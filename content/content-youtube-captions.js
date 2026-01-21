@@ -280,9 +280,38 @@
       .replace(/\\u002f/g, '/');
   }
 
+  function logCaptionRenderer(renderer, source) {
+    if (!renderer) return;
+    const tracks = renderer.captionTracks || [];
+    const translationLanguages = renderer.translationLanguages || [];
+    const translationLangSample = translationLanguages
+      .slice(0, 8)
+      .map((lang) => lang.languageCode || lang.languageName?.simpleText || '');
+    const summaries = tracks.map((track) => ({
+      languageCode: track.languageCode,
+      kind: track.kind || '',
+      name: track.name?.simpleText || '',
+      isTranslatable: track.isTranslatable,
+      vssId: track.vssId,
+      hasBaseUrl: !!track.baseUrl,
+      hasSignatureCipher: !!track.signatureCipher,
+      baseUrlSample: track.baseUrl ? String(track.baseUrl).slice(0, 120) : '',
+    }));
+    console.log('AI Translator: caption renderer info', {
+      source,
+      trackCount: tracks.length,
+      translationLangCount: translationLanguages.length,
+      translationLangSample,
+    });
+    console.log('AI Translator: caption track summaries', summaries);
+  }
+
   function extractTracksFromResponse(data) {
-    const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || null;
+    const renderer = data?.captions?.playerCaptionsTracklistRenderer || null;
+    if (!renderer) return null;
+    const tracks = renderer.captionTracks || null;
     if (!Array.isArray(tracks) || !tracks.length) return null;
+    logCaptionRenderer(renderer, 'playerResponse');
     return tracks;
   }
 
@@ -315,6 +344,11 @@
       tracks.push({
         languageCode: langMatch[1],
         baseUrl: decodeTrackValue(baseUrlMatch[1]),
+      });
+    }
+    if (tracks.length) {
+      console.log('AI Translator: caption tracks parsed (fallback)', {
+        count: tracks.length,
       });
     }
     return tracks.length ? tracks : null;
@@ -450,6 +484,13 @@
         };
       }
       const text = await response.text();
+      console.log('AI Translator: timedtext response meta', {
+        format,
+        status: response.status,
+        contentType,
+        contentLength,
+        url: urlStr.slice(0, 200),
+      });
       console.log('AI Translator: timedtext body preview', {
         format,
         length: text.length,
@@ -830,6 +871,11 @@
     console.log('AI Translator: track selected', {
       trackLang,
       targetLang,
+      kind: track?.kind || '',
+      isTranslatable: track?.isTranslatable,
+      vssId: track?.vssId || '',
+      hasSignatureCipher: !!track?.signatureCipher,
+      hasBaseUrl: !!track?.baseUrl,
       baseUrlSample: String(track?.baseUrl || '').slice(0, 80),
     });
 
