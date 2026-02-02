@@ -28,12 +28,19 @@
     };
   }
 
+  function isMacPlatform() {
+    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    return /mac/i.test(platform);
+  }
+
+  const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
+
   if (!ctx.settings) {
     ctx.settings = {
       enableSelection: true,
       enableHoverTranslation: true,
       hoverTranslationHotkey: 'Shift',
-      selectionTranslationHotkey: 'Control',
+      selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
       selectionTranslationMode: 'inline',
       showFloatBall: true,
       autoDetect: true,
@@ -95,7 +102,7 @@
         enableSelection: true,
         enableHoverTranslation: true,
         hoverTranslationHotkey: 'Shift',
-        selectionTranslationHotkey: 'Control',
+        selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
         selectionTranslationMode: 'inline',
         showFloatBall: true,
         autoDetect: true,
@@ -111,7 +118,7 @@
         enableSelection: true,
         enableHoverTranslation: true,
         hoverTranslationHotkey: 'Shift',
-        selectionTranslationHotkey: 'Control',
+        selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
         selectionTranslationMode: 'inline',
         showFloatBall: true,
         autoDetect: true,

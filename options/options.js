@@ -1,6 +1,20 @@
 // Default prompt template
 const DEFAULT_PROMPT_KEY = 'promptStandard';
 
+function isMacPlatform() {
+  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  return /mac/i.test(platform);
+}
+
+function getPlatformType() {
+  const platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '').toLowerCase();
+  if (platform.includes('mac')) return 'mac';
+  if (platform.includes('win')) return 'windows';
+  if (platform.includes('linux')) return 'linux';
+  return 'other';
+}
+
+const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
 
 // Provider configurations
 const PROVIDERS = {
@@ -140,6 +154,37 @@ function applyI18n(lang) {
   document.title = `${t('appName')} - ${t('settings')}`;
 }
 
+function applyPlatformHotkeyLabels() {
+  const platformType = getPlatformType();
+  if (platformType === 'other') return;
+
+  const selects = [elements.selectionTranslationHotkey, elements.hoverTranslationHotkey].filter(Boolean);
+  const labelMapByPlatform = {
+    mac: {
+      Shift: '⇧ Shift',
+      Alt: '⌥ Option',
+      Control: '⌃ Control',
+      Meta: '⌘ Command',
+    },
+    windows: {
+      Meta: '⊞ Win',
+    },
+    linux: {
+      Meta: 'Super',
+    },
+  };
+
+  const labelMap = labelMapByPlatform[platformType] || null;
+  if (!labelMap) return;
+
+  selects.forEach((select) => {
+    Array.from(select.options).forEach((option) => {
+      const mapped = labelMap[option.value];
+      if (mapped) option.textContent = mapped;
+    });
+  });
+}
+
 // DOM Elements
 const elements = {
   provider: document.getElementById('provider'),
@@ -227,7 +272,7 @@ const defaultSettings = {
   enableSelection: true,
   enableHoverTranslation: true,
   selectionTranslationMode: 'inline',
-  selectionTranslationHotkey: 'Control',
+  selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
   autoDetect: true,
@@ -385,7 +430,7 @@ async function loadSettings() {
     elements.targetLang.value = targetLang;
     elements.enableSelection.checked = result.enableSelection;
     elements.selectionTranslationMode.value = result.selectionTranslationMode || 'inline';
-    elements.selectionTranslationHotkey.value = result.selectionTranslationHotkey || 'Control';
+    elements.selectionTranslationHotkey.value = result.selectionTranslationHotkey || DEFAULT_SELECTION_HOTKEY;
     elements.enableHoverTranslation.checked = result.enableHoverTranslation;
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
@@ -398,6 +443,7 @@ async function loadSettings() {
 
     // Apply i18n based on target language
     applyI18n(targetLang);
+    applyPlatformHotkeyLabels();
 
     syncInlineSettingState();
   } catch (error) {
@@ -493,6 +539,7 @@ async function saveSettings() {
 
     // Update UI language if target language changed
     applyI18n(settings.targetLang);
+    applyPlatformHotkeyLabels();
   } catch (error) {
     console.error('Failed to save settings:', error);
     showStatus(t('connectionFailed'), 'error');

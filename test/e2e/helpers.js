@@ -150,7 +150,7 @@ async function floatBallExists(page) {
  * @param {import('@playwright/test').Page} page
  * @param {string} hotkey
  */
-async function triggerSelectionHotkey(page, hotkey = 'Control') {
+async function triggerSelectionHotkey(page, hotkey = process.platform === 'darwin' ? 'Meta' : 'Control') {
   await page.keyboard.press(hotkey);
 }
 
