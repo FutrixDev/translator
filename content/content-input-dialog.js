@@ -16,6 +16,17 @@
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
 
+  function isInputDictionaryText(text) {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    if (/[\r\n\t]/.test(trimmed)) return false;
+    if (trimmed.length > 80) return false;
+    if (/[=+\-*/^<>]/.test(trimmed)) return false;
+    const segments = trimmed.split(/\s+/).filter(Boolean);
+    return segments.length >= 1 && segments.length <= 4;
+  }
+
   function showInputTranslateDialog() {
     if (state.inputDialog) {
       state.inputDialog.remove();
@@ -74,6 +85,16 @@
           <div class="ai-translator-input-section ai-translator-result-section" id="ai-translator-result-section" style="display: none;">
             <label class="ai-translator-input-label">${t('translatedText')}</label>
             <div class="ai-translator-input-result" id="ai-translator-result-text"></div>
+            <div class="ai-translator-input-meta" id="ai-translator-input-meta" hidden>
+              <span class="ai-translator-input-phonetic" id="ai-translator-input-phonetic"></span>
+              <button class="ai-translator-icon-btn ai-translator-input-speak" id="ai-translator-input-speak" title="${t('pronounce')}" hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 9v6h4l5 4V5L8 9H4z"/>
+                  <path d="M16 9a5 5 0 010 6"/>
+                  <path d="M19 7a8 8 0 010 10"/>
+                </svg>
+              </button>
+            </div>
             <button class="ai-translator-btn ai-translator-input-btn-copy" id="ai-translator-copy-result">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -93,6 +114,16 @@
 
     state.inputDialog.querySelector('.ai-translator-close').addEventListener('click', hideInputDialog);
     state.inputDialog.querySelector('.ai-translator-input-overlay').addEventListener('click', hideInputDialog);
+    const speakBtn = state.inputDialog.querySelector('#ai-translator-input-speak');
+    if (speakBtn) {
+      speakBtn.addEventListener('click', () => {
+        const sourceText = state.inputDialog?.dataset.sourceText || textarea.value.trim();
+        if (!sourceText) return;
+        if (ctx.speakText) {
+          ctx.speakText(sourceText);
+        }
+      });
+    }
 
     const translateInputText = async (targetLangOverride = '') => {
       const text = textarea.value.trim();
@@ -100,9 +131,16 @@
       
       const resultSection = state.inputDialog.querySelector('#ai-translator-result-section');
       const resultText = state.inputDialog.querySelector('#ai-translator-result-text');
+      const metaEl = state.inputDialog.querySelector('#ai-translator-input-meta');
+      const phoneticEl = state.inputDialog.querySelector('#ai-translator-input-phonetic');
+      const speakEl = state.inputDialog.querySelector('#ai-translator-input-speak');
       
       resultSection.style.display = 'block';
+      state.inputDialog.dataset.sourceText = text;
       resultText.innerHTML = `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>`;
+      if (metaEl) metaEl.hidden = true;
+      if (phoneticEl) phoneticEl.textContent = '';
+      if (speakEl) speakEl.hidden = true;
       
       try {
         if (!isExtensionContextAvailable()) {
@@ -114,19 +152,34 @@
           type: 'TRANSLATE',
           text: text,
           targetLang: targetLang,
-          mode: ctx.isSingleWordText ? (ctx.isSingleWordText(text) ? 'word' : 'text') : 'text'
+          mode: isInputDictionaryText(text) ? 'word' : 'text'
         });
         
         if (response.error) {
           resultText.innerHTML = `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>`;
         } else {
           resultText.textContent = response.translation;
+          const isDictionary = response.isWord === true;
+          if (metaEl) metaEl.hidden = !isDictionary;
+          if (speakEl) speakEl.hidden = !isDictionary;
+          if (phoneticEl) {
+            if (isDictionary && response.phonetic) {
+              phoneticEl.textContent = response.phonetic;
+              phoneticEl.hidden = false;
+            } else {
+              phoneticEl.textContent = '';
+              phoneticEl.hidden = true;
+            }
+          }
         }
       } catch (error) {
         const message = isExtensionContextInvalidated(error)
           ? t('extensionContextInvalidated')
           : t('translationFailed');
         resultText.innerHTML = `<div class="ai-translator-input-error">${message}</div>`;
+        if (metaEl) metaEl.hidden = true;
+        if (phoneticEl) phoneticEl.textContent = '';
+        if (speakEl) speakEl.hidden = true;
       }
     };
 
@@ -166,12 +219,13 @@
       });
     }
 
-    // Escape to close
-    document.addEventListener('keydown', handleInputDialogEscape);
+    // Escape to close (capture phase to intercept before other keydown handlers)
+    document.addEventListener('keydown', handleInputDialogEscape, true);
   }
 
   function handleInputDialogEscape(e) {
     if (e.key === 'Escape' && state.inputDialog) {
+      e.stopImmediatePropagation();
       hideInputDialog();
     }
   }
@@ -183,7 +237,7 @@
       }
       state.inputDialog.remove();
       state.inputDialog = null;
-      document.removeEventListener('keydown', handleInputDialogEscape);
+      document.removeEventListener('keydown', handleInputDialogEscape, true);
     }
   }
 

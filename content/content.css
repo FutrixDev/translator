@@ -35,6 +35,11 @@
   animation: ai-translator-fade-in 0.2s ease;
 }
 
+.ai-translator-popup [hidden],
+#ai-translator-input-dialog [hidden] {
+  display: none !important;
+}
+
 @keyframes ai-translator-fade-in {
   from {
     opacity: 0;
@@ -1221,6 +1226,24 @@ button.ai-translator-inline-block {
   max-height: 200px;
   word-break: break-word;
   overflow-y: auto;
+}
+
+.ai-translator-input-meta {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-translator-input-phonetic {
+  font-family: 'Times New Roman', serif;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ai-translator-input-speak {
+  flex-shrink: 0;
 }
 
 .ai-translator-input-loading {

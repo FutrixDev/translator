@@ -231,8 +231,11 @@
     // Event listeners
     state.translationPopup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
     state.translationPopup.querySelector('.ai-translator-copy').addEventListener('click', () => {
-      copyToClipboard(translation);
-      showCopyFeedback();
+      const currentTranslation = state.translationPopup?.querySelector('.ai-translator-translation-text')?.textContent;
+      if (currentTranslation && !currentTranslation.includes(t('translating'))) {
+        copyToClipboard(currentTranslation);
+        showCopyFeedback();
+      }
     });
     const speakBtn = state.translationPopup.querySelector('.ai-translator-speak');
     if (speakBtn) {
@@ -265,6 +268,10 @@
     let isDragging = false;
     let startX, startY, initialX, initialY;
 
+    // Use AbortController so all listeners can be removed on popup close
+    const dragAbort = new AbortController();
+    popup._dragAbortController = dragAbort;
+
     header.style.cursor = 'move';
 
     header.addEventListener('mousedown', (e) => {
@@ -281,7 +288,7 @@
 
       popup.style.transition = 'none';
       e.preventDefault();
-    });
+    }, { signal: dragAbort.signal });
 
     document.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
@@ -299,20 +306,23 @@
 
       popup.style.left = `${newX}px`;
       popup.style.top = `${newY}px`;
-    });
+    }, { signal: dragAbort.signal });
 
     document.addEventListener('mouseup', () => {
       if (isDragging) {
         isDragging = false;
         popup.style.transition = '';
       }
-    });
+    }, { signal: dragAbort.signal });
   }
 
   function hideTranslationPopup() {
     if (state.translationPopup) {
       if (state.translationPopup._langOutsideHandler) {
         document.removeEventListener('mousedown', state.translationPopup._langOutsideHandler);
+      }
+      if (state.translationPopup._dragAbortController) {
+        state.translationPopup._dragAbortController.abort();
       }
       state.translationPopup.remove();
       state.translationPopup = null;

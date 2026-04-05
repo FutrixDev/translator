@@ -62,6 +62,9 @@
       const selectedText = getSelectedText();
       if (selectedText) return;
       if (state.selectionButton || state.selectionTranslationPending) return;
+      // Don't clear state while a context menu is likely open (right-click translation in progress)
+      // The context menu handler in background.js needs lastSelectionElement to show inline translation
+      if (document.visibilityState === 'visible' && document.hasFocus && !document.hasFocus()) return;
       state.lastSelectionElement = null;
       state.lastSelectionRange = null;
       state.lastSelectedText = '';

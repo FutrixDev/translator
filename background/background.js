@@ -61,15 +61,15 @@ const languageNames = {
 const MATH_PLACEHOLDER_RULE = `
 IMPORTANT: Keep placeholders like {{1}}, {{2}} etc. exactly as they are - do not translate, modify, or add line breaks around them.`;
 
-// Single word prompt template (no math placeholder rule)
-const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Translate the given word to {targetLang}.
+// Single word/phrase prompt template (no math placeholder rule)
+const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Translate the given word or short phrase to {targetLang}.
 Return JSON only with keys "translation" and "phonetic".
-- "phonetic" should be the IPA of the source word
+- "phonetic" should be the IPA of the source word or phrase
 - If phonetic is unavailable, use an empty string`;
 
 const WORD_OUTPUT_RULES = `OUTPUT FORMAT:
 Return JSON only with keys "translation" and "phonetic".
-"phonetic" should be the IPA of the source word; if unavailable, use an empty string.`;
+"phonetic" should be the IPA of the source word or phrase; if unavailable, use an empty string.`;
 
 // Default prompt template
 const DEFAULT_PROMPT = `You are a professional translator. Translate the given text to {targetLang}.
@@ -98,7 +98,7 @@ const BATCH_OUTPUT_RULES = `BATCH FORMAT RULES:
 
 // Get browser language and map to supported language
 function getBrowserLanguage() {
-  const browserLang = navigator.language || navigator.userLanguage || 'en';
+  const browserLang = navigator.language || 'en';
   const supportedLangs = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
 
   if (supportedLangs.includes(browserLang)) {
@@ -141,7 +141,8 @@ const defaultSettings = {
   modelName: 'gpt-4.1-mini',
   targetLang: '', // Empty means use browser language
   targetLangSetByUser: false,
-  customPrompt: ''
+  customPrompt: '',
+  theme: 'light'
 };
 
 const MENU_IDS = {
@@ -701,7 +702,7 @@ function getFastBatchOutputRules(delimiter) {
 }
 
 // Fast batch translation with delimiter
-async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '<<<>>>') {
+async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫') {
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // Join texts with delimiter
@@ -749,18 +750,48 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
 // Parse numbered response from AI
 function parseNumberedResponse(content, expectedCount) {
   const translations = [];
-  
-  // Try to extract translations by numbered pattern
+
+  // Build an array of split positions for each expected marker [1], [2], ...
+  // Only match markers that appear at line start or after whitespace to avoid
+  // false positives with citation-style references like "see [1]" inside text.
+  const markerPositions = [];
+  for (let i = 1; i <= expectedCount; i++) {
+    // Match [i] that is either at the start of the string or preceded by a newline
+    const pattern = new RegExp(`(?:^|\\n)\\s*\\[${i}\\]\\s*`, 'g');
+    let m;
+    while ((m = pattern.exec(content)) !== null) {
+      markerPositions.push({ index: i, start: m.index, end: m.index + m[0].length });
+    }
+  }
+
+  // Sort by position in the string
+  markerPositions.sort((a, b) => a.start - b.start);
+
+  // Deduplicate: keep only the first occurrence of each index
+  const seen = new Set();
+  const uniqueMarkers = markerPositions.filter(m => {
+    if (seen.has(m.index)) return false;
+    seen.add(m.index);
+    return true;
+  });
+
+  // Extract text between markers
+  if (uniqueMarkers.length === expectedCount) {
+    for (let i = 0; i < uniqueMarkers.length; i++) {
+      const textStart = uniqueMarkers[i].end;
+      const textEnd = i + 1 < uniqueMarkers.length ? uniqueMarkers[i + 1].start : content.length;
+      translations.push(content.slice(textStart, textEnd).trim());
+    }
+    return translations;
+  }
+
+  // Fallback: try the original greedy approach
   for (let i = 1; i <= expectedCount; i++) {
     const pattern = new RegExp(`\\[${i}\\]\\s*([\\s\\S]*?)(?=\\[${i + 1}\\]|$)`, 'i');
     const match = content.match(pattern);
-    if (match) {
-      translations.push(match[1].trim());
-    } else {
-      translations.push('');
-    }
+    translations.push(match ? match[1].trim() : '');
   }
-  
+
   // If parsing failed, try splitting by line
   if (translations.every(t => !t)) {
     const lines = content.split('\n').filter(line => line.trim());
@@ -768,6 +799,6 @@ function parseNumberedResponse(content, expectedCount) {
       translations[i] = lines[i]?.replace(/^\[\d+\]\s*/, '').trim() || '';
     }
   }
-  
+
   return translations;
 }

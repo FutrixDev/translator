@@ -509,9 +509,23 @@
     });
   }
 
+  function stopFloatBallWatchdog() {
+    if (floatBallWatchdog) {
+      clearInterval(floatBallWatchdog);
+      floatBallWatchdog = null;
+    }
+  }
+
   function updateFloatBallVisibility() {
     // Ensure showFloatBall has a valid boolean value
     const shouldShow = settings.showFloatBall !== false && !isFullscreenActive;
+
+    // Start or stop the watchdog based on visibility
+    if (shouldShow) {
+      startFloatBallWatchdog();
+    } else {
+      stopFloatBallWatchdog();
+    }
 
     // If should show, ensure float ball exists (recreate if removed by page)
     if (shouldShow) {

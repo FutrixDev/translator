@@ -21,7 +21,7 @@
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
   const MAX_BATCH_TOKENS = 3200; // 估算 token 上限（输入侧保守值）
   const CONCURRENCY = 12;       // 并发数
-  const DELIMITER = '<<<>>>';   // 分隔符
+  const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
   async function translatePage() {
     if (!isExtensionContextAvailable()) {
@@ -93,7 +93,7 @@
           const response = await chrome.runtime.sendMessage({
             type: 'TRANSLATE_BATCH_FAST',
             texts: texts,
-            targetLang: settings.targetLang,
+            targetLang: getEffectiveTargetLang(),
             delimiter: DELIMITER
           });
 
@@ -253,7 +253,7 @@
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
-    const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH'];
+    const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
     // 容器元素 - 这些元素不应作为整体翻译，应递归处理子元素
     const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN'];
     // 用于检测代码/脚本内容的模式
