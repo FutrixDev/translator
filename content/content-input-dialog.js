@@ -29,7 +29,7 @@
 
   function showInputTranslateDialog() {
     if (state.inputDialog) {
-      state.inputDialog.remove();
+      hideInputDialog();
     }
 
     // Ensure theme is applied
