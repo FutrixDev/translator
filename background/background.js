@@ -308,23 +308,57 @@ async function callClaudeAPI(endpoint, apiKey, model, systemPrompt, userContent,
   return data.content?.[0]?.text?.trim() || '';
 }
 
+// Normalize a model name for capability detection (strip provider prefixes like "openai/").
+function normalizeModelName(model) {
+  const name = String(model || '').toLowerCase().trim();
+  return name.includes('/') ? name.split('/').pop() : name;
+}
+
+// GPT-5.x and o-series reasoning models renamed `max_tokens` to `max_completion_tokens`
+// and only accept the default temperature (an explicit temperature returns HTTP 400).
+function isOpenAIReasoningModel(model) {
+  const name = normalizeModelName(model);
+  return /^gpt-5/.test(name) || /^o[1-9]/.test(name);
+}
+
+// Newer Claude models reject `temperature`/`top_p` ("deprecated for this model"),
+// including when reached through an OpenAI-compatible gateway. The native Claude
+// path already omits temperature, so mirror that here for any Claude model.
+function isClaudeModelName(model) {
+  const name = normalizeModelName(model);
+  return /claude|opus|sonnet|haiku|fable/.test(name);
+}
+
+// Build an OpenAI-compatible request body with model-aware parameters.
+function buildOpenAIRequestBody(model, messages, maxTokens, temperature) {
+  const body = { model, messages };
+
+  if (isOpenAIReasoningModel(model)) {
+    // GPT-5.x / o-series: new token-limit field, default temperature only.
+    body.max_completion_tokens = maxTokens;
+  } else {
+    body.max_tokens = maxTokens;
+    if (typeof temperature === 'number' && !isClaudeModelName(model)) {
+      body.temperature = temperature;
+    }
+  }
+
+  return body;
+}
+
 // Call OpenAI-compatible API
 async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent, maxTokens = 4096, temperature = 0.3) {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userContent }
+  ];
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent }
-      ],
-      temperature: temperature,
-      max_tokens: maxTokens
-    })
+    body: JSON.stringify(buildOpenAIRequestBody(model, messages, maxTokens, temperature))
   });
 
   const data = await response.json().catch(() => ({}));

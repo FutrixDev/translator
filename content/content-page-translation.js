@@ -29,6 +29,10 @@
       showTranslationError(t('extensionContextInvalidated'));
       return;
     }
+    // 如果之前的译文被“隐藏译文”开关隐藏了，再次点击“翻译整页”应先把它们重新显示出来。
+    // 否则整页已翻译、没有新块可译时会走 length === 0 分支直接返回，
+    // 译文仍处于隐藏状态，用户会觉得“再次翻译没有任何反应”。
+    revealHiddenTranslations();
     if (state.isTranslatingPage) {
       console.log('AI Translator: Already translating page');
       // 如果进度条被关闭了，重新显示它并恢复进度
@@ -143,6 +147,16 @@
     } finally {
       state.isTranslatingPage = false;
       state.translationProgress = { current: 0, total: 0 };
+    }
+  }
+
+  // 重新显示被“隐藏译文”开关隐藏的所有译文块，并同步开关状态，
+  // 使浮球菜单下次显示为“隐藏译文”。
+  function revealHiddenTranslations() {
+    const hidden = document.querySelectorAll('.ai-translator-inline-block.ai-translator-hidden');
+    hidden.forEach(el => el.classList.remove('ai-translator-hidden'));
+    if (hidden.length > 0) {
+      state.translationsVisible = true;
     }
   }
 
@@ -1006,9 +1020,13 @@
         translationEl.style.opacity = '0.85';
       } else {
         translationEl.textContent = translation;
-        // 无数学公式时，设置完整样式
+        // 无数学公式时，设置完整样式。
+        // 注意：不要在这里设置水平 margin。有些页面通过在原元素上设置
+        // `margin-left/right: auto` 让每个块居中（例如 Anthropic 文章的
+        // `.prose > *`），一旦强制 `margin: 0` 就会把译文钉在容器左侧，而原文
+        // 仍然居中，导致译文错位到左边。上下间距由 `.ai-translator-inline-block`
+        // 类（带 !important）控制。
         translationEl.style.cssText = baseStyle + `
-          margin: 0;
           padding: 0;
           box-sizing: border-box;
         `;

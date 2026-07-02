@@ -152,6 +152,18 @@ function applyI18n(lang) {
   
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
+
+  // Show the real extension version from the manifest instead of a hard-coded
+  // string, so the settings page never drifts from the released version.
+  const versionEl = document.querySelector('[data-i18n="appNameVersion"]');
+  if (versionEl) {
+    try {
+      const version = chrome.runtime.getManifest().version;
+      versionEl.textContent = `${t('appName')} v${version}`;
+    } catch (e) {
+      // getManifest() may be unavailable in some contexts; keep the i18n fallback.
+    }
+  }
 }
 
 function applyPlatformHotkeyLabels() {
@@ -567,6 +579,14 @@ function isClaudeAPI(endpoint) {
   return endpoint.includes('anthropic.com') || endpoint.includes('/v1/messages');
 }
 
+// GPT-5.x and o-series reasoning models use `max_completion_tokens` instead of
+// `max_tokens`; sending `max_tokens` to them returns HTTP 400.
+function isOpenAIReasoningModel(model) {
+  const name = String(model || '').toLowerCase().trim();
+  const shortName = name.includes('/') ? name.split('/').pop() : name;
+  return /^gpt-5/.test(shortName) || /^o[1-9]/.test(shortName);
+}
+
 // Test API connection
 async function testConnection() {
   const providerKey = elements.provider.value;
@@ -610,19 +630,26 @@ async function testConnection() {
       });
     } else {
       // Use OpenAI-compatible API format
+      const testModel = modelName || 'gpt-4.1-mini';
+      const testBody = {
+        model: testModel,
+        messages: [
+          { role: 'user', content: 'Hi' }
+        ]
+      };
+      // GPT-5.x / o-series reasoning models require max_completion_tokens.
+      if (isOpenAIReasoningModel(testModel)) {
+        testBody.max_completion_tokens = 20;
+      } else {
+        testBody.max_tokens = 20;
+      }
       response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`
         },
-        body: JSON.stringify({
-          model: modelName || 'gpt-4.1-mini',
-          messages: [
-            { role: 'user', content: 'Hi' }
-          ],
-          max_tokens: 20
-        })
+        body: JSON.stringify(testBody)
       });
     }
 
