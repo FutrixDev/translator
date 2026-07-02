@@ -221,12 +221,29 @@
 
     // Escape to close (capture phase to intercept before other keydown handlers)
     document.addEventListener('keydown', handleInputDialogEscape, true);
+
+    // Prevent host-page focus traps (e.g. Jira/Atlaskit modals built on
+    // focus-lock) from stealing focus out of our dialog. Such traps listen for
+    // focus events bubbling to `document` and forcibly redirect focus back into
+    // their own modal whenever focus lands outside it — which would silently
+    // route the user's keystrokes into the host modal instead of our textarea.
+    // We intercept focus events targeting our dialog in the capture phase and
+    // stop them before the host page's bubble-phase listeners can react.
+    document.addEventListener('focusin', blockHostFocusTrap, true);
+    document.addEventListener('focusout', blockHostFocusTrap, true);
   }
 
   function handleInputDialogEscape(e) {
     if (e.key === 'Escape' && state.inputDialog) {
       e.stopImmediatePropagation();
       hideInputDialog();
+    }
+  }
+
+  function blockHostFocusTrap(e) {
+    const dialog = state.inputDialog;
+    if (dialog && (e.target === dialog || dialog.contains(e.target))) {
+      e.stopImmediatePropagation();
     }
   }
 
@@ -238,6 +255,8 @@
       state.inputDialog.remove();
       state.inputDialog = null;
       document.removeEventListener('keydown', handleInputDialogEscape, true);
+      document.removeEventListener('focusin', blockHostFocusTrap, true);
+      document.removeEventListener('focusout', blockHostFocusTrap, true);
     }
   }
 
