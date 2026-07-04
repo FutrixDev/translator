@@ -20,6 +20,7 @@
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
   const MAX_BATCH_TOKENS = 3200; // 估算 token 上限（输入侧保守值）
+  const MAX_BLOCK_CHARS = 4000; // 单个块最大字符数；超过则按标点分块（见 splitTextIntoChunks），避免正文被丢弃或被模型截断
   const CONCURRENCY = 12;       // 并发数
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
@@ -82,12 +83,86 @@
       // Track if any batch failed
       let batchError = null;
 
+      // 处理超大块：按标点分块 → 分别翻译（必要时拆成多次请求）→ 按序拼回一个整体插入。
+      // 这样正文（尤其是位于 <li> 直属文本节点、用 <br><br> 分段的“超大列表项”）不会被丢弃，
+      // 也不会因一次性塞给模型过长而被截断。
+      const processOversizedBlock = async (block) => {
+        const chunks = splitTextIntoChunks(block.text, MAX_BLOCK_CHARS);
+        if (chunks.length === 0) return;
+        const translations = new Array(chunks.length);
+
+        // 把分块再按批量上限打包，避免单次请求超过 MAX_BATCH_CHARS
+        const subBatches = [];
+        let sub = [];
+        let subChars = 0;
+        for (let i = 0; i < chunks.length; i++) {
+          if (sub.length > 0 && subChars + chunks[i].length > MAX_BATCH_CHARS) {
+            subBatches.push(sub);
+            sub = [];
+            subChars = 0;
+          }
+          sub.push({ index: i, text: chunks[i] });
+          subChars += chunks[i].length;
+        }
+        if (sub.length > 0) subBatches.push(sub);
+
+        for (const sb of subBatches) {
+          if (batchError) return;
+          try {
+            const response = await chrome.runtime.sendMessage({
+              type: 'TRANSLATE_BATCH_FAST',
+              texts: sb.map(x => x.text),
+              targetLang: getEffectiveTargetLang(),
+              delimiter: DELIMITER
+            });
+
+            if (response.error) {
+              batchError = response.error;
+              return;
+            }
+
+            // 分隔符切分数量不匹配：放弃本块（保持原文），不呈现错位/残缺译文。
+            // 这属于单块问题，不设 batchError、不影响整页其它块。
+            if (!response.translations || response.translations.length !== sb.length) {
+              return;
+            }
+            sb.forEach((x, k) => {
+              translations[x.index] = response.translations[k];
+            });
+          } catch (error) {
+            console.error('AI Translator: Oversized block translation failed', error);
+            if (!batchError) {
+              batchError = isExtensionContextInvalidated(error)
+                ? t('extensionContextInvalidated')
+                : (error.message || t('translationFailed'));
+            }
+            return;
+          }
+        }
+
+        // 任一分块缺译（未定义或空）则放弃插入，避免呈现残缺译文
+        if (translations.some(x => !x)) return;
+
+        const combined = translations.join('');
+        if (!combined.trim()) return;
+        if (await shouldSkipTranslation(block, combined)) return;
+        insertTranslationBlock(block, combined);
+      };
+
       // 使用 Promise 池进行并发控制
       const processBatch = async (batch) => {
         // Skip if we already have an error
         if (batchError) return;
         if (!isExtensionContextAvailable()) {
           batchError = t('extensionContextInvalidated');
+          return;
+        }
+
+        // 超大块：单独成批，走分块翻译流程
+        if (batch.length === 1 && batch[0].oversized) {
+          await processOversizedBlock(batch[0]);
+          state.translationProgress.current += batch.length;
+          updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total);
           return;
         }
 
@@ -199,6 +274,63 @@
     return { priorityBlocks, deferredBlocks };
   }
 
+  // 若 pos 落在数学占位符 {{数字}} 内部，回退到该占位符起点，避免把占位符切成两半
+  function avoidPlaceholderSplit(text, start, pos) {
+    if (pos <= start || pos >= text.length) return pos;
+    const open = text.lastIndexOf('{{', pos - 1);
+    if (open < start) return pos;             // pos 之前没有未闭合的 {{
+    const close = text.indexOf('}}', open);
+    if (close === -1) return pos;             // 不是有效占位符
+    if (close + 2 <= pos) return pos;         // 占位符已在 pos 之前闭合，安全
+    return open > start ? open : pos;         // pos 位于占位符内部 → 回退到 {{ 之前
+  }
+
+  // 将超长文本按标点切分为不超过 maxLen 的块，尽量在句末/子句/空白处断开，
+  // 且不切断数学占位符 {{n}}。每块的结尾标点/空白予以保留，拼接时可无缝还原。
+  function splitTextIntoChunks(text, maxLen) {
+    if (!text || text.length <= maxLen) return text ? [text] : [];
+
+    const sentenceEnd = /[.．。!！?？…;；\n]/;   // 句末标点（中英）
+    const clauseEnd = /[,，、:：)）]/;            // 子句标点
+    const chunks = [];
+    const len = text.length;
+    let start = 0;
+
+    while (start < len) {
+      if (len - start <= maxLen) {
+        chunks.push(text.slice(start));
+        break;
+      }
+
+      const hardEnd = avoidPlaceholderSplit(text, start, start + maxLen);
+      let breakAt = -1;
+
+      // 优先句末标点，其次子句标点，再次空白，最后硬切
+      for (let i = hardEnd - 1; i > start; i--) {
+        if (sentenceEnd.test(text[i])) { breakAt = i + 1; break; }
+      }
+      if (breakAt <= start) {
+        for (let i = hardEnd - 1; i > start; i--) {
+          if (clauseEnd.test(text[i])) { breakAt = i + 1; break; }
+        }
+      }
+      if (breakAt <= start) {
+        for (let i = hardEnd - 1; i > start; i--) {
+          if (/\s/.test(text[i])) { breakAt = i + 1; break; }
+        }
+      }
+      if (breakAt <= start) breakAt = hardEnd;
+
+      breakAt = avoidPlaceholderSplit(text, start, breakAt);
+      if (breakAt <= start) breakAt = Math.min(start + maxLen, len);
+
+      chunks.push(text.slice(start, breakAt));
+      start = breakAt;
+    }
+
+    return chunks.filter(c => c.length > 0);
+  }
+
   // 智能分批：根据 token/字符数/段落数限制
   function createSmartBatches(blocks) {
     const batches = [];
@@ -207,31 +339,42 @@
     let currentTokens = 0;
     const itemTokenOverhead = 6;
 
-    for (const block of blocks) {
-      const textLen = block.text.length;
-      const tokenEstimate = estimateTokens(block.text) + itemTokenOverhead;
-      
-      // 如果当前批次加入这个 block 后会超限，先保存当前批次
-      if (currentBatch.length > 0 && 
-          (currentTokens + tokenEstimate > MAX_BATCH_TOKENS ||
-           currentChars + textLen > MAX_BATCH_CHARS ||
-           currentBatch.length >= MAX_BATCH_ITEMS)) {
+    const flush = () => {
+      if (currentBatch.length > 0) {
         batches.push(currentBatch);
         currentBatch = [];
         currentChars = 0;
         currentTokens = 0;
       }
-      
+    };
+
+    for (const block of blocks) {
+      // 超大块单独成批，交由 processBatch 内的分块逻辑（splitTextIntoChunks）处理
+      if (block.oversized) {
+        flush();
+        batches.push([block]);
+        continue;
+      }
+
+      const textLen = block.text.length;
+      const tokenEstimate = estimateTokens(block.text) + itemTokenOverhead;
+
+      // 如果当前批次加入这个 block 后会超限，先保存当前批次
+      if (currentBatch.length > 0 &&
+          (currentTokens + tokenEstimate > MAX_BATCH_TOKENS ||
+           currentChars + textLen > MAX_BATCH_CHARS ||
+           currentBatch.length >= MAX_BATCH_ITEMS)) {
+        flush();
+      }
+
       currentBatch.push(block);
       currentChars += textLen;
       currentTokens += tokenEstimate;
     }
-    
+
     // 保存最后一个批次
-    if (currentBatch.length > 0) {
-      batches.push(currentBatch);
-    }
-    
+    flush();
+
     return batches;
   }
 
@@ -484,7 +627,7 @@
       // 对于块级元素
       if (blockTags.includes(tagName) || hasDirectText) {
         const { text, mathElements } = getTextWithMathPlaceholders(element);
-        if (text && text.length >= 2 && text.length <= 2000) {
+        if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符后判断）
           const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '');
           if (textWithoutMath && (looksLikeCode(textWithoutMath) || isMainlyUrl(textWithoutMath))) {
@@ -495,12 +638,20 @@
             return;
           }
 
-          blocks.push({
+          const block = {
             element: element,
             text: text,
             tagName: tagName,
             mathElements: mathElements // 保存公式信息
-          });
+          };
+          // 超长块（如把整段正文塞进一个 <li>、用 <br><br> 分段的“超大列表项”）：
+          // 标记 oversized，稍后按标点分块翻译。
+          // 不能像以前那样在超限时回退去递归子元素——正文位于本元素的【直属文本节点】里，
+          // 递归只遍历子【元素】会把正文整段丢弃，只剩标题/链接被翻译。
+          if (text.length > MAX_BLOCK_CHARS) {
+            block.oversized = true;
+          }
+          blocks.push(block);
           return; // 不再递归处理子元素
         }
       }
