@@ -21,19 +21,21 @@ const PROVIDERS = {
   openai: {
     name: 'OpenAI',
     endpoint: 'https://api.openai.com/v1/chat/completions',
-    models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
+    models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
     defaultModel: 'gpt-4.1-mini'
   },
   anthropic: {
     name: 'Anthropic Claude',
     endpoint: 'https://api.anthropic.com/v1/messages',
-    models: ['claude-opus-4-5-20251124', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251022', 'claude-opus-4-1-20250805', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
-    defaultModel: 'claude-sonnet-4-5-20250929'
+    // Native Anthropic API accepts version aliases (no date suffix); aliases
+    // always resolve to the latest snapshot and avoid stale/incorrect dates.
+    models: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1'],
+    defaultModel: 'claude-sonnet-5'
   },
   gemini: {
     name: 'Google Gemini',
     endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    models: ['gemini-3-flash', 'gemini-3-pro', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    models: ['gemini-3.5-flash', 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
     defaultModel: 'gemini-3-flash'
   },
   deepseek: {
@@ -47,6 +49,8 @@ const PROVIDERS = {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     models: [
       // Anthropic Claude
+      'anthropic/claude-opus-4.8',
+      'anthropic/claude-sonnet-5',
       'anthropic/claude-opus-4.5',
       'anthropic/claude-sonnet-4.5',
       'anthropic/claude-haiku-4.5',
@@ -54,6 +58,9 @@ const PROVIDERS = {
       'anthropic/claude-sonnet-4',
       'anthropic/claude-opus-4',
       // OpenAI
+      'openai/gpt-5.5',
+      'openai/gpt-5',
+      'openai/gpt-5-mini',
       'openai/gpt-4.1',
       'openai/gpt-4.1-mini',
       'openai/gpt-4.1-nano',
@@ -63,6 +70,7 @@ const PROVIDERS = {
       'openai/o3-mini',
       'openai/o4-mini',
       // Google Gemini
+      'google/gemini-3.5-flash',
       'google/gemini-3-flash',
       'google/gemini-3-pro',
       'google/gemini-2.5-pro',
@@ -71,7 +79,7 @@ const PROVIDERS = {
       'deepseek/deepseek-chat',
       'deepseek/deepseek-reasoner'
     ],
-    defaultModel: 'anthropic/claude-sonnet-4.5'
+    defaultModel: 'anthropic/claude-sonnet-5'
   },
   ollama: {
     name: 'Ollama (Local)',
@@ -587,6 +595,14 @@ function isOpenAIReasoningModel(model) {
   return /^gpt-5/.test(shortName) || /^o[1-9]/.test(shortName);
 }
 
+// GPT-5 family accepts `reasoning_effort`; 'minimal' skips heavy reasoning so a
+// probe returns text quickly. The o-series does not support 'minimal'.
+function isGpt5Family(model) {
+  const name = String(model || '').toLowerCase().trim();
+  const shortName = name.includes('/') ? name.split('/').pop() : name;
+  return /^gpt-5/.test(shortName);
+}
+
 // Test API connection
 async function testConnection() {
   const providerKey = elements.provider.value;
@@ -621,8 +637,9 @@ async function testConnection() {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: modelName || 'claude-sonnet-4-5-20250929',
-          max_tokens: 20,
+          model: modelName || 'claude-sonnet-5',
+          // Room for a reply even when the model spends budget on thinking.
+          max_tokens: 256,
           messages: [
             { role: 'user', content: 'Hi' }
           ]
@@ -637,9 +654,13 @@ async function testConnection() {
           { role: 'user', content: 'Hi' }
         ]
       };
-      // GPT-5.x / o-series reasoning models require max_completion_tokens.
+      // GPT-5.x / o-series reasoning models require max_completion_tokens and
+      // spend part of it on hidden reasoning — give the probe room to reply.
       if (isOpenAIReasoningModel(testModel)) {
-        testBody.max_completion_tokens = 20;
+        testBody.max_completion_tokens = 256;
+        if (isGpt5Family(testModel)) {
+          testBody.reasoning_effort = 'minimal';
+        }
       } else {
         testBody.max_tokens = 20;
       }
