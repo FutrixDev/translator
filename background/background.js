@@ -279,7 +279,9 @@ async function callClaudeAPI(endpoint, apiKey, model, systemPrompt, userContent,
     },
     body: JSON.stringify({
       model: model,
-      max_tokens: maxTokens,
+      // Latest Claude models may spend budget on thinking; floor it so short
+      // translations aren't truncated to empty (see tokenBudgetFor).
+      max_tokens: tokenBudgetFor(model, maxTokens),
       system: systemPrompt,
       messages: [
         { role: 'user', content: userContent }
@@ -321,6 +323,14 @@ function isOpenAIReasoningModel(model) {
   return /^gpt-5/.test(name) || /^o[1-9]/.test(name);
 }
 
+// The GPT-5 family (gpt-5, gpt-5-mini, gpt-5.4-mini, gpt-5.5, ...) accepts the
+// `reasoning_effort` control; 'minimal' skips heavy chain-of-thought, keeping
+// translation fast and cheap. The o-series (o1..) does NOT support 'minimal',
+// so it is only sent for gpt-5*.
+function isGpt5Family(model) {
+  return /^gpt-5/.test(normalizeModelName(model));
+}
+
 // Newer Claude models reject `temperature`/`top_p` ("deprecated for this model"),
 // including when reached through an OpenAI-compatible gateway. The native Claude
 // path already omits temperature, so mirror that here for any Claude model.
@@ -329,15 +339,35 @@ function isClaudeModelName(model) {
   return /claude|opus|sonnet|haiku|fable/.test(name);
 }
 
+// Reasoning (GPT-5/o-series) and modern thinking (Claude) models spend part of
+// the output budget on hidden reasoning/thinking tokens. A short call such as a
+// single-word lookup (budget 800) can be consumed entirely by that hidden spend,
+// returning empty text with finish_reason "length". Give these models a floor so
+// the visible translation always has room. The token limit is only a cap, so
+// raising it never lengthens a normal translation.
+const REASONING_TOKEN_FLOOR = 2000;
+
+function tokenBudgetFor(model, maxTokens) {
+  if (isOpenAIReasoningModel(model) || isClaudeModelName(model)) {
+    return Math.max(maxTokens, REASONING_TOKEN_FLOOR);
+  }
+  return maxTokens;
+}
+
 // Build an OpenAI-compatible request body with model-aware parameters.
 function buildOpenAIRequestBody(model, messages, maxTokens, temperature) {
   const body = { model, messages };
+  const tokenLimit = tokenBudgetFor(model, maxTokens);
 
   if (isOpenAIReasoningModel(model)) {
     // GPT-5.x / o-series: new token-limit field, default temperature only.
-    body.max_completion_tokens = maxTokens;
+    body.max_completion_tokens = tokenLimit;
+    // Skip heavy chain-of-thought for translation (GPT-5 family only).
+    if (isGpt5Family(model)) {
+      body.reasoning_effort = 'minimal';
+    }
   } else {
-    body.max_tokens = maxTokens;
+    body.max_tokens = tokenLimit;
     if (typeof temperature === 'number' && !isClaudeModelName(model)) {
       body.temperature = temperature;
     }
