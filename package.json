@@ -5,7 +5,7 @@
   "scripts": {
     "icons": "node scripts/generate-icons.js",
     "build": "echo 'No build required - load directly in Chrome'",
-    "zip": "zip -r ai-translator.zip manifest.json background/ content/ popup/ icons/*.png -x '*.DS_Store'",
+    "zip": "rm -f ai-translator.zip && zip -r ai-translator.zip manifest.json background/ content/ i18n/ options/ popup/ icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png icons/icon16-light.png icons/icon32-light.png icons/icon48-light.png icons/icon128-light.png -x '*.DS_Store'",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:ui": "npx playwright test --ui",

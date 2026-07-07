@@ -801,14 +801,22 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
   }
 
   // Parse by delimiter
-  const translations = content.split(delimiter).map(t => t.trim());
+  const segments = content.split(delimiter).map(t => t.trim());
 
-  // Ensure we have the same number of translations as inputs
-  while (translations.length < texts.length) {
-    translations.push('');
+  // 段数必须与输入数量一致，否则按位置回填不可靠。模型偶尔会漏掉/多打一个分隔符
+  // （或把相邻两段合并），此时若像以前那样 pad/truncate 到 texts.length，会把数量
+  // 错误“抹平”，导致整批从出错点起往后错开一位——A 段挂上 B 段的译文。
+  // 改为回退到编号法：[1][2]… 按编号精确对齐，对漏标记/乱序稳健，最坏是某段未译
+  // 而非串位。仅在极少数不匹配时多发一次请求。
+  if (segments.length !== texts.length) {
+    console.warn(
+      `AI Translator: fast-batch delimiter split produced ${segments.length} segments ` +
+      `for ${texts.length} inputs; falling back to numbered batch to avoid misaligned translations`
+    );
+    return translateBatchWithAI(texts, targetLang, settings);
   }
 
-  return translations.slice(0, texts.length);
+  return segments;
 }
 
 // Parse numbered response from AI

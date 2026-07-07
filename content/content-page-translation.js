@@ -1054,37 +1054,46 @@
       text = prefix + text;
     }
 
-    // 按占位符拆分文本，逐个插入文本节点和数学元素
-    let remaining = text;
-
+    // 建立 占位符编号 -> 数学条目 的映射，按“译文中实际出现的顺序”还原。
+    // 不能依赖 mathElements 的原始下标顺序：翻译（尤其中英语序差异）经常调换公式
+    // 前后位置，例如 “each m KV entries in C^a and C^b” → “C^a 和 C^b 中的每 m 个……”，
+    // 会把 {{3}} {{4}} 排到 {{2}} 之前。旧实现按原始顺序逐个 indexOf 并截断剩余文本，
+    // 一旦顺序被调换，靠前编号的占位符就会把靠后编号的占位符连同其间文本一起吞掉，
+    // 导致后者以字面 {{n}} 残留、且对应公式被丢弃（arxiv 页 C^a/C^b 显示为 {{3}}{{4}}）。
+    const mathByNumber = new Map();
     for (const math of mathElements) {
-      const placeholderIndex = remaining.indexOf(math.placeholder);
-      if (placeholderIndex === -1) {
-        // 占位符未找到，可能被 LLM 删除了，跳过
-        continue;
-      }
+      const m = /^\{\{(\d+)\}\}$/.exec(math.placeholder);
+      if (m) mathByNumber.set(m[1], math);
+    }
+
+    const placeholderRe = /\{\{(\d+)\}\}/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = placeholderRe.exec(text)) !== null) {
+      const math = mathByNumber.get(match[1]);
+      // 未知编号（模型幻觉出的占位符）：保留为普通文本，随后随 textBefore 一并插入
+      if (!math) continue;
 
       // 添加占位符前的文本
-      const textBefore = remaining.substring(0, placeholderIndex);
+      const textBefore = text.slice(lastIndex, match.index);
       if (textBefore) {
         container.appendChild(document.createTextNode(textBefore));
       }
 
-      // 添加原始数学元素或 LaTeX 文本
+      // 还原原始数学元素或 LaTeX 文本（每次出现都独立 clone，兼容重复占位符）
       if (math.type === 'text') {
         container.appendChild(document.createTextNode(math.text));
       } else if (math.element) {
-        const mathClone = math.element.cloneNode(true);
-        container.appendChild(mathClone);
+        container.appendChild(math.element.cloneNode(true));
       }
 
-      // 更新剩余文本
-      remaining = remaining.substring(placeholderIndex + math.placeholder.length);
+      lastIndex = placeholderRe.lastIndex;
     }
 
     // 添加最后剩余的文本
-    if (remaining) {
-      container.appendChild(document.createTextNode(remaining));
+    const tail = text.slice(lastIndex);
+    if (tail) {
+      container.appendChild(document.createTextNode(tail));
     }
   }
 
