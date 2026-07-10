@@ -410,9 +410,11 @@
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
-    const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
+    const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR'];
     // 容器元素 - 这些元素不应作为整体翻译，应递归处理子元素
-    const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN'];
+    // 表格标签作为容器递归下探到单元格（TD/TH 在 blockTags 中）：很多站点（如 Hacker News）
+    // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
+    const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
     // 用于检测代码/脚本内容的模式
     const codePatterns = [
       /^[\s\S]*<script[\s>]/i,       // 包含 <script 标签
@@ -470,6 +472,16 @@
       if (urlLength / text.length > 0.7) return true;
 
       return false;
+    }
+
+    // 检查文本是否只由数字与常见数值符号组成（数据表单元格常见，如 0.83、94.2%、±0.02、1,234）。
+    // 这类单元格翻译无意义，还会给结果表添噪，直接跳过。要求至少含一个数字，
+    // 以免误伤 "N/A"、"Method" 等含字母的表头/文本单元格。
+    function isNumericOrSymbolOnly(text) {
+      const t = (text || '').trim();
+      if (!t) return false;
+      if (!/\d/.test(t)) return false;
+      return /^[\d\s.,%±+\-*/()<>=:~×·°∓‰$€£¥–—]+$/.test(t);
     }
 
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
@@ -630,6 +642,10 @@
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符后判断）
           const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '');
+          // 数据表单元格若只是数字/符号（如 0.83、94.2%），跳过：翻译无意义且会给结果表加噪
+          if ((tagName === 'TD' || tagName === 'TH') && isNumericOrSymbolOnly(textWithoutMath)) {
+            return;
+          }
           if (textWithoutMath && (looksLikeCode(textWithoutMath) || isMainlyUrl(textWithoutMath))) {
             // 递归处理子元素，可能有非代码/非URL的部分
             for (const child of element.children) {
@@ -1158,12 +1174,15 @@
       inlineTarget.appendChild(translationEl);
     } else {
       // 对于非水平 flex 布局（如侧边栏），插入为同级元素
-      const translationEl = document.createElement(element.tagName);
+      // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
+      const isTableCell = element.tagName === 'TD' || element.tagName === 'TH';
+      const translationEl = document.createElement(isTableCell ? 'div' : element.tagName);
 
       // 复制原始元素的类名，保留页面的 CSS 样式（如 ltx_p 用于 MathML 内联显示）
       // 然后添加我们的标记类
       // 需要移除位置相关的类，避免破坏布局（如 absolute, fixed, inset-* 等）
-      if (element.className) {
+      // 单元格不复制类名：避免把列宽/对齐等单元格专属样式带到译文块上
+      if (element.className && !isTableCell) {
         const positionClasses = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
         translationEl.className = element.className
           .replace('ai-translator-translated', '')
@@ -1217,6 +1236,10 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
+      } else if (isTableCell) {
+        // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
+        // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
+        element.appendChild(translationEl);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
@@ -1542,4 +1565,6 @@
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
   ctx.getTextOffsetLeft = getTextOffsetLeft;
+  ctx.collectTranslatableBlocks = collectTranslatableBlocks;
+  ctx.insertTranslationBlock = insertTranslationBlock;
 })();
