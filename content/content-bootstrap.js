@@ -51,6 +51,7 @@
       youtubeCaptionBgOpacity: 82,
       youtubeCaptionPosXPct: null,
       youtubeCaptionPosYPct: null,
+      youtubeCaptionWidthPct: null,
       youtubeCaptionScale: 1,
       targetLang: 'zh-CN',
       theme: 'light'
@@ -120,6 +121,7 @@
         youtubeCaptionBgOpacity: 82,
         youtubeCaptionPosXPct: null,
         youtubeCaptionPosYPct: null,
+        youtubeCaptionWidthPct: null,
         youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'
@@ -143,6 +145,7 @@
         youtubeCaptionBgOpacity: 82,
         youtubeCaptionPosXPct: null,
         youtubeCaptionPosYPct: null,
+        youtubeCaptionWidthPct: null,
         youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'

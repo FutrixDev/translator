@@ -150,7 +150,7 @@ test('does not render when no caption request is observed', async ({ page, conte
   expect(overlayText).toBeFalsy();
 });
 
-test('applies saved caption position and scale', async ({ page, context }) => {
+test('applies saved caption position, width and scale', async ({ page, context }) => {
   await setExtensionSettings(page, {
     targetLang: 'zh-CN',
     targetLangSetByUser: true,
@@ -160,6 +160,7 @@ test('applies saved caption position and scale', async ({ page, context }) => {
     enableYoutubeCaptionTranslation: true,
     youtubeCaptionPosXPct: 30,
     youtubeCaptionPosYPct: 40,
+    youtubeCaptionWidthPct: 60,
     youtubeCaptionScale: 1.5,
   });
 
@@ -189,20 +190,21 @@ test('applies saved caption position and scale', async ({ page, context }) => {
 
   const layout = await page.evaluate(() => {
     const o = document.getElementById('ai-translator-youtube-caption-overlay');
+    const b = o.querySelector('.ai-translator-caption-block');
     return {
       scale: o.style.getPropertyValue('--ai-yt-caption-scale'),
-      left: o.style.left,
-      top: o.style.top,
-      transform: o.style.transform,
+      left: b.style.left,
+      top: b.style.top,
+      width: b.style.width,
     };
   });
   expect(layout.scale).toBe('1.5');
   expect(layout.left).toBe('30%');
   expect(layout.top).toBe('40%');
-  expect(layout.transform).toContain('translate(-50%, -50%)');
+  expect(layout.width).toBe('60%');
 });
 
-test('scrolling over the caption resizes it', async ({ page, context }) => {
+test('resizing via the edge handle changes the caption width', async ({ page, context }) => {
   await setExtensionSettings(page, {
     targetLang: 'zh-CN',
     targetLangSetByUser: true,
@@ -236,19 +238,27 @@ test('scrolling over the caption resizes it', async ({ page, context }) => {
   });
   await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
 
-  // The caption block must be interactive (drag/scroll target).
+  // The caption box is interactive and exposes 8 resize handles.
   const block = page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
   await expect(block).toHaveCSS('pointer-events', 'auto');
   await expect(block).toHaveCSS('cursor', 'move');
+  await expect(page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-handle')).toHaveCount(8);
 
-  // Scroll up over the caption to enlarge it.
+  // Drag the east (right-edge) handle outward to widen the box.
   await page.evaluate(() => {
+    const c = document.querySelector('.ytp-caption-window-container').getBoundingClientRect();
     const b = document.querySelector('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
-    b.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    const h = b.querySelector('.ai-cap-h-e');
+    const bRect = b.getBoundingClientRect();
+    const cx = c.left + c.width / 2;
+    const cy = bRect.top + bRect.height / 2;
+    h.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: cx + 30, clientY: cy, bubbles: true, cancelable: true }));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: cx + 220, clientY: cy, bubbles: true, cancelable: true }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   });
 
   await expect.poll(async () => page.evaluate(() => {
-    const o = document.getElementById('ai-translator-youtube-caption-overlay');
-    return parseFloat(o.style.getPropertyValue('--ai-yt-caption-scale')) || 1;
-  })).toBeGreaterThan(1);
+    const b = document.querySelector('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+    return parseInt(b.style.width, 10) || 0;
+  })).toBeGreaterThan(50);
 });
