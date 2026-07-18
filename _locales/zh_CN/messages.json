@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "AI Translator",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "免费、安全、无中间服务器的 AI 翻译:网页、学术论文(保留数学公式/LaTeX)、YouTube 实时字幕。",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  }
+}
