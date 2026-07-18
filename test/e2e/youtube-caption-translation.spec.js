@@ -3,7 +3,9 @@ const { setExtensionSettings } = require('./helpers');
 
 const html = `<!doctype html>
 <html>
-<head><meta charset="utf-8"></head>
+<head><meta charset="utf-8">
+<style>.ytp-caption-window-container{position:relative;width:640px;height:360px;}</style>
+</head>
 <body>
   <div class="ytp-caption-window-container">
     <div class="ytp-caption-window">
@@ -146,4 +148,107 @@ test('does not render when no caption request is observed', async ({ page, conte
     return el ? el.textContent : null;
   });
   expect(overlayText).toBeFalsy();
+});
+
+test('applies saved caption position and scale', async ({ page, context }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'zh-CN',
+    targetLangSetByUser: true,
+    apiKey: 'sk-test',
+    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+    modelName: 'gpt-4.1-mini',
+    enableYoutubeCaptionTranslation: true,
+    youtubeCaptionPosXPct: 30,
+    youtubeCaptionPosYPct: 40,
+    youtubeCaptionScale: 1.5,
+  });
+
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 0.5;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
+
+  const layout = await page.evaluate(() => {
+    const o = document.getElementById('ai-translator-youtube-caption-overlay');
+    return {
+      scale: o.style.getPropertyValue('--ai-yt-caption-scale'),
+      left: o.style.left,
+      top: o.style.top,
+      transform: o.style.transform,
+    };
+  });
+  expect(layout.scale).toBe('1.5');
+  expect(layout.left).toBe('30%');
+  expect(layout.top).toBe('40%');
+  expect(layout.transform).toContain('translate(-50%, -50%)');
+});
+
+test('scrolling over the caption resizes it', async ({ page, context }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'zh-CN',
+    targetLangSetByUser: true,
+    apiKey: 'sk-test',
+    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+    modelName: 'gpt-4.1-mini',
+    enableYoutubeCaptionTranslation: true,
+  });
+
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 0.5;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
+
+  // The caption block must be interactive (drag/scroll target).
+  const block = page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+  await expect(block).toHaveCSS('pointer-events', 'auto');
+  await expect(block).toHaveCSS('cursor', 'move');
+
+  // Scroll up over the caption to enlarge it.
+  await page.evaluate(() => {
+    const b = document.querySelector('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+    b.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+  });
+
+  await expect.poll(async () => page.evaluate(() => {
+    const o = document.getElementById('ai-translator-youtube-caption-overlay');
+    return parseFloat(o.style.getPropertyValue('--ai-yt-caption-scale')) || 1;
+  })).toBeGreaterThan(1);
 });

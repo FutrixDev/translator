@@ -93,6 +93,8 @@
     overlay.appendChild(block);
     container.appendChild(overlay);
     state.overlay = overlay;
+    bindCaptionInteractions(block);
+    applyCaptionLayout();
     return overlay;
   }
 
@@ -147,6 +149,127 @@
     const bg = hexToRgba(s.youtubeCaptionBgColor || '#080808', alpha);
     state.overlay.style.setProperty('--ai-yt-caption-fg', fg);
     state.overlay.style.setProperty('--ai-yt-caption-bg', bg);
+  }
+
+  // ---- draggable + wheel-resizable caption ----
+  let layoutSaveTimer = null;
+
+  function persistCaptionLayout(debounced) {
+    const write = () => {
+      try {
+        chrome.storage.sync.set({
+          youtubeCaptionPosXPct: ctx.settings.youtubeCaptionPosXPct,
+          youtubeCaptionPosYPct: ctx.settings.youtubeCaptionPosYPct,
+          youtubeCaptionScale: ctx.settings.youtubeCaptionScale,
+        });
+      } catch (e) { /* extension context gone */ }
+    };
+    if (!debounced) {
+      if (layoutSaveTimer) { clearTimeout(layoutSaveTimer); layoutSaveTimer = null; }
+      write();
+      return;
+    }
+    if (layoutSaveTimer) clearTimeout(layoutSaveTimer);
+    layoutSaveTimer = setTimeout(() => { layoutSaveTimer = null; write(); }, 400);
+  }
+
+  // Apply the user's saved caption position (percentage of the player, so it
+  // survives resize/fullscreen) and font scale via a CSS variable.
+  function applyCaptionLayout() {
+    if (!state.overlay) return;
+    const s = ctx.settings || {};
+    const scale = Number(s.youtubeCaptionScale);
+    state.overlay.style.setProperty('--ai-yt-caption-scale', String(Number.isFinite(scale) && scale > 0 ? scale : 1));
+    const x = s.youtubeCaptionPosXPct;
+    const y = s.youtubeCaptionPosYPct;
+    if (typeof x === 'number' && typeof y === 'number') {
+      state.overlay.style.left = `${x}%`;
+      state.overlay.style.top = `${y}%`;
+      state.overlay.style.right = 'auto';
+      state.overlay.style.bottom = 'auto';
+      state.overlay.style.transform = 'translate(-50%, -50%)';
+    } else {
+      // fall back to the default CSS position (bottom-centred)
+      state.overlay.style.left = '';
+      state.overlay.style.top = '';
+      state.overlay.style.right = '';
+      state.overlay.style.bottom = '';
+      state.overlay.style.transform = '';
+    }
+  }
+
+  // Drag to move, wheel to resize, double-click to reset. Bound once per block.
+  function bindCaptionInteractions(block) {
+    if (!block || block.__aiInteractive) return;
+    block.__aiInteractive = true;
+
+    const getContainer = () => document.querySelector('.ytp-caption-window-container');
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startCx = 0;
+    let startCy = 0;
+
+    function onMove(e) {
+      if (!dragging) return;
+      const c = getContainer();
+      if (!c) return;
+      e.preventDefault();
+      const rect = c.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      let cx = startCx + (e.clientX - startX);
+      let cy = startCy + (e.clientY - startY);
+      cx = Math.max(0, Math.min(rect.width, cx));
+      cy = Math.max(0, Math.min(rect.height, cy));
+      ctx.settings.youtubeCaptionPosXPct = (cx / rect.width) * 100;
+      ctx.settings.youtubeCaptionPosYPct = (cy / rect.height) * 100;
+      applyCaptionLayout();
+    }
+
+    function onUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      persistCaptionLayout(false);
+    }
+
+    block.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || !state.overlay) return;
+      const c = getContainer();
+      if (!c) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = true;
+      const cRect = c.getBoundingClientRect();
+      const oRect = state.overlay.getBoundingClientRect();
+      startX = e.clientX;
+      startY = e.clientY;
+      startCx = (oRect.left + oRect.width / 2) - cRect.left;
+      startCy = (oRect.top + oRect.height / 2) - cRect.top;
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+    });
+
+    block.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cur = Number(ctx.settings.youtubeCaptionScale) || 1;
+      const next = Math.max(0.5, Math.min(3, cur + (e.deltaY < 0 ? 0.1 : -0.1)));
+      ctx.settings.youtubeCaptionScale = Math.round(next * 100) / 100;
+      applyCaptionLayout();
+      persistCaptionLayout(true);
+    }, { passive: false });
+
+    block.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      ctx.settings.youtubeCaptionPosXPct = null;
+      ctx.settings.youtubeCaptionPosYPct = null;
+      ctx.settings.youtubeCaptionScale = 1;
+      applyCaptionLayout();
+      persistCaptionLayout(false);
+    });
   }
 
   // ---------------------------------------------------------------- parsers
@@ -470,6 +593,7 @@
 
     ensureOverlay();
     applyCaptionStyle();
+    applyCaptionLayout();
     setOverlayVisible(true);
     setNativeCaptionsHidden(true);
 

@@ -49,6 +49,9 @@
       youtubeCaptionFontColor: '#ffffff',
       youtubeCaptionBgColor: '#080808',
       youtubeCaptionBgOpacity: 82,
+      youtubeCaptionPosXPct: null,
+      youtubeCaptionPosYPct: null,
+      youtubeCaptionScale: 1,
       targetLang: 'zh-CN',
       theme: 'light'
     };
@@ -115,6 +118,9 @@
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
         youtubeCaptionBgOpacity: 82,
+        youtubeCaptionPosXPct: null,
+        youtubeCaptionPosYPct: null,
+        youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'
       });
@@ -135,6 +141,9 @@
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
         youtubeCaptionBgOpacity: 82,
+        youtubeCaptionPosXPct: null,
+        youtubeCaptionPosYPct: null,
+        youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'
       });
