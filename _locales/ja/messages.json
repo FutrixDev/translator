@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "AI Translator",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "無料・安全・中継サーバーなしのAI翻訳。ウェブページ、学術論文(数式/LaTeXを保持)、YouTubeのリアルタイム字幕に対応。",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  }
+}

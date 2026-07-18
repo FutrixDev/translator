@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "AI Translator",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "무료·안전·중계 서버 없는 AI 번역. 웹페이지, 학술 논문(수식/LaTeX 보존), 실시간 YouTube 자막 지원.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  }
+}

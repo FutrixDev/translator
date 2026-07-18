@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "AI Translator",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "Traduction IA gratuite, sûre, sans intermédiaire. Pages web, articles scientifiques (maths/LaTeX intacts), sous-titres YouTube.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  }
+}
