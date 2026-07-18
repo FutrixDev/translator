@@ -226,6 +226,42 @@
             </label>
             <span class="hint" data-i18n-hint="hintEnableYoutubeCaptionTranslation"></span>
           </div>
+
+          <div class="youtube-suboptions" id="youtubeSubOptions">
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span data-i18n="showYoutubeOriginalCaption">Show Original Caption</span>
+                <input type="checkbox" id="showYoutubeOriginalCaption" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="hint" data-i18n-hint="hintShowYoutubeOriginalCaption"></span>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="youtubeCaptionStyle">Caption Style</label>
+              <div class="caption-style-controls">
+                <div class="caption-color-field">
+                  <span data-i18n="captionFontColor">Font Color</span>
+                  <input type="color" id="youtubeCaptionFontColor" value="#ffffff">
+                </div>
+                <div class="caption-color-field">
+                  <span data-i18n="captionBgColor">Background Color</span>
+                  <input type="color" id="youtubeCaptionBgColor" value="#080808">
+                </div>
+                <div class="caption-color-field caption-opacity-field">
+                  <span><span data-i18n="captionBgOpacity">Background Opacity</span> <span id="youtubeCaptionBgOpacityValue">82%</span></span>
+                  <input type="range" id="youtubeCaptionBgOpacity" min="0" max="100" value="82">
+                </div>
+              </div>
+              <div class="caption-preview" id="youtubeCaptionPreview">
+                <div class="caption-preview-block">
+                  <div class="caption-preview-original" data-i18n="captionPreviewOriginal">This is the original subtitle</div>
+                  <div class="caption-preview-translated" data-i18n="captionPreviewTranslated">这是翻译后的字幕</div>
+                </div>
+              </div>
+              <span class="hint" data-i18n="hintCaptionDragResize">On the video: drag the caption to move it, scroll over it to resize, double-click to reset.</span>
+            </div>
+          </div>
         </section>
       </div>
 

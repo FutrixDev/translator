@@ -45,6 +45,14 @@
       showFloatBall: true,
       autoDetect: true,
       enableYoutubeCaptionTranslation: false,
+      showYoutubeOriginalCaption: true,
+      youtubeCaptionFontColor: '#ffffff',
+      youtubeCaptionBgColor: '#080808',
+      youtubeCaptionBgOpacity: 82,
+      youtubeCaptionPosXPct: null,
+      youtubeCaptionPosYPct: null,
+      youtubeCaptionWidthPct: null,
+      youtubeCaptionScale: 1,
       targetLang: 'zh-CN',
       theme: 'light'
     };
@@ -107,6 +115,14 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        showYoutubeOriginalCaption: true,
+        youtubeCaptionFontColor: '#ffffff',
+        youtubeCaptionBgColor: '#080808',
+        youtubeCaptionBgOpacity: 82,
+        youtubeCaptionPosXPct: null,
+        youtubeCaptionPosYPct: null,
+        youtubeCaptionWidthPct: null,
+        youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'
       });
@@ -123,6 +139,14 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        showYoutubeOriginalCaption: true,
+        youtubeCaptionFontColor: '#ffffff',
+        youtubeCaptionBgColor: '#080808',
+        youtubeCaptionBgOpacity: 82,
+        youtubeCaptionPosXPct: null,
+        youtubeCaptionPosYPct: null,
+        youtubeCaptionWidthPct: null,
+        youtubeCaptionScale: 1,
         targetLang: 'zh-CN',
         theme: 'light'
       });

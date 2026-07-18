@@ -1444,23 +1444,134 @@ button.ai-translator-inline-block {
   --btn-hover-bg: #e5e7eb;
 }
 
-/* YouTube caption translation overlay */
+/* YouTube caption translation overlay (bilingual: original + translated).
+   The overlay is a full-area, non-interactive layer; the caption box inside it
+   is the draggable + resizable element. */
 #ai-translator-youtube-caption-overlay {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  justify-content: center;
+  inset: 0;
   pointer-events: none;
-  z-index: 1;
+  z-index: 25;
 }
 
-#ai-translator-youtube-caption-overlay .ai-translator-caption-line {
-  margin-top: 2px;
-  font-size: 0.9em;
-  line-height: 1.2;
+/* The caption box: centre-anchored, drag body to move, edge/corner handles to
+   resize. Width defaults to a wrap cap; a set width overrides it. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block {
+  position: absolute;
+  left: 50%;
+  top: 85%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 92%;
+  pointer-events: auto;
+  cursor: move;
+}
+
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block:hover {
+  outline: 2px dashed rgba(255, 255, 255, 0.45);
+  outline-offset: 5px;
+}
+
+/* Original caption line (smaller, secondary). Colors come from user settings
+   via CSS variables, with sensible fallbacks. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-original {
+  padding: 2px 10px;
+  font-size: calc(clamp(12px, 2.4vh, 32px) * var(--ai-yt-caption-scale, 1));
+  line-height: 1.3;
   text-align: center;
+  color: var(--ai-yt-caption-fg, #f1f1f1);
+  background: var(--ai-yt-caption-bg, rgba(8, 8, 8, 0.75));
+  border-radius: 4px;
+  opacity: 0.92;
+}
+
+/* Translated line (larger, primary). Sizes scale with player height. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-line {
+  padding: 3px 12px;
+  font-size: calc(clamp(14px, 3.2vh, 44px) * var(--ai-yt-caption-scale, 1));
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ai-yt-caption-fg, #fff);
+  background: var(--ai-yt-caption-bg, rgba(8, 8, 8, 0.82));
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Resize handles — invisible until the caption box is hovered. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-handle {
+  position: absolute;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block:hover .ai-translator-caption-handle {
+  opacity: 1;
+}
+/* edge strips (E/W widen, N/S resize) */
+#ai-translator-youtube-caption-overlay .ai-cap-h-e,
+#ai-translator-youtube-caption-overlay .ai-cap-h-w {
+  top: 12%;
+  bottom: 12%;
+  width: 12px;
+  cursor: ew-resize;
+}
+#ai-translator-youtube-caption-overlay .ai-cap-h-e { right: -7px; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-w { left: -7px; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-n,
+#ai-translator-youtube-caption-overlay .ai-cap-h-s {
+  left: 12%;
+  right: 12%;
+  height: 12px;
+  cursor: ns-resize;
+}
+#ai-translator-youtube-caption-overlay .ai-cap-h-n { top: -7px; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-s { bottom: -7px; }
+/* corner grips (resize both) */
+#ai-translator-youtube-caption-overlay .ai-cap-corner {
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+}
+#ai-translator-youtube-caption-overlay .ai-cap-h-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+#ai-translator-youtube-caption-overlay .ai-cap-h-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+
+/* Close button (top-right): dismiss captions for the current video. Shown on hover. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-close {
+  position: absolute;
+  top: -28px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(8, 8, 8, 0.8);
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block:hover .ai-translator-caption-close {
+  opacity: 1;
+}
+#ai-translator-youtube-caption-overlay .ai-translator-caption-close:hover {
+  background: rgba(200, 40, 40, 0.92);
+}
+
+/* While our bilingual overlay is active, hide YouTube's native caption windows so
+   the two do not stack and overlap. Toggled via a marker class from JS. */
+.ytp-caption-window-container.ai-translator-hide-native .caption-window {
+  display: none !important;
 }

@@ -222,6 +222,13 @@ const elements = {
   showFloatBall: document.getElementById('showFloatBall'),
   autoDetect: document.getElementById('autoDetect'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
+  showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
+  youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
+  youtubeCaptionBgColor: document.getElementById('youtubeCaptionBgColor'),
+  youtubeCaptionBgOpacity: document.getElementById('youtubeCaptionBgOpacity'),
+  youtubeCaptionBgOpacityValue: document.getElementById('youtubeCaptionBgOpacityValue'),
+  youtubeCaptionPreview: document.getElementById('youtubeCaptionPreview'),
+  youtubeSubOptions: document.getElementById('youtubeSubOptions'),
   customPrompt: document.getElementById('customPrompt'),
   saveSettings: document.getElementById('saveSettings'),
   testConnection: document.getElementById('testConnection'),
@@ -297,6 +304,10 @@ const defaultSettings = {
   showFloatBall: true,
   autoDetect: true,
   enableYoutubeCaptionTranslation: false,
+  showYoutubeOriginalCaption: true,
+  youtubeCaptionFontColor: '#ffffff',
+  youtubeCaptionBgColor: '#080808',
+  youtubeCaptionBgOpacity: 82,
   customPrompt: '',
   theme: 'light'
 };
@@ -456,6 +467,12 @@ async function loadSettings() {
     elements.showFloatBall.checked = result.showFloatBall;
     elements.autoDetect.checked = result.autoDetect;
     elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
+    elements.showYoutubeOriginalCaption.checked = result.showYoutubeOriginalCaption !== false;
+    elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
+    elements.youtubeCaptionBgColor.value = result.youtubeCaptionBgColor || '#080808';
+    elements.youtubeCaptionBgOpacity.value = result.youtubeCaptionBgOpacity != null ? result.youtubeCaptionBgOpacity : 82;
+    updateCaptionPreview();
+    syncYoutubeSubState();
     elements.customPrompt.value = result.customPrompt || '';
 
     // Apply theme
@@ -519,6 +536,10 @@ async function saveSettings() {
     showFloatBall: elements.showFloatBall.checked,
     autoDetect: elements.autoDetect.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
+    showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
+    youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
+    youtubeCaptionBgColor: elements.youtubeCaptionBgColor.value,
+    youtubeCaptionBgOpacity: parseInt(elements.youtubeCaptionBgOpacity.value, 10),
     customPrompt: elements.customPrompt.value.trim(),
     theme: document.documentElement.getAttribute('data-theme') || 'light'
   };
@@ -747,6 +768,13 @@ function setupEventListeners() {
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
 
+  // YouTube caption sub-options (enable/disable + live style preview)
+  elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
+  elements.showYoutubeOriginalCaption.addEventListener('change', updateCaptionPreview);
+  elements.youtubeCaptionFontColor.addEventListener('input', updateCaptionPreview);
+  elements.youtubeCaptionBgColor.addEventListener('input', updateCaptionPreview);
+  elements.youtubeCaptionBgOpacity.addEventListener('input', updateCaptionPreview);
+
   // Preset prompt buttons
   document.querySelectorAll('.btn-preset').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -771,4 +799,37 @@ function syncInlineSettingState() {
   elements.selectionTranslationMode.disabled = !selectionEnabled;
   elements.selectionTranslationHotkey.disabled = !selectionEnabled;
   elements.hoverTranslationHotkey.disabled = !hoverEnabled;
+}
+
+// Grey out the YouTube caption sub-options when the feature itself is off.
+function syncYoutubeSubState() {
+  if (!elements.youtubeSubOptions) return;
+  elements.youtubeSubOptions.classList.toggle('disabled', !elements.enableYoutubeCaptionTranslation.checked);
+}
+
+function capHexToRgba(hex, alpha) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length !== 6) return `rgba(8, 8, 8, ${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Live-update the caption preview from the current color/opacity controls.
+function updateCaptionPreview() {
+  const preview = elements.youtubeCaptionPreview;
+  if (!preview) return;
+  const fg = elements.youtubeCaptionFontColor.value || '#ffffff';
+  const opacityPct = Math.max(0, Math.min(100, parseInt(elements.youtubeCaptionBgOpacity.value, 10) || 0));
+  const bg = capHexToRgba(elements.youtubeCaptionBgColor.value || '#080808', opacityPct / 100);
+  preview.style.setProperty('--cap-preview-fg', fg);
+  preview.style.setProperty('--cap-preview-bg', bg);
+  if (elements.youtubeCaptionBgOpacityValue) {
+    elements.youtubeCaptionBgOpacityValue.textContent = `${opacityPct}%`;
+  }
+  const original = preview.querySelector('.caption-preview-original');
+  if (original) {
+    original.style.display = elements.showYoutubeOriginalCaption.checked ? '' : 'none';
+  }
 }
