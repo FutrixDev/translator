@@ -1444,23 +1444,54 @@ button.ai-translator-inline-block {
   --btn-hover-bg: #e5e7eb;
 }
 
-/* YouTube caption translation overlay */
+/* YouTube caption translation overlay (bilingual: original + translated) */
 #ai-translator-youtube-caption-overlay {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 12%;
   display: flex;
   justify-content: center;
   pointer-events: none;
-  z-index: 1;
+  z-index: 25;
 }
 
-#ai-translator-youtube-caption-overlay .ai-translator-caption-line {
-  margin-top: 2px;
-  font-size: 0.9em;
-  line-height: 1.2;
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 92%;
+}
+
+/* Original caption line (smaller, secondary). Colors come from user settings
+   via CSS variables set on the overlay, with sensible fallbacks. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-original {
+  padding: 2px 10px;
+  font-size: clamp(12px, 2.4vh, 32px);
+  line-height: 1.3;
   text-align: center;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  color: var(--ai-yt-caption-fg, #f1f1f1);
+  background: var(--ai-yt-caption-bg, rgba(8, 8, 8, 0.75));
+  border-radius: 4px;
+  opacity: 0.92;
+}
+
+/* Translated line (larger, primary). Sizes scale with player height. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-line {
+  padding: 3px 12px;
+  font-size: clamp(14px, 3.2vh, 44px);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ai-yt-caption-fg, #fff);
+  background: var(--ai-yt-caption-bg, rgba(8, 8, 8, 0.82));
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* While our bilingual overlay is active, hide YouTube's native caption windows so
+   the two do not stack and overlap. Toggled via a marker class from JS. */
+.ytp-caption-window-container.ai-translator-hide-native .caption-window {
+  display: none !important;
 }

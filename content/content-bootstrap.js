@@ -45,6 +45,10 @@
       showFloatBall: true,
       autoDetect: true,
       enableYoutubeCaptionTranslation: false,
+      showYoutubeOriginalCaption: true,
+      youtubeCaptionFontColor: '#ffffff',
+      youtubeCaptionBgColor: '#080808',
+      youtubeCaptionBgOpacity: 82,
       targetLang: 'zh-CN',
       theme: 'light'
     };
@@ -107,6 +111,10 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        showYoutubeOriginalCaption: true,
+        youtubeCaptionFontColor: '#ffffff',
+        youtubeCaptionBgColor: '#080808',
+        youtubeCaptionBgOpacity: 82,
         targetLang: 'zh-CN',
         theme: 'light'
       });
@@ -123,6 +131,10 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        showYoutubeOriginalCaption: true,
+        youtubeCaptionFontColor: '#ffffff',
+        youtubeCaptionBgColor: '#080808',
+        youtubeCaptionBgOpacity: 82,
         targetLang: 'zh-CN',
         theme: 'light'
       });
