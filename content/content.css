@@ -1543,6 +1543,33 @@ button.ai-translator-inline-block {
 #ai-translator-youtube-caption-overlay .ai-cap-h-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 #ai-translator-youtube-caption-overlay .ai-cap-h-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 
+/* Close button (top-right): dismiss captions for the current video. Shown on hover. */
+#ai-translator-youtube-caption-overlay .ai-translator-caption-close {
+  position: absolute;
+  top: -28px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(8, 8, 8, 0.8);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+#ai-translator-youtube-caption-overlay .ai-translator-caption-block:hover .ai-translator-caption-close {
+  opacity: 1;
+}
+#ai-translator-youtube-caption-overlay .ai-translator-caption-close:hover {
+  background: rgba(200, 40, 40, 0.92);
+}
+
 /* While our bilingual overlay is active, hide YouTube's native caption windows so
    the two do not stack and overlap. Toggled via a marker class from JS. */
 .ytp-caption-window-container.ai-translator-hide-native .caption-window {

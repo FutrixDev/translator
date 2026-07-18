@@ -262,3 +262,59 @@ test('resizing via the edge handle changes the caption width', async ({ page, co
     return parseInt(b.style.width, 10) || 0;
   })).toBeGreaterThan(50);
 });
+
+test('close button dismisses captions and restores native for the video', async ({ page, context }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'zh-CN',
+    targetLangSetByUser: true,
+    apiKey: 'sk-test',
+    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+    modelName: 'gpt-4.1-mini',
+    enableYoutubeCaptionTranslation: true,
+  });
+
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 0.5;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+
+  const overlay = page.locator('#ai-translator-youtube-caption-overlay');
+  await expect(overlay).toContainText('你好世界');
+  await expect(overlay).toBeVisible();
+  // native captions are hidden while our overlay is active
+  await expect(page.locator('.ytp-caption-window-container')).toHaveClass(/ai-translator-hide-native/);
+
+  // click the close (X) button
+  await page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-close').dispatchEvent('click');
+
+  await expect(overlay).toBeHidden();
+  // native captions restored (our override removed)
+  await expect(page.locator('.ytp-caption-window-container')).not.toHaveClass(/ai-translator-hide-native/);
+
+  // stays dismissed after further playback
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 1.2;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+  await page.waitForTimeout(300);
+  await expect(overlay).toBeHidden();
+});

@@ -39,6 +39,7 @@
     trackId: '',
     trackLang: '',
     skipTranslation: false,
+    dismissed: false,
     translating: false,
     lastTriggerMs: 0,
     video: null,
@@ -332,6 +333,24 @@
       bindResizeHandle(h, block, cfg.axes, getContainer);
     }
 
+    // close button (top-right): dismiss captions for this video and stop translating
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'ai-translator-caption-close';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('role', 'button');
+    const closeLabel = ctx.t ? ctx.t('closeCaption') : 'Close captions';
+    closeBtn.setAttribute('aria-label', closeLabel);
+    closeBtn.setAttribute('title', closeLabel);
+    block.appendChild(closeBtn);
+    closeBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    closeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      state.dismissed = true;
+      setOverlayVisible(false);
+      setNativeCaptionsHidden(false);
+    });
+
     // reset (double-click)
     block.addEventListener('dblclick', (e) => {
       e.preventDefault();
@@ -617,13 +636,13 @@
   // Translate the entire track up front, nearest-to-playhead first. Safe to call
   // often: it no-ops while a pass runs and briefly after a failed batch.
   async function ensureTrackTranslated(force) {
-    if (state.skipTranslation || state.translating) return;
+    if (state.skipTranslation || state.dismissed || state.translating) return;
     const now = Date.now();
     if (!force && now - state.lastTriggerMs < 2000) return;
     state.lastTriggerMs = now;
     state.translating = true;
     try {
-      while (state.active && !state.skipTranslation) {
+      while (state.active && !state.skipTranslation && !state.dismissed) {
         const batch = pickNextBatch();
         if (!batch || !batch.length) break;
         batch.forEach((seg) => state.pendingKeys.add(getCueKey(seg)));
@@ -658,7 +677,7 @@
   async function handleTimeUpdate() {
     if (!state.active || !state.cues.length) return;
 
-    if (state.skipTranslation || !isCaptionsEnabled()) {
+    if (state.dismissed || state.skipTranslation || !isCaptionsEnabled()) {
       setOverlayVisible(false);
       setNativeCaptionsHidden(false);
       return;
@@ -733,6 +752,7 @@
     state.trackId = '';
     state.trackLang = '';
     state.skipTranslation = false;
+    state.dismissed = false;
     state.translating = false;
     state.lastTriggerMs = 0;
     state.lastNowMs = 0;
