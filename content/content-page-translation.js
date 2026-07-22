@@ -623,7 +623,9 @@
         const { text, mathElements } = getTextWithMathPlaceholders(element);
         if (text && text.length >= 2 && text.length <= 500) {
           // 跳过看起来像代码或主要是URL的文本
-          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '');
+          // 这里要 trim：只含公式的元素排除占位符后会剩下空白（如 "{{1}} {{2}}"），
+          // 不 trim 会被当成有正文，进而把纯公式送去翻译。
+          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '').trim();
           if (textWithoutMath && !looksLikeCode(textWithoutMath) && !isMainlyUrl(textWithoutMath)) {
             blocks.push({
               element: element,
@@ -641,7 +643,16 @@
         const { text, mathElements } = getTextWithMathPlaceholders(element);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符后判断）
-          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '');
+          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '').trim();
+
+          // 排除公式占位符后没有任何正文：整个块就是一条公式，跳过。
+          // 典型是 arXiv/LaTeXML 的行间公式——公式包在 <table class="ltx_equation"> 里，
+          // 遍历下探到 <td class="ltx_eqn_cell"> 时 text 只有 "{{1}}"。
+          // 若不跳过，"{{1}}" 会被送去翻译，模型原样返回后再按占位符 clone 回原 <math>，
+          // 结果是同一条公式在原文下方又渲染一遍（公式出现两遍）。
+          // 这里 return 而不递归：块内只有公式，子元素会被 MATH_CONTAINER_SELECTOR 拦下，递归没有意义。
+          if (!textWithoutMath) return;
+
           // 数据表单元格若只是数字/符号（如 0.83、94.2%），跳过：翻译无意义且会给结果表加噪
           if ((tagName === 'TD' || tagName === 'TH') && isNumericOrSymbolOnly(textWithoutMath)) {
             return;
@@ -1006,7 +1017,14 @@
   async function shouldSkipTranslation(block, translation) {
     const normalizedOriginal = normalizeComparableText(block.text);
     const normalizedTranslation = normalizeComparableText(translation);
-    if (normalizedOriginal && normalizedOriginal === normalizedTranslation) {
+
+    // 原文除公式占位符/空白外没有任何正文时，一律不插译文（兜底不变量）。
+    // normalizeComparableText 会剥掉 {{N}}，所以纯公式块在这里归一化成空串；
+    // 早先写作 `normalizedOriginal && normalizedOriginal === normalizedTranslation`，
+    // 空串是 falsy，同一性守卫对纯公式块从不生效，公式因而被重复渲染。
+    if (!normalizedOriginal) return true;
+
+    if (normalizedOriginal === normalizedTranslation) {
       return true;
     }
 
