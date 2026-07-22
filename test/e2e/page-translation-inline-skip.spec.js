@@ -2,7 +2,23 @@ const { test, expect } = require('./fixtures');
 const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
 const http = require('http');
 
+// Page translation uses the fast-batch path: blocks are joined with the DELIMITER constant
+// from content/content-page-translation.js, and the model is told to separate the
+// translations with that same delimiter (FAST_BATCH_PROMPT in background/background.js).
+// The mock must honor that contract, so it recovers the delimiter from the system prompt of
+// the request it actually receives instead of hardcoding a copy that can drift out of sync.
+//
+// Getting this wrong does NOT fail loudly: an unsegmented echo still carries the delimiters
+// through, so the segment count still matches and background.js never falls back to the
+// numbered format — but every segment after the first comes back byte-identical to its
+// source, and shouldSkipTranslation() then silently drops it as "already translated".
+const PROMPT_DELIMITER_RE = /segments are separated by "([^"]+)"/;
+
 function startMockOpenAIServer() {
+  // One entry per request that took the fast-batch path, so the test can assert the mock
+  // really spoke the delimiter protocol rather than falling through to the single-text path.
+  const fastBatchRequests = [];
+
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST') {
@@ -17,17 +33,21 @@ function startMockOpenAIServer() {
       });
       req.on('end', () => {
         let content = '';
+        let systemPrompt = '';
         try {
           const data = JSON.parse(body);
-          content = data?.messages?.[data.messages.length - 1]?.content || '';
+          const messages = data?.messages || [];
+          content = messages[messages.length - 1]?.content || '';
+          systemPrompt = messages.find((m) => m?.role === 'system')?.content || '';
         } catch {
           content = '';
         }
 
-        const delimiter = '<<<>>>';
-        if (content.includes(delimiter)) {
-          content = content
-            .split(delimiter)
+        const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
+        if (delimiter) {
+          const segments = content.split(delimiter);
+          fastBatchRequests.push({ delimiter, segmentCount: segments.length });
+          content = segments
             .map((segment) => (segment ? `[T] ${segment}` : segment))
             .join(delimiter);
         } else if (content) {
@@ -46,6 +66,7 @@ function startMockOpenAIServer() {
       const { port } = server.address();
       resolve({
         server,
+        fastBatchRequests,
         endpoint: `http://127.0.0.1:${port}/v1/chat/completions`
       });
     });
@@ -53,7 +74,7 @@ function startMockOpenAIServer() {
 }
 
 test('page translation skips blocks with inline translation', async ({ page }) => {
-  const { server, endpoint } = await startMockOpenAIServer();
+  const { server, endpoint, fastBatchRequests } = await startMockOpenAIServer();
 
   try {
     await setExtensionSettings(page, {
@@ -88,6 +109,15 @@ test('page translation skips blocks with inline translation', async ({ page }) =
     await page.keyboard.up('Shift');
 
     await triggerPageTranslation(page);
+
+    // Fail fast if the prompt wording drifted and the delimiter could no longer be
+    // recovered; the symptom would otherwise be an unexplained timeout on the wait below.
+    await expect
+      .poll(() => fastBatchRequests.length, {
+        timeout: 15000,
+        message: 'mock never recognized a fast-batch request (delimiter not found in system prompt)'
+      })
+      .toBeGreaterThan(0);
 
     await page.waitForFunction(() => {
       const el = document.getElementById('inline-para-two');
