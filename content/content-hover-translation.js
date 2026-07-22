@@ -333,6 +333,12 @@
     const { text, mathElements } = getBlockText(block);
     if (!text || text.length < 2 || text.length > 2000) return;
 
+    // 排除公式占位符后没有正文：整块只是一条公式（如 arXiv 行间公式所在的 <td>，
+    // 它本身不在 MATH_CONTAINER_SELECTOR 内，isValidBlock 拦不住），翻译无意义，
+    // 且译文还原占位符后会把同一条公式在原文下方再渲染一遍。
+    // 注意长度判断挡不住：占位符 "{{1}}" 有 5 个字符。
+    if (!text.replace(/\{\{\d+\}\}/g, '').trim()) return;
+
     const targetLang = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
     const cacheKey = buildCacheKey(text, targetLang);
     const cached = getCachedTranslation(block, cacheKey);
