@@ -9,22 +9,64 @@
  * directly instead.
  */
 const http = require('node:http');
+const zlib = require('node:zlib');
 const { test, expect } = require('./fixtures');
 
-const SOURCE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200">
-  <rect width="800" height="1200" fill="#e9e4d8"/>
-  <text x="60" y="120" font-size="48" fill="#1a1a1a">ORIGINAL</text>
-</svg>`;
+/**
+ * A real PNG, because the format is now load-bearing.
+ *
+ * The service accepts png/jpeg/webp only, and the extension sniffs the magic
+ * bytes before uploading so that an SVG — or a hotlink guard's HTML error page
+ * served with a 200 — falls through to the canvas rung instead of costing a
+ * multi-megabyte POST and a confusing rejection. An SVG fixture therefore no
+ * longer exercises the worker-fetch rung at all: it takes the fallback, and the
+ * two rungs stop being distinguishable.
+ *
+ * Solid colour, so it deflates to a couple of hundred bytes; nothing here reads
+ * the pixels, only the header and the bytes' identity as a PNG.
+ */
+function makePng(width, height, [r, g, b]) {
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++) {
+    const row = y * (1 + width * 3);
+    raw[row] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const p = row + 1 + x * 3;
+      raw[p] = r; raw[p + 1] = g; raw[p + 2] = b;
+    }
+  }
 
-const RESULT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200">
-  <rect width="800" height="1200" fill="#d8e4e9"/>
-  <text x="60" y="120" font-size="48" fill="#1a1a1a">TRANSLATED</text>
-</svg>`;
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'ascii');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;  // 8 bits per channel
+  ihdr[9] = 2;  // truecolour RGB
+  // 10..12 stay 0: deflate, adaptive filtering, no interlace.
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const SOURCE_PNG = makePng(800, 1200, [0xe9, 0xe4, 0xd8]);
+const RESULT_PNG = makePng(800, 1200, [0xd8, 0xe4, 0xe9]);
 
 const PAGE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Comic</title></head>
 <body style="margin:0">
-  <img id="comic" src="/source.svg" width="400">
+  <img id="comic" src="/source.png" width="400">
 </body></html>`;
 
 /**
@@ -33,31 +75,45 @@ const PAGE_HTML = `<!doctype html>
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
  * happy path and each failure the UI has a distinct answer for.
  *
- * `hotlinkGuard` makes /source.svg answer only requests that carry a Referer,
+ * `hotlinkGuard` makes /source.png answer only requests that carry a Referer,
  * which is what a real hotlink-protected CDN does — and, incidentally, the one
  * thing the service worker cannot fake, since Referer is a forbidden header for
  * fetch. That is precisely the case that has to fall through to the page.
+ *
+ * `guardStatus` is how that refusal is phrased. A 403 is the polite version;
+ * plenty of CDNs instead answer **200 with an HTML interstitial**, which is the
+ * nastier case — the fetch "succeeds" and only the bytes give it away.
  */
-function startMockService(behaviour = 'succeed', { hotlinkGuard = false } = {}) {
+function startMockService(
+  behaviour = 'succeed',
+  { hotlinkGuard = false, guardStatus = 403 } = {},
+) {
   const state = { polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0 };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const send = (status, body, type = 'application/json') => {
       res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
-      res.end(typeof body === 'string' ? body : JSON.stringify(body));
+      // Buffers go out as-is. Stringifying one yields `{"type":"Buffer",…}`,
+      // which is a 200 that is not an image — exactly the failure the magic-byte
+      // sniff exists to catch, and it would be caught here as a decode error
+      // several layers away from the cause.
+      if (Buffer.isBuffer(body) || typeof body === 'string') return res.end(body);
+      res.end(JSON.stringify(body));
     };
 
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
-    if (url.pathname === '/source.svg') {
+    if (url.pathname === '/source.png') {
       state.sourceHits += 1;
       if (hotlinkGuard && !req.headers.referer) {
         state.sourceDenied += 1;
-        return send(403, 'forbidden', 'text/plain');
+        return guardStatus === 200
+          ? send(200, '<html><body>Hotlinking is not allowed</body></html>', 'text/html')
+          : send(guardStatus, 'forbidden', 'text/plain');
       }
-      return send(200, SOURCE_SVG, 'image/svg+xml');
+      return send(200, SOURCE_PNG, 'image/png');
     }
-    if (url.pathname === '/result.svg') return send(200, RESULT_SVG, 'image/svg+xml');
+    if (url.pathname === '/result.png') return send(200, RESULT_PNG, 'image/png');
 
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
 
@@ -96,7 +152,7 @@ function startMockService(behaviour = 'succeed', { hotlinkGuard = false } = {}) 
         jobId: 'job_test_1',
         status: 'succeeded',
         progress: 1,
-        resultUrl: `http://localhost:${server.address().port}/result.svg`,
+        resultUrl: `http://localhost:${server.address().port}/result.png`,
         width: 800,
         height: 1200,
         pointsCharged: 10,
@@ -160,13 +216,13 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.svg`);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
 
       // The swap is the whole feature: same element, new pixels.
       await expect(page.locator('#comic')).toHaveAttribute(
-        'src', `${service.base}/result.svg`, { timeout: 20000 },
+        'src', `${service.base}/result.png`, { timeout: 20000 },
       );
       await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
 
@@ -174,9 +230,9 @@ test.describe('Comic page translation', () => {
       await expect(badge).toBeVisible();
 
       await badge.click();
-      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/source.svg`);
+      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/source.png`);
       await badge.click();
-      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/result.svg`);
+      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/result.png`);
 
       // One user action must reserve exactly once, whatever the retries.
       expect(service.state.createBodies).toHaveLength(1);
@@ -194,14 +250,14 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.svg`);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       const overlay = page.locator('.ai-translator-comic-overlay');
       await expect(overlay).toHaveClass(/is-error/);
       await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toBeVisible();
       // The original page is still what the reader sees. Read the resolved
       // property, not the attribute — an untouched src stays relative.
-      expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.svg`);
+      expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
       expect(service.state.polls).toBe(0);
     } finally {
       await service.close();
@@ -215,7 +271,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.svg`);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(1);
       const [created] = service.state.createBodies;
@@ -241,10 +297,10 @@ test.describe('Comic page translation', () => {
       // The reader can see the page; only a request without a Referer is refused.
       await page.locator('#comic').evaluate(img => img.decode());
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.svg`);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
-        'src', `${service.base}/result.svg`, { timeout: 20000 },
+        'src', `${service.base}/result.png`, { timeout: 20000 },
       );
 
       // The worker did try, and was turned away — that is what forced the canvas.
@@ -262,6 +318,36 @@ test.describe('Comic page translation', () => {
     }
   });
 
+  test('does not upload a 200 that is not an image', async ({ context, page }) => {
+    // The guard answers 200 with an HTML interstitial instead of 403. Status and
+    // content-type are both whatever the origin felt like claiming, so the bytes
+    // are the only reliable test — without the magic-byte sniff this uploads an
+    // HTML page, pays for the round trip, and comes back with a rejection the UI
+    // cannot explain.
+    const service = await startMockService('succeed', { hotlinkGuard: true, guardStatus: 200 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', `${service.base}/result.png`, { timeout: 20000 },
+      );
+
+      expect(service.state.sourceDenied).toBeGreaterThan(0);
+      expect(service.state.createBodies).toHaveLength(1);
+      const [upload] = service.state.createBodies;
+      // Recovered by the canvas, exactly as a 403 does — the point is that the
+      // HTML never became an upload.
+      expect(upload.imageBase64.startsWith('data:image/')).toBe(true);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('asks for sign-in instead of failing when no token is stored', async ({ context, page }) => {
     const service = await startMockService('succeed');
     try {
@@ -269,7 +355,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.svg`);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       const overlay = page.locator('.ai-translator-comic-overlay');
       await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toBeVisible();
