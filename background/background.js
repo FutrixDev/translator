@@ -1,5 +1,6 @@
 // AI Translator Background Script
 import '../i18n/messages.js';
+import * as comicClient from './comic-client.js';
 
 // Update extension icon based on theme
 async function updateIcon(theme) {
@@ -36,6 +37,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   }
   if (namespace === 'sync' && (changes.targetLang || changes.targetLangSetByUser)) {
     refreshContextMenuTitles();
+  }
+  if (namespace === 'sync' && changes.enableComicTranslation) {
+    refreshComicMenuVisibility(changes.enableComicTranslation.newValue);
   }
 });
 
@@ -141,6 +145,12 @@ const defaultSettings = {
   modelName: 'gpt-4.1-mini',
   targetLang: '', // Empty means use browser language
   targetLangSetByUser: false,
+  // Comic translation is the one feature that spends money on a server-side
+  // account, so it is opted into. Empty comicTargetLang means "follow
+  // targetLang" — the page a reader wants in Japanese is not always the
+  // language they read articles in.
+  enableComicTranslation: false,
+  comicTargetLang: '',
   customPrompt: '',
   theme: 'light'
 };
@@ -148,6 +158,7 @@ const defaultSettings = {
 const MENU_IDS = {
   translateSelection: 'translate-selection',
   translatePage: 'translate-page',
+  translateComicImage: 'translate-comic-image',
   removeInlineTranslation: 'remove-inline-translation',
 };
 
@@ -176,6 +187,9 @@ async function refreshContextMenuTitles() {
   chrome.contextMenus.update(MENU_IDS.translatePage, {
     title: getContextMenuTitle('contextTranslatePage', uiLang),
   });
+  chrome.contextMenus.update(MENU_IDS.translateComicImage, {
+    title: getContextMenuTitle('contextTranslateComic', uiLang),
+  });
   chrome.contextMenus.update(MENU_IDS.removeInlineTranslation, {
     title: getContextMenuTitle('contextRemoveInlineTranslation', uiLang),
   });
@@ -195,6 +209,18 @@ function createContextMenus() {
       contexts: ['page']
     });
 
+    // Only on images. This is the paid, account-backed path — see comic-client.js
+    // — so it is deliberately a separate entry from the text menus above rather
+    // than another mode of "Translate Page". Created hidden and revealed only
+    // when the feature is switched on: someone who never wants to pay should
+    // not have a paid action sitting in the menu of every image they right-click.
+    chrome.contextMenus.create({
+      id: MENU_IDS.translateComicImage,
+      title: 'Translate This Comic',
+      contexts: ['image'],
+      visible: false
+    });
+
     chrome.contextMenus.create({
       id: MENU_IDS.removeInlineTranslation,
       title: 'Remove Translation',
@@ -203,7 +229,21 @@ function createContextMenus() {
     });
 
     refreshContextMenuTitles();
+    refreshComicMenuVisibility();
   });
+}
+
+/**
+ * Show or hide the comic entry. Called on every menu rebuild and whenever the
+ * setting changes, so the menu never outlives the preference that justified it.
+ */
+async function refreshComicMenuVisibility(enabled) {
+  const visible = enabled !== undefined
+    ? !!enabled
+    : (await chrome.storage.sync.get(defaultSettings)).enableComicTranslation;
+  chrome.contextMenus.update(MENU_IDS.translateComicImage, { visible: !!visible })
+    // The menu is gone during a rebuild; the rebuild itself will re-apply this.
+    .catch(() => {});
 }
 
 // Detect if the API endpoint is Anthropic Claude API
@@ -448,8 +488,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'OPEN_OPTIONS':
       chrome.runtime.openOptionsPage();
       break;
+
+    // --- Comic translation (account-backed, see comic-client.js) -------------
+    case 'COMIC_ACCOUNT':
+      replyComic(comicClient.getAccount({ force: message.force === true }), sendResponse);
+      return true;
+
+    case 'COMIC_SIGN_IN':
+      replyComic(comicClient.signIn(), sendResponse);
+      return true;
+
+    case 'COMIC_SIGN_OUT':
+      replyComic(comicClient.signOut().then(() => ({ signedIn: false })), sendResponse);
+      return true;
+
+    case 'COMIC_JOB_CREATE':
+      replyComic(comicClient.createJob(message.job || {}), sendResponse);
+      return true;
+
+    case 'COMIC_JOB_POLL':
+      replyComic(comicClient.getJob(message.jobId), sendResponse);
+      return true;
+
+    case 'COMIC_JOB_ABANDON':
+      replyComic(comicClient.abandonJob(message.jobId), sendResponse);
+      return true;
+
+    case 'COMIC_OPEN_RECHARGE':
+      comicClient.getRechargeUrl().then(url => chrome.tabs.create({ url }));
+      break;
   }
 });
+
+/**
+ * Settle a comic-client promise into a plain message.
+ *
+ * An Error does not survive chrome.runtime messaging, and the codes matter: the
+ * page decides between "sign in", "top up" and "this image cannot be
+ * translated" purely from `error.code`.
+ */
+function replyComic(promise, sendResponse) {
+  promise
+    .then(data => sendResponse({ ok: true, data }))
+    .catch(error => {
+      if (error instanceof comicClient.ComicApiError) {
+        sendResponse({ ok: false, ...error.toMessage() });
+      } else {
+        sendResponse({ ok: false, error: { code: 'internal_error', message: error?.message || String(error) } });
+      }
+    });
+}
 
 // Context menu for right-click translation
 chrome.runtime.onInstalled.addListener(() => {
@@ -479,6 +567,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } else if (info.menuItemId === MENU_IDS.translatePage) {
     chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' });
+  } else if (info.menuItemId === MENU_IDS.translateComicImage) {
+    const settings = await chrome.storage.sync.get(defaultSettings);
+    // Hiding the menu is what normally prevents this, but a click can race a
+    // switch-off, and this one costs money — so the setting is checked here too.
+    if (!settings.enableComicTranslation) return;
+    // The content script owns the whole job from here: it finds the <img>,
+    // shows progress, and drives the poll loop. Polling from the page rather
+    // than the worker is not a style choice — a service worker is torn down
+    // after ~30s idle, and a page redraw routinely runs longer than that.
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'COMIC_TRANSLATE_IMAGE',
+      srcUrl: info.srcUrl,
+      pageUrl: info.pageUrl || (tab && tab.url) || '',
+      targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
+    });
   } else if (info.menuItemId === MENU_IDS.removeInlineTranslation) {
     chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' });
   }

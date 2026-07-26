@@ -26,6 +26,17 @@
             ctx.showTranslationResult(message.text, message.translation, message.phonetic, message.isWord);
           }
           break;
+        case 'COMIC_TRANSLATE_IMAGE':
+          // Paid, account-backed path — deliberately not gated on the text
+          // translation toggles above, which only govern the BYO-key features.
+          if (ctx.startComicTranslation) {
+            ctx.startComicTranslation({
+              srcUrl: message.srcUrl,
+              pageUrl: message.pageUrl,
+              targetLang: message.targetLang
+            });
+          }
+          break;
         case 'CLEAR_INLINE_TRANSLATION_CONTEXT':
           if (ctx.clearInlineTranslationContext) {
             ctx.clearInlineTranslationContext();

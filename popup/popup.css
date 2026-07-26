@@ -81,6 +81,12 @@ body {
 }
 
 /* Menu Items */
+/* `display: flex` below outranks the browser's [hidden] rule, so a row hidden
+   from script would otherwise stay on screen. */
+.menu-item[hidden] {
+  display: none;
+}
+
 .menu-item {
   display: flex;
   align-items: center;
