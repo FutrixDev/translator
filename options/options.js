@@ -236,7 +236,20 @@ const elements = {
   toggleApiKey: document.getElementById('toggleApiKey'),
   themeToggle: document.getElementById('themeToggle'),
   statusMessage: document.getElementById('statusMessage'),
-  eyeIcon: document.getElementById('eyeIcon')
+  eyeIcon: document.getElementById('eyeIcon'),
+  // Comic translation
+  enableComicTranslation: document.getElementById('enableComicTranslation'),
+  comicTargetLang: document.getElementById('comicTargetLang'),
+  comicAccountLoading: document.getElementById('comicAccountLoading'),
+  comicSignedOut: document.getElementById('comicSignedOut'),
+  comicSignedIn: document.getElementById('comicSignedIn'),
+  comicEmail: document.getElementById('comicEmail'),
+  comicPagesRemaining: document.getElementById('comicPagesRemaining'),
+  comicBalance: document.getElementById('comicBalance'),
+  comicFreeQuota: document.getElementById('comicFreeQuota'),
+  comicSignIn: document.getElementById('comicSignIn'),
+  comicSignOut: document.getElementById('comicSignOut'),
+  comicTopUp: document.getElementById('comicTopUp')
 };
 
 // Preset prompt templates
@@ -303,6 +316,10 @@ const defaultSettings = {
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
   autoDetect: true,
+  // Off by default: this is the one feature that spends money, so it is opted
+  // into rather than out of. Empty comicTargetLang follows targetLang above.
+  enableComicTranslation: false,
+  comicTargetLang: '',
   enableYoutubeCaptionTranslation: false,
   showYoutubeOriginalCaption: true,
   youtubeCaptionFontColor: '#ffffff',
@@ -422,7 +439,84 @@ function detectProviderFromEndpoint(endpoint) {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
+  // Not awaited: this is a network round-trip and the rest of the page must not
+  // wait on the comic service being reachable.
+  refreshComicAccount();
 });
+
+// ---------------------------------------------------------------------------
+// Comic translation account
+//
+// Separate from every other setting on this page: it is a server-side account
+// with a credit balance, not something stored in chrome.storage.sync, so it
+// loads over the network and its buttons act immediately instead of on Save.
+// ---------------------------------------------------------------------------
+
+function showComicState(name) {
+  elements.comicAccountLoading.classList.toggle('hidden', name !== 'loading');
+  elements.comicSignedOut.classList.toggle('hidden', name !== 'signedOut');
+  elements.comicSignedIn.classList.toggle('hidden', name !== 'signedIn');
+}
+
+async function refreshComicAccount({ force = false } = {}) {
+  // With the feature off there is nothing to act on and no reason to ask a paid
+  // service about a balance the user cannot spend. The switch above stays.
+  const { enableComicTranslation } = await chrome.storage.sync.get({ enableComicTranslation: false });
+  if (!enableComicTranslation) {
+    showComicState(null);
+    return;
+  }
+
+  showComicState('loading');
+  const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT', force });
+
+  if (!response || !response.ok) {
+    // A token that the server has since revoked comes back as unauthorized;
+    // the honest answer to that is "signed out", not an error.
+    if (response && response.error && response.error.code === 'unauthorized') {
+      showComicState('signedOut');
+      return;
+    }
+    elements.comicAccountLoading.textContent = t('comicAccountError');
+    showComicState('loading');
+    return;
+  }
+
+  const account = response.data;
+  if (!account.signedIn) {
+    showComicState('signedOut');
+    return;
+  }
+
+  elements.comicEmail.textContent = account.user?.email || account.user?.name || '';
+  // Pages, not points, leads: points are an internal unit and nobody buys a
+  // translation in points.
+  elements.comicPagesRemaining.textContent = account.pagesRemaining ?? 0;
+  elements.comicBalance.textContent = account.balancePoints ?? 0;
+  elements.comicFreeQuota.textContent = account.freeQuota?.remaining ?? 0;
+  showComicState('signedIn');
+}
+
+async function comicSignIn() {
+  showComicState('loading');
+  elements.comicAccountLoading.textContent = t('comicSigningIn');
+  const response = await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+  elements.comicAccountLoading.textContent = t('comicAccountLoading');
+
+  if (!response || !response.ok) {
+    if (response?.error?.code !== 'sign_in_cancelled') {
+      showStatus(response?.error?.message || t('comicSignInFailed'), 'error');
+    }
+    showComicState('signedOut');
+    return;
+  }
+  await refreshComicAccount({ force: true });
+}
+
+async function comicSignOut() {
+  await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
+  showComicState('signedOut');
+}
 
 // Load settings from storage
 async function loadSettings() {
@@ -466,6 +560,9 @@ async function loadSettings() {
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
     elements.autoDetect.checked = result.autoDetect;
+    elements.enableComicTranslation.checked = !!result.enableComicTranslation;
+    elements.comicTargetLang.value = result.comicTargetLang || '';
+    elements.comicTargetLang.disabled = !result.enableComicTranslation;
     elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
     elements.showYoutubeOriginalCaption.checked = result.showYoutubeOriginalCaption !== false;
     elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
@@ -759,6 +856,15 @@ function setupEventListeners() {
   elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
   elements.themeToggle.addEventListener('click', toggleTheme);
 
+  elements.comicSignIn.addEventListener('click', comicSignIn);
+  elements.comicSignOut.addEventListener('click', comicSignOut);
+  elements.comicTopUp.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'COMIC_OPEN_RECHARGE' });
+    // The purchase happens in the tab that just opened; re-reading the balance
+    // when the user comes back is what makes the new credits show up here.
+    window.addEventListener('focus', () => refreshComicAccount({ force: true }), { once: true });
+  });
+
   // Provider change handler
   elements.provider.addEventListener('change', onProviderChange);
 
@@ -767,6 +873,12 @@ function setupEventListeners() {
 
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
+
+  // Written on change rather than on Save, like the rest of the comic card.
+  // Save is gated on a BYO API key, and comic translation does not use one —
+  // routing these through it would strand anyone who has not filled that in.
+  elements.enableComicTranslation.addEventListener('change', saveComicSettings);
+  elements.comicTargetLang.addEventListener('change', saveComicSettings);
 
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
@@ -790,6 +902,25 @@ function setupEventListeners() {
       saveSettings();
     }
   });
+}
+
+async function saveComicSettings() {
+  const enabled = elements.enableComicTranslation.checked;
+  elements.comicTargetLang.disabled = !enabled;
+  try {
+    await chrome.storage.sync.set({
+      enableComicTranslation: enabled,
+      comicTargetLang: elements.comicTargetLang.value
+    });
+    // Switching on should reveal the account state here and now — being told to
+    // reload the page to find out whether you are signed in is not an answer.
+    await refreshComicAccount();
+  } catch (error) {
+    // Only sync-quota exhaustion can land here, and these two keys are a few
+    // bytes. Log it rather than invent an error toast: reopening the page
+    // re-renders from storage, so the user sees the real state either way.
+    console.error('Failed to save comic settings:', error);
+  }
 }
 
 function syncInlineSettingState() {

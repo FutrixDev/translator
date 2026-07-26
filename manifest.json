@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "__MSG_appName__",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "__MSG_appDescription__",
   "default_locale": "en",
   "permissions": [
     "storage",
     "activeTab",
-    "contextMenus"
+    "contextMenus",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -59,6 +60,7 @@
         "content/content-input-dialog.js",
         "content/content-page-translation.js",
         "content/content-hover-translation.js",
+        "content/content-comic-translation.js",
         "content/content-messaging.js",
         "content/content.js"
       ],

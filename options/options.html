@@ -327,6 +327,89 @@
         </button>
       </section>
 
+      <!-- Comic Translation account. Everything here acts immediately; it is
+           deliberately outside the Save Settings flow below, which only writes
+           the BYO-API-key settings. -->
+      <section class="settings-card settings-card-full" id="comicAccountCard">
+        <h2 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18M9 21V9"/>
+          </svg>
+          <span data-i18n="comicAccount">Comic Translation</span>
+        </h2>
+
+        <span class="hint" data-i18n-hint="comicAccountDesc"></span>
+
+        <!-- Both controls write immediately, like the rest of this card. The
+             toggle governs whether the image context menu exists at all: with
+             it off there is no paid entry point anywhere in the UI. -->
+        <div class="inline-setting">
+          <div class="inline-setting-title">
+            <label id="enableComicTranslationLabel" for="comicTargetLang" data-i18n="enableComicTranslation">Enable Comic Translation</label>
+          </div>
+          <div class="inline-setting-controls">
+            <select id="comicTargetLang" aria-labelledby="enableComicTranslationLabel">
+              <option value="" data-i18n="comicTargetLangFollow"></option>
+              <option value="zh-CN" data-i18n="langZhCN"></option>
+              <option value="zh-TW" data-i18n="langZhTW"></option>
+              <option value="en" data-i18n="langEn"></option>
+              <option value="ja" data-i18n="langJa"></option>
+              <option value="ko" data-i18n="langKo"></option>
+              <option value="fr" data-i18n="langFr"></option>
+              <option value="de" data-i18n="langDe"></option>
+              <option value="es" data-i18n="langEs"></option>
+              <option value="pt" data-i18n="langPt"></option>
+              <option value="ru" data-i18n="langRu"></option>
+            </select>
+            <label class="toggle-label toggle-only" for="enableComicTranslation">
+              <input type="checkbox" id="enableComicTranslation" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <span class="hint" data-i18n-hint="hintComicTargetLang"></span>
+        </div>
+
+        <div id="comicAccountLoading" class="account-state" data-i18n="comicAccountLoading">Loading…</div>
+
+        <div id="comicSignedOut" class="account-state hidden">
+          <p class="account-identity" data-i18n="comicNotSignedIn">Not signed in</p>
+          <div class="account-actions">
+            <button type="button" id="comicSignIn" class="btn btn-primary">
+              <span data-i18n="comicSignIn">Sign In</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="comicSignedIn" class="account-state hidden">
+          <p class="account-identity" id="comicEmail"></p>
+          <div class="account-stats">
+            <div class="account-stat">
+              <span class="account-stat-value" id="comicPagesRemaining">—</span>
+              <span class="account-stat-label" data-i18n="comicPagesRemainingLabel">Pages left</span>
+            </div>
+            <div class="account-stat">
+              <span class="account-stat-value" id="comicBalance">—</span>
+              <span class="account-stat-label" data-i18n="comicBalanceLabel">Credits</span>
+            </div>
+            <div class="account-stat">
+              <span class="account-stat-value" id="comicFreeQuota">—</span>
+              <span class="account-stat-label" data-i18n="comicFreeQuotaLabel">Free trial left</span>
+            </div>
+          </div>
+          <div class="account-actions">
+            <button type="button" id="comicTopUp" class="btn btn-primary">
+              <span data-i18n="comicTopUp">Top Up</span>
+            </button>
+            <button type="button" id="comicSignOut" class="btn btn-text">
+              <span data-i18n="comicSignOut">Sign out</span>
+            </button>
+          </div>
+        </div>
+
+        <span class="hint" data-i18n-hint="comicHowTo"></span>
+      </section>
+
       <!-- Save Button -->
       <div class="actions">
         <button id="saveSettings" class="btn btn-primary">

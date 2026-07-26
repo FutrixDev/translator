@@ -4,6 +4,8 @@ const elements = {
   toggleFloatBall: document.getElementById('toggleFloatBall'),
   toggleYoutubeCaptions: document.getElementById('toggleYoutubeCaptions'),
   openSettings: document.getElementById('openSettings'),
+  comicAccount: document.getElementById('comicAccount'),
+  comicAccountStatus: document.getElementById('comicAccountStatus'),
   floatBallStatus: document.getElementById('floatBallStatus'),
   youtubeCaptionsStatus: document.getElementById('youtubeCaptionsStatus'),
   statusText: document.getElementById('statusText')
@@ -49,7 +51,58 @@ function applyI18n(lang) {
 document.addEventListener('DOMContentLoaded', async () => {
   await checkStatus();
   setupEventListeners();
+  // Not awaited: a slow or unreachable comic service must not hold up the
+  // BYO-key features above it.
+  refreshComicAccount();
 });
+
+// Comic translation state, which lives on the server rather than in
+// chrome.storage — see background/comic-client.js.
+let comicSignedIn = false;
+
+async function refreshComicAccount() {
+  // Off means gone, not greyed out: the row's only purpose is to reach a paid
+  // service, and it would otherwise advertise a feature with no entry point.
+  const { enableComicTranslation } = await chrome.storage.sync.get({ enableComicTranslation: false });
+  if (!enableComicTranslation) {
+    elements.comicAccount.hidden = true;
+    return;
+  }
+
+  let account = null;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT' });
+    if (response && response.ok) account = response.data;
+  } catch (error) {
+    console.error('Failed to load comic account:', error);
+  }
+  comicSignedIn = !!(account && account.signedIn);
+
+  // A signed-out account and an unreachable service look the same here on
+  // purpose: either way the useful next step is to sign in, and the options
+  // page is where the real error is spelled out.
+  if (!comicSignedIn) {
+    elements.comicAccountStatus.textContent = t('comicSignIn');
+    elements.comicAccount.title = t('comicSignInRequired');
+    return;
+  }
+  // Pages, not points: points are an internal unit.
+  elements.comicAccountStatus.textContent = account.pagesRemaining ?? 0;
+  elements.comicAccount.title = t('comicPagesRemainingLabel');
+}
+
+async function onComicAccountClick() {
+  if (comicSignedIn) {
+    chrome.runtime.sendMessage({ type: 'COMIC_OPEN_RECHARGE' });
+    window.close();
+    return;
+  }
+  // The consent page opens in its own window; this popup is dismissed the
+  // moment that window takes focus, so the handshake is finished by the
+  // service worker rather than here.
+  chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+  elements.comicAccountStatus.textContent = t('comicSigningIn');
+}
 
 // Check API status and float ball state
 async function checkStatus() {
@@ -157,4 +210,5 @@ function setupEventListeners() {
   elements.toggleFloatBall.addEventListener('click', toggleFloatBall);
   elements.toggleYoutubeCaptions.addEventListener('click', toggleYoutubeCaptions);
   elements.openSettings.addEventListener('click', openSettings);
+  elements.comicAccount.addEventListener('click', onComicAccountClick);
 }

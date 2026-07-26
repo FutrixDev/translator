@@ -1575,3 +1575,164 @@ button.ai-translator-inline-block {
 .ytp-caption-window-container.ai-translator-hide-native .caption-window {
   display: none !important;
 }
+
+/* ==================== Comic Page Translation ==================== */
+/* Pinned over the image by JS (fixed, rect-tracked) rather than wrapped around
+   it: reparenting an <img> breaks galleries and lazy-loaders on the very sites
+   this feature is for. */
+
+.ai-translator-comic-overlay {
+  position: fixed;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(10, 11, 15, 0.55);
+  backdrop-filter: blur(1.5px);
+  border-radius: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: ai-translator-fade-in 0.18s ease;
+}
+
+.ai-translator-comic-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(320px, 88%);
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: #15161c;
+  border: 1px solid #2a2d36;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  color: #f4f5f9;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ai-translator-comic-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(111, 99, 255, 0.25);
+  border-top-color: #6f63ff;
+  animation: ai-translator-comic-spin 0.8s linear infinite;
+  display: none;
+}
+
+.ai-translator-comic-overlay.is-busy .ai-translator-comic-spinner {
+  display: block;
+}
+
+@keyframes ai-translator-comic-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-translator-comic-status {
+  color: #f4f5f9;
+}
+
+.ai-translator-comic-overlay.is-error .ai-translator-comic-status {
+  color: #ff8f8f;
+}
+
+.ai-translator-comic-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: #262a33;
+  overflow: hidden;
+}
+
+.ai-translator-comic-bar[hidden] {
+  display: none;
+}
+
+.ai-translator-comic-bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #6f63ff;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.ai-translator-comic-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ai-translator-comic-actions:empty {
+  display: none;
+}
+
+.ai-translator-comic-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #2f333d;
+  background: #1e2028;
+  color: #d0d3dd;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.ai-translator-comic-btn:hover {
+  background: #2a2d36;
+}
+
+.ai-translator-comic-btn.is-primary {
+  background: #6f63ff;
+  border-color: #6f63ff;
+  color: #fff;
+}
+
+.ai-translator-comic-btn.is-primary:hover {
+  background: #5f53f0;
+}
+
+/* Stays for the life of the page: a redraw is a judgement call, so the original
+   is always one click away. */
+.ai-translator-comic-badge {
+  position: fixed;
+  z-index: 2147483646;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 16, 22, 0.82);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.ai-translator-comic-badge:hover {
+  opacity: 1;
+  background: rgba(15, 16, 22, 0.95);
+}
+
+.ai-translator-comic-toast {
+  position: fixed;
+  z-index: 2147483647;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: #15161c;
+  border: 1px solid #2a2d36;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  animation: ai-translator-fade-in 0.18s ease;
+}

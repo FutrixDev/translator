@@ -47,3 +47,4 @@ test-results/
 
 # Local design docs
 design/
+.gstack/
