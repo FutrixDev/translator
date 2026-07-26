@@ -65,22 +65,28 @@ export async function getApiBase() {
   return base.replace(/\/+$/, '');
 }
 
-/** The stored token, or null when absent or expired. */
+/**
+ * The stored token, or null when there is none.
+ *
+ * Deliberately does NOT enforce `expiresAt` locally. The server slides the
+ * expiry on every authenticated call (userIdForExtToken in the service), but it
+ * never tells the extension the new value — the stored one is frozen at whatever
+ * sign-in returned. Enforcing it here therefore threw away tokens the server was
+ * still perfectly happy with, roughly one TTL after sign-in no matter how
+ * actively the token was being used, and the user got a sign-in prompt for no
+ * reason. A wrong local clock had the same effect.
+ *
+ * Expiry is the server's call, and it already makes it: apiFetch drops the token
+ * on the 401. `expiresAt` is kept in storage as a diagnostic only.
+ */
 export async function getToken() {
   const stored = await chrome.storage.local.get({
     [STORAGE_KEYS.token]: '',
     [STORAGE_KEYS.tokenExpiresAt]: 0
   });
   const token = stored[STORAGE_KEYS.token];
-  const expiresAt = Number(stored[STORAGE_KEYS.tokenExpiresAt]) || 0;
   if (!token) return null;
-  // The server slides the expiry on every use, so a token in active use never
-  // reaches this branch; one that does is genuinely stale.
-  if (expiresAt && expiresAt <= Date.now()) {
-    await clearToken();
-    return null;
-  }
-  return { token, expiresAt };
+  return { token, expiresAt: Number(stored[STORAGE_KEYS.tokenExpiresAt]) || 0 };
 }
 
 async function saveToken(token, expiresAt) {
@@ -297,10 +303,39 @@ export async function fetchImageAsBase64(imageUrl) {
     if (!response.ok) return null;
     const buffer = await response.arrayBuffer();
     if (!buffer.byteLength || buffer.byteLength > MAX_UPLOAD_BYTES) return null;
+    // A 200 is not proof we got a picture: hotlink guards and CDN error pages
+    // routinely answer 200 with HTML, and AVIF/SVG/GIF are things the service
+    // refuses. Uploading any of those costs a multi-megabyte POST and hands the
+    // user a confusing rejection, when returning null instead falls through to
+    // the canvas path — which re-encodes what the page already decoded and
+    // succeeds. Checking the bytes is the only reliable test; content-type is
+    // whatever the server felt like claiming.
+    if (!isSupportedImage(buffer)) return null;
     return arrayBufferToBase64(buffer);
   } catch {
     return null;
   }
+}
+
+/**
+ * Magic-byte sniff for the formats the service accepts (png/jpeg/webp).
+ *
+ * GIF is excluded on purpose even though it is a real image — an animation has
+ * no single page to redraw, so the service rejects it and the canvas fallback
+ * flattens it to a PNG frame instead.
+ */
+function isSupportedImage(buffer) {
+  const b = new Uint8Array(buffer);
+  if (b.length < 12) return false;
+  // PNG: \x89PNG\r\n\x1a\n
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return true;
+  // JPEG: SOI + marker
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true;
+  // WebP: "RIFF" .... "WEBP"
+  const ascii = (start, end) => String.fromCharCode(...b.subarray(start, end));
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return true;
+  return false;
 }
 
 function arrayBufferToBase64(buffer) {

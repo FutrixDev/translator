@@ -210,6 +210,11 @@
     if (restoring) {
       if (entry.originalSrcset === null) img.removeAttribute('srcset');
       else img.setAttribute('srcset', entry.originalSrcset);
+      // `sizes` is stripped alongside srcset on the way in, so it has to come
+      // back too — without it a restored responsive image picks the wrong
+      // candidate width and renders soft.
+      if (entry.originalSizes === null) img.removeAttribute('sizes');
+      else img.setAttribute('sizes', entry.originalSizes);
       entry.pictureSources.forEach(({ element, srcset }) => {
         if (srcset === null) element.removeAttribute('srcset');
         else element.setAttribute('srcset', srcset);
@@ -362,9 +367,26 @@
       );
     }
 
-    // Give the credits back rather than leaving a reservation stranded.
-    sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-    overlay.setError(t('comicTimeout'));
+    // Give the credits back rather than leaving a reservation stranded. Awaited,
+    // because what to tell the user depends on what the server says: the old
+    // fire-and-forget claimed "your credits were not charged" without ever
+    // learning whether the refund landed.
+    const abandoned = await sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
+
+    // The client gave up, but the redraw may have finished a moment earlier —
+    // abandon leaves a succeeded job alone and hands back the result. Charged,
+    // and worth showing rather than throwing away.
+    if (abandoned.ok && abandoned.data.status === 'succeeded' && abandoned.data.resultUrl) {
+      await finishSuccess({ entry, overlay, img, job: abandoned.data });
+      return;
+    }
+
+    // Only claim the refund when the server confirmed it. Otherwise say the
+    // truthful thing — the reservation may still be held, and the reconciliation
+    // sweep will return it — instead of a guess about the user's money.
+    overlay.setError(
+      abandoned.ok && abandoned.data.status === 'abandoned' ? t('comicTimeout') : t('comicTimeoutUnconfirmed')
+    );
     offerDismiss(overlay);
   }
 
@@ -389,12 +411,22 @@
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
-    await new Promise((resolve) => {
+    const loaded = await new Promise((resolve) => {
       const preload = new Image();
-      preload.onload = resolve;
-      preload.onerror = resolve;
+      preload.onload = () => resolve(true);
+      preload.onerror = () => resolve(false);
       preload.src = job.resultUrl;
     });
+
+    // A presigned URL that expired, a network drop, bytes that will not decode —
+    // swapping anyway would replace a readable page with a broken-image icon and
+    // report it as success. The redraw is done and paid for, so the result is
+    // still there on a retry; say so instead of destroying what the user has.
+    if (!loaded) {
+      overlay.setError(t('comicResultUnavailable'));
+      offerDismiss(overlay);
+      return;
+    }
 
     entry.resultUrl = job.resultUrl;
     entry.showingTranslation = true;
