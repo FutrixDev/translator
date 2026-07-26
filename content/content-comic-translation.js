@@ -26,6 +26,11 @@
   const POLL_SLOW_MS = 5000;
   const FAST_WINDOW_MS = 30_000;
   const JOB_TIMEOUT_MS = 180_000;
+  // How long to wait for the server to confirm an abandon. Generous — the whole
+  // point of awaiting it is to learn what happened to the reservation — but
+  // finite, because the alternative is an overlay that never says anything
+  // again.
+  const ABANDON_TIMEOUT_MS = 15_000;
   // Same ceiling the server enforces before it charges anything. Re-encoding a
   // page above this is wasted work.
   const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -252,6 +257,16 @@
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  /**
+   * Resolve with null if `promise` has not settled within `ms`.
+   *
+   * For calls whose answer decides what the user is told: an unanswered one has
+   * to become a known-unknown rather than a wait with no end.
+   */
+  function withTimeout(promise, ms) {
+    return Promise.race([promise, sleep(ms).then(() => null)]);
+  }
+
   async function startComicTranslation({ srcUrl, pageUrl, targetLang }) {
     const img = findImage(srcUrl);
     if (!img) {
@@ -271,22 +286,65 @@
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
     entry.running = true;
     entry.cancelled = false;
-    // One operationId per user action, reused across every retry inside this
-    // run: the server treats it as an idempotency key, so a sign-in round-trip
-    // or a re-upload settles against the same reservation instead of charging
-    // twice. A *new* click gets a new id on purpose — reusing one would hand
-    // back the previous (failed) job instead of trying again.
-    entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     tracked.set(img, entry);
 
+    // A retry after an error leaves the previous overlay sitting on the image;
+    // two stacked cards over one page is not a state worth having.
+    if (entry.overlay) entry.overlay.destroy();
     const overlay = createOverlay(img);
     entry.overlay = overlay;
 
     try {
+      // A job that reached `succeeded` but never made it onto the page is done
+      // and paid for — only the download failed. Go back for the result rather
+      // than ordering a second redraw of the same page.
+      if (entry.completedJobId) {
+        await recoverResult({ entry, overlay, img });
+        return;
+      }
+      // One operationId per user action, reused across every retry inside this
+      // run: the server treats it as an idempotency key, so a sign-in round-trip
+      // or a re-upload settles against the same reservation instead of charging
+      // twice. A *new* click gets a new id on purpose — reusing one would hand
+      // back the previous (failed) job instead of trying again.
+      entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       await runJob({ entry, overlay, img, pageUrl, targetLang });
     } finally {
       entry.running = false;
     }
+  }
+
+  /**
+   * Re-fetch the result of a job that already succeeded.
+   *
+   * finishSuccess can fail after the money is spent: a presigned URL that
+   * expired while the user was away, a dropped download, bytes that will not
+   * decode. The redraw is in the bucket either way, and polling the job mints a
+   * fresh URL for it — so a retry costs nothing, where falling through to
+   * createJob would charge for the same page twice.
+   */
+  async function recoverResult({ entry, overlay, img }) {
+    overlay.setStatus(t('comicLoadingResult'), { progress: 1 });
+    const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
+
+    if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
+      await finishSuccess({ entry, overlay, img, job: polled.data });
+      return;
+    }
+
+    // Keep the id only while the result is still plausibly there to come back
+    // for. A blip between polls is transient; anything else means this job will
+    // never hand back a URL again, so the next click is free to order a new one
+    // instead of retrying a dead id forever.
+    const transient = !polled.ok && polled.error.code === 'network_error';
+    if (!transient) entry.completedJobId = null;
+
+    if (!polled.ok) {
+      showJobError(overlay, polled.error);
+      return;
+    }
+    overlay.setError(t('comicResultUnavailable'));
+    offerDismiss(overlay);
   }
 
   async function runJob({ entry, overlay, img, pageUrl, targetLang }) {
@@ -371,12 +429,22 @@
     // because what to tell the user depends on what the server says: the old
     // fire-and-forget claimed "your credits were not charged" without ever
     // learning whether the refund landed.
-    const abandoned = await sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
+    //
+    // Bounded, because sendMessage settles only when the background answers and
+    // this one goes over the network. A service worker evicted mid-call, or a
+    // request that hangs, would leave the overlay frozen on "translating" — the
+    // job has already timed out at this point, so that is the exact moment the
+    // user most needs to be told something. Timing out here is itself an
+    // unconfirmed refund, which is what the null falls through to below.
+    const abandoned = await withTimeout(
+      sendMessage({ type: 'COMIC_JOB_ABANDON', jobId }),
+      ABANDON_TIMEOUT_MS
+    );
 
     // The client gave up, but the redraw may have finished a moment earlier —
     // abandon leaves a succeeded job alone and hands back the result. Charged,
     // and worth showing rather than throwing away.
-    if (abandoned.ok && abandoned.data.status === 'succeeded' && abandoned.data.resultUrl) {
+    if (abandoned && abandoned.ok && abandoned.data.status === 'succeeded' && abandoned.data.resultUrl) {
       await finishSuccess({ entry, overlay, img, job: abandoned.data });
       return;
     }
@@ -384,9 +452,8 @@
     // Only claim the refund when the server confirmed it. Otherwise say the
     // truthful thing — the reservation may still be held, and the reconciliation
     // sweep will return it — instead of a guess about the user's money.
-    overlay.setError(
-      abandoned.ok && abandoned.data.status === 'abandoned' ? t('comicTimeout') : t('comicTimeoutUnconfirmed')
-    );
+    const confirmed = !!abandoned && abandoned.ok && abandoned.data.status === 'abandoned';
+    overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
     offerDismiss(overlay);
   }
 
@@ -407,6 +474,10 @@
   }
 
   async function finishSuccess({ entry, overlay, img, job }) {
+    // Before the download, not after: from here on the redraw exists and has
+    // been charged for, so every later failure has to be recoverable by going
+    // back to this job rather than by buying another one.
+    entry.completedJobId = job.jobId || entry.jobId || null;
     overlay.setStatus(t('comicLoadingResult'), { progress: 1 });
 
     // Decode before swapping: replacing src directly would blank the image for

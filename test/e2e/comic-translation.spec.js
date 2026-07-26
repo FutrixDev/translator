@@ -13,6 +13,30 @@ const zlib = require('node:zlib');
 const { test, expect } = require('./fixtures');
 
 /**
+ * CRC-32 of a PNG chunk.
+ *
+ * Hand-rolled rather than `zlib.crc32`, which landed in Node 20.15/22.2. This
+ * module builds its fixtures at load time, so on an older runtime the whole
+ * spec file dies on import with a TypeError — before a single test reports, and
+ * looking nothing like the missing-API problem it is.
+ */
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
  * A real PNG, because the format is now load-bearing.
  *
  * The service accepts png/jpeg/webp only, and the extension sniffs the magic
@@ -41,7 +65,7 @@ function makePng(width, height, [r, g, b]) {
     head.writeUInt32BE(data.length, 0);
     head.write(type, 4, 'ascii');
     const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(zlib.crc32(Buffer.concat([head.subarray(4), data])), 0);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
     return Buffer.concat([head, data, crc]);
   };
 
@@ -83,12 +107,17 @@ const PAGE_HTML = `<!doctype html>
  * `guardStatus` is how that refusal is phrased. A 403 is the polite version;
  * plenty of CDNs instead answer **200 with an HTML interstitial**, which is the
  * nastier case — the fetch "succeeds" and only the bytes give it away.
+ *
+ * `resultFailures` makes the first N downloads of the finished page fail, which
+ * is what a presigned URL that expired between the poll and the download looks
+ * like. The redraw is done and charged for at that point, so what the client
+ * does next is a money question.
  */
 function startMockService(
   behaviour = 'succeed',
-  { hotlinkGuard = false, guardStatus = 403 } = {},
+  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0 } = {},
 ) {
-  const state = { polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0 };
+  const state = { polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0 };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -113,7 +142,11 @@ function startMockService(
       }
       return send(200, SOURCE_PNG, 'image/png');
     }
-    if (url.pathname === '/result.png') return send(200, RESULT_PNG, 'image/png');
+    if (url.pathname === '/result.png') {
+      state.resultHits += 1;
+      if (state.resultHits <= resultFailures) return send(403, 'expired', 'text/plain');
+      return send(200, RESULT_PNG, 'image/png');
+    }
 
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
 
@@ -152,7 +185,9 @@ function startMockService(
         jobId: 'job_test_1',
         status: 'succeeded',
         progress: 1,
-        resultUrl: `http://localhost:${server.address().port}/result.png`,
+        // A fresh signature per poll, as the real presign does. It also keeps
+        // the two downloads in the expiry test from being one cached response.
+        resultUrl: `http://localhost:${server.address().port}/result.png?sig=${state.polls}`,
         width: 800,
         height: 1200,
         pointsCharged: 10,
@@ -222,7 +257,7 @@ test.describe('Comic page translation', () => {
 
       // The swap is the whole feature: same element, new pixels.
       await expect(page.locator('#comic')).toHaveAttribute(
-        'src', `${service.base}/result.png`, { timeout: 20000 },
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
 
@@ -232,7 +267,7 @@ test.describe('Comic page translation', () => {
       await badge.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/source.png`);
       await badge.click();
-      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/result.png`);
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/);
 
       // One user action must reserve exactly once, whatever the retries.
       expect(service.state.createBodies).toHaveLength(1);
@@ -259,6 +294,38 @@ test.describe('Comic page translation', () => {
       // property, not the attribute — an untouched src stays relative.
       expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
       expect(service.state.polls).toBe(0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('retrying an undelivered result re-polls the job instead of buying another', async ({ context, page }) => {
+    // The redraw succeeded and the points are spent; only the download of the
+    // finished page failed. A retry that fell through to POST /jobs would order
+    // a second redraw of the same page and charge for it — the user's money,
+    // lost to a transient 403 on a presigned URL.
+    const service = await startMockService('succeed', { resultFailures: 1 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const overlay = page.locator('.ai-translator-comic-overlay');
+      await expect(overlay).toHaveClass(/is-error/, { timeout: 20000 });
+      // The unreadable result was NOT swapped in over a page the reader can see.
+      expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
+      expect(service.state.createBodies).toHaveLength(1);
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+      // The crux: still one job, so still one charge.
+      expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();
     }
@@ -300,7 +367,7 @@ test.describe('Comic page translation', () => {
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
-        'src', `${service.base}/result.png`, { timeout: 20000 },
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
 
       // The worker did try, and was turned away — that is what forced the canvas.
@@ -334,7 +401,7 @@ test.describe('Comic page translation', () => {
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
-        'src', `${service.base}/result.png`, { timeout: 20000 },
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
 
       expect(service.state.sourceDenied).toBeGreaterThan(0);
