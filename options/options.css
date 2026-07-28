@@ -186,6 +186,50 @@ body::before {
   margin-bottom: 24px;
 }
 
+/* A card that holds more than one feature and therefore takes the whole grid
+   row instead of a single column. */
+.settings-card-span {
+  grid-column: 1 / -1;
+}
+
+/* Features inside one card, side by side, with a rule between them so the two
+   read as separate settings rather than one long list.
+
+   An explicit breakpoint rather than auto-fit: the divider has to know which way
+   the columns are laid out, and auto-fit collapses at a width CSS cannot ask
+   about. 820px is where a column would otherwise get too narrow for the
+   select-plus-toggle row. */
+.feature-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px 32px;
+  /* Stretch, not start: the divider is the short column's left border, so it
+     only runs the full height of the card if that column is stretched to it. */
+  align-items: stretch;
+}
+
+.feature-column {
+  min-width: 0;
+}
+
+.feature-column + .feature-column {
+  padding-left: 32px;
+  border-left: 1px solid var(--border);
+}
+
+@media (max-width: 820px) {
+  .feature-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-column + .feature-column {
+    padding-left: 0;
+    padding-top: 24px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
 .section-title {
   display: flex;
   align-items: center;

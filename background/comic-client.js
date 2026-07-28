@@ -113,13 +113,71 @@ export async function isSignedIn() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Runs the hosted consent page in an ordinary tab and resolves with the URL the
+ * server finally redirects to.
+ *
+ * chrome.identity.launchWebAuthFlow does the same job in one call, but it always
+ * opens its own detached browser window, which reads as "the extension launched
+ * a browser" rather than "a page opened". A tab in the window the user is
+ * already looking at is the same flow without that surprise, and it lets them
+ * see the address bar they are about to type a password into.
+ *
+ * The redirect target is still the identity API's
+ * `https://<extension-id>.chromiumapp.org/` — a host that serves nothing, so the
+ * tab never loads a page from it. The token rides back in that URL's FRAGMENT,
+ * which is never sent over the wire, and we read it off the navigation Chrome
+ * reports before closing the tab. Watching for it needs the URL to be visible in
+ * tabs.onUpdated, which host_permissions (`<all_urls>`) already covers.
+ */
+function runAuthTab(authUrl, redirectUri) {
+  return new Promise((resolve, reject) => {
+    let authTabId = null;
+    let settled = false;
+
+    function stopListening() {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+    }
+
+    function onUpdated(tabId, changeInfo, tab) {
+      if (settled || tabId !== authTabId) return;
+      const url = changeInfo.url || tab?.url || tab?.pendingUrl || '';
+      if (!url.startsWith(redirectUri)) return;
+      settled = true;
+      stopListening();
+      // Closing it ourselves keeps the dead chromiumapp.org error page from
+      // ever being what the user is left looking at.
+      chrome.tabs.remove(tabId).catch(() => {});
+      resolve(url);
+    }
+
+    function onRemoved(tabId) {
+      if (settled || tabId !== authTabId) return;
+      settled = true;
+      stopListening();
+      // The user closed the tab before finishing: a cancel, not a failure.
+      reject(new ComicApiError('sign_in_cancelled', 'Sign-in was cancelled'));
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+
+    chrome.tabs.create({ url: authUrl, active: true }).then(tab => {
+      authTabId = tab.id;
+    }).catch(error => {
+      if (settled) return;
+      settled = true;
+      stopListening();
+      reject(new ComicApiError('sign_in_failed', error?.message || String(error)));
+    });
+  });
+}
+
+/**
  * Opens the hosted consent page and exchanges it for a bearer token.
  *
- * launchWebAuthFlow gives us a redirect target that only this extension can
- * receive (`https://<extension-id>.chromiumapp.org/`), and the server issues the
- * token into that URL's FRAGMENT — so the credential is never sent to any
- * server on the way back. The provider choice (Google or GitHub) happens on the
- * web page; the extension never handles the OAuth itself.
+ * The provider choice (Google or GitHub) happens on the web page; the extension
+ * never handles the OAuth itself. See runAuthTab() for how the token gets back.
  */
 export async function signIn() {
   const base = await getApiBase();
@@ -127,19 +185,7 @@ export async function signIn() {
   const state = crypto.randomUUID();
   const authUrl = `${base}/ext/connect?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
-  let finalUrl;
-  try {
-    finalUrl = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
-  } catch (error) {
-    const message = error?.message || String(error);
-    // Chrome reports a closed window and a real failure the same way; treat the
-    // user closing the tab as a cancel rather than an error to shout about.
-    if (/user|cancel|closed/i.test(message)) {
-      throw new ComicApiError('sign_in_cancelled', message);
-    }
-    throw new ComicApiError('sign_in_failed', message);
-  }
-
+  const finalUrl = await runAuthTab(authUrl, redirectUri);
   if (!finalUrl) throw new ComicApiError('sign_in_cancelled', 'Sign-in was cancelled');
 
   const fragment = finalUrl.includes('#') ? finalUrl.slice(finalUrl.indexOf('#') + 1) : '';

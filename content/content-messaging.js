@@ -37,6 +37,16 @@
             });
           }
           break;
+        case 'COMIC_TRANSLATE_PAGE':
+          // No srcUrl: the popup has no cursor to go on, so the content script
+          // picks the page(s) on screen itself.
+          if (ctx.startComicPageTranslation) {
+            ctx.startComicPageTranslation({
+              pageUrl: message.pageUrl,
+              targetLang: message.targetLang
+            });
+          }
+          break;
         case 'CLEAR_INLINE_TRANSLATION_CONTEXT':
           if (ctx.clearInlineTranslationContext) {
             ctx.clearInlineTranslationContext();
