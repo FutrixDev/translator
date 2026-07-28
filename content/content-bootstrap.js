@@ -45,6 +45,8 @@
       showFloatBall: true,
       autoDetect: true,
       enableYoutubeCaptionTranslation: false,
+      enableComicTranslation: false,
+      comicTargetLang: '',
       showYoutubeOriginalCaption: true,
       youtubeCaptionFontColor: '#ffffff',
       youtubeCaptionBgColor: '#080808',
@@ -115,6 +117,8 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        enableComicTranslation: false,
+        comicTargetLang: '',
         showYoutubeOriginalCaption: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
@@ -139,6 +143,8 @@
         showFloatBall: true,
         autoDetect: true,
         enableYoutubeCaptionTranslation: false,
+        enableComicTranslation: false,
+        comicTargetLang: '',
         showYoutubeOriginalCaption: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
@@ -209,6 +215,10 @@
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
       if (ctx.setupYouTubeCaptionTranslation) ctx.setupYouTubeCaptionTranslation();
+      // After loadSettings, because it checks whether the comic feature is on.
+      // A redraw outlives the page that ordered it, so this is where a reader
+      // who paged ahead and came back gets their translation put back.
+      if (ctx.resumeComicJobs) ctx.resumeComicJobs();
       console.log('AI Translator: Initialization complete, showFloatBall =', ctx.settings.showFloatBall);
     } catch (error) {
       console.error('AI Translator: Initialization failed', error);
