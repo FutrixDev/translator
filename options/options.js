@@ -582,6 +582,15 @@ async function loadSettings() {
     applyPlatformHotkeyLabels();
 
     syncInlineSettingState();
+
+    lastGoodSettings = collectSettings();
+    if (hasHotkeyConflict(lastGoodSettings) && resolveStoredHotkeyConflict()) {
+      // Warn after the write, not before: persistSettings ends by confirming
+      // the save, which would otherwise cover the warning immediately. An
+      // 'error' does not auto-hide, so this way round it survives.
+      await persistSettings();
+      showStatus(t('hotkeyConflict'), 'error');
+    }
   } catch (error) {
     console.error('Failed to load settings:', error);
     showStatus(t('connectionFailed'), 'error');
@@ -669,14 +678,66 @@ function collectSettings() {
   };
 }
 
-// One press firing both features at once is a real misconfiguration, but not a
-// reason to reject the write — that would strand the user mid-edit with the old
-// value stored and the new one on screen. Say it instead: 'error' status does
-// not auto-hide, so the warning outlives the save confirmation.
+// ---------------------------------------------------------------------------
+// Hotkey conflicts
+//
+// A shared hotkey is not cosmetic — it breaks translation and bills the user
+// for the privilege. Both content scripts register their keydown listener on
+// document in the capture phase, selection first (see content-bootstrap.js), so
+// one press runs both. translateSelectionInline registers the block in
+// `selectionTranslations` synchronously, before it awaits the API; hover's
+// handler then sees that entry, treats it as "already translated", and clears
+// it — which bumps the request id. The response arrives to a stale id and is
+// discarded. The request was still made and still charged.
+//
+// So the invariant that predates autosave has to hold: a conflicting pair is
+// never persisted. What autosave changes is only what a refusal may look like.
+// It cannot silently drop the write and leave the new value sitting on screen,
+// because there is no Save button left to reconcile the two — the control snaps
+// back to the stored value instead, and the strip says why.
+// ---------------------------------------------------------------------------
+const CONFLICT_FIELDS = [
+  'enableSelection', 'enableHoverTranslation',
+  'selectionTranslationHotkey', 'hoverTranslationHotkey'
+];
+
+let lastGoodSettings = null;
+
 function hasHotkeyConflict(settings) {
   return settings.enableSelection
     && settings.enableHoverTranslation
     && settings.selectionTranslationHotkey === settings.hoverTranslationHotkey;
+}
+
+// Only the four fields above can create a conflict, and each of them persists
+// on its own change event — so exactly one of them differs from the last good
+// state, and that one is the change to undo. Reverting the whole form would
+// also throw away unrelated edits made since.
+function revertConflictingChange() {
+  if (!lastGoodSettings) return;
+  CONFLICT_FIELDS.forEach((key) => {
+    const el = elements[key];
+    if (el.type === 'checkbox') {
+      el.checked = lastGoodSettings[key];
+    } else {
+      el.value = lastGoodSettings[key];
+    }
+  });
+  syncInlineSettingState();
+}
+
+// A build of this branch shipped without the guard above, so storage may
+// already hold a conflicting pair. Leaving it alone would mean the one state
+// the guard exists to prevent is also the one it cannot reach — the user's next
+// edit would revert to a broken baseline. Move hover to a free key on load.
+function resolveStoredHotkeyConflict() {
+  const taken = elements.selectionTranslationHotkey.value;
+  const free = Array.from(elements.hoverTranslationHotkey.options)
+    .map((option) => option.value)
+    .find((value) => value !== taken);
+  if (!free) return false;
+  elements.hoverTranslationHotkey.value = free;
+  return true;
 }
 
 async function persistSettings({ reapplyI18n = false } = {}) {
@@ -684,10 +745,20 @@ async function persistSettings({ reapplyI18n = false } = {}) {
   autosaveTimer = null;
 
   const settings = collectSettings();
+
+  // Checked before the write, not after: a conflicting pair must never reach
+  // storage, because the content scripts act on it the moment it is broadcast.
+  if (hasHotkeyConflict(settings)) {
+    revertConflictingChange();
+    showStatus(t('hotkeyConflict'), 'error');
+    return;
+  }
+
   // Claimed before the write, compared after it. See the yield below.
   const seq = statusSeq;
   try {
     await chrome.storage.sync.set(settings);
+    lastGoodSettings = settings;
 
     // Notify all tabs about settings change
     notifyContentScripts(settings);
@@ -697,9 +768,7 @@ async function persistSettings({ reapplyI18n = false } = {}) {
       applyPlatformHotkeyLabels();
     }
 
-    if (hasHotkeyConflict(settings)) {
-      showStatus(t('hotkeyConflict'), 'error');
-    } else if (statusSeq === seq) {
+    if (statusSeq === seq) {
       // The save confirmation yields. It is routine reassurance, while every
       // other message on this strip answers a deliberate action — so if anyone
       // spoke while the write was in flight, leave their message alone.

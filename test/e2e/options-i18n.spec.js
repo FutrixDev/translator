@@ -45,12 +45,18 @@ test('options disable selects when toggles are off', async ({ page, extensionId 
 });
 
 /**
- * The conflict used to abort the save. Under autosave that would leave the
- * stored value and the visible one disagreeing with no way to reconcile them,
- * so the write goes through and the page says what is wrong instead — and the
- * warning is an error, which does not auto-hide, so it outlives the save toast.
+ * A shared hotkey is not cosmetic. Both content scripts listen on document in
+ * the capture phase, selection registered first, so one press runs both:
+ * selection registers the block synchronously and fires its API request, hover
+ * then reads that registration as "already translated" and clears it, bumping
+ * the request id so the response is discarded on arrival. The call is still
+ * billed and the user sees nothing. So the pair must never be persisted.
+ *
+ * Autosave only changes what the refusal looks like — with no Save button left
+ * to reconcile them, the control snaps back rather than leaving the rejected
+ * value on screen.
  */
-test('options warn about hotkey conflicts without dropping the change', async ({ page, context, extensionId }) => {
+test('options refuse to persist a conflicting hotkey and snap the control back', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     targetLangSetByUser: true,
@@ -58,6 +64,10 @@ test('options warn about hotkey conflicts without dropping the change', async ({
     apiEndpoint: 'https://api.openai.com/v1/chat/completions',
     modelName: 'gpt-4.1-mini',
     provider: 'openai',
+    enableSelection: true,
+    enableHoverTranslation: true,
+    selectionTranslationHotkey: 'Alt',
+    hoverTranslationHotkey: 'Shift',
   });
 
   const optionsUrl = `chrome-extension://${extensionId}/options/options.html`;
@@ -68,10 +78,43 @@ test('options warn about hotkey conflicts without dropping the change', async ({
   await page.selectOption('#selectionTranslationHotkey', 'Control');
 
   await expect(page.locator('#statusMessage')).toHaveText(getMessage('hotkeyConflict', 'en'));
+  // Snapped back, so the page is not claiming a setting that was refused.
+  await expect(page.locator('#selectionTranslationHotkey')).toHaveValue('Alt');
 
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const stored = await worker.evaluate(() => new Promise((resolve) => {
-    chrome.storage.sync.get(['selectionTranslationHotkey'], (r) => resolve(r.selectionTranslationHotkey));
+    chrome.storage.sync.get(['selectionTranslationHotkey', 'hoverTranslationHotkey'], resolve);
   }));
-  expect(stored).toBe('Control');
+  expect(stored.selectionTranslationHotkey).toBe('Alt');
+  expect(stored.hoverTranslationHotkey).toBe('Control');
+});
+
+/**
+ * A build of this branch persisted conflicts before the guard existed, so the
+ * broken pair can already be in storage. The guard alone cannot reach it — the
+ * next edit would just revert to the broken baseline — so the load path has to
+ * break the tie itself.
+ */
+test('a conflicting pair already in storage is resolved on load', async ({ page, context, extensionId }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    targetLangSetByUser: true,
+    enableSelection: true,
+    enableHoverTranslation: true,
+    selectionTranslationHotkey: 'Control',
+    hoverTranslationHotkey: 'Control',
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await page.waitForSelector('#provider');
+
+  await expect(page.locator('#statusMessage')).toHaveText(getMessage('hotkeyConflict', 'en'));
+  await expect(page.locator('#hoverTranslationHotkey')).not.toHaveValue('Control');
+
+  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  const stored = await worker.evaluate(() => new Promise((resolve) => {
+    chrome.storage.sync.get(['selectionTranslationHotkey', 'hoverTranslationHotkey'], resolve);
+  }));
+  expect(stored.selectionTranslationHotkey).toBe('Control');
+  expect(stored.hoverTranslationHotkey).not.toBe('Control');
 });
