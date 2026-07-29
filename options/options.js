@@ -684,6 +684,8 @@ async function persistSettings({ reapplyI18n = false } = {}) {
   autosaveTimer = null;
 
   const settings = collectSettings();
+  // Claimed before the write, compared after it. See the yield below.
+  const seq = statusSeq;
   try {
     await chrome.storage.sync.set(settings);
 
@@ -697,7 +699,16 @@ async function persistSettings({ reapplyI18n = false } = {}) {
 
     if (hasHotkeyConflict(settings)) {
       showStatus(t('hotkeyConflict'), 'error');
-    } else {
+    } else if (statusSeq === seq) {
+      // The save confirmation yields. It is routine reassurance, while every
+      // other message on this strip answers a deliberate action — so if anyone
+      // spoke while the write was in flight, leave their message alone.
+      //
+      // The case that forced this: clicking Test Connection blurs the field
+      // being edited, so the flush lands in the middle of the probe. Whichever
+      // finished last used to win, meaning a connection result could be
+      // replaced by "settings saved" — the user asked a question and got an
+      // unrelated answer. The write itself is unaffected either way.
       showStatus(t('settingsSaved'), 'success');
     }
   } catch (error) {
@@ -887,13 +898,31 @@ function toggleApiKeyVisibility() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Status area
+//
+// One strip serves autosave, connection tests, sign-in and presets, so writes
+// to it have to be ordered rather than last-one-wins. `statusSeq` counts them,
+// which lets a slow async writer notice that someone else has since spoken and
+// hold its tongue — see persistSettings.
+// ---------------------------------------------------------------------------
+let statusHideTimer = null;
+let statusSeq = 0;
+
 // Show status message
 function showStatus(message, type) {
+  // Cancelling the previous hide is the point: these timers used to be left
+  // running, so a save confirmation shown at t=0 would blank whatever occupied
+  // the strip at t=3s — typically a connection error that arrived in between.
+  clearTimeout(statusHideTimer);
+  statusHideTimer = null;
+  statusSeq += 1;
+
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
-  
+
   if (type === 'success') {
-    setTimeout(() => {
+    statusHideTimer = setTimeout(() => {
       elements.statusMessage.classList.add('hidden');
     }, 3000);
   }

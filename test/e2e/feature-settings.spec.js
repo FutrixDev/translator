@@ -103,6 +103,78 @@ test('test connection sits in the API card and reports the missing field', async
   await expect(page.locator('#statusMessage')).toContainText('API Key');
 });
 
+/**
+ * One status strip serves autosave, connection tests, sign-in and presets, and
+ * autosave now writes to it constantly — so the two ways it could trample a
+ * connection result both need pinning.
+ *
+ * First: a save confirmation auto-hides after three seconds, and that timer
+ * used to be left running. Anything that appeared in the meantime got blanked
+ * along with it.
+ */
+test('a save confirmation does not blank a later message when it expires', async ({ page, extensionId }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    targetLangSetByUser: true,
+    provider: 'openai',
+    apiKey: '',
+    modelName: 'gpt-4.1-mini',
+    showFloatBall: true,
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+
+  // Arms the three-second hide.
+  await page.click('label:has(#showFloatBall)');
+  await expect(page.locator('#statusMessage')).toContainText('Settings Saved');
+
+  // Well inside that window, put something the user must not lose.
+  await page.click('#testConnection');
+  await expect(page.locator('#statusMessage')).toContainText('API Key');
+
+  await page.waitForTimeout(3500);
+  await expect(page.locator('#statusMessage')).toBeVisible();
+  await expect(page.locator('#statusMessage')).toContainText('API Key');
+});
+
+/**
+ * Second: clicking Test Connection blurs whatever credential field is being
+ * edited, so the autosave flush runs concurrently with the probe. The routine
+ * "settings saved" must not answer a question the user asked of the API.
+ */
+test('the save confirmation stays quiet while a connection test is in flight', async ({ page, extensionId }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    targetLangSetByUser: true,
+    provider: 'openai',
+    apiKey: 'sk-old',
+    modelName: 'gpt-4.1-mini',
+  });
+
+  await page.route('https://api.openai.com/**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+    });
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+
+  // Edit the key and click straight to the button: the click blurs the field,
+  // which flushes the pending save into the middle of the probe.
+  await page.fill('#apiKey', 'sk-edited-then-tested');
+  await page.click('#testConnection');
+
+  // Mid-probe. The write has long since landed — this is about who gets to
+  // speak, not about whether the save happened.
+  await page.waitForTimeout(900);
+  await expect(page.locator('#statusMessage')).toContainText('Translating');
+
+  await expect(page.locator('#statusMessage')).toContainText('Connection Successful', { timeout: 5000 });
+});
+
 test('popup toggle updates youtube caption setting', async ({ page, context, extensionId }) => {
   const popupUrl = `chrome-extension://${extensionId}/popup/popup.html`;
   await page.goto(popupUrl);
