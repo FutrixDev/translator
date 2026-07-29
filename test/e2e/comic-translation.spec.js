@@ -86,11 +86,32 @@ function makePng(width, height, [r, g, b]) {
 
 const SOURCE_PNG = makePng(800, 1200, [0xe9, 0xe4, 0xd8]);
 const RESULT_PNG = makePng(800, 1200, [0xd8, 0xe4, 0xe9]);
+// Tiny, as the real ones are: a decoy is a spacer stretched over the artwork,
+// not a copy of it.
+const DECOY_PNG = makePng(58, 65, [0x00, 0x00, 0x00]);
 
 const PAGE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Comic</title></head>
 <body style="margin:0">
   <img id="comic" src="/source.png" width="400">
+</body></html>`;
+
+/**
+ * The anti-copy layout: a small image stretched to exactly cover the page.
+ *
+ * Sites that do this also cancel `contextmenu`, so the only thing that reaches
+ * us is a right-click forced past the handler — and it reports the decoy's
+ * src, because the decoy is what hit-testing lands on. Whatever the entry
+ * point, the artwork underneath is what has to be translated.
+ */
+const DECOY_PAGE_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Comic</title></head>
+<body style="margin:0">
+  <div style="position:relative;width:400px;height:600px">
+    <img id="comic" src="/source.png" style="position:absolute;top:0;left:0;width:400px;height:600px">
+    <img id="decoy" src="/decoy.png" style="position:absolute;top:0;left:0;width:400px;height:600px">
+  </div>
+  <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
 </body></html>`;
 
 /**
@@ -112,12 +133,20 @@ const PAGE_HTML = `<!doctype html>
  * is what a presigned URL that expired between the poll and the download looks
  * like. The redraw is done and charged for at that point, so what the client
  * does next is a money question.
+ *
+ * `succeedAfterMs` keeps the job `running` for a wall-clock stretch rather than
+ * a poll count, which is what it takes to still be in flight after the reader
+ * has navigated. A count cannot express that: the reload resets nothing
+ * server-side, so a job held for two polls is already done by the time the new
+ * document asks.
  */
 function startMockService(
   behaviour = 'succeed',
-  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0 } = {},
+  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
 ) {
-  const state = { polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0 };
+  const state = {
+    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0,
+  };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -132,6 +161,8 @@ function startMockService(
     };
 
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/decoy.png') return send(200, DECOY_PNG, 'image/png');
     if (url.pathname === '/source.png') {
       state.sourceHits += 1;
       if (hotlinkGuard && !req.headers.referer) {
@@ -178,9 +209,13 @@ function startMockService(
     if (url.pathname.startsWith('/api/comic/jobs/') && req.method === 'GET') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
       state.polls += 1;
+      if (!state.firstPollAt) state.firstPollAt = Date.now();
+      const held = succeedAfterMs > 0 && Date.now() - state.firstPollAt < succeedAfterMs;
       // First poll still running, second one done: the UI has to survive at
       // least one non-terminal answer or the progress states are never seen.
-      if (state.polls < 2) return send(200, { jobId: 'job_test_1', status: 'running', progress: 0.4 });
+      if (held || state.polls < 2) {
+        return send(200, { jobId: 'job_test_1', status: 'running', progress: 0.4 });
+      }
       return send(200, {
         jobId: 'job_test_1',
         status: 'succeeded',
@@ -204,7 +239,14 @@ function startMockService(
         port,
         base: `http://localhost:${port}`,
         state,
-        close: () => new Promise(done => server.close(done)),
+        // Drop the keep-alive sockets Chrome is holding. Without this, close()
+        // waits for the browser to time them out on its own — tens of seconds
+        // of dead time inside each test's budget, which is what turned a slow
+        // test into an intermittently failing one.
+        close: () => new Promise((done) => {
+          server.close(done);
+          server.closeAllConnections?.();
+        }),
       });
     });
   });
@@ -219,7 +261,12 @@ async function serviceWorker(context) {
 async function connectExtension(context, base, { withToken = true } = {}) {
   const worker = await serviceWorker(context);
   await worker.evaluate(async ({ base, withToken }) => {
-    await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
+    // comicJobs too: it is the cross-page memory, and a record left behind by
+    // the previous test would have the next one silently resume a job whose
+    // mock service is already closed.
+    await chrome.storage.local.remove([
+      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'comicJobs',
+    ]);
     const values = { comicApiBase: base };
     if (withToken) {
       values.comicToken = 'test-token';
@@ -241,6 +288,14 @@ async function triggerComicTranslation(worker, pageUrl, srcUrl) {
       targetLang: 'zh-CN',
     });
   }, { pageUrl, srcUrl });
+}
+
+/** The popup's entry point: no srcUrl, the page picks its own image. */
+async function triggerComicPageTranslation(worker, pageUrl) {
+  await worker.evaluate(async ({ pageUrl }) => {
+    const [tab] = await chrome.tabs.query({ url: pageUrl });
+    await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', pageUrl, targetLang: 'zh-CN' });
+  }, { pageUrl });
 }
 
 test.describe('Comic page translation', () => {
@@ -411,6 +466,152 @@ test.describe('Comic page translation', () => {
       // HTML never became an upload.
       expect(upload.imageBase64.startsWith('data:image/')).toBe(true);
     } finally {
+      await service.close();
+    }
+  });
+
+  test('translates the artwork under a decoy overlay, not the decoy', async ({ context, page }) => {
+    // srcUrl names the placeholder, because that is what the browser hit-tested.
+    // Translating it would spend credits redrawing a 58×65 spacer and leave the
+    // page the reader is looking at untouched.
+    const service = await startMockService('succeed');
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/decoy-page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await triggerComicTranslation(worker, `${service.base}/decoy-page`, `${service.base}/decoy.png`);
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      // The overlay is the site's, not ours to touch.
+      expect(await page.locator('#decoy').evaluate(img => img.src)).toBe(`${service.base}/decoy.png`);
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('starts from the popup with no right-click, and pays for one page', async ({ context, page }) => {
+    // The entry point that exists because comic hosts cancel `contextmenu`. The
+    // decoy has to be recognised as the same page, or one click buys two jobs.
+    const service = await startMockService('succeed');
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/decoy-page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await triggerComicPageTranslation(worker, `${service.base}/decoy-page`);
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('offers a hover button over a comic page and translates from it', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      // The hover button only exists where the feature is on — it is an entry
+      // point to a paid service, not decoration.
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await page.goto(`${service.base}/decoy-page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      // Over the decoy, which is what the pointer can actually reach.
+      await page.locator('#decoy').hover();
+      const button = page.locator('.ai-translator-comic-hover-btn');
+      await expect(button).toBeVisible();
+
+      await button.click();
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
+      await service.close();
+    }
+  });
+
+  /**
+   * A redraw runs for a minute or more, so readers page ahead while they wait.
+   * The server has never cared — it finishes the job whoever is watching — but
+   * the swap is view state in one document, and a navigation used to throw it
+   * away along with the only reference to the job. Both halves of coming back
+   * are money: an in-flight job must be re-attached rather than re-ordered, and
+   * a finished one must be re-fetched rather than bought a second time.
+   */
+  test('re-attaches to a job still running after the reader navigates away', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 8000 });
+    const worker = await connectExtension(context, service.base);
+    try {
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
+
+      // The overlay goes up on the click, before the job exists — reloading on
+      // that alone tests nothing, because there is no job to come back to. Wait
+      // for the record instead: it is written the moment the server hands back a
+      // jobId, so its presence is exactly the precondition this test needs.
+      await expect.poll(
+        () => worker.evaluate(
+          () => chrome.storage.local.get('comicJobs').then(r => Object.keys(r.comicJobs || {}).length),
+        ),
+        { timeout: 15000 },
+      ).toBe(1);
+
+      // Away and back while the redraw is still running. The document that
+      // ordered it is gone; the job is not.
+      await page.reload();
+      await page.waitForSelector('#comic');
+      await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 30000 },
+      );
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+      // The point of the whole feature: one reservation, not two.
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
+      await service.close();
+    }
+  });
+
+  test('puts a finished translation back on a later visit instead of charging again', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+
+      await page.reload();
+      await page.waitForSelector('#comic');
+
+      // The presigned URL from last time is long dead, so this has to be a new
+      // signature off a fresh poll — not the string that was in the old DOM.
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.polls).toBeGreaterThan(2);
+    } finally {
+      await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
       await service.close();
     }
   });

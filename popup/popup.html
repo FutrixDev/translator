@@ -43,6 +43,16 @@
         <kbd id="youtubeCaptionsStatus" data-i18n="off">Off</kbd>
       </button>
 
+      <!-- The entry point that does not depend on the context menu, which comic
+           hosts routinely disable. -->
+      <button id="comicTranslatePage" class="menu-item" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M12 3v18"/>
+        </svg>
+        <span data-i18n="comicTranslateThisPage">Translate Comic Page</span>
+      </button>
+
       <!-- Comic translation runs on our servers against an account balance,
            so unlike the toggles above this row reports a remote state. -->
       <button id="comicAccount" class="menu-item">

@@ -370,6 +370,10 @@
 
     // Check if there are translations on the page
     const hasTranslations = document.querySelectorAll('.ai-translator-inline-block').length > 0;
+    // The comic entry only appears where it can do something: the feature is on
+    // and there is actually a page-sized image on screen to redraw.
+    const showComic = !!settings.enableComicTranslation &&
+      !!(ctx.hasComicPageOnScreen && ctx.hasComicPageOnScreen());
 
     state.floatMenu = document.createElement('div');
     state.floatMenu.id = 'ai-translator-float-menu';
@@ -395,6 +399,15 @@
         </svg>
         <span>${t('translatePage')}</span>
       </button>
+      ${showComic ? `
+      <button class="ai-translator-menu-item" data-action="translate-comic">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M12 3v18"/>
+        </svg>
+        <span>${t('comicTranslateThisPage')}</span>
+      </button>
+      ` : ''}
       ${hasTranslations ? `
       <button class="ai-translator-menu-item" data-action="toggle-translations">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -419,7 +432,7 @@
     // Position menu above the ball
     const ballRect = state.floatBall.getBoundingClientRect();
     const menuWidth = 180;
-    const menuHeight = hasTranslations ? 220 : 180;
+    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 40 : 0);
 
     let left = ballRect.left + (ballRect.width / 2) - (menuWidth / 2);
     let top = ballRect.top - menuHeight - 10;
@@ -485,6 +498,9 @@
       }
       case 'translate-page':
         if (ctx.translatePage) ctx.translatePage();
+        break;
+      case 'translate-comic':
+        if (ctx.startComicPageTranslation) ctx.startComicPageTranslation({ pageUrl: location.href });
         break;
       case 'toggle-translations':
         toggleTranslationsVisibility();
