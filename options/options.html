@@ -104,6 +104,20 @@
               >
             </div>
           </div>
+
+          <!-- Testing belongs next to the credentials it tests. Everything the
+               probe needs — endpoint, key, model — is in this card, so there is
+               no reason to send the user to the bottom of the page to find out
+               whether what they just typed works. -->
+          <div class="form-actions">
+            <button id="testConnection" class="btn btn-secondary btn-inline">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              <span data-i18n="testConnection">Test Connection</span>
+            </button>
+          </div>
         </section>
 
         <!-- Translation Settings -->
@@ -268,12 +282,11 @@
               </div>
             </div>
 
-            <!-- Comic Translation account. Everything here acts immediately; it
-                 is deliberately outside the Save Settings flow below, which only
-                 writes the BYO-API-key settings. -->
+            <!-- Comic Translation account. Unlike everything else on this page
+                 it is a server-side account with a credit balance, so its
+                 buttons talk to the service rather than to chrome.storage. -->
             <div class="feature-column" id="comicAccountCard">
-              <!-- Both controls write immediately, like the rest of this column.
-                   The toggle governs whether the image context menu exists at
+              <!-- The toggle governs whether the image context menu exists at
                    all: with it off there is no paid entry point anywhere in the
                    UI. -->
               <div class="inline-setting">
@@ -407,26 +420,9 @@
         </button>
       </section>
 
-      <!-- Save Button -->
-      <div class="actions">
-        <button id="saveSettings" class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-            <polyline points="17 21 17 13 7 13 7 21"/>
-            <polyline points="7 3 7 8 15 8"/>
-          </svg>
-          <span data-i18n="saveSettings">Save Settings</span>
-        </button>
-        <button id="testConnection" class="btn btn-secondary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
-            <polyline points="22 4 12 14.01 9 11.01"/>
-          </svg>
-          <span data-i18n="testConnection">Test Connection</span>
-        </button>
-      </div>
-
-      <!-- 状态提示 -->
+      <!-- 状态提示. Floats over the page rather than sitting at the bottom of it:
+           every setting now writes itself the moment it changes, so the
+           confirmation has to be visible from wherever the user is scrolled. -->
       <div id="statusMessage" class="status-message hidden"></div>
     </main>
 
