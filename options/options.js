@@ -230,7 +230,6 @@ const elements = {
   youtubeCaptionPreview: document.getElementById('youtubeCaptionPreview'),
   youtubeSubOptions: document.getElementById('youtubeSubOptions'),
   customPrompt: document.getElementById('customPrompt'),
-  saveSettings: document.getElementById('saveSettings'),
   testConnection: document.getElementById('testConnection'),
   resetPrompt: document.getElementById('resetPrompt'),
   toggleApiKey: document.getElementById('toggleApiKey'),
@@ -528,6 +527,9 @@ async function loadSettings() {
     if (!result.targetLangSetByUser || !targetLang) {
       targetLang = getBrowserLanguage();
     }
+    // Carried forward by every autosave, and only flipped by the language
+    // select itself — see the autosave block.
+    targetLangSetByUser = !!result.targetLangSetByUser;
 
     // Determine provider from saved settings or detect from endpoint
     let provider = result.provider;
@@ -580,6 +582,15 @@ async function loadSettings() {
     applyPlatformHotkeyLabels();
 
     syncInlineSettingState();
+
+    lastGoodSettings = collectSettings();
+    if (hasHotkeyConflict(lastGoodSettings) && resolveStoredHotkeyConflict()) {
+      // Warn after the write, not before: persistSettings ends by confirming
+      // the save, which would otherwise cover the warning immediately. An
+      // 'error' does not auto-hide, so this way round it survives.
+      await persistSettings();
+      showStatus(t('hotkeyConflict'), 'error');
+    }
   } catch (error) {
     console.error('Failed to load settings:', error);
     showStatus(t('connectionFailed'), 'error');
@@ -604,8 +615,33 @@ function toggleTheme() {
   notifyContentScripts({ theme: newTheme });
 }
 
-// Save settings to storage
-async function saveSettings() {
+// ---------------------------------------------------------------------------
+// Autosave
+//
+// There is no Save button: every control writes itself the moment it changes.
+// That removes the failure the button created — changing a setting, not
+// noticing the button, and leaving with nothing written.
+//
+// Two things make this more than the old saveSettings() on a different event:
+//
+//  - It must never refuse to write. The old flow aborted the whole save when
+//    the API key was blank, so under autosave anyone without a key could not
+//    change ANY setting: turning the float ball off would silently do nothing.
+//    Judging credentials is now Test Connection's job, and it sits with the
+//    fields it judges.
+//  - targetLangSetByUser only flips when the user actually touches the
+//    language. It records an explicit choice, so writing it on an unrelated
+//    toggle would permanently freeze the language at whatever the browser
+//    happened to imply.
+// ---------------------------------------------------------------------------
+
+const AUTOSAVE_DEBOUNCE_MS = 500;
+let autosaveTimer = null;
+let targetLangSetByUser = false;
+
+// Read the whole form. Cheap enough to do wholesale on every change, and
+// writing every key each time keeps storage consistent with what is on screen.
+function collectSettings() {
   const providerKey = elements.provider.value;
   const provider = PROVIDERS[providerKey];
 
@@ -618,13 +654,13 @@ async function saveSettings() {
   // Get model name from dropdown or custom input
   const modelName = getEffectiveModelName();
 
-  const settings = {
+  return {
     provider: providerKey,
     apiEndpoint: apiEndpoint,
     apiKey: elements.apiKey.value.trim(),
     modelName: modelName,
     targetLang: elements.targetLang.value,
-    targetLangSetByUser: true, // Mark that user has explicitly set the language
+    targetLangSetByUser: targetLangSetByUser,
     enableSelection: elements.enableSelection.checked,
     enableHoverTranslation: elements.enableHoverTranslation.checked,
     selectionTranslationMode: elements.selectionTranslationMode.value,
@@ -640,48 +676,127 @@ async function saveSettings() {
     customPrompt: elements.customPrompt.value.trim(),
     theme: document.documentElement.getAttribute('data-theme') || 'light'
   };
+}
 
-  // Validation
-  if (settings.enableSelection && settings.enableHoverTranslation
-    && settings.selectionTranslationHotkey === settings.hoverTranslationHotkey) {
+// ---------------------------------------------------------------------------
+// Hotkey conflicts
+//
+// A shared hotkey is not cosmetic — it breaks translation and bills the user
+// for the privilege. Both content scripts register their keydown listener on
+// document in the capture phase, selection first (see content-bootstrap.js), so
+// one press runs both. translateSelectionInline registers the block in
+// `selectionTranslations` synchronously, before it awaits the API; hover's
+// handler then sees that entry, treats it as "already translated", and clears
+// it — which bumps the request id. The response arrives to a stale id and is
+// discarded. The request was still made and still charged.
+//
+// So the invariant that predates autosave has to hold: a conflicting pair is
+// never persisted. What autosave changes is only what a refusal may look like.
+// It cannot silently drop the write and leave the new value sitting on screen,
+// because there is no Save button left to reconcile the two — the control snaps
+// back to the stored value instead, and the strip says why.
+// ---------------------------------------------------------------------------
+const CONFLICT_FIELDS = [
+  'enableSelection', 'enableHoverTranslation',
+  'selectionTranslationHotkey', 'hoverTranslationHotkey'
+];
+
+let lastGoodSettings = null;
+
+function hasHotkeyConflict(settings) {
+  return settings.enableSelection
+    && settings.enableHoverTranslation
+    && settings.selectionTranslationHotkey === settings.hoverTranslationHotkey;
+}
+
+// Only the four fields above can create a conflict, and each of them persists
+// on its own change event — so exactly one of them differs from the last good
+// state, and that one is the change to undo. Reverting the whole form would
+// also throw away unrelated edits made since.
+function revertConflictingChange() {
+  if (!lastGoodSettings) return;
+  CONFLICT_FIELDS.forEach((key) => {
+    const el = elements[key];
+    if (el.type === 'checkbox') {
+      el.checked = lastGoodSettings[key];
+    } else {
+      el.value = lastGoodSettings[key];
+    }
+  });
+  syncInlineSettingState();
+}
+
+// A build of this branch shipped without the guard above, so storage may
+// already hold a conflicting pair. Leaving it alone would mean the one state
+// the guard exists to prevent is also the one it cannot reach — the user's next
+// edit would revert to a broken baseline. Move hover to a free key on load.
+function resolveStoredHotkeyConflict() {
+  const taken = elements.selectionTranslationHotkey.value;
+  const free = Array.from(elements.hoverTranslationHotkey.options)
+    .map((option) => option.value)
+    .find((value) => value !== taken);
+  if (!free) return false;
+  elements.hoverTranslationHotkey.value = free;
+  return true;
+}
+
+async function persistSettings({ reapplyI18n = false } = {}) {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+
+  const settings = collectSettings();
+
+  // Checked before the write, not after: a conflicting pair must never reach
+  // storage, because the content scripts act on it the moment it is broadcast.
+  if (hasHotkeyConflict(settings)) {
+    revertConflictingChange();
     showStatus(t('hotkeyConflict'), 'error');
     return;
   }
 
-  if (!settings.apiEndpoint) {
-    showStatus(t('pleaseEnterApiEndpoint'), 'error');
-    if (providerKey === 'custom') {
-      elements.apiEndpoint.focus();
-    }
-    return;
-  }
-
-  if (!settings.apiKey) {
-    showStatus(t('pleaseEnterApiKey'), 'error');
-    elements.apiKey.focus();
-    return;
-  }
-
-  if (!settings.modelName) {
-    showStatus(t('pleaseEnterModelName'), 'error');
-    elements.modelName.focus();
-    return;
-  }
-
+  // Claimed before the write, compared after it. See the yield below.
+  const seq = statusSeq;
   try {
     await chrome.storage.sync.set(settings);
-    showStatus(t('settingsSaved'), 'success');
+    lastGoodSettings = settings;
 
     // Notify all tabs about settings change
     notifyContentScripts(settings);
 
-    // Update UI language if target language changed
-    applyI18n(settings.targetLang);
-    applyPlatformHotkeyLabels();
+    if (reapplyI18n) {
+      applyI18n(settings.targetLang);
+      applyPlatformHotkeyLabels();
+    }
+
+    if (statusSeq === seq) {
+      // The save confirmation yields. It is routine reassurance, while every
+      // other message on this strip answers a deliberate action — so if anyone
+      // spoke while the write was in flight, leave their message alone.
+      //
+      // The case that forced this: clicking Test Connection blurs the field
+      // being edited, so the flush lands in the middle of the probe. Whichever
+      // finished last used to win, meaning a connection result could be
+      // replaced by "settings saved" — the user asked a question and got an
+      // unrelated answer. The write itself is unaffected either way.
+      showStatus(t('settingsSaved'), 'success');
+    }
   } catch (error) {
     console.error('Failed to save settings:', error);
     showStatus(t('connectionFailed'), 'error');
   }
+}
+
+// For controls that fire continuously — typing a key, dragging the opacity
+// slider — so one edit is one write rather than one write per keystroke.
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => persistSettings(), AUTOSAVE_DEBOUNCE_MS);
+}
+
+// Anything still pending when the page goes away would otherwise be lost, and
+// the last thing typed is usually the API key.
+function flushAutosave() {
+  if (autosaveTimer) persistSettings();
 }
 
 // Notify content scripts
@@ -735,8 +850,21 @@ async function testConnection() {
   const apiKey = elements.apiKey.value.trim();
   const modelName = getEffectiveModelName();
 
-  if (!apiEndpoint || !apiKey) {
-    showStatus(t('pleaseConfigureApi'), 'warning');
+  // This button is now the only thing on the page that judges the API config,
+  // so it says which field is missing instead of a blanket "configure the API".
+  if (!apiEndpoint) {
+    showStatus(t('pleaseEnterApiEndpoint'), 'warning');
+    if (providerKey === 'custom') elements.apiEndpoint.focus();
+    return;
+  }
+  if (!apiKey) {
+    showStatus(t('pleaseEnterApiKey'), 'warning');
+    elements.apiKey.focus();
+    return;
+  }
+  if (!modelName) {
+    showStatus(t('pleaseEnterModelName'), 'warning');
+    elements.modelName.focus();
     return;
   }
 
@@ -804,18 +932,21 @@ async function testConnection() {
 }
 
 // Reset prompt to default
-function resetPrompt() {
+async function resetPrompt() {
   elements.customPrompt.value = t(DEFAULT_PROMPT_KEY);
+  await persistSettings();
   showStatus(t('resetToDefault'), 'success');
 }
 
 // Apply preset prompt
-function applyPresetPrompt(presetName) {
+async function applyPresetPrompt(presetName) {
   const presetKey = PROMPT_PRESETS[presetName];
-  if (presetKey) {
-    elements.customPrompt.value = t(presetKey);
-    showStatus(t('presetApplied'), 'success');
-  }
+  if (!presetKey) return;
+  elements.customPrompt.value = t(presetKey);
+  // After the write, so the message the user is left with names what they did
+  // rather than the generic save confirmation persistSettings would show.
+  await persistSettings();
+  showStatus(t('presetApplied'), 'success');
 }
 
 // Toggle API Key visibility
@@ -836,25 +967,89 @@ function toggleApiKeyVisibility() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Status area
+//
+// One strip serves autosave, connection tests, sign-in and presets, so writes
+// to it have to be ordered rather than last-one-wins. `statusSeq` counts them,
+// which lets a slow async writer notice that someone else has since spoken and
+// hold its tongue — see persistSettings.
+// ---------------------------------------------------------------------------
+let statusHideTimer = null;
+let statusSeq = 0;
+
 // Show status message
 function showStatus(message, type) {
+  // Cancelling the previous hide is the point: these timers used to be left
+  // running, so a save confirmation shown at t=0 would blank whatever occupied
+  // the strip at t=3s — typically a connection error that arrived in between.
+  clearTimeout(statusHideTimer);
+  statusHideTimer = null;
+  statusSeq += 1;
+
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
-  
+
   if (type === 'success') {
-    setTimeout(() => {
+    statusHideTimer = setTimeout(() => {
       elements.statusMessage.classList.add('hidden');
     }, 3000);
   }
 }
 
+// Controls that settle on one value per interaction: write straight away.
+const IMMEDIATE_SAVE_FIELDS = [
+  'enableSelection',
+  'selectionTranslationMode',
+  'selectionTranslationHotkey',
+  'enableHoverTranslation',
+  'hoverTranslationHotkey',
+  'showFloatBall',
+  'autoDetect',
+  'enableYoutubeCaptionTranslation',
+  'showYoutubeOriginalCaption'
+];
+
+// Controls that fire on every keystroke or drag frame: debounce, and flush on
+// blur so leaving a field always commits it.
+const DEBOUNCED_SAVE_FIELDS = [
+  'apiEndpoint',
+  'apiKey',
+  'modelName',
+  'customPrompt',
+  'youtubeCaptionFontColor',
+  'youtubeCaptionBgColor',
+  'youtubeCaptionBgOpacity'
+];
+
 // Setup event listeners
 function setupEventListeners() {
-  elements.saveSettings.addEventListener('click', saveSettings);
   elements.testConnection.addEventListener('click', testConnection);
   elements.resetPrompt.addEventListener('click', resetPrompt);
   elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
   elements.themeToggle.addEventListener('click', toggleTheme);
+
+  IMMEDIATE_SAVE_FIELDS.forEach((name) => {
+    elements[name].addEventListener('change', () => persistSettings());
+  });
+
+  DEBOUNCED_SAVE_FIELDS.forEach((name) => {
+    elements[name].addEventListener('input', scheduleAutosave);
+    elements[name].addEventListener('blur', flushAutosave);
+  });
+
+  // The one field whose value changes what the page is written in, so it is
+  // also the one that re-runs i18n.
+  elements.targetLang.addEventListener('change', () => {
+    targetLangSetByUser = true;
+    persistSettings({ reapplyI18n: true });
+  });
+
+  // Closing the tab or switching away must not eat a half-typed API key.
+  window.addEventListener('beforeunload', flushAutosave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushAutosave();
+  });
 
   elements.comicSignIn.addEventListener('click', comicSignIn);
   elements.comicSignOut.addEventListener('click', comicSignOut);
@@ -865,18 +1060,26 @@ function setupEventListeners() {
     window.addEventListener('focus', () => refreshComicAccount({ force: true }), { once: true });
   });
 
-  // Provider change handler
-  elements.provider.addEventListener('change', onProviderChange);
+  // Provider change rewrites the endpoint and the model list, so the write has
+  // to happen after those, not on the generic handler above.
+  elements.provider.addEventListener('change', () => {
+    onProviderChange();
+    persistSettings();
+  });
 
-  // Model select change handler
-  elements.modelSelect.addEventListener('change', onModelSelectChange);
+  // Also ordered: picking from the dropdown clears the custom-model input, and
+  // getEffectiveModelName prefers that input — saving first would store the
+  // custom name the user just replaced.
+  elements.modelSelect.addEventListener('change', () => {
+    onModelSelectChange();
+    persistSettings();
+  });
 
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
 
-  // Written on change rather than on Save, like the rest of the comic card.
-  // Save is gated on a BYO API key, and comic translation does not use one —
-  // routing these through it would strand anyone who has not filled that in.
+  // These two write through their own path because they also refresh the
+  // account panel, which nothing else on the page does.
   elements.enableComicTranslation.addEventListener('change', saveComicSettings);
   elements.comicTargetLang.addEventListener('change', saveComicSettings);
 
@@ -887,7 +1090,8 @@ function setupEventListeners() {
   elements.youtubeCaptionBgColor.addEventListener('input', updateCaptionPreview);
   elements.youtubeCaptionBgOpacity.addEventListener('input', updateCaptionPreview);
 
-  // Preset prompt buttons
+  // Preset prompt buttons. A programmatic value change fires no input event, so
+  // these have to ask for the write themselves.
   document.querySelectorAll('.btn-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       const preset = btn.getAttribute('data-preset');
@@ -895,11 +1099,13 @@ function setupEventListeners() {
     });
   });
 
-  // Save on Ctrl+S / Cmd+S
+  // Ctrl+S / Cmd+S no longer has anything to save, but the reflex is strong
+  // enough that swallowing it and confirming beats letting the browser open a
+  // "save page as" dialog over a settings screen.
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
-      saveSettings();
+      persistSettings();
     }
   });
 }
