@@ -558,6 +558,17 @@ test.describe('Comic page translation', () => {
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
       await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
 
+      // The overlay goes up on the click, before the job exists — reloading on
+      // that alone tests nothing, because there is no job to come back to. Wait
+      // for the record instead: it is written the moment the server hands back a
+      // jobId, so its presence is exactly the precondition this test needs.
+      await expect.poll(
+        () => worker.evaluate(
+          () => chrome.storage.local.get('comicJobs').then(r => Object.keys(r.comicJobs || {}).length),
+        ),
+        { timeout: 15000 },
+      ).toBe(1);
+
       // Away and back while the redraw is still running. The document that
       // ordered it is gone; the job is not.
       await page.reload();

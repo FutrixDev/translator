@@ -503,25 +503,50 @@
     return live;
   }
 
-  async function saveRecord(record) {
-    const records = await loadRecords();
-    records[record.imageSrc] = record;
-    const keys = Object.keys(records);
-    if (keys.length > MAX_RECORDS) {
-      keys
-        .sort((a, b) => records[a].createdAt - records[b].createdAt)
-        .slice(0, keys.length - MAX_RECORDS)
-        .forEach((key) => { delete records[key]; });
-    }
-    await storageSet({ [JOB_STORE_KEY]: records });
+  /**
+   * Serialize every read-modify-write of the record map.
+   *
+   * chrome.storage has no compare-and-set, and the whole map is one value — so
+   * two updates that interleave both load the same snapshot and the second
+   * writes the first one away. That is not hypothetical here: a two-page spread
+   * runs both jobs through `Promise.all`, so both call saveRecord at almost the
+   * same moment, and the loser's page would be unreachable on the next page
+   * load — an already-paid-for redraw the reader would be invited to buy again.
+   *
+   * One chain is enough for one document. Two tabs translating the same image
+   * concurrently could still interleave; that needs a real CAS, and it costs a
+   * duplicate record rather than a lost one, so it is not worth the machinery.
+   */
+  let recordQueue = Promise.resolve();
+
+  function updateRecords(mutate) {
+    recordQueue = recordQueue.then(async () => {
+      const records = await loadRecords();
+      if (mutate(records) === false) return;
+      await storageSet({ [JOB_STORE_KEY]: records });
+    }).catch(() => {});
+    return recordQueue;
   }
 
-  async function dropRecord(imageSrc) {
-    if (!imageSrc) return;
-    const records = await loadRecords();
-    if (!(imageSrc in records)) return;
-    delete records[imageSrc];
-    await storageSet({ [JOB_STORE_KEY]: records });
+  function saveRecord(record) {
+    return updateRecords((records) => {
+      records[record.imageSrc] = record;
+      const keys = Object.keys(records);
+      if (keys.length > MAX_RECORDS) {
+        keys
+          .sort((a, b) => records[a].createdAt - records[b].createdAt)
+          .slice(0, keys.length - MAX_RECORDS)
+          .forEach((key) => { delete records[key]; });
+      }
+    });
+  }
+
+  function dropRecord(imageSrc) {
+    if (!imageSrc) return Promise.resolve();
+    return updateRecords((records) => {
+      if (!(imageSrc in records)) return false;
+      delete records[imageSrc];
+    });
   }
 
   /**
@@ -542,10 +567,26 @@
     });
   }
 
+  /**
+   * The page a record names — by the same rule the context-menu path uses.
+   *
+   * Taking the first DOM match is wrong on exactly the sites this feature is
+   * for: a chapter page that reuses the artwork's src in a thumbnail strip has
+   * several matches, and the thumbnail usually comes first. Swapping a paid
+   * redraw into a 60px thumbnail loses it, and the real page never gets it.
+   *
+   * No resolveRealPage here, unlike findImage: a record is only ever written
+   * with a src that already went through it, so the src *is* the real page and
+   * re-resolving could only walk away from it.
+   */
   function findImageBySrc(src) {
-    return Array.from(document.images).find(img =>
-      img.isConnected && (img.currentSrc === src || img.src === src)
-    ) || null;
+    const candidates = Array.from(document.images).filter(
+      img => img.isConnected && matchesSrc(img, src)
+    );
+    if (!candidates.length) return null;
+    return candidates.reduce(
+      (winner, img) => (renderedArea(img) > renderedArea(winner) ? img : winner)
+    );
   }
 
   /**
@@ -780,13 +821,21 @@
       return;
     }
 
+    // The visible clock and the timeout budget deliberately have different
+    // origins. The clock starts when the reader clicked, because that is the
+    // wait they are actually having. The budget starts HERE, because it exists
+    // to match the server's own redraw budget — counting a sign-in, an image
+    // fetch and an upload against it would abandon a redraw the server was
+    // still perfectly willing to finish, and a slow sign-in could burn the
+    // whole allowance before the job even existed.
+    const jobStartedAt = Date.now();
     entry.jobId = created.data.jobId;
-    entry.jobStartedAt = startedAt;
+    entry.jobStartedAt = jobStartedAt;
     // From here the job exists server-side and will finish with or without this
     // document, so it becomes findable from the next page load.
     rememberJob(entry, 'running');
 
-    await pollJob({ entry, overlay, img, jobId: entry.jobId, startedAt });
+    await pollJob({ entry, overlay, img, jobId: entry.jobId, startedAt: jobStartedAt });
   }
 
   /**
