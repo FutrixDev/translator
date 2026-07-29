@@ -44,7 +44,13 @@ test('options disable selects when toggles are off', async ({ page, extensionId 
   await expect(page.locator('#hoverTranslationHotkey')).toBeDisabled();
 });
 
-test('options block hotkey conflicts', async ({ page, extensionId }) => {
+/**
+ * The conflict used to abort the save. Under autosave that would leave the
+ * stored value and the visible one disagreeing with no way to reconcile them,
+ * so the write goes through and the page says what is wrong instead — and the
+ * warning is an error, which does not auto-hide, so it outlives the save toast.
+ */
+test('options warn about hotkey conflicts without dropping the change', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     targetLangSetByUser: true,
@@ -60,7 +66,12 @@ test('options block hotkey conflicts', async ({ page, extensionId }) => {
 
   await page.selectOption('#hoverTranslationHotkey', 'Control');
   await page.selectOption('#selectionTranslationHotkey', 'Control');
-  await page.click('#saveSettings');
 
   await expect(page.locator('#statusMessage')).toHaveText(getMessage('hotkeyConflict', 'en'));
+
+  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  const stored = await worker.evaluate(() => new Promise((resolve) => {
+    chrome.storage.sync.get(['selectionTranslationHotkey'], (r) => resolve(r.selectionTranslationHotkey));
+  }));
+  expect(stored).toBe('Control');
 });
