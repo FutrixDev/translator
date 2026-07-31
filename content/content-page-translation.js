@@ -439,6 +439,23 @@
       /np\.\w+/,                     // NumPy
     ];
 
+    // 代码高亮容器的 class 检测：按【完整 class token】匹配 highlight / highlighter
+    // 及其 - 连接的变体（highlight、highlight-source-js、highlighter-rouge、js-highlight）。
+    // 不能用 [class*="highlight"] 子串匹配：营销站常用 highlights/highlighted 命名普通
+    // 内容区块——如 retellai.com 用 <section class="c-home-highlights-accordion-2"> 包住
+    // 整篇博客正文，子串命中会把整篇正文当成代码块跳过，整页翻译对正文完全不生效。
+    const highlightClassTokenRe = /(^|-)highlight(er)?(-|$)/;
+    function isInsideCodeHighlightContainer(element) {
+      for (let el = element; el; el = el.parentElement) {
+        const classList = el.classList;
+        if (!classList) continue;
+        for (const cls of classList) {
+          if (highlightClassTokenRe.test(cls)) return true;
+        }
+      }
+      return false;
+    }
+
     // 检查文本是否看起来像代码
     function looksLikeCode(text) {
       // 如果包含大量特殊字符，可能是代码
@@ -554,8 +571,9 @@
       // 跳过被 skipTags 包含的元素
       if (element.closest(skipTags.map(t => t.toLowerCase()).join(','))) return;
 
-      // 跳过代码块容器
-      if (element.closest('.highlight, .codehilite, .sourceCode, .code-block, [class*="language-"], [class*="highlight"]')) return;
+      // 跳过代码块容器（highlight 类及其变体在 isInsideCodeHighlightContainer 里按 token 匹配）
+      if (element.closest('.codehilite, .sourceCode, .code-block, [class*="language-"]')) return;
+      if (isInsideCodeHighlightContainer(element)) return;
 
       // 跳过数学公式内部的所有元素 - 数学公式应该整体保留，不单独翻译内部元素
       if (element.closest(MATH_CONTAINER_SELECTOR)) return;
