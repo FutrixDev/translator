@@ -59,6 +59,22 @@
   const tracked = new WeakMap();
   let lastContextImage = null;
 
+  /**
+   * What the server is asked to do to the page. Everything downstream — the
+   * overlay wording, the badge labels, the cross-page record — keys off this,
+   * so an unknown value is coerced here rather than checked in four places.
+   */
+  const COMIC_MODES = ['translate', 'colorize', 'translate_colorize'];
+
+  function normalizeMode(mode) {
+    return COMIC_MODES.includes(mode) ? mode : 'translate';
+  }
+
+  /** The in-progress label: a colorize that says "translating" reads as a bug. */
+  function statusText(mode) {
+    return t(mode === 'colorize' ? 'comicColorizing' : 'comicTranslating');
+  }
+
   // The right-click target is the only unambiguous way to know WHICH image the
   // user meant: a page can show the same src a dozen times (thumbnail grids,
   // lazy-load placeholders) and info.srcUrl cannot tell them apart.
@@ -321,8 +337,9 @@
     badge.className = 'ai-translator-comic-badge';
     document.body.appendChild(badge);
 
+    const showResultLabel = entry.mode === 'colorize' ? 'comicShowColorized' : 'comicShowTranslation';
     const render = () => {
-      badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t('comicShowTranslation');
+      badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t(showResultLabel);
     };
     render();
 
@@ -349,6 +366,15 @@
     frame = requestAnimationFrame(track);
 
     entry.badge = badge;
+    // For the run-again-in-a-different-mode path, which replaces the swap and
+    // its badge; the rAF loop above only ends on its own when the image leaves
+    // the DOM.
+    entry.destroyBadge = () => {
+      cancelAnimationFrame(frame);
+      badge.remove();
+      entry.badge = null;
+      entry.destroyBadge = null;
+    };
   }
 
   /**
@@ -528,9 +554,28 @@
     return recordQueue;
   }
 
+  /**
+   * One record per (mode, image). The two products on a page are two separate
+   * purchases, and keying by image alone made the second one overwrite the
+   * record of the first — after a reload, switching back to the overwritten
+   * mode had no job id to recover and bought the page again. Records written
+   * before modes existed sit under the bare src and still load; they were all
+   * translations, which is what an absent mode resolves to everywhere.
+   */
+  function recordKey(mode, imageSrc) {
+    return `${normalizeMode(mode)}|${imageSrc}`;
+  }
+
   function saveRecord(record) {
     return updateRecords((records) => {
-      records[record.imageSrc] = record;
+      records[recordKey(record.mode, record.imageSrc)] = record;
+      // A pre-mode record under the bare src IS a translation record — so it is
+      // superseded only when the record being saved is itself the translation.
+      // Deleting it on a colorize save would erase a purchase this write knows
+      // nothing about.
+      if (normalizeMode(record.mode) === 'translate' && record.imageSrc in records) {
+        delete records[record.imageSrc];
+      }
       const keys = Object.keys(records);
       if (keys.length > MAX_RECORDS) {
         keys
@@ -541,11 +586,15 @@
     });
   }
 
-  function dropRecord(imageSrc) {
+  function dropRecord(imageSrc, mode) {
     if (!imageSrc) return Promise.resolve();
     return updateRecords((records) => {
-      if (!(imageSrc in records)) return false;
-      delete records[imageSrc];
+      const key = recordKey(mode, imageSrc);
+      // The bare src is the pre-mode spelling of the same translate record.
+      const legacy = normalizeMode(mode) === 'translate' && imageSrc in records;
+      if (!(key in records) && !legacy) return false;
+      delete records[key];
+      if (legacy) delete records[imageSrc];
     });
   }
 
@@ -555,14 +604,22 @@
    * on it would put a storage round-trip in front of the user's progress.
    */
   function rememberJob(entry, status) {
-    const jobId = entry.jobId || entry.completedJobId;
+    // completedJobId first: it is the id the current mode actually finished
+    // under. entry.jobId can still name a previous run's job — a failed mode B
+    // whose id survived into a recovery of mode A — and persisting that id as
+    // A's success would make A unresumable after a reload.
+    const jobId = entry.completedJobId || entry.jobId;
     if (!jobId || !entry.originalSrc) return;
     if (/^(blob|data):/i.test(entry.originalSrc)) return;
     saveRecord({
       jobId,
+      mode: entry.mode,
       imageSrc: entry.originalSrc,
       pageUrl: location.href,
       createdAt: entry.jobStartedAt || Date.now(),
+      // Selection on the next page load goes by what the reader last SAW, not
+      // by when each job was bought — see resumeComicJobs.
+      displayedAt: Date.now(),
       status
     });
   }
@@ -601,16 +658,33 @@
     const pending = Object.keys(records).map(key => records[key]);
     if (!pending.length) return;
 
+    // Several records can name one image now — one per mode. Only one state can
+    // be on screen, and the newest is the one the reader last saw; the rest of
+    // the group rides along to seed the per-mode stash, so switching modes
+    // after a reload stays a free re-poll.
+    const byImage = new Map();
+    pending.forEach((record) => {
+      const group = byImage.get(record.imageSrc) || [];
+      group.push(record);
+      byImage.set(record.imageSrc, group);
+    });
+
     const claimed = new Set();
     const sweep = () => {
-      pending.forEach((record) => {
-        if (claimed.has(record.imageSrc)) return;
-        const img = findImageBySrc(record.imageSrc);
+      byImage.forEach((group, imageSrc) => {
+        if (claimed.has(imageSrc)) return;
+        const img = findImageBySrc(imageSrc);
         if (!img) return;
-        claimed.add(record.imageSrc);
-        resumeRecord(img, record);
+        claimed.add(imageSrc);
+        // "Newest" is what the reader last had on screen, not what was bought
+        // last: switching back to an older purchase refreshes its displayedAt,
+        // so a reload restores the view they left, not the later receipt.
+        // Records from before the field fall back to their creation time.
+        const shownAt = (r) => r.displayedAt || r.createdAt;
+        const newest = group.reduce((a, b) => (shownAt(b) > shownAt(a) ? b : a));
+        resumeRecord(img, newest, group);
       });
-      return claimed.size === pending.length;
+      return claimed.size === byImage.size;
     };
 
     if (sweep()) return;
@@ -626,7 +700,7 @@
     setTimeout(() => observer.disconnect(), RESUME_WATCH_MS);
   }
 
-  async function resumeRecord(img, record) {
+  async function resumeRecord(img, record, group = [record]) {
     const existing = tracked.get(img);
     // Something on this document already owns the image — a job the user just
     // started, or a swap that already happened.
@@ -637,15 +711,25 @@
       originalSrc: record.imageSrc,
       showingTranslation: false,
       jobId: record.jobId,
-      jobStartedAt: record.createdAt
+      jobStartedAt: record.createdAt,
+      // Records written before modes existed are all translations.
+      mode: normalizeMode(record.mode),
+      // Every finished purchase on this image, whichever mode: asking for one
+      // of them later recovers its job instead of reserving again.
+      completedByMode: {}
     };
+    group.forEach((r) => {
+      if (r.status === 'succeeded' && r.jobId) {
+        entry.completedByMode[normalizeMode(r.mode)] = r.jobId;
+      }
+    });
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
 
     const overlay = createOverlay(img);
     entry.overlay = overlay;
-    overlay.setStatus(t('comicTranslating'), { progress: 0.5 });
+    overlay.setStatus(statusText(entry.mode), { progress: 0.5 });
     // Only for a job still in flight. A finished one is a single poll to mint a
     // URL, and clocking it from its original creation would open the card at
     // "47:12" for work that ended an hour ago.
@@ -665,7 +749,11 @@
         // load — take the card away rather than opening with an error. A network
         // blip keeps the record; a real answer means it will never resolve.
         overlay.destroy();
-        if (polled.ok || polled.error.code !== 'network_error') dropRecord(record.imageSrc);
+        if (polled.ok || polled.error.code !== 'network_error') {
+          dropRecord(record.imageSrc, record.mode);
+          // The id seeded into the stash from this record is equally dead.
+          delete entry.completedByMode[normalizeMode(record.mode)];
+        }
         return;
       }
       await pollJob({ entry, overlay, img, jobId: record.jobId, startedAt: record.createdAt });
@@ -675,20 +763,20 @@
   }
 
   /** Context-menu entry: the browser tells us which image was clicked. */
-  async function startComicTranslation({ srcUrl, pageUrl, targetLang }) {
+  async function startComicTranslation({ srcUrl, pageUrl, targetLang, mode }) {
     const img = findImage(srcUrl);
     if (!img) {
       showDetachedError(t('comicImageNotFound'));
       return;
     }
-    await translateImage(img, { pageUrl, targetLang });
+    await translateImage(img, { pageUrl, targetLang, mode });
   }
 
   /**
    * Float-ball and popup entry: nothing was clicked, so the page is found by
    * looking at what is on screen.
    */
-  async function startComicPageTranslation({ pageUrl, targetLang } = {}) {
+  async function startComicPageTranslation({ pageUrl, targetLang, mode } = {}) {
     const images = pickComicImages();
     if (!images.length) {
       showDetachedError(t('comicNoPageFound'));
@@ -697,7 +785,7 @@
     const lang = targetLang || comicTargetLang();
     // In parallel: a spread is two independent jobs and running them one after
     // the other would double the wait for no reason.
-    await Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang })));
+    await Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode })));
   }
 
   function comicTargetLang() {
@@ -706,17 +794,21 @@
     return ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
   }
 
-  async function translateImage(img, { pageUrl, targetLang }) {
+  async function translateImage(img, { pageUrl, targetLang, mode }) {
+    mode = normalizeMode(mode);
     const existing = tracked.get(img);
     if (existing && existing.running) return;
-    if (existing && existing.badge) {
-      // Already translated. Re-running would charge for the same page again.
+    if (existing && existing.badge && existing.mode === mode) {
+      // Already done in this mode. Re-running would charge for the same page again.
       existing.showingTranslation = true;
       applySource(img, existing.resultUrl, existing);
       return;
     }
-
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
+    // Claimed BEFORE anything below can await: the decode wait yields to the
+    // event loop, and a second trigger landing in that window has to bounce off
+    // `running` rather than pass the guard and start a sibling job under its
+    // own idempotency key — two reservations for one user intent.
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
@@ -728,6 +820,45 @@
     entry.overlay = overlay;
 
     try {
+      if (entry.badge) {
+        // Same page, different product — a translated page being colorized, or
+        // the reverse. That is a NEW job, but the finished one it replaces
+        // stays bought: its job id lives on in `completedByMode`, so coming
+        // back to this mode later is a free re-poll, and a failure in the new
+        // mode costs nothing that was already paid for.
+        entry.destroyBadge?.();
+        // The new job must start from the ORIGINAL pixels: the canvas fallback
+        // reads whatever the <img> currently shows, and feeding it the
+        // previous result would compound two redraws on one page.
+        applySource(img, entry.originalSrc, entry);
+        entry.showingTranslation = false;
+        entry.jobId = null;
+        // Cleared, not carried over: it names the OTHER mode's finished job,
+        // and recoverResult would hand its result back as if it were this
+        // mode's. The per-mode stash below is what keeps it reachable.
+        entry.completedJobId = null;
+        entry.resultUrl = null;
+        // The src assignment above is asynchronous. A fast needs-page-bytes
+        // turnaround would otherwise capture the canvas while the <img> still
+        // shows the previous result — or nothing at all — so the restore has
+        // to finish decoding before the job is allowed to proceed.
+        try {
+          await img.decode();
+        } catch {
+          // A source that will not decode is capturePageBytes' problem to report.
+        }
+      }
+
+      entry.completedByMode = entry.completedByMode || {};
+      entry.mode = mode;
+      // A fresh user action: whatever job id a previous run left behind names
+      // OLD work — a failed sibling mode, an abandoned attempt — and letting it
+      // survive would let rememberJob persist it as this mode's record.
+      entry.jobId = null;
+      // A mode that already finished on this image resumes from its stashed job
+      // id — recoverResult re-polls it for a fresh URL instead of paying again.
+      entry.completedJobId = entry.completedByMode[mode] || entry.completedJobId || null;
+
       // A job that reached `succeeded` but never made it onto the page is done
       // and paid for — only the download failed. Go back for the result rather
       // than ordering a second redraw of the same page.
@@ -757,7 +888,7 @@
    * createJob would charge for the same page twice.
    */
   async function recoverResult({ entry, overlay, img }) {
-    overlay.setStatus(t('comicTranslating'), { progress: 1 });
+    overlay.setStatus(statusText(entry.mode), { progress: 1 });
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
@@ -768,9 +899,15 @@
     // Keep the id only while the result is still plausibly there to come back
     // for. A blip between polls is transient; anything else means this job will
     // never hand back a URL again, so the next click is free to order a new one
-    // instead of retrying a dead id forever.
+    // instead of retrying a dead id forever. The stash and the stored record
+    // have to go with it — either one would hand the same dead id straight
+    // back on the next click or the next page load.
     const transient = !polled.ok && polled.error.code === 'network_error';
-    if (!transient) entry.completedJobId = null;
+    if (!transient) {
+      entry.completedJobId = null;
+      if (entry.completedByMode) delete entry.completedByMode[entry.mode];
+      dropRecord(entry.originalSrc, entry.mode);
+    }
 
     if (!polled.ok) {
       showJobError(overlay, polled.error);
@@ -786,7 +923,7 @@
     // narrating them made a 90-second wait look like four separate things going
     // wrong. The clock carries the "still working" signal instead.
     const startedAt = Date.now();
-    overlay.setStatus(t('comicTranslating'), { progress: 0 });
+    overlay.setStatus(statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
     let created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
@@ -797,7 +934,7 @@
       overlay.stopTimer();
       const signedIn = await promptSignIn(overlay);
       if (!signedIn) return;
-      overlay.setStatus(t('comicTranslating'), { progress: 0 });
+      overlay.setStatus(statusText(entry.mode), { progress: 0 });
       overlay.startTimer(Date.now());
       created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
     }
@@ -806,7 +943,7 @@
       // The worker could not read the file — a blob:/data: src, or an origin
       // that refuses a request without a Referer. The page has already decoded
       // it either way, so send the pixels we can see.
-      overlay.setStatus(t('comicTranslating'), { progress: 0.05 });
+      overlay.setStatus(statusText(entry.mode), { progress: 0.05 });
       const imageBase64 = capturePageBytes(img);
       if (!imageBase64) {
         overlay.setError(t('comicImageUnavailable'));
@@ -852,7 +989,7 @@
       onClick: () => {
         entry.cancelled = true;
         sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         overlay.destroy();
       }
     }]);
@@ -868,7 +1005,7 @@
         // A blip between polls is not a failed job — the reservation is still
         // held server-side, so keep waiting rather than abandoning it.
         if (polled.error.code === 'network_error') continue;
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         showJobError(overlay, polled.error);
         return;
       }
@@ -881,7 +1018,7 @@
       if (job.status === 'failed' || job.status === 'abandoned') {
         // Terminal and refunded. Leaving the record would re-open this card on
         // every future visit to the page.
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         showJobError(overlay, job.error || { code: 'failed', message: '' });
         return;
       }
@@ -889,7 +1026,7 @@
       // Server progress is coarse (queued/running/done). Creeping it with
       // elapsed time keeps the bar honest about the stage while still moving.
       const estimate = Math.min(0.9, 0.1 + elapsed / JOB_TIMEOUT_MS * 1.6);
-      overlay.setStatus(t('comicTranslating'), {
+      overlay.setStatus(statusText(entry.mode), {
         progress: Math.max(job.progress || 0, estimate)
       });
     }
@@ -925,7 +1062,7 @@
     // Only forget the job once the server agrees it is dead. An unconfirmed
     // abandon may well still be running, and leaving the record is what lets a
     // later page load pick it up and show the page the user paid for.
-    if (confirmed) dropRecord(entry.originalSrc);
+    if (confirmed) dropRecord(entry.originalSrc, entry.mode);
     overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
     offerDismiss(overlay);
   }
@@ -941,7 +1078,8 @@
         imageBase64,
         pageUrl: pageUrl || location.href,
         sourceLang: 'auto',
-        targetLang
+        targetLang,
+        mode: entry.mode
       }
     });
   }
@@ -951,7 +1089,12 @@
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
     entry.completedJobId = job.jobId || entry.jobId || null;
-    overlay.setStatus(t('comicTranslating'), { progress: 1 });
+    // Stashed per mode, and never cleared: switching the page to the other
+    // product must not orphan a result that is already bought — coming back to
+    // this mode re-polls this id instead of reserving again.
+    entry.completedByMode = entry.completedByMode || {};
+    if (entry.completedJobId) entry.completedByMode[entry.mode] = entry.completedJobId;
+    overlay.setStatus(statusText(entry.mode), { progress: 1 });
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
@@ -1110,10 +1253,11 @@
   // Hover entry point
   // -------------------------------------------------------------------------
 
-  // A button that follows the pointer onto comic pages. It exists because the
-  // context menu is not reliably reachable: plenty of comic hosts cancel it
-  // outright, and a feature nobody can find is a feature nobody uses.
-  let hoverButton = null;
+  // Buttons that follow the pointer onto comic pages — one per product,
+  // translate and colorize. They exist because the context menu is not reliably
+  // reachable: plenty of comic hosts cancel it outright, and a feature nobody
+  // can find is a feature nobody uses.
+  let hoverHost = null;
   let hoverImage = null;
   let hoverFrame = 0;
   let lastHoverCheck = 0;
@@ -1148,8 +1292,8 @@
       hideHoverButton();
       return;
     }
-    // Over our own button: the pointer is on its way to clicking it.
-    if (hoverButton && hoverButton.style.display !== 'none' && containsPoint(hoverButton, x, y)) return;
+    // Over our own buttons: the pointer is on its way to clicking one.
+    if (hoverHost && hoverHost.style.display !== 'none' && containsPoint(hoverHost, x, y)) return;
 
     const under = imageAtPoint(x, y);
     if (!under) {
@@ -1161,10 +1305,13 @@
       hideHoverButton();
       return;
     }
-    // A running job owns the image, and a finished one already has its own
-    // badge — offering to buy the same redraw twice is the wrong invitation.
+    // Only a RUNNING job hides the buttons. A finished swap keeps them: the
+    // other product is still worth offering — on hosts that cancel the context
+    // menu this hover is its only entry point — and clicking the mode that
+    // already finished is caught by translateImage's same-mode guard, which
+    // flips the view instead of buying the page again.
     const entry = tracked.get(page);
-    if (entry && (entry.running || entry.badge)) {
+    if (entry && entry.running) {
       hideHoverButton();
       return;
     }
@@ -1176,29 +1323,37 @@
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
+  function makeHoverButton(labelKey, extraClass, mode) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-translator-comic-hover-btn ${extraClass}`;
+    button.textContent = t(labelKey);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = hoverImage;
+      hideHoverButton();
+      if (target) translateImage(target, { pageUrl: location.href, targetLang: comicTargetLang(), mode });
+    });
+    return button;
+  }
+
   function showHoverButton(img) {
-    if (!hoverButton) {
-      hoverButton = document.createElement('button');
-      hoverButton.type = 'button';
-      hoverButton.className = 'ai-translator-comic-hover-btn';
-      hoverButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const target = hoverImage;
-        hideHoverButton();
-        if (target) translateImage(target, { pageUrl: location.href, targetLang: comicTargetLang() });
-      });
+    if (!hoverHost) {
+      hoverHost = document.createElement('div');
+      hoverHost.className = 'ai-translator-comic-hover';
+      hoverHost.appendChild(makeHoverButton('comicTranslateAction', 'is-translate', 'translate'));
+      hoverHost.appendChild(makeHoverButton('comicColorizeAction', 'is-colorize', 'colorize'));
       // Sites that block copying tend to cancel these too; ours is our own.
       ['mousedown', 'contextmenu'].forEach(type => {
-        hoverButton.addEventListener(type, event => event.stopPropagation());
+        hoverHost.addEventListener(type, event => event.stopPropagation());
       });
-      document.body.appendChild(hoverButton);
+      document.body.appendChild(hoverHost);
     }
 
-    hoverButton.textContent = t('comicTranslateAction');
     // Explicit, not '': the stylesheet hides it by default so it never flashes
     // before the first position lands.
-    hoverButton.style.display = 'block';
+    hoverHost.style.display = 'flex';
     hoverImage = img;
     if (hoverFrame) return;
 
@@ -1208,21 +1363,21 @@
         return;
       }
       const rect = hoverImage.getBoundingClientRect();
-      const size = hoverButton.getBoundingClientRect();
-      hoverButton.style.top = `${rect.top + 10}px`;
-      hoverButton.style.left = `${rect.right - size.width - 10}px`;
+      const size = hoverHost.getBoundingClientRect();
+      hoverHost.style.top = `${rect.top + 10}px`;
+      hoverHost.style.left = `${rect.right - size.width - 10}px`;
       hoverFrame = requestAnimationFrame(track);
     };
     hoverFrame = requestAnimationFrame(track);
   }
 
   // Leaves `hoverImage` alone: a click arrives after the pointer has already
-  // moved onto the button, and losing the target between press and release
+  // moved onto a button, and losing the target between press and release
   // would turn the click into nothing at all.
   function hideHoverButton() {
     cancelAnimationFrame(hoverFrame);
     hoverFrame = 0;
-    if (hoverButton) hoverButton.style.display = 'none';
+    if (hoverHost) hoverHost.style.display = 'none';
   }
 
   /** Last resort when there is no image to anchor to. */

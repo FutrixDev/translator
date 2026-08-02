@@ -283,7 +283,7 @@ export async function getRechargeUrl() {
  * existing job instead of reserving credits twice, which is what makes a retry
  * after a dropped connection safe.
  */
-export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang }) {
+export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang, mode }) {
   // Ask for the token before downloading anything. Acquisition now happens
   // before the POST rather than after a rejection, so without this a signed-out
   // click — the common first one — pulls a multi-megabyte page for nothing.
@@ -308,7 +308,11 @@ export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, s
       pageUrl: pageUrl || null,
       imageBase64: bytes,
       sourceLang: sourceLang || 'auto',
-      targetLang: targetLang || 'zh-CN'
+      targetLang: targetLang || 'zh-CN',
+      // What the redraw does to the page: translate (default), colorize, or
+      // translate_colorize. Validated server-side; absent means translate so
+      // this client stays compatible with a server that predates modes.
+      mode: mode || 'translate'
     }
   });
 }

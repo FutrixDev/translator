@@ -278,16 +278,17 @@ async function connectExtension(context, base, { withToken = true } = {}) {
 }
 
 /** Stand in for the context-menu click, which is a native menu Playwright cannot open. */
-async function triggerComicTranslation(worker, pageUrl, srcUrl) {
-  await worker.evaluate(async ({ pageUrl, srcUrl }) => {
+async function triggerComicTranslation(worker, pageUrl, srcUrl, mode) {
+  await worker.evaluate(async ({ pageUrl, srcUrl, mode }) => {
     const [tab] = await chrome.tabs.query({ url: pageUrl });
     await chrome.tabs.sendMessage(tab.id, {
       type: 'COMIC_TRANSLATE_IMAGE',
       srcUrl,
       pageUrl,
       targetLang: 'zh-CN',
+      ...(mode ? { mode } : {}),
     });
-  }, { pageUrl, srcUrl });
+  }, { pageUrl, srcUrl, mode: mode || null });
 }
 
 /** The popup's entry point: no srcUrl, the page picks its own image. */
@@ -328,6 +329,8 @@ test.describe('Comic page translation', () => {
       expect(service.state.createBodies).toHaveLength(1);
       expect(service.state.createBodies[0].operationId).toBeTruthy();
       expect(service.state.createBodies[0].targetLang).toBe('zh-CN');
+      // No mode was sent, and the default must stay the original product.
+      expect(service.state.createBodies[0].mode).toBe('translate');
     } finally {
       await service.close();
     }
@@ -523,16 +526,96 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/decoy-page`);
       await page.locator('#comic').evaluate(img => img.decode());
 
-      // Over the decoy, which is what the pointer can actually reach.
+      // Over the decoy, which is what the pointer can actually reach. Two
+      // products, two buttons; the translate one is exercised here.
       await page.locator('#decoy').hover();
-      const button = page.locator('.ai-translator-comic-hover-btn');
+      const button = page.locator('.ai-translator-comic-hover-btn.is-translate');
       await expect(button).toBeVisible();
+      await expect(page.locator('.ai-translator-comic-hover-btn.is-colorize')).toBeVisible();
 
       await button.click();
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].mode).toBe('translate');
+    } finally {
+      await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
+      await service.close();
+    }
+  });
+
+  /**
+   * Switching a finished page to the other product must not orphan what was
+   * already bought. Translate, then colorize, then ask for the translation
+   * again: the third click has to re-poll the first job for a fresh URL —
+   * three swaps, exactly two reservations.
+   */
+  test('switching modes re-polls the finished job instead of paying again', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(service.state.createBodies).toHaveLength(1);
+
+      // The other product on the same page: a second paid job, by design.
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
+      await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(2);
+      expect(service.state.createBodies[1].mode).toBe('colorize');
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+
+      // Back to the translation: already bought, so this must be a poll of the
+      // first job. The switch tears the colorize badge down, and only a
+      // successful recovery puts a badge back — asserting on that cycle rather
+      // than on the src, which matches the same result pattern either way.
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'translate');
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      // The whole point: three results shown, exactly two reservations made.
+      expect(service.state.createBodies).toHaveLength(2);
+
+      // Both purchases survive for later visits — one record per (mode, image),
+      // not one per image with the second overwriting the first.
+      const recordKeys = await worker.evaluate(
+        () => chrome.storage.local.get('comicJobs').then(r => Object.keys(r.comicJobs || {})),
+      );
+      expect(recordKeys.filter(k => k.startsWith('translate|'))).toHaveLength(1);
+      expect(recordKeys.filter(k => k.startsWith('colorize|'))).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('colorizes from the hover button and sends the colorize mode', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await page.goto(`${service.base}/decoy-page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await page.locator('#decoy').hover();
+      const button = page.locator('.ai-translator-comic-hover-btn.is-colorize');
+      await expect(button).toBeVisible();
+
+      await button.click();
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      // Same pipeline, different product — the mode is the entire difference
+      // the server can see.
+      expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].mode).toBe('colorize');
     } finally {
       await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
       await service.close();
