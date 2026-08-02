@@ -554,9 +554,24 @@
     return recordQueue;
   }
 
+  /**
+   * One record per (mode, image). The two products on a page are two separate
+   * purchases, and keying by image alone made the second one overwrite the
+   * record of the first — after a reload, switching back to the overwritten
+   * mode had no job id to recover and bought the page again. Records written
+   * before modes existed sit under the bare src and still load; they were all
+   * translations, which is what an absent mode resolves to everywhere.
+   */
+  function recordKey(mode, imageSrc) {
+    return `${normalizeMode(mode)}|${imageSrc}`;
+  }
+
   function saveRecord(record) {
     return updateRecords((records) => {
-      records[record.imageSrc] = record;
+      records[recordKey(record.mode, record.imageSrc)] = record;
+      // The same job under the pre-mode key is the same purchase, not a second
+      // one to resume twice.
+      if (record.imageSrc in records) delete records[record.imageSrc];
       const keys = Object.keys(records);
       if (keys.length > MAX_RECORDS) {
         keys
@@ -567,11 +582,15 @@
     });
   }
 
-  function dropRecord(imageSrc) {
+  function dropRecord(imageSrc, mode) {
     if (!imageSrc) return Promise.resolve();
     return updateRecords((records) => {
-      if (!(imageSrc in records)) return false;
-      delete records[imageSrc];
+      const key = recordKey(mode, imageSrc);
+      // The bare src is the pre-mode spelling of the same translate record.
+      const legacy = normalizeMode(mode) === 'translate' && imageSrc in records;
+      if (!(key in records) && !legacy) return false;
+      delete records[key];
+      if (legacy) delete records[imageSrc];
     });
   }
 
@@ -628,16 +647,28 @@
     const pending = Object.keys(records).map(key => records[key]);
     if (!pending.length) return;
 
+    // Several records can name one image now — one per mode. Only one state can
+    // be on screen, and the newest is the one the reader last saw; the rest of
+    // the group rides along to seed the per-mode stash, so switching modes
+    // after a reload stays a free re-poll.
+    const byImage = new Map();
+    pending.forEach((record) => {
+      const group = byImage.get(record.imageSrc) || [];
+      group.push(record);
+      byImage.set(record.imageSrc, group);
+    });
+
     const claimed = new Set();
     const sweep = () => {
-      pending.forEach((record) => {
-        if (claimed.has(record.imageSrc)) return;
-        const img = findImageBySrc(record.imageSrc);
+      byImage.forEach((group, imageSrc) => {
+        if (claimed.has(imageSrc)) return;
+        const img = findImageBySrc(imageSrc);
         if (!img) return;
-        claimed.add(record.imageSrc);
-        resumeRecord(img, record);
+        claimed.add(imageSrc);
+        const newest = group.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+        resumeRecord(img, newest, group);
       });
-      return claimed.size === pending.length;
+      return claimed.size === byImage.size;
     };
 
     if (sweep()) return;
@@ -653,7 +684,7 @@
     setTimeout(() => observer.disconnect(), RESUME_WATCH_MS);
   }
 
-  async function resumeRecord(img, record) {
+  async function resumeRecord(img, record, group = [record]) {
     const existing = tracked.get(img);
     // Something on this document already owns the image — a job the user just
     // started, or a swap that already happened.
@@ -666,8 +697,16 @@
       jobId: record.jobId,
       jobStartedAt: record.createdAt,
       // Records written before modes existed are all translations.
-      mode: normalizeMode(record.mode)
+      mode: normalizeMode(record.mode),
+      // Every finished purchase on this image, whichever mode: asking for one
+      // of them later recovers its job instead of reserving again.
+      completedByMode: {}
     };
+    group.forEach((r) => {
+      if (r.status === 'succeeded' && r.jobId) {
+        entry.completedByMode[normalizeMode(r.mode)] = r.jobId;
+      }
+    });
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
@@ -694,7 +733,7 @@
         // load — take the card away rather than opening with an error. A network
         // blip keeps the record; a real answer means it will never resolve.
         overlay.destroy();
-        if (polled.ok || polled.error.code !== 'network_error') dropRecord(record.imageSrc);
+        if (polled.ok || polled.error.code !== 'network_error') dropRecord(record.imageSrc, record.mode);
         return;
       }
       await pollJob({ entry, overlay, img, jobId: record.jobId, startedAt: record.createdAt });
@@ -745,41 +784,11 @@
       applySource(img, existing.resultUrl, existing);
       return;
     }
-    if (existing && existing.badge) {
-      // Same page, different product — a translated page being colorized, or
-      // the reverse. That is a NEW job, but the finished one it replaces stays
-      // bought: its job id lives on in `completedByMode`, so coming back to
-      // this mode later is a free re-poll, and a failure in the new mode costs
-      // nothing that was already paid for.
-      existing.destroyBadge?.();
-      // The new job must start from the ORIGINAL pixels: the canvas fallback
-      // reads whatever the <img> currently shows, and feeding it the previous
-      // result would compound two redraws on one page.
-      applySource(img, existing.originalSrc, existing);
-      existing.showingTranslation = false;
-      existing.jobId = null;
-      // Cleared, not carried over: it names the OTHER mode's finished job, and
-      // recoverResult would hand its result back as if it were this mode's.
-      // The per-mode stash below is what keeps it reachable.
-      existing.completedJobId = null;
-      existing.resultUrl = null;
-      // The src assignment above is asynchronous. A fast needs-page-bytes
-      // turnaround would otherwise capture the canvas while the <img> still
-      // shows the previous result — or nothing at all — so the restore has to
-      // finish decoding before the job is allowed to proceed.
-      try {
-        await img.decode();
-      } catch {
-        // A source that will not decode is capturePageBytes' problem to report.
-      }
-    }
-
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
-    entry.completedByMode = entry.completedByMode || {};
-    entry.mode = mode;
-    // A mode that already finished on this image resumes from its stashed job
-    // id — recoverResult re-polls it for a fresh URL instead of paying again.
-    entry.completedJobId = entry.completedByMode[mode] || entry.completedJobId || null;
+    // Claimed BEFORE anything below can await: the decode wait yields to the
+    // event loop, and a second trigger landing in that window has to bounce off
+    // `running` rather than pass the guard and start a sibling job under its
+    // own idempotency key — two reservations for one user intent.
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
@@ -791,6 +800,41 @@
     entry.overlay = overlay;
 
     try {
+      if (entry.badge) {
+        // Same page, different product — a translated page being colorized, or
+        // the reverse. That is a NEW job, but the finished one it replaces
+        // stays bought: its job id lives on in `completedByMode`, so coming
+        // back to this mode later is a free re-poll, and a failure in the new
+        // mode costs nothing that was already paid for.
+        entry.destroyBadge?.();
+        // The new job must start from the ORIGINAL pixels: the canvas fallback
+        // reads whatever the <img> currently shows, and feeding it the
+        // previous result would compound two redraws on one page.
+        applySource(img, entry.originalSrc, entry);
+        entry.showingTranslation = false;
+        entry.jobId = null;
+        // Cleared, not carried over: it names the OTHER mode's finished job,
+        // and recoverResult would hand its result back as if it were this
+        // mode's. The per-mode stash below is what keeps it reachable.
+        entry.completedJobId = null;
+        entry.resultUrl = null;
+        // The src assignment above is asynchronous. A fast needs-page-bytes
+        // turnaround would otherwise capture the canvas while the <img> still
+        // shows the previous result — or nothing at all — so the restore has
+        // to finish decoding before the job is allowed to proceed.
+        try {
+          await img.decode();
+        } catch {
+          // A source that will not decode is capturePageBytes' problem to report.
+        }
+      }
+
+      entry.completedByMode = entry.completedByMode || {};
+      entry.mode = mode;
+      // A mode that already finished on this image resumes from its stashed job
+      // id — recoverResult re-polls it for a fresh URL instead of paying again.
+      entry.completedJobId = entry.completedByMode[mode] || entry.completedJobId || null;
+
       // A job that reached `succeeded` but never made it onto the page is done
       // and paid for — only the download failed. Go back for the result rather
       // than ordering a second redraw of the same page.
@@ -915,7 +959,7 @@
       onClick: () => {
         entry.cancelled = true;
         sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         overlay.destroy();
       }
     }]);
@@ -931,7 +975,7 @@
         // A blip between polls is not a failed job — the reservation is still
         // held server-side, so keep waiting rather than abandoning it.
         if (polled.error.code === 'network_error') continue;
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         showJobError(overlay, polled.error);
         return;
       }
@@ -944,7 +988,7 @@
       if (job.status === 'failed' || job.status === 'abandoned') {
         // Terminal and refunded. Leaving the record would re-open this card on
         // every future visit to the page.
-        dropRecord(entry.originalSrc);
+        dropRecord(entry.originalSrc, entry.mode);
         showJobError(overlay, job.error || { code: 'failed', message: '' });
         return;
       }
@@ -988,7 +1032,7 @@
     // Only forget the job once the server agrees it is dead. An unconfirmed
     // abandon may well still be running, and leaving the record is what lets a
     // later page load pick it up and show the page the user paid for.
-    if (confirmed) dropRecord(entry.originalSrc);
+    if (confirmed) dropRecord(entry.originalSrc, entry.mode);
     overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
     offerDismiss(overlay);
   }

@@ -583,6 +583,14 @@ test.describe('Comic page translation', () => {
       );
       // The whole point: three results shown, exactly two reservations made.
       expect(service.state.createBodies).toHaveLength(2);
+
+      // Both purchases survive for later visits — one record per (mode, image),
+      // not one per image with the second overwriting the first.
+      const recordKeys = await worker.evaluate(
+        () => chrome.storage.local.get('comicJobs').then(r => Object.keys(r.comicJobs || {})),
+      );
+      expect(recordKeys.filter(k => k.startsWith('translate|'))).toHaveLength(1);
+      expect(recordKeys.filter(k => k.startsWith('colorize|'))).toHaveLength(1);
     } finally {
       await service.close();
     }
