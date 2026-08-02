@@ -600,7 +600,11 @@
    * on it would put a storage round-trip in front of the user's progress.
    */
   function rememberJob(entry, status) {
-    const jobId = entry.jobId || entry.completedJobId;
+    // completedJobId first: it is the id the current mode actually finished
+    // under. entry.jobId can still name a previous run's job — a failed mode B
+    // whose id survived into a recovery of mode A — and persisting that id as
+    // A's success would make A unresumable after a reload.
+    const jobId = entry.completedJobId || entry.jobId;
     if (!jobId || !entry.originalSrc) return;
     if (/^(blob|data):/i.test(entry.originalSrc)) return;
     saveRecord({
@@ -609,6 +613,9 @@
       imageSrc: entry.originalSrc,
       pageUrl: location.href,
       createdAt: entry.jobStartedAt || Date.now(),
+      // Selection on the next page load goes by what the reader last SAW, not
+      // by when each job was bought — see resumeComicJobs.
+      displayedAt: Date.now(),
       status
     });
   }
@@ -665,7 +672,12 @@
         const img = findImageBySrc(imageSrc);
         if (!img) return;
         claimed.add(imageSrc);
-        const newest = group.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+        // "Newest" is what the reader last had on screen, not what was bought
+        // last: switching back to an older purchase refreshes its displayedAt,
+        // so a reload restores the view they left, not the later receipt.
+        // Records from before the field fall back to their creation time.
+        const shownAt = (r) => r.displayedAt || r.createdAt;
+        const newest = group.reduce((a, b) => (shownAt(b) > shownAt(a) ? b : a));
         resumeRecord(img, newest, group);
       });
       return claimed.size === byImage.size;
@@ -733,7 +745,11 @@
         // load — take the card away rather than opening with an error. A network
         // blip keeps the record; a real answer means it will never resolve.
         overlay.destroy();
-        if (polled.ok || polled.error.code !== 'network_error') dropRecord(record.imageSrc, record.mode);
+        if (polled.ok || polled.error.code !== 'network_error') {
+          dropRecord(record.imageSrc, record.mode);
+          // The id seeded into the stash from this record is equally dead.
+          delete entry.completedByMode[normalizeMode(record.mode)];
+        }
         return;
       }
       await pollJob({ entry, overlay, img, jobId: record.jobId, startedAt: record.createdAt });
@@ -831,6 +847,10 @@
 
       entry.completedByMode = entry.completedByMode || {};
       entry.mode = mode;
+      // A fresh user action: whatever job id a previous run left behind names
+      // OLD work — a failed sibling mode, an abandoned attempt — and letting it
+      // survive would let rememberJob persist it as this mode's record.
+      entry.jobId = null;
       // A mode that already finished on this image resumes from its stashed job
       // id — recoverResult re-polls it for a fresh URL instead of paying again.
       entry.completedJobId = entry.completedByMode[mode] || entry.completedJobId || null;
@@ -875,9 +895,15 @@
     // Keep the id only while the result is still plausibly there to come back
     // for. A blip between polls is transient; anything else means this job will
     // never hand back a URL again, so the next click is free to order a new one
-    // instead of retrying a dead id forever.
+    // instead of retrying a dead id forever. The stash and the stored record
+    // have to go with it — either one would hand the same dead id straight
+    // back on the next click or the next page load.
     const transient = !polled.ok && polled.error.code === 'network_error';
-    if (!transient) entry.completedJobId = null;
+    if (!transient) {
+      entry.completedJobId = null;
+      if (entry.completedByMode) delete entry.completedByMode[entry.mode];
+      dropRecord(entry.originalSrc, entry.mode);
+    }
 
     if (!polled.ok) {
       showJobError(overlay, polled.error);
