@@ -569,9 +569,13 @@
   function saveRecord(record) {
     return updateRecords((records) => {
       records[recordKey(record.mode, record.imageSrc)] = record;
-      // The same job under the pre-mode key is the same purchase, not a second
-      // one to resume twice.
-      if (record.imageSrc in records) delete records[record.imageSrc];
+      // A pre-mode record under the bare src IS a translation record — so it is
+      // superseded only when the record being saved is itself the translation.
+      // Deleting it on a colorize save would erase a purchase this write knows
+      // nothing about.
+      if (normalizeMode(record.mode) === 'translate' && record.imageSrc in records) {
+        delete records[record.imageSrc];
+      }
       const keys = Object.keys(records);
       if (keys.length > MAX_RECORDS) {
         keys
@@ -1301,10 +1305,13 @@
       hideHoverButton();
       return;
     }
-    // A running job owns the image, and a finished one already has its own
-    // badge — offering to buy the same redraw twice is the wrong invitation.
+    // Only a RUNNING job hides the buttons. A finished swap keeps them: the
+    // other product is still worth offering — on hosts that cancel the context
+    // menu this hover is its only entry point — and clicking the mode that
+    // already finished is caught by translateImage's same-mode guard, which
+    // flips the view instead of buying the page again.
     const entry = tracked.get(page);
-    if (entry && (entry.running || entry.badge)) {
+    if (entry && entry.running) {
       hideHoverButton();
       return;
     }
