@@ -746,20 +746,40 @@
       return;
     }
     if (existing && existing.badge) {
-      // Same page, different product — a translated page being colorized, or the
-      // reverse. That is a new job, and it must start from the ORIGINAL pixels:
-      // the canvas fallback reads whatever the <img> currently shows, and
-      // feeding it the previous result would compound two redraws.
+      // Same page, different product — a translated page being colorized, or
+      // the reverse. That is a NEW job, but the finished one it replaces stays
+      // bought: its job id lives on in `completedByMode`, so coming back to
+      // this mode later is a free re-poll, and a failure in the new mode costs
+      // nothing that was already paid for.
       existing.destroyBadge?.();
+      // The new job must start from the ORIGINAL pixels: the canvas fallback
+      // reads whatever the <img> currently shows, and feeding it the previous
+      // result would compound two redraws on one page.
       applySource(img, existing.originalSrc, existing);
       existing.showingTranslation = false;
       existing.jobId = null;
+      // Cleared, not carried over: it names the OTHER mode's finished job, and
+      // recoverResult would hand its result back as if it were this mode's.
+      // The per-mode stash below is what keeps it reachable.
       existing.completedJobId = null;
       existing.resultUrl = null;
+      // The src assignment above is asynchronous. A fast needs-page-bytes
+      // turnaround would otherwise capture the canvas while the <img> still
+      // shows the previous result — or nothing at all — so the restore has to
+      // finish decoding before the job is allowed to proceed.
+      try {
+        await img.decode();
+      } catch {
+        // A source that will not decode is capturePageBytes' problem to report.
+      }
     }
 
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
+    entry.completedByMode = entry.completedByMode || {};
     entry.mode = mode;
+    // A mode that already finished on this image resumes from its stashed job
+    // id — recoverResult re-polls it for a fresh URL instead of paying again.
+    entry.completedJobId = entry.completedByMode[mode] || entry.completedJobId || null;
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
@@ -995,6 +1015,11 @@
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
     entry.completedJobId = job.jobId || entry.jobId || null;
+    // Stashed per mode, and never cleared: switching the page to the other
+    // product must not orphan a result that is already bought — coming back to
+    // this mode re-polls this id instead of reserving again.
+    entry.completedByMode = entry.completedByMode || {};
+    if (entry.completedJobId) entry.completedByMode[entry.mode] = entry.completedJobId;
     overlay.setStatus(statusText(entry.mode), { progress: 1 });
 
     // Decode before swapping: replacing src directly would blank the image for
