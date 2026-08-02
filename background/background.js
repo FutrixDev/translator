@@ -159,6 +159,7 @@ const MENU_IDS = {
   translateSelection: 'translate-selection',
   translatePage: 'translate-page',
   translateComicImage: 'translate-comic-image',
+  colorizeComicImage: 'colorize-comic-image',
   removeInlineTranslation: 'remove-inline-translation',
 };
 
@@ -189,6 +190,9 @@ async function refreshContextMenuTitles() {
   });
   chrome.contextMenus.update(MENU_IDS.translateComicImage, {
     title: getContextMenuTitle('contextTranslateComic', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.colorizeComicImage, {
+    title: getContextMenuTitle('contextColorizeComic', uiLang),
   });
   chrome.contextMenus.update(MENU_IDS.removeInlineTranslation, {
     title: getContextMenuTitle('contextRemoveInlineTranslation', uiLang),
@@ -221,6 +225,15 @@ function createContextMenus() {
       visible: false
     });
 
+    // Colorization rides the same account-backed pipeline, gated by the same
+    // setting — a second product on the same image, not a second feature flag.
+    chrome.contextMenus.create({
+      id: MENU_IDS.colorizeComicImage,
+      title: 'Colorize This Comic',
+      contexts: ['image'],
+      visible: false
+    });
+
     chrome.contextMenus.create({
       id: MENU_IDS.removeInlineTranslation,
       title: 'Remove Translation',
@@ -243,6 +256,8 @@ async function refreshComicMenuVisibility(enabled) {
     : (await chrome.storage.sync.get(defaultSettings)).enableComicTranslation;
   chrome.contextMenus.update(MENU_IDS.translateComicImage, { visible: !!visible })
     // The menu is gone during a rebuild; the rebuild itself will re-apply this.
+    .catch(() => {});
+  chrome.contextMenus.update(MENU_IDS.colorizeComicImage, { visible: !!visible })
     .catch(() => {});
 }
 
@@ -567,7 +582,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } else if (info.menuItemId === MENU_IDS.translatePage) {
     chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' });
-  } else if (info.menuItemId === MENU_IDS.translateComicImage) {
+  } else if (info.menuItemId === MENU_IDS.translateComicImage ||
+             info.menuItemId === MENU_IDS.colorizeComicImage) {
     const settings = await chrome.storage.sync.get(defaultSettings);
     // Hiding the menu is what normally prevents this, but a click can race a
     // switch-off, and this one costs money — so the setting is checked here too.
@@ -578,6 +594,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // after ~30s idle, and a page redraw routinely runs longer than that.
     chrome.tabs.sendMessage(tab.id, {
       type: 'COMIC_TRANSLATE_IMAGE',
+      mode: info.menuItemId === MENU_IDS.colorizeComicImage ? 'colorize' : 'translate',
       srcUrl: info.srcUrl,
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)

@@ -33,7 +33,8 @@
             ctx.startComicTranslation({
               srcUrl: message.srcUrl,
               pageUrl: message.pageUrl,
-              targetLang: message.targetLang
+              targetLang: message.targetLang,
+              mode: message.mode
             });
           }
           break;
@@ -43,7 +44,8 @@
           if (ctx.startComicPageTranslation) {
             ctx.startComicPageTranslation({
               pageUrl: message.pageUrl,
-              targetLang: message.targetLang
+              targetLang: message.targetLang,
+              mode: message.mode
             });
           }
           break;

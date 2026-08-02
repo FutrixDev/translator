@@ -59,6 +59,22 @@
   const tracked = new WeakMap();
   let lastContextImage = null;
 
+  /**
+   * What the server is asked to do to the page. Everything downstream — the
+   * overlay wording, the badge labels, the cross-page record — keys off this,
+   * so an unknown value is coerced here rather than checked in four places.
+   */
+  const COMIC_MODES = ['translate', 'colorize', 'translate_colorize'];
+
+  function normalizeMode(mode) {
+    return COMIC_MODES.includes(mode) ? mode : 'translate';
+  }
+
+  /** The in-progress label: a colorize that says "translating" reads as a bug. */
+  function statusText(mode) {
+    return t(mode === 'colorize' ? 'comicColorizing' : 'comicTranslating');
+  }
+
   // The right-click target is the only unambiguous way to know WHICH image the
   // user meant: a page can show the same src a dozen times (thumbnail grids,
   // lazy-load placeholders) and info.srcUrl cannot tell them apart.
@@ -321,8 +337,9 @@
     badge.className = 'ai-translator-comic-badge';
     document.body.appendChild(badge);
 
+    const showResultLabel = entry.mode === 'colorize' ? 'comicShowColorized' : 'comicShowTranslation';
     const render = () => {
-      badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t('comicShowTranslation');
+      badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t(showResultLabel);
     };
     render();
 
@@ -349,6 +366,15 @@
     frame = requestAnimationFrame(track);
 
     entry.badge = badge;
+    // For the run-again-in-a-different-mode path, which replaces the swap and
+    // its badge; the rAF loop above only ends on its own when the image leaves
+    // the DOM.
+    entry.destroyBadge = () => {
+      cancelAnimationFrame(frame);
+      badge.remove();
+      entry.badge = null;
+      entry.destroyBadge = null;
+    };
   }
 
   /**
@@ -560,6 +586,7 @@
     if (/^(blob|data):/i.test(entry.originalSrc)) return;
     saveRecord({
       jobId,
+      mode: entry.mode,
       imageSrc: entry.originalSrc,
       pageUrl: location.href,
       createdAt: entry.jobStartedAt || Date.now(),
@@ -637,7 +664,9 @@
       originalSrc: record.imageSrc,
       showingTranslation: false,
       jobId: record.jobId,
-      jobStartedAt: record.createdAt
+      jobStartedAt: record.createdAt,
+      // Records written before modes existed are all translations.
+      mode: normalizeMode(record.mode)
     };
     entry.running = true;
     entry.cancelled = false;
@@ -645,7 +674,7 @@
 
     const overlay = createOverlay(img);
     entry.overlay = overlay;
-    overlay.setStatus(t('comicTranslating'), { progress: 0.5 });
+    overlay.setStatus(statusText(entry.mode), { progress: 0.5 });
     // Only for a job still in flight. A finished one is a single poll to mint a
     // URL, and clocking it from its original creation would open the card at
     // "47:12" for work that ended an hour ago.
@@ -675,20 +704,20 @@
   }
 
   /** Context-menu entry: the browser tells us which image was clicked. */
-  async function startComicTranslation({ srcUrl, pageUrl, targetLang }) {
+  async function startComicTranslation({ srcUrl, pageUrl, targetLang, mode }) {
     const img = findImage(srcUrl);
     if (!img) {
       showDetachedError(t('comicImageNotFound'));
       return;
     }
-    await translateImage(img, { pageUrl, targetLang });
+    await translateImage(img, { pageUrl, targetLang, mode });
   }
 
   /**
    * Float-ball and popup entry: nothing was clicked, so the page is found by
    * looking at what is on screen.
    */
-  async function startComicPageTranslation({ pageUrl, targetLang } = {}) {
+  async function startComicPageTranslation({ pageUrl, targetLang, mode } = {}) {
     const images = pickComicImages();
     if (!images.length) {
       showDetachedError(t('comicNoPageFound'));
@@ -697,7 +726,7 @@
     const lang = targetLang || comicTargetLang();
     // In parallel: a spread is two independent jobs and running them one after
     // the other would double the wait for no reason.
-    await Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang })));
+    await Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode })));
   }
 
   function comicTargetLang() {
@@ -706,17 +735,31 @@
     return ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
   }
 
-  async function translateImage(img, { pageUrl, targetLang }) {
+  async function translateImage(img, { pageUrl, targetLang, mode }) {
+    mode = normalizeMode(mode);
     const existing = tracked.get(img);
     if (existing && existing.running) return;
-    if (existing && existing.badge) {
-      // Already translated. Re-running would charge for the same page again.
+    if (existing && existing.badge && existing.mode === mode) {
+      // Already done in this mode. Re-running would charge for the same page again.
       existing.showingTranslation = true;
       applySource(img, existing.resultUrl, existing);
       return;
     }
+    if (existing && existing.badge) {
+      // Same page, different product — a translated page being colorized, or the
+      // reverse. That is a new job, and it must start from the ORIGINAL pixels:
+      // the canvas fallback reads whatever the <img> currently shows, and
+      // feeding it the previous result would compound two redraws.
+      existing.destroyBadge?.();
+      applySource(img, existing.originalSrc, existing);
+      existing.showingTranslation = false;
+      existing.jobId = null;
+      existing.completedJobId = null;
+      existing.resultUrl = null;
+    }
 
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
+    entry.mode = mode;
     entry.running = true;
     entry.cancelled = false;
     tracked.set(img, entry);
@@ -757,7 +800,7 @@
    * createJob would charge for the same page twice.
    */
   async function recoverResult({ entry, overlay, img }) {
-    overlay.setStatus(t('comicTranslating'), { progress: 1 });
+    overlay.setStatus(statusText(entry.mode), { progress: 1 });
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
@@ -786,7 +829,7 @@
     // narrating them made a 90-second wait look like four separate things going
     // wrong. The clock carries the "still working" signal instead.
     const startedAt = Date.now();
-    overlay.setStatus(t('comicTranslating'), { progress: 0 });
+    overlay.setStatus(statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
     let created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
@@ -797,7 +840,7 @@
       overlay.stopTimer();
       const signedIn = await promptSignIn(overlay);
       if (!signedIn) return;
-      overlay.setStatus(t('comicTranslating'), { progress: 0 });
+      overlay.setStatus(statusText(entry.mode), { progress: 0 });
       overlay.startTimer(Date.now());
       created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
     }
@@ -806,7 +849,7 @@
       // The worker could not read the file — a blob:/data: src, or an origin
       // that refuses a request without a Referer. The page has already decoded
       // it either way, so send the pixels we can see.
-      overlay.setStatus(t('comicTranslating'), { progress: 0.05 });
+      overlay.setStatus(statusText(entry.mode), { progress: 0.05 });
       const imageBase64 = capturePageBytes(img);
       if (!imageBase64) {
         overlay.setError(t('comicImageUnavailable'));
@@ -889,7 +932,7 @@
       // Server progress is coarse (queued/running/done). Creeping it with
       // elapsed time keeps the bar honest about the stage while still moving.
       const estimate = Math.min(0.9, 0.1 + elapsed / JOB_TIMEOUT_MS * 1.6);
-      overlay.setStatus(t('comicTranslating'), {
+      overlay.setStatus(statusText(entry.mode), {
         progress: Math.max(job.progress || 0, estimate)
       });
     }
@@ -941,7 +984,8 @@
         imageBase64,
         pageUrl: pageUrl || location.href,
         sourceLang: 'auto',
-        targetLang
+        targetLang,
+        mode: entry.mode
       }
     });
   }
@@ -951,7 +995,7 @@
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
     entry.completedJobId = job.jobId || entry.jobId || null;
-    overlay.setStatus(t('comicTranslating'), { progress: 1 });
+    overlay.setStatus(statusText(entry.mode), { progress: 1 });
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
@@ -1110,10 +1154,11 @@
   // Hover entry point
   // -------------------------------------------------------------------------
 
-  // A button that follows the pointer onto comic pages. It exists because the
-  // context menu is not reliably reachable: plenty of comic hosts cancel it
-  // outright, and a feature nobody can find is a feature nobody uses.
-  let hoverButton = null;
+  // Buttons that follow the pointer onto comic pages — one per product,
+  // translate and colorize. They exist because the context menu is not reliably
+  // reachable: plenty of comic hosts cancel it outright, and a feature nobody
+  // can find is a feature nobody uses.
+  let hoverHost = null;
   let hoverImage = null;
   let hoverFrame = 0;
   let lastHoverCheck = 0;
@@ -1148,8 +1193,8 @@
       hideHoverButton();
       return;
     }
-    // Over our own button: the pointer is on its way to clicking it.
-    if (hoverButton && hoverButton.style.display !== 'none' && containsPoint(hoverButton, x, y)) return;
+    // Over our own buttons: the pointer is on its way to clicking one.
+    if (hoverHost && hoverHost.style.display !== 'none' && containsPoint(hoverHost, x, y)) return;
 
     const under = imageAtPoint(x, y);
     if (!under) {
@@ -1176,29 +1221,37 @@
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
+  function makeHoverButton(labelKey, extraClass, mode) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-translator-comic-hover-btn ${extraClass}`;
+    button.textContent = t(labelKey);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = hoverImage;
+      hideHoverButton();
+      if (target) translateImage(target, { pageUrl: location.href, targetLang: comicTargetLang(), mode });
+    });
+    return button;
+  }
+
   function showHoverButton(img) {
-    if (!hoverButton) {
-      hoverButton = document.createElement('button');
-      hoverButton.type = 'button';
-      hoverButton.className = 'ai-translator-comic-hover-btn';
-      hoverButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const target = hoverImage;
-        hideHoverButton();
-        if (target) translateImage(target, { pageUrl: location.href, targetLang: comicTargetLang() });
-      });
+    if (!hoverHost) {
+      hoverHost = document.createElement('div');
+      hoverHost.className = 'ai-translator-comic-hover';
+      hoverHost.appendChild(makeHoverButton('comicTranslateAction', 'is-translate', 'translate'));
+      hoverHost.appendChild(makeHoverButton('comicColorizeAction', 'is-colorize', 'colorize'));
       // Sites that block copying tend to cancel these too; ours is our own.
       ['mousedown', 'contextmenu'].forEach(type => {
-        hoverButton.addEventListener(type, event => event.stopPropagation());
+        hoverHost.addEventListener(type, event => event.stopPropagation());
       });
-      document.body.appendChild(hoverButton);
+      document.body.appendChild(hoverHost);
     }
 
-    hoverButton.textContent = t('comicTranslateAction');
     // Explicit, not '': the stylesheet hides it by default so it never flashes
     // before the first position lands.
-    hoverButton.style.display = 'block';
+    hoverHost.style.display = 'flex';
     hoverImage = img;
     if (hoverFrame) return;
 
@@ -1208,21 +1261,21 @@
         return;
       }
       const rect = hoverImage.getBoundingClientRect();
-      const size = hoverButton.getBoundingClientRect();
-      hoverButton.style.top = `${rect.top + 10}px`;
-      hoverButton.style.left = `${rect.right - size.width - 10}px`;
+      const size = hoverHost.getBoundingClientRect();
+      hoverHost.style.top = `${rect.top + 10}px`;
+      hoverHost.style.left = `${rect.right - size.width - 10}px`;
       hoverFrame = requestAnimationFrame(track);
     };
     hoverFrame = requestAnimationFrame(track);
   }
 
   // Leaves `hoverImage` alone: a click arrives after the pointer has already
-  // moved onto the button, and losing the target between press and release
+  // moved onto a button, and losing the target between press and release
   // would turn the click into nothing at all.
   function hideHoverButton() {
     cancelAnimationFrame(hoverFrame);
     hoverFrame = 0;
-    if (hoverButton) hoverButton.style.display = 'none';
+    if (hoverHost) hoverHost.style.display = 'none';
   }
 
   /** Last resort when there is no image to anchor to. */

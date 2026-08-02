@@ -328,6 +328,8 @@ test.describe('Comic page translation', () => {
       expect(service.state.createBodies).toHaveLength(1);
       expect(service.state.createBodies[0].operationId).toBeTruthy();
       expect(service.state.createBodies[0].targetLang).toBe('zh-CN');
+      // No mode was sent, and the default must stay the original product.
+      expect(service.state.createBodies[0].mode).toBe('translate');
     } finally {
       await service.close();
     }
@@ -523,16 +525,45 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/decoy-page`);
       await page.locator('#comic').evaluate(img => img.decode());
 
-      // Over the decoy, which is what the pointer can actually reach.
+      // Over the decoy, which is what the pointer can actually reach. Two
+      // products, two buttons; the translate one is exercised here.
       await page.locator('#decoy').hover();
-      const button = page.locator('.ai-translator-comic-hover-btn');
+      const button = page.locator('.ai-translator-comic-hover-btn.is-translate');
       await expect(button).toBeVisible();
+      await expect(page.locator('.ai-translator-comic-hover-btn.is-colorize')).toBeVisible();
 
       await button.click();
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].mode).toBe('translate');
+    } finally {
+      await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
+      await service.close();
+    }
+  });
+
+  test('colorizes from the hover button and sends the colorize mode', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await page.goto(`${service.base}/decoy-page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await page.locator('#decoy').hover();
+      const button = page.locator('.ai-translator-comic-hover-btn.is-colorize');
+      await expect(button).toBeVisible();
+
+      await button.click();
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      // Same pipeline, different product — the mode is the entire difference
+      // the server can see.
+      expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].mode).toBe('colorize');
     } finally {
       await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
       await service.close();

@@ -1735,11 +1735,16 @@ button.ai-translator-inline-block {
 
 /* Appears when the pointer is over a comic page. Above the decoy images
    anti-copy sites lay over the artwork, or it would not be clickable on exactly
-   the pages that need it most. */
-.ai-translator-comic-hover-btn {
+   the pages that need it most. The host carries the fixed positioning; the
+   buttons inside it are one per product (translate / colorize). */
+.ai-translator-comic-hover {
   position: fixed;
   z-index: 2147483646;
   display: none;
+  gap: 6px;
+}
+
+.ai-translator-comic-hover-btn {
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -1757,6 +1762,15 @@ button.ai-translator-inline-block {
 .ai-translator-comic-hover-btn:hover {
   opacity: 1;
   background: #6f63ff;
+}
+
+/* Same shape, its own hue — two adjacent paid actions must read as two. */
+.ai-translator-comic-hover-btn.is-colorize {
+  background: rgba(232, 111, 60, 0.92);
+}
+
+.ai-translator-comic-hover-btn.is-colorize:hover {
+  background: #e86f3c;
 }
 
 .ai-translator-comic-toast {

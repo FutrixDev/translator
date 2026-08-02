@@ -407,6 +407,15 @@
         </svg>
         <span>${t('comicTranslateThisPage')}</span>
       </button>
+      <button class="ai-translator-menu-item" data-action="colorize-comic">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22a10 10 0 110-20c5.5 0 10 4 10 9a5 5 0 01-5 5h-2a2 2 0 00-1.5 3.3c.3.4.5.8.5 1.2a1.5 1.5 0 01-2 1.5z"/>
+          <circle cx="7.5" cy="10.5" r="1"/>
+          <circle cx="12" cy="7.5" r="1"/>
+          <circle cx="16.5" cy="10.5" r="1"/>
+        </svg>
+        <span>${t('comicColorizeThisPage')}</span>
+      </button>
       ` : ''}
       ${hasTranslations ? `
       <button class="ai-translator-menu-item" data-action="toggle-translations">
@@ -432,7 +441,7 @@
     // Position menu above the ball
     const ballRect = state.floatBall.getBoundingClientRect();
     const menuWidth = 180;
-    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 40 : 0);
+    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 80 : 0);
 
     let left = ballRect.left + (ballRect.width / 2) - (menuWidth / 2);
     let top = ballRect.top - menuHeight - 10;
@@ -501,6 +510,9 @@
         break;
       case 'translate-comic':
         if (ctx.startComicPageTranslation) ctx.startComicPageTranslation({ pageUrl: location.href });
+        break;
+      case 'colorize-comic':
+        if (ctx.startComicPageTranslation) ctx.startComicPageTranslation({ pageUrl: location.href, mode: 'colorize' });
         break;
       case 'toggle-translations':
         toggleTranslationsVisibility();

@@ -6,6 +6,7 @@ const elements = {
   openSettings: document.getElementById('openSettings'),
   comicAccount: document.getElementById('comicAccount'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
+  comicColorizePage: document.getElementById('comicColorizePage'),
   comicAccountStatus: document.getElementById('comicAccountStatus'),
   floatBallStatus: document.getElementById('floatBallStatus'),
   youtubeCaptionsStatus: document.getElementById('youtubeCaptionsStatus'),
@@ -68,9 +69,11 @@ async function refreshComicAccount() {
   if (!enableComicTranslation) {
     elements.comicAccount.hidden = true;
     elements.comicTranslatePage.hidden = true;
+    elements.comicColorizePage.hidden = true;
     return;
   }
   elements.comicTranslatePage.hidden = false;
+  elements.comicColorizePage.hidden = false;
 
   let account = null;
   try {
@@ -97,17 +100,18 @@ async function refreshComicAccount() {
 // The context menu is the natural home for this, but comic hosts disable it
 // often enough that the popup has to be able to start a page on its own. No
 // srcUrl to send — the content script picks the page(s) on screen.
-async function onComicTranslatePageClick() {
+async function onComicPageAction(mode) {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) return;
     chrome.tabs.sendMessage(tabs[0].id, {
       type: 'COMIC_TRANSLATE_PAGE',
+      mode,
       pageUrl: tabs[0].url || ''
     });
     window.close();
   } catch (error) {
-    console.error('Failed to start comic translation:', error);
+    console.error('Failed to start comic job:', error);
   }
 }
 
@@ -231,5 +235,6 @@ function setupEventListeners() {
   elements.toggleYoutubeCaptions.addEventListener('click', toggleYoutubeCaptions);
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicAccount.addEventListener('click', onComicAccountClick);
-  elements.comicTranslatePage.addEventListener('click', onComicTranslatePageClick);
+  elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
+  elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));
 }
