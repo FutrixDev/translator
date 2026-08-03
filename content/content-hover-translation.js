@@ -363,11 +363,14 @@
     }
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
         text,
         targetLang,
-        mode: 'text'
+        mode: 'text',
+        // 悬停是“鼠标扫过就翻”，不能卡在几十 MB 的语言包下载上。
+        // 首次下载交给设置页那个带进度条的按钮。
+        allowDownload: false
       });
 
       if (hoverRequestIds.get(block) !== requestId) return;
@@ -772,7 +775,7 @@
     }
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
         text: safeText,
         targetLang,

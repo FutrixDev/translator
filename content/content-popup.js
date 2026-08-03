@@ -460,7 +460,7 @@
         if (resultBody) resultBody.hidden = true;
         if (phoneticEl) phoneticEl.hidden = true;
       }
-      const response = await chrome.runtime.sendMessage({
+      const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
         text: text,
         targetLang: targetLang,
