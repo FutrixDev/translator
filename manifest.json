@@ -8,7 +8,9 @@
     "storage",
     "activeTab",
     "contextMenus",
-    "identity"
+    "identity",
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -53,6 +55,7 @@
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-language.js",
+        "content/content-translation-engine.js",
         "content/content-youtube-captions.js",
         "content/content-selection.js",
         "content/content-float-ball.js",

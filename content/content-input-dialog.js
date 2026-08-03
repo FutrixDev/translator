@@ -148,7 +148,7 @@
           return;
         }
         const targetLang = targetLangOverride || state.inputDialog.dataset.targetLang || settings.targetLang;
-        const response = await chrome.runtime.sendMessage({
+        const response = await ctx.requestTranslation({
           type: 'TRANSLATE',
           text: text,
           targetLang: targetLang,

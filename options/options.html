@@ -37,6 +37,38 @@
 
     <main class="main">
       <div class="settings-grid">
+        <!-- Translation Engine -->
+        <section class="settings-card">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>
+            </svg>
+            <span data-i18n="translationEngine">Translation Engine</span>
+          </h2>
+
+          <div class="form-group">
+            <label for="translationEngine" data-i18n="translationEngine">Translation Engine</label>
+            <select id="translationEngine">
+              <option value="builtin" data-i18n="engineBuiltin"></option>
+              <option value="ai" data-i18n="engineCustomAi"></option>
+            </select>
+            <span class="hint" data-i18n-hint="hintTranslationEngine"></span>
+          </div>
+
+          <div class="form-group" id="builtinStatusGroup">
+            <label data-i18n="builtinLanguagePack">Language Pack</label>
+            <div class="hint" id="builtinStatus"></div>
+            <button id="downloadLanguagePack" class="btn btn-secondary btn-inline" hidden>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span data-i18n="downloadLanguagePack">Download Language Pack</span>
+            </button>
+          </div>
+        </section>
+
         <!-- API Settings -->
         <section class="settings-card">
           <h2 class="section-title">
@@ -354,6 +386,38 @@
 
               <span class="hint" data-i18n-hint="comicHowTo"></span>
             </div>
+
+            <!-- PDF translation. Same server-side account and credits as the
+                 comic card above — sign-in and balance live there, this card
+                 only owns its own switch and target language. -->
+            <div class="feature-column" id="pdfFeatureCard">
+              <div class="inline-setting">
+                <div class="inline-setting-title">
+                  <label id="enablePdfTranslationLabel" for="pdfTargetLang" data-i18n="enablePdfTranslation">Enable PDF Translation</label>
+                </div>
+                <div class="inline-setting-controls">
+                  <select id="pdfTargetLang" aria-labelledby="enablePdfTranslationLabel">
+                    <option value="" data-i18n="comicTargetLangFollow"></option>
+                    <option value="zh-CN" data-i18n="langZhCN"></option>
+                    <option value="zh-TW" data-i18n="langZhTW"></option>
+                    <option value="en" data-i18n="langEn"></option>
+                    <option value="ja" data-i18n="langJa"></option>
+                    <option value="ko" data-i18n="langKo"></option>
+                    <option value="fr" data-i18n="langFr"></option>
+                    <option value="de" data-i18n="langDe"></option>
+                    <option value="es" data-i18n="langEs"></option>
+                    <option value="pt" data-i18n="langPt"></option>
+                    <option value="ru" data-i18n="langRu"></option>
+                  </select>
+                  <label class="toggle-label toggle-only" for="enablePdfTranslation">
+                    <input type="checkbox" id="enablePdfTranslation" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <span class="hint" data-i18n-hint="pdfAccountShared"></span>
+              </div>
+              <span class="hint" data-i18n-hint="pdfHowTo"></span>
+            </div>
           </div>
         </section>
       </div>
@@ -438,6 +502,9 @@
   </div>
 
   <script src="../i18n/messages.js"></script>
+  <!-- 内置引擎的语言码映射、可用性查询和首次下载都在这里；设置页复用同一份实现，
+       避免和 content script 各写一套语言码映射后慢慢走偏。 -->
+  <script src="../content/content-translation-engine.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

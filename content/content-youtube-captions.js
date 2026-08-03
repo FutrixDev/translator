@@ -561,11 +561,13 @@
     const texts = cues.map((cue) => cue.text);
     let response;
     try {
-      response = await chrome.runtime.sendMessage({
+      response = await ctx.requestTranslation({
         type: 'TRANSLATE_BATCH_FAST',
         texts,
         targetLang: ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '',
         delimiter: DELIMITER,
+        // 字幕跟着播放走，同样不能卡在语言包下载上。
+        allowDownload: false,
       });
     } catch (error) {
       markBatchFailed(cues);

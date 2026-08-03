@@ -1,0 +1,158 @@
+{
+  "package": "blab-translation-brand-and-chrome-promo",
+  "date": "2026-07-26",
+  "brand": {
+    "name": "Blab Translation",
+    "zhName": "叭叭翻译",
+    "tagline": "叭叭翻译，翻译一切",
+    "bigIdea": "八只手，接住每一种表达",
+    "selectedLogo": "logo-bubble-octopus"
+  },
+  "generationPolicy": {
+    "model": "GPT Image 2",
+    "nativeTextOnly": true,
+    "postEditText": false,
+    "independentAssets": true,
+    "maxAttemptsPerOutput": 2
+  },
+  "assets": [
+    {
+      "id": "logo-bubble-octopus",
+      "role": "logo-concept",
+      "selected": true,
+      "target": "square master",
+      "width": 1254,
+      "height": 1254,
+      "file": "images/logo-bubble-octopus.png",
+      "prompt": "prompts-and-images.md#l1--bubble-octopus",
+      "status": "approved"
+    },
+    {
+      "id": "logo-octo-b",
+      "role": "logo-concept",
+      "selected": false,
+      "target": "square master",
+      "width": 1254,
+      "height": 1254,
+      "file": "images/logo-octo-b.png",
+      "prompt": "prompts-and-images.md#l2--octo-b",
+      "status": "approved-alternative"
+    },
+    {
+      "id": "logo-reach-everything",
+      "role": "logo-concept",
+      "selected": false,
+      "target": "square master",
+      "width": 1254,
+      "height": 1254,
+      "file": "images/logo-reach-everything.png",
+      "prompt": "prompts-and-images.md#l3--reach-everything",
+      "status": "approved-alternative"
+    },
+    {
+      "id": "logo-selected-transparent",
+      "role": "transparent-logo-master",
+      "source": "images/source/logo-selected-chroma-master.png",
+      "width": 1254,
+      "height": 1254,
+      "file": "images/logo-selected-transparent.png",
+      "alpha": true,
+      "deterministicExport": "ffmpeg colorkey; no text or shape editing",
+      "status": "approved"
+    },
+    {
+      "id": "logo-failed-checkerboard-no-alpha",
+      "role": "rejected-candidate",
+      "width": 1254,
+      "height": 1254,
+      "file": "images/rejected/logo-failed-checkerboard-no-alpha.png",
+      "status": "rejected",
+      "reason": "GPT Image 2 painted a checkerboard pattern, but the PNG had no real alpha channel."
+    },
+    {
+      "id": "chrome-icon-16",
+      "role": "chrome-extension-icon",
+      "width": 16,
+      "height": 16,
+      "file": "images/chrome-icon-16.png",
+      "source": "images/logo-selected-transparent.png",
+      "status": "approved"
+    },
+    {
+      "id": "chrome-icon-32",
+      "role": "chrome-extension-icon",
+      "width": 32,
+      "height": 32,
+      "file": "images/chrome-icon-32.png",
+      "source": "images/logo-selected-transparent.png",
+      "status": "approved"
+    },
+    {
+      "id": "chrome-icon-48",
+      "role": "chrome-extension-icon",
+      "width": 48,
+      "height": 48,
+      "file": "images/chrome-icon-48.png",
+      "source": "images/logo-selected-transparent.png",
+      "status": "approved"
+    },
+    {
+      "id": "chrome-icon-128",
+      "role": "chrome-store-icon",
+      "width": 128,
+      "height": 128,
+      "file": "images/chrome-icon-128.png",
+      "source": "images/logo-selected-transparent.png",
+      "status": "approved"
+    },
+    {
+      "id": "chrome-small-promo",
+      "role": "chrome-small-promo",
+      "width": 440,
+      "height": 280,
+      "file": "images/chrome-small-promo-440x280.png",
+      "source": "images/source/chrome-small-promo-master.png",
+      "prompt": "prompts-and-images.md#c1--small-promo-440--280",
+      "nativeText": [
+        "Blab Translation",
+        "叭叭翻译，翻译一切"
+      ],
+      "status": "approved"
+    },
+    {
+      "id": "chrome-marquee-logo-led",
+      "role": "chrome-marquee-promo",
+      "width": 1400,
+      "height": 560,
+      "file": "images/chrome-marquee-logo-led-1400x560.png",
+      "source": "images/source/chrome-marquee-logo-led-master.png",
+      "prompt": "prompts-and-images.md#c2b--logo-led-marquee-1400--560",
+      "nativeText": [
+        "Blab Translation",
+        "叭叭翻译，翻译一切"
+      ],
+      "status": "approved"
+    },
+    {
+      "id": "chrome-marquee-connected-tentacles",
+      "role": "rejected-candidate",
+      "width": 1400,
+      "height": 560,
+      "file": "images/rejected/chrome-marquee-promo-9-tentacles-1400x560.png",
+      "source": "images/source/chrome-marquee-promo-master.png",
+      "prompt": "prompts-and-images.md#c2--marquee-1400--560",
+      "status": "rejected",
+      "reason": "Generated 9 connected tentacles after two attempts."
+    },
+    {
+      "id": "feature-story",
+      "role": "feature-promo",
+      "width": 1280,
+      "height": 800,
+      "file": null,
+      "prompt": "prompts-and-images.md#c3--feature-story-1280--800",
+      "status": "failed-not-delivered",
+      "reason": "Two attempts generated 10 and 12 tentacles; no formal file was written."
+    }
+  ]
+}

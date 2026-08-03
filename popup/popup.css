@@ -142,6 +142,85 @@ body {
   color: white;
 }
 
+/* PDF job list — a compact readout, visually one register quieter than the
+   menu items around it. */
+.pdf-jobs[hidden] {
+  display: none;
+}
+
+.pdf-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 8px 4px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.pdf-job {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdf-job-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-job-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-job-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pdf-job-status.is-error {
+  color: #f87171;
+  white-space: normal;
+}
+
+.pdf-job-track {
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pdf-job-bar {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.pdf-job-open {
+  padding: 3px 10px;
+  background: var(--accent-primary);
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pdf-job-error {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Divider */
 .divider {
   height: 1px;

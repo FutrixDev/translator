@@ -80,8 +80,22 @@
 
       state.translationProgress.total = translatableBlocks.length;
 
-      // Track if any batch failed
+      // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
+      // 在一批 40 段的年代这没问题：那种粒度下出错基本等于接口不可用。
+      // 内置引擎改成一块一批之后，同一个判断会让某一段的偶发失败带走后面几百块
+      // （并发 12，表现就是零散翻了十几块然后整片空白）。所以改成累计阈值：
+      // 攒够这么多次失败才认定是整体故障。真故障时每块都失败，照样瞬间就停，
+      // 不会白白多打几百次请求。
+      const MAX_BATCH_FAILURES = 3;
       let batchError = null;
+      let batchFailures = 0;
+      let firstFailureMessage = null;
+
+      const noteBatchFailure = (message) => {
+        if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
+        batchFailures += 1;
+        if (batchFailures >= MAX_BATCH_FAILURES) batchError = firstFailureMessage;
+      };
 
       // 处理超大块：按标点分块 → 分别翻译（必要时拆成多次请求）→ 按序拼回一个整体插入。
       // 这样正文（尤其是位于 <li> 直属文本节点、用 <br><br> 分段的“超大列表项”）不会被丢弃，
@@ -109,15 +123,16 @@
         for (const sb of subBatches) {
           if (batchError) return;
           try {
-            const response = await chrome.runtime.sendMessage({
+            const response = await ctx.requestTranslation({
               type: 'TRANSLATE_BATCH_FAST',
               texts: sb.map(x => x.text),
               targetLang: getEffectiveTargetLang(),
-              delimiter: DELIMITER
+              delimiter: DELIMITER,
+              allowDownload: true
             });
 
             if (response.error) {
-              batchError = response.error;
+              noteBatchFailure(response.error);
               return;
             }
 
@@ -131,10 +146,11 @@
             });
           } catch (error) {
             console.error('AI Translator: Oversized block translation failed', error);
-            if (!batchError) {
-              batchError = isExtensionContextInvalidated(error)
-                ? t('extensionContextInvalidated')
-                : (error.message || t('translationFailed'));
+            if (isExtensionContextInvalidated(error)) {
+              // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
+              batchError = t('extensionContextInvalidated');
+            } else {
+              noteBatchFailure(error.message);
             }
             return;
           }
@@ -169,20 +185,20 @@
         const texts = batch.map(item => item.text);
 
         try {
-          const response = await chrome.runtime.sendMessage({
+          // 整页翻译是用户点出来的，带着 user activation，是唯一适合触发
+          // 语言包首次下载的路径（下载进度直接显示在下方进度条上）。
+          const response = await ctx.requestTranslation({
             type: 'TRANSLATE_BATCH_FAST',
             texts: texts,
             targetLang: getEffectiveTargetLang(),
-            delimiter: DELIMITER
+            delimiter: DELIMITER,
+            allowDownload: true
           });
 
           // Check for error in response
           if (response.error) {
-            batchError = response.error;
-            throw new Error(response.error);
-          }
-
-          if (response.translations) {
+            noteBatchFailure(response.error);
+          } else if (response.translations) {
             const insertTasks = response.translations.map(async (translation, i) => {
               if (!batch[i] || !translation) return;
               if (await shouldSkipTranslation(batch[i], translation)) return;
@@ -192,10 +208,10 @@
           }
         } catch (error) {
           console.error('AI Translator: Batch translation failed', error);
-          if (!batchError) {
-            batchError = isExtensionContextInvalidated(error)
-              ? t('extensionContextInvalidated')
-              : (error.message || t('translationFailed'));
+          if (isExtensionContextInvalidated(error)) {
+            batchError = t('extensionContextInvalidated');
+          } else {
+            noteBatchFailure(error.message);
           }
         }
 
@@ -331,8 +347,19 @@
     return chunks.filter(c => c.length > 0);
   }
 
+  function usingBuiltinEngine() {
+    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive());
+  }
+
   // 智能分批：根据 token/字符数/段落数限制
   function createSmartBatches(blocks) {
+    // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
+    // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
+    // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
+    if (usingBuiltinEngine()) {
+      return blocks.map((block) => [block]);
+    }
+
     const batches = [];
     let currentBatch = [];
     let currentChars = 0;
@@ -1549,6 +1576,26 @@
     }
   }
 
+  // 语言包首次下载是几十 MB 级别的，期间一条译文都出不来。不给反馈的话进度条会
+  // 卡在 0% 好一阵子，看起来像卡死了，所以把下载进度借同一条进度条显示出来。
+  ctx.onBuiltinDownloadProgress = function(loaded) {
+    const textEl = document.querySelector('#ai-translator-progress .ai-translator-progress-text');
+    const percentEl = document.querySelector('#ai-translator-progress .ai-translator-progress-percent');
+    const barEl = document.querySelector('#ai-translator-progress .ai-translator-progress-bar');
+    if (!textEl || !percentEl || !barEl) return;
+
+    const pct = Math.max(0, Math.min(100, Math.round((loaded || 0) * 100)));
+    if (pct >= 100) {
+      // 下载完成，把进度条交还给翻译进度，否则它会停在“正在下载 100%”上。
+      textEl.textContent = t('translatingProgress');
+      updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total || 1);
+      return;
+    }
+    textEl.textContent = t('builtinDownloading');
+    percentEl.textContent = `${pct}%`;
+    barEl.style.width = `${pct}%`;
+  };
+
   function hidePageTranslationProgress() {
     const progressEl = document.getElementById('ai-translator-progress');
     if (progressEl) {
@@ -1603,4 +1650,7 @@
   ctx.getTextOffsetLeft = getTextOffsetLeft;
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.insertTranslationBlock = insertTranslationBlock;
+  // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
+  // 它保证不会把 {{n}} 数学占位符从中间切断。
+  ctx.splitTextIntoChunks = splitTextIntoChunks;
 })();

@@ -8,6 +8,16 @@
   const { settings, state } = ctx;
   const applyTheme = ctx.applyTheme;
 
+  // 把一条译文送到划词翻译的展示层。SHOW_TRANSLATION（旧的 background 直推结果）
+  // 和 TRANSLATE_SELECTION_TEXT（content script 自己译）共用这一处，避免两边跑偏。
+  function displaySelectionTranslation({ text, translation, phonetic, isWord }) {
+    if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.showInlineSelectionTranslation) {
+      ctx.showInlineSelectionTranslation(text, translation, state.lastSelectionElement, state.lastSelectionRange);
+    } else if (ctx.showTranslationResult) {
+      ctx.showTranslationResult(text, translation, phonetic, isWord);
+    }
+  }
+
   function setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('AI Translator: Received message', message.type, message);
@@ -20,12 +30,38 @@
         case 'SHOW_TRANSLATION':
           // 右键菜单翻译选中文本的结果显示
           if (!settings.enableSelection) break;
-          if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.showInlineSelectionTranslation) {
-            ctx.showInlineSelectionTranslation(message.text, message.translation, state.lastSelectionElement, state.lastSelectionRange);
-          } else if (ctx.showTranslationResult) {
-            ctx.showTranslationResult(message.text, message.translation, message.phonetic, message.isWord);
-          }
+          displaySelectionTranslation({
+            text: message.text,
+            translation: message.translation,
+            phonetic: message.phonetic,
+            isWord: message.isWord
+          });
           break;
+        case 'TRANSLATE_SELECTION_TEXT': {
+          // 右键菜单翻译：background 只转达意图，翻译在这里做，
+          // 这样才能走到内置引擎（Translator 在 service worker 里不存在）。
+          if (!settings.enableSelection) break;
+          const selectionText = message.text || '';
+          if (!selectionText.trim()) break;
+          ctx.requestTranslation({
+            type: 'TRANSLATE',
+            text: selectionText,
+            targetLang: message.targetLang,
+            mode: 'text'
+          }).then((response) => {
+            // 出错时把错误文案顶到同一个展示位。以前这条路失败是只往控制台打一行、
+            // 页面上毫无反应，用户只会以为右键翻译坏了。
+            displaySelectionTranslation({
+              text: selectionText,
+              translation: response?.error || response?.translation || '',
+              phonetic: response?.phonetic || '',
+              isWord: response?.isWord === true
+            });
+          }).catch((error) => {
+            console.error('AI Translator: Context menu translation failed', error);
+          });
+          break;
+        }
         case 'COMIC_TRANSLATE_IMAGE':
           // Paid, account-backed path — deliberately not gated on the text
           // translation toggles above, which only govern the BYO-key features.

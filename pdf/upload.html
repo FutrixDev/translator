@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="pdfUploadTitle">Translate a PDF</title>
+  <link rel="stylesheet" href="upload.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <img src="../icons/icon48.png" width="36" height="36" alt="">
+      <div class="header-text">
+        <h1 data-i18n="pdfUploadTitle">Translate a PDF</h1>
+        <p class="hint" data-i18n="pdfAccountShared">Uses the same account and credits as comic translation.</p>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Local file entry: drag a PDF anywhere onto the zone, or click it. -->
+      <div id="pdfDrop" class="drop-zone" tabindex="0" role="button">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <path d="M12 18v-6"/>
+          <path d="M9 15l3-3 3 3"/>
+        </svg>
+        <p class="drop-text" data-i18n="pdfUploadDrop">Drop a PDF here, or click to choose a file</p>
+        <p class="hint" data-i18n="pdfUploadLimit">Up to 30 MB and 200 pages. Scanned PDFs are not supported.</p>
+        <input type="file" id="pdfFileInput" accept="application/pdf,.pdf" hidden>
+      </div>
+
+      <!-- The current job. One at a time: this page exists to shepherd the
+           file the user just dropped, the popup lists the rest. -->
+      <section id="pdfJobCard" class="job-card" hidden>
+        <div class="job-head">
+          <span id="pdfFileName" class="job-name"></span>
+          <span id="pdfStatusText" class="job-status"></span>
+        </div>
+        <div class="progress-track" id="pdfProgressTrack">
+          <div class="progress-bar" id="pdfProgressBar"></div>
+        </div>
+        <p id="pdfError" class="job-error" hidden></p>
+        <div class="job-actions">
+          <button type="button" id="pdfOpenDual" class="btn btn-primary" hidden>
+            <span data-i18n="pdfOpenDual">Open Bilingual PDF</span>
+          </button>
+          <button type="button" id="pdfOpenMono" class="btn btn-secondary" hidden>
+            <span data-i18n="pdfOpenMono">Open Translated PDF</span>
+          </button>
+          <button type="button" id="pdfRetry" class="btn btn-primary" hidden>
+            <span data-i18n="pdfRetry">Retry</span>
+          </button>
+          <button type="button" id="pdfSignIn" class="btn btn-primary" hidden>
+            <span data-i18n="comicSignIn">Sign In</span>
+          </button>
+          <button type="button" id="pdfRecharge" class="btn btn-primary" hidden>
+            <span data-i18n="comicTopUp">Top Up</span>
+          </button>
+          <button type="button" id="pdfAbandon" class="btn btn-text" hidden>
+            <span data-i18n="pdfAbandon">Cancel Task</span>
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../i18n/messages.js"></script>
+  <script src="pdf-ui.js"></script>
+  <script src="upload.js"></script>
+</body>
+</html>
