@@ -205,7 +205,9 @@ export async function signOut() {
 // Authenticated requests
 // ---------------------------------------------------------------------------
 
-async function apiFetch(path, { method = 'GET', body = null } = {}) {
+// Exported for pdf-client.js, which rides the same account, token and error
+// model rather than duplicating them.
+export async function apiFetch(path, { method = 'GET', body = null } = {}) {
   const stored = await getToken();
   if (!stored) throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
 

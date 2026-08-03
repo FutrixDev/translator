@@ -37,6 +37,8 @@
 
   if (!ctx.settings) {
     ctx.settings = {
+      // 默认走浏览器内置翻译；只有用户在设置里显式切到 'ai' 才用自己的接口。
+      translationEngine: 'builtin',
       enableSelection: true,
       enableHoverTranslation: true,
       hoverTranslationHotkey: 'Shift',
@@ -47,6 +49,8 @@
       enableYoutubeCaptionTranslation: false,
       enableComicTranslation: false,
       comicTargetLang: '',
+      enablePdfTranslation: false,
+      pdfTargetLang: '',
       showYoutubeOriginalCaption: true,
       youtubeCaptionFontColor: '#ffffff',
       youtubeCaptionBgColor: '#080808',
@@ -109,6 +113,7 @@
   ctx.loadSettings = async function() {
     try {
       const result = await chrome.storage.sync.get({
+        translationEngine: 'builtin',
         enableSelection: true,
         enableHoverTranslation: true,
         hoverTranslationHotkey: 'Shift',
@@ -119,6 +124,8 @@
         enableYoutubeCaptionTranslation: false,
         enableComicTranslation: false,
         comicTargetLang: '',
+        enablePdfTranslation: false,
+        pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
@@ -135,6 +142,7 @@
     } catch (error) {
       console.error('AI Translator: Failed to load settings', error);
       Object.assign(ctx.settings, {
+        translationEngine: 'builtin',
         enableSelection: true,
         enableHoverTranslation: true,
         hoverTranslationHotkey: 'Shift',
@@ -145,6 +153,8 @@
         enableYoutubeCaptionTranslation: false,
         enableComicTranslation: false,
         comicTargetLang: '',
+        enablePdfTranslation: false,
+        pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
@@ -215,6 +225,8 @@
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
       if (ctx.setupYouTubeCaptionTranslation) ctx.setupYouTubeCaptionTranslation();
+      // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
+      if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.
       // A redraw outlives the page that ordered it, so this is where a reader
       // who paged ahead and came back gets their translation put back.

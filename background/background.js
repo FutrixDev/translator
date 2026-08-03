@@ -1,6 +1,7 @@
 // AI Translator Background Script
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
+import * as pdfClient from './pdf-client.js';
 
 // Update extension icon based on theme
 async function updateIcon(theme) {
@@ -40,6 +41,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   }
   if (namespace === 'sync' && changes.enableComicTranslation) {
     refreshComicMenuVisibility(changes.enableComicTranslation.newValue);
+  }
+  if (namespace === 'sync' && changes.enablePdfTranslation) {
+    refreshPdfMenuVisibility(changes.enablePdfTranslation.newValue);
   }
 });
 
@@ -140,6 +144,11 @@ function getBrowserLanguage() {
 
 // Default settings
 const defaultSettings = {
+  // 'builtin' = 浏览器内置的 Translator API（端上 NMT，零网络、零费用），默认引擎。
+  // 'ai'      = 用户自己的 OpenAI 兼容接口，需要用户显式选择并配好 Key。
+  // 真正的内置调用发生在 content script（Translator 是 [Exposed=Window]，
+  // service worker 里拿不到），这里只负责存这个开关。
+  translationEngine: 'builtin',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   modelName: 'gpt-4.1-mini',
@@ -151,6 +160,10 @@ const defaultSettings = {
   // language they read articles in.
   enableComicTranslation: false,
   comicTargetLang: '',
+  // PDF translation rides the same server-side account as comics, so it is
+  // opted into for the same reason. Empty pdfTargetLang follows targetLang.
+  enablePdfTranslation: false,
+  pdfTargetLang: '',
   customPrompt: '',
   theme: 'light'
 };
@@ -160,6 +173,8 @@ const MENU_IDS = {
   translatePage: 'translate-page',
   translateComicImage: 'translate-comic-image',
   colorizeComicImage: 'colorize-comic-image',
+  translatePdfLink: 'translate-pdf-link',
+  translatePdfPage: 'translate-pdf-page',
   removeInlineTranslation: 'remove-inline-translation',
 };
 
@@ -193,6 +208,12 @@ async function refreshContextMenuTitles() {
   });
   chrome.contextMenus.update(MENU_IDS.colorizeComicImage, {
     title: getContextMenuTitle('contextColorizeComic', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.translatePdfLink, {
+    title: getContextMenuTitle('contextTranslatePdfLink', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.translatePdfPage, {
+    title: getContextMenuTitle('contextTranslatePdfPage', uiLang),
   });
   chrome.contextMenus.update(MENU_IDS.removeInlineTranslation, {
     title: getContextMenuTitle('contextRemoveInlineTranslation', uiLang),
@@ -234,6 +255,35 @@ function createContextMenus() {
       visible: false
     });
 
+    // The PDF entries are the same account-backed, paid pattern as the comic
+    // ones: created hidden, revealed only when the feature is switched on.
+    // targetUrlPatterns cannot express ".pdf before the query string", so the
+    // click handler re-checks with isLikelyPdfUrl before spending anything.
+    chrome.contextMenus.create({
+      id: MENU_IDS.translatePdfLink,
+      title: 'Translate Linked PDF',
+      contexts: ['link'],
+      targetUrlPatterns: [
+        '*://*/*.pdf', '*://*/*.pdf?*', '*://*/*.pdf#*',
+        '*://*/*.PDF', '*://*/*.PDF?*',
+        '*://arxiv.org/pdf/*', '*://*.arxiv.org/pdf/*'
+      ],
+      visible: false
+    });
+
+    chrome.contextMenus.create({
+      id: MENU_IDS.translatePdfPage,
+      title: 'Translate This PDF',
+      contexts: ['page'],
+      documentUrlPatterns: [
+        '*://*/*.pdf', '*://*/*.pdf?*', '*://*/*.pdf#*',
+        '*://*/*.PDF', '*://*/*.PDF?*',
+        '*://arxiv.org/pdf/*', '*://*.arxiv.org/pdf/*',
+        'file:///*.pdf'
+      ],
+      visible: false
+    });
+
     chrome.contextMenus.create({
       id: MENU_IDS.removeInlineTranslation,
       title: 'Remove Translation',
@@ -243,6 +293,7 @@ function createContextMenus() {
 
     refreshContextMenuTitles();
     refreshComicMenuVisibility();
+    refreshPdfMenuVisibility();
   });
 }
 
@@ -258,6 +309,17 @@ async function refreshComicMenuVisibility(enabled) {
     // The menu is gone during a rebuild; the rebuild itself will re-apply this.
     .catch(() => {});
   chrome.contextMenus.update(MENU_IDS.colorizeComicImage, { visible: !!visible })
+    .catch(() => {});
+}
+
+/** Same contract as refreshComicMenuVisibility, for the PDF entries. */
+async function refreshPdfMenuVisibility(enabled) {
+  const visible = enabled !== undefined
+    ? !!enabled
+    : (await chrome.storage.sync.get(defaultSettings)).enablePdfTranslation;
+  chrome.contextMenus.update(MENU_IDS.translatePdfLink, { visible: !!visible })
+    .catch(() => {});
+  chrome.contextMenus.update(MENU_IDS.translatePdfPage, { visible: !!visible })
     .catch(() => {});
 }
 
@@ -532,6 +594,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'COMIC_OPEN_RECHARGE':
       comicClient.getRechargeUrl().then(url => chrome.tabs.create({ url }));
       break;
+
+    // --- PDF translation (account-backed, see pdf-client.js) -----------------
+    case 'PDF_CREATE_JOB':
+      replyComic(handlePdfCreateJob(message), sendResponse);
+      return true;
+
+    case 'PDF_JOB_GET':
+      replyComic(handlePdfJobGet(message.jobId), sendResponse);
+      return true;
+
+    case 'PDF_JOB_ABANDON':
+      replyComic(handlePdfJobAbandon(message.jobId), sendResponse);
+      return true;
+
+    case 'PDF_JOBS_LIST':
+      // refresh:false is the popup's cheap first paint from storage; the
+      // 3-second cadence passes refresh:true to actually ask the server.
+      replyComic(
+        message.refresh === false ? pdfClient.listJobRecords() : refreshPdfJobs(),
+        sendResponse
+      );
+      return true;
+
+    case 'PDF_OPEN_RESULT':
+      replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
+      return true;
   }
 });
 
@@ -557,29 +645,27 @@ function replyComic(promise, sendResponse) {
 // Context menu for right-click translation
 chrome.runtime.onInstalled.addListener(() => {
   createContextMenus();
+  // Jobs survive a browser restart; the alarm that watches them must too.
+  ensurePdfPollAlarm().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
   createContextMenus();
+  ensurePdfPollAlarm().catch(() => {});
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === MENU_IDS.translateSelection && info.selectionText) {
-    try {
-      const settings = await chrome.storage.sync.get(defaultSettings);
-      const effectiveLang = getEffectiveTargetLang(settings);
-      const result = await translateTextWithMode(info.selectionText, effectiveLang, settings);
-
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'SHOW_TRANSLATION',
-        text: info.selectionText,
-        translation: result.translation,
-        phonetic: result.phonetic || '',
-        isWord: result.isWord === true
-      });
-    } catch (error) {
-      console.error('Translation failed:', error);
-    }
+    // 翻译动作交给 content script，而不是像以前那样在这里译完把结果推过去。
+    // 内置引擎的 Translator 接口是 [Exposed=Window, SecureContext]，service worker
+    // 里根本不存在；只有 content script 能按当前引擎设置正确分流（内置 / 自定义接口）。
+    // 这里只负责把“用户点了右键翻译”这件事转达过去。
+    const settings = await chrome.storage.sync.get(defaultSettings);
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'TRANSLATE_SELECTION_TEXT',
+      text: info.selectionText,
+      targetLang: getEffectiveTargetLang(settings)
+    });
   } else if (info.menuItemId === MENU_IDS.translatePage) {
     chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' });
   } else if (info.menuItemId === MENU_IDS.translateComicImage ||
@@ -599,10 +685,241 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
     });
+  } else if (info.menuItemId === MENU_IDS.translatePdfLink ||
+             info.menuItemId === MENU_IDS.translatePdfPage) {
+    const settings = await chrome.storage.sync.get(defaultSettings);
+    // Same racing-click guard as the comic entries: this costs money.
+    if (!settings.enablePdfTranslation) return;
+    const url = info.menuItemId === MENU_IDS.translatePdfLink
+      ? info.linkUrl
+      : (info.pageUrl || (tab && tab.url) || '');
+    if (!isLikelyPdfUrl(url)) return;
+    // Unlike comics there is no content-script UI to hand off to — the Chrome
+    // PDF viewer admits no content scripts — so the worker owns the job and
+    // reports through notifications and the popup's task list.
+    try {
+      await handlePdfCreateJob({
+        source: { kind: 'url', url },
+        fileName: pdfFileNameFromUrl(url),
+        pageUrl: info.pageUrl || ''
+      });
+    } catch (error) {
+      notifyPdfError(error);
+    }
   } else if (info.menuItemId === MENU_IDS.removeInlineTranslation) {
     chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' });
   }
 });
+
+// ---------------------------------------------------------------------------
+// PDF translation jobs (account-backed, see pdf-client.js)
+//
+// A PDF job runs for minutes — far past the service worker's ~30s idle
+// teardown — so nothing here holds a poll loop open. Instead: the popup and
+// the upload page poll fast while they are open, and a 1-minute chrome.alarm
+// covers the stretches when no UI is looking, firing a notification when a job
+// crosses into a terminal state.
+// ---------------------------------------------------------------------------
+
+const PDF_POLL_ALARM = 'pdf-job-poll';
+
+function isLikelyPdfUrl(url) {
+  if (!url) return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!/^(https?|file):$/.test(parsed.protocol)) return false;
+  if (/\.pdf$/i.test(parsed.pathname)) return true;
+  // arXiv serves PDFs from extensionless /pdf/<id> paths.
+  if (/(^|\.)arxiv\.org$/i.test(parsed.hostname) && /^\/pdf\//.test(parsed.pathname)) return true;
+  return false;
+}
+
+function pdfFileNameFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const segment = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+    if (segment) return /\.pdf$/i.test(segment) ? segment : `${segment}.pdf`;
+  } catch {
+    // Fall through to the generic name.
+  }
+  return 'document.pdf';
+}
+
+/** Base64 → ArrayBuffer, chunk-free: atob handles the whole string at once. */
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function ensurePdfPollAlarm() {
+  if (await pdfClient.hasActiveJobs()) {
+    // periodInMinutes only: no immediate fire, the caller just polled.
+    chrome.alarms.create(PDF_POLL_ALARM, { periodInMinutes: 1 });
+  } else {
+    chrome.alarms.clear(PDF_POLL_ALARM);
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== PDF_POLL_ALARM) return;
+  refreshPdfJobs().catch(error => console.error('PDF poll failed:', error));
+});
+
+/** Refresh every active record; notify for jobs that just finished. */
+async function refreshPdfJobs() {
+  const { records, transitions } = await pdfClient.refreshJobRecords();
+  for (const record of transitions) {
+    notifyPdfTerminal(record);
+  }
+  await ensurePdfPollAlarm();
+  return records;
+}
+
+async function pdfNotificationLang() {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+  return getContextMenuLanguage(settings);
+}
+
+function pdfMessage(key, uiLang) {
+  if (typeof globalThis.getMessage === 'function') {
+    return globalThis.getMessage(key, uiLang);
+  }
+  return key;
+}
+
+async function notifyPdfTerminal(record) {
+  const uiLang = await pdfNotificationLang();
+  const succeeded = record.status === 'succeeded';
+  const titleKey = succeeded ? 'pdfNotifyDoneTitle' : 'pdfNotifyFailTitle';
+  const bodyKey = succeeded
+    ? 'pdfNotifyDoneBody'
+    : pdfClient.pdfErrorMessageKey(record.error && record.error.code);
+  const fileName = record.fileName ? `${record.fileName}\n` : '';
+  chrome.notifications.create(`pdf-job-${record.jobId}`, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: pdfMessage(titleKey, uiLang),
+    message: `${fileName}${pdfMessage(bodyKey, uiLang)}`
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
+async function notifyPdfError(error) {
+  const uiLang = await pdfNotificationLang();
+  const code = error && (error.code || (error.error && error.error.code));
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: pdfMessage('pdfNotifyFailTitle', uiLang),
+    message: pdfMessage(pdfClient.pdfErrorMessageKey(code), uiLang)
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
+/**
+ * The single entry point every PDF surface funnels into: popup button, context
+ * menus, and the upload page all end up here.
+ *
+ * `source` is either `{kind: 'url', url}` — the worker fetches it, carrying
+ * the user's cookies — or `{kind: 'bytes', bytesBase64}` from the upload page
+ * (base64 because an ArrayBuffer does not survive runtime messaging).
+ */
+async function handlePdfCreateJob(message) {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+  const source = message.source || {};
+
+  let bytes;
+  if (source.kind === 'bytes' && source.bytesBase64) {
+    bytes = base64ToArrayBuffer(source.bytesBase64);
+  } else if (source.kind === 'url' && source.url) {
+    bytes = await pdfClient.fetchPdfFromUrl(source.url);
+  } else {
+    throw new comicClient.ComicApiError('invalid_pdf', 'No PDF source was provided');
+  }
+
+  const fileName = message.fileName ||
+    (source.kind === 'url' ? pdfFileNameFromUrl(source.url) : 'document.pdf');
+
+  const job = await pdfClient.createPdfJob({
+    operationId: message.operationId,
+    bytes,
+    fileName,
+    targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)
+  });
+
+  // `error` too: a job can come back already terminal (a dispatch failure, or
+  // an idempotent re-post of a finished operation), and it will never get an
+  // alarm poll to fill that in later.
+  await pdfClient.saveJobRecord({
+    jobId: job.jobId,
+    operationId: job.operationId,
+    fileName,
+    status: job.status,
+    progress: job.progress || 0,
+    pageCount: job.pageCount,
+    results: job.results || null,
+    error: job.error || null,
+    createdAt: Date.now()
+  });
+  await ensurePdfPollAlarm();
+  return { ...job, fileName };
+}
+
+/** Poll one job and keep the local record in step with what came back. */
+async function handlePdfJobGet(jobId) {
+  const view = await pdfClient.getPdfJob(jobId);
+  await pdfClient.saveJobRecord({
+    jobId: view.jobId,
+    status: view.status,
+    progress: view.progress,
+    stage: view.stage || null,
+    pageCount: view.pageCount,
+    results: view.results || null,
+    error: view.error || null
+  });
+  await ensurePdfPollAlarm();
+  return view;
+}
+
+async function handlePdfJobAbandon(jobId) {
+  const view = await pdfClient.abandonPdfJob(jobId);
+  await pdfClient.saveJobRecord({
+    jobId: view.jobId,
+    status: view.status,
+    error: view.error || null
+  });
+  await ensurePdfPollAlarm();
+  return view;
+}
+
+/**
+ * Open a finished PDF in a new tab. Always via a fresh poll: the presigned
+ * URL a record might hold is minutes old and probably expired.
+ */
+async function handlePdfOpenResult(jobId, which) {
+  const view = await handlePdfJobGet(jobId);
+  const results = view.results || {};
+  const url = which === 'mono'
+    ? (results.monoUrl || results.dualUrl)
+    : (results.dualUrl || results.monoUrl);
+  if (!url) {
+    throw new comicClient.ComicApiError('result_unavailable', 'The translated PDF is not available', 404);
+  }
+  await chrome.tabs.create({ url });
+  return { opened: true };
+}
 
 // Build prompt with variable substitution
 // Appends MATH_PLACEHOLDER_RULE unless includeMathRule is false

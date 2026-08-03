@@ -207,6 +207,10 @@ function applyPlatformHotkeyLabels() {
 
 // DOM Elements
 const elements = {
+  translationEngine: document.getElementById('translationEngine'),
+  builtinStatusGroup: document.getElementById('builtinStatusGroup'),
+  builtinStatus: document.getElementById('builtinStatus'),
+  downloadLanguagePack: document.getElementById('downloadLanguagePack'),
   provider: document.getElementById('provider'),
   apiEndpoint: document.getElementById('apiEndpoint'),
   customEndpointGroup: document.getElementById('customEndpointGroup'),
@@ -248,7 +252,10 @@ const elements = {
   comicFreeQuota: document.getElementById('comicFreeQuota'),
   comicSignIn: document.getElementById('comicSignIn'),
   comicSignOut: document.getElementById('comicSignOut'),
-  comicTopUp: document.getElementById('comicTopUp')
+  comicTopUp: document.getElementById('comicTopUp'),
+  // PDF translation
+  enablePdfTranslation: document.getElementById('enablePdfTranslation'),
+  pdfTargetLang: document.getElementById('pdfTargetLang')
 };
 
 // Preset prompt templates
@@ -302,6 +309,9 @@ function getBrowserLanguage() {
 
 // Default settings
 const defaultSettings = {
+  // 默认走浏览器内置翻译（端上 NMT，零网络零费用）。下面那一整套 API 配置
+  // 只在用户显式切到 'ai' 时才用得上，或者在内置引擎顶不住时充当回落。
+  translationEngine: 'builtin',
   provider: 'openai',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
@@ -319,6 +329,10 @@ const defaultSettings = {
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
   comicTargetLang: '',
+  // Same account, same reasoning: PDF translation spends credits, so it ships
+  // off. Empty pdfTargetLang follows targetLang.
+  enablePdfTranslation: false,
+  pdfTargetLang: '',
   enableYoutubeCaptionTranslation: false,
   showYoutubeOriginalCaption: true,
   youtubeCaptionFontColor: '#ffffff',
@@ -458,10 +472,15 @@ function showComicState(name) {
 }
 
 async function refreshComicAccount({ force = false } = {}) {
-  // With the feature off there is nothing to act on and no reason to ask a paid
-  // service about a balance the user cannot spend. The switch above stays.
-  const { enableComicTranslation } = await chrome.storage.sync.get({ enableComicTranslation: false });
-  if (!enableComicTranslation) {
+  // With both features off there is nothing to act on and no reason to ask a
+  // paid service about a balance the user cannot spend. Both, not just comics:
+  // PDF translation spends the same account, and its card defers to this one
+  // for sign-in and balance.
+  const { enableComicTranslation, enablePdfTranslation } = await chrome.storage.sync.get({
+    enableComicTranslation: false,
+    enablePdfTranslation: false
+  });
+  if (!enableComicTranslation && !enablePdfTranslation) {
     showComicState(null);
     return;
   }
@@ -554,6 +573,7 @@ async function loadSettings() {
     updateModelDropdown(provider, result.modelName);
 
     elements.apiKey.value = result.apiKey;
+    elements.translationEngine.value = result.translationEngine === 'ai' ? 'ai' : 'builtin';
     elements.targetLang.value = targetLang;
     elements.enableSelection.checked = result.enableSelection;
     elements.selectionTranslationMode.value = result.selectionTranslationMode || 'inline';
@@ -565,6 +585,9 @@ async function loadSettings() {
     elements.enableComicTranslation.checked = !!result.enableComicTranslation;
     elements.comicTargetLang.value = result.comicTargetLang || '';
     elements.comicTargetLang.disabled = !result.enableComicTranslation;
+    elements.enablePdfTranslation.checked = !!result.enablePdfTranslation;
+    elements.pdfTargetLang.value = result.pdfTargetLang || '';
+    elements.pdfTargetLang.disabled = !result.enablePdfTranslation;
     elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
     elements.showYoutubeOriginalCaption.checked = result.showYoutubeOriginalCaption !== false;
     elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
@@ -582,6 +605,7 @@ async function loadSettings() {
     applyPlatformHotkeyLabels();
 
     syncInlineSettingState();
+    refreshBuiltinStatus();
 
     lastGoodSettings = collectSettings();
     if (hasHotkeyConflict(lastGoodSettings) && resolveStoredHotkeyConflict()) {
@@ -655,6 +679,7 @@ function collectSettings() {
   const modelName = getEffectiveModelName();
 
   return {
+    translationEngine: elements.translationEngine.value,
     provider: providerKey,
     apiEndpoint: apiEndpoint,
     apiKey: elements.apiKey.value.trim(),
@@ -999,6 +1024,7 @@ function showStatus(message, type) {
 
 // Controls that settle on one value per interaction: write straight away.
 const IMMEDIATE_SAVE_FIELDS = [
+  'translationEngine',
   'enableSelection',
   'selectionTranslationMode',
   'selectionTranslationHotkey',
@@ -1022,8 +1048,97 @@ const DEBOUNCED_SAVE_FIELDS = [
   'youtubeCaptionBgOpacity'
 ];
 
+// ---------------------------------------------------------------------------
+// 内置翻译引擎状态
+//
+// 语言包是按“语言对”下载的，而源语言取决于用户当时打开的是什么页面，设置页
+// 无从预知。所以这里只对 en → 目标语言（现实中占绝大多数的那一对）给出状态和
+// 一个下载按钮；其它语言对在整页翻译首次用到时自动下载——那条路径带着用户点击
+// 产生的 user activation，正是 create() 触发下载所要求的东西。
+// ---------------------------------------------------------------------------
+
+const BUILTIN_PROBE_SOURCE = 'en';
+let builtinStatusSeq = 0;
+
+function getBuiltinEngine() {
+  return window.AI_TRANSLATOR_CONTENT && window.AI_TRANSLATOR_CONTENT.builtinTranslator;
+}
+
+async function refreshBuiltinStatus() {
+  const isBuiltin = elements.translationEngine.value === 'builtin';
+  elements.builtinStatusGroup.hidden = !isBuiltin;
+  elements.downloadLanguagePack.hidden = true;
+  if (!isBuiltin) return;
+
+  // 改目标语言和切引擎都会重进这里，而中间夹着一次 await。不按序号丢弃过期结果的话，
+  // 先发起的那次探测后回来，会把状态覆盖成上一个语言的。
+  const seq = ++builtinStatusSeq;
+  const engine = getBuiltinEngine();
+
+  if (!engine || !engine.isSupported()) {
+    elements.builtinStatus.textContent = t('builtinUnsupportedEnv');
+    return;
+  }
+
+  const targetLang = elements.targetLang.value;
+  if (engine.toApiLang(targetLang) === BUILTIN_PROBE_SOURCE) {
+    // 目标语言就是英语，探测 en→en 没有意义。
+    elements.builtinStatus.textContent = t('builtinReady');
+    return;
+  }
+
+  elements.builtinStatus.textContent = t('builtinChecking');
+  const status = await engine.availability(BUILTIN_PROBE_SOURCE, targetLang);
+  if (seq !== builtinStatusSeq) return;
+
+  switch (status) {
+    case 'available':
+      elements.builtinStatus.textContent = t('builtinReady');
+      break;
+    case 'downloading':
+      elements.builtinStatus.textContent = t('builtinDownloading');
+      break;
+    case 'downloadable':
+      elements.builtinStatus.textContent = t('builtinDownloadable');
+      elements.downloadLanguagePack.hidden = false;
+      break;
+    default:
+      elements.builtinStatus.textContent = t('builtinUnsupportedPair');
+  }
+}
+
+async function downloadLanguagePack() {
+  const engine = getBuiltinEngine();
+  if (!engine) return;
+
+  const button = elements.downloadLanguagePack;
+  const targetLang = elements.targetLang.value;
+  button.disabled = true;
+
+  try {
+    // 下载必须由这次点击直接触发：create() 要求 user activation，
+    // 挪到别处（比如打开设置页就自动下）会被浏览器直接拒掉。
+    await engine.ensureDownloaded(BUILTIN_PROBE_SOURCE, targetLang, (loaded) => {
+      const pct = Math.max(0, Math.min(100, Math.round((loaded || 0) * 100)));
+      elements.builtinStatus.textContent = `${t('builtinDownloading')} ${pct}%`;
+    });
+    elements.builtinStatus.textContent = t('builtinReady');
+    button.hidden = true;
+    showStatus(t('builtinDownloadComplete'), 'success');
+  } catch (error) {
+    console.error('Language pack download failed:', error);
+    elements.builtinStatus.textContent = t('builtinDownloadFailed');
+    showStatus(t('builtinDownloadFailed'), 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // Setup event listeners
 function setupEventListeners() {
+  elements.translationEngine.addEventListener('change', refreshBuiltinStatus);
+  elements.downloadLanguagePack.addEventListener('click', downloadLanguagePack);
+
   elements.testConnection.addEventListener('click', testConnection);
   elements.resetPrompt.addEventListener('click', resetPrompt);
   elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
@@ -1042,7 +1157,9 @@ function setupEventListeners() {
   // also the one that re-runs i18n.
   elements.targetLang.addEventListener('change', () => {
     targetLangSetByUser = true;
-    persistSettings({ reapplyI18n: true });
+    // 换目标语言等于换了语言对，内置引擎的状态得重查；放在 persistSettings 之后
+    // 是因为界面语言此时才切完，否则状态文案会停在上一种语言。
+    persistSettings({ reapplyI18n: true }).then(refreshBuiltinStatus);
   });
 
   // Closing the tab or switching away must not eat a half-typed API key.
@@ -1082,6 +1199,11 @@ function setupEventListeners() {
   // account panel, which nothing else on the page does.
   elements.enableComicTranslation.addEventListener('change', saveComicSettings);
   elements.comicTargetLang.addEventListener('change', saveComicSettings);
+
+  // PDF settings share the write-on-change path for the same reason: Save is
+  // gated on a BYO API key that this account-backed feature does not use.
+  elements.enablePdfTranslation.addEventListener('change', savePdfSettings);
+  elements.pdfTargetLang.addEventListener('change', savePdfSettings);
 
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
@@ -1126,6 +1248,23 @@ async function saveComicSettings() {
     // bytes. Log it rather than invent an error toast: reopening the page
     // re-renders from storage, so the user sees the real state either way.
     console.error('Failed to save comic settings:', error);
+  }
+}
+
+async function savePdfSettings() {
+  const enabled = elements.enablePdfTranslation.checked;
+  elements.pdfTargetLang.disabled = !enabled;
+  try {
+    await chrome.storage.sync.set({
+      enablePdfTranslation: enabled,
+      pdfTargetLang: elements.pdfTargetLang.value
+    });
+    // Sign-in state lives on the shared comic card; switching PDF on should
+    // surface it the same way switching comics on does.
+    await refreshComicAccount();
+  } catch (error) {
+    // See saveComicSettings: only sync-quota exhaustion can land here.
+    console.error('Failed to save PDF settings:', error);
   }
 }
 
