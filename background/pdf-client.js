@@ -203,6 +203,46 @@ export async function hasActiveJobs() {
   return records.some(r => isActiveStatus(r.status));
 }
 
+// ---------------------------------------------------------------------------
+// URL → operationId intents
+// ---------------------------------------------------------------------------
+
+// A URL job's operationId must survive a lost response: if the server accepted
+// (and reserved points for) a create we never heard back from, a retry with a
+// FRESH id would be a second paid job for the same PDF (PR #26 review). So the
+// id is minted once per URL and persisted BEFORE the first attempt; every
+// retry reuses it and lands on the server's idempotent adopt path — including
+// the happy accident that retrying an already-finished operation resolves
+// instantly and free.
+const URL_OPS_KEY = 'pdfUrlOps';
+const URL_OP_TTL_MS = JOB_TTL_MS; // aligned with the job records they map to
+const MAX_URL_OPS = 40;
+
+export async function getOrCreateUrlOperationId(url) {
+  const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
+  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  const cutoff = Date.now() - URL_OP_TTL_MS;
+
+  const live = {};
+  for (const [key, entry] of Object.entries(map)) {
+    if (entry && entry.opId && (entry.createdAt || 0) > cutoff) live[key] = entry;
+  }
+
+  let entry = live[url];
+  if (!entry) {
+    entry = { opId: crypto.randomUUID(), createdAt: Date.now() };
+    const keys = Object.keys(live);
+    if (keys.length >= MAX_URL_OPS) {
+      keys.sort((a, b) => (live[a].createdAt || 0) - (live[b].createdAt || 0));
+      for (const key of keys.slice(0, keys.length - MAX_URL_OPS + 1)) delete live[key];
+    }
+    live[url] = entry;
+  }
+
+  await chrome.storage.local.set({ [URL_OPS_KEY]: live });
+  return entry.opId;
+}
+
 /**
  * Re-poll every non-terminal record and persist what came back.
  *

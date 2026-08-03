@@ -101,11 +101,26 @@ function startMockService(behaviour = 'succeed') {
       });
     }
 
+    if (url.pathname === '/paper.pdf' && req.method === 'GET') {
+      // A "remote" PDF for the URL-source flow.
+      return send(200, TINY_PDF, 'application/pdf');
+    }
+
     if (url.pathname === '/api/pdf/jobs' && req.method === 'POST') {
       return readBody((raw) => {
         if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
         const body = JSON.parse(raw.toString() || '{}');
         state.createBodies.push(body);
+        if (behaviour === 'flaky-create' && state.createBodies.length === 1) {
+          // The server ACCEPTED (and, in production, reserved points for) this
+          // create — but the client can't tell: from its side a 500 and a
+          // dropped connection are the same "did it land?" ambiguity. (A raw
+          // socket.destroy() is no good here — Chrome silently re-sends
+          // requests that die on a reused keep-alive connection, which is
+          // itself a second reason the id must be stable.) The retry must
+          // replay the same operationId or it double-charges.
+          return send(500, { error: 'internal_error' });
+        }
         if (behaviour === 'insufficient') {
           return send(402, {
             error: 'insufficient_points',
@@ -188,7 +203,7 @@ async function connectExtension(context, base, { withToken = true } = {}) {
     // pdfJobs too: a record left behind by a previous test would surface in
     // the next one's popup list and confuse its assertions.
     await chrome.storage.local.remove([
-      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'pdfJobs',
+      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'pdfJobs', 'pdfUrlOps',
     ]);
     const values = { comicApiBase: base };
     if (withToken) {
@@ -258,6 +273,40 @@ test.describe('PDF translation', () => {
       expect(records[0].jobId).toBe('pdf_job_1');
       expect(records[0].fileName).toBe('paper.pdf');
       expect(records[0].status).toBe('succeeded');
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a URL job retried after a lost response replays the same operation id', async ({ context, page, extensionId }) => {
+    const service = await startMockService('flaky-create');
+    try {
+      await connectExtension(context, service.base);
+      // PDF_CREATE_JOB is what both the popup button and the context menu
+      // dispatch; sending it from an extension page exercises the exact
+      // production path (a worker cannot runtime-message itself).
+      await page.goto(`chrome-extension://${extensionId}/pdf/upload.html`);
+      const sendCreate = (u) => page.evaluate(
+        (targetUrl) => new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: 'PDF_CREATE_JOB', source: { kind: 'url', url: targetUrl } },
+            resolve,
+          );
+        }),
+        u,
+      );
+
+      const url = `${service.base}/paper.pdf`;
+      const first = await sendCreate(url);
+      expect(first && first.ok).toBeFalsy(); // the response was lost mid-flight
+
+      const second = await sendCreate(url);
+      expect(second && second.ok).toBeTruthy();
+
+      // Both attempts reached the server — with ONE operation id between them.
+      expect(service.state.createBodies).toHaveLength(2);
+      expect(service.state.createBodies[0].operationId).toBeTruthy();
+      expect(service.state.createBodies[1].operationId).toBe(service.state.createBodies[0].operationId);
     } finally {
       await service.close();
     }

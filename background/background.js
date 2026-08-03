@@ -694,6 +694,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       ? info.linkUrl
       : (info.pageUrl || (tab && tab.url) || '');
     if (!isLikelyPdfUrl(url)) return;
+    // file:// can't be fetched from the worker — hand local PDFs to the
+    // upload page's file picker instead (PR #26 review).
+    if (url.startsWith('file:')) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
+      return;
+    }
     // Unlike comics there is no content-script UI to hand off to — the Chrome
     // PDF viewer admits no content scripts — so the worker owns the job and
     // reports through notifications and the popup's task list.
@@ -841,9 +847,16 @@ async function handlePdfCreateJob(message) {
   const source = message.source || {};
 
   let bytes;
+  let operationId = message.operationId;
   if (source.kind === 'bytes' && source.bytesBase64) {
     bytes = base64ToArrayBuffer(source.bytesBase64);
   } else if (source.kind === 'url' && source.url) {
+    // Minted-and-persisted BEFORE the fetch: a retry after a lost response
+    // must replay the same operationId or the server would charge the same
+    // PDF twice (PR #26 review).
+    if (!operationId) {
+      operationId = await pdfClient.getOrCreateUrlOperationId(source.url);
+    }
     bytes = await pdfClient.fetchPdfFromUrl(source.url);
   } else {
     throw new comicClient.ComicApiError('invalid_pdf', 'No PDF source was provided');
@@ -853,7 +866,7 @@ async function handlePdfCreateJob(message) {
     (source.kind === 'url' ? pdfFileNameFromUrl(source.url) : 'document.pdf');
 
   const job = await pdfClient.createPdfJob({
-    operationId: message.operationId,
+    operationId,
     bytes,
     fileName,
     targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)

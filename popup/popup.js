@@ -19,6 +19,7 @@ const elements = {
 // Default settings
 const defaultSettings = {
   apiKey: '',
+  translationEngine: 'builtin',
   showFloatBall: true,
   enableYoutubeCaptionTranslation: false,
   targetLang: 'zh-CN',
@@ -284,6 +285,14 @@ async function onPdfTranslateCurrent() {
     const tab = tabs[0];
     if (!tab || !PDF_UI.isLikelyPdfUrl(tab.url)) return;
 
+    // The background can't fetch file:// URLs — local PDFs go through the
+    // upload page's file picker instead (PR #26 review).
+    if (tab.url.startsWith('file:')) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
+      window.close();
+      return;
+    }
+
     pdfInlineError = null;
     elements.pdfTranslateCurrent.disabled = true;
     const response = await chrome.runtime.sendMessage({
@@ -341,8 +350,11 @@ async function checkStatus() {
 async function translateCurrentPage() {
   try {
     const settings = await chrome.storage.sync.get(defaultSettings);
-    
-    if (!settings.apiKey) {
+
+    // Only the AI engine needs a key — the built-in engine (the default) is
+    // deliberately key-free, so gating on apiKey here would lock new users
+    // out of the primary action (PR #26 review).
+    if (settings.translationEngine === 'ai' && !settings.apiKey) {
       elements.statusText.textContent = t('configureApiKeyFirst');
       document.body.classList.add('status-error');
       // Open settings
