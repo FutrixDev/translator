@@ -340,12 +340,35 @@ function onProviderChange() {
   updateModelDropdown(providerKey);
 }
 
+// ---------------------------------------------------------------------------
+// Model: one setting, two controls
+//
+// The dropdown and the free-text box both write `modelName`, and the text box
+// wins (getEffectiveModelName). So whenever one of them takes over, the other
+// has to visibly let go — otherwise the page asserts two different models at
+// once and the user has no way to tell which one is really being sent.
+//
+// Only the dropdown side of that was implemented. Picking "claude-opus-5" and
+// then typing a model of your own stored the typed name correctly, but the
+// dropdown went on displaying claude-opus-5 — so the typed name looked ignored.
+// ---------------------------------------------------------------------------
+
 // Handle model select change
 function onModelSelectChange() {
   const selectedModel = elements.modelSelect.value;
   if (selectedModel) {
     // Clear custom input when selecting from dropdown
     elements.modelName.value = '';
+  }
+}
+
+// The mirror image: typing overrides the list, so the list drops back to its
+// placeholder. Emptying the box hands control back and leaves the dropdown to
+// be chosen again — deliberately not restoring the old pick, which would
+// resurrect a model the user had already replaced.
+function onCustomModelInput() {
+  if (elements.modelName.value.trim() && elements.modelSelect.value) {
+    elements.modelSelect.value = '';
   }
 }
 
@@ -709,8 +732,6 @@ async function persistSettings({ reapplyI18n = false } = {}) {
     return;
   }
 
-  // Claimed before the write, compared after it. See the yield below.
-  const seq = statusSeq;
   try {
     await chrome.storage.sync.set(settings);
     lastGoodSettings = settings;
@@ -723,18 +744,12 @@ async function persistSettings({ reapplyI18n = false } = {}) {
       applyPlatformHotkeyLabels();
     }
 
-    if (statusSeq === seq) {
-      // The save confirmation yields. It is routine reassurance, while every
-      // other message on this strip answers a deliberate action — so if anyone
-      // spoke while the write was in flight, leave their message alone.
-      //
-      // The case that forced this: clicking Test Connection blurs the field
-      // being edited, so the flush lands in the middle of the probe. Whichever
-      // finished last used to win, meaning a connection result could be
-      // replaced by "settings saved" — the user asked a question and got an
-      // unrelated answer. The write itself is unaffected either way.
-      showStatus(t('settingsSaved'), 'success');
-    }
+    // Deliberately silent. Autosave fires on every keystroke and every toggle,
+    // so confirming each one turned the status strip into a flashing banner
+    // that said nothing the user did not already know — and trained them to
+    // ignore the strip, which is also where hotkey conflicts and connection
+    // failures appear. Success is the expected outcome; only deviations from it
+    // are worth interrupting for.
   } catch (error) {
     console.error('Failed to save settings:', error);
     showStatus(t('connectionFailed'), 'error');
@@ -880,22 +895,20 @@ function toggleApiKeyVisibility() {
 // ---------------------------------------------------------------------------
 // Status area
 //
-// One strip serves autosave, connection tests, sign-in and presets, so writes
-// to it have to be ordered rather than last-one-wins. `statusSeq` counts them,
-// which lets a slow async writer notice that someone else has since spoken and
-// hold its tongue — see persistSettings.
+// The strip only ever answers a deliberate action now — a connection test, a
+// sign-in, a preset, a rejected hotkey. Autosave used to write here too, on
+// every keystroke, which is what made ordering between writers a problem; with
+// that gone, last-one-wins is the whole rule.
 // ---------------------------------------------------------------------------
 let statusHideTimer = null;
-let statusSeq = 0;
 
 // Show status message
 function showStatus(message, type) {
   // Cancelling the previous hide is the point: these timers used to be left
-  // running, so a save confirmation shown at t=0 would blank whatever occupied
-  // the strip at t=3s — typically a connection error that arrived in between.
+  // running, so a message shown at t=0 would blank whatever occupied the strip
+  // at t=3s — typically an error that arrived in between.
   clearTimeout(statusHideTimer);
   statusHideTimer = null;
-  statusSeq += 1;
 
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
@@ -1076,6 +1089,11 @@ function setupEventListeners() {
     onModelSelectChange();
     persistSettings();
   });
+
+  // The write this keystroke also triggers is debounced, so the dropdown is
+  // already released by the time collectSettings reads the pair — regardless of
+  // which listener the browser happens to call first.
+  elements.modelName.addEventListener('input', onCustomModelInput);
 
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);

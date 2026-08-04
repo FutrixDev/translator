@@ -104,15 +104,12 @@ test('test connection sits in the API card and reports the missing field', async
 });
 
 /**
- * One status strip serves autosave, connection tests, sign-in and presets, and
- * autosave now writes to it constantly — so the two ways it could trample a
- * connection result both need pinning.
- *
- * First: a save confirmation auto-hides after three seconds, and that timer
- * used to be left running. Anything that appeared in the meantime got blanked
- * along with it.
+ * Autosave is silent: it fires on every keystroke and every toggle, so
+ * confirming each write turned the strip into a flashing banner and trained
+ * users to ignore the one place hotkey conflicts and connection failures
+ * appear. Changing a setting must leave the strip alone entirely.
  */
-test('a save confirmation does not blank a later message when it expires', async ({ page, extensionId }) => {
+test('changing a setting says nothing', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     targetLangSetByUser: true,
@@ -123,10 +120,36 @@ test('a save confirmation does not blank a later message when it expires', async
   });
 
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await page.click('label:has(#showFloatBall)');
+
+  // The write still happens — silence is not "nothing was saved".
+  await expect.poll(async () => getSetting(context, 'showFloatBall')).toBe(false);
+  await expect(page.locator('#statusMessage')).toBeHidden();
+});
+
+/**
+ * One status strip serves connection tests, sign-in, presets and rejected
+ * hotkeys, so the two ways a routine message could trample a connection result
+ * both need pinning.
+ *
+ * First: a success message auto-hides after three seconds, and that timer used
+ * to be left running. Anything that appeared in the meantime got blanked along
+ * with it.
+ */
+test('a success message does not blank a later message when it expires', async ({ page, extensionId }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    targetLangSetByUser: true,
+    provider: 'openai',
+    apiKey: '',
+    modelName: 'gpt-4.1-mini',
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
   // Arms the three-second hide.
-  await page.click('label:has(#showFloatBall)');
-  await expect(page.locator('#statusMessage')).toContainText('Settings Saved');
+  await page.click('.btn-preset');
+  await expect(page.locator('#statusMessage')).toContainText('Preset applied');
 
   // Well inside that window, put something the user must not lose.
   await page.click('#testConnection');
@@ -139,10 +162,10 @@ test('a save confirmation does not blank a later message when it expires', async
 
 /**
  * Second: clicking Test Connection blurs whatever credential field is being
- * edited, so the autosave flush runs concurrently with the probe. The routine
- * "settings saved" must not answer a question the user asked of the API.
+ * edited, so the autosave flush runs concurrently with the probe. That flush
+ * must not answer a question the user asked of the API.
  */
-test('the save confirmation stays quiet while a connection test is in flight', async ({ page, extensionId }) => {
+test('an autosave flush stays quiet while a connection test is in flight', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     targetLangSetByUser: true,
