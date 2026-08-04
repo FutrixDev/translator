@@ -13,8 +13,14 @@ npm run icons      # Generate extension icons (requires canvas package)
 npm run zip        # Create distributable zip file
 npm run test:unit  # Fast, no browser — API compatibility rules (test/unit/)
 npm run test:e2e   # Playwright, loads the extension in Chrome (test/e2e/)
-npm test           # Both
+npm run test:headed # Same, but with a visible window (HEADED=1)
+npm test           # test:unit + test:e2e
 ```
+
+E2E runs headless by default, so it no longer steals window focus and the
+pointer. That needs `channel: 'chromium'` in `test/e2e/fixtures.js` — the
+bundled Playwright build still cannot load an unpacked extension headless,
+only Chrome's newer headless shell can.
 
 No build step required - the extension loads directly in Chrome as an unpacked extension.
 

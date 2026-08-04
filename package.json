@@ -9,7 +9,7 @@
     "test": "npm run test:unit && npx playwright test",
     "test:unit": "node --test 'test/unit/**/*.test.mjs'",
     "test:e2e": "npx playwright test",
-    "test:headed": "npx playwright test --headed",
+    "test:headed": "HEADED=1 npx playwright test",
     "test:ui": "npx playwright test --ui",
     "test:debug": "npx playwright test --debug",
     "test:float-ball": "npx playwright test float-ball.spec.js",
