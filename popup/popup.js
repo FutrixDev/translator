@@ -151,7 +151,7 @@ let pdfPollTimer = null;
 let pdfInlineError = null;
 
 async function refreshPdfSection() {
-  const { enablePdfTranslation } = await chrome.storage.sync.get({ enablePdfTranslation: false });
+  const { enablePdfTranslation } = await chrome.storage.sync.get({ enablePdfTranslation: true });
   if (!enablePdfTranslation) {
     elements.pdfTranslateCurrent.hidden = true;
     elements.pdfTranslateLocal.hidden = true;
