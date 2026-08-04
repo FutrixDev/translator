@@ -17,97 +17,19 @@ function getPlatformType() {
 const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
 
 // Provider configurations
-const PROVIDERS = {
-  openai: {
-    name: 'OpenAI',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    // gpt-5.6 ships as three tiers (sol > terra > luna); the bare "gpt-5.6"
-    // alias routes to sol. Luna is the high-volume tier, so it leads the list.
-    models: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
-    defaultModel: 'gpt-4.1-mini'
-  },
-  anthropic: {
-    name: 'Anthropic Claude',
-    endpoint: 'https://api.anthropic.com/v1/messages',
-    // Native Anthropic API accepts version aliases (no date suffix); aliases
-    // always resolve to the latest snapshot and avoid stale/incorrect dates.
-    // claude-opus-4-1 is dropped here: it retires 2026-08-05.
-    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-haiku-4-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5'],
-    defaultModel: 'claude-sonnet-5'
-  },
-  gemini: {
-    name: 'Google Gemini',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    // Only stable text models: gemini-3-pro/gemini-3-flash never reached stable
-    // (Pro is preview-only) and the 2.0 line was shut down on 2026-06-01.
-    models: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-    defaultModel: 'gemini-3.6-flash'
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    endpoint: 'https://api.deepseek.com/v1/chat/completions',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    defaultModel: 'deepseek-chat'
-  },
-  openrouter: {
-    name: 'OpenRouter',
-    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-    models: [
-      // Anthropic Claude
-      'anthropic/claude-opus-5',
-      'anthropic/claude-sonnet-5',
-      'anthropic/claude-opus-4.8',
-      'anthropic/claude-opus-4.5',
-      'anthropic/claude-sonnet-4.5',
-      'anthropic/claude-haiku-4.5',
-      'anthropic/claude-sonnet-4',
-      'anthropic/claude-opus-4',
-      // OpenAI
-      'openai/gpt-5.6-luna',
-      'openai/gpt-5.6-terra',
-      'openai/gpt-5.6-sol',
-      'openai/gpt-5.5',
-      'openai/gpt-5',
-      'openai/gpt-5-mini',
-      'openai/gpt-4.1',
-      'openai/gpt-4.1-mini',
-      'openai/gpt-4.1-nano',
-      'openai/gpt-4o',
-      'openai/gpt-4o-mini',
-      'openai/o3',
-      'openai/o3-mini',
-      'openai/o4-mini',
-      // Google Gemini
-      'google/gemini-3.6-flash',
-      'google/gemini-3.5-flash',
-      'google/gemini-3.5-flash-lite',
-      'google/gemini-2.5-pro',
-      'google/gemini-2.5-flash',
-      // DeepSeek
-      'deepseek/deepseek-chat',
-      'deepseek/deepseek-reasoner'
-    ],
-    defaultModel: 'anthropic/claude-sonnet-5'
-  },
-  ollama: {
-    name: 'Ollama (Local)',
-    endpoint: 'http://localhost:11434/v1/chat/completions',
-    models: ['llama3.3', 'qwen2.5', 'deepseek-r1', 'gemma2'],
-    defaultModel: 'llama3.3'
-  },
-  lmstudio: {
-    name: 'LM Studio (Local)',
-    endpoint: 'http://localhost:1234/v1/chat/completions',
-    models: [],
-    defaultModel: ''
-  },
-  custom: {
-    name: 'Custom',
-    endpoint: '',
-    models: [],
-    defaultModel: ''
-  }
-};
+// Provider catalog and every model-capability rule live in shared/api-compat.js
+// (loaded by options.html before this file). Adding a model generation is a
+// one-file change there.
+const {
+  PROVIDERS,
+  DEFAULT_TEMPERATURE,
+  isClaudeAPI,
+  openAIHeaders,
+  claudeHeaders,
+  buildOpenAIRequestBody,
+  buildClaudeRequestBody,
+  readAPIResponse
+} = globalThis.APICompat;
 
 // Current UI language
 let currentUILang = 'en';
@@ -847,36 +769,9 @@ async function notifyContentScripts(settings) {
   }
 }
 
-// Detect if the API endpoint is Anthropic Claude API
-function isClaudeAPI(endpoint) {
-  if (!endpoint) return false;
-  return endpoint.includes('anthropic.com') || endpoint.includes('/v1/messages');
-}
-
-// GPT-5.x and o-series reasoning models use `max_completion_tokens` instead of
-// `max_tokens`; sending `max_tokens` to them returns HTTP 400.
-function isOpenAIReasoningModel(model) {
-  const name = String(model || '').toLowerCase().trim();
-  const shortName = name.includes('/') ? name.split('/').pop() : name;
-  return /^gpt-5/.test(shortName) || /^o[1-9]/.test(shortName);
-}
-
-// Lowest `reasoning_effort` the model accepts, or null when it has no such
-// control, so the probe returns text quickly instead of burning its budget on
-// hidden reasoning. The name of that floor changed across generations:
-// gpt-5…gpt-5.5 use 'minimal'; gpt-5.6+ dropped it in favour of 'none' and
-// reject 'minimal' with HTTP 400. The o-series accepts neither.
-// Keep in sync with background/background.js.
-function minimalReasoningEffort(model) {
-  const name = String(model || '').toLowerCase().trim();
-  const shortName = name.includes('/') ? name.split('/').pop() : name;
-  const match = shortName.match(/^gpt-(\d+)(?:\.(\d+))?/);
-  if (!match) return null;
-  const major = parseInt(match[1], 10);
-  const minor = match[2] ? parseInt(match[2], 10) : 0;
-  if (major < 5) return null;
-  return major > 5 || minor >= 6 ? 'none' : 'minimal';
-}
+// Endpoint/model shape helpers live in shared/api-compat.js — the same
+// module the service worker uses, so the connection test below proves the
+// exact request translation will make.
 
 // Test API connection
 async function testConnection() {
@@ -912,62 +807,34 @@ async function testConnection() {
 
   showStatus(t('translating'), 'warning');
 
+  // The probe is built by the same helpers the service worker translates with,
+  // so "connection successful" means the real request shape was accepted — not
+  // merely that the endpoint and key exist.
+  const claudeShape = isClaudeAPI(apiEndpoint);
+  // 20 tokens is enough for "Hi", but reasoning/thinking models bill hidden
+  // tokens against the same budget; the shared builder raises the floor for
+  // those, so ask for a small budget and let it decide.
+  const PROBE_TOKENS = 20;
+  const headers = claudeShape ? claudeHeaders(apiKey) : openAIHeaders(apiKey);
+  const body = claudeShape
+    ? buildClaudeRequestBody(modelName, 'Hi', PROBE_TOKENS)
+    : buildOpenAIRequestBody(modelName, [{ role: 'user', content: 'Hi' }], PROBE_TOKENS, DEFAULT_TEMPERATURE);
+
   try {
-    let response;
+    const response = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    });
 
-    if (isClaudeAPI(apiEndpoint)) {
-      // Use Claude API format
-      response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: modelName || 'claude-sonnet-5',
-          // Room for a reply even when the model spends budget on thinking.
-          max_tokens: 256,
-          messages: [
-            { role: 'user', content: 'Hi' }
-          ]
-        })
-      });
+    // Vendors disagree on error shape and some report failures with HTTP 200,
+    // so always read the body rather than trusting response.ok alone.
+    const data = await response.json().catch(() => ({}));
+    const result = readAPIResponse(data, response.status, response.ok, claudeShape);
+    if (result.error) {
+      showStatus(`${t('connectionFailed')}: ${result.error}`, 'error');
     } else {
-      // Use OpenAI-compatible API format
-      const testModel = modelName || 'gpt-4.1-mini';
-      const testBody = {
-        model: testModel,
-        messages: [
-          { role: 'user', content: 'Hi' }
-        ]
-      };
-      // GPT-5.x / o-series reasoning models require max_completion_tokens and
-      // spend part of it on hidden reasoning — give the probe room to reply.
-      if (isOpenAIReasoningModel(testModel)) {
-        testBody.max_completion_tokens = 256;
-        const effort = minimalReasoningEffort(testModel);
-        if (effort) {
-          testBody.reasoning_effort = effort;
-        }
-      } else {
-        testBody.max_tokens = 20;
-      }
-      response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify(testBody)
-      });
-    }
-
-    if (response.ok) {
       showStatus(t('connectionSuccess'), 'success');
-    } else {
-      const error = await response.json().catch(() => ({}));
-      showStatus(`${t('connectionFailed')}: ${error.error?.message || response.status}`, 'error');
     }
   } catch (error) {
     showStatus(`${t('connectionFailed')}: ${error.message}`, 'error');

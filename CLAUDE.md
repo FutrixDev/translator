@@ -9,8 +9,11 @@ AI Translator is a Chrome Extension (Manifest V3) that translates web content us
 ## Commands
 
 ```bash
-npm run icons    # Generate extension icons (requires canvas package)
-npm run zip      # Create distributable zip file
+npm run icons      # Generate extension icons (requires canvas package)
+npm run zip        # Create distributable zip file
+npm run test:unit  # Fast, no browser — API compatibility rules (test/unit/)
+npm run test:e2e   # Playwright, loads the extension in Chrome (test/e2e/)
+npm test           # Both
 ```
 
 No build step required - the extension loads directly in Chrome as an unpacked extension.
@@ -57,10 +60,34 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 
 ### API Compatibility
 
-Works with any OpenAI Chat Completions-compatible API:
-- OpenAI, Azure OpenAI, Claude (via compatible endpoints), Ollama, LM Studio
+Works with any OpenAI Chat Completions-compatible API, plus Anthropic's native
+Messages API:
+- OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Ollama, LM Studio
 - Request format: `{model, messages, temperature, max_tokens}`
-- Response: `{choices[0].message.content}`
+- Response: `{choices[0].message.content}`, or `{content[0].text}` for Anthropic
+
+**All of it lives in `shared/api-compat.js`** — the provider catalog, every
+per-model parameter rule, request-body construction, and vendor error parsing.
+Both the service worker (`import '../shared/api-compat.js'`) and the options
+page (`<script src="../shared/api-compat.js">`) consume it, so the "test
+connection" button sends exactly the request translation will send.
+
+When a vendor ships a new model generation, `shared/api-compat.js` should be
+the only file that changes. Do not reimplement these checks in a caller —
+`npm run test:unit` fails if `background.js` or `options.js` redeclares them.
+New top-level directories also need adding to the `zip` script in
+`package.json`, which the same suite asserts.
+
+Parameters are model-dependent and change between generations. Current rules:
+- `gpt-5`+ and `o1`+ use `max_completion_tokens`, never `temperature`
+- `reasoning_effort` floor is `'minimal'` up to gpt-5.5, `'none'` from gpt-5.6
+  (which removed `'minimal'` outright)
+- Gemini 3+ must not be sent `temperature` (Google's guidance: keep the 1.0
+  default; lowering it can cause looping)
+- Claude models reject `temperature`, including behind an OpenAI-compatible
+  gateway
+- Models that bill hidden reasoning/thinking tokens get a floor on the output
+  budget, or short calls return empty text with `finish_reason: "length"`
 
 ## Bug Fixing Guidelines
 
@@ -82,7 +109,7 @@ Follow this process when fixing bugs:
 
 ```javascript
 apiEndpoint: 'https://api.openai.com/v1/chat/completions'
-modelName: 'gpt-4o-mini'
-targetLang: 'zh-CN'
-theme: 'dark'
+modelName: 'gpt-4.1-mini'
+targetLang: ''        // empty = follow browser language
+theme: 'light'
 ```

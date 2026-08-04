@@ -1,4 +1,5 @@
 // AI Translator Background Script
+import '../shared/api-compat.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
@@ -323,237 +324,55 @@ async function refreshPdfMenuVisibility(enabled) {
     .catch(() => {});
 }
 
-// Detect if the API endpoint is Anthropic Claude API
-function isClaudeAPI(endpoint) {
-  if (!endpoint) return false;
-  // Check for Anthropic domain or /v1/messages path
-  return endpoint.includes('anthropic.com') || endpoint.includes('/v1/messages');
-}
+// Every provider/model shape decision lives in shared/api-compat.js so the
+// options page's connection test exercises the identical request.
+const {
+  isClaudeAPI,
+  openAIHeaders,
+  claudeHeaders,
+  buildOpenAIRequestBody,
+  buildClaudeRequestBody,
+  readAPIResponse
+} = globalThis.APICompat;
 
-// Parse API error from response data (handles different vendor formats)
-function parseAPIError(data, httpStatus) {
-  // Check for error field in response body (OpenAI, OpenRouter, etc.)
-  if (data?.error) {
-    const error = data.error;
-    // OpenAI/OpenRouter format: {"error": {"message": "...", "code": ...}}
-    if (typeof error === 'object') {
-      const message = error.message || error.msg || JSON.stringify(error);
-      const code = error.code || error.type || httpStatus;
-      return { isError: true, message, code };
-    }
-    // Simple string error
-    if (typeof error === 'string') {
-      return { isError: true, message: error, code: httpStatus };
-    }
-  }
+// Issue one translation request and return its text, or throw with a
+// user-facing message. Both vendors are handled the same way: some APIs report
+// failures with HTTP 200 and an error payload, so the body is always parsed.
+async function callTranslationAPI(endpoint, headers, body, isClaudeShape) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  });
 
-  // Claude API format: {"type": "error", "error": {...}}
-  if (data?.type === 'error' && data?.error) {
-    const message = data.error.message || JSON.stringify(data.error);
-    return { isError: true, message, code: data.error.type || httpStatus };
-  }
-
-  // Ollama format: {"error": "..."}
-  if (typeof data?.error === 'string') {
-    return { isError: true, message: data.error, code: httpStatus };
-  }
-
-  // No error found
-  return { isError: false };
-}
-
-// Format error message for user display
-function formatErrorMessage(message, code) {
-  // Common error code mappings
-  const errorCodeMessages = {
-    401: '认证失败：请检查 API Key 是否正确',
-    402: '额度不足：请检查账户余额或升级套餐',
-    403: '访问被拒绝：API Key 可能没有权限',
-    404: '模型不存在：请检查模型名称是否正确',
-    429: '请求过于频繁：请稍后重试',
-    500: '服务器错误：API 服务暂时不可用',
-    502: '网关错误：API 服务暂时不可用',
-    503: '服务不可用：API 服务暂时不可用'
-  };
-
-  // If code is a known HTTP status, prepend a helpful message
-  const numericCode = parseInt(code);
-  if (errorCodeMessages[numericCode]) {
-    return `${errorCodeMessages[numericCode]}\n${message}`;
-  }
-
-  return message;
+  const data = await response.json().catch(() => ({}));
+  const result = readAPIResponse(data, response.status, response.ok, isClaudeShape);
+  if (result.error) throw new Error(result.error);
+  return result.text;
 }
 
 // Call Claude API with Anthropic-specific format
 async function callClaudeAPI(endpoint, apiKey, model, systemPrompt, userContent, maxTokens = 4096) {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: model,
-      // Latest Claude models may spend budget on thinking; floor it so short
-      // translations aren't truncated to empty (see tokenBudgetFor).
-      max_tokens: tokenBudgetFor(model, maxTokens),
-      system: systemPrompt,
-      messages: [
-        { role: 'user', content: userContent }
-      ]
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  // Check HTTP status first
-  if (!response.ok) {
-    const errorInfo = parseAPIError(data, response.status);
-    const message = errorInfo.isError
-      ? formatErrorMessage(errorInfo.message, errorInfo.code)
-      : `API 错误: ${response.status}`;
-    throw new Error(message);
-  }
-
-  // Also check for error in response body (some APIs return 200 with error)
-  const errorInfo = parseAPIError(data, response.status);
-  if (errorInfo.isError) {
-    throw new Error(formatErrorMessage(errorInfo.message, errorInfo.code));
-  }
-
-  // Claude response format: { content: [{ type: "text", text: "..." }] }
-  return data.content?.[0]?.text?.trim() || '';
-}
-
-// Normalize a model name for capability detection (strip provider prefixes like "openai/").
-function normalizeModelName(model) {
-  const name = String(model || '').toLowerCase().trim();
-  return name.includes('/') ? name.split('/').pop() : name;
-}
-
-// GPT-5.x and o-series reasoning models renamed `max_tokens` to `max_completion_tokens`
-// and only accept the default temperature (an explicit temperature returns HTTP 400).
-function isOpenAIReasoningModel(model) {
-  const name = normalizeModelName(model);
-  return /^gpt-5/.test(name) || /^o[1-9]/.test(name);
-}
-
-// Compare the version embedded in a gpt-* model name ("gpt-5.6-luna" -> 5.6).
-// Major and minor are compared separately so a future "gpt-5.10" sorts above
-// "gpt-5.6" instead of being read as the decimal 5.1.
-function gptVersionAtLeast(model, major, minor) {
-  const match = normalizeModelName(model).match(/^gpt-(\d+)(?:\.(\d+))?/);
-  if (!match) return false;
-  const gotMajor = parseInt(match[1], 10);
-  const gotMinor = match[2] ? parseInt(match[2], 10) : 0;
-  return gotMajor > major || (gotMajor === major && gotMinor >= minor);
-}
-
-// Lowest `reasoning_effort` the model accepts, or null when it has no such
-// control. Translation never needs chain-of-thought, so we always ask for the
-// floor — but the name of that floor changed across generations:
-//   gpt-5 … gpt-5.5  -> 'minimal'
-//   gpt-5.6+         -> 'minimal' was dropped; the floor is now 'none'
-// Sending 'minimal' to gpt-5.6-{sol,terra,luna} fails with HTTP 400
-// ("Unsupported value: 'reasoning_effort' does not support 'minimal'").
-// The o-series never accepted either value, so it gets nothing.
-function minimalReasoningEffort(model) {
-  if (!gptVersionAtLeast(model, 5, 0)) return null;
-  return gptVersionAtLeast(model, 5, 6) ? 'none' : 'minimal';
-}
-
-// Gemini 3+ is tuned around its default temperature (1.0). Google's guidance is
-// to leave temperature unset: lowering it — standard practice on older models —
-// can push these models into loops or degrade quality on harder input.
-function isGemini3OrNewer(model) {
-  const match = normalizeModelName(model).match(/^gemini-(\d+)/);
-  return match ? parseInt(match[1], 10) >= 3 : false;
-}
-
-// Newer Claude models reject `temperature`/`top_p` ("deprecated for this model"),
-// including when reached through an OpenAI-compatible gateway. The native Claude
-// path already omits temperature, so mirror that here for any Claude model.
-function isClaudeModelName(model) {
-  const name = normalizeModelName(model);
-  return /claude|opus|sonnet|haiku|fable/.test(name);
-}
-
-// Reasoning (GPT-5/o-series), modern thinking (Claude) and Gemini 3+ models
-// spend part of the output budget on hidden reasoning/thinking tokens. A short
-// call such as a single-word lookup (budget 800) can be consumed entirely by
-// that hidden spend, returning empty text with finish_reason "length". Give
-// these models a floor so the visible translation always has room. The token
-// limit is only a cap, so raising it never lengthens a normal translation.
-// Gemini 3 belongs here because its thinking cannot be switched off.
-const REASONING_TOKEN_FLOOR = 2000;
-
-function tokenBudgetFor(model, maxTokens) {
-  if (isOpenAIReasoningModel(model) || isClaudeModelName(model) || isGemini3OrNewer(model)) {
-    return Math.max(maxTokens, REASONING_TOKEN_FLOOR);
-  }
-  return maxTokens;
-}
-
-// Build an OpenAI-compatible request body with model-aware parameters.
-function buildOpenAIRequestBody(model, messages, maxTokens, temperature) {
-  const body = { model, messages };
-  const tokenLimit = tokenBudgetFor(model, maxTokens);
-
-  if (isOpenAIReasoningModel(model)) {
-    // GPT-5.x / o-series: new token-limit field, default temperature only.
-    body.max_completion_tokens = tokenLimit;
-    // Skip heavy chain-of-thought for translation, using whichever spelling of
-    // the floor this generation accepts.
-    const effort = minimalReasoningEffort(model);
-    if (effort) {
-      body.reasoning_effort = effort;
-    }
-  } else {
-    body.max_tokens = tokenLimit;
-    if (typeof temperature === 'number' && !isClaudeModelName(model) && !isGemini3OrNewer(model)) {
-      body.temperature = temperature;
-    }
-  }
-
-  return body;
+  return callTranslationAPI(
+    endpoint,
+    claudeHeaders(apiKey),
+    buildClaudeRequestBody(model, userContent, maxTokens, systemPrompt),
+    true
+  );
 }
 
 // Call OpenAI-compatible API
-async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent, maxTokens = 4096, temperature = 0.3) {
+async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent, maxTokens = 4096, temperature = globalThis.APICompat.DEFAULT_TEMPERATURE) {
   const messages = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userContent }
   ];
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(buildOpenAIRequestBody(model, messages, maxTokens, temperature))
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  // Check HTTP status first
-  if (!response.ok) {
-    const errorInfo = parseAPIError(data, response.status);
-    const message = errorInfo.isError
-      ? formatErrorMessage(errorInfo.message, errorInfo.code)
-      : `API 错误: ${response.status}`;
-    throw new Error(message);
-  }
-
-  // Also check for error in response body (some APIs like OpenRouter return 200 with error)
-  const errorInfo = parseAPIError(data, response.status);
-  if (errorInfo.isError) {
-    throw new Error(formatErrorMessage(errorInfo.message, errorInfo.code));
-  }
-
-  // OpenAI response format: { choices: [{ message: { content: "..." } }] }
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return callTranslationAPI(
+    endpoint,
+    openAIHeaders(apiKey),
+    buildOpenAIRequestBody(model, messages, maxTokens, temperature),
+    false
+  );
 }
 
 // Message listener

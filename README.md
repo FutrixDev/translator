@@ -84,7 +84,7 @@ cd translator
 3. Fill in API configuration:
    - **API Endpoint**: e.g., `https://api.openai.com/v1/chat/completions`
    - **API Key**: Your API key
-   - **Model Name**: e.g., `gpt-4o-mini`
+   - **Model Name**: e.g., `gpt-4.1-mini` (pick from the dropdown, or type any model your endpoint serves)
 4. Select target translation language
 5. Click "Save Settings"
 
@@ -270,7 +270,7 @@ cd translator
 3. 填写 API 配置：
    - **API 地址**: 如 `https://api.openai.com/v1/chat/completions`
    - **API Key**: 你的 API 密钥
-   - **模型名称**: 如 `gpt-4o-mini`
+   - **模型名称**: 如 `gpt-4.1-mini`（可从下拉列表选择，也可直接填写你的接口支持的任意模型）
 4. 选择目标翻译语言
 5. 点击「保存设置」
 
