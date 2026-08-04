@@ -21,7 +21,9 @@ const PROVIDERS = {
   openai: {
     name: 'OpenAI',
     endpoint: 'https://api.openai.com/v1/chat/completions',
-    models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
+    // gpt-5.6 ships as three tiers (sol > terra > luna); the bare "gpt-5.6"
+    // alias routes to sol. Luna is the high-volume tier, so it leads the list.
+    models: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
     defaultModel: 'gpt-4.1-mini'
   },
   anthropic: {
@@ -29,14 +31,17 @@ const PROVIDERS = {
     endpoint: 'https://api.anthropic.com/v1/messages',
     // Native Anthropic API accepts version aliases (no date suffix); aliases
     // always resolve to the latest snapshot and avoid stale/incorrect dates.
-    models: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1'],
+    // claude-opus-4-1 is dropped here: it retires 2026-08-05.
+    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-haiku-4-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5'],
     defaultModel: 'claude-sonnet-5'
   },
   gemini: {
     name: 'Google Gemini',
     endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    models: ['gemini-3.5-flash', 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
-    defaultModel: 'gemini-3-flash'
+    // Only stable text models: gemini-3-pro/gemini-3-flash never reached stable
+    // (Pro is preview-only) and the 2.0 line was shut down on 2026-06-01.
+    models: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    defaultModel: 'gemini-3.6-flash'
   },
   deepseek: {
     name: 'DeepSeek',
@@ -49,15 +54,18 @@ const PROVIDERS = {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     models: [
       // Anthropic Claude
-      'anthropic/claude-opus-4.8',
+      'anthropic/claude-opus-5',
       'anthropic/claude-sonnet-5',
+      'anthropic/claude-opus-4.8',
       'anthropic/claude-opus-4.5',
       'anthropic/claude-sonnet-4.5',
       'anthropic/claude-haiku-4.5',
-      'anthropic/claude-opus-4.1',
       'anthropic/claude-sonnet-4',
       'anthropic/claude-opus-4',
       // OpenAI
+      'openai/gpt-5.6-luna',
+      'openai/gpt-5.6-terra',
+      'openai/gpt-5.6-sol',
       'openai/gpt-5.5',
       'openai/gpt-5',
       'openai/gpt-5-mini',
@@ -70,9 +78,9 @@ const PROVIDERS = {
       'openai/o3-mini',
       'openai/o4-mini',
       // Google Gemini
+      'google/gemini-3.6-flash',
       'google/gemini-3.5-flash',
-      'google/gemini-3-flash',
-      'google/gemini-3-pro',
+      'google/gemini-3.5-flash-lite',
       'google/gemini-2.5-pro',
       'google/gemini-2.5-flash',
       // DeepSeek
@@ -853,12 +861,21 @@ function isOpenAIReasoningModel(model) {
   return /^gpt-5/.test(shortName) || /^o[1-9]/.test(shortName);
 }
 
-// GPT-5 family accepts `reasoning_effort`; 'minimal' skips heavy reasoning so a
-// probe returns text quickly. The o-series does not support 'minimal'.
-function isGpt5Family(model) {
+// Lowest `reasoning_effort` the model accepts, or null when it has no such
+// control, so the probe returns text quickly instead of burning its budget on
+// hidden reasoning. The name of that floor changed across generations:
+// gpt-5…gpt-5.5 use 'minimal'; gpt-5.6+ dropped it in favour of 'none' and
+// reject 'minimal' with HTTP 400. The o-series accepts neither.
+// Keep in sync with background/background.js.
+function minimalReasoningEffort(model) {
   const name = String(model || '').toLowerCase().trim();
   const shortName = name.includes('/') ? name.split('/').pop() : name;
-  return /^gpt-5/.test(shortName);
+  const match = shortName.match(/^gpt-(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  const major = parseInt(match[1], 10);
+  const minor = match[2] ? parseInt(match[2], 10) : 0;
+  if (major < 5) return null;
+  return major > 5 || minor >= 6 ? 'none' : 'minimal';
 }
 
 // Test API connection
@@ -929,8 +946,9 @@ async function testConnection() {
       // spend part of it on hidden reasoning — give the probe room to reply.
       if (isOpenAIReasoningModel(testModel)) {
         testBody.max_completion_tokens = 256;
-        if (isGpt5Family(testModel)) {
-          testBody.reasoning_effort = 'minimal';
+        const effort = minimalReasoningEffort(testModel);
+        if (effort) {
+          testBody.reasoning_effort = effort;
         }
       } else {
         testBody.max_tokens = 20;

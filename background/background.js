@@ -440,12 +440,36 @@ function isOpenAIReasoningModel(model) {
   return /^gpt-5/.test(name) || /^o[1-9]/.test(name);
 }
 
-// The GPT-5 family (gpt-5, gpt-5-mini, gpt-5.4-mini, gpt-5.5, ...) accepts the
-// `reasoning_effort` control; 'minimal' skips heavy chain-of-thought, keeping
-// translation fast and cheap. The o-series (o1..) does NOT support 'minimal',
-// so it is only sent for gpt-5*.
-function isGpt5Family(model) {
-  return /^gpt-5/.test(normalizeModelName(model));
+// Compare the version embedded in a gpt-* model name ("gpt-5.6-luna" -> 5.6).
+// Major and minor are compared separately so a future "gpt-5.10" sorts above
+// "gpt-5.6" instead of being read as the decimal 5.1.
+function gptVersionAtLeast(model, major, minor) {
+  const match = normalizeModelName(model).match(/^gpt-(\d+)(?:\.(\d+))?/);
+  if (!match) return false;
+  const gotMajor = parseInt(match[1], 10);
+  const gotMinor = match[2] ? parseInt(match[2], 10) : 0;
+  return gotMajor > major || (gotMajor === major && gotMinor >= minor);
+}
+
+// Lowest `reasoning_effort` the model accepts, or null when it has no such
+// control. Translation never needs chain-of-thought, so we always ask for the
+// floor — but the name of that floor changed across generations:
+//   gpt-5 … gpt-5.5  -> 'minimal'
+//   gpt-5.6+         -> 'minimal' was dropped; the floor is now 'none'
+// Sending 'minimal' to gpt-5.6-{sol,terra,luna} fails with HTTP 400
+// ("Unsupported value: 'reasoning_effort' does not support 'minimal'").
+// The o-series never accepted either value, so it gets nothing.
+function minimalReasoningEffort(model) {
+  if (!gptVersionAtLeast(model, 5, 0)) return null;
+  return gptVersionAtLeast(model, 5, 6) ? 'none' : 'minimal';
+}
+
+// Gemini 3+ is tuned around its default temperature (1.0). Google's guidance is
+// to leave temperature unset: lowering it — standard practice on older models —
+// can push these models into loops or degrade quality on harder input.
+function isGemini3OrNewer(model) {
+  const match = normalizeModelName(model).match(/^gemini-(\d+)/);
+  return match ? parseInt(match[1], 10) >= 3 : false;
 }
 
 // Newer Claude models reject `temperature`/`top_p` ("deprecated for this model"),
@@ -456,16 +480,17 @@ function isClaudeModelName(model) {
   return /claude|opus|sonnet|haiku|fable/.test(name);
 }
 
-// Reasoning (GPT-5/o-series) and modern thinking (Claude) models spend part of
-// the output budget on hidden reasoning/thinking tokens. A short call such as a
-// single-word lookup (budget 800) can be consumed entirely by that hidden spend,
-// returning empty text with finish_reason "length". Give these models a floor so
-// the visible translation always has room. The token limit is only a cap, so
-// raising it never lengthens a normal translation.
+// Reasoning (GPT-5/o-series), modern thinking (Claude) and Gemini 3+ models
+// spend part of the output budget on hidden reasoning/thinking tokens. A short
+// call such as a single-word lookup (budget 800) can be consumed entirely by
+// that hidden spend, returning empty text with finish_reason "length". Give
+// these models a floor so the visible translation always has room. The token
+// limit is only a cap, so raising it never lengthens a normal translation.
+// Gemini 3 belongs here because its thinking cannot be switched off.
 const REASONING_TOKEN_FLOOR = 2000;
 
 function tokenBudgetFor(model, maxTokens) {
-  if (isOpenAIReasoningModel(model) || isClaudeModelName(model)) {
+  if (isOpenAIReasoningModel(model) || isClaudeModelName(model) || isGemini3OrNewer(model)) {
     return Math.max(maxTokens, REASONING_TOKEN_FLOOR);
   }
   return maxTokens;
@@ -479,13 +504,15 @@ function buildOpenAIRequestBody(model, messages, maxTokens, temperature) {
   if (isOpenAIReasoningModel(model)) {
     // GPT-5.x / o-series: new token-limit field, default temperature only.
     body.max_completion_tokens = tokenLimit;
-    // Skip heavy chain-of-thought for translation (GPT-5 family only).
-    if (isGpt5Family(model)) {
-      body.reasoning_effort = 'minimal';
+    // Skip heavy chain-of-thought for translation, using whichever spelling of
+    // the floor this generation accepts.
+    const effort = minimalReasoningEffort(model);
+    if (effort) {
+      body.reasoning_effort = effort;
     }
   } else {
     body.max_tokens = tokenLimit;
-    if (typeof temperature === 'number' && !isClaudeModelName(model)) {
+    if (typeof temperature === 'number' && !isClaudeModelName(model) && !isGemini3OrNewer(model)) {
       body.temperature = temperature;
     }
   }
