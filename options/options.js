@@ -17,89 +17,19 @@ function getPlatformType() {
 const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
 
 // Provider configurations
-const PROVIDERS = {
-  openai: {
-    name: 'OpenAI',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o4-mini'],
-    defaultModel: 'gpt-4.1-mini'
-  },
-  anthropic: {
-    name: 'Anthropic Claude',
-    endpoint: 'https://api.anthropic.com/v1/messages',
-    // Native Anthropic API accepts version aliases (no date suffix); aliases
-    // always resolve to the latest snapshot and avoid stale/incorrect dates.
-    models: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1'],
-    defaultModel: 'claude-sonnet-5'
-  },
-  gemini: {
-    name: 'Google Gemini',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    models: ['gemini-3.5-flash', 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
-    defaultModel: 'gemini-3-flash'
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    endpoint: 'https://api.deepseek.com/v1/chat/completions',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    defaultModel: 'deepseek-chat'
-  },
-  openrouter: {
-    name: 'OpenRouter',
-    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-    models: [
-      // Anthropic Claude
-      'anthropic/claude-opus-4.8',
-      'anthropic/claude-sonnet-5',
-      'anthropic/claude-opus-4.5',
-      'anthropic/claude-sonnet-4.5',
-      'anthropic/claude-haiku-4.5',
-      'anthropic/claude-opus-4.1',
-      'anthropic/claude-sonnet-4',
-      'anthropic/claude-opus-4',
-      // OpenAI
-      'openai/gpt-5.5',
-      'openai/gpt-5',
-      'openai/gpt-5-mini',
-      'openai/gpt-4.1',
-      'openai/gpt-4.1-mini',
-      'openai/gpt-4.1-nano',
-      'openai/gpt-4o',
-      'openai/gpt-4o-mini',
-      'openai/o3',
-      'openai/o3-mini',
-      'openai/o4-mini',
-      // Google Gemini
-      'google/gemini-3.5-flash',
-      'google/gemini-3-flash',
-      'google/gemini-3-pro',
-      'google/gemini-2.5-pro',
-      'google/gemini-2.5-flash',
-      // DeepSeek
-      'deepseek/deepseek-chat',
-      'deepseek/deepseek-reasoner'
-    ],
-    defaultModel: 'anthropic/claude-sonnet-5'
-  },
-  ollama: {
-    name: 'Ollama (Local)',
-    endpoint: 'http://localhost:11434/v1/chat/completions',
-    models: ['llama3.3', 'qwen2.5', 'deepseek-r1', 'gemma2'],
-    defaultModel: 'llama3.3'
-  },
-  lmstudio: {
-    name: 'LM Studio (Local)',
-    endpoint: 'http://localhost:1234/v1/chat/completions',
-    models: [],
-    defaultModel: ''
-  },
-  custom: {
-    name: 'Custom',
-    endpoint: '',
-    models: [],
-    defaultModel: ''
-  }
-};
+// Provider catalog and every model-capability rule live in shared/api-compat.js
+// (loaded by options.html before this file). Adding a model generation is a
+// one-file change there.
+const {
+  PROVIDERS,
+  DEFAULT_TEMPERATURE,
+  isClaudeAPI,
+  openAIHeaders,
+  claudeHeaders,
+  buildOpenAIRequestBody,
+  buildClaudeRequestBody,
+  readAPIResponse
+} = globalThis.APICompat;
 
 // Current UI language
 let currentUILang = 'en';
@@ -410,12 +340,35 @@ function onProviderChange() {
   updateModelDropdown(providerKey);
 }
 
+// ---------------------------------------------------------------------------
+// Model: one setting, two controls
+//
+// The dropdown and the free-text box both write `modelName`, and the text box
+// wins (getEffectiveModelName). So whenever one of them takes over, the other
+// has to visibly let go — otherwise the page asserts two different models at
+// once and the user has no way to tell which one is really being sent.
+//
+// Only the dropdown side of that was implemented. Picking "claude-opus-5" and
+// then typing a model of your own stored the typed name correctly, but the
+// dropdown went on displaying claude-opus-5 — so the typed name looked ignored.
+// ---------------------------------------------------------------------------
+
 // Handle model select change
 function onModelSelectChange() {
   const selectedModel = elements.modelSelect.value;
   if (selectedModel) {
     // Clear custom input when selecting from dropdown
     elements.modelName.value = '';
+  }
+}
+
+// The mirror image: typing overrides the list, so the list drops back to its
+// placeholder. Emptying the box hands control back and leaves the dropdown to
+// be chosen again — deliberately not restoring the old pick, which would
+// resurrect a model the user had already replaced.
+function onCustomModelInput() {
+  if (elements.modelName.value.trim() && elements.modelSelect.value) {
+    elements.modelSelect.value = '';
   }
 }
 
@@ -779,8 +732,6 @@ async function persistSettings({ reapplyI18n = false } = {}) {
     return;
   }
 
-  // Claimed before the write, compared after it. See the yield below.
-  const seq = statusSeq;
   try {
     await chrome.storage.sync.set(settings);
     lastGoodSettings = settings;
@@ -793,18 +744,12 @@ async function persistSettings({ reapplyI18n = false } = {}) {
       applyPlatformHotkeyLabels();
     }
 
-    if (statusSeq === seq) {
-      // The save confirmation yields. It is routine reassurance, while every
-      // other message on this strip answers a deliberate action — so if anyone
-      // spoke while the write was in flight, leave their message alone.
-      //
-      // The case that forced this: clicking Test Connection blurs the field
-      // being edited, so the flush lands in the middle of the probe. Whichever
-      // finished last used to win, meaning a connection result could be
-      // replaced by "settings saved" — the user asked a question and got an
-      // unrelated answer. The write itself is unaffected either way.
-      showStatus(t('settingsSaved'), 'success');
-    }
+    // Deliberately silent. Autosave fires on every keystroke and every toggle,
+    // so confirming each one turned the status strip into a flashing banner
+    // that said nothing the user did not already know — and trained them to
+    // ignore the strip, which is also where hotkey conflicts and connection
+    // failures appear. Success is the expected outcome; only deviations from it
+    // are worth interrupting for.
   } catch (error) {
     console.error('Failed to save settings:', error);
     showStatus(t('connectionFailed'), 'error');
@@ -839,27 +784,9 @@ async function notifyContentScripts(settings) {
   }
 }
 
-// Detect if the API endpoint is Anthropic Claude API
-function isClaudeAPI(endpoint) {
-  if (!endpoint) return false;
-  return endpoint.includes('anthropic.com') || endpoint.includes('/v1/messages');
-}
-
-// GPT-5.x and o-series reasoning models use `max_completion_tokens` instead of
-// `max_tokens`; sending `max_tokens` to them returns HTTP 400.
-function isOpenAIReasoningModel(model) {
-  const name = String(model || '').toLowerCase().trim();
-  const shortName = name.includes('/') ? name.split('/').pop() : name;
-  return /^gpt-5/.test(shortName) || /^o[1-9]/.test(shortName);
-}
-
-// GPT-5 family accepts `reasoning_effort`; 'minimal' skips heavy reasoning so a
-// probe returns text quickly. The o-series does not support 'minimal'.
-function isGpt5Family(model) {
-  const name = String(model || '').toLowerCase().trim();
-  const shortName = name.includes('/') ? name.split('/').pop() : name;
-  return /^gpt-5/.test(shortName);
-}
+// Endpoint/model shape helpers live in shared/api-compat.js — the same
+// module the service worker uses, so the connection test below proves the
+// exact request translation will make.
 
 // Test API connection
 async function testConnection() {
@@ -895,61 +822,34 @@ async function testConnection() {
 
   showStatus(t('translating'), 'warning');
 
+  // The probe is built by the same helpers the service worker translates with,
+  // so "connection successful" means the real request shape was accepted — not
+  // merely that the endpoint and key exist.
+  const claudeShape = isClaudeAPI(apiEndpoint);
+  // 20 tokens is enough for "Hi", but reasoning/thinking models bill hidden
+  // tokens against the same budget; the shared builder raises the floor for
+  // those, so ask for a small budget and let it decide.
+  const PROBE_TOKENS = 20;
+  const headers = claudeShape ? claudeHeaders(apiKey) : openAIHeaders(apiKey);
+  const body = claudeShape
+    ? buildClaudeRequestBody(modelName, 'Hi', PROBE_TOKENS)
+    : buildOpenAIRequestBody(modelName, [{ role: 'user', content: 'Hi' }], PROBE_TOKENS, DEFAULT_TEMPERATURE);
+
   try {
-    let response;
+    const response = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    });
 
-    if (isClaudeAPI(apiEndpoint)) {
-      // Use Claude API format
-      response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: modelName || 'claude-sonnet-5',
-          // Room for a reply even when the model spends budget on thinking.
-          max_tokens: 256,
-          messages: [
-            { role: 'user', content: 'Hi' }
-          ]
-        })
-      });
+    // Vendors disagree on error shape and some report failures with HTTP 200,
+    // so always read the body rather than trusting response.ok alone.
+    const data = await response.json().catch(() => ({}));
+    const result = readAPIResponse(data, response.status, response.ok, claudeShape);
+    if (result.error) {
+      showStatus(`${t('connectionFailed')}: ${result.error}`, 'error');
     } else {
-      // Use OpenAI-compatible API format
-      const testModel = modelName || 'gpt-4.1-mini';
-      const testBody = {
-        model: testModel,
-        messages: [
-          { role: 'user', content: 'Hi' }
-        ]
-      };
-      // GPT-5.x / o-series reasoning models require max_completion_tokens and
-      // spend part of it on hidden reasoning — give the probe room to reply.
-      if (isOpenAIReasoningModel(testModel)) {
-        testBody.max_completion_tokens = 256;
-        if (isGpt5Family(testModel)) {
-          testBody.reasoning_effort = 'minimal';
-        }
-      } else {
-        testBody.max_tokens = 20;
-      }
-      response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify(testBody)
-      });
-    }
-
-    if (response.ok) {
       showStatus(t('connectionSuccess'), 'success');
-    } else {
-      const error = await response.json().catch(() => ({}));
-      showStatus(`${t('connectionFailed')}: ${error.error?.message || response.status}`, 'error');
     }
   } catch (error) {
     showStatus(`${t('connectionFailed')}: ${error.message}`, 'error');
@@ -995,22 +895,20 @@ function toggleApiKeyVisibility() {
 // ---------------------------------------------------------------------------
 // Status area
 //
-// One strip serves autosave, connection tests, sign-in and presets, so writes
-// to it have to be ordered rather than last-one-wins. `statusSeq` counts them,
-// which lets a slow async writer notice that someone else has since spoken and
-// hold its tongue — see persistSettings.
+// The strip only ever answers a deliberate action now — a connection test, a
+// sign-in, a preset, a rejected hotkey. Autosave used to write here too, on
+// every keystroke, which is what made ordering between writers a problem; with
+// that gone, last-one-wins is the whole rule.
 // ---------------------------------------------------------------------------
 let statusHideTimer = null;
-let statusSeq = 0;
 
 // Show status message
 function showStatus(message, type) {
   // Cancelling the previous hide is the point: these timers used to be left
-  // running, so a save confirmation shown at t=0 would blank whatever occupied
-  // the strip at t=3s — typically a connection error that arrived in between.
+  // running, so a message shown at t=0 would blank whatever occupied the strip
+  // at t=3s — typically an error that arrived in between.
   clearTimeout(statusHideTimer);
   statusHideTimer = null;
-  statusSeq += 1;
 
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type}`;
@@ -1191,6 +1089,11 @@ function setupEventListeners() {
     onModelSelectChange();
     persistSettings();
   });
+
+  // The write this keystroke also triggers is debounced, so the dropdown is
+  // already released by the time collectSettings reads the pair — regardless of
+  // which listener the browser happens to call first.
+  elements.modelName.addEventListener('input', onCustomModelInput);
 
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);

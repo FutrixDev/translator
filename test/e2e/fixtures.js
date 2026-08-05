@@ -18,7 +18,13 @@ const test = base.extend({
    */
   context: async ({}, use) => {
     const context = await chromium.launchPersistentContext('', {
-      headless: false, // Extensions require headed mode
+      // Chrome's newer headless shell loads unpacked extensions, so the suite no
+      // longer has to steal window focus and the pointer while it runs. The
+      // `chromium` channel is what selects that shell — the bundled default
+      // build still cannot load extensions headless.
+      // Set HEADED=1 (or `npm run test:headed`) to watch a run.
+      channel: 'chromium',
+      headless: !process.env.HEADED,
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
