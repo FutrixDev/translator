@@ -160,9 +160,13 @@ const defaultSettings = {
   // language they read articles in.
   enableComicTranslation: false,
   comicTargetLang: '',
-  // PDF translation rides the same server-side account as comics, so it is
-  // opted into for the same reason. Empty pdfTargetLang follows targetLang.
-  enablePdfTranslation: false,
+  // On by default, unlike comics: a PDF is the case where the extension has no
+  // fallback to offer — Chrome's built-in viewer renders in a closed shadow DOM
+  // that content scripts cannot reach, so a reader who never finds this toggle
+  // concludes the product simply does not do PDFs. Nothing is spent until an
+  // explicit click, and the first 20 pages are free.
+  // Empty pdfTargetLang follows targetLang.
+  enablePdfTranslation: true,
   pdfTargetLang: '',
   customPrompt: '',
   theme: 'light'

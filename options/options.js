@@ -329,9 +329,9 @@ const defaultSettings = {
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
   comicTargetLang: '',
-  // Same account, same reasoning: PDF translation spends credits, so it ships
-  // off. Empty pdfTargetLang follows targetLang.
-  enablePdfTranslation: false,
+  // On by default — see the note on defaultSettings in background/background.js.
+  // Empty pdfTargetLang follows targetLang.
+  enablePdfTranslation: true,
   pdfTargetLang: '',
   enableYoutubeCaptionTranslation: false,
   showYoutubeOriginalCaption: true,
@@ -478,7 +478,7 @@ async function refreshComicAccount({ force = false } = {}) {
   // for sign-in and balance.
   const { enableComicTranslation, enablePdfTranslation } = await chrome.storage.sync.get({
     enableComicTranslation: false,
-    enablePdfTranslation: false
+    enablePdfTranslation: true
   });
   if (!enableComicTranslation && !enablePdfTranslation) {
     showComicState(null);
