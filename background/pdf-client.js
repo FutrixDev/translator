@@ -241,6 +241,7 @@ export async function listJobRecords() {
       record.status = 'failed';
       record.stage = null;
       record.error = { code: 'no_response', message: 'The upload did not finish' };
+      record.settledAt = Date.now();
       swept = true;
     }
     live.push(record);
@@ -282,6 +283,23 @@ export async function saveJobRecord(record) {
     .slice(0, MAX_JOB_RECORDS);
   await chrome.storage.local.set({ [JOBS_KEY]: next });
   return merged;
+}
+
+/**
+ * Forget one job on this device.
+ *
+ * Local only, and deliberately so: the row it removes is the popup's copy, not
+ * the job. A dismissed success is still downloadable from the settings history,
+ * and a dismissed failure was still charged or refunded exactly as it was — the
+ * server's account of both is untouched.
+ */
+export async function dismissJobRecord(jobId) {
+  const records = await listJobRecords();
+  const next = records.filter(r => r.jobId !== jobId);
+  if (next.length !== records.length) {
+    await chrome.storage.local.set({ [JOBS_KEY]: next });
+  }
+  return next;
 }
 
 export async function hasActiveJobs() {
@@ -357,7 +375,8 @@ export async function refreshJobRecords() {
       if (error instanceof ComicApiError && error.status === 404) {
         Object.assign(record, {
           status: 'failed',
-          error: { code: 'engine_error', message: 'The job is no longer known to the service' }
+          error: { code: 'engine_error', message: 'The job is no longer known to the service' },
+          settledAt: Date.now()
         });
         transitions.push(record);
         changed = true;
@@ -376,6 +395,8 @@ export async function refreshJobRecords() {
     });
     if (before !== view.status) changed = true;
     if (isActiveStatus(before) && !isActiveStatus(view.status)) {
+      // When it stopped, which is what the popup ages a finished row out by.
+      record.settledAt = Date.now();
       transitions.push(record);
     }
   }

@@ -58,8 +58,124 @@
   // page and the banner beside it are not close at all.
   const SPREAD_AREA_RATIO = 0.5;
 
-  /** Images with a running job or a completed swap, keyed by element. */
-  const tracked = new WeakMap();
+  /**
+   * Images with a running job or a completed swap, keyed by the PAGE they are
+   * about rather than by the <img> element showing it.
+   *
+   * Comic readers recycle a small pool of <img>s: turning the page reassigns
+   * `src` on an element that is already in the DOM, and collapses the outgoing
+   * one to zero size instead of removing it. Keyed by element, a job stayed
+   * bound to the slot rather than to the page — so once the pool wrapped
+   * around, the reader got the previous page's progress card drawn over the
+   * page they were looking at, a badge offering the wrong page's result, and a
+   * translate click that silently re-showed that result instead of starting a
+   * job. Keying by the page makes a recycled slot simply unknown again, which
+   * is what it is.
+   *
+   * A Map, not a WeakMap: the key is no longer something the collector can
+   * reason about, so MAX_TRACKED bounds it instead. Insertion order is
+   * recency — re-tracking an entry re-inserts it.
+   */
+  const tracked = new Map();
+  const MAX_TRACKED = 40;
+
+  /**
+   * A short, stable identity for an image source.
+   *
+   * These readers decode their pages in the browser and hand the <img> a
+   * multi-megabyte `data:` URL. Keeping twenty of those verbatim for a reading
+   * session is not a price worth paying for a lookup key, and the length plus
+   * both ends of the payload tells any two real pages apart.
+   */
+  const KEY_INLINE_MAX = 1024;
+
+  function srcKey(src) {
+    if (!src) return '';
+    if (src.length <= KEY_INLINE_MAX) return src;
+    return `${src.length}:${src.slice(0, 256)}:${src.slice(-256)}`;
+  }
+
+  /** Is `img` still showing the page `entry` is about? */
+  function entryMatchesImage(entry, img = entry.img) {
+    if (!img) return false;
+    const current = img.currentSrc || img.src || '';
+    return current === entry.originalSrc || (!!entry.resultUrl && current === entry.resultUrl);
+  }
+
+  /**
+   * The entry for what this <img> is showing right now, or null.
+   *
+   * Two ways in, because a swapped image no longer carries the src it is keyed
+   * by: the element is stamped with its original when the result goes in. Both
+   * answers are then checked against the element, since a recycled slot can
+   * still be wearing the stamp of the page it used to hold.
+   */
+  function entryFor(img) {
+    const direct = tracked.get(srcKey(img.currentSrc || img.src));
+    if (direct && entryMatchesImage(direct, img)) return direct;
+    const stamped = img.dataset.aiTranslatorOriginalSrc;
+    if (stamped) {
+      const entry = tracked.get(srcKey(stamped));
+      if (entry && entryMatchesImage(entry, img)) return entry;
+    }
+    return null;
+  }
+
+  function trackEntry(entry) {
+    const key = srcKey(entry.originalSrc);
+    if (!key) return;
+    // Started here rather than at load: on a page with nothing tracked the
+    // watcher has no work to do, so it should not be listening yet.
+    watchPageSwaps();
+    tracked.delete(key);
+    tracked.set(key, entry);
+    if (tracked.size <= MAX_TRACKED) return;
+    for (const [victimKey, victim] of tracked) {
+      if (tracked.size <= MAX_TRACKED) break;
+      // A running job is still spending the user's allowance; forgetting it
+      // would strand the result it is about to hand back.
+      if (victim === entry || victim.running) continue;
+      detachEntry(victim);
+      tracked.delete(victimKey);
+    }
+  }
+
+  /**
+   * Let go of the <img> this entry is bound to, without giving up the job.
+   *
+   * Called when the reader turns the page and the slot is handed to another
+   * one. The redraw is paid for and the server will finish it either way, so
+   * the job runs on — but nothing may keep drawing on an element that now
+   * shows a different page. A card still counting for a running job is only
+   * hidden, so that turning back brings the same card, with its clock intact,
+   * rather than a second one.
+   */
+  function detachEntry(entry) {
+    if (entry.detached) return;
+    entry.destroyBadge?.();
+    if (entry.overlay) {
+      if (entry.running) entry.overlay.setHidden(true);
+      else { entry.overlay.destroy(); entry.overlay = null; }
+    }
+    if (entry.img && entry.img.dataset.aiTranslatorOriginalSrc === entry.originalSrc) {
+      delete entry.img.dataset.aiTranslatorOriginalSrc;
+    }
+    entry.detached = true;
+  }
+
+  /** Bind the entry to the element now showing its page. */
+  function bindEntry(entry, img) {
+    entry.img = img;
+    entry.detached = false;
+    // Captured from whichever slot the entry was last bound to; a different
+    // element has its own responsive markup to preserve and restore.
+    entry.originalSrcset = undefined;
+    if (entry.overlay) {
+      entry.overlay.rebind(img);
+      entry.overlay.setHidden(false);
+    }
+  }
+
   let lastContextImage = null;
 
   /**
@@ -75,7 +191,37 @@
 
   /** The in-progress label: a colorize that says "translating" reads as a bug. */
   function statusText(mode) {
-    return t(mode === 'colorize' ? 'comicColorizing' : 'comicTranslating');
+    if (mode === 'colorize') return t('comicColorizing');
+    if (mode === 'translate_colorize') return t('comicTranslatingColorizing');
+    return t('comicTranslating');
+  }
+
+  /** The badge's "show me the result again" label, per product. */
+  function resultLabel(mode) {
+    if (mode === 'colorize') return 'comicShowColorized';
+    if (mode === 'translate_colorize') return 'comicShowColorizedTranslation';
+    return 'comicShowTranslation';
+  }
+
+  /**
+   * The mode a click actually means for THIS image.
+   *
+   * Asking to colorize a page that is currently showing its translation means
+   * "colorize what I am looking at". The job still runs from the original
+   * pixels — a second redraw stacked on the first compounds two generations of
+   * artefacts — so the two products are asked for together instead, which is
+   * exactly what the server's combined mode is for.
+   *
+   * Only what is ON SCREEN counts. Flipping the badge back to the original and
+   * then asking for a colorize is a request about the original, and a purchase
+   * made an hour ago that is not currently displayed is not context either.
+   * That keeps the rule learnable: you get the thing you are looking at, plus
+   * the thing you asked for.
+   */
+  function modeForShownResult(entry, requested) {
+    if (!entry || !entry.badge || !entry.showingTranslation) return requested;
+    const shown = normalizeMode(entry.mode);
+    return shown === requested ? requested : 'translate_colorize';
   }
 
   function comicEnabled() {
@@ -221,6 +367,13 @@
    * in ways that are impossible to test for.
    */
   function createOverlay(img) {
+    // Mutable, not the captured parameter: a reader that recycles its <img>
+    // pool can take this element away and give it back while one job runs, and
+    // the card that comes back has to be the same card — same clock, same
+    // progress — pinned to whichever element now holds the page.
+    let host = img;
+    let hidden = false;
+
     const overlay = document.createElement('div');
     overlay.className = 'ai-translator-comic-overlay';
     overlay.innerHTML = `
@@ -244,11 +397,15 @@
     let frame = 0;
     const track = () => {
       if (!overlay.isConnected) return;
-      if (!img.isConnected) {
+      if (!host.isConnected) {
         destroy();
         return;
       }
-      const rect = img.getBoundingClientRect();
+      if (hidden) {
+        frame = requestAnimationFrame(track);
+        return;
+      }
+      const rect = host.getBoundingClientRect();
       overlay.style.top = `${rect.top}px`;
       overlay.style.left = `${rect.left}px`;
       overlay.style.width = `${rect.width}px`;
@@ -275,6 +432,20 @@
     return {
       element: overlay,
       destroy,
+      /** Follow the job onto the element that now holds its page. */
+      rebind(next) {
+        host = next;
+      },
+      /**
+       * Take the card off the screen without ending the job behind it.
+       *
+       * The reader turned away from a page that is still being redrawn: the
+       * card belongs to that page, not to the one now in the slot.
+       */
+      setHidden(next) {
+        hidden = next;
+        overlay.style.display = next ? 'none' : '';
+      },
       /**
        * Show a running clock, counting from `from`.
        *
@@ -344,7 +515,7 @@
     badge.className = 'ai-translator-comic-badge';
     document.body.appendChild(badge);
 
-    const showResultLabel = entry.mode === 'colorize' ? 'comicShowColorized' : 'comicShowTranslation';
+    const showResultLabel = resultLabel(entry.mode);
     const render = () => {
       badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t(showResultLabel);
     };
@@ -707,8 +878,130 @@
     setTimeout(() => observer.disconnect(), RESUME_WATCH_MS);
   }
 
+  // -------------------------------------------------------------------------
+  // Following the reader
+  // -------------------------------------------------------------------------
+
+  /**
+   * Keep the swaps attached to their pages as the reader turns them.
+   *
+   * A comic reader is not an ordinary page. It recycles a small pool of <img>
+   * elements — turning the page reassigns `src` on an element already in the
+   * DOM and collapses the outgoing one to zero size — and it never reloads the
+   * document, rewriting its own URL through a patched pushState instead. So
+   * resumeComicJobs, which runs once at load and then stops, is the wrong shape
+   * for it twice over: nothing tells it a page has turned, and there is no
+   * second load to be the trigger.
+   *
+   * Watching `src` covers both directions. A slot handed to another page has to
+   * let go of the job it was showing, or that job's card is drawn over a page
+   * it has nothing to do with. And a page turned back to has to get its
+   * translation back, which is free — the result is already bought.
+   */
+  let pageSwapObserver = null;
+
+  function watchPageSwaps() {
+    if (pageSwapObserver) return;
+    const pending = new Set();
+    let scheduled = false;
+
+    const flush = () => {
+      scheduled = false;
+      const images = Array.from(pending);
+      pending.clear();
+      images.forEach(reconcileImage);
+    };
+
+    pageSwapObserver = new MutationObserver((records) => {
+      records.forEach((record) => {
+        if (record.target.tagName === 'IMG') pending.add(record.target);
+      });
+      if (!pending.size || scheduled) return;
+      // Coalesced: a page turn rewrites several slots in one go, and our own
+      // swap is a `src` write that lands right back here.
+      scheduled = true;
+      requestAnimationFrame(flush);
+    });
+    pageSwapObserver.observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'srcset']
+    });
+  }
+
+  function reconcileImage(img) {
+    if (!img.isConnected) return;
+    // Whatever was bound to this element, if the element is not showing it any
+    // more then the slot has been handed to another page.
+    tracked.forEach((entry) => {
+      if (entry.img === img && !entry.detached && !entryMatchesImage(entry, img)) {
+        detachEntry(entry);
+      }
+    });
+
+    const entry = entryFor(img);
+    if (!entry) return;
+    if (entry.running) {
+      // Still being redrawn: give the reader back the card they left, clock and
+      // all, and let the poll loop carry on where it is.
+      if (entry.detached) bindEntry(entry, img);
+      return;
+    }
+    if (!entry.resultUrl && !entry.completedJobId) return;
+    // Two ways to arrive here, and one repair. Either the page has come back
+    // into a slot, or it never left one and the reader's own code has rewritten
+    // `src` anyway — a page turn assigns every slot, including the slot that is
+    // being re-shown, so a result already bought and displayed is quietly
+    // painted over with the original.
+    const showingOriginal = (img.currentSrc || img.src) === entry.originalSrc;
+    if (entry.detached || (entry.showingTranslation && showingOriginal)) {
+      restoreEntry(entry, img);
+    }
+  }
+
+  /**
+   * Put a finished result back on the page that has come back into view.
+   *
+   * Never a new job: the redraw is bought, so the worst case here is one poll
+   * to mint a presigned URL when the one we hold has aged out — the same free
+   * recovery a later page load would do.
+   */
+  async function restoreEntry(entry, img) {
+    if (entry.restoring) return;
+    entry.restoring = true;
+    try {
+      bindEntry(entry, img);
+      // The reader had flipped this one back to the original before turning
+      // away. Give them the badge to flip it again, and leave the page alone.
+      if (!entry.showingTranslation) {
+        if (!entry.badge) attachToggleBadge(entry);
+        return;
+      }
+      let url = entry.resultUrl;
+      if (!url || !(await preloadImage(url))) {
+        if (!entry.completedJobId) return;
+        const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
+        if (!polled.ok || polled.data.status !== 'succeeded' || !polled.data.resultUrl) return;
+        url = polled.data.resultUrl;
+        if (!(await preloadImage(url))) return;
+      }
+      // The reader can turn away again while a poll is in flight; putting the
+      // page back then would land it on whatever is in the slot now.
+      if (entry.detached || entry.img !== img || !entryMatchesImage(entry, img)) return;
+      entry.resultUrl = url;
+      entry.showingTranslation = true;
+      applySource(img, url, entry);
+      if (!entry.badge) attachToggleBadge(entry);
+      // The reader is looking at this one again, so it is the state a reload
+      // should come back to — see the displayedAt note in resumeComicJobs.
+      rememberJob(entry, 'succeeded');
+    } finally {
+      entry.restoring = false;
+    }
+  }
+
   async function resumeRecord(img, record, group = [record]) {
-    const existing = tracked.get(img);
+    const existing = entryFor(img);
     // Something on this document already owns the image — a job the user just
     // started, or a swap that already happened.
     if (existing && (existing.running || existing.badge)) return;
@@ -732,7 +1025,8 @@
     });
     entry.running = true;
     entry.cancelled = false;
-    tracked.set(img, entry);
+    entry.detached = false;
+    trackEntry(entry);
 
     const overlay = createOverlay(img);
     entry.overlay = overlay;
@@ -749,7 +1043,7 @@
         const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: record.jobId });
         if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
           entry.completedJobId = record.jobId;
-          await finishSuccess({ entry, overlay, img, job: polled.data });
+          await finishSuccess({ entry, overlay, job: polled.data });
           return;
         }
         // Nothing to show, and the reader did not ask for anything on this page
@@ -803,22 +1097,36 @@
 
   async function translateImage(img, { pageUrl, targetLang, mode }) {
     mode = normalizeMode(mode);
-    const existing = tracked.get(img);
-    if (existing && existing.running) return;
+    // Keyed by the page, so a recycled slot answers null here rather than
+    // handing back whatever the reader had in it two pages ago.
+    const existing = entryFor(img);
+    if (existing && existing.running) {
+      // The page came back while its job was still going: put the card back
+      // where the reader can see it, and let the poll loop carry on.
+      if (existing.detached) bindEntry(existing, img);
+      return;
+    }
+    // Before every check below: a click on a page that already shows a result
+    // is about that result, so the two products are asked for as one job.
+    mode = modeForShownResult(existing, mode);
     if (existing && existing.badge && existing.mode === mode) {
       // Already done in this mode. Re-running would charge for the same page again.
+      if (existing.img !== img) bindEntry(existing, img);
       existing.showingTranslation = true;
       applySource(img, existing.resultUrl, existing);
       return;
     }
     const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
+    // The same page can be back in a different slot than the one it was
+    // translated in; the entry follows the page, so it has to be re-pointed.
+    if (entry.img !== img || entry.detached) bindEntry(entry, img);
     // Claimed BEFORE anything below can await: the decode wait yields to the
     // event loop, and a second trigger landing in that window has to bounce off
     // `running` rather than pass the guard and start a sibling job under its
     // own idempotency key — two reservations for one user intent.
     entry.running = true;
     entry.cancelled = false;
-    tracked.set(img, entry);
+    trackEntry(entry);
 
     // A retry after an error leaves the previous overlay sitting on the image;
     // two stacked cards over one page is not a state worth having.
@@ -828,15 +1136,18 @@
 
     try {
       if (entry.badge) {
-        // Same page, different product — a translated page being colorized, or
-        // the reverse. That is a NEW job, but the finished one it replaces
-        // stays bought: its job id lives on in `completedByMode`, so coming
-        // back to this mode later is a free re-poll, and a failure in the new
-        // mode costs nothing that was already paid for.
+        // Same page, a different product — by now `mode` already carries what
+        // is on screen as well as what was asked for. That is a NEW job, but
+        // the finished one it replaces stays bought: its job id lives on in
+        // `completedByMode`, so coming back to that mode later is a free
+        // re-poll, and a failure in the new mode costs nothing already paid
+        // for.
         entry.destroyBadge?.();
-        // The new job must start from the ORIGINAL pixels: the canvas fallback
-        // reads whatever the <img> currently shows, and feeding it the
-        // previous result would compound two redraws on one page.
+        // The new job must start from the ORIGINAL pixels — both here and in
+        // the imageUrl createJob sends. Redrawing the previous result would
+        // stack two generations of artefacts on one page, which is why the
+        // combined mode above exists: the server does both passes from the
+        // original in a single job.
         applySource(img, entry.originalSrc, entry);
         entry.showingTranslation = false;
         entry.jobId = null;
@@ -899,7 +1210,7 @@
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
-      await finishSuccess({ entry, overlay, img, job: polled.data });
+      await finishSuccess({ entry, overlay, job: polled.data });
       return;
     }
 
@@ -951,7 +1262,10 @@
       // that refuses a request without a Referer. The page has already decoded
       // it either way, so send the pixels we can see.
       overlay.setStatus(statusText(entry.mode), { progress: 0.05 });
-      const imageBase64 = capturePageBytes(img);
+      // Only from the element still holding this page. Sign-in or a slow fetch
+      // can have taken long enough for the reader to turn away, and a recycled
+      // slot would hand over another page's pixels under this job's name.
+      const imageBase64 = entryMatchesImage(entry, entry.img) ? capturePageBytes(entry.img) : null;
       if (!imageBase64) {
         overlay.setError(t('comicImageUnavailable'));
         offerDismiss(overlay);
@@ -1019,7 +1333,7 @@
 
       const job = polled.data;
       if (job.status === 'succeeded' && job.resultUrl) {
-        await finishSuccess({ entry, overlay, img, job });
+        await finishSuccess({ entry, overlay, job });
         return;
       }
       if (job.status === 'failed' || job.status === 'abandoned') {
@@ -1058,7 +1372,7 @@
     // abandon leaves a succeeded job alone and hands back the result. Charged,
     // and worth showing rather than throwing away.
     if (abandoned && abandoned.ok && abandoned.data.status === 'succeeded' && abandoned.data.resultUrl) {
-      await finishSuccess({ entry, overlay, img, job: abandoned.data });
+      await finishSuccess({ entry, overlay, job: abandoned.data });
       return;
     }
 
@@ -1091,7 +1405,17 @@
     });
   }
 
-  async function finishSuccess({ entry, overlay, img, job }) {
+  /** Resolve true once `url` has decoded, false if it never will. */
+  function preloadImage(url) {
+    return new Promise((resolve) => {
+      const preload = new Image();
+      preload.onload = () => resolve(true);
+      preload.onerror = () => resolve(false);
+      preload.src = url;
+    });
+  }
+
+  async function finishSuccess({ entry, overlay, job }) {
     // Before the download, not after: from here on the redraw exists and has
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
@@ -1105,12 +1429,7 @@
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
-    const loaded = await new Promise((resolve) => {
-      const preload = new Image();
-      preload.onload = () => resolve(true);
-      preload.onerror = () => resolve(false);
-      preload.src = job.resultUrl;
-    });
+    const loaded = await preloadImage(job.resultUrl);
 
     // A presigned URL that expired, a network drop, bytes that will not decode —
     // swapping anyway would replace a readable page with a broken-image icon and
@@ -1123,9 +1442,26 @@
     }
 
     entry.resultUrl = job.resultUrl;
+    // Set before the check below, not after the swap: it is what the reader
+    // asked for, so it is the state to come back to whether or not the page is
+    // in front of them right now.
     entry.showingTranslation = true;
-    applySource(img, job.resultUrl, entry);
+
+    // The reader turned the page while this was finishing, so the <img> this
+    // job started on is showing someone else's page now. The result is bought
+    // and recorded either way — restoreEntry puts it on screen when they turn
+    // back, and swapping it in here would put it on the wrong page.
+    if (entry.detached || !entryMatchesImage(entry, entry.img)) {
+      overlay.destroy();
+      entry.overlay = null;
+      rememberJob(entry, 'succeeded');
+      sendMessage({ type: 'COMIC_ACCOUNT', force: true });
+      return;
+    }
+
+    applySource(entry.img, job.resultUrl, entry);
     overlay.destroy();
+    entry.overlay = null;
     if (!entry.badge) attachToggleBadge(entry);
     // The presigned URL in the DOM dies in 30 minutes and the swap is view
     // state a reload throws away — but the redraw itself is in the bucket for

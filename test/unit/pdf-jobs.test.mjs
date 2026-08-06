@@ -132,9 +132,51 @@ test('a settled pending record stops standing in for the job the server has', ()
   assert.equal(pdf.isPendingInFlight({ jobId: 'job-1', status: 'queued' }), false);
 });
 
+test('dismissing a job drops this device\'s row and leaves the rest alone', async () => {
+  const store = withStorage({
+    pdfJobs: [
+      { jobId: 'job-1', status: 'failed', createdAt: Date.now(), error: { code: 'budget_exceeded' } },
+      { jobId: 'job-2', status: 'running', createdAt: Date.now() }
+    ]
+  });
+  const left = await pdf.dismissJobRecord('job-1');
+  assert.deepEqual(left.map(r => r.jobId), ['job-2']);
+  assert.deepEqual(store.pdfJobs.map(r => r.jobId), ['job-2']);
+});
+
+test('a job that finished stamps when it finished', async () => {
+  // The popup ages a finished row out by this; without it a failure sits in the
+  // menu for the record's whole 24-hour life.
+  const source = repoFile('background/pdf-client.js');
+  const body = source.slice(source.indexOf('export async function refreshJobRecords'));
+  assert.ok(
+    /settledAt: Date\.now\(\)/.test(body),
+    'the terminal transition must stamp settledAt'
+  );
+  const create = repoFile('background/background.js');
+  const createBody = create.slice(create.indexOf('async function handlePdfCreateJob'));
+  assert.ok(
+    /settledAt: Date\.now\(\)/.test(createBody),
+    'a create that fails outright must stamp settledAt too — no poll will ever visit it'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // The wiring these records depend on
 // ---------------------------------------------------------------------------
+
+test('the popup stops showing a job that finished long ago', () => {
+  const source = repoFile('popup/popup.js');
+  assert.ok(
+    /PDF_SETTLED_VISIBLE_MS/.test(source) &&
+      /records\.filter\(isPdfJobStillWorthShowing\)/.test(source),
+    'the popup list must age finished rows out rather than render every record'
+  );
+  assert.ok(
+    /type: 'PDF_JOB_DISMISS'/.test(source),
+    'and offer a way to drop one sooner'
+  );
+});
 
 test('the settings history merges only the local rows still in flight', () => {
   const source = repoFile('background/background.js');

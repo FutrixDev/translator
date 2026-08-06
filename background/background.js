@@ -545,6 +545,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(handlePdfJobsHistory(), sendResponse);
       return true;
 
+    case 'PDF_JOB_DISMISS':
+      replyComic(pdfClient.dismissJobRecord(message.jobId), sendResponse);
+      return true;
+
     case 'PDF_OPEN_RESULT':
       replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
       return true;
@@ -905,7 +909,8 @@ async function handlePdfCreateJob(message) {
       error: {
         code: (error && error.code) || 'engine_error',
         message: (error && error.message) || ''
-      }
+      },
+      settledAt: Date.now()
     });
     throw error;
   }
@@ -922,7 +927,10 @@ async function handlePdfCreateJob(message) {
     stage: job.stage || null,
     pageCount: job.pageCount,
     results: job.results || null,
-    error: job.error || null
+    error: job.error || null,
+    // Already over on arrival: no alarm poll will ever run for it, so this is
+    // the only place its finish time can be stamped.
+    ...(job.status === 'queued' || job.status === 'running' ? {} : { settledAt: Date.now() })
   });
   await ensurePdfPollAlarm();
   return { ...job, fileName };
