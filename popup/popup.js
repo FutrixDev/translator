@@ -106,8 +106,8 @@ const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
 const PDF_POPUP_POLL_MS = 3000;
 const PDF_LIST_LIMIT = 3;
 let pdfPollTimer = null;
-// A create error shown inline above the list (sign-in, top-up, …). Cleared by
-// the next successful action.
+// A create error shown inline above the list (sign-in, an exhausted allowance,
+// …). Cleared by the next successful action.
 let pdfInlineError = null;
 
 async function refreshPdfSection() {

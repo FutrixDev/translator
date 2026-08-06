@@ -267,7 +267,10 @@ test.describe('Advanced Settings login gate', () => {
     }
   });
 
-  test('signing out turns both features off', async ({ context, page, extensionId }) => {
+  // Signing out drops this device's credential and nothing else. The switches
+  // are synced, so writing them off would disable the feature on every other
+  // device the account is still signed in on.
+  test('signing out clears the token but leaves the synced switches alone', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       const worker = await connectExtension(context, service.base);
@@ -280,12 +283,14 @@ test.describe('Advanced Settings login gate', () => {
       await page.locator('#comicSignOut').click();
 
       await expect(page.locator('#comicSignedOut')).toBeVisible();
-      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
-      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
-      // Storage is what actually retracts the context menus and popup rows.
       await expect.poll(async () => worker.evaluate(
-        () => chrome.storage.sync.get({ enableComicTranslation: true, enablePdfTranslation: true }),
-      )).toEqual({ enableComicTranslation: false, enablePdfTranslation: false });
+        () => chrome.storage.local.get({ comicToken: '' }),
+      )).toEqual({ comicToken: '' });
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+      await expect.poll(async () => worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
+      )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });
     } finally {
       await service.close();
     }

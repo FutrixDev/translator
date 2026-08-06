@@ -504,24 +504,16 @@ async function comicSignOut() {
   await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
   comicSignedIn = false;
   showComicState('signedOut');
-  // Neither feature can run without an account, so leaving their switches on
-  // would promise entry points that only ever answer "sign in".
-  await disableAccountFeatures();
-}
-
-/**
- * Turn both account-backed features off, in storage and on screen.
- *
- * Called on sign-out. Writing storage is what actually retracts the context
- * menus and popup rows; the checkboxes are updated to match because the page
- * does not reload after a sign-out.
- */
-async function disableAccountFeatures() {
-  await chrome.storage.sync.set({ enableComicTranslation: false, enablePdfTranslation: false });
-  elements.enableComicTranslation.checked = false;
-  elements.enablePdfTranslation.checked = false;
-  elements.comicTargetLang.disabled = true;
-  elements.pdfTargetLang.disabled = true;
+  // The two switches are deliberately left alone. They live in sync storage
+  // and the token lives in local, so writing them off here would reach across
+  // to every other device the account is signed in on and disable the feature
+  // there — a sign-out is about this device's credential, nothing more.
+  //
+  // What is left is a switch that is on with no token behind it. That is the
+  // same state a second device is in the moment it syncs the preference, and
+  // it is not a dead end: every entry point ends at a sign-in offer rather
+  // than an error — the comic overlay prompts and retries the job, and the PDF
+  // page has its own Sign In button.
 }
 
 /**
