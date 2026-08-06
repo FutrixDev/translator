@@ -32,8 +32,10 @@ const ACCOUNT = {
  * @param {number} meDelayMs hold the account response back this long, to hold
  *   the options page open in the window where it has a token but not yet an
  *   answer.
+ * @param {number} connectDelayMs the same, for the sign-in bounce, so a second
+ *   gate can arrive while the first authentication is still running.
  */
-function startMockService({ connect = 'token', meDelayMs = 0 } = {}) {
+function startMockService({ connect = 'token', meDelayMs = 0, connectDelayMs = 0 } = {}) {
   // `account` is mutable so a test can spend pages mid-run, the way a
   // translation job does, and see whether the page ever notices.
   const state = { meRequests: 0, connectRequests: 0, account: ACCOUNT };
@@ -54,8 +56,12 @@ function startMockService({ connect = 'token', meDelayMs = 0 } = {}) {
       const fragment = connect === 'token'
         ? `#token=granted-token&expires_at=${Date.now() + 3600_000}`
         : '#error=access_denied';
-      res.writeHead(302, { location: `${redirect}${fragment}`, 'cache-control': 'no-store' });
-      res.end();
+      const bounce = () => {
+        res.writeHead(302, { location: `${redirect}${fragment}`, 'cache-control': 'no-store' });
+        res.end();
+      };
+      if (connectDelayMs) return setTimeout(bounce, connectDelayMs);
+      bounce();
       return;
     }
 
@@ -405,6 +411,43 @@ test.describe('Advanced Settings login gate', () => {
       await expect(page.locator('#enableComicTranslation')).toBeChecked();
       // One account fetch for the whole sign-in: the one inside it.
       expect(service.state.meRequests).toBe(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  // Both switches are live while signed out, so both gates can be reached
+  // before either has an account to check. Two independent flows would open two
+  // authentication tabs, and the second to finish would overwrite the first.
+  test('turning both switches on at once runs one sign-in, not two', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ connectDelayMs: 1500 });
+    try {
+      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: false }));
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+
+      // Toggled directly rather than by two clicks: the first one flips the
+      // account panel to its loading state, which is a different height, and
+      // the second click would land on coordinates the reflow has already
+      // moved. What matters here is that both handlers reach the gate before
+      // either has an answer, which is exactly this.
+      await page.evaluate(() => {
+        for (const id of ['enableComicTranslation', 'enablePdfTranslation']) {
+          const el = document.getElementById(id);
+          el.checked = true;
+          el.dispatchEvent(new Event('change'));
+        }
+      });
+
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+      await expect.poll(async () => worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
+      )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });
+      // One authentication tab for both switches.
+      expect(service.state.connectRequests).toBe(1);
     } finally {
       await service.close();
     }

@@ -442,6 +442,9 @@ let comicAccountReady = Promise.resolve();
  *  paint a signed-in panel over a sign-out the user just asked for. */
 let comicAccountGeneration = 0;
 
+/** The sign-in flow currently running, shared by both switches' gates. */
+let comicSignInInFlight = null;
+
 /** Pages left this month for one operation. Older servers report only the comic
  *  allowance, at the top level and under its pre-PDF name. */
 function freePagesLeft(account, operation) {
@@ -513,7 +516,23 @@ function showAccount(account) {
   return true;
 }
 
-async function comicSignIn() {
+/**
+ * Sign in, or join the sign-in already running.
+ *
+ * Both switches are live while signed out, so turning them on in quick
+ * succession sends two gates here. Two independent flows would open two
+ * authentication tabs, and the second to finish would overwrite the first: a
+ * cancelled one landing after a successful one renders the signed-out panel
+ * with a valid token in storage. One flow, one answer, both callers.
+ */
+function comicSignIn() {
+  if (!comicSignInInFlight) {
+    comicSignInInFlight = runComicSignIn().finally(() => { comicSignInInFlight = null; });
+  }
+  return comicSignInInFlight;
+}
+
+async function runComicSignIn() {
   // This decides the account outright, so any read already on the wire is stale
   // from here on — including the one this replaces.
   comicAccountGeneration += 1;
