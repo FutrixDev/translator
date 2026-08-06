@@ -236,6 +236,35 @@ body {
   cursor: pointer;
 }
 
+/* Dismiss. Quiet until the row is hovered — it is an escape hatch, not one of
+   the two things this list is for. */
+.pdf-job-dismiss {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.pdf-job:hover .pdf-job-dismiss,
+.pdf-job-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.pdf-job-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .pdf-job-error {
   flex-direction: row;
   align-items: center;

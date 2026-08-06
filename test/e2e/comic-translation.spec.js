@@ -116,6 +116,35 @@ const DECOY_PAGE_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * How a real online reader turns a page: no navigation at all.
+ *
+ * A small pool of <img> elements is recycled — the element that showed page 1
+ * shows page 3 a moment later — and the URL moves by pushState, so the document
+ * never reloads and the content script never runs again. Both halves matter.
+ * Tracking a translation by its element hands page 3 the badge, the swap and
+ * the "already translated" shortcut that were bought for page 1; and nothing
+ * re-runs on a turn, so coming back has to be noticed from inside the page.
+ *
+ * Two slots is the smallest pool that recycles: pages 1 and 3 share one.
+ */
+const READER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Reader</title></head>
+<body style="margin:0">
+  <img class="page_img" width="400">
+  <img class="page_img" width="400">
+  <script>
+    const pool = Array.from(document.querySelectorAll('.page_img'));
+    window.turnTo = (n) => {
+      const slot = n % pool.length;
+      pool[slot].src = '/source.png?page=' + n;
+      pool.forEach((img, i) => { img.style.display = i === slot ? '' : 'none'; });
+      history.pushState({}, '', '/reader?page=' + n);
+    };
+    turnTo(1);
+  </script>
+</body></html>`;
+
+/**
  * A stand-in for the translation service.
  *
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
@@ -163,6 +192,7 @@ function startMockService(
 
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy.png') return send(200, DECOY_PNG, 'image/png');
     if (url.pathname === '/source.png') {
       state.sourceHits += 1;
@@ -560,12 +590,12 @@ test.describe('Comic page translation', () => {
   });
 
   /**
-   * Switching a finished page to the other product must not orphan what was
-   * already bought. Translate, then colorize, then ask for the translation
-   * again: the third click has to re-poll the first job for a fresh URL —
-   * three swaps, exactly two reservations.
+   * Colorizing a page that is showing its translation is a request about the
+   * translation, not about the raw page underneath it. The job still runs from
+   * the original pixels — stacking a redraw on a redraw compounds artefacts —
+   * so both products are asked for in one job instead.
    */
-  test('switching modes re-polls the finished job instead of paying again', async ({ context, page }) => {
+  test('colorizing a translated page asks for both products in one job', async ({ context, page }) => {
     const service = await startMockService('succeed');
     const worker = await connectExtension(context, service.base);
     try {
@@ -577,8 +607,55 @@ test.describe('Comic page translation', () => {
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].mode).toBe('translate');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
+      await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(2);
+      // The whole point: not 'colorize', which would have redrawn the original
+      // and thrown the translation away.
+      expect(service.state.createBodies[1].mode).toBe('translate_colorize');
+      // And from the original bytes, not from the translated result.
+      expect(service.state.createBodies[1].imageBase64)
+        .toBe(service.state.createBodies[0].imageBase64);
+
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible({ timeout: 20000 });
+      const recordKeys = await worker.evaluate(
+        () => chrome.storage.local.get('comicJobs').then(r => Object.keys(r.comicJobs || {})),
+      );
+      expect(recordKeys.filter(k => k.startsWith('translate|'))).toHaveLength(1);
+      expect(recordKeys.filter(k => k.startsWith('translate_colorize|'))).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  /**
+   * Switching a finished page to the other product must not orphan what was
+   * already bought. Translate, flip back to the original, colorize it, flip
+   * back again and ask for the translation: the last click has to re-poll the
+   * first job for a fresh URL — three swaps, exactly two reservations.
+   *
+   * The badge flips are what make each click a request about the ORIGINAL, so
+   * the combined mode above stays out of it and the two single-product
+   * purchases are the thing under test.
+   */
+  test('switching modes re-polls the finished job instead of paying again', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    const badge = page.locator('.ai-translator-comic-badge');
+    try {
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(service.state.createBodies).toHaveLength(1);
 
       // The other product on the same page: a second paid job, by design.
+      await badge.click();
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/source\.png/);
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
       await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(2);
       expect(service.state.createBodies[1].mode).toBe('colorize');
@@ -590,8 +667,10 @@ test.describe('Comic page translation', () => {
       // first job. The switch tears the colorize badge down, and only a
       // successful recovery puts a badge back — asserting on that cycle rather
       // than on the src, which matches the same result pattern either way.
+      await badge.click();
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/source\.png/);
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'translate');
-      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible({ timeout: 20000 });
+      await expect(badge).toBeVisible({ timeout: 20000 });
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
@@ -709,6 +788,175 @@ test.describe('Comic page translation', () => {
       expect(service.state.polls).toBeGreaterThan(2);
     } finally {
       await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
+      await service.close();
+    }
+  });
+
+  /**
+   * The reader that never reloads.
+   *
+   * `reload()` above is the easy shape of "the reader went away": the document
+   * dies and the content script starts again from the records. An online reader
+   * does neither — it recycles a handful of <img> elements and rewrites the URL
+   * with pushState — so a translation that belongs to *an element* silently
+   * becomes a translation of whatever page that element shows next.
+   */
+  const readerPage = (base, n) => `${base}/reader?page=${n}`;
+
+  /** The context-menu stand-in, against a tab whose URL moves under it. */
+  async function triggerReaderTranslation(worker, base, n) {
+    await worker.evaluate(async ({ base, n }) => {
+      const [tab] = await chrome.tabs.query({ url: `${base}/reader*` });
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'COMIC_TRANSLATE_IMAGE',
+        srcUrl: `${base}/source.png?page=${n}`,
+        pageUrl: `${base}/reader?page=${n}`,
+        targetLang: 'zh-CN',
+      });
+    }, { base, n });
+  }
+
+  test('a recycled page slot does not inherit the previous page translation', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/reader`);
+      await expect(page).toHaveURL(readerPage(service.base, 1));
+
+      // Page 1 lives in the second slot: 1 % 2.
+      const slots = page.locator('.page_img');
+      await triggerReaderTranslation(worker, service.base, 1);
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+
+      const badge = page.locator('.ai-translator-comic-badge');
+      await expect(badge).toBeVisible();
+
+      // Forward one page. The other slot takes over; page 1's badge is still
+      // its own, and has nothing on screen to sit on.
+      await page.evaluate(() => window.turnTo(2));
+      await expect(slots.nth(0)).toHaveAttribute('src', '/source.png?page=2');
+      await expect(badge).toBeHidden();
+
+      // Forward again — and this is the turn that used to break the reader,
+      // because page 3 arrives in the element page 1 was translated in.
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
+      // Page 3 is untranslated, so it gets no badge and nothing covering it.
+      await expect(page.locator('.ai-translator-comic-badge')).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
+
+      // And it can still be translated on its own: the slot's history must not
+      // short-circuit into showing page 1's purchase again.
+      await triggerReaderTranslation(worker, service.base, 3);
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      expect(service.state.createBodies).toHaveLength(2);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('the card for a page still redrawing does not follow the slot to another page', async ({ context, page }) => {
+    // The reported symptom, exactly: translate a page, turn twice, and the
+    // progress card for the first page is sitting on top of the third — which
+    // is also unreadable and unclickable while it is there.
+    const service = await startMockService('succeed', { succeedAfterMs: 8000 });
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/reader`);
+      await expect(page).toHaveURL(readerPage(service.base, 1));
+
+      const slots = page.locator('.page_img');
+      const overlay = page.locator('.ai-translator-comic-overlay');
+      await triggerReaderTranslation(worker, service.base, 1);
+      await expect(overlay).toBeVisible();
+
+      // Two turns, so page 3 lands in the slot the running job started in.
+      await page.evaluate(() => window.turnTo(2));
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
+      // Page 3 is on screen and readable: the card let go of the slot.
+      await expect(slots.nth(1)).toBeVisible();
+      await expect(overlay).toBeHidden();
+
+      // Back to page 1, still running. One card, not a second one, and its
+      // clock has been running the whole time.
+      await page.evaluate(() => window.turnTo(1));
+      await expect(overlay).toBeVisible();
+      await expect(overlay).toHaveCount(1);
+
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 30000 });
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a redraw that lands while the reader has turned away waits for them', async ({ context, page }) => {
+    // The reader does not sit and watch: they turn the page while it renders.
+    // The card belongs to the page it was started on — leaving it up would
+    // cover the page they went to read — and the result, when it arrives, has
+    // to wait rather than land on whatever is in the slot.
+    const service = await startMockService('succeed', { succeedAfterMs: 6000 });
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/reader`);
+      await expect(page).toHaveURL(readerPage(service.base, 1));
+
+      const slots = page.locator('.page_img');
+      const overlay = page.locator('.ai-translator-comic-overlay');
+      await triggerReaderTranslation(worker, service.base, 1);
+      await expect(overlay).toBeVisible();
+
+      // Away while it is still running.
+      await page.evaluate(() => window.turnTo(2));
+      await expect(slots.nth(0)).toHaveAttribute('src', '/source.png?page=2');
+      await expect(overlay).toBeHidden();
+
+      // Let it finish with page 2 on screen. The record is the only place the
+      // outcome shows while the page it belongs to is not being displayed.
+      await expect.poll(
+        () => worker.evaluate(() => chrome.storage.local.get('comicJobs').then(
+          r => Object.values(r.comicJobs || {}).map(job => job.status),
+        )),
+        { timeout: 40000 },
+      ).toContain('succeeded');
+      // Page 2 is untouched by a result that was never about it.
+      await expect(slots.nth(0)).toHaveAttribute('src', '/source.png?page=2');
+
+      await page.evaluate(() => window.turnTo(1));
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('turning back to a translated page puts it back without ordering it again', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/reader`);
+      await expect(page).toHaveURL(readerPage(service.base, 1));
+
+      const slots = page.locator('.page_img');
+      await triggerReaderTranslation(worker, service.base, 1);
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+
+      // Two turns forward, so the slot is recycled and every trace of page 1 is
+      // gone from the DOM.
+      await page.evaluate(() => window.turnTo(2));
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
+      await expect(page.locator('.ai-translator-comic-badge')).toHaveCount(0);
+
+      // Back to page 1. The reader turned a page; they did not throw away what
+      // they paid for.
+      await page.evaluate(() => window.turnTo(1));
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
       await service.close();
     }
   });

@@ -107,6 +107,14 @@ async function onComicPageAction(mode) {
 const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
 const PDF_POPUP_POLL_MS = 3000;
 const PDF_LIST_LIMIT = 3;
+// How long a finished job stays in this menu. The records live for a day so the
+// settings page has something to show while offline, but this list is not a
+// history — it is the readout for what you just started. A failure that outlasts
+// the session it belongs to stops being information and becomes a thing you
+// have to look at every time you open the menu, which is what a day of
+// "翻译超时" was. The full account, kept as long as the server keeps it, is in
+// settings; the × below is the way to drop one sooner.
+const PDF_SETTLED_VISIBLE_MS = 60 * 60 * 1000;
 let pdfPollTimer = null;
 // A create error shown inline above the list (sign-in, an exhausted allowance,
 // …). Cleared by the next successful action.
@@ -174,6 +182,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
   renderPdfJobs(records);
 });
 
+/**
+ * Anything in flight, and anything that finished recently enough to still be
+ * about what the user just did.
+ *
+ * `settledAt` is stamped when a job crosses into a terminal state. Records
+ * written before that field existed fall back to `createdAt`, which ages them
+ * out at least as fast — the point is that they go.
+ */
+function isPdfJobStillWorthShowing(record) {
+  if (PDF_UI.isPdfJobActive(record)) return true;
+  const settled = record.settledAt || record.createdAt || 0;
+  return Date.now() - settled < PDF_SETTLED_VISIBLE_MS;
+}
+
+async function dismissPdfJob(jobId) {
+  try {
+    await chrome.runtime.sendMessage({ type: 'PDF_JOB_DISMISS', jobId });
+  } catch (error) {
+    console.error('Failed to dismiss PDF job:', error);
+  }
+}
+
 function renderPdfJobs(records) {
   const list = elements.pdfJobs;
   list.textContent = '';
@@ -183,7 +213,8 @@ function renderPdfJobs(records) {
   // The worker's own pending record supersedes the placeholder — same row, but
   // one that outlives this popup.
   if (pdfPlaceholder && records.some(r => r.pending)) pdfPlaceholder = null;
-  const rows = pdfPlaceholder ? [pdfPlaceholder, ...records] : records;
+  const fresh = records.filter(isPdfJobStillWorthShowing);
+  const rows = pdfPlaceholder ? [pdfPlaceholder, ...fresh] : fresh;
 
   rows.slice(0, PDF_LIST_LIMIT).forEach((record) => {
     const row = document.createElement('div');
@@ -223,6 +254,24 @@ function renderPdfJobs(records) {
     } else if (record.error) {
       status.classList.add('is-error');
       status.textContent = t(PDF_UI.pdfErrorMessageKey(record.error.code));
+    }
+
+    // A finished row is dismissable — the placeholder has no jobId yet, and a
+    // running job has abandon, not dismiss, as its way out.
+    if (!PDF_UI.isPdfJobActive(record) && record.jobId) {
+      const dismiss = document.createElement('button');
+      dismiss.className = 'pdf-job-dismiss';
+      dismiss.textContent = '×';
+      dismiss.title = t('pdfDismiss');
+      dismiss.setAttribute('aria-label', t('pdfDismiss'));
+      dismiss.addEventListener('click', () => {
+        // Repaint from what is left rather than waiting for the storage event,
+        // so the row goes the moment it is clicked.
+        row.remove();
+        list.hidden = !list.childElementCount;
+        dismissPdfJob(record.jobId);
+      });
+      head.appendChild(dismiss);
     }
 
     list.appendChild(row);
