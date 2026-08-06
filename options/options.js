@@ -185,7 +185,15 @@ const elements = {
   comicTargetLang: document.getElementById('comicTargetLang'),
   // PDF translation
   enablePdfTranslation: document.getElementById('enablePdfTranslation'),
-  pdfTargetLang: document.getElementById('pdfTargetLang')
+  pdfTargetLang: document.getElementById('pdfTargetLang'),
+  // PDF tasks (server-backed history)
+  pdfTasksCard: document.getElementById('pdfTasksCard'),
+  pdfTasksRefresh: document.getElementById('pdfTasksRefresh'),
+  pdfTasksState: document.getElementById('pdfTasksState'),
+  pdfTasksActiveGroup: document.getElementById('pdfTasksActiveGroup'),
+  pdfTasksActiveList: document.getElementById('pdfTasksActiveList'),
+  pdfTasksHistoryGroup: document.getElementById('pdfTasksHistoryGroup'),
+  pdfTasksHistoryList: document.getElementById('pdfTasksHistoryList')
 };
 
 // Preset prompt templates
@@ -488,6 +496,7 @@ function renderAccountFeatures() {
   elements.comicTargetLang.disabled = !comicOn;
   elements.enablePdfTranslation.checked = pdfOn;
   elements.pdfTargetLang.disabled = !pdfOn;
+  syncPdfTasksVisibility(pdfOn);
 }
 
 /** Pages left this month for one operation. Older servers report only the comic
@@ -503,6 +512,186 @@ function formatResetDate(account) {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '—';
   return at.toLocaleDateString(currentUILang, { month: 'short', day: 'numeric' });
+}
+
+// ---------------------------------------------------------------------------
+// PDF tasks
+//
+// The account's own translation jobs, read from the server. Deliberately not
+// the extension's local records: those are a device cache (20 rows, 24-hour
+// TTL, gone with the browser profile) while this list answers "what have I
+// translated", which spans devices and reinstalls. The service worker merges in
+// the one thing the server cannot know yet — an upload still in flight from
+// this device — and hands back the combined list.
+//
+// Polled only while something is running, and only while this page is visible.
+// ---------------------------------------------------------------------------
+
+const PDF_TASKS_POLL_MS = 5000;
+const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
+const PDF_TASK_LANG_KEYS = {
+  'zh-CN': 'langZhCN', 'zh-TW': 'langZhTW', en: 'langEn', ja: 'langJa', ko: 'langKo',
+  fr: 'langFr', de: 'langDe', es: 'langEs', pt: 'langPt', ru: 'langRu'
+};
+let pdfTasksTimer = null;
+/** What the last fetch was made for. renderAccountFeatures runs on every load
+ *  and every account change; only a change in either half is worth a request. */
+let pdfTasksFetchedFor = null;
+
+/** Driven by renderAccountFeatures: the list follows the switch it belongs to. */
+function syncPdfTasksVisibility(visible) {
+  if (!elements.pdfTasksCard) return;
+  elements.pdfTasksCard.hidden = !visible;
+  const key = `${visible}:${comicSignedIn}`;
+  if (key === pdfTasksFetchedFor) return;
+  pdfTasksFetchedFor = key;
+  stopPdfTasksPoll();
+  // Signing in is the case this exists for: the first render can run before the
+  // account has answered, and the list it drew then was a sign-in prompt.
+  if (visible) refreshPdfTasks();
+}
+
+function stopPdfTasksPoll() {
+  if (pdfTasksTimer) clearTimeout(pdfTasksTimer);
+  pdfTasksTimer = null;
+}
+
+function schedulePdfTasksPoll(hasActive) {
+  stopPdfTasksPoll();
+  if (!hasActive || elements.pdfTasksCard.hidden || document.hidden) return;
+  pdfTasksTimer = setTimeout(() => refreshPdfTasks({ quiet: true }), PDF_TASKS_POLL_MS);
+}
+
+async function refreshPdfTasks({ quiet = false } = {}) {
+  if (!quiet) setPdfTasksMessage(t('pdfTasksLoading'));
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({ type: 'PDF_JOBS_HISTORY' });
+  } catch (error) {
+    response = null;
+  }
+
+  if (!response || !response.ok) {
+    // Signed out is not an error to report — it is a sign-in to offer.
+    if (response && response.error && response.error.code === 'unauthorized') {
+      renderPdfTasksSignedOut();
+      return;
+    }
+    if (quiet) {
+      // Leave whatever is on screen; a later poll retries.
+      schedulePdfTasksPoll(true);
+      return;
+    }
+    showPdfTaskGroups([], []);
+    setPdfTasksMessage(t('pdfTasksError'));
+    return;
+  }
+
+  const jobs = (response.data && response.data.jobs) || [];
+  const active = jobs.filter(job => PDF_UI.isPdfJobActive(job));
+  showPdfTaskGroups(active, jobs.filter(job => !PDF_UI.isPdfJobActive(job)));
+
+  if (!jobs.length) setPdfTasksMessage(t('pdfTasksEmpty'));
+  else if (response.data && response.data.stale) setPdfTasksMessage(t('pdfTasksOffline'));
+  else setPdfTasksMessage('');
+
+  schedulePdfTasksPoll(active.length > 0);
+}
+
+function setPdfTasksMessage(text, extraNode = null) {
+  const box = elements.pdfTasksState;
+  box.textContent = text || '';
+  if (extraNode) box.appendChild(extraNode);
+  box.hidden = !box.childNodes.length;
+}
+
+function renderPdfTasksSignedOut() {
+  stopPdfTasksPoll();
+  showPdfTaskGroups([], []);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-text';
+  button.textContent = t('comicSignIn');
+  button.addEventListener('click', async () => {
+    // Same shared flow the switches use, so two sign-ins never race.
+    if (await comicSignIn()) refreshPdfTasks();
+  });
+  setPdfTasksMessage(t('pdfTasksSignedOut'), button);
+}
+
+function showPdfTaskGroups(active, history) {
+  renderPdfTaskList(elements.pdfTasksActiveList, active);
+  renderPdfTaskList(elements.pdfTasksHistoryList, history);
+  elements.pdfTasksActiveGroup.classList.toggle('hidden', !active.length);
+  elements.pdfTasksHistoryGroup.classList.toggle('hidden', !history.length);
+}
+
+function renderPdfTaskList(list, jobs) {
+  list.textContent = '';
+  jobs.forEach(job => list.appendChild(pdfTaskRow(job)));
+}
+
+function pdfTaskRow(job) {
+  const row = document.createElement('div');
+  row.className = 'pdf-task';
+
+  const name = document.createElement('div');
+  name.className = 'pdf-task-name';
+  name.textContent = job.fileName || t('pdfTasksUnnamed');
+  name.title = name.textContent;
+
+  const meta = document.createElement('div');
+  meta.className = 'pdf-task-meta';
+  meta.textContent = pdfTaskMeta(job);
+
+  const main = document.createElement('div');
+  main.className = 'pdf-task-main';
+  main.appendChild(name);
+  main.appendChild(meta);
+  row.appendChild(main);
+
+  if (PDF_UI.isPdfJobActive(job)) {
+    const track = document.createElement('div');
+    track.className = 'pdf-task-track';
+    const bar = document.createElement('div');
+    bar.className = 'pdf-task-bar';
+    bar.style.width = `${Math.max(2, Math.min(100, Math.round(job.progress || 0)))}%`;
+    track.appendChild(bar);
+    main.appendChild(track);
+  } else if (job.status === 'succeeded' && !job.pending) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn btn-text pdf-task-open';
+    open.textContent = t('pdfOpen');
+    // Never the URL the list came with: presigned links expire in minutes and
+    // this page can sit open for hours, so the worker re-signs at click time.
+    open.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'PDF_OPEN_RESULT', jobId: job.jobId, which: 'dual' });
+    });
+    row.appendChild(open);
+  }
+
+  return row;
+}
+
+/** "12 pages · Chinese · Done · Aug 6, 14:20" — whichever of those are known. */
+function pdfTaskMeta(job) {
+  const parts = [];
+  if (job.pageCount) parts.push(t('pdfTasksPages').replace('{count}', job.pageCount));
+  const langKey = PDF_TASK_LANG_KEYS[job.targetLang];
+  if (langKey) parts.push(t(langKey));
+  parts.push(job.status === 'failed' && job.error
+    ? t(PDF_UI.pdfErrorMessageKey(job.error.code))
+    : t(PDF_UI.pdfStatusKey(job)));
+  if (job.createdAt) {
+    const at = new Date(job.createdAt);
+    if (!Number.isNaN(at.getTime())) {
+      parts.push(at.toLocaleString(currentUILang, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      }));
+    }
+  }
+  return parts.join(' · ');
 }
 
 /**
@@ -1229,6 +1418,7 @@ function setupEventListeners() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       flushAutosave();
+      stopPdfTasksPoll();
       return;
     }
     // Coming back to the front. The pages-left counters were fetched when this
@@ -1239,10 +1429,14 @@ function setupEventListeners() {
     // worker caches the account for 30s, and without it a refresh right after
     // a job would re-serve the pre-job numbers.
     refreshComicAccount({ force: true, quiet: true });
+    // Same reasoning for the task list, and the same reason it stops polling
+    // while hidden: a background tab has nobody watching it move.
+    if (!elements.pdfTasksCard.hidden) refreshPdfTasks({ quiet: true });
   });
 
   elements.comicSignIn.addEventListener('click', comicSignIn);
   elements.comicSignOut.addEventListener('click', comicSignOut);
+  elements.pdfTasksRefresh.addEventListener('click', () => refreshPdfTasks());
 
   // Provider change rewrites the endpoint and the model list, so the write has
   // to happen after those, not on the generic handler above.

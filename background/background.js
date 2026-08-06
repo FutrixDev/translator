@@ -188,6 +188,8 @@ const MENU_IDS = {
   colorizeComicImage: 'colorize-comic-image',
   translatePdfLink: 'translate-pdf-link',
   translatePdfPage: 'translate-pdf-page',
+  translatePdfAction: 'translate-pdf-action',
+  translatePdfLocalAction: 'translate-pdf-local-action',
   removeInlineTranslation: 'remove-inline-translation',
 };
 
@@ -227,6 +229,14 @@ async function refreshContextMenuTitles() {
   });
   chrome.contextMenus.update(MENU_IDS.translatePdfPage, {
     title: getContextMenuTitle('contextTranslatePdfPage', uiLang),
+  });
+  // The toolbar-icon entries deliberately read the same as the popup's two
+  // buttons — they are the same two actions, reachable without opening it.
+  chrome.contextMenus.update(MENU_IDS.translatePdfAction, {
+    title: getContextMenuTitle('pdfTranslateThis', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.translatePdfLocalAction, {
+    title: getContextMenuTitle('pdfTranslateLocal', uiLang),
   });
   chrome.contextMenus.update(MENU_IDS.removeInlineTranslation, {
     title: getContextMenuTitle('contextRemoveInlineTranslation', uiLang),
@@ -297,6 +307,26 @@ function createContextMenus() {
       visible: false
     });
 
+    // Chrome's built-in PDF viewer renders the document inside its own
+    // extension frame, and a third-party extension's contexts:['page'] entry
+    // can never match there — which is why right-clicking an open PDF offers
+    // nothing, and why translatePdfPage above only ever fires on pages that
+    // merely *link* like a PDF. The toolbar icon's own menu is not subject to
+    // that: it is the entry point that actually works while reading a PDF.
+    chrome.contextMenus.create({
+      id: MENU_IDS.translatePdfAction,
+      title: 'Translate This PDF',
+      contexts: ['action'],
+      visible: false
+    });
+
+    chrome.contextMenus.create({
+      id: MENU_IDS.translatePdfLocalAction,
+      title: 'Translate a Local PDF…',
+      contexts: ['action'],
+      visible: false
+    });
+
     chrome.contextMenus.create({
       id: MENU_IDS.removeInlineTranslation,
       title: 'Remove Translation',
@@ -342,6 +372,10 @@ async function refreshPdfMenuVisibility() {
   chrome.contextMenus.update(MENU_IDS.translatePdfLink, { visible: !!visible })
     .catch(() => {});
   chrome.contextMenus.update(MENU_IDS.translatePdfPage, { visible: !!visible })
+    .catch(() => {});
+  chrome.contextMenus.update(MENU_IDS.translatePdfAction, { visible: !!visible })
+    .catch(() => {});
+  chrome.contextMenus.update(MENU_IDS.translatePdfLocalAction, { visible: !!visible })
     .catch(() => {});
 }
 
@@ -507,6 +541,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       return true;
 
+    case 'PDF_JOBS_HISTORY':
+      replyComic(handlePdfJobsHistory(), sendResponse);
+      return true;
+
     case 'PDF_OPEN_RESULT':
       replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
       return true;
@@ -575,15 +613,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
     });
+  } else if (info.menuItemId === MENU_IDS.translatePdfLocalAction) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
   } else if (info.menuItemId === MENU_IDS.translatePdfLink ||
-             info.menuItemId === MENU_IDS.translatePdfPage) {
+             info.menuItemId === MENU_IDS.translatePdfPage ||
+             info.menuItemId === MENU_IDS.translatePdfAction) {
     const settings = await chrome.storage.sync.get(defaultSettings);
     // Same racing-click guard as the comic entries: this costs money.
     if (!settings.enablePdfTranslation) return;
     const url = info.menuItemId === MENU_IDS.translatePdfLink
       ? info.linkUrl
       : (info.pageUrl || (tab && tab.url) || '');
-    if (!isLikelyPdfUrl(url)) return;
+    if (!isLikelyPdfUrl(url)) {
+      // The toolbar entry is always there, whatever the tab is showing, so it
+      // is the one click that can legitimately land on a non-PDF — and it has
+      // to say so rather than do nothing.
+      if (info.menuItemId === MENU_IDS.translatePdfAction) notifyPdfNotAPdf();
+      return;
+    }
     // file:// can't be fetched from the worker — hand local PDFs to the
     // upload page's file picker instead (PR #26 review).
     if (url.startsWith('file:')) {
@@ -593,10 +640,25 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Unlike comics there is no content-script UI to hand off to — the Chrome
     // PDF viewer admits no content scripts — so the worker owns the job and
     // reports through notifications and the popup's task list.
+    const fileName = pdfFileNameFromUrl(url);
+    // Resolved here rather than inside the create so a second click on the same
+    // PDF can be recognised as one: the id is per-URL and stable.
+    const operationId = await pdfClient.getOrCreateUrlOperationId(url);
+    const records = await pdfClient.listJobRecords();
+    const running = records.find(r => r.operationId === operationId &&
+      (r.status === 'queued' || r.status === 'running'));
+    if (running) {
+      notifyPdfRunning(running.fileName || fileName);
+      return;
+    }
+    // Before the await, not after: the whole point is that the click stops
+    // looking like it did nothing.
+    notifyPdfStarted(fileName);
     try {
       await handlePdfCreateJob({
         source: { kind: 'url', url },
-        fileName: pdfFileNameFromUrl(url),
+        operationId,
+        fileName,
         pageUrl: info.pageUrl || ''
       });
     } catch (error) {
@@ -709,6 +771,55 @@ async function notifyPdfTerminal(record) {
   });
 }
 
+/**
+ * "It started." Only the context-menu entries need this — they have no UI of
+ * their own, and without it a click on a menu item is indistinguishable from a
+ * click that did nothing, which is exactly what makes people click again.
+ */
+async function notifyPdfStarted(fileName) {
+  const uiLang = await pdfNotificationLang();
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: pdfMessage('pdfNotifyStartTitle', uiLang),
+    message: `${fileName ? `${fileName}\n` : ''}${pdfMessage('pdfNotifyStartBody', uiLang)}`
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
+/** The toolbar entry clicked while the tab is not showing a PDF. */
+async function notifyPdfNotAPdf() {
+  const uiLang = await pdfNotificationLang();
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: pdfMessage('pdfNotifyNotPdfTitle', uiLang),
+    message: pdfMessage('pdfNotifyNotPdfBody', uiLang)
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
+/** A repeat click on a PDF that is already in flight. */
+async function notifyPdfRunning(fileName) {
+  const uiLang = await pdfNotificationLang();
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: pdfMessage('pdfNotifyRunningTitle', uiLang),
+    message: `${fileName ? `${fileName}\n` : ''}${pdfMessage('pdfNotifyStartBody', uiLang)}`
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
 async function notifyPdfError(error) {
   const uiLang = await pdfNotificationLang();
   const code = error && (error.code || (error.error && error.error.code));
@@ -737,48 +848,124 @@ async function handlePdfCreateJob(message) {
   const settings = await chrome.storage.sync.get(defaultSettings);
   const source = message.source || {};
 
-  let bytes;
-  let operationId = message.operationId;
-  if (source.kind === 'bytes' && source.bytesBase64) {
-    bytes = base64ToArrayBuffer(source.bytesBase64);
-  } else if (source.kind === 'url' && source.url) {
-    // Minted-and-persisted BEFORE the fetch: a retry after a lost response
-    // must replay the same operationId or the server would charge the same
-    // PDF twice (PR #26 review).
-    if (!operationId) {
-      operationId = await pdfClient.getOrCreateUrlOperationId(source.url);
-    }
-    bytes = await pdfClient.fetchPdfFromUrl(source.url);
-  } else {
+  const isBytes = source.kind === 'bytes' && !!source.bytesBase64;
+  const isUrl = source.kind === 'url' && !!source.url;
+  if (!isBytes && !isUrl) {
     throw new comicClient.ComicApiError('invalid_pdf', 'No PDF source was provided');
   }
 
-  const fileName = message.fileName ||
-    (source.kind === 'url' ? pdfFileNameFromUrl(source.url) : 'document.pdf');
+  let operationId = message.operationId;
+  if (!operationId && isUrl) {
+    // Minted-and-persisted BEFORE the fetch: a retry after a lost response
+    // must replay the same operationId or the server would charge the same
+    // PDF twice (PR #26 review).
+    operationId = await pdfClient.getOrCreateUrlOperationId(source.url);
+  }
+  if (!operationId) operationId = crypto.randomUUID();
 
-  const job = await pdfClient.createPdfJob({
+  const fileName = message.fileName ||
+    (isUrl ? pdfFileNameFromUrl(source.url) : 'document.pdf');
+
+  // The click's receipt, written before any network work. Download + presign +
+  // PUT + create is several seconds of silence, and every surface reads only
+  // these records — without a row here the user sees nothing at all and clicks
+  // again. It is also what carries a failure back to a popup that has since
+  // closed: the awaited sendMessage promise dies with the popup, this does not.
+  const pendingId = pdfClient.pendingJobId(operationId);
+  await pdfClient.saveJobRecord({
+    jobId: pendingId,
     operationId,
-    bytes,
     fileName,
-    targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)
+    status: 'queued',
+    stage: 'uploading',
+    progress: 0,
+    results: null,
+    error: null,
+    pending: true,
+    createdAt: Date.now()
   });
+
+  let job;
+  try {
+    const bytes = isBytes
+      ? base64ToArrayBuffer(source.bytesBase64)
+      : await pdfClient.fetchPdfFromUrl(source.url);
+
+    job = await pdfClient.createPdfJob({
+      operationId,
+      bytes,
+      fileName,
+      targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)
+    });
+  } catch (error) {
+    await pdfClient.saveJobRecord({
+      jobId: pendingId,
+      status: 'failed',
+      stage: null,
+      error: {
+        code: (error && error.code) || 'engine_error',
+        message: (error && error.message) || ''
+      }
+    });
+    throw error;
+  }
 
   // `error` too: a job can come back already terminal (a dispatch failure, or
   // an idempotent re-post of a finished operation), and it will never get an
   // alarm poll to fill that in later.
-  await pdfClient.saveJobRecord({
+  await pdfClient.replaceJobRecord(pendingId, {
     jobId: job.jobId,
     operationId: job.operationId,
     fileName,
     status: job.status,
     progress: job.progress || 0,
+    stage: job.stage || null,
     pageCount: job.pageCount,
     results: job.results || null,
-    error: job.error || null,
-    createdAt: Date.now()
+    error: job.error || null
   });
   await ensurePdfPollAlarm();
   return { ...job, fileName };
+}
+
+/**
+ * The settings page's task list: the account's own history, from the server.
+ *
+ * Server-authoritative on purpose. The local records are a device's cache — 20
+ * rows, a 24-hour TTL, gone with the profile — while "my translations" means
+ * everything this account ever ran, from any device. The only rows added on top
+ * are the ones the server cannot know about: a create still uploading from
+ * here, or one that failed before it ever reached the server. Both carry a
+ * synthetic `local:` id, which is exactly how they are recognised.
+ *
+ * Names are backfilled from the local record when the server has none, so jobs
+ * created before the file_name column existed still read as something.
+ */
+async function handlePdfJobsHistory() {
+  const records = await pdfClient.listJobRecords();
+
+  let jobs;
+  try {
+    jobs = await pdfClient.listPdfJobs();
+  } catch (error) {
+    // A signed-out account has nothing to show and a sign-in to offer, so that
+    // one propagates. Anything else — offline, service down — still has this
+    // device's cache, which beats an empty page.
+    if (error instanceof comicClient.ComicApiError && error.code === 'unauthorized') throw error;
+    return { jobs: records, stale: true };
+  }
+
+  const byId = new Map(records.map(r => [r.jobId, r]));
+  const merged = jobs.map(job => ({
+    ...job,
+    fileName: job.fileName || byId.get(job.jobId)?.fileName || ''
+  }));
+  const local = records.filter(r => pdfClient.isPendingInFlight(r));
+
+  return {
+    jobs: [...local, ...merged].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+    stale: false
+  };
 }
 
 /** Poll one job and keep the local record in step with what came back. */
@@ -813,7 +1000,24 @@ async function handlePdfJobAbandon(jobId) {
  * URL a record might hold is minutes old and probably expired.
  */
 async function handlePdfOpenResult(jobId, which) {
-  const view = await handlePdfJobGet(jobId);
+  const view = await pdfClient.getPdfJob(jobId);
+  // Refresh the local record only when there already is one. The settings page
+  // lists the whole account, so this can be a job another device started, and
+  // minting a record for it would push it to the top of this device's list as
+  // if it had just run here.
+  const records = await pdfClient.listJobRecords();
+  if (records.some(r => r.jobId === view.jobId)) {
+    await pdfClient.saveJobRecord({
+      jobId: view.jobId,
+      status: view.status,
+      progress: view.progress,
+      stage: view.stage || null,
+      pageCount: view.pageCount,
+      results: view.results || null,
+      error: view.error || null
+    });
+    await ensurePdfPollAlarm();
+  }
   const results = view.results || {};
   const url = which === 'mono'
     ? (results.monoUrl || results.dualUrl)

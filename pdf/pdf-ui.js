@@ -41,6 +41,11 @@
    * translation, then retypesetting is the whole visible story.
    */
   function pdfStatusKey(view) {
+    // The local pending record: the click has landed, the bytes are still on
+    // their way up, and there is no server job yet to have a status.
+    if (view && view.pending && (!view.status || view.status === 'queued')) {
+      return 'pdfStatusUploading';
+    }
     switch (view && view.status) {
       case 'queued': return 'pdfStatusQueued';
       case 'running': {
