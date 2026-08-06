@@ -7,11 +7,14 @@
 // translation never has: not signed in, out of free pages for the month, or an
 // image we are not allowed to fetch.
 //
-// There are three ways in, because the obvious one is not always available:
-// the right-click menu, a button that appears when the pointer is over a page,
-// and the float ball. Comic hosts routinely block the context menu outright and
-// hide the artwork under a decoy image to poison what right-click reports, so a
-// path that never touches the menu is a requirement, not a convenience.
+// There are two ways in: the right-click menu on an image, and the float ball.
+// Both are asked for — nothing offers itself. An earlier build floated the two
+// buttons onto any image the pointer crossed, which on a normal page is every
+// article photo, so the offer is now made only where the user asked for it.
+//
+// Comic hosts routinely hide the artwork under a decoy image to poison what
+// right-click reports, which is why the click POINT, not `info.srcUrl`, decides
+// which image was meant.
 //
 // The network lives in the service worker (background/comic-client.js); this
 // file owns the DOM and the poll loop. Polling from here is deliberate — a
@@ -73,6 +76,10 @@
   /** The in-progress label: a colorize that says "translating" reads as a bug. */
   function statusText(mode) {
     return t(mode === 'colorize' ? 'comicColorizing' : 'comicTranslating');
+  }
+
+  function comicEnabled() {
+    return !!(ctx.settings && ctx.settings.enableComicTranslation);
   }
 
   // The right-click target is the only unambiguous way to know WHICH image the
@@ -1243,137 +1250,6 @@
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Hover entry point
-  // -------------------------------------------------------------------------
-
-  // Buttons that follow the pointer onto comic pages — one per product,
-  // translate and colorize. They exist because the context menu is not reliably
-  // reachable: plenty of comic hosts cancel it outright, and a feature nobody
-  // can find is a feature nobody uses.
-  let hoverHost = null;
-  let hoverImage = null;
-  let hoverFrame = 0;
-  let lastHoverCheck = 0;
-  // Cheap enough at pointer speed, and re-running the hit test on every single
-  // mousemove is not.
-  const HOVER_CHECK_MS = 80;
-
-  function comicEnabled() {
-    return !!(ctx.settings && ctx.settings.enableComicTranslation);
-  }
-
-  function setupHoverButton() {
-    // Driven by mousemove rather than mouseover/mouseout, and hit-tested by
-    // coordinate rather than by event.target. Both are because of what these
-    // viewers do to the DOM: the decoy overlay swallows the enter events, and
-    // recycling page containers under a stationary cursor produces a stream of
-    // spurious "the pointer left" events that flicker the button away. A
-    // position is the one thing that stays true.
-    document.addEventListener('mousemove', (event) => {
-      // Only a real pointer. Viewers dispatch synthetic mouse events at (0, 0)
-      // to drive their own chrome.
-      if (!event.isTrusted) return;
-      const now = Date.now();
-      if (now - lastHoverCheck < HOVER_CHECK_MS) return;
-      lastHoverCheck = now;
-      updateHoverButton(event.clientX, event.clientY);
-    }, true);
-  }
-
-  function updateHoverButton(x, y) {
-    if (!comicEnabled()) {
-      hideHoverButton();
-      return;
-    }
-    // Over our own buttons: the pointer is on its way to clicking one.
-    if (hoverHost && hoverHost.style.display !== 'none' && containsPoint(hoverHost, x, y)) return;
-
-    const under = imageAtPoint(x, y);
-    if (!under) {
-      hideHoverButton();
-      return;
-    }
-    const page = resolveRealPage(under);
-    if (!isComicPage(page)) {
-      hideHoverButton();
-      return;
-    }
-    // Only a RUNNING job hides the buttons. A finished swap keeps them: the
-    // other product is still worth offering — on hosts that cancel the context
-    // menu this hover is its only entry point — and clicking the mode that
-    // already finished is caught by translateImage's same-mode guard, which
-    // flips the view instead of buying the page again.
-    const entry = tracked.get(page);
-    if (entry && entry.running) {
-      hideHoverButton();
-      return;
-    }
-    showHoverButton(page);
-  }
-
-  function containsPoint(element, x, y) {
-    const rect = element.getBoundingClientRect();
-    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  }
-
-  function makeHoverButton(labelKey, extraClass, mode) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `ai-translator-comic-hover-btn ${extraClass}`;
-    button.textContent = t(labelKey);
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const target = hoverImage;
-      hideHoverButton();
-      if (target) translateImage(target, { pageUrl: location.href, targetLang: comicTargetLang(), mode });
-    });
-    return button;
-  }
-
-  function showHoverButton(img) {
-    if (!hoverHost) {
-      hoverHost = document.createElement('div');
-      hoverHost.className = 'ai-translator-comic-hover';
-      hoverHost.appendChild(makeHoverButton('comicTranslateAction', 'is-translate', 'translate'));
-      hoverHost.appendChild(makeHoverButton('comicColorizeAction', 'is-colorize', 'colorize'));
-      // Sites that block copying tend to cancel these too; ours is our own.
-      ['mousedown', 'contextmenu'].forEach(type => {
-        hoverHost.addEventListener(type, event => event.stopPropagation());
-      });
-      document.body.appendChild(hoverHost);
-    }
-
-    // Explicit, not '': the stylesheet hides it by default so it never flashes
-    // before the first position lands.
-    hoverHost.style.display = 'flex';
-    hoverImage = img;
-    if (hoverFrame) return;
-
-    const track = () => {
-      if (!hoverImage || !hoverImage.isConnected) {
-        hideHoverButton();
-        return;
-      }
-      const rect = hoverImage.getBoundingClientRect();
-      const size = hoverHost.getBoundingClientRect();
-      hoverHost.style.top = `${rect.top + 10}px`;
-      hoverHost.style.left = `${rect.right - size.width - 10}px`;
-      hoverFrame = requestAnimationFrame(track);
-    };
-    hoverFrame = requestAnimationFrame(track);
-  }
-
-  // Leaves `hoverImage` alone: a click arrives after the pointer has already
-  // moved onto a button, and losing the target between press and release
-  // would turn the click into nothing at all.
-  function hideHoverButton() {
-    cancelAnimationFrame(hoverFrame);
-    hoverFrame = 0;
-    if (hoverHost) hoverHost.style.display = 'none';
-  }
-
   /** Last resort when there is no image to anchor to. */
   function showDetachedError(message) {
     const toast = document.createElement('div');
@@ -1387,6 +1263,4 @@
   ctx.startComicPageTranslation = startComicPageTranslation;
   ctx.hasComicPageOnScreen = () => pickComicImages().length > 0;
   ctx.resumeComicJobs = resumeComicJobs;
-
-  setupHoverButton();
 })();
