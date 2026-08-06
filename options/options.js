@@ -444,21 +444,30 @@ function formatResetDate(account) {
   return at.toLocaleDateString(currentUILang, { month: 'short', day: 'numeric' });
 }
 
-async function refreshComicAccount({ force = false } = {}) {
+/**
+ * `quiet` is for refreshes the user did not ask for (see the visibilitychange
+ * handler in setupEventListeners): no loading flash on the way in, and a
+ * failure leaves the numbers that are already on screen rather than replacing
+ * a readable panel with an error the user never provoked.
+ */
+async function refreshComicAccount({ force = false, quiet = false } = {}) {
   // Asked for unconditionally, unlike before: both features now require an
   // account, so the panel is the only way to get one and has to be readable
   // even with both switches off.
-  showComicState('loading');
+  if (!quiet) showComicState('loading');
   const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT', force });
 
   if (!response || !response.ok) {
     // A token that the server has since revoked comes back as unauthorized;
-    // the honest answer to that is "signed out", not an error.
+    // the honest answer to that is "signed out", not an error. Worth showing
+    // even on a quiet pass — the panel would otherwise keep offering an
+    // account that is gone.
     if (response && response.error && response.error.code === 'unauthorized') {
       comicSignedIn = false;
       showComicState('signedOut');
       return;
     }
+    if (quiet) return;
     comicSignedIn = false;
     elements.comicAccountLoading.textContent = t('comicAccountError');
     showComicState('loading');
@@ -1108,7 +1117,18 @@ function setupEventListeners() {
   // Closing the tab or switching away must not eat a half-typed API key.
   window.addEventListener('beforeunload', flushAutosave);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushAutosave();
+    if (document.visibilityState === 'hidden') {
+      flushAutosave();
+      return;
+    }
+    // Coming back to the front. The pages-left counters were fetched when this
+    // tab loaded, and openOptionsPage() focuses an existing tab instead of
+    // reloading it — so a tab left open while comic or PDF jobs spend the
+    // month's allowance would keep showing the numbers it opened with, with
+    // nothing to ever correct them. `force` is what makes this work: the
+    // worker caches the account for 30s, and without it a refresh right after
+    // a job would re-serve the pre-job numbers.
+    refreshComicAccount({ force: true, quiet: true });
   });
 
   elements.comicSignIn.addEventListener('click', comicSignIn);

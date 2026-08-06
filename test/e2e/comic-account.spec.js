@@ -31,7 +31,9 @@ const ACCOUNT = {
  *   the fragment; 'no-token' is the shape a failed authorization takes.
  */
 function startMockService({ connect = 'token' } = {}) {
-  const state = { meRequests: 0, connectRequests: 0 };
+  // `account` is mutable so a test can spend pages mid-run, the way a
+  // translation job does, and see whether the page ever notices.
+  const state = { meRequests: 0, connectRequests: 0, account: ACCOUNT };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -59,7 +61,7 @@ function startMockService({ connect = 'token' } = {}) {
       if (!(req.headers.authorization || '').startsWith('Bearer ')) {
         return send(401, { error: 'unauthorized', loginRequired: true });
       }
-      return send(200, ACCOUNT);
+      return send(200, state.account);
     }
 
     send(404, { error: 'not_found' });
@@ -119,6 +121,40 @@ test.describe('Comic account state', () => {
         .toHaveText(String(ACCOUNT.freeQuotas.pdf_page.remaining));
       await expect(page.locator('#freeQuotaReset')).not.toHaveText('—');
       await expect(page.locator('#comicSignedOut')).toBeHidden();
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('re-focusing an open options tab picks up pages spent since it loaded', async ({ context, page, extensionId }) => {
+    const service = await startMockService();
+    try {
+      await connectExtension(context, service.base);
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicPagesRemaining')).toHaveText('24');
+
+      // Jobs run while the tab sits in the background. openOptionsPage() focuses
+      // this tab rather than reloading it, so nothing here re-runs on its own —
+      // without a refresh on the way back the counters stay at 24/17 forever.
+      service.state.account = {
+        ...ACCOUNT,
+        freeQuota: quota(40, 11),
+        freeQuotas: { comic_page: quota(40, 11), pdf_page: quota(20, 5) },
+      };
+
+      // The event is dispatched rather than provoked by focusing another tab:
+      // headless Chrome reports every page as visible regardless of which is
+      // in front, so bringToFront() cannot produce a hidden state to come back
+      // from. Chrome firing this on tab focus is browser behaviour; what is
+      // under test is what the page does when it arrives.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+      await expect(page.locator('#comicPagesRemaining')).toHaveText('11');
+      await expect(page.locator('#pdfPagesRemaining')).toHaveText('5');
+      // Quietly: the account panel is never swapped out for the loading state,
+      // so a refresh the user did not ask for cannot make the page flicker.
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+      await expect(page.locator('#comicAccountLoading')).toBeHidden();
     } finally {
       await service.close();
     }
