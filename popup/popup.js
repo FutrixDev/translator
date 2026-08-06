@@ -111,6 +111,10 @@ let pdfPollTimer = null;
 // A create error shown inline above the list (sign-in, an exhausted allowance,
 // …). Cleared by the next successful action.
 let pdfInlineError = null;
+// The row painted on click, before the worker has written anything. It only has
+// to survive the few milliseconds until the worker's own pending record lands;
+// renderPdfJobs drops it the moment it sees one.
+let pdfPlaceholder = null;
 
 async function refreshPdfSection() {
   const { enablePdfTranslation } = await AccountGate.applyAccountGate(
@@ -144,16 +148,31 @@ function schedulePdfPoll() {
   }, PDF_POPUP_POLL_MS);
 }
 
-async function refreshPdfJobs({ refresh }) {
-  let records = [];
+async function listPdfRecords(refresh = false) {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'PDF_JOBS_LIST', refresh });
-    if (response && response.ok) records = response.data || [];
+    if (response && response.ok) return response.data || [];
   } catch (error) {
     console.error('Failed to list PDF jobs:', error);
   }
-  renderPdfJobs(records);
+  return [];
 }
+
+async function refreshPdfJobs({ refresh }) {
+  renderPdfJobs(await listPdfRecords(refresh));
+}
+
+// The worker writes its records to storage.local; watching them is what makes
+// the list move between polls — including the pending row it writes the instant
+// a create starts, from the context menu as much as from here.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.pdfJobs) return;
+  // Gated off on this device: refreshPdfSection has hidden the whole section
+  // and rendering would put it back on screen.
+  if (elements.pdfTranslateLocal.hidden) return;
+  const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
+  renderPdfJobs(records);
+});
 
 function renderPdfJobs(records) {
   const list = elements.pdfJobs;
@@ -161,7 +180,12 @@ function renderPdfJobs(records) {
 
   if (pdfInlineError) list.appendChild(pdfInlineError);
 
-  records.slice(0, PDF_LIST_LIMIT).forEach((record) => {
+  // The worker's own pending record supersedes the placeholder — same row, but
+  // one that outlives this popup.
+  if (pdfPlaceholder && records.some(r => r.pending)) pdfPlaceholder = null;
+  const rows = pdfPlaceholder ? [pdfPlaceholder, ...records] : records;
+
+  rows.slice(0, PDF_LIST_LIMIT).forEach((record) => {
     const row = document.createElement('div');
     row.className = 'pdf-job';
 
@@ -249,15 +273,29 @@ async function onPdfTranslateCurrent() {
       return;
     }
 
+    // Paint before sending, not after: creating a job is a download, a
+    // presign, an upload and a create — several seconds during which the user
+    // would otherwise see nothing and click again. The awaited response below
+    // dies with the popup, so it is never what puts the first row on screen.
     pdfInlineError = null;
-    elements.pdfTranslateCurrent.disabled = true;
+    pdfPlaceholder = {
+      jobId: 'placeholder',
+      fileName: PDF_UI.pdfFileNameFromUrl(tab.url),
+      status: 'queued',
+      pending: true,
+      progress: 0
+    };
+    setPdfBusy(true);
+    renderPdfJobs(await listPdfRecords());
+
     const response = await chrome.runtime.sendMessage({
       type: 'PDF_CREATE_JOB',
       source: { kind: 'url', url: tab.url },
       fileName: PDF_UI.pdfFileNameFromUrl(tab.url),
       pageUrl: tab.url
     });
-    elements.pdfTranslateCurrent.disabled = false;
+    setPdfBusy(false);
+    pdfPlaceholder = null;
 
     if (!response || !response.ok) {
       showPdfCreateError(response && response.error);
@@ -266,8 +304,21 @@ async function onPdfTranslateCurrent() {
     await refreshPdfJobs({ refresh: false });
   } catch (error) {
     console.error('Failed to start PDF job:', error);
-    elements.pdfTranslateCurrent.disabled = false;
+    setPdfBusy(false);
+    pdfPlaceholder = null;
   }
+}
+
+/**
+ * The button's in-flight state. Disabling alone is invisible in this popup —
+ * .menu-item sets an explicit colour — so popup.css carries a :disabled rule
+ * and this also swaps the label to say what is happening.
+ */
+function setPdfBusy(busy) {
+  const button = elements.pdfTranslateCurrent;
+  button.disabled = busy;
+  const label = button.querySelector('[data-i18n="pdfTranslateThis"]') || button;
+  label.textContent = busy ? t('pdfStatusUploading') : t('pdfTranslateThis');
 }
 
 function onPdfTranslateLocal() {

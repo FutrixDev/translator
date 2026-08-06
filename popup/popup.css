@@ -113,6 +113,23 @@ body {
   transform: scale(0.98);
 }
 
+/* A busy entry (a PDF job being started). `disabled` alone is invisible here —
+   .menu-item sets its own colour — so the dimming has to be spelled out, and
+   with it the hover feedback that would otherwise still say "clickable". */
+.menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}
+
+.menu-item:disabled:active {
+  background: transparent;
+  transform: none;
+}
+
 .menu-item svg {
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -120,6 +137,10 @@ body {
 
 .menu-item:hover svg {
   color: var(--accent-primary);
+}
+
+.menu-item:disabled:hover svg {
+  color: var(--text-secondary);
 }
 
 .menu-item span {

@@ -928,3 +928,117 @@ body::before {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* ==================== PDF tasks ==================== */
+
+/* Below the two feature columns, separated the same way the account panel above
+   them is: it belongs to the PDF column but is a list rather than a setting. */
+.pdf-tasks {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.pdf-tasks[hidden] {
+  display: none;
+}
+
+.pdf-tasks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pdf-tasks-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pdf-tasks-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.pdf-tasks-state[hidden] {
+  display: none;
+}
+
+.pdf-tasks-group {
+  margin-bottom: 16px;
+}
+
+.pdf-tasks-group.hidden {
+  display: none;
+}
+
+.pdf-tasks-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.pdf-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pdf-task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.pdf-task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pdf-task-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-task-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.pdf-task-track {
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.pdf-task-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-primary);
+  transition: width 0.3s ease;
+}
+
+.pdf-task-open {
+  flex-shrink: 0;
+}

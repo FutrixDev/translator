@@ -141,6 +141,9 @@ export async function createPdfJob({
     body: {
       operationId: opId,
       sourceKey: ticket.sourceKey,
+      // Cosmetic, but it has to travel: the name lives on the job row so the
+      // website's history can label a job this extension created.
+      fileName: fileName || '',
       targetLang: targetLang || 'zh-CN',
       output: {
         kind: outputKind,
@@ -154,6 +157,20 @@ export async function createPdfJob({
 
 export function getPdfJob(jobId) {
   return apiFetch(`/api/pdf/jobs/${encodeURIComponent(jobId)}`);
+}
+
+/**
+ * The account's own job list, newest first — every device it ever translated
+ * from, not just this one.
+ *
+ * The local records in this file are a device's cache and outlive nothing: 24h
+ * TTL, 20 rows, gone with the browser profile. The settings page shows the
+ * history a user actually means when they say "my translations", so it reads
+ * the server and treats this as the truth.
+ */
+export async function listPdfJobs() {
+  const data = await apiFetch('/api/pdf/jobs');
+  return Array.isArray(data && data.jobs) ? data.jobs : [];
 }
 
 export function abandonPdfJob(jobId) {
@@ -170,19 +187,72 @@ const JOBS_KEY = 'pdfJobs';
 const JOB_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_JOB_RECORDS = 20;
 
+// A record written the moment the user clicks, before the download, the
+// presigned PUT and the create have run — the several seconds during which
+// nothing else exists to look at. It carries `pending: true` and a synthetic
+// `local:<operationId>` id, and is replaced by the real record (or marked
+// failed) as soon as the create settles.
+const PENDING_ID_PREFIX = 'local:';
+// A pending record older than this belongs to a worker that was killed
+// mid-upload: nothing will ever come back to replace it, so stop showing it as
+// in-flight. Generous enough to cover a 30 MiB upload on a slow link.
+const PENDING_STALE_MS = 10 * 60 * 1000;
+
 function isActiveStatus(status) {
   return status === 'queued' || status === 'running';
+}
+
+export function pendingJobId(operationId) {
+  return `${PENDING_ID_PREFIX}${operationId}`;
+}
+
+export function isPendingRecord(record) {
+  return !!(record && (record.pending || String(record.jobId || '').startsWith(PENDING_ID_PREFIX)));
 }
 
 export async function listJobRecords() {
   const stored = await chrome.storage.local.get({ [JOBS_KEY]: [] });
   const records = Array.isArray(stored[JOBS_KEY]) ? stored[JOBS_KEY] : [];
   const cutoff = Date.now() - JOB_TTL_MS;
-  const live = records.filter(r => r && r.jobId && (r.createdAt || 0) > cutoff);
-  if (live.length !== records.length) {
+  const staleCutoff = Date.now() - PENDING_STALE_MS;
+  let swept = false;
+  const live = [];
+  for (const record of records) {
+    if (!record || !record.jobId || (record.createdAt || 0) <= cutoff) {
+      swept = true;
+      continue;
+    }
+    if (isPendingRecord(record) && isActiveStatus(record.status) && (record.createdAt || 0) <= staleCutoff) {
+      record.status = 'failed';
+      record.stage = null;
+      record.error = { code: 'no_response', message: 'The upload did not finish' };
+      swept = true;
+    }
+    live.push(record);
+  }
+  if (swept) {
     await chrome.storage.local.set({ [JOBS_KEY]: live });
   }
   return live;
+}
+
+/**
+ * Swap a pending record for the real one the server just handed back.
+ *
+ * Done in a single write so the popup's 3-second poll can never observe the
+ * gap where the click has no row at all.
+ */
+export async function replaceJobRecord(oldJobId, record) {
+  const records = await listJobRecords();
+  const previous = records.find(r => r.jobId === oldJobId);
+  const rest = records.filter(r => r.jobId !== oldJobId && r.jobId !== record.jobId);
+  const merged = { ...(previous || {}), ...record, pending: false };
+  if (!merged.createdAt) merged.createdAt = previous?.createdAt || Date.now();
+  const next = [merged, ...rest]
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, MAX_JOB_RECORDS);
+  await chrome.storage.local.set({ [JOBS_KEY]: next });
+  return merged;
 }
 
 /** Upsert by jobId; newest first; TTL and cap applied on the way through. */
@@ -201,7 +271,10 @@ export async function saveJobRecord(record) {
 
 export async function hasActiveJobs() {
   const records = await listJobRecords();
-  return records.some(r => isActiveStatus(r.status));
+  // Pending records deliberately do not hold the alarm open: there is no
+  // server job behind them yet to poll, and the create path re-arms the alarm
+  // itself the moment there is one.
+  return records.some(r => !isPendingRecord(r) && isActiveStatus(r.status));
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +332,9 @@ export async function refreshJobRecords() {
 
   for (const record of records) {
     if (!isActiveStatus(record.status)) continue;
+    // A pending record names no server job — `getPdfJob('local:…')` would 404
+    // and the 404 branch below would wrongly bury a job still uploading.
+    if (isPendingRecord(record)) continue;
     let view;
     try {
       view = await getPdfJob(record.jobId);
