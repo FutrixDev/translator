@@ -524,29 +524,35 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('offers a hover button over a comic page and translates from it', async ({ context, page }) => {
+  /**
+   * The pointer buys nothing and offers nothing.
+   *
+   * An earlier build floated Translate/Colorize onto whatever image the cursor
+   * crossed. The test that "is this a comic page?" can honestly answer is only
+   * "is this a reasonably large image", which describes every article photo on
+   * the web, so the two paid buttons appeared everywhere. Asking is now the
+   * user's move: right-click, or the float ball.
+   */
+  test('shows nothing on hover, even with the feature on', async ({ context, page }) => {
     const service = await startMockService('succeed');
     const worker = await connectExtension(context, service.base);
     try {
-      // The hover button only exists where the feature is on — it is an entry
-      // point to a paid service, not decoration.
       await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
       await page.goto(`${service.base}/decoy-page`);
       await page.locator('#comic').evaluate(img => img.decode());
 
-      // Over the decoy, which is what the pointer can actually reach. Two
-      // products, two buttons; the translate one is exercised here.
-      await page.locator('#decoy').hover();
-      const button = page.locator('.ai-translator-comic-hover-btn.is-translate');
-      await expect(button).toBeVisible();
-      await expect(page.locator('.ai-translator-comic-hover-btn.is-colorize')).toBeVisible();
+      // Move, don't just land: the old trigger was mousemove-driven, so a
+      // single hover point would not have fired it either.
+      const box = await page.locator('#decoy').boundingBox();
+      for (const fraction of [0.3, 0.5, 0.7]) {
+        await page.mouse.move(box.x + box.width * fraction, box.y + box.height * fraction);
+      }
+      await page.waitForTimeout(600);
 
-      await button.click();
-      await expect(page.locator('#comic')).toHaveAttribute(
-        'src', /\/result\.png\?sig=/, { timeout: 20000 },
-      );
-      expect(service.state.createBodies).toHaveLength(1);
-      expect(service.state.createBodies[0].mode).toBe('translate');
+      expect(await page.locator('.ai-translator-comic-hover-btn').count()).toBe(0);
+      // Nothing of ours at all — a differently-named affordance is the same bug.
+      expect(await page.locator('[class^="ai-translator-comic"]').count()).toBe(0);
+      expect(service.state.createBodies).toHaveLength(0);
     } finally {
       await worker.evaluate(() => chrome.storage.sync.remove('enableComicTranslation'));
       await service.close();
@@ -604,7 +610,7 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('colorizes from the hover button and sends the colorize mode', async ({ context, page }) => {
+  test('colorizes from the right-click menu and sends the colorize mode', async ({ context, page }) => {
     const service = await startMockService('succeed');
     const worker = await connectExtension(context, service.base);
     try {
@@ -612,11 +618,11 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/decoy-page`);
       await page.locator('#comic').evaluate(img => img.decode());
 
-      await page.locator('#decoy').hover();
-      const button = page.locator('.ai-translator-comic-hover-btn.is-colorize');
-      await expect(button).toBeVisible();
-
-      await button.click();
+      // The decoy is what the right-click reports, and it still has to resolve
+      // to the artwork behind it — the same job the translate entry does.
+      await triggerComicTranslation(
+        worker, `${service.base}/decoy-page`, `${service.base}/decoy.png`, 'colorize',
+      );
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
