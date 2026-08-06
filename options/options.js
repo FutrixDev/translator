@@ -428,9 +428,19 @@ function showComicState(name) {
   elements.comicSignedIn.classList.toggle('hidden', name !== 'signedIn');
 }
 
-/** True once the service has confirmed a signed-in account. Read by the two
- *  feature toggles, which must not turn on without one. */
-let comicSignedIn = false;
+/**
+ * Whether this device has an account: true, false, or null while the answer is
+ * outstanding or the service could not be reached.
+ *
+ * Three states rather than two because the two feature switches render from it.
+ * Collapsing "not answered yet" into "signed out" would flash both switches off
+ * on every load for the signed-in majority; collapsing it into "signed in"
+ * would show a signed-out user a switch that is about to retract. Unknown
+ * renders the stored preference and corrects itself, which for a signed-out
+ * device is a message round-trip — getAccount() answers `{signedIn: false}` off
+ * the local token without touching the network.
+ */
+let comicSignedIn = null;
 
 /** The initial account fetch, so the sign-in gate can wait on it instead of
  *  reading a `comicSignedIn` that has not been answered yet. Never rejects. */
@@ -444,6 +454,41 @@ let comicAccountGeneration = 0;
 
 /** The sign-in flow currently running, shared by both switches' gates. */
 let comicSignInInFlight = null;
+
+/**
+ * The stored preference behind each account-backed switch, kept apart from what
+ * the checkbox shows.
+ *
+ * These two are the only settings on the page whose displayed state is not
+ * simply what storage says: both features run on our servers against a monthly
+ * allowance, so a device with no account cannot have them on however the
+ * preference arrived — and it arrives on every new install, because the
+ * switches sync and the token does not.
+ *
+ * The preference itself is left alone rather than corrected. Writing false from
+ * a signed-out device would sync back and turn the feature off on the device
+ * that is still signed in, which is not what "sign out here" asked for. See
+ * shared/account-gate.js, which derives the same answer for every other
+ * surface.
+ */
+let storedComicEnabled = false;
+let storedPdfEnabled = false;
+
+/**
+ * Draw the two switches from preference AND account.
+ *
+ * Called on load and on every account transition, so the switches can never sit
+ * on for a feature this device cannot run. `comicSignedIn === null` means the
+ * answer is still outstanding — see the declaration.
+ */
+function renderAccountFeatures() {
+  const comicOn = storedComicEnabled && comicSignedIn !== false;
+  const pdfOn = storedPdfEnabled && comicSignedIn !== false;
+  elements.enableComicTranslation.checked = comicOn;
+  elements.comicTargetLang.disabled = !comicOn;
+  elements.enablePdfTranslation.checked = pdfOn;
+  elements.pdfTargetLang.disabled = !pdfOn;
+}
 
 /** Pages left this month for one operation. Older servers report only the comic
  *  allowance, at the top level and under its pre-PDF name. */
@@ -484,11 +529,15 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
     // account that is gone.
     if (response && response.error && response.error.code === 'unauthorized') {
       comicSignedIn = false;
+      renderAccountFeatures();
       showComicState('signedOut');
       return;
     }
     if (quiet) return;
-    comicSignedIn = false;
+    // Unreachable, not signed out. The switches keep showing the preference
+    // rather than retracting on a service outage the user did not cause; the
+    // gate still asks for a sign-in before either can be turned on.
+    comicSignedIn = null;
     elements.comicAccountLoading.textContent = t('comicAccountError');
     showComicState('loading');
     return;
@@ -501,11 +550,13 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
 function showAccount(account) {
   if (!account.signedIn) {
     comicSignedIn = false;
+    renderAccountFeatures();
     showComicState('signedOut');
     return false;
   }
 
   comicSignedIn = true;
+  renderAccountFeatures();
   elements.comicEmail.textContent = account.user?.email || account.user?.name || '';
   // Pages left this month, per feature: the product is free, so a balance would
   // be answering a question nobody is asking.
@@ -543,6 +594,7 @@ async function runComicSignIn() {
 
   if (!response || !response.ok) {
     comicSignedIn = false;
+    renderAccountFeatures();
     if (response?.error?.code !== 'sign_in_cancelled') {
       showStatus(response?.error?.message || t('comicSignInFailed'), 'error');
     }
@@ -560,17 +612,17 @@ async function comicSignOut() {
   comicAccountGeneration += 1;
   await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
   comicSignedIn = false;
-  showComicState('signedOut');
-  // The two switches are deliberately left alone. They live in sync storage
-  // and the token lives in local, so writing them off here would reach across
-  // to every other device the account is signed in on and disable the feature
-  // there — a sign-out is about this device's credential, nothing more.
+  // Both switches go off with the token: neither feature can run on a device
+  // with no account, so leaving one on would be a switch that promises a
+  // sign-in prompt rather than a translation.
   //
-  // What is left is a switch that is on with no token behind it. That is the
-  // same state a second device is in the moment it syncs the preference, and
-  // it is not a dead end: every entry point ends at a sign-in offer rather
-  // than an error — the comic overlay prompts and retries the job, and the PDF
-  // page has its own Sign In button.
+  // The stored preference behind them is deliberately NOT written off. It lives
+  // in sync storage while the token lives in local, so clobbering it here would
+  // reach across to every other device the account is still signed in on and
+  // disable the feature there — a sign-out is about this device's credential,
+  // nothing more. Signing back in restores what the user had.
+  renderAccountFeatures();
+  showComicState('signedOut');
 }
 
 /**
@@ -584,14 +636,17 @@ async function comicSignOut() {
 async function requireAccountFor(checkbox) {
   if (!checkbox.checked) return true;
   // The switches are live from the first paint, while the account request is
-  // still on the wire and `comicSignedIn` is merely at its initial false. A
+  // still on the wire and `comicSignedIn` is merely at its initial null. A
   // click landing in that window would open an authentication tab at someone
   // who is already signed in, so wait for the answer before believing it.
   await comicAccountReady;
   if (comicSignedIn) return true;
   const signedIn = await comicSignIn();
   if (!signedIn) {
-    checkbox.checked = false;
+    // Back to preference-AND-account, which with no account is off. The failed
+    // sign-in itself has already rendered that; this covers the checkbox the
+    // user just clicked in the same pass.
+    renderAccountFeatures();
     showStatus(t('accountRequired'), 'error');
   }
   return signedIn;
@@ -643,12 +698,13 @@ async function loadSettings() {
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
     elements.autoDetect.checked = result.autoDetect;
-    elements.enableComicTranslation.checked = !!result.enableComicTranslation;
+    // The switches themselves are drawn by renderAccountFeatures, which also
+    // weighs whether this device has the account both features need.
+    storedComicEnabled = !!result.enableComicTranslation;
+    storedPdfEnabled = !!result.enablePdfTranslation;
     elements.comicTargetLang.value = result.comicTargetLang || '';
-    elements.comicTargetLang.disabled = !result.enableComicTranslation;
-    elements.enablePdfTranslation.checked = !!result.enablePdfTranslation;
     elements.pdfTargetLang.value = result.pdfTargetLang || '';
-    elements.pdfTargetLang.disabled = !result.enablePdfTranslation;
+    renderAccountFeatures();
     elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
     elements.showYoutubeOriginalCaption.checked = result.showYoutubeOriginalCaption !== false;
     elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
@@ -1249,16 +1305,29 @@ function setupEventListeners() {
   });
 }
 
-/** `gate` is set only by the switch's own change event — see setupEventListeners. */
+/**
+ * `gate` is set only by the switch's own change event — see setupEventListeners.
+ *
+ * Only a gated call moves the preference. The language select shares this
+ * handler and must write the pair without touching the switch: it can be
+ * reached while the account answer is still outstanding, and reading the
+ * checkbox there would persist a switch that is merely mid-render.
+ */
 async function saveComicSettings({ gate = false } = {}) {
-  // Sign-in first: requireAccountFor may clear the checkbox, and what gets
-  // written has to be what the checkbox ends up saying.
-  if (gate) await requireAccountFor(elements.enableComicTranslation);
-  const enabled = elements.enableComicTranslation.checked;
-  elements.comicTargetLang.disabled = !enabled;
+  if (gate) {
+    // Read before the gate, not after: a successful sign-in redraws both
+    // switches from the stored preference, which does not yet include the click
+    // being handled here.
+    const wanted = elements.enableComicTranslation.checked;
+    // A refused sign-in leaves the preference exactly as it was — writing false
+    // would sync across and disable the feature on a device that is signed in.
+    if (!(await requireAccountFor(elements.enableComicTranslation))) return;
+    storedComicEnabled = wanted;
+    renderAccountFeatures();
+  }
   try {
     await chrome.storage.sync.set({
-      enableComicTranslation: enabled,
+      enableComicTranslation: storedComicEnabled,
       comicTargetLang: elements.comicTargetLang.value
     });
   } catch (error) {
@@ -1269,13 +1338,17 @@ async function saveComicSettings({ gate = false } = {}) {
   }
 }
 
+/** See saveComicSettings — same contract, same reasons. */
 async function savePdfSettings({ gate = false } = {}) {
-  if (gate) await requireAccountFor(elements.enablePdfTranslation);
-  const enabled = elements.enablePdfTranslation.checked;
-  elements.pdfTargetLang.disabled = !enabled;
+  if (gate) {
+    const wanted = elements.enablePdfTranslation.checked;
+    if (!(await requireAccountFor(elements.enablePdfTranslation))) return;
+    storedPdfEnabled = wanted;
+    renderAccountFeatures();
+  }
   try {
     await chrome.storage.sync.set({
-      enablePdfTranslation: enabled,
+      enablePdfTranslation: storedPdfEnabled,
       pdfTargetLang: elements.pdfTargetLang.value
     });
   } catch (error) {

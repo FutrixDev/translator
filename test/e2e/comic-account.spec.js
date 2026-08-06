@@ -258,31 +258,44 @@ test.describe('Comic translation switch', () => {
     }
   });
 
+  // The entry follows BOTH halves of the answer: the switch and the account.
+  // Signing out has to retract it even though no sync key moved.
   test('shows and hides the image context menu entry', async ({ context }) => {
-    const worker = await serviceWorker(context);
-    // chrome.contextMenus has no read API, so the call the worker makes is the
-    // only observable. Record it, then flip the setting the way options does.
-    await worker.evaluate(async () => {
-      globalThis.__menuUpdates = [];
-      const original = chrome.contextMenus.update.bind(chrome.contextMenus);
-      chrome.contextMenus.update = (id, props, cb) => {
-        globalThis.__menuUpdates.push({ id, visible: props && props.visible });
-        return original(id, props, cb);
-      };
-      await chrome.storage.sync.set({ enableComicTranslation: false });
-    });
+    const service = await startMockService();
+    try {
+      const worker = await connectExtension(context, service.base, { enabled: false });
+      // chrome.contextMenus has no read API, so the call the worker makes is the
+      // only observable. Record it, then flip the setting the way options does.
+      await worker.evaluate(() => {
+        globalThis.__menuUpdates = [];
+        const original = chrome.contextMenus.update.bind(chrome.contextMenus);
+        chrome.contextMenus.update = (id, props, cb) => {
+          globalThis.__menuUpdates.push({ id, visible: props && props.visible });
+          return original(id, props, cb);
+        };
+      });
 
-    const visibilityCalls = () => worker.evaluate(() => globalThis.__menuUpdates
-      .filter(u => u.id === 'translate-comic-image' && u.visible !== undefined)
-      .map(u => u.visible));
+      const visibilityCalls = () => worker.evaluate(() => globalThis.__menuUpdates
+        .filter(u => u.id === 'translate-comic-image' && u.visible !== undefined)
+        .map(u => u.visible));
 
-    await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
-    await expect.poll(visibilityCalls).toContain(true);
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
+      await expect.poll(visibilityCalls).toContain(true);
 
-    await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: false }));
-    await expect.poll(async () => (await visibilityCalls()).at(-1)).toBe(false);
+      // Signed out with the switch untouched: the entry goes anyway.
+      await worker.evaluate(() => chrome.storage.local.remove('comicToken'));
+      await expect.poll(async () => (await visibilityCalls()).at(-1)).toBe(false);
 
-    await worker.evaluate(() => { delete globalThis.__menuUpdates; });
+      await worker.evaluate(() => chrome.storage.local.set({ comicToken: 'test-token' }));
+      await expect.poll(async () => (await visibilityCalls()).at(-1)).toBe(true);
+
+      await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: false }));
+      await expect.poll(async () => (await visibilityCalls()).at(-1)).toBe(false);
+
+      await worker.evaluate(() => { delete globalThis.__menuUpdates; });
+    } finally {
+      await service.close();
+    }
   });
 });
 
@@ -314,17 +327,17 @@ test.describe('Advanced Settings login gate', () => {
   });
 
   // The gate belongs to the switch, not to the card. Both controls persist the
-  // same pair of keys, so a language select that ran the gate would ask a
-  // signed-out user to sign in for picking a language — and turn the feature
-  // off if they declined. PDF is the case that bites: it ships ON, so a user
-  // who has never signed in still reaches this handler.
-  test('picking a language while signed out neither prompts nor disables the feature', async ({ context, page, extensionId }) => {
-    const service = await startMockService({ connect: 'no-token' });
+  // same pair of keys, so a language select that ran the gate would ask for a
+  // sign-in over picking a language — and turn the feature off if it were
+  // declined. It must also not carry the switch along: the select writes the
+  // stored preference, never whatever the checkbox happens to be showing.
+  test('picking a language never prompts for sign-in or moves the switch', async ({ context, page, extensionId }) => {
+    const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      const worker = await connectExtension(context, service.base, { enabled: false });
       await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true, pdfTargetLang: '' }));
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-      await expect(page.locator('#comicSignedOut')).toBeVisible();
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
       await expect(page.locator('#enablePdfTranslation')).toBeChecked();
 
       await page.locator('#pdfTargetLang').selectOption('ja');
@@ -334,6 +347,34 @@ test.describe('Advanced Settings login gate', () => {
       )).toEqual({ enablePdfTranslation: true, pdfTargetLang: 'ja' });
       await expect(page.locator('#enablePdfTranslation')).toBeChecked();
       // No sign-in tab was opened on the way.
+      expect(service.state.connectRequests).toBe(0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  // The state a signed-out device is in the moment sync delivers a preference
+  // from a device that is signed in. Both features run on our servers, so this
+  // one cannot have them on — and must not answer by writing the preference off
+  // and syncing that back to the device that can.
+  test('a synced-on switch stays off while this device has no account', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ connect: 'no-token' });
+    try {
+      const worker = await connectExtension(context, service.base, { withToken: false, enabled: true });
+      await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true }));
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+
+      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
+      await expect(page.locator('#comicTargetLang')).toBeDisabled();
+      await expect(page.locator('#pdfTargetLang')).toBeDisabled();
+
+      // Rendering it off is not the same as answering it off.
+      expect(await worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
+      )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });
+      // And nothing about drawing the page went looking for an account.
       expect(service.state.connectRequests).toBe(0);
     } finally {
       await service.close();
@@ -480,10 +521,11 @@ test.describe('Advanced Settings login gate', () => {
     }
   });
 
-  // Signing out drops this device's credential and nothing else. The switches
-  // are synced, so writing them off would disable the feature on every other
-  // device the account is still signed in on.
-  test('signing out clears the token but leaves the synced switches alone', async ({ context, page, extensionId }) => {
+  // Signing out takes both switches off screen with the token — neither feature
+  // can run without one — but writes neither off. They are synced, so answering
+  // the preference would disable the feature on every other device the account
+  // is still signed in on; signing back in is what restores them here.
+  test('signing out turns both switches off without answering the synced preference', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       const worker = await connectExtension(context, service.base);
@@ -499,8 +541,10 @@ test.describe('Advanced Settings login gate', () => {
       await expect.poll(async () => worker.evaluate(
         () => chrome.storage.local.get({ comicToken: '' }),
       )).toEqual({ comicToken: '' });
-      await expect(page.locator('#enableComicTranslation')).toBeChecked();
-      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
+      await expect(page.locator('#comicTargetLang')).toBeDisabled();
+      await expect(page.locator('#pdfTargetLang')).toBeDisabled();
       await expect.poll(async () => worker.evaluate(
         () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
       )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });

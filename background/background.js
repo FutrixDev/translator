@@ -1,5 +1,6 @@
 // AI Translator Background Script
 import '../shared/api-compat.js';
+import '../shared/account-gate.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
@@ -41,10 +42,17 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     refreshContextMenuTitles();
   }
   if (namespace === 'sync' && changes.enableComicTranslation) {
-    refreshComicMenuVisibility(changes.enableComicTranslation.newValue);
+    refreshComicMenuVisibility();
   }
   if (namespace === 'sync' && changes.enablePdfTranslation) {
-    refreshPdfMenuVisibility(changes.enablePdfTranslation.newValue);
+    refreshPdfMenuVisibility();
+  }
+  // Both entries are gated on the account as well as the switch, so signing in
+  // or out has to re-run the same check. Without this a sign-out leaves menu
+  // entries for two features this device can no longer run.
+  if (namespace === 'local' && changes[AccountGate.TOKEN_KEY]) {
+    refreshComicMenuVisibility();
+    refreshPdfMenuVisibility();
   }
 });
 
@@ -303,13 +311,24 @@ function createContextMenus() {
 }
 
 /**
- * Show or hide the comic entry. Called on every menu rebuild and whenever the
- * setting changes, so the menu never outlives the preference that justified it.
+ * Settings with the account gate applied — the only shape the rest of this
+ * worker should judge the two server-backed features from. See
+ * shared/account-gate.js.
  */
-async function refreshComicMenuVisibility(enabled) {
-  const visible = enabled !== undefined
-    ? !!enabled
-    : (await chrome.storage.sync.get(defaultSettings)).enableComicTranslation;
+async function getGatedSettings() {
+  return AccountGate.applyAccountGate(await chrome.storage.sync.get(defaultSettings));
+}
+
+/**
+ * Show or hide the comic entry. Called on every menu rebuild and whenever the
+ * setting or the account changes, so the menu never outlives the preference —
+ * or the sign-in — that justified it.
+ *
+ * Re-read rather than handed the new value: the answer depends on the switch
+ * AND the token, so a changed switch is only half of it.
+ */
+async function refreshComicMenuVisibility() {
+  const visible = (await getGatedSettings()).enableComicTranslation;
   chrome.contextMenus.update(MENU_IDS.translateComicImage, { visible: !!visible })
     // The menu is gone during a rebuild; the rebuild itself will re-apply this.
     .catch(() => {});
@@ -318,10 +337,8 @@ async function refreshComicMenuVisibility(enabled) {
 }
 
 /** Same contract as refreshComicMenuVisibility, for the PDF entries. */
-async function refreshPdfMenuVisibility(enabled) {
-  const visible = enabled !== undefined
-    ? !!enabled
-    : (await chrome.storage.sync.get(defaultSettings)).enablePdfTranslation;
+async function refreshPdfMenuVisibility() {
+  const visible = (await getGatedSettings()).enablePdfTranslation;
   chrome.contextMenus.update(MENU_IDS.translatePdfLink, { visible: !!visible })
     .catch(() => {});
   chrome.contextMenus.update(MENU_IDS.translatePdfPage, { visible: !!visible })
@@ -337,6 +354,12 @@ async function refreshPdfMenuVisibility(enabled) {
  * is the one point both features funnel through, so it is the only place the
  * answer can be relied on; without it a switched-off feature can still upload a
  * document and spend the month's allowance.
+ *
+ * Reads the raw switch, NOT getGatedSettings(): the account half of the gate is
+ * already enforced one layer down, where apiFetch answers a create with no
+ * token as `unauthorized` — and every surface turns that into a sign-in offer.
+ * Answering `feature_disabled` instead would name the wrong problem and leave
+ * the user nothing to do about it.
  */
 async function assertFeatureEnabled(key) {
   const settings = await chrome.storage.sync.get(defaultSettings);

@@ -183,6 +183,44 @@ async function setExtensionSettings(page, settings) {
 }
 
 /**
+ * Give the extension the account that comic and PDF translation require.
+ *
+ * Comic and PDF translation are gated on a token in chrome.storage.local as
+ * well as on their switches (see shared/account-gate.js), so any test about
+ * either feature being ON has to establish one. The account cache is seeded
+ * alongside the token so nothing reaches the network: getAccount() serves it
+ * for 30 seconds before asking the service.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {boolean} signedIn pass false to put the device back to signed out
+ */
+async function setExtensionAccount(page, signedIn = true) {
+  const context = page.context();
+  let worker = context.serviceWorkers()[0];
+  if (!worker) {
+    worker = await context.waitForEvent('serviceworker');
+  }
+  await worker.evaluate(async (isSignedIn) => {
+    if (!isSignedIn) {
+      await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
+      return;
+    }
+    const quota = { limit: 40, used: 0, remaining: 40, applied: false, resetsAt: '2099-02-01T00:00:00.000Z' };
+    await chrome.storage.local.set({
+      comicToken: 'test-token',
+      comicTokenExpiresAt: Date.now() + 3600_000,
+      comicAccountCache: {
+        fetchedAt: Date.now(),
+        account: {
+          user: { email: 'reader@example.com', name: 'Reader' },
+          freeQuotas: { comic_page: quota, pdf_page: quota },
+        },
+      },
+    });
+  }, signedIn);
+}
+
+/**
  * Send a message to the active tab from the extension service worker
  * @param {import('@playwright/test').Page} page
  * @param {object} message
@@ -213,5 +251,6 @@ module.exports = {
   triggerSelectionHotkey,
   getCurrentTheme,
   setExtensionSettings,
+  setExtensionAccount,
   sendMessageToActiveTab,
 };
