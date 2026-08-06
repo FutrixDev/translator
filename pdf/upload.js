@@ -136,8 +136,10 @@
       return;
     }
     // A used-up monthly allowance offers no action — retrying it now would fail
-    // the same way, and there is nothing to buy.
-    if (code === 'insufficient_points') return;
+    // the same way, and there is nothing to buy. A switched-off feature is the
+    // same shape: this page outlived the switch, and every retry is refused
+    // until the setting goes back on.
+    if (code === 'insufficient_points' || code === 'feature_disabled') return;
     // Anything else: the same operationId makes another attempt safe.
     if (currentFile) elements.retry.hidden = false;
   }

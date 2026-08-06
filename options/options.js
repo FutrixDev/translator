@@ -436,6 +436,12 @@ let comicSignedIn = false;
  *  reading a `comicSignedIn` that has not been answered yet. Never rejects. */
 let comicAccountReady = Promise.resolve();
 
+/** Bumped by sign-in and sign-out, which decide this device's state outright.
+ *  A read that was already on the wire when one of them happened is answering
+ *  a question about the account that was; it is dropped rather than allowed to
+ *  paint a signed-in panel over a sign-out the user just asked for. */
+let comicAccountGeneration = 0;
+
 /** Pages left this month for one operation. Older servers report only the comic
  *  allowance, at the top level and under its pre-PDF name. */
 function freePagesLeft(account, operation) {
@@ -461,8 +467,12 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
   // Asked for unconditionally, unlike before: both features now require an
   // account, so the panel is the only way to get one and has to be readable
   // even with both switches off.
+  const generation = comicAccountGeneration;
   if (!quiet) showComicState('loading');
   const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT', force });
+  // Signed in or out while this was on the wire: the answer is about an account
+  // the user has already moved on from, and every branch below would paint it.
+  if (generation !== comicAccountGeneration) return;
 
   if (!response || !response.ok) {
     // A token that the server has since revoked comes back as unauthorized;
@@ -481,11 +491,15 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
     return;
   }
 
-  const account = response.data;
+  showAccount(response.data);
+}
+
+/** Put a fetched account on screen. Returns whether it is a signed-in one. */
+function showAccount(account) {
   if (!account.signedIn) {
     comicSignedIn = false;
     showComicState('signedOut');
-    return;
+    return false;
   }
 
   comicSignedIn = true;
@@ -496,9 +510,13 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
   elements.pdfPagesRemaining.textContent = freePagesLeft(account, 'pdf_page');
   elements.freeQuotaReset.textContent = formatResetDate(account);
   showComicState('signedIn');
+  return true;
 }
 
 async function comicSignIn() {
+  // This decides the account outright, so any read already on the wire is stale
+  // from here on — including the one this replaces.
+  comicAccountGeneration += 1;
   showComicState('loading');
   elements.comicAccountLoading.textContent = t('comicSigningIn');
   const response = await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
@@ -512,11 +530,15 @@ async function comicSignIn() {
     showComicState('signedOut');
     return false;
   }
-  await refreshComicAccount({ force: true });
-  return comicSignedIn;
+  // Rendered from what sign-in already fetched: the worker saved the token and
+  // returned the account in the same call. Asking again would be a second
+  // round-trip whose transient failure would read as "not signed in" — clearing
+  // the checkbox and demanding an account the user just successfully created.
+  return showAccount(response.data);
 }
 
 async function comicSignOut() {
+  comicAccountGeneration += 1;
   await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
   comicSignedIn = false;
   showComicState('signedOut');

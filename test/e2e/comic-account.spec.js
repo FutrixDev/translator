@@ -384,6 +384,59 @@ test.describe('Advanced Settings login gate', () => {
     }
   });
 
+  // Sign-in already returns the account: the worker saves the token and fetches
+  // it in the same call. A second round-trip would only add a way to fail after
+  // succeeding — a transient error on it reads as "not signed in", clears the
+  // checkbox, and demands the account that was just created.
+  test('a successful sign-in renders the account it was handed, without asking again', async ({ context, page, extensionId }) => {
+    const service = await startMockService();
+    try {
+      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+      // The sign-out state cost nothing to determine: no token, no request.
+      expect(service.state.meRequests).toBe(0);
+
+      await page.locator('label:has(#enableComicTranslation)').click();
+
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+      await expect(page.locator('#comicEmail')).toHaveText(ACCOUNT.user.email);
+      await expect(page.locator('#comicPagesRemaining')).toHaveText('24');
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      // One account fetch for the whole sign-in: the one inside it.
+      expect(service.state.meRequests).toBe(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  // A read that was already on the wire when the user signed out is answering a
+  // question about the account that was.
+  test('an account read in flight during sign-out cannot undo it', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ meDelayMs: 2000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+
+      // The quiet refresh the page runs whenever it comes back to the front,
+      // held open by the delayed service.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.locator('#comicSignOut').click();
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+
+      // Long enough for the held-back response to land and be discarded.
+      await page.waitForTimeout(3000);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+      await expect(page.locator('#comicSignedIn')).toBeHidden();
+      expect(await worker.evaluate(
+        () => chrome.storage.local.get({ comicToken: '' }),
+      )).toEqual({ comicToken: '' });
+    } finally {
+      await service.close();
+    }
+  });
+
   // Signing out drops this device's credential and nothing else. The switches
   // are synced, so writing them off would disable the feature on every other
   // device the account is still signed in on.
