@@ -64,13 +64,15 @@ document.addEventListener('DOMContentLoaded', async () => {
  *
  * Purely a storage read: the account, its sign-in state and the monthly
  * allowance are all reported in Settings now, so the popup no longer waits on a
- * network round-trip to draw a list of buttons. A signed-out user who clicks
- * one is offered sign-in by the overlay that starts the job.
+ * network round-trip to draw a list of buttons. The local token is enough to
+ * know whether this device has an account at all — see shared/account-gate.js.
  */
 async function refreshComicSection() {
   // Off means gone, not greyed out: these rows would otherwise advertise a
   // feature with no entry point behind it.
-  const { enableComicTranslation } = await chrome.storage.sync.get({ enableComicTranslation: false });
+  const { enableComicTranslation } = await AccountGate.applyAccountGate(
+    await chrome.storage.sync.get({ enableComicTranslation: false })
+  );
   elements.comicTranslatePage.hidden = !enableComicTranslation;
   elements.comicColorizePage.hidden = !enableComicTranslation;
 }
@@ -111,7 +113,9 @@ let pdfPollTimer = null;
 let pdfInlineError = null;
 
 async function refreshPdfSection() {
-  const { enablePdfTranslation } = await chrome.storage.sync.get({ enablePdfTranslation: true });
+  const { enablePdfTranslation } = await AccountGate.applyAccountGate(
+    await chrome.storage.sync.get({ enablePdfTranslation: true })
+  );
   if (!enablePdfTranslation) {
     elements.pdfTranslateCurrent.hidden = true;
     elements.pdfTranslateLocal.hidden = true;

@@ -52,6 +52,7 @@
       ],
       "js": [
         "i18n/messages.js",
+        "shared/account-gate.js",
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-language.js",

@@ -167,6 +167,12 @@
         theme: 'light'
       });
     }
+    // After both branches, so the fallback above cannot leave PDF translation
+    // on either. Comic and PDF translation need an account this device may not
+    // have; applied once here so every consumer of ctx.settings — the float
+    // ball menu, the comic overlay — reads a switch that is true only when the
+    // feature can actually run. See shared/account-gate.js.
+    await AccountGate.applyAccountGate(ctx.settings);
     console.log('AI Translator: Settings loaded', {
       showFloatBall: ctx.settings.showFloatBall,
       theme: ctx.settings.theme
@@ -175,11 +181,25 @@
 
   ctx.setupStorageListener = function() {
     chrome.storage.onChanged.addListener((changes, namespace) => {
+      // The account token is per device and lives in local storage, and it is
+      // half of whether comic and PDF translation are on. Signing in or out
+      // therefore changes the answer without any sync key moving — re-derive it
+      // from what sync already holds rather than mirror the token here.
+      if (namespace === 'local' && changes[AccountGate.TOKEN_KEY]) {
+        ctx.loadSettings();
+        return;
+      }
       if (namespace !== 'sync') return;
 
       Object.keys(changes).forEach((key) => {
         ctx.settings[key] = changes[key].newValue;
       });
+      // A switch synced down from a device that IS signed in must not turn the
+      // feature on here. Not awaited — the listener is synchronous and the only
+      // readers are menus built on a later user gesture.
+      if (AccountGate.ACCOUNT_FEATURE_KEYS.some((key) => key in changes)) {
+        AccountGate.applyAccountGate(ctx.settings);
+      }
 
       if (changes.showFloatBall) {
         console.log('AI Translator: Storage changed, showFloatBall:', changes.showFloatBall.oldValue, '->', changes.showFloatBall.newValue);

@@ -64,6 +64,34 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 - **Storage**: Chrome sync storage for cross-device settings
 - **Theming**: CSS variables for dark/light theme support
 
+### Account-Backed Features
+
+Comic translation and PDF translation are the two features that do NOT use the
+user's own API key: they run on our servers against a monthly free page
+allowance, so both require a signed-in account. That makes their switches a
+preference with a precondition, and the two halves live in different storage
+areas on purpose:
+
+| what | where | scope |
+| --- | --- | --- |
+| `enableComicTranslation` / `enablePdfTranslation` | `chrome.storage.sync` | per account |
+| `comicToken` | `chrome.storage.local` | per device |
+
+**A device with no token has both features off, whatever sync says.** That
+answer is derived on every read by `shared/account-gate.js` — never written back
+to sync. A new install syncs the switches down before it has ever signed in
+(PDF ships on), so a signed-out device that "corrected" the preference would
+reach across and disable the feature on the device that is still signed in.
+
+Every surface that reads either switch must run it through
+`AccountGate.applyAccountGate()` first: the options page, the popup, the content
+scripts and the service worker's context menu entries all do, and
+`npm run test:unit` asserts each of them loads the module. The one deliberate
+exception is `assertFeatureEnabled()` in `background.js`, which judges the raw
+switch — the account half is enforced one layer down, where `apiFetch` answers a
+create with no token as `unauthorized`, and every surface turns that into a
+sign-in offer.
+
 ### API Compatibility
 
 Works with any OpenAI Chat Completions-compatible API, plus Anthropic's native
