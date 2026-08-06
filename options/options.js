@@ -1138,12 +1138,15 @@ function setupEventListeners() {
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
 
   // These two write through their own path because turning either on demands an
-  // account first, which nothing else on the page does.
-  elements.enableComicTranslation.addEventListener('change', saveComicSettings);
-  elements.comicTargetLang.addEventListener('change', saveComicSettings);
+  // account first, which nothing else on the page does. Only the switch itself
+  // carries that gate: both handlers persist the same pair of keys, so letting
+  // the language select run it would make picking a language ask for sign-in —
+  // and, if that were cancelled, turn the feature off.
+  elements.enableComicTranslation.addEventListener('change', () => saveComicSettings({ gate: true }));
+  elements.comicTargetLang.addEventListener('change', () => saveComicSettings());
 
-  elements.enablePdfTranslation.addEventListener('change', savePdfSettings);
-  elements.pdfTargetLang.addEventListener('change', savePdfSettings);
+  elements.enablePdfTranslation.addEventListener('change', () => savePdfSettings({ gate: true }));
+  elements.pdfTargetLang.addEventListener('change', () => savePdfSettings());
 
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
@@ -1172,10 +1175,11 @@ function setupEventListeners() {
   });
 }
 
-async function saveComicSettings() {
+/** `gate` is set only by the switch's own change event — see setupEventListeners. */
+async function saveComicSettings({ gate = false } = {}) {
   // Sign-in first: requireAccountFor may clear the checkbox, and what gets
   // written has to be what the checkbox ends up saying.
-  await requireAccountFor(elements.enableComicTranslation);
+  if (gate) await requireAccountFor(elements.enableComicTranslation);
   const enabled = elements.enableComicTranslation.checked;
   elements.comicTargetLang.disabled = !enabled;
   try {
@@ -1191,8 +1195,8 @@ async function saveComicSettings() {
   }
 }
 
-async function savePdfSettings() {
-  await requireAccountFor(elements.enablePdfTranslation);
+async function savePdfSettings({ gate = false } = {}) {
+  if (gate) await requireAccountFor(elements.enablePdfTranslation);
   const enabled = elements.enablePdfTranslation.checked;
   elements.pdfTargetLang.disabled = !enabled;
   try {

@@ -267,6 +267,33 @@ test.describe('Advanced Settings login gate', () => {
     }
   });
 
+  // The gate belongs to the switch, not to the card. Both controls persist the
+  // same pair of keys, so a language select that ran the gate would ask a
+  // signed-out user to sign in for picking a language — and turn the feature
+  // off if they declined. PDF is the case that bites: it ships ON, so a user
+  // who has never signed in still reaches this handler.
+  test('picking a language while signed out neither prompts nor disables the feature', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ connect: 'no-token' });
+    try {
+      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true, pdfTargetLang: '' }));
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+
+      await page.locator('#pdfTargetLang').selectOption('ja');
+
+      await expect.poll(async () => worker.evaluate(
+        () => chrome.storage.sync.get({ enablePdfTranslation: false, pdfTargetLang: '' }),
+      )).toEqual({ enablePdfTranslation: true, pdfTargetLang: 'ja' });
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+      // No sign-in tab was opened on the way.
+      expect(service.state.connectRequests).toBe(0);
+    } finally {
+      await service.close();
+    }
+  });
+
   // Signing out drops this device's credential and nothing else. The switches
   // are synced, so writing them off would disable the feature on every other
   // device the account is still signed in on.
