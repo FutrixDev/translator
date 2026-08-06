@@ -210,6 +210,21 @@ export function isPendingRecord(record) {
   return !!(record && (record.pending || String(record.jobId || '').startsWith(PENDING_ID_PREFIX)));
 }
 
+/**
+ * A pending record that is still worth showing next to the server's own list.
+ *
+ * Only while it is in flight. Once it has failed it names no server job and
+ * carries no jobId to match one by, so a settled pending row cannot be told
+ * apart from the case that matters: the create reached the server, the response
+ * was lost on the way back, and the job it made is in that list already. Keeping
+ * the row would show one operation twice — a failed upload beside the job that
+ * is actually running. The popup showed that error live when it happened; the
+ * history is the server's account.
+ */
+export function isPendingInFlight(record) {
+  return isPendingRecord(record) && isActiveStatus(record && record.status);
+}
+
 export async function listJobRecords() {
   const stored = await chrome.storage.local.get({ [JOBS_KEY]: [] });
   const records = Array.isArray(stored[JOBS_KEY]) ? stored[JOBS_KEY] : [];

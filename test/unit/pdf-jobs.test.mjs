@@ -121,9 +121,29 @@ test('a pending record reads as uploading, not as a queued server job', () => {
   assert.equal(ui.pdfStatusKey({ status: 'failed', pending: true }), 'pdfStatusFailed');
 });
 
+test('a settled pending record stops standing in for the job the server has', () => {
+  // In flight, it is the only trace of the click and the history must show it.
+  assert.equal(pdf.isPendingInFlight({ jobId: 'local:op-1', status: 'queued' }), true);
+  // Failed, it may well BE the job the server list already carries — the create
+  // landed and the response was lost — and there is no id left to prove it is
+  // not. Showing it would double up one operation.
+  assert.equal(pdf.isPendingInFlight({ jobId: 'local:op-1', status: 'failed' }), false);
+  // A real server job is never local filler, whatever its status.
+  assert.equal(pdf.isPendingInFlight({ jobId: 'job-1', status: 'queued' }), false);
+});
+
 // ---------------------------------------------------------------------------
 // The wiring these records depend on
 // ---------------------------------------------------------------------------
+
+test('the settings history merges only the local rows still in flight', () => {
+  const source = repoFile('background/background.js');
+  const body = source.slice(source.indexOf('async function handlePdfJobsHistory'));
+  assert.ok(
+    /records\.filter\(r => pdfClient\.isPendingInFlight\(r\)\)/.test(body),
+    'a settled local row must not be prepended to the server list'
+  );
+});
 
 test('the record is written before the work that can fail, not after it', () => {
   const source = repoFile('background/background.js');

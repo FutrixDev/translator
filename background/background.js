@@ -960,7 +960,7 @@ async function handlePdfJobsHistory() {
     ...job,
     fileName: job.fileName || byId.get(job.jobId)?.fileName || ''
   }));
-  const local = records.filter(r => pdfClient.isPendingRecord(r));
+  const local = records.filter(r => pdfClient.isPendingInFlight(r));
 
   return {
     jobs: [...local, ...merged].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
