@@ -208,3 +208,81 @@ test('popup toggle updates youtube caption setting', async ({ page, context, ext
 
   await expect.poll(async () => getSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
 });
+
+/**
+ * Requirement of the free model: PDF translation ships ON, and switching it off
+ * has to retract every way in — the two popup rows and the two context menu
+ * entries — not just grey out the settings card.
+ */
+test('the PDF switch is on by default and its entry points follow it', async ({ page, context, extensionId }) => {
+  await setExtensionSettings(page, { targetLang: 'en', targetLangSetByUser: true });
+
+  const popupUrl = `chrome-extension://${extensionId}/popup/popup.html`;
+  await page.goto(popupUrl);
+  // Not "translate this PDF" — that one needs the active tab to be a PDF.
+  await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
+
+  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  await worker.evaluate(async () => {
+    globalThis.__pdfMenuUpdates = [];
+    const original = chrome.contextMenus.update.bind(chrome.contextMenus);
+    chrome.contextMenus.update = (id, props, cb) => {
+      globalThis.__pdfMenuUpdates.push({ id, visible: props && props.visible });
+      return original(id, props, cb);
+    };
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+  await page.click('label:has(#enablePdfTranslation)');
+  await expect.poll(async () => getSetting(context, 'enablePdfTranslation')).toBe(false);
+
+  await expect.poll(async () => worker.evaluate(() => globalThis.__pdfMenuUpdates
+    .filter(u => u.id === 'translate-pdf-page' && u.visible !== undefined)
+    .map(u => u.visible).at(-1))).toBe(false);
+  await expect.poll(async () => worker.evaluate(() => globalThis.__pdfMenuUpdates
+    .filter(u => u.id === 'translate-pdf-link' && u.visible !== undefined)
+    .map(u => u.visible).at(-1))).toBe(false);
+
+  await page.goto(popupUrl);
+  await expect(page.locator('#pdfTranslateLocal')).toBeHidden();
+  await expect(page.locator('#pdfTranslateThis')).toBeHidden();
+
+  await worker.evaluate(() => { delete globalThis.__pdfMenuUpdates; });
+});
+
+/**
+ * Layout, but load-bearing: YouTube moved out of the old Feature Settings card
+ * so it sits beside Translation Settings, and what is left is Advanced Settings
+ * with the two account-backed features side by side.
+ */
+test('YouTube has its own card and Advanced Settings holds the two account features', async ({ page, extensionId }) => {
+  await setExtensionSettings(page, { targetLang: 'en', targetLangSetByUser: true });
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+
+  const youtubeCard = page.locator('.settings-card:has(#enableYoutubeCaptionTranslation)');
+  await expect(youtubeCard).toHaveText(/YouTube Settings/);
+  // Its own card, not the one comic and PDF live in.
+  await expect(youtubeCard.locator('#enableComicTranslation')).toHaveCount(0);
+
+  const advanced = page.locator('#advancedSettingsCard');
+  await expect(advanced).toHaveText(/Advanced Settings/);
+  await expect(advanced.locator('#comicFeatureCard #enableComicTranslation')).toHaveCount(1);
+  await expect(advanced.locator('#pdfFeatureCard #enablePdfTranslation')).toHaveCount(1);
+  // One account panel above both columns, not one per feature.
+  await expect(advanced.locator('#comicAccountCard')).toHaveCount(1);
+
+  // Translation Settings comes first, so the YouTube card is the one to its
+  // right in the auto-fit grid.
+  const order = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.settings-card')];
+    const index = (selector) => cards.findIndex(card => card.querySelector(selector));
+    return {
+      translation: index('#enableSelection'),
+      youtube: index('#enableYoutubeCaptionTranslation'),
+      advanced: index('#enableComicTranslation'),
+    };
+  });
+  expect(order.youtube).toBe(order.translation + 1);
+  expect(order.advanced).toBeGreaterThan(order.youtube);
+});

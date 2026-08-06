@@ -25,6 +25,7 @@
       case 'gateway_unavailable':
       case 'storage_unavailable': return 'pdfErrUnavailable';
       case 'unauthorized': return 'pdfSignInRequired';
+      case 'feature_disabled': return 'featureDisabled';
       case 'upload_failed':
       case 'network_error':
       case 'no_response': return 'pdfErrNetwork';

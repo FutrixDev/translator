@@ -27,7 +27,6 @@
     openMono: document.getElementById('pdfOpenMono'),
     retry: document.getElementById('pdfRetry'),
     signIn: document.getElementById('pdfSignIn'),
-    recharge: document.getElementById('pdfRecharge'),
     abandon: document.getElementById('pdfAbandon')
   };
 
@@ -73,7 +72,7 @@
 
   function hideActions() {
     [elements.openDual, elements.openMono, elements.retry,
-     elements.signIn, elements.recharge, elements.abandon]
+     elements.signIn, elements.abandon]
       .forEach(btn => { btn.hidden = true; });
   }
 
@@ -136,10 +135,11 @@
       elements.signIn.hidden = false;
       return;
     }
-    if (code === 'insufficient_points') {
-      elements.recharge.hidden = false;
-      return;
-    }
+    // A used-up monthly allowance offers no action — retrying it now would fail
+    // the same way, and there is nothing to buy. A switched-off feature is the
+    // same shape: this page outlived the switch, and every retry is refused
+    // until the setting goes back on.
+    if (code === 'insufficient_points' || code === 'feature_disabled') return;
     // Anything else: the same operationId makes another attempt safe.
     if (currentFile) elements.retry.hidden = false;
   }
@@ -325,7 +325,6 @@
     setupDropZone();
     elements.retry.addEventListener('click', startJob);
     elements.signIn.addEventListener('click', signIn);
-    elements.recharge.addEventListener('click', () => sendMessage({ type: 'COMIC_OPEN_RECHARGE' }));
     elements.abandon.addEventListener('click', abandonJob);
     elements.openDual.addEventListener('click', () => openResult('dual'));
     elements.openMono.addEventListener('click', () => openResult('mono'));

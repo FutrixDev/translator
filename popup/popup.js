@@ -4,10 +4,8 @@ const elements = {
   toggleFloatBall: document.getElementById('toggleFloatBall'),
   toggleYoutubeCaptions: document.getElementById('toggleYoutubeCaptions'),
   openSettings: document.getElementById('openSettings'),
-  comicAccount: document.getElementById('comicAccount'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
-  comicAccountStatus: document.getElementById('comicAccountStatus'),
   pdfTranslateCurrent: document.getElementById('pdfTranslateCurrent'),
   pdfTranslateLocal: document.getElementById('pdfTranslateLocal'),
   pdfJobs: document.getElementById('pdfJobs'),
@@ -57,49 +55,24 @@ function applyI18n(lang) {
 document.addEventListener('DOMContentLoaded', async () => {
   await checkStatus();
   setupEventListeners();
-  // Not awaited: a slow or unreachable comic service must not hold up the
-  // BYO-key features above it.
-  refreshComicAccount();
+  refreshComicSection();
   refreshPdfSection();
 });
 
-// Comic translation state, which lives on the server rather than in
-// chrome.storage — see background/comic-client.js.
-let comicSignedIn = false;
-
-async function refreshComicAccount() {
-  // Off means gone, not greyed out: the row's only purpose is to reach a paid
-  // service, and it would otherwise advertise a feature with no entry point.
+/**
+ * Show or hide the two comic entry points.
+ *
+ * Purely a storage read: the account, its sign-in state and the monthly
+ * allowance are all reported in Settings now, so the popup no longer waits on a
+ * network round-trip to draw a list of buttons. A signed-out user who clicks
+ * one is offered sign-in by the overlay that starts the job.
+ */
+async function refreshComicSection() {
+  // Off means gone, not greyed out: these rows would otherwise advertise a
+  // feature with no entry point behind it.
   const { enableComicTranslation } = await chrome.storage.sync.get({ enableComicTranslation: false });
-  if (!enableComicTranslation) {
-    elements.comicAccount.hidden = true;
-    elements.comicTranslatePage.hidden = true;
-    elements.comicColorizePage.hidden = true;
-    return;
-  }
-  elements.comicTranslatePage.hidden = false;
-  elements.comicColorizePage.hidden = false;
-
-  let account = null;
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT' });
-    if (response && response.ok) account = response.data;
-  } catch (error) {
-    console.error('Failed to load comic account:', error);
-  }
-  comicSignedIn = !!(account && account.signedIn);
-
-  // A signed-out account and an unreachable service look the same here on
-  // purpose: either way the useful next step is to sign in, and the options
-  // page is where the real error is spelled out.
-  if (!comicSignedIn) {
-    elements.comicAccountStatus.textContent = t('comicSignIn');
-    elements.comicAccount.title = t('comicSignInRequired');
-    return;
-  }
-  // Pages, not points: points are an internal unit.
-  elements.comicAccountStatus.textContent = account.pagesRemaining ?? 0;
-  elements.comicAccount.title = t('comicPagesRemainingLabel');
+  elements.comicTranslatePage.hidden = !enableComicTranslation;
+  elements.comicColorizePage.hidden = !enableComicTranslation;
 }
 
 // The context menu is the natural home for this, but comic hosts disable it
@@ -120,19 +93,6 @@ async function onComicPageAction(mode) {
   }
 }
 
-async function onComicAccountClick() {
-  if (comicSignedIn) {
-    chrome.runtime.sendMessage({ type: 'COMIC_OPEN_RECHARGE' });
-    window.close();
-    return;
-  }
-  // The consent page opens in its own window; this popup is dismissed the
-  // moment that window takes focus, so the handshake is finished by the
-  // service worker rather than here.
-  chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
-  elements.comicAccountStatus.textContent = t('comicSigningIn');
-}
-
 // ---------------------------------------------------------------------------
 // PDF translation — entry points and the compact task list
 //
@@ -146,8 +106,8 @@ const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
 const PDF_POPUP_POLL_MS = 3000;
 const PDF_LIST_LIMIT = 3;
 let pdfPollTimer = null;
-// A create error shown inline above the list (sign-in, top-up, …). Cleared by
-// the next successful action.
+// A create error shown inline above the list (sign-in, an exhausted allowance,
+// …). Cleared by the next successful action.
 let pdfInlineError = null;
 
 async function refreshPdfSection() {
@@ -244,8 +204,9 @@ function renderPdfJobs(records) {
 }
 
 /**
- * Create errors the user can act on right here: a sign-in for 401, a top-up
- * for 402. Everything else becomes a plain error line.
+ * Create errors the user can act on right here: a sign-in for 401. Everything
+ * else — including a used-up monthly allowance, which nothing but waiting
+ * fixes — becomes a plain error line.
  */
 function showPdfCreateError(error) {
   const box = document.createElement('div');
@@ -261,15 +222,6 @@ function showPdfCreateError(error) {
     button.textContent = t('comicSignIn');
     button.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
-      window.close();
-    });
-    box.appendChild(button);
-  } else if (error && error.code === 'insufficient_points') {
-    const button = document.createElement('button');
-    button.className = 'pdf-job-open';
-    button.textContent = t('comicTopUp');
-    button.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'COMIC_OPEN_RECHARGE' });
       window.close();
     });
     box.appendChild(button);
@@ -428,7 +380,6 @@ function setupEventListeners() {
   elements.toggleFloatBall.addEventListener('click', toggleFloatBall);
   elements.toggleYoutubeCaptions.addEventListener('click', toggleYoutubeCaptions);
   elements.openSettings.addEventListener('click', openSettings);
-  elements.comicAccount.addEventListener('click', onComicAccountClick);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));
   elements.pdfTranslateCurrent.addEventListener('click', onPdfTranslateCurrent);
