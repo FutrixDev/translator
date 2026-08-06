@@ -406,8 +406,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
   // Not awaited: this is a network round-trip and the rest of the page must not
-  // wait on the comic service being reachable.
-  refreshComicAccount();
+  // wait on the comic service being reachable. Kept as a handle instead, so the
+  // one thing that genuinely needs the answer — the sign-in gate — can wait for
+  // it rather than read a `comicSignedIn` that is only false because the
+  // request has not landed yet.
+  comicAccountReady = refreshComicAccount().catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -428,6 +431,10 @@ function showComicState(name) {
 /** True once the service has confirmed a signed-in account. Read by the two
  *  feature toggles, which must not turn on without one. */
 let comicSignedIn = false;
+
+/** The initial account fetch, so the sign-in gate can wait on it instead of
+ *  reading a `comicSignedIn` that has not been answered yet. Never rejects. */
+let comicAccountReady = Promise.resolve();
 
 /** Pages left this month for one operation. Older servers report only the comic
  *  allowance, at the top level and under its pre-PDF name. */
@@ -534,7 +541,13 @@ async function comicSignOut() {
  * to put the setting back the way it was.
  */
 async function requireAccountFor(checkbox) {
-  if (!checkbox.checked || comicSignedIn) return true;
+  if (!checkbox.checked) return true;
+  // The switches are live from the first paint, while the account request is
+  // still on the wire and `comicSignedIn` is merely at its initial false. A
+  // click landing in that window would open an authentication tab at someone
+  // who is already signed in, so wait for the answer before believing it.
+  await comicAccountReady;
+  if (comicSignedIn) return true;
   const signedIn = await comicSignIn();
   if (!signedIn) {
     checkbox.checked = false;

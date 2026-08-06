@@ -328,6 +328,23 @@ async function refreshPdfMenuVisibility(enabled) {
     .catch(() => {});
 }
 
+/**
+ * Refuse a job for a feature whose switch is off.
+ *
+ * Hiding entry points only governs what gets rendered next. A surface that was
+ * already open when the switch went off keeps its buttons — an upload page, the
+ * popup, a comic overlay sitting on a page — and can still send a create. This
+ * is the one point both features funnel through, so it is the only place the
+ * answer can be relied on; without it a switched-off feature can still upload a
+ * document and spend the month's allowance.
+ */
+async function assertFeatureEnabled(key) {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+  if (!settings[key]) {
+    throw new comicClient.ComicApiError('feature_disabled', `${key} is turned off`);
+  }
+}
+
 // Every provider/model shape decision lives in shared/api-compat.js so the
 // options page's connection test exercises the identical request.
 const {
@@ -430,7 +447,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'COMIC_JOB_CREATE':
-      replyComic(comicClient.createJob(message.job || {}), sendResponse);
+      replyComic(
+        assertFeatureEnabled('enableComicTranslation')
+          .then(() => comicClient.createJob(message.job || {})),
+        sendResponse,
+      );
       return true;
 
     case 'COMIC_JOB_POLL':
@@ -689,6 +710,7 @@ async function notifyPdfError(error) {
  * (base64 because an ArrayBuffer does not survive runtime messaging).
  */
 async function handlePdfCreateJob(message) {
+  await assertFeatureEnabled('enablePdfTranslation');
   const settings = await chrome.storage.sync.get(defaultSettings);
   const source = message.source || {};
 

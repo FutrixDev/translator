@@ -29,8 +29,11 @@ const ACCOUNT = {
  * @param {'token'|'no-token'} connect what /ext/connect hands back. The real
  *   page bounces the browser to the extension's redirect URI with the token in
  *   the fragment; 'no-token' is the shape a failed authorization takes.
+ * @param {number} meDelayMs hold the account response back this long, to hold
+ *   the options page open in the window where it has a token but not yet an
+ *   answer.
  */
-function startMockService({ connect = 'token' } = {}) {
+function startMockService({ connect = 'token', meDelayMs = 0 } = {}) {
   // `account` is mutable so a test can spend pages mid-run, the way a
   // translation job does, and see whether the page ever notices.
   const state = { meRequests: 0, connectRequests: 0, account: ACCOUNT };
@@ -61,6 +64,7 @@ function startMockService({ connect = 'token' } = {}) {
       if (!(req.headers.authorization || '').startsWith('Bearer ')) {
         return send(401, { error: 'unauthorized', loginRequired: true });
       }
+      if (meDelayMs) return setTimeout(() => send(200, state.account), meDelayMs);
       return send(200, state.account);
     }
 
@@ -325,6 +329,56 @@ test.describe('Advanced Settings login gate', () => {
       await expect(page.locator('#enablePdfTranslation')).toBeChecked();
       // No sign-in tab was opened on the way.
       expect(service.state.connectRequests).toBe(0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  // The switches are live from the first paint, but the account they depend on
+  // arrives over the network. Nothing about "not answered yet" looks different
+  // from "signed out" unless the gate waits for the answer.
+  test('turning a switch on before the account lands does not open a sign-in tab', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ meDelayMs: 2000 });
+    try {
+      const worker = await connectExtension(context, service.base, { enabled: false });
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      // A good token is in local storage; only the answer is outstanding.
+      await expect(page.locator('#comicAccountLoading')).toBeVisible();
+
+      await page.locator('label:has(#enableComicTranslation)').click();
+
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      await expect.poll(() => worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: false }),
+      )).toEqual({ enableComicTranslation: true });
+      expect(service.state.connectRequests).toBe(0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  // Hiding entry points only governs what gets rendered next: a popup, an
+  // upload page or a comic overlay that was already open when the switch went
+  // off keeps its buttons. The worker is what actually decides.
+  test('a create is refused for a feature whose switch is off', async ({ context, page, extensionId }) => {
+    const service = await startMockService();
+    try {
+      const worker = await connectExtension(context, service.base, { enabled: false });
+      await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: false }));
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+
+      const comic = await page.evaluate(() => chrome.runtime.sendMessage({
+        type: 'COMIC_JOB_CREATE', job: { imageUrl: 'https://example.com/page.png' },
+      }));
+      const pdf = await page.evaluate(() => chrome.runtime.sendMessage({
+        type: 'PDF_CREATE_JOB', source: { kind: 'url', url: 'https://example.com/doc.pdf' },
+      }));
+
+      expect(comic.ok).toBe(false);
+      expect(comic.error.code).toBe('feature_disabled');
+      expect(pdf.ok).toBe(false);
+      expect(pdf.error.code).toBe('feature_disabled');
     } finally {
       await service.close();
     }

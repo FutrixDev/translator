@@ -262,6 +262,10 @@ async function serviceWorker(context) {
 async function connectExtension(context, base, { withToken = true } = {}) {
   const worker = await serviceWorker(context);
   await worker.evaluate(async ({ base, withToken }) => {
+    // The feature ships off, and the worker refuses a create while it is: these
+    // tests stand in for a context-menu click, which only exists when the
+    // switch is on, so the switch has to be on for them too.
+    await chrome.storage.sync.set({ enableComicTranslation: true });
     // comicJobs too: it is the cross-page memory, and a record left behind by
     // the previous test would have the next one silently resume a job whose
     // mock service is already closed.

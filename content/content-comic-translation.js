@@ -1236,6 +1236,9 @@
       case 'network_error':
       case 'no_response': return t('comicNetworkError');
       case 'extension_context': return t('extensionContextInvalidated');
+      // An overlay that was already open when the switch went off; the worker
+      // is the one that decides, so this is how that decision reads.
+      case 'feature_disabled': return t('featureDisabled');
       default: return t('comicFailed');
     }
   }
