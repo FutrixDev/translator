@@ -441,10 +441,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.abandonJob(message.jobId), sendResponse);
       return true;
 
-    case 'COMIC_OPEN_RECHARGE':
-      comicClient.getRechargeUrl().then(url => chrome.tabs.create({ url }));
-      break;
-
     // --- PDF translation (account-backed, see pdf-client.js) -----------------
     case 'PDF_CREATE_JOB':
       replyComic(handlePdfCreateJob(message), sendResponse);
@@ -477,7 +473,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * Settle a comic-client promise into a plain message.
  *
  * An Error does not survive chrome.runtime messaging, and the codes matter: the
- * page decides between "sign in", "top up" and "this image cannot be
+ * page decides between "sign in", "out of free pages" and "this image cannot be
  * translated" purely from `error.code`.
  */
 function replyComic(promise, sendResponse) {

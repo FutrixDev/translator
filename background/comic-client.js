@@ -1,7 +1,8 @@
 // AI Translator — Comic translation API client (service worker side)
 //
 // Comic page translation is the one feature that does NOT use the user's own
-// API key: the redraw runs on our servers, costs credits, and therefore needs a
+// API key: the redraw runs on our servers, draws on a monthly free page
+// allowance, and therefore needs a
 // signed-in account. Everything account- or job-related lives here so the
 // existing BYO-key text translation in background.js stays untouched.
 //
@@ -243,13 +244,13 @@ export async function apiFetch(path, { method = 'GET', body = null } = {}) {
   return data;
 }
 
-/** Balance, free-trial state and the pack catalog in one call. */
+/** Sign-in state and the monthly free page allowance in one call. */
 export async function getAccount({ force = false } = {}) {
   if (!(await getToken())) return { signedIn: false };
   const cached = await chrome.storage.local.get({ [STORAGE_KEYS.account]: null });
   const entry = cached[STORAGE_KEYS.account];
   // A 30s cache keeps the popup and the options page from re-querying on every
-  // open; anything that spends or adds credits passes force.
+  // open; anything that consumes the allowance passes force.
   if (!force && entry && Date.now() - entry.fetchedAt < 30_000) {
     return { signedIn: true, ...entry.account };
   }
@@ -259,10 +260,6 @@ export async function getAccount({ force = false } = {}) {
     [STORAGE_KEYS.account]: { fetchedAt: Date.now(), account }
   });
   return { signedIn: true, ...account };
-}
-
-export async function getRechargeUrl() {
-  return `${await getApiBase()}/billing`;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +279,7 @@ export async function getRechargeUrl() {
  *     `blob:`/`data:` src.
  *
  * `operationId` is the idempotency key — re-posting the same one returns the
- * existing job instead of reserving credits twice, which is what makes a retry
+ * existing job instead of counting the page twice, which is what makes a retry
  * after a dropped connection safe.
  */
 export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang, mode }) {

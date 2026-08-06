@@ -230,6 +230,14 @@ body::before {
   }
 }
 
+/* The account sits above both columns, not inside one: it is what the two
+   switches below it depend on, and a rule under it says so. */
+.feature-account {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
 .section-title {
   display: flex;
   align-items: center;
@@ -859,7 +867,7 @@ body::before {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
-/* ==================== Comic Translation Account ==================== */
+/* ==================== Account ==================== */
 
 .account-state {
   margin-top: 14px;
@@ -899,6 +907,14 @@ body::before {
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.2;
+}
+
+/* The reset date is a date, not a count — at 22px a localized "September 1"
+   wraps the stat box that its two numeric siblings sit comfortably inside. */
+.account-stat-value.account-stat-date {
+  font-size: 15px;
+  font-weight: 500;
+  padding-top: 5px;
 }
 
 .account-stat-label {

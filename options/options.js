@@ -170,19 +170,19 @@ const elements = {
   themeToggle: document.getElementById('themeToggle'),
   statusMessage: document.getElementById('statusMessage'),
   eyeIcon: document.getElementById('eyeIcon'),
-  // Comic translation
-  enableComicTranslation: document.getElementById('enableComicTranslation'),
-  comicTargetLang: document.getElementById('comicTargetLang'),
+  // Account shared by comic and PDF translation
   comicAccountLoading: document.getElementById('comicAccountLoading'),
   comicSignedOut: document.getElementById('comicSignedOut'),
   comicSignedIn: document.getElementById('comicSignedIn'),
   comicEmail: document.getElementById('comicEmail'),
   comicPagesRemaining: document.getElementById('comicPagesRemaining'),
-  comicBalance: document.getElementById('comicBalance'),
-  comicFreeQuota: document.getElementById('comicFreeQuota'),
+  pdfPagesRemaining: document.getElementById('pdfPagesRemaining'),
+  freeQuotaReset: document.getElementById('freeQuotaReset'),
   comicSignIn: document.getElementById('comicSignIn'),
   comicSignOut: document.getElementById('comicSignOut'),
-  comicTopUp: document.getElementById('comicTopUp'),
+  // Comic translation
+  enableComicTranslation: document.getElementById('enableComicTranslation'),
+  comicTargetLang: document.getElementById('comicTargetLang'),
   // PDF translation
   enablePdfTranslation: document.getElementById('enablePdfTranslation'),
   pdfTargetLang: document.getElementById('pdfTargetLang')
@@ -411,11 +411,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Comic translation account
+// Account
 //
-// Separate from every other setting on this page: it is a server-side account
-// with a credit balance, not something stored in chrome.storage.sync, so it
-// loads over the network and its buttons act immediately instead of on Save.
+// Separate from every other setting on this page: it is a server-side account,
+// not something stored in chrome.storage.sync, so it loads over the network and
+// its buttons act immediately instead of on Save. Comic and PDF translation
+// share it — one sign-in, one monthly free allowance per feature.
 // ---------------------------------------------------------------------------
 
 function showComicState(name) {
@@ -424,20 +425,29 @@ function showComicState(name) {
   elements.comicSignedIn.classList.toggle('hidden', name !== 'signedIn');
 }
 
-async function refreshComicAccount({ force = false } = {}) {
-  // With both features off there is nothing to act on and no reason to ask a
-  // paid service about a balance the user cannot spend. Both, not just comics:
-  // PDF translation spends the same account, and its card defers to this one
-  // for sign-in and balance.
-  const { enableComicTranslation, enablePdfTranslation } = await chrome.storage.sync.get({
-    enableComicTranslation: false,
-    enablePdfTranslation: true
-  });
-  if (!enableComicTranslation && !enablePdfTranslation) {
-    showComicState(null);
-    return;
-  }
+/** True once the service has confirmed a signed-in account. Read by the two
+ *  feature toggles, which must not turn on without one. */
+let comicSignedIn = false;
 
+/** Pages left this month for one operation. Older servers report only the comic
+ *  allowance, at the top level and under its pre-PDF name. */
+function freePagesLeft(account, operation) {
+  const quota = account.freeQuotas?.[operation] ?? (operation === 'comic_page' ? account.freeQuota : null);
+  return quota?.remaining ?? 0;
+}
+
+function formatResetDate(account) {
+  const iso = account.freeQuotas?.comic_page?.resetsAt ?? account.freeQuota?.resetsAt;
+  if (!iso) return '—';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  return at.toLocaleDateString(currentUILang, { month: 'short', day: 'numeric' });
+}
+
+async function refreshComicAccount({ force = false } = {}) {
+  // Asked for unconditionally, unlike before: both features now require an
+  // account, so the panel is the only way to get one and has to be readable
+  // even with both switches off.
   showComicState('loading');
   const response = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT', force });
 
@@ -445,9 +455,11 @@ async function refreshComicAccount({ force = false } = {}) {
     // A token that the server has since revoked comes back as unauthorized;
     // the honest answer to that is "signed out", not an error.
     if (response && response.error && response.error.code === 'unauthorized') {
+      comicSignedIn = false;
       showComicState('signedOut');
       return;
     }
+    comicSignedIn = false;
     elements.comicAccountLoading.textContent = t('comicAccountError');
     showComicState('loading');
     return;
@@ -455,16 +467,18 @@ async function refreshComicAccount({ force = false } = {}) {
 
   const account = response.data;
   if (!account.signedIn) {
+    comicSignedIn = false;
     showComicState('signedOut');
     return;
   }
 
+  comicSignedIn = true;
   elements.comicEmail.textContent = account.user?.email || account.user?.name || '';
-  // Pages, not points, leads: points are an internal unit and nobody buys a
-  // translation in points.
-  elements.comicPagesRemaining.textContent = account.pagesRemaining ?? 0;
-  elements.comicBalance.textContent = account.balancePoints ?? 0;
-  elements.comicFreeQuota.textContent = account.freeQuota?.remaining ?? 0;
+  // Pages left this month, per feature: the product is free, so a balance would
+  // be answering a question nobody is asking.
+  elements.comicPagesRemaining.textContent = freePagesLeft(account, 'comic_page');
+  elements.pdfPagesRemaining.textContent = freePagesLeft(account, 'pdf_page');
+  elements.freeQuotaReset.textContent = formatResetDate(account);
   showComicState('signedIn');
 }
 
@@ -475,18 +489,57 @@ async function comicSignIn() {
   elements.comicAccountLoading.textContent = t('comicAccountLoading');
 
   if (!response || !response.ok) {
+    comicSignedIn = false;
     if (response?.error?.code !== 'sign_in_cancelled') {
       showStatus(response?.error?.message || t('comicSignInFailed'), 'error');
     }
     showComicState('signedOut');
-    return;
+    return false;
   }
   await refreshComicAccount({ force: true });
+  return comicSignedIn;
 }
 
 async function comicSignOut() {
   await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
+  comicSignedIn = false;
   showComicState('signedOut');
+  // Neither feature can run without an account, so leaving their switches on
+  // would promise entry points that only ever answer "sign in".
+  await disableAccountFeatures();
+}
+
+/**
+ * Turn both account-backed features off, in storage and on screen.
+ *
+ * Called on sign-out. Writing storage is what actually retracts the context
+ * menus and popup rows; the checkboxes are updated to match because the page
+ * does not reload after a sign-out.
+ */
+async function disableAccountFeatures() {
+  await chrome.storage.sync.set({ enableComicTranslation: false, enablePdfTranslation: false });
+  elements.enableComicTranslation.checked = false;
+  elements.enablePdfTranslation.checked = false;
+  elements.comicTargetLang.disabled = true;
+  elements.pdfTargetLang.disabled = true;
+}
+
+/**
+ * Gate for the two Advanced Settings switches: turning one ON requires an
+ * account, so an unauthenticated user gets the sign-in flow instead, and the
+ * switch snaps back if they cancel or it fails.
+ *
+ * Turning one OFF is never gated — a user who cannot sign in must still be able
+ * to put the setting back the way it was.
+ */
+async function requireAccountFor(checkbox) {
+  if (!checkbox.checked || comicSignedIn) return true;
+  const signedIn = await comicSignIn();
+  if (!signedIn) {
+    checkbox.checked = false;
+    showStatus(t('accountRequired'), 'error');
+  }
+  return signedIn;
 }
 
 // Load settings from storage
@@ -1068,12 +1121,6 @@ function setupEventListeners() {
 
   elements.comicSignIn.addEventListener('click', comicSignIn);
   elements.comicSignOut.addEventListener('click', comicSignOut);
-  elements.comicTopUp.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'COMIC_OPEN_RECHARGE' });
-    // The purchase happens in the tab that just opened; re-reading the balance
-    // when the user comes back is what makes the new credits show up here.
-    window.addEventListener('focus', () => refreshComicAccount({ force: true }), { once: true });
-  });
 
   // Provider change rewrites the endpoint and the model list, so the write has
   // to happen after those, not on the generic handler above.
@@ -1098,13 +1145,11 @@ function setupEventListeners() {
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
 
-  // These two write through their own path because they also refresh the
-  // account panel, which nothing else on the page does.
+  // These two write through their own path because turning either on demands an
+  // account first, which nothing else on the page does.
   elements.enableComicTranslation.addEventListener('change', saveComicSettings);
   elements.comicTargetLang.addEventListener('change', saveComicSettings);
 
-  // PDF settings share the write-on-change path for the same reason: Save is
-  // gated on a BYO API key that this account-backed feature does not use.
   elements.enablePdfTranslation.addEventListener('change', savePdfSettings);
   elements.pdfTargetLang.addEventListener('change', savePdfSettings);
 
@@ -1136,6 +1181,9 @@ function setupEventListeners() {
 }
 
 async function saveComicSettings() {
+  // Sign-in first: requireAccountFor may clear the checkbox, and what gets
+  // written has to be what the checkbox ends up saying.
+  await requireAccountFor(elements.enableComicTranslation);
   const enabled = elements.enableComicTranslation.checked;
   elements.comicTargetLang.disabled = !enabled;
   try {
@@ -1143,9 +1191,6 @@ async function saveComicSettings() {
       enableComicTranslation: enabled,
       comicTargetLang: elements.comicTargetLang.value
     });
-    // Switching on should reveal the account state here and now — being told to
-    // reload the page to find out whether you are signed in is not an answer.
-    await refreshComicAccount();
   } catch (error) {
     // Only sync-quota exhaustion can land here, and these two keys are a few
     // bytes. Log it rather than invent an error toast: reopening the page
@@ -1155,6 +1200,7 @@ async function saveComicSettings() {
 }
 
 async function savePdfSettings() {
+  await requireAccountFor(elements.enablePdfTranslation);
   const enabled = elements.enablePdfTranslation.checked;
   elements.pdfTargetLang.disabled = !enabled;
   try {
@@ -1162,9 +1208,6 @@ async function savePdfSettings() {
       enablePdfTranslation: enabled,
       pdfTargetLang: elements.pdfTargetLang.value
     });
-    // Sign-in state lives on the shared comic card; switching PDF on should
-    // surface it the same way switching comics on does.
-    await refreshComicAccount();
   } catch (error) {
     // See saveComicSettings: only sync-quota exhaustion can land here.
     console.error('Failed to save PDF settings:', error);

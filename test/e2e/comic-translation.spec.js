@@ -1,7 +1,8 @@
 /**
  * Comic page translation — end-to-end against a mock of the translation service.
  *
- * The real service costs credits and calls an image model, so the API is
+ * The real service spends the monthly free allowance and calls an image model,
+ * so the API is
  * stubbed here and everything else is real: the service worker's HTTP client,
  * the bearer token in chrome.storage.local, the poll loop, and the in-place
  * swap of the <img>. What that leaves untested is only the native context-menu
@@ -336,7 +337,7 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('offers a top-up when the balance is short, and charges nothing', async ({ context, page }) => {
+  test('reports a used-up allowance with nothing to buy, and spends nothing', async ({ context, page }) => {
     const service = await startMockService('insufficient');
     try {
       const worker = await connectExtension(context, service.base);
@@ -347,7 +348,10 @@ test.describe('Comic page translation', () => {
 
       const overlay = page.locator('.ai-translator-comic-overlay');
       await expect(overlay).toHaveClass(/is-error/);
-      await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toBeVisible();
+      // Dismiss is the only way out: the free pages refill next month and there
+      // is no top-up to offer.
+      await expect(overlay.locator('.ai-translator-comic-btn')).toHaveCount(1);
+      await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toHaveCount(0);
       // The original page is still what the reader sees. Read the resolved
       // property, not the attribute — an untouched src stays relative.
       expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
@@ -357,11 +361,11 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('retrying an undelivered result re-polls the job instead of buying another', async ({ context, page }) => {
-    // The redraw succeeded and the points are spent; only the download of the
+  test('retrying an undelivered result re-polls the job instead of ordering another', async ({ context, page }) => {
+    // The redraw succeeded and the free page is spent; only the download of the
     // finished page failed. A retry that fell through to POST /jobs would order
-    // a second redraw of the same page and charge for it — the user's money,
-    // lost to a transient 403 on a presigned URL.
+    // a second redraw of the same page and count it again — a page out of the
+    // month's allowance, lost to a transient 403 on a presigned URL.
     const service = await startMockService('succeed', { resultFailures: 1 });
     try {
       const worker = await connectExtension(context, service.base);
@@ -382,7 +386,7 @@ test.describe('Comic page translation', () => {
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
-      // The crux: still one job, so still one charge.
+      // The crux: still one job, so still one page counted.
       expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();
@@ -475,7 +479,7 @@ test.describe('Comic page translation', () => {
 
   test('translates the artwork under a decoy overlay, not the decoy', async ({ context, page }) => {
     // srcUrl names the placeholder, because that is what the browser hit-tested.
-    // Translating it would spend credits redrawing a 58×65 spacer and leave the
+    // Translating it would spend a free page redrawing a 58×65 spacer and leave the
     // page the reader is looking at untouched.
     const service = await startMockService('succeed');
     try {

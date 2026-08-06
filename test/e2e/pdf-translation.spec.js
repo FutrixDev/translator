@@ -1,7 +1,8 @@
 /**
  * PDF translation — end-to-end against a mock of the translation service.
  *
- * The real service costs credits and runs a retypeset engine for minutes, so
+ * The real service spends the monthly free allowance and runs a retypeset
+ * engine for minutes, so
  * the API is stubbed here and everything else is real: the upload page's file
  * intake, the base64 hop through runtime messaging, the service worker's
  * ticket → presigned PUT → job creation sequence in pdf-client.js, and the
@@ -312,7 +313,7 @@ test.describe('PDF translation', () => {
     }
   });
 
-  test('offers a top-up when the balance is short, and uploads only once', async ({ context, page, extensionId }) => {
+  test('reports a used-up allowance with no action, and uploads only once', async ({ context, page, extensionId }) => {
     const service = await startMockService('insufficient');
     try {
       await connectExtension(context, service.base);
@@ -321,8 +322,9 @@ test.describe('PDF translation', () => {
       // The 402 lands after the upload but before any polling.
       await expect(page.locator('#pdfError')).toBeVisible({ timeout: 15000 });
       await expect(page.locator('#pdfError')).not.toBeEmpty();
-      await expect(page.locator('#pdfRecharge')).toBeVisible();
-      // Not a retryable failure: retrying without credits buys nothing.
+      // Nothing to buy and nothing to retry: the month's free pages are spent,
+      // so the page offers no action at all.
+      await expect(page.locator('#pdfRecharge')).toHaveCount(0);
       await expect(page.locator('#pdfRetry')).toBeHidden();
 
       expect(service.state.createBodies).toHaveLength(1);

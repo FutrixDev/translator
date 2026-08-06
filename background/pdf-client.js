@@ -1,7 +1,8 @@
 // AI Translator — PDF translation API client (service worker side)
 //
 // PDF translation is the comic pipeline's shape with a bigger document in the
-// middle: it runs on our servers, costs credits, and needs the same signed-in
+// middle: it runs on our servers, draws on the same monthly free page
+// allowance, and needs the same signed-in
 // account. Everything auth-related is therefore imported from comic-client.js
 // rather than duplicated — one token, one sign-in, one error model.
 //

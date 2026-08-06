@@ -250,10 +250,70 @@
           </div>
         </section>
 
-        <!-- Feature Settings. Spans the grid because it holds two features side
-             by side: YouTube captions on the left, comic translation on the
-             right. -->
-        <section class="settings-card settings-card-span">
+        <!-- YouTube captions. A normal one-column card so the grid seats it
+             beside Translation Settings: captions are a translation surface,
+             not an account-backed feature like the two below. -->
+        <section class="settings-card">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22.54 6.42a2.78 2.78 0 00-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 00-1.94 2A29 29 0 001 11.75a29 29 0 00.46 5.33A2.78 2.78 0 003.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 001.94-2 29 29 0 00.46-5.25 29 29 0 00-.46-5.33z"/>
+              <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>
+            </svg>
+            <span data-i18n="youtubeSettings">YouTube Captions</span>
+          </h2>
+
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <span data-i18n="enableYoutubeCaptionTranslation">YouTube Caption Translation</span>
+              <input type="checkbox" id="enableYoutubeCaptionTranslation">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="hint" data-i18n-hint="hintEnableYoutubeCaptionTranslation"></span>
+          </div>
+
+          <div class="youtube-suboptions" id="youtubeSubOptions">
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span data-i18n="showYoutubeOriginalCaption">Show Original Caption</span>
+                <input type="checkbox" id="showYoutubeOriginalCaption" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="hint" data-i18n-hint="hintShowYoutubeOriginalCaption"></span>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="youtubeCaptionStyle">Caption Style</label>
+              <div class="caption-style-controls">
+                <div class="caption-color-field">
+                  <span data-i18n="captionFontColor">Font Color</span>
+                  <input type="color" id="youtubeCaptionFontColor" value="#ffffff">
+                </div>
+                <div class="caption-color-field">
+                  <span data-i18n="captionBgColor">Background Color</span>
+                  <input type="color" id="youtubeCaptionBgColor" value="#080808">
+                </div>
+                <div class="caption-color-field caption-opacity-field">
+                  <span><span data-i18n="captionBgOpacity">Background Opacity</span> <span id="youtubeCaptionBgOpacityValue">82%</span></span>
+                  <input type="range" id="youtubeCaptionBgOpacity" min="0" max="100" value="82">
+                </div>
+              </div>
+              <div class="caption-preview" id="youtubeCaptionPreview">
+                <div class="caption-preview-block">
+                  <div class="caption-preview-original" data-i18n="captionPreviewOriginal">This is the original subtitle</div>
+                  <div class="caption-preview-translated" data-i18n="captionPreviewTranslated">这是翻译后的字幕</div>
+                </div>
+              </div>
+              <span class="hint" data-i18n="hintCaptionDragResize">On the video: drag the caption to move it, scroll over it to resize, double-click to reset.</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Advanced Settings. Spans the grid because the two features under it
+             share one account: comic translation on the left, PDF translation
+             on the right, and a single sign-in panel above them both. Neither
+             switch means anything while signed out, which is why the panel
+             leads rather than sitting inside one column. -->
+        <section class="settings-card settings-card-span" id="advancedSettingsCard">
           <h2 class="section-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 1v22"/>
@@ -263,64 +323,56 @@
               <path d="M19 17H5"/>
               <path d="M17 21H7"/>
             </svg>
-            <span data-i18n="featureSettings">Feature Settings</span>
+            <span data-i18n="advancedSettings">Advanced Settings</span>
           </h2>
 
-          <div class="feature-columns">
-            <div class="feature-column">
-              <div class="toggle-group">
-                <label class="toggle-label">
-                  <span data-i18n="enableYoutubeCaptionTranslation">YouTube Caption Translation</span>
-                  <input type="checkbox" id="enableYoutubeCaptionTranslation">
-                  <span class="toggle-slider"></span>
-                </label>
-                <span class="hint" data-i18n-hint="hintEnableYoutubeCaptionTranslation"></span>
-              </div>
+          <!-- The account. Unlike everything else on this page it lives on the
+               server, so its buttons talk to the service rather than to
+               chrome.storage, and what it reports is this month's free
+               allowance rather than a balance. -->
+          <div class="feature-account" id="comicAccountCard">
+            <div id="comicAccountLoading" class="account-state" data-i18n="comicAccountLoading">Loading…</div>
 
-              <div class="youtube-suboptions" id="youtubeSubOptions">
-                <div class="toggle-group">
-                  <label class="toggle-label">
-                    <span data-i18n="showYoutubeOriginalCaption">Show Original Caption</span>
-                    <input type="checkbox" id="showYoutubeOriginalCaption" checked>
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span class="hint" data-i18n-hint="hintShowYoutubeOriginalCaption"></span>
-                </div>
-
-                <div class="form-group">
-                  <label data-i18n="youtubeCaptionStyle">Caption Style</label>
-                  <div class="caption-style-controls">
-                    <div class="caption-color-field">
-                      <span data-i18n="captionFontColor">Font Color</span>
-                      <input type="color" id="youtubeCaptionFontColor" value="#ffffff">
-                    </div>
-                    <div class="caption-color-field">
-                      <span data-i18n="captionBgColor">Background Color</span>
-                      <input type="color" id="youtubeCaptionBgColor" value="#080808">
-                    </div>
-                    <div class="caption-color-field caption-opacity-field">
-                      <span><span data-i18n="captionBgOpacity">Background Opacity</span> <span id="youtubeCaptionBgOpacityValue">82%</span></span>
-                      <input type="range" id="youtubeCaptionBgOpacity" min="0" max="100" value="82">
-                    </div>
-                  </div>
-                  <div class="caption-preview" id="youtubeCaptionPreview">
-                    <div class="caption-preview-block">
-                      <div class="caption-preview-original" data-i18n="captionPreviewOriginal">This is the original subtitle</div>
-                      <div class="caption-preview-translated" data-i18n="captionPreviewTranslated">这是翻译后的字幕</div>
-                    </div>
-                  </div>
-                  <span class="hint" data-i18n="hintCaptionDragResize">On the video: drag the caption to move it, scroll over it to resize, double-click to reset.</span>
-                </div>
+            <div id="comicSignedOut" class="account-state hidden">
+              <p class="account-identity" data-i18n="comicNotSignedIn">Not signed in</p>
+              <div class="account-actions">
+                <button type="button" id="comicSignIn" class="btn btn-primary">
+                  <span data-i18n="comicSignIn">Sign In</span>
+                </button>
               </div>
             </div>
 
-            <!-- Comic Translation account. Unlike everything else on this page
-                 it is a server-side account with a credit balance, so its
-                 buttons talk to the service rather than to chrome.storage. -->
-            <div class="feature-column" id="comicAccountCard">
-              <!-- The toggle governs whether the image context menu exists at
-                   all: with it off there is no paid entry point anywhere in the
-                   UI. -->
+            <div id="comicSignedIn" class="account-state hidden">
+              <p class="account-identity" id="comicEmail"></p>
+              <div class="account-stats">
+                <div class="account-stat">
+                  <span class="account-stat-value" id="comicPagesRemaining">—</span>
+                  <span class="account-stat-label" data-i18n="comicPagesRemainingLabel">Comic pages left</span>
+                </div>
+                <div class="account-stat">
+                  <span class="account-stat-value" id="pdfPagesRemaining">—</span>
+                  <span class="account-stat-label" data-i18n="pdfPagesRemainingLabel">PDF pages left</span>
+                </div>
+                <div class="account-stat">
+                  <span class="account-stat-value account-stat-date" id="freeQuotaReset">—</span>
+                  <span class="account-stat-label" data-i18n="freeQuotaResetLabel">Resets</span>
+                </div>
+              </div>
+              <div class="account-actions">
+                <button type="button" id="comicSignOut" class="btn btn-text">
+                  <span data-i18n="comicSignOut">Sign out</span>
+                </button>
+              </div>
+            </div>
+
+            <span class="hint" data-i18n-hint="freeQuotaDesc"></span>
+          </div>
+
+          <div class="feature-columns">
+            <!-- The toggle governs whether the image context menu exists at
+                 all: with it off there is no comic entry point anywhere in the
+                 UI. -->
+            <div class="feature-column" id="comicFeatureCard">
               <div class="inline-setting">
                 <div class="inline-setting-title">
                   <label id="enableComicTranslationLabel" for="comicTargetLang" data-i18n="enableComicTranslation">Enable Comic Translation</label>
@@ -346,50 +398,12 @@
                 </div>
                 <span class="hint" data-i18n-hint="comicAccountDesc"></span>
               </div>
-
-              <div id="comicAccountLoading" class="account-state" data-i18n="comicAccountLoading">Loading…</div>
-
-              <div id="comicSignedOut" class="account-state hidden">
-                <p class="account-identity" data-i18n="comicNotSignedIn">Not signed in</p>
-                <div class="account-actions">
-                  <button type="button" id="comicSignIn" class="btn btn-primary">
-                    <span data-i18n="comicSignIn">Sign In</span>
-                  </button>
-                </div>
-              </div>
-
-              <div id="comicSignedIn" class="account-state hidden">
-                <p class="account-identity" id="comicEmail"></p>
-                <div class="account-stats">
-                  <div class="account-stat">
-                    <span class="account-stat-value" id="comicPagesRemaining">—</span>
-                    <span class="account-stat-label" data-i18n="comicPagesRemainingLabel">Pages left</span>
-                  </div>
-                  <div class="account-stat">
-                    <span class="account-stat-value" id="comicBalance">—</span>
-                    <span class="account-stat-label" data-i18n="comicBalanceLabel">Credits</span>
-                  </div>
-                  <div class="account-stat">
-                    <span class="account-stat-value" id="comicFreeQuota">—</span>
-                    <span class="account-stat-label" data-i18n="comicFreeQuotaLabel">Free trial left</span>
-                  </div>
-                </div>
-                <div class="account-actions">
-                  <button type="button" id="comicTopUp" class="btn btn-primary">
-                    <span data-i18n="comicTopUp">Top Up</span>
-                  </button>
-                  <button type="button" id="comicSignOut" class="btn btn-text">
-                    <span data-i18n="comicSignOut">Sign out</span>
-                  </button>
-                </div>
-              </div>
-
               <span class="hint" data-i18n-hint="comicHowTo"></span>
             </div>
 
-            <!-- PDF translation. Same server-side account and credits as the
-                 comic card above — sign-in and balance live there, this card
-                 only owns its own switch and target language. -->
+            <!-- PDF translation. Same account and same monthly allowance pool
+                 as the comic column; this one owns only its own switch and
+                 target language. -->
             <div class="feature-column" id="pdfFeatureCard">
               <div class="inline-setting">
                 <div class="inline-setting-title">

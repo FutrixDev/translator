@@ -3,9 +3,9 @@
 // Pick a comic page → the server redraws it with the text translated → the
 // result replaces the image in place, with a badge to flip back to the
 // original. Unlike every other feature in this extension, this one runs on our
-// servers against the user's account balance, so it can fail for reasons text
-// translation never has: not signed in, out of credits, or an image we are not
-// allowed to fetch.
+// servers against the user's account, so it can fail for reasons text
+// translation never has: not signed in, out of free pages for the month, or an
+// image we are not allowed to fetch.
 //
 // There are three ways in, because the obvious one is not always available:
 // the right-click menu, a button that appears when the pointer is over a page,
@@ -1031,10 +1031,10 @@
       });
     }
 
-    // Give the credits back rather than leaving a reservation stranded. Awaited,
+    // Give the page back rather than leaving a reservation stranded. Awaited,
     // because what to tell the user depends on what the server says: the old
-    // fire-and-forget claimed "your credits were not charged" without ever
-    // learning whether the refund landed.
+    // fire-and-forget claimed "this page was not counted" without ever
+    // learning whether the release landed.
     //
     // Bounded, because sendMessage settles only when the background answers and
     // this one goes over the network. A service worker evicted mid-call, or a
@@ -1123,10 +1123,10 @@
     // The presigned URL in the DOM dies in 30 minutes and the swap is view
     // state a reload throws away — but the redraw itself is in the bucket for
     // days. Keeping the record is what lets the next visit to this page mint a
-    // new URL and put the translation back, instead of asking the user to pay
-    // for a page they already translated.
+    // new URL and put the translation back, instead of making the user spend a
+    // second free page on one they already translated.
     rememberJob(entry, 'succeeded');
-    // The balance just moved; drop the cached copy so the popup shows the truth.
+    // The allowance just moved; drop the cached copy so Settings shows the truth.
     sendMessage({ type: 'COMIC_ACCOUNT', force: true });
   }
 
@@ -1203,19 +1203,10 @@
   }
 
   function showJobError(overlay, error) {
+    // Dismiss is the only action, including for a used-up monthly allowance:
+    // there is nothing to buy, so an "act now" button would lead nowhere. The
+    // message names the reset date instead.
     overlay.setError(errorText(error));
-
-    if (error.code === 'insufficient_points') {
-      overlay.setActions([
-        {
-          label: t('comicTopUp'),
-          variant: 'primary',
-          onClick: () => sendMessage({ type: 'COMIC_OPEN_RECHARGE' })
-        },
-        { label: t('comicDismiss'), onClick: () => overlay.destroy() }
-      ]);
-      return;
-    }
     offerDismiss(overlay);
   }
 

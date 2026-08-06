@@ -1,23 +1,37 @@
 /**
- * Comic account state in the options page and the popup.
+ * The account panel in the options page, shared by comic and PDF translation.
  *
- * Both surfaces read the balance from the service through the worker, so the
- * service is stubbed and everything else is real: the token in
+ * It reads the monthly free allowance from the service through the worker, so
+ * the service is stubbed and everything else is real: the token in
  * chrome.storage.local, the worker's HTTP client and its 30s account cache,
- * and the rendering of the numbers the user actually acts on.
+ * and the rendering of the numbers the user actually acts on. The popup is
+ * here too, to prove it stays out of this entirely.
  */
 const http = require('node:http');
 const { test, expect } = require('./fixtures');
 
+const RESETS_AT = '2099-02-01T00:00:00.000Z';
+const quota = (limit, remaining) => ({
+  limit, used: limit - remaining, remaining, applied: false, resetsAt: RESETS_AT,
+});
+
 const ACCOUNT = {
   user: { email: 'reader@example.com', name: 'Reader' },
-  balancePoints: 240,
+  balancePoints: 0,
   pagesRemaining: 24,
-  freeQuota: { remaining: 3, total: 5 },
+  // `freeQuota` is the pre-PDF shape, still sent for extensions that predate
+  // `freeQuotas`; the options page prefers the map when both are present.
+  freeQuota: quota(40, 24),
+  freeQuotas: { comic_page: quota(40, 24), pdf_page: quota(20, 17) },
 };
 
-function startMockService() {
-  const state = { meRequests: 0 };
+/**
+ * @param {'token'|'no-token'} connect what /ext/connect hands back. The real
+ *   page bounces the browser to the extension's redirect URI with the token in
+ *   the fragment; 'no-token' is the shape a failed authorization takes.
+ */
+function startMockService({ connect = 'token' } = {}) {
+  const state = { meRequests: 0, connectRequests: 0 };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -25,6 +39,20 @@ function startMockService() {
       res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(body));
     };
+
+    // The sign-in tab. comic-client.js watches the tab's URL and settles as
+    // soon as it starts navigating to the redirect URI, so the fact that
+    // chromiumapp.org itself never loads is exactly the production behaviour.
+    if (url.pathname === '/ext/connect') {
+      state.connectRequests += 1;
+      const redirect = url.searchParams.get('redirect_uri');
+      const fragment = connect === 'token'
+        ? `#token=granted-token&expires_at=${Date.now() + 3600_000}`
+        : '#error=access_denied';
+      res.writeHead(302, { location: `${redirect}${fragment}`, 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
 
     if (url.pathname === '/api/billing/me') {
       state.meRequests += 1;
@@ -75,7 +103,7 @@ async function connectExtension(context, base, { withToken = true, enabled = tru
 }
 
 test.describe('Comic account state', () => {
-  test('options page shows the balance when signed in', async ({ context, page, extensionId }) => {
+  test('options page shows both monthly allowances when signed in', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       await connectExtension(context, service.base);
@@ -83,9 +111,13 @@ test.describe('Comic account state', () => {
 
       await expect(page.locator('#comicSignedIn')).toBeVisible();
       await expect(page.locator('#comicEmail')).toHaveText(ACCOUNT.user.email);
-      await expect(page.locator('#comicPagesRemaining')).toHaveText(String(ACCOUNT.pagesRemaining));
-      await expect(page.locator('#comicBalance')).toHaveText(String(ACCOUNT.balancePoints));
-      await expect(page.locator('#comicFreeQuota')).toHaveText(String(ACCOUNT.freeQuota.remaining));
+      // Pages left this month, per feature — the product is free, so there is
+      // no balance to show.
+      await expect(page.locator('#comicPagesRemaining'))
+        .toHaveText(String(ACCOUNT.freeQuotas.comic_page.remaining));
+      await expect(page.locator('#pdfPagesRemaining'))
+        .toHaveText(String(ACCOUNT.freeQuotas.pdf_page.remaining));
+      await expect(page.locator('#freeQuotaReset')).not.toHaveText('—');
       await expect(page.locator('#comicSignedOut')).toBeHidden();
     } finally {
       await service.close();
@@ -107,18 +139,19 @@ test.describe('Comic account state', () => {
     }
   });
 
-  test('popup shows pages remaining, and a sign-in prompt without a token', async ({ context, page, extensionId }) => {
+  test('the popup carries no account row and queries nothing', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
+      // Signed in, feature on: the state that used to make the popup fetch.
       await connectExtension(context, service.base);
       await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-      // Pages, not points — the popup has room for one number only.
-      await expect(page.locator('#comicAccountStatus')).toHaveText(String(ACCOUNT.pagesRemaining));
+      await expect(page.locator('#comicTranslatePage')).toBeVisible();
+      await expect(page.locator('#comicAccount')).toHaveCount(0);
 
-      await connectExtension(context, service.base, { withToken: false });
-      await page.reload();
-      await expect(page.locator('#comicAccountStatus')).not.toHaveText(String(ACCOUNT.pagesRemaining));
-      await expect(page.locator('#comicAccountStatus')).not.toBeEmpty();
+      // Allowance and sign-in live in Settings now, so opening the popup must
+      // not cost a round trip.
+      await page.waitForTimeout(300);
+      expect(service.state.meRequests).toBe(0);
     } finally {
       await service.close();
     }
@@ -126,15 +159,14 @@ test.describe('Comic account state', () => {
 });
 
 test.describe('Comic translation switch', () => {
-  test('is off out of the box and hides the popup row', async ({ context, page, extensionId }) => {
+  test('is off out of the box and hides the popup rows', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       await connectExtension(context, service.base, { enabled: false });
       await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
 
-      await expect(page.locator('#comicAccount')).toBeHidden();
-      // A feature nobody switched on must not talk to a paid service.
-      expect(service.state.meRequests).toBe(0);
+      await expect(page.locator('#comicTranslatePage')).toBeHidden();
+      await expect(page.locator('#comicColorizePage')).toBeHidden();
     } finally {
       await service.close();
     }
@@ -146,12 +178,10 @@ test.describe('Comic translation switch', () => {
       const worker = await connectExtension(context, service.base, { enabled: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
-      // Off: the account block is not merely empty, it is absent, and nothing
-      // has been asked of the service.
-      await expect(page.locator('#comicSignedIn')).toBeHidden();
+      // The account panel loads even with both switches off: it is now the only
+      // place to sign in, and turning either switch on requires being signed in.
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
       await expect(page.locator('#comicSignedOut')).toBeHidden();
-      await expect(page.locator('#comicAccountLoading')).toBeHidden();
-      expect(service.state.meRequests).toBe(0);
 
       const toggle = page.locator('#enableComicTranslation');
       // The checkbox itself is display:none behind the slider, so the label is
@@ -207,5 +237,57 @@ test.describe('Comic translation switch', () => {
     await expect.poll(async () => (await visibilityCalls()).at(-1)).toBe(false);
 
     await worker.evaluate(() => { delete globalThis.__menuUpdates; });
+  });
+});
+
+/**
+ * Requirement of the free model: both server-backed features need an account,
+ * so the switch itself is the sign-in prompt. Turning one ON without one must
+ * not leave a switch claiming a feature that can only ever answer "sign in".
+ */
+test.describe('Advanced Settings login gate', () => {
+  test('a failed sign-in snaps the switch back and stores nothing', async ({ context, page, extensionId }) => {
+    const service = await startMockService({ connect: 'no-token' });
+    try {
+      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+
+      await page.locator('label:has(#enableComicTranslation)').click();
+
+      // The sign-in tab really opened; it just came back without a token.
+      await expect.poll(() => service.state.connectRequests, { timeout: 15000 }).toBe(1);
+      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
+      await expect(page.locator('#comicTargetLang')).toBeDisabled();
+      expect(await worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: false }),
+      )).toEqual({ enableComicTranslation: false });
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('signing out turns both features off', async ({ context, page, extensionId }) => {
+    const service = await startMockService();
+    try {
+      const worker = await connectExtension(context, service.base);
+      await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true }));
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+      await expect(page.locator('#comicSignedIn')).toBeVisible();
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+
+      await page.locator('#comicSignOut').click();
+
+      await expect(page.locator('#comicSignedOut')).toBeVisible();
+      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
+      // Storage is what actually retracts the context menus and popup rows.
+      await expect.poll(async () => worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: true, enablePdfTranslation: true }),
+      )).toEqual({ enableComicTranslation: false, enablePdfTranslation: false });
+    } finally {
+      await service.close();
+    }
   });
 });
