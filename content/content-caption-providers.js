@@ -202,6 +202,22 @@
     }
   }
 
+  /**
+   * Hand a track back in the mode the page had it in.
+   *
+   * The one exception is a track that is 'disabled' now: that is the viewer
+   * having switched subtitles off since we adopted it, and the mode we recorded
+   * is from before they did. Restoring it would turn their subtitles back on —
+   * so a track we no longer want is left exactly where they left it.
+   *
+   * Every path that gives a track back goes through here: switching tracks,
+   * detaching, and the overlay going inactive.
+   */
+  function restoreTrackMode(track, mode) {
+    if (!track || track.mode === 'disabled') return;
+    try { track.mode = mode || 'disabled'; } catch (e) { /* detached */ }
+  }
+
   function releaseTrack() {
     if (!tt.track) return;
     tt.track.removeEventListener('cuechange', tt.onCueUpdate);
@@ -210,8 +226,7 @@
       tt.trackEl.removeEventListener('load', tt.onCueUpdate);
       tt.trackEl = null;
     }
-    // Put the page back exactly as we found it.
-    try { tt.track.mode = tt.restoreMode || 'disabled'; } catch (e) { /* detached */ }
+    restoreTrackMode(tt.track, tt.restoreMode);
     tt.track = null;
     tt.restoreMode = '';
   }
@@ -397,14 +412,15 @@
     // handing the track back in the mode the page had it in.
     setNativeCaptionsHidden(hidden) {
       if (!tt.track) return;
-      // 'disabled' is the viewer having turned subtitles off since we adopted
-      // the track. Handing it back in the mode it had then would turn them on
-      // again — and on the next frame we would read that as subtitles being on,
-      // take the track back, and flip it off and on for as long as it played.
-      if (!hidden && tt.track.mode === 'disabled') return;
-      try {
-        tt.track.mode = hidden ? 'hidden' : (tt.restoreMode || 'showing');
-      } catch (e) { /* detached */ }
+      if (!hidden) {
+        // Not just cosmetic: without restoreTrackMode's disabled check, a viewer
+        // switching subtitles off would get them handed straight back, we would
+        // read that next frame as subtitles being on, adopt the track again, and
+        // flip it off and on for as long as the video played.
+        restoreTrackMode(tt.track, tt.restoreMode || 'showing');
+        return;
+      }
+      try { tt.track.mode = 'hidden'; } catch (e) { /* detached */ }
     },
   };
 

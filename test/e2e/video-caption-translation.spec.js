@@ -291,6 +291,13 @@ test('turning subtitles off in the page turns ours off, and they stay off', asyn
 
   await expect(overlay).toBeHidden();
   expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('disabled');
+
+  // Detaching is the other path that hands the track back, and it has to answer
+  // the same way: the mode we recorded is from before the viewer switched
+  // subtitles off, so restoring it here would switch them on as a parting act.
+  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await p.waitForTimeout(600);
+  expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('disabled');
 });
 
 test('turning the feature off puts the page back the way it was', async ({ page: p, context }) => {
