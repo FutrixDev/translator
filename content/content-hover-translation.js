@@ -56,17 +56,185 @@
     }
   }
 
-  function trackInlineTranslation(block, translationEl, kind) {
+  // ==================== 受管容器：浮层渲染 ====================
+  //
+  // Lexical / ProseMirror 这类编辑器会撤销子树里的外来节点（见 content-utils.js
+  // 里 MANAGED_DOM_ROOT_SELECTOR 的说明）。往这种块下面 after() 一个译文，下一帧
+  // 就没了，用户什么都看不到。
+  //
+  // 这类块改用文档级浮层：节点挂在 body 上，按原文块的位置贴着它显示。编辑器的
+  // MutationObserver 只盯自己的根节点，看不见 body 上的东西，也就不会删。
+  //
+  // 已实测过的插入位置（Higgsfield 的 div.rde-content，只读 Lexical）：
+  //   block.after(el)            -> 1 秒内被删
+  //   block.appendChild(el)      -> 被删
+  //   块内挂 shadow host         -> 被删
+  //   插到编辑器根节点外面        -> 存活
+  //   position:absolute 挂 body  -> 存活
+  // 子树内没有任何可行位置，所以只能走浮层。
+  const ANCHOR_LAYER_ID = 'ai-translator-anchor-layer';
+  const anchoredBlocks = new Map();   // 浮层节点 -> 原文块
+  const hostileNodes = new WeakSet(); // 运行时发现的“插进去会被删”的位置
+  let anchorFrame = 0;
+  let anchorListenersBound = false;
+
+  function shouldAnchor(block) {
+    if (!block) return false;
+    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(block)) return true;
+    // 名单之外的框架靠 verifyInlineSurvival 现场发现，记在 hostileNodes 里。
+    // 两个位置都要问：译文可能是 after() 到块的兄弟位（父级是 block.parentElement），
+    // 也可能是 appendChild / range.insertNode 到块里面（父级是块或块的后代）。
+    return hostileNodes.has(block) || !!(block.parentElement && hostileNodes.has(block.parentElement));
+  }
+
+  function getAnchorLayer() {
+    let layer = document.getElementById(ANCHOR_LAYER_ID);
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.id = ANCHOR_LAYER_ID;
+      // 定位上下文用 fixed 的零尺寸容器：子节点按视口坐标定位，不必去算 body
+      // 到底是不是定位元素、有没有 border/margin。
+      layer.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;margin:0;padding:0;border:0;z-index:2147483646;';
+      (document.body || document.documentElement).appendChild(layer);
+    }
+    return layer;
+  }
+
+  function positionAnchored(el, block) {
+    if (!block || !block.isConnected) {
+      el.style.visibility = 'hidden';
+      return;
+    }
+    const rect = block.getBoundingClientRect();
+    // 原文块滚出视口（或它自己的滚动容器）时把浮层收起来，否则它会飘在别的内容上。
+    if ((!rect.width && !rect.height) || rect.bottom < 0 || rect.top > window.innerHeight) {
+      el.style.visibility = 'hidden';
+      return;
+    }
+    el.style.visibility = '';
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.bottom}px`;
+    el.style.width = `${rect.width}px`;
+  }
+
+  function repositionAnchored() {
+    anchorFrame = 0;
+    anchoredBlocks.forEach((block, el) => {
+      if (!el.isConnected) {
+        anchoredBlocks.delete(el);
+        return;
+      }
+      positionAnchored(el, block);
+    });
+    if (anchoredBlocks.size === 0) unbindAnchorListeners();
+  }
+
+  function scheduleReposition() {
+    if (anchorFrame) return;
+    anchorFrame = requestAnimationFrame(repositionAnchored);
+  }
+
+  // scroll 用捕获阶段：浮层要跟着任意祖先滚动容器走，不只是文档滚动。
+  function bindAnchorListeners() {
+    if (anchorListenersBound) return;
+    anchorListenersBound = true;
+    window.addEventListener('scroll', scheduleReposition, { capture: true, passive: true });
+    window.addEventListener('resize', scheduleReposition, { passive: true });
+  }
+
+  function unbindAnchorListeners() {
+    if (!anchorListenersBound) return;
+    anchorListenersBound = false;
+    window.removeEventListener('scroll', scheduleReposition, { capture: true });
+    window.removeEventListener('resize', scheduleReposition);
+  }
+
+  // 浮层是绝对定位的，顶不动后面的内容，只能盖在上面 —— 没有底色就是两层字叠在
+  // 一起，谁也读不了。译文的字色是从原文块抄来的，底色就得抄原文块背后的那层实色，
+  // 对比度才对得上：往上找第一个完全不透明的背景色，找不到就交给系统色 Canvas
+  // （它跟随明暗主题，比写死白色稳妥）。
+  function resolveBackdrop(block) {
+    let node = block;
+    while (node && node.nodeType === Node.ELEMENT_NODE) {
+      const bg = window.getComputedStyle(node).backgroundColor;
+      // 半透明的背景挡不住下面的字，得继续往上找。第四个数就是 alpha，rgba(r,g,b,a)
+      // 和 rgb(r g b / a) 两种写法都是这样；只有三个数就是不透明的。
+      const parts = bg ? bg.match(/[\d.]+/g) : null;
+      if (parts && (parts.length < 4 || parseFloat(parts[3]) === 1)) return bg;
+      node = node.parentElement;
+    }
+    return 'Canvas';
+  }
+
+  function mountAnchored(el, block, computedStyle) {
+    el.classList.add('ai-translator-anchored');
+    // 挂到 body 之后继承链就断了。行内渲染时字号/字体/行高有一半是从原文块继承来的
+    // （公式那条分支干脆只设了 opacity），这里按原文块的计算值补齐。
+    //
+    // 字号必须带 important：加载态的样式是 font-size: 1.1em !important，而 em 是相对
+    // 父级算的 —— 浮层的父级是 body，不是原文块。正文字号和 body 不一样的站点上，
+    // “正在翻译”会莫名比正文大一圈或小一圈。
+    if (computedStyle) {
+      el.style.setProperty('font-size', computedStyle.fontSize, 'important');
+      el.style.setProperty('font-family', computedStyle.fontFamily, 'important');
+      el.style.setProperty('line-height', computedStyle.lineHeight, 'important');
+      // 颜色不带 important：加载态的紫色和错误态的红色都该压过原文颜色。
+      if (!el.style.color && !el.classList.contains('ai-translator-error')) {
+        el.style.color = computedStyle.color;
+      }
+    }
+    el.style.setProperty('background', resolveBackdrop(block), 'important');
+    el.style.setProperty('position', 'absolute', 'important');
+    el.style.setProperty('margin', '0', 'important');
+    el.style.setProperty('box-sizing', 'border-box', 'important');
+    el.style.setProperty('max-width', '100vw', 'important');
+    getAnchorLayer().appendChild(el);
+    anchoredBlocks.set(el, block);
+    positionAnchored(el, block);
+    bindAnchorListeners();
+    return el;
+  }
+
+  function releaseAnchored(el) {
+    if (!el) return;
+    anchoredBlocks.delete(el);
+    if (anchoredBlocks.size === 0) unbindAnchorListeners();
+  }
+
+  // 名单覆盖不到的框架同样会吃节点。插完之后隔两帧回看一眼：节点没了而原文块还在，
+  // 就把这个插入父级记为 hostile，并用浮层重画一次。少了这一步，未知框架上的表现
+  // 依旧是“第一次悬停什么都没有，之后再悬停也不再重试”。
+  function verifyInlineSurvival(block, translationEl, kind, redraw) {
+    if (!redraw || !translationEl || anchoredBlocks.has(translationEl)) return;
+    const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
+    const parent = translationEl.parentElement;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (translationEl.isConnected) return;
+      if (!block.isConnected || map.get(block) !== translationEl) return;
+      // 记块本身：这一块下次直接走浮层。也记插入父级：同一个容器里的其它块可以
+      // 不用再各自撞一次墙。
+      hostileNodes.add(block);
+      if (parent) hostileNodes.add(parent);
+      map.delete(block);
+      inlineTranslationSources.delete(translationEl);
+      const replacement = redraw();
+      if (replacement) trackInlineTranslation(block, replacement, kind);
+    }));
+  }
+
+  function trackInlineTranslation(block, translationEl, kind, redraw) {
     if (!block || !translationEl) return;
     const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
     const existing = map.get(block);
     if (existing && existing !== translationEl) {
       inlineTranslationSources.delete(existing);
+      releaseAnchored(existing);
       existing.remove();
     }
     map.set(block, translationEl);
     inlineTranslationSources.set(translationEl, block);
     markInlineSource(block, kind);
+    verifyInlineSurvival(block, translationEl, kind, redraw);
   }
 
   function bumpRequestId(map, block) {
@@ -102,7 +270,9 @@
       if (requestMap.get(block) !== requestId) return;
       loadingMap.delete(block);
       const translationEl = renderFn();
-      trackInlineTranslation(block, translationEl, kind);
+      // renderFn 本身就是这条译文的重画函数：被受管容器删掉时用它原样再画一次，
+      // 那时 shouldAnchor 已经认得这个父级，会自动走浮层。
+      trackInlineTranslation(block, translationEl, kind, renderFn);
       if (onComplete) onComplete();
     };
 
@@ -121,6 +291,7 @@
     const translationEl = map.get(block);
     if (translationEl) {
       inlineTranslationSources.delete(translationEl);
+      releaseAnchored(translationEl);
       translationEl.remove();
     }
     map.delete(block);
@@ -343,14 +514,14 @@
     const cacheKey = buildCacheKey(text, targetLang);
     const cached = getCachedTranslation(block, cacheKey);
     if (cached) {
-      const translationEl = renderInlineTranslation(block, cached, mathElements, { kind: 'hover' });
-      trackInlineTranslation(block, translationEl, 'hover');
+      const render = () => renderInlineTranslation(block, cached, mathElements, { kind: 'hover' });
+      trackInlineTranslation(block, render(), 'hover', render);
       return;
     }
 
     const requestId = bumpRequestId(hoverRequestIds, block);
-    const loadingEl = renderInlineLoading(block, { kind: 'hover' });
-    trackInlineTranslation(block, loadingEl, 'hover');
+    const renderLoading = () => renderInlineLoading(block, { kind: 'hover' });
+    trackInlineTranslation(block, renderLoading(), 'hover', renderLoading);
     recordLoadingStart(block, 'hover');
     if (!ctx.isExtensionContextAvailable || !ctx.isExtensionContextAvailable()) {
       scheduleInlineReplacement(
@@ -643,7 +814,9 @@
     const range = resolveSelectionRange(selectionRange);
     const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
 
-    if (!shouldInline || !isSelectionRangeInsideBlock(range, block)) {
+    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading /
+    // renderInlineTranslation 那条路，由它们挂浮层。
+    if (shouldAnchor(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
       return renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
     }
 
@@ -692,7 +865,9 @@
     const range = resolveSelectionRange(selectionRange);
     const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
 
-    if (!shouldInline || !isSelectionRangeInsideBlock(range, block)) {
+    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading /
+    // renderInlineTranslation 那条路，由它们挂浮层。
+    if (shouldAnchor(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
       return renderInlineLoading(block, { kind: 'selection' });
     }
 
@@ -746,17 +921,17 @@
     const cacheKey = buildCacheKey(safeText, targetLang);
     const cached = getCachedTranslation(block, cacheKey);
     if (cached) {
-      const translationEl = renderSelectionTranslation(block, cached, mathElements, selectionRange, {
+      const render = () => renderSelectionTranslation(block, cached, mathElements, selectionRange, {
         selectionText: safeText
       });
-      trackInlineTranslation(block, translationEl, 'selection');
+      trackInlineTranslation(block, render(), 'selection', render);
       state.selectionTranslationPending = false;
       return;
     }
 
     const requestId = bumpRequestId(selectionRequestIds, block);
-    const loadingEl = renderSelectionLoading(block, selectionRange, { selectionText: safeText });
-    trackInlineTranslation(block, loadingEl, 'selection');
+    const renderLoading = () => renderSelectionLoading(block, selectionRange, { selectionText: safeText });
+    trackInlineTranslation(block, renderLoading(), 'selection', renderLoading);
     recordLoadingStart(block, 'selection');
     if (!ctx.isExtensionContextAvailable || !ctx.isExtensionContextAvailable()) {
       scheduleInlineReplacement(
@@ -848,10 +1023,10 @@
 
     const extracted = extractSelectionPlaceholders(text, selectionRange);
     clearSelectionTranslation();
-    const translationEl = renderSelectionTranslation(block, translation || '', extracted.mathElements, selectionRange, {
+    const render = () => renderSelectionTranslation(block, translation || '', extracted.mathElements, selectionRange, {
       selectionText: extracted.text || text
     });
-    trackInlineTranslation(block, translationEl, 'selection');
+    trackInlineTranslation(block, render(), 'selection', render);
   }
 
   function buildBaseStyle(computedStyle, omitColor = false) {
@@ -882,7 +1057,8 @@
     const computedStyle = window.getComputedStyle(inlineTarget);
     const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
 
-    if (isHorizontalFlex) {
+    // 浮层是块级的，贴在原文块下方，用不上“同一行右侧”那套内联变体。
+    if (isHorizontalFlex && !shouldAnchor(block)) {
       const loadingEl = document.createElement('span');
       loadingEl.className = `ai-translator-inline-block ai-translator-inline-right ${className} ${INLINE_LOADING_CLASS}`;
       loadingEl.style.cssText = `
@@ -922,6 +1098,10 @@
       }
     }
 
+    if (shouldAnchor(block)) {
+      return mountAnchored(loadingEl, block, computedStyle);
+    }
+
     if (block.hasAttribute('slot')) {
       const internalLoading = document.createElement('span');
       internalLoading.className = `ai-translator-inline-block ${className} ${INLINE_LOADING_CLASS}`;
@@ -948,7 +1128,7 @@
     const computedStyle = window.getComputedStyle(inlineTarget);
     const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
 
-    if (isHorizontalFlex) {
+    if (isHorizontalFlex && !shouldAnchor(block)) {
       const translationEl = document.createElement('span');
       translationEl.className = `ai-translator-inline-block ai-translator-inline-right ${className}`;
 
@@ -1009,6 +1189,10 @@
       if (textOffset > 0) {
         translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
       }
+    }
+
+    if (shouldAnchor(block)) {
+      return mountAnchored(translationEl, block, computedStyle);
     }
 
     if (block.hasAttribute('slot')) {

@@ -439,6 +439,15 @@
   display: none !important;
 }
 
+/* 受管容器（只读 Lexical / ProseMirror 等）里的译文没法插进原地，改挂到文档级
+   浮层上（见 content-hover-translation.js）。它顶不动后面的内容，只能盖在上面，
+   所以要读起来像一层浮层：底色和字色由 JS 按原文块设置，这里补边距和层次。 */
+.ai-translator-inline-block.ai-translator-anchored {
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18) !important;
+}
+
 .ai-translator-inline-loading {
   color: #7c5cff !important;
   font-weight: 600 !important;
