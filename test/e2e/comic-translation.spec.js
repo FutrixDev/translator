@@ -60,7 +60,33 @@ function makePng(width, height, [r, g, b]) {
       raw[p] = r; raw[p + 1] = g; raw[p + 2] = b;
     }
   }
+  return encodePng(width, height, raw);
+}
 
+/**
+ * A page that does NOT compress, so its `data:` URL is megabyte-scale.
+ *
+ * Readers that decode their own artwork hand the <img> an inline `data:` URL,
+ * and the size of that string is the whole point of the fixture: it is what
+ * makes keeping the raw src around as a lookup key — in memory, and in
+ * chrome.storage — the wrong design. A deterministic LCG rather than
+ * Math.random so a failure reproduces.
+ */
+function noisePng(width, height, seed) {
+  let state = seed >>> 0 || 1;
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++) {
+    const row = y * (1 + width * 3);
+    raw[row] = 0;
+    for (let x = 0; x < width * 3; x++) {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      raw[row + 1 + x] = (state >>> 24) & 0xff;
+    }
+  }
+  return encodePng(width, height, raw);
+}
+
+function encodePng(width, height, raw) {
   const chunk = (type, data) => {
     const head = Buffer.alloc(8);
     head.writeUInt32BE(data.length, 0);
@@ -145,6 +171,66 @@ const READER_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * The same reader, wearing the responsive markup a real one ships.
+ *
+ * `srcset` and a parent `<picture>` both outrank `src`, so swapping in a result
+ * means stripping them — and a slot that is handed to the next page has to get
+ * them back. The site rewrites `src` and `srcset` on every turn but never
+ * touches `sizes` or the `<source>`, which is exactly why those two are what
+ * this asserts on: they are the attributes only the extension can put back.
+ *
+ * The `<source>` deliberately never matches, so `currentSrc` stays the <img>'s
+ * own URL and the page's identity is not the thing under test here.
+ */
+const PICTURE_READER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Reader</title></head>
+<body style="margin:0">
+  <picture><source media="(max-width: 1px)" srcset="/decoy.png"><img class="page_img" width="400" sizes="400px"></picture>
+  <picture><source media="(max-width: 1px)" srcset="/decoy.png"><img class="page_img" width="400" sizes="400px"></picture>
+  <script>
+    const pool = Array.from(document.querySelectorAll('.page_img'));
+    window.turnTo = (n) => {
+      const slot = n % pool.length;
+      pool[slot].src = '/source.png?page=' + n;
+      pool[slot].srcset = '/source.png?page=' + n + ' 1x';
+      pool.forEach((img, i) => { img.style.display = i === slot ? '' : 'none'; });
+      history.pushState({}, '', '/picture-reader?page=' + n);
+    };
+    turnTo(1);
+  </script>
+</body></html>`;
+
+/**
+ * The reader that has no URLs at all.
+ *
+ * Sites that decrypt their pages in the browser hand the <img> a multi-megabyte
+ * `data:` URL, which is the hardest case for every piece of state this feature
+ * keeps: nothing about the page is short, and nothing about it survives being
+ * treated as a key. Three distinct pages, none of which compress.
+ */
+const DATA_PAGES = [0, 1, 2, 3].map(
+  n => `data:image/png;base64,${noisePng(320, 400, n * 7919 + 1).toString('base64')}`,
+);
+
+const DATA_READER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Reader</title></head>
+<body style="margin:0">
+  <img class="page_img" width="400">
+  <img class="page_img" width="400">
+  <script>
+    const pages = ${JSON.stringify(DATA_PAGES)};
+    const pool = Array.from(document.querySelectorAll('.page_img'));
+    window.turnTo = (n) => {
+      const slot = n % pool.length;
+      pool[slot].src = pages[n];
+      pool.forEach((img, i) => { img.style.display = i === slot ? '' : 'none'; });
+      history.pushState({}, '', '/data-reader?page=' + n);
+    };
+    turnTo(1);
+  </script>
+</body></html>`;
+
+/**
  * A stand-in for the translation service.
  *
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
@@ -193,6 +279,8 @@ function startMockService(
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/picture-reader') return send(200, PICTURE_READER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/data-reader') return send(200, DATA_READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy.png') return send(200, DECOY_PNG, 'image/png');
     if (url.pathname === '/source.png') {
       state.sourceHits += 1;
@@ -356,7 +444,10 @@ test.describe('Comic page translation', () => {
       await expect(badge).toBeVisible();
 
       await badge.click();
-      await expect(page.locator('#comic')).toHaveAttribute('src', `${service.base}/source.png`);
+      // Resolved, not the attribute: flipping back restores the markup exactly
+      // as the site wrote it, and the site wrote a relative URL.
+      expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
+      await expect(page.locator('#comic')).toHaveAttribute('src', '/source.png');
       await badge.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/);
 
@@ -955,6 +1046,132 @@ test.describe('Comic page translation', () => {
       await page.evaluate(() => window.turnTo(1));
       await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
       await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+      expect(service.state.createBodies).toHaveLength(1);
+
+      // And asking for it again buys nothing either: what the page knows about
+      // page 1 has to outlive the DOM it was displayed in, or a reader working
+      // through a chapter pays twice for every page they look at twice.
+      await triggerReaderTranslation(worker, service.base, 1);
+      await page.waitForTimeout(1500);
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('gives a recycled slot its responsive markup back', async ({ context, page }) => {
+    // Swapping a result in means stripping `srcset`, `sizes` and the
+    // `<picture>` sources, because all three outrank `src`. The reader then
+    // hands the slot to another page — rewriting `src` and `srcset` itself, and
+    // nothing else. Whatever the extension stripped and the site does not
+    // rewrite stays stripped forever: every page that lands in that slot for
+    // the rest of the session renders from a candidate list that is missing.
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/picture-reader`);
+      const slots = page.locator('.page_img');
+      const before = await page.evaluate(() => {
+        const img = document.querySelectorAll('.page_img')[1];
+        return { sizes: img.getAttribute('sizes'), source: img.parentElement.querySelector('source').getAttribute('srcset') };
+      });
+
+      await worker.evaluate(async ({ base }) => {
+        const [tab] = await chrome.tabs.query({ url: `${base}/picture-reader*` });
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'COMIC_TRANSLATE_IMAGE',
+          srcUrl: `${base}/source.png?page=1`,
+          pageUrl: `${base}/picture-reader?page=1`,
+          targetLang: 'zh-CN',
+        });
+      }, { base: service.base });
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      // Stripped while the result is in place, or the responsive markup would
+      // put the untranslated page straight back.
+      await expect(slots.nth(1)).not.toHaveAttribute('srcset', /./);
+
+      // Two turns, so page 3 lands in the slot page 1 was translated in.
+      await page.evaluate(() => window.turnTo(2));
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
+
+      await expect.poll(() => page.evaluate(() => {
+        const img = document.querySelectorAll('.page_img')[1];
+        return { sizes: img.getAttribute('sizes'), source: img.parentElement.querySelector('source').getAttribute('srcset') };
+      })).toEqual(before);
+      // And the two the site DID rewrite are left as the site wrote them —
+      // restoring page 1's would put page 1 back on top of page 3.
+      await expect(slots.nth(1)).toHaveAttribute('srcset', '/source.png?page=3 1x');
+    } finally {
+      await service.close();
+    }
+  });
+
+  /** The popup's entry point, against a tab whose URL moves under it. */
+  const triggerDataReaderTranslation = (worker, base) => worker.evaluate(async ({ base }) => {
+    const [tab] = await chrome.tabs.query({ url: `${base}/data-reader*` });
+    // No srcUrl: passing a megabyte of base64 through the context menu is not
+    // what happens, and the float ball has none either.
+    await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', targetLang: 'zh-CN' });
+  }, { base });
+
+  test('tells inlined pages apart without keeping them', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/data-reader`);
+      const slots = page.locator('.page_img');
+
+      await triggerDataReaderTranslation(worker, service.base);
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+
+      // Page 3 arrives in page 1's slot. Two inlined pages are two different
+      // pages even though neither has a URL to tell them apart by.
+      await page.evaluate(() => window.turnTo(2));
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', /^data:image\/png/);
+      await expect(page.locator('.ai-translator-comic-badge')).toHaveCount(0);
+
+      // Back to page 1: bought, so it comes back on its own and for nothing.
+      await page.evaluate(() => window.turnTo(1));
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('remembers an inlined page across a reload', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/data-reader`);
+      await expect(page.locator('.page_img').nth(1)).toHaveAttribute('src', /^data:image\/png/);
+
+      await triggerDataReaderTranslation(worker, service.base);
+      await expect(page.locator('.page_img').nth(1)).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      // The record is the whole point: without one there is nothing for the
+      // next document to find.
+      await expect.poll(
+        () => worker.evaluate(() => chrome.storage.local.get('comicJobs').then(
+          r => Object.values(r.comicJobs || {}).map(job => job.status),
+        )),
+        { timeout: 20000 },
+      ).toEqual(['succeeded']);
+      // And it holds an id of the page, not the page: a record that inlined a
+      // megabyte of base64 would blow the extension's storage quota inside a
+      // single chapter.
+      const stored = await worker.evaluate(() => chrome.storage.local.get('comicJobs').then(
+        r => JSON.stringify(r.comicJobs || {}).length,
+      ));
+      expect(stored).toBeLessThan(1000);
+
+      await page.reload();
+      await expect(page.locator('.page_img').nth(1)).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
       expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();
