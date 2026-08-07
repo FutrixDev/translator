@@ -230,3 +230,59 @@ test('a disabled menu item in the popup actually looks disabled', () => {
   // button mid-request would still read as clickable.
   assert.match(repoFile('popup/popup.css'), /\.menu-item:disabled\s*\{/);
 });
+
+// ---------------------------------------------------------------------------
+// The link out to the web library
+//
+// The extension cannot render a PDF: Chrome's viewer is an out-of-process
+// iframe with a closed shadow DOM. The website can, so the settings history
+// links each job to it — which only works if the URL is built from the origin
+// the service worker is actually configured with, and refuses to be built at
+// all from anything else.
+// ---------------------------------------------------------------------------
+
+test('a job in the history links to the same job in the web library', () => {
+  assert.equal(
+    ui.pdfLibraryUrl('https://translators-ai.com', 'job-1'),
+    'https://translators-ai.com/settings/pdf?job=job-1'
+  );
+  // No job: the library itself, which is what the card header links to.
+  assert.equal(ui.pdfLibraryUrl('https://translators-ai.com'), 'https://translators-ai.com/settings/pdf');
+  // A trailing slash or a path on the configured base must not reach the URL.
+  assert.equal(
+    ui.pdfLibraryUrl('https://staging.example.com/', 'job-1'),
+    'https://staging.example.com/settings/pdf?job=job-1'
+  );
+  // An id is a server id, but it still goes through encodeURIComponent — a
+  // link is not the place to find out that assumption was wrong.
+  assert.equal(
+    ui.pdfLibraryUrl('https://translators-ai.com', 'a/b?c=d'),
+    'https://translators-ai.com/settings/pdf?job=a%2Fb%3Fc%3Dd'
+  );
+});
+
+test('a pending job gets no link, because the server has no such job', () => {
+  // The library reads an unknown ?job= as a hint and falls back to the newest
+  // document, so this link would quietly open the wrong one.
+  assert.equal(ui.pdfLibraryUrl('https://translators-ai.com', 'local:op-1'), '');
+});
+
+test('the library link cannot be built from a base that is not a web origin', () => {
+  // The base comes out of chrome.storage, and this value ends up in an href.
+  assert.equal(ui.pdfLibraryUrl('javascript:alert(1)', 'job-1'), '');
+  assert.equal(ui.pdfLibraryUrl('', 'job-1'), '');
+  assert.equal(ui.pdfLibraryUrl(null, 'job-1'), '');
+  assert.equal(ui.pdfLibraryUrl('not a url', 'job-1'), '');
+});
+
+test('the settings page asks the worker for the origin instead of hardcoding one', () => {
+  const options = repoFile('options/options.js');
+  assert.match(options, /ACCOUNT_SITE_BASE/);
+  assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase, job\.jobId\)/);
+  // The default origin lives in comic-client.js; a second copy here would be
+  // the one that goes stale.
+  assert.doesNotMatch(options, /translators-ai\.com/);
+
+  const background = repoFile('background/background.js');
+  assert.match(background, /case 'ACCOUNT_SITE_BASE':/);
+});

@@ -188,6 +188,7 @@ const elements = {
   pdfTargetLang: document.getElementById('pdfTargetLang'),
   // PDF tasks (server-backed history)
   pdfTasksCard: document.getElementById('pdfTasksCard'),
+  pdfTasksLibraryLink: document.getElementById('pdfTasksLibraryLink'),
   pdfTasksRefresh: document.getElementById('pdfTasksRefresh'),
   pdfTasksState: document.getElementById('pdfTasksState'),
   pdfTasksActiveGroup: document.getElementById('pdfTasksActiveGroup'),
@@ -413,6 +414,10 @@ function detectProviderFromEndpoint(endpoint) {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
+  // Awaited, unlike the account below: this one only reads chrome.storage in
+  // the worker, and every task row rendered before it lands would be a row
+  // without its link to the web library.
+  await loadAccountSiteBase();
   // Not awaited: this is a network round-trip and the rest of the page must not
   // wait on the comic service being reachable. Kept as a handle instead, so the
   // one thing that genuinely needs the answer — the sign-in gate — can wait for
@@ -537,6 +542,33 @@ let pdfTasksTimer = null;
 /** What the last fetch was made for. renderAccountFeatures runs on every load
  *  and every account change; only a change in either half is worth a request. */
 let pdfTasksFetchedFor = null;
+/**
+ * Where the account lives on the web. Empty until the service worker answers,
+ * which is why every link built from it is conditional: a row that renders
+ * before the reply simply has no link, and the next render has one.
+ */
+let accountSiteBase = '';
+
+/**
+ * Ask once per page load. The origin is a constant with a storage override, so
+ * it does not change under an open settings page, and re-asking on every
+ * refresh would be a message per five-second poll for a value that never moves.
+ */
+async function loadAccountSiteBase() {
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({ type: 'ACCOUNT_SITE_BASE' });
+  } catch (error) {
+    response = null;
+  }
+  accountSiteBase = (response && response.ok && response.data && response.data.base) || '';
+
+  const link = elements.pdfTasksLibraryLink;
+  if (!link) return;
+  const href = PDF_UI.pdfLibraryUrl(accountSiteBase);
+  link.href = href;
+  link.hidden = !href;
+}
 
 /** Driven by renderAccountFeatures: the list follows the switch it belongs to. */
 function syncPdfTasksVisibility(visible) {
@@ -658,7 +690,28 @@ function pdfTaskRow(job) {
     bar.style.width = `${Math.max(2, Math.min(100, Math.round(job.progress || 0)))}%`;
     track.appendChild(bar);
     main.appendChild(track);
-  } else if (job.status === 'succeeded' && !job.pending) {
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'pdf-task-actions';
+
+  // The web library, opened on this job. Offered for every row the server
+  // knows about, not only the finished ones: the library renders the original
+  // too, so it answers "what was this?" for a job that failed and "how far has
+  // it got?" for one still running. `pdfLibraryUrl` returns '' for a pending
+  // record, whose id names no server job yet.
+  const libraryUrl = PDF_UI.pdfLibraryUrl(accountSiteBase, job.jobId);
+  if (libraryUrl) {
+    const view = document.createElement('a');
+    view.className = 'pdf-task-view';
+    view.href = libraryUrl;
+    view.target = '_blank';
+    view.rel = 'noopener';
+    view.textContent = t('pdfTasksViewOnWeb');
+    actions.appendChild(view);
+  }
+
+  if (!PDF_UI.isPdfJobActive(job) && job.status === 'succeeded' && !job.pending) {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'btn btn-text pdf-task-open';
@@ -668,8 +721,10 @@ function pdfTaskRow(job) {
     open.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'PDF_OPEN_RESULT', jobId: job.jobId, which: 'dual' });
     });
-    row.appendChild(open);
+    actions.appendChild(open);
   }
+
+  if (actions.childNodes.length) row.appendChild(actions);
 
   return row;
 }

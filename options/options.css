@@ -1039,6 +1039,37 @@ body::before {
   transition: width 0.3s ease;
 }
 
+.pdf-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .pdf-task-open {
   flex-shrink: 0;
+}
+
+/* The two links out to the web library — one per row, one in the card head.
+   Sized like .btn-text so they sit level with the Open button beside them. */
+.pdf-task-view,
+.pdf-tasks-library {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--accent-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.pdf-task-view:hover,
+.pdf-tasks-library:hover {
+  text-decoration: underline;
+  background: var(--bg-tertiary);
+}
+
+/* Pushes itself and the Refresh button to the right of the title. */
+.pdf-tasks-library {
+  margin-left: auto;
 }
