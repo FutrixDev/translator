@@ -58,9 +58,74 @@
   // page and the banner beside it are not close at all.
   const SPREAD_AREA_RATIO = 0.5;
 
+  // -------------------------------------------------------------------------
+  // Page identity
+  // -------------------------------------------------------------------------
+
   /**
-   * Images with a running job or a completed swap, keyed by the PAGE they are
-   * about rather than by the <img> element showing it.
+   * A short, stable name for the PAGE an <img> is showing.
+   *
+   * The src string is the only thing that identifies a page, and it is a bad
+   * thing to keep: readers that decrypt their own artwork hand the <img> a
+   * multi-megabyte `data:` URL, and this feature needs that identity in three
+   * places at once — an in-memory map for a reading session, a stored record
+   * for the next one, and a stamp on the element itself. Keeping the string
+   * three times over is what made `data:` and `blob:` sources unresumable:
+   * rather than pay it, the record simply refused to be written.
+   *
+   * So the identity is a fingerprint instead — a 53-bit hash of the length and
+   * up to three 8KB windows of the payload. Bounded work per call, which is
+   * what makes it safe to compute on demand rather than cached against the
+   * element, and nothing anywhere retains the source string it came from.
+   *
+   * A fingerprint, deliberately not a digest: two pages of one chapter differ
+   * in length and diverge within the first compressed block, so the windows
+   * settle it. What it is not built to survive is an adversary choosing the
+   * bytes — nothing here is a security boundary, and the cost of a collision
+   * is one wrong picture on screen.
+   */
+  const ID_SAMPLE_CHARS = 8192;
+
+  function hash53(str) {
+    let h1 = 0xdeadbeef;
+    let h2 = 0x41c6ce57;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+
+  function pageIdOfSrc(src) {
+    if (!src) return '';
+    let sample = src;
+    if (src.length > ID_SAMPLE_CHARS * 3) {
+      const middle = src.length >> 1;
+      sample = src.slice(0, ID_SAMPLE_CHARS)
+        + src.slice(middle - (ID_SAMPLE_CHARS >> 1), middle + (ID_SAMPLE_CHARS >> 1))
+        + src.slice(-ID_SAMPLE_CHARS);
+    }
+    // The length is part of the name, not just of the hash input: two pages
+    // have to differ in both to collide.
+    return `${src.length.toString(36)}-${hash53(sample)}`;
+  }
+
+  function pageIdOf(img) {
+    return img ? pageIdOfSrc(img.currentSrc || img.src || '') : '';
+  }
+
+  /** The element this <img> is wearing the stamp of, if it is swapped. */
+  const PAGE_ID_ATTR = 'data-ai-translator-page-id';
+
+  // -------------------------------------------------------------------------
+  // Entries
+  // -------------------------------------------------------------------------
+
+  /**
+   * Everything this document knows about a page, keyed by page id.
    *
    * Comic readers recycle a small pool of <img>s: turning the page reassigns
    * `src` on an element that is already in the DOM, and collapses the outgoing
@@ -72,71 +137,69 @@
    * job. Keying by the page makes a recycled slot simply unknown again, which
    * is what it is.
    *
+   * An entry has two lifetimes in one object. The receipt — which job, which
+   * mode, bought or not — is cheap and lasts as long as the document. The
+   * BINDING — the element, its original src, the DOM swap, the card, the
+   * badge — lasts only while the reader is looking at that page, and
+   * detachEntry drops all of it. That is what keeps a long reading session
+   * flat: only the handful of pages actually on screen hold anything big.
+   *
    * A Map, not a WeakMap: the key is no longer something the collector can
    * reason about, so MAX_TRACKED bounds it instead. Insertion order is
    * recency — re-tracking an entry re-inserts it.
    */
   const tracked = new Map();
-  const MAX_TRACKED = 40;
-
-  /**
-   * A short, stable identity for an image source.
-   *
-   * These readers decode their pages in the browser and hand the <img> a
-   * multi-megabyte `data:` URL. Keeping twenty of those verbatim for a reading
-   * session is not a price worth paying for a lookup key, and the length plus
-   * both ends of the payload tells any two real pages apart.
-   */
-  const KEY_INLINE_MAX = 1024;
-
-  function srcKey(src) {
-    if (!src) return '';
-    if (src.length <= KEY_INLINE_MAX) return src;
-    return `${src.length}:${src.slice(0, 256)}:${src.slice(-256)}`;
-  }
+  const MAX_TRACKED = 60;
 
   /** Is `img` still showing the page `entry` is about? */
   function entryMatchesImage(entry, img = entry.img) {
-    if (!img) return false;
-    const current = img.currentSrc || img.src || '';
-    return current === entry.originalSrc || (!!entry.resultUrl && current === entry.resultUrl);
+    if (!img || !img.isConnected) return false;
+    // While the result is in place the element's src names the redraw, not the
+    // page — the swap itself is the proof of identity.
+    if (entry.swap && entry.swap.isApplied(img)) return true;
+    return pageIdOf(img) === entry.pageId;
   }
 
   /**
    * The entry for what this <img> is showing right now, or null.
    *
    * Two ways in, because a swapped image no longer carries the src it is keyed
-   * by: the element is stamped with its original when the result goes in. Both
+   * by: the element is stamped with its page id when the result goes in. Both
    * answers are then checked against the element, since a recycled slot can
    * still be wearing the stamp of the page it used to hold.
    */
   function entryFor(img) {
-    const direct = tracked.get(srcKey(img.currentSrc || img.src));
+    const direct = tracked.get(pageIdOf(img));
     if (direct && entryMatchesImage(direct, img)) return direct;
-    const stamped = img.dataset.aiTranslatorOriginalSrc;
+    const stamped = img.getAttribute(PAGE_ID_ATTR);
     if (stamped) {
-      const entry = tracked.get(srcKey(stamped));
+      const entry = tracked.get(stamped);
       if (entry && entryMatchesImage(entry, img)) return entry;
     }
     return null;
   }
 
   function trackEntry(entry) {
-    const key = srcKey(entry.originalSrc);
-    if (!key) return;
+    if (!entry.pageId) return;
     // Started here rather than at load: on a page with nothing tracked the
     // watcher has no work to do, so it should not be listening yet.
     watchPageSwaps();
-    tracked.delete(key);
-    tracked.set(key, entry);
+    tracked.delete(entry.pageId);
+    tracked.set(entry.pageId, entry);
     if (tracked.size <= MAX_TRACKED) return;
-    for (const [victimKey, victim] of tracked) {
+    for (const [victimId, victim] of tracked) {
       if (tracked.size <= MAX_TRACKED) break;
       // A running job is still spending the user's allowance; forgetting it
       // would strand the result it is about to hand back.
       if (victim === entry || victim.running) continue;
       detachEntry(victim);
-      tracked.delete(victimKey);
+      tracked.delete(victimId);
+      // Evicting the entry must not evict what it bought. The record is still
+      // in storage and the reader can still turn back to that page, so the
+      // purchase moves onto the list reconcileImage consults for pages this
+      // document does not otherwise know — otherwise a long chapter turns a
+      // paid redraw back into a page the reader is invited to buy again.
+      rememberPurchase(victim);
     }
   }
 
@@ -157,23 +220,59 @@
       if (entry.running) entry.overlay.setHidden(true);
       else { entry.overlay.destroy(); entry.overlay = null; }
     }
-    if (entry.img && entry.img.dataset.aiTranslatorOriginalSrc === entry.originalSrc) {
-      delete entry.img.dataset.aiTranslatorOriginalSrc;
-    }
+    // Hand the element back the markup we took from it. Only the parts still
+    // holding what we left there — see swapSource.
+    entry.swap?.revert();
+    entry.swap = null;
+    // Nothing that costs memory may outlive the binding: on a reader that
+    // inlines its pages this string is the page itself, in base64.
+    entry.originalSrc = null;
+    entry.img = null;
     entry.detached = true;
   }
 
   /** Bind the entry to the element now showing its page. */
   function bindEntry(entry, img) {
     entry.img = img;
+    // Re-read rather than remembered: the same page can come back in a
+    // different slot, whose markup is its own. Skipped while a swap is in
+    // place, where `src` names the redraw instead of the page.
+    if (!entry.swap) entry.originalSrc = img.currentSrc || img.src;
     entry.detached = false;
-    // Captured from whichever slot the entry was last bound to; a different
-    // element has its own responsive markup to preserve and restore.
-    entry.originalSrcset = undefined;
     if (entry.overlay) {
       entry.overlay.rebind(img);
       entry.overlay.setHidden(false);
     }
+  }
+
+  /** A fresh entry for the page `img` is showing right now. */
+  function newEntry(img) {
+    const originalSrc = img.currentSrc || img.src;
+    return {
+      img,
+      pageId: pageIdOfSrc(originalSrc),
+      originalSrc,
+      // A blob: URL dies with the document that minted it, so this page can
+      // never be recognised again — see rememberJob.
+      blobSourced: /^blob:/i.test(originalSrc),
+      showingTranslation: false,
+      detached: false,
+      swap: null
+    };
+  }
+
+  /** Show the redraw, reversibly. */
+  function showResult(entry, url) {
+    entry.swap?.revert();
+    entry.swap = swapSource(entry.img, url, entry.pageId);
+    entry.showingTranslation = true;
+  }
+
+  /** Put the page back the way the site had it. */
+  function showOriginal(entry) {
+    entry.swap?.revert();
+    entry.swap = null;
+    entry.showingTranslation = false;
   }
 
   let lastContextImage = null;
@@ -318,7 +417,8 @@
     if (img.currentSrc === srcUrl || img.src === srcUrl) return true;
     // A swapped image no longer carries its original src, but it is still the
     // element the user right-clicked.
-    return img.dataset.aiTranslatorOriginalSrc === srcUrl;
+    const stamped = img.getAttribute(PAGE_ID_ATTR);
+    return !!stamped && stamped === pageIdOfSrc(srcUrl);
   }
 
   /**
@@ -522,8 +622,8 @@
     render();
 
     badge.addEventListener('click', () => {
-      entry.showingTranslation = !entry.showingTranslation;
-      applySource(entry.img, entry.showingTranslation ? entry.resultUrl : entry.originalSrc, entry);
+      if (entry.showingTranslation) showOriginal(entry);
+      else showResult(entry, entry.resultUrl);
       render();
     });
 
@@ -556,46 +656,58 @@
   }
 
   /**
-   * Point an <img> at a different URL.
+   * Point an <img> at a different URL, reversibly.
    *
    * `srcset` and a parent `<picture>` both outrank `src`, so setting src alone
    * leaves responsive markup showing the untranslated page — on exactly the
-   * image-heavy sites this feature targets.
+   * image-heavy sites this feature targets. Everything the swap touches is
+   * recorded together with the value it was given.
+   *
+   * `revert()` then puts back only the attributes still holding that value,
+   * which is what makes it safe to call at any point. Undoing the swap on a
+   * badge click finds all of them untouched and restores the lot. Undoing it
+   * because the reader turned the page finds `src` and `srcset` already
+   * rewritten by the site's own code — those must be left alone, or the
+   * previous page reappears over the one being read — while `sizes` and the
+   * `<picture>` sources are still stripped, because the site never touches
+   * them and only this can put them back.
    */
-  function applySource(img, url, entry) {
-    if (entry.originalSrcset === undefined) {
-      entry.originalSrcset = img.getAttribute('srcset');
-      entry.originalSizes = img.getAttribute('sizes');
-      entry.pictureSources = img.parentElement && img.parentElement.tagName === 'PICTURE'
-        ? Array.from(img.parentElement.querySelectorAll('source')).map(source => ({
-            element: source,
-            srcset: source.getAttribute('srcset')
-          }))
-        : [];
-    }
+  function swapSource(img, url, pageId) {
+    const touched = [];
+    const write = (element, name, value) => {
+      const was = element.getAttribute(name);
+      if (value === null) element.removeAttribute(name);
+      else element.setAttribute(name, value);
+      touched.push({ element, name, was, left: value });
+    };
 
-    const restoring = url === entry.originalSrc;
-    if (restoring) {
-      if (entry.originalSrcset === null) img.removeAttribute('srcset');
-      else img.setAttribute('srcset', entry.originalSrcset);
-      // `sizes` is stripped alongside srcset on the way in, so it has to come
-      // back too — without it a restored responsive image picks the wrong
-      // candidate width and renders soft.
-      if (entry.originalSizes === null) img.removeAttribute('sizes');
-      else img.setAttribute('sizes', entry.originalSizes);
-      entry.pictureSources.forEach(({ element, srcset }) => {
-        if (srcset === null) element.removeAttribute('srcset');
-        else element.setAttribute('srcset', srcset);
-      });
-    } else {
-      img.removeAttribute('srcset');
-      img.removeAttribute('sizes');
-      entry.pictureSources.forEach(({ element }) => element.removeAttribute('srcset'));
-      // Right-clicking a swapped image reports the presigned URL, which matches
-      // nothing on the page; this is how the element is found again.
-      img.dataset.aiTranslatorOriginalSrc = entry.originalSrc;
+    if (img.parentElement && img.parentElement.tagName === 'PICTURE') {
+      img.parentElement.querySelectorAll('source').forEach(source => write(source, 'srcset', null));
     }
-    img.src = url;
+    write(img, 'srcset', null);
+    // `sizes` is stripped alongside srcset — left on its own it makes the image
+    // pick a candidate width for markup that is no longer there.
+    write(img, 'sizes', null);
+    // Right-clicking a swapped image reports the presigned URL, which matches
+    // nothing on the page; this is how the element is found again. The page id
+    // rather than the src, because on a reader that inlines its pages the src
+    // is megabytes of DOM attribute.
+    write(img, PAGE_ID_ATTR, pageId);
+    write(img, 'src', url);
+
+    return {
+      isApplied: (element = img) => element === img && img.getAttribute('src') === url,
+      revert() {
+        // In reverse, so `src` is settled before the markup that outranks it.
+        for (let i = touched.length - 1; i >= 0; i--) {
+          const { element, name, was, left } = touched[i];
+          if (element.getAttribute(name) !== left) continue;
+          if (was === null) element.removeAttribute(name);
+          else element.setAttribute(name, was);
+        }
+        touched.length = 0;
+      }
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -646,11 +758,12 @@
    * asked for the result again. So the minimum needed to re-attach — which
    * image, which job, when it started — is mirrored into chrome.storage.local.
    *
-   * Keyed by image URL, not page URL: readers rewrite their own URL between
-   * visits to the same chapter (query strings, hashes, SPA routes) while the
-   * artwork's src stays put. The cost is that a blob:/data: source can never be
-   * resumed, since those URLs die with the document that minted them — but there
-   * would be nothing to match them against either way.
+   * Keyed by the artwork, not the page URL: readers rewrite their own URL
+   * between visits to the same chapter (query strings, hashes, SPA routes)
+   * while the artwork stays put. By page id rather than by src, so a reader
+   * that inlines a multi-megabyte `data:` URL costs the same twenty bytes as
+   * one that links to a CDN — those pages used to be refused a record
+   * entirely, on the grounds that storing them was not worth it.
    *
    * Records survive success on purpose. Coming back to an already-translated
    * page is the common case, and re-polling a finished job is free: it mints a
@@ -662,9 +775,6 @@
   const RECORD_TTL_MS = 24 * 60 * 60 * 1000;
   // A ceiling on how much of the user's storage quota this feature may hold.
   const MAX_RECORDS = 60;
-  // How long after load to keep watching for a recorded image to appear. Comic
-  // readers lazy-load artwork, sometimes several seconds in.
-  const RESUME_WATCH_MS = 30_000;
 
   function storageGet(key) {
     return new Promise((resolve) => {
@@ -691,7 +801,16 @@
     });
   }
 
-  /** Every live record, expired ones already dropped. */
+  /**
+   * Every live record, expired ones already dropped and older shapes folded in.
+   *
+   * Two spellings came before this one: a bare src key from before modes
+   * existed, and `${mode}|${src}` after. Both carry the src verbatim, which is
+   * the thing the page id replaced, so both are re-keyed on the way in — and
+   * the payload goes with them, since the first write after this drops the map
+   * back to storage in the new shape. Records the reader never comes back to
+   * age out on their own inside RECORD_TTL_MS.
+   */
   async function loadRecords() {
     const stored = await storageGet(JOB_STORE_KEY);
     const records = stored[JOB_STORE_KEY];
@@ -700,9 +819,11 @@
     const live = {};
     Object.keys(records).forEach((key) => {
       const record = records[key];
-      if (record && typeof record.jobId === 'string' && record.createdAt > cutoff) {
-        live[key] = record;
-      }
+      if (!record || typeof record.jobId !== 'string' || !(record.createdAt > cutoff)) return;
+      const pageId = record.pageId || (record.imageSrc ? pageIdOfSrc(record.imageSrc) : '');
+      if (!pageId) return;
+      const { imageSrc, ...rest } = record;
+      live[recordKey(record.mode, pageId)] = { ...rest, pageId };
     });
     return live;
   }
@@ -733,27 +854,18 @@
   }
 
   /**
-   * One record per (mode, image). The two products on a page are two separate
-   * purchases, and keying by image alone made the second one overwrite the
+   * One record per (mode, page). The two products on a page are two separate
+   * purchases, and keying by page alone made the second one overwrite the
    * record of the first — after a reload, switching back to the overwritten
-   * mode had no job id to recover and bought the page again. Records written
-   * before modes existed sit under the bare src and still load; they were all
-   * translations, which is what an absent mode resolves to everywhere.
+   * mode had no job id to recover and bought the page again.
    */
-  function recordKey(mode, imageSrc) {
-    return `${normalizeMode(mode)}|${imageSrc}`;
+  function recordKey(mode, pageId) {
+    return `${normalizeMode(mode)}|${pageId}`;
   }
 
   function saveRecord(record) {
     return updateRecords((records) => {
-      records[recordKey(record.mode, record.imageSrc)] = record;
-      // A pre-mode record under the bare src IS a translation record — so it is
-      // superseded only when the record being saved is itself the translation.
-      // Deleting it on a colorize save would erase a purchase this write knows
-      // nothing about.
-      if (normalizeMode(record.mode) === 'translate' && record.imageSrc in records) {
-        delete records[record.imageSrc];
-      }
+      records[recordKey(record.mode, record.pageId)] = record;
       const keys = Object.keys(records);
       if (keys.length > MAX_RECORDS) {
         keys
@@ -764,15 +876,12 @@
     });
   }
 
-  function dropRecord(imageSrc, mode) {
-    if (!imageSrc) return Promise.resolve();
+  function dropRecord(pageId, mode) {
+    if (!pageId) return Promise.resolve();
     return updateRecords((records) => {
-      const key = recordKey(mode, imageSrc);
-      // The bare src is the pre-mode spelling of the same translate record.
-      const legacy = normalizeMode(mode) === 'translate' && imageSrc in records;
-      if (!(key in records) && !legacy) return false;
+      const key = recordKey(mode, pageId);
+      if (!(key in records)) return false;
       delete records[key];
-      if (legacy) delete records[imageSrc];
     });
   }
 
@@ -787,12 +896,18 @@
     // whose id survived into a recovery of mode A — and persisting that id as
     // A's success would make A unresumable after a reload.
     const jobId = entry.completedJobId || entry.jobId;
-    if (!jobId || !entry.originalSrc) return;
-    if (/^(blob|data):/i.test(entry.originalSrc)) return;
+    if (!jobId || !entry.pageId) return;
+    // A `blob:` URL is minted by the document that made it and dies with it, so
+    // a record naming one could never match anything again. A `data:` URL is
+    // the opposite case and used to be refused alongside it: the same page
+    // decodes to the same bytes on every visit, and now that a record holds an
+    // id of those bytes rather than the bytes themselves, remembering it costs
+    // what any other page costs.
+    if (entry.blobSourced) return;
     saveRecord({
       jobId,
       mode: entry.mode,
-      imageSrc: entry.originalSrc,
+      pageId: entry.pageId,
       pageUrl: location.href,
       createdAt: entry.jobStartedAt || Date.now(),
       // Selection on the next page load goes by what the reader last SAW, not
@@ -803,20 +918,22 @@
   }
 
   /**
-   * The page a record names — by the same rule the context-menu path uses.
+   * The element showing a given page — by the same rule the context-menu path
+   * uses.
    *
    * Taking the first DOM match is wrong on exactly the sites this feature is
-   * for: a chapter page that reuses the artwork's src in a thumbnail strip has
+   * for: a chapter page that reuses the artwork in a thumbnail strip has
    * several matches, and the thumbnail usually comes first. Swapping a paid
    * redraw into a 60px thumbnail loses it, and the real page never gets it.
    *
-   * No resolveRealPage here, unlike findImage: a record is only ever written
-   * with a src that already went through it, so the src *is* the real page and
+   * No resolveRealPage here, unlike findImage: a page id is only ever recorded
+   * for a page that already went through it, so this *is* the real page and
    * re-resolving could only walk away from it.
    */
-  function findImageBySrc(src) {
+  function findImageByPageId(pageId) {
+    if (!pageId) return null;
     const candidates = Array.from(document.images).filter(
-      img => img.isConnected && matchesSrc(img, src)
+      img => img.isConnected && (img.getAttribute(PAGE_ID_ATTR) === pageId || pageIdOf(img) === pageId)
     );
     if (!candidates.length) return null;
     return candidates.reduce(
@@ -825,57 +942,77 @@
   }
 
   /**
+   * Purchases this document has not put back on screen yet, by page id.
+   *
+   * Seeded from storage at load and topped up by trackEntry when an entry is
+   * evicted, this is the list reconcileImage checks whenever a page it does not
+   * recognise appears. A purchase leaves the list the moment it is claimed.
+   */
+  const knownPages = new Map();
+
+  /**
    * Re-attach to jobs that were started before this document existed.
    *
-   * Sweeps once, then watches: the image a record names is frequently not in the
-   * DOM yet when the content script runs, because the reader lazy-loads it.
+   * The sweep here only covers what is already in the DOM. Everything after it
+   * — artwork lazy-loaded ten minutes into a chapter, a page turned back to on
+   * a reader that never reloads — arrives through the same `src` write that
+   * watchPageSwaps is listening for, so that is what finds it. The previous
+   * shape, a second MutationObserver that gave up after 30 seconds, could only
+   * ever catch the start of a session.
    */
   async function resumeComicJobs() {
     if (!comicEnabled()) return;
     const records = await loadRecords();
-    const pending = Object.keys(records).map(key => records[key]);
-    if (!pending.length) return;
-
-    // Several records can name one image now — one per mode. Only one state can
-    // be on screen, and the newest is the one the reader last saw; the rest of
-    // the group rides along to seed the per-mode stash, so switching modes
-    // after a reload stays a free re-poll.
-    const byImage = new Map();
-    pending.forEach((record) => {
-      const group = byImage.get(record.imageSrc) || [];
+    Object.keys(records).forEach((key) => {
+      const record = records[key];
+      const group = knownPages.get(record.pageId) || [];
       group.push(record);
-      byImage.set(record.imageSrc, group);
+      knownPages.set(record.pageId, group);
     });
+    if (!knownPages.size) return;
+    watchPageSwaps();
 
-    const claimed = new Set();
-    const sweep = () => {
-      byImage.forEach((group, imageSrc) => {
-        if (claimed.has(imageSrc)) return;
-        const img = findImageBySrc(imageSrc);
-        if (!img) return;
-        claimed.add(imageSrc);
-        // "Newest" is what the reader last had on screen, not what was bought
-        // last: switching back to an older purchase refreshes its displayedAt,
-        // so a reload restores the view they left, not the later receipt.
-        // Records from before the field fall back to their creation time.
-        const shownAt = (r) => r.displayedAt || r.createdAt;
-        const newest = group.reduce((a, b) => (shownAt(b) > shownAt(a) ? b : a));
-        resumeRecord(img, newest, group);
-      });
-      return claimed.size === byImage.size;
-    };
+    // Largest match per page, for the thumbnail-strip reason above.
+    const onScreen = new Map();
+    Array.from(document.images).forEach((img) => {
+      if (!img.isConnected) return;
+      const pageId = pageIdOf(img);
+      if (!knownPages.has(pageId)) return;
+      const best = onScreen.get(pageId);
+      if (!best || renderedArea(img) > renderedArea(best)) onScreen.set(pageId, img);
+    });
+    onScreen.forEach((img, pageId) => claimKnownPage(pageId, img));
+  }
 
-    if (sweep()) return;
-    const observer = new MutationObserver(() => {
-      if (sweep()) observer.disconnect();
-    });
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['src', 'srcset']
-    });
-    setTimeout(() => observer.disconnect(), RESUME_WATCH_MS);
+  /** Put a purchase this document did not make back on the page showing it. */
+  function claimKnownPage(pageId, img = findImageByPageId(pageId)) {
+    const group = knownPages.get(pageId);
+    if (!group || !img) return false;
+    knownPages.delete(pageId);
+    // "Newest" is what the reader last had on screen, not what was bought last:
+    // switching back to an older purchase refreshes its displayedAt, so a
+    // reload restores the view they left, not the later receipt. Records from
+    // before the field fall back to their creation time.
+    const shownAt = (r) => r.displayedAt || r.createdAt;
+    const newest = group.reduce((a, b) => (shownAt(b) > shownAt(a) ? b : a));
+    resumeRecord(img, newest, group);
+    return true;
+  }
+
+  /** Hand an entry's purchases back to the known-pages list before dropping it. */
+  function rememberPurchase(entry) {
+    const byMode = entry.completedByMode || {};
+    const group = Object.keys(byMode)
+      .filter(mode => byMode[mode])
+      .map(mode => ({
+        jobId: byMode[mode],
+        mode,
+        pageId: entry.pageId,
+        createdAt: entry.jobStartedAt || Date.now(),
+        displayedAt: Date.now(),
+        status: 'succeeded'
+      }));
+    if (group.length) knownPages.set(entry.pageId, group);
   }
 
   // -------------------------------------------------------------------------
@@ -899,6 +1036,9 @@
    * translation back, which is free — the result is already bought.
    */
   let pageSwapObserver = null;
+  // Long enough that a hidden tab is not doing per-mutation work, short enough
+  // that the queue never becomes the reason memory grows.
+  const HIDDEN_FLUSH_MS = 500;
 
   function watchPageSwaps() {
     if (pageSwapObserver) return;
@@ -920,7 +1060,13 @@
       // Coalesced: a page turn rewrites several slots in one go, and our own
       // swap is a `src` write that lands right back here.
       scheduled = true;
-      requestAnimationFrame(flush);
+      // rAF does not fire in a background tab, and a reader left open in one
+      // still turns pages — an image carousel, a preloader — so the queue would
+      // grow for as long as the tab stayed hidden and then flush all at once on
+      // return. A timer keeps it draining; the frame is only worth waiting for
+      // when there is a frame to draw.
+      if (document.hidden) setTimeout(flush, HIDDEN_FLUSH_MS);
+      else requestAnimationFrame(flush);
     });
     pageSwapObserver.observe(document.documentElement, {
       subtree: true,
@@ -940,7 +1086,14 @@
     });
 
     const entry = entryFor(img);
-    if (!entry) return;
+    if (!entry) {
+      // Nothing this document translated — but a page can be bought and still
+      // be unknown here: by a previous session, or by an entry this one evicted
+      // to stay bounded. Either way the redraw exists and putting it back is
+      // free, where letting the page look untranslated invites paying twice.
+      claimKnownPage(pageIdOf(img), img);
+      return;
+    }
     if (entry.running) {
       // Still being redrawn: give the reader back the card they left, clock and
       // all, and let the poll loop carry on where it is.
@@ -953,10 +1106,8 @@
     // `src` anyway — a page turn assigns every slot, including the slot that is
     // being re-shown, so a result already bought and displayed is quietly
     // painted over with the original.
-    const showingOriginal = (img.currentSrc || img.src) === entry.originalSrc;
-    if (entry.detached || (entry.showingTranslation && showingOriginal)) {
-      restoreEntry(entry, img);
-    }
+    const paintedOver = entry.showingTranslation && !(entry.swap && entry.swap.isApplied(img));
+    if (entry.detached || paintedOver) restoreEntry(entry, img);
   }
 
   /**
@@ -966,6 +1117,8 @@
    * to mint a presigned URL when the one we hold has aged out — the same free
    * recovery a later page load would do.
    */
+  const RESTORE_POLL_COOLDOWN_MS = 15_000;
+
   async function restoreEntry(entry, img) {
     if (entry.restoring) return;
     entry.restoring = true;
@@ -979,7 +1132,13 @@
       }
       let url = entry.resultUrl;
       if (!url || !(await preloadImage(url))) {
+        // A presigned URL that has aged out is re-minted by polling the job,
+        // which is free — but only worth asking once in a while. A page the
+        // reader is flicking past, or one whose job the server has genuinely
+        // lost, would otherwise put a request on the network for every turn.
         if (!entry.completedJobId) return;
+        if (Date.now() - (entry.lastRestorePollAt || 0) < RESTORE_POLL_COOLDOWN_MS) return;
+        entry.lastRestorePollAt = Date.now();
         const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
         if (!polled.ok || polled.data.status !== 'succeeded' || !polled.data.resultUrl) return;
         url = polled.data.resultUrl;
@@ -989,8 +1148,7 @@
       // page back then would land it on whatever is in the slot now.
       if (entry.detached || entry.img !== img || !entryMatchesImage(entry, img)) return;
       entry.resultUrl = url;
-      entry.showingTranslation = true;
-      applySource(img, url, entry);
+      showResult(entry, url);
       if (!entry.badge) attachToggleBadge(entry);
       // The reader is looking at this one again, so it is the state a reload
       // should come back to — see the displayedAt note in resumeComicJobs.
@@ -1007,9 +1165,7 @@
     if (existing && (existing.running || existing.badge)) return;
 
     const entry = {
-      img,
-      originalSrc: record.imageSrc,
-      showingTranslation: false,
+      ...newEntry(img),
       jobId: record.jobId,
       jobStartedAt: record.createdAt,
       // Records written before modes existed are all translations.
@@ -1051,13 +1207,13 @@
         // blip keeps the record; a real answer means it will never resolve.
         overlay.destroy();
         if (polled.ok || polled.error.code !== 'network_error') {
-          dropRecord(record.imageSrc, record.mode);
+          dropRecord(record.pageId, record.mode);
           // The id seeded into the stash from this record is equally dead.
           delete entry.completedByMode[normalizeMode(record.mode)];
         }
         return;
       }
-      await pollJob({ entry, overlay, img, jobId: record.jobId, startedAt: record.createdAt });
+      await pollJob({ entry, overlay, jobId: record.jobId, startedAt: record.createdAt });
     } finally {
       entry.running = false;
     }
@@ -1112,11 +1268,10 @@
     if (existing && existing.badge && existing.mode === mode) {
       // Already done in this mode. Re-running would charge for the same page again.
       if (existing.img !== img) bindEntry(existing, img);
-      existing.showingTranslation = true;
-      applySource(img, existing.resultUrl, existing);
+      showResult(existing, existing.resultUrl);
       return;
     }
-    const entry = existing || { img, originalSrc: img.currentSrc || img.src, showingTranslation: false };
+    const entry = existing || newEntry(img);
     // The same page can be back in a different slot than the one it was
     // translated in; the entry follows the page, so it has to be re-pointed.
     if (entry.img !== img || entry.detached) bindEntry(entry, img);
@@ -1148,8 +1303,7 @@
         // stack two generations of artefacts on one page, which is why the
         // combined mode above exists: the server does both passes from the
         // original in a single job.
-        applySource(img, entry.originalSrc, entry);
-        entry.showingTranslation = false;
+        showOriginal(entry);
         entry.jobId = null;
         // Cleared, not carried over: it names the OTHER mode's finished job,
         // and recoverResult would hand its result back as if it were this
@@ -1180,17 +1334,17 @@
       // A job that reached `succeeded` but never made it onto the page is done
       // and paid for — only the download failed. Go back for the result rather
       // than ordering a second redraw of the same page.
-      if (entry.completedJobId) {
-        await recoverResult({ entry, overlay, img });
-        return;
-      }
+      if (entry.completedJobId && await recoverResult({ entry, overlay })) return;
+      // Falling through means the receipt named a job the server no longer has.
+      // The click still stands, so order the page rather than making the reader
+      // ask a second time for something that can no longer be delivered.
       // One operationId per user action, reused across every retry inside this
       // run: the server treats it as an idempotency key, so a sign-in round-trip
       // or a re-upload settles against the same reservation instead of charging
       // twice. A *new* click gets a new id on purpose — reusing one would hand
       // back the previous (failed) job instead of trying again.
       entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await runJob({ entry, overlay, img, pageUrl, targetLang });
+      await runJob({ entry, overlay, pageUrl, targetLang });
     } finally {
       entry.running = false;
     }
@@ -1204,38 +1358,49 @@
    * decode. The redraw is in the bucket either way, and polling the job mints a
    * fresh URL for it — so a retry costs nothing, where falling through to
    * createJob would charge for the same page twice.
+   *
+   * Returns false, and only false, when the receipt turned out to name a job
+   * the server will never hand back — the one case where ordering the page is
+   * the right thing to do next.
    */
-  async function recoverResult({ entry, overlay, img }) {
+  // Codes that say nothing about whether the job still exists. Treating any of
+  // them as a dead receipt would throw away a purchase over a dropped
+  // connection or a signed-out moment.
+  const INCONCLUSIVE_POLL = ['network_error', 'no_response', 'extension_context', 'unauthorized'];
+
+  async function recoverResult({ entry, overlay }) {
     overlay.setStatus(statusText(entry.mode), { progress: 1 });
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
       await finishSuccess({ entry, overlay, job: polled.data });
-      return;
+      return true;
     }
 
-    // Keep the id only while the result is still plausibly there to come back
-    // for. A blip between polls is transient; anything else means this job will
-    // never hand back a URL again, so the next click is free to order a new one
-    // instead of retrying a dead id forever. The stash and the stored record
-    // have to go with it — either one would hand the same dead id straight
-    // back on the next click or the next page load.
-    const transient = !polled.ok && polled.error.code === 'network_error';
-    if (!transient) {
-      entry.completedJobId = null;
-      if (entry.completedByMode) delete entry.completedByMode[entry.mode];
-      dropRecord(entry.originalSrc, entry.mode);
+    // Keep the id unless the answer settles it. Only a job the server names as
+    // over, or one it no longer has at all, is a receipt worth throwing away —
+    // and it has to be thrown away in three places at once, since the entry,
+    // the per-mode stash and the stored record would each hand it straight back
+    // on the next click or the next page load.
+    const dead = polled.ok
+      ? ['failed', 'abandoned', 'expired'].includes(polled.data.status)
+      : !INCONCLUSIVE_POLL.includes(polled.error.code);
+    if (!dead) {
+      if (polled.ok) {
+        overlay.setError(t('comicResultUnavailable'));
+        offerDismiss(overlay);
+      } else {
+        showJobError(overlay, polled.error);
+      }
+      return true;
     }
-
-    if (!polled.ok) {
-      showJobError(overlay, polled.error);
-      return;
-    }
-    overlay.setError(t('comicResultUnavailable'));
-    offerDismiss(overlay);
+    entry.completedJobId = null;
+    if (entry.completedByMode) delete entry.completedByMode[entry.mode];
+    dropRecord(entry.pageId, entry.mode);
+    return false;
   }
 
-  async function runJob({ entry, overlay, img, pageUrl, targetLang }) {
+  async function runJob({ entry, overlay, pageUrl, targetLang }) {
     // One label for the whole run. The stages underneath — preparing, uploading
     // pixels, queued, downloading the result — are ours, not the reader's, and
     // narrating them made a 90-second wait look like four separate things going
@@ -1244,7 +1409,7 @@
     overlay.setStatus(statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
-    let created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
+    let created = await createJob({ entry, pageUrl, targetLang, imageBase64: null });
 
     if (!created.ok && created.error.code === 'unauthorized') {
       // Sign-in is the one interruption that is genuinely the user's turn, so
@@ -1254,7 +1419,7 @@
       if (!signedIn) return;
       overlay.setStatus(statusText(entry.mode), { progress: 0 });
       overlay.startTimer(Date.now());
-      created = await createJob({ entry, img, pageUrl, targetLang, imageBase64: null });
+      created = await createJob({ entry, pageUrl, targetLang, imageBase64: null });
     }
 
     if (!created.ok && created.error.needsPageBytes) {
@@ -1271,7 +1436,7 @@
         offerDismiss(overlay);
         return;
       }
-      created = await createJob({ entry, img, pageUrl, targetLang, imageBase64 });
+      created = await createJob({ entry, pageUrl, targetLang, imageBase64 });
     }
 
     if (!created.ok) {
@@ -1293,7 +1458,7 @@
     // document, so it becomes findable from the next page load.
     rememberJob(entry, 'running');
 
-    await pollJob({ entry, overlay, img, jobId: entry.jobId, startedAt: jobStartedAt });
+    await pollJob({ entry, overlay, jobId: entry.jobId, startedAt: jobStartedAt });
   }
 
   /**
@@ -1304,13 +1469,13 @@
    * measured from when the *job* was created, so a resumed job cannot be granted
    * a second full budget the server has no intention of honouring.
    */
-  async function pollJob({ entry, overlay, img, jobId, startedAt }) {
+  async function pollJob({ entry, overlay, jobId, startedAt }) {
     overlay.setActions([{
       label: t('comicCancel'),
       onClick: () => {
         entry.cancelled = true;
         sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-        dropRecord(entry.originalSrc, entry.mode);
+        dropRecord(entry.pageId, entry.mode);
         overlay.destroy();
       }
     }]);
@@ -1326,7 +1491,7 @@
         // A blip between polls is not a failed job — the reservation is still
         // held server-side, so keep waiting rather than abandoning it.
         if (polled.error.code === 'network_error') continue;
-        dropRecord(entry.originalSrc, entry.mode);
+        dropRecord(entry.pageId, entry.mode);
         showJobError(overlay, polled.error);
         return;
       }
@@ -1339,7 +1504,7 @@
       if (job.status === 'failed' || job.status === 'abandoned') {
         // Terminal and refunded. Leaving the record would re-open this card on
         // every future visit to the page.
-        dropRecord(entry.originalSrc, entry.mode);
+        dropRecord(entry.pageId, entry.mode);
         showJobError(overlay, job.error || { code: 'failed', message: '' });
         return;
       }
@@ -1383,12 +1548,12 @@
     // Only forget the job once the server agrees it is dead. An unconfirmed
     // abandon may well still be running, and leaving the record is what lets a
     // later page load pick it up and show the page the user paid for.
-    if (confirmed) dropRecord(entry.originalSrc, entry.mode);
+    if (confirmed) dropRecord(entry.pageId, entry.mode);
     overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
     offerDismiss(overlay);
   }
 
-  function createJob({ entry, img, pageUrl, targetLang, imageBase64 }) {
+  function createJob({ entry, pageUrl, targetLang, imageBase64 }) {
     return sendMessage({
       type: 'COMIC_JOB_CREATE',
       job: {
@@ -1459,7 +1624,7 @@
       return;
     }
 
-    applySource(entry.img, job.resultUrl, entry);
+    showResult(entry, job.resultUrl);
     overlay.destroy();
     entry.overlay = null;
     if (!entry.badge) attachToggleBadge(entry);
