@@ -444,6 +444,11 @@
           <div class="pdf-tasks" id="pdfTasksCard" hidden>
             <div class="pdf-tasks-head">
               <h3 class="pdf-tasks-title" data-i18n="pdfTasksTitle">PDF Translation Tasks</h3>
+              <!-- href is filled in from the service worker's configured
+                   origin; hidden until then, so it is never a link to
+                   nowhere. -->
+              <a id="pdfTasksLibraryLink" class="pdf-tasks-library" target="_blank" rel="noopener"
+                 data-i18n="pdfTasksOpenLibrary" hidden>Open web library</a>
               <button type="button" id="pdfTasksRefresh" class="btn btn-text">
                 <span data-i18n="pdfTasksRefresh">Refresh</span>
               </button>

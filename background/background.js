@@ -552,6 +552,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'PDF_OPEN_RESULT':
       replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
       return true;
+
+    // Where the account lives on the web, so the settings page can link a job
+    // to the library that renders it. Asked for rather than duplicated: the
+    // origin has a default and a storage override in comic-client.js, and a
+    // second copy in the options page would be the one that goes stale.
+    // Deliberately not gated on being signed in — the link is worth showing to
+    // someone who is not, because following it is how they sign in.
+    case 'ACCOUNT_SITE_BASE':
+      replyComic(comicClient.getApiBase().then(base => ({ base })), sendResponse);
+      return true;
   }
 });
 

@@ -139,6 +139,26 @@ Follow this process when fixing bugs:
 5. **Verify the Fix** - Ensure the fix addresses the actual root cause, not just a workaround
 6. **Avoid Breaking Other Features** - When adding or fixing a feature, ensure existing functionality is not affected. Run unit tests if available; if not, manually verify related features still work
 
+## Shipping Changes
+
+1. **Every finished change ships as a PR.** Once the work is done and tested,
+   don't leave it sitting in the working tree — run the `github-pr-workflow`
+   skill (`python3 /Users/dylanwang/github-workflow/scripts/github_pr_workflow.py .`)
+   and follow its loop through to merge-ready: read the bot's review, fix the
+   code yourself, push, let it re-review. The script auto-commits the *entire*
+   working tree, so check `git status` for another session's changes first — a
+   stray file swept into a PR is someone else's work merged without review.
+
+2. **After several rounds of patching, step back and look at the whole.** A
+   feature built one fix at a time drifts: the same origin ends up hardcoded in
+   three files, two functions answer the same question differently, a helper
+   lives in the caller that needed it first. Before opening the PR, re-read the
+   feature end to end and ask whether the shape still makes sense — not just
+   whether each patch was right on its own. Consolidate duplicated logic into
+   the module that owns it (`shared/api-compat.js` and `shared/account-gate.js`
+   exist because of exactly this), and add a unit test that fails if the
+   duplicate comes back.
+
 ## Default Configuration
 
 ```javascript
