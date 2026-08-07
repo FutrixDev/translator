@@ -430,9 +430,17 @@
           throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
         }
         const translations = [];
+        // “丢掉这一段”只有在别的段译出来了才说得通。一段没译出来是这一段的问题，
+        // 整批一段都没译出来就不是了，那是这条链路在这批文本上根本没工作。
+        let attempted = 0;
+        let produced = 0;
         for (const text of texts) {
+          const hasContent = !!String(text == null ? '' : text).trim();
+          if (hasContent) attempted += 1;
           try {
-            translations.push(await translateWithBuiltin(text, targetLang, shared));
+            const translated = await translateWithBuiltin(text, targetLang, shared);
+            translations.push(translated);
+            if (hasContent && translated) produced += 1;
           } catch (error) {
             // 环境不支持 / 语言包没下 / 实例建不出来，这些对每一段都成立，
             // 抛出去让整批回落 AI。而“语言对不支持”此时只可能来自这一段自己的
@@ -446,6 +454,12 @@
             // 回填原文反而会被当成一条有效译文插进页面。
             translations.push('');
           }
+        }
+        // 一批空串在调用方眼里是“翻译成功了，只是每条都没译文”：它保留原文、
+        // 不报错，也不会回落 AI——用户配了接口却什么都没发生。抛出去，让上层
+        // 按引擎不可用处理（有接口就回落，没接口就把原因说清楚）。
+        if (attempted > 0 && produced === 0) {
+          throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
         }
         // 逐条翻译，条数天然与输入一致——分隔符那套错位问题在这条路上不存在。
         return { translations };

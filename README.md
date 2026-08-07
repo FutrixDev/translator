@@ -44,6 +44,14 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - Toggle show/hide translations
 - High-performance batch translation (100 items/batch, 8 concurrent)
 
+#### Video Subtitles
+- Bilingual subtitles on YouTube, and on any video whose player carries a
+  standard subtitle track — no per-site support needed
+- Only translates the subtitles you already have switched on, and hands the
+  track back untouched when you switch them off
+- Drag to move, drag the edges to resize; position and size are remembered
+- Survives fullscreen
+
 #### UI Polish
 - Inline translations inherit original typography for a clean, consistent look
 - Inline loading indicator is more visible to show translation progress
@@ -229,6 +237,12 @@ MIT License
 - 继承原文样式（字体、颜色、大小）
 - 支持显示/隐藏译文切换
 - 高性能批量翻译（100条/批，8并发）
+
+#### 视频字幕
+- YouTube，以及任何自带标准字幕轨的播放器，都能显示双语字幕——无需逐站适配
+- 只翻译你已经打开的字幕；你把字幕关掉，字幕轨也原样交还
+- 可拖动位置、拉边缘改大小，位置与尺寸都会记住
+- 全屏下依然显示
 
 #### UI 美化
 - 译文继承原始排版，整体视觉更统一

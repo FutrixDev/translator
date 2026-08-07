@@ -1,33 +1,29 @@
-// AI Translator YouTube Caption Translation
+// AI Translator — video subtitle translation.
 //
-// Captions are obtained by observing the YouTube player's own /api/timedtext
-// responses (relayed from the MAIN-world interceptor via window.postMessage),
-// because YouTube now gates that endpoint behind a per-session Proof-of-Origin
-// token that the extension cannot reproduce on its own. Captured cues are
-// translated in a rolling look-ahead window and rendered as an extra line
-// inside the native caption container.
+// This is the site-independent engine. A caption *provider*
+// (content/content-caption-providers.js) says whether it can supply cues on
+// this page and hands them over; from there everything is the same everywhere:
+// cues are merged into sentence-level segments, the whole track is translated
+// nearest-to-playhead first, and the result is drawn as a bilingual line in a
+// draggable, resizable overlay pinned over the video.
+//
+// The pure half of that — parsing, cue conversion, segmentation, batching,
+// provider picking — lives in shared/caption-core.js so a provider and a unit
+// test can both reach it.
 (function() {
   'use strict';
 
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
+  const core = globalThis.CaptionCore;
+  if (!core) return;
 
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';
-  const MAX_CUES = 20000;
-  // Merge short ASR fragments into full sentences, so the model translates
-  // coherent units (not word-fragments) and the reader sees a complete line
-  // while it is being spoken.
-  const SEG_MAX_DURATION_MS = 12000;
-  const SEG_MAX_CHARS = 220;
-  const SEG_GAP_MS = 1500;
-  // Whole-track translation: contiguous sentences are grouped into batches (for
-  // cross-sentence context) and the whole track is translated up front.
-  const BATCH_MAX_ITEMS = 16;
-  const BATCH_MAX_CHARS = 1600;
   const RETRY_COOLDOWN_MS = 8000;
 
   const state = {
     active: false,
+    provider: null,
     overlay: null,
     block: null,
     rawCues: [],
@@ -46,44 +42,44 @@
     lastNowMs: 0,
   };
 
-  let messageListener = null;
-  let navListener = null;
-
-  function isYouTube() {
-    return window.location.hostname.includes('youtube.com');
-  }
-
-  function isCaptionsEnabled() {
-    const button = document.querySelector('.ytp-subtitles-button');
-    if (button) {
-      return button.getAttribute('aria-pressed') === 'true';
-    }
-    return !!document.querySelector('.ytp-caption-window-container');
-  }
-
-  function getVideoElement() {
-    return document.querySelector('video');
-  }
-
-  function getLangBase(lang) {
-    if (ctx.getLangBase) return ctx.getLangBase(lang || '');
-    return String(lang || '').split('-')[0].toLowerCase();
+  // Storage keys still say "youtube" because they are user data: this used to
+  // be a YouTube-only feature, and renaming them would silently discard every
+  // existing user's caption position, size and colours.
+  function getSetting(key) {
+    return (ctx.settings || {})[key];
   }
 
   function getTargetLangBase() {
     const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
-    return getLangBase(target);
+    return core.getLangBase(target);
+  }
+
+  function getVideoElement() {
+    if (state.provider && state.provider.getVideo) return state.provider.getVideo();
+    return document.querySelector('video');
+  }
+
+  function isCaptionsEnabled() {
+    return !!state.provider && state.provider.isCaptionsEnabled();
+  }
+
+  function setNativeCaptionsHidden(hidden) {
+    if (state.provider && state.provider.setNativeCaptionsHidden) {
+      state.provider.setNativeCaptionsHidden(hidden);
+    }
   }
 
   // ---------------------------------------------------------------- overlay
   function ensureOverlay() {
-    const container = document.querySelector('.ytp-caption-window-container');
+    const container = state.provider && state.provider.getOverlayHost
+      ? state.provider.getOverlayHost()
+      : null;
     if (!container) return null;
     if (state.overlay && container.contains(state.overlay)) {
       return state.overlay;
     }
     const overlay = document.createElement('div');
-    overlay.id = 'ai-translator-youtube-caption-overlay';
+    overlay.id = 'ai-translator-caption-overlay';
     const block = document.createElement('div');
     block.className = 'ai-translator-caption-block';
     const original = document.createElement('div');
@@ -105,7 +101,7 @@
   // The original line is hidden when the user turns off "show original caption".
   function setOverlayContent(original, translation) {
     if (!state.overlay) return;
-    const showOriginal = ctx.settings?.showYoutubeOriginalCaption !== false;
+    const showOriginal = getSetting('showYoutubeOriginalCaption') !== false;
     const origEl = state.overlay.querySelector('.ai-translator-caption-original');
     const transEl = state.overlay.querySelector('.ai-translator-caption-line');
     if (origEl) {
@@ -123,15 +119,6 @@
     state.overlay.style.display = visible ? 'flex' : 'none';
   }
 
-  // Hide YouTube's own caption windows while our bilingual overlay is showing, so
-  // the native line and our line don't stack and overlap. Scoped by a marker class
-  // so native captions return to normal the moment our overlay goes inactive.
-  function setNativeCaptionsHidden(hidden) {
-    const container = document.querySelector('.ytp-caption-window-container');
-    if (!container) return;
-    container.classList.toggle('ai-translator-hide-native', !!hidden);
-  }
-
   function hexToRgba(hex, alpha) {
     const h = String(hex || '').replace('#', '');
     if (h.length !== 6) return `rgba(8, 8, 8, ${alpha})`;
@@ -145,13 +132,13 @@
   // Apply the user's caption colors to the overlay via CSS variables.
   function applyCaptionStyle() {
     if (!state.overlay) return;
-    const s = ctx.settings || {};
-    const fg = s.youtubeCaptionFontColor || '#ffffff';
-    const rawOpacity = s.youtubeCaptionBgOpacity != null ? Number(s.youtubeCaptionBgOpacity) : 82;
-    const alpha = Math.max(0, Math.min(1, (Number.isFinite(rawOpacity) ? rawOpacity : 82) / 100));
-    const bg = hexToRgba(s.youtubeCaptionBgColor || '#080808', alpha);
-    state.overlay.style.setProperty('--ai-yt-caption-fg', fg);
-    state.overlay.style.setProperty('--ai-yt-caption-bg', bg);
+    const fg = getSetting('youtubeCaptionFontColor') || '#ffffff';
+    const rawOpacity = getSetting('youtubeCaptionBgOpacity');
+    const opacity = rawOpacity != null ? Number(rawOpacity) : 82;
+    const alpha = Math.max(0, Math.min(1, (Number.isFinite(opacity) ? opacity : 82) / 100));
+    const bg = hexToRgba(getSetting('youtubeCaptionBgColor') || '#080808', alpha);
+    state.overlay.style.setProperty('--ai-caption-fg', fg);
+    state.overlay.style.setProperty('--ai-caption-bg', bg);
   }
 
   // ---- draggable + wheel-resizable caption ----
@@ -177,18 +164,31 @@
     layoutSaveTimer = setTimeout(() => { layoutSaveTimer = null; write(); }, 400);
   }
 
+  // The overlay covers the whole host, so its own box is the reference frame for
+  // position, width and font size — whether the host is a site's caption layer
+  // or the box we pin over a bare <video>.
+  function getCaptionFrame() {
+    return state.overlay;
+  }
+
   // Apply the user's saved caption position, width and scale. Position and width
-  // are percentages of the player, so they survive resize/fullscreen; the scale
-  // is a CSS variable that multiplies the font size.
+  // are percentages of the video box, so they survive resize/fullscreen; the
+  // scale is a CSS variable that multiplies the font size.
   function applyCaptionLayout() {
     if (!state.overlay) return;
-    const s = ctx.settings || {};
-    const scale = Number(s.youtubeCaptionScale);
-    state.overlay.style.setProperty('--ai-yt-caption-scale', String(Number.isFinite(scale) && scale > 0 ? scale : 1));
+    const scale = Number(getSetting('youtubeCaptionScale'));
+    state.overlay.style.setProperty('--ai-caption-scale', String(Number.isFinite(scale) && scale > 0 ? scale : 1));
+    // 1% of the video's height, in px. Caption text is sized against the video
+    // rather than the viewport alone, so a small embedded player doesn't get
+    // captions scaled for a full-screen one. See content.css.
+    const frameHeight = state.overlay.getBoundingClientRect().height;
+    if (frameHeight > 0) {
+      state.overlay.style.setProperty('--ai-caption-unit', `${frameHeight / 100}px`);
+    }
     const block = state.block || state.overlay.querySelector('.ai-translator-caption-block');
     if (!block) return;
-    const x = s.youtubeCaptionPosXPct;
-    const y = s.youtubeCaptionPosYPct;
+    const x = getSetting('youtubeCaptionPosXPct');
+    const y = getSetting('youtubeCaptionPosYPct');
     if (typeof x === 'number' && typeof y === 'number') {
       block.style.left = `${x}%`;
       block.style.top = `${y}%`;
@@ -196,7 +196,7 @@
       block.style.left = '';
       block.style.top = '';
     }
-    const w = s.youtubeCaptionWidthPct;
+    const w = getSetting('youtubeCaptionWidthPct');
     if (typeof w === 'number') {
       block.style.width = `${w}%`;
       block.style.maxWidth = 'none';
@@ -276,7 +276,7 @@
     if (!block || block.__aiInteractive) return;
     block.__aiInteractive = true;
 
-    const getContainer = () => document.querySelector('.ytp-caption-window-container');
+    const getContainer = getCaptionFrame;
     let dragging = false;
     let startX = 0;
     let startY = 0;
@@ -364,189 +364,18 @@
     });
   }
 
-  // ---------------------------------------------------------------- parsers
-  function parseJson3(data) {
-    const events = Array.isArray(data?.events) ? data.events : [];
-    const cues = [];
-    for (const event of events) {
-      const startMs = Number(event.tStartMs);
-      const durationMs = Number(event.dDurationMs);
-      if (!Number.isFinite(startMs) || !Number.isFinite(durationMs) || durationMs <= 0) continue;
-      const text = (event.segs || [])
-        .map((seg) => seg.utf8 || '')
-        .join('')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (!text) continue;
-      cues.push({ startMs, endMs: startMs + durationMs, text });
-    }
-    return cues;
-  }
-
-  function parseVttTimestamp(value) {
-    if (!value) return Number.NaN;
-    const cleaned = value.replace(',', '.');
-    const parts = cleaned.split(':');
-    if (parts.length < 2) return Number.NaN;
-    const secondsPart = parts.pop() || '0';
-    const minutesPart = parts.pop() || '0';
-    const hoursPart = parts.pop() || '0';
-    const [secStr, msStr = '0'] = secondsPart.split('.');
-    const hours = Number(hoursPart);
-    const minutes = Number(minutesPart);
-    const seconds = Number(secStr);
-    const millis = Number(msStr.padEnd(3, '0').slice(0, 3));
-    if (![hours, minutes, seconds, millis].every(Number.isFinite)) return Number.NaN;
-    return ((hours * 3600 + minutes * 60 + seconds) * 1000) + millis;
-  }
-
-  function parseVtt(text) {
-    const lines = text.replace(/\r\n/g, '\n').split('\n');
-    const cues = [];
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i].trim();
-      if (!line || line.startsWith('WEBVTT')) {
-        i += 1;
-        continue;
-      }
-      if (line.includes('-->')) {
-        const parts = line.split('-->');
-        const startMs = parseVttTimestamp(parts[0]?.trim() || '');
-        const endMs = parseVttTimestamp((parts[1]?.trim() || '').split(' ')[0] || '');
-        i += 1;
-        const textLines = [];
-        while (i < lines.length && lines[i].trim() !== '') {
-          textLines.push(lines[i]);
-          i += 1;
-        }
-        const cueText = textLines
-          .join(' ')
-          .replace(/<[^>]+>/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-        if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs && cueText) {
-          cues.push({ startMs, endMs, text: cueText });
-        }
-        continue;
-      }
-      i += 1;
-    }
-    return cues;
-  }
-
-  function parseSrv3(text) {
-    const doc = new DOMParser().parseFromString(text, 'text/xml');
-    const nodes = Array.from(doc.getElementsByTagName('text'));
-    const cues = [];
-    for (const node of nodes) {
-      const start = Number(node.getAttribute('start'));
-      const dur = Number(node.getAttribute('dur') || node.getAttribute('d'));
-      if (!Number.isFinite(start) || !Number.isFinite(dur) || dur <= 0) continue;
-      const cueText = (node.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!cueText) continue;
-      cues.push({
-        startMs: Math.round(start * 1000),
-        endMs: Math.round((start + dur) * 1000),
-        text: cueText,
-      });
-    }
-    return cues;
-  }
-
-  function parseCaptionPayload(text, contentType) {
-    const trimmed = (text || '').trim();
-    if (!trimmed) return [];
-    const ct = contentType || '';
-    if (ct.includes('json') || trimmed.startsWith('{')) {
-      try {
-        return parseJson3(JSON.parse(trimmed));
-      } catch (e) { /* fall through */ }
-    }
-    if (trimmed.startsWith('WEBVTT') || trimmed.includes('-->')) {
-      return parseVtt(trimmed);
-    }
-    if (trimmed.startsWith('<')) {
-      return parseSrv3(trimmed);
-    }
-    try {
-      return parseJson3(JSON.parse(trimmed));
-    } catch (e) { /* give up */ }
-    return [];
-  }
-
   // ------------------------------------------------------------------- cues
   function getCueKey(cue) {
     return `${state.trackId}|${cue.startMs}|${cue.text}`;
   }
 
-  function endsSentence(text) {
-    return /[.!?。！？…؟][)"'”’\]]?\s*$/.test(text);
-  }
-
-  // Group consecutive raw cues into sentence-level segments. A new segment starts
-  // at sentence-ending punctuation, a long pause, or when the merged text/span
-  // grows too large.
-  function buildSegments(rawCues) {
-    const sorted = rawCues.slice().sort((a, b) => a.startMs - b.startMs);
-    const segments = [];
-    let cur = null;
-    for (const cue of sorted) {
-      if (!cur) {
-        cur = { startMs: cue.startMs, endMs: cue.endMs, text: cue.text };
-        continue;
-      }
-      const gap = cue.startMs - cur.endMs;
-      const merged = `${cur.text} ${cue.text}`.replace(/\s+/g, ' ').trim();
-      const spanTooLong = (cue.endMs - cur.startMs) > SEG_MAX_DURATION_MS;
-      if (endsSentence(cur.text) || gap > SEG_GAP_MS || merged.length > SEG_MAX_CHARS || spanTooLong) {
-        segments.push(cur);
-        cur = { startMs: cue.startMs, endMs: cue.endMs, text: cue.text };
-      } else {
-        cur.text = merged;
-        cur.endMs = cue.endMs;
-      }
-    }
-    if (cur) segments.push(cur);
-    return segments;
-  }
-
-  // Chunk contiguous segments into batches (bounded by item count and characters)
-  // so each translation request carries neighbouring sentences for context.
-  function buildBatches(segments) {
-    const batches = [];
-    let cur = [];
-    let chars = 0;
-    for (const seg of segments) {
-      if (cur.length && (cur.length >= BATCH_MAX_ITEMS || chars + seg.text.length > BATCH_MAX_CHARS)) {
-        batches.push(cur);
-        cur = [];
-        chars = 0;
-      }
-      cur.push(seg);
-      chars += seg.text.length;
-    }
-    if (cur.length) batches.push(cur);
-    return batches;
-  }
-
-  function ingestRawCues(newCues) {
-    if (!newCues.length) return false;
-    const seen = new Set(state.rawCues.map((c) => `${c.startMs}|${c.text}`));
-    let added = false;
-    for (const cue of newCues) {
-      const key = `${cue.startMs}|${cue.text}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      state.rawCues.push(cue);
-      added = true;
-    }
-    if (!added) return false;
-    state.rawCues.sort((a, b) => a.startMs - b.startMs);
-    if (state.rawCues.length > MAX_CUES) state.rawCues = state.rawCues.slice(-MAX_CUES);
-    state.cues = buildSegments(state.rawCues);
-    state.batches = buildBatches(state.cues);
-    return true;
+  function clearTrack() {
+    state.rawCues = [];
+    state.cues = [];
+    state.batches = [];
+    state.cueCache.clear();
+    state.pendingKeys.clear();
+    state.failedUntil.clear();
   }
 
   function getActiveCue(nowMs) {
@@ -561,14 +390,12 @@
     const texts = cues.map((cue) => cue.text);
     let response;
     try {
-      response = await ctx.requestTranslation({
-        type: 'TRANSLATE_BATCH_FAST',
+      response = await ctx.requestTranslation(core.buildTranslationRequest({
         texts,
         targetLang: ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '',
+        trackLang: state.trackLang,
         delimiter: DELIMITER,
-        // 字幕跟着播放走，同样不能卡在语言包下载上。
-        allowDownload: false,
-      });
+      }));
     } catch (error) {
       markBatchFailed(cues);
       return false;
@@ -685,6 +512,8 @@
       return;
     }
 
+    // Providers that pin their own box over the video keep it on the video here.
+    if (state.provider && state.provider.syncOverlayHost) state.provider.syncOverlayHost();
     ensureOverlay();
     applyCaptionStyle();
     applyCaptionLayout();
@@ -697,60 +526,126 @@
     ensureTrackTranslated(false);
   }
 
-  // ------------------------------------------------------- capture handling
-  function handleCapturedTimedText(url, text, contentType) {
-    let lang = '';
-    try {
-      lang = new URL(url, window.location.href).searchParams.get('lang') || '';
-    } catch (e) { /* keep empty */ }
+  // ---------------------------------------------------- provider activation
+  // Videos and their tracks appear late — after a click, after an SPA route
+  // change, after the player attaches a track element. Capture-phase media
+  // events catch every one of those without observing the whole document.
+  const MEDIA_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay', 'play'];
+  let watching = false;
 
-    const cues = parseCaptionPayload(text, contentType);
-    if (!cues.length) return;
-
-    const trackId = lang || 'track';
-    if (trackId !== state.trackId) {
-      // Caption language changed (or first track): start a fresh cue set.
-      state.trackId = trackId;
-      state.trackLang = lang;
-      state.rawCues = [];
-      state.cues = [];
-      state.batches = [];
-      state.cueCache.clear();
-      state.pendingKeys.clear();
-      state.failedUntil.clear();
+  function onMediaEvent(event) {
+    const el = event.target;
+    if (!el || el.tagName !== 'VIDEO') return;
+    watchTrackList(el);
+    if (!state.provider) {
+      tryActivate();
+      return;
     }
-    ingestRawCues(cues);
-
-    const targetBase = getTargetLangBase();
-    const trackBase = getLangBase(lang);
-    state.skipTranslation = !!(trackBase && targetBase && trackBase === targetBase);
-
+    if (state.provider.onMediaChanged) state.provider.onMediaChanged(el);
     ensureVideoListener();
-    handleTimeUpdate();
-    // Translate the whole track up front (nearest-to-playhead first).
-    ensureTrackTranslated(true);
   }
 
-  function onWindowMessage(event) {
-    if (event.source !== window) return;
-    const data = event.data;
-    if (!data || data.source !== 'ai-translator' || data.type !== 'YT_TIMEDTEXT_CAPTURED') return;
-    handleCapturedTimedText(data.url || '', data.text || '', data.contentType || '');
+  function onTrackListEvent() {
+    if (!state.provider) {
+      tryActivate();
+      return;
+    }
+    if (state.provider.onMediaChanged) state.provider.onMediaChanged();
   }
 
-  function requestReplay() {
-    window.postMessage({ source: 'ai-translator', type: 'YT_TIMEDTEXT_REPLAY' }, '*');
+  // A <track> added after load, or an in-band track the player just created,
+  // shows up here — video.textTracks is the only place that change is announced.
+  function watchTrackList(video) {
+    if (video.__aiCaptionTrackWatch) return;
+    let list;
+    try { list = video.textTracks; } catch (e) { return; }
+    if (!list || !list.addEventListener) return;
+    video.__aiCaptionTrackWatch = true;
+    list.addEventListener('addtrack', onTrackListEvent);
+    list.addEventListener('removetrack', onTrackListEvent);
+    // Fires when a track's mode changes — i.e. the viewer picked a subtitle
+    // language in the player's own control.
+    list.addEventListener('change', onTrackListEvent);
   }
+
+  function startWatching() {
+    if (watching) return;
+    watching = true;
+    for (const type of MEDIA_EVENTS) {
+      document.addEventListener(type, onMediaEvent, true);
+    }
+    for (const video of document.querySelectorAll('video')) watchTrackList(video);
+  }
+
+  function stopWatching() {
+    if (!watching) return;
+    watching = false;
+    for (const type of MEDIA_EVENTS) {
+      document.removeEventListener(type, onMediaEvent, true);
+    }
+    // The per-video track-list listeners stay: they are keyed off
+    // __aiCaptionTrackWatch, so removing them would only mean re-adding them if
+    // the feature is switched back on, and while it is off they reach
+    // tryActivate() and stop at the inactive state.
+  }
+
+  function tryActivate() {
+    if (!state.active || state.provider) return false;
+    const provider = core.selectProvider(ctx.captionProviders || []);
+    if (!provider) return false;
+    state.provider = provider;
+    provider.attach(engineApi);
+    return true;
+  }
+
+  // ------------------------------------------------- what providers call in
+  const engineApi = {
+    /**
+     * Hand over a track's cues. Providers re-offer the whole track rather than
+     * a delta; a different trackId means the caption language changed, which
+     * starts a fresh cue set.
+     */
+    ingestTrack(track) {
+      if (!state.active || !track) return;
+      const cues = Array.isArray(track.cues) ? track.cues : [];
+      if (!cues.length) return;
+      const trackId = track.trackId || 'track';
+      if (trackId !== state.trackId) {
+        state.trackId = trackId;
+        state.trackLang = track.lang || '';
+        clearTrack();
+      }
+
+      const merged = core.mergeRawCues(state.rawCues, cues, core.MAX_CUES);
+      if (merged.added) {
+        state.rawCues = merged.cues;
+        state.cues = core.buildSegments(state.rawCues);
+        state.batches = core.buildBatches(state.cues);
+      }
+
+      const trackBase = core.getLangBase(track.lang || '');
+      const targetBase = getTargetLangBase();
+      state.skipTranslation = !!(trackBase && targetBase && trackBase === targetBase);
+
+      ensureVideoListener();
+      handleTimeUpdate();
+      if (merged.added) ensureTrackTranslated(true);
+    },
+
+    /** Same page, different video (an SPA route change). */
+    reset() {
+      resetForVideo();
+    },
+
+    isActive() {
+      return state.active;
+    },
+  };
 
   // -------------------------------------------------------------- lifecycle
   function resetForVideo() {
     setNativeCaptionsHidden(false);
-    state.rawCues = [];
-    state.cues = [];
-    state.batches = [];
-    state.cueCache.clear();
-    state.pendingKeys.clear();
-    state.failedUntil.clear();
+    clearTrack();
     state.trackId = '';
     state.trackLang = '';
     state.skipTranslation = false;
@@ -769,43 +664,21 @@
     state.block = null;
   }
 
-  function start() {
+  ctx.setupVideoCaptionTranslation = function() {
+    if (!getSetting('enableYoutubeCaptionTranslation')) return;
     if (state.active) return;
     state.active = true;
-    if (!messageListener) {
-      messageListener = onWindowMessage;
-      window.addEventListener('message', messageListener);
-    }
-    // Captions may have been fetched by the player before we started listening
-    // (e.g. CC on by default); ask the interceptor to replay what it buffered.
-    requestReplay();
-  }
-
-  function handleNavigation() {
-    if (!state.active) return;
-    resetForVideo();
-    // Do not replay here: the interceptor clears its buffer on navigation, and
-    // the player will issue a fresh timedtext request for the new video.
-  }
-
-  ctx.setupYouTubeCaptionTranslation = function() {
-    if (!isYouTube()) return;
-    if (!ctx.settings?.enableYoutubeCaptionTranslation) return;
-    start();
-    if (!navListener) {
-      navListener = handleNavigation;
-      window.addEventListener('yt-navigate-finish', navListener);
-    }
+    startWatching();
+    // A provider may not be able to answer yet (no video, no track); the
+    // watcher above retries as the page brings one up.
+    tryActivate();
   };
 
-  ctx.stopYouTubeCaptionTranslation = function() {
-    if (navListener) {
-      window.removeEventListener('yt-navigate-finish', navListener);
-      navListener = null;
-    }
-    if (messageListener) {
-      window.removeEventListener('message', messageListener);
-      messageListener = null;
+  ctx.stopVideoCaptionTranslation = function() {
+    stopWatching();
+    if (state.provider) {
+      if (state.provider.detach) state.provider.detach();
+      state.provider = null;
     }
     state.active = false;
     resetForVideo();
