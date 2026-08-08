@@ -165,32 +165,100 @@ async function getCurrentTheme(page) {
 }
 
 /**
- * Set extension settings via chrome.storage
+ * The settings every E2E run needs in place before the extension will do what
+ * the specs are about to assert.
  *
- * A spec that asserts on mock-API traffic must pass `translationEngine: 'ai'`
- * here. The shipped default is 'builtin' — Chrome's on-device Translator API —
- * and the headless Chrome this suite drives reports every language pack as
- * 'downloadable', so `create()` is left waiting on a download that never
- * arrives. The AI path is then never reached and the request the spec is about
- * to assert on is never sent; the symptom is a timeout with no explanation
- * (before the stall watchdog in content/content-translation-engine.js, an
- * outright hang). Pinning the engine is not a preference the spec is asserting
- * about, it is how the spec picks the backend it is testing.
+ * `translationEngine` is the whole list, and it is not a preference — it is how
+ * the suite picks the backend it is testing. The extension ships with Chrome's
+ * on-device Translator selected (`translationEngine: 'builtin'`, see
+ * background/background.js), and the headless Chrome this suite drives answers
+ * `availability('en'→'zh')` as 'downloadable' in about a millisecond and then
+ * never settles `create()`: it wants a language pack that never arrives.
  *
- * @param {import('@playwright/test').Page} page
+ * That used to hang the page outright, which is what made the failure so hard
+ * to read — a spec that stood up mock-openai-server.js saw zero requests and
+ * timed out saying nothing about the engine. The stall watchdog in
+ * content/content-translation-engine.js (8d182bb) fixed the hang: the built-in
+ * engine now gives up after ~30s and falls back to the AI path. But falling
+ * back is not the same as being pointed at the right backend to begin with —
+ * every such spec would pay 30s and depend on a timeout firing to pass.
+ *
+ * So the harness pins the AI backend — the one the mock servers speak — for
+ * every context, rather than asking each spec to remember. A spec that means to
+ * exercise the built-in engine passes `translationEngine` explicitly to
+ * setExtensionSettings and wins over this.
+ */
+const E2E_BASE_SETTINGS = Object.freeze({
+  translationEngine: 'ai',
+});
+
+/**
+ * The extension's service worker — the only context here holding `chrome.*`.
+ * It registers a moment after the browser context launches, so a caller that
+ * gets there first has to wait for it.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function getServiceWorker(context) {
+  return context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+}
+
+/**
+ * @param {import('@playwright/test').BrowserContext} context
  * @param {object} settings
  */
-async function setExtensionSettings(page, settings) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+async function writeSyncSettings(context, settings) {
+  const worker = await getServiceWorker(context);
   await worker.evaluate((newSettings) => {
     return new Promise((resolve) => {
       chrome.storage.sync.set(newSettings, resolve);
     });
   }, settings);
+}
+
+/**
+ * Read settings back out of chrome.storage.sync — the counterpart to the write
+ * above, and the shape the assertions want: whatever a spec just clicked in the
+ * options page, is it actually stored?
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string[]} keys
+ * @returns {Promise<object>}
+ */
+async function getSyncSettings(context, keys) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate((settingKeys) => new Promise((resolve) => {
+    chrome.storage.sync.get(settingKeys, resolve);
+  }), keys);
+}
+
+/**
+ * One setting, unwrapped. Safe inside expect.poll — it reads storage fresh each
+ * call rather than closing over a value.
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string} key
+ */
+async function getSyncSetting(context, key) {
+  const values = await getSyncSettings(context, [key]);
+  return values[key];
+}
+
+/**
+ * Put E2E_BASE_SETTINGS in place. The fixture in fixtures.js calls this once per
+ * browser context, so the specs that never touch settings at all — most of
+ * hover-translation.spec.js — are covered too.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function applyBaseSettings(context) {
+  await writeSyncSettings(context, { ...E2E_BASE_SETTINGS });
+}
+
+/**
+ * Set extension settings via chrome.storage, on top of E2E_BASE_SETTINGS.
+ * Anything the caller names wins over the baseline.
+ * @param {import('@playwright/test').Page} page
+ * @param {object} settings
+ */
+async function setExtensionSettings(page, settings) {
+  await writeSyncSettings(page.context(), { ...E2E_BASE_SETTINGS, ...settings });
 }
 
 /**
@@ -206,11 +274,7 @@ async function setExtensionSettings(page, settings) {
  * @param {boolean} signedIn pass false to put the device back to signed out
  */
 async function setExtensionAccount(page, signedIn = true) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+  const worker = await getServiceWorker(page.context());
   await worker.evaluate(async (isSignedIn) => {
     if (!isSignedIn) {
       await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
@@ -237,11 +301,7 @@ async function setExtensionAccount(page, signedIn = true) {
  * @param {object} message
  */
 async function sendMessageToActiveTab(page, message) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+  const worker = await getServiceWorker(page.context());
   await worker.evaluate(async (msg) => {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (tabs[0]?.id) {
@@ -251,6 +311,11 @@ async function sendMessageToActiveTab(page, message) {
 }
 
 module.exports = {
+  E2E_BASE_SETTINGS,
+  getServiceWorker,
+  getSyncSettings,
+  getSyncSetting,
+  applyBaseSettings,
   waitForFloatBall,
   openFloatBallMenu,
   triggerPageTranslation,

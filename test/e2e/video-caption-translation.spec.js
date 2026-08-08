@@ -18,7 +18,6 @@ const BASE_SETTINGS = {
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   modelName: 'gpt-4.1-mini',
   enableYoutubeCaptionTranslation: true,
-  translationEngine: 'ai',
 };
 
 const VTT = `WEBVTT

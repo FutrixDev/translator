@@ -12,6 +12,7 @@
 const http = require('node:http');
 const zlib = require('node:zlib');
 const { test, expect } = require('./fixtures');
+const { getServiceWorker } = require('./helpers');
 
 /**
  * CRC-32 of a PNG chunk.
@@ -371,14 +372,9 @@ function startMockService(
   });
 }
 
-async function serviceWorker(context) {
-  const [existing] = context.serviceWorkers();
-  return existing || context.waitForEvent('serviceworker');
-}
-
 /** Point the extension at the mock and give it a token, as a real sign-in would. */
 async function connectExtension(context, base, { withToken = true } = {}) {
-  const worker = await serviceWorker(context);
+  const worker = await getServiceWorker(context);
   await worker.evaluate(async ({ base, withToken }) => {
     // The feature ships off, and the worker refuses a create while it is: these
     // tests stand in for a context-menu click, which only exists when the

@@ -9,6 +9,7 @@
  */
 const http = require('node:http');
 const { test, expect } = require('./fixtures');
+const { getServiceWorker } = require('./helpers');
 
 const RESETS_AT = '2099-02-01T00:00:00.000Z';
 const quota = (limit, remaining) => ({
@@ -88,11 +89,6 @@ function startMockService({ connect = 'token', meDelayMs = 0, connectDelayMs = 0
   });
 }
 
-async function serviceWorker(context) {
-  const [existing] = context.serviceWorkers();
-  return existing || context.waitForEvent('serviceworker');
-}
-
 /**
  * Point the extension at the mock and give it a token, as a real sign-in would.
  *
@@ -100,7 +96,7 @@ async function serviceWorker(context) {
  * a user who wants comic translation sees, and the off state has its own tests.
  */
 async function connectExtension(context, base, { withToken = true, enabled = true } = {}) {
-  const worker = await serviceWorker(context);
+  const worker = await getServiceWorker(context);
   await worker.evaluate(async ({ base, withToken, enabled }) => {
     await chrome.storage.sync.set({ enableComicTranslation: enabled });
     await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
