@@ -56,6 +56,11 @@ test('input translation shows phonetic and pronunciation for short phrase', asyn
 
   try {
     await setExtensionSettings(page, {
+      // Dictionary mode only exists on the AI path — the built-in engine gives
+      // back no phonetic and reports isWord: false — and the assertions below
+      // are on this mock's replies, so the backend has to be pinned. See
+      // setExtensionSettings in ./helpers.
+      translationEngine: 'ai',
       apiEndpoint: endpoint,
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',

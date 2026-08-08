@@ -166,6 +166,17 @@ async function getCurrentTheme(page) {
 
 /**
  * Set extension settings via chrome.storage
+ *
+ * A spec that asserts on mock-API traffic must pass `translationEngine: 'ai'`
+ * here. The shipped default is 'builtin' — Chrome's on-device Translator API —
+ * and the headless Chrome this suite drives reports every language pack as
+ * 'downloadable', so `create()` is left waiting on a download that never
+ * arrives. The AI path is then never reached and the request the spec is about
+ * to assert on is never sent; the symptom is a timeout with no explanation
+ * (before the stall watchdog in content/content-translation-engine.js, an
+ * outright hang). Pinning the engine is not a preference the spec is asserting
+ * about, it is how the spec picks the backend it is testing.
+ *
  * @param {import('@playwright/test').Page} page
  * @param {object} settings
  */
