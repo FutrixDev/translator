@@ -23,9 +23,6 @@ test('page translation: "highlights" sections translate, real highlighter contai
 
   try {
     await setExtensionSettings(page, {
-      // This spec asserts the mock received a fast-batch request, so it has to
-      // pin the AI backend — see setExtensionSettings in ./helpers.
-      translationEngine: 'ai',
       apiEndpoint: endpoint,
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',

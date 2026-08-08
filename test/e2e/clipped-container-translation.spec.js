@@ -46,7 +46,6 @@ test.describe('translations clipped by a collapsed ancestor', () => {
 
     try {
       await setExtensionSettings(page, {
-        translationEngine: 'ai',
         apiEndpoint: endpoint,
         apiKey: 'test-key',
         modelName: 'gpt-4.1-mini',
@@ -98,7 +97,6 @@ test.describe('translations clipped by a collapsed ancestor', () => {
 
     try {
       await setExtensionSettings(page, {
-        translationEngine: 'ai',
         apiEndpoint: endpoint,
         apiKey: 'test-key',
         modelName: 'gpt-4.1-mini',

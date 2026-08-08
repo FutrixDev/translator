@@ -13,6 +13,19 @@
 // That failure is invisible from inside a spec, and the fix is a single value in
 // one place, so it is asserted here rather than trusted to stay put.
 //
+// This supersedes test/unit/e2e-translation-engine-pinned.test.mjs, which fixed
+// the same bug the other way round: each spec wrote the pin itself, and that
+// test asserted they had, via a heuristic — "mocks the translation API" AND
+// "reaches for an ai-translator-* node" — backed by a hand-maintained list of
+// the six specs then matching. Two problems it named itself. The list has to be
+// edited whenever a seventh arrives, and the patterns can drift into matching
+// nothing, which is why it carried a second test guarding its own regexes.
+// Worse, the heuristic could not see hover-translation.spec.js, which failed for
+// exactly this reason without mocking the API in any shape the patterns knew.
+// Pinning the engine for every context needs no heuristic, no list, and no
+// second guard, so the two cannot coexist: that one required the line in each
+// spec, this one requires its absence.
+//
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
