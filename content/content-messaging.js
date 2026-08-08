@@ -117,9 +117,9 @@
           }
           if ('enableYoutubeCaptionTranslation' in message.settings) {
             if (message.settings.enableYoutubeCaptionTranslation) {
-              if (ctx.setupYouTubeCaptionTranslation) ctx.setupYouTubeCaptionTranslation();
-            } else if (ctx.stopYouTubeCaptionTranslation) {
-              ctx.stopYouTubeCaptionTranslation();
+              if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
+            } else if (ctx.stopVideoCaptionTranslation) {
+              ctx.stopVideoCaptionTranslation();
             }
           }
           break;

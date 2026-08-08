@@ -17,6 +17,22 @@ const html = `<!doctype html>
 </body>
 </html>`;
 
+// These tests are about the caption pipeline, not about engine selection, so
+// they pin the backend to the mocked API. Left on the default the run would
+// hinge on whether this machine happens to hold the browser's on-device
+// language pack for the pair — a fresh profile does not, so it falls back to
+// the API, but that is an accident of the profile and not something to assert
+// through.
+const BASE_SETTINGS = {
+  targetLang: 'zh-CN',
+  targetLangSetByUser: true,
+  apiKey: 'sk-test',
+  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+  modelName: 'gpt-4.1-mini',
+  enableYoutubeCaptionTranslation: true,
+  translationEngine: 'ai',
+};
+
 const timedtextBody = JSON.stringify({
   events: [{ tStartMs: 0, dDurationMs: 2000, segs: [{ utf8: 'Hello world' }] }],
 });
@@ -36,14 +52,7 @@ async function simulatePlayerTimedtext(page, lang) {
 }
 
 test('renders translated line when captions on and language differs', async ({ page, context }) => {
-  await setExtensionSettings(page, {
-    targetLang: 'zh-CN',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
-  });
+  await setExtensionSettings(page, BASE_SETTINGS);
 
   await context.route('https://www.youtube.com/watch**', (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -72,20 +81,13 @@ test('renders translated line when captions on and language differs', async ({ p
     video.dispatchEvent(new Event('timeupdate'));
   });
 
-  await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 });
 
 test('skips translation when track language matches target', async ({ page, context }) => {
   let apiCalls = 0;
 
-  await setExtensionSettings(page, {
-    targetLang: 'en',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
-  });
+  await setExtensionSettings(page, { ...BASE_SETTINGS, targetLang: 'en' });
 
   await context.route('https://www.youtube.com/watch**', (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -119,14 +121,7 @@ test('skips translation when track language matches target', async ({ page, cont
 });
 
 test('does not render when no caption request is observed', async ({ page, context }) => {
-  await setExtensionSettings(page, {
-    targetLang: 'zh-CN',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
-  });
+  await setExtensionSettings(page, BASE_SETTINGS);
 
   await context.route('https://www.youtube.com/watch**', (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -144,7 +139,7 @@ test('does not render when no caption request is observed', async ({ page, conte
 
   // With no observed timedtext response there are no cues, so no overlay text.
   const overlayText = await page.evaluate(() => {
-    const el = document.querySelector('#ai-translator-youtube-caption-overlay');
+    const el = document.querySelector('#ai-translator-caption-overlay');
     return el ? el.textContent : null;
   });
   expect(overlayText).toBeFalsy();
@@ -152,12 +147,7 @@ test('does not render when no caption request is observed', async ({ page, conte
 
 test('applies saved caption position, width and scale', async ({ page, context }) => {
   await setExtensionSettings(page, {
-    targetLang: 'zh-CN',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
+    ...BASE_SETTINGS,
     youtubeCaptionPosXPct: 30,
     youtubeCaptionPosYPct: 40,
     youtubeCaptionWidthPct: 60,
@@ -186,13 +176,13 @@ test('applies saved caption position, width and scale', async ({ page, context }
     v.currentTime = 0.5;
     v.dispatchEvent(new Event('timeupdate'));
   });
-  await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 
   const layout = await page.evaluate(() => {
-    const o = document.getElementById('ai-translator-youtube-caption-overlay');
+    const o = document.getElementById('ai-translator-caption-overlay');
     const b = o.querySelector('.ai-translator-caption-block');
     return {
-      scale: o.style.getPropertyValue('--ai-yt-caption-scale'),
+      scale: o.style.getPropertyValue('--ai-caption-scale'),
       left: b.style.left,
       top: b.style.top,
       width: b.style.width,
@@ -205,14 +195,7 @@ test('applies saved caption position, width and scale', async ({ page, context }
 });
 
 test('resizing via the edge handle changes the caption width', async ({ page, context }) => {
-  await setExtensionSettings(page, {
-    targetLang: 'zh-CN',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
-  });
+  await setExtensionSettings(page, BASE_SETTINGS);
 
   await context.route('https://www.youtube.com/watch**', (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -236,18 +219,18 @@ test('resizing via the edge handle changes the caption width', async ({ page, co
     v.currentTime = 0.5;
     v.dispatchEvent(new Event('timeupdate'));
   });
-  await expect(page.locator('#ai-translator-youtube-caption-overlay')).toContainText('你好世界');
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 
   // The caption box is interactive and exposes 8 resize handles.
-  const block = page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+  const block = page.locator('#ai-translator-caption-overlay .ai-translator-caption-block');
   await expect(block).toHaveCSS('pointer-events', 'auto');
   await expect(block).toHaveCSS('cursor', 'move');
-  await expect(page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-handle')).toHaveCount(8);
+  await expect(page.locator('#ai-translator-caption-overlay .ai-translator-caption-handle')).toHaveCount(8);
 
   // Drag the east (right-edge) handle outward to widen the box.
   await page.evaluate(() => {
     const c = document.querySelector('.ytp-caption-window-container').getBoundingClientRect();
-    const b = document.querySelector('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+    const b = document.querySelector('#ai-translator-caption-overlay .ai-translator-caption-block');
     const h = b.querySelector('.ai-cap-h-e');
     const bRect = b.getBoundingClientRect();
     const cx = c.left + c.width / 2;
@@ -258,20 +241,13 @@ test('resizing via the edge handle changes the caption width', async ({ page, co
   });
 
   await expect.poll(async () => page.evaluate(() => {
-    const b = document.querySelector('#ai-translator-youtube-caption-overlay .ai-translator-caption-block');
+    const b = document.querySelector('#ai-translator-caption-overlay .ai-translator-caption-block');
     return parseInt(b.style.width, 10) || 0;
   })).toBeGreaterThan(50);
 });
 
 test('close button dismisses captions and restores native for the video', async ({ page, context }) => {
-  await setExtensionSettings(page, {
-    targetLang: 'zh-CN',
-    targetLangSetByUser: true,
-    apiKey: 'sk-test',
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-4.1-mini',
-    enableYoutubeCaptionTranslation: true,
-  });
+  await setExtensionSettings(page, BASE_SETTINGS);
 
   await context.route('https://www.youtube.com/watch**', (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
@@ -296,14 +272,14 @@ test('close button dismisses captions and restores native for the video', async 
     v.dispatchEvent(new Event('timeupdate'));
   });
 
-  const overlay = page.locator('#ai-translator-youtube-caption-overlay');
+  const overlay = page.locator('#ai-translator-caption-overlay');
   await expect(overlay).toContainText('你好世界');
   await expect(overlay).toBeVisible();
   // native captions are hidden while our overlay is active
   await expect(page.locator('.ytp-caption-window-container')).toHaveClass(/ai-translator-hide-native/);
 
   // click the close (X) button
-  await page.locator('#ai-translator-youtube-caption-overlay .ai-translator-caption-close').dispatchEvent('click');
+  await page.locator('#ai-translator-caption-overlay .ai-translator-caption-close').dispatchEvent('click');
 
   await expect(overlay).toBeHidden();
   // native captions restored (our override removed)

@@ -227,9 +227,9 @@
 
       if (changes.enableYoutubeCaptionTranslation) {
         if (ctx.settings.enableYoutubeCaptionTranslation) {
-          if (ctx.setupYouTubeCaptionTranslation) ctx.setupYouTubeCaptionTranslation();
-        } else if (ctx.stopYouTubeCaptionTranslation) {
-          ctx.stopYouTubeCaptionTranslation();
+          if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
+        } else if (ctx.stopVideoCaptionTranslation) {
+          ctx.stopVideoCaptionTranslation();
         }
       }
     });
@@ -244,7 +244,7 @@
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
-      if (ctx.setupYouTubeCaptionTranslation) ctx.setupYouTubeCaptionTranslation();
+      if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.

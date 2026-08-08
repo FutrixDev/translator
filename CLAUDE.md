@@ -92,6 +92,59 @@ switch — the account half is enforced one layer down, where `apiFetch` answers
 create with no token as `unauthorized`, and every surface turns that into a
 sign-in offer.
 
+### Video Subtitle Translation
+
+One engine, one overlay, and a small provider per way of getting cues. The
+engine — `content/content-video-captions.js` — owns everything that is the same
+on every site: sentence segmentation, batching, the bilingual overlay and its
+drag/resize/persistence, hiding the page's own line, and re-mounting on
+fullscreen. `shared/caption-core.js` holds the pure parts of that (VTT/json3/srv3
+parsing, cue merging, batching, track choice, the translation request) so
+`npm run test:unit` can exercise them with no browser.
+
+A provider in `content/content-caption-providers.js` answers four questions:
+
+| question | method |
+| --- | --- |
+| can I supply cues on this page? | `canActivate()` |
+| here are the cues | `attach(engine)` → `engine.ingestTrack()` |
+| where does the overlay go? | `getOverlayHost()` / `syncOverlayHost()` |
+| how do I get the page's own captions out of the way? | `setNativeCaptionsHidden()` |
+
+`CaptionCore.selectProvider()` picks the highest-priority one that says yes.
+Two ship today:
+
+- **`YouTubeProvider`** — YouTube gates `/api/timedtext` behind a
+  proof-of-origin token only its player can mint, so the cues are observed from
+  the player's own response by the MAIN-world interceptor
+  (`content/youtube-timedtext-interceptor.js`, matched to `*://*.youtube.com/*`
+  alone — see below). It mounts into the player's caption layer.
+- **`TextTrackProvider`** — the standard `<track>`/`TextTrack` API, so it needs
+  no per-site code at all. It mounts a fixed-position host pinned to the
+  `<video>` rect rather than wrapping the element, because reparenting a
+  `<video>` breaks players that manage their own DOM.
+
+Two rules the generic provider exists to keep:
+
+- **We translate the subtitles the viewer already has on; we never turn
+  subtitles on.** A track at `showing` or `hidden` is on (`hidden` is a player
+  drawing the cues itself); everything at `disabled` is a language the page
+  merely offers, and `pickSubtitleTrack()` returns null rather than choose among
+  them. Vimeo lists four and shows none.
+- **A track is put back exactly as it was found.** We hold it at `hidden`, not
+  `disabled`, so cues keep loading; `restoreMode` goes back on detach. The one
+  exception is a track the viewer disabled while we held it — restoring that one
+  would turn subtitles back on and we would read that as consent, forever.
+
+**Do not broaden the MAIN-world interceptor's match patterns to `<all_urls>`.**
+Patching `fetch`/`XHR` on every page is a performance, compatibility and
+store-review cost, and it buys nothing the `TextTrack` path does not already
+give. A site that needs network observation gets its own match pattern.
+
+Storage keys still read `enableYoutubeCaptionTranslation` / `youtubeCaption*` /
+`showYoutubeOriginalCaption` on purpose: renaming them would drop the settings
+of everyone who already has the feature on.
+
 ### API Compatibility
 
 Works with any OpenAI Chat Completions-compatible API, plus Anthropic's native

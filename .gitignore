@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+# Without the slash too: a git worktree usually symlinks node_modules at the
+# main checkout, and `node_modules/` does not match a symlink.
+node_modules
 
 # Build output
 dist/
