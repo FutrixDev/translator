@@ -24,6 +24,10 @@
   const CONCURRENCY = 12;       // 并发数
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
+  // 本轮收集里，受管容器内有多少块连生成内容都承不住而被放弃。翻译流程用它来
+  // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
+  let managedSkipCount = 0;
+
   async function translatePage() {
     if (!isExtensionContextAvailable()) {
       showPageTranslationProgress();
@@ -60,11 +64,12 @@
       let translatableBlocks = collectTranslatableBlocks(document.body);
       translatableBlocks = await filterBlocksByLanguage(translatableBlocks);
       
-      const managedSkipped = hasSkippedManagedContent();
+      const managedSkipped = managedSkipCount;
 
       if (translatableBlocks.length === 0) {
         // 一块也收不到有两种完全不同的原因，不能都报“页面已翻译”：真的翻完了，
-        // 还是正文整个落在受管容器里被跳过了。后者报“已翻译”是彻头彻尾的误导。
+        // 还是正文整个落在受管容器里、且那里的块连生成内容都承不住。后者报
+        // “已翻译”是彻头彻尾的误导。
         if (!managedSkipped) state.pageHasBeenTranslated = true;
         showPageNotice(managedSkipped ? t('pageContentNotTranslatable') : t('pageAlreadyTranslated'));
         state.isTranslatingPage = false;
@@ -72,10 +77,10 @@
       }
 
       if (managedSkipped) {
-        // 收到了一些块，但正文那部分被跳过了（典型情况：正文在只读 Lexical 里，
-        // 收到的是容器外的导航和边栏）。译文会照常出现，只是不含正文，所以这里
+        // 收到了大部分块，但受管容器里有几块画不出来（有公式、站点自己用了
+        // ::after、块是 flex/grid 容器）。译文会照常出现，只是缺那几块，所以
         // 不打断流程，只留一条线索。
-        console.info('AI Translator: skipped content inside a managed editor root; use hover translation there');
+        console.info(`AI Translator: ${managedSkipped} block(s) inside a managed editor root cannot carry generated content`);
       }
 
       // 优先处理首屏相关内容
@@ -257,7 +262,13 @@
   function revealHiddenTranslations() {
     const hidden = document.querySelectorAll('.ai-translator-inline-block.ai-translator-hidden');
     hidden.forEach(el => el.classList.remove('ai-translator-hidden'));
-    if (hidden.length > 0) {
+    // 受管容器里的译文整体开关（见 content-managed-translation.js），它被隐藏时
+    // 上面那批里只有一个不显示的替身，光看 hidden.length 会漏判。
+    const managedHidden = ctx.areManagedTranslationsHidden && ctx.areManagedTranslationsHidden();
+    if (managedHidden && ctx.setManagedTranslationsVisible) {
+      ctx.setManagedTranslationsVisible(true);
+    }
+    if (hidden.length > 0 || managedHidden) {
       state.translationsVisible = true;
     }
   }
@@ -444,6 +455,7 @@
 
   // 收集可翻译的块级元素
   function collectTranslatableBlocks(root) {
+    managedSkipCount = 0;
     const blocks = [];
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
@@ -602,12 +614,17 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
-      // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉。
-      // 整页翻译在这种容器里无解：译文块要靠插进原文之间把页面撑开才读得下去，
-      // 而子树内没有任何位置能活下来（悬停那条路改挂文档级浮层，浮层会盖住下文，
-      // 只适合一次看一段）。所以这里直接不收——翻了也是白翻，还要为此付一次 API
-      // 调用的钱。
-      if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) return;
+      // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
+      // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
+      // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
+      // 容器——翻出来也显示不了，这里就不收：省一次 API 调用的钱。
+      if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) {
+        const hasMath = !!(MATH_CONTAINER_SELECTOR && element.querySelector(MATH_CONTAINER_SELECTOR));
+        if (!(ctx.canRenderManagedTranslation && ctx.canRenderManagedTranslation(element, { hasMath }))) {
+          managedSkipCount++;
+          return;
+        }
+      }
       if (element.closest('.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn')) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
@@ -1205,6 +1222,19 @@
     // 标记为已翻译
     element.classList.add('ai-translator-translated');
 
+    const hasMathElements = block.mathElements && block.mathElements.length > 0;
+
+    // 受管容器（只读的 Lexical / ProseMirror 等）会删掉插进子树的译文节点，这里
+    // 把译文画成原文块自己的 ::after —— 生成内容不是节点，编辑器看不见它，而且它
+    // 占真实排版空间，后面的段落被顶下去而不是被盖住。见 content-managed-translation.js。
+    // 收集阶段已经用同一条判据筛过一遍，画不出来的块根本不会走到这里。
+    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element) &&
+        ctx.canRenderManagedTranslation &&
+        ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
+      ctx.renderManagedTranslation(element, translation, {});
+      return;
+    }
+
     // 检测是否在水平布局中
     const isHorizontalFlex = isHorizontalFlexParent(element);
     const inlineTarget = isHorizontalFlex ? getInlineTranslationTarget(element) : element;
@@ -1221,8 +1251,6 @@
       letter-spacing: ${computedStyle.letterSpacing};
       opacity: 0.85;
     `;
-
-    const hasMathElements = block.mathElements && block.mathElements.length > 0;
 
     if (isHorizontalFlex) {
       // 对于水平 flex 布局（如顶部导航），将翻译插入到元素内部
@@ -1491,17 +1519,6 @@
         }, 200);
       }, 1200);
     }, 200);
-  }
-
-  // 受管容器里的正文被 processElement 跳过了。判据是容器里确有成篇的文字——
-  // 一个空的评论框、一个搜索用的富文本输入不该让整页翻译报警。
-  function hasSkippedManagedContent() {
-    if (!ctx.MANAGED_DOM_ROOT_SELECTOR) return false;
-    const roots = document.querySelectorAll(ctx.MANAGED_DOM_ROOT_SELECTOR);
-    for (const root of roots) {
-      if ((root.innerText || '').trim().length >= 200) return true;
-    }
-    return false;
   }
 
   // 进度条位置上的一条提示。原来只用来说“页面已翻译”，现在还要说“正文翻不了”，
