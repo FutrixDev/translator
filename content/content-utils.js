@@ -38,7 +38,8 @@
     '.monaco-editor'           // Monaco
   ].join(', ');
 
-  ctx.MANAGED_DOM_ROOT_SELECTOR = MANAGED_DOM_ROOT_SELECTOR;
+  // 选择器本身不导出：调用方问的都是“这个元素在不在受管容器里”，把名单递出去只会
+  // 让别的文件各自 querySelectorAll 一遍，规则就从这里漏出去了。
 
   // 返回 element 所在的受管容器根节点，不在受管容器里则返回 null。
   ctx.getManagedDomRoot = function(element) {

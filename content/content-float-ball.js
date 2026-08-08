@@ -535,6 +535,12 @@
         el.classList.add('ai-translator-hidden');
       }
     });
+
+    // 受管容器里的译文是原文块的 ::after，没有自己的节点可以加类名（它在上面这批
+    // 里只有一个不显示的替身），只能整体开关。见 content-managed-translation.js。
+    if (ctx.setManagedTranslationsVisible) {
+      ctx.setManagedTranslationsVisible(state.translationsVisible);
+    }
   }
 
   function stopFloatBallWatchdog() {

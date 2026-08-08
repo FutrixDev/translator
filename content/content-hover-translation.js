@@ -56,29 +56,18 @@
     }
   }
 
-  // ==================== 受管容器：浮层渲染 ====================
+  // ==================== 受管容器：生成内容渲染 ====================
   //
   // Lexical / ProseMirror 这类编辑器会撤销子树里的外来节点（见 content-utils.js
   // 里 MANAGED_DOM_ROOT_SELECTOR 的说明）。往这种块下面 after() 一个译文，下一帧
   // 就没了，用户什么都看不到。
   //
-  // 这类块改用文档级浮层：节点挂在 body 上，按原文块的位置贴着它显示。编辑器的
-  // MutationObserver 只盯自己的根节点，看不见 body 上的东西，也就不会删。
-  //
-  // 已实测过的插入位置（Higgsfield 的 div.rde-content，只读 Lexical）：
-  //   block.after(el)            -> 1 秒内被删
-  //   block.appendChild(el)      -> 被删
-  //   块内挂 shadow host         -> 被删
-  //   插到编辑器根节点外面        -> 存活
-  //   position:absolute 挂 body  -> 存活
-  // 子树内没有任何可行位置，所以只能走浮层。
-  const ANCHOR_LAYER_ID = 'ai-translator-anchor-layer';
-  const anchoredBlocks = new Map();   // 浮层节点 -> 原文块
+  // 这类块的译文改成原文块自己的 ::after —— 生成内容不是 DOM 节点，编辑器的
+  // MutationObserver 看不见它，同时它又占真实排版空间，会把后面的段落顶下去。
+  // 具体实现和取舍在 content-managed-translation.js。
   const hostileNodes = new WeakSet(); // 运行时发现的“插进去会被删”的位置
-  let anchorFrame = 0;
-  let anchorListenersBound = false;
 
-  function shouldAnchor(block) {
+  function shouldUseManagedRendering(block) {
     if (!block) return false;
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(block)) return true;
     // 名单之外的框架靠 verifyInlineSurvival 现场发现，记在 hostileNodes 里。
@@ -87,125 +76,27 @@
     return hostileNodes.has(block) || !!(block.parentElement && hostileNodes.has(block.parentElement));
   }
 
-  function getAnchorLayer() {
-    let layer = document.getElementById(ANCHOR_LAYER_ID);
-    if (!layer) {
-      layer = document.createElement('div');
-      layer.id = ANCHOR_LAYER_ID;
-      // 定位上下文用 fixed 的零尺寸容器：子节点按视口坐标定位，不必去算 body
-      // 到底是不是定位元素、有没有 border/margin。
-      layer.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;margin:0;padding:0;border:0;z-index:2147483646;';
-      (document.body || document.documentElement).appendChild(layer);
-    }
-    return layer;
+  // 受管容器里的一次渲染尝试。放不下就返回 null，由调用方继续走原来的插入路径 ——
+  // 那条路在 Lexical 里会被删掉，但在其它框架上未必，总好过什么都不画。
+  function renderManaged(block, text, options) {
+    if (!shouldUseManagedRendering(block)) return null;
+    if (!ctx.canRenderManagedTranslation || !ctx.renderManagedTranslation) return null;
+    if (!ctx.canRenderManagedTranslation(block, { hasMath: !!(options && options.hasMath) })) return null;
+    return ctx.renderManagedTranslation(block, text, options);
   }
 
-  function positionAnchored(el, block) {
-    if (!block || !block.isConnected) {
-      el.style.visibility = 'hidden';
-      return;
-    }
-    const rect = block.getBoundingClientRect();
-    // 原文块滚出视口（或它自己的滚动容器）时把浮层收起来，否则它会飘在别的内容上。
-    if ((!rect.width && !rect.height) || rect.bottom < 0 || rect.top > window.innerHeight) {
-      el.style.visibility = 'hidden';
-      return;
-    }
-    el.style.visibility = '';
-    el.style.left = `${rect.left}px`;
-    el.style.top = `${rect.bottom}px`;
-    el.style.width = `${rect.width}px`;
-  }
-
-  function repositionAnchored() {
-    anchorFrame = 0;
-    anchoredBlocks.forEach((block, el) => {
-      if (!el.isConnected) {
-        anchoredBlocks.delete(el);
-        return;
-      }
-      positionAnchored(el, block);
-    });
-    if (anchoredBlocks.size === 0) unbindAnchorListeners();
-  }
-
-  function scheduleReposition() {
-    if (anchorFrame) return;
-    anchorFrame = requestAnimationFrame(repositionAnchored);
-  }
-
-  // scroll 用捕获阶段：浮层要跟着任意祖先滚动容器走，不只是文档滚动。
-  function bindAnchorListeners() {
-    if (anchorListenersBound) return;
-    anchorListenersBound = true;
-    window.addEventListener('scroll', scheduleReposition, { capture: true, passive: true });
-    window.addEventListener('resize', scheduleReposition, { passive: true });
-  }
-
-  function unbindAnchorListeners() {
-    if (!anchorListenersBound) return;
-    anchorListenersBound = false;
-    window.removeEventListener('scroll', scheduleReposition, { capture: true });
-    window.removeEventListener('resize', scheduleReposition);
-  }
-
-  // 浮层是绝对定位的，顶不动后面的内容，只能盖在上面 —— 没有底色就是两层字叠在
-  // 一起，谁也读不了。译文的字色是从原文块抄来的，底色就得抄原文块背后的那层实色，
-  // 对比度才对得上：往上找第一个完全不透明的背景色，找不到就交给系统色 Canvas
-  // （它跟随明暗主题，比写死白色稳妥）。
-  function resolveBackdrop(block) {
-    let node = block;
-    while (node && node.nodeType === Node.ELEMENT_NODE) {
-      const bg = window.getComputedStyle(node).backgroundColor;
-      // 半透明的背景挡不住下面的字，得继续往上找。第四个数就是 alpha，rgba(r,g,b,a)
-      // 和 rgb(r g b / a) 两种写法都是这样；只有三个数就是不透明的。
-      const parts = bg ? bg.match(/[\d.]+/g) : null;
-      if (parts && (parts.length < 4 || parseFloat(parts[3]) === 1)) return bg;
-      node = node.parentElement;
-    }
-    return 'Canvas';
-  }
-
-  function mountAnchored(el, block, computedStyle) {
-    el.classList.add('ai-translator-anchored');
-    // 挂到 body 之后继承链就断了。行内渲染时字号/字体/行高有一半是从原文块继承来的
-    // （公式那条分支干脆只设了 opacity），这里按原文块的计算值补齐。
-    //
-    // 字号必须带 important：加载态的样式是 font-size: 1.1em !important，而 em 是相对
-    // 父级算的 —— 浮层的父级是 body，不是原文块。正文字号和 body 不一样的站点上，
-    // “正在翻译”会莫名比正文大一圈或小一圈。
-    if (computedStyle) {
-      el.style.setProperty('font-size', computedStyle.fontSize, 'important');
-      el.style.setProperty('font-family', computedStyle.fontFamily, 'important');
-      el.style.setProperty('line-height', computedStyle.lineHeight, 'important');
-      // 颜色不带 important：加载态的紫色和错误态的红色都该压过原文颜色。
-      if (!el.style.color && !el.classList.contains('ai-translator-error')) {
-        el.style.color = computedStyle.color;
-      }
-    }
-    el.style.setProperty('background', resolveBackdrop(block), 'important');
-    el.style.setProperty('position', 'absolute', 'important');
-    el.style.setProperty('margin', '0', 'important');
-    el.style.setProperty('box-sizing', 'border-box', 'important');
-    el.style.setProperty('max-width', '100vw', 'important');
-    getAnchorLayer().appendChild(el);
-    anchoredBlocks.set(el, block);
-    positionAnchored(el, block);
-    bindAnchorListeners();
-    return el;
-  }
-
-  function releaseAnchored(el) {
-    if (!el) return;
-    anchoredBlocks.delete(el);
-    if (anchoredBlocks.size === 0) unbindAnchorListeners();
+  function releaseManaged(el) {
+    if (!el || !ctx.releaseManagedTranslation) return;
+    ctx.releaseManagedTranslation(el);
   }
 
   // 名单覆盖不到的框架同样会吃节点。插完之后隔两帧回看一眼：节点没了而原文块还在，
-  // 就把这个插入父级记为 hostile，并用浮层重画一次。少了这一步，未知框架上的表现
-  // 依旧是“第一次悬停什么都没有，之后再悬停也不再重试”。
+  // 就把这个插入父级记为 hostile，并重画一次 —— 那时 shouldUseManagedRendering 已
+  // 经认得它，会走生成内容。少了这一步，未知框架上的表现依旧是“第一次悬停什么都
+  // 没有，之后再悬停也不再重试”。
   function verifyInlineSurvival(block, translationEl, kind, redraw) {
-    if (!redraw || !translationEl || anchoredBlocks.has(translationEl)) return;
+    if (!redraw || !translationEl) return;
+    if (ctx.isManagedTranslationHandle && ctx.isManagedTranslationHandle(translationEl)) return;
     const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
     const parent = translationEl.parentElement;
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -228,7 +119,7 @@
     const existing = map.get(block);
     if (existing && existing !== translationEl) {
       inlineTranslationSources.delete(existing);
-      releaseAnchored(existing);
+      releaseManaged(existing);
       existing.remove();
     }
     map.set(block, translationEl);
@@ -271,7 +162,7 @@
       loadingMap.delete(block);
       const translationEl = renderFn();
       // renderFn 本身就是这条译文的重画函数：被受管容器删掉时用它原样再画一次，
-      // 那时 shouldAnchor 已经认得这个父级，会自动走浮层。
+      // 那时 shouldUseManagedRendering 已经认得这个父级，会自动走生成内容。
       trackInlineTranslation(block, translationEl, kind, renderFn);
       if (onComplete) onComplete();
     };
@@ -291,7 +182,7 @@
     const translationEl = map.get(block);
     if (translationEl) {
       inlineTranslationSources.delete(translationEl);
-      releaseAnchored(translationEl);
+      releaseManaged(translationEl);
       translationEl.remove();
     }
     map.delete(block);
@@ -814,9 +705,9 @@
     const range = resolveSelectionRange(selectionRange);
     const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
 
-    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading /
-    // renderInlineTranslation 那条路，由它们挂浮层。
-    if (shouldAnchor(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
+    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineTranslation
+    // 那条路，由它渲染成原文块的 ::after。
+    if (shouldUseManagedRendering(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
       return renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
     }
 
@@ -865,9 +756,9 @@
     const range = resolveSelectionRange(selectionRange);
     const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
 
-    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading /
-    // renderInlineTranslation 那条路，由它们挂浮层。
-    if (shouldAnchor(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
+    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading
+    // 那条路，由它渲染成原文块的 ::after。
+    if (shouldUseManagedRendering(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
       return renderInlineLoading(block, { kind: 'selection' });
     }
 
@@ -1050,15 +941,20 @@
 
   function renderInlineLoading(block, options = {}) {
     const { kind } = options;
+    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
+
+    // 受管容器先问一句：那里的译文是原文块的 ::after，下面这一整套建节点、抄样式、
+    // 挑插入位置都用不上。动画点点也做不到生成内容上，加载态用一句静态文案。
+    const managedLoading = renderManaged(block, t('translating'), { kind, state: 'loading', className });
+    if (managedLoading) return managedLoading;
+
     const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
     const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
       ? ctx.getInlineTranslationTarget(block)
       : block;
     const computedStyle = window.getComputedStyle(inlineTarget);
-    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
 
-    // 浮层是块级的，贴在原文块下方，用不上“同一行右侧”那套内联变体。
-    if (isHorizontalFlex && !shouldAnchor(block)) {
+    if (isHorizontalFlex) {
       const loadingEl = document.createElement('span');
       loadingEl.className = `ai-translator-inline-block ai-translator-inline-right ${className} ${INLINE_LOADING_CLASS}`;
       loadingEl.style.cssText = `
@@ -1098,10 +994,6 @@
       }
     }
 
-    if (shouldAnchor(block)) {
-      return mountAnchored(loadingEl, block, computedStyle);
-    }
-
     if (block.hasAttribute('slot')) {
       const internalLoading = document.createElement('span');
       internalLoading.className = `ai-translator-inline-block ${className} ${INLINE_LOADING_CLASS}`;
@@ -1121,14 +1013,24 @@
 
   function renderInlineTranslation(block, translation, mathElements = [], options = {}) {
     const { kind, isError } = options;
+    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
+
+    // 见 renderInlineLoading：受管容器走生成内容，下面那套插节点的路都用不上。
+    const managed = renderManaged(block, translation, {
+      kind,
+      state: isError ? 'error' : null,
+      className,
+      hasMath: mathElements.length > 0
+    });
+    if (managed) return managed;
+
     const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
     const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
       ? ctx.getInlineTranslationTarget(block)
       : block;
     const computedStyle = window.getComputedStyle(inlineTarget);
-    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
 
-    if (isHorizontalFlex && !shouldAnchor(block)) {
+    if (isHorizontalFlex) {
       const translationEl = document.createElement('span');
       translationEl.className = `ai-translator-inline-block ai-translator-inline-right ${className}`;
 
@@ -1189,10 +1091,6 @@
       if (textOffset > 0) {
         translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
       }
-    }
-
-    if (shouldAnchor(block)) {
-      return mountAnchored(translationEl, block, computedStyle);
     }
 
     if (block.hasAttribute('slot')) {
