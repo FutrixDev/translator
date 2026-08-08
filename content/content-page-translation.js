@@ -60,11 +60,22 @@
       let translatableBlocks = collectTranslatableBlocks(document.body);
       translatableBlocks = await filterBlocksByLanguage(translatableBlocks);
       
+      const managedSkipped = hasSkippedManagedContent();
+
       if (translatableBlocks.length === 0) {
-        state.pageHasBeenTranslated = true;
-        showAlreadyTranslatedMessage();
+        // 一块也收不到有两种完全不同的原因，不能都报“页面已翻译”：真的翻完了，
+        // 还是正文整个落在受管容器里被跳过了。后者报“已翻译”是彻头彻尾的误导。
+        if (!managedSkipped) state.pageHasBeenTranslated = true;
+        showPageNotice(managedSkipped ? t('pageContentNotTranslatable') : t('pageAlreadyTranslated'));
         state.isTranslatingPage = false;
         return;
+      }
+
+      if (managedSkipped) {
+        // 收到了一些块，但正文那部分被跳过了（典型情况：正文在只读 Lexical 里，
+        // 收到的是容器外的导航和边栏）。译文会照常出现，只是不含正文，所以这里
+        // 不打断流程，只留一条线索。
+        console.info('AI Translator: skipped content inside a managed editor root; use hover translation there');
       }
 
       // 优先处理首屏相关内容
@@ -591,6 +602,12 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
+      // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉。
+      // 整页翻译在这种容器里无解：译文块要靠插进原文之间把页面撑开才读得下去，
+      // 而子树内没有任何位置能活下来（悬停那条路改挂文档级浮层，浮层会盖住下文，
+      // 只适合一次看一段）。所以这里直接不收——翻了也是白翻，还要为此付一次 API
+      // 调用的钱。
+      if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) return;
       if (element.closest('.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn')) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
@@ -1476,7 +1493,21 @@
     }, 200);
   }
 
-  function showAlreadyTranslatedMessage() {
+  // 受管容器里的正文被 processElement 跳过了。判据是容器里确有成篇的文字——
+  // 一个空的评论框、一个搜索用的富文本输入不该让整页翻译报警。
+  function hasSkippedManagedContent() {
+    if (!ctx.MANAGED_DOM_ROOT_SELECTOR) return false;
+    const roots = document.querySelectorAll(ctx.MANAGED_DOM_ROOT_SELECTOR);
+    for (const root of roots) {
+      if ((root.innerText || '').trim().length >= 200) return true;
+    }
+    return false;
+  }
+
+  // 进度条位置上的一条提示。原来只用来说“页面已翻译”，现在还要说“正文翻不了”，
+  // 所以文案由调用方给，函数名也不再替它下结论。
+  function showPageNotice(message) {
+    const text = escapeHtml(message);
     const progressEl = document.getElementById('ai-translator-progress');
     if (progressEl) {
       progressEl.innerHTML = `
@@ -1485,7 +1516,7 @@
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
             <path d="M12 16v-4M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          <span>${t('pageAlreadyTranslated')}</span>
+          <span>${text}</span>
         </div>
         <button class="ai-translator-progress-close" title="${t('close')}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
