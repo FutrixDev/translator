@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, setExtensionAccount } = require('./helpers');
+const { getMessage } = require('../../i18n/messages');
 
 async function getSetting(context, key) {
   let worker = context.serviceWorkers()[0];
@@ -334,8 +335,13 @@ test('YouTube has its own card and Advanced Settings holds the two account featu
   await setExtensionSettings(page, { targetLang: 'en', targetLangSetByUser: true });
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
+  // Read the heading through the i18n key, not through a copy of the English
+  // string: this test is about which card holds which control, and the card's
+  // wording is not its business. It was "YouTube Settings" until subtitle
+  // translation stopped being YouTube-only, and a hardcoded copy failed the
+  // test on a rename that was entirely correct.
   const youtubeCard = page.locator('.settings-card:has(#enableYoutubeCaptionTranslation)');
-  await expect(youtubeCard).toHaveText(/YouTube Settings/);
+  await expect(youtubeCard).toContainText(getMessage('youtubeSettings', 'en'));
   // Its own card, not the one comic and PDF live in.
   await expect(youtubeCard.locator('#enableComicTranslation')).toHaveCount(0);
 
