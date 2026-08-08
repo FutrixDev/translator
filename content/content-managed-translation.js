@@ -178,6 +178,13 @@
     return !!el && handles.has(el);
   };
 
+  // 句柄对应的原文块。句柄挂在离屏 holder 里，它自己的位置没有任何意义 —— 译文的
+  // 真实几何是原文块的 ::after 撑出来的那部分。要量受管译文，量的就是这个块。
+  ctx.getManagedTranslationBlock = function(el) {
+    const entry = handles.get(el);
+    return entry ? entry.block : null;
+  };
+
   // 释放句柄对应的那条译文。调用方在 remove() 之前调用：句柄自己 remove 掉不会
   // 让 ::after 消失，规则和原文块上的标记都得在这里收。
   ctx.releaseManagedTranslation = function(handle) {

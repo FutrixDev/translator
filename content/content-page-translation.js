@@ -1210,6 +1210,13 @@
     }
   }
 
+  // 译文插进 DOM 不等于看得见：折叠容器（overflow:hidden + max-height）会把它整条
+  // 裁掉。见 content-clip-guard.js。下面每一处把译文放进 DOM 的分支后面都要跟一次，
+  // clip-guard.test.mjs 会数：插入点比检查点多，就是漏了一处。
+  function keepTranslationVisible(anchor) {
+    if (ctx.keepTranslationVisible) ctx.keepTranslationVisible(anchor);
+  }
+
   // 插入翻译块
   function insertTranslationBlock(block, translation) {
     const element = block.element;
@@ -1232,6 +1239,8 @@
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
       ctx.renderManagedTranslation(element, translation, {});
+      // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
+      keepTranslationVisible(element);
       return;
     }
 
@@ -1280,6 +1289,7 @@
 
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
+      keepTranslationVisible(translationEl);
     } else {
       // 对于非水平 flex 布局（如侧边栏），插入为同级元素
       // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
@@ -1344,13 +1354,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
+        keepTranslationVisible(internalTranslation);
       } else if (isTableCell) {
         // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
         // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
         element.appendChild(translationEl);
+        keepTranslationVisible(translationEl);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
+        keepTranslationVisible(translationEl);
       }
     }
   }
