@@ -4,6 +4,7 @@
  */
 const { test: base, chromium } = require('@playwright/test');
 const path = require('path');
+const { applyBaseSettings } = require('./helpers');
 
 // Path to the extension
 const extensionPath = path.resolve(__dirname, '../../');
@@ -38,6 +39,13 @@ const test = base.extend({
     if (context.pages().length === 0) {
       await context.newPage();
     }
+
+    // Every context, not only the ones a spec configures: a spec that calls no
+    // helper at all still needs the extension pointed at a backend the suite can
+    // serve. See E2E_BASE_SETTINGS in helpers.js for what that means and why.
+    // This runs before the test body, so it lands before the first page.goto()
+    // and the content script reads it on load.
+    await applyBaseSettings(context);
 
     await use(context);
     await context.close();

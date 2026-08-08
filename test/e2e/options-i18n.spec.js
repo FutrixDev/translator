@@ -1,6 +1,6 @@
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, getSyncSettings } = require('./helpers');
 
 test('options hints use i18n keys', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
@@ -81,10 +81,7 @@ test('options refuse to persist a conflicting hotkey and snap the control back',
   // Snapped back, so the page is not claiming a setting that was refused.
   await expect(page.locator('#selectionTranslationHotkey')).toHaveValue('Alt');
 
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-  const stored = await worker.evaluate(() => new Promise((resolve) => {
-    chrome.storage.sync.get(['selectionTranslationHotkey', 'hoverTranslationHotkey'], resolve);
-  }));
+  const stored = await getSyncSettings(context, ['selectionTranslationHotkey', 'hoverTranslationHotkey']);
   expect(stored.selectionTranslationHotkey).toBe('Alt');
   expect(stored.hoverTranslationHotkey).toBe('Control');
 });
@@ -111,10 +108,7 @@ test('a conflicting pair already in storage is resolved on load', async ({ page,
   await expect(page.locator('#statusMessage')).toHaveText(getMessage('hotkeyConflict', 'en'));
   await expect(page.locator('#hoverTranslationHotkey')).not.toHaveValue('Control');
 
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-  const stored = await worker.evaluate(() => new Promise((resolve) => {
-    chrome.storage.sync.get(['selectionTranslationHotkey', 'hoverTranslationHotkey'], resolve);
-  }));
+  const stored = await getSyncSettings(context, ['selectionTranslationHotkey', 'hoverTranslationHotkey']);
   expect(stored.selectionTranslationHotkey).toBe('Control');
   expect(stored.hoverTranslationHotkey).not.toBe('Control');
 });

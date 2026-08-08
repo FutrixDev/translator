@@ -1,16 +1,6 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, setExtensionAccount } = require('./helpers');
+const { setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting } = require('./helpers');
 const { getMessage } = require('../../i18n/messages');
-
-async function getSetting(context, key) {
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
-  return worker.evaluate((settingKey) => new Promise((resolve) => {
-    chrome.storage.sync.get([settingKey], (result) => resolve(result[settingKey]));
-  }), key);
-}
 
 test('options toggle updates youtube caption setting', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
@@ -30,7 +20,7 @@ test('options toggle updates youtube caption setting', async ({ page, context, e
   // No Save button any more: the toggle is the whole interaction.
   await toggleLabel.click();
 
-  await expect.poll(async () => getSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
+  await expect.poll(async () => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
 });
 
 /**
@@ -57,7 +47,7 @@ test('settings save without an API key configured', async ({ page, context, exte
   await expect(toggleLabel).toBeVisible();
   await toggleLabel.click();
 
-  await expect.poll(async () => getSetting(context, 'showFloatBall')).toBe(false);
+  await expect.poll(async () => getSyncSetting(context, 'showFloatBall')).toBe(false);
 });
 
 /**
@@ -77,7 +67,7 @@ test('typed fields autosave after the debounce', async ({ page, context, extensi
   await page.fill('#apiKey', 'sk-typed-not-clicked');
   await page.locator('#apiKey').blur();
 
-  await expect.poll(async () => getSetting(context, 'apiKey')).toBe('sk-typed-not-clicked');
+  await expect.poll(async () => getSyncSetting(context, 'apiKey')).toBe('sk-typed-not-clicked');
 });
 
 /**
@@ -124,7 +114,7 @@ test('changing a setting says nothing', async ({ page, context, extensionId }) =
   await page.click('label:has(#showFloatBall)');
 
   // The write still happens — silence is not "nothing was saved".
-  await expect.poll(async () => getSetting(context, 'showFloatBall')).toBe(false);
+  await expect.poll(async () => getSyncSetting(context, 'showFloatBall')).toBe(false);
   await expect(page.locator('#statusMessage')).toBeHidden();
 });
 
@@ -207,7 +197,7 @@ test('popup toggle updates youtube caption setting', async ({ page, context, ext
   await expect(toggle).toBeVisible();
   await toggle.click();
 
-  await expect.poll(async () => getSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
+  await expect.poll(async () => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
 });
 
 /**
@@ -227,7 +217,7 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
   // Not "translate this PDF" — that one needs the active tab to be a PDF.
   await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
 
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  const worker = await getServiceWorker(context);
   await worker.evaluate(async () => {
     globalThis.__pdfMenuUpdates = [];
     const original = chrome.contextMenus.update.bind(chrome.contextMenus);
@@ -240,7 +230,7 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
   await expect(page.locator('#enablePdfTranslation')).toBeChecked();
   await page.click('label:has(#enablePdfTranslation)');
-  await expect.poll(async () => getSetting(context, 'enablePdfTranslation')).toBe(false);
+  await expect.poll(async () => getSyncSetting(context, 'enablePdfTranslation')).toBe(false);
 
   await expect.poll(async () => worker.evaluate(() => globalThis.__pdfMenuUpdates
     .filter(u => u.id === 'translate-pdf-page' && u.visible !== undefined)
@@ -292,8 +282,8 @@ test('signed out, both account features read off however the preference arrived'
   // And the preference itself is untouched: it belongs to the account, not to
   // this device. Writing it off here would sync back and disable the feature on
   // the device that is still signed in.
-  expect(await getSetting(context, 'enableComicTranslation')).toBe(true);
-  expect(await getSetting(context, 'enablePdfTranslation')).toBe(true);
+  expect(await getSyncSetting(context, 'enableComicTranslation')).toBe(true);
+  expect(await getSyncSetting(context, 'enablePdfTranslation')).toBe(true);
 });
 
 /**

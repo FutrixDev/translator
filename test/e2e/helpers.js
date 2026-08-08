@@ -165,21 +165,100 @@ async function getCurrentTheme(page) {
 }
 
 /**
- * Set extension settings via chrome.storage
- * @param {import('@playwright/test').Page} page
+ * The settings every E2E run needs in place before the extension will do what
+ * the specs are about to assert.
+ *
+ * `translationEngine` is the whole list, and it is not a preference — it is what
+ * makes the suite testable at all. The extension ships with Chrome's built-in
+ * on-device Translator selected (`translationEngine: 'builtin'`, see
+ * background/background.js), and in the test browser that engine is *present*
+ * and reports en→zh as `downloadable`: it wants a language pack that never
+ * finishes downloading there. Every path that awaits `Translator.create()` then
+ * hangs for good — including the prefetch in
+ * content/content-translation-engine.js, which fires on the page's first
+ * keydown or pointerdown and caches the hung promise for every later request on
+ * that page.
+ *
+ * Left at the shipped default the failure is silent and misleading: a spec that
+ * stands up mock-openai-server.js sees zero requests, and a spec that waits on a
+ * translation waits out its full timeout, because the content script answered
+ * the request itself and never reached the service worker at all.
+ *
+ * So the harness pins the AI backend — the one the mock servers speak. A spec
+ * that means to exercise the built-in engine passes `translationEngine`
+ * explicitly to setExtensionSettings and wins over this.
+ */
+const E2E_BASE_SETTINGS = Object.freeze({
+  translationEngine: 'ai',
+});
+
+/**
+ * The extension's service worker — the only context here holding `chrome.*`.
+ * It registers a moment after the browser context launches, so a caller that
+ * gets there first has to wait for it.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function getServiceWorker(context) {
+  return context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+}
+
+/**
+ * @param {import('@playwright/test').BrowserContext} context
  * @param {object} settings
  */
-async function setExtensionSettings(page, settings) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+async function writeSyncSettings(context, settings) {
+  const worker = await getServiceWorker(context);
   await worker.evaluate((newSettings) => {
     return new Promise((resolve) => {
       chrome.storage.sync.set(newSettings, resolve);
     });
   }, settings);
+}
+
+/**
+ * Read settings back out of chrome.storage.sync — the counterpart to the write
+ * above, and the shape the assertions want: whatever a spec just clicked in the
+ * options page, is it actually stored?
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string[]} keys
+ * @returns {Promise<object>}
+ */
+async function getSyncSettings(context, keys) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate((settingKeys) => new Promise((resolve) => {
+    chrome.storage.sync.get(settingKeys, resolve);
+  }), keys);
+}
+
+/**
+ * One setting, unwrapped. Safe inside expect.poll — it reads storage fresh each
+ * call rather than closing over a value.
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string} key
+ */
+async function getSyncSetting(context, key) {
+  const values = await getSyncSettings(context, [key]);
+  return values[key];
+}
+
+/**
+ * Put E2E_BASE_SETTINGS in place. The fixture in fixtures.js calls this once per
+ * browser context, so the specs that never touch settings at all — most of
+ * hover-translation.spec.js — are covered too.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function applyBaseSettings(context) {
+  await writeSyncSettings(context, { ...E2E_BASE_SETTINGS });
+}
+
+/**
+ * Set extension settings via chrome.storage, on top of E2E_BASE_SETTINGS.
+ * Anything the caller names wins over the baseline.
+ * @param {import('@playwright/test').Page} page
+ * @param {object} settings
+ */
+async function setExtensionSettings(page, settings) {
+  await writeSyncSettings(page.context(), { ...E2E_BASE_SETTINGS, ...settings });
 }
 
 /**
@@ -195,11 +274,7 @@ async function setExtensionSettings(page, settings) {
  * @param {boolean} signedIn pass false to put the device back to signed out
  */
 async function setExtensionAccount(page, signedIn = true) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+  const worker = await getServiceWorker(page.context());
   await worker.evaluate(async (isSignedIn) => {
     if (!isSignedIn) {
       await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
@@ -226,11 +301,7 @@ async function setExtensionAccount(page, signedIn = true) {
  * @param {object} message
  */
 async function sendMessageToActiveTab(page, message) {
-  const context = page.context();
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
+  const worker = await getServiceWorker(page.context());
   await worker.evaluate(async (msg) => {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (tabs[0]?.id) {
@@ -240,6 +311,11 @@ async function sendMessageToActiveTab(page, message) {
 }
 
 module.exports = {
+  E2E_BASE_SETTINGS,
+  getServiceWorker,
+  getSyncSettings,
+  getSyncSetting,
+  applyBaseSettings,
   waitForFloatBall,
   openFloatBallMenu,
   triggerPageTranslation,

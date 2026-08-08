@@ -1,15 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
-
-async function getSetting(context, key) {
-  let worker = context.serviceWorkers()[0];
-  if (!worker) {
-    worker = await context.waitForEvent('serviceworker');
-  }
-  return worker.evaluate((settingKey) => new Promise((resolve) => {
-    chrome.storage.sync.get([settingKey], (result) => resolve(result[settingKey]));
-  }), key);
-}
+const { setExtensionSettings, getSyncSetting } = require('./helpers');
 
 async function openOptions(page, extensionId, settings) {
   await setExtensionSettings(page, {
@@ -37,13 +27,13 @@ test('typing a custom model overrides a model picked from the dropdown', async (
   });
 
   await page.locator('#modelSelect').selectOption('anthropic/claude-opus-5');
-  await expect.poll(() => getSetting(context, 'modelName')).toBe('anthropic/claude-opus-5');
+  await expect.poll(() => getSyncSetting(context, 'modelName')).toBe('anthropic/claude-opus-5');
 
   await page.locator('#modelName').fill('x-ai/grok-4');
   await page.locator('#modelName').blur();
 
   // The typed name is what gets used...
-  await expect.poll(() => getSetting(context, 'modelName')).toBe('x-ai/grok-4');
+  await expect.poll(() => getSyncSetting(context, 'modelName')).toBe('x-ai/grok-4');
   // ...so the dropdown must not keep advertising the model it replaced.
   await expect(page.locator('#modelSelect')).toHaveValue('');
 });
@@ -61,7 +51,7 @@ test('clearing the custom model falls back to the dropdown selection', async ({ 
 
   await page.locator('#modelSelect').selectOption('openai/gpt-5.6-luna');
   await expect(page.locator('#modelName')).toHaveValue('');
-  await expect.poll(() => getSetting(context, 'modelName')).toBe('openai/gpt-5.6-luna');
+  await expect.poll(() => getSyncSetting(context, 'modelName')).toBe('openai/gpt-5.6-luna');
 });
 
 test('a custom model survives a reload', async ({ page, context, extensionId }) => {
@@ -74,7 +64,7 @@ test('a custom model survives a reload', async ({ page, context, extensionId }) 
   await page.locator('#modelSelect').selectOption('anthropic/claude-opus-5');
   await page.locator('#modelName').fill('x-ai/grok-4');
   await page.locator('#modelName').blur();
-  await expect.poll(() => getSetting(context, 'modelName')).toBe('x-ai/grok-4');
+  await expect.poll(() => getSyncSetting(context, 'modelName')).toBe('x-ai/grok-4');
 
   await page.reload();
   await expect(page.locator('#modelName')).toHaveValue('x-ai/grok-4');

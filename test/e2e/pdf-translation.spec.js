@@ -15,6 +15,7 @@
  */
 const http = require('node:http');
 const { test, expect } = require('./fixtures');
+const { getServiceWorker } = require('./helpers');
 
 /**
  * A minimal PDF as a static byte template.
@@ -186,11 +187,6 @@ function startMockService(behaviour = 'succeed') {
   });
 }
 
-async function serviceWorker(context) {
-  const [existing] = context.serviceWorkers();
-  return existing || context.waitForEvent('serviceworker');
-}
-
 /**
  * Point the extension at the mock and give it a token, as a real sign-in
  * would. comicApiBase on purpose: PDF and comics are one account on one
@@ -198,7 +194,7 @@ async function serviceWorker(context) {
  * importing getApiBase's machinery from comic-client.js).
  */
 async function connectExtension(context, base, { withToken = true } = {}) {
-  const worker = await serviceWorker(context);
+  const worker = await getServiceWorker(context);
   await worker.evaluate(async ({ base, withToken }) => {
     await chrome.storage.sync.set({ enablePdfTranslation: true });
     // pdfJobs too: a record left behind by a previous test would surface in
@@ -266,7 +262,7 @@ test.describe('PDF translation', () => {
       expect(created.targetLang).toBeTruthy();
 
       // The service worker mirrored the job for the popup's task list.
-      const worker = await serviceWorker(context);
+      const worker = await getServiceWorker(context);
       const records = await worker.evaluate(
         () => chrome.storage.local.get('pdfJobs').then(r => r.pdfJobs || []),
       );

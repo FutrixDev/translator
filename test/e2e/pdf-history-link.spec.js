@@ -13,6 +13,7 @@
  */
 const http = require('node:http');
 const { test, expect } = require('./fixtures');
+const { getServiceWorker } = require('./helpers');
 
 const ACCOUNT = {
   email: 'reader@example.com',
@@ -64,8 +65,7 @@ function startMockService() {
 }
 
 async function connectExtension(context, base) {
-  const [existing] = context.serviceWorkers();
-  const worker = existing || await context.waitForEvent('serviceworker');
+  const worker = await getServiceWorker(context);
   await worker.evaluate(async (base) => {
     await chrome.storage.sync.set({ enablePdfTranslation: true });
     // A record left by another test would join this list and shift the rows.
