@@ -165,45 +165,19 @@ async function getCurrentTheme(page) {
 }
 
 /**
- * The settings every E2E run needs in place before the extension will do what
- * the specs are about to assert.
+ * Set extension settings via chrome.storage
  *
- * `translationEngine` is the whole list, and it is not a preference — it is what
- * makes the suite testable at all. The extension ships with Chrome's built-in
- * on-device Translator selected (`translationEngine: 'builtin'`, see
- * background/background.js), and in the test browser that engine is *present*
- * and reports en→zh as `downloadable`: it wants a language pack that never
- * finishes downloading there. Every path that awaits `Translator.create()` then
- * hangs for good — including the prefetch in
- * content/content-translation-engine.js, which fires on the page's first
- * keydown or pointerdown and caches the hung promise for every later request on
- * that page.
+ * A spec that asserts on mock-API traffic must pass `translationEngine: 'ai'`
+ * here. The shipped default is 'builtin' — Chrome's on-device Translator API —
+ * and the headless Chrome this suite drives reports every language pack as
+ * 'downloadable', so `create()` is left waiting on a download that never
+ * arrives. The AI path is then never reached and the request the spec is about
+ * to assert on is never sent; the symptom is a timeout with no explanation
+ * (before the stall watchdog in content/content-translation-engine.js, an
+ * outright hang). Pinning the engine is not a preference the spec is asserting
+ * about, it is how the spec picks the backend it is testing.
  *
- * Left at the shipped default the failure is silent and misleading: a spec that
- * stands up mock-openai-server.js sees zero requests, and a spec that waits on a
- * translation waits out its full timeout, because the content script answered
- * the request itself and never reached the service worker at all.
- *
- * So the harness pins the AI backend — the one the mock servers speak. A spec
- * that means to exercise the built-in engine passes `translationEngine`
- * explicitly to setExtensionSettings and wins over this.
- */
-const E2E_BASE_SETTINGS = Object.freeze({
-  translationEngine: 'ai',
-});
-
-/**
- * The extension's service worker — the only context here holding `chrome.*`.
- * It registers a moment after the browser context launches, so a caller that
- * gets there first has to wait for it.
- * @param {import('@playwright/test').BrowserContext} context
- */
-async function getServiceWorker(context) {
-  return context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-}
-
-/**
- * @param {import('@playwright/test').BrowserContext} context
+ * @param {import('@playwright/test').Page} page
  * @param {object} settings
  */
 async function writeSyncSettings(context, settings) {
