@@ -57,6 +57,7 @@
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-managed-translation.js",
+        "content/content-clip-guard.js",
         "content/content-language.js",
         "content/content-translation-engine.js",
         "content/content-caption-providers.js",

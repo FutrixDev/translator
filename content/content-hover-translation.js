@@ -90,6 +90,16 @@
     ctx.releaseManagedTranslation(el);
   }
 
+  // 译文进了 DOM 不等于看得见：它可能落在某个 overflow:hidden 祖先的可视区外面。
+  // 见 content-clip-guard.js（受管句柄由它自己换算成原文块）。
+  function keepVisible(translationEl) {
+    if (ctx.keepTranslationVisible) ctx.keepTranslationVisible(translationEl);
+  }
+
+  function releaseClipGuards() {
+    if (ctx.releaseTranslationClipGuards) ctx.releaseTranslationClipGuards();
+  }
+
   // 名单覆盖不到的框架同样会吃节点。插完之后隔两帧回看一眼：节点没了而原文块还在，
   // 就把这个插入父级记为 hostile，并重画一次 —— 那时 shouldUseManagedRendering 已
   // 经认得它，会走生成内容。少了这一步，未知框架上的表现依旧是“第一次悬停什么都
@@ -121,10 +131,12 @@
       inlineTranslationSources.delete(existing);
       releaseManaged(existing);
       existing.remove();
+      releaseClipGuards();
     }
     map.set(block, translationEl);
     inlineTranslationSources.set(translationEl, block);
     markInlineSource(block, kind);
+    keepVisible(translationEl);
     verifyInlineSurvival(block, translationEl, kind, redraw);
   }
 
@@ -184,6 +196,7 @@
       inlineTranslationSources.delete(translationEl);
       releaseManaged(translationEl);
       translationEl.remove();
+      releaseClipGuards();
     }
     map.delete(block);
     unmarkInlineSource(block, kind);
