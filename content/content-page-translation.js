@@ -1634,14 +1634,22 @@
 
     const pct = Math.max(0, Math.min(100, Math.round((loaded || 0) * 100)));
     if (pct >= 100) {
-      // 下载完成，把进度条交还给翻译进度，否则它会停在“正在下载 100%”上。
-      textEl.textContent = t('translatingProgress');
-      updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total || 1);
+      ctx.onBuiltinDownloadEnded();
       return;
     }
     textEl.textContent = t('builtinDownloading');
     percentEl.textContent = `${pct}%`;
     barEl.style.width = `${pct}%`;
+  };
+
+  // 下载这一程结束了——下完了、失败了、或者卡住被放弃了。三种情况后面都轮到翻译
+  // 继续走（内置或回落到 AI），所以进度条必须还回去，否则它会停在“正在下载语言包
+  // 45%”上，而页面其实早就在用另一条路翻译了。
+  ctx.onBuiltinDownloadEnded = function() {
+    const textEl = document.querySelector('#ai-translator-progress .ai-translator-progress-text');
+    if (!textEl) return;
+    textEl.textContent = t('translatingProgress');
+    updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total || 1);
   };
 
   function hidePageTranslationProgress() {

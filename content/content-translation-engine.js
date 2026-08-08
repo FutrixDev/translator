@@ -86,7 +86,11 @@
     UNSUPPORTED_ENV: 'unsupportedEnv',
     UNSUPPORTED_PAIR: 'unsupportedPair',
     NEEDS_DOWNLOAD: 'needsDownload',
-    CREATE_FAILED: 'createFailed'
+    CREATE_FAILED: 'createFailed',
+    // 内置 API 卡住了（见下面的看门狗）。对用户来说和“暂时用不了”是一回事，
+    // engineErrorMessage 的 default 分支就是它的文案；单独列一档是为了让日志和
+    // 回落决策能把“报错了”和“没反应”分开。
+    TIMED_OUT: 'timedOut'
   };
 
   class EngineUnavailableError extends Error {
@@ -159,6 +163,86 @@
     return pageLang;
   }
 
+  // ==================== 卡死看门狗 ====================
+
+  // Translator API 的三个入口（availability / create / translate）都没有超时：
+  // 出问题时它们不 reject，只是永远不 settle。而下面缓存的是 Promise，整页几十个
+  // 块会一起 await 同一个不会 settle 的 create()——进度条停在 0%、不报错，也永远
+  // 走不到回落 AI 那一步。回落逻辑一直是好的，缺的是有人先认输。
+  //
+  // 所以规则是：进内置 API 的每一次调用都必须有上限。这个边界到 Translator 为止，
+  // 再往外（chrome.i18n.detectLanguage 之类）不在此列。
+  //
+  // 但 create() 不能简单地设一个总时长上限：首次下载语言包是几十 MB，慢网上花几
+  // 分钟属于正常，一刀切只会砍掉一个本来能成的功能。所以下载这条路不看总时长，
+  // 只看“还动不动”——每个 downloadprogress 事件把死线往后推。设置页那个用户手点
+  // 的下载按钮因此不受影响：只要还在下，死线就一直在往后走；而它真卡住时，按钮
+  // 也不会再一直转下去。
+  //
+  // “还没开始”和“下得慢”是两回事，窗口也分两档。实测（headless Chrome，
+  // en→zh，availability 返回 downloadable）：卡住的 create() 一个
+  // downloadprogress 都不发，一个事件都等不到。所以第一个事件之前给的是短窗口
+  // ——真的开始下了，浏览器很快就会报第一次进度；等不到就是根本没动起来。
+  // 一旦有了第一个事件，窗口放宽到一分钟：慢链路上两次进度之间安静一阵是正常的。
+  const AVAILABILITY_TIMEOUT_MS = 15000;
+  const CREATE_TIMEOUT_MS = 20000;
+  const DOWNLOAD_START_MS = 30000;
+  const DOWNLOAD_STALL_MS = 60000;
+  // translate() 是端上推理，不走网络，一段正常一两秒。但整页翻译有 12 路并发压在
+  // 同一个模型上，排队会把单次观察到的耗时放大好几倍，所以这条线要留得很宽：
+  // 它的作用是给“永远不返回”封顶，不是给延迟设指标。
+  const TRANSLATE_TIMEOUT_MS = 120000;
+
+  class TimeoutError extends Error {
+    constructor(what) {
+      super(`builtin translator ${what} timed out`);
+      this.name = 'TimeoutError';
+    }
+  }
+
+  /**
+   * 给一个可能永远不 settle 的 Promise 加一条死线。
+   * bump() 把死线整体往后推，用来表达“只要还在动就继续等”；
+   * 带上 nextMs 则同时换掉之后的窗口（第一次进度之后要放宽，见上）。
+   */
+  function stallWatchdog(ms, what) {
+    let timer = null;
+    let stopped = false;
+    let onStall;
+    const stalled = new Promise((resolve, reject) => {
+      onStall = () => reject(new TimeoutError(what));
+    });
+
+    function bump(nextMs) {
+      if (stopped) return;
+      if (typeof nextMs === 'number') ms = nextMs;
+      clearTimeout(timer);
+      timer = setTimeout(onStall, ms);
+    }
+
+    function stop() {
+      stopped = true;
+      clearTimeout(timer);
+    }
+
+    bump();
+    return {
+      bump,
+      /**
+       * race 会给 call 挂上处理函数，所以输的那一路之后再 reject 也只是被丢掉，
+       * 不会变成 unhandled rejection。call 用函数传进来，是为了让同步抛出的异常
+       * 也落进这条链，而不是绕过看门狗直接炸给调用方。
+       */
+      guard(call) {
+        const promise = new Promise((resolve) => resolve(call()));
+        return Promise.race([promise, stalled]).then(
+          (value) => { stop(); return value; },
+          (error) => { stop(); throw error; }
+        );
+      }
+    };
+  }
+
   // ==================== Translator 实例 ====================
 
   // 缓存的是 Promise 而不是实例：整页翻译会在同一瞬间发起几十个块，
@@ -169,32 +253,77 @@
     return `${src}>${tgt}`;
   }
 
-  async function getTranslator(src, tgt, allowDownload, onProgress) {
+  // 三处都要问可用性（翻译前、预取、设置页探测），走同一个入口，
+  // 免得有一处漏了超时又能一直挂着。
+  function probeAvailability(src, tgt) {
+    return stallWatchdog(AVAILABILITY_TIMEOUT_MS, 'availability').guard(
+      () => self.Translator.availability({ sourceLanguage: src, targetLanguage: tgt })
+    );
+  }
+
+  function getTranslator(src, tgt, allowDownload, onProgress) {
     const key = instanceKey(src, tgt);
     const cached = translators.get(key);
     if (cached) return cached;
 
-    const pending = (async () => {
-      const options = { sourceLanguage: src, targetLanguage: tgt };
-      if (allowDownload) {
-        options.monitor = (monitor) => {
-          monitor.addEventListener('downloadprogress', (event) => {
-            const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
-            const handler = onProgress || ctx.onBuiltinDownloadProgress;
-            if (typeof handler === 'function') handler(loaded, src, tgt);
-          });
-        };
+    // 有下载才有 downloadprogress 可看；语言包已就绪时 create() 只是建个会话，
+    // 是本地操作，给一个固定的短上限就够。
+    const watchdog = stallWatchdog(allowDownload ? DOWNLOAD_START_MS : CREATE_TIMEOUT_MS, 'create');
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+
+    const options = { sourceLanguage: src, targetLanguage: tgt };
+    if (controller) options.signal = controller.signal;
+    if (allowDownload) {
+      options.monitor = (monitor) => {
+        monitor.addEventListener('downloadprogress', (event) => {
+          // 有动静了：死线往后推，并且从这里开始用宽窗口。
+          watchdog.bump(DOWNLOAD_STALL_MS);
+          const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
+          const handler = onProgress || ctx.onBuiltinDownloadProgress;
+          if (typeof handler === 'function') handler(loaded, src, tgt);
+        });
+      };
+    }
+
+    const pending = watchdog.guard(() => self.Translator.create(options)).then(
+      (translator) => {
+        if (allowDownload) notifyDownloadEnded();
+        return translator;
+      },
+      (error) => {
+        // 失败不留缓存，否则整页翻译会一直复用同一个坏 Promise，
+        // 用户改完设置重试也还是同一个错误。
+        translators.delete(key);
+        // 卡住的下载不会自己好，别让浏览器还挂着它。
+        if (error instanceof TimeoutError && controller) {
+          try { controller.abort(error); } catch (abortError) { /* 已经结束了 */ }
+        }
+        if (allowDownload) notifyDownloadEnded();
+        throw error;
       }
-      return await self.Translator.create(options);
-    })().catch((error) => {
-      // 失败不留缓存，否则整页翻译会一直复用同一个坏 Promise，
-      // 用户改完设置重试也还是同一个错误。
-      translators.delete(key);
-      throw error;
-    });
+    );
 
     translators.set(key, pending);
     return pending;
+  }
+
+  // 下载这一程结束了（下完、失败、或者卡住被放弃）。进度条上这时可能正写着
+  // “正在下载语言包 30%”，回落到 AI 之后那行字会一直留在那儿骗人，所以要把
+  // 进度条交还给翻译进度。设置页有自己的状态行，不挂这个钩子。
+  function notifyDownloadEnded() {
+    if (typeof ctx.onBuiltinDownloadEnded !== 'function') return;
+    try { ctx.onBuiltinDownloadEnded(); } catch (error) { /* 页面已经走了 */ }
+  }
+
+  // 卡住的会话不会自己缓过来，留在缓存里只会让后面每一段再等一次超时。
+  function dropTranslator(src, tgt) {
+    const key = instanceKey(src, tgt);
+    const pending = translators.get(key);
+    if (!pending) return;
+    translators.delete(key);
+    pending.then((translator) => {
+      try { translator.destroy(); } catch (error) { /* 已销毁或页面正在卸载 */ }
+    }, () => {});
   }
 
   function destroyAll() {
@@ -264,11 +393,15 @@
     return chunks;
   }
 
+  function translateOnce(translator, text) {
+    return stallWatchdog(TRANSLATE_TIMEOUT_MS, 'translate').guard(() => translator.translate(text));
+  }
+
   async function runTranslate(translator, text) {
     // 先整段送：NMT 同样吃句子边界和上下文，切得越碎译文越差，
     // 所以只有真的撞到配额上限才退化成分段。
     try {
-      return await translator.translate(text);
+      return await translateOnce(translator, text);
     } catch (error) {
       if (!isQuotaError(error)) throw error;
     }
@@ -276,7 +409,7 @@
     const chunks = splitForQuota(text);
     const parts = [];
     for (const chunk of chunks) {
-      parts.push(await translator.translate(chunk));
+      parts.push(await translateOnce(translator, chunk));
     }
     return parts.join('');
   }
@@ -311,8 +444,11 @@
     if (!translators.has(instanceKey(src, tgt))) {
       let status;
       try {
-        status = await self.Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+        status = await probeAvailability(src, tgt);
       } catch (error) {
+        // 问都问不出来，那不是这个语言对的问题：判成 UNSUPPORTED_PAIR 的话，
+        // 批量里每一段都会再问一次、再等一次超时。
+        if (error instanceof TimeoutError) throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
         throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
       }
       if (status === 'unavailable') {
@@ -340,10 +476,24 @@
       if (isActivationError(error)) {
         throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
       }
+      if (error instanceof TimeoutError) {
+        throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
+      }
       throw new EngineUnavailableError(ENGINE_REASONS.CREATE_FAILED);
     }
 
-    const translated = await runTranslate(translator, source);
+    let translated;
+    try {
+      translated = await runTranslate(translator, source);
+    } catch (error) {
+      // 会话卡住是整条链路的事，不是这一段的事：扔掉它，让整批回落 AI，
+      // 否则后面每一段都会在同一个坏会话上再耗一次超时。
+      if (error instanceof TimeoutError) {
+        dropTranslator(src, tgt);
+        throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
+      }
+      throw error;
+    }
     if (typeof translated !== 'string' || !translated.trim()) {
       throw new Error('builtin translator returned empty result');
     }
@@ -527,7 +677,7 @@
       src = toApiLang(await getPageSourceLang());
       if (!src || !SUPPORTED_LANGS.has(src) || src === tgt) return;
       // downloadable 才需要预取；available 已就绪，downloading 说明别处已经在下了。
-      const status = await self.Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+      const status = await probeAvailability(src, tgt);
       if (status !== 'downloadable') return;
     } catch (error) {
       return;
@@ -568,7 +718,7 @@
       if (src === tgt) return 'available';
       if (!SUPPORTED_LANGS.has(src) || !SUPPORTED_LANGS.has(tgt)) return 'unavailable';
       try {
-        return await self.Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+        return await probeAvailability(src, tgt);
       } catch (error) {
         return 'unavailable';
       }
@@ -589,10 +739,15 @@
       }
       if (src === tgt) return 'available';
       try {
+        // 这条路是设置页那颗按钮，下载可以很久，但同样不能无限期地转下去：
+        // 看门狗只在下载停住不动时才收网，正常往下走的下载它一次都不会碰。
         await getTranslator(src, tgt, true, onProgress);
       } catch (error) {
         if (isActivationError(error)) {
           throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
+        }
+        if (error instanceof TimeoutError) {
+          throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
         }
         throw new EngineUnavailableError(ENGINE_REASONS.CREATE_FAILED);
       }
