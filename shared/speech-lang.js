@@ -125,7 +125,10 @@
 
   /** 2 a natural voice, 1 an Eloquence robot, 0 a novelty joke. */
   function voiceTier(voice) {
-    const family = String(voice?.name || '').split(' (')[0].trim();
+    // The parenthetical's inner pair is localized (fullwidth on a Chinese
+    // system), and nothing promises the outer pair never will be — an Eddy
+    // missed here would rank as natural and out-order the real voices.
+    const family = String(voice?.name || '').split(/\s*[（(]/)[0].trim();
     if (NOVELTY_VOICES.has(family)) return 0;
     if (ELOQUENCE_VOICES.has(family)) return 1;
     return 2;
@@ -150,6 +153,9 @@
     const canon = (value) => String(value || '').replace('_', '-').toLowerCase();
     let candidates = list.filter((voice) => canon(voice?.lang) === canon(tag));
     if (!candidates.length) {
+      // Belt and braces: resolveSpeechLang only hands back a tag no voice
+      // answers to when no voice shares its base either, so this filter
+      // should never fire — but a same-base voice still beats returning null.
       candidates = list.filter((voice) => baseOf(voice?.lang) === baseOf(tag));
     }
 

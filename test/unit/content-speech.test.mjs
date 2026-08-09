@@ -182,6 +182,12 @@ test('a natural voice beats the novelty voices listed before it', () => {
   assert.equal(pickVoice('en', MACOS_VOICES)?.name, 'Samantha');
   // Eloquence robots are ahead of Kyoko alphabetically too.
   assert.equal(pickVoice('ja', MACOS_VOICES)?.name, 'Kyoko');
+  // A locale that renders the OUTER parenthesis fullwidth must not smuggle an
+  // Eloquence voice into the natural tier.
+  assert.equal(pickVoice('en', [
+    { name: 'Eddy（英语（美国））', lang: 'en-US' },
+    { name: 'Samantha', lang: 'en-US' },
+  ])?.name, 'Samantha');
 });
 
 test('the system default wins its own language, joke voices never inherit it', () => {
