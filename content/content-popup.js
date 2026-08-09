@@ -16,19 +16,20 @@
   const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
+  const speech = ctx.speech;
+  const SPEAKER_ICON = speech.SPEAKER_ICON;
 
-  function showTranslationPopup(text, x, y) {
-    hideTranslationPopup();
-
-    // Ensure theme is applied
-    applyTheme(settings.theme);
-
-    const isWord = isSingleWordText(text);
-
-    state.translationPopup = document.createElement('div');
-    state.translationPopup.className = 'ai-translator-popup';
-    state.translationPopup.dataset.sourceText = text;
-    state.translationPopup.innerHTML = `
+  /**
+   * The popup markup, shared by the live-translation and the
+   * already-translated entry points. They rendered two near-identical copies
+   * of this before; every control added to one had to be remembered in the
+   * other, and the pronunciation buttons would have made that four.
+   *
+   * @param {{text: string, phonetic?: string, translation?: string, pending?: boolean}} options
+   *   `pending` renders the loading state instead of a finished translation.
+   */
+  function buildPopupMarkup({ text, phonetic = '', translation = '', pending = false }) {
+    return `
       <div class="ai-translator-header">
         <div class="ai-translator-header-left">
           <svg class="ai-translator-title-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -41,7 +42,7 @@
           <div class="ai-translator-lang-dropdown">
             <button class="ai-translator-lang-trigger" type="button" title="${t('targetLanguage')}" aria-expanded="false">
               <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(getEffectiveTargetLang()))}</span>
-                <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M6 9l6 6 6-6"/>
               </svg>
             </button>
@@ -49,45 +50,51 @@
               ${buildTargetLangMenu(getEffectiveTargetLang())}
             </div>
           </div>
-          <button class="ai-translator-close" title="${t('close')}">×</button>
+          <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
         </div>
       </div>
       <div class="ai-translator-content">
         <div class="ai-translator-source">
-          <div class="ai-translator-label">${t('original')}</div>
-          <div class="ai-translator-text-row">
-            <div class="ai-translator-text">${escapeHtml(text)}</div>
-            <button class="ai-translator-icon-btn ai-translator-speak" title="${t('pronounce')}" ${isWord ? '' : 'hidden'}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 9v6h4l5 4V5L8 9H4z"/>
-                <path d="M16 9a5 5 0 010 6"/>
-                <path d="M19 7a8 8 0 010 10"/>
-              </svg>
-            </button>
+          <div class="ai-translator-label-row">
+            <div class="ai-translator-label">${t('original')}</div>
+            <div class="ai-translator-label-tools">
+              <button class="ai-translator-icon-btn ai-translator-speak-source" type="button" aria-label="${t('pronounceOriginal')}">
+                ${SPEAKER_ICON}
+              </button>
+            </div>
           </div>
-          <div class="ai-translator-phonetic" hidden></div>
+          <div class="ai-translator-text">${escapeHtml(text)}</div>
+          <div class="ai-translator-phonetic" ${phonetic ? '' : 'hidden'}>${escapeHtml(phonetic)}</div>
         </div>
         <div class="ai-translator-divider"></div>
         <div class="ai-translator-result">
-          <div class="ai-translator-label">${t('translation')}</div>
+          <div class="ai-translator-label-row">
+            <div class="ai-translator-label">${t('translation')}</div>
+            <div class="ai-translator-label-tools">
+              <button class="ai-translator-icon-btn ai-translator-speak-translation" type="button" aria-label="${t('pronounceTranslation')}" hidden>
+                ${SPEAKER_ICON}
+              </button>
+            </div>
+          </div>
           <div class="ai-translator-translation">
-            <div class="ai-translator-loading">
+            <div class="ai-translator-loading"${pending ? '' : ' style="display: none;"'}>
               <div class="ai-translator-spinner"></div>
               <span>${t('translating')}</span>
             </div>
+            ${pending ? `
             <div class="ai-translator-loading-lines">
               <div class="ai-translator-loading-line"></div>
               <div class="ai-translator-loading-line short"></div>
-            </div>
-            <div class="ai-translator-result-body" hidden>
-              <div class="ai-translator-translation-text"></div>
+            </div>` : ''}
+            <div class="ai-translator-result-body" ${pending ? 'hidden' : ''}>
+              <div class="ai-translator-translation-text">${escapeHtml(translation)}</div>
             </div>
           </div>
         </div>
       </div>
       <div class="ai-translator-actions">
-        <button class="ai-translator-btn ai-translator-copy" title="${t('copyTranslation')}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
             <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
           </svg>
@@ -95,6 +102,43 @@
         </button>
       </div>
     `;
+  }
+
+  /**
+   * Wire the two speaker buttons. The source one is live from the moment the
+   * popup opens — hearing the word is the whole reason it is there, and it does
+   * not need the translation to come back first. The translation one appears
+   * once there is something to read out, and speaks in the target language
+   * rather than a guess made from a handful of characters.
+   */
+  function setupPopupSpeech(popup) {
+    speech.bindSpeakButton(
+      popup.querySelector('.ai-translator-speak-source'),
+      () => ({ text: popup.dataset.sourceText || '' })
+    );
+    const showTranslationSpeak = speech.bindSpeakButton(
+      popup.querySelector('.ai-translator-speak-translation'),
+      () => ({
+        text: popup.querySelector('.ai-translator-translation-text')?.textContent || '',
+        lang: popup.dataset.targetLang || getEffectiveTargetLang(),
+      })
+    );
+    // translateText runs outside this closure and re-queries the popup by
+    // selector, so it reaches the setter through the element it already has.
+    popup._showTranslationSpeak = showTranslationSpeak;
+    return showTranslationSpeak;
+  }
+
+  function showTranslationPopup(text, x, y) {
+    hideTranslationPopup();
+
+    // Ensure theme is applied
+    applyTheme(settings.theme);
+
+    state.translationPopup = document.createElement('div');
+    state.translationPopup.className = 'ai-translator-popup';
+    state.translationPopup.dataset.sourceText = text;
+    state.translationPopup.innerHTML = buildPopupMarkup({ text, pending: true });
 
     // Position popup
     const popupWidth = 400;
@@ -126,12 +170,7 @@
         showCopyFeedback();
       }
     });
-    const speakBtn = state.translationPopup.querySelector('.ai-translator-speak');
-    if (speakBtn) {
-      speakBtn.addEventListener('click', () => {
-        speakText(state.translationPopup?.dataset.sourceText || '');
-      });
-    }
+    setupPopupSpeech(state.translationPopup);
     const initialLang = setupLanguageDropdown(state.translationPopup, getEffectiveTargetLang(), (lang) => {
       translateText(state.translationPopup?.dataset.sourceText || text, lang);
     });
@@ -144,7 +183,7 @@
   }
 
   // 显示已完成的翻译结果（用于右键菜单翻译）
-  function showTranslationResult(text, translation, phonetic = '', isWord = false) {
+  function showTranslationResult(text, translation, phonetic = '') {
     hideTranslationPopup();
 
     // Ensure theme is applied
@@ -153,69 +192,7 @@
     state.translationPopup = document.createElement('div');
     state.translationPopup.className = 'ai-translator-popup';
     state.translationPopup.dataset.sourceText = text;
-    state.translationPopup.innerHTML = `
-      <div class="ai-translator-header">
-        <div class="ai-translator-header-left">
-          <svg class="ai-translator-title-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
-            <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
-          </svg>
-          <span class="ai-translator-title">${t('aiTranslate')}</span>
-        </div>
-        <div class="ai-translator-header-right">
-          <div class="ai-translator-lang-dropdown">
-            <button class="ai-translator-lang-trigger" type="button" title="${t('targetLanguage')}" aria-expanded="false">
-              <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(getEffectiveTargetLang()))}</span>
-                <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
-            <div class="ai-translator-lang-menu" hidden>
-              ${buildTargetLangMenu(getEffectiveTargetLang())}
-            </div>
-          </div>
-          <button class="ai-translator-close" title="${t('close')}">×</button>
-        </div>
-      </div>
-      <div class="ai-translator-content">
-        <div class="ai-translator-source">
-          <div class="ai-translator-label">${t('original')}</div>
-          <div class="ai-translator-text-row">
-            <div class="ai-translator-text">${escapeHtml(text)}</div>
-            <button class="ai-translator-icon-btn ai-translator-speak" title="${t('pronounce')}" ${isWord ? '' : 'hidden'}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 9v6h4l5 4V5L8 9H4z"/>
-                <path d="M16 9a5 5 0 010 6"/>
-                <path d="M19 7a8 8 0 010 10"/>
-              </svg>
-            </button>
-          </div>
-          <div class="ai-translator-phonetic" ${phonetic ? '' : 'hidden'}>${escapeHtml(phonetic)}</div>
-        </div>
-      <div class="ai-translator-divider"></div>
-        <div class="ai-translator-result">
-          <div class="ai-translator-label">${t('translation')}</div>
-          <div class="ai-translator-translation">
-            <div class="ai-translator-loading" style="display: none;">
-              <div class="ai-translator-spinner"></div>
-              <span>${t('translating')}</span>
-            </div>
-            <div class="ai-translator-result-body">
-              <div class="ai-translator-translation-text">${escapeHtml(translation)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="ai-translator-actions">
-        <button class="ai-translator-btn ai-translator-copy" title="${t('copyTranslation')}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-          </svg>
-          ${t('copy')}
-        </button>
-      </div>
-    `;
+    state.translationPopup.innerHTML = buildPopupMarkup({ text, phonetic, translation });
 
     // 居中显示弹窗
     const popupWidth = 400;
@@ -237,12 +214,8 @@
         showCopyFeedback();
       }
     });
-    const speakBtn = state.translationPopup.querySelector('.ai-translator-speak');
-    if (speakBtn) {
-      speakBtn.addEventListener('click', () => {
-        speakText(state.translationPopup?.dataset.sourceText || '');
-      });
-    }
+    const showTranslationSpeak = setupPopupSpeech(state.translationPopup);
+    showTranslationSpeak(!!translation);
     setupLanguageDropdown(state.translationPopup, getEffectiveTargetLang(), (lang) => {
       translateText(state.translationPopup?.dataset.sourceText || text, lang);
     });
@@ -324,6 +297,7 @@
       if (state.translationPopup._dragAbortController) {
         state.translationPopup._dragAbortController.abort();
       }
+      speech.stopSpeaking();
       state.translationPopup.remove();
       state.translationPopup = null;
     }
@@ -405,30 +379,6 @@
     return trimmed.length <= 40;
   }
 
-  function getDetectedLang(text) {
-    if (!chrome?.i18n?.detectLanguage) return Promise.resolve('');
-    return new Promise((resolve) => {
-      chrome.i18n.detectLanguage(text, (result) => {
-        const topLang = result?.languages?.[0]?.language || '';
-        resolve(topLang);
-      });
-    });
-  }
-
-  async function speakText(text) {
-    const trimmed = text.trim();
-    if (!trimmed || !window.speechSynthesis) return;
-
-    const utterance = new SpeechSynthesisUtterance(trimmed);
-    const detectedLang = await getDetectedLang(trimmed);
-    if (detectedLang) {
-      utterance.lang = detectedLang;
-    }
-
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }
-
   async function translateText(text, targetLangOverride = '') {
     const requestId = String(++state.translationRequestId);
     try {
@@ -459,6 +409,7 @@
         if (loadingLines) loadingLines.style.display = 'flex';
         if (resultBody) resultBody.hidden = true;
         if (phoneticEl) phoneticEl.hidden = true;
+        state.translationPopup._showTranslationSpeak?.(false);
       }
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
@@ -474,8 +425,8 @@
       const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
       const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
       const phoneticEl = state.translationPopup.querySelector('.ai-translator-phonetic');
-      const speakBtn = state.translationPopup.querySelector('.ai-translator-speak');
-      
+      const showTranslationSpeak = state.translationPopup._showTranslationSpeak;
+
       if (response.error) {
         if (loadingEl) loadingEl.style.display = 'none';
         if (loadingLines) loadingLines.style.display = 'none';
@@ -501,9 +452,7 @@
             phoneticEl.hidden = true;
           }
         }
-        if (speakBtn) {
-          speakBtn.hidden = response.isWord !== true;
-        }
+        showTranslationSpeak?.(!!response.translation);
         if (resultBody) {
           resultBody.hidden = false;
           resultBody.classList.remove('ai-translator-reveal');
@@ -552,5 +501,4 @@
   ctx.setupLanguageDropdown = setupLanguageDropdown;
   ctx.translateText = translateText;
   ctx.isSingleWordText = isSingleWordText;
-  ctx.speakText = speakText;
 })();
