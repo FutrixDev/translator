@@ -68,7 +68,19 @@
   }
 }
 
+/* The header carries the target-language menu, and that menu has to paint over
+   the panel body below it.
+   `z-index` on the menu alone is not enough: host pages style bare tags, and a
+   single `div { opacity: .8 }` (example.com ships exactly that) turns this
+   header into a stacking context. The menu is then sealed inside it and paints
+   under the body that follows in the DOM — visible, but every click on a
+   language lands on whatever is on top, which in the input dialog is the
+   textarea. We cannot stop the page creating that context; giving the header a
+   stacking position of its own keeps it, and the menu with it, above its later
+   siblings either way. */
 .ai-translator-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -82,6 +94,17 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
+}
+
+/* On its own the pill reads as a badge saying what language this panel is
+   about. The label is what makes it read as the control that picks where the
+   translation goes — without it people go looking in the settings page. */
+.ai-translator-lang-hint {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .ai-translator-title-icon {

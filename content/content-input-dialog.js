@@ -17,6 +17,83 @@
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const speech = ctx.speech;
 
+  // The dialog is a scratchpad: you paste something in and want it in a
+  // particular language *now*. Reading the target straight off the settings
+  // page made every one-off a trip through settings — and left the setting
+  // changed for page and selection translation afterwards. So the dialog keeps
+  // its own target, whatever was last picked in it.
+  //
+  // It lives in local storage, not sync: this is one device's scratchpad
+  // habit, and writing it to sync would reach across and retarget the dialog
+  // on every other device. Changing the target language in settings clears it
+  // (see below) — an explicit choice there is the stronger signal, and a
+  // dialog that ignored it would be the same complaint over again.
+  const INPUT_TARGET_LANG_KEY = 'inputDialogTargetLang';
+  let rememberedTargetLang = '';
+  // The read below is async, and this script runs in every frame. Anything that
+  // decides the target for real — a pick, or a settings change — settles the
+  // value, and a read that lands afterwards must not put the old one back.
+  let targetLangSettled = false;
+
+  function loadRememberedTargetLang() {
+    if (!isExtensionContextAvailable()) return;
+    try {
+      chrome.storage.local.get(INPUT_TARGET_LANG_KEY, (result) => {
+        if (chrome.runtime.lastError || targetLangSettled) return;
+        targetLangSettled = true;
+        rememberedTargetLang = result?.[INPUT_TARGET_LANG_KEY] || '';
+      });
+    } catch (error) {
+      // Extension context went away; the settings default still works.
+    }
+  }
+
+  function rememberTargetLang(lang) {
+    const next = lang || '';
+    targetLangSettled = true;
+    // Every frame on the page runs this listener, so a settings change asks all
+    // of them to clear at once. Only the frame that actually holds a different
+    // value needs to write, or a page full of iframes writes the same string
+    // once per frame.
+    if (next === rememberedTargetLang) return;
+    rememberedTargetLang = next;
+    if (!isExtensionContextAvailable()) return;
+    try {
+      chrome.storage.local.set({ [INPUT_TARGET_LANG_KEY]: rememberedTargetLang });
+    } catch (error) {
+      // Same as above: losing the memory is not worth failing the translation.
+    }
+  }
+
+  function getInputTargetLang() {
+    return rememberedTargetLang || getEffectiveTargetLang();
+  }
+
+  // What an open dialog is actually set to. The dropdown writes its pick to
+  // dataset.targetLang, so that is the language the header is showing — both
+  // translating and reading aloud follow what the user can see, even if a
+  // settings change has since moved the default out from under the open
+  // dialog. getInputTargetLang() is only reached before anything is picked.
+  function getShownTargetLang() {
+    return state.inputDialog?.dataset.targetLang || getInputTargetLang();
+  }
+
+  loadRememberedTargetLang();
+
+  if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'sync' && changes.targetLang) {
+        // Someone went and set a default explicitly. Follow it.
+        rememberTargetLang('');
+      } else if (namespace === 'local' && changes[INPUT_TARGET_LANG_KEY]) {
+        // Another tab's dialog picked a language; keep this one in step. This
+        // is the stored value arriving, so it settles the read above too.
+        targetLangSettled = true;
+        rememberedTargetLang = changes[INPUT_TARGET_LANG_KEY].newValue || '';
+      }
+    });
+  }
+
   function isInputDictionaryText(text) {
     if (!text) return false;
     const trimmed = text.trim();
@@ -50,15 +127,16 @@
             <span class="ai-translator-title">${t('inputTextTranslation')}</span>
           </div>
           <div class="ai-translator-header-right">
+            <span class="ai-translator-lang-hint">${t('translateTo')}</span>
             <div class="ai-translator-lang-dropdown">
               <button class="ai-translator-lang-trigger" type="button" title="${t('targetLanguage')}" aria-expanded="false">
-                <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(getEffectiveTargetLang()))}</span>
+                <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(getInputTargetLang()))}</span>
                 <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
               </button>
               <div class="ai-translator-lang-menu" hidden>
-                ${buildTargetLangMenu(getEffectiveTargetLang())}
+                ${buildTargetLangMenu(getInputTargetLang())}
               </div>
             </div>
             <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
@@ -138,12 +216,8 @@
     // gets wrong most often.
     const showResultSpeak = speech.bindSpeakButton(
       dialog.querySelector('#ai-translator-input-speak-result'),
-      () => ({ text: resultText.textContent || '', lang: currentTargetLang() })
+      () => ({ text: resultText.textContent || '', lang: getShownTargetLang() })
     );
-
-    function currentTargetLang() {
-      return dialog.dataset.targetLang || settings.targetLang || getEffectiveTargetLang();
-    }
 
     function syncSourceSpeak() {
       showSourceSpeak(!!textarea.value.trim());
@@ -171,7 +245,7 @@
           resultText.innerHTML = `<div class="ai-translator-input-error">${t('extensionContextInvalidated')}</div>`;
           return;
         }
-        const targetLang = targetLangOverride || currentTargetLang();
+        const targetLang = targetLangOverride || getShownTargetLang();
         const response = await ctx.requestTranslation({
           type: 'TRANSLATE',
           text: text,
@@ -235,7 +309,10 @@
     });
 
     if (ctx.setupLanguageDropdown) {
-      ctx.setupLanguageDropdown(dialog, getEffectiveTargetLang(), (lang) => {
+      ctx.setupLanguageDropdown(dialog, getInputTargetLang(), (lang) => {
+        rememberTargetLang(lang);
+        // Picking a language with the box empty is someone setting up before
+        // they type, not asking for a translation.
         const text = textarea.value.trim();
         if (!text) return;
         translateInputText(lang);
