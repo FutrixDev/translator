@@ -126,8 +126,18 @@
     if (token !== requestToken) return false;
 
     const utterance = new SpeechSynthesisUtterance(trimmed);
-    const voiceLang = SpeechLang.resolveSpeechLang(spokenLang, window.speechSynthesis.getVoices());
-    if (voiceLang) utterance.lang = voiceLang;
+    // The voice is set explicitly, not left to the tag: Chrome answers a bare
+    // tag with the first listed match, and macOS lists its novelty voices
+    // first — `en-US` alone means Albert, the hoarse croak.
+    const voices = window.speechSynthesis.getVoices();
+    const voice = SpeechLang.pickVoice(spokenLang, voices);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      const voiceLang = SpeechLang.resolveSpeechLang(spokenLang, voices);
+      if (voiceLang) utterance.lang = voiceLang;
+    }
 
     const finish = () => {
       if (token !== requestToken) return;

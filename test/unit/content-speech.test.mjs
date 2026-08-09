@@ -19,7 +19,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 const OWNER = 'content/content-speech.js';
 
 await import('../../shared/speech-lang.js');
-const { SPEECH_REGION, scriptOf, resolveSpeechLang, resolveSpokenLang } = globalThis.SpeechLang;
+const { SPEECH_REGION, scriptOf, resolveSpeechLang, resolveSpokenLang, pickVoice } = globalThis.SpeechLang;
 
 // A stand-in for what speechSynthesis.getVoices() hands back on macOS: every
 // entry region-qualified, never a bare tag, and several regions per language.
@@ -150,6 +150,66 @@ test('detection is the last resort, not the first', async () => {
   // target than an empty tag, which is the system default voice again.
   assert.equal(await resolveSpokenLang('xy', 'fr', async () => ''), 'fr');
   assert.equal(scriptOf('animation'), '');
+});
+
+// ==================== which of the matching voices speaks ====================
+//
+// The bug these cover: with `utterance.voice` unset, Chrome takes the FIRST
+// listed voice matching the tag — and macOS enumerates alphabetically, so a
+// correct `en-US` was read by Albert, a hoarse novelty voice, while Samantha
+// sat at index 131. The original sounded fine (婷婷 is the system default on a
+// Chinese-locale Mac); only the translation croaked.
+
+// The shape speechSynthesis.getVoices() actually has on that Mac: alphabetical
+// by name, novelty and Eloquence voices listed before the natural ones, the
+// system default nowhere near the language being spoken.
+const MACOS_VOICES = [
+  { name: '婷婷', lang: 'zh-CN', default: true },
+  { name: 'Albert', lang: 'en-US' },
+  { name: 'Bad News', lang: 'en-US' },
+  { name: 'Eddy (英语（美国）)', lang: 'en-US' },
+  { name: 'Eddy (日语（日本）)', lang: 'ja-JP' },
+  { name: 'Eddy (芬兰语（芬兰）)', lang: 'fi-FI' },
+  { name: 'Flo (芬兰语（芬兰）)', lang: 'fi-FI' },
+  { name: 'Grandma (英语（美国）)', lang: 'en-US' },
+  { name: 'Kyoko', lang: 'ja-JP' },
+  { name: 'Samantha', lang: 'en-US' },
+  { name: 'Whisper', lang: 'en-US' },
+];
+
+test('a natural voice beats the novelty voices listed before it', () => {
+  // The reported case: translation to English read by Albert, the croak.
+  assert.equal(pickVoice('en', MACOS_VOICES)?.name, 'Samantha');
+  // Eloquence robots are ahead of Kyoko alphabetically too.
+  assert.equal(pickVoice('ja', MACOS_VOICES)?.name, 'Kyoko');
+  // A locale that renders the OUTER parenthesis fullwidth must not smuggle an
+  // Eloquence voice into the natural tier.
+  assert.equal(pickVoice('en', [
+    { name: 'Eddy（英语（美国））', lang: 'en-US' },
+    { name: 'Samantha', lang: 'en-US' },
+  ])?.name, 'Samantha');
+});
+
+test('the system default wins its own language, joke voices never inherit it', () => {
+  assert.equal(pickVoice('zh-CN', MACOS_VOICES)?.name, '婷婷');
+  // A language whose only installed voices are Eloquence still gets one —
+  // robotic in the right language beats natural in the wrong one.
+  assert.equal(pickVoice('fi-FI', MACOS_VOICES)?.name, 'Eddy (芬兰语（芬兰）)');
+});
+
+test('no candidates means no voice, not a guess', () => {
+  assert.equal(pickVoice('sw', MACOS_VOICES), null);
+  assert.equal(pickVoice('en', []), null);
+  assert.equal(pickVoice('', MACOS_VOICES), null);
+});
+
+test('the utterance is given the picked voice, not just a tag', () => {
+  // Setting only `utterance.lang` is the exact regression this guards: Chrome
+  // resolves a bare tag to the first listed match, which on macOS is a
+  // novelty voice.
+  const code = repoFile(OWNER);
+  assert.match(code, /SpeechLang\.pickVoice\(/, `${OWNER} must choose the voice through SpeechLang.pickVoice`);
+  assert.match(code, /utterance\.voice\s*=/, `${OWNER} must set utterance.voice from the picked voice`);
 });
 
 test('the pure half is loaded before the module that uses it', () => {
