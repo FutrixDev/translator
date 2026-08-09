@@ -1,11 +1,13 @@
-// AI Translator — choosing the language a read-aloud button speaks in.
+// AI Translator — choosing the language and the voice a read-aloud button
+// speaks with.
 //
-// Two questions, both easy to get wrong, both pure, so they live here where
+// Three questions, all easy to get wrong, all pure, so they live here where
 // `npm run test:unit` can exercise them against a synthetic voice list rather
 // than against whichever voices the machine running the tests happens to have.
 //
 //   1. What language is this text actually in?   resolveSpokenLang()
 //   2. What tag will an installed voice answer to? resolveSpeechLang()
+//   3. Which of the voices answering should speak? pickVoice()
 //
 // Question 2 is the one that made every non-Chinese target unintelligible.
 // Chrome matches `utterance.lang` against the installed voices, and when
@@ -16,6 +18,13 @@
 // chrome.i18n.detectLanguage returns. So the common case was the broken one:
 // choosing English on a Chinese-locale Mac set `lang = 'en'`, matched nothing,
 // and read the English out with 婷婷, the system default.
+//
+// Question 3 is why a correct tag still came out hoarse. When `utterance.voice`
+// is unset, Chrome takes the FIRST voice in its list that matches the tag, not
+// the language's flagship — and macOS enumerates voices alphabetically, so
+// `en-US` lands on Albert, a croaking novelty voice, with Samantha at 131.
+// Japanese lands on Eddy, an Eloquence robot, with Kyoko behind it. The tag
+// fix moved the failure from "wrong language" to "right language, joke voice".
 //
 // Loaded as a classic script by the content scripts, so it publishes onto the
 // global object rather than using `export`.
@@ -61,11 +70,11 @@
   /**
    * Widen a language tag until some installed voice answers to it.
    *
-   * Only the tag is ever set, never `utterance.voice`: once the tag matches,
-   * the engine picks that language's preferred voice. Choosing one ourselves
-   * would mean ranking the 41 English voices macOS installs with no signal for
-   * which are ordinary and which are novelties — the first alphabetically is
-   * Albert, and "Bad News" and "Bells" are in there too.
+   * The widened tag is only half the answer: left to match it alone, Chrome
+   * takes the first listed voice for the tag, which on macOS is a novelty.
+   * pickVoice() below chooses the voice that actually speaks; this keeps
+   * choosing the tag, which is also the fallback when pickVoice has no list
+   * to rank yet.
    *
    * @param {string} lang
    * @param {Array<{lang: string}>} voices speechSynthesis.getVoices()
@@ -91,6 +100,69 @@
     // to the system default voice.
     const installed = list.find((voice) => baseOf(tagOf(voice)) === baseOf(tag));
     return installed ? tagOf(installed) : tag;
+  }
+
+  // macOS ships two families of deliberately unnatural voices in the same list
+  // as the real ones, and on a machine with nothing else installed they are
+  // what alphabetical order serves first.
+  //
+  // The novelty voices are sound-effect jokes — Albert is a hoarse croak,
+  // Bells sings, Whisper whispers. Kathy, Fred, Junior and Ralph are their
+  // 1980s-era siblings. None of them should ever read a translation while any
+  // natural voice for the language is installed.
+  const NOVELTY_VOICES = new Set([
+    'Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos',
+    'Fred', 'Good News', 'Jester', 'Junior', 'Kathy', 'Organ', 'Ralph',
+    'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox',
+  ]);
+  // The Eloquence voices are intelligible but robotic — kept by Apple for
+  // screen-reader users who prefer them. Each name repeats across every
+  // language with a localized parenthetical ("Eddy (英语（美国）)"), which is
+  // why matching is on the family name before the parenthesis.
+  const ELOQUENCE_VOICES = new Set([
+    'Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley',
+  ]);
+
+  /** 2 a natural voice, 1 an Eloquence robot, 0 a novelty joke. */
+  function voiceTier(voice) {
+    const family = String(voice?.name || '').split(' (')[0].trim();
+    if (NOVELTY_VOICES.has(family)) return 0;
+    if (ELOQUENCE_VOICES.has(family)) return 1;
+    return 2;
+  }
+
+  /**
+   * The voice that should read text in `lang`, or null to leave the choice to
+   * the engine (no list yet, or nothing installed for the language).
+   *
+   * Ranking: natural beats Eloquence beats novelty; within a tier the system
+   * default voice wins, then list order — which is how ties were broken before
+   * this function existed, minus the joke voices that made ties dangerous.
+   *
+   * @param {string} lang
+   * @param {Array<{name: string, lang: string, default?: boolean}>} voices
+   */
+  function pickVoice(lang, voices) {
+    const list = Array.isArray(voices) ? voices : [];
+    const tag = resolveSpeechLang(lang, list);
+    if (!tag || !list.length) return null;
+
+    const canon = (value) => String(value || '').replace('_', '-').toLowerCase();
+    let candidates = list.filter((voice) => canon(voice?.lang) === canon(tag));
+    if (!candidates.length) {
+      candidates = list.filter((voice) => baseOf(voice?.lang) === baseOf(tag));
+    }
+
+    let best = null;
+    let bestScore = -1;
+    for (const voice of candidates) {
+      const score = voiceTier(voice) * 2 + (voice?.default ? 1 : 0);
+      if (score > bestScore) {
+        best = voice;
+        bestScore = score;
+      }
+    }
+    return best;
   }
 
   /**
@@ -124,5 +196,5 @@
     return detected || declared || '';
   }
 
-  root.SpeechLang = { SPEECH_REGION, CJK_SCRIPT, scriptOf, resolveSpeechLang, resolveSpokenLang };
+  root.SpeechLang = { SPEECH_REGION, CJK_SCRIPT, scriptOf, resolveSpeechLang, resolveSpokenLang, pickVoice };
 })(globalThis);
