@@ -14,7 +14,7 @@
     if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.showInlineSelectionTranslation) {
       ctx.showInlineSelectionTranslation(text, translation, state.lastSelectionElement, state.lastSelectionRange);
     } else if (ctx.showTranslationResult) {
-      ctx.showTranslationResult(text, translation, phonetic, isWord);
+      ctx.showTranslationResult(text, translation, phonetic);
     }
   }
 

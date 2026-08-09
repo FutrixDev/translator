@@ -51,7 +51,7 @@ function startInputDictionaryMockServer() {
   });
 }
 
-test('input translation shows phonetic and pronunciation for short phrase', async ({ page }) => {
+test('input translation shows phonetic for words and read-aloud for anything typed', async ({ page }) => {
   const { server, endpoint } = await startInputDictionaryMockServer();
 
   try {
@@ -74,18 +74,32 @@ test('input translation shows phonetic and pronunciation for short phrase', asyn
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');
 
     await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+
+    // The source is readable before anything has been translated — hearing how
+    // the word you just typed is pronounced is the whole point of the button.
+    await expect(page.locator('#ai-translator-input-speak')).toBeHidden();
     await page.fill('#ai-translator-input-text', 'on the fly');
+    await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
+    await expect(page.locator('#ai-translator-input-speak-result')).toBeHidden();
+
     await page.click('#ai-translator-do-translate');
 
     await expect(page.locator('#ai-translator-result-section')).toBeVisible();
     await expect(page.locator('#ai-translator-result-text')).toContainText('[DICT] on the fly');
     await expect(page.locator('#ai-translator-input-phonetic')).toHaveText('/ɒn ðə flaɪ/');
-    await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
+    await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
     await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');
     await page.click('#ai-translator-do-translate');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[TEXT] this is a full sentence for translation');
+    // Only the phonetic is dictionary-only; both speakers stay available because
+    // a sentence can be read aloud just as well as a word.
     await expect(page.locator('#ai-translator-input-phonetic')).toBeHidden();
+    await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
+    await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
+
+    // Nothing typed, nothing to read.
+    await page.fill('#ai-translator-input-text', '');
     await expect(page.locator('#ai-translator-input-speak')).toBeHidden();
   } finally {
     server.close();

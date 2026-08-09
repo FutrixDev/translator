@@ -40,6 +40,23 @@
   display: none !important;
 }
 
+/* A content script inherits the host page's box model, and most pages never
+   ship a border-box reset. Under the inherited content-box every `width: 100%`
+   control in our own panels — the input textarea above all — is laid out at
+   100% *plus* its padding and border, so it runs past the panel that holds it
+   and gets clipped. Pin the box model on our own subtrees rather than fixing
+   the widths one control at a time. */
+.ai-translator-popup,
+.ai-translator-popup *,
+.ai-translator-popup *::before,
+.ai-translator-popup *::after,
+#ai-translator-input-dialog,
+#ai-translator-input-dialog *,
+#ai-translator-input-dialog *::before,
+#ai-translator-input-dialog *::after {
+  box-sizing: border-box;
+}
+
 @keyframes ai-translator-fade-in {
   from {
     opacity: 0;
@@ -237,16 +254,6 @@
   overflow-y: auto;
 }
 
-.ai-translator-text-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ai-translator-text-row .ai-translator-text {
-  flex: 1;
-}
-
 .ai-translator-icon-btn {
   width: 28px;
   height: 28px;
@@ -265,6 +272,51 @@
   background: var(--icon-hover-bg);
   border-color: var(--icon-hover-border);
   color: var(--accent);
+}
+
+.ai-translator-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(111, 99, 255, 0.25);
+}
+
+/* A speaker button that is mid-utterance is also its own stop button, so it
+   has to look engaged rather than merely hovered. */
+.ai-translator-icon-btn.is-speaking {
+  background: var(--icon-hover-bg);
+  border-color: var(--icon-hover-border);
+}
+
+.ai-translator-icon-btn.is-speaking svg {
+  animation: ai-translator-speak-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes ai-translator-speak-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* A section label with its tools on the right — the popup's original and
+   translation, the input dialog's input and result. Reserving the icon
+   button's height keeps the panel below from shifting when a phonetic or a
+   speaker appears. */
+.ai-translator-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.ai-translator-label-row .ai-translator-label {
+  margin-bottom: 0;
+}
+
+.ai-translator-label-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .ai-translator-divider {
@@ -1135,9 +1187,11 @@ button.ai-translator-inline-block {
 
 .ai-translator-input-modal {
   position: relative;
-  width: 420px;
-  max-width: 90vw;
-  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  max-width: min(92vw, 560px);
+  max-height: 84vh;
   --popup-bg: #15161c;
   --popup-border: #2a2d36;
   --popup-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
@@ -1161,8 +1215,17 @@ button.ai-translator-inline-block {
   box-shadow: var(--popup-shadow);
   color: var(--text-primary);
   font-size: 15px;
-  overflow: hidden;
+  /* Visible, like the selection popup: the language menu drops out of the
+     header and `hidden` used to cut it off whenever the dialog was short.
+     Nothing else can escape — the body clips its own scroll, and the header
+     and footer round the corners they cover. */
+  overflow: visible;
   animation: ai-translator-modal-in 0.2s ease;
+}
+
+.ai-translator-input-modal .ai-translator-header {
+  flex: 0 0 auto;
+  border-radius: 14px 14px 0 0;
 }
 
 @keyframes ai-translator-modal-in {
@@ -1176,24 +1239,23 @@ button.ai-translator-inline-block {
   }
 }
 
+/* The modal caps its own height, so the body is the one region that scrolls.
+   Before this it did not, and a long translation was clipped away with the
+   copy and translate buttons unreachable underneath. */
 .ai-translator-input-body {
-  padding: 18px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .ai-translator-input-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.ai-translator-input-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: 0.3px;
 }
 
 .ai-translator-input-textarea {
@@ -1221,9 +1283,26 @@ button.ai-translator-inline-block {
   color: var(--text-muted);
 }
 
-.ai-translator-input-actions {
+.ai-translator-input-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-translator-input-footer {
+  flex: 0 0 auto;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--divider);
+  border-radius: 0 0 14px 14px;
+}
+
+/* Copy sits opposite the primary action instead of trailing the result panel,
+   so the two things you can do with a translation share one row. */
+.ai-translator-input-btn-copy {
+  margin-right: auto;
 }
 
 .ai-translator-btn-primary {
@@ -1237,8 +1316,11 @@ button.ai-translator-inline-block {
   background: #7c72ff;
 }
 
+/* Same padding, radius and border as the textarea: the two panels are the same
+   object at different stages, and used to read as two unrelated boxes. The
+   body owns the scrolling now, so this one no longer caps its own height. */
 .ai-translator-input-result {
-  padding: 14px 16px;
+  padding: 12px 14px;
   background: var(--pill-bg);
   border: 1px solid var(--pill-border);
   border-radius: 10px;
@@ -1246,26 +1328,21 @@ button.ai-translator-inline-block {
   font-size: 15px;
   line-height: 1.6;
   min-height: 60px;
-  max-height: 200px;
   word-break: break-word;
-  overflow-y: auto;
-}
-
-.ai-translator-input-meta {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  white-space: pre-wrap;
 }
 
 .ai-translator-input-phonetic {
   font-family: 'Times New Roman', serif;
   font-size: 13px;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ai-translator-input-speak {
+.ai-translator-input-speak,
+.ai-translator-input-speak-result {
   flex-shrink: 0;
 }
 
@@ -1278,10 +1355,6 @@ button.ai-translator-inline-block {
 
 .ai-translator-input-error {
   color: #ff6b6b;
-}
-
-.ai-translator-input-btn-copy {
-  margin-top: 10px;
 }
 
 /* ==================== Light Theme ==================== */
