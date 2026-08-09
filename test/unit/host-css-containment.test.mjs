@@ -153,7 +153,7 @@ test('the reset is declared before the rules that have to beat it', () => {
     '.ai-translator-lang-caret {',         // transitions transform
     '.ai-translator-phonetic {',           // serif face
     '.ai-translator-input-phonetic {',     // serif face
-    '.ai-translator-input-label {',        // 0.3px tracking
+    '.ai-translator-label {',              // 0.3px tracking
   ]) {
     const at = CSS.indexOf(rule);
     assert.ok(at > 0, `${rule} is gone; this guard needs updating`);

@@ -384,7 +384,7 @@ test('a hostile host stylesheet cannot reach into the dialog', async ({ page }) 
     expect(textarea['letter-spacing']).toBe('normal');
     expect(textarea['text-transform']).toBe('none');
 
-    const label = await computed(page, '#ai-translator-input-dialog .ai-translator-input-label', [
+    const label = await computed(page, '#ai-translator-input-dialog .ai-translator-label', [
       'text-transform', 'letter-spacing', 'font-family',
     ]);
     expect(label['text-transform']).toBe('none');
