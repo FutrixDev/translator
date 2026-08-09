@@ -63,6 +63,13 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 - **Code detection**: Regex patterns skip non-human text (code blocks, JSON, Markdown syntax)
 - **Storage**: Chrome sync storage for cross-device settings
 - **Theming**: CSS variables for dark/light theme support
+- **Host-page containment**: our panels are a subtree of the page's own
+  document, so every page rule on a bare tag matches them too — example.com
+  ships `div { opacity: .8 }`. One scoped reset at the top of
+  `content/content.css` is the boundary; **a new panel root has to be added to
+  its `:is()` lists**, and its own rules have to outrank (0,1,0). Guarded by
+  `test/unit/host-css-containment.test.mjs` and the hostile-stylesheet spec in
+  `test/e2e/input-translation.spec.js`.
 
 ### Account-Backed Features
 

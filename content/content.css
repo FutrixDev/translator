@@ -40,22 +40,85 @@
   display: none !important;
 }
 
-/* A content script inherits the host page's box model, and most pages never
-   ship a border-box reset. Under the inherited content-box every `width: 100%`
-   control in our own panels — the input textarea above all — is laid out at
-   100% *plus* its padding and border, so it runs past the panel that holds it
-   and gets clipped. Pin the box model on our own subtrees rather than fixing
-   the widths one control at a time. */
-.ai-translator-popup,
-.ai-translator-popup *,
-.ai-translator-popup *::before,
-.ai-translator-popup *::after,
-#ai-translator-input-dialog,
-#ai-translator-input-dialog *,
-#ai-translator-input-dialog *::before,
-#ai-translator-input-dialog *::after {
+/* ==================== Host-page containment ====================
+
+   Our panels are a subtree of the host page's document, so every page rule
+   that targets a bare tag matches them too. example.com ships
+   `div { opacity: .8 }`; our roots, the modal and the header are all `div`s,
+   so it matched each of them and the opacity multiplied down the tree until
+   the page showed through the dialog. The same leak has been patched twice
+   downstream already — the box model (`width: 100%` + padding overflowing
+   under the page's content-box) and the stacking context that same opacity
+   built around `.ai-translator-header`, which sealed the language menu inside
+   it. Both were symptoms. This is the boundary, and it absorbs the box-sizing
+   reset that used to stand here on its own: one block, one scope, one place to
+   add the next property rather than a reset per symptom.
+
+   Two properties of this block are load-bearing:
+
+   - **No `!important` anywhere in it.** Important author declarations outrank
+     animations, so `opacity: 1 !important` would pin `ai-translator-fade-in`
+     and `ai-translator-modal-in` at full opacity and the panels would appear
+     without ever fading in. A *normal* declaration loses to a running
+     animation and wins once it ends — exactly the order we want.
+   - **Every selector weighs one class (0,1,0), and the block comes before all
+     of our own rules.** A page's `div` rule is (0,0,1) and loses to it; every
+     rule of ours below wins the tie on source order. That is why the dialog is
+     matched as `[id="…"]` and not `#…`: an id would be (1,0,0) and would
+     silently outrank our own deliberate values — `.ai-translator-result-body`
+     (opacity 0 until `.ai-translator-reveal`), the caret's rotate, the
+     phonetic's serif face.
+
+   Scope is these two roots. The float ball, the progress toast and the caption
+   overlay are separate roots with the same exposure; adding one means adding
+   it to the `:is()` lists below and checking its own rules still outrank
+   (0,1,0) — most of them are id-scoped, so they do.
+
+   What is left out is deliberate: colour, spacing and font-size are already
+   declared on our own elements, so a page rule loses to them without help.
+   Only properties a host page puts on bare tags *and* that we do not already
+   set everywhere they matter are worth pinning. */
+
+/* Not inherited — a bare-tag rule can hit any single node in the subtree, and
+   opacity/filter/transform compound as it descends. Pin them on every node. */
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *::after {
   box-sizing: border-box;
+  opacity: 1;
+  filter: none;
+  transform: none;
 }
+
+/* Inherited — initial value at the root, `inherit` below it. Pinning a fixed
+   value on every descendant instead would cut our own inheritance: the result
+   box's line-height would stop reaching the text it wraps. `inherit` still
+   blocks a direct hit like `button { text-transform: uppercase }` or
+   `body { line-height: 1.8 }` without breaking the chain. */
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) {
+  visibility: visible;
+  line-height: normal;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) *::after {
+  visibility: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  /* Both roots declare the panel font. The UA gives form controls one of their
+     own, which is why several of our buttons already say `font-family: inherit`
+     one at a time; this covers the ones that never did (the language trigger
+     and its items rendered in the UA's form font) and shuts out
+     `textarea { font-family: monospace }` in the same line. */
+  font-family: inherit;
+}
+
+/* ==================== end of host-page containment ==================== */
 
 @keyframes ai-translator-fade-in {
   from {
@@ -70,14 +133,17 @@
 
 /* The header carries the target-language menu, and that menu has to paint over
    the panel body below it.
-   `z-index` on the menu alone is not enough: host pages style bare tags, and a
-   single `div { opacity: .8 }` (example.com ships exactly that) turns this
-   header into a stacking context. The menu is then sealed inside it and paints
+   `z-index` on the menu alone is not enough: anything that turns this header
+   into a stacking context seals the menu inside it, and the menu then paints
    under the body that follows in the DOM — visible, but every click on a
    language lands on whatever is on top, which in the input dialog is the
-   textarea. We cannot stop the page creating that context; giving the header a
-   stacking position of its own keeps it, and the menu with it, above its later
-   siblings either way. */
+   textarea. `div { opacity: .8 }` (example.com ships exactly that) is how we
+   found it; the containment reset above now pins opacity, filter and transform
+   so that particular route is closed, but it is not the only one — `contain`,
+   `will-change` and `mix-blend-mode` all build a stacking context too, and
+   pinning every property a page might use is not a thing we can finish. Giving
+   the header a stacking position of its own keeps it, and the menu with it,
+   above its later siblings either way. */
 .ai-translator-header {
   position: relative;
   z-index: 1;
