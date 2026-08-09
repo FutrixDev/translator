@@ -17,6 +17,11 @@
   // is capped rather than risking a silent cut-off mid-sentence.
   const MAX_SPEAK_CHARS = 1000;
 
+  // Which language to speak in, and which tag an installed voice will answer
+  // to. Both are pure and both are subtle, so they live in shared/ where the
+  // unit suite can drive them against a fixed voice list.
+  const SpeechLang = globalThis.SpeechLang;
+
   // The glyph every speaker button carries. It lives here so the four buttons
   // cannot end up drawn from two slightly different SVGs.
   const SPEAKER_ICON = `
@@ -53,6 +58,25 @@
         resolve('');
       }
     });
+  }
+
+  // getVoices() is empty until the engine has enumerated; Chrome announces the
+  // real list with `voiceschanged`. Resolving against an empty list would fall
+  // through to the raw tag and land back on the default voice, which is the
+  // whole bug, so the first utterance waits for the list.
+  let voicesReady = null;
+  function whenVoicesReady() {
+    if (!voicesReady) {
+      voicesReady = new Promise((resolve) => {
+        if (window.speechSynthesis.getVoices().length) return resolve();
+        const timer = setTimeout(resolve, 1000);
+        window.speechSynthesis.addEventListener('voiceschanged', () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
+    }
+    return voicesReady;
   }
 
   function applyButtonState(button, speaking) {
@@ -97,11 +121,13 @@
     if (!trimmed || isStopClick) return false;
 
     const token = ++requestToken;
-    const resolvedLang = lang || await detectLang(trimmed);
+    const spokenLang = await SpeechLang.resolveSpokenLang(trimmed, lang, () => detectLang(trimmed));
+    await whenVoicesReady();
     if (token !== requestToken) return false;
 
     const utterance = new SpeechSynthesisUtterance(trimmed);
-    if (resolvedLang) utterance.lang = resolvedLang;
+    const voiceLang = SpeechLang.resolveSpeechLang(spokenLang, window.speechSynthesis.getVoices());
+    if (voiceLang) utterance.lang = voiceLang;
 
     const finish = () => {
       if (token !== requestToken) return;

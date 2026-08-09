@@ -18,6 +18,17 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 
 const OWNER = 'content/content-speech.js';
 
+await import('../../shared/speech-lang.js');
+const { SPEECH_REGION, scriptOf, resolveSpeechLang, resolveSpokenLang } = globalThis.SpeechLang;
+
+// A stand-in for what speechSynthesis.getVoices() hands back on macOS: every
+// entry region-qualified, never a bare tag, and several regions per language.
+const VOICES = [
+  'zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'en-GB', 'en-AU', 'ja-JP', 'ko-KR',
+  'fr-FR', 'fr-CA', 'de-DE', 'es-ES', 'es-MX', 'pt-BR', 'pt-PT', 'ru-RU',
+  'it-IT', 'nl-NL',
+].map((lang) => ({ lang }));
+
 // Every script the manifest injects, minus the owner itself.
 function otherContentScripts() {
   const manifest = JSON.parse(repoFile('manifest.json'));
@@ -71,6 +82,85 @@ test('the owner loads before every surface that uses it', () => {
     assert.ok(ownerAt < scripts.indexOf(consumer),
       `${OWNER} must load before ${consumer}, which reads ctx.speech at module scope`);
   }
+});
+
+// ==================== which voice actually speaks ====================
+//
+// The bug these cover: Chrome matches `utterance.lang` against the installed
+// voices and answers no match with the SYSTEM DEFAULT voice, not a near one.
+// No installed voice carries a bare tag, and eight of our ten targets are
+// bare — so picking English on a Chinese-locale Mac read the English aloud
+// with 婷婷.
+
+test('a bare target language is widened to a tag some voice answers to', () => {
+  for (const [base, expected] of Object.entries(SPEECH_REGION)) {
+    assert.equal(resolveSpeechLang(base, VOICES), expected,
+      `'${base}' must resolve to an installed voice's tag, or Chrome uses the system default`);
+  }
+});
+
+test('every language the picker offers can be spoken', () => {
+  // The same drift target/unit/target-languages.test.mjs guards for the prompt:
+  // a language offered but not mapped here is silently read in the wrong voice.
+  const bootstrap = repoFile('content/content-bootstrap.js');
+  const block = bootstrap.slice(bootstrap.indexOf('TARGET_LANGUAGE_OPTIONS: ['));
+  const offered = [...block.slice(0, block.indexOf(']')).matchAll(/value: '([^']+)'/g)].map((m) => m[1]);
+  assert.ok(offered.length >= 10, `expected the full target list, saw ${offered.join(', ')}`);
+
+  for (const lang of offered) {
+    const resolved = resolveSpeechLang(lang, VOICES);
+    assert.ok(VOICES.some((v) => v.lang === resolved),
+      `target '${lang}' resolves to '${resolved}', which no voice answers to — add it to SPEECH_REGION`);
+  }
+});
+
+test('a tag a voice already answers to is left alone', () => {
+  // zh-CN and zh-TW are different voices, not two spellings of one.
+  assert.equal(resolveSpeechLang('zh-TW', VOICES), 'zh-TW');
+  assert.equal(resolveSpeechLang('en-GB', VOICES), 'en-GB');
+  // A language with no map entry still beats the system default.
+  assert.equal(resolveSpeechLang('nl', VOICES), 'nl-NL');
+  // Nothing installed for it: hand back the tag rather than invent a region.
+  assert.equal(resolveSpeechLang('sw', VOICES), 'sw');
+  // No list to check against yet — same, rather than guessing.
+  assert.equal(resolveSpeechLang('en', []), 'en');
+});
+
+test('script decides the language when the text disagrees with the target', async () => {
+  const never = () => { throw new Error('detection should not be reached'); };
+
+  // The reported case: translating 动画 into English echoed the source back,
+  // and the translation button read Chinese with an English voice.
+  assert.equal(await resolveSpokenLang('动画', 'en', never), 'zh');
+  assert.equal(await resolveSpokenLang('안녕하세요', 'en', never), 'ko');
+  assert.equal(await resolveSpokenLang('こんにちは', 'en', never), 'ja');
+  // Kanji beside kana is Japanese, not Chinese.
+  assert.equal(await resolveSpokenLang('日本語を話す', 'en', never), 'ja');
+  // The target agrees, so its finer form survives: zh-TW must not become zh.
+  assert.equal(await resolveSpokenLang('動畫', 'zh-TW', never), 'zh-TW');
+});
+
+test('detection is the last resort, not the first', async () => {
+  // Latin text with a Latin target: no reason to spend a detection call, and
+  // no reason to doubt the target.
+  assert.equal(await resolveSpokenLang('animation', 'en', () => { throw new Error('no'); }), 'en');
+  // Latin text with a CJK target is the target being wrong; ask.
+  assert.equal(await resolveSpokenLang('animation', 'zh-CN', async () => 'en'), 'en');
+  // Detection has nothing to say on two characters — better the declared
+  // target than an empty tag, which is the system default voice again.
+  assert.equal(await resolveSpokenLang('xy', 'fr', async () => ''), 'fr');
+  assert.equal(scriptOf('animation'), '');
+});
+
+test('the pure half is loaded before the module that uses it', () => {
+  const manifest = JSON.parse(repoFile('manifest.json'));
+  const scripts = manifest.content_scripts.find((entry) => entry.js.includes(OWNER)).js;
+  const at = scripts.indexOf('shared/speech-lang.js');
+  assert.ok(at !== -1, 'manifest.json must inject shared/speech-lang.js');
+  assert.ok(at < scripts.indexOf(OWNER), 'shared/speech-lang.js must load before ' + OWNER);
+  // And the owner must not grow its own copy of the resolution it delegates.
+  assert.doesNotMatch(repoFile(OWNER), /SPEECH_REGION\s*=/,
+    `${OWNER} redeclares the region map — it belongs to shared/speech-lang.js`);
 });
 
 test('every string this feature added has a translation in all locales', () => {
