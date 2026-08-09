@@ -108,18 +108,22 @@
   // 逐块判更准，所以这里缓存页面级结果。
   let pageSourceLangPromise = null;
 
-  async function detectLanguageOf(text, requireReliable) {
+  // CLD 在几个字符上基本是在猜，短样本直接不问。独立文本（输入框）会按字母体系
+  // 放宽这个下限——一两个汉字或假名已经足够定语言，见 resolveStandaloneSourceLang。
+  const DETECT_MIN_CHARS = 8;
+
+  // requireReliable 默认关：页面级取样 4000 字，本来就稳，卡这道门槛只会让整页
+  // 退化成没有源语言可用。块级和纯拉丁的独立文本才打开它。
+  async function detectLanguageOf(text, { requireReliable = false, minChars = DETECT_MIN_CHARS } = {}) {
     if (!chrome?.i18n?.detectLanguage) return '';
     const sample = ctx.getLanguageDetectionText
       ? ctx.getLanguageDetectionText(text)
       : String(text || '').slice(0, 400);
-    if (!sample || sample.length < 8) return '';
+    if (!sample || sample.length < minChars) return '';
     try {
       const result = await chrome.i18n.detectLanguage(sample);
       const top = result?.languages?.[0];
       if (!top || !top.language || top.language === 'und') return '';
-      // 块级探测才要求“判得准”。页面级取样 4000 字，本来就稳，
-      // 卡这道门槛只会让整页退化成没有源语言可用。
       if (requireReliable && (result.isReliable !== true || (top.percentage || 0) < 70)) {
         return '';
       }
@@ -148,16 +152,64 @@
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
 
-  async function resolveSourceLang(text, hint) {
-    if (hint) return toApiLang(hint);
+  // SUPPORTED_LANGS 里用非拉丁字母书写的那些。判断“页面语言可不可能是这段文字的
+  // 语言”只需要这一条：字母体系对不上就一定不是。
+  //
+  // 从 SUPPORTED_LANGS 派生，不另抄一张表：zh→Hans、bg→Cyrl 这些 Intl 自己就
+  // 知道，而往 SUPPORTED_LANGS 里加语言的人不该还要记得同步第二处——漏掉一门
+  // 非拉丁语言，正是下面这个 bug 原样复发。
+  const NON_LATIN_LANGS = new Set([...SUPPORTED_LANGS].filter((lang) => {
+    try {
+      return new Intl.Locale(lang).maximize().script !== 'Latn';
+    } catch (error) {
+      // 认不出来就当非拉丁：这个集合只用来否决页面语言，多否决一次最多是源语言
+      // 猜成 en（拉丁文本照样译得出来），少否决一次就是原文原样退回。
+      return true;
+    }
+  }));
+  // Script=Common 涵盖数字、标点、空白和 emoji，Inherited 涵盖组合用附加符号，
+  // 所以 "hello 😀" 和 "café" 都仍算纯拉丁。
+  const HAS_NON_LATIN_CHARS = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
+
+  /**
+   * 输入框里的文字不属于这个页面：读英文页面时想把“动画”翻成英文是常事。拿页面
+   * 语言当源语言会得出 src='en'、tgt='en'，被同语言短路原样返回——用户选了目标
+   * 语言、点了翻译，拿回来的还是自己输入的那行字。反过来同样成立：在中文页面上
+   * 输入 "animation" 想要中文，会被判成 zh→zh 原样退回。
+   *
+   * 短文本上 CLD 唯一可靠的线索是字母体系。实测（headless Chrome，全部
+   * isReliable=false）：动画→zh、アニメ→ja、안녕→ko、привет→ru 都对，而同样
+   * 长度的拉丁字母全错——hello→sr、animation→ja、Bonjour→no、ok→pl。几十种
+   * 拉丁语言在一两个词上本来就分不开。所以只在文本自身带非拉丁字符时才采信
+   * “判得不准”的结果，纯拉丁文本仍旧要求 isReliable。
+   */
+  async function resolveStandaloneSourceLang(trimmed) {
+    const nonLatinText = HAS_NON_LATIN_CHARS.test(trimmed);
+    const detected = toApiLang(await detectLanguageOf(trimmed, {
+      minChars: nonLatinText ? 2 : DETECT_MIN_CHARS,
+      requireReliable: !nonLatinText
+    }));
+    if (detected && SUPPORTED_LANGS.has(detected)) return detected;
+
     const pageLang = toApiLang(await getPageSourceLang());
+    if (pageLang && NON_LATIN_LANGS.has(pageLang) === nonLatinText) return pageLang;
+    // 字母体系对不上，页面语言出局。剩下的拉丁文本按英文处理：拉丁字母里英文
+    // 是压倒性的多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走
+    // 到这里说明连字母体系都没给出答案，那就交给 AI，模型自己会认源语言。
+    return nonLatinText ? '' : 'en';
+  }
+
+  async function resolveSourceLang(text, hint, standalone) {
+    if (hint) return toApiLang(hint);
     const trimmed = String(text || '').trim();
+    if (standalone) return resolveStandaloneSourceLang(trimmed);
+    const pageLang = toApiLang(await getPageSourceLang());
     if (trimmed.length >= SELF_DETECT_MIN_CHARS) {
       // 块级结果只在“判得准、且判出来的语言内置引擎确实支持”时才采信。
       // 逐块探测存在的意义是混合语言页面（英文正文里夹日文引用），那是少数派；
       // 而技术文章里满是型号名、版本号和百分数，CLD 判歪一段很常见 —— 一旦判歪，
       // 这一段就变成不支持的语言对。宁可整段按页面主语言处理，也不能被一次误判带走。
-      const own = toApiLang(await detectLanguageOf(trimmed, true));
+      const own = toApiLang(await detectLanguageOf(trimmed, { requireReliable: true }));
       if (own && SUPPORTED_LANGS.has(own)) return own;
     }
     return pageLang;
@@ -429,7 +481,7 @@
     if (!source.trim()) return source;
 
     const tgt = toApiLang(targetLang);
-    const src = await resolveSourceLang(source, options.sourceLang);
+    const src = await resolveSourceLang(source, options.sourceLang, options.standaloneText);
 
     if (!src || !tgt) throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
     // 同语言不需要翻译。原样返回，与 AI 那条路“已是目标语言则原样返回”的约定一致。
@@ -559,7 +611,9 @@
     const targetLang = message.targetLang;
     const shared = {
       sourceLang: message.sourceLang,
-      allowDownload: message.allowDownload
+      allowDownload: message.allowDownload,
+      // 输入框的文本是用户自己敲的，与页面无关。见 resolveSourceLang。
+      standaloneText: message.standaloneText === true
     };
 
     switch (message.type) {
