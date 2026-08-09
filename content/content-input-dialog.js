@@ -250,7 +250,11 @@
           type: 'TRANSLATE',
           text: text,
           targetLang: targetLang,
-          mode: isInputDictionaryText(text) ? 'word' : 'text'
+          mode: isInputDictionaryText(text) ? 'word' : 'text',
+          // 这段文字是用户敲进来的，跟当前页面没有任何关系。不声明的话，内置
+          // 引擎会拿页面语言当源语言，于是在英文页面上输入“动画”翻成英文就变成
+          // en→en，被同语言短路原样退回。
+          standaloneText: true
         });
 
         if (response.error) {

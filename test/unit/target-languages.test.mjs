@@ -64,6 +64,26 @@ test('the settings page and the in-page picker offer the same languages', () => 
   assert.deepEqual(pickerLanguages().slice().sort(), settingsLanguages().slice().sort());
 });
 
+test('the built-in engine derives its non-Latin set instead of hand-listing it', () => {
+  // NON_LATIN_LANGS decides whether the page's language could plausibly be the
+  // language of something typed into the input dialog. A hardcoded copy would
+  // be a fifth list to keep in step, and forgetting one non-Latin language
+  // there brings back exactly the bug it exists to prevent: the typed text
+  // takes the page's language as its source and comes back untranslated.
+  const source = repoFile('content/content-translation-engine.js');
+  const start = source.indexOf('const NON_LATIN_LANGS =');
+  assert.notEqual(start, -1, 'could not find NON_LATIN_LANGS');
+  const block = source.slice(start, source.indexOf('}));', start));
+  assert.match(block, /\.\.\.SUPPORTED_LANGS/, 'NON_LATIN_LANGS stopped following SUPPORTED_LANGS');
+  assert.match(block, /Intl\.Locale/, 'a language\'s script should be Intl\'s answer, not a literal');
+
+  // And the derivation has to actually have an answer for every target we
+  // offer — a language Intl cannot place would fall to the catch branch.
+  for (const lang of settingsLanguages()) {
+    assert.ok(new Intl.Locale(lang).maximize().script, `Intl cannot place the script of '${lang}'`);
+  }
+});
+
 test('both surfaces agree with the list of accepted targets', () => {
   // Normalization in the service worker and the options page decides what
   // counts as a supported target; anything offered has to survive it.
