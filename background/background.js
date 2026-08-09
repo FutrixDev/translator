@@ -71,6 +71,7 @@ const languageNames = {
   'fr': 'Français',
   'de': 'Deutsch',
   'es': 'Español',
+  'pt': 'Português',
   'ru': 'Русский'
 };
 
