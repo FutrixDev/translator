@@ -120,6 +120,14 @@ test('input translation shows phonetic for words and read-aloud for anything typ
  * stacking context the opacity built around the dialog header (which sealed
  * the language menu behind the textarea, so the picker looked decorative), and
  * the compounded opacity that let page text show through the panel.
+ *
+ * The `.host-kit button` rule is the fourth, and it is the shape that matters
+ * most in practice. A theme does not style `button` from a bare tag; it styles
+ * it from a class on `<body>`, which weighs (0,1,1) — one type selector more
+ * than the single-class rules our own controls were written with. This is
+ * Elementor's kit rule copied off azulle.com, where it turned the float menu,
+ * the popup, the input dialog and the progress toast into stacks of lime pills
+ * all at once.
  */
 const HOSTILE_PAGE_CSS = `
   div { opacity: 0.8; box-sizing: content-box; filter: saturate(0.4); }
@@ -127,18 +135,25 @@ const HOSTILE_PAGE_CSS = `
   button { text-transform: uppercase; font-family: monospace; }
   textarea { box-sizing: content-box; font-family: monospace; transform: translateX(30px); }
   label { text-transform: uppercase; letter-spacing: 4px; }
+  .host-kit button {
+    background-color: rgb(195, 250, 125);
+    border: 1px solid rgb(195, 250, 125);
+    border-radius: 100px;
+    padding: 14px 30px;
+    font: 600 15.75px monospace;
+  }
 `;
 
 /**
  * The inherited half, injected once the dialog is up rather than served with
  * the page.
  *
- * These reach our panels through `<body>`, so they would also reach the float
- * ball and its menu — which are separate roots, outside this reset, and are how
- * every test here opens the dialog in the first place. A 3× line-height on the
- * menu is enough to push the item being clicked off a fixed-position element
- * that Playwright cannot scroll. Injecting after the dialog is open tests the
- * same cascade against the same elements without breaking the way in.
+ * These reach our panels through `<body>`, and the float ball and its menu are
+ * how every test here opens the dialog in the first place. A 3× line-height on
+ * the menu is enough to push the item being clicked off a fixed-position
+ * element that Playwright cannot scroll — so even now that the menu is a
+ * covered root, injecting after the dialog is open keeps the way in from
+ * depending on the very reset under test.
  */
 const HOSTILE_INHERITED_CSS = `
   body {
@@ -190,10 +205,11 @@ function startTargetLangFixture() {
     const site = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><head><style>${HOSTILE_PAGE_CSS}</style></head>`
-        + '<body><h1>Hostile stylesheet page</h1><p>Body text.</p>'
+        + '<body class="host-kit"><h1>Hostile stylesheet page</h1><p>Body text.</p>'
         // A div of the page's own, so a test can check the page rules are
         // actually live before asserting they did not reach us.
-        + '<div id="host-canary">Host div</div></body></html>');
+        + '<div id="host-canary">Host div</div>'
+        + '<button id="host-button" type="button">Host button</button></body></html>');
     });
 
     api.listen(0, '127.0.0.1', () => {
@@ -321,6 +337,69 @@ function computed(page, selector, properties) {
     return Object.fromEntries(props.map((name) => [name, style.getPropertyValue(name)]));
   }, { sel: selector, props: properties });
 }
+
+test('a theme\'s button style cannot reach our controls', async ({ page }) => {
+  // The reported symptom, on azulle.com: every panel rendered as a stack of
+  // lime pills. `.host-kit button` weighs (0,1,1) and every control rule of
+  // ours weighed (0,1,0), so the page won outright on background, padding,
+  // border-radius and font — in the float menu, the popup, the input dialog
+  // and the progress toast at the same time, since they all share the shape.
+  const fixture = await startTargetLangFixture();
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: fixture.endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      targetLangSetByUser: true,
+    });
+
+    await page.goto(fixture.url);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    // The page's own button is styled, so the rule is live. Without this the
+    // assertions below would pass against a stylesheet that never loaded.
+    expect(await computed(page, '#host-button', ['background-color', 'border-radius', 'padding'])).toEqual({
+      'background-color': 'rgb(195, 250, 125)',
+      'border-radius': '100px',
+      padding: '14px 30px',
+    });
+
+    await openFloatBallMenu(page);
+    const item = await computed(page, '.ai-translator-menu-item', [
+      'background-color', 'border-radius', 'padding', 'font-size', 'font-weight', 'font-family',
+    ]);
+    expect(item['background-color']).toBe('rgba(0, 0, 0, 0)');
+    expect(item['border-radius']).toBe('0px');
+    expect(item.padding).toBe('12px 14px');
+    expect(item['font-size']).toBe('13px');
+    expect(item['font-weight']).toBe('400');
+    expect(item['font-family']).not.toContain('monospace');
+
+    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
+    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await settleDialogAnimations(page);
+
+    // The dialog's own two button shapes: the pill and the icon square.
+    const primary = await computed(page, '#ai-translator-do-translate', [
+      'background-color', 'border-radius', 'padding', 'font-size',
+    ]);
+    expect(primary['background-color']).toBe('rgb(111, 99, 255)');
+    expect(primary['border-radius']).toBe('999px');
+    expect(primary.padding).toBe('9px 14px');
+    expect(primary['font-size']).toBe('14px');
+
+    const trigger = await computed(page, '#ai-translator-input-dialog .ai-translator-lang-trigger', [
+      'border-radius', 'padding', 'font-weight',
+    ]);
+    expect(trigger['border-radius']).toBe('999px');
+    expect(trigger.padding).toBe('7px 12px 7px 14px');
+    expect(trigger['font-weight']).toBe('500');
+  } finally {
+    fixture.close();
+  }
+});
 
 test('a hostile host stylesheet cannot reach into the dialog', async ({ page }) => {
   // The guard for the containment reset in content/content.css. Three defects
