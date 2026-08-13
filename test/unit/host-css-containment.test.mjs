@@ -172,16 +172,25 @@ test('the reset is declared before the rules that have to beat it', () => {
 // popup, the input dialog and the progress toast all lost their background,
 // padding, border-radius and font to the page's button style at once.
 //
-// The fix is a specificity band, and both edges of it are asserted here
-// because a browser only shows you the failure on a site that happens to ship
-// the rule:
+// The same kit ships `.elementor-kit-6 button:hover`, and a state is a
+// pseudo-class, so that one weighs (0,2,1) — heavier again. It takes whatever
+// the control's own hover rule does not restate, which is why hovering a float
+// menu item drew a near-black 1px box around it and turned the label white.
 //
-//   theme (0,1,1)  <  the control reset (0,1,2)  <  our own rules (0,2,0)
+// So the fix is a four-step specificity band, and every edge of it is asserted
+// here because a browser only shows you the failure on a site that happens to
+// ship the rule:
 //
-// The reset gets its extra type selector from a leading `body`; our own rules
-// get their second class from the panel root they are scoped to. A new rule
-// for a control written the old way, with one class, silently drops back
-// underneath the theme — that is what the last test catches.
+//   theme (0,1,1)  <  theme state (0,2,1)  <  the reset (0,2,2)  ≤  ours (0,2,2)
+//
+// The reset gets there from a leading `body` plus `:is(:enabled, :disabled)`,
+// which matches every control in every state and is there for the class of
+// weight alone; our own rules get there from `html body` plus the panel root.
+// The last tie is settled by source order within our own stylesheet, so the
+// reset has to stay above them in the file — which the older guard above
+// already asserts. A new rule for a control written the old way, with one
+// class, silently drops back underneath the theme — that is what the last test
+// catches.
 
 /** Rough CSS specificity: [ids, classes, types]. `:is()`/`:not()` take the max of their arguments. */
 function specificity(selector) {
@@ -249,23 +258,27 @@ test('the markup still renders controls we have to defend', () => {
   assert.ok(classes.has('ai-translator-menu-item'), 'the float menu items are no longer buttons with that class');
 });
 
+/** A theme's `.kit button` and its `:hover`/`:focus` twin — the two weights to clear. */
+const THEME_BASE = [0, 1, 1];
+const THEME_STATE = [0, 2, 1];
+
 test('the control reset outranks a theme rule but not our own', () => {
   const reset = selectors(resetBlock()).filter((s) => /\b(button|textarea|select)\b/.test(s));
   assert.equal(reset.length, 1, 'expected exactly one form-control rule in the containment block');
   const weight = specificity(reset[0]);
   assert.ok(
-    compare(weight, [0, 1, 1]) > 0,
-    `the control reset weighs ${weight} and no longer beats a theme's \`.kit button\` (0,1,1); `
-    + 'the panels go back to the page\'s button style',
+    compare(weight, THEME_STATE) > 0,
+    `the control reset weighs ${weight} and no longer beats a theme's \`.kit button:hover\` (0,2,1); `
+    + 'a page that restyles or moves its buttons on hover reaches ours',
   );
   assert.ok(
-    compare(weight, [0, 2, 0]) < 0,
-    `the control reset weighs ${weight} and now outranks our own control rules (0,2,0); `
+    compare(weight, [0, 2, 2]) <= 0,
+    `the control reset weighs ${weight} and now outranks our own control rules (0,2,2); `
     + 'it would flatten every background, padding and radius we set',
   );
 });
 
-test('every rule for one of our controls is scoped to its panel root', () => {
+test('every rule for one of our controls outranks the theme, in every state', () => {
   const classes = controlClasses();
   const offenders = [];
   for (const selector of allSelectors()) {
@@ -275,13 +288,16 @@ test('every rule for one of our controls is scoped to its panel root', () => {
     // `!important` throughout is its own defence — .ai-translator-inline-block is a page
     // element, not a panel child, and cannot be scoped to a root.
     if (new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^{}]*!\\s*important`).test(CSS)) continue;
-    if (compare(specificity(selector), [0, 1, 1]) <= 0) offenders.push(selector);
+    if (compare(specificity(selector), THEME_STATE) <= 0) offenders.push(selector);
   }
   assert.deepEqual(
     offenders,
     [],
-    'these control rules weigh (0,1,0) and lose to a theme\'s `.kit button` (0,1,1).\n'
-    + 'Prefix each with the panel root it lives in, e.g.\n'
-    + '  :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn { … }',
+    `these control rules do not clear a theme's \`.kit button:hover\` (${THEME_STATE}), so the page\n`
+    + `takes every property they leave to the base rule — a rule at ${THEME_BASE} is not enough.\n`
+    + 'Prefix each with `html body` and the panel root it lives in, e.g.\n'
+    + '  html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn { … }\n'
+    + 'A light-theme override takes the attribute onto the `html` it is already set on:\n'
+    + '  html[data-ai-translator-theme="light"] body .ai-translator-menu-item { … }',
   );
 });

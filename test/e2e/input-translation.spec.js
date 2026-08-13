@@ -128,6 +128,13 @@ test('input translation shows phonetic for words and read-aloud for anything typ
  * Elementor's kit rule copied off azulle.com, where it turned the float menu,
  * the popup, the input dialog and the progress toast into stacks of lime pills
  * all at once.
+ *
+ * Its `:hover`/`:focus` twin is the fifth, and it is heavier still — a state is
+ * a pseudo-class, so (0,2,1). It takes whatever the control's own hover rule
+ * does not restate, which on the first fix was the border and the colour: the
+ * float menu drew a near-black box around the item under the pointer and turned
+ * its label white, on a white menu. Both rules are the real values off that
+ * site, so the fixture fails the way the site did.
  */
 const HOSTILE_PAGE_CSS = `
   div { opacity: 0.8; box-sizing: content-box; filter: saturate(0.4); }
@@ -141,6 +148,12 @@ const HOSTILE_PAGE_CSS = `
     border-radius: 100px;
     padding: 14px 30px;
     font: 600 15.75px monospace;
+  }
+  .host-kit button:hover,
+  .host-kit button:focus {
+    background-color: rgb(0, 2, 22);
+    color: rgb(255, 255, 255);
+    border: 1px solid rgb(0, 2, 22);
   }
 `;
 
@@ -338,6 +351,19 @@ function computed(page, selector, properties) {
   }, { sel: selector, props: properties });
 }
 
+/**
+ * Wait out a hover/focus transition on one element.
+ *
+ * The menu item carries `transition: background 0.15s`, so a computed style read
+ * taken the instant after `page.hover()` samples the first frame — rgba(0, 0, 0, 0)
+ * on its way to our purple, which reads exactly like the rule never matched.
+ */
+function settleTransitions(page, selector) {
+  return page.evaluate((sel) => Promise.all(
+    document.querySelector(sel).getAnimations().map((animation) => animation.finished.catch(() => {})),
+  ), selector);
+}
+
 test('a theme\'s button style cannot reach our controls', async ({ page }) => {
   // The reported symptom, on azulle.com: every panel rendered as a stack of
   // lime pills. `.host-kit button` weighs (0,1,1) and every control rule of
@@ -377,6 +403,20 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(item['font-weight']).toBe('400');
     expect(item['font-family']).not.toContain('monospace');
 
+    // Hovering is where the page gets a second, heavier go at it. Our own hover
+    // rule only sets a background, so the border and the colour have to come
+    // from the base rule outranking `.host-kit button:hover`, not from us
+    // restating them per control.
+    await page.hover('.ai-translator-menu-item[data-action="translate-page"]');
+    await settleTransitions(page, '.ai-translator-menu-item[data-action="translate-page"]');
+    const hovered = await computed(page, '.ai-translator-menu-item[data-action="translate-page"]', [
+      'background-color', 'color', 'border-top-width', 'border-top-style',
+    ]);
+    expect(hovered['background-color']).toBe('rgba(124, 92, 255, 0.08)');
+    expect(hovered.color).toBe('rgb(29, 29, 31)');
+    expect(hovered['border-top-width']).toBe('0px');
+    expect(hovered['border-top-style']).toBe('none');
+
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');
     await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
     await settleDialogAnimations(page);
@@ -389,6 +429,14 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(primary['border-radius']).toBe('999px');
     expect(primary.padding).toBe('9px 14px');
     expect(primary['font-size']).toBe('14px');
+
+    // `:focus` is the state that outlives the pointer — a clicked button keeps
+    // it, so a leak here is not a flicker, it is how the button then looks.
+    await page.focus('#ai-translator-do-translate');
+    await settleTransitions(page, '#ai-translator-do-translate');
+    const focused = await computed(page, '#ai-translator-do-translate', ['background-color', 'color']);
+    expect(focused['background-color']).toBe('rgb(111, 99, 255)');
+    expect(focused.color).toBe('rgb(255, 255, 255)');
 
     const trigger = await computed(page, '#ai-translator-input-dialog .ai-translator-lang-trigger', [
       'border-radius', 'padding', 'font-weight',
@@ -562,3 +610,4 @@ test('the containment reset does not outrank our own fade-in', async ({ page }) 
     fixture.close();
   }
 });
+

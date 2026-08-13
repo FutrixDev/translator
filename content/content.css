@@ -135,20 +135,40 @@
    Elementor is on a large slice of the web and every page builder ships the
    same shape, so this is the common case, not one hostile site.
 
-   The specificity here is the whole point, and it sits in a band:
+   The same kit ships a second rule that has to be answered separately:
 
-   - `body` in front adds a type selector, so this weighs (0,1,2) and beats the
-     (0,1,1) theme rule outright. A tie would be settled by source order, and
-     the page's stylesheet is parsed after ours injects, so a tie loses.
-   - It stays one class short of (0,2,0), which is what our own control rules
-     below now weigh — they carry their panel root as a prefix for exactly this
-     reason. So this neutralises the theme and then our own design wins back
-     every property it declares, without an `!important` anywhere.
+     .elementor-kit-6 button:hover,
+     .elementor-kit-6 button:focus { background: #000216; color: #fff;
+                                     border: 1px solid #000216 }
+
+   That weighs (0,2,1) — a whole class heavier, because a state is a
+   pseudo-class. It reaches every property the hovered control's *own* hover
+   rule does not restate, and there are always some: the float menu's items
+   set `border: none` and their colour in the base rule only, so hovering one
+   drew a 1px near-black box around it and flipped the label to #fff, which on
+   the light theme is white on white. Themes animate `transform` on hover as
+   often as they recolour, and no control of ours declares that at all.
+
+   So the band has four steps, and no `!important` anywhere in it:
+
+     theme base (0,1,1) < theme state (0,2,1) < this reset (0,2,2) ≤ ours (0,2,2)
+
+   - `body` in front adds a type selector and `:is(:enabled, :disabled)` adds
+     the class. The union is every form control in every state, so it changes
+     nothing about what this matches — it is here for the one class of weight,
+     which is what puts the reset above a theme's `:hover` as well as its base
+     rule.
+   - Our own control rules carry `html body` and their panel root, which lands
+     them on (0,2,2) too. A tie inside one stylesheet is settled by source
+     order and they all sit below this block, so they win back every property
+     they declare and this reset keeps the rest. A tie with the *page* would
+     go the other way — its sheet parses after ours injects — which is why
+     beating the theme has to be strict.
 
    Adding a control to a panel needs nothing here; adding a *rule* for one
-   needs the root prefix, or the theme takes it back. That is asserted by
-   test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) :is(button, input, textarea, select) {
+   needs the `html body` + root prefix, or the theme's hover takes it back.
+   That is asserted by test/unit/host-css-containment.test.mjs. */
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -240,7 +260,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   color: var(--text-primary);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-close {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-close {
   width: 28px;
   height: 28px;
   display: flex;
@@ -255,7 +275,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   transition: all 0.2s ease;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-close:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-close:hover {
   background: var(--icon-hover-bg);
   border-color: var(--icon-hover-border);
   color: var(--text-primary);
@@ -288,7 +308,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   position: relative;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -307,11 +327,11 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   transition: all 0.2s ease;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger:hover {
   border-color: var(--accent);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger:focus {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-trigger:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(111, 99, 255, 0.15);
@@ -347,7 +367,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   overflow-y: auto;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item {
   width: 100%;
   text-align: left;
   border: none;
@@ -359,11 +379,11 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   cursor: pointer;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item:hover {
   background: var(--icon-hover-bg);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item.is-selected {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item.is-selected {
   background: rgba(111, 99, 255, 0.18);
   color: var(--text-primary);
 }
@@ -377,7 +397,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   overflow-y: auto;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn {
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -391,13 +411,13 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   transition: all 0.2s ease;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn:hover {
   background: var(--icon-hover-bg);
   border-color: var(--icon-hover-border);
   color: var(--accent);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn:focus-visible {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(111, 99, 255, 0.25);
@@ -405,7 +425,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
 
 /* A speaker button that is mid-utterance is also its own stop button, so it
    has to look engaged rather than merely hovered. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn.is-speaking {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn.is-speaking {
   background: var(--icon-hover-bg);
   border-color: var(--icon-hover-border);
 }
@@ -561,7 +581,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   border-top: 1px solid var(--divider);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -576,7 +596,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
   transition: all 0.2s ease;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn:hover {
   background: var(--btn-hover-bg);
   color: var(--text-primary);
   border-color: var(--accent);
@@ -845,7 +865,7 @@ button.ai-translator-inline-block {
   color: #22c55e;
 }
 
-[id="ai-translator-progress"] .ai-translator-progress-close {
+html body [id="ai-translator-progress"] .ai-translator-progress-close {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
@@ -863,7 +883,7 @@ button.ai-translator-inline-block {
   z-index: 10;
 }
 
-[id="ai-translator-progress"] .ai-translator-progress-close:hover {
+html body [id="ai-translator-progress"] .ai-translator-progress-close:hover {
   background: linear-gradient(145deg, #4a2525 0%, #3a1a1a 100%);
   border-color: rgba(239, 68, 68, 0.5);
   color: #f87171;
@@ -871,7 +891,7 @@ button.ai-translator-inline-block {
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
 }
 
-[id="ai-translator-progress"] .ai-translator-progress-close:active {
+html body [id="ai-translator-progress"] .ai-translator-progress-close:active {
   transform: scale(0.95);
 }
 
@@ -1243,7 +1263,7 @@ button.ai-translator-inline-block {
   }
 }
 
-[id="ai-translator-float-menu"] .ai-translator-menu-item {
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -1262,11 +1282,11 @@ button.ai-translator-inline-block {
   box-sizing: border-box;
 }
 
-[id="ai-translator-float-menu"] .ai-translator-menu-item:hover {
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:hover {
   background: rgba(124, 92, 255, 0.15);
 }
 
-[id="ai-translator-float-menu"] .ai-translator-menu-item:active {
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:active {
   background: rgba(124, 92, 255, 0.25);
 }
 
@@ -1381,7 +1401,7 @@ button.ai-translator-inline-block {
   gap: 8px;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea {
   width: 100%;
   padding: 12px 14px;
   background: var(--pill-bg);
@@ -1396,13 +1416,13 @@ button.ai-translator-inline-block {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea:focus {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(111, 99, 255, 0.2);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea::placeholder {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-textarea::placeholder {
   color: var(--text-muted);
 }
 
@@ -1424,18 +1444,18 @@ button.ai-translator-inline-block {
 
 /* Copy sits opposite the primary action instead of trailing the result panel,
    so the two things you can do with a translation share one row. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-btn-copy {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-btn-copy {
   margin-right: auto;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-primary {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   box-shadow: 0 6px 16px rgba(111, 99, 255, 0.3);
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-primary:hover {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-primary:hover {
   background: #7c72ff;
 }
 
@@ -1464,8 +1484,8 @@ button.ai-translator-inline-block {
   white-space: nowrap;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak-result {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak,
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak-result {
   flex-shrink: 0;
 }
 
@@ -1508,7 +1528,7 @@ button.ai-translator-inline-block {
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
 }
 
-[data-ai-translator-theme="light"] .ai-translator-lang-item.is-selected {
+html[data-ai-translator-theme="light"] body .ai-translator-lang-item.is-selected {
   background: rgba(111, 99, 255, 0.12);
 }
 
@@ -1544,13 +1564,13 @@ button.ai-translator-inline-block {
   color: #16a34a;
 }
 
-[data-ai-translator-theme="light"] .ai-translator-progress-close {
+html[data-ai-translator-theme="light"] body .ai-translator-progress-close {
   background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 100%);
   border-color: rgba(239, 68, 68, 0.2);
   color: #dc2626;
 }
 
-[data-ai-translator-theme="light"] .ai-translator-progress-close:hover {
+html[data-ai-translator-theme="light"] body .ai-translator-progress-close:hover {
   background: linear-gradient(145deg, #fee2e2 0%, #fecaca 100%);
   border-color: rgba(239, 68, 68, 0.4);
   color: #b91c1c;
@@ -1626,11 +1646,11 @@ button.ai-translator-inline-block {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(124, 92, 255, 0.1);
 }
 
-[data-ai-translator-theme="light"] .ai-translator-menu-item {
+html[data-ai-translator-theme="light"] body .ai-translator-menu-item {
   color: #1d1d1f;
 }
 
-[data-ai-translator-theme="light"] .ai-translator-menu-item:hover {
+html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
   background: rgba(124, 92, 255, 0.08);
 }
 
