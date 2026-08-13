@@ -28,10 +28,11 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
+const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
 
 const CSS = repoFile('content/content.css');
 const MARKER = '/* ==================== Host-page containment ====================';
@@ -159,4 +160,128 @@ test('the reset is declared before the rules that have to beat it', () => {
     assert.ok(at > 0, `${rule} is gone; this guard needs updating`);
     assert.ok(at > start, `${rule} is declared above the containment reset, so the reset wins the tie`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Form controls
+//
+// A theme does not write `button { … }`. It writes `.elementor-kit-6 button`,
+// from a class it puts on <body> — (0,1,1), one type selector heavier than the
+// single-class rules our own controls were written with. azulle.com renders
+// every panel we have as a stack of lime pills that way: the float menu, the
+// popup, the input dialog and the progress toast all lost their background,
+// padding, border-radius and font to the page's button style at once.
+//
+// The fix is a specificity band, and both edges of it are asserted here
+// because a browser only shows you the failure on a site that happens to ship
+// the rule:
+//
+//   theme (0,1,1)  <  the control reset (0,1,2)  <  our own rules (0,2,0)
+//
+// The reset gets its extra type selector from a leading `body`; our own rules
+// get their second class from the panel root they are scoped to. A new rule
+// for a control written the old way, with one class, silently drops back
+// underneath the theme — that is what the last test catches.
+
+/** Rough CSS specificity: [ids, classes, types]. `:is()`/`:not()` take the max of their arguments. */
+function specificity(selector) {
+  let s = selector.replace(/::[a-z-]+/g, '');
+  const total = [0, 0, 0];
+  // Functional pseudo-classes contribute the specificity of their heaviest argument.
+  const functional = /:(is|not|has|where)\(/;
+  let match;
+  while ((match = functional.exec(s))) {
+    let depth = 0;
+    let end = match.index + match[0].length - 1;
+    for (; end < s.length; end += 1) {
+      if (s[end] === '(') depth += 1;
+      else if (s[end] === ')' && (depth -= 1) === 0) break;
+    }
+    const inner = s.slice(match.index + match[0].length, end);
+    if (match[1] !== 'where') {
+      const best = splitSelectorList(inner)
+        .map((part) => specificity(part.trim()))
+        .reduce((a, b) => (compare(b, a) > 0 ? b : a), [0, 0, 0]);
+      for (let i = 0; i < 3; i += 1) total[i] += best[i];
+    }
+    s = s.slice(0, match.index) + ' ' + s.slice(end + 1);
+  }
+  total[0] += (s.match(/#[\w-]+/g) || []).length;
+  total[1] += (s.match(/\.[\w-]+/g) || []).length
+    + (s.match(/\[[^\]]*\]/g) || []).length
+    + (s.match(/:[a-z-]+(?![\w-]*\()/g) || []).length;
+  total[2] += (s.match(/(^|[\s>+~])([a-z][\w-]*)/g) || []).length;
+  return total;
+}
+
+/** > 0 when a outranks b. */
+function compare(a, b) {
+  for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] - b[i];
+  return 0;
+}
+
+/** The class names we render on real form controls, read off the markup rather than listed here. */
+function controlClasses() {
+  const classes = new Set();
+  for (const file of repoDir('content').filter((f) => f.endsWith('.js'))) {
+    const js = repoFile(`content/${file}`);
+    for (const [, , attr] of js.matchAll(/<(button|textarea|input|select)\b[^>]*\bclass="([^"]*)"/g)) {
+      for (const name of attr.replace(/\$\{[^}]*\}/g, ' ').split(/\s+/)) {
+        if (name.startsWith('ai-translator-')) classes.add(name);
+      }
+    }
+  }
+  return classes;
+}
+
+/** Every rule in the sheet as {selector, specificity}, one entry per selector in a list. */
+function allSelectors() {
+  return [...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*\}/g)]
+    .flatMap(([, group]) => splitSelectorList(group))
+    .map((s) => s.trim())
+    .filter((s) => s && !s.startsWith('@') && !s.startsWith('from') && !s.startsWith('to'));
+}
+
+test('the markup still renders controls we have to defend', () => {
+  // If this ever empties out, the guard below passes vacuously.
+  const classes = controlClasses();
+  assert.ok(classes.size >= 8, `only found ${classes.size} control classes; the markup scan has stopped matching`);
+  assert.ok(classes.has('ai-translator-menu-item'), 'the float menu items are no longer buttons with that class');
+});
+
+test('the control reset outranks a theme rule but not our own', () => {
+  const reset = selectors(resetBlock()).filter((s) => /\b(button|textarea|select)\b/.test(s));
+  assert.equal(reset.length, 1, 'expected exactly one form-control rule in the containment block');
+  const weight = specificity(reset[0]);
+  assert.ok(
+    compare(weight, [0, 1, 1]) > 0,
+    `the control reset weighs ${weight} and no longer beats a theme's \`.kit button\` (0,1,1); `
+    + 'the panels go back to the page\'s button style',
+  );
+  assert.ok(
+    compare(weight, [0, 2, 0]) < 0,
+    `the control reset weighs ${weight} and now outranks our own control rules (0,2,0); `
+    + 'it would flatten every background, padding and radius we set',
+  );
+});
+
+test('every rule for one of our controls is scoped to its panel root', () => {
+  const classes = controlClasses();
+  const offenders = [];
+  for (const selector of allSelectors()) {
+    // Only rules whose *subject* is the control: `… .ai-translator-btn svg` styles the icon.
+    const subject = selector.split(/[\s>+~]+/).filter(Boolean).pop() || '';
+    if (![...classes].some((name) => subject.includes(`.${name}`))) continue;
+    // `!important` throughout is its own defence — .ai-translator-inline-block is a page
+    // element, not a panel child, and cannot be scoped to a root.
+    if (new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^{}]*!\\s*important`).test(CSS)) continue;
+    if (compare(specificity(selector), [0, 1, 1]) <= 0) offenders.push(selector);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'these control rules weigh (0,1,0) and lose to a theme\'s `.kit button` (0,1,1).\n'
+    + 'Prefix each with the panel root it lives in, e.g.\n'
+    + '  :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn { … }',
+  );
 });
