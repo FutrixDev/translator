@@ -670,12 +670,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // looking like it did nothing.
     notifyPdfStarted(fileName);
     try {
-      await handlePdfCreateJob({
+      const job = await handlePdfCreateJob({
         source: { kind: 'url', url },
         operationId,
         fileName,
         pageUrl: info.pageUrl || ''
       });
+      // A create can resolve to a job that is already over — the idempotent
+      // adopt of an earlier attempt that died. No poll transition will ever
+      // fire for it, so without this the user saw "started" and then nothing.
+      // (handlePdfCreateJob has already released the operation id, so the
+      // "try again" in the failure copy is true.)
+      if (job && (job.status === 'failed' || job.status === 'abandoned')) {
+        notifyPdfError(job.error || { code: job.status });
+      }
     } catch (error) {
       notifyPdfError(error);
     }
@@ -770,15 +778,15 @@ async function notifyPdfTerminal(record) {
   const uiLang = await pdfNotificationLang();
   const succeeded = record.status === 'succeeded';
   const titleKey = succeeded ? 'pdfNotifyDoneTitle' : 'pdfNotifyFailTitle';
-  const bodyKey = succeeded
-    ? 'pdfNotifyDoneBody'
-    : pdfClient.pdfErrorMessageKey(record.error && record.error.code);
+  const body = succeeded
+    ? pdfMessage('pdfNotifyDoneBody', uiLang)
+    : pdfClient.pdfErrorMessage(record.error, key => pdfMessage(key, uiLang));
   const fileName = record.fileName ? `${record.fileName}\n` : '';
   chrome.notifications.create(`pdf-job-${record.jobId}`, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title: pdfMessage(titleKey, uiLang),
-    message: `${fileName}${pdfMessage(bodyKey, uiLang)}`
+    message: `${fileName}${body}`
   }, () => {
     if (chrome.runtime.lastError) {
       console.warn('PDF notification failed:', chrome.runtime.lastError.message);
@@ -837,12 +845,13 @@ async function notifyPdfRunning(fileName) {
 
 async function notifyPdfError(error) {
   const uiLang = await pdfNotificationLang();
-  const code = error && (error.code || (error.error && error.error.code));
+  // Either the error itself or the {error: {...}} messaging envelope.
+  const inner = error && error.error && error.error.code ? error.error : error;
   chrome.notifications.create({
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title: pdfMessage('pdfNotifyFailTitle', uiLang),
-    message: pdfMessage(pdfClient.pdfErrorMessageKey(code), uiLang)
+    message: pdfClient.pdfErrorMessage(inner, key => pdfMessage(key, uiLang))
   }, () => {
     if (chrome.runtime.lastError) {
       console.warn('PDF notification failed:', chrome.runtime.lastError.message);
@@ -913,13 +922,28 @@ async function handlePdfCreateJob(message) {
       targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)
     });
   } catch (error) {
+    const code = (error && error.code) || 'engine_error';
+    // A 409 of this family means the cached operation id names work that
+    // already settled — a failed-then-deleted job, a finalized billing row, or
+    // a job with different settings (the target language changed). Replaying
+    // it can never succeed, so drop the URL binding: the NEXT click mints a
+    // fresh id and actually runs. Everything else (network, auth, quota)
+    // keeps the binding — those retries must stay idempotent.
+    if (code === 'operation_already_finished' || code === 'output_conflict' || code === 'job_conflict') {
+      await pdfClient.releaseUrlOperationId(operationId);
+    }
     await pdfClient.saveJobRecord({
       jobId: pendingId,
       status: 'failed',
       stage: null,
       error: {
-        code: (error && error.code) || 'engine_error',
-        message: (error && error.message) || ''
+        code,
+        message: (error && error.message) || '',
+        // too_many_pages carries the server's actual cap; keep it on the
+        // record so the popup can render the honest number, not a stale one.
+        ...(error && error.details && error.details.maxPages
+          ? { maxPages: error.details.maxPages }
+          : {})
       },
       settledAt: Date.now()
     });
@@ -943,6 +967,14 @@ async function handlePdfCreateJob(message) {
     // the only place its finish time can be stamped.
     ...(job.status === 'queued' || job.status === 'running' ? {} : { settledAt: Date.now() })
   });
+  if (job.status === 'failed' || job.status === 'abandoned') {
+    // Terminal on arrival: either the dispatch just failed, or the create
+    // adopted a job that had already died. Both burn the operation id — the
+    // server adopts by (user, operationId) regardless of status, so replaying
+    // it would return this same dead job for the binding's whole 24h TTL.
+    // Released here, the next click starts a genuinely new attempt.
+    await pdfClient.releaseUrlOperationId(operationId);
+  }
   await ensurePdfPollAlarm();
   return { ...job, fileName };
 }

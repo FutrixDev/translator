@@ -1,37 +1,13 @@
 // AI Translator — shared helpers for the PDF surfaces (popup + upload page).
 //
 // A classic script on purpose: both pages load it with a plain <script> tag,
-// the same way i18n/messages.js is shared. The service worker has its own
-// module-side copy of the error map in background/pdf-client.js.
+// the same way i18n/messages.js is shared. The error map itself lives in
+// shared/pdf-errors.js (loaded before this file), so the service worker and
+// the pages read the SAME table instead of two copies that drift.
 (function () {
   'use strict';
 
-  /** Server/client error codes → i18n message keys (see i18n/messages.js). */
-  function pdfErrorMessageKey(code) {
-    switch (code) {
-      case 'insufficient_points': return 'pdfErrInsufficientPoints';
-      case 'too_many_pages': return 'pdfErrTooManyPages';
-      case 'encrypted_pdf': return 'pdfErrEncrypted';
-      case 'invalid_pdf':
-      case 'invalid_source_key':
-      case 'invalid_output':
-      case 'missing_source': return 'pdfErrInvalid';
-      case 'scanned_unsupported': return 'pdfErrScanned';
-      case 'pdf_too_large': return 'pdfErrTooLarge';
-      case 'source_fetch_failed': return 'pdfErrSourceFetch';
-      case 'engine_error': return 'pdfErrEngine';
-      case 'budget_exceeded': return 'pdfErrBudget';
-      case 'container_unavailable':
-      case 'gateway_unavailable':
-      case 'storage_unavailable': return 'pdfErrUnavailable';
-      case 'unauthorized': return 'pdfSignInRequired';
-      case 'feature_disabled': return 'featureDisabled';
-      case 'upload_failed':
-      case 'network_error':
-      case 'no_response': return 'pdfErrNetwork';
-      default: return 'pdfFailed';
-    }
-  }
+  const { pdfErrorMessageKey, pdfErrorMessage } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
 
   /**
    * A job view/record → the i18n key of what to show for it.
@@ -123,6 +99,7 @@
 
   globalThis.AI_TRANSLATOR_PDF_UI = {
     pdfErrorMessageKey,
+    pdfErrorMessage,
     pdfStatusKey,
     isPdfJobActive,
     isLikelyPdfUrl,

@@ -33,9 +33,12 @@
   let currentUILang = 'en';
   const t = (key) => getMessage(key, currentUILang);
 
-  // The file currently being shepherded. `operationId` is minted once per
-  // chosen file and reused on every retry, so a retry adopts the existing
-  // job instead of paying for a second one.
+  // The file currently being shepherded. `operationId` is minted when the
+  // file is chosen and reused on a retry after transport trouble, so such a
+  // retry adopts the existing job instead of paying for a second one. It is
+  // re-minted the moment it is known to be burned — a terminal job, or a 409
+  // for an operation the server already settled — because the server adopts
+  // by id regardless of status and would replay the dead outcome forever.
   let currentFile = null;
   let currentJobId = null;
   let pollTimer = null;
@@ -121,7 +124,12 @@
       return;
     }
 
-    // failed / abandoned
+    // failed / abandoned. This job is over, and the server adopts by
+    // (user, operationId) regardless of status — a retry replaying this id
+    // would only re-adopt this same dead job. The next attempt is new paid
+    // work, so it gets a new id. (Lost-response failures never reach here —
+    // they fail in startJob, where the id is deliberately kept.)
+    if (currentFile) currentFile.operationId = crypto.randomUUID();
     elements.progressTrack.hidden = true;
     renderFailure(view.error || { code: view.status });
   }
@@ -129,7 +137,7 @@
   /** Terminal failures and create-time rejections share one presentation. */
   function renderFailure(error) {
     const code = error && error.code;
-    showError(t(PDF_UI.pdfErrorMessageKey(code)));
+    showError(PDF_UI.pdfErrorMessage(error, t));
 
     if (code === 'unauthorized' || (error && error.loginRequired)) {
       elements.signIn.hidden = false;
@@ -140,7 +148,11 @@
     // same shape: this page outlived the switch, and every retry is refused
     // until the setting goes back on.
     if (code === 'insufficient_points' || code === 'feature_disabled') return;
-    // Anything else: the same operationId makes another attempt safe.
+    // Anything else gets a retry. Which operationId it replays is decided
+    // where the failure was observed: a terminal job or a settled-operation
+    // 409 minted a fresh id (the old one is a dead end on the server), while
+    // a network/upload failure kept it (replaying it is what stops a lost
+    // response from becoming a double charge).
     if (currentFile) elements.retry.hidden = false;
   }
 
@@ -197,6 +209,15 @@
     });
 
     if (!response.ok) {
+      const code = response.error && response.error.code;
+      // The 409s that can never succeed on replay: the id names an operation
+      // the server already settled, or a job with different settings. Mint a
+      // fresh id so Retry starts a genuinely new attempt. Every other failure
+      // keeps the id — after a lost response it is exactly what makes Retry
+      // adopt the job instead of paying for a second one.
+      if (code === 'operation_already_finished' || code === 'output_conflict' || code === 'job_conflict') {
+        currentFile.operationId = crypto.randomUUID();
+      }
       elements.statusText.textContent = t('pdfStatusFailed');
       elements.progressTrack.hidden = true;
       renderFailure(response.error || {});

@@ -275,6 +275,174 @@ test('the library link cannot be built from a base that is not a web origin', ()
   assert.equal(ui.pdfLibraryUrl('not a url', 'job-1'), '');
 });
 
+// ---------------------------------------------------------------------------
+// The sticky URL → operationId binding, and when it must let go
+//
+// The binding exists so a retry after a lost response replays the SAME id and
+// adopts the same job instead of paying twice. But the server adopts by
+// (user, operationId) regardless of status, and billing refuses an id it
+// already settled — so once the job behind an id is failed, abandoned or gone,
+// every replay is the same dead end for the binding's whole 24h TTL. That was
+// the "翻译此PDF fails forever after one hiccup" bug: a burned id must be
+// released the moment it is seen to burn.
+// ---------------------------------------------------------------------------
+
+test('a URL keeps its operation id across clicks, until it is released', async () => {
+  withStorage();
+  const first = await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00001');
+  assert.equal(await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00001'), first);
+  await pdf.releaseUrlOperationId(first);
+  const second = await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00001');
+  assert.notEqual(second, first, 'after a release the next click must mint a fresh id');
+});
+
+test('releasing an id no URL holds leaves the other bindings alone', async () => {
+  withStorage();
+  const kept = await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00002');
+  await pdf.releaseUrlOperationId('never-issued');
+  await pdf.releaseUrlOperationId(null);
+  assert.equal(await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00002'), kept);
+});
+
+test('a poll that sees the job die releases the binding; a success keeps it', async () => {
+  const store = withStorage({
+    comicToken: 'token',
+    pdfJobs: [
+      { jobId: 'job-dead', operationId: 'op-dead', status: 'running', createdAt: Date.now() },
+      { jobId: 'job-live', operationId: 'op-live', status: 'running', createdAt: Date.now() }
+    ],
+    pdfUrlOps: {
+      'https://a.example/dead.pdf': { opId: 'op-dead', createdAt: Date.now() },
+      'https://a.example/live.pdf': { opId: 'op-live', createdAt: Date.now() }
+    }
+  });
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    status: 200,
+    json: async () => (String(url).includes('job-dead')
+      ? { jobId: 'job-dead', status: 'failed', progress: 40, error: { code: 'budget_exceeded', message: '', refunded: true } }
+      : { jobId: 'job-live', status: 'succeeded', progress: 100, results: {} })
+  });
+  const { transitions } = await pdf.refreshJobRecords();
+  assert.equal(transitions.length, 2);
+  assert.equal(store.pdfUrlOps['https://a.example/dead.pdf'], undefined,
+    'the failed job burned its id — the binding must go');
+  assert.ok(store.pdfUrlOps['https://a.example/live.pdf'],
+    'a succeeded id stays: replaying it resolves instantly and free');
+});
+
+test('a job the server has forgotten releases its binding too', async () => {
+  // The 404 case: swept server-side, or deleted from the web history. Its
+  // billing reservation is settled, so a replay of the id would only 409.
+  const store = withStorage({
+    comicToken: 'token',
+    pdfJobs: [{ jobId: 'job-gone', operationId: 'op-gone', status: 'running', createdAt: Date.now() }],
+    pdfUrlOps: { 'https://a.example/gone.pdf': { opId: 'op-gone', createdAt: Date.now() } }
+  });
+  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({ error: 'not_found' }) });
+  const { transitions } = await pdf.refreshJobRecords();
+  assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].status, 'failed');
+  assert.deepEqual(store.pdfUrlOps, {});
+});
+
+test('the create path releases the id when the server says it is burned', () => {
+  const source = repoFile('background/background.js');
+  const body = source.slice(source.indexOf('async function handlePdfCreateJob'));
+  // The 409 family that can never succeed on replay…
+  for (const code of ['operation_already_finished', 'output_conflict', 'job_conflict']) {
+    assert.ok(body.includes(`'${code}'`), `the create catch must recognise ${code}`);
+  }
+  assert.match(body, /releaseUrlOperationId\(operationId\)/,
+    'and both the 409 catch and the terminal-on-arrival adopt must release the id');
+  // …and the job that arrives already dead (the idempotent adopt of a failed
+  // attempt), which no poll will ever transition.
+  assert.ok(
+    /job\.status === 'failed' \|\| job\.status === 'abandoned'/.test(body),
+    'a job terminal on arrival burns the id too'
+  );
+});
+
+test('the upload page re-mints a burned operation id before offering retry', () => {
+  // Same class of bug as the URL binding, bytes edition: the page keeps one
+  // operationId per chosen file, and a Retry replaying it after a terminal
+  // job would only re-adopt the same dead job.
+  const source = repoFile('pdf/upload.js');
+  const view = source.slice(source.indexOf('function renderView'), source.indexOf('function renderFailure'));
+  assert.match(view, /currentFile\.operationId = crypto\.randomUUID\(\)/,
+    'a terminal job must burn the id the next retry would otherwise replay');
+  const start = source.slice(source.indexOf('async function startJob'));
+  assert.ok(start.includes("'operation_already_finished'"),
+    'a settled-operation 409 must re-mint too');
+});
+
+// ---------------------------------------------------------------------------
+// One error map, honest copy
+// ---------------------------------------------------------------------------
+
+await import('../../i18n/messages.js');
+const t = (key) => globalThis.getMessage(key, 'en');
+
+test('the worker and the pages read the same error map', () => {
+  // The map lives once, in shared/pdf-errors.js; both re-export it.
+  assert.equal(pdf.pdfErrorMessageKey, ui.pdfErrorMessageKey);
+  const pages = ['popup/popup.html', 'pdf/upload.html', 'options/options.html'];
+  for (const page of pages) {
+    const html = repoFile(page);
+    const shared = html.indexOf('shared/pdf-errors.js');
+    const uiAt = html.indexOf('pdf-ui.js');
+    assert.ok(shared > -1, `${page} must load shared/pdf-errors.js`);
+    assert.ok(shared < uiAt, `${page} must load it before pdf-ui.js, which reads it`);
+  }
+});
+
+test('the codes behind the retry-poisoning bug map to actionable copy', () => {
+  assert.equal(ui.pdfErrorMessageKey('dispatch_rejected'), 'pdfErrBusy');
+  assert.equal(ui.pdfErrorMessageKey('operation_already_finished'), 'pdfErrRetry');
+  assert.equal(ui.pdfErrorMessageKey('job_conflict'), 'pdfErrRetry');
+  assert.equal(ui.pdfErrorMessageKey('output_conflict'), 'pdfErrOutputConflict');
+  assert.equal(ui.pdfErrorMessageKey('source_download_failed'), 'pdfErrUnavailable');
+  assert.equal(ui.pdfErrorMessageKey('delivery_unreadable'), 'pdfErrEngine');
+  assert.equal(ui.pdfErrorMessageKey('invalid_operation_id'), 'pdfErrInvalid');
+  assert.equal(ui.pdfErrorMessageKey('missing_operation_id'), 'pdfErrInvalid');
+  assert.equal(ui.pdfErrorMessageKey('invalid_byte_size'), 'pdfErrInvalid');
+  // apiFetch mints http_<status> when the body carries no code.
+  assert.equal(ui.pdfErrorMessageKey('http_503'), 'pdfErrUnavailable');
+  assert.equal(ui.pdfErrorMessageKey('http_404'), 'pdfFailed');
+});
+
+test('the page-limit message shows the cap the server actually enforced', () => {
+  // The server sends { maxPages } with too_many_pages; a ComicApiError carries
+  // it under details, its toMessage() flattening carries it at the top level.
+  assert.equal(
+    ui.pdfErrorMessage({ code: 'too_many_pages', details: { maxPages: 32 } }, t),
+    'This PDF has too many pages (32 max)'
+  );
+  assert.equal(
+    ui.pdfErrorMessage({ code: 'too_many_pages', maxPages: 48 }, t),
+    'This PDF has too many pages (48 max)'
+  );
+  // A stored record error has no details; the message still shows a number,
+  // never the raw placeholder.
+  assert.match(ui.pdfErrorMessage({ code: 'too_many_pages' }, t), /\(\d+ max\)$/);
+});
+
+test('every locale carries the new copy, and none leaks the placeholder', () => {
+  for (const [lang, table] of Object.entries(globalThis.I18N_MESSAGES)) {
+    if (!table.pdfFailed) continue; // a locale without the PDF feature strings
+    for (const key of ['pdfErrBusy', 'pdfErrRetry', 'pdfErrOutputConflict']) {
+      assert.ok(table[key], `${lang} is missing ${key}`);
+    }
+    assert.match(table.pdfErrTooManyPages, /\{maxPages\}/,
+      `${lang}.pdfErrTooManyPages must interpolate the server's cap, not hardcode one`);
+    const rendered = ui.pdfErrorMessage(
+      { code: 'too_many_pages', maxPages: 32 },
+      (key) => globalThis.getMessage(key, lang)
+    );
+    assert.doesNotMatch(rendered, /\{maxPages\}/, `${lang} leaked the placeholder`);
+  }
+});
+
 test('the settings page asks the worker for the origin instead of hardcoding one', () => {
   const options = repoFile('options/options.js');
   assert.match(options, /ACCOUNT_SITE_BASE/);
