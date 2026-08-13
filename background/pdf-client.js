@@ -13,6 +13,10 @@
 // (2026-08-02-pdf-translation-server-retypeset-design.md §3.1).
 
 import { apiFetch, getToken, ComicApiError } from './comic-client.js';
+// Side-effect module (no exports): publishes the shared error map on
+// globalThis, the same dual-mode arrangement as i18n/messages.js. The pages
+// load the identical file with a <script> tag via pdf/pdf-ui.js.
+import '../shared/pdf-errors.js';
 
 // Kept in sync with pdfMaxBytes() on the server. Checking here saves the user
 // a 30 MiB upload that would only be refused at job creation.
@@ -133,6 +137,10 @@ export async function createPdfJob({
     throw new ComicApiError('upload_failed', error?.message || 'Uploading the PDF failed');
   }
   if (!putResponse.ok) {
+    // The storage PUT does not go through apiFetch, so it gets its own line in
+    // the SW console — without one, "upload_failed" is undiagnosable later.
+    const bodySnippet = await putResponse.text().then(t => t.slice(0, 200)).catch(() => '');
+    console.warn(`[pdf] presigned PUT failed: HTTP ${putResponse.status} op=${opId} ${bodySnippet}`);
     throw new ComicApiError('upload_failed', `Uploading the PDF failed (HTTP ${putResponse.status})`, putResponse.status);
   }
 
@@ -321,6 +329,15 @@ export async function hasActiveJobs() {
 // retry reuses it and lands on the server's idempotent adopt path — including
 // the happy accident that retrying an already-finished operation resolves
 // instantly and free.
+//
+// The idempotency is for LIVE work only, though. The server adopts a job for
+// (user, operationId) whatever its status, and billing refuses to reserve
+// under an id it already settled — so once the job behind an id is failed,
+// abandoned, or gone, every replay of that id is the same dead end, for the
+// whole 24h TTL. That was the "翻译此PDF fails forever after one hiccup" bug:
+// releaseUrlOperationId() below is called the moment an id is seen to be
+// burned, so the NEXT click mints a fresh id, a fresh reservation, a fresh
+// dispatch. (The web app never had the bug — it mints a UUID per submit.)
 const URL_OPS_KEY = 'pdfUrlOps';
 const URL_OP_TTL_MS = JOB_TTL_MS; // aligned with the job records they map to
 const MAX_URL_OPS = 40;
@@ -351,6 +368,36 @@ export async function getOrCreateUrlOperationId(url) {
 }
 
 /**
+ * Forget a URL → operationId binding whose id can never run again.
+ *
+ * Called when the id is known to be burned: the job behind it ended in
+ * `failed`/`abandoned`, the server no longer knows the job (404 — e.g. deleted
+ * from the web history), or the create was refused with
+ * `operation_already_finished` / `output_conflict` / `job_conflict`. NOT
+ * called for queued/running/succeeded — those are exactly the states the
+ * binding exists to make replays converge on.
+ *
+ * Keyed by the id, not the URL: the callers that observe a burned id (a poll
+ * transition, a create rejection) hold the record, which no longer remembers
+ * which URL minted it.
+ */
+export async function releaseUrlOperationId(operationId) {
+  if (!operationId) return;
+  const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
+  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  let changed = false;
+  for (const [key, entry] of Object.entries(map)) {
+    if (entry && entry.opId === operationId) {
+      delete map[key];
+      changed = true;
+    }
+  }
+  if (changed) {
+    await chrome.storage.local.set({ [URL_OPS_KEY]: map });
+  }
+}
+
+/**
  * Re-poll every non-terminal record and persist what came back.
  *
  * Returns `{records, transitions}` — `transitions` are the records that just
@@ -378,6 +425,10 @@ export async function refreshJobRecords() {
           error: { code: 'engine_error', message: 'The job is no longer known to the service' },
           settledAt: Date.now()
         });
+        // The server forgot the job (swept, or deleted from the web history);
+        // its billing reservation is settled, so a replay of this id would
+        // only 409. Release it so the next click starts clean.
+        await releaseUrlOperationId(record.operationId);
         transitions.push(record);
         changed = true;
       }
@@ -398,6 +449,11 @@ export async function refreshJobRecords() {
       // When it stopped, which is what the popup ages a finished row out by.
       record.settledAt = Date.now();
       transitions.push(record);
+      // A failure burns the operation id (see releaseUrlOperationId); a
+      // success keeps it — replaying a succeeded id resolves instantly, free.
+      if (view.status === 'failed' || view.status === 'abandoned') {
+        await releaseUrlOperationId(record.operationId);
+      }
     }
   }
 
@@ -407,31 +463,7 @@ export async function refreshJobRecords() {
   return { records, transitions };
 }
 
-/** Server/client error codes → i18n message keys (see i18n/messages.js). */
-export function pdfErrorMessageKey(code) {
-  switch (code) {
-    case 'insufficient_points': return 'pdfErrInsufficientPoints';
-    case 'too_many_pages': return 'pdfErrTooManyPages';
-    case 'encrypted_pdf': return 'pdfErrEncrypted';
-    case 'invalid_pdf':
-    case 'invalid_source_key':
-    case 'invalid_output':
-    case 'missing_source': return 'pdfErrInvalid';
-    case 'scanned_unsupported': return 'pdfErrScanned';
-    case 'pdf_too_large': return 'pdfErrTooLarge';
-    case 'source_fetch_failed': return 'pdfErrSourceFetch';
-    case 'engine_error': return 'pdfErrEngine';
-    case 'budget_exceeded': return 'pdfErrBudget';
-    case 'container_unavailable':
-    case 'gateway_unavailable':
-    case 'storage_unavailable': return 'pdfErrUnavailable';
-    case 'unauthorized': return 'pdfSignInRequired';
-    case 'feature_disabled': return 'featureDisabled';
-    case 'upload_failed':
-    case 'network_error':
-    case 'no_response': return 'pdfErrNetwork';
-    default: return 'pdfFailed';
-  }
-}
+/** The shared map from shared/pdf-errors.js, re-exported for the worker. */
+export const { pdfErrorMessageKey, pdfErrorMessage } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
 
 export { MAX_PDF_BYTES, ComicApiError };

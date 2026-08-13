@@ -253,7 +253,7 @@ function renderPdfJobs(records) {
       head.appendChild(open);
     } else if (record.error) {
       status.classList.add('is-error');
-      status.textContent = t(PDF_UI.pdfErrorMessageKey(record.error.code));
+      status.textContent = PDF_UI.pdfErrorMessage(record.error, t);
     }
 
     // A finished row is dismissable — the placeholder has no jobId yet, and a
@@ -290,7 +290,7 @@ function showPdfCreateError(error) {
   box.className = 'pdf-job pdf-job-error';
   const text = document.createElement('span');
   text.className = 'pdf-job-status is-error';
-  text.textContent = t(PDF_UI.pdfErrorMessageKey(error && error.code));
+  text.textContent = PDF_UI.pdfErrorMessage(error, t);
   box.appendChild(text);
 
   if (error && (error.code === 'unauthorized' || error.loginRequired)) {

@@ -736,7 +736,7 @@ function pdfTaskMeta(job) {
   const langKey = PDF_TASK_LANG_KEYS[job.targetLang];
   if (langKey) parts.push(t(langKey));
   parts.push(job.status === 'failed' && job.error
-    ? t(PDF_UI.pdfErrorMessageKey(job.error.code))
+    ? PDF_UI.pdfErrorMessage(job.error, t)
     : t(PDF_UI.pdfStatusKey(job)));
   if (job.createdAt) {
     const at = new Date(job.createdAt);

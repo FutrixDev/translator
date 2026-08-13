@@ -238,6 +238,13 @@ export async function apiFetch(path, { method = 'GET', body = null } = {}) {
 
   if (!response.ok) {
     const { error, message, ...details } = data;
+    // The one place every API failure passes through, so the one log line that
+    // makes a field report diagnosable from the SW console. Status + code +
+    // a bounded message snippet; never the token, never the whole body.
+    console.warn(
+      `[api] ${method} ${path} -> HTTP ${response.status}` +
+        ` code=${error || 'none'} ${String(message || '').slice(0, 200)}`
+    );
     throw new ComicApiError(error || `http_${response.status}`, message || '', response.status, details);
   }
 
