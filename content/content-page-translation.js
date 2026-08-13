@@ -489,18 +489,34 @@
       /np\.\w+/,                     // NumPy
     ];
 
-    // 代码高亮容器的 class 检测：按【完整 class token】匹配 highlight / highlighter
-    // 及其 - 连接的变体（highlight、highlight-source-js、highlighter-rouge、js-highlight）。
-    // 不能用 [class*="highlight"] 子串匹配：营销站常用 highlights/highlighted 命名普通
-    // 内容区块——如 retellai.com 用 <section class="c-home-highlights-accordion-2"> 包住
-    // 整篇博客正文，子串命中会把整篇正文当成代码块跳过，整页翻译对正文完全不生效。
+    // 代码块容器的 class 检测。全部按【完整 class token】匹配，绝不用 [class*=] 子串匹配：
+    //
+    // - highlight / highlighter 及其 - 连接的变体（highlight、highlight-source-js、
+    //   highlighter-rouge、js-highlight）。营销站常用 highlights/highlighted 命名普通
+    //   内容区块——如 retellai.com 用 <section class="c-home-highlights-accordion-2"> 包住
+    //   整篇博客正文，子串命中会把整篇正文当成代码块跳过，整页翻译对正文完全不生效。
+    //
+    // - Prism 的 language-<lang>。这条尤其危险：原来写成 [class*="language-"]，而
+    //   Wikipedia 的 Vector 2022 皮肤在 <html> 上挂了 vector-feature-language-in-header-enabled，
+    //   子串命中的是 <html>，于是 processElement(document.body) 第一步就 return，
+    //   整页一个块都收不到 → 误报“页面已翻译”，全文翻译对所有维基页面彻底失效。
+    //   只按 token 前缀匹配仍然不够：language-switcher / language-list / language-item
+    //   是多语言站导航的常见命名。所以还要求这个祖先真的装着代码（自身是 <pre>/<code>
+    //   或子孙里有），语言切换器不可能满足。
     const highlightClassTokenRe = /(^|-)highlight(er)?(-|$)/;
-    function isInsideCodeHighlightContainer(element) {
+    const CODE_CONTAINER_CLASSES = new Set(['codehilite', 'sourceCode', 'code-block']);
+    function holdsCode(el) {
+      const tagName = el.tagName;
+      return tagName === 'PRE' || tagName === 'CODE' || !!el.querySelector('pre, code');
+    }
+    function isInsideCodeContainer(element) {
       for (let el = element; el; el = el.parentElement) {
         const classList = el.classList;
         if (!classList) continue;
         for (const cls of classList) {
           if (highlightClassTokenRe.test(cls)) return true;
+          if (CODE_CONTAINER_CLASSES.has(cls)) return true;
+          if (cls.startsWith('language-') && holdsCode(el)) return true;
         }
       }
       return false;
@@ -632,9 +648,9 @@
       // 跳过被 skipTags 包含的元素
       if (element.closest(skipTags.map(t => t.toLowerCase()).join(','))) return;
 
-      // 跳过代码块容器（highlight 类及其变体在 isInsideCodeHighlightContainer 里按 token 匹配）
-      if (element.closest('.codehilite, .sourceCode, .code-block, [class*="language-"]')) return;
-      if (isInsideCodeHighlightContainer(element)) return;
+      // 跳过代码块容器（codehilite / sourceCode / highlight 变体 / Prism language-*，
+      // 统一在 isInsideCodeContainer 里按完整 class token 匹配）
+      if (isInsideCodeContainer(element)) return;
 
       // 跳过数学公式内部的所有元素 - 数学公式应该整体保留，不单独翻译内部元素
       if (element.closest(MATH_CONTAINER_SELECTOR)) return;
