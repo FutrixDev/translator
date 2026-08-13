@@ -20,6 +20,11 @@ function startMockOpenAIServer() {
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
   const fastBatchRequests = [];
+  // The raw user-message text of EVERY request, whichever path it took. A "this text must
+  // never be translated" assertion has to check what actually left the browser: asserting on
+  // the DOM instead only proves no translation was rendered, which also passes when the text
+  // was shipped to the API and the reply merely failed to land.
+  const sentTexts = [];
 
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -45,6 +50,8 @@ function startMockOpenAIServer() {
           content = '';
         }
 
+        if (content) sentTexts.push(content);
+
         const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
         if (delimiter) {
           const segments = content.split(delimiter);
@@ -69,6 +76,7 @@ function startMockOpenAIServer() {
       resolve({
         server,
         fastBatchRequests,
+        sentTexts,
         endpoint: `http://127.0.0.1:${port}/v1/chat/completions`
       });
     });

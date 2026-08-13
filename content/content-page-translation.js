@@ -503,8 +503,20 @@
     //   只按 token 前缀匹配仍然不够：language-switcher / language-list / language-item
     //   是多语言站导航的常见命名。所以还要求这个祖先真的装着代码（自身是 <pre>/<code>
     //   或子孙里有），语言切换器不可能满足。
+    //
+    // - LaTeXML 的 ltx_listing / ltx_lstlisting / ltx_listingline / ltx_verbatim
+    //   （arXiv HTML 版与 ar5iv 论文的代码清单）。这条必须单列，上面两条都够不着它：
+    //   LaTeXML 把语种写成 ltx_lst_language_Python，是【下划线】，language- 匹配不到；
+    //   而清单里根本没有 <pre>/<code>——结构是
+    //   <div class="ltx_listing"><div class="ltx_listingline"><span class="ltx_text …">，
+    //   于是每个 <span> 都作为内联可译元素被单独送去翻译（实测泄漏 qa / dspy / Predict /
+    //   "question->answer" / # Out: Prediction(...)）。looksLikeCode() 也接不住：
+    //   拆到单个 span 之后碎片里一个特殊字符都没有。
     const highlightClassTokenRe = /(^|-)highlight(er)?(-|$)/;
-    const CODE_CONTAINER_CLASSES = new Set(['codehilite', 'sourceCode', 'code-block']);
+    const CODE_CONTAINER_CLASSES = new Set([
+      'codehilite', 'sourceCode', 'code-block',
+      'ltx_listing', 'ltx_lstlisting', 'ltx_listingline', 'ltx_verbatim',
+    ]);
     function holdsCode(el) {
       const tagName = el.tagName;
       return tagName === 'PRE' || tagName === 'CODE' || !!el.querySelector('pre, code');
