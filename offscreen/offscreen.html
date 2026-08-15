@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!--
+  The OCR worker room. Nothing is ever displayed here — this document exists
+  for one reason: Tesseract spawns a Web Worker and instantiates WebAssembly,
+  and an MV3 service worker may not spawn a nested worker.
+
+  Recognition only. The optional translate step runs in the content script via
+  ctx.requestTranslation(), which already owns the built-in-Translator path and
+  the fallback to the user's API.
+-->
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AI Translator OCR worker</title>
+  </head>
+  <body>
+    <script src="../vendor/tesseract/tesseract.min.js"></script>
+    <script src="../shared/ocr.js"></script>
+    <script src="offscreen.js"></script>
+  </body>
+</html>

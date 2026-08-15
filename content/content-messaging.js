@@ -63,15 +63,21 @@
           break;
         }
         case 'OCR_TRANSLATE_IMAGE':
-          // BYO-key vision OCR. Guarded by its own switch — a click can race a
+          // Image OCR. Guarded by its own switch — a click can race a
           // switch-off, same as the comic entries.
           if (!settings.enableImageOcrTranslation) break;
           if (ctx.startImageOcrTranslation) {
             ctx.startImageOcrTranslation({
               srcUrl: message.srcUrl,
-              targetLang: message.targetLang
+              targetLang: message.targetLang,
+              translate: message.translate
             });
           }
+          break;
+        // Local-OCR progress, relayed by the service worker on behalf of the
+        // offscreen document, which cannot address a tab itself.
+        case 'OCR_PROGRESS':
+          if (ctx.handleOcrProgress) ctx.handleOcrProgress(message);
           break;
         case 'COMIC_TRANSLATE_IMAGE':
           // Paid, account-backed path — deliberately not gated on the text

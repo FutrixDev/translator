@@ -266,6 +266,37 @@
             </label>
             <span class="hint" data-i18n-hint="hintEnableImageOcrTranslation"></span>
           </div>
+
+          <div class="feature-suboptions" id="ocrSubOptions">
+            <div class="form-group">
+              <label for="ocrEngine" data-i18n="ocrEngine">Recognition Engine</label>
+              <select id="ocrEngine">
+                <option value="local" data-i18n="ocrEngineLocal"></option>
+                <option value="vision" data-i18n="ocrEngineVision"></option>
+              </select>
+              <span class="hint" data-i18n-hint="hintOcrEngine"></span>
+            </div>
+
+            <div class="form-group" id="ocrSourceLanguageGroup">
+              <label for="ocrSourceLanguage" data-i18n="ocrSourceLanguage">Text Language in Images</label>
+              <!-- The languages are appended from OCRCore.OCR_LANGUAGES: the
+                   list is only offerable if its .traineddata is vendored, so it
+                   is owned by shared/ocr.js and not restated here. -->
+              <select id="ocrSourceLanguage">
+                <option value="auto" data-i18n="ocrSourceLanguageAuto"></option>
+              </select>
+              <span class="hint" data-i18n-hint="hintOcrSourceLanguage"></span>
+            </div>
+
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span data-i18n="ocrTranslate">Translate Recognized Text</span>
+                <input type="checkbox" id="ocrTranslate" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="hint" data-i18n-hint="hintOcrTranslate"></span>
+            </div>
+          </div>
         </section>
 
         <!-- YouTube captions. A normal one-column card so the grid seats it
@@ -292,7 +323,7 @@
             <span class="hint" data-i18n-hint="hintEnableYoutubeCaptionTranslation"></span>
           </div>
 
-          <div class="youtube-suboptions" id="youtubeSubOptions">
+          <div class="feature-suboptions" id="youtubeSubOptions">
             <div class="toggle-group">
               <label class="toggle-label">
                 <span data-i18n="showYoutubeOriginalCaption">Show Original Caption</span>
@@ -573,6 +604,7 @@
 
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
+  <script src="../shared/ocr.js"></script>
   <script src="../i18n/messages.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/pdf-errors.js"></script>

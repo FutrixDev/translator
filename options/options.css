@@ -765,8 +765,12 @@ body::before {
   }
 }
 
-/* ── YouTube caption sub-options ─────────────────────────────── */
-.youtube-suboptions {
+/* ── Sub-options of a feature toggle ─────────────────────────────
+   Settings that only mean anything while their feature is on: the indent and
+   rule say they belong to the toggle above, and `.disabled` says the toggle
+   is off without hiding them — a setting that vanishes is one the user cannot
+   discover. Used by the video-caption and image-OCR toggles. */
+.feature-suboptions {
   margin-top: 4px;
   padding-left: 14px;
   border-left: 2px solid var(--border);
@@ -775,7 +779,7 @@ body::before {
   gap: 14px;
 }
 
-.youtube-suboptions.disabled {
+.feature-suboptions.disabled {
   opacity: 0.45;
   pointer-events: none;
 }

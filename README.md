@@ -44,6 +44,14 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - Toggle show/hide translations
 - High-performance batch translation (100 items/batch, 8 concurrent)
 
+#### Image Text (OCR)
+- Right-click any image to read the text in it — screenshots, signs, menus, comics
+- Recognition runs on your own device by default: free, offline, no API key
+- Translating what it read is a separate step you can switch off — sometimes
+  "what does this say" is the whole question
+- Or point it at your own vision model when the image is a photograph or
+  stylized type the local engine struggles with
+
 #### Video Subtitles
 - Bilingual subtitles on YouTube, and on any video whose player carries a
   standard subtitle track — no per-site support needed
@@ -237,6 +245,12 @@ MIT License
 - 继承原文样式（字体、颜色、大小）
 - 支持显示/隐藏译文切换
 - 高性能批量翻译（100条/批，8并发）
+
+#### 图片文字（OCR）
+- 右键任意图片即可读出其中的文字——截图、路牌、菜单、漫画
+- 默认在本机识别：免费、离线、不需要 API Key
+- 识别之后是否翻译是可以单独关掉的一步——很多时候你只想知道“这上面写了什么”
+- 照片和艺术字本地引擎读不动时，也可以改用你自己的视觉模型
 
 #### 视频字幕
 - YouTube，以及任何自带标准字幕轨的播放器，都能显示双语字幕——无需逐站适配

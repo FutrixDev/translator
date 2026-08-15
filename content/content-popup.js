@@ -28,7 +28,12 @@
    * @param {{text: string, phonetic?: string, translation?: string, pending?: boolean}} options
    *   `pending` renders the loading state instead of a finished translation.
    */
-  function buildPopupMarkup({ text, phonetic = '', translation = '', pending = false }) {
+  // `sourceLabel` overrides the "Original" heading. Image OCR uses it to say
+  // which language it recognised ("Original · 日本語"): the phonetic slot below
+  // would be the obvious place, but translateText hides that on every
+  // re-translation, and the recognised language does not stop being true
+  // because the user picked a different target.
+  function buildPopupMarkup({ text, phonetic = '', translation = '', pending = false, sourceLabel = '' }) {
     return `
       <div class="ai-translator-header">
         <div class="ai-translator-header-left">
@@ -56,7 +61,7 @@
       <div class="ai-translator-content">
         <div class="ai-translator-source">
           <div class="ai-translator-label-row">
-            <div class="ai-translator-label">${t('original')}</div>
+            <div class="ai-translator-label">${escapeHtml(sourceLabel || t('original'))}</div>
             <div class="ai-translator-label-tools">
               <button class="ai-translator-icon-btn ai-translator-speak-source" type="button" aria-label="${t('pronounceOriginal')}">
                 ${SPEAKER_ICON}
@@ -183,7 +188,16 @@
   }
 
   // 显示已完成的翻译结果（用于右键菜单翻译）
-  function showTranslationResult(text, translation, phonetic = '') {
+  /**
+   * `options.sourceLabel` renames the "Original" heading; see buildPopupMarkup.
+   *
+   * `options.recognizeOnly` is for image OCR with the translate step switched
+   * off, where the recognised text is the whole result: the translation half is
+   * hidden rather than left blank, and Copy takes the source text. It is not a
+   * dead end — picking a target language from the dropdown translates, and
+   * translateText brings the hidden half back.
+   */
+  function showTranslationResult(text, translation, phonetic = '', options = {}) {
     hideTranslationPopup();
 
     // Ensure theme is applied
@@ -192,7 +206,16 @@
     state.translationPopup = document.createElement('div');
     state.translationPopup.className = 'ai-translator-popup';
     state.translationPopup.dataset.sourceText = text;
-    state.translationPopup.innerHTML = buildPopupMarkup({ text, phonetic, translation });
+    state.translationPopup.innerHTML = buildPopupMarkup({
+      text,
+      phonetic,
+      translation,
+      sourceLabel: options.sourceLabel || ''
+    });
+    if (options.recognizeOnly) {
+      state.translationPopup.querySelector('.ai-translator-divider')?.setAttribute('hidden', '');
+      state.translationPopup.querySelector('.ai-translator-result')?.setAttribute('hidden', '');
+    }
 
     // 居中显示弹窗
     const popupWidth = 400;
@@ -208,9 +231,16 @@
     // Event listeners
     state.translationPopup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
     state.translationPopup.querySelector('.ai-translator-copy').addEventListener('click', () => {
-      const currentTranslation = state.translationPopup?.querySelector('.ai-translator-translation-text')?.textContent;
-      if (currentTranslation && !currentTranslation.includes(t('translating'))) {
-        copyToClipboard(currentTranslation);
+      const popup = state.translationPopup;
+      if (!popup) return;
+      // With the translation half hidden there is nothing else to copy, and the
+      // recognised text is what the user came for. Reads the DOM rather than a
+      // captured flag so it corrects itself the moment a translation arrives.
+      const wanted = popup.querySelector('.ai-translator-result')?.hasAttribute('hidden')
+        ? popup.dataset.sourceText
+        : popup.querySelector('.ai-translator-translation-text')?.textContent;
+      if (wanted && !wanted.includes(t('translating'))) {
+        copyToClipboard(wanted);
         showCopyFeedback();
       }
     });
@@ -401,6 +431,12 @@
       if (state.translationPopup) {
         state.translationPopup.dataset.requestId = requestId;
         state.translationPopup.dataset.targetLang = targetLang;
+        // A recognise-only popup (image OCR with the translate step off) has
+        // its translation half hidden. Getting here means something asked for a
+        // translation anyway — the language dropdown — which is asking for it
+        // back.
+        state.translationPopup.querySelector('.ai-translator-divider')?.removeAttribute('hidden');
+        state.translationPopup.querySelector('.ai-translator-result')?.removeAttribute('hidden');
         const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
         const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
         const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
