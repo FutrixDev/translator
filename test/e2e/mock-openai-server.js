@@ -25,6 +25,10 @@ function startMockOpenAIServer() {
   // the DOM instead only proves no translation was rendered, which also passes when the text
   // was shipped to the API and the reply merely failed to land.
   const sentTexts = [];
+  // One entry per vision (image OCR) request — content arrived as an array of parts rather
+  // than a string. Recorded so specs can assert the image really left the browser in the
+  // OpenAI shape, not just that a popup rendered something.
+  const visionRequests = [];
 
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -48,6 +52,33 @@ function startMockOpenAIServer() {
           systemPrompt = messages.find((m) => m?.role === 'system')?.content || '';
         } catch {
           content = '';
+        }
+
+        // A vision request: [{type:'text'},{type:'image_url'}]. Answer with the JSON
+        // contract from shared/ocr.js instead of the echo protocol below.
+        if (Array.isArray(content)) {
+          const imagePart = content.find((part) => part?.type === 'image_url');
+          visionRequests.push({
+            partTypes: content.map((part) => part?.type),
+            // Enough of the data URL to assert the media type without dumping megabytes
+            // of base64 into a test failure message.
+            imageUrlPrefix: String(imagePart?.image_url?.url || '').slice(0, 40),
+            systemPrompt
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  text: 'HELLO WORLD',
+                  language: 'en',
+                  languageName: '英语',
+                  translation: '你好，世界'
+                })
+              }
+            }]
+          }));
+          return;
         }
 
         if (content) sentTexts.push(content);
@@ -77,6 +108,7 @@ function startMockOpenAIServer() {
         server,
         fastBatchRequests,
         sentTexts,
+        visionRequests,
         endpoint: `http://127.0.0.1:${port}/v1/chat/completions`
       });
     });

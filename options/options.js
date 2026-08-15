@@ -155,6 +155,7 @@ const elements = {
   hoverTranslationHotkey: document.getElementById('hoverTranslationHotkey'),
   showFloatBall: document.getElementById('showFloatBall'),
   autoDetect: document.getElementById('autoDetect'),
+  enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
   youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
@@ -264,6 +265,8 @@ const defaultSettings = {
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
   autoDetect: true,
+  // BYO-key vision OCR: free until clicked, so on by default like PDF.
+  enableImageOcrTranslation: true,
   // Off by default: this is the one feature that spends money, so it is opted
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
@@ -942,6 +945,7 @@ async function loadSettings() {
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
     elements.autoDetect.checked = result.autoDetect;
+    elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     // The switches themselves are drawn by renderAccountFeatures, which also
     // weighs whether this device has the account both features need.
     storedComicEnabled = !!result.enableComicTranslation;
@@ -1054,6 +1058,7 @@ function collectSettings() {
     hoverTranslationHotkey: elements.hoverTranslationHotkey.value,
     showFloatBall: elements.showFloatBall.checked,
     autoDetect: elements.autoDetect.checked,
+    enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
@@ -1338,6 +1343,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'hoverTranslationHotkey',
   'showFloatBall',
   'autoDetect',
+  'enableImageOcrTranslation',
   'enableYoutubeCaptionTranslation',
   'showYoutubeOriginalCaption'
 ];

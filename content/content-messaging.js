@@ -62,6 +62,17 @@
           });
           break;
         }
+        case 'OCR_TRANSLATE_IMAGE':
+          // BYO-key vision OCR. Guarded by its own switch — a click can race a
+          // switch-off, same as the comic entries.
+          if (!settings.enableImageOcrTranslation) break;
+          if (ctx.startImageOcrTranslation) {
+            ctx.startImageOcrTranslation({
+              srcUrl: message.srcUrl,
+              targetLang: message.targetLang
+            });
+          }
+          break;
         case 'COMIC_TRANSLATE_IMAGE':
           // Paid, account-backed path — deliberately not gated on the text
           // translation toggles above, which only govern the BYO-key features.
