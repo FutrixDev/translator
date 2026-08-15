@@ -97,12 +97,52 @@
     }
   }
 
+  // The structured `blocks` output as paragraphs of {text, confidence} lines —
+  // the shape OCRCore.filterRecognizedLines judges. Line granularity on
+  // purpose: Tesseract's hallucinations (stylised art read as Latin garbage)
+  // arrive as whole low-scoring lines, whereas dropping individual words would
+  // silently rewrite sentences.
+  function flattenBlocks(blocks) {
+    const paragraphs = [];
+    for (const block of blocks || []) {
+      for (const paragraph of (block && block.paragraphs) || []) {
+        const lines = [];
+        for (const line of (paragraph && paragraph.lines) || []) {
+          if (!line) continue;
+          lines.push({
+            text: String(line.text || '').replace(/\n+$/, ''),
+            confidence: typeof line.confidence === 'number' ? line.confidence : null
+          });
+        }
+        if (lines.length) paragraphs.push(lines);
+      }
+    }
+    return paragraphs;
+  }
+
   async function recognize({ dataUrl, languages }, onProgress) {
     const worker = await getTesseractWorker(languages, onProgress);
-    const { data } = await worker.recognize(dataUrl);
+    // `blocks` carries the per-line confidences the filter below needs; `text`
+    // is kept as the fallback when a build answers without them — an
+    // unfiltered result still beats an empty one.
+    const { data } = await worker.recognize(dataUrl, {}, { text: true, blocks: true });
+
+    let raw = data && typeof data.text === 'string' ? data.text : '';
+    const paragraphs = data && Array.isArray(data.blocks) ? flattenBlocks(data.blocks) : [];
+    if (paragraphs.length) {
+      // The filter works on the flat list (its all-dropped fallback has to see
+      // the whole result); membership rebuilds the paragraph gaps, which the
+      // popup renders and the reader needs.
+      const kept = new Set(globalThis.OCRCore.filterRecognizedLines(paragraphs.flat()));
+      raw = paragraphs
+        .map((lines) => lines.filter((line) => kept.has(line)).map((line) => line.text).join('\n'))
+        .filter((text) => text.trim())
+        .join('\n\n');
+    }
+
     // Just the text: the same {text, language} contract the vision engine
     // answers with, minus the language, which the service worker derives.
-    return { text: globalThis.OCRCore.normalizeRecognizedText(data.text) };
+    return { text: globalThis.OCRCore.normalizeRecognizedText(raw) };
   }
 
   const HANDLERS = {
