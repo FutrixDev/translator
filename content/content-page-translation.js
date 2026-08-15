@@ -214,7 +214,9 @@
           // Check for error in response
           if (response.error) {
             noteBatchFailure(response.error);
-          } else if (response.translations) {
+          } else {
+            // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
+            // 走逐块回退，而不是无声丢掉整批。
             await applyFastBatchTranslations(batch, response.translations, {
               onFailure: noteBatchFailure,
               isAborted: () => !!batchError

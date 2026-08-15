@@ -152,6 +152,24 @@ test('more translations than blocks trigger the same per-block retry', async () 
   assert.deepEqual(insertedByElement(blocks), ['译:Alpha.', '译:Beta.']);
 });
 
+test('a response with no translations array at all is retried per block, not dropped', async () => {
+  // processBatch feeds response.translations straight in; a malformed response
+  // ({} — neither error nor translations) and an empty array both take the
+  // same mismatch exit instead of silently losing the batch.
+  for (const translations of [undefined, []]) {
+    inserted.length = 0;
+    const blocks = ['First.', 'Second.'].map(makeBlock);
+    const requests = stubRequests((message) => ({
+      translations: [`译:${message.texts[0]}`],
+    }));
+
+    await ctx.applyFastBatchTranslations(blocks, translations, {});
+
+    assert.deepEqual(requests.map((m) => m.texts), [['First.'], ['Second.']]);
+    assert.deepEqual(insertedByElement(blocks), ['译:First.', '译:Second.']);
+  }
+});
+
 // ==================== the retry itself holds the same line ====================
 
 test('a single-block retry whose response splits into two segments inserts nothing for that block', async () => {
