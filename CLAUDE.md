@@ -65,11 +65,21 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 - **Theming**: CSS variables for dark/light theme support
 - **Host-page containment**: our panels are a subtree of the page's own
   document, so every page rule on a bare tag matches them too — example.com
-  ships `div { opacity: .8 }`. One scoped reset at the top of
-  `content/content.css` is the boundary; **a new panel root has to be added to
-  its `:is()` lists**, and its own rules have to outrank (0,1,0). Guarded by
-  `test/unit/host-css-containment.test.mjs` and the hostile-stylesheet spec in
-  `test/e2e/input-translation.spec.js`.
+  ships `div { opacity: .8 }`, and every page builder ships
+  `.kit button { … }` plus a heavier `.kit button:hover` twin. One scoped reset
+  at the top of `content/content.css` is the boundary, and specificity is a
+  four-step band with no `!important` in it:
+
+  ```
+  theme base (0,1,1) < theme state (0,2,1) < the reset (0,2,2) ≤ ours (0,2,2)
+  ```
+
+  So **a new panel root has to be added to the reset's `:is()` lists**, and a
+  new rule for a control needs `html body` plus its panel root
+  (`html[data-ai-translator-theme="light"] body …` for a light override) or the
+  theme's `:hover` takes back every property the rule leaves to the base rule.
+  Guarded by `test/unit/host-css-containment.test.mjs` and the
+  hostile-stylesheet spec in `test/e2e/input-translation.spec.js`.
 
 ### Account-Backed Features
 
