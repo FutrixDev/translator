@@ -1349,8 +1349,9 @@ async function handleOcrImage(message) {
     return { error: '请先在设置中配置 API Key' };
   }
 
+  const uiLang = getContextMenuLanguage(settings);
   try {
-    const { base64, mediaType } = await fetchImageForOcr(message.srcUrl, getContextMenuLanguage(settings));
+    const { base64, mediaType } = await fetchImageForOcr(message.srcUrl, uiLang);
     const targetLang = message.targetLang || getEffectiveTargetLang(settings);
     const targetLangName = languageNames[targetLang] || targetLang;
     const systemPrompt = globalThis.OCRCore.buildOcrSystemPrompt(targetLangName);
@@ -1378,7 +1379,13 @@ async function handleOcrImage(message) {
       );
     }
 
-    return globalThis.OCRCore.parseOcrResponse(content);
+    const parsed = globalThis.OCRCore.parseOcrResponse(content);
+    // null means the reply was JSON that broke (token cap, mangled quoting);
+    // an error beats presenting the raw blob as a translation.
+    if (!parsed) {
+      return { error: getMessage('translationFailed', uiLang) };
+    }
+    return parsed;
   } catch (error) {
     console.error('OCR translation error:', error);
     return { error: error.message || '翻译失败，请重试' };

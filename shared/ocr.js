@@ -60,13 +60,53 @@ Rules:
 
   // --- Response parsing ------------------------------------------------------
 
+  // The prompt asks for line breaks preserved, and weaker models take that
+  // literally inside the JSON string values — a raw newline where JSON demands
+  // \n. Escape control characters, but only inside string literals: between
+  // tokens they are legal pretty-printing.
+  function escapeControlCharsInStrings(candidate) {
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    for (const ch of candidate) {
+      if (!inString) {
+        if (ch === '"') inString = true;
+        out += ch;
+        continue;
+      }
+      if (escaped) {
+        out += ch;
+        escaped = false;
+      } else if (ch === '\\') {
+        out += ch;
+        escaped = true;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else if (ch === '\n') {
+        out += '\\n';
+      } else if (ch === '\r') {
+        out += '\\r';
+      } else if (ch === '\t') {
+        out += '\\t';
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+
   /**
-   * Parse the model's reply into {text, language, languageName, translation}.
+   * Parse the model's reply into {text, language, languageName, translation},
+   * or null when the reply tried to be JSON and broke — truncated by the token
+   * cap, mangled past repair. Showing that blob as a "translation" would be
+   * worse than an error, so the caller turns null into one.
    *
-   * Tolerant on purpose: models wrap JSON in ```json fences, or prefix a
-   * sentence, despite the prompt. If no JSON object can be recovered at all,
-   * the whole reply is treated as the translation — the most useful reading of
-   * a model that answered in prose — with no extracted text to show.
+   * Tolerant on purpose: models wrap JSON in ```json fences, prefix a
+   * sentence, or leave literal newlines inside string values, despite the
+   * prompt. A reply with no JSON object in it at all is treated as the
+   * translation — the most useful reading of a model that answered in prose —
+   * with no extracted text to show.
    */
   function parseOcrResponse(content) {
     const raw = String(content || '').trim();
@@ -84,20 +124,25 @@ Rules:
     }
 
     if (candidate.startsWith('{')) {
+      let parsed = null;
       try {
-        const parsed = JSON.parse(candidate);
-        const str = (v) => (typeof v === 'string' ? v.trim() : '');
-        return {
-          text: str(parsed.text),
-          language: str(parsed.language),
-          // Both spellings: the prompt asks for languageName, but models that
-          // have seen more snake_case JSON sometimes normalize to it.
-          languageName: str(parsed.languageName) || str(parsed.language_name),
-          translation: str(parsed.translation)
-        };
+        parsed = JSON.parse(candidate);
       } catch {
-        // Fall through to the plain-text reading.
+        try {
+          parsed = JSON.parse(escapeControlCharsInStrings(candidate));
+        } catch {
+          return null;
+        }
       }
+      const str = (v) => (typeof v === 'string' ? v.trim() : '');
+      return {
+        text: str(parsed.text),
+        language: str(parsed.language),
+        // Both spellings: the prompt asks for languageName, but models that
+        // have seen more snake_case JSON sometimes normalize to it.
+        languageName: str(parsed.languageName) || str(parsed.language_name),
+        translation: str(parsed.translation)
+      };
     }
 
     return { ...empty, translation: raw };

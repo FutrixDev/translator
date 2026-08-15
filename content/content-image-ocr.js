@@ -42,6 +42,15 @@
     // The "source" slot shows what is being worked on while there is no text
     // yet: the extraction notice.
     popup.innerHTML = ctx.buildPopupMarkup({ text: t('ocrExtracting'), pending: true });
+    // The standard markup ships controls this popup cannot serve: there is no
+    // source text to speak or copy yet, and the language dropdown would
+    // re-translate an empty string. Success rebuilds the popup fully wired via
+    // showTranslationResult; until then (and on failure, where this popup
+    // stays) only close and drag are live, so the rest must not render.
+    for (const selector of ['.ai-translator-lang-dropdown', '.ai-translator-speak-source', '.ai-translator-actions']) {
+      const el = popup.querySelector(selector);
+      if (el) el.style.display = 'none';
+    }
     popup.style.left = `${Math.max(10, (window.innerWidth - 400) / 2)}px`;
     popup.style.top = `${Math.max(10, (window.innerHeight - 250) / 2)}px`;
     state.translationPopup = popup;

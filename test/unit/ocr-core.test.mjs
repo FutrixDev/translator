@@ -51,6 +51,21 @@ test('a reply with no recoverable JSON becomes a bare translation', () => {
   assert.equal(parsed.translation, 'The sign says "Exit" which means 出口.');
 });
 
+test('literal newlines inside JSON string values parse and survive', () => {
+  // "Preserve line breaks" read literally: raw control characters where JSON
+  // demands \n. Pretty-printed whitespace between tokens must stay untouched.
+  const parsed = OCR.parseOcrResponse('{\n  "text": "LINE ONE\nLINE TWO",\n  "language": "en",\n  "languageName": "English",\n  "translation": "第一行\n第二行"\n}');
+  assert.equal(parsed.text, 'LINE ONE\nLINE TWO');
+  assert.equal(parsed.translation, '第一行\n第二行');
+  assert.equal(parsed.language, 'en');
+});
+
+test('a JSON reply broken past repair is null, never shown as a translation', () => {
+  // Truncated by the token cap mid-string: not prose, not recoverable JSON.
+  assert.equal(OCR.parseOcrResponse('{"text": "HELLO WORLD", "language": "en", "langu'), null);
+  assert.equal(OCR.parseOcrResponse('```json\n{"text": broken}\n```'), null);
+});
+
 test('empty and non-string replies come back all-empty, never throw', () => {
   const empty = { text: '', language: '', languageName: '', translation: '' };
   assert.deepEqual(OCR.parseOcrResponse(''), empty);
