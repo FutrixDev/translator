@@ -24,6 +24,24 @@
   const CONCURRENCY = 12;       // 并发数
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
+  // 内联格式标记：整页翻译提取文本时，把 <a>/<strong>/<em> 等内联格式元素编码成
+  // 成对的 <a1>…</a1> 标记随正文一起送翻，译文再按标记克隆原元素重建（见
+  // buildTranslationContent），从而保留超链接（href）和内联样式（class/style）。
+  // 只在 AI 引擎下生成标记：内置 NMT 引擎没有“原样保留标记”的承诺，喂进去只会
+  // 让标记被翻碎；内置引擎继续走纯文本，行为与从前完全一致。
+  const MARKUP_MARKER_RE = /<\/?[a-z]+\d+>/g;
+  const MARKUP_TAGS = new Set([
+    'A', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'SUP', 'SUB', 'MARK', 'SMALL',
+    'ABBR', 'DEL', 'INS', 'Q', 'CITE', 'DFN', 'CODE', 'KBD', 'SAMP', 'VAR'
+  ]);
+
+  // looksLikeCode/isMainlyUrl/长度阈值这类“对正文的判断”都要先剥掉占位符和
+  // 内联标记再做，否则 <a1></a1> 里的尖括号会把带链接的段落误判成代码。
+  function stripPlaceholders(text) {
+    if (!text) return '';
+    return text.replace(/\{\{\d+\}\}/g, '').replace(MARKUP_MARKER_RE, '');
+  }
+
   // 本轮收集里，受管容器内有多少块连生成内容都承不住而被放弃。翻译流程用它来
   // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
   let managedSkipCount = 0;
@@ -271,6 +289,97 @@
     if (hidden.length > 0 || managedHidden) {
       state.translationsVisible = true;
     }
+    // “仅显示译文”开着时，此前因“隐藏译文”被放回来的原文要重新藏起去
+    applyTranslationOnlyMode();
+  }
+
+  // ==================== 仅显示译文 ====================
+  // settings.showTranslationOnly（默认关）：整页翻译插入译文后隐藏对应原文。
+  // 只作用于整页翻译（.ai-translator-translated 标记的块）；悬停/划词翻译的
+  // 译文块（带各自的类名）被明确排除。
+
+  function isTranslationOnlyActive() {
+    // 浮球“隐藏译文”开关优先：译文都不显示了还藏着原文，页面就两边全空了
+    return !!settings.showTranslationOnly && state.translationsVisible !== false;
+  }
+
+  // 隐藏一条译文对应的原文：
+  // - 译文是原文块的兄弟节点（常规段落）→ 给原文块加 hidden 类
+  // - 译文插在原文块内部（水平 flex / 表格单元格 / slot）→ 把译文之前的子节点
+  //   包进一个 wrap 再隐藏。wrap 在模式关闭时原样解包（见 applyTranslationOnlyMode），
+  //   不给页面留下多余结构。
+  // 已知局限：wrap 会移动页面自己的节点。框架（React/Vue）重渲染被 wrap 的
+  // 子树时可能因找不到原父节点而报错。隔离世界里看不到页面世界的
+  // __reactFiber$ 等 expando，无法预检测；本模式默认关、由用户显式打开，
+  // 遇到这类页面关掉开关即可完整恢复。
+  function hideSourceForTranslation(translationEl) {
+    const prev = translationEl.previousElementSibling;
+    if (prev && prev.classList && prev.classList.contains('ai-translator-translated')) {
+      prev.classList.add('ai-translator-source-hidden');
+      return;
+    }
+
+    const holder = translationEl.parentElement;
+    const host = holder && holder.closest('.ai-translator-translated');
+    if (!host) return;
+    // 受管容器：译文是原文块自己的 ::after，隐藏原文会连译文一起消失，只能共存
+    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(host)) return;
+
+    let wrap = holder.querySelector(':scope > .ai-translator-source-wrap');
+    for (const node of Array.from(holder.childNodes)) {
+      // 译文之后的节点不动：插译文时原文全在它前面，之后出现的是页面新加的
+      // 内容，收进 wrap 会在解包时把它挪到译文前面，改变页面自己的顺序。
+      if (node === translationEl) break;
+      if (node.nodeType === Node.ELEMENT_NODE &&
+          (node.classList.contains('ai-translator-inline-block') ||
+           node.classList.contains('ai-translator-source-wrap'))) continue;
+      if (!wrap) {
+        wrap = document.createElement('span');
+        wrap.className = 'ai-translator-source-wrap';
+        holder.insertBefore(wrap, node);
+      }
+      wrap.appendChild(node);
+    }
+    if (wrap) wrap.classList.add('ai-translator-source-hidden');
+  }
+
+  // 按当前开关状态应用/撤销“仅显示译文”。设置变化、浮球“隐藏译文”切换、
+  // revealHiddenTranslations 时都会调用，幂等。
+  function applyTranslationOnlyMode() {
+    if (isTranslationOnlyActive()) {
+      // 页面脚本可能删掉我们插入的译文，原文不能跟着陪葬：先把配对译文已经
+      // 不在的隐藏原文放回来，再按当前还活着的译文重新隐藏。
+      document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
+        if (el.classList.contains('ai-translator-source-wrap')) {
+          const holder = el.parentElement;
+          if (holder && holder.querySelector(':scope > .ai-translator-inline-block')) return;
+          el.classList.remove('ai-translator-source-hidden');
+          if (holder) {
+            while (el.firstChild) holder.insertBefore(el.firstChild, el);
+            el.remove();
+          }
+        } else {
+          const next = el.nextElementSibling;
+          if (!next || !next.classList || !next.classList.contains('ai-translator-inline-block')) {
+            el.classList.remove('ai-translator-source-hidden');
+          }
+        }
+      });
+      const translations = document.querySelectorAll(
+        '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)'
+      );
+      translations.forEach((el) => hideSourceForTranslation(el));
+    } else {
+      document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
+        el.classList.remove('ai-translator-source-hidden');
+      });
+      document.querySelectorAll('.ai-translator-source-wrap').forEach((wrap) => {
+        const parent = wrap.parentNode;
+        if (!parent) return;
+        while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+        wrap.remove();
+      });
+    }
   }
 
   function estimateTokens(text) {
@@ -456,6 +565,8 @@
   // 收集可翻译的块级元素
   function collectTranslatableBlocks(root) {
     managedSkipCount = 0;
+    // 内联格式标记只在 AI 引擎下生成，见 MARKUP_MARKER_RE 处的说明。
+    const preserveMarkup = !usingBuiltinEngine();
     const blocks = [];
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
@@ -727,18 +838,21 @@
 
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
-        const { text, mathElements } = getTextWithMathPlaceholders(element);
-        if (text && text.length >= 2 && text.length <= 500) {
+        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup });
+        // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
+        const plainText = stripPlaceholders(text).trim();
+        if (text && plainText.length >= 2 && plainText.length <= 500) {
           // 跳过看起来像代码或主要是URL的文本
           // 这里要 trim：只含公式的元素排除占位符后会剩下空白（如 "{{1}} {{2}}"），
           // 不 trim 会被当成有正文，进而把纯公式送去翻译。
-          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '').trim();
+          const textWithoutMath = plainText;
           if (textWithoutMath && !looksLikeCode(textWithoutMath) && !isMainlyUrl(textWithoutMath)) {
             blocks.push({
               element: element,
               text: text,
               tagName: tagName,
-              mathElements: mathElements
+              mathElements: mathElements,
+              markupElements: markupElements
             });
             return;
           }
@@ -747,10 +861,10 @@
 
       // 对于块级元素
       if (blockTags.includes(tagName) || hasDirectText) {
-        const { text, mathElements } = getTextWithMathPlaceholders(element);
+        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup });
         if (text && text.length >= 2) {
-          // 跳过看起来像代码或主要是URL的文本（排除数学占位符后判断）
-          const textWithoutMath = text.replace(/\{\{\d+\}\}/g, '').trim();
+          // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
+          const textWithoutMath = stripPlaceholders(text).trim();
 
           // 排除公式占位符后没有任何正文：整个块就是一条公式，跳过。
           // 典型是 arXiv/LaTeXML 的行间公式——公式包在 <table class="ltx_equation"> 里，
@@ -772,16 +886,25 @@
             return;
           }
 
-          const block = {
-            element: element,
-            text: text,
-            tagName: tagName,
-            mathElements: mathElements // 保存公式信息
-          };
           // 超长块（如把整段正文塞进一个 <li>、用 <br><br> 分段的“超大列表项”）：
           // 标记 oversized，稍后按标点分块翻译。
           // 不能像以前那样在超限时回退去递归子元素——正文位于本元素的【直属文本节点】里，
           // 递归只遍历子【元素】会把正文整段丢弃，只剩标题/链接被翻译。
+          // 超长块回退成纯文本提取：splitTextIntoChunks 只认得 {{n}} 占位符，
+          // 会把成对的内联标记从中间切开、拆进不同请求，重建必然错乱。
+          if (text.length > MAX_BLOCK_CHARS && markupElements && markupElements.length > 0) {
+            const plain = getTextWithMathPlaceholders(element);
+            text = plain.text;
+            mathElements = plain.mathElements;
+            markupElements = [];
+          }
+          const block = {
+            element: element,
+            text: text,
+            tagName: tagName,
+            mathElements: mathElements, // 保存公式信息
+            markupElements: markupElements
+          };
           if (text.length > MAX_BLOCK_CHARS) {
             block.oversized = true;
           }
@@ -897,12 +1020,27 @@
     return false;
   }
 
+  // 判断一个节点是否值得作为内联格式标记保留：语义/格式标签整表收，SPAN 只收
+  // 带 class 或 style 的——裸 span 没有样式可保，编码它只会给模型添乱。
+  function isMarkupElement(node) {
+    const tagName = node.tagName;
+    if (MARKUP_TAGS.has(tagName)) return true;
+    if (tagName === 'SPAN') {
+      return !!(node.getAttribute('class') || node.getAttribute('style'));
+    }
+    return false;
+  }
+
   // 获取元素内容，用占位符替换数学公式（图标直接跳过）
-  // 返回 { text: string, mathElements: Array<{placeholder: string, type: string, element?: Element, text?: string}> }
-  // 注意：mathElements 保存 DOM 引用或 LaTeX 文本，用于后续还原
-  function getTextWithMathPlaceholders(element) {
+  // 返回 { text, mathElements, markupElements }：
+  // - mathElements 保存 DOM 引用或 LaTeX 文本，用于后续还原
+  // - markupElements 仅在 options.preserveMarkup 时非空，保存内联格式元素的引用，
+  //   文本里对应成对的 <a1>…</a1> 标记（标签名小写 + 序号，序号即数组下标 + 1）
+  function getTextWithMathPlaceholders(element, options) {
+    const preserveMarkup = !!(options && options.preserveMarkup);
     let text = '';
     const mathElements = [];
+    const markupElements = [];
     let mathIndex = 0;
 
     // 跳过的隐藏类名
@@ -992,6 +1130,27 @@
           return;
         }
 
+        // 内联格式元素：包上成对标记再递归。若递归后一个字都没添上（比如里面
+        // 只有图标），把开标记回滚掉——空标记对既没意义又诱导模型幻觉。
+        if (preserveMarkup && isMarkupElement(node)) {
+          const index = markupElements.length + 1;
+          const tag = node.tagName.toLowerCase();
+          const open = `<${tag}${index}>`;
+          const before = text.length;
+          text += open;
+          markupElements.push({ index, tag, element: node });
+          for (const child of node.childNodes) {
+            processNode(child);
+          }
+          if (text.length === before + open.length) {
+            text = text.slice(0, before);
+            markupElements.pop();
+          } else {
+            text += `</${tag}${index}>`;
+          }
+          return;
+        }
+
         // 递归处理子节点
         for (const child of node.childNodes) {
           processNode(child);
@@ -1003,7 +1162,7 @@
       processNode(child);
     }
 
-    return { text: text.trim(), mathElements };
+    return { text: text.trim(), mathElements, markupElements };
   }
 
   // 获取元素的直接文本内容（向后兼容）
@@ -1089,6 +1248,7 @@
     if (!text) return '';
     return text
       .replace(/\{\{\d+\}\}/g, '')
+      .replace(MARKUP_MARKER_RE, '')
       .replace(/\s+/g, '')
       .replace(/[\u200B-\u200D\uFEFF]/g, '')
       .trim()
@@ -1184,28 +1344,15 @@
     return child;
   }
 
-  // 用 DOM 操作构建包含数学公式的译文内容
-  // 不使用 innerHTML，直接用 cloneNode 复制原始数学元素，避免 HTML 序列化问题
-  function buildTranslationContentWithMath(container, translatedText, mathElements, prefix = '') {
-    // 清理 LLM 可能添加的换行
-    let text = translatedText.replace(/\s*\n\s*/g, ' ');
-
-    // 添加前缀（如空格）
-    if (prefix) {
-      text = prefix + text;
-    }
-
-    // 建立 占位符编号 -> 数学条目 的映射，按“译文中实际出现的顺序”还原。
-    // 不能依赖 mathElements 的原始下标顺序：翻译（尤其中英语序差异）经常调换公式
-    // 前后位置，例如 “each m KV entries in C^a and C^b” → “C^a 和 C^b 中的每 m 个……”，
-    // 会把 {{3}} {{4}} 排到 {{2}} 之前。旧实现按原始顺序逐个 indexOf 并截断剩余文本，
-    // 一旦顺序被调换，靠前编号的占位符就会把靠后编号的占位符连同其间文本一起吞掉，
-    // 导致后者以字面 {{n}} 残留、且对应公式被丢弃（arxiv 页 C^a/C^b 显示为 {{3}}{{4}}）。
-    const mathByNumber = new Map();
-    for (const math of mathElements) {
-      const m = /^\{\{(\d+)\}\}$/.exec(math.placeholder);
-      if (m) mathByNumber.set(m[1], math);
-    }
+  // 把一段可能含 {{n}} 数学占位符的文本追加进容器。
+  // 建立 占位符编号 -> 数学条目 的映射，按“译文中实际出现的顺序”还原。
+  // 不能依赖 mathElements 的原始下标顺序：翻译（尤其中英语序差异）经常调换公式
+  // 前后位置，例如 “each m KV entries in C^a and C^b” → “C^a 和 C^b 中的每 m 个……”，
+  // 会把 {{3}} {{4}} 排到 {{2}} 之前。旧实现按原始顺序逐个 indexOf 并截断剩余文本，
+  // 一旦顺序被调换，靠前编号的占位符就会把靠后编号的占位符连同其间文本一起吞掉，
+  // 导致后者以字面 {{n}} 残留、且对应公式被丢弃（arxiv 页 C^a/C^b 显示为 {{3}}{{4}}）。
+  function appendTextWithMath(container, text, mathByNumber) {
+    if (!text) return;
 
     const placeholderRe = /\{\{(\d+)\}\}/g;
     let lastIndex = 0;
@@ -1238,6 +1385,76 @@
     }
   }
 
+  // 用 DOM 操作构建译文内容：还原数学公式占位符 {{n}}，并按内联格式标记
+  // <a1>…</a1> 克隆原元素重建超链接/内联样式。
+  // 不使用 innerHTML：数学元素直接 cloneNode，标记元素浅 clone 后以 DOM API
+  // 组装，译文文本一律走 createTextNode，模型输出里的任何 HTML 都不会被解析。
+  function buildTranslationContent(container, translatedText, block, prefix = '') {
+    const mathElements = (block && block.mathElements) || [];
+    const markupElements = (block && block.markupElements) || [];
+
+    // 清理 LLM 可能添加的换行
+    let text = translatedText.replace(/\s*\n\s*/g, ' ');
+
+    // 添加前缀（如空格）
+    if (prefix) {
+      text = prefix + text;
+    }
+
+    const mathByNumber = new Map();
+    for (const math of mathElements) {
+      const m = /^\{\{(\d+)\}\}$/.exec(math.placeholder);
+      if (m) mathByNumber.set(m[1], math);
+    }
+
+    if (markupElements.length === 0) {
+      appendTextWithMath(container, text, mathByNumber);
+      return;
+    }
+
+    const markupByNumber = new Map();
+    for (const mk of markupElements) {
+      markupByNumber.set(String(mk.index), mk);
+    }
+
+    // 栈式重建：开标记 → 浅 clone 原元素（保留 href/class/style，去掉 id 和
+    // on* 属性）并下钻；闭标记 → 弹回。对模型输出保持防御：编号或标签名对不上
+    // 的标记当普通文本原样保留；错序的闭标记只弹到对应层；缺失的闭标记到结尾
+    // 自动闭合。最坏情况（标记全被模型丢掉）退化为纯文本译文，即今天的行为。
+    const markerRe = /<(\/?)([a-z]+)(\d+)>/g;
+    const stack = [{ node: container, index: null }];
+    let lastIndex = 0;
+    let match;
+    while ((match = markerRe.exec(text)) !== null) {
+      const closing = match[1] === '/';
+      const entry = markupByNumber.get(match[3]);
+      if (!entry || entry.tag !== match[2]) continue;
+
+      appendTextWithMath(stack[stack.length - 1].node, text.slice(lastIndex, match.index), mathByNumber);
+      lastIndex = markerRe.lastIndex;
+
+      if (!closing) {
+        const el = entry.element.cloneNode(false);
+        el.removeAttribute('id');
+        for (const attr of Array.from(el.attributes)) {
+          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+        }
+        stack[stack.length - 1].node.appendChild(el);
+        stack.push({ node: el, index: entry.index });
+      } else {
+        // findLastIndex：模型把同一编号的开标记重复输出时，闭标记只弹最内层
+        const pos = stack.findLastIndex((frame) => frame.index === entry.index);
+        if (pos > 0) stack.length = pos;
+      }
+    }
+    appendTextWithMath(stack[stack.length - 1].node, text.slice(lastIndex), mathByNumber);
+  }
+
+  // 向后兼容的旧签名（悬停/划词翻译仍按 mathElements 数组调用）
+  function buildTranslationContentWithMath(container, translatedText, mathElements, prefix = '') {
+    buildTranslationContent(container, translatedText, { mathElements }, prefix);
+  }
+
   // 译文插进 DOM 不等于看得见：折叠容器（overflow:hidden + max-height）会把它整条
   // 裁掉。见 content-clip-guard.js。下面每一处把译文放进 DOM 的分支后面都要跟一次，
   // clip-guard.test.mjs 会数：插入点比检查点多，就是漏了一处。
@@ -1258,6 +1475,8 @@
     element.classList.add('ai-translator-translated');
 
     const hasMathElements = block.mathElements && block.mathElements.length > 0;
+    const hasMarkupElements = block.markupElements && block.markupElements.length > 0;
+    const hasRichContent = hasMathElements || hasMarkupElements;
 
     // 受管容器（只读的 Lexical / ProseMirror 等）会删掉插进子树的译文节点，这里
     // 把译文画成原文块自己的 ::after —— 生成内容不是节点，编辑器看不见它，而且它
@@ -1266,7 +1485,14 @@
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element) &&
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
-      ctx.renderManagedTranslation(element, translation, {});
+      // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
+      // 只在块确实带标记时剥：正文本来就含 <b2> 这类字样的页面（HTML 教程等）
+      // 不能被误删。
+      ctx.renderManagedTranslation(
+        element,
+        hasMarkupElements ? translation.replace(MARKUP_MARKER_RE, '') : translation,
+        {}
+      );
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return;
@@ -1295,9 +1521,9 @@
       const translationEl = document.createElement('span');
       translationEl.className = 'ai-translator-inline-block ai-translator-inline-right';
 
-      if (hasMathElements) {
+      if (hasRichContent) {
         // 使用 DOM 操作构建内容，不用 innerHTML
-        buildTranslationContentWithMath(translationEl, translation, block.mathElements, ' ');
+        buildTranslationContent(translationEl, translation, block, ' ');
       } else {
         translationEl.textContent = ' ' + translation;
       }
@@ -1318,6 +1544,7 @@
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
       keepTranslationVisible(translationEl);
+      if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
     } else {
       // 对于非水平 flex 布局（如侧边栏），插入为同级元素
       // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
@@ -1337,15 +1564,19 @@
       }
       translationEl.classList.add('ai-translator-inline-block');
 
-      if (hasMathElements) {
+      if (hasRichContent) {
         // 使用 DOM 操作构建内容，不用 innerHTML
-        buildTranslationContentWithMath(translationEl, translation, block.mathElements);
+        buildTranslationContent(translationEl, translation, block);
+      } else {
+        translationEl.textContent = translation;
+      }
+      if (hasMathElements) {
         // 有数学公式时，尽量少设置内联样式，让页面 CSS 控制布局
         // 只设置 opacity 来区分译文
         translationEl.style.opacity = '0.85';
       } else {
-        translationEl.textContent = translation;
-        // 无数学公式时，设置完整样式。
+        // 无数学公式时，设置完整样式（含只带内联标记的富文本块——克隆出来的
+        // 链接/强调元素自带类名，页面 CSS 会在 baseStyle 之上继续生效）。
         // 注意：不要在这里设置水平 margin。有些页面通过在原元素上设置
         // `margin-left/right: auto` 让每个块居中（例如 Anthropic 文章的
         // `.prose > *`），一旦强制 `margin: 0` 就会把译文钉在容器左侧，而原文
@@ -1374,7 +1605,11 @@
         // 使用 span 而不是复制标签名，避免嵌套问题（如 a > a）
         const internalTranslation = document.createElement('span');
         internalTranslation.className = 'ai-translator-inline-block';
-        internalTranslation.textContent = translation;
+        if (hasRichContent) {
+          buildTranslationContent(internalTranslation, translation, block);
+        } else {
+          internalTranslation.textContent = translation;
+        }
         internalTranslation.style.cssText = baseStyle + `
           display: block;
           margin: 0;
@@ -1383,15 +1618,18 @@
         `;
         element.appendChild(internalTranslation);
         keepTranslationVisible(internalTranslation);
+        if (isTranslationOnlyActive()) hideSourceForTranslation(internalTranslation);
       } else if (isTableCell) {
         // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
         // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
         element.appendChild(translationEl);
         keepTranslationVisible(translationEl);
+        if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
         keepTranslationVisible(translationEl);
+        if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
       }
     }
   }
@@ -1740,6 +1978,10 @@
   ctx.translatePage = translatePage;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;
+  ctx.buildTranslationContent = buildTranslationContent;
+  ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;
+  // 内联格式标记的唯一定义，content-language.js 剥标记时复用
+  ctx.MARKUP_MARKER_RE = MARKUP_MARKER_RE;
   ctx.isMathElement = isMathElement;
   ctx.isIconElement = isIconElement;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;

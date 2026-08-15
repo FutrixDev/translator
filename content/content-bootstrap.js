@@ -122,6 +122,7 @@
         selectionTranslationMode: 'inline',
         showFloatBall: true,
         autoDetect: true,
+        showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
         enableComicTranslation: false,
@@ -152,6 +153,7 @@
         selectionTranslationMode: 'inline',
         showFloatBall: true,
         autoDetect: true,
+        showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
         enableComicTranslation: false,
@@ -226,6 +228,11 @@
 
       if (changes.selectionTranslationMode && ctx.settings.selectionTranslationMode !== 'inline') {
         if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
+      }
+
+      if (changes.showTranslationOnly) {
+        // 已翻译的页面上实时生效：开 → 藏原文；关 → 原文放回来
+        if (ctx.applyTranslationOnlyMode) ctx.applyTranslationOnlyMode();
       }
 
       if (changes.enableYoutubeCaptionTranslation) {
