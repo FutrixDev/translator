@@ -232,13 +232,13 @@
           // Check for error in response
           if (response.error) {
             noteBatchFailure(response.error);
-          } else if (response.translations) {
-            const insertTasks = response.translations.map(async (translation, i) => {
-              if (!batch[i] || !translation) return;
-              if (await shouldSkipTranslation(batch[i], translation)) return;
-              insertTranslationBlock(batch[i], translation);
+          } else {
+            // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
+            // 走逐块回退，而不是无声丢掉整批。
+            await applyFastBatchTranslations(batch, response.translations, {
+              onFailure: noteBatchFailure,
+              isAborted: () => !!batchError
             });
-            await Promise.all(insertTasks);
           }
         } catch (error) {
           console.error('AI Translator: Batch translation failed', error);
@@ -1304,6 +1304,60 @@
     }
   }
 
+  // 分批译文只能按位置回填，回填前数量必须一致 —— 与超大块路径（processOversizedBlock）
+  // 同一条规则。模型偶尔会吞掉/多打一个分隔符（把相邻两段合并、或把一段拆成两段），
+  // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
+  // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
+  // 最坏是某一块拿不到译文而保持原文。
+  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted } = {}) {
+    if (!Array.isArray(translations) || translations.length !== batch.length) {
+      const returned = Array.isArray(translations) ? translations.length : 0;
+      console.warn(
+        `AI Translator: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
+        'retrying block-by-block to avoid misaligned translations'
+      );
+      await translateBlocksOneByOne(batch, { onFailure, isAborted });
+      return;
+    }
+
+    await Promise.all(translations.map(async (translation, i) => {
+      if (!batch[i] || !translation) return;
+      if (await shouldSkipTranslation(batch[i], translation)) return;
+      insertTranslationBlock(batch[i], translation);
+    }));
+  }
+
+  async function translateBlocksOneByOne(batch, { onFailure, isAborted } = {}) {
+    for (const block of batch) {
+      if (isAborted && isAborted()) return;
+      try {
+        const response = await ctx.requestTranslation({
+          type: 'TRANSLATE_BATCH_FAST',
+          texts: [block.text],
+          targetLang: getEffectiveTargetLang(),
+          delimiter: DELIMITER,
+          allowDownload: true
+        });
+        if (response.error) {
+          if (onFailure) onFailure(response.error);
+          continue;
+        }
+        // 单块请求同样守数量：模型把一段拆成两段时放弃该块，而不是插半截译文。
+        const translation = Array.isArray(response.translations) && response.translations.length === 1
+          ? response.translations[0]
+          : null;
+        if (!translation) continue;
+        if (await shouldSkipTranslation(block, translation)) continue;
+        insertTranslationBlock(block, translation);
+      } catch (error) {
+        // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
+        if (isExtensionContextInvalidated(error)) throw error;
+        console.error('AI Translator: Per-block fallback translation failed', error);
+        if (onFailure) onFailure(error.message);
+      }
+    }
+  }
+
   async function filterBlocksByLanguage(blocks) {
     if (!chrome?.i18n?.detectLanguage) return blocks;
     if (!settings.autoDetect) return blocks;
@@ -1989,6 +2043,9 @@
   ctx.getTextOffsetLeft = getTextOffsetLeft;
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.insertTranslationBlock = insertTranslationBlock;
+  // 单元测试直接驱动这条“译文数量必须与块数一致”的守卫
+  // （test/unit/fast-batch-alignment.test.mjs），不必伪造整条整页翻译流水线。
+  ctx.applyFastBatchTranslations = applyFastBatchTranslations;
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
