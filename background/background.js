@@ -1,6 +1,7 @@
 // AI Translator Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+import '../shared/ocr.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
@@ -46,6 +47,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   }
   if (namespace === 'sync' && changes.enablePdfTranslation) {
     refreshPdfMenuVisibility();
+  }
+  if (namespace === 'sync' && changes.enableImageOcrTranslation) {
+    refreshOcrMenuVisibility();
   }
   // Both entries are gated on the account as well as the switch, so signing in
   // or out has to re-run the same check. Without this a sign-out leaves menu
@@ -178,6 +182,10 @@ const defaultSettings = {
   // Empty pdfTargetLang follows targetLang.
   enablePdfTranslation: true,
   pdfTargetLang: '',
+  // OCR translation runs on the user's own API key (a vision-capable model),
+  // so unlike comics/PDF it needs no account and defaults on. The context menu
+  // entry is the only surface, and it costs nothing until clicked.
+  enableImageOcrTranslation: true,
   customPrompt: '',
   theme: 'light'
 };
@@ -186,6 +194,7 @@ const MENU_IDS = {
   translateSelection: 'translate-selection',
   translatePage: 'translate-page',
   translateComicImage: 'translate-comic-image',
+  ocrTranslateImage: 'ocr-translate-image',
   colorizeComicImage: 'colorize-comic-image',
   translatePdfLink: 'translate-pdf-link',
   translatePdfPage: 'translate-pdf-page',
@@ -221,6 +230,9 @@ async function refreshContextMenuTitles() {
   });
   chrome.contextMenus.update(MENU_IDS.translateComicImage, {
     title: getContextMenuTitle('contextTranslateComic', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.ocrTranslateImage, {
+    title: getContextMenuTitle('contextOcrImage', uiLang),
   });
   chrome.contextMenus.update(MENU_IDS.colorizeComicImage, {
     title: getContextMenuTitle('contextColorizeComic', uiLang),
@@ -266,6 +278,17 @@ function createContextMenus() {
     chrome.contextMenus.create({
       id: MENU_IDS.translateComicImage,
       title: 'Translate This Comic',
+      contexts: ['image'],
+      visible: false
+    });
+
+    // OCR is the free sibling of the comic entry: it reads the text out of any
+    // image with the user's own vision-capable model. Gated only by its
+    // settings switch (no account), hidden when switched off so the image menu
+    // stays as small as the user asked for.
+    chrome.contextMenus.create({
+      id: MENU_IDS.ocrTranslateImage,
+      title: 'Extract & Translate Image Text',
       contexts: ['image'],
       visible: false
     });
@@ -338,6 +361,7 @@ function createContextMenus() {
     refreshContextMenuTitles();
     refreshComicMenuVisibility();
     refreshPdfMenuVisibility();
+    refreshOcrMenuVisibility();
   });
 }
 
@@ -365,6 +389,18 @@ async function refreshComicMenuVisibility() {
     .catch(() => {});
   chrome.contextMenus.update(MENU_IDS.colorizeComicImage, { visible: !!visible })
     .catch(() => {});
+}
+
+/**
+ * Same rebuild-and-on-change contract as the comic/PDF entries, but judged on
+ * the raw switch alone: OCR spends the user's own API key, not an account
+ * allowance, so the account gate has no say here.
+ */
+async function refreshOcrMenuVisibility() {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+  chrome.contextMenus.update(MENU_IDS.ocrTranslateImage, {
+    visible: !!settings.enableImageOcrTranslation
+  }).catch(() => {});
 }
 
 /** Same contract as refreshComicMenuVisibility, for the PDF entries. */
@@ -483,6 +519,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'TRANSLATE_BATCH_FAST':
       handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter)
+        .then(sendResponse)
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+
+    case 'OCR_IMAGE':
+      handleOcrImage(message)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -627,6 +669,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       srcUrl: info.srcUrl,
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
+    });
+  } else if (info.menuItemId === MENU_IDS.ocrTranslateImage) {
+    const settings = await chrome.storage.sync.get(defaultSettings);
+    if (!settings.enableImageOcrTranslation) return;
+    // The content script owns the UI (popup, progress, errors); it asks back
+    // via OCR_IMAGE for the actual fetch + vision call, which must run here —
+    // the page's CSP can block a content-script fetch, and the API endpoint is
+    // cross-origin to every page.
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: info.srcUrl,
+      targetLang: getEffectiveTargetLang(settings)
     });
   } else if (info.menuItemId === MENU_IDS.translatePdfLocalAction) {
     chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
@@ -1212,6 +1266,128 @@ async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
     return { translations };
   } catch (error) {
     console.error('Fast batch translation error:', error);
+    return { error: error.message || '翻译失败，请重试' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Image OCR translation (BYO-key, vision model). The pure parts — prompt,
+// response parsing, encoding limits — live in shared/ocr.js.
+// ---------------------------------------------------------------------------
+
+/** ArrayBuffer → base64, chunked so a multi-megabyte image cannot blow the
+ *  argument-count limit of String.fromCharCode.apply. */
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Fetch the image and get it into a shape the vision APIs accept.
+ *
+ * Fetched from the worker, not the page: host_permissions cover <all_urls>, the
+ * request carries the user's cookies (hotlink-guarded CDNs), and a page CSP
+ * cannot block it. Bytes already in an accepted format under the size cap pass
+ * through untouched; anything else (SVG, BMP, oversized) is decoded and
+ * re-encoded via OffscreenCanvas, downscaled to OCR_MAX_DIMENSION.
+ */
+async function fetchImageForOcr(srcUrl, uiLang) {
+  const { canSendImageDirectly, OCR_MAX_BYTES, OCR_MAX_DIMENSION } = globalThis.OCRCore;
+
+  let response;
+  try {
+    response = await fetch(srcUrl);
+  } catch {
+    throw new Error(getMessage('ocrImageLoadFailed', uiLang));
+  }
+  if (!response.ok) {
+    throw new Error(getMessage('ocrImageLoadFailed', uiLang));
+  }
+  const blob = await response.blob();
+
+  if (canSendImageDirectly(blob.type, blob.size)) {
+    return { base64: arrayBufferToBase64(await blob.arrayBuffer()), mediaType: blob.type };
+  }
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    // SVG being the common case: workers cannot rasterize it.
+    throw new Error(getMessage('ocrImageUnsupported', uiLang));
+  }
+  const scale = Math.min(1, OCR_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = new OffscreenCanvas(width, height);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  // PNG keeps text edges crisp; fall back to JPEG only when the PNG is still
+  // over the cap (photographs, mostly — where JPEG is the right encoding).
+  let out = await canvas.convertToBlob({ type: 'image/png' });
+  if (out.size > OCR_MAX_BYTES) {
+    out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  }
+  return { base64: arrayBufferToBase64(await out.arrayBuffer()), mediaType: out.type };
+}
+
+/**
+ * One vision call does the whole job: extract the text, detect its language,
+ * translate to the target. Returns {text, language, languageName, translation}
+ * or {error} — the same envelope shape the TRANSLATE handlers use.
+ */
+async function handleOcrImage(message) {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+
+  if (!settings.apiKey) {
+    return { error: '请先在设置中配置 API Key' };
+  }
+
+  const uiLang = getContextMenuLanguage(settings);
+  try {
+    const { base64, mediaType } = await fetchImageForOcr(message.srcUrl, uiLang);
+    const targetLang = message.targetLang || getEffectiveTargetLang(settings);
+    const targetLangName = languageNames[targetLang] || targetLang;
+    const systemPrompt = globalThis.OCRCore.buildOcrSystemPrompt(targetLangName);
+    const instruction = globalThis.OCRCore.OCR_USER_INSTRUCTION;
+
+    let content;
+    if (isClaudeAPI(settings.apiEndpoint)) {
+      content = await callClaudeAPI(
+        settings.apiEndpoint,
+        settings.apiKey,
+        settings.modelName,
+        systemPrompt,
+        globalThis.APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64),
+        4000
+      );
+    } else {
+      content = await callOpenAIAPI(
+        settings.apiEndpoint,
+        settings.apiKey,
+        settings.modelName,
+        systemPrompt,
+        globalThis.APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64),
+        4000,
+        globalThis.APICompat.DEFAULT_TEMPERATURE
+      );
+    }
+
+    const parsed = globalThis.OCRCore.parseOcrResponse(content);
+    // null means the reply was JSON that broke (token cap, mangled quoting);
+    // an error beats presenting the raw blob as a translation.
+    if (!parsed) {
+      return { error: getMessage('translationFailed', uiLang) };
+    }
+    return parsed;
+  } catch (error) {
+    console.error('OCR translation error:', error);
     return { error: error.message || '翻译失败，请重试' };
   }
 }

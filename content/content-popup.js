@@ -497,6 +497,10 @@
 
   ctx.showTranslationPopup = showTranslationPopup;
   ctx.showTranslationResult = showTranslationResult;
+  // For content-image-ocr.js, whose pending state has no source text yet and
+  // therefore cannot go through the two entry points above.
+  ctx.buildPopupMarkup = buildPopupMarkup;
+  ctx.setupPopupDrag = setupPopupDrag;
   ctx.hideTranslationPopup = hideTranslationPopup;
   ctx.setupLanguageDropdown = setupLanguageDropdown;
   ctx.translateText = translateText;

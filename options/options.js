@@ -156,6 +156,7 @@ const elements = {
   showFloatBall: document.getElementById('showFloatBall'),
   autoDetect: document.getElementById('autoDetect'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
+  enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
   youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
@@ -267,6 +268,8 @@ const defaultSettings = {
   autoDetect: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
   showTranslationOnly: false,
+  // BYO-key vision OCR: free until clicked, so on by default like PDF.
+  enableImageOcrTranslation: true,
   // Off by default: this is the one feature that spends money, so it is opted
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
@@ -946,6 +949,7 @@ async function loadSettings() {
     elements.showFloatBall.checked = result.showFloatBall;
     elements.autoDetect.checked = result.autoDetect;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
+    elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     // The switches themselves are drawn by renderAccountFeatures, which also
     // weighs whether this device has the account both features need.
     storedComicEnabled = !!result.enableComicTranslation;
@@ -1059,6 +1063,7 @@ function collectSettings() {
     showFloatBall: elements.showFloatBall.checked,
     autoDetect: elements.autoDetect.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
+    enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
@@ -1344,6 +1349,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'showFloatBall',
   'autoDetect',
   'showTranslationOnly',
+  'enableImageOcrTranslation',
   'enableYoutubeCaptionTranslation',
   'showYoutubeOriginalCaption'
 ];

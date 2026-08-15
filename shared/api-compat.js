@@ -154,6 +154,30 @@
     return body;
   }
 
+  // --- Vision content -------------------------------------------------------
+  //
+  // The two wire formats for "a prompt plus one image". Both slot straight into
+  // the existing body builders: the OpenAI shape is a user message's `content`
+  // array, the Claude shape is the `userContent` buildClaudeRequestBody takes.
+
+  // OpenAI Chat Completions (and the Gemini/OpenRouter compatibility
+  // endpoints): the image travels as a data: URL inside an image_url part.
+  function buildOpenAIVisionUserContent(promptText, mediaType, base64Data) {
+    return [
+      { type: 'text', text: promptText },
+      { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64Data}` } }
+    ];
+  }
+
+  // Anthropic Messages: a base64 source block. Image before text — Anthropic's
+  // own guidance for single-image prompts.
+  function buildClaudeVisionUserContent(promptText, mediaType, base64Data) {
+    return [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+      { type: 'text', text: promptText }
+    ];
+  }
+
   // Build a native Anthropic Messages body. `systemPrompt` is optional: the
   // connection probe sends none.
   function buildClaudeRequestBody(model, userContent, maxTokens, systemPrompt) {
@@ -351,6 +375,8 @@
     claudeHeaders,
     buildOpenAIRequestBody,
     buildClaudeRequestBody,
+    buildOpenAIVisionUserContent,
+    buildClaudeVisionUserContent,
     parseAPIError,
     formatErrorMessage,
     readAPIResponse,
