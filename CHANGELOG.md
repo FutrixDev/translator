@@ -4,6 +4,16 @@
 
 ### New features
 
+- **Image OCR** (`shared/ocr.js`, `offscreen/`, `vendor/tesseract/`):
+  right-click an image to read the text in it. Two separable steps —
+  recognition, then an *optional* translation. Recognition runs on-device by
+  default (Tesseract WASM in an offscreen document: free, offline, no API key,
+  which is why the `offscreen` permission and `wasm-unsafe-eval` were added);
+  a vision model is the alternative for photographs and stylized type. Neither
+  engine translates: both return `{text, language}` and the content script
+  translates through the ordinary path, so Chrome's free built-in Translator
+  serves the vision engine too. With the translate step off, the recognised
+  text is a complete result and the popup shows it alone.
 - **PDF translation** (`pdf/`, account-backed): upload a PDF and receive a
   re-typeset translated document produced server-side against the account's
   monthly free page allowance. Ships enabled by default; requires sign-in on

@@ -162,6 +162,47 @@ Storage keys still read `enableYoutubeCaptionTranslation` / `youtubeCaption*` /
 `showYoutubeOriginalCaption` on purpose: renaming them would drop the settings
 of everyone who already has the feature on.
 
+### Image OCR
+
+Right-click an image → read the text in it. **Two separable steps, and keeping
+them separable is the whole design:**
+
+1. **Recognise.** Two engines behind one contract, `{text, language}`:
+   - **`local`** (the default) — Tesseract WASM, `vendor/tesseract/`, running in
+     `offscreen/`. Free, offline, no API key. A service worker may not spawn a
+     nested Worker or instantiate this WASM, which is the only reason the
+     offscreen document exists; MV3 also needs `wasm-unsafe-eval` in
+     `content_security_policy.extension_pages` and every path pinned
+     (`corePath`/`workerPath`/`langPath`, `workerBlobURL:false`, `gzip:false`)
+     because Tesseract's defaults fetch from a CDN.
+   - **`vision`** — the user's own vision model, through the same
+     `shared/api-compat.js` builders as everything else.
+2. **Translate — optional, and not in either engine.** The content script runs
+   it on the recognised text through `ctx.translateText`, the ordinary path.
+
+**A vision model could translate in the same call; it deliberately does not.**
+One shape for one engine and two for the other would fork every caller, and it
+would cut the free built-in Translator out of the vision path. Recognise-only is
+a complete result, so it has a real terminal popup (`recognizeOnly`), not a
+blank half.
+
+`shared/ocr.js` is the pure half and owns everything two surfaces would
+otherwise restate: the bundled language catalog (`OCR_LANGUAGES` — a language is
+only offerable if its `.traineddata` is in `vendor/tesseract/lang`, so the
+options page renders its picker from this), `DEFAULT_OCR_ENGINE`, the vision
+prompt and its tolerant parser, the encoding limits, and `shouldTranslate`.
+
+Two things it deliberately does not own:
+
+- **Language-code normalisation.** `shouldTranslate` takes codes the caller has
+  already put through `ctx.builtinTranslator.toApiLang`. A second alias table
+  here would have to agree with `content/content-translation-engine.js` forever.
+- **Detecting the language during recognition.** Tesseract must be told its
+  languages up front and Chrome's `LanguageDetector` reports `unavailable` on
+  plenty of profiles, so the language is worked out *after* the text exists, by
+  `detectScriptLanguage()` counting codepoints — with the Tesseract language
+  string as the only thing that can tell Simplified from Traditional Han.
+
 ### API Compatibility
 
 Works with any OpenAI Chat Completions-compatible API, plus Anthropic's native

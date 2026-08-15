@@ -20,6 +20,12 @@ test('options hints use i18n keys', async ({ page, extensionId }) => {
   await expect(page.locator('#toggleApiKey')).toHaveAttribute('title', getMessage('toggleApiKey', 'en'));
   await expect(page.locator('#provider option[value="openai"]')).toHaveText(getMessage('providerOpenai', 'en'));
   await expect(page.locator('#targetLang option[value="zh-CN"]')).toHaveText(getMessage('langZhCN', 'en'));
+
+  // The OCR language picker is rendered from OCRCore.OCR_LANGUAGES rather than
+  // written into the markup, so an options page that failed to load the module
+  // would show an "auto"-only picker and say nothing about it.
+  await expect(page.locator('#ocrSourceLanguage option')).toHaveCount(6);
+  await expect(page.locator('#ocrSourceLanguage option[value="jpn"]')).toHaveText(getMessage('langJa', 'en'));
 });
 
 test('options disable selects when toggles are off', async ({ page, extensionId }) => {

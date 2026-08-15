@@ -1,11 +1,17 @@
 /**
- * Image OCR translation — end-to-end against the mock chat-completions server.
+ * Image OCR — end to end, both engines.
  *
- * The right-click flow: the service worker fetches the image, base64s it into a
- * vision request, and the content script shows the extracted text + translation
- * in the standard popup. Everything is real except the native context-menu
- * click, which Playwright cannot drive — the OCR_TRANSLATE_IMAGE message it
- * would send is dispatched directly instead, same as the comic spec.
+ * The feature is two steps and this spec keeps them apart, because that split
+ * is the thing most easily broken by a later patch: step 1 recognises (locally
+ * in the offscreen document, or with a vision model), step 2 is an ordinary
+ * translation of the recognised text and is optional. So the local engine must
+ * reach a popup with no vision request behind it, the vision engine must send
+ * the image once and the *text* separately, and with the translate step off
+ * neither engine may translate at all.
+ *
+ * Everything is real except the native context-menu click, which Playwright
+ * cannot drive — the OCR_TRANSLATE_IMAGE message it would send is dispatched
+ * directly instead, same as the comic spec.
  */
 const http = require('node:http');
 const zlib = require('node:zlib');
@@ -93,26 +99,51 @@ function startPageServer() {
   });
 }
 
-// The OCR round trip crosses the service worker twice (image fetch, vision
-// call); on a loaded machine the worker can wait tens of seconds for CPU, so
-// this spec gets a bigger test budget and the round-trip expects get 60s. A
-// healthy machine is unaffected — expects return as soon as they pass.
+/**
+ * Text the local engine has to read for itself. Drawn in the page rather than
+ * hand-encoded here: a real font at a real size is what the engine was trained
+ * on, and the result is a plain PNG data URL the worker can fetch like any
+ * other image URL.
+ */
+async function drawTextImage(page, text) {
+  return await page.evaluate((label) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 720;
+    canvas.height = 200;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000000';
+    ctx.font = '110px serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 40, canvas.height / 2);
+    return canvas.toDataURL('image/png');
+  }, text);
+}
+
+// The OCR round trip crosses the service worker twice (image fetch, then either
+// the offscreen engine or a vision call); on a loaded machine the worker can
+// wait tens of seconds for CPU, and the local engine also pays a one-off ~2s to
+// start. So this spec gets a bigger test budget and the round-trip expects get
+// 60s. A healthy machine is unaffected — expects return as soon as they pass.
 test.describe.configure({ timeout: 180000 });
 
-test.describe('image OCR translation', () => {
+test.describe('image OCR', () => {
   let mock;
   let pageServer;
+
+  const baseSettings = () => ({
+    apiEndpoint: mock.endpoint,
+    apiKey: 'test-key',
+    modelName: 'gpt-4.1-mini',
+    targetLang: 'zh-CN',
+    targetLangSetByUser: true,
+  });
 
   test.beforeEach(async ({ page }) => {
     mock = await startMockOpenAIServer();
     pageServer = await startPageServer();
-    await setExtensionSettings(page, {
-      apiEndpoint: mock.endpoint,
-      apiKey: 'test-key',
-      modelName: 'gpt-4.1-mini',
-      targetLang: 'zh-CN',
-      targetLangSetByUser: true,
-    });
+    await setExtensionSettings(page, baseSettings());
   });
 
   test.afterEach(() => {
@@ -120,7 +151,32 @@ test.describe('image OCR translation', () => {
     pageServer?.server.close();
   });
 
-  test('right-click OCR shows extracted text, detected language, and translation', async ({ page }) => {
+  test('the local engine reads the image on-device, then the text is translated', async ({ page }) => {
+    // The default engine, and the one thing no mock can stand in for: real
+    // Tesseract, in the real offscreen document, over a real PNG.
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+    const srcUrl = await drawTextImage(page, 'EXIT');
+
+    await sendMessageToActiveTab(page, { type: 'OCR_TRANSLATE_IMAGE', srcUrl, targetLang: 'zh-CN' });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup).toBeVisible({ timeout: 30000 });
+    // Waits out engine start plus recognition.
+    await expect(popup.locator('.ai-translator-text')).toContainText('EXIT', { timeout: 90000 });
+    // Latin script, so the label names the language the heuristic settled on.
+    // Language names are endonyms everywhere in the extension, so this one stays
+    // "English" even though the surrounding UI is in Chinese.
+    await expect(popup.locator('.ai-translator-label').first()).toContainText('原文 · English');
+    // Step 2 ran, as an ordinary text translation — the mock's echo protocol,
+    // not a vision reply.
+    await expect(popup.locator('.ai-translator-translation-text')).toContainText('[T]', { timeout: 60000 });
+    // The whole point of the local engine: nothing was billed to read it.
+    expect(mock.visionRequests).toHaveLength(0);
+  });
+
+  test('the vision engine sends the image once, and the recognised text separately', async ({ page }) => {
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
 
@@ -132,23 +188,45 @@ test.describe('image OCR translation', () => {
 
     const popup = page.locator('.ai-translator-popup');
     await expect(popup).toBeVisible({ timeout: 30000 });
-
-    // The finished popup is the standard one: extracted text in the source
-    // slot, the detected-language line where a phonetic would sit, the
-    // translation below, and the speech/copy controls wired. The first expect
-    // waits out the whole round trip.
     await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
-    await expect(popup.locator('.ai-translator-translation-text')).toContainText('你好，世界');
-    await expect(popup.locator('.ai-translator-phonetic')).toContainText('英语');
+    await expect(popup.locator('.ai-translator-label').first()).toContainText('原文 · English');
+    await expect(popup.locator('.ai-translator-translation-text')).toContainText('[T] HELLO WORLD');
     await expect(popup.locator('.ai-translator-speak-source')).toBeVisible();
     await expect(popup.locator('.ai-translator-copy')).toBeVisible();
 
-    // The image itself must have left the browser as an OpenAI vision request:
+    // The image left the browser exactly once, as an OpenAI vision request:
     // text part first, then the data-URL image part, with the OCR system prompt.
     expect(mock.visionRequests).toHaveLength(1);
     expect(mock.visionRequests[0].partTypes).toEqual(['text', 'image_url']);
     expect(mock.visionRequests[0].imageUrlPrefix.startsWith('data:image/png;base64,')).toBe(true);
     expect(mock.visionRequests[0].systemPrompt).toContain('OCR');
+    // And the translation was a second, image-free request — which is what lets
+    // a free translator serve the vision path too.
+    expect(mock.sentTexts).toContain('HELLO WORLD');
+  });
+
+  test('with the translate step off, the popup stops at the recognised text', async ({ page }) => {
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: `${pageServer.origin}/sign.png`,
+      targetLang: 'zh-CN',
+      // The real menu click reads ocrTranslate and puts it on the message; the
+      // synthetic one has to carry it itself.
+      translate: false,
+    });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
+    // Recognise-only is a finished state, not a half-drawn one: the translation
+    // half is gone rather than sitting there empty.
+    await expect(popup.locator('.ai-translator-result')).toBeHidden();
+    // Give a step 2 that wrongly ran time to reach the server.
+    await page.waitForTimeout(1000);
+    expect(mock.sentTexts).not.toContain('HELLO WORLD');
   });
 
   test('an image that fails to load reports the localized error in the popup', async ({ page }) => {
@@ -171,14 +249,7 @@ test.describe('image OCR translation', () => {
 
   test('the switch actually gates the flow: off means no popup and no request', async ({ page }) => {
     // Set before goto so the content script loads with the flag already off.
-    await setExtensionSettings(page, {
-      apiEndpoint: mock.endpoint,
-      apiKey: 'test-key',
-      modelName: 'gpt-4.1-mini',
-      targetLang: 'zh-CN',
-      targetLangSetByUser: true,
-      enableImageOcrTranslation: false,
-    });
+    await setExtensionSettings(page, { ...baseSettings(), enableImageOcrTranslation: false });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
 

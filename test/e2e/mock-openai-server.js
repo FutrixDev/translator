@@ -69,12 +69,9 @@ function startMockOpenAIServer() {
           res.end(JSON.stringify({
             choices: [{
               message: {
-                content: JSON.stringify({
-                  text: 'HELLO WORLD',
-                  language: 'en',
-                  languageName: '英语',
-                  translation: '你好，世界'
-                })
+                // Recognition only: the translation is a second, ordinary
+                // request, which the echo protocol below answers.
+                content: JSON.stringify({ text: 'HELLO WORLD', language: 'en' })
               }
             }]
           }));

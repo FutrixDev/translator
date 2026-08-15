@@ -157,6 +157,11 @@ const elements = {
   autoDetect: document.getElementById('autoDetect'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
+  ocrEngine: document.getElementById('ocrEngine'),
+  ocrSourceLanguage: document.getElementById('ocrSourceLanguage'),
+  ocrSourceLanguageGroup: document.getElementById('ocrSourceLanguageGroup'),
+  ocrTranslate: document.getElementById('ocrTranslate'),
+  ocrSubOptions: document.getElementById('ocrSubOptions'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
   youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
@@ -268,8 +273,12 @@ const defaultSettings = {
   autoDetect: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
   showTranslationOnly: false,
-  // BYO-key vision OCR: free until clicked, so on by default like PDF.
+  // Image OCR: on the default engine it is free and local, so on by default.
+  // See the notes on defaultSettings in background/background.js.
   enableImageOcrTranslation: true,
+  ocrEngine: OCRCore.DEFAULT_OCR_ENGINE,
+  ocrSourceLanguage: 'auto',
+  ocrTranslate: true,
   // Off by default: this is the one feature that spends money, so it is opted
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
@@ -950,6 +959,11 @@ async function loadSettings() {
     elements.autoDetect.checked = result.autoDetect;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
+    elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
+    renderOcrLanguages();
+    elements.ocrSourceLanguage.value = result.ocrSourceLanguage || 'auto';
+    elements.ocrTranslate.checked = result.ocrTranslate !== false;
+    syncOcrSubState();
     // The switches themselves are drawn by renderAccountFeatures, which also
     // weighs whether this device has the account both features need.
     storedComicEnabled = !!result.enableComicTranslation;
@@ -1064,6 +1078,9 @@ function collectSettings() {
     autoDetect: elements.autoDetect.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
+    ocrEngine: elements.ocrEngine.value,
+    ocrSourceLanguage: elements.ocrSourceLanguage.value,
+    ocrTranslate: elements.ocrTranslate.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
@@ -1350,6 +1367,9 @@ const IMMEDIATE_SAVE_FIELDS = [
   'autoDetect',
   'showTranslationOnly',
   'enableImageOcrTranslation',
+  'ocrEngine',
+  'ocrSourceLanguage',
+  'ocrTranslate',
   'enableYoutubeCaptionTranslation',
   'showYoutubeOriginalCaption'
 ];
@@ -1540,6 +1560,9 @@ function setupEventListeners() {
   elements.pdfTargetLang.addEventListener('change', () => savePdfSettings());
 
   // YouTube caption sub-options (enable/disable + live style preview)
+  elements.enableImageOcrTranslation.addEventListener('change', syncOcrSubState);
+  elements.ocrEngine.addEventListener('change', syncOcrSubState);
+
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
   elements.showYoutubeOriginalCaption.addEventListener('change', updateCaptionPreview);
   elements.youtubeCaptionFontColor.addEventListener('input', updateCaptionPreview);
@@ -1631,6 +1654,38 @@ function syncInlineSettingState() {
 function syncYoutubeSubState() {
   if (!elements.youtubeSubOptions) return;
   elements.youtubeSubOptions.classList.toggle('disabled', !elements.enableYoutubeCaptionTranslation.checked);
+}
+
+/**
+ * Fill the OCR language picker from OCRCore.OCR_LANGUAGES, below the "auto"
+ * option the markup carries. A language is only offerable if its .traineddata
+ * is vendored, so shared/ocr.js owns the list and this page reads it — hard-
+ * coding the options here is how the two drift into disagreeing.
+ *
+ * The labels stay as data-i18n keys; applyI18n fills them in a moment later.
+ */
+function renderOcrLanguages() {
+  const select = elements.ocrSourceLanguage;
+  if (!select || select.dataset.populated) return;
+  for (const lang of OCRCore.OCR_LANGUAGES) {
+    const option = document.createElement('option');
+    option.value = lang.code;
+    option.dataset.i18n = lang.labelKey;
+    select.appendChild(option);
+  }
+  select.dataset.populated = '1';
+}
+
+// Same, for image OCR — plus one rule of its own: the language list belongs to
+// the local engine. Tesseract has to be told which languages to look for, so
+// the setting exists at all; a vision model reads whatever is in the image and
+// leaving the control live would promise a choice that changes nothing.
+function syncOcrSubState() {
+  if (!elements.ocrSubOptions) return;
+  elements.ocrSubOptions.classList.toggle('disabled', !elements.enableImageOcrTranslation.checked);
+  if (elements.ocrSourceLanguageGroup) {
+    elements.ocrSourceLanguageGroup.hidden = elements.ocrEngine.value === 'vision';
+  }
 }
 
 function capHexToRgba(hex, alpha) {
