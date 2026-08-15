@@ -94,6 +94,37 @@ test('translation-only mode hides sources, and unwinds without a trace', async (
   expect(off.cellText).toContain('Table cell content');
 });
 
+test('a page that removes the translation gets its original back on the next apply', async ({ page }) => {
+  await loadHarness(page);
+
+  const result = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    ctx.settings.showTranslationOnly = true;
+    const blocks = ctx.collectTranslatableBlocks(document.body);
+    blocks
+      .filter((b) => ['para', 'cell'].includes(b.element.id))
+      .forEach((b) => ctx.insertTranslationBlock(b, '[译] ' + b.text));
+
+    // Simulate a page script deleting both inserted translations.
+    document.querySelectorAll('.ai-translator-inline-block:not(.ai-translator-hover-translation)')
+      .forEach((el) => el.remove());
+    ctx.applyTranslationOnlyMode();
+
+    return {
+      paraHidden: document.getElementById('para').classList.contains('ai-translator-source-hidden'),
+      hiddenCount: document.querySelectorAll('.ai-translator-source-hidden').length,
+      wrapCount: document.querySelectorAll('.ai-translator-source-wrap').length,
+      cellText: document.getElementById('cell').textContent.trim(),
+    };
+  });
+
+  // The originals must not stay entombed behind a translation that no longer exists.
+  expect(result.paraHidden).toBe(false);
+  expect(result.hiddenCount).toBe(0);
+  expect(result.wrapCount).toBe(0);
+  expect(result.cellText).toContain('Table cell content');
+});
+
 test('float ball "hide translations" brings the originals back', async ({ page }) => {
   await loadHarness(page);
 

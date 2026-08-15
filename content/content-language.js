@@ -45,11 +45,12 @@
 
   ctx.getLanguageDetectionText = function(text) {
     if (!text) return '';
-    // 剥掉数学占位符 {{n}} 和内联格式标记 <a1>…</a1>（见 content-page-translation.js），
-    // 两者都不是正文，混进去会拉低语言检测的置信度。
+    // 剥掉数学占位符 {{n}} 和内联格式标记 <a1>…</a1>，两者都不是正文，混进去
+    // 会拉低语言检测的置信度。标记的定义在 content-page-translation.js
+    // （ctx.MARKUP_MARKER_RE）；字面量兜底只为本文件先于它加载的窗口期。
     const cleaned = text
       .replace(/\{\{\d+\}\}/g, '')
-      .replace(/<\/?[a-z]+\d+>/g, '')
+      .replace(ctx.MARKUP_MARKER_RE || /<\/?[a-z]+\d+>/g, '')
       .replace(/\s+/g, ' ')
       .trim();
     return cleaned.slice(0, 400);

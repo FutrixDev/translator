@@ -305,9 +305,13 @@
 
   // 隐藏一条译文对应的原文：
   // - 译文是原文块的兄弟节点（常规段落）→ 给原文块加 hidden 类
-  // - 译文插在原文块内部（水平 flex / 表格单元格 / slot）→ 把其余子节点包进
-  //   一个 wrap 再隐藏。wrap 在模式关闭时原样解包（见 applyTranslationOnlyMode），
+  // - 译文插在原文块内部（水平 flex / 表格单元格 / slot）→ 把译文之前的子节点
+  //   包进一个 wrap 再隐藏。wrap 在模式关闭时原样解包（见 applyTranslationOnlyMode），
   //   不给页面留下多余结构。
+  // 已知局限：wrap 会移动页面自己的节点。框架（React/Vue）重渲染被 wrap 的
+  // 子树时可能因找不到原父节点而报错。隔离世界里看不到页面世界的
+  // __reactFiber$ 等 expando，无法预检测；本模式默认关、由用户显式打开，
+  // 遇到这类页面关掉开关即可完整恢复。
   function hideSourceForTranslation(translationEl) {
     const prev = translationEl.previousElementSibling;
     if (prev && prev.classList && prev.classList.contains('ai-translator-translated')) {
@@ -323,7 +327,9 @@
 
     let wrap = holder.querySelector(':scope > .ai-translator-source-wrap');
     for (const node of Array.from(holder.childNodes)) {
-      if (node === translationEl) continue;
+      // 译文之后的节点不动：插译文时原文全在它前面，之后出现的是页面新加的
+      // 内容，收进 wrap 会在解包时把它挪到译文前面，改变页面自己的顺序。
+      if (node === translationEl) break;
       if (node.nodeType === Node.ELEMENT_NODE &&
           (node.classList.contains('ai-translator-inline-block') ||
            node.classList.contains('ai-translator-source-wrap'))) continue;
@@ -341,6 +347,24 @@
   // revealHiddenTranslations 时都会调用，幂等。
   function applyTranslationOnlyMode() {
     if (isTranslationOnlyActive()) {
+      // 页面脚本可能删掉我们插入的译文，原文不能跟着陪葬：先把配对译文已经
+      // 不在的隐藏原文放回来，再按当前还活着的译文重新隐藏。
+      document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
+        if (el.classList.contains('ai-translator-source-wrap')) {
+          const holder = el.parentElement;
+          if (holder && holder.querySelector(':scope > .ai-translator-inline-block')) return;
+          el.classList.remove('ai-translator-source-hidden');
+          if (holder) {
+            while (el.firstChild) holder.insertBefore(el.firstChild, el);
+            el.remove();
+          }
+        } else {
+          const next = el.nextElementSibling;
+          if (!next || !next.classList || !next.classList.contains('ai-translator-inline-block')) {
+            el.classList.remove('ai-translator-source-hidden');
+          }
+        }
+      });
       const translations = document.querySelectorAll(
         '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)'
       );
@@ -1418,7 +1442,8 @@
         stack[stack.length - 1].node.appendChild(el);
         stack.push({ node: el, index: entry.index });
       } else {
-        const pos = stack.findIndex((frame) => frame.index === entry.index);
+        // findLastIndex：模型把同一编号的开标记重复输出时，闭标记只弹最内层
+        const pos = stack.findLastIndex((frame) => frame.index === entry.index);
         if (pos > 0) stack.length = pos;
       }
     }
@@ -1460,8 +1485,14 @@
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element) &&
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
-      // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事
-      ctx.renderManagedTranslation(element, translation.replace(MARKUP_MARKER_RE, ''), {});
+      // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
+      // 只在块确实带标记时剥：正文本来就含 <b2> 这类字样的页面（HTML 教程等）
+      // 不能被误删。
+      ctx.renderManagedTranslation(
+        element,
+        hasMarkupElements ? translation.replace(MARKUP_MARKER_RE, '') : translation,
+        {}
+      );
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return;
@@ -1949,6 +1980,8 @@
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;
   ctx.buildTranslationContent = buildTranslationContent;
   ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;
+  // 内联格式标记的唯一定义，content-language.js 剥标记时复用
+  ctx.MARKUP_MARKER_RE = MARKUP_MARKER_RE;
   ctx.isMathElement = isMathElement;
   ctx.isIconElement = isIconElement;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
