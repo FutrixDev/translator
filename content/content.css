@@ -657,6 +657,12 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   display: none !important;
 }
 
+/* 仅显示译文（settings.showTranslationOnly）：隐藏已翻译块的原文。
+   这两个类加在【页面自己的元素】上，不属于面板 reset 那套特异性阶梯 */
+.ai-translator-source-hidden {
+  display: none !important;
+}
+
 .ai-translator-inline-loading {
   color: #7c5cff !important;
   font-weight: 600 !important;

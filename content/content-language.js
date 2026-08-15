@@ -45,7 +45,13 @@
 
   ctx.getLanguageDetectionText = function(text) {
     if (!text) return '';
-    const cleaned = text.replace(/\{\{\d+\}\}/g, '').replace(/\s+/g, ' ').trim();
+    // 剥掉数学占位符 {{n}} 和内联格式标记 <a1>…</a1>（见 content-page-translation.js），
+    // 两者都不是正文，混进去会拉低语言检测的置信度。
+    const cleaned = text
+      .replace(/\{\{\d+\}\}/g, '')
+      .replace(/<\/?[a-z]+\d+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     return cleaned.slice(0, 400);
   };
 })();

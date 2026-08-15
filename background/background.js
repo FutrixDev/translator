@@ -1347,10 +1347,11 @@ CRITICAL RULES:
 4. Keep technical terms, brand names, proper nouns in original form
 5. If already in target language, return EXACTLY as is (no paraphrasing or reordering)
 6. MUST have exactly the same number of output segments as input
+7. Preserve placeholders and inline tags EXACTLY: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> or <strong2>...</strong2> with the same names and numbers, wrapping the translated text they originally wrapped. Never invent, drop, or renumber tags.
 
 Example:
-Input: Hello{delimiter}How are you{delimiter}Thank you
-Output: 你好{delimiter}你好吗{delimiter}谢谢`;
+Input: Hello{delimiter}Read <a1>the docs</a1> first{delimiter}Thank you
+Output: 你好{delimiter}请先阅读<a1>文档</a1>{delimiter}谢谢`;
 
 // Fast batch output rules appended when using custom prompts
 function getFastBatchOutputRules(delimiter) {
@@ -1358,7 +1359,8 @@ function getFastBatchOutputRules(delimiter) {
 1. Input segments are separated by "${delimiter}"
 2. Output translations MUST be separated by "${delimiter}" in the EXACT same order
 3. Output ONLY the translations, nothing else
-4. MUST have exactly the same number of output segments as input`;
+4. MUST have exactly the same number of output segments as input
+5. Preserve placeholders and inline tags EXACTLY: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> with the same names and numbers, wrapping the translated text they originally wrapped. Never invent, drop, or renumber tags.`;
 }
 
 // Fast batch translation with delimiter
