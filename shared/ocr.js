@@ -108,12 +108,21 @@
   // Codepoint ranges that settle which language the recognised text is in.
   // Kana and Hangul are decisive on sight; Han is not, because Japanese uses it
   // too — so kana is tested first and Han is only reached when no kana appeared.
+  //
+  // The scripts that go to a vote carry a per-codepoint weight, because raw
+  // counts are the wrong yardstick across scripts: one Han character carries
+  // about a word's worth of text while a Latin letter carries about a fifth of
+  // one — and the noise OCR produces (misread strokes, watermarks, UI chrome)
+  // is overwhelmingly Latin. Unweighted, twenty letters of Tesseract garbage
+  // outvote a dozen real Han characters and a Chinese photo is labelled
+  // English. Kana and Hangul never reach the vote (see the early return), so
+  // their weights are moot.
   const SCRIPT_RANGES = [
-    { lang: 'ja', re: /[぀-ゟ゠-ヿ]/g },
-    { lang: 'ko', re: /[가-힯ᄀ-ᇿ㄰-㆏]/g },
-    { lang: 'ru', re: /[Ѐ-ӿ]/g },
-    { lang: 'han', re: /[㐀-䶿一-鿿豈-﫿]/g },
-    { lang: 'en', re: /[A-Za-zÀ-ɏ]/g }
+    { lang: 'ja', re: /[぀-ゟ゠-ヿ]/g, weight: 1 },
+    { lang: 'ko', re: /[가-힯ᄀ-ᇿ㄰-㆏]/g, weight: 1 },
+    { lang: 'ru', re: /[Ѐ-ӿ]/g, weight: 1 },
+    { lang: 'han', re: /[㐀-䶿一-鿿豈-﫿]/g, weight: 3 },
+    { lang: 'en', re: /[A-Za-zÀ-ɏ]/g, weight: 1 }
   ];
 
   /**
@@ -131,13 +140,14 @@
     if (!source.trim()) return '';
 
     let best = null;
-    for (const { lang, re } of SCRIPT_RANGES) {
+    for (const { lang, re, weight } of SCRIPT_RANGES) {
       const count = (source.match(re) || []).length;
       // Kana and Hangul settle it outright: a single one of either cannot show
       // up in Chinese or Latin text, whereas Han is common to Chinese *and*
       // Japanese and Latin letters litter otherwise-CJK strings.
       if (count > 0 && (lang === 'ja' || lang === 'ko')) return lang;
-      if (count > 0 && (!best || count > best.count)) best = { lang, count };
+      const score = count * weight;
+      if (score > 0 && (!best || score > best.score)) best = { lang, score };
     }
     if (!best) return '';
     if (best.lang !== 'han') return best.lang;
