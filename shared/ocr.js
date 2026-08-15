@@ -78,11 +78,15 @@
     { code: 'kor', bcp47: 'ko', labelKey: 'langKo' }
   ];
 
-  // Which second language 'auto' pairs with English, keyed by the UI/target
+  // Which language 'auto' puts FIRST, ahead of English, keyed by the UI/target
   // language. English is always in the set because it turns up in screenshots,
-  // UI chrome and signage everywhere; the second slot is the user's own script,
-  // which is the other thing they are realistically pointing the tool at. Two
-  // is the cap on purpose — a third costs more time than it wins back.
+  // UI chrome and signage everywhere; the user's own script is the other thing
+  // they are realistically pointing the tool at — and it must lead, because
+  // Tesseract treats the first language in the '+'-joined string as the
+  // preferred one. With eng first, stylised CJK glyphs come back as confident
+  // Latin garbage; CJK-first is safe because the CJK traineddata already reads
+  // embedded ASCII/Latin, while the reverse is not true. Two languages is the
+  // cap on purpose — a third costs more time than it wins back.
   const AUTO_SECOND_LANGUAGE = {
     'zh-CN': 'chi_sim',
     'zh-TW': 'chi_tra',
@@ -92,15 +96,17 @@
 
   /**
    * Resolve the stored `ocrSourceLanguage` setting into the '+'-joined string
-   * Tesseract wants. 'auto' means English plus the user's own script; an
-   * explicit choice means exactly that language and nothing else, because a
-   * user who picked one knows better than the heuristic.
+   * Tesseract wants. 'auto' means the user's own script plus English — in that
+   * order, because Tesseract prefers the first language listed and the CJK
+   * models read embedded Latin while eng cannot read CJK; an explicit choice
+   * means exactly that language and nothing else, because a user who picked
+   * one knows better than the heuristic.
    */
   function resolveOcrLanguages(setting, uiLang) {
     const known = OCR_LANGUAGES.some((l) => l.code === setting);
     if (known) return setting;
     const second = AUTO_SECOND_LANGUAGE[uiLang];
-    return second ? `eng+${second}` : 'eng';
+    return second ? `${second}+eng` : 'eng';
   }
 
   // --- Script detection ------------------------------------------------------
@@ -143,7 +149,7 @@
     if (best.lang !== 'han') return best.lang;
 
     const hint = String(hintLanguages || '');
-    // chi_tra alone means Traditional; anything else (including the eng+chi_sim
+    // chi_tra alone means Traditional; anything else (including the chi_sim+eng
     // default) means Simplified.
     return hint.includes('chi_tra') && !hint.includes('chi_sim') ? 'zh-Hant' : 'zh-Hans';
   }
