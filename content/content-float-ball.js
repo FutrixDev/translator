@@ -541,6 +541,12 @@
     if (ctx.setManagedTranslationsVisible) {
       ctx.setManagedTranslationsVisible(state.translationsVisible);
     }
+
+    // “仅显示译文”与本开关联动：译文被藏起来时必须把原文放回来，
+    // 否则页面两边都不显示。译文重新显示时再把原文藏回去。
+    if (ctx.applyTranslationOnlyMode) {
+      ctx.applyTranslationOnlyMode();
+    }
   }
 
   function stopFloatBallWatchdog() {
