@@ -16,6 +16,22 @@ const http = require('http');
 
 const PROMPT_DELIMITER_RE = /segments are separated by "([^"]+)"/;
 
+/**
+ * The pixel size of a PNG data URL, straight out of its IHDR chunk.
+ *
+ * The picture that arrives is the only proof of what the worker did to it: a
+ * region crop is a different picture from the whole image, and its dimensions
+ * are what say so. Null for anything that is not a PNG data URL.
+ */
+function pngDataUrlSize(dataUrl) {
+  const base64 = /^data:image\/png;base64,(.+)$/s.exec(String(dataUrl || ''));
+  if (!base64) return null;
+  const bytes = Buffer.from(base64[1], 'base64');
+  // 8-byte signature, then the IHDR chunk: 4 length + 4 type + width + height.
+  if (bytes.length < 24 || bytes.toString('ascii', 12, 16) !== 'IHDR') return null;
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
 function startMockOpenAIServer() {
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
@@ -63,6 +79,8 @@ function startMockOpenAIServer() {
             // Enough of the data URL to assert the media type without dumping megabytes
             // of base64 into a test failure message.
             imageUrlPrefix: String(imagePart?.image_url?.url || '').slice(0, 40),
+            // What the worker actually sent, for specs that assert on the crop.
+            imageSize: pngDataUrlSize(imagePart?.image_url?.url),
             systemPrompt
           });
           res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -70,7 +70,9 @@
             ctx.startImageOcrTranslation({
               srcUrl: message.srcUrl,
               targetLang: message.targetLang,
-              translate: message.translate
+              translate: message.translate,
+              // Whole image, or the area the user is about to draw.
+              selectRegion: message.selectRegion === true
             });
           }
           break;

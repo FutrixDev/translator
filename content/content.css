@@ -84,10 +84,10 @@
 
 /* Not inherited — a bare-tag rule can hit any single node in the subtree, and
    opacity/filter/transform compound as it descends. Pin them on every node. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]),
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::after {
   box-sizing: border-box;
   opacity: 1;
   filter: none;
@@ -99,16 +99,16 @@
    box's line-height would stop reaching the text it wraps. `inherit` still
    blocks a direct hit like `button { text-transform: uppercase }` or
    `body { line-height: 1.8 }` without breaking the chain. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) {
   visibility: visible;
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::after {
   visibility: inherit;
   line-height: inherit;
   letter-spacing: inherit;
@@ -168,7 +168,7 @@
    Adding a control to a panel needs nothing here; adding a *rule* for one
    needs the `html body` + root prefix, or the theme's hover takes it back.
    That is asserted by test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -2018,4 +2018,81 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   animation: ai-translator-fade-in 0.18s ease;
+}
+
+/* ==================== Image OCR: the area picker ====================
+
+   A viewport-sized scrim with one hole in it. The hole is the selection, and
+   before the first drag it is the image itself — so the picker opens by saying
+   what is about to be read, and the rectangle is drawn inside that.
+
+   The hole is a spread box-shadow rather than four dimming panels: one element
+   to move, and no seams between the panels to catch a sub-pixel gap. The ring
+   is inset in the same declaration, which keeps the highlighted area exactly
+   the rectangle that was dragged — a border would eat 2px of it under the
+   border-box reset above.
+
+   Everything is id-scoped, so a host page's `div` rule cannot reach it. */
+
+#ai-translator-ocr-region {
+  position: fixed;
+  z-index: 2147483646;
+  inset: 0;
+  cursor: crosshair;
+  /* The scrim itself paints nothing: the box below carries it, so the hole and
+     the dimming can never disagree. */
+  background: transparent;
+  overflow: hidden;
+  /* Deliberately no ai-translator-fade-in: that animation scales and shifts
+     what it opens, and this element is a coordinate system, not a panel. A
+     transform on it would move the scrim off the viewport it is supposed to
+     cover, put the highlight somewhere other than the pixels being read, and —
+     because a transformed element becomes the containing block for everything
+     inside it — do the same to the children below. It is also a tool the user
+     is already dragging in: it has to be exact from the first frame. */
+}
+
+/* Absolute, against the scrim's own box — which is the viewport, pinned above.
+   Client coordinates therefore go in unchanged, and nothing here depends on
+   `position: fixed` resolving against the viewport, which any transformed
+   ancestor would quietly take away. */
+#ai-translator-ocr-region .ai-translator-ocr-region-box {
+  position: absolute;
+  box-shadow:
+    0 0 0 100vmax rgba(8, 9, 13, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Once there is a real selection the ring is the accent, so the drawn
+   rectangle reads as the user's own and not as the opening highlight. */
+#ai-translator-ocr-region .ai-translator-ocr-region-box.ai-translator-ocr-region-drawn {
+  box-shadow:
+    0 0 0 100vmax rgba(8, 9, 13, 0.55),
+    inset 0 0 0 2px #6f63ff;
+  background: rgba(111, 99, 255, 0.08);
+}
+
+#ai-translator-ocr-region .ai-translator-ocr-region-hint {
+  position: absolute;
+  top: 24px;
+  /* Centred with auto margins, not a translate: the containment reset above
+     pins `transform: none` on every node in our subtree. Pinning both edges
+     keeps it on screen in a narrow window, where a fixed width would not. */
+  left: 16px;
+  right: 16px;
+  width: auto;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(21, 22, 28, 0.94);
+  border: 1px solid #2a2d36;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
 }

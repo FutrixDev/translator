@@ -41,6 +41,9 @@ globalThis.document = {
     set textContent(value) { this._text = String(value); },
     get innerHTML() { return this._text; },
   }),
+  // The file registers its contextmenu listener at load time (the right-clicked
+  // image has to be recorded before the menu click arrives).
+  addEventListener: () => {},
 };
 await import('../../content/content-utils.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;

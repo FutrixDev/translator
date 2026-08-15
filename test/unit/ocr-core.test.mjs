@@ -72,6 +72,99 @@ test('non-string JSON values are normalized to empty strings, not passed through
   assert.equal(parsed.language, '');
 });
 
+// --- Region crop -------------------------------------------------------------
+
+test('a crop is clamped to the image by its edges, not by its size', () => {
+  // A drag that ran off the top-left keeps the part that was over the image.
+  assert.deepEqual(
+    OCR.normalizeCropRect({ x: -0.25, y: -0.125, width: 0.5, height: 0.5 }),
+    { x: 0, y: 0, width: 0.25, height: 0.375 }
+  );
+});
+
+test('a right-to-left drag is the same rectangle', () => {
+  assert.deepEqual(
+    OCR.normalizeCropRect({ x: 0.75, y: 0.5, width: -0.25, height: -0.25 }),
+    { x: 0.5, y: 0.25, width: 0.25, height: 0.25 }
+  );
+});
+
+test('a stray click and a whole-image selection both mean "no crop"', () => {
+  // Null is not an error here: it is "recognise all of it", which is what both
+  // a slipped click and a full-image drag should do.
+  assert.equal(OCR.normalizeCropRect({ x: 0.5, y: 0.5, width: 0.001, height: 0.4 }), null);
+  assert.equal(OCR.normalizeCropRect({ x: 0, y: 0, width: 1, height: 1 }), null);
+  assert.equal(OCR.normalizeCropRect(null), null);
+  assert.equal(OCR.normalizeCropRect({ x: 0, y: 0, width: NaN, height: 0.5 }), null);
+});
+
+test('the crop lands on source pixels that are inside the image', () => {
+  const rect = OCR.cropSourceRect({ x: 0.25, y: 0.5, width: 0.5, height: 0.5 }, 800, 600);
+  assert.deepEqual(rect, { sx: 200, sy: 300, sw: 400, sh: 300 });
+});
+
+test('a crop against the far edge cannot round past it', () => {
+  // drawImage with a source rectangle that overruns the bitmap draws
+  // transparent padding — a recognisable image with a black band, or nothing.
+  const rect = OCR.cropSourceRect({ x: 0.99, y: 0.99, width: 0.02, height: 0.02 }, 100, 100);
+  assert.ok(rect.sx + rect.sw <= 100 && rect.sy + rect.sh <= 100);
+  assert.ok(rect.sw >= 1 && rect.sh >= 1);
+  assert.equal(OCR.cropSourceRect({ x: 0.1, y: 0.1, width: 0.5, height: 0.5 }, 0, 0), null);
+});
+
+test('a small crop is scaled up for the engine, a large one still capped', () => {
+  // Both engines read small type badly, and a crop is small by definition.
+  const small = OCR.computeOcrCanvasSize(200, 60, { allowUpscale: true });
+  assert.equal(small.width, 600, 'capped at 3x rather than stretched to the minimum');
+  assert.equal(small.height, 180);
+  assert.deepEqual(OCR.computeOcrCanvasSize(800, 400, { allowUpscale: true }), { width: 1000, height: 500 });
+  // Never past the cap, whichever way it got there.
+  const big = OCR.computeOcrCanvasSize(4096, 2048, { allowUpscale: true });
+  assert.equal(Math.max(big.width, big.height), OCR.OCR_MAX_DIMENSION);
+});
+
+test('a full image is left at its own size', () => {
+  // Upscaling everything would cost a decode and a bigger upload on every
+  // recognition; the page published this image at this size.
+  assert.deepEqual(OCR.computeOcrCanvasSize(200, 60), { width: 200, height: 60 });
+});
+
+test('object-fit decides which pixels a rectangle drawn on screen covers', () => {
+  const image = { naturalWidth: 1000, naturalHeight: 500 };
+  const box = { boxWidth: 400, boxHeight: 400, ...image };
+
+  // fill (the initial value) stretches to the box: the box IS the image.
+  assert.deepEqual(
+    OCR.paintedImageBox({ ...box, objectFit: 'fill' }),
+    { left: 0, top: 0, width: 400, height: 400 }
+  );
+  // contain letterboxes: the painted image is smaller than the box and centred.
+  assert.deepEqual(
+    OCR.paintedImageBox({ ...box, objectFit: 'contain' }),
+    { left: 0, top: 100, width: 400, height: 200 }
+  );
+  // cover overflows: the box is a window onto a bigger painting, so the same
+  // rectangle on screen is a much smaller part of the source.
+  assert.deepEqual(
+    OCR.paintedImageBox({ ...box, objectFit: 'cover' }),
+    { left: -200, top: 0, width: 800, height: 400 }
+  );
+  // none paints at natural size, centred and clipped.
+  assert.deepEqual(
+    OCR.paintedImageBox({ ...box, objectFit: 'none' }),
+    { left: -300, top: -50, width: 1000, height: 500 }
+  );
+});
+
+test('an image with no intrinsic size falls back to the box it was given', () => {
+  // An SVG without a viewBox, or an image that has not decoded yet: there is
+  // nothing to fit, and the box is all anyone knows.
+  assert.deepEqual(
+    OCR.paintedImageBox({ boxWidth: 300, boxHeight: 200, naturalWidth: 0, naturalHeight: 0, objectFit: 'cover' }),
+    { left: 0, top: 0, width: 300, height: 200 }
+  );
+});
+
 // --- resolveOcrLanguages -----------------------------------------------------
 
 test('auto pairs English with the user own script, and only those two', () => {
@@ -413,7 +506,11 @@ test('every locale carries the OCR strings the worker, popup and options look up
     'hintOcrSourceLanguage',
     'ocrSourceLanguageAuto',
     'ocrTranslate',
-    'hintOcrTranslate'
+    'hintOcrTranslate',
+    // The area picker: its own menu entry, and the instruction it puts on screen.
+    'contextOcrImageRegion',
+    'ocrRegionHint',
+    'imageOcrSettings'
   ];
   // The labels the recognised-language line resolves through.
   for (const lang of OCR.OCR_LANGUAGES) keys.push(lang.labelKey);
@@ -422,5 +519,43 @@ test('every locale carries the OCR strings the worker, popup and options look up
       assert.equal(typeof table[key], 'string', `${locale} is missing ${key}`);
       assert.ok(table[key].length > 0, `${locale} has an empty ${key}`);
     }
+  }
+});
+
+// --- The right-clicked image -------------------------------------------------
+//
+// Comic translation and image OCR both act on "the image under the cursor", and
+// before the area picker they each answered that themselves — two contextmenu
+// listeners, two copies of the same hit-test. content-utils.js owns it now, and
+// these keep the copies from growing back.
+
+test('only content-utils.js watches the document for a right-click', () => {
+  // A listener on our own picker root is a different question ("cancel"), so
+  // this looks for the document-level one alone.
+  const files = ['content/content-utils.js', 'content/content-comic-translation.js',
+    'content/content-image-ocr.js', 'content/content-messaging.js'];
+  const watching = files.filter((file) =>
+    /document\.addEventListener\(\s*['"]contextmenu['"]/.test(repoFile(file)));
+  assert.deepEqual(watching, ['content/content-utils.js'],
+    'the right-clicked image is tracked once, in content-utils.js');
+});
+
+test('the image helpers both features share are not restated by either', () => {
+  const utils = repoFile('content/content-utils.js');
+  for (const name of ['imageAtPoint', 'getLastContextImage', 'renderedArea', 'imageMatchesSrc']) {
+    assert.ok(utils.includes(`ctx.${name} = `), `content-utils.js must own ${name}`);
+  }
+  for (const file of ['content/content-comic-translation.js', 'content/content-image-ocr.js']) {
+    const src = repoFile(file);
+    for (const name of ['imageAtPoint', 'renderedArea']) {
+      assert.equal(
+        new RegExp(`function\\s+${name}\\s*\\(`).test(src), false,
+        `${file} re-declares ${name} — it belongs to content-utils.js alone`
+      );
+    }
+    assert.equal(
+      /currentSrc === srcUrl/.test(src), false,
+      `${file} compares srcUrl itself — use ctx.imageMatchesSrc`
+    );
   }
 });

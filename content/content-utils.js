@@ -52,6 +52,68 @@
     return !!ctx.getManagedDomRoot(element);
   };
 
+  // ==================== 右键点到的那张图 ====================
+
+  // A context-menu click reports `info.srcUrl`, and that is not enough to know
+  // WHICH image the user meant: a page can show the same src a dozen times
+  // (thumbnail grids, lazy-load placeholders). The click point is the only
+  // unambiguous answer, and it is gone by the time the menu click arrives — so
+  // it is recorded here, once, for every feature that acts on an image.
+  //
+  // One listener rather than one per feature: comic translation and image OCR
+  // both need exactly this, and two listeners answering the same question is
+  // how they drift apart.
+  let lastContextImage = null;
+
+  document.addEventListener('contextmenu', (event) => {
+    // A synthetic contextmenu carries no cursor position, and letting one
+    // through would throw away the target of the real right-click that follows.
+    if (!event.isTrusted) return;
+    lastContextImage = ctx.imageAtPoint(event.clientX, event.clientY);
+  }, true);
+
+  function naturalArea(img) {
+    return (img.naturalWidth || 0) * (img.naturalHeight || 0);
+  }
+
+  /**
+   * The image the user is pointing at — not necessarily the topmost one.
+   *
+   * Anti-copy sites stack a tiny transparent image over the artwork and stretch
+   * it to the same box, so hit-testing lands on the decoy by design. Resolution
+   * is what tells the real image apart from the thing covering it.
+   */
+  ctx.imageAtPoint = function(x, y) {
+    if (typeof document.elementsFromPoint !== 'function') return null;
+    const images = document.elementsFromPoint(x, y).filter(el => el.tagName === 'IMG');
+    if (!images.length) return null;
+    return images.reduce((best, img) => (naturalArea(img) > naturalArea(best) ? img : best));
+  };
+
+  /** The last right-clicked image, or null if it is gone from the document. */
+  ctx.getLastContextImage = function() {
+    return lastContextImage && lastContextImage.isConnected ? lastContextImage : null;
+  };
+
+  /** How much of the screen an image takes up — the "is this the big one" test. */
+  ctx.renderedArea = function(img) {
+    const rect = img.getBoundingClientRect();
+    return rect.width * rect.height;
+  };
+
+  /**
+   * Does this element show the src the context menu reported?
+   *
+   * `currentSrc` as well as `src`, because a responsive image serves neither
+   * one reliably: the menu reports whichever the browser actually loaded.
+   * Features with extra ways to recognise their own images (comic translation
+   * stamps the ones it swaps) build on top of this rather than restating it.
+   */
+  ctx.imageMatchesSrc = function(img, srcUrl) {
+    if (!srcUrl) return false;
+    return img.currentSrc === srcUrl || img.src === srcUrl;
+  };
+
   ctx.copyToClipboard = async function(text) {
     try {
       await navigator.clipboard.writeText(text);

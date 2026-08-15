@@ -91,6 +91,10 @@ function applyI18n(lang) {
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
 
+  // Last, because it builds on the labels the pass above just filled in — and
+  // because what "auto" resolves to depends on the language this very call set.
+  syncOcrAutoLabel();
+
   // Show the real extension version from the manifest instead of a hard-coded
   // string, so the settings page never drifts from the released version.
   const versionEl = document.querySelector('[data-i18n="appNameVersion"]');
@@ -1674,6 +1678,33 @@ function renderOcrLanguages() {
     select.appendChild(option);
   }
   select.dataset.populated = '1';
+}
+
+/**
+ * Finish the "auto" label by naming the languages it resolves to right now —
+ * "Auto (English + 简体中文)".
+ *
+ * "Auto" on its own is the one option here that does something the user cannot
+ * see: the local engine must be handed a fixed language list, so auto quietly
+ * means English (it turns up in screenshots, UI chrome and signage everywhere)
+ * plus the one script the user reads. Someone whose images are Japanese while
+ * their target language is Chinese has to be able to notice that from the
+ * picker, because it is exactly the case where they should choose a language
+ * themselves.
+ *
+ * Written after applyI18n rather than as a data-i18n key: the resolution lives
+ * in shared/ocr.js and depends on the UI language, so it cannot be a string in
+ * ten locale tables.
+ */
+function syncOcrAutoLabel() {
+  const select = elements.ocrSourceLanguage;
+  const option = select && select.querySelector('option[value="auto"]');
+  if (!option) return;
+  const names = OCRCore.resolveOcrLanguages('auto', currentUILang).split('+').map((code) => {
+    const lang = OCRCore.OCR_LANGUAGES.find((entry) => entry.code === code);
+    return lang ? t(lang.labelKey) : code;
+  });
+  option.textContent = `${t('ocrSourceLanguageAuto')} (${names.join(' + ')})`;
 }
 
 // Same, for image OCR — plus one rule of its own: the language list belongs to

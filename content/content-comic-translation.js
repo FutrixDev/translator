@@ -275,8 +275,6 @@
     entry.showingTranslation = false;
   }
 
-  let lastContextImage = null;
-
   /**
    * What the server is asked to do to the page. Everything downstream — the
    * overlay wording, the badge labels, the cross-page record — keys off this,
@@ -327,24 +325,15 @@
     return !!(ctx.settings && ctx.settings.enableComicTranslation);
   }
 
-  // The right-click target is the only unambiguous way to know WHICH image the
-  // user meant: a page can show the same src a dozen times (thumbnail grids,
-  // lazy-load placeholders) and info.srcUrl cannot tell them apart.
-  document.addEventListener('contextmenu', (event) => {
-    // A synthetic contextmenu carries no cursor position, and letting one
-    // through would throw away the target of the real right-click that follows.
-    if (!event.isTrusted) return;
-    lastContextImage = imageAtPoint(event.clientX, event.clientY);
-  }, true);
+  // The right-click target — the only unambiguous way to know WHICH image the
+  // user meant — is tracked once for the whole content script, in
+  // content-utils.js, because image OCR needs the same answer.
 
   function naturalArea(img) {
     return (img.naturalWidth || 0) * (img.naturalHeight || 0);
   }
 
-  function renderedArea(img) {
-    const rect = img.getBoundingClientRect();
-    return rect.width * rect.height;
-  }
+  const renderedArea = ctx.renderedArea;
 
   /** Artwork, or page furniture? */
   function isComicPage(img) {
@@ -366,20 +355,6 @@
   }
 
   /**
-   * The image the user is pointing at — not necessarily the topmost one.
-   *
-   * Anti-copy sites stack a tiny transparent image over the artwork and stretch
-   * it to the same box, so hit-testing lands on the decoy by design. Resolution
-   * is what tells the page apart from the thing covering it.
-   */
-  function imageAtPoint(x, y) {
-    if (typeof document.elementsFromPoint !== 'function') return null;
-    const images = document.elementsFromPoint(x, y).filter(el => el.tagName === 'IMG');
-    if (!images.length) return null;
-    return images.reduce((best, img) => (naturalArea(img) > naturalArea(best) ? img : best));
-  }
-
-  /**
    * Trade a decoy for the artwork behind it.
    *
    * `info.srcUrl` reports whatever the browser hit-tested under the cursor, so
@@ -396,15 +371,16 @@
   }
 
   function findImage(srcUrl) {
+    const lastContextImage = ctx.getLastContextImage();
     // The click point outranks srcUrl. The two disagree exactly when the site is
     // hiding the artwork behind something else, and the point is still right.
-    if (lastContextImage && lastContextImage.isConnected &&
+    if (lastContextImage &&
         (isComicPage(lastContextImage) || matchesSrc(lastContextImage, srcUrl))) {
       return resolveRealPage(lastContextImage);
     }
     const candidates = Array.from(document.images).filter(img => matchesSrc(img, srcUrl));
     if (!candidates.length) {
-      return lastContextImage && lastContextImage.isConnected ? lastContextImage : null;
+      return lastContextImage;
     }
     // Fall back to the largest match — on a page that reuses a src, the comic
     // page itself is the big one and the rest are navigation thumbnails.
@@ -414,7 +390,7 @@
 
   function matchesSrc(img, srcUrl) {
     if (!srcUrl) return false;
-    if (img.currentSrc === srcUrl || img.src === srcUrl) return true;
+    if (ctx.imageMatchesSrc(img, srcUrl)) return true;
     // A swapped image no longer carries its original src, but it is still the
     // element the user right-clicked.
     const stamped = img.getAttribute(PAGE_ID_ATTR);
