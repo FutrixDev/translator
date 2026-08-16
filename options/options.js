@@ -165,6 +165,7 @@ const elements = {
   ocrSourceLanguage: document.getElementById('ocrSourceLanguage'),
   ocrSourceLanguageGroup: document.getElementById('ocrSourceLanguageGroup'),
   ocrTranslate: document.getElementById('ocrTranslate'),
+  enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
   ocrSubOptions: document.getElementById('ocrSubOptions'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
@@ -282,7 +283,11 @@ const defaultSettings = {
   enableImageOcrTranslation: true,
   ocrEngine: OCRCore.DEFAULT_OCR_ENGINE,
   ocrSourceLanguage: 'auto',
-  ocrTranslate: true,
+  // Recognise-first: the popup stops at the recognised text and offers a
+  // Translate button; auto-translating is opted into. Matches background.js.
+  ocrTranslate: false,
+  // The hover shortcut over large images — opted into, see background.js.
+  enableImageOcrHoverButton: false,
   // Off by default: this is the one feature that spends money, so it is opted
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
@@ -966,7 +971,11 @@ async function loadSettings() {
     elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
     renderOcrLanguages();
     elements.ocrSourceLanguage.value = result.ocrSourceLanguage || 'auto';
-    elements.ocrTranslate.checked = result.ocrTranslate !== false;
+    // Default-off switches: only a stored true turns them on. Recognise-first
+    // is the product default — auto-translate and the hover button are opted
+    // into, so the comparison direction matches the false default above.
+    elements.ocrTranslate.checked = result.ocrTranslate === true;
+    elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton === true;
     syncOcrSubState();
     // The switches themselves are drawn by renderAccountFeatures, which also
     // weighs whether this device has the account both features need.
@@ -1085,6 +1094,7 @@ function collectSettings() {
     ocrEngine: elements.ocrEngine.value,
     ocrSourceLanguage: elements.ocrSourceLanguage.value,
     ocrTranslate: elements.ocrTranslate.checked,
+    enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
@@ -1374,6 +1384,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'ocrEngine',
   'ocrSourceLanguage',
   'ocrTranslate',
+  'enableImageOcrHoverButton',
   'enableYoutubeCaptionTranslation',
   'showYoutubeOriginalCaption'
 ];

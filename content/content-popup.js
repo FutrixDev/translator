@@ -98,6 +98,13 @@
         </div>
       </div>
       <div class="ai-translator-actions">
+        <button class="ai-translator-btn ai-translator-btn-primary ai-translator-translate-btn" type="button" title="${t('translate')}" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
+            <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
+          </svg>
+          ${t('translate')}
+        </button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -215,6 +222,18 @@
     if (options.recognizeOnly) {
       state.translationPopup.querySelector('.ai-translator-divider')?.setAttribute('hidden', '');
       state.translationPopup.querySelector('.ai-translator-result')?.setAttribute('hidden', '');
+      // Step 2, on demand: the same translation the dropdown would run, one
+      // labelled click instead of a language choice. translateText brings the
+      // hidden half back and hides this button again.
+      const translateBtn = state.translationPopup.querySelector('.ai-translator-translate-btn');
+      if (translateBtn) {
+        translateBtn.hidden = false;
+        translateBtn.addEventListener('click', () => {
+          const popup = state.translationPopup;
+          if (!popup) return;
+          translateText(popup.dataset.sourceText || text, popup.dataset.targetLang || '');
+        });
+      }
     }
 
     // 居中显示弹窗
@@ -431,12 +450,14 @@
       if (state.translationPopup) {
         state.translationPopup.dataset.requestId = requestId;
         state.translationPopup.dataset.targetLang = targetLang;
-        // A recognise-only popup (image OCR with the translate step off) has
-        // its translation half hidden. Getting here means something asked for a
-        // translation anyway — the language dropdown — which is asking for it
-        // back.
+        // A recognise-only popup (image OCR with the auto-translate step off)
+        // has its translation half hidden and a Translate button in its place.
+        // Getting here means something asked for a translation anyway — that
+        // button, or the language dropdown — so the half comes back and the
+        // button, its job done, goes away.
         state.translationPopup.querySelector('.ai-translator-divider')?.removeAttribute('hidden');
         state.translationPopup.querySelector('.ai-translator-result')?.removeAttribute('hidden');
+        state.translationPopup.querySelector('.ai-translator-translate-btn')?.setAttribute('hidden', '');
         const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
         const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
         const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');

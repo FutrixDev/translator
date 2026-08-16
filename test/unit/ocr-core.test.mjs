@@ -606,6 +606,10 @@ test('every locale carries the OCR strings the worker, popup and options look up
     'ocrSourceLanguageAuto',
     'ocrTranslate',
     'hintOcrTranslate',
+    // The hover shortcut button: its options switch, hint, and on-image label.
+    'enableImageOcrHoverButton',
+    'hintEnableImageOcrHoverButton',
+    'ocrRecognizeText',
     // The area picker: its own menu entry, and the instruction it puts on screen.
     'contextOcrImageRegion',
     'ocrRegionHint',
