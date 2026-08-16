@@ -31,13 +31,20 @@
 
   // 'local'  — Tesseract WASM in the offscreen document. Free, offline, fast
   //            (sub-second on clean images), weaker on photos and stylised type.
-  // 'vision' — the user's own vision model. Costs money and takes seconds, but
-  //            reads images the local engine cannot.
+  // 'vision' — the user's own vision-capable model, called directly at their
+  //            configured endpoint with their key (no server of ours). Costs
+  //            money and takes seconds, but reads images the local engine
+  //            cannot.
   //
-  // The default is the free one, for the same reason translationEngine defaults
-  // to 'builtin'. Both the service worker and the options page read it from
-  // here rather than each writing 'local' into their own defaults.
-  const DEFAULT_OCR_ENGINE = 'local';
+  // The default is 'vision': recognition quality is the whole product here,
+  // and the local engine's ceiling on photos, art type and rare glyphs is real
+  // (measured — see the retry-ladder notes below). Every user of this
+  // extension has an API key configured already, and a model without image
+  // support answers with its own vendor error, which the popup surfaces.
+  // 'local' remains the free, offline choice one switch away. Both the service
+  // worker and the options page read the default from here rather than each
+  // writing it into their own defaults.
+  const DEFAULT_OCR_ENGINE = 'vision';
 
   // --- Image encoding limits -------------------------------------------------
 

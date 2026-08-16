@@ -167,8 +167,10 @@ test.describe('image OCR', () => {
   });
 
   test('the local engine reads the image on-device, then the text is translated', async ({ page }) => {
-    // The default engine, and the one thing no mock can stand in for: real
-    // Tesseract, in the real offscreen document, over a real PNG.
+    // The one thing no mock can stand in for: real Tesseract, in the real
+    // offscreen document, over a real PNG. Chosen explicitly — the default
+    // engine is 'vision' now.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'local' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
     const srcUrl = await drawTextImage(page, 'EXIT');
@@ -196,7 +198,9 @@ test.describe('image OCR', () => {
     // Latin garbage which the popup then labelled English. The target language
     // is zh-CN, so the 'auto' plan runs chi_sim first — this exercises the
     // whole ladder: native pass, oversized verdict from the line boxes, and
-    // the rescaled pass whose answer must win.
+    // the rescaled pass whose answer must win. Chosen explicitly — the
+    // default engine is 'vision' now.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'local' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
     const srcUrl = await page.evaluate(() => {

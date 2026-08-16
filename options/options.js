@@ -958,7 +958,10 @@ async function loadSettings() {
     elements.autoDetect.checked = result.autoDetect;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
-    elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
+    // A stored choice of either engine is kept; only an unknown value falls
+    // back to the default. `=== 'vision' ? … : default` would silently flip a
+    // stored 'local' now that the default is 'vision'.
+    elements.ocrEngine.value = result.ocrEngine === 'local' ? 'local' : OCRCore.DEFAULT_OCR_ENGINE;
     // Default-on, so only a stored false turns it off.
     elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton !== false;
     syncOcrSubState();

@@ -168,15 +168,17 @@ Right-click an image → read the text in it. **Two separable steps, and keeping
 them separable is the whole design:**
 
 1. **Recognise.** Two engines behind one contract, `{text, language}`:
-   - **`local`** (the default) — Tesseract WASM, `vendor/tesseract/`, running in
+   - **`vision`** (the default) — the user's own vision-capable model, called
+     directly at their configured endpoint with their key (no server of ours),
+     through the same `shared/api-compat.js` builders as everything else. The
+     configured model must accept image input; the options hint says so.
+   - **`local`** — Tesseract WASM, `vendor/tesseract/`, running in
      `offscreen/`. Free, offline, no API key. A service worker may not spawn a
      nested Worker or instantiate this WASM, which is the only reason the
      offscreen document exists; MV3 also needs `wasm-unsafe-eval` in
      `content_security_policy.extension_pages` and every path pinned
      (`corePath`/`workerPath`/`langPath`, `workerBlobURL:false`, `gzip:false`)
      because Tesseract's defaults fetch from a CDN.
-   - **`vision`** — the user's own vision model, through the same
-     `shared/api-compat.js` builders as everything else.
 2. **Translate — optional, and not in either engine.** The content script runs
    it on the recognised text through `ctx.translateText`, the ordinary path.
    Always recognise-first: every entry point sends `translate: false`, the popup

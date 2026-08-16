@@ -186,7 +186,7 @@ const defaultSettings = {
   // so unlike comics/PDF it defaults on. The context menu entry is the only
   // surface.
   enableImageOcrTranslation: true,
-  // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js. This is
+  // 'local' vs 'vision'; the default is 'vision'. See shared/ocr.js. This is
   // the one OCR sub-setting: no language picker (recognition always runs the
   // resolveOcrLanguagePlan auto plan — nobody can pre-declare tomorrow's
   // images) and no auto-translate switch (the popup always stops at the
