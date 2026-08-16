@@ -355,33 +355,16 @@
               <span class="hint" data-i18n-hint="hintOcrEngine"></span>
             </div>
 
-            <div class="form-group" id="ocrSourceLanguageGroup">
-              <label for="ocrSourceLanguage" data-i18n="ocrSourceLanguage">Text Language in Images</label>
-              <!-- The languages are appended from OCRCore.OCR_LANGUAGES: the
-                   list is only offerable if its .traineddata is vendored, so it
-                   is owned by shared/ocr.js and not restated here. The "auto"
-                   label is completed by this page's script with the two
-                   languages it actually resolves to — "Auto" alone does not
-                   tell anyone that English is one of them. -->
-              <select id="ocrSourceLanguage">
-                <option value="auto" data-i18n="ocrSourceLanguageAuto"></option>
-              </select>
-              <span class="hint" data-i18n-hint="hintOcrSourceLanguage"></span>
-            </div>
-
-            <div class="toggle-group">
-              <label class="toggle-label">
-                <span data-i18n="ocrTranslate">Auto-Translate After Recognition</span>
-                <input type="checkbox" id="ocrTranslate">
-                <span class="toggle-slider"></span>
-              </label>
-              <span class="hint" data-i18n-hint="hintOcrTranslate"></span>
-            </div>
-
+            <!-- No language picker: recognition always runs the auto plan
+                 (the user's own script first, English as a fallback pass) —
+                 nobody can pre-declare what language tomorrow's images will
+                 be in. No auto-translate toggle either: the popup always
+                 shows the recognised text first, with a Translate button for
+                 the optional second step. -->
             <div class="toggle-group">
               <label class="toggle-label">
                 <span data-i18n="enableImageOcrHoverButton">Show Recognize Button on Images</span>
-                <input type="checkbox" id="enableImageOcrHoverButton">
+                <input type="checkbox" id="enableImageOcrHoverButton" checked>
                 <span class="toggle-slider"></span>
               </label>
               <span class="hint" data-i18n-hint="hintEnableImageOcrHoverButton"></span>

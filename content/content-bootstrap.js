@@ -48,10 +48,10 @@
       autoDetect: true,
       enableYoutubeCaptionTranslation: false,
       enableImageOcrTranslation: true,
-      // Auto-translate after recognition and the hover shortcut button: both
-      // off by default, matching background.js defaultSettings.
-      ocrTranslate: false,
-      enableImageOcrHoverButton: false,
+      // The hover shortcut button defaults on, matching background.js
+      // defaultSettings. (There is no auto-translate setting: OCR is always
+      // recognise-first, with a Translate button in the popup.)
+      enableImageOcrHoverButton: true,
       enableComicTranslation: false,
       comicTargetLang: '',
       enablePdfTranslation: true,
@@ -129,8 +129,7 @@
         showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
-        ocrTranslate: false,
-        enableImageOcrHoverButton: false,
+        enableImageOcrHoverButton: true,
         enableComicTranslation: false,
         comicTargetLang: '',
         enablePdfTranslation: true,
@@ -162,8 +161,7 @@
         showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
-        ocrTranslate: false,
-        enableImageOcrHoverButton: false,
+        enableImageOcrHoverButton: true,
         enableComicTranslation: false,
         comicTargetLang: '',
         enablePdfTranslation: true,

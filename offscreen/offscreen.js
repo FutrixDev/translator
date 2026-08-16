@@ -148,7 +148,7 @@
       // The filter works on the flat list (its all-dropped fallback has to see
       // the whole result); membership rebuilds the paragraph gaps, which the
       // popup renders and the reader needs.
-      const keptSet = new Set(globalThis.OCRCore.filterRecognizedLines(kept));
+      const keptSet = new Set(globalThis.OCRCore.filterRecognizedLines(kept, languages));
       kept = kept.filter((line) => keptSet.has(line));
       raw = paragraphs
         .map((lines) => lines.filter((line) => keptSet.has(line)).map((line) => line.text).join('\n'))
@@ -197,9 +197,12 @@
    * while the result is below the acceptance bar (most images stop after one):
    *
    *   1. `languages` at the size the service worker sent;
-   *   2. the same language again with the image scaled toward the LSTM's
-   *      comfort band, when pass 1's own line boxes say the glyphs were
-   *      oversized (poem cards, memes, headline screenshots);
+   *   2. the same language again at each retry rung — the image scaled toward
+   *      a size the LSTM reads well, when pass 1's own line boxes say the
+   *      glyphs were oversized (poem cards, memes, headline screenshots).
+   *      There are up to two rungs because no single scale wins on every
+   *      rendering, and every rung runs: a pass can clear the acceptance bar
+   *      by silently losing a line, so no rung's score may cut the next one;
    *   3. `fallbackLanguages` — 'auto' sends eng — for images that were not in
    *      the primary language at all.
    *
@@ -210,19 +213,24 @@
   async function recognize({ dataUrl, languages, fallbackLanguages }, onProgress) {
     reportProgress = onProgress;
     try {
-      const { isAcceptableRecognition, rescaleFactorForRetry, pickBetterRecognition } = globalThis.OCRCore;
+      const { isAcceptableRecognition, rescaleFactorsForRetry, pickBetterRecognition } = globalThis.OCRCore;
 
       let best = await runPass(languages, dataUrl);
-      let scaledUrl = null;
-      const factor = rescaleFactorForRetry(best.assessment);
-      if (factor) {
-        scaledUrl = await rescaleDataUrl(dataUrl, factor);
-        if (scaledUrl) best = pickBetterRecognition(best, await runPass(languages, scaledUrl));
+      // Rung factors come from the first pass's assessment: the native-size
+      // line boxes are the only measurement of the actual glyphs.
+      let bestUrl = dataUrl;
+      for (const factor of rescaleFactorsForRetry(best.assessment)) {
+        const scaledUrl = await rescaleDataUrl(dataUrl, factor);
+        if (!scaledUrl) continue;
+        const pass = await runPass(languages, scaledUrl);
+        const winner = pickBetterRecognition(best, pass);
+        if (winner === pass) bestUrl = scaledUrl;
+        best = winner;
       }
       if (!isAcceptableRecognition(best.assessment) && fallbackLanguages) {
-        // At the rescaled size when one was made — oversized glyphs are
-        // oversized in every language.
-        best = pickBetterRecognition(best, await runPass(fallbackLanguages, scaledUrl || dataUrl));
+        // At the size that read best so far — oversized glyphs are oversized
+        // in every language.
+        best = pickBetterRecognition(best, await runPass(fallbackLanguages, bestUrl));
       }
 
       // The same {text, language} contract the vision engine answers with,

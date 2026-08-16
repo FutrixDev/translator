@@ -179,6 +179,12 @@ them separable is the whole design:**
      `shared/api-compat.js` builders as everything else.
 2. **Translate — optional, and not in either engine.** The content script runs
    it on the recognised text through `ctx.translateText`, the ordinary path.
+   Always recognise-first: every entry point sends `translate: false`, the popup
+   shows the recognised text with a Translate button for step 2. There is no
+   auto-translate setting and no user-facing OCR language setting — nobody can
+   pre-declare what language an arbitrary image will contain, so the local
+   engine's languages come from the UI language (`resolveOcrLanguagePlan`) and
+   the text's actual language is detected after recognition.
 
 **A vision model could translate in the same call; it deliberately does not.**
 One shape for one engine and two for the other would fork every caller, and it
@@ -188,9 +194,10 @@ blank half.
 
 `shared/ocr.js` is the pure half and owns everything two surfaces would
 otherwise restate: the bundled language catalog (`OCR_LANGUAGES` — a language is
-only offerable if its `.traineddata` is in `vendor/tesseract/lang`, so the
-options page renders its picker from this), `DEFAULT_OCR_ENGINE`, the vision
-prompt and its tolerant parser, the encoding limits, and `shouldTranslate`.
+only usable if its `.traineddata` is in `vendor/tesseract/lang`, which
+`npm run test:unit` asserts), `DEFAULT_OCR_ENGINE`, the retry ladder's tuning
+(rescale rungs, acceptance bar, pass competition), the vision prompt and its
+tolerant parser, the encoding limits, and `shouldTranslate`.
 
 Two things it deliberately does not own:
 

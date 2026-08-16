@@ -4,10 +4,11 @@
  * The feature is two steps and this spec keeps them apart, because that split
  * is the thing most easily broken by a later patch: step 1 recognises (locally
  * in the offscreen document, or with a vision model), step 2 is an ordinary
- * translation of the recognised text and is optional. So the local engine must
- * reach a popup with no vision request behind it, the vision engine must send
- * the image once and the *text* separately, and with the translate step off
- * neither engine may translate at all.
+ * translation the user asks for with the popup's Translate button. Every real
+ * entry point sends translate: false — recognise-first is the flow, not a
+ * preference. So the local engine must reach a popup with no vision request
+ * behind it, the vision engine must send the image once and the *text*
+ * separately, and a recognise-first run may not translate at all.
  *
  * Everything is real except the native context-menu click, which Playwright
  * cannot drive — the OCR_TRANSLATE_IMAGE message it would send is dispatched
@@ -268,7 +269,7 @@ test.describe('image OCR', () => {
   });
 
   test('with the translate step off, the popup stops at the recognised text', async ({ page }) => {
-    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
 
@@ -276,8 +277,7 @@ test.describe('image OCR', () => {
       type: 'OCR_TRANSLATE_IMAGE',
       srcUrl: `${pageServer.origin}/sign.png`,
       targetLang: 'zh-CN',
-      // The real menu click reads ocrTranslate and puts it on the message; the
-      // synthetic one has to carry it itself.
+      // What the real menu click always sends now: recognise-first.
       translate: false,
     });
 
@@ -292,7 +292,7 @@ test.describe('image OCR', () => {
   });
 
   test('the recognise-only popup offers a Translate button that runs step 2 on demand', async ({ page }) => {
-    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');
 
@@ -322,10 +322,12 @@ test.describe('image OCR', () => {
     expect(mock.sentTexts).toContain('HELLO WORLD');
   });
 
-  test('the hover button appears on large images when its switch is on, and runs the flow', async ({ page }) => {
-    // ocrTranslate is left at its default (off), so the click should land on
-    // the recognise-only popup — the same terminal state the menu click reaches.
-    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', enableImageOcrHoverButton: true });
+  test('the hover button appears on large images by default, and runs recognise-first', async ({ page }) => {
+    // enableImageOcrHoverButton is deliberately NOT set: the button is the
+    // flow's front door and must be there out of the box. The click lands on
+    // the recognise-only popup — the same terminal state the menu click
+    // reaches — with the Translate button as step 2.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#big');
 
@@ -348,7 +350,8 @@ test.describe('image OCR', () => {
     expect(mock.visionRequests).toHaveLength(1);
   });
 
-  test('with the hover switch off (the default), hovering shows no button', async ({ page }) => {
+  test('with the hover switch turned off, hovering shows no button', async ({ page }) => {
+    await setExtensionSettings(page, { ...baseSettings(), enableImageOcrHoverButton: false });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#big');
 
@@ -406,7 +409,7 @@ test.describe('image OCR', () => {
     // The picker is the one half of this feature that only the page can do, and
     // the proof is the picture the worker ends up sending: a crop is a
     // different image, and its shape says which rectangle was read.
-    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#wide');
 
