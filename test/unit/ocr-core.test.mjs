@@ -165,46 +165,47 @@ test('an image with no intrinsic size falls back to the box it was given', () =>
   );
 });
 
-// --- resolveOcrLanguages -----------------------------------------------------
+// --- resolveOcrLanguagePlan --------------------------------------------------
 
-test('auto pairs the user own script with English, and only those two', () => {
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-CN'), 'chi_sim+eng');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-TW'), 'chi_tra+eng');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ja'), 'jpn+eng');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ko'), 'kor+eng');
+test('auto recognises with the user own script, English as the fallback pass', () => {
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'zh-CN'), { primary: 'chi_sim', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'zh-TW'), { primary: 'chi_tra', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'ja'), { primary: 'jpn', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'ko'), { primary: 'kor', fallback: 'eng' });
 });
 
-test('auto puts the user own script FIRST — Tesseract order is preference', () => {
-  // With eng leading, stylised CJK glyphs come back as confident Latin
-  // garbage; the CJK models already read embedded Latin, so CJK must lead.
-  for (const uiLang of ['zh-CN', 'zh-TW', 'ja', 'ko']) {
-    const resolved = OCR.resolveOcrLanguages('auto', uiLang);
-    assert.notEqual(resolved.split('+')[0], 'eng', `${uiLang}: eng must not lead (${resolved})`);
-    assert.equal(resolved.split('+')[1], 'eng', `${uiLang}: eng comes second (${resolved})`);
+test('a plan never combines languages into one pass', () => {
+  // In a combined 'chi_sim+eng' pass Tesseract picks the higher-scoring
+  // hypothesis per line, and whenever the CJK model is unsure the eng model's
+  // Latin-garbage reading wins the line ("FUSS 6," for 千山鸟飞绝，— reproduced
+  // against the vendored engine). Languages compete as whole passes instead.
+  for (const uiLang of ['zh-CN', 'zh-TW', 'ja', 'ko', 'en', 'fr']) {
+    const plan = OCR.resolveOcrLanguagePlan('auto', uiLang);
+    assert.ok(!plan.primary.includes('+'), `${uiLang}: primary must be one language (${plan.primary})`);
+    assert.ok(!(plan.fallback || '').includes('+'), `${uiLang}: fallback must be one language (${plan.fallback})`);
   }
 });
 
-test('auto falls back to English alone for a UI language with no bundled pack', () => {
-  // French text is Latin script, which eng already reads well enough; loading a
-  // second pack would cost time for nothing.
-  assert.equal(OCR.resolveOcrLanguages('auto', 'fr'), 'eng');
-  assert.equal(OCR.resolveOcrLanguages('', ''), 'eng');
+test('auto is English alone for a UI language with no bundled pack', () => {
+  // French text is Latin script, which eng already reads well enough; there is
+  // no second pack worth falling back to.
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'fr'), { primary: 'eng', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('', ''), { primary: 'eng', fallback: null });
 });
 
-test('an explicit language wins outright — returned verbatim, no English tagged on', () => {
-  // Someone who picked Japanese knows better than the heuristic, and every
-  // extra language costs recognition time and a little accuracy.
-  assert.equal(OCR.resolveOcrLanguages('jpn', 'zh-CN'), 'jpn');
-  assert.equal(OCR.resolveOcrLanguages('eng', 'ja'), 'eng');
-  assert.equal(OCR.resolveOcrLanguages('chi_sim', 'zh-CN'), 'chi_sim');
-  assert.equal(OCR.resolveOcrLanguages('chi_tra', 'en'), 'chi_tra');
-  assert.equal(OCR.resolveOcrLanguages('kor', 'ja'), 'kor');
+test('an explicit language wins outright — exactly that language, no fallback', () => {
+  // Someone who picked Japanese knows better than the heuristic.
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('jpn', 'zh-CN'), { primary: 'jpn', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('eng', 'ja'), { primary: 'eng', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('chi_sim', 'zh-CN'), { primary: 'chi_sim', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('chi_tra', 'en'), { primary: 'chi_tra', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('kor', 'ja'), { primary: 'kor', fallback: null });
 });
 
 test('an unknown stored language is treated as auto, not passed to Tesseract', () => {
   // A setting from a future build, or a hand-edited one. Tesseract throws on a
   // pack it cannot load, which would break the feature outright.
-  assert.equal(OCR.resolveOcrLanguages('klingon', 'ja'), 'jpn+eng');
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('klingon', 'ja'), { primary: 'jpn', fallback: 'eng' });
 });
 
 test('every catalog language has a bundled traineddata file', () => {
@@ -214,6 +215,89 @@ test('every catalog language has a bundled traineddata file', () => {
       `${lang.code} is offered but its traineddata is not vendored`
     );
   }
+});
+
+// --- adaptive retry ----------------------------------------------------------
+// The numbers behind these come from reproducing the failure against the
+// vendored engine: a poem card with ~105px glyphs loses two of four lines at
+// native size (confidences 4 and 0) and reads near-perfectly scaled to a
+// third (71–96). The line boxes are right in both cases.
+
+test('assessRecognition weights the mean by text length and takes the median height', () => {
+  const a = OCR.assessRecognition([
+    { text: '柳宗元', confidence: 95, height: 50 },
+    { text: '千山鸟飞绝，', confidence: 87, height: 100 },
+    { text: '万径人踪灭。', confidence: 4, height: 102 }
+  ]);
+  // (95*3 + 87*6 + 4*6) / 15
+  assert.ok(Math.abs(a.meanConfidence - 55.4) < 0.01, `weighted mean, got ${a.meanConfidence}`);
+  assert.equal(a.medianLineHeight, 100);
+});
+
+test('assessRecognition with nothing to measure says so instead of guessing', () => {
+  assert.deepEqual(OCR.assessRecognition([]), { meanConfidence: null, medianLineHeight: null });
+  // Lines with no score and no box: still no evidence.
+  const a = OCR.assessRecognition([{ text: 'abc', confidence: null, height: null }]);
+  assert.deepEqual(a, { meanConfidence: null, medianLineHeight: null });
+  // A scoreless line contributes its height, not a made-up confidence.
+  const b = OCR.assessRecognition([{ text: 'abc', confidence: null, height: 40 }]);
+  assert.deepEqual(b, { meanConfidence: null, medianLineHeight: 40 });
+});
+
+test('an empty line cannot drag the mean — weight comes from visible text', () => {
+  const a = OCR.assessRecognition([
+    { text: '独钓寒江雪。', confidence: 90, height: 40 },
+    { text: '   ', confidence: 0, height: 40 }
+  ]);
+  assert.equal(a.meanConfidence, 90);
+});
+
+test('no evidence is not acceptable — it must climb the ladder, not pass', () => {
+  assert.equal(OCR.isAcceptableRecognition({ meanConfidence: null, medianLineHeight: null }), false);
+  assert.equal(OCR.isAcceptableRecognition(null), false);
+  assert.equal(OCR.isAcceptableRecognition({ meanConfidence: OCR.OCR_ACCEPT_MEAN_CONFIDENCE }), true);
+  assert.equal(OCR.isAcceptableRecognition({ meanConfidence: OCR.OCR_ACCEPT_MEAN_CONFIDENCE - 1 }), false);
+});
+
+test('oversized low-confidence lines earn a rescale toward the comfort band', () => {
+  const factor = OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: 104 });
+  assert.ok(factor > 0.2 && factor < 0.5, `a ~104px line scales to a third-ish, got ${factor}`);
+  // The retry lands the median near the target, inside the LSTM's band.
+  assert.ok(Math.abs(104 * factor - 36) < 1);
+});
+
+test('an acceptable pass is never rescaled, whatever its glyph size', () => {
+  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 85, medianLineHeight: 104 }), null);
+});
+
+test('small or unmeasurable lines are not rescaled — size was not the problem', () => {
+  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: 40 }), null);
+  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: null }), null);
+  assert.equal(OCR.rescaleFactorForRetry(null), null);
+});
+
+test('an absurd measurement is clamped, not obeyed', () => {
+  // One merged box spanning the image would ask for a near-zero scale.
+  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 10, medianLineHeight: 2000 }), 0.2);
+});
+
+test('passes compete whole: higher mean confidence wins, ties keep the first', () => {
+  const weak = { text: 'FUSS 6,', assessment: { meanConfidence: 17 } };
+  const strong = { text: '千山鸟飞绝，', assessment: { meanConfidence: 84 } };
+  assert.equal(OCR.pickBetterRecognition(weak, strong), strong);
+  assert.equal(OCR.pickBetterRecognition(strong, weak), strong);
+  const tie = { text: 'other', assessment: { meanConfidence: 84 } };
+  assert.equal(OCR.pickBetterRecognition(strong, tie), strong);
+});
+
+test('a pass with no evidence loses to any scored pass, and null passes are survivable', () => {
+  const scored = { text: 'x', assessment: { meanConfidence: 5 } };
+  const unscored = { text: '', assessment: { meanConfidence: null } };
+  assert.equal(OCR.pickBetterRecognition(unscored, scored), scored);
+  assert.equal(OCR.pickBetterRecognition(scored, unscored), scored);
+  assert.equal(OCR.pickBetterRecognition(scored, null), scored);
+  assert.equal(OCR.pickBetterRecognition(null, scored), scored);
+  assert.equal(OCR.pickBetterRecognition(null, null), null);
 });
 
 // --- detectScriptLanguage ----------------------------------------------------
