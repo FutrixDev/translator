@@ -201,6 +201,66 @@ test('normalizing nothing yields an empty string, never throws', () => {
   assert.equal(OCR.normalizeRecognizedText(undefined), '');
 });
 
+// --- filterRecognizedLines ---------------------------------------------------
+
+test('low-confidence garbage lines are dropped, real lines survive in order', () => {
+  // The real bug: large stylised Chinese glyphs Tesseract has no model for,
+  // recognised as low-scoring Latin garbage next to correctly-read small text.
+  const lines = [
+    { text: '< rs', confidence: 21 },
+    { text: 'SEE Fis 64, BEAR K. MASS 7 Ol eR', confidence: 34 },
+    { text: '柳宗元', confidence: 91 },
+    { text: '裁剪编辑', confidence: 88 }
+  ];
+  assert.deepEqual(
+    OCR.filterRecognizedLines(lines).map((l) => l.text),
+    ['柳宗元', '裁剪编辑']
+  );
+});
+
+test('when every line is low confidence, the input comes back unfiltered', () => {
+  // A photo that is all stylised type is exactly where confidence stops
+  // meaning anything, and a shaky result still beats an empty popup.
+  const lines = [
+    { text: 'blurry one', confidence: 30 },
+    { text: 'blurry two', confidence: 41 }
+  ];
+  assert.deepEqual(OCR.filterRecognizedLines(lines), lines);
+});
+
+test('surviving lines keep their order and identity, so structure can be rebuilt', () => {
+  // The offscreen document rebuilds paragraph gaps by Set membership, which
+  // only works if the filter returns the same objects it was given.
+  const first = { text: 'Header', confidence: 90 };
+  const junk = { text: 'ol eR', confidence: 12 };
+  const last = { text: 'Body line', confidence: 84 };
+  const kept = OCR.filterRecognizedLines([first, junk, last]);
+  assert.equal(kept.length, 2);
+  assert.equal(kept[0], first);
+  assert.equal(kept[1], last);
+});
+
+test('a line with no numeric confidence is kept — unknown is not bad', () => {
+  const lines = [
+    { text: 'no score' },
+    { text: 'garbage', confidence: 10 },
+    { text: 'good', confidence: 95 }
+  ];
+  assert.deepEqual(OCR.filterRecognizedLines(lines).map((l) => l.text), ['no score', 'good']);
+});
+
+test('the threshold is inclusive at the bar and drops one point under it', () => {
+  const at = { text: 'at', confidence: OCR.OCR_LINE_CONFIDENCE_THRESHOLD };
+  const below = { text: 'below', confidence: OCR.OCR_LINE_CONFIDENCE_THRESHOLD - 1 };
+  assert.deepEqual(OCR.filterRecognizedLines([at, below]), [at]);
+});
+
+test('filtering nothing yields an empty array, never throws', () => {
+  assert.deepEqual(OCR.filterRecognizedLines([]), []);
+  assert.deepEqual(OCR.filterRecognizedLines(null), []);
+  assert.deepEqual(OCR.filterRecognizedLines(undefined), []);
+});
+
 // --- shouldTranslate ---------------------------------------------------------
 
 test('the translate step runs when it is on and the languages differ', () => {
@@ -364,6 +424,15 @@ test('the local engine runs in the offscreen document, not the worker', () => {
   for (const opt of ['corePath', 'workerPath', 'langPath', 'workerBlobURL', 'gzip']) {
     assert.ok(offscreen.includes(opt), `the engine must be pinned to the vendored ${opt}`);
   }
+});
+
+test('the offscreen document filters what it recognised before answering', () => {
+  // Without the structured output there are no per-line confidences, and
+  // without the filter the stylised-glyph garbage rides along with the real
+  // text and poisons language detection downstream.
+  const offscreen = repoFile('offscreen/offscreen.js');
+  assert.ok(/blocks:\s*true/.test(offscreen), 'recognize must request the structured blocks output');
+  assert.ok(offscreen.includes('filterRecognizedLines'), 'the confidence filter must run on the result');
 });
 
 test('the content script chain loads the OCR core and UI before the message router', () => {

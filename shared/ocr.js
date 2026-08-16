@@ -194,6 +194,45 @@
       .trim();
   }
 
+  // --- Low-confidence line filtering -----------------------------------------
+
+  // Tesseract reads everything shaped like glyphs, including stylised display
+  // type and decorative art it has no model for — and those come out as Latin
+  // garbage lines ("SEE Fis 64, BEAR K. MASS 7 Ol eR") sitting next to
+  // perfectly good small text. It does, however, know when it was guessing:
+  // the hallucinated lines score far below the real ones, so its own
+  // confidence is the signal that separates them.
+  //
+  // 55 rather than higher because the two failure modes are not symmetric: a
+  // dropped real line is text the user can see in the image and we silently
+  // withheld, while a kept garbage line is only noise around a correct result.
+  // Clean print scores in the 80–95 band, small or slightly blurry but
+  // genuinely readable text falls into the 60s–70s, and the hallucinations
+  // from stylised glyphs sit in the 10s–40s — 55 lands in that gap, on the
+  // keep-more side of it.
+  const OCR_LINE_CONFIDENCE_THRESHOLD = 55;
+
+  /**
+   * Drop the lines Tesseract itself did not believe. `lines` is
+   * [{text, confidence}] in reading order, confidence 0–100 straight from the
+   * engine. The return is the surviving subset — order intact, the same
+   * objects — so a caller can rebuild paragraph structure by membership.
+   *
+   * If every line fails the bar, the input comes back untouched: an image
+   * that is *all* stylised type is exactly where the confidence stops meaning
+   * anything, and a low-confidence result the user can judge for themselves
+   * still beats an empty popup. A line with no numeric confidence is kept for
+   * the same reason — "unknown" is not "bad".
+   */
+  function filterRecognizedLines(lines) {
+    const all = Array.isArray(lines) ? lines : [];
+    const kept = all.filter((line) => {
+      if (!line || typeof line.confidence !== 'number' || !isFinite(line.confidence)) return true;
+      return line.confidence >= OCR_LINE_CONFIDENCE_THRESHOLD;
+    });
+    return kept.length > 0 ? kept : all;
+  }
+
   // --- Translation step ------------------------------------------------------
 
   /**
@@ -358,6 +397,8 @@ Rules:
     canSendImageDirectly,
     resolveOcrLanguages,
     detectScriptLanguage,
+    OCR_LINE_CONFIDENCE_THRESHOLD,
+    filterRecognizedLines,
     normalizeRecognizedText,
     detectedLanguageLabelKey,
     shouldTranslate,
