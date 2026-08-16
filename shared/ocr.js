@@ -60,6 +60,138 @@
     return OCR_MEDIA_TYPES.includes(mediaType) && byteLength <= OCR_MAX_BYTES;
   }
 
+  // --- Region crop -----------------------------------------------------------
+  //
+  // The user can point at part of an image instead of the whole of it, and the
+  // two sides of that describe the same rectangle with different numbers: the
+  // content script knows where the drag landed on the rendered <img>, and only
+  // the worker knows how many pixels the decoded image really has. Fractions of
+  // the image are the one description both can agree on — they survive a srcset
+  // handing the worker a different resolution than the page displayed, and they
+  // survive the downscale below.
+
+  // A drag under this on either edge is a stray click, not a selection.
+  const MIN_CROP_FRACTION = 0.005;
+
+  // A crop is by definition a small piece of an image, and both engines read
+  // small type badly — Tesseract wants glyphs around 30px tall, and a vision
+  // model tiles what it is given. A crop whose long edge lands under this is
+  // scaled up on the way out rather than handed over as a postage stamp; a
+  // bicubic canvas draw is better than what either engine does internally.
+  const OCR_MIN_DIMENSION = 1000;
+
+  // Past 3× there are no more edges to recover, only invented ones.
+  const OCR_MAX_UPSCALE = 3;
+
+  /**
+   * A crop as sent over the wire → a crop that can be trusted, or null when
+   * there is nothing worth cropping to.
+   *
+   * Null is not an error: it means "recognise the whole image", which is what
+   * both a missing crop and a full-image selection mean.
+   */
+  function normalizeCropRect(crop) {
+    if (!crop) return null;
+    let { x, y, width, height } = crop;
+    if (![x, y, width, height].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+    // A drag that ran right-to-left or bottom-to-top arrives negative.
+    if (width < 0) { x += width; width = -width; }
+    if (height < 0) { y += height; height = -height; }
+    // Clamp to the image by its edges, not by its size: a selection that ran
+    // off the top keeps the part that was over the image.
+    const left = Math.min(Math.max(x, 0), 1);
+    const top = Math.min(Math.max(y, 0), 1);
+    const right = Math.min(Math.max(x + width, 0), 1);
+    const bottom = Math.min(Math.max(y + height, 0), 1);
+    width = right - left;
+    height = bottom - top;
+    if (width < MIN_CROP_FRACTION || height < MIN_CROP_FRACTION) return null;
+    // The whole image, asked for the long way. Cropping it would cost a decode
+    // and a re-encode to arrive back where it started.
+    if (width > 0.999 && height > 0.999) return null;
+    return { x: left, y: top, width, height };
+  }
+
+  /**
+   * The crop in source pixels, for drawImage. Null when there is no crop, or
+   * when the image has no dimensions to crop against.
+   */
+  function cropSourceRect(crop, imageWidth, imageHeight) {
+    const rect = normalizeCropRect(crop);
+    if (!rect || !(imageWidth > 0) || !(imageHeight > 0)) return null;
+    const sx = Math.min(Math.round(rect.x * imageWidth), imageWidth - 1);
+    const sy = Math.min(Math.round(rect.y * imageHeight), imageHeight - 1);
+    return {
+      sx,
+      sy,
+      sw: Math.max(1, Math.min(Math.round(rect.width * imageWidth), imageWidth - sx)),
+      sh: Math.max(1, Math.min(Math.round(rect.height * imageHeight), imageHeight - sy))
+    };
+  }
+
+  /**
+   * How big the canvas handed to an engine should be: never wider than
+   * OCR_MAX_DIMENSION, and — when the caller asks for it — never smaller than
+   * OCR_MIN_DIMENSION on the long edge.
+   *
+   * `allowUpscale` is the crop path. A full image is what the page chose to
+   * publish and is left at its own size; a crop is the user pointing at a
+   * detail, and is worth the pixels.
+   */
+  function computeOcrCanvasSize(width, height, { allowUpscale = false } = {}) {
+    const longest = Math.max(width, height);
+    let scale = 1;
+    if (longest > OCR_MAX_DIMENSION) {
+      scale = OCR_MAX_DIMENSION / longest;
+    } else if (allowUpscale && longest > 0 && longest < OCR_MIN_DIMENSION) {
+      // Capped both ways, so the result lands in [longest, OCR_MIN_DIMENSION]
+      // and can never overshoot OCR_MAX_DIMENSION.
+      scale = Math.min(OCR_MAX_UPSCALE, OCR_MIN_DIMENSION / longest);
+    }
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale))
+    };
+  }
+
+  /**
+   * Where the image is actually painted inside the box the page gave it, in
+   * that box's own coordinates. `object-fit` decides, and its values disagree
+   * about everything: `contain` letterboxes (the painted box is smaller than
+   * the element), `cover` and `none` overflow it (the painted box is bigger,
+   * and the element shows a window onto it).
+   *
+   * This is what turns a point on screen into a point in the image: the crop
+   * the user drew over a `cover` thumbnail is a much smaller part of the source
+   * than the same rectangle over a plain one, and getting it wrong crops
+   * somewhere else entirely.
+   *
+   * Only the centred case, because `object-position` defaults to `50% 50%` and
+   * is vanishingly rare on content images. A page that moves the paint off
+   * centre shifts the crop by that much.
+   */
+  function paintedImageBox({ boxWidth, boxHeight, naturalWidth, naturalHeight, objectFit }) {
+    const whole = { left: 0, top: 0, width: boxWidth, height: boxHeight };
+    // No intrinsic size (an SVG without one, an image still loading) means
+    // there is nothing to fit and the box is all we know.
+    if (!(naturalWidth > 0) || !(naturalHeight > 0) || !(boxWidth > 0) || !(boxHeight > 0)) return whole;
+
+    const fit = String(objectFit || 'fill').trim();
+    const contain = Math.min(boxWidth / naturalWidth, boxHeight / naturalHeight);
+    let scale;
+    if (fit === 'contain') scale = contain;
+    else if (fit === 'cover') scale = Math.max(boxWidth / naturalWidth, boxHeight / naturalHeight);
+    else if (fit === 'none') scale = 1;
+    else if (fit === 'scale-down') scale = Math.min(contain, 1);
+    // 'fill' (the initial value) stretches to the box, and so does anything we
+    // do not recognise — the box is the safe reading.
+    else return whole;
+
+    const width = naturalWidth * scale;
+    const height = naturalHeight * scale;
+    return { left: (boxWidth - width) / 2, top: (boxHeight - height) / 2, width, height };
+  }
+
   // --- Recognition languages -------------------------------------------------
 
   // Tesseract is not language-agnostic: it needs the language list up front,
@@ -393,8 +525,13 @@ Rules:
     OCR_MEDIA_TYPES,
     OCR_MAX_BYTES,
     OCR_MAX_DIMENSION,
+    OCR_MIN_DIMENSION,
     OCR_LANGUAGES,
     canSendImageDirectly,
+    normalizeCropRect,
+    cropSourceRect,
+    computeOcrCanvasSize,
+    paintedImageBox,
     resolveOcrLanguages,
     detectScriptLanguage,
     OCR_LINE_CONFIDENCE_THRESHOLD,

@@ -207,6 +207,7 @@ const MENU_IDS = {
   translatePage: 'translate-page',
   translateComicImage: 'translate-comic-image',
   ocrTranslateImage: 'ocr-translate-image',
+  ocrTranslateImageRegion: 'ocr-translate-image-region',
   colorizeComicImage: 'colorize-comic-image',
   translatePdfLink: 'translate-pdf-link',
   translatePdfPage: 'translate-pdf-page',
@@ -245,6 +246,9 @@ async function refreshContextMenuTitles() {
   });
   chrome.contextMenus.update(MENU_IDS.ocrTranslateImage, {
     title: getContextMenuTitle('contextOcrImage', uiLang),
+  });
+  chrome.contextMenus.update(MENU_IDS.ocrTranslateImageRegion, {
+    title: getContextMenuTitle('contextOcrImageRegion', uiLang),
   });
   chrome.contextMenus.update(MENU_IDS.colorizeComicImage, {
     title: getContextMenuTitle('contextColorizeComic', uiLang),
@@ -301,6 +305,18 @@ function createContextMenus() {
     chrome.contextMenus.create({
       id: MENU_IDS.ocrTranslateImage,
       title: 'Extract & Translate Image Text',
+      contexts: ['image'],
+      visible: false
+    });
+
+    // The same recognition aimed at part of the image: the content script puts
+    // a picker over it and the crop rides along with the request. A separate
+    // entry rather than a modifier on the one above, because a modifier is
+    // undiscoverable — and the two answer different questions ("what does this
+    // say" vs "what does *that bit* say").
+    chrome.contextMenus.create({
+      id: MENU_IDS.ocrTranslateImageRegion,
+      title: 'Extract Text from a Selected Area',
       contexts: ['image'],
       visible: false
     });
@@ -410,9 +426,12 @@ async function refreshComicMenuVisibility() {
  */
 async function refreshOcrMenuVisibility() {
   const settings = await chrome.storage.sync.get(defaultSettings);
-  chrome.contextMenus.update(MENU_IDS.ocrTranslateImage, {
-    visible: !!settings.enableImageOcrTranslation
-  }).catch(() => {});
+  const visible = !!settings.enableImageOcrTranslation;
+  // The two entries are the same feature aimed at a whole image or at part of
+  // one, so they appear and disappear together.
+  for (const id of [MENU_IDS.ocrTranslateImage, MENU_IDS.ocrTranslateImageRegion]) {
+    chrome.contextMenus.update(id, { visible }).catch(() => {});
+  }
 }
 
 /** Same contract as refreshComicMenuVisibility, for the PDF entries. */
@@ -694,17 +713,22 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
     });
-  } else if (info.menuItemId === MENU_IDS.ocrTranslateImage) {
+  } else if (info.menuItemId === MENU_IDS.ocrTranslateImage ||
+             info.menuItemId === MENU_IDS.ocrTranslateImageRegion) {
     const settings = await chrome.storage.sync.get(defaultSettings);
     if (!settings.enableImageOcrTranslation) return;
-    // The content script owns the UI (popup, progress, errors) and step 2, the
-    // optional translation. It asks back via OCR_IMAGE for step 1, which must
-    // run here: the page's CSP can block a content-script fetch, the API
-    // endpoint is cross-origin to every page, and the local engine lives in an
-    // offscreen document only this context can open.
+    // The content script owns the UI (the area picker, popup, progress, errors)
+    // and step 2, the optional translation. It asks back via OCR_IMAGE for step
+    // 1, which must run here: the page's CSP can block a content-script fetch,
+    // the API endpoint is cross-origin to every page, and the local engine
+    // lives in an offscreen document only this context can open.
     chrome.tabs.sendMessage(tab.id, {
       type: 'OCR_TRANSLATE_IMAGE',
       srcUrl: info.srcUrl,
+      // Which rectangle to read is a question only the page can answer — the
+      // worker never sees the image on screen — so it is asked there and comes
+      // back on the OCR_IMAGE request.
+      selectRegion: info.menuItemId === MENU_IDS.ocrTranslateImageRegion,
       targetLang: getEffectiveTargetLang(settings),
       translate: settings.ocrTranslate !== false
     });
@@ -1334,8 +1358,8 @@ function arrayBufferToBase64(buffer) {
  * than getting its own pass: Tesseract has no size cap of its own, but it is
  * also slow enough on a 6000px scan that the downscale is a favour.
  */
-async function fetchImageForOcr(srcUrl, uiLang) {
-  const { canSendImageDirectly, OCR_MAX_BYTES, OCR_MAX_DIMENSION } = globalThis.OCRCore;
+async function fetchImageForOcr(srcUrl, uiLang, crop) {
+  const { canSendImageDirectly, cropSourceRect, computeOcrCanvasSize, OCR_MAX_BYTES } = globalThis.OCRCore;
 
   let response;
   try {
@@ -1348,7 +1372,9 @@ async function fetchImageForOcr(srcUrl, uiLang) {
   }
   const blob = await response.blob();
 
-  if (canSendImageDirectly(blob.type, blob.size)) {
+  // The fast path is only fast because nothing is decoded, so it cannot apply
+  // to a crop: cropping is a source rectangle on a decoded bitmap.
+  if (!crop && canSendImageDirectly(blob.type, blob.size)) {
     return { base64: arrayBufferToBase64(await blob.arrayBuffer()), mediaType: blob.type };
   }
 
@@ -1359,11 +1385,15 @@ async function fetchImageForOcr(srcUrl, uiLang) {
     // SVG being the common case: workers cannot rasterize it.
     throw new Error(getMessage('ocrImageUnsupported', uiLang));
   }
-  const scale = Math.min(1, OCR_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  // The crop arrives as fractions of the image — the only thing the page and
+  // the worker can agree on, since the two may not even be holding the same
+  // resolution (srcset). A crop the page drew but this side cannot use comes
+  // back null, and the whole image is recognised: a wrong crop would be worse.
+  const source = cropSourceRect(crop, bitmap.width, bitmap.height)
+    || { sx: 0, sy: 0, sw: bitmap.width, sh: bitmap.height };
+  const { width, height } = computeOcrCanvasSize(source.sw, source.sh, { allowUpscale: !!crop });
   const canvas = new OffscreenCanvas(width, height);
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  canvas.getContext('2d').drawImage(bitmap, source.sx, source.sy, source.sw, source.sh, 0, 0, width, height);
   bitmap.close();
 
   // PNG keeps text edges crisp; fall back to JPEG only when the PNG is still
@@ -1437,9 +1467,9 @@ function relayOcrProgress(message) {
 // --- Recognition -----------------------------------------------------------
 
 /** Recognise with the local engine. Free, offline, no API key. */
-async function recognizeLocally({ srcUrl, requestId, tabId }, settings, uiLang) {
+async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, uiLang) {
   await ensureOffscreenDocument();
-  const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang);
+  const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
   const languages = globalThis.OCRCore.resolveOcrLanguages(settings.ocrSourceLanguage, uiLang);
 
   if (tabId !== undefined) ocrProgressTabs.set(requestId, tabId);
@@ -1470,11 +1500,11 @@ async function recognizeLocally({ srcUrl, requestId, tabId }, settings, uiLang) 
 }
 
 /** Recognise with the user's own vision model. */
-async function recognizeWithVision({ srcUrl }, settings, uiLang) {
+async function recognizeWithVision({ srcUrl, crop }, settings, uiLang) {
   if (!settings.apiKey) {
     throw new Error(getMessage('configureApiKeyFirst', uiLang));
   }
-  const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang);
+  const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
   const systemPrompt = globalThis.OCRCore.OCR_SYSTEM_PROMPT;
   const instruction = globalThis.OCRCore.OCR_USER_INSTRUCTION;
 
@@ -1527,6 +1557,9 @@ async function handleOcrImage(message, sender) {
   const uiLang = getContextMenuLanguage(settings);
   const request = {
     srcUrl: message.srcUrl,
+    // Fractions of the image, or absent for the whole of it. Both engines take
+    // the same crop because it is applied once, on the way in.
+    crop: message.crop,
     requestId: message.requestId || `ocr-${Date.now()}`,
     tabId: sender && sender.tab ? sender.tab.id : undefined
   };

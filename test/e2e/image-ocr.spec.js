@@ -72,10 +72,14 @@ function makePng(width, height, [r, g, b]) {
 }
 
 const SIGN_PNG = makePng(320, 120, [0xf0, 0xf0, 0xf0]);
+// Displayed at its own size at the origin of the page, so a drag in client
+// coordinates is a drag in image coordinates and the crop is checkable.
+const WIDE_PNG = makePng(400, 100, [0xe8, 0xe8, 0xe8]);
 
 const PAGE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>OCR</title></head>
 <body style="margin:0">
+  <img id="wide" src="/wide.png" width="400" height="100" style="display:block">
   <img id="sign" src="/sign.png" width="320">
 </body></html>`;
 
@@ -88,6 +92,9 @@ function startPageServer() {
       } else if (req.url === '/sign.png') {
         res.writeHead(200, { 'Content-Type': 'image/png' });
         res.end(SIGN_PNG);
+      } else if (req.url === '/wide.png') {
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        res.end(WIDE_PNG);
       } else {
         res.writeHead(404);
         res.end();
@@ -270,6 +277,70 @@ test.describe('image OCR', () => {
     // targetLang zh-CN drives the worker's message locale, so the failure copy
     // must come back in Chinese — this is the getMessage wiring, end to end.
     await expect(popup.locator('.ai-translator-error')).toContainText('图片加载失败', { timeout: 60000 });
+    expect(mock.visionRequests).toHaveLength(0);
+  });
+
+  test('a drawn region is the only part of the image that is recognised', async ({ page }) => {
+    // The picker is the one half of this feature that only the page can do, and
+    // the proof is the picture the worker ends up sending: a crop is a
+    // different image, and its shape says which rectangle was read.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#wide');
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: `${pageServer.origin}/wide.png`,
+      targetLang: 'zh-CN',
+      translate: false,
+      selectRegion: true,
+    });
+
+    const picker = page.locator('#ai-translator-ocr-region');
+    await expect(picker).toBeVisible({ timeout: 30000 });
+    // The right half, inset from the edges: 200×80 of a 400×100 image.
+    await page.mouse.move(200, 10);
+    await page.mouse.down();
+    await page.mouse.move(340, 60, { steps: 5 });
+    await page.mouse.move(400, 90, { steps: 5 });
+    await page.mouse.up();
+    // The picker is a modal step: it goes away as soon as it has its answer.
+    await expect(picker).toHaveCount(0);
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
+
+    expect(mock.visionRequests).toHaveLength(1);
+    const sent = mock.visionRequests[0].imageSize;
+    // Not the whole image (4:1) but the 200×80 rectangle that was drawn (2.5:1),
+    // scaled up on the way out because a crop is small and both engines read
+    // small type badly.
+    expect(sent.width / sent.height).toBeGreaterThan(2.2);
+    expect(sent.width / sent.height).toBeLessThan(2.8);
+    expect(sent.width).toBeGreaterThan(400);
+  });
+
+  test('backing out of the picker recognises nothing at all', async ({ page }) => {
+    // Escape is a real answer, not a failure: "the whole image" was the other
+    // menu entry, so nothing should run and nothing should be billed.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#wide');
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: `${pageServer.origin}/wide.png`,
+      targetLang: 'zh-CN',
+      selectRegion: true,
+    });
+
+    const picker = page.locator('#ai-translator-ocr-region');
+    await expect(picker).toBeVisible({ timeout: 30000 });
+    await page.keyboard.press('Escape');
+    await expect(picker).toHaveCount(0);
+
+    await page.waitForTimeout(1000);
+    await expect(page.locator('.ai-translator-popup')).toHaveCount(0);
     expect(mock.visionRequests).toHaveLength(0);
   });
 

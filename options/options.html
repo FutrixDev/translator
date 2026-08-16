@@ -258,45 +258,6 @@
             <span class="hint" data-i18n-hint="hintShowTranslationOnly"></span>
           </div>
 
-          <div class="toggle-group">
-            <label class="toggle-label">
-              <span data-i18n="enableImageOcrTranslation">Image Text Translation (OCR)</span>
-              <input type="checkbox" id="enableImageOcrTranslation" checked>
-              <span class="toggle-slider"></span>
-            </label>
-            <span class="hint" data-i18n-hint="hintEnableImageOcrTranslation"></span>
-          </div>
-
-          <div class="feature-suboptions" id="ocrSubOptions">
-            <div class="form-group">
-              <label for="ocrEngine" data-i18n="ocrEngine">Recognition Engine</label>
-              <select id="ocrEngine">
-                <option value="local" data-i18n="ocrEngineLocal"></option>
-                <option value="vision" data-i18n="ocrEngineVision"></option>
-              </select>
-              <span class="hint" data-i18n-hint="hintOcrEngine"></span>
-            </div>
-
-            <div class="form-group" id="ocrSourceLanguageGroup">
-              <label for="ocrSourceLanguage" data-i18n="ocrSourceLanguage">Text Language in Images</label>
-              <!-- The languages are appended from OCRCore.OCR_LANGUAGES: the
-                   list is only offerable if its .traineddata is vendored, so it
-                   is owned by shared/ocr.js and not restated here. -->
-              <select id="ocrSourceLanguage">
-                <option value="auto" data-i18n="ocrSourceLanguageAuto"></option>
-              </select>
-              <span class="hint" data-i18n-hint="hintOcrSourceLanguage"></span>
-            </div>
-
-            <div class="toggle-group">
-              <label class="toggle-label">
-                <span data-i18n="ocrTranslate">Translate Recognized Text</span>
-                <input type="checkbox" id="ocrTranslate" checked>
-                <span class="toggle-slider"></span>
-              </label>
-              <span class="hint" data-i18n-hint="hintOcrTranslate"></span>
-            </div>
-          </div>
         </section>
 
         <!-- YouTube captions. A normal one-column card so the grid seats it
@@ -356,6 +317,65 @@
                 </div>
               </div>
               <span class="hint" data-i18n="hintCaptionDragResize">On the video: drag the caption to move it, scroll over it to resize, double-click to reset.</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Image OCR. Its own card, next to video subtitles: like them it is a
+             translation surface with an engine and a language of its own, and
+             it had outgrown the tail of the Translation Settings list. Free and
+             local by default, so it sits above the account-backed card below. -->
+        <section class="settings-card">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18"/>
+              <path d="M7 14h6"/>
+              <path d="M7 17h10"/>
+            </svg>
+            <span data-i18n="imageOcrSettings">Image Text (OCR)</span>
+          </h2>
+
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <span data-i18n="enableImageOcrTranslation">Image Text Translation (OCR)</span>
+              <input type="checkbox" id="enableImageOcrTranslation" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="hint" data-i18n-hint="hintEnableImageOcrTranslation"></span>
+          </div>
+
+          <div class="feature-suboptions" id="ocrSubOptions">
+            <div class="form-group">
+              <label for="ocrEngine" data-i18n="ocrEngine">Recognition Engine</label>
+              <select id="ocrEngine">
+                <option value="local" data-i18n="ocrEngineLocal"></option>
+                <option value="vision" data-i18n="ocrEngineVision"></option>
+              </select>
+              <span class="hint" data-i18n-hint="hintOcrEngine"></span>
+            </div>
+
+            <div class="form-group" id="ocrSourceLanguageGroup">
+              <label for="ocrSourceLanguage" data-i18n="ocrSourceLanguage">Text Language in Images</label>
+              <!-- The languages are appended from OCRCore.OCR_LANGUAGES: the
+                   list is only offerable if its .traineddata is vendored, so it
+                   is owned by shared/ocr.js and not restated here. The "auto"
+                   label is completed by this page's script with the two
+                   languages it actually resolves to — "Auto" alone does not
+                   tell anyone that English is one of them. -->
+              <select id="ocrSourceLanguage">
+                <option value="auto" data-i18n="ocrSourceLanguageAuto"></option>
+              </select>
+              <span class="hint" data-i18n-hint="hintOcrSourceLanguage"></span>
+            </div>
+
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span data-i18n="ocrTranslate">Translate Recognized Text</span>
+                <input type="checkbox" id="ocrTranslate" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="hint" data-i18n-hint="hintOcrTranslate"></span>
             </div>
           </div>
         </section>
