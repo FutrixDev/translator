@@ -422,11 +422,10 @@
       hideHoverButton();
       if (!img) return;
       // The context-menu whole-image flow, verbatim: same entry point, same
-      // popup, same optional step 2 judged by the same setting the menu click
-      // would have carried on its message.
+      // recognise-first popup with its Translate button for step 2.
       startImageOcrTranslation({
         srcUrl: img.currentSrc || img.src,
-        translate: settings.ocrTranslate === true,
+        translate: false,
         selectRegion: false
       });
     });

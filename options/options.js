@@ -91,10 +91,6 @@ function applyI18n(lang) {
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
 
-  // Last, because it builds on the labels the pass above just filled in — and
-  // because what "auto" resolves to depends on the language this very call set.
-  syncOcrAutoLabel();
-
   // Show the real extension version from the manifest instead of a hard-coded
   // string, so the settings page never drifts from the released version.
   const versionEl = document.querySelector('[data-i18n="appNameVersion"]');
@@ -162,9 +158,6 @@ const elements = {
   showTranslationOnly: document.getElementById('showTranslationOnly'),
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   ocrEngine: document.getElementById('ocrEngine'),
-  ocrSourceLanguage: document.getElementById('ocrSourceLanguage'),
-  ocrSourceLanguageGroup: document.getElementById('ocrSourceLanguageGroup'),
-  ocrTranslate: document.getElementById('ocrTranslate'),
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
   ocrSubOptions: document.getElementById('ocrSubOptions'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
@@ -282,12 +275,9 @@ const defaultSettings = {
   // See the notes on defaultSettings in background/background.js.
   enableImageOcrTranslation: true,
   ocrEngine: OCRCore.DEFAULT_OCR_ENGINE,
-  ocrSourceLanguage: 'auto',
-  // Recognise-first: the popup stops at the recognised text and offers a
-  // Translate button; auto-translating is opted into. Matches background.js.
-  ocrTranslate: false,
-  // The hover shortcut over large images — opted into, see background.js.
-  enableImageOcrHoverButton: false,
+  // The hover shortcut over large images — on by default, it is the flow's
+  // front door. Matches background.js.
+  enableImageOcrHoverButton: true,
   // Off by default: this is the one feature that spends money, so it is opted
   // into rather than out of. Empty comicTargetLang follows targetLang above.
   enableComicTranslation: false,
@@ -969,13 +959,8 @@ async function loadSettings() {
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
-    renderOcrLanguages();
-    elements.ocrSourceLanguage.value = result.ocrSourceLanguage || 'auto';
-    // Default-off switches: only a stored true turns them on. Recognise-first
-    // is the product default — auto-translate and the hover button are opted
-    // into, so the comparison direction matches the false default above.
-    elements.ocrTranslate.checked = result.ocrTranslate === true;
-    elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton === true;
+    // Default-on, so only a stored false turns it off.
+    elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton !== false;
     syncOcrSubState();
     // The switches themselves are drawn by renderAccountFeatures, which also
     // weighs whether this device has the account both features need.
@@ -1092,8 +1077,6 @@ function collectSettings() {
     showTranslationOnly: elements.showTranslationOnly.checked,
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
-    ocrSourceLanguage: elements.ocrSourceLanguage.value,
-    ocrTranslate: elements.ocrTranslate.checked,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
@@ -1382,8 +1365,6 @@ const IMMEDIATE_SAVE_FIELDS = [
   'showTranslationOnly',
   'enableImageOcrTranslation',
   'ocrEngine',
-  'ocrSourceLanguage',
-  'ocrTranslate',
   'enableImageOcrHoverButton',
   'enableYoutubeCaptionTranslation',
   'showYoutubeOriginalCaption'
@@ -1576,7 +1557,6 @@ function setupEventListeners() {
 
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableImageOcrTranslation.addEventListener('change', syncOcrSubState);
-  elements.ocrEngine.addEventListener('change', syncOcrSubState);
 
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
   elements.showYoutubeOriginalCaption.addEventListener('change', updateCaptionPreview);
@@ -1671,64 +1651,12 @@ function syncYoutubeSubState() {
   elements.youtubeSubOptions.classList.toggle('disabled', !elements.enableYoutubeCaptionTranslation.checked);
 }
 
-/**
- * Fill the OCR language picker from OCRCore.OCR_LANGUAGES, below the "auto"
- * option the markup carries. A language is only offerable if its .traineddata
- * is vendored, so shared/ocr.js owns the list and this page reads it — hard-
- * coding the options here is how the two drift into disagreeing.
- *
- * The labels stay as data-i18n keys; applyI18n fills them in a moment later.
- */
-function renderOcrLanguages() {
-  const select = elements.ocrSourceLanguage;
-  if (!select || select.dataset.populated) return;
-  for (const lang of OCRCore.OCR_LANGUAGES) {
-    const option = document.createElement('option');
-    option.value = lang.code;
-    option.dataset.i18n = lang.labelKey;
-    select.appendChild(option);
-  }
-  select.dataset.populated = '1';
-}
-
-/**
- * Finish the "auto" label by naming the languages it resolves to right now —
- * "Auto (English + 简体中文)".
- *
- * "Auto" on its own is the one option here that does something the user cannot
- * see: the local engine must be handed a fixed language list, so auto quietly
- * means English (it turns up in screenshots, UI chrome and signage everywhere)
- * plus the one script the user reads. Someone whose images are Japanese while
- * their target language is Chinese has to be able to notice that from the
- * picker, because it is exactly the case where they should choose a language
- * themselves.
- *
- * Written after applyI18n rather than as a data-i18n key: the resolution lives
- * in shared/ocr.js and depends on the UI language, so it cannot be a string in
- * ten locale tables.
- */
-function syncOcrAutoLabel() {
-  const select = elements.ocrSourceLanguage;
-  const option = select && select.querySelector('option[value="auto"]');
-  if (!option) return;
-  const plan = OCRCore.resolveOcrLanguagePlan('auto', currentUILang);
-  const names = [plan.primary, plan.fallback].filter(Boolean).map((code) => {
-    const lang = OCRCore.OCR_LANGUAGES.find((entry) => entry.code === code);
-    return lang ? t(lang.labelKey) : code;
-  });
-  option.textContent = `${t('ocrSourceLanguageAuto')} (${names.join(' + ')})`;
-}
-
-// Same, for image OCR — plus one rule of its own: the language list belongs to
-// the local engine. Tesseract has to be told which languages to look for, so
-// the setting exists at all; a vision model reads whatever is in the image and
-// leaving the control live would promise a choice that changes nothing.
+// Same, for image OCR. There is deliberately no language picker to sync:
+// recognition always runs the auto plan (see resolveOcrLanguagePlan), because
+// nobody can pre-declare what language tomorrow's images will be in.
 function syncOcrSubState() {
   if (!elements.ocrSubOptions) return;
   elements.ocrSubOptions.classList.toggle('disabled', !elements.enableImageOcrTranslation.checked);
-  if (elements.ocrSourceLanguageGroup) {
-    elements.ocrSourceLanguageGroup.hidden = elements.ocrEngine.value === 'vision';
-  }
 }
 
 function capHexToRgba(hex, alpha) {

@@ -186,22 +186,16 @@ const defaultSettings = {
   // so unlike comics/PDF it defaults on. The context menu entry is the only
   // surface.
   enableImageOcrTranslation: true,
-  // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js.
+  // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js. This is
+  // the one OCR sub-setting: no language picker (recognition always runs the
+  // resolveOcrLanguagePlan auto plan — nobody can pre-declare tomorrow's
+  // images) and no auto-translate switch (the popup always stops at the
+  // recognised text and offers a Translate button for step 2).
   ocrEngine: globalThis.OCRCore.DEFAULT_OCR_ENGINE,
-  // '' / 'auto' = the user's own script, with English as a fallback pass. See
-  // resolveOcrLanguagePlan: Tesseract needs its languages up front, so this
-  // cannot be detected from the image.
-  ocrSourceLanguage: 'auto',
-  // Step 2, as an automatism: on means the recognised text is translated the
-  // moment it exists, off means the popup stops at the recognised text and
-  // offers a Translate button for the times it is wanted. Off is the default:
-  // plenty of right-clicks are "what does this say", not "what does this
-  // mean", and the button keeps the second step one click away.
-  ocrTranslate: false,
   // The hover shortcut over large images — the same whole-image flow as the
-  // context menu, one hover closer. Off by default: a button that appears over
-  // pictures is a change to every page the user reads, so it is opted into.
-  enableImageOcrHoverButton: false,
+  // context menu, one hover closer. On by default: it is the flow's front
+  // door, and it only appears over images big enough to plausibly hold text.
+  enableImageOcrHoverButton: true,
   customPrompt: '',
   theme: 'light'
 };
@@ -321,7 +315,7 @@ function createContextMenus() {
     // say" vs "what does *that bit* say").
     chrome.contextMenus.create({
       id: MENU_IDS.ocrTranslateImageRegion,
-      title: 'Recognize Text in a Selected Area',
+      title: 'OCR a Region You Draw',
       contexts: ['image'],
       visible: false
     });
@@ -735,9 +729,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // back on the OCR_IMAGE request.
       selectRegion: info.menuItemId === MENU_IDS.ocrTranslateImageRegion,
       targetLang: getEffectiveTargetLang(settings),
-      // Auto-translate only when asked to: the default experience is
-      // recognise-first, with a Translate button in the popup for step 2.
-      translate: settings.ocrTranslate === true
+      // Always recognise-first: the popup stops at the recognised text and
+      // offers a Translate button for step 2. Explicit false, because the
+      // content script treats an absent flag as the old translate-too path.
+      translate: false
     });
   } else if (info.menuItemId === MENU_IDS.translatePdfLocalAction) {
     chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
@@ -1477,7 +1472,7 @@ function relayOcrProgress(message) {
 async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, uiLang) {
   await ensureOffscreenDocument();
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
-  const plan = globalThis.OCRCore.resolveOcrLanguagePlan(settings.ocrSourceLanguage, uiLang);
+  const plan = globalThis.OCRCore.resolveOcrLanguagePlan(uiLang);
 
   if (tabId !== undefined) ocrProgressTabs.set(requestId, tabId);
   let result;

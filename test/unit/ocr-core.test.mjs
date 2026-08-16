@@ -167,11 +167,11 @@ test('an image with no intrinsic size falls back to the box it was given', () =>
 
 // --- resolveOcrLanguagePlan --------------------------------------------------
 
-test('auto recognises with the user own script, English as the fallback pass', () => {
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'zh-CN'), { primary: 'chi_sim', fallback: 'eng' });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'zh-TW'), { primary: 'chi_tra', fallback: 'eng' });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'ja'), { primary: 'jpn', fallback: 'eng' });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'ko'), { primary: 'kor', fallback: 'eng' });
+test('the plan recognises with the user own script, English as the fallback pass', () => {
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('zh-CN'), { primary: 'chi_sim', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('zh-TW'), { primary: 'chi_tra', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('ja'), { primary: 'jpn', fallback: 'eng' });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('ko'), { primary: 'kor', fallback: 'eng' });
 });
 
 test('a plan never combines languages into one pass', () => {
@@ -180,32 +180,30 @@ test('a plan never combines languages into one pass', () => {
   // Latin-garbage reading wins the line ("FUSS 6," for 千山鸟飞绝，— reproduced
   // against the vendored engine). Languages compete as whole passes instead.
   for (const uiLang of ['zh-CN', 'zh-TW', 'ja', 'ko', 'en', 'fr']) {
-    const plan = OCR.resolveOcrLanguagePlan('auto', uiLang);
+    const plan = OCR.resolveOcrLanguagePlan(uiLang);
     assert.ok(!plan.primary.includes('+'), `${uiLang}: primary must be one language (${plan.primary})`);
     assert.ok(!(plan.fallback || '').includes('+'), `${uiLang}: fallback must be one language (${plan.fallback})`);
   }
 });
 
-test('auto is English alone for a UI language with no bundled pack', () => {
+test('the plan is English alone for a UI language with no bundled pack', () => {
   // French text is Latin script, which eng already reads well enough; there is
   // no second pack worth falling back to.
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('auto', 'fr'), { primary: 'eng', fallback: null });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('', ''), { primary: 'eng', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan('fr'), { primary: 'eng', fallback: null });
+  assert.deepEqual(OCR.resolveOcrLanguagePlan(''), { primary: 'eng', fallback: null });
 });
 
-test('an explicit language wins outright — exactly that language, no fallback', () => {
-  // Someone who picked Japanese knows better than the heuristic.
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('jpn', 'zh-CN'), { primary: 'jpn', fallback: null });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('eng', 'ja'), { primary: 'eng', fallback: null });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('chi_sim', 'zh-CN'), { primary: 'chi_sim', fallback: null });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('chi_tra', 'en'), { primary: 'chi_tra', fallback: null });
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('kor', 'ja'), { primary: 'kor', fallback: null });
-});
-
-test('an unknown stored language is treated as auto, not passed to Tesseract', () => {
-  // A setting from a future build, or a hand-edited one. Tesseract throws on a
-  // pack it cannot load, which would break the feature outright.
-  assert.deepEqual(OCR.resolveOcrLanguagePlan('klingon', 'ja'), { primary: 'jpn', fallback: 'eng' });
+test('there is no user-facing OCR language setting feeding the plan', () => {
+  // The user cannot pre-declare what language an arbitrary image will contain,
+  // so the plan is derived from the UI language alone and the text's actual
+  // language is detected after recognition (detectScriptLanguage). The old
+  // ocrSourceLanguage setting must stay gone from every surface.
+  const background = readFileSync(repoPath('background/background.js'), 'utf8');
+  const optionsJs = readFileSync(repoPath('options/options.js'), 'utf8');
+  const optionsHtml = readFileSync(repoPath('options/options.html'), 'utf8');
+  for (const [name, src] of [['background.js', background], ['options.js', optionsJs], ['options.html', optionsHtml]]) {
+    assert.ok(!src.includes('ocrSourceLanguage'), `${name} must not reference ocrSourceLanguage`);
+  }
 });
 
 test('every catalog language has a bundled traineddata file', () => {
@@ -259,26 +257,46 @@ test('no evidence is not acceptable — it must climb the ladder, not pass', () 
   assert.equal(OCR.isAcceptableRecognition({ meanConfidence: OCR.OCR_ACCEPT_MEAN_CONFIDENCE - 1 }), false);
 });
 
-test('oversized low-confidence lines earn a rescale toward the comfort band', () => {
-  const factor = OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: 104 });
-  assert.ok(factor > 0.2 && factor < 0.5, `a ~104px line scales to a third-ish, got ${factor}`);
-  // The retry lands the median near the target, inside the LSTM's band.
-  assert.ok(Math.abs(104 * factor - 36) < 1);
+test('oversized low-confidence lines earn rescale rungs, larger-target first', () => {
+  // Two rungs, not one: on the same poem card one rendering reads best near
+  // 52px lines and another near 26px, and a single mid target measured worse
+  // than either. Whole-pass competition makes the extra rung free of risk.
+  const factors = OCR.rescaleFactorsForRetry({ meanConfidence: 30, medianLineHeight: 104 });
+  assert.equal(factors.length, 2);
+  assert.ok(Math.abs(104 * factors[0] - 52) < 1, `first rung lands near 52px, got ${104 * factors[0]}`);
+  assert.ok(Math.abs(104 * factors[1] - 26) < 1, `second rung lands near 26px, got ${104 * factors[1]}`);
 });
 
 test('an acceptable pass is never rescaled, whatever its glyph size', () => {
-  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 85, medianLineHeight: 104 }), null);
+  assert.deepEqual(OCR.rescaleFactorsForRetry({ meanConfidence: 85, medianLineHeight: 104 }), []);
 });
 
-test('small or unmeasurable lines are not rescaled — size was not the problem', () => {
-  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: 40 }), null);
-  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 30, medianLineHeight: null }), null);
-  assert.equal(OCR.rescaleFactorForRetry(null), null);
+test('small lines are not rescaled — size was not the problem', () => {
+  assert.deepEqual(OCR.rescaleFactorsForRetry({ meanConfidence: 30, medianLineHeight: 40 }), []);
+  assert.deepEqual(OCR.rescaleFactorsForRetry(null), []);
 });
 
-test('an absurd measurement is clamped, not obeyed', () => {
-  // One merged box spanning the image would ask for a near-zero scale.
-  assert.equal(OCR.rescaleFactorForRetry({ meanConfidence: 10, medianLineHeight: 2000 }), 0.2);
+test('the gate sits below the honest oversize line, because the measurement lies', () => {
+  // Layout analysis under-reports oversized lines by up to ~2× (a reproduced
+  // 108px-ink line came back as ~50px). A gate at 60 would wave exactly those
+  // images through unretried, so ~50px reported must still earn a retry.
+  const factors = OCR.rescaleFactorsForRetry({ meanConfidence: 30, medianLineHeight: 50 });
+  assert.ok(factors.length >= 1, 'a ~50px reported median must still be retried');
+  // A rung that would barely change the image is skipped, not run.
+  for (const f of factors) assert.ok(f <= 0.9, `a factor of ${f} is a re-run, not a rescale`);
+});
+
+test('a failed pass with no line boxes at all gets one probe rung', () => {
+  // The classic shape of that failure is display type layout never resolved
+  // into lines; a wrong probe loses the pick-best and costs only time.
+  assert.deepEqual(OCR.rescaleFactorsForRetry({ meanConfidence: 30, medianLineHeight: null }), [0.5]);
+  assert.deepEqual(OCR.rescaleFactorsForRetry({ meanConfidence: null, medianLineHeight: null }), [0.5]);
+});
+
+test('an absurd measurement is clamped, and the collapsed rungs deduplicate', () => {
+  // One merged box spanning the image would ask for a near-zero scale; both
+  // targets clamp to the same floor, which is one rung, not two.
+  assert.deepEqual(OCR.rescaleFactorsForRetry({ meanConfidence: 10, medianLineHeight: 2000 }), [0.2]);
 });
 
 test('passes compete whole: higher mean confidence wins, ties keep the first', () => {
@@ -288,6 +306,49 @@ test('passes compete whole: higher mean confidence wins, ties keep the first', (
   assert.equal(OCR.pickBetterRecognition(strong, weak), strong);
   const tie = { text: 'other', assessment: { meanConfidence: 84 } };
   assert.equal(OCR.pickBetterRecognition(strong, tie), strong);
+});
+
+test('near-tied same-language passes are settled by how much text they read', () => {
+  // The poem-card failure this rule exists for: the 52px rung read three of
+  // four lines at mean 79, the 26px rung read all four at 69 — mean
+  // confidence alone cannot see the missing 孤舟蓑笠翁 line.
+  const lossy = {
+    languages: 'chi_sim',
+    text: '干山乌飞绝，\n万径人踪灭。\n独钓寒江雪。',
+    assessment: { meanConfidence: 79 }
+  };
+  const complete = {
+    languages: 'chi_sim',
+    text: '江雪\n干山乌飞绝，\n万径人踪灭。\n孤舟蓑笠翁，\n独钓寒江雪。',
+    assessment: { meanConfidence: 69.4 }
+  };
+  assert.equal(OCR.pickBetterRecognition(lossy, complete), complete);
+  assert.equal(OCR.pickBetterRecognition(complete, lossy), complete);
+
+  // Outside the band, mean confidence rules again whatever the volume.
+  const garbageheavy = {
+    languages: 'chi_sim',
+    text: '和罗三下柳杀元\n千山鸟飞绝，\n万径人踪灭。\n独钓寒江雪。',
+    assessment: { meanConfidence: 79 - OCR.OCR_NEAR_TIE_CONFIDENCE - 1 }
+  };
+  assert.equal(OCR.pickBetterRecognition(lossy, garbageheavy), lossy);
+});
+
+test('the volume tiebreak never crosses languages — eng garbage cannot win on length', () => {
+  // An eng fallback pass on a CJK image can produce verbose Latin misreads;
+  // against a different-language pass the comparison stays strict-mean.
+  const chi = {
+    languages: 'chi_sim',
+    text: '千山鸟飞绝，',
+    assessment: { meanConfidence: 73 }
+  };
+  const engVerbose = {
+    languages: 'eng',
+    text: 'LB om Fuses, BEAR. MARES, MIS, extra extra extra',
+    assessment: { meanConfidence: 68 }
+  };
+  assert.equal(OCR.pickBetterRecognition(chi, engVerbose), chi);
+  assert.equal(OCR.pickBetterRecognition(engVerbose, chi), chi);
 });
 
 test('a pass with no evidence loses to any scored pass, and null passes are survivable', () => {
@@ -432,6 +493,50 @@ test('the threshold is inclusive at the bar and drops one point under it', () =>
   assert.deepEqual(OCR.filterRecognizedLines([at, below]), [at]);
 });
 
+test('in a CJK pass, a low-confidence CJK line survives — rare glyphs score badly', () => {
+  // The line the strict bar silently deleted from the 江雪 poem: 蓑 is thin in
+  // the training data, so 孤舟蓑笠翁 never climbs out of the 20s–50s at any
+  // scale even when read almost right. A dropped real line is the worse
+  // failure, so a mostly-CJK line in a CJK pass only falls to the hopeless bar.
+  const lines = [
+    { text: '万径人踪灭。', confidence: 90 },
+    { text: '孤舟蓑笠翁，', confidence: 27 },
+    { text: '独钓寒江雪。', confidence: 80 }
+  ];
+  assert.deepEqual(
+    OCR.filterRecognizedLines(lines, 'chi_sim').map((l) => l.text),
+    ['万径人踪灭。', '孤舟蓑笠翁，', '独钓寒江雪。']
+  );
+  // Hopeless is still hopeless, even in a CJK pass.
+  const junk = { text: '机舟装签公，', confidence: OCR.OCR_CJK_LINE_CONFIDENCE_THRESHOLD - 1 };
+  assert.deepEqual(OCR.filterRecognizedLines([...lines, junk], 'chi_sim').map((l) => l.text),
+    ['万径人踪灭。', '孤舟蓑笠翁，', '独钓寒江雪。']);
+});
+
+test('in a CJK pass, Latin garbage lines still face the strict bar', () => {
+  // The hallucination signature in a CJK pass IS a Latin line — stylised art
+  // decoded as "SEE Fis 64". The relaxed bar is for the pass language's own
+  // script, not for everything the pass produced.
+  const lines = [
+    { text: '柳宗元', confidence: 91 },
+    { text: 'SEE Fis 64, BEAR K. MASS', confidence: 34 },
+    { text: '独钓寒江雪。', confidence: 80 }
+  ];
+  assert.deepEqual(
+    OCR.filterRecognizedLines(lines, 'chi_sim').map((l) => l.text),
+    ['柳宗元', '独钓寒江雪。']
+  );
+});
+
+test('outside a CJK pass, CJK lines get no special treatment', () => {
+  // An eng pass that emitted a low-scoring CJK-looking line was guessing.
+  const lines = [
+    { text: 'Emergency exit', confidence: 88 },
+    { text: '出 口', confidence: 30 }
+  ];
+  assert.deepEqual(OCR.filterRecognizedLines(lines, 'eng').map((l) => l.text), ['Emergency exit']);
+});
+
 test('filtering nothing yields an empty array, never throws', () => {
   assert.deepEqual(OCR.filterRecognizedLines([]), []);
   assert.deepEqual(OCR.filterRecognizedLines(null), []);
@@ -566,15 +671,24 @@ test('recognition stops at the worker — translating is the content script job'
     ocrUi.includes('ctx.translateText('),
     'the content script runs step 2 through the shared translation path'
   );
-  // The worker owns the setting, so it has to put the answer on the message —
-  // the content script cannot read chrome.storage.sync for it.
+  // Recognise-first is not a preference: every entry point must say
+  // translate: false explicitly, because the content script treats an absent
+  // flag as the old translate-too path.
   assert.ok(
-    background.includes('settings.ocrTranslate'),
-    'the menu click must carry the translate preference to the content script'
+    background.includes('translate: false'),
+    'the menu click must send the recognise-first flag to the content script'
+  );
+  assert.ok(
+    !background.includes('settings.ocrTranslate') && !background.includes('ocrTranslate:'),
+    'there is no auto-translate setting any more — the popup Translate button is step 2'
+  );
+  assert.ok(
+    repoFile('content/content-image-ocr.js').includes('translate: false'),
+    'the hover button is recognise-first too'
   );
   assert.ok(
     repoFile('content/content-messaging.js').includes('translate: message.translate'),
-    'the router must forward it to the OCR flow'
+    'the router must forward the flag to the OCR flow'
   );
 });
 
@@ -685,11 +799,6 @@ test('every locale carries the OCR strings the worker, popup and options look up
     'hintOcrEngine',
     'ocrEngineLocal',
     'ocrEngineVision',
-    'ocrSourceLanguage',
-    'hintOcrSourceLanguage',
-    'ocrSourceLanguageAuto',
-    'ocrTranslate',
-    'hintOcrTranslate',
     // The hover shortcut button: its options switch, hint, and on-image label.
     'enableImageOcrHoverButton',
     'hintEnableImageOcrHoverButton',

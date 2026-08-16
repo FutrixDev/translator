@@ -229,19 +229,19 @@
   };
 
   /**
-   * Resolve the stored `ocrSourceLanguage` setting into a recognition plan:
-   * `primary` is the language the engine tries first, `fallback` (or null) is
-   * tried only when the primary pass comes back below the acceptance bar (see
-   * isAcceptableRecognition) — each as its own single-language pass, never
-   * '+'-combined (see AUTO_PRIMARY_LANGUAGE for why).
+   * The recognition plan for a UI language: `primary` is the language the
+   * engine tries first, `fallback` (or null) is tried only when the primary
+   * pass comes back below the acceptance bar (see isAcceptableRecognition) —
+   * each as its own single-language pass, never '+'-combined (see
+   * AUTO_PRIMARY_LANGUAGE for why).
    *
-   * 'auto' means the user's own script with English as the fallback; an
-   * explicit choice means exactly that language and nothing else, because a
-   * user who picked one knows better than the heuristic.
+   * There is deliberately no user-facing language setting feeding this: a user
+   * cannot be asked to pre-declare what language an arbitrary image will turn
+   * out to contain, so the plan is always derived from their UI language, and
+   * the actual language of the text is detected *after* recognition (see
+   * detectScriptLanguage).
    */
-  function resolveOcrLanguagePlan(setting, uiLang) {
-    const known = OCR_LANGUAGES.some((l) => l.code === setting);
-    if (known) return { primary: setting, fallback: null };
+  function resolveOcrLanguagePlan(uiLang) {
     const primary = AUTO_PRIMARY_LANGUAGE[uiLang];
     return primary ? { primary, fallback: 'eng' } : { primary: 'eng', fallback: null };
   }
@@ -265,17 +265,39 @@
   // reshuffle noise. Below that, a retry has something real to win.
   const OCR_ACCEPT_MEAN_CONFIDENCE = 70;
 
-  // Where the retry aims the median line: the middle of the LSTM's comfort
-  // band, with room on either side for the spread around the median.
-  const OCR_TARGET_LINE_HEIGHT = 36;
+  // Where the retry rungs aim the median line. Two targets, not one, because
+  // no single scale wins: on the same poem card, one font rendering reads best
+  // near 52px and another (same text, serif + JPEG artifacts) reads best near
+  // 26px, and the old single 36px target sat in the valley between the two —
+  // measurably worse than either. Every rung runs — there is no early stop at
+  // the acceptance bar, because a pass can score well by silently losing a
+  // line (the poem card's 52px rung reads three of four lines at mean 79) —
+  // and whole passes then compete, so a rung can only ever improve the answer.
+  const OCR_RETRY_TARGET_LINE_HEIGHTS = [52, 26];
 
-  // Only lines clearly above the comfort band are worth a rescale pass; at or
-  // under this, size was not the problem and a retry would just repeat it.
-  const OCR_RETRY_MIN_LINE_HEIGHT = 60;
+  // Only lines above the comfort band are worth a rescale pass; at or under
+  // this, size was not the problem and a retry would just repeat it. 45 rather
+  // than the comfort band's own ceiling because the measurement itself runs
+  // low: layout analysis under-reports oversized lines by up to ~2× (a
+  // reproduced 108px-ink line came back as ~50px), and a gate at the honest
+  // number would wave exactly those images through unretried.
+  const OCR_RETRY_MIN_LINE_HEIGHT = 45;
 
   // A factor below this means the measurement was nonsense (one merged box
   // spanning the image), not a real 180px-glyph banner.
   const OCR_MIN_RETRY_SCALE = 0.2;
+
+  // A factor this close to 1 is a re-run, not a rescale.
+  const OCR_MAX_RETRY_SCALE = 0.9;
+
+  // Two same-language passes within this band are the same read *quality* —
+  // a gap that size is segmentation luck, not signal — so within it the pass
+  // that read more text wins. Mean confidence alone cannot see a missing
+  // line: on the poem card, the rung that lost 孤舟蓑笠翁 outright scored 79
+  // while the rung that read all four lines scored 73. Only same-language
+  // passes get this tiebreak; against the eng fallback the comparison stays
+  // strict-mean, so verbose Latin misreads of CJK can never win on volume.
+  const OCR_NEAR_TIE_CONFIDENCE = 10;
 
   /**
    * How good was a recognition pass, and how tall was its text? `lines` is the
@@ -318,15 +340,30 @@
   }
 
   /**
-   * The scale a retry pass should run at, or null when rescaling has nothing
-   * to offer: the pass was already acceptable, the lines were not oversized,
-   * or there were no line boxes to measure.
+   * The scales the retry rungs should run at, best-first — an empty array when
+   * rescaling has nothing to offer: the pass was already acceptable, or the
+   * lines were not oversized. Computed from the *first* pass's assessment (the
+   * native-size line boxes are the only glyph measurement there is).
+   *
+   * A pass that produced no line boxes at all but still failed gets one probe
+   * rung at 0.5: the classic shape of that failure is oversized display type
+   * that layout analysis never resolved into lines, and whole-pass competition
+   * means a wrong guess costs time, never correctness.
    */
-  function rescaleFactorForRetry(assessment) {
-    if (!assessment || isAcceptableRecognition(assessment)) return null;
+  function rescaleFactorsForRetry(assessment) {
+    if (!assessment || isAcceptableRecognition(assessment)) return [];
     const height = assessment.medianLineHeight;
-    if (!(typeof height === 'number' && height > OCR_RETRY_MIN_LINE_HEIGHT)) return null;
-    return Math.max(OCR_MIN_RETRY_SCALE, OCR_TARGET_LINE_HEIGHT / height);
+    if (!(typeof height === 'number' && height > 0)) return [0.5];
+    if (height <= OCR_RETRY_MIN_LINE_HEIGHT) return [];
+    const factors = [];
+    for (const target of OCR_RETRY_TARGET_LINE_HEIGHTS) {
+      const factor = Math.max(OCR_MIN_RETRY_SCALE, target / height);
+      if (factor > OCR_MAX_RETRY_SCALE) continue;
+      // Two targets collapsing onto (nearly) the same factor is one rung.
+      if (factors.some((f) => Math.abs(f - factor) / f < 0.15)) continue;
+      factors.push(factor);
+    }
+    return factors;
   }
 
   /**
@@ -334,6 +371,11 @@
    * a line-by-line merge: two passes segment the page differently, and
    * stitching them would invent orderings no engine produced. Either side may
    * be null/absent; a pass with no evidence loses to any scored one.
+   *
+   * One refinement: when both passes ran the same languages and their means
+   * sit within OCR_NEAR_TIE_CONFIDENCE of each other, the pass with more
+   * recognised text wins — see that constant for the missing-line failure
+   * this exists to catch.
    */
   function pickBetterRecognition(a, b) {
     if (!b) return a || null;
@@ -342,7 +384,18 @@
       pass.assessment && typeof pass.assessment.meanConfidence === 'number'
         ? pass.assessment.meanConfidence
         : -1;
-    return score(b) > score(a) ? b : a;
+    const chars = (pass) => String(pass.text || '').replace(/\s+/g, '').length;
+    const scoreA = score(a);
+    const scoreB = score(b);
+    if (
+      a.languages && a.languages === b.languages &&
+      scoreA >= 0 && scoreB >= 0 &&
+      Math.abs(scoreA - scoreB) <= OCR_NEAR_TIE_CONFIDENCE &&
+      chars(a) !== chars(b)
+    ) {
+      return chars(b) > chars(a) ? b : a;
+    }
+    return scoreB > scoreA ? b : a;
   }
 
   // --- Script detection ------------------------------------------------------
@@ -448,11 +501,31 @@
   // keep-more side of it.
   const OCR_LINE_CONFIDENCE_THRESHOLD = 55;
 
+  // The bar for a CJK line read by a CJK pass, where the confidence bands
+  // above do not hold. Rare glyphs score badly even when read right — 孤舟蓑笠翁
+  // never climbs out of the 20s–50s at any scale because 蓑 is thin in the
+  // training data — while the hallucination signature in a CJK pass is a
+  // *Latin* line (stylised art decoded as "SEE Fis 64"), which this bar does
+  // not apply to. So a mostly-CJK line is dropped only when the engine calls
+  // it hopeless outright; anything better is real text imperfectly read, and
+  // silently deleting a whole line of it is the worse failure.
+  const OCR_CJK_LINE_CONFIDENCE_THRESHOLD = 15;
+
+  // Tesseract language codes whose script the relaxed bar above is about.
+  const CJK_PASS_RE = /^(chi_|jpn|kor)/;
+  const CJK_GLYPH_RE = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]/g;
+  const LATIN_GLYPH_RE = /[A-Za-z]/g;
+
   /**
    * Drop the lines Tesseract itself did not believe. `lines` is
    * [{text, confidence}] in reading order, confidence 0–100 straight from the
-   * engine. The return is the surviving subset — order intact, the same
-   * objects — so a caller can rebuild paragraph structure by membership.
+   * engine; `languages` is the Tesseract language string the pass ran with.
+   * The return is the surviving subset — order intact, the same objects — so a
+   * caller can rebuild paragraph structure by membership.
+   *
+   * In a CJK pass a line that is itself mostly CJK gets the relaxed bar (see
+   * OCR_CJK_LINE_CONFIDENCE_THRESHOLD); Latin-heavy lines keep the strict one,
+   * because that is what the hallucinated-garbage lines look like there.
    *
    * If every line fails the bar, the input comes back untouched: an image
    * that is *all* stylised type is exactly where the confidence stops meaning
@@ -460,11 +533,16 @@
    * still beats an empty popup. A line with no numeric confidence is kept for
    * the same reason — "unknown" is not "bad".
    */
-  function filterRecognizedLines(lines) {
+  function filterRecognizedLines(lines, languages) {
     const all = Array.isArray(lines) ? lines : [];
+    const cjkPass = CJK_PASS_RE.test(String(languages || ''));
     const kept = all.filter((line) => {
       if (!line || typeof line.confidence !== 'number' || !isFinite(line.confidence)) return true;
-      return line.confidence >= OCR_LINE_CONFIDENCE_THRESHOLD;
+      const text = String(line.text || '');
+      const mostlyCjk = cjkPass &&
+        (text.match(CJK_GLYPH_RE) || []).length > (text.match(LATIN_GLYPH_RE) || []).length;
+      const bar = mostlyCjk ? OCR_CJK_LINE_CONFIDENCE_THRESHOLD : OCR_LINE_CONFIDENCE_THRESHOLD;
+      return line.confidence >= bar;
     });
     return kept.length > 0 ? kept : all;
   }
@@ -639,11 +717,13 @@ Rules:
     resolveOcrLanguagePlan,
     assessRecognition,
     isAcceptableRecognition,
-    rescaleFactorForRetry,
+    rescaleFactorsForRetry,
     pickBetterRecognition,
     OCR_ACCEPT_MEAN_CONFIDENCE,
+    OCR_NEAR_TIE_CONFIDENCE,
     detectScriptLanguage,
     OCR_LINE_CONFIDENCE_THRESHOLD,
+    OCR_CJK_LINE_CONFIDENCE_THRESHOLD,
     filterRecognizedLines,
     normalizeRecognizedText,
     detectedLanguageLabelKey,
