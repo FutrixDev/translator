@@ -283,8 +283,13 @@ test('the post-insert helper runs both guards, and in the order that matters', (
   // clip guard 可能把某个祖先的 max-height 放开，框因此长高 —— fit guard 要量的是
   // 放开之后的样子，所以它必须在后面
   assert.ok(clip < fit, 'the fit guard must measure the box the clip guard just relaxed');
-  // 顺序反了会出现最糟的结果：原文被藏起来，译文又被撤走，那一块彻底空白
-  assert.ok(fit < hide, 'the source must not be hidden until the translation is known to survive');
+  // 「仅显示译文」开着时也一样：原文已经不显示了，框里只剩译文一个人，fit guard
+  // 量的必须是这个样子，否则会按「原文 + 译文」的高度白撤一批译文。撤译文那条路
+  // 自己负责把原文放回去（content-fit-guard.js 的 yieldOrDrop），所以先藏不会留下
+  // 两种语言都没有的块。
+  assert.ok(hide < fit, 'the fit guard must measure the box translation-only mode just emptied');
+  assert.match(repoFile('content/content-fit-guard.js'), /releaseSourceForTranslation\(translationEl\);\s*\n\s*translationEl\.remove\(\)/,
+    'the fit guard drops a translation without putting its source back — that block ends up blank');
 });
 
 test('the hover path asks the guard when it tracks a translation', () => {

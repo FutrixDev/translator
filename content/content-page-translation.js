@@ -316,13 +316,29 @@
     applyTranslationOnlyMode();
   }
 
-  // ==================== 仅显示译文 ====================
-  // settings.showTranslationOnly（默认关）：整页翻译插入译文后隐藏对应原文。
+  // ==================== 隐藏原文 ====================
+  // 隐藏一条译文对应的原文，有两个互不相干的理由：
+  //
+  //   1. settings.showTranslationOnly（默认关）——用户要的，全页一刀切。
+  //   2. 这一块挤不下两种语言（content-fit-guard.js 判的）——页面逼的，逐块决定。
+  //      译文节点上带 data-ai-translator-crowded 标记。
+  //
+  // 两个理由共用一套隐藏/释放机制，但**该不该藏是逐条算的**，不能再看一个全局开关：
+  // 「仅显示译文」关掉时，crowded 那批必须继续藏着，否则挤不下的那些块又糊回去。
   // 只作用于整页翻译（.ai-translator-translated 标记的块）；悬停/划词翻译的
   // 译文块（带各自的类名）被明确排除。
+  const CROWDED_ATTR = 'data-ai-translator-crowded';
+  const PAGE_TRANSLATION_SELECTOR =
+    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+
+  function shouldHideSource(translationEl) {
+    // 浮球“隐藏译文”开关优先：译文都不显示了还藏着原文，页面就两边全空了
+    if (state.translationsVisible === false) return false;
+    if (settings.showTranslationOnly) return true;
+    return translationEl.hasAttribute(CROWDED_ATTR);
+  }
 
   function isTranslationOnlyActive() {
-    // 浮球“隐藏译文”开关优先：译文都不显示了还藏着原文，页面就两边全空了
     return !!settings.showTranslationOnly && state.translationsVisible !== false;
   }
 
@@ -335,18 +351,23 @@
   // 子树时可能因找不到原父节点而报错。隔离世界里看不到页面世界的
   // __reactFiber$ 等 expando，无法预检测；本模式默认关、由用户显式打开，
   // 遇到这类页面关掉开关即可完整恢复。
-  function hideSourceForTranslation(translationEl) {
+  // @param {{safeOnly?: boolean}} [options] safeOnly：只走加类名那条路，不碰 wrap。
+  //   crowded 隐藏是默认行为（用户没打开任何开关），不能顺带把搬节点的风险也变成
+  //   默认——包不进去就让 fit guard 撤译文，那条路一个页面节点都不动。
+  // @returns {boolean} 原文是否藏起来了
+  function hideSourceForTranslation(translationEl, options) {
     const prev = translationEl.previousElementSibling;
     if (prev && prev.classList && prev.classList.contains('ai-translator-translated')) {
       prev.classList.add('ai-translator-source-hidden');
-      return;
+      return true;
     }
+    if (options && options.safeOnly) return false;
 
     const holder = translationEl.parentElement;
     const host = holder && holder.closest('.ai-translator-translated');
-    if (!host) return;
+    if (!host) return false;
     // 受管容器：译文是原文块自己的 ::after，隐藏原文会连译文一起消失，只能共存
-    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(host)) return;
+    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(host)) return false;
 
     let wrap = holder.querySelector(':scope > .ai-translator-source-wrap');
     for (const node of Array.from(holder.childNodes)) {
@@ -364,45 +385,70 @@
       wrap.appendChild(node);
     }
     if (wrap) wrap.classList.add('ai-translator-source-hidden');
+    return !!wrap;
   }
 
-  // 按当前开关状态应用/撤销“仅显示译文”。设置变化、浮球“隐藏译文”切换、
-  // revealHiddenTranslations 时都会调用，幂等。
+  // 找一条隐藏原文配对的译文。隐藏原文有两种形态，配对方向相反：
+  // 加了类名的原文块 → 译文是它的下一个兄弟；wrap → 译文是 wrap 的兄弟。
+  function pairedTranslation(hiddenEl) {
+    const candidate = hiddenEl.classList.contains('ai-translator-source-wrap')
+      ? hiddenEl.parentElement && hiddenEl.parentElement.querySelector(':scope > .ai-translator-inline-block')
+      : hiddenEl.nextElementSibling;
+    return candidate && candidate.classList
+      && candidate.classList.contains('ai-translator-inline-block') ? candidate : null;
+  }
+
+  function releaseHiddenSource(hiddenEl) {
+    hiddenEl.classList.remove('ai-translator-source-hidden');
+    if (!hiddenEl.classList.contains('ai-translator-source-wrap')) return;
+    const parent = hiddenEl.parentNode;
+    if (!parent) return;
+    while (hiddenEl.firstChild) parent.insertBefore(hiddenEl.firstChild, hiddenEl);
+    hiddenEl.remove();
+  }
+
+  // 重新算一遍每条原文该不该藏。设置变化、浮球“隐藏译文”切换、
+  // revealHiddenTranslations、fit guard 撤译文时都会调用，幂等。
+  //
+  // 先全量释放再重新隐藏，而不是分「模式开/模式关」两条路：现在藏原文的理由不止一
+  // 个（见 shouldHideSource），逐条问一次是唯一不会把两个理由搞混的写法。释放这一
+  // 遍同时修掉页面脚本删掉译文之后留下的孤儿原文——译文没了原文不能跟着陪葬。
   function applyTranslationOnlyMode() {
-    if (isTranslationOnlyActive()) {
-      // 页面脚本可能删掉我们插入的译文，原文不能跟着陪葬：先把配对译文已经
-      // 不在的隐藏原文放回来，再按当前还活着的译文重新隐藏。
-      document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
-        if (el.classList.contains('ai-translator-source-wrap')) {
-          const holder = el.parentElement;
-          if (holder && holder.querySelector(':scope > .ai-translator-inline-block')) return;
-          el.classList.remove('ai-translator-source-hidden');
-          if (holder) {
-            while (el.firstChild) holder.insertBefore(el.firstChild, el);
-            el.remove();
-          }
-        } else {
-          const next = el.nextElementSibling;
-          if (!next || !next.classList || !next.classList.contains('ai-translator-inline-block')) {
-            el.classList.remove('ai-translator-source-hidden');
-          }
-        }
-      });
-      const translations = document.querySelectorAll(
-        '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)'
-      );
-      translations.forEach((el) => hideSourceForTranslation(el));
-    } else {
-      document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
-        el.classList.remove('ai-translator-source-hidden');
-      });
-      document.querySelectorAll('.ai-translator-source-wrap').forEach((wrap) => {
-        const parent = wrap.parentNode;
-        if (!parent) return;
-        while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
-        wrap.remove();
-      });
+    document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
+      const translation = pairedTranslation(el);
+      if (translation && shouldHideSource(translation)) return;
+      releaseHiddenSource(el);
+    });
+    // 释放之后还剩下的 wrap 是上一轮留下的空壳，原样解包，不给页面留多余结构
+    document.querySelectorAll('.ai-translator-source-wrap:not(.ai-translator-source-hidden)')
+      .forEach((wrap) => releaseHiddenSource(wrap));
+
+    document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
+      if (shouldHideSource(el)) hideSourceForTranslation(el);
+    });
+  }
+
+  // fit guard 判定这一块挤不下两种语言时调用：给译文打上 crowded 标记，把原文让出来。
+  // 只走加类名那条安全路（见 hideSourceForTranslation 的 safeOnly）。
+  // @returns {boolean} 让出来了没有；没让出来的话 fit guard 会撤掉译文
+  function hideCrowdedSource(translationEl) {
+    if (!hideSourceForTranslation(translationEl, { safeOnly: true })) return false;
+    translationEl.setAttribute(CROWDED_ATTR, '');
+    return true;
+  }
+
+  // fit guard 要撤掉这条译文了：先把为它让出来的原文放回去。两个理由藏的都要放
+  // ——译文没了还藏着原文，那一块彻底空白，比重叠糟得多。
+  function releaseSourceForTranslation(translationEl) {
+    translationEl.removeAttribute(CROWDED_ATTR);
+    const prev = translationEl.previousElementSibling;
+    if (prev && prev.classList && prev.classList.contains('ai-translator-source-hidden')) {
+      releaseHiddenSource(prev);
+      return;
     }
+    const holder = translationEl.parentElement;
+    const wrap = holder && holder.querySelector(':scope > .ai-translator-source-wrap');
+    if (wrap) releaseHiddenSource(wrap);
   }
 
   function estimateTokens(text) {
@@ -1556,10 +1602,15 @@
   //
   // 下面每一处把译文放进 DOM 的分支后面都要跟一次，clip-guard.test.mjs 会数：
   // 插入点比检查点多，就是漏了一处。
-  function finishTranslationInsert(translationEl) {
+  // @param {number} sourceWidthBefore 插译文之前原文块的宽度。fit guard 的横向判据
+  //   要「页面原本给这一块多少地方」，插完就量不到了，只能在插之前记下来传进去。
+  function finishTranslationInsert(translationEl, sourceWidthBefore) {
     keepTranslationVisible(translationEl);
-    if (ctx.keepTranslationInFlow && !ctx.keepTranslationInFlow(translationEl)) return false;
+    // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
+    // 才是它真实的处境。反过来先量就会按「原文 + 译文」的高度白撤一批译文。
     if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
+    if (ctx.keepTranslationInFlow &&
+        !ctx.keepTranslationInFlow(translationEl, sourceWidthBefore)) return false;
     return true;
   }
 
@@ -1599,6 +1650,10 @@
       keepTranslationVisible(element);
       return;
     }
+
+    // 页面原本给这一块多少横向空间。插完就问不到了（收缩包裹的框会被译文自己撑宽），
+    // fit guard 的横向判据要的就是这个数，所以在动 DOM 之前量。
+    const sourceWidthBefore = element.getBoundingClientRect().width;
 
     // 检测是否在水平布局中
     const isHorizontalFlex = isHorizontalFlexParent(element);
@@ -1645,7 +1700,7 @@
 
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(translationEl);
+      finishTranslationInsert(translationEl, sourceWidthBefore);
     } else {
       // 对于非水平 flex 布局（如侧边栏），插入为同级元素
       // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
@@ -1718,16 +1773,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        finishTranslationInsert(internalTranslation);
+        finishTranslationInsert(internalTranslation, sourceWidthBefore);
       } else if (isTableCell) {
         // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
         // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
         element.appendChild(translationEl);
-        finishTranslationInsert(translationEl);
+        finishTranslationInsert(translationEl, sourceWidthBefore);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(translationEl);
+        finishTranslationInsert(translationEl, sourceWidthBefore);
       }
     }
   }
@@ -2078,6 +2133,9 @@
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;
   ctx.buildTranslationContent = buildTranslationContent;
   ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;
+  // content-fit-guard.js 用：挤不下两种语言时让原文，撤译文时把原文放回来
+  ctx.hideCrowdedSource = hideCrowdedSource;
+  ctx.releaseSourceForTranslation = releaseSourceForTranslation;
   // 内联格式标记的唯一定义，content-language.js 剥标记时复用
   ctx.MARKUP_MARKER_RE = MARKUP_MARKER_RE;
   ctx.isMathElement = isMathElement;
