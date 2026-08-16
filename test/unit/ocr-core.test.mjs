@@ -146,6 +146,23 @@ test('a few stray Latin letters do not outvote the script they sit in', () => {
   assert.equal(OCR.detectScriptLanguage('WiFi 密码就在前台那边登记本上', 'chi_sim+eng'), 'zh-Hans');
 });
 
+test('OCR garbage Latin does not outvote real Han: the vote is weighted', () => {
+  // Verbatim Tesseract output from a photo of a Chinese poem: 21 letters of
+  // misread-stroke garbage against 13 real Han characters. A raw codepoint
+  // count called this English, and the en→zh "translation" echoed the garbage
+  // back. One Han character is roughly a word; a Latin letter is a fifth of
+  // one — so Han votes weigh 3 and the real script wins.
+  const tesseractOutput = '< rs 柳宗元 SEE Fis 64, BEAR K. MASS 7 Ol eR 独钓寒江要。—— 世 "裁剪编辑';
+  assert.equal(OCR.detectScriptLanguage(tesseractOutput, 'eng+chi_sim'), 'zh-Hans');
+});
+
+test('genuinely English text with a couple of stray CJK characters stays English', () => {
+  // The weighting must not overshoot: four Han characters weigh 12, which a
+  // real English sentence comfortably outvotes.
+  const english = 'The phrase 中文 simply means the Chinese language, and 中文 appears twice in this sentence.';
+  assert.equal(OCR.detectScriptLanguage(english, 'eng+chi_sim'), 'en');
+});
+
 test('Latin and Cyrillic are recognised', () => {
   assert.equal(OCR.detectScriptLanguage('Emergency exit', 'eng'), 'en');
   assert.equal(OCR.detectScriptLanguage('Аварийный выход', 'eng'), 'ru');
