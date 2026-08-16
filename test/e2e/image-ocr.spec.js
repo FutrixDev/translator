@@ -75,12 +75,16 @@ const SIGN_PNG = makePng(320, 120, [0xf0, 0xf0, 0xf0]);
 // Displayed at its own size at the origin of the page, so a drag in client
 // coordinates is a drag in image coordinates and the crop is checkable.
 const WIDE_PNG = makePng(400, 100, [0xe8, 0xe8, 0xe8]);
+// Big enough for the hover shortcut button (its threshold is 200×200 CSS px);
+// the two images above are both under it, which the hover spec relies on.
+const BIG_PNG = makePng(300, 300, [0xdd, 0xdd, 0xdd]);
 
 const PAGE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>OCR</title></head>
 <body style="margin:0">
   <img id="wide" src="/wide.png" width="400" height="100" style="display:block">
   <img id="sign" src="/sign.png" width="320">
+  <img id="big" src="/big.png" width="300" height="300" style="display:block">
 </body></html>`;
 
 function startPageServer() {
@@ -95,6 +99,9 @@ function startPageServer() {
       } else if (req.url === '/wide.png') {
         res.writeHead(200, { 'Content-Type': 'image/png' });
         res.end(WIDE_PNG);
+      } else if (req.url === '/big.png') {
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        res.end(BIG_PNG);
       } else {
         res.writeHead(404);
         res.end();
@@ -234,6 +241,73 @@ test.describe('image OCR', () => {
     // Give a step 2 that wrongly ran time to reach the server.
     await page.waitForTimeout(1000);
     expect(mock.sentTexts).not.toContain('HELLO WORLD');
+  });
+
+  test('the recognise-only popup offers a Translate button that runs step 2 on demand', async ({ page }) => {
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', ocrTranslate: false });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: `${pageServer.origin}/sign.png`,
+      targetLang: 'zh-CN',
+      translate: false,
+    });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
+    // Recognise-only, but not a dead end: the button is the second step held
+    // out, and nothing has been translated yet.
+    const translateBtn = popup.locator('.ai-translator-translate-btn');
+    await expect(translateBtn).toBeVisible();
+    await expect(popup.locator('.ai-translator-result')).toBeHidden();
+    expect(mock.sentTexts).not.toContain('HELLO WORLD');
+
+    await translateBtn.click();
+
+    // The click ran the ordinary translation path over the recognised text and
+    // the popup became the bilingual view — button gone, both halves shown.
+    await expect(popup.locator('.ai-translator-translation-text')).toContainText('[T] HELLO WORLD', { timeout: 60000 });
+    await expect(popup.locator('.ai-translator-result')).toBeVisible();
+    await expect(translateBtn).toBeHidden();
+    expect(mock.sentTexts).toContain('HELLO WORLD');
+  });
+
+  test('the hover button appears on large images when its switch is on, and runs the flow', async ({ page }) => {
+    // ocrTranslate is left at its default (off), so the click should land on
+    // the recognise-only popup — the same terminal state the menu click reaches.
+    await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision', enableImageOcrHoverButton: true });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#big');
+
+    const hoverBtn = page.locator('#ai-translator-ocr-hover-btn');
+    await page.locator('#big').hover();
+    await expect(hoverBtn).toBeVisible();
+
+    // A 400×100 image is below the 200×200 threshold: moving there is the
+    // mouseleave of #big, and no new button takes its place.
+    await page.locator('#wide').hover();
+    await expect(hoverBtn).toHaveCount(0);
+
+    await page.locator('#big').hover();
+    await expect(hoverBtn).toBeVisible();
+    await hoverBtn.click();
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
+    await expect(popup.locator('.ai-translator-translate-btn')).toBeVisible();
+    expect(mock.visionRequests).toHaveLength(1);
+  });
+
+  test('with the hover switch off (the default), hovering shows no button', async ({ page }) => {
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#big');
+
+    await page.locator('#big').hover();
+    // Give a wrongly-live listener time to render one.
+    await page.waitForTimeout(500);
+    await expect(page.locator('#ai-translator-ocr-hover-btn')).toHaveCount(0);
   });
 
   test('multi-line text keeps its line structure in the popup', async ({ page }) => {

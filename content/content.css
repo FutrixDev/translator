@@ -84,10 +84,10 @@
 
 /* Not inherited — a bare-tag rule can hit any single node in the subtree, and
    opacity/filter/transform compound as it descends. Pin them on every node. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]),
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
   box-sizing: border-box;
   opacity: 1;
   filter: none;
@@ -99,16 +99,16 @@
    box's line-height would stop reaching the text it wraps. `inherit` still
    blocks a direct hit like `button { text-transform: uppercase }` or
    `body { line-height: 1.8 }` without breaking the chain. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) {
   visibility: visible;
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
   visibility: inherit;
   line-height: inherit;
   letter-spacing: inherit;
@@ -168,7 +168,7 @@
    Adding a control to a panel needs nothing here; adding a *rule* for one
    needs the `html body` + root prefix, or the theme's hover takes it back.
    That is asserted by test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -2102,4 +2102,53 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
   font-size: 13px;
   text-align: center;
   pointer-events: none;
+}
+
+/* ==================== Image OCR: the hover shortcut button ====================
+
+   A small floating action pinned near the top-right corner of a large image
+   while the cursor rests on it (enableImageOcrHoverButton, off by default).
+   Clicking it runs the same whole-image recognition as the context menu entry.
+
+   Styled by #id like the selection button above: (1,0,0) outranks any theme's
+   `.kit div:hover` and every list in the containment reset, so no `html body`
+   prefix is needed. It still sits in the reset's `:is()` lists so a page rule
+   on a bare tag cannot reach the properties this rule leaves alone. */
+
+#ai-translator-ocr-hover-btn {
+  position: fixed;
+  z-index: 2147483646;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(21, 22, 28, 0.92);
+  border: 1px solid #2a2d36;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+  animation: ai-translator-btn-pop 0.15s ease;
+}
+
+#ai-translator-ocr-hover-btn:hover {
+  background: rgba(38, 40, 50, 0.96);
+  border-color: #6f63ff;
+}
+
+/* Light theme, per the data-ai-translator-theme convention on <html>. */
+html[data-ai-translator-theme="light"] #ai-translator-ocr-hover-btn {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #d9d9e3;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  color: #1f2330;
+}
+
+html[data-ai-translator-theme="light"] #ai-translator-ocr-hover-btn:hover {
+  background: #f4f3ff;
+  border-color: #6f63ff;
 }

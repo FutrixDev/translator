@@ -48,6 +48,10 @@
       autoDetect: true,
       enableYoutubeCaptionTranslation: false,
       enableImageOcrTranslation: true,
+      // Auto-translate after recognition and the hover shortcut button: both
+      // off by default, matching background.js defaultSettings.
+      ocrTranslate: false,
+      enableImageOcrHoverButton: false,
       enableComicTranslation: false,
       comicTargetLang: '',
       enablePdfTranslation: true,
@@ -125,6 +129,8 @@
         showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
+        ocrTranslate: false,
+        enableImageOcrHoverButton: false,
         enableComicTranslation: false,
         comicTargetLang: '',
         enablePdfTranslation: true,
@@ -156,6 +162,8 @@
         showTranslationOnly: false,
         enableYoutubeCaptionTranslation: false,
         enableImageOcrTranslation: true,
+        ocrTranslate: false,
+        enableImageOcrHoverButton: false,
         enableComicTranslation: false,
         comicTargetLang: '',
         enablePdfTranslation: true,
@@ -251,6 +259,7 @@
       await ctx.loadSettings();
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
       if (ctx.setupHoverTranslation) ctx.setupHoverTranslation();
+      if (ctx.setupImageOcrHoverButton) ctx.setupImageOcrHoverButton();
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();

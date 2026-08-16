@@ -193,11 +193,16 @@ const defaultSettings = {
   // CJK). See resolveOcrLanguages: Tesseract needs its languages up front, so
   // this cannot be detected.
   ocrSourceLanguage: 'auto',
-  // Step 2. Off means the popup shows the recognised text alone, which is a
-  // complete result — plenty of right-clicks are "what does this say", not
-  // "what does this mean". On is the default because the extension is a
-  // translator, and with translationEngine 'builtin' it is also free.
-  ocrTranslate: true,
+  // Step 2, as an automatism: on means the recognised text is translated the
+  // moment it exists, off means the popup stops at the recognised text and
+  // offers a Translate button for the times it is wanted. Off is the default:
+  // plenty of right-clicks are "what does this say", not "what does this
+  // mean", and the button keeps the second step one click away.
+  ocrTranslate: false,
+  // The hover shortcut over large images — the same whole-image flow as the
+  // context menu, one hover closer. Off by default: a button that appears over
+  // pictures is a change to every page the user reads, so it is opted into.
+  enableImageOcrHoverButton: false,
   customPrompt: '',
   theme: 'light'
 };
@@ -299,12 +304,13 @@ function createContextMenus() {
     });
 
     // OCR is the free sibling of the comic entry: it reads the text out of any
-    // image with the user's own vision-capable model. Gated only by its
-    // settings switch (no account), hidden when switched off so the image menu
-    // stays as small as the user asked for.
+    // image, locally by default. Gated only by its settings switch (no
+    // account), hidden when switched off so the image menu stays as small as
+    // the user asked for. The entry says "recognize", not "translate" —
+    // translating is a separate, optional step the popup offers afterwards.
     chrome.contextMenus.create({
       id: MENU_IDS.ocrTranslateImage,
-      title: 'Extract & Translate Image Text',
+      title: 'Recognize Image Text',
       contexts: ['image'],
       visible: false
     });
@@ -316,7 +322,7 @@ function createContextMenus() {
     // say" vs "what does *that bit* say").
     chrome.contextMenus.create({
       id: MENU_IDS.ocrTranslateImageRegion,
-      title: 'Extract Text from a Selected Area',
+      title: 'Recognize Text in a Selected Area',
       contexts: ['image'],
       visible: false
     });
@@ -730,7 +736,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // back on the OCR_IMAGE request.
       selectRegion: info.menuItemId === MENU_IDS.ocrTranslateImageRegion,
       targetLang: getEffectiveTargetLang(settings),
-      translate: settings.ocrTranslate !== false
+      // Auto-translate only when asked to: the default experience is
+      // recognise-first, with a Translate button in the popup for step 2.
+      translate: settings.ocrTranslate === true
     });
   } else if (info.menuItemId === MENU_IDS.translatePdfLocalAction) {
     chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
