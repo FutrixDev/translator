@@ -395,6 +395,9 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   word-break: break-word;
   max-height: 80px;
   overflow-y: auto;
+  /* Image OCR and multi-line selections carry real line breaks — a poem's
+     lines, a sign's rows. Collapsing them loses the layout the source had. */
+  white-space: pre-wrap;
 }
 
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn {
@@ -493,6 +496,10 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   word-break: break-word;
   background: transparent;
   font-weight: 600;
+  /* Mirror the source's line structure: the translation prompt and the
+     built-in Translator both preserve \n, so honouring it here is all it
+     takes for the translation to keep the original layout. */
+  white-space: pre-wrap;
 }
 
 .ai-translator-translation-text.ai-translator-translation-flow {
