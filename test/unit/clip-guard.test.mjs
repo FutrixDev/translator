@@ -249,19 +249,42 @@ test('a managed handle is measured as its source block, not as itself', () => {
 // Wiring: the guard is worthless if a caller inserts without asking.
 // ---------------------------------------------------------------------------
 
-test('every insertion in the whole-page path asks the guard', () => {
+test('every insertion in the whole-page path asks the guards', () => {
   const source = repoFile('content/content-page-translation.js');
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   const end = body.indexOf('\n  function showPageTranslationProgress');
   const fn = body.slice(0, end);
 
-  // 每一次把译文放进 DOM 之后，都要问一次“它看得见吗”
+  // 每一次把译文放进 DOM 之后，都要跟一次 finishTranslationInsert：
+  // 「它看得见吗」（clip guard）+「页面给它地方站吗」（fit guard）。
   const insertions = fn.match(/\.(appendChild|after)\(\w+\)/g) || [];
-  const guards = fn.match(/keepTranslationVisible\(/g) || [];
+  const guards = fn.match(/finishTranslationInsert\(/g) || [];
   assert.ok(insertions.length >= 4, `expected the insertion sites, found ${insertions.length}`);
-  // +1 是受管译文那条（画成 ::after，没有节点可插）
-  assert.equal(guards.length, insertions.length + 1,
-    'an insertion site was added without a visibility check');
+  assert.equal(guards.length, insertions.length,
+    'an insertion site was added without going through finishTranslationInsert');
+
+  // 受管译文那条画成 ::after，没有节点可插，所以它自己单独问 clip guard
+  assert.match(fn, /keepTranslationVisible\(element\)/,
+    'the managed (::after) branch lost its visibility check');
+});
+
+test('the post-insert helper runs both guards, and in the order that matters', () => {
+  const source = repoFile('content/content-page-translation.js');
+  const body = source.slice(source.indexOf('function finishTranslationInsert'));
+  const fn = body.slice(0, body.indexOf('\n  }') + 4);
+
+  const clip = fn.indexOf('keepTranslationVisible(');
+  const fit = fn.indexOf('keepTranslationInFlow(');
+  const hide = fn.indexOf('hideSourceForTranslation(');
+  assert.ok(clip !== -1, 'the clip guard is not called');
+  assert.ok(fit !== -1, 'the fit guard is not called');
+  assert.ok(hide !== -1, 'translation-only mode no longer hides the source');
+
+  // clip guard 可能把某个祖先的 max-height 放开，框因此长高 —— fit guard 要量的是
+  // 放开之后的样子，所以它必须在后面
+  assert.ok(clip < fit, 'the fit guard must measure the box the clip guard just relaxed');
+  // 顺序反了会出现最糟的结果：原文被藏起来，译文又被撤走，那一块彻底空白
+  assert.ok(fit < hide, 'the source must not be hidden until the translation is known to survive');
 });
 
 test('the hover path asks the guard when it tracks a translation', () => {

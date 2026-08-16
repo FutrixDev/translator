@@ -27,9 +27,32 @@
   // 内联格式标记：整页翻译提取文本时，把 <a>/<strong>/<em> 等内联格式元素编码成
   // 成对的 <a1>…</a1> 标记随正文一起送翻，译文再按标记克隆原元素重建（见
   // buildTranslationContent），从而保留超链接（href）和内联样式（class/style）。
-  // 只在 AI 引擎下生成标记：内置 NMT 引擎没有“原样保留标记”的承诺，喂进去只会
-  // 让标记被翻碎；内置引擎继续走纯文本，行为与从前完全一致。
-  const MARKUP_MARKER_RE = /<\/?[a-z]+\d+>/g;
+  //
+  // **两个引擎都生成标记。** 这里曾经只在 AI 引擎下生成，理由是“内置 NMT 没有
+  // 原样保留标记的承诺”——那是假设，实测不成立。拿 Chrome 内置 Translator 跑
+  // en→zh-Hans / zh-Hant / ja，每句连翻三遍结果一致：
+  //
+  //   12 句 × 3 语言里，标记原样往返的 8 成以上；zh-Hans 的两处缺陷是
+  //   `<a1>` 被大写成 `<A1>`（闭标记仍是小写），一处是 `</strong2>` 整个丢失。
+  //
+  // 所以标记是能用的，只是要求解析端宽容：markerRe 大小写不敏感、容空白（见
+  // buildTranslationContent），丢了闭标记就在结尾自动闭合。默认引擎正是内置
+  // NMT，之前的开关等于让绝大多数用户的译文一个超链接都留不下。
+  //
+  // 大小写不敏感同样适用于这条正则：译文里的标记可能是 <A1>。
+  const MARKUP_MARKER_RE = /<\/?[a-z]+\d+>/gi;
+
+  // 由本块**真正生成过**的标签名与编号拼出的正则，用来清掉解析后仍留在译文里的
+  // 标记残骸（模型把 <a1>/<strong2> 串成了 <strong1> 这种，配不上任何一对，
+  // 重建时只能原样跳过）。
+  // 只认自己用过的标签名和编号，是为了不动页面正文：讲 HTML 的页面正文里就写着
+  // <b2> 这类字样，我们没生成过 b 标记时它一个字都不该被删。
+  function markupDebrisRe(markupElements) {
+    if (!markupElements || markupElements.length === 0) return null;
+    const tags = [...new Set(markupElements.map((mk) => mk.tag))].join('|');
+    const nums = [...new Set(markupElements.map((mk) => String(mk.index)))].join('|');
+    return new RegExp(`<\\s*/?\\s*(?:${tags})\\s*(?:${nums})\\s*>`, 'gi');
+  }
   const MARKUP_TAGS = new Set([
     'A', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'SUP', 'SUB', 'MARK', 'SMALL',
     'ABBR', 'DEL', 'INS', 'Q', 'CITE', 'DFN', 'CODE', 'KBD', 'SAMP', 'VAR'
@@ -565,8 +588,6 @@
   // 收集可翻译的块级元素
   function collectTranslatableBlocks(root) {
     managedSkipCount = 0;
-    // 内联格式标记只在 AI 引擎下生成，见 MARKUP_MARKER_RE 处的说明。
-    const preserveMarkup = !usingBuiltinEngine();
     const blocks = [];
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
@@ -838,7 +859,7 @@
 
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
-        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup });
+        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup: true });
         // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
         const plainText = stripPlaceholders(text).trim();
         if (text && plainText.length >= 2 && plainText.length <= 500) {
@@ -861,7 +882,7 @@
 
       // 对于块级元素
       if (blockTags.includes(tagName) || hasDirectText) {
-        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup });
+        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup: true });
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
           const textWithoutMath = stripPlaceholders(text).trim();
@@ -1475,16 +1496,26 @@
     // on* 属性）并下钻；闭标记 → 弹回。对模型输出保持防御：编号或标签名对不上
     // 的标记当普通文本原样保留；错序的闭标记只弹到对应层；缺失的闭标记到结尾
     // 自动闭合。最坏情况（标记全被模型丢掉）退化为纯文本译文，即今天的行为。
-    const markerRe = /<(\/?)([a-z]+)(\d+)>/g;
+    //
+    // 大小写不敏感 + 容空白，是内置 NMT 逼出来的：实测 en→zh-Hans 会把开标记
+    // 大写成 `<A1>`（闭标记仍是 `</a1>`）。按小写严格匹配的话，这条链接不但重
+    // 建不出来，`<A1>` 四个字符还会原样显示给读者。见 MARKUP_MARKER_RE 处。
+    const markerRe = /<\s*(\/?)\s*([a-z]+)\s*(\d+)\s*>/gi;
+    // 解析完仍留在正文里的标记残骸（配不上任何一对，上面 continue 掉的那些）不
+    // 能直接给读者看，落笔前清掉。只认本块生成过的标签名和编号，见 markupDebrisRe。
+    const debrisRe = markupDebrisRe(markupElements);
+    const emit = (node, chunk) => {
+      appendTextWithMath(node, debrisRe ? chunk.replace(debrisRe, '') : chunk, mathByNumber);
+    };
     const stack = [{ node: container, index: null }];
     let lastIndex = 0;
     let match;
     while ((match = markerRe.exec(text)) !== null) {
       const closing = match[1] === '/';
       const entry = markupByNumber.get(match[3]);
-      if (!entry || entry.tag !== match[2]) continue;
+      if (!entry || entry.tag !== match[2].toLowerCase()) continue;
 
-      appendTextWithMath(stack[stack.length - 1].node, text.slice(lastIndex, match.index), mathByNumber);
+      emit(stack[stack.length - 1].node, text.slice(lastIndex, match.index));
       lastIndex = markerRe.lastIndex;
 
       if (!closing) {
@@ -1501,7 +1532,7 @@
         if (pos > 0) stack.length = pos;
       }
     }
-    appendTextWithMath(stack[stack.length - 1].node, text.slice(lastIndex), mathByNumber);
+    emit(stack[stack.length - 1].node, text.slice(lastIndex));
   }
 
   // 向后兼容的旧签名（悬停/划词翻译仍按 mathElements 数组调用）
@@ -1510,10 +1541,26 @@
   }
 
   // 译文插进 DOM 不等于看得见：折叠容器（overflow:hidden + max-height）会把它整条
-  // 裁掉。见 content-clip-guard.js。下面每一处把译文放进 DOM 的分支后面都要跟一次，
-  // clip-guard.test.mjs 会数：插入点比检查点多，就是漏了一处。
+  // 裁掉。见 content-clip-guard.js。
   function keepTranslationVisible(anchor) {
     if (ctx.keepTranslationVisible) ctx.keepTranslationVisible(anchor);
+  }
+
+  // 译文放进 DOM 之后要做的三件事，顺序是有讲究的：
+  //   1. 把裁剪它的祖先放开（clip guard）——框可能因此长高，第 2 步要量的是放开
+  //      之后的样子；
+  //   2. 确认页面真给了它地方站（fit guard，见 content-fit-guard.js）。站不住就
+  //      撤掉译文，返回 false；
+  //   3. 这时候才轮到“仅显示译文”去藏原文。顺序反了会出现最糟的结果——原文被藏
+  //      起来，译文又被撤走，那一块彻底空白。
+  //
+  // 下面每一处把译文放进 DOM 的分支后面都要跟一次，clip-guard.test.mjs 会数：
+  // 插入点比检查点多，就是漏了一处。
+  function finishTranslationInsert(translationEl) {
+    keepTranslationVisible(translationEl);
+    if (ctx.keepTranslationInFlow && !ctx.keepTranslationInFlow(translationEl)) return false;
+    if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
+    return true;
   }
 
   // 插入翻译块
@@ -1540,11 +1587,12 @@
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
       // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
-      // 只在块确实带标记时剥：正文本来就含 <b2> 这类字样的页面（HTML 教程等）
-      // 不能被误删。
+      // 用 markupDebrisRe 而不是笼统的 MARKUP_MARKER_RE：只剥本块真生成过的标签
+      // 名+编号，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
+      const managedDebrisRe = markupDebrisRe(block.markupElements);
       ctx.renderManagedTranslation(
         element,
-        hasMarkupElements ? translation.replace(MARKUP_MARKER_RE, '') : translation,
+        managedDebrisRe ? translation.replace(managedDebrisRe, '') : translation,
         {}
       );
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
@@ -1597,8 +1645,7 @@
 
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
-      keepTranslationVisible(translationEl);
-      if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
+      finishTranslationInsert(translationEl);
     } else {
       // 对于非水平 flex 布局（如侧边栏），插入为同级元素
       // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
@@ -1671,19 +1718,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        keepTranslationVisible(internalTranslation);
-        if (isTranslationOnlyActive()) hideSourceForTranslation(internalTranslation);
+        finishTranslationInsert(internalTranslation);
       } else if (isTableCell) {
         // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
         // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
         element.appendChild(translationEl);
-        keepTranslationVisible(translationEl);
-        if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
+        finishTranslationInsert(translationEl);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        keepTranslationVisible(translationEl);
-        if (isTranslationOnlyActive()) hideSourceForTranslation(translationEl);
+        finishTranslationInsert(translationEl);
       }
     }
   }

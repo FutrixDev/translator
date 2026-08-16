@@ -48,9 +48,11 @@
     // 剥掉数学占位符 {{n}} 和内联格式标记 <a1>…</a1>，两者都不是正文，混进去
     // 会拉低语言检测的置信度。标记的定义在 content-page-translation.js
     // （ctx.MARKUP_MARKER_RE）；字面量兜底只为本文件先于它加载的窗口期。
+    // 兜底必须和那边逐字一致（含 i：内置 NMT 会把标记大写成 <A1>），
+    // markup-marker-regex.test.mjs 会比对两处源码。
     const cleaned = text
       .replace(/\{\{\d+\}\}/g, '')
-      .replace(ctx.MARKUP_MARKER_RE || /<\/?[a-z]+\d+>/g, '')
+      .replace(ctx.MARKUP_MARKER_RE || /<\/?[a-z]+\d+>/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
     return cleaned.slice(0, 400);
