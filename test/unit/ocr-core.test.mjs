@@ -74,11 +74,21 @@ test('non-string JSON values are normalized to empty strings, not passed through
 
 // --- resolveOcrLanguages -----------------------------------------------------
 
-test('auto pairs English with the user own script, and only those two', () => {
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-CN'), 'eng+chi_sim');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-TW'), 'eng+chi_tra');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ja'), 'eng+jpn');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ko'), 'eng+kor');
+test('auto pairs the user own script with English, and only those two', () => {
+  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-CN'), 'chi_sim+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-TW'), 'chi_tra+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'ja'), 'jpn+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'ko'), 'kor+eng');
+});
+
+test('auto puts the user own script FIRST — Tesseract order is preference', () => {
+  // With eng leading, stylised CJK glyphs come back as confident Latin
+  // garbage; the CJK models already read embedded Latin, so CJK must lead.
+  for (const uiLang of ['zh-CN', 'zh-TW', 'ja', 'ko']) {
+    const resolved = OCR.resolveOcrLanguages('auto', uiLang);
+    assert.notEqual(resolved.split('+')[0], 'eng', `${uiLang}: eng must not lead (${resolved})`);
+    assert.equal(resolved.split('+')[1], 'eng', `${uiLang}: eng comes second (${resolved})`);
+  }
 });
 
 test('auto falls back to English alone for a UI language with no bundled pack', () => {
@@ -88,17 +98,20 @@ test('auto falls back to English alone for a UI language with no bundled pack', 
   assert.equal(OCR.resolveOcrLanguages('', ''), 'eng');
 });
 
-test('an explicit language wins outright — no English tagged on', () => {
+test('an explicit language wins outright — returned verbatim, no English tagged on', () => {
   // Someone who picked Japanese knows better than the heuristic, and every
   // extra language costs recognition time and a little accuracy.
   assert.equal(OCR.resolveOcrLanguages('jpn', 'zh-CN'), 'jpn');
   assert.equal(OCR.resolveOcrLanguages('eng', 'ja'), 'eng');
+  assert.equal(OCR.resolveOcrLanguages('chi_sim', 'zh-CN'), 'chi_sim');
+  assert.equal(OCR.resolveOcrLanguages('chi_tra', 'en'), 'chi_tra');
+  assert.equal(OCR.resolveOcrLanguages('kor', 'ja'), 'kor');
 });
 
 test('an unknown stored language is treated as auto, not passed to Tesseract', () => {
   // A setting from a future build, or a hand-edited one. Tesseract throws on a
   // pack it cannot load, which would break the feature outright.
-  assert.equal(OCR.resolveOcrLanguages('klingon', 'ja'), 'eng+jpn');
+  assert.equal(OCR.resolveOcrLanguages('klingon', 'ja'), 'jpn+eng');
 });
 
 test('every catalog language has a bundled traineddata file', () => {
@@ -115,7 +128,7 @@ test('every catalog language has a bundled traineddata file', () => {
 test('kana settles Japanese even when Han characters outnumber it', () => {
   // The whole reason kana is tested first: Japanese is mostly Han by volume.
   assert.equal(OCR.detectScriptLanguage('東京都渋谷区の駅', 'jpn'), 'ja');
-  assert.equal(OCR.detectScriptLanguage('日本語です', 'eng+jpn'), 'ja');
+  assert.equal(OCR.detectScriptLanguage('日本語です', 'jpn+eng'), 'ja');
 });
 
 test('Hangul settles Korean', () => {
@@ -123,14 +136,14 @@ test('Hangul settles Korean', () => {
 });
 
 test('Han with no kana is Chinese, and the language list picks the variant', () => {
-  assert.equal(OCR.detectScriptLanguage('紧急出口', 'eng+chi_sim'), 'zh-Hans');
+  assert.equal(OCR.detectScriptLanguage('紧急出口', 'chi_sim+eng'), 'zh-Hans');
   assert.equal(OCR.detectScriptLanguage('緊急出口', 'chi_tra'), 'zh-Hant');
   // Both packs loaded: no evidence either way, so the common case wins.
   assert.equal(OCR.detectScriptLanguage('緊急出口', 'chi_sim+chi_tra'), 'zh-Hans');
 });
 
 test('a few stray Latin letters do not outvote the script they sit in', () => {
-  assert.equal(OCR.detectScriptLanguage('WiFi 密码就在前台那边登记本上', 'eng+chi_sim'), 'zh-Hans');
+  assert.equal(OCR.detectScriptLanguage('WiFi 密码就在前台那边登记本上', 'chi_sim+eng'), 'zh-Hans');
 });
 
 test('Latin and Cyrillic are recognised', () => {

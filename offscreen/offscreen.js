@@ -55,7 +55,7 @@
     }, IDLE_TEARDOWN_MS);
   }
 
-  /** A Tesseract worker loaded with exactly `languages` ('eng', 'eng+chi_sim', …). */
+  /** A Tesseract worker loaded with exactly `languages` ('eng', 'chi_sim+eng', …). */
   async function getTesseractWorker(languages, onProgress) {
     if (tesseract && tesseract.languages === languages) return tesseract.worker;
     if (tesseractStarting) {
