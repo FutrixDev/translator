@@ -236,6 +236,32 @@ test.describe('image OCR', () => {
     expect(mock.sentTexts).not.toContain('HELLO WORLD');
   });
 
+  test('multi-line text keeps its line structure in the popup', async ({ page }) => {
+    // Selection results default to inline display, which needs a live DOM
+    // selection; the popup path is the one the OCR flow shares.
+    await setExtensionSettings(page, { ...baseSettings(), selectionTranslationMode: 'popup' });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+
+    // The OCR popup and the selection popup are the same surface
+    // (showTranslationResult); SHOW_TRANSLATION is the shortest real path to
+    // render it with multi-line content — a poem read out of an image.
+    await sendMessageToActiveTab(page, {
+      type: 'SHOW_TRANSLATION',
+      text: '江雪\n千山鸟飞绝，\n万径人踪灭。',
+      translation: 'River Snow\nNo birds over a thousand hills,\nNo footprints on ten thousand paths.',
+    });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup).toBeVisible({ timeout: 30000 });
+    // innerText reflects rendering: if the popup collapsed the newlines, each
+    // side would come back as one long line instead of three.
+    const sourceLines = (await popup.locator('.ai-translator-text').innerText()).split('\n').filter(Boolean);
+    const translationLines = (await popup.locator('.ai-translator-translation-text').innerText()).split('\n').filter(Boolean);
+    expect(sourceLines).toHaveLength(3);
+    expect(translationLines).toHaveLength(3);
+  });
+
   test('an image that fails to load reports the localized error in the popup', async ({ page }) => {
     await page.goto(`${pageServer.origin}/`);
     await page.waitForSelector('#sign');

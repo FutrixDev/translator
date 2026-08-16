@@ -210,11 +210,15 @@
     { code: 'kor', bcp47: 'ko', labelKey: 'langKo' }
   ];
 
-  // Which second language 'auto' pairs with English, keyed by the UI/target
+  // Which language 'auto' puts FIRST, ahead of English, keyed by the UI/target
   // language. English is always in the set because it turns up in screenshots,
-  // UI chrome and signage everywhere; the second slot is the user's own script,
-  // which is the other thing they are realistically pointing the tool at. Two
-  // is the cap on purpose — a third costs more time than it wins back.
+  // UI chrome and signage everywhere; the user's own script is the other thing
+  // they are realistically pointing the tool at — and it must lead, because
+  // Tesseract treats the first language in the '+'-joined string as the
+  // preferred one. With eng first, stylised CJK glyphs come back as confident
+  // Latin garbage; CJK-first is safe because the CJK traineddata already reads
+  // embedded ASCII/Latin, while the reverse is not true. Two languages is the
+  // cap on purpose — a third costs more time than it wins back.
   const AUTO_SECOND_LANGUAGE = {
     'zh-CN': 'chi_sim',
     'zh-TW': 'chi_tra',
@@ -224,15 +228,17 @@
 
   /**
    * Resolve the stored `ocrSourceLanguage` setting into the '+'-joined string
-   * Tesseract wants. 'auto' means English plus the user's own script; an
-   * explicit choice means exactly that language and nothing else, because a
-   * user who picked one knows better than the heuristic.
+   * Tesseract wants. 'auto' means the user's own script plus English — in that
+   * order, because Tesseract prefers the first language listed and the CJK
+   * models read embedded Latin while eng cannot read CJK; an explicit choice
+   * means exactly that language and nothing else, because a user who picked
+   * one knows better than the heuristic.
    */
   function resolveOcrLanguages(setting, uiLang) {
     const known = OCR_LANGUAGES.some((l) => l.code === setting);
     if (known) return setting;
     const second = AUTO_SECOND_LANGUAGE[uiLang];
-    return second ? `eng+${second}` : 'eng';
+    return second ? `${second}+eng` : 'eng';
   }
 
   // --- Script detection ------------------------------------------------------
@@ -240,12 +246,21 @@
   // Codepoint ranges that settle which language the recognised text is in.
   // Kana and Hangul are decisive on sight; Han is not, because Japanese uses it
   // too — so kana is tested first and Han is only reached when no kana appeared.
+  //
+  // The scripts that go to a vote carry a per-codepoint weight, because raw
+  // counts are the wrong yardstick across scripts: one Han character carries
+  // about a word's worth of text while a Latin letter carries about a fifth of
+  // one — and the noise OCR produces (misread strokes, watermarks, UI chrome)
+  // is overwhelmingly Latin. Unweighted, twenty letters of Tesseract garbage
+  // outvote a dozen real Han characters and a Chinese photo is labelled
+  // English. Kana and Hangul never reach the vote (see the early return), so
+  // their weights are moot.
   const SCRIPT_RANGES = [
-    { lang: 'ja', re: /[぀-ゟ゠-ヿ]/g },
-    { lang: 'ko', re: /[가-힯ᄀ-ᇿ㄰-㆏]/g },
-    { lang: 'ru', re: /[Ѐ-ӿ]/g },
-    { lang: 'han', re: /[㐀-䶿一-鿿豈-﫿]/g },
-    { lang: 'en', re: /[A-Za-zÀ-ɏ]/g }
+    { lang: 'ja', re: /[぀-ゟ゠-ヿ]/g, weight: 1 },
+    { lang: 'ko', re: /[가-힯ᄀ-ᇿ㄰-㆏]/g, weight: 1 },
+    { lang: 'ru', re: /[Ѐ-ӿ]/g, weight: 1 },
+    { lang: 'han', re: /[㐀-䶿一-鿿豈-﫿]/g, weight: 3 },
+    { lang: 'en', re: /[A-Za-zÀ-ɏ]/g, weight: 1 }
   ];
 
   /**
@@ -263,19 +278,20 @@
     if (!source.trim()) return '';
 
     let best = null;
-    for (const { lang, re } of SCRIPT_RANGES) {
+    for (const { lang, re, weight } of SCRIPT_RANGES) {
       const count = (source.match(re) || []).length;
       // Kana and Hangul settle it outright: a single one of either cannot show
       // up in Chinese or Latin text, whereas Han is common to Chinese *and*
       // Japanese and Latin letters litter otherwise-CJK strings.
       if (count > 0 && (lang === 'ja' || lang === 'ko')) return lang;
-      if (count > 0 && (!best || count > best.count)) best = { lang, count };
+      const score = count * weight;
+      if (score > 0 && (!best || score > best.score)) best = { lang, score };
     }
     if (!best) return '';
     if (best.lang !== 'han') return best.lang;
 
     const hint = String(hintLanguages || '');
-    // chi_tra alone means Traditional; anything else (including the eng+chi_sim
+    // chi_tra alone means Traditional; anything else (including the chi_sim+eng
     // default) means Simplified.
     return hint.includes('chi_tra') && !hint.includes('chi_sim') ? 'zh-Hant' : 'zh-Hans';
   }
@@ -308,6 +324,45 @@
       .join('\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  // --- Low-confidence line filtering -----------------------------------------
+
+  // Tesseract reads everything shaped like glyphs, including stylised display
+  // type and decorative art it has no model for — and those come out as Latin
+  // garbage lines ("SEE Fis 64, BEAR K. MASS 7 Ol eR") sitting next to
+  // perfectly good small text. It does, however, know when it was guessing:
+  // the hallucinated lines score far below the real ones, so its own
+  // confidence is the signal that separates them.
+  //
+  // 55 rather than higher because the two failure modes are not symmetric: a
+  // dropped real line is text the user can see in the image and we silently
+  // withheld, while a kept garbage line is only noise around a correct result.
+  // Clean print scores in the 80–95 band, small or slightly blurry but
+  // genuinely readable text falls into the 60s–70s, and the hallucinations
+  // from stylised glyphs sit in the 10s–40s — 55 lands in that gap, on the
+  // keep-more side of it.
+  const OCR_LINE_CONFIDENCE_THRESHOLD = 55;
+
+  /**
+   * Drop the lines Tesseract itself did not believe. `lines` is
+   * [{text, confidence}] in reading order, confidence 0–100 straight from the
+   * engine. The return is the surviving subset — order intact, the same
+   * objects — so a caller can rebuild paragraph structure by membership.
+   *
+   * If every line fails the bar, the input comes back untouched: an image
+   * that is *all* stylised type is exactly where the confidence stops meaning
+   * anything, and a low-confidence result the user can judge for themselves
+   * still beats an empty popup. A line with no numeric confidence is kept for
+   * the same reason — "unknown" is not "bad".
+   */
+  function filterRecognizedLines(lines) {
+    const all = Array.isArray(lines) ? lines : [];
+    const kept = all.filter((line) => {
+      if (!line || typeof line.confidence !== 'number' || !isFinite(line.confidence)) return true;
+      return line.confidence >= OCR_LINE_CONFIDENCE_THRESHOLD;
+    });
+    return kept.length > 0 ? kept : all;
   }
 
   // --- Translation step ------------------------------------------------------
@@ -479,6 +534,8 @@ Rules:
     paintedImageBox,
     resolveOcrLanguages,
     detectScriptLanguage,
+    OCR_LINE_CONFIDENCE_THRESHOLD,
+    filterRecognizedLines,
     normalizeRecognizedText,
     detectedLanguageLabelKey,
     shouldTranslate,

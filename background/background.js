@@ -188,8 +188,10 @@ const defaultSettings = {
   enableImageOcrTranslation: true,
   // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js.
   ocrEngine: globalThis.OCRCore.DEFAULT_OCR_ENGINE,
-  // '' / 'auto' = English plus the user's own script. See resolveOcrLanguages:
-  // Tesseract needs its languages up front, so this cannot be detected.
+  // '' / 'auto' = the user's own script first, then English (Tesseract prefers
+  // the first language listed; CJK packs read embedded Latin, eng cannot read
+  // CJK). See resolveOcrLanguages: Tesseract needs its languages up front, so
+  // this cannot be detected.
   ocrSourceLanguage: 'auto',
   // Step 2. Off means the popup shows the recognised text alone, which is a
   // complete result — plenty of right-clicks are "what does this say", not

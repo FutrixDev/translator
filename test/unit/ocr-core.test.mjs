@@ -167,11 +167,21 @@ test('an image with no intrinsic size falls back to the box it was given', () =>
 
 // --- resolveOcrLanguages -----------------------------------------------------
 
-test('auto pairs English with the user own script, and only those two', () => {
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-CN'), 'eng+chi_sim');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-TW'), 'eng+chi_tra');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ja'), 'eng+jpn');
-  assert.equal(OCR.resolveOcrLanguages('auto', 'ko'), 'eng+kor');
+test('auto pairs the user own script with English, and only those two', () => {
+  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-CN'), 'chi_sim+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'zh-TW'), 'chi_tra+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'ja'), 'jpn+eng');
+  assert.equal(OCR.resolveOcrLanguages('auto', 'ko'), 'kor+eng');
+});
+
+test('auto puts the user own script FIRST — Tesseract order is preference', () => {
+  // With eng leading, stylised CJK glyphs come back as confident Latin
+  // garbage; the CJK models already read embedded Latin, so CJK must lead.
+  for (const uiLang of ['zh-CN', 'zh-TW', 'ja', 'ko']) {
+    const resolved = OCR.resolveOcrLanguages('auto', uiLang);
+    assert.notEqual(resolved.split('+')[0], 'eng', `${uiLang}: eng must not lead (${resolved})`);
+    assert.equal(resolved.split('+')[1], 'eng', `${uiLang}: eng comes second (${resolved})`);
+  }
 });
 
 test('auto falls back to English alone for a UI language with no bundled pack', () => {
@@ -181,17 +191,20 @@ test('auto falls back to English alone for a UI language with no bundled pack', 
   assert.equal(OCR.resolveOcrLanguages('', ''), 'eng');
 });
 
-test('an explicit language wins outright — no English tagged on', () => {
+test('an explicit language wins outright — returned verbatim, no English tagged on', () => {
   // Someone who picked Japanese knows better than the heuristic, and every
   // extra language costs recognition time and a little accuracy.
   assert.equal(OCR.resolveOcrLanguages('jpn', 'zh-CN'), 'jpn');
   assert.equal(OCR.resolveOcrLanguages('eng', 'ja'), 'eng');
+  assert.equal(OCR.resolveOcrLanguages('chi_sim', 'zh-CN'), 'chi_sim');
+  assert.equal(OCR.resolveOcrLanguages('chi_tra', 'en'), 'chi_tra');
+  assert.equal(OCR.resolveOcrLanguages('kor', 'ja'), 'kor');
 });
 
 test('an unknown stored language is treated as auto, not passed to Tesseract', () => {
   // A setting from a future build, or a hand-edited one. Tesseract throws on a
   // pack it cannot load, which would break the feature outright.
-  assert.equal(OCR.resolveOcrLanguages('klingon', 'ja'), 'eng+jpn');
+  assert.equal(OCR.resolveOcrLanguages('klingon', 'ja'), 'jpn+eng');
 });
 
 test('every catalog language has a bundled traineddata file', () => {
@@ -208,7 +221,7 @@ test('every catalog language has a bundled traineddata file', () => {
 test('kana settles Japanese even when Han characters outnumber it', () => {
   // The whole reason kana is tested first: Japanese is mostly Han by volume.
   assert.equal(OCR.detectScriptLanguage('東京都渋谷区の駅', 'jpn'), 'ja');
-  assert.equal(OCR.detectScriptLanguage('日本語です', 'eng+jpn'), 'ja');
+  assert.equal(OCR.detectScriptLanguage('日本語です', 'jpn+eng'), 'ja');
 });
 
 test('Hangul settles Korean', () => {
@@ -216,14 +229,31 @@ test('Hangul settles Korean', () => {
 });
 
 test('Han with no kana is Chinese, and the language list picks the variant', () => {
-  assert.equal(OCR.detectScriptLanguage('紧急出口', 'eng+chi_sim'), 'zh-Hans');
+  assert.equal(OCR.detectScriptLanguage('紧急出口', 'chi_sim+eng'), 'zh-Hans');
   assert.equal(OCR.detectScriptLanguage('緊急出口', 'chi_tra'), 'zh-Hant');
   // Both packs loaded: no evidence either way, so the common case wins.
   assert.equal(OCR.detectScriptLanguage('緊急出口', 'chi_sim+chi_tra'), 'zh-Hans');
 });
 
 test('a few stray Latin letters do not outvote the script they sit in', () => {
-  assert.equal(OCR.detectScriptLanguage('WiFi 密码就在前台那边登记本上', 'eng+chi_sim'), 'zh-Hans');
+  assert.equal(OCR.detectScriptLanguage('WiFi 密码就在前台那边登记本上', 'chi_sim+eng'), 'zh-Hans');
+});
+
+test('OCR garbage Latin does not outvote real Han: the vote is weighted', () => {
+  // Verbatim Tesseract output from a photo of a Chinese poem: 21 letters of
+  // misread-stroke garbage against 13 real Han characters. A raw codepoint
+  // count called this English, and the en→zh "translation" echoed the garbage
+  // back. One Han character is roughly a word; a Latin letter is a fifth of
+  // one — so Han votes weigh 3 and the real script wins.
+  const tesseractOutput = '< rs 柳宗元 SEE Fis 64, BEAR K. MASS 7 Ol eR 独钓寒江要。—— 世 "裁剪编辑';
+  assert.equal(OCR.detectScriptLanguage(tesseractOutput, 'eng+chi_sim'), 'zh-Hans');
+});
+
+test('genuinely English text with a couple of stray CJK characters stays English', () => {
+  // The weighting must not overshoot: four Han characters weigh 12, which a
+  // real English sentence comfortably outvotes.
+  const english = 'The phrase 中文 simply means the Chinese language, and 中文 appears twice in this sentence.';
+  assert.equal(OCR.detectScriptLanguage(english, 'eng+chi_sim'), 'en');
 });
 
 test('Latin and Cyrillic are recognised', () => {
@@ -262,6 +292,66 @@ test('normalizing nothing yields an empty string, never throws', () => {
   assert.equal(OCR.normalizeRecognizedText(''), '');
   assert.equal(OCR.normalizeRecognizedText(null), '');
   assert.equal(OCR.normalizeRecognizedText(undefined), '');
+});
+
+// --- filterRecognizedLines ---------------------------------------------------
+
+test('low-confidence garbage lines are dropped, real lines survive in order', () => {
+  // The real bug: large stylised Chinese glyphs Tesseract has no model for,
+  // recognised as low-scoring Latin garbage next to correctly-read small text.
+  const lines = [
+    { text: '< rs', confidence: 21 },
+    { text: 'SEE Fis 64, BEAR K. MASS 7 Ol eR', confidence: 34 },
+    { text: '柳宗元', confidence: 91 },
+    { text: '裁剪编辑', confidence: 88 }
+  ];
+  assert.deepEqual(
+    OCR.filterRecognizedLines(lines).map((l) => l.text),
+    ['柳宗元', '裁剪编辑']
+  );
+});
+
+test('when every line is low confidence, the input comes back unfiltered', () => {
+  // A photo that is all stylised type is exactly where confidence stops
+  // meaning anything, and a shaky result still beats an empty popup.
+  const lines = [
+    { text: 'blurry one', confidence: 30 },
+    { text: 'blurry two', confidence: 41 }
+  ];
+  assert.deepEqual(OCR.filterRecognizedLines(lines), lines);
+});
+
+test('surviving lines keep their order and identity, so structure can be rebuilt', () => {
+  // The offscreen document rebuilds paragraph gaps by Set membership, which
+  // only works if the filter returns the same objects it was given.
+  const first = { text: 'Header', confidence: 90 };
+  const junk = { text: 'ol eR', confidence: 12 };
+  const last = { text: 'Body line', confidence: 84 };
+  const kept = OCR.filterRecognizedLines([first, junk, last]);
+  assert.equal(kept.length, 2);
+  assert.equal(kept[0], first);
+  assert.equal(kept[1], last);
+});
+
+test('a line with no numeric confidence is kept — unknown is not bad', () => {
+  const lines = [
+    { text: 'no score' },
+    { text: 'garbage', confidence: 10 },
+    { text: 'good', confidence: 95 }
+  ];
+  assert.deepEqual(OCR.filterRecognizedLines(lines).map((l) => l.text), ['no score', 'good']);
+});
+
+test('the threshold is inclusive at the bar and drops one point under it', () => {
+  const at = { text: 'at', confidence: OCR.OCR_LINE_CONFIDENCE_THRESHOLD };
+  const below = { text: 'below', confidence: OCR.OCR_LINE_CONFIDENCE_THRESHOLD - 1 };
+  assert.deepEqual(OCR.filterRecognizedLines([at, below]), [at]);
+});
+
+test('filtering nothing yields an empty array, never throws', () => {
+  assert.deepEqual(OCR.filterRecognizedLines([]), []);
+  assert.deepEqual(OCR.filterRecognizedLines(null), []);
+  assert.deepEqual(OCR.filterRecognizedLines(undefined), []);
 });
 
 // --- shouldTranslate ---------------------------------------------------------
@@ -427,6 +517,15 @@ test('the local engine runs in the offscreen document, not the worker', () => {
   for (const opt of ['corePath', 'workerPath', 'langPath', 'workerBlobURL', 'gzip']) {
     assert.ok(offscreen.includes(opt), `the engine must be pinned to the vendored ${opt}`);
   }
+});
+
+test('the offscreen document filters what it recognised before answering', () => {
+  // Without the structured output there are no per-line confidences, and
+  // without the filter the stylised-glyph garbage rides along with the real
+  // text and poisons language detection downstream.
+  const offscreen = repoFile('offscreen/offscreen.js');
+  assert.ok(/blocks:\s*true/.test(offscreen), 'recognize must request the structured blocks output');
+  assert.ok(offscreen.includes('filterRecognizedLines'), 'the confidence filter must run on the result');
 });
 
 test('the content script chain loads the OCR core and UI before the message router', () => {
