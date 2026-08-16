@@ -189,6 +189,54 @@ test.describe('image OCR', () => {
     expect(mock.visionRequests).toHaveLength(0);
   });
 
+  test('oversized Chinese glyphs are rescaled and read correctly by the local engine', async ({ page }) => {
+    // Regression for the 江雪 poem card: ~110px glyphs sit far above the
+    // LSTM's comfort band, and before the scale-retry ladder chi_sim answered
+    // Latin garbage which the popup then labelled English. The target language
+    // is zh-CN, so the 'auto' plan runs chi_sim first — this exercises the
+    // whole ladder: native pass, oversized verdict from the line boxes, and
+    // the rescaled pass whose answer must win.
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+    const srcUrl = await page.evaluate(() => {
+      const lines = ['千山鸟飞绝，', '万径人踪灭。'];
+      const canvas = document.createElement('canvas');
+      canvas.width = 960;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#000000';
+      ctx.font = '110px serif';
+      ctx.textBaseline = 'middle';
+      lines.forEach((line, i) => ctx.fillText(line, 60, 110 + i * 180));
+      return canvas.toDataURL('image/png');
+    });
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl,
+      targetLang: 'zh-CN',
+      translate: false,
+    });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup).toBeVisible({ timeout: 30000 });
+    // The ladder is up to three passes, so this gets the long budget. The
+    // assertions are about the failure class, not every glyph: near-twin
+    // characters (千/干, 鸟/乌) genuinely flip with the renderer's font
+    // choices, so a full-sentence match would pin this test to one Chromium
+    // build. What must never come back is the old behaviour — Latin garbage
+    // presented as English.
+    const text = popup.locator('.ai-translator-text');
+    await expect(text).toContainText('万径人踪灭', { timeout: 120000 });
+    await expect(text).not.toContainText(/[A-Za-z]{3,}/);
+    // And the language followed the text: Han codepoints plus the chi_sim
+    // hint, not the English the garbage used to be labelled as.
+    await expect(popup.locator('.ai-translator-label').first()).toContainText('简体中文');
+    expect(mock.visionRequests).toHaveLength(0);
+  });
+
   test('the vision engine sends the image once, and the recognised text separately', async ({ page }) => {
     await setExtensionSettings(page, { ...baseSettings(), ocrEngine: 'vision' });
     await page.goto(`${pageServer.origin}/`);

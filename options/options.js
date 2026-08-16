@@ -1711,7 +1711,8 @@ function syncOcrAutoLabel() {
   const select = elements.ocrSourceLanguage;
   const option = select && select.querySelector('option[value="auto"]');
   if (!option) return;
-  const names = OCRCore.resolveOcrLanguages('auto', currentUILang).split('+').map((code) => {
+  const plan = OCRCore.resolveOcrLanguagePlan('auto', currentUILang);
+  const names = [plan.primary, plan.fallback].filter(Boolean).map((code) => {
     const lang = OCRCore.OCR_LANGUAGES.find((entry) => entry.code === code);
     return lang ? t(lang.labelKey) : code;
   });

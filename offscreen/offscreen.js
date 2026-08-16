@@ -19,13 +19,20 @@
   const TARGET = 'ocr-offscreen';
 
   // Tesseract is expensive to start (a ~2.9MB core plus a traineddata file per
-  // language) and cheap to keep, so one worker is cached and reused across
-  // requests for the same language set. Idle teardown below stops that from
-  // becoming a permanent memory cost.
+  // language) and cheap to keep, so workers are cached and reused across
+  // requests. Two slots, not one, because a request with a fallback language
+  // (see recognize below) alternates between two single-language workers — a
+  // one-slot cache would tear each down just before it was needed again. Idle
+  // teardown below stops the cache from becoming a permanent memory cost.
+  const MAX_CACHED_WORKERS = 2;
   const IDLE_TEARDOWN_MS = 2 * 60 * 1000;
-  let tesseract = null;          // { languages, worker }
-  let tesseractStarting = null;  // in-flight createWorker, so two requests share one
+  const workerCache = new Map(); // languages -> Promise<{ worker }>
   let idleTimer = null;
+
+  // Rebound to the live request's reporter for the duration of its passes:
+  // the logger closure is fixed at createWorker time, so a cached worker would
+  // otherwise keep reporting to the request that created it.
+  let reportProgress = null;
 
   // The split loader + .wasm pair rather than the single `.wasm.js` file that
   // inlines the module as base64: 1MB smaller in the package, and the loader
@@ -35,18 +42,18 @@
   const WORKER_PATH = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
   const LANG_PATH = chrome.runtime.getURL('vendor/tesseract/lang');
 
+  function terminateQuietly(entryPromise) {
+    entryPromise
+      .then(({ worker }) => worker.terminate())
+      // A worker that failed to start, or already died, has nothing to stop.
+      .catch(() => {});
+  }
+
   function scheduleIdleTeardown() {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(async () => {
-      const current = tesseract;
-      tesseract = null;
-      if (current) {
-        try {
-          await current.worker.terminate();
-        } catch {
-          // Terminating an already-dead worker is not a failure worth reporting.
-        }
-      }
+    idleTimer = setTimeout(() => {
+      for (const entry of workerCache.values()) terminateQuietly(entry);
+      workerCache.clear();
       // Nothing left to keep this document open for, and an open offscreen
       // document keeps the service worker alive with it. The worker recreates
       // us on the next request; a ~2s cold start is the cheaper side of that
@@ -55,22 +62,17 @@
     }, IDLE_TEARDOWN_MS);
   }
 
-  /** A Tesseract worker loaded with exactly `languages` ('eng', 'chi_sim+eng', …). */
-  async function getTesseractWorker(languages, onProgress) {
-    if (tesseract && tesseract.languages === languages) return tesseract.worker;
-    if (tesseractStarting) {
-      const pending = await tesseractStarting;
-      if (pending.languages === languages) return pending.worker;
+  /** A Tesseract worker loaded with exactly `languages` ('eng', 'chi_sim', …). */
+  async function getTesseractWorker(languages) {
+    let entry = workerCache.get(languages);
+    if (entry) {
+      // Re-insert so eviction order tracks use, not creation.
+      workerCache.delete(languages);
+      workerCache.set(languages, entry);
+      return (await entry).worker;
     }
 
-    // A different language set than the cached one: the old worker is useless.
-    if (tesseract) {
-      const stale = tesseract;
-      tesseract = null;
-      stale.worker.terminate().catch(() => {});
-    }
-
-    tesseractStarting = (async () => {
+    entry = (async () => {
       // OEM 1 is LSTM_ONLY, which is all the bundled `-lstm` core supports.
       const worker = await Tesseract.createWorker(languages, 1, {
         corePath: CORE_PATH,
@@ -81,27 +83,35 @@
         workerBlobURL: false,
         gzip: false,
         logger: (m) => {
-          if (onProgress && typeof m.progress === 'number') {
-            onProgress(m.status === 'recognizing text' ? 'recognizing' : 'loading', m.progress);
+          if (reportProgress && typeof m.progress === 'number') {
+            reportProgress(m.status === 'recognizing text' ? 'recognizing' : 'loading', m.progress);
           }
         }
       });
-      return { languages, worker };
+      return { worker };
     })();
 
-    try {
-      tesseract = await tesseractStarting;
-      return tesseract.worker;
-    } finally {
-      tesseractStarting = null;
+    workerCache.set(languages, entry);
+    while (workerCache.size > MAX_CACHED_WORKERS) {
+      const [oldest] = workerCache.keys();
+      terminateQuietly(workerCache.get(oldest));
+      workerCache.delete(oldest);
     }
+    // A failed start must not poison the slot — the next request recreates it.
+    entry.catch(() => {
+      if (workerCache.get(languages) === entry) workerCache.delete(languages);
+    });
+    return (await entry).worker;
   }
 
-  // The structured `blocks` output as paragraphs of {text, confidence} lines —
-  // the shape OCRCore.filterRecognizedLines judges. Line granularity on
-  // purpose: Tesseract's hallucinations (stylised art read as Latin garbage)
-  // arrive as whole low-scoring lines, whereas dropping individual words would
-  // silently rewrite sentences.
+  // The structured `blocks` output as paragraphs of {text, confidence, height}
+  // lines — the shape OCRCore.filterRecognizedLines judges and
+  // OCRCore.assessRecognition measures. Line granularity on purpose:
+  // Tesseract's hallucinations (stylised art read as Latin garbage) arrive as
+  // whole low-scoring lines, whereas dropping individual words would silently
+  // rewrite sentences. `height` is the line box from layout analysis, which is
+  // right even when the text inside it came out wrong — it is what the rescale
+  // retry measures glyph size with.
   function flattenBlocks(blocks) {
     const paragraphs = [];
     for (const block of blocks || []) {
@@ -109,9 +119,12 @@
         const lines = [];
         for (const line of (paragraph && paragraph.lines) || []) {
           if (!line) continue;
+          const box = line.bbox;
+          const height = box && isFinite(box.y1 - box.y0) && box.y1 - box.y0 > 0 ? box.y1 - box.y0 : null;
           lines.push({
             text: String(line.text || '').replace(/\n+$/, ''),
-            confidence: typeof line.confidence === 'number' ? line.confidence : null
+            confidence: typeof line.confidence === 'number' ? line.confidence : null,
+            height
           });
         }
         if (lines.length) paragraphs.push(lines);
@@ -120,8 +133,9 @@
     return paragraphs;
   }
 
-  async function recognize({ dataUrl, languages }, onProgress) {
-    const worker = await getTesseractWorker(languages, onProgress);
+  /** One recognition pass: {languages, text, assessment}. */
+  async function runPass(languages, dataUrl) {
+    const worker = await getTesseractWorker(languages);
     // `blocks` carries the per-line confidences the filter below needs; `text`
     // is kept as the fallback when a build answers without them — an
     // unfiltered result still beats an empty one.
@@ -129,20 +143,94 @@
 
     let raw = data && typeof data.text === 'string' ? data.text : '';
     const paragraphs = data && Array.isArray(data.blocks) ? flattenBlocks(data.blocks) : [];
+    let kept = paragraphs.flat();
     if (paragraphs.length) {
       // The filter works on the flat list (its all-dropped fallback has to see
       // the whole result); membership rebuilds the paragraph gaps, which the
       // popup renders and the reader needs.
-      const kept = new Set(globalThis.OCRCore.filterRecognizedLines(paragraphs.flat()));
+      const keptSet = new Set(globalThis.OCRCore.filterRecognizedLines(kept));
+      kept = kept.filter((line) => keptSet.has(line));
       raw = paragraphs
-        .map((lines) => lines.filter((line) => kept.has(line)).map((line) => line.text).join('\n'))
+        .map((lines) => lines.filter((line) => keptSet.has(line)).map((line) => line.text).join('\n'))
         .filter((text) => text.trim())
         .join('\n\n');
     }
 
-    // Just the text: the same {text, language} contract the vision engine
-    // answers with, minus the language, which the service worker derives.
-    return { text: globalThis.OCRCore.normalizeRecognizedText(raw) };
+    return {
+      languages,
+      text: globalThis.OCRCore.normalizeRecognizedText(raw),
+      // Judged on the kept lines — the result the user would actually see.
+      assessment: globalThis.OCRCore.assessRecognition(kept)
+    };
+  }
+
+  /** The image redrawn at `factor` of its size, as a data URL, or null. */
+  async function rescaleDataUrl(dataUrl, factor) {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(
+        Math.max(1, Math.round(bitmap.width * factor)),
+        Math.max(1, Math.round(bitmap.height * factor))
+      );
+      const g = canvas.getContext('2d');
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const out = await canvas.convertToBlob({ type: 'image/png' });
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(out);
+      });
+    } catch {
+      // A rescale that failed just means no retry pass — the first pass still
+      // stands as a result.
+      return null;
+    }
+  }
+
+  /**
+   * Recognition as a short ladder of single-language passes, climbed only
+   * while the result is below the acceptance bar (most images stop after one):
+   *
+   *   1. `languages` at the size the service worker sent;
+   *   2. the same language again with the image scaled toward the LSTM's
+   *      comfort band, when pass 1's own line boxes say the glyphs were
+   *      oversized (poem cards, memes, headline screenshots);
+   *   3. `fallbackLanguages` — 'auto' sends eng — for images that were not in
+   *      the primary language at all.
+   *
+   * Whole passes compete on mean confidence and the best one answers. The
+   * languages that produced the winning text go back too: they are the hint
+   * that lets the service worker tell Simplified from Traditional Han.
+   */
+  async function recognize({ dataUrl, languages, fallbackLanguages }, onProgress) {
+    reportProgress = onProgress;
+    try {
+      const { isAcceptableRecognition, rescaleFactorForRetry, pickBetterRecognition } = globalThis.OCRCore;
+
+      let best = await runPass(languages, dataUrl);
+      let scaledUrl = null;
+      const factor = rescaleFactorForRetry(best.assessment);
+      if (factor) {
+        scaledUrl = await rescaleDataUrl(dataUrl, factor);
+        if (scaledUrl) best = pickBetterRecognition(best, await runPass(languages, scaledUrl));
+      }
+      if (!isAcceptableRecognition(best.assessment) && fallbackLanguages) {
+        // At the rescaled size when one was made — oversized glyphs are
+        // oversized in every language.
+        best = pickBetterRecognition(best, await runPass(fallbackLanguages, scaledUrl || dataUrl));
+      }
+
+      // The same {text, language} contract the vision engine answers with,
+      // minus the language itself, which the service worker derives.
+      return { text: best.text, languages: best.languages };
+    } finally {
+      reportProgress = null;
+    }
   }
 
   const HANDLERS = {

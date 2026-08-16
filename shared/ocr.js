@@ -210,16 +210,18 @@
     { code: 'kor', bcp47: 'ko', labelKey: 'langKo' }
   ];
 
-  // Which language 'auto' puts FIRST, ahead of English, keyed by the UI/target
-  // language. English is always in the set because it turns up in screenshots,
-  // UI chrome and signage everywhere; the user's own script is the other thing
-  // they are realistically pointing the tool at — and it must lead, because
-  // Tesseract treats the first language in the '+'-joined string as the
-  // preferred one. With eng first, stylised CJK glyphs come back as confident
-  // Latin garbage; CJK-first is safe because the CJK traineddata already reads
-  // embedded ASCII/Latin, while the reverse is not true. Two languages is the
-  // cap on purpose — a third costs more time than it wins back.
-  const AUTO_SECOND_LANGUAGE = {
+  // Which language 'auto' recognises WITH, keyed by the UI/target language:
+  // the user's own script is what they are realistically pointing the tool at.
+  //
+  // Deliberately NOT combined with English into one 'chi_sim+eng' pass. In a
+  // combined pass Tesseract picks the higher-scoring hypothesis per line, and
+  // whenever the CJK model is unsure of a line the eng model's reading wins —
+  // which turns "wrong but at least Chinese" into confident Latin garbage
+  // ("FUSS 6," for 千山鸟飞绝，— reproduced against the vendored engine). The
+  // CJK traineddata already reads embedded ASCII/Latin on its own, so English
+  // inside a CJK image costs nothing; a *purely* English image is instead
+  // caught by the fallback pass below.
+  const AUTO_PRIMARY_LANGUAGE = {
     'zh-CN': 'chi_sim',
     'zh-TW': 'chi_tra',
     ja: 'jpn',
@@ -227,18 +229,120 @@
   };
 
   /**
-   * Resolve the stored `ocrSourceLanguage` setting into the '+'-joined string
-   * Tesseract wants. 'auto' means the user's own script plus English — in that
-   * order, because Tesseract prefers the first language listed and the CJK
-   * models read embedded Latin while eng cannot read CJK; an explicit choice
-   * means exactly that language and nothing else, because a user who picked
-   * one knows better than the heuristic.
+   * Resolve the stored `ocrSourceLanguage` setting into a recognition plan:
+   * `primary` is the language the engine tries first, `fallback` (or null) is
+   * tried only when the primary pass comes back below the acceptance bar (see
+   * isAcceptableRecognition) — each as its own single-language pass, never
+   * '+'-combined (see AUTO_PRIMARY_LANGUAGE for why).
+   *
+   * 'auto' means the user's own script with English as the fallback; an
+   * explicit choice means exactly that language and nothing else, because a
+   * user who picked one knows better than the heuristic.
    */
-  function resolveOcrLanguages(setting, uiLang) {
+  function resolveOcrLanguagePlan(setting, uiLang) {
     const known = OCR_LANGUAGES.some((l) => l.code === setting);
-    if (known) return setting;
-    const second = AUTO_SECOND_LANGUAGE[uiLang];
-    return second ? `${second}+eng` : 'eng';
+    if (known) return { primary: setting, fallback: null };
+    const primary = AUTO_PRIMARY_LANGUAGE[uiLang];
+    return primary ? { primary, fallback: 'eng' } : { primary: 'eng', fallback: null };
+  }
+
+  // --- Adaptive retry ---------------------------------------------------------
+
+  // Tesseract's LSTM reads glyphs best around 30–40px tall. Poem cards, memes
+  // and headline screenshots ship glyphs of 100px and more, and at that size
+  // recognition falls apart line by line (reproduced: the same poem image goes
+  // from two-of-four lines destroyed at native size to near-perfect at a third
+  // of it). The pipeline only caps images *above* OCR_MAX_DIMENSION, so the
+  // fix is a second pass: measure how tall the lines actually were — layout
+  // analysis gets the line boxes right even when the text inside them came out
+  // as garbage — and re-recognise at a scale that lands them near the sweet
+  // spot. The same mechanism walks back the crop path's upscale-to-1000px when
+  // that overshoots a few large glyphs.
+
+  // Clean print scores 80–95 and genuinely readable text lands in the 60s–70s
+  // (the same bands OCR_LINE_CONFIDENCE_THRESHOLD is built on), so a pass
+  // averaging 70+ is already a good read — retrying it would spend time to
+  // reshuffle noise. Below that, a retry has something real to win.
+  const OCR_ACCEPT_MEAN_CONFIDENCE = 70;
+
+  // Where the retry aims the median line: the middle of the LSTM's comfort
+  // band, with room on either side for the spread around the median.
+  const OCR_TARGET_LINE_HEIGHT = 36;
+
+  // Only lines clearly above the comfort band are worth a rescale pass; at or
+  // under this, size was not the problem and a retry would just repeat it.
+  const OCR_RETRY_MIN_LINE_HEIGHT = 60;
+
+  // A factor below this means the measurement was nonsense (one merged box
+  // spanning the image), not a real 180px-glyph banner.
+  const OCR_MIN_RETRY_SCALE = 0.2;
+
+  /**
+   * How good was a recognition pass, and how tall was its text? `lines` is the
+   * flat [{text, confidence, height}] the engine produced — confidence 0–100
+   * or null, height in px of the line's bounding box or null.
+   *
+   * The mean is weighted by text length so a one-glyph stray cannot outvote a
+   * full line, and it is computed over the lines the user would actually see
+   * (the caller passes post-filter lines). Null means "no evidence", which
+   * callers must treat as unacceptable rather than fine.
+   */
+  function assessRecognition(lines) {
+    const all = Array.isArray(lines) ? lines : [];
+    let weight = 0;
+    let sum = 0;
+    const heights = [];
+    for (const line of all) {
+      if (!line) continue;
+      const textLength = String(line.text || '').trim().length;
+      if (textLength && typeof line.confidence === 'number' && isFinite(line.confidence)) {
+        weight += textLength;
+        sum += line.confidence * textLength;
+      }
+      if (typeof line.height === 'number' && isFinite(line.height) && line.height > 0) {
+        heights.push(line.height);
+      }
+    }
+    heights.sort((a, b) => a - b);
+    return {
+      meanConfidence: weight ? sum / weight : null,
+      medianLineHeight: heights.length ? heights[Math.floor((heights.length - 1) / 2)] : null
+    };
+  }
+
+  /** Is this pass good enough to stop retrying? No evidence is not good enough. */
+  function isAcceptableRecognition(assessment) {
+    return !!assessment &&
+      typeof assessment.meanConfidence === 'number' &&
+      assessment.meanConfidence >= OCR_ACCEPT_MEAN_CONFIDENCE;
+  }
+
+  /**
+   * The scale a retry pass should run at, or null when rescaling has nothing
+   * to offer: the pass was already acceptable, the lines were not oversized,
+   * or there were no line boxes to measure.
+   */
+  function rescaleFactorForRetry(assessment) {
+    if (!assessment || isAcceptableRecognition(assessment)) return null;
+    const height = assessment.medianLineHeight;
+    if (!(typeof height === 'number' && height > OCR_RETRY_MIN_LINE_HEIGHT)) return null;
+    return Math.max(OCR_MIN_RETRY_SCALE, OCR_TARGET_LINE_HEIGHT / height);
+  }
+
+  /**
+   * The better of two passes, judged by mean confidence — whole passes, never
+   * a line-by-line merge: two passes segment the page differently, and
+   * stitching them would invent orderings no engine produced. Either side may
+   * be null/absent; a pass with no evidence loses to any scored one.
+   */
+  function pickBetterRecognition(a, b) {
+    if (!b) return a || null;
+    if (!a) return b;
+    const score = (pass) =>
+      pass.assessment && typeof pass.assessment.meanConfidence === 'number'
+        ? pass.assessment.meanConfidence
+        : -1;
+    return score(b) > score(a) ? b : a;
   }
 
   // --- Script detection ------------------------------------------------------
@@ -532,7 +636,12 @@ Rules:
     cropSourceRect,
     computeOcrCanvasSize,
     paintedImageBox,
-    resolveOcrLanguages,
+    resolveOcrLanguagePlan,
+    assessRecognition,
+    isAcceptableRecognition,
+    rescaleFactorForRetry,
+    pickBetterRecognition,
+    OCR_ACCEPT_MEAN_CONFIDENCE,
     detectScriptLanguage,
     OCR_LINE_CONFIDENCE_THRESHOLD,
     filterRecognizedLines,

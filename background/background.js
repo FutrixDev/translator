@@ -188,10 +188,9 @@ const defaultSettings = {
   enableImageOcrTranslation: true,
   // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js.
   ocrEngine: globalThis.OCRCore.DEFAULT_OCR_ENGINE,
-  // '' / 'auto' = the user's own script first, then English (Tesseract prefers
-  // the first language listed; CJK packs read embedded Latin, eng cannot read
-  // CJK). See resolveOcrLanguages: Tesseract needs its languages up front, so
-  // this cannot be detected.
+  // '' / 'auto' = the user's own script, with English as a fallback pass. See
+  // resolveOcrLanguagePlan: Tesseract needs its languages up front, so this
+  // cannot be detected from the image.
   ocrSourceLanguage: 'auto',
   // Step 2, as an automatism: on means the recognised text is translated the
   // moment it exists, off means the popup stops at the recognised text and
@@ -1478,7 +1477,7 @@ function relayOcrProgress(message) {
 async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, uiLang) {
   await ensureOffscreenDocument();
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
-  const languages = globalThis.OCRCore.resolveOcrLanguages(settings.ocrSourceLanguage, uiLang);
+  const plan = globalThis.OCRCore.resolveOcrLanguagePlan(settings.ocrSourceLanguage, uiLang);
 
   if (tabId !== undefined) ocrProgressTabs.set(requestId, tabId);
   let result;
@@ -1487,7 +1486,8 @@ async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, ui
       target: 'ocr-offscreen',
       type: 'OCR_OFFSCREEN_RECOGNIZE',
       requestId,
-      languages,
+      languages: plan.primary,
+      fallbackLanguages: plan.fallback,
       dataUrl: `data:${mediaType};base64,${base64}`
     });
   } finally {
@@ -1499,11 +1499,12 @@ async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, ui
     throw new Error(getMessage('ocrEngineFailed', uiLang));
   }
   // Tesseract cannot report a language — it was told which ones to look for.
-  // The answer comes from the codepoints that came out, with the language list
-  // as the only thing that can tell Simplified from Traditional Han.
+  // The answer comes from the codepoints that came out, with the languages of
+  // the winning pass (the offscreen document may have used the fallback) as
+  // the only thing that can tell Simplified from Traditional Han.
   return {
     text: result.text,
-    language: globalThis.OCRCore.detectScriptLanguage(result.text, languages)
+    language: globalThis.OCRCore.detectScriptLanguage(result.text, result.languages || plan.primary)
   };
 }
 
