@@ -65,6 +65,7 @@
         "content/content-utils.js",
         "content/content-managed-translation.js",
         "content/content-clip-guard.js",
+        "content/content-fit-guard.js",
         "content/content-language.js",
         "content/content-speech.js",
         "content/content-translation-engine.js",
