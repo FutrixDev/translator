@@ -1,58 +1,50 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
-const http = require('http');
+const { startMockServer } = require('./mock-server');
 
-function startInputDictionaryMockServer() {
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      if (req.method !== 'POST') {
-        res.writeHead(404);
-        res.end();
-        return;
+async function startInputDictionaryMockServer() {
+  const { origin, close } = await startMockServer((req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+
+    req.on('end', () => {
+      let systemPrompt = '';
+      let text = '';
+
+      try {
+        const data = JSON.parse(body);
+        systemPrompt = data?.messages?.[0]?.content || '';
+        text = data?.messages?.[1]?.content || '';
+      } catch (error) {
+        systemPrompt = '';
+        text = '';
       }
 
-      let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
-      });
+      const isDictionaryMode = /"translation"\s+and\s+"phonetic"/i.test(systemPrompt);
+      const content = isDictionaryMode
+        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetic: '/ɒn ðə flaɪ/' })
+        : `[TEXT] ${text}`;
 
-      req.on('end', () => {
-        let systemPrompt = '';
-        let text = '';
-
-        try {
-          const data = JSON.parse(body);
-          systemPrompt = data?.messages?.[0]?.content || '';
-          text = data?.messages?.[1]?.content || '';
-        } catch (error) {
-          systemPrompt = '';
-          text = '';
-        }
-
-        const isDictionaryMode = /"translation"\s+and\s+"phonetic"/i.test(systemPrompt);
-        const content = isDictionaryMode
-          ? JSON.stringify({ translation: `[DICT] ${text}`, phonetic: '/ɒn ðə flaɪ/' })
-          : `[TEXT] ${text}`;
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          choices: [{ message: { content } }]
-        }));
-      });
-    });
-
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({
-        server,
-        endpoint: `http://127.0.0.1:${port}/v1/chat/completions`
-      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [{ message: { content } }]
+      }));
     });
   });
+
+  return { endpoint: `${origin}/v1/chat/completions`, close };
 }
 
 test('input translation shows phonetic for words and read-aloud for anything typed', async ({ page }) => {
-  const { server, endpoint } = await startInputDictionaryMockServer();
+  const { close, endpoint } = await startInputDictionaryMockServer();
 
   try {
     await setExtensionSettings(page, {
@@ -102,7 +94,7 @@ test('input translation shows phonetic for words and read-aloud for anything typ
     await page.fill('#ai-translator-input-text', '');
     await expect(page.locator('#ai-translator-input-speak')).toBeHidden();
   } finally {
-    server.close();
+    await close();
   }
 });
 
@@ -183,60 +175,52 @@ const HOSTILE_INHERITED_CSS = `
  * page to run it on. The page serves HOSTILE_PAGE_CSS — see above for why that
  * is the point of the fixture rather than incidental to it.
  */
-function startTargetLangFixture() {
+async function startTargetLangFixture() {
   const LANGUAGE_NAMES = {
     'zh-CN': '简体中文',
     'ja': '日本語',
     'fr': 'Français',
   };
 
-  return new Promise((resolve) => {
-    const api = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        let systemPrompt = '';
-        let text = '';
-        try {
-          const data = JSON.parse(body);
-          systemPrompt = data?.messages?.[0]?.content || '';
-          text = data?.messages?.[1]?.content || '';
-        } catch (error) {
-          systemPrompt = '';
-        }
-        // The prompt names the target in that language's own words — see
-        // languageNames in background/background.js.
-        const asked = Object.entries(LANGUAGE_NAMES)
-          .find(([, name]) => systemPrompt.includes(name));
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          choices: [{ message: { content: `[${asked ? asked[0] : 'unknown'}] ${text}` } }]
-        }));
-      });
-    });
-
-    const site = http.createServer((req, res) => {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(`<!doctype html><html><head><style>${HOSTILE_PAGE_CSS}</style></head>`
-        + '<body class="host-kit"><h1>Hostile stylesheet page</h1><p>Body text.</p>'
-        // A div of the page's own, so a test can check the page rules are
-        // actually live before asserting they did not reach us.
-        + '<div id="host-canary">Host div</div>'
-        + '<button id="host-button" type="button">Host button</button></body></html>');
-    });
-
-    api.listen(0, '127.0.0.1', () => {
-      site.listen(0, '127.0.0.1', () => {
-        resolve({
-          api,
-          site,
-          endpoint: `http://127.0.0.1:${api.address().port}/v1/chat/completions`,
-          url: `http://127.0.0.1:${site.address().port}/`,
-          close() { api.close(); site.close(); },
-        });
-      });
+  const api = await startMockServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      let systemPrompt = '';
+      let text = '';
+      try {
+        const data = JSON.parse(body);
+        systemPrompt = data?.messages?.[0]?.content || '';
+        text = data?.messages?.[1]?.content || '';
+      } catch (error) {
+        systemPrompt = '';
+      }
+      // The prompt names the target in that language's own words — see
+      // languageNames in background/background.js.
+      const asked = Object.entries(LANGUAGE_NAMES)
+        .find(([, name]) => systemPrompt.includes(name));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [{ message: { content: `[${asked ? asked[0] : 'unknown'}] ${text}` } }]
+      }));
     });
   });
+
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><html><head><style>${HOSTILE_PAGE_CSS}</style></head>`
+      + '<body class="host-kit"><h1>Hostile stylesheet page</h1><p>Body text.</p>'
+      // A div of the page's own, so a test can check the page rules are
+      // actually live before asserting they did not reach us.
+      + '<div id="host-canary">Host div</div>'
+      + '<button id="host-button" type="button">Host button</button></body></html>');
+  });
+
+  return {
+    endpoint: `${api.origin}/v1/chat/completions`,
+    url: `${site.origin}/`,
+    close: () => Promise.all([api.close(), site.close()]),
+  };
 }
 
 async function openInputDialog(page) {
@@ -285,7 +269,7 @@ test('the input dialog translates into the language picked in it, not the one in
     await page.click('#ai-translator-do-translate');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[ja]');
   } finally {
-    fixture.close();
+    await fixture.close();
   }
 });
 
@@ -319,7 +303,7 @@ test('setting a target language in settings overrides what the input dialog reme
     await page.click('#ai-translator-do-translate');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[fr]');
   } finally {
-    fixture.close();
+    await fixture.close();
   }
 });
 
@@ -445,7 +429,7 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(trigger.padding).toBe('7px 12px 7px 14px');
     expect(trigger['font-weight']).toBe('500');
   } finally {
-    fixture.close();
+    await fixture.close();
   }
 });
 
@@ -556,7 +540,7 @@ test('a hostile host stylesheet cannot reach into the dialog', async ({ page }) 
     });
     expect(menuIsOnTop).toBe(true);
   } finally {
-    fixture.close();
+    await fixture.close();
   }
 });
 
@@ -607,7 +591,7 @@ test('the containment reset does not outrank our own fade-in', async ({ page }) 
       .poll(async () => (await computed(page, '.ai-translator-input-modal', ['opacity'])).opacity)
       .toBe('1');
   } finally {
-    fixture.close();
+    await fixture.close();
   }
 });
 

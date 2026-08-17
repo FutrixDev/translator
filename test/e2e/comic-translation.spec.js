@@ -9,10 +9,10 @@
  * click, which Playwright cannot drive — the message it sends is dispatched
  * directly instead.
  */
-const http = require('node:http');
 const zlib = require('node:zlib');
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
+const { startMockServer } = require('./mock-server');
 
 /**
  * CRC-32 of a PNG chunk.
@@ -257,7 +257,7 @@ const DATA_READER_HTML = `<!doctype html>
  * server-side, so a job held for two polls is already done by the time the new
  * document asks.
  */
-function startMockService(
+async function startMockService(
   behaviour = 'succeed',
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
 ) {
@@ -265,7 +265,7 @@ function startMockService(
     polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0,
   };
 
-  const server = http.createServer((req, res) => {
+  const { origin, close } = await startMockServer((req, res, base) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const send = (status, body, type = 'application/json') => {
       res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
@@ -342,7 +342,7 @@ function startMockService(
         progress: 1,
         // A fresh signature per poll, as the real presign does. It also keeps
         // the two downloads in the expiry test from being one cached response.
-        resultUrl: `http://localhost:${server.address().port}/result.png?sig=${state.polls}`,
+        resultUrl: `${base}/result.png?sig=${state.polls}`,
         width: 800,
         height: 1200,
         pointsCharged: 10,
@@ -352,24 +352,7 @@ function startMockService(
     send(404, { error: 'not_found' });
   });
 
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
-      resolve({
-        port,
-        base: `http://localhost:${port}`,
-        state,
-        // Drop the keep-alive sockets Chrome is holding. Without this, close()
-        // waits for the browser to time them out on its own — tens of seconds
-        // of dead time inside each test's budget, which is what turned a slow
-        // test into an intermittently failing one.
-        close: () => new Promise((done) => {
-          server.close(done);
-          server.closeAllConnections?.();
-        }),
-      });
-    });
-  });
+  return { base: origin, state, close };
 }
 
 /** Point the extension at the mock and give it a token, as a real sign-in would. */

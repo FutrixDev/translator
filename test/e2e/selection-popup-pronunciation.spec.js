@@ -6,27 +6,22 @@
 // otherwise only show up in a user's hands.
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
-const http = require('http');
+const { startMockServer } = require('./mock-server');
 
-function startMockServer(reply) {
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
-      });
-    });
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, endpoint: `http://127.0.0.1:${port}/v1/chat/completions` });
+async function startReplyMockServer(reply) {
+  const { origin, close } = await startMockServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
     });
   });
+  return { endpoint: `${origin}/v1/chat/completions`, close };
 }
 
 test('the selection popup can read out both the original and the translation', async ({ page }) => {
-  const { server, endpoint } = await startMockServer('示例域名');
+  const { close, endpoint } = await startReplyMockServer('示例域名');
 
   try {
     await setExtensionSettings(page, {
@@ -75,6 +70,6 @@ test('the selection popup can read out both the original and the translation', a
     ]);
     expect(labels[0]).not.toEqual(labels[1]);
   } finally {
-    server.close();
+    await close();
   }
 });

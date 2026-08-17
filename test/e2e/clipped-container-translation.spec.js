@@ -42,7 +42,7 @@ const check = (page, selector) =>
 
 test.describe('translations clipped by a collapsed ancestor', () => {
   test('hover translation is revealed, and the clip is restored afterwards', async ({ page }) => {
-    const { server, endpoint } = await startMockOpenAIServer();
+    const { close, endpoint } = await startMockOpenAIServer();
 
     try {
       await setExtensionSettings(page, {
@@ -88,12 +88,12 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         })()`), { timeout: 5000 })
         .toEqual(before);
     } finally {
-      server.close();
+      await close();
     }
   });
 
   test('whole-page translation is revealed too', async ({ page }) => {
-    const { server, endpoint } = await startMockOpenAIServer();
+    const { close, endpoint } = await startMockOpenAIServer();
 
     try {
       await setExtensionSettings(page, {
@@ -122,7 +122,7 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         })
         .toMatchObject({ inside: true });
     } finally {
-      server.close();
+      await close();
     }
   });
 });

@@ -14,11 +14,11 @@
  * cannot drive — the OCR_TRANSLATE_IMAGE message it would send is dispatched
  * directly instead, same as the comic spec.
  */
-const http = require('node:http');
 const zlib = require('node:zlib');
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, sendMessageToActiveTab } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { startMockServer } = require('./mock-server');
 
 // CRC-32 for PNG chunks; hand-rolled for the same runtime reason as the comic
 // spec (zlib.crc32 needs Node 20.15/22.2).
@@ -89,28 +89,23 @@ const PAGE_HTML = `<!doctype html>
 </body></html>`;
 
 function startPageServer() {
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      if (req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(PAGE_HTML);
-      } else if (req.url === '/sign.png') {
-        res.writeHead(200, { 'Content-Type': 'image/png' });
-        res.end(SIGN_PNG);
-      } else if (req.url === '/wide.png') {
-        res.writeHead(200, { 'Content-Type': 'image/png' });
-        res.end(WIDE_PNG);
-      } else if (req.url === '/big.png') {
-        res.writeHead(200, { 'Content-Type': 'image/png' });
-        res.end(BIG_PNG);
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
-    server.listen(0, '127.0.0.1', () => {
-      resolve({ server, origin: `http://127.0.0.1:${server.address().port}` });
-    });
+  return startMockServer((req, res) => {
+    if (req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(PAGE_HTML);
+    } else if (req.url === '/sign.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(SIGN_PNG);
+    } else if (req.url === '/wide.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(WIDE_PNG);
+    } else if (req.url === '/big.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(BIG_PNG);
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
   });
 }
 
@@ -161,9 +156,9 @@ test.describe('image OCR', () => {
     await setExtensionSettings(page, baseSettings());
   });
 
-  test.afterEach(() => {
-    mock?.server.close();
-    pageServer?.server.close();
+  test.afterEach(async () => {
+    await mock?.close();
+    await pageServer?.close();
   });
 
   test('the local engine reads the image on-device, then the text is translated', async ({ page }) => {
