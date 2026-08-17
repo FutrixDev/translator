@@ -12,7 +12,7 @@
  * numbered format — but every segment after the first comes back byte-identical to its
  * source, and shouldSkipTranslation() then silently drops it as "already translated".
  */
-const http = require('http');
+const { startMockServer } = require('./mock-server');
 
 const PROMPT_DELIMITER_RE = /segments are separated by "([^"]+)"/;
 
@@ -32,7 +32,7 @@ function pngDataUrlSize(dataUrl) {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
-function startMockOpenAIServer() {
+async function startMockOpenAIServer() {
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
   const fastBatchRequests = [];
@@ -46,88 +46,83 @@ function startMockOpenAIServer() {
   // OpenAI shape, not just that a popup rendered something.
   const visionRequests = [];
 
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      if (req.method !== 'POST') {
-        res.writeHead(404);
-        res.end();
+  const { origin, close } = await startMockServer((req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      let content = '';
+      let systemPrompt = '';
+      try {
+        const data = JSON.parse(body);
+        const messages = data?.messages || [];
+        content = messages[messages.length - 1]?.content || '';
+        systemPrompt = messages.find((m) => m?.role === 'system')?.content || '';
+      } catch {
+        content = '';
+      }
+
+      // A vision request: [{type:'text'},{type:'image_url'}]. Answer with the JSON
+      // contract from shared/ocr.js instead of the echo protocol below.
+      if (Array.isArray(content)) {
+        const imagePart = content.find((part) => part?.type === 'image_url');
+        visionRequests.push({
+          partTypes: content.map((part) => part?.type),
+          // Enough of the data URL to assert the media type without dumping megabytes
+          // of base64 into a test failure message.
+          imageUrlPrefix: String(imagePart?.image_url?.url || '').slice(0, 40),
+          // What the worker actually sent, for specs that assert on the crop.
+          imageSize: pngDataUrlSize(imagePart?.image_url?.url),
+          systemPrompt
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          choices: [{
+            message: {
+              // Recognition only: the translation is a second, ordinary
+              // request, which the echo protocol below answers.
+              content: JSON.stringify({ text: 'HELLO WORLD', language: 'en' })
+            }
+          }]
+        }));
         return;
       }
 
-      let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
+      if (content) sentTexts.push(content);
+
+      const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
+      if (delimiter) {
+        const segments = content.split(delimiter);
+        fastBatchRequests.push({ delimiter, segmentCount: segments.length });
+        content = segments
+          .map((segment) => (segment ? `[T] ${segment}` : segment))
+          .join(delimiter);
+      } else if (content) {
+        content = `[T] ${content}`;
+      }
+
+      const response = JSON.stringify({
+        choices: [{ message: { content } }]
       });
-      req.on('end', () => {
-        let content = '';
-        let systemPrompt = '';
-        try {
-          const data = JSON.parse(body);
-          const messages = data?.messages || [];
-          content = messages[messages.length - 1]?.content || '';
-          systemPrompt = messages.find((m) => m?.role === 'system')?.content || '';
-        } catch {
-          content = '';
-        }
-
-        // A vision request: [{type:'text'},{type:'image_url'}]. Answer with the JSON
-        // contract from shared/ocr.js instead of the echo protocol below.
-        if (Array.isArray(content)) {
-          const imagePart = content.find((part) => part?.type === 'image_url');
-          visionRequests.push({
-            partTypes: content.map((part) => part?.type),
-            // Enough of the data URL to assert the media type without dumping megabytes
-            // of base64 into a test failure message.
-            imageUrlPrefix: String(imagePart?.image_url?.url || '').slice(0, 40),
-            // What the worker actually sent, for specs that assert on the crop.
-            imageSize: pngDataUrlSize(imagePart?.image_url?.url),
-            systemPrompt
-          });
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            choices: [{
-              message: {
-                // Recognition only: the translation is a second, ordinary
-                // request, which the echo protocol below answers.
-                content: JSON.stringify({ text: 'HELLO WORLD', language: 'en' })
-              }
-            }]
-          }));
-          return;
-        }
-
-        if (content) sentTexts.push(content);
-
-        const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
-        if (delimiter) {
-          const segments = content.split(delimiter);
-          fastBatchRequests.push({ delimiter, segmentCount: segments.length });
-          content = segments
-            .map((segment) => (segment ? `[T] ${segment}` : segment))
-            .join(delimiter);
-        } else if (content) {
-          content = `[T] ${content}`;
-        }
-
-        const response = JSON.stringify({
-          choices: [{ message: { content } }]
-        });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(response);
-      });
-    });
-
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({
-        server,
-        fastBatchRequests,
-        sentTexts,
-        visionRequests,
-        endpoint: `http://127.0.0.1:${port}/v1/chat/completions`
-      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(response);
     });
   });
+
+  return {
+    fastBatchRequests,
+    sentTexts,
+    visionRequests,
+    endpoint: `${origin}/v1/chat/completions`,
+    close
+  };
 }
 
 module.exports = { startMockOpenAIServer };

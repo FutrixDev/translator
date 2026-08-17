@@ -11,9 +11,9 @@
  * mock's), and that it reaches the DOM on the first render rather than one
  * poll later.
  */
-const http = require('node:http');
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
+const { startMockServer } = require('./mock-server');
 
 const ACCOUNT = {
   email: 'reader@example.com',
@@ -39,8 +39,8 @@ const JOBS = [
   },
 ];
 
-function startMockService() {
-  const server = http.createServer((req, res) => {
+async function startMockService() {
+  const { origin, close } = await startMockServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const send = (status, body) => {
       res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -54,14 +54,7 @@ function startMockService() {
     send(404, { error: 'not_found' });
   });
 
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      resolve({
-        base: `http://localhost:${server.address().port}`,
-        close: () => new Promise(done => { server.close(done); server.closeAllConnections?.(); }),
-      });
-    });
-  });
+  return { base: origin, close };
 }
 
 async function connectExtension(context, base) {
@@ -94,7 +87,7 @@ test.describe('PDF history → web library', () => {
       await expect(history.locator('.pdf-task-view').first())
         .toHaveAttribute('href', `${service.base}/settings/pdf?job=pdf_done`);
       // Built from the configured origin, not from a hardcoded production one.
-      expect(service.base.startsWith('http://localhost:')).toBe(true);
+      expect(service.base.startsWith('http://127.0.0.1:')).toBe(true);
 
       // A failure gets one too: the library still has the original, which is
       // how "what was this file?" gets answered.

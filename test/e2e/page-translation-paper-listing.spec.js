@@ -37,7 +37,7 @@ const ARXIV_LISTING = `
 `;
 
 test('page translation: arXiv/LaTeXML code listings never reach the API, paper prose still does', async ({ page }) => {
-  const { server, endpoint, fastBatchRequests, sentTexts } = await startMockOpenAIServer();
+  const { close, endpoint, fastBatchRequests, sentTexts } = await startMockOpenAIServer();
 
   try {
     await setExtensionSettings(page, {
@@ -105,6 +105,6 @@ test('page translation: arXiv/LaTeXML code listings never reach the API, paper p
     await expect(page.locator('#S3\\.SS1\\.p4\\.1 .ai-translator-inline-block')).toHaveCount(0);
     await expect(page.locator('#S3\\.SS1\\.p4\\.1 .ai-translator-translated')).toHaveCount(0);
   } finally {
-    server.close();
+    await close();
   }
 });

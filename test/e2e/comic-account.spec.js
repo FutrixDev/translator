@@ -7,9 +7,9 @@
  * and the rendering of the numbers the user actually acts on. The popup is
  * here too, to prove it stays out of this entirely.
  */
-const http = require('node:http');
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
+const { startMockServer } = require('./mock-server');
 
 const RESETS_AT = '2099-02-01T00:00:00.000Z';
 const quota = (limit, remaining) => ({
@@ -36,12 +36,12 @@ const ACCOUNT = {
  * @param {number} connectDelayMs the same, for the sign-in bounce, so a second
  *   gate can arrive while the first authentication is still running.
  */
-function startMockService({ connect = 'token', meDelayMs = 0, connectDelayMs = 0 } = {}) {
+async function startMockService({ connect = 'token', meDelayMs = 0, connectDelayMs = 0 } = {}) {
   // `account` is mutable so a test can spend pages mid-run, the way a
   // translation job does, and see whether the page ever notices.
   const state = { meRequests: 0, connectRequests: 0, account: ACCOUNT };
 
-  const server = http.createServer((req, res) => {
+  const { origin, close } = await startMockServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const send = (status, body) => {
       res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -78,15 +78,7 @@ function startMockService({ connect = 'token', meDelayMs = 0, connectDelayMs = 0
     send(404, { error: 'not_found' });
   });
 
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      resolve({
-        base: `http://localhost:${server.address().port}`,
-        state,
-        close: () => new Promise(done => server.close(done)),
-      });
-    });
-  });
+  return { base: origin, state, close };
 }
 
 /**

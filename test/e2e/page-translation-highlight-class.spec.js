@@ -28,7 +28,7 @@ const { startMockOpenAIServer } = require('./mock-openai-server');
 // text: code-looking text would also be dropped by the looksLikeCode() heuristics,
 // and the test would then pass even if the class rule were deleted outright.
 test('page translation: "highlights"/"language-" lookalikes translate, real code containers stay skipped', async ({ page }) => {
-  const { server, endpoint, fastBatchRequests } = await startMockOpenAIServer();
+  const { close, endpoint, fastBatchRequests } = await startMockOpenAIServer();
 
   try {
     await setExtensionSettings(page, {
@@ -114,6 +114,6 @@ test('page translation: "highlights"/"language-" lookalikes translate, real code
     await expect(page.locator('#github-container .ai-translator-inline-block')).toHaveCount(0);
     await expect(page.locator('#prism-container .ai-translator-inline-block')).toHaveCount(0);
   } finally {
-    server.close();
+    await close();
   }
 });

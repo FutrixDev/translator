@@ -13,9 +13,9 @@
  * back at this server, a PUT sink that checks it was truly handed a PDF, a
  * 202 job creation, and a poll that goes running → succeeded.
  */
-const http = require('node:http');
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
+const { startMockServer } = require('./mock-server');
 
 /**
  * A minimal PDF as a static byte template.
@@ -49,7 +49,7 @@ trailer
  * 402 the UI has a distinct answer for. The 401 case needs no behaviour at
  * all: without a token the client must refuse before any request is made.
  */
-function startMockService(behaviour = 'succeed') {
+async function startMockService(behaviour = 'succeed') {
   const state = {
     uploadTickets: [],
     uploadPuts: [],
@@ -57,7 +57,7 @@ function startMockService(behaviour = 'succeed') {
     polls: 0,
   };
 
-  const server = http.createServer((req, res) => {
+  const { origin, close } = await startMockServer((req, res, base) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const send = (status, body, type = 'application/json') => {
       res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
@@ -71,7 +71,6 @@ function startMockService(behaviour = 'succeed') {
     };
 
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
-    const base = () => `http://localhost:${server.address().port}`;
 
     if (url.pathname === '/api/pdf/uploads' && req.method === 'POST') {
       return readBody((raw) => {
@@ -83,7 +82,7 @@ function startMockService(behaviour = 'succeed') {
         const sourceKey = `pdf/u1/${body.operationId}/source.pdf`;
         return send(200, {
           sourceKey,
-          uploadUrl: `${base()}/upload-sink?key=${encodeURIComponent(sourceKey)}`,
+          uploadUrl: `${base}/upload-sink?key=${encodeURIComponent(sourceKey)}`,
           maxBytes: 30 * 1024 * 1024,
         });
       });
@@ -160,8 +159,8 @@ function startMockService(behaviour = 'succeed') {
         pointsCharged: 3,
         // A fresh signature per poll, as the real presign does.
         results: {
-          dualUrl: `${base()}/result-dual.pdf?sig=${state.polls}`,
-          monoUrl: `${base()}/result-mono.pdf?sig=${state.polls}`,
+          dualUrl: `${base}/result-dual.pdf?sig=${state.polls}`,
+          monoUrl: `${base}/result-mono.pdf?sig=${state.polls}`,
         },
       });
     }
@@ -173,18 +172,7 @@ function startMockService(behaviour = 'succeed') {
     send(404, { error: 'not_found' });
   });
 
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      resolve({
-        base: `http://localhost:${server.address().port}`,
-        state,
-        close: () => new Promise((done) => {
-          server.close(done);
-          server.closeAllConnections?.();
-        }),
-      });
-    });
-  });
+  return { base: origin, state, close };
 }
 
 /**

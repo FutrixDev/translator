@@ -3,7 +3,7 @@ const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 test('page translation skips blocks with inline translation', async ({ page }) => {
-  const { server, endpoint, fastBatchRequests } = await startMockOpenAIServer();
+  const { close, endpoint, fastBatchRequests } = await startMockOpenAIServer();
 
   try {
     await setExtensionSettings(page, {
@@ -56,6 +56,6 @@ test('page translation skips blocks with inline translation', async ({ page }) =
     await expect(paragraphOne).not.toHaveClass(/ai-translator-translated/);
     await expect(page.locator('#inline-translation-test .ai-translator-inline-block')).toHaveCount(2);
   } finally {
-    server.close();
+    await close();
   }
 });
