@@ -134,6 +134,18 @@ function runAuthTab(authUrl, redirectUri) {
   return new Promise((resolve, reject) => {
     let authTabId = null;
     let settled = false;
+    // Events the tab fired before we knew its id.
+    //
+    // The listeners have to be registered before chrome.tabs.create, or a fast
+    // redirect is missed outright — but Chrome starts reporting the tab the
+    // moment it exists, which is before the create promise hands back its id.
+    // Anything arriving in that window (measured at ~200ms) cannot be matched
+    // against authTabId yet, so it is queued and replayed once it can be.
+    // Discarding it instead was benign for onUpdated, where more events follow,
+    // and a hang for onRemoved, where none do: a tab closed inside the window
+    // left this promise pending forever, so signIn() never returned and both
+    // listeners stayed attached for the life of the worker.
+    const pending = [];
 
     function stopListening() {
       chrome.tabs.onUpdated.removeListener(onUpdated);
@@ -141,9 +153,16 @@ function runAuthTab(authUrl, redirectUri) {
     }
 
     function onUpdated(tabId, changeInfo, tab) {
-      if (settled || tabId !== authTabId) return;
+      if (settled) return;
       const url = changeInfo.url || tab?.url || tab?.pendingUrl || '';
+      // Filtered before queueing, not after: every tab in the browser reports
+      // its navigations here, and only this one URL is ever of interest.
       if (!url.startsWith(redirectUri)) return;
+      if (authTabId === null) {
+        pending.push(() => onUpdated(tabId, changeInfo, tab));
+        return;
+      }
+      if (tabId !== authTabId) return;
       settled = true;
       stopListening();
       // Closing it ourselves keeps the dead chromiumapp.org error page from
@@ -153,7 +172,12 @@ function runAuthTab(authUrl, redirectUri) {
     }
 
     function onRemoved(tabId) {
-      if (settled || tabId !== authTabId) return;
+      if (settled) return;
+      if (authTabId === null) {
+        pending.push(() => onRemoved(tabId));
+        return;
+      }
+      if (tabId !== authTabId) return;
       settled = true;
       stopListening();
       // The user closed the tab before finishing: a cancel, not a failure.
@@ -164,7 +188,24 @@ function runAuthTab(authUrl, redirectUri) {
     chrome.tabs.onRemoved.addListener(onRemoved);
 
     chrome.tabs.create({ url: authUrl, active: true }).then(tab => {
-      authTabId = tab.id;
+      const id = tab?.id;
+      if (typeof id !== 'number' || id < 0) {
+        // No id means nothing can ever be matched, so the queue would never
+        // drain and the promise would never settle — the same hang by another
+        // route. Chrome only does this when the tab could not really be opened.
+        settled = true;
+        stopListening();
+        reject(new ComicApiError('sign_in_failed', 'The sign-in tab could not be opened'));
+        return;
+      }
+      authTabId = id;
+      // Replayed in arrival order, so a redirect that landed before the id was
+      // known still wins over the removal our own tabs.remove() will cause.
+      const queued = pending.splice(0, pending.length);
+      for (const replay of queued) {
+        if (settled) break;
+        replay();
+      }
     }).catch(error => {
       if (settled) return;
       settled = true;
