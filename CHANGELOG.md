@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.1 — 2026-08-18
+
+### Fixes
+
+- **A block's own text is translated, and the translation lands where the page
+  has room for it.** Three defects on one reported page. Collection recursed
+  over `element.children`, which excludes an element's *direct text nodes* — so
+  any block that mixed text with an element child lost that text entirely and
+  whole sentences were never sent for translation. Insertion then always chose
+  a sibling: the translation of an element that paints its own background
+  rendered as naked text outside the box (our reset strips
+  `background`/`border`/`padding` off the copied class names), and a list
+  item's translation was a sibling `<li>` that never inherited the page's
+  inline indent and had its marker suppressed, so it sat flush left with no
+  bullet. Direct text runs are now wrapped before recursing, and one rule —
+  `getTranslationPlacement` — decides sibling-or-child for both full-page and
+  hover translation, which had been answering it differently (hover had no
+  table-cell case at all, so hover-translating a `<td>` added a phantom
+  column).
+
 ## 1.3.0 — 2026-08-16
 
 ### New features
@@ -26,21 +46,6 @@
 
 ### Fixes
 
-- **A block's own text is translated, and the translation lands where the page
-  has room for it.** Three defects on one reported page. Collection recursed
-  over `element.children`, which excludes an element's *direct text nodes* — so
-  any block that mixed text with an element child lost that text entirely and
-  whole sentences were never sent for translation. Insertion then always chose
-  a sibling: the translation of an element that paints its own background
-  rendered as naked text outside the box (our reset strips
-  `background`/`border`/`padding` off the copied class names), and a list
-  item's translation was a sibling `<li>` that never inherited the page's
-  inline indent and had its marker suppressed, so it sat flush left with no
-  bullet. Direct text runs are now wrapped before recursing, and one rule —
-  `getTranslationPlacement` — decides sibling-or-child for both full-page and
-  hover translation, which had been answering it differently (hover had no
-  table-cell case at all, so hover-translating a `<td>` added a phantom
-  column).
 - **Links survive on the default engine.** Inline-markup preservation was
   switched off for Chrome's built-in NMT on an assumption that was never
   measured — and that engine is the default, so most users lost every link in
