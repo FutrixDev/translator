@@ -986,8 +986,14 @@
       return loadingEl;
     }
 
-    const loadingEl = document.createElement(block.tagName);
-    if (block.className) {
+    // 往哪儿插和整页翻译共用一套判据——表格单元格、列表项、页面自己画了框的块都只能
+    // 往【内部】插，否则分别是多一列、多一条幽灵条目、译文掉到框外面。
+    // 见 content-page-translation.js 的 getTranslationPlacement。
+    const placement = ctx.getTranslationPlacement
+      ? ctx.getTranslationPlacement(block, computedStyle)
+      : { inside: false, tag: 'div' };
+    const loadingEl = document.createElement(placement.inside ? placement.tag : block.tagName);
+    if (block.className && !placement.inside) {
       loadingEl.className = block.className
         .replace('ai-translator-translated', '')
         .replace(POSITION_CLASSES, '')
@@ -1001,7 +1007,7 @@
     `;
 
     if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block);
+      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
       if (textOffset > 0) {
         loadingEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
       }
@@ -1018,6 +1024,11 @@
       `;
       block.appendChild(internalLoading);
       return internalLoading;
+    }
+
+    if (placement.inside) {
+      block.appendChild(loadingEl);
+      return loadingEl;
     }
 
     block.after(loadingEl);
@@ -1074,8 +1085,12 @@
       return translationEl;
     }
 
-    const translationEl = document.createElement(block.tagName);
-    if (block.className) {
+    // 见 renderInlineLoading：插入位置和整页翻译共用 getTranslationPlacement
+    const placement = ctx.getTranslationPlacement
+      ? ctx.getTranslationPlacement(block, computedStyle)
+      : { inside: false, tag: 'div' };
+    const translationEl = document.createElement(placement.inside ? placement.tag : block.tagName);
+    if (block.className && !placement.inside) {
       translationEl.className = block.className
         .replace('ai-translator-translated', '')
         .replace(POSITION_CLASSES, '')
@@ -1100,7 +1115,7 @@
     }
 
     if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block);
+      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
       if (textOffset > 0) {
         translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
       }
@@ -1128,6 +1143,11 @@
       }
       block.appendChild(internalTranslation);
       return internalTranslation;
+    }
+
+    if (placement.inside) {
+      block.appendChild(translationEl);
+      return translationEl;
     }
 
     block.after(translationEl);

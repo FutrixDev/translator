@@ -703,10 +703,23 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   }
 }
 
-/* 列表项的翻译 */
-li.ai-translator-inline-block {
-  list-style: none !important;
-  margin-left: 0 !important;
+/* 列表项的翻译现在插在 <li> 内部（见 getTranslationPlacement），译文不再是一条
+   兄弟 <li>，所以这里不需要压圆点、也不需要清 margin：以前那条
+   `li.ai-translator-inline-block { list-style:none; margin-left:0 }` 正是把译文推到
+   整个列表左外侧的原因。译文块的排版由 .ai-translator-inline-block 一条负责。 */
+
+/* 直属文本节点的锚点（wrapDirectTextRuns）。它只是个挂译文用的壳，页面针对
+   `span` 写的规则不该借它改变原文的样子，所以把排版和字体钉回继承值。 */
+span.ai-translator-text-run {
+  display: inline !important;
+  font: inherit !important;
+  color: inherit !important;
+  letter-spacing: inherit !important;
+  text-transform: inherit !important;
+  background: none !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 /* 链接翻译 */
