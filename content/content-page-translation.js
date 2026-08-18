@@ -41,6 +41,8 @@
   //
   // 大小写不敏感同样适用于这条正则：译文里的标记可能是 <A1>。
   const MARKUP_MARKER_RE = /<\/?[a-z]+\d+>/gi;
+  // 直属文本节点的锚点类名，见 wrapDirectTextRuns
+  const TEXT_RUN_CLASS = 'ai-translator-text-run';
 
   // 由本块**真正生成过**的标签名与编号拼出的正则，用来清掉解析后仍留在译文里的
   // 标记残骸（模型把 <a1>/<strong2> 串成了 <strong1> 这种，配不上任何一对，
@@ -782,6 +784,36 @@
       return false;
     }
 
+    // 把元素的【直属文本节点】按连续段裹进 <span>，给它们一个能收进 blocks、
+    // 之后能挂译文的锚点——文本节点自己两样都做不到。
+    // 只裹真要翻的那几段（太短、像代码、就是个 URL、纯数字的都不裹），页面 DOM
+    // 就一个多余节点都不会多出来；<br>/<span> 这些元素天然把文本分段，分开裹，
+    // 原来的换行结构就还在。
+    function wrapDirectTextRuns(element) {
+      const runs = [];
+      let current = null;
+      for (const node of element.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (!current) {
+            current = [];
+            runs.push(current);
+          }
+          current.push(node);
+          continue;
+        }
+        current = null;
+      }
+      for (const run of runs) {
+        const text = run.map((node) => node.textContent).join('').trim();
+        if (text.length < 2) continue;
+        if (looksLikeCode(text) || isMainlyUrl(text) || isNumericOrSymbolOnly(text)) continue;
+        const wrap = document.createElement('span');
+        wrap.className = TEXT_RUN_CLASS;
+        element.insertBefore(wrap, run[0]);
+        for (const node of run) wrap.appendChild(node);
+      }
+    }
+
     // 检查元素是否有多个可翻译的直接子元素（用于判断是否应该递归而非整体翻译）
     // 这对于导航菜单等结构很重要，避免将整个菜单作为一个块翻译
     function hasMultipleTranslatableDirectChildren(element) {
@@ -896,6 +928,14 @@
 
         // 如果满足递归条件，递归处理子元素而不是整体翻译
         if (shouldRecurse) {
+          // 递归只走 element.children，而【直属文本节点】不在里面。不先把它们裹起来，
+          // 一个块级子元素就足以让本元素自己的正文整段消失——
+          // alignment.anthropic.com 的对话框正是这个形状：
+          //   <div class="code-box"><span>Human:</span> Write a one-stanza poem…<p>…</p></div>
+          // 里面的 <p> 让这里递归，于是 "Write a one-stanza poem…" 一次都没被送去
+          // 翻译，页面上只剩 <span>Human:</span> 的译文孤零零挂在原文右边。
+          // 同一个坑在超长块那条路上已经栽过一次，见 MAX_BLOCK_CHARS 附近的注释。
+          wrapDirectTextRuns(element);
           for (const child of element.children) {
             processElement(child);
           }
@@ -1238,10 +1278,19 @@
     return text;
   }
 
-  // 获取元素内文本相对于元素左边界的偏移量（跳过 icon/svg 等前置元素）
-  function getTextOffsetLeft(element) {
+  // 原文第一个文本相对于元素左边的偏移（跳过 icon/svg 等前置元素），用来让译文和
+  // 原文的文字左对齐。
+  // @param {{fromContentBox?: boolean}} options 译文插到元素【内部】时传 true：
+  //   元素那圈 padding/border 译文已经继承了，再按外边框算一次就是双份缩进
+  //   （.code-box 的 16px padding 会变成 32px）。
+  function getTextOffsetLeft(element, options) {
     const elementRect = element.getBoundingClientRect();
     if (elementRect.width === 0) return 0;
+    let originLeft = elementRect.left;
+    if (options && options.fromContentBox) {
+      const style = window.getComputedStyle(element);
+      originLeft += (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0);
+    }
 
     // 递归查找第一个文本节点的位置
     function findFirstTextRect(node) {
@@ -1272,7 +1321,7 @@
 
     const textRect = findFirstTextRect(element);
     if (textRect) {
-      return Math.max(0, textRect.left - elementRect.left);
+      return Math.max(0, textRect.left - originLeft);
     }
 
     return 0;
@@ -1614,6 +1663,56 @@
     return true;
   }
 
+  // ---- 译文往哪儿插 --------------------------------------------------------
+  // 默认插在原文块【后面】当兄弟。三类块不能这么插，共同点是：原文块不只是一段
+  // 文字，它还是页面结构、或页面画的那个框的一部分，而兄弟节点分不到那份东西。
+  //
+  //   - 表格单元格：兄弟 <td> 会给整行多加一列，撑破网格。
+  //   - 列表项：兄弟 <li> 是一条幽灵条目——列表长度、li:nth-child、屏读的
+  //     「第几项，共几项」全都多算一条。而要压掉它多出来的那个圆点只能上
+  //     display:block，那又把译文从条目自己的缩进里拽出去：issue #71 里译文跑到
+  //     整个列表的左外侧，既没有圆点也不跟原条目对齐。
+  //   - 自己画了框的块（有背景色或背景图，如 alignment.anthropic.com 的
+  //     .code-box）：兄弟落在框外面。抄一份页面类名也救不回来——
+  //     .ai-translator-inline-block 的 reset 会把 background/border/padding 全抹掉，
+  //     结果就是灰框外面挂着一段裸译文，正是 issue #71 的「翻译的内容不在框内」。
+  //
+  // 插到内部这三件事就都自然成立：页面结构没变，缩进和框都是继承来的。
+  const INSIDE_ONLY_TAGS = new Set(['TD', 'TH', 'LI']);
+  // 内容模型只收内联内容的元素：往里插 <div> 是非法嵌套，改用 <span>，块级排版由
+  // .ai-translator-inline-block 自带的 display:block 提供。
+  const PHRASING_CONTENT_TAGS = new Set(
+    ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'DT', 'LABEL', 'A', 'SPAN', 'BUTTON']);
+  // 只有普通块级流才往里插。flex/grid 容器里多一个子节点就是多一个 flex item，
+  // 横排时会挤在原文右边——那种块宁可让译文留在外面。
+  const IN_FLOW_DISPLAYS = new Set(['block', 'flow-root', 'list-item', 'table-cell']);
+
+  // 元素自己画了一个看得见的框？只认背景（背景色/背景图）：这是「读者眼里这是一个
+  // 框」的强信号。单边框线不算——维基百科那种 border-bottom 的标题只是根分隔线，
+  // 把译文塞进标题里反而会让分隔线跑到译文下面。
+  function paintsOwnBox(computedStyle) {
+    const image = computedStyle.backgroundImage;
+    if (image && image !== 'none') return true;
+    const color = computedStyle.backgroundColor;
+    if (!color || color === 'transparent') return false;
+    const parsed = color.match(/rgba?\(([^)]+)\)/);
+    if (!parsed) return true; // 认不出的颜色语法（color(display-p3 …) 等）：作者设过就算
+    const parts = parsed[1].split(',').map((part) => parseFloat(part));
+    const alpha = parts.length > 3 ? parts[3] : 1;
+    return alpha > 0.02;
+  }
+
+  // @returns {{inside: boolean, tag: string}} inside=true 时 tag 是要新建的标签名
+  function getTranslationPlacement(element, computedStyle) {
+    const style = computedStyle || window.getComputedStyle(element);
+    const inside = INSIDE_ONLY_TAGS.has(element.tagName)
+      || (paintsOwnBox(style) && IN_FLOW_DISPLAYS.has(style.display));
+    return {
+      inside,
+      tag: PHRASING_CONTENT_TAGS.has(element.tagName) ? 'span' : 'div'
+    };
+  }
+
   // 插入翻译块
   function insertTranslationBlock(block, translation) {
     const element = block.element;
@@ -1702,16 +1801,17 @@
       inlineTarget.appendChild(translationEl);
       finishTranslationInsert(translationEl, sourceWidthBefore);
     } else {
-      // 对于非水平 flex 布局（如侧边栏），插入为同级元素
-      // 表格单元格例外：译文要插到单元格【内部】，插一个兄弟 <td> 会给整行多加一列、撑破表格网格
-      const isTableCell = element.tagName === 'TD' || element.tagName === 'TH';
-      const translationEl = document.createElement(isTableCell ? 'div' : element.tagName);
+      // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
+      // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
+      const placement = getTranslationPlacement(element, computedStyle);
+      const translationEl = document.createElement(placement.inside ? placement.tag : element.tagName);
 
       // 复制原始元素的类名，保留页面的 CSS 样式（如 ltx_p 用于 MathML 内联显示）
       // 然后添加我们的标记类
       // 需要移除位置相关的类，避免破坏布局（如 absolute, fixed, inset-* 等）
-      // 单元格不复制类名：避免把列宽/对齐等单元格专属样式带到译文块上
-      if (element.className && !isTableCell) {
+      // 往内部插时不复制：单元格专属样式（列宽/对齐）会带歪译文块，而页面画的那个框
+      // 会在框里再画一个一模一样的框——内部译文要的样式本来就是继承来的
+      if (element.className && !placement.inside) {
         const positionClasses = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
         translationEl.className = element.className
           .replace('ai-translator-translated', '')
@@ -1744,8 +1844,22 @@
         `;
       }
 
+      // 页面用【负的下外边距】把相邻块吸到一起时（alignment.anthropic.com 的
+      // `.code-box p { margin: -12px 0 }` 就是拿来抵消 <br> 的），兄弟译文会被同一条
+      // 规则吸进原文里，两行字直接叠在一块。相邻外边距的合并值是
+      // max(正) + min(负)，所以补偿要补到「负的那一截 + 我们本来的行间距」，
+      // 只补正好抵消的量仍然会贴着原文。
+      if (!placement.inside) {
+        const sourceMarginBottom = parseFloat(computedStyle.marginBottom) || 0;
+        if (sourceMarginBottom < 0) {
+          const gap = (parseFloat(computedStyle.fontSize) || 16) * 0.15;
+          translationEl.style.setProperty(
+            'margin-top', `${Math.round(-sourceMarginBottom + gap)}px`, 'important');
+        }
+      }
+
       // 计算原文文本相对于元素的偏移量（跳过 icon 等前置元素）
-      const textOffset = getTextOffsetLeft(element);
+      const textOffset = getTextOffsetLeft(element, { fromContentBox: placement.inside });
 
       // 使用 setProperty 设置 padding-left，加 !important 防止被页面 CSS 覆盖
       if (textOffset > 0) {
@@ -1774,9 +1888,9 @@
         `;
         element.appendChild(internalTranslation);
         finishTranslationInsert(internalTranslation, sourceWidthBefore);
-      } else if (isTableCell) {
-        // 表格单元格：译文作为块级子节点追加到单元格【内部】，显示在原内容下方，保持网格不变。
-        // 用 <div>（而非 <td>）避免 td 内嵌 td 的非法结构。
+      } else if (placement.inside) {
+        // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
+        // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         element.appendChild(translationEl);
         finishTranslationInsert(translationEl, sourceWidthBefore);
       } else {
@@ -2143,6 +2257,8 @@
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
   ctx.getTextOffsetLeft = getTextOffsetLeft;
+  ctx.getTranslationPlacement = getTranslationPlacement;
+  ctx.TEXT_RUN_CLASS = TEXT_RUN_CLASS;
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.insertTranslationBlock = insertTranslationBlock;
   // 单元测试直接驱动这条“译文数量必须与块数一致”的守卫
