@@ -1,8 +1,9 @@
 # Chrome 网上应用店提交说明 — v1.3.0
 
-提交日期：2026-08-18 ｜ 上一个上架版本：1.2.0（2026-08-10）
+提交日期：2026-08-16 ｜ 上一个上架版本：1.2.0（2026-08-10）
 
-打包源：`main` @ `ca77f14`（含 PR #72，issue #71 的网页翻译位置修复）。
+本文档记录的是 **1.3.0** 那次提交。issue #71 的网页翻译位置修复没有赶上这个包，
+随 1.3.1 发布，见 [store-submission-1.3.1.md](store-submission-1.3.1.md)。
 
 ## 一、包信息
 
@@ -32,10 +33,6 @@
 > - 修复：使用 Chrome 内置翻译引擎（默认引擎）时，译文中的超链接会全部丢失。
 > - 修复：在按坐标定位的页面上，译文会盖住原有内容。现在优先让原文让位，实在
 >   放不下才不显示译文。
-> - 修复：整段文字有时不会被翻译——一个段落里只要混有子元素，段落自己的正文
->   就会被漏掉。
-> - 修复：译文的位置。带底色的方框里，译文会掉到框外面；列表项的译文会跑到列表
->   左侧、既没有项目符号也不跟原条目对齐。现在这两种译文都插在原文块内部。
 > - 修复：PDF 翻译遇到一次临时失败后，24 小时内无法再次使用。
 > - 修复：部分网站的主题样式会影响插件面板内按钮的外观。
 
@@ -52,11 +49,6 @@
 > - Fixed: on coordinate-driven layouts, translations could overlap existing
 >   content. The source line now yields first; the translation is only dropped
 >   as a last resort.
-> - Fixed: a paragraph's own text could go untranslated whenever the paragraph
->   also contained a child element.
-> - Fixed: where the translation is placed. Inside a shaded box it rendered
->   outside the box; a list item's translation sat to the left of the list with
->   no bullet and no matching indent. Both now render inside the source block.
 > - Fixed: one transient failure disabled PDF translation for 24 hours.
 > - Fixed: some sites' theme CSS could restyle buttons inside our panels.
 
@@ -106,13 +98,13 @@ PDF 翻译发送到我方服务器处理。不出售数据、不用于与功能�
 ## 五、提交前 checklist
 
 - [x] `manifest.json` 版本已升到 1.3.0（高于已上架的 1.2.0）
-- [x] `npm run test:unit` 全绿（301 passed）
+- [x] `npm run test:unit` 全绿（284 passed）
 - [x] `npm run zip` 产物完整性已校验（引用无缺失、无多余文件）
 - [x] CHANGELOG 1.3.0 一节已写（并把此前误记在 1.2.0 下的 OCR 条目移到了这里
       —— 8/10 上架的 1.2.0 包里并不含 OCR）
-- [x] `npm run test:e2e` 整轮 139 passed / 9 skipped / 0 failed。
-      （那条 `comic-account.spec.js` 的 60s 超时是 mock server 拆卸时挂住，已由
-      `e00bcb7 fix(test): stop mock-server teardown from hanging for 60s` 修掉。）
+- [x] `npm run test:e2e` 整轮复跑 138 passed / 9 skipped / 0 failed。
+      （第一轮曾有 1 条 `comic-account.spec.js` 的 60s 超时。当时判为偶发；后来
+      查明是 mock server 拆卸时挂住，已由 `e00bcb7` 修掉。）
 - [ ] 在 `chrome://extensions/` 用"加载已解压的扩展程序"实测一遍 1.3.0 的
       OCR 与网页翻译
 - [ ] 上传 zip、粘贴上面的更新说明与权限理由、提交审核
