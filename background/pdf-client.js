@@ -86,6 +86,18 @@ export async function fetchPdfFromUrl(url) {
  * Three hops, all idempotent under `operationId`: ticket → presigned PUT →
  * job creation. Re-running the whole sequence with the same operationId lands
  * on the same storage key and adopts the same job instead of paying twice.
+ *
+ * `confirmCharge` is D9's answer to "this will spend credits, is that alright",
+ * and the PDF half of the same handshake comic jobs run (app/api/pdf/jobs
+ * /route.ts): a job that would cost credits and did not say yes is refused with
+ * 409 QUOTE_CONFIRM_REQUIRED carrying the server's own quote, having reserved
+ * nothing. The caller shows that quote and comes back through here with the
+ * SAME operationId and `confirmCharge: true`, which is the same operation and
+ * therefore cannot be charged twice. Work the monthly allowance covers is never
+ * refused, so the question is only ever asked about real credits. Deciding to
+ * ask is not this layer's job — see shared/comic-charge.js and the three
+ * surfaces that own the asking (the upload page, the popup, and the
+ * context-menu notification).
  */
 export async function createPdfJob({
   operationId,
@@ -93,7 +105,8 @@ export async function createPdfJob({
   fileName,
   targetLang,
   outputKind = 'dual',
-  dualLayout = 'side-by-side'
+  dualLayout = 'side-by-side',
+  confirmCharge
 }) {
   // Ask for the token before touching the bytes: a signed-out click must not
   // wait through a 30 MiB upload to learn it needed a sign-in.
@@ -157,7 +170,12 @@ export async function createPdfJob({
         kind: outputKind,
         dualLayout,
         watermark: false
-      }
+      },
+      // Sent only to say yes. Absent is the server's default and already means
+      // "not confirmed", so an unconfirmed create carries no claim at all —
+      // and the server refuses anything that is not a boolean outright
+      // (400 invalid_confirm_charge), which is why nothing else is ever sent.
+      ...(confirmCharge === true ? { confirmCharge: true } : {})
     }
   });
   return { ...job, operationId: opId, fileName: fileName || '' };
@@ -395,6 +413,28 @@ export async function releaseUrlOperationId(operationId) {
   if (changed) {
     await chrome.storage.local.set({ [URL_OPS_KEY]: map });
   }
+}
+
+/**
+ * The URL an operation id was minted for, or null.
+ *
+ * The reverse of getOrCreateUrlOperationId, and it exists for the context
+ * menu's charge confirmation: that question is asked in a notification, whose
+ * answer can arrive minutes later and after the service worker has been torn
+ * down and restarted. Rather than persist a second copy of the request, the
+ * notification carries the operation id in its own id and the URL is looked
+ * back up here — the binding that already outlives the worker is the only
+ * state involved, so there is nothing extra to keep in sync or expire.
+ */
+export async function findUrlForOperationId(operationId) {
+  if (!operationId) return null;
+  const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
+  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  const cutoff = Date.now() - URL_OP_TTL_MS;
+  for (const [url, entry] of Object.entries(map)) {
+    if (entry && entry.opId === operationId && (entry.createdAt || 0) > cutoff) return url;
+  }
+  return null;
 }
 
 /**
