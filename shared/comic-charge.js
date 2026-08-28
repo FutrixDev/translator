@@ -1,8 +1,16 @@
 // Blab Translation — the charge-confirmation round trip for server-backed jobs.
 //
+// Comics and PDFs both come through here. The file is still named for the
+// feature that needed it first, but nothing in it is about comics: the module
+// is published as `ChargeConfirm` (with `ComicCharge` kept as the name the
+// comic content script already calls it by), and there is exactly one copy of
+// this logic in the repo on purpose — a second one would be the one that
+// drifts on the day the server changes the handshake.
+//
 // D9 put a confirmation gate in front of anything that spends credits. The
-// contract, from the server side (app/api/comic/jobs/route.ts and
-// lib/comic/billing.ts `requireComicConfirmation`):
+// contract, from the server side (app/api/comic/jobs/route.ts,
+// app/api/pdf/jobs/route.ts and lib/comic/billing.ts
+// `requireComicConfirmation`):
 //
 //   * `confirmCharge` is absent by default, and absent means NOT confirmed.
 //   * A job that would spend credits and is affordable, but was not confirmed,
@@ -21,10 +29,12 @@
 // 「额度内零确认 / 需积分一次汇总确认」 — and this is its extension-side half.
 //
 // Pure on purpose: no DOM, no chrome.*, no fetch. The surface that has an
-// overlay to draw on supplies `confirm`, the surface that can talk to the
-// service supplies `submit`, and this file owns only the order they happen in.
-// Loaded as a classic script by the content scripts, so it publishes onto the
-// global object rather than using `export`.
+// overlay (or a page, or a notification) to draw on supplies `confirm`, the
+// surface that can talk to the service supplies `submit`, and this file owns
+// only the order they happen in. Loaded as a classic script by the content
+// scripts and by the extension's own pages, and imported for its side effect by
+// the service worker, so it publishes onto the global object rather than using
+// `export`.
 (function (root) {
   'use strict';
 
@@ -118,12 +128,41 @@
     return submit(true);
   }
 
-  root.ComicCharge = {
+  /**
+   * The price, in the user's language.
+   *
+   * Both numbers or neither: a half-filled sentence ("costs 3 credits, you have
+   * undefined") reads as a bug at the exact moment the user is deciding whether
+   * to trust us with their balance. The server sends both, so the wordless
+   * `fallback` is for a body we could not read — which is still worth asking
+   * about, just not worth guessing numbers for.
+   *
+   * The keys are the caller's because the sentence is: a comic page and a PDF
+   * are priced differently and read differently ("this page" / "this PDF").
+   * The rule about the two numbers is not, which is why it lives here rather
+   * than once per surface.
+   */
+  function chargeText(quote, t, { required, fallback }) {
+    if (!quote || !Number.isFinite(quote.points) || !Number.isFinite(quote.balancePoints)) {
+      return t(fallback);
+    }
+    return t(required)
+      .replace('{points}', String(quote.points))
+      .replace('{balance}', String(quote.balancePoints));
+  }
+
+  const api = {
     CONFIRM_REQUIRED_CODE,
     DECLINED_CODE,
     isConfirmRequired,
     readQuote,
     needsUserConfirmation,
-    submitWithConfirmation
+    submitWithConfirmation,
+    chargeText
   };
+
+  root.ChargeConfirm = api;
+  // The name the comic content script has called it by since D9 landed. One
+  // object, two names — never a second implementation.
+  root.ComicCharge = api;
 })(globalThis);

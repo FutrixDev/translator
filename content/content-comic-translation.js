@@ -1772,21 +1772,15 @@
   }
 
   /**
-   * The price, in the reader's language.
-   *
-   * Both numbers or neither: a half-filled sentence ("costs 3 credits, you have
-   * undefined") reads as a bug at the exact moment the user is deciding whether
-   * to trust us with their balance. The server sends both, so the wordless
-   * fallback is for a body we could not read — which is still worth asking
-   * about, just not worth guessing numbers for.
+   * The price, in the reader's language — the shared sentence with this
+   * feature's wording in it. The two-numbers-or-neither rule lives in
+   * shared/comic-charge.js, where the PDF surfaces read it too.
    */
   function chargeText(quote) {
-    if (!quote || !Number.isFinite(quote.points) || !Number.isFinite(quote.balancePoints)) {
-      return t('comicChargeConfirm');
-    }
-    return t('comicChargeRequired')
-      .replace('{points}', String(quote.points))
-      .replace('{balance}', String(quote.balancePoints));
+    return ComicCharge.chargeText(quote, t, {
+      required: 'comicChargeRequired',
+      fallback: 'comicChargeConfirm'
+    });
   }
 
   function showJobError(overlay, error) {

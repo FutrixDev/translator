@@ -271,6 +271,36 @@ body {
   gap: 8px;
 }
 
+/* The charge question. The error row's layout, deliberately none of its red:
+   being asked to approve a price is not a failure. */
+.pdf-job-ask {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-job-ask .pdf-job-status {
+  flex: 1;
+  white-space: normal;
+}
+
+.pdf-job-decline {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pdf-job-decline:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* Divider */
 .divider {
   height: 1px;

@@ -48,6 +48,15 @@
           <button type="button" id="pdfOpenMono" class="btn btn-secondary" hidden>
             <span data-i18n="pdfOpenMono">Open Translated PDF</span>
           </button>
+          <!-- The charge confirmation: shown only when the server has refused
+               an unconfirmed create with its quote (D9). Free work never sees
+               these two. -->
+          <button type="button" id="pdfConfirmCharge" class="btn btn-primary" hidden>
+            <span data-i18n="comicChargeApprove">Use Credits</span>
+          </button>
+          <button type="button" id="pdfDeclineCharge" class="btn btn-text" hidden>
+            <span data-i18n="comicCancel">Cancel</span>
+          </button>
           <button type="button" id="pdfRetry" class="btn btn-primary" hidden>
             <span data-i18n="pdfRetry">Retry</span>
           </button>
@@ -63,6 +72,7 @@
   </div>
 
   <script src="../i18n/messages.js"></script>
+  <script src="../shared/comic-charge.js"></script>
   <script src="../shared/pdf-errors.js"></script>
   <script src="pdf-ui.js"></script>
   <script src="upload.js"></script>
