@@ -1,4 +1,4 @@
-// AI Translator Content Script Popup
+// Blab Translation Content Script Popup
 (function() {
   'use strict';
 
@@ -518,7 +518,7 @@
         }
       }
     } catch (error) {
-      console.error('AI Translator: Translation failed', error);
+      console.error('Blab Translation: Translation failed', error);
       if (state.translationPopup && state.translationPopup.dataset.requestId === requestId) {
         const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
         const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');

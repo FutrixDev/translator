@@ -59,6 +59,7 @@
         "i18n/messages.js",
         "shared/account-gate.js",
         "shared/caption-core.js",
+        "shared/comic-charge.js",
         "shared/ocr.js",
         "shared/speech-lang.js",
         "content/content-bootstrap.js",

@@ -1,5 +1,5 @@
 /**
- * Test helper functions for AI Translator E2E tests
+ * Test helper functions for Blab Translation E2E tests
  */
 
 /**

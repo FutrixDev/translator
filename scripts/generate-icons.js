@@ -1,6 +1,12 @@
 /**
- * Icon Generator for AI Translator
+ * Icon Generator for Blab Translation
  * 设计：两个交叠的拟人化气泡，中间融合区域代表翻译
+ *
+ * SUPERSEDED — do not run. It draws the PRE-G1 two-bubble mark, so
+ * `npm run icons` would overwrite icons/icon{16,32,48,128}(-light).png with
+ * the old brand. The shipped icons now come from
+ * brand/blab-translation-2026-07-26/images/chrome-icon-*.png, which are drawn
+ * art, not generated. Kept only as the record of how the old set was made.
  */
 
 const fs = require('fs');

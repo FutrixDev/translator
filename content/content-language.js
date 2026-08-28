@@ -1,4 +1,4 @@
-// AI Translator Content Script Language Helpers
+// Blab Translation Content Script Language Helpers
 (function() {
   'use strict';
 

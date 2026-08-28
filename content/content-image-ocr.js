@@ -1,4 +1,4 @@
-// AI Translator Content Script — image OCR
+// Blab Translation Content Script — image OCR
 //
 // The context menu's image entry lands here. The feature is two
 // separable steps and this module is where they are sequenced:

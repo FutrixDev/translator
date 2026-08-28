@@ -1,4 +1,4 @@
-// AI Translator — video subtitle translation.
+// Blab Translation — video subtitle translation.
 //
 // This is the site-independent engine. A caption *provider*
 // (content/content-caption-providers.js) says whether it can supply cues on

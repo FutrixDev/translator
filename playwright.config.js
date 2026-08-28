@@ -3,7 +3,7 @@ const { defineConfig } = require('@playwright/test');
 const path = require('path');
 
 /**
- * Playwright configuration for AI Translator Chrome Extension testing
+ * Playwright configuration for Blab Translation Chrome Extension testing
  * @see https://playwright.dev/docs/test-configuration
  */
 module.exports = defineConfig({

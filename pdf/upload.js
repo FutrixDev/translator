@@ -1,4 +1,4 @@
-// AI Translator — local PDF upload page.
+// Blab Translation — local PDF upload page.
 //
 // This page exists because no content script can reach a local file: the user
 // picks (or drops) a PDF here, the bytes go to the service worker as base64 —

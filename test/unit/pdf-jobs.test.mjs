@@ -243,11 +243,11 @@ test('a disabled menu item in the popup actually looks disabled', () => {
 
 test('a job in the history links to the same job in the web library', () => {
   assert.equal(
-    ui.pdfLibraryUrl('https://translators-ai.com', 'job-1'),
-    'https://translators-ai.com/settings/pdf?job=job-1'
+    ui.pdfLibraryUrl('https://blab-translation.com', 'job-1'),
+    'https://blab-translation.com/settings/pdf?job=job-1'
   );
   // No job: the library itself, which is what the card header links to.
-  assert.equal(ui.pdfLibraryUrl('https://translators-ai.com'), 'https://translators-ai.com/settings/pdf');
+  assert.equal(ui.pdfLibraryUrl('https://blab-translation.com'), 'https://blab-translation.com/settings/pdf');
   // A trailing slash or a path on the configured base must not reach the URL.
   assert.equal(
     ui.pdfLibraryUrl('https://staging.example.com/', 'job-1'),
@@ -256,15 +256,15 @@ test('a job in the history links to the same job in the web library', () => {
   // An id is a server id, but it still goes through encodeURIComponent — a
   // link is not the place to find out that assumption was wrong.
   assert.equal(
-    ui.pdfLibraryUrl('https://translators-ai.com', 'a/b?c=d'),
-    'https://translators-ai.com/settings/pdf?job=a%2Fb%3Fc%3Dd'
+    ui.pdfLibraryUrl('https://blab-translation.com', 'a/b?c=d'),
+    'https://blab-translation.com/settings/pdf?job=a%2Fb%3Fc%3Dd'
   );
 });
 
 test('a pending job gets no link, because the server has no such job', () => {
   // The library reads an unknown ?job= as a hint and falls back to the newest
   // document, so this link would quietly open the wrong one.
-  assert.equal(ui.pdfLibraryUrl('https://translators-ai.com', 'local:op-1'), '');
+  assert.equal(ui.pdfLibraryUrl('https://blab-translation.com', 'local:op-1'), '');
 });
 
 test('the library link cannot be built from a base that is not a web origin', () => {
@@ -448,7 +448,10 @@ test('the settings page asks the worker for the origin instead of hardcoding one
   assert.match(options, /ACCOUNT_SITE_BASE/);
   assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase, job\.jobId\)/);
   // The default origin lives in comic-client.js; a second copy here would be
-  // the one that goes stale.
+  // the one that goes stale. Both the current origin and the pre-G1 one it
+  // replaced are refused: a stale paste of the old name is the same bug, and
+  // renaming the guard to the new domain alone would have let it through.
+  assert.doesNotMatch(options, /blab-translation\.com/);
   assert.doesNotMatch(options, /translators-ai\.com/);
 
   const background = repoFile('background/background.js');

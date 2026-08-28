@@ -1,4 +1,4 @@
-// AI Translator Content Script Utilities
+// Blab Translation Content Script Utilities
 (function() {
   'use strict';
 

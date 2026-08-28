@@ -1,4 +1,4 @@
-// AI Translator Content Script Translation Engine
+// Blab Translation Content Script Translation Engine
 //
 // 两条翻译后端，一个统一入口：
 //
@@ -653,7 +653,7 @@
                 && error.reason !== ENGINE_REASONS.UNSUPPORTED_PAIR) {
               throw error;
             }
-            console.warn('AI Translator: builtin segment failed, keeping original', error);
+            console.warn('Blab Translation: builtin segment failed, keeping original', error);
             // 空串而不是原文：上层对 falsy 译文是“跳过、保留原文”，
             // 回填原文反而会被当成一条有效译文插进页面。
             translations.push('');
@@ -694,12 +694,12 @@
       } catch (error) {
         if (error instanceof EngineUnavailableError) {
           if (await canFallBackToAI()) {
-            console.info('AI Translator: builtin unavailable (%s), falling back to AI', error.reason);
+            console.info('Blab Translation: builtin unavailable (%s), falling back to AI', error.reason);
           } else {
             return { error: engineErrorMessage(error.reason) };
           }
         } else {
-          console.warn('AI Translator: builtin translation failed', error);
+          console.warn('Blab Translation: builtin translation failed', error);
           if (!(await canFallBackToAI())) {
             return { error: engineErrorMessage(ENGINE_REASONS.CREATE_FAILED) };
           }
@@ -745,7 +745,7 @@
       // 静默进行。这不是用户点出来的翻译，不该去占用进度条；失败也不弹提示，
       // 等他真的发起翻译时，那条路自己会重试并给出说明。
       getTranslator(src, tgt, true).catch((error) => {
-        console.info('AI Translator: language pack prefetch failed', error);
+        console.info('Blab Translation: language pack prefetch failed', error);
       });
     };
     window.addEventListener('pointerdown', onGesture, true);
