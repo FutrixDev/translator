@@ -1,4 +1,4 @@
-// AI Translator — YouTube timedtext interceptor (runs in the page MAIN world).
+// Blab Translation — YouTube timedtext interceptor (runs in the page MAIN world).
 //
 // Why this exists: YouTube's /api/timedtext endpoint now requires a per-session
 // Proof-of-Origin Token (`pot`). A URL scraped from ytInitialPlayerResponse lacks

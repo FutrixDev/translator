@@ -1,4 +1,4 @@
-// AI Translator — the account gate for the two server-backed features.
+// Blab Translation — the account gate for the two server-backed features.
 //
 // Comic translation and PDF translation do not use the user's own API key: they
 // run on our servers against a monthly free page allowance, so both require a

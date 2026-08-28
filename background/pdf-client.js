@@ -1,4 +1,4 @@
-// AI Translator — PDF translation API client (service worker side)
+// Blab Translation — PDF translation API client (service worker side)
 //
 // PDF translation is the comic pipeline's shape with a bigger document in the
 // middle: it runs on our servers, draws on the same monthly free page

@@ -1,4 +1,4 @@
-// AI Translator — choosing the language and the voice a read-aloud button
+// Blab Translation — choosing the language and the voice a read-aloud button
 // speaks with.
 //
 // Three questions, all easy to get wrong, all pure, so they live here where

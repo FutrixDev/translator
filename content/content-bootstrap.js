@@ -1,4 +1,4 @@
-// AI Translator Content Script Bootstrap
+// Blab Translation Content Script Bootstrap
 (function() {
   'use strict';
 
@@ -148,7 +148,7 @@
       Object.assign(ctx.settings, result);
       ctx.applyTheme(ctx.settings.theme);
     } catch (error) {
-      console.error('AI Translator: Failed to load settings', error);
+      console.error('Blab Translation: Failed to load settings', error);
       Object.assign(ctx.settings, {
         translationEngine: 'builtin',
         enableSelection: true,
@@ -184,7 +184,7 @@
     // ball menu, the comic overlay — reads a switch that is true only when the
     // feature can actually run. See shared/account-gate.js.
     await AccountGate.applyAccountGate(ctx.settings);
-    console.log('AI Translator: Settings loaded', {
+    console.log('Blab Translation: Settings loaded', {
       showFloatBall: ctx.settings.showFloatBall,
       theme: ctx.settings.theme
     });
@@ -213,7 +213,7 @@
       }
 
       if (changes.showFloatBall) {
-        console.log('AI Translator: Storage changed, showFloatBall:', changes.showFloatBall.oldValue, '->', changes.showFloatBall.newValue);
+        console.log('Blab Translation: Storage changed, showFloatBall:', changes.showFloatBall.oldValue, '->', changes.showFloatBall.newValue);
         if (ctx.updateFloatBallVisibility) {
           ctx.updateFloatBallVisibility();
         }
@@ -252,7 +252,7 @@
   };
 
   ctx.init = async function() {
-    console.log('AI Translator: Initializing...');
+    console.log('Blab Translation: Initializing...');
     try {
       await ctx.loadSettings();
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
@@ -268,9 +268,9 @@
       // A redraw outlives the page that ordered it, so this is where a reader
       // who paged ahead and came back gets their translation put back.
       if (ctx.resumeComicJobs) ctx.resumeComicJobs();
-      console.log('AI Translator: Initialization complete, showFloatBall =', ctx.settings.showFloatBall);
+      console.log('Blab Translation: Initialization complete, showFloatBall =', ctx.settings.showFloatBall);
     } catch (error) {
-      console.error('AI Translator: Initialization failed', error);
+      console.error('Blab Translation: Initialization failed', error);
     }
   };
 })();

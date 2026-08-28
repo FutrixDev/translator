@@ -1,4 +1,4 @@
-// AI Translator — the ONE PDF error-code → user-facing message map.
+// Blab Translation — the ONE PDF error-code → user-facing message map.
 //
 // Dual-mode on purpose, exactly like i18n/messages.js: the popup, the upload
 // page and the options page load it with a plain <script> tag, while the

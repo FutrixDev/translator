@@ -1,4 +1,4 @@
-// AI Translator Content Script — Comic page translation
+// Blab Translation Content Script — Comic page translation
 //
 // Pick a comic page → the server redraws it with the text translated → the
 // result replaces the image in place, with a badge to flip back to the

@@ -1,4 +1,4 @@
-// AI Translator Background Script
+// Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
 import '../shared/ocr.js';
@@ -1770,7 +1770,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
   // 而非串位。仅在极少数不匹配时多发一次请求。
   if (segments.length !== texts.length) {
     console.warn(
-      `AI Translator: fast-batch delimiter split produced ${segments.length} segments ` +
+      `Blab Translation: fast-batch delimiter split produced ${segments.length} segments ` +
       `for ${texts.length} inputs; falling back to numbered batch to avoid misaligned translations`
     );
     return translateBatchWithAI(texts, targetLang, settings);

@@ -1,4 +1,4 @@
-// AI Translator — Comic translation API client (service worker side)
+// Blab Translation — Comic translation API client (service worker side)
 //
 // Comic page translation is the one feature that does NOT use the user's own
 // API key: the redraw runs on our servers, draws on a monthly free page

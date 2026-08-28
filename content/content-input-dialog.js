@@ -1,4 +1,4 @@
-// AI Translator Content Script Input Dialog
+// Blab Translation Content Script Input Dialog
 (function() {
   'use strict';
 
