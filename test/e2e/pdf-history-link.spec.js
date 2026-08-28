@@ -4,7 +4,7 @@
  * The extension cannot render a PDF. Chrome's viewer is an out-of-process
  * iframe with a closed shadow DOM, so "show me the translated layout" is a
  * question only the website can answer — which is why every row in this list
- * links to the same job on translators-ai.com/settings/pdf.
+ * links to the same job on blab-translation.com/settings/pdf.
  *
  * What this pins down is the part unit tests cannot see: that the link is built
  * from the origin the service worker is actually configured with (here, the

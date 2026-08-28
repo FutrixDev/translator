@@ -14,7 +14,12 @@
 // The apex, not an `app.` subdomain: the marketing site and the account/API
 // half are one Cloudflare Worker on one origin, so /login and /api/* live here
 // too. Keep in sync with PRODUCTION_ORIGIN in translator-saas/server.
-const DEFAULT_API_BASE = 'https://translators-ai.com';
+//
+// blab-translation.com replaced translators-ai.com in the G1 brand migration.
+// The old origin keeps serving /api/* untouched (no 301 — a preflight does not
+// follow one) for as long as older installs are still out there, so a version
+// skew in either direction keeps working.
+const DEFAULT_API_BASE = 'https://blab-translation.com';
 
 const STORAGE_KEYS = {
   apiBase: 'comicApiBase',
