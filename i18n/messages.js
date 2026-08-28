@@ -1,4 +1,4 @@
-// AI Translator i18n Messages
+// Blab Translation i18n Messages
 // Supports multiple languages based on user's target language setting
 
 const I18N_MESSAGES = {
@@ -166,8 +166,8 @@ const I18N_MESSAGES = {
     
     // Settings / Options
     settings: 'Settings',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
 
     // Translation engine (see content/content-translation-engine.js)
     translationEngine: 'Translation Engine',
@@ -500,8 +500,8 @@ Rules:
     
     // Settings / Options
     settings: '设置',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: '叭叭翻译',
+    appNameVersion: '叭叭翻译 v1.3.1',
 
     // Translation engine (see content/content-translation-engine.js)
     translationEngine: '翻译引擎',
@@ -802,8 +802,8 @@ Rules:
     pageContentNotTranslatable: '本頁內文無法就地承載譯文。選取文字，可在彈出視窗中查看翻譯。',
     closeTranslation: '關閉翻譯',
     settings: '設置',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: '叭叭翻譯',
+    appNameVersion: '叭叭翻譯 v1.3.1',
     apiSettings: 'API 設置',
     provider: '服務商',
     providerOpenai: 'OpenAI',
@@ -1081,8 +1081,8 @@ Rules:
     pageContentNotTranslatable: 'このページの本文には訳文をその場で表示できません。テキストを選択すると、ポップアップで翻訳を確認できます。',
     closeTranslation: '翻訳を閉じる',
     settings: '設定',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'API 設定',
     provider: 'プロバイダー',
     providerOpenai: 'OpenAI',
@@ -1345,8 +1345,8 @@ Rules:
     pageContentNotTranslatable: '이 페이지의 본문에는 번역을 그 자리에 표시할 수 없습니다. 텍스트를 선택하면 팝업에서 번역을 볼 수 있습니다.',
     closeTranslation: '번역 닫기',
     settings: '설정',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'API 설정',
     provider: '제공업체',
     providerOpenai: 'OpenAI',
@@ -1609,8 +1609,8 @@ Rules:
     pageContentNotTranslatable: 'Le texte de cette page ne peut pas accueillir de traduction sur place. Sélectionnez le texte pour lire la traduction dans une fenêtre contextuelle.',
     closeTranslation: 'Fermer la traduction',
     settings: 'Paramètres',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'Paramètres API',
     provider: 'Fournisseur',
     providerOpenai: 'OpenAI',
@@ -1873,8 +1873,8 @@ Rules:
     pageContentNotTranslatable: 'Der Text dieser Seite kann keine Übersetzung an Ort und Stelle aufnehmen. Markieren Sie den Text, um die Übersetzung in einem Pop-up zu lesen.',
     closeTranslation: 'Übersetzung schließen',
     settings: 'Einstellungen',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'API-Einstellungen',
     provider: 'Anbieter',
     providerOpenai: 'OpenAI',
@@ -2137,8 +2137,8 @@ Rules:
     pageContentNotTranslatable: 'El texto de esta página no puede alojar una traducción en su lugar. Selecciona el texto para leer la traducción en una ventana emergente.',
     closeTranslation: 'Cerrar traducción',
     settings: 'Configuración',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'Configuración de API',
     provider: 'Proveedor',
     providerOpenai: 'OpenAI',
@@ -2401,8 +2401,8 @@ Rules:
     pageContentNotTranslatable: 'O texto desta página não pode exibir a tradução no próprio lugar. Selecione o texto para ler a tradução numa janela pop-up.',
     closeTranslation: 'Fechar tradução',
     settings: 'Configurações',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'Configurações de API',
     provider: 'Provedor',
     providerOpenai: 'OpenAI',
@@ -2665,8 +2665,8 @@ Rules:
     pageContentNotTranslatable: 'Текст этой страницы не может вместить перевод на месте. Выделите текст, чтобы прочитать перевод во всплывающем окне.',
     closeTranslation: 'Закрыть перевод',
     settings: 'Настройки',
-    appName: 'AI Translator',
-    appNameVersion: 'AI Translator v1.0.0',
+    appName: 'Blab Translation',
+    appNameVersion: 'Blab Translation v1.3.1',
     apiSettings: 'Настройки API',
     provider: 'Провайдер',
     providerOpenai: 'OpenAI',

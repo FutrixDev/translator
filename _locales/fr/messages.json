@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "AI Translator",
+    "message": "Blab Translation",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Traduction IA gratuite, sûre, sans intermédiaire. Pages web, articles scientifiques (maths/LaTeX intacts), sous-titres YouTube.",
+    "message": "Traduction IA gratuite : pages web, articles scientifiques (maths/LaTeX intacts), sous-titres YouTube, PDF et bandes dessinées.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   }
 }
