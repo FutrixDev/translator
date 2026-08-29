@@ -1,4 +1,4 @@
-// AI Translator Content Script Speech
+// Blab Translation Content Script Speech
 //
 // One owner for read-aloud. Both translation surfaces — the selection popup and
 // the input dialog — mount speaker buttons for the original text and for the

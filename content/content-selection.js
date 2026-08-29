@@ -1,4 +1,4 @@
-// AI Translator Content Script Selection
+// Blab Translation Content Script Selection
 (function() {
   'use strict';
 

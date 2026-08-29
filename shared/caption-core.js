@@ -1,4 +1,4 @@
-// AI Translator — the site-independent half of subtitle translation.
+// Blab Translation — the site-independent half of subtitle translation.
 //
 // Everything here is pure: give it text or cues, get cues or segments back. It
 // knows nothing about YouTube, about the DOM, or about how a page hands over

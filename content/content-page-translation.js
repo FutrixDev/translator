@@ -1,4 +1,4 @@
-// AI Translator Content Script Page Translation
+// Blab Translation Content Script Page Translation
 (function() {
   'use strict';
 
@@ -82,7 +82,7 @@
     // 译文仍处于隐藏状态，用户会觉得“再次翻译没有任何反应”。
     revealHiddenTranslations();
     if (state.isTranslatingPage) {
-      console.log('AI Translator: Already translating page');
+      console.log('Blab Translation: Already translating page');
       // 如果进度条被关闭了，重新显示它并恢复进度
       let existingProgress = document.getElementById('ai-translator-progress');
       if (!existingProgress) {
@@ -123,7 +123,7 @@
         // 收到了大部分块，但受管容器里有几块画不出来（有公式、站点自己用了
         // ::after、块是 flex/grid 容器）。译文会照常出现，只是缺那几块，所以
         // 不打断流程，只留一条线索。
-        console.info(`AI Translator: ${managedSkipped} block(s) inside a managed editor root cannot carry generated content`);
+        console.info(`Blab Translation: ${managedSkipped} block(s) inside a managed editor root cannot carry generated content`);
       }
 
       // 优先处理首屏相关内容
@@ -135,7 +135,7 @@
       // 软优先：首屏批次排在前面，但不阻塞后续批次启动
       const batches = priorityBatches.concat(deferredBatches);
       
-      console.log(`AI Translator: ${translatableBlocks.length} blocks, ${batches.length} batches, concurrency: ${CONCURRENCY}`);
+      console.log(`Blab Translation: ${translatableBlocks.length} blocks, ${batches.length} batches, concurrency: ${CONCURRENCY}`);
 
       state.translationProgress.total = translatableBlocks.length;
 
@@ -204,7 +204,7 @@
               translations[x.index] = response.translations[k];
             });
           } catch (error) {
-            console.error('AI Translator: Oversized block translation failed', error);
+            console.error('Blab Translation: Oversized block translation failed', error);
             if (isExtensionContextInvalidated(error)) {
               // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
               batchError = t('extensionContextInvalidated');
@@ -266,7 +266,7 @@
             });
           }
         } catch (error) {
-          console.error('AI Translator: Batch translation failed', error);
+          console.error('Blab Translation: Batch translation failed', error);
           if (isExtensionContextInvalidated(error)) {
             batchError = t('extensionContextInvalidated');
           } else {
@@ -292,7 +292,7 @@
         hidePageTranslationProgress();
       }
     } catch (error) {
-      console.error('AI Translator: Page translation failed', error);
+      console.error('Blab Translation: Page translation failed', error);
       showTranslationError(error.message || t('translationFailed'));
     } finally {
       state.isTranslatingPage = false;
@@ -1415,7 +1415,7 @@
       if (!settings.autoDetect) return false;
       return await isTargetLanguageText(block.text);
     } catch (error) {
-      console.warn('AI Translator: Language detection failed', error);
+      console.warn('Blab Translation: Language detection failed', error);
       return false;
     }
   }
@@ -1429,7 +1429,7 @@
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
-        `AI Translator: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
+        `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
       await translateBlocksOneByOne(batch, { onFailure, isAborted });
@@ -1468,7 +1468,7 @@
       } catch (error) {
         // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
         if (isExtensionContextInvalidated(error)) throw error;
-        console.error('AI Translator: Per-block fallback translation failed', error);
+        console.error('Blab Translation: Per-block fallback translation failed', error);
         if (onFailure) onFailure(error.message);
       }
     }
@@ -1487,7 +1487,7 @@
           keep[index] = false;
         }
       } catch (error) {
-        console.warn('AI Translator: Language pre-check failed', error);
+        console.warn('Blab Translation: Language pre-check failed', error);
       }
     }, 8);
 

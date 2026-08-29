@@ -1,6 +1,12 @@
 /**
  * Promotional Assets Generator for AI Academic Paper Translator
  * Generates icon and promotional images
+ *
+ * SUPERSEDED — do not run. Same reason as generate-icons.js: it writes
+ * icons/promo-small.png, icons/promo-large.png and icons/icon128-new.png in
+ * the pre-G1 brand. The store tiles now come from
+ * brand/blab-translation-2026-07-26/images/chrome-{small-promo,marquee-logo-led}-*.png,
+ * and icon128-new.png was deleted as unreferenced.
  */
 
 const fs = require('fs');

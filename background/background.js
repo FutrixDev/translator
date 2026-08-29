@@ -1,10 +1,16 @@
-// AI Translator Background Script
+// Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+// Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
+// copy of D9's charge-confirmation logic, which the content scripts and the
+// extension's own pages load as a classic script.
+import '../shared/comic-charge.js';
 import '../shared/ocr.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
+
+const ChargeConfirm = globalThis.ChargeConfirm;
 
 // Update extension icon based on theme
 async function updateIcon(theme) {
@@ -775,24 +781,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Before the await, not after: the whole point is that the click stops
     // looking like it did nothing.
     notifyPdfStarted(fileName);
-    try {
-      const job = await handlePdfCreateJob({
-        source: { kind: 'url', url },
-        operationId,
-        fileName,
-        pageUrl: info.pageUrl || ''
-      });
-      // A create can resolve to a job that is already over — the idempotent
-      // adopt of an earlier attempt that died. No poll transition will ever
-      // fire for it, so without this the user saw "started" and then nothing.
-      // (handlePdfCreateJob has already released the operation id, so the
-      // "try again" in the failure copy is true.)
-      if (job && (job.status === 'failed' || job.status === 'abandoned')) {
-        notifyPdfError(job.error || { code: job.status });
-      }
-    } catch (error) {
-      notifyPdfError(error);
-    }
+    await runPdfUrlJob({ url, operationId, fileName, pageUrl: info.pageUrl || '' });
   } else if (info.menuItemId === MENU_IDS.removeInlineTranslation) {
     chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' });
   }
@@ -965,6 +954,116 @@ async function notifyPdfError(error) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The context menu's charge confirmation
+//
+// Every other PDF surface asks the question on the surface the user is looking
+// at — the upload page in its job card, the popup in its task list. The context
+// menu has no surface at all (Chrome's PDF viewer admits no content script), so
+// it asks in the one place it already speaks: a notification, with the answer
+// as its buttons.
+//
+// That makes the answer arrive out-of-band, minutes later, quite possibly after
+// this worker has been torn down and restarted — which is why the round trip is
+// written out here instead of going through ChargeConfirm.submitWithConfirmation
+// like the page surfaces do. That helper awaits an answer inside one call, and
+// a promise held open across a service-worker teardown is exactly the thing
+// MV3 will not keep. The parts that are actual policy — is this a confirmation
+// request, what does the quote say, how is the price worded — still come from
+// the shared module; only the ordering is different, because the ordering here
+// spans two events.
+//
+// The notification id carries the operation id, and pdfUrlOps still maps that
+// back to the URL, so the handshake keeps no state of its own: nothing to
+// expire, nothing to leak, and a restarted worker picks it up unchanged.
+// ---------------------------------------------------------------------------
+
+const PDF_CHARGE_NOTIFICATION_PREFIX = 'pdf-charge-';
+
+// The PDF wording of the shared price sentence. A comic page and a document
+// are priced differently and read differently; the two-numbers-or-neither rule
+// they share lives in shared/comic-charge.js.
+const PDF_CHARGE_KEYS = { required: 'pdfChargeRequired', fallback: 'pdfChargeConfirm' };
+
+/**
+ * Create a URL job from the context menu, asking about the price if the server
+ * says there is one.
+ *
+ * `confirmCharge` is true only on the second pass — the one the notification's
+ * own button starts.
+ */
+async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge = false }) {
+  try {
+    const job = await handlePdfCreateJob({
+      source: { kind: 'url', url },
+      operationId,
+      fileName,
+      pageUrl: pageUrl || '',
+      confirmCharge
+    });
+    // A create can resolve to a job that is already over — the idempotent
+    // adopt of an earlier attempt that died. No poll transition will ever
+    // fire for it, so without this the user saw "started" and then nothing.
+    // (handlePdfCreateJob has already released the operation id, so the
+    // "try again" in the failure copy is true.)
+    if (job && (job.status === 'failed' || job.status === 'abandoned')) {
+      notifyPdfError(job.error || { code: job.status });
+    }
+  } catch (error) {
+    if (ChargeConfirm.isConfirmRequired(error)) {
+      // Nothing was reserved and no job was created, so there is nothing to
+      // report as a failure — only a question to put to the user.
+      // The quote reader takes the flat messaging shape every other surface
+      // sees; here the error is still a ComicApiError, which keeps the body's
+      // extra fields under `details`.
+      await askPdfCharge(operationId, fileName,
+        ChargeConfirm.readQuote({ code: error.code, ...(error.details || {}) }));
+      return;
+    }
+    notifyPdfError(error);
+  }
+}
+
+/** "This costs N credits — spend them?", as a notification with two buttons. */
+async function askPdfCharge(operationId, fileName, quote) {
+  const uiLang = await pdfNotificationLang();
+  const t = key => pdfMessage(key, uiLang);
+  chrome.notifications.create(`${PDF_CHARGE_NOTIFICATION_PREFIX}${operationId}`, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: t('pdfNotifyChargeTitle'),
+    message: `${fileName ? `${fileName}\n` : ''}${ChargeConfirm.chargeText(quote, t, PDF_CHARGE_KEYS)}`,
+    buttons: [{ title: t('comicChargeApprove') }, { title: t('comicCancel') }],
+    // The question stays until it is answered. A price that scrolled away after
+    // a few seconds would leave a click looking like it silently did nothing.
+    requireInteraction: true
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
+chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  if (!notificationId.startsWith(PDF_CHARGE_NOTIFICATION_PREFIX)) return;
+  chrome.notifications.clear(notificationId);
+  // Button 1 is Cancel, and declining is a cancel rather than a failure: the
+  // 409 reserved nothing, no job exists, no record was kept. Saying nothing
+  // back is the whole of it. (Dismissing the notification says the same.)
+  if (buttonIndex !== 0) return;
+
+  const operationId = notificationId.slice(PDF_CHARGE_NOTIFICATION_PREFIX.length);
+  const url = await pdfClient.findUrlForOperationId(operationId);
+  // The binding aged out (24h) while the notification sat there. There is no
+  // longer anything to translate, and re-deriving a URL from an id is not
+  // possible — the next click starts a fresh operation anyway.
+  if (!url) return;
+
+  const fileName = pdfFileNameFromUrl(url);
+  notifyPdfStarted(fileName);
+  await runPdfUrlJob({ url, operationId, fileName, confirmCharge: true });
+});
+
 /**
  * The single entry point every PDF surface funnels into: popup button, context
  * menus, and the upload page all end up here.
@@ -1025,10 +1124,27 @@ async function handlePdfCreateJob(message) {
       operationId,
       bytes,
       fileName,
-      targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings)
+      targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings),
+      // Only ever true, and only because a surface asked the user first. The
+      // worker never decides this on anyone's behalf.
+      confirmCharge: message.confirmCharge === true
     });
   } catch (error) {
     const code = (error && error.code) || 'engine_error';
+    if (ChargeConfirm.isConfirmRequired({ code })) {
+      // Not a failure: the server refused with a question, reserved nothing and
+      // created no job. Drop the receipt rather than settle it — a red row
+      // saying the translation failed, for a price nobody has been shown yet,
+      // is worse than no row, and the confirmed retry replays this same
+      // operation id and writes the receipt again. The id is deliberately NOT
+      // released: it is the only thing making that retry the same operation.
+      await pdfClient.dismissJobRecord(pendingId);
+      // Echoed so the caller's retry is provably the same operation rather than
+      // one that merely resolves to the same id again (the popup, for one, does
+      // not mint its own — see the URL binding above).
+      error.details = { ...(error.details || {}), operationId };
+      throw error;
+    }
     // A 409 of this family means the cached operation id names work that
     // already settled — a failed-then-deleted job, a finalized billing row, or
     // a job with different settings (the target language changed). Replaying
@@ -1770,7 +1886,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
   // 而非串位。仅在极少数不匹配时多发一次请求。
   if (segments.length !== texts.length) {
     console.warn(
-      `AI Translator: fast-batch delimiter split produced ${segments.length} segments ` +
+      `Blab Translation: fast-batch delimiter split produced ${segments.length} segments ` +
       `for ${texts.length} inputs; falling back to numbered batch to avoid misaligned translations`
     );
     return translateBatchWithAI(texts, targetLang, settings);

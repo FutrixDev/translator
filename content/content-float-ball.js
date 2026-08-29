@@ -1,4 +1,4 @@
-// AI Translator Content Script Float Ball
+// Blab Translation Content Script Float Ball
 (function() {
   'use strict';
 
@@ -36,7 +36,7 @@
   function ensureFloatBallExists() {
     // Check if float ball was removed from DOM
     if (state.floatBall && !document.body.contains(state.floatBall)) {
-      console.log('AI Translator: Float ball was removed from DOM, recreating...');
+      console.log('Blab Translation: Float ball was removed from DOM, recreating...');
       state.floatBall = null;
       state.floatBallContainer = null;
     }
@@ -80,7 +80,7 @@
 
     // Ensure document.body exists
     if (!document.body) {
-      console.error('AI Translator: document.body not available');
+      console.error('Blab Translation: document.body not available');
       return;
     }
 
@@ -151,12 +151,12 @@
         }
       }
     } catch (error) {
-      console.warn('AI Translator: Failed to load saved position, using default', error);
+      console.warn('Blab Translation: Failed to load saved position, using default', error);
       localStorage.removeItem('ai-translator-float-position');
     }
 
     document.body.appendChild(state.floatBall);
-    console.log('AI Translator: Float ball created');
+    console.log('Blab Translation: Float ball created');
 
     // Setup drag and click handling
     setupFloatBallInteraction();
@@ -588,10 +588,10 @@
         ensureFloatBallInViewport();
       }
 
-      console.log('AI Translator: Float ball visibility updated, display =', state.floatBall.style.display,
+      console.log('Blab Translation: Float ball visibility updated, display =', state.floatBall.style.display,
                   ', element in DOM =', document.body.contains(state.floatBall));
     } else if (shouldShow) {
-      console.warn('AI Translator: Float ball not in DOM, cannot update visibility');
+      console.warn('Blab Translation: Float ball not in DOM, cannot update visibility');
     }
   }
 
@@ -642,7 +642,7 @@
       state.floatBall.style.setProperty('top', `${newTop}px`, 'important');
       state.floatBall.style.setProperty('right', 'auto', 'important');
       state.floatBall.style.setProperty('bottom', 'auto', 'important');
-      console.log('AI Translator: Float ball position adjusted to', newLeft, newTop);
+      console.log('Blab Translation: Float ball position adjusted to', newLeft, newTop);
 
       // Clear any invalid saved position
       localStorage.removeItem('ai-translator-float-position');

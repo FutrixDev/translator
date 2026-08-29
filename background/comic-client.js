@@ -1,4 +1,4 @@
-// AI Translator — Comic translation API client (service worker side)
+// Blab Translation — Comic translation API client (service worker side)
 //
 // Comic page translation is the one feature that does NOT use the user's own
 // API key: the redraw runs on our servers, draws on a monthly free page
@@ -14,7 +14,12 @@
 // The apex, not an `app.` subdomain: the marketing site and the account/API
 // half are one Cloudflare Worker on one origin, so /login and /api/* live here
 // too. Keep in sync with PRODUCTION_ORIGIN in translator-saas/server.
-const DEFAULT_API_BASE = 'https://translators-ai.com';
+//
+// blab-translation.com replaced translators-ai.com in the G1 brand migration.
+// The old origin keeps serving /api/* untouched (no 301 — a preflight does not
+// follow one) for as long as older installs are still out there, so a version
+// skew in either direction keeps working.
+const DEFAULT_API_BASE = 'https://blab-translation.com';
 
 const STORAGE_KEYS = {
   apiBase: 'comicApiBase',
@@ -329,8 +334,18 @@ export async function getAccount({ force = false } = {}) {
  * `operationId` is the idempotency key — re-posting the same one returns the
  * existing job instead of counting the page twice, which is what makes a retry
  * after a dropped connection safe.
+ *
+ * `confirmCharge` is D9's answer to "this will spend credits, is that alright".
+ * The server refuses an unconfirmed job that costs credits with a 409 carrying
+ * its quote, which apiFetch surfaces as a ComicApiError with
+ * code `QUOTE_CONFIRM_REQUIRED` and the quote in its details; the caller shows
+ * the quote and comes back through here with the SAME operationId and
+ * `confirmCharge: true`. That 409 reserves nothing and the retry is the same
+ * operation, so the round trip cannot charge twice. Deciding to ask is not this
+ * layer's job — the confirmation UI is, and has to be, on the surface the user
+ * is looking at. See shared/comic-charge.js.
  */
-export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang, mode }) {
+export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang, mode, confirmCharge }) {
   // Ask for the token before downloading anything. Acquisition now happens
   // before the POST rather than after a rejection, so without this a signed-out
   // click — the common first one — pulls a multi-megabyte page for nothing.
@@ -359,7 +374,11 @@ export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, s
       // What the redraw does to the page: translate (default), colorize, or
       // translate_colorize. Validated server-side; absent means translate so
       // this client stays compatible with a server that predates modes.
-      mode: mode || 'translate'
+      mode: mode || 'translate',
+      // Sent only to say yes. Absent is the server's default and already means
+      // "not confirmed", so an unconfirmed create carries no claim at all —
+      // which is also what a server predating D9 sees.
+      ...(confirmCharge === true ? { confirmCharge: true } : {})
     }
   });
 }

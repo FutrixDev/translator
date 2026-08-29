@@ -1,4 +1,4 @@
-// AI Translator Content Script Hover Translation
+// Blab Translation Content Script Hover Translation
 (function() {
   'use strict';
 

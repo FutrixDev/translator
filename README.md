@@ -1,4 +1,4 @@
-# AI Translator
+# Blab Translation
 
 <p align="center">
   <a href="#english">🇬🇧 English</a> | <a href="#中文">🇨🇳 中文</a>
@@ -8,7 +8,7 @@
 
 <a id="english"></a>
 
-## 🌐 AI Translator - Chrome Extension
+## 🌐 Blab Translation - Chrome Extension
 
 An AI-powered Chrome browser translation extension that supports selection translation and full-page translation, making web translation smarter and more natural.
 
@@ -210,7 +210,7 @@ MIT License
 
 <a id="中文"></a>
 
-## 🌐 AI Translator - 智能翻译插件
+## 🌐 叭叭翻译 - 智能翻译插件
 
 一款基于 AI 的 Chrome 浏览器翻译插件，支持划词翻译和全文翻译，让网页翻译更智能、更自然。
 

@@ -1,4 +1,4 @@
-// AI Translator — local PDF upload page.
+// Blab Translation — local PDF upload page.
 //
 // This page exists because no content script can reach a local file: the user
 // picks (or drops) a PDF here, the bytes go to the service worker as base64 —
@@ -10,6 +10,11 @@
   'use strict';
 
   const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
+  // D9's charge handshake, the same module the comic overlay and the service
+  // worker use. Nothing in it is comic-specific — see shared/comic-charge.js.
+  const ChargeConfirm = globalThis.ChargeConfirm;
+  // This page's wording of the shared price sentence.
+  const CHARGE_KEYS = { required: 'pdfChargeRequired', fallback: 'pdfChargeConfirm' };
   // Kept in sync with MAX_PDF_BYTES in background/pdf-client.js.
   const MAX_PDF_BYTES = 30 * 1024 * 1024;
   const POLL_MS = 2500;
@@ -27,7 +32,9 @@
     openMono: document.getElementById('pdfOpenMono'),
     retry: document.getElementById('pdfRetry'),
     signIn: document.getElementById('pdfSignIn'),
-    abandon: document.getElementById('pdfAbandon')
+    abandon: document.getElementById('pdfAbandon'),
+    confirmCharge: document.getElementById('pdfConfirmCharge'),
+    declineCharge: document.getElementById('pdfDeclineCharge')
   };
 
   let currentUILang = 'en';
@@ -75,7 +82,8 @@
 
   function hideActions() {
     [elements.openDual, elements.openMono, elements.retry,
-     elements.signIn, elements.abandon]
+     elements.signIn, elements.abandon,
+     elements.confirmCharge, elements.declineCharge]
       .forEach(btn => { btn.hidden = true; });
   }
 
@@ -132,6 +140,60 @@
     if (currentFile) currentFile.operationId = crypto.randomUUID();
     elements.progressTrack.hidden = true;
     renderFailure(view.error || { code: view.status });
+  }
+
+  /**
+   * The price, and the two buttons that answer it.
+   *
+   * Drawn in the job card the file is already in, which is this page's shape
+   * for everything else it has to say about that file — the progress, the
+   * failure, the sign-in offer. There is no overlay here and no service worker
+   * UI to borrow: the page IS the surface.
+   */
+  function renderCharge(quote) {
+    elements.jobCard.hidden = false;
+    elements.fileName.textContent = currentFile ? currentFile.name : '';
+    elements.statusText.textContent = ChargeConfirm.chargeText(quote, t, CHARGE_KEYS);
+    elements.error.hidden = true;
+    elements.progressTrack.hidden = true;
+    hideActions();
+    elements.confirmCharge.hidden = false;
+    elements.declineCharge.hidden = false;
+  }
+
+  /** Resolves true to spend the credits, false to leave them alone. */
+  function promptCharge(quote) {
+    return new Promise((resolve) => {
+      renderCharge(quote);
+      const answer = (approved) => {
+        elements.confirmCharge.removeEventListener('click', onApprove);
+        elements.declineCharge.removeEventListener('click', onDecline);
+        // The question is over, so its buttons go with it: a late click on a
+        // stale Cancel would land while a paid create was already in flight.
+        hideActions();
+        resolve(approved);
+      };
+      const onApprove = () => { answer(true); renderStarting(); };
+      const onDecline = () => answer(false);
+      elements.confirmCharge.addEventListener('click', onApprove);
+      elements.declineCharge.addEventListener('click', onDecline);
+    });
+  }
+
+  /**
+   * Declining is a cancel, not a failure.
+   *
+   * The 409 reserved nothing and created no job, so there is nothing to
+   * abandon, nothing to remember and nothing to refund — and nothing that
+   * belongs in the red error line either. The file is still here, so Retry can
+   * ask again.
+   */
+  function renderDeclined() {
+    elements.statusText.textContent = t('pdfChargeDeclined');
+    elements.error.hidden = true;
+    elements.progressTrack.hidden = true;
+    hideActions();
+    elements.retry.hidden = false;
   }
 
   /** Terminal failures and create-time rejections share one presentation. */
@@ -195,18 +257,45 @@
     }
   }
 
+  /**
+   * Create the job, asking the user first if the server says it costs credits.
+   *
+   * The server refuses an unconfirmed create that would spend credits with a
+   * 409 carrying its own quote, having reserved nothing; the retry that says
+   * yes carries the SAME operationId and is therefore the same operation, not
+   * a second charge for one file. Work the monthly allowance covers is never
+   * refused, so this page only ever asks about real credits.
+   */
+  function submitJob() {
+    return ChargeConfirm.submitWithConfirmation({
+      // A closure over the file's own id, deliberately: the confirmed retry
+      // cannot reach a fresh operationId even by accident, which is the one
+      // thing standing between this round trip and a double charge.
+      submit: (confirmCharge) => sendMessage({
+        type: 'PDF_CREATE_JOB',
+        source: { kind: 'bytes', bytesBase64: currentFile.bytesBase64 },
+        fileName: currentFile.name,
+        operationId: currentFile.operationId,
+        // Only ever true after the user has said so; the worker sends nothing
+        // at all otherwise, which is already the server's "not confirmed".
+        confirmCharge: confirmCharge === true
+      }),
+      confirm: promptCharge
+    });
+  }
+
   async function startJob() {
     if (!currentFile) return;
     stopPolling();
     currentJobId = null;
     renderStarting();
 
-    const response = await sendMessage({
-      type: 'PDF_CREATE_JOB',
-      source: { kind: 'bytes', bytesBase64: currentFile.bytesBase64 },
-      fileName: currentFile.name,
-      operationId: currentFile.operationId
-    });
+    const response = await submitJob();
+
+    if (!response.ok && response.declined) {
+      renderDeclined();
+      return;
+    }
 
     if (!response.ok) {
       const code = response.error && response.error.code;

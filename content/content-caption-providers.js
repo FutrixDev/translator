@@ -1,4 +1,4 @@
-// AI Translator — caption providers.
+// Blab Translation — caption providers.
 //
 // A provider answers three questions for one class of site:
 //

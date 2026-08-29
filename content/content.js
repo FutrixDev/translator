@@ -1,4 +1,4 @@
-// AI Translator Content Script Entrypoint
+// Blab Translation Content Script Entrypoint
 (function() {
   'use strict';
 

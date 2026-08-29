@@ -1,4 +1,4 @@
-// AI Translator — shared helpers for the PDF surfaces (popup + upload page).
+// Blab Translation — shared helpers for the PDF surfaces (popup + upload page).
 //
 // A classic script on purpose: both pages load it with a plain <script> tag,
 // the same way i18n/messages.js is shared. The error map itself lives in

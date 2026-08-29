@@ -1,4 +1,4 @@
-// AI Translator Content Script — Comic page translation
+// Blab Translation Content Script — Comic page translation
 //
 // Pick a comic page → the server redraws it with the text translated → the
 // result replaces the image in place, with a badge to flip back to the
@@ -1385,7 +1385,9 @@
     overlay.setStatus(statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
-    let created = await createJob({ entry, pageUrl, targetLang, imageBase64: null });
+    let created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
+
+    if (!created.ok && created.declined) return;
 
     if (!created.ok && created.error.code === 'unauthorized') {
       // Sign-in is the one interruption that is genuinely the user's turn, so
@@ -1395,7 +1397,8 @@
       if (!signedIn) return;
       overlay.setStatus(statusText(entry.mode), { progress: 0 });
       overlay.startTimer(Date.now());
-      created = await createJob({ entry, pageUrl, targetLang, imageBase64: null });
+      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
+      if (!created.ok && created.declined) return;
     }
 
     if (!created.ok && created.error.needsPageBytes) {
@@ -1412,7 +1415,8 @@
         offerDismiss(overlay);
         return;
       }
-      created = await createJob({ entry, pageUrl, targetLang, imageBase64 });
+      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 });
+      if (!created.ok && created.declined) return;
     }
 
     if (!created.ok) {
@@ -1529,11 +1533,56 @@
     offerDismiss(overlay);
   }
 
-  function createJob({ entry, pageUrl, targetLang, imageBase64 }) {
+  /**
+   * Order the page, stopping for the reader's consent if the server asks.
+   *
+   * Every create in runJob goes through here rather than through createJob,
+   * because the 409 can land on any of them: the first attempt, the retry after
+   * a sign-in (a signed-out user has no balance to quote against, so their
+   * *first* quote arrives here), and the re-upload after needsPageBytes.
+   *
+   * The prompt is drawn on the overlay — the card already pinned to the page
+   * being ordered. It is the only surface in this feature that can say WHICH
+   * page the price is for, which matters on a spread where two jobs are in
+   * flight at once, and it is where the user is already looking. The other
+   * candidates were both worse: the service worker has no UI at all and would
+   * have to invent one (a notification, a popup) that appears away from the
+   * page, and window.confirm() blocks the whole tab and is styled by the site's
+   * chrome, not ours. promptSignIn is the existing precedent for exactly this
+   * shape of interruption, and this follows it.
+   *
+   * Resolves to the usual envelope, plus `declined: true` when the reader said
+   * no. Declining is a cancel, not an error: the 409 reserved nothing and no
+   * job id exists yet, so there is nothing to abandon, nothing to remember and
+   * nothing to refund — the caller just returns.
+   */
+  function submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 }) {
+    return ComicCharge.submitWithConfirmation({
+      // A closure, not a parameter, and that is the point: the retry after a
+      // confirmation can only reach entry.operationId, so it structurally
+      // cannot become a second operation the server would charge twice for.
+      submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }),
+      confirm: async (quote) => {
+        // The reader's turn, so the clock stops — exactly as it does for
+        // sign-in. Counting the time someone spends reading a price as redraw
+        // time would also spend their timeout budget on it.
+        overlay.stopTimer();
+        const approved = await promptCharge(overlay, quote);
+        if (!approved) return false;
+        overlay.setStatus(statusText(entry.mode), { progress: 0 });
+        overlay.startTimer(Date.now());
+        return true;
+      }
+    });
+  }
+
+  function createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }) {
     return sendMessage({
       type: 'COMIC_JOB_CREATE',
       job: {
         operationId: entry.operationId,
+        // Only ever true, and only after the reader said so — see submitJob.
+        confirmCharge: confirmCharge === true,
         // For the *worker* to fetch, not the service — the service only ever
         // receives bytes. Skipped once we already hold them.
         imageUrl: imageBase64 ? null : entry.originalSrc,
@@ -1683,6 +1732,54 @@
           }
         }
       ]);
+    });
+  }
+
+  /**
+   * Ask the reader to spend credits on this page.
+   *
+   * Only ever reached from a server 409: the monthly allowance covers a page
+   * without any confirmation at all (B4 §「额度内零确认 / 需积分一次汇总确认」),
+   * so this card appears exactly when real credits are about to be spent, and
+   * never for free work.
+   *
+   * Approving clears the buttons before returning. The cancel button belongs to
+   * the question, and the question is over — but the job is not yet created, so
+   * a late click on a stale Cancel would tear down the overlay while a paid
+   * create was still in flight, leaving a redraw nobody is watching.
+   */
+  function promptCharge(overlay, quote) {
+    return new Promise((resolve) => {
+      overlay.setStatus(chargeText(quote), { busy: false });
+      overlay.setActions([
+        {
+          label: t('comicChargeApprove'),
+          variant: 'primary',
+          onClick: () => {
+            overlay.setActions([]);
+            resolve(true);
+          }
+        },
+        {
+          label: t('comicCancel'),
+          onClick: () => {
+            overlay.destroy();
+            resolve(false);
+          }
+        }
+      ]);
+    });
+  }
+
+  /**
+   * The price, in the reader's language — the shared sentence with this
+   * feature's wording in it. The two-numbers-or-neither rule lives in
+   * shared/comic-charge.js, where the PDF surfaces read it too.
+   */
+  function chargeText(quote) {
+    return ComicCharge.chargeText(quote, t, {
+      required: 'comicChargeRequired',
+      fallback: 'comicChargeConfirm'
     });
   }
 

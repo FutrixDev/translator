@@ -1,4 +1,4 @@
-// AI Translator Content Script Messaging
+// Blab Translation Content Script Messaging
 (function() {
   'use strict';
 
@@ -20,7 +20,7 @@
 
   function setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      console.log('AI Translator: Received message', message.type, message);
+      console.log('Blab Translation: Received message', message.type, message);
       switch (message.type) {
         case 'TRANSLATE_PAGE':
           if (ctx.translatePage) {
@@ -58,7 +58,7 @@
               isWord: response?.isWord === true
             });
           }).catch((error) => {
-            console.error('AI Translator: Context menu translation failed', error);
+            console.error('Blab Translation: Context menu translation failed', error);
           });
           break;
         }
@@ -117,7 +117,7 @@
           if (!('showFloatBall' in message.settings)) {
             settings.showFloatBall = prevShowFloatBall;
           }
-          console.log('AI Translator: Settings updated, showFloatBall changed from', prevShowFloatBall, 'to', settings.showFloatBall);
+          console.log('Blab Translation: Settings updated, showFloatBall changed from', prevShowFloatBall, 'to', settings.showFloatBall);
           if (ctx.updateFloatBallVisibility) {
             ctx.updateFloatBallVisibility();
           }
@@ -143,7 +143,7 @@
           }
           break;
         case 'TOGGLE_FLOAT_BALL':
-          console.log('AI Translator: TOGGLE_FLOAT_BALL received, show =', message.show);
+          console.log('Blab Translation: TOGGLE_FLOAT_BALL received, show =', message.show);
           // 只有当值确实改变时才更新，避免无效的切换
           if (settings.showFloatBall !== message.show) {
             settings.showFloatBall = message.show;

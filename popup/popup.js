@@ -105,6 +105,11 @@ async function onComicPageAction(mode) {
 // ---------------------------------------------------------------------------
 
 const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
+// D9's charge handshake — one implementation, shared with the comic overlay,
+// the upload page and the service worker (shared/comic-charge.js).
+const ChargeConfirm = globalThis.ChargeConfirm;
+// This surface's wording of the shared price sentence.
+const PDF_CHARGE_KEYS = { required: 'pdfChargeRequired', fallback: 'pdfChargeConfirm' };
 const PDF_POPUP_POLL_MS = 3000;
 const PDF_LIST_LIMIT = 3;
 // How long a finished job stays in this menu. The records live for a day so the
@@ -119,6 +124,9 @@ let pdfPollTimer = null;
 // A create error shown inline above the list (sign-in, an exhausted allowance,
 // …). Cleared by the next successful action.
 let pdfInlineError = null;
+// The charge question, when the server has refused an unconfirmed create and
+// named its price. One at a time, and only while it is unanswered.
+let pdfInlinePrompt = null;
 // The row painted on click, before the worker has written anything. It only has
 // to survive the few milliseconds until the worker's own pending record lands;
 // renderPdfJobs drops it the moment it sees one.
@@ -209,6 +217,9 @@ function renderPdfJobs(records) {
   list.textContent = '';
 
   if (pdfInlineError) list.appendChild(pdfInlineError);
+  // Re-appended on every repaint, so the poll's 3-second cadence cannot wipe
+  // an unanswered question off the screen.
+  if (pdfInlinePrompt) list.appendChild(pdfInlinePrompt);
 
   // The worker's own pending record supersedes the placeholder — same row, but
   // one that outlives this popup.
@@ -281,6 +292,49 @@ function renderPdfJobs(records) {
 }
 
 /**
+ * Ask the user to spend credits on this PDF, in the list they started it from.
+ *
+ * Only ever reached from the server's 409: the monthly allowance covers a
+ * document without any confirmation at all, so this appears exactly when real
+ * credits are about to be spent and never for free work. It is a question, not
+ * a failure, so it borrows the error row's layout and none of its red.
+ *
+ * Resolves true to spend, false to leave the balance alone.
+ */
+function promptPdfCharge(quote) {
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'pdf-job pdf-job-ask';
+
+    const text = document.createElement('span');
+    text.className = 'pdf-job-status';
+    text.textContent = ChargeConfirm.chargeText(quote, t, PDF_CHARGE_KEYS);
+
+    const answer = (approved) => {
+      // The question is over, so its buttons go with it — a late click on a
+      // stale Cancel must not land on a paid create that is already in flight.
+      pdfInlinePrompt = null;
+      box.remove();
+      resolve(approved);
+    };
+
+    const approve = document.createElement('button');
+    approve.className = 'pdf-job-open';
+    approve.textContent = t('comicChargeApprove');
+    approve.addEventListener('click', () => answer(true));
+
+    const decline = document.createElement('button');
+    decline.className = 'pdf-job-decline';
+    decline.textContent = t('comicCancel');
+    decline.addEventListener('click', () => answer(false));
+
+    box.append(text, approve, decline);
+    pdfInlinePrompt = box;
+    refreshPdfJobs({ refresh: false });
+  });
+}
+
+/**
  * Create errors the user can act on right here: a sign-in for 401. Everything
  * else — including a used-up monthly allowance, which nothing but waiting
  * fixes — becomes a plain error line.
@@ -322,32 +376,69 @@ async function onPdfTranslateCurrent() {
       return;
     }
 
+    pdfInlineError = null;
+    pdfInlinePrompt = null;
+    const fileName = PDF_UI.pdfFileNameFromUrl(tab.url);
+
     // Paint before sending, not after: creating a job is a download, a
     // presign, an upload and a create — several seconds during which the user
     // would otherwise see nothing and click again. The awaited response below
     // dies with the popup, so it is never what puts the first row on screen.
-    pdfInlineError = null;
-    pdfPlaceholder = {
-      jobId: 'placeholder',
-      fileName: PDF_UI.pdfFileNameFromUrl(tab.url),
-      status: 'queued',
-      pending: true,
-      progress: 0
+    const paintUploading = async () => {
+      pdfPlaceholder = {
+        jobId: 'placeholder',
+        fileName,
+        status: 'queued',
+        pending: true,
+        progress: 0
+      };
+      setPdfBusy(true);
+      renderPdfJobs(await listPdfRecords());
     };
-    setPdfBusy(true);
-    renderPdfJobs(await listPdfRecords());
+    await paintUploading();
 
-    const response = await chrome.runtime.sendMessage({
-      type: 'PDF_CREATE_JOB',
-      source: { kind: 'url', url: tab.url },
-      fileName: PDF_UI.pdfFileNameFromUrl(tab.url),
-      pageUrl: tab.url
+    // The operation id the worker minted for this URL, echoed back on a 409.
+    // Sending it out again with the confirmation is what makes the paid create
+    // the SAME operation rather than a second charge for one document.
+    let operationId = null;
+    const response = await ChargeConfirm.submitWithConfirmation({
+      submit: async (confirmCharge) => {
+        const reply = await chrome.runtime.sendMessage({
+          type: 'PDF_CREATE_JOB',
+          source: { kind: 'url', url: tab.url },
+          fileName,
+          pageUrl: tab.url,
+          ...(operationId ? { operationId } : {}),
+          // Only ever true, and only after the user has said so.
+          confirmCharge: confirmCharge === true
+        }) || { ok: false, error: { code: 'no_response' } };
+        if (!reply.ok && reply.error && reply.error.operationId) {
+          operationId = reply.error.operationId;
+        }
+        return reply;
+      },
+      confirm: async (quote) => {
+        // Nothing is uploading while the question stands: the 409 reserved
+        // nothing, and a progress row under a price would be a lie.
+        setPdfBusy(false);
+        pdfPlaceholder = null;
+        const approved = await promptPdfCharge(quote);
+        if (!approved) return false;
+        await paintUploading();
+        return true;
+      }
     });
     setPdfBusy(false);
     pdfPlaceholder = null;
 
-    if (!response || !response.ok) {
-      showPdfCreateError(response && response.error);
+    // Declining is a cancel, not a failure — nothing was reserved, no job
+    // exists, and there is nothing to show but the list as it was.
+    if (!response.ok && response.declined) {
+      await refreshPdfJobs({ refresh: false });
+      return;
+    }
+    if (!response.ok) {
+      showPdfCreateError(response.error);
       return;
     }
     await refreshPdfJobs({ refresh: false });
