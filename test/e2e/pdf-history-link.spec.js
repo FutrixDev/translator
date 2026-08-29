@@ -4,7 +4,7 @@
  * The extension cannot render a PDF. Chrome's viewer is an out-of-process
  * iframe with a closed shadow DOM, so "show me the translated layout" is a
  * question only the website can answer — which is why every row in this list
- * links to the same job on blab-translation.com/settings/pdf.
+ * links to the same job on blab-translation.com/app/settings/pdf.
  *
  * What this pins down is the part unit tests cannot see: that the link is built
  * from the origin the service worker is actually configured with (here, the
@@ -85,24 +85,24 @@ test.describe('PDF history → web library', () => {
       // The link carries the job, so the library opens on the document the
       // reader clicked rather than on whatever is newest.
       await expect(history.locator('.pdf-task-view').first())
-        .toHaveAttribute('href', `${service.base}/settings/pdf?job=pdf_done`);
+        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_done`);
       // Built from the configured origin, not from a hardcoded production one.
       expect(service.base.startsWith('http://127.0.0.1:')).toBe(true);
 
       // A failure gets one too: the library still has the original, which is
       // how "what was this file?" gets answered.
       await expect(history.locator('.pdf-task-view').nth(1))
-        .toHaveAttribute('href', `${service.base}/settings/pdf?job=pdf_failed`);
+        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_failed`);
 
       // And so does a job that is still running — its progress is readable
       // there while it works.
       await expect(page.locator('#pdfTasksActiveList .pdf-task-view'))
-        .toHaveAttribute('href', `${service.base}/settings/pdf?job=pdf_running`);
+        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_running`);
 
       // The card header reaches the library itself, which is the only way in
       // when the list is empty.
       await expect(page.locator('#pdfTasksLibraryLink'))
-        .toHaveAttribute('href', `${service.base}/settings/pdf`);
+        .toHaveAttribute('href', `${service.base}/app/settings/pdf`);
       await expect(page.locator('#pdfTasksLibraryLink')).toBeVisible();
 
       // New tab, and severed from this page: an <a target="_blank"> without
