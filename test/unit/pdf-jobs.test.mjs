@@ -244,20 +244,20 @@ test('a disabled menu item in the popup actually looks disabled', () => {
 test('a job in the history links to the same job in the web library', () => {
   assert.equal(
     ui.pdfLibraryUrl('https://blab-translation.com', 'job-1'),
-    'https://blab-translation.com/settings/pdf?job=job-1'
+    'https://blab-translation.com/app/settings/pdf?job=job-1'
   );
   // No job: the library itself, which is what the card header links to.
-  assert.equal(ui.pdfLibraryUrl('https://blab-translation.com'), 'https://blab-translation.com/settings/pdf');
+  assert.equal(ui.pdfLibraryUrl('https://blab-translation.com'), 'https://blab-translation.com/app/settings/pdf');
   // A trailing slash or a path on the configured base must not reach the URL.
   assert.equal(
     ui.pdfLibraryUrl('https://staging.example.com/', 'job-1'),
-    'https://staging.example.com/settings/pdf?job=job-1'
+    'https://staging.example.com/app/settings/pdf?job=job-1'
   );
   // An id is a server id, but it still goes through encodeURIComponent — a
   // link is not the place to find out that assumption was wrong.
   assert.equal(
     ui.pdfLibraryUrl('https://blab-translation.com', 'a/b?c=d'),
-    'https://blab-translation.com/settings/pdf?job=a%2Fb%3Fc%3Dd'
+    'https://blab-translation.com/app/settings/pdf?job=a%2Fb%3Fc%3Dd'
   );
 });
 

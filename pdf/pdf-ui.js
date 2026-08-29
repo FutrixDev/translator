@@ -79,7 +79,7 @@
       return '';
     }
     if (!/^https?:$/.test(origin.protocol)) return '';
-    const path = `${origin.origin}/settings/pdf`;
+    const path = `${origin.origin}/app/settings/pdf`;
     if (jobId === undefined || jobId === null || jobId === '') return path;
     const id = String(jobId);
     if (id.startsWith('local:')) return '';
