@@ -51,6 +51,19 @@
 // 译文不是它的子节点时才作数）——它自己的字都超出了自己的盒子，那么以这个盒子为
 // 参照放译文必然重叠。
 //
+// **差多少才算撒谎，要按行高比例算，不能用固定像素**（overflowsOwnBox）。现代排版
+// 普遍用一对负外边距的伪元素做行首行尾裁剪（leading trim），把半行距从盒子里削掉：
+//
+//   p::before { content:""; display:table; margin-bottom: -7.79px }
+//   p::after  { content:""; display:table; margin-bottom: -7.98px }
+//
+// 于是**每一个**文本块的 scrollHeight 都比 clientHeight 大一点——那是设计，不是塌陷。
+// claude.com 把这对伪元素挂在每个类型令牌（u-text-style-h1 / body-2 / caption）上，
+// 全站 3914 个元素里 356 个吃到，正文差 8px。按 SLACK 那 2px 判，整篇文章的每一段都
+// 会被判成撒谎、原文全被让掉，用户的双语阅读被静默改成了全页「仅显示译文」。
+// 半行是分界：trim 削掉的永远在半行距以内（8px / 30.4px 行高 = 0.26 行），而这条判据
+// 真正要抓的那种盒子（clientHeight 0 的坐标格子）差的是一整行以上。
+//
 // ---------------------------------------------------------------------------
 // 四、横向：**这一块比页面原本给它的地方宽了**
 //
@@ -164,6 +177,25 @@
   const MAX_DEPTH = 2;
   // 布局取整会差个零点几像素，别为此撤译文
   const SLACK = 2;
+  // 「盒子装不下自己的字」要差过半行才算数——为什么不能用固定像素，见文件头第三节。
+  const OWN_BOX_LIE_RATIO = 0.5;
+
+  function lineHeightOf(el) {
+    const style = window.getComputedStyle(el);
+    const lineHeight = parseFloat(style.lineHeight);
+    if (lineHeight > 0) return lineHeight;
+    // line-height:normal 量不出数值，按字号估一个
+    const fontSize = parseFloat(style.fontSize);
+    return fontSize > 0 ? fontSize * 1.2 : 0;
+  }
+
+  // 这个块自己的盒子装不下自己的字，而且差得过半行（见文件头第三节）。
+  // 量不出行高时退回旧口径（只看 SLACK），至少不比改动前差。
+  function overflowsOwnBox(el) {
+    const overflow = el.scrollHeight - el.clientHeight;
+    if (overflow <= SLACK) return false;
+    return overflow > lineHeightOf(el) * OWN_BOX_LIE_RATIO;
+  }
 
   // 译文继承了页面的绝对定位 → 按回正常流。改的是译文自己的内联样式，
   // 页面的规则一个都没动。
@@ -214,11 +246,17 @@
   // rect 有没有跑到 host 的 padding box 外面。
   // 用 clientTop/clientHeight 而不是 rect.height：溢出发生在 padding box 上，
   // 而 getBoundingClientRect() 含边框。与 clip-guard 的 clipsAway 同一套量法。
+  // 容差和 overflowsOwnBox 用同一把尺子（见文件头第三节）：宿主自己带行首行尾裁剪
+  // 时，它的 padding box 本来就比自己的字矮，插在里面的译文于是天然「溢出」那么一截
+  // ——claude.com 上实测 5.5～10.6px，占 0.18～0.29 行；而这条判据真正要抓的溢出是
+  // 整整一行起（译文自己另起一行，却没地方放）。按固定 2px 判，带裁剪的页面上每一条
+  // 内部插入的译文都会被当成溢出撤掉。
   function spillsOut(host, rect) {
     const box = host.getBoundingClientRect();
     const top = box.top + host.clientTop;
     const bottom = top + host.clientHeight;
-    return rect.bottom > bottom + SLACK || rect.top < top - SLACK;
+    const slack = Math.max(SLACK, lineHeightOf(host) * OWN_BOX_LIE_RATIO);
+    return rect.bottom > bottom + slack || rect.top < top - slack;
   }
 
   // 撤掉这条译文。撤之前一定要把原文放回去——不管是刚才为这条译文让的，还是
@@ -262,7 +300,7 @@
     // 译文是它的子节点时 scrollHeight 把译文也算进去了，那一路量不出这件事，跳过。
     const source = pairedSource(translationEl);
     if (source && !source.contains(translationEl) && source.textContent.trim() &&
-        source.scrollHeight > source.clientHeight + SLACK) {
+        overflowsOwnBox(source)) {
       // 这里没有「让了还是不行」的可能：压的就是原文那几个字，原文让开就没了。
       return yieldOrDrop(translationEl, () => false);
     }

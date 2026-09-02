@@ -51,7 +51,7 @@ class FakeClassList {
 
 class FakeElement {
   constructor({ top = 0, height = 0, width = 100, overflowY = 'visible', position = 'static',
-    classes = [], text = '', scrollHeight = null } = {}) {
+    classes = [], text = '', scrollHeight = null, lineHeight = '', fontSize = '' } = {}) {
     this.nodeType = 1;
     this.isConnected = true;
     this.parentElement = null;
@@ -68,6 +68,10 @@ class FakeElement {
     this.position = position;
     this.textContent = text;
     this.ownScrollHeight = scrollHeight;
+    // 「盒子装不下自己的字」的判据按行高比例算，量不出行高时退回只看 SLACK 的旧口径
+    // —— 默认空串正是那条退路，只有明确给了行高的用例才走比例那条。
+    this.lineHeight = lineHeight;
+    this.fontSize = fontSize;
   }
 
   append(child) { child.parentElement = this; this.children.push(child); return child; }
@@ -115,7 +119,10 @@ class FakeElement {
 globalThis.Node = { ELEMENT_NODE: 1 };
 globalThis.window = {
   AI_TRANSLATOR_CONTENT: {},
-  getComputedStyle: (el) => ({ overflowY: el.overflowY, position: el.position }),
+  getComputedStyle: (el) => ({
+    overflowY: el.overflowY, position: el.position,
+    lineHeight: el.lineHeight, fontSize: el.fontSize,
+  }),
 };
 globalThis.document = { body: new FakeElement(), documentElement: new FakeElement() };
 
@@ -179,6 +186,30 @@ test('a translation the box made room for is left alone', () => {
 
   assert.equal(ctx.keepTranslationInFlow(translation), true);
   assert.equal(translation.isConnected, true);
+});
+
+test('leading trim on the host is not a spill: 8px out of a 30.4px line keeps the translation', () => {
+  // 同一把尺子的另一头。宿主自己带行首行尾裁剪时，它的 padding box 比自己的字矮
+  // 8px，插在里面的译文天然「溢出」这一截（0.26 行）——claude.com 上实测 5.5～10.6px。
+  // 按固定 2px 判，带裁剪的页面上每一条内部插入的译文都会被当成溢出撤掉。
+  const host = new FakeElement({ top: 100, height: 60, lineHeight: '30.4px' });
+  const translation = new FakeElement({ top: 100, height: 68 });
+  host.append(translation);
+  body.append(host);
+
+  assert.equal(ctx.keepTranslationInFlow(translation), true);
+  assert.equal(translation.isConnected, true, 'the trim was mistaken for a spill');
+});
+
+test('a spill of more than half a line is still a spill, line height or not', () => {
+  // 反面：译文自己另起一行却没地方放，差的是整整一行以上，比例判据照样抓得住。
+  const host = new FakeElement({ top: 100, height: 30, lineHeight: '30.4px' });
+  const translation = new FakeElement({ top: 100, height: 60 });
+  host.append(translation);
+  body.append(host);
+
+  assert.equal(ctx.keepTranslationInFlow(translation), false);
+  assert.equal(translation.isConnected, false, 'a real spill was tolerated');
 });
 
 test('a clipping ancestor is left to the clip guard, not second-guessed', () => {
@@ -378,6 +409,48 @@ test('a source that fits its own text is not mistaken for a lying box', () => {
 
     assert.equal(ctx.keepTranslationInFlow(translation), true);
     assert.equal(source.hidden, false, 'a plain paragraph had its source hidden');
+  });
+});
+
+test('leading trim is not a lying box: 8px out of a 30.4px line keeps the source', () => {
+  // claude.com 的每个类型令牌都挂着一对负外边距的伪元素做行首行尾裁剪
+  //   p::before/::after { content:""; display:table; margin-bottom: -7.9px }
+  // 于是**每一个**文本块的 scrollHeight 都比 clientHeight 大 8px —— 那是设计。
+  // 按固定 2px 判，整篇文章每一段都会被判成撒谎、原文全被让掉，用户的双语阅读
+  // 被静默改成了全页「仅显示译文」。8px / 30.4px 行高 = 0.26 行，不到半行。
+  withSourceYielding(() => {
+    const host = new FakeElement({ top: 100, height: 4000 });
+    const source = new FakeElement({
+      top: 100, height: 167, scrollHeight: 175, lineHeight: '30.4px',
+      classes: ['ai-translator-translated'], text: 'Organizations have started using AI…',
+    });
+    const translation = new FakeElement({ top: 267, height: 122, lineHeight: '30.4px' });
+    host.append(source);
+    host.append(translation);
+    body.append(host);
+
+    assert.equal(ctx.keepTranslationInFlow(translation), true);
+    assert.equal(source.hidden, false,
+      'a trimmed paragraph had its source hidden — the whole article loses its original text');
+  });
+});
+
+test('a box short of its text by more than half a line is still a lying box', () => {
+  // 上一条的反面，同一套比例判据：40px 高的盒子装着 80px 的字（行高 20px，
+  // 差了两行）。这才是这条判据要抓的那种框，加了行高之后照样抓得住。
+  withSourceYielding(() => {
+    const host = new FakeElement({ top: 100, height: 400 });
+    const source = new FakeElement({
+      top: 100, height: 40, scrollHeight: 80, lineHeight: '20px',
+      classes: ['ai-translator-translated'], text: 'Temperature',
+    });
+    const translation = new FakeElement({ top: 140, height: 20, lineHeight: '20px' });
+    host.append(source);
+    host.append(translation);
+    body.append(host);
+
+    assert.equal(ctx.keepTranslationInFlow(translation), true);
+    assert.equal(source.hidden, true, 'the box was two lines short of its own text and nobody yielded');
   });
 });
 

@@ -650,13 +650,44 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 .ai-translator-inline-block {
   display: block !important;
-  margin-top: 0.15em !important;
+  /* 兄弟译文和原文之间隔多远，不是这条 0.15em 说了算：相邻外边距会合并，原文的
+     margin-bottom 站在同一道缝里。补偿量由 JS 按原文实际的下外边距算好交过来
+     （--ai-translator-pair-margin-top，见 insertTranslationBlock），页面没给原文
+     下外边距、或者译文是插进原文内部的，就退回这里的默认值。 */
+  margin-top: var(--ai-translator-pair-margin-top, 0.15em) !important;
   margin-bottom: 0.15em !important;
   padding: 0 !important;
   border: none !important;
   background: none !important;
   /* 颜色和透明度由 JS 动态设置，继承原元素 */
   animation: ai-translator-block-fade-in 0.25s ease;
+}
+
+/* 译文块不要页面挂在原文标签/类名上的伪元素。
+   插译文时会复制原文的标签名和 class（见 insertTranslationBlock），页面针对
+   `p::after` / `.u-text-style-body-2::after` 写的规则于是照样罩住译文——而那些规则
+   的前提是「这个盒子里装着页面自己排好的那一段字」，译文不是。
+
+   现在的主流排版会用一对负外边距的伪元素做行首行尾裁剪（leading trim），把半行距
+   从盒子里削掉：
+
+     p::before { content:""; display:table; margin-bottom: -7.79px }
+     p::after  { content:""; display:table; margin-bottom: -7.98px }
+
+   claude.com 的每个类型令牌（u-text-style-h1 / body-2 / body-3 / caption）都带着
+   这一对，全站 3914 个元素里 356 个吃到——**每一段字都比自己的盒子高约 8px**。
+   译文继承之后，它的字上下各溢出自己的盒子 ~4.8px，而这条规则给译文的上下间距只有
+   0.15em（≈2.9px），于是相邻两段译文的字间距实测是 −6.5px：后一段的第一行直接压在
+   前一段最后一行上，整篇文章糊成一片。
+
+   连 content 一起清掉，不是只中和 margin：同一条复制路径还会把页面的装饰性伪元素
+   （引号、序号、图标）在译文上再画一份，那本来也是错的。译文块里只有文字和克隆出来
+   的内联元素，没有浮动，清掉 clearfix 类的伪元素没有副作用。
+
+   `html body` 是为了压过页面那条单类名规则（0,1,1）——见文件头的特异性说明。 */
+html body .ai-translator-inline-block::before,
+html body .ai-translator-inline-block::after {
+  content: none !important;
 }
 
 /* 隐藏译文 */
@@ -668,6 +699,16 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
    这两个类加在【页面自己的元素】上，不属于面板 reset 那套特异性阶梯 */
 .ai-translator-source-hidden {
   display: none !important;
+}
+
+/* 原文一藏（仅显示译文，或 fit guard 为译文让位），上面那份补偿就没有东西可抵消
+   了：它是拿来吃掉原文 margin-bottom 的，原文 display:none 之后不再占那道缝，
+   负的 margin-top 会转而去抵消【上一段译文】的下外边距，把整页的段间距压没
+   （claude.com 实测 31px → 3px）。这里退回默认间距，段落节奏由译文自己的
+   margin-bottom 撑着。加类名的原文正好是译文的前一个兄弟（hideSourceForTranslation），
+   所以选得中；wrap 那条隐藏路径对应的是插在原文内部的译文，本来就没有这份补偿。 */
+.ai-translator-source-hidden + .ai-translator-inline-block {
+  margin-top: 0.15em !important;
 }
 
 .ai-translator-inline-loading {
