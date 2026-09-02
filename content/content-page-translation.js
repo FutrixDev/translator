@@ -1844,18 +1844,30 @@
         `;
       }
 
-      // 页面用【负的下外边距】把相邻块吸到一起时（alignment.anthropic.com 的
-      // `.code-box p { margin: -12px 0 }` 就是拿来抵消 <br> 的），兄弟译文会被同一条
-      // 规则吸进原文里，两行字直接叠在一块。相邻外边距的合并值是
-      // max(正) + min(负)，所以补偿要补到「负的那一截 + 我们本来的行间距」，
-      // 只补正好抵消的量仍然会贴着原文。
+      // 兄弟译文和原文之间的距离，从来不是 `.ai-translator-inline-block` 那条
+      // 0.15em 说了算：相邻外边距会合并，合并值是 max(正) + min(负)，原文的
+      // margin-bottom 站在同一道缝里，两边谁大谁赢。
+      //   · 原文 margin-bottom 为负时（alignment.anthropic.com 的
+      //     `.code-box p { margin: -12px 0 }` 拿来抵消 <br>），页面把两个块吸到
+      //     一起，译文直接叠在原文上；
+      //   · 原文 margin-bottom 为正时（claude.com 正文是 31.43px，段间 16px），
+      //     页面把译文推开到离原文 31px、离下一段 16px 的地方——译文离下一段
+      //     比离自己的原文还近，读起来像是下一段的译文。
+      // 两种都是同一道算术题：想要间距 g，就令译文 margin-top = -原文 mb + g。
+      // 合并时得 mb + (-mb + g) = g；flex/grid 里兄弟外边距不合并，直接相加也是
+      // g。所以不必判断在不在合并语境里，一个式子两头都成立。
+      // 再把原文的下外边距让给译文（负外边距除外，那是页面用来吸下一个块的，
+      // 照抄会把下一段拽到译文身上），「原文 + 译文」这一对就正好占住原文原来
+      // 的位置，页面自己的段落节奏不受影响。
       if (!placement.inside) {
         const sourceMarginBottom = parseFloat(computedStyle.marginBottom) || 0;
-        if (sourceMarginBottom < 0) {
-          const gap = (parseFloat(computedStyle.fontSize) || 16) * 0.15;
-          translationEl.style.setProperty(
-            'margin-top', `${Math.round(-sourceMarginBottom + gap)}px`, 'important');
-        }
+        const gap = (parseFloat(computedStyle.fontSize) || 16) * 0.15;
+        // 补偿量交给 CSS 而不是直接写死 margin-top：原文被藏起来时（仅显示译文 /
+        // fit guard 让位）这份补偿必须失效，那件事只有 CSS 看得见。
+        translationEl.style.setProperty(
+          '--ai-translator-pair-margin-top', `${Math.round(-sourceMarginBottom + gap)}px`);
+        translationEl.style.setProperty(
+          'margin-bottom', `${Math.round(Math.max(sourceMarginBottom, gap))}px`, 'important');
       }
 
       // 计算原文文本相对于元素的偏移量（跳过 icon 等前置元素）

@@ -29,6 +29,7 @@ body { font-family: sans-serif; max-width: 800px; margin: 0 auto; }
 .code-box { background-color:#f0f0f0; padding:16px; border-radius:8px; font-family:monospace; font-size:0.8em; white-space:pre-wrap; line-height:2; }
 .code-box br { display:none; }
 .code-box p { margin:-12px 0; }
+.rhythm-p { margin:16px 0 32px; }
 </style>
 <style>__CONTENT_CSS__</style>
 </head><body>
@@ -42,6 +43,8 @@ body { font-family: sans-serif; max-width: 800px; margin: 0 auto; }
 <ul id="psm-list"><li style='margin-left: 36pt;' id="li-1"><span style='font-weight: 700;'>Pre-training teaches an LLM a distribution over personas.</span> Implicit in this distribution are various hypotheses about the Assistant persona.</li><li style='margin-left: 36pt;' id="li-2"><span style='font-weight: 700;'>This results in a posterior distribution over Assistant personas.</span> Because this is still a distribution, stochasticity still matters.</li></ul>
 
 <p id="plain-p">An ordinary paragraph that paints no box of its own and must keep the sibling layout.</p>
+
+<div id="rhythm"><p class="rhythm-p" id="rhythm-1">A paragraph whose page gives it a generous bottom margin, the way claude.com does.</p><p class="rhythm-p" id="rhythm-2">The next paragraph, which the translation above must not appear to belong to.</p></div>
 </body></html>`;
 
 test('page translation placement: box-painting elements, list items, and stray text runs', async ({ page }) => {
@@ -97,6 +100,22 @@ test('page translation placement: box-painting elements, list items, and stray t
       // ordinary paragraphs keep the sibling layout
       plainInside: !!document.querySelector('#plain-p > .ai-translator-inline-block'),
       plainSibling: !!document.querySelector('#plain-p + .ai-translator-inline-block'),
+      // a positive page margin must not push the translation away from its own source
+      rhythm1: rect('#rhythm-1'),
+      rhythm2: rect('#rhythm-2'),
+      rhythm1Translation: rect('#rhythm-1 + .ai-translator-inline-block'),
+      // ...and with the source hidden, the compensation must stand down
+      rhythmOnly: (() => {
+        const a = document.querySelector('#rhythm-1 + .ai-translator-inline-block');
+        const b = document.querySelector('#rhythm-2 + .ai-translator-inline-block');
+        if (!a || !b) return null;
+        // 只藏原文：译文是复制原文标签名建出来的，也是 #rhythm 下的 <p>
+        const sources = [document.getElementById('rhythm-1'), document.getElementById('rhythm-2')];
+        sources.forEach((el) => el.classList.add('ai-translator-source-hidden'));
+        const gap = Math.round(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom);
+        sources.forEach((el) => el.classList.remove('ai-translator-source-hidden'));
+        return gap;
+      })(),
     };
   });
 
@@ -124,4 +143,21 @@ test('page translation placement: box-painting elements, list items, and stray t
   // Ordinary blocks are untouched by the placement rule.
   expect(result.plainInside).toBe(false);
   expect(result.plainSibling).toBe(true);
+
+  // A positive margin-bottom on the source is the mirror image of the negative one:
+  // margin collapsing hands the gap above the translation to the page (32px) while the
+  // gap below stays the next paragraph's (16px), so the translation reads as belonging
+  // to the paragraph after it. The pair must sit tighter than the paragraphs around it,
+  // and must still occupy the source's original slot in the page's rhythm.
+  expect(result.rhythm1Translation).not.toBeNull();
+  const gapAbove = result.rhythm1Translation.top - result.rhythm1.bottom;
+  const gapBelow = result.rhythm2.top - result.rhythm1Translation.bottom;
+  expect(gapAbove).toBeLessThan(gapBelow);
+  expect(gapAbove).toBeLessThan(8);
+  expect(gapBelow).toBe(32);
+
+  // In translation-only mode the source stops occupying that gap, so the compensation
+  // has nothing left to cancel and would eat the page's paragraph rhythm instead.
+  // Translations must keep standing 32px apart, not collapse onto one another.
+  expect(result.rhythmOnly).toBe(32);
 });
