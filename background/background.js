@@ -1827,7 +1827,7 @@ The segments are parsed by a program, so the output format is a contract:
 6. The number of output segments equals the number of input segments; an empty segment stays empty
 7. Preserve placeholders and inline tags: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> or <strong2>...</strong2> with the same names and numbers, wrapping the translated text they originally wrapped. Do not invent, drop, or renumber tags.
 
-Example (illustrative; here the target language happens to be Chinese):
+Example (target language shown as Chinese):
 Input: Hello{delimiter}Read <a1>the docs</a1> first{delimiter}Thank you
 Output: 你好{delimiter}请先阅读<a1>文档</a1>{delimiter}谢谢`;
 
