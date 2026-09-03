@@ -87,7 +87,7 @@ const languageNames = {
 
 // Math placeholder rule - always appended to prompts (cannot be overridden by custom prompts)
 const MATH_PLACEHOLDER_RULE = `
-IMPORTANT: Keep placeholders like {{1}}, {{2}} etc. exactly as they are - do not translate, modify, or add line breaks around them.`;
+Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Keep each one exactly as written, in place, with no line breaks added around it.`;
 
 // Single word/phrase prompt template (no math placeholder rule)
 const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Translate the given word or short phrase to {targetLang}.
@@ -102,27 +102,27 @@ Return JSON only with keys "translation" and "phonetic".
 // Default prompt template
 const DEFAULT_PROMPT = `You are a professional translator. Translate the given text to {targetLang}.
 Rules:
-1. Provide ONLY the translation, no explanations or notes
+1. Reply with the translation only, no explanations or notes
 2. Maintain the original formatting (line breaks, punctuation)
 3. Keep technical terms, brand names, and proper nouns in their original form when appropriate
-4. If the text is already in the target language, return it EXACTLY as is (no paraphrasing or reordering)
+4. If the text is already in the target language, return it unchanged (no paraphrasing or reordering)
 5. Translate naturally, not literally`;
 
 // Default batch prompt template
 const DEFAULT_BATCH_PROMPT = `You are a professional translator. Translate the given numbered texts to {targetLang}.
 Rules:
-1. Return translations in the SAME numbered format: [1] translation1 [2] translation2 etc.
+1. Return translations in the same numbered format: [1] translation1 [2] translation2 etc.
 2. Keep the numbering system exactly as given
 3. Maintain original formatting within each translation
 4. Keep technical terms, brand names, and proper nouns in their original form when appropriate
-5. If a text is already in the target language, return it EXACTLY as is (no paraphrasing or reordering)
+5. If a text is already in the target language, return it unchanged (no paraphrasing or reordering)
 6. Translate naturally, not literally`;
 
 // Batch output rules appended when using custom prompts
 const BATCH_OUTPUT_RULES = `BATCH FORMAT RULES:
-1. Return translations in the SAME numbered format: [1] translation1 [2] translation2 etc.
+1. Return translations in the same numbered format: [1] translation1 [2] translation2 etc.
 2. Keep the numbering system exactly as given
-3. Output ONLY the translations, nothing else`;
+3. Output the translations and nothing else`;
 
 // Get browser language and map to supported language
 function getBrowserLanguage() {
@@ -1818,16 +1818,16 @@ async function translateBatchWithAI(texts, targetLang, settings) {
 // Fast batch prompt template
 const FAST_BATCH_PROMPT = `You are a professional translator. Translate multiple text segments to {targetLang}.
 
-CRITICAL RULES:
+The segments are parsed by a program, so the output format is a contract:
 1. Input segments are separated by "{delimiter}"
-2. Output translations MUST be separated by "{delimiter}" in the EXACT same order
-3. Output ONLY the translations, nothing else
+2. Output translations separated by "{delimiter}", in the same order
+3. Output the translations and nothing else
 4. Keep technical terms, brand names, proper nouns in original form
-5. If already in target language, return EXACTLY as is (no paraphrasing or reordering)
-6. MUST have exactly the same number of output segments as input
-7. Preserve placeholders and inline tags EXACTLY: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> or <strong2>...</strong2> with the same names and numbers, wrapping the translated text they originally wrapped. Never invent, drop, or renumber tags.
+5. If a segment is already in the target language, return it unchanged (no paraphrasing or reordering)
+6. The number of output segments equals the number of input segments; an empty segment stays empty
+7. Preserve placeholders and inline tags: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> or <strong2>...</strong2> with the same names and numbers, wrapping the translated text they originally wrapped. Do not invent, drop, or renumber tags.
 
-Example:
+Example (illustrative; here the target language happens to be Chinese):
 Input: Hello{delimiter}Read <a1>the docs</a1> first{delimiter}Thank you
 Output: 你好{delimiter}请先阅读<a1>文档</a1>{delimiter}谢谢`;
 
@@ -1835,10 +1835,10 @@ Output: 你好{delimiter}请先阅读<a1>文档</a1>{delimiter}谢谢`;
 function getFastBatchOutputRules(delimiter) {
   return `BATCH FORMAT RULES:
 1. Input segments are separated by "${delimiter}"
-2. Output translations MUST be separated by "${delimiter}" in the EXACT same order
-3. Output ONLY the translations, nothing else
-4. MUST have exactly the same number of output segments as input
-5. Preserve placeholders and inline tags EXACTLY: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> with the same names and numbers, wrapping the translated text they originally wrapped. Never invent, drop, or renumber tags.`;
+2. Output translations separated by "${delimiter}", in the same order
+3. Output the translations and nothing else
+4. The number of output segments equals the number of input segments; an empty segment stays empty
+5. Preserve placeholders and inline tags: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> with the same names and numbers, wrapping the translated text they originally wrapped. Do not invent, drop, or renumber tags.`;
 }
 
 // Fast batch translation with delimiter
