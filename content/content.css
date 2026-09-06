@@ -2010,10 +2010,14 @@ html body #ai-translator-caption-btn svg {
   background: rgba(20, 20, 20, 0.72);
 }
 
+/* Placement is written inline by positionMenu() as `right`/`bottom`, anchored
+   above the button. `left`/`top` must stay `auto`: with all four edges set and
+   a fixed width, left/top win and the popover lands in the anchor's top-left
+   corner stretched to its full height. */
 #ai-translator-caption-menu {
   position: absolute;
-  left: 0;
-  top: 0;
+  left: auto;
+  top: auto;
   z-index: 2147483001;
   box-sizing: border-box;
   width: 300px;

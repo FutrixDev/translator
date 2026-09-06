@@ -5,7 +5,7 @@
 // — it goes through a provider that observes the player's network traffic,
 // where this one reads cues the browser has already parsed.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, expectCaptionMenuAnchoredAboveButton } = require('./helpers');
 
 const ORIGIN = 'https://video.test';
 
@@ -351,6 +351,10 @@ test('with no player control bar the button sits in the video corner', async ({ 
   await button.click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText('English');
+
+  // And the menu is a popover on the badge: just above it, right-aligned with
+  // it, at its own height, inside the floating box pinned to the video.
+  await expectCaptionMenuAnchoredAboveButton(p, '#ai-translator-caption-controls');
 });
 
 test('a page with no subtitle track gets no button', async ({ page: p, context }) => {

@@ -1,5 +1,10 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, getSyncSetting, writeSyncSettings } = require('./helpers');
+const {
+  setExtensionSettings,
+  getSyncSetting,
+  writeSyncSettings,
+  expectCaptionMenuAnchoredAboveButton,
+} = require('./helpers');
 
 const html = `<!doctype html>
 <html>
@@ -405,6 +410,11 @@ test('the menu lists the five rows in order', async ({ page, context }) => {
     '字幕样式',
     '不再显示该快捷方式',
   ]);
+
+  // And it is a popover on the icon, not a panel in the player's corner: just
+  // above the button, right-aligned with it, at its own height, inside the
+  // player it is docked in.
+  await expectCaptionMenuAnchoredAboveButton(page, '#movie_player');
 });
 
 // A3 — a player reads a click on itself as play/pause and a key as a shortcut.

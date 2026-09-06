@@ -260,6 +260,11 @@
     const rect = button.getBoundingClientRect();
     // Anchored above the button and right-aligned with it, in the anchor's own
     // coordinates — the anchor is the player (docked) or our box (floating).
+    // right/bottom are the only placement, so left/top are cleared here rather
+    // than trusted to the stylesheet: a page rule (or a stale inline value)
+    // pinning either one would win over ours and drag the menu to the corner.
+    menu.style.left = 'auto';
+    menu.style.top = 'auto';
     menu.style.right = `${Math.max(4, Math.round(anchor.right - rect.right))}px`;
     menu.style.bottom = `${Math.max(4, Math.round(anchor.bottom - rect.top + 8))}px`;
   }
