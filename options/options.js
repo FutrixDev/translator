@@ -291,8 +291,12 @@ const defaultSettings = {
   enableYoutubeCaptionTranslation: false,
   // Kept in the read set, not on the page any more: it is what a profile from
   // before the display-type select migrates from (CaptionCore does the sum).
+  // captionDisplayMode stays '' (unset) here for the same reason as in
+  // content/content-bootstrap.js: a mode in the defaults would answer
+  // resolveCaptionDisplay() before it could read the boolean, and the select
+  // would show bilingual to a user who had turned the original line off.
   showYoutubeOriginalCaption: true,
-  captionDisplayMode: 'bilingual',
+  captionDisplayMode: '',
   captionTranslationPosition: 'below',
   captionPlayerButton: true,
   youtubeCaptionFontColor: '#ffffff',

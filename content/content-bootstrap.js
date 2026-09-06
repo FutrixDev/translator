@@ -58,8 +58,14 @@
       pdfTargetLang: '',
       // Superseded by captionDisplayMode; still read so a profile that only
       // has the old boolean migrates instead of resetting to bilingual.
+      //
+      // captionDisplayMode's default is '' — unset — and has to stay that way:
+      // CaptionCore.resolveCaptionDisplay() only consults the boolean when the
+      // mode is not one of the three, so pre-filling a mode here would satisfy
+      // the resolver before it ever looked, and the migration would be dead on
+      // every real path. The resolver's own default is bilingual.
       showYoutubeOriginalCaption: true,
-      captionDisplayMode: 'bilingual',
+      captionDisplayMode: '',
       captionTranslationPosition: 'below',
       captionPlayerButton: true,
       youtubeCaptionFontColor: '#ffffff',
@@ -140,7 +146,9 @@
         enablePdfTranslation: true,
         pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
-        captionDisplayMode: 'bilingual',
+        // '' = unset, so CaptionCore migrates from the boolean above. See the
+        // note in the defaults at the top of this file.
+        captionDisplayMode: '',
         captionTranslationPosition: 'below',
         captionPlayerButton: true,
         youtubeCaptionFontColor: '#ffffff',
@@ -175,7 +183,9 @@
         enablePdfTranslation: true,
         pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
-        captionDisplayMode: 'bilingual',
+        // '' = unset, so CaptionCore migrates from the boolean above. See the
+        // note in the defaults at the top of this file.
+        captionDisplayMode: '',
         captionTranslationPosition: 'below',
         captionPlayerButton: true,
         youtubeCaptionFontColor: '#ffffff',

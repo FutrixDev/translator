@@ -459,6 +459,31 @@ test('the display type decides which lines are drawn', async ({ page, context })
   await expect(translated).toBeVisible();
 });
 
+// The upgrade path, end to end: a profile written before F17 has the checkbox
+// and no captionDisplayMode at all. Nothing on the way to the screen may fill
+// that key in — the content script's own defaults included — or the resolver
+// reads a set mode and never looks at the checkbox, and everyone who had the
+// original line turned off gets it back.
+test('a pre-F17 profile with the checkbox off still shows the translation alone', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, showYoutubeOriginalCaption: false });
+  // The premise of the test: the new key was never written.
+  expect(await getSyncSetting(context, 'captionDisplayMode')).toBeUndefined();
+  await playCue(page);
+
+  const original = page.locator('#ai-translator-caption-overlay .ai-translator-caption-original');
+  const translated = page.locator('#ai-translator-caption-overlay .ai-translator-caption-line');
+  await expect(translated).toHaveText('你好世界');
+  await expect(translated).toBeVisible();
+  await expect(original).toBeHidden();
+
+  // And the migrated mode is what the in-player select shows, so the reader is
+  // not told "bilingual" while looking at one line.
+  await page.locator('#ai-translator-caption-btn').click();
+  await expect(
+    page.locator('#ai-translator-caption-menu [data-action="mode"] .ai-translator-caption-select'),
+  ).toHaveValue('translation');
+});
+
 // A5 — position flips which line is on top, and it flips live: the setting is
 // a CSS `order`, so the box under the pointer is never rebuilt.
 test('the translation can be put above the original', async ({ page, context }) => {

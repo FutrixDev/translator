@@ -387,6 +387,41 @@ test('a mode nobody recognises falls back rather than blanking the screen', () =
   assert.equal(core.resolveCaptionDisplay(null).mode, 'bilingual');
 });
 
+// The migration above is only reachable if nothing pre-fills the key. Every
+// reader of settings passes chrome.storage a dictionary of defaults, and a
+// `captionDisplayMode: 'bilingual'` in one of those is handed to the resolver
+// as a set mode: the boolean is never consulted, and a user who had unchecked
+// "show original caption" gets a second line back on upgrade. The unit tests of
+// the pure function cannot see that, so the defaults themselves are asserted.
+const DEFAULT_DICTIONARY_SOURCES = [
+  'content/content-bootstrap.js',
+  'options/options.js',
+];
+
+test('no default dictionary pre-fills captionDisplayMode with a mode', () => {
+  for (const rel of DEFAULT_DICTIONARY_SOURCES) {
+    const src = repoFile(rel);
+    const assignments = src.match(/captionDisplayMode:\s*(?:'[^']*'|"[^"]*")/g) || [];
+    assert.ok(assignments.length > 0, `${rel} no longer declares a captionDisplayMode default`);
+    for (const assignment of assignments) {
+      assert.match(
+        assignment,
+        /captionDisplayMode:\s*(?:''|"")/,
+        `${rel}: ${assignment} — a mode here kills the migration off showYoutubeOriginalCaption`,
+      );
+    }
+  }
+});
+
+test('the defaults still carry showYoutubeOriginalCaption for the resolver to read', () => {
+  // The unset mode is only half of it: the old boolean has to stay in the read
+  // set, or storage returns nothing for it and every pre-F17 profile reads as
+  // bilingual anyway.
+  for (const rel of DEFAULT_DICTIONARY_SOURCES) {
+    assert.match(repoFile(rel), /showYoutubeOriginalCaption:\s*true/, `${rel} dropped the migration source`);
+  }
+});
+
 // ------------------------------------------------------------------ controls
 test('the in-player control file holds no site-specific selectors', () => {
   // Same rule the engine is held to: where the button goes is the provider's
