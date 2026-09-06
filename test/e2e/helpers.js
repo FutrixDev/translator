@@ -313,6 +313,7 @@ async function sendMessageToActiveTab(page, message) {
 module.exports = {
   E2E_BASE_SETTINGS,
   getServiceWorker,
+  writeSyncSettings,
   getSyncSettings,
   getSyncSetting,
   applyBaseSettings,
