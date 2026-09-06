@@ -109,6 +109,29 @@
       return document.querySelector('.ytp-caption-window-container');
     },
 
+    // Our button belongs in the player's own control bar, first in the right
+    // group — left of the settings gear, where a viewer looks for caption
+    // controls. The menu is anchored to #movie_player because that is the
+    // element that goes fullscreen; a menu outside it would vanish there.
+    getControlsHost() {
+      const parent = document.querySelector('.ytp-right-controls');
+      if (!parent) return null;
+      return {
+        parent,
+        before: parent.firstElementChild,
+        menuRoot: document.querySelector('#movie_player') || parent,
+        buttonClass: 'ytp-button',
+      };
+    },
+
+    // Sit where YouTube puts its own captions, and step above the control bar
+    // while that is showing rather than hide behind it.
+    getCaptionAnchor() {
+      const player = document.querySelector('#movie_player');
+      const controlsUp = !!player && !player.classList.contains('ytp-autohide');
+      return { bottomPct: 8, liftPx: controlsUp ? 52 : 0 };
+    },
+
     // Hide YouTube's caption windows while our bilingual overlay is showing, so
     // the native line and ours don't stack. Scoped by a marker class so native
     // captions return the moment the overlay goes inactive.
@@ -188,6 +211,7 @@
     tt.engine.ingestTrack({
       trackId: trackIdOf(tt.track),
       lang: tt.track.language || '',
+      label: tt.track.label || '',
       cues,
     });
   }
@@ -405,6 +429,29 @@
 
     syncOverlayHost() {
       syncHost();
+    },
+
+    // A generic player's controls are its own; we do not know its bar, so the
+    // engine falls back to a badge pinned to the video (see content-caption-
+    // controls.js). Returning null is that answer, not a failure.
+    getControlsHost() {
+      return null;
+    },
+
+    // No player chrome we can measure, so just off the bottom edge.
+    getCaptionAnchor() {
+      return { bottomPct: 6, liftPx: 0 };
+    },
+
+    // What the menu's status line names. Read-only: this runs while the feature
+    // is off, so it must not adopt anything or touch a track's mode.
+    getTrackLabel() {
+      if (tt.track) return tt.track.label || tt.track.language || '';
+      const entries = subtitleEntries(findVideoWithTracks());
+      if (!entries.length) return '';
+      const picked = core.pickSubtitleTrack(entries);
+      if (!picked) return '';
+      return picked.track.label || picked.track.language || '';
     },
 
     // The browser draws nothing for a hidden track, so hiding the native line

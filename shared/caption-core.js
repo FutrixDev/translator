@@ -258,6 +258,41 @@
     return { cues: merged.length > cap ? merged.slice(-cap) : merged, added: true };
   }
 
+  // ----------------------------------------------------------- display mode
+  /**
+   * How the caption lines are shown, from the user's settings alone.
+   *
+   * Three modes, one position, and the migration off the old boolean:
+   *
+   *   bilingual    both lines; `translationFirst` puts the translation above
+   *                the original when the position is 'above'
+   *   translation  the translated line only
+   *   original     nothing of ours on screen — `useNative` hands the page its
+   *                own captions back. The track keeps translating in the
+   *                background, so switching out of this mode is instant.
+   *
+   * `captionDisplayMode` unset is the pre-F17 state, where the only control was
+   * a "show original caption" checkbox: unchecked meant translation-only, and
+   * that is what it keeps meaning until the new select is touched.
+   */
+  const CAPTION_DISPLAY_MODES = ['bilingual', 'translation', 'original'];
+
+  function resolveCaptionDisplay(settings) {
+    const s = settings || {};
+    let mode = s.captionDisplayMode;
+    if (CAPTION_DISPLAY_MODES.indexOf(mode) === -1) {
+      mode = s.showYoutubeOriginalCaption === false ? 'translation' : 'bilingual';
+    }
+    const above = s.captionTranslationPosition === 'above';
+    return {
+      mode,
+      showOriginal: mode === 'bilingual',
+      showTranslation: mode !== 'original',
+      translationFirst: mode === 'bilingual' && above,
+      useNative: mode === 'original',
+    };
+  }
+
   // ------------------------------------------------------- provider picking
   /**
    * Provider ranks. A site-specific provider always outranks the generic one:
@@ -367,6 +402,8 @@
     buildBatches,
     mergeRawCues,
     buildTranslationRequest,
+    CAPTION_DISPLAY_MODES,
+    resolveCaptionDisplay,
     PROVIDER_PRIORITY,
     selectProvider,
     pickSubtitleTrack,

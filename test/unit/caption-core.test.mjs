@@ -329,3 +329,78 @@ test('providers declare their rank from the shared scale', () => {
     'a hardcoded priority number bypasses PROVIDER_PRIORITY and its site-beats-generic rule',
   );
 });
+
+// -------------------------------------------------------------- display mode
+// Three modes and one position, resolved from settings alone so the engine, the
+// in-player menu and the options preview cannot disagree about what is on
+// screen. The migration is the part with teeth: `captionDisplayMode` unset is
+// every user who installed before F17, and their only control was a checkbox.
+test('bilingual is the default, with the translation under the original', () => {
+  assert.deepEqual(core.resolveCaptionDisplay({}), {
+    mode: 'bilingual',
+    showOriginal: true,
+    showTranslation: true,
+    translationFirst: false,
+    useNative: false,
+  });
+});
+
+test('position "above" flips the two lines, and only in bilingual mode', () => {
+  const above = core.resolveCaptionDisplay({ captionDisplayMode: 'bilingual', captionTranslationPosition: 'above' });
+  assert.equal(above.translationFirst, true);
+  // With one line on screen there is nothing to put it above.
+  const single = core.resolveCaptionDisplay({ captionDisplayMode: 'translation', captionTranslationPosition: 'above' });
+  assert.equal(single.translationFirst, false);
+});
+
+test('"translation" shows the translated line alone', () => {
+  const d = core.resolveCaptionDisplay({ captionDisplayMode: 'translation' });
+  assert.equal(d.showOriginal, false);
+  assert.equal(d.showTranslation, true);
+  assert.equal(d.useNative, false);
+});
+
+test('"original" draws nothing of ours and hands the page its own captions back', () => {
+  // Not the same as switching the feature off: the track keeps translating in
+  // the background, so coming back out of this mode is instant.
+  const d = core.resolveCaptionDisplay({ captionDisplayMode: 'original' });
+  assert.equal(d.showOriginal, false);
+  assert.equal(d.showTranslation, false);
+  assert.equal(d.useNative, true);
+});
+
+test('the pre-F17 "show original caption" checkbox keeps its meaning', () => {
+  // Unchecked was the only way to get a translation-only line before the select
+  // existed. Reading it as bilingual would put a second line on screen for
+  // everyone who had turned it off.
+  assert.equal(core.resolveCaptionDisplay({ showYoutubeOriginalCaption: false }).mode, 'translation');
+  assert.equal(core.resolveCaptionDisplay({ showYoutubeOriginalCaption: true }).mode, 'bilingual');
+  // ...and the new key wins the moment it is set.
+  assert.equal(
+    core.resolveCaptionDisplay({ showYoutubeOriginalCaption: false, captionDisplayMode: 'bilingual' }).mode,
+    'bilingual',
+  );
+});
+
+test('a mode nobody recognises falls back rather than blanking the screen', () => {
+  assert.equal(core.resolveCaptionDisplay({ captionDisplayMode: 'sideways' }).mode, 'bilingual');
+  assert.equal(core.resolveCaptionDisplay(null).mode, 'bilingual');
+});
+
+// ------------------------------------------------------------------ controls
+test('the in-player control file holds no site-specific selectors', () => {
+  // Same rule the engine is held to: where the button goes is the provider's
+  // answer (getControlsHost), not something the control file knows.
+  const controls = repoFile('content/content-caption-controls.js');
+  for (const marker of ['ytp-right-controls', 'youtube.com', 'movie_player', 'x.com']) {
+    assert.equal(controls.includes(marker), false, `content-caption-controls.js mentions ${marker}`);
+  }
+});
+
+test('the controls load after the providers and before the engine', () => {
+  // It reads a provider's getControlsHost() and the engine drives it, so it has
+  // to be defined between the two.
+  const manifest = repoFile('manifest.json');
+  assert.ok(manifest.indexOf('content/content-caption-providers.js') < manifest.indexOf('content/content-caption-controls.js'));
+  assert.ok(manifest.indexOf('content/content-caption-controls.js') < manifest.indexOf('content/content-video-captions.js'));
+});

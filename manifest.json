@@ -71,6 +71,7 @@
         "content/content-speech.js",
         "content/content-translation-engine.js",
         "content/content-caption-providers.js",
+        "content/content-caption-controls.js",
         "content/content-video-captions.js",
         "content/content-selection.js",
         "content/content-float-ball.js",

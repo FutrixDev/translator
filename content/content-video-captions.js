@@ -22,6 +22,12 @@
   const RETRY_COOLDOWN_MS = 8000;
 
   const state = {
+    // `enabled` is the user's switch; `active` is whether a translating
+    // provider is attached. They used to be the same thing, and that is why the
+    // in-player button could not exist: with the feature off nothing watched
+    // the page, so there was nowhere to draw the way to turn it on. Now the
+    // watcher runs regardless and only the translating half is gated.
+    enabled: false,
     active: false,
     provider: null,
     overlay: null,
@@ -34,12 +40,14 @@
     failedUntil: new Map(),
     trackId: '',
     trackLang: '',
+    trackLabel: '',
     skipTranslation: false,
     dismissed: false,
     translating: false,
     lastTriggerMs: 0,
     video: null,
     lastNowMs: 0,
+    controlsTimer: null,
   };
 
   // Storage keys still say "youtube" because they are user data: this used to
@@ -47,6 +55,15 @@
   // existing user's caption position, size and colours.
   function getSetting(key) {
     return (ctx.settings || {})[key];
+  }
+
+  /**
+   * What is on screen, from the settings alone — which line shows, in which
+   * order, and whether we draw at all. shared/caption-core.js owns the rule so
+   * the options preview and the in-player menu resolve it the same way.
+   */
+  function currentDisplay() {
+    return core.resolveCaptionDisplay(ctx.settings || {});
   }
 
   function getTargetLangBase() {
@@ -94,24 +111,59 @@
     state.block = block;
     bindCaptionInteractions(block);
     applyCaptionLayout();
+    applyCaptionDisplay();
     return overlay;
   }
 
-  // Render the bilingual block: original caption on top, translated line beneath.
-  // The original line is hidden when the user turns off "show original caption".
+  // Render the block. Which lines appear is the display mode's answer; the
+  // text is always set with textContent — a caption is someone else's markup.
   function setOverlayContent(original, translation) {
     if (!state.overlay) return;
-    const showOriginal = getSetting('showYoutubeOriginalCaption') !== false;
+    const display = currentDisplay();
     const origEl = state.overlay.querySelector('.ai-translator-caption-original');
     const transEl = state.overlay.querySelector('.ai-translator-caption-line');
     if (origEl) {
       origEl.textContent = original || '';
-      origEl.style.display = (showOriginal && original) ? '' : 'none';
+      origEl.style.display = (display.showOriginal && original) ? '' : 'none';
     }
     if (transEl) {
       transEl.textContent = translation || '';
-      transEl.style.display = translation ? '' : 'none';
+      transEl.style.display = (display.showTranslation && translation) ? '' : 'none';
     }
+    // The backplate is one box behind both lines, so it has to know when there
+    // is nothing behind it to draw — otherwise a gap between cues leaves an
+    // empty grey slab sitting on the video.
+    const block = state.overlay.querySelector('.ai-translator-caption-block');
+    if (block) {
+      const hasText = !!((display.showOriginal && original) || (display.showTranslation && translation));
+      block.classList.toggle('ai-cap-empty', !hasText);
+    }
+  }
+
+  /**
+   * Order the two lines and place the block where the page's own captions sit.
+   *
+   * The order is a CSS `order`, not a DOM move: the block is dragged and
+   * resized by handles that are its children, and rebuilding it under the
+   * pointer would drop the drag. Where "the bottom" is comes from the provider
+   * — a player's captions sit above its control bar, and only the provider
+   * knows where that bar is or whether it is showing.
+   */
+  function applyCaptionDisplay() {
+    if (!state.overlay) return;
+    const display = currentDisplay();
+    const origEl = state.overlay.querySelector('.ai-translator-caption-original');
+    const transEl = state.overlay.querySelector('.ai-translator-caption-line');
+    if (origEl) origEl.style.order = display.translationFirst ? '2' : '1';
+    if (transEl) transEl.style.order = display.translationFirst ? '1' : '2';
+
+    const anchor = state.provider && state.provider.getCaptionAnchor
+      ? state.provider.getCaptionAnchor()
+      : null;
+    const bottomPct = anchor && Number.isFinite(anchor.bottomPct) ? anchor.bottomPct : 6;
+    const liftPx = anchor && Number.isFinite(anchor.liftPx) ? anchor.liftPx : 0;
+    state.overlay.style.setProperty('--ai-caption-bottom', `${bottomPct}%`);
+    state.overlay.style.setProperty('--ai-caption-lift', `${liftPx}px`);
   }
 
   function setOverlayVisible(visible) {
@@ -189,7 +241,13 @@
     if (!block) return;
     const x = getSetting('youtubeCaptionPosXPct');
     const y = getSetting('youtubeCaptionPosYPct');
-    if (typeof x === 'number' && typeof y === 'number') {
+    // Untouched, the block sits where the page's own captions do (see
+    // applyCaptionDisplay). A viewer who has dragged it once has said where
+    // they want it, and that wins for good — including over the control bar
+    // lift, which would otherwise shove their position around.
+    const placed = typeof x === 'number' && typeof y === 'number';
+    block.classList.toggle('ai-cap-anchored', !placed);
+    if (placed) {
       block.style.left = `${x}%`;
       block.style.top = `${y}%`;
     } else {
@@ -514,11 +572,22 @@
 
     // Providers that pin their own box over the video keep it on the video here.
     if (state.provider && state.provider.syncOverlayHost) state.provider.syncOverlayHost();
-    ensureOverlay();
-    applyCaptionStyle();
-    applyCaptionLayout();
-    setOverlayVisible(true);
-    setNativeCaptionsHidden(true);
+
+    const display = currentDisplay();
+    if (display.useNative) {
+      // "Original only": the page draws its own captions again and we draw
+      // nothing. Translation below carries on regardless, so the moment the
+      // viewer picks another mode the lines are already there.
+      setOverlayVisible(false);
+      setNativeCaptionsHidden(false);
+    } else {
+      ensureOverlay();
+      applyCaptionStyle();
+      applyCaptionLayout();
+      applyCaptionDisplay();
+      setOverlayVisible(true);
+      setNativeCaptionsHidden(true);
+    }
 
     const nowMs = Math.floor((state.video?.currentTime || 0) * 1000);
     state.lastNowMs = nowMs;
@@ -539,18 +608,22 @@
     watchTrackList(el);
     if (!state.provider) {
       tryActivate();
+      syncControls();
       return;
     }
     if (state.provider.onMediaChanged) state.provider.onMediaChanged(el);
     ensureVideoListener();
+    syncControls();
   }
 
   function onTrackListEvent() {
     if (!state.provider) {
       tryActivate();
+      syncControls();
       return;
     }
     if (state.provider.onMediaChanged) state.provider.onMediaChanged();
+    syncControls();
   }
 
   // A <track> added after load, or an in-band track the player just created,
@@ -575,11 +648,13 @@
       document.addEventListener(type, onMediaEvent, true);
     }
     for (const video of document.querySelectorAll('video')) watchTrackList(video);
+    syncControls();
   }
 
   function stopWatching() {
     if (!watching) return;
     watching = false;
+    stopControlsHeartbeat();
     for (const type of MEDIA_EVENTS) {
       document.removeEventListener(type, onMediaEvent, true);
     }
@@ -598,6 +673,71 @@
     return true;
   }
 
+  // ------------------------------------------------------ in-player controls
+  // The button is not part of translating: it has to be there when the feature
+  // is off, because turning it on is what it is for. So it is driven from the
+  // page's *candidate* provider — the one that says it could supply cues here —
+  // rather than from an attached one.
+  const CONTROLS_HEARTBEAT_MS = 1500;
+
+  /** The provider whose player this is, attached or not. */
+  function candidateProvider() {
+    return state.provider || core.selectProvider(ctx.captionProviders || []);
+  }
+
+  /** The menu's status line: which track we are on, or why there is none. */
+  function captionStatus(provider) {
+    if (state.skipTranslation) return { kind: 'same-language' };
+    if (state.cues.length) return { kind: 'track', label: state.trackLabel || state.trackLang };
+    let label = '';
+    try {
+      if (provider && provider.getTrackLabel) label = provider.getTrackLabel() || '';
+    } catch (e) { /* a provider probing for DOM that is not there */ }
+    return label ? { kind: 'track', label } : { kind: 'none' };
+  }
+
+  /**
+   * Put the button where this page's provider says it goes, or take it away.
+   *
+   * Cheap enough to call on a heartbeat, which is what keeps it attached to a
+   * player that rebuilds its own control bar between videos.
+   */
+  function syncControls() {
+    const controls = ctx.captionControls;
+    if (!controls) return;
+    if (getSetting('captionPlayerButton') === false) {
+      controls.unmount();
+      return;
+    }
+    // No provider means no subtitle track and no site we know — a bare <video>
+    // in an ad or a page background, where an icon of ours would be litter.
+    const provider = candidateProvider();
+    if (!provider) {
+      controls.unmount();
+      return;
+    }
+    let host = null;
+    let video = null;
+    try {
+      if (provider.getControlsHost) host = provider.getControlsHost();
+    } catch (e) { /* the player's control bar is not up yet */ }
+    try {
+      video = provider.getVideo ? provider.getVideo() : document.querySelector('video');
+    } catch (e) { /* keep null */ }
+    controls.sync({ host, video, status: captionStatus(provider) });
+  }
+
+  function startControlsHeartbeat() {
+    if (state.controlsTimer) return;
+    state.controlsTimer = setInterval(syncControls, CONTROLS_HEARTBEAT_MS);
+  }
+
+  function stopControlsHeartbeat() {
+    if (!state.controlsTimer) return;
+    clearInterval(state.controlsTimer);
+    state.controlsTimer = null;
+  }
+
   // ------------------------------------------------- what providers call in
   const engineApi = {
     /**
@@ -613,6 +753,7 @@
       if (trackId !== state.trackId) {
         state.trackId = trackId;
         state.trackLang = track.lang || '';
+        state.trackLabel = track.label || track.lang || '';
         clearTrack();
       }
 
@@ -629,6 +770,7 @@
 
       ensureVideoListener();
       handleTimeUpdate();
+      syncControls();
       if (merged.added) ensureTrackTranslated(true);
     },
 
@@ -648,6 +790,7 @@
     clearTrack();
     state.trackId = '';
     state.trackLang = '';
+    state.trackLabel = '';
     state.skipTranslation = false;
     state.dismissed = false;
     state.translating = false;
@@ -664,23 +807,55 @@
     state.block = null;
   }
 
-  ctx.setupVideoCaptionTranslation = function() {
-    if (!getSetting('enableYoutubeCaptionTranslation')) return;
-    if (state.active) return;
-    state.active = true;
-    startWatching();
-    // A provider may not be able to answer yet (no video, no track); the
-    // watcher above retries as the page brings one up.
-    tryActivate();
-  };
-
-  ctx.stopVideoCaptionTranslation = function() {
-    stopWatching();
+  /** Stop translating and give the page back everything we took from it. */
+  function deactivate() {
     if (state.provider) {
       if (state.provider.detach) state.provider.detach();
       state.provider = null;
     }
     state.active = false;
     resetForVideo();
+  }
+
+  /**
+   * The one entry point for "the settings changed" — the storage listener, the
+   * popup's message, the in-player menu and startup all land here.
+   *
+   * Watching is unconditional (see state.enabled): with the feature off the
+   * engine still follows the page's videos, so the button is there to turn it
+   * on. Only attaching a provider — the part that reads cues and calls the
+   * translation API — is gated.
+   */
+  ctx.applyCaptionSettings = function() {
+    state.enabled = !!getSetting('enableYoutubeCaptionTranslation');
+    startWatching();
+    if (state.enabled && !state.active) {
+      state.active = true;
+      // A provider may not be able to answer yet (no video, no track); the
+      // watcher retries as the page brings one up.
+      tryActivate();
+    } else if (!state.enabled && state.active) {
+      deactivate();
+    }
+    // Display type and position change what is on screen without touching the
+    // pipeline: re-render the current cue rather than wait for the next frame.
+    applyCaptionLayout();
+    applyCaptionDisplay();
+    renderActiveCue(state.lastNowMs);
+    handleTimeUpdate();
+    syncControls();
+    if (document.querySelector('video')) startControlsHeartbeat();
+  };
+
+  ctx.setupVideoCaptionTranslation = function() {
+    ctx.applyCaptionSettings();
+  };
+
+  // Kept as the "feature off" path callers already use. It stops translating;
+  // it does not stop watching, because the button has to survive it.
+  ctx.stopVideoCaptionTranslation = function() {
+    state.enabled = false;
+    deactivate();
+    syncControls();
   };
 })();

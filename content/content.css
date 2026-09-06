@@ -84,10 +84,10 @@
 
 /* Not inherited — a bare-tag rule can hit any single node in the subtree, and
    opacity/filter/transform compound as it descends. Pin them on every node. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]),
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
   box-sizing: border-box;
   opacity: 1;
   filter: none;
@@ -99,16 +99,16 @@
    box's line-height would stop reaching the text it wraps. `inherit` still
    blocks a direct hit like `button { text-transform: uppercase }` or
    `body { line-height: 1.8 }` without breaking the chain. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) {
   visibility: visible;
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
   visibility: inherit;
   line-height: inherit;
   letter-spacing: inherit;
@@ -168,7 +168,7 @@
    Adding a control to a panel needs nothing here; adding a *rule* for one
    needs the `html body` + root prefix, or the theme's hover takes it back.
    That is asserted by test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -1790,10 +1790,34 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 0;
   max-width: 92%;
   pointer-events: auto;
   cursor: move;
+  /* One backplate behind both lines instead of a slab per line: two stacked
+     boxes with a gap between them read as two separate captions, and the seam
+     is visible over any moving image. */
+  padding: 3px 12px;
+  background: var(--ai-caption-bg, rgba(8, 8, 8, 0.82));
+  border-radius: 6px;
+}
+
+/* Between cues there is no text, and a plate with nothing on it is just a
+   grey box parked on the video. */
+#ai-translator-caption-overlay .ai-translator-caption-block.ai-cap-empty {
+  background: transparent;
+  padding: 0;
+}
+
+/* Where the block sits before anyone has dragged it: on the page's own caption
+   line, lifted clear of the player's control bar while that bar is showing.
+   Both numbers come from the provider (see getCaptionAnchor); a block the
+   viewer has placed keeps `top` and never gets here. */
+#ai-translator-caption-overlay .ai-translator-caption-block.ai-cap-anchored {
+  top: auto;
+  bottom: calc(var(--ai-caption-bottom, 6%) + var(--ai-caption-lift, 0px));
+  transform: translateX(-50%);
+  transition: bottom 0.15s ease;
 }
 
 #ai-translator-caption-overlay .ai-translator-caption-block:hover {
@@ -1809,26 +1833,23 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
    keeps the size it has always had, and a small embedded one gets captions that
    fit inside it instead of spilling over. */
 #ai-translator-caption-overlay .ai-translator-caption-original {
-  padding: 2px 10px;
-  font-size: calc(clamp(12px, min(2.4vh, 5.5 * var(--ai-caption-unit, 1vh)), 32px) * var(--ai-caption-scale, 1));
+  padding: 1px 0;
+  /* 0.8x the translated line: it is the reference, not the thing being read. */
+  font-size: calc(clamp(12px, min(2.56vh, 5.84 * var(--ai-caption-unit, 1vh)), 35px) * var(--ai-caption-scale, 1));
   line-height: 1.3;
   text-align: center;
   color: var(--ai-caption-fg, #f1f1f1);
-  background: var(--ai-caption-bg, rgba(8, 8, 8, 0.75));
-  border-radius: 4px;
-  opacity: 0.92;
+  opacity: 0.85;
 }
 
 /* Translated line (larger, primary). Sizes scale with the player, as above. */
 #ai-translator-caption-overlay .ai-translator-caption-line {
-  padding: 3px 12px;
+  padding: 1px 0;
   font-size: calc(clamp(14px, min(3.2vh, 7.3 * var(--ai-caption-unit, 1vh)), 44px) * var(--ai-caption-scale, 1));
   font-weight: 500;
   line-height: 1.35;
   text-align: center;
   color: var(--ai-caption-fg, #fff);
-  background: var(--ai-caption-bg, rgba(8, 8, 8, 0.82));
-  border-radius: 4px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
@@ -1905,6 +1926,230 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
    the two do not stack and overlap. Toggled via a marker class from JS. */
 .ytp-caption-window-container.ai-translator-hide-native .caption-window {
   display: none !important;
+}
+
+/* ============ In-player caption controls (button + menu) ============ */
+/* The button docks into the site's own control bar when the provider gives it
+   a slot, and otherwise rides a rect-tracked box over the video. Every rule
+   below carries `html body` plus the element's id so it clears a host theme's
+   `.kit button:hover` — these roots are the outermost element we render, so
+   the containment reset (which only reaches *inside* a root) does not cover
+   them and each property has to be stated here. */
+
+/* The floating fallback: a box on the video's rect, fading in on activity. */
+#ai-translator-caption-controls {
+  position: fixed;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 2147483000;
+}
+
+#ai-translator-caption-controls.ai-cap-visible {
+  opacity: 1;
+}
+
+html body #ai-translator-caption-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  border: 0 solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+  opacity: 0.9;
+  filter: none;
+  transform: none;
+  cursor: pointer;
+  pointer-events: auto;
+  vertical-align: middle;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+html body #ai-translator-caption-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Translating right now: the icon comes up to full strength and picks up the
+   brand tint, so the state is readable at a glance on a moving image. */
+html body #ai-translator-caption-btn.ai-cap-active {
+  opacity: 1;
+}
+
+html body #ai-translator-caption-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  opacity: 1;
+  filter: none;
+  transform: none;
+  pointer-events: none;
+}
+
+/* Floating fallback only: without a control bar behind it the icon needs its
+   own plate to stay legible over the picture. */
+#ai-translator-caption-controls > #ai-translator-caption-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(20, 20, 20, 0.72);
+}
+
+#ai-translator-caption-menu {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2147483001;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: 92vw;
+  margin: 0;
+  padding: 6px 0;
+  border: 0 solid transparent;
+  border-radius: 10px;
+  background: rgba(28, 28, 28, 0.96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: normal;
+  text-align: left;
+  pointer-events: auto;
+  display: block;
+}
+
+/* The menu is toggled with the `hidden` property. Restating it at id weight
+   matters: `[hidden]`'s display:none is only a UA rule, and any page
+   declaration of `display` on the element would outrank it and leave a closed
+   menu on screen. */
+#ai-translator-caption-menu[hidden] {
+  display: none;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  min-height: 34px;
+  cursor: pointer;
+  color: #f5f5f5;
+  transition: background 0.12s ease;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-menu-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* "Position" with one line on screen, or "display type" with the feature off:
+   still shown, so the menu does not change shape, but plainly inert. */
+#ai-translator-caption-menu .ai-translator-caption-menu-item.ai-cap-disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-menu-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-menu-chevron {
+  flex: none;
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+html body #ai-translator-caption-menu .ai-translator-caption-select {
+  flex: none;
+  box-sizing: border-box;
+  appearance: none;
+  width: auto;
+  min-width: 0;
+  max-width: 150px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: #f5f5f5;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: normal;
+  cursor: pointer;
+}
+
+html body #ai-translator-caption-menu .ai-translator-caption-select:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+html body #ai-translator-caption-menu .ai-translator-caption-select option {
+  color: #111;
+  background: #fff;
+}
+
+/* The on/off switch on the first row. A div, not a checkbox, so it takes the
+   same treatment on every page regardless of the UA's control styling. */
+#ai-translator-caption-menu .ai-translator-caption-switch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.24);
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-switch.ai-cap-on {
+  background: #3b82f6;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-knob {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s ease;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-switch.ai-cap-on .ai-translator-caption-knob {
+  left: 16px;
+}
+
+#ai-translator-caption-menu .ai-translator-caption-menu-status {
+  padding: 8px 14px 4px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(245, 245, 245, 0.62);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==================== Comic Page Translation ==================== */

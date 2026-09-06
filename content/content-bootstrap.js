@@ -56,7 +56,12 @@
       comicTargetLang: '',
       enablePdfTranslation: true,
       pdfTargetLang: '',
+      // Superseded by captionDisplayMode; still read so a profile that only
+      // has the old boolean migrates instead of resetting to bilingual.
       showYoutubeOriginalCaption: true,
+      captionDisplayMode: 'bilingual',
+      captionTranslationPosition: 'below',
+      captionPlayerButton: true,
       youtubeCaptionFontColor: '#ffffff',
       youtubeCaptionBgColor: '#080808',
       youtubeCaptionBgOpacity: 82,
@@ -135,6 +140,9 @@
         enablePdfTranslation: true,
         pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
+        captionDisplayMode: 'bilingual',
+        captionTranslationPosition: 'below',
+        captionPlayerButton: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
         youtubeCaptionBgOpacity: 82,
@@ -167,6 +175,9 @@
         enablePdfTranslation: true,
         pdfTargetLang: '',
         showYoutubeOriginalCaption: true,
+        captionDisplayMode: 'bilingual',
+        captionTranslationPosition: 'below',
+        captionPlayerButton: true,
         youtubeCaptionFontColor: '#ffffff',
         youtubeCaptionBgColor: '#080808',
         youtubeCaptionBgOpacity: 82,
@@ -189,6 +200,16 @@
       theme: ctx.settings.theme
     });
   };
+
+  // The settings the video-caption engine reacts to, in one place so the
+  // storage listener and the popup's message cannot drift apart.
+  const CAPTION_SETTING_KEYS = [
+    'enableYoutubeCaptionTranslation',
+    'captionDisplayMode',
+    'captionTranslationPosition',
+    'captionPlayerButton',
+  ];
+  ctx.captionSettingKeys = CAPTION_SETTING_KEYS;
 
   ctx.setupStorageListener = function() {
     chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -241,12 +262,12 @@
         if (ctx.applyTranslationOnlyMode) ctx.applyTranslationOnlyMode();
       }
 
-      if (changes.enableYoutubeCaptionTranslation) {
-        if (ctx.settings.enableYoutubeCaptionTranslation) {
-          if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
-        } else if (ctx.stopVideoCaptionTranslation) {
-          ctx.stopVideoCaptionTranslation();
-        }
+      // One entry point for all four caption keys: the switch decides whether
+      // we translate, the other three only change what is drawn, and the engine
+      // sorts out which of those it is. Options and the in-player menu both
+      // land here, so a change on one surface shows up live on the other.
+      if (CAPTION_SETTING_KEYS.some((key) => key in changes)) {
+        if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
       }
     });
   };
