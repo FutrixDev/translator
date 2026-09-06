@@ -705,6 +705,12 @@
   function syncControls() {
     const controls = ctx.captionControls;
     if (!controls) return;
+    // The heartbeat is what re-docks the button when the player rebuilds its
+    // control bar, and a page can reach a video long after settings were
+    // applied — YouTube home, then a click through to a watch page. Starting it
+    // from here means every route that syncs the controls also keeps them
+    // synced; stopWatching() is still the only thing that stops it.
+    if (document.querySelector('video')) startControlsHeartbeat();
     if (getSetting('captionPlayerButton') === false) {
       controls.unmount();
       return;
@@ -844,7 +850,6 @@
     renderActiveCue(state.lastNowMs);
     handleTimeUpdate();
     syncControls();
-    if (document.querySelector('video')) startControlsHeartbeat();
   };
 
   ctx.setupVideoCaptionTranslation = function() {
