@@ -1,19 +1,37 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const {
+  setExtensionSettings,
+  getSyncSetting,
+  writeSyncSettings,
+  expectCaptionMenuAnchoredAboveButton,
+} = require('./helpers');
 
 const html = `<!doctype html>
 <html>
 <head><meta charset="utf-8">
-<style>.ytp-caption-window-container{position:relative;width:640px;height:360px;}</style>
+<style>
+  #movie_player{position:relative;width:640px;height:360px;}
+  .ytp-caption-window-container{position:absolute;inset:0;}
+  .ytp-chrome-bottom{position:absolute;left:0;right:0;bottom:0;height:36px;}
+  .ytp-right-controls{position:absolute;right:0;bottom:0;display:flex;}
+</style>
 </head>
 <body>
-  <div class="ytp-caption-window-container">
-    <div class="ytp-caption-window">
-      <span class="captions-text">Hello world</span>
+  <div id="movie_player">
+    <video id="video"></video>
+    <div class="ytp-caption-window-container">
+      <div class="ytp-caption-window">
+        <span class="captions-text">Hello world</span>
+      </div>
+    </div>
+    <div class="ytp-chrome-bottom">
+      <div class="ytp-right-controls">
+        <button class="ytp-settings-button ytp-button"></button>
+        <button class="ytp-fullscreen-button ytp-button"></button>
+      </div>
     </div>
   </div>
   <button class="ytp-subtitles-button" aria-pressed="true"></button>
-  <video id="video"></video>
 </body>
 </html>`;
 
@@ -292,4 +310,235 @@ test('close button dismisses captions and restores native for the video', async 
   });
   await page.waitForTimeout(300);
   await expect(overlay).toBeHidden();
+});
+
+// ---------------------------------------------------------------- F17
+// The in-player control. Everything below drives the same fixture, so the
+// helpers here set the page up once and then assert on the button and menu.
+
+/** Load the fixture with routes in place and let the content script settle. */
+async function openPlayer(page, context, settings, body = html) {
+  await setExtensionSettings(page, settings);
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+}
+
+/** Feed the player's captions in and advance the playhead onto the first cue. */
+async function playCue(page) {
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 0.5;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+}
+
+// The live player splits its right-hand cluster into two groups; the fixture
+// above is the flat older layout. Both have to place the button.
+const splitBarHtml = html.replace(
+  `      <div class="ytp-right-controls">
+        <button class="ytp-settings-button ytp-button"></button>
+        <button class="ytp-fullscreen-button ytp-button"></button>
+      </div>`,
+  `      <div class="ytp-right-controls">
+        <div class="ytp-right-controls-left">
+          <button class="ytp-subtitles-button ytp-button"></button>
+          <button class="ytp-settings-button ytp-button"></button>
+        </div>
+        <div class="ytp-right-controls-right">
+          <button class="ytp-fullscreen-button ytp-button"></button>
+        </div>
+      </div>`,
+);
+
+// A1 — the provider hands back the leftmost slot in the player's right-hand
+// cluster, and the button lands in it rather than floating over the picture.
+test('the button docks into the player control bar, first in the right cluster', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+
+  await expect.poll(async () => page.evaluate(() => {
+    const bar = document.querySelector('.ytp-right-controls');
+    const first = bar && bar.firstElementChild;
+    return !!first && first.classList.contains('ai-translator-caption-btn');
+  })).toBe(true);
+
+  // It wears the player's own button class, so it inherits that bar's sizing.
+  await expect(page.locator('.ytp-right-controls > .ai-translator-caption-btn')).toHaveClass(/ytp-button/);
+  // Docked means docked: no floating box over the video as well.
+  await expect(page.locator('#ai-translator-caption-controls')).toHaveCount(0);
+});
+
+// The whole point of watching with the feature off: the button is how you
+// turn it on, so it cannot itself depend on the feature being on.
+test('the button is there with the feature off, and turns it on', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+
+  const button = page.locator('#ai-translator-caption-btn');
+  await expect(button).toHaveCount(1);
+
+  await button.click();
+  await page.locator('#ai-translator-caption-menu .ai-translator-caption-switch').click();
+
+  await expect.poll(() => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
+});
+
+// A2 — the menu's five rows, in order, in the reader's language.
+test('the menu lists the five rows in order', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  await page.locator('#ai-translator-caption-btn').click();
+
+  const menu = page.locator('#ai-translator-caption-menu');
+  await expect(menu).toBeVisible();
+  const labels = await menu.locator('[role="menuitem"] .ai-translator-caption-menu-label').allTextContents();
+  expect(labels).toEqual([
+    '开启字幕翻译',
+    '字幕显示类型',
+    '译文位置',
+    '字幕样式',
+    '不再显示该快捷方式',
+  ]);
+
+  // And it is a popover on the icon, not a panel in the player's corner: just
+  // above the button, right-aligned with it, at its own height, inside the
+  // player it is docked in.
+  await expectCaptionMenuAnchoredAboveButton(page, '#movie_player');
+});
+
+// A3 — a player reads a click on itself as play/pause and a key as a shortcut.
+// Ours are neither, and the player must never see them.
+test('clicking the button and the menu never reaches the player', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+
+  await page.evaluate(() => {
+    window.__playerClicks = 0;
+    const count = () => { window.__playerClicks += 1; };
+    document.getElementById('movie_player').addEventListener('click', count);
+    document.querySelector('video').addEventListener('click', count);
+    document.querySelector('video').play = () => {};
+  });
+
+  const paused = await page.evaluate(() => document.querySelector('video').paused);
+  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-menu .ai-translator-caption-menu-item').first().click();
+
+  expect(await page.evaluate(() => window.__playerClicks)).toBe(0);
+  expect(await page.evaluate(() => document.querySelector('video').paused)).toBe(paused);
+});
+
+// A4 — the three display types, read off the lines that are actually on screen.
+test('the display type decides which lines are drawn', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  await playCue(page);
+
+  const original = page.locator('#ai-translator-caption-overlay .ai-translator-caption-original');
+  const translated = page.locator('#ai-translator-caption-overlay .ai-translator-caption-line');
+  await expect(translated).toHaveText('你好世界');
+  await expect(original).toBeVisible();
+
+  const pick = async (mode) => {
+    await page.locator('#ai-translator-caption-btn').click();
+    await page.selectOption('#ai-translator-caption-menu .ai-translator-caption-select', mode);
+    await page.keyboard.press('Escape');
+  };
+
+  await pick('translation');
+  await expect(original).toBeHidden();
+  await expect(translated).toBeVisible();
+
+  // "Original only" hands the picture back to the player: our overlay goes
+  // away and the native caption windows come back out of hiding.
+  await pick('original');
+  await expect(page.locator('#ai-translator-caption-overlay')).toBeHidden();
+  await expect(page.locator('.ytp-caption-window-container')).not.toHaveClass(/ai-translator-hide-native/);
+
+  await pick('bilingual');
+  await expect(original).toBeVisible();
+  await expect(translated).toBeVisible();
+});
+
+// The upgrade path, end to end: a profile written before F17 has the checkbox
+// and no captionDisplayMode at all. Nothing on the way to the screen may fill
+// that key in — the content script's own defaults included — or the resolver
+// reads a set mode and never looks at the checkbox, and everyone who had the
+// original line turned off gets it back.
+test('a pre-F17 profile with the checkbox off still shows the translation alone', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, showYoutubeOriginalCaption: false });
+  // The premise of the test: the new key was never written.
+  expect(await getSyncSetting(context, 'captionDisplayMode')).toBeUndefined();
+  await playCue(page);
+
+  const original = page.locator('#ai-translator-caption-overlay .ai-translator-caption-original');
+  const translated = page.locator('#ai-translator-caption-overlay .ai-translator-caption-line');
+  await expect(translated).toHaveText('你好世界');
+  await expect(translated).toBeVisible();
+  await expect(original).toBeHidden();
+
+  // And the migrated mode is what the in-player select shows, so the reader is
+  // not told "bilingual" while looking at one line.
+  await page.locator('#ai-translator-caption-btn').click();
+  await expect(
+    page.locator('#ai-translator-caption-menu [data-action="mode"] .ai-translator-caption-select'),
+  ).toHaveValue('translation');
+});
+
+// A5 — position flips which line is on top, and it flips live: the setting is
+// a CSS `order`, so the box under the pointer is never rebuilt.
+test('the translation can be put above the original', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, captionTranslationPosition: 'above' });
+  await playCue(page);
+
+  const tops = () => page.evaluate(() => {
+    const o = document.querySelector('#ai-translator-caption-overlay .ai-translator-caption-original');
+    const t = document.querySelector('#ai-translator-caption-overlay .ai-translator-caption-line');
+    return { original: o.getBoundingClientRect().top, translated: t.getBoundingClientRect().top };
+  });
+
+  await expect(page.locator('#ai-translator-caption-overlay .ai-translator-caption-line')).toHaveText('你好世界');
+  const above = await tops();
+  expect(above.translated).toBeLessThan(above.original);
+
+  await writeSyncSettings(context, { captionTranslationPosition: 'below' });
+  await expect.poll(async () => {
+    const t = await tops();
+    return t.translated > t.original;
+  }).toBe(true);
+});
+
+// A7 — "don't show this again" takes the button off every player, and the
+// options page switch brings it back without a reload.
+test('hiding the shortcut removes the button, and restoring it brings it back', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(1);
+
+  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-menu .ai-translator-caption-menu-item').last().click();
+  await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(0);
+
+  await writeSyncSettings(context, { captionPlayerButton: true });
+  await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(1);
+});
+
+// The bar YouTube actually ships: two nested groups, with CC and the gear in
+// the left one. The button belongs beside those, not beside fullscreen.
+test('on the split control bar the button joins the caption-side group', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS, splitBarHtml);
+
+  await expect.poll(async () => page.evaluate(() => {
+    const group = document.querySelector('.ytp-right-controls-left');
+    const first = group && group.firstElementChild;
+    return !!first && first.classList.contains('ai-translator-caption-btn');
+  })).toBe(true);
 });

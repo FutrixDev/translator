@@ -5,7 +5,7 @@
 // — it goes through a provider that observes the player's network traffic,
 // where this one reads cues the browser has already parsed.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, expectCaptionMenuAnchoredAboveButton } = require('./helpers');
 
 const ORIGIN = 'https://video.test';
 
@@ -315,4 +315,74 @@ test('turning the feature off puts the page back the way it was', async ({ page:
   // The track goes back to the mode the page had it in, not to ours.
   const mode = await p.evaluate(() => document.querySelector('video').textTracks[0].mode);
   expect(mode).toBe('showing');
+});
+
+// ---------------------------------------------------------------- F17
+// A6 — with no control bar of ours to dock into, the button becomes a badge in
+// the video's bottom-right corner. And a page with no subtitle track at all
+// gets nothing: an icon there would be litter on someone else's <video>.
+
+test('with no player control bar the button sits in the video corner', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await p.waitForTimeout(600);
+
+  const button = p.locator('#ai-translator-caption-btn');
+  await expect(button).toHaveCount(1);
+
+  // Nudge the pointer over the video: the badge follows a player's own rhythm
+  // and only shows while there is activity.
+  await p.mouse.move(320, 180);
+
+  const gaps = await p.evaluate(() => {
+    const v = document.querySelector('video').getBoundingClientRect();
+    const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
+    return { right: v.right - b.right, bottom: v.bottom - b.bottom };
+  });
+  expect(gaps.right).toBeLessThanOrEqual(16);
+  expect(gaps.bottom).toBeLessThanOrEqual(16);
+  expect(gaps.right).toBeGreaterThanOrEqual(0);
+  expect(gaps.bottom).toBeGreaterThanOrEqual(0);
+
+  // The menu's status line names the track it found, read without adopting it.
+  await button.click();
+  await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
+    .toContainText('English');
+
+  // And the menu is a popover on the badge: just above it, right-aligned with
+  // it, at its own height, inside the floating box pinned to the video.
+  await expectCaptionMenuAnchoredAboveButton(p, '#ai-translator-caption-controls');
+});
+
+test('a page with no subtitle track gets no button', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, NO_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  // Long enough for the controls heartbeat to have run more than once.
+  await p.waitForTimeout(2500);
+  await p.mouse.move(320, 180);
+
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(0);
+  await expect(p.locator('#ai-translator-caption-controls')).toHaveCount(0);
+});
+
+// The generic provider has no site code to hide the native line, so "original
+// only" has to hand the track back at the mode the page had it in.
+test('original-only gives the page its own captions back', async ({ page: p, context }) => {
+  await setExtensionSettings(p, { ...BASE_SETTINGS, captionDisplayMode: 'original' });
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await p.waitForTimeout(600);
+  await seekIntoFirstCue(p);
+  await p.waitForTimeout(400);
+
+  await expect(p.locator('#ai-translator-caption-overlay')).toBeHidden();
+  expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('showing');
 });

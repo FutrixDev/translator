@@ -285,13 +285,31 @@
           </div>
 
           <div class="feature-suboptions" id="youtubeSubOptions">
+            <div class="form-group">
+              <label for="captionDisplayMode" data-i18n="captionDisplayMode">Subtitle display type</label>
+              <select id="captionDisplayMode">
+                <option value="bilingual" data-i18n="captionModeBilingual">Bilingual subtitles</option>
+                <option value="translation" data-i18n="captionModeTranslation">Translation only</option>
+                <option value="original" data-i18n="captionModeOriginal">Original only</option>
+              </select>
+              <span class="hint" data-i18n-hint="hintShowYoutubeOriginalCaption"></span>
+            </div>
+
+            <div class="form-group">
+              <label for="captionTranslationPosition" data-i18n="captionTranslationPosition">Translation position</label>
+              <select id="captionTranslationPosition">
+                <option value="below" data-i18n="captionPositionBelow">Below the original</option>
+                <option value="above" data-i18n="captionPositionAbove">Above the original</option>
+              </select>
+            </div>
+
             <div class="toggle-group">
               <label class="toggle-label">
-                <span data-i18n="showYoutubeOriginalCaption">Show Original Caption</span>
-                <input type="checkbox" id="showYoutubeOriginalCaption" checked>
+                <span data-i18n="captionPlayerButton">Show a shortcut button in the player</span>
+                <input type="checkbox" id="captionPlayerButton" checked>
                 <span class="toggle-slider"></span>
               </label>
-              <span class="hint" data-i18n-hint="hintShowYoutubeOriginalCaption"></span>
+              <span class="hint" data-i18n-hint="hintCaptionPlayerButton"></span>
             </div>
 
             <div class="form-group">
@@ -617,6 +635,9 @@
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/ocr.js"></script>
+  <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
+       will draw, including the migration from the old original-caption box. -->
+  <script src="../shared/caption-core.js"></script>
   <script src="../i18n/messages.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/pdf-errors.js"></script>

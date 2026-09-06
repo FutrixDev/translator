@@ -134,12 +134,8 @@
           if ('selectionTranslationMode' in message.settings && message.settings.selectionTranslationMode !== 'inline') {
             if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
           }
-          if ('enableYoutubeCaptionTranslation' in message.settings) {
-            if (message.settings.enableYoutubeCaptionTranslation) {
-              if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
-            } else if (ctx.stopVideoCaptionTranslation) {
-              ctx.stopVideoCaptionTranslation();
-            }
+          if ((ctx.captionSettingKeys || []).some((key) => key in message.settings)) {
+            if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
           }
           break;
         case 'TOGGLE_FLOAT_BALL':

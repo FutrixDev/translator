@@ -1,6 +1,7 @@
 /**
  * Test helper functions for Blab Translation E2E tests
  */
+const { expect } = require('@playwright/test');
 
 /**
  * Wait for the float ball to appear on the page
@@ -310,9 +311,44 @@ async function sendMessageToActiveTab(page, message) {
   }, message);
 }
 
+/**
+ * The caption menu is a popover: it sits just above the icon, right-aligned
+ * with it, at its own content height, inside the anchor it is placed in. Both
+ * caption specs assert it — docked in the player, and floating over a bare
+ * <video> — so the four checks live here rather than twice.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} anchorSelector the element the menu is positioned within
+ */
+async function expectCaptionMenuAnchoredAboveButton(page, anchorSelector) {
+  const boxes = await page.evaluate((sel) => {
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height };
+    };
+    const menu = document.getElementById('ai-translator-caption-menu');
+    const button = document.getElementById('ai-translator-caption-btn');
+    const anchor = document.querySelector(sel);
+    if (!menu || !button || !anchor) return null;
+    return { menu: box(menu), button: box(button), anchor: box(anchor) };
+  }, anchorSelector);
+
+  expect(boxes, `menu, button and ${anchorSelector} must all be on the page`).not.toBeNull();
+  // Above the button, not overlapping it.
+  expect(boxes.menu.bottom).toBeLessThanOrEqual(boxes.button.top);
+  // Right-aligned with the button.
+  expect(Math.abs(boxes.menu.right - boxes.button.right)).toBeLessThanOrEqual(8);
+  // Its own height — not stretched between two opposite pinned edges.
+  expect(boxes.menu.height).toBeLessThan(320);
+  // And inside the player / floating box it is anchored to.
+  expect(boxes.menu.left).toBeGreaterThanOrEqual(boxes.anchor.left);
+  return boxes;
+}
+
 module.exports = {
   E2E_BASE_SETTINGS,
+  expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,
+  writeSyncSettings,
   getSyncSettings,
   getSyncSetting,
   applyBaseSettings,
