@@ -312,10 +312,10 @@ test('close button dismisses captions and restores native for the video', async 
 // helpers here set the page up once and then assert on the button and menu.
 
 /** Load the fixture with routes in place and let the content script settle. */
-async function openPlayer(page, context, settings) {
+async function openPlayer(page, context, settings, body = html) {
   await setExtensionSettings(page, settings);
   await context.route('https://www.youtube.com/watch**', (route) => {
-    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+    route.fulfill({ status: 200, contentType: 'text/html', body });
   });
   await context.route('https://www.youtube.com/api/timedtext**', (route) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
@@ -340,6 +340,24 @@ async function playCue(page) {
     v.dispatchEvent(new Event('timeupdate'));
   });
 }
+
+// The live player splits its right-hand cluster into two groups; the fixture
+// above is the flat older layout. Both have to place the button.
+const splitBarHtml = html.replace(
+  `      <div class="ytp-right-controls">
+        <button class="ytp-settings-button ytp-button"></button>
+        <button class="ytp-fullscreen-button ytp-button"></button>
+      </div>`,
+  `      <div class="ytp-right-controls">
+        <div class="ytp-right-controls-left">
+          <button class="ytp-subtitles-button ytp-button"></button>
+          <button class="ytp-settings-button ytp-button"></button>
+        </div>
+        <div class="ytp-right-controls-right">
+          <button class="ytp-fullscreen-button ytp-button"></button>
+        </div>
+      </div>`,
+);
 
 // A1 — the provider hands back the leftmost slot in the player's right-hand
 // cluster, and the button lands in it rather than floating over the picture.
@@ -476,4 +494,16 @@ test('hiding the shortcut removes the button, and restoring it brings it back', 
 
   await writeSyncSettings(context, { captionPlayerButton: true });
   await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(1);
+});
+
+// The bar YouTube actually ships: two nested groups, with CC and the gear in
+// the left one. The button belongs beside those, not beside fullscreen.
+test('on the split control bar the button joins the caption-side group', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS, splitBarHtml);
+
+  await expect.poll(async () => page.evaluate(() => {
+    const group = document.querySelector('.ytp-right-controls-left');
+    const first = group && group.firstElementChild;
+    return !!first && first.classList.contains('ai-translator-caption-btn');
+  })).toBe(true);
 });

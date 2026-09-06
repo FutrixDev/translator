@@ -114,7 +114,13 @@
     // controls. The menu is anchored to #movie_player because that is the
     // element that goes fullscreen; a menu outside it would vanish there.
     getControlsHost() {
-      const parent = document.querySelector('.ytp-right-controls');
+      // The bar is split into two groups on the live player today
+      // (…-left holds CC and the gear, …-right holds size and fullscreen) and
+      // is flat on older layouts. Prefer the left group so the button lands
+      // beside the caption controls rather than beside fullscreen; fall back to
+      // the bar itself where the split does not exist.
+      const parent = document.querySelector('.ytp-right-controls-left')
+        || document.querySelector('.ytp-right-controls');
       if (!parent) return null;
       return {
         parent,
