@@ -161,7 +161,9 @@ const elements = {
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
   ocrSubOptions: document.getElementById('ocrSubOptions'),
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
-  showYoutubeOriginalCaption: document.getElementById('showYoutubeOriginalCaption'),
+  captionDisplayMode: document.getElementById('captionDisplayMode'),
+  captionTranslationPosition: document.getElementById('captionTranslationPosition'),
+  captionPlayerButton: document.getElementById('captionPlayerButton'),
   youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
   youtubeCaptionBgColor: document.getElementById('youtubeCaptionBgColor'),
   youtubeCaptionBgOpacity: document.getElementById('youtubeCaptionBgOpacity'),
@@ -287,7 +289,12 @@ const defaultSettings = {
   enablePdfTranslation: true,
   pdfTargetLang: '',
   enableYoutubeCaptionTranslation: false,
+  // Kept in the read set, not on the page any more: it is what a profile from
+  // before the display-type select migrates from (CaptionCore does the sum).
   showYoutubeOriginalCaption: true,
+  captionDisplayMode: 'bilingual',
+  captionTranslationPosition: 'below',
+  captionPlayerButton: true,
   youtubeCaptionFontColor: '#ffffff',
   youtubeCaptionBgColor: '#080808',
   youtubeCaptionBgOpacity: 82,
@@ -970,7 +977,10 @@ async function loadSettings() {
     elements.pdfTargetLang.value = result.pdfTargetLang || '';
     renderAccountFeatures();
     elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
-    elements.showYoutubeOriginalCaption.checked = result.showYoutubeOriginalCaption !== false;
+    const captionDisplay = CaptionCore.resolveCaptionDisplay(result);
+    elements.captionDisplayMode.value = captionDisplay.mode;
+    elements.captionTranslationPosition.value = result.captionTranslationPosition === 'above' ? 'above' : 'below';
+    elements.captionPlayerButton.checked = result.captionPlayerButton !== false;
     elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
     elements.youtubeCaptionBgColor.value = result.youtubeCaptionBgColor || '#080808';
     elements.youtubeCaptionBgOpacity.value = result.youtubeCaptionBgOpacity != null ? result.youtubeCaptionBgOpacity : 82;
@@ -1079,7 +1089,12 @@ function collectSettings() {
     ocrEngine: elements.ocrEngine.value,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
-    showYoutubeOriginalCaption: elements.showYoutubeOriginalCaption.checked,
+    captionDisplayMode: elements.captionDisplayMode.value,
+    captionTranslationPosition: elements.captionTranslationPosition.value,
+    captionPlayerButton: elements.captionPlayerButton.checked,
+    // Written alongside the new key so a profile that syncs back to an older
+    // build still shows or hides the original line the way it was left here.
+    showYoutubeOriginalCaption: elements.captionDisplayMode.value !== 'translation',
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
     youtubeCaptionBgColor: elements.youtubeCaptionBgColor.value,
     youtubeCaptionBgOpacity: parseInt(elements.youtubeCaptionBgOpacity.value, 10),
@@ -1367,7 +1382,9 @@ const IMMEDIATE_SAVE_FIELDS = [
   'ocrEngine',
   'enableImageOcrHoverButton',
   'enableYoutubeCaptionTranslation',
-  'showYoutubeOriginalCaption'
+  'captionDisplayMode',
+  'captionTranslationPosition',
+  'captionPlayerButton'
 ];
 
 // Controls that fire on every keystroke or drag frame: debounce, and flush on
@@ -1559,7 +1576,8 @@ function setupEventListeners() {
   elements.enableImageOcrTranslation.addEventListener('change', syncOcrSubState);
 
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
-  elements.showYoutubeOriginalCaption.addEventListener('change', updateCaptionPreview);
+  elements.captionDisplayMode.addEventListener('change', updateCaptionPreview);
+  elements.captionTranslationPosition.addEventListener('change', updateCaptionPreview);
   elements.youtubeCaptionFontColor.addEventListener('input', updateCaptionPreview);
   elements.youtubeCaptionBgColor.addEventListener('input', updateCaptionPreview);
   elements.youtubeCaptionBgOpacity.addEventListener('input', updateCaptionPreview);
@@ -1680,8 +1698,22 @@ function updateCaptionPreview() {
   if (elements.youtubeCaptionBgOpacityValue) {
     elements.youtubeCaptionBgOpacityValue.textContent = `${opacityPct}%`;
   }
+  // The preview answers "what will I see", so it runs the same resolver the
+  // player does rather than reading the two controls its own way.
+  const display = CaptionCore.resolveCaptionDisplay({
+    captionDisplayMode: elements.captionDisplayMode.value,
+    captionTranslationPosition: elements.captionTranslationPosition.value,
+  });
   const original = preview.querySelector('.caption-preview-original');
+  const translated = preview.querySelector('.caption-preview-translated');
   if (original) {
-    original.style.display = elements.showYoutubeOriginalCaption.checked ? '' : 'none';
+    original.style.display = display.showOriginal ? '' : 'none';
+    original.style.order = display.translationFirst ? '2' : '1';
   }
+  if (translated) {
+    translated.style.display = display.showTranslation ? '' : 'none';
+    translated.style.order = display.translationFirst ? '1' : '2';
+  }
+  // Position only means something with two lines on screen.
+  elements.captionTranslationPosition.disabled = display.mode !== 'bilingual';
 }
