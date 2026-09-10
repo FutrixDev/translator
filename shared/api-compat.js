@@ -276,7 +276,7 @@
       name: 'Anthropic Claude',
       endpoint: 'https://api.anthropic.com/v1/messages',
       // Native Anthropic API accepts version aliases (no date suffix); aliases
-      // avoid stale/incorrect dates. claude-opus-4-1 is omitted: it retires
+      // avoid stale/incorrect dates. claude-opus-4-1 is omitted: it retired on
       // 2026-08-05.
       models: ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-haiku-4-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-sonnet-4-5'],
       defaultModel: 'claude-sonnet-5'

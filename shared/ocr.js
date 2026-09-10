@@ -576,10 +576,10 @@
   // translation is step 2, and it does not happen here (see the file header).
   const OCR_SYSTEM_PROMPT = `You are an OCR engine. The user sends one image.
 Do both of the following:
-1. Extract ALL human-readable text from the image, preserving reading order and line breaks.
+1. Extract all human-readable text from the image, preserving reading order and line breaks.
 2. Detect the language the extracted text is written in.
 
-Return ONLY a JSON object with exactly these keys:
+Return a JSON object, and nothing else, with exactly these keys:
 {"text": "<extracted text, verbatim>", "language": "<BCP 47 code such as en, ja, zh-Hans>"}
 
 Rules:
