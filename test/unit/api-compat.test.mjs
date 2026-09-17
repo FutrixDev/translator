@@ -136,7 +136,7 @@ test('catalog defaults point at a model in their own list', () => {
 test('catalog lists no retired models', () => {
   // Append here as vendors retire ids, so they cannot be reintroduced.
   const retired = [
-    'claude-opus-4-1',      // retires 2026-08-05
+    'claude-opus-4-1',      // retired 2026-08-05
     'anthropic/claude-opus-4.1',
     'gemini-2.0-flash',     // shut down 2026-06-01
     'gemini-2.0-flash-lite',

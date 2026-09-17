@@ -215,7 +215,9 @@ Two things it deliberately does not own:
 Works with any OpenAI Chat Completions-compatible API, plus Anthropic's native
 Messages API:
 - OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Ollama, LM Studio
-- Request format: `{model, messages, temperature, max_tokens}`
+- Request format: `{model, messages, max_tokens}` plus whatever per-model
+  parameters `shared/api-compat.js` decides (see the rules below —
+  `temperature` is only sent where the model still honours it)
 - Response: `{choices[0].message.content}`, or `{content[0].text}` for Anthropic
 
 **All of it lives in `shared/api-compat.js`** — the provider catalog, every
