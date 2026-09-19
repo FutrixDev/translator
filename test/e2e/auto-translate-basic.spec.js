@@ -19,12 +19,23 @@ const ORIGIN = 'https://auto.test';
 
 const LEAD = 'The ferry leaves the northern pier every morning at a quarter past six.';
 const BODY = 'Passengers who miss it can wait for the afternoon crossing or take the coastal road instead.';
+// 第三段刻意带内联标记，而且正文缩进在标签里边。这两样东西都会让「送去翻译的
+// 文本」和「页面上原样的文字」长得不一样：前者带内联标记、且 trim 过（见
+// content/page/collect.js 的 getTextWithMathPlaceholders）。调度层开跑前要认出
+// 「这个节点被回收了」，两边必须取同一个表示法 —— 取错了，带链接的段落和所有
+// 含公式的段落会被一律丢掉，而且再也没有东西把它们送回来。
+const RICH_MIDDLE = 'is posted on the noticeboard by the';
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Harbour notes</title></head>
 <body>
   <div id="lead-box"><p id="lead">${LEAD}</p></div>
   <div id="body-box"><p id="body">${BODY}</p></div>
+  <div id="rich-box">
+    <p id="rich">
+      The <a href="/tide">printed tide table</a> ${RICH_MIDDLE} <em>harbour master</em> every Friday.
+    </p>
+  </div>
 </body></html>`;
 
 async function serve(context) {
@@ -59,10 +70,13 @@ test('auto translation: a page the user marked "always" translates itself on ope
     // 没有任何触发动作。悬浮球在那儿，谁也没碰它。
     await page.waitForSelector('#lead-box .ai-translator-inline-block', { timeout: 30000 });
     await page.waitForSelector('#body-box .ai-translator-inline-block', { timeout: 30000 });
+    await page.waitForSelector('#rich-box .ai-translator-inline-block', { timeout: 30000 });
 
     await expect(page.locator('#lead-box .ai-translator-inline-block')).toContainText(LEAD);
     expect(sentTexts.join('\n')).toContain(LEAD);
     expect(sentTexts.join('\n')).toContain(BODY);
+    // 内联标记怎么编码是收集器的事，这里只认标记之间那段素文字。
+    expect(sentTexts.join('\n')).toContain(RICH_MIDDLE);
   } finally {
     await close();
   }

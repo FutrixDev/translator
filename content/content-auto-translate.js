@@ -55,8 +55,14 @@
       fingerprint: (text) => globalThis.BlockIdentity.fingerprint(text)
     });
 
-    // 待译队列。Map 而不是数组：同一个块可能被发现层送来两次（父子子树都变过），
-    // 按元素去重，而插入顺序正好是进带顺序 —— 用户先看到的先译。
+    // 待译队列：元素 -> { block, source }。Map 而不是数组：同一个块可能被发现层
+    // 送来两次（父子子树都变过），按元素去重，而插入顺序正好是进带顺序 ——
+    // 用户先看到的先译。
+    //
+    // source 是**排队那一刻页面上原样文字**的指纹，用来在开跑前认出「这个节点已经
+    // 被回收去装别的内容了」。不能拿 block.text 去比：那是「送去翻译的文本」，
+    // 带公式占位符、内联标记，而且 trim 过（content/page/collect.js 的
+    // getTextWithMathPlaceholders），和 readSourceText 读出来的根本不是一个表示法。
     const queue = new Map();
     // 本轮在途请求的章。一轮之内才有意义，下一轮重新盖。
     const tickets = new Map();
@@ -101,11 +107,21 @@
      * **一进来就翻篇**：在途的那一轮跑完后会拿自己那一代的号去对，对不上就什么
      * 都不改。bump 要是留给各个调用点自己记，漏一个就是一次「旧结果覆盖新判定」
      * —— 而那条路上没有任何报错，只有页面一直空着或者语言再也探不出来。
+     *
+     * **「我现在想看原文」也在这里认**。ctx.state.translationsVisible 是那句话
+     * 唯一的出处（悬浮球菜单里的「隐藏译文」写它，「翻译整页」把它放回来）。闩在
+     * 这里而不是在各个调用点上：换路由、改设置、用户表态都会重开一轮，漏一条就
+     * 是一次「菜单写着已隐藏、页面上却自己冒出译文」—— 而新插进去的译文不带
+     * ai-translator-hidden，那个开关就此成了摆设。
      */
     function start(why) {
       bumpSession(why || 'start');
       stopDiscovery();
       clearSample();
+      if (ctx.state.translationsVisible === false) {
+        status = STATUS.PAUSED;
+        return;
+      }
       broken = false;
       lastError = null;
       langResolved = false;
@@ -221,7 +237,9 @@
       for (const block of blocks) {
         const element = block.element;
         if (!element || !element.isConnected) continue;
-        queue.set(element, block);
+        // 和 block 同一个任务里读，是一份对得上的快照。指纹走 guard.stamp ——
+        // 开跑前那次比对用的是同一个入口，两边就不可能各归一化一套。
+        queue.set(element, { block, source: guard.stamp(element).textFingerprint });
         added = true;
       }
       if (added) scheduleStart();
@@ -252,23 +270,25 @@
     function takeBatch() {
       const blocks = [];
       tickets.clear();
-      for (const [element, block] of queue) {
+      for (const [element, entry] of queue) {
         if (!element.isConnected) continue;
         const ticket = guard.stamp(element);
-        // 章盖的是此刻页面上的文字，block.text 是排队那一刻抄下来的。虚拟列表把
-        // 一个节点回收给下一条内容，两者就此对不上 —— 而这一轮会拿旧文字去译、
-        // 用新文字的指纹去验，验得过，于是旧译文被登记成新文字的译文，**从此
-        // 不会再被翻一次**。页面上看不出异样，只有内容是错的。
+        // 排队那一刻的原样文字和此刻的对不上 = 虚拟列表把这个节点回收给下一条
+        // 内容了。entry.block 抄的还是上一条，这一轮会拿它去译、用新内容的指纹
+        // 去验 —— 验得过，于是旧译文被登记成新文字的译文，**从此不会再被翻一
+        // 次**。页面上看不出异样，只有内容是错的。
+        //
+        // 两边都是 guard.stamp 读出来的原样文字，比的是同一个表示法。
         //
         // 丢掉就行：改文字本身是一次 characterData 变动，发现层下一轮会把这个块
         // 带着新文字原样送回来。这里不记台账，那一轮才不会被当成翻过了。
-        if (globalThis.BlockIdentity.fingerprint(block.text) !== ticket.textFingerprint) continue;
+        if (entry.source !== ticket.textFingerprint) continue;
         const key = `${ticket.blockId}:${ticket.textFingerprint}`;
         if (ledger.has(key)) continue;
         ledger.add(key);
         if (alreadyTranslated(element, ticket.textFingerprint)) continue;
         tickets.set(element, ticket);
-        blocks.push(block);
+        blocks.push(entry.block);
       }
       queue.clear();
       return blocks;
@@ -354,6 +374,8 @@
       ledger.clear();
     }
 
+    // 用户刚把译文藏起来。光靠 start() 那道闩不够 —— 藏译文不会重开一轮，而
+    // 此刻正跑着的那一轮和挂着的观察器要立刻停下。
     function pauseCurrentPage() {
       if (status === STATUS.OFF || status === STATUS.PAUSED) return;
       bumpSession('paused');
@@ -395,9 +417,6 @@
 
     function onSettingsChanged(changes) {
       if (!RESTART_KEYS.some((key) => key in changes)) return;
-      // 用户自己喊停的页面不该因为改了个设置就又动起来。它的在途结果在喊停那一刻
-      // 就已经作废了。
-      if (status === STATUS.PAUSED) return;
       start('settings');
     }
 

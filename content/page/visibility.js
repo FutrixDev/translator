@@ -19,11 +19,16 @@
     if (managedHidden && ctx.setManagedTranslationsVisible) {
       ctx.setManagedTranslationsVisible(true);
     }
-    if (hidden.length > 0 || managedHidden) {
-      state.translationsVisible = true;
-    }
+    // 无条件置位。这个标记是「用户此刻想不想看译文」唯一的出处，自动翻译那一层
+    // （content/content-auto-translate.js 的 start()）也读它 —— 只在「确实藏着
+    // 东西」时才置位的话，在一个还没有译文的页面上藏一次、再点「翻译整页」，标记
+    // 就永远停在 false，自动翻译从此不会再醒。
+    state.translationsVisible = true;
     // “仅显示译文”开着时，此前因“隐藏译文”被放回来的原文要重新藏起去
     applyTranslationOnlyMode();
+    // 悬浮球的开关不是唯一的入口：「翻译整页」也会把译文放出来。两条路都要通知
+    // 到自动翻译那一层，否则藏过一次之后它就再也不会醒过来。
+    if (ctx.autoTranslate) ctx.autoTranslate.resumeCurrentPage();
   }
 
   // ==================== 隐藏原文 ====================

@@ -132,11 +132,35 @@ test('自动这一轮不触发语言包下载 —— 它没有 user activation',
   assert.match(code('content/content-auto-translate.js'), /allowDownload:\s*false/);
 });
 
-test('排队时抄下的文字和盖章时的实况对不上，这一块就不发', () => {
+test('排队那一刻的原样文字和开跑时的实况对不上，这一块就不发', () => {
   const scheduler = code('content/content-auto-translate.js');
   // 虚拟列表把节点回收给下一条内容：拿旧文字去译、用新文字的指纹去验，验得过，
   // 于是错的译文被永久登记成这段新文字的译文。
-  assert.match(scheduler, /BlockIdentity\.fingerprint\(block\.text\) !== ticket\.textFingerprint/);
+  assert.match(scheduler, /source: guard\.stamp\(element\)\.textFingerprint/);
+  assert.match(scheduler, /entry\.source !== ticket\.textFingerprint/);
+  // 两边必须是同一个表示法。block.text 是「送去翻译的文本」——带公式占位符、
+  // 内联标记，而且 trim 过；拿它去和 readSourceText 的指纹比，带链接的段落和
+  // 所有含公式的段落会被一律丢掉，而且再也没有东西把它们送回来。
+  assert.doesNotMatch(scheduler, /fingerprint\(block\.text\)/);
+});
+
+test('「隐藏译文」期间没有任何一条路能把自动翻译重开', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  // 闩在 start() 里。换路由、改设置、用户表态都会重开一轮，漏一条就是一次
+  // 「菜单写着已隐藏、页面上却自己冒出译文」—— 新插进去的译文不带
+  // ai-translator-hidden，那个开关就此成了摆设。
+  assert.match(
+    scheduler,
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{\s*status = STATUS\.PAUSED;\s*return;\s*\}/
+  );
+  // 所以各个调用点不再各自判一遍 PAUSED。
+  assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);
+
+  // 把译文放出来的两条路都要通知到这一层：悬浮球的开关，和「翻译整页」。
+  const visibility = code('content/page/visibility.js');
+  assert.match(visibility, /\n    state\.translationsVisible = true;/);
+  assert.match(visibility, /ctx\.autoTranslate\.resumeCurrentPage\(\)/);
+  assert.match(code('content/content-float-ball.js'), /ctx\.autoTranslate\.pauseCurrentPage\(\)/);
 });
 
 test('上一代跑完的那一轮，不许改这一代的状态', () => {
