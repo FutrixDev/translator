@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { contentHarnessScripts, REPO_ROOT } = require('./helpers');
 const path = require('path');
 
 // Focused DOM unit test of the REAL collectTranslatableBlocks + insertTranslationBlock,
@@ -13,15 +14,11 @@ const path = require('path');
 //      its marker stripped by CSS → the translation sat flush left with no bullet.
 // Plus the page's `.code-box p { margin: -12px 0 }`: a negative source margin-bottom
 // collapses against the sibling translation's margin-top and stacks the two lines.
-const ROOT = path.join(__dirname, '..', '..');
-const SCRIPTS = [
-  path.join(ROOT, 'i18n/messages.js'),
-  path.join(ROOT, 'shared/default-settings.js'),
-  path.join(ROOT, 'content/content-bootstrap.js'),
-  path.join(ROOT, 'content/content-clip-guard.js'),
-  path.join(ROOT, 'content/content-fit-guard.js'),
-  path.join(ROOT, 'content/content-page-translation.js'),
-];
+const SCRIPTS = contentHarnessScripts(
+  'content/content-clip-guard.js',
+  'content/content-fit-guard.js',
+  'content/content-page-translation.js',
+);
 
 // Page CSS below is copied verbatim from the article; __CONTENT_CSS__ is our own
 // content/content.css, so the theme rules that stripped the bullet are in play too.
@@ -50,7 +47,7 @@ body { font-family: sans-serif; max-width: 800px; margin: 0 auto; }
 
 test('page translation placement: box-painting elements, list items, and stray text runs', async ({ page }) => {
   const fs = require('fs');
-  const css = fs.readFileSync(path.join(ROOT, 'content/content.css'), 'utf8');
+  const css = fs.readFileSync(path.join(REPO_ROOT, 'content/content.css'), 'utf8');
   await page.setContent(FIXTURE_HTML.replace('__CONTENT_CSS__', css), { waitUntil: 'load' });
   for (const s of SCRIPTS) await page.addScriptTag({ path: s });
 

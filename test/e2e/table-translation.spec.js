@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const path = require('path');
+const { contentHarnessScripts } = require('./helpers');
 
 // Focused DOM unit test of the REAL collectTranslatableBlocks + insertTranslationBlock
 // functions, loaded straight from source into a plain headless page (no extension, network,
@@ -9,13 +9,7 @@ const path = require('path');
 //   - a cell's translation is inserted INSIDE the cell as a <div>, never as a sibling <td>
 //     (a sibling cell would add a phantom column and break the grid);
 //   - pure-numeric/symbol data cells (0.83, 94.2%, ±0.02) are skipped.
-const ROOT = path.join(__dirname, '..', '..');
-const SCRIPTS = [
-  path.join(ROOT, 'i18n/messages.js'),
-  path.join(ROOT, 'shared/default-settings.js'),
-  path.join(ROOT, 'content/content-bootstrap.js'),
-  path.join(ROOT, 'content/content-page-translation.js'),
-];
+const SCRIPTS = contentHarnessScripts('content/content-page-translation.js');
 
 const FIXTURE_HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body>
   <table id="layout-table" border="0">

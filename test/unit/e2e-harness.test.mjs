@@ -149,6 +149,36 @@ test('no spec restates the UI language the harness already pins', () => {
 // Only the lookup is banned, not worker.evaluate: comic-account.spec.js holds a
 // worker to stub chrome.contextMenus and to read storage with a defaults
 // object, and both are real work in the worker rather than a settings read.
+// The same habit, in the other direction: four specs that inject source files
+// into a bare page each kept their own copy of the module list. They are not a
+// preference — content-bootstrap.js reaches for DefaultSettings and
+// getUILanguage as it runs, so a module missing from one list is a TypeError
+// inside an injected script, surfacing three calls later as `ctx.settings`
+// being undefined. Adding shared/default-settings.js broke all four at once,
+// in exactly that shape. contentHarnessScripts() in helpers.js is the list now.
+test('no spec hand-rolls the content-script harness', () => {
+  const offenders = specFiles()
+    .filter(name => /content\/content-bootstrap\.js/.test(repoFile(`test/e2e/${name}`)));
+  assert.deepEqual(offenders, [],
+    'use contentHarnessScripts() from test/e2e/helpers.js and pass only the modules the spec is about');
+});
+
+test('the harness prelude carries everything content-bootstrap.js reaches for', () => {
+  // It runs at injection time, so a missing dependency is not a late failure.
+  const bootstrap = repoFile('content/content-bootstrap.js');
+  const needed = {
+    'i18n/messages.js': /getUILanguage\(/,
+    'shared/default-settings.js': /DefaultSettings\./,
+  };
+  for (const [module, used] of Object.entries(needed)) {
+    assert.match(bootstrap, used, `content-bootstrap.js no longer uses ${module}`);
+    assert.ok(helpers.CONTENT_HARNESS_PRELUDE.includes(module),
+      `${module} is missing from CONTENT_HARNESS_PRELUDE, so every DOM-harness spec throws on injection`);
+  }
+  // And the file it bootstraps, last, so ctx exists before anything reads it.
+  assert.equal(helpers.CONTENT_HARNESS_PRELUDE.at(-1), 'content/content-bootstrap.js');
+});
+
 test('no spec re-derives the extension service worker', () => {
   const offenders = specFiles()
     .filter(name => /context\.serviceWorkers\(\)/.test(repoFile(`test/e2e/${name}`)));
