@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { contentHarnessScripts, REPO_ROOT } = require('./helpers');
+const { contentHarnessScripts, PAGE_TRANSLATION_MODULES, REPO_ROOT } = require('./helpers');
 const path = require('path');
 
 // Focused DOM unit test of the REAL collectTranslatableBlocks + insertTranslationBlock,
@@ -17,7 +17,7 @@ const path = require('path');
 const SCRIPTS = contentHarnessScripts(
   'content/content-clip-guard.js',
   'content/content-fit-guard.js',
-  'content/content-page-translation.js',
+  ...PAGE_TRANSLATION_MODULES,
 );
 
 // Page CSS below is copied verbatim from the article; __CONTENT_CSS__ is our own

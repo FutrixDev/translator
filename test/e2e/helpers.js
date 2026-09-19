@@ -20,13 +20,26 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
  * Pass the modules the spec is actually about; they load after the prelude, in
  * the order given.
  *
- * @param {...string} modules repo-relative paths, e.g. 'content/content-page-translation.js'
+ * @param {...string} modules repo-relative paths, e.g. ...PAGE_TRANSLATION_MODULES
  * @returns {string[]} absolute paths, ready for page.addScriptTag({ path })
  */
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
   'i18n/messages.js',
   'shared/default-settings.js',
   'content/content-bootstrap.js',
+]);
+
+// 整页翻译不是一个文件了：collect/batch/insert/visibility 加门面，少一个就是
+// 某个 ctx.x 不存在，报出来的还是三步之后的 TypeError。要整页翻译就要这一串。
+// progress.js 不在里面：进度条是页面级 UI，DOM 夹具里没有它要挂的地方，门面在
+// 调用前就会因为拿不到 showPageTranslationProgress 报错——所以它也在。
+const PAGE_TRANSLATION_MODULES = Object.freeze([
+  'content/page/batch.js',
+  'content/page/collect.js',
+  'content/page/insert.js',
+  'content/page/visibility.js',
+  'content/page/progress.js',
+  'content/content-page-translation.js',
 ]);
 
 function contentHarnessScripts(...modules) {
@@ -390,6 +403,7 @@ module.exports = {
   REPO_ROOT,
   CONTENT_HARNESS_PRELUDE,
   contentHarnessScripts,
+  PAGE_TRANSLATION_MODULES,
   expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,
   writeSyncSettings,

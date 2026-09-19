@@ -114,7 +114,8 @@ test('the root is returned, not just a boolean', () => {
 });
 
 test('both inserting surfaces consult the shared rule', () => {
-  for (const file of ['content/content-hover-translation.js', 'content/content-page-translation.js']) {
+  // 整页那一边落笔在 content/page/insert.js。
+  for (const file of ['content/content-hover-translation.js', 'content/page/insert.js']) {
     assert.match(
       repoFile(file),
       /ctx\.isInsideManagedDomRoot/,
@@ -168,6 +169,8 @@ test('nothing renders a translation as an absolutely positioned overlay', () => 
   for (const file of [
     'content/content-hover-translation.js',
     'content/content-page-translation.js',
+    'content/page/insert.js',
+    'content/page/visibility.js',
     'content/content-managed-translation.js',
     'content/content.css',
   ]) {
@@ -180,12 +183,15 @@ test('whole-page translation reaches into managed roots', () => {
   // site whose whole article body is a read-only Lexical root means "translate
   // page" translates the nav and nothing else. It must collect those blocks and
   // render them the same way hover does.
-  const src = repoFile('content/content-page-translation.js');
-  assert.match(src, /ctx\.isInsideManagedDomRoot/);
-  assert.match(src, /ctx\.renderManagedTranslation\(/, 'page translation collects managed blocks but never renders them');
+  // 收集端决定哪些块进得来，落笔端决定它们怎么渲染，门面负责把“全被跳过”说出口。
+  const collect = repoFile('content/page/collect.js');
+  const insert = repoFile('content/page/insert.js');
+  assert.match(collect, /ctx\.isInsideManagedDomRoot/);
+  assert.match(insert, /ctx\.renderManagedTranslation\(/, 'page translation collects managed blocks but never renders them');
   // The remaining skip is narrow: only blocks generated content cannot carry.
-  assert.match(src, /canRenderManagedTranslation/, 'page translation must not skip a managed root wholesale');
-  assert.match(src, /pageContentNotTranslatable/, 'skipping the body silently is the bug, not the fix');
+  assert.match(collect, /canRenderManagedTranslation/, 'page translation must not skip a managed root wholesale');
+  assert.match(repoFile('content/content-page-translation.js'), /pageContentNotTranslatable/,
+    'skipping the body silently is the bug, not the fix');
 });
 
 test('the generated-content module is the only place that owns the mechanism', () => {
@@ -202,6 +208,8 @@ test('the generated-content module is the only place that owns the mechanism', (
   for (const file of [
     'content/content-hover-translation.js',
     'content/content-page-translation.js',
+    'content/page/insert.js',
+    'content/page/collect.js',
     'content/content-float-ball.js',
   ]) {
     assert.doesNotMatch(
@@ -263,6 +271,8 @@ test('the framework list is not restated outside content-utils.js', () => {
   for (const file of [
     'content/content-hover-translation.js',
     'content/content-page-translation.js',
+    'content/page/collect.js',
+    'content/page/insert.js',
     'content/content-selection.js',
     'content/content-popup.js',
   ]) {
@@ -281,14 +291,14 @@ test('content-utils.js loads before the surfaces that use it', () => {
   assert.ok(bundle, 'content-utils.js is not in any content script bundle');
   const at = (file) => bundle.js.indexOf(file);
   assert.ok(at('content/content-utils.js') < at('content/content-hover-translation.js'));
-  assert.ok(at('content/content-utils.js') < at('content/content-page-translation.js'));
+  assert.ok(at('content/content-utils.js') < at('content/page/collect.js'));
 
   // The renderer hangs its helpers off the same ctx object, so it has to run
   // before anything calls them.
   const renderer = at('content/content-managed-translation.js');
   assert.ok(renderer > 0, 'content-managed-translation.js is not in the bundle');
   assert.ok(renderer < at('content/content-hover-translation.js'));
-  assert.ok(renderer < at('content/content-page-translation.js'));
+  assert.ok(renderer < at('content/page/insert.js'));
   assert.ok(renderer < at('content/content-float-ball.js'));
 });
 

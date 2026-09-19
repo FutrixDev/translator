@@ -2,7 +2,7 @@
 // github.com/FutrixDev/translator#71.
 //
 // Two surfaces build a translation element next to a source block: full-page
-// translation (content-page-translation.js) and hover/selection translation
+// translation (content/page/insert.js) and hover/selection translation
 // (content-hover-translation.js). They used to each decide "sibling or child?"
 // on their own, and they disagreed: the hover path had no table-cell case at
 // all. The rule now lives in one place, `getTranslationPlacement`, and this
@@ -22,18 +22,23 @@ import { fileURLToPath } from 'node:url';
 const repoUrl = (rel) => new URL(`../../${rel}`, import.meta.url);
 const repoFile = (rel) => readFileSync(fileURLToPath(repoUrl(rel)), 'utf8');
 
-const pageTranslation = repoFile('content/content-page-translation.js');
+const pageInsert = repoFile('content/page/insert.js');
+const pageCollect = repoFile('content/page/collect.js');
 const hoverTranslation = repoFile('content/content-hover-translation.js');
 // Comments in content.css quote the rules that were removed, so strip them before
 // asserting on what the stylesheet actually declares.
 const contentCss = repoFile('content/content.css').replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the placement rule is declared once and published on ctx', () => {
-  const owners = readdirSync(fileURLToPath(repoUrl('content')))
-    .filter((name) => name.endsWith('.js'))
-    .filter((name) => /function\s+getTranslationPlacement\s*\(/.test(repoFile(`content/${name}`)));
-  assert.deepEqual(owners, ['content-page-translation.js']);
-  assert.match(pageTranslation, /ctx\.getTranslationPlacement\s*=\s*getTranslationPlacement/);
+  // content/ 和 content/page/ 都要扫：规则搬进子目录之后，只扫一层等于不扫。
+  const contentFiles = ['content', 'content/page'].flatMap((dir) =>
+    readdirSync(fileURLToPath(repoUrl(dir)))
+      .filter((name) => name.endsWith('.js'))
+      .map((name) => `${dir}/${name}`));
+  const owners = contentFiles
+    .filter((rel) => /function\s+getTranslationPlacement\s*\(/.test(repoFile(rel)));
+  assert.deepEqual(owners, ['content/page/insert.js']);
+  assert.match(pageInsert, /ctx\.getTranslationPlacement\s*=\s*getTranslationPlacement/);
 });
 
 test('the tables the rule is made of are not copied into another file', () => {
@@ -53,9 +58,9 @@ test('hover/selection translation asks the shared rule where to insert', () => {
 });
 
 test('the stray-text-node wrapper class is the one content.css styles', () => {
-  const declared = pageTranslation.match(/const TEXT_RUN_CLASS = '([^']+)'/);
-  assert.ok(declared, 'TEXT_RUN_CLASS is gone from content-page-translation.js');
-  assert.match(pageTranslation, /ctx\.TEXT_RUN_CLASS\s*=\s*TEXT_RUN_CLASS/);
+  const declared = pageCollect.match(/const TEXT_RUN_CLASS = '([^']+)'/);
+  assert.ok(declared, 'TEXT_RUN_CLASS is gone from content/page/collect.js');
+  assert.match(pageCollect, /ctx\.TEXT_RUN_CLASS\s*=\s*TEXT_RUN_CLASS/);
   // The wrapper is injected into the page's own markup, so it has to render as
   // if it were not there — no box, no font of its own.
   assert.ok(contentCss.includes(`span.${declared[1]}`),
