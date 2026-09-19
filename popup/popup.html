@@ -105,12 +105,15 @@
     </main>
 
     <footer class="footer">
-      <span id="statusText" data-i18n="ready">Ready</span>
+      <!-- 文字归 renderStatus() 管（popup.js）：内置引擎那条线还要带上原因，
+           不是一个 i18n key 能表达的。这里的 Ready 只是脚本跑起来之前的占位。 -->
+      <span id="statusText">Ready</span>
     </footer>
   </div>
 
   <script src="../i18n/messages.js"></script>
   <script src="../shared/account-gate.js"></script>
+  <script src="../shared/engine-status.js"></script>
   <script src="../shared/comic-charge.js"></script>
   <script src="../shared/pdf-errors.js"></script>
   <script src="../pdf/pdf-ui.js"></script>

@@ -86,6 +86,13 @@ console.warn = () => {};
 await import('../../content/content-translation-engine.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
+// Every test below ends "...and the request reaches the AI path". That is now
+// a thing the user has to have asked for: falling back spends their own API
+// budget, so `engineFallback` defaults to 'local-only' and the watchdog's job
+// ends at giving up. The watchdog is what this file is about, so the opt-in is
+// stated once here — and pinned, on its own, by the last test in the file.
+ctx.settings.engineFallback = 'allow-ai';
+
 // ==================== helpers ====================
 
 function fakeTranslator(overrides = {}) {
@@ -426,4 +433,29 @@ test('the page-translation surface answers the download-ended hook', () => {
   // create() ends. Without a listener the progress bar keeps its stale
   // "downloading language pack" label for the rest of the page translation.
   assert.match(repoFile('content/content-page-translation.js'), /ctx\.onBuiltinDownloadEnded = function/);
+});
+
+// ==================== giving up is not the same as paying ====================
+
+test('local-only gives up with a reason instead of billing the user', async (t) => {
+  // Same wedged create() as the first test, same watchdog, opposite ending.
+  // The user picked the free engine; a page it cannot handle is a page that
+  // does not get translated, not a page that quietly costs money.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  self.Translator.availability = async () => 'available';
+  const calls = stubCreate(() => new Promise(() => {}));
+  const before = sentToAI.length;
+  ctx.settings.engineFallback = 'local-only';
+
+  try {
+    const pending = translateRequest('ja');
+    await waitFor(() => calls.length === 1, 'create() to be called');
+    t.mock.timers.tick(21_000);
+
+    const result = await pending;
+    assert.ok(result.error, 'a stalled built-in engine returned no error at all');
+    assert.equal(sentToAI.length, before, 'local-only still sent the text to the AI path');
+  } finally {
+    ctx.settings.engineFallback = 'allow-ai';
+  }
 });

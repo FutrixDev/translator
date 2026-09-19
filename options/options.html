@@ -55,6 +55,15 @@
             <span class="hint" data-i18n-hint="hintTranslationEngine"></span>
           </div>
 
+          <div class="form-group" id="engineFallbackGroup">
+            <label for="engineFallback" data-i18n="engineFallback">When local translation can't run</label>
+            <select id="engineFallback">
+              <option value="local-only" data-i18n="engineFallbackLocalOnly"></option>
+              <option value="allow-ai" data-i18n="engineFallbackAllowAi"></option>
+            </select>
+            <span class="hint" data-i18n-hint="hintEngineFallback"></span>
+          </div>
+
           <div class="form-group" id="builtinStatusGroup">
             <label data-i18n="builtinLanguagePack">Language Pack</label>
             <div class="hint" id="builtinStatus"></div>
@@ -653,6 +662,7 @@
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/default-settings.js"></script>
+  <script src="../shared/engine-status.js"></script>
   <script src="../shared/ocr.js"></script>
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->

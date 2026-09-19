@@ -125,8 +125,14 @@ const specFiles = () => readdirSync(fileURLToPath(new URL('../e2e/', import.meta
   .filter(name => name.endsWith('.spec.js'));
 
 test('no spec restates the engine the harness already pins', () => {
-  const offenders = specFiles()
-    .filter(name => /translationEngine:\s*'ai'/.test(repoFile(`test/e2e/${name}`)));
+  // A spec that switches between engines is not restating the baseline — the
+  // switch is what it is testing, and naming both sides of it is the only way
+  // that spec reads. Writing 'ai' and nothing else is the habit this guards.
+  const offenders = specFiles().filter(name => {
+    const source = repoFile(`test/e2e/${name}`);
+    const values = new Set([...source.matchAll(/translationEngine:\s*'([a-z]+)'/g)].map(m => m[1]));
+    return values.has('ai') && values.size === 1;
+  });
   assert.deepEqual(offenders, [],
     'E2E_BASE_SETTINGS in test/e2e/helpers.js already selects the AI backend for every spec');
 });
