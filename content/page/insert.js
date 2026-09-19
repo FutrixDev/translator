@@ -305,8 +305,21 @@
     const element = block.element;
     if (!element || !element.parentNode) return;
 
-    // 检查是否已经翻译过，防止重复
-    if (element.classList.contains('ai-translator-translated')) return;
+    // 这个元素上已经挂着一条译文了 —— 它还算不算数，问 BlockIdentity，用的是
+    // 和收集端（page/collect.js 的陈旧判定）**同一条判据**。两端必须同问同答：
+    // 收集端放行的块，落笔端要是只看 class 一律拒收，这一轮就静默地什么都没写，
+    // 而调用方照样把它记成「这一块有结果了」。页面上那条旧译文从此没有任何东西
+    // 会再动它 —— 收集端下一轮也不会，class 还在，它连指纹都懒得算。
+    //
+    // 收集端已经替陈旧的块摘过一次了，所以走到这里还带着 class 的只剩一种情形：
+    // **这一块被收走之后、译文回来之前，另一轮翻译抢先插了一条**。用户在一轮
+    // 手动整页翻译跑着的时候改了目标语言，调度层按 RESTART_KEYS 另起一轮，两轮
+    // 于是同时在飞；先落地的那条是旧语言的。摘掉它，换上这一轮的。
+    if (element.classList.contains('ai-translator-translated')) {
+      const identity = globalThis.BlockIdentity;
+      if (!identity.isStale(element, identity.fingerprint(ctx.readSourceText(element)), lang)) return;
+      releaseTranslation(element);
+    }
     if (element.classList.contains('ai-translator-inline-source')) return;
 
     // 标记为已翻译

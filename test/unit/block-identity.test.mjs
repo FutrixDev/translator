@@ -248,6 +248,23 @@ test('every insertion registers an identity — including the one with no node t
     'the shared post-insert path no longer registers the block identity');
 });
 
+// 收集端和落笔端之间隔着一次 await：块被收走之后、译文回来之前，另一轮翻译
+// （用户改了目标语言，手动那一轮还在飞）完全可能抢先给它插一条旧语言的译文。
+// 落笔端要是只看 `.ai-translator-translated` 就一律拒收，这一轮静默地什么都没写，
+// 调用方照样记账，而收集端下一轮同样只看 class —— 那条旧语言的译文从此没有任何
+// 东西会再动它。两端必须用同一条判据，且落笔端要能把旧的摘掉。
+test('the insertion side asks the same staleness question the collector does', () => {
+  const source = repoFile('content/page/insert.js');
+  const body = source.slice(source.indexOf('function insertTranslationBlock'));
+  const guard = body.indexOf("classList.contains('ai-translator-translated')");
+  assert.ok(guard !== -1, 'the duplicate guard moved; re-check where the staleness question belongs');
+  const window = body.slice(guard, guard + 400);
+  assert.match(window, /identity\.isStale\(element, identity\.fingerprint\(ctx\.readSourceText\(element\)\), lang\)/,
+    'the insertion side answers "already translated?" from the class alone again');
+  assert.match(window, /releaseTranslation\(element\);/,
+    'a stale translation is refused instead of replaced — the page keeps the old language forever');
+});
+
 test('block-identity loads before the modules that use it', () => {
   const manifest = JSON.parse(repoFile('manifest.json'));
   const list = manifest.content_scripts.find((cs) => (cs.js || []).includes('shared/block-identity.js')).js;

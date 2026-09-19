@@ -318,6 +318,11 @@
     }
     if (accept && !accept(block)) return;
     ctx.insertTranslationBlock(block, translation, { lang: target.stamp });
+    // 无条件报结果，不去问插入端「真写进去了吗」。它拒收只剩两种情形，两种都是
+    // 终局：这一块上已经挂着一条**同内容同语言**的译文（那就是有结果了），或者
+    // 它是划词/悬停那套的原文壳子（我们永远插不进去，重试只是重复花同一笔钱）。
+    // 「语言换了所以拒收」那种已经不存在——插入端现在会把旧的那条摘掉换上新的，
+    // 见 page/insert.js 的 insertTranslationBlock。
     if (onSettled) onSettled(block);
   }
 
