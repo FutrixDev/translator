@@ -982,3 +982,24 @@ content-bootstrap.js:41/121/153   默认值三处重复（收敛）
 content-bootstrap.js:254          ctx.init（挂载点）
 content-float-ball.js:324         单击 -> toggleFloatMenu（改）
 ```
+
+---
+
+## 15. 实现与本文的偏离（PR-6 落地时记录）
+
+本文是落地前写的。真写出来时有七处和上文不同 —— 这里逐条记下**为什么**，
+免得后来的人照着上文去"修正"代码，把当时刻意绕开的坑重新踩一遍。
+
+| # | 本文原说 | 实际实现 | 为什么 |
+| --- | --- | --- | --- |
+| 1 | §2.6 `suspend()` 期间发现到的候选**丢弃** | **攒着**，`resume()` 时补送 | 丢弃会漏内容：插译文那几百毫秒里懒加载长出来的段落，是页面自己的变动，不是我们的产物。丢了它就再也没有第二次机会 —— MutationObserver 不会重播。攒着最坏是多一轮空跑，台账会拦住重复。 |
+| 2 | §5.1 `runTranslationPass` 加 `quiet` 参数抑制 UI | **没有这个参数** | PR-1 拆分时进度条和悬浮球状态已经留在 `content-page-translation.js` 那一层，`page/batch.js` 里本来就没有 UI 调用。再加个开关是给不存在的问题上锁。 |
+| 3 | §5.1 自动轮撞上 `state.isTranslatingPage` 时"排队" | 调度层自己的 `running` 闸 + 500ms 重试 | 队列要处理的是"用户手动翻译正在跑"这一种情况，而那一轮跑完会把整页都翻掉 —— 排在后面的自动轮醒来时无事可做。一个重试计时器就够，且不用跨模块共享队列状态。 |
+| 4 | §2.7 `markPageExplicit()` 无条件记录 | 记录前先看 `settings.autoTranslate` | 总开关是关的时候，用户手动翻一次不该让这一页从此"自动"起来 —— 那是把一次动作读成了长期授权。 |
+| 5 | §2.7 `pagehide` 时拆掉观察器 | **不拆** | bfcache：`pagehide` 之后页面可能原样回来，观察器拆了就不会再装。而页面真的走了的时候，整个 JS 环境跟着没了，本来也不用谁来拆。 |
+| 6 | §2.7 状态机 off/pending/idle/running/paused/error | 多一个 **`ask`** | "该问用户"和"还没判完"（`pending`）不是一回事，PR-7 的追问条要认的正是前者。少这一态，状态呈现层只能去猜。 |
+| 7 | — | 自动轮也过 `ctx.filterBlocksByLanguage` | 本文没提，写 e2e 时才发现：`skipTargetLanguageText` 只有手动那条路认。自动这一轮绕过去，就是把用户明确说过不必发的文字一屏一屏替他发出去，而页面上看不出任何异样。由 `auto-translate-wiring.test.mjs` 钉住。 |
+
+**PR-6 的三条出口 e2e**（`test/e2e/auto-translate-{basic,incremental,spa}.spec.js`）都做过变异
+验证：把路由接线注释掉，`spa` 第一条挂；把视口带放大到 10000px，`incremental` 挂。
+断言咬的是它们该咬的东西，不是碰巧变绿。

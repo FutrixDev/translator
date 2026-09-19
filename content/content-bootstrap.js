@@ -168,6 +168,10 @@
       if (CAPTION_SETTING_KEYS.some((key) => key in changes)) {
         if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
       }
+
+      // 自动翻译要看五个键（总开关、站点规则、语言名单、目标语言、引擎），而它
+      // 们各自的含义只有调度层知道 —— 在这里摊成五个 if，等于把那份判断抄一遍。
+      if (ctx.autoTranslate) ctx.autoTranslate.onSettingsChanged(changes);
     });
   };
 
@@ -182,6 +186,9 @@
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
       if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
+      // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
+      // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
+      if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.

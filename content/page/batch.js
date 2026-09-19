@@ -21,7 +21,11 @@
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
   const MAX_BATCH_TOKENS = 3200; // 估算 token 上限（输入侧保守值）
   const MAX_BLOCK_CHARS = 4000; // 单个块最大字符数；超过则按标点分块（见 splitTextIntoChunks），避免正文被丢弃或被模型截断
-  const CONCURRENCY = 12;       // 并发数
+  // 并发按引擎分：内置引擎在批内是串行的（content-translation-engine.js 的
+  // `for (const text of texts) await translateWithBuiltin(...)`），12 路并发只是让
+  // 12 个批同时去抢同一份端上模型，多出来的是排队和内存，不是吞吐；云端引擎
+  // 是网络并发，12 才有意义。
+  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12 });
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
   // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
@@ -219,23 +223,33 @@
     });
   }
 
-  async function isTargetLanguageText(text) {
-    const targetLang = getEffectiveTargetLang();
-    const targetBase = getLangBase(targetLang);
-    if (!targetBase) return false;
+  // 采信一次语言判定的门槛。**全仓只有这一处。** 自动翻译的调度层也要判语言
+  // （这一页整体是什么语言，该不该自己动手），第二套阈值意味着「这段不用翻」和
+  // 「这页不用翻」会在同一份文本上给出不同答案。
+  const LANGUAGE_CONFIDENCE_MIN = 85;
 
+  /**
+   * 这段文字是什么语言 —— 只在够有把握时回答。
+   * @returns {Promise<?string>} 语言基码（'en' / 'zh' …），判不出或不够有把握时 null
+   */
+  async function detectReliableLanguage(text) {
     const detectText = getLanguageDetectionText(text);
-    if (detectText.length < 4) return false;
+    if (detectText.length < 4) return null;
 
     const result = await detectLanguage(detectText);
     const topLang = result?.languages?.[0];
-    if (!topLang) return false;
-
-    const detectedBase = getLangBase(topLang.language);
-    if (detectedBase !== targetBase) return false;
+    if (!topLang) return null;
 
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
-    return confidence >= 85 && result.isReliable !== false;
+    if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
+
+    return getLangBase(topLang.language);
+  }
+
+  async function isTargetLanguageText(text) {
+    const targetBase = getLangBase(getEffectiveTargetLang());
+    if (!targetBase) return false;
+    return (await detectReliableLanguage(text)) === targetBase;
   }
 
   async function shouldSkipTranslation(block, translation) {
@@ -261,30 +275,42 @@
     }
   }
 
+  // 译文写回页面的唯一入口。三条插入路径（分批回填 / 逐块回退 / 超大块拼回）
+  // 全走这里，`accept` 这道迟到校验就不会漏在其中一条上。
+  //
+  // accept 在 shouldSkipTranslation 之后问：语言判定可能要跑一次 detectLanguage，
+  // 把它放在后面意味着「已经作废的请求」还要多花一次判定。但顺序反过来，两者
+  // 之间那次 await 又给了页面一个变动的窗口 —— 校验必须是插入前的最后一件事，
+  // 这点比省一次本地判定重要。
+  async function insertTranslation(block, translation, accept) {
+    if (await shouldSkipTranslation(block, translation)) return;
+    if (accept && !accept(block)) return;
+    ctx.insertTranslationBlock(block, translation);
+  }
+
   // 分批译文只能按位置回填，回填前数量必须一致 —— 与超大块路径（processOversizedBlock）
   // 同一条规则。模型偶尔会吞掉/多打一个分隔符（把相邻两段合并、或把一段拆成两段），
   // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
   // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
   // 最坏是某一块拿不到译文而保持原文。
-  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted } = {}) {
+  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept } = {}) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept });
       return;
     }
 
     await Promise.all(translations.map(async (translation, i) => {
       if (!batch[i] || !translation) return;
-      if (await shouldSkipTranslation(batch[i], translation)) return;
-      ctx.insertTranslationBlock(batch[i], translation);
+      await insertTranslation(batch[i], translation, accept);
     }));
   }
 
-  async function translateBlocksOneByOne(batch, { onFailure, isAborted } = {}) {
+  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept } = {}) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
@@ -304,8 +330,7 @@
           ? response.translations[0]
           : null;
         if (!translation) continue;
-        if (await shouldSkipTranslation(block, translation)) continue;
-        ctx.insertTranslationBlock(block, translation);
+        await insertTranslation(block, translation, accept);
       } catch (error) {
         // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
         if (isExtensionContextInvalidated(error)) throw error;
@@ -343,6 +368,9 @@
   // 归 content/content-page-translation.js，将来自动翻译的增量轮次并不需要它。
   async function runTranslationPass(blocks, options = {}) {
     const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+    // 迟到校验。手动整页翻译不传 —— 用户点下去到译文回来这段时间里，页面通常
+    // 还是那一页，而自动翻译的一轮可能横跨一次路由切换。
+    const accept = typeof options.accept === 'function' ? options.accept : null;
     const total = blocks.length;
     let done = 0;
 
@@ -354,8 +382,9 @@
     const deferredBatches = createSmartBatches(deferredBlocks);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    
-    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${CONCURRENCY}`);
+    const concurrency = usingBuiltinEngine() ? CONCURRENCY.builtin : CONCURRENCY.ai;
+
+    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 
 
     // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
@@ -439,8 +468,7 @@
 
       const combined = translations.join('');
       if (!combined.trim()) return;
-      if (await shouldSkipTranslation(block, combined)) return;
-      ctx.insertTranslationBlock(block, combined);
+      await insertTranslation(block, combined, accept);
     };
 
     // 使用 Promise 池进行并发控制
@@ -481,7 +509,8 @@
           // 走逐块回退，而不是无声丢掉整批。
           await applyFastBatchTranslations(batch, response.translations, {
             onFailure: noteBatchFailure,
-            isAborted: () => !!batchError
+            isAborted: () => !!batchError,
+            accept
           });
         }
       } catch (error) {
@@ -499,7 +528,7 @@
 
     // 并发执行所有批次，首屏批次在队列前优先开始
     if (batches.length > 0) {
-      await runWithConcurrency(batches, processBatch, CONCURRENCY);
+      await runWithConcurrency(batches, processBatch, concurrency);
     }
 
     return batchError;
@@ -513,5 +542,8 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
+  // 自动翻译的调度层判「这一页是什么语言」用的也是它 —— 同一个阈值，
+  // 同一份清洗（见上面 LANGUAGE_CONFIDENCE_MIN 的注释）。
+  ctx.detectReliableLanguage = detectReliableLanguage;
   ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
 })();
