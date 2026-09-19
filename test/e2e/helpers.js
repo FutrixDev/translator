@@ -188,9 +188,17 @@ async function getCurrentTheme(page) {
  * every context, rather than asking each spec to remember. A spec that means to
  * exercise the built-in engine passes `translationEngine` explicitly to
  * setExtensionSettings and wins over this.
+ *
+ * `uiLanguage` is here for the same reason. Left unset it means "follow the
+ * browser", so every label a spec reads — the OCR popup's "Source · English",
+ * the caption menu's rows, every error string — would be drawn in whatever
+ * language the machine running the suite happens to have Chrome in. Pinning
+ * English makes those assertions mean something; a spec asserting another
+ * language passes `uiLanguage` and wins over this.
  */
 const E2E_BASE_SETTINGS = Object.freeze({
   translationEngine: 'ai',
+  uiLanguage: 'en',
 });
 
 /**

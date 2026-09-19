@@ -24,8 +24,10 @@ await import('../../shared/caption-core.js');
 const MESSAGES = globalThis.I18N_MESSAGES;
 const core = globalThis.CaptionCore;
 
-// Every UI language getUILanguage() can return, plus the 'en' it falls back to.
-const LANGS = ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
+// Every UI language getUILanguage() can return. Read from the module rather
+// than restated here: a language added to messages.js has to be covered by this
+// guard on the same commit, not whenever someone remembers this list exists.
+const LANGS = globalThis.UI_LANGUAGES;
 
 // The button's label, the five menu rows, the select options and the status
 // line — everything F17 draws inside a video player — plus the options-page

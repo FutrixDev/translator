@@ -1,11 +1,6 @@
 // Default prompt template
 const DEFAULT_PROMPT_KEY = 'promptStandard';
 
-function isMacPlatform() {
-  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-  return /mac/i.test(platform);
-}
-
 function getPlatformType() {
   const platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '').toLowerCase();
   if (platform.includes('mac')) return 'mac';
@@ -14,7 +9,9 @@ function getPlatformType() {
   return 'other';
 }
 
-const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
+// Same value the content scripts start with — one definition, in
+// shared/default-settings.js (loaded by options.html before this file).
+const DEFAULT_SELECTION_HOTKEY = globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY;
 
 // Provider configurations
 // Provider catalog and every model-capability rule live in shared/api-compat.js
@@ -148,13 +145,14 @@ const elements = {
   modelSelect: document.getElementById('modelSelect'),
   modelName: document.getElementById('modelName'),
   targetLang: document.getElementById('targetLang'),
+  uiLanguage: document.getElementById('uiLanguage'),
   enableSelection: document.getElementById('enableSelection'),
   selectionTranslationMode: document.getElementById('selectionTranslationMode'),
   selectionTranslationHotkey: document.getElementById('selectionTranslationHotkey'),
   enableHoverTranslation: document.getElementById('enableHoverTranslation'),
   hoverTranslationHotkey: document.getElementById('hoverTranslationHotkey'),
   showFloatBall: document.getElementById('showFloatBall'),
-  autoDetect: document.getElementById('autoDetect'),
+  skipTargetLanguageText: document.getElementById('skipTargetLanguageText'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   ocrEngine: document.getElementById('ocrEngine'),
@@ -264,13 +262,16 @@ const defaultSettings = {
   modelName: 'gpt-4.1-mini',
   targetLang: '', // Empty means use browser language
   targetLangSetByUser: false, // Track if user ever set the language
+  // 界面语言，与目标语言解耦：'' = 跟随浏览器。见 i18n/messages.js getUILanguage。
+  uiLanguage: '',
   enableSelection: true,
   enableHoverTranslation: true,
   selectionTranslationMode: 'inline',
   selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
-  autoDetect: true,
+  // 名字要说实话：这颗开关做的是“已经是目标语言的段落就别译了”。
+  skipTargetLanguageText: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
   showTranslationOnly: false,
   // Image OCR: on the default engine it is free and local, so on by default.
@@ -966,7 +967,7 @@ async function loadSettings() {
     elements.enableHoverTranslation.checked = result.enableHoverTranslation;
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
-    elements.autoDetect.checked = result.autoDetect;
+    elements.skipTargetLanguageText.checked = result.skipTargetLanguageText;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
@@ -996,7 +997,8 @@ async function loadSettings() {
     applyTheme(result.theme || 'light');
 
     // Apply i18n based on target language
-    applyI18n(targetLang);
+    elements.uiLanguage.value = result.uiLanguage || '';
+    applyI18n(result.uiLanguage);
     applyPlatformHotkeyLabels();
 
     syncInlineSettingState();
@@ -1081,13 +1083,14 @@ function collectSettings() {
     modelName: modelName,
     targetLang: elements.targetLang.value,
     targetLangSetByUser: targetLangSetByUser,
+    uiLanguage: elements.uiLanguage.value,
     enableSelection: elements.enableSelection.checked,
     enableHoverTranslation: elements.enableHoverTranslation.checked,
     selectionTranslationMode: elements.selectionTranslationMode.value,
     selectionTranslationHotkey: elements.selectionTranslationHotkey.value,
     hoverTranslationHotkey: elements.hoverTranslationHotkey.value,
     showFloatBall: elements.showFloatBall.checked,
-    autoDetect: elements.autoDetect.checked,
+    skipTargetLanguageText: elements.skipTargetLanguageText.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
@@ -1191,7 +1194,7 @@ async function persistSettings({ reapplyI18n = false } = {}) {
     notifyContentScripts(settings);
 
     if (reapplyI18n) {
-      applyI18n(settings.targetLang);
+      applyI18n(settings.uiLanguage);
       applyPlatformHotkeyLabels();
     }
 
@@ -1380,7 +1383,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'enableHoverTranslation',
   'hoverTranslationHotkey',
   'showFloatBall',
-  'autoDetect',
+  'skipTargetLanguageText',
   'showTranslationOnly',
   'enableImageOcrTranslation',
   'ocrEngine',
@@ -1508,13 +1511,17 @@ function setupEventListeners() {
     elements[name].addEventListener('blur', flushAutosave);
   });
 
-  // The one field whose value changes what the page is written in, so it is
-  // also the one that re-runs i18n.
   elements.targetLang.addEventListener('change', () => {
     targetLangSetByUser = true;
-    // 换目标语言等于换了语言对，内置引擎的状态得重查；放在 persistSettings 之后
-    // 是因为界面语言此时才切完，否则状态文案会停在上一种语言。
-    persistSettings({ reapplyI18n: true }).then(refreshBuiltinStatus);
+    // 换目标语言等于换了语言对，内置引擎的状态得重查。界面语言不再跟着它走，
+    // 所以这里不重跑 i18n——只有下面那颗选择器才会。
+    persistSettings().then(refreshBuiltinStatus);
+  });
+
+  // The one field whose value changes what this page is written in, so it is
+  // also the one that re-runs i18n.
+  elements.uiLanguage.addEventListener('change', () => {
+    persistSettings({ reapplyI18n: true });
   });
 
   // Closing the tab or switching away must not eat a half-typed API key.

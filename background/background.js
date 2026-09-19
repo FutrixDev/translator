@@ -174,6 +174,9 @@ const defaultSettings = {
   modelName: 'gpt-4.1-mini',
   targetLang: '', // Empty means use browser language
   targetLangSetByUser: false,
+  // The extension's own UI language. Empty means follow the browser. Kept
+  // apart from targetLang on purpose — see getUILanguage in i18n/messages.js.
+  uiLanguage: '',
   // Comic translation is the one feature that spends money on a server-side
   // account, so it is opted into. Empty comicTargetLang means "follow
   // targetLang" — the page a reader wants in Japanese is not always the
@@ -220,10 +223,11 @@ const MENU_IDS = {
   removeInlineTranslation: 'remove-inline-translation',
 };
 
+// The menu titles are UI chrome, so they follow the UI language — not the
+// language the user is translating *into*, which is what this used to read.
 function getContextMenuLanguage(settings) {
-  const effectiveLang = getEffectiveTargetLang(settings);
   if (typeof globalThis.getUILanguage === 'function') {
-    return globalThis.getUILanguage(effectiveLang);
+    return globalThis.getUILanguage(settings.uiLanguage);
   }
   return 'en';
 }

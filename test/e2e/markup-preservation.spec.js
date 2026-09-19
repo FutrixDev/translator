@@ -25,6 +25,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = [
   path.join(ROOT, 'i18n/messages.js'),
+  path.join(ROOT, 'shared/default-settings.js'),
   path.join(ROOT, 'content/content-bootstrap.js'),
   path.join(ROOT, 'content/content-page-translation.js'),
 ];

@@ -28,56 +28,8 @@
     };
   }
 
-  function isMacPlatform() {
-    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-    return /mac/i.test(platform);
-  }
-
-  const DEFAULT_SELECTION_HOTKEY = isMacPlatform() ? 'Meta' : 'Control';
-
   if (!ctx.settings) {
-    ctx.settings = {
-      // 默认走浏览器内置翻译；只有用户在设置里显式切到 'ai' 才用自己的接口。
-      translationEngine: 'builtin',
-      enableSelection: true,
-      enableHoverTranslation: true,
-      hoverTranslationHotkey: 'Shift',
-      selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
-      selectionTranslationMode: 'inline',
-      showFloatBall: true,
-      autoDetect: true,
-      enableYoutubeCaptionTranslation: false,
-      enableImageOcrTranslation: true,
-      // The hover shortcut button defaults on, matching background.js
-      // defaultSettings. (There is no auto-translate setting: OCR is always
-      // recognise-first, with a Translate button in the popup.)
-      enableImageOcrHoverButton: true,
-      enableComicTranslation: false,
-      comicTargetLang: '',
-      enablePdfTranslation: true,
-      pdfTargetLang: '',
-      // Superseded by captionDisplayMode; still read so a profile that only
-      // has the old boolean migrates instead of resetting to bilingual.
-      //
-      // captionDisplayMode's default is '' — unset — and has to stay that way:
-      // CaptionCore.resolveCaptionDisplay() only consults the boolean when the
-      // mode is not one of the three, so pre-filling a mode here would satisfy
-      // the resolver before it ever looked, and the migration would be dead on
-      // every real path. The resolver's own default is bilingual.
-      showYoutubeOriginalCaption: true,
-      captionDisplayMode: '',
-      captionTranslationPosition: 'below',
-      captionPlayerButton: true,
-      youtubeCaptionFontColor: '#ffffff',
-      youtubeCaptionBgColor: '#080808',
-      youtubeCaptionBgOpacity: 82,
-      youtubeCaptionPosXPct: null,
-      youtubeCaptionPosYPct: null,
-      youtubeCaptionWidthPct: null,
-      youtubeCaptionScale: 1,
-      targetLang: 'zh-CN',
-      theme: 'light'
-    };
+    ctx.settings = DefaultSettings.contentDefaults();
   }
 
   if (!ctx.state) {
@@ -103,7 +55,8 @@
   }
 
   ctx.t = function(key) {
-    const uiLang = getUILanguage(ctx.settings.targetLang);
+    // 界面语言，不是翻译目标语言：把一页译成日文不该把悬浮球菜单也变成日文。
+    const uiLang = getUILanguage(ctx.settings.uiLanguage);
     return getMessage(key, uiLang);
   };
 
@@ -128,76 +81,12 @@
 
   ctx.loadSettings = async function() {
     try {
-      const result = await chrome.storage.sync.get({
-        translationEngine: 'builtin',
-        enableSelection: true,
-        enableHoverTranslation: true,
-        hoverTranslationHotkey: 'Shift',
-        selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
-        selectionTranslationMode: 'inline',
-        showFloatBall: true,
-        autoDetect: true,
-        showTranslationOnly: false,
-        enableYoutubeCaptionTranslation: false,
-        enableImageOcrTranslation: true,
-        enableImageOcrHoverButton: true,
-        enableComicTranslation: false,
-        comicTargetLang: '',
-        enablePdfTranslation: true,
-        pdfTargetLang: '',
-        showYoutubeOriginalCaption: true,
-        // '' = unset, so CaptionCore migrates from the boolean above. See the
-        // note in the defaults at the top of this file.
-        captionDisplayMode: '',
-        captionTranslationPosition: 'below',
-        captionPlayerButton: true,
-        youtubeCaptionFontColor: '#ffffff',
-        youtubeCaptionBgColor: '#080808',
-        youtubeCaptionBgOpacity: 82,
-        youtubeCaptionPosXPct: null,
-        youtubeCaptionPosYPct: null,
-        youtubeCaptionWidthPct: null,
-        youtubeCaptionScale: 1,
-        targetLang: 'zh-CN',
-        theme: 'light'
-      });
+      const result = await chrome.storage.sync.get(DefaultSettings.contentDefaults());
       Object.assign(ctx.settings, result);
       ctx.applyTheme(ctx.settings.theme);
     } catch (error) {
       console.error('Blab Translation: Failed to load settings', error);
-      Object.assign(ctx.settings, {
-        translationEngine: 'builtin',
-        enableSelection: true,
-        enableHoverTranslation: true,
-        hoverTranslationHotkey: 'Shift',
-        selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
-        selectionTranslationMode: 'inline',
-        showFloatBall: true,
-        autoDetect: true,
-        showTranslationOnly: false,
-        enableYoutubeCaptionTranslation: false,
-        enableImageOcrTranslation: true,
-        enableImageOcrHoverButton: true,
-        enableComicTranslation: false,
-        comicTargetLang: '',
-        enablePdfTranslation: true,
-        pdfTargetLang: '',
-        showYoutubeOriginalCaption: true,
-        // '' = unset, so CaptionCore migrates from the boolean above. See the
-        // note in the defaults at the top of this file.
-        captionDisplayMode: '',
-        captionTranslationPosition: 'below',
-        captionPlayerButton: true,
-        youtubeCaptionFontColor: '#ffffff',
-        youtubeCaptionBgColor: '#080808',
-        youtubeCaptionBgOpacity: 82,
-        youtubeCaptionPosXPct: null,
-        youtubeCaptionPosYPct: null,
-        youtubeCaptionWidthPct: null,
-        youtubeCaptionScale: 1,
-        targetLang: 'zh-CN',
-        theme: 'light'
-      });
+      Object.assign(ctx.settings, DefaultSettings.contentDefaults());
     }
     // After both branches, so the fallback above cannot leave PDF translation
     // on either. Comic and PDF translation need an account this device may not

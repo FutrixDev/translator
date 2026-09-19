@@ -393,8 +393,11 @@ test('a mode nobody recognises falls back rather than blanking the screen', () =
 // as a set mode: the boolean is never consulted, and a user who had unchecked
 // "show original caption" gets a second line back on upgrade. The unit tests of
 // the pure function cannot see that, so the defaults themselves are asserted.
+// The content scripts' dictionary was three copies inside content-bootstrap.js
+// and is now one file; the options page keeps its own, because its dictionary
+// is the initial value of every form control, not the same set.
 const DEFAULT_DICTIONARY_SOURCES = [
-  'content/content-bootstrap.js',
+  'shared/default-settings.js',
   'options/options.js',
 ];
 
@@ -411,6 +414,20 @@ test('no default dictionary pre-fills captionDisplayMode with a mode', () => {
       );
     }
   }
+});
+
+test('the content scripts read one defaults dictionary, not a copy of one', () => {
+  // content-bootstrap.js held three copies of this dictionary — the initial
+  // value, the storage read set, and the read-failed fallback — and they had
+  // already drifted. A copy reintroduced here is a caption default that applies
+  // on one code path and not another.
+  const bootstrap = repoFile('content/content-bootstrap.js');
+  assert.match(bootstrap, /DefaultSettings\.contentDefaults\(\)/, 'content-bootstrap.js stopped using the shared defaults');
+  assert.doesNotMatch(
+    bootstrap,
+    /captionDisplayMode:|translationEngine:/,
+    'content-bootstrap.js is declaring settings defaults again — they belong in shared/default-settings.js',
+  );
 });
 
 test('the defaults still carry showYoutubeOriginalCaption for the resolver to read', () => {

@@ -218,6 +218,9 @@ const I18N_MESSAGES = {
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Please select or enter a model name',
     targetLanguage: 'Target Language',
+    interfaceLanguage: 'Interface Language',
+    interfaceLanguageFollowBrowser: 'Follow browser',
+    hintInterfaceLanguage: 'The language this extension speaks to you in. Independent of the target language above.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -269,7 +272,7 @@ const I18N_MESSAGES = {
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Show Float Ball',
     hintShowFloatBall: 'Show quick translation button at page corner',
-    autoDetectLanguage: 'Auto Detect Language',
+    skipTargetLanguageText: 'Skip text already in the target language',
     showTranslationOnly: 'Show Translation Only',
     hintShowTranslationOnly: 'In full-page translation, hide the original text and keep only the translation',
     advancedSettings: 'Advanced Settings',
@@ -575,6 +578,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: '请选择或输入模型名称',
     targetLanguage: '目标语言',
+    interfaceLanguage: '界面语言',
+    interfaceLanguageFollowBrowser: '跟随浏览器',
+    hintInterfaceLanguage: '扩展自己的界面用哪种语言，与上面的目标语言互不影响。',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -626,7 +632,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: '显示翻译球',
     hintShowFloatBall: '页面右下角显示快捷翻译按钮',
-    autoDetectLanguage: '自动检测语言',
+    skipTargetLanguageText: '跳过已是目标语言的内容',
     showTranslationOnly: '仅显示译文',
     hintShowTranslationOnly: '整页翻译时隐藏原文，只保留译文',
     advancedSettings: '高级设置',
@@ -881,6 +887,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: '請選擇或輸入模型名稱',
     targetLanguage: '目標語言',
+    interfaceLanguage: '介面語言',
+    interfaceLanguageFollowBrowser: '跟隨瀏覽器',
+    hintInterfaceLanguage: '擴充功能自己的介面用哪種語言，與上面的目標語言互不影響。',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -932,7 +941,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: '顯示翻譯球',
     hintShowFloatBall: '頁面右下角顯示快捷翻譯按鈕',
-    autoDetectLanguage: '自動檢測語言',
+    skipTargetLanguageText: '跳過已是目標語言的內容',
     showTranslationOnly: '僅顯示譯文',
     hintShowTranslationOnly: '整頁翻譯時隱藏原文，只保留譯文',
     advancedSettings: '進階設定',
@@ -1183,6 +1192,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'モデルを選択または入力してください',
     targetLanguage: 'ターゲット言語',
+    interfaceLanguage: '表示言語',
+    interfaceLanguageFollowBrowser: 'ブラウザに合わせる',
+    hintInterfaceLanguage: '拡張機能の画面に使う言語です。上のターゲット言語とは無関係です。',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -1232,7 +1244,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'フロートボールを表示',
     hintShowFloatBall: 'ページの角にクイック翻訳ボタンを表示',
-    autoDetectLanguage: '言語を自動検出',
+    skipTargetLanguageText: 'すでに翻訳先の言語である文はスキップ',
     advancedSettings: '詳細設定',
     youtubeSettings: '動画字幕',
     enableYoutubeCaptionTranslation: '動画字幕の翻訳',
@@ -1470,6 +1482,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: '모델을 선택하거나 입력하세요',
     targetLanguage: '대상 언어',
+    interfaceLanguage: '인터페이스 언어',
+    interfaceLanguageFollowBrowser: '브라우저 설정 따르기',
+    hintInterfaceLanguage: '확장 프로그램 화면에 쓰이는 언어입니다. 위의 대상 언어와는 별개입니다.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -1519,7 +1534,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: '플로팅 볼 표시',
     hintShowFloatBall: '페이지 모서리에 빠른 번역 버튼 표시',
-    autoDetectLanguage: '언어 자동 감지',
+    skipTargetLanguageText: '이미 목표 언어인 문장은 건너뛰기',
     advancedSettings: '고급 설정',
     youtubeSettings: '동영상 자막',
     enableYoutubeCaptionTranslation: '동영상 자막 번역',
@@ -1757,6 +1772,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Veuillez sélectionner ou saisir un nom de modèle',
     targetLanguage: 'Langue cible',
+    interfaceLanguage: "Langue de l'interface",
+    interfaceLanguageFollowBrowser: 'Suivre le navigateur',
+    hintInterfaceLanguage: "La langue dans laquelle l'extension vous parle. Indépendante de la langue cible ci-dessus.",
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -1806,7 +1824,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Afficher la bulle flottante',
     hintShowFloatBall: 'Afficher le bouton de traduction rapide dans le coin de la page',
-    autoDetectLanguage: 'Détection automatique de la langue',
+    skipTargetLanguageText: 'Ignorer le texte déjà dans la langue cible',
     advancedSettings: 'Paramètres avancés',
     youtubeSettings: 'Sous-titres vidéo',
     enableYoutubeCaptionTranslation: 'Traduction des sous-titres vidéo',
@@ -2044,6 +2062,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Bitte Modell auswählen oder eingeben',
     targetLanguage: 'Zielsprache',
+    interfaceLanguage: 'Oberflächensprache',
+    interfaceLanguageFollowBrowser: 'Browser folgen',
+    hintInterfaceLanguage: 'Die Sprache, in der die Erweiterung mit Ihnen spricht. Unabhängig von der Zielsprache oben.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -2093,7 +2114,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Schwebekugel anzeigen',
     hintShowFloatBall: 'Schnellübersetzungsschaltfläche in der Seitenecke anzeigen',
-    autoDetectLanguage: 'Sprache automatisch erkennen',
+    skipTargetLanguageText: 'Text überspringen, der schon in der Zielsprache ist',
     advancedSettings: 'Erweiterte Einstellungen',
     youtubeSettings: 'Video-Untertitel',
     enableYoutubeCaptionTranslation: 'Video-Untertitel-Uebersetzung',
@@ -2331,6 +2352,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Seleccione o ingrese un nombre de modelo',
     targetLanguage: 'Idioma de destino',
+    interfaceLanguage: 'Idioma de la interfaz',
+    interfaceLanguageFollowBrowser: 'Seguir al navegador',
+    hintInterfaceLanguage: 'El idioma en el que la extensión te habla. Independiente del idioma de destino de arriba.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -2380,7 +2404,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Mostrar bola flotante',
     hintShowFloatBall: 'Mostrar botón de traducción rápida en la esquina de la página',
-    autoDetectLanguage: 'Detectar idioma automáticamente',
+    skipTargetLanguageText: 'Omitir el texto que ya está en el idioma de destino',
     advancedSettings: 'Configuración avanzada',
     youtubeSettings: 'Subtitulos de video',
     enableYoutubeCaptionTranslation: 'Traduccion de subtitulos de video',
@@ -2618,6 +2642,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Selecione ou digite um nome de modelo',
     targetLanguage: 'Idioma de destino',
+    interfaceLanguage: 'Idioma da interface',
+    interfaceLanguageFollowBrowser: 'Seguir o navegador',
+    hintInterfaceLanguage: 'O idioma em que a extensão fala com você. Independente do idioma de destino acima.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -2667,7 +2694,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Mostrar bola flutuante',
     hintShowFloatBall: 'Mostrar botão de tradução rápida no canto da página',
-    autoDetectLanguage: 'Detectar idioma automaticamente',
+    skipTargetLanguageText: 'Ignorar o texto que já está no idioma de destino',
     advancedSettings: 'Configurações avançadas',
     youtubeSettings: 'Legendas de video',
     enableYoutubeCaptionTranslation: 'Traducao de legendas de video',
@@ -2905,6 +2932,9 @@ Rules:
     enterModelPlaceholder: '-- Enter model name --',
     pleaseEnterModelName: 'Выберите или введите название модели',
     targetLanguage: 'Целевой язык',
+    interfaceLanguage: 'Язык интерфейса',
+    interfaceLanguageFollowBrowser: 'Как в браузере',
+    hintInterfaceLanguage: 'Язык, на котором с вами говорит расширение. Не связан с целевым языком выше.',
     langZhCN: '简体中文',
     langZhTW: '繁体中文',
     langEn: 'English',
@@ -2954,7 +2984,7 @@ Rules:
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Показать плавающий шар',
     hintShowFloatBall: 'Показывать кнопку быстрого перевода в углу страницы',
-    autoDetectLanguage: 'Автоопределение языка',
+    skipTargetLanguageText: 'Пропускать текст, который уже на целевом языке',
     advancedSettings: 'Расширенные настройки',
     youtubeSettings: 'Субтитры видео',
     enableYoutubeCaptionTranslation: 'Перевод субтитров видео',
@@ -3029,31 +3059,70 @@ function getMessage(key, lang = 'en') {
   return key;
 }
 
-// Get UI language based on target language setting
-function getUILanguage(targetLang) {
-  // Map target language to UI language
-  const langMap = {
-    'zh-CN': 'zh-CN',
-    'zh-TW': 'zh-TW',
-    'ja': 'ja',
-    'ko': 'ko',
-    'fr': 'fr',
-    'de': 'de',
-    'es': 'es',
-    'pt': 'pt',
-    'ru': 'ru',
-  };
-  
-  return langMap[targetLang] || 'en';
+// The languages this file actually carries a full string table for.
+const UI_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
+
+// Region-tagged tags the browser really reports, mapped onto the table above.
+// Chinese is the one that cannot be resolved by stripping the region: zh-HK and
+// zh-MO are traditional, zh-SG is simplified, so 'zh-HK'.split('-')[0] would
+// hand a Hong Kong reader a simplified UI.
+const UI_LANGUAGE_ALIASES = {
+  'zh': 'zh-CN',
+  'zh-cn': 'zh-CN',
+  'zh-hans': 'zh-CN',
+  'zh-sg': 'zh-CN',
+  'zh-tw': 'zh-TW',
+  'zh-hk': 'zh-TW',
+  'zh-mo': 'zh-TW',
+  'zh-hant': 'zh-TW',
+};
+
+function normalizeUILanguage(tag) {
+  if (!tag) return '';
+  const lower = String(tag).trim().toLowerCase();
+  if (!lower) return '';
+  if (UI_LANGUAGE_ALIASES[lower]) return UI_LANGUAGE_ALIASES[lower];
+  const base = lower.split('-')[0];
+  if (UI_LANGUAGE_ALIASES[base]) return UI_LANGUAGE_ALIASES[base];
+  const match = UI_LANGUAGES.find(lang => lang.toLowerCase() === lower || lang.toLowerCase() === base);
+  return match || '';
+}
+
+function browserUILanguage() {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage) {
+      return chrome.i18n.getUILanguage();
+    }
+  } catch (error) {
+    // A torn-down extension context. Fall through to navigator/English.
+  }
+  return (typeof navigator !== 'undefined' && navigator.language) || '';
+}
+
+/**
+ * Which language to draw the extension's own UI in.
+ *
+ * This used to be derived from the *target* language, so choosing to translate
+ * into Japanese also turned the settings page Japanese — two unrelated choices
+ * wired to one control, and no way to have an English UI while translating into
+ * Japanese. The target language no longer has any say. `explicitUiLang` is the
+ * user's `uiLanguage` setting; empty means "follow the browser", which is what
+ * every other extension does and what a fresh install gets.
+ */
+function getUILanguage(explicitUiLang) {
+  return normalizeUILanguage(explicitUiLang)
+    || normalizeUILanguage(browserUILanguage())
+    || 'en';
 }
 
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { I18N_MESSAGES, getMessage, getUILanguage };
+  module.exports = { I18N_MESSAGES, UI_LANGUAGES, getMessage, getUILanguage };
 }
 
 if (typeof globalThis !== 'undefined') {
   globalThis.I18N_MESSAGES = I18N_MESSAGES;
   globalThis.getMessage = getMessage;
+  globalThis.UI_LANGUAGES = UI_LANGUAGES;
   globalThis.getUILanguage = getUILanguage;
 }

@@ -45,7 +45,7 @@ test('page translation: arXiv/LaTeXML code listings never reach the API, paper p
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      autoDetect: false
+      skipTargetLanguageText: false
     });
 
     await page.goto('https://example.com');

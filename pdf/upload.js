@@ -50,8 +50,8 @@
   let currentJobId = null;
   let pollTimer = null;
 
-  function applyI18n(targetLang) {
-    currentUILang = getUILanguage(targetLang);
+  function applyI18n(uiLanguage) {
+    currentUILang = getUILanguage(uiLanguage);
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const key = el.getAttribute('data-i18n');
       const text = t(key);
@@ -428,9 +428,9 @@
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
-    const settings = await chrome.storage.sync.get({ targetLang: 'zh-CN', theme: 'light' });
+    const settings = await chrome.storage.sync.get({ uiLanguage: '', theme: 'light' });
     document.documentElement.setAttribute('data-theme', settings.theme || 'light');
-    applyI18n(settings.targetLang);
+    applyI18n(settings.uiLanguage);
 
     setupDropZone();
     elements.retry.addEventListener('click', startJob);

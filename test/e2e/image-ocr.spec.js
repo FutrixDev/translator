@@ -142,12 +142,17 @@ test.describe('image OCR', () => {
   let mock;
   let pageServer;
 
+  // The popup's own chrome — the "原文 · English" label, the error text — is
+  // drawn in the UI language, which is a setting of its own and no longer
+  // inherited from targetLang. The assertions below are written in Chinese, so
+  // the spec has to ask for Chinese rather than assume it.
   const baseSettings = () => ({
     apiEndpoint: mock.endpoint,
     apiKey: 'test-key',
     modelName: 'gpt-4.1-mini',
     targetLang: 'zh-CN',
     targetLangSetByUser: true,
+    uiLanguage: 'zh-CN',
   });
 
   test.beforeEach(async ({ page }) => {

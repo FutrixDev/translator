@@ -78,7 +78,7 @@ test('a spec that asks for the built-in engine still gets it', async () => {
 test('a spec that sets no settings at all is covered by the fixture', async () => {
   const { writes, context } = fakePage();
   await helpers.applyBaseSettings(context);
-  assert.deepEqual(writes, [{ translationEngine: 'ai' }]);
+  assert.deepEqual(writes, [{ translationEngine: 'ai', uiLanguage: 'en' }]);
 
   // Most of hover-translation.spec.js never calls setExtensionSettings, so the
   // baseline has to be applied per context rather than per settings call.
@@ -91,6 +91,27 @@ test('the pin is load-bearing: the shipped default is a different engine', () =>
   assert.equal(shipped, 'builtin', 'background/background.js no longer declares a default engine by that name');
   assert.notEqual(shipped, helpers.E2E_BASE_SETTINGS.translationEngine,
     'if the extension ever ships the AI backend as its default, drop the pin and this test with it');
+});
+
+// The UI language used to come out of the *target* language, so a spec that
+// translated into Chinese got Chinese labels for free. It is its own setting
+// now, and its default is "follow the browser" — i.e. whatever language the
+// machine running the suite has Chrome in. Every label assertion in the suite
+// depends on this pin.
+test('the UI language is pinned, because its default follows the machine', () => {
+  assert.equal(helpers.E2E_BASE_SETTINGS.uiLanguage, 'en');
+  assert.match(repoFile('i18n/messages.js'), /function getUILanguage\(explicitUiLang\)/,
+    'getUILanguage no longer takes the UI-language setting; the pin may be reaching the wrong thing');
+});
+
+test('a spec that asserts labels in another language says so', () => {
+  // The two that do. Neither can rely on targetLang carrying the UI along any
+  // more, so each has to ask — and this fails if one drops the request and
+  // starts asserting Chinese against an English UI.
+  for (const name of ['image-ocr.spec.js', 'youtube-caption-translation.spec.js']) {
+    assert.match(repoFile(`test/e2e/${name}`), /uiLanguage: 'zh-CN'/,
+      `${name} asserts Chinese labels, so it has to set uiLanguage itself`);
+  }
 });
 
 test("'ai' is the only value that turns the built-in engine off", () => {
@@ -108,6 +129,13 @@ test('no spec restates the engine the harness already pins', () => {
     .filter(name => /translationEngine:\s*'ai'/.test(repoFile(`test/e2e/${name}`)));
   assert.deepEqual(offenders, [],
     'E2E_BASE_SETTINGS in test/e2e/helpers.js already selects the AI backend for every spec');
+});
+
+test('no spec restates the UI language the harness already pins', () => {
+  const offenders = specFiles()
+    .filter(name => /uiLanguage:\s*'en'/.test(repoFile(`test/e2e/${name}`)));
+  assert.deepEqual(offenders, [],
+    'E2E_BASE_SETTINGS in test/e2e/helpers.js already pins English for every spec');
 });
 
 // The engine bug was one spelling of a broader habit: reaching for chrome.* by
