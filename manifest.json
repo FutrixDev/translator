@@ -68,6 +68,7 @@
         "shared/site-rules.js",
         "shared/block-identity.js",
         "shared/translation-cache.js",
+        "shared/spa-navigation.js",
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-managed-translation.js",
