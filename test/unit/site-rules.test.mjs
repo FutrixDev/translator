@@ -171,6 +171,24 @@ test('a user rule is looked up along the parent chain, so normalizeHost is a con
   }).reason, R.USER_NEVER);
 });
 
+test('a single-label host can carry a user rule — it is where normalizeHost puts it', () => {
+  // localhost、公司内网的 wiki/jira 都是单标签主机，normalizeHost 原样返回，所
+  // 以点「总是翻译」就存在这个键下。父域查找要是从「第一个父域」开始数，这条
+  // 规则写下去就永远查不到——用户点了，什么都没发生，也没有任何报错。
+  for (const host of ['localhost', 'wiki', 'jira']) {
+    assert.equal(verdict({ host, userRules: { [host]: 'always' } }).reason, R.USER_ALWAYS);
+    assert.equal(verdict({ host, userRules: { [host]: 'never' } }).reason, R.USER_NEVER);
+  }
+  // IP 同理：它只问它自己，不问不存在的「父域」。
+  assert.equal(verdict({ host: '10.0.0.7', userRules: { '10.0.0.7': 'always' } }).reason, R.USER_ALWAYS);
+  assert.equal(verdict({ host: '10.0.0.7', userRules: { '0.0.7': 'always' } }).verdict, 'ask');
+});
+
+test('a bare TLD is never asked — that rule would cover half the web', () => {
+  assert.equal(verdict({ host: 'example.com', userRules: { com: 'always' } }).verdict, 'ask');
+  assert.equal(verdict({ host: 'shop.example.co.uk', userRules: { uk: 'never' } }).verdict, 'ask');
+});
+
 // ------------------------------------------------------------ 内置规则
 
 test('a built-in rule matches its subdomains and its path glob', () => {
@@ -192,6 +210,18 @@ test('the matched rule rides along with every verdict, including the off ones', 
   assert.equal(blocked.rule.match, 'x.com');
   assert.deepEqual(blocked.rule.atomicBlockSelectors, ['[data-testid="tweetText"]']);
   assert.equal(SiteRules.decide(ask({})).rule, null);
+});
+
+test('the rule handed out is frozen — the adapter layer gets a copy of nothing', () => {
+  // 交出去的是进程里唯一的那一份。适配层往 excludeSelectors 里 push 一条，就是
+  // 永久改写了所有 x.com 标签页的行为，而且下次读到时没有任何痕迹。
+  const rule = SiteRules.matchBuiltin('x.com', '/home');
+  assert.ok(Object.isFrozen(rule));
+  assert.ok(Object.isFrozen(rule.excludeSelectors));
+  assert.throws(() => rule.excludeSelectors.push('.injected'), TypeError);
+  assert.throws(() => { rule.state = 'never'; }, TypeError);
+  assert.deepEqual(SiteRules.matchBuiltin('x.com', '/home').excludeSelectors,
+    ['[data-testid="User-Name"] a', 'time', '[role="group"]']);
 });
 
 test('the shipped table is internally consistent', () => {

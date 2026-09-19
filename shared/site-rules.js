@@ -151,10 +151,23 @@
     return { rules, blocklist, ok: true, errors };
   }
 
+  // 这张表是进程里唯一的一份，而 decide() 会把命中的规则原样交出去——适配层要
+  // 它的 selector。不冻的话，一句 rule.excludeSelectors.push() 就永久改写了本次
+  // 会话的内置表，而且改的是别的站点的行为，下次读到时没有任何痕迹。
+  //
+  // 冻的是 table() 缓存的那一份，不是 loadTable()：后者是纯校验器，不该动调用
+  // 方交进来的对象。
+  function deepFreeze(value) {
+    if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+    Object.freeze(value);
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+    return value;
+  }
+
   let cached = null;
   function table() {
     if (!cached) {
-      cached = loadTable(root.SiteRulesBuiltin);
+      cached = deepFreeze(loadTable(root.SiteRulesBuiltin));
       if (!cached.ok) {
         console.warn('Blab Translation: built-in site rules rejected, falling back', cached.errors);
       }
@@ -192,13 +205,30 @@
 
   // 沿父域往上找：a.b.x.com 依次问 a.b.x.com、b.x.com、x.com。用户显式写下的
   // 域名才会命中它自己和它的子域，绝不会因为归一化把整个后缀圈进来。
+  //
+  // 两头都要停：
+  //   - 光秃秃的顶级域（com、org）永远不问。那是一条能把半个互联网圈进去的规
+  //     则，不该因为某次拼接意外生效。
+  //   - 单标签主机（localhost、公司内网的 wiki）只问它自己。它没有父域，但
+  //     normalizeHost 原样返回它，用户在这种页面上点「总是翻译」就存在这个键
+  //     下——不问它，那条规则写下去就永远不生效。
   function lookupUserRule(userRules, host) {
     if (!userRules || typeof userRules !== 'object') return '';
-    const labels = cleanHost(host).split('.');
-    for (let i = 0; i + 1 < labels.length; i++) {
-      const candidate = labels.slice(i).join('.');
+    const clean = cleanHost(host);
+    if (!clean) return '';
+
+    const hit = (candidate) => {
       const value = userRules[candidate];
-      if (value === 'always' || value === 'never') return value;
+      return (value === 'always' || value === 'never') ? value : '';
+    };
+
+    // IP 也没有父域可言：10.0.0.7 的「父域」0.0.7 是个不存在的东西。
+    if (IPV4_RE.test(clean) || !clean.includes('.')) return hit(clean);
+
+    const labels = clean.split('.');
+    for (let i = 0; i + 1 < labels.length; i++) {
+      const value = hit(labels.slice(i).join('.'));
+      if (value) return value;
     }
     return '';
   }
