@@ -131,7 +131,7 @@ globalThis.SiteRules = {
 `reason` 是枚举，**不是人话**（人话在 i18n 里）：
 
 ```
-GLOBAL_OFF · BLOCKLIST · USER_NEVER · USER_ALWAYS · BUILTIN_ALWAYS
+GLOBAL_OFF · BLOCKLIST · USER_NEVER · USER_EXPLICIT · USER_ALWAYS · BUILTIN_ALWAYS
 SAME_LANGUAGE · LANG_NOT_LISTED · UNKNOWN_LANGUAGE · DEFAULT_ASK
 ```
 
@@ -139,18 +139,26 @@ SAME_LANGUAGE · LANG_NOT_LISTED · UNKNOWN_LANGUAGE · DEFAULT_ASK
 
 | # | 条件 | 结果 | 备注 |
 | --- | --- | --- | --- |
-| 1 | `!settings.autoTranslate` | `off` / `GLOBAL_OFF` | 全局闸门 |
+| 1 | `!explicit && !settings.autoTranslate` | `off` / `GLOBAL_OFF` | 全局闸门 |
 | 2 | 内置黑名单命中 | `off` / `BLOCKLIST` | 优先级**高于**用户 `always`（银行、医疗、政务） |
-| 3 | `userRules[host] === 'never'` | `off` / `USER_NEVER` | |
-| 4 | `userRules[host] === 'always'` | `auto` / `USER_ALWAYS` | **第一级：用户显式** |
-| 5 | 内置规则 `state === 'always'` | `auto` / `BUILTIN_ALWAYS` | **第二级：站点规则** |
-| 6 | `pageLang === targetLang` | `off` / `SAME_LANGUAGE` | **第三级：语言规则** |
-| 7 | `autoTranslateLangs` 非空且 `pageLang` 不在其中 | `off` / `LANG_NOT_LISTED` | 同上 |
-| 8 | `pageLang == null` | `ask` / `UNKNOWN_LANGUAGE` | 判不出不赌 |
-| 9 | 其余 | `ask` / `DEFAULT_ASK` | **第四级：全局默认** |
+| 3 | 内置规则 `state === 'never'` | `off` / `BLOCKLIST` | 表里的 never 和黑名单对外同一个说法 |
+| 4 | `userRules[host] === 'never'` | `off` / `USER_NEVER` | |
+| 5 | `explicit` | `auto` / `USER_EXPLICIT` | **第一级：用户显式** |
+| 6 | `userRules[host] === 'always'` | `auto` / `USER_ALWAYS` | 同上 |
+| 7 | 内置规则 `state === 'always'` | `auto` / `BUILTIN_ALWAYS` | **第二级：站点规则** |
+| 8 | `pageLang === targetLang` | `off` / `SAME_LANGUAGE` | **第三级：语言规则** |
+| 9 | `autoTranslateLangs` 非空且 `pageLang` 不在其中 | `off` / `LANG_NOT_LISTED` | 同上 |
+| 10 | `pageLang == null` | `ask` / `UNKNOWN_LANGUAGE` | 判不出不赌 |
+| 11 | 其余 | `ask` / `DEFAULT_ASK` | **第四级：全局默认** |
 
-`explicit === true` 时**跳过 6、7 两条** —— 用户点了翻译就翻，语言规则只约束自动触发。
-这是 PRD FR-1.6 的落地点，也是唯一一处让 `decide()` 带状态味道的参数，必须由调用方显式传。
+`explicit === true` 直接给 `auto`（PR-2 实现时对本节的修订，PRD FR-1.6 的落地点）。
+初稿写的是「跳过语言规则两条」，但那样一个用户已经点过翻译的页面仍然落在 `ask`——
+页面后来长出来的内容该不该跟上，问的还是这个函数，调度层就只能绕过 `decide()` 自己
+判一遍，同一个问题两个地方回答。它压得住语言规则和总开关（总开关管的是「我们自己
+开始翻」），压不住禁翻的三条：黑名单、内置 `never`、用户 `never`。
+
+总开关排在黑名单之前，是为了理由的可操作性：一个没翻过的页面在总开关关着时，
+状态点该说「自动翻译已关闭」，而不是「这个站点被禁了」。两者 verdict 都是 `off`。
 
 ### 2.2 `shared/site-rules-builtin.js` — 规则数据（约 220 行，纯数据）
 
@@ -683,7 +691,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 
 | 文件 | 覆盖 | 对应验收 |
 | --- | --- | --- |
-| `site-rules.test.mjs` | `decide()` 全部 9 条短路分支；黑名单优先于用户 `always`；`explicit` 跳过语言规则；注册域归一（`mobile.x.com` → `x.com`） | FR-1 |
+| `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；注册域归一（`mobile.x.com` → `x.com`）；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
 | `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`release` 摘除译文节点 | FR-2.10 |
 | `translation-cache.test.mjs` | 键包含全部 7 个因子；改 `promptVersion` 后不命中；LRU 淘汰；30 天过期；in-flight 合并只发一次 | FR-7 |
