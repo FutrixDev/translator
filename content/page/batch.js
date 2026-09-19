@@ -403,6 +403,16 @@
     let batchFailures = 0;
     let firstFailureMessage = null;
 
+    // 「还要不要继续」只有这一个答案。三处要问：超大块的分块循环、每个批次开跑
+    // 前、以及传给逐块回退的那个谓词。
+    //
+    // 外面喊停和里面出错是两回事，但**停法必须是同一个**。自动翻译那一轮可能横跨
+    // 一次路由切换或一次改设置 —— 到那时这一页已经不归这一轮管了，`accept` 会把
+    // 回填一条条拒掉，可池子里剩下的批次照样一个接一个发出去。并发 12、几百块的
+    // 队列，用户关掉自动翻译或换掉付费引擎之后，账单还在涨，而页面上一个字都不会
+    // 变 —— 没有任何地方看得出来。
+    const aborted = () => !!batchError || (typeof options.isAborted === 'function' && options.isAborted());
+
     const noteBatchFailure = (message) => {
       if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
       batchFailures += 1;
@@ -433,7 +443,7 @@
       if (sub.length > 0) subBatches.push(sub);
 
       for (const sb of subBatches) {
-        if (batchError) return;
+        if (aborted()) return;
         try {
           const response = await requestBatch({
             type: 'TRANSLATE_BATCH_FAST',
@@ -478,8 +488,8 @@
 
     // 使用 Promise 池进行并发控制
     const processBatch = async (batch) => {
-      // Skip if we already have an error
-      if (batchError) return;
+      // 出错了，或者外面已经不要这一轮的结果了
+      if (aborted()) return;
       if (!isExtensionContextAvailable()) {
         batchError = t('extensionContextInvalidated');
         return;
@@ -515,7 +525,7 @@
           await applyFastBatchTranslations(batch, response.translations, {
             allowDownload,
             onFailure: noteBatchFailure,
-            isAborted: () => !!batchError,
+            isAborted: aborted,
             accept
           });
         }

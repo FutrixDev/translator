@@ -327,10 +327,20 @@
         // 就是把他明确说过不必发的文字一轮一轮发出去。被滤掉的块此刻已经记进
         // 台账，发现层下次再送来也不会重来。
         const fresh = await ctx.filterBlocksByLanguage(blocks);
-        if (fresh.length > 0) {
+        // 探语言本身就是一串 await。期间换了路由或者关掉了自动翻译，这一轮的结果
+        // 一条都不会被采纳 —— 那就一条都别发。
+        if (fresh.length > 0 && guard.version() === session) {
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
-          error = await ctx.runTranslationPass(fresh, { accept: acceptBlock, allowDownload: false });
+          //
+          // isAborted 和 accept 分工不同，缺一不可：accept 拦的是「回填」，翻都
+          // 翻完了才拒，钱已经花掉；isAborted 拦的是「还要不要发下一批」。跑到
+          // 一半换了路由时，能省下的是池子里剩下的那几百块。
+          error = await ctx.runTranslationPass(fresh, {
+            accept: acceptBlock,
+            allowDownload: false,
+            isAborted: () => guard.version() !== session,
+          });
         }
       } catch (thrown) {
         console.error('Blab Translation: auto translation pass failed', thrown);

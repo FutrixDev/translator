@@ -207,3 +207,35 @@ test('挤不进观察器的块要记在一边，不能扔', () => {
   assert.match(discover, /deferred\.clear\(\);/);
   assert.match(discover, /window\.removeEventListener\('scroll', onScroll, SCROLL_LISTENER\);/);
 });
+
+// 翻完了才拒，钱已经花掉。这一条钉的是「还要不要发下一批」。
+test('换了路由或关掉自动翻译之后，在途的那一轮不再发下一批', () => {
+  const batch = code('content/page/batch.js');
+  // 「要不要停」只有一个答案：三处问的必须是同一个谓词，否则逐块回退那条路
+  // 只认 batchError，外面喊停喊不动它。
+  assert.match(batch, /const aborted = \(\) => !!batchError \|\| \(typeof options\.isAborted === 'function' && options\.isAborted\(\)\)/);
+  assert.match(batch, /isAborted: aborted,/);
+  // 早先那两处 `if (batchError) return;` 都要换成 aborted()，一处不换就是一个
+  // 停不下来的口子。
+  assert.doesNotMatch(batch, /if \(batchError\) return;/);
+  assert.equal(batch.match(/if \(aborted\(\)\) return;/g).length, 2);
+
+  const scheduler = code('content/content-auto-translate.js');
+  assert.match(scheduler, /isAborted: \(\) => guard\.version\(\) !== session,/);
+  // 探语言本身就是一串 await，回来时这一页可能已经不归这一轮管了 —— 那就一块
+  // 都别发，而不是发完再一条条拒。
+  assert.match(scheduler, /if \(fresh\.length > 0 && guard\.version\(\) === session\)/);
+});
+
+test('换页要让页面语言的缓存过期，且这件事归引擎自己管', () => {
+  const engine = code('content/content-translation-engine.js');
+  assert.match(engine, /SpaNavigation\.onRouteChange\(\(\) => \{\s*pageSourceLangPromise = null;/);
+  // 缓存归引擎所有，过期也归它。放到自动翻译那一层去清的话，自动翻译关着的时候
+  // 划词/悬停/字幕照样在用一份上一页的语言。
+  assert.doesNotMatch(code('content/content-auto-translate.js'), /pageSourceLangPromise/);
+  // 订阅要真订得上：引擎必须排在 spa-navigation 后面。
+  assert.ok(
+    isolated.indexOf('shared/spa-navigation.js') < isolated.indexOf('content/content-translation-engine.js'),
+    'shared/spa-navigation.js 必须排在 content-translation-engine.js 前面'
+  );
+});

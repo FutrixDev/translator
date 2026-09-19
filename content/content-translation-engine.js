@@ -181,6 +181,20 @@
     return pageSourceLangPromise;
   }
 
+  // 单页应用换页时 document 从头到尾是同一个，这个模块级缓存也就一直是上一篇文章
+  // 的语言。中文页跳到英文页之后，凡是短于 SELF_DETECT_MIN_CHARS 的块都不自己探，
+  // 直接拿缓存里的 zh 当源语言 —— 目标语言也是 zh，于是判成「已经是目标语言」，
+  // 原样退回，一个字不译。页面上看不出任何异样，只有短句永远是英文。
+  //
+  // 清缓存放在引擎这一层、由它自己订路由，而不是让自动翻译那一层换页时顺手清一下：
+  // 划词、悬停、字幕走的是同一个 resolveSourceLang，自动翻译关着的时候它们照样在
+  // 这条路上。谁拥有这个缓存，谁负责让它过期。
+  if (globalThis.SpaNavigation) {
+    globalThis.SpaNavigation.onRouteChange(() => {
+      pageSourceLangPromise = null;
+    });
+  }
+
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
 
