@@ -998,7 +998,13 @@ content-float-ball.js:324         单击 -> toggleFloatMenu（改）
 | 4 | §2.7 `markPageExplicit()` 无条件记录 | 记录前先看 `settings.autoTranslate` | 总开关是关的时候，用户手动翻一次不该让这一页从此"自动"起来 —— 那是把一次动作读成了长期授权。 |
 | 5 | §2.7 `pagehide` 时拆掉观察器 | **不拆** | bfcache：`pagehide` 之后页面可能原样回来，观察器拆了就不会再装。而页面真的走了的时候，整个 JS 环境跟着没了，本来也不用谁来拆。 |
 | 6 | §2.7 状态机 off/pending/idle/running/paused/error | 多一个 **`ask`** | "该问用户"和"还没判完"（`pending`）不是一回事，PR-7 的追问条要认的正是前者。少这一态，状态呈现层只能去猜。 |
+| 8 | — | 自动轮传 `allowDownload: false` |  语言包是几十 MB 的下载，`create()` 触发它要求 user activation。自动这一轮没有手势，硬触发只换回一个 `NotAllowedError`，白等一次创建超时再回落。和悬停、字幕这两条同样无手势的路取齐。 |
 | 7 | — | 自动轮也过 `ctx.filterBlocksByLanguage` | 本文没提，写 e2e 时才发现：`skipTargetLanguageText` 只有手动那条路认。自动这一轮绕过去，就是把用户明确说过不必发的文字一屏一屏替他发出去，而页面上看不出任何异样。由 `auto-translate-wiring.test.mjs` 钉住。 |
+
+评审（Codex）在这一轮提了 5 条，全部属实、全部已修：语言包下载手势、虚拟列表回收
+导致的「旧文字配新指纹」、跨代次的状态覆盖、观察器淘汰把首屏摘掉、换引擎不重扫。
+前四条各自都有「页面上看不出异样」的性质 —— 内容是错的、或者页面一直空着，而没有
+任何报错。相应的钉子加在 `auto-translate-wiring.test.mjs`。
 
 **PR-6 的三条出口 e2e**（`test/e2e/auto-translate-{basic,incremental,spa}.spec.js`）都做过变异
 验证：把路由接线注释掉，`spa` 第一条挂；把视口带放大到 10000px，`incremental` 挂。

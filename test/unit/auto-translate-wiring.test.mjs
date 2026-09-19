@@ -122,3 +122,47 @@ test('「已经是目标语言就别翻」这条设置，自动这一轮也认',
   assert.match(scheduler, /ctx\.filterBlocksByLanguage\(/);
   assert.match(code('content/page/batch.js'), /ctx\.filterBlocksByLanguage = filterBlocksByLanguage;/);
 });
+
+test('自动这一轮不触发语言包下载 —— 它没有 user activation', () => {
+  const batch = code('content/page/batch.js');
+  // 三个请求点原本写死 true。写死了，自动那一轮就会去 create() 一个要下载的
+  // 翻译器，换回 NotAllowedError，白等一次创建超时。
+  assert.doesNotMatch(batch, /allowDownload:\s*true/);
+  assert.match(batch, /const allowDownload = options\.allowDownload !== false;/);
+  assert.match(code('content/content-auto-translate.js'), /allowDownload:\s*false/);
+});
+
+test('排队时抄下的文字和盖章时的实况对不上，这一块就不发', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  // 虚拟列表把节点回收给下一条内容：拿旧文字去译、用新文字的指纹去验，验得过，
+  // 于是错的译文被永久登记成这段新文字的译文。
+  assert.match(scheduler, /BlockIdentity\.fingerprint\(block\.text\) !== ticket\.textFingerprint/);
+});
+
+test('上一代跑完的那一轮，不许改这一代的状态', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  assert.match(scheduler, /const session = guard\.version\(\);/);
+  assert.match(scheduler, /if \(guard\.version\(\) !== session\)/);
+  // 挂起的是当时那一个，换了路由之后 discovery 已经是新的了。
+  assert.match(scheduler, /const suspended = discovery;/);
+  assert.doesNotMatch(scheduler, /if \(discovery\) discovery\.resume\(\);/);
+});
+
+test('换引擎也要重开一轮 —— 只作废不重扫，页面会一直空着', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  const keys = scheduler.match(/const RESTART_KEYS = \[([^\]]*)\]/);
+  assert.ok(keys, 'RESTART_KEYS 应当是一处列全的清单');
+  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine']) {
+    assert.ok(keys[1].includes(`'${key}'`), `${key} 变了这一页要从头来过`);
+  }
+});
+
+test('观察器淘汰按离视口的远近，不按挂上的先后', () => {
+  const discover = code('content/content-auto-discover.js');
+  // 首次全量扫长文时所有元素在同一个任务里挂上，「最早挂上的」正是用户此刻
+  // 看着的那一屏。
+  assert.match(discover, /function distanceFromViewport\(element\)/);
+  assert.match(discover, /ranked\.sort\(\(a, b\) => b\.away - a\.away\)/);
+  // 同步淘汰是在 IntersectionObserver 还没派发过一次回调的时候就动手。
+  assert.match(discover, /trimTimer = setTimeout\(trim, TRIM_DELAY_MS\)/);
+});

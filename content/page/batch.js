@@ -293,14 +293,14 @@
   // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
   // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
   // 最坏是某一块拿不到译文而保持原文。
-  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept } = {}) {
+  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept, allowDownload } = {}) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload });
       return;
     }
 
@@ -310,7 +310,7 @@
     }));
   }
 
-  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept } = {}) {
+  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload = true } = {}) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
@@ -319,7 +319,7 @@
           texts: [block.text],
           targetLang: getEffectiveTargetLang(),
           delimiter: DELIMITER,
-          allowDownload: true
+          allowDownload
         });
         if (response.error) {
           if (onFailure) onFailure(response.error);
@@ -371,6 +371,11 @@
     // 迟到校验。手动整页翻译不传 —— 用户点下去到译文回来这段时间里，页面通常
     // 还是那一页，而自动翻译的一轮可能横跨一次路由切换。
     const accept = typeof options.accept === 'function' ? options.accept : null;
+    // 语言包是几十 MB 的下载，create() 触发它要求 user activation。整页翻译是
+    // 用户点出来的，手势就在那儿；自动翻译这一轮没有，硬触发只会换回一个
+    // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
+    // needsDownload 那条回落路 —— 和悬停、字幕这两条同样没有手势的路一致。
+    const allowDownload = options.allowDownload !== false;
     const total = blocks.length;
     let done = 0;
 
@@ -435,7 +440,7 @@
             texts: sb.map(x => x.text),
             targetLang: getEffectiveTargetLang(),
             delimiter: DELIMITER,
-            allowDownload: true
+            allowDownload
           });
 
           if (response.error) {
@@ -491,14 +496,14 @@
       const texts = batch.map(item => item.text);
 
       try {
-        // 整页翻译是用户点出来的，带着 user activation，是唯一适合触发
-        // 语言包首次下载的路径（下载进度直接显示在下方进度条上）。
+        // allowDownload 见 runTranslationPass 开头：用户点出来的那一轮可以触发
+        // 语言包首次下载（进度就显示在下方进度条上），自动那一轮不行。
         const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: texts,
           targetLang: getEffectiveTargetLang(),
           delimiter: DELIMITER,
-          allowDownload: true
+          allowDownload
         });
 
         // Check for error in response
@@ -508,6 +513,7 @@
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
           // 走逐块回退，而不是无声丢掉整批。
           await applyFastBatchTranslations(batch, response.translations, {
+            allowDownload,
             onFailure: noteBatchFailure,
             isAborted: () => !!batchError,
             accept

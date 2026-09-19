@@ -35,8 +35,17 @@
   const MAX_DIRTY_ROOTS = 40;
   // IntersectionObserver 持强引用，挂上去的元素不会被回收。无限滚动的页面能滚
   // 出几万个块，全挂着就是一条永不释放的引用链。超过上限先摘掉已经离开文档的，
-  // 还超就摘最早挂上的 —— 最早的那些正是用户早就滚过去、再也不会回看的。
+  // 还超就摘**离视口最远的**。
+  //
+  // 曾经摘的是「最早挂上的」，理由是用户早就滚过去了 —— 那个理由只在增量场景下
+  // 成立。首次全量扫一篇上万块的长文时，所有元素在同一个任务里挂上去，最早的
+  // 那几千个正是文档开头、也就是用户此刻正看着的那一屏；摘掉它们，页面从打开
+  // 起就一片空白，而被摘掉的块不会有任何变动把它们送回来。
   const MAX_OBSERVED = 2000;
+  // 淘汰等一等再做。IntersectionObserver 的回调要到这一帧的渲染步骤才派发，同步
+  // 淘汰是在「谁在视口里」这个问题还没有答案的时候就动手。等过这一个窗口，进带的
+  // 都已经被摘走了（见 onBand 的「进带即摘」），剩下的才真是带外的。
+  const TRIM_DELAY_MS = DEBOUNCE_MS;
   // 上下各一屏。
   const BAND_MARGIN = '100% 0px';
 
@@ -106,10 +115,10 @@
     }
 
     const dirtyRoots = new Set();
-    // 插入顺序即淘汰顺序，Set 保证的就是这个。
     const observed = new Set();
     let collapsed = false;
     let timer = null;
+    let trimTimer = null;
     let suspended = false;
     let stopped = false;
 
@@ -175,7 +184,7 @@
       if (observed.has(element)) return;
       observed.add(element);
       bandObserver.observe(element);
-      if (observed.size > MAX_OBSERVED) trim();
+      if (observed.size > MAX_OBSERVED) scheduleTrim();
     }
 
     function unwatch(element) {
@@ -183,13 +192,36 @@
       bandObserver.unobserve(element);
     }
 
+    function scheduleTrim() {
+      if (stopped || trimTimer !== null) return;
+      trimTimer = setTimeout(trim, TRIM_DELAY_MS);
+    }
+
+    // 元素在视口之外多远。带内一律算 0 —— 那些本来也留不到这一步。
+    function distanceFromViewport(element) {
+      const rect = element.getBoundingClientRect();
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      if (rect.top >= height) return rect.top - height;
+      if (rect.bottom <= 0) return -rect.bottom;
+      return 0;
+    }
+
     function trim() {
+      trimTimer = null;
+      if (stopped) return;
+
       for (const element of observed) {
         if (!element.isConnected) unwatch(element);
       }
-      for (const element of observed) {
+      if (observed.size <= MAX_OBSERVED) return;
+
+      // getBoundingClientRect 一趟下来只强制一次重排，之后都是读缓存。只有超过
+      // 上限的页面才走到这里，而且一个窗口最多一次。
+      const ranked = [...observed].map((element) => ({ element, away: distanceFromViewport(element) }));
+      ranked.sort((a, b) => b.away - a.away);
+      for (const entry of ranked) {
         if (observed.size <= MAX_OBSERVED) break;
-        unwatch(element);
+        unwatch(entry.element);
       }
     }
 
@@ -262,6 +294,10 @@
       if (timer !== null) {
         clearTimeout(timer);
         timer = null;
+      }
+      if (trimTimer !== null) {
+        clearTimeout(trimTimer);
+        trimTimer = null;
       }
       dirtyRoots.clear();
       observed.clear();

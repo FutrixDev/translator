@@ -246,6 +246,14 @@
       for (const [element, block] of queue) {
         if (!element.isConnected) continue;
         const ticket = guard.stamp(element);
+        // 章盖的是此刻页面上的文字，block.text 是排队那一刻抄下来的。虚拟列表把
+        // 一个节点回收给下一条内容，两者就此对不上 —— 而这一轮会拿旧文字去译、
+        // 用新文字的指纹去验，验得过，于是旧译文被登记成新文字的译文，**从此
+        // 不会再被翻一次**。页面上看不出异样，只有内容是错的。
+        //
+        // 丢掉就行：改文字本身是一次 characterData 变动，发现层下一轮会把这个块
+        // 带着新文字原样送回来。这里不记台账，那一轮才不会被当成翻过了。
+        if (globalThis.BlockIdentity.fingerprint(block.text) !== ticket.textFingerprint) continue;
         const key = `${ticket.blockId}:${ticket.textFingerprint}`;
         if (ledger.has(key)) continue;
         ledger.add(key);
@@ -273,11 +281,15 @@
       const blocks = takeBatch();
       if (blocks.length === 0) return;
 
+      // 这一轮属于哪一代。await 期间可能换了路由、改了设置 —— 回来时这一页已经
+      // 不归我们管了，下面那几个状态赋值就都是在替新的一代乱表态。
+      const session = guard.version();
       running = true;
       status = STATUS.RUNNING;
       // 我们自己插译文引起的变动，发现层本来就认得出来。挂起是为了省掉插入期间
       // 那几十次「子树变了」带来的重复收集。
-      if (discovery) discovery.suspend();
+      const suspended = discovery;
+      if (suspended) suspended.suspend();
 
       let error = null;
       try {
@@ -286,14 +298,29 @@
         // 就是把他明确说过不必发的文字一轮一轮发出去。被滤掉的块此刻已经记进
         // 台账，发现层下次再送来也不会重来。
         const fresh = await ctx.filterBlocksByLanguage(blocks);
-        if (fresh.length > 0) error = await ctx.runTranslationPass(fresh, { accept: acceptBlock });
+        if (fresh.length > 0) {
+          // 自动这一轮没有 user activation，不触发语言包下载 —— 见
+          // content/page/batch.js 里 runTranslationPass 开头那段。
+          error = await ctx.runTranslationPass(fresh, { accept: acceptBlock, allowDownload: false });
+        }
       } catch (thrown) {
         console.error('Blab Translation: auto translation pass failed', thrown);
         error = (thrown && thrown.message) || String(thrown);
       } finally {
         running = false;
         tickets.clear();
-        if (discovery) discovery.resume();
+        // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
+        // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
+        if (suspended) suspended.resume();
+      }
+
+      // 翻篇了。这一轮的成败是上一页的事，这一页刚刚判完、状态是新定的，
+      // 覆盖它会让 PENDING 变回 IDLE（语言再也探不出来），或者让一次旧的失败
+      // 把新一页的发现层停掉。
+      if (guard.version() !== session) {
+        // 新的一代有自己的队要排 —— 刚才 running 挡回去的那次 pump 没有重排。
+        if (queue.size > 0 && (status === STATUS.IDLE || status === STATUS.RUNNING)) scheduleStart();
+        return;
       }
 
       if (error) {
@@ -353,6 +380,11 @@
       start();
     }
 
+    // 这几个键一变，这一页要从头来过：代次翻篇作废在途的结果，start() 重新判、
+    // 重新扫。换引擎也在其中 —— 只作废不重扫的话，那些块进带时已经被摘掉了
+    // （发现层「进带即摘」），没有任何变动会把它们再送回来，页面就一直空着。
+    const RESTART_KEYS = ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine'];
+
     function onSettingsChanged(changes) {
       // 目标语言或引擎变了，在途的那些译文是按旧设置要来的。
       if ('targetLang' in changes || 'translationEngine' in changes) {
@@ -360,10 +392,7 @@
       }
       // 用户自己喊停的页面不该因为改了个设置就又动起来。
       if (status === STATUS.PAUSED) return;
-      if ('autoTranslate' in changes || 'siteRules' in changes ||
-          'autoTranslateLangs' in changes || 'targetLang' in changes) {
-        start();
-      }
+      if (RESTART_KEYS.some((key) => key in changes)) start();
     }
 
     globalThis.SpaNavigation.onRouteChange(onRouteChange);
