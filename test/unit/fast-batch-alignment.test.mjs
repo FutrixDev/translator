@@ -24,11 +24,11 @@ import assert from 'node:assert/strict';
 // content-page-translation.js is a classic script hanging everything off
 // window.AI_TRANSLATOR_CONTENT; at load it only defines functions, so this is
 // all the DOM it needs. `document`/`chrome` stay empty: the code under test
-// must not reach them (autoDetect=false keeps shouldSkipTranslation local).
+// must not reach them (skipTargetLanguageText=false keeps shouldSkipTranslation local).
 globalThis.window = {
   AI_TRANSLATOR_CONTENT: {
     constants: { MATH_CONTAINER_SELECTOR: '.katex' },
-    settings: { autoDetect: false },
+    settings: { skipTargetLanguageText: false },
     state: {},
     t: (key) => key,
     escapeHtml: (s) => s,

@@ -21,6 +21,7 @@ const defaultSettings = {
   showFloatBall: true,
   enableYoutubeCaptionTranslation: false,
   targetLang: 'zh-CN',
+  uiLanguage: '',
   theme: 'light'
 };
 
@@ -474,8 +475,7 @@ async function checkStatus() {
     // Apply theme
     applyTheme(settings.theme || 'light');
     
-    // Apply i18n based on target language
-    applyI18n(settings.targetLang);
+    applyI18n(settings.uiLanguage);
     
     // Update float ball status
     elements.floatBallStatus.textContent = settings.showFloatBall ? t('on') : t('off');

@@ -1,7 +1,37 @@
 /**
  * Test helper functions for Blab Translation E2E tests
  */
+const path = require('path');
 const { expect } = require('@playwright/test');
+
+const REPO_ROOT = path.join(__dirname, '..', '..');
+
+/**
+ * The source files a DOM-harness spec injects to get a working
+ * `window.AI_TRANSLATOR_CONTENT` — no extension, no network, no display.
+ *
+ * Four specs each kept their own copy of this list. They are not a preference:
+ * content-bootstrap.js reaches for `DefaultSettings` and `getUILanguage` as it
+ * runs, so a module missing from the list is a TypeError inside an injected
+ * script, which Playwright reports as `ctx.settings` being undefined three
+ * calls later. Adding shared/default-settings.js broke all four at once, in
+ * exactly that unreadable shape, which is why the list lives here now.
+ *
+ * Pass the modules the spec is actually about; they load after the prelude, in
+ * the order given.
+ *
+ * @param {...string} modules repo-relative paths, e.g. 'content/content-page-translation.js'
+ * @returns {string[]} absolute paths, ready for page.addScriptTag({ path })
+ */
+const CONTENT_HARNESS_PRELUDE = Object.freeze([
+  'i18n/messages.js',
+  'shared/default-settings.js',
+  'content/content-bootstrap.js',
+]);
+
+function contentHarnessScripts(...modules) {
+  return [...CONTENT_HARNESS_PRELUDE, ...modules].map(rel => path.join(REPO_ROOT, rel));
+}
 
 /**
  * Wait for the float ball to appear on the page
@@ -188,9 +218,17 @@ async function getCurrentTheme(page) {
  * every context, rather than asking each spec to remember. A spec that means to
  * exercise the built-in engine passes `translationEngine` explicitly to
  * setExtensionSettings and wins over this.
+ *
+ * `uiLanguage` is here for the same reason. Left unset it means "follow the
+ * browser", so every label a spec reads — the OCR popup's "Source · English",
+ * the caption menu's rows, every error string — would be drawn in whatever
+ * language the machine running the suite happens to have Chrome in. Pinning
+ * English makes those assertions mean something; a spec asserting another
+ * language passes `uiLanguage` and wins over this.
  */
 const E2E_BASE_SETTINGS = Object.freeze({
   translationEngine: 'ai',
+  uiLanguage: 'en',
 });
 
 /**
@@ -346,6 +384,9 @@ async function expectCaptionMenuAnchoredAboveButton(page, anchorSelector) {
 
 module.exports = {
   E2E_BASE_SETTINGS,
+  REPO_ROOT,
+  CONTENT_HARNESS_PRELUDE,
+  contentHarnessScripts,
   expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,
   writeSyncSettings,

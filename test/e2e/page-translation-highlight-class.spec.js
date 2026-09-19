@@ -36,7 +36,7 @@ test('page translation: "highlights"/"language-" lookalikes translate, real code
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      autoDetect: false
+      skipTargetLanguageText: false
     });
 
     await page.goto('https://example.com');

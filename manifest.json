@@ -58,6 +58,7 @@
       "js": [
         "i18n/messages.js",
         "shared/account-gate.js",
+        "shared/default-settings.js",
         "shared/caption-core.js",
         "shared/comic-charge.js",
         "shared/ocr.js",

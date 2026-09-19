@@ -11,7 +11,7 @@ test('page translation skips blocks with inline translation', async ({ page }) =
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      autoDetect: false,
+      skipTargetLanguageText: false,
       enableHoverTranslation: true,
       hoverTranslationHotkey: 'Shift'
     });

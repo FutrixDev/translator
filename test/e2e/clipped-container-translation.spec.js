@@ -50,7 +50,7 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         apiKey: 'test-key',
         modelName: 'gpt-4.1-mini',
         targetLang: 'zh-CN',
-        autoDetect: false,
+        skipTargetLanguageText: false,
         enableHoverTranslation: true,
         hoverTranslationHotkey: 'Shift'
       });
@@ -101,7 +101,7 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         apiKey: 'test-key',
         modelName: 'gpt-4.1-mini',
         targetLang: 'zh-CN',
-        autoDetect: false
+        skipTargetLanguageText: false
       });
 
       await page.goto('https://example.com');

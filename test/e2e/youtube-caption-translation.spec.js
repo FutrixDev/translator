@@ -41,9 +41,14 @@ const html = `<!doctype html>
 // language pack for the pair — a fresh profile does not, so it falls back to
 // the API, but that is an accident of the profile and not something to assert
 // through.
+//
+// The menu's labels are drawn in the UI language, which is a setting of its own
+// and no longer inherited from targetLang — so a spec that asserts Chinese rows
+// has to ask for Chinese.
 const BASE_SETTINGS = {
   targetLang: 'zh-CN',
   targetLangSetByUser: true,
+  uiLanguage: 'zh-CN',
   apiKey: 'sk-test',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   modelName: 'gpt-4.1-mini',

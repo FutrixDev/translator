@@ -116,3 +116,45 @@ test('a conflicting pair already in storage is resolved on load', async ({ page,
   expect(stored.selectionTranslationHotkey).toBe('Control');
   expect(stored.hoverTranslationHotkey).not.toBe('Control');
 });
+
+/**
+ * The interface language and the target language used to be one control: the
+ * UI was drawn in whatever language pages were being translated into, so a
+ * Chinese reader who translated one article into Japanese got a Japanese
+ * settings page and no way back short of changing the target language again.
+ *
+ * They are two settings now, and this is the promise: picking an interface
+ * language redraws the page and leaves the target language exactly where it
+ * was, and changing the target language redraws nothing.
+ */
+test('the interface language is chosen on its own, and the target language no longer drives it', async ({ page, context, extensionId }) => {
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    targetLangSetByUser: true,
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await page.waitForSelector('#provider');
+
+  // English, because the harness pins it — see E2E_BASE_SETTINGS. A fresh
+  // profile would show the empty "follow browser" row instead.
+  await expect(page.locator('#uiLanguage')).toHaveValue('en');
+  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'en'));
+
+  // Translating into Japanese leaves the page in English — the old coupling.
+  await page.selectOption('#targetLang', 'ja');
+  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'en'));
+
+  // Asking for a Japanese interface redraws the page, target language intact.
+  await page.selectOption('#uiLanguage', 'ja');
+  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'ja'));
+  await expect(page.locator('#targetLang')).toHaveValue('ja');
+
+  const stored = await getSyncSettings(context, ['uiLanguage', 'targetLang']);
+  expect(stored.uiLanguage).toBe('ja');
+  expect(stored.targetLang).toBe('ja');
+
+  // And "follow browser" is reachable again, not a one-way door.
+  await page.selectOption('#uiLanguage', '');
+  await expect.poll(async () => (await getSyncSettings(context, ['uiLanguage'])).uiLanguage).toBe('');
+});

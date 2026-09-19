@@ -1412,7 +1412,7 @@
     }
 
     try {
-      if (!settings.autoDetect) return false;
+      if (!settings.skipTargetLanguageText) return false;
       return await isTargetLanguageText(block.text);
     } catch (error) {
       console.warn('Blab Translation: Language detection failed', error);
@@ -1476,7 +1476,7 @@
 
   async function filterBlocksByLanguage(blocks) {
     if (!chrome?.i18n?.detectLanguage) return blocks;
-    if (!settings.autoDetect) return blocks;
+    if (!settings.skipTargetLanguageText) return blocks;
 
     const keep = new Array(blocks.length).fill(true);
     const tasks = blocks.map((block, index) => ({ block, index }));

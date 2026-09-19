@@ -178,6 +178,24 @@
             </select>
           </div>
 
+          <div class="form-group">
+            <label for="uiLanguage" data-i18n="interfaceLanguage">Interface Language</label>
+            <select id="uiLanguage">
+              <option value="" data-i18n="interfaceLanguageFollowBrowser"></option>
+              <option value="en" data-i18n="langEn"></option>
+              <option value="zh-CN" data-i18n="langZhCN"></option>
+              <option value="zh-TW" data-i18n="langZhTW"></option>
+              <option value="ja" data-i18n="langJa"></option>
+              <option value="ko" data-i18n="langKo"></option>
+              <option value="fr" data-i18n="langFr"></option>
+              <option value="de" data-i18n="langDe"></option>
+              <option value="es" data-i18n="langEs"></option>
+              <option value="pt" data-i18n="langPt"></option>
+              <option value="ru" data-i18n="langRu"></option>
+            </select>
+            <span class="hint" data-i18n-hint="hintInterfaceLanguage"></span>
+          </div>
+
           <div class="inline-setting">
             <div class="inline-setting-title">
               <label id="enableSelectionLabel" for="selectionTranslationMode" data-i18n="enableSelectionTranslation">Enable Selection Translation</label>
@@ -243,8 +261,8 @@
 
           <div class="toggle-group">
             <label class="toggle-label">
-              <span data-i18n="autoDetectLanguage">Auto Detect Language</span>
-              <input type="checkbox" id="autoDetect" checked>
+              <span data-i18n="skipTargetLanguageText">Skip text already in the target language</span>
+              <input type="checkbox" id="skipTargetLanguageText" checked>
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -634,6 +652,7 @@
 
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
+  <script src="../shared/default-settings.js"></script>
   <script src="../shared/ocr.js"></script>
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->
