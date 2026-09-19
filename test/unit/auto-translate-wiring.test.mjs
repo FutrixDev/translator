@@ -201,7 +201,7 @@ test('挤不进观察器的块要记在一边，不能扔', () => {
   // 三条把位置还给 deferred 的路：进带即摘腾出位置、读者一跃跳走、重排换人。
   // 缺一条就有一类页面翻不全。
   assert.match(discover, /function unwatch\(element\) \{[\s\S]*?scheduleRebalance\(\);/);
-  assert.match(discover, /function onScroll\(\) \{[\s\S]*?scheduleRebalance\(\);/);
+  assert.match(discover, /function onScroll\(event\) \{[\s\S]*?scheduleRebalance\(\);/);
   assert.match(discover, /deferred\.delete\(entry\.element\);\s*observed\.add\(entry\.element\);\s*bandObserver\.observe\(entry\.element\);/);
   // 停掉时两个集合都要清，滚动监听也要摘。
   assert.match(discover, /deferred\.clear\(\);/);
@@ -238,4 +238,30 @@ test('换页要让页面语言的缓存过期，且这件事归引擎自己管',
     isolated.indexOf('shared/spa-navigation.js') < isolated.indexOf('content/content-translation-engine.js'),
     'shared/spa-navigation.js 必须排在 content-translation-engine.js 前面'
   );
+});
+
+test('跳转这道门量的是真正在滚的那个容器，不是 window', () => {
+  const discover = code('content/content-auto-discover.js');
+  // 候选长在内部滚动容器里（侧栏、自己滚的信息流）时，滚它一样会派发到这个捕获
+  // 监听上，但 window.scrollY 一动不动。门若只看 window，超出观察上限的那一截就
+  // 永远卡在 deferred 里 —— 留下的块没有一个会进带，也没有别的路会排重排。
+  assert.match(discover, /const target = scrollTargetOf\(event\);/);
+  assert.doesNotMatch(discover, /const now = window\.scrollY;/);
+  // 门槛取这个容器自己的一屏高，位置取它自己的 scrollTop。
+  assert.match(discover, /return target === document \? window\.scrollY : target\.scrollTop;/);
+  assert.match(discover, /return target\.clientHeight \|\| 0;/);
+  // 页面滚动的 target 在各家浏览器里是 document / documentElement / scrollingElement，
+  // 不归一成一个键的话，同一次滚动会分记两份记号，两份都到不了门槛。
+  assert.match(discover, /target === document\.scrollingElement \|\| target === document\.documentElement/);
+  // 记号按容器分开存，且存在 WeakMap 里 —— 容器是页面自己的节点，页面删掉它之后
+  // 这里不该拦着不放。
+  assert.match(discover, /let scrollMarks = new WeakMap\(\);/);
+  assert.match(discover, /scrollMarks\.set\(target, now\);/);
+  // 没见过的容器按「停在 0」算。改成「第一次先记下、这一次不算」就会吞掉一次跳转：
+  // 一次跳转只派发一个 scroll 事件，那一次正好就是第一次。
+  assert.match(discover, /const mark = scrollMarks\.get\(target\) \|\| 0;/);
+  // 这个模块的包装是 (function () {，里面没有 root 这个绑定 —— 写 root 就是每次
+  // 滚动抛一次 ReferenceError，而页面上看不出来。
+  assert.match(discover, /^\(function \(\) \{/m);
+  assert.doesNotMatch(discover, /target === root/);
 });

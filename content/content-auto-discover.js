@@ -129,7 +129,9 @@
     let collapsed = false;
     let timer = null;
     let rebalanceTimer = null;
-    let rebalanceScrollY = 0;
+    // 各个滚动容器上一次「跨过一屏」时停在哪儿。页面本身的滚动记在 document 名下。
+    // WeakMap：容器是页面自己的节点，页面把它删掉之后这里不该拦着不放。
+    let scrollMarks = new WeakMap();
     let suspended = false;
     let stopped = false;
 
@@ -224,10 +226,46 @@
     // 只认「跳」，不认「滚」：一屏之内的滚动本来就会让块进带、把位置让出来，
     // 那条路已经会排重排了。不加这道门的话，长文里每一次连续滚动都要多量一遍
     // 全体候选的几何 —— 白做，而且正好做在读者滚得最快的时候。
-    function onScroll() {
+    //
+    // **量的是真正在滚的那个东西，不是 window。** 候选常常长在一个内部滚动容器里
+    // （侧栏、面板、自己滚的信息流）：滚它一样会派发到这个捕获监听上，但
+    // `window.scrollY` 一动不动，于是这道门永远关着。那种页面上超出观察上限的那
+    // 一截就此卡在 deferred 里 —— 留下的块没有一个会进带，也就没有别的路会排重排。
+    //
+    // 门槛取这个容器自己的一屏高。记号在跨过门槛时才更新，所以连续滚动最多每滚过
+    // 一屏排一次重排，和页面滚动那条路是同一个节奏。
+    function scrollTargetOf(event) {
+      const target = event && event.target;
+      // 页面滚动的 target 是 document，有的浏览器给 documentElement —— 归一成前者，
+      // 否则同一次滚动会在两个键下各记一份记号，两份都到不了门槛。
+      if (!target || target === window || target === document) return document;
+      if (target === document.scrollingElement || target === document.documentElement) return document;
+      if (target.nodeType !== 1) return document;
+      return target;
+    }
+
+    function scrollOffsetOf(target) {
+      return target === document ? window.scrollY : target.scrollTop;
+    }
+
+    function scrollSpanOf(target) {
+      if (target === document) return window.innerHeight || document.documentElement.clientHeight || 0;
+      return target.clientHeight || 0;
+    }
+
+    function onScroll(event) {
       if (deferred.size === 0) return;
-      const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      if (Math.abs(window.scrollY - rebalanceScrollY) < height) return;
+      const target = scrollTargetOf(event);
+      const span = scrollSpanOf(target);
+      // 一屏都量不出来（藏着的、折叠的容器），没有「跳」可言。
+      if (span <= 0) return;
+      const now = scrollOffsetOf(target);
+      // 没见过的容器按「停在 0」算，和页面滚动那条路一样（容器本来就从 0 开始）。
+      // 不能改成「第一次先记下、这一次不算」：一次跳转只派发一个 scroll 事件，
+      // 那一次正好就是第一次 —— 门就永远等不到第二次来开。
+      const mark = scrollMarks.get(target) || 0;
+      if (Math.abs(now - mark) < span) return;
+      scrollMarks.set(target, now);
       scheduleRebalance();
     }
 
@@ -248,7 +286,6 @@
     function rebalance() {
       rebalanceTimer = null;
       if (stopped) return;
-      rebalanceScrollY = window.scrollY;
 
       // 离开文档的直接扔 —— 观察器的强引用真正会漏的就是这一部分。
       for (const element of [...observed]) if (!element.isConnected) drop(observed, element);
@@ -353,7 +390,7 @@
         rebalanceTimer = null;
       }
       window.removeEventListener('scroll', onScroll, SCROLL_LISTENER);
-      rebalanceScrollY = 0;
+      scrollMarks = new WeakMap();
       dirtyRoots.clear();
       observed.clear();
       deferred.clear();

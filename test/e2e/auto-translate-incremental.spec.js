@@ -83,3 +83,94 @@ test('auto translation: only what the reader is near gets translated, and later 
     await close();
   }
 });
+
+// 发现层同时观察的块有上限（MAX_OBSERVED = 2000）：IntersectionObserver 持强引用，
+// 无限滚动的页面能滚出几万个块，全挂着就是一条永不释放的引用链。超出的那些进
+// deferred，等位置让出来时按离视口远近换进来。
+//
+// 这条 spec 钉的是「换进来」这件事在**内部滚动容器**里也成立。候选常常长在一个自己
+// 滚的容器里（侧栏、面板、信息流），那种页面上滚它不会改变 window.scrollY —— 只量
+// window 的话，超出上限的那一截就永远卡在 deferred 里：留下的块一个都没进带，没有
+// 别的路会排重排，读者跳到那儿看到的是一片原文，而且再也不会变。
+// 「这一轮停下来了」= 连着一秒多没有新的请求发出去。
+//
+// 跳转之前必须先停稳。发现层在装载时就排了一次重排（把 deferred 里离视口最近的
+// 换上来），那个 400ms 的定时器要是正好落在跳转之后才去量几何，量到的就是跳完的
+// 位置 —— 于是最后一条会被那次重排顺手捎上，滚动监听整个坏掉也照样通过。用例就
+// 什么都证不了了。
+async function waitUntilQuiet(read, { quietMs = 1200, timeoutMs = 30000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let last = read();
+  let since = Date.now();
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const now = read();
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+      continue;
+    }
+    if (Date.now() - since >= quietMs) return;
+  }
+  throw new Error('页面一直没停下来');
+}
+
+const CAP_TARGET = 'The final entry was written the night the lamp was decommissioned for good.';
+const FILLER_COUNT = 2100;
+
+function overflowPage() {
+  const fillers = [];
+  for (let i = 0; i < FILLER_COUNT; i++) {
+    fillers.push(`<div><p>Index entry ${i}: the keeper noted the wind, the tide and the colour of the sky.</p></div>`);
+  }
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Keeper's index</title></head>
+<body>
+  <div id="scroller" style="height:600px;overflow-y:auto">
+    ${fillers.join('\n    ')}
+    <div id="cap-box"><p id="cap-target">${CAP_TARGET}</p></div>
+  </div>
+</body></html>`;
+}
+
+test('auto translation: past the observer cap, a jump inside a scrolling container still brings content in', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  // 这一段是整套里唯一会走到滚动监听那几行的地方 —— 那里任何一个拼错的标识符都是
+  // 每次滚动抛一次，而页面上看不出来。
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(String(error)));
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+      siteRules: { 'auto.test': 'always' },
+    });
+    await context.route(`${ORIGIN}/**`, (route) => {
+      route.fulfill({ status: 200, contentType: 'text/html', body: overflowPage() });
+    });
+
+    await page.goto(`${ORIGIN}/index`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    // 容器顶上那几条先翻好，说明这一轮跑完了。最后那一条此刻在 deferred 里。
+    await page.waitForSelector('#scroller .ai-translator-inline-block', { timeout: 30000 });
+    await waitUntilQuiet(() => sentTexts.length);
+    expect(sentTexts.join('\n')).not.toContain(CAP_TARGET);
+
+    // —— 一跃到底。滚的是容器，window.scrollY 一动不动 ——
+    await page.evaluate(() => {
+      const el = document.getElementById('scroller');
+      el.scrollTop = el.scrollHeight;
+    });
+
+    await page.waitForSelector('#cap-box .ai-translator-inline-block', { timeout: 30000 });
+    await expect(page.locator('#cap-box .ai-translator-inline-block')).toContainText(CAP_TARGET);
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await close();
+  }
+});
