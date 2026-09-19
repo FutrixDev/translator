@@ -562,6 +562,11 @@
         const allowDownload = options.allowDownload === true
           || (options.allowDownload !== false && !!navigator.userActivation?.isActive);
         if (!allowDownload) {
+          // 这一页确实要这个包、这个包确实不在本地 —— 比加载时那次探测更硬的证据，
+          // 且 src/tgt 现成。挂上预取，用户下一次点击就把它取回来。
+          // 不排除 iframe：iframe 里的点击落在 iframe 自己的 window 上，顶层那份
+          // 监听收不到；这条路不用探测，多挂一份不花任何往返。
+          if (ctx.armLanguagePackPrefetch) ctx.armLanguagePackPrefetch(src, tgt);
           throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
         }
       }
@@ -572,6 +577,8 @@
       translator = await getTranslator(src, tgt, needsDownload);
     } catch (error) {
       if (isActivationError(error)) {
+        // 手势过期了（activation 只有几秒，前面那几次 IPC 就能耗掉）。同上：挂预取。
+        if (ctx.armLanguagePackPrefetch) ctx.armLanguagePackPrefetch(src, tgt);
         throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
       }
       if (error instanceof TimeoutError) {
@@ -770,82 +777,6 @@
     return chrome.runtime.sendMessage(message);
   };
 
-  // ==================== 语言包预取 ====================
-
-  // 首次翻译要等几十 MB 的语言包，这份等待是可以挪走的：create() 只要求 user
-  // activation，不要求这次 activation 是“为了翻译”产生的。所以在页面加载后先把
-  // 语言对探好，再挂一个一次性监听，用户在页面上的第一次点击或按键就顺手把包拉下来。
-  // 等他真的去点翻译时，包多半已经在本地了。
-  //
-  // 代价是：用户可能从没打算在这个页面上翻译，包却下了。只在“这个页面的语言对
-  // 确实还没下载”时才做，一个语言对一辈子只有一次，权衡下来是值的。
-  async function setupLanguagePackPrefetch() {
-    // iframe 里的语言对和主文档一样，跟着做纯属重复。
-    if (window.top !== window) return;
-    if (!shouldUseBuiltin()) return;
-
-    let src;
-    let tgt;
-    try {
-      tgt = toApiLang(settings.targetLang);
-      if (!tgt || !SUPPORTED_LANGS.has(tgt)) return;
-      src = toApiLang(await getPageSourceLang());
-      if (!src || !SUPPORTED_LANGS.has(src) || src === tgt) return;
-      // downloadable 才需要预取；available 已就绪，downloading 说明别处已经在下了。
-      const status = await probeAvailability(src, tgt);
-      if (status !== 'downloadable') return;
-    } catch (error) {
-      return;
-    }
-
-    // 探测放在挂监听之前，是为了让手势回调里只剩一次 create()：
-    // activation 是有时效的（几秒），中间夹着 IPC 会把它耗掉。
-    const onGesture = () => {
-      window.removeEventListener('pointerdown', onGesture, true);
-      window.removeEventListener('keydown', onGesture, true);
-      // 静默进行。这不是用户点出来的翻译，不该去占用进度条；失败也不弹提示，
-      // 等他真的发起翻译时，那条路自己会重试并给出说明。
-      getTranslator(src, tgt, true).then(() => {
-        // 包刚落地。自动翻译那一轮很可能已经因为 builtinNeedsDownload 停在
-        // ERROR 上了 —— 它不会自己再试，而这一刻正是这一页唯一变好的时刻。
-        notifyLanguagePackReady({ sourceLang: src, targetLang: tgt });
-      }).catch((error) => {
-        console.info('Blab Translation: language pack prefetch failed', error);
-      });
-    };
-    window.addEventListener('pointerdown', onGesture, true);
-    window.addEventListener('keydown', onGesture, true);
-  }
-
-  // 「一个原本要下载的语言包，刚刚装好了」。
-  //
-  // 新装机走默认设置（translationEngine: 'builtin'、engineFallback: 'local-only'）
-  // 打开一个英文页面时，自动翻译那一轮没有 user activation，明确传
-  // allowDownload: false，于是每一批都拿回 builtinNeedsDownload；攒够三次，调度
-  // 层判定这一页整体失败，停在 ERROR 并关掉发现层。它不会自己重试 —— 那条规矩
-  // 是对的（在一个明显坏掉的接口上重试就是烧钱），可这一次「坏」的原因偏偏是会
-  // 自己好的：用户在页面上的第一次点击或按键就把包拉下来了。没有这条通知，那一页
-  // 要一直空着，直到刷新、跳转或者改一次设置。
-  //
-  // 只有预取这一条路会发：它是这个内容脚本里唯一**先确认过「这个语言对还没下」**
-  // 、然后真的把它下下来的地方。（设置页那颗下载按钮走的是 ensureDownloaded，
-  // 跑在 options 页自己的上下文里，通知不到已经开着的标签页 —— 那是 PR-10 的事。）
-  const languagePackListeners = new Set();
-
-  function onLanguagePackReady(fn) {
-    if (typeof fn === 'function') languagePackListeners.add(fn);
-  }
-
-  function notifyLanguagePackReady(pair) {
-    for (const fn of languagePackListeners) {
-      try {
-        fn(pair);
-      } catch (error) {
-        console.warn('Blab Translation: language pack listener failed', error);
-      }
-    }
-  }
-
   // ==================== 对外接口 ====================
 
   /**
@@ -862,9 +793,7 @@
     return toApiLang(settings.targetLang) || '';
   }
 
-  ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
   ctx.currentTargetLang = currentTargetLang;
-  ctx.onLanguagePackReady = onLanguagePackReady;
 
   // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
   // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和
@@ -915,6 +844,12 @@
     translate: translateWithBuiltin,
     destroyAll,
 
+    // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
+    // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎
+    // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
+    supportsLang: (code) => SUPPORTED_LANGS.has(code),
+    pageSourceLang: getPageSourceLang,
+
     async availability(sourceLang, targetLang) {
       if (!isBuiltinSupported()) return 'unavailable';
       const src = toApiLang(sourceLang);
@@ -930,8 +865,10 @@
     },
 
     /**
-     * 下载并就绪某个语言对。只应由设置页的按钮调用——那里有真实的用户手势
-     * （create() 触发下载要求 user activation），也有地方把进度显示出来。
+     * 下载并就绪某个语言对。只应在**真实的用户手势里**调用——create() 触发下载
+     * 要求 user activation。两个调用方：设置页那颗按钮（有地方显示进度），和
+     * content/content-language-pack.js 的预取（借用户在页面上的第一次点击，静默
+     * 进行，不传 onProgress）。
      */
     async ensureDownloaded(sourceLang, targetLang, onProgress) {
       if (!isBuiltinSupported()) {

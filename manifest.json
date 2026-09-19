@@ -78,6 +78,7 @@
         "content/content-language.js",
         "content/content-speech.js",
         "content/content-translation-engine.js",
+        "content/content-language-pack.js",
         "content/content-translation-cache.js",
         "content/content-caption-providers.js",
         "content/content-caption-controls.js",

@@ -246,13 +246,37 @@
     return getLangBase(topLang.language);
   }
 
-  async function isTargetLanguageText(text) {
-    const targetBase = getLangBase(getEffectiveTargetLang());
+  // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。
+  //
+  // 两个读数，都要，且必须取自同一时刻：
+  //
+  //   request —— 发给引擎的那一门。getEffectiveTargetLang 会把「跟随浏览器」补成
+  //              具体语言，因为请求里非填一个不可。
+  //   stamp   —— 记进译文身份的那一门。currentTargetLang 的空串**就是**「跟随浏
+  //              览器」这个哨兵，登记端和比对端同读同写，补了反而对不上。
+  //
+  // 为什么不各用各的、现用现问：用户在一轮翻译跑到一半时改了目标语言，早发出去
+  // 的那几批拿回来的是旧语言的译文，现问就会给它们盖上新语言的戳；下一轮一看
+  // 「语言没变」把这些块全跳过，旧语言的译文就永远留在页面上了。反过来（请求用
+  // 新的、戳按旧的）只是白翻一轮，不会留下错的东西 —— 但两个读数同源，两种都
+  // 不会发生：这一轮整个是旧语言的，改设置由 RESTART_KEYS 另起一轮来接。
+  function passTarget() {
+    return {
+      request: getEffectiveTargetLang(),
+      stamp: ctx.currentTargetLang ? ctx.currentTargetLang() : null
+    };
+  }
+
+  // 默认现问设置，是给**一轮开跑之前**的那个调用点留的（filterBlocksByLanguage：
+  // 那时候还没有「这一轮」，现问就是对的）。一轮之内的调用一律把 target.request
+  // 传进来 —— 那一门在开跑时就定死了，见 passTarget。
+  async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
+    const targetBase = getLangBase(targetLang);
     if (!targetBase) return false;
     return (await detectReliableLanguage(text)) === targetBase;
   }
 
-  async function shouldSkipTranslation(block, translation) {
+  async function shouldSkipTranslation(block, translation, target) {
     const normalizedOriginal = ctx.normalizeComparableText(block.text);
     const normalizedTranslation = ctx.normalizeComparableText(translation);
 
@@ -268,7 +292,7 @@
 
     try {
       if (!settings.skipTargetLanguageText) return false;
-      return await isTargetLanguageText(block.text);
+      return await isTargetLanguageText(block.text, target.request);
     } catch (error) {
       console.warn('Blab Translation: Language detection failed', error);
       return false;
@@ -282,8 +306,10 @@
   // 把它放在后面意味着「已经作废的请求」还要多花一次判定。但顺序反过来，两者
   // 之间那次 await 又给了页面一个变动的窗口 —— 校验必须是插入前的最后一件事，
   // 这点比省一次本地判定重要。
-  async function insertTranslation(block, translation, { accept, onSettled } = {}) {
-    if (await shouldSkipTranslation(block, translation)) {
+  async function insertTranslation(
+    block, translation, { accept, onSettled, target = passTarget() } = {}
+  ) {
+    if (await shouldSkipTranslation(block, translation, target)) {
       // 模型把原文原样还回来了 —— 这一块本来就不用翻。这和「翻好了」一样是**终局**，
       // 所以同样要报出去：自动翻译那一层据此记账，不报的话它下一轮还会被送出来，
       // 再花一次同样的钱，永远如此。
@@ -291,7 +317,7 @@
       return;
     }
     if (accept && !accept(block)) return;
-    ctx.insertTranslationBlock(block, translation);
+    ctx.insertTranslationBlock(block, translation, { lang: target.stamp });
     if (onSettled) onSettled(block);
   }
 
@@ -300,31 +326,39 @@
   // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
   // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
   // 最坏是某一块拿不到译文而保持原文。
-  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept, allowDownload, onSettled } = {}) {
+  // target 不传就现读一门：这个函数是导出的（ctx.applyFastBatchTranslations），
+  // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
+  async function applyFastBatchTranslations(
+    batch, translations,
+    { onFailure, isAborted, accept, allowDownload, onSettled, target = passTarget() } = {}
+  ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled, target });
       return;
     }
 
     await Promise.all(translations.map(async (translation, i) => {
       if (!batch[i] || !translation) return;
-      await insertTranslation(batch[i], translation, { accept, onSettled });
+      await insertTranslation(batch[i], translation, { accept, onSettled, target });
     }));
   }
 
-  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload = true, onSettled } = {}) {
+  async function translateBlocksOneByOne(
+    batch,
+    { onFailure, isAborted, accept, allowDownload = true, onSettled, target = passTarget() } = {}
+  ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
         const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: [block.text],
-          targetLang: getEffectiveTargetLang(),
+          targetLang: target.request,
           delimiter: DELIMITER,
           allowDownload
         });
@@ -337,7 +371,7 @@
           ? response.translations[0]
           : null;
         if (!translation) continue;
-        await insertTranslation(block, translation, { accept, onSettled });
+        await insertTranslation(block, translation, { accept, onSettled, target });
       } catch (error) {
         // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
         if (isExtensionContextInvalidated(error)) throw error;
@@ -388,6 +422,8 @@
     // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
     // needsDownload 那条回落路 —— 和悬停、字幕这两条同样没有手势的路一致。
     const allowDownload = options.allowDownload !== false;
+    // 这一轮的目标语言，只在这里读一次。见 passTarget。
+    const target = passTarget();
     const total = blocks.length;
     let done = 0;
 
@@ -460,7 +496,7 @@
           const response = await requestBatch({
             type: 'TRANSLATE_BATCH_FAST',
             texts: sb.map(x => x.text),
-            targetLang: getEffectiveTargetLang(),
+            targetLang: target.request,
             delimiter: DELIMITER,
             allowDownload
           });
@@ -495,7 +531,7 @@
 
       const combined = translations.join('');
       if (!combined.trim()) return;
-      await insertTranslation(block, combined, { accept, onSettled });
+      await insertTranslation(block, combined, { accept, onSettled, target });
     };
 
     // 使用 Promise 池进行并发控制
@@ -523,7 +559,7 @@
         const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: texts,
-          targetLang: getEffectiveTargetLang(),
+          targetLang: target.request,
           delimiter: DELIMITER,
           allowDownload
         });
@@ -539,7 +575,8 @@
             onFailure: noteBatchFailure,
             isAborted: aborted,
             accept,
-            onSettled
+            onSettled,
+            target
           });
         }
       } catch (error) {

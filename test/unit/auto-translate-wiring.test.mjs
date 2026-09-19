@@ -71,7 +71,7 @@ test('译文写回页面只有一个入口 —— 迟到校验才不会漏在某
   const calls = source.match(/ctx\.insertTranslationBlock\(/g) || [];
   assert.equal(calls.length, 1, '三条插入路径都要走 insertTranslation()');
   // 签名本身由「台账等结果再记」那一条钉住（它还要求同一个口子报 onSettled）。
-  assert.match(source, /async function insertTranslation\(block, translation, \{/);
+  assert.match(source, /async function insertTranslation\(\s*\n\s*block, translation, \{/);
   assert.match(source, /if \(accept && !accept\(block\)\) return;/);
 });
 
@@ -280,8 +280,11 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   assert.match(identity, /lang: entry && entry\.lang != null \? String\(entry\.lang\) : null,/);
 
   // 登记的那一刻记下译成了哪门语言，就在唯一的登记口（managed 和普通两条插入路
-  // 径都经过它）。
-  assert.match(code('content/page/insert.js'), /lang: ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/);
+  // 径都经过它）。语言是**带进来**的，不是在那里现问的 —— 见下面「一轮翻译只认
+  // 一门语言」。
+  const insert = code('content/page/insert.js');
+  assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang\)/);
+  assert.doesNotMatch(insert, /currentTargetLang/);
   // 两个问「这块还算翻过吗」的地方都要带上目标语言。
   assert.match(code('content/page/collect.js'), /identity\.isStale\(element, identity\.fingerprint\(readSourceText\(element\)\), target\)/);
   assert.match(code('content/content-auto-translate.js'), /identity\.isStale\(element, textFingerprint, target\)/);
@@ -299,7 +302,7 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 「这一块有结果了」只有翻译层知道，而且要在唯一的写回口报 —— 模型把原文原样
   // 还回来（不用翻）和真的写回去了，同样是终局，漏报哪一种都会让那一块下一轮再
   // 花一次同样的钱。
-  assert.match(batch, /async function insertTranslation\(block, translation, \{ accept, onSettled \} = \{\}\)/);
+  assert.match(batch, /async function insertTranslation\(\s*\n\s*block, translation, \{ accept, onSettled, target = passTarget\(\) \} = \{\}\s*\n\s*\)/);
   assert.equal((batch.match(/if \(onSettled\) onSettled\(block\);/g) || []).length, 2);
   assert.match(batch, /const onSettled = typeof options\.onSettled === 'function' \? options\.onSettled : null;/);
 
@@ -393,21 +396,23 @@ test('这一轮没结果的块放回队列，但只放一次', () => {
 });
 
 test('语言包装好了，停在错误上的那一页要自己活过来', () => {
-  const engine = code('content/content-translation-engine.js');
+  const pack = code('content/content-language-pack.js');
   // 预取是这个内容脚本里唯一「先确认过没下、然后真的把它下下来」的地方，
-  // 所以通知从那里发 —— 而且只在 create() 真的成功之后。
-  assert.match(engine, /notifyLanguagePackReady\(\{ sourceLang: src, targetLang: tgt \}\)/);
-  assert.match(engine, /ctx\.onLanguagePackReady = onLanguagePackReady;/);
+  // 所以通知从那里发 —— 而且只在下载真的成功之后。
+  assert.match(pack, /notifyLanguagePackReady\(\{ sourceLang: src, targetLang: tgt \}\)/);
+  assert.match(pack, /ctx\.onLanguagePackReady = onLanguagePackReady;/);
   // 监听器自己抛不能把别的监听器带走。
-  assert.match(engine, /function notifyLanguagePackReady\([\s\S]*?try \{[\s\S]*?\} catch/);
+  assert.match(pack, /function notifyLanguagePackReady\([\s\S]*?try \{[\s\S]*?\} catch/);
 
   const auto = code('content/content-auto-translate.js');
   // 调度层订阅，并且走 start() —— 它会把 broken 放掉、重新判、重新扫。只作废不
   // 重扫的话那些块进带时已经被摘了，页面就一直空着。
   assert.match(auto, /ctx\.onLanguagePackReady\(\(\) => start\('language-pack'\)\)/);
+  // 这个文件漏在 manifest 外面，init() 里那句订阅会当场 TypeError —— 响是响，
+  // 但整个初始化就断在那儿了，所以这一条直接钉住它在不在名单里。
   assert.ok(
-    isolated.indexOf('content/content-translation-engine.js') < isolated.indexOf('content/content-auto-translate.js'),
-    'content-translation-engine.js 必须排在 content-auto-translate.js 前面'
+    isolated.includes('content/content-language-pack.js'),
+    'content-language-pack.js 必须在 manifest 的内容脚本名单里'
   );
 });
 
@@ -418,4 +423,84 @@ test('没有布局盒子的候选排在最后，而不是和视口里的并列',
   assert.match(discover, /if \(rect\.width === 0 && rect\.height === 0\) return Infinity;/);
   // Infinity - Infinity 是 NaN，而返回 NaN 的比较函数排出来的顺序没有定义。
   assert.match(discover, /ranked\.sort\(\(a, b\) => \(a\.away === b\.away \? 0 : a\.away - b\.away\)\);/);
+});
+
+// ---- 一轮翻译只认一门语言 ------------------------------------------------
+//
+// 用户在一轮跑到一半时改了目标语言：早发出去的那几批拿回来的是**旧**语言的译文，
+// 而落笔那一刻现问设置，问到的是**新**语言。旧译文盖上新戳，下一轮收集端一看
+// 「语言没变」把这些块全跳过 —— 那一块永远停在旧语言上，页面上还看不出异样。
+//
+// 所以目标语言在 runTranslationPass 开跑时读一次，之后一路带着走。改设置不靠这
+// 一轮去追，靠 RESTART_KEYS 另起一轮（见上面那条）。
+test('一轮翻译只读一次目标语言，然后一路带到落笔', () => {
+  const batch = code('content/page/batch.js');
+
+  // 两个读数在同一个地方、同一时刻取。
+  assert.match(batch, /function passTarget\(\) \{[\s\S]*?request: getEffectiveTargetLang\(\)[\s\S]*?stamp: ctx\.currentTargetLang/);
+  // 这一轮只在开跑时取一次。
+  assert.match(batch, /const target = passTarget\(\);/);
+
+  // 发请求的三个地方（分批 / 逐块回退 / 超大块）全用这一轮定下的那门语言，
+  // 没有一个还在现问。
+  assert.equal((batch.match(/targetLang: target\.request,/g) || []).length, 3);
+  assert.doesNotMatch(batch, /targetLang: getEffectiveTargetLang\(\)/);
+
+  // 落笔时把它交给唯一的登记口。
+  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp \}\)/);
+  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null \} = \{\}\)/);
+
+  // 「这块是不是本来就已经是目标语言」也要按这一轮的那门语言问，否则同一轮里
+  // 前后两批会按两门语言判该不该跳过。
+  assert.match(batch, /isTargetLanguageText\(block\.text, target\.request\)/);
+});
+
+// ---- 语言包预取要跟着语言对走 --------------------------------------------
+//
+// 预取是一次性监听：挂的时候记的是「为哪个语言对挂的」。用户换目标语言、换引擎、
+// 或者单页应用翻到一篇别的语言的文章之后，挂着的那一对就过期了 —— 而一个带着过期
+// 语言对的监听比没有更糟：用户的下一次点击会把**别的**包下下来，真正缺的那个永远
+// 没人下。
+test('语言包预取记着自己是为哪个语言对挂的，过期了要换掉', () => {
+  const engine = code('content/content-translation-engine.js');
+  const pack = code('content/content-language-pack.js');
+
+  // 同一时刻只有一份，换语言对时先摘掉旧的。
+  assert.match(pack, /let armedPrefetch = null;/);
+  assert.match(pack, /function armLanguagePackPrefetch\(src, tgt\)/);
+  assert.match(pack, /if \(armedPrefetch && armedPrefetch\.src === src && armedPrefetch\.tgt === tgt\) return;/);
+  assert.match(pack, /disarmLanguagePackPrefetch\(\);\s*\n\s*const onGesture/);
+  // 预取只走引擎的公开面。伸手进去拿内部实现，这个文件就白拆了。
+  assert.doesNotMatch(pack, /SUPPORTED_LANGS|getTranslator\(|probeAvailability\(/);
+
+  // 真正撞上「缺这个包」的时候就地挂上 —— 那一刻 src/tgt 是现成的，换语言、换
+  // 引擎、路由切换三种过期情形全由它接住，一次多余的探测往返都不花。
+  // 只数真实翻译那条路上的。设置页那颗下载按钮（ensureDownloaded）跑在 options
+  // 页自己的上下文里，那里没有要翻的页面，挂预取没有意义。
+  const translatePath = engine.slice(
+    engine.indexOf('async function translateWithBuiltin'),
+    engine.indexOf('async ensureDownloaded')
+  );
+  const armedBeforeThrow = translatePath.match(
+    /ctx\.armLanguagePackPrefetch\(src, tgt\);\s*\n\s*throw new EngineUnavailableError\(ENGINE_REASONS\.NEEDS_DOWNLOAD\);/g
+  ) || [];
+  const needsDownloadThrows = translatePath.match(
+    /throw new EngineUnavailableError\(ENGINE_REASONS\.NEEDS_DOWNLOAD\);/g
+  ) || [];
+  assert.equal(needsDownloadThrows.length, 2, 'NEEDS_DOWNLOAD 的抛出点应当正好两处');
+  assert.equal(armedBeforeThrow.length, 2, '每一处「缺包」都要就地把预取挂上');
+
+  // 手势真的来了，还要再确认一次这一对没过期：挂上之后、点下去之前，用户仍然
+  // 可能改掉目标语言。
+  assert.match(pack, /if \(downloadTargetLang\(\) !== tgt\) return;/);
+  // 预取要的是「真能下下来的那个包」，所以补 navigator.language；身份戳那一门
+  // 不补（空串是哨兵）。两者不能合并。
+  assert.match(pack, /function downloadTargetLang\(\)[\s\S]*?toApiLang\(ctx\.getEffectiveTargetLang/);
+  // 挂的时候问的和触发的时候问的必须是同一个问题：划词/输入框弹窗上那个一次性
+  // 的语言下拉能让一次翻译用上跟设置不同的目标语言，那一对挂上去只会被手势那道
+  // 门拒掉，还顺手顶掉真正该挂的那一对。且这道门要挡在 disarm 之前。
+  assert.match(
+    pack,
+    /if \(tgt !== downloadTargetLang\(\)\) return;\s*\n\s*if \(armedPrefetch &&[\s\S]*?\n\s*disarmLanguagePackPrefetch\(\);/
+  );
 });
