@@ -95,12 +95,17 @@
       });
     }
 
-    function start() {
+    /**
+     * 重新判这一页，从头扫一遍。
+     *
+     * **一进来就翻篇**：在途的那一轮跑完后会拿自己那一代的号去对，对不上就什么
+     * 都不改。bump 要是留给各个调用点自己记，漏一个就是一次「旧结果覆盖新判定」
+     * —— 而那条路上没有任何报错，只有页面一直空着或者语言再也探不出来。
+     */
+    function start(why) {
+      bumpSession(why || 'start');
       stopDiscovery();
       clearSample();
-      queue.clear();
-      tickets.clear();
-      ledger.clear();
       broken = false;
       lastError = null;
       langResolved = false;
@@ -155,6 +160,9 @@
       const text = sampleText;
       clearSample();
 
+      // 探语言也是一次 await。期间换了路由的话，start() 把新的一页也放回了
+      // PENDING —— 只看状态的话，上一页的语言会被拿来判这一页。
+      const session = guard.version();
       let lang = null;
       try {
         // 和「这一段已经是目标语言了」用的是同一个判定和同一个阈值
@@ -163,7 +171,8 @@
       } catch (error) {
         console.warn('Blab Translation: auto language detection failed', error);
       }
-      if (status !== STATUS.PENDING) return;  // 期间被暂停、换了路由或改了设置
+      // 期间被暂停、换了路由或改了设置。
+      if (guard.version() !== session || status !== STATUS.PENDING) return;
 
       pageLang = lang;
       const final = resolve(lang);
@@ -355,7 +364,7 @@
 
     function resumeCurrentPage() {
       if (status !== STATUS.PAUSED && status !== STATUS.ERROR) return;
-      start();
+      start('resume');
     }
 
     /**
@@ -370,14 +379,13 @@
       if (!ctx.settings.autoTranslate) return;
       if (explicit) return;
       explicit = true;
-      start();
+      start('explicit');
     }
 
     function onRouteChange(change) {
-      bumpSession(`route:${change && change.via}`);
       // 新的一页，用户还没表过态。
       explicit = false;
-      start();
+      start(`route:${change && change.via}`);
     }
 
     // 这几个键一变，这一页要从头来过：代次翻篇作废在途的结果，start() 重新判、
@@ -386,17 +394,15 @@
     const RESTART_KEYS = ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine'];
 
     function onSettingsChanged(changes) {
-      // 目标语言或引擎变了，在途的那些译文是按旧设置要来的。
-      if ('targetLang' in changes || 'translationEngine' in changes) {
-        bumpSession('settings');
-      }
-      // 用户自己喊停的页面不该因为改了个设置就又动起来。
+      if (!RESTART_KEYS.some((key) => key in changes)) return;
+      // 用户自己喊停的页面不该因为改了个设置就又动起来。它的在途结果在喊停那一刻
+      // 就已经作废了。
       if (status === STATUS.PAUSED) return;
-      if (RESTART_KEYS.some((key) => key in changes)) start();
+      start('settings');
     }
 
     globalThis.SpaNavigation.onRouteChange(onRouteChange);
-    start();
+    start('load');
 
     return {
       state: () => ({

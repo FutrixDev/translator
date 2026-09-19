@@ -349,7 +349,7 @@ globalThis.SpaNavigation = {
 会为页面自己的 `pushState` 触发。轮询是兜底，这一路成不成立都不影响正确性，只影响
 「多快发现」；而要确认它需要一个真实 SPA 的 e2e，那正是 PR-6 的路由重译旅程。
 
-### 2.6 `content/content-auto-discover.js` — 发现层（约 260 行）
+### 2.6 `content/content-auto-discover.js` — 发现层（落地 374 行，注释占一半）
 
 ```js
 ctx.setupAutoDiscovery = function ({ onCandidates }) {
@@ -383,7 +383,7 @@ ctx.setupAutoDiscovery = function ({ onCandidates }) {
 **characterData 的成本**：页面上的计数器、时钟会持续触发。缓解就在第 4 步的 hash 比较：
 文本没变就地丢弃，不进队列。这一步是 O(文本长度) 的 FNV，可接受。
 
-### 2.7 `content/content-auto-translate.js` — 调度层（约 320 行）
+### 2.7 `content/content-auto-translate.js` — 调度层（落地 430 行，注释占一半）
 
 ```js
 ctx.setupAutoTranslate = function () {};   // 由 ctx.init 调用
@@ -987,7 +987,7 @@ content-float-ball.js:324         单击 -> toggleFloatMenu（改）
 
 ## 15. 实现与本文的偏离（PR-6 落地时记录）
 
-本文是落地前写的。真写出来时有七处和上文不同 —— 这里逐条记下**为什么**，
+本文是落地前写的。真写出来时有十一处和上文不同 —— 这里逐条记下**为什么**，
 免得后来的人照着上文去"修正"代码，把当时刻意绕开的坑重新踩一遍。
 
 | # | 本文原说 | 实际实现 | 为什么 |
@@ -998,13 +998,24 @@ content-float-ball.js:324         单击 -> toggleFloatMenu（改）
 | 4 | §2.7 `markPageExplicit()` 无条件记录 | 记录前先看 `settings.autoTranslate` | 总开关是关的时候，用户手动翻一次不该让这一页从此"自动"起来 —— 那是把一次动作读成了长期授权。 |
 | 5 | §2.7 `pagehide` 时拆掉观察器 | **不拆** | bfcache：`pagehide` 之后页面可能原样回来，观察器拆了就不会再装。而页面真的走了的时候，整个 JS 环境跟着没了，本来也不用谁来拆。 |
 | 6 | §2.7 状态机 off/pending/idle/running/paused/error | 多一个 **`ask`** | "该问用户"和"还没判完"（`pending`）不是一回事，PR-7 的追问条要认的正是前者。少这一态，状态呈现层只能去猜。 |
-| 8 | — | 自动轮传 `allowDownload: false` |  语言包是几十 MB 的下载，`create()` 触发它要求 user activation。自动这一轮没有手势，硬触发只换回一个 `NotAllowedError`，白等一次创建超时再回落。和悬停、字幕这两条同样无手势的路取齐。 |
 | 7 | — | 自动轮也过 `ctx.filterBlocksByLanguage` | 本文没提，写 e2e 时才发现：`skipTargetLanguageText` 只有手动那条路认。自动这一轮绕过去，就是把用户明确说过不必发的文字一屏一屏替他发出去，而页面上看不出任何异样。由 `auto-translate-wiring.test.mjs` 钉住。 |
+| 8 | — | 自动轮传 `allowDownload: false` |  语言包是几十 MB 的下载，`create()` 触发它要求 user activation。自动这一轮没有手势，硬触发只换回一个 `NotAllowedError`，白等一次创建超时再回落。和悬停、字幕这两条同样无手势的路取齐。 |
+| 9 | §2.6 超过观察上限就**摘掉**多余的块 | 摘下来的进 `deferred`，位置让出来时按远近换人 | 摘掉＝永久丢失：静态长文里读者滚过去既不产生 DOM 变动、也不触发重扫，被摘掉的那一段永远是原文。观察的那 2000 个始终是**离视口最近的**，所以读者必然先经过它们（进带即摘腾出位置）才会走到 `deferred` 那一段；锚点一跃跳过中间全部的情形由一个滚动监听兜底。 |
+| 10 | §2.7 各个重启点自己 `bumpSession()` | `bumpSession()` 收进 `start()` 里 | 漏一个调用点就是一次「旧结果覆盖新判定」，而那条路上没有任何报错 —— 只有页面一直空着或者语言再也探不出来。收进去之后「重判一次」和「翻篇一次」在代码里是同一个动作，漏不掉。 |
+| 11 | — | 探语言的 `await` 前后也要对代次 | 只看 `status === PENDING` 拦不住换路由：`start()` 把新的一页也放回 `PENDING`，于是上一页的语言被拿来判这一页。 |
 
-评审（Codex）在这一轮提了 5 条，全部属实、全部已修：语言包下载手势、虚拟列表回收
-导致的「旧文字配新指纹」、跨代次的状态覆盖、观察器淘汰把首屏摘掉、换引擎不重扫。
-前四条各自都有「页面上看不出异样」的性质 —— 内容是错的、或者页面一直空着，而没有
-任何报错。相应的钉子加在 `auto-translate-wiring.test.mjs`。
+评审（Codex）在 PR #89 上跑了两轮，共 8 条，全部属实、全部已修。
+
+第一轮 5 条：语言包下载手势、虚拟列表回收导致的「旧文字配新指纹」、跨代次的状态
+覆盖、观察器淘汰把首屏摘掉、换引擎不重扫。前四条各自都有「页面上看不出异样」的
+性质 —— 内容是错的、或者页面一直空着，而没有任何报错。
+
+第二轮 3 条，全都是第一轮那几个修法自己带出来的后续，对应上表 9–11。其中第 10 条
+按仓库 CLAUDE.md 的「同一类问题一次修干净」办：不是给漏掉的那个调用点补一行
+`bumpSession()`，而是把它挪进 `start()`，让这一类漏法从此不成立 —— 顺带修掉了
+`markPageExplicit()` 上同样的、还没有人发现的那一处。
+
+相应的钉子加在 `auto-translate-wiring.test.mjs`（现 18 条）。
 
 **PR-6 的三条出口 e2e**（`test/e2e/auto-translate-{basic,incremental,spa}.spec.js`）都做过变异
 验证：把路由接线注释掉，`spa` 第一条挂；把视口带放大到 10000px，`incremental` 挂。

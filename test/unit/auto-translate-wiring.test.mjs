@@ -157,12 +157,29 @@ test('换引擎也要重开一轮 —— 只作废不重扫，页面会一直空
   }
 });
 
-test('观察器淘汰按离视口的远近，不按挂上的先后', () => {
+test('观察器按离视口的远近挑该观察谁，不按挂上的先后', () => {
   const discover = code('content/content-auto-discover.js');
   // 首次全量扫长文时所有元素在同一个任务里挂上，「最早挂上的」正是用户此刻
   // 看着的那一屏。
   assert.match(discover, /function distanceFromViewport\(element\)/);
-  assert.match(discover, /ranked\.sort\(\(a, b\) => b\.away - a\.away\)/);
-  // 同步淘汰是在 IntersectionObserver 还没派发过一次回调的时候就动手。
-  assert.match(discover, /trimTimer = setTimeout\(trim, TRIM_DELAY_MS\)/);
+  // 近的排在前面：留下的是前 MAX_OBSERVED 个。排反了就是把读者眼前那一屏换出去。
+  assert.match(discover, /ranked\.sort\(\(a, b\) => a\.away - b\.away\)/);
+  // 同步重排是在 IntersectionObserver 还没派发过一次回调的时候就动手。
+  assert.match(discover, /rebalanceTimer = setTimeout\(rebalance, REBALANCE_DELAY_MS\)/);
+});
+
+test('挤不进观察器的块要记在一边，不能扔', () => {
+  const discover = code('content/content-auto-discover.js');
+  // 扔掉就再也回不来了：静态长文滚过去既不产生变动也不触发重扫，被扔掉的那
+  // 一段永远是原文，而且页面上看不出任何异样。
+  assert.match(discover, /const deferred = new Set\(\);/);
+  assert.match(discover, /if \(observed\.size >= MAX_OBSERVED\) \{\s*deferred\.add\(element\);/);
+  // 三条把位置还给 deferred 的路：进带即摘腾出位置、读者一跃跳走、重排换人。
+  // 缺一条就有一类页面翻不全。
+  assert.match(discover, /function unwatch\(element\) \{[\s\S]*?scheduleRebalance\(\);/);
+  assert.match(discover, /function onScroll\(\) \{[\s\S]*?scheduleRebalance\(\);/);
+  assert.match(discover, /deferred\.delete\(entry\.element\);\s*observed\.add\(entry\.element\);\s*bandObserver\.observe\(entry\.element\);/);
+  // 停掉时两个集合都要清，滚动监听也要摘。
+  assert.match(discover, /deferred\.clear\(\);/);
+  assert.match(discover, /window\.removeEventListener\('scroll', onScroll, SCROLL_LISTENER\);/);
 });

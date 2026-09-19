@@ -34,20 +34,27 @@
   // 切换列表视图）会产生成百上千条记录，逐棵子树收集比全收一遍还慢。
   const MAX_DIRTY_ROOTS = 40;
   // IntersectionObserver 持强引用，挂上去的元素不会被回收。无限滚动的页面能滚
-  // 出几万个块，全挂着就是一条永不释放的引用链。超过上限先摘掉已经离开文档的，
-  // 还超就摘**离视口最远的**。
+  // 出几万个块，全挂着就是一条永不释放的引用链。所以同时观察的块有个上限 ——
+  // **观察的永远是离视口最近的那一批，其余的记在一边等**。
   //
-  // 曾经摘的是「最早挂上的」，理由是用户早就滚过去了 —— 那个理由只在增量场景下
-  // 成立。首次全量扫一篇上万块的长文时，所有元素在同一个任务里挂上去，最早的
-  // 那几千个正是文档开头、也就是用户此刻正看着的那一屏；摘掉它们，页面从打开
-  // 起就一片空白，而被摘掉的块不会有任何变动把它们送回来。
+  // 两条都是踩出来的：
+  //
+  //   · 淘汰次序不能按「挂上的先后」。首次全量扫一篇上万块的长文时，所有元素在
+  //     同一个任务里挂上去，最早的那几千个正是文档开头、用户此刻正看着的那一屏。
+  //   · 淘汰不能是**丢弃**。被摘掉的块没有任何变动会把它们送回来，读者滚到那里
+  //     时看到的是一片原文，而且再也不会变。所以摘下来的进 deferred，位置让出来
+  //     时按远近重新挑一批观察。
   const MAX_OBSERVED = 2000;
-  // 淘汰等一等再做。IntersectionObserver 的回调要到这一帧的渲染步骤才派发，同步
-  // 淘汰是在「谁在视口里」这个问题还没有答案的时候就动手。等过这一个窗口，进带的
+  // 让出的位置攒够这么多才重排。重排要把所有候选量一遍几何，攒着做才摊得薄。
+  const REBALANCE_SLACK = 200;
+  // 重排等一等再做。IntersectionObserver 的回调要到这一帧的渲染步骤才派发，同步
+  // 重排是在「谁在视口里」这个问题还没有答案的时候就动手。等过这一个窗口，进带的
   // 都已经被摘走了（见 onBand 的「进带即摘」），剩下的才真是带外的。
-  const TRIM_DELAY_MS = DEBOUNCE_MS;
+  const REBALANCE_DELAY_MS = DEBOUNCE_MS;
   // 上下各一屏。
   const BAND_MARGIN = '100% 0px';
+  // capture: 内层滚动容器（侧栏、虚拟列表）的 scroll 不冒泡，捕获才收得到。
+  const SCROLL_LISTENER = Object.freeze({ passive: true, capture: true });
 
   // 我们自己的界面。译文块、悬浮球、进度条、各种弹层改自己的 DOM 是常态
   // （进度条每译完一块就改一次文字），把这些当成「页面变了」会变成一个自激循环。
@@ -115,10 +122,14 @@
     }
 
     const dirtyRoots = new Set();
+    // 正在观察的。
     const observed = new Set();
+    // 认得、但没位置观察的。它们不会丢，只是在等一个位置。
+    const deferred = new Set();
     let collapsed = false;
     let timer = null;
-    let trimTimer = null;
+    let rebalanceTimer = null;
+    let rebalanceScrollY = 0;
     let suspended = false;
     let stopped = false;
 
@@ -181,23 +192,46 @@
     }
 
     function watch(element) {
-      if (observed.has(element)) return;
+      if (observed.has(element) || deferred.has(element)) return;
+      // 满了就先记着。进来的顺序是文档顺序，所以首次全量扫时留下的正是开头那
+      // 一批；读者要是从锚点跳进文档中段，接下来那次重排会按远近把位置换给他
+      // 眼前的那些。
+      if (observed.size >= MAX_OBSERVED) {
+        deferred.add(element);
+        scheduleRebalance();
+        return;
+      }
       observed.add(element);
       bandObserver.observe(element);
-      if (observed.size > MAX_OBSERVED) scheduleTrim();
     }
 
     function unwatch(element) {
       observed.delete(element);
       bandObserver.unobserve(element);
+      // 进带即摘会腾出位置。攒够一批再把 deferred 里离视口最近的换上来。
+      if (deferred.size > 0 && observed.size + REBALANCE_SLACK <= MAX_OBSERVED) scheduleRebalance();
     }
 
-    function scheduleTrim() {
-      if (stopped || trimTimer !== null) return;
-      trimTimer = setTimeout(trim, TRIM_DELAY_MS);
+    function scheduleRebalance() {
+      if (stopped || rebalanceTimer !== null) return;
+      rebalanceTimer = setTimeout(rebalance, REBALANCE_DELAY_MS);
     }
 
-    // 元素在视口之外多远。带内一律算 0 —— 那些本来也留不到这一步。
+    // 读者一跃跳到文档另一头（锚点、「回到顶部」）时，中间那些块一个都没进带，
+    // 没有位置让出来，重排也就不会被触发 —— 而他眼前的那一屏可能整片都在
+    // deferred 里。这个监听补的就是这一跳。
+    //
+    // 只认「跳」，不认「滚」：一屏之内的滚动本来就会让块进带、把位置让出来，
+    // 那条路已经会排重排了。不加这道门的话，长文里每一次连续滚动都要多量一遍
+    // 全体候选的几何 —— 白做，而且正好做在读者滚得最快的时候。
+    function onScroll() {
+      if (deferred.size === 0) return;
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      if (Math.abs(window.scrollY - rebalanceScrollY) < height) return;
+      scheduleRebalance();
+    }
+
+    // 元素在视口之外多远。带内一律算 0。
     function distanceFromViewport(element) {
       const rect = element.getBoundingClientRect();
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
@@ -206,22 +240,41 @@
       return 0;
     }
 
-    function trim() {
-      trimTimer = null;
+    function drop(set, element) {
+      set.delete(element);
+      if (set === observed) bandObserver.unobserve(element);
+    }
+
+    function rebalance() {
+      rebalanceTimer = null;
       if (stopped) return;
+      rebalanceScrollY = window.scrollY;
 
-      for (const element of observed) {
-        if (!element.isConnected) unwatch(element);
-      }
-      if (observed.size <= MAX_OBSERVED) return;
+      // 离开文档的直接扔 —— 观察器的强引用真正会漏的就是这一部分。
+      for (const element of [...observed]) if (!element.isConnected) drop(observed, element);
+      for (const element of [...deferred]) if (!element.isConnected) drop(deferred, element);
+      if (deferred.size === 0 && observed.size <= MAX_OBSERVED) return;
 
-      // getBoundingClientRect 一趟下来只强制一次重排，之后都是读缓存。只有超过
-      // 上限的页面才走到这里，而且一个窗口最多一次。
-      const ranked = [...observed].map((element) => ({ element, away: distanceFromViewport(element) }));
-      ranked.sort((a, b) => b.away - a.away);
-      for (const entry of ranked) {
-        if (observed.size <= MAX_OBSERVED) break;
-        unwatch(entry.element);
+      // getBoundingClientRect 一趟下来只强制一次重排，之后都是读缓存。只有块数
+      // 超过上限的页面才走到这里，而且一个窗口最多一次、一次至少换进一批。
+      const ranked = [];
+      for (const element of observed) ranked.push({ element, away: distanceFromViewport(element), on: true });
+      for (const element of deferred) ranked.push({ element, away: distanceFromViewport(element), on: false });
+      ranked.sort((a, b) => a.away - b.away);
+
+      for (let i = 0; i < ranked.length; i++) {
+        const keep = i < MAX_OBSERVED;
+        const entry = ranked[i];
+        if (keep === entry.on) continue;
+        if (keep) {
+          deferred.delete(entry.element);
+          observed.add(entry.element);
+          bandObserver.observe(entry.element);
+        } else {
+          observed.delete(entry.element);
+          bandObserver.unobserve(entry.element);
+          deferred.add(entry.element);
+        }
       }
     }
 
@@ -295,13 +348,18 @@
         clearTimeout(timer);
         timer = null;
       }
-      if (trimTimer !== null) {
-        clearTimeout(trimTimer);
-        trimTimer = null;
+      if (rebalanceTimer !== null) {
+        clearTimeout(rebalanceTimer);
+        rebalanceTimer = null;
       }
+      window.removeEventListener('scroll', onScroll, SCROLL_LISTENER);
+      rebalanceScrollY = 0;
       dirtyRoots.clear();
       observed.clear();
+      deferred.clear();
     }
+
+    window.addEventListener('scroll', onScroll, SCROLL_LISTENER);
 
     domObserver.observe(document.body, {
       childList: true,
