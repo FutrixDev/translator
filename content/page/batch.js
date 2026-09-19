@@ -1,0 +1,511 @@
+// Blab Translation — 整页翻译：分批与翻译轮次
+//
+// 一组块进来，译文落到页面上：按首屏排序、按 token/字符/条数分批、并发跑、
+// 失败到什么程度算整体故障。runTranslationPass 是这一轮的全部，
+// 它不碰进度条也不管“页面已翻译”那类状态——那些是调用方的事
+// （content/content-page-translation.js）。
+(function() {
+  'use strict';
+
+  const ctx = window.AI_TRANSLATOR_CONTENT;
+  if (!ctx) return;
+
+  const { settings } = ctx;
+  const t = ctx.t;
+  const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
+  const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
+  const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
+  const getLangBase = ctx.getLangBase;
+  const getLanguageDetectionText = ctx.getLanguageDetectionText;
+  const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
+  const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
+  const MAX_BATCH_TOKENS = 3200; // 估算 token 上限（输入侧保守值）
+  const MAX_BLOCK_CHARS = 4000; // 单个块最大字符数；超过则按标点分块（见 splitTextIntoChunks），避免正文被丢弃或被模型截断
+  const CONCURRENCY = 12;       // 并发数
+  const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
+
+  function estimateTokens(text) {
+    if (!text) return 0;
+    const cjkMatches = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
+    const cjkCount = cjkMatches ? cjkMatches.length : 0;
+    const nonCjkCount = Math.max(0, text.length - cjkCount);
+    return Math.ceil(cjkCount * 1.1 + nonCjkCount / 4);
+  }
+
+  // 按视口优先拆分：首屏和附近内容优先处理
+  function splitBlocksByViewport(blocks) {
+    const priorityBlocks = [];
+    const deferredBlocks = [];
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
+    const margin = viewportHeight * 1.2;
+
+    blocks.forEach(block => {
+      const el = block.element;
+      if (!el || !el.getBoundingClientRect) {
+        deferredBlocks.push(block);
+        return;
+      }
+
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        deferredBlocks.push(block);
+        return;
+      }
+
+      const inPriorityRange = rect.bottom >= -margin && rect.top <= viewportHeight + margin;
+      if (inPriorityRange) {
+        priorityBlocks.push(block);
+      } else {
+        deferredBlocks.push(block);
+      }
+    });
+
+    return { priorityBlocks, deferredBlocks };
+  }
+
+  // 若 pos 落在数学占位符 {{数字}} 内部，回退到该占位符起点，避免把占位符切成两半
+  function avoidPlaceholderSplit(text, start, pos) {
+    if (pos <= start || pos >= text.length) return pos;
+    const open = text.lastIndexOf('{{', pos - 1);
+    if (open < start) return pos;             // pos 之前没有未闭合的 {{
+    const close = text.indexOf('}}', open);
+    if (close === -1) return pos;             // 不是有效占位符
+    if (close + 2 <= pos) return pos;         // 占位符已在 pos 之前闭合，安全
+    return open > start ? open : pos;         // pos 位于占位符内部 → 回退到 {{ 之前
+  }
+
+  // 将超长文本按标点切分为不超过 maxLen 的块，尽量在句末/子句/空白处断开，
+  // 且不切断数学占位符 {{n}}。每块的结尾标点/空白予以保留，拼接时可无缝还原。
+  function splitTextIntoChunks(text, maxLen) {
+    if (!text || text.length <= maxLen) return text ? [text] : [];
+
+    const sentenceEnd = /[.．。!！?？…;；\n]/;   // 句末标点（中英）
+    const clauseEnd = /[,，、:：)）]/;            // 子句标点
+    const chunks = [];
+    const len = text.length;
+    let start = 0;
+
+    while (start < len) {
+      if (len - start <= maxLen) {
+        chunks.push(text.slice(start));
+        break;
+      }
+
+      const hardEnd = avoidPlaceholderSplit(text, start, start + maxLen);
+      let breakAt = -1;
+
+      // 优先句末标点，其次子句标点，再次空白，最后硬切
+      for (let i = hardEnd - 1; i > start; i--) {
+        if (sentenceEnd.test(text[i])) { breakAt = i + 1; break; }
+      }
+      if (breakAt <= start) {
+        for (let i = hardEnd - 1; i > start; i--) {
+          if (clauseEnd.test(text[i])) { breakAt = i + 1; break; }
+        }
+      }
+      if (breakAt <= start) {
+        for (let i = hardEnd - 1; i > start; i--) {
+          if (/\s/.test(text[i])) { breakAt = i + 1; break; }
+        }
+      }
+      if (breakAt <= start) breakAt = hardEnd;
+
+      breakAt = avoidPlaceholderSplit(text, start, breakAt);
+      if (breakAt <= start) breakAt = Math.min(start + maxLen, len);
+
+      chunks.push(text.slice(start, breakAt));
+      start = breakAt;
+    }
+
+    return chunks.filter(c => c.length > 0);
+  }
+
+  function usingBuiltinEngine() {
+    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive());
+  }
+
+  // 智能分批：根据 token/字符数/段落数限制
+  function createSmartBatches(blocks) {
+    // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
+    // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
+    // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
+    if (usingBuiltinEngine()) {
+      return blocks.map((block) => [block]);
+    }
+
+    const batches = [];
+    let currentBatch = [];
+    let currentChars = 0;
+    let currentTokens = 0;
+    const itemTokenOverhead = 6;
+
+    const flush = () => {
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentChars = 0;
+        currentTokens = 0;
+      }
+    };
+
+    for (const block of blocks) {
+      // 超大块单独成批，交由 processBatch 内的分块逻辑（splitTextIntoChunks）处理
+      if (block.oversized) {
+        flush();
+        batches.push([block]);
+        continue;
+      }
+
+      const textLen = block.text.length;
+      const tokenEstimate = estimateTokens(block.text) + itemTokenOverhead;
+
+      // 如果当前批次加入这个 block 后会超限，先保存当前批次
+      if (currentBatch.length > 0 &&
+          (currentTokens + tokenEstimate > MAX_BATCH_TOKENS ||
+           currentChars + textLen > MAX_BATCH_CHARS ||
+           currentBatch.length >= MAX_BATCH_ITEMS)) {
+        flush();
+      }
+
+      currentBatch.push(block);
+      currentChars += textLen;
+      currentTokens += tokenEstimate;
+    }
+
+    // 保存最后一个批次
+    flush();
+
+    return batches;
+  }
+
+  // 并发控制函数
+  async function runWithConcurrency(items, processor, concurrency) {
+    const results = [];
+    let index = 0;
+    
+    async function runNext() {
+      const currentIndex = index++;
+      if (currentIndex >= items.length) return;
+      
+      await processor(items[currentIndex]);
+      results[currentIndex] = true;
+      
+      // 继续处理下一个
+      await runNext();
+    }
+    
+    // 启动 concurrency 个并发任务
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, items.length); i++) {
+      workers.push(runNext());
+    }
+    
+    await Promise.all(workers);
+    return results;
+  }
+
+  // 收集可翻译的块级元素
+
+  async function detectLanguage(text) {
+    if (!chrome?.i18n?.detectLanguage) return null;
+    return new Promise((resolve) => {
+      chrome.i18n.detectLanguage(text, resolve);
+    });
+  }
+
+  async function isTargetLanguageText(text) {
+    const targetLang = getEffectiveTargetLang();
+    const targetBase = getLangBase(targetLang);
+    if (!targetBase) return false;
+
+    const detectText = getLanguageDetectionText(text);
+    if (detectText.length < 4) return false;
+
+    const result = await detectLanguage(detectText);
+    const topLang = result?.languages?.[0];
+    if (!topLang) return false;
+
+    const detectedBase = getLangBase(topLang.language);
+    if (detectedBase !== targetBase) return false;
+
+    const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
+    return confidence >= 85 && result.isReliable !== false;
+  }
+
+  async function shouldSkipTranslation(block, translation) {
+    const normalizedOriginal = ctx.normalizeComparableText(block.text);
+    const normalizedTranslation = ctx.normalizeComparableText(translation);
+
+    // 原文除公式占位符/空白外没有任何正文时，一律不插译文（兜底不变量）。
+    // normalizeComparableText 会剥掉 {{N}}，所以纯公式块在这里归一化成空串；
+    // 早先写作 `normalizedOriginal && normalizedOriginal === normalizedTranslation`，
+    // 空串是 falsy，同一性守卫对纯公式块从不生效，公式因而被重复渲染。
+    if (!normalizedOriginal) return true;
+
+    if (normalizedOriginal === normalizedTranslation) {
+      return true;
+    }
+
+    try {
+      if (!settings.skipTargetLanguageText) return false;
+      return await isTargetLanguageText(block.text);
+    } catch (error) {
+      console.warn('Blab Translation: Language detection failed', error);
+      return false;
+    }
+  }
+
+  // 分批译文只能按位置回填，回填前数量必须一致 —— 与超大块路径（processOversizedBlock）
+  // 同一条规则。模型偶尔会吞掉/多打一个分隔符（把相邻两段合并、或把一段拆成两段），
+  // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
+  // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
+  // 最坏是某一块拿不到译文而保持原文。
+  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted } = {}) {
+    if (!Array.isArray(translations) || translations.length !== batch.length) {
+      const returned = Array.isArray(translations) ? translations.length : 0;
+      console.warn(
+        `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
+        'retrying block-by-block to avoid misaligned translations'
+      );
+      await translateBlocksOneByOne(batch, { onFailure, isAborted });
+      return;
+    }
+
+    await Promise.all(translations.map(async (translation, i) => {
+      if (!batch[i] || !translation) return;
+      if (await shouldSkipTranslation(batch[i], translation)) return;
+      ctx.insertTranslationBlock(batch[i], translation);
+    }));
+  }
+
+  async function translateBlocksOneByOne(batch, { onFailure, isAborted } = {}) {
+    for (const block of batch) {
+      if (isAborted && isAborted()) return;
+      try {
+        const response = await ctx.requestTranslation({
+          type: 'TRANSLATE_BATCH_FAST',
+          texts: [block.text],
+          targetLang: getEffectiveTargetLang(),
+          delimiter: DELIMITER,
+          allowDownload: true
+        });
+        if (response.error) {
+          if (onFailure) onFailure(response.error);
+          continue;
+        }
+        // 单块请求同样守数量：模型把一段拆成两段时放弃该块，而不是插半截译文。
+        const translation = Array.isArray(response.translations) && response.translations.length === 1
+          ? response.translations[0]
+          : null;
+        if (!translation) continue;
+        if (await shouldSkipTranslation(block, translation)) continue;
+        ctx.insertTranslationBlock(block, translation);
+      } catch (error) {
+        // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
+        if (isExtensionContextInvalidated(error)) throw error;
+        console.error('Blab Translation: Per-block fallback translation failed', error);
+        if (onFailure) onFailure(error.message);
+      }
+    }
+  }
+
+  async function filterBlocksByLanguage(blocks) {
+    if (!chrome?.i18n?.detectLanguage) return blocks;
+    if (!settings.skipTargetLanguageText) return blocks;
+
+    const keep = new Array(blocks.length).fill(true);
+    const tasks = blocks.map((block, index) => ({ block, index }));
+
+    await runWithConcurrency(tasks, async ({ block, index }) => {
+      try {
+        if (await isTargetLanguageText(block.text)) {
+          keep[index] = false;
+        }
+      } catch (error) {
+        console.warn('Blab Translation: Language pre-check failed', error);
+      }
+    }, 8);
+
+    return blocks.filter((_, index) => keep[index]);
+  }
+
+
+
+  // 一轮翻译：一组块进来，译文落到页面上。返回致命错误的消息，没有就返回 null。
+  //
+  // 什么时候显示进度、什么时候算“整页翻完了”，都不在这里——页面级的那一份状态
+  // 归 content/content-page-translation.js，将来自动翻译的增量轮次并不需要它。
+  async function runTranslationPass(blocks, options = {}) {
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+    const total = blocks.length;
+    let done = 0;
+
+    // 优先处理首屏相关内容
+    const { priorityBlocks, deferredBlocks } = splitBlocksByViewport(blocks);
+
+    // 按 token/字符数/段落数智能分批
+    const priorityBatches = createSmartBatches(priorityBlocks);
+    const deferredBatches = createSmartBatches(deferredBlocks);
+    // 软优先：首屏批次排在前面，但不阻塞后续批次启动
+    const batches = priorityBatches.concat(deferredBatches);
+    
+    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${CONCURRENCY}`);
+
+
+    // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
+    // 在一批 40 段的年代这没问题：那种粒度下出错基本等于接口不可用。
+    // 内置引擎改成一块一批之后，同一个判断会让某一段的偶发失败带走后面几百块
+    // （并发 12，表现就是零散翻了十几块然后整片空白）。所以改成累计阈值：
+    // 攒够这么多次失败才认定是整体故障。真故障时每块都失败，照样瞬间就停，
+    // 不会白白多打几百次请求。
+    const MAX_BATCH_FAILURES = 3;
+    let batchError = null;
+    let batchFailures = 0;
+    let firstFailureMessage = null;
+
+    const noteBatchFailure = (message) => {
+      if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
+      batchFailures += 1;
+      if (batchFailures >= MAX_BATCH_FAILURES) batchError = firstFailureMessage;
+    };
+
+    // 处理超大块：按标点分块 → 分别翻译（必要时拆成多次请求）→ 按序拼回一个整体插入。
+    // 这样正文（尤其是位于 <li> 直属文本节点、用 <br><br> 分段的“超大列表项”）不会被丢弃，
+    // 也不会因一次性塞给模型过长而被截断。
+    const processOversizedBlock = async (block) => {
+      const chunks = splitTextIntoChunks(block.text, MAX_BLOCK_CHARS);
+      if (chunks.length === 0) return;
+      const translations = new Array(chunks.length);
+
+      // 把分块再按批量上限打包，避免单次请求超过 MAX_BATCH_CHARS
+      const subBatches = [];
+      let sub = [];
+      let subChars = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        if (sub.length > 0 && subChars + chunks[i].length > MAX_BATCH_CHARS) {
+          subBatches.push(sub);
+          sub = [];
+          subChars = 0;
+        }
+        sub.push({ index: i, text: chunks[i] });
+        subChars += chunks[i].length;
+      }
+      if (sub.length > 0) subBatches.push(sub);
+
+      for (const sb of subBatches) {
+        if (batchError) return;
+        try {
+          const response = await ctx.requestTranslation({
+            type: 'TRANSLATE_BATCH_FAST',
+            texts: sb.map(x => x.text),
+            targetLang: getEffectiveTargetLang(),
+            delimiter: DELIMITER,
+            allowDownload: true
+          });
+
+          if (response.error) {
+            noteBatchFailure(response.error);
+            return;
+          }
+
+          // 分隔符切分数量不匹配：放弃本块（保持原文），不呈现错位/残缺译文。
+          // 这属于单块问题，不设 batchError、不影响整页其它块。
+          if (!response.translations || response.translations.length !== sb.length) {
+            return;
+          }
+          sb.forEach((x, k) => {
+            translations[x.index] = response.translations[k];
+          });
+        } catch (error) {
+          console.error('Blab Translation: Oversized block translation failed', error);
+          if (isExtensionContextInvalidated(error)) {
+            // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
+            batchError = t('extensionContextInvalidated');
+          } else {
+            noteBatchFailure(error.message);
+          }
+          return;
+        }
+      }
+
+      // 任一分块缺译（未定义或空）则放弃插入，避免呈现残缺译文
+      if (translations.some(x => !x)) return;
+
+      const combined = translations.join('');
+      if (!combined.trim()) return;
+      if (await shouldSkipTranslation(block, combined)) return;
+      ctx.insertTranslationBlock(block, combined);
+    };
+
+    // 使用 Promise 池进行并发控制
+    const processBatch = async (batch) => {
+      // Skip if we already have an error
+      if (batchError) return;
+      if (!isExtensionContextAvailable()) {
+        batchError = t('extensionContextInvalidated');
+        return;
+      }
+
+      // 超大块：单独成批，走分块翻译流程
+      if (batch.length === 1 && batch[0].oversized) {
+        await processOversizedBlock(batch[0]);
+        done += batch.length;
+        onProgress(done, total);
+        return;
+      }
+
+      const texts = batch.map(item => item.text);
+
+      try {
+        // 整页翻译是用户点出来的，带着 user activation，是唯一适合触发
+        // 语言包首次下载的路径（下载进度直接显示在下方进度条上）。
+        const response = await ctx.requestTranslation({
+          type: 'TRANSLATE_BATCH_FAST',
+          texts: texts,
+          targetLang: getEffectiveTargetLang(),
+          delimiter: DELIMITER,
+          allowDownload: true
+        });
+
+        // Check for error in response
+        if (response.error) {
+          noteBatchFailure(response.error);
+        } else {
+          // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
+          // 走逐块回退，而不是无声丢掉整批。
+          await applyFastBatchTranslations(batch, response.translations, {
+            onFailure: noteBatchFailure,
+            isAborted: () => !!batchError
+          });
+        }
+      } catch (error) {
+        console.error('Blab Translation: Batch translation failed', error);
+        if (isExtensionContextInvalidated(error)) {
+          batchError = t('extensionContextInvalidated');
+        } else {
+          noteBatchFailure(error.message);
+        }
+      }
+
+      done += batch.length;
+      onProgress(done, total);
+    };
+
+    // 并发执行所有批次，首屏批次在队列前优先开始
+    if (batches.length > 0) {
+      await runWithConcurrency(batches, processBatch, CONCURRENCY);
+    }
+
+    return batchError;
+  }
+
+  ctx.runTranslationPass = runTranslationPass;
+  ctx.filterBlocksByLanguage = filterBlocksByLanguage;
+  // 单元测试直接驱动这条“译文数量必须与块数一致”的守卫
+  // （test/unit/fast-batch-alignment.test.mjs），不必伪造整条整页翻译流水线。
+  ctx.applyFastBatchTranslations = applyFastBatchTranslations;
+  // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
+  // 它保证不会把 {{n}} 数学占位符从中间切断。
+  ctx.splitTextIntoChunks = splitTextIntoChunks;
+  ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
+})();

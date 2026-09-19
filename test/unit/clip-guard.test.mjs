@@ -250,9 +250,11 @@ test('a managed handle is measured as its source block, not as itself', () => {
 // ---------------------------------------------------------------------------
 
 test('every insertion in the whole-page path asks the guards', () => {
-  const source = repoFile('content/content-page-translation.js');
+  const source = repoFile('content/page/insert.js');
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
-  const end = body.indexOf('\n  function showPageTranslationProgress');
+  // 落笔是这个文件的最后一个函数，后面只剩导出。
+  const end = body.indexOf('\n  ctx.');
+  assert.ok(end > 0, 'insertTranslationBlock is no longer the last function in insert.js');
   const fn = body.slice(0, end);
 
   // 每一次把译文放进 DOM 之后，都要跟一次 finishTranslationInsert：
@@ -269,7 +271,7 @@ test('every insertion in the whole-page path asks the guards', () => {
 });
 
 test('the post-insert helper runs both guards, and in the order that matters', () => {
-  const source = repoFile('content/content-page-translation.js');
+  const source = repoFile('content/page/insert.js');
   const body = source.slice(source.indexOf('function finishTranslationInsert'));
   const fn = body.slice(0, body.indexOf('\n  }') + 4);
 
@@ -310,6 +312,9 @@ test('the clip guard is the only place that forces a height open', () => {
   for (const file of [
     'content/content-hover-translation.js',
     'content/content-page-translation.js',
+    'content/page/insert.js',
+    'content/page/visibility.js',
+    'content/page/progress.js',
     'content/content-float-ball.js',
     'content/content-managed-translation.js',
   ]) {
@@ -325,5 +330,5 @@ test('the guard module loads before the surfaces that call it', () => {
   const at = (file) => bundle.js.indexOf(file);
   const guard = at('content/content-clip-guard.js');
   assert.ok(guard < at('content/content-hover-translation.js'));
-  assert.ok(guard < at('content/content-page-translation.js'));
+  assert.ok(guard < at('content/page/insert.js'));
 });

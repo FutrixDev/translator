@@ -1,4 +1,4 @@
-// Guards for applyFastBatchTranslations in content/content-page-translation.js.
+// Guards for applyFastBatchTranslations in content/page/batch.js.
 //
 // Page translation joins a batch of blocks with a delimiter and maps the
 // returned segments back onto the blocks BY POSITION. That mapping is only
@@ -21,8 +21,8 @@ import assert from 'node:assert/strict';
 
 // ==================== the faked browser ====================
 
-// content-page-translation.js is a classic script hanging everything off
-// window.AI_TRANSLATOR_CONTENT; at load it only defines functions, so this is
+// The content/page/* modules are classic scripts hanging everything off
+// window.AI_TRANSLATOR_CONTENT; at load they only define functions, so this is
 // all the DOM it needs. `document`/`chrome` stay empty: the code under test
 // must not reach them (skipTargetLanguageText=false keeps shouldSkipTranslation local).
 globalThis.window = {
@@ -46,7 +46,11 @@ globalThis.chrome = {};
 console.warn = () => {};
 console.error = () => {};
 
-await import('../../content/content-page-translation.js');
+// 分批器要落笔就得有 insert.js，比对原文要有 collect.js 的 normalizeComparableText。
+// 按 manifest 顺序加载，跨文件引用全是 ctx.x() 的运行时读取，顺序其实无所谓。
+for (const module of ['batch', 'collect', 'insert', 'visibility', 'progress']) {
+  await import(`../../content/page/${module}.js`);
+}
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
 // ==================== helpers ====================

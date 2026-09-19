@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { contentHarnessScripts } = require('./helpers');
+const { contentHarnessScripts, PAGE_TRANSLATION_MODULES } = require('./helpers');
 
 // Focused DOM unit test of the REAL insertTranslationBlock +
 // applyTranslationOnlyMode functions, loaded straight from source into a plain
@@ -12,7 +12,7 @@ const { contentHarnessScripts } = require('./helpers');
 //   - hover/selection translations are never treated as page translations;
 //   - the float ball's "hide translations" toggle wins — originals come back
 //     rather than leaving the page blank.
-const SCRIPTS = contentHarnessScripts('content/content-page-translation.js');
+const SCRIPTS = contentHarnessScripts(...PAGE_TRANSLATION_MODULES);
 
 const FIXTURE_HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body>
   <p id="para">A perfectly ordinary paragraph that will be translated as a sibling block.</p>

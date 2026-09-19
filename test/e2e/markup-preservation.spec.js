@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { contentHarnessScripts } = require('./helpers');
+const { contentHarnessScripts, PAGE_TRANSLATION_MODULES } = require('./helpers');
 
 // Focused DOM unit test of the REAL getTextWithMathPlaceholders +
 // collectTranslatableBlocks + insertTranslationBlock/buildTranslationContent
@@ -22,7 +22,7 @@ const { contentHarnessScripts } = require('./helpers');
 // uppercased opening marker, which the tolerant regex below handles. Since the
 // builtin engine is the DEFAULT, the old gate meant most users lost every link
 // in every translation, which is the bug this suite now pins down.
-const SCRIPTS = contentHarnessScripts('content/content-page-translation.js');
+const SCRIPTS = contentHarnessScripts(...PAGE_TRANSLATION_MODULES);
 
 const FIXTURE_HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body>
   <p id="rich">Please read <a id="doc-link" class="doc-link" href="/docs" onclick="evil()">the documentation</a> carefully before you <strong>start working</strong> on the project.</p>

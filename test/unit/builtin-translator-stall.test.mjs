@@ -415,6 +415,8 @@ test('every call into the Translator API goes through the watchdog', async () =>
   assert.match(src, /function stallWatchdog\(/);
 
   for (const file of [
+    'content/page/batch.js',
+    'content/page/progress.js',
     'content/content-page-translation.js',
     'content/content-hover-translation.js',
     'content/content-popup.js',
@@ -432,7 +434,8 @@ test('the page-translation surface answers the download-ended hook', () => {
   // The engine calls ctx.onBuiltinDownloadEnded whenever a download-bearing
   // create() ends. Without a listener the progress bar keeps its stale
   // "downloading language pack" label for the rest of the page translation.
-  assert.match(repoFile('content/content-page-translation.js'), /ctx\.onBuiltinDownloadEnded = function/);
+  // 进度条那一半现在住在 content/page/progress.js。
+  assert.match(repoFile('content/page/progress.js'), /ctx\.onBuiltinDownloadEnded = function/);
 });
 
 // ==================== giving up is not the same as paying ====================
