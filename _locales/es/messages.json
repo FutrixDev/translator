@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "Traducción IA gratuita: webs, artículos académicos (fórmulas/LaTeX intactas), subtítulos de YouTube, PDF y cómics.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Traducir o restaurar esta página",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

@@ -1,16 +1,18 @@
 // DOM Elements
 const elements = {
   translatePage: document.getElementById('translatePage'),
-  toggleFloatBall: document.getElementById('toggleFloatBall'),
-  toggleYoutubeCaptions: document.getElementById('toggleYoutubeCaptions'),
+  translatePageLabel: document.getElementById('translatePageLabel'),
+  translatePageShortcut: document.getElementById('translatePageShortcut'),
+  toggleSiteAuto: document.getElementById('toggleSiteAuto'),
+  siteAutoStatus: document.getElementById('siteAutoStatus'),
+  togglePagePause: document.getElementById('togglePagePause'),
+  pagePauseLabel: document.getElementById('pagePauseLabel'),
   openSettings: document.getElementById('openSettings'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
   pdfTranslateCurrent: document.getElementById('pdfTranslateCurrent'),
   pdfTranslateLocal: document.getElementById('pdfTranslateLocal'),
   pdfJobs: document.getElementById('pdfJobs'),
-  floatBallStatus: document.getElementById('floatBallStatus'),
-  youtubeCaptionsStatus: document.getElementById('youtubeCaptionsStatus'),
   statusText: document.getElementById('statusText')
 };
 
@@ -18,8 +20,7 @@ const elements = {
 const defaultSettings = {
   apiKey: '',
   translationEngine: 'builtin',
-  showFloatBall: true,
-  enableYoutubeCaptionTranslation: false,
+  autoTranslate: true,
   targetLang: 'zh-CN',
   uiLanguage: '',
   theme: 'light'
@@ -473,6 +474,133 @@ function onPdfTranslateLocal() {
   window.close();
 }
 
+// ---------------------------------------------------------------------------
+// 这一页的三行动作
+//
+// 一次 AUTO_PAGE_STATE 往返带回这一页的全部事实：主机名、有没有译文、自动翻译
+// 此刻停在哪个状态。三行同时从这一份快照画出来 —— 分三次问的话，用户在中间那
+// 一刻点了悬浮球，popup 就会拿着三个互相矛盾的答案画出一张脸。
+//
+// 没有接收端的页面（chrome://、应用商店、还没注入完的标签页）拿到的是 null，
+// 那时只留「翻译此页」一行：另外两行在那种页面上没有任何可做的事，摆在那儿只
+// 是一个点了没反应的按钮。
+// ---------------------------------------------------------------------------
+
+// 自动翻译真的在管这一页的那几个状态。off / ask 不在其中：那时「暂停」无事可停。
+const AUTO_ACTIVE = new Set(['pending', 'idle', 'running', 'paused', 'error']);
+
+let pageState = null;
+let globalAuto = true;
+
+async function sendToActiveTab(message) {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0] && tabs[0].id;
+    if (typeof tabId !== 'number') return null;
+    return (await chrome.tabs.sendMessage(tabId, message)) || null;
+  } catch (error) {
+    // “Could not establish connection” —— 这一页没有 content script。是答案，不是故障。
+    return null;
+  }
+}
+
+/**
+ * 键位印的是 chrome.commands.getAll() 报的那一个，不是 manifest 里写的那一个。
+ * 用户在 chrome://extensions/shortcuts 里改掉、或者和别的扩展撞了被 Chrome 收
+ * 走之后，manifest 那行就成了假话；Chrome 报空字符串时这块 kbd 直接不出现。
+ */
+async function refreshShortcutHint() {
+  try {
+    const commands = await chrome.commands.getAll();
+    const found = commands.find((command) => command.name === 'toggle-translate-page');
+    const shortcut = (found && found.shortcut) || '';
+    elements.translatePageShortcut.textContent = shortcut;
+    elements.translatePageShortcut.hidden = !shortcut;
+  } catch (error) {
+    elements.translatePageShortcut.hidden = true;
+  }
+}
+
+function renderPageRows() {
+  const auto = pageState && pageState.auto;
+  const status = auto ? auto.status : '';
+
+  // ① 这个站点。「开」问的是此刻这一页到底在不在自动翻，不是 siteRules 里写了
+  //    什么 —— x.com 内置就是 always，规则表里一条没有，说「关」就是撒谎。
+  const siteRow = !!(pageState && pageState.host);
+  elements.toggleSiteAuto.hidden = !siteRow;
+  if (siteRow) {
+    const on = globalAuto && status !== 'off' && status !== 'ask';
+    elements.siteAutoStatus.textContent = on ? t('on') : t('off');
+    elements.toggleSiteAuto.title = pageState.host;
+  }
+
+  // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
+  //    那一遍要花的是用户自己的钱。
+  const showing = pageState && pageState.hasTranslations && pageState.translationsVisible;
+  elements.translatePageLabel.textContent = showing ? t('hideTranslations') : t('translateCurrentPage');
+
+  // ③ 暂停 / 继续这一页。
+  const pauseRow = AUTO_ACTIVE.has(status);
+  elements.togglePagePause.hidden = !pauseRow;
+  if (pauseRow) {
+    elements.pagePauseLabel.textContent = status === 'paused' ? t('popupResumePage') : t('popupPausePage');
+  }
+}
+
+async function refreshPageRows() {
+  pageState = await sendToActiveTab({ type: 'AUTO_PAGE_STATE' });
+  renderPageRows();
+}
+
+/**
+ * 站点开关：开写 always，关写 never。
+ *
+ * 关**不能**是「把规则删掉」。删掉之后判定会往下落到内置名单，而 x.com、
+ * reddit.com 这些在内置名单里就是 always —— 用户刚把它关掉，下一次打开又自动
+ * 翻了，而且规则表里干干净净，他连去哪儿改都找不到。
+ *
+ * 开的时候顺带把总开关打开：用户刚指着这个站点说「自动翻」，因为一个他此刻看
+ * 不见的总开关而什么都不发生，是最坏的一种没反应。总开关本身默认就是开的，这
+ * 一步只在他自己关过之后才有事做。
+ */
+async function toggleSiteAuto() {
+  if (!pageState || !pageState.host) return;
+  const status = pageState.auto ? pageState.auto.status : '';
+  const on = globalAuto && status !== 'off' && status !== 'ask';
+  try {
+    if (!on && !globalAuto) {
+      await chrome.storage.sync.set({ autoTranslate: true });
+      globalAuto = true;
+    }
+    await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
+  } catch (error) {
+    console.error('Failed to write site rule:', error);
+    return;
+  }
+  // 规则一落地，页面那边的调度层就会重判重跑（siteRules 在 RESTART_KEYS 里）。
+  // 它跑完才知道新状态是什么，所以这里重新问一次页面，而不是自己猜一个画上去。
+  await refreshPageRows();
+}
+
+async function togglePageTranslation() {
+  const reply = await sendToActiveTab({ type: 'TOGGLE_PAGE_TRANSLATION' });
+  if (!reply) {
+    showStatus('translationFailed', false);
+    return;
+  }
+  if (reply.action === 'translating') showStatus('translating');
+  // 还原是当场就看得见的，popup 没必要再留着挡视线。
+  window.close();
+}
+
+async function togglePagePause() {
+  const status = pageState && pageState.auto ? pageState.auto.status : '';
+  const auto = await sendToActiveTab({ type: 'SET_AUTO_PAUSED', paused: status !== 'paused' });
+  if (pageState) pageState.auto = auto;
+  renderPageRows();
+}
+
 // Check API status and float ball state
 async function checkStatus() {
   try {
@@ -483,10 +611,9 @@ async function checkStatus() {
     
     applyI18n(settings.uiLanguage);
     
-    // Update float ball status
-    elements.floatBallStatus.textContent = settings.showFloatBall ? t('on') : t('off');
-    elements.youtubeCaptionsStatus.textContent = settings.enableYoutubeCaptionTranslation ? t('on') : t('off');
-    
+    globalAuto = settings.autoTranslate !== false;
+    await Promise.all([refreshPageRows(), refreshShortcutHint()]);
+
     await refreshEngineStatus(settings);
   } catch (error) {
     console.error('Failed to check status:', error);
@@ -555,72 +682,25 @@ function showStatus(key, ok = true) {
   renderStatus({ key, detailKey: '', ok });
 }
 
-// Translate current page
+/**
+ * 「翻译此页」那一行按下去之前，唯一还要拦一次的事：自定义接口没有 key。
+ *
+ * 内置引擎（默认）不需要 key，所以这道门只对 'ai' 开 —— 按 apiKey 一刀切会把
+ * 新用户挡在主操作外面（PR #26 的评审）。过了这道门，动作本身交给页面：
+ * 「有译文就收起来，没有就译」这条规则只能有一个地方说了算，那就是页面。
+ */
 async function translateCurrentPage() {
   try {
     const settings = await chrome.storage.sync.get(defaultSettings);
-
-    // Only the AI engine needs a key — the built-in engine (the default) is
-    // deliberately key-free, so gating on apiKey here would lock new users
-    // out of the primary action (PR #26 review).
     if (settings.translationEngine === 'ai' && !settings.apiKey) {
       showStatus('configureApiKeyFirst', false);
-      // Open settings
       chrome.runtime.openOptionsPage();
       return;
     }
-
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs[0]?.id) {
-      showStatus('translationFailed', false);
-      return;
-    }
-
-    // Send message to content script
-    chrome.tabs.sendMessage(tabs[0].id, { type: 'TRANSLATE_PAGE' });
-    
-    showStatus('translating');
-    
-    // Close popup after a short delay
-    setTimeout(() => window.close(), 500);
+    await togglePageTranslation();
   } catch (error) {
     console.error('Failed to translate page:', error);
     showStatus('translationFailed', false);
-  }
-}
-
-// Toggle float ball
-async function toggleFloatBall() {
-  try {
-    const settings = await chrome.storage.sync.get(defaultSettings);
-    const newState = !settings.showFloatBall;
-    
-    await chrome.storage.sync.set({ showFloatBall: newState });
-    elements.floatBallStatus.textContent = newState ? t('on') : t('off');
-    
-    // Notify all tabs
-    const tabs = await chrome.tabs.query({});
-    tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'TOGGLE_FLOAT_BALL',
-        show: newState
-      }).catch(() => {});
-    });
-  } catch (error) {
-    console.error('Failed to toggle float ball:', error);
-  }
-}
-
-// Toggle YouTube captions translation
-async function toggleYoutubeCaptions() {
-  try {
-    const settings = await chrome.storage.sync.get(defaultSettings);
-    const newState = !settings.enableYoutubeCaptionTranslation;
-
-    await chrome.storage.sync.set({ enableYoutubeCaptionTranslation: newState });
-    elements.youtubeCaptionsStatus.textContent = newState ? t('on') : t('off');
-  } catch (error) {
-    console.error('Failed to toggle YouTube captions:', error);
   }
 }
 
@@ -633,8 +713,8 @@ function openSettings() {
 // Setup event listeners
 function setupEventListeners() {
   elements.translatePage.addEventListener('click', translateCurrentPage);
-  elements.toggleFloatBall.addEventListener('click', toggleFloatBall);
-  elements.toggleYoutubeCaptions.addEventListener('click', toggleYoutubeCaptions);
+  elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
+  elements.togglePagePause.addEventListener('click', togglePagePause);
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));

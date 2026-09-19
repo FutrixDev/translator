@@ -109,5 +109,43 @@
     }
   }
 
+  /**
+   * 一次点击的语义：**要么翻译，要么还原**。
+   *
+   * 悬浮球单击、Alt+A、popup 的第二行走的都是这一个函数。三个入口各写一遍
+   * 「有没有译文 → 藏还是翻」，迟早有一处把判断写歪：最容易歪的那一处是
+   * 「藏起来的译文算不算有译文」——算成没有，点一下就会重新翻一遍整页。
+   *
+   * 还原这条路只藏译文、放回原文，**不撤销已经翻好的东西**：再点一下立刻就
+   * 回来了，不必再花一次钱。
+   *
+   * @returns {'translating'|'restored'} 这一下做了哪件事（消息回话用）
+   */
+  /**
+   * 这一页现在有没有译文 —— 藏起来的也算。
+   *
+   * 两个调用方：悬浮球那一下点击（翻译还是还原），以及 popup 画按钮文案时问的
+   * 那一次。两处各写一遍的话，迟早一处记得算 managed 译文（PDF、漫画那一类不
+   * 在正文 DOM 里的），另一处忘了，于是同一页在球上是「还原」在 popup 里是
+   * 「翻译」。
+   */
+  function hasPageTranslations() {
+    return !!document.querySelector('.ai-translator-inline-block')
+      || !!(ctx.hasManagedTranslations && ctx.hasManagedTranslations());
+  }
+
+  function togglePageTranslation() {
+    if (hasPageTranslations() && state.translationsVisible !== false) {
+      ctx.setTranslationsVisible(false);
+      return 'restored';
+    }
+    // 译文藏着的情况也走这里：translatePage() 开头就会把它们放出来，顺带把这一
+    // 页里新长出来、还没翻的块补上。
+    translatePage();
+    return 'translating';
+  }
+
   ctx.translatePage = translatePage;
+  ctx.togglePageTranslation = togglePageTranslation;
+  ctx.hasPageTranslations = hasPageTranslations;
 })();

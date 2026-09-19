@@ -92,7 +92,13 @@
     // 查找时会向上逐级找父域（见 SiteRules.decide）。
     siteRules: Object.freeze({}),
     // 只自动翻这些源语言；空数组 = 不限制。装的是语言基码（'en'、'ja'）。
-    autoTranslateLangs: Object.freeze([])
+    autoTranslateLangs: Object.freeze([]),
+    // 每个域名追问过几次：{ 'example.com': 2 }。问到 3 次还没换来一次「翻译」
+    // 就永远不再问（content/content-auto-status.js 的 MAX_ASKS）。
+    //
+    // 跟着 sync 走是有意的：用户在笔记本上把某个站点的追问条关掉三次，换台机器
+    // 不该从头再问三次 —— 他已经回答过了，只是用的是关掉它这个动作。
+    siteAskCount: Object.freeze({})
   });
 
   /**
@@ -107,6 +113,7 @@
     // 就跟着有了这条规则 —— 而且 CONTENT_DEFAULTS 是冻的，严格模式下直接抛。
     defaults.siteRules = {};
     defaults.autoTranslateLangs = [];
+    defaults.siteAskCount = {};
     return defaults;
   }
 

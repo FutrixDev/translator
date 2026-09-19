@@ -152,16 +152,25 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // ai-translator-hidden，那个开关就此成了摆设。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{\s*status = STATUS\.PAUSED;\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{\s*setStatus\(STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);
 
-  // 把译文放出来的两条路都要通知到这一层：悬浮球的开关，和「翻译整页」。
+  // 显隐只有一个出处：content/page/visibility.js。它两边都通知到 —— 放出来是
+  // resume，藏起来是 pause。
   const visibility = code('content/page/visibility.js');
-  assert.match(visibility, /\n    state\.translationsVisible = true;/);
+  assert.match(visibility, /function setTranslationsVisible\(visible\)/);
   assert.match(visibility, /ctx\.autoTranslate\.resumeCurrentPage\(\)/);
-  assert.match(code('content/content-float-ball.js'), /ctx\.autoTranslate\.pauseCurrentPage\(\)/);
+  assert.match(visibility, /ctx\.autoTranslate\.pauseCurrentPage\(\)/);
+  // 悬浮球和「翻译整页」都走它，不自己动 state.translationsVisible ——
+  // 自己写那个字段就是把暂停这一半漏掉，而漏掉的症状要等到下一轮才看得见。
+  for (const file of ['content/content-float-ball.js', 'content/content-page-translation.js']) {
+    const source = code(file);
+    assert.match(source, /ctx\.setTranslationsVisible\(/, `${file} 应当走共用的显隐入口`);
+    assert.doesNotMatch(source, /state\.translationsVisible\s*=(?!=)/, `${file} 不该自己写显隐字段`);
+    assert.doesNotMatch(source, /autoTranslate\.(pause|resume)CurrentPage/, `${file} 不该越过显隐层直接停调度`);
+  }
 });
 
 test('上一代跑完的那一轮，不许改这一代的状态', () => {

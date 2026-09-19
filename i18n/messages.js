@@ -369,6 +369,41 @@ Rules:
     engineFallbackLocalOnly: 'Stop and tell me (free)',
     engineFallbackAllowAi: 'Use my own API (billed)',
     hintEngineFallback: 'The built-in engine is free; your own API is not. Falling back spends your quota, so it only happens if you ask for it here.',
+
+    // Auto-translate: the ask bar
+    autoAskPrompt: 'Translate this page?',
+    autoAskTranslate: 'Translate',
+    autoAskDismiss: 'Not now',
+    autoAskAlways: 'Always translate {site}',
+
+    // Auto-translate: the status dot
+    autoStateOff: 'Not translating this page',
+    autoStateAsk: 'Waiting for your answer',
+    autoStatePending: 'Waiting for the page to settle',
+    autoStateIdle: 'This page is translated',
+    autoStateRunning: 'Translating…',
+    autoStatePartial: '{count} blocks are still untranslated',
+    autoStatePaused: 'Paused on this page',
+    autoStateError: 'Translation stopped',
+
+    // Auto-translate: why the page is in that state
+    autoReasonGlobalOff: 'Auto-translate is off',
+    autoReasonBlocklist: 'This site is never translated automatically',
+    autoReasonUserNever: 'You chose never for this site',
+    autoReasonUserExplicit: 'You asked for this page',
+    autoReasonUserAlways: 'You chose always for this site',
+    autoReasonBuiltinAlways: 'This site is translated automatically',
+    autoReasonSameLanguage: 'Already in your language',
+    autoReasonLangNotListed: 'This page\'s language is not on your list',
+    autoReasonUnknownLanguage: 'Couldn\'t tell what language this is',
+    autoReasonDefaultAsk: 'Asking first on a new site',
+
+    // Auto-translate: float ball and popup
+    floatBallMore: 'More',
+    popupSiteAuto: 'Auto-translate this site',
+    popupPausePage: 'Pause on this page',
+    popupResumePage: 'Resume on this page',
+
     
     // Errors
     configureApiKeyFirst: 'Please configure API Key in settings first',
@@ -721,6 +756,41 @@ Rules:
     engineFallbackAllowAi: '改用我自己的接口（会计费）',
     hintEngineFallback: '内置引擎免费，你自己的接口不是。回退要花你的额度，所以只有在这里选了才会发生。',
 
+    // 自动翻译：追问条
+    autoAskPrompt: '这一页要翻译吗？',
+    autoAskTranslate: '翻译',
+    autoAskDismiss: '不用',
+    autoAskAlways: '总是翻译 {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: '这一页不翻译',
+    autoStateAsk: '等你决定',
+    autoStatePending: '等页面稳定下来',
+    autoStateIdle: '这一页已经翻好了',
+    autoStateRunning: '正在翻译…',
+    autoStatePartial: '还有 {count} 段没翻成',
+    autoStatePaused: '这一页已暂停',
+    autoStateError: '翻译中断了',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: '自动翻译已关闭',
+    autoReasonBlocklist: '这个站点从不自动翻译',
+    autoReasonUserNever: '你选过这个站点「从不翻译」',
+    autoReasonUserExplicit: '这一页是你自己要翻的',
+    autoReasonUserAlways: '你选过这个站点「总是翻译」',
+    autoReasonBuiltinAlways: '这个站点默认自动翻译',
+    autoReasonSameLanguage: '本来就是你的语言',
+    autoReasonLangNotListed: '这一页的语言不在你的名单里',
+    autoReasonUnknownLanguage: '判不出这一页是什么语言',
+    autoReasonDefaultAsk: '新站点先问一句',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: '更多',
+    popupSiteAuto: '自动翻译这个站点',
+    popupPausePage: '在这一页暂停',
+    popupResumePage: '在这一页继续',
+
+
     // Errors
     configureApiKeyFirst: '请先在设置中配置 API Key',
   },
@@ -1043,6 +1113,41 @@ Rules:
     engineFallbackLocalOnly: '停下來告訴我（不計費）',
     engineFallbackAllowAi: '改用我自己的介接（會計費）',
     hintEngineFallback: '內建引擎免費，你自己的介接不是。改用它會花你的額度，所以只有在這裡選了才會發生。',
+
+    // 自动翻译：追问条
+    autoAskPrompt: '這一頁要翻譯嗎？',
+    autoAskTranslate: '翻譯',
+    autoAskDismiss: '不用',
+    autoAskAlways: '總是翻譯 {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: '這一頁不翻譯',
+    autoStateAsk: '等你決定',
+    autoStatePending: '等頁面穩定下來',
+    autoStateIdle: '這一頁已經翻好了',
+    autoStateRunning: '正在翻譯…',
+    autoStatePartial: '還有 {count} 段沒翻成',
+    autoStatePaused: '這一頁已暫停',
+    autoStateError: '翻譯中斷了',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: '自動翻譯已關閉',
+    autoReasonBlocklist: '這個站點從不自動翻譯',
+    autoReasonUserNever: '你選過這個站點「從不翻譯」',
+    autoReasonUserExplicit: '這一頁是你自己要翻的',
+    autoReasonUserAlways: '你選過這個站點「總是翻譯」',
+    autoReasonBuiltinAlways: '這個站點預設自動翻譯',
+    autoReasonSameLanguage: '本來就是你的語言',
+    autoReasonLangNotListed: '這一頁的語言不在你的名單裡',
+    autoReasonUnknownLanguage: '判不出這一頁是什麼語言',
+    autoReasonDefaultAsk: '新站點先問一句',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: '更多',
+    popupSiteAuto: '自動翻譯這個站點',
+    popupPausePage: '在這一頁暫停',
+    popupResumePage: '在這一頁繼續',
+
     configureApiKeyFirst: '請先在設置中配置 API Key',
   },
 
@@ -1349,6 +1454,41 @@ Rules:
     engineFallbackLocalOnly: '中止して知らせる（無料）',
     engineFallbackAllowAi: '自分の API を使う（課金あり）',
     hintEngineFallback: '組み込みエンジンは無料ですが、自分の API は有料です。切り替えると自分の利用枠を消費するため、ここで選んだときだけ行われます。',
+
+    // 自动翻译：追问条
+    autoAskPrompt: 'このページを翻訳しますか？',
+    autoAskTranslate: '翻訳',
+    autoAskDismiss: '今はしない',
+    autoAskAlways: '{site} を常に翻訳',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'このページは翻訳しません',
+    autoStateAsk: '選択待ちです',
+    autoStatePending: 'ページが落ち着くのを待っています',
+    autoStateIdle: 'このページは翻訳済みです',
+    autoStateRunning: '翻訳中…',
+    autoStatePartial: '{count} 件が未翻訳です',
+    autoStatePaused: 'このページでは一時停止中',
+    autoStateError: '翻訳が中断しました',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: '自動翻訳がオフです',
+    autoReasonBlocklist: 'このサイトは自動翻訳しません',
+    autoReasonUserNever: 'このサイトを「翻訳しない」に設定しています',
+    autoReasonUserExplicit: 'あなたがこのページを翻訳しました',
+    autoReasonUserAlways: 'このサイトを「常に翻訳」に設定しています',
+    autoReasonBuiltinAlways: 'このサイトは自動的に翻訳されます',
+    autoReasonSameLanguage: 'すでに対象言語です',
+    autoReasonLangNotListed: 'このページの言語はリストにありません',
+    autoReasonUnknownLanguage: '言語を判定できませんでした',
+    autoReasonDefaultAsk: '新しいサイトではまず確認します',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'その他',
+    popupSiteAuto: 'このサイトを自動翻訳',
+    popupPausePage: 'このページで一時停止',
+    popupResumePage: 'このページで再開',
+
     configureApiKeyFirst: '設定でAPI Keyを先に設定してください',
   },
 
@@ -1655,6 +1795,41 @@ Rules:
     engineFallbackLocalOnly: '멈추고 알려주기 (무료)',
     engineFallbackAllowAi: '내 API 사용 (과금됨)',
     hintEngineFallback: '내장 엔진은 무료지만 내 API는 아닙니다. 대체 사용은 내 사용량을 쓰므로 여기서 선택한 경우에만 일어납니다.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: '이 페이지를 번역할까요?',
+    autoAskTranslate: '번역',
+    autoAskDismiss: '나중에',
+    autoAskAlways: '{site} 항상 번역',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: '이 페이지는 번역하지 않습니다',
+    autoStateAsk: '선택을 기다리는 중',
+    autoStatePending: '페이지가 안정되기를 기다리는 중',
+    autoStateIdle: '이 페이지는 번역되었습니다',
+    autoStateRunning: '번역 중…',
+    autoStatePartial: '{count}개가 아직 번역되지 않았습니다',
+    autoStatePaused: '이 페이지에서 일시중지됨',
+    autoStateError: '번역이 중단되었습니다',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: '자동 번역이 꺼져 있습니다',
+    autoReasonBlocklist: '이 사이트는 자동 번역하지 않습니다',
+    autoReasonUserNever: '이 사이트를 “번역 안 함”으로 설정했습니다',
+    autoReasonUserExplicit: '직접 이 페이지를 번역했습니다',
+    autoReasonUserAlways: '이 사이트를 “항상 번역”으로 설정했습니다',
+    autoReasonBuiltinAlways: '이 사이트는 자동으로 번역됩니다',
+    autoReasonSameLanguage: '이미 대상 언어입니다',
+    autoReasonLangNotListed: '이 페이지의 언어가 목록에 없습니다',
+    autoReasonUnknownLanguage: '언어를 판별할 수 없습니다',
+    autoReasonDefaultAsk: '새 사이트에서는 먼저 물어봅니다',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: '더보기',
+    popupSiteAuto: '이 사이트 자동 번역',
+    popupPausePage: '이 페이지에서 일시중지',
+    popupResumePage: '이 페이지에서 계속',
+
     configureApiKeyFirst: '먼저 설정에서 API Key를 구성하세요',
   },
 
@@ -1961,6 +2136,41 @@ Rules:
     engineFallbackLocalOnly: 'S\'arrêter et me le dire (gratuit)',
     engineFallbackAllowAi: 'Utiliser mon API (facturé)',
     hintEngineFallback: 'Le moteur intégré est gratuit, pas votre API. Le repli consomme votre quota : il n\'a donc lieu que si vous le demandez ici.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: 'Traduire cette page ?',
+    autoAskTranslate: 'Traduire',
+    autoAskDismiss: 'Pas maintenant',
+    autoAskAlways: 'Toujours traduire {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'Cette page n\'est pas traduite',
+    autoStateAsk: 'En attente de votre choix',
+    autoStatePending: 'En attente de la stabilisation de la page',
+    autoStateIdle: 'Cette page est traduite',
+    autoStateRunning: 'Traduction en cours…',
+    autoStatePartial: '{count} blocs encore non traduits',
+    autoStatePaused: 'En pause sur cette page',
+    autoStateError: 'La traduction s\'est arrêtée',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: 'La traduction automatique est désactivée',
+    autoReasonBlocklist: 'Ce site n\'est jamais traduit automatiquement',
+    autoReasonUserNever: 'Vous avez choisi « jamais » pour ce site',
+    autoReasonUserExplicit: 'Vous avez demandé cette page',
+    autoReasonUserAlways: 'Vous avez choisi « toujours » pour ce site',
+    autoReasonBuiltinAlways: 'Ce site est traduit automatiquement',
+    autoReasonSameLanguage: 'Déjà dans votre langue',
+    autoReasonLangNotListed: 'La langue de cette page n\'est pas dans votre liste',
+    autoReasonUnknownLanguage: 'Impossible d\'identifier la langue',
+    autoReasonDefaultAsk: 'On demande d’abord sur un nouveau site',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'Plus',
+    popupSiteAuto: 'Traduire ce site automatiquement',
+    popupPausePage: 'Mettre en pause sur cette page',
+    popupResumePage: 'Reprendre sur cette page',
+
     configureApiKeyFirst: 'Veuillez d\'abord configurer la clé API dans les paramètres',
   },
 
@@ -2267,6 +2477,41 @@ Rules:
     engineFallbackLocalOnly: 'Abbrechen und Bescheid geben (kostenlos)',
     engineFallbackAllowAi: 'Meine eigene API nutzen (kostenpflichtig)',
     hintEngineFallback: 'Die integrierte Engine ist kostenlos, Ihre eigene API nicht. Das Ausweichen verbraucht Ihr Kontingent und passiert deshalb nur, wenn Sie es hier verlangen.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: 'Diese Seite übersetzen?',
+    autoAskTranslate: 'Übersetzen',
+    autoAskDismiss: 'Jetzt nicht',
+    autoAskAlways: '{site} immer übersetzen',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'Diese Seite wird nicht übersetzt',
+    autoStateAsk: 'Warte auf deine Entscheidung',
+    autoStatePending: 'Warte, bis die Seite ruhig ist',
+    autoStateIdle: 'Diese Seite ist übersetzt',
+    autoStateRunning: 'Übersetze…',
+    autoStatePartial: '{count} Blöcke sind noch nicht übersetzt',
+    autoStatePaused: 'Auf dieser Seite pausiert',
+    autoStateError: 'Übersetzung abgebrochen',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: 'Automatische Übersetzung ist aus',
+    autoReasonBlocklist: 'Diese Website wird nie automatisch übersetzt',
+    autoReasonUserNever: 'Du hast „nie“ für diese Website gewählt',
+    autoReasonUserExplicit: 'Du hast diese Seite angefordert',
+    autoReasonUserAlways: 'Du hast „immer“ für diese Website gewählt',
+    autoReasonBuiltinAlways: 'Diese Website wird automatisch übersetzt',
+    autoReasonSameLanguage: 'Bereits in deiner Sprache',
+    autoReasonLangNotListed: 'Die Sprache dieser Seite steht nicht auf deiner Liste',
+    autoReasonUnknownLanguage: 'Sprache nicht erkannt',
+    autoReasonDefaultAsk: 'Bei neuen Websites wird zuerst gefragt',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'Mehr',
+    popupSiteAuto: 'Diese Website automatisch übersetzen',
+    popupPausePage: 'Auf dieser Seite pausieren',
+    popupResumePage: 'Auf dieser Seite fortsetzen',
+
     configureApiKeyFirst: 'Bitte zuerst API-Schlüssel in den Einstellungen konfigurieren',
   },
 
@@ -2573,6 +2818,41 @@ Rules:
     engineFallbackLocalOnly: 'Parar y avisarme (gratis)',
     engineFallbackAllowAi: 'Usar mi propia API (se factura)',
     hintEngineFallback: 'El motor integrado es gratuito; tu propia API no. Recurrir a ella consume tu cuota, así que solo ocurre si lo pides aquí.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: '¿Traducir esta página?',
+    autoAskTranslate: 'Traducir',
+    autoAskDismiss: 'Ahora no',
+    autoAskAlways: 'Traducir siempre {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'Esta página no se traduce',
+    autoStateAsk: 'Esperando tu decisión',
+    autoStatePending: 'Esperando a que la página se estabilice',
+    autoStateIdle: 'Esta página está traducida',
+    autoStateRunning: 'Traduciendo…',
+    autoStatePartial: '{count} bloques siguen sin traducir',
+    autoStatePaused: 'En pausa en esta página',
+    autoStateError: 'La traducción se detuvo',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: 'La traducción automática está desactivada',
+    autoReasonBlocklist: 'Este sitio nunca se traduce automáticamente',
+    autoReasonUserNever: 'Elegiste «nunca» para este sitio',
+    autoReasonUserExplicit: 'Pediste traducir esta página',
+    autoReasonUserAlways: 'Elegiste «siempre» para este sitio',
+    autoReasonBuiltinAlways: 'Este sitio se traduce automáticamente',
+    autoReasonSameLanguage: 'Ya está en tu idioma',
+    autoReasonLangNotListed: 'El idioma de esta página no está en tu lista',
+    autoReasonUnknownLanguage: 'No se pudo identificar el idioma',
+    autoReasonDefaultAsk: 'En un sitio nuevo preguntamos primero',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'Más',
+    popupSiteAuto: 'Traducir este sitio automáticamente',
+    popupPausePage: 'Pausar en esta página',
+    popupResumePage: 'Reanudar en esta página',
+
     configureApiKeyFirst: 'Por favor configure primero la clave API en configuración',
   },
 
@@ -2879,6 +3159,41 @@ Rules:
     engineFallbackLocalOnly: 'Parar e me avisar (grátis)',
     engineFallbackAllowAi: 'Usar a minha própria API (cobrado)',
     hintEngineFallback: 'O motor integrado é grátis; a sua própria API não. Recorrer a ela gasta a sua cota, então só acontece se você pedir aqui.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: 'Traduzir esta página?',
+    autoAskTranslate: 'Traduzir',
+    autoAskDismiss: 'Agora não',
+    autoAskAlways: 'Sempre traduzir {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'Esta página não é traduzida',
+    autoStateAsk: 'Aguardando sua decisão',
+    autoStatePending: 'Aguardando a página estabilizar',
+    autoStateIdle: 'Esta página está traduzida',
+    autoStateRunning: 'Traduzindo…',
+    autoStatePartial: '{count} blocos ainda sem tradução',
+    autoStatePaused: 'Pausado nesta página',
+    autoStateError: 'A tradução parou',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: 'A tradução automática está desligada',
+    autoReasonBlocklist: 'Este site nunca é traduzido automaticamente',
+    autoReasonUserNever: 'Você escolheu «nunca» para este site',
+    autoReasonUserExplicit: 'Você pediu esta página',
+    autoReasonUserAlways: 'Você escolheu «sempre» para este site',
+    autoReasonBuiltinAlways: 'Este site é traduzido automaticamente',
+    autoReasonSameLanguage: 'Já está no seu idioma',
+    autoReasonLangNotListed: 'O idioma desta página não está na sua lista',
+    autoReasonUnknownLanguage: 'Não foi possível identificar o idioma',
+    autoReasonDefaultAsk: 'Em um site novo, perguntamos primeiro',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'Mais',
+    popupSiteAuto: 'Traduzir este site automaticamente',
+    popupPausePage: 'Pausar nesta página',
+    popupResumePage: 'Retomar nesta página',
+
     configureApiKeyFirst: 'Configure primeiro a chave da API nas configurações',
   },
 
@@ -3185,6 +3500,41 @@ Rules:
     engineFallbackLocalOnly: 'Остановиться и сказать мне (бесплатно)',
     engineFallbackAllowAi: 'Использовать мой API (платно)',
     hintEngineFallback: 'Встроенный движок бесплатный, ваш API — нет. Переход на него расходует вашу квоту, поэтому происходит только если вы выберете это здесь.',
+
+    // 自动翻译：追问条
+    autoAskPrompt: 'Перевести эту страницу?',
+    autoAskTranslate: 'Перевести',
+    autoAskDismiss: 'Не сейчас',
+    autoAskAlways: 'Всегда переводить {site}',
+
+    // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
+    autoStateOff: 'Эта страница не переводится',
+    autoStateAsk: 'Ждём вашего решения',
+    autoStatePending: 'Ждём, пока страница успокоится',
+    autoStateIdle: 'Страница переведена',
+    autoStateRunning: 'Переводим…',
+    autoStatePartial: 'Ещё {count} фрагментов без перевода',
+    autoStatePaused: 'Приостановлено на этой странице',
+    autoStateError: 'Перевод прерван',
+
+    // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
+    autoReasonGlobalOff: 'Автоперевод выключен',
+    autoReasonBlocklist: 'Этот сайт никогда не переводится автоматически',
+    autoReasonUserNever: 'Вы выбрали «никогда» для этого сайта',
+    autoReasonUserExplicit: 'Вы сами запросили эту страницу',
+    autoReasonUserAlways: 'Вы выбрали «всегда» для этого сайта',
+    autoReasonBuiltinAlways: 'Этот сайт переводится автоматически',
+    autoReasonSameLanguage: 'Уже на вашем языке',
+    autoReasonLangNotListed: 'Языка этой страницы нет в вашем списке',
+    autoReasonUnknownLanguage: 'Не удалось определить язык',
+    autoReasonDefaultAsk: 'На новом сайте сначала спрашиваем',
+
+    // 自动翻译：悬浮球与 popup
+    floatBallMore: 'Ещё',
+    popupSiteAuto: 'Автоперевод этого сайта',
+    popupPausePage: 'Приостановить на этой странице',
+    popupResumePage: 'Продолжить на этой странице',
+
     configureApiKeyFirst: 'Сначала настройте ключ API в настройках',
   },
 };

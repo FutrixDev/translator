@@ -190,6 +190,9 @@
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
+      // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
+      // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
+      if (ctx.setupAutoStatus) ctx.setupAutoStatus();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.

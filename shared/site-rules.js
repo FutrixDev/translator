@@ -295,10 +295,39 @@
     return out('ask', REASONS.DEFAULT_ASK);
   }
 
+  // ---------------------------------------------------------------- 写规则
+
+  /**
+   * 写下一条用户站点规则，或把它抹掉（state 不是 always/never 时）。
+   *
+   * 放在这里而不是三个调用方各写一遍：**存进去的那把钥匙必须和 decide() 查的
+   * 那把是同一把**。追问条、popup、设置页都要写这张表，只要有一处忘了
+   * normalizeHost（或者哪天归一化规则变了而只改了两处），用户点下的「总是翻译」
+   * 就存在一个永远查不到的键上 —— 按钮有反应、规则也确实写进去了，页面就是不
+   * 翻，而且哪里都不报错。
+   *
+   * 读—改—写，不是整份覆盖：另一个标签页此刻可能正在给别的域名写规则。
+   *
+   * @returns {Promise<string>} 实际用的键，写不成时是空串。
+   */
+  async function writeUserRule(hostname, state) {
+    const key = normalizeHost(hostname);
+    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+    if (!key || !store) return '';
+    const stored = await store.get({ siteRules: {} });
+    const rules = Object.assign({}, stored.siteRules);
+    if (STATES.has(state)) rules[key] = state;
+    else delete rules[key];
+    await store.set({ siteRules: rules });
+    return key;
+  }
+
   root.SiteRules = {
     REASONS,
     decide,
     normalizeHost,
+    lookupUserRule,
+    writeUserRule,
     matchBuiltin,
     loadTable,
   };

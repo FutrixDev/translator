@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "무료 AI 번역. 웹페이지, 학술 논문(수식/LaTeX 보존), 실시간 YouTube 자막, PDF, 만화 페이지 지원.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "이 페이지 번역 / 원문 복원",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

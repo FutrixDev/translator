@@ -189,17 +189,6 @@ test('an autosave flush stays quiet while a connection test is in flight', async
   await expect(page.locator('#statusMessage')).toContainText('Connection Successful', { timeout: 5000 });
 });
 
-test('popup toggle updates youtube caption setting', async ({ page, context, extensionId }) => {
-  const popupUrl = `chrome-extension://${extensionId}/popup/popup.html`;
-  await page.goto(popupUrl);
-
-  const toggle = page.locator('#toggleYoutubeCaptions');
-  await expect(toggle).toBeVisible();
-  await toggle.click();
-
-  await expect.poll(async () => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
-});
-
 /**
  * Requirement of the free model: PDF translation ships ON for an account, and
  * switching it off has to retract every way in — the two popup rows and the two

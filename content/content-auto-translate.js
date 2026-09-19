@@ -17,8 +17,9 @@
 //           一个章（shared/session-guard.js），写回前验一次。**不取消请求** ——
 //           钱已经花了，取消也拿不回来；能做干净的只有「不写上去」。
 //
-// 它不画任何东西。询问条、状态点、悬浮球的样子都是 PR-7 的事，这一层只把
-// state() 摆在那里给它们读。
+// 它不画任何东西。询问条、状态点、悬浮球的样子都是 content/content-auto-status.js
+// 的事，这一层只把 state() 摆在那里给它们读，再用 onStateChange() 在变了的时候
+// 喊一声 —— 呈现层不轮询，见下面 setStatus() 的注释。
 (function () {
   'use strict';
 
@@ -96,6 +97,59 @@
     // 一轮整体失败就不再自动重试。runTranslationPass 返回错误本身已经意味着它
     // 内部连续失败了三次 —— 到这一步再重试，是在一个明显坏掉的接口上继续烧钱。
     let broken = false;
+    // 这一页上「给过机会还是没翻成」的块数。状态点的黄灯就是它：一轮跑完了，可
+    // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
+    // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
+    let gaveUp = 0;
+
+    // ------------------------------------------------------------------ 对外
+
+    // 上面这几个变量是这一层唯一的对外产物，而**呈现层不能靠轮询去读**：状态一秒
+    // 里可能变好几次（IDLE→RUNNING→IDLE），轮询要么漏掉中间那一下，要么每
+    // 200ms 醒一次、在一个早就判完的页面上白跑一整天。
+    const listeners = new Set();
+
+    function snapshot() {
+      return {
+        status,
+        reason,
+        pageLang,
+        error: lastError,
+        sessionVersion: guard.version(),
+        queued: queue.size,
+        gaveUp
+      };
+    }
+
+    function publish() {
+      if (listeners.size === 0) return;
+      const snap = snapshot();
+      for (const listener of listeners) {
+        // 一个画坏了的状态点不该把调度层带下水 —— 那一页会就此停止翻译，而用户
+        // 看到的只是一个不动的圆点。
+        try {
+          listener(snap);
+        } catch (error) {
+          console.warn('Blab Translation: auto status listener failed', error);
+        }
+      }
+    }
+
+    /**
+     * **status 只能从这里改。**
+     *
+     * 呈现层要的是「变了就告诉我」，而这一层有十个地方在改这个变量。让每个调用点
+     * 自己记得广播一次，就是这个项目反复修过的那一类 bug：漏掉的那一个不报错，
+     * 只是状态点停在上一态 —— 页面明明在翻，点是灰的；或者一页翻挂了，点还是绿的。
+     * 所以广播不是调用点的义务，是赋值本身的一部分。
+     *
+     * 每次调用都广播，哪怕 status 没变：同一个 IDLE 在一轮跑完前后含义不同
+     * （queued、gaveUp 都变了），去重反而会把「这一页有几段没翻成」吞掉。
+     */
+    function setStatus(next) {
+      status = next;
+      publish();
+    }
 
     // ------------------------------------------------------------------ 判
 
@@ -129,7 +183,7 @@
       stopDiscovery();
       clearSample();
       if (ctx.state.translationsVisible === false) {
-        status = STATUS.PAUSED;
+        setStatus(STATUS.PAUSED);
         return;
       }
       broken = false;
@@ -144,17 +198,17 @@
       reason = first.reason;
 
       if (first.verdict === 'off') {
-        status = STATUS.OFF;
+        setStatus(STATUS.OFF);
         return;
       }
       if (first.verdict === 'auto') {
         langResolved = true;
-        status = STATUS.IDLE;
+        setStatus(STATUS.IDLE);
         startDiscovery();
         return;
       }
 
-      status = STATUS.PENDING;
+      setStatus(STATUS.PENDING);
       startDiscovery();
     }
 
@@ -207,13 +261,13 @@
       if (final.verdict === 'auto') {
         // 第二问答不出 auto —— 所有「要翻」的理由都在第一问里定了。留着这一支
         // 是因为「该不该翻」只有 decide() 一个权威，这里不该替它推断。
-        status = STATUS.IDLE;
+        setStatus(STATUS.IDLE);
         if (discovery) discovery.rescan();
         return;
       }
       // off 就是不翻；ask 要问用户，而问的界面还不存在（PR-7）。两者都不再需要
       // 发现层 —— 一个没人看的观察器在每个页面上白跑，是实打实的耗电。
-      status = final.verdict === 'ask' ? STATUS.ASK : STATUS.OFF;
+      setStatus(final.verdict === 'ask' ? STATUS.ASK : STATUS.OFF);
       stopDiscovery();
     }
 
@@ -343,7 +397,7 @@
       // 不归我们管了，下面那几个状态赋值就都是在替新的一代乱表态。
       const session = guard.version();
       running = true;
-      status = STATUS.RUNNING;
+      setStatus(STATUS.RUNNING);
       // 我们自己插译文引起的变动，发现层本来就认得出来。挂起是为了省掉插入期间
       // 那几十次「子树变了」带来的重复收集。
       const suspended = discovery;
@@ -402,6 +456,7 @@
           retried.add(pending.key);
           if (element.isConnected) queue.set(element, pending.entry);
         }
+        gaveUp += giveUp.length;
         for (const element of giveUp) commit(element);
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
@@ -421,13 +476,13 @@
       if (error) {
         broken = true;
         lastError = error;
-        status = STATUS.ERROR;
+        setStatus(STATUS.ERROR);
         stopDiscovery();
         console.warn('Blab Translation: auto translation stopped for this page —', error);
         return;
       }
 
-      status = STATUS.IDLE;
+      setStatus(STATUS.IDLE);
       if (queue.size > 0) scheduleStart();
     }
 
@@ -435,6 +490,7 @@
 
     function bumpSession(why) {
       guard.bump(why);
+      gaveUp = 0;
       queue.clear();
       tickets.clear();
       inflight.clear();
@@ -449,7 +505,7 @@
       bumpSession('paused');
       stopDiscovery();
       clearSample();
-      status = STATUS.PAUSED;
+      setStatus(STATUS.PAUSED);
     }
 
     function resumeCurrentPage() {
@@ -519,14 +575,24 @@
     start('load');
 
     return {
-      state: () => ({
-        status,
-        reason,
-        pageLang,
-        error: lastError,
-        sessionVersion: guard.version(),
-        queued: queue.size
-      }),
+      state: snapshot,
+      /**
+       * 订阅状态变化，返回退订函数。
+       *
+       * **订阅的那一刻就先回调一次当前状态。** 呈现层是在调度层之后才装起来的
+       * （content/content-bootstrap.js 的 init 就是这个顺序），那时 start('load')
+       * 早已跑完 —— 只等「下一次变化」的话，一个判完就定下来不再动的页面（黑名单、
+       * 语言相同、要追问）永远等不到那一次，追问条根本不会出现。
+       */
+      onStateChange: (listener) => {
+        listeners.add(listener);
+        try {
+          listener(snapshot());
+        } catch (error) {
+          console.warn('Blab Translation: auto status listener failed', error);
+        }
+        return () => listeners.delete(listener);
+      },
       pauseCurrentPage,
       resumeCurrentPage,
       markPageExplicit,

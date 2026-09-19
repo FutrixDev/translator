@@ -103,6 +103,8 @@
           </linearGradient>
         </defs>
       </svg>
+      <span class="ai-translator-status-dot" data-state="none"></span>
+      <span class="ai-translator-ball-more" role="button" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</span>
     `;
 
     // Load saved position or use default
@@ -156,6 +158,9 @@
     }
 
     document.body.appendChild(state.floatBall);
+    // 看门狗随时会把球整个重建一遍，innerHTML 一换，状态点就回到了初始的空白。
+    // 重建之后补一笔，否则一次页面脚本的误删会让那颗点永久消失。
+    if (ctx.paintAutoStatusDot) ctx.paintAutoStatusDot();
     console.log('Blab Translation: Float ball created');
 
     // Setup drag and click handling
@@ -202,11 +207,34 @@
     state.floatBallContainer.classList.remove('docked-left', 'docked-right');
   }
 
+  // 触屏没有 hover，··· 不会出现，长按顶替它。
+  const LONG_PRESS_MS = 500;
+  // 长按开出菜单后，浏览器合成的那一下 click 要吞掉。给它一个时限：有些情况下
+  // 合成事件根本不来（长按触发了系统手势），没有时限的话这个「吞掉」会一直挂
+  // 在那儿，把用户下一次真正的单击也吃了。
+  const LONG_PRESS_CLICK_WINDOW_MS = 1000;
+
+  /**
+   * 单击落在球的哪一块上 —— 这一下的含义就由它决定。
+   *
+   * **必须在 mousedown 时判**。mouseup 的 e.target 可能已经换了元素：状态点在
+   * 这一拍里刚好被隐藏，指针就落回球身上，那时候再问等于问错对象。
+   */
+  function pressZone(target) {
+    if (!target || !target.closest) return 'ball';
+    if (target.closest('.ai-translator-ball-more')) return 'menu';
+    if (target.closest('.ai-translator-status-dot')) return 'status';
+    return 'ball';
+  }
+
   function setupFloatBallInteraction() {
     let isDragging = false;
     let dragStartX, dragStartY;
     let ballStartX, ballStartY;
     let dragDistance = 0;
+    let zone = 'ball';
+    let longPressAt = 0;
+    let longPressTimer = null;
 
     // Mouse down - start drag
     state.floatBall.addEventListener('mousedown', (e) => {
@@ -215,6 +243,7 @@
       isDragging = true;
       dragDistance = 0;
       state.floatBallDragged = false;
+      zone = pressZone(e.target);
 
       dragStartX = e.clientX;
       dragStartY = e.clientY;
@@ -319,11 +348,37 @@
           y: finalY,
           docked: dockedSide
         }));
-      } else {
-        // It was a click, not a drag
+      } else if (Date.now() - longPressAt < LONG_PRESS_CLICK_WINDOW_MS) {
+        // 长按已经把菜单开出来了，随后合成的这一下不该再做第二件事。
+        longPressAt = 0;
+      } else if (zone === 'menu') {
         toggleFloatMenu();
+      } else if (zone === 'status') {
+        if (ctx.toggleAutoStatusExplain) ctx.toggleAutoStatusExplain();
+      } else {
+        // 单击 = 翻译 / 还原（D1）。菜单挪到了球上那个 ···（触屏长按）——
+        // 最常做的那件事不该藏在一层菜单后面。
+        if (ctx.togglePageTranslation) ctx.togglePageTranslation();
       }
     });
+
+    // 触屏：长按开菜单。没有 hover 就没有 ···，这是它在触屏上唯一的入口。
+    const cancelLongPress = () => {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+    state.floatBall.addEventListener('touchstart', () => {
+      cancelLongPress();
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        longPressAt = Date.now();
+        toggleFloatMenu();
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+    for (const type of ['touchmove', 'touchend', 'touchcancel']) {
+      state.floatBall.addEventListener(type, cancelLongPress, { passive: true });
+    }
 
     // Handle window resize
     window.addEventListener('resize', () => {
@@ -368,8 +423,9 @@
       return;
     }
 
-    // Check if there are translations on the page
-    const hasTranslations = document.querySelectorAll('.ai-translator-inline-block').length > 0;
+    // 这一页有没有译文，问的是 content-page-translation.js 那一处 —— 它还算上
+    // PDF、漫画这类不在正文 DOM 里的管控译文，自己数一遍 inline-block 会漏掉。
+    const hasTranslations = !!(ctx.hasPageTranslations && ctx.hasPageTranslations());
     // The comic entry only appears where it can do something: the feature is on
     // and there is actually a page-sized image on screen to redraw.
     const showComic = !!settings.enableComicTranslation &&
@@ -523,37 +579,10 @@
     }
   }
 
-  // Toggle visibility of all page translations
+  // 译文显隐的实现在 content/page/visibility.js —— 悬浮球、popup、Alt+A、
+  // 「翻译整页」四个入口共用那一份。
   function toggleTranslationsVisibility() {
-    state.translationsVisible = !state.translationsVisible;
-
-    const translations = document.querySelectorAll('.ai-translator-inline-block');
-    translations.forEach(el => {
-      if (state.translationsVisible) {
-        el.classList.remove('ai-translator-hidden');
-      } else {
-        el.classList.add('ai-translator-hidden');
-      }
-    });
-
-    // 受管容器里的译文是原文块的 ::after，没有自己的节点可以加类名（它在上面这批
-    // 里只有一个不显示的替身），只能整体开关。见 content-managed-translation.js。
-    if (ctx.setManagedTranslationsVisible) {
-      ctx.setManagedTranslationsVisible(state.translationsVisible);
-    }
-
-    // “仅显示译文”与本开关联动：译文被藏起来时必须把原文放回来，
-    // 否则页面两边都不显示。译文重新显示时再把原文藏回去。
-    if (ctx.applyTranslationOnlyMode) {
-      ctx.applyTranslationOnlyMode();
-    }
-
-    // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
-    // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
-    if (ctx.autoTranslate) {
-      if (state.translationsVisible) ctx.autoTranslate.resumeCurrentPage();
-      else ctx.autoTranslate.pauseCurrentPage();
-    }
+    if (ctx.setTranslationsVisible) ctx.setTranslationsVisible(state.translationsVisible === false);
   }
 
   function stopFloatBallWatchdog() {

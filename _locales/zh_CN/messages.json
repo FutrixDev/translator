@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "免费 AI 翻译:网页、学术论文(保留数学公式/LaTeX)、YouTube 实时字幕、PDF 与漫画页面。",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "翻译 / 还原当前页面",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

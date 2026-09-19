@@ -714,6 +714,25 @@ chrome.runtime.onStartup.addListener(() => {
   ensureCacheSweepAlarm();
 });
 
+// Alt+A —— 翻译 / 还原当前页面。
+//
+// 和右键菜单、popup 那一行走的是同一条消息，因为它们是同一个动作；键位在
+// manifest 的 commands 里声明，用户可以在 chrome://extensions/shortcuts 改掉。
+//
+// content script 不在的页面（chrome:// 、Web Store、一个还没跑完的标签页）
+// sendMessage 会 reject，这里咽掉 —— 一个快捷键按不动是本来就该安静的事，
+// 抛出去只会在 service worker 的控制台里堆未处理的 rejection。
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== 'toggle-translate-page') return;
+  const target = tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  if (!target || typeof target.id !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(target.id, { type: 'TOGGLE_PAGE_TRANSLATION' });
+  } catch (error) {
+    console.log('Blab Translation: toggle shortcut had no receiver', error && error.message);
+  }
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === MENU_IDS.translateSelection && info.selectionText) {
     // 翻译动作交给 content script，而不是像以前那样在这里译完把结果推过去。

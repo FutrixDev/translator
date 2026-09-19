@@ -10,25 +10,40 @@
   if (!ctx) return;
 
   const { settings, state } = ctx;
-  function revealHiddenTranslations() {
-    const hidden = document.querySelectorAll('.ai-translator-inline-block.ai-translator-hidden');
-    hidden.forEach(el => el.classList.remove('ai-translator-hidden'));
-    // 受管容器里的译文整体开关（见 content-managed-translation.js），它被隐藏时
-    // 上面那批里只有一个不显示的替身，光看 hidden.length 会漏判。
-    const managedHidden = ctx.areManagedTranslationsHidden && ctx.areManagedTranslationsHidden();
-    if (managedHidden && ctx.setManagedTranslationsVisible) {
-      ctx.setManagedTranslationsVisible(true);
-    }
+
+  /**
+   * 「此刻想不想看译文」——**这个开关只有这一处实现**。
+   *
+   * 入口有四个：悬浮球单击、悬浮球菜单里的显示/隐藏、popup 的那一行、以及
+   * 「翻译整页」顺手把藏起来的放出来。四处各写一遍的代价不是重复，是漏项：
+   * 忘了受管容器那批（它们是原文块的 ::after，在下面那串里只有一个不显示的
+   * 替身），或者忘了通知自动翻译——用户一边藏译文，新译文一边冒出来。
+   */
+  function setTranslationsVisible(visible) {
     // 无条件置位。这个标记是「用户此刻想不想看译文」唯一的出处，自动翻译那一层
     // （content/content-auto-translate.js 的 start()）也读它 —— 只在「确实藏着
     // 东西」时才置位的话，在一个还没有译文的页面上藏一次、再点「翻译整页」，标记
     // 就永远停在 false，自动翻译从此不会再醒。
-    state.translationsVisible = true;
-    // “仅显示译文”开着时，此前因“隐藏译文”被放回来的原文要重新藏起去
+    state.translationsVisible = visible;
+    document.querySelectorAll('.ai-translator-inline-block').forEach((el) => {
+      el.classList.toggle('ai-translator-hidden', !visible);
+    });
+    // 受管容器里的译文整体开关（见 content-managed-translation.js）：它没有自己
+    // 的节点可以加类名，只能整体开关。幂等，所以不必先问它现在是什么状态。
+    if (ctx.setManagedTranslationsVisible) ctx.setManagedTranslationsVisible(visible);
+    // “仅显示译文”与本开关联动：译文被藏起来时必须把原文放回来，否则页面两边
+    // 都不显示；译文重新显示时再把原文藏回去。
     applyTranslationOnlyMode();
-    // 悬浮球的开关不是唯一的入口：「翻译整页」也会把译文放出来。两条路都要通知
-    // 到自动翻译那一层，否则藏过一次之后它就再也不会醒过来。
-    if (ctx.autoTranslate) ctx.autoTranslate.resumeCurrentPage();
+    // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
+    // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
+    if (ctx.autoTranslate) {
+      if (visible) ctx.autoTranslate.resumeCurrentPage();
+      else ctx.autoTranslate.pauseCurrentPage();
+    }
+  }
+
+  function revealHiddenTranslations() {
+    setTranslationsVisible(true);
   }
 
   // ==================== 隐藏原文 ====================
@@ -168,6 +183,7 @@
 
 
   ctx.revealHiddenTranslations = revealHiddenTranslations;
+  ctx.setTranslationsVisible = setTranslationsVisible;
   ctx.isTranslationOnlyActive = isTranslationOnlyActive;
   ctx.hideSourceForTranslation = hideSourceForTranslation;
   ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;

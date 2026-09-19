@@ -272,3 +272,71 @@ test('decide survives being asked nothing at all', () => {
     assert.equal(d.reason, R.GLOBAL_OFF);
   }
 });
+
+// ---------------------------------------------------------------- 写入
+
+// writeUserRule 在调用时才去看 globalThis.chrome，所以这里塞一个假的就够了。
+function fakeChrome(initial = {}) {
+  const store = Object.assign({}, initial);
+  return {
+    store,
+    chrome: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            const out = {};
+            for (const key of Object.keys(defaults)) {
+              out[key] = key in store ? store[key] : defaults[key];
+            }
+            return out;
+          },
+          set: async (patch) => { Object.assign(store, patch); }
+        }
+      }
+    }
+  };
+}
+
+test('writeUserRule 写的是 normalizeHost 认的那个键', async () => {
+  // 追问条拿到的是 location.hostname（`www.example.com`），decide() 查的是归一化
+  // 之后的 `example.com`。两边各自剥一次，迟早剥得不一样 —— 那时候规则写进去了，
+  // 却永远查不出来。
+  const fake = fakeChrome();
+  globalThis.chrome = fake.chrome;
+  try {
+    const key = await SiteRules.writeUserRule('www.example.com', 'always');
+    assert.equal(key, SiteRules.normalizeHost('www.example.com'));
+    assert.deepEqual(fake.store.siteRules, { [key]: 'always' });
+    // 写进去的立刻要能被判定读出来。
+    assert.equal(SiteRules.decide(ask({ userRules: fake.store.siteRules })).reason, R.USER_ALWAYS);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('关掉一个站点写的是 never，不是把它的规则删掉', async () => {
+  // x.com 在内置名单里就是 always。删掉用户规则等于让判定落回内置那一条，
+  // 于是「关掉」的下一次访问又自动翻了。
+  const fake = fakeChrome({ siteRules: { 'x.com': 'always' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('x.com', 'never');
+    assert.deepEqual(fake.store.siteRules, { 'x.com': 'never' });
+    assert.equal(SiteRules.decide(ask({ host: 'x.com', userRules: fake.store.siteRules })).reason, R.USER_NEVER);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('writeUserRule 只认 always / never，且不动别的站点', async () => {
+  const fake = fakeChrome({ siteRules: { 'other.com': 'never' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('example.com', 'sometimes');
+    assert.deepEqual(fake.store.siteRules, { 'other.com': 'never' }, '不认的状态不该落盘');
+    await SiteRules.writeUserRule('example.com', 'always');
+    assert.deepEqual(fake.store.siteRules, { 'other.com': 'never', 'example.com': 'always' });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
