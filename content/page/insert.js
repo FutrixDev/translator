@@ -298,6 +298,39 @@
     return true;
   }
 
+  // 页面上已经挂着一条译文，我们手里又来了一条：让不让位。
+  //
+  // 问的是三方而不是两方。只比「页面上那条的语言」和「我们这条的语言」的话，两轮
+  // 同时在飞时就成了谁最后落地谁说了算，而两个方向都会出事：
+  //
+  //   · 只看 class 一律拒收（这里原来的写法）：用户在一轮手动整页翻译跑着的时候
+  //     改了目标语言，调度层按 RESTART_KEYS 另起一轮，旧那轮的中文先落地；新那轮
+  //     的日文回来时被拒，这一轮静默地什么都没写，而调用方照样把它记成「有结果
+  //     了」。页面上那条中文从此没有任何东西会再动它 —— 收集端下一轮也不会，
+  //     class 还在。
+  //   · 反过来「语言不一样就换掉」：同一场竞速里新那轮的日文先落地，旧那轮的中文
+  //     随后回来，一样「语言不一样」，于是把日文又换回中文；新那轮的台账早把这
+  //     一块记成有结果了，同样再没人动它。
+  //
+  // 所以裁决者只能是**此刻这一页该译成的那门语言**：我们这条正是它，才有资格换掉
+  // 页面上那条；不是它，就按「晚到的旧货」处理，不动页面。
+  //
+  // 这一处现问设置，和「一轮之内目标语言取一次」（page/batch.js 的 passTarget）
+  // 不矛盾：那一条管的是**记什么戳** —— 戳必须是发请求时的那一门，否则戳和译文
+  // 对不上；这一条管的是**谁说了算** —— 只能是用户此刻要的那一门。
+  //
+  // null 一律当「不知道」，不知道就不动页面。三处都会出现：没登记过身份
+  // （lookup 落空）、登记时没说语言（entry.lang，见 registerTranslation），以及
+  // 只装了整页翻译那几个模块的 DOM 夹具里根本没有引擎（currentTargetLang 不在）。
+  // 调用方自己没说语言（lang == null）不必单列一条：那时 lang 既不可能等于
+  // entry.lang 之外的某个具体值，也不可能等于 current，最后一行自然答 false。
+  function supersedesExistingTranslation(element, lang) {
+    const entry = globalThis.BlockIdentity.lookup(element);
+    if (!entry || entry.lang == null || entry.lang === lang) return false;
+    const current = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+    return current != null && lang === current;
+  }
+
   // 插入翻译块
   // lang：见 registerTranslation —— 这一轮译成的是哪门语言，由调用方带进来；
   // 不带就是「没说」，这一块的身份里不记语言。
@@ -305,19 +338,9 @@
     const element = block.element;
     if (!element || !element.parentNode) return;
 
-    // 这个元素上已经挂着一条译文了 —— 它还算不算数，问 BlockIdentity，用的是
-    // 和收集端（page/collect.js 的陈旧判定）**同一条判据**。两端必须同问同答：
-    // 收集端放行的块，落笔端要是只看 class 一律拒收，这一轮就静默地什么都没写，
-    // 而调用方照样把它记成「这一块有结果了」。页面上那条旧译文从此没有任何东西
-    // 会再动它 —— 收集端下一轮也不会，class 还在，它连指纹都懒得算。
-    //
-    // 收集端已经替陈旧的块摘过一次了，所以走到这里还带着 class 的只剩一种情形：
-    // **这一块被收走之后、译文回来之前，另一轮翻译抢先插了一条**。用户在一轮
-    // 手动整页翻译跑着的时候改了目标语言，调度层按 RESTART_KEYS 另起一轮，两轮
-    // 于是同时在飞；先落地的那条是旧语言的。摘掉它，换上这一轮的。
+    // 这个元素上已经挂着一条译文了。动不动它，见 supersedesExistingTranslation。
     if (element.classList.contains('ai-translator-translated')) {
-      const identity = globalThis.BlockIdentity;
-      if (!identity.isStale(element, identity.fingerprint(ctx.readSourceText(element)), lang)) return;
+      if (!supersedesExistingTranslation(element, lang)) return;
       releaseTranslation(element);
     }
     if (element.classList.contains('ai-translator-inline-source')) return;

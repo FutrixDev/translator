@@ -284,7 +284,17 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   // 一门语言」。
   const insert = code('content/page/insert.js');
   assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang\)/);
-  assert.doesNotMatch(insert, /currentTargetLang/);
+  // 落笔端只有一处能现问设置：裁决两轮同时在飞时谁说了算（supersedesExistingTranslation）。
+  // 除它以外一处都不许有 —— 戳必须是发请求时的那一门语言，在这里现问就会把
+  // 用户中途改的新语言盖在旧译文上，从此这一块指纹一致、语言「也一致」，再没
+  // 人会把它重翻。
+  const arbiterAt = insert.indexOf('function supersedesExistingTranslation');
+  assert.ok(arbiterAt !== -1, '裁决者没了：两轮同时在飞时谁说了算？');
+  const arbiterEnd = insert.indexOf('\n  }\n', arbiterAt);
+  const arbiter = insert.slice(arbiterAt, arbiterEnd);
+  assert.match(arbiter, /const current = ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null;/);
+  assert.match(arbiter, /return current != null && lang === current;/);
+  assert.doesNotMatch(insert.slice(0, arbiterAt) + insert.slice(arbiterEnd), /currentTargetLang/);
   // 两个问「这块还算翻过吗」的地方都要带上目标语言。
   assert.match(code('content/page/collect.js'), /identity\.isStale\(element, identity\.fingerprint\(readSourceText\(element\)\), target\)/);
   assert.match(code('content/content-auto-translate.js'), /identity\.isStale\(element, textFingerprint, target\)/);

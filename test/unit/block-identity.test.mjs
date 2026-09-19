@@ -248,21 +248,32 @@ test('every insertion registers an identity — including the one with no node t
     'the shared post-insert path no longer registers the block identity');
 });
 
-// 收集端和落笔端之间隔着一次 await：块被收走之后、译文回来之前，另一轮翻译
-// （用户改了目标语言，手动那一轮还在飞）完全可能抢先给它插一条旧语言的译文。
-// 落笔端要是只看 `.ai-translator-translated` 就一律拒收，这一轮静默地什么都没写，
-// 调用方照样记账，而收集端下一轮同样只看 class —— 那条旧语言的译文从此没有任何
-// 东西会再动它。两端必须用同一条判据，且落笔端要能把旧的摘掉。
-test('the insertion side asks the same staleness question the collector does', () => {
+// 收集端和落笔端之间隔着一次 await，两轮翻译（用户改了目标语言，手动那一轮还在
+// 飞）完全可能同时在飞，两条译文先后落到同一块上 —— 而先后顺序是网络说了算的。
+// 只看 `.ai-translator-translated` 一律拒收，后到的新语言译文写不进去；反过来
+// 「语言不一样就换掉」，后到的旧语言译文把新的盖掉。两条路通向同一个终点：页面
+// 停在旧语言，调用方照样记账，从此没有任何东西会再动它。所以裁决者是**此刻该译
+// 成的那门语言**，不是先来后到。
+test('the insertion side replaces an existing translation only for the current target language', () => {
   const source = repoFile('content/page/insert.js');
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   const guard = body.indexOf("classList.contains('ai-translator-translated')");
-  assert.ok(guard !== -1, 'the duplicate guard moved; re-check where the staleness question belongs');
-  const window = body.slice(guard, guard + 400);
-  assert.match(window, /identity\.isStale\(element, identity\.fingerprint\(ctx\.readSourceText\(element\)\), lang\)/,
+  assert.ok(guard !== -1, 'the duplicate guard moved; re-check where the arbitration belongs');
+  const window = body.slice(guard, guard + 300);
+  assert.match(window, /supersedesExistingTranslation\(element, lang\)/,
     'the insertion side answers "already translated?" from the class alone again');
   assert.match(window, /releaseTranslation\(element\);/,
-    'a stale translation is refused instead of replaced — the page keeps the old language forever');
+    'a superseded translation is refused instead of replaced — the page keeps the old language forever');
+
+  const arbiterAt = source.indexOf('function supersedesExistingTranslation');
+  assert.ok(arbiterAt !== -1, 'supersedesExistingTranslation is gone; who arbitrates two passes in flight now?');
+  const arbiter = source.slice(arbiterAt, source.indexOf('\n  }\n', arbiterAt));
+  assert.match(arbiter, /ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/,
+    'the arbiter stopped asking what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
+  assert.match(arbiter, /lang === current/,
+    'the arbiter no longer requires the incoming result to be the current target language');
+  assert.match(arbiter, /entry\.lang === lang/,
+    'the arbiter stopped deduplicating — every repeat insert now tears the translation down and redraws it');
 });
 
 test('block-identity loads before the modules that use it', () => {
