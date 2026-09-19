@@ -181,6 +181,20 @@
     return pageSourceLangPromise;
   }
 
+  // 单页应用换页时 document 从头到尾是同一个，这个模块级缓存也就一直是上一篇文章
+  // 的语言。中文页跳到英文页之后，凡是短于 SELF_DETECT_MIN_CHARS 的块都不自己探，
+  // 直接拿缓存里的 zh 当源语言 —— 目标语言也是 zh，于是判成「已经是目标语言」，
+  // 原样退回，一个字不译。页面上看不出任何异样，只有短句永远是英文。
+  //
+  // 清缓存放在引擎这一层、由它自己订路由，而不是让自动翻译那一层换页时顺手清一下：
+  // 划词、悬停、字幕走的是同一个 resolveSourceLang，自动翻译关着的时候它们照样在
+  // 这条路上。谁拥有这个缓存，谁负责让它过期。
+  if (globalThis.SpaNavigation) {
+    globalThis.SpaNavigation.onRouteChange(() => {
+      pageSourceLangPromise = null;
+    });
+  }
+
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
 
@@ -791,7 +805,11 @@
       window.removeEventListener('keydown', onGesture, true);
       // 静默进行。这不是用户点出来的翻译，不该去占用进度条；失败也不弹提示，
       // 等他真的发起翻译时，那条路自己会重试并给出说明。
-      getTranslator(src, tgt, true).catch((error) => {
+      getTranslator(src, tgt, true).then(() => {
+        // 包刚落地。自动翻译那一轮很可能已经因为 builtinNeedsDownload 停在
+        // ERROR 上了 —— 它不会自己再试，而这一刻正是这一页唯一变好的时刻。
+        notifyLanguagePackReady({ sourceLang: src, targetLang: tgt });
+      }).catch((error) => {
         console.info('Blab Translation: language pack prefetch failed', error);
       });
     };
@@ -799,9 +817,54 @@
     window.addEventListener('keydown', onGesture, true);
   }
 
+  // 「一个原本要下载的语言包，刚刚装好了」。
+  //
+  // 新装机走默认设置（translationEngine: 'builtin'、engineFallback: 'local-only'）
+  // 打开一个英文页面时，自动翻译那一轮没有 user activation，明确传
+  // allowDownload: false，于是每一批都拿回 builtinNeedsDownload；攒够三次，调度
+  // 层判定这一页整体失败，停在 ERROR 并关掉发现层。它不会自己重试 —— 那条规矩
+  // 是对的（在一个明显坏掉的接口上重试就是烧钱），可这一次「坏」的原因偏偏是会
+  // 自己好的：用户在页面上的第一次点击或按键就把包拉下来了。没有这条通知，那一页
+  // 要一直空着，直到刷新、跳转或者改一次设置。
+  //
+  // 只有预取这一条路会发：它是这个内容脚本里唯一**先确认过「这个语言对还没下」**
+  // 、然后真的把它下下来的地方。（设置页那颗下载按钮走的是 ensureDownloaded，
+  // 跑在 options 页自己的上下文里，通知不到已经开着的标签页 —— 那是 PR-10 的事。）
+  const languagePackListeners = new Set();
+
+  function onLanguagePackReady(fn) {
+    if (typeof fn === 'function') languagePackListeners.add(fn);
+  }
+
+  function notifyLanguagePackReady(pair) {
+    for (const fn of languagePackListeners) {
+      try {
+        fn(pair);
+      } catch (error) {
+        console.warn('Blab Translation: language pack listener failed', error);
+      }
+    }
+  }
+
   // ==================== 对外接口 ====================
 
+  /**
+   * 「我们此刻往哪门语言译」。
+   *
+   * 落笔端把这个答案记进译文的身份里（shared/block-identity.js 的 lang），收集端
+   * 拿它去问「挂在这一块上的译文还是这门语言的吗」。两边必须走同一个入口，否则
+   * 一边记原样设置、一边记归一化后的写法，每一块都判成陈旧。
+   *
+   * 归一化过：zh-CN 和 zh 到了引擎那边是同一门语言，用户在设置里换个写法不该把
+   * 整页重翻一遍。空（跟随浏览器语言）归一成空串。
+   */
+  function currentTargetLang() {
+    return toApiLang(settings.targetLang) || '';
+  }
+
   ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
+  ctx.currentTargetLang = currentTargetLang;
+  ctx.onLanguagePackReady = onLanguagePackReady;
 
   // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
   // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和

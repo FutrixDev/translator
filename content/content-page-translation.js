@@ -52,13 +52,17 @@
     state.isTranslatingPage = true;
     state.translationProgress = { current: 0, total: 0 };
     ctx.showPageTranslationProgress();
+    // 用户在这一页表过态了。此后长出来的新内容跟着翻，不必再点一次。
+    if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
 
     try {
       // 收集需要翻译的元素（以块级元素为单位）
       let translatableBlocks = ctx.collectTranslatableBlocks(document.body);
-      translatableBlocks = await ctx.filterBlocksByLanguage(translatableBlocks);
-
+      // 紧挨着上一行读，中间不能有 await。这个计数是收集器的模块级变量，每次
+      // collectTranslatableBlocks 进门就清零 —— 自动翻译的发现层也在调它。隔着
+      // 一次 await 去读，读到的可能是发现层那一次收集的结果。
       const managedSkipped = ctx.getManagedSkipCount();
+      translatableBlocks = await ctx.filterBlocksByLanguage(translatableBlocks);
 
       if (translatableBlocks.length === 0) {
         // 一块也收不到有两种完全不同的原因，不能都报“页面已翻译”：真的翻完了，
