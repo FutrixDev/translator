@@ -32,7 +32,20 @@ function pngDataUrlSize(dataUrl) {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
-async function startMockOpenAIServer() {
+/**
+ * @param {object} [options]
+ * @param {number} [options.failRequests]
+ *   让最前面这么多次翻译请求以 HTTP 500 作答，之后恢复正常。
+ *
+ *   偶发失败和接口不可用是两回事：一轮里失败不到 MAX_BATCH_FAILURES 次时这一轮
+ *   **不报错**（content/page/batch.js），那几块只是一个字都没翻。要证「下一次
+ *   还会再试一次」，就得能造出这种一半成一半败的一轮 —— 整台服务器一直 500 造
+ *   不出来，那是另一条路（整体故障）。
+ *
+ *   失败的那几次照样记进 sentTexts：文字确实发出去了，钱也确实花了。
+ */
+async function startMockOpenAIServer({ failRequests = 0 } = {}) {
+  let remainingFailures = failRequests;
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
   const fastBatchRequests = [];
@@ -96,6 +109,13 @@ async function startMockOpenAIServer() {
       }
 
       if (content) sentTexts.push(content);
+
+      if (remainingFailures > 0) {
+        remainingFailures -= 1;
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'mock: upstream hiccup' } }));
+        return;
+      }
 
       const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
       if (delimiter) {

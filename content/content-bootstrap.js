@@ -169,8 +169,9 @@
         if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
       }
 
-      // 自动翻译要看五个键（总开关、站点规则、语言名单、目标语言、引擎），而它
-      // 们各自的含义只有调度层知道 —— 在这里摊成五个 if，等于把那份判断抄一遍。
+      // 自动翻译关心哪些键、每个键该怎么反应，只有调度层知道（那份名单在
+      // content-auto-translate.js 的 RESTART_KEYS，会随功能增减）。整包递过去，
+      // 在这里摊成一串 if 等于把那份判断抄一遍 —— 抄本迟早和正本对不上。
       if (ctx.autoTranslate) ctx.autoTranslate.onSettingsChanged(changes);
     });
   };

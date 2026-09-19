@@ -815,7 +815,22 @@
 
   // ==================== 对外接口 ====================
 
+  /**
+   * 「我们此刻往哪门语言译」。
+   *
+   * 落笔端把这个答案记进译文的身份里（shared/block-identity.js 的 lang），收集端
+   * 拿它去问「挂在这一块上的译文还是这门语言的吗」。两边必须走同一个入口，否则
+   * 一边记原样设置、一边记归一化后的写法，每一块都判成陈旧。
+   *
+   * 归一化过：zh-CN 和 zh 到了引擎那边是同一门语言，用户在设置里换个写法不该把
+   * 整页重翻一遍。空（跟随浏览器语言）归一成空串。
+   */
+  function currentTargetLang() {
+    return toApiLang(settings.targetLang) || '';
+  }
+
   ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
+  ctx.currentTargetLang = currentTargetLang;
 
   // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
   // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和

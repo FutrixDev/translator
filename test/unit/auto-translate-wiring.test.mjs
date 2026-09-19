@@ -70,7 +70,8 @@ test('译文写回页面只有一个入口 —— 迟到校验才不会漏在某
   const source = code('content/page/batch.js');
   const calls = source.match(/ctx\.insertTranslationBlock\(/g) || [];
   assert.equal(calls.length, 1, '三条插入路径都要走 insertTranslation()');
-  assert.match(source, /function insertTranslation\(block, translation, accept\)/);
+  // 签名本身由「台账等结果再记」那一条钉住（它还要求同一个口子报 onSettled）。
+  assert.match(source, /async function insertTranslation\(block, translation, \{/);
   assert.match(source, /if \(accept && !accept\(block\)\) return;/);
 });
 
@@ -264,4 +265,77 @@ test('跳转这道门量的是真正在滚的那个容器，不是 window', () =
   // 滚动抛一次 ReferenceError，而页面上看不出来。
   assert.match(discover, /^\(function \(\) \{/m);
   assert.doesNotMatch(discover, /target === root/);
+});
+
+test('「翻过了」要连目标语言一起问 —— 两个生产调用点都带第三个参数', () => {
+  // 换目标语言时只把调度层重启一遍是不够的：页面上那些块的身份登记还在，指纹也
+  // 没变，收集那一层一看「登记过、不陈旧」就直接跳过 —— 已经翻过的那一片永远停
+  // 在上一门语言。所以答案放在**译文的身份**里，手动整页翻译因此一并修好。
+  const identity = code('shared/block-identity.js');
+  assert.match(identity, /function isStale\(element, currentFingerprint, targetLang\)/);
+  // 两头都要能退回从前：漏传只是回到旧行为，绝不能把「没说」当成某个具体值 ——
+  // 那会让每一块都判成陈旧，放开、重翻、再登记、再判陈旧，一个烧钱的死循环。
+  assert.match(identity, /if \(targetLang == null \|\| entry\.lang == null\) return false;/);
+  assert.match(identity, /lang: entry && entry\.lang != null \? String\(entry\.lang\) : null,/);
+
+  // 登记的那一刻记下译成了哪门语言，就在唯一的登记口（managed 和普通两条插入路
+  // 径都经过它）。
+  assert.match(code('content/page/insert.js'), /lang: ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/);
+  // 两个问「这块还算翻过吗」的地方都要带上目标语言。
+  assert.match(code('content/page/collect.js'), /identity\.isStale\(element, identity\.fingerprint\(readSourceText\(element\)\), target\)/);
+  assert.match(code('content/content-auto-translate.js'), /identity\.isStale\(element, textFingerprint, target\)/);
+
+  // 目标语言的规范化归引擎所有（toApiLang 那套别名表只有一份）。
+  assert.match(code('content/content-translation-engine.js'), /ctx\.currentTargetLang = currentTargetLang;/);
+  assert.ok(
+    isolated.indexOf('content/content-translation-engine.js') < isolated.indexOf('content/page/insert.js'),
+    'content-translation-engine.js 必须排在 page/insert.js 前面'
+  );
+});
+
+test('台账等结果再记，且结果由翻译层报上来', () => {
+  const batch = code('content/page/batch.js');
+  // 「这一块有结果了」只有翻译层知道，而且要在唯一的写回口报 —— 模型把原文原样
+  // 还回来（不用翻）和真的写回去了，同样是终局，漏报哪一种都会让那一块下一轮再
+  // 花一次同样的钱。
+  assert.match(batch, /async function insertTranslation\(block, translation, \{ accept, onSettled \} = \{\}\)/);
+  assert.equal((batch.match(/if \(onSettled\) onSettled\(block\);/g) || []).length, 2);
+  assert.match(batch, /const onSettled = typeof options\.onSettled === 'function' \? options\.onSettled : null;/);
+
+  const auto = code('content/content-auto-translate.js');
+  // 发出去的那一刻不记账：批次失败一两次时这一轮不报错（MAX_BATCH_FAILURES 是
+  // 3），那几块一个字都没翻 —— 先记账就是让它们永远被当成翻过了，页面上一片原文
+  // 而且没有任何报错。所以整份文件里 `ledger.add` 只能有一处，就在 commit 里。
+  assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
+  assert.match(auto, /inflight\.set\(element, key\);/);
+  assert.match(auto, /onSettled: \(block\) => commit\(block\.element\)/);
+  assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(key\);/);
+  // 被语言滤掉的是有意跳过，也是结果，同样要记。
+  assert.match(auto, /for \(const block of blocks\) if \(!keep\.has\(block\.element\)\) commit\(block\.element\);/);
+  // 代次翻篇和一轮收尾都要清空在途表：迟到的结果不能往新一代的台账里塞一笔。
+  assert.equal((auto.match(/inflight\.clear\(\);/g) || []).length, 3);
+});
+
+test('改对了密钥/地址/模型/回落，停在错误上的那一页要自己重来', () => {
+  const auto = code('content/content-auto-translate.js');
+  const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
+  assert.ok(keys, 'RESTART_KEYS 不见了');
+  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine',
+    'apiKey', 'apiEndpoint', 'modelName', 'engineFallback']) {
+    assert.ok(keys[1].includes(`'${key}'`), `RESTART_KEYS 少了 ${key}`);
+  }
+  // 名单在调度层，不在转发那一层 —— 在 bootstrap 里摊成一串 if 就是把它抄一遍，
+  // 抄本迟早和正本对不上（这条规则正是因为那份「五个键」的注释过期才立的）。
+  const bootstrap = code('content/content-bootstrap.js');
+  assert.match(bootstrap, /if \(ctx\.autoTranslate\) ctx\.autoTranslate\.onSettingsChanged\(changes\);/);
+  assert.doesNotMatch(bootstrap, /RESTART_KEYS/);
+  // 这四个键真的是设置里存的那四个 —— 拼错一个，这条门就永远不开，而且没有任何
+  // 迹象。engineFallback 归内容侧默认值管，另外三个归后台的 defaultSettings。
+  assert.ok('engineFallback' in DefaultSettings.CONTENT_DEFAULTS);
+  const background = read('background/background.js');
+  const declared = background.match(/const defaultSettings = \{([\s\S]*?)\n\};/);
+  assert.ok(declared, 'background.js 的 defaultSettings 不见了');
+  for (const key of ['apiKey', 'apiEndpoint', 'modelName']) {
+    assert.match(declared[1], new RegExp(`^\\s*${key}:`, 'm'), `defaultSettings 里没有 ${key}`);
+  }
 });

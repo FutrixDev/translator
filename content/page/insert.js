@@ -257,7 +257,13 @@
       // 它是我们自己的，不会把它算进原文。
       fingerprint: globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element)),
       translationEl: translationEl || null,
-      managed: !!managed
+      managed: !!managed,
+      // 这条译文是哪门语言的。收集端据此认出「目标语言换了，这条该重翻」——
+      // 内容身份一个字没变，不记这一笔就没有任何东西能让它过期。
+      // 守卫按这个文件里既有的写法留：引擎模块在真实页面上一定在，只装落笔那
+      // 几个模块的单测夹具里不一定。没说就是 null，那边一律不问（见
+      // shared/block-identity.js 的 register）。
+      lang: ctx.currentTargetLang ? ctx.currentTargetLang() : null
     });
   }
 

@@ -282,10 +282,17 @@
   // 把它放在后面意味着「已经作废的请求」还要多花一次判定。但顺序反过来，两者
   // 之间那次 await 又给了页面一个变动的窗口 —— 校验必须是插入前的最后一件事，
   // 这点比省一次本地判定重要。
-  async function insertTranslation(block, translation, accept) {
-    if (await shouldSkipTranslation(block, translation)) return;
+  async function insertTranslation(block, translation, { accept, onSettled } = {}) {
+    if (await shouldSkipTranslation(block, translation)) {
+      // 模型把原文原样还回来了 —— 这一块本来就不用翻。这和「翻好了」一样是**终局**，
+      // 所以同样要报出去：自动翻译那一层据此记账，不报的话它下一轮还会被送出来，
+      // 再花一次同样的钱，永远如此。
+      if (onSettled) onSettled(block);
+      return;
+    }
     if (accept && !accept(block)) return;
     ctx.insertTranslationBlock(block, translation);
+    if (onSettled) onSettled(block);
   }
 
   // 分批译文只能按位置回填，回填前数量必须一致 —— 与超大块路径（processOversizedBlock）
@@ -293,24 +300,24 @@
   // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
   // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
   // 最坏是某一块拿不到译文而保持原文。
-  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept, allowDownload } = {}) {
+  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted, accept, allowDownload, onSettled } = {}) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled });
       return;
     }
 
     await Promise.all(translations.map(async (translation, i) => {
       if (!batch[i] || !translation) return;
-      await insertTranslation(batch[i], translation, accept);
+      await insertTranslation(batch[i], translation, { accept, onSettled });
     }));
   }
 
-  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload = true } = {}) {
+  async function translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload = true, onSettled } = {}) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
@@ -330,7 +337,7 @@
           ? response.translations[0]
           : null;
         if (!translation) continue;
-        await insertTranslation(block, translation, accept);
+        await insertTranslation(block, translation, { accept, onSettled });
       } catch (error) {
         // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
         if (isExtensionContextInvalidated(error)) throw error;
@@ -371,6 +378,11 @@
     // 迟到校验。手动整页翻译不传 —— 用户点下去到译文回来这段时间里，页面通常
     // 还是那一页，而自动翻译的一轮可能横跨一次路由切换。
     const accept = typeof options.accept === 'function' ? options.accept : null;
+    // 「这一块有结果了」。翻好了是结果，模型说「不用翻」也是结果 —— 失败不是。
+    // 自动翻译拿它记台账：只有报过的块才不再送第二次（见
+    // content/content-auto-translate.js 的 commit）。整页翻译不传，它点一次就结束，
+    // 没有下一轮。
+    const onSettled = typeof options.onSettled === 'function' ? options.onSettled : null;
     // 语言包是几十 MB 的下载，create() 触发它要求 user activation。整页翻译是
     // 用户点出来的，手势就在那儿；自动翻译这一轮没有，硬触发只会换回一个
     // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
@@ -483,7 +495,7 @@
 
       const combined = translations.join('');
       if (!combined.trim()) return;
-      await insertTranslation(block, combined, accept);
+      await insertTranslation(block, combined, { accept, onSettled });
     };
 
     // 使用 Promise 池进行并发控制
@@ -526,7 +538,8 @@
             allowDownload,
             onFailure: noteBatchFailure,
             isAborted: aborted,
-            accept
+            accept,
+            onSettled
           });
         }
       } catch (error) {

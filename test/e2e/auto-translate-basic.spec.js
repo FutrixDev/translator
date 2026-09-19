@@ -12,7 +12,7 @@
 // 断言 sentTexts 而不只看 DOM：DOM 只能证明「没画出译文」，那在「发出去了但没落
 // 地」时也成立——而钱是在发出去那一刻花掉的。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, writeSyncSettings } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://auto.test';
@@ -99,6 +99,84 @@ test('auto translation: a page with no rule is left alone — nothing rendered, 
 
     await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
     expect(sentTexts).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test('auto translation: changing the target language re-translates what is already on the page', async ({ page, context }) => {
+  // 换目标语言之前翻过的那一片，是**上一门语言**的译文。只把调度层重启一遍不
+  // 够：页面上每一块的身份登记还在，原文一个字没变，指纹自然一致 —— 收集那一层
+  // 一看「登记过、不陈旧」就跳过，于是用户改完设置，已经翻出来的部分永远停在中
+  // 文，只有之后新滚出来的那些才是日文。页面上看不出异样（两种语言都是「译文」），
+  // 也没有任何报错。
+  //
+  // 断言的是「同一段原文又发出去了一次」：这件事只有在旧译文被判成陈旧、放开、
+  // 重新收集之后才可能发生。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint, {
+      siteRules: { 'auto.test': 'always' },
+    }));
+    await serve(context);
+
+    await page.goto(`${ORIGIN}/article`);
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#lead-box .ai-translator-inline-block', { timeout: 30000 });
+
+    const countLead = () => sentTexts.filter((text) => text.includes(LEAD)).length;
+    await expect.poll(countLead, { timeout: 30000 }).toBe(1);
+
+    // 只写这一个键：storage 的变更通知里就只有 targetLang，和用户在设置页改它
+    // 时到达的是同一份东西。
+    await writeSyncSettings(context, { targetLang: 'ja' });
+
+    await expect.poll(countLead, { timeout: 30000 }).toBeGreaterThanOrEqual(2);
+    // 译文还在页面上 —— 重翻是「放开再插一条」，不是「删掉就完了」。
+    await expect(page.locator('#lead-box .ai-translator-inline-block')).toHaveCount(1);
+  } finally {
+    await close();
+  }
+});
+
+test('auto translation: a block whose batch failed gets another chance, not a silent hole', async ({ page, context }) => {
+  // 一轮里失败不到三次不算整体故障（content/page/batch.js 的 MAX_BATCH_FAILURES）：
+  // 这一轮照样「成功」结束，只是那几块一个字都没翻。台账要是在**发出去那一刻**
+  // 就记上，它们从此被当成翻过了 —— 发现层下一轮送回来，调度层一看台账，跳过。
+  // 页面上那一片永远是原文，没有报错，没有重试，什么痕迹都没有。
+  //
+  // 所以记账要等结果：翻好了算、模型说不用翻算，失败不算。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer({ failRequests: 1 });
+
+  try {
+    await setExtensionSettings(page, settings(endpoint, {
+      siteRules: { 'auto.test': 'always' },
+    }));
+    await serve(context);
+
+    await page.goto(`${ORIGIN}/article`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    const countLead = () => sentTexts.filter((text) => text.includes(LEAD)).length;
+    // 第一批发出去了，服务器 500 —— 文字花了钱，页面上什么也没落地。
+    await expect.poll(countLead, { timeout: 30000 }).toBeGreaterThanOrEqual(1);
+    await expect(page.locator('#lead-box .ai-translator-inline-block')).toHaveCount(0);
+
+    // 页面自己动一下（评论区追加、信息流插入……）。脏根是 #lead-box，重新收集时
+    // #lead 还没有译文、也没有身份登记，于是又一次被送到调度层门口 —— 从这里往
+    // 后，唯一决定它会不会被再发一次的就是台账。
+    await page.evaluate(() => {
+      const box = document.getElementById('lead-box');
+      const note = document.createElement('p');
+      note.id = 'late-note';
+      note.textContent = 'The harbour office posts a notice whenever the schedule changes.';
+      box.appendChild(note);
+    });
+
+    await expect.poll(countLead, { timeout: 30000 }).toBeGreaterThanOrEqual(2);
+    await page.waitForSelector('#lead-box .ai-translator-inline-block', { timeout: 30000 });
+    await expect(page.locator('#lead')).toContainText(LEAD);
   } finally {
     await close();
   }

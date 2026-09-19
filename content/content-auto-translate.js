@@ -66,10 +66,15 @@
     const queue = new Map();
     // 本轮在途请求的章。一轮之内才有意义，下一轮重新盖。
     const tickets = new Map();
-    // 已经动过手的块：`代次内编号:文本指纹`。发现层每次扫描都会把没翻成的块
+    // 已经**有结果**的块：`代次内编号:文本指纹`。发现层每次扫描都会把没翻成的块
     // （已经是中文的、判定跳过的）原样再送一遍，没有这本台账就会一遍遍重新发请求。
     // 代次一翻篇就整本作废 —— 换了目标语言之后，同样的文字要重新翻。
     const ledger = new Set();
+    // 这一轮正在路上的块 → 它在台账里的那个 key。**记账要等结果**：批次失败一两次
+    // 时这一轮不报错（content/page/batch.js 的 MAX_BATCH_FAILURES 是 3），可那几块
+    // 一个字都没翻。先记账的话它们就此永远被当成翻过了 —— 发现层下一轮送回来，
+    // takeBatch 一看台账，跳过，页面上那一片永远是原文，而且没有任何报错。
+    const inflight = new Map();
 
     let discovery = null;
     let status = STATUS.OFF;
@@ -257,7 +262,22 @@
     function alreadyTranslated(element, textFingerprint) {
       const identity = globalThis.BlockIdentity;
       if (!identity.lookup(element)) return false;
-      return !identity.isStale(element, textFingerprint);
+      // 目标语言也要带上：挂在上面那条译文要是上一门语言的，这一块就不算翻过。
+      const target = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+      return !identity.isStale(element, textFingerprint, target);
+    }
+
+    // 「这一块这一轮有结果了，别再送第二次」。三种结果算数：译文写回去了、模型
+    // 说不用翻（两者都由 runTranslationPass 的 onSettled 报上来）、用户的语言设置
+    // 把它滤掉了。失败不算 —— 那一块下一次扫描回来时还该有一次机会。
+    //
+    // 只认还在 inflight 里的：代次一翻篇 inflight 就清空，于是一条迟到的结果不会
+    // 往新一代的台账里塞一笔（塞进去就是新一代的那一块永远不翻）。
+    function commit(element) {
+      const key = inflight.get(element);
+      if (key === undefined) return;
+      inflight.delete(element);
+      ledger.add(key);
     }
 
     function acceptBlock(block) {
@@ -270,6 +290,7 @@
     function takeBatch() {
       const blocks = [];
       tickets.clear();
+      inflight.clear();
       for (const [element, entry] of queue) {
         if (!element.isConnected) continue;
         const ticket = guard.stamp(element);
@@ -285,8 +306,9 @@
         if (entry.source !== ticket.textFingerprint) continue;
         const key = `${ticket.blockId}:${ticket.textFingerprint}`;
         if (ledger.has(key)) continue;
-        ledger.add(key);
+        // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
         if (alreadyTranslated(element, ticket.textFingerprint)) continue;
+        inflight.set(element, key);
         tickets.set(element, ticket);
         blocks.push(entry.block);
       }
@@ -324,11 +346,16 @@
       try {
         // 「已经是目标语言的就别翻了」是用户的设置，自动这一轮和手动那一轮认的是
         // 同一条（content/content-page-translation.js 在同一个位置调它）。不认，
-        // 就是把他明确说过不必发的文字一轮一轮发出去。被滤掉的块此刻已经记进
-        // 台账，发现层下次再送来也不会重来。
+        // 就是把他明确说过不必发的文字一轮一轮发出去。
         const fresh = await ctx.filterBlocksByLanguage(blocks);
         // 探语言本身就是一串 await。期间换了路由或者关掉了自动翻译，这一轮的结果
-        // 一条都不会被采纳 —— 那就一条都别发。
+        // 一条都不会被采纳 —— 那就一条都别发，也别往（早已作废重建的）台账里记。
+        if (guard.version() === session) {
+          // 被语言滤掉的是**有意跳过**，和失败是两回事：这一轮不发它，下一轮也不
+          // 该再发。记账。
+          const keep = new Set(fresh.map((block) => block.element));
+          for (const block of blocks) if (!keep.has(block.element)) commit(block.element);
+        }
         if (fresh.length > 0 && guard.version() === session) {
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
@@ -338,6 +365,10 @@
           // 一半换了路由时，能省下的是池子里剩下的那几百块。
           error = await ctx.runTranslationPass(fresh, {
             accept: acceptBlock,
+            // 记账等结果：accept 是「还要不要写回去」，onSettled 是「这一块有结果
+            // 了」。失败的块两者都不会走到，于是留在 inflight 里，随这一轮一起
+            // 丢掉 —— 下次扫描回来还有一次机会。
+            onSettled: (block) => commit(block.element),
             allowDownload: false,
             isAborted: () => guard.version() !== session,
           });
@@ -348,6 +379,9 @@
       } finally {
         running = false;
         tickets.clear();
+        // 没走到结果的那些块就此从台账的视野里消失 —— 下一次扫描送回来时是全新的
+        // 一块，可以再试一次。
+        inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
         if (suspended) suspended.resume();
@@ -381,6 +415,7 @@
       guard.bump(why);
       queue.clear();
       tickets.clear();
+      inflight.clear();
       ledger.clear();
     }
 
@@ -423,7 +458,15 @@
     // 这几个键一变，这一页要从头来过：代次翻篇作废在途的结果，start() 重新判、
     // 重新扫。换引擎也在其中 —— 只作废不重扫的话，那些块进带时已经被摘掉了
     // （发现层「进带即摘」），没有任何变动会把它们再送回来，页面就一直空着。
-    const RESTART_KEYS = ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine'];
+    //
+    // 后四个是**用来救场的**：一页因为密钥没填、填错、地址或模型写错而停在 ERROR
+    // 之后，用户去设置页把它改对 —— 改对了却不重来，这一页就一直停在那儿，直到
+    // 他自己想起来刷新。engineFallback 同理：内置引擎在这台机器上用不了时，把它
+    // 从 local-only 改成 allow-ai 正是那一页唯一的活路。
+    const RESTART_KEYS = [
+      'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine',
+      'apiKey', 'apiEndpoint', 'modelName', 'engineFallback'
+    ];
 
     function onSettingsChanged(changes) {
       if (!RESTART_KEYS.some((key) => key in changes)) return;

@@ -75,6 +75,14 @@
       fingerprint: (entry && entry.fingerprint) || fingerprint(''),
       translationEl: (entry && entry.translationEl) || null,
       managed: !!(entry && entry.managed),
+      // 译成了哪门语言。不揉进 fingerprint —— 那个哈希回答的是「这段原文变了
+      // 没有」，把目标语言掺进去，虚拟列表的回收判定和换目标语言的判定就再也
+      // 分不开了。两个问题分开存、分开问。
+      //
+      // 没说就存 null，isStale 见到 null 一律不问这一问：漏问只是回到从前
+      // （旧语言的译文继续挂着），而把「没说」当成某个具体值会让每一块都判成
+      // 陈旧 —— 放开、重翻、再登记、再判陈旧，是个烧钱的死循环。
+      lang: entry && entry.lang != null ? String(entry.lang) : null,
     };
     registry.set(element, record);
     return record;
@@ -86,15 +94,26 @@
   }
 
   /**
-   * 已登记、但内容对不上了 = 节点被复用。
+   * 挂在这个元素上的译文过期了没有。两种过期，都要问：
+   *
+   *   1. **内容换了** = 节点被复用（虚拟列表）。
+   *   2. **目标语言换了**。原文一个字没动，但那条译文是上一门语言的。这一问不
+   *      问的话，改完目标语言的页面是花的：先前翻过的块留着旧语言，新长出来的
+   *      块是新语言，而且再也没有东西会把旧的那批换过来 —— 内容身份没变，它们
+   *      每一轮都被当成「已经翻好了」跳过。
    *
    * 没登记过的元素返回 false 而不是 true：「陈旧」说的是「这里的译文过期了」，
    * 一个从没翻过的元素没有过期的东西。调用方先 lookup 再问这一句。
+   *
+   * `targetLang` 省略（或登记时没说）就不问第 2 问 —— 见 register 里那段：漏问
+   * 是安全的方向，误判成陈旧不是。
    */
-  function isStale(element, currentFingerprint) {
+  function isStale(element, currentFingerprint, targetLang) {
     const entry = registry.get(element);
     if (!entry) return false;
-    return entry.fingerprint !== currentFingerprint;
+    if (entry.fingerprint !== currentFingerprint) return true;
+    if (targetLang == null || entry.lang == null) return false;
+    return entry.lang !== targetLang;
   }
 
   function forget(element) {
