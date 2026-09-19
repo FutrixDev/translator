@@ -34,6 +34,12 @@ const CONTENT_HARNESS_PRELUDE = Object.freeze([
 // progress.js 不在里面：进度条是页面级 UI，DOM 夹具里没有它要挂的地方，门面在
 // 调用前就会因为拿不到 showPageTranslationProgress 报错——所以它也在。
 const PAGE_TRANSLATION_MODULES = Object.freeze([
+  // shared/ 的模块也在这串里：collect.js / insert.js 通过 `globalThis.BlockIdentity`
+  // 拿内容身份，manifest 里它排在两者之前。夹具漏掉它的症状和上面那段说的一样难
+  // 读——`Cannot read properties of undefined (reading 'lookup')`，堆栈指着 collect.js
+  // 而不是这份清单。block-identity.test.mjs 里有一条守卫：这串模块里出现的每个
+  // `globalThis.X`，都必须由前面某个文件提供。
+  'shared/block-identity.js',
   'content/page/batch.js',
   'content/page/collect.js',
   'content/page/insert.js',

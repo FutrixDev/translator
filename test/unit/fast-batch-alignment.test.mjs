@@ -41,6 +41,9 @@ globalThis.window = {
 };
 globalThis.document = {};
 globalThis.chrome = {};
+// 落笔会给每个块登记内容指纹（shared/block-identity.js），指纹是把原文子树读一遍
+// 算出来的，所以这个假 DOM 也得有节点类型常量。
+globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 
 // The guard narrates every fallback; assertions do the talking here.
 console.warn = () => {};
@@ -48,6 +51,7 @@ console.error = () => {};
 
 // 分批器要落笔就得有 insert.js，比对原文要有 collect.js 的 normalizeComparableText。
 // 按 manifest 顺序加载，跨文件引用全是 ctx.x() 的运行时读取，顺序其实无所谓。
+await import('../../shared/block-identity.js');
 for (const module of ['batch', 'collect', 'insert', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }
@@ -71,6 +75,8 @@ function makeBlock(text) {
   return {
     text,
     element: {
+      nodeType: 1,
+      childNodes: [],
       parentNode: {},
       classList: {
         contains: (c) => classes.has(c),

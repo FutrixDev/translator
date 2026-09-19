@@ -179,9 +179,12 @@
   //
   // 下面每一处把译文放进 DOM 的分支后面都要跟一次，clip-guard.test.mjs 会数：
   // 插入点比检查点多，就是漏了一处。
+  // @param {Element} element 原文块。译文节点自己不认识它 —— 兄弟、块内、slot 内、
+  //   flex 内联四种形态里，从译文往回找原文各有各的走法，所以由插入方传进来。
   // @param {number} sourceWidthBefore 插译文之前原文块的宽度。fit guard 的横向判据
   //   要「页面原本给这一块多少地方」，插完就量不到了，只能在插之前记下来传进去。
-  function finishTranslationInsert(translationEl, sourceWidthBefore) {
+  function finishTranslationInsert(element, translationEl, sourceWidthBefore) {
+    registerTranslation(element, translationEl, false);
     keepTranslationVisible(translationEl);
     // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
     // 才是它真实的处境。反过来先量就会按「原文 + 译文」的高度白撤一批译文。
@@ -241,6 +244,49 @@
     };
   }
 
+  // ---- 译文的身份与撤除 ----------------------------------------------------
+  // 「这个元素翻过了」以前只靠 `.ai-translator-translated` 记，那是**节点身份**；
+  // 虚拟列表回收节点之后它就在说谎。真正的判据是内容指纹，见 shared/block-identity.js。
+  // 那个模块只回答「是不是同一段内容」，摘节点的事留在这里：插入有五种形态，
+  // 只有这个文件知道自己插的是哪一种。
+
+  function registerTranslation(element, translationEl, managed) {
+    globalThis.BlockIdentity.register(element, {
+      // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
+      // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
+      // 它是我们自己的，不会把它算进原文。
+      fingerprint: globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element)),
+      translationEl: translationEl || null,
+      managed: !!managed
+    });
+  }
+
+  // 节点被回收去装别的内容了：把上一条译文整条摘掉，让这一块重新变回「没翻过」。
+  // 摘的东西比一个 remove() 多：
+  //   · 为它让出位置而藏起来的原文要放回去，否则新内容连原文都不显示（撤译文
+  //     那条路——content-fit-guard.js 的 yieldOrDrop——也是这么成对做的）；
+  //   · `.ai-translator-translated` 必须摘，它是发现层 closest() 串里的一员，
+  //     留着的话放开的块下一轮照样被跳过，等于没放开。
+  // @returns {boolean} 这个元素上本来有没有译文
+  function releaseTranslation(element) {
+    const entry = globalThis.BlockIdentity.lookup(element);
+    if (!entry) return false;
+    globalThis.BlockIdentity.forget(element);
+    if (entry.translationEl) {
+      if (entry.managed) {
+        // 两条都按仓库里既有的写法留守卫（content-fit-guard.js:265、
+        // content-hover-translation.js:89）：这两个模块在 manifest 里排在前面，
+        // 真实页面上一定在，而只装整页翻译那几个模块的 DOM 夹具里不一定。
+        if (ctx.releaseManagedTranslation) ctx.releaseManagedTranslation(entry.translationEl);
+      } else {
+        if (ctx.releaseSourceForTranslation) ctx.releaseSourceForTranslation(entry.translationEl);
+        entry.translationEl.remove();
+      }
+    }
+    element.classList.remove('ai-translator-translated');
+    return true;
+  }
+
   // 插入翻译块
   function insertTranslationBlock(block, translation) {
     const element = block.element;
@@ -268,11 +314,13 @@
       // 用 markupDebrisRe 而不是笼统的 MARKUP_MARKER_RE：只剥本块真生成过的标签
       // 名+编号，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
       const managedDebrisRe = markupDebrisRe(block.markupElements);
-      ctx.renderManagedTranslation(
+      const handle = ctx.renderManagedTranslation(
         element,
         managedDebrisRe ? translation.replace(managedDebrisRe, '') : translation,
         {}
       );
+      // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
+      registerTranslation(element, handle, true);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return;
@@ -327,7 +375,7 @@
 
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(translationEl, sourceWidthBefore);
+      finishTranslationInsert(element, translationEl, sourceWidthBefore);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -427,16 +475,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        finishTranslationInsert(internalTranslation, sourceWidthBefore);
+        finishTranslationInsert(element, internalTranslation, sourceWidthBefore);
       } else if (placement.inside) {
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         element.appendChild(translationEl);
-        finishTranslationInsert(translationEl, sourceWidthBefore);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(translationEl, sourceWidthBefore);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore);
       }
     }
   }
@@ -447,4 +495,5 @@
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
   ctx.getTranslationPlacement = getTranslationPlacement;
   ctx.insertTranslationBlock = insertTranslationBlock;
+  ctx.releaseTranslation = releaseTranslation;
 })();
