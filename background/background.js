@@ -6,6 +6,9 @@ import '../shared/account-gate.js';
 // extension's own pages load as a classic script.
 import '../shared/comic-charge.js';
 import '../shared/ocr.js';
+// Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
+// sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
+import '../shared/translation-cache.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
@@ -679,16 +682,36 @@ function replyComic(promise, sendResponse) {
     });
 }
 
+// 译文缓存的清理闹钟。
+//
+// 写缓存的是内容脚本，但没有一个内容脚本能负责清理：页面随时会走，而清理要在
+// 「没人翻译的时候」发生。所以过期与字节预算由常驻侧按天来收，和 PDF 轮询同一套
+// chrome.alarms 机制、各自一个名字。周期取一天：条目活 30 天，预算是 4 MB 的软上限，
+// 都不是需要分钟级响应的东西。
+const CACHE_SWEEP_ALARM = 'translation-cache-sweep';
+
+function ensureCacheSweepAlarm() {
+  chrome.alarms.create(CACHE_SWEEP_ALARM, { periodInMinutes: 24 * 60 });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== CACHE_SWEEP_ALARM) return;
+  globalThis.TranslationCache.sweep()
+    .catch(error => console.error('Translation cache sweep failed:', error));
+});
+
 // Context menu for right-click translation
 chrome.runtime.onInstalled.addListener(() => {
   createContextMenus();
   // Jobs survive a browser restart; the alarm that watches them must too.
   ensurePdfPollAlarm().catch(() => {});
+  ensureCacheSweepAlarm();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   createContextMenus();
   ensurePdfPollAlarm().catch(() => {});
+  ensureCacheSweepAlarm();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
