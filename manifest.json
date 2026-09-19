@@ -64,6 +64,8 @@
         "shared/comic-charge.js",
         "shared/ocr.js",
         "shared/speech-lang.js",
+        "shared/site-rules-builtin.js",
+        "shared/site-rules.js",
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-managed-translation.js",
