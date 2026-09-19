@@ -200,10 +200,6 @@
     return true;
   };
 
-  ctx.hasManagedTranslations = function() {
-    return handles.size > 0;
-  };
-
   ctx.setManagedTranslationsVisible = function(visible) {
     const root = document.documentElement;
     if (!root) return;

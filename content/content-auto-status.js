@@ -78,33 +78,34 @@
   }
 
   /**
-   * 读—改—写这个域名的追问计数。`mutate` 返回 null = 把这条记录删掉（用户表态
-   * 了，前面问过几次都不算数）。
+   * 记一笔追问计数。`'clear'` = 把这条记录删掉（用户表态了，前面问过几次都不
+   * 算数）。
    *
-   * **改的是刚从存储里读出来的那个数，不是 ctx.settings 里那份。** 同一个域名可
-   * 能同时开着三个标签页，每页都有自己的 ctx.settings；各自拿内存里的 0 加到 1
-   * 再写回去，最后一个写的赢，三次追问只留下一次。
+   * **加一这件事不在这里做。** 同一个域名可能同时开着三个标签页，三页同时读出
+   * 0、同时写回 1，说好的「问三次就不再问」一次都攒不满。读—改—写只能有一个
+   * 主人，那个主人是服务工作者（shared/site-rules.js 的 updateAskCount）。
+   *
+   * 写回来的数顺手记进本页的 ctx.settings：storage.onChanged 也会送一份过来，
+   * 但下一次 render() 可能比它先到。
    */
-  async function updateAskCount(mutate) {
+  async function updateAskCount(op) {
     const key = askKey();
     if (!key) return;
     try {
-      const stored = await chrome.storage.sync.get({ siteAskCount: {} });
-      const counts = Object.assign({}, stored.siteAskCount);
-      const current = typeof counts[key] === 'number' ? counts[key] : 0;
-      const next = mutate(current);
-      if (next === null) delete counts[key];
-      else counts[key] = next;
+      const reply = await chrome.runtime.sendMessage({ type: 'SITE_ASK_COUNT', host: key, op });
+      if (!reply || typeof reply.count !== 'number') return;
+      const counts = Object.assign({}, ctx.settings.siteAskCount);
+      if (reply.count > 0) counts[key] = reply.count;
+      else delete counts[key];
       ctx.settings.siteAskCount = counts;
-      await chrome.storage.sync.set({ siteAskCount: counts });
     } catch (error) {
       // 记不住就当没问过。这条计数只决定「还问不问」，写失败不该把条子也带走。
       console.warn('Blab Translation: siteAskCount write failed', error);
     }
   }
 
-  const bumpAskCount = () => updateAskCount((n) => n + 1);
-  const clearAskCount = () => updateAskCount(() => null);
+  const bumpAskCount = () => updateAskCount('bump');
+  const clearAskCount = () => updateAskCount('clear');
 
   // ------------------------------------------------------------------ 文案
 

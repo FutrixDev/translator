@@ -122,16 +122,23 @@
    * @returns {'translating'|'restored'} 这一下做了哪件事（消息回话用）
    */
   /**
-   * 这一页现在有没有译文 —— 藏起来的也算。
+   * 这一页现在有没有**整页翻译**的译文 —— 藏起来的也算。
    *
    * 两个调用方：悬浮球那一下点击（翻译还是还原），以及 popup 画按钮文案时问的
-   * 那一次。两处各写一遍的话，迟早一处记得算 managed 译文（PDF、漫画那一类不
-   * 在正文 DOM 里的），另一处忘了，于是同一页在球上是「还原」在 popup 里是
-   * 「翻译」。
+   * 那一次。两处各写一遍的话，迟早一处把判据写歪。
+   *
+   * 判据本身归显隐层（content/page/visibility.js）所有：划词和悬停译出来的块用
+   * 的是同一个 .ai-translator-inline-block 类名，只是多带一个自己的类名。用户
+   * 划词译了一句，这一页并不因此就「翻过了」—— 再点一下悬浮球该翻整页，不是把
+   * 那一句藏起来。
+   *
+   * 受管译文（PDF、漫画，以及 Lexical 这类容器里画成 ::after 的那些）不必另问
+   * 一句：它们的句柄也是 .ai-translator-inline-block，就挂在文档里的离屏
+   * holder 上，同一条选择器一并数到，而悬停/划词的句柄同样带着自己的类名被排除。
    */
   function hasPageTranslations() {
-    return !!document.querySelector('.ai-translator-inline-block')
-      || !!(ctx.hasManagedTranslations && ctx.hasManagedTranslations());
+    const selector = ctx.PAGE_TRANSLATION_SELECTOR;
+    return !!selector && !!document.querySelector(selector);
   }
 
   function togglePageTranslation() {

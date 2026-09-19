@@ -44,9 +44,8 @@ test('呈现层只画，不碰队列、不碰代次、不自己判一遍', () =>
 test('追问条的上限和计数是同一处说了算', () => {
   const view = code('content/content-auto-status.js');
   assert.equal((view.match(/MAX_ASKS/g) || []).length, 2, '一处定义一处使用');
-  // 计数是读改写，不是拿内存里那份加一：同一个站点开三个标签页，各算各的就会
-  // 三个都写成 1，上限永远够不着。
-  assert.match(view, /chrome\.storage\.sync\.get\(\{ siteAskCount: \{\} \}\)/);
+  // 加一这件事本身在服务工作者里（见「追问计数只有服务工作者一个人写」），这里
+  // 只确认本页没有自己拿内存那份加一 —— 那会让上限永远够不着。
   assert.doesNotMatch(view, /ctx\.settings\.siteAskCount\[[^\]]*\]\s*(\+\+|=[^=])/);
 });
 
@@ -87,17 +86,64 @@ test('「有译文就收起来，没有就译」只有一处说了算', () => {
   const page = code('content/content-page-translation.js');
   assert.match(page, /function hasPageTranslations\(\)/);
   assert.match(page, /ctx\.hasPageTranslations = hasPageTranslations;/);
-  // 管控容器里的译文（PDF、漫画）不在正文 DOM 里，谁漏算谁就会在同一页上把
-  // 「还原」画成「翻译」。
-  assert.match(page, /ctx\.hasManagedTranslations && ctx\.hasManagedTranslations\(\)/);
-  assert.equal(
-    (page.match(/ai-translator-inline-block/g) || []).length, 1,
-    '判断「有没有译文」的那一句只该有一处'
-  );
+  // 判据本身归显隐层所有。这里自己写一条选择器，就会漏掉那两个 :not()，
+  // 于是用户划词译的一句让整页变成「翻过了」—— 再点一下是藏那一句，不是翻整页。
+  assert.match(page, /ctx\.PAGE_TRANSLATION_SELECTOR/);
+  assert.doesNotMatch(page, /ai-translator-inline-block/, '选择器不该在这里再写一遍');
 
   for (const file of ['popup/popup.js', 'content/content-float-ball.js']) {
     assert.doesNotMatch(code(file), /ai-translator-inline-block/, `${file} 不该自己再判一遍`);
   }
+});
+
+test('整页译文的判据带着那两个 :not()，划词和悬停不算', () => {
+  const visibility = code('content/page/visibility.js');
+  assert.match(visibility, /const PAGE_TRANSLATION_SELECTOR\s*=/);
+  assert.match(visibility, /ctx\.PAGE_TRANSLATION_SELECTOR = PAGE_TRANSLATION_SELECTOR;/);
+  const selector = visibility.match(/const PAGE_TRANSLATION_SELECTOR\s*=\s*\n?\s*'([^']+)'/);
+  assert.ok(selector, '取不到选择器本身');
+  for (const cls of ['ai-translator-selection-translation', 'ai-translator-hover-translation']) {
+    assert.ok(selector[1].includes(`:not(.${cls})`), `${cls} 必须被排除`);
+  }
+
+  // 受管译文（PDF、漫画、Lexical 这类容器）的句柄同样带 .ai-translator-inline-block，
+  // 挂在文档里的离屏 holder 上，所以同一条选择器就数到了 —— 不必再留一个
+  // 「有没有受管译文」的问法，两个问法迟早各答各的。
+  const managed = code('content/content-managed-translation.js');
+  assert.doesNotMatch(managed, /hasManagedTranslations/, '两处判据必然会分家');
+  assert.match(managed, /handle\.className = \['ai-translator-inline-block'/);
+});
+
+test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的', () => {
+  const insert = code('content/page/insert.js');
+  assert.match(
+    insert,
+    /function registerTranslation\(element, translationEl, managed, lang\) \{[\s\S]{0,400}?ctx\.applyTranslationVisibility\(translationEl\)/,
+    '插入点没有跟上当前显隐状态'
+  );
+  const visibility = code('content/page/visibility.js');
+  assert.match(visibility, /function applyTranslationVisibility\(translationEl\)/);
+  assert.match(visibility, /classList\.toggle\('ai-translator-hidden', state\.translationsVisible === false\)/);
+  assert.doesNotMatch(insert, /ai-translator-hidden/, '类名归显隐层，这里不该再写一遍');
+});
+
+test('追问计数只有服务工作者一个人写', () => {
+  // 同一个域名开着三个标签页，三页各自读出 0、各自写回 1，「问三次就不再问」
+  // 一次都攒不满。
+  const status = code('content/content-auto-status.js');
+  assert.doesNotMatch(status, /storage\.sync\.set/, '内容脚本不该自己写这个数');
+  assert.match(status, /sendMessage\(\{ type: 'SITE_ASK_COUNT', host: key, op \}\)/);
+
+  const rules = code('shared/site-rules.js');
+  assert.match(rules, /function updateAskCount\(hostname, op\)/);
+  // 服务工作者是单实例，但两条消息的处理照样能在 await 处交错，所以要排队。
+  assert.match(rules, /askQueue = result\.catch/);
+  assert.match(rules, /const result = askQueue\.then\(run, run\);/);
+
+  const background = code('background/background.js');
+  assert.match(background, /case 'SITE_ASK_COUNT':/);
+  assert.match(background, /SiteRules\.updateAskCount\(message\.host, message\.op\)/);
+  assert.match(background, /import '\.\.\/shared\/site-rules\.js';/);
 });
 
 test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {

@@ -46,6 +46,21 @@
     setTranslationsVisible(true);
   }
 
+  /**
+   * 刚插进来的这一条译文，跟上当前的显隐状态。
+   *
+   * setTranslationsVisible() 只管得到调用那一刻已经在 DOM 里的块。用户在一轮翻译
+   * 跑到一半时点了「显示原文」，后面几批插进来的译文得自己知道现在是藏着的 ——
+   * 否则他一边藏，译文一边冒出来，那个开关就成了摆设。
+   *
+   * 受管译文（::after 那一路）不走这里：它们的显隐是根元素上的一个属性，整体
+   * 开关，新画出来的天然就跟着。
+   */
+  function applyTranslationVisibility(translationEl) {
+    if (!translationEl || !translationEl.classList) return;
+    translationEl.classList.toggle('ai-translator-hidden', state.translationsVisible === false);
+  }
+
   // ==================== 隐藏原文 ====================
   // 隐藏一条译文对应的原文，有两个互不相干的理由：
   //
@@ -58,6 +73,9 @@
   // 只作用于整页翻译（.ai-translator-translated 标记的块）；悬停/划词翻译的
   // 译文块（带各自的类名）被明确排除。
   const CROWDED_ATTR = 'data-ai-translator-crowded';
+  // 「整页翻译的译文」是什么，只有这一条说了算。悬停和划词的译文块用的是同一个
+  // .ai-translator-inline-block 类名，少写一个 :not() 就会把用户划词译的那一句
+  // 算成「这一页翻过了」—— 于是 Alt+A 第一下不是翻译整页，是把那一句藏起来。
   const PAGE_TRANSLATION_SELECTOR =
     '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
 
@@ -184,6 +202,8 @@
 
   ctx.revealHiddenTranslations = revealHiddenTranslations;
   ctx.setTranslationsVisible = setTranslationsVisible;
+  ctx.applyTranslationVisibility = applyTranslationVisibility;
+  ctx.PAGE_TRANSLATION_SELECTOR = PAGE_TRANSLATION_SELECTOR;
   ctx.isTranslationOnlyActive = isTranslationOnlyActive;
   ctx.hideSourceForTranslation = hideSourceForTranslation;
   ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;

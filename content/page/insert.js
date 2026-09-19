@@ -261,6 +261,10 @@
   // 没人说就登记成 null：BlockIdentity 把 null 读作「没说」，陈旧判定于是不问语言
   // 这一维 —— 正是「不知道」该有的样子（见 shared/block-identity.js 的 register）。
   function registerTranslation(element, translationEl, managed, lang) {
+    // 这一批译文可能是在用户点了「显示原文」之后才落到 DOM 里的：整页翻译跑一轮
+    // 要几十秒，中途的开关只管得到当时已经插好的块。新插进来的这一条自己跟上
+    // 当前状态，否则藏了一次译文还会一批批冒出来。
+    if (!managed && ctx.applyTranslationVisibility) ctx.applyTranslationVisibility(translationEl);
     globalThis.BlockIdentity.register(element, {
       // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
       // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出

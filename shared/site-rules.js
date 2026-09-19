@@ -322,12 +322,48 @@
     return key;
   }
 
+  // 这个域名被追问过几次：读出来、加一、写回去。
+  //
+  // 这种写法必须只有一个主人。同一个域名可能同时开着三个标签页，三个内容脚本
+  // 各自读出 0、各自写回 1，「问三次就不再问」这句承诺永远凑不满三次。所以计数
+  // 由服务工作者代劳（background.js 的 SITE_ASK_COUNT），内容脚本只发消息。
+  //
+  // 服务工作者是单实例，但两条消息的处理之间照样能在 await 处交错，所以这里还要
+  // 一条队列把前一次的写等完。队列只保证顺序、不传播失败：一次写崩了不该把后面
+  // 的全卡死。
+  let askQueue = Promise.resolve();
+
+  /**
+   * @param {string} hostname 主机名，内部按 normalizeHost 归一
+   * @param {'bump'|'clear'} op 加一，或者把这条记录整条删掉（用户表态了，
+   *   前面问过几次都不算数）
+   * @returns {Promise<number>} 写完之后的次数
+   */
+  function updateAskCount(hostname, op) {
+    const run = async () => {
+      const key = normalizeHost(hostname);
+      const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+      if (!key || !store) return 0;
+      const stored = await store.get({ siteAskCount: {} });
+      const counts = Object.assign({}, stored.siteAskCount);
+      const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
+      if (op === 'clear') delete counts[key];
+      else counts[key] = current + 1;
+      await store.set({ siteAskCount: counts });
+      return op === 'clear' ? 0 : current + 1;
+    };
+    const result = askQueue.then(run, run);
+    askQueue = result.catch(() => {});
+    return result;
+  }
+
   root.SiteRules = {
     REASONS,
     decide,
     normalizeHost,
     lookupUserRule,
     writeUserRule,
+    updateAskCount,
     matchBuiltin,
     loadTable,
   };

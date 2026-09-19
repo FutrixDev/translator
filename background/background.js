@@ -1,6 +1,7 @@
 // Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+import '../shared/site-rules.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -587,6 +588,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'OPEN_OPTIONS':
       chrome.runtime.openOptionsPage();
       break;
+
+    // 自动翻译的追问条问过几次。内容脚本不自己读写这个数：同一个域名的几个标签页
+    // 会各自读出同一个旧值再各自写回，三次的额度一次都攒不满。计数收在这里，
+    // 排队的那条链在 shared/site-rules.js。
+    case 'SITE_ASK_COUNT':
+      globalThis.SiteRules.updateAskCount(message.host, message.op)
+        .then(count => sendResponse({ count }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
 
     // --- Comic translation (account-backed, see comic-client.js) -------------
     case 'COMIC_ACCOUNT':

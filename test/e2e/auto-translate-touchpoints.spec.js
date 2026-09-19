@@ -11,7 +11,9 @@
 //   · Alt+A 可用 —— 键位真的注册在 manifest 的 commands 里，而它触发的那个动作
 //     和悬浮球、popup 点的是同一个。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, getSyncSetting, getServiceWorker, sendMessageToActiveTab } = require('./helpers');
+const {
+  setExtensionSettings, getSyncSetting, getServiceWorker, sendMessageToActiveTab, triggerSelectionHotkey
+} = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://ask.test';
@@ -195,4 +197,112 @@ test('popup: 没有可操作的页面时只剩一行，键位印的是真注册�
   // 的那个；这条同时也是「新代码在 popup 里没抛异常」的证据 —— 抛了的话这一行
   // 会停在 hidden。
   await expect(page.locator('#translatePageShortcut')).toHaveText(/^(Alt\+|⌥)A$/);
+});
+
+test('划词译了一句，Alt+A 第一下仍然是翻整页，不是把那一句藏起来', async ({ page, context }) => {
+  // 划词译文和整页译文共用 .ai-translator-inline-block，只是各自多带一个类名。
+  // 判据少写一个 :not()，用户划词查了一个词之后，这一页在插件眼里就算「翻过
+  // 了」—— 再按 Alt+A 不翻页，反而把刚查的那句藏了。
+  const { close, endpoint } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+      // 这一页不自动翻：要证的是手动那一下按下去做了哪件事。
+      siteRules: { 'ask.test': 'never' }
+    });
+    await context.route(`${ORIGIN}/**`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Ledger</title></head>
+<body><div id="box">
+  <p id="picked">${BODY}</p>
+  <p id="rest">Nobody in the harbour office could say who had opened the second ledger.</p>
+</div></body></html>`
+      });
+    });
+    await page.goto(`${ORIGIN}/selection`);
+    await page.waitForSelector('#ai-translator-float-ball');
+    await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
+
+    await page.locator('#picked').selectText();
+    await triggerSelectionHotkey(page);
+    await page.waitForSelector('.ai-translator-selection-translation', { state: 'attached' });
+    // 这一页现在有一条译文了 —— 但它是划词译的，整页还一个字没翻。
+    // 整页译文按块插在段落后面，所以数的是 #box 底下、去掉划词那一条之后还剩几条。
+    const pageBlocks = page.locator('#box .ai-translator-inline-block:not(.ai-translator-selection-translation)');
+    await expect(pageBlocks).toHaveCount(0);
+
+    const first = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(first.action).toBe('translating');
+
+    // 剩下那一段被翻了，划词那一条还在、还看得见。
+    await expect(pageBlocks).not.toHaveCount(0, { timeout: 30000 });
+    await expect(page.locator('.ai-translator-selection-translation')).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+test('一轮翻译跑到一半按下 Alt+A，后面落下来的译文也是藏着的', async ({ page, context }) => {
+  // 整页翻译一批批往回落，一轮要几十秒。中途「显示原文」只管得到当时已经插好的
+  // 块的话，用户一边藏、译文一边冒出来，那个开关就是个摆设。
+  const { close, endpoint } = await startMockOpenAIServer({ delayMs: 700 });
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+      autoTranslate: false
+    });
+    // 一批最多装 40 段，而并发是 12 路：段数要多到凑出十几批，第十三批才会排在
+    // 队里等 —— 「一半」那个窗口是这么来的，不是靠赛跑抢出来的。
+    const paras = Array.from({ length: 600 }, (_, i) =>
+      `<p id="p${i}">Entry ${i}: the harbour master wrote down every boat that left before dawn.</p>`
+    ).join('');
+    await context.route(`${ORIGIN}/**`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Ledger</title></head>
+<body><div id="box">${paras}</div></body></html>`
+      });
+    });
+    await page.goto(`${ORIGIN}/long`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    const started = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(started.action).toBe('translating');
+
+    // 第一波落地，但整轮还没跑完 —— 这一下就按在半路上。
+    await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
+    const midway = await page.locator('#box .ai-translator-inline-block').count();
+    expect(midway).toBeLessThan(600);
+
+    const hidden = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(hidden.action).toBe('restored');
+
+    // 剩下的批次继续落地 —— 但一条都不该露出来。
+    await page.waitForFunction(
+      (before) => document.querySelectorAll('#box .ai-translator-inline-block').length > before,
+      midway,
+      { timeout: 30000 }
+    );
+    await page.waitForTimeout(1500);
+    const visible = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('#box .ai-translator-inline-block'))
+        .filter((el) => !el.classList.contains('ai-translator-hidden')).length
+    );
+    expect(visible).toBe(0);
+  } finally {
+    await close();
+  }
 });

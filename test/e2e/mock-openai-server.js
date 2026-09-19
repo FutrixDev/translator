@@ -43,8 +43,12 @@ function pngDataUrlSize(dataUrl) {
  *   不出来，那是另一条路（整体故障）。
  *
  *   失败的那几次照样记进 sentTexts：文字确实发出去了，钱也确实花了。
+ * @param {number} [options.delayMs]
+ *   每次作答前先拖这么久。整页翻译在真实页面上要跑几十秒，一批批往回落 ——
+ *   「翻到一半用户按了显示原文」这类旅程，只有在一轮还没跑完的时候才存在，
+ *   而答得太快的服务器把那个窗口压成了零。
  */
-async function startMockOpenAIServer({ failRequests = 0 } = {}) {
+async function startMockOpenAIServer({ failRequests = 0, delayMs = 0 } = {}) {
   let remainingFailures = failRequests;
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
@@ -131,8 +135,12 @@ async function startMockOpenAIServer({ failRequests = 0 } = {}) {
       const response = JSON.stringify({
         choices: [{ message: { content } }]
       });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(response);
+      const reply = () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(response);
+      };
+      if (delayMs > 0) setTimeout(reply, delayMs);
+      else reply();
     });
   });
 
