@@ -75,6 +75,11 @@
     // 一个字都没翻。先记账的话它们就此永远被当成翻过了 —— 发现层下一轮送回来，
     // takeBatch 一看台账，跳过，页面上那一片永远是原文，而且没有任何报错。
     const inflight = new Map();
+    // 已经给过第二次机会的 key。失败不记台账（见上），可也不能无限重来：一个在
+    // 某几块上稳定失败的接口，批次失败数够不上 MAX_BATCH_FAILURES，这一轮就不
+    // 报错 —— 于是那几块被放回队列、再失败、再放回，成了一个每 250ms 一次的
+    // 死循环。所以每一块只给一次重来，再失败就记进台账：这一页对它无能为力。
+    const retried = new Set();
 
     let discovery = null;
     let status = STATUS.OFF;
@@ -274,10 +279,10 @@
     // 只认还在 inflight 里的：代次一翻篇 inflight 就清空，于是一条迟到的结果不会
     // 往新一代的台账里塞一笔（塞进去就是新一代的那一块永远不翻）。
     function commit(element) {
-      const key = inflight.get(element);
-      if (key === undefined) return;
+      const pending = inflight.get(element);
+      if (!pending) return;
       inflight.delete(element);
-      ledger.add(key);
+      ledger.add(pending.key);
     }
 
     function acceptBlock(block) {
@@ -308,7 +313,9 @@
         if (ledger.has(key)) continue;
         // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
         if (alreadyTranslated(element, ticket.textFingerprint)) continue;
-        inflight.set(element, key);
+        // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
+        // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
+        inflight.set(element, { key, entry });
         tickets.set(element, ticket);
         blocks.push(entry.block);
       }
@@ -379,8 +386,23 @@
       } finally {
         running = false;
         tickets.clear();
-        // 没走到结果的那些块就此从台账的视野里消失 —— 下一次扫描送回来时是全新的
-        // 一块，可以再试一次。
+        // 这一轮没走到结果的块（批次失败一两次，runTranslationPass 还没到报错的
+        // 门槛）。它们既不在台账里，也不会再被送回来 —— 发现层进带时就把它们摘了，
+        // 而一张静止的页面不会再有任何变动。所以这里亲自放回队列，下面那句
+        // scheduleStart 会把它们带进下一轮。
+        //
+        // 代次一翻篇 inflight 就被清空，所以这个循环在作废的那一轮里天然是空转，
+        // 不会把上一页的块塞进新一页的队列。
+        const giveUp = [];
+        for (const [element, pending] of inflight) {
+          if (retried.has(pending.key)) {
+            giveUp.push(element);
+            continue;
+          }
+          retried.add(pending.key);
+          if (element.isConnected) queue.set(element, pending.entry);
+        }
+        for (const element of giveUp) commit(element);
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
@@ -416,6 +438,7 @@
       queue.clear();
       tickets.clear();
       inflight.clear();
+      retried.clear();
       ledger.clear();
     }
 
@@ -463,9 +486,24 @@
     // 之后，用户去设置页把它改对 —— 改对了却不重来，这一页就一直停在那儿，直到
     // 他自己想起来刷新。engineFallback 同理：内置引擎在这台机器上用不了时，把它
     // 从 local-only 改成 allow-ai 正是那一页唯一的活路。
+    //
+    // 这份名单不是随手攒的，它有一条可以对照的来源：**凡是喂进「这一页翻不翻」
+    // 或者「这一块翻不翻」的设置键，都得在里面**。
+    //
+    //   判（shared/site-rules.js 的 decide）   autoTranslate、autoTranslateLangs，
+    //                                          外加它另外两个入参的出处 siteRules、targetLang
+    //   译（content/page/batch.js）            skipTargetLanguageText
+    //   engine（哪条路、回落到哪、拿什么去调）  translationEngine、engineFallback、
+    //                                          apiKey、apiEndpoint、modelName
+    //
+    // 漏一个的后果都一样，而且都不报错：skipTargetLanguageText 从开改成关之后，
+    // 之前被误判成「已经是目标语言」而跳过的那些块，key 还在台账里、元素早被
+    // 发现层摘了，新设置永远轮不到它们。test/unit/auto-translate-wiring.test.mjs
+    // 会去那两个文件里把实际读到的键扫出来对账。
     const RESTART_KEYS = [
-      'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine',
-      'apiKey', 'apiEndpoint', 'modelName', 'engineFallback'
+      'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
+      'skipTargetLanguageText',
+      'translationEngine', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback'
     ];
 
     function onSettingsChanged(changes) {
@@ -474,6 +512,10 @@
     }
 
     globalThis.SpaNavigation.onRouteChange(onRouteChange);
+    // 语言包刚装好。默认设置下这一页十有八九已经停在 ERROR 上了（自动这一轮
+    // 不带 user activation，拿回的是 builtinNeedsDownload），而 start() 会把
+    // broken 放掉、重新判、重新扫 —— 这是这一页唯一不用刷新就能活过来的时刻。
+    ctx.onLanguagePackReady(() => start('language-pack'));
     start('load');
 
     return {

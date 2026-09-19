@@ -270,8 +270,18 @@
     }
 
     // 元素在视口之外多远。带内一律算 0。
+    //
+    // 没有布局盒子的（display:none 的折叠面板、还没打开的 tab 面板）排在最后。
+    // 它们的 rect 全是 0，照上面那几条算出来是 -0 —— 和一块**正在视口里**的
+    // 内容同一档。排序是稳定的，于是文档里靠前的那两千个隐藏块会把 observed
+    // 的名额占满不放，真正在看的正文一直待在 deferred 里，连进带的机会都没有。
+    //
+    // 排到最后而不是直接剔除：它们迟早会被展开，而 MutationObserver 只看
+    // childList/characterData，展开是一次属性变动，它看不见 —— 那时候唯一能把
+    // 这一块捞回来的就是还挂在它身上的 IntersectionObserver。
     function distanceFromViewport(element) {
       const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return Infinity;
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
       if (rect.top >= height) return rect.top - height;
       if (rect.bottom <= 0) return -rect.bottom;
@@ -297,7 +307,9 @@
       const ranked = [];
       for (const element of observed) ranked.push({ element, away: distanceFromViewport(element), on: true });
       for (const element of deferred) ranked.push({ element, away: distanceFromViewport(element), on: false });
-      ranked.sort((a, b) => a.away - b.away);
+      // 相等先判掉：两个都没布局的块 away 都是 Infinity，相减是 NaN，而返回
+      // NaN 的比较函数排出来的顺序是没有定义的。
+      ranked.sort((a, b) => (a.away === b.away ? 0 : a.away - b.away));
 
       for (let i = 0; i < ranked.length; i++) {
         const keep = i < MAX_OBSERVED;

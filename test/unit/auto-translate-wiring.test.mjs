@@ -188,7 +188,8 @@ test('观察器按离视口的远近挑该观察谁，不按挂上的先后', ()
   // 看着的那一屏。
   assert.match(discover, /function distanceFromViewport\(element\)/);
   // 近的排在前面：留下的是前 MAX_OBSERVED 个。排反了就是把读者眼前那一屏换出去。
-  assert.match(discover, /ranked\.sort\(\(a, b\) => a\.away - b\.away\)/);
+  // 只钉方向，不钉这句怎么写 —— 相等短路那一段归下面「没有布局盒子的候选」那条。
+  assert.match(discover, /ranked\.sort\(\(a, b\) => .*a\.away - b\.away/);
   // 同步重排是在 IntersectionObserver 还没派发过一次回调的时候就动手。
   assert.match(discover, /rebalanceTimer = setTimeout\(rebalance, REBALANCE_DELAY_MS\)/);
 });
@@ -307,9 +308,9 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 3），那几块一个字都没翻 —— 先记账就是让它们永远被当成翻过了，页面上一片原文
   // 而且没有任何报错。所以整份文件里 `ledger.add` 只能有一处，就在 commit 里。
   assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
-  assert.match(auto, /inflight\.set\(element, key\);/);
+  assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);/);
   assert.match(auto, /onSettled: \(block\) => commit\(block\.element\)/);
-  assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(key\);/);
+  assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(pending\.key\);/);
   // 被语言滤掉的是有意跳过，也是结果，同样要记。
   assert.match(auto, /for \(const block of blocks\) if \(!keep\.has\(block\.element\)\) commit\(block\.element\);/);
   // 代次翻篇和一轮收尾都要清空在途表：迟到的结果不能往新一代的台账里塞一笔。
@@ -320,7 +321,8 @@ test('改对了密钥/地址/模型/回落，停在错误上的那一页要自�
   const auto = code('content/content-auto-translate.js');
   const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
   assert.ok(keys, 'RESTART_KEYS 不见了');
-  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine',
+  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
+    'skipTargetLanguageText', 'translationEngine',
     'apiKey', 'apiEndpoint', 'modelName', 'engineFallback']) {
     assert.ok(keys[1].includes(`'${key}'`), `RESTART_KEYS 少了 ${key}`);
   }
@@ -338,4 +340,82 @@ test('改对了密钥/地址/模型/回落，停在错误上的那一页要自�
   for (const key of ['apiKey', 'apiEndpoint', 'modelName']) {
     assert.match(declared[1], new RegExp(`^\\s*${key}:`, 'm'), `defaultSettings 里没有 ${key}`);
   }
+});
+
+// 这份名单历来是手写的，而漏一个的后果是静默的：设置改了、这一页不重来，台账里
+// 那些 key 还在、元素早被发现层摘了，新设置永远轮不到它们。所以不再靠人记 ——
+// 把「谁喂进了判定」从源头扫出来对账。
+test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
+  const auto = code('content/content-auto-translate.js');
+  const listed = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
+  assert.ok(listed, 'RESTART_KEYS 不见了');
+
+  // 「这一页翻不翻」和「这一块翻不翻」，两个判定各自读了哪些设置键。
+  const sources = {
+    'shared/site-rules.js': /\bprefs\.([A-Za-z_$][\w$]*)/g,
+    'content/page/batch.js': /\bsettings\.([A-Za-z_$][\w$]*)/g
+  };
+  // decide() 另外两个入参的出处：调用点从 ctx.settings 上取，名字和这里对不上。
+  const viaParams = ['siteRules', 'targetLang'];
+  // 读了但**故意**不重来的键写在这里，连同理由 —— 空着就是「一个也没有」。
+  const deliberately = new Map();
+
+  const found = new Set(viaParams);
+  for (const [file, pattern] of Object.entries(sources)) {
+    for (const hit of code(file).matchAll(pattern)) found.add(hit[1]);
+  }
+  assert.ok(found.has('skipTargetLanguageText'), '扫描没扫到已知的键，正则该修了');
+
+  for (const key of found) {
+    if (deliberately.has(key)) continue;
+    assert.ok(
+      listed[1].includes(`'${key}'`),
+      `${key} 喂进了判定却不在 RESTART_KEYS 里；要么补进去，要么在 deliberately 里写明为什么不用`
+    );
+  }
+});
+
+test('这一轮没结果的块放回队列，但只放一次', () => {
+  const auto = code('content/content-auto-translate.js');
+  // 发现层「进带即摘」，一张静止的页面不会再有任何变动把它送回来 —— 所以调度层
+  // 得亲自放回去，而且要连排队时那条 entry 一起放（takeBatch 拿 entry.source 认
+  // 「这个节点被回收去装别的内容了」）。
+  assert.match(auto, /queue\.set\(element, pending\.entry\)/);
+  // 只给一次。不设这道闸，一个在某几块上稳定失败、又够不上 MAX_BATCH_FAILURES
+  // 的接口会把这里变成每 250ms 一次的死循环。
+  assert.match(auto, /if \(retried\.has\(pending\.key\)\)/);
+  assert.match(auto, /retried\.add\(pending\.key\);/);
+  // 放弃的那些走 commit，台账仍然只有一个写入口。
+  assert.match(auto, /for \(const element of giveUp\) commit\(element\);/);
+  assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
+  // 代次翻篇整本作废，重来的次数也一样。
+  assert.match(auto, /function bumpSession\([\s\S]*?retried\.clear\(\);/);
+});
+
+test('语言包装好了，停在错误上的那一页要自己活过来', () => {
+  const engine = code('content/content-translation-engine.js');
+  // 预取是这个内容脚本里唯一「先确认过没下、然后真的把它下下来」的地方，
+  // 所以通知从那里发 —— 而且只在 create() 真的成功之后。
+  assert.match(engine, /notifyLanguagePackReady\(\{ sourceLang: src, targetLang: tgt \}\)/);
+  assert.match(engine, /ctx\.onLanguagePackReady = onLanguagePackReady;/);
+  // 监听器自己抛不能把别的监听器带走。
+  assert.match(engine, /function notifyLanguagePackReady\([\s\S]*?try \{[\s\S]*?\} catch/);
+
+  const auto = code('content/content-auto-translate.js');
+  // 调度层订阅，并且走 start() —— 它会把 broken 放掉、重新判、重新扫。只作废不
+  // 重扫的话那些块进带时已经被摘了，页面就一直空着。
+  assert.match(auto, /ctx\.onLanguagePackReady\(\(\) => start\('language-pack'\)\)/);
+  assert.ok(
+    isolated.indexOf('content/content-translation-engine.js') < isolated.indexOf('content/content-auto-translate.js'),
+    'content-translation-engine.js 必须排在 content-auto-translate.js 前面'
+  );
+});
+
+test('没有布局盒子的候选排在最后，而不是和视口里的并列', () => {
+  const discover = code('content/content-auto-discover.js');
+  // rect 全零算出来是 -0，和「正在视口里」同一档；稳定排序会让文档靠前的隐藏块
+  // 把 observed 的名额占满不放。
+  assert.match(discover, /if \(rect\.width === 0 && rect\.height === 0\) return Infinity;/);
+  // Infinity - Infinity 是 NaN，而返回 NaN 的比较函数排出来的顺序没有定义。
+  assert.match(discover, /ranked\.sort\(\(a, b\) => \(a\.away === b\.away \? 0 : a\.away - b\.away\)\);/);
 });
