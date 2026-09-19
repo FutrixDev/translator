@@ -24,6 +24,12 @@
   const CONCURRENCY = 12;       // 并发数
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
+  // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
+  // 它与 ctx.requestTranslation 同形，只是先去缓存里看一眼。没加载到它就走原路：
+  // 单元测试只装 content/page/* 这几个模块，那里翻译照常跑，只是不省请求。
+  const requestBatch = (message) =>
+    (ctx.requestTranslationCached || ctx.requestTranslation)(message);
+
   function estimateTokens(text) {
     if (!text) return 0;
     const cjkMatches = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
@@ -282,7 +288,7 @@
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
-        const response = await ctx.requestTranslation({
+        const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: [block.text],
           targetLang: getEffectiveTargetLang(),
@@ -395,7 +401,7 @@
       for (const sb of subBatches) {
         if (batchError) return;
         try {
-          const response = await ctx.requestTranslation({
+          const response = await requestBatch({
             type: 'TRANSLATE_BATCH_FAST',
             texts: sb.map(x => x.text),
             targetLang: getEffectiveTargetLang(),
@@ -459,7 +465,7 @@
       try {
         // 整页翻译是用户点出来的，带着 user activation，是唯一适合触发
         // 语言包首次下载的路径（下载进度直接显示在下方进度条上）。
-        const response = await ctx.requestTranslation({
+        const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: texts,
           targetLang: getEffectiveTargetLang(),

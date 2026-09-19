@@ -235,33 +235,69 @@ globalThis.BlockIdentity = {
 `.ai-translator-translated` **保留**，但降级为纯样式钩子，不再承担幂等职责。
 `collectTranslatableBlocks` 里 `:866-867` 的跳过条件改为查注册表（见 §4.1）。
 
-### 2.4 `shared/translation-cache.js` — 两级缓存（约 200 行）
+### 2.4 `shared/translation-cache.js` — 两级缓存（实际 298 行，已实现 / PR-4）
 
 PRD FR-7 落点。信息流重复率极高（转推引用、重复回帖、回访），没有缓存，
 AI 引擎下的自动模式成本不可控。
 
 ```js
 globalThis.TranslationCache = {
-  async get(key),
-  async set(key, text),
-  buildKey({ text, sourceLang, targetLang, engine, modelId, promptVersion, glossaryVersion }),
-  async sweep(),        // 由 background 的 chrome.alarms 驱动
-  stats(),              // -> { hits, misses, size }
+  TTL_MS,
+  buildKey({ text, targetLang, endpoint, model, prompt, version }),
+  async serve(texts, factors, fetchMissing),  // 一批进、等长一批出
+  async flush(),
+  async sweep(),        // 由 background 的 chrome.alarms 每天驱动
 };
 ```
 
-- **键**：`hash(normalize(text) + SEP + [sourceLang, targetLang, engine, modelId, promptVersion, glossaryVersion].join(SEP))`，
-  `SEP` 取 `U+0000`。`promptVersion` / `glossaryVersion` **不能省**：
-  改提示词或换术语库后，旧键会继续供应按旧口径译出的结果，而且没有任何征兆。
-  `promptVersion` 是 `shared/api-compat.js` 里一个手工维护的常量，改提示词时同步 +1 ——
-  这条要写进 `translator/CLAUDE.md`，否则一定会忘。
+- **键**：`hash([text, targetLang, endpoint, model, prompt, version].join(SEP))`，
+  `SEP` 取 `U+0000`，`hash` 是两条起点不同的 FNV-1a 32 位 lane 拼成的 16 位十六进制。
 - **L1**：进程内 `Map` + 插入序 LRU，上限 2000 条。
-- **L2**：`chrome.storage.local` 的 `translationCache` 键，条目形如 `{ t, ts }`。
-  写入**批量攒 500ms** 再落盘，避免逐块写爆 storage。
-- **过期**：30 天。清理挂在 background 既有的 `chrome.alarms` 上（已有 `PDF_POLL_ALARM` 先例），
-  每天一次；同时在条目数超过 20000 时按 `ts` 淘汰最旧的 25%。
-- **in-flight 合并**：`Map<key, Promise>`，同一批里重复文本只发一次请求。
-  「同一条推文出现在时间线和详情页」就是这种情况。
+- **L2**：`chrome.storage.local`，**一条目一个 `tc:<hash>` 键**。
+  写入批量攒 500ms 再落盘。
+- **过期**：30 天，清理挂在 background 的 `chrome.alarms` 上（`PDF_POLL_ALARM` 先例），每天一次。
+- **in-flight 合并**：`Map<key, Promise>`，同一批里重复文本、以及并发批次之间的
+  重复文本，都只发一次请求。
+
+**PR-4 实现时改了六处，每一处都是设计稿的缺陷而不是妥协：**
+
+1. **只缓存 AI 引擎，只缓存 `TRANSLATE_BATCH_FAST`。** 内置引擎（Chrome 端上的
+   Translator）零网络零费用，缓存它省下几十毫秒、花掉用户 10 MB storage 配额里的
+   一大块（本扩展没申请 `unlimitedStorage`，PDF 任务和漫画令牌住在同一块地方）；
+   顺带消掉了设计稿没看见的一个洞 —— 内置引擎按**页面语言**推断源语言，同一段英文
+   在法语页面和英语页面上译出来可以不一样，跨页复用会串味，而 AI 那条路压根不声明
+   源语言。**因此 `sourceLang` 和 `engine` 都不在键里**，不是省略，是不存在。
+   划词/悬停/输入框（`TRANSLATE`）也不缓存：它们是用户一次一次点出来的，量小且几乎
+   不重复，而且返回是 `{translation, phonetic, isWord}` 另一种形状。
+2. **`glossaryVersion` 删除。** 全仓库没有术语库这个功能（grep 零命中）。
+   为不存在的功能留字段，违反本目录 `CLAUDE.md` 的无历史包袱铁律。
+3. **`promptVersion` 手工常量 → `version`（扩展版本号）+ `prompt`（用户自定义提示词原文）。**
+   设计稿那条「改提示词时同步 +1，写进 `translator/CLAUDE.md` 否则一定会忘」是在给
+   自己布置一个必然被忘掉的作业。提示词只有两个来源：我们的 `DEFAULT_BATCH_PROMPT`
+   （改它必然伴随一次发版，而发版必然改 manifest 版本号，忘不掉）和用户的
+   `settings.customPrompt` —— **后者设计稿整个漏掉了**，那是真正的正确性缺口：
+   用户改完自定义提示词，旧译文会继续按旧口径供货。代价是每次更新扩展作废一次缓存，
+   条目本来也只活 30 天。
+4. **`endpoint` 进键。** 同名模型挂在不同网关（OpenAI / OpenRouter / 本地 Ollama）
+   后面是两个东西。`apiKey` 不进键，也永远不该进：它不改变译文，而键会以明文落进 storage。
+5. **`get`/`set`/`stats` → 一个 `serve()`。** 逐条 `get`/`set` 的形状会让每个调用方
+   自己实现「哪些命中、哪些要发、回来怎么按位置塞回去」——而**顺序和长度是这里唯一
+   不能出错的地方**（上游按位置回填，多一条少一条就是 A 块挂上 B 块的译文）。
+   一个入口意味着只有一份对齐代码，并且同批去重、跨批 in-flight 合并、回写都在它里面。
+   `stats()` 没有调用方，按铁律删掉，PR-10 要统计时连同消费方一起加。
+6. **条目数上限 → 字节预算（4 MB，`getBytesInUse()`）。** 段落长度能差一个数量级，
+   条数是很差的代理；而真正的约束是 `chrome.storage.local` 那 10 MB。超预算时一次
+   扔掉四分之一最旧的，而不是刚好扔到预算线上——踩着线清理，下一次翻译立刻又超。
+
+**接线**：`content/content-translation-cache.js`（101 行）是桥，
+`content/page/batch.js` 的三个 `TRANSLATE_BATCH_FAST` 出口统一走
+`ctx.requestTranslationCached`（与 `ctx.requestTranslation` 同形）。
+单开一个桥文件是因为 `content/content-translation-engine.js` 已经 902 行，
+而且设置页也加载它（那里没有 `ctx`，也没有页面翻译）。
+
+**已知留白**：`shared/caption-core.js` 的字幕翻译也走 `TRANSLATE_BATCH_FAST`，
+重看同一个视频是重复率很高的场景，但它不在本 PR 的范围里（字幕是用户开着字幕时
+一次性的、有界的量）。要接的话接在同一个 `serve()` 上，不需要新代码。
 
 ### 2.5 `shared/spa-navigation.js` — 路由信号（约 140 行）
 
@@ -734,7 +770,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；注册域归一（`mobile.x.com` → `x.com`）；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
 | `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`readSourceText` 不把译文算进原文；`ctx.releaseTranslation` 摘译文节点、放回原文、清标记；判定排在 `closest()` 之前 | FR-2.10 |
-| `translation-cache.test.mjs` | 键包含全部 7 个因子；改 `promptVersion` 后不命中；LRU 淘汰；30 天过期；in-flight 合并只发一次 | FR-7 |
+| `translation-cache.test.mjs` | **已落地（PR-4，20 条）**：6 个因子每一个都改变键；因子边界不滑动；L1 命中零请求；**换一份新模块实例（空 L1）后 L2 仍命中**；换模型后不命中；同批去重；并发 in-flight 合并；失败不记账且等待方自己重发；条数对不上整批作废；空译文传回但不缓存；30 天过期；sweep 的过期/畸形/字节预算三条；超 L1 容量的调用不出空洞；三份装载清单 | FR-7 |
 | `spa-navigation.test.mjs` | 三路信号去重（250ms 内同一 `to` 只发一次）；`navigation` 缺失时降级到轮询 | FR-2.8 |
 | `session-guard.test.mjs` | `acceptResult` 三条校验各自独立生效 | FR-2.11 |
 
@@ -755,11 +791,12 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | `auto-translate-basic.spec.js` | 规则为 `always` 的域打开即译；`never` 不译；`ask` 出追问条且不自动译 | FR-1 / FR-3 |
 | `auto-translate-incremental.spec.js` | 注入无限滚动 fixture，滚 10 屏，新块全部被译、无块被译两次 | FR-2 |
 | `page-translation-recycled-block.spec.js` | **已落地（PR-3）**：改块内文字后再点一次整页翻译，断言新内容被译、旧译文节点被摘掉，且没变的块这一轮**根本没发出去**（断 `sentTexts` 而不是只看 DOM） | FR-2.10 |
+| `page-translation-cache.spec.js` | **已落地（PR-4）**：整页翻译一次 → 等落盘 → **reload**（L1 随页面消失）→ 同样的文字再译一次，断言 `sentTexts` 一条都没增加、且页面上确有译文。用 reload 而不是原地再点一次，是因为同页第二次命中 L1 证明不了译文走完了 `chrome.storage.local` 那一圈 | FR-7 |
 | `auto-translate-virtualized.spec.js` | 上一条的滚动版：真虚拟列表回收，反复 100 次无错配。发现层要在才写得出来，随 PR-6 | FR-2.10（评审补入） |
 | `auto-translate-spa.spec.js` | `history.pushState` 切 3 次路由，每次重新判定并翻译；旧路由在途结果不写回 | FR-2.8 / FR-2.11 |
 | `auto-translate-loop-guard.spec.js` | 插入译文不触发新一轮翻译；注入 10k 节点爆发后 CPU 回落 | FR-2.5 / R1 |
 | `auto-translate-quiet.spec.js` | 自动模式全程无进度条、无 toast | FR-2.7 |
-| `auto-translate-budget.spec.js` | AI 引擎达每日预算后停止并提示；缓存命中后第二次翻译请求数为 0 | FR-7 / FR-9 |
+| `auto-translate-budget.spec.js` | AI 引擎达每日预算后停止并提示（缓存那半已由 `page-translation-cache.spec.js` 覆盖） | FR-9 |
 | `engine-fallback.spec.js` | `local-only` 下 `http://` 页面**零网络请求**；`allow-ai` 下回退有可见痕迹 | FR-9.1 |
 | `popup-status.spec.js` | 无 Key + builtin → 不报错；`ai` + 无 Key → 报错 | M0-a |
 | `ui-language-decoupling.spec.js` | 改 `targetLang` 不改界面语言 | M0-b |
@@ -847,22 +884,24 @@ D1（悬浮球单击语义）**已定案**为「改成翻译 / 还原切换」�
 
 ## 14. 附录：文件总表
 
-**新增（13）**
+**新增（14）**
 
-估算值；已落地的模块在括号里标出**实际**行数（PR-3 时点）。
+估算值；已落地的模块在括号里标出**实际**行数（PR-4 时点）。
 
 ```
 shared/default-settings.js         80  (94)   默认值单一来源
 shared/site-rules.js              180  (305)  决策纯函数
 shared/site-rules-builtin.js      220  (88)   规则数据（首批规则在 PR-8 才填）
 shared/block-identity.js          120  (114)  内容身份
-shared/translation-cache.js       200         两级缓存
+shared/translation-cache.js       200  (298)  两级缓存
 shared/spa-navigation.js          140         路由信号
 content/page/collect.js           620  (852)  由 content-page-translation 拆出
 content/page/batch.js             400  (511)  同上（含新增 runTranslationPass）
 content/page/insert.js            560  (499)  同上
 content/page/visibility.js        260  (172)  同上
 content/page/progress.js               (363)  同上（原表漏列）
+content/content-translation-cache.js    (101)  缓存桥接（PR-4 新增，原表未列：
+                                               引擎 902 行放不下，且设置页也加载引擎）
 content/content-auto-discover.js  260         发现层
 content/content-auto-translate.js 320         调度层
 content/content-auto-status.js    200         状态呈现
