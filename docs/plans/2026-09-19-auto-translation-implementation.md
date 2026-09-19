@@ -196,15 +196,30 @@ X / Reddit 是虚拟列表，回收 DOM 节点时 class 还在、文本已换成
 
 ```js
 globalThis.BlockIdentity = {
-  hash(text),                 // FNV-1a 32 位，输出 8 位十六进制
-  normalize(text),            // 折叠空白 + trim + NFC；与既有 normalizeComparableText 同口径
-  register(el, { hash, translationEl, blockId }),
-  lookup(el),                 // -> Entry | undefined
-  isStale(el, currentHash),   // 已登记但 hash 变了 = 节点被复用
-  release(el),                // 移除译文节点并注销
-  nextBlockId(),
+  fingerprint(text),                // NFC + 折叠空白 + trim，再 FNV-1a 32 位；
+                                    // 归一化与 hash 不单独导出，见下第 1 条
+  register(el, { fingerprint, translationEl, managed }),
+  lookup(el),                       // -> Entry | undefined
+  isStale(el, currentFingerprint),  // 已登记但指纹变了 = 节点被复用
+  forget(el),                       // 只注销，不碰 DOM
 };
 ```
+
+**PR-3 实现时改了四处（已落地，以此处为准）：**
+
+1. **`fingerprint()` 是唯一入口。** 原设计让调用方自己 `hash(normalize(x))`，
+   那就有两个地方各归一化一套；一旦登记端和比对端差一步，**每个块都会被判成
+   陈旧，翻完立刻重翻** —— 一个会烧钱的死循环。合成一个函数，两头都只能走它。
+2. **`release()` 不在这个模块，改名 `ctx.releaseTranslation()` 落在
+   `content/page/insert.js`。** 摘译文节点要认识五种插入形态（兄弟、块内、
+   slot 内、flex 内联、受管容器的 ::after），还要调 `ctx.releaseManagedTranslation`
+   和 `ctx.releaseSourceForTranslation`。让 `shared/` 去摘节点，它就再也不能在
+   `node --test` 里跑了。这里只回答「是不是同一段内容」，`forget()` 只注销。
+3. **`normalize()` 不转小写，和 `normalizeComparableText` **不**同口径。**
+   两者问的不是一个问题：那边问「模型是不是把原文原样还回来了」，宽容才不会把
+   大小写差异当成真译文；这边问「这段文字变了没有」，大小写变了就是变了。
+4. **`blockId` / `nextBlockId()` 推迟到 PR-6。** 它只给调度器记账（§7.2），
+   PR-3 没有任何人读它 —— 本仓不建模现在不需要的字段。
 
 **关键决策：注册表用 `WeakMap<Element, Entry>`，不写 `data-*` 属性。**
 
@@ -426,19 +441,41 @@ ctx.autoStatus                        // 状态点 / 追问条控制
 ### 4.1 幂等判定（替换 class 检查）
 
 ```js
-// content/page/collect.js，processElement 内，原 :866-867 的位置
-const entry = BlockIdentity.lookup(element);
-if (entry) {
-  const now = BlockIdentity.hash(BlockIdentity.normalize(getDirectText(element)));
-  if (entry.hash === now) return;   // 真·已翻译，跳过
-  BlockIdentity.release(element);   // 节点被复用：移除旧译文，当作新块重来
+// content/page/collect.js，processElement 内，**排在 closest() 跳过链之前**
+const identity = globalThis.BlockIdentity;
+if (identity.lookup(element)) {
+  if (!identity.isStale(element, identity.fingerprint(readSourceText(element)))) return;
+  ctx.releaseTranslation(element);   // 节点被复用：摘掉旧译文，当作新块重来
 }
 ```
 
-`release()` 必须真的把旧译文节点从 DOM 里摘掉 —— 否则虚拟列表滚动几轮后，
-一条新推文下面会挂着三条陈年译文。
+三个实现要点，都是照原样写会出错的地方：
 
-### 4.2 代次与迟到响应
+- **必须排在 `element.closest('.ai-translator-popup, .ai-translator-translated, …')`
+  之前。** 那条选择器串里就有 `.ai-translator-translated`，而 `closest()` 从元素
+  自己开始找 —— 排在它后面，回收的块会先被当成「已翻译」挡掉，陈旧判定再也没有
+  机会发生。
+- **文本不能用 `getDirectText()`。** 它只读直接子文本节点，而 X 的
+  `[data-testid="tweetText"]` 把正文分装在一串 `<span>` 里，读出来是空字符串：
+  整列推文指纹相同，回收一次也认不出来。PR-3 为此在 `collect.js` 里加了
+  `readSourceText(element)` —— 整棵子树读一遍，**只**跳过我们自己插进去的
+  `.ai-translator-inline-block`。`.ai-translator-inline-source` 看着像我们的类名，
+  其实打在**页面自己的块**上（悬停译过的那一块），跳掉就是把真正的正文从指纹里
+  抹去。**登记端和比对端必须是同一个读法**，否则同上：每块都陈旧，翻完立刻重翻。
+- **只对已登记的元素读子树。** 这一步不便宜，所以代价跟着已翻块数走，不跟着
+  页面 DOM 大小走。
+
+`ctx.releaseTranslation()`（在 `insert.js`）摘的东西比一个 `remove()` 多：
+为译文让出位置而藏起来的原文要放回去（`ctx.releaseSourceForTranslation`，
+和 fit guard 撤译文那条路成对），受管 `::after` 要走
+`ctx.releaseManagedTranslation`，最后 `.ai-translator-translated` 必须摘掉 ——
+它是上面那条 `closest()` 串里的一员，留着的话放开的块下一轮照样被跳过。
+
+### 4.2 代次与迟到响应（PR-6）
+
+代次要作废的是**队列和在途请求**，两样都是调度器的东西，PR-3 没有它们可作废，
+所以这一节整体跟着调度层走。
+
 
 `sessionVersion` 是一个模块级整数，自增时做三件事：清队列、标记在途请求作废、
 把 `BlockIdentity` 里属于旧路由的条目在**下次扫描时**惰性清理（不主动遍历，代价太大）。
@@ -637,6 +674,9 @@ M0 全是现存缺陷，**先于任何新功能**。理由很简单：自动翻�
 **载荷全在 `textHash` 上，`blockId` 只做记账。** 这点必须写清楚，
 否则后来者会误以为 `blockId` 是幂等依据。
 
+正因为它只做记账，PR-3 的 `BlockIdentity` **没有**这个字段：那一层没有人读它。
+它和 `nextBlockId()` 一起落在 PR-6 —— 调度器到场的同一个 PR。
+
 ### 7.3 首批规则
 
 | 站点 | state | 要点 |
@@ -693,7 +733,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | --- | --- | --- |
 | `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；注册域归一（`mobile.x.com` → `x.com`）；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
-| `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`release` 摘除译文节点 | FR-2.10 |
+| `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`readSourceText` 不把译文算进原文；`ctx.releaseTranslation` 摘译文节点、放回原文、清标记；判定排在 `closest()` 之前 | FR-2.10 |
 | `translation-cache.test.mjs` | 键包含全部 7 个因子；改 `promptVersion` 后不命中；LRU 淘汰；30 天过期；in-flight 合并只发一次 | FR-7 |
 | `spa-navigation.test.mjs` | 三路信号去重（250ms 内同一 `to` 只发一次）；`navigation` 缺失时降级到轮询 | FR-2.8 |
 | `session-guard.test.mjs` | `acceptResult` 三条校验各自独立生效 | FR-2.11 |
@@ -714,7 +754,8 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | --- | --- | --- |
 | `auto-translate-basic.spec.js` | 规则为 `always` 的域打开即译；`never` 不译；`ask` 出追问条且不自动译 | FR-1 / FR-3 |
 | `auto-translate-incremental.spec.js` | 注入无限滚动 fixture，滚 10 屏，新块全部被译、无块被译两次 | FR-2 |
-| `auto-translate-virtualized.spec.js` | **回收同一 DOM 节点换内容**，断言新内容被译、旧译文被摘掉；反复 100 次无错配 | FR-2.10（评审补入） |
+| `page-translation-recycled-block.spec.js` | **已落地（PR-3）**：改块内文字后再点一次整页翻译，断言新内容被译、旧译文节点被摘掉，且没变的块这一轮**根本没发出去**（断 `sentTexts` 而不是只看 DOM） | FR-2.10 |
+| `auto-translate-virtualized.spec.js` | 上一条的滚动版：真虚拟列表回收，反复 100 次无错配。发现层要在才写得出来，随 PR-6 | FR-2.10（评审补入） |
 | `auto-translate-spa.spec.js` | `history.pushState` 切 3 次路由，每次重新判定并翻译；旧路由在途结果不写回 | FR-2.8 / FR-2.11 |
 | `auto-translate-loop-guard.spec.js` | 插入译文不触发新一轮翻译；注入 10k 节点爆发后 CPU 回落 | FR-2.5 / R1 |
 | `auto-translate-quiet.spec.js` | 自动模式全程无进度条、无 toast | FR-2.7 |
@@ -758,10 +799,10 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | **PR-0b** | M0-b/e：语言解耦、`autoDetect` 改名、默认值单一来源 | `i18n/messages.js` + 5 处调用、`shared/default-settings.js`、`content-bootstrap.js` | 改翻译语言不改界面语言；默认值只有一处 |
 | **PR-1** | `content-page-translation.js` 拆四个文件 + 抽 `runTranslationPass` | `content/page/*.js`、`manifest.json` | **纯搬运**，既有全部 e2e 原样通过 |
 | **PR-2** | 决策层 | `shared/site-rules.js`、`shared/site-rules-builtin.js` | `site-rules.test.mjs` 全绿；无 UI 变化 |
-| **PR-3** | 内容身份 + 代次 + 迟到校验 | `shared/block-identity.js`、`content/page/collect.js`、`insert.js` | 虚拟列表 e2e 绿；手动翻译行为不变 |
+| **PR-3** | 内容身份（幂等基石） | `shared/block-identity.js`、`content/page/collect.js`、`insert.js` | `block-identity.test.mjs` 全绿；`page-translation-recycled-block.spec.js` 在真浏览器里走通「改文字→重译、没改→不重发」；手动翻译行为不变 |
 | **PR-4** | 两级缓存 | `shared/translation-cache.js`、`background/background.js`（alarm） | 第二次翻译请求数为 0 |
 | **PR-5** | 路由信号 | `shared/spa-navigation.js` | 三路去重单测绿 |
-| **PR-6** | 发现层 + 调度层（**自动翻译在此可用**） | `content-auto-discover.js`、`content-auto-translate.js` | 打开即译 / 滚动续译 / 路由重译 三条 e2e 绿 |
+| **PR-6** | 发现层 + 调度层 + 代次/迟到校验（**自动翻译在此可用**） | `content-auto-discover.js`、`content-auto-translate.js` | 打开即译 / 滚动续译 / 路由重译 三条 e2e 绿 |
 | **PR-7** | 交互四触点 | `content-auto-status.js`、`content-float-ball.js`、`popup/`、`manifest.json`(commands) | 启用 ≤3 次点击；关闭不离开页面；`Alt+A` 可用 |
 | **PR-8** | 站点适配首批规则 | `shared/site-rules-builtin.js`、`content/page/collect.js`（原子块） | X / Reddit / arXiv / HN fixture 回归 |
 | **PR-9** | 字幕面接入 | `content-video-captions.js`、`content-caption-providers.js` | 自动开启；滑动窗口；切视频无残留 |
@@ -808,23 +849,30 @@ D1（悬浮球单击语义）**已定案**为「改成翻译 / 还原切换」�
 
 **新增（13）**
 
+估算值；已落地的模块在括号里标出**实际**行数（PR-3 时点）。
+
 ```
-shared/default-settings.js         80    默认值单一来源
-shared/site-rules.js              180    决策纯函数
-shared/site-rules-builtin.js      220    规则数据
-shared/block-identity.js          120    内容身份
-shared/translation-cache.js       200    两级缓存
-shared/spa-navigation.js          140    路由信号
-content/page/collect.js           620    由 content-page-translation 拆出
-content/page/batch.js             400    同上（含新增 runTranslationPass）
-content/page/insert.js            560    同上
-content/page/visibility.js        260    同上
-content/content-auto-discover.js  260    发现层
-content/content-auto-translate.js 320    调度层
-content/content-auto-status.js    200    状态呈现
+shared/default-settings.js         80  (94)   默认值单一来源
+shared/site-rules.js              180  (305)  决策纯函数
+shared/site-rules-builtin.js      220  (88)   规则数据（首批规则在 PR-8 才填）
+shared/block-identity.js          120  (114)  内容身份
+shared/translation-cache.js       200         两级缓存
+shared/spa-navigation.js          140         路由信号
+content/page/collect.js           620  (852)  由 content-page-translation 拆出
+content/page/batch.js             400  (511)  同上（含新增 runTranslationPass）
+content/page/insert.js            560  (499)  同上
+content/page/visibility.js        260  (172)  同上
+content/page/progress.js               (363)  同上（原表漏列）
+content/content-auto-discover.js  260         发现层
+content/content-auto-translate.js 320         调度层
+content/content-auto-status.js    200         状态呈现
 ```
 
-全部在 1k 行以内。拆分后 `content-page-translation.js` 从 2282 行降到约 280 行。
+全部在 1k 行以内。拆分后 `content-page-translation.js` 从 2282 行降到 109 行。
+
+**`content/page/collect.js` 是唯一需要盯的：852 行，而 PR-8 还要往里加原子块选择器。**
+真到了顶就再拆一次（文本提取 / 跳过判据 / 块构造是三件事），但那是一次纯搬运，
+要单独一个 PR，不能混在加功能的 PR 里 —— PR-1 就是这么做的。
 
 **改动（11）**
 

@@ -280,6 +280,19 @@
           return;
         }
       }
+      // 节点身份 vs 内容身份。`.ai-translator-translated` 只说「这个**节点**翻过
+      // 了」，而 X / Reddit 是虚拟列表：滚动时同一个节点被回收去装下一条推文，
+      // class 还在，文字已经换了。只认 class 的话新内容永远被静默跳过。
+      // 必须排在下面那条 closest() 前面 —— 它的选择器串里就有
+      // `.ai-translator-translated`，而 closest() 从元素自己开始找，先跑就把回收
+      // 的块一并挡掉了，陈旧判定再也没机会发生。
+      // 整棵子树的文本读一遍不便宜，所以只对**登记过的**元素读：代价跟着已翻块
+      // 数走，不跟着页面 DOM 大小走。
+      const identity = globalThis.BlockIdentity;
+      if (identity.lookup(element)) {
+        if (!identity.isStale(element, identity.fingerprint(readSourceText(element)))) return;
+        ctx.releaseTranslation(element);
+      }
       if (element.closest('.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn')) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
@@ -695,6 +708,39 @@
     return text;
   }
 
+  // 这个块「属于页面自己」的那段文字 —— 跳过我们插进去的译文节点。
+  //
+  // 身份指纹（shared/block-identity.js）两头都走它：落笔时登记一次，之后每一轮
+  // 发现再问一次。两头必须是同一个读法，否则每个块都会被判成「内容变了」，翻完
+  // 立刻重翻。
+  //
+  // 不能用 getDirectText：它只读直接子文本节点，而 X 的 [data-testid="tweetText"]
+  // 把正文分装在一串 <span> 里，读出来是空字符串 —— 整列推文的指纹全都一样，回收
+  // 一次也认不出来。
+  // 也不能用 getTextWithMathPlaceholders：那边要的是「送去翻译的文本」，带公式占位
+  // 符和内联标记；这边要的是「页面上这段字变了没有」，越素越好。
+  // 只跳 `.ai-translator-inline-block` —— 悬停/划词译文也带这个类，所以一并跳掉。
+  // 另外两个看起来像「我们的」类名都**不能**跳：
+  //   · `.ai-translator-inline-source` 打在**页面自己的块**上（悬停译过的那块），
+  //     跳掉就是把真正的正文从指纹里抹去：这段字变了看不出来，而悬停标记被摘掉
+  //     时指纹反倒凭空一变，白翻一遍；
+  //   · `.ai-translator-text-run` 是 wrapDirectTextRuns 包出来的锚点 span，
+  //     里面装的就是原文。
+  const OWN_TRANSLATION_CLASS = 'ai-translator-inline-block';
+  function readSourceText(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return '';
+    let text = '';
+    for (const node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE &&
+                 !node.classList.contains(OWN_TRANSLATION_CLASS)) {
+        text += readSourceText(node);
+      }
+    }
+    return text;
+  }
+
   // 原文第一个文本相对于元素左边的偏移（跳过 icon/svg 等前置元素），用来让译文和
   // 原文的文字左对齐。
   // @param {{fromContentBox?: boolean}} options 译文插到元素【内部】时传 true：
@@ -797,6 +843,7 @@
   ctx.isIconElement = isIconElement;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
+  ctx.readSourceText = readSourceText;
   ctx.getTextOffsetLeft = getTextOffsetLeft;
   ctx.normalizeComparableText = normalizeComparableText;
   // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
