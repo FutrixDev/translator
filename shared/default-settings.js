@@ -78,7 +78,21 @@
     targetLang: 'zh-CN',
     // 界面语言，与翻译目标语言彻底分开。'' = 跟随浏览器。
     uiLanguage: '',
-    theme: 'light'
+    theme: 'light',
+
+    // —— 自动翻译 ——
+    // 一个总开关，一份站点名单，一份语言名单。三者的判定顺序全在
+    // shared/site-rules.js 的 decide() 里，这里只放数据。
+    //
+    // 默认开：这个功能的价值是「打开外文页面就已经是中文的」，默认关等于
+    // 让每个用户先发现它、再打开它，绝大多数人两件事都不会做。关掉它的成本
+    // 是一次点击，而且总开关一关，整条链路（发现层、调度层、询问条）全停。
+    autoTranslate: true,
+    // 站点级覆盖：{ 'example.com': 'always' | 'never' }。域名是归一化后的主机名，
+    // 查找时会向上逐级找父域（见 SiteRules.decide）。
+    siteRules: Object.freeze({}),
+    // 只自动翻这些源语言；空数组 = 不限制。装的是语言基码（'en'、'ja'）。
+    autoTranslateLangs: Object.freeze([])
   });
 
   /**
@@ -87,7 +101,13 @@
    * either throw or leak one caller's values into the next.
    */
   function contentDefaults() {
-    return Object.assign({}, CONTENT_DEFAULTS);
+    const defaults = Object.assign({}, CONTENT_DEFAULTS);
+    // 容器型默认值必须各给一份新的。Object.assign 复制的是引用：共用同一个 {}
+    // 时，一处往 siteRules 里记一条站点规则，同一页面里其他拿到「默认值」的地方
+    // 就跟着有了这条规则 —— 而且 CONTENT_DEFAULTS 是冻的，严格模式下直接抛。
+    defaults.siteRules = {};
+    defaults.autoTranslateLangs = [];
+    return defaults;
   }
 
   root.DefaultSettings = { DEFAULT_SELECTION_HOTKEY, CONTENT_DEFAULTS, contentDefaults };

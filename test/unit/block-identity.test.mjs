@@ -108,6 +108,43 @@ test('a registered element goes stale exactly when its text changes', () => {
   assert.equal(BlockIdentity.lookup(node), undefined);
 });
 
+test('换了目标语言，挂着的译文就不是这一块的译文了', () => {
+  // 第二种陈旧：文字一个字没变，可它下面那条译文是上一门语言的。不问这一问，
+  // 用户把目标语言从中文改成日文之后，已经翻过的那一片永远停在中文 —— 收集那
+  // 一层一看「登记过、指纹一致」就直接跳过，谁也不会把它送出去重翻。
+  const node = el();
+  const text = BlockIdentity.fingerprint('Ship it on Friday');
+  BlockIdentity.register(node, { fingerprint: text, lang: 'zh-CN' });
+  assert.equal(BlockIdentity.isStale(node, text, 'zh-CN'), false);
+  assert.equal(BlockIdentity.isStale(node, text, 'ja'), true);
+});
+
+test('语言这一维只在两边都说得出来时才问', () => {
+  // 两头都要能退回从前。登记时没说语言（lang: null），或者问的人没带目标语言，
+  // 都按「不问这一问」算 —— 顶多回到旧行为（旧译文继续挂着）。
+  //
+  // 反过来把「没说」当成某个具体值（比如空串）就是灾难：每一块都判成陈旧 →
+  // 放开 → 重翻 → 再登记 → 再判陈旧，一个烧钱的死循环，而且页面上看着一切正常。
+  const unsaid = el();
+  const text = BlockIdentity.fingerprint('Ship it on Friday');
+  BlockIdentity.register(unsaid, { fingerprint: text });
+  assert.equal(BlockIdentity.lookup(unsaid).lang, null);
+  assert.equal(BlockIdentity.isStale(unsaid, text, 'ja'), false);
+
+  const said = el();
+  BlockIdentity.register(said, { fingerprint: text, lang: 'zh-CN' });
+  assert.equal(BlockIdentity.isStale(said, text), false);
+  assert.equal(BlockIdentity.isStale(said, text, null), false);
+});
+
+test('文字变了就是变了，语言一致也救不回来', () => {
+  // 两问互不吞没：指纹这一问答「这个节点是不是被回收给另一条内容了」，先问、
+  // 且一票否决。把语言揉进指纹就再也分不开这两件事。
+  const node = el();
+  BlockIdentity.register(node, { fingerprint: BlockIdentity.fingerprint('First tweet'), lang: 'zh-CN' });
+  assert.equal(BlockIdentity.isStale(node, BlockIdentity.fingerprint('Second tweet'), 'zh-CN'), true);
+});
+
 // ==================== 读的是页面自己的文字 ====================
 
 test('the source text comes from the whole subtree — X nests its tweet text in spans', () => {
@@ -205,10 +242,38 @@ test('every insertion registers an identity — including the one with no node t
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   // 四种有节点的形态都汇进 finishTranslationInsert，受管 ::after 那条没有节点，
   // 走不到那里，所以它必须自己登记一次。
-  assert.match(body, /registerTranslation\(element, handle, true\)/,
+  assert.match(body, /registerTranslation\(element, handle, true, lang\)/,
     'the managed (::after) branch inserts a translation nobody can later release');
-  assert.match(source, /function finishTranslationInsert\(element, translationEl, sourceWidthBefore\) \{\s*\n\s*registerTranslation\(element, translationEl, false\);/,
+  assert.match(source, /function finishTranslationInsert\(element, translationEl, sourceWidthBefore, lang\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang\);/,
     'the shared post-insert path no longer registers the block identity');
+});
+
+// 收集端和落笔端之间隔着一次 await，两轮翻译（用户改了目标语言，手动那一轮还在
+// 飞）完全可能同时在飞，两条译文先后落到同一块上 —— 而先后顺序是网络说了算的。
+// 只看 `.ai-translator-translated` 一律拒收，后到的新语言译文写不进去；反过来
+// 「语言不一样就换掉」，后到的旧语言译文把新的盖掉。两条路通向同一个终点：页面
+// 停在旧语言，调用方照样记账，从此没有任何东西会再动它。所以裁决者是**此刻该译
+// 成的那门语言**，不是先来后到。
+test('the insertion side replaces an existing translation only for the current target language', () => {
+  const source = repoFile('content/page/insert.js');
+  const body = source.slice(source.indexOf('function insertTranslationBlock'));
+  const guard = body.indexOf("classList.contains('ai-translator-translated')");
+  assert.ok(guard !== -1, 'the duplicate guard moved; re-check where the arbitration belongs');
+  const window = body.slice(guard, guard + 300);
+  assert.match(window, /supersedesExistingTranslation\(element, lang\)/,
+    'the insertion side answers "already translated?" from the class alone again');
+  assert.match(window, /releaseTranslation\(element\);/,
+    'a superseded translation is refused instead of replaced — the page keeps the old language forever');
+
+  const arbiterAt = source.indexOf('function supersedesExistingTranslation');
+  assert.ok(arbiterAt !== -1, 'supersedesExistingTranslation is gone; who arbitrates two passes in flight now?');
+  const arbiter = source.slice(arbiterAt, source.indexOf('\n  }\n', arbiterAt));
+  assert.match(arbiter, /ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/,
+    'the arbiter stopped asking what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
+  assert.match(arbiter, /lang === current/,
+    'the arbiter no longer requires the incoming result to be the current target language');
+  assert.match(arbiter, /entry\.lang === lang/,
+    'the arbiter stopped deduplicating — every repeat insert now tears the translation down and redraws it');
 });
 
 test('block-identity loads before the modules that use it', () => {

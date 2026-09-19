@@ -547,6 +547,13 @@
     if (ctx.applyTranslationOnlyMode) {
       ctx.applyTranslationOnlyMode();
     }
+
+    // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
+    // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
+    if (ctx.autoTranslate) {
+      if (state.translationsVisible) ctx.autoTranslate.resumeCurrentPage();
+      else ctx.autoTranslate.pauseCurrentPage();
+    }
   }
 
   function stopFloatBallWatchdog() {

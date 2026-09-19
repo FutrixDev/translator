@@ -21,7 +21,11 @@
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
   const MAX_BATCH_TOKENS = 3200; // 估算 token 上限（输入侧保守值）
   const MAX_BLOCK_CHARS = 4000; // 单个块最大字符数；超过则按标点分块（见 splitTextIntoChunks），避免正文被丢弃或被模型截断
-  const CONCURRENCY = 12;       // 并发数
+  // 并发按引擎分：内置引擎在批内是串行的（content-translation-engine.js 的
+  // `for (const text of texts) await translateWithBuiltin(...)`），12 路并发只是让
+  // 12 个批同时去抢同一份端上模型，多出来的是排队和内存，不是吞吐；云端引擎
+  // 是网络并发，12 才有意义。
+  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12 });
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
   // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
@@ -219,26 +223,60 @@
     });
   }
 
-  async function isTargetLanguageText(text) {
-    const targetLang = getEffectiveTargetLang();
-    const targetBase = getLangBase(targetLang);
-    if (!targetBase) return false;
+  // 采信一次语言判定的门槛。**全仓只有这一处。** 自动翻译的调度层也要判语言
+  // （这一页整体是什么语言，该不该自己动手），第二套阈值意味着「这段不用翻」和
+  // 「这页不用翻」会在同一份文本上给出不同答案。
+  const LANGUAGE_CONFIDENCE_MIN = 85;
 
+  /**
+   * 这段文字是什么语言 —— 只在够有把握时回答。
+   * @returns {Promise<?string>} 语言基码（'en' / 'zh' …），判不出或不够有把握时 null
+   */
+  async function detectReliableLanguage(text) {
     const detectText = getLanguageDetectionText(text);
-    if (detectText.length < 4) return false;
+    if (detectText.length < 4) return null;
 
     const result = await detectLanguage(detectText);
     const topLang = result?.languages?.[0];
-    if (!topLang) return false;
-
-    const detectedBase = getLangBase(topLang.language);
-    if (detectedBase !== targetBase) return false;
+    if (!topLang) return null;
 
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
-    return confidence >= 85 && result.isReliable !== false;
+    if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
+
+    return getLangBase(topLang.language);
   }
 
-  async function shouldSkipTranslation(block, translation) {
+  // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。
+  //
+  // 两个读数，都要，且必须取自同一时刻：
+  //
+  //   request —— 发给引擎的那一门。getEffectiveTargetLang 会把「跟随浏览器」补成
+  //              具体语言，因为请求里非填一个不可。
+  //   stamp   —— 记进译文身份的那一门。currentTargetLang 的空串**就是**「跟随浏
+  //              览器」这个哨兵，登记端和比对端同读同写，补了反而对不上。
+  //
+  // 为什么不各用各的、现用现问：用户在一轮翻译跑到一半时改了目标语言，早发出去
+  // 的那几批拿回来的是旧语言的译文，现问就会给它们盖上新语言的戳；下一轮一看
+  // 「语言没变」把这些块全跳过，旧语言的译文就永远留在页面上了。反过来（请求用
+  // 新的、戳按旧的）只是白翻一轮，不会留下错的东西 —— 但两个读数同源，两种都
+  // 不会发生：这一轮整个是旧语言的，改设置由 RESTART_KEYS 另起一轮来接。
+  function passTarget() {
+    return {
+      request: getEffectiveTargetLang(),
+      stamp: ctx.currentTargetLang ? ctx.currentTargetLang() : null
+    };
+  }
+
+  // 默认现问设置，是给**一轮开跑之前**的那个调用点留的（filterBlocksByLanguage：
+  // 那时候还没有「这一轮」，现问就是对的）。一轮之内的调用一律把 target.request
+  // 传进来 —— 那一门在开跑时就定死了，见 passTarget。
+  async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
+    const targetBase = getLangBase(targetLang);
+    if (!targetBase) return false;
+    return (await detectReliableLanguage(text)) === targetBase;
+  }
+
+  async function shouldSkipTranslation(block, translation, target) {
     const normalizedOriginal = ctx.normalizeComparableText(block.text);
     const normalizedTranslation = ctx.normalizeComparableText(translation);
 
@@ -254,11 +292,42 @@
 
     try {
       if (!settings.skipTargetLanguageText) return false;
-      return await isTargetLanguageText(block.text);
+      return await isTargetLanguageText(block.text, target.request);
     } catch (error) {
       console.warn('Blab Translation: Language detection failed', error);
       return false;
     }
+  }
+
+  // 译文写回页面的唯一入口。三条插入路径（分批回填 / 逐块回退 / 超大块拼回）
+  // 全走这里，`accept` 这道迟到校验就不会漏在其中一条上。
+  //
+  // accept 在 shouldSkipTranslation 之后问：语言判定可能要跑一次 detectLanguage，
+  // 把它放在后面意味着「已经作废的请求」还要多花一次判定。但顺序反过来，两者
+  // 之间那次 await 又给了页面一个变动的窗口 —— 校验必须是插入前的最后一件事，
+  // 这点比省一次本地判定重要。
+  async function insertTranslation(
+    block, translation, { accept, onSettled, target = passTarget() } = {}
+  ) {
+    if (await shouldSkipTranslation(block, translation, target)) {
+      // 模型把原文原样还回来了 —— 这一块本来就不用翻。这和「翻好了」一样是**终局**，
+      // 所以同样要报出去：自动翻译那一层据此记账，不报的话它下一轮还会被送出来，
+      // 再花一次同样的钱，永远如此。
+      if (onSettled) onSettled(block);
+      return;
+    }
+    if (accept && !accept(block)) return;
+    ctx.insertTranslationBlock(block, translation, { lang: target.stamp });
+    // 无条件报结果，不去问插入端「真写进去了吗」。它拒收的三种情形都是终局：
+    //   · 这一块上已经挂着一条同语言的译文 —— 那就是有结果了；
+    //   · 这一轮译成的已经不是用户此刻要的那门语言了（并发的另一轮把页面翻成了
+    //     新的），我们是晚到的旧货 —— 重试只会再交一次旧货，而改语言必然伴随
+    //     一次重开（调度层 bumpSession 会清空台账、收集端会把旧语言的块放开），
+    //     真正该译的那一轮自己会把这一块收走；
+    //   · 它是划词/悬停那套的原文壳子 —— 我们永远插不进去，重试只是重复花同
+    //     一笔钱。
+    // 见 page/insert.js 的 supersedesExistingTranslation。
+    if (onSettled) onSettled(block);
   }
 
   // 分批译文只能按位置回填，回填前数量必须一致 —— 与超大块路径（processOversizedBlock）
@@ -266,34 +335,41 @@
   // 数量一错开，A 块就会挂上 B 块的译文；行内标记 <a1>…</a1> 还会落进无法还原它的
   // 块里，以字面乱码呈现。数量不一致时退回逐块翻译：一块一请求，单段无从错位，
   // 最坏是某一块拿不到译文而保持原文。
-  async function applyFastBatchTranslations(batch, translations, { onFailure, isAborted } = {}) {
+  // target 不传就现读一门：这个函数是导出的（ctx.applyFastBatchTranslations），
+  // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
+  async function applyFastBatchTranslations(
+    batch, translations,
+    { onFailure, isAborted, accept, allowDownload, onSettled, target = passTarget() } = {}
+  ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
       console.warn(
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled, target });
       return;
     }
 
     await Promise.all(translations.map(async (translation, i) => {
       if (!batch[i] || !translation) return;
-      if (await shouldSkipTranslation(batch[i], translation)) return;
-      ctx.insertTranslationBlock(batch[i], translation);
+      await insertTranslation(batch[i], translation, { accept, onSettled, target });
     }));
   }
 
-  async function translateBlocksOneByOne(batch, { onFailure, isAborted } = {}) {
+  async function translateBlocksOneByOne(
+    batch,
+    { onFailure, isAborted, accept, allowDownload = true, onSettled, target = passTarget() } = {}
+  ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
         const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: [block.text],
-          targetLang: getEffectiveTargetLang(),
+          targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload: true
+          allowDownload
         });
         if (response.error) {
           if (onFailure) onFailure(response.error);
@@ -304,8 +380,7 @@
           ? response.translations[0]
           : null;
         if (!translation) continue;
-        if (await shouldSkipTranslation(block, translation)) continue;
-        ctx.insertTranslationBlock(block, translation);
+        await insertTranslation(block, translation, { accept, onSettled, target });
       } catch (error) {
         // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
         if (isExtensionContextInvalidated(error)) throw error;
@@ -343,6 +418,21 @@
   // 归 content/content-page-translation.js，将来自动翻译的增量轮次并不需要它。
   async function runTranslationPass(blocks, options = {}) {
     const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+    // 迟到校验。手动整页翻译不传 —— 用户点下去到译文回来这段时间里，页面通常
+    // 还是那一页，而自动翻译的一轮可能横跨一次路由切换。
+    const accept = typeof options.accept === 'function' ? options.accept : null;
+    // 「这一块有结果了」。翻好了是结果，模型说「不用翻」也是结果 —— 失败不是。
+    // 自动翻译拿它记台账：只有报过的块才不再送第二次（见
+    // content/content-auto-translate.js 的 commit）。整页翻译不传，它点一次就结束，
+    // 没有下一轮。
+    const onSettled = typeof options.onSettled === 'function' ? options.onSettled : null;
+    // 语言包是几十 MB 的下载，create() 触发它要求 user activation。整页翻译是
+    // 用户点出来的，手势就在那儿；自动翻译这一轮没有，硬触发只会换回一个
+    // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
+    // needsDownload 那条回落路 —— 和悬停、字幕这两条同样没有手势的路一致。
+    const allowDownload = options.allowDownload !== false;
+    // 这一轮的目标语言，只在这里读一次。见 passTarget。
+    const target = passTarget();
     const total = blocks.length;
     let done = 0;
 
@@ -354,8 +444,9 @@
     const deferredBatches = createSmartBatches(deferredBlocks);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    
-    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${CONCURRENCY}`);
+    const concurrency = usingBuiltinEngine() ? CONCURRENCY.builtin : CONCURRENCY.ai;
+
+    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 
 
     // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
@@ -368,6 +459,16 @@
     let batchError = null;
     let batchFailures = 0;
     let firstFailureMessage = null;
+
+    // 「还要不要继续」只有这一个答案。三处要问：超大块的分块循环、每个批次开跑
+    // 前、以及传给逐块回退的那个谓词。
+    //
+    // 外面喊停和里面出错是两回事，但**停法必须是同一个**。自动翻译那一轮可能横跨
+    // 一次路由切换或一次改设置 —— 到那时这一页已经不归这一轮管了，`accept` 会把
+    // 回填一条条拒掉，可池子里剩下的批次照样一个接一个发出去。并发 12、几百块的
+    // 队列，用户关掉自动翻译或换掉付费引擎之后，账单还在涨，而页面上一个字都不会
+    // 变 —— 没有任何地方看得出来。
+    const aborted = () => !!batchError || (typeof options.isAborted === 'function' && options.isAborted());
 
     const noteBatchFailure = (message) => {
       if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
@@ -399,14 +500,14 @@
       if (sub.length > 0) subBatches.push(sub);
 
       for (const sb of subBatches) {
-        if (batchError) return;
+        if (aborted()) return;
         try {
           const response = await requestBatch({
             type: 'TRANSLATE_BATCH_FAST',
             texts: sb.map(x => x.text),
-            targetLang: getEffectiveTargetLang(),
+            targetLang: target.request,
             delimiter: DELIMITER,
-            allowDownload: true
+            allowDownload
           });
 
           if (response.error) {
@@ -439,14 +540,13 @@
 
       const combined = translations.join('');
       if (!combined.trim()) return;
-      if (await shouldSkipTranslation(block, combined)) return;
-      ctx.insertTranslationBlock(block, combined);
+      await insertTranslation(block, combined, { accept, onSettled, target });
     };
 
     // 使用 Promise 池进行并发控制
     const processBatch = async (batch) => {
-      // Skip if we already have an error
-      if (batchError) return;
+      // 出错了，或者外面已经不要这一轮的结果了
+      if (aborted()) return;
       if (!isExtensionContextAvailable()) {
         batchError = t('extensionContextInvalidated');
         return;
@@ -463,14 +563,14 @@
       const texts = batch.map(item => item.text);
 
       try {
-        // 整页翻译是用户点出来的，带着 user activation，是唯一适合触发
-        // 语言包首次下载的路径（下载进度直接显示在下方进度条上）。
+        // allowDownload 见 runTranslationPass 开头：用户点出来的那一轮可以触发
+        // 语言包首次下载（进度就显示在下方进度条上），自动那一轮不行。
         const response = await requestBatch({
           type: 'TRANSLATE_BATCH_FAST',
           texts: texts,
-          targetLang: getEffectiveTargetLang(),
+          targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload: true
+          allowDownload
         });
 
         // Check for error in response
@@ -480,8 +580,12 @@
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
           // 走逐块回退，而不是无声丢掉整批。
           await applyFastBatchTranslations(batch, response.translations, {
+            allowDownload,
             onFailure: noteBatchFailure,
-            isAborted: () => !!batchError
+            isAborted: aborted,
+            accept,
+            onSettled,
+            target
           });
         }
       } catch (error) {
@@ -499,7 +603,7 @@
 
     // 并发执行所有批次，首屏批次在队列前优先开始
     if (batches.length > 0) {
-      await runWithConcurrency(batches, processBatch, CONCURRENCY);
+      await runWithConcurrency(batches, processBatch, concurrency);
     }
 
     return batchError;
@@ -513,5 +617,8 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
+  // 自动翻译的调度层判「这一页是什么语言」用的也是它 —— 同一个阈值，
+  // 同一份清洗（见上面 LANGUAGE_CONFIDENCE_MIN 的注释）。
+  ctx.detectReliableLanguage = detectReliableLanguage;
   ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
 })();

@@ -183,8 +183,8 @@
   //   flex 内联四种形态里，从译文往回找原文各有各的走法，所以由插入方传进来。
   // @param {number} sourceWidthBefore 插译文之前原文块的宽度。fit guard 的横向判据
   //   要「页面原本给这一块多少地方」，插完就量不到了，只能在插之前记下来传进去。
-  function finishTranslationInsert(element, translationEl, sourceWidthBefore) {
-    registerTranslation(element, translationEl, false);
+  function finishTranslationInsert(element, translationEl, sourceWidthBefore, lang) {
+    registerTranslation(element, translationEl, false, lang);
     keepTranslationVisible(translationEl);
     // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
     // 才是它真实的处境。反过来先量就会按「原文 + 译文」的高度白撤一批译文。
@@ -250,14 +250,25 @@
   // 那个模块只回答「是不是同一段内容」，摘节点的事留在这里：插入有五种形态，
   // 只有这个文件知道自己插的是哪一种。
 
-  function registerTranslation(element, translationEl, managed) {
+  // lang：这段译文**是译成哪门语言的**，由发起这一轮的人一路带进来。
+  //
+  // 不在这里现问设置。译文是一次请求的结果，而那次请求是更早的时候按**当时的**
+  // 目标语言发出去的，这中间用户完全可能改过。现问就会把旧语言的译文盖上新语言
+  // 的戳，下一轮收集端一看「语言没变」直接跳过 —— 那一块永远停在旧语言上，页面
+  // 上还看不出任何异样。一轮翻译只认一门语言，那一门在 page/batch.js 的
+  // runTranslationPass 开跑时就定死了。
+  //
+  // 没人说就登记成 null：BlockIdentity 把 null 读作「没说」，陈旧判定于是不问语言
+  // 这一维 —— 正是「不知道」该有的样子（见 shared/block-identity.js 的 register）。
+  function registerTranslation(element, translationEl, managed, lang) {
     globalThis.BlockIdentity.register(element, {
       // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
       // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
       // 它是我们自己的，不会把它算进原文。
       fingerprint: globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element)),
       translationEl: translationEl || null,
-      managed: !!managed
+      managed: !!managed,
+      lang
     });
   }
 
@@ -287,13 +298,51 @@
     return true;
   }
 
+  // 页面上已经挂着一条译文，我们手里又来了一条：让不让位。
+  //
+  // 问的是三方而不是两方。只比「页面上那条的语言」和「我们这条的语言」的话，两轮
+  // 同时在飞时就成了谁最后落地谁说了算，而两个方向都会出事：
+  //
+  //   · 只看 class 一律拒收（这里原来的写法）：用户在一轮手动整页翻译跑着的时候
+  //     改了目标语言，调度层按 RESTART_KEYS 另起一轮，旧那轮的中文先落地；新那轮
+  //     的日文回来时被拒，这一轮静默地什么都没写，而调用方照样把它记成「有结果
+  //     了」。页面上那条中文从此没有任何东西会再动它 —— 收集端下一轮也不会，
+  //     class 还在。
+  //   · 反过来「语言不一样就换掉」：同一场竞速里新那轮的日文先落地，旧那轮的中文
+  //     随后回来，一样「语言不一样」，于是把日文又换回中文；新那轮的台账早把这
+  //     一块记成有结果了，同样再没人动它。
+  //
+  // 所以裁决者只能是**此刻这一页该译成的那门语言**：我们这条正是它，才有资格换掉
+  // 页面上那条；不是它，就按「晚到的旧货」处理，不动页面。
+  //
+  // 这一处现问设置，和「一轮之内目标语言取一次」（page/batch.js 的 passTarget）
+  // 不矛盾：那一条管的是**记什么戳** —— 戳必须是发请求时的那一门，否则戳和译文
+  // 对不上；这一条管的是**谁说了算** —— 只能是用户此刻要的那一门。
+  //
+  // null 一律当「不知道」，不知道就不动页面。三处都会出现：没登记过身份
+  // （lookup 落空）、登记时没说语言（entry.lang，见 registerTranslation），以及
+  // 只装了整页翻译那几个模块的 DOM 夹具里根本没有引擎（currentTargetLang 不在）。
+  // 调用方自己没说语言（lang == null）不必单列一条：那时 lang 既不可能等于
+  // entry.lang 之外的某个具体值，也不可能等于 current，最后一行自然答 false。
+  function supersedesExistingTranslation(element, lang) {
+    const entry = globalThis.BlockIdentity.lookup(element);
+    if (!entry || entry.lang == null || entry.lang === lang) return false;
+    const current = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+    return current != null && lang === current;
+  }
+
   // 插入翻译块
-  function insertTranslationBlock(block, translation) {
+  // lang：见 registerTranslation —— 这一轮译成的是哪门语言，由调用方带进来；
+  // 不带就是「没说」，这一块的身份里不记语言。
+  function insertTranslationBlock(block, translation, { lang = null } = {}) {
     const element = block.element;
     if (!element || !element.parentNode) return;
 
-    // 检查是否已经翻译过，防止重复
-    if (element.classList.contains('ai-translator-translated')) return;
+    // 这个元素上已经挂着一条译文了。动不动它，见 supersedesExistingTranslation。
+    if (element.classList.contains('ai-translator-translated')) {
+      if (!supersedesExistingTranslation(element, lang)) return;
+      releaseTranslation(element);
+    }
     if (element.classList.contains('ai-translator-inline-source')) return;
 
     // 标记为已翻译
@@ -320,7 +369,7 @@
         {}
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
-      registerTranslation(element, handle, true);
+      registerTranslation(element, handle, true, lang);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return;
@@ -375,7 +424,7 @@
 
       // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(element, translationEl, sourceWidthBefore);
+      finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -475,16 +524,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        finishTranslationInsert(element, internalTranslation, sourceWidthBefore);
+        finishTranslationInsert(element, internalTranslation, sourceWidthBefore, lang);
       } else if (placement.inside) {
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         element.appendChild(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
       }
     }
   }

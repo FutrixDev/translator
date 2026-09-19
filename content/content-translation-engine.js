@@ -181,6 +181,20 @@
     return pageSourceLangPromise;
   }
 
+  // 单页应用换页时 document 从头到尾是同一个，这个模块级缓存也就一直是上一篇文章
+  // 的语言。中文页跳到英文页之后，凡是短于 SELF_DETECT_MIN_CHARS 的块都不自己探，
+  // 直接拿缓存里的 zh 当源语言 —— 目标语言也是 zh，于是判成「已经是目标语言」，
+  // 原样退回，一个字不译。页面上看不出任何异样，只有短句永远是英文。
+  //
+  // 清缓存放在引擎这一层、由它自己订路由，而不是让自动翻译那一层换页时顺手清一下：
+  // 划词、悬停、字幕走的是同一个 resolveSourceLang，自动翻译关着的时候它们照样在
+  // 这条路上。谁拥有这个缓存，谁负责让它过期。
+  if (globalThis.SpaNavigation) {
+    globalThis.SpaNavigation.onRouteChange(() => {
+      pageSourceLangPromise = null;
+    });
+  }
+
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
 
@@ -548,6 +562,11 @@
         const allowDownload = options.allowDownload === true
           || (options.allowDownload !== false && !!navigator.userActivation?.isActive);
         if (!allowDownload) {
+          // 这一页确实要这个包、这个包确实不在本地 —— 比加载时那次探测更硬的证据，
+          // 且 src/tgt 现成。挂上预取，用户下一次点击就把它取回来。
+          // 不排除 iframe：iframe 里的点击落在 iframe 自己的 window 上，顶层那份
+          // 监听收不到；这条路不用探测，多挂一份不花任何往返。
+          if (ctx.armLanguagePackPrefetch) ctx.armLanguagePackPrefetch(src, tgt);
           throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
         }
       }
@@ -558,6 +577,8 @@
       translator = await getTranslator(src, tgt, needsDownload);
     } catch (error) {
       if (isActivationError(error)) {
+        // 手势过期了（activation 只有几秒，前面那几次 IPC 就能耗掉）。同上：挂预取。
+        if (ctx.armLanguagePackPrefetch) ctx.armLanguagePackPrefetch(src, tgt);
         throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
       }
       if (error instanceof TimeoutError) {
@@ -756,52 +777,23 @@
     return chrome.runtime.sendMessage(message);
   };
 
-  // ==================== 语言包预取 ====================
-
-  // 首次翻译要等几十 MB 的语言包，这份等待是可以挪走的：create() 只要求 user
-  // activation，不要求这次 activation 是“为了翻译”产生的。所以在页面加载后先把
-  // 语言对探好，再挂一个一次性监听，用户在页面上的第一次点击或按键就顺手把包拉下来。
-  // 等他真的去点翻译时，包多半已经在本地了。
-  //
-  // 代价是：用户可能从没打算在这个页面上翻译，包却下了。只在“这个页面的语言对
-  // 确实还没下载”时才做，一个语言对一辈子只有一次，权衡下来是值的。
-  async function setupLanguagePackPrefetch() {
-    // iframe 里的语言对和主文档一样，跟着做纯属重复。
-    if (window.top !== window) return;
-    if (!shouldUseBuiltin()) return;
-
-    let src;
-    let tgt;
-    try {
-      tgt = toApiLang(settings.targetLang);
-      if (!tgt || !SUPPORTED_LANGS.has(tgt)) return;
-      src = toApiLang(await getPageSourceLang());
-      if (!src || !SUPPORTED_LANGS.has(src) || src === tgt) return;
-      // downloadable 才需要预取；available 已就绪，downloading 说明别处已经在下了。
-      const status = await probeAvailability(src, tgt);
-      if (status !== 'downloadable') return;
-    } catch (error) {
-      return;
-    }
-
-    // 探测放在挂监听之前，是为了让手势回调里只剩一次 create()：
-    // activation 是有时效的（几秒），中间夹着 IPC 会把它耗掉。
-    const onGesture = () => {
-      window.removeEventListener('pointerdown', onGesture, true);
-      window.removeEventListener('keydown', onGesture, true);
-      // 静默进行。这不是用户点出来的翻译，不该去占用进度条；失败也不弹提示，
-      // 等他真的发起翻译时，那条路自己会重试并给出说明。
-      getTranslator(src, tgt, true).catch((error) => {
-        console.info('Blab Translation: language pack prefetch failed', error);
-      });
-    };
-    window.addEventListener('pointerdown', onGesture, true);
-    window.addEventListener('keydown', onGesture, true);
-  }
-
   // ==================== 对外接口 ====================
 
-  ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
+  /**
+   * 「我们此刻往哪门语言译」。
+   *
+   * 落笔端把这个答案记进译文的身份里（shared/block-identity.js 的 lang），收集端
+   * 拿它去问「挂在这一块上的译文还是这门语言的吗」。两边必须走同一个入口，否则
+   * 一边记原样设置、一边记归一化后的写法，每一块都判成陈旧。
+   *
+   * 归一化过：zh-CN 和 zh 到了引擎那边是同一门语言，用户在设置里换个写法不该把
+   * 整页重翻一遍。空（跟随浏览器语言）归一成空串。
+   */
+  function currentTargetLang() {
+    return toApiLang(settings.targetLang) || '';
+  }
+
+  ctx.currentTargetLang = currentTargetLang;
 
   // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
   // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和
@@ -852,6 +844,12 @@
     translate: translateWithBuiltin,
     destroyAll,
 
+    // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
+    // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎
+    // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
+    supportsLang: (code) => SUPPORTED_LANGS.has(code),
+    pageSourceLang: getPageSourceLang,
+
     async availability(sourceLang, targetLang) {
       if (!isBuiltinSupported()) return 'unavailable';
       const src = toApiLang(sourceLang);
@@ -867,8 +865,10 @@
     },
 
     /**
-     * 下载并就绪某个语言对。只应由设置页的按钮调用——那里有真实的用户手势
-     * （create() 触发下载要求 user activation），也有地方把进度显示出来。
+     * 下载并就绪某个语言对。只应在**真实的用户手势里**调用——create() 触发下载
+     * 要求 user activation。两个调用方：设置页那颗按钮（有地方显示进度），和
+     * content/content-language-pack.js 的预取（借用户在页面上的第一次点击，静默
+     * 进行，不传 onProgress）。
      */
     async ensureDownloaded(sourceLang, targetLang, onProgress) {
       if (!isBuiltinSupported()) {

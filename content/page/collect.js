@@ -290,7 +290,10 @@
       // 数走，不跟着页面 DOM 大小走。
       const identity = globalThis.BlockIdentity;
       if (identity.lookup(element)) {
-        if (!identity.isStale(element, identity.fingerprint(readSourceText(element)))) return;
+        // 第三个参数是目标语言：内容没变但语言换了的块也要放开重翻，否则改完
+        // 目标语言的页面是花的 —— 先前那批留着旧语言，而且没有任何东西会再动它们。
+        const target = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+        if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }
       if (element.closest('.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn')) return;
