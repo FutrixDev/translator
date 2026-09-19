@@ -299,7 +299,7 @@ globalThis.TranslationCache = {
 重看同一个视频是重复率很高的场景，但它不在本 PR 的范围里（字幕是用户开着字幕时
 一次性的、有界的量）。要接的话接在同一个 `serve()` 上，不需要新代码。
 
-### 2.5 `shared/spa-navigation.js` — 路由信号（约 140 行）
+### 2.5 `shared/spa-navigation.js` — 路由信号（159 行，已实现）
 
 PRD FR-2.8 落点。**这里有一个必须纠正的技术前提。**
 
@@ -315,18 +315,39 @@ PRD FR-2.8 落点。**这里有一个必须纠正的技术前提。**
 | 路径 | 覆盖 | 可靠性 |
 | --- | --- | --- |
 | `window.addEventListener('popstate' / 'hashchange')` | 后退/前进、锚点跳转 | 浏览器派发，隔离世界收得到，可靠 |
-| `window.navigation`（Navigation API）的 `navigate` 事件 | 同文档导航，含 `pushState` | Chrome 102+；存在即用，不存在就跳过 |
+| `window.navigation`（Navigation API）的 `navigatesuccess` 事件 | 同文档导航，含 `pushState` | Chrome 102+；存在即用，不存在就跳过 |
 | URL 轮询 | 兜底，覆盖前两者漏掉的一切 | 字符串比较，`document.visibilityState === 'visible'` 时每 800ms 一次；页面隐藏时停 |
 
 ```js
 globalThis.SpaNavigation = {
-  onRouteChange(cb),   // cb({ from, to, via: 'popstate'|'navigation'|'poll' })，返回 unsubscribe
+  POLL_INTERVAL_MS,    // 800
   currentUrl(),
+  onRouteChange(cb),   // cb({ from, to, via: 'popstate'|'hashchange'|'navigation'|'poll' })，返回 unsubscribe
 };
 ```
 
-去重：三路都可能对同一次导航触发，按 `to` 做 250ms 内的合并，只发一次。
 **字幕、漫画、未来的面共用这一份**，不得各写一套（`CLAUDE.md` Coherence 条款）。
+
+实现时相对上面这份设计有三处偏离，都是刻意的：
+
+1. **去重按「上一次播报出去的 URL」，不是 250ms 时间窗。** 时间窗在两头都不对：
+   一次 `popstate` 之后 800ms 才轮到的那一次轮询远在窗外，照样会为同一次导航再播一声 ——
+   实际上按时间窗写出来的版本会对**同一个 URL** 每 800ms 重播一次，永不停止；
+   而窗内它又会吃掉真导航 —— 在锚点密集的文档页上，250ms 内 A→B→A 是一次普通操作，
+   用户确实回到了 A，下游确实需要知道。按 URL 去重两头都对：同一次导航三路各喊一声只播一次，
+   哪怕相隔几秒；A→B→A 播两次，因为那本来就是两次。单元测试两条都钉着
+   （「哪怕相隔远超 250ms」「250ms 内 A→B→A 是两次」），把实现换回时间窗版本会红。
+2. **订 `navigatesuccess` 而不是 `navigate`。** `navigate` 在导航**提交前**触发，
+   那一刻 `location.href` 还是旧值，于是这一路要么得从 event 上另取 URL（三路各有一套取法），
+   要么会为一次被取消的导航白播一声。改订 `navigatesuccess` 之后三路都是「事件只管触发，
+   URL 一律现读 `location.href`」——一个事实来源，三个触发器。
+3. **`via` 报事件自己的名字**，所以联合类型里多一个 `'hashchange'`。
+   把 hashchange 混报成 `'popstate'` 会让下游的日志和将来的按路径调优失去分辨力，
+   而这两件事对使用者本来就不同：锚点跳转通常不换内容，`popstate` 通常换。
+
+另有一处留给 PR-6 验证而不是在本 PR 里断言：隔离世界的 `window.navigation` 是否真的
+会为页面自己的 `pushState` 触发。轮询是兜底，这一路成不成立都不影响正确性，只影响
+「多快发现」；而要确认它需要一个真实 SPA 的 e2e，那正是 PR-6 的路由重译旅程。
 
 ### 2.6 `content/content-auto-discover.js` — 发现层（约 260 行）
 
@@ -771,7 +792,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
 | `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`readSourceText` 不把译文算进原文；`ctx.releaseTranslation` 摘译文节点、放回原文、清标记；判定排在 `closest()` 之前 | FR-2.10 |
 | `translation-cache.test.mjs` | **已落地（PR-4，20 条）**：6 个因子每一个都改变键；因子边界不滑动；L1 命中零请求；**换一份新模块实例（空 L1）后 L2 仍命中**；换模型后不命中；同批去重；并发 in-flight 合并；失败不记账且等待方自己重发；条数对不上整批作废；空译文传回但不缓存；30 天过期；sweep 的过期/畸形/字节预算三条；超 L1 容量的调用不出空洞；三份装载清单 | FR-7 |
-| `spa-navigation.test.mjs` | 三路信号去重（250ms 内同一 `to` 只发一次）；`navigation` 缺失时降级到轮询 | FR-2.8 |
+| `spa-navigation.test.mjs` | 三路信号按「上次播报的 URL」去重（同一次导航只发一次，A→B→A 发两次）；`navigation` 缺失时降级到轮询；页面隐藏停心跳 | FR-2.8 |
 | `session-guard.test.mjs` | `acceptResult` 三条校验各自独立生效 | FR-2.11 |
 
 单测跑在 Node 里，所以这六个模块**必须零 DOM 依赖或可注入 DOM** ——
@@ -894,7 +915,7 @@ shared/site-rules.js              180  (305)  决策纯函数
 shared/site-rules-builtin.js      220  (88)   规则数据（首批规则在 PR-8 才填）
 shared/block-identity.js          120  (114)  内容身份
 shared/translation-cache.js       200  (298)  两级缓存
-shared/spa-navigation.js          140         路由信号
+shared/spa-navigation.js          159         路由信号
 content/page/collect.js           620  (852)  由 content-page-translation 拆出
 content/page/batch.js             400  (511)  同上（含新增 runTranslationPass）
 content/page/insert.js            560  (499)  同上
