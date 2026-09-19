@@ -341,11 +341,14 @@ async function setExtensionAccount(page, signedIn = true) {
  */
 async function sendMessageToActiveTab(page, message) {
   const worker = await getServiceWorker(page.context());
-  await worker.evaluate(async (msg) => {
+  return worker.evaluate(async (msg) => {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, msg);
-    }
+    if (!tabs[0]?.id) return undefined;
+    // The reply, for the messages that have one (PROBE_ENGINE). A tab with no
+    // listener rejects, and that is an answer too — `undefined` rather than a
+    // rejection the caller did not ask for, since most callers here only
+    // trigger something and never look.
+    return chrome.tabs.sendMessage(tabs[0].id, msg).catch(() => undefined);
   }, message);
 }
 

@@ -25,6 +25,12 @@ const defaultSettings = {
   theme: 'light'
 };
 
+// 内置引擎只有已注入的 content script 答得出（见 content-messaging.js 的
+// PROBE_ENGINE）。这条往返要有上限：popup 是个当场要出结果的面板，宁可说
+// “不知道”，也不能挂在那儿转。
+const ENGINE_PROBE_TIMEOUT_MS = 300;
+const PROBE_TIMED_OUT = 'timeout';
+
 // Apply theme
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -481,16 +487,72 @@ async function checkStatus() {
     elements.floatBallStatus.textContent = settings.showFloatBall ? t('on') : t('off');
     elements.youtubeCaptionsStatus.textContent = settings.enableYoutubeCaptionTranslation ? t('on') : t('off');
     
-    // Check if API is configured
-    if (!settings.apiKey) {
-      elements.statusText.textContent = t('apiNotConfigured');
-      document.body.classList.add('status-error');
-    } else {
-      elements.statusText.textContent = t('ready');
-    }
+    await refreshEngineStatus(settings);
   } catch (error) {
     console.error('Failed to check status:', error);
   }
+}
+
+/**
+ * 问当前标签页：内置引擎在你那儿能用吗。
+ *
+ * 三种结果，含义互不相同，绝不能揉成一个：
+ *   一个 probe 对象  —— content script 如实回答了
+ *   PROBE_TIMED_OUT —— 它在那儿，只是没来得及答；这不是故障的证据
+ *   null            —— 这一页压根没有 content script（chrome:// 、应用商店、
+ *                      未注入的标签页），那是个答案，不是一次失败
+ */
+async function probeActiveTabEngine() {
+  let tabId;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    tabId = tabs[0] && tabs[0].id;
+  } catch (error) {
+    return null;
+  }
+  if (!tabId) return null;
+
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(PROBE_TIMED_OUT), ENGINE_PROBE_TIMEOUT_MS));
+  try {
+    const reply = await Promise.race([
+      chrome.tabs.sendMessage(tabId, { type: 'PROBE_ENGINE' }),
+      timeout
+    ]);
+    return reply || null;
+  } catch (error) {
+    // “Could not establish connection” 之类：这一页没有接收端。
+    return null;
+  }
+}
+
+async function refreshEngineStatus(settings) {
+  // 自定义接口那条路与页面无关，别为它多跑一次往返。
+  const probe = settings.translationEngine === 'ai' ? null : await probeActiveTabEngine();
+  const status = EngineStatus.describeEngineStatus(
+    settings,
+    probe === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : probe
+  );
+  renderStatus(status);
+}
+
+function renderStatus(status) {
+  const detail = status.detailKey ? t(status.detailKey) : '';
+  const text = detail ? `${t(status.key)} · ${detail}` : t(status.key);
+  elements.statusText.textContent = text;
+  // 底栏一行放不下就截断，完整的话留在 title 里。
+  elements.statusText.title = text;
+  document.body.classList.toggle('status-error', !status.ok);
+}
+
+/**
+ * 底栏那一行只有这一个写入口。
+ *
+ * 文字和那颗状态点是一对：以前 translationFailed 只改文字，点还是绿的，
+ * 而 status-error 只加不减，一次失败能把它红到 popup 关掉为止。让它们分开
+ * 各写各的，迟早再错一次。
+ */
+function showStatus(key, ok = true) {
+  renderStatus({ key, detailKey: '', ok });
 }
 
 // Translate current page
@@ -502,8 +564,7 @@ async function translateCurrentPage() {
     // deliberately key-free, so gating on apiKey here would lock new users
     // out of the primary action (PR #26 review).
     if (settings.translationEngine === 'ai' && !settings.apiKey) {
-      elements.statusText.textContent = t('configureApiKeyFirst');
-      document.body.classList.add('status-error');
+      showStatus('configureApiKeyFirst', false);
       // Open settings
       chrome.runtime.openOptionsPage();
       return;
@@ -511,20 +572,20 @@ async function translateCurrentPage() {
 
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
-      elements.statusText.textContent = t('translationFailed');
+      showStatus('translationFailed', false);
       return;
     }
 
     // Send message to content script
     chrome.tabs.sendMessage(tabs[0].id, { type: 'TRANSLATE_PAGE' });
     
-    elements.statusText.textContent = t('translating');
+    showStatus('translating');
     
     // Close popup after a short delay
     setTimeout(() => window.close(), 500);
   } catch (error) {
     console.error('Failed to translate page:', error);
-    elements.statusText.textContent = t('translationFailed');
+    showStatus('translationFailed', false);
   }
 }
 

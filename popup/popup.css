@@ -322,10 +322,16 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* 状态现在可能是「用不了本地翻译 · 这个页面是 http://」这样的两段话，
+     一行放不下就换行，而不是把底栏撑宽。 */
+  text-align: center;
+  line-height: 1.5;
 }
 
 #statusText::before {
   content: '';
+  /* 文案换行时圆点不能被压扁。 */
+  flex: none;
   width: 6px;
   height: 6px;
   background: #4ade80;

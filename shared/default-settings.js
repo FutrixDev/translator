@@ -34,6 +34,9 @@
   const CONTENT_DEFAULTS = Object.freeze({
     // 默认走浏览器内置翻译；只有用户在设置里显式切到 'ai' 才用自己的接口。
     translationEngine: 'builtin',
+    // 内置引擎顶不住时要不要改走用户自己的接口。默认不：那是在花他的钱，
+    // 而选内置引擎本来就是在选“零费用”。'allow-ai' 才回退。
+    engineFallback: 'local-only',
     enableSelection: true,
     enableHoverTranslation: true,
     hoverTranslationHotkey: 'Shift',

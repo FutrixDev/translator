@@ -62,11 +62,43 @@
 
   // isSecureContext 这一条是真会命中的：http:// 页面上 content script 继承文档的
   // 非安全上下文，Translator 直接不存在。这类页面静默回落到 AI 接口。
-  function isBuiltinSupported() {
+  function hasTranslatorApi() {
     return typeof self !== 'undefined'
       && typeof self.Translator !== 'undefined'
-      && typeof self.Translator.create === 'function'
-      && self.isSecureContext === true;
+      && typeof self.Translator.create === 'function';
+  }
+
+  function isBuiltinSupported() {
+    return hasTranslatorApi() && self.isSecureContext === true;
+  }
+
+  // 用不了内置引擎时，用户该听到的是原因，不是一句“不可用”。版本是唯一能独立
+  // 知道的事实：Translator 是 SecureContext 接口，http:// 页面上它本来就不存在，
+  // 光看“在不在”分不出“浏览器太旧”和“这页是 http”。
+  //
+  // 降级 UA 之后 userAgentData 只在安全上下文里有，所以 UA 字符串那条回落不是
+  // 多余的——http:// 页面恰好只剩它。
+  function chromeMajorVersion() {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    if (!nav) return 0;
+    const brands = (nav.userAgentData && nav.userAgentData.brands) || [];
+    for (const entry of brands) {
+      // brands 里混着一条随机的 GREASE 品牌，只认这两个真名。
+      if (entry && (entry.brand === 'Google Chrome' || entry.brand === 'Chromium')) {
+        const major = parseInt(entry.version, 10);
+        if (major > 0) return major;
+      }
+    }
+    const match = /Chrom(?:e|ium)\/(\d+)/.exec(nav.userAgent || '');
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  function builtinUnsupportedReason() {
+    return globalThis.EngineStatus.builtinUnsupportedReason({
+      secureContext: typeof self !== 'undefined' && self.isSecureContext === true,
+      hasTranslator: hasTranslatorApi(),
+      chromeMajor: chromeMajorVersion()
+    });
   }
 
   function isBuiltinSelected() {
@@ -574,9 +606,20 @@
     return hasApiKey;
   }
 
+  // 选内置引擎就是选了“零费用”。内置这条路走不通时悄悄改走用户自己的接口，
+  // 花的是他的钱，而他从没同意过这件事——所以回退默认关闭，开了才回退。
   async function canFallBackToAI() {
+    if (settings.engineFallback !== 'allow-ai') return false;
     if (!apiKeyKnown) await refreshApiKeyPresence();
     return hasApiKey;
+  }
+
+  // 真的回退了就留一条痕迹，本页内存里，popup 一问就报出来。
+  // 不落存储：这件事是这一页的事，页面走了它就该消失。
+  let lastFallback = null;
+
+  function noteFallback(reason) {
+    lastFallback = { reason, at: Date.now() };
   }
 
   if (chrome?.storage?.onChanged) {
@@ -682,11 +725,13 @@
     if (isBuiltinSelected() && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
-      // 配了自定义接口就静默顶上；没配就把真实原因说清楚，别让用户收到一句
+      // 用户开了回退就顶上，并留痕；没开就把真实原因说清楚，别让他收到一句
       // 与实际问题无关的“请先配置 API Key”。
       if (!(await canFallBackToAI())) {
         return { error: engineErrorMessage(ENGINE_REASONS.UNSUPPORTED_ENV) };
       }
+      // 环境这条路能问出更细的原因（版本 / http），比笼统的 unsupportedEnv 好。
+      noteFallback(builtinUnsupportedReason() || ENGINE_REASONS.UNSUPPORTED_ENV);
     } else if (shouldUseBuiltin()) {
       try {
         const result = await handleWithBuiltin(message);
@@ -695,6 +740,7 @@
         if (error instanceof EngineUnavailableError) {
           if (await canFallBackToAI()) {
             console.info('Blab Translation: builtin unavailable (%s), falling back to AI', error.reason);
+            noteFallback(error.reason);
           } else {
             return { error: engineErrorMessage(error.reason) };
           }
@@ -703,6 +749,7 @@
           if (!(await canFallBackToAI())) {
             return { error: engineErrorMessage(ENGINE_REASONS.CREATE_FAILED) };
           }
+          noteFallback(ENGINE_REASONS.CREATE_FAILED);
         }
       }
     }
@@ -756,10 +803,51 @@
 
   ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
 
+  // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
+  // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和
+  // “查出来是坏的”对用户是两件事，不能混成同一句话。
+  function withinBudget(ms, run) {
+    return Promise.race([
+      Promise.resolve().then(run).catch(() => 'unknown'),
+      new Promise((resolve) => setTimeout(() => resolve('unknown'), ms))
+    ]);
+  }
+
+  async function probeStatus({ budgetMs = 250 } = {}) {
+    const result = {
+      engine: isBuiltinSelected() ? 'builtin' : 'ai',
+      supported: isBuiltinSupported(),
+      reason: '',
+      availability: 'unknown',
+      lastFallback
+    };
+    if (result.engine !== 'builtin') return result;
+    if (!result.supported) {
+      result.reason = builtinUnsupportedReason();
+      return result;
+    }
+    const tgt = toApiLang(settings.targetLang);
+    if (!tgt || !SUPPORTED_LANGS.has(tgt)) {
+      result.availability = 'unavailable';
+      return result;
+    }
+    result.availability = await withinBudget(budgetMs, async () => {
+      const src = toApiLang(await getPageSourceLang());
+      // 判不出页面语言不等于坏了：真翻译时会再判一次，这里只能说“不知道”。
+      if (!src) return 'unknown';
+      if (!SUPPORTED_LANGS.has(src)) return 'unavailable';
+      if (src === tgt) return 'available';
+      return await probeAvailability(src, tgt);
+    });
+    return result;
+  }
+
   ctx.builtinTranslator = {
     isSupported: isBuiltinSupported,
     isSelected: isBuiltinSelected,
     isActive: shouldUseBuiltin,
+    unsupportedReason: builtinUnsupportedReason,
+    probeStatus,
     toApiLang,
     translate: translateWithBuiltin,
     destroyAll,

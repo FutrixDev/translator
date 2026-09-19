@@ -135,6 +135,8 @@ function applyPlatformHotkeyLabels() {
 // DOM Elements
 const elements = {
   translationEngine: document.getElementById('translationEngine'),
+  engineFallback: document.getElementById('engineFallback'),
+  engineFallbackGroup: document.getElementById('engineFallbackGroup'),
   builtinStatusGroup: document.getElementById('builtinStatusGroup'),
   builtinStatus: document.getElementById('builtinStatus'),
   downloadLanguagePack: document.getElementById('downloadLanguagePack'),
@@ -256,6 +258,7 @@ const defaultSettings = {
   // 默认走浏览器内置翻译（端上 NMT，零网络零费用）。下面那一整套 API 配置
   // 只在用户显式切到 'ai' 时才用得上，或者在内置引擎顶不住时充当回落。
   translationEngine: 'builtin',
+  engineFallback: 'local-only',
   provider: 'openai',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
@@ -960,6 +963,7 @@ async function loadSettings() {
 
     elements.apiKey.value = result.apiKey;
     elements.translationEngine.value = result.translationEngine === 'ai' ? 'ai' : 'builtin';
+    elements.engineFallback.value = result.engineFallback === 'allow-ai' ? 'allow-ai' : 'local-only';
     elements.targetLang.value = targetLang;
     elements.enableSelection.checked = result.enableSelection;
     elements.selectionTranslationMode.value = result.selectionTranslationMode || 'inline';
@@ -1077,6 +1081,7 @@ function collectSettings() {
 
   return {
     translationEngine: elements.translationEngine.value,
+    engineFallback: elements.engineFallback.value,
     provider: providerKey,
     apiEndpoint: apiEndpoint,
     apiKey: elements.apiKey.value.trim(),
@@ -1377,6 +1382,7 @@ function showStatus(message, type) {
 // Controls that settle on one value per interaction: write straight away.
 const IMMEDIATE_SAVE_FIELDS = [
   'translationEngine',
+  'engineFallback',
   'enableSelection',
   'selectionTranslationMode',
   'selectionTranslationHotkey',
@@ -1425,6 +1431,8 @@ function getBuiltinEngine() {
 async function refreshBuiltinStatus() {
   const isBuiltin = elements.translationEngine.value === 'builtin';
   elements.builtinStatusGroup.hidden = !isBuiltin;
+  // 回退只有在内置引擎下才是个问题：选了自定义接口，本来每一条就都在计费。
+  elements.engineFallbackGroup.hidden = !isBuiltin;
   elements.downloadLanguagePack.hidden = true;
   if (!isBuiltin) return;
 
@@ -1434,7 +1442,12 @@ async function refreshBuiltinStatus() {
   const engine = getBuiltinEngine();
 
   if (!engine || !engine.isSupported()) {
-    elements.builtinStatus.textContent = t('builtinUnsupportedEnv');
+    // 说清楚为什么。设置页本身永远是安全上下文，所以这里问出来的实际上只会是
+    // “Chrome 太旧”或“这个版本没有这个接口”——但那正是用户在这一页需要知道的：
+    // 引擎选单把内置摆在第一位，不给理由就等于让他选一个不会动的东西。
+    const reason = engine && engine.unsupportedReason && engine.unsupportedReason();
+    const key = EngineStatus.REASON_MESSAGE_KEYS[reason] || 'builtinUnsupportedEnv';
+    elements.builtinStatus.textContent = t(key);
     return;
   }
 

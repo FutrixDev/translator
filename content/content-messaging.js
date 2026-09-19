@@ -27,6 +27,21 @@
             ctx.translatePage();
           }
           break;
+        case 'PROBE_ENGINE':
+          // popup 不能自己探内置引擎：它自己的 isSecureContext 恒为 true，
+          // 而目标页可能是 http://，两个 realm 给出的答案根本不是一回事。
+          // 唯一能如实回答的只有已经注入这一页的 content script。
+          //
+          // 这是整个监听器里唯一一条要异步回话的消息，所以只有它 return true
+          // ——其余分支返回 undefined，通道立即关闭，保持原样。
+          if (!ctx.builtinTranslator) {
+            sendResponse(null);
+            return;
+          }
+          ctx.builtinTranslator.probeStatus()
+            .then(sendResponse)
+            .catch(() => sendResponse(null));
+          return true;
         case 'SHOW_TRANSLATION':
           // 右键菜单翻译选中文本的结果显示
           if (!settings.enableSelection) break;
