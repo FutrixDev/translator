@@ -639,3 +639,43 @@ test('总开关关着但用户已经在这一页表过态，就不算这个站�
   assert.equal(held.verdict, 'auto');
   assert.equal(held.refused, false);
 });
+
+test('四份装载清单：加载了 site-rules.js 的地方，都配着它的数据源', async () => {
+  // table() 拿不到 root.SiteRulesBuiltin 时不抛，它退回一张空表 —— 于是
+  // matchBuiltin() 谁也不认，isBlocked() 对每一个域名都答「不在黑名单里」。
+  // 那份禁翻清单（网银、网页邮箱、政务表单）就这么静静地没了，而控制台里只有
+  // 一行 warn。所以这两个文件是一对，不是一个带一个可选的附件。
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const read = (rel) => readFileSync(root + rel, 'utf8');
+
+  const manifest = JSON.parse(read('manifest.json'));
+  for (const cs of manifest.content_scripts) {
+    const order = (cs.js || []);
+    const rules = order.indexOf('shared/site-rules.js');
+    if (rules < 0) continue;
+    const builtin = order.indexOf('shared/site-rules-builtin.js');
+    assert.ok(builtin >= 0, `${cs.matches} 装了 site-rules.js 却没装数据源`);
+    assert.ok(builtin < rules, '数据源必须排在 site-rules.js 之前');
+  }
+
+  for (const [file, rulesPattern, builtinPattern] of [
+    ['background/background.js',
+      /import '\.\.\/shared\/site-rules\.js';/,
+      /import '\.\.\/shared\/site-rules-builtin\.js';/],
+    ['options/options.html',
+      /<script src="\.\.\/shared\/site-rules\.js"><\/script>/,
+      /<script src="\.\.\/shared\/site-rules-builtin\.js"><\/script>/],
+    ['popup/popup.html',
+      /<script src="\.\.\/shared\/site-rules\.js"><\/script>/,
+      /<script src="\.\.\/shared\/site-rules-builtin\.js"><\/script>/]
+  ]) {
+    const text = read(file);
+    const rules = text.search(rulesPattern);
+    if (rules < 0) continue;
+    const builtin = text.search(builtinPattern);
+    assert.ok(builtin >= 0, `${file} 装了 site-rules.js 却没装数据源`);
+    assert.ok(builtin < rules, `${file} 里数据源要排在 site-rules.js 之前`);
+  }
+});
