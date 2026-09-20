@@ -234,3 +234,32 @@ test('状态点的显隐只有一套机制', () => {
   assert.doesNotMatch(ball, /ai-translator-status-dot" hidden/);
   assert.match(read('content/content.css'), /\.ai-translator-status-dot\[data-state="none"\] \{\s*display: none;/);
 });
+
+test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', () => {
+  // 划词和悬停的快捷键是「单独一个修饰键」，Alt+A 的第一下 keydown 和它长得一
+  // 模一样。两个 keydown 处理器只要有一个直接动手，用户按一次 Alt+A 就会既译
+  // 一句又译一页 —— 两次请求，用自己的 API 就是两份钱。判据放这里，是因为这
+  // 件事按下去看着正常，只有账单知道。
+  const utils = code('content/content-utils.js');
+  assert.match(utils, /ctx\.armModifierTap = function\(key, run, onChord\)/);
+  // 四个了结的口子：来了别的键作废、松开就算数、按住够久也算数，以及这一按已
+  // 经被「按住划」花掉了就收回。
+  assert.match(utils, /addEventListener\('keydown'[\s\S]*?event\.key !== pendingTap\.key\) settleModifierTap\('chord'\)/);
+  assert.match(utils, /addEventListener\('keyup'[\s\S]*?event\.key === pendingTap\.key\) settleModifierTap\('fire'\)/);
+  assert.match(utils, /setTimeout\([\s\S]*?settleModifierTap\('fire'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
+  assert.match(utils, /ctx\.disarmModifierTap = function\(\) \{\s*settleModifierTap\('drop'\);/);
+
+  // 而这条闸门必须装在两个处理器里，不能只装一个。
+  for (const rel of ['content/content-selection.js', 'content/content-hover-translation.js']) {
+    assert.match(code(rel), /ctx\.armModifierTap\(event\.key,/, `${rel} 的修饰键快捷键没过那道闸门`);
+  }
+
+  // 悬停还多两层：和弦作废时连「按住了」一起收回，否则接着划过的每一段都会被
+  // 当成按住悬停（一个和弦，一串请求）；而「按住划」一旦真的译了，挂起的那一下
+  // 要收回，否则松手会把刚划出来的译文又切掉。
+  const hover = code('content/content-hover-translation.js');
+  assert.match(hover, /ctx\.disarmModifierTap\(\);/);
+  assert.match(hover, /chordKey = event\.key;/);
+  assert.match(hover, /if \(chordKey\) return;/);
+  assert.match(hover, /event\.key === chordKey\) chordKey = null;/);
+});

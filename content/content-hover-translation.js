@@ -19,6 +19,8 @@
 
   let hotkeyDown = false;
   let activeHotkey = null;
+  // 这一下修饰键被和弦（Alt+A 之类）用掉了，按着的这段时间里不再触发悬停翻译。
+  let chordKey = null;
 
   const INLINE_SOURCE_CLASS = 'ai-translator-inline-source';
   const INLINE_LOADING_CLASS = 'ai-translator-inline-loading';
@@ -281,6 +283,17 @@
     hotkeyDown = true;
     activeHotkey = event.key;
 
+    // 快捷键是单独一个修饰键，和 Alt+A 这类命令键位的第一下分不开：等确定用户
+    // 只按了它再译（见 content-utils.js 的 armModifierTap）。是和弦的话，连
+    // 「按住了」这个状态一起收回，否则接下来划过的段落都会被当成按住悬停。
+    ctx.armModifierTap(event.key, runHoverHotkey, () => {
+      hotkeyDown = false;
+      activeHotkey = null;
+      chordKey = event.key;
+    });
+  }
+
+  function runHoverHotkey() {
     const block = resolveBlockFromInteractionTarget(getHoveredTarget());
     if (!block) return;
 
@@ -293,6 +306,7 @@
   }
 
   function handleKeyUp(event) {
+    if (event.key === chordKey) chordKey = null;
     if (event.key !== activeHotkey) return;
     hotkeyDown = false;
     activeHotkey = null;
@@ -301,7 +315,12 @@
   function handleMouseOver(event) {
     const hotkeyActive = hotkeyDown || isHotkeyModifierActive(event);
     if (!hotkeyActive || !settings.enableHoverTranslation) return;
+    // 按着键还划了鼠标：这一按是「按住划」，不是「单按一下」。把按下时挂起的
+    // 那一下收回 —— 不然松手时它会把刚划出来的译文当成「再按一次」切掉。
+    ctx.disarmModifierTap();
     if (!hotkeyDown) {
+      // 这一下修饰键已经被 Alt+A 之类的和弦用掉了，松开之前不再当成「按住悬停」。
+      if (chordKey) return;
       hotkeyDown = true;
       activeHotkey = getHoverHotkey();
     }

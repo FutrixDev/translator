@@ -31,12 +31,6 @@
 
   // ---------------------------------------------------------------- 主机名
 
-  // 二级通用标签 + 两字母国家顶级域 = 公共后缀：co.uk、com.cn、ac.jp、gov.au……
-  // 一条规则顶掉一张会过期的表。co.com 之类不是国家域，不受影响。
-  const GENERIC_SLD = new Set([
-    'co', 'com', 'net', 'org', 'edu', 'gov', 'ac', 'mil', 'gob', 'go', 'or', 'ne', 'nom',
-  ]);
-
   const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
   function cleanHost(hostname) {
@@ -44,25 +38,20 @@
   }
 
   /**
-   * 注册域：mobile.x.com -> x.com。
+   * 规则的键：就是这台主机本身，只脱掉 www.。
    *
-   * 这只用来决定「用户点总是翻译时，这条规则存在哪个键下」。**查的时候不依赖
-   * 它**：lookupUserRule 会沿着主机名一路往上找父域，所以就算这里对某个冷门后
-   * 缀判断保守了，精确写下的那条规则依然命中。少剥一层只是范围小一点，多剥一
-   * 层才是真的错——所以宁可少剥。
+   * 不往上剥到「注册域」。浏览器里没有公共后缀表，任何自己写的启发式都会把
+   * alice.github.io 剥成 github.io —— 用户在一个人的站点上点「总是翻译」，
+   * 这条规则就悄悄盖住了 github.io 上所有别人的站点。同一个后缀下住着互不
+   * 相干的租户（github.io、vercel.app、pages.dev、blogspot.com……），这类
+   * 后缀没有尽头，也没法靠一张表穷举。
+   *
+   * 范围小一点不是问题：lookupUserRule 会沿着主机名一路往上找父域，所以用户
+   * 真想覆盖整个站点时，在 x.com 上表的态照样命中 mobile.x.com。反过来多剥
+   * 一层，才是替用户做了他没做的决定。
    */
   function normalizeHost(hostname) {
-    const host = cleanHost(hostname).replace(/^www\./, '');
-    if (!host) return '';
-    // IP 和 localhost 这类单标签主机没有注册域可言，原样返回。
-    if (IPV4_RE.test(host) || host.includes(':') || !host.includes('.')) return host;
-
-    const labels = host.split('.');
-    if (labels.length <= 2) return host;
-    const sld = labels[labels.length - 2];
-    const tld = labels[labels.length - 1];
-    const keep = (tld.length === 2 && GENERIC_SLD.has(sld)) ? 3 : 2;
-    return labels.slice(-keep).join('.');
+    return cleanHost(hostname).replace(/^www\./, '');
   }
 
   // 后缀匹配：模式命中它自己，以及它的子域。反过来不成立——规则写 x.com 命中
@@ -341,6 +330,27 @@
     return key;
   }
 
+  // 这张表只为一件事存在：同一个站点最多追问几次。它按域名一路长下去，同步存
+  // 储每项 8KB 的配额迟早会被撑满 —— 到那天 set() 直接失败，调用方只打一行日
+  // 志，从此所有站点的计数都记不上，追问上限静悄悄地不再生效。规则改成按精确
+  // 主机名存之后子域不再合并，涨得更快。
+  //
+  // 所以给它一个上限：满了先扔计数最小的（被问得最少的那几个，重新问一次的代
+  // 价也最小），刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过
+  // 的态一点没丢 —— 那些在 siteRules 里，是另一张表。
+  const MAX_ASK_HOSTS = 200;
+
+  function pruneAskCounts(counts, keep) {
+    const keys = Object.keys(counts);
+    if (keys.length <= MAX_ASK_HOSTS) return counts;
+    keys
+      .filter((key) => key !== keep)
+      .sort((a, b) => counts[a] - counts[b])
+      .slice(0, keys.length - MAX_ASK_HOSTS)
+      .forEach((key) => { delete counts[key]; });
+    return counts;
+  }
+
   /**
    * 这个域名被追问过几次：读出来、加一、写回去。`'clear'` 是把整条记录删掉
    * ——用户表过态了，前面问过几次都不算数。
@@ -354,8 +364,12 @@
     const stored = await store.get({ siteAskCount: {} });
     const counts = Object.assign({}, stored.siteAskCount);
     const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
-    if (op === 'clear') delete counts[key];
-    else counts[key] = current + 1;
+    if (op === 'clear') {
+      delete counts[key];
+    } else {
+      counts[key] = current + 1;
+      pruneAskCounts(counts, key);
+    }
     await store.set({ siteAskCount: counts });
     return op === 'clear' ? 0 : current + 1;
   }

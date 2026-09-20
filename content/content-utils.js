@@ -128,4 +128,58 @@
       document.body.removeChild(textarea);
     }
   };
+
+  // ==================== 单修饰键快捷键：等一下再动手 ====================
+
+  // 划词翻译和悬停翻译的快捷键都是「单独一个修饰键」（Control / Shift / Alt / Meta）。
+  // 这和 Alt+A 这类命令键位天生打架：和弦的第一下 keydown 和「只按了那个修饰键」
+  // 长得一模一样。立刻动手，用户按一次 Alt+A 就会既划词译一句、又整页译一遍——
+  // 两次请求，用自己的 API 就是两份钱。
+  //
+  // 所以「只按了它」这件事要等一等才算数：
+  //   - 松开了它     → 确实只按了它，立刻动手；
+  //   - 按住超过一瞬 → 悬停翻译本来就是按住用的，也算；
+  //   - 中间来了别的键 → 这是一个和弦，这一下作废，onChord 收拾首尾。
+  //
+  // 还有第四种结局：这一按已经被别的用法花掉了（按住划过一段，悬停翻译当场就
+  // 译了）。那就 disarmModifierTap() 把它收回——不然松手的那一下会把刚划出来的
+  // 译文再切掉一次。
+  const MODIFIER_TAP_HOLD_MS = 220;
+
+  let pendingTap = null;
+
+  function settleModifierTap(outcome) {
+    const tap = pendingTap;
+    if (!tap) return;
+    pendingTap = null;
+    clearTimeout(tap.timer);
+    if (outcome === 'fire') tap.run();
+    else if (outcome === 'chord' && tap.onChord) tap.onChord();
+  }
+
+  ctx.armModifierTap = function(key, run, onChord) {
+    settleModifierTap('drop');
+    const tap = { key, run, onChord, timer: 0 };
+    tap.timer = setTimeout(() => {
+      if (pendingTap === tap) settleModifierTap('fire');
+    }, MODIFIER_TAP_HOLD_MS);
+    pendingTap = tap;
+  };
+
+  ctx.disarmModifierTap = function() {
+    settleModifierTap('drop');
+  };
+
+  window.addEventListener('keydown', (event) => {
+    // 按住不放会一直重复发 keydown，那还是同一下。
+    if (pendingTap && event.key !== pendingTap.key) settleModifierTap('chord');
+  }, true);
+
+  window.addEventListener('keyup', (event) => {
+    if (pendingTap && event.key === pendingTap.key) settleModifierTap('fire');
+  }, true);
+
+  // 切走了标签页（Alt+Tab、点到别的窗口），手上这一下就不作数了。
+  // 不带 capture：只要窗口自己失焦，不管页面里哪个输入框换了焦点。
+  window.addEventListener('blur', () => settleModifierTap('drop'));
 })();

@@ -136,29 +136,48 @@ test('the language judgement agrees with the one the captions use', () => {
 
 // ------------------------------------------------------------ 主机名
 
-test('normalizeHost keeps the registrable domain, and under-strips on purpose', () => {
+test('normalizeHost keys a rule on the exact host — a shared suffix is not one site', () => {
   const n = SiteRules.normalizeHost;
-  assert.equal(n('mobile.x.com'), 'x.com');
-  assert.equal(n('www.reddit.com'), 'reddit.com');
-  assert.equal(n('old.reddit.com'), 'reddit.com');
-  assert.equal(n('X.COM.'), 'x.com');          // 大小写和根点
-  assert.equal(n('a.b.c.example.com'), 'example.com');
+  assert.equal(n('mobile.x.com'), 'mobile.x.com');
+  assert.equal(n('www.reddit.com'), 'reddit.com');   // 只脱 www.
+  assert.equal(n('old.reddit.com'), 'old.reddit.com');
+  assert.equal(n('X.COM.'), 'x.com');                // 大小写和根点
+  assert.equal(n('a.b.c.example.com'), 'a.b.c.example.com');
 
-  // 两段公共后缀：剥到 co.uk 就等于把整个英国圈进一条规则。
+  // 多租户后缀：alice 和 bob 是两个互不相干的人，不能共用一条规则。浏览器里
+  // 没有公共后缀表，剥「注册域」的启发式必然把他们剥成同一个键。
+  assert.equal(n('alice.github.io'), 'alice.github.io');
+  assert.notEqual(n('alice.github.io'), n('bob.github.io'));
+  assert.notEqual(n('a.vercel.app'), n('b.vercel.app'));
+  assert.notEqual(n('a.pages.dev'), n('b.pages.dev'));
+
+  // 两段公共后缀也一样，不再猜。
   assert.equal(n('www.bbc.co.uk'), 'bbc.co.uk');
-  assert.equal(n('shop.example.com.cn'), 'example.com.cn');
-  assert.equal(n('lab.example.ac.jp'), 'example.ac.jp');
+  assert.equal(n('shop.example.com.cn'), 'shop.example.com.cn');
 
-  // 没有注册域可言的主机原样返回，不能被切成 '0.1'。
   assert.equal(n('10.0.0.7'), '10.0.0.7');
   assert.equal(n('localhost'), 'localhost');
   assert.equal(n(''), '');
   assert.equal(n(null), '');
 });
 
+test('one tenant choice does not decide for the tenant next door', () => {
+  // alice 上点了「总是翻译」，存在 alice.github.io 下。bob 的站点不受影响——
+  // 少剥一层只是范围小，多剥一层是替用户做了他没做的决定。
+  const rules = { 'alice.github.io': 'always' };
+  assert.equal(verdict({ host: 'alice.github.io', userRules: rules }).reason, R.USER_ALWAYS);
+  assert.equal(verdict({ host: 'bob.github.io', userRules: rules }).verdict, 'ask');
+  assert.equal(verdict({ host: 'github.io', userRules: rules }).verdict, 'ask');
+  // 「不要翻译」同理：blogspot 上拉黑一个博客不该拉黑所有博客。
+  const never = { 'a.blogspot.com': 'never' };
+  assert.equal(verdict({ host: 'a.blogspot.com', userRules: never }).reason, R.USER_NEVER);
+  assert.equal(verdict({ host: 'b.blogspot.com', userRules: never }).verdict, 'ask');
+});
+
 test('a user rule is looked up along the parent chain, so normalizeHost is a convenience', () => {
-  // 归一化只决定“点总是翻译时存在哪个键下”。查的时候沿父域一路往上，所以就算
-  // 某个冷门后缀被保守地少剥了一层，精确写下的那条规则依然命中。
+  // 归一化只决定“点总是翻译时存在哪个键下”，而它现在存的就是这台主机本身。
+  // 想覆盖整个站点靠的是查找这一头：沿父域一路往上，所以在 example.co.uk 上表
+  // 的态照样命中 shop.example.co.uk。
   const rules = { 'example.co.uk': 'always' };
   assert.equal(verdict({ host: 'shop.example.co.uk', userRules: rules }).reason, R.USER_ALWAYS);
   assert.equal(verdict({ host: 'example.co.uk', userRules: rules }).reason, R.USER_ALWAYS);
@@ -381,6 +400,46 @@ test('表态之后计数清零，清的是这一条不是整张表', async () =>
   try {
     assert.equal(await SiteRules.updateAskCount('a.test', 'clear'), 0);
     assert.deepEqual(fake.store.siteAskCount, { 'b.test': 1 });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+// 和 shared/site-rules.js 里的 MAX_ASK_HOSTS 一致。
+const MAX_ASK_HOSTS = 200;
+
+test('追问计数不会一路长到把同步配额撑爆', async () => {
+  // 这张表只为「同一个站点最多问几次」而存在，却按域名无限长。同步存储每项
+  // 8KB，撑满那天 set() 直接失败、调用方只打一行日志 —— 从此所有站点都记不上
+  // 数，追问上限静悄悄地不再生效。
+  const counts = { 'seldom.test': 1 };
+  for (let i = 0; i < MAX_ASK_HOSTS - 1; i++) counts[`h${i}.test`] = 5;
+  const fake = fakeChrome({ siteAskCount: counts });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('fresh.test', 'bump'), 1);
+    const kept = fake.store.siteAskCount;
+    assert.equal(Object.keys(kept).length, MAX_ASK_HOSTS);
+    assert.equal(kept['fresh.test'], 1, '刚记下的这一条必须留着');
+    assert.equal(kept['seldom.test'], undefined, '先扔问得最少的：重新问一次的代价最小');
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('挤位置的时候，不挤掉刚刚动过的那一条', async () => {
+  // 正在追问的就是计数最小的那个站点：要是「扔最小的」连它一起扔了，这一条
+  // 计数永远停在 1，用户会被同一个站点问到天荒地老。
+  const counts = { 'now.test': 1, 'idle.test': 1 };
+  for (let i = 0; i < MAX_ASK_HOSTS - 1; i++) counts[`h${i}.test`] = 9;
+  const fake = fakeChrome({ siteAskCount: counts });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('now.test', 'bump'), 2);
+    const kept = fake.store.siteAskCount;
+    assert.equal(Object.keys(kept).length, MAX_ASK_HOSTS);
+    assert.equal(kept['now.test'], 2);
+    assert.equal(kept['idle.test'], undefined);
   } finally {
     delete globalThis.chrome;
   }

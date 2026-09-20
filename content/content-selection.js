@@ -200,6 +200,12 @@
     if (event.repeat) return;
     if (isSelectionTriggerIgnored(event.target)) return;
 
+    // 快捷键是单独一个修饰键，和 Alt+A 这类命令键位的第一下分不开：等确定用户
+    // 只按了它再译（见 content-utils.js 的 armModifierTap）。
+    ctx.armModifierTap(event.key, () => runSelectionHotkey(event));
+  }
+
+  function runSelectionHotkey(event) {
     if (hasSelectionTranslationVisible()) {
       cancelSelectionTranslation();
       return;

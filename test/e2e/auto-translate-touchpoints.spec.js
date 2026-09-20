@@ -335,3 +335,67 @@ test('把译文藏了之后，popup 上那颗「继续」真的能把这一页�
     await close();
   }
 });
+
+test('划词键位是 Alt 时，Alt+A 只翻整页，不会顺手把选中的那句也译一遍', async ({ page, context }) => {
+  // 划词和悬停的快捷键是「单独一个修饰键」，而 Alt+A 的第一下 keydown 长得和
+  // 「只按了 Alt」一模一样。立刻动手的话，用户按一次 Alt+A 会既译一句又译一页
+  // —— 两次请求，用自己的 API 就是两份钱。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, {
+      siteRules: { 'ask.test': 'never' },
+      enableSelection: true,
+      selectionTranslationHotkey: 'Alt'
+    });
+    await page.locator('#para').selectText();
+
+    // Alt 按下去，接着来的是 A —— 这是一个和弦，不是「只按了 Alt」。
+    await page.keyboard.down('Alt');
+    await page.keyboard.press('a');
+    await page.keyboard.up('Alt');
+
+    // 等过「按住」的那一档，确认它是真的没动手，而不是还没轮到。
+    await page.waitForTimeout(800);
+    await expect(page.locator('.ai-translator-selection-translation')).toHaveCount(0);
+    expect(sentTexts).toHaveLength(0);
+
+    // 而单按一下 Alt 照样译：这是让键位闭嘴，不是让它失灵。
+    await page.keyboard.press('Alt');
+    await page.waitForSelector('.ai-translator-selection-translation', { state: 'attached' });
+    expect(sentTexts).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
+test('悬停键位是 Alt 时，Alt+A 之后一路划过去也不会译', async ({ page, context }) => {
+  // 悬停翻译是「按住键、鼠标划过哪段就译哪段」。Alt+A 按住的那一小会儿里鼠标
+  // 只要动一下，划过的每一段都会被当成用户要译 —— 一个和弦，一串请求。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, {
+      siteRules: { 'ask.test': 'never' },
+      enableHoverTranslation: true,
+      hoverTranslationHotkey: 'Alt'
+    });
+    await page.mouse.move(5, 5);
+
+    await page.keyboard.down('Alt');
+    await page.keyboard.press('a');
+    // Alt 还按着（用户手还没抬），鼠标划到段落上。
+    await page.locator('#para').hover();
+    await page.waitForTimeout(800);
+    await expect(page.locator('.ai-translator-hover-translation')).toHaveCount(0);
+    expect(sentTexts).toHaveLength(0);
+    await page.keyboard.up('Alt');
+
+    // 松开之后重新按住，这一下是干干净净的悬停翻译。
+    await page.keyboard.down('Alt');
+    await page.waitForSelector('.ai-translator-hover-translation', { state: 'attached' });
+    await page.keyboard.up('Alt');
+  } finally {
+    await close();
+  }
+});

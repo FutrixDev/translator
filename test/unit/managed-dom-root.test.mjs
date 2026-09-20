@@ -34,7 +34,9 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 
 // content-utils.js is a classic script that hangs its helpers off
 // window.AI_TRANSLATOR_CONTENT. Give it just enough of a DOM to run.
-globalThis.window = { AI_TRANSLATOR_CONTENT: {} };
+// The file also registers the modifier-tap guard's key listeners on window at
+// load time, so the stub needs the same one method document's does.
+globalThis.window = { AI_TRANSLATOR_CONTENT: {}, addEventListener: () => {} };
 globalThis.Node = { ELEMENT_NODE: 1 };
 globalThis.document = {
   createElement: () => ({
@@ -292,6 +294,8 @@ test('content-utils.js loads before the surfaces that use it', () => {
   const at = (file) => bundle.js.indexOf(file);
   assert.ok(at('content/content-utils.js') < at('content/content-hover-translation.js'));
   assert.ok(at('content/content-utils.js') < at('content/page/collect.js'));
+  // Both modifier-key hotkeys arm their trigger through ctx.armModifierTap.
+  assert.ok(at('content/content-utils.js') < at('content/content-selection.js'));
 
   // The renderer hangs its helpers off the same ctx object, so it has to run
   // before anything calls them.

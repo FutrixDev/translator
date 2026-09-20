@@ -107,7 +107,7 @@ shared/spa-navigation.js    路由信号 —— 正文、字幕、未来的面�
 // 全局挂载（与 CaptionCore / AccountGate 同形）
 globalThis.SiteRules = {
   decide(input),              // -> Decision
-  normalizeHost(hostname),    // 取注册域：mobile.x.com -> x.com
+  normalizeHost(hostname),    // 规则的键：这台主机本身，只脱 www.
   matchBuiltin(host, path),   // -> Rule | null
 };
 
@@ -169,7 +169,7 @@ globalThis.SiteRulesBuiltin = {
   blocklist: [ /* 见 §7.3 */ ],
   rules: [
     {
-      match: 'x.com',                       // 注册域，或 'arxiv.org/abs/*' 路径通配
+      match: 'x.com',                       // 主机名（含子域），或 'arxiv.org/abs/*' 路径通配
       state: 'always',
       atomicBlockSelectors: ['[data-testid="tweetText"]'],
       excludeSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
@@ -687,6 +687,11 @@ const ready = engine === 'ai'
 `chrome.commands` 的处理落在 `background/background.js`，向活动标签页转发一条消息，
 content 侧走与悬浮球单击**同一个函数**。
 
+划词和悬停的快捷键是「单独一个修饰键」（默认 Control / Shift，可配成 Alt），
+和 `Alt+A` 的第一下 keydown 长得一模一样：不管的话，用户按一次 `Alt+A` 会既译一句
+又译一页，两次请求。所以这类单修饰键触发统一过 `content-utils.js` 的
+`armModifierTap()`——松开、或者按住超过一瞬才算数，中间来了别的键就作废。
+
 ### 5.7 `background/background.js`
 
 - `chrome.commands.onCommand` 监听（上条）。
@@ -788,7 +793,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 
 | 文件 | 覆盖 | 对应验收 |
 | --- | --- | --- |
-| `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；注册域归一（`mobile.x.com` → `x.com`）；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
+| `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；规则按精确主机名存（`alice.github.io` 不圈进 `bob.github.io`），放大靠查找时的父域链；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
 | `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`readSourceText` 不把译文算进原文；`ctx.releaseTranslation` 摘译文节点、放回原文、清标记；判定排在 `closest()` 之前 | FR-2.10 |
 | `translation-cache.test.mjs` | **已落地（PR-4，20 条）**：6 个因子每一个都改变键；因子边界不滑动；L1 命中零请求；**换一份新模块实例（空 L1）后 L2 仍命中**；换模型后不命中；同批去重；并发 in-flight 合并；失败不记账且等待方自己重发；条数对不上整批作废；空译文传回但不缓存；30 天过期；sweep 的过期/畸形/字节预算三条；超 L1 容量的调用不出空洞；三份装载清单 | FR-7 |
