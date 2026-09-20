@@ -336,6 +336,40 @@ test('把译文藏了之后，popup 上那颗「继续」真的能把这一页�
   }
 });
 
+test('译文藏着的时候把这个站点关掉 —— popup 上那个开关得真的关得掉', async ({ page, context }) => {
+  // 「我想看原文」把这一页停在 paused。popup 上那一行画的是**状态**：状态一天
+  // 停在 paused，它就一天写着「开」，再点一次又写一遍 never —— 怎么点都关不掉。
+  // 所以规则改了，判定就得跟着改，哪怕这一页此刻一个字也不会翻。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
+    const spent = sentTexts.length;
+
+    const hidden = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(hidden.action).toBe('restored');
+    const paused = await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' });
+    expect(paused.auto.status).toBe('paused');
+
+    // popup 上的那一下：把站点规则改成「永不」。走的是 popup 点下去的同一条路。
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.writeUserRule('ask.test', 'never'));
+
+    await expect.poll(
+      async () => (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status,
+      { timeout: 5000 }
+    ).toBe('off');
+
+    // 关掉不等于把译文翻出来重来一遍：藏着的还藏着，一个新请求都不发。
+    await expect(blocks.first()).toHaveClass(/ai-translator-hidden/);
+    expect(sentTexts.length).toBe(spent);
+  } finally {
+    await close();
+  }
+});
+
 test('划词键位是 Alt 时，Alt+A 只翻整页，不会顺手把选中的那句也译一遍', async ({ page, context }) => {
   // 划词和悬停的快捷键是「单独一个修饰键」，而 Alt+A 的第一下 keydown 长得和
   // 「只按了 Alt」一模一样。立刻动手的话，用户按一次 Alt+A 会既译一句又译一页

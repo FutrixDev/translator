@@ -150,9 +150,12 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // 闩在 start() 里。换路由、改设置、用户表态都会重开一轮，漏一条就是一次
   // 「菜单写着已隐藏、页面上却自己冒出译文」—— 新插进去的译文不带
   // ai-translator-hidden，那个开关就此成了摆设。
+  //
+  // 拦的是**开始翻**，不是**重新判**：setStatus 紧跟着 return，这一闩里一行翻译
+  // 都跑不了；而判定照常跟上，否则 popup 上那个站点开关会一直停在「开」。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{\s*setStatus\(STATUS\.PAUSED\);\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{[\s\S]*?const hidden = resolve\(pageLang\);\s*reason = hidden\.reason;\s*setStatus\(hidden\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);

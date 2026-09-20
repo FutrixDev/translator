@@ -373,14 +373,43 @@ test('站点规则先落地，总开关才跟着开', () => {
   assert.ok(body.indexOf('try {') < rule && rule < body.indexOf('} catch (error) {'));
 });
 
+test('译文藏着的时候改了规则也得重判 —— 否则那个站点开关关不掉', () => {
+  // 「我想看原文」把这一页停在 PAUSED。这时在 popup 上把站点关掉：规则落地会
+  // 重开一轮，而那一轮要是直接在隐藏闩上返回，status 和 reason 都还停在上一次，
+  // 这一行照着 status 画出来还是「开」—— 再点一次又写一遍 never，怎么点都关不掉。
+  const auto = code('content/content-auto-translate.js');
+  const guard = auto.slice(auto.indexOf('if (ctx.state.translationsVisible === false)'));
+  assert.match(guard.slice(0, 900),
+    /const hidden = resolve\(pageLang\);\s*reason = hidden\.reason;\s*setStatus\(hidden\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
+    '隐藏闩得先重判再返回，不能原地掉头');
+  // 规则改了确实会重开一轮，否则上面那段永远跑不到。
+  const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));
+  assert.match(keys, /'siteRules'/);
+  // 而 popup 那一行画的就是 status —— 这是「重判」必须落到 status 上的原因。
+  assert.match(code('popup/popup.js'), /const on = globalAuto && status !== 'off' && status !== 'ask';/);
+});
+
 test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
   // 用内置引擎译完、事后把引擎换成自定义的（还没填 key），按钮上写着「收起
   // 译文」，点下去弹出设置页、译文还在原地。门只对真要开译的那一下开。
   const popup = code('popup/popup.js');
   const body = popup.slice(popup.indexOf('async function translateCurrentPage()'),
     popup.indexOf('function openSettings()'));
-  assert.match(body, /const willTranslate = !\(pageState && pageState\.hasTranslations\);/);
+  assert.match(body, /const willTranslate = !isHideAction\(\);/);
   assert.match(body, /if \(willTranslate && settings\.translationEngine === 'ai' && !settings\.apiKey\)/);
-  // 判据还是页面回的那一份事实 —— 和按钮上那行字用的是同一个，不是另立一套。
-  assert.match(popup, /pageState\.hasTranslations && pageState\.translationsVisible/);
+});
+
+test('「这一下是不是收起」只有一个出处 —— 按钮上那行字和那道门问的是同一句', () => {
+  // 两处各写一遍迟早对不上。而且这一问里的 translationsVisible 不是装饰：译文
+  // 藏着的那一下按下去走的是 translatePage()，它会把这一页新长出来、还没翻的块
+  // 补上 —— 那些块要花钱，门得拦得住。
+  const popup = code('popup/popup.js');
+  assert.match(popup,
+    /function isHideAction\(\) \{\s*return !!\(pageState && pageState\.hasTranslations && pageState\.translationsVisible\);\s*\}/);
+  assert.equal((popup.match(/isHideAction\(\)/g) || []).length, 3, '一处定义、两处用，多一处就是又立了一套');
+  assert.match(popup, /const showing = isHideAction\(\);/);
+  // 「藏着的那一下会补新块」这件事是上面那句注释的依据，它变了这个测试就该重判。
+  const pageSide = code('content/content-page-translation.js');
+  const toggle = pageSide.slice(pageSide.indexOf('function togglePageTranslation()'));
+  assert.match(toggle.slice(0, 500), /translationsVisible !== false\)[\s\S]*?return 'restored';[\s\S]*?translatePage\(\);/);
 });

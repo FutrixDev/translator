@@ -527,6 +527,18 @@ async function refreshShortcutHint() {
   }
 }
 
+/**
+ * 这一下按下去是不是「收起译文」。
+ *
+ * 按钮上那行字和那道 key 门问的是同一件事，所以只有一个出处。收起是纯 DOM，
+ * 一个请求都不发；其余两种都可能开译 —— 没译文当然是译，**译文藏着那种也是**：
+ * 页面那边走的是 `translatePage()`，放出旧译文的同时把这一页新长出来的块补上，
+ * 那些块要花钱。
+ */
+function isHideAction() {
+  return !!(pageState && pageState.hasTranslations && pageState.translationsVisible);
+}
+
 function renderPageRows() {
   const auto = pageState && pageState.auto;
   const status = auto ? auto.status : '';
@@ -552,7 +564,7 @@ function renderPageRows() {
 
   // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
   //    那一遍要花的是用户自己的钱。
-  const showing = pageState && pageState.hasTranslations && pageState.translationsVisible;
+  const showing = isHideAction();
   elements.translatePageLabel.textContent = showing ? t('hideTranslations') : t('translateCurrentPage');
 
   // ③ 暂停 / 继续这一页。
@@ -718,14 +730,15 @@ function showStatus(key, ok = true) {
  * 新用户挡在主操作外面（PR #26 的评审）。过了这道门，动作本身交给页面：
  * 「有译文就收起来，没有就译」这条规则只能有一个地方说了算，那就是页面。
  *
- * 门也只对「真要开译」的那一下开。这一页已经有译文了，这一下就是收起来 / 放
- * 出来 —— 动的是 DOM，一个请求都不发。拿 key 去拦它，按钮上写着「收起译文」，
- * 点下去弹出的是设置页，而译文还在原地：用内置引擎译完、事后把引擎换成自定义
- * 的人，从此连自己那一页都收不起来。
+ * 门也只对「真要开译」的那一下开。按钮上写着「收起译文」的那一下是纯 DOM，一
+ * 个请求都不发，拿 key 去拦它，点下去弹出的是设置页、而译文还在原地：用内置引
+ * 擎译完、事后把引擎换成自定义的人，从此连自己那一页都收不起来。反过来，译文
+ * 藏着的那一下**不是**纯 DOM —— 它会顺带补上新长出来的块，那些块要花钱，门得
+ * 拦得住。两边问的是同一个 isHideAction()。
  */
 async function translateCurrentPage() {
   try {
-    const willTranslate = !(pageState && pageState.hasTranslations);
+    const willTranslate = !isHideAction();
     const settings = await chrome.storage.sync.get(defaultSettings);
     if (willTranslate && settings.translationEngine === 'ai' && !settings.apiKey) {
       showStatus('configureApiKeyFirst', false);

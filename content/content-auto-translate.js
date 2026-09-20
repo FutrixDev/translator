@@ -183,7 +183,16 @@
       stopDiscovery();
       clearSample();
       if (ctx.state.translationsVisible === false) {
-        setStatus(STATUS.PAUSED);
+        // 「我现在想看原文」拦住的是**开始翻**，不是**重新判**。判定还得跟上：
+        // 用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮要是直接
+        // 停在 PAUSED，reason 和状态都还停在上一次 —— popup 照着状态画，那个开关
+        // 会一直显示「开」，再点一次又写一遍 never，怎么点都关不掉。
+        //
+        // 判出 off 就如实说 off（这一页往后也不会自己翻了）；还该翻的照旧停着 ——
+        // 藏着译文的那一页就是暂停，这条闩不动。
+        const hidden = resolve(pageLang);
+        reason = hidden.reason;
+        setStatus(hidden.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
       broken = false;
