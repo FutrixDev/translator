@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "無料のAI翻訳。ウェブページ、学術論文(数式/LaTeXを保持)、YouTubeのリアルタイム字幕、PDF、マンガのページに対応。",
+    "message": "無料のAI翻訳が自動に。開いたページをそのまま翻訳し、数式/LaTeXを保持。YouTube字幕、PDF、マンガにも対応。",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

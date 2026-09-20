@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Free AI translation: web pages, academic papers (math/LaTeX preserved), real-time YouTube captions, PDF and comic pages.",
+    "message": "Free AI translation, now automatic: pages translate themselves, with math/LaTeX preserved, YouTube captions, PDF, comics.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

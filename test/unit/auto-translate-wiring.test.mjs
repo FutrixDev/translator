@@ -35,7 +35,8 @@ test('调度层读的全局，都由排在它前面的文件提供', () => {
     SessionGuard: 'shared/session-guard.js',
     BlockIdentity: 'shared/block-identity.js',
     SiteRules: 'shared/site-rules.js',
-    SpaNavigation: 'shared/spa-navigation.js'
+    SpaNavigation: 'shared/spa-navigation.js',
+    AutoStats: 'shared/auto-stats.js'
   };
   const at = isolated.indexOf('content/content-auto-translate.js');
   for (const [name, file] of Object.entries(providers)) {
@@ -336,12 +337,57 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 而且没有任何报错。所以整份文件里 `ledger.add` 只能有一处，就在 commit 里。
   assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
   assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);/);
-  assert.match(auto, /onSettled: \(block\) => commit\(block\.element\)/);
+  assert.match(auto, /onSettled: \(block\) => \{\s*\n\s*translated = true;\s*\n\s*commit\(block\.element\);\s*\n\s*\},/);
+  // 「这一轮真的译出了东西」也只能从这同一个口子置起。放在发请求之前就是另一
+  // 个方向的同一个错：一张只有一两批的小页面可以整页全失败而 error 仍是 null
+  // （连错三批才报错），那一页一个字都没译出来，却会被记成「自动翻了一页」。
+  assert.equal((auto.match(/translated = true;/g) || []).length, 1);
   assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(pending\.key\);/);
   // 被语言滤掉的是有意跳过，也是结果，同样要记。
   assert.match(auto, /for \(const block of blocks\) if \(!keep\.has\(block\.element\)\) commit\(block\.element\);/);
   // 代次翻篇和一轮收尾都要清空在途表：迟到的结果不能往新一代的台账里塞一笔。
   assert.equal((auto.match(/inflight\.clear\(\);/g) || []).length, 3);
+});
+
+test('「发给模型的字符数」一次调用记一笔，不多不少', () => {
+  const bg = code('background/background.js');
+
+  // 记在三个真发请求的函数上，不记在消息监听器里。监听器两头都漏：前面漏掉
+  // `if (!settings.apiKey)` 那一关（没配 Key 时一个字符也没发出去，而自动翻译
+  // 一页最多同时开 12 批，整页整页地虚记），后面漏掉快速分批分隔符对不上时的
+  // 整批重发（一条消息两次调用）。
+  for (const fn of ['handleTranslate', 'handleBatchTranslate', 'handleBatchTranslateFast']) {
+    const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${fn} 不见了`);
+    assert.match(body[0], /if \(!settings\.apiKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
+    assert.doesNotMatch(body[0], /countCharsSentToModel/, `${fn} 在 apiKey 那一关这一侧，记不得账`);
+  }
+
+  for (const fn of ['translateTextWithMode', 'translateBatchWithAI', 'translateBatchFastWithAI']) {
+    const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${fn} 不见了`);
+    assert.match(body[0], /countCharsSentToModel\(/, `${fn} 是一次真发出去的调用，要记一笔`);
+  }
+
+  // 回退那一次走的就是 translateBatchWithAI，于是自然记第二笔 —— 靠的是这一句，
+  // 不是在回退处另记一笔。
+  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings\);/);
+  // 求和只有一处（shared/auto-stats.js），三个调用点不各抄一遍。
+  assert.equal((bg.match(/AutoStats\.textsChars\(/g) || []).length, 2);
+  assert.equal((bg.match(/AutoStats\.add\(\{ aiChars/g) || []).length, 1);
+  assert.doesNotMatch(bg, /countCharsSentToModel\(message\)/, '消息监听器不再记账');
+});
+
+test('设置页里两块别处写的数据，要跟着别处一起变', () => {
+  const options = code('options/options.js');
+  // 站点审计表是弹出窗口写的，本机统计是内容脚本和 worker 写的，而
+  // openOptionsPage() 把已开着的标签页调到前面、不重新加载它。没有这一条订阅，
+  // 用户刚在另一个标签页按下的「总是翻译」就不在表里，想撤回也无从撤起。
+  const listener = options.match(/chrome\.storage\.onChanged\.addListener\([\s\S]*?\n  \}\);/);
+  assert.ok(listener, '设置页没有订阅 storage.onChanged');
+  assert.match(listener[0], /area === 'sync' && changes\.siteRules\) renderSiteRules\(\)/);
+  // autoStats 在 local，不在 sync —— 盯错了区域就一个事件也收不到。
+  assert.match(listener[0], /area === 'local' && changes\.autoStats\) renderAutoStats\(\)/);
 });
 
 test('改对了密钥/地址/模型/回落，停在错误上的那一页要自己重来', () => {

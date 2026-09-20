@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Kostenlose KI-Übersetzung: Webseiten, Fachartikel (Formeln/LaTeX erhalten), Live-YouTube-Untertitel, PDFs und Comicseiten.",
+    "message": "Kostenlose KI-Übersetzung, jetzt automatisch: Seiten übersetzen sich selbst, Formeln/LaTeX erhalten, YouTube, PDF, Comics.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

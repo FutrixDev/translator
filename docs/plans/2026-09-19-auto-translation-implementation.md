@@ -1755,3 +1755,74 @@ SPA 在路由切换时把 `<video>` 整个换掉，而被摘走的那个元素**
 自己那条 `display: flex` 一来就把它压掉了 —— JS 照样置 hidden，屏幕上那一行纹丝不
 动（e2e 抓到的：Playwright 说它 visible，DOM 里 `hidden=""` 明明在）。菜单根节点早
 就为同一件事单独写过一条，这是第二处，由 `caption-core.test.mjs` 钉住。
+
+### PR-10：设置页那一张卡片，和一个跨上下文的通知
+
+本文 §11 给 PR-10 的那一行是「设置页审计表（**每条可删**）、本机统计、10 语文案、
+商店材料」。落地时有九处不同。
+
+**1. `autoStats` 里存的是两个计数，不是一个比率。** §9 的存储示例写的是
+`{ month, pages, cacheHit: 0.61, aiChars }`。`cacheHit` 存不得 —— **比率没法
+累加**。这个月前半段 50%、后半段 80%，两个数字加起来没有任何意义；而这份统计
+从头到尾只有一种写法，就是「把这一笔加上去」。所以落地成
+`{ month, pages, aiChars, cacheHits, cacheMisses }`，比率在读出来的那一刻现除
+（`AutoStats.cacheHitRate`）。顺带一条：**一次都没量过时它返回 `null`，不是 0**
+——「还没有数据」和「一次都没命中」是两句不同的话，把前者画成 0% 是在冤枉缓存，
+设置页那一格显示的是「—」。
+
+**2. 「只自动翻这些语言」是九个基码的勾选，没有自由输入。** 本文没说这份名单长什么
+样。写的时候只有一个约束是硬的：`SiteRules.decide()` 把页面语言和这份名单**两边
+都过一次 `baseLang()`**，所以它判的就是基码。给一个自由输入框，用户填 `zh-TW`
+和填 `zh` 会得到完全一样的行为，而界面在骗他说这两件事不同。九个勾跟着目标语言
+下拉里那几门走，`zh-CN`/`zh-TW` 在这里合成一个「中文」—— 这一勾说的是「中文的
+页面要自动翻」，不是「翻成中文」，后者是上面那个下拉。**勾上 = 这门语言的页面
+可以被自动翻**（`decide()` 里不在名单上就 `LANG_NOT_LISTED` 判 off），别读反了。为此新加了一个 `langZh` 文案键，
+十种语言里都是同一个「中文」本名（和 `langJa`/`langKo` 一个道理）。
+
+**3. `baseLang` 从 `SiteRules` 导出，而不是在设置页再写一遍。**
+`split('-')[0].toLowerCase()` 这条规则在仓库里已经有三份副本，`site-rules.test.mjs`
+拿它们互相对账。设置页要画这份名单，就得和 `decide()` 认的是同一个口径；再抄
+第四份，就是在赌四份将来一起改。
+
+**4. `siteRules` 刻意不进 `collectSettings()`。** 设置页保存是一次**整份**
+`chrome.storage.sync.set(settings)`。规则表是张共享表 —— 弹出窗口、内容脚本、
+设置页都在改它 —— 把它塞进那一份，等于用户在设置页动任何一个开关，都拿这一页
+打开时读到的快照去盖掉别的标签页刚写下的规则。删除走
+`SiteRules.writeUserRule(host, null)`，也就是单写者那条通道，和另外两个调用方
+同一个入口。
+
+**5. 删一条规则不需要额外广播。** 第一版在删除之后调了 `notifyContentScripts`。
+多余：调度层的 `onSettingsChanged` 盯的是 `chrome.storage.onChanged`，而
+`RESTART_KEYS` 里本来就有 `siteRules`。多发一条只是让同一件事有两个触发源，将来
+改一处忘一处。
+
+**6. 审计表和统计块挂在 `applyI18n()` 的末尾重画。** 这两块是运行时画出来的
+（主机名、按 locale 格式化的数字、「总是翻译」这类行内文案），身上没有
+`data-i18n`，`applyI18n` 那几轮选择器一个也扫不到。不在那里重画，换过界面语言的
+中文页面上就留着一排英文按钮。它只有两个调用方（`loadSettings` 和 uiLanguage 的
+change），所以挂在末尾就是「界面语言变了」这件事唯一的落点。
+
+**7. 第 21 条留给 PR-10 的那一半，在这里补上。** 第 21 条把「语言包装好了，停在
+ERROR 上的页面要自己活过来」做成了页面内的 `ctx.onLanguagePackReady`，并留了一句
+「设置页 `ensureDownloaded` 那条路跨上下文，喊不到已经开着的标签页」。现在设置页
+下完包广播一条 `LANGUAGE_PACK_READY`（`chrome.tabs.sendMessage`，和
+`notifyContentScripts` 同一个写法），`content/content-language-pack.js` 接住后走
+同一个 `notifyLanguagePackReady`。
+
+接收端有一道闸：**这一页不在用内置引擎就直接丢掉**。广播是发给每一个标签页的，
+而 `start()` 是把整页重新翻一遍 —— 对一个因为 API key 写错而停在 ERROR 上的页面，
+那是白花一次钱。反过来，广播带的 `sourceLang` 是设置页探测用的那一个（英语），
+**不**拿它去挡：真缺的是别的包时，这一轮照样拿回 `builtinNeedsDownload` 再停回
+ERROR，什么都不花；用它挡，会把「源语言恰好就是英语」的那些页面也一起挡掉。
+
+**8. `KNOWN_GAP` 清空了，而且它是个棘轮。** 二十七条在其他九种语言下仍是英文的
+文案补齐之后，`test/unit/i18n-locale-coverage.test.mjs` 的名单空了，但文件留着：
+它现在是一道只能往前的闸，**下一个只有英文的键会红在加它的那个 PR 里**，而不是
+被里斯本的用户发现。那个套件还有一条反向断言 —— 名单里出现已经翻好的键也会红 ——
+所以「把名字加回名单」不是修复它的办法。
+
+**9. 隐私政策是新写的，商店那一栏的 `<all_urls>` 理由必须重写。** 仓库里原本没有
+隐私政策（1.3.x 提交时表单里没填）。这一版必须有，因为 1.3.0 那一栏的理由里有
+一句 "Content scripts only translate when the user asks" —— 自动翻译之后**这句话
+不成立了**。权限清单一个字没动，但审核员看的是行为。详见
+`docs/store-submission-1.4.0.md` 第三节和 `docs/privacy-policy.md`。

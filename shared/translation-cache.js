@@ -36,6 +36,10 @@
   'use strict';
 
   const KEY_PREFIX = 'tc:';
+  // 「缓存被清空了」的广播信号。**刻意不带 tc: 前缀**：它不是一条译文，而
+  // sweep 的过期清理和 clear 自己的批量删除都是按前缀取键的，带上前缀就会把
+  // 信号本身一起删掉。
+  const EPOCH_KEY = 'translationCacheEpoch';
   // 因子之间的分隔符取 U+0000：用户自定义提示词是唯一有可能塞进任意字符的因子，
   // 而它来自 <textarea>，里面出现真正的 NUL 需要刻意构造。有了它，
   // ('ab', 'c') 和 ('a', 'bc') 不会撞成同一个键。
@@ -101,6 +105,24 @@
     if (l1.has(key)) l1.delete(key);
     l1.set(key, translation);
     while (l1.size > L1_LIMIT) l1.delete(l1.keys().next().value);
+  }
+
+  /**
+   * 把这个上下文里攒着的一切丢掉 —— 定时器、待写、L1。
+   *
+   * 清空缓存有两半。落盘的那一半只有一处（chrome.storage.local），删一次就没了；
+   * 内存里的这一半**每个上下文各有一份** —— 设置页一份、每个开着的标签页一份、
+   * service worker 一份，它们是同一份源码的不同实例，互相看不见。所以删完落盘的
+   * 那一半还不算清空：那些标签页会继续按自己的 L1 供货，而它们那 500 ms 里攒着
+   * 的条目会在删除**之后**落回 storage，用户按下「清除」，缓存却自己长了回来。
+   */
+  function dropLocalState() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    pendingWrites.clear();
+    l1.clear();
   }
 
   function scheduleFlush() {
@@ -290,11 +312,61 @@
     return { removed: doomed.length, kept: alive.length - evicted };
   }
 
+  /**
+   * 清空缓存 —— 设置页那颗按钮走的就是这里。
+   *
+   * 隐私政策的「删除你的数据」一节把缓存和设置、站点规则、统计并列，所以它必须
+   * 真的有一条能按的路；没有这个函数，那一句就只能改成「卸载扩展」。
+   *
+   * 三步，缺一步就还有译文活着：丢掉本上下文攒的（dropLocalState），删掉落盘的，
+   * 然后**告诉别的上下文也丢**。最后那一步不是锦上添花 —— 一个开着的标签页有
+   * 自己的 L1 和自己的待写队列，删 storage 碰不到它们。
+   */
+  async function clear() {
+    dropLocalState();
+
+    // 这里**不吞错误**，而 sweep 吞 —— 两者的区别是有没有人在等答案。sweep 由
+    // chrome.alarms 半夜叫起来，没清成就下次再说；clear 是有人刚按下按钮，按了
+    // 没反应就是「说好能删，其实删不掉」。所以失败往上抛，让设置页说出来。
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all).filter((key) => key.startsWith(KEY_PREFIX));
+    if (keys.length > 0) await chrome.storage.local.remove(keys);
+
+    // 广播。写什么无所谓，**变了**就行，所以必须每次都不一样：同一毫秒里连按两次
+    // 「清除」，光一个 Date.now() 会写回同一个值，onChanged 也就不发了。
+    // 放在删除之后：先广播的话，标签页可能在 remove 落地之前就丢完并重新读回
+    // 几条还没删掉的。
+    await chrome.storage.local.set({
+      [EPOCH_KEY]: `${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+    });
+    return { removed: keys.length };
+  }
+
+  // 别人清空了缓存，这边跟着丢。
+  //
+  // 信号走 storage，是因为 storage 是这几个上下文之间唯一共有的东西（设置页不能
+  // 给标签页发消息，也不该为这一件事去申请 tabs 权限）。**只广播一个时间戳，不
+  // 广播被删掉的那几千个键**：后者的 onChanged payload 里带着每一条译文的原文，
+  // 一次清空就要往每个开着的标签页塞几兆字节。
+  //
+  // 正在路上的请求（inflight）不受影响，这是对的：它们是清空**之后**才会回来的
+  // 新译文，本来就该留下。这里丢的只有清空之前就已经攒下的东西。
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && EPOCH_KEY in changes) dropLocalState();
+    });
+  } catch (error) {
+    // 拿不到 onChanged（受限上下文、测试替身）就只是少了这层加固，缓存本身照常
+    // 工作，所以不抛。
+    console.warn('Blab Translation: translation cache clear broadcast unavailable', error);
+  }
+
   root.TranslationCache = {
     TTL_MS,
     buildKey,
     serve,
     flush,
     sweep,
+    clear,
   };
 })(globalThis);

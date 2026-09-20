@@ -109,6 +109,12 @@
     // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
     // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
     let gaveUp = 0;
+    // 本机统计里「这个月自动翻了几页」已经替这个 URL 记过一笔了。
+    //
+    // 按 URL 记，不按代次记：同一页会因为设置变动、暂停后继续重开好几轮代次，那
+    // 还是同一页；而单页应用换了路由就是另一页，URL 也确实变了。第一次真的翻出
+    // 东西才记 —— 判定成 off、或者一块都没送出去的那些「打开过」不算翻译过。
+    let countedUrl = '';
 
     // ------------------------------------------------------------------ 对外
 
@@ -458,6 +464,10 @@
       if (suspended) suspended.suspend();
 
       let error = null;
+      // 这一轮真的有块拿到了结果。**由 onSettled 置起**，而不是发出去的那一刻：
+      // runTranslationPass 要连错三批才报错，一张只有一两批的小页面可以整页全
+      // 失败而 error 仍是 null —— 那一页一个字都没译出来，不该记成「翻了一页」。
+      let translated = false;
       try {
         // 「已经是目标语言的就别翻了」是用户的设置，自动这一轮和手动那一轮认的是
         // 同一条（content/content-page-translation.js 在同一个位置调它）。不认，
@@ -483,7 +493,10 @@
             // 记账等结果：accept 是「还要不要写回去」，onSettled 是「这一块有结果
             // 了」。失败的块两者都不会走到，于是留在 inflight 里，随这一轮一起
             // 丢掉 —— 下次扫描回来还有一次机会。
-            onSettled: (block) => commit(block.element),
+            onSettled: (block) => {
+              translated = true;
+              commit(block.element);
+            },
             allowDownload: false,
             isAborted: () => guard.version() !== session,
           });
@@ -525,6 +538,15 @@
         // 新的一代有自己的队要排 —— 刚才 running 挡回去的那次 pump 没有重排。
         if (queue.size > 0 && (status === STATUS.IDLE || status === STATUS.RUNNING)) scheduleStart();
         return;
+      }
+
+      // 数在报错之前。一轮里有几批成了、另几批崩到了 runTranslationPass 报错的
+      // 门槛，页面上是真有译文摆着的 —— 而「这个月自动翻了几页」问的是「这一页
+      // 翻过没有」，不是「这一轮有没有出错」。记在下面那个 return 后头，就是把
+      // 一页看得见译文的页面记成零。
+      if (translated && countedUrl !== location.href) {
+        countedUrl = location.href;
+        globalThis.AutoStats.add({ pages: 1 });
       }
 
       if (error) {
