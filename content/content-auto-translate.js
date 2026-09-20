@@ -515,11 +515,22 @@
       ledger.clear();
     }
 
-    // 用户刚把译文藏起来。光靠 start() 那道闩不够 —— 藏译文不会重开一轮，而
-    // 此刻正跑着的那一轮和挂着的观察器要立刻停下。
-    function pauseCurrentPage() {
+    /**
+     * 这一页先停下。光靠 start() 那道闩不够 —— 停一下不会重开一轮，而此刻正跑
+     * 着的那一轮和挂着的观察器要立刻停下。
+     *
+     * `cause` 说的是**谁停的**，因为解铃还须系铃人：
+     *
+     *   - 不带 cause（popup 上按的「暂停」）—— 这是他对这一页下的一句话，记成
+     *     一道闩，只有他自己解得开。
+     *   - `'hidden'`（他把译文藏了）—— **不上闩**。藏译文本身就是一道闩，
+     *     start() 看的是 ctx.state.translationsVisible，这一道在译文放回来之前
+     *     一直拦着。再上一道的话，放回译文时跟着解掉的就不只是自己：他在 popup
+     *     上按下的暂停会被一次「显示译文」顺手洗掉，页面自己又翻起来了。
+     */
+    function pauseCurrentPage(cause) {
       if (status === STATUS.OFF || status === STATUS.PAUSED) return;
-      pausedByUser = true;
+      if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
       stopDiscovery();
       clearSample();
@@ -535,12 +546,22 @@
      * 重开一轮只会原地弹回 PAUSED —— popup 上那颗「继续」按下去毫无反应，而且
      * 不报错。所以先走显隐层的唯一入口把译文放回来，它回头会再叫一次这里，
      * 那时闩已经开了。
+     *
+     * 同样要问是谁在继续（见 pauseCurrentPage）：把译文放回来
+     * （`cause === 'hidden'`）不等于撤销他在 popup 上按下的那句「这一页先别翻
+     * 了」。那两句话是分开的，解闩的也只有后面那一句。
      */
-    function resumeCurrentPage() {
+    function resumeCurrentPage(cause) {
       if (status !== STATUS.PAUSED && status !== STATUS.ERROR) return;
-      // 解闩的只有这一句。放在最前面是因为藏着译文那条路要拐个弯（下面），回头
-      // 还会再走一次这里 —— 两次都解，解的是同一道。
-      pausedByUser = false;
+      // 闩只有他自己解得开：popup 上的「继续」，或者「翻译整页」。显隐层越过
+      // 它的话，藏一下再显示一下就把暂停洗掉了，而他从头到尾没碰过那颗按钮。
+      if (cause === 'hidden') {
+        if (pausedByUser) return;
+      } else {
+        // 放在最前面是因为藏着译文那条路要拐个弯（下面），回头还会再走一次这里
+        // —— 那一次带着 'hidden'，此刻已经解开的这一道不会再被问起。
+        pausedByUser = false;
+      }
       if (ctx.state.translationsVisible === false && ctx.revealHiddenTranslations) {
         ctx.revealHiddenTranslations();
         return;

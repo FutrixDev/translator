@@ -31,8 +31,13 @@
   // 原文块上的标记，规则按它的取值选中：[data-ai-translator-managed="7"]::after
   const BLOCK_ATTR = 'data-ai-translator-managed';
   const STATE_ATTR = 'data-ai-translator-managed-state';
-  // 挂在 <html> 上，一个属性关掉所有受管译文（浮球菜单的“隐藏译文”）
+  // 挂在 <html> 上，一个属性关掉受管译文（浮球菜单的“隐藏译文”）
   const HIDDEN_ATTR = 'data-ai-translator-managed-hidden';
+  // 这一条是划词 / 悬停译出来的**一次性**结果。那个开关管的是整页那一批，收不到
+  // 它头上：用户刚刚指着一句话问出来的答案，不归一个管整页的开关收走。普通容器
+  // 里靠 PAGE_TRANSLATION_SELECTOR 的两个 :not() 排除，这里没有节点可以选中 ——
+  // 译文是原文块的 ::after，所以标记打在原文块上，由规则把它让开。
+  const ONE_OFF_ATTR = 'data-ai-translator-managed-one-off';
   const STYLE_ID = 'ai-translator-managed-style';
   const HOLDER_ID = 'ai-translator-managed-handles';
 
@@ -55,12 +60,17 @@
   color: #d93025;
   opacity: 1;
 }
-[${HIDDEN_ATTR}] [${BLOCK_ATTR}]::after {
+[${HIDDEN_ATTR}] [${BLOCK_ATTR}]:not([${ONE_OFF_ATTR}])::after {
   content: none !important;
 }
 `;
 
   const handles = new Map();      // 句柄元素 -> { id, block }
+  // 这个块此刻挂的是哪一个句柄。一个块同时只有一条译文，而换一条译文是「先画新
+  // 的、再收旧的」：加载态换成结果就是这个次序。两个句柄共用同一个 id，收旧的时
+  // 候不问一句「这个块现在归谁」，收掉的就是刚画上去的那一条 —— 用户看到的是
+  // 「正在翻译…」闪一下，然后什么都没有。
+  const currentHandle = new WeakMap(); // 原文块 -> 句柄元素
   const rulesById = new Map();    // id -> CSSStyleRule
   let nextId = 1;
 
@@ -136,9 +146,17 @@
     const style = window.getComputedStyle(block);
     // flex/grid 容器里的 ::after 是一个布局项，会跟原文并排而不是另起一行
     if (/flex|grid/.test(style.display)) return false;
-    // 站点自己用了 ::after（引号、角标、装饰线），我们的 content 会把它盖掉
-    const after = window.getComputedStyle(block, '::after').content;
-    if (after && after !== 'none' && after !== 'normal') return false;
+    // 站点自己用了 ::after（引号、角标、装饰线），我们的 content 会把它盖掉。
+    //
+    // **我们自己画的那一笔不算。** 一条译文从「正在翻译…」变成正文，就是在同一个
+    // 块上再画一次；把上一笔当成站点的装饰，第二笔就永远落不下去 —— 受管容器里
+    // 划词会一直停在「正在翻译…」，然后退回那条插真节点的路，而那条路在 Lexical
+    // 里下一帧就被编辑器撤销了，用户什么都看不到。这个块归不归我们管，
+    // BLOCK_ATTR 说了算。
+    if (!block.hasAttribute(BLOCK_ATTR)) {
+      const after = window.getComputedStyle(block, '::after').content;
+      if (after && after !== 'none' && after !== 'normal') return false;
+    }
     return true;
   };
 
@@ -169,8 +187,18 @@
     handle.className = ['ai-translator-inline-block', 'ai-translator-managed-handle', className]
       .filter(Boolean).join(' ');
     handle.textContent = text;
+
+    // 一次性还是整页，判据只有一条：**句柄自己答不答得上那条选择器**。这里再按
+    // kind / className 自己判一遍的话，两处迟早各答各的 —— 而这一处答错的样子是
+    // 用户划完词按一下「显示原文」，那句答案连同整页译文一起没了，再划一句还是
+    // 不出来（生成内容由一条文档级规则统管，新画的天然跟着）。
+    const oneOff = !!ctx.PAGE_TRANSLATION_SELECTOR && !handle.matches(ctx.PAGE_TRANSLATION_SELECTOR);
+    if (oneOff) block.setAttribute(ONE_OFF_ATTR, '');
+    else block.removeAttribute(ONE_OFF_ATTR);
+
     getHolder().appendChild(handle);
     handles.set(handle, { id, block });
+    currentHandle.set(block, handle);
     return handle;
   };
 
@@ -191,10 +219,18 @@
     const entry = handles.get(handle);
     if (!entry) return false;
     handles.delete(handle);
+    // 这个块已经换了一条译文（见 currentHandle）：旧句柄只收自己，规则和块上的
+    // 标记都是新那条的，动不得。
+    if (entry.block && currentHandle.get(entry.block) !== handle) {
+      handle.remove();
+      return true;
+    }
     dropRule(entry.id);
     if (entry.block) {
+      currentHandle.delete(entry.block);
       entry.block.removeAttribute(BLOCK_ATTR);
       entry.block.removeAttribute(STATE_ATTR);
+      entry.block.removeAttribute(ONE_OFF_ATTR);
     }
     handle.remove();
     return true;

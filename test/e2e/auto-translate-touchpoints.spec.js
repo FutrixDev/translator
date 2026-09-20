@@ -12,7 +12,8 @@
 //     和悬浮球、popup 点的是同一个。
 const { test, expect } = require('./fixtures');
 const {
-  setExtensionSettings, getSyncSetting, getServiceWorker, sendMessageToActiveTab, triggerSelectionHotkey
+  setExtensionSettings, getSyncSetting, getServiceWorker, sendMessageToActiveTab, triggerSelectionHotkey,
+  openFloatBallMenu
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -256,6 +257,60 @@ test('划词译了一句，Alt+A 第一下仍然是翻整页，不是把那一�
   }
 });
 
+test('受管容器：整页译文藏着的时候划词，那一句照样看得见', async ({ page, context }) => {
+  // Lexical / ProseMirror 这类容器里，译文不是节点而是原文块的 ::after，由一条
+  // 文档级规则统管。上一条旅程里那两个 :not() 在这里落不到实处 —— 一个挂在
+  // <html> 上的属性会把所有受管译文一起关掉，连同他刚划词问出来的那一句；而且
+  // 它管的是生成内容，**接下来新划的一句照样不出来**，直到整页译文重新显示。
+  const { close, endpoint } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+      siteRules: { 'ask.test': 'never' }
+    });
+    await context.route(`${ORIGIN}/**`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Editor</title></head>
+<body><div id="box" data-lexical-editor="true">
+  <p id="picked">${BODY}</p>
+  <p id="rest">Nobody in the office could say who had opened the second book.</p>
+</div></body></html>`
+      });
+    });
+    await page.goto(`${ORIGIN}/editor`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    // 受管译文没有自己的节点可以数 —— 认原文块上的标记，看它的 ::after。
+    const after = (sel) => page.evaluate(
+      (s) => window.getComputedStyle(document.querySelector(s), '::after').content, sel);
+
+    // 他先指着一句话问「这什么意思」。这一条是一次性的，块上有记号。
+    await page.locator('#picked').selectText();
+    await triggerSelectionHotkey(page);
+    await page.waitForSelector('#picked[data-ai-translator-managed-one-off]', { timeout: 30000 });
+    await expect.poll(() => after('#picked'), { timeout: 30000 }).toContain('harbour master');
+
+    // 然后翻整页。划过的那一块已经有译文，发现层会跳过它。
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('translating');
+    await page.waitForSelector('#rest[data-ai-translator-managed]', { timeout: 30000 });
+    await expect.poll(() => after('#rest'), { timeout: 30000 }).toContain('second book');
+
+    // 「显示原文」：整页那一批收起来 —— 他刚刚问出来的那一句留着。
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('restored');
+    await expect.poll(() => after('#rest'), { timeout: 5000 }).toBe('none');
+    expect(await after('#picked')).toContain('harbour master');
+  } finally {
+    await close();
+  }
+});
+
 test('一轮翻译跑到一半按下 Alt+A，后面落下来的译文也是藏着的', async ({ page, context }) => {
   // 整页翻译一批批往回落，一轮要几十秒。中途「显示原文」只管得到当时已经插好的
   // 块的话，用户一边藏、译文一边冒出来，那个开关就是个摆设。
@@ -338,6 +393,50 @@ test('把译文藏了之后，popup 上那颗「继续」真的能把这一页�
     expect(resumed.status).not.toBe('paused');
     await expect(blocks.first()).not.toHaveClass(/ai-translator-hidden/);
     await expect(dot).toHaveAttribute('data-state', 'none');
+  } finally {
+    await close();
+  }
+});
+
+test('popup 上按下的暂停，不会被「显示原文 → 显示译文」顺手洗掉', async ({ page, context }) => {
+  // 「这一页先别翻了」和「我现在想看原文」是两句话。显隐那两下说的是后者 ——
+  // 它顺手停下、顺手继续都对，但能撤销的只有它自己停的那一下。越过那道闩的
+  // 话，用户看一眼原文再切回来，页面自己又翻起来了，而他从头到尾没碰过那颗
+  // 按钮 —— 而且他没有任何理由想到要再去按一次暂停。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
+
+    await sendMessageToActiveTab(page, { type: 'SET_AUTO_PAUSED', paused: true });
+    expect((await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status).toBe('paused');
+    const spent = sentTexts.length;
+
+    // 悬浮球菜单里那一项只管显隐（不像 Alt+A，它不会顺手开一轮）。来回各一次。
+    const menu = page.locator('#ai-translator-float-menu');
+    await openFloatBallMenu(page);
+    await page.click('.ai-translator-menu-item[data-action="toggle-translations"]');
+    await expect(blocks.first()).toHaveClass(/ai-translator-hidden/);
+    await expect(menu).toBeHidden();
+    await openFloatBallMenu(page);
+    await page.click('.ai-translator-menu-item[data-action="toggle-translations"]');
+    await expect(blocks.first()).not.toHaveClass(/ai-translator-hidden/);
+
+    // 译文回来了，暂停还在。
+    expect((await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status).toBe('paused');
+    await expect(page.locator('#ai-translator-float-ball .ai-translator-status-dot'))
+      .toHaveAttribute('data-state', 'paused');
+
+    // 停着就是真的停着：这一页新长出来的一段不会被翻。
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.textContent = 'A ninth entry appeared overnight, written in a different hand.';
+      document.getElementById('box').appendChild(p);
+    });
+    await page.waitForTimeout(1500);
+    expect(sentTexts.length).toBe(spent);
   } finally {
     await close();
   }

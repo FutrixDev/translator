@@ -50,9 +50,12 @@
     applyTranslationOnlyMode();
     // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
     // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
+    //
+    // 带上「是显隐干的」：这一停不上闩，这一继续也不解闩。他在 popup 上按下的
+    // 暂停是另一句话，不归这个开关撤销（见 pauseCurrentPage）。
     if (ctx.autoTranslate) {
-      if (visible) ctx.autoTranslate.resumeCurrentPage();
-      else ctx.autoTranslate.pauseCurrentPage();
+      if (visible) ctx.autoTranslate.resumeCurrentPage('hidden');
+      else ctx.autoTranslate.pauseCurrentPage('hidden');
     }
   }
 

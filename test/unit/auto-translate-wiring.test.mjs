@@ -164,8 +164,10 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // resume，藏起来是 pause。
   const visibility = code('content/page/visibility.js');
   assert.match(visibility, /function setTranslationsVisible\(visible\)/);
-  assert.match(visibility, /ctx\.autoTranslate\.resumeCurrentPage\(\)/);
-  assert.match(visibility, /ctx\.autoTranslate\.pauseCurrentPage\(\)/);
+  // 两下都报上名来：这是显隐干的。停不上闩、继续也不解闩 —— 他在 popup 上按下
+  // 的那句「这一页先别翻了」不归这个开关撤销（见 auto-status-wiring 那一条）。
+  assert.match(visibility, /ctx\.autoTranslate\.resumeCurrentPage\('hidden'\)/);
+  assert.match(visibility, /ctx\.autoTranslate\.pauseCurrentPage\('hidden'\)/);
   // 悬浮球和「翻译整页」都走它，不自己动 state.translationsVisible ——
   // 自己写那个字段就是把暂停这一半漏掉，而漏掉的症状要等到下一轮才看得见。
   for (const file of ['content/content-float-ball.js', 'content/content-page-translation.js']) {

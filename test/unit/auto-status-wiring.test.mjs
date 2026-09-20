@@ -134,6 +134,28 @@ test('显隐开关只收整页那一批 —— 划词译出来的一句不归它
   assert.match(code('content/page/insert.js'), /ctx\.applyTranslationVisibility\(translationEl\)/);
 });
 
+test('受管容器里那一句划词译文也不归显隐开关收', () => {
+  // 受管译文（PDF、漫画、Lexical 这类容器）没有自己的节点：译文是原文块的
+  // ::after，由一条文档级规则统管。所以上面那两个 :not() 在这里落不到实处 ——
+  // 一个挂在 <html> 上的属性会把**所有**受管译文一起关掉，连同刚划词译出来的
+  // 那一句；而且它管的是生成内容，接下来新划的一句照样不出来，直到整页译文
+  // 重新显示为止。规则里必须把一次性那一类让开。
+  const managed = code('content/content-managed-translation.js');
+  assert.match(managed, /const ONE_OFF_ATTR = 'data-ai-translator-managed-one-off';/);
+  assert.match(managed,
+    /\[\$\{HIDDEN_ATTR\}\] \[\$\{BLOCK_ATTR\}\]:not\(\[\$\{ONE_OFF_ATTR\}\]\)::after \{\s*content: none !important;/,
+    '藏译文的那条规则得把一次性那一类让开');
+
+  // 判据只有一条：句柄自己答不答得上 PAGE_TRANSLATION_SELECTOR。这里再按
+  // kind / className 判一遍的话，两处迟早各答各的。
+  assert.match(managed, /!handle\.matches\(ctx\.PAGE_TRANSLATION_SELECTOR\)/);
+  assert.match(managed, /if \(oneOff\) block\.setAttribute\(ONE_OFF_ATTR, ''\);\s*else block\.removeAttribute\(ONE_OFF_ATTR\);/);
+  // 块放回去的时候三个标记一起摘 —— 留一个下来，下一条译文借这个块时就带着
+  // 上一条的身份。
+  assert.match(managed,
+    /removeAttribute\(BLOCK_ATTR\);\s*entry\.block\.removeAttribute\(STATE_ATTR\);\s*entry\.block\.removeAttribute\(ONE_OFF_ATTR\);/);
+});
+
 test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的', () => {
   const insert = code('content/page/insert.js');
   // 插入点必须跟上当前的显隐状态。跟在哪一步由 clip-guard.test.mjs 钉着：得等
@@ -195,7 +217,7 @@ test('藏着译文时按「继续」，先把译文放回来', () => {
   const auto = code('content/content-auto-translate.js');
   assert.match(
     auto,
-    /function resumeCurrentPage\(\) \{[\s\S]{0,320}?ctx\.state\.translationsVisible === false[\s\S]{0,120}?ctx\.revealHiddenTranslations\(\);\s*return;/,
+    /function resumeCurrentPage\(cause\) \{[\s\S]{0,520}?ctx\.state\.translationsVisible === false[\s\S]{0,120}?ctx\.revealHiddenTranslations\(\);\s*return;/,
     '「继续」没有把译文放回来'
   );
   // 放回来这件事只有显隐层做得了，这里不该自己改标记或者摘类名。
@@ -210,7 +232,7 @@ test('popup 那一行印「继续」的时候，页面那边真的会继续', ()
   const auto = code('content/content-auto-translate.js');
   assert.match(
     auto,
-    /function resumeCurrentPage\(\) \{\s*if \(status !== STATUS\.PAUSED && status !== STATUS\.ERROR\) return;/,
+    /function resumeCurrentPage\(cause\) \{\s*if \(status !== STATUS\.PAUSED && status !== STATUS\.ERROR\) return;/,
     '页面那边的「继续」门变了'
   );
 
@@ -478,14 +500,26 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
   assert.match(auto, /let pausedByUser = false;/);
   assert.match(auto, /if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{/, 'start() 得认这道闩');
 
-  const pause = auto.slice(auto.indexOf('function pauseCurrentPage()'), auto.indexOf('function resumeCurrentPage()'));
-  assert.match(pause, /pausedByUser = true;/);
+  const pause = auto.slice(auto.indexOf('function pauseCurrentPage('), auto.indexOf('    /**\n     * 「继续翻这一页」'));
+  assert.match(pause, /if \(cause !== 'hidden'\) pausedByUser = true;/,
+    '藏译文那一停不上闩：start() 看 translationsVisible 已经拦着了，再上一道就会被一次「显示译文」顺手解开');
 
   // 解闩的只有用户自己后说的那两句（继续 / 翻译整页），外加「换了一页」。
   assert.equal((auto.match(/pausedByUser = false;/g) || []).length, 4,
     '一处声明、三处解闩（resumeCurrentPage / markPageExplicit / onRouteChange），多一处就是又开了一条自己会解闩的路');
-  const resume = auto.slice(auto.indexOf('function resumeCurrentPage()'), auto.indexOf('function markPageExplicit()'));
+  const resume = auto.slice(auto.indexOf('function resumeCurrentPage('), auto.indexOf('    /**\n     * 用户在这一页点了「翻译整页」'));
   assert.match(resume, /pausedByUser = false;/);
+  // 解铃还须系铃人：把译文放回来不等于撤销他在 popup 上按下的暂停。越过这道闩
+  // 的话，藏一下再显示一下就把暂停洗掉了，而他从头到尾没碰过那颗按钮。
+  assert.match(resume, /if \(cause === 'hidden'\) \{\s*if \(pausedByUser\) return;\s*\} else \{/,
+    '带 hidden 的继续不解闩，而且闩还在就得原地停住');
+  const visibility = code('content/page/visibility.js');
+  assert.match(visibility,
+    /resumeCurrentPage\('hidden'\);\s*else ctx\.autoTranslate\.pauseCurrentPage\('hidden'\);/,
+    '显隐层这两下都要报上名来');
+  assert.match(code('content/content-messaging.js'),
+    /pauseCurrentPage\(\);\s*else ctx\.autoTranslate\.resumeCurrentPage\(\);/,
+    'popup 那两下是用户自己说的，不带 cause');
   const explicit = auto.slice(auto.indexOf('function markPageExplicit()'), auto.indexOf('function onRouteChange('));
   assert.match(explicit,
     /const wasHeld = pausedByUser;\s*pausedByUser = false;\s*if \(explicit && !wasHeld\) return;/,
