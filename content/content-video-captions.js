@@ -21,6 +21,14 @@
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';
   const RETRY_COOLDOWN_MS = 8000;
 
+  // 一次往前译多远。从前是「整条轨道，一次译完」——一小时的讲座在观众看到第二句
+  // 之前就把全片发去了云端，而其中绝大多数他不会看到（他会跳、会关、会只听开头
+  // 三分钟）。按播放头往前开一扇窗，窗随播放头走：看到哪里，译到哪里往前五分钟。
+  const WINDOW_MS = 5 * 60 * 1000;
+  // 「只看原文」那一档：屏幕上此刻一个译文字都没在用。仍然预译，但窗小得多——
+  // 押的是「他可能马上切回双语」，而不是「他会把整片看完」。
+  const NATIVE_WINDOW_MS = 30 * 1000;
+
   const state = {
     // `enabled` is the user's switch; `active` is whether a translating
     // provider is attached. They used to be the same thing, and that is why the
@@ -45,6 +53,13 @@
     dismissed: false,
     translating: false,
     lastTriggerMs: 0,
+    // 「原字幕此刻是开着的吗」的上一次观察，和「别再替他开了」那道闩。
+    // 两者的生命周期不同，见 syncNativeCaptions() / resetForVideo()。
+    sawNativeOn: false,
+    autoEnableBlocked: false,
+    // 按过「开启原字幕」，而且按了个空——这段视频是真没有字幕可开。菜单据此不再
+    // 提供那一项，见 captionStatus()。按视频清。
+    nativeUnavailable: false,
     video: null,
     lastNowMs: 0,
     controlsTimer: null,
@@ -441,9 +456,28 @@
   }
 
   // ------------------------------------------------------------ translation
+  /** 整页那一面的代次号。调度层没起来（它可以没起来）时是 0，两边都对不上就不比。 */
+  function sessionVersion() {
+    const auto = ctx.autoTranslate;
+    if (!auto || !auto.state) return 0;
+    const snap = auto.state();
+    return snap && snap.sessionVersion || 0;
+  }
+
   async function translateCues(cues) {
     if (state.skipTranslation || !cues.length) return true;
     if (ctx.isExtensionContextAvailable && !ctx.isExtensionContextAvailable()) return false;
+
+    // 发请求那一刻这批字幕属于谁。await 之下这两样都会变——观众在播放器里换一门
+    // 字幕语言（trackId 变），或者换了目标语言 / 换了模型（调度层翻篇）。下面写回
+    // 前拿它们对一次，对不上就整批丢掉。
+    //
+    // trackId 尤其要在这里存下来：getCueKey() 读的是 state.trackId **此刻**的值，
+    // 而回来时那已经是新轨道的号了——上一门语言的译文会被照着新轨道的键写进缓存，
+    // 于是换一次字幕语言，画面上出现的是上一门语言译出来的句子，而且因为键是对的，
+    // 它永远不会被重译掉。
+    const trackId = state.trackId;
+    const version = sessionVersion();
 
     const texts = cues.map((cue) => cue.text);
     let response;
@@ -455,14 +489,27 @@
         delimiter: DELIMITER,
       }));
     } catch (error) {
-      markBatchFailed(cues);
+      markBatchFailed(cues, trackId);
       return false;
     }
 
     if (!response || response.error || !Array.isArray(response.translations)) {
-      markBatchFailed(cues);
+      markBatchFailed(cues, trackId);
       return false;
     }
+
+    // 条数对不上就整批作废。上游两条路径今天都保证条数相等（AI 那条段数不等时自己
+    // 退回编号法，内置那条逐条 push），所以这不是在修一个线上 bug——它防的是下标错
+    // 位：短一条，尾部那几句会一直留在 pendingKeys 里，既不重试也不显示，而且
+    // isSegmentTranslatable() 认 pendingKeys，它们从此对任何一轮都是「已经在译了」。
+    if (response.translations.length !== cues.length) {
+      markBatchFailed(cues, trackId);
+      return false;
+    }
+
+    // 轨道或代次已经翻篇：这批译文说的是另一回事了。pendingKeys 得放开——它们是按
+    // 旧 trackId 记的键，clearTrack() 已经连同整张表一起清掉了，这里不必再动。
+    if (trackId !== state.trackId || version !== sessionVersion()) return false;
 
     response.translations.forEach((translation, index) => {
       const cue = cues[index];
@@ -477,7 +524,11 @@
     return true;
   }
 
-  function markBatchFailed(cues) {
+  // trackId 由调用方传进来，理由和 translateCues 里存它的理由是同一个：失败回来时
+  // state.trackId 可能已经是别人了，照它记的冷却会扣在新轨道的句子上。轨道已经翻篇
+  // 的话这批键连同整张表早就被 clearTrack() 清了，什么都不必记。
+  function markBatchFailed(cues, trackId) {
+    if (trackId !== undefined && trackId !== state.trackId) return;
     const retryAt = Date.now() + RETRY_COOLDOWN_MS;
     cues.forEach((cue) => {
       const key = getCueKey(cue);
@@ -501,27 +552,43 @@
     return 0;
   }
 
+  /**
+   * 这一轮往前译多远（毫秒），Infinity = 不设限。
+   *
+   * 只有花钱的那条路需要设限。内置引擎是本机跑的，不联网、不计费，整条轨道一次
+   * 译完的代价只是几十毫秒 CPU——给它设窗反而会让观众往回拖进度条时重译。
+   */
+  function translationWindowMs() {
+    const builtin = ctx.builtinTranslator;
+    if (builtin && builtin.isActive && builtin.isActive()) return Infinity;
+    return currentDisplay().useNative ? NATIVE_WINDOW_MS : WINDOW_MS;
+  }
+
   // Pick the batch nearest the playhead that still has translatable segments, so
-  // what the viewer is watching translates first while the whole track fills in.
-  function pickNextBatch() {
+  // what the viewer is watching translates first while the rest fills in ahead
+  // of him. Batches past `limitMs` from the playhead are left for later: the
+  // window slides as he watches, and a seek re-centres it on the next trigger.
+  function pickNextBatch(limitMs) {
     const wallNow = Date.now();
     const playhead = state.lastNowMs;
     let best = null;
     let bestDist = Infinity;
     for (const batch of state.batches) {
+      const dist = batchDistance(batch, playhead);
+      if (dist > limitMs) continue;
+      if (dist >= bestDist) continue;
       const todo = batch.filter((seg) => isSegmentTranslatable(seg, wallNow));
       if (!todo.length) continue;
-      const dist = batchDistance(batch, playhead);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = todo;
-      }
+      bestDist = dist;
+      best = todo;
     }
     return best;
   }
 
-  // Translate the entire track up front, nearest-to-playhead first. Safe to call
-  // often: it no-ops while a pass runs and briefly after a failed batch.
+  // Translate ahead of the playhead, nearest first. Safe to call often: it
+  // no-ops while a pass runs and briefly after a failed batch, and it stops at
+  // the window's edge rather than at the end of the track — handleTimeUpdate
+  // calls it again as the playhead advances, which is what moves the window.
   async function ensureTrackTranslated(force) {
     if (state.skipTranslation || state.dismissed || state.translating) return;
     const now = Date.now();
@@ -529,8 +596,9 @@
     state.lastTriggerMs = now;
     state.translating = true;
     try {
+      const limitMs = translationWindowMs();
       while (state.active && !state.skipTranslation && !state.dismissed) {
-        const batch = pickNextBatch();
+        const batch = pickNextBatch(limitMs);
         if (!batch || !batch.length) break;
         batch.forEach((seg) => state.pendingKeys.add(getCueKey(seg)));
         const ok = await translateCues(batch);
@@ -685,6 +753,89 @@
     return state.provider || core.selectProvider(ctx.captionProviders || []);
   }
 
+  // --------------------------------------------- turning the page's own on
+  // 「没开原字幕的视频，替我把原字幕点开」。整轮自动化里只有这一件事**改动播放器
+  // 自己的状态**，所以它有自己的开关（autoEnableCaptions，默认关），而且有一道只
+  // 合不开的闩：见 syncNativeCaptions()。
+  //
+  // 闸门用的是 siteRefused 而不是「这个站点开着自动翻」。视频站点没上过内置
+  // always 名单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false——拿它
+  // 当闸门，这件事在它最该发生的地方一次也不会发生。要问的是「这个站点是不是被
+  // 明令拒绝的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
+  function autoEnableAllowed() {
+    if (!state.active || state.dismissed) return false;
+    if (!getSetting('autoEnableCaptions')) return false;
+    if (state.autoEnableBlocked) return false;
+    const auto = ctx.autoTranslate;
+    if (auto && auto.state && auto.state().siteRefused) return false;
+    return true;
+  }
+
+  /**
+   * 每个心跳看一眼原字幕开着没有，该开就开，该收手就永远收手。
+   *
+   * 那道闩是这件事的全部风险所在：观众自己去播放器里把字幕关掉了，我们下一个心跳
+   * 又把它点回来——1.5 秒一次，他关不掉。所以**「看见开着」之后再「看见关了」，
+   * 就再不自动开第二次**，而且不问是谁开的：他本来就开着、自己关掉，和我们开的、
+   * 他关掉，在他眼里是同一件事。
+   *
+   * sawNativeOn 按视频清（resetForVideo），autoEnableBlocked 按会话留——换一个视频
+   * 不算他改了主意，YouTube 自己也是这么记 CC 偏好的。要越过这道闩只有一条路：
+   * 菜单里那一项「开启原字幕」，那是他自己按的（ctx.enableNativeCaptions）。
+   */
+  function syncNativeCaptions() {
+    const provider = state.provider;
+    if (!provider || !provider.isCaptionsEnabled || !provider.enableNativeCaptions) return;
+    let on = false;
+    try {
+      on = !!provider.isCaptionsEnabled();
+    } catch (e) {
+      return; // 播放器还没搭起来，这一拍什么都不知道，就什么都不做
+    }
+    if (on) {
+      state.sawNativeOn = true;
+      // 开起来了，就不存在「这段视频没有字幕」那回事。
+      state.nativeUnavailable = false;
+      return;
+    }
+    if (state.sawNativeOn) {
+      state.sawNativeOn = false;
+      state.autoEnableBlocked = true;
+      return;
+    }
+    if (!autoEnableAllowed()) return;
+    try {
+      // 按不动不算数：控制条还没上来（下一个心跳再试），或者这段视频根本没有字幕
+      // （那就每拍两次 querySelector，便宜到不值得记状态）。
+      provider.enableNativeCaptions();
+    } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
+  }
+
+  /**
+   * 「开启原字幕」——菜单里那一项，观众自己按的。
+   *
+   * 和 syncNativeCaptions 的自动路径共用同一个 provider 方法，但越过闩、也越过
+   * autoEnableCaptions 那个开关：他按了，就是他要。
+   *
+   * @returns {boolean} 有没有按到东西。false = 这段视频没有可开的字幕。
+   */
+  ctx.enableNativeCaptions = function() {
+    const provider = state.provider || candidateProvider();
+    if (!provider || !provider.enableNativeCaptions) return false;
+    state.autoEnableBlocked = false;
+    let ok = false;
+    try {
+      ok = !!provider.enableNativeCaptions();
+    } catch (e) { /* 同上 */ }
+    // 按了个空：两个 provider 在这里的 false 说的都是「这段视频没有可开的字幕」
+    // （YouTube 的 CC 按钮 disabled，或者页面一条字幕轨都没列）。记下来，下面那行
+    // syncControls() 才有话可说——否则菜单会在 1.5 秒后的下一拍把同一个按钮再摆
+    // 出来，按下去还是没反应。
+    state.nativeUnavailable = !ok;
+    syncControls();
+    return ok;
+  };
+
   /** The menu's status line: which track we are on, or why there is none. */
   function captionStatus(provider) {
     if (state.skipTranslation) return { kind: 'same-language' };
@@ -693,7 +844,22 @@
     try {
       if (provider && provider.getTrackLabel) label = provider.getTrackLabel() || '';
     } catch (e) { /* a provider probing for DOM that is not there */ }
-    return label ? { kind: 'track', label } : { kind: 'none' };
+    if (label) return { kind: 'track', label };
+    // 没有 cue，也没有一条开着的原字幕。这不是「这段视频没有字幕」——那句话我们
+    // 说不准——而是「原字幕还没点开」，菜单据此给的是一个按钮而不是一句死话。
+    //
+    // 问的是传进来的这个 provider，不是 isCaptionsEnabled()（那读的是**已接上的**
+    // 那个）：功能关着的时候按钮照样在（那正是它的用处），而那时 state.provider 是
+    // null，拿它去问，一个原字幕开得好好的播放器也会被说成「还没点开」。
+    // 默认当它开着——拿不准就不摆这个按钮，宁可少给一条路，不要给一条按了没反应的。
+    let nativeOn = true;
+    try {
+      nativeOn = !provider || !provider.isCaptionsEnabled || !!provider.isCaptionsEnabled();
+    } catch (e) { /* 播放器还没搭起来，下一拍再说 */ }
+    if (provider && provider.enableNativeCaptions && !nativeOn && !state.nativeUnavailable) {
+      return { kind: 'needs-native' };
+    }
+    return { kind: 'none' };
   }
 
   /**
@@ -722,6 +888,9 @@
       controls.unmount();
       return;
     }
+    // 心跳是这件事唯一的驱动：原字幕关着的时候一条 cue 都不会来，handleTimeUpdate
+    // 在 !state.cues.length 那一行就返回了，谁也不会问「要不要替他点开」。
+    syncNativeCaptions();
     let host = null;
     let video = null;
     try {
@@ -800,6 +969,12 @@
     state.skipTranslation = false;
     state.dismissed = false;
     state.translating = false;
+    // 换一个视频＝重新观察一次。播放器在 SPA 跳转中会把整个字幕层拆掉重建，
+    // 不清的话那一瞬的「不见了」会被读成「他关掉了」，闩就白落了。
+    // autoEnableBlocked 刻意不清：那是他的意思，整个会话都算数。
+    state.sawNativeOn = false;
+    // 这一条说的是上一段视频有没有字幕，对下一段视频什么都不说。
+    state.nativeUnavailable = false;
     state.lastTriggerMs = 0;
     state.lastNowMs = 0;
     if (state.video) {

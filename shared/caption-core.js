@@ -329,20 +329,31 @@
    * entries (isDefault is the `default` attribute on the `<track>` element,
    * which a TextTrack itself does not expose).
    *
-   * We translate the subtitles the viewer already has on. We never turn
-   * subtitles on for them, and a track's mode is what says which is which:
+   * By default we translate the subtitles the viewer already has on and turn
+   * none on ourselves, and a track's mode is what says which is which:
    * 'showing' is the browser drawing the track, and 'hidden' is a player that
    * loads the cues and draws them itself (video.js, Vimeo and JW all do).
    *
    * Everything left at 'disabled' is a language the page merely offers —
    * Vimeo's player lists four and shows none until asked — so choosing among
-   * those would put subtitles on screen that nobody asked for, in whichever
-   * language happened to be listed first. Returning null is therefore an
-   * ordinary answer and not a failure: the provider stays attached, and this
-   * runs again the moment a track's mode changes.
+   * those puts subtitles on screen that nobody asked for, in whichever language
+   * happened to be listed first. Returning null is therefore an ordinary answer
+   * and not a failure: the provider stays attached, and this runs again the
+   * moment a track's mode changes.
+   *
+   * `options.allowDisabled` lifts that last part, and **only the viewer's own
+   * `autoEnableCaptions` may set it** — "turn subtitles on for me" is a change
+   * to the page's own state, so it is a thing to be asked for rather than
+   * guessed at. See the rungs below for which disabled track then wins, and
+   * CLAUDE.md's "Video Subtitle Translation" for why the older, absolute rule
+   * was changed rather than quietly worked around.
+   *
+   * @param {Array<{track: TextTrack, isDefault: boolean}>} entries
+   * @param {{allowDisabled?: boolean, audioLang?: string}} [options]
    */
-  function pickSubtitleTrack(entries) {
+  function pickSubtitleTrack(entries, options) {
     const list = entries || [];
+    const opts = options || {};
     const inMode = (mode) => {
       const matching = list.filter((entry) => entry.track && entry.track.mode === mode);
       if (!matching.length) return null;
@@ -350,7 +361,33 @@
       // page marked default is its answer to which of them matters.
       return matching.find((entry) => entry.isDefault) || matching[0];
     };
-    return inMode('showing') || inMode('hidden') || null;
+    const picked = inMode('showing') || inMode('hidden');
+    if (picked) return picked;
+    if (!opts.allowDisabled) return null;
+
+    // The viewer asked us to turn subtitles on for them (autoEnableCaptions),
+    // so a track nobody has switched on is now a candidate. Which one:
+    //
+    //   1. the one in the language being spoken. A `captions`/`subtitles` list
+    //      usually holds one transcription plus several translations of it, and
+    //      the transcription is the one worth translating — going through a
+    //      translation would be a second-hand copy of the dialogue.
+    //   2. the one the page marked `default` — its own answer to the question.
+    //   3. the first one listed.
+    //
+    // Rung 1 needs an audio language, which no browser reliably reports today
+    // (Chrome ships no `video.audioTracks`), so the caller hands over whatever
+    // it could establish and mostly that is nothing — see audioLangOf() in
+    // content/content-caption-providers.js. Rung 2 carries the weight in
+    // practice; rung 1 is there for the players and browsers that do say.
+    const disabled = list.filter((entry) => entry.track && entry.track.mode === 'disabled');
+    if (!disabled.length) return null;
+    const audio = getLangBase(opts.audioLang || '');
+    if (audio) {
+      const spoken = disabled.find((entry) => getLangBase(entry.track.language || '') === audio);
+      if (spoken) return spoken;
+    }
+    return disabled.find((entry) => entry.isDefault) || disabled[0];
   }
 
   /**

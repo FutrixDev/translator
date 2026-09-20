@@ -1428,3 +1428,62 @@ popup 上按了暂停，再从悬浮球菜单看一眼原文、切回译文，�
 无规则、缓存跟路径走），`test/e2e/page-translation-site-rules.spec.js` 四条（X / HN /
 arXiv / old.reddit.com）。四条 e2e 逐条反向验证过：把 `ctx.resolveSiteAdapter` 换成
 `() => null`，四条全红。
+
+### PR-9：字幕面接入
+
+本文 §8 说的是「复用」，落地时有五处不同。
+
+**1. 闸门用 `siteRefused`，不是 `siteAuto`。** §8 原说字幕这一面跟着整页那一面的
+结论走。真接上去发现它在最该生效的地方永远是 false：`SiteRules.decide()` 的阶梯里，
+youtube.com 既不在拦截名单、也不在内置 `always` 名单，答案是 `ask`，于是
+`siteAuto` 恒假 —— 拿它当闸门，替观众点开原字幕这件事在 YouTube 上一次也不会发生。
+要问的是另一句话：「这个站点是不是**明令拒绝**了我们自己动手」。那三条
+（总开关关着、在拦截名单里、用户对这个站点说过 never）现在由
+`shared/site-rules.js` 的 `REFUSALS` 定义，`decide()` 的返回值多一个 `refused`
+字段。**分类留在 SiteRules 里，调用方只读 `.refused`** —— 否则每个调用方都得把理由
+表重述一遍，而 `auto-translate-wiring.test.mjs` 的守卫正是在防这个（它不许调度层里
+出现 `blocklist`/`isBlocked`，第一版写法撞上了，撞对了）。
+
+**2. `autoEnableCaptions` 是本轮唯一保留的独立开关。** UX 设计反复说的是「少一个
+开关」，这一个留下来，因为它和其余的自动化不是一类事：别的都只是往页面里插我们自己
+的节点，它**改动播放器自己的状态**（YouTube 的 CC 按钮、一条 `<track>` 的 mode）。
+有副作用的那一件事要单独同意。默认关 —— 关着的时候，字幕这一面和从前一模一样。
+
+**3. 那道闩只合不开，而且不问是谁开的。** 心跳 1.5 秒一拍，所以「观众关掉、我们点
+回来」不是打扰，是他**关不掉**。`syncNativeCaptions()` 因此记两件事：`sawNativeOn`
+（看见开着，按视频清）和 `autoEnableBlocked`（看见开着之后又看见关了，按会话留）。
+第一版写了三个标志，想分清「我们开的他关掉」和「他本来就开着又自己关掉」——想清楚
+之后发现这个区分是错的：在他眼里是同一件事，而且分错一次的代价就是上面那个打扰。
+越过闩只有一条路：菜单里的「开启原字幕」，那是他自己按的。
+
+**4. 往前译加了窗，而且只给花钱的那条路加。** §8 没提窗口，原实现是整条轨道译到
+底。内置引擎免费且本地，窗是 `Infinity`（不设）；云端那条路默认 5 分钟，在「只看
+原文」模式下缩到 30 秒 —— **缩不是停**，切回双语要立刻有译文。
+`translationWindowMs()` 是这三句话的唯一出处。
+
+**5. 顺手修了一个既有的真 bug。** `getCueKey(cue)` 是在 await **之后**算的，读的是
+当时的 `state.trackId`：上一条轨道的译文晚到，会用新轨道的 key 存进缓存 —— 而且因为
+key 是合法的，这批错语言的译文再也不会被重译。现在 trackId 和 sessionVersion 在发
+请求时就捕获，对不上就整批丢掉。另加 §8 要的长度守卫
+（`translations.length !== cues.length` → 走既有的冷却重试）；`parseNumberedResponse`
+在所有分支上都恰好 push `expectedCount` 条，所以这道守卫不会误伤既有的 mock。
+
+**6. 状态行问的是「候选」provider，不是「已接上」那个。** 按钮在功能关着的时候也
+要在（那正是它的用处），而那时 `state.provider` 是 null —— 第一版的
+`captionStatus()` 走的是引擎内部的 `isCaptionsEnabled()`（读 `state.provider`），
+于是一个原字幕开得好好的 YouTube 播放器会被说成「原字幕还没开启」。现在问的是
+`syncControls()` 传进来的那个候选 provider，而且**拿不准就当它开着** —— 宁可少给
+一条路，不要给一条按了没反应的。
+
+**7. 「按了个空」要记下来，否则 1.5 秒后同一个死按钮又摆回来。** YouTube 在没有
+字幕的视频上把自己的 CC 按钮 disable 掉，`enableNativeCaptions()` 于是返回 false。
+第一版由菜单自己把状态行改成「未检测到字幕轨」，但下一拍心跳 `sync()` 会把
+`ui.info` 整个覆盖掉，那句话活不过 1.5 秒，按钮回来，按下去还是没反应。改成引擎记
+一个 `nativeUnavailable`（按视频清，原字幕一开起来就清），菜单那边因此**一行状态都
+不用自己造** —— `ctx.enableNativeCaptions()` 返回前已经 `syncControls()` 过了。
+
+**8. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
+菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`
+自己那条 `display: flex` 一来就把它压掉了 —— JS 照样置 hidden，屏幕上那一行纹丝不
+动（e2e 抓到的：Playwright 说它 visible，DOM 里 `hidden=""` 明明在）。菜单根节点早
+就为同一件事单独写过一条，这是第二处，由 `caption-core.test.mjs` 钉住。

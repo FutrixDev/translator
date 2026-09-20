@@ -208,6 +208,48 @@ test('subtitles the page merely offers are left off', () => {
   assert.equal(core.pickSubtitleTrack([]), null);
 });
 
+// ------------------------------------------- turning subtitles on, on request
+test('with allowDisabled off, a track the page merely offers stays off', () => {
+  // 默认档没有变过：传 undefined、传 {}、传 {allowDisabled:false} 是同一件事。
+  for (const options of [undefined, {}, { allowDisabled: false }, { audioLang: 'en' }]) {
+    assert.equal(core.pickSubtitleTrack([entry('disabled', 'en', true)], options), null);
+  }
+});
+
+test('allowDisabled prefers the track that matches what is being spoken', () => {
+  // 一段英文演讲，播放器列了四门字幕都没开。挑「默认」那条会挑到页面语言的那门
+  // 译制字幕——那是一条已经翻过一次的中文字幕，我们再翻一次得到的是中文译中文。
+  const picked = core.pickSubtitleTrack([
+    entry('disabled', 'zh-CN', true),
+    entry('disabled', 'de'),
+    entry('disabled', 'en-US'),
+  ], { allowDisabled: true, audioLang: 'en' });
+  assert.equal(picked.track.language, 'en-US');
+});
+
+test('allowDisabled falls back to the page\'s own default, then to the first', () => {
+  assert.equal(core.pickSubtitleTrack([
+    entry('disabled', 'de'),
+    entry('disabled', 'fr', true),
+  ], { allowDisabled: true, audioLang: 'ja' }).track.language, 'fr');
+
+  assert.equal(core.pickSubtitleTrack([
+    entry('disabled', 'de'),
+    entry('disabled', 'fr'),
+  ], { allowDisabled: true }).track.language, 'de');
+
+  assert.equal(core.pickSubtitleTrack([], { allowDisabled: true }), null);
+});
+
+test('allowDisabled never overrules a track that is already on', () => {
+  // 观众自己开着一门字幕，而声道是另一门语言：动他的选择比留着更糟。
+  const picked = core.pickSubtitleTrack([
+    entry('showing', 'fr'),
+    entry('disabled', 'en'),
+  ], { allowDisabled: true, audioLang: 'en' });
+  assert.equal(picked.track.language, 'fr');
+});
+
 // -------------------------------------------------------- translation request
 test('the track states the source language, so detection never has to guess', () => {
   // A subtitle line is a few words — too short to identify. Without this the
@@ -455,4 +497,118 @@ test('the controls load after the providers and before the engine', () => {
   const manifest = repoFile('manifest.json');
   assert.ok(manifest.indexOf('content/content-caption-providers.js') < manifest.indexOf('content/content-caption-controls.js'));
   assert.ok(manifest.indexOf('content/content-caption-controls.js') < manifest.indexOf('content/content-video-captions.js'));
+});
+
+// -------------------------------------------------- turning subtitles on
+// 这一轮的自动化里，只有这一件事**改动播放器自己的状态**。其余的（整页翻译、字
+// 幕覆盖层）都只是往页面里插我们自己的节点，插错了刷新一下就没了；把播放器的 CC
+// 点开是留在观众账号里的。所以它有自己的开关、默认关着，而且有一道只合不开的闩。
+test('替观众开原字幕是一个单独的开关，默认关着', () => {
+  const defaults = repoFile('shared/default-settings.js');
+  assert.match(defaults, /autoEnableCaptions:\s*false/);
+
+  // 设置页那一格要写得进去，也要读得回来。
+  const options = repoFile('options/options.js');
+  assert.match(options, /autoEnableCaptions:\s*elements\.autoEnableCaptions\.checked/);
+  assert.match(options, /elements\.autoEnableCaptions\.checked\s*=\s*!!result\.autoEnableCaptions/);
+  assert.match(repoFile('options/options.html'), /id="autoEnableCaptions"/);
+
+  // 改了要当场生效，而不是等下一次刷新：字幕这一面靠 CAPTION_SETTING_KEYS 认领
+  // 哪些键值得重新 applyCaptionSettings()。
+  assert.match(repoFile('content/content-bootstrap.js'), /'autoEnableCaptions'/);
+});
+
+test('自动开原字幕过不了两道闸门：开关，和这个站点被不被明令拒绝', () => {
+  const engine = repoFile('content/content-video-captions.js');
+  const gate = engine.match(/function autoEnableAllowed\(\)[\s\S]*?\n  \}/);
+  assert.ok(gate, '找不到 autoEnableAllowed()');
+  assert.match(gate[0], /getSetting\('autoEnableCaptions'\)/);
+  assert.match(gate[0], /siteRefused/);
+  assert.match(gate[0], /state\.autoEnableBlocked/);
+
+  // 闸门问的是「被拒绝了吗」而不是「开着自动翻吗」：视频站点在整页那一面多半是
+  // ask，拿 siteAuto 当闸门等于这件事永远不发生。
+  assert.equal(/autoEnableAllowed[\s\S]{0,400}?siteAuto/.test(engine), false);
+
+  // 调度层只是转述 SiteRules 的答案，分类留在阶梯那边。
+  assert.match(repoFile('content/content-auto-translate.js'), /\.refused === true/);
+});
+
+test('观众自己把字幕关掉之后，就不再替他开第二次', () => {
+  const engine = repoFile('content/content-video-captions.js');
+  const latch = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
+  assert.ok(latch, '找不到 syncNativeCaptions()');
+  // 看见开着 → 记下；再看见关了 → 落闩。少了任何一半，1.5 秒一次的心跳会把他
+  // 刚关掉的字幕点回来，他关不掉。
+  assert.match(latch[0], /state\.sawNativeOn\s*=\s*true/);
+  assert.match(latch[0], /state\.autoEnableBlocked\s*=\s*true/);
+
+  // 闩按会话留，sawNativeOn 按视频清：播放器在 SPA 跳转里会把字幕层拆掉重建，
+  // 不清的话那一瞬的「不见了」会被读成「他关掉了」。
+  const reset = engine.match(/function resetForVideo\(\)[\s\S]*?\n  \}/);
+  assert.match(reset[0], /state\.sawNativeOn\s*=\s*false/);
+  assert.equal(/autoEnableBlocked\s*=/.test(reset[0]), false, 'resetForVideo 不该动那道闩');
+
+  // 越闩只有一条路：他自己在菜单里按的那一下。
+  assert.match(engine, /ctx\.enableNativeCaptions = function[\s\S]*?state\.autoEnableBlocked = false/);
+  assert.match(repoFile('content/content-caption-controls.js'), /ctx\.enableNativeCaptions\(\)/);
+});
+
+test('allowDisabled 只从 enableNativeCaptions 那条路进来', () => {
+  // 它是「把页面只是提供的那几门字幕挑一门出来开」的许可。任何别的调用点拿到
+  // 它，默认行为就变成了「替所有人开字幕」，而那是整个功能唯一不可逆的一步。
+  const providers = repoFile('content/content-caption-providers.js');
+  const calls = providers.match(/syncSelection\((true)?\)/g) || [];
+  assert.ok(calls.length >= 3, '至少三处 syncSelection 调用');
+  assert.equal(calls.filter((c) => c === 'syncSelection(true)').length, 1);
+  const enable = providers.match(/enableNativeCaptions\(\)\s*\{[\s\S]*?syncSelection\(true\)/);
+  assert.ok(enable, 'syncSelection(true) 不在 enableNativeCaptions 里');
+
+  // 两个 provider 都得答得上这句话，否则引擎在那种页面上只能干等。
+  assert.equal((providers.match(/enableNativeCaptions\(\)\s*\{/g) || []).length, 2);
+});
+
+test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
+  // 从前是「整条轨道一次译完」：一小时的讲座在观众看到第二句之前就整片发去了云
+  // 端，其中绝大多数他不会看到。
+  const engine = repoFile('content/content-video-captions.js');
+  const window = engine.match(/function translationWindowMs\(\)[\s\S]*?\n  \}/);
+  assert.ok(window, '找不到 translationWindowMs()');
+  assert.match(window[0], /builtin\.isActive\(\)\) return Infinity/);
+  assert.match(window[0], /useNative \? NATIVE_WINDOW_MS : WINDOW_MS/);
+
+  // 窗要真的拦住批次，而不是算出来放着不用。
+  assert.match(engine, /function pickNextBatch\(limitMs\)/);
+  assert.match(engine, /if \(dist > limitMs\) continue;/);
+  assert.match(engine, /pickNextBatch\(limitMs\)/);
+});
+
+test('一批译文回来时轨道或代次已经翻篇，就整批丢掉', () => {
+  // getCueKey() 读的是 state.trackId **此刻**的值。观众在播放器里换一门字幕语
+  // 言，上一门语言的译文会照着新轨道的键写进缓存——而且因为键是对的，它永远不会
+  // 被重译掉。
+  const engine = repoFile('content/content-video-captions.js');
+  const fn = engine.match(/async function translateCues\(cues\)[\s\S]*?\n  \}/);
+  assert.ok(fn, '找不到 translateCues()');
+  // 存在 await 之前。
+  const beforeAwait = fn[0].slice(0, fn[0].indexOf('await ctx.requestTranslation'));
+  assert.match(beforeAwait, /const trackId = state\.trackId;/);
+  assert.match(beforeAwait, /const version = sessionVersion\(\);/);
+  assert.match(fn[0], /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) return false;/);
+  // 条数对不上也整批作废：短一条，尾部那几句会永远留在 pendingKeys 里。
+  assert.match(fn[0], /response\.translations\.length !== cues\.length/);
+});
+
+test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏得住', () => {
+  // `[hidden]` 的 display:none 只是 UA 规则，菜单项自己那条 `display: flex` 一来
+  // 就把它压掉了——JS 照样把 hidden 置上，屏幕上那一行纹丝不动。菜单根节点早就为
+  // 同一件事单独写过一条（`#ai-translator-caption-menu[hidden]`），这是第二处。
+  const controls = repoFile('content/content-caption-controls.js');
+  assert.match(controls, /parts\.nativeItem\.hidden = !needsNative;/);
+  const css = repoFile('content/content.css');
+  assert.match(
+    css,
+    /#ai-translator-caption-menu \.ai-translator-caption-menu-item\[hidden\]\s*\{\s*display:\s*none;/,
+    '菜单项缺 [hidden] 规则：JS 藏不住它'
+  );
 });

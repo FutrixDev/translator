@@ -124,6 +124,8 @@
         pageLang,
         // 「这个站点开着自动翻」是一句和 status 不同的话，见 siteAuto()。
         siteAuto: siteAuto(),
+        // 「这个站点是被明令拒绝的」—— 和 siteAuto 不是一对反义词，见 siteRefused()。
+        siteRefused: siteRefused(),
         error: lastError,
         sessionVersion: guard.version(),
         queued: queue.size,
@@ -197,6 +199,13 @@
      */
     function siteAuto() {
       return resolve(pageLang, { explicit: false }).verdict === 'auto';
+    }
+
+    // 「这个站点不许我们自己动手」——哪几种情形算，由 SiteRules 自己说（它的
+    // REFUSALS），这里只是把答案转述出去。整页之外的自动化拿它当闸门，而不是拿
+    // siteAuto：两者中间隔着一大片 ask，理由写在 REFUSALS 那段注释里。
+    function siteRefused() {
+      return resolve(pageLang, { explicit: false }).refused === true;
     }
 
     /**

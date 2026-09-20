@@ -104,6 +104,7 @@
   // storage listener and the popup's message cannot drift apart.
   const CAPTION_SETTING_KEYS = [
     'enableYoutubeCaptionTranslation',
+    'autoEnableCaptions',
     'captionDisplayMode',
     'captionTranslationPosition',
     'captionPlayerButton',

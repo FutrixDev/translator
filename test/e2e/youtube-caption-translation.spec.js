@@ -407,7 +407,10 @@ test('the menu lists the five rows in order', async ({ page, context }) => {
 
   const menu = page.locator('#ai-translator-caption-menu');
   await expect(menu).toBeVisible();
-  const labels = await menu.locator('[role="menuitem"] .ai-translator-caption-menu-label').allTextContents();
+  // :not([hidden]) — the menu carries one conditional row («开启原字幕», for a
+  // video whose subtitles are off), and allTextContents() does not care about
+  // visibility. This player has subtitles on, so five is the whole menu.
+  const labels = await menu.locator('[role="menuitem"]:not([hidden]) .ai-translator-caption-menu-label').allTextContents();
   expect(labels).toEqual([
     '开启字幕翻译',
     '字幕显示类型',
@@ -546,4 +549,68 @@ test('on the split control bar the button joins the caption-side group', async (
     const first = group && group.firstElementChild;
     return !!first && first.classList.contains('ai-translator-caption-btn');
   })).toBe(true);
+});
+
+// ------------------------------------------------------------------- PR-9
+// 替观众按播放器自己的 CC 按钮。YouTube 上这件事尤其值——大多数视频没有人工字幕，
+// 而 CC 按钮点出来的自动字幕走的是同一个 /api/timedtext，拦截器照样收得到。
+
+/** The player as it looks with captions off, plus a CC button that records presses. */
+function ccOff(attrs = '') {
+  return html.replace(
+    '<button class="ytp-subtitles-button" aria-pressed="true"></button>',
+    `<button class="ytp-subtitles-button" aria-pressed="false" ${attrs}></button>
+     <script>
+       window.__ccClicks = 0;
+       const b = document.querySelector('.ytp-subtitles-button');
+       b.addEventListener('click', () => {
+         window.__ccClicks += 1;
+         if (!b.disabled) b.setAttribute('aria-pressed', 'true');
+       });
+     </script>`
+  );
+}
+
+test('with the setting on, the player’s own CC button gets pressed — once', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: true }, ccOff());
+
+  await expect.poll(() => page.evaluate(() => document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed')), { timeout: 8000 })
+    .toBe('true');
+
+  // Three more heartbeats. Captions are on now, so there is nothing to press —
+  // a second press would switch them back off.
+  await page.waitForTimeout(3 * 1500 + 300);
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
+});
+
+test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS, ccOff());
+  await page.waitForTimeout(3500);
+
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
+  expect(await page.evaluate(() => document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed'))).toBe('false');
+});
+
+test('a video with no captions at all says so, instead of offering the button again', async ({ page, context }) => {
+  // YouTube disables its own CC button on a video with no tracks. Pressing our
+  // row there presses nothing — and the menu has to say that and stop offering,
+  // or the next heartbeat puts the same dead button back 1.5s later.
+  await openPlayer(page, context, BASE_SETTINGS, ccOff('disabled'));
+
+  await page.locator('#ai-translator-caption-btn').click();
+  const menu = page.locator('#ai-translator-caption-menu');
+  const nativeRow = menu.locator('[data-action="native"]');
+  await expect(nativeRow).toBeVisible();
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('这个视频的原字幕没有开启');
+
+  await nativeRow.click();
+  // The menu stays open — there is something to read — and the row is gone.
+  await expect(menu).toBeVisible();
+  await expect(nativeRow).toBeHidden();
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
+
+  // And it stays gone across the heartbeat that would otherwise re-offer it.
+  await page.waitForTimeout(2000);
+  await expect(nativeRow).toBeHidden();
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
 });

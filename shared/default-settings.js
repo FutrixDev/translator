@@ -47,6 +47,11 @@
     skipTargetLanguageText: true,
     showTranslationOnly: false,
     enableYoutubeCaptionTranslation: false,
+    // 「没开原字幕的视频，替我把原字幕点开」。默认关，而且是本轮唯一保留的独立
+    // 开关：它**改动播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的
+    // mode），而其余的自动化只是往页面里插我们自己的节点。有副作用的那一件事要
+    // 单独同意 —— 关着的时候，字幕这一面的行为和从前一模一样。
+    autoEnableCaptions: false,
     enableImageOcrTranslation: true,
     // The hover shortcut button defaults on, matching background.js
     // defaultSettings. (There is no auto-translate setting: OCR is always

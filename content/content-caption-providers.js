@@ -103,6 +103,37 @@
       return !!document.querySelector('.ytp-caption-window-container');
     },
 
+    // Press the player's own CC button. Only the engine calls this — from
+    // syncNativeCaptions() when the viewer has asked for it in advance
+    // (autoEnableCaptions), or from ctx.enableNativeCaptions() when they press
+    // the menu's own row.
+    //
+    // Clicking YouTube's own control rather than reaching into the player's
+    // API: the button is what a viewer would press, so whatever it does — pick
+    // the default caption track, fall back to the auto-generated one, remember
+    // the choice for the next video — is what happens here too. Auto-generated
+    // captions come down the same /api/timedtext request, so the interceptor
+    // picks them up with no extra work, and that is most of why this is worth
+    // doing at all: the majority of YouTube videos have no human-written track.
+    //
+    // Returns whether there was anything to press — false means either the
+    // control bar is not up yet (the engine tries again on the next media
+    // event) or this video has no captions at all, which is not something a
+    // click can fix.
+    enableNativeCaptions() {
+      const button = document.querySelector('.ytp-subtitles-button');
+      if (!button) return false;
+      if (button.getAttribute('aria-pressed') === 'true') return true;
+      // YouTube disables the button outright on a video with no tracks.
+      if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
+      try {
+        button.click();
+      } catch (e) {
+        return false;
+      }
+      return true;
+    },
+
     // The player's own caption layer: already positioned over the video and
     // already inside the element that goes fullscreen.
     getOverlayHost() {
@@ -283,18 +314,53 @@
   }
 
   /**
+   * What language is being spoken, as far as anything on the page will say.
+   *
+   * Usually nothing will: Chrome ships no `video.audioTracks` at all, and a
+   * `lang` attribute on a `<video>` is rare. Both are read anyway because when
+   * one of them *is* there it is a statement by the page rather than a guess,
+   * and it is the only thing that can tell a transcription apart from a
+   * translation in a track list. An empty answer is ordinary — see the rungs
+   * in CaptionCore.pickSubtitleTrack().
+   *
+   * Deliberately not read: the page's own `lang`. On a video site that is the
+   * language of the interface, which says nothing about the audio — the very
+   * confusion caption-core's buildTranslationRequest() exists to avoid.
+   */
+  function audioLangOf(video) {
+    if (!video) return '';
+    try {
+      const list = video.audioTracks;
+      if (list && list.length) {
+        for (const track of list) {
+          if (track.enabled && track.language) return track.language;
+        }
+      }
+    } catch (e) { /* not implemented here, which is the common case */ }
+    return video.getAttribute && video.getAttribute('lang') || '';
+  }
+
+  /**
    * Choose (or re-choose) a track. Called on attach and whenever the page's
    * track list or a track's mode changes, so switching subtitle language in the
    * site's own control switches what we translate.
    *
    * No answer is a normal outcome — a page that offers subtitles the viewer has
    * not turned on gets nothing from us until they do, and this runs again then.
+   *
+   * `allowDisabled` is a **permission for this one call**, never a mode the
+   * provider stays in. Turning subtitles on is something the engine decides and
+   * the engine takes back (it stops the moment the viewer switches them off
+   * again); if the flag lived here, every later track-list event would quietly
+   * re-open the track the viewer had just closed.
    */
-  function syncSelection() {
+  function syncSelection(allowDisabled) {
     const video = findVideoWithTracks() || tt.video;
     const entries = subtitleEntries(video);
     if (!entries.length) return;
-    const picked = core.pickSubtitleTrack(entries);
+    const picked = core.pickSubtitleTrack(entries, allowDisabled
+      ? { allowDisabled: true, audioLang: audioLangOf(video) }
+      : undefined);
     if (!picked || picked.track === tt.track) return;
     // Our own track sits at 'hidden', which is never 'showing' — so only an
     // explicit switch by the page (or losing the track we held) moves us.
@@ -418,6 +484,19 @@
     // is really "do we still have a track". A player turning subtitles off
     // sets the track to 'disabled', which is how that reads here.
     isCaptionsEnabled() {
+      return !!tt.track && tt.track.mode !== 'disabled';
+    },
+
+    // Turn subtitles on: re-run the choice with disabled tracks allowed in.
+    // Adopting a track is *already* how this provider switches captions on —
+    // it holds them at 'hidden' and draws the line itself — so there is nothing
+    // to click here, only a track to take.
+    //
+    // True means a track is now held, which is as much as this can promise:
+    // its cues may still be on their way (a <track> file is only fetched once
+    // its mode leaves 'disabled' — see adoptTrack).
+    enableNativeCaptions() {
+      syncSelection(true);
       return !!tt.track && tt.track.mode !== 'disabled';
     },
 

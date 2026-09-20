@@ -143,11 +143,27 @@ Two ship today:
 
 Two rules the generic provider exists to keep:
 
-- **We translate the subtitles the viewer already has on; we never turn
-  subtitles on.** A track at `showing` or `hidden` is on (`hidden` is a player
-  drawing the cues itself); everything at `disabled` is a language the page
-  merely offers, and `pickSubtitleTrack()` returns null rather than choose among
-  them. Vimeo lists four and shows none.
+- **We translate the subtitles the viewer already has on, and by default we
+  turn none on ourselves.** A track at `showing` or `hidden` is on (`hidden` is a
+  player drawing the cues itself); everything at `disabled` is a language the
+  page merely offers, and `pickSubtitleTrack()` returns null rather than choose
+  among them. Vimeo lists four and shows none.
+
+  The exception is `autoEnableCaptions` — off by default, and the only
+  automation in the extension that changes the **player's own** state rather
+  than adding nodes of ours, which is why it is a switch of its own. With it on,
+  `pickSubtitleTrack({allowDisabled, audioLang})` may promote a disabled track:
+  audio-language match, then `default`, then the first. `allowDisabled` is a
+  permission for one call, never a mode a provider stays in — the engine asks
+  for it (`enableNativeCaptions()`), so the engine can stop asking.
+
+  **And it is a latch that only closes.** `syncNativeCaptions()` runs on the
+  1.5s controls heartbeat, so a viewer who switches subtitles off and sees them
+  return cannot switch them off at all. Seeing captions on and then off sets
+  `autoEnableBlocked` for the rest of the session — whoever turned them on, from
+  the viewer's side those are the same event. `sawNativeOn` clears per video;
+  the block does not. The one way past it is the menu's 「开启原字幕」
+  (`ctx.enableNativeCaptions()`), which is the viewer asking.
 - **A track is put back exactly as it was found.** We hold it at `hidden`, not
   `disabled`, so cues keep loading; `restoreMode` goes back on detach. The one
   exception is a track the viewer disabled while we held it — restoring that one
