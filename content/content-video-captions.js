@@ -81,6 +81,18 @@
     return core.resolveCaptionDisplay(ctx.settings || {});
   }
 
+  /**
+   * 我们此刻往哪门语言译，**整码**，专作缓存键用。
+   *
+   * 和 getTargetLangBase() 的差别正是它存在的理由：zh-CN 和 zh-TW 的基码都是
+   * zh，可它们是两套字。按基码做键，观众从简体切到繁体，已经译过的那些句子的键
+   * 一个不变——整段视频继续放着简体，而且因为键「对」上了，它们永远不会被重译掉。
+   */
+  function getTargetLangKey() {
+    const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
+    return String(target || '').trim().toLowerCase();
+  }
+
   function getTargetLangBase() {
     const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
     return core.getLangBase(target);
@@ -446,9 +458,11 @@
    * 中文换成日文，已经译过的那些句子的键一个不变，于是整段视频继续放着中文 ——
    * 而且因为键是对的，它们永远不会被重译掉。加上之后，换语言这件事不需要谁去清
    * 一张表：新语言天然是一套新键，旧的那一套还留在那里，换回去就是现成的。
+   *
+   * 用整码而不是基码，见 getTargetLangKey()：简体和繁体是同一个基码下的两套字。
    */
   function getCueKey(cue) {
-    return `${getTargetLangBase()}|${state.trackId}|${cue.startMs}|${cue.text}`;
+    return `${getTargetLangKey()}|${state.trackId}|${cue.startMs}|${cue.text}`;
   }
 
   function clearTrack() {
@@ -583,10 +597,23 @@
    *
    * 只有花钱的那条路需要设限。内置引擎是本机跑的，不联网、不计费，整条轨道一次
    * 译完的代价只是几十毫秒 CPU——给它设窗反而会让观众往回拖进度条时重译。
+   *
+   * 但**「选了内置引擎」不等于「这一批不花钱」**。isActive() 答的是「内置是选中
+   * 的那个引擎，而且这个环境给得了」，它答不了「这门语言对此刻真能在本机跑」：
+   * 语言包还没下到本地时 handleWithBuiltin() 抛 EngineUnavailableError，而
+   * engineFallback === 'allow-ai' 的用户会把这一批原样转给他自己的接口（见
+   * content-translation-engine.js 的 requestTranslation）。于是一场两小时的讲座
+   * 在他看到第二句之前就整片发去了云端——正是这个窗存在的理由。
+   *
+   * 所以不设限的条件多一条：回退关着。那时内置跑不起来就是报错，一个字也不会发
+   * 出去，Infinity 确实不花钱。反过来，回退开着而包其实就在本地，会白设一个窗，
+   * 代价只是译文晚一点点到（本机译本来就快）——比前一种便宜得多。
    */
   function translationWindowMs() {
     const builtin = ctx.builtinTranslator;
-    if (builtin && builtin.isActive && builtin.isActive()) return Infinity;
+    const free = builtin && builtin.isActive && builtin.isActive()
+      && getSetting('engineFallback') !== 'allow-ai';
+    if (free) return Infinity;
     return currentDisplay().useNative ? NATIVE_WINDOW_MS : WINDOW_MS;
   }
 
@@ -844,7 +871,18 @@
     try {
       // 按不动不算数：控制条还没上来（下一个心跳再试），或者这段视频根本没有字幕
       // （那就每拍两次 querySelector，便宜到不值得记状态）。
-      provider.enableNativeCaptions();
+      const answer = provider.enableNativeCaptions();
+      // 按成了就**当场**记下「看见开着」。留给下一拍去记，中间这 1.5 秒里观众
+      // 把它关掉，下一拍看见的是「关着，而且没落闩」—— 于是又替他开一次，这正
+      // 是那道闩要防的事，只不过发生在它合上之前。
+      if (answer === true) {
+        state.sawNativeOn = true;
+        state.nativeUnavailable = false;
+      }
+      // answer === false（这段视频没有可开的字幕）这里**不记**，和菜单那条路不
+      // 一样：那边是观众按了一下，把「按了个空」如实告诉他；这边 1.5 秒一拍，而
+      // 播放器在加载中把 CC 按钮先摆成 disabled 是常事——记下来就会在一段本来有
+      // 字幕的视频上，把菜单里那一行藏到换视频为止。
     } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
   }
 

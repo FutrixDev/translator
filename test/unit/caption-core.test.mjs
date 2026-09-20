@@ -607,6 +607,30 @@ test('「控制条还没上来」和「这段视频没有字幕」不是同一�
   assert.match(engine, /if \(typeof answer === 'boolean'\) state\.nativeUnavailable = !answer/);
 });
 
+test('替他开成了就当场记下，别等下一拍', () => {
+  // 心跳 1.5 秒一拍。开成了却把 true 丢掉，观众在这 1.5 秒里把刚亮起来的字幕关
+  // 掉，下一拍看见的是「关着，而且没落闩」——于是又替他开一次。那道闩要防的正
+  // 是这件事，只不过发生在它合上之前。
+  const engine = repoFile('content/content-video-captions.js');
+  const sync = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
+  assert.ok(sync, '找不到 syncNativeCaptions()');
+  assert.match(
+    sync[0],
+    /=\s*provider\.enableNativeCaptions\(\)/,
+    '按下去的结果被丢掉了',
+  );
+  assert.match(sync[0], /answer === true[\s\S]{0,120}state\.sawNativeOn = true/);
+
+  // 但 false 这里**不记**，和菜单那条路正相反：那边是观众按了一下，把「按了个
+  // 空」如实告诉他；这边一秒两拍，而播放器加载中把 CC 按钮先摆成 disabled 是常
+  // 事——记下来就会在一段本来有字幕的视频上，把菜单那一行藏到换视频为止。
+  assert.equal(
+    /nativeUnavailable\s*=\s*true/.test(sync[0]),
+    false,
+    '心跳把「这段视频没有字幕」记了下来：加载中的一拍会把菜单那行藏掉',
+  );
+});
+
 test('allowDisabled 只从 enableNativeCaptions 那条路进来', () => {
   // 它是「把页面只是提供的那几门字幕挑一门出来开」的许可。任何别的调用点拿到
   // 它，默认行为就变成了「替所有人开字幕」，而那是整个功能唯一不可逆的一步。
@@ -627,8 +651,18 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   const engine = repoFile('content/content-video-captions.js');
   const window = engine.match(/function translationWindowMs\(\)[\s\S]*?\n  \}/);
   assert.ok(window, '找不到 translationWindowMs()');
-  assert.match(window[0], /builtin\.isActive\(\)\) return Infinity/);
+  assert.match(window[0], /builtin\.isActive\(\)/);
+  assert.match(window[0], /return Infinity/);
   assert.match(window[0], /useNative \? NATIVE_WINDOW_MS : WINDOW_MS/);
+
+  // 「选了内置引擎」不等于「这一批不花钱」：语言包还没下到本地时内置会抛
+  // EngineUnavailableError，而 engineFallback === 'allow-ai' 的用户会把这一批原
+  // 样转给他自己的接口。所以不设限得再加一条：回退关着。
+  assert.match(
+    window[0],
+    /engineFallback'\) !== 'allow-ai'/,
+    '回退开着的时候也不设限：一场两小时的讲座会整片发去云端',
+  );
 
   // 窗要真的拦住批次，而不是算出来放着不用。
   assert.match(engine, /function pickNextBatch\(limitMs\)/);
@@ -667,8 +701,18 @@ test('译文表的键里带着目标语言：换一门语言就是换一套键',
   const engine = repoFile('content/content-video-captions.js');
   const fn = engine.match(/function getCueKey\(cue\) \{[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 getCueKey()');
-  assert.match(fn[0], /getTargetLangBase\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
+  assert.match(fn[0], /getTargetLangKey\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
   assert.match(fn[0], /state\.trackId/);
+
+  // 而且要整码。zh-CN 和 zh-TW 的基码都是 zh，可它们是两套字：按基码做键，观众
+  // 从简体切到繁体，整段视频会继续放着简体，永远不会被重译掉。
+  const keyFn = engine.match(/function getTargetLangKey\(\) \{[\s\S]*?\n  \}/);
+  assert.ok(keyFn, '找不到 getTargetLangKey()');
+  assert.ok(
+    !/getLangBase/.test(keyFn[0]),
+    'getTargetLangKey() 砍成了基码：简繁互换会共用同一套键',
+  );
+  assert.match(keyFn[0], /toLowerCase\(\)/);
 });
 
 test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏得住', () => {
