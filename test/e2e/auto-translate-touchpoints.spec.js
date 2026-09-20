@@ -473,3 +473,39 @@ test('悬停键位是 Alt 时，Alt+A 之后一路划过去也不会译', async 
     await close();
   }
 });
+
+// 触屏上长按是菜单的唯一入口（没有 hover 就没有那颗 `···`）。菜单 500ms 就开出
+// 来了，手指却常常还按着 —— 松手时浏览器补发的那一串合成事件，必须被认成这次
+// 长按的尾巴，而不是一次新的单击。认错了，代价是一次没人点过的整页翻译。
+test('长按开了菜单还按着不放 —— 松手那一下不该再把整页翻一遍', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'never' } });
+
+    const ball = page.locator('#ai-translator-float-ball');
+    const box = await ball.boundingBox();
+    // 球心，不是那颗 `···`：落在球身上才会走到「翻译整页」那一档。
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart', touchPoints: [{ x: point.x, y: point.y }]
+    });
+
+    // 菜单在 500ms 开出来，手指再按满一秒多 —— 旧的一秒窗口就是在这儿过的期。
+    await expect(page.locator('#ai-translator-float-menu')).toBeVisible();
+    await page.waitForTimeout(1600);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+    // 合成事件是异步补上来的，给它跑完的时间，再看有没有人开始花钱。
+    await page.waitForTimeout(1200);
+    expect(sentTexts).toHaveLength(0);
+    await expect(page.locator('#box .ai-translator-inline-block')).toHaveCount(0);
+    // 菜单还开着 —— 那一下要是漏过去，它会被当成第二次点击又合上。
+    await expect(page.locator('#ai-translator-float-menu')).toBeVisible();
+  } finally {
+    await close();
+  }
+});

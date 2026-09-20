@@ -324,3 +324,41 @@ test('追问的号要先领到手才画条子 —— 三次额度经不起两个
   assert.doesNotMatch(status, /bumpAskCount/);
   assert.doesNotMatch(status, /\blet counted\b/);
 });
+
+test('黑名单那一行是死的，不是关着的 —— 点不动，也带不动总开关', () => {
+  // 前提在 site-rules.test.mjs：「the blocklist outranks the user own always」。
+  // 既然写 always 下去也翻不了，这一行就不能装成一个能开的开关 —— 点一下什么都
+  // 没变已经够糟，而它真正会变的那件事更糟：顺手把总开关打开，别的站点全自动翻
+  // 起来，他本来只想管眼前这一个。
+  const popup = code('popup/popup.js');
+  assert.match(popup, /const blocked = !!auto && auto\.reason === 'BLOCKLIST';/);
+  assert.match(popup, /elements\.toggleSiteAuto\.disabled = blocked;/);
+  assert.match(popup, /elements\.toggleSiteAuto\.title = blocked \? t\('autoReasonBlocklist'\)/);
+  assert.match(read('i18n/messages.js'), /autoReasonBlocklist:/, '理由那句话得真有');
+
+  // 画面灰掉之外再挡一道：键盘走得到 disabled 的按钮，扩展页面也点得动。
+  const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
+    popup.indexOf('async function togglePageTranslation()'));
+  const guard = body.indexOf("reason === 'BLOCKLIST'");
+  assert.ok(guard > 0, 'toggleSiteAuto 里没有黑名单闸');
+  assert.ok(guard < body.indexOf('autoTranslate: true'), '闸必须在打开总开关之前');
+
+  // 判定给出的 reason 得一路送到 popup 手上，否则上面那些判断永远是假。
+  assert.match(code('content/content-auto-translate.js'), /reason/);
+  assert.match(code('shared/site-rules.js'), /BLOCKLIST: 'BLOCKLIST'/);
+});
+
+test('站点规则先落地，总开关才跟着开', () => {
+  // 反过来写的话，规则写失败（同步存储配额）时总开关已经替所有别的站点开好了：
+  // 他点的是一个站点，拿到的是整个浏览器。漏掉的那半边不伤人 —— 规则落了地而
+  // 总开关没开，再点一次就补上了。
+  const popup = code('popup/popup.js');
+  const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
+    popup.indexOf('async function togglePageTranslation()'));
+  const rule = body.indexOf('writeUserRule(');
+  const globalOn = body.indexOf('autoTranslate: true');
+  assert.ok(rule > 0 && globalOn > 0, '两条写入都得在这个函数里');
+  assert.ok(globalOn > rule, '总开关不该排在站点规则前面');
+  // 两条都在同一个 try 里，失败才说得出口。
+  assert.ok(body.indexOf('try {') < rule && rule < body.indexOf('} catch (error) {'));
+});

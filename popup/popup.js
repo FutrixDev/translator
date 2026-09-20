@@ -537,8 +537,14 @@ function renderPageRows() {
   elements.toggleSiteAuto.hidden = !siteRow;
   if (siteRow) {
     const on = globalAuto && status !== 'off' && status !== 'ask';
+    // 黑名单这一行是死的，不是关着的。阶梯上 isBlocked() 和内置 never 排在所有
+    // 站点规则前面，所以往规则表里写一条 always 下去，这一页照样不翻 —— 点了没
+    // 反应还不是最糟的，最糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻
+    // 起来，而他本来只想管眼前这一个。灰掉，并且把为什么写在 title 上。
+    const blocked = !!auto && auto.reason === 'BLOCKLIST';
+    elements.toggleSiteAuto.disabled = blocked;
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
-    elements.toggleSiteAuto.title = pageState.host;
+    elements.toggleSiteAuto.title = blocked ? t('autoReasonBlocklist') : pageState.host;
   }
 
   // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
@@ -573,14 +579,20 @@ async function refreshPageRows() {
  */
 async function toggleSiteAuto() {
   if (!pageState || !pageState.host) return;
+  // 键盘能走到一个 disabled 的按钮上、扩展页面也能被脚本点，所以画面上灰掉之外
+  // 这里再挡一道：黑名单改不动，别让这一下的副作用（开总开关）自己跑掉。
+  if (pageState.auto && pageState.auto.reason === 'BLOCKLIST') return;
   const status = pageState.auto ? pageState.auto.status : '';
   const on = globalAuto && status !== 'off' && status !== 'ask';
   try {
+    await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
+    // 总开关排在规则后面，顺序是有意的：规则写不进去（配额挤爆）的时候，总开关
+    // 不该已经替所有别的站点开好了 —— 他要的是这一个站点，拿到的会是整个浏览器。
+    // 反过来那半边漏掉不伤人：规则落了地而总开关没开，再点一次就补上了。
     if (!on && !globalAuto) {
       await chrome.storage.sync.set({ autoTranslate: true });
       globalAuto = true;
     }
-    await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
   } catch (error) {
     // 这条写入是会失败的：同步存储每项 8KB，站点规则表按域名一路长下去。
     // 失败了就得说一声——开关是个乐观控件，它已经在用户眼里动过了，而规则没

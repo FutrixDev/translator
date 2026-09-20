@@ -209,10 +209,6 @@
 
   // 触屏没有 hover，··· 不会出现，长按顶替它。
   const LONG_PRESS_MS = 500;
-  // 长按开出菜单后，浏览器合成的那一下 click 要吞掉。给它一个时限：有些情况下
-  // 合成事件根本不来（长按触发了系统手势），没有时限的话这个「吞掉」会一直挂
-  // 在那儿，把用户下一次真正的单击也吃了。
-  const LONG_PRESS_CLICK_WINDOW_MS = 1000;
 
   /**
    * 单击落在球的哪一块上 —— 这一下的含义就由它决定。
@@ -233,7 +229,12 @@
     let ballStartX, ballStartY;
     let dragDistance = 0;
     let zone = 'ball';
-    let longPressAt = 0;
+    // 这一次触摸已经被长按用掉了 —— 记的是「哪一次手势」，不是「什么时候」。
+    // 计时的版本在手指按满一秒以上时会自己过期：菜单 500ms 就开出来了，手指还
+    // 按着，松手时合成的那一下 click 已经出了窗口，于是它一路落到最后一档，把
+    // 整页翻译也点了 —— 一次长按，开菜单外加一次花钱的整页翻译。手势的结束由
+    // 那一下合成事件自己宣布，不由秒表宣布。
+    let longPressFired = false;
     let longPressTimer = null;
 
     // Mouse down - start drag
@@ -348,9 +349,9 @@
           y: finalY,
           docked: dockedSide
         }));
-      } else if (Date.now() - longPressAt < LONG_PRESS_CLICK_WINDOW_MS) {
+      } else if (longPressFired) {
         // 长按已经把菜单开出来了，随后合成的这一下不该再做第二件事。
-        longPressAt = 0;
+        longPressFired = false;
       } else if (zone === 'menu') {
         toggleFloatMenu();
       } else if (zone === 'status') {
@@ -370,9 +371,12 @@
     };
     state.floatBall.addEventListener('touchstart', () => {
       cancelLongPress();
+      // 新的一次触摸开始，上一次留下的那面旗到此为止 —— 合成事件万一没来（长按
+      // 被系统手势截走），旗也烂不过这一次手势，下一次点击照常。
+      longPressFired = false;
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
-        longPressAt = Date.now();
+        longPressFired = true;
         toggleFloatMenu();
       }, LONG_PRESS_MS);
     }, { passive: true });
