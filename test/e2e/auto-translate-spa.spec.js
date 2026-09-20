@@ -12,7 +12,7 @@
 // 列表页该问用户，摘要页直接翻，两者只差一个 pathname。这正是路由变化必须重新
 // 决策的原因，也是「只在首次加载时判一次」那种实现会踩空的地方。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, sendMessageToActiveTab } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ABSTRACT = 'We present a method for aligning the two halves of a long document without supervision.';
@@ -107,6 +107,40 @@ test('auto translation: after a route change the unchanged shell is not paid for
     const afterRoute = sentTexts.slice(beforeRoute).join('\n');
     expect(afterRoute).toContain(NEXT_ABSTRACT);
     expect(afterRoute).not.toContain(SHELL);
+  } finally {
+    await close();
+  }
+});
+
+test('auto translation: pausing one article does not follow the reader into the next', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, fixtureHtml(ABSTRACT));
+
+    await page.goto('https://arxiv.org/abs/2401.00001');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#view-box .ai-translator-inline-block', { timeout: 30000 });
+
+    // 「这一页先别翻了」——他说的是**这一页**。
+    await sendMessageToActiveTab(page, { type: 'SET_AUTO_PAUSED', paused: true });
+    expect((await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status).toBe('paused');
+    const beforeRoute = sentTexts.length;
+
+    // 站内翻到下一篇。这是新的一页，他还没对它表过态——闩要是跟着走，从这一刻
+    // 起这个单页应用里的每一篇都是原文，而「继续」那颗按钮指着的是他早就离开的
+    // 那一页，他没有任何理由想到要去点它。
+    await page.evaluate((text) => {
+      history.pushState({}, '', '/abs/2401.00002');
+      document.getElementById('view').textContent = text;
+    }, NEXT_ABSTRACT);
+
+    await page.waitForFunction((text) => {
+      const blocks = document.querySelectorAll('#view-box .ai-translator-inline-block');
+      return Array.from(blocks).some((el) => el.textContent.includes(text));
+    }, NEXT_ABSTRACT, { timeout: 30000 });
+    expect(sentTexts.slice(beforeRoute).join('\n')).toContain(NEXT_ABSTRACT);
   } finally {
     await close();
   }

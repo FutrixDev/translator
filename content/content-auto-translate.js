@@ -572,6 +572,11 @@
     function onRouteChange(change) {
       // 新的一页，用户还没表过态。
       explicit = false;
+      // 闩也一样是**这一页**的：他按的那句话是「这一页先别翻了」，不是「这个站
+      // 点从此别翻了」—— 那句话有另一个说法（popup 上关掉这个站点，写 never）。
+      // 不解的话，SPA 里点进下一篇文章起就全是原文，而且他没有任何理由想到要去
+      // 点「继续」：那颗按钮此刻指着的是他早就离开的那一页。
+      pausedByUser = false;
       start(`route:${change && change.via}`);
     }
 

@@ -441,15 +441,21 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
   const pause = auto.slice(auto.indexOf('function pauseCurrentPage()'), auto.indexOf('function resumeCurrentPage()'));
   assert.match(pause, /pausedByUser = true;/);
 
-  // 解闩的只有用户自己后说的那两句：继续，或者「翻译整页」。
-  assert.equal((auto.match(/pausedByUser = false;/g) || []).length, 3,
-    '一处声明、两处解闩（resumeCurrentPage / markPageExplicit），多一处就是又开了一条自己会解闩的路');
+  // 解闩的只有用户自己后说的那两句（继续 / 翻译整页），外加「换了一页」。
+  assert.equal((auto.match(/pausedByUser = false;/g) || []).length, 4,
+    '一处声明、三处解闩（resumeCurrentPage / markPageExplicit / onRouteChange），多一处就是又开了一条自己会解闩的路');
   const resume = auto.slice(auto.indexOf('function resumeCurrentPage()'), auto.indexOf('function markPageExplicit()'));
   assert.match(resume, /pausedByUser = false;/);
-  const explicit = auto.slice(auto.indexOf('function markPageExplicit()'));
-  assert.match(explicit.slice(0, 700),
+  const explicit = auto.slice(auto.indexOf('function markPageExplicit()'), auto.indexOf('function onRouteChange('));
+  assert.match(explicit,
     /const wasHeld = pausedByUser;\s*pausedByUser = false;\s*if \(explicit && !wasHeld\) return;/,
     '闩解了就得重开一轮 —— 哪怕这一页早就表过态，那一轮正停在闩上');
+
+  // 他按的那句话是「**这一页**先别翻了」。SPA 里点进下一篇就是新的一页，闩不解
+  // 的话往后全是原文，而「继续」那颗按钮此刻指着的是他早就离开的那一页。
+  const route = auto.slice(auto.indexOf('function onRouteChange('), auto.indexOf('const RESTART_KEYS'));
+  assert.match(route, /explicit = false;[\s\S]*pausedByUser = false;[\s\S]*start\(`route:/,
+    '换了一页，表态和闩都归零');
 });
 
 test('球上那两颗按钮键盘够得着', () => {
