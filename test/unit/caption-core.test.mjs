@@ -685,9 +685,18 @@ test('一批译文回来时轨道或代次已经翻篇，就整批丢掉——�
   // 手清过，换目标语言那一路没有——不放开，这几句就永远停在「正在译」上。
   assert.match(
     fn[0],
-    /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return false;/,
+    /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return STALE;/,
     '过期的一批直接 return 了，pendingKeys 没放开',
   );
+
+  // 而且「过期」要和「失败」分开报：过期说的是脚下的世界变了，新的那一套句子一
+  // 个都还没译，而当时想去译它们的那次调用正撞上 state.translating 被这一批占着，
+  // 什么也没做就回去了。当失败停下来，视频停着的时候没有 timeupdate 来推第二次，
+  // 新字幕会一直空着。
+  const loop = engine.match(/async function ensureTrackTranslated\(force\)[\s\S]*?\n  \}/);
+  assert.ok(loop, '找不到 ensureTrackTranslated()');
+  assert.match(loop[0], /result === STALE\) continue;/, '过期的一批把整轮停掉了');
+  assert.match(loop[0], /if \(!result\) break;/);
   // 条数对不上也整批作废：短一条，尾部那几句会永远留在 pendingKeys 里。
   assert.match(fn[0], /response\.translations\.length !== cues\.length/);
   // 记「正在译」和放开它在同一个函数里，两道早退才不会各自漏一个口子。

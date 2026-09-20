@@ -487,6 +487,18 @@
     return snap && snap.sessionVersion || 0;
   }
 
+  /**
+   * translateCues 的第三种回答。
+   *
+   * true 这一批译好了；false 这一批没成（已经记了冷却，等下一次触发再来）；STALE
+   * 这一批**过期**了——脚下的世界变了，它不作数，可这不是失败：新的那一套句子一
+   * 个都还没译，而当时想去译它们的那一次调用（ingestTrack 的
+   * ensureTrackTranslated(true)，或者换目标语言那一路的 handleTimeUpdate）正好撞
+   * 上 state.translating 被这一批占着，什么也没做就回去了。把它当失败停下来，视
+   * 频这时候要是停着，就再没有 timeupdate 来推第二次，新字幕会一直空着。
+   */
+  const STALE = 'stale';
+
   async function translateCues(cues) {
     if (state.skipTranslation || !cues.length) return true;
     if (ctx.isExtensionContextAvailable && !ctx.isExtensionContextAvailable()) return false;
@@ -544,7 +556,7 @@
     // 上：既不重试也不显示，而且是**永远**，因为再没有谁会去动它们。
     if (trackId !== state.trackId || version !== sessionVersion()) {
       releaseBatch(keys);
-      return false;
+      return STALE;
     }
 
     response.translations.forEach((translation, index) => {
@@ -653,8 +665,12 @@
       while (state.active && !state.skipTranslation && !state.dismissed) {
         const batch = pickNextBatch(limitMs);
         if (!batch || !batch.length) break;
-        const ok = await translateCues(batch);
-        if (!ok) break; // cooldown set on the batch; a later trigger resumes it
+        const result = await translateCues(batch);
+        // 过期不是失败：这一批不作数，可新世界里那些句子还等着，而想去译它们的那
+        // 次调用早被 state.translating 挡回去了（见 STALE）。接着往下走——下一轮
+        // pickNextBatch 取的已经是新的那一套。
+        if (result === STALE) continue;
+        if (!result) break; // cooldown set on the batch; a later trigger resumes it
       }
     } finally {
       state.translating = false;

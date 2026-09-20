@@ -1431,7 +1431,7 @@ arXiv / old.reddit.com）。四条 e2e 逐条反向验证过：把 `ctx.resolveS
 
 ### PR-9：字幕面接入
 
-本文 §8 说的是「复用」，落地时有十六处不同。
+本文 §8 说的是「复用」，落地时有十七处不同。
 
 **1. 闸门用 `siteRefused`，不是 `siteAuto`。** §8 原说字幕这一面跟着整页那一面的
 结论走。真接上去发现它在最该生效的地方永远是 false：`SiteRules.decide()` 的阶梯里，
@@ -1562,6 +1562,15 @@ provider 用「此刻还列不列得出字幕轨」来分 —— 它本来就只
 那边是观众按了一下，把「按了个空」如实告诉他（第 7 条）；这边一秒两拍，而播放器加载
 中把 CC 按钮先摆成 disabled 是常事，记下来就会在一段本来有字幕的视频上，把菜单那一
 行藏到换视频为止。
+
+**17. 「这一批过期了」要和「这一批失败了」分开报（评审第 7 轮 P2）。** 第 8 条让过期
+的一批先放开 key 再丢，丢的方式仍是 `return false`，而循环里 `false` 的意思是「失败
+了，记了冷却，等下一次触发」—— 于是整轮就停在那里。问题在于：触发过期的那次切换
+（`ingestTrack` 换轨道、或者换目标语言走 `applyCaptionSettings` → `handleTimeUpdate`）
+本来会顺手调一次 `ensureTrackTranslated()`，可那一刻 `state.translating` 还被这一批占
+着，它什么也没做就回去了。视频这时候要是停着，就再没有 `timeupdate` 来推第二次，新
+字幕一直空着。改成第三种回答 `STALE`，循环 `continue` —— 下一轮 `pickNextBatch` 取的
+已经是新世界里的那一套句子，这一轮自己把它接着译完。
 
 **10. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
 菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`
