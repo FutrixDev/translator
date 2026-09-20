@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Traduction IA gratuite : pages web, articles scientifiques (maths/LaTeX intacts), sous-titres YouTube, PDF et bandes dessinées.",
+    "message": "Traduction IA gratuite, désormais automatique : les pages se traduisent seules, maths/LaTeX intacts, YouTube, PDF, BD.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

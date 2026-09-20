@@ -35,7 +35,8 @@ test('调度层读的全局，都由排在它前面的文件提供', () => {
     SessionGuard: 'shared/session-guard.js',
     BlockIdentity: 'shared/block-identity.js',
     SiteRules: 'shared/site-rules.js',
-    SpaNavigation: 'shared/spa-navigation.js'
+    SpaNavigation: 'shared/spa-navigation.js',
+    AutoStats: 'shared/auto-stats.js'
   };
   const at = isolated.indexOf('content/content-auto-translate.js');
   for (const [name, file] of Object.entries(providers)) {

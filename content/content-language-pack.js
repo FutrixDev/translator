@@ -126,9 +126,10 @@
   // 自己好的：用户在页面上的第一次点击或按键就把包拉下来了。没有这条通知，那一页
   // 要一直空着，直到刷新、跳转或者改一次设置。
   //
-  // 只有预取这一条路会发：它是这个内容脚本里唯一**先确认过「这个语言对还没下」**
-  // 、然后真的把它下下来的地方。（设置页那颗下载按钮走的是同一个 ensureDownloaded，
-  // 但跑在 options 页自己的上下文里，通知不到已经开着的标签页 —— 那是 PR-10 的事。）
+  // 页面里只有预取这一条路会发：它是这个内容脚本里唯一**先确认过「这个语言对
+  // 还没下」**、然后真的把它下下来的地方。另一条路在页面外 —— 设置页那颗下载按钮
+  // 走的是同一个 ensureDownloaded，但跑在 options 自己的上下文里，够不着已经开着
+  // 的标签页，所以它下完广播一条 LANGUAGE_PACK_READY，由下面那个监听接住。
   const languagePackListeners = new Set();
 
   function onLanguagePackReady(fn) {
@@ -144,6 +145,21 @@
       }
     }
   }
+
+  // 设置页下完包发的那一条（options/options.js 的 downloadLanguagePack）。广播是
+  // 发给每一个标签页的，所以先问一句这一页在不在用内置引擎：不用的话，装好的是
+  // 哪个包都与它无关，而 start() 是把整页重新翻一遍 —— 对一个因为 API key 写错
+  // 而停在 ERROR 上的页面，那是白花一次钱。
+  //
+  // 带过来的 sourceLang 是设置页探测用的那一个（英语），不一定是这一页的源语言。
+  // 不拿它去挡：真缺的是别的包时，这一轮照样拿回 builtinNeedsDownload 再停回
+  // ERROR，什么都不花；而用它挡，会把「源语言恰好就是英语」的那些页面也一起挡掉。
+  chrome.runtime.onMessage.addListener((message) => {
+    if (!message || message.type !== 'LANGUAGE_PACK_READY') return;
+    const engine = builtin();
+    if (!engine || !engine.isActive()) return;
+    notifyLanguagePackReady({ sourceLang: message.sourceLang, targetLang: message.targetLang });
+  });
 
   ctx.setupLanguagePackPrefetch = setupLanguagePackPrefetch;
   ctx.armLanguagePackPrefetch = armLanguagePackPrefetch;

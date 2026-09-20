@@ -78,13 +78,26 @@
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。
     let failure = null;
+    // 本机统计要的「命中率」也只有这一层数得出来：serve() 对外只有「这批的译文」，
+    // 里面命中了几条不在返回值里。取数不动 serve() 的契约 —— 未命中的那几条就是
+    // 它交给我们去发的那几条，剩下的都是命中。整批命中时这个回调根本不会被调用，
+    // 所以初值 0 就是「一条都没未命中」。
+    let missingCount = 0;
     const translations = await cache.serve(message.texts, factors, async (missing) => {
+      missingCount = missing.length;
       const response = await ctx.requestTranslation({ ...message, texts: missing });
       if (!response || response.error) {
         failure = response || { error: 'unknown' };
         return null;
       }
       return Array.isArray(response.translations) ? response.translations : null;
+    });
+
+    // 记在成败之前：命中与否是缓存这一面的事实，请求后来失败了也不改变「这几条
+    // 本来就不用发」。
+    globalThis.AutoStats.add({
+      cacheHits: message.texts.length - missingCount,
+      cacheMisses: missingCount
     });
 
     if (!translations) {

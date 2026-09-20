@@ -2,12 +2,13 @@
 //
 // getMessage() falls back to English for a key a locale does not have, so a
 // missing translation is invisible: the settings page just quietly turns half
-// English for everyone outside en/zh-CN. Today the Translation Engine section,
-// the caption-style section and a handful of hints are in that state.
+// English for everyone outside en/zh-CN. The Translation Engine section, the
+// caption-style section and a handful of hints used to be in that state.
 //
-// This file does not demand they be fixed now. It demands the list not grow —
-// a new English-only key fails here, in the PR that adds it, instead of being
-// found by a user in Lisbon. PR-10 empties KNOWN_GAP; nothing may be added.
+// KNOWN_GAP is empty now — PR-10 translated the last twenty-seven. It stays
+// empty: a new English-only key fails here, in the PR that adds it, instead of
+// being found by a user in Lisbon. Adding a name back to the set is not how a
+// failure here gets fixed; the ten translations are.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -23,23 +24,12 @@ const { I18N_MESSAGES, UI_LANGUAGES, getMessage } = globalThis;
 // in every locale, so PR-10 must not "fill these in".
 const MODEL_FACING = new Set(['promptStandard', 'promptLiteral', 'promptCreative']);
 
-// Real UI strings that are English-only today. Every one of these is visible
-// in options.html. This set may only shrink.
-const KNOWN_GAP = new Set([
-  // Translation Engine section — added with the built-in engine, en only
-  'translationEngine', 'engineBuiltin', 'engineCustomAi', 'hintTranslationEngine',
-  'builtinLanguagePack', 'downloadLanguagePack', 'builtinReady', 'builtinChecking',
-  'builtinDownloadable', 'builtinDownloading', 'builtinDownloadComplete',
-  'builtinDownloadFailed',
-  // YouTube caption style section
-  'youtubeCaptionStyle', 'captionFontColor', 'captionBgColor', 'captionBgOpacity',
-  'captionPreviewOriginal', 'captionPreviewTranslated', 'closeCaption',
-  'showYoutubeOriginalCaption', 'hintShowYoutubeOriginalCaption',
-  'hintCaptionDragResize',
-  // Selection hotkey and display
-  'selectionTranslationHotkey', 'hintSelectionTranslationHotkey', 'hotkeyConflict',
-  'showTranslationOnly', 'hintShowTranslationOnly'
-]);
+// Empty, and meant to stay that way: every string visible in options.html is
+// translated in all ten locales. It is kept as a set rather than deleted
+// because the two tests below are what hold the line, and a future gap that
+// genuinely cannot be closed in its own PR has somewhere honest to be listed
+// — visible, countable, and failing the moment it is translated.
+const KNOWN_GAP = new Set([]);
 
 const englishKeys = Object.keys(I18N_MESSAGES.en);
 

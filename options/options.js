@@ -88,6 +88,12 @@ function applyI18n(lang) {
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
 
+  // 站点审计表和本机统计是运行时画出来的（主机名、按 locale 格式化的数字、
+  // 「总是翻译」这类行内文案），身上没有 data-i18n，上面那几轮选择器一个也扫
+  // 不到。不在这里重画，换过界面语言的中文页面上就留着一排英文的按钮。
+  renderSiteRules();
+  renderAutoStats();
+
   // Show the real extension version from the manifest instead of a hard-coded
   // string, so the settings page never drifts from the released version.
   const versionEl = document.querySelector('[data-i18n="appNameVersion"]');
@@ -156,6 +162,15 @@ const elements = {
   showFloatBall: document.getElementById('showFloatBall'),
   skipTargetLanguageText: document.getElementById('skipTargetLanguageText'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
+  // Automatic translation
+  autoTranslate: document.getElementById('autoTranslate'),
+  autoSubOptions: document.getElementById('autoSubOptions'),
+  autoTranslateLangs: document.getElementById('autoTranslateLangs'),
+  siteRules: document.getElementById('siteRules'),
+  statPages: document.getElementById('statPages'),
+  statCacheHit: document.getElementById('statCacheHit'),
+  statChars: document.getElementById('statChars'),
+  resetAutoStats: document.getElementById('resetAutoStats'),
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   ocrEngine: document.getElementById('ocrEngine'),
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
@@ -278,6 +293,11 @@ const defaultSettings = {
   skipTargetLanguageText: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
   showTranslationOnly: false,
+  // 自动翻译。默认开，理由写在 shared/default-settings.js 的 CONTENT_DEFAULTS
+  // 里——那份是内容脚本这一侧的出处，改默认值要两边一起改。siteRules 不在这里：
+  // 它不经 collectSettings 那次整份写入（见下面「自动翻译」那一节）。
+  autoTranslate: true,
+  autoTranslateLangs: [],
   // Image OCR: on the default engine it is free and local, so on by default.
   // See the notes on defaultSettings in background/background.js.
   enableImageOcrTranslation: true,
@@ -782,6 +802,138 @@ function pdfTaskMeta(job) {
   return parts.join(' · ');
 }
 
+
+// ---------------------------------------------------------------------------
+// 自动翻译：总开关、语言名单、站点审计表、本机统计
+//
+// 卡片里四块东西，只有前两块是普通设置项（走 collectSettings 那次整份写入）。
+// 后两块各有各的写入通道，而且**必须**如此：
+//
+//   siteRules   是一张共享表，弹出窗口、内容脚本、设置页都在改它，所以写入收
+//               在服务工作者里（SiteRules.writeUserRule）。把它塞进
+//               collectSettings，等于用户在设置页改任何一项，都拿这一页打开时
+//               读到的那份快照去盖掉别的标签页刚写下的规则。
+//   autoStats   根本不在 sync 里 —— 它只属于这台电脑（shared/auto-stats.js）。
+//
+// 两块都是运行时画出来的，不带 data-i18n，所以换界面语言时要整块重画：
+// 见 applyI18n 末尾。
+// ---------------------------------------------------------------------------
+
+function syncAutoSubState() {
+  if (!elements.autoSubOptions) return;
+  elements.autoSubOptions.classList.toggle('disabled', !elements.autoTranslate.checked);
+}
+
+function autoLangChips() {
+  return Array.from(elements.autoTranslateLangs.querySelectorAll('input[data-lang]'));
+}
+
+function collectAutoTranslateLangs() {
+  return autoLangChips().filter(box => box.checked).map(box => box.getAttribute('data-lang'));
+}
+
+/**
+ * 勾上存着的那几门语言。
+ *
+ * 存的**应该**是基码，因为这些勾只写得出基码；但 decide() 读这份名单时两边都过
+ * baseLang，所以一份手改过、或者从别处同步来的 'zh-CN' 在判定里是算数的。这里
+ * 用同一个 baseLang 收一次，界面才不会告诉用户「你没选中文」而它其实正在生效。
+ */
+function showAutoTranslateLangs(langs) {
+  const picked = new Set((Array.isArray(langs) ? langs : []).map(SiteRules.baseLang).filter(Boolean));
+  autoLangChips().forEach(box => { box.checked = picked.has(box.getAttribute('data-lang')); });
+}
+
+/**
+ * 站点审计表：用户在弹出窗口里对哪些站点表过态，以及在这里把它收回来。
+ *
+ * 直接读 storage.sync，不等任何消息 —— 这张表是别的标签页写的，设置页打开的时候
+ * 它早就在那儿了。删除也不自己写：走 SiteRules.writeUserRule(host, null) 那条单
+ * 写者通道，于是同时删两个站点的两个标签页不会互相盖掉。删完不必通知内容脚本，
+ * 调度层盯的是 storage.onChanged（content-auto-translate.js 的 RESTART_KEYS）。
+ */
+async function renderSiteRules() {
+  const box = elements.siteRules;
+  if (!box) return;
+
+  let rules = {};
+  try {
+    const stored = await chrome.storage.sync.get({ siteRules: {} });
+    if (stored.siteRules && typeof stored.siteRules === 'object') rules = stored.siteRules;
+  } catch (error) {
+    console.error('Failed to read site rules:', error);
+  }
+
+  const hosts = Object.keys(rules)
+    .filter(host => rules[host] === 'always' || rules[host] === 'never')
+    .sort();
+
+  box.textContent = '';
+  if (!hosts.length) {
+    const empty = document.createElement('p');
+    empty.className = 'site-rules-empty';
+    empty.textContent = t('siteRulesEmpty');
+    box.appendChild(empty);
+    return;
+  }
+  hosts.forEach(host => box.appendChild(siteRuleRow(host, rules[host])));
+}
+
+function siteRuleRow(host, state) {
+  const row = document.createElement('div');
+  row.className = 'site-rule';
+
+  const name = document.createElement('span');
+  name.className = 'site-rule-host';
+  name.textContent = host;
+  name.title = host;
+  row.appendChild(name);
+
+  const badge = document.createElement('span');
+  badge.className = `site-rule-state site-rule-${state}`;
+  badge.textContent = t(state === 'always' ? 'siteRuleAlways' : 'siteRuleNever');
+  row.appendChild(badge);
+
+  const forget = document.createElement('button');
+  forget.type = 'button';
+  forget.className = 'btn btn-text site-rule-forget';
+  forget.textContent = t('siteRuleForget');
+  forget.addEventListener('click', async () => {
+    forget.disabled = true;
+    try {
+      await SiteRules.writeUserRule(host, null);
+    } catch (error) {
+      console.error('Failed to remove site rule:', error);
+      showStatus(t('connectionFailed'), 'error');
+      forget.disabled = false;
+      return;
+    }
+    // 重读一遍，而不是把这一行摘掉：规则是沿父域生效的，删掉 x.com 之后
+    // mobile.x.com 那一行还在不在，只有把表重新读出来才算数。
+    renderSiteRules();
+  });
+  row.appendChild(forget);
+
+  return row;
+}
+
+async function renderAutoStats() {
+  if (!elements.statPages) return;
+  const stats = await AutoStats.read();
+  elements.statPages.textContent = stats.pages.toLocaleString(currentUILang);
+  elements.statChars.textContent = stats.aiChars.toLocaleString(currentUILang);
+  const rate = AutoStats.cacheHitRate(stats);
+  // 一次都没量过写「—」而不是 0%：那两句话不一样，见 shared/auto-stats.js。
+  elements.statCacheHit.textContent = rate === null ? '—' : `${Math.round(rate * 100)}%`;
+}
+
+async function resetAutoStats() {
+  // AutoStats.reset() 自己把错误吃掉（统计写不上不该变成一次报错），所以这里
+  // 没有失败分支 —— 重画一遍就是结果，清没清成看得见。
+  await AutoStats.reset();
+  renderAutoStats();
+}
+
 /**
  * `quiet` is for refreshes the user did not ask for (see the visibilitychange
  * handler in setupEventListeners): no loading flash on the way in, and a
@@ -977,6 +1129,10 @@ async function loadSettings() {
     elements.showFloatBall.checked = result.showFloatBall;
     elements.skipTargetLanguageText.checked = result.skipTargetLanguageText;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
+    // 默认开，所以只有存着的 false 才关得掉它。
+    elements.autoTranslate.checked = result.autoTranslate !== false;
+    showAutoTranslateLangs(result.autoTranslateLangs);
+    syncAutoSubState();
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
     // Default-on, so only a stored false turns it off.
@@ -1102,6 +1258,8 @@ function collectSettings() {
     showFloatBall: elements.showFloatBall.checked,
     skipTargetLanguageText: elements.skipTargetLanguageText.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
+    autoTranslate: elements.autoTranslate.checked,
+    autoTranslateLangs: collectAutoTranslateLangs(),
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
@@ -1246,6 +1404,37 @@ async function notifyContentScripts(settings) {
     });
   } catch (error) {
     // Ignore errors
+  }
+}
+
+/**
+ * Tell the open tabs a language pack just landed.
+ *
+ * A tab that opened before the pack existed is most likely parked on ERROR: the
+ * automatic round runs without a user gesture, so it passes
+ * `allowDownload: false` and every batch comes back `builtinNeedsDownload`. The
+ * scheduler does not retry on its own — deliberately, because retrying against
+ * an engine that is plainly broken is how you burn a user's quota — so without
+ * this message those pages stay blank until a reload.
+ *
+ * The content script has the same notification for the pack it downloads
+ * itself (`ctx.onLanguagePackReady`, content/content-language-pack.js); this is
+ * the half that cannot reach it, because the download that just finished ran in
+ * this page's context, not theirs. The receiving end ignores it unless that tab
+ * is actually on the built-in engine.
+ */
+async function broadcastLanguagePackReady(targetLang) {
+  try {
+    const tabs = await chrome.tabs.query({});
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'LANGUAGE_PACK_READY',
+        sourceLang: BUILTIN_PROBE_SOURCE,
+        targetLang
+      }).catch(() => {});
+    });
+  } catch (error) {
+    // A tab with no content script rejects; nothing here is worth reporting.
   }
 }
 
@@ -1397,6 +1586,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'showFloatBall',
   'skipTargetLanguageText',
   'showTranslationOnly',
+  'autoTranslate',
   'enableImageOcrTranslation',
   'ocrEngine',
   'enableImageOcrHoverButton',
@@ -1503,6 +1693,7 @@ async function downloadLanguagePack() {
     elements.builtinStatus.textContent = t('builtinReady');
     button.hidden = true;
     showStatus(t('builtinDownloadComplete'), 'success');
+    broadcastLanguagePackReady(engine.toApiLang(targetLang));
   } catch (error) {
     console.error('Language pack download failed:', error);
     elements.builtinStatus.textContent = t('builtinDownloadFailed');
@@ -1605,6 +1796,12 @@ function setupEventListeners() {
 
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableImageOcrTranslation.addEventListener('change', syncOcrSubState);
+
+  // 总开关自己进了 IMMEDIATE_SAVE_FIELDS，这里只管把下面那块变灰。语言勾没有
+  // 单独的 id，逐个挂：它们写的是同一个 autoTranslateLangs，一次点击一次写。
+  elements.autoTranslate.addEventListener('change', syncAutoSubState);
+  autoLangChips().forEach(box => box.addEventListener('change', () => persistSettings()));
+  elements.resetAutoStats.addEventListener('click', resetAutoStats);
 
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
   elements.captionDisplayMode.addEventListener('change', updateCaptionPreview);

@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.4.0 — 2026-09-20
+
+### New features
+
+- **Automatic translation.** A page in a language you do not read translates
+  itself, with no click. The decision is one function — `SiteRules.decide()`
+  in `shared/site-rules.js` — and it answers one of five things: translate,
+  don't, ask, this site is off, this language is one you read. Three inputs
+  feed it, in strict precedence: **a rule you set for this site beats a rule we
+  ship, and both beat the language list.** So a site you told us to leave alone
+  stays alone even after it changes language, and the built-in list of sites
+  worth translating (`shared/site-rules-builtin.js`) never overrules something
+  you decided yourself.
+- **One click is a permanent answer.** The bar that appears on an undecided
+  page has two buttons and they are not "yes/no for now" — 「总是翻译」 and
+  「不再翻译」 write a rule for that host, and the bar never appears there
+  again. Rules apply down parent domains, so a decision about `reddit.com`
+  covers `old.reddit.com`. Every rule you have made is listed in the settings
+  page, and **every one of them can be deleted there** — an answer you gave by
+  accident is one click from being unmade.
+- **A page can be paused without a decision.** Alt+A, the toolbar popup and the
+  float ball all toggle the page you are looking at, for this visit only, and
+  leave no rule behind.
+- **Single-page apps are followed.** `shared/spa-navigation.js` watches the
+  History API and the URL, so a new article on a site that never reloads gets
+  the same treatment a fresh page would, and the old page's translations are
+  dropped rather than left to attach to the wrong text.
+- **A translation cache.** Text already translated with the same engine, model,
+  prompt and target language is not sent again (`shared/translation-cache.js`),
+  which makes a second visit free and a back-button navigation instant.
+- **Site adapters** (`content/page/site-adapter.js`): the containers worth
+  translating and the furniture worth skipping, per site, for the handful where
+  a generic sweep gets it wrong.
+- **On this computer** — a small panel in the settings page counting the pages
+  translated this month, how much the cache saved, and how many characters
+  actually went to the model. It lives in `chrome.storage.local`
+  (`shared/auto-stats.js`): **it is not synced, and not sent anywhere.** It is
+  a mirror for you, not telemetry for us.
+
+### Fixes
+
+- A page stuck on a missing built-in language pack now recovers by itself the
+  moment the pack lands, whether it was downloaded by the page's own prefetch
+  or by the button in the settings page — previously it stayed blank until a
+  reload.
+- Twenty-seven settings-page strings that were English in the other nine
+  locales are translated, and `test/unit/i18n-locale-coverage.test.mjs` now
+  fails on the next English-only string instead of letting it ship.
+
 ## 1.3.1 — 2026-08-18
 
 ### Fixes

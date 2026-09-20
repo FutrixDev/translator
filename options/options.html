@@ -161,6 +161,95 @@
           </div>
         </section>
 
+        <!-- Automatic translation. A spanning card, because the three things
+             under it are one subject and the middle one is a list: the switch,
+             the sites the user has already decided about, and what that has
+             cost this month.
+
+             Placed after API Settings rather than further down: it is the
+             biggest switch on the page and the one a user comes looking for
+             when a page translated itself. It does not go between Translation
+             Settings and YouTube — those two are a deliberate pair in the
+             auto-fit grid (test/e2e/feature-settings.spec.js asserts the
+             adjacency), and a spanning card between them takes up a whole row
+             and breaks it. -->
+        <section class="settings-card settings-card-span" id="autoTranslateCard">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+            </svg>
+            <span data-i18n="autoTranslateSection">Automatic Translation</span>
+          </h2>
+
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <span data-i18n="autoTranslateEnable">Translate pages automatically</span>
+              <input type="checkbox" id="autoTranslate" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="hint" data-i18n-hint="hintAutoTranslate"></span>
+          </div>
+
+          <div class="feature-suboptions" id="autoSubOptions">
+            <!-- Base codes, because that is what the rule is judged on:
+                 decide() puts both sides through baseLang(), so zh-CN and
+                 zh-TW are one tick here — "I read Chinese", not "translate
+                 into Chinese", which is the Target Language select above. -->
+            <div class="form-group">
+              <label data-i18n="autoTranslateLangsLabel">Only these languages</label>
+              <div class="lang-chips" id="autoTranslateLangs">
+                <label class="lang-chip"><input type="checkbox" data-lang="zh"><span data-i18n="langZh"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="en"><span data-i18n="langEn"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ja"><span data-i18n="langJa"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ko"><span data-i18n="langKo"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="fr"><span data-i18n="langFr"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="de"><span data-i18n="langDe"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="es"><span data-i18n="langEs"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="pt"><span data-i18n="langPt"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ru"><span data-i18n="langRu"></span></label>
+              </div>
+              <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
+            </div>
+
+            <!-- The audit table. Every row is a decision the user made in the
+                 popup, and every row can be taken back here — that is the
+                 point of showing them at all. -->
+            <div class="form-group">
+              <label data-i18n="siteRulesTitle">Sites you have decided about</label>
+              <div class="site-rules" id="siteRules"></div>
+              <span class="hint" data-i18n-hint="hintSiteRules"></span>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="autoStatsTitle">On this computer</label>
+              <div class="auto-stats">
+                <div class="auto-stat">
+                  <span class="auto-stat-value" id="statPages">0</span>
+                  <span class="auto-stat-label" data-i18n="autoStatsPages">Pages translated automatically</span>
+                </div>
+                <div class="auto-stat">
+                  <span class="auto-stat-value" id="statCacheHit">—</span>
+                  <span class="auto-stat-label" data-i18n="autoStatsCacheHit">Served from the cache</span>
+                </div>
+                <div class="auto-stat">
+                  <span class="auto-stat-value" id="statChars">0</span>
+                  <span class="auto-stat-label" data-i18n="autoStatsChars">Characters sent to the model</span>
+                </div>
+              </div>
+              <button type="button" id="resetAutoStats" class="btn btn-text">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+                <span data-i18n="autoStatsReset">Clear</span>
+              </button>
+              <span class="hint" data-i18n-hint="hintAutoStats"></span>
+            </div>
+          </div>
+        </section>
+
         <!-- Translation Settings -->
         <section class="settings-card">
           <h2 class="section-title">
@@ -677,6 +766,11 @@
        will draw, including the migration from the old original-caption box. -->
   <script src="../shared/caption-core.js"></script>
   <script src="../i18n/messages.js"></script>
+  <!-- 站点规则的写入协议（单写者、父域查找）和内容脚本共用一份；内置名单
+       是它 table() 的数据源，一起加载省得将来有人调 matchBuiltin 时炸。 -->
+  <script src="../shared/site-rules-builtin.js"></script>
+  <script src="../shared/site-rules.js"></script>
+  <script src="../shared/auto-stats.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/pdf-errors.js"></script>
   <script src="../pdf/pdf-ui.js"></script>

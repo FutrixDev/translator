@@ -482,6 +482,9 @@
     REASONS,
     decide,
     normalizeHost,
+    // 导出是为了设置页：那份语言名单画在界面上，勾哪几个得和 decide() 认哪几个
+    // 是同一个口径。设置页再抄一份 split('-')[0] 就是这张表的第四份副本。
+    baseLang,
     lookupUserRule,
     writeUserRule,
     updateAskCount,

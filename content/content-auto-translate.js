@@ -109,6 +109,12 @@
     // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
     // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
     let gaveUp = 0;
+    // 本机统计里「这个月自动翻了几页」已经替这个 URL 记过一笔了。
+    //
+    // 按 URL 记，不按代次记：同一页会因为设置变动、暂停后继续重开好几轮代次，那
+    // 还是同一页；而单页应用换了路由就是另一页，URL 也确实变了。第一次真的翻出
+    // 东西才记 —— 判定成 off、或者一块都没送出去的那些「打开过」不算翻译过。
+    let countedUrl = '';
 
     // ------------------------------------------------------------------ 对外
 
@@ -458,6 +464,8 @@
       if (suspended) suspended.suspend();
 
       let error = null;
+      // 这一轮真的把块送去翻了（不是整批被语言设置滤空、也不是半路换了代次）。
+      let translated = false;
       try {
         // 「已经是目标语言的就别翻了」是用户的设置，自动这一轮和手动那一轮认的是
         // 同一条（content/content-page-translation.js 在同一个位置调它）。不认，
@@ -472,6 +480,7 @@
           for (const block of blocks) if (!keep.has(block.element)) commit(block.element);
         }
         if (fresh.length > 0 && guard.version() === session) {
+          translated = true;
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
           //
@@ -534,6 +543,11 @@
         stopDiscovery();
         console.warn('Blab Translation: auto translation stopped for this page —', error);
         return;
+      }
+
+      if (translated && countedUrl !== location.href) {
+        countedUrl = location.href;
+        globalThis.AutoStats.add({ pages: 1 });
       }
 
       setStatus(STATUS.IDLE);

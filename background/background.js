@@ -2,6 +2,9 @@
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
 import '../shared/site-rules.js';
+// Side-effect module: publishes globalThis.AutoStats. 统计的写入点全在这里 ——
+// 每个标签页都在记，读—改—写必须收进单实例（见 shared/auto-stats.js 开头）。
+import '../shared/auto-stats.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -536,6 +539,19 @@ async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent,
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 本机统计里「发给模型的字符数」记在这里，而不是记在三个 handler 里。
+  //
+  // 这是那条路上唯一一个**只经过一次**的地方：译文缓存在内容脚本那边就把命中
+  // 的部分拦掉了，内置引擎压根不发消息，所以进到这个监听器的每一条翻译消息都
+  // 对应一次真要发出去的请求。记在更深处要改三个函数（其中 handleBatchTranslateFast
+  // 明确不动），记在更浅处就没有了。
+  //
+  // 数的是源文本的字符数，不是请求体（见 AutoStats.messageChars）。没配 Key 时
+  // handler 会当场回错、一个字符也没发出去——那一刻这里已经记过了，差值是几十个
+  // 字符，换来的是这段逻辑只有一处。
+  const aiChars = globalThis.AutoStats.messageChars(message);
+  if (aiChars > 0) globalThis.AutoStats.add({ aiChars });
+
   switch (message.type) {
     case 'INLINE_CONTEXT_MENU_STATE':
       if (typeof message.visible === 'boolean') {
@@ -605,6 +621,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 这里只管转接。
     case 'SITE_RULES_WRITE':
       globalThis.SiteRules.applyWrite(message)
+        .then(value => sendResponse({ value }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+
+    // 本机统计的读—改—写。内容脚本和设置页不自己动这份记录：每个标签页都在往
+    // 里记，两边先读到同一份旧数字、后写的整份盖掉，丢的就是那几笔。规则在
+    // shared/auto-stats.js，这里只管转接。
+    case 'AUTO_STATS_WRITE':
+      globalThis.AutoStats.applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
