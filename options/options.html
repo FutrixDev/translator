@@ -195,8 +195,12 @@
           <div class="feature-suboptions" id="autoSubOptions">
             <!-- Base codes, because that is what the rule is judged on:
                  decide() puts both sides through baseLang(), so zh-CN and
-                 zh-TW are one tick here — "I read Chinese", not "translate
-                 into Chinese", which is the Target Language select above. -->
+                 zh-TW are one tick here. A tick means "a page written in this
+                 language may be translated automatically" — not "translate
+                 into this language", which is the Target Language select
+                 above, and not "I read it, so leave it alone" either: a
+                 language that is NOT ticked is the one decide() answers
+                 LANG_NOT_LISTED for and leaves untranslated. -->
             <div class="form-group">
               <label data-i18n="autoTranslateLangsLabel">Only these languages</label>
               <div class="lang-chips" id="autoTranslateLangs">
