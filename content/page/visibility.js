@@ -11,6 +11,16 @@
 
   const { settings, state } = ctx;
 
+  // 「整页翻译的译文」是什么，**只有这一条说了算**。悬停和划词的译文块用的是同一
+  // 个 .ai-translator-inline-block 类名，只多带一个自己的类名，所以少写一个
+  // :not() 就会把用户划词译的那一句算成整页翻译的一部分 —— 于是 Alt+A 第一下不是
+  // 翻译整页，是把那一句藏起来。
+  //
+  // 这个文件里三处用到它，三处都必须是同一条：显隐开关、「仅显示译文」的逐条计算，
+  // 以及 content-page-translation.js 问的「这一页翻过了没有」。
+  const PAGE_TRANSLATION_SELECTOR =
+    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+
   /**
    * 「此刻想不想看译文」——**这个开关只有这一处实现**。
    *
@@ -25,7 +35,11 @@
     // 东西」时才置位的话，在一个还没有译文的页面上藏一次、再点「翻译整页」，标记
     // 就永远停在 false，自动翻译从此不会再醒。
     state.translationsVisible = visible;
-    document.querySelectorAll('.ai-translator-inline-block').forEach((el) => {
+    // 只管整页翻译那一批。划词和悬停译出来的是**一次性**的结果：用户刚刚指着一句
+    // 话说「这句什么意思」，答案不该被一个管着整页的开关收走。而且那条插入路径
+    // （content-hover-translation.js）根本不读这个标记 —— 藏旧的、不藏新的，用户
+    // 看到的就是这个开关时灵时不灵。一次性的结果由它自己那条路收（点别处、Esc）。
+    document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
       el.classList.toggle('ai-translator-hidden', !visible);
     });
     // 受管容器里的译文整体开关（见 content-managed-translation.js）：它没有自己
@@ -73,11 +87,6 @@
   // 只作用于整页翻译（.ai-translator-translated 标记的块）；悬停/划词翻译的
   // 译文块（带各自的类名）被明确排除。
   const CROWDED_ATTR = 'data-ai-translator-crowded';
-  // 「整页翻译的译文」是什么，只有这一条说了算。悬停和划词的译文块用的是同一个
-  // .ai-translator-inline-block 类名，少写一个 :not() 就会把用户划词译的那一句
-  // 算成「这一页翻过了」—— 于是 Alt+A 第一下不是翻译整页，是把那一句藏起来。
-  const PAGE_TRANSLATION_SELECTOR =
-    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
 
   function shouldHideSource(translationEl) {
     // 浮球“隐藏译文”开关优先：译文都不显示了还藏着原文，页面就两边全空了

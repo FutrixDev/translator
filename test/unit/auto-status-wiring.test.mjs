@@ -117,6 +117,23 @@ test('整页译文的判据带着那两个 :not()，划词和悬停不算', () =
   assert.match(managed, /handle\.className = \['ai-translator-inline-block'/);
 });
 
+test('显隐开关只收整页那一批 —— 划词译出来的一句不归它管', () => {
+  // 这个开关的三个入口（悬浮球、Alt+A、popup）说的都是「这一页我想看原文」。
+  // 用它去收划词译的那一句是两头不落好：那是用户刚刚指着一句话问出来的答案，
+  // 而且插它的那条路（content-hover-translation.js）根本不读这个标记 —— 藏旧
+  // 的、不藏新的，用户看到的就是这个开关时灵时不灵。
+  const visibility = code('content/page/visibility.js');
+  const fn = visibility.slice(visibility.indexOf('function setTranslationsVisible(visible)'),
+    visibility.indexOf('function revealHiddenTranslations()'));
+  assert.match(fn, /document\.querySelectorAll\(PAGE_TRANSLATION_SELECTOR\)/);
+  assert.doesNotMatch(fn, /'\.ai-translator-inline-block'/, '收的是整页那一批，不是页面上所有译文块');
+
+  // 划词/悬停那条插入路径确实不读这个标记 —— 上面那句话的依据。它只在整页那条
+  // 路（content/page/insert.js）上被调用。
+  assert.doesNotMatch(code('content/content-hover-translation.js'), /applyTranslationVisibility/);
+  assert.match(code('content/page/insert.js'), /ctx\.applyTranslationVisibility\(translationEl\)/);
+});
+
 test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的', () => {
   const insert = code('content/page/insert.js');
   // 插入点必须跟上当前的显隐状态。跟在哪一步由 clip-guard.test.mjs 钉着：得等
@@ -387,7 +404,30 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
   const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));
   assert.match(keys, /'siteRules'/);
   // 而 popup 那一行画的就是 status —— 这是「重判」必须落到 status 上的原因。
-  assert.match(code('popup/popup.js'), /const on = globalAuto && status !== 'off' && status !== 'ask';/);
+  const popup = code('popup/popup.js');
+  assert.match(popup, /function siteAutoOn\(status\) \{\s*return !!globalAuto && AUTO_ACTIVE\.has\(status\);/);
+  assert.equal((popup.match(/siteAutoOn\(status\)/g) || []).length, 3,
+    '一处定义、两处调用（画这一行、点这一行）—— 画的和点的必须是同一句');
+});
+
+test('pending 不能画成「开」—— 它只会走到 ask 或 off，而点一下写下的是永久的 never', () => {
+  // 走到 pending 的前提就是第一问已经答了 ask（off 和 auto 都当场返回了），而
+  // 第二问带上语言之后，decide() 的阶梯上剩给它的只有 off 和 ask。所以一个
+  // pending 的站点永远不会变成「在自动翻」。popup 问完就不再听了，画错的那个
+  // 「开」会一直错到它关掉；用户照着它点一下，写进去的是一条永久的 never。
+  const popup = code('popup/popup.js');
+  const set = popup.slice(popup.indexOf('const AUTO_ACTIVE'), popup.indexOf('const AUTO_RESUMABLE'));
+  assert.doesNotMatch(set, /'pending'/, 'pending 不是「自动翻译在管这一页」');
+  for (const s of ['idle', 'running', 'paused', 'error']) assert.match(set, new RegExp(`'${s}'`));
+
+  // 同一个集合也决定暂停那一行在不在 —— 两处问的是同一件事，所以不能是两个集合。
+  assert.match(popup, /const pauseRow = AUTO_ACTIVE\.has\(status\);/);
+
+  // 上面那段推理的依据：decide() 里 off 和 auto 都当场返回，ask 是阶梯的末端。
+  const rules = code('shared/site-rules.js');
+  const ladder = rules.slice(rules.indexOf('function decide(input)'));
+  assert.match(ladder.slice(0, 2000), /if \(!pageLang\) return out\('ask', REASONS\.UNKNOWN_LANGUAGE\);\s*return out\('ask', REASONS\.DEFAULT_ASK\);/,
+    '语言那一段之后没有通往 auto 的路 —— 这条一旦变了，pending 的含义也变了');
 });
 
 test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {

@@ -244,6 +244,13 @@ test('划词译了一句，Alt+A 第一下仍然是翻整页，不是把那一�
     // 剩下那一段被翻了，划词那一条还在、还看得见。
     await expect(pageBlocks).not.toHaveCount(0, { timeout: 30000 });
     await expect(page.locator('.ai-translator-selection-translation')).toBeVisible();
+
+    // 再按一下：这一下是「我想看原文」。整页那一批收起来，划词那一句留着 ——
+    // 他刚刚指着那句话问过「这什么意思」，答案不归一个管整页的开关收走。
+    const hidden = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(hidden.action).toBe('restored');
+    await expect(pageBlocks.first()).toBeHidden();
+    await expect(page.locator('.ai-translator-selection-translation')).toBeVisible();
   } finally {
     await close();
   }

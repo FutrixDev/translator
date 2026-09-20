@@ -1327,3 +1327,31 @@ Tab 停在它身上时人看到的是焦点凭空消失了一格；状态点没�
 （`resumeCurrentPage` / `markPageExplicit` / `onRouteChange`），多一处就红 —— 每多一条自己
 会解闩的路，都得是有人特意写下的。e2e 那一条在 `test/e2e/auto-translate-spa.spec.js`：
 `/abs/2401.00001` 上暂停，`pushState` 到 `/abs/2401.00002`，新文章照常翻。
+
+### PR-7 第十二轮：两处「同一个问题两个答案」
+
+**一、显隐开关收走了划词译的那一句。** `setTranslationsVisible()` 用的是宽选择器
+`.ai-translator-inline-block`，而划词和悬停的译文块用的是同一个类名（只多带一个自己
+的）。于是「我想看原文」这一下把用户刚刚指着一句话问出来的答案也收走了 —— 更糟的是
+插它的那条路（`content-hover-translation.js`）根本不读 `state.translationsVisible`，
+所以他再划一句，新的答案照样冒出来：藏旧的、不藏新的，这个开关在他眼里就是时灵时
+不灵。
+
+这个文件里本来就有一条说了算的判据 `PAGE_TRANSLATION_SELECTOR`（「仅显示译文」的逐条
+计算和 `hasPageTranslations()` 用的都是它，后者的注释里写得很清楚：用户划词译了一句，
+这一页并不因此就「翻过了」）。显隐开关只是没收到这份通知。现在三处同一条，常量也从
+文件中段挪到了顶上 —— 它是这个文件的中心定义，不该藏在 `CROWDED_ATTR` 后面。
+
+**二、popup 把 `pending` 画成「开」。** 走到 `PENDING` 的**前提**就是第一问已经答了
+`ask`（`off` 和 `auto` 都当场返回了），而第二问带上语言之后，`decide()` 的阶梯上剩给它
+的只有 `off`（同语言 / 不在语言名单里）和 `ask` 两条 —— 再没有一条通往 `auto`。所以一个
+`pending` 的站点**永远不会**变成「在自动翻」。
+
+代价不是画错一瞬：popup 问完就不再听了，这个字会一直错到它关掉；而用户照着那个「开」
+点一下，写进去的是一条**永久的 `never`**。
+
+`AUTO_ACTIVE` 去掉 `pending` 之后，站点行的「开 / 关」和暂停行的「在 / 不在」问的成了同
+一件事，所以合并成一个出处：`siteAutoOn(status)`，画这一行和点这一行共用。原来那句
+`globalAuto && status !== 'off' && status !== 'ask'` 在两个函数里各写了一遍，这正是它
+们会分家的原因。单元测试把 `decide()` 末端那两行 `ask` 也钉住了 —— 那是上面整段推理的
+依据，它一变，`pending` 的含义就变了。

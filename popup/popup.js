@@ -486,8 +486,17 @@ function onPdfTranslateLocal() {
 // 是一个点了没反应的按钮。
 // ---------------------------------------------------------------------------
 
-// 自动翻译真的在管这一页的那几个状态。off / ask 不在其中：那时「暂停」无事可停。
-const AUTO_ACTIVE = new Set(['pending', 'idle', 'running', 'paused', 'error']);
+// 自动翻译真的在管这一页的那几个状态。**站点那一行的「开」和暂停那一行在不在，
+// 问的是同一件事**，所以只有这一个出处。
+//
+// off / ask 不在其中：那时「暂停」无事可停。pending 也不在 —— 它看着像「正要
+// 开翻」，其实不是：走到 pending 的**前提**就是第一问已经答了 ask（off 和 auto
+// 都当场返回了），而第二问带上语言之后，decide() 的阶梯上剩给它的只有 off
+// （同语言 / 不在语言名单里）和 ask 两条，再没有一条通往 auto。
+//
+// 把它算成「开」的代价不是画错一瞬：popup 问完就不再听了，这个字会一直错到它
+// 关掉；而用户照着那个「开」点一下，写进去的是一条**永久的 never**。
+const AUTO_ACTIVE = new Set(['idle', 'running', 'paused', 'error']);
 
 // 这一行该写「继续」而不是「暂停」的状态。和页面那边 resumeCurrentPage() 的门
 // 是同一道（PAUSED 或 ERROR）—— 那边早就支持把出错的一页重跑，这边要是只认
@@ -539,16 +548,27 @@ function isHideAction() {
   return !!(pageState && pageState.hasTranslations && pageState.translationsVisible);
 }
 
+/**
+ * 站点那一行印「开」还是「关」—— 画它的时候和点它的时候问的必须是同一句，否则
+ * 用户看见「开」、点下去写的却是一条「开」的规则。所以两处共用这一个。
+ *
+ * 问的是**此刻这一页到底在不在自动翻**，不是 siteRules 里写了什么：x.com 内置
+ * 就是 always，规则表里一条没有，说「关」就是撒谎。总开关关着时全部算关 ——
+ * 那时候确实一页都不翻。
+ */
+function siteAutoOn(status) {
+  return !!globalAuto && AUTO_ACTIVE.has(status);
+}
+
 function renderPageRows() {
   const auto = pageState && pageState.auto;
   const status = auto ? auto.status : '';
 
-  // ① 这个站点。「开」问的是此刻这一页到底在不在自动翻，不是 siteRules 里写了
-  //    什么 —— x.com 内置就是 always，规则表里一条没有，说「关」就是撒谎。
+  // ① 这个站点。「开」是什么意思见 siteAutoOn()。
   const siteRow = !!(pageState && pageState.host);
   elements.toggleSiteAuto.hidden = !siteRow;
   if (siteRow) {
-    const on = globalAuto && status !== 'off' && status !== 'ask';
+    const on = siteAutoOn(status);
     // 黑名单这一行是死的，不是关着的。阶梯上黑名单排在所有站点规则前面，所以往
     // 规则表里写一条 always 下去，这一页照样不翻 —— 点了没反应还不是最糟的，最
     // 糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻起来，而他本来只想管
@@ -598,7 +618,7 @@ async function toggleSiteAuto() {
   // 这里再挡一道：黑名单改不动，别让这一下的副作用（开总开关）自己跑掉。
   if (pageState.blocked) return;
   const status = pageState.auto ? pageState.auto.status : '';
-  const on = globalAuto && status !== 'off' && status !== 'ask';
+  const on = siteAutoOn(status);
   try {
     await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
     // 总开关排在规则后面，顺序是有意的：规则写不进去（配额挤爆）的时候，总开关
