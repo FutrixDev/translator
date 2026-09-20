@@ -1,6 +1,10 @@
 // Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+// 内置名单排在 site-rules.js 之前：它是那个模块 table() 的数据源。没有它
+// table() 会静静地退回一张空表，而空表的 isBlocked() 对每一个域名都答「不在
+// 黑名单里」—— 银行、网页邮箱、政务表单那份禁翻清单就这么没了，不报错。
+import '../shared/site-rules-builtin.js';
 import '../shared/site-rules.js';
 // Side-effect module: publishes globalThis.AutoStats. 统计的写入点全在这里 ——
 // 每个标签页都在记，读—改—写必须收进单实例（见 shared/auto-stats.js 开头）。

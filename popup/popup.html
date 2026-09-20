@@ -115,6 +115,11 @@
   </div>
 
   <script src="../i18n/messages.js"></script>
+  <!-- 内置名单要排在 site-rules.js 之前：它是那个模块 table() 的数据源，而
+       table() 没有它时静静地退回一张空表 —— 空表的 isBlocked() 对每一个域名都
+       答「不在黑名单里」。这里今天只用 writeUserRule，用不着判定；配一份数据源
+       是为了将来有人在这里问一句 decide()，拿到的不是一张假的空表。 -->
+  <script src="../shared/site-rules-builtin.js"></script>
   <script src="../shared/site-rules.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/engine-status.js"></script>
