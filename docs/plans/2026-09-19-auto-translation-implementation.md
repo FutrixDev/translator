@@ -1431,7 +1431,7 @@ arXiv / old.reddit.com）。四条 e2e 逐条反向验证过：把 `ctx.resolveS
 
 ### PR-9：字幕面接入
 
-本文 §8 说的是「复用」，落地时有二十五处不同。
+本文 §8 说的是「复用」，落地时有二十六处不同。
 
 **1. 闸门用 `siteRefused`，不是 `siteAuto`。** §8 原说字幕这一面跟着整页那一面的
 结论走。真接上去发现它在最该生效的地方永远是 false：`SiteRules.decide()` 的阶梯里，
@@ -1661,6 +1661,17 @@ true。监听器不能再直接挂它 —— `addEventListener` 递进来的 Eve
 （且回退关着）本来就是整条译到底，一分钱不花，没有理由缩。所以
 `limitMs === Infinity` 直接放行，包括播放头后面那些。倒回去看是另一回事：那时播放头
 自己就退回来了，这些句子重新排在它前面。
+
+**26. 他自己按那一行开成了，也要当场记下（评审第 12 轮 P2）。** 第 21 条把「按成
+了就当场记 sawNativeOn」写进了自动那一路，菜单那一路（`ctx.enableNativeCaptions`）
+漏在外面 —— 而它恰恰更不能省：YouTube 的 `enableNativeCaptions()` 在 `button.click()`
+之后直接答 true，不等 `aria-pressed` 翻面，而这一行紧接着就 `syncControls()`。那一问
+要是还读到 `false`，就落进自动那一路，而闩刚被这一行解开（他按了，就是他要），
+`autoEnableCaptions` 开着的话它会**再点一次**——把观众刚要的字幕点回去。
+
+就算 `aria-pressed` 当场就翻了，这一行也还得在：不记的话那道闩永远合不上，观众在这
+1.5 秒里把字幕关掉，下一拍看见的是「关着，而且没落闩」，照样替他开回来。按空了则仍
+旧什么都不记，理由同第 21 条。
 
 **10. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
 菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`

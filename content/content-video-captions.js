@@ -976,9 +976,18 @@
     try {
       answer = provider.enableNativeCaptions();
     } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
-    // 按空了不记任何东西。菜单那一行露不露，是 captionStatus() 每一拍现问
+    // 按成了就**当场**记下「看见开着」，和自动那一路一个道理，只是这里更不能省：
+    // 下面紧接着就是 syncControls()，它会去问 nativeCaptionsState()，而 YouTube 的
+    // enableNativeCaptions() 在 button.click() 之后直接答 true，不等 aria-pressed
+    // 翻面。那一问要是恰好还读到 false，就落进自动那一路——闩刚被上一行解开、
+    // autoEnableCaptions 又开着的话，它会再点一次，把观众刚要的字幕点回去。
+    // 就算 aria-pressed 当场就翻了，这一行也还得在：不记的话闩永远合不上，观众在
+    // 这 1.5 秒里把字幕关掉，下一拍看见的是「关着，而且没落闩」，照样替他开回来。
+    //
+    // 按空了则什么都不记。菜单那一行露不露，是 captionStatus() 每一拍现问
     // canEnableNativeCaptions() 问出来的：按钮 disabled 就不摆（那是 YouTube 在
     // 说这段视频没有字幕轨），按钮一旦活过来，那一行自己就回来了。
+    if (answer) state.sawNativeOn = true;
     syncControls();
     return !!answer;
   };

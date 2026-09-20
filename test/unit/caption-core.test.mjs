@@ -678,6 +678,27 @@ test('替他开成了就当场记下，别等下一拍', () => {
   );
 });
 
+test('他自己按那一行开成了，同样要当场记下', () => {
+  // 菜单那一行走的是另一个函数，漏在了外面。YouTube 的 enableNativeCaptions() 在
+  // button.click() 之后直接答 true，不等 aria-pressed 翻面，而这一行紧接着就
+  // syncControls() —— 那一问要是还读到 false，就落进自动那一路：闩刚被这一行解开，
+  // autoEnableCaptions 又开着的话，它会再点一次，把观众刚要的字幕点回去。
+  const engine = repoFile('content/content-video-captions.js');
+  const manual = engine.match(/ctx\.enableNativeCaptions = function\(\)[\s\S]*?\n  \};/);
+  assert.ok(manual, '找不到 ctx.enableNativeCaptions');
+  assert.match(
+    manual[0],
+    /if \(answer\) state\.sawNativeOn = true;\n\s*syncControls\(\);/,
+    '按下去的结果丢了，或者记在了 syncControls() 后面——那一拍已经去问过播放器了',
+  );
+
+  // 点一次和答 true 之间没有确认：正因为如此，上面那一行才省不得。
+  const providers = repoFile('content/content-caption-providers.js');
+  const press = providers.match(/enableNativeCaptions\(\) \{[\s\S]*?\n    \},/);
+  assert.ok(press, '找不到 YouTubeProvider.enableNativeCaptions()');
+  assert.match(press[0], /button\.click\(\);[\s\S]{0,80}return true;/);
+});
+
 test('「原字幕开着没有」拿不准的时候，不许去合那道闩', () => {
   // 那道闩一合就是一整个会话。YouTube 的字幕容器是播放器外壳的一部分，可以先于
   // 控制条挂上来、而且是空的——把它读成「开着」，等按钮带着 aria-pressed="false"
