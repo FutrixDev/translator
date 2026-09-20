@@ -1,7 +1,7 @@
 # 隐私政策 — 叭叭翻译 / Blab Translation Privacy Policy
 
-最后更新：2026-09-20 ｜ 适用版本：1.4.0 起
-Last updated: 2026-09-20 ｜ Applies from: version 1.4.0
+最后更新：2026-09-21 ｜ 适用版本：1.4.0 起
+Last updated: 2026-09-21 ｜ Applies from: version 1.4.0
 
 > 这一页要能贴到 Chrome 网上应用店的 **Privacy policy URL** 里，所以它写的是
 > 事实，不是承诺：每一条都能在源码里指到具体文件。哪天代码改了而这一页没改，
@@ -11,14 +11,26 @@ Last updated: 2026-09-20 ｜ Applies from: version 1.4.0
 
 ## 一句话 / In one sentence
 
-**我们不收集你的任何数据。** 扩展把要翻译的文字发给**你自己配置的**翻译接口；
-漫画和 PDF 这两项功能例外，它们会把文件上传到我们的服务器处理。除此之外，没有
-任何东西离开你的电脑 —— 没有埋点、没有统计上报、没有第三方分析。
+**扩展本身不收集你的任何数据。** 它把你要翻译的文字发给**你自己配置的**那个接口；
+默认引擎跑在你自己的电脑上，连这一步都不出去。没有埋点、没有统计上报、没有第三方
+分析。
 
-**We collect nothing.** The extension sends the text you want translated to the
-API **you configured yourself**. The two exceptions are comic and PDF
-translation, which upload the file to our server to do the work. Nothing else
-leaves your computer: there is no analytics, no telemetry, no third-party SDK.
+**有例外，而且只有一处：漫画翻译和 PDF 翻译。** 这两项跑在我们的服务器上，所以
+要先登录。一旦你用了它们，我们这边就有一个属于你的账号：你的邮箱、你这个月还剩
+多少免费页数、以及你跑过的每一个任务；文件本身也会上传给我们处理。**不碰这两项
+功能，就没有账号，上面这些东西一样都不存在。** 细账见第二节。
+
+**The extension itself collects nothing.** It sends the text you want translated
+to the API **you configured yourself**, and on default settings that engine runs
+on your own computer, so not even that leaves. There is no analytics, no
+telemetry, no third-party SDK.
+
+**There is one exception, and only one: comic translation and PDF translation.**
+They run on our servers, so they require signing in. Once you use them we hold an
+account for you — your email address, how many free pages you have left this
+month, and a record of every job you have run — and the file itself is uploaded
+to us to do the work. **If you never touch those two features there is no
+account and none of that exists.** Section 2 is the itemised list.
 
 ---
 
@@ -30,8 +42,8 @@ leaves your computer: there is no analytics, no telemetry, no third-party SDK.
 | 划词 / 悬停 / 输入框翻译 | 同上 | 同一条路，同一个引擎设置。 |
 | 视频字幕翻译 | 同上 | 发出去的是字幕文本，不是视频、不是音频。 |
 | 图片文字识别（OCR） | **默认在本机**（打包在扩展里的 Tesseract，离线运行）；也可以选用你自己的视觉模型 | 选本机引擎时图片不出电脑。选视觉模型时，图片会发到你填的那个接口。 |
-| **漫画翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。图片上传到我们的服务器处理，处理完返回结果。 |
-| **PDF 翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。整个 PDF 文件会上传。任务在服务器上排队，完成后通知你。 |
+| **漫画翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。图片上传到我们的服务器处理，处理完返回结果。连同上传的还有**那张图所在的网址**，见第二节。 |
+| **PDF 翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。整个 PDF 文件会上传，文件名跟着任务记录一起存下来。任务在服务器上排队，完成后通知你。 |
 
 **自动翻译不改变这张表。** 它改变的只是「什么时候开始翻译」—— 从「你点一下」
 变成「这一页符合你设的规则时自动开始」。发出去的还是同样的文字，发到同样的地方，
@@ -46,7 +58,40 @@ translation makes no network request at all.
 
 ---
 
-## 二、存在你电脑上的东西 / What is stored on your machine
+## 二、账号：漫画和 PDF 那一半 / The account behind comic and PDF translation
+
+漫画翻译和 PDF 翻译是仅有的两项不用你自己 API key 的功能 —— 它们跑在我们的服务器
+上，靠一个按月重置的免费页数额度。要有额度就要有账号，所以**这两项功能的代价就是
+这一节**。
+
+| 我们这边存下了什么 | 什么时候产生的 | 源码里在哪 |
+| --- | --- | --- |
+| 你的邮箱，可能还有显示名 —— 由 Google 或 GitHub 在你授权时提供 | 第一次登录 | 登录发生在 `blab-translation.com/ext/connect` 这个网页上，OAuth 全程在那里完成，扩展只拿回一个令牌（`background/comic-client.js` 的 `signIn()`） |
+| 免费额度：这个月还剩几页、几号重置 | 每次用这两项功能 | `GET /api/billing/me`；设置页上那几个数字就是它 |
+| 任务记录：每个漫画 / PDF 任务的状态、PDF 的**文件名**、漫画那张图**所在页面的网址** | 每次发起一个任务 | `/api/comic/jobs`、`/api/pdf/jobs`（`background/comic-client.js`、`background/pdf-client.js`） |
+| 文件本身：漫画的那张图、PDF 的整个文件 | 每次发起一个任务 | 字节由扩展上传；PDF 走一次性预签名直传对象存储 |
+
+两件值得单独说的事：
+
+- **这份记录跟着账号走，不跟着设备走。** 换一台电脑登录同一个账号，看到的是同一份
+  历史 —— 设置页里能列出你在别的设备上跑过的任务，就是因为这个。
+- **漫画翻译会把那张图所在页面的网址一起发过来**，这是整份政策里唯一一处网址离开
+  你电脑的地方，而且只发生在你亲手点下「翻译这张图」的那一刻。网页翻译、划词、
+  字幕、OCR 都不发送任何网址，自动翻译也不发送。
+
+Comic and PDF translation are the only two features that do not use your own API
+key: they run on our servers against a monthly free page allowance, which is why
+they need an account. Using them means we hold your email address (supplied by
+Google or GitHub when you authorise the sign-in), your remaining free pages, and
+a record of every job — with the file name for a PDF, and **the address of the
+page the image came from** for a comic. That job history belongs to the account,
+not to the device, which is why the settings page can list jobs you started
+elsewhere. The comic page URL is the only address that ever leaves your computer,
+and only at the moment you click "translate this image".
+
+---
+
+## 三、存在你电脑上的东西 / What is stored on your machine
 
 | 内容 | 位置 | 跟着账号同步吗 |
 | --- | --- | --- |
@@ -55,7 +100,7 @@ translation makes no network request at all.
 | API key | `chrome.storage.sync` | 是，同上。**我们从不读取、不上传它**；它只在你的浏览器里被拼进发给你自己接口的请求 |
 | 登录令牌（漫画 / PDF 用） | `chrome.storage.local` | **否**，只在这台设备上 |
 | 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
-| 译文缓存 | `chrome.storage.local` | 否 |
+| 译文缓存（30 天过期） | `chrome.storage.local` | 否 |
 
 **「本机统计」那一块是给你自己看的镜子，不是我们的埋点。** 它之所以放在
 `local` 而不是 `sync`，正是为了这句话能站得住：`sync` 跟着账号走，这几个数字不
@@ -67,7 +112,7 @@ button that clears it.
 
 ---
 
-## 三、权限为什么要 / Why each permission
+## 四、权限为什么要 / Why each permission
 
 | 权限 | 用途 |
 | --- | --- |
@@ -82,26 +127,36 @@ button that clears it.
 
 ---
 
-## 四、我们不做的事 / What we do not do
+## 五、我们不做的事 / What we do not do
 
 - 不出售数据，不把数据用于与功能无关的任何用途，不做信用评估或贷款审批。
 - 不收集浏览历史。扩展知道你打开了哪一页，**是因为它要在那一页上干活**，这件事
-  不会被记录，也不会被发送 —— 唯一的例外是你自己按下的「总是翻译 / 不再翻译」，
-  那条规则存在你的浏览器里。
+  不会被记录，也不会被发送 —— 自动翻译尤其不会。两处例外，都写在别处了：你自己
+  按下的「总是翻译 / 不再翻译」存在你的浏览器里（第三节），而漫画翻译会把那张图
+  所在页面的网址发给我们（第二节）。
 - 不使用任何第三方分析 SDK。整个代码库里搜不到一个。
 - 不下载或执行远程代码。所有 JS 和 WASM 都在安装包里。
 
 ---
 
-## 五、删除你的数据 / Deleting your data
+## 六、删除你的数据 / Deleting your data
 
-- 设置、站点规则、缓存、统计：在设置页里逐项清除，或者直接卸载扩展 —— Chrome
+- **你电脑上的**：设置、站点规则、译文缓存、本机统计，都能在设置页里清 —— 站点
+  规则一行一个删除按钮，统计和译文缓存各有一颗「清除」；或者直接卸载扩展，Chrome
   会把这个扩展的 `storage` 一并删掉。
-- 漫画 / PDF 服务器上的数据：在设置页退出登录，或联系下面的邮箱要求删除账号。
+- **我们服务器上的**（账号、任务记录、上传过的文件）：**在设置页「退出登录」只是
+  删掉这台设备上的令牌，服务器上的东西还在。** 要真删，发邮件到下面那个地址，
+  说明要删除账号。
+
+What is on your computer — settings, site rules, the translation cache and the
+local statistics — can be cleared in the settings page or removed wholesale by
+uninstalling the extension. What is on our servers is a separate act: **signing
+out only deletes this device's token**, so ask for account deletion at the
+address below.
 
 ---
 
-## 六、联系 / Contact
+## 七、联系 / Contact
 
 有任何问题，或者要求删除服务器上的数据：**（发布前填入联系邮箱）**
 

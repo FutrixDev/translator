@@ -290,11 +290,40 @@
     return { removed: doomed.length, kept: alive.length - evicted };
   }
 
+  /**
+   * 把落盘的缓存整块删掉 —— 设置页那颗按钮走的就是这里。
+   *
+   * 隐私政策的「删除你的数据」一节把缓存和设置、站点规则、统计并列，所以它必须
+   * 真的有一条能按的路；没有这个函数，那一句就只能改成「卸载扩展」。
+   *
+   * 先停掉攒批的定时器再删：那 500 ms 里攒着的条目会在删除**之后**落盘，于是用户
+   * 按下「清除」，缓存却只是少了一批、并没有空。（同理，别的标签页在这一刻正在
+   * 路上的那几条请求，回来时仍会写进缓存 —— 它们是清除之后新译的，本来就该留。）
+   */
+  async function clear() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    pendingWrites.clear();
+    l1.clear();
+
+    // 这里**不吞错误**，而 sweep 吞 —— 两者的区别是有没有人在等答案。sweep 由
+    // chrome.alarms 半夜叫起来，没清成就下次再说；clear 是有人刚按下按钮，按了
+    // 没反应就是「说好能删，其实删不掉」。所以失败往上抛，让设置页说出来。
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all).filter((key) => key.startsWith(KEY_PREFIX));
+    if (keys.length === 0) return { removed: 0 };
+    await chrome.storage.local.remove(keys);
+    return { removed: keys.length };
+  }
+
   root.TranslationCache = {
     TTL_MS,
     buildKey,
     serve,
     flush,
     sweep,
+    clear,
   };
 })(globalThis);

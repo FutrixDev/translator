@@ -171,6 +171,7 @@ const elements = {
   statCacheHit: document.getElementById('statCacheHit'),
   statChars: document.getElementById('statChars'),
   resetAutoStats: document.getElementById('resetAutoStats'),
+  clearTranslationCache: document.getElementById('clearTranslationCache'),
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   ocrEngine: document.getElementById('ocrEngine'),
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
@@ -932,6 +933,24 @@ async function resetAutoStats() {
   // 没有失败分支 —— 重画一遍就是结果，清没清成看得见。
   await AutoStats.reset();
   renderAutoStats();
+}
+
+/**
+ * 清掉这台电脑上存着的译文。
+ *
+ * 和上面那颗按钮相反，这一颗有失败分支：统计清不掉，用户下次看还是那几个数字，
+ * 自己就知道了；缓存清不掉却说「清好了」，是在一件写进隐私政策的事情上骗人。
+ * TranslationCache.clear() 为此特地不吞错误。
+ */
+async function clearTranslationCache() {
+  try {
+    await TranslationCache.clear();
+  } catch (error) {
+    console.error('Failed to clear the translation cache:', error);
+    showStatus(t('cacheClearFailed'), 'error');
+    return;
+  }
+  showStatus(t('cacheCleared'), 'success');
 }
 
 /**
@@ -1817,6 +1836,7 @@ function setupEventListeners() {
   elements.autoTranslate.addEventListener('change', syncAutoSubState);
   autoLangChips().forEach(box => box.addEventListener('change', () => persistSettings()));
   elements.resetAutoStats.addEventListener('click', resetAutoStats);
+  elements.clearTranslationCache.addEventListener('click', clearTranslationCache);
 
   elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
   elements.captionDisplayMode.addEventListener('change', updateCaptionPreview);

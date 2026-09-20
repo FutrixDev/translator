@@ -336,6 +336,50 @@ test('三份装载清单里都有缓存模块', async () => {
 
   assert.match(read('background/background.js'), /import '\.\.\/shared\/translation-cache\.js';/,
     'background 要 sweep()，就得先加载模块');
+
+  // 设置页是第四份清单：那颗「清除缓存」按钮调的是同一个模块。少了这一行，
+  // 按钮会在 ReferenceError 里静静地什么也不做。
+  const optionsHtml = read('options/options.html');
+  assert.match(optionsHtml, /<script src="\.\.\/shared\/translation-cache\.js"><\/script>/,
+    '设置页要 clear()，就得先加载模块');
+  assert.match(read('options/options.js'), /await TranslationCache\.clear\(\);/,
+    '设置页按自己的路清缓存，就会漏掉 tc: 前缀这条只有模块知道的事');
+});
+
+test('clear 把缓存整块删掉，不碰别人的键，也不让攒着的写偷偷落回来', async () => {
+  const probe = await freshCache();
+  const a = probe.cache.buildKey({ ...FACTORS, text: 'a' });
+  const b = probe.cache.buildKey({ ...FACTORS, text: 'b' });
+  const { cache, store } = await freshCache({
+    [a]: { t: '甲', ts: Date.now() },
+    [b]: { t: '乙', ts: Date.now() },
+    'pdf-job:1': { anything: true },
+    'comicToken': 'x'
+  });
+
+  // 刚翻完一批，攒着的那一条还没落盘 —— 它必须跟着一起没，否则用户按完「清除」
+  // 半秒后缓存里又冒出一条。
+  await cache.serve(['c'], FACTORS, async (missing) => missing.map((t) => `译:${t}`));
+
+  const result = await cache.clear();
+  assert.equal(result.removed, 2);
+  assert.deepEqual([...store.keys()].sort(), ['comicToken', 'pdf-job:1']);
+
+  await cache.flush();
+  assert.deepEqual([...store.keys()].sort(), ['comicToken', 'pdf-job:1'], '攒着的那一条不该落盘');
+
+  // L1 也空了：不空的话同一个页面继续拿旧译文，「清除」在这一页上等于没按。
+  const fetchMissing = recorder();
+  await cache.serve(['a'], FACTORS, fetchMissing);
+  assert.deepEqual(fetchMissing.batches, [['a']]);
+});
+
+test('clear 失败要让调用方知道 —— 按钮按了没反应不能说成清好了', async () => {
+  const { cache } = await freshCache();
+  chrome.storage.local.remove = async () => { throw new Error('quota'); };
+  const key = cache.buildKey({ ...FACTORS, text: 'a' });
+  await chrome.storage.local.set({ [key]: { t: '甲', ts: Date.now() } });
+  await assert.rejects(() => cache.clear(), /quota/);
 });
 
 // L1 有容量上限（2000 条）。一次足够大的调用会把自己早先放进 L1 的条目挤出去，

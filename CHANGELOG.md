@@ -31,7 +31,10 @@
   dropped rather than left to attach to the wrong text.
 - **A translation cache.** Text already translated with the same engine, model,
   prompt and target language is not sent again (`shared/translation-cache.js`),
-  which makes a second visit free and a back-button navigation instant.
+  which makes a second visit free and a back-button navigation instant. Entries
+  expire after 30 days, and the settings page has a button that empties the
+  whole cache — what the privacy policy promises has to be a thing you can
+  actually press.
 - **Site adapters** (`content/page/site-adapter.js`): the containers worth
   translating and the furniture worth skipping, per site, for the handful where
   a generic sweep gets it wrong.

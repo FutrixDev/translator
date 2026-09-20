@@ -214,14 +214,15 @@
             </div>
           </div>
 
-          <!-- The audit table and the counters sit OUTSIDE #autoSubOptions on
-               purpose. That container carries `pointer-events: none` when the
-               master switch is off, and these two are not sub-options of it:
-               deleting a rule you set by accident, and clearing the numbers
-               this computer kept, are things a user must be able to do
+          <!-- The audit table, the counters and the cache button sit OUTSIDE
+               #autoSubOptions on purpose. That container carries
+               `pointer-events: none` when the master switch is off, and these
+               three are not sub-options of it: deleting a rule you set by
+               accident, clearing the numbers this computer kept, and deleting
+               the translations it stored are things a user must be able to do
                *especially* when automation is off. Inside, the only way to
-               reach either button would be to switch automation back on —
-               which saves immediately and restarts translation in open tabs.
+               reach any of those buttons would be to switch automation back on
+               — which saves immediately and restarts translation in open tabs.
 
                Every row in the table is a decision the user made in the popup,
                and every row can be taken back here — that is the point of
@@ -256,6 +257,23 @@
               <span data-i18n="autoStatsReset">Clear</span>
             </button>
             <span class="hint" data-i18n-hint="hintAutoStats"></span>
+          </div>
+
+          <!-- 译文缓存。放在统计下面，是因为上面那三个数字里有一个就是它
+               ("Served from the cache")；而它有一颗按钮，是因为隐私政策把缓存
+               写进了「可以在设置页里逐项清除」那一行 —— 没有这颗按钮，那句话
+               就是空头支票。 -->
+          <div class="form-group">
+            <label data-i18n="cacheTitle">Translation cache</label>
+            <button type="button" id="clearTranslationCache" class="btn btn-text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"/>
+                <path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2"/>
+                <path d="M19 6l-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6"/>
+              </svg>
+              <span data-i18n="cacheClear">Clear the cache</span>
+            </button>
+            <span class="hint" data-i18n-hint="hintTranslationCache"></span>
           </div>
         </section>
 
@@ -780,6 +798,7 @@
   <script src="../shared/site-rules-builtin.js"></script>
   <script src="../shared/site-rules.js"></script>
   <script src="../shared/auto-stats.js"></script>
+  <script src="../shared/translation-cache.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/pdf-errors.js"></script>
   <script src="../pdf/pdf-ui.js"></script>

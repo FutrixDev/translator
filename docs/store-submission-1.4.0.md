@@ -46,7 +46,8 @@ the user asks"，**现在这句话不成立了**）。
 >   只管这一次访问，不写任何规则。
 > - 新增：单页应用跟得上了。站内换一篇文章，和打开一个新页面是一样的待遇。
 > - 新增：译文缓存。同样的文字、同样的引擎和模型，不会再发第二次 —— 第二次
->   访问是免费的，按返回键是瞬间的。
+>   访问是免费的，按返回键是瞬间的。条目 30 天过期，设置页里也有一颗按钮随时
+>   清空它。
 > - 新增：设置页里的「本机统计」。这个月自动翻了几页、缓存替你省下多少、真正
 >   发给模型多少字符。**这几个数字只存在你这台电脑上，不同步、不上传**，
 >   旁边就有清除按钮。
@@ -75,7 +76,8 @@ the user asks"，**现在这句话不成立了**）。
 >   reloads is treated like a fresh page.
 > - New: a translation cache. The same text through the same engine and model
 >   is never sent twice, so a second visit is free and the back button is
->   instant.
+>   instant. Entries expire after 30 days, and Settings has a button that
+>   empties it on the spot.
 > - New: "On this computer" in Settings — pages translated this month, what
 >   the cache saved, and the characters that actually reached the model.
 >   **These numbers stay on your machine: not synced, never uploaded**, and
@@ -111,15 +113,31 @@ user chooses.
 
 **Remote code**：仍然选 **"No, I am not using remote code"**。
 
-**数据用途**（补一句）：用户文本被发送到用户自己配置的 OpenAI 兼容接口以完成
-翻译 —— 默认引擎是 Chrome 端上的 Translator，此时文本不出设备；漫画和 PDF 翻译
-发送到我方服务器处理。**不收集浏览历史、不做任何埋点上报**：设置页里的「本机
-统计」只写 `chrome.storage.local`，不同步也不上传。不出售数据、不用于与功能
-无关的用途、不做信用评估。
+**数据用途**：用户文本被发送到用户自己配置的 OpenAI 兼容接口以完成翻译 ——
+默认引擎是 Chrome 端上的 Translator，此时文本不出设备；漫画和 PDF 翻译发送到
+我方服务器处理。设置页里的「本机统计」只写 `chrome.storage.local`，不同步也不
+上传，**不是埋点**。不出售数据、不用于与功能无关的用途、不做信用评估。
+
+**Data types 那几个勾，按下面这张表填 —— 别少勾。** 表单问的是「这个扩展收集
+什么」，而漫画和 PDF 翻译是账号制的：用了它们，我方服务器上就有邮箱、额度和任务
+记录（细账见 [privacy-policy.md](privacy-policy.md) 第二节）。少勾一项，审核对着
+登录流程一走就是一次下架级的不实陈述。
+
+| 勾 | 为什么 |
+| --- | --- |
+| **Personally identifiable information** | 登录后账号里有用户的邮箱（Google / GitHub 在授权时提供），设置页会把它显示出来 |
+| **Authentication information** | 登录令牌存在 `chrome.storage.local`，每个请求用它换授权 |
+| **Website content** | 要翻译的文本；漫画的图片和 PDF 文件会上传到我方服务器 |
+| **User activity** | 任务记录：每个漫画 / PDF 任务存在账号上，跨设备可见 |
+| **Web history** | 漫画任务连同图片发送**那张图所在页面的网址**（`pageUrl`）。**只有这一条路**会把网址发给我们 —— 网页翻译、字幕、OCR、自动翻译都不发 |
+
+不勾：Health information、Financial and payment information、Personal
+communications、Location。
 
 **Privacy policy URL**：本次**必须**提供。政策正文见
 [privacy-policy.md](privacy-policy.md)，发布前把它挂到一个公开 URL 上，并填好
-文末的联系邮箱。
+文末的联系邮箱。**它在 1.4.0 这一版被重写过**：第二节新增了账号那一半的细账，
+旧版本那句「我们不收集你的任何数据」与登录流程对不上。
 
 ## 四、给审核员的测试说明（Reviewer notes）
 
@@ -142,7 +160,9 @@ user chooses.
 >    was fully reversible.
 > 5. "On this computer" on the same page shows the counters. They are in
 >    `chrome.storage.local` (`shared/auto-stats.js`) and are never uploaded;
->    the Clear button empties them.
+>    the Clear button empties them. The translation cache below it has a Clear
+>    button of its own, which deletes every cached translation
+>    (`shared/translation-cache.js`).
 >
 > On default settings the translation engine is Chrome's on-device Translator,
 > so steps 1–5 make **no network request**. Chrome may download a language pack
@@ -153,7 +173,7 @@ user chooses.
 - [x] `manifest.json` 版本已升到 1.4.0（高于已提交的 1.3.1）
 - [x] `permissions` / `host_permissions` 未新增任何项
 - [x] `_locales/` 十种语言的 `appDescription` 已重写并全部 ≤132 字符
-- [x] `npm run test:unit` 全绿（613 passed）
+- [x] `npm run test:unit` 全绿（615 passed）
 - [x] `npm run test:e2e` 全绿（214 passed, 9 skipped）
 - [ ] `npm run zip` 产物已校验：十种 `_locales` 齐全、Tesseract 核心与语言包在内、
       无 `.DS_Store`、无 source map、无测试文件
