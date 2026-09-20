@@ -549,6 +549,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
       break;
+    case 'COMMAND_SHORTCUTS':
+      // 内容脚本够不着 chrome.commands，而它得知道哪些修饰键被我们自己的命令
+      // 占着：单修饰键的悬停快捷键不能抢在和弦的第二下之前动手（见
+      // content/content-utils.js 的 commandModifiers）。键位用户改得掉，所以
+      // 答的是**现在真的绑着**的那一份，不是 manifest 里那份建议值。
+      chrome.commands.getAll((commands) => {
+        sendResponse({ shortcuts: (commands || []).map((c) => c.shortcut).filter(Boolean) });
+      });
+      return true;
+
     case 'TRANSLATE':
       handleTranslate(message.text, message.targetLang, message.mode)
         .then(sendResponse)

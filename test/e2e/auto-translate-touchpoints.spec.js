@@ -647,11 +647,54 @@ test('划词键位按住不放不算数 —— 松开那一下才译', async ({ 
   }
 });
 
-test('按住 Alt 译了一段，再去够 A —— 后面划过的段落不该跟着译', async ({ page, context }) => {
-  // 和弦不一定按得快。用户按住 Alt 的时候光标已经停在一段上，「按住档」那一瞬
-  // 自己先译了一段；他这才去够 A。译出来的那一段留着 —— 请求已经付过了，当场
-  // 撤掉只会更怪 —— 但从那一下起 Alt 就是和弦的一半，后面划过的段落一段都不该
-  // 再译。少了这道补刀，松手之前划过多少段就是多少次请求。
+test('悬停键位是 Alt 时，光标停在段落上按住 Alt，不会抢在 A 之前先译一段', async ({ page, context }) => {
+  // Alt+A 是「先按住 Alt，再去够 A」。手慢一点，中间那段空当就超过了按住档的
+  // 220ms —— 旧的样子是当场替他译了光标底下那一段，A 随后照样把整页翻了。补跑
+  // 的和弦收得回「按住了」这个状态，收不回已经发出去的那次请求：这套机制本来
+  // 要挡的那笔重复账单，从按住档漏了回来。
+  //
+  // 所以命令键位占着的修饰键不开按住档（见 content-utils.js 的 commandModifiers）。
+  // 断言落在 sentTexts 上，是因为漏掉的那一次在页面上只是多出一段译文，看着
+  // 像是功能正常——只有账单知道。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, {
+      siteRules: { 'ask.test': 'never' },
+      enableHoverTranslation: true,
+      hoverTranslationHotkey: 'Alt'
+    });
+
+    // 光标先停在段落上再按住 Alt：这一按没有鼠标移动可依，走的正是按住档那条路。
+    await page.locator('#para').hover();
+    await page.keyboard.down('Alt');
+    await page.waitForTimeout(800);
+    expect(sentTexts).toHaveLength(0);
+    await expect(page.locator('.ai-translator-hover-translation')).toHaveCount(0);
+
+    // Alt 还按着，这才按下 A。松手也不该补译一次 —— 那一下已经是和弦的一半了。
+    await page.keyboard.press('a');
+    await page.keyboard.up('Alt');
+    await page.waitForTimeout(800);
+    expect(sentTexts).toHaveLength(0);
+
+    // 而这是让它闭嘴，不是让它失灵：同一个手势，松开手就译。命令键位走不到松
+    // 开那一步（A 一下去就作废了），真的只按了 Alt 的人一下都不少。
+    await page.locator('#para').hover();
+    await page.keyboard.down('Alt');
+    await page.keyboard.up('Alt');
+    await page.waitForSelector('.ai-translator-hover-translation', { state: 'attached' });
+    await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
+  } finally {
+    await close();
+  }
+});
+
+test('按着 Alt 划了一段，再去够 A —— 后面划过的段落不该跟着译', async ({ page, context }) => {
+  // 和弦不一定按得快。用户按着 Alt 先划过了一段，悬停当场就译了（走的是
+  // mouseover，跟按住档无关）；他这才去够 A。译出来的那一段留着 —— 请求已经付
+  // 过了，当场撤掉只会更怪 —— 但从那一下起 Alt 就是和弦的一半，后面划过的段落
+  // 一段都不该再译。少了这道补刀，松手之前划过多少段就是多少次请求。
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
@@ -667,9 +710,9 @@ test('按住 Alt 译了一段，再去够 A —— 后面划过的段落不该�
       document.getElementById('box').appendChild(extra);
     });
 
-    // 光标先停在第一段上再按住 Alt：这一按没有鼠标移动可依，靠的是「按住够久」。
-    await page.locator('#para').hover();
+    await page.mouse.move(5, 5);
     await page.keyboard.down('Alt');
+    await page.locator('#para').hover();
     await page.waitForSelector('.ai-translator-hover-translation', { state: 'attached' });
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
 
@@ -682,8 +725,9 @@ test('按住 Alt 译了一段，再去够 A —— 后面划过的段落不该�
     await page.keyboard.up('Alt');
 
     // 松开之后重新按住，悬停翻译照常能用：拦的是那一按，不是这个功能。
-    await page.locator('#para2').hover();
+    await page.mouse.move(5, 5);
     await page.keyboard.down('Alt');
+    await page.locator('#para2').hover();
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(2);
     await page.keyboard.up('Alt');
   } finally {
@@ -713,8 +757,12 @@ test('悬停键位是 Alt 时，Alt+A 之后一路划过去也不会译', async 
     expect(sentTexts).toHaveLength(0);
     await page.keyboard.up('Alt');
 
-    // 松开之后重新按住，这一下是干干净净的悬停翻译。
+    // 松开之后重新来一次，这一下是干干净净的悬停翻译。先把光标挪开再按住：
+    // 命令键位占着的修饰键没有按住档（Alt+A 的那半秒不该先译一段），悬停走的
+    // 是按住之后划过去的那条路。
+    await page.mouse.move(5, 5);
     await page.keyboard.down('Alt');
+    await page.locator('#para').hover();
     await page.waitForSelector('.ai-translator-hover-translation', { state: 'attached' });
     await page.keyboard.up('Alt');
   } finally {

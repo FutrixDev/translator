@@ -148,10 +148,80 @@
   // 手势本来就是「按住，划过哪段译哪段」，光标已经停在段落上时没有别的时机。
   // 划词是「点一下」，按住只说明用户还没想好，或者正伸手去够 C；给它加上这一条
   // 等于把 Ctrl+C 中间的那半秒重新变成一次翻译，而那正是这套机制要挡的事。
+  // 同样的道理还挡掉了一类悬停：命令键位占着的修饰键不开按住档，见下面的
+  // commandModifiers。
   //
   // 后两种结局都动过手或者花掉了，而键还按着，所以和弦还能来得更晚（见下面的
   // spentTap）。那时候撤不回已经译的那一段，但能把后面那一串拦下来。
   const MODIFIER_TAP_HOLD_MS = 220;
+
+  // 按住档有一个天生的例外：**我们自己的命令键位占着的那个修饰键**。Alt+A 是
+  // 先按住 Alt 再去够 A 的，手慢一点就过了 220ms —— 按住档当场替他译了光标底下
+  // 那一段，A 随后照样把整页翻了。补跑的 onChord 收得回「按住了」这个状态，收
+  // 不回已经发出去的那次请求：这套机制本来要挡的那笔重复账单，从按住档漏回来了。
+  //
+  // 所以命令占着的修饰键不开按住档，只留「松开才算数」那一条 —— 而 Alt+A 永远
+  // 走不到松开（A 一下去就是和弦）。代价是老实的：把悬停键位改成 Alt 的人，光标
+  // 停在段落上按住 Alt 不再当场出译文，得松一下手；按住划过下一段照样立刻译，
+  // 那条路走的是 mouseover，跟这里无关。默认的 Shift 没被任何命令占，一切照旧。
+  //
+  // 名单不写死成 'Alt'：键位在 chrome://extensions/shortcuts 里改得掉（见
+  // background.js 的 onCommand）。有人把它改成 Ctrl+Shift+Y，撞上的就成了默认的
+  // Shift —— 写死 'Alt' 的话这一层等于没装。
+  const COMMAND_MODIFIER_TOKENS = {
+    alt: 'Alt', option: 'Alt', '\u2325': 'Alt',
+    shift: 'Shift', '\u21e7': 'Shift',
+    ctrl: 'Control', control: 'Control', macctrl: 'Control', '\u2303': 'Control',
+    command: 'Meta', cmd: 'Meta', search: 'Meta', '\u2318': 'Meta'
+  };
+
+  // Chrome 按平台印键位：Windows/Linux 上是 'Alt+A'，macOS 上是 '\u2325A'（e2e 里
+  // 那条 commands 断言就钉着这两种）。两种都认，别的平台再变也只是多一个名字。
+  function collectCommandModifiers(shortcuts) {
+    const found = new Set();
+    for (const shortcut of shortcuts || []) {
+      const text = String(shortcut || '');
+      for (const part of text.split('+')) {
+        const named = COMMAND_MODIFIER_TOKENS[part.trim().toLowerCase()];
+        if (named) found.add(named);
+      }
+      for (const glyph of text) {
+        const symbol = COMMAND_MODIFIER_TOKENS[glyph];
+        if (symbol) found.add(symbol);
+      }
+    }
+    return found;
+  }
+
+  // manifest 里声明的那一份先垫上：页面刚打开、还没问到答案的那几百毫秒也得是
+  // 对的，而那正好是用户伸手按快捷键的时候。
+  let commandModifiers = new Set();
+  try {
+    const commands = chrome.runtime.getManifest().commands || {};
+    const suggested = [];
+    for (const entry of Object.values(commands)) {
+      if (entry && entry.suggested_key) suggested.push(...Object.values(entry.suggested_key));
+    }
+    commandModifiers = collectCommandModifiers(suggested);
+  } catch (error) {
+    // 上下文没了（扩展刚更新）。名单空着只是少一层保护，不该把整个内容脚本带塌。
+  }
+
+  // 真正生效的那一份只有服务工作者够得着（chrome.commands 不对内容脚本开放）。
+  // 它**只会把名单变长**：用户改过的键位可能多占一个修饰键，那一个必须补上；
+  // 而把 manifest 声明的那个从名单里摘掉，换来的只是一个「悬停键位也改成了 Alt」
+  // 的人少松一次手，赌的却是这条消息在每台机器上都答得又对又准。
+  try {
+    chrome.runtime.sendMessage({ type: 'COMMAND_SHORTCUTS' }, (response) => {
+      if (chrome.runtime.lastError) return;
+      if (!response || !Array.isArray(response.shortcuts)) return;
+      for (const modifier of collectCommandModifiers(response.shortcuts)) {
+        commandModifiers.add(modifier);
+      }
+    });
+  } catch (error) {
+    // 同上：垫着的那份 manifest 名单照样管用。
+  }
 
   let pendingTap = null;
 
@@ -187,7 +257,7 @@
     settleSpentTap('drop');
     const opts = options || {};
     const tap = { key, run, onChord: opts.onChord || null, timer: 0 };
-    if (opts.hold) {
+    if (opts.hold && !commandModifiers.has(key)) {
       tap.timer = setTimeout(() => {
         if (pendingTap === tap) settleModifierTap('hold');
       }, MODIFIER_TAP_HOLD_MS);

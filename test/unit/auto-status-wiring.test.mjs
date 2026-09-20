@@ -310,7 +310,10 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   // 经被「按住划」花掉了就收回。
   assert.match(utils, /addEventListener\('keydown'[\s\S]*?event\.key !== pendingTap\.key\) settleModifierTap\('chord'\)/);
   assert.match(utils, /addEventListener\('keyup'[\s\S]*?event\.key === pendingTap\.key\) settleModifierTap\('fire'\)/);
-  assert.match(utils, /if \(opts\.hold\) \{[\s\S]*?settleModifierTap\('hold'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
+  // 「按住够久也算数」还带一条例外：命令键位占着的修饰键不开这一档（Alt+A 的
+  // 那半秒不该先译一段）。那条规则是「什么时候**不**动手」，比对着源文件看更
+  // 该跑一遍 —— 整套闸门的行为判据在 test/unit/modifier-tap.test.mjs。
+  assert.match(utils, /if \(opts\.hold && !commandModifiers\.has\(key\)\) \{[\s\S]*?settleModifierTap\('hold'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
   assert.match(utils, /ctx\.disarmModifierTap = function\(\) \{\s*settleModifierTap\('spent'\);/);
 
   // 和弦可以来得比「动手」还晚：按住 Alt 超过一瞬、或者按着 Alt 先划了一段，
