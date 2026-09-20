@@ -405,23 +405,52 @@ test('表态之后计数清零，清的是这一条不是整张表', async () =>
   }
 });
 
-// 和 shared/site-rules.js 里的 MAX_ASK_HOSTS 一致。
-const MAX_ASK_HOSTS = 200;
+// 和 shared/site-rules.js 里的 MAX_ASK_BYTES 一致。
+const MAX_ASK_BYTES = 6 * 1024;
+const askBytes = (counts) => new TextEncoder().encode(JSON.stringify(counts)).length;
+
+// 撑到刚好超过预算为止。按条数算不出这个数：一条占多少字节取决于域名有多长，
+// 这正是上限要按字节而不是按条数的理由。
+function overflowingCounts(seed) {
+  const counts = Object.assign({}, seed);
+  for (let i = 0; askBytes(counts) <= MAX_ASK_BYTES; i++) {
+    counts[`host-${String(i).padStart(4, '0')}.example.test`] = 9;
+  }
+  return counts;
+}
 
 test('追问计数不会一路长到把同步配额撑爆', async () => {
   // 这张表只为「同一个站点最多问几次」而存在，却按域名无限长。同步存储每项
   // 8KB，撑满那天 set() 直接失败、调用方只打一行日志 —— 从此所有站点都记不上
   // 数，追问上限静悄悄地不再生效。
-  const counts = { 'seldom.test': 1 };
-  for (let i = 0; i < MAX_ASK_HOSTS - 1; i++) counts[`h${i}.test`] = 5;
-  const fake = fakeChrome({ siteAskCount: counts });
+  const fake = fakeChrome({ siteAskCount: overflowingCounts({ 'seldom.test': 1 }) });
   globalThis.chrome = fake.chrome;
   try {
     assert.equal(await SiteRules.updateAskCount('fresh.test', 'bump'), 1);
     const kept = fake.store.siteAskCount;
-    assert.equal(Object.keys(kept).length, MAX_ASK_HOSTS);
+    assert.ok(askBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${askBytes(kept)} 字节`);
     assert.equal(kept['fresh.test'], 1, '刚记下的这一条必须留着');
     assert.equal(kept['seldom.test'], undefined, '先扔问得最少的：重新问一次的代价最小');
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('域名越长，装得下的站点越少 —— 上限量的是字节', async () => {
+  // 按条数封顶的版本在这里会放行：两百条以内，可每条都是一个 200 字符的域名，
+  // 序列化出来远远超过 8KB，set() 照样会被拒。
+  const long = (i) => `${'sub.'.repeat(40)}h${i}.example.test`;
+  const counts = {};
+  for (let i = 0; i < 60; i++) counts[long(i)] = 5;
+  assert.ok(Object.keys(counts).length < 200, '条数还远没到两百');
+  assert.ok(askBytes(counts) > MAX_ASK_BYTES, '字节数却早就超了');
+
+  const fake = fakeChrome({ siteAskCount: counts });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.updateAskCount('fresh.test', 'bump');
+    assert.ok(askBytes(fake.store.siteAskCount) <= MAX_ASK_BYTES);
+    assert.equal(fake.store.siteAskCount['fresh.test'], 1);
   } finally {
     delete globalThis.chrome;
   }
@@ -430,14 +459,14 @@ test('追问计数不会一路长到把同步配额撑爆', async () => {
 test('挤位置的时候，不挤掉刚刚动过的那一条', async () => {
   // 正在追问的就是计数最小的那个站点：要是「扔最小的」连它一起扔了，这一条
   // 计数永远停在 1，用户会被同一个站点问到天荒地老。
-  const counts = { 'now.test': 1, 'idle.test': 1 };
-  for (let i = 0; i < MAX_ASK_HOSTS - 1; i++) counts[`h${i}.test`] = 9;
-  const fake = fakeChrome({ siteAskCount: counts });
+  const fake = fakeChrome({
+    siteAskCount: overflowingCounts({ 'now.test': 1, 'idle.test': 1 })
+  });
   globalThis.chrome = fake.chrome;
   try {
     assert.equal(await SiteRules.updateAskCount('now.test', 'bump'), 2);
     const kept = fake.store.siteAskCount;
-    assert.equal(Object.keys(kept).length, MAX_ASK_HOSTS);
+    assert.ok(askBytes(kept) <= MAX_ASK_BYTES);
     assert.equal(kept['now.test'], 2);
     assert.equal(kept['idle.test'], undefined);
   } finally {

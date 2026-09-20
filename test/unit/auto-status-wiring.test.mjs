@@ -43,7 +43,10 @@ test('呈现层只画，不碰队列、不碰代次、不自己判一遍', () =>
 
 test('追问条的上限和计数是同一处说了算', () => {
   const view = code('content/content-auto-status.js');
-  assert.equal((view.match(/MAX_ASKS/g) || []).length, 2, '一处定义一处使用');
+  // 一处定义，两处比较：领号回来的那个权威计数，和省一趟往返的本地预检（见
+  // 「追问的号要先领到手才画条子」）。两处比的都得是这个常量 —— 谁把 3 直接写
+  // 进判断里，改上限的时候就只会改到一半。
+  assert.equal((view.match(/MAX_ASKS/g) || []).length, 3, '一处定义，两处比较');
   // 加一这件事本身在服务工作者里（见「追问计数只有服务工作者一个人写」），这里
   // 只确认本页没有自己拿内存那份加一 —— 那会让上限永远够不着。
   assert.doesNotMatch(view, /ctx\.settings\.siteAskCount\[[^\]]*\]\s*(\+\+|=[^=])/);
@@ -116,11 +119,10 @@ test('整页译文的判据带着那两个 :not()，划词和悬停不算', () =
 
 test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的', () => {
   const insert = code('content/page/insert.js');
-  assert.match(
-    insert,
-    /function registerTranslation\(element, translationEl, managed, lang\) \{[\s\S]{0,400}?ctx\.applyTranslationVisibility\(translationEl\)/,
-    '插入点没有跟上当前显隐状态'
-  );
+  // 插入点必须跟上当前的显隐状态。跟在哪一步由 clip-guard.test.mjs 钉着：得等
+  // 两道几何守卫量完再跟 —— .ai-translator-hidden 是 display:none，先藏起来，
+  // 两道守卫量到的就都是零。
+  assert.match(insert, /ctx\.applyTranslationVisibility\(translationEl\)/, '插入点没有跟上当前显隐状态');
   const visibility = code('content/page/visibility.js');
   assert.match(visibility, /function applyTranslationVisibility\(translationEl\)/);
   assert.match(visibility, /classList\.toggle\('ai-translator-hidden', state\.translationsVisible === false\)/);
@@ -241,18 +243,23 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   // 一句又译一页 —— 两次请求，用自己的 API 就是两份钱。判据放这里，是因为这
   // 件事按下去看着正常，只有账单知道。
   const utils = code('content/content-utils.js');
-  assert.match(utils, /ctx\.armModifierTap = function\(key, run, onChord\)/);
+  assert.match(utils, /ctx\.armModifierTap = function\(key, run, options\)/);
   // 四个了结的口子：来了别的键作废、松开就算数、按住够久也算数，以及这一按已
   // 经被「按住划」花掉了就收回。
   assert.match(utils, /addEventListener\('keydown'[\s\S]*?event\.key !== pendingTap\.key\) settleModifierTap\('chord'\)/);
   assert.match(utils, /addEventListener\('keyup'[\s\S]*?event\.key === pendingTap\.key\) settleModifierTap\('fire'\)/);
-  assert.match(utils, /setTimeout\([\s\S]*?settleModifierTap\('fire'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
+  assert.match(utils, /if \(opts\.hold\) \{[\s\S]*?settleModifierTap\('fire'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
   assert.match(utils, /ctx\.disarmModifierTap = function\(\) \{\s*settleModifierTap\('drop'\);/);
 
   // 而这条闸门必须装在两个处理器里，不能只装一个。
   for (const rel of ['content/content-selection.js', 'content/content-hover-translation.js']) {
     assert.match(code(rel), /ctx\.armModifierTap\(event\.key,/, `${rel} 的修饰键快捷键没过那道闸门`);
   }
+
+  // 「按住够久也算数」只给悬停开。划词是点一下的手势，给它开上，用户按着 Ctrl
+  // 伸手去够 C 的那半秒就又变回一次翻译 —— 和弦的第二下来得慢一点就漏。
+  assert.match(code('content/content-hover-translation.js'), /hold: true,/);
+  assert.doesNotMatch(code('content/content-selection.js'), /hold:/, '划词不该开按住档');
 
   // 悬停还多两层：和弦作废时连「按住了」一起收回，否则接着划过的每一段都会被
   // 当成按住悬停（一个和弦，一串请求）；而「按住划」一旦真的译了，挂起的那一下
@@ -262,4 +269,27 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   assert.match(hover, /chordKey = event\.key;/);
   assert.match(hover, /if \(chordKey\) return;/);
   assert.match(hover, /event\.key === chordKey\) chordKey = null;/);
+});
+
+test('追问的号要先领到手才画条子 —— 三次额度经不起两个标签页同时开', () => {
+  // 三次是硬上限，而「现在问到第几次了」这件事同一时刻可能有好几个标签页在读。
+  // 各读各的本地快照，读到的都是 2，于是四张条子一起画出来，问了四次。所以顺序
+  // 反过来：先向唯一的主人（服务工作者）要一个号，它加完把真数发回来，够了才画。
+  const status = code('content/content-auto-status.js');
+  assert.match(status, /function reserveAskSlot\(\) \{\s*if \(askSlot !== 'none'\) return;\s*askSlot = 'pending';/);
+  assert.match(status, /updateAskCount\('bump'\)\.then\(\(count\) => \{[\s\S]*?count > MAX_ASKS[\s\S]*?askSlot = 'denied'/);
+
+  // 画之前的那道闸门：号没到手就先把条子收了，等 then 回来再 render 一次。
+  assert.match(status, /if \(mode === 'ask' && askSlot !== 'granted'\) \{\s*reserveAskSlot\(\);\s*removeBar\(\);\s*return;\s*\}/);
+
+  // 而领到号之后，本地那个数已经被自己这一次加过了 —— 第三次正好等于 3，再拿
+  // 它和上限比就会把自己问掉。所以 granted 直接放行，本地判断只是省一趟往返。
+  const should = status.slice(status.indexOf('function shouldAsk'));
+  const shouldFn = should.slice(0, should.indexOf('\n  }') + 4);
+  assert.ok(shouldFn.indexOf("askSlot === 'granted'") < shouldFn.indexOf('askCount() < MAX_ASKS'),
+    '本地预检必须排在「号已到手」后面，否则第三次追问会被自己的计数挡掉');
+
+  // 旧的「画完再记一笔」那个闩不能还留着：它和领号是同一件事的两种记法。
+  assert.doesNotMatch(status, /bumpAskCount/);
+  assert.doesNotMatch(status, /\blet counted\b/);
 });

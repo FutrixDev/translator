@@ -338,16 +338,26 @@
   // 所以给它一个上限：满了先扔计数最小的（被问得最少的那几个，重新问一次的代
   // 价也最小），刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过
   // 的态一点没丢 —— 那些在 siteRules 里，是另一张表。
-  const MAX_ASK_HOSTS = 200;
+  //
+  // 上限按**序列化之后的字节数**算，不按条数。撑爆配额的是字节：一条记录占多少
+  // 取决于主机名有多长，两百个 40 字符的域名就已经贴着 8KB，而域名可以长得多。
+  // 按条数封顶只是把那天推远一点，并没有堵上。8KB 里只留 6KB 给它，剩下的是给
+  // 键名本身和「Chrome 怎么数」留的余量 —— 差那一点就写不进去，代价是整张表。
+  const MAX_ASK_BYTES = 6 * 1024;
+
+  function askCountBytes(counts) {
+    return new TextEncoder().encode(JSON.stringify(counts)).length;
+  }
 
   function pruneAskCounts(counts, keep) {
-    const keys = Object.keys(counts);
-    if (keys.length <= MAX_ASK_HOSTS) return counts;
-    keys
+    if (askCountBytes(counts) <= MAX_ASK_BYTES) return counts;
+    const victims = Object.keys(counts)
       .filter((key) => key !== keep)
-      .sort((a, b) => counts[a] - counts[b])
-      .slice(0, keys.length - MAX_ASK_HOSTS)
-      .forEach((key) => { delete counts[key]; });
+      .sort((a, b) => counts[a] - counts[b]);
+    for (const key of victims) {
+      delete counts[key];
+      if (askCountBytes(counts) <= MAX_ASK_BYTES) break;
+    }
     return counts;
   }
 

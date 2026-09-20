@@ -169,13 +169,18 @@
     if (ctx.keepTranslationVisible) ctx.keepTranslationVisible(anchor);
   }
 
-  // 译文放进 DOM 之后要做的三件事，顺序是有讲究的：
+  // 译文放进 DOM 之后要做的四件事，顺序是有讲究的：
   //   1. 把裁剪它的祖先放开（clip guard）——框可能因此长高，第 2 步要量的是放开
   //      之后的样子；
   //   2. 确认页面真给了它地方站（fit guard，见 content-fit-guard.js）。站不住就
   //      撤掉译文，返回 false；
   //   3. 这时候才轮到“仅显示译文”去藏原文。顺序反了会出现最糟的结果——原文被藏
   //      起来，译文又被撤走，那一块彻底空白。
+  //   4. 最后才跟上「译文藏着」这个状态。前两步全靠量几何：先加上 hidden 就是
+  //      display:none，两个守卫量到的是一个零尺寸的东西 —— 裁剪它的祖先不会被
+  //      放开，撑不下的译文也不会被撤掉，等用户把译文放出来，这一批要么被裁着
+  //      要么压在别人身上。这四步都在同一个任务里跑完，中间不会有一帧画出来，
+  //      所以「先显示再藏起来」看不到。
   //
   // 下面每一处把译文放进 DOM 的分支后面都要跟一次，clip-guard.test.mjs 会数：
   // 插入点比检查点多，就是漏了一处。
@@ -191,6 +196,8 @@
     if (ctx.isTranslationOnlyActive()) ctx.hideSourceForTranslation(translationEl);
     if (ctx.keepTranslationInFlow &&
         !ctx.keepTranslationInFlow(translationEl, sourceWidthBefore)) return false;
+    // 守卫量完了，这时候才跟上显隐（第 4 步）。撤掉的那一条走不到这里，也不需要。
+    if (ctx.applyTranslationVisibility) ctx.applyTranslationVisibility(translationEl);
     return true;
   }
 
@@ -260,11 +267,11 @@
   //
   // 没人说就登记成 null：BlockIdentity 把 null 读作「没说」，陈旧判定于是不问语言
   // 这一维 —— 正是「不知道」该有的样子（见 shared/block-identity.js 的 register）。
+  // 这一批译文可能是在用户点了「显示原文」之后才落到 DOM 里的：整页翻译跑一轮要
+  // 几十秒，中途的开关只管得到当时已经插好的块 —— 新插进来的这一条得自己跟上当
+  // 前状态，否则藏了一次译文还会一批批冒出来。跟上这件事在 finishTranslationInsert
+  // 的最后一步做，不在这里：这里跑在两个几何守卫之前（见那边的第 4 条）。
   function registerTranslation(element, translationEl, managed, lang) {
-    // 这一批译文可能是在用户点了「显示原文」之后才落到 DOM 里的：整页翻译跑一轮
-    // 要几十秒，中途的开关只管得到当时已经插好的块。新插进来的这一条自己跟上
-    // 当前状态，否则藏了一次译文还会一批批冒出来。
-    if (!managed && ctx.applyTranslationVisibility) ctx.applyTranslationVisibility(translationEl);
     globalThis.BlockIdentity.register(element, {
       // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
       // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出

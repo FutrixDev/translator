@@ -292,6 +292,19 @@ test('the post-insert helper runs both guards, and in the order that matters', (
   assert.ok(hide < fit, 'the fit guard must measure the box translation-only mode just emptied');
   assert.match(repoFile('content/content-fit-guard.js'), /releaseSourceForTranslation\(translationEl\);\s*\n\s*translationEl\.remove\(\)/,
     'the fit guard drops a translation without putting its source back — that block ends up blank');
+
+  // 用户在一轮翻译跑到一半时点了「显示原文」，后面几批译文插进来时自己跟上那个
+  // 状态 —— 而「藏着」是 display:none。跟得太早，两个守卫量到的就是一个零尺寸的
+  // 东西：裁剪它的祖先不会被放开，撑不下的译文也不会被撤掉，等用户把译文放回来，
+  // 这一批要么被裁着要么压在别人身上。所以它排在守卫后面。
+  const visibility = fn.indexOf('applyTranslationVisibility(');
+  assert.ok(visibility !== -1, 'a translation inserted mid-pass no longer follows the hidden state');
+  assert.ok(fit < visibility, 'the guards must measure a translation that is still laid out');
+
+  const reg = source.slice(source.indexOf('function registerTranslation'));
+  const regFn = reg.slice(0, reg.indexOf('\n  }') + 4);
+  assert.ok(!regFn.includes('applyTranslationVisibility'),
+    'registerTranslation runs before both guards — the hidden state cannot be applied there');
 });
 
 test('the hover path asks the guard when it tracks a translation', () => {

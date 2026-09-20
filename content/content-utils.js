@@ -138,12 +138,16 @@
   //
   // 所以「只按了它」这件事要等一等才算数：
   //   - 松开了它     → 确实只按了它，立刻动手；
-  //   - 按住超过一瞬 → 悬停翻译本来就是按住用的，也算；
   //   - 中间来了别的键 → 这是一个和弦，这一下作废，onChord 收拾首尾。
   //
   // 还有第四种结局：这一按已经被别的用法花掉了（按住划过一段，悬停翻译当场就
   // 译了）。那就 disarmModifierTap() 把它收回——不然松手的那一下会把刚划出来的
   // 译文再切掉一次。
+  //
+  // 第五种结局要 hold: true 才有：按住超过一瞬也算数。它只属于悬停翻译——那个
+  // 手势本来就是「按住，划过哪段译哪段」，光标已经停在段落上时没有别的时机。
+  // 划词是「点一下」，按住只说明用户还没想好，或者正伸手去够 C；给它加上这一条
+  // 等于把 Ctrl+C 中间的那半秒重新变成一次翻译，而那正是这套机制要挡的事。
   const MODIFIER_TAP_HOLD_MS = 220;
 
   let pendingTap = null;
@@ -157,12 +161,15 @@
     else if (outcome === 'chord' && tap.onChord) tap.onChord();
   }
 
-  ctx.armModifierTap = function(key, run, onChord) {
+  ctx.armModifierTap = function(key, run, options) {
     settleModifierTap('drop');
-    const tap = { key, run, onChord, timer: 0 };
-    tap.timer = setTimeout(() => {
-      if (pendingTap === tap) settleModifierTap('fire');
-    }, MODIFIER_TAP_HOLD_MS);
+    const opts = options || {};
+    const tap = { key, run, onChord: opts.onChord || null, timer: 0 };
+    if (opts.hold) {
+      tap.timer = setTimeout(() => {
+        if (pendingTap === tap) settleModifierTap('fire');
+      }, MODIFIER_TAP_HOLD_MS);
+    }
     pendingTap = tap;
   };
 

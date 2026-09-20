@@ -59,9 +59,10 @@
   // 说那还是他刚刚说过「不用」的那个站点 —— 跟着代次重置，reddit 上每点一下都
   // 会再问一次。整页导航会换一个新的内容脚本，那才是重新问的边界。
   let dismissed = false;
-  // 这一页已经把追问记过一笔了。渲染每次状态变化都会跑，不闩住的话一次「问了一
-  // 遍」会被记成十几次，三次的额度当场就用完了。
-  let counted = false;
+  // 这一页在追问额度里的号：'none' 还没要，'pending' 要了还没回，'granted' 要到
+  // 了（条子这才画得出来），'denied' 超额。渲染每次状态变化都会跑，这个闩同时
+  // 管住「一次追问只记一笔」——不然一次「问了一遍」会被记成十几次。
+  let askSlot = 'none';
   let explaining = false;
 
   // ------------------------------------------------------------------ 计数
@@ -91,22 +92,49 @@
    */
   async function updateAskCount(op) {
     const key = askKey();
-    if (!key || !globalThis.SiteRules) return;
+    if (!key || !globalThis.SiteRules) return null;
     try {
       const count = await globalThis.SiteRules.updateAskCount(key, op);
-      if (typeof count !== 'number') return;
+      if (typeof count !== 'number') return null;
       const counts = Object.assign({}, ctx.settings.siteAskCount);
       if (count > 0) counts[key] = count;
       else delete counts[key];
       ctx.settings.siteAskCount = counts;
+      return count;
     } catch (error) {
       // 记不住就当没问过。这条计数只决定「还问不问」，写失败不该把条子也带走。
       console.warn('Blab Translation: siteAskCount write failed', error);
+      return null;
     }
   }
 
-  const bumpAskCount = () => updateAskCount('bump');
   const clearAskCount = () => updateAskCount('clear');
+
+  /**
+   * 跟计数的主人要一个「问这一次」的号，要到了才画条子。
+   *
+   * 次序是反过来的：先加一，再看加完是第几次。同一个站点同时开着四个标签页，
+   * 四页都读到本地那个 0、都把条子画出来、事后各自加一 —— 说好的「最多问三次」
+   * 当场变成四次，而那第四张条子已经在屏幕上了，再撤只是闪一下。先要号就不会
+   * 有第四张：加一这件事只有一个主人（服务工作者，见 updateAskCount 的注释），
+   * 它发回来的数才是这一次真正的排名。
+   *
+   * 要不到就当这一页问过了，不再重试。写失败（count 为 null）算要到 —— 这条
+   * 计数只决定「还问不问」，存不上不该把条子也带走。
+   */
+  function reserveAskSlot() {
+    if (askSlot !== 'none') return;
+    askSlot = 'pending';
+    updateAskCount('bump').then((count) => {
+      if (typeof count === 'number' && count > MAX_ASKS) {
+        askSlot = 'denied';
+        dismissed = true;
+      } else {
+        askSlot = 'granted';
+      }
+      render();
+    });
+  }
 
   // ------------------------------------------------------------------ 文案
 
@@ -236,6 +264,10 @@
   function shouldAsk(snap) {
     if (!snap || snap.status !== STATUS.ASK) return false;
     if (dismissed) return false;
+    // 号要到了就是要到了。这一次的计数在要号时已经加过，再拿它和上限比就会把
+    // 第三次问掉——加完正好等于 3。还没要号时，本地计数是一道预检：这个站点早
+    // 就问满了，连那一趟往返都省了。
+    if (askSlot === 'granted') return true;
     return askCount() < MAX_ASKS;
   }
 
@@ -251,6 +283,14 @@
       return;
     }
 
+    // 追问得先要到号。本页读到的计数可能和另外三个标签页读到的是同一个 0，
+    // 所以这里不认它，认服务工作者加完之后发回来的那个数（见 reserveAskSlot）。
+    if (mode === 'ask' && askSlot !== 'granted') {
+      reserveAskSlot();
+      removeBar();
+      return;
+    }
+
     if (!bar || !document.body.contains(bar)) bar = buildBar();
     bar.dataset.mode = mode;
 
@@ -261,10 +301,6 @@
         t('autoAskAlways').replace('{site}', site);
       bar.querySelector('[data-act="translate"]').textContent = t('autoAskTranslate');
       bar.querySelector('[data-act="dismiss"]').textContent = t('autoAskDismiss');
-      if (!counted) {
-        counted = true;
-        bumpAskCount();
-      }
       return;
     }
 

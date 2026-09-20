@@ -286,10 +286,14 @@
     // 快捷键是单独一个修饰键，和 Alt+A 这类命令键位的第一下分不开：等确定用户
     // 只按了它再译（见 content-utils.js 的 armModifierTap）。是和弦的话，连
     // 「按住了」这个状态一起收回，否则接下来划过的段落都会被当成按住悬停。
-    ctx.armModifierTap(event.key, runHoverHotkey, () => {
-      hotkeyDown = false;
-      activeHotkey = null;
-      chordKey = event.key;
+    ctx.armModifierTap(event.key, runHoverHotkey, {
+      // 悬停是按住用的手势，所以按住够久也算数（划词没有这一条）。
+      hold: true,
+      onChord: () => {
+        hotkeyDown = false;
+        activeHotkey = null;
+        chordKey = event.key;
+      }
     });
   }
 

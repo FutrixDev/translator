@@ -363,7 +363,37 @@ test('划词键位是 Alt 时，Alt+A 只翻整页，不会顺手把选中的那
     // 而单按一下 Alt 照样译：这是让键位闭嘴，不是让它失灵。
     await page.keyboard.press('Alt');
     await page.waitForSelector('.ai-translator-selection-translation', { state: 'attached' });
-    expect(sentTexts).toHaveLength(1);
+    // 浮层是先挂上「翻译中」再发请求的，所以这里得等请求真出去。当场数会数到
+    // 零 —— 而零在这里不是「没发」，是「还没发」，两者差一个往返。
+    await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
+  } finally {
+    await close();
+  }
+});
+
+test('划词键位按住不放不算数 —— 松开那一下才译', async ({ page, context }) => {
+  // 「按住够久也算数」是悬停的手势，不是划词的。划词也开上的话，和弦的第二下
+  // 来得慢一点（用户按着 Ctrl 伸手去够 C）就会先被当成「只按了 Ctrl」译一句。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, {
+      siteRules: { 'ask.test': 'never' },
+      enableSelection: true,
+      selectionTranslationHotkey: 'Alt'
+    });
+    await page.locator('#para').selectText();
+
+    // 按住，远远超过「按住」那一档的时长。
+    await page.keyboard.down('Alt');
+    await page.waitForTimeout(800);
+    await expect(page.locator('.ai-translator-selection-translation')).toHaveCount(0);
+    expect(sentTexts).toHaveLength(0);
+
+    // 松开才算数。
+    await page.keyboard.up('Alt');
+    await page.waitForSelector('.ai-translator-selection-translation', { state: 'attached' });
+    await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
   } finally {
     await close();
   }

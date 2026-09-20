@@ -201,7 +201,9 @@
     if (isSelectionTriggerIgnored(event.target)) return;
 
     // 快捷键是单独一个修饰键，和 Alt+A 这类命令键位的第一下分不开：等确定用户
-    // 只按了它再译（见 content-utils.js 的 armModifierTap）。
+    // 只按了它再译（见 content-utils.js 的 armModifierTap）。划词是「点一下」的
+    // 手势，所以不开 hold —— 松开才算数，按住多久都不动手。用户按着 Ctrl 伸手
+    // 去够 C 的那半秒，不该变成一次翻译。
     ctx.armModifierTap(event.key, () => runSelectionHotkey(event));
   }
 
