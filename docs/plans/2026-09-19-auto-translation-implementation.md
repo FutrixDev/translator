@@ -694,6 +694,11 @@ content 侧走与悬浮球单击**同一个函数**。
 它的手势本来就是「按住，划过哪段译哪段」，所以按住超过一瞬也算数；划词是「点一下」，
 不开这一档——按着 Ctrl 伸手去够 C 的那半秒不该变成一次翻译。
 
+和弦还可以来得更晚：按住 Alt 超过一瞬（按住档自己动了手）、或者按着 Alt 先划了一段
+（悬停当场就译了），这才去够 A。那时候已经译出来的一段留着——请求已经付过了，当场
+撤掉只会更怪——但这一按要接着盯到松手为止（`spentTap`），后面来的那个键把 `onChord`
+补跑一次。少了这道补刀，`hotkeyDown` 一直是真，松手之前划过多少段就是多少次请求。
+
 ### 5.7 `background/background.js`
 
 - `chrome.commands.onCommand` 监听（上条）。
@@ -871,7 +876,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | **PR-7** | 交互四触点 | `content-auto-status.js`、`content-float-ball.js`、`popup/`、`manifest.json`(commands) | 启用 ≤3 次点击；关闭不离开页面；`Alt+A` 可用 |
 | **PR-8** | 站点适配首批规则 | `shared/site-rules-builtin.js`、`content/page/collect.js`（原子块） | X / Reddit / arXiv / HN fixture 回归 |
 | **PR-9** | 字幕面接入 | `content-video-captions.js`、`content-caption-providers.js` | 自动开启；滑动窗口；切视频无残留 |
-| **PR-10** | 设置页审计表、本机统计、10 语文案、商店材料 | `options/`、`_locales/*` | 全量回归 + 商店描述与隐私政策同步 |
+| **PR-10** | 设置页审计表（**每条可删**）、本机统计、10 语文案、商店材料 | `options/`、`_locales/*` | 全量回归 + 商店描述与隐私政策同步 |
 
 **里程碑映射**：PR-0a/0b = M0；PR-1…PR-6 = M1；PR-7 = M2；PR-8/9 = M3；PR-10 = M4。
 
@@ -1167,3 +1172,26 @@ P1 在三轮评审之前一路绿着过来。
 
 第九轮那一条的验证同样是变异式的：把落笔端的门改回只看 class，以及保留判据但删掉「摘旧的」
 那一步 —— 两种都让 `page-translation-restamp` 的第一条变红，而后两条（去重仍然要成立）保持绿。
+
+### PR-7 第五轮的三条
+
+评审指出的三条都属实，但第三条只接受了一半，理由写在这里而不是只留在 PR 评论里：
+
+1. **popup 上那一行印「继续」的时候，页面那边真的得继续。** 页面的 `resumeCurrentPage()`
+   从一开始就收 `PAUSED` 和 `ERROR` 两种，popup 却只认 `paused` —— 于是出错的那一页上按钮
+   印着「暂停」，点下去把 `ERROR` 变成 `PAUSED`，用户得重开 popup 再点一次才轮到重试，而
+   出错的那一页正是最需要一下点中的。两边共用一个 `AUTO_RESUMABLE`，钉在
+   `auto-status-wiring.test.mjs` 里同时比对两处源码。
+2. **和弦可以来得比「动手」还晚**（见 §5.6 的补充）。e2e 补了一条旅程：按住 Alt 译出一段，
+   手不松再按 A，之后划过的段落一段都不许再译；变异掉那一行补刀，这条旅程当场变红。
+3. **`siteRules` 会无限长下去** —— 属实，同步存储每项 8KB，撑爆那天 `set()` 直接失败。
+   但**不分片**：分片会把一个六处都在读的结构换掉，而且真正的风险不是表太大，是用户亲口
+   说过的话被程序扔掉。所以做两件事，都不改 schema：
+   - **只在超预算时**收掉「收了也查不出差别」的条目（`compactUserRules`）。多余不靠眼力
+     判断，靠再查一遍：删掉之后 `lookupUserRule` 对这个键的答案没变，才真的多余。这样
+     `x.com=always` 底下的 `ads.x.com=never`、以及 `localhost` 下面的单标签主机都不会被
+     误收。不平时清理，是因为子域那条今天多余不等于明天多余：用户哪天把父域改成相反的
+     状态，留着的那条还护得住那个子域，平白收掉了就跟着变 —— 一次没人看见的改主意。
+   - **写不进去就让失败传出去**，popup 上说一声（`popupSiteRuleFailed`）。那个开关是乐观
+     控件，它已经在用户眼里动过了；吞掉失败就是「按钮动了、设置没存上」。
+   真正的泄压阀是 PR-10 那张**每条可删**的审计表，已经写进上面的 PR 清单。

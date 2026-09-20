@@ -401,6 +401,7 @@ Rules:
     // Auto-translate: float ball and popup
     floatBallMore: 'More',
     popupSiteAuto: 'Auto-translate this site',
+    popupSiteRuleFailed: "Couldn't save this site's setting",
     popupPausePage: 'Pause on this page',
     popupResumePage: 'Resume on this page',
 
@@ -787,6 +788,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: '更多',
     popupSiteAuto: '自动翻译这个站点',
+    popupSiteRuleFailed: '这个站点的设置没能保存',
     popupPausePage: '在这一页暂停',
     popupResumePage: '在这一页继续',
 
@@ -1145,6 +1147,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: '更多',
     popupSiteAuto: '自動翻譯這個站點',
+    popupSiteRuleFailed: '這個站點的設定沒能儲存',
     popupPausePage: '在這一頁暫停',
     popupResumePage: '在這一頁繼續',
 
@@ -1486,6 +1489,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'その他',
     popupSiteAuto: 'このサイトを自動翻訳',
+    popupSiteRuleFailed: 'このサイトの設定を保存できませんでした',
     popupPausePage: 'このページで一時停止',
     popupResumePage: 'このページで再開',
 
@@ -1827,6 +1831,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: '더보기',
     popupSiteAuto: '이 사이트 자동 번역',
+    popupSiteRuleFailed: '이 사이트 설정을 저장하지 못했습니다',
     popupPausePage: '이 페이지에서 일시중지',
     popupResumePage: '이 페이지에서 계속',
 
@@ -2168,6 +2173,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Plus',
     popupSiteAuto: 'Traduire ce site automatiquement',
+    popupSiteRuleFailed: "Impossible d'enregistrer le réglage de ce site",
     popupPausePage: 'Mettre en pause sur cette page',
     popupResumePage: 'Reprendre sur cette page',
 
@@ -2509,6 +2515,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Mehr',
     popupSiteAuto: 'Diese Website automatisch übersetzen',
+    popupSiteRuleFailed: 'Einstellung für diese Website konnte nicht gespeichert werden',
     popupPausePage: 'Auf dieser Seite pausieren',
     popupResumePage: 'Auf dieser Seite fortsetzen',
 
@@ -2850,6 +2857,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Más',
     popupSiteAuto: 'Traducir este sitio automáticamente',
+    popupSiteRuleFailed: 'No se pudo guardar el ajuste de este sitio',
     popupPausePage: 'Pausar en esta página',
     popupResumePage: 'Reanudar en esta página',
 
@@ -3191,6 +3199,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Mais',
     popupSiteAuto: 'Traduzir este site automaticamente',
+    popupSiteRuleFailed: 'Não foi possível salvar a configuração deste site',
     popupPausePage: 'Pausar nesta página',
     popupResumePage: 'Retomar nesta página',
 
@@ -3532,6 +3541,7 @@ Rules:
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Ещё',
     popupSiteAuto: 'Автоперевод этого сайта',
+    popupSiteRuleFailed: 'Не удалось сохранить настройку для этого сайта',
     popupPausePage: 'Приостановить на этой странице',
     popupResumePage: 'Продолжить на этой странице',
 

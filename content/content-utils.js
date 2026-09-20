@@ -148,45 +148,72 @@
   // 手势本来就是「按住，划过哪段译哪段」，光标已经停在段落上时没有别的时机。
   // 划词是「点一下」，按住只说明用户还没想好，或者正伸手去够 C；给它加上这一条
   // 等于把 Ctrl+C 中间的那半秒重新变成一次翻译，而那正是这套机制要挡的事。
+  //
+  // 后两种结局都动过手或者花掉了，而键还按着，所以和弦还能来得更晚（见下面的
+  // spentTap）。那时候撤不回已经译的那一段，但能把后面那一串拦下来。
   const MODIFIER_TAP_HOLD_MS = 220;
 
   let pendingTap = null;
+
+  // 已经花掉、而键还按着的那一下。和弦可以来得比这晚：按住 Alt 超过一瞬（按住
+  // 档自己动了手）、或者按着 Alt 先划了一段（悬停当场就译了），再去够 A。动过
+  // 的手收不回来 —— 请求已经付过了，把刚出来的译文再撤掉只会更怪 —— 但后面那
+  // 一串拦得住：接着来的那个键在这里把 onChord 补跑一次，悬停据此把「按住了」
+  // 收回。不补这一下，hotkeyDown 会一直是真，松手之前划过的每一段都当按住悬停
+  // 译一遍，一个和弦换一串请求，正是第 3 轮挡掉的那件事从慢一点的入法漏回来。
+  let spentTap = null;
 
   function settleModifierTap(outcome) {
     const tap = pendingTap;
     if (!tap) return;
     pendingTap = null;
     clearTimeout(tap.timer);
-    if (outcome === 'fire') tap.run();
+    // 动没动手是一回事，这一按还值不值得盯是另一回事：只要键还按着、这一按已经
+    // 有了去向（自己动了手，或者被按住划花掉了），和弦就还可能来。
+    if (outcome === 'hold' || outcome === 'spent') spentTap = tap;
+    if (outcome === 'hold' || outcome === 'fire') tap.run();
     else if (outcome === 'chord' && tap.onChord) tap.onChord();
+  }
+
+  function settleSpentTap(outcome) {
+    const tap = spentTap;
+    if (!tap) return;
+    spentTap = null;
+    if (outcome === 'chord' && tap.onChord) tap.onChord();
   }
 
   ctx.armModifierTap = function(key, run, options) {
     settleModifierTap('drop');
+    settleSpentTap('drop');
     const opts = options || {};
     const tap = { key, run, onChord: opts.onChord || null, timer: 0 };
     if (opts.hold) {
       tap.timer = setTimeout(() => {
-        if (pendingTap === tap) settleModifierTap('fire');
+        if (pendingTap === tap) settleModifierTap('hold');
       }, MODIFIER_TAP_HOLD_MS);
     }
     pendingTap = tap;
   };
 
   ctx.disarmModifierTap = function() {
-    settleModifierTap('drop');
+    settleModifierTap('spent');
   };
 
   window.addEventListener('keydown', (event) => {
     // 按住不放会一直重复发 keydown，那还是同一下。
     if (pendingTap && event.key !== pendingTap.key) settleModifierTap('chord');
+    else if (spentTap && event.key !== spentTap.key) settleSpentTap('chord');
   }, true);
 
   window.addEventListener('keyup', (event) => {
     if (pendingTap && event.key === pendingTap.key) settleModifierTap('fire');
+    else if (spentTap && event.key === spentTap.key) settleSpentTap('drop');
   }, true);
 
   // 切走了标签页（Alt+Tab、点到别的窗口），手上这一下就不作数了。
   // 不带 capture：只要窗口自己失焦，不管页面里哪个输入框换了焦点。
-  window.addEventListener('blur', () => settleModifierTap('drop'));
+  window.addEventListener('blur', () => {
+    settleModifierTap('drop');
+    settleSpentTap('drop');
+  });
 })();

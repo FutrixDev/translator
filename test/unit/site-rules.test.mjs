@@ -405,7 +405,7 @@ test('表态之后计数清零，清的是这一条不是整张表', async () =>
   }
 });
 
-// 和 shared/site-rules.js 里的 MAX_ASK_BYTES 一致。
+// 和 shared/site-rules.js 里的 MAX_ITEM_BYTES 一致。
 const MAX_ASK_BYTES = 6 * 1024;
 const askBytes = (counts) => new TextEncoder().encode(JSON.stringify(counts)).length;
 
@@ -469,6 +469,110 @@ test('挤位置的时候，不挤掉刚刚动过的那一条', async () => {
     assert.ok(askBytes(kept) <= MAX_ASK_BYTES);
     assert.equal(kept['now.test'], 2);
     assert.equal(kept['idle.test'], undefined);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+// ------------------------------------------------ 站点规则表也有同一道预算
+
+const ruleBytes = (rules) => new TextEncoder().encode(JSON.stringify(rules)).length;
+
+// 撑到刚好超过预算为止。`under` 决定灌进去的是哪一种：给了父域就灌它的子域
+// （每一条都被父域盖着，压缩挑得出来），不给就灌互不相干的域名（谁也盖不住
+// 谁，压缩一条都动不了）。
+function overflowingRules(seed, under = '') {
+  const rules = Object.assign({}, seed);
+  for (let i = 0; ruleBytes(rules) <= MAX_ASK_BYTES; i++) {
+    rules[under ? `sub-${i}.${under}` : `filler-${i}.example-${i}.test`] = 'always';
+  }
+  return rules;
+}
+
+test('规则表挤爆了，先收掉「收了也查不出差别」的那些', async () => {
+  // 用户先在 x.com 上点了「总是翻译」，后来在 mobile.x.com 上又点了一次同样
+  // 的。lookupUserRule 本来就会沿父域往上找，所以子域那条删了也没人看得出来
+  // —— 同步存储每项 8KB，这种条目正是该先腾出去的。
+  const before = overflowingRules({ 'x.com': 'always', 'mobile.x.com': 'always' }, 'x.com');
+  const fake = fakeChrome({ siteRules: before });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    const kept = fake.store.siteRules;
+    assert.ok(ruleBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${ruleBytes(kept)} 字节`);
+    assert.ok(Object.keys(kept).length < Object.keys(before).length, '一条都没收');
+    assert.equal(kept['x.com'], 'always', '盖住它们的那条不能跟着走');
+    assert.equal(kept['new.test'], 'never', '刚写下的那一条永远留着');
+
+    // 「多余」的定义只有一条：收掉之后，原来每一个键查出来的答案一个字都没变。
+    // 谁先被收掉是顺序问题，这个才是规则。
+    for (const host of Object.keys(before)) {
+      assert.equal(
+        SiteRules.lookupUserRule(kept, host),
+        SiteRules.lookupUserRule(before, host),
+        `${host} 的判定被压缩改掉了`
+      );
+    }
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('用户自己写的例外，挤成什么样都不收', async () => {
+  // ads.x.com=never 是用户在 x.com=always 底下挖的一个洞。它和父域的状态相反，
+  // 收掉它等于替他改主意 —— 而这张表里的每一条都是他亲口说过的话。
+  // localhost 下面那条同理：lookupUserRule 不会为 wiki.localhost 去问
+  // localhost（光秃秃的末标签永远不问），收掉它规则就直接失效了。
+  // 两条例外的键名故意比灌进去的那些长：压缩从最长的扫起，它们头一批就被拿起
+  // 来试。短的话会一直轮不到，这个测试就什么都没测。
+  const EXCEPTION = 'advertising-network.corporate.x.com';
+  const SINGLE_LABEL = 'wiki-internal-directory.localhost';
+  const fake = fakeChrome({
+    siteRules: overflowingRules({
+      'x.com': 'always', [EXCEPTION]: 'never',
+      'localhost': 'always', [SINGLE_LABEL]: 'always'
+    })
+  });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    const kept = fake.store.siteRules;
+    assert.equal(kept[EXCEPTION], 'never', '相反的例外被收掉了');
+    assert.equal(kept[SINGLE_LABEL], 'always', '单标签主机没有父域可落');
+    assert.equal(SiteRules.lookupUserRule(kept, EXCEPTION), 'never');
+    assert.equal(SiteRules.lookupUserRule(kept, SINGLE_LABEL), 'always');
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('没挤爆就一条都不动 —— 压缩不是平时的清理工', async () => {
+  // 子域那条今天多余，不等于明天多余：用户哪天把 x.com 改成 never，留着的
+  // mobile.x.com=always 还护得住那个子域，平白收掉了就跟着变成 never —— 一次
+  // 没人看见的改主意。顶着配额失败去换这个风险值得，平白无故不值得。
+  const fake = fakeChrome({ siteRules: { 'x.com': 'always', 'mobile.x.com': 'always' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    assert.deepEqual(fake.store.siteRules, {
+      'x.com': 'always', 'mobile.x.com': 'always', 'new.test': 'never'
+    });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('压缩也腾不出地方，就让写入失败传出去', async () => {
+  // 配额是硬的，压缩只是泄压阀。真挤不下的时候，调用方必须看得见失败 —— popup
+  // 上那个开关是乐观控件，它已经在用户眼里动过了，吞掉失败就是「按钮动了、设置
+  // 没存上」，而页面下一次打开照旧。
+  const fake = fakeChrome({ siteRules: overflowingRules({}) });
+  fake.chrome.storage.sync.set = async () => {
+    throw new Error('QUOTA_BYTES_PER_ITEM quota exceeded');
+  };
+  globalThis.chrome = fake.chrome;
+  try {
+    await assert.rejects(SiteRules.writeUserRule('new.test', 'never'), /quota/i);
   } finally {
     delete globalThis.chrome;
   }

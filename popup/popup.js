@@ -489,6 +489,12 @@ function onPdfTranslateLocal() {
 // 自动翻译真的在管这一页的那几个状态。off / ask 不在其中：那时「暂停」无事可停。
 const AUTO_ACTIVE = new Set(['pending', 'idle', 'running', 'paused', 'error']);
 
+// 这一行该写「继续」而不是「暂停」的状态。和页面那边 resumeCurrentPage() 的门
+// 是同一道（PAUSED 或 ERROR）—— 那边早就支持把出错的一页重跑，这边要是只认
+// paused，按钮就印着「暂停」，点下去把 ERROR 变成 PAUSED，用户得重开 popup 再
+// 点一次才轮到重试。出错的一页正是最需要一下点中的那一页。
+const AUTO_RESUMABLE = new Set(['paused', 'error']);
+
 let pageState = null;
 let globalAuto = true;
 
@@ -544,7 +550,8 @@ function renderPageRows() {
   const pauseRow = AUTO_ACTIVE.has(status);
   elements.togglePagePause.hidden = !pauseRow;
   if (pauseRow) {
-    elements.pagePauseLabel.textContent = status === 'paused' ? t('popupResumePage') : t('popupPausePage');
+    elements.pagePauseLabel.textContent =
+      AUTO_RESUMABLE.has(status) ? t('popupResumePage') : t('popupPausePage');
   }
 }
 
@@ -575,7 +582,12 @@ async function toggleSiteAuto() {
     }
     await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
   } catch (error) {
+    // 这条写入是会失败的：同步存储每项 8KB，站点规则表按域名一路长下去。
+    // 失败了就得说一声——开关是个乐观控件，它已经在用户眼里动过了，而规则没
+    // 写进去，页面下一次打开照旧。一行控制台日志只有我们看得见。
     console.error('Failed to write site rule:', error);
+    showStatus('popupSiteRuleFailed', false);
+    await refreshPageRows();
     return;
   }
   // 规则一落地，页面那边的调度层就会重判重跑（siteRules 在 RESTART_KEYS 里）。
@@ -596,7 +608,9 @@ async function togglePageTranslation() {
 
 async function togglePagePause() {
   const status = pageState && pageState.auto ? pageState.auto.status : '';
-  const auto = await sendToActiveTab({ type: 'SET_AUTO_PAUSED', paused: status !== 'paused' });
+  const auto = await sendToActiveTab({
+    type: 'SET_AUTO_PAUSED', paused: !AUTO_RESUMABLE.has(status)
+  });
   if (pageState) pageState.auto = auto;
   renderPageRows();
 }

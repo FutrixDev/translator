@@ -307,6 +307,67 @@
     return result;
   }
 
+  // 两张表都按域名一路长下去，而同步存储是**每项** 8KB：撑爆的那天 set() 直接
+  // 失败。追问计数失败了是上限静悄悄不再生效，站点规则失败了是用户刚点下的选择
+  // 根本没存上。所以两张表共用一道预算，也共用一个量法。
+  //
+  // 按**序列化之后的字节数**算，不按条数。撑爆配额的是字节：一条记录占多少取决
+  // 于主机名有多长，两百个 40 字符的域名就已经贴着 8KB，而域名可以长得多。按条
+  // 数封顶只是把那天推远一点，并没有堵上。8KB 里只留 6KB，剩下的是给键名本身和
+  // 「Chrome 怎么数」留的余量 —— 差那一点就写不进去，代价是整张表。
+  const MAX_ITEM_BYTES = 6 * 1024;
+
+  function itemBytes(value) {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  }
+
+  // 追问计数满了先扔计数最小的（被问得最少的那几个，重新问一次的代价也最小），
+  // 刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过的态一点没丢
+  // —— 那些在 siteRules 里，是另一张表。
+  function pruneAskCounts(counts, keep) {
+    if (itemBytes(counts) <= MAX_ITEM_BYTES) return counts;
+    const victims = Object.keys(counts)
+      .filter((key) => key !== keep)
+      .sort((a, b) => counts[a] - counts[b]);
+    for (const key of victims) {
+      delete counts[key];
+      if (itemBytes(counts) <= MAX_ITEM_BYTES) break;
+    }
+    return counts;
+  }
+
+  /**
+   * 站点规则满了：扔掉**扔了也不改变任何判定**的那些。
+   *
+   * 这张表不能像计数那样挑一条扔 —— 每一条都是用户亲口说过的话，扔掉哪一条都
+   * 是替他改主意。但表里会有真正多余的条目：用户先在 x.com 上点了「总是翻译」，
+   * 后来又在 mobile.x.com 上点了一次同样的，而 lookupUserRule 本来就会沿父域
+   * 往上找 —— 删掉子域那条，mobile.x.com 查出来还是 always。
+   *
+   * 「多余」不靠眼力判断，靠查一遍：删掉之后再用同一个函数查这个键，答案一样
+   * 才真的多余。这样单标签主机（localhost 和它下面的 wiki.localhost）、自己
+   * 写死的例外（x.com=always 而 ads.x.com=never）都不会被误收 —— 前者查出来
+   * 是空，后者查出来是相反的那个。从最长的键扫起：最深的子域最可能被盖住。
+   *
+   * **只在超预算时跑**，不平时清理。子域那条今天多余，不等于明天多余：用户哪
+   * 天把 x.com 改成 never，留着的 mobile.x.com=always 还护得住那个子域，收掉
+   * 了就跟着变成 never —— 一次没人看见的改主意。顶着配额失败去换这个风险值得，
+   * 平白无故去换不值得。真正的泄压阀是设置页里那张能删的审计表（PR-10）。
+   */
+  function compactUserRules(rules, keep) {
+    if (itemBytes(rules) <= MAX_ITEM_BYTES) return rules;
+    const keys = Object.keys(rules)
+      .filter((key) => key !== keep)
+      .sort((a, b) => b.length - a.length);
+    for (const key of keys) {
+      const state = rules[key];
+      delete rules[key];
+      if (lookupUserRule(rules, key) !== state) rules[key] = state;
+      else if (itemBytes(rules) <= MAX_ITEM_BYTES) break;
+    }
+    return rules;
+  }
+
   /**
    * 写下一条用户站点规则，或把它抹掉（state 不是 always/never 时）。
    *
@@ -326,39 +387,11 @@
     const rules = Object.assign({}, stored.siteRules);
     if (STATES.has(state)) rules[key] = state;
     else delete rules[key];
+    compactUserRules(rules, key);
+    // 挤不下就让它抛。这条路上只有用户刚点的那一下，调用方看得见失败、也说得
+    // 出口；吞掉它才是那种「按钮动了、设置没存上」的坏结局。
     await store.set({ siteRules: rules });
     return key;
-  }
-
-  // 这张表只为一件事存在：同一个站点最多追问几次。它按域名一路长下去，同步存
-  // 储每项 8KB 的配额迟早会被撑满 —— 到那天 set() 直接失败，调用方只打一行日
-  // 志，从此所有站点的计数都记不上，追问上限静悄悄地不再生效。规则改成按精确
-  // 主机名存之后子域不再合并，涨得更快。
-  //
-  // 所以给它一个上限：满了先扔计数最小的（被问得最少的那几个，重新问一次的代
-  // 价也最小），刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过
-  // 的态一点没丢 —— 那些在 siteRules 里，是另一张表。
-  //
-  // 上限按**序列化之后的字节数**算，不按条数。撑爆配额的是字节：一条记录占多少
-  // 取决于主机名有多长，两百个 40 字符的域名就已经贴着 8KB，而域名可以长得多。
-  // 按条数封顶只是把那天推远一点，并没有堵上。8KB 里只留 6KB 给它，剩下的是给
-  // 键名本身和「Chrome 怎么数」留的余量 —— 差那一点就写不进去，代价是整张表。
-  const MAX_ASK_BYTES = 6 * 1024;
-
-  function askCountBytes(counts) {
-    return new TextEncoder().encode(JSON.stringify(counts)).length;
-  }
-
-  function pruneAskCounts(counts, keep) {
-    if (askCountBytes(counts) <= MAX_ASK_BYTES) return counts;
-    const victims = Object.keys(counts)
-      .filter((key) => key !== keep)
-      .sort((a, b) => counts[a] - counts[b]);
-    for (const key of victims) {
-      delete counts[key];
-      if (askCountBytes(counts) <= MAX_ASK_BYTES) break;
-    }
-    return counts;
   }
 
   /**

@@ -186,6 +186,26 @@ test('藏着译文时按「继续」，先把译文放回来', () => {
   assert.doesNotMatch(auto, /ai-translator-hidden/, '类名归显隐层');
 });
 
+test('popup 那一行印「继续」的时候，页面那边真的会继续', () => {
+  // 两边各写各的门，就会出现按钮印着「暂停」、点下去把 ERROR 变成 PAUSED 的
+  // 局面 —— 用户得重开一次 popup 再点一次才轮到重试，而出错那一页正是最需要
+  // 一下点中的。所以这道门在 popup 里只有一处说了算，且和页面那边一字不差。
+  const auto = code('content/content-auto-translate.js');
+  assert.match(
+    auto,
+    /function resumeCurrentPage\(\) \{\s*if \(status !== STATUS\.PAUSED && status !== STATUS\.ERROR\) return;/,
+    '页面那边的「继续」门变了'
+  );
+
+  const popup = code('popup/popup.js');
+  assert.match(popup, /const AUTO_RESUMABLE = new Set\(\['paused', 'error'\]\);/);
+  // 标签和消息共用同一个集合，不是各判各的。
+  assert.equal((popup.match(/AUTO_RESUMABLE/g) || []).length, 3, '一处定义，两处用');
+  assert.match(popup, /AUTO_RESUMABLE\.has\(status\) \? t\('popupResumePage'\) : t\('popupPausePage'\)/);
+  assert.match(popup, /paused: !AUTO_RESUMABLE\.has\(status\)/);
+  assert.doesNotMatch(popup, /status === 'paused'/, '别再单独拿 paused 判一次');
+});
+
 test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {
   assert.ok(manifest.commands, 'manifest 里没有 commands');
   const command = manifest.commands['toggle-translate-page'];
@@ -248,8 +268,19 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   // 经被「按住划」花掉了就收回。
   assert.match(utils, /addEventListener\('keydown'[\s\S]*?event\.key !== pendingTap\.key\) settleModifierTap\('chord'\)/);
   assert.match(utils, /addEventListener\('keyup'[\s\S]*?event\.key === pendingTap\.key\) settleModifierTap\('fire'\)/);
-  assert.match(utils, /if \(opts\.hold\) \{[\s\S]*?settleModifierTap\('fire'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
-  assert.match(utils, /ctx\.disarmModifierTap = function\(\) \{\s*settleModifierTap\('drop'\);/);
+  assert.match(utils, /if \(opts\.hold\) \{[\s\S]*?settleModifierTap\('hold'\)[\s\S]*?MODIFIER_TAP_HOLD_MS\)/);
+  assert.match(utils, /ctx\.disarmModifierTap = function\(\) \{\s*settleModifierTap\('spent'\);/);
+
+  // 和弦可以来得比「动手」还晚：按住 Alt 超过一瞬、或者按着 Alt 先划了一段，
+  // 再去够 A。那一下撤不回已经译的，但必须把 onChord 补跑一次——不然松手之前
+  // 划过的每一段都还当按住悬停，一个和弦换一串请求。'hold' 和 'spent' 都要留
+  // 着盯，'fire' 不用：键都松了，没有第二下了。
+  assert.match(utils, /if \(outcome === 'hold' \|\| outcome === 'spent'\) spentTap = tap;/);
+  assert.match(utils, /addEventListener\('keydown'[\s\S]*?event\.key !== spentTap\.key\) settleSpentTap\('chord'\)/);
+  assert.match(utils, /addEventListener\('keyup'[\s\S]*?event\.key === spentTap\.key\) settleSpentTap\('drop'\)/);
+  // 盯着的那一下也要跟着窗口失焦和下一次 arm 一起清掉。
+  assert.match(utils, /ctx\.armModifierTap = function[\s\S]{0,200}?settleSpentTap\('drop'\);/);
+  assert.match(utils, /addEventListener\('blur'[\s\S]*?settleSpentTap\('drop'\)/);
 
   // 而这条闸门必须装在两个处理器里，不能只装一个。
   for (const rel of ['content/content-selection.js', 'content/content-hover-translation.js']) {
