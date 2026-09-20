@@ -236,6 +236,31 @@
     return true;
   };
 
+  // 原文块已经不在文档里的那些句柄，连同它们的规则一起收掉。
+  //
+  // 句柄挂在离屏 holder 上，holder 挂在 body 上 —— 单页应用换页换掉的是内容那
+  // 段子树，holder 一动不动，于是上一页的句柄全留了下来。留着有两笔账：它们还
+  // 答得上 PAGE_TRANSLATION_SELECTOR（「这一页翻过了没有」因此答错，见
+  // content-page-translation.js 的 hasPageTranslations），以及样式表里那条
+  // ::after 规则和 handles 里的条目再没有人会来收，一个长会话里只增不减。
+  //
+  // 挑换路由这个时机，是因为「上一页没了」在这一刻不含糊。读的时候顺手清不行：
+  // 页面暂时把一段子树摘下来再挂回去是常事，那种块不该在一次读里被判死刑。
+  function sweepOrphanedHandles() {
+    for (const [handle, entry] of [...handles]) {
+      if (entry.block && !entry.block.isConnected) ctx.releaseManagedTranslation(handle);
+    }
+  }
+
+  ctx.sweepOrphanedManagedTranslations = sweepOrphanedHandles;
+
+  // 谁拥有这个值，谁负责清 —— 引擎那份语言缓存也是自己订的路由过期
+  // （content-translation-engine.js:192）。守卫留着：只装了整页翻译那几个模块的
+  // DOM 夹具里没有这一层。
+  if (globalThis.SpaNavigation) {
+    globalThis.SpaNavigation.onRouteChange(sweepOrphanedHandles);
+  }
+
   ctx.setManagedTranslationsVisible = function(visible) {
     const root = document.documentElement;
     if (!root) return;

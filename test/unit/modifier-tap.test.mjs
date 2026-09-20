@@ -33,21 +33,29 @@ function load({ commands = { 'toggle-translate-page': { suggested_key: { default
 
   const ctx = {};
   const sent = [];
+  let live = liveShortcuts;
+  let hidden = false;
+  let clock = 1_000_000;
   const sandbox = {
     window: { AI_TRANSLATOR_CONTENT: ctx, ...target(listeners.window) },
-    document: { ...target(listeners.document), createElement: () => ({ set textContent(v) {}, innerHTML: '' }) },
+    document: {
+      ...target(listeners.document),
+      get hidden() { return hidden; },
+      createElement: () => ({ set textContent(v) {}, innerHTML: '' }),
+    },
     navigator: {},
     console,
+    Date: { now: () => clock },
     chrome: {
       runtime: {
         lastError: null,
         getManifest: () => ({ commands }),
         sendMessage: (message, callback) => {
           sent.push(message);
-          if (liveShortcuts === null) return;
+          if (live === null) return;
           // 真实世界里这是异步的，但测试要的是「答回来之后名单对不对」，
           // 所以同步交付，省掉每条用例一个 await。
-          callback({ shortcuts: liveShortcuts });
+          callback({ shortcuts: live });
         },
       },
     },
@@ -64,6 +72,11 @@ function load({ commands = { 'toggle-translate-page': { suggested_key: { default
     elapse() { const due = [...timers.values()]; timers.clear(); for (const t of due) t.fn(); },
     pending: () => timers.size,
     key(type, key) { for (const fn of listeners.window[type] || []) fn({ key }); },
+    // 用户跑去 chrome://extensions/shortcuts 改了键位，再回到这一页。
+    rebind(shortcuts) { live = shortcuts; },
+    focus() { for (const fn of listeners.window.focus || []) fn({}); },
+    reveal() { hidden = false; for (const fn of listeners.document.visibilitychange || []) fn({}); },
+    tick(ms) { clock += ms; },
   };
 }
 
@@ -164,4 +177,39 @@ test('真实键位只有服务工作者答得上来 —— 那半边也得在', 
   assert.match(arm.slice(0, 600), /chrome\.commands\.getAll\(/, '答的必须是现在真的绑着的键位，不是 manifest 的建议值');
   assert.match(arm.slice(0, 600), /sendResponse\(\{ shortcuts:[\s\S]*?\}\);\s*\}\);\s*return true;/,
     'getAll 是异步的，不 return true 这条消息的通道当场就关了，回调答给空气');
+});
+
+test('键位是在别的标签页改的 —— 回到这一页要重问一次', () => {
+  // chrome://extensions/shortcuts 是另一个标签页，而此刻已经开着的每一页手里都
+  // 还是装载时那份名单。只问一次的话，改成 Ctrl+Shift+Y 的人回到这一页按住
+  // Shift，这一层要挡的那次重复请求原样回来 —— 而且要一直回来到他刷新为止。
+  const world = load({ liveShortcuts: [] });
+  assert.equal(heldRun(world, 'Shift'), 1, '一个命令都没绑着的时候，Shift 本来就该有按住档');
+
+  world.rebind(['Ctrl+Shift+Y']);
+  world.tick(2000);
+  world.focus();
+  assert.equal(heldRun(world, 'Shift'), 0, '回到这一页没重问，旧名单会一直用到他刷新');
+});
+
+test('标签页重新露头也算回来了', () => {
+  // 同一个窗口里切标签页只发 visibilitychange，不一定有 focus。
+  const world = load({ liveShortcuts: [] });
+  world.rebind(['Ctrl+Shift+Y']);
+  world.tick(2000);
+  world.reveal();
+  assert.equal(heldRun(world, 'Shift'), 0);
+});
+
+test('focus 和 visibilitychange 成对到达时只问一次', () => {
+  // 切回一个标签页常常两下一起来，来回点窗口更密。一次按键换一条消息不值当。
+  const world = load({ liveShortcuts: [] });
+  assert.equal(world.sent.length, 1, '装载时问的那一次');
+  world.focus();
+  world.reveal();
+  assert.equal(world.sent.length, 1, '一秒之内的第二第三下该被并掉');
+
+  world.tick(2000);
+  world.focus();
+  assert.equal(world.sent.length, 2);
 });

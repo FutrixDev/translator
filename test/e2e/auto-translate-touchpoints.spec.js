@@ -350,6 +350,70 @@ test('受管容器：整页译文藏着的时候划词，那一句照样看得�
   }
 });
 
+test('受管容器重建之后，悬浮球的第一下是翻译，不是藏一条不存在的译文', async ({ page, context }) => {
+  // 受管译文没有自己的节点：句柄挂在一个 display:none 的离屏 holder 上，真正的
+  // 译文是原文块的 ::after。子树被换掉的时候，::after 跟着走了，句柄留在原地
+  // —— holder 挂在 body 上，谁都没动它。
+  //
+  // 于是「这一页翻过了没有」答成了 true：popup 上写着「显示原文」，而他点悬浮球
+  // 的第一下是把一条早就不存在的译文「藏」一次。页面纹丝不动，他得再点一次才开
+  // 始翻。普通容器里没有这一出 —— 那些译文节点就长在被换掉的子树里，一起没了。
+  //
+  // 两段分别钉两半。前半段编辑器自己重建子树（Lexical 这类容器的日常），换路由
+  // 那一下没发生，孤儿句柄还原样挂着：这一下走得通，靠的只能是读的时候不数它。
+  // 后半段换路由，收的是另一笔账 —— 规则和 map 里的条目再没人来收，一个长会话
+  // 里只增不减。
+  const { close, endpoint } = await startMockOpenAIServer();
+  const handles = () => page.evaluate(
+    () => document.querySelectorAll('#ai-translator-managed-handles .ai-translator-inline-block').length);
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+      siteRules: { 'ask.test': 'never' }
+    });
+    await context.route(`${ORIGIN}/**`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Editor</title></head>
+<body><div id="box" data-lexical-editor="true">
+  <p id="one">${BODY}</p>
+  <p id="two">Nobody in the office could say who had opened the second book.</p>
+</div></body></html>`
+      });
+    });
+    await page.goto(`${ORIGIN}/editor`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('translating');
+    await page.waitForSelector('#two[data-ai-translator-managed]', { timeout: 30000 });
+    await expect.poll(handles, { timeout: 30000 }).toBe(2);
+
+    // 编辑器照自己那份状态把子树重建了一遍：块是新的，旧的那两个离开了文档。
+    await page.evaluate(() => {
+      document.getElementById('box').innerHTML =
+        '<p id="three">The ledger from the previous winter was never returned to its shelf.</p>';
+    });
+    expect(await handles()).toBe(2);   // 换路由没发生，孤儿还挂着
+
+    // 他点悬浮球。这一下该是翻译 —— 这一页现在一条译文都没有。
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('translating');
+    await page.waitForSelector('#three[data-ai-translator-managed]', { timeout: 30000 });
+    await expect.poll(handles, { timeout: 30000 }).toBe(3);
+
+    // 换路由：上一页没了，这一刻不含糊，两个孤儿连同它们的规则一起收掉。
+    await page.evaluate(() => { history.pushState({}, '', '/editor/next'); });
+    await expect.poll(handles, { timeout: 10000 }).toBe(1);
+  } finally {
+    await close();
+  }
+});
+
 test('一轮翻译跑到一半按下 Alt+A，后面落下来的译文也是藏着的', async ({ page, context }) => {
   // 整页翻译一批批往回落，一轮要几十秒。中途「显示原文」只管得到当时已经插好的
   // 块的话，用户一边藏、译文一边冒出来，那个开关就是个摆设。

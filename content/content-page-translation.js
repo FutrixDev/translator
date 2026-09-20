@@ -138,7 +138,24 @@
    */
   function hasPageTranslations() {
     const selector = ctx.PAGE_TRANSLATION_SELECTOR;
-    return !!selector && !!document.querySelector(selector);
+    if (!selector) return false;
+    for (const el of document.querySelectorAll(selector)) {
+      // 受管译文没有自己的节点：句柄只是个挂在离屏 holder 上的替身，译文是原文
+      // 块的那条 ::after。原文块离开文档之后（单页应用换页把那段子树整个换掉，
+      // Lexical 这类编辑器自己重建子树也一样），::after 跟着没了，替身却还在
+      // —— holder 挂在 body 上，换路由不动它。
+      //
+      // 数进去的样子：新的一页上 popup 写着「隐藏译文」，而悬浮球 / Alt+A 的第
+      // 一下不是翻译这一页，是把一条不存在的译文「藏」一次；他得再按一次才开始
+      // 翻。普通容器里没有这一出，那些译文节点就长在被换掉的子树里，一起走了。
+      //
+      // 这里只是**不数**，不顺手清理：一个还没重新挂回去的块不该在一次读里被
+      // 判死刑。真正收掉孤儿的是换路由那一下，见 content-managed-translation.js。
+      const block = ctx.getManagedTranslationBlock && ctx.getManagedTranslationBlock(el);
+      if (block && !block.isConnected) continue;
+      return true;
+    }
+    return false;
   }
 
   function togglePageTranslation() {

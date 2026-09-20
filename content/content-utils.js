@@ -211,17 +211,39 @@
   // 它**只会把名单变长**：用户改过的键位可能多占一个修饰键，那一个必须补上；
   // 而把 manifest 声明的那个从名单里摘掉，换来的只是一个「悬停键位也改成了 Alt」
   // 的人少松一次手，赌的却是这条消息在每台机器上都答得又对又准。
-  try {
-    chrome.runtime.sendMessage({ type: 'COMMAND_SHORTCUTS' }, (response) => {
-      if (chrome.runtime.lastError) return;
-      if (!response || !Array.isArray(response.shortcuts)) return;
-      for (const modifier of collectCommandModifiers(response.shortcuts)) {
-        commandModifiers.add(modifier);
-      }
-    });
-  } catch (error) {
-    // 同上：垫着的那份 manifest 名单照样管用。
+  //
+  // 只在装载时问一次不够：键位是在 chrome://extensions/shortcuts 里改的，那是
+  // **另一个标签页**，而此刻已经开着的每一页手里都还是旧名单。改成 Ctrl+Shift+Y
+  // 的人回到这一页，按住 Shift 超过一瞬 —— 这一层要挡的那次重复请求原样回来。
+  //
+  // 所以回到这一页就重问一次。这个时机跑不掉：他必须离开这一页才改得成，也必须
+  // 回来才用得上，而 focus 一定排在他按下第一个键之前。节流是为了把 focus 和
+  // visibilitychange 成对到达的那两下并成一次。
+  const COMMAND_REFRESH_THROTTLE_MS = 1000;
+  let commandRefreshedAt = 0;
+
+  function refreshCommandModifiers() {
+    const now = Date.now();
+    if (commandRefreshedAt && now - commandRefreshedAt < COMMAND_REFRESH_THROTTLE_MS) return;
+    commandRefreshedAt = now;
+    try {
+      chrome.runtime.sendMessage({ type: 'COMMAND_SHORTCUTS' }, (response) => {
+        if (chrome.runtime.lastError) return;
+        if (!response || !Array.isArray(response.shortcuts)) return;
+        for (const modifier of collectCommandModifiers(response.shortcuts)) {
+          commandModifiers.add(modifier);
+        }
+      });
+    } catch (error) {
+      // 上下文没了。垫着的那份 manifest 名单照样管用。
+    }
   }
+
+  refreshCommandModifiers();
+  window.addEventListener('focus', refreshCommandModifiers);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshCommandModifiers();
+  });
 
   let pendingTap = null;
 
