@@ -32,7 +32,8 @@ the user asks"，**现在这句话不成立了**）。
 **中文**
 
 > 1.4.0 — 自动翻译
-> - 新增：自动翻译。一篇你读不懂的语言写的页面，打开就自己翻好了，不用点。
+> - 新增：自动翻译。你设成「总是翻译」的网站、以及我们内置名单里的网站，
+>   打开就是译文，不用点；别的网站会先问你一次，答过就记住。
 >   要不要翻，按三样东西决定，优先级从高到低：**你对这个网站的决定 > 我们内置
 >   的网站名单 > 你勾选的「我能读的语言」**。所以你说过「不再翻译」的网站，
 >   哪天换了语言也还是不翻。
@@ -56,8 +57,10 @@ the user asks"，**现在这句话不成立了**）。
 **English**
 
 > 1.4.0 — Automatic translation
-> - New: pages translate themselves. A page written in a language you do not
->   read is translated on open, with no click. Three things decide it, in this
+> - New: pages translate themselves. On a site you set to Always — and on the
+>   sites our built-in list covers — a page written in a language you do not
+>   read is translated on open, with no click; anywhere else you are asked once
+>   and the answer is kept. Three things decide it, in this
 >   order: **your decision about this site > our built-in site list > the
 >   languages you ticked as ones you read.** A site you told us to leave alone
 >   stays alone, even after it changes language.
@@ -151,7 +154,7 @@ user chooses.
 - [x] `permissions` / `host_permissions` 未新增任何项
 - [x] `_locales/` 十种语言的 `appDescription` 已重写并全部 ≤132 字符
 - [x] `npm run test:unit` 全绿（611 passed）
-- [ ] `npm run test:e2e` 全绿
+- [x] `npm run test:e2e` 全绿（214 passed, 9 skipped）
 - [ ] `npm run zip` 产物已校验：十种 `_locales` 齐全、Tesseract 核心与语言包在内、
       无 `.DS_Store`、无 source map、无测试文件
 - [ ] 在 `chrome://extensions/` 用「加载已解压的扩展程序」实测一遍第四节那五步

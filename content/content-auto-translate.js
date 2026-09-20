@@ -464,7 +464,9 @@
       if (suspended) suspended.suspend();
 
       let error = null;
-      // 这一轮真的把块送去翻了（不是整批被语言设置滤空、也不是半路换了代次）。
+      // 这一轮真的有块拿到了结果。**由 onSettled 置起**，而不是发出去的那一刻：
+      // runTranslationPass 要连错三批才报错，一张只有一两批的小页面可以整页全
+      // 失败而 error 仍是 null —— 那一页一个字都没译出来，不该记成「翻了一页」。
       let translated = false;
       try {
         // 「已经是目标语言的就别翻了」是用户的设置，自动这一轮和手动那一轮认的是
@@ -480,7 +482,6 @@
           for (const block of blocks) if (!keep.has(block.element)) commit(block.element);
         }
         if (fresh.length > 0 && guard.version() === session) {
-          translated = true;
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
           //
@@ -492,7 +493,10 @@
             // 记账等结果：accept 是「还要不要写回去」，onSettled 是「这一块有结果
             // 了」。失败的块两者都不会走到，于是留在 inflight 里，随这一轮一起
             // 丢掉 —— 下次扫描回来还有一次机会。
-            onSettled: (block) => commit(block.element),
+            onSettled: (block) => {
+              translated = true;
+              commit(block.element);
+            },
             allowDownload: false,
             isAborted: () => guard.version() !== session,
           });

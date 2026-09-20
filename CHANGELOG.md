@@ -4,8 +4,10 @@
 
 ### New features
 
-- **Automatic translation.** A page in a language you do not read translates
-  itself, with no click. The decision is one function — `SiteRules.decide()`
+- **Automatic translation.** A page in a language you do not read is
+  translated on open, with no click, on the sites you have set to Always and
+  on the ones our built-in list already covers; anywhere else you are asked
+  once and the answer is kept. The decision is one function — `SiteRules.decide()`
   in `shared/site-rules.js` — and it answers one of five things: translate,
   don't, ask, this site is off, this language is one you read. Three inputs
   feed it, in strict precedence: **a rule you set for this site beats a rule we

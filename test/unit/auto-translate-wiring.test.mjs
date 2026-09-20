@@ -337,7 +337,11 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 而且没有任何报错。所以整份文件里 `ledger.add` 只能有一处，就在 commit 里。
   assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
   assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);/);
-  assert.match(auto, /onSettled: \(block\) => commit\(block\.element\)/);
+  assert.match(auto, /onSettled: \(block\) => \{\s*\n\s*translated = true;\s*\n\s*commit\(block\.element\);\s*\n\s*\},/);
+  // 「这一轮真的译出了东西」也只能从这同一个口子置起。放在发请求之前就是另一
+  // 个方向的同一个错：一张只有一两批的小页面可以整页全失败而 error 仍是 null
+  // （连错三批才报错），那一页一个字都没译出来，却会被记成「自动翻了一页」。
+  assert.equal((auto.match(/translated = true;/g) || []).length, 1);
   assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(pending\.key\);/);
   // 被语言滤掉的是有意跳过，也是结果，同样要记。
   assert.match(auto, /for \(const block of blocks\) if \(!keep\.has\(block\.element\)\) commit\(block\.element\);/);

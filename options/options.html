@@ -212,41 +212,50 @@
               </div>
               <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
             </div>
+          </div>
 
-            <!-- The audit table. Every row is a decision the user made in the
-                 popup, and every row can be taken back here — that is the
-                 point of showing them at all. -->
-            <div class="form-group">
-              <label data-i18n="siteRulesTitle">Sites you have decided about</label>
-              <div class="site-rules" id="siteRules"></div>
-              <span class="hint" data-i18n-hint="hintSiteRules"></span>
-            </div>
+          <!-- The audit table and the counters sit OUTSIDE #autoSubOptions on
+               purpose. That container carries `pointer-events: none` when the
+               master switch is off, and these two are not sub-options of it:
+               deleting a rule you set by accident, and clearing the numbers
+               this computer kept, are things a user must be able to do
+               *especially* when automation is off. Inside, the only way to
+               reach either button would be to switch automation back on —
+               which saves immediately and restarts translation in open tabs.
 
-            <div class="form-group">
-              <label data-i18n="autoStatsTitle">On this computer</label>
-              <div class="auto-stats">
-                <div class="auto-stat">
-                  <span class="auto-stat-value" id="statPages">0</span>
-                  <span class="auto-stat-label" data-i18n="autoStatsPages">Pages translated automatically</span>
-                </div>
-                <div class="auto-stat">
-                  <span class="auto-stat-value" id="statCacheHit">—</span>
-                  <span class="auto-stat-label" data-i18n="autoStatsCacheHit">Served from the cache</span>
-                </div>
-                <div class="auto-stat">
-                  <span class="auto-stat-value" id="statChars">0</span>
-                  <span class="auto-stat-label" data-i18n="autoStatsChars">Characters sent to the model</span>
-                </div>
+               Every row in the table is a decision the user made in the popup,
+               and every row can be taken back here — that is the point of
+               showing them at all. -->
+          <div class="form-group">
+            <label data-i18n="siteRulesTitle">Sites you have decided about</label>
+            <div class="site-rules" id="siteRules"></div>
+            <span class="hint" data-i18n-hint="hintSiteRules"></span>
+          </div>
+
+          <div class="form-group">
+            <label data-i18n="autoStatsTitle">On this computer</label>
+            <div class="auto-stats">
+              <div class="auto-stat">
+                <span class="auto-stat-value" id="statPages">0</span>
+                <span class="auto-stat-label" data-i18n="autoStatsPages">Pages translated automatically</span>
               </div>
-              <button type="button" id="resetAutoStats" class="btn btn-text">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
-                  <path d="M3 3v5h5"/>
-                </svg>
-                <span data-i18n="autoStatsReset">Clear</span>
-              </button>
-              <span class="hint" data-i18n-hint="hintAutoStats"></span>
+              <div class="auto-stat">
+                <span class="auto-stat-value" id="statCacheHit">—</span>
+                <span class="auto-stat-label" data-i18n="autoStatsCacheHit">Served from the cache</span>
+              </div>
+              <div class="auto-stat">
+                <span class="auto-stat-value" id="statChars">0</span>
+                <span class="auto-stat-label" data-i18n="autoStatsChars">Characters sent to the model</span>
+              </div>
             </div>
+            <button type="button" id="resetAutoStats" class="btn btn-text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+              <span data-i18n="autoStatsReset">Clear</span>
+            </button>
+            <span class="hint" data-i18n-hint="hintAutoStats"></span>
           </div>
         </section>
 

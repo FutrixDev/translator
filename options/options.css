@@ -1132,6 +1132,15 @@ body::before {
   outline-offset: 2px;
 }
 
+/* The chips are a sub-option of the switch; the audit table and the counters
+   below them are not, so they sit outside `.feature-suboptions` (see
+   options.html for why). Every other card ends with that container, so it
+   carries no bottom margin — this card is the one that needs one, and the
+   20px matches `.form-group`'s own rhythm. */
+#autoTranslateCard .feature-suboptions {
+  margin-bottom: 20px;
+}
+
 /* The site audit table. One row per decision the user made in the popup. */
 .site-rules {
   display: flex;
