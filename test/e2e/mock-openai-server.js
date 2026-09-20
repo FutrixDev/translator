@@ -48,12 +48,21 @@ function pngDataUrlSize(dataUrl) {
  *
  *   「出错之前页面上已经有译文了」这个局面只有这一头造得出来 —— 而它正是出错那
  *   条路上最要紧的一个：一个字都没翻成的页面，用户连「隐藏译文」都点不到。
+ * @param {?(text: string) => boolean} [options.failWhen]
+ *   按**内容**决定这一次答不答：命中就 500。
+ *
+ *   failRequests / failAfter 数的是「第几次请求」，而整页翻译是 8 个并发在跑，
+ *   哪一批先到是赛跑出来的。要造「这几块翻成了、那几块崩了」这种确定的一轮，
+ *   就只能按内容挑 —— 按次数挑的话，同一份测试今天证的是 A 成了，明天证的是
+ *   A 崩了，而两种结局里只有一种在测那件事。
+ *
+ *   和上面两个不叠加使用：这一条先判，命中就不再数次数。
  * @param {number} [options.delayMs]
  *   每次作答前先拖这么久。整页翻译在真实页面上要跑几十秒，一批批往回落 ——
  *   「翻到一半用户按了显示原文」这类旅程，只有在一轮还没跑完的时候才存在，
  *   而答得太快的服务器把那个窗口压成了零。
  */
-async function startMockOpenAIServer({ failRequests = 0, failAfter = null, delayMs = 0 } = {}) {
+async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failWhen = null, delayMs = 0 } = {}) {
   let remainingFailures = failRequests;
   let served = 0;
   // One entry per request that took the fast-batch path, so tests can assert the mock
@@ -119,6 +128,12 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, delay
       }
 
       if (content) sentTexts.push(content);
+
+      if (failWhen && typeof content === 'string' && failWhen(content)) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'mock: upstream refused this batch' } }));
+        return;
+      }
 
       if (remainingFailures > 0) {
         remainingFailures -= 1;

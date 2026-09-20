@@ -668,6 +668,64 @@ test('出错的那一页，看一眼原文再看回来，不会替他重试一�
   }
 });
 
+test('一轮里前面几块翻成了、后面崩了，这一页照样记进「本月自动翻译」', async ({ page, context }) => {
+  // 设置页统计面板的第一格问的是「这个月自动翻了几页」。而一轮翻译的结局不止成
+  // 和败两种：几批成了、另几批崩到了整体故障的门槛，页面上是真有译文摆着的。
+  // 把这一页记成零，用户看到的就是「明明翻出来了，计数没动」—— 而他没有别的办
+  // 法知道这一格到底在数什么，于是整块面板一起失去可信度。
+  //
+  // 这里刻意走询问条而不是 siteRules:always：always 的话第一轮只有 #para，干干
+  // 净净地成功、当场记上一笔，后面崩不崩都不影响那个 1，这条测试就什么都没证。
+  // 要崩的那几块必须和 #para **同在第一轮里**。
+  //
+  // 也刻意用 failWhen 而不是 failAfter：八个并发批次谁先到是赛跑，按次数挑的话
+  // 有时崩的是 #para 那一批 —— 那一轮一个字都没翻成，本来就该记零。
+  const MARK = 'Tide ledger';
+  const { close, endpoint } = await startMockOpenAIServer({
+    failWhen: (text) => text.includes(MARK)
+  });
+  const autoStatus = async () =>
+    (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status;
+
+  try {
+    await serve(page, context, endpoint);
+    const bar = page.locator('#ai-translator-auto-bar');
+    await expect(bar).toBeVisible();
+
+    // 四段各自超过 MAX_BLOCK_CHARS，于是各自成批，一批一次失败，攒够
+    // MAX_BATCH_FAILURES（3）就是整体故障。排得紧一点是为了让它们全落进发现层
+    // 那条带子里（content/content-auto-discover.js 的 BAND_MARGIN），不然要等
+    // 用户滚过去才凑得齐三次。
+    await page.evaluate((mark) => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'font-size:12px;line-height:1.2';
+      for (let i = 0; i < 4; i += 1) {
+        const p = document.createElement('p');
+        p.style.margin = '0';
+        p.textContent = `${mark} ${i}: `
+          + 'The tide book records this departure and the return that followed it. '.repeat(60);
+        wrap.appendChild(p);
+      }
+      document.getElementById('box').appendChild(wrap);
+    }, MARK);
+
+    await bar.locator('[data-act="translate"]').click();
+
+    await expect.poll(autoStatus, { timeout: 30000 }).toBe('error');
+    // 出错了，而 #para 的译文就在页面上 —— 这一页确实被自动翻过。少了这一条，
+    // 下面那个 1 有可能来自一轮根本没翻成的空转。
+    await expect(page.locator('#para + .ai-translator-inline-block')).toHaveCount(1);
+
+    const worker = await getServiceWorker(context);
+    await expect.poll(
+      () => worker.evaluate(async () => (await chrome.storage.local.get('autoStats')).autoStats?.pages ?? 0),
+      { timeout: 5000 }
+    ).toBe(1);
+  } finally {
+    await close();
+  }
+});
+
 test('划词键位是 Alt 时，Alt+A 只翻整页，不会顺手把选中的那句也译一遍', async ({ page, context }) => {
   // 划词和悬停的快捷键是「单独一个修饰键」，而 Alt+A 的第一下 keydown 长得和
   // 「只按了 Alt」一模一样。立刻动手的话，用户按一次 Alt+A 会既译一句又译一页

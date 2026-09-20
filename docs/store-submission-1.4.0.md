@@ -35,7 +35,7 @@ the user asks"，**现在这句话不成立了**）。
 > - 新增：自动翻译。你设成「总是翻译」的网站、以及我们内置名单里的网站，
 >   打开就是译文，不用点；别的网站会先问你一次，答过就记住。
 >   要不要翻，按三样东西决定，优先级从高到低：**你对这个网站的决定 > 我们内置
->   的网站名单 > 你勾选的「我能读的语言」**。所以你说过「不再翻译」的网站，
+>   的网站名单 > 你勾选的「只自动翻这些语言」**。所以你说过「不再翻译」的网站，
 >   哪天换了语言也还是不翻。
 > - 新增：一次点击就是一个长期答案。没决定过的页面上会出现一条询问，两个按钮
 >   —— 「总是翻译」「不再翻译」。按下去就给这个网站记了一条规则，以后不再问。
@@ -59,12 +59,11 @@ the user asks"，**现在这句话不成立了**）。
 
 > 1.4.0 — Automatic translation
 > - New: pages translate themselves. On a site you set to Always — and on the
->   sites our built-in list covers — a page written in a language you do not
->   read is translated on open, with no click; anywhere else you are asked once
->   and the answer is kept. Three things decide it, in this
->   order: **your decision about this site > our built-in site list > the
->   languages you ticked as ones you read.** A site you told us to leave alone
->   stays alone, even after it changes language.
+>   sites our built-in list covers — the page is translated on open, with no
+>   click; anywhere else you are asked once and the answer is kept. Three
+>   things decide it, in this order: **your decision about this site > our
+>   built-in site list > the languages you ticked to have translated.** A site
+>   you told us to leave alone stays alone, even after it changes language.
 > - New: one click is a permanent answer. An undecided page shows a bar with
 >   two buttons — Always translate, Never translate. Either one writes a rule
 >   for that site and the bar never comes back. Rules cover subdomains.
@@ -144,11 +143,11 @@ communications、Location。
 > Automatic translation is the new feature and the one worth checking. It is on
 > by default, and it does nothing at all until it has a reason to.
 >
-> 1. Install and open any page in a language you read (for a machine set to
->    English, `https://en.wikipedia.org/wiki/Chrome_Web_Store`). Nothing
->    happens — the page's language matches the reader, so there is nothing to
->    do.
-> 2. Open a page in a language you do not read
+> 1. Install and open a page that is already in the target language (for a
+>    machine set to English, `https://en.wikipedia.org/wiki/Chrome_Web_Store`).
+>    Nothing happens — the page's language matches the target, so there is
+>    nothing to do.
+> 2. Open a page in another language
 >    (`https://ja.wikipedia.org/wiki/Google_Chrome`). A bar appears at the
 >    bottom asking whether to translate this site. **Nothing has been
 >    translated and nothing has been sent yet.**

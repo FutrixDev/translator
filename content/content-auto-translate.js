@@ -540,6 +540,15 @@
         return;
       }
 
+      // 数在报错之前。一轮里有几批成了、另几批崩到了 runTranslationPass 报错的
+      // 门槛，页面上是真有译文摆着的 —— 而「这个月自动翻了几页」问的是「这一页
+      // 翻过没有」，不是「这一轮有没有出错」。记在下面那个 return 后头，就是把
+      // 一页看得见译文的页面记成零。
+      if (translated && countedUrl !== location.href) {
+        countedUrl = location.href;
+        globalThis.AutoStats.add({ pages: 1 });
+      }
+
       if (error) {
         broken = true;
         lastError = error;
@@ -547,11 +556,6 @@
         stopDiscovery();
         console.warn('Blab Translation: auto translation stopped for this page —', error);
         return;
-      }
-
-      if (translated && countedUrl !== location.href) {
-        countedUrl = location.href;
-        globalThis.AutoStats.add({ pages: 1 });
       }
 
       setStatus(STATUS.IDLE);

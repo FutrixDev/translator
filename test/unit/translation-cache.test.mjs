@@ -4,24 +4,60 @@
 // 不知道当前用哪个引擎、不知道请求长什么样、不知道谁在调它。所以这份测试只需要
 // 一个假的 storage 和一个假的 fetchMissing。
 //
-// 每个用例自己 import 一次带版本后缀的模块路径（ESM 会把它当成另一个模块重新执行），
-// 拿到一份全新的 L1。**这不是小聪明，是这份测试的主要手段**：L1 命中和 L2 命中
-// 是两条完全不同的路，共用一个进程内 Map 就只能测到前一条。
+// 每个用例自己求值一次模块源码，拿到一份全新的 L1。**这不是小聪明，是这份测试的
+// 主要手段**：L1 命中和 L2 命中是两条完全不同的路，共用一个进程内 Map 就只能测到
+// 前一条。
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-let moduleSeq = 0;
-let previous = null;
+// 被测的那个文件是一段直接往 globalThis 上挂的 IIFE（MV3 的 content script 没有
+// 模块系统），所以「再来一份」只能靠把源码再求值一次 —— 每求值一次就是一套新的
+// 闭包变量，也就是新的 L1、新的待写队列、新的定时器。
+//
+// **不能靠给 import 路径加查询串。** package.json 没有 "type": "module"，这个
+// .js 在 Node 眼里是 CommonJS，而 CJS 的模块缓存按解析后的文件名记，查询串在那
+// 一步就被丢掉了 —— `?case=1` 和 `?case=2` 拿回来的是同一份实例、同一个 L1，
+// 于是上面那句话里的两条路测出来会是同一条。
+const SOURCE = readFileSync(new URL('../../shared/translation-cache.js', import.meta.url), 'utf8');
 
-/** 一份干净的 storage.local 假件 + 一份全新的缓存模块。 */
-async function freshCache(seed = {}) {
-  // 上一份模块实例还活着，它那个 500ms 的攒批定时器随时会醒，而它是从
-  // globalThis.chrome 现取 storage 的 —— 醒过来就写进下一个用例的 store 里。
-  // 先把它的待写清空（flush() 会清空 pendingWrites），定时器醒来就无事可做了。
-  if (previous) await previous.flush().catch(() => {});
+/** 还活着的实例。每一份都攥着自己的 500ms 定时器，收尾时要挨个结掉。 */
+const live = [];
+
+function loadCache() {
+  // eslint-disable-next-line no-new-func
+  new Function(SOURCE)();
+  const instance = globalThis.TranslationCache;
+  live.push(instance);
+  return instance;
+}
+
+/**
+ * 把上一个用例留下的实例结清。
+ *
+ * 它们那个 500ms 的攒批定时器随时会醒，而它是从 globalThis.chrome 现取 storage
+ * 的 —— 醒过来就写进下一个用例的 store 里。flush() 会清空 pendingWrites，定时器
+ * 醒来就无事可做了。
+ */
+async function settleLive() {
+  while (live.length > 0) await live.pop().flush().catch(() => {});
+}
+
+/**
+ * 一份 chrome.storage.local 假件。
+ *
+ * 带 onChanged，而且 set/remove 真的把事件发出去 —— 清空缓存的广播走的就是这条
+ * 路，一个收不到事件的假件会让「别的上下文也跟着丢」那条用例假绿。
+ */
+function makeChromeStub(seed = {}) {
   const store = new Map(Object.entries(seed));
   const calls = { get: 0, set: 0, remove: 0, bytes: 0 };
-  globalThis.chrome = {
+  const listeners = [];
+  const fire = (changes) => {
+    if (Object.keys(changes).length === 0) return;
+    for (const listener of [...listeners]) listener(changes, 'local');
+  };
+  const chrome = {
     storage: {
       local: {
         async get(keys) {
@@ -35,11 +71,22 @@ async function freshCache(seed = {}) {
         },
         async set(items) {
           calls.set += 1;
-          for (const [key, value] of Object.entries(items)) store.set(key, value);
+          const changes = {};
+          for (const [key, value] of Object.entries(items)) {
+            changes[key] = { oldValue: store.get(key), newValue: value };
+            store.set(key, value);
+          }
+          fire(changes);
         },
         async remove(keys) {
           calls.remove += 1;
-          for (const key of [].concat(keys)) store.delete(key);
+          const changes = {};
+          for (const key of [].concat(keys)) {
+            if (!store.has(key)) continue;
+            changes[key] = { oldValue: store.get(key) };
+            store.delete(key);
+          }
+          fire(changes);
         },
         async getBytesInUse(keys) {
           calls.bytes += 1;
@@ -49,12 +96,34 @@ async function freshCache(seed = {}) {
           }
           return total;
         }
+      },
+      onChanged: {
+        addListener(listener) { listeners.push(listener); }
       }
     }
   };
-  await import(`../../shared/translation-cache.js?case=${moduleSeq++}`);
-  previous = globalThis.TranslationCache;
-  return { cache: previous, store, calls };
+  return { chrome, store, calls };
+}
+
+/** 一份干净的 storage.local 假件 + 一份全新的缓存模块。 */
+async function freshCache(seed = {}) {
+  await settleLive();
+  const { chrome, store, calls } = makeChromeStub(seed);
+  globalThis.chrome = chrome;
+  return { cache: loadCache(), store, calls };
+}
+
+/**
+ * 两份模块实例，共用一份 storage —— 也就是设置页和一个开着的标签页。
+ *
+ * 这是这份测试里唯一一处非造两份不可的地方：L1 和待写队列**每个上下文各有一
+ * 份**，一份实例永远量不出「设置页清空了，那个标签页还在按自己的 L1 供货」。
+ */
+async function freshPair(seed = {}) {
+  await settleLive();
+  const { chrome, store } = makeChromeStub(seed);
+  globalThis.chrome = chrome;
+  return { options: loadCache(), tab: loadCache(), store };
 }
 
 const FACTORS = {
@@ -363,15 +432,44 @@ test('clear 把缓存整块删掉，不碰别人的键，也不让攒着的写�
 
   const result = await cache.clear();
   assert.equal(result.removed, 2);
-  assert.deepEqual([...store.keys()].sort(), ['comicToken', 'pdf-job:1']);
+  // 广播信号自己留了下来 —— 它不带 tc: 前缀正是为了这个：清空和过期清理都按前缀
+  // 取键，带上前缀就会把信号本身一起删掉，于是这条广播只发得出第一次。
+  assert.deepEqual([...store.keys()].sort(),
+    ['comicToken', 'pdf-job:1', 'translationCacheEpoch']);
 
   await cache.flush();
-  assert.deepEqual([...store.keys()].sort(), ['comicToken', 'pdf-job:1'], '攒着的那一条不该落盘');
+  assert.deepEqual([...store.keys()].sort(),
+    ['comicToken', 'pdf-job:1', 'translationCacheEpoch'], '攒着的那一条不该落盘');
 
   // L1 也空了：不空的话同一个页面继续拿旧译文，「清除」在这一页上等于没按。
   const fetchMissing = recorder();
   await cache.serve(['a'], FACTORS, fetchMissing);
   assert.deepEqual(fetchMissing.batches, [['a']]);
+});
+
+test('一个上下文清空，别的上下文跟着丢 —— 否则那个标签页还在按自己的 L1 供货', async () => {
+  const { options, tab, store } = await freshPair();
+
+  // tab 是一个开着的标签页：刚翻完一批，L1 里有两条，待写队列里也有两条
+  // （那 500ms 还没到）。
+  const first = recorder();
+  await tab.serve(['a', 'b'], FACTORS, first);
+  assert.deepEqual(first.batches, [['a', 'b']]);
+
+  // options 是设置页，用户在这里按下「清除」。
+  const result = await options.clear();
+  assert.equal(result.removed, 0, '那一批还没落盘，落盘的这一半本来就是空的');
+
+  // 待写的那两条不许再落回去。少了这一条，用户按下按钮半秒之后缓存自己长回来，
+  // 而他看不到任何异样。
+  await tab.flush();
+  assert.deepEqual([...store.keys()].filter((key) => key.startsWith('tc:')), []);
+
+  // L1 也空了：不空的话这个标签页继续按旧译文供货，那颗按钮在他正看着的那一页
+  // 上等于没按。
+  const second = recorder();
+  await tab.serve(['a', 'b'], FACTORS, second);
+  assert.deepEqual(second.batches, [['a', 'b']]);
 });
 
 test('clear 失败要让调用方知道 —— 按钮按了没反应不能说成清好了', async () => {
