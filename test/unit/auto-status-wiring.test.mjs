@@ -425,25 +425,55 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
   // 规则改了确实会重开一轮，否则上面那段永远跑不到。
   const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));
   assert.match(keys, /'siteRules'/);
-  // 而 popup 那一行画的就是 status —— 这是「重判」必须落到 status 上的原因。
+  // 站点那一行自己每次都重判（auto.siteAuto），所以这一段现在护的是另外两样：
+  // reason 决定状态点上那句说明，status 决定暂停那一行在不在 —— 藏着的一页被
+  // 改成 never 之后，那一行不该还印着「继续」，点下去又把它开回来。
+  assert.match(auto, /siteAuto: siteAuto\(\),/, '站点那一句跟着快照一起回');
   const popup = code('popup/popup.js');
-  assert.match(popup, /function siteAutoOn\(status\) \{\s*return !!globalAuto && AUTO_ACTIVE\.has\(status\);/);
-  assert.equal((popup.match(/siteAutoOn\(status\)/g) || []).length, 3,
+  assert.match(popup, /function siteAutoOn\(\) \{\s*return !!\(pageState && pageState\.auto && pageState\.auto\.siteAuto\);/);
+  assert.equal((popup.match(/siteAutoOn\(\)/g) || []).length, 3,
     '一处定义、两处调用（画这一行、点这一行）—— 画的和点的必须是同一句');
 });
 
-test('pending 不能画成「开」—— 它只会走到 ask 或 off，而点一下写下的是永久的 never', () => {
+test('一次性的「翻译这一页」不能让站点开关翻成「开」', () => {
+  // 没设过规则的站点，追问条上点「翻译」而没勾「总是」：markPageExplicit() 把这
+  // 一页推进 idle/running，可规则表里一条都没落地，下次再来照样问他。那一行照着
+  // status 画就会写「开」—— 而他顺手去点那个看起来已经开着的开关，写下的是一条
+  // **永久的 never**：他想开，反倒关死了。行为断言在
+  // test/e2e/auto-translate-touchpoints.spec.js 的同名旅程里。
+  const auto = code('content/content-auto-translate.js');
+  assert.match(auto, /function siteAuto\(\) \{\s*return resolve\(pageLang, \{ explicit: false \}\)\.verdict === 'auto';\s*\}/,
+    '站点那一句得把用户在这一页表过的那一下刨掉再判');
+  assert.match(auto, /siteAuto: siteAuto\(\),/, '它得跟着快照一起回 popup');
+  // 默认那一头不许跟着改：resolve() 不带参数问的仍是「这一页此刻该不该翻」，
+  // 连同他表过的态 —— 兑现那一下点击的整条路（后续长出来的内容）全靠它。
+  assert.match(auto, /explicit: options && options\.explicit === false \? false : explicit/);
+
+  // 刨的必须是 explicit 本身，不能换成「只认 USER_ALWAYS / BUILTIN_ALWAYS 这两
+  // 条理由」：decide() 的阶梯上 explicit 排在所有站点规则之前，一旦表过态那两条
+  // 就被挡在后面 —— 在 x.com（内置 always）上按一下 Alt+A，这一行反倒翻成「关」。
+  const ladder = code('shared/site-rules.js');
+  const decide = ladder.slice(ladder.indexOf('function decide(input)'));
+  assert.ok(decide.indexOf("REASONS.USER_EXPLICIT") < decide.indexOf("REASONS.USER_ALWAYS"),
+    'explicit 排在站点规则之前 —— 这正是不能按 reason 认的原因');
+  const popup = code('popup/popup.js');
+  assert.doesNotMatch(popup, /USER_ALWAYS|BUILTIN_ALWAYS/, 'popup 手上没有阶梯，认不了 reason');
+  assert.doesNotMatch(popup, /siteAutoOn\(status\)/, '站点那一行不看 status');
+});
+
+test('pending 不能画出一行「暂停这一页」—— 它只会走到 ask 或 off，没有什么可停', () => {
   // 走到 pending 的前提就是第一问已经答了 ask（off 和 auto 都当场返回了），而
   // 第二问带上语言之后，decide() 的阶梯上剩给它的只有 off 和 ask。所以一个
-  // pending 的站点永远不会变成「在自动翻」。popup 问完就不再听了，画错的那个
-  // 「开」会一直错到它关掉；用户照着它点一下，写进去的是一条永久的 never。
+  // pending 的页面永远不会变成「在自动翻」—— 给它画一行「暂停这一页」，用户按
+  // 下去停的是一件从来没开始的事，而按钮会就此改口写「继续」。
   const popup = code('popup/popup.js');
   const set = popup.slice(popup.indexOf('const AUTO_ACTIVE'), popup.indexOf('const AUTO_RESUMABLE'));
   assert.doesNotMatch(set, /'pending'/, 'pending 不是「自动翻译在管这一页」');
   for (const s of ['idle', 'running', 'paused', 'error']) assert.match(set, new RegExp(`'${s}'`));
 
-  // 同一个集合也决定暂停那一行在不在 —— 两处问的是同一件事，所以不能是两个集合。
+  // 这个集合只管这一行。站点那一行问的是另一句话（见 siteAutoOn()）。
   assert.match(popup, /const pauseRow = AUTO_ACTIVE\.has\(status\);/);
+  assert.equal((popup.match(/AUTO_ACTIVE/g) || []).length, 2, '一处定义、一处用');
 
   // 上面那段推理的依据：decide() 里 off 和 auto 都当场返回，ask 是阶梯的末端。
   const rules = code('shared/site-rules.js');

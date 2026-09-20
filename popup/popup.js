@@ -486,16 +486,15 @@ function onPdfTranslateLocal() {
 // 是一个点了没反应的按钮。
 // ---------------------------------------------------------------------------
 
-// 自动翻译真的在管这一页的那几个状态。**站点那一行的「开」和暂停那一行在不在，
-// 问的是同一件事**，所以只有这一个出处。
+// 自动翻译真的在管这一页的那几个状态 —— **只决定「暂停这一页」那一行在不在**。
 //
 // off / ask 不在其中：那时「暂停」无事可停。pending 也不在 —— 它看着像「正要
 // 开翻」，其实不是：走到 pending 的**前提**就是第一问已经答了 ask（off 和 auto
 // 都当场返回了），而第二问带上语言之后，decide() 的阶梯上剩给它的只有 off
 // （同语言 / 不在语言名单里）和 ask 两条，再没有一条通往 auto。
 //
-// 把它算成「开」的代价不是画错一瞬：popup 问完就不再听了，这个字会一直错到它
-// 关掉；而用户照着那个「开」点一下，写进去的是一条**永久的 never**。
+// **站点那一行不看它。**「这一页此刻在不在翻」和「这个站点开着自动翻」是两句
+// 话，中间隔着一次一次性的「翻译这一页」（见 siteAutoOn()）。
 const AUTO_ACTIVE = new Set(['idle', 'running', 'paused', 'error']);
 
 // 这一行该写「继续」而不是「暂停」的状态。和页面那边 resumeCurrentPage() 的门
@@ -552,12 +551,20 @@ function isHideAction() {
  * 站点那一行印「开」还是「关」—— 画它的时候和点它的时候问的必须是同一句，否则
  * 用户看见「开」、点下去写的却是一条「开」的规则。所以两处共用这一个。
  *
- * 问的是**此刻这一页到底在不在自动翻**，不是 siteRules 里写了什么：x.com 内置
- * 就是 always，规则表里一条没有，说「关」就是撒谎。总开关关着时全部算关 ——
- * 那时候确实一页都不翻。
+ * 问的是**这个站点自己会不会翻这一页**。不是 siteRules 里写了什么，也不是这一
+ * 页此刻在不在翻 —— 两头都会撒谎：
+ *
+ *   - 只看规则表：x.com 内置就是 always，表里一条没有，写「关」是撒谎；
+ *   - 只看状态：用户在一个没设过规则的站点上点一次「翻译这一页」（没勾「总是」），
+ *     这一页确实在翻，可站点一条规则都没落地。写「开」是撒谎，而他顺手去点那个
+ *     看起来已经开着的开关，写进去的是一条**永久的 never** —— 他想开，反倒关死
+ *     了。popup 问完就不再听，这个字会一直错到它关掉。
+ *
+ * 这句话只有页面答得了（规则表、内置名单、黑名单、总开关、他在这一页表过的态，
+ * 全在它那边），所以它由 AUTO_PAGE_STATE 一起带回来，popup 只管读。
  */
-function siteAutoOn(status) {
-  return !!globalAuto && AUTO_ACTIVE.has(status);
+function siteAutoOn() {
+  return !!(pageState && pageState.auto && pageState.auto.siteAuto);
 }
 
 function renderPageRows() {
@@ -568,7 +575,7 @@ function renderPageRows() {
   const siteRow = !!(pageState && pageState.host);
   elements.toggleSiteAuto.hidden = !siteRow;
   if (siteRow) {
-    const on = siteAutoOn(status);
+    const on = siteAutoOn();
     // 黑名单这一行是死的，不是关着的。阶梯上黑名单排在所有站点规则前面，所以往
     // 规则表里写一条 always 下去，这一页照样不翻 —— 点了没反应还不是最糟的，最
     // 糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻起来，而他本来只想管
@@ -617,8 +624,7 @@ async function toggleSiteAuto() {
   // 键盘能走到一个 disabled 的按钮上、扩展页面也能被脚本点，所以画面上灰掉之外
   // 这里再挡一道：黑名单改不动，别让这一下的副作用（开总开关）自己跑掉。
   if (pageState.blocked) return;
-  const status = pageState.auto ? pageState.auto.status : '';
-  const on = siteAutoOn(status);
+  const on = siteAutoOn();
   try {
     await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
     // 总开关排在规则后面，顺序是有意的：规则写不进去（配额挤爆）的时候，总开关

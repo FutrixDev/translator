@@ -122,6 +122,8 @@
         status,
         reason,
         pageLang,
+        // 「这个站点开着自动翻」是一句和 status 不同的话，见 siteAuto()。
+        siteAuto: siteAuto(),
         error: lastError,
         sessionVersion: guard.version(),
         queued: queue.size,
@@ -161,7 +163,7 @@
 
     // ------------------------------------------------------------------ 判
 
-    function resolve(lang) {
+    function resolve(lang, options) {
       return globalThis.SiteRules.decide({
         host: location.hostname,
         path: location.pathname,
@@ -169,8 +171,32 @@
         targetLang: ctx.getEffectiveTargetLang(),
         userRules: ctx.settings.siteRules,
         settings: ctx.settings,
-        explicit
+        // 默认连同用户在这一页上表过的态一起问 —— 那正是「这一页此刻该不该翻」。
+        // 把那一下刨掉再问的另有其用，见 siteAuto()。
+        explicit: options && options.explicit === false ? false : explicit
       });
+    }
+
+    /**
+     * 「**这个站点**自己会不会翻这一页」—— 把用户在这一页上的那一下点击刨掉，
+     * 重判一次。
+     *
+     * popup 上「自动翻译这个站点」那一行画的是这句话。用 status 画的话（idle /
+     * running 就算开），用户在一个没设过规则的站点上点一次「翻译这一页」（没勾
+     * 「总是」）就会看见那一行翻成「开」—— 可规则表里一条都没写，下次再来还是
+     * 照样问他；而他顺手去点那个看起来已经开着的开关，写进去的是一条**永久的
+     * never**，从此这个站点再也不翻。他想开，结果关死了。
+     *
+     * 必须刨掉 explicit 才问得对，而不是换一组 reason 去认：decide() 的阶梯上
+     * explicit 那一级排在所有站点规则之前，一旦表过态，USER_ALWAYS 和
+     * BUILTIN_ALWAYS 都被它挡在后面 —— 只认那两个 reason 的话，在 x.com 上点一
+     * 次「翻译这一页」，这一行反倒会从「开」翻成「关」。
+     *
+     * 语言用此刻量到的那一门（量不出就是 null）：这一行问的是站点，而能答「auto」
+     * 的三级全在语言之前，语言到底是什么对它没有影响。
+     */
+    function siteAuto() {
+      return resolve(pageLang, { explicit: false }).verdict === 'auto';
     }
 
     /**

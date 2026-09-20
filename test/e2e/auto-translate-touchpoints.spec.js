@@ -70,6 +70,45 @@ test('ask bar: 勾一下、点一下，这一页翻了，这个站点以后也�
   }
 });
 
+test('一次性的「翻译这一页」不会让站点开关说成「开」', async ({ page, context }) => {
+  // popup 上「自动翻译这个站点」那一行画的要是 status，这一条就是它的账单：
+  // 用户在追问条上点「翻译」而**没勾「总是」**—— 这一页翻了（idle/running），
+  // 规则表里一条都没落地，下次再来照样问他。那一行却写着「开」；他顺手去点那个
+  // 看起来已经开着的开关，写进去的是一条**永久的 never**。他想开，反倒关死了。
+  //
+  // 断言落在 auto.siteAuto 上 —— popup 那一行读的就是这一个字段。
+  const { close, endpoint } = await startMockOpenAIServer();
+  const siteAuto = async () =>
+    (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.siteAuto;
+
+  try {
+    await serve(page, context, endpoint);
+
+    const bar = page.locator('#ai-translator-auto-bar');
+    await expect(bar).toBeVisible();
+    // 只点「翻译」。「总是」那一格一下都不碰 —— 这一下只对这一页算数。
+    await bar.locator('[data-act="translate"]').click();
+    await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
+
+    const after = (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto;
+    expect(['idle', 'running']).toContain(after.status);   // 这一页确实在翻
+    expect(after.siteAuto).toBe(false);                    // 这个站点却一条规则都没有
+    expect(await getSyncSetting(context, 'siteRules')).toBeFalsy();
+
+    // 反过来那一半同样会错，而且更难想到：把「表过态」当成「这个站点关着」来认
+    // （只认 USER_ALWAYS / BUILTIN_ALWAYS 那两条理由）的话，x.com 这种内置就翻
+    // 的站点上，用户按一下 Alt+A，这一行反倒从「开」翻成「关」—— decide() 的阶
+    // 梯上 explicit 排在所有站点规则之前，把它们全挡在了后面。
+    //
+    // 这里用等价的用户规则摆出同一个局面：规则落地，而这一页早就表过态了。
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.writeUserRule('ask.test', 'always'));
+    await expect.poll(siteAuto, { timeout: 5000 }).toBe(true);
+  } finally {
+    await close();
+  }
+});
+
 test('ask bar: 「不用」就地收走，不跳页、不翻译', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
