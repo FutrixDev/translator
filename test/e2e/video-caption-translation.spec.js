@@ -444,6 +444,27 @@ test('with the setting off, subtitles the page only offers stay off', async ({ p
   await expect(p.locator('#ai-translator-caption-overlay')).toHaveCount(0);
 });
 
+test('hiding the player button does not stop subtitles being turned on', async ({ page: p, context }) => {
+  // Two settings, two things. Hiding our icon says "keep your button off the
+  // control bar"; turning subtitles on is what the other switch is for. Both
+  // run off the same heartbeat, which is how they came to be tangled once.
+  await setExtensionSettings(p, {
+    ...BASE_SETTINGS,
+    autoEnableCaptions: true,
+    captionPlayerButton: false,
+  });
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+  // And the button really is gone — otherwise this passes for the wrong reason.
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(0);
+});
+
 test('the viewer switching subtitles off outlasts the heartbeat', async ({ page: p, context }) => {
   // The whole risk of this feature in one test: we re-check every 1.5s, so a
   // viewer who switches subtitles off and sees them come back cannot switch

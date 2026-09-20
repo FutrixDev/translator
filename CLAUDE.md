@@ -164,6 +164,17 @@ Two rules the generic provider exists to keep:
   the viewer's side those are the same event. `sawNativeOn` clears per video;
   the block does not. The one way past it is the menu's 「开启原字幕」
   (`ctx.enableNativeCaptions()`), which is the viewer asking.
+
+  Two things that look like details and are not. **`enableNativeCaptions()`
+  answers three ways**: `true` pressed something, `false` this video has no
+  captions at all, `null` the control bar is not up yet — ask again. Only the
+  definite answers are written down (`state.nativeUnavailable` hides the menu
+  row until captions come on or the video changes), because recording a
+  not-yet-mounted button as `false` takes that row away for the rest of the
+  video. And **the heartbeat runs all of this ahead of `captionPlayerButton`**:
+  hiding our icon and turning subtitles on are separate settings, but
+  `syncControls()` is the only thing driving either, and it returns early on the
+  first.
 - **A track is put back the way the viewer would want it.** We hold it at
   `hidden`, not `disabled`, so cues keep loading; `restoreMode` goes back on
   detach. Usually that is the mode we found it in, with two exceptions, one at

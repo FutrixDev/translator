@@ -1431,7 +1431,7 @@ arXiv / old.reddit.com）。四条 e2e 逐条反向验证过：把 `ctx.resolveS
 
 ### PR-9：字幕面接入
 
-本文 §8 说的是「复用」，落地时有五处不同。
+本文 §8 说的是「复用」，落地时有十三处不同。
 
 **1. 闸门用 `siteRefused`，不是 `siteAuto`。** §8 原说字幕这一面跟着整页那一面的
 结论走。真接上去发现它在最该生效的地方永远是 false：`SiteRules.decide()` 的阶梯里，
@@ -1516,6 +1516,28 @@ youtube.com 既不在拦截名单、也不在内置 `always` 名单，答案是 
 是 `'disabled'`。松手时（切「只看原文」、关掉翻译）会把它还成关掉 —— 当场收回观众刚
 按下去要到的东西。关着的轨道只会经由这一行走到这里，所以它还回去的模式是
 `'showing'`。
+
+**11. 替观众开原字幕，不能挂在那个按钮的开关后面（评审第 4 轮 P2）。** 自动开启唯一
+的驱动是心跳里的 `syncControls()`，而它一进门先看 `captionPlayerButton`：关着就
+`unmount()` 返回。于是「藏起播放器上那个图标」顺带把「替我开原字幕」一起关了 ——
+两个开关，观众开了后者、关了前者，得到的是什么都不发生。`syncNativeCaptions()` 现
+在排在那道闸门前面，由 `caption-core.test.mjs` 的顺序断言和一条 e2e 钉住。
+
+**12. 「这个站点准不准」问不到的时候，要当拒绝（评审第 4 轮 P2）。** `ctx.init` 里
+字幕这一面排在自动翻译前面（`content-bootstrap.js`），所以第一次同步控件时
+`ctx.autoTranslate` 根本不存在。原来那行 `if (auto && auto.state && …siteRefused)`
+在那一拍是**放行**的 —— 而放行的这一下恰好落在总开关关着、或者站点在拦截名单上的
+页面上，还偏偏是整轮自动化里唯一会去动播放器自己状态的动作。改成问不到就不动：心跳
+1.5 秒一拍，等一拍不要紧。
+
+**13. 「控制条还没上来」和「这段视频没有字幕」必须分开（评审第 4 轮 P2）。** 第 7 条
+把「按了个空」记进 `state.nativeUnavailable`，但 `enableNativeCaptions()` 那时只有
+真假两个答案，YouTube 的 `.ytp-subtitles-button` 还没挂上去也返回 false —— 于是在播
+放器慢一拍的页面上，观众按下那一行之后它就此消失，而那个标记只在字幕真开起来或者换
+了视频时才清。provider 现在给三种答案：`true` 按到了、`false` 这段视频没有可开的字
+幕、`null` 还不知道；引擎只把前两种记下来（`typeof answer === 'boolean'`）。通用
+provider 用「此刻还列不列得出字幕轨」来分 —— 它本来就只在有轨道的视频上自荐
+（`canActivate`），一条都不列说明轨道从脚下没了，说不准。
 
 **10. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
 菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`

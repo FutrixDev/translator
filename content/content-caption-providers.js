@@ -116,20 +116,25 @@
     // picks them up with no extra work, and that is most of why this is worth
     // doing at all: the majority of YouTube videos have no human-written track.
     //
-    // Returns whether there was anything to press — false means either the
-    // control bar is not up yet (the engine tries again on the next media
-    // event) or this video has no captions at all, which is not something a
-    // click can fix.
+    // Three answers, because the two ways of pressing nothing are not the same
+    // thing to the viewer:
+    //   true  — captions are on, or the click that turns them on just happened;
+    //   false — this video has no captions at all, which no click can fix;
+    //   null  — the control bar is not up yet; ask again on the next beat.
+    // The engine writes only the definite answers down (state.nativeUnavailable),
+    // so a button that has not mounted yet must not come back as false: that
+    // would take the menu's "turn subtitles on" row away for the rest of the
+    // video, and a control bar arriving a beat late is ordinary.
     enableNativeCaptions() {
       const button = document.querySelector('.ytp-subtitles-button');
-      if (!button) return false;
+      if (!button) return null;
       if (button.getAttribute('aria-pressed') === 'true') return true;
       // YouTube disables the button outright on a video with no tracks.
       if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
       try {
         button.click();
       } catch (e) {
-        return false;
+        return null;
       }
       return true;
     },
@@ -511,9 +516,19 @@
     // True means a track is now held, which is as much as this can promise:
     // its cues may still be on their way (a <track> file is only fetched once
     // its mode leaves 'disabled' — see adoptTrack).
+    //
+    // Coming up empty splits in two, and the caller keeps them apart (see
+    // YouTubeProvider.enableNativeCaptions for what it does with each). The
+    // question that separates them is whether the player is listing a subtitle
+    // track at all right now: this provider only offers itself on a video that
+    // had one (canActivate), so none listed means they have gone out from under
+    // us — a video swapped, a <track> not mounted yet — and is worth asking
+    // again. Some listed and still none taken is this video having nothing we
+    // can show.
     enableNativeCaptions() {
       syncSelection(true);
-      return !!tt.track && tt.track.mode !== 'disabled';
+      if (tt.track && tt.track.mode !== 'disabled') return true;
+      return subtitleEntries(TextTrackProvider.getVideo()).length ? false : null;
     },
 
     getOverlayHost() {

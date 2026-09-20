@@ -791,8 +791,20 @@
     if (!state.active || state.dismissed) return false;
     if (!getSetting('autoEnableCaptions')) return false;
     if (state.autoEnableBlocked) return false;
+    // 问不到那个结论，就当是拒绝。ctx.init 里字幕这一面排在自动翻译前面（见
+    // content-bootstrap.js），所以第一次同步控件时 ctx.autoTranslate 还不存在 ——
+    // 写成「问不到就放行」，那一下恰好落在总开关关着、或者站点在黑名单上的页面
+    // 上，而它偏偏是整轮自动化里唯一会去动播放器的动作。等一拍不要紧：心跳 1.5
+    // 秒一次，那时候调度层早就建起来了。
     const auto = ctx.autoTranslate;
-    if (auto && auto.state && auto.state().siteRefused) return false;
+    if (!auto || typeof auto.state !== 'function') return false;
+    let snap = null;
+    try {
+      snap = auto.state();
+    } catch (e) {
+      return false; // 同上：说不准就不动
+    }
+    if (!snap || snap.siteRefused) return false;
     return true;
   }
 
@@ -848,17 +860,21 @@
     const provider = state.provider || candidateProvider();
     if (!provider || !provider.enableNativeCaptions) return false;
     state.autoEnableBlocked = false;
-    let ok = false;
+    let answer = null;
     try {
-      ok = !!provider.enableNativeCaptions();
-    } catch (e) { /* 同上 */ }
-    // 按了个空：两个 provider 在这里的 false 说的都是「这段视频没有可开的字幕」
-    // （YouTube 的 CC 按钮 disabled，或者页面一条字幕轨都没列）。记下来，下面那行
-    // syncControls() 才有话可说——否则菜单会在 1.5 秒后的下一拍把同一个按钮再摆
-    // 出来，按下去还是没反应。
-    state.nativeUnavailable = !ok;
+      answer = provider.enableNativeCaptions();
+    } catch (e) { /* 播放器换了 DOM：按「还不知道」算，下一拍再说 */ }
+    // provider 给的是三种答案，中间那种是这几行存在的理由：
+    //   true  按到了；
+    //   false 这段视频没有可开的字幕（YouTube 的 CC 按钮 disabled，或者页面一条
+    //         字幕轨都没列）。记下来，下面那行 syncControls() 才有话可说——否则菜
+    //         单会在 1.5 秒后的下一拍把同一个按钮再摆出来，按下去还是没反应；
+    //   null  「还不知道」：控制条还没搭起来。这一种**不能记**——记成「没有字幕」
+    //         等于把那一行从此藏掉（这个标记只在字幕真开起来、或者换了视频时才
+    //         清），而控制条晚一拍出来是常事，观众再按一次本该就成了。
+    if (typeof answer === 'boolean') state.nativeUnavailable = !answer;
     syncControls();
-    return ok;
+    return !!answer;
   };
 
   /** The menu's status line: which track we are on, or why there is none. */
@@ -915,6 +931,14 @@
     // from here means every route that syncs the controls also keeps them
     // synced; stopWatching() is still the only thing that stops it.
     if (document.querySelector('video')) startControlsHeartbeat();
+    // 心跳是替观众开原字幕唯一的驱动：原字幕关着的时候一条 cue 都不会来，
+    // handleTimeUpdate 在 !state.cues.length 那一行就返回了，谁也不会问「要不要
+    // 替他点开」。
+    //
+    // 它排在下面那道闸门**前面**，因为它和那个按钮是两件事：观众把播放器里的按
+    // 钮藏了，说的是「别在控制条上摆你的图标」，不是「别替我开字幕」——他为后者
+    // 专门开过另一个开关。搁在闸门后面，两个设置就被捆成了一个。
+    syncNativeCaptions();
     if (getSetting('captionPlayerButton') === false) {
       controls.unmount();
       return;
@@ -926,9 +950,6 @@
       controls.unmount();
       return;
     }
-    // 心跳是这件事唯一的驱动：原字幕关着的时候一条 cue 都不会来，handleTimeUpdate
-    // 在 !state.cues.length 那一行就返回了，谁也不会问「要不要替他点开」。
-    syncNativeCaptions();
     let host = null;
     let video = null;
     try {

@@ -554,6 +554,59 @@ test('观众自己把字幕关掉之后，就不再替他开第二次', () => {
   assert.match(repoFile('content/content-caption-controls.js'), /ctx\.enableNativeCaptions\(\)/);
 });
 
+test('问不到「这个站点准不准」，就不动播放器', () => {
+  // ctx.init 里字幕排在自动翻译前面，所以第一次同步控件时 ctx.autoTranslate 还
+  // 不存在。写成「问不到就放行」，那一下正好落在总开关关着、或者站点在黑名单上
+  // 的页面上——而它是整轮自动化里唯一改动播放器自己状态的动作。
+  const engine = repoFile('content/content-video-captions.js');
+  const gate = engine.match(/function autoEnableAllowed\(\)[\s\S]*?\n  \}/);
+  assert.ok(gate, '找不到 autoEnableAllowed()');
+  assert.match(gate[0], /if \(!auto \|\| typeof auto\.state !== 'function'\) return false/);
+  // 拿到了 state() 也可能抛（页面正在拆），那也算「说不准」。
+  assert.match(gate[0], /catch[\s\S]{0,80}?return false/);
+
+  // 字幕先起、自动翻译后起，这个顺序本身就是上面那道闩的理由。
+  const boot = repoFile('content/content-bootstrap.js');
+  assert.ok(
+    boot.indexOf('setupVideoCaptionTranslation') < boot.indexOf('ctx.setupAutoTranslate'),
+    'bootstrap 顺序变了，上面那道闩的理由要重写'
+  );
+});
+
+test('藏起播放器上的按钮，不等于不要替他开原字幕', () => {
+  // 两个设置，两件事：captionPlayerButton 说的是「别在控制条上摆你的图标」，
+  // autoEnableCaptions 说的是「没开字幕的视频替我点开」。自动开启那一步唯一的驱
+  // 动是心跳里的 syncControls()，所以它必须排在按钮那道闸门**前面**——排在后面，
+  // 藏了图标的观众就再也等不到字幕。
+  const engine = repoFile('content/content-video-captions.js');
+  const sync = engine.match(/function syncControls\(\)[\s\S]*?\n  \}/);
+  assert.ok(sync, '找不到 syncControls()');
+  assert.equal((sync[0].match(/syncNativeCaptions\(\)/g) || []).length, 1);
+  assert.ok(
+    sync[0].indexOf('syncNativeCaptions()') < sync[0].indexOf("getSetting('captionPlayerButton')"),
+    '自动开原字幕被挡在了按钮的开关后面'
+  );
+});
+
+test('「控制条还没上来」和「这段视频没有字幕」不是同一个答案', () => {
+  // nativeUnavailable 只在字幕真开起来、或者换了视频时才清。把「还没搭起来」记
+  // 成「没有字幕」，菜单里那一行就此消失——而控制条晚一拍出来是常事。
+  const providers = repoFile('content/content-caption-providers.js');
+  const yt = providers.match(/enableNativeCaptions\(\)\s*\{[\s\S]*?\n    \},/);
+  assert.ok(yt, '找不到 YouTubeProvider.enableNativeCaptions()');
+  assert.match(yt[0], /if \(!button\) return null/);
+  // disabled 的 CC 按钮才是说得准的那一种。
+  assert.match(yt[0], /aria-disabled[\s\S]{0,40}?return false/);
+
+  // 通用 provider 同理：一条字幕轨都没列 = 轨道从我们脚下没了（canActivate 要求
+  // 它本来有），说不准；列了还是没接上，才是这段视频没有可放的。
+  assert.match(providers, /subtitleEntries\(TextTrackProvider\.getVideo\(\)\)\.length \? false : null/);
+
+  // 引擎只把说得准的那两个答案记下来。
+  const engine = repoFile('content/content-video-captions.js');
+  assert.match(engine, /if \(typeof answer === 'boolean'\) state\.nativeUnavailable = !answer/);
+});
+
 test('allowDisabled 只从 enableNativeCaptions 那条路进来', () => {
   // 它是「把页面只是提供的那几门字幕挑一门出来开」的许可。任何别的调用点拿到
   // 它，默认行为就变成了「替所有人开字幕」，而那是整个功能唯一不可逆的一步。
