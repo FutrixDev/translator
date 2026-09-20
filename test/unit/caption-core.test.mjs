@@ -250,6 +250,63 @@ test('allowDisabled never overrules a track that is already on', () => {
   assert.equal(picked.track.language, 'fr');
 });
 
+test('「有人在放字幕」是 showing 和 hidden 两种，判定只此一处', () => {
+  // 和 pickSubtitleTrack 偏好的是同一对模式：showing 是浏览器在画，hidden 是播
+  // 放器自己在画（video.js / Vimeo / JW 都这样），在观众眼里都是「字幕开着」。
+  // 两边要是各写各的，provider 就会去问「要不要替你开字幕」——而它正开着。
+  assert.equal(core.hasActiveSubtitleTrack([entry('showing', 'fr')]), true);
+  assert.equal(core.hasActiveSubtitleTrack([entry('disabled', 'en', true), entry('hidden', 'fr')]), true);
+  assert.equal(core.hasActiveSubtitleTrack([entry('disabled', 'de'), entry('disabled', 'en', true)]), false);
+  assert.equal(core.hasActiveSubtitleTrack([]), false);
+  assert.equal(core.hasActiveSubtitleTrack(undefined), false);
+  assert.equal(core.hasActiveSubtitleTrack([{}, { track: null }]), false);
+});
+
+test('手里没轨道不等于「页面没开字幕」——要去问页面', () => {
+  // 字幕翻译默认是关着的，那时 TextTrackProvider 只是个候选，attach 从来没跑
+  // 过，tt.track 一直是 null。菜单的状态行却每一拍都画：把「我手里没有」答成
+  // 「原字幕关着」，屏幕上明明压着一条 <track> 字幕，菜单偏说「未检测到字幕
+  // 轨」——因为功能关着的时候那一行「开启原字幕」本身是藏起来的
+  // （refreshMenu），状态行只剩下那句最没用的话。
+  const providers = repoFile('content/content-caption-providers.js');
+  const generic = providers.slice(providers.indexOf('const TextTrackProvider = {'));
+  const probe = generic.match(/nativeCaptionsState\(\) \{[\s\S]*?\n    \},/);
+  assert.ok(probe, '找不到 TextTrackProvider.nativeCaptionsState()');
+  assert.match(
+    probe[0],
+    /if \(tt\.track\) return tt\.track\.mode !== 'disabled';/,
+    '手里有轨道的时候，答案就是那条轨道',
+  );
+  assert.match(
+    probe[0],
+    /return core\.hasActiveSubtitleTrack\(subtitleEntries\(TextTrackProvider\.getVideo\(\)\)\);/,
+    '手里没轨道的时候没去问页面自己的轨道',
+  );
+});
+
+test('「开启原字幕」要把观众自己选的那条开回来，不是重挑一条', () => {
+  // allowDisabled 只从这一条路进来。观众本来在看第四门语言，自己把字幕关了，再
+  // 按这一行：所有轨道都 disabled，挑选器于是按「声道语言 / default / 第一条」
+  // 往下走，开回来的是页面列在最前面的那门——一次改语言，伪装成一次开字幕。
+  const providers = repoFile('content/content-caption-providers.js');
+  const sync = providers.match(/function syncSelection\(allowDisabled\) \{[\s\S]*?\n  \}/);
+  assert.ok(sync, '找不到 syncSelection()');
+  assert.match(
+    sync[0],
+    /const heldEntry = tt\.track \? entries\.find\(\(entry\) => entry\.track === tt\.track\) : null;/,
+  );
+  assert.match(
+    sync[0],
+    /const reopenHeld = !!\(allowDisabled && heldEntry && !core\.hasActiveSubtitleTrack\(entries\)\);/,
+    '重开那条路没有优先认手里攥着的轨道，或者没有让位给已经开着的轨道',
+  );
+  assert.match(sync[0], /const picked = reopenHeld \? heldEntry : core\.pickSubtitleTrack\(/);
+  // 同一个 heldEntry 也是下面那道「我们还在这条轨道上」的依据：两处各算一遍，
+  // 迟早会算出两个答案来。
+  assert.match(sync[0], /const holding = !!heldEntry && !heldOff;/);
+  assert.equal(/entries\.some\(\(e\) => e\.track === tt\.track\)/.test(sync[0]), false);
+});
+
 // -------------------------------------------------------- translation request
 test('the track states the source language, so detection never has to guess', () => {
   // A subtitle line is a few words — too short to identify. Without this the

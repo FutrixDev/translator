@@ -436,6 +436,26 @@
   }
 
   /**
+   * Is anybody drawing subtitles right now.
+   *
+   * The same two modes pickSubtitleTrack() prefers, asked as a yes/no:
+   * 'showing' is the browser drawing the track, 'hidden' is a player that
+   * loads the cues and draws them itself, and to a viewer both are subtitles
+   * on the screen. Everything at 'disabled' is a language the page merely
+   * offers and nobody has asked for.
+   *
+   * It is one rule and it lives here rather than beside each caller, because
+   * the picker and the "are the site's subtitles on" question have to agree:
+   * a provider that called a 'hidden' track off would offer to turn subtitles
+   * on that are already running.
+   *
+   * @param {Array<{track: TextTrack}>} entries
+   */
+  function hasActiveSubtitleTrack(entries) {
+    return (entries || []).some((entry) => entry && entry.track && entry.track.mode !== 'disabled');
+  }
+
+  /**
    * The translation request for one batch of caption segments.
    *
    * The caption track states its own language, and that statement beats
@@ -489,6 +509,7 @@
     PROVIDER_PRIORITY,
     selectProvider,
     pickSubtitleTrack,
+    hasActiveSubtitleTrack,
     getLangBase,
     getScriptVariant,
     isSameLanguage,

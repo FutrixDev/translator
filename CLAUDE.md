@@ -157,6 +157,15 @@ Two rules the generic provider exists to keep:
   permission for one call, never a mode a provider stays in — the engine asks
   for it (`enableNativeCaptions()`), so the engine can stop asking.
 
+  **Re-opening is not choosing.** Those rungs pick a track for a viewer who has
+  none; a viewer pressing 「开启原字幕」 after switching his own off already made
+  that choice. So with every track at `disabled`, the one we are still holding
+  wins over the rungs — otherwise the row that exists to give his subtitles back
+  hands him whichever language the page listed first, a language change wearing
+  the clothes of a re-enable. The rungs take over only when we hold nothing,
+  and any track still at `showing`/`hidden` outranks both: the page has moved on
+  and that one is the current answer.
+
   **And it is a latch that only closes.** `syncNativeCaptions()` runs on the
   1.5s controls heartbeat, so a viewer who switches subtitles off and sees them
   return cannot switch them off at all. Seeing captions on and then off sets
@@ -170,7 +179,15 @@ Two rules the generic provider exists to keep:
   whether subtitles are on right now — `true`, `false`, or `null` for "the
   player is not up yet, ask again"; `enableNativeCaptions()` turns them on and
   answers plain yes/no; `canEnableNativeCaptions()` says whether the viewer
-  could turn them on, `null` when there is nothing to judge by. **Nothing a
+  could turn them on, `null` when there is nothing to judge by. And
+  `nativeCaptionsState()` is a question about **the page**, not about us: the
+  generic provider is a candidate on every page with a `<video>`, the status
+  line is drawn whether or not subtitle translation is switched on, so holding
+  no track of our own it reads the video's own track modes
+  (`CaptionCore.hasActiveSubtitleTrack()` — the same `showing`/`hidden` pair the
+  picker prefers, written once so the two cannot disagree). Answering "off"
+  there told a viewer with subtitles on his screen that no subtitle track was
+  detected. **Nothing a
   provider says about the player is written down.** Both probes are asked fresh
   on every beat, because every answer they give can change on the next one: a CC
   button mounts disabled while the player loads, and a reading of `false` kept

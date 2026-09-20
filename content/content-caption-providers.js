@@ -394,7 +394,23 @@
     const video = findVideoWithTracks() || tt.video;
     const entries = subtitleEntries(video);
     if (!entries.length) return;
-    const picked = core.pickSubtitleTrack(entries, allowDisabled
+    // Re-opening is not the same as choosing. `allowDisabled` only ever comes
+    // from "turn subtitles on for me", and on a video whose tracks are all off
+    // the track we are still holding is the one the viewer had on before he
+    // turned them off — his choice, made once already.
+    //
+    // The picker cannot know that. With nothing showing it works down audio
+    // language, `default`, first-listed, which on a list of four languages
+    // hands back whichever the page listed first: a silent language change
+    // wearing the clothes of a re-enable, and the viewer's own selection lost
+    // to a press of the row that was meant to give it back.
+    //
+    // Only when nothing else is on: a track at 'showing' or 'hidden' means the
+    // page (or the viewer) has already moved to another one, and that one is
+    // the current answer — the same order pickSubtitleTrack() itself keeps.
+    const heldEntry = tt.track ? entries.find((entry) => entry.track === tt.track) : null;
+    const reopenHeld = !!(allowDisabled && heldEntry && !core.hasActiveSubtitleTrack(entries));
+    const picked = reopenHeld ? heldEntry : core.pickSubtitleTrack(entries, allowDisabled
       ? { allowDisabled: true, audioLang: audioLangOf(video) }
       : undefined);
     if (!picked) return;
@@ -404,14 +420,15 @@
     // as "you are already on it", and enableNativeCaptions() reports failure
     // having done nothing — when re-opening it is the entire point of the call.
     //
-    // The ordinary path never gets here: pickSubtitleTrack() filters disabled
-    // tracks out, so it cannot return the one we are holding.
+    // Only the re-enable path arrives here holding what was picked: an
+    // ordinary sync calls pickSubtitleTrack() without allowDisabled, which
+    // filters disabled tracks out and so can never hand back the one we hold.
     const heldOff = !!tt.track && tt.track.mode === 'disabled';
     if (picked.track === tt.track && !heldOff) return;
     // Our own track sits at 'hidden', which is never 'showing' — so only an
     // explicit switch by the page (or losing the track we held) moves us.
-    const held = tt.track && entries.some((e) => e.track === tt.track) && tt.track.mode !== 'disabled';
-    if (held && picked.track.mode !== 'showing') return;
+    const holding = !!heldEntry && !heldOff;
+    if (holding && picked.track.mode !== 'showing') return;
     adoptTrack(picked.track, video);
   }
 
@@ -526,14 +543,29 @@
       return tt.video || findVideoWithTracks() || document.querySelector('video');
     },
 
-    // We hold the track at 'hidden' ourselves, so "are the site's subtitles on"
-    // is really "do we still have a track". A player turning subtitles off
-    // sets the track to 'disabled', which is how that reads here.
+    // Once we hold a track, that track is the answer: we keep it at 'hidden'
+    // and draw the line ourselves, and a player turning subtitles off sets it
+    // to 'disabled', which is how that reads here.
+    //
+    // Holding nothing is a different question, not the same one answered "no".
+    // This provider is asked as a *candidate* too: the menu's status line is
+    // drawn on every page with a video, and with subtitle translation switched
+    // off — the default — nothing ever attaches, so `tt.track` is null on a
+    // page whose own subtitles are running perfectly well. Answering "off"
+    // there put "no subtitle track detected" in the menu about the very track
+    // burned into the picture in front of the viewer (the status line falls to
+    // that wording because the "turn subtitles on" row is itself hidden while
+    // the feature is off — see refreshMenu in content-caption-controls.js).
+    //
+    // So with nothing of our own to read, read the page's: a subtitle track
+    // out of 'disabled' is subtitles being drawn by somebody, the browser at
+    // 'showing' or the player itself at 'hidden'.
     //
     // Never null: unlike a control bar that has to mount, a track list is
     // readable from the first frame, so this provider is always sure.
     nativeCaptionsState() {
-      return !!tt.track && tt.track.mode !== 'disabled';
+      if (tt.track) return tt.track.mode !== 'disabled';
+      return core.hasActiveSubtitleTrack(subtitleEntries(TextTrackProvider.getVideo()));
     },
 
     // Turn subtitles on: re-run the choice with disabled tracks allowed in.
