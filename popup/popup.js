@@ -717,11 +717,17 @@ function showStatus(key, ok = true) {
  * 内置引擎（默认）不需要 key，所以这道门只对 'ai' 开 —— 按 apiKey 一刀切会把
  * 新用户挡在主操作外面（PR #26 的评审）。过了这道门，动作本身交给页面：
  * 「有译文就收起来，没有就译」这条规则只能有一个地方说了算，那就是页面。
+ *
+ * 门也只对「真要开译」的那一下开。这一页已经有译文了，这一下就是收起来 / 放
+ * 出来 —— 动的是 DOM，一个请求都不发。拿 key 去拦它，按钮上写着「收起译文」，
+ * 点下去弹出的是设置页，而译文还在原地：用内置引擎译完、事后把引擎换成自定义
+ * 的人，从此连自己那一页都收不起来。
  */
 async function translateCurrentPage() {
   try {
+    const willTranslate = !(pageState && pageState.hasTranslations);
     const settings = await chrome.storage.sync.get(defaultSettings);
-    if (settings.translationEngine === 'ai' && !settings.apiKey) {
+    if (willTranslate && settings.translationEngine === 'ai' && !settings.apiKey) {
       showStatus('configureApiKeyFirst', false);
       chrome.runtime.openOptionsPage();
       return;

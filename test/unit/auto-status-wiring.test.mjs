@@ -372,3 +372,15 @@ test('站点规则先落地，总开关才跟着开', () => {
   // 两条都在同一个 try 里，失败才说得出口。
   assert.ok(body.indexOf('try {') < rule && rule < body.indexOf('} catch (error) {'));
 });
+
+test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
+  // 用内置引擎译完、事后把引擎换成自定义的（还没填 key），按钮上写着「收起
+  // 译文」，点下去弹出设置页、译文还在原地。门只对真要开译的那一下开。
+  const popup = code('popup/popup.js');
+  const body = popup.slice(popup.indexOf('async function translateCurrentPage()'),
+    popup.indexOf('function openSettings()'));
+  assert.match(body, /const willTranslate = !\(pageState && pageState\.hasTranslations\);/);
+  assert.match(body, /if \(willTranslate && settings\.translationEngine === 'ai' && !settings\.apiKey\)/);
+  // 判据还是页面回的那一份事实 —— 和按钮上那行字用的是同一个，不是另立一套。
+  assert.match(popup, /pageState\.hasTranslations && pageState\.translationsVisible/);
+});
