@@ -143,15 +143,86 @@ Two ship today:
 
 Two rules the generic provider exists to keep:
 
-- **We translate the subtitles the viewer already has on; we never turn
-  subtitles on.** A track at `showing` or `hidden` is on (`hidden` is a player
-  drawing the cues itself); everything at `disabled` is a language the page
-  merely offers, and `pickSubtitleTrack()` returns null rather than choose among
-  them. Vimeo lists four and shows none.
-- **A track is put back exactly as it was found.** We hold it at `hidden`, not
-  `disabled`, so cues keep loading; `restoreMode` goes back on detach. The one
-  exception is a track the viewer disabled while we held it — restoring that one
-  would turn subtitles back on and we would read that as consent, forever.
+- **We translate the subtitles the viewer already has on, and by default we
+  turn none on ourselves.** A track at `showing` or `hidden` is on (`hidden` is a
+  player drawing the cues itself); everything at `disabled` is a language the
+  page merely offers, and `pickSubtitleTrack()` returns null rather than choose
+  among them. Vimeo lists four and shows none.
+
+  The exception is `autoEnableCaptions` — off by default, and the only
+  automation in the extension that changes the **player's own** state rather
+  than adding nodes of ours, which is why it is a switch of its own. With it on,
+  `pickSubtitleTrack({allowDisabled, audioLang})` may promote a disabled track:
+  audio-language match, then `default`, then the first. `allowDisabled` is a
+  permission for one call, never a mode a provider stays in — the engine asks
+  for it (`enableNativeCaptions()`), so the engine can stop asking.
+
+  **Re-opening is not choosing.** Those rungs pick a track for a viewer who has
+  none; a viewer pressing 「开启原字幕」 after switching his own off already made
+  that choice. So with every track at `disabled`, the one we are still holding
+  wins over the rungs — otherwise the row that exists to give his subtitles back
+  hands him whichever language the page listed first, a language change wearing
+  the clothes of a re-enable. The rungs take over only when we hold nothing,
+  and any track still at `showing`/`hidden` outranks both: the page has moved on
+  and that one is the current answer.
+
+  **And it is a latch that only closes.** `syncNativeCaptions()` runs on the
+  1.5s controls heartbeat, so a viewer who switches subtitles off and sees them
+  return cannot switch them off at all. Seeing captions on and then off sets
+  `autoEnableBlocked` for the rest of the session — whoever turned them on, from
+  the viewer's side those are the same event. `sawNativeOn` clears per video;
+  the block does not. The one way past it is the menu's 「开启原字幕」
+  (`ctx.enableNativeCaptions()`), which is the viewer asking.
+
+  Two things that look like details and are not. **A provider answers three
+  questions, and only one of them is a command.** `nativeCaptionsState()` says
+  whether subtitles are on right now — `true`, `false`, or `null` for "the
+  player is not up yet, ask again"; `enableNativeCaptions()` turns them on and
+  answers plain yes/no; `canEnableNativeCaptions()` says whether the viewer
+  could turn them on, `null` when there is nothing to judge by. And
+  `nativeCaptionsState()` is a question about **the page**, not about us: the
+  generic provider is a candidate on every page with a `<video>`, the status
+  line is drawn whether or not subtitle translation is switched on, so holding
+  no track of our own it reads the video's own track modes
+  (`CaptionCore.hasActiveSubtitleTrack()` — the same `showing`/`hidden` pair the
+  picker prefers, written once so the two cannot disagree). Answering "off"
+  there told a viewer with subtitles on his screen that no subtitle track was
+  detected. Which makes the other half a rule of its own: **what we
+  hold is dropped the moment it stops being the page's video**
+  (`releaseStaleVideo()`, on both a removed element and a track list that is no
+  longer ours). A `<video>` an SPA swapped out keeps its tracks, and one of ours
+  left at `hidden` on it would answer "subtitles are on" for a film that
+  finished — which is exactly what would stop `autoEnableCaptions` turning them
+  on for the video now playing. **Nothing a
+  provider says about the player is written down.** Both probes are asked fresh
+  on every beat, because every answer they give can change on the next one: a CC
+  button mounts disabled while the player loads, and a reading of `false` kept
+  from that moment would hide the menu's retry row for the rest of the video.
+  The only thing recorded is what we did — a successful `enableNativeCaptions()`
+  sets `sawNativeOn` on the spot, so a viewer who switches the new captions off
+  within the 1.5s beat is not overridden. The same rule reaches past the
+  providers: "this track is already in the target language" is `sameLanguage()`,
+  computed on every read, because the viewer can change the target halfway
+  through a video and nothing would go back to revise a stored answer — and it
+  compares **whole tags**, through `CaptionCore.isSameLanguage()`. `zh-CN` and
+  `zh-TW` share a base code and are two writing systems, so base equality would
+  answer "already in your language" to exactly the conversion the viewer wants;
+  the cue cache is keyed on the whole tag for the same reason. And **the
+  heartbeat runs all of this ahead of `captionPlayerButton`**:
+  hiding our icon and turning subtitles on are separate settings, but
+  `syncControls()` is the only thing driving either, and it returns early on the
+  first.
+- **A track is put back the way the viewer would want it.** We hold it at
+  `hidden`, not `disabled`, so cues keep loading; `restoreMode` goes back on
+  detach. Usually that is the mode we found it in, with two exceptions, one at
+  each end:
+  - A track the viewer disabled while we held it stays disabled. Restoring it
+    would turn subtitles back on, and we would read that as consent, forever.
+  - A track we hold **because** he asked for it (`enableNativeCaptions()` on a
+    `disabled` track — the menu row, or `autoEnableCaptions`) goes back at
+    `showing`. Its found mode was `disabled`, so restoring that would switch
+    subtitles off the moment we let go — in "original only", or when he turns
+    translation off — taking away the thing he just asked for.
 
 **Do not broaden the MAIN-world interceptor's match patterns to `<all_urls>`.**
 Patching `fetch`/`XHR` on every page is a performance, compatibility and

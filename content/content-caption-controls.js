@@ -161,6 +161,21 @@
       writeSettings({ enableYoutubeCaptionTranslation: !ctx.settings.enableYoutubeCaptionTranslation });
     });
 
+    // 1b — 唯一一项「现在能做的事」。原字幕没开的时候，前面那个开关已经是开的，
+    // 而屏幕上什么都不会发生——因为根本没有 cue 送进来。此前这里只有一行死话
+    // 「未检测到字幕轨道」，看到它的人无路可走。这一项是那条路：按下去就是按播放
+    // 器自己的 CC 按钮（见 content-video-captions.js 的 ctx.enableNativeCaptions），
+    // 而且因为是他按的，会越过「别再替他开了」那道闩。
+    //
+    // 平时藏着：只在 status 说 needs-native 时露出来，见 refreshMenu()。
+    const nativeItem = menuItem('native', 'captionMenuEnableNative', 'Turn on subtitles');
+    nativeItem.hidden = true;
+    nativeItem.addEventListener('click', () => {
+      // 成功就收起菜单。失败的话什么都不用做：ctx.enableNativeCaptions() 在返回前
+      // 已经把菜单刷成了「未检测到字幕轨道」并收起这一项——那句话留在屏幕上。
+      if (ctx.enableNativeCaptions && ctx.enableNativeCaptions()) closeMenu();
+    });
+
     // 2 — display type.
     const modeItem = menuItem('mode', 'captionDisplayMode', 'Subtitle display');
     const modeSelect = buildSelect([
@@ -208,13 +223,14 @@
     status.className = 'ai-translator-caption-menu-status';
 
     menu.appendChild(enableItem);
+    menu.appendChild(nativeItem);
     menu.appendChild(modeItem);
     menu.appendChild(posItem);
     menu.appendChild(styleItem);
     menu.appendChild(hideItem);
     menu.appendChild(status);
 
-    ui.parts = { enableItem, enableSwitch, modeItem, modeSelect, posItem, posSelect, status };
+    ui.parts = { enableItem, enableSwitch, nativeItem, modeItem, modeSelect, posItem, posSelect, status };
     return menu;
   }
 
@@ -242,10 +258,17 @@
 
     const info = ui.info || {};
     const status = info.status || {};
+    // 「原字幕还没开」这句话只在功能本身开着的时候才成立——功能关着的时候，下一步
+    // 是上面那个开关，不是这个。
+    const needsNative = enabled && status.kind === 'needs-native';
+    parts.nativeItem.hidden = !needsNative;
+
     if (status.kind === 'same-language') {
       parts.status.textContent = t('captionStatusSameLang', 'Already in your language');
     } else if (status.kind === 'track') {
       parts.status.textContent = `${t('captionStatusTrack', 'Subtitle track')}: ${status.label || ''}`;
+    } else if (needsNative) {
+      parts.status.textContent = t('captionStatusNeedsNative', 'This video’s subtitles are off');
     } else {
       parts.status.textContent = t('captionStatusNoTrack', 'No subtitle track detected');
     }

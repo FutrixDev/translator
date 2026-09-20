@@ -37,6 +37,13 @@ const VTT_ZH = `WEBVTT
 你好世界
 `;
 
+// A second foreign track, so "which one did we pick" has a visible answer.
+const VTT_DE = `WEBVTT
+
+00:00:00.000 --> 00:00:04.000
+Hallo Welt
+`;
+
 function page(body, head = '') {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     body { margin: 0; }
@@ -50,6 +57,14 @@ const WITH_TRACK = page(`
   </video>`);
 
 const NO_TRACK = page('<video id="v" width="640" height="360"></video>');
+
+// Two subtitle languages, neither turned on, and a <video lang> that says what
+// the audio is. The page offers German first — order is not a preference.
+const TWO_OFF_EN_AUDIO = page(`
+  <video id="v" lang="en" width="640" height="360">
+    <track kind="subtitles" srclang="de" label="Deutsch" src="/subs-de.vtt">
+    <track kind="subtitles" srclang="en" label="English" src="/subs.vtt">
+  </video>`);
 
 const TWO_TRACKS = page(`
   <video id="v" width="640" height="360">
@@ -70,6 +85,9 @@ async function serve(context, html) {
   });
   await context.route(`${ORIGIN}/subs-zh.vtt`, (route) => {
     route.fulfill({ status: 200, contentType: 'text/vtt', body: VTT_ZH });
+  });
+  await context.route(`${ORIGIN}/subs-de.vtt`, (route) => {
+    route.fulfill({ status: 200, contentType: 'text/vtt', body: VTT_DE });
   });
 }
 
@@ -385,4 +403,197 @@ test('original-only gives the page its own captions back', async ({ page: p, con
 
   await expect(p.locator('#ai-translator-caption-overlay')).toBeHidden();
   expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('showing');
+});
+
+// ------------------------------------------------------------------- PR-9
+// 「没开原字幕的视频，替我把原字幕点开」—— autoEnableCaptions。本轮唯一会改动播放
+// 器自己状态的自动化，所以它单独一个开关、默认关，而且只合不开。
+
+/** The track modes as the page sees them, e.g. ['de:disabled', 'en:hidden']. */
+function trackModes(p) {
+  return p.evaluate(() => Array.from(document.querySelector('video').textTracks)
+    .map((t) => `${t.language}:${t.mode}`));
+}
+
+test('turning subtitles on picks the language the audio is in, not the first listed', async ({ page: p, context }) => {
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: true });
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+
+  // German is listed first; the audio is English. Picking by list order would
+  // put a German translation of English speech on screen.
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
+test('with the setting off, subtitles the page only offers stay off', async ({ page: p, context }) => {
+  // The same page as above, minus the one setting. This is the default install.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  // Two heartbeats' worth: long enough that "nothing happened" means it.
+  await p.waitForTimeout(3500);
+
+  expect(await trackModes(p)).toEqual(['de:disabled', 'en:disabled']);
+  await expect(p.locator('#ai-translator-caption-overlay')).toHaveCount(0);
+});
+
+test('hiding the player button does not stop subtitles being turned on', async ({ page: p, context }) => {
+  // Two settings, two things. Hiding our icon says "keep your button off the
+  // control bar"; turning subtitles on is what the other switch is for. Both
+  // run off the same heartbeat, which is how they came to be tangled once.
+  await setExtensionSettings(p, {
+    ...BASE_SETTINGS,
+    autoEnableCaptions: true,
+    captionPlayerButton: false,
+  });
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+  // And the button really is gone — otherwise this passes for the wrong reason.
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(0);
+});
+
+test('the viewer switching subtitles off outlasts the heartbeat', async ({ page: p, context }) => {
+  // The whole risk of this feature in one test: we re-check every 1.5s, so a
+  // viewer who switches subtitles off and sees them come back cannot switch
+  // them off at all. Seeing them on and then off is the latch, whoever put
+  // them on — from his side those are the same event.
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: true });
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await p.evaluate(() => { document.querySelector('video').textTracks[0].mode = 'disabled'; });
+  // Four heartbeats with the video still playing under them: the first latches,
+  // and none of the rest may undo it.
+  for (let i = 0; i < 4; i += 1) {
+    await p.evaluate((t) => {
+      const v = document.querySelector('video');
+      v.currentTime = 1 + t * 0.2;
+      v.dispatchEvent(new Event('timeupdate'));
+    }, i);
+    await p.waitForTimeout(1600);
+    expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('disabled');
+  }
+
+  await expect(p.locator('#ai-translator-caption-overlay')).toBeHidden();
+});
+
+test('changing the reader language re-translates the lines already cached', async ({ page: p, context }) => {
+  // The cache holds *translations*, so the language they are in is part of what
+  // identifies them. Without that, switching from Chinese to Japanese mid-video
+  // leaves every line already translated keyed exactly as before: the Chinese
+  // stays on screen, and because the keys are valid it is never re-translated.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  let calls = 0;
+  await context.route('https://api.openai.com/**', (route) => {
+    calls += 1;
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: `译文${calls}` } }] }),
+    });
+  });
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  const overlay = p.locator('#ai-translator-caption-overlay');
+  await expect(overlay).toContainText('译文1');
+
+  await setExtensionSettings(p, { ...BASE_SETTINGS, targetLang: 'ja' });
+  // A pass is debounced, so keep the video running under it until one comes
+  // round; every reply after the first carries a different number.
+  await expect.poll(async () => {
+    await seekIntoFirstCue(p);
+    return (await overlay.textContent()) || '';
+  }, { timeout: 15000 }).toMatch(/译文[2-9]/);
+});
+
+test('after the viewer switches subtitles off, the menu can switch them back on', async ({ page: p, context }) => {
+  // The latch is deliberate — we never re-open subtitles the viewer closed —
+  // so this row is the only way back, and it has to work on the track we were
+  // holding when he closed it. Two things used to stand in the way: the menu
+  // still named that track ("Subtitles: English") and so never showed the row,
+  // and the pick behind the row saw the track it already held and returned
+  // "already on it" without re-opening anything.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  const overlay = p.locator('#ai-translator-caption-overlay');
+  await expect(overlay).toContainText('你好世界');
+
+  await p.evaluate(() => { document.querySelector('video').textTracks[0].mode = 'disabled'; });
+  // Keep the video running under it: hiding the overlay happens on the next
+  // frame we are asked about, not on the mode change itself.
+  for (let i = 0; i < 4; i += 1) {
+    await p.evaluate((t) => {
+      const v = document.querySelector('video');
+      v.currentTime = 1 + t * 0.2;
+      v.dispatchEvent(new Event('timeupdate'));
+    }, i);
+    await p.waitForTimeout(150);
+  }
+  expect(await trackModes(p)).toEqual(['en:disabled']);
+  await expect(overlay).toBeHidden();
+
+  await p.mouse.move(320, 180);
+  await p.locator('#ai-translator-caption-btn').click();
+  await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
+    .toContainText(/subtitles are off/i);
+  await p.locator('#ai-translator-caption-menu [data-action="native"]').click();
+
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['en:hidden']);
+  await seekIntoFirstCue(p);
+  await expect(overlay).toContainText('你好世界');
+
+  // And the track he asked for is handed back *on*. Restoring the mode it had
+  // when we took it would mean turning subtitles off as a parting act — for a
+  // track we only ever held because he pressed "turn subtitles on".
+  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['en:showing']);
+});
+
+test('the menu offers to turn subtitles on even with the setting off', async ({ page: p, context }) => {
+  // The setting is for "do it without asking". Pressing the item in the menu
+  // *is* asking, so it goes through whatever the setting says — and through the
+  // latch, because this is the viewer changing his mind.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await p.waitForTimeout(2000);
+  expect(await trackModes(p)).toEqual(['de:disabled', 'en:disabled']);
+
+  await p.mouse.move(320, 180);
+  await p.locator('#ai-translator-caption-btn').click();
+
+  // Not "this video has no subtitles" — that is a sentence we cannot say. The
+  // menu says what is actually true and gives him the button.
+  await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
+    .toContainText(/subtitles are off/i);
+  await p.locator('#ai-translator-caption-menu [data-action="native"]').click();
+
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 });

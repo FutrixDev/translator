@@ -104,9 +104,14 @@
   // storage listener and the popup's message cannot drift apart.
   const CAPTION_SETTING_KEYS = [
     'enableYoutubeCaptionTranslation',
+    'autoEnableCaptions',
     'captionDisplayMode',
     'captionTranslationPosition',
     'captionPlayerButton',
+    // 目标语言不是字幕自己的设置，可它换了之后字幕这一面必须重算：译文表按目标语
+    // 言做键（换语言＝换一套键），而「这条轨道本来就是目标语言」也跟着翻篇。少了
+    // 这一行，观众在视频页换目标语言，字幕要等到播放器下一次重交轨道才反应过来。
+    'targetLang',
   ];
   ctx.captionSettingKeys = CAPTION_SETTING_KEYS;
 

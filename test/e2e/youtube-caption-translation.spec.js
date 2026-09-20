@@ -142,6 +142,47 @@ test('skips translation when track language matches target', async ({ page, cont
   expect(apiCalls).toBe(0);
 });
 
+// 换目标语言之后，同语言那道闸门要当场重开 —— 而且视频停着的时候也得开。
+// 「不必译」曾经是在 ingestTrack 里记下的：一个视频只算一次，换了目标语言没人回头
+// 去改它，整段视频再不会开译。
+test('switching the target language away from the track language starts translation', async ({ page, context }) => {
+  await setExtensionSettings(page, { ...BASE_SETTINGS, targetLang: 'en' });
+
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+  });
+
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    video.currentTime = 0.5;
+    video.dispatchEvent(new Event('timeupdate'));
+  });
+  await page.waitForTimeout(500);
+  // 同语言这一路连浮层都不建（handleTimeUpdate 在那道闸门上就返回了）。
+  await expect(page.locator('#ai-translator-caption-overlay')).toHaveCount(0);
+
+  // 视频就停在这里：之后再没有一个 timeupdate 来推第二次，全靠设置改动那一路。
+  await writeSyncSettings(context, { targetLang: 'zh-CN' });
+
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
 test('does not render when no caption request is observed', async ({ page, context }) => {
   await setExtensionSettings(page, BASE_SETTINGS);
 
@@ -407,7 +448,10 @@ test('the menu lists the five rows in order', async ({ page, context }) => {
 
   const menu = page.locator('#ai-translator-caption-menu');
   await expect(menu).toBeVisible();
-  const labels = await menu.locator('[role="menuitem"] .ai-translator-caption-menu-label').allTextContents();
+  // :not([hidden]) — the menu carries one conditional row («开启原字幕», for a
+  // video whose subtitles are off), and allTextContents() does not care about
+  // visibility. This player has subtitles on, so five is the whole menu.
+  const labels = await menu.locator('[role="menuitem"]:not([hidden]) .ai-translator-caption-menu-label').allTextContents();
   expect(labels).toEqual([
     '开启字幕翻译',
     '字幕显示类型',
@@ -546,4 +590,73 @@ test('on the split control bar the button joins the caption-side group', async (
     const first = group && group.firstElementChild;
     return !!first && first.classList.contains('ai-translator-caption-btn');
   })).toBe(true);
+});
+
+// ------------------------------------------------------------------- PR-9
+// 替观众按播放器自己的 CC 按钮。YouTube 上这件事尤其值——大多数视频没有人工字幕，
+// 而 CC 按钮点出来的自动字幕走的是同一个 /api/timedtext，拦截器照样收得到。
+
+/** The player as it looks with captions off, plus a CC button that records presses. */
+function ccOff(attrs = '') {
+  return html.replace(
+    '<button class="ytp-subtitles-button" aria-pressed="true"></button>',
+    `<button class="ytp-subtitles-button" aria-pressed="false" ${attrs}></button>
+     <script>
+       window.__ccClicks = 0;
+       const b = document.querySelector('.ytp-subtitles-button');
+       b.addEventListener('click', () => {
+         window.__ccClicks += 1;
+         if (!b.disabled) b.setAttribute('aria-pressed', 'true');
+       });
+     </script>`
+  );
+}
+
+test('with the setting on, the player’s own CC button gets pressed — once', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: true }, ccOff());
+
+  await expect.poll(() => page.evaluate(() => document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed')), { timeout: 8000 })
+    .toBe('true');
+
+  // Three more heartbeats. Captions are on now, so there is nothing to press —
+  // a second press would switch them back off.
+  await page.waitForTimeout(3 * 1500 + 300);
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
+});
+
+test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS, ccOff());
+  await page.waitForTimeout(3500);
+
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
+  expect(await page.evaluate(() => document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed'))).toBe('false');
+});
+
+test('a video with no captions at all says so, instead of offering a dead button', async ({ page, context }) => {
+  // YouTube disables its own CC button on a video with no tracks. Pressing our
+  // row there would press nothing, so the row is never offered in the first
+  // place and the menu says what is going on instead.
+  await openPlayer(page, context, BASE_SETTINGS, ccOff('disabled'));
+
+  await page.locator('#ai-translator-caption-btn').click();
+  const menu = page.locator('#ai-translator-caption-menu');
+  const nativeRow = menu.locator('[data-action="native"]');
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
+  await expect(nativeRow).toBeHidden();
+
+  // Across the heartbeat too — this is asked afresh every beat, so it has to
+  // keep giving the same answer while the button stays disabled.
+  await page.waitForTimeout(2000);
+  await expect(nativeRow).toBeHidden();
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
+
+  // And the moment the button comes alive — which is what a player finishing
+  // its load looks like — the row is back. Nothing was written down, so there
+  // is nothing to clear: the menu simply asks again.
+  await page.evaluate(() => document.querySelector('.ytp-subtitles-button').removeAttribute('disabled'));
+  await expect(nativeRow).toBeVisible({ timeout: 8000 });
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('这个视频的原字幕没有开启');
+
+  await nativeRow.click();
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
 });

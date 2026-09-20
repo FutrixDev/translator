@@ -29,6 +29,19 @@
     DEFAULT_ASK: 'DEFAULT_ASK',
   });
 
+  // 阶梯最上面那三级：**这个站点不许我们自己动手**。
+  //
+  // 和「verdict === 'off'」不是一回事，这才是它值得单独有个名字的原因。下面还有
+  // 三级也答 off，但它们量的是语言——「页面已经是你的语言了」「这门语言不在你的
+  // 名单里」——那是「这一页不必翻」，不是「这个站点别碰」。
+  //
+  // 谁需要分清这两句话：一件自动化要的闸门不总是「这个站点开着自动翻」。整页翻译
+  // 之外的自动化（比如替观众点开播放器的原字幕）发生的地方，decide() 多半答的是
+  // ask——视频站点没上过内置 always 名单，页面语言又常常和声道语言不是一回事。拿
+  // 「开着自动翻」当闸门，那些事在它们最该发生的地方一次也不会发生；拿「被明令拒
+  // 绝」当闸门，被拒的三种情形一个不漏，其余照常。
+  const REFUSALS = Object.freeze([REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.USER_NEVER]);
+
   // ---------------------------------------------------------------- 主机名
 
   const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
@@ -249,7 +262,8 @@
    * @param {Object}  input.userRules   { 'x.com': 'always' | 'never' }
    * @param {Object}  input.settings    { autoTranslate, autoTranslateLangs }
    * @param {boolean} input.explicit    用户已经在这一页表过态
-   * @returns {{verdict: 'auto'|'ask'|'off', reason: string, rule: ?Object}}
+   * @returns {{verdict: 'auto'|'ask'|'off', reason: string, rule: ?Object,
+   *            refused: boolean}} refused 见 REFUSALS：站点级的拒绝，不含语言结论。
    */
   function decide(input) {
     const {
@@ -262,7 +276,9 @@
 
     // 命中的规则跟着每一个结论走：适配层要它的 selector，和「这次翻不翻」无关。
     const rule = matchBuiltin(host, path);
-    const out = (verdict, reason) => ({ verdict, reason, rule });
+    const out = (verdict, reason) => ({
+      verdict, reason, rule, refused: REFUSALS.indexOf(reason) !== -1,
+    });
 
     // 总开关管的是「我们自己开始翻」。用户已经在这一页动过手的，它拦不住——
     // 所以这里带上 explicit，而不是把 explicit 塞到它后面去：一个没翻过的页面

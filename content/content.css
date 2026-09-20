@@ -2299,6 +2299,14 @@ html body #ai-translator-caption-btn svg {
   transition: background 0.12s ease;
 }
 
+/* Same point as the menu root's `[hidden]` above, and here it is not a page
+   declaration that outranks the UA rule but our own `display: flex` one rule
+   up. "Turn on subtitles" is the menu's one conditional row, so it is the one
+   that needs this. */
+#ai-translator-caption-menu .ai-translator-caption-menu-item[hidden] {
+  display: none;
+}
+
 #ai-translator-caption-menu .ai-translator-caption-menu-item:hover {
   background: rgba(255, 255, 255, 0.09);
 }

@@ -49,6 +49,11 @@ const CAPTION_KEYS = [
   'captionStatusSameLang',
   'captionPlayerButton',
   'hintCaptionPlayerButton',
+  // 「原字幕还没开」那条路：菜单里的那一项、它的状态行，和设置页那个开关。
+  'captionMenuEnableNative',
+  'captionStatusNeedsNative',
+  'autoEnableCaptions',
+  'hintAutoEnableCaptions',
   // The popup row and the options card that were already there and had to move
   // with the feature — they name the same thing the button does now.
   'youtubeCaptions',

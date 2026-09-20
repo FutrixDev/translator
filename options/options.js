@@ -163,6 +163,7 @@ const elements = {
   enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   captionDisplayMode: document.getElementById('captionDisplayMode'),
   captionTranslationPosition: document.getElementById('captionTranslationPosition'),
+  autoEnableCaptions: document.getElementById('autoEnableCaptions'),
   captionPlayerButton: document.getElementById('captionPlayerButton'),
   youtubeCaptionFontColor: document.getElementById('youtubeCaptionFontColor'),
   youtubeCaptionBgColor: document.getElementById('youtubeCaptionBgColor'),
@@ -303,6 +304,9 @@ const defaultSettings = {
   captionDisplayMode: '',
   captionTranslationPosition: 'below',
   captionPlayerButton: true,
+  // 本轮自动化里唯一一件**改动播放器自己状态**的事，所以它单独一个开关，而且默认
+  // 关着：关着的时候，字幕这一面和从前一模一样。
+  autoEnableCaptions: false,
   youtubeCaptionFontColor: '#ffffff',
   youtubeCaptionBgColor: '#080808',
   youtubeCaptionBgOpacity: 82,
@@ -989,6 +993,7 @@ async function loadSettings() {
     const captionDisplay = CaptionCore.resolveCaptionDisplay(result);
     elements.captionDisplayMode.value = captionDisplay.mode;
     elements.captionTranslationPosition.value = result.captionTranslationPosition === 'above' ? 'above' : 'below';
+    elements.autoEnableCaptions.checked = !!result.autoEnableCaptions;
     elements.captionPlayerButton.checked = result.captionPlayerButton !== false;
     elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
     elements.youtubeCaptionBgColor.value = result.youtubeCaptionBgColor || '#080808';
@@ -1103,6 +1108,7 @@ function collectSettings() {
     enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     captionDisplayMode: elements.captionDisplayMode.value,
     captionTranslationPosition: elements.captionTranslationPosition.value,
+    autoEnableCaptions: elements.autoEnableCaptions.checked,
     captionPlayerButton: elements.captionPlayerButton.checked,
     // Written alongside the new key so a profile that syncs back to an older
     // build still shows or hides the original line the way it was left here.
@@ -1397,6 +1403,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'enableYoutubeCaptionTranslation',
   'captionDisplayMode',
   'captionTranslationPosition',
+  'autoEnableCaptions',
   'captionPlayerButton'
 ];
 

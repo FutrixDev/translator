@@ -602,3 +602,40 @@ test('压缩也腾不出地方，就让写入失败传出去', async () => {
     delete globalThis.chrome;
   }
 });
+
+// --------------------------------------------------------------- refused
+// 「这个站点不许我们自己动手」和「这一页不必翻」是两句话。整页翻译只看 verdict，
+// 所以从前不必分；字幕那一面（替观众点开播放器的原字幕）要的是前一句，于是
+// decide() 把它算成一个字段，分类留在阶梯自己这边。
+test('refused 只认站点级的三条拒绝，不认语言结论', () => {
+  const refused = (over) => SiteRules.decide(ask(over));
+
+  // 站点级：总开关关着、在禁翻名单里、用户对这个域名写过 never。
+  assert.equal(refused({ settings: { autoTranslate: false } }).refused, true);
+  assert.equal(refused({ host: 'mail.google.com', path: '/mail/u/0/' }).refused, true);
+  assert.equal(refused({ userRules: { 'example.com': 'never' } }).refused, true);
+
+  // 语言结论也答 off，但它量的是**页面**的语言。字幕说的是**声道**的语言，中文
+  // 界面的视频站放一场英文演讲，这两条会答「不必翻」，而要翻的是那条英文字幕轨。
+  const same = refused({ pageLang: 'zh-CN' });
+  assert.equal(same.verdict, 'off');
+  assert.equal(same.reason, R.SAME_LANGUAGE);
+  assert.equal(same.refused, false);
+
+  const notListed = refused({ settings: { autoTranslate: true, autoTranslateLangs: ['ja'] } });
+  assert.equal(notListed.verdict, 'off');
+  assert.equal(notListed.reason, R.LANG_NOT_LISTED);
+  assert.equal(notListed.refused, false);
+
+  // 中间那一大片 ask，以及所有 auto，都不是拒绝。
+  assert.equal(refused({}).refused, false);
+  assert.equal(refused({ pageLang: null }).refused, false);
+  assert.equal(refused({ userRules: { 'example.com': 'always' } }).refused, false);
+});
+
+test('总开关关着但用户已经在这一页表过态，就不算这个站点拒绝了我们', () => {
+  // explicit 越过总开关是阶梯本来就有的行为；refused 跟着同一个结论走，不另算。
+  const held = SiteRules.decide(ask({ settings: { autoTranslate: false }, explicit: true }));
+  assert.equal(held.verdict, 'auto');
+  assert.equal(held.refused, false);
+});
