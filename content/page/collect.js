@@ -54,6 +54,12 @@
     const { MAX_BLOCK_CHARS } = ctx.PAGE_LIMITS;
     managedSkipCount = 0;
     const blocks = [];
+    // 站点适配：内置规则表里那两串选择器（见 content/page/site-adapter.js）。整轮
+    // 收集只解析一次——规则按 host + path 选中，一轮里不会变。这一页没有规则时两
+    // 串都是空串，下面所有用到它们的地方都短路掉，走的还是原来的通用启发式。
+    const adapter = ctx.resolveSiteAdapter ? ctx.resolveSiteAdapter() : null;
+    const atomicSelector = (adapter && adapter.atomic) || '';
+    const excludeSelector = (adapter && adapter.exclude) || '';
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
@@ -269,6 +275,10 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
+      // 站点规则说这一块不必翻：作者名、时间戳、票数、"reply"。这些在形状上和正文
+      // 没有区别，通用启发式挡不住。用 closest 而不是 matches，因为排除的是整块——
+      // Hacker News 的 `.subtext` 底下还有一串 <a>，它们也在排除之列。
+      if (excludeSelector && element.closest(excludeSelector)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
       // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
@@ -335,10 +345,17 @@
       const directText = getDirectText(element);
       const hasDirectText = directText.length >= 2;
 
+      // 站点规则说这一块要整个翻。一条推文的正文是 `<div data-testid="tweetText">`
+      // 里一串 <span>，下面那条通则会按「有可翻子元素就下探」把它拆成一句一请求，
+      // 译文一句一句插回去。原子块跳过下探这一步，直接走块级分支整块翻——注意它
+      // 同时也绕开了 `blockTags.includes(tagName) || hasDirectText` 那道门，推文正文
+      // 是个 <div>，文字全在子 <span> 里，两个条件都不成立。
+      const atomic = !!(atomicSelector && element.matches(atomicSelector));
+
       // 对于任何有可翻译子元素的元素，检查是否应该递归处理而非整体翻译
       // 这确保导航菜单等嵌套结构的每个项被单独翻译
       // 注意：只有当子元素是【块级元素】时才递归，内联元素（如 <a>、<span>）应该包含在整体翻译中
-      if (hasTranslatableChildren(element)) {
+      if (!atomic && hasTranslatableChildren(element)) {
         let shouldRecurse = false;
         for (const child of element.children) {
           // 跳过数学公式和图标
@@ -400,7 +417,7 @@
       }
 
       // 对于块级元素
-      if (blockTags.includes(tagName) || hasDirectText) {
+      if (atomic || blockTags.includes(tagName) || hasDirectText) {
         let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup: true });
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）

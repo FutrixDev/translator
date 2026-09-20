@@ -1395,3 +1395,36 @@ popup 上按了暂停，再从悬浮球菜单看一眼原文、切回译文，�
 「显示原文 → 显示译文」顺手洗掉` 两条旅程，外加 `managed-dom-root` 与
 `auto-status-wiring` 里的四处钉子。四处改动逐条反向验证过：每去掉一处，对应的旅程或单测
 立刻变红。
+
+### PR-8：规则表到收集器之间多了一层
+
+§11 的 PR 清单里 PR-8 只写了两个文件（规则表 + `collect.js` 的原子块）。落地时在中间加
+了一个新模块 `content/page/site-adapter.js`（71 行），`manifest.json` 里排在 `batch.js`
+之后、`collect.js` 之前。它只做一件事：把当前页命中的那条内置规则，解析成 `atomic` /
+`exclude` 两串选择器，按 `host + path` 缓存。
+
+分出来的理由有两条，都不是风格问题：
+
+- **规则表是会随版本更新的数据，而 `matches()` / `closest()` 在 `processElement` 的热路
+  径上。** 表里一个写错的选择器会让这两个调用当场抛，那是整页零块、静默翻不了。所以
+  每串选择器先拿 `document.querySelector` 试一次，抛了就当这条没写过——坏掉的退化方向
+  是「翻得碎」，不是「翻不了」，和 `shared/site-rules.js` 的 `loadTable` 同一个精神。
+  这段校验逻辑放进 `collect.js` 会把它挤得更长（本来已经 852 行）。
+- **`globalThis.SiteRules` 不进 `collect.js`。** `block-identity.test.mjs` 和
+  `fast-batch-alignment.test.mjs` 都把 `collect.js` 装进一个极简假 DOM 里跑，多一个全局
+  读就多一个桩。
+
+`collect.js` 这边只有两道门各加一个词：`!atomic && hasTranslatableChildren(...)`（原子块
+不下探）和 `atomic || blockTags.includes(...)`（推文正文是个 `<div>`，直属文本为空，两个
+原条件都不成立）。内联分支**故意不动**——原子的内联元素本来就被整块推出去，超过 500 字
+时落到块级分支，`atomic` 在那里接住它。
+
+`test/e2e/helpers.js` 的 `PAGE_TRANSLATION_MODULES` 要跟着加三个文件
+（`shared/site-rules-builtin.js`、`shared/site-rules.js`、`content/page/site-adapter.js`）。
+漏掉不会红在守卫上：site-adapter 对 `globalThis.SiteRules` 是运行时软读，拿不到就安静地
+退回通用启发式，站点规则的 spec 会全变成「翻是翻了，只是没按规则翻」。
+
+验收：`test/unit/site-adapter.test.mjs` 七条（含坏选择器只丢自己那一条、全坏读成
+无规则、缓存跟路径走），`test/e2e/page-translation-site-rules.spec.js` 四条（X / HN /
+arXiv / old.reddit.com）。四条 e2e 逐条反向验证过：把 `ctx.resolveSiteAdapter` 换成
+`() => null`，四条全红。

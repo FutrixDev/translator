@@ -96,6 +96,7 @@
         "content/content-popup.js",
         "content/content-input-dialog.js",
         "content/page/batch.js",
+        "content/page/site-adapter.js",
         "content/page/collect.js",
         "content/page/insert.js",
         "content/page/visibility.js",
