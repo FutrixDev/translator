@@ -535,6 +535,7 @@
 
     const texts = cues.map((cue) => cue.text);
     let response;
+    let threw = false;
     try {
       response = await ctx.requestTranslation(core.buildTranslationRequest({
         texts,
@@ -543,12 +544,30 @@
         delimiter: DELIMITER,
       }));
     } catch (error) {
-      markBatchFailed(keys, trackId);
+      threw = true;
+    }
+
+    // 轨道或代次已经翻篇：这一批说的是另一回事了，丢掉——**不管它是成是败**。
+    // 所以这一问排在看 response 之前：请求失败和世界变了是两件独立的事，一批过期
+    // 的请求恰好也报了错（换目标语言时在飞的那一个多半如此），按失败处理就是记一
+    // 笔谁也用不上的冷却、然后 return false 把整轮停在那里（见 STALE）。
+    //
+    // 丢之前要先按当初那一套键把 pendingKeys 放开。换轨道那一路 clearTrack() 确实
+    // 已经连表带键清过一遍，换目标语言那一路却没有——applyCaptionSettings() 只重新
+    // 渲染和重新调度，不碰这张表。不放开的话，这几句就卡在「正在译」上：既不重试
+    // 也不显示，而且是**永远**，因为再没有谁会去动它们。
+    if (trackId !== state.trackId || version !== sessionVersion()) {
+      releaseBatch(keys);
+      return STALE;
+    }
+
+    if (threw) {
+      markBatchFailed(keys);
       return false;
     }
 
     if (!response || response.error || !Array.isArray(response.translations)) {
-      markBatchFailed(keys, trackId);
+      markBatchFailed(keys);
       return false;
     }
 
@@ -557,19 +576,8 @@
     // 位：短一条，尾部那几句会一直留在 pendingKeys 里，既不重试也不显示，而且
     // isSegmentTranslatable() 认 pendingKeys，它们从此对任何一轮都是「已经在译了」。
     if (response.translations.length !== cues.length) {
-      markBatchFailed(keys, trackId);
+      markBatchFailed(keys);
       return false;
-    }
-
-    // 轨道或代次已经翻篇：这批译文说的是另一回事了，丢掉。
-    //
-    // 但要先按当初那一套键把 pendingKeys 放开。换轨道那一路 clearTrack() 确实已经
-    // 连表带键清过一遍，换目标语言那一路却没有——applyCaptionSettings() 不碰这张
-    // 表，targetLang 也不在它认的那几个键里。不放开的话，这几句就卡在「正在译」
-    // 上：既不重试也不显示，而且是**永远**，因为再没有谁会去动它们。
-    if (trackId !== state.trackId || version !== sessionVersion()) {
-      releaseBatch(keys);
-      return STALE;
     }
 
     response.translations.forEach((translation, index) => {
@@ -590,14 +598,13 @@
     keys.forEach((key) => state.pendingKeys.delete(key));
   }
 
-  // 键和 trackId 都由调用方在发请求那一刻取好（见 translateCues）。
+  // 键由调用方在发请求那一刻取好（见 translateCues）。
   //
-  // 放开是无条件的；**冷却**才要再对一次 trackId：轨道已经翻篇的话这批键连同整张
-  // 表早就被 clearTrack() 清了，再把冷却记回去，只是在新的表里堆一批谁也读不到、
-  // 谁也不会清的死账。
-  function markBatchFailed(keys, trackId) {
+  // 这里不再自己对一次 trackId：唯一的调用方在此之前已经答过「脚下的世界变了没
+  // 有」，变了的那一批走的是 STALE 那条路，根本到不了这里。同一个问题留两个答案，
+  // 迟早有一天它们说的不是一回事。
+  function markBatchFailed(keys) {
     releaseBatch(keys);
-    if (trackId !== undefined && trackId !== state.trackId) return;
     const retryAt = Date.now() + RETRY_COOLDOWN_MS;
     keys.forEach((key) => state.failedUntil.set(key, retryAt));
   }
@@ -621,6 +628,24 @@
     if (playheadMs < seg.startMs) return seg.startMs - playheadMs;
     if (playheadMs > seg.endMs) return playheadMs - seg.endMs;
     return 0;
+  }
+
+  /**
+   * 这一句在不在窗里。
+   *
+   * 窗是**花钱的闸**，不是「译哪一段」的规矩。所以不设窗的时候（内置引擎，而且不
+   * 会回退到付费那条路）整条轨道都在窗里，播放头后面那些也算——加窗之前本来就是
+   * 整条译到底，那一路一分钱不花，没有理由缩。
+   *
+   * 设了窗就只往前看。距离本身是对称的（seg 在播放头前后都算得出来），可拿它直接
+   * 比上限，等于让播放头后面五分钟的句子和前面五分钟的句子抢同一份额度：实际宽度
+   * 翻了一倍，而多出来的那一半全花在观众已经跳过去的内容上。倒回去看是另一回事
+   * ——那时播放头自己就退回来了，这些句子重新排在它前面。
+   */
+  function withinWindow(seg, playheadMs, limitMs) {
+    if (limitMs === Infinity) return true;
+    if (seg.endMs < playheadMs) return false;
+    return segmentDistance(seg, playheadMs) <= limitMs;
   }
 
   /**
@@ -658,13 +683,13 @@
     let best = null;
     let bestDist = Infinity;
     for (const batch of state.batches) {
-      // 窗按句子量，不按批次量（见 segmentDistance）。一批里窗内窗外都有是常事，
+      // 窗按句子量，不按批次量（见 withinWindow）。一批里窗内窗外都有是常事，
       // 只把窗内那几句挑出来发；剩下的等窗滑过去再说，下一次触发自然会取到。
       let dist = Infinity;
       const todo = [];
       for (const seg of batch) {
+        if (!withinWindow(seg, playhead, limitMs)) continue;
         const segDist = segmentDistance(seg, playhead);
-        if (segDist > limitMs) continue;
         if (!isSegmentTranslatable(seg, wallNow)) continue;
         todo.push(seg);
         if (segDist < dist) dist = segDist;

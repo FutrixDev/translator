@@ -739,7 +739,7 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
 
   // 窗要真的拦住句子，而不是算出来放着不用。
   assert.match(engine, /function pickNextBatch\(limitMs\)/);
-  assert.match(engine, /if \(segDist > limitMs\) continue;/);
+  assert.match(engine, /if \(!withinWindow\(seg, playhead, limitMs\)\) continue;/);
   // 而且每一轮现算：一轮可以跑很久，观众中途把引擎从内置换成 AI，取一次留着用
   // 等于拿上一个引擎的结论去放行下一个引擎的批次。
   assert.match(engine, /pickNextBatch\(translationWindowMs\(\)\)/);
@@ -760,6 +760,18 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
     /batchDistance/.test(engine),
     false,
     '窗又按整批量了：一批里只要有一句在窗内，整批都会被发出去',
+  );
+
+  // 而且只往前看。距离本身是对称的，拿它直接比上限等于让播放头**后面**五分钟的
+  // 句子和前面五分钟的抢同一份额度——实际宽度翻倍，多出来的那一半全花在观众已经
+  // 跳过去的内容上。不设窗那一路（不花钱）不受这条约束：整条译到底本来就是它。
+  const within = engine.match(/function withinWindow\(seg, playheadMs, limitMs\)[\s\S]*?\n  \}/);
+  assert.ok(within, '找不到 withinWindow()');
+  assert.match(within[0], /if \(limitMs === Infinity\) return true;/);
+  assert.match(
+    within[0],
+    /if \(seg\.endMs < playheadMs\) return false;/,
+    '已经放过去的句子还在占那份额度',
   );
 });
 
@@ -786,6 +798,16 @@ test('一批译文回来时轨道或代次已经翻篇，就整批丢掉——�
   // 个都还没译，而当时想去译它们的那次调用正撞上 state.translating 被这一批占着，
   // 什么也没做就回去了。当失败停下来，视频停着的时候没有 timeupdate 来推第二次，
   // 新字幕会一直空着。
+  // 这一问要排在**看 response 之前**：请求失败和脚下的世界变了是两件独立的事，
+  // 而换目标语言时在飞的那个请求多半两样都占。按失败处理就是记一笔谁也用不上的
+  // 冷却，然后 return false 把整轮停在那里——正是上面那段话要防的事。
+  assert.ok(
+    fn[0].indexOf('return STALE;') < fn[0].indexOf('markBatchFailed'),
+    '过期这一问排在了失败处理后面：一批过期的请求恰好报错，就又成了失败',
+  );
+  // 同一个问题不留两个答案：markBatchFailed 不再自己对一次 trackId。
+  assert.match(engine, /function markBatchFailed\(keys\)/);
+
   const loop = engine.match(/async function ensureTrackTranslated\(force\)[\s\S]*?\n  \}/);
   assert.ok(loop, '找不到 ensureTrackTranslated()');
   assert.match(loop[0], /result === STALE\) continue;/, '过期的一批把整轮停掉了');
