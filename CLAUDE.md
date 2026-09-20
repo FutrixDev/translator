@@ -187,7 +187,13 @@ Two rules the generic provider exists to keep:
   (`CaptionCore.hasActiveSubtitleTrack()` — the same `showing`/`hidden` pair the
   picker prefers, written once so the two cannot disagree). Answering "off"
   there told a viewer with subtitles on his screen that no subtitle track was
-  detected. **Nothing a
+  detected. Which makes the other half a rule of its own: **what we
+  hold is dropped the moment it stops being the page's video**
+  (`releaseStaleVideo()`, on both a removed element and a track list that is no
+  longer ours). A `<video>` an SPA swapped out keeps its tracks, and one of ours
+  left at `hidden` on it would answer "subtitles are on" for a film that
+  finished — which is exactly what would stop `autoEnableCaptions` turning them
+  on for the video now playing. **Nothing a
   provider says about the player is written down.** Both probes are asked fresh
   on every beat, because every answer they give can change on the next one: a CC
   button mounts disabled while the player loads, and a reading of `false` kept

@@ -307,6 +307,39 @@ test('「开启原字幕」要把观众自己选的那条开回来，不是重�
   assert.equal(/entries\.some\(\(e\) => e\.track === tt\.track\)/.test(sync[0]), false);
 });
 
+test('页面把那个 <video> 换掉了，手里攥着的东西全得放开', () => {
+  // SPA 换一条视频：旧的 <video> 从文档里摘走，可它身上的轨道原样还在——脱离文
+  // 档、没人看得见，却照样有问必答。我们留在它身上那条 hidden 轨道会答「原字幕
+  // 开着」，于是 autoEnableCaptions 再也不会替新视频开字幕；浮层问 getVideo()
+  // 要的是一个谁也看不见的框；引擎手里那批 cue 还钉在一部放完了的片子上。
+  const providers = repoFile('content/content-caption-providers.js');
+  const stale = providers.match(/function releaseStaleVideo\(nextVideo\) \{[\s\S]*?\n  \}/);
+  assert.ok(stale, '找不到 releaseStaleVideo()');
+  assert.match(stale[0], /releaseTrack\(\);\n\s*tt\.video = nextVideo \|\| null;/, '轨道和视频要一起放开');
+  assert.match(
+    stale[0],
+    /if \(heldTrack && tt\.engine && tt\.engine\.reset\) tt\.engine\.reset\(\);/,
+    '没告诉引擎——新视频一条轨道都没开的时候，谁也不会替它清掉旧的 cue',
+  );
+  // 放开要排在 releaseTrack 之后：setNativeCaptionsHidden(false) 认 tt.track，
+  // 先清掉才不会把旧轨道的模式再动一次。
+  assert.ok(stale[0].indexOf('releaseTrack();') < stale[0].indexOf('tt.engine.reset()'));
+
+  const sync = providers.match(/function syncSelection\(allowDisabled\) \{[\s\S]*?\n  \}/);
+  assert.match(
+    sync[0],
+    /if \(tt\.video && tt\.video\.isConnected === false\) releaseStaleVideo\(null\);/,
+    '页面把元素摘走了这一种没认出来',
+  );
+  assert.match(
+    sync[0],
+    /if \(tt\.track && !entries\.some\(\(entry\) => entry\.track === tt\.track\)\) releaseStaleVideo\(video\);/,
+    '元素还在、轨道换了一套这一种没认出来',
+  );
+  // 两道都要排在读它之前：下面每一行都是在拿手里那条轨道算事情。
+  assert.ok(sync[0].indexOf('releaseStaleVideo(video)') < sync[0].indexOf('const heldEntry'));
+});
+
 // -------------------------------------------------------- translation request
 test('the track states the source language, so detection never has to guess', () => {
   // A subtitle line is a few words — too short to identify. Without this the

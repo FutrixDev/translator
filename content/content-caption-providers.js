@@ -322,6 +322,30 @@
     tt.restoreMode = '';
   }
 
+  /**
+   * Let go of a video that is not the page's any more, and of everything we
+   * were holding on it.
+   *
+   * A generic SPA swaps the `<video>` on a route change, and the element it
+   * removed keeps its tracks — detached, unwatchable, and still answering
+   * every question we put to it. The track we left at 'hidden' on it reports
+   * "subtitles are on" (nativeCaptionsState), which is what stops
+   * autoEnableCaptions from ever turning a track on for the new video; the
+   * overlay gets its box from a `<video>` nobody can see; and the cues stay
+   * pinned to a film that finished.
+   *
+   * The engine is told because nobody else will tell it. Adopting a track on
+   * the new video resets its cues by trackId — but the case this exists for is
+   * the one where no adoption happens (every track at 'disabled', or none at
+   * all), and the old lines would go on being drawn over the new picture.
+   */
+  function releaseStaleVideo(nextVideo) {
+    const heldTrack = !!tt.track;
+    releaseTrack();
+    tt.video = nextVideo || null;
+    if (heldTrack && tt.engine && tt.engine.reset) tt.engine.reset();
+  }
+
   function adoptTrack(track, video) {
     releaseTrack();
     tt.video = video;
@@ -391,9 +415,15 @@
    * re-open the track the viewer had just closed.
    */
   function syncSelection(allowDisabled) {
+    // Two ways to be holding a video that is gone, and both have to be cleared
+    // before anything here reads state off it — see releaseStaleVideo(). The
+    // page removed the element; or the element is still there and the tracks
+    // we knew are not its any more.
+    if (tt.video && tt.video.isConnected === false) releaseStaleVideo(null);
     const video = findVideoWithTracks() || tt.video;
     const entries = subtitleEntries(video);
     if (!entries.length) return;
+    if (tt.track && !entries.some((entry) => entry.track === tt.track)) releaseStaleVideo(video);
     // Re-opening is not the same as choosing. `allowDisabled` only ever comes
     // from "turn subtitles on for me", and on a video whose tracks are all off
     // the track we are still holding is the one the viewer had on before he
