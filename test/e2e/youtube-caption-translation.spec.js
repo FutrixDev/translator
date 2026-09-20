@@ -591,26 +591,31 @@ test('with the setting off, the CC button is left alone', async ({ page, context
   expect(await page.evaluate(() => document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed'))).toBe('false');
 });
 
-test('a video with no captions at all says so, instead of offering the button again', async ({ page, context }) => {
+test('a video with no captions at all says so, instead of offering a dead button', async ({ page, context }) => {
   // YouTube disables its own CC button on a video with no tracks. Pressing our
-  // row there presses nothing — and the menu has to say that and stop offering,
-  // or the next heartbeat puts the same dead button back 1.5s later.
+  // row there would press nothing, so the row is never offered in the first
+  // place and the menu says what is going on instead.
   await openPlayer(page, context, BASE_SETTINGS, ccOff('disabled'));
 
   await page.locator('#ai-translator-caption-btn').click();
   const menu = page.locator('#ai-translator-caption-menu');
   const nativeRow = menu.locator('[data-action="native"]');
-  await expect(nativeRow).toBeVisible();
-  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('这个视频的原字幕没有开启');
-
-  await nativeRow.click();
-  // The menu stays open — there is something to read — and the row is gone.
-  await expect(menu).toBeVisible();
-  await expect(nativeRow).toBeHidden();
   await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
+  await expect(nativeRow).toBeHidden();
 
-  // And it stays gone across the heartbeat that would otherwise re-offer it.
+  // Across the heartbeat too — this is asked afresh every beat, so it has to
+  // keep giving the same answer while the button stays disabled.
   await page.waitForTimeout(2000);
   await expect(nativeRow).toBeHidden();
   await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');
+
+  // And the moment the button comes alive — which is what a player finishing
+  // its load looks like — the row is back. Nothing was written down, so there
+  // is nothing to clear: the menu simply asks again.
+  await page.evaluate(() => document.querySelector('.ytp-subtitles-button').removeAttribute('disabled'));
+  await expect(nativeRow).toBeVisible({ timeout: 8000 });
+  await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('这个视频的原字幕没有开启');
+
+  await nativeRow.click();
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
 });

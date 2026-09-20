@@ -57,9 +57,6 @@
     // 两者的生命周期不同，见 syncNativeCaptions() / resetForVideo()。
     sawNativeOn: false,
     autoEnableBlocked: false,
-    // 按过「开启原字幕」，而且按了个空——这段视频是真没有字幕可开。菜单据此不再
-    // 提供那一项，见 captionStatus()。按视频清。
-    nativeUnavailable: false,
     video: null,
     lastNowMs: 0,
     controlsTimer: null,
@@ -677,9 +674,10 @@
     state.lastTriggerMs = now;
     state.translating = true;
     try {
-      const limitMs = translationWindowMs();
       while (state.active && !state.skipTranslation && !state.dismissed) {
-        const batch = pickNextBatch(limitMs);
+        // 窗每一轮现算。一轮可以跑很久，而这中间观众可以把引擎从内置换成 AI ——
+        // 取一次留着用，等于拿「上一个引擎不花钱」这个结论去放行下一个引擎的批次。
+        const batch = pickNextBatch(translationWindowMs());
         if (!batch || !batch.length) break;
         const result = await translateCues(batch);
         // 过期不是失败：这一批不作数，可新世界里那些句子还等着，而想去译它们的那
@@ -890,13 +888,11 @@
     }
     if (on === true) {
       state.sawNativeOn = true;
-      // 开起来了，就不存在「这段视频没有字幕」那回事。
-      state.nativeUnavailable = false;
       return;
     }
     // 「说不准」这一拍什么都不做。读成「关着」的代价是下面那道闩：它只要合上就是
     // 一整个会话，而那时观众什么都没做过——控制条晚一拍上来而已。读成「关着」去按
-    // 也没有意义：按钮本来就还不在，enableNativeCaptions() 照样只会回一个 null。
+    // 也没有意义：按钮本来就还不在，按了也是按空。
     if (on !== false) return;
     if (state.sawNativeOn) {
       state.sawNativeOn = false;
@@ -905,20 +901,14 @@
     }
     if (!autoEnableAllowed()) return;
     try {
-      // 按不动不算数：控制条还没上来（下一个心跳再试），或者这段视频根本没有字幕
-      // （那就每拍两次 querySelector，便宜到不值得记状态）。
-      const answer = provider.enableNativeCaptions();
       // 按成了就**当场**记下「看见开着」。留给下一拍去记，中间这 1.5 秒里观众
       // 把它关掉，下一拍看见的是「关着，而且没落闩」—— 于是又替他开一次，这正
       // 是那道闩要防的事，只不过发生在它合上之前。
-      if (answer === true) {
-        state.sawNativeOn = true;
-        state.nativeUnavailable = false;
-      }
-      // answer === false（这段视频没有可开的字幕）这里**不记**，和菜单那条路不
-      // 一样：那边是观众按了一下，把「按了个空」如实告诉他；这边 1.5 秒一拍，而
-      // 播放器在加载中把 CC 按钮先摆成 disabled 是常事——记下来就会在一段本来有
-      // 字幕的视频上，把菜单里那一行藏到换视频为止。
+      //
+      // 按了个空则什么都不记：控制条还没上来、或者这段视频根本没有字幕，都是每
+      // 拍一次 querySelector 就能重新问出来的事（canEnableNativeCaptions），记
+      // 下来只会让一个会变的答案冻在那里。
+      if (provider.enableNativeCaptions()) state.sawNativeOn = true;
     } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
   }
 
@@ -934,19 +924,13 @@
     const provider = state.provider || candidateProvider();
     if (!provider || !provider.enableNativeCaptions) return false;
     state.autoEnableBlocked = false;
-    let answer = null;
+    let answer = false;
     try {
       answer = provider.enableNativeCaptions();
-    } catch (e) { /* 播放器换了 DOM：按「还不知道」算，下一拍再说 */ }
-    // provider 给的是三种答案，中间那种是这几行存在的理由：
-    //   true  按到了；
-    //   false 这段视频没有可开的字幕（YouTube 的 CC 按钮 disabled，或者页面一条
-    //         字幕轨都没列）。记下来，下面那行 syncControls() 才有话可说——否则菜
-    //         单会在 1.5 秒后的下一拍把同一个按钮再摆出来，按下去还是没反应；
-    //   null  「还不知道」：控制条还没搭起来。这一种**不能记**——记成「没有字幕」
-    //         等于把那一行从此藏掉（这个标记只在字幕真开起来、或者换了视频时才
-    //         清），而控制条晚一拍出来是常事，观众再按一次本该就成了。
-    if (typeof answer === 'boolean') state.nativeUnavailable = !answer;
+    } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
+    // 按空了不记任何东西。菜单那一行露不露，是 captionStatus() 每一拍现问
+    // canEnableNativeCaptions() 问出来的：按钮 disabled 就不摆（那是 YouTube 在
+    // 说这段视频没有字幕轨），按钮一旦活过来，那一行自己就回来了。
     syncControls();
     return !!answer;
   };
@@ -976,7 +960,16 @@
     // 挡住了——自动开启那一面还记着「是观众自己关的」，不会再替他点，这一行就是
     // 唯一的回头路。
     if (!nativeOn) {
-      if (provider && provider.enableNativeCaptions && !state.nativeUnavailable) {
+      // 能不能点开，每一拍现问，从不记。按钮 disabled 是 YouTube 在说这段视频没
+      // 有字幕轨，那就别摆一个按下去没反应的按钮；可它在播放器加载中也会 disabled
+      // 一阵子，记下来就会把这一行藏到换视频为止，而观众再没有别的路回来。
+      let canEnable = null;
+      try {
+        if (provider && provider.canEnableNativeCaptions) {
+          canEnable = provider.canEnableNativeCaptions();
+        }
+      } catch (e) { /* 播放器换了 DOM，下一拍再说 */ }
+      if (provider && provider.enableNativeCaptions && canEnable !== false) {
         return { kind: 'needs-native' };
       }
       return { kind: 'none' };
@@ -1107,8 +1100,6 @@
     // 不清的话那一瞬的「不见了」会被读成「他关掉了」，闩就白落了。
     // autoEnableBlocked 刻意不清：那是他的意思，整个会话都算数。
     state.sawNativeOn = false;
-    // 这一条说的是上一段视频有没有字幕，对下一段视频什么都不说。
-    state.nativeUnavailable = false;
     state.lastTriggerMs = 0;
     state.lastNowMs = 0;
     if (state.video) {

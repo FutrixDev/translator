@@ -130,26 +130,37 @@
     // picks them up with no extra work, and that is most of why this is worth
     // doing at all: the majority of YouTube videos have no human-written track.
     //
-    // Three answers, because the two ways of pressing nothing are not the same
-    // thing to the viewer:
-    //   true  — captions are on, or the click that turns them on just happened;
-    //   false — this video has no captions at all, which no click can fix;
-    //   null  — the control bar is not up yet; ask again on the next beat.
-    // The engine writes only the definite answers down (state.nativeUnavailable),
-    // so a button that has not mounted yet must not come back as false: that
-    // would take the menu's "turn subtitles on" row away for the rest of the
-    // video, and a control bar arriving a beat late is ordinary.
+    // True means captions are on, or the click that turns them on just
+    // happened. Why it came up empty is a separate question, and it has its own
+    // method: canEnableNativeCaptions below.
     enableNativeCaptions() {
       const button = document.querySelector('.ytp-subtitles-button');
-      if (!button) return null;
+      if (!button) return false;
       if (button.getAttribute('aria-pressed') === 'true') return true;
-      // YouTube disables the button outright on a video with no tracks.
       if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
       try {
         button.click();
       } catch (e) {
-        return null;
+        return false;
       }
+      return true;
+    },
+
+    // Could the viewer turn captions on right now? The menu asks this every
+    // beat to decide whether to offer the row, and the answer is never written
+    // down — all three of these change while a player loads:
+    //   true  — the button is there and live;
+    //   false — the button is there and disabled, which is how YouTube says
+    //           this video has no caption track at all;
+    //   null  — no control bar yet; ask again on the next beat.
+    // Asking every time is the whole point. A disabled button is not always
+    // permanent — the player disables it briefly during load — so an answer
+    // remembered once would take the row away for the rest of the video, and
+    // the viewer would have no way back.
+    canEnableNativeCaptions() {
+      const button = document.querySelector('.ytp-subtitles-button');
+      if (!button) return null;
+      if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
       return true;
     },
 
@@ -534,18 +545,18 @@
     // its cues may still be on their way (a <track> file is only fetched once
     // its mode leaves 'disabled' — see adoptTrack).
     //
-    // Coming up empty splits in two, and the caller keeps them apart (see
-    // YouTubeProvider.enableNativeCaptions for what it does with each). The
-    // question that separates them is whether the player is listing a subtitle
-    // track at all right now: this provider only offers itself on a video that
-    // had one (canActivate), so none listed means they have gone out from under
-    // us — a video swapped, a <track> not mounted yet — and is worth asking
-    // again. Some listed and still none taken is this video having nothing we
-    // can show.
     enableNativeCaptions() {
       syncSelection(true);
-      if (tt.track && tt.track.mode !== 'disabled') return true;
-      return subtitleEntries(TextTrackProvider.getVideo()).length ? false : null;
+      return !!(tt.track && tt.track.mode !== 'disabled');
+    },
+
+    // A track listed is all this one needs, since adopting one is how it turns
+    // captions on. None listed is "not yet" rather than "never": this provider
+    // only offers itself on a video that had a track (canActivate), so an empty
+    // list means they went out from under us — a video swapped, a <track> not
+    // mounted yet — and the next beat may well find them.
+    canEnableNativeCaptions() {
+      return subtitleEntries(TextTrackProvider.getVideo()).length ? true : null;
     },
 
     getOverlayHost() {

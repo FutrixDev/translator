@@ -588,23 +588,31 @@ test('藏起播放器上的按钮，不等于不要替他开原字幕', () => {
   );
 });
 
-test('「控制条还没上来」和「这段视频没有字幕」不是同一个答案', () => {
-  // nativeUnavailable 只在字幕真开起来、或者换了视频时才清。把「还没搭起来」记
-  // 成「没有字幕」，菜单里那一行就此消失——而控制条晚一拍出来是常事。
+test('「能不能点开」是每一拍现问的，不是记下来的', () => {
+  // 记下来的那个版本是这么坏的：菜单按过一次、按了个空，就把「这段视频没有字幕」
+  // 记住，那一行藏到换视频为止。可 YouTube 在播放器加载中也会把 CC 按钮先摆成
+  // disabled——于是一段本来有字幕的视频上，观众再没有别的路把字幕找回来。
   const providers = repoFile('content/content-caption-providers.js');
-  const yt = providers.match(/enableNativeCaptions\(\)\s*\{[\s\S]*?\n    \},/);
-  assert.ok(yt, '找不到 YouTubeProvider.enableNativeCaptions()');
-  assert.match(yt[0], /if \(!button\) return null/);
-  // disabled 的 CC 按钮才是说得准的那一种。
-  assert.match(yt[0], /aria-disabled[\s\S]{0,40}?return false/);
+  const probe = providers.match(/canEnableNativeCaptions\(\) \{[\s\S]*?\n    \},/);
+  assert.ok(probe, '找不到 YouTubeProvider.canEnableNativeCaptions()');
+  assert.match(probe[0], /if \(!button\) return null/, '控制条还没上来 ≠ 没有字幕');
+  assert.match(probe[0], /aria-disabled[\s\S]{0,40}?return false/);
 
   // 通用 provider 同理：一条字幕轨都没列 = 轨道从我们脚下没了（canActivate 要求
-  // 它本来有），说不准；列了还是没接上，才是这段视频没有可放的。
-  assert.match(providers, /subtitleEntries\(TextTrackProvider\.getVideo\(\)\)\.length \? false : null/);
+  // 它本来有），说不准，下一拍再问。
+  assert.match(providers, /subtitleEntries\(TextTrackProvider\.getVideo\(\)\)\.length \? true : null/);
 
-  // 引擎只把说得准的那两个答案记下来。
+  // 菜单每一拍照这个答案决定摆不摆那一行，而且谁也不许把它记下来。
   const engine = repoFile('content/content-video-captions.js');
-  assert.match(engine, /if \(typeof answer === 'boolean'\) state\.nativeUnavailable = !answer/);
+  const status = engine.match(/function captionStatus\(provider\)[\s\S]*?\n  \}/);
+  assert.ok(status, '找不到 captionStatus()');
+  assert.match(status[0], /canEnableNativeCaptions\(\)/);
+  assert.match(status[0], /canEnable !== false/);
+  assert.equal(
+    /nativeUnavailable/.test(engine),
+    false,
+    '「这段视频没有字幕」又被记了下来：加载中的一拍会把菜单那行藏到换视频为止',
+  );
 });
 
 test('替他开成了就当场记下，别等下一拍', () => {
@@ -616,18 +624,8 @@ test('替他开成了就当场记下，别等下一拍', () => {
   assert.ok(sync, '找不到 syncNativeCaptions()');
   assert.match(
     sync[0],
-    /=\s*provider\.enableNativeCaptions\(\)/,
+    /if \(provider\.enableNativeCaptions\(\)\) state\.sawNativeOn = true;/,
     '按下去的结果被丢掉了',
-  );
-  assert.match(sync[0], /answer === true[\s\S]{0,120}state\.sawNativeOn = true/);
-
-  // 但 false 这里**不记**，和菜单那条路正相反：那边是观众按了一下，把「按了个
-  // 空」如实告诉他；这边一秒两拍，而播放器加载中把 CC 按钮先摆成 disabled 是常
-  // 事——记下来就会在一段本来有字幕的视频上，把菜单那一行藏到换视频为止。
-  assert.equal(
-    /nativeUnavailable\s*=\s*true/.test(sync[0]),
-    false,
-    '心跳把「这段视频没有字幕」记了下来：加载中的一拍会把菜单那行藏掉',
   );
 });
 
@@ -693,7 +691,15 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   // 窗要真的拦住句子，而不是算出来放着不用。
   assert.match(engine, /function pickNextBatch\(limitMs\)/);
   assert.match(engine, /if \(segDist > limitMs\) continue;/);
-  assert.match(engine, /pickNextBatch\(limitMs\)/);
+  // 而且每一轮现算：一轮可以跑很久，观众中途把引擎从内置换成 AI，取一次留着用
+  // 等于拿上一个引擎的结论去放行下一个引擎的批次。
+  assert.match(engine, /pickNextBatch\(translationWindowMs\(\)\)/);
+  const loopFn = engine.match(/async function ensureTrackTranslated\(force\)[\s\S]*?\n  \}/);
+  assert.equal(
+    /const limitMs = translationWindowMs\(\)/.test(loopFn[0]),
+    false,
+    '窗在整轮开始时取了一次就留着用',
+  );
 
   // 而且量的是**句子**，不是批次：批次只按条数和字数切，时间上想多长有多长。一
   // 段前面一句、一小时后一句的稀疏轨道，两句同批，这一批离播放头最近的那一头是

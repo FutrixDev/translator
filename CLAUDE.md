@@ -165,13 +165,20 @@ Two rules the generic provider exists to keep:
   the block does not. The one way past it is the menu's 「开启原字幕」
   (`ctx.enableNativeCaptions()`), which is the viewer asking.
 
-  Two things that look like details and are not. **`enableNativeCaptions()`
-  answers three ways**: `true` pressed something, `false` this video has no
-  captions at all, `null` the control bar is not up yet — ask again. Only the
-  definite answers are written down (`state.nativeUnavailable` hides the menu
-  row until captions come on or the video changes), because recording a
-  not-yet-mounted button as `false` takes that row away for the rest of the
-  video. And **the heartbeat runs all of this ahead of `captionPlayerButton`**:
+  Two things that look like details and are not. **A provider answers three
+  questions, and only one of them is a command.** `nativeCaptionsState()` says
+  whether subtitles are on right now — `true`, `false`, or `null` for "the
+  player is not up yet, ask again"; `enableNativeCaptions()` turns them on and
+  answers plain yes/no; `canEnableNativeCaptions()` says whether the viewer
+  could turn them on, `null` when there is nothing to judge by. **Nothing a
+  provider says about the player is written down.** Both probes are asked fresh
+  on every beat, because every answer they give can change on the next one: a CC
+  button mounts disabled while the player loads, and a reading of `false` kept
+  from that moment would hide the menu's retry row for the rest of the video.
+  The only thing recorded is what we did — a successful `enableNativeCaptions()`
+  sets `sawNativeOn` on the spot, so a viewer who switches the new captions off
+  within the 1.5s beat is not overridden. And **the heartbeat runs all of this
+  ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the
   first.
