@@ -331,7 +331,7 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 没变已经够糟，而它真正会变的那件事更糟：顺手把总开关打开，别的站点全自动翻
   // 起来，他本来只想管眼前这一个。
   const popup = code('popup/popup.js');
-  assert.match(popup, /const blocked = !!auto && auto\.reason === 'BLOCKLIST';/);
+  assert.match(popup, /const blocked = !!pageState\.blocked;/);
   assert.match(popup, /elements\.toggleSiteAuto\.disabled = blocked;/);
   assert.match(popup, /elements\.toggleSiteAuto\.title = blocked \? t\('autoReasonBlocklist'\)/);
   assert.match(read('i18n/messages.js'), /autoReasonBlocklist:/, '理由那句话得真有');
@@ -339,13 +339,23 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 画面灰掉之外再挡一道：键盘走得到 disabled 的按钮，扩展页面也点得动。
   const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
     popup.indexOf('async function togglePageTranslation()'));
-  const guard = body.indexOf("reason === 'BLOCKLIST'");
+  const guard = body.indexOf('pageState.blocked');
   assert.ok(guard > 0, 'toggleSiteAuto 里没有黑名单闸');
   assert.ok(guard < body.indexOf('autoTranslate: true'), '闸必须在打开总开关之前');
 
-  // 判定给出的 reason 得一路送到 popup 手上，否则上面那些判断永远是假。
-  assert.match(code('content/content-auto-translate.js'), /reason/);
-  assert.match(code('shared/site-rules.js'), /BLOCKLIST: 'BLOCKLIST'/);
+  // **不许**回头去读 auto.reason：总开关关着时它是 GLOBAL_OFF，黑名单被遮住，
+  // 而那正是这个开关最该灰着的时候（site-rules.test.mjs 里有这一条的行为断言）。
+  assert.doesNotMatch(popup, /reason === 'BLOCKLIST'/, "别用被遮住的 reason 判黑名单");
+
+  // 这一句只有页面答得了（popup 自己的 location 是 chrome-extension://），
+  // 而且答的必须是判定层那一个主人，不是 popup 自己再判一遍。
+  assert.match(code('content/content-messaging.js'),
+    /blocked: globalThis\.SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
+  const rules = code('shared/site-rules.js');
+  assert.match(rules, /function isBlocklisted\(host, path\)/);
+  assert.match(rules, /if \(isBlocklisted\(host, path\)\) return out\('off', REASONS\.BLOCKLIST\);/,
+    '阶梯自己也得问这一问，否则两处迟早不一致');
+  assert.doesNotMatch(popup, /isBlocklisted/, 'popup 手上没有内置表，判不了');
 });
 
 test('站点规则先落地，总开关才跟着开', () => {

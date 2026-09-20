@@ -181,6 +181,22 @@
     return table().blocklist.some((pattern) => patternMatches(pattern, host, path));
   }
 
+  /**
+   * 「这一页永远不自己翻，用户说了也不算」。
+   *
+   * 黑名单和内置表里的 never 是同一件事的两种写法，对外只有一个说法 —— 所以这
+   * 一问必须有一个主人，下面的阶梯自己也问它。
+   *
+   * 单拎出来是因为 decide() 的答案在这个问题上**会被遮住**：总开关关着时它第一
+   * 档就回 GLOBAL_OFF，谁也看不出这一页其实还被拉着黑。要据此把界面上那个站点
+   * 开关灰掉的调用方，问的就得是这一问，不能去读那个被遮住的 reason。
+   */
+  function isBlocklisted(host, path) {
+    if (isBlocked(host, path)) return true;
+    const rule = matchBuiltin(host, path);
+    return !!(rule && rule.state === 'never');
+  }
+
   // ---------------------------------------------------------------- 语言
 
   // 与 content-language.js 的 ctx.getLangBase、caption-core 的 getLangBase 同一个
@@ -256,9 +272,7 @@
     // 禁翻的三条在所有「要翻」的理由之前，包括用户自己设的总是翻译。它防的不
     // 是「用户想翻银行页面」，是「用户在某个域名上点过一次总是翻译，此后我们
     // 往他的邮箱、在线文档编辑器、政务表单里插节点」。
-    if (isBlocked(host, path)) return out('off', REASONS.BLOCKLIST);
-    // 内置表里的 never 和黑名单是同一件事的两种写法，对外只有一个说法。
-    if (rule && rule.state === 'never') return out('off', REASONS.BLOCKLIST);
+    if (isBlocklisted(host, path)) return out('off', REASONS.BLOCKLIST);
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 
@@ -457,6 +471,7 @@
     updateAskCount,
     applyWrite,
     matchBuiltin,
+    isBlocklisted,
     loadTable,
   };
 })(globalThis);

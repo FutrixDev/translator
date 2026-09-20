@@ -46,6 +46,31 @@ test('the blocklist outranks the user own always — that is what it is for', ()
   assert.equal(docs.reason, R.USER_ALWAYS);
 });
 
+test('总开关关着也答得出「这一页拉黑了」—— decide() 的那个答案会被遮住', () => {
+  // 阶梯第一档就回 GLOBAL_OFF，黑名单被它整个遮住。界面上要据此把站点开关灰掉
+  // 的地方，问的必须是 isBlocklisted() 这一问：总开关关着恰恰是那个开关最该灰
+  // 着的时候 —— 点下去写的是一条永远生效不了的 always，还顺手把总开关替所有别
+  // 的站点打开了。
+  const off = { autoTranslate: false, autoTranslateLangs: [] };
+  assert.equal(verdict({ host: 'secure.chase.com', settings: off }).reason, R.GLOBAL_OFF);
+  assert.equal(SiteRules.isBlocklisted('secure.chase.com', '/'), true);
+
+  // 而它和阶梯给的答案必须是同一个 —— 两处各判一遍，迟早不一致。黑名单表和内
+  // 置表里的 never 都算，对外只有一个说法。
+  const probes = [
+    ['secure.chase.com', '/'], ['mail.google.com', '/'], ['hmrc.gov.uk', '/'],
+    ['x.com', '/home'], ['news.google.com', '/'], ['example.com', '/article/1'],
+    ['govtech.com', '/'],
+  ];
+  for (const [host, path] of probes) {
+    assert.equal(
+      SiteRules.isBlocklisted(host, path),
+      verdict({ host, path }).reason === R.BLOCKLIST,
+      `${host}${path}`,
+    );
+  }
+});
+
 test('the blocklist matches subdomains, and does not match a longer public suffix', () => {
   assert.equal(verdict({ host: 'www.irs.gov' }).reason, R.BLOCKLIST);
   assert.equal(verdict({ host: 'secure.chase.com' }).reason, R.BLOCKLIST);

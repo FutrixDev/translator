@@ -48,6 +48,10 @@
           const auto = ctx.autoTranslate ? ctx.autoTranslate.state() : null;
           sendResponse({
             host: location.hostname,
+            // 「这一页永远不自己翻」也只有页面答得了，而且得单独答一句：总开关
+            // 关着的时候 auto.reason 是 GLOBAL_OFF，把黑名单整个遮住了，popup
+            // 照着那个 reason 判就会把一个点不动的开关画成能点的。
+            blocked: globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname),
             hasTranslations: ctx.hasPageTranslations ? ctx.hasPageTranslations() : false,
             translationsVisible: state.translationsVisible !== false,
             auto

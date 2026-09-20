@@ -1220,3 +1220,21 @@ P1 在三轮评审之前一路绿着过来。
 触屏）：长按开菜单、再按满 1.6 秒、松手，翻译请求必须是 0 条。把实现变回秒表窗口，这条旅程
 当场变红 —— 那次没人点过的整页翻译是真的会发出去。前两条是 popup 的接线，钉在
 `auto-status-wiring.test.mjs` 里（去掉灰、去掉闸、把顺序换回来，三种变异各让一条变红）。
+
+### PR-7 第七轮的一条
+
+上一轮那道黑名单闸问错了人：它读的是 `auto.reason`，而 `decide()` 第一档就
+`GLOBAL_OFF` —— 总开关关着时黑名单被整个遮住，闸不响。而那恰恰是这个开关最该灰着的
+时候：点下去写的是一条永远生效不了的 `always`，还顺手把总开关替所有别的站点打开了。
+
+修法不是在 popup 里再判一遍（popup 手上没有内置表，它的 `location` 是
+`chrome-extension://`），是把这一问**单独立成一个主人**：`SiteRules.isBlocklisted()`
+—— 黑名单表和内置表里的 `never` 是同一件事的两种写法，对外只有一个说法，`decide()`
+自己的那一档也换成问它。页面在 `AUTO_PAGE_STATE` 里把答案单独回一句（`blocked`，
+跟 `host` 一样「只有页面答得了」），popup 照着它灰。
+
+钉住两头：`site-rules.test.mjs` 里一条行为断言 —— 总开关关着时 `reason` 是
+`GLOBAL_OFF` 而 `isBlocklisted()` 照样答 true，并且逐个探针比对它和阶梯的答案必须
+一致；`auto-status-wiring.test.mjs` 里 popup 不许再出现 `reason === 'BLOCKLIST'`，
+也不许自己调 `isBlocklisted`。三种变异（popup 读回 reason、`isBlocklisted` 丢掉黑名单
+那一半、页面不回这一句）各自变红。

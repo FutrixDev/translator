@@ -537,11 +537,14 @@ function renderPageRows() {
   elements.toggleSiteAuto.hidden = !siteRow;
   if (siteRow) {
     const on = globalAuto && status !== 'off' && status !== 'ask';
-    // 黑名单这一行是死的，不是关着的。阶梯上 isBlocked() 和内置 never 排在所有
-    // 站点规则前面，所以往规则表里写一条 always 下去，这一页照样不翻 —— 点了没
-    // 反应还不是最糟的，最糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻
-    // 起来，而他本来只想管眼前这一个。灰掉，并且把为什么写在 title 上。
-    const blocked = !!auto && auto.reason === 'BLOCKLIST';
+    // 黑名单这一行是死的，不是关着的。阶梯上黑名单排在所有站点规则前面，所以往
+    // 规则表里写一条 always 下去，这一页照样不翻 —— 点了没反应还不是最糟的，最
+    // 糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻起来，而他本来只想管
+    // 眼前这一个。灰掉，并且把为什么写在 title 上。
+    //
+    // 问的是页面单独回的那一句，不是 auto.reason：总开关关着时 reason 是
+    // GLOBAL_OFF，黑名单被它整个遮住 —— 那正是这个开关最该灰着的时候。
+    const blocked = !!pageState.blocked;
     elements.toggleSiteAuto.disabled = blocked;
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
     elements.toggleSiteAuto.title = blocked ? t('autoReasonBlocklist') : pageState.host;
@@ -581,7 +584,7 @@ async function toggleSiteAuto() {
   if (!pageState || !pageState.host) return;
   // 键盘能走到一个 disabled 的按钮上、扩展页面也能被脚本点，所以画面上灰掉之外
   // 这里再挡一道：黑名单改不动，别让这一下的副作用（开总开关）自己跑掉。
-  if (pageState.auto && pageState.auto.reason === 'BLOCKLIST') return;
+  if (pageState.blocked) return;
   const status = pageState.auto ? pageState.auto.status : '';
   const on = globalAuto && status !== 'off' && status !== 'ask';
   try {
