@@ -615,6 +615,55 @@ test('「能不能点开」是每一拍现问的，不是记下来的', () => {
   );
 });
 
+test('「本来就是目标语言」是现算的，而且换了目标语言字幕这一面要当场知道', () => {
+  const engine = repoFile('content/content-video-captions.js');
+
+  // 记下来的那个版本（state.skipTranslation）一个视频只算一次，在 ingestTrack
+  // 里。观众看到一半把目标语言从英文换成中文，那条英文轨道的「不必译」就冻在那
+  // 里，之后每一次 handleTimeUpdate 都在早退上返回，整段视频再不会开译。
+  assert.equal(
+    /skipTranslation/.test(engine),
+    false,
+    '「不必译」又被记了下来：换目标语言之后没人回头去改它',
+  );
+  const derived = engine.match(/function sameLanguage\(\)[\s\S]*?\n  \}/);
+  assert.ok(derived, '找不到 sameLanguage()');
+  assert.match(derived[0], /state\.trackLang/);
+  assert.match(derived[0], /getTargetLangBase\(\)/);
+
+  // 现算还不够：得有人来推这一下。targetLang 不是字幕自己的设置，可它一变，
+  // 译文表的键（整码，见 getTargetLangKey）和这道闸门一起翻篇。
+  assert.match(repoFile('content/content-bootstrap.js'), /'targetLang',/);
+
+  // 而且要越过 2 秒节流：视频停着的时候没有 timeupdate 来推第二次。
+  const apply = engine.match(/ctx\.applyCaptionSettings = function\(\)[\s\S]*?\n  \};/);
+  assert.ok(apply, '找不到 applyCaptionSettings()');
+  assert.match(apply[0], /handleTimeUpdate\(true\)/);
+  assert.match(engine, /ensureTrackTranslated\(!!force\)/);
+
+  // 但事件监听器不能直接挂 handleTimeUpdate：Event 对象一概是真的，那样每一次
+  // timeupdate 都成了 force，节流等于没有。
+  assert.match(engine, /addEventListener\('timeupdate', onVideoTimeUpdate\)/);
+  assert.equal(/addEventListener\('timeupdate', handleTimeUpdate\)/.test(engine), false);
+});
+
+test('「原字幕开着没有」要排在「本来就是目标语言」前面', () => {
+  // 一条本来就是目标语言的轨道被观众关掉之后：菜单继续报「已经是你要的语言」，
+  // 而那句话描述的是一条屏幕上已经不存在的轨道，还正好把唯一那条回头路挡住了
+  // ——自动开启那一面记着「是他自己关的」，不会再替他点。
+  const engine = repoFile('content/content-video-captions.js');
+  const status = engine.match(/function captionStatus\(provider\)[\s\S]*?\n  \}/);
+  assert.ok(status, '找不到 captionStatus()');
+  assert.ok(
+    status[0].indexOf('nativeCaptionsState()') < status[0].indexOf("'same-language'"),
+    '「本来就是目标语言」抢在了原字幕那一问前面',
+  );
+  assert.ok(
+    status[0].indexOf("'same-language'") < status[0].indexOf("kind: 'track'"),
+    '同语言的轨道又要去报轨道名了',
+  );
+});
+
 test('替他开成了就当场记下，别等下一拍', () => {
   // 心跳 1.5 秒一拍。开成了却把 true 丢掉，观众在这 1.5 秒里把刚亮起来的字幕关
   // 掉，下一拍看见的是「关着，而且没落闩」——于是又替他开一次。那道闩要防的正

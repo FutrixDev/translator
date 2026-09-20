@@ -49,7 +49,6 @@
     trackId: '',
     trackLang: '',
     trackLabel: '',
-    skipTranslation: false,
     dismissed: false,
     translating: false,
     lastTriggerMs: 0,
@@ -93,6 +92,21 @@
   function getTargetLangBase() {
     const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
     return core.getLangBase(target);
+  }
+
+  /**
+   * 这条轨道本来就是目标语言，不必译。
+   *
+   * 现算，不记。记下来的那一版是在 ingestTrack() 里写的，而它一个视频只跑一次：
+   * 观众看到一半把目标语言从英文换成中文，那条英文轨道的「不必译」就冻在那里，
+   * 之后每一次 handleTimeUpdate() 都在这道早退上返回，整段视频再不会开译——除非
+   * 播放器恰好重新交一次轨道进来。会变的答案不留副本，和 canEnableNativeCaptions
+   * 是同一条。
+   */
+  function sameLanguage() {
+    const trackBase = core.getLangBase(state.trackLang || '');
+    const targetBase = getTargetLangBase();
+    return !!(trackBase && targetBase && trackBase === targetBase);
   }
 
   function getVideoElement() {
@@ -499,7 +513,7 @@
   const STALE = 'stale';
 
   async function translateCues(cues) {
-    if (state.skipTranslation || !cues.length) return true;
+    if (sameLanguage() || !cues.length) return true;
     if (ctx.isExtensionContextAvailable && !ctx.isExtensionContextAvailable()) return false;
 
     // 发请求那一刻这批句子的键，和这一轮属于谁。
@@ -668,13 +682,13 @@
   // the window's edge rather than at the end of the track — handleTimeUpdate
   // calls it again as the playhead advances, which is what moves the window.
   async function ensureTrackTranslated(force) {
-    if (state.skipTranslation || state.dismissed || state.translating) return;
+    if (sameLanguage() || state.dismissed || state.translating) return;
     const now = Date.now();
     if (!force && now - state.lastTriggerMs < 2000) return;
     state.lastTriggerMs = now;
     state.translating = true;
     try {
-      while (state.active && !state.skipTranslation && !state.dismissed) {
+      while (state.active && !sameLanguage() && !state.dismissed) {
         // 窗每一轮现算。一轮可以跑很久，而这中间观众可以把引擎从内置换成 AI ——
         // 取一次留着用，等于拿「上一个引擎不花钱」这个结论去放行下一个引擎的批次。
         const batch = pickNextBatch(translationWindowMs());
@@ -706,15 +720,24 @@
   function ensureVideoListener() {
     const video = getVideoElement();
     if (!video || video === state.video) return;
-    if (state.video) state.video.removeEventListener('timeupdate', handleTimeUpdate);
+    if (state.video) state.video.removeEventListener('timeupdate', onVideoTimeUpdate);
     state.video = video;
-    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('timeupdate', onVideoTimeUpdate);
   }
 
-  async function handleTimeUpdate() {
+  // 事件对象不能当 force 用：addEventListener 传进来的那个 Event 一概是真的。
+  function onVideoTimeUpdate() {
+    handleTimeUpdate();
+  }
+
+  /**
+   * @param {boolean} [force] 越过 ensureTrackTranslated 的 2 秒节流。设置改动走
+   *   这一路：视频停着的时候没有 timeupdate 来推第二次，被节流挡掉就是不开译。
+   */
+  async function handleTimeUpdate(force) {
     if (!state.active || !state.cues.length) return;
 
-    if (state.dismissed || state.skipTranslation || !isCaptionsEnabled()) {
+    if (state.dismissed || sameLanguage() || !isCaptionsEnabled()) {
       setOverlayVisible(false);
       setNativeCaptionsHidden(false);
       return;
@@ -742,7 +765,7 @@
     const nowMs = Math.floor((state.video?.currentTime || 0) * 1000);
     state.lastNowMs = nowMs;
     renderActiveCue(nowMs);
-    ensureTrackTranslated(false);
+    ensureTrackTranslated(!!force);
   }
 
   // ---------------------------------------------------- provider activation
@@ -937,8 +960,6 @@
 
   /** The menu's status line: which track we are on, or why there is none. */
   function captionStatus(provider) {
-    if (state.skipTranslation) return { kind: 'same-language' };
-
     // 原字幕开着没有。问的是**传进来的这个** provider，不是 isCaptionsEnabled()
     // （那读的是已接上的那个）：功能关着的时候按钮照样在（那正是它的用处），而那
     // 时 state.provider 是 null，拿它去问，一个原字幕开得好好的播放器也会被说成
@@ -974,6 +995,12 @@
       }
       return { kind: 'none' };
     }
+
+    // 「本来就是目标语言」排在原字幕那一问**后面**。它描述的是这条轨道，而观众关
+    // 掉字幕之后屏幕上没有轨道可言——报一句「已经是你要的语言」既没用，又正好把
+    // 唯一那条回头路挡住了：自动开启那一面还记着「是他自己关的」，不会再替他点。
+    // 和第 9 条（轨道名排在原字幕后面）是同一句话，只是往上又挪了一格。
+    if (sameLanguage()) return { kind: 'same-language' };
 
     if (state.cues.length) return { kind: 'track', label: state.trackLabel || state.trackLang };
     let label = '';
@@ -1066,10 +1093,6 @@
         state.batches = core.buildBatches(state.cues);
       }
 
-      const trackBase = core.getLangBase(track.lang || '');
-      const targetBase = getTargetLangBase();
-      state.skipTranslation = !!(trackBase && targetBase && trackBase === targetBase);
-
       ensureVideoListener();
       handleTimeUpdate();
       syncControls();
@@ -1093,7 +1116,6 @@
     state.trackId = '';
     state.trackLang = '';
     state.trackLabel = '';
-    state.skipTranslation = false;
     state.dismissed = false;
     state.translating = false;
     // 换一个视频＝重新观察一次。播放器在 SPA 跳转中会把整个字幕层拆掉重建，
@@ -1103,7 +1125,7 @@
     state.lastTriggerMs = 0;
     state.lastNowMs = 0;
     if (state.video) {
-      state.video.removeEventListener('timeupdate', handleTimeUpdate);
+      state.video.removeEventListener('timeupdate', onVideoTimeUpdate);
       state.video = null;
     }
     if (state.overlay) {
@@ -1148,7 +1170,7 @@
     applyCaptionLayout();
     applyCaptionDisplay();
     renderActiveCue(state.lastNowMs);
-    handleTimeUpdate();
+    handleTimeUpdate(true);
     syncControls();
   };
 

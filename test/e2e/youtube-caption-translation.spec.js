@@ -142,6 +142,47 @@ test('skips translation when track language matches target', async ({ page, cont
   expect(apiCalls).toBe(0);
 });
 
+// 换目标语言之后，同语言那道闸门要当场重开 —— 而且视频停着的时候也得开。
+// 「不必译」曾经是在 ingestTrack 里记下的：一个视频只算一次，换了目标语言没人回头
+// 去改它，整段视频再不会开译。
+test('switching the target language away from the track language starts translation', async ({ page, context }) => {
+  await setExtensionSettings(page, { ...BASE_SETTINGS, targetLang: 'en' });
+
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: html });
+  });
+
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+
+  await context.route('https://api.openai.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    video.currentTime = 0.5;
+    video.dispatchEvent(new Event('timeupdate'));
+  });
+  await page.waitForTimeout(500);
+  // 同语言这一路连浮层都不建（handleTimeUpdate 在那道闸门上就返回了）。
+  await expect(page.locator('#ai-translator-caption-overlay')).toHaveCount(0);
+
+  // 视频就停在这里：之后再没有一个 timeupdate 来推第二次，全靠设置改动那一路。
+  await writeSyncSettings(context, { targetLang: 'zh-CN' });
+
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
 test('does not render when no caption request is observed', async ({ page, context }) => {
   await setExtensionSettings(page, BASE_SETTINGS);
 

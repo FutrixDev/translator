@@ -177,7 +177,10 @@ Two rules the generic provider exists to keep:
   from that moment would hide the menu's retry row for the rest of the video.
   The only thing recorded is what we did — a successful `enableNativeCaptions()`
   sets `sawNativeOn` on the spot, so a viewer who switches the new captions off
-  within the 1.5s beat is not overridden. And **the heartbeat runs all of this
+  within the 1.5s beat is not overridden. The same rule reaches past the
+  providers: "this track is already in the target language" is `sameLanguage()`,
+  computed on every read, because the viewer can change the target halfway
+  through a video and nothing would go back to revise a stored answer. And **the heartbeat runs all of this
   ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the
