@@ -11,7 +11,7 @@
 // 标签页同时读到同一份旧数字，后写的那份把先写的盖掉，丢的不是用户的选择，
 // 只是几个计数，但丢法是一样的：悄无声息，而且越忙丢得越多。
 //
-// 纯函数（currentMonth / mergeDelta / messageChars / cacheHitRate）放在最上面，
+// 纯函数（currentMonth / mergeDelta / textsChars / cacheHitRate）放在最上面，
 // node --test 里直接跑，不需要 chrome。
 (function (root) {
   'use strict';
@@ -71,15 +71,10 @@
    * 还有一整张 base64 图片，把它们算进「翻译了多少字」只会让这个数字失去意义。
    * 三种翻译消息之外的一概是 0 —— 这个函数就是靠这个来认出「这是一次翻译请求」。
    */
-  function messageChars(message) {
-    if (!message) return 0;
-    if (message.type === 'TRANSLATE') {
-      return typeof message.text === 'string' ? message.text.length : 0;
-    }
-    if (message.type !== 'TRANSLATE_BATCH' && message.type !== 'TRANSLATE_BATCH_FAST') return 0;
-    if (!Array.isArray(message.texts)) return 0;
+  function textsChars(texts) {
+    if (!Array.isArray(texts)) return 0;
     let total = 0;
-    for (const text of message.texts) {
+    for (const text of texts) {
       if (typeof text === 'string') total += text.length;
     }
     return total;
@@ -191,7 +186,7 @@
     emptyStats,
     currentMonth,
     mergeDelta,
-    messageChars,
+    textsChars,
     cacheHitRate,
     read,
     add,

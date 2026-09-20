@@ -537,41 +537,30 @@ async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent,
   );
 }
 
-// 本机统计里「发给模型的字符数」记在这里，而不是记在三个 handler 里。
+// 本机统计里「发给模型的字符数」记在每一次**真的要发出去**的调用上，而不是记在
+// 消息监听器里。
 //
-// 这是那条路上唯一一个**只经过一次**的地方：译文缓存在内容脚本那边就把命中的
-// 部分拦掉了，内置引擎压根不发消息，所以进到消息监听器的每一条翻译消息都对应
-// 一次要发出去的请求。记在更深处要改三个函数（其中 handleBatchTranslateFast
-// 明确不动），记在更浅处就没有了。
+// 监听器看着像那条路上唯一的收口，其实不是，两头都漏：
+//   - 漏在前面：三个 handler 都以 `if (!settings.apiKey) return { error }` 开头，
+//     没配 Key 时一个字符也不会离开浏览器。而自动翻译一页最多同时开 12 批、失败
+//     的块下一轮还会再来，于是没配 Key 的人每打开一页，就有整整一页的字符被记进
+//     「发给模型」，而浏览器一个字节都没往外送。
+//   - 漏在后面：一条消息不一定只对应一次调用。快速分批的分隔符数量对不上时会**
+//     整批重发一次**（走编号法，见 translateBatchFastWithAI 末尾），按消息记账就
+//     会少算掉那一整批。
 //
-// 但「要发出去」不等于「发得出去」：三个 handler 都以
-// `if (!settings.apiKey) return { error }` 开头，没配 Key 时一个字符也不会离开
-// 浏览器。所以这里要把同一个前提先问一遍。**这不是几十个字符的误差** —— 自动
-// 翻译一页最多同时开 12 批、失败的块下一轮还会再来一次，于是没配 Key 的人每打开
-// 一页，就有整整一页的字符被记进「发给模型」，而浏览器一个字节都没往外送。
+// 记在这三个函数上就没有这两个口子：它们各自只有一个外部调用点（就是自己的
+// handler，在 apiKey 那一关之后），加上回退那一次内部调用 —— 一次调用一笔账，不
+// 多不少。
 //
-// 代价是多读一次 storage，只读 apiKey 这一个键（handler 读的是整份默认值），
-// 而且不挡在转发前面 —— 记账再准也不该让翻译多等一个 IPC。
-//
-// 数的是源文本的字符数，不是请求体（见 AutoStats.messageChars）。发出去之后才
-// 失败的（网络错误、限流、500）照记：那些字符确实已经送出去了。
-async function countCharsSentToModel(message) {
-  try {
-    const chars = globalThis.AutoStats.messageChars(message);
-    if (chars <= 0) return;
-    const { apiKey } = await chrome.storage.sync.get({ apiKey: defaultSettings.apiKey });
-    if (!apiKey) return;
-    globalThis.AutoStats.add({ aiChars: chars });
-  } catch (error) {
-    // 统计写不上不该变成一次翻译失败。
-    console.warn('Blab Translation: usage counter skipped', error);
-  }
+// 数的是源文本的字符数，不是请求体。发出去之后才失败的（网络错误、限流、500）
+// 照记：那些字符确实送出去了。
+function countCharsSentToModel(chars) {
+  if (chars > 0) globalThis.AutoStats.add({ aiChars: chars });
 }
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  countCharsSentToModel(message);
-
   switch (message.type) {
     case 'INLINE_CONTEXT_MENU_STATE':
       if (typeof message.visible === 'boolean') {
@@ -1877,6 +1866,8 @@ async function translateSingleWordWithAI(text, targetLang, settings) {
 }
 
 async function translateTextWithMode(text, targetLang, settings, forceWord = false) {
+  countCharsSentToModel(typeof text === 'string' ? text.length : 0);
+
   if (forceWord || isSingleWordText(text)) {
     const result = await translateSingleWordWithAI(text, targetLang, settings);
     return { ...result, isWord: true };
@@ -1888,6 +1879,9 @@ async function translateTextWithMode(text, targetLang, settings, forceWord = fal
 
 // Translate batch of texts with AI (numbered format)
 async function translateBatchWithAI(texts, targetLang, settings) {
+  // 快速分批回退到这里时会再走一遍这一句 —— 那本来就是第二次真发出去的请求。
+  countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
+
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // Create numbered list for batch translation
@@ -1955,6 +1949,8 @@ function getFastBatchOutputRules(delimiter) {
 
 // Fast batch translation with delimiter
 async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫') {
+  countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
+
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // Join texts with delimiter

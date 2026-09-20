@@ -42,18 +42,14 @@ test('空增量就是「读出来该显示的样子」', () => {
     { month: '2026-10', pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0 });
 });
 
-test('messageChars 数的是源文本，不是请求体', () => {
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE', text: 'hello' }), 5);
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE_BATCH', texts: ['ab', 'cde'] }), 5);
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE_BATCH_FAST', texts: ['ab', 'cde'] }), 5);
-  // 不是翻译的消息一律 0 —— 这个函数就是靠这个认出「这是一次翻译请求」的。
-  assert.equal(AutoStats.messageChars({ type: 'OCR_IMAGE', dataUrl: 'data:image/png;base64,AAAA' }), 0);
-  assert.equal(AutoStats.messageChars({ type: 'COMIC_ACCOUNT' }), 0);
-  assert.equal(AutoStats.messageChars(null), 0);
-  // 畸形消息不该抛：它走的是服务工作者那个总入口，抛了就是整条消息分发挂掉。
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE' }), 0);
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE_BATCH', texts: 'nope' }), 0);
-  assert.equal(AutoStats.messageChars({ type: 'TRANSLATE_BATCH', texts: [null, 'ok'] }), 2);
+test('textsChars 数的是源文本，不是请求体', () => {
+  assert.equal(AutoStats.textsChars(['ab', 'cde']), 5);
+  // 一批里的空洞不该让整批的账算不出来。
+  assert.equal(AutoStats.textsChars([null, 'ok']), 2);
+  assert.equal(AutoStats.textsChars([]), 0);
+  // 不是数组就是 0，而不是 NaN —— 一个坏掉的调用不该把这个月的计数毁掉。
+  assert.equal(AutoStats.textsChars('nope'), 0);
+  assert.equal(AutoStats.textsChars(undefined), 0);
 });
 
 test('一次都没量过的命中率是 null，不是 0', () => {

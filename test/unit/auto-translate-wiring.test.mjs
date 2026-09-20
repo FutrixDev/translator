@@ -349,24 +349,33 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   assert.equal((auto.match(/inflight\.clear\(\);/g) || []).length, 3);
 });
 
-test('「发给模型的字符数」只在真发得出去的时候记', () => {
+test('「发给模型的字符数」一次调用记一笔，不多不少', () => {
   const bg = code('background/background.js');
-  // 三个 handler 都以这一句开头，没配 Key 时一个字符也不会离开浏览器；记账要
-  // 先问同一个前提，否则没配 Key 的人每打开一页就被记上整整一页（自动翻译一页
-  // 最多同时开 12 批，失败的块下一轮还会再来）。
+
+  // 记在三个真发请求的函数上，不记在消息监听器里。监听器两头都漏：前面漏掉
+  // `if (!settings.apiKey)` 那一关（没配 Key 时一个字符也没发出去，而自动翻译
+  // 一页最多同时开 12 批，整页整页地虚记），后面漏掉快速分批分隔符对不上时的
+  // 整批重发（一条消息两次调用）。
   for (const fn of ['handleTranslate', 'handleBatchTranslate', 'handleBatchTranslateFast']) {
     const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
     assert.ok(body, `${fn} 不见了`);
     assert.match(body[0], /if \(!settings\.apiKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
+    assert.doesNotMatch(body[0], /countCharsSentToModel/, `${fn} 在 apiKey 那一关这一侧，记不得账`);
   }
-  const counter = bg.match(/async function countCharsSentToModel\(message\) \{[\s\S]*?\n\}/);
-  assert.ok(counter, 'countCharsSentToModel 不见了');
-  assert.match(counter[0], /AutoStats\.messageChars\(message\)/);
-  assert.match(counter[0], /chrome\.storage\.sync\.get\(\{ apiKey:/);
-  assert.match(counter[0], /if \(!apiKey\) return;/);
-  // 记账只有这一处，而且不挡在转发前面（不 await）。
+
+  for (const fn of ['translateTextWithMode', 'translateBatchWithAI', 'translateBatchFastWithAI']) {
+    const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${fn} 不见了`);
+    assert.match(body[0], /countCharsSentToModel\(/, `${fn} 是一次真发出去的调用，要记一笔`);
+  }
+
+  // 回退那一次走的就是 translateBatchWithAI，于是自然记第二笔 —— 靠的是这一句，
+  // 不是在回退处另记一笔。
+  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings\);/);
+  // 求和只有一处（shared/auto-stats.js），三个调用点不各抄一遍。
+  assert.equal((bg.match(/AutoStats\.textsChars\(/g) || []).length, 2);
   assert.equal((bg.match(/AutoStats\.add\(\{ aiChars/g) || []).length, 1);
-  assert.match(bg, /\n  countCharsSentToModel\(message\);\n/);
+  assert.doesNotMatch(bg, /countCharsSentToModel\(message\)/, '消息监听器不再记账');
 });
 
 test('设置页里两块别处写的数据，要跟着别处一起变', () => {
