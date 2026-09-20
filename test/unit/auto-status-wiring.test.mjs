@@ -528,8 +528,18 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
   // 他按的那句话是「**这一页**先别翻了」。SPA 里点进下一篇就是新的一页，闩不解
   // 的话往后全是原文，而「继续」那颗按钮此刻指着的是他早就离开的那一页。
   const route = auto.slice(auto.indexOf('function onRouteChange('), auto.indexOf('const RESTART_KEYS'));
-  assert.match(route, /explicit = false;[\s\S]*pausedByUser = false;[\s\S]*start\(`route:/,
-    '换了一页，表态和闩都归零');
+  assert.match(route,
+    /explicit = false;[\s\S]*pausedByUser = false;[\s\S]*pageLang = null;\s*langResolved = false;\s*start\(`route:/,
+    '换了一页，表态、闩和上一页量到的语言都归零');
+
+  // 语言是**一页**的测量结果，清它的只有「换了一页」那一下 —— 声明一处、过期一
+  // 处，多一处就是又多了一个主人。尤其是 start()：它说的是「重新判」，同一个文档
+  // 上量到的语言照样作数；反过来，这一处要是没有，藏着译文时换一页就会被上一页
+  // 的语言判成 off，而「显示译文」只叫得醒 PAUSED / ERROR，那一页再也问不出来。
+  assert.equal((auto.match(/pageLang = null;/g) || []).length, 2,
+    '一处声明、一处过期（onRouteChange）');
+  const startBody = auto.slice(auto.indexOf('function start(why)'), auto.indexOf('function stopDiscovery('));
+  assert.doesNotMatch(startBody, /pageLang = null;/, 'start() 不清语言：它不是「换了一页」');
 });
 
 test('球上那两颗按钮键盘够得着', () => {
