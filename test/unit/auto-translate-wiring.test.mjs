@@ -349,6 +349,38 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   assert.equal((auto.match(/inflight\.clear\(\);/g) || []).length, 3);
 });
 
+test('「发给模型的字符数」只在真发得出去的时候记', () => {
+  const bg = code('background/background.js');
+  // 三个 handler 都以这一句开头，没配 Key 时一个字符也不会离开浏览器；记账要
+  // 先问同一个前提，否则没配 Key 的人每打开一页就被记上整整一页（自动翻译一页
+  // 最多同时开 12 批，失败的块下一轮还会再来）。
+  for (const fn of ['handleTranslate', 'handleBatchTranslate', 'handleBatchTranslateFast']) {
+    const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${fn} 不见了`);
+    assert.match(body[0], /if \(!settings\.apiKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
+  }
+  const counter = bg.match(/async function countCharsSentToModel\(message\) \{[\s\S]*?\n\}/);
+  assert.ok(counter, 'countCharsSentToModel 不见了');
+  assert.match(counter[0], /AutoStats\.messageChars\(message\)/);
+  assert.match(counter[0], /chrome\.storage\.sync\.get\(\{ apiKey:/);
+  assert.match(counter[0], /if \(!apiKey\) return;/);
+  // 记账只有这一处，而且不挡在转发前面（不 await）。
+  assert.equal((bg.match(/AutoStats\.add\(\{ aiChars/g) || []).length, 1);
+  assert.match(bg, /\n  countCharsSentToModel\(message\);\n/);
+});
+
+test('设置页里两块别处写的数据，要跟着别处一起变', () => {
+  const options = code('options/options.js');
+  // 站点审计表是弹出窗口写的，本机统计是内容脚本和 worker 写的，而
+  // openOptionsPage() 把已开着的标签页调到前面、不重新加载它。没有这一条订阅，
+  // 用户刚在另一个标签页按下的「总是翻译」就不在表里，想撤回也无从撤起。
+  const listener = options.match(/chrome\.storage\.onChanged\.addListener\([\s\S]*?\n  \}\);/);
+  assert.ok(listener, '设置页没有订阅 storage.onChanged');
+  assert.match(listener[0], /area === 'sync' && changes\.siteRules\) renderSiteRules\(\)/);
+  // autoStats 在 local，不在 sync —— 盯错了区域就一个事件也收不到。
+  assert.match(listener[0], /area === 'local' && changes\.autoStats\) renderAutoStats\(\)/);
+});
+
 test('改对了密钥/地址/模型/回落，停在错误上的那一页要自己重来', () => {
   const auto = code('content/content-auto-translate.js');
   const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);

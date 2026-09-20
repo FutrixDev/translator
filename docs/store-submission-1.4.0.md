@@ -153,7 +153,7 @@ user chooses.
 - [x] `manifest.json` 版本已升到 1.4.0（高于已提交的 1.3.1）
 - [x] `permissions` / `host_permissions` 未新增任何项
 - [x] `_locales/` 十种语言的 `appDescription` 已重写并全部 ≤132 字符
-- [x] `npm run test:unit` 全绿（611 passed）
+- [x] `npm run test:unit` 全绿（613 passed）
 - [x] `npm run test:e2e` 全绿（214 passed, 9 skipped）
 - [ ] `npm run zip` 产物已校验：十种 `_locales` 齐全、Tesseract 核心与语言包在内、
       无 `.DS_Store`、无 source map、无测试文件

@@ -1756,6 +1756,21 @@ function setupEventListeners() {
     if (!elements.pdfTasksCard.hidden) refreshPdfTasks({ quiet: true });
   });
 
+  // 同样的道理，同样的原因，另外两块：站点审计表和本机统计都是**别处**写的。
+  // 用户在另一个标签页的弹出窗口里按下「总是翻译」，或者随便翻了几页，这个开着
+  // 的设置页不会自己知道；而 openOptionsPage() 是把它调到前面来，不是重新加载。
+  // 于是他回到这里，看见的是一张缺了刚做的那个决定的表 —— 想把手滑按错的那一下
+  // 撤回来，偏偏就差那一行。
+  //
+  // 这里盯 storage 而不是盯 visibilitychange：两块数据本来就住在 storage 里，
+  // 盯它不要一次网络往返，而且两个窗口并排摆着的时候也跟得上。
+  // 这个页面自己的写入也会回弹到这里（删规则、清统计），于是多重画一次；两个
+  // 函数都是整块重读重画的，重画一次和重画两次结果一样。
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.siteRules) renderSiteRules();
+    if (area === 'local' && changes.autoStats) renderAutoStats();
+  });
+
   elements.comicSignIn.addEventListener('click', comicSignIn);
   elements.comicSignOut.addEventListener('click', comicSignOut);
   elements.pdfTasksRefresh.addEventListener('click', () => refreshPdfTasks());

@@ -537,20 +537,40 @@ async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent,
   );
 }
 
+// 本机统计里「发给模型的字符数」记在这里，而不是记在三个 handler 里。
+//
+// 这是那条路上唯一一个**只经过一次**的地方：译文缓存在内容脚本那边就把命中的
+// 部分拦掉了，内置引擎压根不发消息，所以进到消息监听器的每一条翻译消息都对应
+// 一次要发出去的请求。记在更深处要改三个函数（其中 handleBatchTranslateFast
+// 明确不动），记在更浅处就没有了。
+//
+// 但「要发出去」不等于「发得出去」：三个 handler 都以
+// `if (!settings.apiKey) return { error }` 开头，没配 Key 时一个字符也不会离开
+// 浏览器。所以这里要把同一个前提先问一遍。**这不是几十个字符的误差** —— 自动
+// 翻译一页最多同时开 12 批、失败的块下一轮还会再来一次，于是没配 Key 的人每打开
+// 一页，就有整整一页的字符被记进「发给模型」，而浏览器一个字节都没往外送。
+//
+// 代价是多读一次 storage，只读 apiKey 这一个键（handler 读的是整份默认值），
+// 而且不挡在转发前面 —— 记账再准也不该让翻译多等一个 IPC。
+//
+// 数的是源文本的字符数，不是请求体（见 AutoStats.messageChars）。发出去之后才
+// 失败的（网络错误、限流、500）照记：那些字符确实已经送出去了。
+async function countCharsSentToModel(message) {
+  try {
+    const chars = globalThis.AutoStats.messageChars(message);
+    if (chars <= 0) return;
+    const { apiKey } = await chrome.storage.sync.get({ apiKey: defaultSettings.apiKey });
+    if (!apiKey) return;
+    globalThis.AutoStats.add({ aiChars: chars });
+  } catch (error) {
+    // 统计写不上不该变成一次翻译失败。
+    console.warn('Blab Translation: usage counter skipped', error);
+  }
+}
+
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // 本机统计里「发给模型的字符数」记在这里，而不是记在三个 handler 里。
-  //
-  // 这是那条路上唯一一个**只经过一次**的地方：译文缓存在内容脚本那边就把命中
-  // 的部分拦掉了，内置引擎压根不发消息，所以进到这个监听器的每一条翻译消息都
-  // 对应一次真要发出去的请求。记在更深处要改三个函数（其中 handleBatchTranslateFast
-  // 明确不动），记在更浅处就没有了。
-  //
-  // 数的是源文本的字符数，不是请求体（见 AutoStats.messageChars）。没配 Key 时
-  // handler 会当场回错、一个字符也没发出去——那一刻这里已经记过了，差值是几十个
-  // 字符，换来的是这段逻辑只有一处。
-  const aiChars = globalThis.AutoStats.messageChars(message);
-  if (aiChars > 0) globalThis.AutoStats.add({ aiChars });
+  countCharsSentToModel(message);
 
   switch (message.type) {
     case 'INLINE_CONTEXT_MENU_STATE':
