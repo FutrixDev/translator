@@ -1270,3 +1270,45 @@ popup 上那一行画的是**状态**，`paused` 不是 `off` 也不是 `ask`，
 「这一下是不是收起」于是也归一个主人：`isHideAction()` —— 按钮上那行字和这道门问的是同
 一句，`hasTranslations && translationsVisible` 两个条件缺一不可。一处定义、两处用，这件事
 本身由测试数着（多一处就是又立了一套）。
+
+### PR-7 第十轮的三条
+
+**一、后台标签页把追问的三次机会花光了。** `render()` 一判出「这一页该问」就去领号，而
+中键点开的那一串链接、浏览器预渲染的那一份，内容脚本一样跑完 —— 条子在那些标签页里谁也
+没见过，号却照领。三次机会可以在用户面前一次没露过的情况下用光，这个域名从此永远安静，
+而他只会觉得这个插件在这儿坏了。
+
+领号前先问一句 `document.visibilityState === 'visible'`：看不见就不领，条子照旧收走。
+「等它真被看见了再领」需要有人来叫第二遍 —— `visibilitychange` 重画一次，预渲染转正走的
+也是这个事件。
+
+这一条在浏览器里证不了：无头 Chromium 把每个标签页都报成 `visible`，CDP 也没有覆盖它的
+命令（`Emulation.setPageVisibilityOverride` 早就不在协议里了）。所以它钉在
+`test/unit/auto-status-wiring.test.mjs`：闸门那一句和那个监听器，两半都钉。
+
+**二、用户按下的暂停，别人改一条规则就能顶开。** `pauseCurrentPage()` 只改调度层的
+`status`，而 `status` 会被下一次 `start()` 盖掉 —— 而 `start()` 常常是别人替他叫的：另一个
+标签页在追问条上勾了「总是」，`siteRules` 一落地，这一页的 `onSettingsChanged` 就重开一轮。
+他按下的暂停当场失效，页面自己又翻起来，而他没有碰过任何东西。
+
+所以暂停记成一道闩 `pausedByUser`，和「藏起译文」并列在 `start()` 的同一个判断里。解闩的
+只有他自己后说的那两句：**继续**（`resumeCurrentPage`）、**翻译整页**（`markPageExplicit`）。
+后者还得连带重开一轮 —— 哪怕这一页早就表过态（`explicit` 已经是 `true`），那一轮正停在
+闩上，不重开就等于什么都没发生。
+
+**三、球上那两颗按钮键盘够不着。** 状态点和 `···` 都是 `<span role="button">` —— 既不进
+Tab 序，也不认 Enter，而本文档自己那一行写的是「追问条、状态点、popup 四行均可 Tab / Enter
+操作」。
+
+两颗都换成真的 `<button type="button">`，Enter/Space 在球上那个 `keydown` 里派活：落在哪
+一颗上仍旧问 `pressZone()`（鼠标那条路问的是同一个），并且 `preventDefault()` 把 `<button>`
+自己合成的那一下 `click` 挡掉 —— 不挡的话，将来谁在球上挂一个 `click`，一次按键就点两回。
+
+配套的三件小事：`···` 平时 `opacity: 0`，所以显形那条规则要连 `:focus-within` 一起认，否则
+Tab 停在它身上时人看到的是焦点凭空消失了一格；状态点没有文字，`aria-label` 和 `title` 说的
+必须是同一句（都是 `explainLine()`）；`···` 是开合菜单的按钮，`aria-expanded` 得跟着菜单走。
+
+**「Esc 关掉菜单」没有在这一层再写一遍。** `content/content-selection.js` 那一处统管所有浮层
+的 Esc，它本来就连着 `ctx.hideFloatMenu()`。这一层只补它管不到的那半件事：菜单一撤，焦点
+如果正在菜单里，就掉回 `<body>` 了 —— 送它回 `···` 上。鼠标点别处关的不算，那时候焦点本来
+就不在这儿，抢回来是打断。

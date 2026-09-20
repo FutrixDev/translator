@@ -155,7 +155,7 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // 都跑不了；而判定照常跟上，否则 popup 上那个站点开关会一直停在「开」。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false\) \{[\s\S]*?const hidden = resolve\(pageLang\);\s*reason = hidden\.reason;\s*setStatus\(hidden\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(pageLang\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);

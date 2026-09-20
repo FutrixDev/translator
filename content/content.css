@@ -1378,9 +1378,19 @@ html body [id="ai-translator-progress"] .ai-translator-progress-close:active {
   transition: opacity 0.15s ease;
 }
 
-#ai-translator-float-ball:hover .ai-translator-ball-more {
+#ai-translator-float-ball:hover .ai-translator-ball-more,
+#ai-translator-float-ball:focus-within .ai-translator-ball-more {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* 键盘上这两颗按钮的位置感全靠焦点环 —— 球本身不是 tab 停靠点，焦点一进来就
+   直接落在它们身上。··· 平时是 opacity:0，所以上面那条得连 :focus-within 一起
+   认，否则 Tab 停到它身上时人看到的是焦点凭空消失了一格。 */
+#ai-translator-float-ball .ai-translator-status-dot:focus-visible,
+#ai-translator-float-ball .ai-translator-ball-more:focus-visible {
+  outline: 2px solid #7c5cff;
+  outline-offset: 2px;
 }
 
 /* ==================== Auto-translate bar ==================== */

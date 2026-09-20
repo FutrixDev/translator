@@ -103,8 +103,8 @@
           </linearGradient>
         </defs>
       </svg>
-      <span class="ai-translator-status-dot" data-state="none"></span>
-      <span class="ai-translator-ball-more" role="button" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</span>
+      <button type="button" class="ai-translator-status-dot" data-state="none"></button>
+      <button type="button" class="ai-translator-ball-more" aria-expanded="false" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</button>
     `;
 
     // Load saved position or use default
@@ -161,6 +161,8 @@
     // 看门狗随时会把球整个重建一遍，innerHTML 一换，状态点就回到了初始的空白。
     // 重建之后补一笔，否则一次页面脚本的误删会让那颗点永久消失。
     if (ctx.paintAutoStatusDot) ctx.paintAutoStatusDot();
+    // 同理：··· 上的 aria-expanded 也是 innerHTML 里的初始值，重建时菜单可能正开着。
+    setMoreExpanded(!!state.floatMenu);
     console.log('Blab Translation: Float ball created');
 
     // Setup drag and click handling
@@ -258,6 +260,23 @@
       state.floatBall.classList.add('dragging');
 
       e.preventDefault();
+    });
+
+    // 键盘走的是另一条路。球上这两颗按钮的鼠标语义摊在 mousedown/mouseup 一对
+    // 事件里 —— 要先分辨出这一下到底是点击还是拖拽的起手，而键盘既没有拖拽也
+    // 没有 mousedown，那条路上一个字都不会执行。
+    //
+    // <button> 自己会在 Enter/Space 上合成一次 click；preventDefault 把那一次挡
+    // 掉再自己派活，而不是反过来依赖它：合成的那一下将来要是撞上球身上新挂的
+    // click，就成了一次按键点两回。
+    state.floatBall.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      const hit = pressZone(e.target);
+      if (hit === 'ball') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (hit === 'menu') toggleFloatMenu();
+      else if (ctx.toggleAutoStatusExplain) ctx.toggleAutoStatusExplain();
     });
 
     // Mouse move - update position
@@ -515,6 +534,7 @@
     state.floatMenu.style.top = `${top}px`;
 
     document.body.appendChild(state.floatMenu);
+    setMoreExpanded(true);
 
     // Menu item click handlers
     state.floatMenu.querySelectorAll('.ai-translator-menu-item').forEach(item => {
@@ -540,10 +560,28 @@
 
   function hideFloatMenu() {
     if (state.floatMenu) {
+      // 焦点还在菜单里的时候把菜单撤掉，焦点就掉回 <body> —— 键盘用户得从头再
+      // Tab 一遍才回得到球上。所以那一种要把焦点送回 ··· 去。
+      //
+      // 只有那一种。鼠标点别处关的、程序自己关的，焦点本来就不在这儿，抢回来
+      // 就成了打断。「Esc 关掉浮层」本身不在这一层 —— content-selection.js 那
+      // 一处统管所有浮层的 Esc，这里再挂一个就是同一个问题有了两个主人。
+      const returnFocus = state.floatMenu.contains(document.activeElement);
       state.floatMenu.remove();
       state.floatMenu = null;
       document.removeEventListener('mousedown', handleOutsideClick);
+      if (returnFocus) {
+        const more = state.floatBall && state.floatBall.querySelector('.ai-translator-ball-more');
+        if (more) more.focus();
+      }
     }
+    setMoreExpanded(false);
+  }
+
+  /** ··· 是一颗开合菜单的按钮，读屏得知道它此刻是开是合。 */
+  function setMoreExpanded(open) {
+    const more = state.floatBall && state.floatBall.querySelector('.ai-translator-ball-more');
+    if (more) more.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function handleMenuAction(action) {

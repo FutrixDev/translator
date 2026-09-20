@@ -543,3 +543,96 @@ test('长按开了菜单还按着不放 —— 松手那一下不该再把整页
     await close();
   }
 });
+
+test('球上那两颗按钮，不碰鼠标也用得了', async ({ page, context }) => {
+  // 实现文档那一行写的是「追问条、状态点、popup 四行均可 Tab / Enter」。鼠标那
+  // 条路摊在 mousedown/mouseup 一对事件上 —— 键盘上一个字都跑不到，所以这条旅程
+  // 走的全程只有 Tab / Enter / Esc。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
+
+    // 先把这一页停下来，状态点才有东西可说 —— 不亮的时候它是 display:none，
+    // 键盘本来就够不着，也不该够得着。
+    await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    const dot = page.locator('#ai-translator-float-ball .ai-translator-status-dot');
+    await expect(dot).toHaveAttribute('data-state', 'paused');
+    const spent = sentTexts.length;
+
+    // 状态点：读屏靠 aria-label 认它，Enter 把说明条打开。
+    const label = await dot.getAttribute('aria-label');
+    expect(label && label.length).toBeTruthy();
+    await dot.press('Enter');
+    await expect(page.locator('#ai-translator-auto-bar')).toHaveAttribute('data-mode', 'explain');
+
+    // ···：平时 opacity:0，焦点一落上去就得显形，否则焦点在人眼里凭空消失一格。
+    const more = page.locator('#ai-translator-float-ball .ai-translator-ball-more');
+    await expect(more).toHaveCSS('opacity', '0');
+    await more.focus();
+    await expect(more).toHaveCSS('opacity', '1');
+    await more.press('Enter');
+    await expect(page.locator('#ai-translator-float-menu')).toBeVisible();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+
+    // 菜单里的几项本身也得进得了焦点。（不走 Tab：此刻说明条还开着，中间隔着
+    // 它那颗按钮 —— 两个浮层同时开着时的 Tab 次序不是什么值得钉死的契约。）
+    await page.locator('#ai-translator-float-menu .ai-translator-menu-item').first().focus();
+    const inMenu = await page.evaluate(() => (document.activeElement && document.activeElement.className) || '');
+    expect(inMenu).toContain('ai-translator-menu-item');
+
+    // 键盘上没有「别处」可点，Esc 是菜单唯一的退路（那一处在 content-selection.js，
+    // 它连着划词浮层一起关）。菜单一撤，焦点正在里头 —— 得把它送回 ··· 上，
+    // 否则要从头 Tab 一整页才回得到球上。
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#ai-translator-float-menu')).toHaveCount(0);
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    const focused = await page.evaluate(() => (document.activeElement && document.activeElement.className) || '');
+    expect(focused).toContain('ai-translator-ball-more');
+
+    // 全程没有一下是花钱的。
+    expect(sentTexts.length).toBe(spent);
+  } finally {
+    await close();
+  }
+});
+
+test('他按下的暂停，别的标签页改一条规则也顶不开', async ({ page, context }) => {
+  // 暂停只改调度层的 status，而 status 会被下一次 start() 盖掉 —— 而 start()
+  // 常常是别人替他叫的：另一个标签页在追问条上勾了「总是」，siteRules 一落地，
+  // 这一页的 onSettingsChanged 就重开一轮。他按下的暂停当场失效，页面自己又翻
+  // 起来了，而他没有碰过任何东西。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).toHaveCount(1, { timeout: 30000 });
+
+    const paused = await sendMessageToActiveTab(page, { type: 'SET_AUTO_PAUSED', paused: true });
+    expect(paused.status).toBe('paused');
+    const spent = sentTexts.length;
+
+    // 停下之后这一页又长出一段。重开一轮的话，它一定会被翻掉 —— 这是「有没有
+    // 真的停住」唯一看得见的证据。
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.id = 'later';
+      p.textContent = 'A second ledger arrived on the evening tide, unsigned and already damp.';
+      document.getElementById('box').appendChild(p);
+    });
+
+    // 别的标签页写了一条跟这一页无关的规则 —— siteRules 整张表变了，这一页照样
+    // 收到通知。
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.writeUserRule('elsewhere.test', 'always'));
+
+    await page.waitForTimeout(3000);
+    const after = await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' });
+    expect(after.auto.status).toBe('paused');
+    await expect(blocks).toHaveCount(1);
+    expect(sentTexts.length).toBe(spent);
+  } finally {
+    await close();
+  }
+});

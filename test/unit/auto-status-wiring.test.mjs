@@ -311,7 +311,8 @@ test('追问的号要先领到手才画条子 —— 三次额度经不起两个
   assert.match(status, /updateAskCount\('bump'\)\.then\(\(count\) => \{[\s\S]*?count > MAX_ASKS[\s\S]*?askSlot = 'denied'/);
 
   // 画之前的那道闸门：号没到手就先把条子收了，等 then 回来再 render 一次。
-  assert.match(status, /if \(mode === 'ask' && askSlot !== 'granted'\) \{\s*reserveAskSlot\(\);\s*removeBar\(\);\s*return;\s*\}/);
+  // 领号那一下还得先问这一页看不看得见（见「追问的号只在看得见的标签页里领」）。
+  assert.match(status, /if \(mode === 'ask' && askSlot !== 'granted'\) \{\s*if \(document\.visibilityState === 'visible'\) reserveAskSlot\(\);\s*removeBar\(\);\s*return;\s*\}/);
 
   // 而领到号之后，本地那个数已经被自己这一次加过了 —— 第三次正好等于 3，再拿
   // 它和上限比就会把自己问掉。所以 granted 直接放行，本地判断只是省一趟往返。
@@ -378,9 +379,9 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
   // 重开一轮，而那一轮要是直接在隐藏闩上返回，status 和 reason 都还停在上一次，
   // 这一行照着 status 画出来还是「开」—— 再点一次又写一遍 never，怎么点都关不掉。
   const auto = code('content/content-auto-translate.js');
-  const guard = auto.slice(auto.indexOf('if (ctx.state.translationsVisible === false)'));
+  const guard = auto.slice(auto.indexOf('if (ctx.state.translationsVisible === false || pausedByUser)'));
   assert.match(guard.slice(0, 900),
-    /const hidden = resolve\(pageLang\);\s*reason = hidden\.reason;\s*setStatus\(hidden\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
+    /const held = resolve\(pageLang\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
     '隐藏闩得先重判再返回，不能原地掉头');
   // 规则改了确实会重开一轮，否则上面那段永远跑不到。
   const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));
@@ -412,4 +413,82 @@ test('「这一下是不是收起」只有一个出处 —— 按钮上那行字
   const pageSide = code('content/content-page-translation.js');
   const toggle = pageSide.slice(pageSide.indexOf('function togglePageTranslation()'));
   assert.match(toggle.slice(0, 500), /translationsVisible !== false\)[\s\S]*?return 'restored';[\s\S]*?translatePage\(\);/);
+});
+
+test('追问的号只在看得见的标签页里领 —— 后台那一串不能把三次机会花光', () => {
+  // 中键点开的十条链接、浏览器预渲染的那一份，都会一路跑到 render()。条子在那些
+  // 标签页里谁也没见过，号却照领 —— 三次机会在用户面前一次没露过的情况下花光，
+  // 这个域名从此永远安静。
+  const view = code('content/content-auto-status.js');
+  assert.match(view,
+    /if \(document\.visibilityState === 'visible'\) reserveAskSlot\(\);/,
+    '领号前得先确认这一页看得见');
+  assert.equal((view.match(/reserveAskSlot\(\)/g) || []).length, 2, '一处定义一处调用，多一处就是又开了一条不看可见性的路');
+  // 而且「等它被看见了再领」得真有人来叫第二遍：预渲染转正走的也是这个事件。
+  assert.match(view,
+    /document\.addEventListener\('visibilitychange', \(\) => \{\s*if \(document\.visibilityState === 'visible'\) render\(\);\s*\}\);/,
+    '页面转到前台时必须重画一次，否则那张条子永远不会出现');
+});
+
+test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把它顶开', () => {
+  // status 会被下一次 start() 覆盖，而 start() 常常是别人替他叫的：另一个标签页
+  // 在追问条上点了「总是」，siteRules 一落地，这一页的 onSettingsChanged 就重开
+  // 一轮 —— 他按下的暂停当场失效，页面自己又翻起来了。
+  const auto = code('content/content-auto-translate.js');
+  assert.match(auto, /let pausedByUser = false;/);
+  assert.match(auto, /if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{/, 'start() 得认这道闩');
+
+  const pause = auto.slice(auto.indexOf('function pauseCurrentPage()'), auto.indexOf('function resumeCurrentPage()'));
+  assert.match(pause, /pausedByUser = true;/);
+
+  // 解闩的只有用户自己后说的那两句：继续，或者「翻译整页」。
+  assert.equal((auto.match(/pausedByUser = false;/g) || []).length, 3,
+    '一处声明、两处解闩（resumeCurrentPage / markPageExplicit），多一处就是又开了一条自己会解闩的路');
+  const resume = auto.slice(auto.indexOf('function resumeCurrentPage()'), auto.indexOf('function markPageExplicit()'));
+  assert.match(resume, /pausedByUser = false;/);
+  const explicit = auto.slice(auto.indexOf('function markPageExplicit()'));
+  assert.match(explicit.slice(0, 700),
+    /const wasHeld = pausedByUser;\s*pausedByUser = false;\s*if \(explicit && !wasHeld\) return;/,
+    '闩解了就得重开一轮 —— 哪怕这一页早就表过态，那一轮正停在闩上');
+});
+
+test('球上那两颗按钮键盘够得着', () => {
+  // 计划里写死的那一行：追问条、状态点、popup 四行都要能 Tab / Enter。span 上挂
+  // 一个 role="button" 不算 —— 它既不进 Tab 序，也不认 Enter。
+  const ball = code('content/content-float-ball.js');
+  assert.match(ball, /<button type="button" class="ai-translator-status-dot"/);
+  assert.match(ball, /<button type="button" class="ai-translator-ball-more"/);
+  assert.doesNotMatch(ball, /<span class="ai-translator-(status-dot|ball-more)"/, '回到 span 就等于键盘又够不着了');
+
+  // 鼠标那条路摊在 mousedown/mouseup 一对事件上（要分辨拖拽），键盘一个字都跑不到，
+  // 所以得自己派活；<button> 合成的那一下 click 要挡掉，否则将来一按点两回。
+  const keydown = ball.slice(ball.indexOf("state.floatBall.addEventListener('keydown'"));
+  assert.ok(keydown, '球上没有键盘入口');
+  assert.match(keydown.slice(0, 700), /if \(e\.key !== 'Enter' && e\.key !== ' ' && e\.key !== 'Spacebar'\) return;/);
+  assert.match(keydown.slice(0, 700), /const hit = pressZone\(e\.target\);[\s\S]*?e\.preventDefault\(\);/,
+    '落在哪一颗上得问同一个 pressZone，别在键盘这条路上再判一遍');
+  assert.match(keydown.slice(0, 700), /if \(hit === 'menu'\) toggleFloatMenu\(\);/);
+  assert.match(keydown.slice(0, 700), /ctx\.toggleAutoStatusExplain\(\)/);
+
+  // 「Esc 关掉浮层」统管在 content-selection.js 那一处（它连着 popup、划词、悬停
+  // 一起关）。这里再挂一个就是同一个问题有了两个主人 —— 迟早一个关了一个没关。
+  assert.doesNotMatch(ball, /'Escape'/, 'Esc 的主人是 content-selection.js，不是悬浮球');
+  assert.match(code('content/content-selection.js'), /if \(ctx\.hideFloatMenu\) ctx\.hideFloatMenu\(\);/);
+  // 而菜单一撤焦点就掉回 <body>：焦点原本在菜单里的那一种，得把它送回 ··· 上。
+  // 鼠标点别处关的不算 —— 那时候焦点本来就不在这儿，抢回来是打断。
+  assert.match(ball,
+    /const returnFocus = state\.floatMenu\.contains\(document\.activeElement\);[\s\S]*?if \(returnFocus\) \{[\s\S]*?more\.focus\(\);/);
+  assert.match(ball, /function setMoreExpanded\(open\)/);
+  assert.match(ball, /more\.setAttribute\('aria-expanded', open \? 'true' : 'false'\)/);
+
+  // 状态点没有文字，读屏只能靠 aria-label，而它说的必须和 title 是同一句。
+  const view = code('content/content-auto-status.js');
+  assert.match(view, /dot\.title = line;\s*dot\.setAttribute\('aria-label', line\);/);
+
+  // ··· 平时 opacity:0。焦点停在一个看不见的东西上，人看到的是焦点凭空消失了一格。
+  const css = read('content/content.css');
+  assert.match(css, /#ai-translator-float-ball:focus-within \.ai-translator-ball-more \{/);
+  for (const cls of ['status-dot', 'ball-more']) {
+    assert.match(css, new RegExp(`#ai-translator-float-ball \\.ai-translator-${cls}:focus-visible`), `${cls} 没有焦点环`);
+  }
 });

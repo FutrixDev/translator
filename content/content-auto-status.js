@@ -185,7 +185,11 @@
     if (!dot) return;
     const next = dotState(latest);
     dot.dataset.state = next;
-    dot.title = latest ? explainLine(latest) : '';
+    // 这颗点没有文字，它的名字就是它此刻在说的那句话 —— 鼠标看 title，读屏看
+    // aria-label，两边说的必须是同一句。
+    const line = latest ? explainLine(latest) : '';
+    dot.title = line;
+    dot.setAttribute('aria-label', line);
   }
 
   // ------------------------------------------------------------------ 条子
@@ -286,7 +290,11 @@
     // 追问得先要到号。本页读到的计数可能和另外三个标签页读到的是同一个 0，
     // 所以这里不认它，认服务工作者加完之后发回来的那个数（见 reserveAskSlot）。
     if (mode === 'ask' && askSlot !== 'granted') {
-      reserveAskSlot();
+      // 号只在**看得见**的标签页里要。后台标签页（中键点开的那一串）和预渲染的
+      // 那一份都会走到这里，而那张条子谁也没看见 —— 三次机会就这么在用户面前一次
+      // 没露过的情况下花光，这个域名从此永远安静。等这一页真的被看见了再要：
+      // visibilitychange 会把 render() 重新叫一遍（预渲染转正也走这个事件）。
+      if (document.visibilityState === 'visible') reserveAskSlot();
       removeBar();
       return;
     }
@@ -324,6 +332,11 @@
 
   ctx.setupAutoStatus = function () {
     if (!ctx.autoTranslate) return;
+    // 这一页从后台转到前台（或者预渲染转正）的那一刻，才轮到它开口问 ——
+    // 要号这件事压在 render() 里那道可见性闸后面，没人叫它就一直不问。
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') render();
+    });
     // onStateChange 订阅的那一刻就会回调一次当前状态，所以这里不用自己先读一遍
     // state() —— 那会是同一份快照画两遍。
     ctx.autoTranslate.onStateChange((snap) => {

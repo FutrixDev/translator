@@ -88,6 +88,14 @@
     let lastError = null;
     // 用户在这一页已经表过态（点过「翻译整页」）。换路由就忘掉。
     let explicit = false;
+    // 「这一页先别翻了」—— popup 上按的暂停，或者把译文藏起来（两条都走
+    // pauseCurrentPage）。
+    //
+    // 必须记成一道闩，不能只把状态改成 PAUSED：状态会被下一次 start() 覆盖，而
+    // start() 是别人替他叫的 —— 另一个标签页在追问条上点了「总是」，siteRules
+    // 一落地，这一页的 onSettingsChanged 就重开一轮，他按下的暂停当场失效，页面
+    // 自己又翻起来了。闩只有他自己解得开（继续 / 翻译整页），或者换一个文档。
+    let pausedByUser = false;
     let pageLang = null;
     let langResolved = false;
     let sampleText = '';
@@ -182,17 +190,17 @@
       bumpSession(why || 'start');
       stopDiscovery();
       clearSample();
-      if (ctx.state.translationsVisible === false) {
-        // 「我现在想看原文」拦住的是**开始翻**，不是**重新判**。判定还得跟上：
-        // 用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮要是直接
-        // 停在 PAUSED，reason 和状态都还停在上一次 —— popup 照着状态画，那个开关
-        // 会一直显示「开」，再点一次又写一遍 never，怎么点都关不掉。
+      if (ctx.state.translationsVisible === false || pausedByUser) {
+        // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
+        // 还得跟上：用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮
+        // 要是直接停在 PAUSED，reason 和状态都还停在上一次 —— popup 照着状态画，
+        // 那个开关会一直显示「开」，再点一次又写一遍 never，怎么点都关不掉。
         //
         // 判出 off 就如实说 off（这一页往后也不会自己翻了）；还该翻的照旧停着 ——
-        // 藏着译文的那一页就是暂停，这条闩不动。
-        const hidden = resolve(pageLang);
-        reason = hidden.reason;
-        setStatus(hidden.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
+        // 停着的那一页就是暂停，这两条闩都不动。
+        const held = resolve(pageLang);
+        reason = held.reason;
+        setStatus(held.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
       broken = false;
@@ -511,6 +519,7 @@
     // 此刻正跑着的那一轮和挂着的观察器要立刻停下。
     function pauseCurrentPage() {
       if (status === STATUS.OFF || status === STATUS.PAUSED) return;
+      pausedByUser = true;
       bumpSession('paused');
       stopDiscovery();
       clearSample();
@@ -529,6 +538,9 @@
      */
     function resumeCurrentPage() {
       if (status !== STATUS.PAUSED && status !== STATUS.ERROR) return;
+      // 解闩的只有这一句。放在最前面是因为藏着译文那条路要拐个弯（下面），回头
+      // 还会再走一次这里 —— 两次都解，解的是同一道。
+      pausedByUser = false;
       if (ctx.state.translationsVisible === false && ctx.revealHiddenTranslations) {
         ctx.revealHiddenTranslations();
         return;
@@ -546,7 +558,13 @@
      */
     function markPageExplicit() {
       if (!ctx.settings.autoTranslate) return;
-      if (explicit) return;
+      // 「翻译整页」是比暂停更晚、更明确的一句话，所以它解闩 —— 否则点完整页
+      // 翻译，这一页新长出来的内容照旧不跟，而他刚刚要的就是翻。
+      //
+      // 解了闩就得重开一轮，哪怕这一页早就表过态了：那一轮正停在闩上。
+      const wasHeld = pausedByUser;
+      pausedByUser = false;
+      if (explicit && !wasHeld) return;
       explicit = true;
       start('explicit');
     }
