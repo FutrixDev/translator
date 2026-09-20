@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "Kostenlose KI-Übersetzung: Webseiten, Fachartikel (Formeln/LaTeX erhalten), Live-YouTube-Untertitel, PDFs und Comicseiten.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Diese Seite übersetzen / wiederherstellen",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

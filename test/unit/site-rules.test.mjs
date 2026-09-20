@@ -46,6 +46,31 @@ test('the blocklist outranks the user own always — that is what it is for', ()
   assert.equal(docs.reason, R.USER_ALWAYS);
 });
 
+test('总开关关着也答得出「这一页拉黑了」—— decide() 的那个答案会被遮住', () => {
+  // 阶梯第一档就回 GLOBAL_OFF，黑名单被它整个遮住。界面上要据此把站点开关灰掉
+  // 的地方，问的必须是 isBlocklisted() 这一问：总开关关着恰恰是那个开关最该灰
+  // 着的时候 —— 点下去写的是一条永远生效不了的 always，还顺手把总开关替所有别
+  // 的站点打开了。
+  const off = { autoTranslate: false, autoTranslateLangs: [] };
+  assert.equal(verdict({ host: 'secure.chase.com', settings: off }).reason, R.GLOBAL_OFF);
+  assert.equal(SiteRules.isBlocklisted('secure.chase.com', '/'), true);
+
+  // 而它和阶梯给的答案必须是同一个 —— 两处各判一遍，迟早不一致。黑名单表和内
+  // 置表里的 never 都算，对外只有一个说法。
+  const probes = [
+    ['secure.chase.com', '/'], ['mail.google.com', '/'], ['hmrc.gov.uk', '/'],
+    ['x.com', '/home'], ['news.google.com', '/'], ['example.com', '/article/1'],
+    ['govtech.com', '/'],
+  ];
+  for (const [host, path] of probes) {
+    assert.equal(
+      SiteRules.isBlocklisted(host, path),
+      verdict({ host, path }).reason === R.BLOCKLIST,
+      `${host}${path}`,
+    );
+  }
+});
+
 test('the blocklist matches subdomains, and does not match a longer public suffix', () => {
   assert.equal(verdict({ host: 'www.irs.gov' }).reason, R.BLOCKLIST);
   assert.equal(verdict({ host: 'secure.chase.com' }).reason, R.BLOCKLIST);
@@ -136,29 +161,48 @@ test('the language judgement agrees with the one the captions use', () => {
 
 // ------------------------------------------------------------ 主机名
 
-test('normalizeHost keeps the registrable domain, and under-strips on purpose', () => {
+test('normalizeHost keys a rule on the exact host — a shared suffix is not one site', () => {
   const n = SiteRules.normalizeHost;
-  assert.equal(n('mobile.x.com'), 'x.com');
-  assert.equal(n('www.reddit.com'), 'reddit.com');
-  assert.equal(n('old.reddit.com'), 'reddit.com');
-  assert.equal(n('X.COM.'), 'x.com');          // 大小写和根点
-  assert.equal(n('a.b.c.example.com'), 'example.com');
+  assert.equal(n('mobile.x.com'), 'mobile.x.com');
+  assert.equal(n('www.reddit.com'), 'reddit.com');   // 只脱 www.
+  assert.equal(n('old.reddit.com'), 'old.reddit.com');
+  assert.equal(n('X.COM.'), 'x.com');                // 大小写和根点
+  assert.equal(n('a.b.c.example.com'), 'a.b.c.example.com');
 
-  // 两段公共后缀：剥到 co.uk 就等于把整个英国圈进一条规则。
+  // 多租户后缀：alice 和 bob 是两个互不相干的人，不能共用一条规则。浏览器里
+  // 没有公共后缀表，剥「注册域」的启发式必然把他们剥成同一个键。
+  assert.equal(n('alice.github.io'), 'alice.github.io');
+  assert.notEqual(n('alice.github.io'), n('bob.github.io'));
+  assert.notEqual(n('a.vercel.app'), n('b.vercel.app'));
+  assert.notEqual(n('a.pages.dev'), n('b.pages.dev'));
+
+  // 两段公共后缀也一样，不再猜。
   assert.equal(n('www.bbc.co.uk'), 'bbc.co.uk');
-  assert.equal(n('shop.example.com.cn'), 'example.com.cn');
-  assert.equal(n('lab.example.ac.jp'), 'example.ac.jp');
+  assert.equal(n('shop.example.com.cn'), 'shop.example.com.cn');
 
-  // 没有注册域可言的主机原样返回，不能被切成 '0.1'。
   assert.equal(n('10.0.0.7'), '10.0.0.7');
   assert.equal(n('localhost'), 'localhost');
   assert.equal(n(''), '');
   assert.equal(n(null), '');
 });
 
+test('one tenant choice does not decide for the tenant next door', () => {
+  // alice 上点了「总是翻译」，存在 alice.github.io 下。bob 的站点不受影响——
+  // 少剥一层只是范围小，多剥一层是替用户做了他没做的决定。
+  const rules = { 'alice.github.io': 'always' };
+  assert.equal(verdict({ host: 'alice.github.io', userRules: rules }).reason, R.USER_ALWAYS);
+  assert.equal(verdict({ host: 'bob.github.io', userRules: rules }).verdict, 'ask');
+  assert.equal(verdict({ host: 'github.io', userRules: rules }).verdict, 'ask');
+  // 「不要翻译」同理：blogspot 上拉黑一个博客不该拉黑所有博客。
+  const never = { 'a.blogspot.com': 'never' };
+  assert.equal(verdict({ host: 'a.blogspot.com', userRules: never }).reason, R.USER_NEVER);
+  assert.equal(verdict({ host: 'b.blogspot.com', userRules: never }).verdict, 'ask');
+});
+
 test('a user rule is looked up along the parent chain, so normalizeHost is a convenience', () => {
-  // 归一化只决定“点总是翻译时存在哪个键下”。查的时候沿父域一路往上，所以就算
-  // 某个冷门后缀被保守地少剥了一层，精确写下的那条规则依然命中。
+  // 归一化只决定“点总是翻译时存在哪个键下”，而它现在存的就是这台主机本身。
+  // 想覆盖整个站点靠的是查找这一头：沿父域一路往上，所以在 example.co.uk 上表
+  // 的态照样命中 shop.example.co.uk。
   const rules = { 'example.co.uk': 'always' };
   assert.equal(verdict({ host: 'shop.example.co.uk', userRules: rules }).reason, R.USER_ALWAYS);
   assert.equal(verdict({ host: 'example.co.uk', userRules: rules }).reason, R.USER_ALWAYS);
@@ -270,5 +314,291 @@ test('decide survives being asked nothing at all', () => {
     const d = SiteRules.decide(input);
     assert.equal(d.verdict, 'off');
     assert.equal(d.reason, R.GLOBAL_OFF);
+  }
+});
+
+// ---------------------------------------------------------------- 写入
+
+// 写入在调用时才去看 globalThis.chrome，所以这里塞一个假的就够了。
+//
+// runtime.sendMessage 也要有：页面里的 writeUserRule 只是把这件事发给服务工作者
+// （见 background.js 的 SITE_RULES_WRITE），真正动存储的是那边的 applyWrite。
+// 这里把那一跳接回来，测到的就是整条路，而不是半条。
+function fakeChrome(initial = {}) {
+  const store = Object.assign({}, initial);
+  const delay = typeof initial.__setDelay === 'number' ? initial.__setDelay : 0;
+  delete store.__setDelay;
+  return {
+    store,
+    chrome: {
+      runtime: {
+        sendMessage: async (message) => ({ value: await SiteRules.applyWrite(message) })
+      },
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            const out = {};
+            for (const key of Object.keys(defaults)) {
+              out[key] = key in store ? store[key] : defaults[key];
+            }
+            return out;
+          },
+          set: async (patch) => {
+            // 慢一点的 set 才照得出「两个标签页同时写」：读和写之间有真实的空档。
+            if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+            Object.assign(store, patch);
+          }
+        }
+      }
+    }
+  };
+}
+
+test('writeUserRule 写的是 normalizeHost 认的那个键', async () => {
+  // 追问条拿到的是 location.hostname（`www.example.com`），decide() 查的是归一化
+  // 之后的 `example.com`。两边各自剥一次，迟早剥得不一样 —— 那时候规则写进去了，
+  // 却永远查不出来。
+  const fake = fakeChrome();
+  globalThis.chrome = fake.chrome;
+  try {
+    const key = await SiteRules.writeUserRule('www.example.com', 'always');
+    assert.equal(key, SiteRules.normalizeHost('www.example.com'));
+    assert.deepEqual(fake.store.siteRules, { [key]: 'always' });
+    // 写进去的立刻要能被判定读出来。
+    assert.equal(SiteRules.decide(ask({ userRules: fake.store.siteRules })).reason, R.USER_ALWAYS);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('关掉一个站点写的是 never，不是把它的规则删掉', async () => {
+  // x.com 在内置名单里就是 always。删掉用户规则等于让判定落回内置那一条，
+  // 于是「关掉」的下一次访问又自动翻了。
+  const fake = fakeChrome({ siteRules: { 'x.com': 'always' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('x.com', 'never');
+    assert.deepEqual(fake.store.siteRules, { 'x.com': 'never' });
+    assert.equal(SiteRules.decide(ask({ host: 'x.com', userRules: fake.store.siteRules })).reason, R.USER_NEVER);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('writeUserRule 只认 always / never，且不动别的站点', async () => {
+  const fake = fakeChrome({ siteRules: { 'other.com': 'never' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('example.com', 'sometimes');
+    assert.deepEqual(fake.store.siteRules, { 'other.com': 'never' }, '不认的状态不该落盘');
+    await SiteRules.writeUserRule('example.com', 'always');
+    assert.deepEqual(fake.store.siteRules, { 'other.com': 'never', 'example.com': 'always' });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('两个页面同时写，谁的选择都不会被对方盖掉', async () => {
+  // 两边都是「整份读出来、改一个键、整份写回」。不排队的话，两个内容脚本同时
+  // 读到同一份旧对象，后写的那份把先写的整条抹掉 —— 用户在另一个标签页上点的
+  // 「关」凭空消失，而且哪里都不报错。
+  const fake = fakeChrome({ __setDelay: 5 });
+  globalThis.chrome = fake.chrome;
+  try {
+    await Promise.all([
+      SiteRules.writeUserRule('a.test', 'always'),
+      SiteRules.writeUserRule('b.test', 'never'),
+      SiteRules.updateAskCount('c.test', 'bump'),
+      SiteRules.updateAskCount('c.test', 'bump')
+    ]);
+    assert.deepEqual(fake.store.siteRules, { 'a.test': 'always', 'b.test': 'never' });
+    // 同一个域名被问了两次就是两次 —— 各读各的会停在 1，三次的额度永远攒不满。
+    assert.deepEqual(fake.store.siteAskCount, { 'c.test': 2 });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('表态之后计数清零，清的是这一条不是整张表', async () => {
+  const fake = fakeChrome({ siteAskCount: { 'a.test': 2, 'b.test': 1 } });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('a.test', 'clear'), 0);
+    assert.deepEqual(fake.store.siteAskCount, { 'b.test': 1 });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+// 和 shared/site-rules.js 里的 MAX_ITEM_BYTES 一致。
+const MAX_ASK_BYTES = 6 * 1024;
+const askBytes = (counts) => new TextEncoder().encode(JSON.stringify(counts)).length;
+
+// 撑到刚好超过预算为止。按条数算不出这个数：一条占多少字节取决于域名有多长，
+// 这正是上限要按字节而不是按条数的理由。
+function overflowingCounts(seed) {
+  const counts = Object.assign({}, seed);
+  for (let i = 0; askBytes(counts) <= MAX_ASK_BYTES; i++) {
+    counts[`host-${String(i).padStart(4, '0')}.example.test`] = 9;
+  }
+  return counts;
+}
+
+test('追问计数不会一路长到把同步配额撑爆', async () => {
+  // 这张表只为「同一个站点最多问几次」而存在，却按域名无限长。同步存储每项
+  // 8KB，撑满那天 set() 直接失败、调用方只打一行日志 —— 从此所有站点都记不上
+  // 数，追问上限静悄悄地不再生效。
+  const fake = fakeChrome({ siteAskCount: overflowingCounts({ 'seldom.test': 1 }) });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('fresh.test', 'bump'), 1);
+    const kept = fake.store.siteAskCount;
+    assert.ok(askBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${askBytes(kept)} 字节`);
+    assert.equal(kept['fresh.test'], 1, '刚记下的这一条必须留着');
+    assert.equal(kept['seldom.test'], undefined, '先扔问得最少的：重新问一次的代价最小');
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('域名越长，装得下的站点越少 —— 上限量的是字节', async () => {
+  // 按条数封顶的版本在这里会放行：两百条以内，可每条都是一个 200 字符的域名，
+  // 序列化出来远远超过 8KB，set() 照样会被拒。
+  const long = (i) => `${'sub.'.repeat(40)}h${i}.example.test`;
+  const counts = {};
+  for (let i = 0; i < 60; i++) counts[long(i)] = 5;
+  assert.ok(Object.keys(counts).length < 200, '条数还远没到两百');
+  assert.ok(askBytes(counts) > MAX_ASK_BYTES, '字节数却早就超了');
+
+  const fake = fakeChrome({ siteAskCount: counts });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.updateAskCount('fresh.test', 'bump');
+    assert.ok(askBytes(fake.store.siteAskCount) <= MAX_ASK_BYTES);
+    assert.equal(fake.store.siteAskCount['fresh.test'], 1);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('挤位置的时候，不挤掉刚刚动过的那一条', async () => {
+  // 正在追问的就是计数最小的那个站点：要是「扔最小的」连它一起扔了，这一条
+  // 计数永远停在 1，用户会被同一个站点问到天荒地老。
+  const fake = fakeChrome({
+    siteAskCount: overflowingCounts({ 'now.test': 1, 'idle.test': 1 })
+  });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('now.test', 'bump'), 2);
+    const kept = fake.store.siteAskCount;
+    assert.ok(askBytes(kept) <= MAX_ASK_BYTES);
+    assert.equal(kept['now.test'], 2);
+    assert.equal(kept['idle.test'], undefined);
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+// ------------------------------------------------ 站点规则表也有同一道预算
+
+const ruleBytes = (rules) => new TextEncoder().encode(JSON.stringify(rules)).length;
+
+// 撑到刚好超过预算为止。`under` 决定灌进去的是哪一种：给了父域就灌它的子域
+// （每一条都被父域盖着，压缩挑得出来），不给就灌互不相干的域名（谁也盖不住
+// 谁，压缩一条都动不了）。
+function overflowingRules(seed, under = '') {
+  const rules = Object.assign({}, seed);
+  for (let i = 0; ruleBytes(rules) <= MAX_ASK_BYTES; i++) {
+    rules[under ? `sub-${i}.${under}` : `filler-${i}.example-${i}.test`] = 'always';
+  }
+  return rules;
+}
+
+test('规则表挤爆了，先收掉「收了也查不出差别」的那些', async () => {
+  // 用户先在 x.com 上点了「总是翻译」，后来在 mobile.x.com 上又点了一次同样
+  // 的。lookupUserRule 本来就会沿父域往上找，所以子域那条删了也没人看得出来
+  // —— 同步存储每项 8KB，这种条目正是该先腾出去的。
+  const before = overflowingRules({ 'x.com': 'always', 'mobile.x.com': 'always' }, 'x.com');
+  const fake = fakeChrome({ siteRules: before });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    const kept = fake.store.siteRules;
+    assert.ok(ruleBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${ruleBytes(kept)} 字节`);
+    assert.ok(Object.keys(kept).length < Object.keys(before).length, '一条都没收');
+    assert.equal(kept['x.com'], 'always', '盖住它们的那条不能跟着走');
+    assert.equal(kept['new.test'], 'never', '刚写下的那一条永远留着');
+
+    // 「多余」的定义只有一条：收掉之后，原来每一个键查出来的答案一个字都没变。
+    // 谁先被收掉是顺序问题，这个才是规则。
+    for (const host of Object.keys(before)) {
+      assert.equal(
+        SiteRules.lookupUserRule(kept, host),
+        SiteRules.lookupUserRule(before, host),
+        `${host} 的判定被压缩改掉了`
+      );
+    }
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('用户自己写的例外，挤成什么样都不收', async () => {
+  // ads.x.com=never 是用户在 x.com=always 底下挖的一个洞。它和父域的状态相反，
+  // 收掉它等于替他改主意 —— 而这张表里的每一条都是他亲口说过的话。
+  // localhost 下面那条同理：lookupUserRule 不会为 wiki.localhost 去问
+  // localhost（光秃秃的末标签永远不问），收掉它规则就直接失效了。
+  // 两条例外的键名故意比灌进去的那些长：压缩从最长的扫起，它们头一批就被拿起
+  // 来试。短的话会一直轮不到，这个测试就什么都没测。
+  const EXCEPTION = 'advertising-network.corporate.x.com';
+  const SINGLE_LABEL = 'wiki-internal-directory.localhost';
+  const fake = fakeChrome({
+    siteRules: overflowingRules({
+      'x.com': 'always', [EXCEPTION]: 'never',
+      'localhost': 'always', [SINGLE_LABEL]: 'always'
+    })
+  });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    const kept = fake.store.siteRules;
+    assert.equal(kept[EXCEPTION], 'never', '相反的例外被收掉了');
+    assert.equal(kept[SINGLE_LABEL], 'always', '单标签主机没有父域可落');
+    assert.equal(SiteRules.lookupUserRule(kept, EXCEPTION), 'never');
+    assert.equal(SiteRules.lookupUserRule(kept, SINGLE_LABEL), 'always');
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('没挤爆就一条都不动 —— 压缩不是平时的清理工', async () => {
+  // 子域那条今天多余，不等于明天多余：用户哪天把 x.com 改成 never，留着的
+  // mobile.x.com=always 还护得住那个子域，平白收掉了就跟着变成 never —— 一次
+  // 没人看见的改主意。顶着配额失败去换这个风险值得，平白无故不值得。
+  const fake = fakeChrome({ siteRules: { 'x.com': 'always', 'mobile.x.com': 'always' } });
+  globalThis.chrome = fake.chrome;
+  try {
+    await SiteRules.writeUserRule('new.test', 'never');
+    assert.deepEqual(fake.store.siteRules, {
+      'x.com': 'always', 'mobile.x.com': 'always', 'new.test': 'never'
+    });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('压缩也腾不出地方，就让写入失败传出去', async () => {
+  // 配额是硬的，压缩只是泄压阀。真挤不下的时候，调用方必须看得见失败 —— popup
+  // 上那个开关是乐观控件，它已经在用户眼里动过了，吞掉失败就是「按钮动了、设置
+  // 没存上」，而页面下一次打开照旧。
+  const fake = fakeChrome({ siteRules: overflowingRules({}) });
+  fake.chrome.storage.sync.set = async () => {
+    throw new Error('QUOTA_BYTES_PER_ITEM quota exceeded');
+  };
+  globalThis.chrome = fake.chrome;
+  try {
+    await assert.rejects(SiteRules.writeUserRule('new.test', 'never'), /quota/i);
+  } finally {
+    delete globalThis.chrome;
   }
 });

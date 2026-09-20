@@ -84,10 +84,10 @@
 
 /* Not inherited — a bare-tag rule can hit any single node in the subtree, and
    opacity/filter/transform compound as it descends. Pin them on every node. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]),
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *::after {
   box-sizing: border-box;
   opacity: 1;
   filter: none;
@@ -99,16 +99,16 @@
    box's line-height would stop reaching the text it wraps. `inherit` still
    blocks a direct hit like `button { text-transform: uppercase }` or
    `body { line-height: 1.8 }` without breaking the chain. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) {
   visibility: visible;
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) *::after {
   visibility: inherit;
   line-height: inherit;
   letter-spacing: inherit;
@@ -168,7 +168,7 @@
    Adding a control to a panel needs nothing here; adding a *rule* for one
    needs the `html body` + root prefix, or the theme's hover takes it back.
    That is asserted by test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-auto-bar"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -1304,6 +1304,208 @@ html body [id="ai-translator-progress"] .ai-translator-progress-close:active {
   transform: scale(1.1);
 }
 
+/* 状态点：自动翻译此刻的样子，画在球上而不是另起一个角标 —— 一页上只该有一个
+   「翻译在这儿」的锚点。不亮的时候是 display:none 而不是透明：一颗常亮的灰点会
+   被当成可以点的东西，而在一个不翻的页面上它没有任何可点的含义。 */
+#ai-translator-float-ball .ai-translator-status-dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(10, 10, 16, 0.9);
+  cursor: pointer;
+}
+
+#ai-translator-float-ball .ai-translator-status-dot[data-state="none"] {
+  display: none;
+}
+
+/* 6px 的东西点不中。透明的 ::before 把可点区域撑到 16px，看上去仍然是 6px。 */
+#ai-translator-float-ball .ai-translator-status-dot::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+}
+
+#ai-translator-float-ball .ai-translator-status-dot[data-state="running"] {
+  background: #06b6d4;
+  animation: ai-translator-dot-breathe 1.6s ease-in-out infinite;
+}
+
+#ai-translator-float-ball .ai-translator-status-dot[data-state="partial"] {
+  background: #f5a524;
+}
+
+#ai-translator-float-ball .ai-translator-status-dot[data-state="paused"] {
+  background: #8b8b9a;
+}
+
+#ai-translator-float-ball .ai-translator-status-dot[data-state="error"] {
+  background: #f43f5e;
+}
+
+/* 防护栏把每个后代的 opacity 钉成 1，但动画的层级在普通声明之上——这也正是那
+   段重置里一个 !important 都不能有的原因。 */
+@keyframes ai-translator-dot-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 球上的 ···：菜单从「单击球」挪到了这里，因为单击球现在是翻译/还原。
+   它压在球的边缘上，不是飘在外面 —— 中间留一丝空隙的话，指针从球移过去的路上
+   就会离开球，:hover 一断，这颗按钮在指针到达之前就消失了。 */
+#ai-translator-float-ball .ai-translator-ball-more {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2a2a3d;
+  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.35);
+  color: #e8e8f0;
+  font-size: 11px;
+  letter-spacing: -0.5px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+#ai-translator-float-ball:hover .ai-translator-ball-more,
+#ai-translator-float-ball:focus-within .ai-translator-ball-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 键盘上这两颗按钮的位置感全靠焦点环 —— 球本身不是 tab 停靠点，焦点一进来就
+   直接落在它们身上。··· 平时是 opacity:0，所以上面那条得连 :focus-within 一起
+   认，否则 Tab 停到它身上时人看到的是焦点凭空消失了一格。 */
+#ai-translator-float-ball .ai-translator-status-dot:focus-visible,
+#ai-translator-float-ball .ai-translator-ball-more:focus-visible {
+  outline: 2px solid #7c5cff;
+  outline-offset: 2px;
+}
+
+/* ==================== Auto-translate bar ==================== */
+
+/* 追问条和状态说明共用这一条，data-mode 决定哪几个孩子在场。两份 DOM 会带来两
+   套定位、两套主题覆盖，以及迟早对不齐的两个右下角。 */
+#ai-translator-auto-bar {
+  position: fixed;
+  right: 24px;
+  bottom: 124px;
+  z-index: 2147483646;
+  max-width: min(360px, calc(100vw - 48px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(124, 92, 255, 0.1);
+  color: #e8e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  animation: ai-translator-menu-in 0.15s ease;
+}
+
+#ai-translator-auto-bar .ai-translator-auto-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#ai-translator-auto-bar .ai-translator-auto-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #a8a8b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#ai-translator-auto-bar .ai-translator-auto-remember-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* 上面那道防护栏给每个 input 都上了 appearance:none —— 对文本框是保护，对勾选
+   框是直接抹掉。这里单独把它还回来，选择器按标签写而不是给它一个类名：类名一
+   加，它就成了「我们的控件」，得连同主题覆盖一起重画一遍。 */
+#ai-translator-auto-bar input[type="checkbox"] {
+  appearance: auto;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #7c5cff;
+  cursor: pointer;
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid #3a3a4a;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8e8f0;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="translate"] {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7c5cff 0%, #06b6d4 100%);
+  color: #ffffff;
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"] {
+  padding: 2px 4px;
+  border-color: transparent;
+  font-size: 15px;
+  color: #8b8b9a;
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn:hover {
+  border-color: #7c5cff;
+  background: rgba(124, 92, 255, 0.18);
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="translate"]:hover {
+  border-color: transparent;
+  background: linear-gradient(135deg, #8e73ff 0%, #22c8e0 100%);
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"]:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #e8e8f0;
+}
+
+/* 展开说明时只剩一行字和一个关闭。追问那几个控件留在 DOM 里不重建 —— 用户点掉
+   说明之后，还没回答的那一问要原样回来。 */
+#ai-translator-auto-bar[data-mode="explain"] .ai-translator-auto-remember {
+  display: none;
+}
+
+html body [id="ai-translator-auto-bar"][data-mode="explain"] .ai-translator-auto-btn[data-act="translate"],
+html body [id="ai-translator-auto-bar"][data-mode="explain"] .ai-translator-auto-btn[data-act="dismiss"] {
+  display: none;
+}
+
 /* ==================== Float Menu ==================== */
 
 #ai-translator-float-menu {
@@ -1723,6 +1925,46 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
 
 [data-ai-translator-theme="light"] .ai-translator-menu-divider {
   background: #e0e0e5;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-status-dot {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.95);
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-ball-more {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.3), 0 2px 6px rgba(0, 0, 0, 0.12);
+  color: #1d1d1f;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-auto-bar {
+  background: #ffffff;
+  border-color: #e0e0e5;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(124, 92, 255, 0.1);
+  color: #1d1d1f;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-auto-bar .ai-translator-auto-remember {
+  color: #6b7280;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn {
+  border-color: #d8d8e0;
+  color: #1d1d1f;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="translate"] {
+  border-color: transparent;
+  color: #ffffff;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="close"] {
+  border-color: transparent;
+  color: #9aa0ac;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="close"]:hover {
+  color: #1d1d1f;
 }
 
 /* Light theme - Input Dialog */

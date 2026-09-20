@@ -103,6 +103,8 @@
           </linearGradient>
         </defs>
       </svg>
+      <button type="button" class="ai-translator-status-dot" data-state="none"></button>
+      <button type="button" class="ai-translator-ball-more" aria-expanded="false" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</button>
     `;
 
     // Load saved position or use default
@@ -156,6 +158,11 @@
     }
 
     document.body.appendChild(state.floatBall);
+    // 看门狗随时会把球整个重建一遍，innerHTML 一换，状态点就回到了初始的空白。
+    // 重建之后补一笔，否则一次页面脚本的误删会让那颗点永久消失。
+    if (ctx.paintAutoStatusDot) ctx.paintAutoStatusDot();
+    // 同理：··· 上的 aria-expanded 也是 innerHTML 里的初始值，重建时菜单可能正开着。
+    setMoreExpanded(!!state.floatMenu);
     console.log('Blab Translation: Float ball created');
 
     // Setup drag and click handling
@@ -202,11 +209,35 @@
     state.floatBallContainer.classList.remove('docked-left', 'docked-right');
   }
 
+  // 触屏没有 hover，··· 不会出现，长按顶替它。
+  const LONG_PRESS_MS = 500;
+
+  /**
+   * 单击落在球的哪一块上 —— 这一下的含义就由它决定。
+   *
+   * **必须在 mousedown 时判**。mouseup 的 e.target 可能已经换了元素：状态点在
+   * 这一拍里刚好被隐藏，指针就落回球身上，那时候再问等于问错对象。
+   */
+  function pressZone(target) {
+    if (!target || !target.closest) return 'ball';
+    if (target.closest('.ai-translator-ball-more')) return 'menu';
+    if (target.closest('.ai-translator-status-dot')) return 'status';
+    return 'ball';
+  }
+
   function setupFloatBallInteraction() {
     let isDragging = false;
     let dragStartX, dragStartY;
     let ballStartX, ballStartY;
     let dragDistance = 0;
+    let zone = 'ball';
+    // 这一次触摸已经被长按用掉了 —— 记的是「哪一次手势」，不是「什么时候」。
+    // 计时的版本在手指按满一秒以上时会自己过期：菜单 500ms 就开出来了，手指还
+    // 按着，松手时合成的那一下 click 已经出了窗口，于是它一路落到最后一档，把
+    // 整页翻译也点了 —— 一次长按，开菜单外加一次花钱的整页翻译。手势的结束由
+    // 那一下合成事件自己宣布，不由秒表宣布。
+    let longPressFired = false;
+    let longPressTimer = null;
 
     // Mouse down - start drag
     state.floatBall.addEventListener('mousedown', (e) => {
@@ -215,6 +246,7 @@
       isDragging = true;
       dragDistance = 0;
       state.floatBallDragged = false;
+      zone = pressZone(e.target);
 
       dragStartX = e.clientX;
       dragStartY = e.clientY;
@@ -228,6 +260,23 @@
       state.floatBall.classList.add('dragging');
 
       e.preventDefault();
+    });
+
+    // 键盘走的是另一条路。球上这两颗按钮的鼠标语义摊在 mousedown/mouseup 一对
+    // 事件里 —— 要先分辨出这一下到底是点击还是拖拽的起手，而键盘既没有拖拽也
+    // 没有 mousedown，那条路上一个字都不会执行。
+    //
+    // <button> 自己会在 Enter/Space 上合成一次 click；preventDefault 把那一次挡
+    // 掉再自己派活，而不是反过来依赖它：合成的那一下将来要是撞上球身上新挂的
+    // click，就成了一次按键点两回。
+    state.floatBall.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      const hit = pressZone(e.target);
+      if (hit === 'ball') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (hit === 'menu') toggleFloatMenu();
+      else if (ctx.toggleAutoStatusExplain) ctx.toggleAutoStatusExplain();
     });
 
     // Mouse move - update position
@@ -319,11 +368,40 @@
           y: finalY,
           docked: dockedSide
         }));
-      } else {
-        // It was a click, not a drag
+      } else if (longPressFired) {
+        // 长按已经把菜单开出来了，随后合成的这一下不该再做第二件事。
+        longPressFired = false;
+      } else if (zone === 'menu') {
         toggleFloatMenu();
+      } else if (zone === 'status') {
+        if (ctx.toggleAutoStatusExplain) ctx.toggleAutoStatusExplain();
+      } else {
+        // 单击 = 翻译 / 还原（D1）。菜单挪到了球上那个 ···（触屏长按）——
+        // 最常做的那件事不该藏在一层菜单后面。
+        if (ctx.togglePageTranslation) ctx.togglePageTranslation();
       }
     });
+
+    // 触屏：长按开菜单。没有 hover 就没有 ···，这是它在触屏上唯一的入口。
+    const cancelLongPress = () => {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+    state.floatBall.addEventListener('touchstart', () => {
+      cancelLongPress();
+      // 新的一次触摸开始，上一次留下的那面旗到此为止 —— 合成事件万一没来（长按
+      // 被系统手势截走），旗也烂不过这一次手势，下一次点击照常。
+      longPressFired = false;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        longPressFired = true;
+        toggleFloatMenu();
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+    for (const type of ['touchmove', 'touchend', 'touchcancel']) {
+      state.floatBall.addEventListener(type, cancelLongPress, { passive: true });
+    }
 
     // Handle window resize
     window.addEventListener('resize', () => {
@@ -368,8 +446,9 @@
       return;
     }
 
-    // Check if there are translations on the page
-    const hasTranslations = document.querySelectorAll('.ai-translator-inline-block').length > 0;
+    // 这一页有没有译文，问的是 content-page-translation.js 那一处 —— 它还算上
+    // PDF、漫画这类不在正文 DOM 里的管控译文，自己数一遍 inline-block 会漏掉。
+    const hasTranslations = !!(ctx.hasPageTranslations && ctx.hasPageTranslations());
     // The comic entry only appears where it can do something: the feature is on
     // and there is actually a page-sized image on screen to redraw.
     const showComic = !!settings.enableComicTranslation &&
@@ -455,6 +534,7 @@
     state.floatMenu.style.top = `${top}px`;
 
     document.body.appendChild(state.floatMenu);
+    setMoreExpanded(true);
 
     // Menu item click handlers
     state.floatMenu.querySelectorAll('.ai-translator-menu-item').forEach(item => {
@@ -480,10 +560,28 @@
 
   function hideFloatMenu() {
     if (state.floatMenu) {
+      // 焦点还在菜单里的时候把菜单撤掉，焦点就掉回 <body> —— 键盘用户得从头再
+      // Tab 一遍才回得到球上。所以那一种要把焦点送回 ··· 去。
+      //
+      // 只有那一种。鼠标点别处关的、程序自己关的，焦点本来就不在这儿，抢回来
+      // 就成了打断。「Esc 关掉浮层」本身不在这一层 —— content-selection.js 那
+      // 一处统管所有浮层的 Esc，这里再挂一个就是同一个问题有了两个主人。
+      const returnFocus = state.floatMenu.contains(document.activeElement);
       state.floatMenu.remove();
       state.floatMenu = null;
       document.removeEventListener('mousedown', handleOutsideClick);
+      if (returnFocus) {
+        const more = state.floatBall && state.floatBall.querySelector('.ai-translator-ball-more');
+        if (more) more.focus();
+      }
     }
+    setMoreExpanded(false);
+  }
+
+  /** ··· 是一颗开合菜单的按钮，读屏得知道它此刻是开是合。 */
+  function setMoreExpanded(open) {
+    const more = state.floatBall && state.floatBall.querySelector('.ai-translator-ball-more');
+    if (more) more.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function handleMenuAction(action) {
@@ -523,37 +621,10 @@
     }
   }
 
-  // Toggle visibility of all page translations
+  // 译文显隐的实现在 content/page/visibility.js —— 悬浮球、popup、Alt+A、
+  // 「翻译整页」四个入口共用那一份。
   function toggleTranslationsVisibility() {
-    state.translationsVisible = !state.translationsVisible;
-
-    const translations = document.querySelectorAll('.ai-translator-inline-block');
-    translations.forEach(el => {
-      if (state.translationsVisible) {
-        el.classList.remove('ai-translator-hidden');
-      } else {
-        el.classList.add('ai-translator-hidden');
-      }
-    });
-
-    // 受管容器里的译文是原文块的 ::after，没有自己的节点可以加类名（它在上面这批
-    // 里只有一个不显示的替身），只能整体开关。见 content-managed-translation.js。
-    if (ctx.setManagedTranslationsVisible) {
-      ctx.setManagedTranslationsVisible(state.translationsVisible);
-    }
-
-    // “仅显示译文”与本开关联动：译文被藏起来时必须把原文放回来，
-    // 否则页面两边都不显示。译文重新显示时再把原文藏回去。
-    if (ctx.applyTranslationOnlyMode) {
-      ctx.applyTranslationOnlyMode();
-    }
-
-    // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
-    // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
-    if (ctx.autoTranslate) {
-      if (state.translationsVisible) ctx.autoTranslate.resumeCurrentPage();
-      else ctx.autoTranslate.pauseCurrentPage();
-    }
+    if (ctx.setTranslationsVisible) ctx.setTranslationsVisible(state.translationsVisible === false);
   }
 
   function stopFloatBallWatchdog() {

@@ -76,6 +76,11 @@ test.describe('Hover Translation', () => {
     await page.keyboard.up('Shift');
     await page.waitForSelector('.ai-translator-hover-translation', { state: 'detached' });
 
+    // 先把光标挪开：上一步它已经停在这一段上了，直接 hover 不会再发一次
+    // mouseover，这一下就只剩「按住档」那条路——而 Alt 正是 Alt+A 占着的那个
+    // 修饰键，它没有按住档（见 content/content-utils.js 的 commandModifiers）。
+    // 悬停翻译本来的手势是「按住键、划过哪段译哪段」，走的就是 mouseover。
+    await page.mouse.move(5, 5);
     await page.keyboard.down('Alt');
     await paragraph.hover();
     await page.waitForSelector('.ai-translator-hover-translation', { state: 'attached' });

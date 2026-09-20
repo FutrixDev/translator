@@ -40,6 +40,14 @@
     "type": "module"
   },
   "options_page": "options/options.html",
+  "commands": {
+    "toggle-translate-page": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "__MSG_cmdTogglePage__"
+    }
+  },
   "content_scripts": [
     {
       "matches": [
@@ -95,6 +103,7 @@
         "content/content-page-translation.js",
         "content/content-auto-discover.js",
         "content/content-auto-translate.js",
+        "content/content-auto-status.js",
         "content/content-hover-translation.js",
         "content/content-image-ocr.js",
         "content/content-comic-translation.js",

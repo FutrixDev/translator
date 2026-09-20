@@ -20,14 +20,19 @@ test.describe('Float Ball', () => {
     expect(exists).toBe(true);
   });
 
-  test('should open menu on click', async ({ page }) => {
+  // 球本身是翻译 / 还原，菜单挪到了球上那颗 `···`：最常做的那件事该是最省事的
+  // 那一下，而菜单里其余六项是偶尔才用一次的。
+  test('should open menu from the ··· chip, not from the ball itself', async ({ page }) => {
     await page.goto('https://example.com');
     await waitForFloatBall(page);
 
-    await openFloatBallMenu(page);
+    // 单击球 —— 菜单不该出来。这一条是反向的：`···` 能开菜单证明不了球不能开。
+    await page.click('#ai-translator-float-ball', { position: { x: 18, y: 18 } });
+    await page.waitForTimeout(300);
+    await expect(page.locator('#ai-translator-float-menu')).toHaveCount(0);
 
-    const menu = page.locator('#ai-translator-float-menu');
-    await expect(menu).toBeVisible();
+    await openFloatBallMenu(page);
+    await expect(page.locator('#ai-translator-float-menu')).toBeVisible();
   });
 
   test('should persist after React SPA navigation', async ({ page }) => {

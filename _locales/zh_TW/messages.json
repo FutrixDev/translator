@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "免費 AI 翻譯:網頁、學術論文(保留數學公式/LaTeX)、YouTube 即時字幕、PDF 與漫畫頁面。",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "翻譯 / 還原目前頁面",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

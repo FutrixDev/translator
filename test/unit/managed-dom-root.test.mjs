@@ -34,7 +34,9 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 
 // content-utils.js is a classic script that hangs its helpers off
 // window.AI_TRANSLATOR_CONTENT. Give it just enough of a DOM to run.
-globalThis.window = { AI_TRANSLATOR_CONTENT: {} };
+// The file also registers the modifier-tap guard's key listeners on window at
+// load time, so the stub needs the same one method document's does.
+globalThis.window = { AI_TRANSLATOR_CONTENT: {}, addEventListener: () => {} };
 globalThis.Node = { ELEMENT_NODE: 1 };
 globalThis.document = {
   createElement: () => ({
@@ -258,6 +260,46 @@ test('every managed translation can be released', () => {
   );
 });
 
+test('our own generated content is not mistaken for the site\'s', () => {
+  // A translation goes on screen twice: "Translating…" first, then the result.
+  // Both are the same block's ::after. If the second render reads the first one
+  // back and treats it as decoration the site owns, it refuses — the block is
+  // stuck on "Translating…" and the caller falls back to inserting a real node,
+  // which is exactly what a Lexical root deletes. The user sees nothing.
+  const src = repoFile('content/content-managed-translation.js');
+  assert.match(
+    src,
+    /if \(!block\.hasAttribute\(BLOCK_ATTR\)\) \{\s*const after = window\.getComputedStyle\(block, '::after'\)\.content;/,
+    'the site-owns-::after check must skip blocks we already drew on',
+  );
+});
+
+test('a stale handle releases only itself', () => {
+  // Replacing a translation is "draw the new one, then drop the old" — the
+  // hover file's trackInlineTranslation does exactly that. Both handles carry
+  // the same id, because a block only ever has one translation. So the release
+  // path has to ask who the block belongs to now; without that it drops the
+  // rule and the attributes the new render just set, and the result blinks in
+  // and disappears.
+  const src = repoFile('content/content-managed-translation.js');
+  assert.match(src, /const currentHandle = new WeakMap\(\);/);
+  assert.match(src, /currentHandle\.set\(block, handle\);/, 'every render claims the block');
+  assert.match(
+    src,
+    /if \(entry\.block && currentHandle\.get\(entry\.block\) !== handle\) \{\s*handle\.remove\(\);\s*return true;/,
+    'a handle the block has moved on from must not drop the live rule',
+  );
+  assert.match(src, /currentHandle\.delete\(entry\.block\);/, '真收掉的那一次要销账');
+
+  // 顺带证明上面那一条不是空谈：替换那条路确实先画后收。
+  const hover = repoFile('content/content-hover-translation.js');
+  assert.match(
+    hover,
+    /const existing = map\.get\(block\);\s*if \(existing && existing !== translationEl\) \{/,
+    'trackInlineTranslation still replaces before it releases',
+  );
+});
+
 test('the framework list is not restated outside content-utils.js', () => {
   // One list, one place. A second copy drifts the moment a framework is added
   // to one and not the other.
@@ -292,6 +334,8 @@ test('content-utils.js loads before the surfaces that use it', () => {
   const at = (file) => bundle.js.indexOf(file);
   assert.ok(at('content/content-utils.js') < at('content/content-hover-translation.js'));
   assert.ok(at('content/content-utils.js') < at('content/page/collect.js'));
+  // Both modifier-key hotkeys arm their trigger through ctx.armModifierTap.
+  assert.ok(at('content/content-utils.js') < at('content/content-selection.js'));
 
   // The renderer hangs its helpers off the same ctx object, so it has to run
   // before anything calls them.

@@ -65,11 +65,18 @@ async function waitForFloatBall(page, timeout = 10000) {
 }
 
 /**
- * Click the float ball to open menu
+ * Open the float ball's menu.
+ *
+ * 单击球本身现在是翻译 / 还原（PR-7：最常做的那件事该是最省事的那一下），菜单
+ * 挪到了球上那颗 `···`。它平时 opacity:0 且 pointer-events:none，只在球 :hover
+ * 时才在，所以这里必须先 hover 再点 —— Playwright 的 click 会自己先移过去，但
+ * 那是在拿到元素框之后，而 pointer-events:none 的元素它根本不会当成可点。
+ *
  * @param {import('@playwright/test').Page} page
  */
 async function openFloatBallMenu(page) {
-  await page.click('#ai-translator-float-ball');
+  await page.hover('#ai-translator-float-ball');
+  await page.click('#ai-translator-float-ball .ai-translator-ball-more');
   await page.waitForSelector('#ai-translator-float-menu', {
     state: 'visible',
     timeout: 5000,

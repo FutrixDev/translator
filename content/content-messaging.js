@@ -27,6 +27,37 @@
             ctx.translatePage();
           }
           break;
+        case 'TOGGLE_PAGE_TRANSLATION':
+          // popup 那一行和悬浮球那一下点的是同一个动作，所以走同一个函数：
+          // 「有译文就收起来，没有就译」这条规则只能有一个地方说了算。
+          sendResponse(ctx.togglePageTranslation ? { action: ctx.togglePageTranslation() } : null);
+          break;
+        case 'SET_AUTO_PAUSED':
+          if (ctx.autoTranslate) {
+            if (message.paused) ctx.autoTranslate.pauseCurrentPage();
+            else ctx.autoTranslate.resumeCurrentPage();
+          }
+          sendResponse(ctx.autoTranslate ? ctx.autoTranslate.state() : null);
+          break;
+        case 'AUTO_PAGE_STATE': {
+          // popup 的三行动作全从这一次往返里画。分三条消息问的话，用户在中间那
+          // 一刻点了悬浮球，popup 就会拿着三个互相矛盾的答案画出一张脸。
+          //
+          // host 也从这里回：popup 自己的 location 是 chrome-extension://，
+          // 站点规则该写在哪个键上只有页面知道。
+          const auto = ctx.autoTranslate ? ctx.autoTranslate.state() : null;
+          sendResponse({
+            host: location.hostname,
+            // 「这一页永远不自己翻」也只有页面答得了，而且得单独答一句：总开关
+            // 关着的时候 auto.reason 是 GLOBAL_OFF，把黑名单整个遮住了，popup
+            // 照着那个 reason 判就会把一个点不动的开关画成能点的。
+            blocked: globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname),
+            hasTranslations: ctx.hasPageTranslations ? ctx.hasPageTranslations() : false,
+            translationsVisible: state.translationsVisible !== false,
+            auto
+          });
+          break;
+        }
         case 'PROBE_ENGINE':
           // popup 不能自己探内置引擎：它自己的 isSecureContext 恒为 true，
           // 而目标页可能是 http://，两个 realm 给出的答案根本不是一回事。
@@ -151,16 +182,6 @@
           }
           if ((ctx.captionSettingKeys || []).some((key) => key in message.settings)) {
             if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
-          }
-          break;
-        case 'TOGGLE_FLOAT_BALL':
-          console.log('Blab Translation: TOGGLE_FLOAT_BALL received, show =', message.show);
-          // 只有当值确实改变时才更新，避免无效的切换
-          if (settings.showFloatBall !== message.show) {
-            settings.showFloatBall = message.show;
-            if (ctx.updateFloatBallVisibility) {
-              ctx.updateFloatBallVisibility();
-            }
           }
           break;
       }

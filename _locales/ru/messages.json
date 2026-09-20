@@ -6,5 +6,9 @@
   "appDescription": {
     "message": "Бесплатный ИИ-перевод: веб-страницы, научные статьи (формулы/LaTeX сохранены), субтитры YouTube, PDF и комиксы.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Перевести страницу или вернуть оригинал",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

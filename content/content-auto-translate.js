@@ -17,8 +17,9 @@
 //           一个章（shared/session-guard.js），写回前验一次。**不取消请求** ——
 //           钱已经花了，取消也拿不回来；能做干净的只有「不写上去」。
 //
-// 它不画任何东西。询问条、状态点、悬浮球的样子都是 PR-7 的事，这一层只把
-// state() 摆在那里给它们读。
+// 它不画任何东西。询问条、状态点、悬浮球的样子都是 content/content-auto-status.js
+// 的事，这一层只把 state() 摆在那里给它们读，再用 onStateChange() 在变了的时候
+// 喊一声 —— 呈现层不轮询，见下面 setStatus() 的注释。
 (function () {
   'use strict';
 
@@ -87,6 +88,14 @@
     let lastError = null;
     // 用户在这一页已经表过态（点过「翻译整页」）。换路由就忘掉。
     let explicit = false;
+    // 「这一页先别翻了」—— popup 上按的暂停，或者把译文藏起来（两条都走
+    // pauseCurrentPage）。
+    //
+    // 必须记成一道闩，不能只把状态改成 PAUSED：状态会被下一次 start() 覆盖，而
+    // start() 是别人替他叫的 —— 另一个标签页在追问条上点了「总是」，siteRules
+    // 一落地，这一页的 onSettingsChanged 就重开一轮，他按下的暂停当场失效，页面
+    // 自己又翻起来了。闩只有他自己解得开（继续 / 翻译整页），或者换一个文档。
+    let pausedByUser = false;
     let pageLang = null;
     let langResolved = false;
     let sampleText = '';
@@ -96,10 +105,65 @@
     // 一轮整体失败就不再自动重试。runTranslationPass 返回错误本身已经意味着它
     // 内部连续失败了三次 —— 到这一步再重试，是在一个明显坏掉的接口上继续烧钱。
     let broken = false;
+    // 这一页上「给过机会还是没翻成」的块数。状态点的黄灯就是它：一轮跑完了，可
+    // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
+    // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
+    let gaveUp = 0;
+
+    // ------------------------------------------------------------------ 对外
+
+    // 上面这几个变量是这一层唯一的对外产物，而**呈现层不能靠轮询去读**：状态一秒
+    // 里可能变好几次（IDLE→RUNNING→IDLE），轮询要么漏掉中间那一下，要么每
+    // 200ms 醒一次、在一个早就判完的页面上白跑一整天。
+    const listeners = new Set();
+
+    function snapshot() {
+      return {
+        status,
+        reason,
+        pageLang,
+        // 「这个站点开着自动翻」是一句和 status 不同的话，见 siteAuto()。
+        siteAuto: siteAuto(),
+        error: lastError,
+        sessionVersion: guard.version(),
+        queued: queue.size,
+        gaveUp
+      };
+    }
+
+    function publish() {
+      if (listeners.size === 0) return;
+      const snap = snapshot();
+      for (const listener of listeners) {
+        // 一个画坏了的状态点不该把调度层带下水 —— 那一页会就此停止翻译，而用户
+        // 看到的只是一个不动的圆点。
+        try {
+          listener(snap);
+        } catch (error) {
+          console.warn('Blab Translation: auto status listener failed', error);
+        }
+      }
+    }
+
+    /**
+     * **status 只能从这里改。**
+     *
+     * 呈现层要的是「变了就告诉我」，而这一层有十个地方在改这个变量。让每个调用点
+     * 自己记得广播一次，就是这个项目反复修过的那一类 bug：漏掉的那一个不报错，
+     * 只是状态点停在上一态 —— 页面明明在翻，点是灰的；或者一页翻挂了，点还是绿的。
+     * 所以广播不是调用点的义务，是赋值本身的一部分。
+     *
+     * 每次调用都广播，哪怕 status 没变：同一个 IDLE 在一轮跑完前后含义不同
+     * （queued、gaveUp 都变了），去重反而会把「这一页有几段没翻成」吞掉。
+     */
+    function setStatus(next) {
+      status = next;
+      publish();
+    }
 
     // ------------------------------------------------------------------ 判
 
-    function resolve(lang) {
+    function resolve(lang, options) {
       return globalThis.SiteRules.decide({
         host: location.hostname,
         path: location.pathname,
@@ -107,8 +171,32 @@
         targetLang: ctx.getEffectiveTargetLang(),
         userRules: ctx.settings.siteRules,
         settings: ctx.settings,
-        explicit
+        // 默认连同用户在这一页上表过的态一起问 —— 那正是「这一页此刻该不该翻」。
+        // 把那一下刨掉再问的另有其用，见 siteAuto()。
+        explicit: options && options.explicit === false ? false : explicit
       });
+    }
+
+    /**
+     * 「**这个站点**自己会不会翻这一页」—— 把用户在这一页上的那一下点击刨掉，
+     * 重判一次。
+     *
+     * popup 上「自动翻译这个站点」那一行画的是这句话。用 status 画的话（idle /
+     * running 就算开），用户在一个没设过规则的站点上点一次「翻译这一页」（没勾
+     * 「总是」）就会看见那一行翻成「开」—— 可规则表里一条都没写，下次再来还是
+     * 照样问他；而他顺手去点那个看起来已经开着的开关，写进去的是一条**永久的
+     * never**，从此这个站点再也不翻。他想开，结果关死了。
+     *
+     * 必须刨掉 explicit 才问得对，而不是换一组 reason 去认：decide() 的阶梯上
+     * explicit 那一级排在所有站点规则之前，一旦表过态，USER_ALWAYS 和
+     * BUILTIN_ALWAYS 都被它挡在后面 —— 只认那两个 reason 的话，在 x.com 上点一
+     * 次「翻译这一页」，这一行反倒会从「开」翻成「关」。
+     *
+     * 语言用此刻量到的那一门（量不出就是 null）：这一行问的是站点，而能答「auto」
+     * 的三级全在语言之前，语言到底是什么对它没有影响。
+     */
+    function siteAuto() {
+      return resolve(pageLang, { explicit: false }).verdict === 'auto';
     }
 
     /**
@@ -128,14 +216,25 @@
       bumpSession(why || 'start');
       stopDiscovery();
       clearSample();
-      if (ctx.state.translationsVisible === false) {
-        status = STATUS.PAUSED;
+      if (ctx.state.translationsVisible === false || pausedByUser) {
+        // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
+        // 还得跟上：用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮
+        // 要是直接停在 PAUSED，reason 和状态都还停在上一次 —— popup 照着状态画，
+        // 那个开关会一直显示「开」，再点一次又写一遍 never，怎么点都关不掉。
+        //
+        // 判出 off 就如实说 off（这一页往后也不会自己翻了）；还该翻的照旧停着 ——
+        // 停着的那一页就是暂停，这两条闩都不动。
+        const held = resolve(pageLang);
+        reason = held.reason;
+        setStatus(held.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
       broken = false;
       lastError = null;
+      // 语言要重新量，但**不清**：这还是同一个文档，上一次量到的就是它的语言。
+      // 清掉它的是「换了一页」那一下（见 onRouteChange）—— 谁拥有这个值，谁负责
+      // 让它过期，而 start() 说的是「重新判」，不是「换了一页」。
       langResolved = false;
-      pageLang = null;
 
       // 第一问：不带语言。decide() 的阶梯上，语言之前的每一条都在这里定下来，
       // 而语言之后的条目在 pageLang 为空时只会落到「要问」—— 所以这一问要么给
@@ -144,17 +243,17 @@
       reason = first.reason;
 
       if (first.verdict === 'off') {
-        status = STATUS.OFF;
+        setStatus(STATUS.OFF);
         return;
       }
       if (first.verdict === 'auto') {
         langResolved = true;
-        status = STATUS.IDLE;
+        setStatus(STATUS.IDLE);
         startDiscovery();
         return;
       }
 
-      status = STATUS.PENDING;
+      setStatus(STATUS.PENDING);
       startDiscovery();
     }
 
@@ -207,13 +306,13 @@
       if (final.verdict === 'auto') {
         // 第二问答不出 auto —— 所有「要翻」的理由都在第一问里定了。留着这一支
         // 是因为「该不该翻」只有 decide() 一个权威，这里不该替它推断。
-        status = STATUS.IDLE;
+        setStatus(STATUS.IDLE);
         if (discovery) discovery.rescan();
         return;
       }
       // off 就是不翻；ask 要问用户，而问的界面还不存在（PR-7）。两者都不再需要
       // 发现层 —— 一个没人看的观察器在每个页面上白跑，是实打实的耗电。
-      status = final.verdict === 'ask' ? STATUS.ASK : STATUS.OFF;
+      setStatus(final.verdict === 'ask' ? STATUS.ASK : STATUS.OFF);
       stopDiscovery();
     }
 
@@ -343,7 +442,7 @@
       // 不归我们管了，下面那几个状态赋值就都是在替新的一代乱表态。
       const session = guard.version();
       running = true;
-      status = STATUS.RUNNING;
+      setStatus(STATUS.RUNNING);
       // 我们自己插译文引起的变动，发现层本来就认得出来。挂起是为了省掉插入期间
       // 那几十次「子树变了」带来的重复收集。
       const suspended = discovery;
@@ -402,6 +501,7 @@
           retried.add(pending.key);
           if (element.isConnected) queue.set(element, pending.entry);
         }
+        gaveUp += giveUp.length;
         for (const element of giveUp) commit(element);
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
@@ -421,13 +521,13 @@
       if (error) {
         broken = true;
         lastError = error;
-        status = STATUS.ERROR;
+        setStatus(STATUS.ERROR);
         stopDiscovery();
         console.warn('Blab Translation: auto translation stopped for this page —', error);
         return;
       }
 
-      status = STATUS.IDLE;
+      setStatus(STATUS.IDLE);
       if (queue.size > 0) scheduleStart();
     }
 
@@ -435,6 +535,7 @@
 
     function bumpSession(why) {
       guard.bump(why);
+      gaveUp = 0;
       queue.clear();
       tickets.clear();
       inflight.clear();
@@ -442,18 +543,73 @@
       ledger.clear();
     }
 
-    // 用户刚把译文藏起来。光靠 start() 那道闩不够 —— 藏译文不会重开一轮，而
-    // 此刻正跑着的那一轮和挂着的观察器要立刻停下。
-    function pauseCurrentPage() {
+    /**
+     * 这一页先停下。光靠 start() 那道闩不够 —— 停一下不会重开一轮，而此刻正跑
+     * 着的那一轮和挂着的观察器要立刻停下。
+     *
+     * `cause` 说的是**谁停的**，因为解铃还须系铃人：
+     *
+     *   - 不带 cause（popup 上按的「暂停」）—— 这是他对这一页下的一句话，记成
+     *     一道闩，只有他自己解得开。
+     *   - `'hidden'`（他把译文藏了）—— **不上闩**。藏译文本身就是一道闩，
+     *     start() 看的是 ctx.state.translationsVisible，这一道在译文放回来之前
+     *     一直拦着。再上一道的话，放回译文时跟着解掉的就不只是自己：他在 popup
+     *     上按下的暂停会被一次「显示译文」顺手洗掉，页面自己又翻起来了。
+     */
+    function pauseCurrentPage(cause) {
       if (status === STATUS.OFF || status === STATUS.PAUSED) return;
+      // 出错停下的那一页，藏一下译文不该把它改写成「已暂停」。ERROR 是一个**结
+      // 论**（broken 已经置上、发现层已经停了，这一页没有一件在跑的活可停），而
+      // 看一眼原文不是对那个结论的答复。改写它要付两次账：状态点从「出错」变成
+      // 「已暂停」，那句「为什么停了」就此没人说得出；而把译文放回来那一下会把它
+      // 当成自己停下的那一页叫醒、重开一轮 —— 用户只是想看一眼原文，却替他把刚
+      // 刚失败的那些请求又发了一遍，钱是他的。重试有专门的一句话，见
+      // resumeCurrentPage。
+      if (cause === 'hidden' && status === STATUS.ERROR) return;
+      if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
       stopDiscovery();
       clearSample();
-      status = STATUS.PAUSED;
+      setStatus(STATUS.PAUSED);
     }
 
-    function resumeCurrentPage() {
+    /**
+     * 「继续翻这一页」。
+     *
+     * **藏着译文的时候，继续就是把译文放回来。** 这一页会停下来只有两种可能：
+     * 用户在 popup 上按了暂停，或者他把译文藏了（setTranslationsVisible(false)
+     * 顺手停的）。后一种情况下 start() 里那道闩还认着「我现在想看原文」，直接
+     * 重开一轮只会原地弹回 PAUSED —— popup 上那颗「继续」按下去毫无反应，而且
+     * 不报错。所以先走显隐层的唯一入口把译文放回来，它回头会再叫一次这里，
+     * 那时闩已经开了。
+     *
+     * 同样要问是谁在继续（见 pauseCurrentPage）：把译文放回来
+     * （`cause === 'hidden'`）不等于撤销他在 popup 上按下的那句「这一页先别翻
+     * 了」。那两句话是分开的，解闩的也只有后面那一句。
+     */
+    function resumeCurrentPage(cause) {
       if (status !== STATUS.PAUSED && status !== STATUS.ERROR) return;
+      // 闩只有他自己解得开：popup 上的「继续」，或者「翻译整页」。显隐层越过
+      // 它的话，藏一下再显示一下就把暂停洗掉了，而他从头到尾没碰过那颗按钮。
+      if (cause === 'hidden') {
+        if (pausedByUser) return;
+        // 「显示译文」不是「重试」。出错的那一页等的是一句明确的「继续」（popup
+        // 那一行、或者「翻译整页」）—— 一次看原文的往返替他说了这句话，账单上多
+        // 出来的那几次请求他从头到尾没同意过，页面上也看不出任何异样。
+        if (status === STATUS.ERROR) return;
+      } else {
+        // 放在最前面是因为藏着译文那条路要拐个弯（下面），回头还会再走一次这里
+        // —— 那一次带着 'hidden'，此刻已经解开的这一道不会再被问起。
+        pausedByUser = false;
+      }
+      if (ctx.state.translationsVisible === false && ctx.revealHiddenTranslations) {
+        ctx.revealHiddenTranslations();
+        // 显隐层回头会再叫一次这里（带 'hidden'），闩开了，这一轮就是在那一次接上
+        // 的 —— 只有一种页面它接不上：停在 ERROR 的那一页，因为重试必须是他自己
+        // 说的那一句（见上面）。而此刻说话的正是他，所以这一次不能把活全指望给
+        // 那一次回调。
+        if (status !== STATUS.ERROR) return;
+      }
       start('resume');
     }
 
@@ -467,7 +623,13 @@
      */
     function markPageExplicit() {
       if (!ctx.settings.autoTranslate) return;
-      if (explicit) return;
+      // 「翻译整页」是比暂停更晚、更明确的一句话，所以它解闩 —— 否则点完整页
+      // 翻译，这一页新长出来的内容照旧不跟，而他刚刚要的就是翻。
+      //
+      // 解了闩就得重开一轮，哪怕这一页早就表过态了：那一轮正停在闩上。
+      const wasHeld = pausedByUser;
+      pausedByUser = false;
+      if (explicit && !wasHeld) return;
       explicit = true;
       start('explicit');
     }
@@ -475,6 +637,21 @@
     function onRouteChange(change) {
       // 新的一页，用户还没表过态。
       explicit = false;
+      // 闩也一样是**这一页**的：他按的那句话是「这一页先别翻了」，不是「这个站
+      // 点从此别翻了」—— 那句话有另一个说法（popup 上关掉这个站点，写 never）。
+      // 不解的话，SPA 里点进下一篇文章起就全是原文，而且他没有任何理由想到要去
+      // 点「继续」：那颗按钮此刻指着的是他早就离开的那一页。
+      pausedByUser = false;
+      // 上一页量到的语言也留不得：它是**那一页**的测量结果，而这一层是它的主人
+      // （引擎那份缓存同理，由引擎自己订路由过期 —— 见 content-translation-engine.js）。
+      //
+      // 漏掉这一行的样子最难自己想到：用户正把译文藏着看原文，此时换了一页 ——
+      // start() 走的是「先看原文」那条捷径，判完就 return，于是新的一页被**上一页
+      // 的语言**判了一次。判出 off（语言和目标语言相同、或者不在他勾的语言里）就
+      // 再也回不来了：把译文放回来那一下只叫得醒 PAUSED / ERROR，OFF 停在那儿，
+      // 追问条一次都不会出现，直到他整页刷新。
+      pageLang = null;
+      langResolved = false;
       start(`route:${change && change.via}`);
     }
 
@@ -519,14 +696,24 @@
     start('load');
 
     return {
-      state: () => ({
-        status,
-        reason,
-        pageLang,
-        error: lastError,
-        sessionVersion: guard.version(),
-        queued: queue.size
-      }),
+      state: snapshot,
+      /**
+       * 订阅状态变化，返回退订函数。
+       *
+       * **订阅的那一刻就先回调一次当前状态。** 呈现层是在调度层之后才装起来的
+       * （content/content-bootstrap.js 的 init 就是这个顺序），那时 start('load')
+       * 早已跑完 —— 只等「下一次变化」的话，一个判完就定下来不再动的页面（黑名单、
+       * 语言相同、要追问）永远等不到那一次，追问条根本不会出现。
+       */
+      onStateChange: (listener) => {
+        listeners.add(listener);
+        try {
+          listener(snapshot());
+        } catch (error) {
+          console.warn('Blab Translation: auto status listener failed', error);
+        }
+        return () => listeners.delete(listener);
+      },
       pauseCurrentPage,
       resumeCurrentPage,
       markPageExplicit,

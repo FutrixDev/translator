@@ -16,31 +16,34 @@
     </header>
 
     <main class="main">
+      <!-- 这一页的三行动作。顺序是「以后都这样」→「现在就这一次」→「先停一下」，
+           从最持久的决定走到最临时的那一个。
+           悬浮球和视频字幕两行搬去了设置页：它们是偏好，不是此刻要做的事，而
+           popup 每多一行，真正要点的那一行就更难找一次。 -->
+      <button id="toggleSiteAuto" class="menu-item" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l1-8z" stroke-linejoin="round"/>
+        </svg>
+        <span data-i18n="popupSiteAuto">Auto-translate this site</span>
+        <kbd id="siteAutoStatus" data-i18n="off">Off</kbd>
+      </button>
+
       <button id="translatePage" class="menu-item">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
           <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
         </svg>
-        <span data-i18n="translateCurrentPage">Translate Page</span>
-        <kbd data-i18n="translatePage">Full Page</kbd>
+        <span id="translatePageLabel" data-i18n="translateCurrentPage">Translate Page</span>
+        <!-- 键位从 chrome.commands.getAll() 读，不写死：用户在
+             chrome://extensions/shortcuts 改过之后，这里印的得是他改成的那个。 -->
+        <kbd id="translatePageShortcut" hidden></kbd>
       </button>
 
-      <button id="toggleFloatBall" class="menu-item">
+      <button id="togglePagePause" class="menu-item" hidden>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M8 12h8M12 8v8"/>
+          <path d="M10 5v14M14 5v14" stroke-linecap="round"/>
         </svg>
-        <span data-i18n="floatBall">Float Ball</span>
-        <kbd id="floatBallStatus" data-i18n="on">On</kbd>
-      </button>
-
-      <button id="toggleYoutubeCaptions" class="menu-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="5" width="18" height="14" rx="2"/>
-          <path d="M7 10h4M7 14h6"/>
-        </svg>
-        <span data-i18n="youtubeCaptions">Video Subtitle Translation</span>
-        <kbd id="youtubeCaptionsStatus" data-i18n="off">Off</kbd>
+        <span id="pagePauseLabel" data-i18n="popupPausePage">Pause on this page</span>
       </button>
 
       <!-- The entry point that does not depend on the context menu, which comic
@@ -112,6 +115,7 @@
   </div>
 
   <script src="../i18n/messages.js"></script>
+  <script src="../shared/site-rules.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/engine-status.js"></script>
   <script src="../shared/comic-charge.js"></script>

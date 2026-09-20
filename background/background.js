@@ -1,6 +1,7 @@
 // Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+import '../shared/site-rules.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -548,6 +549,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
       break;
+    case 'COMMAND_SHORTCUTS':
+      // 内容脚本够不着 chrome.commands，而它得知道哪些修饰键被我们自己的命令
+      // 占着：单修饰键的悬停快捷键不能抢在和弦的第二下之前动手（见
+      // content/content-utils.js 的 commandModifiers）。键位用户改得掉，所以
+      // 答的是**现在真的绑着**的那一份，不是 manifest 里那份建议值。
+      chrome.commands.getAll((commands) => {
+        sendResponse({ shortcuts: (commands || []).map((c) => c.shortcut).filter(Boolean) });
+      });
+      return true;
+
     case 'TRANSLATE':
       handleTranslate(message.text, message.targetLang, message.mode)
         .then(sendResponse)
@@ -587,6 +598,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'OPEN_OPTIONS':
       chrome.runtime.openOptionsPage();
       break;
+
+    // 站点规则和追问计数的读—改—写。内容脚本和 popup 不自己动这两张表：它们是
+    // 整份对象读出来、改一个键、整份写回，两个标签页同时来就会互相盖掉 ——
+    // 用户点下的选择没了，而且哪里都不报错。规则本身在 shared/site-rules.js，
+    // 这里只管转接。
+    case 'SITE_RULES_WRITE':
+      globalThis.SiteRules.applyWrite(message)
+        .then(value => sendResponse({ value }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
 
     // --- Comic translation (account-backed, see comic-client.js) -------------
     case 'COMIC_ACCOUNT':
@@ -712,6 +733,25 @@ chrome.runtime.onStartup.addListener(() => {
   createContextMenus();
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
+});
+
+// Alt+A —— 翻译 / 还原当前页面。
+//
+// 和右键菜单、popup 那一行走的是同一条消息，因为它们是同一个动作；键位在
+// manifest 的 commands 里声明，用户可以在 chrome://extensions/shortcuts 改掉。
+//
+// content script 不在的页面（chrome:// 、Web Store、一个还没跑完的标签页）
+// sendMessage 会 reject，这里咽掉 —— 一个快捷键按不动是本来就该安静的事，
+// 抛出去只会在 service worker 的控制台里堆未处理的 rejection。
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== 'toggle-translate-page') return;
+  const target = tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  if (!target || typeof target.id !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(target.id, { type: 'TOGGLE_PAGE_TRANSLATION' });
+  } catch (error) {
+    console.log('Blab Translation: toggle shortcut had no receiver', error && error.message);
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {

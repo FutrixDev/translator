@@ -107,7 +107,7 @@ shared/spa-navigation.js    路由信号 —— 正文、字幕、未来的面�
 // 全局挂载（与 CaptionCore / AccountGate 同形）
 globalThis.SiteRules = {
   decide(input),              // -> Decision
-  normalizeHost(hostname),    // 取注册域：mobile.x.com -> x.com
+  normalizeHost(hostname),    // 规则的键：这台主机本身，只脱 www.
   matchBuiltin(host, path),   // -> Rule | null
 };
 
@@ -169,7 +169,7 @@ globalThis.SiteRulesBuiltin = {
   blocklist: [ /* 见 §7.3 */ ],
   rules: [
     {
-      match: 'x.com',                       // 注册域，或 'arxiv.org/abs/*' 路径通配
+      match: 'x.com',                       // 主机名（含子域），或 'arxiv.org/abs/*' 路径通配
       state: 'always',
       atomicBlockSelectors: ['[data-testid="tweetText"]'],
       excludeSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
@@ -687,6 +687,18 @@ const ready = engine === 'ai'
 `chrome.commands` 的处理落在 `background/background.js`，向活动标签页转发一条消息，
 content 侧走与悬浮球单击**同一个函数**。
 
+划词和悬停的快捷键是「单独一个修饰键」（默认 Control / Shift，可配成 Alt），
+和 `Alt+A` 的第一下 keydown 长得一模一样：不管的话，用户按一次 `Alt+A` 会既译一句
+又译一页，两次请求。所以这类单修饰键触发统一过 `content-utils.js` 的
+`armModifierTap()`——松开才算数，中间来了别的键就作废。悬停另外开 `hold: true`：
+它的手势本来就是「按住，划过哪段译哪段」，所以按住超过一瞬也算数；划词是「点一下」，
+不开这一档——按着 Ctrl 伸手去够 C 的那半秒不该变成一次翻译。
+
+和弦还可以来得更晚：按住 Alt 超过一瞬（按住档自己动了手）、或者按着 Alt 先划了一段
+（悬停当场就译了），这才去够 A。那时候已经译出来的一段留着——请求已经付过了，当场
+撤掉只会更怪——但这一按要接着盯到松手为止（`spentTap`），后面来的那个键把 `onChord`
+补跑一次。少了这道补刀，`hotkeyDown` 一直是真，松手之前划过多少段就是多少次请求。
+
 ### 5.7 `background/background.js`
 
 - `chrome.commands.onCommand` 监听（上条）。
@@ -788,7 +800,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 
 | 文件 | 覆盖 | 对应验收 |
 | --- | --- | --- |
-| `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；注册域归一（`mobile.x.com` → `x.com`）；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
+| `site-rules.test.mjs` | `decide()` 全部短路分支（每条 reason 都要被覆盖到）；黑名单优先于用户 `always`；`explicit` 压得住总开关、压不住禁翻三条；规则按精确主机名存（`alice.github.io` 不圈进 `bob.github.io`），放大靠查找时的父域链；语言口径与 `CaptionCore.getLangBase` 一致 | FR-1 |
 | `site-rules-schema.test.mjs` | 规则表 schema 校验；坏字段整表回退到兜底且不抛 | FR-1.7 |
 | `block-identity.test.mjs` | hash 稳定性与归一化；`isStale` 在文本变化时为真；`readSourceText` 不把译文算进原文；`ctx.releaseTranslation` 摘译文节点、放回原文、清标记；判定排在 `closest()` 之前 | FR-2.10 |
 | `translation-cache.test.mjs` | **已落地（PR-4，20 条）**：6 个因子每一个都改变键；因子边界不滑动；L1 命中零请求；**换一份新模块实例（空 L1）后 L2 仍命中**；换模型后不命中；同批去重；并发 in-flight 合并；失败不记账且等待方自己重发；条数对不上整批作废；空译文传回但不缓存；30 天过期；sweep 的过期/畸形/字节预算三条；超 L1 容量的调用不出空洞；三份装载清单 | FR-7 |
@@ -864,7 +876,7 @@ if (response.translations.length !== cues.length) { markBatchFailed(cues); retur
 | **PR-7** | 交互四触点 | `content-auto-status.js`、`content-float-ball.js`、`popup/`、`manifest.json`(commands) | 启用 ≤3 次点击；关闭不离开页面；`Alt+A` 可用 |
 | **PR-8** | 站点适配首批规则 | `shared/site-rules-builtin.js`、`content/page/collect.js`（原子块） | X / Reddit / arXiv / HN fixture 回归 |
 | **PR-9** | 字幕面接入 | `content-video-captions.js`、`content-caption-providers.js` | 自动开启；滑动窗口；切视频无残留 |
-| **PR-10** | 设置页审计表、本机统计、10 语文案、商店材料 | `options/`、`_locales/*` | 全量回归 + 商店描述与隐私政策同步 |
+| **PR-10** | 设置页审计表（**每条可删**）、本机统计、10 语文案、商店材料 | `options/`、`_locales/*` | 全量回归 + 商店描述与隐私政策同步 |
 
 **里程碑映射**：PR-0a/0b = M0；PR-1…PR-6 = M1；PR-7 = M2；PR-8/9 = M3；PR-10 = M4。
 
@@ -1160,3 +1172,226 @@ P1 在三轮评审之前一路绿着过来。
 
 第九轮那一条的验证同样是变异式的：把落笔端的门改回只看 class，以及保留判据但删掉「摘旧的」
 那一步 —— 两种都让 `page-translation-restamp` 的第一条变红，而后两条（去重仍然要成立）保持绿。
+
+### PR-7 第五轮的三条
+
+评审指出的三条都属实，但第三条只接受了一半，理由写在这里而不是只留在 PR 评论里：
+
+1. **popup 上那一行印「继续」的时候，页面那边真的得继续。** 页面的 `resumeCurrentPage()`
+   从一开始就收 `PAUSED` 和 `ERROR` 两种，popup 却只认 `paused` —— 于是出错的那一页上按钮
+   印着「暂停」，点下去把 `ERROR` 变成 `PAUSED`，用户得重开 popup 再点一次才轮到重试，而
+   出错的那一页正是最需要一下点中的。两边共用一个 `AUTO_RESUMABLE`，钉在
+   `auto-status-wiring.test.mjs` 里同时比对两处源码。
+2. **和弦可以来得比「动手」还晚**（见 §5.6 的补充）。e2e 补了一条旅程：按住 Alt 译出一段，
+   手不松再按 A，之后划过的段落一段都不许再译；变异掉那一行补刀，这条旅程当场变红。
+3. **`siteRules` 会无限长下去** —— 属实，同步存储每项 8KB，撑爆那天 `set()` 直接失败。
+   但**不分片**：分片会把一个六处都在读的结构换掉，而且真正的风险不是表太大，是用户亲口
+   说过的话被程序扔掉。所以做两件事，都不改 schema：
+   - **只在超预算时**收掉「收了也查不出差别」的条目（`compactUserRules`）。多余不靠眼力
+     判断，靠再查一遍：删掉之后 `lookupUserRule` 对这个键的答案没变，才真的多余。这样
+     `x.com=always` 底下的 `ads.x.com=never`、以及 `localhost` 下面的单标签主机都不会被
+     误收。不平时清理，是因为子域那条今天多余不等于明天多余：用户哪天把父域改成相反的
+     状态，留着的那条还护得住那个子域，平白收掉了就跟着变 —— 一次没人看见的改主意。
+   - **写不进去就让失败传出去**，popup 上说一声（`popupSiteRuleFailed`）。那个开关是乐观
+     控件，它已经在用户眼里动过了；吞掉失败就是「按钮动了、设置没存上」。
+   真正的泄压阀是 PR-10 那张**每条可删**的审计表，已经写进上面的 PR 清单。
+
+### PR-7 第六轮的三条
+
+三条都属实，三条都改了。共同点是「同一下点击顺手做了第二件事」：
+
+1. **黑名单那一行是死的，不是关着的。** 阶梯上 `isBlocked()` 和内置 `never` 排在所有站点
+   规则前面（`site-rules.test.mjs` 的「the blocklist outranks the user own always」就是这
+   条），所以在 `mail.google.com` 上把那一行点开，写下去的 `always` 一辈子也生效不了。点
+   了没反应还不是最糟的 —— 最糟的是这一下**顺手把总开关打开了**：他要的是眼前这一个站点，
+   拿到的是整个浏览器。现在按钮灰着（`.menu-item:disabled` 早就有），`title` 上写着为什么
+   （`autoReasonBlocklist`，十个语言都已经有），`toggleSiteAuto()` 里再挡一道 —— 键盘走得
+   到 disabled 的按钮，扩展页面也点得动。
+2. **站点规则先落地，总开关才跟着开。** 原来的顺序是反的，于是规则写失败（上一轮那条配额）
+   的时候总开关已经替所有别的站点开好了。反过来漏掉的那半边不伤人：规则落了地而总开关没
+   开，再点一次就补上。
+3. **长按的尾巴由那一下合成事件自己宣布，不由秒表宣布。** 触屏菜单 500ms 就开出来了，手指
+   常常还按着；松手时补发的那一串合成事件如果晚于一秒的窗口，就一路落到最后一档，把整页
+   翻译也点了 —— 一次长按，开菜单外加一次花钱的整页翻译。改成按手势记一面旗
+   （`longPressFired`），由合成的那一下 mouseup 消费掉，下一次 `touchstart` 兜底清掉，所以
+   合成事件万一根本不来（长按被系统手势截走），旗也烂不过这一次手势。
+
+第三条补了一条真·浏览器旅程（CDP `Input.dispatchTouchEvent` + 触摸模拟，这套件里第一次用
+触屏）：长按开菜单、再按满 1.6 秒、松手，翻译请求必须是 0 条。把实现变回秒表窗口，这条旅程
+当场变红 —— 那次没人点过的整页翻译是真的会发出去。前两条是 popup 的接线，钉在
+`auto-status-wiring.test.mjs` 里（去掉灰、去掉闸、把顺序换回来，三种变异各让一条变红）。
+
+### PR-7 第七轮的一条
+
+上一轮那道黑名单闸问错了人：它读的是 `auto.reason`，而 `decide()` 第一档就
+`GLOBAL_OFF` —— 总开关关着时黑名单被整个遮住，闸不响。而那恰恰是这个开关最该灰着的
+时候：点下去写的是一条永远生效不了的 `always`，还顺手把总开关替所有别的站点打开了。
+
+修法不是在 popup 里再判一遍（popup 手上没有内置表，它的 `location` 是
+`chrome-extension://`），是把这一问**单独立成一个主人**：`SiteRules.isBlocklisted()`
+—— 黑名单表和内置表里的 `never` 是同一件事的两种写法，对外只有一个说法，`decide()`
+自己的那一档也换成问它。页面在 `AUTO_PAGE_STATE` 里把答案单独回一句（`blocked`，
+跟 `host` 一样「只有页面答得了」），popup 照着它灰。
+
+钉住两头：`site-rules.test.mjs` 里一条行为断言 —— 总开关关着时 `reason` 是
+`GLOBAL_OFF` 而 `isBlocklisted()` 照样答 true，并且逐个探针比对它和阶梯的答案必须
+一致；`auto-status-wiring.test.mjs` 里 popup 不许再出现 `reason === 'BLOCKLIST'`，
+也不许自己调 `isBlocklisted`。三种变异（popup 读回 reason、`isBlocklisted` 丢掉黑名单
+那一半、页面不回这一句）各自变红。
+
+### PR-7 第八轮的一条
+
+`translateCurrentPage()` 那道 key 门开得太宽：这一页已经有译文时，那一下是收起来 /
+放出来，动的是 DOM，一个请求都不发 —— 却照样被没填 key 的自定义引擎拦下，按钮上写着
+「收起译文」，点下去弹出的是设置页，译文还在原地。用内置引擎译完、事后把引擎换成自定义
+的人，从此连自己那一页都收不起来。门改成只对「真要开译」的那一下开，判据还是页面回的
+那一份 `hasTranslations` —— 和按钮上那行字用的是同一个事实，不另立一套。
+
+### PR-7 第九轮的两条
+
+**一、译文藏着的时候，那个站点开关关不掉。** 「我想看原文」把这一页停在 `paused`；
+popup 上那一行画的是**状态**，`paused` 不是 `off` 也不是 `ask`，于是它写着「开」。
+点一下写 `never` 落盘，规则变动确实重开了一轮 —— 可 `start()` 第一件事就撞上隐藏闩，
+原地返回，`status`/`reason` 都还停在上一次。那一行重画出来还是「开」，再点一次又写一遍
+`never`，怎么点都关不掉。
+
+闩拦的本来就只是**开始翻**，不是**重新判**。所以它先 `resolve()` 一次再返回：判出
+`off` 就如实说 `off`（这一页往后也不会自己翻了），还该翻的照旧停在 `paused`。一行翻译
+也没多跑 —— `setStatus` 紧跟着 `return`，这件事由 `auto-translate-wiring.test.mjs`
+那条老断言换个形状继续钉。加了一条真旅程：译好、藏起来、从服务工作者走 popup 那条同样的
+写入路写 `never`，状态必须从 `paused` 变成 `off`，而译文还藏着、请求数一条不增。把闩改回
+原地返回，这条旅程当场变红（`Expected "off" / Received "paused"`）。
+
+**二、第八轮那道 key 门漏了「藏着」这一种。** 判据写的是「有译文就不花钱」，可页面那边
+`togglePageTranslation()` 在译文藏着时走的是 `translatePage()` —— 放出旧译文的同时，把
+这一页藏起来之后新长出来的块补上，那些块要花钱。没填 key 的自定义引擎照样会被放进去跑一趟
+必然失败的翻译。
+
+「这一下是不是收起」于是也归一个主人：`isHideAction()` —— 按钮上那行字和这道门问的是同
+一句，`hasTranslations && translationsVisible` 两个条件缺一不可。一处定义、两处用，这件事
+本身由测试数着（多一处就是又立了一套）。
+
+### PR-7 第十轮的三条
+
+**一、后台标签页把追问的三次机会花光了。** `render()` 一判出「这一页该问」就去领号，而
+中键点开的那一串链接、浏览器预渲染的那一份，内容脚本一样跑完 —— 条子在那些标签页里谁也
+没见过，号却照领。三次机会可以在用户面前一次没露过的情况下用光，这个域名从此永远安静，
+而他只会觉得这个插件在这儿坏了。
+
+领号前先问一句 `document.visibilityState === 'visible'`：看不见就不领，条子照旧收走。
+「等它真被看见了再领」需要有人来叫第二遍 —— `visibilitychange` 重画一次，预渲染转正走的
+也是这个事件。
+
+这一条在浏览器里证不了：无头 Chromium 把每个标签页都报成 `visible`，CDP 也没有覆盖它的
+命令（`Emulation.setPageVisibilityOverride` 早就不在协议里了）。所以它钉在
+`test/unit/auto-status-wiring.test.mjs`：闸门那一句和那个监听器，两半都钉。
+
+**二、用户按下的暂停，别人改一条规则就能顶开。** `pauseCurrentPage()` 只改调度层的
+`status`，而 `status` 会被下一次 `start()` 盖掉 —— 而 `start()` 常常是别人替他叫的：另一个
+标签页在追问条上勾了「总是」，`siteRules` 一落地，这一页的 `onSettingsChanged` 就重开一轮。
+他按下的暂停当场失效，页面自己又翻起来，而他没有碰过任何东西。
+
+所以暂停记成一道闩 `pausedByUser`，和「藏起译文」并列在 `start()` 的同一个判断里。解闩的
+只有他自己后说的那两句：**继续**（`resumeCurrentPage`）、**翻译整页**（`markPageExplicit`）。
+后者还得连带重开一轮 —— 哪怕这一页早就表过态（`explicit` 已经是 `true`），那一轮正停在
+闩上，不重开就等于什么都没发生。
+
+**三、球上那两颗按钮键盘够不着。** 状态点和 `···` 都是 `<span role="button">` —— 既不进
+Tab 序，也不认 Enter，而本文档自己那一行写的是「追问条、状态点、popup 四行均可 Tab / Enter
+操作」。
+
+两颗都换成真的 `<button type="button">`，Enter/Space 在球上那个 `keydown` 里派活：落在哪
+一颗上仍旧问 `pressZone()`（鼠标那条路问的是同一个），并且 `preventDefault()` 把 `<button>`
+自己合成的那一下 `click` 挡掉 —— 不挡的话，将来谁在球上挂一个 `click`，一次按键就点两回。
+
+配套的三件小事：`···` 平时 `opacity: 0`，所以显形那条规则要连 `:focus-within` 一起认，否则
+Tab 停在它身上时人看到的是焦点凭空消失了一格；状态点没有文字，`aria-label` 和 `title` 说的
+必须是同一句（都是 `explainLine()`）；`···` 是开合菜单的按钮，`aria-expanded` 得跟着菜单走。
+
+**「Esc 关掉菜单」没有在这一层再写一遍。** `content/content-selection.js` 那一处统管所有浮层
+的 Esc，它本来就连着 `ctx.hideFloatMenu()`。这一层只补它管不到的那半件事：菜单一撤，焦点
+如果正在菜单里，就掉回 `<body>` 了 —— 送它回 `···` 上。鼠标点别处关的不算，那时候焦点本来
+就不在这儿，抢回来是打断。
+
+### PR-7 第十一轮：闩是「这一页」的
+
+第十轮那道闩只补了一半。`onRouteChange()` 把 `explicit` 归零（新的一页，用户还没表过
+态），却没归零 `pausedByUser` —— 于是他在一篇文章上按下的暂停，跟着他走进了单页应用里
+的下一篇、下下篇。他按的那句话是「**这一页**先别翻了」；「这个站点从此别翻了」有另一个
+说法，就是 popup 上把站点关掉（写 `never`）。
+
+更糟的是他没有任何理由想到要去解：唯一的那颗「继续」按钮此刻指着的是他早就离开的那一
+页，而新的一页看起来只是安静地没有翻译。
+
+所以 `onRouteChange()` 里两样一起归零。单元测试把解闩的地方钉成了三处
+（`resumeCurrentPage` / `markPageExplicit` / `onRouteChange`），多一处就红 —— 每多一条自己
+会解闩的路，都得是有人特意写下的。e2e 那一条在 `test/e2e/auto-translate-spa.spec.js`：
+`/abs/2401.00001` 上暂停，`pushState` 到 `/abs/2401.00002`，新文章照常翻。
+
+### PR-7 第十二轮：两处「同一个问题两个答案」
+
+**一、显隐开关收走了划词译的那一句。** `setTranslationsVisible()` 用的是宽选择器
+`.ai-translator-inline-block`，而划词和悬停的译文块用的是同一个类名（只多带一个自己
+的）。于是「我想看原文」这一下把用户刚刚指着一句话问出来的答案也收走了 —— 更糟的是
+插它的那条路（`content-hover-translation.js`）根本不读 `state.translationsVisible`，
+所以他再划一句，新的答案照样冒出来：藏旧的、不藏新的，这个开关在他眼里就是时灵时
+不灵。
+
+这个文件里本来就有一条说了算的判据 `PAGE_TRANSLATION_SELECTOR`（「仅显示译文」的逐条
+计算和 `hasPageTranslations()` 用的都是它，后者的注释里写得很清楚：用户划词译了一句，
+这一页并不因此就「翻过了」）。显隐开关只是没收到这份通知。现在三处同一条，常量也从
+文件中段挪到了顶上 —— 它是这个文件的中心定义，不该藏在 `CROWDED_ATTR` 后面。
+
+**二、popup 把 `pending` 画成「开」。** 走到 `PENDING` 的**前提**就是第一问已经答了
+`ask`（`off` 和 `auto` 都当场返回了），而第二问带上语言之后，`decide()` 的阶梯上剩给它
+的只有 `off`（同语言 / 不在语言名单里）和 `ask` 两条 —— 再没有一条通往 `auto`。所以一个
+`pending` 的站点**永远不会**变成「在自动翻」。
+
+代价不是画错一瞬：popup 问完就不再听了，这个字会一直错到它关掉；而用户照着那个「开」
+点一下，写进去的是一条**永久的 `never`**。
+
+`AUTO_ACTIVE` 去掉 `pending` 之后，站点行的「开 / 关」和暂停行的「在 / 不在」问的成了同
+一件事，所以合并成一个出处：`siteAutoOn(status)`，画这一行和点这一行共用。原来那句
+`globalAuto && status !== 'off' && status !== 'ask'` 在两个函数里各写了一遍，这正是它
+们会分家的原因。单元测试把 `decide()` 末端那两行 `ask` 也钉住了 —— 那是上面整段推理的
+依据，它一变，`pending` 的含义就变了。
+
+### PR-7 第十三轮：受管容器里的那一句，和「谁停的谁解」
+
+第十二轮把「划词译出来的一句不归整页开关收」写进了 `PAGE_TRANSLATION_SELECTOR`。评审
+指出那一条在**受管容器**（Lexical / ProseMirror / PDF / 漫画）里落不到实处，顺带又指出
+显隐层那一停一续越权撤销了 popup 上按下的暂停。两条都真，而第一条往下挖出了同一处的另
+外两个缺陷。
+
+**一、受管容器里的译文没有节点可以排除。** 它是原文块的 `::after`，显隐靠挂在 `<html>`
+上的一个属性整体开关 —— 那个属性会把**所有**受管译文一起关掉，包括刚划词问出来的那一
+句；而且它管的是生成内容，**接下来新划的一句照样不出来**，直到整页译文重新显示为止。
+
+修法和普通容器一致：原文块上打一个 `data-ai-translator-managed-one-off`，隐藏规则改成
+`[hidden] [managed]:not([one-off])::after`。判据只有一条 —— **句柄自己答不答得上
+`PAGE_TRANSLATION_SELECTOR`**。这里再按 `kind` / `className` 自己判一遍的话，两处迟早
+各答各的。
+
+写验收旅程时发现这个场景**当时根本走不到**，底下压着两个缺陷：
+
+- `canRenderManagedTranslation()` 把**我们自己上一笔**当成了站点的 `::after` 装饰。一条
+  译文从「正在翻译…」变成正文，就是在同一个块上再画一次；第二笔因此永远落不下去，
+  受管容器里划词一直停在「正在翻译…」，然后退回那条插真节点的路 —— 而那条路在 Lexical
+  里下一帧就被编辑器撤销，用户什么都看不到。现在先问 `BLOCK_ATTR`：这个块归不归我们管。
+- 换一条译文是「先画新的、再收旧的」（`trackInlineTranslation`）。两个句柄共用同一个
+  id，旧句柄一释放，规则和块上的标记全被收走 —— 刚画上去的那条当场消失。现在记
+  `currentHandle`（块 → 句柄），旧句柄只收自己。
+
+**二、显隐层越权撤销了暂停。** 「这一页先别翻了」和「我现在想看原文」是两句话。显隐那
+一下顺手停、顺手续都对，但能撤销的只有它自己停的那一下。原来那条路无条件解闩：用户在
+popup 上按了暂停，再从悬浮球菜单看一眼原文、切回译文，页面就自己又翻起来了 —— 而他从
+头到尾没碰过那颗按钮，也没有任何理由想到要再去按一次。
+
+`pauseCurrentPage(cause)` / `resumeCurrentPage(cause)` 现在要问是谁停的：`'hidden'` 那一
+停**不上闩**（`start()` 看的是 `ctx.state.translationsVisible`，那一道已经拦着了），那一
+续也不解闩，闩还在就原地停住。popup 那两下不带 `cause`，照旧是用户自己说了算。
+
+验收：`受管容器：整页译文藏着的时候划词，那一句照样看得见`、`popup 上按下的暂停，不会被
+「显示原文 → 显示译文」顺手洗掉` 两条旅程，外加 `managed-dom-root` 与
+`auto-status-wiring` 里的四处钉子。四处改动逐条反向验证过：每去掉一处，对应的旅程或单测
+立刻变红。

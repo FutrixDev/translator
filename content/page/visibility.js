@@ -10,25 +10,72 @@
   if (!ctx) return;
 
   const { settings, state } = ctx;
-  function revealHiddenTranslations() {
-    const hidden = document.querySelectorAll('.ai-translator-inline-block.ai-translator-hidden');
-    hidden.forEach(el => el.classList.remove('ai-translator-hidden'));
-    // 受管容器里的译文整体开关（见 content-managed-translation.js），它被隐藏时
-    // 上面那批里只有一个不显示的替身，光看 hidden.length 会漏判。
-    const managedHidden = ctx.areManagedTranslationsHidden && ctx.areManagedTranslationsHidden();
-    if (managedHidden && ctx.setManagedTranslationsVisible) {
-      ctx.setManagedTranslationsVisible(true);
-    }
+
+  // 「整页翻译的译文」是什么，**只有这一条说了算**。悬停和划词的译文块用的是同一
+  // 个 .ai-translator-inline-block 类名，只多带一个自己的类名，所以少写一个
+  // :not() 就会把用户划词译的那一句算成整页翻译的一部分 —— 于是 Alt+A 第一下不是
+  // 翻译整页，是把那一句藏起来。
+  //
+  // 这个文件里三处用到它，三处都必须是同一条：显隐开关、「仅显示译文」的逐条计算，
+  // 以及 content-page-translation.js 问的「这一页翻过了没有」。
+  const PAGE_TRANSLATION_SELECTOR =
+    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+
+  /**
+   * 「此刻想不想看译文」——**这个开关只有这一处实现**。
+   *
+   * 入口有四个：悬浮球单击、悬浮球菜单里的显示/隐藏、popup 的那一行、以及
+   * 「翻译整页」顺手把藏起来的放出来。四处各写一遍的代价不是重复，是漏项：
+   * 忘了受管容器那批（它们是原文块的 ::after，在下面那串里只有一个不显示的
+   * 替身），或者忘了通知自动翻译——用户一边藏译文，新译文一边冒出来。
+   */
+  function setTranslationsVisible(visible) {
     // 无条件置位。这个标记是「用户此刻想不想看译文」唯一的出处，自动翻译那一层
     // （content/content-auto-translate.js 的 start()）也读它 —— 只在「确实藏着
     // 东西」时才置位的话，在一个还没有译文的页面上藏一次、再点「翻译整页」，标记
     // 就永远停在 false，自动翻译从此不会再醒。
-    state.translationsVisible = true;
-    // “仅显示译文”开着时，此前因“隐藏译文”被放回来的原文要重新藏起去
+    state.translationsVisible = visible;
+    // 只管整页翻译那一批。划词和悬停译出来的是**一次性**的结果：用户刚刚指着一句
+    // 话说「这句什么意思」，答案不该被一个管着整页的开关收走。而且那条插入路径
+    // （content-hover-translation.js）根本不读这个标记 —— 藏旧的、不藏新的，用户
+    // 看到的就是这个开关时灵时不灵。一次性的结果由它自己那条路收（点别处、Esc）。
+    document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
+      el.classList.toggle('ai-translator-hidden', !visible);
+    });
+    // 受管容器里的译文整体开关（见 content-managed-translation.js）：它没有自己
+    // 的节点可以加类名，只能整体开关。幂等，所以不必先问它现在是什么状态。
+    if (ctx.setManagedTranslationsVisible) ctx.setManagedTranslationsVisible(visible);
+    // “仅显示译文”与本开关联动：译文被藏起来时必须把原文放回来，否则页面两边
+    // 都不显示；译文重新显示时再把原文藏回去。
     applyTranslationOnlyMode();
-    // 悬浮球的开关不是唯一的入口：「翻译整页」也会把译文放出来。两条路都要通知
-    // 到自动翻译那一层，否则藏过一次之后它就再也不会醒过来。
-    if (ctx.autoTranslate) ctx.autoTranslate.resumeCurrentPage();
+    // 「显示原文」就是「我现在想看原文」。自动翻译要是继续往下翻，用户一边藏
+    // 译文、一边有新译文冒出来 —— 那个开关就成了摆设。
+    //
+    // 带上「是显隐干的」：这一停不上闩，这一继续也不解闩。他在 popup 上按下的
+    // 暂停是另一句话，不归这个开关撤销（见 pauseCurrentPage）。
+    if (ctx.autoTranslate) {
+      if (visible) ctx.autoTranslate.resumeCurrentPage('hidden');
+      else ctx.autoTranslate.pauseCurrentPage('hidden');
+    }
+  }
+
+  function revealHiddenTranslations() {
+    setTranslationsVisible(true);
+  }
+
+  /**
+   * 刚插进来的这一条译文，跟上当前的显隐状态。
+   *
+   * setTranslationsVisible() 只管得到调用那一刻已经在 DOM 里的块。用户在一轮翻译
+   * 跑到一半时点了「显示原文」，后面几批插进来的译文得自己知道现在是藏着的 ——
+   * 否则他一边藏，译文一边冒出来，那个开关就成了摆设。
+   *
+   * 受管译文（::after 那一路）不走这里：它们的显隐是根元素上的一个属性，整体
+   * 开关，新画出来的天然就跟着。
+   */
+  function applyTranslationVisibility(translationEl) {
+    if (!translationEl || !translationEl.classList) return;
+    translationEl.classList.toggle('ai-translator-hidden', state.translationsVisible === false);
   }
 
   // ==================== 隐藏原文 ====================
@@ -43,8 +90,6 @@
   // 只作用于整页翻译（.ai-translator-translated 标记的块）；悬停/划词翻译的
   // 译文块（带各自的类名）被明确排除。
   const CROWDED_ATTR = 'data-ai-translator-crowded';
-  const PAGE_TRANSLATION_SELECTOR =
-    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
 
   function shouldHideSource(translationEl) {
     // 浮球“隐藏译文”开关优先：译文都不显示了还藏着原文，页面就两边全空了
@@ -168,6 +213,9 @@
 
 
   ctx.revealHiddenTranslations = revealHiddenTranslations;
+  ctx.setTranslationsVisible = setTranslationsVisible;
+  ctx.applyTranslationVisibility = applyTranslationVisibility;
+  ctx.PAGE_TRANSLATION_SELECTOR = PAGE_TRANSLATION_SELECTOR;
   ctx.isTranslationOnlyActive = isTranslationOnlyActive;
   ctx.hideSourceForTranslation = hideSourceForTranslation;
   ctx.applyTranslationOnlyMode = applyTranslationOnlyMode;

@@ -31,12 +31,6 @@
 
   // ---------------------------------------------------------------- 主机名
 
-  // 二级通用标签 + 两字母国家顶级域 = 公共后缀：co.uk、com.cn、ac.jp、gov.au……
-  // 一条规则顶掉一张会过期的表。co.com 之类不是国家域，不受影响。
-  const GENERIC_SLD = new Set([
-    'co', 'com', 'net', 'org', 'edu', 'gov', 'ac', 'mil', 'gob', 'go', 'or', 'ne', 'nom',
-  ]);
-
   const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
   function cleanHost(hostname) {
@@ -44,25 +38,20 @@
   }
 
   /**
-   * 注册域：mobile.x.com -> x.com。
+   * 规则的键：就是这台主机本身，只脱掉 www.。
    *
-   * 这只用来决定「用户点总是翻译时，这条规则存在哪个键下」。**查的时候不依赖
-   * 它**：lookupUserRule 会沿着主机名一路往上找父域，所以就算这里对某个冷门后
-   * 缀判断保守了，精确写下的那条规则依然命中。少剥一层只是范围小一点，多剥一
-   * 层才是真的错——所以宁可少剥。
+   * 不往上剥到「注册域」。浏览器里没有公共后缀表，任何自己写的启发式都会把
+   * alice.github.io 剥成 github.io —— 用户在一个人的站点上点「总是翻译」，
+   * 这条规则就悄悄盖住了 github.io 上所有别人的站点。同一个后缀下住着互不
+   * 相干的租户（github.io、vercel.app、pages.dev、blogspot.com……），这类
+   * 后缀没有尽头，也没法靠一张表穷举。
+   *
+   * 范围小一点不是问题：lookupUserRule 会沿着主机名一路往上找父域，所以用户
+   * 真想覆盖整个站点时，在 x.com 上表的态照样命中 mobile.x.com。反过来多剥
+   * 一层，才是替用户做了他没做的决定。
    */
   function normalizeHost(hostname) {
-    const host = cleanHost(hostname).replace(/^www\./, '');
-    if (!host) return '';
-    // IP 和 localhost 这类单标签主机没有注册域可言，原样返回。
-    if (IPV4_RE.test(host) || host.includes(':') || !host.includes('.')) return host;
-
-    const labels = host.split('.');
-    if (labels.length <= 2) return host;
-    const sld = labels[labels.length - 2];
-    const tld = labels[labels.length - 1];
-    const keep = (tld.length === 2 && GENERIC_SLD.has(sld)) ? 3 : 2;
-    return labels.slice(-keep).join('.');
+    return cleanHost(hostname).replace(/^www\./, '');
   }
 
   // 后缀匹配：模式命中它自己，以及它的子域。反过来不成立——规则写 x.com 命中
@@ -192,6 +181,22 @@
     return table().blocklist.some((pattern) => patternMatches(pattern, host, path));
   }
 
+  /**
+   * 「这一页永远不自己翻，用户说了也不算」。
+   *
+   * 黑名单和内置表里的 never 是同一件事的两种写法，对外只有一个说法 —— 所以这
+   * 一问必须有一个主人，下面的阶梯自己也问它。
+   *
+   * 单拎出来是因为 decide() 的答案在这个问题上**会被遮住**：总开关关着时它第一
+   * 档就回 GLOBAL_OFF，谁也看不出这一页其实还被拉着黑。要据此把界面上那个站点
+   * 开关灰掉的调用方，问的就得是这一问，不能去读那个被遮住的 reason。
+   */
+  function isBlocklisted(host, path) {
+    if (isBlocked(host, path)) return true;
+    const rule = matchBuiltin(host, path);
+    return !!(rule && rule.state === 'never');
+  }
+
   // ---------------------------------------------------------------- 语言
 
   // 与 content-language.js 的 ctx.getLangBase、caption-core 的 getLangBase 同一个
@@ -267,9 +272,7 @@
     // 禁翻的三条在所有「要翻」的理由之前，包括用户自己设的总是翻译。它防的不
     // 是「用户想翻银行页面」，是「用户在某个域名上点过一次总是翻译，此后我们
     // 往他的邮箱、在线文档编辑器、政务表单里插节点」。
-    if (isBlocked(host, path)) return out('off', REASONS.BLOCKLIST);
-    // 内置表里的 never 和黑名单是同一件事的两种写法，对外只有一个说法。
-    if (rule && rule.state === 'never') return out('off', REASONS.BLOCKLIST);
+    if (isBlocklisted(host, path)) return out('off', REASONS.BLOCKLIST);
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 
@@ -295,11 +298,180 @@
     return out('ask', REASONS.DEFAULT_ASK);
   }
 
+  // ---------------------------------------------------------------- 写规则
+
+  // 同步存储上的「读—改—写」只能有一个主人。
+  //
+  // 站点规则和追问计数各自是一整个对象里的一个键：读出来、改一个键、整份写回。
+  // 同一个域名开着三个标签页，或者用户一边在 popup 上点「关」、一边追问条在给
+  // 另一个域名记数，两边都会先读到同一份旧对象，后写的那份把先写的整个盖掉 ——
+  // 用户点下的选择就这么没了，而且哪里都不报错。
+  //
+  // 所以写入点收到服务工作者里：它是单实例，配上一条队列（两条消息的处理照样
+  // 能在 await 处交错）就能把这些改动串成一条线。队列只保证顺序、不传播失败：
+  // 一次写崩了不该把后面的全卡死。
+  const IN_SERVICE_WORKER =
+    typeof ServiceWorkerGlobalScope !== 'undefined' && root instanceof ServiceWorkerGlobalScope;
+
+  let writeQueue = Promise.resolve();
+
+  function enqueue(run) {
+    const result = writeQueue.then(run, run);
+    writeQueue = result.catch(() => {});
+    return result;
+  }
+
+  // 两张表都按域名一路长下去，而同步存储是**每项** 8KB：撑爆的那天 set() 直接
+  // 失败。追问计数失败了是上限静悄悄不再生效，站点规则失败了是用户刚点下的选择
+  // 根本没存上。所以两张表共用一道预算，也共用一个量法。
+  //
+  // 按**序列化之后的字节数**算，不按条数。撑爆配额的是字节：一条记录占多少取决
+  // 于主机名有多长，两百个 40 字符的域名就已经贴着 8KB，而域名可以长得多。按条
+  // 数封顶只是把那天推远一点，并没有堵上。8KB 里只留 6KB，剩下的是给键名本身和
+  // 「Chrome 怎么数」留的余量 —— 差那一点就写不进去，代价是整张表。
+  const MAX_ITEM_BYTES = 6 * 1024;
+
+  function itemBytes(value) {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  }
+
+  // 追问计数满了先扔计数最小的（被问得最少的那几个，重新问一次的代价也最小），
+  // 刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过的态一点没丢
+  // —— 那些在 siteRules 里，是另一张表。
+  function pruneAskCounts(counts, keep) {
+    if (itemBytes(counts) <= MAX_ITEM_BYTES) return counts;
+    const victims = Object.keys(counts)
+      .filter((key) => key !== keep)
+      .sort((a, b) => counts[a] - counts[b]);
+    for (const key of victims) {
+      delete counts[key];
+      if (itemBytes(counts) <= MAX_ITEM_BYTES) break;
+    }
+    return counts;
+  }
+
+  /**
+   * 站点规则满了：扔掉**扔了也不改变任何判定**的那些。
+   *
+   * 这张表不能像计数那样挑一条扔 —— 每一条都是用户亲口说过的话，扔掉哪一条都
+   * 是替他改主意。但表里会有真正多余的条目：用户先在 x.com 上点了「总是翻译」，
+   * 后来又在 mobile.x.com 上点了一次同样的，而 lookupUserRule 本来就会沿父域
+   * 往上找 —— 删掉子域那条，mobile.x.com 查出来还是 always。
+   *
+   * 「多余」不靠眼力判断，靠查一遍：删掉之后再用同一个函数查这个键，答案一样
+   * 才真的多余。这样单标签主机（localhost 和它下面的 wiki.localhost）、自己
+   * 写死的例外（x.com=always 而 ads.x.com=never）都不会被误收 —— 前者查出来
+   * 是空，后者查出来是相反的那个。从最长的键扫起：最深的子域最可能被盖住。
+   *
+   * **只在超预算时跑**，不平时清理。子域那条今天多余，不等于明天多余：用户哪
+   * 天把 x.com 改成 never，留着的 mobile.x.com=always 还护得住那个子域，收掉
+   * 了就跟着变成 never —— 一次没人看见的改主意。顶着配额失败去换这个风险值得，
+   * 平白无故去换不值得。真正的泄压阀是设置页里那张能删的审计表（PR-10）。
+   */
+  function compactUserRules(rules, keep) {
+    if (itemBytes(rules) <= MAX_ITEM_BYTES) return rules;
+    const keys = Object.keys(rules)
+      .filter((key) => key !== keep)
+      .sort((a, b) => b.length - a.length);
+    for (const key of keys) {
+      const state = rules[key];
+      delete rules[key];
+      if (lookupUserRule(rules, key) !== state) rules[key] = state;
+      else if (itemBytes(rules) <= MAX_ITEM_BYTES) break;
+    }
+    return rules;
+  }
+
+  /**
+   * 写下一条用户站点规则，或把它抹掉（state 不是 always/never 时）。
+   *
+   * 放在这里而不是三个调用方各写一遍：**存进去的那把钥匙必须和 decide() 查的
+   * 那把是同一把**。追问条、popup、设置页都要写这张表，只要有一处忘了
+   * normalizeHost（或者哪天归一化规则变了而只改了两处），用户点下的「总是翻译」
+   * 就存在一个永远查不到的键上 —— 按钮有反应、规则也确实写进去了，页面就是不
+   * 翻，而且哪里都不报错。
+   *
+   * @returns {Promise<string>} 实际用的键，写不成时是空串。
+   */
+  async function applyUserRule({ host, state }) {
+    const key = normalizeHost(host);
+    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+    if (!key || !store) return '';
+    const stored = await store.get({ siteRules: {} });
+    const rules = Object.assign({}, stored.siteRules);
+    if (STATES.has(state)) rules[key] = state;
+    else delete rules[key];
+    compactUserRules(rules, key);
+    // 挤不下就让它抛。这条路上只有用户刚点的那一下，调用方看得见失败、也说得
+    // 出口；吞掉它才是那种「按钮动了、设置没存上」的坏结局。
+    await store.set({ siteRules: rules });
+    return key;
+  }
+
+  /**
+   * 这个域名被追问过几次：读出来、加一、写回去。`'clear'` 是把整条记录删掉
+   * ——用户表过态了，前面问过几次都不算数。
+   *
+   * @returns {Promise<number>} 写完之后的次数
+   */
+  async function applyAskCount({ host, op }) {
+    const key = normalizeHost(host);
+    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+    if (!key || !store) return 0;
+    const stored = await store.get({ siteAskCount: {} });
+    const counts = Object.assign({}, stored.siteAskCount);
+    const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
+    if (op === 'clear') {
+      delete counts[key];
+    } else {
+      counts[key] = current + 1;
+      pruneAskCounts(counts, key);
+    }
+    await store.set({ siteAskCount: counts });
+    return op === 'clear' ? 0 : current + 1;
+  }
+
+  const WRITES = { rule: applyUserRule, ask: applyAskCount };
+
+  /**
+   * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接，规则
+   * 本身不在那边（background.js 的 SITE_RULES_WRITE）。
+   */
+  function applyWrite(message) {
+    const write = message && WRITES[message.kind];
+    if (!write) return Promise.reject(new Error(`unknown site-rules write: ${message && message.kind}`));
+    return enqueue(() => write(message));
+  }
+
+  // 在服务工作者里就自己写，在别处就把这件事交给它。调用方两边共用一个名字，
+  // 省得每个写入点都要记得自己是谁、该不该发消息。
+  function request(kind, payload) {
+    const message = Object.assign({ type: 'SITE_RULES_WRITE', kind }, payload);
+    if (IN_SERVICE_WORKER) return applyWrite(message);
+    return root.chrome.runtime.sendMessage(message).then((reply) => {
+      if (reply && reply.error) throw new Error(reply.error);
+      return reply ? reply.value : undefined;
+    });
+  }
+
+  function writeUserRule(hostname, state) {
+    return request('rule', { host: hostname, state });
+  }
+
+  function updateAskCount(hostname, op) {
+    return request('ask', { host: hostname, op });
+  }
+
   root.SiteRules = {
     REASONS,
     decide,
     normalizeHost,
+    lookupUserRule,
+    writeUserRule,
+    updateAskCount,
+    applyWrite,
     matchBuiltin,
+    isBlocklisted,
     loadTable,
   };
 })(globalThis);
