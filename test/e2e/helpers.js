@@ -40,7 +40,14 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 而不是这份清单。block-identity.test.mjs 里有一条守卫：这串模块里出现的每个
   // `globalThis.X`，都必须由前面某个文件提供。
   'shared/block-identity.js',
+  // 站点适配（content/page/site-adapter.js）读内置规则表，表在 shared/ 的这两个
+  // 文件里；manifest 里它们排在整页翻译的所有模块之前。夹具漏掉它们不会红在这
+  // 里——site-adapter 对 `globalThis.SiteRules` 是运行时软读，拿不到就安静地退回
+  // 通用启发式，于是站点规则的 spec 全都「翻是翻了，只是没按规则翻」。
+  'shared/site-rules-builtin.js',
+  'shared/site-rules.js',
   'content/page/batch.js',
+  'content/page/site-adapter.js',
   'content/page/collect.js',
   'content/page/insert.js',
   'content/page/visibility.js',
