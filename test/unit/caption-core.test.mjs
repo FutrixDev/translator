@@ -631,6 +631,32 @@ test('替他开成了就当场记下，别等下一拍', () => {
   );
 });
 
+test('「原字幕开着没有」拿不准的时候，不许去合那道闩', () => {
+  // 那道闩一合就是一整个会话。YouTube 的字幕容器是播放器外壳的一部分，可以先于
+  // 控制条挂上来、而且是空的——把它读成「开着」，等按钮带着 aria-pressed="false"
+  // 出现，下一拍就成了「观众刚把字幕关掉」，自动开启从此停摆，而他什么都没做过。
+  const providers = repoFile('content/content-caption-providers.js');
+  const probe = providers.match(/nativeCaptionsState\(\) \{[\s\S]*?\n    \},/);
+  assert.ok(probe, '找不到 YouTubeProvider.nativeCaptionsState()');
+  assert.match(probe[0], /aria-pressed'\) === 'true'/, '按钮才是权威');
+  assert.match(
+    probe[0],
+    /ytp-caption-segment'\)\) return true;[\s\S]{0,40}return null;/,
+    '没有按钮的时候，空容器要答「说不准」，不能答 true 也不能答 false',
+  );
+
+  // 引擎照三种答案走：只有确凿的 false 才往闩那一步去。
+  const engine = repoFile('content/content-video-captions.js');
+  const sync = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
+  assert.match(sync[0], /if \(on === true\)/);
+  assert.match(sync[0], /if \(on !== false\) return;/, '「说不准」被读成了「关着」');
+  assert.equal(
+    /provider\.isCaptionsEnabled/.test(engine),
+    false,
+    '还留着两问一样问题的两个方法',
+  );
+});
+
 test('allowDisabled 只从 enableNativeCaptions 那条路进来', () => {
   // 它是「把页面只是提供的那几门字幕挑一门出来开」的许可。任何别的调用点拿到
   // 它，默认行为就变成了「替所有人开字幕」，而那是整个功能唯一不可逆的一步。
@@ -664,10 +690,22 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
     '回退开着的时候也不设限：一场两小时的讲座会整片发去云端',
   );
 
-  // 窗要真的拦住批次，而不是算出来放着不用。
+  // 窗要真的拦住句子，而不是算出来放着不用。
   assert.match(engine, /function pickNextBatch\(limitMs\)/);
-  assert.match(engine, /if \(dist > limitMs\) continue;/);
+  assert.match(engine, /if \(segDist > limitMs\) continue;/);
   assert.match(engine, /pickNextBatch\(limitMs\)/);
+
+  // 而且量的是**句子**，不是批次：批次只按条数和字数切，时间上想多长有多长。一
+  // 段前面一句、一小时后一句的稀疏轨道，两句同批，这一批离播放头最近的那一头是
+  // 0——按批次量，那一小时之外的一句就跟着发出去了，窗等于没设。
+  const pick = engine.match(/function pickNextBatch\(limitMs\)[\s\S]*?\n  \}/);
+  assert.ok(pick, '找不到 pickNextBatch()');
+  assert.match(pick[0], /segmentDistance\(seg, playhead\)/);
+  assert.equal(
+    /batchDistance/.test(engine),
+    false,
+    '窗又按整批量了：一批里只要有一句在窗内，整批都会被发出去',
+  );
 });
 
 test('一批译文回来时轨道或代次已经翻篇，就整批丢掉——但键要先放开', () => {

@@ -103,8 +103,10 @@
     return document.querySelector('video');
   }
 
+  // 「拿不准」在这里读作「没开」：读不出播放器的状态就不往它身上画。
+  // 三种答案的由来见 provider 的 nativeCaptionsState()。
   function isCaptionsEnabled() {
-    return !!state.provider && state.provider.isCaptionsEnabled();
+    return !!state.provider && state.provider.nativeCaptionsState() === true;
   }
 
   function setNativeCaptionsHidden(hidden) {
@@ -596,11 +598,17 @@
     return !(retryAt && retryAt > wallNow);
   }
 
-  function batchDistance(batch, playheadMs) {
-    const start = batch[0].startMs;
-    const end = batch[batch.length - 1].endMs;
-    if (playheadMs < start) return start - playheadMs;
-    if (playheadMs > end) return playheadMs - end;
+  /**
+   * 这一句离播放头多远（毫秒），正在播的那一句是 0。
+   *
+   * 量的是**句子**，不是批次。批次只按条数和字数切（buildBatches），时间上想多长
+   * 有多长：一段前面一句、一小时后一句的稀疏轨道，两句会落在同一批里，而这一批
+   * 「离播放头最近的那一头」是 0 —— 按批次量距离，那一小时之外的一句就跟着进来
+   * 了，窗等于没设。
+   */
+  function segmentDistance(seg, playheadMs) {
+    if (playheadMs < seg.startMs) return seg.startMs - playheadMs;
+    if (playheadMs > seg.endMs) return playheadMs - seg.endMs;
     return 0;
   }
 
@@ -639,11 +647,19 @@
     let best = null;
     let bestDist = Infinity;
     for (const batch of state.batches) {
-      const dist = batchDistance(batch, playhead);
-      if (dist > limitMs) continue;
-      if (dist >= bestDist) continue;
-      const todo = batch.filter((seg) => isSegmentTranslatable(seg, wallNow));
+      // 窗按句子量，不按批次量（见 segmentDistance）。一批里窗内窗外都有是常事，
+      // 只把窗内那几句挑出来发；剩下的等窗滑过去再说，下一次触发自然会取到。
+      let dist = Infinity;
+      const todo = [];
+      for (const seg of batch) {
+        const segDist = segmentDistance(seg, playhead);
+        if (segDist > limitMs) continue;
+        if (!isSegmentTranslatable(seg, wallNow)) continue;
+        todo.push(seg);
+        if (segDist < dist) dist = segDist;
+      }
       if (!todo.length) continue;
+      if (dist >= bestDist) continue;
       bestDist = dist;
       best = todo;
     }
@@ -865,19 +881,23 @@
    */
   function syncNativeCaptions() {
     const provider = state.provider;
-    if (!provider || !provider.isCaptionsEnabled || !provider.enableNativeCaptions) return;
-    let on = false;
+    if (!provider || !provider.nativeCaptionsState || !provider.enableNativeCaptions) return;
+    let on = null;
     try {
-      on = !!provider.isCaptionsEnabled();
+      on = provider.nativeCaptionsState();
     } catch (e) {
       return; // 播放器还没搭起来，这一拍什么都不知道，就什么都不做
     }
-    if (on) {
+    if (on === true) {
       state.sawNativeOn = true;
       // 开起来了，就不存在「这段视频没有字幕」那回事。
       state.nativeUnavailable = false;
       return;
     }
+    // 「说不准」这一拍什么都不做。读成「关着」的代价是下面那道闩：它只要合上就是
+    // 一整个会话，而那时观众什么都没做过——控制条晚一拍上来而已。读成「关着」去按
+    // 也没有意义：按钮本来就还不在，enableNativeCaptions() 照样只会回一个 null。
+    if (on !== false) return;
     if (state.sawNativeOn) {
       state.sawNativeOn = false;
       state.autoEnableBlocked = true;
@@ -942,7 +962,8 @@
     // 条按了没反应的。
     let nativeOn = true;
     try {
-      nativeOn = !provider || !provider.isCaptionsEnabled || !!provider.isCaptionsEnabled();
+      nativeOn = !provider || !provider.nativeCaptionsState
+        || provider.nativeCaptionsState() !== false;
     } catch (e) { /* 播放器还没搭起来，下一拍再说 */ }
 
     // 原字幕是关着的。这不是「这段视频没有字幕」——那句话我们说不准——而是「原字幕

@@ -97,10 +97,24 @@
       return document.querySelector('video');
     },
 
-    isCaptionsEnabled() {
+    // true / false / null — the same three answers as enableNativeCaptions, for
+    // the same reason. The button is the only authority: the engine arms a
+    // session-long latch off a false here (the viewer just switched captions
+    // off, so stop turning them back on — see syncNativeCaptions), and a false
+    // that was really a guess stops auto-enable for the rest of the session.
+    //
+    // Without a button, the caption container is all there is, and its mere
+    // presence is not an answer: it is part of the player's chrome and can be
+    // mounted, empty, before the control bar is. A caption actually drawn
+    // inside it is an answer. Nothing drawn is "not yet" — never false — both
+    // because the container may be empty simply between two cues, and because
+    // an answer this weak must not be the one that closes the latch.
+    nativeCaptionsState() {
       const button = document.querySelector('.ytp-subtitles-button');
       if (button) return button.getAttribute('aria-pressed') === 'true';
-      return !!document.querySelector('.ytp-caption-window-container');
+      const container = document.querySelector('.ytp-caption-window-container');
+      if (container && container.querySelector('.ytp-caption-segment')) return true;
+      return null;
     },
 
     // Press the player's own CC button. Only the engine calls this — from
@@ -504,7 +518,10 @@
     // We hold the track at 'hidden' ourselves, so "are the site's subtitles on"
     // is really "do we still have a track". A player turning subtitles off
     // sets the track to 'disabled', which is how that reads here.
-    isCaptionsEnabled() {
+    //
+    // Never null: unlike a control bar that has to mount, a track list is
+    // readable from the first frame, so this provider is always sure.
+    nativeCaptionsState() {
       return !!tt.track && tt.track.mode !== 'disabled';
     },
 
