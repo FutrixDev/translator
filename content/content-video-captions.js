@@ -491,19 +491,12 @@
   }
 
   // ------------------------------------------------------------ translation
-  /** 整页那一面的代次号。调度层没起来（它可以没起来）时是 0，两边都对不上就不比。 */
-  function sessionVersion() {
-    const auto = ctx.autoTranslate;
-    if (!auto || !auto.state) return 0;
-    const snap = auto.state();
-    return snap && snap.sessionVersion || 0;
-  }
 
   /**
    * translateCues 的第三种回答。
    *
    * true 这一批译好了；false 这一批没成（已经记了冷却，等下一次触发再来）；STALE
-   * 这一批**过期**了——脚下的世界变了，它不作数，可这不是失败：新的那一套句子一
+   * 这一批**过期**了——轨道或目标语言换了，它不作数，可这不是失败：新的那一套句子一
    * 个都还没译，而当时想去译它们的那一次调用（ingestTrack 的
    * ensureTrackTranslated(true)，或者换目标语言那一路的 handleTimeUpdate）正好撞
    * 上 state.translating 被这一批占着，什么也没做就回去了。把它当失败停下来，视
@@ -530,7 +523,14 @@
     // 这里放，上面那两道 return 就是两个放不掉的口子。
     keys.forEach((key) => state.pendingKeys.add(key));
     const trackId = state.trackId;
-    const version = sessionVersion();
+    // 「这一批说的还是不是同一回事」，一共就两样：哪条轨道，往哪门语言译。
+    //
+    // 这里曾经比的是整页那一面的代次号（autoTranslate 的 sessionVersion）。那是
+    // 另一个部件的时钟：用户在 popup 上暂停这一页、把译文藏起来、关掉全局自动翻
+    // 译，它都会翻篇——而字幕的轨道、目标语言、引擎一样没变。在飞的那一批因此被
+    // 判成过期丢掉，下一轮 pickNextBatch 又把同一批没缓存的句子挑出来重发一次：
+    // 白白付两回钱，而第一回的结果就在手上。
+    const target = getTargetLang();
 
     const texts = cues.map((cue) => cue.text);
     let response;
@@ -546,7 +546,8 @@
       threw = true;
     }
 
-    // 轨道或代次已经翻篇：这一批说的是另一回事了，丢掉——**不管它是成是败**。
+    // 轨道换了，或者目标语言换了：这一批说的是另一回事了，丢掉——**不管它是成是
+    // 败**。
     // 所以这一问排在看 response 之前：请求失败和世界变了是两件独立的事，一批过期
     // 的请求恰好也报了错（换目标语言时在飞的那一个多半如此），按失败处理就是记一
     // 笔谁也用不上的冷却、然后 return false 把整轮停在那里（见 STALE）。
@@ -555,7 +556,7 @@
     // 已经连表带键清过一遍，换目标语言那一路却没有——applyCaptionSettings() 只重新
     // 渲染和重新调度，不碰这张表。不放开的话，这几句就卡在「正在译」上：既不重试
     // 也不显示，而且是**永远**，因为再没有谁会去动它们。
-    if (trackId !== state.trackId || version !== sessionVersion()) {
+    if (trackId !== state.trackId || target !== getTargetLang()) {
       releaseBatch(keys);
       return STALE;
     }

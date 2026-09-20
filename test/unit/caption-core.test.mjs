@@ -796,22 +796,30 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   );
 });
 
-test('一批译文回来时轨道或代次已经翻篇，就整批丢掉——但键要先放开', () => {
+test('一批译文回来时轨道或目标语言已经翻篇，就整批丢掉——但键要先放开', () => {
   // getCueKey() 读的是 state **此刻**的值。观众换一门字幕语言或换个目标语言，上
   // 一轮的译文会照着新的那一套键写进缓存——而且因为键是对的，它永远不会被重译掉。
   const engine = repoFile('content/content-video-captions.js');
   const fn = engine.match(/async function translateCues\(cues\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 translateCues()');
-  // 键、轨道号、代次，三样都取在 await 之前。
+  // 键、轨道号、目标语言，三样都取在 await 之前。
   const beforeAwait = fn[0].slice(0, fn[0].indexOf('await ctx.requestTranslation'));
   assert.match(beforeAwait, /const keys = cues\.map\(\(cue\) => getCueKey\(cue\)\);/);
   assert.match(beforeAwait, /const trackId = state\.trackId;/);
-  assert.match(beforeAwait, /const version = sessionVersion\(\);/);
+  assert.match(beforeAwait, /const target = getTargetLang\(\);/);
+  // 过期只由字幕自己的两样东西决定。整页那一面的代次号（sessionVersion）是另一个
+  // 部件的时钟：暂停这一页、藏起译文、关掉全局自动翻译都会让它翻篇，而轨道和目标
+  // 语言一样没变——在飞的那一批被判过期丢掉，下一轮又把同一批句子重发一次，钱付两
+  // 回而第一回的结果就在手上。
+  assert.ok(
+    !/sessionVersion\(\)/.test(fn[0]),
+    '字幕的过期判定又挂回整页那一面的代次号上了',
+  );
   // 丢掉这一批之前先按当初那一套键放开 pendingKeys。换轨道那一路 clearTrack() 顺
   // 手清过，换目标语言那一路没有——不放开，这几句就永远停在「正在译」上。
   assert.match(
     fn[0],
-    /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return STALE;/,
+    /if \(trackId !== state\.trackId \|\| target !== getTargetLang\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return STALE;/,
     '过期的一批直接 return 了，pendingKeys 没放开',
   );
 
