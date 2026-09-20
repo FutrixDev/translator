@@ -394,9 +394,12 @@ test('受管容器重建之后，悬浮球的第一下是翻译，不是藏一�
     await page.waitForSelector('#two[data-ai-translator-managed]', { timeout: 30000 });
     await expect.poll(handles, { timeout: 30000 }).toBe(2);
 
-    // 编辑器照自己那份状态把子树重建了一遍：块是新的，旧的那两个离开了文档。
+    // 编辑器照自己那份状态把子树重建了一遍：块是新的，旧的那两个离开了文档 ——
+    // 但单页应用把它们存着，回头还要挂回来（Turbo、React Router 的缓存都这么干）。
     await page.evaluate(() => {
-      document.getElementById('box').innerHTML =
+      const box = document.getElementById('box');
+      window.__cached = [...box.children];
+      box.innerHTML =
         '<p id="three">The ledger from the previous winter was never returned to its shelf.</p>';
     });
     expect(await handles()).toBe(2);   // 换路由没发生，孤儿还挂着
@@ -409,6 +412,23 @@ test('受管容器重建之后，悬浮球的第一下是翻译，不是藏一�
     // 换路由：上一页没了，这一刻不含糊，两个孤儿连同它们的规则一起收掉。
     await page.evaluate(() => { history.pushState({}, '', '/editor/next'); });
     await expect.poll(handles, { timeout: 10000 }).toBe(1);
+
+    // 他又退回去了，缓存的那一段挂回原处。句柄和 ::after 刚才收掉了，内容身份的
+    // 台账要是留着，发现层一看指纹没变就跳过（content/page/collect.js:295）——
+    // 这两个块从此既没有译文，也再没有任何东西会来翻它们。
+    await page.evaluate(() => {
+      const box = document.getElementById('box');
+      for (const el of window.__cached) box.appendChild(el);
+    });
+    expect(await page.evaluate(
+      () => document.querySelectorAll('#one.ai-translator-translated, #two.ai-translator-translated').length
+    )).toBe(0);
+
+    // 收起来（#three 那条还在），再翻一遍：这一轮该把挂回来的两块重新翻出来。
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('restored');
+    expect((await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' })).action).toBe('translating');
+    await page.waitForSelector('#one[data-ai-translator-managed]', { timeout: 30000 });
+    await page.waitForSelector('#two[data-ai-translator-managed]', { timeout: 30000 });
   } finally {
     await close();
   }

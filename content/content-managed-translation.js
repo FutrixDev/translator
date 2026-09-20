@@ -248,7 +248,19 @@
   // 页面暂时把一段子树摘下来再挂回去是常事，那种块不该在一次读里被判死刑。
   function sweepOrphanedHandles() {
     for (const [handle, entry] of [...handles]) {
-      if (entry.block && !entry.block.isConnected) ctx.releaseManagedTranslation(handle);
+      if (!entry.block || entry.block.isConnected) continue;
+      // 先收这一个句柄：一个块同时挂两个句柄是有的（先画新的、再收旧的），那笔
+      // 账只有按句柄一个个走才算得对（见 currentHandle）。
+      ctx.releaseManagedTranslation(handle);
+      // 再收台账。句柄、::after 规则、块上那几个属性是一半，BlockIdentity 里那
+      // 条登记和 .ai-translator-translated 是另一半 —— 两半都收，这个块才真的回
+      // 到「没翻过」。单页应用把整段子树摘下来存着、回头再挂回去是常事（Turbo、
+      // React Router 的缓存都这么干），而那时候发现层一看指纹没变就跳过
+      // （content/page/collect.js:295）：译文早被这里收掉了，这个块从此既没有译
+      // 文，也再没有任何东西会来翻它。
+      //
+      // 第二个句柄轮到时这一句会空跑 —— lookup 已经查不到了，直接返回 false。
+      if (ctx.releaseTranslation) ctx.releaseTranslation(entry.block);
     }
   }
 

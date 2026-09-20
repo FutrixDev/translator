@@ -659,10 +659,30 @@ async function togglePageTranslation() {
   window.close();
 }
 
+/**
+ * 「暂停 / 继续这一页」。
+ *
+ * 这颗按钮是 popup 打开那一刻画的，而那一页还在跑。popup 问完就不再听
+ * （refreshPageRows 是一问一答，没有任何东西会把新状态推过来），所以他盯着这颗
+ * 按钮的这几秒里，那一轮可能已经失败了。
+ *
+ * 拿开着时那份快照去写的样子：他看着「暂停」点下去，送出去的是 paused:true，
+ * 而这一页此刻停在 ERROR —— 从 popup 来的这一下不带 cause:'hidden'，
+ * pauseCurrentPage 里那道 ERROR 守卫拦不住它（content-auto-translate.js:568），
+ * 于是「出错」被改写成「已暂停」，那句「为什么停了」就此没人说得出，而那一行本
+ * 来正是他重试的入口。
+ *
+ * 所以点下去先重新问一页。状态要是变过，这一下瞄的其实是另一颗按钮 —— 重画就
+ * 够了，不替他按。标签当场从「暂停」变成「继续」，他看得见发生了什么。
+ */
 async function togglePagePause() {
-  const status = pageState && pageState.auto ? pageState.auto.status : '';
+  const drawn = pageState && pageState.auto ? pageState.auto.status : '';
+  await refreshPageRows();
+  const live = pageState && pageState.auto ? pageState.auto.status : '';
+  if (!AUTO_ACTIVE.has(live)) return;
+  if (AUTO_RESUMABLE.has(drawn) !== AUTO_RESUMABLE.has(live)) return;
   const auto = await sendToActiveTab({
-    type: 'SET_AUTO_PAUSED', paused: !AUTO_RESUMABLE.has(status)
+    type: 'SET_AUTO_PAUSED', paused: !AUTO_RESUMABLE.has(live)
   });
   if (pageState) pageState.auto = auto;
   renderPageRows();

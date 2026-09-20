@@ -205,3 +205,58 @@ test('a fallback that happened is on the footer, not just in the log', async ({ 
     await close();
   }
 });
+
+test('页面在他看着按钮的时候出错了：那一下不该把 ERROR 抹成 PAUSED', async ({ page, extensionId }) => {
+  // popup 上那三行是打开那一刻画的，之后它就不再听了（refreshPageRows 是一问一
+  // 答，没有任何东西会把新状态推过来）。他盯着「暂停」这颗按钮的这几秒里，那一
+  // 轮可能已经失败了。
+  //
+  // 拿快照去写的样子：送出去的是 paused:true，而这一页此刻停在 ERROR —— 从
+  // popup 来的这一下不带 cause:'hidden'，pauseCurrentPage 里那道 ERROR 守卫拦不
+  // 住它（content-auto-translate.js:568）。「出错」被改写成「已暂停」，那句「为
+  // 什么停了」就此没人说得出，而那一行本来正是他重试的入口。
+  //
+  // 这里把页面那一端换成一个听我们摆布的假页面：popup 作为标签页打开时，
+  // chrome.tabs.query 问到的活动标签页就是 popup 自己，真页面接不上。换掉的只
+  // 是出口，按钮、渲染和点击处理都是真的。
+  await page.goto(popupUrl(extensionId));
+  await page.waitForFunction(() => typeof refreshPageRows === 'function');
+
+  await page.evaluate(() => {
+    window.__sent = [];
+    window.__status = 'running';
+    chrome.tabs.query = async () => [{ id: 1 }];
+    chrome.tabs.sendMessage = async (tabId, message) => {
+      window.__sent.push(message);
+      if (message.type === 'AUTO_PAGE_STATE') {
+        return { host: 'example.com', blocked: false, auto: { status: window.__status, siteAuto: true } };
+      }
+      if (message.type === 'SET_AUTO_PAUSED') {
+        window.__status = message.paused ? 'paused' : 'running';
+        return { status: window.__status, siteAuto: true };
+      }
+      return null;
+    };
+  });
+
+  await page.evaluate(() => refreshPageRows());
+  const label = page.locator('#pagePauseLabel');
+  await expect(page.locator('#togglePagePause')).toBeVisible();
+  await expect(label).toHaveText(en('popupPausePage'));
+
+  // 这一轮失败了。popup 什么都不知道，按钮还印着「暂停」。
+  await page.evaluate(() => { window.__status = 'error'; });
+  await page.evaluate(() => { window.__sent.length = 0; });
+  await page.locator('#togglePagePause').click();
+
+  // 这一下瞄的是另一颗按钮。重新问一次页面就够了，不替他按。
+  await expect(label).toHaveText(en('popupResumePage'));
+  expect(await page.evaluate(() => window.__sent.map((m) => m.type)))
+    .toEqual(['AUTO_PAGE_STATE']);
+  expect(await page.evaluate(() => window.__status)).toBe('error');
+
+  // 他看着「继续」再点一次 —— 这一下才是重试，而失败的原因一直留到这一刻。
+  await page.locator('#togglePagePause').click();
+  expect(await page.evaluate(() => window.__sent.filter((m) => m.type === 'SET_AUTO_PAUSED')))
+    .toEqual([{ type: 'SET_AUTO_PAUSED', paused: false }]);
+});

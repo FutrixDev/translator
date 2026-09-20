@@ -241,11 +241,21 @@ test('popup 那一行印「继续」的时候，页面那边真的会继续', ()
 
   const popup = code('popup/popup.js');
   assert.match(popup, /const AUTO_RESUMABLE = new Set\(\['paused', 'error'\]\);/);
+  assert.equal((popup.match(/const AUTO_RESUMABLE\b/g) || []).length, 1, '一处定义');
   // 标签和消息共用同一个集合，不是各判各的。
-  assert.equal((popup.match(/AUTO_RESUMABLE/g) || []).length, 3, '一处定义，两处用');
   assert.match(popup, /AUTO_RESUMABLE\.has\(status\) \? t\('popupResumePage'\) : t\('popupPausePage'\)/);
-  assert.match(popup, /paused: !AUTO_RESUMABLE\.has\(status\)/);
-  assert.doesNotMatch(popup, /status === 'paused'/, '别再单独拿 paused 判一次');
+  assert.match(popup, /paused: !AUTO_RESUMABLE\.has\(live\)/);
+
+  // 而且点下去那一刻要**重新问一遍**。按钮是 popup 打开那一刻画的，他盯着它的
+  // 这几秒里那一轮可能已经失败了；拿快照去写，送出去的 paused:true 会把 ERROR
+  // 改写成 PAUSED（从 popup 来的这一下不带 cause:'hidden'，页面那边那道 ERROR
+  // 守卫拦不住它），失败的原因就此没人说得出，而那一行正是他重试的入口。
+  const click = popup.slice(popup.indexOf('async function togglePagePause()'));
+  const body = click.slice(0, click.indexOf('\n}'));
+  assert.ok(body.indexOf('await refreshPageRows()') < body.indexOf('SET_AUTO_PAUSED'),
+    '先重新问一页，再决定送什么');
+  assert.match(body, /AUTO_RESUMABLE\.has\(drawn\) !== AUTO_RESUMABLE\.has\(live\)\) return;/,
+    '状态变过就只重画 —— 这一下瞄的是另一颗按钮');
 });
 
 test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {
@@ -479,7 +489,16 @@ test('pending 不能画出一行「暂停这一页」—— 它只会走到 ask 
 
   // 这个集合只管这一行。站点那一行问的是另一句话（见 siteAutoOn()）。
   assert.match(popup, /const pauseRow = AUTO_ACTIVE\.has\(status\);/);
-  assert.equal((popup.match(/AUTO_ACTIVE/g) || []).length, 2, '一处定义、一处用');
+  // 数用了几次没有意义（点击那一头要判的次数会变）；要钉住的是**没有第二份判
+  // 据**：状态字面量在 popup 里只许出现在这两个集合的定义里，别处再拼一遍，画
+  // 出来的那一行和点下去做的那件事就会各判各的。
+  assert.equal((popup.match(/const AUTO_ACTIVE\b/g) || []).length, 1, '一处定义');
+  const literals = popup.split('\n')
+    .filter((line) => !/const AUTO_(ACTIVE|RESUMABLE)\b/.test(line))
+    .join('\n');
+  for (const s of ['idle', 'running', 'paused', 'error']) {
+    assert.doesNotMatch(literals, new RegExp(`'${s}'`), `'${s}' 只许写在集合的定义里`);
+  }
 
   // 上面那段推理的依据：decide() 里 off 和 auto 都当场返回，ask 是阶梯的末端。
   const rules = code('shared/site-rules.js');
