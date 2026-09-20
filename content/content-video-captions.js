@@ -78,20 +78,17 @@
   }
 
   /**
-   * 我们此刻往哪门语言译，**整码**，专作缓存键用。
+   * 我们此刻往哪门语言译，**整码**。
    *
-   * 和 getTargetLangBase() 的差别正是它存在的理由：zh-CN 和 zh-TW 的基码都是
-   * zh，可它们是两套字。按基码做键，观众从简体切到繁体，已经译过的那些句子的键
-   * 一个不变——整段视频继续放着简体，而且因为键「对」上了，它们永远不会被重译掉。
+   * 整码而不是基码，字幕这一面两处都靠它：缓存键（getCueKey）和「本来就是目标语
+   * 言」（sameLanguage）。zh-CN 和 zh-TW 的基码都是 zh，可它们是两套字——按基码
+   * 做键，观众从简体切到繁体，已经译过的那些句子的键一个不变，整段视频继续放着
+   * 简体，而且因为键「对」上了，它们永远不会被重译掉；按基码判同语言，一条繁体
+   * 轨道配简体目标会被当成「已经是你要的语言」，一个字也不译。
    */
-  function getTargetLangKey() {
+  function getTargetLang() {
     const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
     return String(target || '').trim().toLowerCase();
-  }
-
-  function getTargetLangBase() {
-    const target = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '';
-    return core.getLangBase(target);
   }
 
   /**
@@ -102,11 +99,13 @@
    * 之后每一次 handleTimeUpdate() 都在这道早退上返回，整段视频再不会开译——除非
    * 播放器恰好重新交一次轨道进来。会变的答案不留副本，和 canEnableNativeCaptions
    * 是同一条。
+   *
+   * 比的是**整码**，不是基码：zh-CN 和 zh-TW 的基码都是 zh，可它们是两套字，而
+   * 「繁转简」正是观众要的那一件事。判定在 caption-core（isSameLanguage），和
+   * getCueKey 的理由一模一样——缓存键当初就是为这件事从基码改成整码的。
    */
   function sameLanguage() {
-    const trackBase = core.getLangBase(state.trackLang || '');
-    const targetBase = getTargetLangBase();
-    return !!(trackBase && targetBase && trackBase === targetBase);
+    return core.isSameLanguage(state.trackLang || '', getTargetLang());
   }
 
   function getVideoElement() {
@@ -472,10 +471,10 @@
    * 而且因为键是对的，它们永远不会被重译掉。加上之后，换语言这件事不需要谁去清
    * 一张表：新语言天然是一套新键，旧的那一套还留在那里，换回去就是现成的。
    *
-   * 用整码而不是基码，见 getTargetLangKey()：简体和繁体是同一个基码下的两套字。
+   * 用整码而不是基码，见 getTargetLang()：简体和繁体是同一个基码下的两套字。
    */
   function getCueKey(cue) {
-    return `${getTargetLangKey()}|${state.trackId}|${cue.startMs}|${cue.text}`;
+    return `${getTargetLang()}|${state.trackId}|${cue.startMs}|${cue.text}`;
   }
 
   function clearTrack() {
@@ -706,12 +705,22 @@
   // no-ops while a pass runs and briefly after a failed batch, and it stops at
   // the window's edge rather than at the end of the track — handleTimeUpdate
   // calls it again as the playhead advances, which is what moves the window.
+  // 每一轮的号。state.translating 存的是**此刻这一轮是谁**，不只是「有人在跑」。
+  let passSeq = 0;
+
   async function ensureTrackTranslated(force) {
     if (sameLanguage() || state.dismissed || state.translating) return;
     const now = Date.now();
     if (!force && now - state.lastTriggerMs < 2000) return;
     state.lastTriggerMs = now;
-    state.translating = true;
+    // 拿号，而不是举一面「有人在跑」的旗子。这一轮的所有权是**会被收走的**：
+    // resetForVideo() 把 state.translating 清掉（换视频、SPA 跳转），紧接着新轨道
+    // 进来，ingestTrack() 又起一轮新的——而旧那一轮此刻正停在 await 上。它回来时
+    // 只要照 STALE 那条路接着跑，两轮就并排跑起来了，而且各自的 finally 都会把标
+    // 志清掉，于是第三轮第四轮也能进来：付费的批次同时在飞，串行那条规矩就等于没
+    // 有。号对不上，这一轮就是已经不算数的那一轮。
+    const pass = ++passSeq;
+    state.translating = pass;
     try {
       while (state.active && !sameLanguage() && !state.dismissed) {
         // 窗每一轮现算。一轮可以跑很久，而这中间观众可以把引擎从内置换成 AI ——
@@ -719,14 +728,19 @@
         const batch = pickNextBatch(translationWindowMs());
         if (!batch || !batch.length) break;
         const result = await translateCues(batch);
+        // 所有权在 await 那一头被收走了：接班的那一轮已经在跑新的一套，这里再往
+        // 下走就是两轮并行。走人，而且什么都别碰。
+        if (state.translating !== pass) return;
         // 过期不是失败：这一批不作数，可新世界里那些句子还等着，而想去译它们的那
         // 次调用早被 state.translating 挡回去了（见 STALE）。接着往下走——下一轮
-        // pickNextBatch 取的已经是新的那一套。
+        // pickNextBatch 取的已经是新的那一套。换目标语言走的正是这一路：没人动过
+        // 所有权，所以接着跑的还是这一轮。
         if (result === STALE) continue;
         if (!result) break; // cooldown set on the batch; a later trigger resumes it
       }
     } finally {
-      state.translating = false;
+      // 只清自己那一号。清掉别人的，等于替下一次调用把门打开，而接班那一轮还在跑。
+      if (state.translating === pass) state.translating = false;
     }
   }
 

@@ -180,8 +180,12 @@ Two rules the generic provider exists to keep:
   within the 1.5s beat is not overridden. The same rule reaches past the
   providers: "this track is already in the target language" is `sameLanguage()`,
   computed on every read, because the viewer can change the target halfway
-  through a video and nothing would go back to revise a stored answer. And **the heartbeat runs all of this
-  ahead of `captionPlayerButton`**:
+  through a video and nothing would go back to revise a stored answer — and it
+  compares **whole tags**, through `CaptionCore.isSameLanguage()`. `zh-CN` and
+  `zh-TW` share a base code and are two writing systems, so base equality would
+  answer "already in your language" to exactly the conversion the viewer wants;
+  the cue cache is keyed on the whole tag for the same reason. And **the
+  heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the
   first.

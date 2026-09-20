@@ -324,6 +324,51 @@
     return String(lang).split('-')[0].toLowerCase();
   }
 
+  // Regions whose Chinese is written in one script or the other. A tag rarely
+  // carries the script subtag itself — YouTube ships `zh-Hans`/`zh-Hant`, but a
+  // <track> in the wild is `zh-CN` or `zh-TW` far more often.
+  const ZH_HANT_SUBTAGS = new Set(['hant', 'tw', 'hk', 'mo']);
+  const ZH_HANS_SUBTAGS = new Set(['hans', 'cn', 'sg', 'my']);
+
+  /**
+   * Which script a Chinese tag is written in — 'hans', 'hant', or '' for "this
+   * tag does not say", which includes every non-Chinese language.
+   */
+  function getScriptVariant(lang) {
+    const parts = String(lang || '').toLowerCase().split('-').filter(Boolean);
+    if (parts[0] !== 'zh') return '';
+    for (let i = 1; i < parts.length; i += 1) {
+      if (ZH_HANT_SUBTAGS.has(parts[i])) return 'hant';
+      if (ZH_HANS_SUBTAGS.has(parts[i])) return 'hans';
+    }
+    return '';
+  }
+
+  /**
+   * Are these two tags the same language *in the same script*?
+   *
+   * The base code alone is not that question. `zh-CN` and `zh-TW` both reduce
+   * to `zh`, and they are two writing systems: a Traditional track against a
+   * Simplified target is exactly the case a viewer wants converted, and base
+   * equality answers "already in your language" and translates nothing at all.
+   * Everywhere else the base is the whole answer — `en-GB` against `en` is the
+   * same English, and paying to translate it would be the bug.
+   *
+   * A tag that does not say which script it is in counts as a match, because
+   * `zh` against `zh-CN` is genuinely unknown and this answer is a spend gate:
+   * guessing "different" there bills the viewer for a translation that is
+   * probably a no-op, and guessing "same" costs him nothing he had.
+   */
+  function isSameLanguage(a, b) {
+    const baseA = getLangBase(a);
+    const baseB = getLangBase(b);
+    if (!baseA || !baseB || baseA !== baseB) return false;
+    const scriptA = getScriptVariant(a);
+    const scriptB = getScriptVariant(b);
+    if (!scriptA || !scriptB) return true;
+    return scriptA === scriptB;
+  }
+
   /**
    * Which of a video's subtitle tracks to translate, given `{track, isDefault}`
    * entries (isDefault is the `default` attribute on the `<track>` element,
@@ -445,5 +490,7 @@
     selectProvider,
     pickSubtitleTrack,
     getLangBase,
+    getScriptVariant,
+    isSameLanguage,
   };
 })(globalThis);

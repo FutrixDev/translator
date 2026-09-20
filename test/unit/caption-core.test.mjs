@@ -629,10 +629,10 @@ test('「本来就是目标语言」是现算的，而且换了目标语言字�
   const derived = engine.match(/function sameLanguage\(\)[\s\S]*?\n  \}/);
   assert.ok(derived, '找不到 sameLanguage()');
   assert.match(derived[0], /state\.trackLang/);
-  assert.match(derived[0], /getTargetLangBase\(\)/);
+  assert.match(derived[0], /getTargetLang\(\)/);
 
   // 现算还不够：得有人来推这一下。targetLang 不是字幕自己的设置，可它一变，
-  // 译文表的键（整码，见 getTargetLangKey）和这道闸门一起翻篇。
+  // 译文表的键（整码，见 getTargetLang）和这道闸门一起翻篇。
   assert.match(repoFile('content/content-bootstrap.js'), /'targetLang',/);
 
   // 而且要越过 2 秒节流：视频停着的时候没有 timeupdate 来推第二次。
@@ -846,16 +846,16 @@ test('译文表的键里带着目标语言：换一门语言就是换一套键',
   const engine = repoFile('content/content-video-captions.js');
   const fn = engine.match(/function getCueKey\(cue\) \{[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 getCueKey()');
-  assert.match(fn[0], /getTargetLangKey\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
+  assert.match(fn[0], /getTargetLang\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
   assert.match(fn[0], /state\.trackId/);
 
   // 而且要整码。zh-CN 和 zh-TW 的基码都是 zh，可它们是两套字：按基码做键，观众
   // 从简体切到繁体，整段视频会继续放着简体，永远不会被重译掉。
-  const keyFn = engine.match(/function getTargetLangKey\(\) \{[\s\S]*?\n  \}/);
-  assert.ok(keyFn, '找不到 getTargetLangKey()');
+  const keyFn = engine.match(/function getTargetLang\(\) \{[\s\S]*?\n  \}/);
+  assert.ok(keyFn, '找不到 getTargetLang()');
   assert.ok(
     !/getLangBase/.test(keyFn[0]),
-    'getTargetLangKey() 砍成了基码：简繁互换会共用同一套键',
+    'getTargetLang() 砍成了基码：简繁互换会共用同一套键，同语言那道闸门也会把繁体轨道当成简体的',
   );
   assert.match(keyFn[0], /toLowerCase\(\)/);
 });
@@ -871,5 +871,62 @@ test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏�
     css,
     /#ai-translator-caption-menu \.ai-translator-caption-menu-item\[hidden\]\s*\{\s*display:\s*none;/,
     '菜单项缺 [hidden] 规则：JS 藏不住它'
+  );
+});
+
+test('简体和繁体不是同一门语言，别的语言的地区码则是', () => {
+  // 一条繁体轨道配简体目标，正是观众要的那一件事。按基码判，两边都是 zh，
+  // 「本来就是目标语言」就成立了——handleTimeUpdate 在那道闸门上返回，一个字也不译。
+  assert.equal(core.isSameLanguage('zh-TW', 'zh-CN'), false);
+  assert.equal(core.isSameLanguage('zh-Hant', 'zh-Hans'), false);
+  assert.equal(core.isSameLanguage('zh-HK', 'zh-CN'), false);
+  assert.equal(core.isSameLanguage('zh-Hant-TW', 'zh-SG'), false);
+
+  // 同一套字就是同一门语言，大小写和写法都不算数。
+  assert.equal(core.isSameLanguage('zh-TW', 'zh-hant'), true);
+  assert.equal(core.isSameLanguage('ZH-CN', 'zh-Hans'), true);
+
+  // 说不准的那一边按「同语言」算：这是一道花钱的闸，猜「不同」是替观众买一次
+  // 多半什么也没变的翻译。
+  assert.equal(core.isSameLanguage('zh', 'zh-CN'), true);
+  assert.equal(core.isSameLanguage('zh-TW', 'zh'), true);
+
+  // 别的语言，地区码不分家——en-GB 配 en 去译一遍才是 bug。
+  assert.equal(core.isSameLanguage('en-GB', 'en'), true);
+  assert.equal(core.isSameLanguage('pt-BR', 'pt-PT'), true);
+  assert.equal(core.isSameLanguage('en', 'ja'), false);
+  assert.equal(core.isSameLanguage('', 'en'), false);
+  assert.equal(core.isSameLanguage('en', ''), false);
+
+  // 引擎走的是这一个判定，不是自己再写一遍基码比较。
+  const engine = repoFile('content/content-video-captions.js');
+  const fn = engine.match(/function sameLanguage\(\)[\s\S]*?\n  \}/);
+  assert.ok(fn, '找不到 sameLanguage()');
+  assert.match(fn[0], /core\.isSameLanguage\(/);
+  assert.ok(!/getLangBase/.test(fn[0]), 'sameLanguage() 又砍回基码了');
+});
+
+test('一轮译文有主，换了视频的那一轮不许接着跑', () => {
+  // resetForVideo() 会把 state.translating 清掉，紧接着新轨道进来又起一轮新的，
+  // 而旧那一轮正停在 await 上。它回来照 STALE 接着跑，两轮就并排跑起来——各自的
+  // finally 又都会清标志，于是第三轮第四轮也能进来，付费的批次同时在飞。
+  const engine = repoFile('content/content-video-captions.js');
+  const fn = engine.match(/async function ensureTrackTranslated\(force\)[\s\S]*?\n  \}/);
+  assert.ok(fn, '找不到 ensureTrackTranslated()');
+  assert.match(fn[0], /const pass = \+\+passSeq;/, '这一轮没有号：所有权无从谈起');
+  assert.match(fn[0], /state\.translating = pass;/);
+  assert.match(
+    fn[0],
+    /if \(state\.translating !== pass\) return;/,
+    '所有权被收走之后还往下走：两轮并行',
+  );
+  assert.ok(
+    fn[0].indexOf('if (state.translating !== pass) return;') < fn[0].indexOf('if (result === STALE)'),
+    '先接着跑再验所有权，等于没验',
+  );
+  assert.match(
+    fn[0],
+    /if \(state\.translating === pass\) state\.translating = false;/,
+    'finally 清掉的可能是接班那一轮的标志',
   );
 });
