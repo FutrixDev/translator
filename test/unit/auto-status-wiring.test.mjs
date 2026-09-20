@@ -217,9 +217,12 @@ test('藏着译文时按「继续」，先把译文放回来', () => {
   const auto = code('content/content-auto-translate.js');
   assert.match(
     auto,
-    /function resumeCurrentPage\(cause\) \{[\s\S]{0,520}?ctx\.state\.translationsVisible === false[\s\S]{0,120}?ctx\.revealHiddenTranslations\(\);\s*return;/,
+    /function resumeCurrentPage\(cause\) \{[\s\S]{0,760}?ctx\.state\.translationsVisible === false[\s\S]{0,160}?ctx\.revealHiddenTranslations\(\);[\s\S]{0,200}?\}\s*start\('resume'\);/,
     '「继续」没有把译文放回来'
   );
+  // 放回来之后这一轮通常是在显隐层那次回调里接上的（它会再叫一次 resumeCurrentPage）
+  // —— 唯独停在 ERROR 的那一页接不上，得由这一次自己 start()。那一条另有专门的
+  // 一测，见「出错停下的那一页，看一眼原文不算「重试」」。
   // 放回来这件事只有显隐层做得了，这里不该自己改标记或者摘类名。
   assert.doesNotMatch(auto, /translationsVisible = /, '标记归显隐层写');
   assert.doesNotMatch(auto, /ai-translator-hidden/, '类名归显隐层');
@@ -541,7 +544,8 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
   assert.match(resume, /pausedByUser = false;/);
   // 解铃还须系铃人：把译文放回来不等于撤销他在 popup 上按下的暂停。越过这道闩
   // 的话，藏一下再显示一下就把暂停洗掉了，而他从头到尾没碰过那颗按钮。
-  assert.match(resume, /if \(cause === 'hidden'\) \{\s*if \(pausedByUser\) return;\s*\} else \{/,
+  assert.match(resume,
+    /if \(cause === 'hidden'\) \{\s*if \(pausedByUser\) return;\s*if \(status === STATUS\.ERROR\) return;\s*\} else \{/,
     '带 hidden 的继续不解闩，而且闩还在就得原地停住');
   const visibility = code('content/page/visibility.js');
   assert.match(visibility,
@@ -611,4 +615,32 @@ test('球上那两颗按钮键盘够得着', () => {
   for (const cls of ['status-dot', 'ball-more']) {
     assert.match(css, new RegExp(`#ai-translator-float-ball \\.ai-translator-${cls}:focus-visible`), `${cls} 没有焦点环`);
   }
+});
+
+test('出错停下的那一页，看一眼原文不算「重试」', () => {
+  // 「隐藏译文 / 显示译文」走的是 pauseCurrentPage('hidden') / resumeCurrentPage('hidden')，
+  // 和 popup 上那颗「暂停 / 继续」共用同两个函数。可这两句话不是一回事：一句是
+  // 「我现在想看原文」，另一句是「这件事重来一遍」。ERROR 那一页上，两者的差价是
+  // 一串真发出去的请求。
+  const auto = code('content/content-auto-translate.js');
+  const pause = auto.slice(auto.indexOf('function pauseCurrentPage('), auto.indexOf('function resumeCurrentPage('));
+  const resume = auto.slice(auto.indexOf('function resumeCurrentPage('), auto.indexOf('function markPageExplicit('));
+
+  // 一、藏译文不改写 ERROR。改写了，状态点就从「出错」变成「已暂停」——「为什么
+  // 停了」就此没人说得出；而下面那一道也就白设了，因为回来时它已经是 PAUSED。
+  assert.match(pause, /if \(cause === 'hidden' && status === STATUS\.ERROR\) return;/,
+    '藏一下译文不该把出错的那一页改写成「已暂停」');
+  // 二、显示译文不叫醒 ERROR。
+  assert.match(resume,
+    /if \(cause === 'hidden'\) \{\s*if \(pausedByUser\) return;\s*if \(status === STATUS\.ERROR\) return;/,
+    '「显示译文」不是「重试」：出错的那一页等的是一句明确的「继续」');
+
+  // 三、而他真说出那一句的时候，它得动。显隐层那条路是拐个弯回来的：
+  // start() 前先把译文放回去，放回去那一下显隐层又会叫一次 resumeCurrentPage('hidden')
+  // —— 平时这一轮就是在那一次里接上的，可停在 ERROR 的那一页正好被上面第二道挡
+  // 住。所以这一处不能无条件 return，否则 popup 上的「继续」在藏着译文时按下去
+  // 永远没有反应，而那是这一页唯一的重试入口。
+  assert.match(resume,
+    /ctx\.revealHiddenTranslations\(\);[\s\S]*?if \(status !== STATUS\.ERROR\) return;\s*\}\s*start\('resume'\);/,
+    '藏着译文的 ERROR 页，「继续」得由这一次自己接上');
 });

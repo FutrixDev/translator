@@ -43,13 +43,19 @@ function pngDataUrlSize(dataUrl) {
  *   不出来，那是另一条路（整体故障）。
  *
  *   失败的那几次照样记进 sentTexts：文字确实发出去了，钱也确实花了。
+ * @param {?number} [options.failAfter]
+ *   反过来的那一半：前这么多次翻译请求正常作答，之后**一直**失败。
+ *
+ *   「出错之前页面上已经有译文了」这个局面只有这一头造得出来 —— 而它正是出错那
+ *   条路上最要紧的一个：一个字都没翻成的页面，用户连「隐藏译文」都点不到。
  * @param {number} [options.delayMs]
  *   每次作答前先拖这么久。整页翻译在真实页面上要跑几十秒，一批批往回落 ——
  *   「翻到一半用户按了显示原文」这类旅程，只有在一轮还没跑完的时候才存在，
  *   而答得太快的服务器把那个窗口压成了零。
  */
-async function startMockOpenAIServer({ failRequests = 0, delayMs = 0 } = {}) {
+async function startMockOpenAIServer({ failRequests = 0, failAfter = null, delayMs = 0 } = {}) {
   let remainingFailures = failRequests;
+  let served = 0;
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
   const fastBatchRequests = [];
@@ -120,6 +126,13 @@ async function startMockOpenAIServer({ failRequests = 0, delayMs = 0 } = {}) {
         res.end(JSON.stringify({ error: { message: 'mock: upstream hiccup' } }));
         return;
       }
+
+      if (failAfter !== null && served >= failAfter) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'mock: upstream down' } }));
+        return;
+      }
+      served += 1;
 
       const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
       if (delimiter) {

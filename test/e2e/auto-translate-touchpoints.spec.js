@@ -515,6 +515,75 @@ test('译文藏着的时候把这个站点关掉 —— popup 上那个开关得
   }
 });
 
+test('出错的那一页，看一眼原文再看回来，不会替他重试一遍', async ({ page, context }) => {
+  // 「隐藏译文」走的是 pauseCurrentPage('hidden')，而那道门只放过 OFF 和 PAUSED
+  // —— 停在 ERROR 的一页会被改写成 PAUSED。两笔账：状态点从「出错」变成「已暂
+  // 停」，为什么停了就此没人说得出；而「显示译文」那一下把它当成自己停下的那一页
+  // 叫醒、重开一轮，刚刚失败的那些请求又发了一遍。用户只是想看一眼原文，页面上
+  // 一点异样都没有，账单是他的。
+  //
+  // 造这个局面要的是「先翻成了一条，接口才开始出毛病」—— 一个字都没翻成的页面
+  // 连「隐藏译文」都点不到（那一项按 hasPageTranslations() 挂）。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer({ failAfter: 1 });
+  const autoStatus = async () =>
+    (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status;
+  const toggleVisibility = async () => {
+    await openFloatBallMenu(page);
+    await page.click('.ai-translator-menu-item[data-action="toggle-translations"]');
+  };
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
+
+    // 接口从这一刻起不答了。新长出来的每一段都超过 MAX_BLOCK_CHARS —— 超大块各自
+    // 单独成批（content/page/batch.js 的 createSmartBatches），一批一次失败，攒够
+    // MAX_BATCH_FAILURES 就是「整体故障」：这一页停在 error 上，而刚才那条译文还
+    // 在页面上。
+    //
+    // 排得紧一点是有原因的：发现层只收视野上下各一屏之内的块（见
+    // content/content-auto-discover.js 的 BAND_MARGIN）。按默认字号铺开，这几段里
+    // 只有头两段落在带子里，剩下的要等用户滚过去 —— 那就凑不齐三次。
+    await page.evaluate(() => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'font-size:12px;line-height:1.2';
+      for (let i = 0; i < 4; i += 1) {
+        const p = document.createElement('p');
+        p.style.margin = '0';
+        p.textContent = `Ledger ${i}: `
+          + 'The tide book records this departure and the return that followed it. '.repeat(60);
+        wrap.appendChild(p);
+      }
+      document.getElementById('box').appendChild(wrap);
+    });
+    await expect.poll(autoStatus, { timeout: 30000 }).toBe('error');
+    const spent = sentTexts.length;
+
+    // 看一眼原文。
+    await toggleVisibility();
+    await expect(blocks.first()).toHaveClass(/ai-translator-hidden/);
+    expect(await autoStatus()).toBe('error');
+
+    // 看回译文。**这一下不是「重试」**：一个请求都不该发，状态也还是出错。
+    await toggleVisibility();
+    await expect(blocks.first()).not.toHaveClass(/ai-translator-hidden/);
+    await page.waitForTimeout(2000);
+    expect(await autoStatus()).toBe('error');
+    expect(sentTexts.length).toBe(spent);
+
+    // 而他真说出那一句的时候，它得动 —— popup 第三行的「继续」，藏着译文也一样：
+    // 先把译文放回来，再重试。这一条正是上面那道门最容易反过来关死的地方。
+    await toggleVisibility();
+    await expect(blocks.first()).toHaveClass(/ai-translator-hidden/);
+    await sendMessageToActiveTab(page, { type: 'SET_AUTO_PAUSED', paused: false });
+    await expect(blocks.first()).not.toHaveClass(/ai-translator-hidden/);
+    await expect.poll(() => sentTexts.length, { timeout: 30000 }).toBeGreaterThan(spent);
+  } finally {
+    await close();
+  }
+});
+
 test('划词键位是 Alt 时，Alt+A 只翻整页，不会顺手把选中的那句也译一遍', async ({ page, context }) => {
   // 划词和悬停的快捷键是「单独一个修饰键」，而 Alt+A 的第一下 keydown 长得和
   // 「只按了 Alt」一模一样。立刻动手的话，用户按一次 Alt+A 会既译一句又译一页

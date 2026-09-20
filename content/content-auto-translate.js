@@ -558,6 +558,14 @@
      */
     function pauseCurrentPage(cause) {
       if (status === STATUS.OFF || status === STATUS.PAUSED) return;
+      // 出错停下的那一页，藏一下译文不该把它改写成「已暂停」。ERROR 是一个**结
+      // 论**（broken 已经置上、发现层已经停了，这一页没有一件在跑的活可停），而
+      // 看一眼原文不是对那个结论的答复。改写它要付两次账：状态点从「出错」变成
+      // 「已暂停」，那句「为什么停了」就此没人说得出；而把译文放回来那一下会把它
+      // 当成自己停下的那一页叫醒、重开一轮 —— 用户只是想看一眼原文，却替他把刚
+      // 刚失败的那些请求又发了一遍，钱是他的。重试有专门的一句话，见
+      // resumeCurrentPage。
+      if (cause === 'hidden' && status === STATUS.ERROR) return;
       if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
       stopDiscovery();
@@ -585,6 +593,10 @@
       // 它的话，藏一下再显示一下就把暂停洗掉了，而他从头到尾没碰过那颗按钮。
       if (cause === 'hidden') {
         if (pausedByUser) return;
+        // 「显示译文」不是「重试」。出错的那一页等的是一句明确的「继续」（popup
+        // 那一行、或者「翻译整页」）—— 一次看原文的往返替他说了这句话，账单上多
+        // 出来的那几次请求他从头到尾没同意过，页面上也看不出任何异样。
+        if (status === STATUS.ERROR) return;
       } else {
         // 放在最前面是因为藏着译文那条路要拐个弯（下面），回头还会再走一次这里
         // —— 那一次带着 'hidden'，此刻已经解开的这一道不会再被问起。
@@ -592,7 +604,11 @@
       }
       if (ctx.state.translationsVisible === false && ctx.revealHiddenTranslations) {
         ctx.revealHiddenTranslations();
-        return;
+        // 显隐层回头会再叫一次这里（带 'hidden'），闩开了，这一轮就是在那一次接上
+        // 的 —— 只有一种页面它接不上：停在 ERROR 的那一页，因为重试必须是他自己
+        // 说的那一句（见上面）。而此刻说话的正是他，所以这一次不能把活全指望给
+        // 那一次回调。
+        if (status !== STATUS.ERROR) return;
       }
       start('resume');
     }
