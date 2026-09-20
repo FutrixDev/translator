@@ -1461,12 +1461,24 @@ youtube.com 既不在拦截名单、也不在内置 `always` 名单，答案是 
 原文」模式下缩到 30 秒 —— **缩不是停**，切回双语要立刻有译文。
 `translationWindowMs()` 是这三句话的唯一出处。
 
-**5. 顺手修了一个既有的真 bug。** `getCueKey(cue)` 是在 await **之后**算的，读的是
-当时的 `state.trackId`：上一条轨道的译文晚到，会用新轨道的 key 存进缓存 —— 而且因为
-key 是合法的，这批错语言的译文再也不会被重译。现在 trackId 和 sessionVersion 在发
-请求时就捕获，对不上就整批丢掉。另加 §8 要的长度守卫
-（`translations.length !== cues.length` → 走既有的冷却重试）；`parseNumberedResponse`
-在所有分支上都恰好 push `expectedCount` 条，所以这道守卫不会误伤既有的 mock。
+**5. 顺手修了两个既有的真 bug，都在同一个地方：key 是在 await 之后算的。**
+`getCueKey(cue)` 读的是**当时**的 `state`，而 await 之下它会变。
+
+- 轨道那一头：上一条轨道的译文晚到，会用新轨道的 key 存进缓存 —— 而且因为 key 是
+  合法的，这批错语言的译文再也不会被重译。
+- 语言那一头（评审第二轮才挖出来的）：缓存里放的是**译文**，key 里却没有目标语言。
+  看片中途把目标语言从中文换成日文，已经译过的那些句子 key 一个不变，于是整段视频
+  继续放着中文，而且同样永远不会被重译掉。
+
+两头是同一句话的两半，所以修法也是一个：`getCueKey()` 把目标语言一起编进 key（换
+语言天然就是换一套 key，不需要谁去清表，换回去还是现成的），而这一批的 key 在**发
+请求那一刻**就取好，写回、记冷却、放开 pendingKeys 全照那一套。`pendingKeys` 的记和
+放因此收进了 `translateCues()` 一个函数里 —— 原先调用方记、被调方放，中间那两道早退
+就是两个放不掉的口子。
+
+另加 §8 要的长度守卫（`translations.length !== cues.length` → 走既有的冷却重试）；
+`parseNumberedResponse` 在所有分支上都恰好 push `expectedCount` 条，所以这道守卫不会
+误伤既有的 mock。
 
 **6. 状态行问的是「候选」provider，不是「已接上」那个。** 按钮在功能关着的时候也
 要在（那正是它的用处），而那时 `state.provider` 是 null —— 第一版的
@@ -1482,7 +1494,30 @@ key 是合法的，这批错语言的译文再也不会被重译。现在 trackI
 一个 `nativeUnavailable`（按视频清，原字幕一开起来就清），菜单那边因此**一行状态都
 不用自己造** —— `ctx.enableNativeCaptions()` 返回前已经 `syncControls()` 过了。
 
-**8. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
+**8. 过期的一批要先把 key 放开再丢（评审第 2 轮 P2）。** 代次翻篇时整批译文作废是
+对的，但那批句子的 key 还留在 `pendingKeys` 里，而 `isSegmentTranslatable()` 认
+`pendingKeys`。换轨道那一路 `clearTrack()` 顺手清过，换目标语言那一路没有 ——
+`applyCaptionSettings()` 不碰这张表，`targetLang` 也不在它认的那几个键里。于是这几句
+永远停在「正在译」上：既不重试也不显示。现在丢之前先 `releaseBatch(keys)`。
+
+**9. 观众自己关掉的原字幕，菜单要能把它开回来（评审第 2 轮 P2）。** 这是那道只合不
+开的闩唯一的回头路，而它当时是坏的，坏在三处：
+
+- `syncSelection(true)` 重新挑中的正是手里攥着的那条（已经 `disabled`），
+  `picked.track === tt.track` 把它读成「你已经在这条上了」，什么都没做就回报失败。
+- `getTrackLabel()` 只看 `tt.track` 在不在，于是继续报着那条关掉的轨道的名字，
+  `captionStatus()` 据此答 `track`，那一行根本不会露出来。
+- 顺着修的时候发现第三处：`captionStatus()` 里 `state.cues.length` 那一问排在最前，
+  而关掉原字幕不会清掉上一轮的 cue —— 屏幕上一个字也没有（`handleTimeUpdate()` 照
+  同一个判断把浮层收了），菜单却报着「字幕轨：English」。现在「原字幕开着没有」排在
+  轨道名之前。
+
+外加一条不修就当场露馅的：被重新点开的那条轨道，`adoptTrack()` 记的 `restoreMode`
+是 `'disabled'`。松手时（切「只看原文」、关掉翻译）会把它还成关掉 —— 当场收回观众刚
+按下去要到的东西。关着的轨道只会经由这一行走到这里，所以它还回去的模式是
+`'showing'`。
+
+**10. CSS：`[hidden]` 在这个菜单里藏不住东西。** 这是本轮唯一一条「按情况露出来」的
 菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`
 自己那条 `display: flex` 一来就把它压掉了 —— JS 照样置 hidden，屏幕上那一行纹丝不
 动（e2e 抓到的：Playwright 说它 visible，DOM 里 `hidden=""` 明明在）。菜单根节点早

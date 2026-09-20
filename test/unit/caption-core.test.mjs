@@ -583,20 +583,39 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   assert.match(engine, /pickNextBatch\(limitMs\)/);
 });
 
-test('一批译文回来时轨道或代次已经翻篇，就整批丢掉', () => {
-  // getCueKey() 读的是 state.trackId **此刻**的值。观众在播放器里换一门字幕语
-  // 言，上一门语言的译文会照着新轨道的键写进缓存——而且因为键是对的，它永远不会
-  // 被重译掉。
+test('一批译文回来时轨道或代次已经翻篇，就整批丢掉——但键要先放开', () => {
+  // getCueKey() 读的是 state **此刻**的值。观众换一门字幕语言或换个目标语言，上
+  // 一轮的译文会照着新的那一套键写进缓存——而且因为键是对的，它永远不会被重译掉。
   const engine = repoFile('content/content-video-captions.js');
   const fn = engine.match(/async function translateCues\(cues\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 translateCues()');
-  // 存在 await 之前。
+  // 键、轨道号、代次，三样都取在 await 之前。
   const beforeAwait = fn[0].slice(0, fn[0].indexOf('await ctx.requestTranslation'));
+  assert.match(beforeAwait, /const keys = cues\.map\(\(cue\) => getCueKey\(cue\)\);/);
   assert.match(beforeAwait, /const trackId = state\.trackId;/);
   assert.match(beforeAwait, /const version = sessionVersion\(\);/);
-  assert.match(fn[0], /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) return false;/);
+  // 丢掉这一批之前先按当初那一套键放开 pendingKeys。换轨道那一路 clearTrack() 顺
+  // 手清过，换目标语言那一路没有——不放开，这几句就永远停在「正在译」上。
+  assert.match(
+    fn[0],
+    /if \(trackId !== state\.trackId \|\| version !== sessionVersion\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return false;/,
+    '过期的一批直接 return 了，pendingKeys 没放开',
+  );
   // 条数对不上也整批作废：短一条，尾部那几句会永远留在 pendingKeys 里。
   assert.match(fn[0], /response\.translations\.length !== cues\.length/);
+  // 记「正在译」和放开它在同一个函数里，两道早退才不会各自漏一个口子。
+  assert.match(beforeAwait, /keys\.forEach\(\(key\) => state\.pendingKeys\.add\(key\)\);/);
+  assert.doesNotMatch(engine, /pendingKeys\.add\(getCueKey\(/, 'pendingKeys 又在 translateCues 之外记了一处');
+});
+
+test('译文表的键里带着目标语言：换一门语言就是换一套键', () => {
+  // 少了这一截，看片中途把目标语言从中文换成日文，已经译过的句子键一个不变，整
+  // 段视频继续放着中文，而且因为键是对的，永远不会被重译掉。
+  const engine = repoFile('content/content-video-captions.js');
+  const fn = engine.match(/function getCueKey\(cue\) \{[\s\S]*?\n  \}/);
+  assert.ok(fn, '找不到 getCueKey()');
+  assert.match(fn[0], /getTargetLangBase\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
+  assert.match(fn[0], /state\.trackId/);
 });
 
 test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏得住', () => {

@@ -438,8 +438,17 @@
   }
 
   // ------------------------------------------------------------------- cues
+  /**
+   * 一句字幕在译文表里的身份。
+   *
+   * 键里带着目标语言，理由和带着轨道号是同一个：缓存里放的是**译文**，而同一句
+   * 原文译成另一门语言是另一条内容。少了这一截，观众在看视频的中途把目标语言从
+   * 中文换成日文，已经译过的那些句子的键一个不变，于是整段视频继续放着中文 ——
+   * 而且因为键是对的，它们永远不会被重译掉。加上之后，换语言这件事不需要谁去清
+   * 一张表：新语言天然是一套新键，旧的那一套还留在那里，换回去就是现成的。
+   */
   function getCueKey(cue) {
-    return `${state.trackId}|${cue.startMs}|${cue.text}`;
+    return `${getTargetLangBase()}|${state.trackId}|${cue.startMs}|${cue.text}`;
   }
 
   function clearTrack() {
@@ -468,14 +477,20 @@
     if (state.skipTranslation || !cues.length) return true;
     if (ctx.isExtensionContextAvailable && !ctx.isExtensionContextAvailable()) return false;
 
-    // 发请求那一刻这批字幕属于谁。await 之下这两样都会变——观众在播放器里换一门
-    // 字幕语言（trackId 变），或者换了目标语言 / 换了模型（调度层翻篇）。下面写回
-    // 前拿它们对一次，对不上就整批丢掉。
+    // 发请求那一刻这批句子的键，和这一轮属于谁。
     //
-    // trackId 尤其要在这里存下来：getCueKey() 读的是 state.trackId **此刻**的值，
-    // 而回来时那已经是新轨道的号了——上一门语言的译文会被照着新轨道的键写进缓存，
-    // 于是换一次字幕语言，画面上出现的是上一门语言译出来的句子，而且因为键是对的，
-    // 它永远不会被重译掉。
+    // 键必须在这里就取好：getCueKey() 读的是 state **此刻**的值，而 await 之下它
+    // 会变——观众在播放器里换一门字幕语言（trackId 变），或者换了目标语言。回来时
+    // 照当时的 state 重算一遍键，等于把上一门语言的译文写进新的那一套键里，画面上
+    // 会出现上一轮译出来的句子，而且因为键是对的，它永远不会被重译掉。
+    //
+    // 拿旧键写回是无害的（新的那一套看不见它），拿旧键**放开** pendingKeys 则是
+    // 必须的：那一套键就是当初记进去的那一套，不照它删，这几句会永远停在「正在
+    // 译」上——isSegmentTranslatable() 认 pendingKeys。
+    const keys = cues.map((cue) => getCueKey(cue));
+    // 记「正在译」和放开它是同一件事的两头，所以两头都在这个函数里：调用方记、
+    // 这里放，上面那两道 return 就是两个放不掉的口子。
+    keys.forEach((key) => state.pendingKeys.add(key));
     const trackId = state.trackId;
     const version = sessionVersion();
 
@@ -489,12 +504,12 @@
         delimiter: DELIMITER,
       }));
     } catch (error) {
-      markBatchFailed(cues, trackId);
+      markBatchFailed(keys, trackId);
       return false;
     }
 
     if (!response || response.error || !Array.isArray(response.translations)) {
-      markBatchFailed(cues, trackId);
+      markBatchFailed(keys, trackId);
       return false;
     }
 
@@ -503,18 +518,25 @@
     // 位：短一条，尾部那几句会一直留在 pendingKeys 里，既不重试也不显示，而且
     // isSegmentTranslatable() 认 pendingKeys，它们从此对任何一轮都是「已经在译了」。
     if (response.translations.length !== cues.length) {
-      markBatchFailed(cues, trackId);
+      markBatchFailed(keys, trackId);
       return false;
     }
 
-    // 轨道或代次已经翻篇：这批译文说的是另一回事了。pendingKeys 得放开——它们是按
-    // 旧 trackId 记的键，clearTrack() 已经连同整张表一起清掉了，这里不必再动。
-    if (trackId !== state.trackId || version !== sessionVersion()) return false;
+    // 轨道或代次已经翻篇：这批译文说的是另一回事了，丢掉。
+    //
+    // 但要先按当初那一套键把 pendingKeys 放开。换轨道那一路 clearTrack() 确实已经
+    // 连表带键清过一遍，换目标语言那一路却没有——applyCaptionSettings() 不碰这张
+    // 表，targetLang 也不在它认的那几个键里。不放开的话，这几句就卡在「正在译」
+    // 上：既不重试也不显示，而且是**永远**，因为再没有谁会去动它们。
+    if (trackId !== state.trackId || version !== sessionVersion()) {
+      releaseBatch(keys);
+      return false;
+    }
 
     response.translations.forEach((translation, index) => {
       const cue = cues[index];
       if (!cue) return;
-      const key = getCueKey(cue);
+      const key = keys[index];
       state.cueCache.set(key, translation || cue.text);
       state.pendingKeys.delete(key);
       state.failedUntil.delete(key);
@@ -524,17 +546,21 @@
     return true;
   }
 
-  // trackId 由调用方传进来，理由和 translateCues 里存它的理由是同一个：失败回来时
-  // state.trackId 可能已经是别人了，照它记的冷却会扣在新轨道的句子上。轨道已经翻篇
-  // 的话这批键连同整张表早就被 clearTrack() 清了，什么都不必记。
-  function markBatchFailed(cues, trackId) {
+  /** 这一批没失败，只是过期了：不记冷却，只把「正在译」这个标记还回去。 */
+  function releaseBatch(keys) {
+    keys.forEach((key) => state.pendingKeys.delete(key));
+  }
+
+  // 键和 trackId 都由调用方在发请求那一刻取好（见 translateCues）。
+  //
+  // 放开是无条件的；**冷却**才要再对一次 trackId：轨道已经翻篇的话这批键连同整张
+  // 表早就被 clearTrack() 清了，再把冷却记回去，只是在新的表里堆一批谁也读不到、
+  // 谁也不会清的死账。
+  function markBatchFailed(keys, trackId) {
+    releaseBatch(keys);
     if (trackId !== undefined && trackId !== state.trackId) return;
     const retryAt = Date.now() + RETRY_COOLDOWN_MS;
-    cues.forEach((cue) => {
-      const key = getCueKey(cue);
-      state.pendingKeys.delete(key);
-      state.failedUntil.set(key, retryAt);
-    });
+    keys.forEach((key) => state.failedUntil.set(key, retryAt));
   }
 
   function isSegmentTranslatable(seg, wallNow) {
@@ -600,7 +626,6 @@
       while (state.active && !state.skipTranslation && !state.dismissed) {
         const batch = pickNextBatch(limitMs);
         if (!batch || !batch.length) break;
-        batch.forEach((seg) => state.pendingKeys.add(getCueKey(seg)));
         const ok = await translateCues(batch);
         if (!ok) break; // cooldown set on the batch; a later trigger resumes it
       }
@@ -839,26 +864,39 @@
   /** The menu's status line: which track we are on, or why there is none. */
   function captionStatus(provider) {
     if (state.skipTranslation) return { kind: 'same-language' };
+
+    // 原字幕开着没有。问的是**传进来的这个** provider，不是 isCaptionsEnabled()
+    // （那读的是已接上的那个）：功能关着的时候按钮照样在（那正是它的用处），而那
+    // 时 state.provider 是 null，拿它去问，一个原字幕开得好好的播放器也会被说成
+    // 「还没点开」。默认当它开着——拿不准就不摆那个按钮，宁可少给一条路，不要给一
+    // 条按了没反应的。
+    let nativeOn = true;
+    try {
+      nativeOn = !provider || !provider.isCaptionsEnabled || !!provider.isCaptionsEnabled();
+    } catch (e) { /* 播放器还没搭起来，下一拍再说 */ }
+
+    // 原字幕是关着的。这不是「这段视频没有字幕」——那句话我们说不准——而是「原字幕
+    // 还没点开」，菜单据此给的是一个按钮而不是一句死话。
+    //
+    // 这一问要排在轨道名前面，因为关掉它的那一下不会把上一轮留下的东西抹掉：
+    // state.cues 还是满的，provider 手里可能还攥着那条轨道。屏幕上此刻一个字也没
+    // 有（handleTimeUpdate 照同一个判断把浮层收了起来），这时报一句「字幕轨：
+    // English」是在描述一件屏幕上不存在的事，而那个能把字幕找回来的按钮反倒被它
+    // 挡住了——自动开启那一面还记着「是观众自己关的」，不会再替他点，这一行就是
+    // 唯一的回头路。
+    if (!nativeOn) {
+      if (provider && provider.enableNativeCaptions && !state.nativeUnavailable) {
+        return { kind: 'needs-native' };
+      }
+      return { kind: 'none' };
+    }
+
     if (state.cues.length) return { kind: 'track', label: state.trackLabel || state.trackLang };
     let label = '';
     try {
       if (provider && provider.getTrackLabel) label = provider.getTrackLabel() || '';
     } catch (e) { /* a provider probing for DOM that is not there */ }
     if (label) return { kind: 'track', label };
-    // 没有 cue，也没有一条开着的原字幕。这不是「这段视频没有字幕」——那句话我们
-    // 说不准——而是「原字幕还没点开」，菜单据此给的是一个按钮而不是一句死话。
-    //
-    // 问的是传进来的这个 provider，不是 isCaptionsEnabled()（那读的是**已接上的**
-    // 那个）：功能关着的时候按钮照样在（那正是它的用处），而那时 state.provider 是
-    // null，拿它去问，一个原字幕开得好好的播放器也会被说成「还没点开」。
-    // 默认当它开着——拿不准就不摆这个按钮，宁可少给一条路，不要给一条按了没反应的。
-    let nativeOn = true;
-    try {
-      nativeOn = !provider || !provider.isCaptionsEnabled || !!provider.isCaptionsEnabled();
-    } catch (e) { /* 播放器还没搭起来，下一拍再说 */ }
-    if (provider && provider.enableNativeCaptions && !nativeOn && !state.nativeUnavailable) {
-      return { kind: 'needs-native' };
-    }
     return { kind: 'none' };
   }
 

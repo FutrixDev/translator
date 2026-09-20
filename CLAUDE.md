@@ -164,10 +164,17 @@ Two rules the generic provider exists to keep:
   the viewer's side those are the same event. `sawNativeOn` clears per video;
   the block does not. The one way past it is the menu's 「开启原字幕」
   (`ctx.enableNativeCaptions()`), which is the viewer asking.
-- **A track is put back exactly as it was found.** We hold it at `hidden`, not
-  `disabled`, so cues keep loading; `restoreMode` goes back on detach. The one
-  exception is a track the viewer disabled while we held it — restoring that one
-  would turn subtitles back on and we would read that as consent, forever.
+- **A track is put back the way the viewer would want it.** We hold it at
+  `hidden`, not `disabled`, so cues keep loading; `restoreMode` goes back on
+  detach. Usually that is the mode we found it in, with two exceptions, one at
+  each end:
+  - A track the viewer disabled while we held it stays disabled. Restoring it
+    would turn subtitles back on, and we would read that as consent, forever.
+  - A track we hold **because** he asked for it (`enableNativeCaptions()` on a
+    `disabled` track — the menu row, or `autoEnableCaptions`) goes back at
+    `showing`. Its found mode was `disabled`, so restoring that would switch
+    subtitles off the moment we let go — in "original only", or when he turns
+    translation off — taking away the thing he just asked for.
 
 **Do not broaden the MAIN-world interceptor's match patterns to `<all_urls>`.**
 Patching `fetch`/`XHR` on every page is a performance, compatibility and

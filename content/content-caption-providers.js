@@ -296,7 +296,13 @@
     releaseTrack();
     tt.video = video;
     tt.track = track;
-    tt.restoreMode = track.mode;
+    // What to hand it back as. Normally the mode we took it in — but a disabled
+    // track only ever reaches here through "turn subtitles on" (see
+    // syncSelection's allowDisabled), and subtitles are exactly what the viewer
+    // asked for there. Handing that one back at 'disabled' takes away what he
+    // just asked for the moment we let go: a blank screen in "original only",
+    // and subtitles going with us when he switches translation off.
+    tt.restoreMode = track.mode === 'disabled' ? 'showing' : track.mode;
     if (!tt.onCueUpdate) tt.onCueUpdate = scheduleCueSync;
     // A <track> is only fetched once its mode leaves 'disabled', so the file
     // may well arrive after we adopt it — and Chrome fires no 'addcue' for a
@@ -361,7 +367,17 @@
     const picked = core.pickSubtitleTrack(entries, allowDisabled
       ? { allowDisabled: true, audioLang: audioLangOf(video) }
       : undefined);
-    if (!picked || picked.track === tt.track) return;
+    if (!picked) return;
+    // The page switched off the track we hold (its mode went to 'disabled'):
+    // we have not let go of it, but it is no longer a track we are on. Without
+    // this, `picked.track === tt.track` reads "re-open the one I just closed"
+    // as "you are already on it", and enableNativeCaptions() reports failure
+    // having done nothing — when re-opening it is the entire point of the call.
+    //
+    // The ordinary path never gets here: pickSubtitleTrack() filters disabled
+    // tracks out, so it cannot return the one we are holding.
+    const heldOff = !!tt.track && tt.track.mode === 'disabled';
+    if (picked.track === tt.track && !heldOff) return;
     // Our own track sits at 'hidden', which is never 'showing' — so only an
     // explicit switch by the page (or losing the track we held) moves us.
     const held = tt.track && entries.some((e) => e.track === tt.track) && tt.track.mode !== 'disabled';
@@ -530,8 +546,14 @@
 
     // What the menu's status line names. Read-only: this runs while the feature
     // is off, so it must not adopt anything or touch a track's mode.
+    //
+    // A track we hold but the page has switched off is not a track we are on:
+    // naming it would have the menu say subtitles are running when the screen
+    // is blank, and hide the row that offers to turn them back on. Falling
+    // through answers what is actually available — nothing, while every track
+    // is disabled, which is the honest answer there.
     getTrackLabel() {
-      if (tt.track) return tt.track.label || tt.track.language || '';
+      if (tt.track && tt.track.mode !== 'disabled') return tt.track.label || tt.track.language || '';
       const entries = subtitleEntries(findVideoWithTracks());
       if (!entries.length) return '';
       const picked = core.pickSubtitleTrack(entries);

@@ -473,6 +473,84 @@ test('the viewer switching subtitles off outlasts the heartbeat', async ({ page:
   await expect(p.locator('#ai-translator-caption-overlay')).toBeHidden();
 });
 
+test('changing the reader language re-translates the lines already cached', async ({ page: p, context }) => {
+  // The cache holds *translations*, so the language they are in is part of what
+  // identifies them. Without that, switching from Chinese to Japanese mid-video
+  // leaves every line already translated keyed exactly as before: the Chinese
+  // stays on screen, and because the keys are valid it is never re-translated.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  let calls = 0;
+  await context.route('https://api.openai.com/**', (route) => {
+    calls += 1;
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: `译文${calls}` } }] }),
+    });
+  });
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  const overlay = p.locator('#ai-translator-caption-overlay');
+  await expect(overlay).toContainText('译文1');
+
+  await setExtensionSettings(p, { ...BASE_SETTINGS, targetLang: 'ja' });
+  // A pass is debounced, so keep the video running under it until one comes
+  // round; every reply after the first carries a different number.
+  await expect.poll(async () => {
+    await seekIntoFirstCue(p);
+    return (await overlay.textContent()) || '';
+  }, { timeout: 15000 }).toMatch(/译文[2-9]/);
+});
+
+test('after the viewer switches subtitles off, the menu can switch them back on', async ({ page: p, context }) => {
+  // The latch is deliberate — we never re-open subtitles the viewer closed —
+  // so this row is the only way back, and it has to work on the track we were
+  // holding when he closed it. Two things used to stand in the way: the menu
+  // still named that track ("Subtitles: English") and so never showed the row,
+  // and the pick behind the row saw the track it already held and returned
+  // "already on it" without re-opening anything.
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  const overlay = p.locator('#ai-translator-caption-overlay');
+  await expect(overlay).toContainText('你好世界');
+
+  await p.evaluate(() => { document.querySelector('video').textTracks[0].mode = 'disabled'; });
+  // Keep the video running under it: hiding the overlay happens on the next
+  // frame we are asked about, not on the mode change itself.
+  for (let i = 0; i < 4; i += 1) {
+    await p.evaluate((t) => {
+      const v = document.querySelector('video');
+      v.currentTime = 1 + t * 0.2;
+      v.dispatchEvent(new Event('timeupdate'));
+    }, i);
+    await p.waitForTimeout(150);
+  }
+  expect(await trackModes(p)).toEqual(['en:disabled']);
+  await expect(overlay).toBeHidden();
+
+  await p.mouse.move(320, 180);
+  await p.locator('#ai-translator-caption-btn').click();
+  await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
+    .toContainText(/subtitles are off/i);
+  await p.locator('#ai-translator-caption-menu [data-action="native"]').click();
+
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['en:hidden']);
+  await seekIntoFirstCue(p);
+  await expect(overlay).toContainText('你好世界');
+
+  // And the track he asked for is handed back *on*. Restoring the mode it had
+  // when we took it would mean turning subtitles off as a parting act — for a
+  // track we only ever held because he pressed "turn subtitles on".
+  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['en:showing']);
+});
+
 test('the menu offers to turn subtitles on even with the setting off', async ({ page: p, context }) => {
   // The setting is for "do it without asking". Pressing the item in the menu
   // *is* asking, so it goes through whatever the setting says — and through the

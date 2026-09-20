@@ -12,6 +12,13 @@ document — bilingual rendering, no auto-enabling of captions, skip when the
 track language is the target language — still holds and is now enforced for
 every site at once.
 
+**Since superseded on one point** by `autoEnableCaptions`
+([2026-09-19-auto-translation-implementation.md](2026-09-19-auto-translation-implementation.md)
+§15, PR-9): "we never turn subtitles on" is now the default rather than an
+absolute. With that switch on the engine may open a `disabled` track, and a
+track opened that way goes back at `showing` rather than in the mode it was
+found in. The rules as they stand are in the repository's CLAUDE.md.
+
 ## How subtitles reach a page
 
 The survey below sorts sites into four classes:
