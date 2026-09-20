@@ -275,12 +275,21 @@ test('decide survives being asked nothing at all', () => {
 
 // ---------------------------------------------------------------- 写入
 
-// writeUserRule 在调用时才去看 globalThis.chrome，所以这里塞一个假的就够了。
+// 写入在调用时才去看 globalThis.chrome，所以这里塞一个假的就够了。
+//
+// runtime.sendMessage 也要有：页面里的 writeUserRule 只是把这件事发给服务工作者
+// （见 background.js 的 SITE_RULES_WRITE），真正动存储的是那边的 applyWrite。
+// 这里把那一跳接回来，测到的就是整条路，而不是半条。
 function fakeChrome(initial = {}) {
   const store = Object.assign({}, initial);
+  const delay = typeof initial.__setDelay === 'number' ? initial.__setDelay : 0;
+  delete store.__setDelay;
   return {
     store,
     chrome: {
+      runtime: {
+        sendMessage: async (message) => ({ value: await SiteRules.applyWrite(message) })
+      },
       storage: {
         sync: {
           get: async (defaults) => {
@@ -290,7 +299,11 @@ function fakeChrome(initial = {}) {
             }
             return out;
           },
-          set: async (patch) => { Object.assign(store, patch); }
+          set: async (patch) => {
+            // 慢一点的 set 才照得出「两个标签页同时写」：读和写之间有真实的空档。
+            if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+            Object.assign(store, patch);
+          }
         }
       }
     }
@@ -336,6 +349,38 @@ test('writeUserRule 只认 always / never，且不动别的站点', async () => 
     assert.deepEqual(fake.store.siteRules, { 'other.com': 'never' }, '不认的状态不该落盘');
     await SiteRules.writeUserRule('example.com', 'always');
     assert.deepEqual(fake.store.siteRules, { 'other.com': 'never', 'example.com': 'always' });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('两个页面同时写，谁的选择都不会被对方盖掉', async () => {
+  // 两边都是「整份读出来、改一个键、整份写回」。不排队的话，两个内容脚本同时
+  // 读到同一份旧对象，后写的那份把先写的整条抹掉 —— 用户在另一个标签页上点的
+  // 「关」凭空消失，而且哪里都不报错。
+  const fake = fakeChrome({ __setDelay: 5 });
+  globalThis.chrome = fake.chrome;
+  try {
+    await Promise.all([
+      SiteRules.writeUserRule('a.test', 'always'),
+      SiteRules.writeUserRule('b.test', 'never'),
+      SiteRules.updateAskCount('c.test', 'bump'),
+      SiteRules.updateAskCount('c.test', 'bump')
+    ]);
+    assert.deepEqual(fake.store.siteRules, { 'a.test': 'always', 'b.test': 'never' });
+    // 同一个域名被问了两次就是两次 —— 各读各的会停在 1，三次的额度永远攒不满。
+    assert.deepEqual(fake.store.siteAskCount, { 'c.test': 2 });
+  } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('表态之后计数清零，清的是这一条不是整张表', async () => {
+  const fake = fakeChrome({ siteAskCount: { 'a.test': 2, 'b.test': 1 } });
+  globalThis.chrome = fake.chrome;
+  try {
+    assert.equal(await SiteRules.updateAskCount('a.test', 'clear'), 0);
+    assert.deepEqual(fake.store.siteAskCount, { 'b.test': 1 });
   } finally {
     delete globalThis.chrome;
   }

@@ -508,8 +508,22 @@
       setStatus(STATUS.PAUSED);
     }
 
+    /**
+     * 「继续翻这一页」。
+     *
+     * **藏着译文的时候，继续就是把译文放回来。** 这一页会停下来只有两种可能：
+     * 用户在 popup 上按了暂停，或者他把译文藏了（setTranslationsVisible(false)
+     * 顺手停的）。后一种情况下 start() 里那道闩还认着「我现在想看原文」，直接
+     * 重开一轮只会原地弹回 PAUSED —— popup 上那颗「继续」按下去毫无反应，而且
+     * 不报错。所以先走显隐层的唯一入口把译文放回来，它回头会再叫一次这里，
+     * 那时闩已经开了。
+     */
     function resumeCurrentPage() {
       if (status !== STATUS.PAUSED && status !== STATUS.ERROR) return;
+      if (ctx.state.translationsVisible === false && ctx.revealHiddenTranslations) {
+        ctx.revealHiddenTranslations();
+        return;
+      }
       start('resume');
     }
 

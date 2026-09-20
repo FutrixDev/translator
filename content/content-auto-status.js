@@ -83,19 +83,20 @@
    *
    * **加一这件事不在这里做。** 同一个域名可能同时开着三个标签页，三页同时读出
    * 0、同时写回 1，说好的「问三次就不再问」一次都攒不满。读—改—写只能有一个
-   * 主人，那个主人是服务工作者（shared/site-rules.js 的 updateAskCount）。
+   * 主人，那个主人是服务工作者（shared/site-rules.js 的 updateAskCount 把这件事
+   * 发过去）。
    *
    * 写回来的数顺手记进本页的 ctx.settings：storage.onChanged 也会送一份过来，
    * 但下一次 render() 可能比它先到。
    */
   async function updateAskCount(op) {
     const key = askKey();
-    if (!key) return;
+    if (!key || !globalThis.SiteRules) return;
     try {
-      const reply = await chrome.runtime.sendMessage({ type: 'SITE_ASK_COUNT', host: key, op });
-      if (!reply || typeof reply.count !== 'number') return;
+      const count = await globalThis.SiteRules.updateAskCount(key, op);
+      if (typeof count !== 'number') return;
       const counts = Object.assign({}, ctx.settings.siteAskCount);
-      if (reply.count > 0) counts[key] = reply.count;
+      if (count > 0) counts[key] = count;
       else delete counts[key];
       ctx.settings.siteAskCount = counts;
     } catch (error) {
@@ -191,16 +192,10 @@
 
     if (act === 'translate') {
       const remember = bar.querySelector('.ai-translator-auto-remember input');
-      // 勾了就先落规则再翻。顺序反过来也能翻成，但写规则是异步的，用户在它落地
-      // 之前切走这一页，这个站点就只翻了这一次 —— 而他明明说的是「总是」。
-      if (remember && remember.checked && globalThis.SiteRules) {
-        globalThis.SiteRules.writeUserRule(location.hostname, 'always');
-      }
-      // 表过态了，前面问过几次都不算数：下次再来这个站点，三次的额度是满的。
-      clearAskCount();
-      dismissed = true;
-      if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
-      render();
+      // 这一下要落两笔存储再开译，而开译会把条子收走 —— 收走之前先把按钮钉住，
+      // 免得用户连点两下、记两次数。
+      button.disabled = true;
+      acceptAsk(!!(remember && remember.checked));
       return;
     }
 
@@ -211,6 +206,31 @@
       else dismissed = true;
       render();
     }
+  }
+
+  /**
+   * 用户在追问条上点了「翻译」。
+   *
+   * **勾了「总是」就要等规则真落地再翻。** 写规则是异步的，不等它就开译的话，
+   * 用户在中间切走这一页（或者这一次写失败了），这个站点就只翻了这一次 ——
+   * 而他明明说的是「总是」，条子却已经收走了，没有任何地方会再提起这件事。
+   *
+   * 写失败不拦着这一页翻：他要的就是现在这一页。规则没落地的后果是下次再来时
+   * 照样会问，这本来就是实情。
+   */
+  async function acceptAsk(always) {
+    if (always && globalThis.SiteRules) {
+      try {
+        await globalThis.SiteRules.writeUserRule(location.hostname, 'always');
+      } catch (error) {
+        console.warn('Blab Translation: site rule write failed', error);
+      }
+    }
+    // 表过态了，前面问过几次都不算数：下次再来这个站点，三次的额度是满的。
+    await clearAskCount();
+    dismissed = true;
+    if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
+    render();
   }
 
   function shouldAsk(snap) {

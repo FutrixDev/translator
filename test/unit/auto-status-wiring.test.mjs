@@ -51,8 +51,8 @@ test('追问条的上限和计数是同一处说了算', () => {
 
 test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
   const rules = code('shared/site-rules.js');
-  assert.match(rules, /async function writeUserRule\(hostname, state\)/);
-  assert.match(rules, /const key = normalizeHost\(hostname\);/);
+  assert.match(rules, /async function applyUserRule\(\{ host, state \}\)/);
+  assert.match(rules, /const key = normalizeHost\(host\);/);
 
   // 三个写入点（追问条、popup、设置页）都得走它。各自拼一次键，写进去的和
   // decide() 读出来的迟早不是同一个。
@@ -127,23 +127,61 @@ test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的',
   assert.doesNotMatch(insert, /ai-translator-hidden/, '类名归显隐层，这里不该再写一遍');
 });
 
-test('追问计数只有服务工作者一个人写', () => {
-  // 同一个域名开着三个标签页，三页各自读出 0、各自写回 1，「问三次就不再问」
-  // 一次都攒不满。
-  const status = code('content/content-auto-status.js');
-  assert.doesNotMatch(status, /storage\.sync\.set/, '内容脚本不该自己写这个数');
-  assert.match(status, /sendMessage\(\{ type: 'SITE_ASK_COUNT', host: key, op \}\)/);
-
+test('同步存储上的读—改—写只有服务工作者一个人做', () => {
+  // 站点规则和追问计数都是「整份对象读出来、改一个键、整份写回」。同一个域名开
+  // 着三个标签页，三页各自读出同一份旧对象再各自写回，后写的把先写的整个盖掉：
+  // 「问三次就不再问」一次都攒不满，用户在 popup 上点的「关」也会凭空消失。
   const rules = code('shared/site-rules.js');
-  assert.match(rules, /function updateAskCount\(hostname, op\)/);
-  // 服务工作者是单实例，但两条消息的处理照样能在 await 处交错，所以要排队。
-  assert.match(rules, /askQueue = result\.catch/);
-  assert.match(rules, /const result = askQueue\.then\(run, run\);/);
+  assert.match(rules, /const IN_SERVICE_WORKER\s*=/);
+  assert.match(rules, /function applyWrite\(message\)/);
+  // 两条写入路径共用同一条队列 —— 各排各的等于没排。
+  assert.equal((rules.match(/enqueue\(/g) || []).length, 2, '一处定义一处使用');
+  assert.match(rules, /writeQueue = result\.catch/);
+  for (const fn of ['applyUserRule', 'applyAskCount']) {
+    assert.match(rules, new RegExp(`WRITES = \\{[^}]*${fn}`), `${fn} 必须挂在同一张表上`);
+  }
+  // 写入点两边共用一个名字：调用方不该自己判断「我现在是不是服务工作者」。
+  assert.match(rules, /function writeUserRule\(hostname, state\) \{\s*return request\('rule'/);
+  assert.match(rules, /function updateAskCount\(hostname, op\) \{\s*return request\('ask'/);
+
+  for (const file of ['content/content-auto-status.js', 'popup/popup.js', 'options/options.js']) {
+    assert.doesNotMatch(
+      code(file),
+      /storage\.sync\.set\([^)]*site(Rules|AskCount)/,
+      `${file} 不该自己写这两张表`
+    );
+  }
 
   const background = code('background/background.js');
-  assert.match(background, /case 'SITE_ASK_COUNT':/);
-  assert.match(background, /SiteRules\.updateAskCount\(message\.host, message\.op\)/);
+  assert.match(background, /case 'SITE_RULES_WRITE':/);
+  assert.match(background, /SiteRules\.applyWrite\(message\)/);
   assert.match(background, /import '\.\.\/shared\/site-rules\.js';/);
+});
+
+test('勾了「总是」就要等规则落地再翻', () => {
+  // 不等的话，用户在写落地之前切走这一页，这个站点就只翻了这一次 —— 条子已经
+  // 收走，没有任何地方会再提起他说过「总是」。
+  const status = code('content/content-auto-status.js');
+  assert.match(status, /async function acceptAsk\(always\)/);
+  assert.match(status, /await globalThis\.SiteRules\.writeUserRule\(location\.hostname, 'always'\)/);
+  assert.match(status, /await clearAskCount\(\);[\s\S]{0,200}?markPageExplicit\(\)/);
+  // 写失败不拦着这一页翻：他要的就是现在这一页。
+  assert.match(status, /catch \(error\) \{[\s\S]{0,160}?site rule write failed/);
+});
+
+test('藏着译文时按「继续」，先把译文放回来', () => {
+  // 藏译文会顺手把这一页停下（setTranslationsVisible → pauseCurrentPage），而
+  // start() 里那道闩还认着「我现在想看原文」。直接重开一轮只会原地弹回 PAUSED，
+  // popup 上那颗「继续」按下去毫无反应，还不报错。
+  const auto = code('content/content-auto-translate.js');
+  assert.match(
+    auto,
+    /function resumeCurrentPage\(\) \{[\s\S]{0,320}?ctx\.state\.translationsVisible === false[\s\S]{0,120}?ctx\.revealHiddenTranslations\(\);\s*return;/,
+    '「继续」没有把译文放回来'
+  );
+  // 放回来这件事只有显隐层做得了，这里不该自己改标记或者摘类名。
+  assert.doesNotMatch(auto, /translationsVisible = /, '标记归显隐层写');
+  assert.doesNotMatch(auto, /ai-translator-hidden/, '类名归显隐层');
 });
 
 test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {

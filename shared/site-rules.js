@@ -297,6 +297,27 @@
 
   // ---------------------------------------------------------------- 写规则
 
+  // 同步存储上的「读—改—写」只能有一个主人。
+  //
+  // 站点规则和追问计数各自是一整个对象里的一个键：读出来、改一个键、整份写回。
+  // 同一个域名开着三个标签页，或者用户一边在 popup 上点「关」、一边追问条在给
+  // 另一个域名记数，两边都会先读到同一份旧对象，后写的那份把先写的整个盖掉 ——
+  // 用户点下的选择就这么没了，而且哪里都不报错。
+  //
+  // 所以写入点收到服务工作者里：它是单实例，配上一条队列（两条消息的处理照样
+  // 能在 await 处交错）就能把这些改动串成一条线。队列只保证顺序、不传播失败：
+  // 一次写崩了不该把后面的全卡死。
+  const IN_SERVICE_WORKER =
+    typeof ServiceWorkerGlobalScope !== 'undefined' && root instanceof ServiceWorkerGlobalScope;
+
+  let writeQueue = Promise.resolve();
+
+  function enqueue(run) {
+    const result = writeQueue.then(run, run);
+    writeQueue = result.catch(() => {});
+    return result;
+  }
+
   /**
    * 写下一条用户站点规则，或把它抹掉（state 不是 always/never 时）。
    *
@@ -306,12 +327,10 @@
    * 就存在一个永远查不到的键上 —— 按钮有反应、规则也确实写进去了，页面就是不
    * 翻，而且哪里都不报错。
    *
-   * 读—改—写，不是整份覆盖：另一个标签页此刻可能正在给别的域名写规则。
-   *
    * @returns {Promise<string>} 实际用的键，写不成时是空串。
    */
-  async function writeUserRule(hostname, state) {
-    const key = normalizeHost(hostname);
+  async function applyUserRule({ host, state }) {
+    const key = normalizeHost(host);
     const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
     if (!key || !store) return '';
     const stored = await store.get({ siteRules: {} });
@@ -322,39 +341,54 @@
     return key;
   }
 
-  // 这个域名被追问过几次：读出来、加一、写回去。
-  //
-  // 这种写法必须只有一个主人。同一个域名可能同时开着三个标签页，三个内容脚本
-  // 各自读出 0、各自写回 1，「问三次就不再问」这句承诺永远凑不满三次。所以计数
-  // 由服务工作者代劳（background.js 的 SITE_ASK_COUNT），内容脚本只发消息。
-  //
-  // 服务工作者是单实例，但两条消息的处理之间照样能在 await 处交错，所以这里还要
-  // 一条队列把前一次的写等完。队列只保证顺序、不传播失败：一次写崩了不该把后面
-  // 的全卡死。
-  let askQueue = Promise.resolve();
-
   /**
-   * @param {string} hostname 主机名，内部按 normalizeHost 归一
-   * @param {'bump'|'clear'} op 加一，或者把这条记录整条删掉（用户表态了，
-   *   前面问过几次都不算数）
+   * 这个域名被追问过几次：读出来、加一、写回去。`'clear'` 是把整条记录删掉
+   * ——用户表过态了，前面问过几次都不算数。
+   *
    * @returns {Promise<number>} 写完之后的次数
    */
+  async function applyAskCount({ host, op }) {
+    const key = normalizeHost(host);
+    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+    if (!key || !store) return 0;
+    const stored = await store.get({ siteAskCount: {} });
+    const counts = Object.assign({}, stored.siteAskCount);
+    const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
+    if (op === 'clear') delete counts[key];
+    else counts[key] = current + 1;
+    await store.set({ siteAskCount: counts });
+    return op === 'clear' ? 0 : current + 1;
+  }
+
+  const WRITES = { rule: applyUserRule, ask: applyAskCount };
+
+  /**
+   * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接，规则
+   * 本身不在那边（background.js 的 SITE_RULES_WRITE）。
+   */
+  function applyWrite(message) {
+    const write = message && WRITES[message.kind];
+    if (!write) return Promise.reject(new Error(`unknown site-rules write: ${message && message.kind}`));
+    return enqueue(() => write(message));
+  }
+
+  // 在服务工作者里就自己写，在别处就把这件事交给它。调用方两边共用一个名字，
+  // 省得每个写入点都要记得自己是谁、该不该发消息。
+  function request(kind, payload) {
+    const message = Object.assign({ type: 'SITE_RULES_WRITE', kind }, payload);
+    if (IN_SERVICE_WORKER) return applyWrite(message);
+    return root.chrome.runtime.sendMessage(message).then((reply) => {
+      if (reply && reply.error) throw new Error(reply.error);
+      return reply ? reply.value : undefined;
+    });
+  }
+
+  function writeUserRule(hostname, state) {
+    return request('rule', { host: hostname, state });
+  }
+
   function updateAskCount(hostname, op) {
-    const run = async () => {
-      const key = normalizeHost(hostname);
-      const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
-      if (!key || !store) return 0;
-      const stored = await store.get({ siteAskCount: {} });
-      const counts = Object.assign({}, stored.siteAskCount);
-      const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
-      if (op === 'clear') delete counts[key];
-      else counts[key] = current + 1;
-      await store.set({ siteAskCount: counts });
-      return op === 'clear' ? 0 : current + 1;
-    };
-    const result = askQueue.then(run, run);
-    askQueue = result.catch(() => {});
-    return result;
+    return request('ask', { host: hostname, op });
   }
 
   root.SiteRules = {
@@ -364,6 +398,7 @@
     lookupUserRule,
     writeUserRule,
     updateAskCount,
+    applyWrite,
     matchBuiltin,
     loadTable,
   };

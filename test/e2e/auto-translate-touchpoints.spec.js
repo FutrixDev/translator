@@ -306,3 +306,32 @@ test('一轮翻译跑到一半按下 Alt+A，后面落下来的译文也是藏�
     await close();
   }
 });
+
+test('把译文藏了之后，popup 上那颗「继续」真的能把这一页开回来', async ({ page, context }) => {
+  // 藏译文会顺手把这一页停下（「我现在想看原文」），而 start() 里那道闩认的也是
+  // 同一个标记。「继续」要是只重开一轮，就会原地弹回 PAUSED —— 按钮按下去毫无
+  // 反应，还不报错。
+  const { close, endpoint } = await startMockOpenAIServer();
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    const blocks = page.locator('#box .ai-translator-inline-block');
+    await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
+
+    // 悬浮球菜单里的「显示原文」按的就是这一下。
+    const hidden = await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' });
+    expect(hidden.action).toBe('restored');
+    await expect(blocks.first()).toHaveClass(/ai-translator-hidden/);
+
+    const dot = page.locator('#ai-translator-float-ball .ai-translator-status-dot');
+    await expect(dot).toHaveAttribute('data-state', 'paused');
+
+    // popup 第三行：继续翻这一页。
+    const resumed = await sendMessageToActiveTab(page, { type: 'SET_AUTO_PAUSED', paused: false });
+    expect(resumed.status).not.toBe('paused');
+    await expect(blocks.first()).not.toHaveClass(/ai-translator-hidden/);
+    await expect(dot).toHaveAttribute('data-state', 'none');
+  } finally {
+    await close();
+  }
+});

@@ -589,12 +589,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 自动翻译的追问条问过几次。内容脚本不自己读写这个数：同一个域名的几个标签页
-    // 会各自读出同一个旧值再各自写回，三次的额度一次都攒不满。计数收在这里，
-    // 排队的那条链在 shared/site-rules.js。
-    case 'SITE_ASK_COUNT':
-      globalThis.SiteRules.updateAskCount(message.host, message.op)
-        .then(count => sendResponse({ count }))
+    // 站点规则和追问计数的读—改—写。内容脚本和 popup 不自己动这两张表：它们是
+    // 整份对象读出来、改一个键、整份写回，两个标签页同时来就会互相盖掉 ——
+    // 用户点下的选择没了，而且哪里都不报错。规则本身在 shared/site-rules.js，
+    // 这里只管转接。
+    case 'SITE_RULES_WRITE':
+      globalThis.SiteRules.applyWrite(message)
+        .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
 
