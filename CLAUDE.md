@@ -112,20 +112,49 @@ switch — the account half is enforced one layer down, where `apiFetch` answers
 create with no token as `unauthorized`, and every surface turns that into a
 sign-in offer.
 
+Comic translation is a family of classic scripts sharing one shelf, `ctx.comic`:
+
+| file | what it owns |
+| --- | --- |
+| `content/comic/pages.js` | is this a comic page, which images to translate, page ids, the mode/status vocabulary |
+| `content/comic/entries.js` | the per-image ledger, showing the result or the original |
+| `content/comic/overlay.js` | the badge and the spinner drawn over an image |
+| `content/comic/memory.js` | jobs remembered in `chrome.storage.local` across a reload |
+| `content/comic/prompts.js` | the sign-in / out-of-credit / error prompts |
+| `content/content-comic-translation.js` | the entry: the job lifecycle (create, poll, recover) and page-swap watching |
+
+Every reference crossing a file goes through the shelf (`comic.foo`), so no file
+depends on being loaded before another. Tests ask the **family**, not a file:
+`comicSource()` in `test/unit/helpers/sources.mjs`.
+
 ### Video Subtitle Translation
 
 One engine, one overlay, and a small provider per way of getting cues. The
-engine — `content/content-video-captions.js` — owns everything that is the same
-on every site: sentence segmentation, batching, the bilingual overlay and its
-drag/resize/persistence, hiding the page's own line, and re-mounting on
-fullscreen. `shared/caption-core.js` holds the pure parts of that (VTT/json3/srv3
-parsing, cue merging, batching, track choice, the translation request) so
-`npm run test:unit` can exercise them with no browser.
+engine owns everything that is the same on every site: sentence segmentation,
+batching, the bilingual overlay and its drag/resize/persistence, hiding the
+page's own line, and re-mounting on fullscreen. `shared/caption-core.js` holds
+the pure parts of that (VTT/json3/srv3 parsing, cue merging, batching, track
+choice, the translation request) so `npm run test:unit` can exercise them with
+no browser.
+
+The engine is a family of classic scripts sharing one shelf, `ctx.captions`:
+
+| file | what it owns |
+| --- | --- |
+| `content/captions/state.js` | the one mutable `state` object, the timing constants, the settings/target-language/video-element readers. **Loads first** — the others take `caps.state` at load time. |
+| `content/captions/overlay.js` | the overlay: mount, render, drag/resize, persistence, fullscreen |
+| `content/captions/translate.js` | cue keys, batch picking, `translateCues`, the sliding window |
+| `content/captions/activation.js` | when we take over a video: the site gate, track watching, provider selection, `ctx.enableNativeCaptions` |
+| `content/content-video-captions.js` | the entry: the time-update loop, `ctx.applyCaptionSettings`, `ctx.setupVideoCaptionTranslation` |
+
+Everything crossing a file goes through the shelf (`caps.foo`), so only that one
+`state` read depends on manifest order. Tests ask the **family**, not a file:
+`captionEngineSource()` in `test/unit/helpers/sources.mjs`.
 
 **Subtitles have no switch of their own.** Whether we translate them at all is
 the same gate the page text goes through — the main `autoTranslate` switch plus
 this site's rule — and the engine reads it off the scheduler's snapshot
-(`siteRefused()` in `content/content-video-captions.js`, subscribed through
+(`siteRefused()` in `content/captions/activation.js`, subscribed through
 `ctx.autoTranslate.onStateChange`, which is why `ctx.init` starts the scheduler
 first). It asks `siteRefused`, **not** `siteAuto`: video sites are not on the
 built-in Always list, so the page-text answer there is usually `ask` and

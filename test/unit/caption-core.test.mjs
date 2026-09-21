@@ -2,8 +2,9 @@
 // translation, and the boundary that keeps it that way.
 //
 // Subtitle translation used to be one YouTube-shaped file. It is now an engine
-// (content/content-video-captions.js) plus providers
-// (content/content-caption-providers.js) that answer "can I supply cues here?".
+// (content/content-video-captions.js plus the content/captions/ family it loads)
+// alongside providers (content/content-caption-providers.js) that answer
+// "can I supply cues here?".
 // The two things that rot in that arrangement are asserted here rather than
 // eyeballed: the cue shape every provider has to produce, and the rule that
 // picks which provider gets the page.
@@ -11,9 +12,9 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { contentCss } from './helpers/sources.mjs';
+import { captionEngineSource, contentCss } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -375,12 +376,12 @@ test('a track that declares no language is left to detection', () => {
 test('the caption engine asks for its request through the shared builder', () => {
   // The source-language hint is the whole point of the builder; a caller that
   // assembles its own message drops it and silently loses the translation.
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   assert.match(engine, /core\.buildTranslationRequest\(/);
   assert.equal(
     engine.includes("type: 'TRANSLATE_BATCH_FAST'"),
     false,
-    'content-video-captions.js hand-rolls the request instead of using buildTranslationRequest',
+    '字幕引擎自己拼了一份请求，没走 buildTranslationRequest',
   );
 });
 
@@ -415,16 +416,30 @@ test('batches stay under both the item and character caps', () => {
 test('the engine and the providers load the shared core, and the manifest ships it', () => {
   const manifest = JSON.parse(repoFile('manifest.json'));
   const bundle = manifest.content_scripts.flatMap((entry) => entry.js || []);
-  for (const file of ['shared/caption-core.js', 'content/content-caption-providers.js', 'content/content-video-captions.js']) {
+  // 引擎拆成了一族：入口加 content/captions/ 下的几份。清单从磁盘列出来再比对，
+  // 于是新加一份而忘了写进 manifest 会在这里停下 —— 内容脚本是普通脚本，漏装只会
+  // 安静地少掉几个函数，不会报错。
+  const family = readdirSync(fileURLToPath(new URL('../../content/captions', import.meta.url)))
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => `content/captions/${name}`);
+  assert.ok(family.length > 0, 'content/captions/ 空了？');
+  for (const file of ['shared/caption-core.js', 'content/content-caption-providers.js',
+    'content/content-video-captions.js', ...family]) {
     assert.ok(bundle.includes(file), `manifest.json must inject ${file}`);
   }
   assert.ok(
     !bundle.includes('content/content-youtube-captions.js'),
     'the YouTube-only module is gone — its engine half is content-video-captions.js',
   );
-  // Order matters: both consumers read globalThis.CaptionCore at load time.
+  // Order matters: every consumer reads globalThis.CaptionCore at load time.
   assert.ok(bundle.indexOf('shared/caption-core.js') < bundle.indexOf('content/content-caption-providers.js'));
-  assert.ok(bundle.indexOf('shared/caption-core.js') < bundle.indexOf('content/content-video-captions.js'));
+  for (const file of [...family, 'content/content-video-captions.js']) {
+    assert.ok(bundle.indexOf('shared/caption-core.js') < bundle.indexOf(file), `${file} 排在 caption-core 前面了`);
+  }
+  // 这一族自己也有一条：state.js 挂的那张表是其余几份装载时就读走的。
+  for (const file of family.filter((f) => f !== 'content/captions/state.js')) {
+    assert.ok(bundle.indexOf('content/captions/state.js') < bundle.indexOf(file), `${file} 排在 captions/state.js 前面了`);
+  }
 });
 
 test('no consumer re-declares the shared caption logic', () => {
@@ -434,8 +449,8 @@ test('no consumer re-declares the shared caption logic', () => {
   const shared = ['parseVtt', 'parseJson3', 'parseSrv3', 'parseCaptionPayload',
     'buildSegments', 'buildBatches', 'fromTextTrackCues', 'mergeRawCues',
     'selectProvider', 'pickSubtitleTrack', 'buildTranslationRequest'];
-  for (const file of ['content/content-video-captions.js', 'content/content-caption-providers.js']) {
-    const src = repoFile(file);
+  for (const [file, src] of [['字幕引擎那一族', captionEngineSource()],
+    ['content/content-caption-providers.js', repoFile('content/content-caption-providers.js')]]) {
     for (const name of shared) {
       assert.equal(
         src.includes(`function ${name}(`),
@@ -449,9 +464,9 @@ test('no consumer re-declares the shared caption logic', () => {
 test('the engine holds no site-specific selectors', () => {
   // Every one of these belongs to a provider. An engine that reaches for a
   // YouTube class name is an engine that has stopped being generic.
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   for (const marker of ['ytp-', 'youtube.com', 'yt-navigate', 'timedtext']) {
-    assert.equal(engine.includes(marker), false, `content-video-captions.js mentions ${marker}`);
+    assert.equal(engine.includes(marker), false, `字幕引擎里出现了 ${marker}`);
   }
 });
 
@@ -588,7 +603,8 @@ test('the controls load after the providers and before the engine', () => {
   // to be defined between the two.
   const manifest = repoFile('manifest.json');
   assert.ok(manifest.indexOf('content/content-caption-providers.js') < manifest.indexOf('content/content-caption-controls.js'));
-  assert.ok(manifest.indexOf('content/content-caption-controls.js') < manifest.indexOf('content/content-video-captions.js'));
+  // 引擎的第一份是 content/captions/state.js —— 比对它，而不是比对入口文件。
+  assert.ok(manifest.indexOf('content/content-caption-controls.js') < manifest.indexOf('content/captions/state.js'));
 });
 
 // -------------------------------------------------- turning subtitles on
@@ -611,7 +627,7 @@ test('替观众开原字幕是一个单独的开关，默认关着', () => {
 });
 
 test('自动开原字幕过不了两道闸门：开关，和这个站点被不被明令拒绝', () => {
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const gate = engine.match(/function autoEnableAllowed\(\)[\s\S]*?\n  \}/);
   assert.ok(gate, '找不到 autoEnableAllowed()');
   assert.match(gate[0], /getSetting\('autoEnableCaptions'\)/);
@@ -627,7 +643,7 @@ test('自动开原字幕过不了两道闸门：开关，和这个站点被不�
 });
 
 test('观众自己把字幕关掉之后，就不再替他开第二次', () => {
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const latch = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
   assert.ok(latch, '找不到 syncNativeCaptions()');
   // 看见开着 → 记下；再看见关了 → 落闩。少了任何一半，1.5 秒一次的心跳会把他
@@ -650,7 +666,7 @@ test('问不到「这个站点准不准」，就当是不准', () => {
   // 这一句话现在管两件事：替观众打开原字幕（改的是播放器自己的状态），以及字幕
   // 到底翻不翻（把页面上的文字发给第三方）。「还没判出来」和「判出来是不许」在
   // 观众那里没有区别，而后者错一次是把不该发的发出去了。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   // 「调度层没起来」和「state() 抛了（页面正在拆）」在取快照那一层就合成了同一
   // 个答案：null，什么都不知道。
   const snap = engine.match(/function autoSnapshot\(\)[\s\S]*?\n  \}/);
@@ -682,9 +698,9 @@ test('菜单第一行画的是站点规则，不是闸门', () => {
   // 闸门＝「这个站点没明令拒绝我们」，站点规则＝「这个站点开着自动翻」，中间隔
   // 着一大片 ask。一个没设过规则的普通视频站上闸门开着而规则关着——拿闸门去画
   // 那一行，它会显示成「开」，而观众按下去写进去的是一条永久的 never。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   assert.match(engine, /function siteAuto\(\)[\s\S]*?return !!\(snap && snap\.siteAuto\);/);
-  assert.match(engine, /state\.siteAuto = siteAuto\(\);/);
+  assert.match(engine, /state\.siteAuto = (?:caps\.)?siteAuto\(\);/);
   assert.match(engine, /controls\.sync\(\{[^}]*siteAuto: state\.siteAuto/);
 
   const controls = repoFile('content/content-caption-controls.js');
@@ -719,8 +735,8 @@ test('写不进规则的站点，那一行点不动', () => {
 test('字幕翻不翻只有一个答案，控件不自己再算一遍', () => {
   // 引擎算出闸门，随 controls.sync() 递给控件；控件回头去读设置就是第二个答案，
   // 而两个答案里总有一个是错的。
-  const engine = repoFile('content/content-video-captions.js');
-  assert.match(engine, /state\.enabled = !siteRefused\(\);/);
+  const engine = captionEngineSource();
+  assert.match(engine, /state\.enabled = !(?:caps\.)?siteRefused\(\);/);
   assert.match(engine, /controls\.sync\(\{[^}]*enabled: state\.enabled/);
 
   const controls = repoFile('content/content-caption-controls.js');
@@ -748,7 +764,7 @@ test('藏起播放器上的按钮，不等于不要替他开原字幕', () => {
   // autoEnableCaptions 说的是「没开字幕的视频替我点开」。自动开启那一步唯一的驱
   // 动是心跳里的 syncControls()，所以它必须排在按钮那道闸门**前面**——排在后面，
   // 藏了图标的观众就再也等不到字幕。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const sync = engine.match(/function syncControls\(\)[\s\S]*?\n  \}/);
   assert.ok(sync, '找不到 syncControls()');
   assert.equal((sync[0].match(/syncNativeCaptions\(\)/g) || []).length, 1);
@@ -773,7 +789,7 @@ test('「能不能点开」是每一拍现问的，不是记下来的', () => {
   assert.match(providers, /subtitleEntries\(TextTrackProvider\.getVideo\(\)\)\.length \? true : null/);
 
   // 菜单每一拍照这个答案决定摆不摆那一行，而且谁也不许把它记下来。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const status = engine.match(/function captionStatus\(provider\)[\s\S]*?\n  \}/);
   assert.ok(status, '找不到 captionStatus()');
   assert.match(status[0], /canEnableNativeCaptions\(\)/);
@@ -786,7 +802,7 @@ test('「能不能点开」是每一拍现问的，不是记下来的', () => {
 });
 
 test('「本来就是目标语言」是现算的，而且换了目标语言字幕这一面要当场知道', () => {
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
 
   // 记下来的那个版本（state.skipTranslation）一个视频只算一次，在 ingestTrack
   // 里。观众看到一半把目标语言从英文换成中文，那条英文轨道的「不必译」就冻在那
@@ -821,7 +837,7 @@ test('「原字幕开着没有」要排在「本来就是目标语言」前面',
   // 一条本来就是目标语言的轨道被观众关掉之后：菜单继续报「已经是你要的语言」，
   // 而那句话描述的是一条屏幕上已经不存在的轨道，还正好把唯一那条回头路挡住了
   // ——自动开启那一面记着「是他自己关的」，不会再替他点。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const status = engine.match(/function captionStatus\(provider\)[\s\S]*?\n  \}/);
   assert.ok(status, '找不到 captionStatus()');
   assert.ok(
@@ -838,7 +854,7 @@ test('替他开成了就当场记下，别等下一拍', () => {
   // 心跳 1.5 秒一拍。开成了却把 true 丢掉，观众在这 1.5 秒里把刚亮起来的字幕关
   // 掉，下一拍看见的是「关着，而且没落闩」——于是又替他开一次。那道闩要防的正
   // 是这件事，只不过发生在它合上之前。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const sync = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
   assert.ok(sync, '找不到 syncNativeCaptions()');
   assert.match(
@@ -853,7 +869,7 @@ test('他自己按那一行开成了，同样要当场记下', () => {
   // button.click() 之后直接答 true，不等 aria-pressed 翻面，而这一行紧接着就
   // syncControls() —— 那一问要是还读到 false，就落进自动那一路：闩刚被这一行解开，
   // autoEnableCaptions 又开着的话，它会再点一次，把观众刚要的字幕点回去。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const manual = engine.match(/ctx\.enableNativeCaptions = function\(\)[\s\S]*?\n  \};/);
   assert.ok(manual, '找不到 ctx.enableNativeCaptions');
   assert.match(
@@ -884,7 +900,7 @@ test('「原字幕开着没有」拿不准的时候，不许去合那道闩', ()
   );
 
   // 引擎照三种答案走：只有确凿的 false 才往闩那一步去。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const sync = engine.match(/function syncNativeCaptions\(\)[\s\S]*?\n  \}/);
   assert.match(sync[0], /if \(on === true\)/);
   assert.match(sync[0], /if \(on !== false\) return;/, '「说不准」被读成了「关着」');
@@ -912,12 +928,12 @@ test('allowDisabled 只从 enableNativeCaptions 那条路进来', () => {
 test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   // 从前是「整条轨道一次译完」：一小时的讲座在观众看到第二句之前就整片发去了云
   // 端，其中绝大多数他不会看到。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const window = engine.match(/function translationWindowMs\(\)[\s\S]*?\n  \}/);
   assert.ok(window, '找不到 translationWindowMs()');
   assert.match(window[0], /builtin\.isActive\(\)/);
   assert.match(window[0], /return Infinity/);
-  assert.match(window[0], /useNative \? NATIVE_WINDOW_MS : WINDOW_MS/);
+  assert.match(window[0], /useNative \? (?:caps\.)?NATIVE_WINDOW_MS : (?:caps\.)?WINDOW_MS/);
 
   // 「选了内置引擎」不等于「这一批不花钱」：语言包还没下到本地时内置会抛
   // EngineUnavailableError，而 engineFallback === 'allow-ai' 的用户会把这一批原
@@ -969,14 +985,14 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
 test('一批译文回来时轨道或目标语言已经翻篇，就整批丢掉——但键要先放开', () => {
   // getCueKey() 读的是 state **此刻**的值。观众换一门字幕语言或换个目标语言，上
   // 一轮的译文会照着新的那一套键写进缓存——而且因为键是对的，它永远不会被重译掉。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const fn = engine.match(/async function translateCues\(cues\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 translateCues()');
   // 键、轨道号、目标语言，三样都取在 await 之前。
   const beforeAwait = fn[0].slice(0, fn[0].indexOf('await ctx.requestTranslation'));
   assert.match(beforeAwait, /const keys = cues\.map\(\(cue\) => getCueKey\(cue\)\);/);
   assert.match(beforeAwait, /const trackId = state\.trackId;/);
-  assert.match(beforeAwait, /const target = getTargetLang\(\);/);
+  assert.match(beforeAwait, /const target = (?:caps\.)?getTargetLang\(\);/);
   // 过期只由字幕自己的两样东西决定。整页那一面的代次号（sessionVersion）是另一个
   // 部件的时钟：暂停这一页、藏起译文、关掉全局自动翻译都会让它翻篇，而轨道和目标
   // 语言一样没变——在飞的那一批被判过期丢掉，下一轮又把同一批句子重发一次，钱付两
@@ -989,7 +1005,7 @@ test('一批译文回来时轨道或目标语言已经翻篇，就整批丢掉�
   // 手清过，换目标语言那一路没有——不放开，这几句就永远停在「正在译」上。
   assert.match(
     fn[0],
-    /if \(trackId !== state\.trackId \|\| target !== getTargetLang\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return STALE;/,
+    /if \(trackId !== state\.trackId \|\| target !== (?:caps\.)?getTargetLang\(\)\) \{\s*\n\s*releaseBatch\(keys\);\s*\n\s*return STALE;/,
     '过期的一批直接 return 了，pendingKeys 没放开',
   );
 
@@ -1021,7 +1037,7 @@ test('一批译文回来时轨道或目标语言已经翻篇，就整批丢掉�
 test('译文表的键里带着目标语言：换一门语言就是换一套键', () => {
   // 少了这一截，看片中途把目标语言从中文换成日文，已经译过的句子键一个不变，整
   // 段视频继续放着中文，而且因为键是对的，永远不会被重译掉。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const fn = engine.match(/function getCueKey\(cue\) \{[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 getCueKey()');
   assert.match(fn[0], /getTargetLang\(\)/, '键里没有目标语言：换语言后旧译文会被当成新语言的');
@@ -1058,7 +1074,7 @@ test('字幕引擎问的是那一个共用的语言判定，不是自己再写�
   // 事：引擎问的是**那一份**。一条繁体轨道配简体目标正是观众要的那件事，按基码
   // 判两边都是 zh，「本来就是目标语言」成立，handleTimeUpdate 在那道闸门上返回，
   // 一个字也不译。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const fn = engine.match(/function sameLanguage\(\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 sameLanguage()');
   assert.match(fn[0], /langTags\.isSameLanguage\(/);
@@ -1075,7 +1091,7 @@ test('一轮译文有主，换了视频的那一轮不许接着跑', () => {
   // resetForVideo() 会把 state.translating 清掉，紧接着新轨道进来又起一轮新的，
   // 而旧那一轮正停在 await 上。它回来照 STALE 接着跑，两轮就并排跑起来——各自的
   // finally 又都会清标志，于是第三轮第四轮也能进来，付费的批次同时在飞。
-  const engine = repoFile('content/content-video-captions.js');
+  const engine = captionEngineSource();
   const fn = engine.match(/async function ensureTrackTranslated\(force\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 ensureTrackTranslated()');
   assert.match(fn[0], /const pass = \+\+passSeq;/, '这一轮没有号：所有权无从谈起');

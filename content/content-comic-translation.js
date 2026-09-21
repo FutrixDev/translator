@@ -31,7 +31,7 @@
 
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
-  // 这一族共用的架子，说明见 content/content-comic-translation.js 顶上。
+  // 这一族共用的架子（说明见本文件顶上）。
   const comic = (ctx.comic = ctx.comic || {});
 
   const t = ctx.t;

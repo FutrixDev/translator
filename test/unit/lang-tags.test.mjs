@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { captionEngineSource } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
 const L = globalThis.LangTags;
@@ -75,11 +76,11 @@ test('全仓只有这一份实现：别处不许再写一遍 split(\'-\')[0]', (
     'shared/site-rules.js',
     'content/content-language.js',
     'content/page/batch.js',
-    'content/content-video-captions.js',
     'content/content-translation-engine.js',
-  ];
-  for (const rel of sources) {
-    const text = repoFile(rel);
+  ].map((rel) => [rel, repoFile(rel)]);
+  // 字幕引擎是一族文件，整族一起读 —— 第二份实现躲进 content/captions/ 里也算数。
+  sources.push(['字幕引擎那一族', captionEngineSource()]);
+  for (const [rel, text] of sources) {
     assert.ok(
       !/function getLangBase\s*\(/.test(text),
       `${rel} 里又长出一份 getLangBase —— 它的主人是 shared/lang-tags.js`,
@@ -99,7 +100,7 @@ test('三条路问的是同一句：字幕、整页正文、自动翻译的决�
   // 这一条守的是「同一个问题只有一个答案」。上一条守的是别处没有第二份实现，
   // 这一条守的是**调用方真的去问了**——一个没人调的共用模块，和没有是一样的。
   assert.match(
-    repoFile('content/content-video-captions.js'),
+    captionEngineSource(),
     /langTags\.isSameLanguage\(/,
     '字幕的 sameLanguage() 要走共用判定',
   );

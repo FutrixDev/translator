@@ -87,3 +87,16 @@ export function comicSource() {
   return [surfaceSource('content/comic', (name) => name.endsWith('.js')),
           readFileSync(path.join(ROOT, 'content/content-comic-translation.js'), 'utf8')].join('\n');
 }
+
+/**
+ * 字幕引擎全体：content/captions/*.js 加上入口 content/content-video-captions.js。
+ *
+ * 「引擎有没有做某件事」问的是这一族 —— 开关状态、覆盖层、翻译、启用字幕分在四个
+ * 文件里，哪个函数落在哪一份是排版，不是契约。
+ *
+ * 要断言的是**装载顺序**（谁在 manifest 里排在谁前面），照旧去读 manifest.json。
+ */
+export function captionEngineSource() {
+  return [surfaceSource('content/captions', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'content/content-video-captions.js'), 'utf8')].join('\n');
+}
