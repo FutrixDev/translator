@@ -32,6 +32,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const require = createRequire(import.meta.url);
@@ -87,8 +88,8 @@ test('a spec that sets no settings at all is covered by the fixture', async () =
 });
 
 test('the pin is load-bearing: the shipped default is a different engine', () => {
-  const shipped = repoFile('background/background.js').match(/translationEngine: '([a-z]+)'/)?.[1];
-  assert.equal(shipped, 'builtin', 'background/background.js no longer declares a default engine by that name');
+  const shipped = workerSource().match(/translationEngine: '([a-z]+)'/)?.[1];
+  assert.equal(shipped, 'builtin', 'the service worker no longer declares a default engine by that name');
   assert.notEqual(shipped, helpers.E2E_BASE_SETTINGS.translationEngine,
     'if the extension ever ships the AI backend as its default, drop the pin and this test with it');
 });

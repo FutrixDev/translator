@@ -23,6 +23,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { contentBundle, familyPaths, hoverSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -308,13 +309,13 @@ test('the post-insert helper runs both guards, and in the order that matters', (
 });
 
 test('the hover path asks the guard when it tracks a translation', () => {
-  const source = repoFile('content/content-hover-translation.js');
+  const source = hoverSource();
   assert.match(source, /keepVisible\(translationEl\);/,
     'trackInlineTranslation is the single place hover/selection register a translation');
 });
 
 test('every disposal releases the guards it took', () => {
-  const source = repoFile('content/content-hover-translation.js');
+  const source = hoverSource();
   const releases = source.match(/releaseClipGuards\(\)/g) || [];
   // 两处丢弃译文的地方（换块、移除），加上函数定义本身
   assert.equal(releases.length, 3, 'a disposal site drops a translation without releasing its guard');
@@ -322,26 +323,27 @@ test('every disposal releases the guards it took', () => {
 
 test('the clip guard is the only place that forces a height open', () => {
   // 同 api-compat.js / account-gate.js：规则散出去就会各处漂移
-  for (const file of [
-    'content/content-hover-translation.js',
-    'content/content-page-translation.js',
-    'content/page/insert.js',
-    'content/page/visibility.js',
-    'content/page/progress.js',
-    'content/content-float-ball.js',
-    'content/content-managed-translation.js',
+  for (const [file, src] of [
+    ...['content/content-page-translation.js',
+      'content/page/insert.js',
+      'content/page/visibility.js',
+      'content/page/progress.js',
+      'content/content-float-ball.js',
+      'content/content-managed-translation.js'].map((rel) => [rel, repoFile(rel)]),
+    ['悬停那一族', hoverSource()],
   ]) {
-    assert.doesNotMatch(repoFile(file), /setProperty\(\s*['"](max-height|-webkit-line-clamp)['"]/,
+    assert.doesNotMatch(src, /setProperty\(\s*['"](max-height|-webkit-line-clamp)['"]/,
       `${file} relaxes a height constraint itself`);
   }
 });
 
 test('the guard module loads before the surfaces that call it', () => {
-  const manifest = JSON.parse(repoFile('manifest.json'));
-  const bundle = manifest.content_scripts.find((entry) => entry.js.includes('content/content-clip-guard.js'));
-  assert.ok(bundle, 'content-clip-guard.js is not in any content script bundle');
-  const at = (file) => bundle.js.indexOf(file);
+  const bundle = contentBundle('content/content-clip-guard.js');
+  const at = (file) => bundle.indexOf(file);
   const guard = at('content/content-clip-guard.js');
-  assert.ok(guard < at('content/content-hover-translation.js'));
+  // 悬停是一族文件，入口不是最先装的那一份 —— 每一份都要排在守卫后面。
+  for (const file of familyPaths('content/hover', 'content/content-hover-translation.js')) {
+    assert.ok(guard < at(file), `${file} 排在 content-clip-guard.js 前面了`);
+  }
   assert.ok(guard < at('content/page/insert.js'));
 });

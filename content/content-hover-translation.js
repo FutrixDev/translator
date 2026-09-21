@@ -1,246 +1,29 @@
-// Blab Translation Content Script Hover Translation
+// Blab Translation 悬停/划选翻译 —— 按住键指着一块正文
+//
+// 按住设定的修饰键，鼠标指到哪一段就译哪一段；右键菜单和划选按钮走的是同一套。这
+// 一份是这条路的入口：认热键、认鼠标、把一块正文译出来，以及对外的那几个 ctx.*。
+//
+// 其余分在 content/hover/ 下：翻哪一块（blocks.js）、行内译文的台账（inline.js）、
+// 公式先抠出来（latex.js）、划选那一路（selection.js）、译文长什么样（render.js）。
+// 五份各自把要给别人用的名字 Object.assign 到同一张架子 `ctx.hover` 上，取值发生在
+// 调用时——所以带 hov. 前缀的名字就是住在别处的，而装载顺序无关紧要。
 (function() {
   'use strict';
 
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
 
-  const { settings, constants, state } = ctx;
-  const { MATH_CONTAINER_SELECTOR } = constants;
+  const { settings } = ctx;
   const t = ctx.t;
-
-  const BLOCK_TAGS = new Set([
-    'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-    'BLOCKQUOTE', 'FIGCAPTION', 'DT', 'DD'
-  ]);
-  const SKIP_SELECTOR = '.ai-translator-popup, .ai-translator-inline-block, .ai-translator-hover-translation, .ai-translator-selection-translation, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn';
-  const SKIP_TAG_SELECTOR = 'script, style, noscript, iframe, textarea, input, select, code, pre, svg, canvas, kbd, samp, var';
-  const POSITION_CLASSES = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
+  // 这一族共用的架子，说明见 content/content-hover-translation.js 顶上。
+  const hov = (ctx.hover = ctx.hover || {});
 
   let hotkeyDown = false;
   let activeHotkey = null;
   // 这一下修饰键被和弦（Alt+A 之类）用掉了，按着的这段时间里不再触发悬停翻译。
   let chordKey = null;
 
-  const INLINE_SOURCE_CLASS = 'ai-translator-inline-source';
-  const INLINE_LOADING_CLASS = 'ai-translator-inline-loading';
-  const hoverTranslations = new Map();
-  const selectionTranslations = new Map();
-  const inlineTranslationSources = new WeakMap();
-  const hoverRequestIds = new Map();
-  const selectionRequestIds = new Map();
-  const hoverLoadingStarts = new Map();
-  const selectionLoadingStarts = new Map();
-  const MIN_LOADING_MS = 120;
-  let lastContextBlock = null;
 
-  const translationCache = new WeakMap();
-
-  function markInlineSource(block, kind) {
-    if (!block) return;
-    block.classList.add(INLINE_SOURCE_CLASS);
-    if (kind === 'hover') {
-      block.dataset.aiTranslatorInlineHover = '1';
-    } else if (kind === 'selection') {
-      block.dataset.aiTranslatorInlineSelection = '1';
-    }
-  }
-
-  function unmarkInlineSource(block, kind) {
-    if (!block) return;
-    if (kind === 'hover') {
-      delete block.dataset.aiTranslatorInlineHover;
-    } else if (kind === 'selection') {
-      delete block.dataset.aiTranslatorInlineSelection;
-    }
-    if (!block.dataset.aiTranslatorInlineHover && !block.dataset.aiTranslatorInlineSelection) {
-      block.classList.remove(INLINE_SOURCE_CLASS);
-    }
-  }
-
-  // ==================== 受管容器：生成内容渲染 ====================
-  //
-  // Lexical / ProseMirror 这类编辑器会撤销子树里的外来节点（见 content-utils.js
-  // 里 MANAGED_DOM_ROOT_SELECTOR 的说明）。往这种块下面 after() 一个译文，下一帧
-  // 就没了，用户什么都看不到。
-  //
-  // 这类块的译文改成原文块自己的 ::after —— 生成内容不是 DOM 节点，编辑器的
-  // MutationObserver 看不见它，同时它又占真实排版空间，会把后面的段落顶下去。
-  // 具体实现和取舍在 content-managed-translation.js。
-  const hostileNodes = new WeakSet(); // 运行时发现的“插进去会被删”的位置
-
-  function shouldUseManagedRendering(block) {
-    if (!block) return false;
-    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(block)) return true;
-    // 名单之外的框架靠 verifyInlineSurvival 现场发现，记在 hostileNodes 里。
-    // 两个位置都要问：译文可能是 after() 到块的兄弟位（父级是 block.parentElement），
-    // 也可能是 appendChild / range.insertNode 到块里面（父级是块或块的后代）。
-    return hostileNodes.has(block) || !!(block.parentElement && hostileNodes.has(block.parentElement));
-  }
-
-  // 受管容器里的一次渲染尝试。放不下就返回 null，由调用方继续走原来的插入路径 ——
-  // 那条路在 Lexical 里会被删掉，但在其它框架上未必，总好过什么都不画。
-  function renderManaged(block, text, options) {
-    if (!shouldUseManagedRendering(block)) return null;
-    if (!ctx.canRenderManagedTranslation || !ctx.renderManagedTranslation) return null;
-    if (!ctx.canRenderManagedTranslation(block, { hasMath: !!(options && options.hasMath) })) return null;
-    return ctx.renderManagedTranslation(block, text, options);
-  }
-
-  function releaseManaged(el) {
-    if (!el || !ctx.releaseManagedTranslation) return;
-    ctx.releaseManagedTranslation(el);
-  }
-
-  // 译文进了 DOM 不等于看得见：它可能落在某个 overflow:hidden 祖先的可视区外面。
-  // 见 content-clip-guard.js（受管句柄由它自己换算成原文块）。
-  function keepVisible(translationEl) {
-    if (ctx.keepTranslationVisible) ctx.keepTranslationVisible(translationEl);
-  }
-
-  function releaseClipGuards() {
-    if (ctx.releaseTranslationClipGuards) ctx.releaseTranslationClipGuards();
-  }
-
-  // 名单覆盖不到的框架同样会吃节点。插完之后隔两帧回看一眼：节点没了而原文块还在，
-  // 就把这个插入父级记为 hostile，并重画一次 —— 那时 shouldUseManagedRendering 已
-  // 经认得它，会走生成内容。少了这一步，未知框架上的表现依旧是“第一次悬停什么都
-  // 没有，之后再悬停也不再重试”。
-  function verifyInlineSurvival(block, translationEl, kind, redraw) {
-    if (!redraw || !translationEl) return;
-    if (ctx.isManagedTranslationHandle && ctx.isManagedTranslationHandle(translationEl)) return;
-    const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
-    const parent = translationEl.parentElement;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (translationEl.isConnected) return;
-      if (!block.isConnected || map.get(block) !== translationEl) return;
-      // 记块本身：这一块下次直接走浮层。也记插入父级：同一个容器里的其它块可以
-      // 不用再各自撞一次墙。
-      hostileNodes.add(block);
-      if (parent) hostileNodes.add(parent);
-      map.delete(block);
-      inlineTranslationSources.delete(translationEl);
-      const replacement = redraw();
-      if (replacement) trackInlineTranslation(block, replacement, kind);
-    }));
-  }
-
-  function trackInlineTranslation(block, translationEl, kind, redraw) {
-    if (!block || !translationEl) return;
-    const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
-    const existing = map.get(block);
-    if (existing && existing !== translationEl) {
-      inlineTranslationSources.delete(existing);
-      releaseManaged(existing);
-      existing.remove();
-      releaseClipGuards();
-    }
-    map.set(block, translationEl);
-    inlineTranslationSources.set(translationEl, block);
-    markInlineSource(block, kind);
-    keepVisible(translationEl);
-    verifyInlineSurvival(block, translationEl, kind, redraw);
-  }
-
-  function bumpRequestId(map, block) {
-    const next = (map.get(block) || 0) + 1;
-    map.set(block, next);
-    return next;
-  }
-
-  function getLoadingMap(kind) {
-    return kind === 'hover' ? hoverLoadingStarts : selectionLoadingStarts;
-  }
-
-  function recordLoadingStart(block, kind) {
-    if (!block) return;
-    const map = getLoadingMap(kind);
-    map.set(block, Date.now());
-  }
-
-  function clearLoadingStart(block, kind) {
-    if (!block) return;
-    const map = getLoadingMap(kind);
-    map.delete(block);
-  }
-
-  function scheduleInlineReplacement(block, kind, requestId, renderFn, onComplete) {
-    const requestMap = kind === 'hover' ? hoverRequestIds : selectionRequestIds;
-    const loadingMap = getLoadingMap(kind);
-    const startedAt = loadingMap.get(block);
-    const elapsed = startedAt ? Date.now() - startedAt : 0;
-    const delay = startedAt ? Math.max(0, MIN_LOADING_MS - elapsed) : 0;
-
-    const applyReplacement = () => {
-      if (requestMap.get(block) !== requestId) return;
-      loadingMap.delete(block);
-      const translationEl = renderFn();
-      // renderFn 本身就是这条译文的重画函数：被受管容器删掉时用它原样再画一次，
-      // 那时 shouldUseManagedRendering 已经认得这个父级，会自动走生成内容。
-      trackInlineTranslation(block, translationEl, kind, renderFn);
-      if (onComplete) onComplete();
-    };
-
-    if (delay > 0) {
-      setTimeout(applyReplacement, delay);
-    } else {
-      applyReplacement();
-    }
-  }
-
-  function removeInlineTranslation(block, kind) {
-    const map = kind === 'hover' ? hoverTranslations : selectionTranslations;
-    if (!block || !map.has(block)) return;
-    bumpRequestId(kind === 'hover' ? hoverRequestIds : selectionRequestIds, block);
-    clearLoadingStart(block, kind);
-    const translationEl = map.get(block);
-    if (translationEl) {
-      inlineTranslationSources.delete(translationEl);
-      releaseManaged(translationEl);
-      translationEl.remove();
-      releaseClipGuards();
-    }
-    map.delete(block);
-    unmarkInlineSource(block, kind);
-  }
-
-  function clearInlineTranslations(map, kind) {
-    const blocks = Array.from(map.keys());
-    blocks.forEach((block) => removeInlineTranslation(block, kind));
-  }
-
-  function clearInlineTranslationsForBlock(block) {
-    removeInlineTranslation(block, 'hover');
-    removeInlineTranslation(block, 'selection');
-  }
-
-  function hasInlineTranslation(block) {
-    return hoverTranslations.has(block) || selectionTranslations.has(block);
-  }
-
-  function updateInlineContextMenu(visible) {
-    if (!ctx.isExtensionContextAvailable || !ctx.isExtensionContextAvailable()) return;
-    try {
-      chrome.runtime.sendMessage({
-        type: 'INLINE_CONTEXT_MENU_STATE',
-        visible: !!visible
-      });
-    } catch (error) {
-      // Ignore context menu sync errors
-    }
-  }
-
-  function setInlineTranslationContext(block) {
-    lastContextBlock = block || null;
-    updateInlineContextMenu(!!lastContextBlock);
-  }
-
-  function clearInlineTranslationContext() {
-    if (!lastContextBlock) return;
-    clearInlineTranslationsForBlock(lastContextBlock);
-    lastContextBlock = null;
-    updateInlineContextMenu(false);
-  }
 
   function setupHoverTranslation() {
     document.addEventListener('keydown', handleKeyDown, true);
@@ -298,11 +81,11 @@
   }
 
   function runHoverHotkey() {
-    const block = resolveBlockFromInteractionTarget(getHoveredTarget());
+    const block = hov.resolveBlockFromInteractionTarget(getHoveredTarget());
     if (!block) return;
 
-    if (hasInlineTranslation(block)) {
-      clearInlineTranslationsForBlock(block);
+    if (hov.hasInlineTranslation(block)) {
+      hov.clearInlineTranslationsForBlock(block);
       return;
     }
 
@@ -329,106 +112,41 @@
       activeHotkey = getHoverHotkey();
     }
 
-    const block = resolveBlockFromInteractionTarget(event.target);
-    if (!block || hasInlineTranslation(block)) return;
+    const block = hov.resolveBlockFromInteractionTarget(event.target);
+    if (!block || hov.hasInlineTranslation(block)) return;
 
     translateHoverBlock(block);
   }
 
   function handleContextMenu(event) {
     const translationEl = event.target.closest('.ai-translator-inline-block');
-    if (translationEl && inlineTranslationSources.has(translationEl)) {
-      setInlineTranslationContext(inlineTranslationSources.get(translationEl));
+    if (translationEl && hov.inlineTranslationSources.has(translationEl)) {
+      hov.setInlineTranslationContext(hov.inlineTranslationSources.get(translationEl));
       return;
     }
 
-    const block = resolveBlockFromTarget(event.target);
-    if (block && hasInlineTranslation(block)) {
-      setInlineTranslationContext(block);
+    const block = hov.resolveBlockFromTarget(event.target);
+    if (block && hov.hasInlineTranslation(block)) {
+      hov.setInlineTranslationContext(block);
       return;
     }
 
-    setInlineTranslationContext(null);
+    hov.setInlineTranslationContext(null);
   }
 
   function clearHoverTranslation() {
-    clearInlineTranslations(hoverTranslations, 'hover');
+    hov.clearInlineTranslations(hov.hoverTranslations, 'hover');
   }
 
   function clearSelectionTranslation() {
-    clearInlineTranslations(selectionTranslations, 'selection');
+    hov.clearInlineTranslations(hov.selectionTranslations, 'selection');
   }
 
-  function resolveBlockFromTarget(target) {
-    if (!target) return null;
-    let el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
-    if (!el) return null;
-
-    if (el.closest(SKIP_SELECTOR)) return null;
-    if (el.closest(SKIP_TAG_SELECTOR)) return null;
-    if (MATH_CONTAINER_SELECTOR && el.closest(MATH_CONTAINER_SELECTOR)) return null;
-
-    while (el && el !== document.body && el !== document.documentElement) {
-      if (BLOCK_TAGS.has(el.tagName)) {
-        if (!isValidBlock(el)) return null;
-        return el;
-      }
-      el = el.parentElement;
-    }
-
-    return null;
-  }
-
-  function resolveBlockFromInteractionTarget(target) {
-    if (!target) return null;
-    const translationEl = target.closest?.('.ai-translator-inline-block');
-    if (translationEl && inlineTranslationSources.has(translationEl)) {
-      return inlineTranslationSources.get(translationEl) || null;
-    }
-    return resolveBlockFromTarget(target);
-  }
-
-  function isValidBlock(element) {
-    if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
-    if (element.isContentEditable) return false;
-    if (element.closest(SKIP_SELECTOR)) return false;
-    if (element.closest(SKIP_TAG_SELECTOR)) return false;
-    if (MATH_CONTAINER_SELECTOR && element.closest(MATH_CONTAINER_SELECTOR)) return false;
-    if (element.classList.contains('ai-translator-translated')) return false;
-    if (ctx.isMathElement && ctx.isMathElement(element)) return false;
-    return true;
-  }
-
-  function getBlockText(element) {
-    if (ctx.getTextWithMathPlaceholders) {
-      return ctx.getTextWithMathPlaceholders(element);
-    }
-    return { text: element.textContent?.trim() || '', mathElements: [] };
-  }
-
-  function buildCacheKey(text, targetLang) {
-    return `${targetLang || ''}::${text}`;
-  }
-
-  function getCachedTranslation(block, cacheKey) {
-    const entry = translationCache.get(block);
-    if (!entry) return '';
-    return entry.get(cacheKey) || '';
-  }
-
-  function setCachedTranslation(block, cacheKey, translation) {
-    let entry = translationCache.get(block);
-    if (!entry) {
-      entry = new Map();
-      translationCache.set(block, entry);
-    }
-    entry.set(cacheKey, translation);
-  }
 
   async function translateHoverBlock(block) {
-    if (!block || hasInlineTranslation(block)) return;
+    if (!block || hov.hasInlineTranslation(block)) return;
 
-    const { text, mathElements } = getBlockText(block);
+    const { text, mathElements } = hov.getBlockText(block);
     if (!text || text.length < 2 || text.length > 2000) return;
 
     // 排除公式占位符后没有正文：整块只是一条公式（如 arXiv 行间公式所在的 <td>，
@@ -438,24 +156,24 @@
     if (!text.replace(/\{\{\d+\}\}/g, '').trim()) return;
 
     const targetLang = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
-    const cacheKey = buildCacheKey(text, targetLang);
-    const cached = getCachedTranslation(block, cacheKey);
+    const cacheKey = hov.buildCacheKey(text, targetLang);
+    const cached = hov.getCachedTranslation(block, cacheKey);
     if (cached) {
-      const render = () => renderInlineTranslation(block, cached, mathElements, { kind: 'hover' });
-      trackInlineTranslation(block, render(), 'hover', render);
+      const render = () => hov.renderInlineTranslation(block, cached, mathElements, { kind: 'hover' });
+      hov.trackInlineTranslation(block, render(), 'hover', render);
       return;
     }
 
-    const requestId = bumpRequestId(hoverRequestIds, block);
-    const renderLoading = () => renderInlineLoading(block, { kind: 'hover' });
-    trackInlineTranslation(block, renderLoading(), 'hover', renderLoading);
-    recordLoadingStart(block, 'hover');
+    const requestId = hov.bumpRequestId(hov.hoverRequestIds, block);
+    const renderLoading = () => hov.renderInlineLoading(block, { kind: 'hover' });
+    hov.trackInlineTranslation(block, renderLoading(), 'hover', renderLoading);
+    hov.recordLoadingStart(block, 'hover');
     if (!ctx.isExtensionContextAvailable || !ctx.isExtensionContextAvailable()) {
-      scheduleInlineReplacement(
+      hov.scheduleInlineReplacement(
         block,
         'hover',
         requestId,
-        () => renderInlineTranslation(block, t('extensionContextInvalidated'), [], { kind: 'hover', isError: true })
+        () => hov.renderInlineTranslation(block, t('extensionContextInvalidated'), [], { kind: 'hover', isError: true })
       );
       return;
     }
@@ -471,719 +189,54 @@
         allowDownload: false
       });
 
-      if (hoverRequestIds.get(block) !== requestId) return;
+      if (hov.hoverRequestIds.get(block) !== requestId) return;
 
       if (response?.error) {
-        scheduleInlineReplacement(
+        hov.scheduleInlineReplacement(
           block,
           'hover',
           requestId,
-          () => renderInlineTranslation(block, response.error, [], { kind: 'hover', isError: true })
+          () => hov.renderInlineTranslation(block, response.error, [], { kind: 'hover', isError: true })
         );
         return;
       }
 
       const translation = response?.translation || '';
-      setCachedTranslation(block, cacheKey, translation);
-      scheduleInlineReplacement(
+      hov.setCachedTranslation(block, cacheKey, translation);
+      hov.scheduleInlineReplacement(
         block,
         'hover',
         requestId,
-        () => renderInlineTranslation(block, translation, mathElements, { kind: 'hover' })
+        () => hov.renderInlineTranslation(block, translation, mathElements, { kind: 'hover' })
       );
     } catch (error) {
-      if (hoverRequestIds.get(block) !== requestId) return;
+      if (hov.hoverRequestIds.get(block) !== requestId) return;
       const message = ctx.isExtensionContextInvalidated && ctx.isExtensionContextInvalidated(error)
         ? t('extensionContextInvalidated')
         : t('translationFailed');
-      scheduleInlineReplacement(
+      hov.scheduleInlineReplacement(
         block,
         'hover',
         requestId,
-        () => renderInlineTranslation(block, message, [], { kind: 'hover', isError: true })
+        () => hov.renderInlineTranslation(block, message, [], { kind: 'hover', isError: true })
       );
     }
   }
 
-  function shouldTreatAsInlineLatex(content) {
-    const trimmed = content.trim();
-    if (!trimmed) return false;
-    if (/^\d[\d,.\s]*$/.test(trimmed)) return false;
-    if (/\\/.test(trimmed)) return true;
-    if (/[\^_={}|<>]/.test(trimmed)) return true;
-    if (/[\p{Sm}]/u.test(trimmed)) return true;
-    if (/[\p{L}]/u.test(trimmed)) return true;
-    return false;
-  }
 
-  function findInlineLatexRanges(text) {
-    if (!text) return [];
-    const ranges = [];
-
-    const addRange = (start, end) => {
-      if (start >= 0 && end > start) {
-        ranges.push({ start, end });
-      }
-    };
-
-    const addMatches = (regex) => {
-      regex.lastIndex = 0;
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        addRange(match.index, match.index + match[0].length);
-        if (match[0].length === 0) {
-          regex.lastIndex += 1;
-        }
-      }
-    };
-
-    addMatches(/\\\(([\s\S]+?)\\\)/g);
-    addMatches(/\\\[([\s\S]+?)\\\]/g);
-    addMatches(/\$\$([\s\S]+?)\$\$/g);
-
-    const inlineRegex = /(^|[^\\])\$([^\n$]+?)\$/g;
-    inlineRegex.lastIndex = 0;
-    let match;
-    while ((match = inlineRegex.exec(text)) !== null) {
-      const prefix = match[1] || '';
-      const inner = match[2] || '';
-      if (!shouldTreatAsInlineLatex(inner)) {
-        if (match[0].length === 0) {
-          inlineRegex.lastIndex += 1;
-        }
-        continue;
-      }
-      const start = match.index + prefix.length;
-      const end = start + inner.length + 2;
-      addRange(start, end);
-      if (match[0].length === 0) {
-        inlineRegex.lastIndex += 1;
-      }
-    }
-
-    return ranges;
-  }
-
-  function resolveLatexSafeOffset(text, offset) {
-    const ranges = findInlineLatexRanges(text);
-    for (const range of ranges) {
-      if (offset > range.start && offset < range.end) {
-        return Math.min(range.end, text.length);
-      }
-    }
-    return offset;
-  }
-
-  function extractLatexPlaceholders(text, startIndex = 0) {
-    if (!text) return { text: '', mathElements: [] };
-
-    const mathElements = [];
-    let mathIndex = startIndex;
-
-    function addPlaceholder(raw) {
-      mathIndex += 1;
-      const placeholder = `{{${mathIndex}}}`;
-      mathElements.push({ placeholder, type: 'text', text: raw });
-      return placeholder;
-    }
-
-    let result = text;
-    result = result.replace(/\\\(([\s\S]+?)\\\)/g, (match) => addPlaceholder(match));
-    result = result.replace(/\\\[([\s\S]+?)\\\]/g, (match) => addPlaceholder(match));
-    result = result.replace(/\$\$([\s\S]+?)\$\$/g, (match) => addPlaceholder(match));
-    result = result.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, inner) => {
-      if (!shouldTreatAsInlineLatex(inner)) {
-        return match;
-      }
-      const placeholder = addPlaceholder(`$${inner}$`);
-      return prefix + placeholder;
-    });
-
-    return { text: result, mathElements };
-  }
-
-  function extractSelectionPlaceholders(selectionText, selectionRange) {
-    const range = resolveSelectionRange(selectionRange);
-    let baseText = selectionText || '';
-    let mathElements = [];
-
-    if (range && ctx.getTextWithMathPlaceholders) {
-      const fragment = range.cloneContents();
-      const container = document.createElement('span');
-      container.appendChild(fragment);
-
-      if (MATH_CONTAINER_SELECTOR) {
-        container.querySelectorAll(MATH_CONTAINER_SELECTOR).forEach((node) => {
-          const id = node.getAttribute?.('id');
-          if (!id) return;
-          const original = document.getElementById(id);
-          if (original && original !== node && original.matches?.(MATH_CONTAINER_SELECTOR)) {
-            node.replaceWith(original.cloneNode(true));
-          }
-        });
-      }
-
-      const extracted = ctx.getTextWithMathPlaceholders(container);
-      if (extracted?.text) {
-        baseText = extracted.text;
-        mathElements = Array.isArray(extracted.mathElements) ? extracted.mathElements : [];
-      }
-    }
-
-    const extractedLatex = extractLatexPlaceholders(baseText, mathElements.length);
-    return {
-      text: extractedLatex.text,
-      mathElements: mathElements.concat(extractedLatex.mathElements)
-    };
-  }
-
-  function resolveSelectionAnchor(anchorEl) {
-    if (anchorEl && anchorEl.nodeType === Node.ELEMENT_NODE) return anchorEl;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return null;
-
-    const anchorNode = selection.anchorNode || selection.focusNode || selection.getRangeAt(0).commonAncestorContainer;
-    if (!anchorNode) return null;
-
-    return anchorNode.nodeType === Node.ELEMENT_NODE ? anchorNode : anchorNode.parentElement;
-  }
-
-  function resolveSelectionRange(selectionRange) {
-    if (selectionRange && selectionRange.startContainer) return selectionRange;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return null;
-    return selection.getRangeAt(0);
-  }
-
-  function normalizeComparableText(text) {
-    if (!text) return '';
-    return text
-      .replace(/\{\{\d+\}\}/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function isSelectionRangeInsideBlock(range, block) {
-    if (!range || range.collapsed || !block) return false;
-    return block.contains(range.startContainer) && block.contains(range.endContainer);
-  }
-
-  function isFullBlockSelection(selectionText, blockText) {
-    const normalizedSelection = normalizeComparableText(selectionText);
-    const normalizedBlock = normalizeComparableText(blockText);
-    return normalizedSelection && normalizedSelection === normalizedBlock;
-  }
-
-  function resolveMathContainer(element) {
-    if (!element) return null;
-    const el = element.nodeType === Node.ELEMENT_NODE ? element : element.parentElement;
-    if (!el) return null;
-
-    let mathContainer = null;
-    if (MATH_CONTAINER_SELECTOR) {
-      mathContainer = el.closest(MATH_CONTAINER_SELECTOR);
-      if (mathContainer) {
-        let parent = mathContainer.parentElement;
-        while (parent && parent.matches?.(MATH_CONTAINER_SELECTOR)) {
-          mathContainer = parent;
-          parent = parent.parentElement;
-        }
-      }
-    }
-
-    if (!mathContainer && ctx.isMathElement) {
-      let current = el;
-      while (current && current !== document.body && current !== document.documentElement) {
-        if (ctx.isMathElement(current)) {
-          mathContainer = current;
-          break;
-        }
-        current = current.parentElement;
-      }
-    }
-
-    return mathContainer;
-  }
-
-  function resolveSafeInsertionRange(range, block) {
-    if (!range) return null;
-    const insertionRange = range.cloneRange();
-    insertionRange.collapse(false);
-
-    const endContainer = insertionRange.endContainer;
-    const endElement = endContainer.nodeType === Node.ELEMENT_NODE ? endContainer : endContainer.parentElement;
-    if (!endElement) return insertionRange;
-
-    const mathContainer = resolveMathContainer(endElement);
-    if (mathContainer) {
-      if (block && !block.contains(mathContainer)) return insertionRange;
-      const safeRange = document.createRange();
-      safeRange.setStartAfter(mathContainer);
-      safeRange.collapse(true);
-      return safeRange;
-    }
-
-    if (endContainer.nodeType === Node.TEXT_NODE) {
-      const safeOffset = resolveLatexSafeOffset(endContainer.textContent || '', insertionRange.endOffset);
-      if (safeOffset !== insertionRange.endOffset) {
-        insertionRange.setStart(endContainer, safeOffset);
-        insertionRange.collapse(true);
-      }
-    }
-
-    return insertionRange;
-  }
-
-  function renderSelectionTranslation(block, translation, mathElements, selectionRange, options = {}) {
-    const { isError, selectionText } = options;
-    const blockText = getBlockText(block).text;
-    const range = resolveSelectionRange(selectionRange);
-    const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
-
-    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineTranslation
-    // 那条路，由它渲染成原文块的 ::after。
-    if (shouldUseManagedRendering(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
-      return renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
-    }
-
-    const translationEl = document.createElement('span');
-    translationEl.className = 'ai-translator-inline-block ai-translator-selection-translation';
-
-    const computedStyle = window.getComputedStyle(block);
-    translationEl.style.cssText = buildBaseStyle(computedStyle, isError) + `
-      display: inline;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    `;
-    translationEl.style.setProperty('display', 'inline', 'important');
-    translationEl.style.setProperty('margin-top', '0', 'important');
-    translationEl.style.setProperty('margin-bottom', '0', 'important');
-    translationEl.style.setProperty('padding', '0', 'important');
-
-    if (isError) {
-      translationEl.classList.add('ai-translator-error');
-    }
-
-    translationEl.appendChild(document.createTextNode(' ('));
-    if (mathElements.length && ctx.buildTranslationContentWithMath) {
-      ctx.buildTranslationContentWithMath(translationEl, translation, mathElements);
-    } else {
-      translationEl.appendChild(document.createTextNode(translation));
-    }
-    translationEl.appendChild(document.createTextNode(')'));
-
-    try {
-      const insertionRange = resolveSafeInsertionRange(range, block);
-      if (!insertionRange || !block.contains(insertionRange.startContainer)) {
-        return renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
-      }
-      insertionRange.insertNode(translationEl);
-      return translationEl;
-    } catch (error) {
-      return renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
-    }
-  }
-
-  function renderSelectionLoading(block, selectionRange, options = {}) {
-    const { selectionText } = options;
-    const blockText = getBlockText(block).text;
-    const range = resolveSelectionRange(selectionRange);
-    const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
-
-    // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineLoading
-    // 那条路，由它渲染成原文块的 ::after。
-    if (shouldUseManagedRendering(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
-      return renderInlineLoading(block, { kind: 'selection' });
-    }
-
-    const loadingEl = document.createElement('span');
-    loadingEl.className = 'ai-translator-inline-block ai-translator-selection-translation';
-
-    const computedStyle = window.getComputedStyle(block);
-    loadingEl.style.cssText = buildBaseStyle(computedStyle) + `
-      display: inline;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    `;
-    loadingEl.style.setProperty('display', 'inline', 'important');
-    loadingEl.style.setProperty('margin-top', '0', 'important');
-    loadingEl.style.setProperty('margin-bottom', '0', 'important');
-    loadingEl.style.setProperty('padding', '0', 'important');
-
-    loadingEl.appendChild(document.createTextNode(' ('));
-    const dots = createLoadingDots();
-    loadingEl.appendChild(dots);
-    loadingEl.appendChild(document.createTextNode(')'));
-
-    try {
-      const insertionRange = resolveSafeInsertionRange(range, block);
-      if (!insertionRange || !block.contains(insertionRange.startContainer)) {
-        return renderInlineLoading(block, { kind: 'selection' });
-      }
-      insertionRange.insertNode(loadingEl);
-      return loadingEl;
-    } catch (error) {
-      return renderInlineLoading(block, { kind: 'selection' });
-    }
-  }
-
-  async function translateSelectionInline(text, anchorEl, selectionRange) {
-    if (!text || !ctx.isSelectionInlineEnabled || !ctx.isSelectionInlineEnabled()) return;
-
-    const anchor = resolveSelectionAnchor(anchorEl);
-    const block = resolveBlockFromTarget(anchor);
-    if (!block) return;
-
-    state.selectionTranslationPending = true;
-    clearSelectionTranslation();
-
-    const extracted = extractSelectionPlaceholders(text, selectionRange);
-    const safeText = extracted.text;
-    const mathElements = extracted.mathElements;
-
-    const targetLang = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
-    const cacheKey = buildCacheKey(safeText, targetLang);
-    const cached = getCachedTranslation(block, cacheKey);
-    if (cached) {
-      const render = () => renderSelectionTranslation(block, cached, mathElements, selectionRange, {
-        selectionText: safeText
-      });
-      trackInlineTranslation(block, render(), 'selection', render);
-      state.selectionTranslationPending = false;
-      return;
-    }
-
-    const requestId = bumpRequestId(selectionRequestIds, block);
-    const renderLoading = () => renderSelectionLoading(block, selectionRange, { selectionText: safeText });
-    trackInlineTranslation(block, renderLoading(), 'selection', renderLoading);
-    recordLoadingStart(block, 'selection');
-    if (!ctx.isExtensionContextAvailable || !ctx.isExtensionContextAvailable()) {
-      scheduleInlineReplacement(
-        block,
-        'selection',
-        requestId,
-        () => renderSelectionTranslation(block, t('extensionContextInvalidated'), [], selectionRange, {
-          isError: true,
-          selectionText: safeText
-        }),
-        () => {
-          state.selectionTranslationPending = false;
-        }
-      );
-      return;
-    }
-
-    try {
-      const response = await ctx.requestTranslation({
-        type: 'TRANSLATE',
-        text: safeText,
-        targetLang,
-        mode: 'text'
-      });
-
-      if (selectionRequestIds.get(block) !== requestId) {
-        state.selectionTranslationPending = false;
-        return;
-      }
-
-      if (response?.error) {
-        scheduleInlineReplacement(
-          block,
-          'selection',
-          requestId,
-          () => renderSelectionTranslation(block, response.error, [], selectionRange, {
-            isError: true,
-            selectionText: safeText
-          }),
-          () => {
-            state.selectionTranslationPending = false;
-          }
-        );
-        return;
-      }
-
-      const translation = response?.translation || '';
-      setCachedTranslation(block, cacheKey, translation);
-      scheduleInlineReplacement(
-        block,
-        'selection',
-        requestId,
-        () => renderSelectionTranslation(block, translation, mathElements, selectionRange, {
-          selectionText: safeText
-        }),
-        () => {
-          state.selectionTranslationPending = false;
-        }
-      );
-    } catch (error) {
-      if (selectionRequestIds.get(block) !== requestId) {
-        state.selectionTranslationPending = false;
-        return;
-      }
-      const message = ctx.isExtensionContextInvalidated && ctx.isExtensionContextInvalidated(error)
-        ? t('extensionContextInvalidated')
-        : t('translationFailed');
-      scheduleInlineReplacement(
-        block,
-        'selection',
-        requestId,
-        () => renderSelectionTranslation(block, message, [], selectionRange, {
-          isError: true,
-          selectionText: safeText
-        }),
-        () => {
-          state.selectionTranslationPending = false;
-        }
-      );
-    }
-  }
-
-  function showInlineSelectionTranslation(text, translation, anchorEl, selectionRange) {
-    if (!text || !ctx.isSelectionInlineEnabled || !ctx.isSelectionInlineEnabled()) return;
-
-    const anchor = resolveSelectionAnchor(anchorEl);
-    const block = resolveBlockFromTarget(anchor);
-    if (!block) return;
-
-    const extracted = extractSelectionPlaceholders(text, selectionRange);
-    clearSelectionTranslation();
-    const render = () => renderSelectionTranslation(block, translation || '', extracted.mathElements, selectionRange, {
-      selectionText: extracted.text || text
-    });
-    trackInlineTranslation(block, render(), 'selection', render);
-  }
-
-  function buildBaseStyle(computedStyle, omitColor = false) {
-    return `
-      font-size: ${computedStyle.fontSize};
-      font-family: ${computedStyle.fontFamily};
-      font-weight: ${computedStyle.fontWeight};
-      line-height: ${computedStyle.lineHeight};
-      text-align: ${computedStyle.textAlign};
-      ${omitColor ? '' : `color: ${computedStyle.color};`}
-      letter-spacing: ${computedStyle.letterSpacing};
-      opacity: 0.85;
-    `;
-  }
-
-  function createLoadingDots() {
-    const dots = document.createElement('span');
-    dots.className = INLINE_LOADING_CLASS;
-    return dots;
-  }
-
-  function renderInlineLoading(block, options = {}) {
-    const { kind } = options;
-    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
-
-    // 受管容器先问一句：那里的译文是原文块的 ::after，下面这一整套建节点、抄样式、
-    // 挑插入位置都用不上。动画点点也做不到生成内容上，加载态用一句静态文案。
-    const managedLoading = renderManaged(block, t('translating'), { kind, state: 'loading', className });
-    if (managedLoading) return managedLoading;
-
-    const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
-    const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
-      ? ctx.getInlineTranslationTarget(block)
-      : block;
-    const computedStyle = window.getComputedStyle(inlineTarget);
-
-    if (isHorizontalFlex) {
-      const loadingEl = document.createElement('span');
-      loadingEl.className = `ai-translator-inline-block ai-translator-inline-right ${className} ${INLINE_LOADING_CLASS}`;
-      loadingEl.style.cssText = `
-        font-size: 0.85em;
-        font-family: ${computedStyle.fontFamily};
-        font-weight: ${computedStyle.fontWeight};
-        line-height: ${computedStyle.lineHeight};
-        color: ${computedStyle.color};
-        letter-spacing: ${computedStyle.letterSpacing};
-        opacity: 0.7;
-        display: inline;
-        margin: 0;
-        padding: 0;
-      `;
-      inlineTarget.appendChild(loadingEl);
-      return loadingEl;
-    }
-
-    // 往哪儿插和整页翻译共用一套判据——表格单元格、列表项、页面自己画了框的块都只能
-    // 往【内部】插，否则分别是多一列、多一条幽灵条目、译文掉到框外面。
-    // 见 content-page-translation.js 的 getTranslationPlacement。
-    const placement = ctx.getTranslationPlacement
-      ? ctx.getTranslationPlacement(block, computedStyle)
-      : { inside: false, tag: 'div' };
-    const loadingEl = document.createElement(placement.inside ? placement.tag : block.tagName);
-    if (block.className && !placement.inside) {
-      loadingEl.className = block.className
-        .replace('ai-translator-translated', '')
-        .replace(POSITION_CLASSES, '')
-        .trim();
-    }
-    loadingEl.classList.add('ai-translator-inline-block', className, INLINE_LOADING_CLASS);
-    loadingEl.style.cssText = buildBaseStyle(computedStyle) + `
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    `;
-
-    if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
-      if (textOffset > 0) {
-        loadingEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
-      }
-    }
-
-    if (block.hasAttribute('slot')) {
-      const internalLoading = document.createElement('span');
-      internalLoading.className = `ai-translator-inline-block ${className} ${INLINE_LOADING_CLASS}`;
-      internalLoading.style.cssText = buildBaseStyle(computedStyle) + `
-        display: block;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `;
-      block.appendChild(internalLoading);
-      return internalLoading;
-    }
-
-    if (placement.inside) {
-      block.appendChild(loadingEl);
-      return loadingEl;
-    }
-
-    block.after(loadingEl);
-    return loadingEl;
-  }
-
-  function renderInlineTranslation(block, translation, mathElements = [], options = {}) {
-    const { kind, isError } = options;
-    const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
-
-    // 见 renderInlineLoading：受管容器走生成内容，下面那套插节点的路都用不上。
-    const managed = renderManaged(block, translation, {
-      kind,
-      state: isError ? 'error' : null,
-      className,
-      hasMath: mathElements.length > 0
-    });
-    if (managed) return managed;
-
-    const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
-    const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
-      ? ctx.getInlineTranslationTarget(block)
-      : block;
-    const computedStyle = window.getComputedStyle(inlineTarget);
-
-    if (isHorizontalFlex) {
-      const translationEl = document.createElement('span');
-      translationEl.className = `ai-translator-inline-block ai-translator-inline-right ${className}`;
-
-      if (mathElements.length && ctx.buildTranslationContentWithMath) {
-        ctx.buildTranslationContentWithMath(translationEl, translation, mathElements, ' ');
-      } else {
-        translationEl.textContent = ` ${translation}`;
-      }
-
-      translationEl.style.cssText = `
-        font-size: 0.85em;
-        font-family: ${computedStyle.fontFamily};
-        font-weight: ${computedStyle.fontWeight};
-        line-height: ${computedStyle.lineHeight};
-        ${isError ? '' : `color: ${computedStyle.color};`}
-        letter-spacing: ${computedStyle.letterSpacing};
-        opacity: 0.7;
-        display: inline;
-        margin: 0;
-        padding: 0;
-      `;
-
-      if (isError) {
-        translationEl.classList.add('ai-translator-error');
-      }
-
-      inlineTarget.appendChild(translationEl);
-      return translationEl;
-    }
-
-    // 见 renderInlineLoading：插入位置和整页翻译共用 getTranslationPlacement
-    const placement = ctx.getTranslationPlacement
-      ? ctx.getTranslationPlacement(block, computedStyle)
-      : { inside: false, tag: 'div' };
-    const translationEl = document.createElement(placement.inside ? placement.tag : block.tagName);
-    if (block.className && !placement.inside) {
-      translationEl.className = block.className
-        .replace('ai-translator-translated', '')
-        .replace(POSITION_CLASSES, '')
-        .trim();
-    }
-    translationEl.classList.add('ai-translator-inline-block', className);
-
-    if (mathElements.length && ctx.buildTranslationContentWithMath) {
-      ctx.buildTranslationContentWithMath(translationEl, translation, mathElements);
-      translationEl.style.opacity = '0.85';
-    } else {
-      translationEl.textContent = translation;
-      translationEl.style.cssText = buildBaseStyle(computedStyle, isError) + `
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `;
-    }
-
-    if (isError) {
-      translationEl.classList.add('ai-translator-error');
-    }
-
-    if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
-      if (textOffset > 0) {
-        translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
-      }
-    }
-
-    if (block.hasAttribute('slot')) {
-      const internalTranslation = document.createElement('span');
-      internalTranslation.className = `ai-translator-inline-block ${className}`;
-
-      if (mathElements.length && ctx.buildTranslationContentWithMath) {
-        ctx.buildTranslationContentWithMath(internalTranslation, translation, mathElements);
-        internalTranslation.style.opacity = '0.85';
-      } else {
-        internalTranslation.textContent = translation;
-        internalTranslation.style.cssText = buildBaseStyle(computedStyle, isError) + `
-          display: block;
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        `;
-      }
-
-      if (isError) {
-        internalTranslation.classList.add('ai-translator-error');
-      }
-      block.appendChild(internalTranslation);
-      return internalTranslation;
-    }
-
-    if (placement.inside) {
-      block.appendChild(translationEl);
-      return translationEl;
-    }
-
-    block.after(translationEl);
-    return translationEl;
-  }
 
   ctx.setupHoverTranslation = setupHoverTranslation;
   ctx.clearHoverTranslation = clearHoverTranslation;
   ctx.clearSelectionTranslation = clearSelectionTranslation;
   ctx.hasSelectionTranslation = function() {
-    return selectionTranslations.size > 0;
+    return hov.selectionTranslations.size > 0;
   };
-  ctx.clearInlineTranslationContext = clearInlineTranslationContext;
-  ctx.translateSelectionInline = translateSelectionInline;
-  ctx.showInlineSelectionTranslation = showInlineSelectionTranslation;
+  ctx.clearInlineTranslationContext = hov.clearInlineTranslationContext;
+  ctx.translateSelectionInline = hov.translateSelectionInline;
+  ctx.showInlineSelectionTranslation = hov.showInlineSelectionTranslation;
+
+  // 别的文件要用的，都从这张架子上取。
+  Object.assign(hov, {
+    clearSelectionTranslation,
+  });
 })();

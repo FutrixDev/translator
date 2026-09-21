@@ -12,6 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -44,7 +45,7 @@ function settingsLanguages() {
 
 /** The names the service worker puts in the prompt. */
 function promptLanguageNames() {
-  const source = repoFile('background/background.js');
+  const source = workerSource();
   const start = source.indexOf('const languageNames = {');
   assert.notEqual(start, -1, 'could not find languageNames');
   const block = source.slice(start, source.indexOf('};', start));
@@ -87,7 +88,7 @@ test('the built-in engine derives its non-Latin set instead of hand-listing it',
 test('both surfaces agree with the list of accepted targets', () => {
   // Normalization in the service worker and the options page decides what
   // counts as a supported target; anything offered has to survive it.
-  const accepted = readStringArray(repoFile('background/background.js'), 'const supportedLangs = [');
+  const accepted = readStringArray(workerSource(), 'const supportedLangs = [');
   const acceptedInOptions = readStringArray(repoFile('options/options.js'), 'const supportedLangs = [');
   assert.deepEqual(accepted, acceptedInOptions);
   assert.deepEqual(accepted.slice().sort(), settingsLanguages().slice().sort());

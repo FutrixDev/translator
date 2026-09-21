@@ -39,23 +39,57 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 
 ### Main Components
 
-1. **Background Service Worker** (`background/background.js`)
-   - Handles all API requests to translation endpoints
-   - Manages context menus and theme icon updates
-   - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
-   - Stores default settings and translation prompts
+**Nothing here is one file any more.** Every part below is a *family* of
+ES-module or classic-script files under one directory; which function lives in
+which file is layout, not contract. The rule that makes that safe is the same
+everywhere: **ask the surface, not the file** — the helpers in
+`test/unit/helpers/sources.mjs` (`workerSource()`, `optionsSource()`,
+`messagesSource()`, `contentCss()`, `comicSource()`, `captionEngineSource()`,
+`hoverSource()`) read a whole family, so adding a module never means editing a
+test. Only assertions about **load order** read `manifest.json` or the entry
+file directly.
 
-2. **Content Script** (`content/content.js`)
+1. **Background Service Worker** (`background/*.js`, entry `background.js` —
+   a real ES module, so these are `import`s)
+   - Handles all API requests to translation endpoints (`api-client.js`,
+     `ai-translate.js`, `prompts.js`)
+   - Manages context menus and theme icon updates (`context-menus.js`, `icon.js`)
+   - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
+   - Stores default settings and translation prompts (`settings.js`)
+   - The account-backed clients live beside it: `comic-client.js`,
+     `pdf-client.js`, `pdf-jobs.js`, `pdf-notify.js`, `ocr-recognize.js`,
+     `feature-gate.js`
+
+2. **Content Script** (`content/*.js` + the sub-families below)
    - Injected into all webpages for DOM interaction
-   - Text extraction with code/math detection
-   - Batch translation with concurrency control (8 workers, max 2500 chars or 25 items per batch)
+   - Text extraction with code/math detection, batch translation with
+     concurrency control (8 workers, max 2500 chars or 25 items per batch) —
+     `content/page/*.js` (collect, insert, batch, visibility, progress,
+     site-adapter) behind the entry `content-page-translation.js`
    - UI components: selection button, float ball, translation popup, progress bar
+   - Three more families have sections of their own below: comic
+     (`content/comic/`), hover/selection (`content/hover/`), captions
+     (`content/captions/`)
+
+   **Content scripts are classic scripts sharing one global lexical
+   environment**, so `manifest.json`'s order *is* the dependency graph, and a
+   file that throws at load fails silently rather than loudly. That is why each
+   sub-family hangs its cross-file names on one shelf object
+   (`ctx.comic` / `ctx.hover` / `ctx.captions`) and reads them at call time:
+   order then stops mattering. A name that crosses a file and is *not* written
+   `comic.foo` is a bug waiting for a reload — including after `...`, where the
+   spread operator's dots look exactly like a property access.
 
 3. **Popup** (`popup/`) - Quick access panel for common actions
 
-4. **Options** (`options/`) - Full settings page with API configuration and feature toggles
+4. **Options** (`options/options*.js` + `options.html`) - Full settings page
+   with API configuration and feature toggles, one script per card
+   (connection, models, builtin, account, auto, pdf-tasks, i18n) over the
+   shared `options.js`
 
-5. **i18n** (`i18n/messages.js`) - 10+ language translations, auto-selects based on target language
+5. **i18n** (`i18n/messages.js` + `i18n/lang/<tag>.js`) - one string table per
+   language, registered onto one catalog; `messages.js` holds only the lookup and
+   the UI-language resolution. Every load list carries all ten, in any order.
 
 ### Key Technical Patterns
 
@@ -67,8 +101,9 @@ No build step required - the extension loads directly in Chrome as an unpacked e
   document, so every page rule on a bare tag matches them too — example.com
   ships `div { opacity: .8 }`, and every page builder ships
   `.kit button { … }` plus a heavier `.kit button:hover` twin. One scoped reset
-  at the top of `content/content.css` is the boundary, and specificity is a
-  four-step band with no `!important` in it:
+  at the top of `content/css/popup.css` — the first of the twelve stylesheets
+  the manifest injects, and that array's order *is* the cascade order — is the
+  boundary, and specificity is a four-step band with no `!important` in it:
 
   ```
   theme base (0,1,1) < theme state (0,2,1) < the reset (0,2,2) ≤ ours (0,2,2)
@@ -109,20 +144,68 @@ switch — the account half is enforced one layer down, where `apiFetch` answers
 create with no token as `unauthorized`, and every surface turns that into a
 sign-in offer.
 
+Comic translation is a family of classic scripts sharing one shelf, `ctx.comic`:
+
+| file | what it owns |
+| --- | --- |
+| `content/comic/pages.js` | is this a comic page, which images to translate, page ids, the mode/status vocabulary |
+| `content/comic/entries.js` | the per-image ledger, showing the result or the original |
+| `content/comic/overlay.js` | the badge and the spinner drawn over an image |
+| `content/comic/memory.js` | jobs remembered in `chrome.storage.local` across a reload |
+| `content/comic/prompts.js` | the sign-in / out-of-credit / error prompts |
+| `content/content-comic-translation.js` | the entry: the job lifecycle (create, poll, recover) and page-swap watching |
+
+Every reference crossing a file goes through the shelf (`comic.foo`), so no file
+depends on being loaded before another. Tests ask the **family**, not a file:
+`comicSource()` in `test/unit/helpers/sources.mjs`.
+
+### Hover / Selection Translation
+
+Hold the hotkey and point at a paragraph, or select text and press the button —
+both land in the same place. It is a family of classic scripts sharing one
+shelf, `ctx.hover`:
+
+| file | what it owns |
+| --- | --- |
+| `content/hover/blocks.js` | which element counts as a block, its text, the translation cache key |
+| `content/hover/inline.js` | the ledger of inline translations: managed rendering, clip guards, survival checks, the context-menu target |
+| `content/hover/latex.js` | pulling formulas out before translating and putting them back |
+| `content/hover/selection.js` | the selection path: anchors, safe insertion ranges, rendering a selection's translation |
+| `content/hover/render.js` | what a translation looks like: base style, loading dots, the inline node |
+| `content/content-hover-translation.js` | the entry: hotkeys, mouse, right-click, translating one block, and the `ctx.*` exports |
+
+Every reference crossing a file goes through the shelf (`hov.foo`), so no file
+depends on being loaded before another. Tests ask the **family**, not a file:
+`hoverSource()` in `test/unit/helpers/sources.mjs`.
+
 ### Video Subtitle Translation
 
 One engine, one overlay, and a small provider per way of getting cues. The
-engine — `content/content-video-captions.js` — owns everything that is the same
-on every site: sentence segmentation, batching, the bilingual overlay and its
-drag/resize/persistence, hiding the page's own line, and re-mounting on
-fullscreen. `shared/caption-core.js` holds the pure parts of that (VTT/json3/srv3
-parsing, cue merging, batching, track choice, the translation request) so
-`npm run test:unit` can exercise them with no browser.
+engine owns everything that is the same on every site: sentence segmentation,
+batching, the bilingual overlay and its drag/resize/persistence, hiding the
+page's own line, and re-mounting on fullscreen. `shared/caption-core.js` holds
+the pure parts of that (VTT/json3/srv3 parsing, cue merging, batching, track
+choice, the translation request) so `npm run test:unit` can exercise them with
+no browser.
+
+The engine is a family of classic scripts sharing one shelf, `ctx.captions`:
+
+| file | what it owns |
+| --- | --- |
+| `content/captions/state.js` | the one mutable `state` object, the timing constants, the settings/target-language/video-element readers. **Loads first** — the others take `caps.state` at load time. |
+| `content/captions/overlay.js` | the overlay: mount, render, drag/resize, persistence, fullscreen |
+| `content/captions/translate.js` | cue keys, batch picking, `translateCues`, the sliding window |
+| `content/captions/activation.js` | when we take over a video: the site gate, track watching, provider selection, `ctx.enableNativeCaptions` |
+| `content/content-video-captions.js` | the entry: the time-update loop, `ctx.applyCaptionSettings`, `ctx.setupVideoCaptionTranslation` |
+
+Everything crossing a file goes through the shelf (`caps.foo`), so only that one
+`state` read depends on manifest order. Tests ask the **family**, not a file:
+`captionEngineSource()` in `test/unit/helpers/sources.mjs`.
 
 **Subtitles have no switch of their own.** Whether we translate them at all is
 the same gate the page text goes through — the main `autoTranslate` switch plus
 this site's rule — and the engine reads it off the scheduler's snapshot
-(`siteRefused()` in `content/content-video-captions.js`, subscribed through
+(`siteRefused()` in `content/captions/activation.js`, subscribed through
 `ctx.autoTranslate.onStateChange`, which is why `ctx.init` starts the scheduler
 first). It asks `siteRefused`, **not** `siteAuto`: video sites are not on the
 built-in Always list, so the page-text answer there is usually `ask` and

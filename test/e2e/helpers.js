@@ -1,6 +1,7 @@
 /**
  * Test helper functions for Blab Translation E2E tests
  */
+const fs = require('fs');
 const path = require('path');
 const { expect } = require('@playwright/test');
 
@@ -23,7 +24,13 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
  * @param {...string} modules repo-relative paths, e.g. ...PAGE_TRANSLATION_MODULES
  * @returns {string[]} absolute paths, ready for page.addScriptTag({ path })
  */
+// 界面文案是十一个文件了：一门语言一个表，加上取文案的那几个函数。语言清单不在
+// 这里重抄一遍——UI_LANGUAGES 就在 messages.js 里，将来加一门语言这份夹具自己跟上。
+const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
+  .UI_LANGUAGES.map(lang => `i18n/lang/${lang}.js`);
+
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
+  ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
   'shared/default-settings.js',
   'content/content-bootstrap.js',
@@ -423,11 +430,27 @@ async function expectCaptionMenuAnchoredAboveButton(page, anchorSelector) {
   return boxes;
 }
 
+/**
+ * 扩展真正注入的那一整张内容脚本样式表。
+ *
+ * 样式表是 content/css/ 下的十二份文件了，**按 manifest 的 css 数组顺序**接起来
+ * 才是浏览器里的那张表：顺序就是层叠顺序，light-theme.css 整份都靠排在被它覆盖
+ * 的那些后面工作。往裸页面里塞样式的 spec 用这个，别自己拼文件名。
+ */
+function contentStylesheet() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'manifest.json'), 'utf8'));
+  return manifest.content_scripts
+    .flatMap((cs) => cs.css || [])
+    .map((rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'))
+    .join('\n');
+}
+
 module.exports = {
   E2E_BASE_SETTINGS,
   REPO_ROOT,
   CONTENT_HARNESS_PRELUDE,
   contentHarnessScripts,
+  contentStylesheet,
   PAGE_TRANSLATION_MODULES,
   expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,

@@ -16,6 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { optionsSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -153,7 +154,7 @@ test('a job that finished stamps when it finished', async () => {
     /settledAt: Date\.now\(\)/.test(body),
     'the terminal transition must stamp settledAt'
   );
-  const create = repoFile('background/background.js');
+  const create = repoFile('background/pdf-jobs.js');
   const createBody = create.slice(create.indexOf('async function handlePdfCreateJob'));
   assert.ok(
     /settledAt: Date\.now\(\)/.test(createBody),
@@ -179,7 +180,7 @@ test('the popup stops showing a job that finished long ago', () => {
 });
 
 test('the settings history merges only the local rows still in flight', () => {
-  const source = repoFile('background/background.js');
+  const source = repoFile('background/pdf-jobs.js');
   const body = source.slice(source.indexOf('async function handlePdfJobsHistory'));
   assert.ok(
     /records\.filter\(r => pdfClient\.isPendingInFlight\(r\)\)/.test(body),
@@ -188,7 +189,7 @@ test('the settings history merges only the local rows still in flight', () => {
 });
 
 test('the record is written before the work that can fail, not after it', () => {
-  const source = repoFile('background/background.js');
+  const source = repoFile('background/pdf-jobs.js');
   const body = source.slice(source.indexOf('async function handlePdfCreateJob'));
   const pendingAt = body.indexOf('pending: true');
   const createAt = body.indexOf('pdfClient.createPdfJob');
@@ -347,7 +348,7 @@ test('a job the server has forgotten releases its binding too', async () => {
 });
 
 test('the create path releases the id when the server says it is burned', () => {
-  const source = repoFile('background/background.js');
+  const source = repoFile('background/pdf-jobs.js');
   const body = source.slice(source.indexOf('async function handlePdfCreateJob'));
   // The 409 family that can never succeed on replay…
   for (const code of ['operation_already_finished', 'output_conflict', 'job_conflict']) {
@@ -444,7 +445,8 @@ test('every locale carries the new copy, and none leaks the placeholder', () => 
 });
 
 test('the settings page asks the worker for the origin instead of hardcoding one', () => {
-  const options = repoFile('options/options.js');
+  // 设置页拆成了一组同级脚本，哪一行落在哪个文件里是排版；这里问的是这一页。
+  const options = optionsSource();
   assert.match(options, /ACCOUNT_SITE_BASE/);
   assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase, job\.jobId\)/);
   // The default origin lives in comic-client.js; a second copy here would be

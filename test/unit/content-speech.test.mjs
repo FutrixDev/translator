@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { messageCatalog } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -224,14 +225,13 @@ test('the pure half is loaded before the module that uses it', () => {
 });
 
 test('every string this feature added has a translation in all locales', () => {
-  const messages = repoFile('i18n/messages.js');
-  const locales = [...messages.matchAll(/^\s{2}'?([a-zA-Z-]+)'?:\s*\{$/gm)].map(m => m[1]);
+  const catalog = messageCatalog();
+  const locales = Object.keys(catalog);
   assert.ok(locales.length >= 10, `expected the full locale set, saw ${locales.join(', ')}`);
 
   const keys = ['pronounceOriginal', 'pronounceTranslation', 'stopPronunciation', 'translateShortcutHint'];
   for (const key of keys) {
-    const uses = [...messages.matchAll(new RegExp(`^\\s+${key}:`, 'gm'))];
-    assert.equal(uses.length, locales.length,
-      `${key} is missing from ${locales.length - uses.length} locale(s)`);
+    const missing = locales.filter(locale => !catalog[locale][key]);
+    assert.deepEqual(missing, [], `${key} is missing from ${missing.join(', ')}`);
   }
 });

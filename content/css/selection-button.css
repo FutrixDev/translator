@@ -1,0 +1,47 @@
+/* ==================== Selection Button ==================== */
+
+#ai-translator-selection-btn {
+  position: fixed;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #7c5cff 0%, #6366f1 100%);
+  border: none;
+  border-radius: 20px;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(124, 92, 255, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: ai-translator-btn-pop 0.2s ease;
+  user-select: none;
+}
+
+#ai-translator-selection-btn:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(124, 92, 255, 0.5);
+}
+
+#ai-translator-selection-btn:active {
+  transform: scale(0.98);
+}
+
+#ai-translator-selection-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes ai-translator-btn-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

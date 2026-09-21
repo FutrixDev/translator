@@ -1521,7 +1521,7 @@ youtube.com 既不在拦截名单、也不在内置 `always` 名单，答案是 
 的驱动是心跳里的 `syncControls()`，而它一进门先看 `captionPlayerButton`：关着就
 `unmount()` 返回。于是「藏起播放器上那个图标」顺带把「替我开原字幕」一起关了 ——
 两个开关，观众开了后者、关了前者，得到的是什么都不发生。`syncNativeCaptions()` 现
-在排在那道闸门前面，由 `caption-core.test.mjs` 的顺序断言和一条 e2e 钉住。
+在排在那道闸门前面，由 `caption-engine.test.mjs` 的顺序断言和一条 e2e 钉住。
 
 **12. 「这个站点准不准」问不到的时候，要当拒绝（评审第 4 轮 P2）。** `ctx.init` 里
 字幕这一面排在自动翻译前面（`content-bootstrap.js`），所以第一次同步控件时
@@ -1754,7 +1754,7 @@ SPA 在路由切换时把 `<video>` 整个换掉，而被摘走的那个元素**
 菜单项，而 `[hidden]` 的 `display:none` 只是 UA 规则，`.ai-translator-caption-menu-item`
 自己那条 `display: flex` 一来就把它压掉了 —— JS 照样置 hidden，屏幕上那一行纹丝不
 动（e2e 抓到的：Playwright 说它 visible，DOM 里 `hidden=""` 明明在）。菜单根节点早
-就为同一件事单独写过一条，这是第二处，由 `caption-core.test.mjs` 钉住。
+就为同一件事单独写过一条，这是第二处，由 `caption-engine.test.mjs` 钉住。
 
 ### PR-10：设置页那一张卡片，和一个跨上下文的通知
 

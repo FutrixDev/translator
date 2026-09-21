@@ -1,0 +1,61 @@
+/* ==================== Account ==================== */
+
+.account-state {
+  margin-top: 14px;
+}
+
+.account-state.hidden {
+  display: none;
+}
+
+.account-identity {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.account-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.account-stat {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.account-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+/* The reset date is a date, not a count — at 22px a localized "September 1"
+   wraps the stat box that its two numeric siblings sit comfortably inside. */
+.account-stat-value.account-stat-date {
+  font-size: 15px;
+  font-weight: 500;
+  padding-top: 5px;
+}
+
+.account-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.account-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}

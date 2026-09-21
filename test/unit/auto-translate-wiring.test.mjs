@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { workerSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -14,9 +15,13 @@ const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 //
 // 先剥行注释再剥块注释，顺序不能反：行注释里出现的 `content/page/*` 会被当成一个
 // 块注释的开头，一路吃到下一个真正的 `*/`，中间的代码就此消失。
-const code = (rel) => read(rel)
+const strip = (source) => source
   .replace(/^[ \t]*\/\/.*$/gm, '')
   .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '');
+const code = (rel) => strip(read(rel));
+// service worker 拆成了一组模块（background/*.js），一个 handler 落在哪个文件里
+// 是实现细节 —— 这里问的都是「worker 有没有这么做」，所以整份读它。
+const workerCode = () => strip(workerSource());
 
 const manifest = JSON.parse(read('manifest.json'));
 const isolated = manifest.content_scripts.find((entry) => (entry.world || 'ISOLATED') === 'ISOLATED').js;
@@ -350,7 +355,7 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
 });
 
 test('「发给模型的字符数」一次调用记一笔，不多不少', () => {
-  const bg = code('background/background.js');
+  const bg = workerCode();
 
   // 记在三个真发请求的函数上，不记在消息监听器里。监听器两头都漏：前面漏掉
   // `if (!settings.apiKey)` 那一关（没配 Key 时一个字符也没发出去，而自动翻译
@@ -407,9 +412,8 @@ test('改对了密钥/地址/模型/回落，停在错误上的那一页要自�
   // 这四个键真的是设置里存的那四个 —— 拼错一个，这条门就永远不开，而且没有任何
   // 迹象。engineFallback 归内容侧默认值管，另外三个归后台的 defaultSettings。
   assert.ok('engineFallback' in DefaultSettings.CONTENT_DEFAULTS);
-  const background = read('background/background.js');
-  const declared = background.match(/const defaultSettings = \{([\s\S]*?)\n\};/);
-  assert.ok(declared, 'background.js 的 defaultSettings 不见了');
+  const declared = workerSource().match(/const defaultSettings = \{([\s\S]*?)\n\};/);
+  assert.ok(declared, 'worker 的 defaultSettings 不见了');
   for (const key of ['apiKey', 'apiEndpoint', 'modelName']) {
     assert.match(declared[1], new RegExp(`^\\s*${key}:`, 'm'), `defaultSettings 里没有 ${key}`);
   }

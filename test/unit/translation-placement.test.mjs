@@ -18,16 +18,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { contentCss, hoverSource } from './helpers/sources.mjs';
 
 const repoUrl = (rel) => new URL(`../../${rel}`, import.meta.url);
 const repoFile = (rel) => readFileSync(fileURLToPath(repoUrl(rel)), 'utf8');
 
 const pageInsert = repoFile('content/page/insert.js');
 const pageCollect = repoFile('content/page/collect.js');
-const hoverTranslation = repoFile('content/content-hover-translation.js');
+const hoverTranslation = hoverSource();
 // Comments in content.css quote the rules that were removed, so strip them before
 // asserting on what the stylesheet actually declares.
-const contentCss = repoFile('content/content.css').replace(/\/\*[\s\S]*?\*\//g, '');
+const contentCssText = contentCss().replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the placement rule is declared once and published on ctx', () => {
   // content/ 和 content/page/ 都要扫：规则搬进子目录之后，只扫一层等于不扫。
@@ -63,15 +64,15 @@ test('the stray-text-node wrapper class is the one content.css styles', () => {
   assert.match(pageCollect, /ctx\.TEXT_RUN_CLASS\s*=\s*TEXT_RUN_CLASS/);
   // The wrapper is injected into the page's own markup, so it has to render as
   // if it were not there — no box, no font of its own.
-  assert.ok(contentCss.includes(`span.${declared[1]}`),
-    `content/content.css has no rule for .${declared[1]}; the wrapper would inherit the page's span styling`);
+  assert.ok(contentCssText.includes(`span.${declared[1]}`),
+    `content/css/ has no rule for .${declared[1]}; the wrapper would inherit the page's span styling`);
 });
 
 test('a list item keeps its marker when it holds its own translation', () => {
   // `li.ai-translator-inline-block { list-style: none; margin-left: 0 }` existed
   // for the old sibling-<li> layout. With the translation inside the item the
   // same rule strips the bullet off the source item.
-  const rule = contentCss.match(/li\.ai-translator-inline-block\s*\{([^}]*)\}/);
+  const rule = contentCssText.match(/li\.ai-translator-inline-block\s*\{([^}]*)\}/);
   if (rule) {
     assert.doesNotMatch(rule[1], /list-style\s*:\s*none/);
     assert.doesNotMatch(rule[1], /margin-left\s*:\s*0/);

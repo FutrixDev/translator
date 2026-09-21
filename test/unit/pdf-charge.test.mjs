@@ -32,6 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
+const { comicSource, workerSource } = await import('./helpers/sources.mjs');
 
 // No `export`: the extension's own pages load it as a classic script, so
 // importing it for its side effect publishes globalThis.ChargeConfirm.
@@ -251,23 +252,24 @@ test('a binding that aged out no longer names a document', async () => {
 // ---------------------------------------------------------------------------
 
 test('the PDF create path asks through the shared module, and only that one', () => {
-  const background = repoFile('background/background.js');
-  assert.match(background, /import '\.\.\/shared\/comic-charge\.js'/,
+  assert.match(repoFile('background/background.js'), /import '\.\.\/shared\/comic-charge\.js'/,
     'the worker must load the shared charge module');
-  assert.match(background, /ChargeConfirm\.isConfirmRequired\(error\)/,
+  assert.match(workerSource(), /ChargeConfirm\.isConfirmRequired\(error\)/,
     'and recognise the 409 through it rather than by comparing the string itself');
 
   // One implementation, repo-wide. A second copy is the one that goes stale on
   // the day the server changes the handshake.
-  for (const file of ['background/background.js', 'popup/popup.js', 'pdf/upload.js',
-    'content/content-comic-translation.js']) {
-    assert.doesNotMatch(repoFile(file), /function submitWithConfirmation/,
-      `${file} must call the shared handshake, not restate it`);
+  for (const [name, src] of [['the service worker', workerSource()],
+    ['popup/popup.js', repoFile('popup/popup.js')],
+    ['pdf/upload.js', repoFile('pdf/upload.js')],
+    ['漫画翻译那一族', comicSource()]]) {
+    assert.doesNotMatch(src, /function submitWithConfirmation/,
+      `${name} must call the shared handshake, not restate it`);
   }
 });
 
 test('the refused create drops its receipt and keeps its operation id', () => {
-  const source = repoFile('background/background.js');
+  const source = repoFile('background/pdf-jobs.js');
   const body = source.slice(source.indexOf('async function handlePdfCreateJob'));
   const branch = body.slice(body.indexOf('ChargeConfirm.isConfirmRequired'));
   const head = branch.slice(0, branch.indexOf('throw error;'));
@@ -284,7 +286,7 @@ test('the refused create drops its receipt and keeps its operation id', () => {
 });
 
 test('the context menu asks with a notification and only spends on the yes button', () => {
-  const source = repoFile('background/background.js');
+  const source = repoFile('background/pdf-jobs.js');
   const listener = source.slice(source.indexOf('chrome.notifications.onButtonClicked'));
   assert.match(listener, /buttonIndex !== 0\) return;/,
     'cancel (and dismissal) must be silent — a declined charge is not an error');
