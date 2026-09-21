@@ -55,7 +55,9 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 
 4. **Options** (`options/`) - Full settings page with API configuration and feature toggles
 
-5. **i18n** (`i18n/messages.js`) - 10+ language translations, auto-selects based on target language
+5. **i18n** (`i18n/messages.js` + `i18n/lang/<tag>.js`) - one string table per
+   language, registered onto one catalog; `messages.js` holds only the lookup and
+   the UI-language resolution. Every load list carries all ten, in any order.
 
 ### Key Technical Patterns
 
@@ -67,8 +69,9 @@ No build step required - the extension loads directly in Chrome as an unpacked e
   document, so every page rule on a bare tag matches them too — example.com
   ships `div { opacity: .8 }`, and every page builder ships
   `.kit button { … }` plus a heavier `.kit button:hover` twin. One scoped reset
-  at the top of `content/content.css` is the boundary, and specificity is a
-  four-step band with no `!important` in it:
+  at the top of `content/css/popup.css` — the first of the twelve stylesheets
+  the manifest injects, and that array's order *is* the cascade order — is the
+  boundary, and specificity is a four-step band with no `!important` in it:
 
   ```
   theme base (0,1,1) < theme state (0,2,1) < the reset (0,2,2) ≤ ours (0,2,2)

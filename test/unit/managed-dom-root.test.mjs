@@ -29,7 +29,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { messageCatalog } from './helpers/sources.mjs';
+import { contentCss, messageCatalog } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -175,10 +175,11 @@ test('nothing renders a translation as an absolutely positioned overlay', () => 
     'content/page/insert.js',
     'content/page/visibility.js',
     'content/content-managed-translation.js',
-    'content/content.css',
   ]) {
     assert.doesNotMatch(repoFile(file), /ai-translator-anchor|mountAnchored/, `${file} grew an overlay path again`);
   }
+  assert.doesNotMatch(contentCss(), /ai-translator-anchor|mountAnchored/,
+    'the injected stylesheet grew an overlay path again');
 });
 
 test('whole-page translation reaches into managed roots', () => {

@@ -1,4 +1,4 @@
-// Guards for the host-page containment reset in content/content.css.
+// Guards for the host-page containment reset in content/css/popup.css.
 //
 // A content script's UI is a subtree of the host page's document, so any page
 // rule written against a bare tag matches our own elements. example.com ships
@@ -30,11 +30,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { contentCss } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
 
-const CSS = repoFile('content/content.css');
+// 整张表，按 manifest 的顺序接起来：下面既看规则本身，也看它们相对这段重置的
+// 前后位置，而那个前后是由 manifest 的 css 数组定的，不是由文件名定的。
+const CSS = contentCss();
 const MARKER = '/* ==================== Host-page containment ====================';
 const END_MARKER = '/* ==================== end of host-page containment ==================== */';
 
@@ -48,7 +51,7 @@ function resetBlock() {
   const end = CSS.indexOf(END_MARKER);
   assert.ok(
     start > 0 && end > start,
-    'the containment reset is no longer delimited by its markers in content/content.css.\n'
+    'the containment reset is no longer delimited by its markers in content/css/popup.css.\n'
     + 'If they were renamed, update MARKER/END_MARKER here; if the block was deleted, '
     + 'host pages can reach into our panels again.',
   );

@@ -60,3 +60,19 @@ export function messagesSource() {
 export function messageCatalog() {
   return require('../../../i18n/messages.js').I18N_MESSAGES;
 }
+
+/**
+ * 内容脚本注入的那一整张样式表：content/css/ 下的十二份，按 **manifest 里的顺序**
+ * 接起来。
+ *
+ * 顺序就是层叠顺序 —— light-theme.css 整份都靠「排在被它覆盖的那些后面」工作，
+ * 按文件名排会把它挪到 input-dialog 前面去，于是这里读到的层叠和浏览器里的不是
+ * 同一张表。所以清单从 manifest 读，不在这里重抄。
+ */
+export function contentCss() {
+  const manifest = JSON.parse(readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  return manifest.content_scripts
+    .flatMap((cs) => cs.css || [])
+    .map((rel) => readFileSync(path.join(ROOT, rel), 'utf8'))
+    .join('\n');
+}

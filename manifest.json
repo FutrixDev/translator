@@ -124,7 +124,18 @@
         "content/content.js"
       ],
       "css": [
-        "content/content.css"
+        "content/css/popup.css",
+        "content/css/translation.css",
+        "content/css/progress.css",
+        "content/css/selection-button.css",
+        "content/css/float-ball.css",
+        "content/css/auto-translate-bar.css",
+        "content/css/float-menu.css",
+        "content/css/input-dialog.css",
+        "content/css/light-theme.css",
+        "content/css/captions.css",
+        "content/css/comic.css",
+        "content/css/image-ocr.css"
       ],
       "run_at": "document_end"
     }

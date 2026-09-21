@@ -1,0 +1,216 @@
+/* ==================== Inline Translation ==================== */
+
+.ai-translator-source-text {
+  /* Keep original styling */
+}
+
+.ai-translator-inline {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.08) 0%, rgba(92, 140, 255, 0.05) 100%);
+  border-left: 3px solid #7c5cff;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.95em;
+  color: #5c8cff;
+  line-height: 1.5;
+}
+
+/* ==================== Block Translation (Page Translation) ==================== */
+
+.ai-translator-translated {
+  /* 原文保持不变 */
+}
+
+.ai-translator-inline-block {
+  display: block !important;
+  /* 兄弟译文和原文之间隔多远，不是这条 0.15em 说了算：相邻外边距会合并，原文的
+     margin-bottom 站在同一道缝里。补偿量由 JS 按原文实际的下外边距算好交过来
+     （--ai-translator-pair-margin-top，见 insertTranslationBlock），页面没给原文
+     下外边距、或者译文是插进原文内部的，就退回这里的默认值。 */
+  margin-top: var(--ai-translator-pair-margin-top, 0.15em) !important;
+  margin-bottom: 0.15em !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  /* 颜色和透明度由 JS 动态设置，继承原元素 */
+  animation: ai-translator-block-fade-in 0.25s ease;
+}
+
+/* 译文块不要页面挂在原文标签/类名上的伪元素。
+   插译文时会复制原文的标签名和 class（见 insertTranslationBlock），页面针对
+   `p::after` / `.u-text-style-body-2::after` 写的规则于是照样罩住译文——而那些规则
+   的前提是「这个盒子里装着页面自己排好的那一段字」，译文不是。
+
+   现在的主流排版会用一对负外边距的伪元素做行首行尾裁剪（leading trim），把半行距
+   从盒子里削掉：
+
+     p::before { content:""; display:table; margin-bottom: -7.79px }
+     p::after  { content:""; display:table; margin-bottom: -7.98px }
+
+   claude.com 的每个类型令牌（u-text-style-h1 / body-2 / body-3 / caption）都带着
+   这一对，全站 3914 个元素里 356 个吃到——**每一段字都比自己的盒子高约 8px**。
+   译文继承之后，它的字上下各溢出自己的盒子 ~4.8px，而这条规则给译文的上下间距只有
+   0.15em（≈2.9px），于是相邻两段译文的字间距实测是 −6.5px：后一段的第一行直接压在
+   前一段最后一行上，整篇文章糊成一片。
+
+   连 content 一起清掉，不是只中和 margin：同一条复制路径还会把页面的装饰性伪元素
+   （引号、序号、图标）在译文上再画一份，那本来也是错的。译文块里只有文字和克隆出来
+   的内联元素，没有浮动，清掉 clearfix 类的伪元素没有副作用。
+
+   `html body` 是为了压过页面那条单类名规则（0,1,1）——见文件头的特异性说明。 */
+html body .ai-translator-inline-block::before,
+html body .ai-translator-inline-block::after {
+  content: none !important;
+}
+
+/* 隐藏译文 */
+.ai-translator-inline-block.ai-translator-hidden {
+  display: none !important;
+}
+
+/* 仅显示译文（settings.showTranslationOnly）：隐藏已翻译块的原文。
+   这两个类加在【页面自己的元素】上，不属于面板 reset 那套特异性阶梯 */
+.ai-translator-source-hidden {
+  display: none !important;
+}
+
+/* 原文一藏（仅显示译文，或 fit guard 为译文让位），上面那份补偿就没有东西可抵消
+   了：它是拿来吃掉原文 margin-bottom 的，原文 display:none 之后不再占那道缝，
+   负的 margin-top 会转而去抵消【上一段译文】的下外边距，把整页的段间距压没
+   （claude.com 实测 31px → 3px）。这里退回默认间距，段落节奏由译文自己的
+   margin-bottom 撑着。加类名的原文正好是译文的前一个兄弟（hideSourceForTranslation），
+   所以选得中；wrap 那条隐藏路径对应的是插在原文内部的译文，本来就没有这份补偿。 */
+.ai-translator-source-hidden + .ai-translator-inline-block {
+  margin-top: 0.15em !important;
+}
+
+.ai-translator-inline-loading {
+  color: #7c5cff !important;
+  font-weight: 600 !important;
+  font-size: 1.1em !important;
+  opacity: 1 !important;
+  text-shadow: 0 0 6px rgba(124, 92, 255, 0.35);
+}
+
+.ai-translator-inline-loading::after {
+  content: '...';
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: baseline;
+  width: 0;
+  white-space: nowrap;
+  animation: ai-translator-loading-dots 1s steps(4, end) infinite;
+}
+
+@keyframes ai-translator-block-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+
+@keyframes ai-translator-loading-dots {
+  to {
+    width: 1.5em;
+  }
+}
+
+/* 列表项的翻译现在插在 <li> 内部（见 getTranslationPlacement），译文不再是一条
+   兄弟 <li>，所以这里不需要压圆点、也不需要清 margin：以前那条
+   `li.ai-translator-inline-block { list-style:none; margin-left:0 }` 正是把译文推到
+   整个列表左外侧的原因。译文块的排版由 .ai-translator-inline-block 一条负责。 */
+
+/* 直属文本节点的锚点（wrapDirectTextRuns）。它只是个挂译文用的壳，页面针对
+   `span` 写的规则不该借它改变原文的样子，所以把排版和字体钉回继承值。 */
+span.ai-translator-text-run {
+  display: inline !important;
+  font: inherit !important;
+  color: inherit !important;
+  letter-spacing: inherit !important;
+  text-transform: inherit !important;
+  background: none !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 链接翻译 */
+a.ai-translator-inline-block {
+  text-decoration: none !important;
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* 按钮翻译 */
+button.ai-translator-inline-block {
+  border: none !important;
+  background: none !important;
+  cursor: default !important;
+}
+
+/* 数学公式样式：使用 cloneNode 复制原始元素，让页面原生 CSS 控制显示 */
+/* 只隐藏辅助元素，不强制设置 display 属性 */
+.ai-translator-inline-block .MJX_Assistive_MathML,
+.ai-translator-inline-block .mjx-assistive-mml,
+.ai-translator-inline-block .katex-mathml,
+.ai-translator-inline-block .sr-only,
+.ai-translator-inline-block .visually-hidden {
+  display: none !important;
+}
+
+/* 隐藏数学公式的辅助元素（屏幕阅读器用） */
+.ai-translator-inline-block .MJX_Assistive_MathML,
+.ai-translator-inline-block .mjx-assistive-mml,
+.ai-translator-inline-block .katex-mathml,
+.ai-translator-inline-block .sr-only,
+.ai-translator-inline-block .visually-hidden {
+  display: none !important;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+}
+
+/* 水平 flex 布局中的内嵌翻译（如顶部导航） - 显示在原文右侧 */
+.ai-translator-inline-right {
+  display: inline !important;
+  font-size: 0.85em !important;
+  opacity: 0.7 !important;
+  margin-left: 4px !important;
+}
+
+/* 内嵌翻译中的数学公式也需要正确显示 */
+.ai-translator-inline-right mjx-container,
+.ai-translator-inline-right .MathJax,
+.ai-translator-inline-right .katex,
+.ai-translator-inline-right math {
+  display: inline !important;
+  vertical-align: baseline !important;
+}
+
+/* MathJax 3 内部元素 - 全部强制内联 */
+.ai-translator-inline-right mjx-container *,
+.ai-translator-inline-right mjx-math,
+.ai-translator-inline-right mjx-mrow {
+  display: inline !important;
+}
+
+/* 隐藏 MathML 语义注释 */
+.ai-translator-inline-right math annotation,
+.ai-translator-inline-right math annotation-xml {
+  display: none !important;
+}
+
+.ai-translator-inline-right .MJX_Assistive_MathML,
+.ai-translator-inline-right .mjx-assistive-mml,
+.ai-translator-inline-right .katex-mathml,
+.ai-translator-inline-right .sr-only,
+.ai-translator-inline-right .visually-hidden {
+  display: none !important;
+}
+
+/* ==================== Page Translation Progress ==================== */

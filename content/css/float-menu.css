@@ -1,0 +1,71 @@
+/* ==================== Float Menu ==================== */
+
+#ai-translator-float-menu {
+  position: fixed;
+  z-index: 2147483647;
+  width: 180px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(124, 92, 255, 0.1);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  animation: ai-translator-menu-in 0.15s ease;
+}
+
+@keyframes ai-translator-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  margin: 0;
+  background: transparent;
+  border: none;
+  color: #f0f0f5;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  box-sizing: border-box;
+}
+
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:hover {
+  background: rgba(124, 92, 255, 0.15);
+}
+
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:active {
+  background: rgba(124, 92, 255, 0.25);
+}
+
+.ai-translator-menu-item svg {
+  color: #7c5cff;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+}
+
+.ai-translator-menu-item span {
+  flex: 1;
+  text-align: left;
+}
+
+.ai-translator-menu-divider {
+  height: 1px;
+  background: #2a2a3a;
+  margin: 4px 0;
+}

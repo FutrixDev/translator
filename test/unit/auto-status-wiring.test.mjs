@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { messagesSource } from './helpers/sources.mjs';
+import { contentCss, messagesSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -308,7 +308,7 @@ test('manifest 里每个 __MSG__ 占位符，十个 _locales 都得有', () => {
 });
 
 test('追问条也是一个面板根，进了那道防护栏的名单', () => {
-  const css = read('content/content.css');
+  const css = contentCss();
   const reset = css.slice(
     css.indexOf('/* ==================== Host-page containment'),
     css.indexOf('/* ==================== end of host-page containment')
@@ -325,7 +325,7 @@ test('状态点的显隐只有一套机制', () => {
   const ball = code('content/content-float-ball.js');
   assert.match(ball, /class="ai-translator-status-dot" data-state="none"/);
   assert.doesNotMatch(ball, /ai-translator-status-dot" hidden/);
-  assert.match(read('content/content.css'), /\.ai-translator-status-dot\[data-state="none"\] \{\s*display: none;/);
+  assert.match(contentCss(), /\.ai-translator-status-dot\[data-state="none"\] \{\s*display: none;/);
 });
 
 test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', () => {
@@ -669,7 +669,7 @@ test('球上那两颗按钮键盘够得着', () => {
   assert.match(view, /dot\.title = line;\s*dot\.setAttribute\('aria-label', line\);/);
 
   // ··· 平时 opacity:0。焦点停在一个看不见的东西上，人看到的是焦点凭空消失了一格。
-  const css = read('content/content.css');
+  const css = contentCss();
   assert.match(css, /#ai-translator-float-ball:focus-within \.ai-translator-ball-more \{/);
   for (const cls of ['status-dot', 'ball-more']) {
     assert.match(css, new RegExp(`#ai-translator-float-ball \\.ai-translator-${cls}:focus-visible`), `${cls} 没有焦点环`);

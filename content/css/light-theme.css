@@ -1,0 +1,400 @@
+/* ==================== Light Theme ==================== */
+
+[data-ai-translator-theme="light"] .ai-translator-popup {
+  --popup-bg: #ffffff;
+  --popup-border: #e6e7ec;
+  --popup-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  --header-bg: #ffffff;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9aa0ac;
+  --divider: #eef0f3;
+  --accent: #6f63ff;
+  --pill-bg: #f1f3f5;
+  --pill-border: #e2e6ea;
+  --icon-hover-bg: rgba(111, 99, 255, 0.12);
+  --icon-hover-border: rgba(111, 99, 255, 0.3);
+  --btn-bg: #f3f4f6;
+  --btn-border: #e5e7eb;
+  --btn-text: #374151;
+  --btn-hover-bg: #e5e7eb;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-lang-menu {
+  background: #ffffff;
+  border-color: #e2e6ea;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-lang-item.is-selected {
+  background: rgba(111, 99, 255, 0.12);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-popup ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-inline {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.06) 0%, rgba(92, 140, 255, 0.04) 100%);
+  color: #7c5cff;
+}
+
+/* .ai-translator-inline-block 继承原元素颜色，无需主题特定样式 */
+
+[data-ai-translator-theme="light"] #ai-translator-progress {
+  background: linear-gradient(145deg, #ffffff 0%, #f5f5f7 100%);
+  border-color: #e0e0e5;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(34, 197, 94, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-track {
+  background: #e5e5ea;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-text {
+  color: #6e6e73;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-percent {
+  color: #16a34a;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-progress-close {
+  background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-progress-close:hover {
+  background: linear-gradient(145deg, #fee2e2 0%, #fecaca 100%);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #b91c1c;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-success {
+  color: #16a34a;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-success svg {
+  color: #16a34a;
+  filter: drop-shadow(0 0 6px rgba(22, 163, 74, 0.4));
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-success span {
+  color: #16a34a;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-info {
+  color: #2563eb;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-info svg {
+  color: #2563eb;
+  filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.3));
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-info span {
+  color: #2563eb;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-error {
+  color: #dc2626;
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-error svg {
+  color: #dc2626;
+  filter: drop-shadow(0 0 6px rgba(220, 38, 38, 0.3));
+}
+
+[data-ai-translator-theme="light"] .ai-translator-progress-error-text {
+  color: #dc2626;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball-container {
+  background: rgba(230, 230, 238, 0.95);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball {
+  background: linear-gradient(145deg, #ffffff 0%, #e8e8f0 100%);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(124, 92, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball:hover {
+  box-shadow:
+    0 12px 40px rgba(124, 92, 255, 0.2),
+    0 0 0 1px rgba(124, 92, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball svg {
+  filter: drop-shadow(0 2px 6px rgba(124, 92, 255, 0.3));
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-menu {
+  background: #ffffff;
+  border-color: #e0e0e5;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(124, 92, 255, 0.1);
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-menu-item {
+  color: #1d1d1f;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
+  background: rgba(124, 92, 255, 0.08);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-menu-divider {
+  background: #e0e0e5;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-status-dot {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.95);
+}
+
+[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-ball-more {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.3), 0 2px 6px rgba(0, 0, 0, 0.12);
+  color: #1d1d1f;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-auto-bar {
+  background: #ffffff;
+  border-color: #e0e0e5;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(124, 92, 255, 0.1);
+  color: #1d1d1f;
+}
+
+[data-ai-translator-theme="light"] #ai-translator-auto-bar .ai-translator-auto-remember {
+  color: #6b7280;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn {
+  border-color: #d8d8e0;
+  color: #1d1d1f;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="translate"] {
+  border-color: transparent;
+  color: #ffffff;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="close"] {
+  border-color: transparent;
+  color: #9aa0ac;
+}
+
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="close"]:hover {
+  color: #1d1d1f;
+}
+
+/* Light theme - Input Dialog */
+[data-ai-translator-theme="light"] .ai-translator-input-overlay {
+  background: rgba(15, 16, 20, 0.2);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-input-modal {
+  --popup-bg: #ffffff;
+  --popup-border: #e6e7ec;
+  --popup-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  --header-bg: #ffffff;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9aa0ac;
+  --divider: #eef0f3;
+  --accent: #6f63ff;
+  --pill-bg: #f1f3f5;
+  --pill-border: #e2e6ea;
+  --icon-hover-bg: rgba(111, 99, 255, 0.12);
+  --icon-hover-border: rgba(111, 99, 255, 0.3);
+  --btn-bg: #f3f4f6;
+  --btn-border: #e5e7eb;
+  --btn-text: #374151;
+  --btn-hover-bg: #e5e7eb;
+}
+
+/* Video subtitle translation overlay (bilingual: original + translated).
+   The overlay is a full-area, non-interactive layer; the caption box inside it
+   is the draggable + resizable element. It is mounted into whatever the active
+   caption provider offers as a host: YouTube's own caption layer, or the box
+   below that the generic provider pins over a bare <video>. */
+#ai-translator-caption-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* The host the generic (TextTrack) provider pins over a bare <video>: a fixed
+   box kept on the video's rect in JS, rather than a wrapper around the element
+   — reparenting a <video> breaks players that manage their own DOM. Sized and
+   positioned inline; everything here just has to survive the page's CSS and,
+   when it is promoted to the top layer over a fullscreen <video>, the UA's
+   popover styles. */
+.ai-translator-caption-host {
+  position: fixed;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+/* The caption box: centre-anchored, drag body to move, edge/corner handles to
+   resize. Width defaults to a wrap cap; a set width overrides it. */
+#ai-translator-caption-overlay .ai-translator-caption-block {
+  position: absolute;
+  left: 50%;
+  top: 85%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  max-width: 92%;
+  pointer-events: auto;
+  cursor: move;
+  /* One backplate behind both lines instead of a slab per line: two stacked
+     boxes with a gap between them read as two separate captions, and the seam
+     is visible over any moving image. */
+  padding: 3px 12px;
+  background: var(--ai-caption-bg, rgba(8, 8, 8, 0.82));
+  border-radius: 6px;
+}
+
+/* Between cues there is no text, and a plate with nothing on it is just a
+   grey box parked on the video. */
+#ai-translator-caption-overlay .ai-translator-caption-block.ai-cap-empty {
+  background: transparent;
+  padding: 0;
+}
+
+/* Where the block sits before anyone has dragged it: on the page's own caption
+   line, lifted clear of the player's control bar while that bar is showing.
+   Both numbers come from the provider (see getCaptionAnchor); a block the
+   viewer has placed keeps `top` and never gets here. */
+#ai-translator-caption-overlay .ai-translator-caption-block.ai-cap-anchored {
+  top: auto;
+  bottom: calc(var(--ai-caption-bottom, 6%) + var(--ai-caption-lift, 0px));
+  transform: translateX(-50%);
+  transition: bottom 0.15s ease;
+}
+
+#ai-translator-caption-overlay .ai-translator-caption-block:hover {
+  outline: 2px dashed rgba(255, 255, 255, 0.45);
+  outline-offset: 5px;
+}
+
+/* Original caption line (smaller, secondary). Colors come from user settings
+   via CSS variables, with sensible fallbacks.
+
+   Size follows the viewport OR the video, whichever is smaller: --ai-caption-unit
+   is 1% of the video box (set in JS), so a player filling most of the window
+   keeps the size it has always had, and a small embedded one gets captions that
+   fit inside it instead of spilling over. */
+#ai-translator-caption-overlay .ai-translator-caption-original {
+  padding: 1px 0;
+  /* 0.8x the translated line: it is the reference, not the thing being read. */
+  font-size: calc(clamp(12px, min(2.56vh, 5.84 * var(--ai-caption-unit, 1vh)), 35px) * var(--ai-caption-scale, 1));
+  line-height: 1.3;
+  text-align: center;
+  color: var(--ai-caption-fg, #f1f1f1);
+  opacity: 0.85;
+}
+
+/* Translated line (larger, primary). Sizes scale with the player, as above. */
+#ai-translator-caption-overlay .ai-translator-caption-line {
+  padding: 1px 0;
+  font-size: calc(clamp(14px, min(3.2vh, 7.3 * var(--ai-caption-unit, 1vh)), 44px) * var(--ai-caption-scale, 1));
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ai-caption-fg, #fff);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Resize handles — invisible until the caption box is hovered. */
+#ai-translator-caption-overlay .ai-translator-caption-handle {
+  position: absolute;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#ai-translator-caption-overlay .ai-translator-caption-block:hover .ai-translator-caption-handle {
+  opacity: 1;
+}
+/* edge strips (E/W widen, N/S resize) */
+#ai-translator-caption-overlay .ai-cap-h-e,
+#ai-translator-caption-overlay .ai-cap-h-w {
+  top: 12%;
+  bottom: 12%;
+  width: 12px;
+  cursor: ew-resize;
+}
+#ai-translator-caption-overlay .ai-cap-h-e { right: -7px; }
+#ai-translator-caption-overlay .ai-cap-h-w { left: -7px; }
+#ai-translator-caption-overlay .ai-cap-h-n,
+#ai-translator-caption-overlay .ai-cap-h-s {
+  left: 12%;
+  right: 12%;
+  height: 12px;
+  cursor: ns-resize;
+}
+#ai-translator-caption-overlay .ai-cap-h-n { top: -7px; }
+#ai-translator-caption-overlay .ai-cap-h-s { bottom: -7px; }
+/* corner grips (resize both) */
+#ai-translator-caption-overlay .ai-cap-corner {
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+}
+#ai-translator-caption-overlay .ai-cap-h-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+#ai-translator-caption-overlay .ai-cap-h-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+#ai-translator-caption-overlay .ai-cap-h-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+#ai-translator-caption-overlay .ai-cap-h-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+
+/* Close button (top-right): dismiss captions for the current video. Shown on hover. */
+#ai-translator-caption-overlay .ai-translator-caption-close {
+  position: absolute;
+  top: -28px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(8, 8, 8, 0.8);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+#ai-translator-caption-overlay .ai-translator-caption-block:hover .ai-translator-caption-close {
+  opacity: 1;
+}
+#ai-translator-caption-overlay .ai-translator-caption-close:hover {
+  background: rgba(200, 40, 40, 0.92);
+}
+
+/* While our bilingual overlay is active, hide YouTube's native caption windows so
+   the two do not stack and overlap. Toggled via a marker class from JS. */
+.ytp-caption-window-container.ai-translator-hide-native .caption-window {
+  display: none !important;
+}

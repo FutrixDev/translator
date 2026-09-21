@@ -434,7 +434,7 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
 });
 
 test('a hostile host stylesheet cannot reach into the dialog', async ({ page }) => {
-  // The guard for the containment reset in content/content.css. Three defects
+  // The guard for the containment reset in content/css/popup.css. Three defects
   // came out of one mechanism — a page rule on a bare tag matching our own
   // elements — and each was patched where it surfaced. This asserts the
   // boundary instead: on a page that styles every tag our dialog is built from,

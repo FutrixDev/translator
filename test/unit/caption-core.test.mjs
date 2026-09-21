@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { contentCss } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -1043,7 +1044,7 @@ test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏�
   // 同一件事单独写过一条（`#ai-translator-caption-menu[hidden]`），这是第二处。
   const controls = repoFile('content/content-caption-controls.js');
   assert.match(controls, /parts\.nativeItem\.hidden = !needsNative;/);
-  const css = repoFile('content/content.css');
+  const css = contentCss();
   assert.match(
     css,
     /#ai-translator-caption-menu \.ai-translator-caption-menu-item\[hidden\]\s*\{\s*display:\s*none;/,

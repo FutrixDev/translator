@@ -1,6 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { contentHarnessScripts, PAGE_TRANSLATION_MODULES, REPO_ROOT } = require('./helpers');
-const path = require('path');
+const { contentHarnessScripts, contentStylesheet, PAGE_TRANSLATION_MODULES } = require('./helpers');
 
 // Focused DOM unit test of the REAL collectTranslatableBlocks + insertTranslationBlock,
 // loaded straight from source into a plain headless page (no extension or network needed),
@@ -21,7 +20,7 @@ const SCRIPTS = contentHarnessScripts(
 );
 
 // Page CSS below is copied verbatim from the article; __CONTENT_CSS__ is our own
-// content/content.css, so the theme rules that stripped the bullet are in play too.
+// content/css/ 那十二份接起来的，所以剥掉圆点的那几条主题规则也在场。
 const FIXTURE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
 body { font-family: sans-serif; max-width: 800px; margin: 0 auto; }
 .code-box { background-color:#f0f0f0; padding:16px; border-radius:8px; font-family:monospace; font-size:0.8em; white-space:pre-wrap; line-height:2; }
@@ -46,8 +45,7 @@ body { font-family: sans-serif; max-width: 800px; margin: 0 auto; }
 </body></html>`;
 
 test('page translation placement: box-painting elements, list items, and stray text runs', async ({ page }) => {
-  const fs = require('fs');
-  const css = fs.readFileSync(path.join(REPO_ROOT, 'content/content.css'), 'utf8');
+  const css = contentStylesheet();
   await page.setContent(FIXTURE_HTML.replace('__CONTENT_CSS__', css), { waitUntil: 'load' });
   for (const s of SCRIPTS) await page.addScriptTag({ path: s });
 
