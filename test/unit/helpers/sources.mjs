@@ -100,3 +100,35 @@ export function captionEngineSource() {
   return [surfaceSource('content/captions', (name) => name.endsWith('.js')),
           readFileSync(path.join(ROOT, 'content/content-video-captions.js'), 'utf8')].join('\n');
 }
+
+/**
+ * 悬停/划选翻译全体：content/hover/*.js 加上入口 content/content-hover-translation.js。
+ *
+ * 「这条路有没有做某件事」问的是这一族 —— 翻哪一块、行内台账、公式、划选、渲染分
+ * 在五个文件里，哪个函数落在哪一份是排版，不是契约。
+ */
+export function hoverSource() {
+  return [surfaceSource('content/hover', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'content/content-hover-translation.js'), 'utf8')].join('\n');
+}
+
+/**
+ * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
+ */
+export function contentBundle(marker = 'content/content-utils.js') {
+  const manifest = JSON.parse(readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  const bundle = manifest.content_scripts.find((cs) => (cs.js || []).includes(marker));
+  if (!bundle) throw new Error(`没有哪个 content_scripts 装了 ${marker}`);
+  return bundle.js;
+}
+
+/**
+ * 一族文件在 manifest 里的全部位置：content/<dir>/ 下的每一份，加上入口。
+ *
+ * 「X 要排在悬停翻译前面」这类断言，拆族之后问的是「排在这一族的每一份前面」——
+ * 只比对入口文件会漏掉真正先装载的那几份。
+ */
+export function familyPaths(dir, entry) {
+  const abs = path.join(ROOT, dir);
+  return [...readdirSync(abs).filter((n) => n.endsWith('.js')).sort().map((n) => `${dir}/${n}`), entry];
+}

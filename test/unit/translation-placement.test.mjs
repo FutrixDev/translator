@@ -18,14 +18,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { contentCss } from './helpers/sources.mjs';
+import { contentCss, hoverSource } from './helpers/sources.mjs';
 
 const repoUrl = (rel) => new URL(`../../${rel}`, import.meta.url);
 const repoFile = (rel) => readFileSync(fileURLToPath(repoUrl(rel)), 'utf8');
 
 const pageInsert = repoFile('content/page/insert.js');
 const pageCollect = repoFile('content/page/collect.js');
-const hoverTranslation = repoFile('content/content-hover-translation.js');
+const hoverTranslation = hoverSource();
 // Comments in content.css quote the rules that were removed, so strip them before
 // asserting on what the stylesheet actually declares.
 const contentCssText = contentCss().replace(/\/\*[\s\S]*?\*\//g, '');

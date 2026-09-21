@@ -127,6 +127,25 @@ Every reference crossing a file goes through the shelf (`comic.foo`), so no file
 depends on being loaded before another. Tests ask the **family**, not a file:
 `comicSource()` in `test/unit/helpers/sources.mjs`.
 
+### Hover / Selection Translation
+
+Hold the hotkey and point at a paragraph, or select text and press the button —
+both land in the same place. It is a family of classic scripts sharing one
+shelf, `ctx.hover`:
+
+| file | what it owns |
+| --- | --- |
+| `content/hover/blocks.js` | which element counts as a block, its text, the translation cache key |
+| `content/hover/inline.js` | the ledger of inline translations: managed rendering, clip guards, survival checks, the context-menu target |
+| `content/hover/latex.js` | pulling formulas out before translating and putting them back |
+| `content/hover/selection.js` | the selection path: anchors, safe insertion ranges, rendering a selection's translation |
+| `content/hover/render.js` | what a translation looks like: base style, loading dots, the inline node |
+| `content/content-hover-translation.js` | the entry: hotkeys, mouse, right-click, translating one block, and the `ctx.*` exports |
+
+Every reference crossing a file goes through the shelf (`hov.foo`), so no file
+depends on being loaded before another. Tests ask the **family**, not a file:
+`hoverSource()` in `test/unit/helpers/sources.mjs`.
+
 ### Video Subtitle Translation
 
 One engine, one overlay, and a small provider per way of getting cues. The

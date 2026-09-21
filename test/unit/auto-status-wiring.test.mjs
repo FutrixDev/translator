@@ -6,15 +6,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contentCss, messagesSource } from './helpers/sources.mjs';
+import { contentCss, hoverSource, messagesSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 // 注释里把规则原样讲了一遍，不剥的话每一条断言都会被自己的说明文字匹配上。
 // 先行注释后块注释，顺序不能反（见 auto-translate-wiring.test.mjs 的说明）。
-const code = (rel) => read(rel)
+const stripComments = (text) => text
   .replace(/^[ \t]*\/\/.*$/gm, '')
   .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '');
+const code = (rel) => stripComments(read(rel));
+// 悬停那条路是一族文件，问它就整族一起问 —— 哪个函数落在哪一份是排版，不是契约。
+const hoverCode = () => stripComments(hoverSource());
 
 const manifest = JSON.parse(read('manifest.json'));
 const isolated = manifest.content_scripts.find((entry) => (entry.world || 'ISOLATED') === 'ISOLATED').js;
@@ -149,7 +152,7 @@ test('显隐开关只收整页那一批 —— 划词译出来的一句不归它
 
   // 划词/悬停那条插入路径确实不读这个标记 —— 上面那句话的依据。它只在整页那条
   // 路（content/page/insert.js）上被调用。
-  assert.doesNotMatch(code('content/content-hover-translation.js'), /applyTranslationVisibility/);
+  assert.doesNotMatch(hoverCode(), /applyTranslationVisibility/);
   assert.match(code('content/page/insert.js'), /ctx\.applyTranslationVisibility\(translationEl\)/);
 });
 
@@ -357,19 +360,20 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   assert.match(utils, /addEventListener\('blur'[\s\S]*?settleSpentTap\('drop'\)/);
 
   // 而这条闸门必须装在两个处理器里，不能只装一个。
-  for (const rel of ['content/content-selection.js', 'content/content-hover-translation.js']) {
-    assert.match(code(rel), /ctx\.armModifierTap\(event\.key,/, `${rel} 的修饰键快捷键没过那道闸门`);
+  for (const [rel, src] of [['content/content-selection.js', code('content/content-selection.js')],
+    ['悬停那一族', hoverCode()]]) {
+    assert.match(src, /ctx\.armModifierTap\(event\.key,/, `${rel} 的修饰键快捷键没过那道闸门`);
   }
 
   // 「按住够久也算数」只给悬停开。划词是点一下的手势，给它开上，用户按着 Ctrl
   // 伸手去够 C 的那半秒就又变回一次翻译 —— 和弦的第二下来得慢一点就漏。
-  assert.match(code('content/content-hover-translation.js'), /hold: true,/);
+  assert.match(hoverCode(), /hold: true,/);
   assert.doesNotMatch(code('content/content-selection.js'), /hold:/, '划词不该开按住档');
 
   // 悬停还多两层：和弦作废时连「按住了」一起收回，否则接着划过的每一段都会被
   // 当成按住悬停（一个和弦，一串请求）；而「按住划」一旦真的译了，挂起的那一下
   // 要收回，否则松手会把刚划出来的译文又切掉。
-  const hover = code('content/content-hover-translation.js');
+  const hover = hoverCode();
   assert.match(hover, /ctx\.disarmModifierTap\(\);/);
   assert.match(hover, /chordKey = event\.key;/);
   assert.match(hover, /if \(chordKey\) return;/);

@@ -29,7 +29,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { contentCss, messageCatalog } from './helpers/sources.mjs';
+import { contentBundle, contentCss, familyPaths, hoverSource, messageCatalog } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -118,9 +118,10 @@ test('the root is returned, not just a boolean', () => {
 
 test('both inserting surfaces consult the shared rule', () => {
   // 整页那一边落笔在 content/page/insert.js。
-  for (const file of ['content/content-hover-translation.js', 'content/page/insert.js']) {
+  for (const [file, src] of [['悬停那一族', hoverSource()],
+    ['content/page/insert.js', repoFile('content/page/insert.js')]]) {
     assert.match(
-      repoFile(file),
+      src,
       /ctx\.isInsideManagedDomRoot/,
       `${file} inserts translations into the page but never asks whether the target is a managed root`,
     );
@@ -133,7 +134,7 @@ test('every render entry point in the hover file routes managed blocks', () => {
   // flex, <slot>, a Range-based insert — and a branch that returns before the
   // managed check inserts a node that a managed root deletes on sight, which is
   // exactly the silent failure this whole change exists to fix.
-  const src = repoFile('content/content-hover-translation.js');
+  const src = hoverSource();
   for (const fn of [
     'function renderInlineLoading',
     'function renderInlineTranslation',
@@ -158,7 +159,7 @@ test('the runtime fallback recognises both insertion shapes', () => {
   // block.parentElement) or inside it (Range.insertNode, appendChild). The
   // runtime "this host ate my node" fallback has to answer for both, or an
   // unknown framework keeps failing silently on the shapes it misses.
-  const src = repoFile('content/content-hover-translation.js');
+  const src = hoverSource();
   const start = src.indexOf('function shouldUseManagedRendering');
   const body = src.slice(start, src.indexOf('\n  function ', start + 10));
   assert.match(body, /hostileNodes\.has\(block\)/, 'a block whose own subtree ate the node is ignored');
@@ -169,14 +170,14 @@ test('nothing renders a translation as an absolutely positioned overlay', () => 
   // The mechanism this replaced. An overlay is out of flow, so it can only sit
   // on top of the paragraph that follows — which is precisely what users
   // reported. Generated content takes real layout space instead.
-  for (const file of [
-    'content/content-hover-translation.js',
-    'content/content-page-translation.js',
-    'content/page/insert.js',
-    'content/page/visibility.js',
-    'content/content-managed-translation.js',
+  for (const [file, src] of [
+    ...['content/content-page-translation.js',
+      'content/page/insert.js',
+      'content/page/visibility.js',
+      'content/content-managed-translation.js'].map((rel) => [rel, repoFile(rel)]),
+    ['悬停那一族', hoverSource()],
   ]) {
-    assert.doesNotMatch(repoFile(file), /ai-translator-anchor|mountAnchored/, `${file} grew an overlay path again`);
+    assert.doesNotMatch(src, /ai-translator-anchor|mountAnchored/, `${file} grew an overlay path again`);
   }
   assert.doesNotMatch(contentCss(), /ai-translator-anchor|mountAnchored/,
     'the injected stylesheet grew an overlay path again');
@@ -209,15 +210,15 @@ test('the generated-content module is the only place that owns the mechanism', (
   // touching the stylesheet is a second copy of the rule, and that is not.
   const owner = 'content/content-managed-translation.js';
   assert.match(repoFile(owner), /data-ai-translator-managed/);
-  for (const file of [
-    'content/content-hover-translation.js',
-    'content/content-page-translation.js',
-    'content/page/insert.js',
-    'content/page/collect.js',
-    'content/content-float-ball.js',
+  for (const [file, src] of [
+    ...['content/content-page-translation.js',
+      'content/page/insert.js',
+      'content/page/collect.js',
+      'content/content-float-ball.js'].map((rel) => [rel, repoFile(rel)]),
+    ['悬停那一族', hoverSource()],
   ]) {
     assert.doesNotMatch(
-      repoFile(file),
+      src,
       /data-ai-translator-managed|insertRule|cssRules|deleteRule/,
       `${file} restates the generated-content mechanism; it belongs only in ${owner}`,
     );
@@ -252,7 +253,7 @@ test('every managed translation can be released', () => {
   // callers hold. Calling .remove() on the handle leaves the rule and the
   // block's attribute behind — the translation stays on screen forever — so
   // both disposal paths in the hover file must release first.
-  const src = repoFile('content/content-hover-translation.js');
+  const src = hoverSource();
   const removals = src.match(/^\s*\w+\.remove\(\);$/gm) || [];
   assert.ok(removals.length >= 2, 'expected the replace and the teardown paths');
   assert.equal(
@@ -294,7 +295,7 @@ test('a stale handle releases only itself', () => {
   assert.match(src, /currentHandle\.delete\(entry\.block\);/, '真收掉的那一次要销账');
 
   // 顺带证明上面那一条不是空谈：替换那条路确实先画后收。
-  const hover = repoFile('content/content-hover-translation.js');
+  const hover = hoverSource();
   assert.match(
     hover,
     /const existing = map\.get\(block\);\s*if \(existing && existing !== translationEl\) \{/,
@@ -312,16 +313,16 @@ test('the framework list is not restated outside content-utils.js', () => {
   // rule, and that is not.
   const owner = 'content/content-utils.js';
   const hooks = /\[data-lexical-editor\]|\.ProseMirror\b|\[data-slate-editor\]|\.ql-editor\b|\.cm-content\b|\.CodeMirror-code\b|\.monaco-editor\b/;
-  for (const file of [
-    'content/content-hover-translation.js',
-    'content/content-page-translation.js',
-    'content/page/collect.js',
-    'content/page/insert.js',
-    'content/content-selection.js',
-    'content/content-popup.js',
+  for (const [file, src] of [
+    ...['content/content-page-translation.js',
+      'content/page/collect.js',
+      'content/page/insert.js',
+      'content/content-selection.js',
+      'content/content-popup.js'].map((rel) => [rel, repoFile(rel)]),
+    ['悬停那一族', hoverSource()],
   ]) {
     assert.doesNotMatch(
-      repoFile(file),
+      src,
       hooks,
       `${file} restates the editor list; it belongs only in ${owner}`,
     );
@@ -330,11 +331,13 @@ test('the framework list is not restated outside content-utils.js', () => {
 });
 
 test('content-utils.js loads before the surfaces that use it', () => {
-  const manifest = JSON.parse(repoFile('manifest.json'));
-  const bundle = manifest.content_scripts.find((entry) => entry.js.includes('content/content-utils.js'));
-  assert.ok(bundle, 'content-utils.js is not in any content script bundle');
-  const at = (file) => bundle.js.indexOf(file);
-  assert.ok(at('content/content-utils.js') < at('content/content-hover-translation.js'));
+  const bundle = contentBundle('content/content-utils.js');
+  const at = (file) => bundle.indexOf(file);
+  // 悬停是一族文件，入口不是最先装的那一份 —— 每一份都要排在被它用到的模块后面。
+  const hoverFamily = familyPaths('content/hover', 'content/content-hover-translation.js');
+  for (const file of hoverFamily) {
+    assert.ok(at('content/content-utils.js') < at(file), `${file} 排在 content-utils.js 前面了`);
+  }
   assert.ok(at('content/content-utils.js') < at('content/page/collect.js'));
   // Both modifier-key hotkeys arm their trigger through ctx.armModifierTap.
   assert.ok(at('content/content-utils.js') < at('content/content-selection.js'));
@@ -343,7 +346,9 @@ test('content-utils.js loads before the surfaces that use it', () => {
   // before anything calls them.
   const renderer = at('content/content-managed-translation.js');
   assert.ok(renderer > 0, 'content-managed-translation.js is not in the bundle');
-  assert.ok(renderer < at('content/content-hover-translation.js'));
+  for (const file of hoverFamily) {
+    assert.ok(renderer < at(file), `${file} 排在 content-managed-translation.js 前面了`);
+  }
   assert.ok(renderer < at('content/page/insert.js'));
   assert.ok(renderer < at('content/content-float-ball.js'));
 });

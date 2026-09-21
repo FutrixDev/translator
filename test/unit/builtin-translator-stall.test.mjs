@@ -25,6 +25,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { hoverSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -415,16 +416,16 @@ test('every call into the Translator API goes through the watchdog', async () =>
   assert.equal((src.match(/self\.Translator\.create\(/g) || []).length, 1);
   assert.match(src, /function stallWatchdog\(/);
 
-  for (const file of [
-    'content/page/batch.js',
-    'content/page/progress.js',
-    'content/content-page-translation.js',
-    'content/content-hover-translation.js',
-    'content/content-popup.js',
-    'options/options.js',
+  for (const [file, src] of [
+    ...['content/page/batch.js',
+      'content/page/progress.js',
+      'content/content-page-translation.js',
+      'content/content-popup.js',
+      'options/options.js'].map((rel) => [rel, repoFile(rel)]),
+    ['悬停那一族', hoverSource()],
   ]) {
     assert.doesNotMatch(
-      repoFile(file),
+      src,
       /Translator\.(create|availability|translate)\(/,
       `${file} reaches into the Translator API directly, bypassing the watchdog`,
     );
