@@ -147,8 +147,9 @@
     menu.hidden = true;
     stopEvents(menu);
 
-    // 1 — the feature switch itself.
-    const enableItem = menuItem('enable', 'captionMenuEnable', 'Translate subtitles');
+    // 1 — 这个站点自动不自动翻。字幕翻译并进主开关之后，这一行写的就是站点规
+    // 则，和 popup 上那一行是同一句话、同一份实现（SiteRules.setSiteAuto）。
+    const enableItem = menuItem('enable', 'popupSiteAuto', 'Auto-translate this site');
     const enableSwitch = document.createElement('span');
     enableSwitch.className = 'ai-translator-caption-switch';
     enableSwitch.setAttribute('role', 'switch');
@@ -158,7 +159,16 @@
     enableSwitch.appendChild(knob);
     enableItem.appendChild(enableSwitch);
     enableItem.addEventListener('click', () => {
-      writeSettings({ enableYoutubeCaptionTranslation: !ctx.settings.enableYoutubeCaptionTranslation });
+      // 黑名单站点改不动：BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，
+      // 写进去也不算数，而「顺带打开总开关」那个副作用会照跑 —— 他要的是这一个
+      // 站点，拿到的会是整个浏览器。画面上灰着，这里再挡一道。
+      if (enableItem.classList.contains('ai-cap-disabled')) return;
+      SiteRules.setSiteAuto(location.hostname, !captionsOn()).catch((error) => {
+        // 同步存储每项 8KB，规则表按域名一路长下去，这条写入是会失败的。开关是
+        // 个乐观控件，它已经在观众眼里动过了，而规则没落地 —— 下一个心跳会把它
+        // 画回真实状态，控制台留一行给我们自己。
+        console.error('Blab Translation: failed to write site rule', error);
+      });
     });
 
     // 1b — 唯一一项「现在能做的事」。原字幕没开的时候，前面那个开关已经是开的，
@@ -234,6 +244,14 @@
     return menu;
   }
 
+  /**
+   * 字幕这会儿翻不翻。答案在引擎那一层（闸门＝主开关＋站点规则），随
+   * controls.sync() 过来；控件自己不去重算一遍，重算就是第二个答案。
+   */
+  function captionsOn() {
+    return !!(ui.info || {}).enabled;
+  }
+
   /** Push the current settings and track state into the open (or closed) menu. */
   function refreshMenu() {
     const parts = ui.parts;
@@ -242,7 +260,11 @@
     const display = globalThis.CaptionCore
       ? globalThis.CaptionCore.resolveCaptionDisplay(settings)
       : { mode: 'bilingual' };
-    const enabled = !!settings.enableYoutubeCaptionTranslation;
+    const enabled = captionsOn();
+    // 黑名单站点上这一行点了也不算数，所以它得看起来就点不动。
+    const blocked = !!(globalThis.SiteRules
+      && globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname));
+    parts.enableItem.classList.toggle('ai-cap-disabled', blocked);
 
     parts.enableSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
     parts.enableSwitch.classList.toggle('ai-cap-on', enabled);
@@ -489,8 +511,10 @@
      * the menu shows. Called by the engine whenever anything it knows changes:
      * a media event, a settings change, a track arriving, the playhead moving.
      *
-     * `info` is `{ host, video, status }` — `host` is the provider's docked
-     * slot or null, `status` is `{ kind, label }` for the menu's status line.
+     * `info` is `{ host, video, enabled, status }` — `host` is the provider's
+     * docked slot or null, `enabled` is the gate the engine just computed (the
+     * main switch plus this site's rule), `status` is `{ kind, label }` for the
+     * menu's status line.
      */
     sync(info) {
       ui.info = info || {};
@@ -513,8 +537,7 @@
         return;
       }
 
-      const enabled = !!(ctx.settings || {}).enableYoutubeCaptionTranslation;
-      const active = enabled && (ui.info.status || {}).kind === 'track';
+      const active = captionsOn() && (ui.info.status || {}).kind === 'track';
       ui.button.classList.toggle('ai-cap-active', active);
       refreshMenu();
       if (ui.open) positionMenu();

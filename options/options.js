@@ -176,7 +176,6 @@ const elements = {
   ocrEngine: document.getElementById('ocrEngine'),
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
   ocrSubOptions: document.getElementById('ocrSubOptions'),
-  enableYoutubeCaptionTranslation: document.getElementById('enableYoutubeCaptionTranslation'),
   captionDisplayMode: document.getElementById('captionDisplayMode'),
   captionTranslationPosition: document.getElementById('captionTranslationPosition'),
   autoEnableCaptions: document.getElementById('autoEnableCaptions'),
@@ -314,7 +313,6 @@ const defaultSettings = {
   // Empty pdfTargetLang follows targetLang.
   enablePdfTranslation: true,
   pdfTargetLang: '',
-  enableYoutubeCaptionTranslation: false,
   // Kept in the read set, not on the page any more: it is what a profile from
   // before the display-type select migrates from (CaptionCore does the sum).
   // captionDisplayMode stays '' (unset) here for the same reason as in
@@ -1164,7 +1162,6 @@ async function loadSettings() {
     elements.comicTargetLang.value = result.comicTargetLang || '';
     elements.pdfTargetLang.value = result.pdfTargetLang || '';
     renderAccountFeatures();
-    elements.enableYoutubeCaptionTranslation.checked = !!result.enableYoutubeCaptionTranslation;
     const captionDisplay = CaptionCore.resolveCaptionDisplay(result);
     elements.captionDisplayMode.value = captionDisplay.mode;
     elements.captionTranslationPosition.value = result.captionTranslationPosition === 'above' ? 'above' : 'below';
@@ -1282,7 +1279,6 @@ function collectSettings() {
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
-    enableYoutubeCaptionTranslation: elements.enableYoutubeCaptionTranslation.checked,
     captionDisplayMode: elements.captionDisplayMode.value,
     captionTranslationPosition: elements.captionTranslationPosition.value,
     autoEnableCaptions: elements.autoEnableCaptions.checked,
@@ -1609,7 +1605,6 @@ const IMMEDIATE_SAVE_FIELDS = [
   'enableImageOcrTranslation',
   'ocrEngine',
   'enableImageOcrHoverButton',
-  'enableYoutubeCaptionTranslation',
   'captionDisplayMode',
   'captionTranslationPosition',
   'autoEnableCaptions',
@@ -1834,11 +1829,12 @@ function setupEventListeners() {
   // 总开关自己进了 IMMEDIATE_SAVE_FIELDS，这里只管把下面那块变灰。语言勾没有
   // 单独的 id，逐个挂：它们写的是同一个 autoTranslateLangs，一次点击一次写。
   elements.autoTranslate.addEventListener('change', syncAutoSubState);
+  // 字幕那张卡也跟着这一个开关灰：字幕翻不翻由主开关加站点规则说了算。
+  elements.autoTranslate.addEventListener('change', syncYoutubeSubState);
   autoLangChips().forEach(box => box.addEventListener('change', () => persistSettings()));
   elements.resetAutoStats.addEventListener('click', resetAutoStats);
   elements.clearTranslationCache.addEventListener('click', clearTranslationCache);
 
-  elements.enableYoutubeCaptionTranslation.addEventListener('change', syncYoutubeSubState);
   elements.captionDisplayMode.addEventListener('change', updateCaptionPreview);
   elements.captionTranslationPosition.addEventListener('change', updateCaptionPreview);
   elements.youtubeCaptionFontColor.addEventListener('input', updateCaptionPreview);
@@ -1926,10 +1922,12 @@ function syncInlineSettingState() {
   elements.hoverTranslationHotkey.disabled = !hoverEnabled;
 }
 
-// Grey out the YouTube caption sub-options when the feature itself is off.
+// 字幕的选项跟着主开关灰掉。字幕自己没有开关了：翻不翻由主开关加站点规则说了
+// 算（content/content-video-captions.js 的 siteRefused），总开关关着的时候，底
+// 下这些「字幕怎么画」的选项一个也轮不到。
 function syncYoutubeSubState() {
   if (!elements.youtubeSubOptions) return;
-  elements.youtubeSubOptions.classList.toggle('disabled', !elements.enableYoutubeCaptionTranslation.checked);
+  elements.youtubeSubOptions.classList.toggle('disabled', !elements.autoTranslate.checked);
 }
 
 // Same, for image OCR. There is deliberately no language picker to sync:

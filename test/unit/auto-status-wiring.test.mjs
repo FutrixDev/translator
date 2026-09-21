@@ -57,11 +57,16 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
   assert.match(rules, /async function applyUserRule\(\{ host, state \}\)/);
   assert.match(rules, /const key = normalizeHost\(host\);/);
 
-  // 三个写入点（追问条、popup、设置页）都得走它。各自拼一次键，写进去的和
-  // decide() 读出来的迟早不是同一个。
-  for (const file of ['content/content-auto-status.js', 'popup/popup.js']) {
+  // 四个写入点（追问条、popup、播放器里的字幕菜单、设置页）都得走它。各自拼一
+  // 次键，写进去的和 decide() 读出来的迟早不是同一个。
+  const WRITERS = [
+    'content/content-auto-status.js',
+    'popup/popup.js',
+    'content/content-caption-controls.js',
+  ];
+  for (const file of WRITERS) {
     const source = code(file);
-    assert.match(source, /SiteRules\.writeUserRule\(/, `${file} 应当走共用的写入口`);
+    assert.match(source, /SiteRules\.(writeUserRule|setSiteAuto)\(/, `${file} 应当走共用的写入口`);
     for (const hit of source.match(/[\w.]*normalizeHost/g) || []) {
       assert.ok(hit.endsWith('SiteRules.normalizeHost'), `${file} 的 normalizeHost 必须是共用那一个`);
     }
@@ -69,11 +74,24 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
   }
 });
 
-test('popup 的「关」写的是 never，不是把规则删掉', () => {
+test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
+  // popup 上那一行和播放器里字幕菜单的第一行说的是同一句话（字幕并进主开关之
+  // 后）。两处各写一遍，迟早一处写 never、另一处写「把规则删掉」。
+  const rules = code('shared/site-rules.js');
+  assert.match(rules, /async function setSiteAuto\(hostname, on\)/);
+  assert.match(rules, /^\s*setSiteAuto,$/m, 'setSiteAuto 没有导出');
+
+  assert.match(code('popup/popup.js'), /SiteRules\.setSiteAuto\(pageState\.host, !on\)/);
+  assert.match(code('content/content-caption-controls.js'),
+    /SiteRules\.setSiteAuto\(location\.hostname, !captionsOn\(\)\)/);
+});
+
+test('「关」写的是 never，不是把规则删掉', () => {
   // 删掉之后判定往下落到内置名单，而 x.com、reddit.com 在内置名单里就是 always
   // —— 用户刚关掉，下一次打开又自动翻了，规则表里还干干净净。
-  const popup = code('popup/popup.js');
-  assert.match(popup, /writeUserRule\(pageState\.host, on \? 'never' : 'always'\)/);
+  const rules = code('shared/site-rules.js');
+  const body = rules.slice(rules.indexOf('async function setSiteAuto(hostname, on)'));
+  assert.match(body.slice(0, 600), /writeUserRule\(hostname, on \? 'always' : 'never'\)/);
 });
 
 test('popup 的三行从同一次往返画出来', () => {
@@ -397,7 +415,17 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
     popup.indexOf('async function togglePageTranslation()'));
   const guard = body.indexOf('pageState.blocked');
   assert.ok(guard > 0, 'toggleSiteAuto 里没有黑名单闸');
-  assert.ok(guard < body.indexOf('autoTranslate: true'), '闸必须在打开总开关之前');
+  assert.ok(guard < body.indexOf('SiteRules.setSiteAuto('), '闸必须在写规则之前');
+
+  // 播放器里那一行是同一个开关的第二块画布，同样得挡住：写 always 下去不算数，
+  // 而「顺带打开总开关」那个副作用会照跑。
+  const controls = code('content/content-caption-controls.js');
+  assert.match(controls, /SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', blocked\);/);
+  const click = controls.slice(controls.indexOf("enableItem.addEventListener('click'"));
+  const capGuard = click.indexOf("ai-cap-disabled");
+  assert.ok(capGuard > 0 && capGuard < click.indexOf('SiteRules.setSiteAuto('),
+    '字幕菜单那一行点下去之前得先看黑名单');
 
   // **不许**回头去读 auto.reason：总开关关着时它是 GLOBAL_OFF，黑名单被遮住，
   // 而那正是这个开关最该灰着的时候（site-rules.test.mjs 里有这一条的行为断言）。
@@ -418,15 +446,22 @@ test('站点规则先落地，总开关才跟着开', () => {
   // 反过来写的话，规则写失败（同步存储配额）时总开关已经替所有别的站点开好了：
   // 他点的是一个站点，拿到的是整个浏览器。漏掉的那半边不伤人 —— 规则落了地而
   // 总开关没开，再点一次就补上了。
-  const popup = code('popup/popup.js');
-  const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
-    popup.indexOf('async function togglePageTranslation()'));
-  const rule = body.indexOf('writeUserRule(');
-  const globalOn = body.indexOf('autoTranslate: true');
+  const rules = code('shared/site-rules.js');
+  const body = rules.slice(rules.indexOf('async function setSiteAuto(hostname, on)'));
+  const fn = body.slice(0, body.indexOf('\n  }') + 4);
+  const rule = fn.indexOf('writeUserRule(');
+  const globalOn = fn.indexOf('autoTranslate: true');
   assert.ok(rule > 0 && globalOn > 0, '两条写入都得在这个函数里');
   assert.ok(globalOn > rule, '总开关不该排在站点规则前面');
-  // 两条都在同一个 try 里，失败才说得出口。
-  assert.ok(body.indexOf('try {') < rule && rule < body.indexOf('} catch (error) {'));
+  // 规则写不进去就该抛出去 —— 两条写入之间没有 catch，调用方才答得出「没存上」。
+  assert.equal(/catch/.test(fn), false, 'setSiteAuto 不该自己把失败吞掉');
+
+  // 调用方接得住：popup 那一行失败了要说得出口。
+  const popup = code('popup/popup.js');
+  const toggle = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
+    popup.indexOf('async function togglePageTranslation()'));
+  const call = toggle.indexOf('SiteRules.setSiteAuto(');
+  assert.ok(toggle.indexOf('try {') < call && call < toggle.indexOf('} catch (error) {'));
 });
 
 test('译文藏着的时候改了规则也得重判 —— 否则那个站点开关关不掉', () => {

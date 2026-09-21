@@ -35,7 +35,6 @@ const LANGS = globalThis.UI_LANGUAGES;
 // controls that reach the same settings.
 const CAPTION_KEYS = [
   'captionControlsLabel',
-  'captionMenuEnable',
   'captionDisplayMode',
   'captionModeBilingual',
   'captionModeTranslation',
@@ -58,7 +57,10 @@ const CAPTION_KEYS = [
   // The popup row and the options card that were already there and had to move
   // with the feature — they name the same thing the button does now.
   'youtubeCaptions',
-  'enableYoutubeCaptionTranslation',
+  // 字幕并进主开关之后，菜单第一行写的就是站点规则，和 popup 上那一行同一句话
+  // 同一个 key；设置页那张卡剩下的是一句「跟着主开关走」的说明。
+  'popupSiteAuto',
+  'captionFollowsAutoTranslate',
 ];
 
 test('every UI language block exists', () => {

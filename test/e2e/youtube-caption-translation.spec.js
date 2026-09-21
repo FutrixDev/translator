@@ -52,7 +52,6 @@ const BASE_SETTINGS = {
   apiKey: 'sk-test',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   modelName: 'gpt-4.1-mini',
-  enableYoutubeCaptionTranslation: true,
 };
 
 const timedtextBody = JSON.stringify({
@@ -427,10 +426,13 @@ test('the button docks into the player control bar, first in the right cluster',
   await expect(page.locator('#ai-translator-caption-controls')).toHaveCount(0);
 });
 
-// The whole point of watching with the feature off: the button is how you
-// turn it on, so it cannot itself depend on the feature being on.
-test('the button is there with the feature off, and turns it on', async ({ page, context }) => {
-  await openPlayer(page, context, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+// The whole point of watching with the gate shut: the button is how you open
+// it, so it cannot itself depend on the gate being open.
+//
+// 而「开」现在是一条站点规则加主开关，不是一个字幕专用的设置项：菜单第一行和
+// popup 上那一行说的是同一句话，走的是同一个 SiteRules.setSiteAuto。
+test('the button is there with the gate shut, and opens it', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoTranslate: false });
 
   const button = page.locator('#ai-translator-caption-btn');
   await expect(button).toHaveCount(1);
@@ -438,7 +440,15 @@ test('the button is there with the feature off, and turns it on', async ({ page,
   await button.click();
   await page.locator('#ai-translator-caption-menu .ai-translator-caption-switch').click();
 
-  await expect.poll(() => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
+  // 两件事都得发生，缺一不可：这个站点落一条 always，而总开关跟着打开——只写规
+  // 则的话，用户刚说了「翻这个站点」，却因为一个他此刻看不见的总开关而什么都不
+  // 发生。
+  await expect.poll(() => getSyncSetting(context, 'autoTranslate')).toBe(true);
+  await expect.poll(async () => {
+    const rules = await getSyncSetting(context, 'siteRules');
+    // 存进去的键过了 normalizeHost：www. 被剥掉。
+    return (rules || {})['youtube.com'];
+  }).toBe('always');
 });
 
 // A2 — the menu's five rows, in order, in the reader's language.
@@ -453,7 +463,7 @@ test('the menu lists the five rows in order', async ({ page, context }) => {
   // visibility. This player has subtitles on, so five is the whole menu.
   const labels = await menu.locator('[role="menuitem"]:not([hidden]) .ai-translator-caption-menu-label').allTextContents();
   expect(labels).toEqual([
-    '开启字幕翻译',
+    '自动翻译这个站点',
     '字幕显示类型',
     '译文位置',
     '字幕样式',

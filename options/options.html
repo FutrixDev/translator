@@ -425,14 +425,10 @@
             <span data-i18n="youtubeSettings">Video Subtitles</span>
           </h2>
 
-          <div class="toggle-group">
-            <label class="toggle-label">
-              <span data-i18n="enableYoutubeCaptionTranslation">Video Subtitle Translation</span>
-              <input type="checkbox" id="enableYoutubeCaptionTranslation">
-              <span class="toggle-slider"></span>
-            </label>
-            <span class="hint" data-i18n-hint="hintEnableYoutubeCaptionTranslation"></span>
-          </div>
+          <!-- 这张卡里没有「开 / 关」：字幕翻不翻跟着主开关和站点规则走（见
+               content/content-video-captions.js 的 siteRefused）。少了这一行，一
+               张只剩「显示方式」的卡片读起来像是字幕永远在翻。 -->
+          <p class="hint" data-i18n-hint="captionFollowsAutoTranslate"></p>
 
           <div class="feature-suboptions" id="youtubeSubOptions">
             <div class="form-group">
