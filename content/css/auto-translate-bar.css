@@ -100,13 +100,13 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"
   color: #e8e8f0;
 }
 
-/* 展开说明时只剩一行字和一个关闭。追问那几个控件留在 DOM 里不重建 —— 用户点掉
-   说明之后，还没回答的那一问要原样回来。 */
-#ai-translator-auto-bar[data-mode="explain"] .ai-translator-auto-remember {
+/* 展开说明和「没存上」都只剩一行字和一个关闭。追问那几个控件留在 DOM 里不重建
+   —— 用户点掉说明之后，还没回答的那一问要原样回来。 */
+#ai-translator-auto-bar:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-remember {
   display: none;
 }
 
-html body [id="ai-translator-auto-bar"][data-mode="explain"] .ai-translator-auto-btn[data-act="translate"],
-html body [id="ai-translator-auto-bar"][data-mode="explain"] .ai-translator-auto-btn[data-act="dismiss"] {
+html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="translate"],
+html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="dismiss"] {
   display: none;
 }
