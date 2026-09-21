@@ -16,6 +16,9 @@
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getLangBase = ctx.getLangBase;
+  // 「这两门语言算一门吗」的判定在 shared/lang-tags.js，由 content-language.js
+  // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
+  const isSameLanguage = ctx.isSameLanguage;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
@@ -282,7 +285,7 @@
     // 比整码，走的是和字幕引擎、和自动翻译决策层同一个判定
     // （shared/lang-tags.js）。曾经这里比基码而字幕那边比整码：一页 zh-TW 的正文
     // 配 zh-CN 的目标，字幕翻、正文不翻，同一个问题两条路两个答案。
-    return ctx.isSameLanguage(await detectReliableLanguage(text), targetLang);
+    return isSameLanguage(await detectReliableLanguage(text), targetLang);
   }
 
   async function shouldSkipTranslation(block, translation, target) {

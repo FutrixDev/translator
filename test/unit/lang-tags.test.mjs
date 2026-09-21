@@ -109,7 +109,7 @@ test('三条路问的是同一句：字幕、整页正文、自动翻译的决�
   );
   assert.match(
     repoFile('content/page/batch.js'),
-    /ctx\.isSameLanguage\(await detectReliableLanguage\(text\), targetLang\)/,
+    /isSameLanguage\(await detectReliableLanguage\(text\), targetLang\)/,
     '整页翻译的「这一段已经是目标语言了」要走共用判定',
   );
 
