@@ -219,7 +219,7 @@
     if (existing && (existing.running || existing.badge)) return;
 
     const entry = {
-      ...newEntry(img),
+      ...comic.newEntry(img),
       jobId: record.jobId,
       jobStartedAt: record.createdAt,
       // Records written before modes existed are all translations.
