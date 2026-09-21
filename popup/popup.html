@@ -115,6 +115,9 @@
   </div>
 
   <script src="../i18n/messages.js"></script>
+  <!-- 语言标签的判定（基码、简繁、同语言）只有这一份，caption-core 和
+       site-rules 都在加载时就取走它，所以它要排在两者之前。 -->
+  <script src="../shared/lang-tags.js"></script>
   <!-- 内置名单要排在 site-rules.js 之前：它是那个模块 table() 的数据源，而
        table() 没有它时静静地退回一张空表 —— 空表的 isBlocked() 对每一个域名都
        答「不在黑名单里」。这里今天只用 writeUserRule，用不着判定；配一份数据源

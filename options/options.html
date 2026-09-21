@@ -193,9 +193,12 @@
           </div>
 
           <div class="feature-suboptions" id="autoSubOptions">
-            <!-- Base codes, because that is what the rule is judged on:
-                 decide() puts both sides through baseLang(), so zh-CN and
-                 zh-TW are one tick here. A tick means "a page written in this
+            <!-- Base codes, because that is what THIS rung is judged on:
+                 decide() puts both sides of the language list through
+                 baseLang(), so zh-CN and zh-TW are one tick here. (Its
+                 same-language rung compares whole tags — a Traditional page
+                 with a Simplified target is a real translation. Two rungs, two
+                 questions; see shared/lang-tags.js.) A tick means "a page written in this
                  language may be translated automatically" — not "translate
                  into this language", which is the Target Language select
                  above, and not "I read it, so leave it alone" either: a
@@ -793,6 +796,9 @@
   <script src="../shared/default-settings.js"></script>
   <script src="../shared/engine-status.js"></script>
   <script src="../shared/ocr.js"></script>
+  <!-- 语言标签的判定（基码、简繁、同语言）只有这一份，caption-core 和
+       site-rules 都在加载时就取走它，所以它要排在两者之前。 -->
+  <script src="../shared/lang-tags.js"></script>
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->
   <script src="../shared/caption-core.js"></script>

@@ -11,10 +11,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/site-rules.js');
-await import('../../shared/caption-core.js');
-const { SiteRules, SiteRulesBuiltin, CaptionCore } = globalThis;
+const { SiteRules, SiteRulesBuiltin, LangTags } = globalThis;
 const R = SiteRules.REASONS;
 
 // 一页普通的英文网页，开着自动翻译，什么规则都没命中——阶梯的中性起点。
@@ -112,8 +112,9 @@ test('a user rule outranks the built-in table, in both directions', () => {
 });
 
 test('the language rules only gate the sites nobody has spoken for', () => {
-  // 同语言：翻了等于没翻。
-  assert.equal(verdict({ pageLang: 'zh-TW', targetLang: 'zh-CN' }).reason, R.SAME_LANGUAGE);
+  // 同语言：翻了等于没翻。比的是整码——zh-TW 配 zh-CN 是两套字，不算同语言。
+  assert.equal(verdict({ pageLang: 'zh-Hans', targetLang: 'zh-CN' }).reason, R.SAME_LANGUAGE);
+  assert.notEqual(verdict({ pageLang: 'zh-TW', targetLang: 'zh-CN' }).reason, R.SAME_LANGUAGE);
   // 不在名单里。
   const listed = { autoTranslate: true, autoTranslateLangs: ['en', 'ja'] };
   assert.equal(verdict({ pageLang: 'de', settings: listed }).reason, R.LANG_NOT_LISTED);
@@ -143,20 +144,40 @@ test('the default answer for an unknown site is ask, never auto', () => {
   }
 });
 
-test('the language judgement agrees with the one the captions use', () => {
-  // 两个模块各有一份 getLangBase。一旦分叉，同一对语言在整页翻译里算“同语言”、
-  // 在字幕里不算——这种不一致只会以“有时候不翻”的形式被用户看见。
-  const pairs = [
+test('「这一页已经是你的语言了」问的是那个共用的判定，而且比整码', () => {
+  // 判定只有一份（shared/lang-tags.js），行为断言在 lang-tags.test.mjs。这里守
+  // 的是**这一档确实在用它**：曾经这里比基码而字幕那边比整码，于是一页 zh-TW 的
+  // 正文配 zh-CN 的目标，字幕翻、正文不翻——同一个问题两条路两个答案。
+  for (const [a, b] of [
     ['zh-CN', 'zh-Hans'], ['en-GB', 'en'], ['EN', 'en-US'],
     ['pt-BR', 'pt-PT'], ['ja', 'ja-JP'],
-  ];
-  for (const [a, b] of pairs) {
-    assert.equal(CaptionCore.getLangBase(a), CaptionCore.getLangBase(b), `test data wrong for ${a}/${b}`);
+  ]) {
+    assert.ok(LangTags.isSameLanguage(a, b), `test data wrong for ${a}/${b}`);
     assert.equal(verdict({ pageLang: a, targetLang: b }).reason, R.SAME_LANGUAGE,
-      `site-rules reads ${a}/${b} as different languages, caption-core does not`);
+      `site-rules reads ${a}/${b} as different languages, lang-tags does not`);
   }
-  // 反过来也要一致：base 不同就不是同语言。
+
+  // 简繁互换是用户要的那一件事，这一档不许把它挡掉。
+  for (const [a, b] of [['zh-TW', 'zh-CN'], ['zh-Hant', 'zh-Hans'], ['zh-HK', 'zh-CN']]) {
+    const out = verdict({ pageLang: a, targetLang: b });
+    assert.notEqual(out.reason, R.SAME_LANGUAGE, `${a} -> ${b} 被当成了同一门语言`);
+  }
+
+  // 基码不同当然更不是同语言。
   assert.equal(verdict({ pageLang: 'en', targetLang: 'zh-CN' }).verdict, 'ask');
+});
+
+test('可翻语言名单反过来按基码，勾的是「中文」不是「简体中文」', () => {
+  // autoTranslateLangs 是设置页上那张勾选表，值是基码。拿整码比，一个勾了 zh 的
+  // 用户会被这一档挡在所有 zh-CN 的页面外面。
+  const listed = (pageLang) => SiteRules.decide(ask({
+    pageLang, targetLang: 'en',
+    settings: { autoTranslate: true, autoTranslateLangs: ['zh', 'ja'] },
+  }));
+  assert.equal(listed('zh-CN').reason, R.DEFAULT_ASK);
+  assert.equal(listed('zh-TW').reason, R.DEFAULT_ASK);
+  assert.equal(listed('ja-JP').reason, R.DEFAULT_ASK);
+  assert.equal(listed('de').reason, R.LANG_NOT_LISTED);
 });
 
 // ------------------------------------------------------------ 主机名
@@ -687,42 +708,51 @@ test('总开关关着但用户已经在这一页表过态，就不算这个站�
   assert.equal(held.refused, false);
 });
 
-test('四份装载清单：加载了 site-rules.js 的地方，都配着它的数据源', async () => {
-  // table() 拿不到 root.SiteRulesBuiltin 时不抛，它退回一张空表 —— 于是
-  // matchBuiltin() 谁也不认，isBlocked() 对每一个域名都答「不在黑名单里」。
-  // 那份禁翻清单（网银、网页邮箱、政务表单）就这么静静地没了，而控制台里只有
-  // 一行 warn。所以这两个文件是一对，不是一个带一个可选的附件。
+// 四份装载清单，一份都不能漏：manifest 的 <all_urls> 那一条、service worker 的
+// import、设置页和弹窗的 <script>。共用模块是按顺序加载的经典脚本，**谁在谁前面
+// 就是依赖关系本身**——漏一处的表现不是报错，是那一处静静地换了一套行为。
+const LOAD_LISTS = [
+  ['background/background.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['options/options.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
+  ['popup/popup.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
+];
+
+// [依赖方, 被依赖方, 漏了会怎样]
+const LOAD_ORDER = [
+  ['shared/site-rules.js', 'shared/site-rules-builtin.js',
+   'table() 拿不到数据源时不抛，它退回一张空表 —— matchBuiltin() 谁也不认，'
+   + 'isBlocked() 对每一个域名都答「不在黑名单里」。那份禁翻清单（网银、网页'
+   + '邮箱、政务表单）就这么静静地没了，而控制台里只有一行 warn。'],
+  ['shared/site-rules.js', 'shared/lang-tags.js',
+   'site-rules.js 在加载时就把 getLangBase 取走了。'],
+  ['shared/caption-core.js', 'shared/lang-tags.js',
+   'caption-core.js 在加载时就把 getLangBase 取走了。'],
+];
+
+test('四份装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const read = (rel) => readFileSync(root + rel, 'utf8');
 
   const manifest = JSON.parse(read('manifest.json'));
-  for (const cs of manifest.content_scripts) {
-    const order = (cs.js || []);
-    const rules = order.indexOf('shared/site-rules.js');
-    if (rules < 0) continue;
-    const builtin = order.indexOf('shared/site-rules-builtin.js');
-    assert.ok(builtin >= 0, `${cs.matches} 装了 site-rules.js 却没装数据源`);
-    assert.ok(builtin < rules, '数据源必须排在 site-rules.js 之前');
-  }
+  for (const [dependent, dependency, why] of LOAD_ORDER) {
+    for (const cs of manifest.content_scripts) {
+      const order = (cs.js || []);
+      const at = order.indexOf(dependent);
+      if (at < 0) continue;
+      const dep = order.indexOf(dependency);
+      assert.ok(dep >= 0, `${cs.matches} 装了 ${dependent} 却没装 ${dependency}：${why}`);
+      assert.ok(dep < at, `${cs.matches} 里 ${dependency} 必须排在 ${dependent} 之前`);
+    }
 
-  for (const [file, rulesPattern, builtinPattern] of [
-    ['background/background.js',
-      /import '\.\.\/shared\/site-rules\.js';/,
-      /import '\.\.\/shared\/site-rules-builtin\.js';/],
-    ['options/options.html',
-      /<script src="\.\.\/shared\/site-rules\.js"><\/script>/,
-      /<script src="\.\.\/shared\/site-rules-builtin\.js"><\/script>/],
-    ['popup/popup.html',
-      /<script src="\.\.\/shared\/site-rules\.js"><\/script>/,
-      /<script src="\.\.\/shared\/site-rules-builtin\.js"><\/script>/]
-  ]) {
-    const text = read(file);
-    const rules = text.search(rulesPattern);
-    if (rules < 0) continue;
-    const builtin = text.search(builtinPattern);
-    assert.ok(builtin >= 0, `${file} 装了 site-rules.js 却没装数据源`);
-    assert.ok(builtin < rules, `${file} 里数据源要排在 site-rules.js 之前`);
+    for (const [file, pattern] of LOAD_LISTS) {
+      const text = read(file);
+      const at = text.search(pattern(dependent));
+      if (at < 0) continue;
+      const dep = text.search(pattern(dependency));
+      assert.ok(dep >= 0, `${file} 装了 ${dependent} 却没装 ${dependency}：${why}`);
+      assert.ok(dep < at, `${file} 里 ${dependency} 要排在 ${dependent} 之前`);
+    }
   }
 });

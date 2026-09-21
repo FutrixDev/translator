@@ -18,6 +18,14 @@
 (function (root) {
   'use strict';
 
+  // 语言标签的判定只有一个主人：shared/lang-tags.js。这里取走的是**它**的
+  // getLangBase —— 字幕轨道按声道语言挑轨（pickSubtitleTrack）要它，整页翻译
+  // 和决策层要的是同一个函数。取不到就立刻炸，因为装载顺序错了的表现否则是
+  // 「挑轨这一步静静地不工作」。
+  const LangTags = root.LangTags;
+  if (!LangTags) throw new Error('caption-core.js 要先装 shared/lang-tags.js');
+  const { getLangBase } = LangTags;
+
   // Merge short ASR fragments into full sentences, so the model translates
   // coherent units (not word-fragments) and the reader sees a complete line
   // while it is being spoken.
@@ -319,56 +327,6 @@
     return null;
   }
 
-  function getLangBase(lang) {
-    if (!lang) return '';
-    return String(lang).split('-')[0].toLowerCase();
-  }
-
-  // Regions whose Chinese is written in one script or the other. A tag rarely
-  // carries the script subtag itself — YouTube ships `zh-Hans`/`zh-Hant`, but a
-  // <track> in the wild is `zh-CN` or `zh-TW` far more often.
-  const ZH_HANT_SUBTAGS = new Set(['hant', 'tw', 'hk', 'mo']);
-  const ZH_HANS_SUBTAGS = new Set(['hans', 'cn', 'sg', 'my']);
-
-  /**
-   * Which script a Chinese tag is written in — 'hans', 'hant', or '' for "this
-   * tag does not say", which includes every non-Chinese language.
-   */
-  function getScriptVariant(lang) {
-    const parts = String(lang || '').toLowerCase().split('-').filter(Boolean);
-    if (parts[0] !== 'zh') return '';
-    for (let i = 1; i < parts.length; i += 1) {
-      if (ZH_HANT_SUBTAGS.has(parts[i])) return 'hant';
-      if (ZH_HANS_SUBTAGS.has(parts[i])) return 'hans';
-    }
-    return '';
-  }
-
-  /**
-   * Are these two tags the same language *in the same script*?
-   *
-   * The base code alone is not that question. `zh-CN` and `zh-TW` both reduce
-   * to `zh`, and they are two writing systems: a Traditional track against a
-   * Simplified target is exactly the case a viewer wants converted, and base
-   * equality answers "already in your language" and translates nothing at all.
-   * Everywhere else the base is the whole answer — `en-GB` against `en` is the
-   * same English, and paying to translate it would be the bug.
-   *
-   * A tag that does not say which script it is in counts as a match, because
-   * `zh` against `zh-CN` is genuinely unknown and this answer is a spend gate:
-   * guessing "different" there bills the viewer for a translation that is
-   * probably a no-op, and guessing "same" costs him nothing he had.
-   */
-  function isSameLanguage(a, b) {
-    const baseA = getLangBase(a);
-    const baseB = getLangBase(b);
-    if (!baseA || !baseB || baseA !== baseB) return false;
-    const scriptA = getScriptVariant(a);
-    const scriptB = getScriptVariant(b);
-    if (!scriptA || !scriptB) return true;
-    return scriptA === scriptB;
-  }
-
   /**
    * Which of a video's subtitle tracks to translate, given `{track, isDefault}`
    * entries (isDefault is the `default` attribute on the `<track>` element,
@@ -510,8 +468,5 @@
     selectProvider,
     pickSubtitleTrack,
     hasActiveSubtitleTrack,
-    getLangBase,
-    getScriptVariant,
-    isSameLanguage,
   };
 })(globalThis);

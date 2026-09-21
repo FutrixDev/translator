@@ -53,6 +53,16 @@
 
 ### Fixes
 
+- **A page and its subtitles no longer disagree about what language you
+  read.** Page translation compared base codes (`zh`) while the caption engine
+  compared whole tags (`zh-TW`), so on a Traditional Chinese page with
+  Simplified as your target the subtitles were translated and the body text was
+  silently skipped — the same question, two routes, two answers. There is now
+  one owner of that judgement, `shared/lang-tags.js`, and both routes ask it:
+  whole tags, so Simplified↔Traditional is a real translation and `en-GB` to
+  `en` is still not. The language list in the settings page keeps working on
+  base codes, because what you tick there is 「中文」, not 「简体中文」.
+
 - A page stuck on a missing built-in language pack now recovers by itself the
   moment the pack lands, whether it was downloaded by the page's own prefetch
   or by the button in the settings page — previously it stayed blank until a

@@ -230,7 +230,14 @@
 
   /**
    * 这段文字是什么语言 —— 只在够有把握时回答。
-   * @returns {Promise<?string>} 语言基码（'en' / 'zh' …），判不出或不够有把握时 null
+   *
+   * 回的是**整码**（'en'、'zh-CN'、'zh-TW' …），不砍成基码。chrome.i18n 的
+   * 检测器本来就分得出简繁，砍掉那个子标签就等于把这个区别丢在这里：一份繁体
+   * 的正文配简体的目标语言，下一步会认成「本来就是目标语言」，整页一个字也不
+   * 翻——而那正是用户要的那一件事。要基码的调用方自己取（getLangBase 在
+   * shared/lang-tags.js），因为砍了就再也接不回来。
+   *
+   * @returns {Promise<?string>} 语言标签，判不出或不够有把握时 null
    */
   async function detectReliableLanguage(text) {
     const detectText = getLanguageDetectionText(text);
@@ -243,7 +250,7 @@
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
     if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
 
-    return getLangBase(topLang.language);
+    return topLang.language || null;
   }
 
   // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。
@@ -271,9 +278,11 @@
   // 那时候还没有「这一轮」，现问就是对的）。一轮之内的调用一律把 target.request
   // 传进来 —— 那一门在开跑时就定死了，见 passTarget。
   async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
-    const targetBase = getLangBase(targetLang);
-    if (!targetBase) return false;
-    return (await detectReliableLanguage(text)) === targetBase;
+    if (!getLangBase(targetLang)) return false;
+    // 比整码，走的是和字幕引擎、和自动翻译决策层同一个判定
+    // （shared/lang-tags.js）。曾经这里比基码而字幕那边比整码：一页 zh-TW 的正文
+    // 配 zh-CN 的目标，字幕翻、正文不翻，同一个问题两条路两个答案。
+    return ctx.isSameLanguage(await detectReliableLanguage(text), targetLang);
   }
 
   async function shouldSkipTranslation(block, translation, target) {
