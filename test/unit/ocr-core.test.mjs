@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoPath = (rel) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
 const repoFile = (rel) => readFileSync(repoPath(rel), 'utf8');
-const { workerSource, messageCatalog } = await import('./helpers/sources.mjs');
+const { comicSource, workerSource, messageCatalog } = await import('./helpers/sources.mjs');
 
 await import('../../shared/ocr.js');
 await import('../../shared/api-compat.js');
@@ -826,10 +826,16 @@ test('every locale carries the OCR strings the worker, popup and options look up
 test('only content-utils.js watches the document for a right-click', () => {
   // A listener on our own picker root is a different question ("cancel"), so
   // this looks for the document-level one alone.
-  const files = ['content/content-utils.js', 'content/content-comic-translation.js',
-    'content/content-image-ocr.js', 'content/content-messaging.js'];
-  const watching = files.filter((file) =>
-    /document\.addEventListener\(\s*['"]contextmenu['"]/.test(repoFile(file)));
+  const surfaces = [
+    ['content/content-utils.js', repoFile('content/content-utils.js')],
+    // 漫画翻译拆成了 content/comic/*.js 加一个入口，所以这里问的是那一族，不是某一份。
+    ['漫画翻译那一族', comicSource()],
+    ['content/content-image-ocr.js', repoFile('content/content-image-ocr.js')],
+    ['content/content-messaging.js', repoFile('content/content-messaging.js')],
+  ];
+  const watching = surfaces
+    .filter(([, src]) => /document\.addEventListener\(\s*['"]contextmenu['"]/.test(src))
+    .map(([name]) => name);
   assert.deepEqual(watching, ['content/content-utils.js'],
     'the right-clicked image is tracked once, in content-utils.js');
 });
@@ -839,8 +845,8 @@ test('the image helpers both features share are not restated by either', () => {
   for (const name of ['imageAtPoint', 'getLastContextImage', 'renderedArea', 'imageMatchesSrc']) {
     assert.ok(utils.includes(`ctx.${name} = `), `content-utils.js must own ${name}`);
   }
-  for (const file of ['content/content-comic-translation.js', 'content/content-image-ocr.js']) {
-    const src = repoFile(file);
+  for (const [file, src] of [['漫画翻译那一族', comicSource()],
+    ['content/content-image-ocr.js', repoFile('content/content-image-ocr.js')]]) {
     for (const name of ['imageAtPoint', 'renderedArea']) {
       assert.equal(
         new RegExp(`function\\s+${name}\\s*\\(`).test(src), false,

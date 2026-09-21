@@ -76,3 +76,14 @@ export function contentCss() {
     .map((rel) => readFileSync(path.join(ROOT, rel), 'utf8'))
     .join('\n');
 }
+
+/**
+ * 漫画翻译全体：content/comic/*.js 加上入口 content/content-comic-translation.js。
+ *
+ * 「这个功能有没有自己去做某件事」问的是这一族 —— 认页、台账、覆盖层、任务记忆、
+ * 文案分在五个文件里，哪个函数落在哪一份是排版，不是契约。
+ */
+export function comicSource() {
+  return [surfaceSource('content/comic', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'content/content-comic-translation.js'), 'utf8')].join('\n');
+}

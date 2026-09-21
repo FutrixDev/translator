@@ -119,6 +119,11 @@
         "content/content-auto-status.js",
         "content/content-hover-translation.js",
         "content/content-image-ocr.js",
+        "content/comic/pages.js",
+        "content/comic/entries.js",
+        "content/comic/overlay.js",
+        "content/comic/memory.js",
+        "content/comic/prompts.js",
         "content/content-comic-translation.js",
         "content/content-messaging.js",
         "content/content.js"

@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const { workerSource } = await import('./helpers/sources.mjs');
+const { comicSource, workerSource } = await import('./helpers/sources.mjs');
 
 // No `export`: the extension's own pages load it as a classic script, so
 // importing it for its side effect publishes globalThis.ChargeConfirm.
@@ -262,7 +262,7 @@ test('the PDF create path asks through the shared module, and only that one', ()
   for (const [name, src] of [['the service worker', workerSource()],
     ['popup/popup.js', repoFile('popup/popup.js')],
     ['pdf/upload.js', repoFile('pdf/upload.js')],
-    ['content/content-comic-translation.js', repoFile('content/content-comic-translation.js')]]) {
+    ['漫画翻译那一族', comicSource()]]) {
     assert.doesNotMatch(src, /function submitWithConfirmation/,
       `${name} must call the shared handshake, not restate it`);
   }
