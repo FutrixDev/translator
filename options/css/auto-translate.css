@@ -1,0 +1,147 @@
+/* ── Automatic translation ───────────────────────────────────────
+   Three blocks under one toggle: which languages, which sites, and what it
+   has cost this month. All three live inside `.feature-suboptions`, so they
+   inherit the indent and the dimming when the master switch is off. */
+
+/* Language chips. A checkbox each, drawn as a pill — nine of them wrap into
+   two rows at this card's width, where nine checkbox rows would push the site
+   list off the first screen. The input stays a real checkbox (keyboard,
+   :checked, form semantics); only its box is hidden. */
+.lang-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.lang-chip input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.lang-chip:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.lang-chip:has(input:checked) {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: #ffffff;
+}
+
+/* The checkbox is visually gone, so the focus ring has to land on the pill —
+   otherwise tabbing through the row shows nothing at all. */
+.lang-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
+}
+
+/* The chips are a sub-option of the switch; the audit table and the counters
+   below them are not, so they sit outside `.feature-suboptions` (see
+   options.html for why). Every other card ends with that container, so it
+   carries no bottom margin — this card is the one that needs one, and the
+   20px matches `.form-group`'s own rhythm. */
+#autoTranslateCard .feature-suboptions {
+  margin-bottom: 20px;
+}
+
+/* The site audit table. One row per decision the user made in the popup. */
+.site-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.site-rules-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.site-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.site-rule-host {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-rule-state {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.site-rule-always {
+  color: var(--success);
+}
+
+.site-rule-never {
+  color: var(--text-muted);
+}
+
+.site-rule-forget {
+  flex-shrink: 0;
+}
+
+/* This month's counters. auto-fit rather than three fixed columns: the card
+   spans the grid on a wide window and is one column on a narrow one. */
+.auto-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.auto-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.auto-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
