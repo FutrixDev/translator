@@ -64,6 +64,11 @@
   // 管住「一次追问只记一笔」——不然一次「问了一遍」会被记成十几次。
   let askSlot = 'none';
   let explaining = false;
+  // 一句要让用户看见的话，显示到他自己关掉为止。今天只有一个来源：他勾了「总是」
+  // 而那条规则没能写进去。**不能只写一行控制台日志** —— 勾选框是个乐观控件，他
+  // 看到的是「记住了」，而下一次打开这个站点还会再问一遍，中间没有任何地方提起过
+  // 这件事。（popup 上同一件事说的是同一句话，见 popupSiteRuleFailed。）
+  let notice = '';
 
   // ------------------------------------------------------------------ 计数
 
@@ -233,8 +238,11 @@
 
     // dismiss 和 close 是同一件事的两个说法：这一页不要再问了。计数**不清**——
     // 「不用」正是那三次里的一次，清掉它等于永远问不到上限。
+    //
+    // 一次关掉一层：条子此刻显示的是哪一样，这一下关掉的就是哪一样。
     if (act === 'dismiss' || act === 'close') {
-      if (explaining) explaining = false;
+      if (notice) notice = '';
+      else if (explaining) explaining = false;
       else dismissed = true;
       render();
     }
@@ -247,20 +255,31 @@
    * 用户在中间切走这一页（或者这一次写失败了），这个站点就只翻了这一次 ——
    * 而他明明说的是「总是」，条子却已经收走了，没有任何地方会再提起这件事。
    *
-   * 写失败不拦着这一页翻：他要的就是现在这一页。规则没落地的后果是下次再来时
-   * 照样会问，这本来就是实情。
+   * 写失败不拦着这一页翻：他要的就是现在这一页。但要说一声 —— 见 notice。
+   *
+   * 走 setSiteAuto 而不是 writeUserRule：「这个站点自动翻」是一句话，popup 上
+   * 那一行和播放器里字幕菜单的第一项说的都是它，三处各写一遍，迟早有一处忘了
+   * 顺带打开总开关、或者写成「把规则删掉」。顺带它还替我们挡住了存不进规则表的
+   * host（file:// 页面上 location.hostname 是空串）：从前那一路是
+   * writeUserRule 一声不响什么都不写，勾选框照样打着勾。
+   *
+   * 黑名单站点不必在这里挡：走到 ASK 就说明 decide() 没把它判成 BLOCKLIST
+   * （那一档排在前面），条子压根不会出现。
    */
   async function acceptAsk(always) {
+    let failed = false;
     if (always && globalThis.SiteRules) {
       try {
-        await globalThis.SiteRules.writeUserRule(location.hostname, 'always');
+        await globalThis.SiteRules.setSiteAuto(location.hostname, true);
       } catch (error) {
         console.warn('Blab Translation: site rule write failed', error);
+        failed = true;
       }
     }
     // 表过态了，前面问过几次都不算数：下次再来这个站点，三次的额度是满的。
     await clearAskCount();
     dismissed = true;
+    notice = failed ? t('popupSiteRuleFailed') : '';
     if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
     render();
   }
@@ -280,8 +299,10 @@
 
     const snap = latest;
     const asking = shouldAsk(snap);
-    // 展开说明压在追问之上：用户点了那颗点，要的就是那一行字。
-    const mode = explaining ? 'explain' : (asking ? 'ask' : '');
+    // 压在最上面的是那句「没存上」：它是对用户刚按下的那一下的回答，而且他不关
+    // 掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是那一
+    // 行字），再往下才是追问。
+    const mode = notice ? 'notice' : (explaining ? 'explain' : (asking ? 'ask' : ''));
     if (!mode) {
       removeBar();
       return;
@@ -312,7 +333,8 @@
       return;
     }
 
-    bar.querySelector('.ai-translator-auto-text').textContent = explainLine(snap);
+    bar.querySelector('.ai-translator-auto-text').textContent =
+      mode === 'notice' ? notice : explainLine(snap);
   }
 
   // ------------------------------------------------------------------ 装配

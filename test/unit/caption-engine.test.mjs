@@ -399,6 +399,29 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   );
 });
 
+test('重看一遍不该再付一次钱：字幕也走那张持久缓存', () => {
+  // 内存里那张 state.cueCache 只活到 clearTrack()：换一集、刷一次页面、第二天再
+  // 打开，它都是空的，而一部两小时的片子是两千来条句子。整页翻译走
+  // ctx.requestTranslationCached 已经很久了，字幕从前直接走 ctx.requestTranslation
+  // —— 同一条轨道看几遍就付几遍钱，而那几遍的译文一模一样。
+  const engine = captionEngineSource();
+  assert.match(
+    engine,
+    /await \(ctx\.requestTranslationCached \|\| ctx\.requestTranslation\)\(/,
+    '字幕又绕过缓存层直接发请求了',
+  );
+  // 只有这一处发译文请求。多一处就是一条不走缓存的岔路，而它省下的钱看不见，
+  // 多花的钱也看不见。
+  assert.equal(
+    (engine.match(/ctx\.requestTranslation(?!Cached)\(/g) || []).length,
+    0,
+    '还有一处直接调 ctx.requestTranslation',
+  );
+  // 而轨道声明的那门语言要跟着请求走：它是缓存键的一个因子（见
+  // test/unit/translation-cache.test.mjs），少了它，两门源语言会共用一条译文。
+  assert.match(engine, /trackLang: state\.trackLang/);
+});
+
 test('一批译文回来时轨道或目标语言已经翻篇，就整批丢掉——但键要先放开', () => {
   // getCueKey() 读的是 state **此刻**的值。观众换一门字幕语言或换个目标语言，上
   // 一轮的译文会照着新的那一套键写进缓存——而且因为键是对的，它永远不会被重译掉。

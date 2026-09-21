@@ -129,6 +129,8 @@ async function freshPair(seed = {}) {
 
 const FACTORS = {
   targetLang: 'zh-CN',
+  // 整页翻译那一路的值：它从不声明源语言。字幕会带一门（轨道自己说的）。
+  sourceLang: '',
   endpoint: 'https://api.openai.com/v1/chat/completions',
   model: 'gpt-4.1-mini',
   prompt: '',
@@ -157,6 +159,7 @@ test('键因子少一个都不行：每一个都改变键', async () => {
   for (const [name, changed] of Object.entries({
     text: 'hello world',
     targetLang: 'ja',
+    sourceLang: 'en',
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     model: 'gpt-4.1',
     prompt: '请用口语化的中文',
@@ -165,6 +168,17 @@ test('键因子少一个都不行：每一个都改变键', async () => {
     assert.notEqual(cache.buildKey({ ...base, [name]: changed }), key,
       `改了 ${name} 还命中同一个键 —— 旧译文会被当成新译文供出去`);
   }
+});
+
+test('同一句台词，英语轨和法语轨不是同一条译文', async () => {
+  // 字幕是唯一会声明源语言的调用方（轨道自己说得出它是哪门语言，一句台词太短，
+  // 测不出来）。"Yes." 这种句子在哪门语言里都长这样 —— 键里没有源语言，第一条
+  // 轨道的译文就会被供给所有别的轨道。
+  const { cache } = await freshCache();
+  const en = { ...FACTORS, text: 'Yes.', sourceLang: 'en' };
+  assert.notEqual(cache.buildKey(en), cache.buildKey({ ...en, sourceLang: 'fr' }));
+  // 而整页翻译那一路（不声明）和这两条都不是同一个键。
+  assert.notEqual(cache.buildKey(en), cache.buildKey({ ...en, sourceLang: '' }));
 });
 
 test('因子边界不会滑动：("ab","c") 与 ("a","bc") 不是同一个键', async () => {
@@ -399,10 +413,18 @@ test('三份装载清单里都有缓存模块', async () => {
   const idxBridge = order.indexOf('content/content-translation-cache.js');
   const idxEngine = order.indexOf('content/content-translation-engine.js');
   const idxBatch = order.indexOf('content/page/batch.js');
+  const idxCaptions = order.indexOf('content/captions/translate.js');
   assert.ok(idxShared >= 0 && idxBridge >= 0, '两个模块都要在 manifest 里');
   assert.ok(idxShared < idxBridge, 'shared/translation-cache.js 必须排在桥接之前');
   assert.ok(idxEngine < idxBridge, '桥接要用 ctx.builtinTranslator，必须排在引擎之后');
   assert.ok(idxBridge < idxBatch, '桥接必须排在 content/page/batch.js 之前');
+  assert.ok(idxBridge < idxCaptions, '桥接必须排在 content/captions/translate.js 之前');
+
+  // 桥接要把请求里声明的源语言一起放进因子。字幕带着轨道语言来（见
+  // shared/caption-core.js 的 buildTranslationRequest），少了这一条，同一句台词
+  // 会在两门源语言之间串味 —— 而且键是对的，永远不会被重译掉。
+  assert.match(read('content/content-translation-cache.js'), /sourceLang: message\.sourceLang \|\| ''/,
+    '桥接没有把 sourceLang 放进键因子');
 
   assert.match(read('background/background.js'), /import '\.\.\/shared\/translation-cache\.js';/,
     'background 要 sweep()，就得先加载模块');

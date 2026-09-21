@@ -70,7 +70,12 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
   ];
   for (const file of WRITERS) {
     const source = code(file);
-    assert.match(source, /SiteRules\.(writeUserRule|setSiteAuto)\(/, `${file} 应当走共用的写入口`);
+    assert.match(source, /SiteRules\.setSiteAuto\(/, `${file} 应当走共用的写入口`);
+    // 三处说的都是「这个站点自动翻」这一句话，所以三处都该是 setSiteAuto。自己
+    // 去调底下那个 writeUserRule，就会漏掉它顺带做的那两件事：挡住存不进规则表
+    // 的 host，和把总开关打开。
+    assert.doesNotMatch(source, /SiteRules\.writeUserRule\(/,
+      `${file} 绕过 setSiteAuto 直接写规则`);
     for (const hit of source.match(/[\w.]*normalizeHost/g) || []) {
       assert.ok(hit.endsWith('SiteRules.normalizeHost'), `${file} 的 normalizeHost 必须是共用那一个`);
     }
@@ -79,8 +84,9 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
 });
 
 test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
-  // popup 上那一行和播放器里字幕菜单的第一行说的是同一句话（字幕并进主开关之
-  // 后）。两处各写一遍，迟早一处写 never、另一处写「把规则删掉」。
+  // popup 上那一行、播放器里字幕菜单的第一行、追问条上那个「总是」勾选框，说的
+  // 都是同一句话（字幕并进主开关之后）。三处各写一遍，迟早一处写 never、另一处
+  // 写「把规则删掉」。
   const rules = code('shared/site-rules.js');
   assert.match(rules, /async function setSiteAuto\(hostname, on\)/);
   assert.match(rules, /^\s*setSiteAuto,$/m, 'setSiteAuto 没有导出');
@@ -88,6 +94,8 @@ test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
   assert.match(code('popup/popup.js'), /SiteRules\.setSiteAuto\(pageState\.host, !on\)/);
   assert.match(code('content/content-caption-controls.js'),
     /SiteRules\.setSiteAuto\(location\.hostname, !siteAutoOn\(\)\)/);
+  assert.match(code('content/content-auto-status.js'),
+    /SiteRules\.setSiteAuto\(location\.hostname, true\)/);
 });
 
 test('「关」写的是 never，不是把规则删掉', () => {
@@ -226,10 +234,34 @@ test('勾了「总是」就要等规则落地再翻', () => {
   // 收走，没有任何地方会再提起他说过「总是」。
   const status = code('content/content-auto-status.js');
   assert.match(status, /async function acceptAsk\(always\)/);
-  assert.match(status, /await globalThis\.SiteRules\.writeUserRule\(location\.hostname, 'always'\)/);
+  assert.match(status, /await globalThis\.SiteRules\.setSiteAuto\(location\.hostname, true\)/);
   assert.match(status, /await clearAskCount\(\);[\s\S]{0,200}?markPageExplicit\(\)/);
   // 写失败不拦着这一页翻：他要的就是现在这一页。
   assert.match(status, /catch \(error\) \{[\s\S]{0,160}?site rule write failed/);
+});
+
+test('规则没存上要说一声，不能只留一行控制台日志', () => {
+  // 勾选框是个乐观控件：用户看到的是「记住了」。规则没落地的话，下一次打开这个
+  // 站点还会再问一遍，而中间没有任何地方提起过这件事 —— 他只会觉得这个扩展记不
+  // 住事。file:// 页面（location.hostname 是空串）每一次都走这条路。
+  const status = code('content/content-auto-status.js');
+  assert.match(status, /failed = true;/);
+  assert.match(status, /notice = failed \? t\('popupSiteRuleFailed'\) : '';/);
+  // 那句话得真画到条子上，而且压在追问和展开说明之上。
+  assert.match(status, /const mode = notice \? 'notice' :/);
+  assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
+  // 关掉一次只关掉一层：他关的是这句话，底下没答完的那一问不该跟着一起没。
+  assert.match(status, /if \(notice\) notice = '';\s*\n\s*else if \(explaining\)/);
+  // 这个模式在样式表里得和 explain 一样只剩一行字和一个关闭，否则那两个按钮会
+  // 挂在一句「没能保存」下面，按下去是「翻译」和「不用」。
+  const css = contentCss();
+  for (const act of ['translate', 'dismiss']) {
+    assert.match(
+      css,
+      new RegExp(`\\[data-mode="notice"\\][^{]*\\[data-act="${act}"\\]`),
+      `notice 模式没藏掉「${act}」那个按钮`,
+    );
+  }
 });
 
 test('藏着译文时按「继续」，先把译文放回来', () => {
