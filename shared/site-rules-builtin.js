@@ -23,7 +23,7 @@
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-19',
+    rulesVersion: '2026-09-21',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -48,6 +48,64 @@
         state: 'always',
         atomicBlockSelectors: ['blockquote.abstract'],
         excludeSelectors: ['.authors', '.dateline', '.submission-history'],
+        blockIdAttr: null,
+      },
+      {
+        // 全文的 HTML 版，LaTeXML 出的（class 全是 ltx_ 开头）。
+        //
+        // **ar5iv 不用单开一条**：它的域名是 ar5iv.labs.arxiv.org，以 arxiv.org
+        // 结尾，路径也是 /html/<id>，上面这个模式原样命中它。
+        //
+        // 排除的两块都不是正文，而且是整份文档里最贵的两块：
+        //   - .ltx_authors 是姓名、单位、邮箱，外加 \thanks 脚注（"Work performed
+        //     while at Google Brain"）——人名翻出来只会让人认不出是谁。
+        //   - .ltx_bibliography 动辄几百条，占全文相当一部分字数，而参考文献翻成
+        //     中文的结果是**找不到原文**了。读者要拿它去搜论文。
+        // 公式和代码清单不在这里：MATH_CONTAINER_SELECTOR 认得 .ltx_Math，
+        // collect.js 的代码容器名单认得 ltx_listing 那一族，两者都已经跳过了。
+        match: 'arxiv.org/html/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: ['.ltx_authors', '.ltx_bibliography'],
+        blockIdAttr: null,
+      },
+      {
+        // 列表页：一屏几十条标题，正是「扫一眼今天有什么」的场景。
+        // 结构是 <dl><dt>…</dt><dd><div class="list-title">…；标题本身有直接文本，
+        // 通用启发式就当块处理了，所以这里只要把不是正文的三块摘掉：作者名、
+        // arXiv 编号（"arXiv:2609.22081 [pdf, html, other]"）、学科分类（分类名后
+        // 面跟着 cs.CL 这样的代号，翻了就对不上目录了）。
+        // .list-comments（"17 pages, 6 figures"）是人写的，留着。
+        match: 'arxiv.org/list/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: ['.list-authors', '.list-identifier', '.list-subjects'],
+        blockIdAttr: null,
+      },
+      {
+        // Hugging Face 的 Daily Papers 榜单。
+        //
+        // 写成两条而不是 `/papers*` 一条，是因为 pathMatches 把 `*` 展开成 `.*`，
+        // 不带 `/` 的通配没有段边界：`/papers*` 会连 `/paperswithcode` 这样的
+        // 组织主页一起认下来，而内置规则是 always——认错的代价是在一个从没问过
+        // 用户的页面上自己动手，还花他的额度。
+        //
+        // 一条选择器都没有是查过之后的结论，不是没来得及写：这一页的 class 全是
+        // Tailwind 那种工具类（flex、text-sm），没有一个能当锚点的语义 class，
+        // 标题就是 article h3 a 里的纯文本。拿工具类当选择器，人家调一次样式我们
+        // 就悄悄失效。真需要排除时再补，那天它得有个稳定的钩子。
+        match: 'huggingface.co/papers',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 单篇的摘要页，外加 /papers/date/<日期> 这种榜单归档。
+        match: 'huggingface.co/papers/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: [],
         blockIdAttr: null,
       },
       {

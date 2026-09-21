@@ -8,9 +8,10 @@
 // 节都没变**。MutationObserver 在这条路径上没有任何记录可看，所以译文若出现，只
 // 可能是路由事件让调度层重新问了一次「这一页该不该翻」。
 //
-// 选 arxiv.org 不是凑数：内置表里那条规则写的是 `arxiv.org/abs/*`——**按路径**。
-// 列表页该问用户，摘要页直接翻，两者只差一个 pathname。这正是路由变化必须重新
-// 决策的原因，也是「只在首次加载时判一次」那种实现会踩空的地方。
+// 选 arxiv.org 不是凑数：内置表里那几条规则写的是 `arxiv.org/abs/*`、
+// `/html/*`、`/list/*`——**全都按路径**。首页不在任何一条下面，该问用户；摘要页
+// 直接翻。两者只差一个 pathname。这正是路由变化必须重新决策的原因，也是「只在
+// 首次加载时判一次」那种实现会踩空的地方。
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, sendMessageToActiveTab, openFloatBallMenu } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
@@ -20,6 +21,9 @@ const SHELL = 'Cornell University maintains this archive and accepts submissions
 const NEXT_ABSTRACT = 'A follow-up study measures how the same method behaves on much shorter inputs.';
 const GERMAN_LIST = 'Die Bibliothek veroeffentlicht jeden Morgen eine neue Liste mit Arbeiten aus dem Bereich '
   + 'der maschinellen Uebersetzung, und die Redaktion prueft jede einzelne Einreichung sehr sorgfaeltig.';
+
+// 最后一条旅程量的是语言，不是站点规则。给它一个内置表上没有的域名。
+const LIBRARY = 'https://papers.library.example';
 
 // 这条旅程只要一个视图：页首那段不变的导航文字会一起被取样，而它正是要避开的
 // 干扰项（换页之后留在页面上的旧文字不该替新的一页回答「这是什么语言」）。
@@ -47,8 +51,10 @@ function settings(endpoint, extra) {
   };
 }
 
-async function serve(context, html) {
-  await context.route('https://arxiv.org/**', (route) => {
+// 默认发 arxiv.org，因为前三条旅程要的就是「同一个站点，一个路径在内置表里、
+// 一个不在」。最后一条不依赖内置表，它换一个没有任何规则的域名。
+async function serve(context, html, origin = 'https://arxiv.org') {
+  await context.route(`${origin}/**`, (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: html });
   });
 }
@@ -61,11 +67,11 @@ test('auto translation: an SPA route change re-decides the page, with no DOM cha
     await setExtensionSettings(page, settings(endpoint));
     await serve(context, fixtureHtml(ABSTRACT));
 
-    await page.goto('https://arxiv.org/list/cs.CL/recent');
+    await page.goto('https://arxiv.org/');
     await page.waitForSelector('#ai-translator-float-ball');
 
-    // 列表页不在 `/abs/*` 下，该问用户——问的界面是下一个 PR，这里的正确行为是
-    // 安静地什么都不做。
+    // 首页不在内置表的任何一条路径下，该问用户——问的界面是下一个 PR，这里的
+    // 正确行为是安静地什么都不做。
     await page.waitForTimeout(4000);
     await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
     expect(sentTexts).toEqual([]);
@@ -176,11 +182,13 @@ test('auto translation: a hidden route change is judged on its own language, not
 
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, SINGLE_VIEW);
+    await serve(context, SINGLE_VIEW, LIBRARY);
 
-    // 列表页不在内置表的 `/abs/*` 下，所以要问 —— 而页面语言正是在这一问里量出
-    // 来的。走内置规则直接翻的那种页面反倒量不到：那条路在语言之前就有答案了。
-    await page.goto('https://arxiv.org/list/cs.CL/recent');
+    // 这个域名不在内置表里，所以要问 —— 而页面语言正是在这一问里量出来的。走内
+    // 置规则直接翻的那种页面反倒量不到：那条路在语言之前就有答案了。
+    // 这条旅程和内置表无关，所以它不借 arxiv.org 的路径来制造「要问」：那是别人
+    // 的数据，哪天多一条规则，这里就会因为一个不相干的改动变红。
+    await page.goto(`${LIBRARY}/list/cs.CL/recent`);
     await page.waitForSelector('#ai-translator-float-ball');
     const bar = page.locator('#ai-translator-auto-bar');
     await expect(bar).toBeVisible({ timeout: 30000 });

@@ -38,6 +38,13 @@
 - **Site adapters** (`content/page/site-adapter.js`): the containers worth
   translating and the furniture worth skipping, per site, for the handful where
   a generic sweep gets it wrong.
+- **Papers, not just abstracts.** The built-in list now covers arXiv's full
+  HTML papers (`/html/*`, which is also ar5iv — same domain suffix, same
+  paths), its listing pages (`/list/*`) and Hugging Face's Daily Papers.
+  Author blocks and bibliographies are skipped on the full-text pages: a
+  translated reference list is one you can no longer search with. arXiv PDFs
+  are not covered and cannot be — Chrome's built-in PDF viewer takes no
+  content scripts; the toolbar popup offers to open them in ours instead.
 - **On this computer** — a small panel in the settings page counting the pages
   translated this month, how much the cache saved, and how many characters
   actually went to the model. It lives in `chrome.storage.local`

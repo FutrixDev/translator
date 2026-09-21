@@ -152,6 +152,47 @@ test('site rules: an arXiv abstract is translated whole, its author and history 
   }
 });
 
+const LTX_PROSE = 'The decoder keeps a single buffer alive across the whole document instead of allocating one per span.';
+const LTX_AUTHORS = 'Dana Author, Erik Coauthor — work performed while visiting another lab';
+const LTX_BIB = 'Alice Researcher and Bob Engineer. A study of long documents. In Proceedings of Somewhere, 2019.';
+
+// 全文的 HTML 版是 LaTeXML 出的，class 全是 ltx_ 开头，和摘要页一个 class 都不共用。
+// 这一页的 host 故意写成 ar5iv.labs.arxiv.org：内置表里只有 `arxiv.org/html/*` 一条，
+// 它靠 hostMatches 的后缀匹配顺带管住 ar5iv，这条旅程就是那句话的凭据。
+const LTX_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ar5iv</title></head>
+<body>
+  <div class="ltx_page_content" id="doc">
+    <div class="ltx_authors" id="ltx-authors"><span class="ltx_personname">${LTX_AUTHORS}</span></div>
+    <div class="ltx_para" id="para"><p class="ltx_p">${LTX_PROSE}</p></div>
+    <ul class="ltx_bibliography" id="bib"><li class="ltx_bibitem">${LTX_BIB}</li></ul>
+  </div>
+</body></html>`;
+
+test('site rules: an arXiv HTML paper is translated on ar5iv too, minus its authors and bibliography', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://ar5iv.labs.arxiv.org/**', LTX_PAGE);
+
+    await page.goto('https://ar5iv.labs.arxiv.org/html/1706.03762');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#para .ai-translator-inline-block', { timeout: 30000 });
+
+    const all = sentTexts.join('\n');
+    expect(all).toContain(LTX_PROSE);
+    // 参考文献是全文里最贵的一块，翻成中文之后读者反而搜不到原文了；作者名同理。
+    // 两块都有直属文本，没有规则时通用启发式会照翻。
+    expect(all).not.toContain(LTX_BIB);
+    expect(all).not.toContain(LTX_AUTHORS);
+    await expect(page.locator('#bib .ai-translator-inline-block')).toHaveCount(0);
+    await expect(page.locator('#ltx-authors .ai-translator-inline-block')).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
 const RD_TITLE = 'Someone rewrote the whole parser in a single afternoon and it came out faster';
 const RD_BODY = 'The trick was to stop allocating a fresh node for every token and reuse one buffer instead.';
 const RD_SCORE = 'four hundred and twelve points';
