@@ -163,7 +163,10 @@
       // 写进去也不算数，而「顺带打开总开关」那个副作用会照跑 —— 他要的是这一个
       // 站点，拿到的会是整个浏览器。画面上灰着，这里再挡一道。
       if (enableItem.classList.contains('ai-cap-disabled')) return;
-      SiteRules.setSiteAuto(location.hostname, !captionsOn()).catch((error) => {
+      // 看的是 siteAuto（站点规则），不是 captionsOn()（闸门）。一个没有任何规则
+      // 的普通视频站上闸门是开的而站点规则是关的 —— 拿闸门去取反，他按一下写进
+      // 去的会是一条永久的 never，而 popup 上同一行按下去写的是 always。
+      SiteRules.setSiteAuto(location.hostname, !siteAutoOn()).catch((error) => {
         // 同步存储每项 8KB，规则表按域名一路长下去，这条写入是会失败的。开关是
         // 个乐观控件，它已经在观众眼里动过了，而规则没落地 —— 下一个心跳会把它
         // 画回真实状态，控制台留一行给我们自己。
@@ -252,6 +255,27 @@
     return !!(ui.info || {}).enabled;
   }
 
+  /**
+   * 这个站点开着自动翻没有。和上面那句不是一回事：闸门问的是「没被明令拒绝」，
+   * 中间隔着一大片「要问过才翻」。菜单第一行画的、点的都是这一句 —— 它就是
+   * popup 上那一行。同样随 controls.sync() 过来，控件不自己再算一遍。
+   */
+  function siteAutoOn() {
+    return !!(ui.info || {}).siteAuto;
+  }
+
+  /**
+   * 这个 host 上的规则写得进去吗。黑名单站点写进去也不算数（BLOCKLIST 在
+   * decide() 的阶梯上排在 USER_ALWAYS 前面），file:// 这类没有 host 的页面根本
+   * 生不出键来 —— 两种都得让这一行看起来就点不动，否则按下去要么毫无动静，要么
+   * 只剩「顺带打开总开关」那半边副作用。
+   */
+  function ruleWritable() {
+    if (!globalThis.SiteRules) return false;
+    if (!globalThis.SiteRules.normalizeHost(location.hostname)) return false;
+    return !globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname);
+  }
+
   /** Push the current settings and track state into the open (or closed) menu. */
   function refreshMenu() {
     const parts = ui.parts;
@@ -261,13 +285,12 @@
       ? globalThis.CaptionCore.resolveCaptionDisplay(settings)
       : { mode: 'bilingual' };
     const enabled = captionsOn();
-    // 黑名单站点上这一行点了也不算数，所以它得看起来就点不动。
-    const blocked = !!(globalThis.SiteRules
-      && globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname));
-    parts.enableItem.classList.toggle('ai-cap-disabled', blocked);
+    const siteAuto = siteAutoOn();
+    parts.enableItem.classList.toggle('ai-cap-disabled', !ruleWritable());
 
-    parts.enableSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
-    parts.enableSwitch.classList.toggle('ai-cap-on', enabled);
+    // 这一行画的是站点规则，不是闸门：见 siteAutoOn()。
+    parts.enableSwitch.setAttribute('aria-checked', siteAuto ? 'true' : 'false');
+    parts.enableSwitch.classList.toggle('ai-cap-on', siteAuto);
     parts.modeSelect.value = display.mode;
     parts.posSelect.value = settings.captionTranslationPosition === 'above' ? 'above' : 'below';
 
@@ -511,10 +534,12 @@
      * the menu shows. Called by the engine whenever anything it knows changes:
      * a media event, a settings change, a track arriving, the playhead moving.
      *
-     * `info` is `{ host, video, enabled, status }` — `host` is the provider's
-     * docked slot or null, `enabled` is the gate the engine just computed (the
-     * main switch plus this site's rule), `status` is `{ kind, label }` for the
-     * menu's status line.
+     * `info` is `{ host, video, enabled, siteAuto, status }` — `host` is the
+     * provider's docked slot or null, `enabled` is the gate the engine just
+     * computed (this site has not refused us), `siteAuto` is whether this site
+     * is set to auto-translate (what the first menu row draws and writes — the
+     * two are not the same answer, there is a whole band of "ask" between
+     * them), `status` is `{ kind, label }` for the menu's status line.
      */
     sync(info) {
       ui.info = info || {};

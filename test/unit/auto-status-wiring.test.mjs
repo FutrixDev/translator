@@ -83,7 +83,7 @@ test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
 
   assert.match(code('popup/popup.js'), /SiteRules\.setSiteAuto\(pageState\.host, !on\)/);
   assert.match(code('content/content-caption-controls.js'),
-    /SiteRules\.setSiteAuto\(location\.hostname, !captionsOn\(\)\)/);
+    /SiteRules\.setSiteAuto\(location\.hostname, !siteAutoOn\(\)\)/);
 });
 
 test('「关」写的是 never，不是把规则删掉', () => {
@@ -420,8 +420,9 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 播放器里那一行是同一个开关的第二块画布，同样得挡住：写 always 下去不算数，
   // 而「顺带打开总开关」那个副作用会照跑。
   const controls = code('content/content-caption-controls.js');
-  assert.match(controls, /SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
-  assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', blocked\);/);
+  assert.match(controls, /isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(controls,
+    /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\);/);
   const click = controls.slice(controls.indexOf("enableItem.addEventListener('click'"));
   const capGuard = click.indexOf("ai-cap-disabled");
   assert.ok(capGuard > 0 && capGuard < click.indexOf('SiteRules.setSiteAuto('),

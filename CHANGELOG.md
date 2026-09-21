@@ -30,10 +30,12 @@
   the same gate: a site you have not refused gets translated subtitles, and a
   site you have refused gets none. The switch is gone from the settings page,
   and the first row of the in-player menu is now the same sentence the toolbar
-  popup says — 「自动翻译这个站点」 — writing the same rule. **If you had the
-  subtitle switch off, note that subtitles will now be translated on sites you
-  have not turned off**; turning one off is one click, in the player or in the
-  popup, and it is remembered.
+  popup says — 「自动翻译这个站点」 — reading and writing the same rule, so it
+  shows what the popup shows: on for a site you have turned on, off for a site
+  you have said nothing about. **If you had the subtitle switch off, note that
+  subtitles will now be translated on sites you have not turned off**; a site
+  you want left alone is 「不再翻译」 in the popup, or the same row in the
+  player, and it is remembered.
 - **A page can be paused without a decision.** Alt+A, the toolbar popup and the
   float ball all toggle the page you are looking at, for this visit only, and
   leave no rule behind.

@@ -503,10 +503,16 @@
    * BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算数，而顺带
    * 打开总开关这个副作用会照跑。
    *
+   * 存不进规则表的 host 在这里就拦住。file:// 页面上 location.hostname 是空串，
+   * normalizeHost 给不出键，writeUserRule 会一声不响地什么都不写 —— 而后面那半
+   * 边照跑：一个写着「这个站点」的开关，按下去把整个浏览器的总开关打开了。抛出
+   * 去而不是默默返回，调用方才说得出「没存上」。
+   *
    * 两个调用点：popup 那一行，和播放器里字幕菜单的第一项。字幕翻译并进主开关之
    * 后它们说的是同一句话，所以也只该有一份实现。
    */
   async function setSiteAuto(hostname, on) {
+    if (!normalizeHost(hostname)) throw new Error(`site rules: unusable host ${hostname}`);
     await writeUserRule(hostname, on ? 'always' : 'never');
     if (!on) return;
     const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;

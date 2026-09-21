@@ -134,9 +134,17 @@ decided, or `ctx.autoTranslate` is not up — counts as refused: this step sends
 the page's text to a third party, and "not decided yet" must not look like yes.
 
 The in-player menu's first row and the popup's site row are therefore the same
-sentence, and go through one implementation, `SiteRules.setSiteAuto()`. The
-controls layer does not recompute the gate; the engine hands it down in
-`controls.sync({ enabled })`, because a second computation is a second answer.
+sentence, and go through one implementation, `SiteRules.setSiteAuto()`. That row
+draws and writes **`siteAuto`**, not the gate — on an ordinary video site with no
+rule the gate is open while `siteAuto` is false, so drawing the row from the gate
+would show it on and a click would then write a permanent `never`. The engine
+hands both down in `controls.sync({ enabled, siteAuto })` and the controls layer
+recomputes neither, because a second computation is a second answer. Two things
+the row cannot write are greyed out (`ruleWritable()`): a blocklisted host, where
+`BLOCKLIST` outranks `USER_ALWAYS`, and a host `normalizeHost()` cannot turn into
+a key — `file://` pages have no hostname, and there the rule would silently not
+be stored while the "also open the main switch" half still ran.
+`SiteRules.setSiteAuto()` throws on such a host rather than half-succeeding.
 
 A provider in `content/content-caption-providers.js` answers four questions:
 

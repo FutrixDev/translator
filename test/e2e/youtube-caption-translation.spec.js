@@ -438,7 +438,14 @@ test('the button is there with the gate shut, and opens it', async ({ page, cont
   await expect(button).toHaveCount(1);
 
   await button.click();
-  await page.locator('#ai-translator-caption-menu .ai-translator-caption-switch').click();
+  const toggle = page.locator('#ai-translator-caption-menu .ai-translator-caption-switch');
+  // 画的是这个站点的规则，不是字幕闸门。没设过规则的时候它是关的——拿闸门去画
+  // 的话，在一个没被拒绝的站点上它会显示成「开」，而按下去写进去的是 never。
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+
+  // 规则落地之后这一行跟着翻过来，不必等观众重开菜单或者刷新页面。
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
   // 两件事都得发生，缺一不可：这个站点落一条 always，而总开关跟着打开——只写规
   // 则的话，用户刚说了「翻这个站点」，却因为一个他此刻看不见的总开关而什么都不

@@ -37,6 +37,10 @@
     // the page, so there was nowhere to draw the way to turn it on. Now the
     // watcher runs regardless and only the translating half is gated.
     enabled: false,
+    // 「这个站点开着自动翻」。**不是** enabled：闸门问的是「没被明令拒绝」，中
+    // 间隔着一大片 ask。菜单第一行画的是这一句（和 popup 上那一行同一句话），
+    // 闸门是另一句，见下面的 siteRefused() / siteAuto()。
+    siteAuto: false,
     active: false,
     provider: null,
     overlay: null,
@@ -906,18 +910,38 @@
   // 字幕在它最该工作的地方一次也不会工作。要问的是「这个站点是不是被明令拒绝
   // 的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
 
+  /**
+   * 调度层那份快照，取不到就是 null。下面两句话都从这一份里读，省得各问各的 ——
+   * 「调度层还没起来」和「state() 抛了（页面正在拆）」在这里合成同一个答案：
+   * 什么都不知道。谁把「不知道」当成什么，由问的那一方各自决定。
+   */
+  function autoSnapshot() {
+    const auto = ctx.autoTranslate;
+    if (!auto || typeof auto.state !== 'function') return null;
+    try {
+      return auto.state() || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 「这个站点开着自动翻」。**闸门不问这一句**（见上），菜单第一行问它：那一行
+   * 写的是站点规则，和 popup 上那一行是同一句话、同一份实现。拿闸门去画它，会
+   * 在一个 ask 站点上画成「开」，而用户按下去写进去的是一条永久的 never。
+   */
+  function siteAuto() {
+    const snap = autoSnapshot();
+    return !!(snap && snap.siteAuto);
+  }
+
   /** 「这个站点不许我们自己动手」。问不到就当是拒绝。 */
   function siteRefused() {
-    const auto = ctx.autoTranslate;
+    const snap = autoSnapshot();
     // 说不准的时候宁可不翻：这一步会把页面上的文字发给第三方，而「还没判出来」
     // 和「判出来是不许」在用户那里没有区别 —— 后者错一次是把不该发的发出去了。
-    if (!auto || typeof auto.state !== 'function') return true;
-    try {
-      const snap = auto.state();
-      return !snap || snap.siteRefused !== false;
-    } catch (e) {
-      return true;
-    }
+    // 所以是 `!== false` 而不是 `=== true`：字段缺了也算说不准。
+    return !snap || snap.siteRefused !== false;
   }
 
   let gateSubscribed = false;
@@ -939,8 +963,11 @@
     // applyCaptionSettings()，旗子晚一行就是一次无限递归。
     gateSubscribed = true;
     auto.onStateChange(() => {
-      // 一秒里能广播好几次（IDLE→RUNNING→IDLE），真正翻篇了才动。
-      if (siteRefused() === state.enabled) ctx.applyCaptionSettings();
+      // 一秒里能广播好几次（IDLE→RUNNING→IDLE），真正翻篇了才动。两句话各管各
+      // 的：闸门变了要重来一遍，站点规则变了要把菜单那一行重画。
+      if (siteRefused() === state.enabled || siteAuto() !== state.siteAuto) {
+        ctx.applyCaptionSettings();
+      }
     });
   }
 
@@ -1139,9 +1166,15 @@
     try {
       video = provider.getVideo ? provider.getVideo() : document.querySelector('video');
     } catch (e) { /* keep null */ }
-    // enabled 从这里过去，而不是让控件自己去读设置：字幕翻不翻已经不是一个设置
-    // 项了，是这一层刚算出来的闸门。两边各算一遍就是两个答案。
-    controls.sync({ host, video, enabled: state.enabled, status: captionStatus(provider) });
+    // enabled（闸门）和 siteAuto（站点规则）都从这里过去，而不是让控件自己去读
+    // 设置或者再问一遍调度层：两边各算一遍就是两个答案。
+    controls.sync({
+      host,
+      video,
+      enabled: state.enabled,
+      siteAuto: state.siteAuto,
+      status: captionStatus(provider),
+    });
   }
 
   function startControlsHeartbeat() {
@@ -1244,6 +1277,7 @@
    */
   ctx.applyCaptionSettings = function() {
     state.enabled = !siteRefused();
+    state.siteAuto = siteAuto();
     startWatching();
     if (state.enabled && !state.active) {
       state.active = true;
