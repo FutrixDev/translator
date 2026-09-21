@@ -57,11 +57,14 @@ test('a subdomain gets the parent domain rule', () => {
   assert.match(adapter.exclude, /faceplate-timeago/);
 });
 
-// 内置表里 arxiv 那条写的是 `arxiv.org/abs/*`——按路径。列表页不该拿到摘要页的
-// 适配，否则 `blockquote.abstract` 这种只在摘要页存在的选择器会被白算一轮。
+// 内置表里 arXiv 那几条都是按路径写的，而且**各带各的选择器**：摘要页的
+// `blockquote.abstract`、全文页的 `.ltx_bibliography`、列表页的 `.list-authors`，
+// 没有一个在别的路径下存在。串了就是每一块都白算一轮 closest()。
 test('a path-scoped rule does not leak to the rest of the site', () => {
-  assert.ok(at('arxiv.org', '/abs/2401.00001'), '摘要页应当有适配');
-  assert.equal(at('arxiv.org', '/list/cs.CL/recent'), null);
+  assert.match(at('arxiv.org', '/abs/2401.00001').atomic, /blockquote\.abstract/);
+  assert.match(at('arxiv.org', '/html/2310.03714v1').exclude, /ltx_bibliography/);
+  assert.match(at('arxiv.org', '/list/cs.CL/recent').exclude, /list-authors/);
+  assert.equal(at('arxiv.org', '/'), null, 'arXiv 首页不在任何一条规则下');
 });
 
 test('a site with no rule gets nothing, and the caller falls back to the generic path', () => {
@@ -96,6 +99,6 @@ test('a rule whose selectors are all malformed reads as no rule at all', () => {
 test('the cache follows the path, not just the host', () => {
   const abs = at('arxiv.org', '/abs/2401.00001');
   assert.ok(abs);
-  assert.equal(at('arxiv.org', '/list/cs.CL/recent'), null);
+  assert.equal(at('arxiv.org', '/'), null);
   assert.deepEqual(at('arxiv.org', '/abs/2401.00002'), abs);
 });

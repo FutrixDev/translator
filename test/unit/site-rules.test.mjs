@@ -238,13 +238,53 @@ test('a bare TLD is never asked — that rule would cover half the web', () => {
 test('a built-in rule matches its subdomains and its path glob', () => {
   const m = SiteRules.matchBuiltin;
   assert.equal(m('arxiv.org', '/abs/2401.00001').match, 'arxiv.org/abs/*');
-  // 带路径的规则不能整站生效：列表页、PDF 页结构完全不同。
-  assert.equal(m('arxiv.org', '/list/cs.CL/recent'), null);
+  assert.equal(m('arxiv.org', '/html/2310.03714v1').match, 'arxiv.org/html/*');
+  assert.equal(m('arxiv.org', '/list/cs.CL/recent').match, 'arxiv.org/list/*');
+  // 带路径的规则不能整站生效：首页、PDF 页和这三条的结构都不一样，
+  // 而 /abs/* 那条的 `blockquote.abstract` 只在摘要页存在。
   assert.equal(m('arxiv.org', '/'), null);
+  assert.equal(m('arxiv.org', '/pdf/2401.00001'), null);
 
   assert.equal(m('mobile.x.com', '/home').match, 'x.com');
   assert.equal(m('old.reddit.com', '/r/rust/').match, 'reddit.com');
   assert.equal(m('example.com', '/'), null);
+});
+
+// ar5iv 是 arXiv 那套 LaTeXML 全文的另一个门牌：域名 ar5iv.labs.arxiv.org 以
+// arxiv.org 结尾，路径同样是 /html/<id>。后缀匹配让一条规则管住两个站点，所以
+// 表里**不该**再有一条 ar5iv 的规则——两条一模一样的东西迟早只改一边。
+test('ar5iv 走的是 arxiv.org/html/* 那一条，不另写一条', () => {
+  const m = SiteRules.matchBuiltin;
+  assert.equal(m('ar5iv.labs.arxiv.org', '/html/1706.03762').match, 'arxiv.org/html/*');
+  assert.equal(m('ar5iv.org', '/html/1706.03762'), null);
+
+  const table = SiteRules.loadTable(globalThis.SiteRulesBuiltin);
+  assert.equal(table.rules.filter((rule) => rule.match.includes('ar5iv')).length, 0);
+});
+
+// 论文这一族现在有四条规则，而「自动翻译」这件事只在 verdict 是 auto 时发生 ——
+// matchBuiltin 命中了但 state 不是 always，结论会一路掉到语言那几档去。
+test('论文页的四条规则都真的自动翻，不是只命中', () => {
+  const at = (host, path) => SiteRules.decide({
+    host, path, pageLang: 'en', targetLang: 'zh-CN',
+    settings: { autoTranslate: true }, userRules: {},
+  });
+  for (const [host, path] of [
+    ['arxiv.org', '/abs/2401.00001'],
+    ['arxiv.org', '/html/2310.03714v1'],
+    ['ar5iv.labs.arxiv.org', '/html/1706.03762'],
+    ['arxiv.org', '/list/cs.CL/recent'],
+    ['huggingface.co', '/papers'],
+    ['huggingface.co', '/papers/2609.05571'],
+  ]) {
+    const out = at(host, path);
+    assert.equal(out.verdict, 'auto', `${host}${path} 应当自动翻`);
+    assert.equal(out.reason, SiteRules.REASONS.BUILTIN_ALWAYS);
+  }
+
+  // Hugging Face 只有 /papers 那一段：模型页、数据集页、讨论区不在内置名单上。
+  assert.equal(at('huggingface.co', '/').verdict, 'ask');
+  assert.equal(at('huggingface.co', '/models').verdict, 'ask');
 });
 
 test('the matched rule rides along with every verdict, including the off ones', () => {
