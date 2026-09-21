@@ -22,6 +22,20 @@
   covers `old.reddit.com`. Every rule you have made is listed in the settings
   page, and **every one of them can be deleted there** — an answer you gave by
   accident is one click from being unmade.
+- **Subtitles are part of that same decision.** Video subtitle translation used
+  to be a switch of its own, off by default, on the second card of the settings
+  page — which meant that on a site you had told us to translate, the page was
+  translated and the subtitles were not, and that telling us 「不再翻译」 on
+  youtube.com stopped the page text while the subtitles carried on. It is now
+  the same gate: a site you have not refused gets translated subtitles, and a
+  site you have refused gets none. The switch is gone from the settings page,
+  and the first row of the in-player menu is now the same sentence the toolbar
+  popup says — 「自动翻译这个站点」 — reading and writing the same rule, so it
+  shows what the popup shows: on for a site you have turned on, off for a site
+  you have said nothing about. **If you had the subtitle switch off, note that
+  subtitles will now be translated on sites you have not turned off**; a site
+  you want left alone is 「不再翻译」 in the popup, or the same row in the
+  player, and it is remembered.
 - **A page can be paused without a decision.** Alt+A, the toolbar popup and the
   float ball all toggle the page you are looking at, for this visit only, and
   leave no rule behind.

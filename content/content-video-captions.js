@@ -37,6 +37,10 @@
     // the page, so there was nowhere to draw the way to turn it on. Now the
     // watcher runs regardless and only the translating half is gated.
     enabled: false,
+    // 「这个站点开着自动翻」。**不是** enabled：闸门问的是「没被明令拒绝」，中
+    // 间隔着一大片 ask。菜单第一行画的是这一句（和 popup 上那一行同一句话），
+    // 闸门是另一句，见下面的 siteRefused() / siteAuto()。
+    siteAuto: false,
     active: false,
     provider: null,
     overlay: null,
@@ -895,6 +899,78 @@
   // rather than from an attached one.
   const CONTROLS_HEARTBEAT_MS = 1500;
 
+  // ------------------------------------------------------------- 闸门
+  // 字幕翻译没有自己的开关：它和正文一样由主开关加站点规则说了算
+  // （docs/plans/2026-09-19-auto-translation-prd.md §5.4.1、同名 ux-design §2.5）。
+  // 一个默认关着、藏在设置页第二张卡里的独立开关，做得再好也等于不存在；而两个
+  // 开关意味着用户在一个视频站上点了「不再翻译」，字幕却照翻不误。
+  //
+  // 问的是 siteRefused 而不是「这个站点开着自动翻」。视频站没上过内置 always 名
+  // 单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false —— 拿它当闸门，
+  // 字幕在它最该工作的地方一次也不会工作。要问的是「这个站点是不是被明令拒绝
+  // 的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
+
+  /**
+   * 调度层那份快照，取不到就是 null。下面两句话都从这一份里读，省得各问各的 ——
+   * 「调度层还没起来」和「state() 抛了（页面正在拆）」在这里合成同一个答案：
+   * 什么都不知道。谁把「不知道」当成什么，由问的那一方各自决定。
+   */
+  function autoSnapshot() {
+    const auto = ctx.autoTranslate;
+    if (!auto || typeof auto.state !== 'function') return null;
+    try {
+      return auto.state() || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 「这个站点开着自动翻」。**闸门不问这一句**（见上），菜单第一行问它：那一行
+   * 写的是站点规则，和 popup 上那一行是同一句话、同一份实现。拿闸门去画它，会
+   * 在一个 ask 站点上画成「开」，而用户按下去写进去的是一条永久的 never。
+   */
+  function siteAuto() {
+    const snap = autoSnapshot();
+    return !!(snap && snap.siteAuto);
+  }
+
+  /** 「这个站点不许我们自己动手」。问不到就当是拒绝。 */
+  function siteRefused() {
+    const snap = autoSnapshot();
+    // 说不准的时候宁可不翻：这一步会把页面上的文字发给第三方，而「还没判出来」
+    // 和「判出来是不许」在用户那里没有区别 —— 后者错一次是把不该发的发出去了。
+    // 所以是 `!== false` 而不是 `=== true`：字段缺了也算说不准。
+    return !snap || snap.siteRefused !== false;
+  }
+
+  let gateSubscribed = false;
+
+  /**
+   * 闸门变了就重来一遍。
+   *
+   * 订阅而不是轮询：调度层每次重判都会广播，而总开关和站点规则都在它的
+   * RESTART_KEYS 里 —— 用户在 popup 上把这个站点关掉，字幕当场就停。订阅的那一
+   * 刻它还会先回调一次当前状态，所以这里不必自己补第一下。
+   *
+   * ctx.init 里字幕排在调度层后面（content-bootstrap.js），这里才拿得到它。
+   */
+  function subscribeToGate() {
+    if (gateSubscribed) return;
+    const auto = ctx.autoTranslate;
+    if (!auto || typeof auto.onStateChange !== 'function') return;
+    // 先立旗再订阅：onStateChange 会当场回调一次，而回调会走回
+    // applyCaptionSettings()，旗子晚一行就是一次无限递归。
+    gateSubscribed = true;
+    auto.onStateChange(() => {
+      // 一秒里能广播好几次（IDLE→RUNNING→IDLE），真正翻篇了才动。两句话各管各
+      // 的：闸门变了要重来一遍，站点规则变了要把菜单那一行重画。
+      if (siteRefused() === state.enabled || siteAuto() !== state.siteAuto) {
+        ctx.applyCaptionSettings();
+      }
+    });
+  }
+
   /** The provider whose player this is, attached or not. */
   function candidateProvider() {
     return state.provider || core.selectProvider(ctx.captionProviders || []);
@@ -913,21 +989,7 @@
     if (!state.active || state.dismissed) return false;
     if (!getSetting('autoEnableCaptions')) return false;
     if (state.autoEnableBlocked) return false;
-    // 问不到那个结论，就当是拒绝。ctx.init 里字幕这一面排在自动翻译前面（见
-    // content-bootstrap.js），所以第一次同步控件时 ctx.autoTranslate 还不存在 ——
-    // 写成「问不到就放行」，那一下恰好落在总开关关着、或者站点在黑名单上的页面
-    // 上，而它偏偏是整轮自动化里唯一会去动播放器的动作。等一拍不要紧：心跳 1.5
-    // 秒一次，那时候调度层早就建起来了。
-    const auto = ctx.autoTranslate;
-    if (!auto || typeof auto.state !== 'function') return false;
-    let snap = null;
-    try {
-      snap = auto.state();
-    } catch (e) {
-      return false; // 同上：说不准就不动
-    }
-    if (!snap || snap.siteRefused) return false;
-    return true;
+    return !siteRefused();
   }
 
   /**
@@ -1104,7 +1166,15 @@
     try {
       video = provider.getVideo ? provider.getVideo() : document.querySelector('video');
     } catch (e) { /* keep null */ }
-    controls.sync({ host, video, status: captionStatus(provider) });
+    // enabled（闸门）和 siteAuto（站点规则）都从这里过去，而不是让控件自己去读
+    // 设置或者再问一遍调度层：两边各算一遍就是两个答案。
+    controls.sync({
+      host,
+      video,
+      enabled: state.enabled,
+      siteAuto: state.siteAuto,
+      status: captionStatus(provider),
+    });
   }
 
   function startControlsHeartbeat() {
@@ -1200,13 +1270,14 @@
    * The one entry point for "the settings changed" — the storage listener, the
    * popup's message, the in-player menu and startup all land here.
    *
-   * Watching is unconditional (see state.enabled): with the feature off the
-   * engine still follows the page's videos, so the button is there to turn it
-   * on. Only attaching a provider — the part that reads cues and calls the
+   * Watching is unconditional (see state.enabled): with the gate shut the
+   * engine still follows the page's videos, so the button is there to open it.
+   * Only attaching a provider — the part that reads cues and calls the
    * translation API — is gated.
    */
   ctx.applyCaptionSettings = function() {
-    state.enabled = !!getSetting('enableYoutubeCaptionTranslation');
+    state.enabled = !siteRefused();
+    state.siteAuto = siteAuto();
     startWatching();
     if (state.enabled && !state.active) {
       state.active = true;
@@ -1223,17 +1294,12 @@
     renderActiveCue(state.lastNowMs);
     handleTimeUpdate(true);
     syncControls();
+    // 最后一步：这时候 state.enabled 已经是对的，订阅那一下的立即回调就不会再
+    // 多走一轮。
+    subscribeToGate();
   };
 
   ctx.setupVideoCaptionTranslation = function() {
     ctx.applyCaptionSettings();
-  };
-
-  // Kept as the "feature off" path callers already use. It stops translating;
-  // it does not stop watching, because the button has to survive it.
-  ctx.stopVideoCaptionTranslation = function() {
-    state.enabled = false;
-    deactivate();
-    syncControls();
   };
 })();

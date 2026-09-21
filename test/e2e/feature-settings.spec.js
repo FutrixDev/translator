@@ -2,7 +2,9 @@ const { test, expect } = require('./fixtures');
 const { setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting } = require('./helpers');
 const { getMessage } = require('../../i18n/messages');
 
-test('options toggle updates youtube caption setting', async ({ page, context, extensionId }) => {
+// 这张卡上已经没有「开 / 关」了：字幕翻不翻跟着主开关和站点规则走。剩下的开关
+// 里挑一个来守自动保存这条路——「视频一开就自动开字幕」。
+test('options toggle updates a caption setting', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     targetLangSetByUser: true,
@@ -15,12 +17,12 @@ test('options toggle updates youtube caption setting', async ({ page, context, e
   const optionsUrl = `chrome-extension://${extensionId}/options/options.html`;
   await page.goto(optionsUrl);
 
-  const toggleLabel = page.locator('label:has(#enableYoutubeCaptionTranslation)');
+  const toggleLabel = page.locator('label:has(#autoEnableCaptions)');
   await expect(toggleLabel).toBeVisible();
   // No Save button any more: the toggle is the whole interaction.
   await toggleLabel.click();
 
-  await expect.poll(async () => getSyncSetting(context, 'enableYoutubeCaptionTranslation')).toBe(true);
+  await expect.poll(async () => getSyncSetting(context, 'autoEnableCaptions')).toBe(true);
 });
 
 /**
@@ -319,7 +321,7 @@ test('YouTube has its own card and Advanced Settings holds the two account featu
   // wording is not its business. It was "YouTube Settings" until subtitle
   // translation stopped being YouTube-only, and a hardcoded copy failed the
   // test on a rename that was entirely correct.
-  const youtubeCard = page.locator('.settings-card:has(#enableYoutubeCaptionTranslation)');
+  const youtubeCard = page.locator('.settings-card:has(#autoEnableCaptions)');
   await expect(youtubeCard).toContainText(getMessage('youtubeSettings', 'en'));
   // Its own card, not the one comic and PDF live in.
   await expect(youtubeCard.locator('#enableComicTranslation')).toHaveCount(0);
@@ -338,7 +340,7 @@ test('YouTube has its own card and Advanced Settings holds the two account featu
     const index = (selector) => cards.findIndex(card => card.querySelector(selector));
     return {
       translation: index('#enableSelection'),
-      youtube: index('#enableYoutubeCaptionTranslation'),
+      youtube: index('#autoEnableCaptions'),
       advanced: index('#enableComicTranslation'),
     };
   });

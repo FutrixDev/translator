@@ -102,8 +102,10 @@
 
   // The settings the video-caption engine reacts to, in one place so the
   // storage listener and the popup's message cannot drift apart.
+  // 字幕翻不翻已经不在这张表里：它跟着主开关和站点规则走，而那两个键的变化由
+  // 调度层广播给字幕这一面（content-video-captions.js 的 subscribeToGate）。
+  // 搁在这里再应一次，等于同一件事有两条路进来。
   const CAPTION_SETTING_KEYS = [
-    'enableYoutubeCaptionTranslation',
     'autoEnableCaptions',
     'captionDisplayMode',
     'captionTranslationPosition',
@@ -166,10 +168,10 @@
         if (ctx.applyTranslationOnlyMode) ctx.applyTranslationOnlyMode();
       }
 
-      // One entry point for all four caption keys: the switch decides whether
-      // we translate, the other three only change what is drawn, and the engine
-      // sorts out which of those it is. Options and the in-player menu both
-      // land here, so a change on one surface shows up live on the other.
+      // One entry point for the caption keys: they only change what is drawn
+      // (whether we translate at all is the gate, and that comes from the
+      // scheduler). Options and the in-player menu both land here, so a change
+      // on one surface shows up live on the other.
       if (CAPTION_SETTING_KEYS.some((key) => key in changes)) {
         if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
       }
@@ -191,10 +193,13 @@
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
-      if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
+      // 字幕排在调度层后面，因为字幕翻不翻由它说了算：字幕这一面一装起来就去订
+      // 阅（subscribeToGate），顺序反了就得等下一次状态变化才上闸 —— 而一个判完
+      // 就定下来不再动的页面（黑名单、语言相同、要追问）永远等不到那一次。
+      if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
       if (ctx.setupAutoStatus) ctx.setupAutoStatus();

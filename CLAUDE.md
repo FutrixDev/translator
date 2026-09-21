@@ -119,6 +119,33 @@ fullscreen. `shared/caption-core.js` holds the pure parts of that (VTT/json3/srv
 parsing, cue merging, batching, track choice, the translation request) so
 `npm run test:unit` can exercise them with no browser.
 
+**Subtitles have no switch of their own.** Whether we translate them at all is
+the same gate the page text goes through — the main `autoTranslate` switch plus
+this site's rule — and the engine reads it off the scheduler's snapshot
+(`siteRefused()` in `content/content-video-captions.js`, subscribed through
+`ctx.autoTranslate.onStateChange`, which is why `ctx.init` starts the scheduler
+first). It asks `siteRefused`, **not** `siteAuto`: video sites are not on the
+built-in Always list, so the page-text answer there is usually `ask` and
+`siteAuto` is permanently false — gating on it would mean subtitles never work
+where they matter most. What has to be true is only that this site is not
+*refused* (`GLOBAL_OFF` / `BLOCKLIST` / `USER_NEVER`, the `REFUSALS` list in
+`shared/site-rules.js`). Anything the answer is not yet — the scheduler has not
+decided, or `ctx.autoTranslate` is not up — counts as refused: this step sends
+the page's text to a third party, and "not decided yet" must not look like yes.
+
+The in-player menu's first row and the popup's site row are therefore the same
+sentence, and go through one implementation, `SiteRules.setSiteAuto()`. That row
+draws and writes **`siteAuto`**, not the gate — on an ordinary video site with no
+rule the gate is open while `siteAuto` is false, so drawing the row from the gate
+would show it on and a click would then write a permanent `never`. The engine
+hands both down in `controls.sync({ enabled, siteAuto })` and the controls layer
+recomputes neither, because a second computation is a second answer. Two things
+the row cannot write are greyed out (`ruleWritable()`): a blocklisted host, where
+`BLOCKLIST` outranks `USER_ALWAYS`, and a host `normalizeHost()` cannot turn into
+a key — `file://` pages have no hostname, and there the rule would silently not
+be stored while the "also open the main switch" half still ran.
+`SiteRules.setSiteAuto()` throws on such a host rather than half-succeeding.
+
 A provider in `content/content-caption-providers.js` answers four questions:
 
 | question | method |
@@ -252,9 +279,12 @@ Patching `fetch`/`XHR` on every page is a performance, compatibility and
 store-review cost, and it buys nothing the `TextTrack` path does not already
 give. A site that needs network observation gets its own match pattern.
 
-Storage keys still read `enableYoutubeCaptionTranslation` / `youtubeCaption*` /
-`showYoutubeOriginalCaption` on purpose: renaming them would drop the settings
-of everyone who already has the feature on.
+Storage keys still read `youtubeCaption*` / `showYoutubeOriginalCaption` on
+purpose: renaming them would drop the settings of everyone who already has the
+feature on. (`enableYoutubeCaptionTranslation` is gone — the feature no longer
+has a switch of its own, see above. The key is simply never read again; there is
+no migration, because a stale value in sync storage that nothing consults costs
+nothing, and a migration that runs on every profile can only lose data.)
 
 ### Image OCR
 

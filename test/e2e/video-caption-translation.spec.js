@@ -17,8 +17,12 @@ const BASE_SETTINGS = {
   apiKey: 'sk-test',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   modelName: 'gpt-4.1-mini',
-  enableYoutubeCaptionTranslation: true,
 };
+
+// 「把字幕关掉」有两条路，因为字幕没有自己的开关了：它跟着主开关加站点规则走
+// （content/content-video-captions.js 的 siteRefused，PRD §5.4.1）。这一条是关主
+// 开关——GLOBAL_OFF 是 REFUSALS 的第一档。站点规则那条在文件末尾单独守。
+const GATE_SHUT = { ...BASE_SETTINGS, autoTranslate: false };
 
 const VTT = `WEBVTT
 
@@ -312,12 +316,12 @@ test('turning subtitles off in the page turns ours off, and they stay off', asyn
   // Detaching is the other path that hands the track back, and it has to answer
   // the same way: the mode we recorded is from before the viewer switched
   // subtitles off, so restoring it here would switch them on as a parting act.
-  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await setExtensionSettings(p, GATE_SHUT);
   await p.waitForTimeout(600);
   expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('disabled');
 });
 
-test('turning the feature off puts the page back the way it was', async ({ page: p, context }) => {
+test('shutting the gate puts the page back the way it was', async ({ page: p, context }) => {
   await setExtensionSettings(p, BASE_SETTINGS);
   await serve(context, WITH_TRACK);
   await mockTranslation(context);
@@ -326,7 +330,7 @@ test('turning the feature off puts the page back the way it was', async ({ page:
   await seekIntoFirstCue(p);
   await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 
-  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await setExtensionSettings(p, GATE_SHUT);
   await p.waitForTimeout(600);
 
   await expect(p.locator('.ai-translator-caption-host')).toHaveCount(0);
@@ -568,7 +572,7 @@ test('after the viewer switches subtitles off, the menu can switch them back on'
   // And the track he asked for is handed back *on*. Restoring the mode it had
   // when we took it would mean turning subtitles off as a parting act — for a
   // track we only ever held because he pressed "turn subtitles on".
-  await setExtensionSettings(p, { ...BASE_SETTINGS, enableYoutubeCaptionTranslation: false });
+  await setExtensionSettings(p, GATE_SHUT);
   await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['en:showing']);
 });
 
@@ -596,4 +600,43 @@ test('the menu offers to turn subtitles on even with the setting off', async ({ 
   await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
   await seekIntoFirstCue(p);
   await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
+// ---------------------------------------------------------------- 闸门
+// 字幕翻不翻由主开关加站点规则说了算。上面用主开关关闸，这两条守另外半边：一条
+// 站点规则同样关得掉，而且**规则一落地字幕当场就停**，不必刷新页面 —— 用户在
+// popup 上把这个站点关掉，是因为他此刻就不想要，而这一页正在播。
+
+test('一条 never 规则同样把字幕关掉', async ({ page: p, context }) => {
+  await setExtensionSettings(p, { ...BASE_SETTINGS, siteRules: { 'video.test': 'never' } });
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await p.waitForTimeout(1500);
+  await seekIntoFirstCue(p);
+
+  // 字幕没上，而页面自己的那条轨也没被我们动过。
+  await expect(p.locator('#ai-translator-caption-overlay')).toHaveCount(0);
+  expect(await p.evaluate(() => document.querySelector('video').textTracks[0].mode)).toBe('showing');
+  // 按钮还在：它是把这个站点重新打开的地方，不能自己也跟着消失。
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(1);
+});
+
+test('规则改在播放当中：字幕当场停，不必刷新', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await setExtensionSettings(p, { ...BASE_SETTINGS, siteRules: { 'video.test': 'never' } });
+
+  await expect(p.locator('.ai-translator-caption-host')).toHaveCount(0);
+  // 轨照旧还给页面，和主开关那条路一个交法。
+  await expect
+    .poll(() => p.evaluate(() => document.querySelector('video').textTracks[0].mode), { timeout: 8000 })
+    .toBe('showing');
 });

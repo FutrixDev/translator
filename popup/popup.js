@@ -609,15 +609,9 @@ async function refreshPageRows() {
 }
 
 /**
- * 站点开关：开写 always，关写 never。
- *
- * 关**不能**是「把规则删掉」。删掉之后判定会往下落到内置名单，而 x.com、
- * reddit.com 这些在内置名单里就是 always —— 用户刚把它关掉，下一次打开又自动
- * 翻了，而且规则表里干干净净，他连去哪儿改都找不到。
- *
- * 开的时候顺带把总开关打开：用户刚指着这个站点说「自动翻」，因为一个他此刻看
- * 不见的总开关而什么都不发生，是最坏的一种没反应。总开关本身默认就是开的，这
- * 一步只在他自己关过之后才有事做。
+ * 站点开关。开写 always、关写 never，开的时候顺带打开总开关 —— 这几条规矩和
+ * 它们的理由都在 SiteRules.setSiteAuto() 里，播放器里字幕菜单的第一项说的是同
+ * 一句话，走的是同一份实现。
  */
 async function toggleSiteAuto() {
   if (!pageState || !pageState.host) return;
@@ -626,14 +620,8 @@ async function toggleSiteAuto() {
   if (pageState.blocked) return;
   const on = siteAutoOn();
   try {
-    await SiteRules.writeUserRule(pageState.host, on ? 'never' : 'always');
-    // 总开关排在规则后面，顺序是有意的：规则写不进去（配额挤爆）的时候，总开关
-    // 不该已经替所有别的站点开好了 —— 他要的是这一个站点，拿到的会是整个浏览器。
-    // 反过来那半边漏掉不伤人：规则落了地而总开关没开，再点一次就补上了。
-    if (!on && !globalAuto) {
-      await chrome.storage.sync.set({ autoTranslate: true });
-      globalAuto = true;
-    }
+    await SiteRules.setSiteAuto(pageState.host, !on);
+    if (!on) globalAuto = true;
   } catch (error) {
     // 这条写入是会失败的：同步存储每项 8KB，站点规则表按域名一路长下去。
     // 失败了就得说一声——开关是个乐观控件，它已经在用户眼里动过了，而规则没

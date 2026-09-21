@@ -484,6 +484,43 @@
     return request('ask', { host: hostname, op });
   }
 
+  /**
+   * 「这个站点自动翻 / 不自动翻」——一个开关的两件事，写在一处。
+   *
+   * 开写 always、关写 never。**关不能是「把规则删掉」**：删掉之后判定会往下落到
+   * 内置名单，而 x.com、reddit.com 这些在内置名单里就是 always —— 用户刚把它关
+   * 掉，下一次打开又自动翻了，而且规则表里干干净净，他连去哪儿改都找不到。
+   *
+   * 开的时候顺带把总开关打开：用户刚指着这个站点说「自动翻」，因为一个他此刻看
+   * 不见的总开关而什么都不发生，是最坏的一种没反应。总开关本身默认就是开的，这
+   * 一步只在他自己关过之后才有事做。
+   *
+   * 顺序是有意的：规则写不进去（同步存储每项 8KB，规则表按域名一路长下去）的时
+   * 候，总开关不该已经替所有别的站点开好了 —— 他要的是这一个站点，拿到的会是整
+   * 个浏览器。反过来那半边漏掉不伤人：规则落了地而总开关没开，再点一次就补上了。
+   *
+   * 黑名单站点由调用方自己挡（画面上那一行要灰掉，见 popup 和字幕菜单）：
+   * BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算数，而顺带
+   * 打开总开关这个副作用会照跑。
+   *
+   * 存不进规则表的 host 在这里就拦住。file:// 页面上 location.hostname 是空串，
+   * normalizeHost 给不出键，writeUserRule 会一声不响地什么都不写 —— 而后面那半
+   * 边照跑：一个写着「这个站点」的开关，按下去把整个浏览器的总开关打开了。抛出
+   * 去而不是默默返回，调用方才说得出「没存上」。
+   *
+   * 两个调用点：popup 那一行，和播放器里字幕菜单的第一项。字幕翻译并进主开关之
+   * 后它们说的是同一句话，所以也只该有一份实现。
+   */
+  async function setSiteAuto(hostname, on) {
+    if (!normalizeHost(hostname)) throw new Error(`site rules: unusable host ${hostname}`);
+    await writeUserRule(hostname, on ? 'always' : 'never');
+    if (!on) return;
+    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
+    if (!store) return;
+    const stored = await store.get({ autoTranslate: true });
+    if (stored.autoTranslate === false) await store.set({ autoTranslate: true });
+  }
+
   root.SiteRules = {
     REASONS,
     decide,
@@ -493,6 +530,7 @@
     baseLang,
     lookupUserRule,
     writeUserRule,
+    setSiteAuto,
     updateAskCount,
     applyWrite,
     matchBuiltin,

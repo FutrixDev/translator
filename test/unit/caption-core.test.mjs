@@ -645,22 +645,100 @@ test('观众自己把字幕关掉之后，就不再替他开第二次', () => {
   assert.match(repoFile('content/content-caption-controls.js'), /ctx\.enableNativeCaptions\(\)/);
 });
 
-test('问不到「这个站点准不准」，就不动播放器', () => {
-  // ctx.init 里字幕排在自动翻译前面，所以第一次同步控件时 ctx.autoTranslate 还
-  // 不存在。写成「问不到就放行」，那一下正好落在总开关关着、或者站点在黑名单上
-  // 的页面上——而它是整轮自动化里唯一改动播放器自己状态的动作。
+test('问不到「这个站点准不准」，就当是不准', () => {
+  // 这一句话现在管两件事：替观众打开原字幕（改的是播放器自己的状态），以及字幕
+  // 到底翻不翻（把页面上的文字发给第三方）。「还没判出来」和「判出来是不许」在
+  // 观众那里没有区别，而后者错一次是把不该发的发出去了。
   const engine = repoFile('content/content-video-captions.js');
-  const gate = engine.match(/function autoEnableAllowed\(\)[\s\S]*?\n  \}/);
-  assert.ok(gate, '找不到 autoEnableAllowed()');
-  assert.match(gate[0], /if \(!auto \|\| typeof auto\.state !== 'function'\) return false/);
-  // 拿到了 state() 也可能抛（页面正在拆），那也算「说不准」。
-  assert.match(gate[0], /catch[\s\S]{0,80}?return false/);
+  // 「调度层没起来」和「state() 抛了（页面正在拆）」在取快照那一层就合成了同一
+  // 个答案：null，什么都不知道。
+  const snap = engine.match(/function autoSnapshot\(\)[\s\S]*?\n  \}/);
+  assert.ok(snap, '找不到 autoSnapshot()');
+  assert.match(snap[0], /if \(!auto \|\| typeof auto\.state !== 'function'\) return null/);
+  assert.match(snap[0], /catch[\s\S]{0,80}?return null/);
 
-  // 字幕先起、自动翻译后起，这个顺序本身就是上面那道闩的理由。
+  const gate = engine.match(/function siteRefused\(\)[\s\S]*?\n  \}/);
+  assert.ok(gate, '找不到 siteRefused()');
+  // 不知道 → 拒绝。而快照里没有这个字段也算不知道 —— `!== false` 而不是
+  // `=== true` 的反面。
+  assert.match(gate[0], /return !snap \|\| snap\.siteRefused !== false;/);
+
+  // 自动开原字幕那一道闸复用同一句话，不自己再问一遍。
+  const auto = engine.match(/function autoEnableAllowed\(\)[\s\S]*?\n  \}/);
+  assert.ok(auto, '找不到 autoEnableAllowed()');
+  assert.match(auto[0], /return !siteRefused\(\);/);
+
+  // 自动翻译先起、字幕后起：字幕一装起来就去订阅那个闸门，顺序反了就得等下一次
+  // 状态变化才上闸——而一个判完就定下来不再动的页面永远等不到那一次。
   const boot = repoFile('content/content-bootstrap.js');
   assert.ok(
-    boot.indexOf('setupVideoCaptionTranslation') < boot.indexOf('ctx.setupAutoTranslate'),
-    'bootstrap 顺序变了，上面那道闩的理由要重写'
+    boot.indexOf('ctx.setupAutoTranslate') < boot.indexOf('setupVideoCaptionTranslation'),
+    'bootstrap 顺序变了，subscribeToGate 的理由要重写'
+  );
+});
+
+test('菜单第一行画的是站点规则，不是闸门', () => {
+  // 闸门＝「这个站点没明令拒绝我们」，站点规则＝「这个站点开着自动翻」，中间隔
+  // 着一大片 ask。一个没设过规则的普通视频站上闸门开着而规则关着——拿闸门去画
+  // 那一行，它会显示成「开」，而观众按下去写进去的是一条永久的 never。
+  const engine = repoFile('content/content-video-captions.js');
+  assert.match(engine, /function siteAuto\(\)[\s\S]*?return !!\(snap && snap\.siteAuto\);/);
+  assert.match(engine, /state\.siteAuto = siteAuto\(\);/);
+  assert.match(engine, /controls\.sync\(\{[^}]*siteAuto: state\.siteAuto/);
+
+  const controls = repoFile('content/content-caption-controls.js');
+  assert.match(controls, /function siteAutoOn\(\)[\s\S]*?return !!\(ui\.info \|\| \{\}\)\.siteAuto;/);
+  // 画、点两处都问站点规则。
+  assert.match(controls, /aria-checked', siteAuto \? 'true' : 'false'/);
+  assert.match(controls, /classList\.toggle\('ai-cap-on', siteAuto\)/);
+  assert.match(controls, /SiteRules\.setSiteAuto\(location\.hostname, !siteAutoOn\(\)\)/);
+  // 闸门还管着它该管的：字幕流水线自己，和「显示方式」那一格灰不灰。
+  assert.match(controls, /parts\.modeItem\.classList\.toggle\('ai-cap-disabled', !enabled\)/);
+});
+
+test('写不进规则的站点，那一行点不动', () => {
+  // 黑名单：BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算
+  // 数。没有 host（file://）：normalizeHost 给不出键，规则一声不响地没写上，而
+  // 「顺带打开总开关」那半边会照跑——他要的是这一个站点，拿到的是整个浏览器。
+  const controls = repoFile('content/content-caption-controls.js');
+  const fn = controls.match(/function ruleWritable\(\)[\s\S]*?\n  \}/);
+  assert.ok(fn, '找不到 ruleWritable()');
+  assert.match(fn[0], /normalizeHost\(location\.hostname\)/);
+  assert.match(fn[0], /isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\)/);
+
+  // 写入口那边再挡一道：画面灰着只是画面，别的调用方照样能递个空 host 进来。
+  const rules = repoFile('shared/site-rules.js');
+  const set = rules.slice(rules.indexOf('async function setSiteAuto(hostname, on)'));
+  const guard = set.indexOf('if (!normalizeHost(hostname)) throw');
+  assert.ok(guard > 0, 'setSiteAuto 没有挡住存不进去的 host');
+  assert.ok(guard < set.indexOf('writeUserRule('), '得在写之前挡');
+});
+
+test('字幕翻不翻只有一个答案，控件不自己再算一遍', () => {
+  // 引擎算出闸门，随 controls.sync() 递给控件；控件回头去读设置就是第二个答案，
+  // 而两个答案里总有一个是错的。
+  const engine = repoFile('content/content-video-captions.js');
+  assert.match(engine, /state\.enabled = !siteRefused\(\);/);
+  assert.match(engine, /controls\.sync\(\{[^}]*enabled: state\.enabled/);
+
+  const controls = repoFile('content/content-caption-controls.js');
+  assert.match(controls, /function captionsOn\(\)[\s\S]*?return !!\(ui\.info \|\| \{\}\)\.enabled;/);
+  assert.equal(
+    /enableYoutubeCaptionTranslation/.test(controls), false,
+    '字幕不再有自己的开关，控件不该还认得这个键',
+  );
+
+  // 闸门一变就重来一遍：订阅调度层，而不是等下一次心跳或者设置变动。站点规则
+  // 变了也要重来：ask→always 并不挪动闸门，可菜单第一行画的就是它。
+  assert.match(engine, /auto\.onStateChange\(/);
+  assert.match(engine, /siteRefused\(\) === state\.enabled \|\| siteAuto\(\) !== state\.siteAuto/);
+  // 先立旗再订阅：onStateChange 会当场回调一次，旗子晚一行就是一次无限递归。
+  const sub = engine.match(/function subscribeToGate\(\)[\s\S]*?\n  \}/);
+  assert.ok(sub, '找不到 subscribeToGate()');
+  assert.ok(
+    sub[0].indexOf('gateSubscribed = true') < sub[0].indexOf('auto.onStateChange('),
+    '旗子必须在订阅之前立起来',
   );
 });
 
