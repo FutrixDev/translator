@@ -221,7 +221,16 @@ Two rules the generic provider exists to keep:
   the characters and only then is the tag whole enough to compare. Its table
   holds only characters that exist on one side and not the other — 后, 几, 台,
   里 are ordinary Traditional words, and a table containing them would read a
-  Traditional page as Simplified. And **the
+  Traditional page as Simplified. That refinement belongs to
+  `detectLanguageOf()` in `content/content-translation-engine.js`, not to any
+  one caller, because the built-in engine asks the same question again one
+  layer below the gate: it knows Simplified (`zh`) and Traditional
+  (`zh-Hant`) as two languages, and a bare `zh` source against a `zh` target
+  trips its own equal-language short-circuit — the gate opens and the page
+  still comes back untranslated. Both harnesses that load the engine in Node
+  (`test/unit/helpers/engine-harness.mjs`,
+  `test/unit/builtin-translator-stall.test.mjs`) must load `lang-tags.js`
+  first. And **the
   heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the

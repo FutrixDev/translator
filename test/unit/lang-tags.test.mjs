@@ -76,6 +76,7 @@ test('全仓只有这一份实现：别处不许再写一遍 split(\'-\')[0]', (
     'content/content-language.js',
     'content/page/batch.js',
     'content/content-video-captions.js',
+    'content/content-translation-engine.js',
   ];
   for (const rel of sources) {
     const text = repoFile(rel);
@@ -120,6 +121,15 @@ test('三条路问的是同一句：字幕、整页正文、自动翻译的决�
     repoFile('content/page/batch.js'),
     /return refineScriptTag\(topLang\.language, detectText\) \|\| null;/,
     'detectReliableLanguage 要交出补过简繁的整码',
+  );
+
+  // 第四条路：内置引擎自己判源语言。上游的闸门放行了不等于译得出来——引擎在
+  // 下游又问了一次「这段文字是什么语言」，问到的要是个光秃秃的 zh，它自己的
+  // 「源语言等于目标语言就原样返回」那一档照样会把整页吃掉。
+  assert.match(
+    repoFile('content/content-translation-engine.js'),
+    /return LangTags\.refineScript\(top\.language, sample\);/,
+    'detectLanguageOf 要交出补过简繁的整码',
   );
 });
 

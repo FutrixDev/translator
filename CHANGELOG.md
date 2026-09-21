@@ -70,6 +70,13 @@
   words in Traditional text too, and counting them would have read a Traditional
   page as Simplified.
 
+  The default engine asks the same question a second time, one layer down, and
+  it was getting the same bare `zh`: Chrome's built-in translator knows
+  Simplified and Traditional as two separate languages, so a Traditional page
+  with Simplified as the target came back as "source and target are the same
+  language" and every block was handed back untranslated. It now reads the
+  script the same way the gate above it does.
+
 - A page stuck on a missing built-in language pack now recovers by itself the
   moment the pack lands, whether it was downloaded by the page's own prefetch
   or by the button in the settings page — previously it stayed blank until a
