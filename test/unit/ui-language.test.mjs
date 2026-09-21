@@ -97,6 +97,22 @@ test('no caller feeds getUILanguage a target language', () => {
   }
 });
 
+test('changing the UI language repaints the context menu right away', () => {
+  // The context-menu titles are drawn with uiLanguageOf(settings), and the only
+  // thing that redraws them is this storage listener. Watching targetLang alone
+  // leaves the menu speaking the *old* UI language until the service worker
+  // next cold-starts — while the popup and every content script switched the
+  // moment the setting was written. Nothing throws; the menu is simply wrong.
+  const worker = workerSource();
+  const calls = [...worker.matchAll(/refreshContextMenuTitles\(\);/g)].map((m) => m.index);
+  assert.ok(calls.length > 0, 'the worker no longer repaints the context-menu titles');
+  const guards = calls.map((at) => worker.slice(Math.max(0, at - 400), at));
+  assert.ok(guards.some((guard) => /changes\.uiLanguage/.test(guard)),
+    'no storage listener repaints the context menu when uiLanguage changes');
+  assert.ok(guards.some((guard) => /changes\.targetLang/.test(guard)),
+    'the target language stopped repainting the context menu');
+});
+
 test('the settings page offers the choice, and "follow browser" is the empty value', () => {
   const html = repoFile('options/options.html');
   const start = html.indexOf('<select id="uiLanguage">');

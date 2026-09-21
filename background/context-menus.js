@@ -349,7 +349,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // 菜单跟着设置走：语言变了改标题，开关变了改可见性。图标主题那一路在 icon.js
 // 自己听自己的 —— 两个监听器互不相干，MV3 允许注册多个。
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'sync' && (changes.targetLang || changes.targetLangSetByUser)) {
+  // 标题读两样东西，所以两样都要听：界面语言（uiLanguage，菜单这句话本身用哪门
+  // 语言说）和目标语言（targetLang，说的是「译成 X」里的那个 X）。少听前者的后果
+  // 不是没刷新那么轻——内容脚本和 popup 都当场跟着界面语言改了，只有右键菜单还是
+  // 旧的那门语言，要等 service worker 下次醒来才对得上。
+  if (namespace === 'sync'
+      && (changes.uiLanguage || changes.targetLang || changes.targetLangSetByUser)) {
     refreshContextMenuTitles();
   }
   if (namespace === 'sync' && changes.enableComicTranslation) {
