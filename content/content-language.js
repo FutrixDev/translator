@@ -42,6 +42,7 @@
   // ctx.getLangBase 这个名字留着，是因为 content/page/batch.js 一族都按它取。
   ctx.getLangBase = globalThis.LangTags.getLangBase;
   ctx.isSameLanguage = globalThis.LangTags.isSameLanguage;
+  ctx.refineScriptTag = globalThis.LangTags.refineScript;
 
   ctx.getLanguageDetectionText = function(text) {
     if (!text) return '';

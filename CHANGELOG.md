@@ -63,6 +63,13 @@
   `en` is still not. The language list in the settings page keeps working on
   base codes, because what you tick there is 「中文」, not 「简体中文」.
 
+  Chrome's own language detector cannot tell the two scripts apart — it answers
+  a plain `zh` for both — so for Chinese the script is now read off the
+  characters themselves before that judgement is made. Only characters that
+  exist on one side and not the other count; 后, 几, 台 and 里 are ordinary
+  words in Traditional text too, and counting them would have read a Traditional
+  page as Simplified.
+
 - A page stuck on a missing built-in language pack now recovers by itself the
   moment the pack lands, whether it was downloaded by the page's own prefetch
   or by the button in the settings page — previously it stayed blank until a

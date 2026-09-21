@@ -19,6 +19,7 @@
   // 「这两门语言算一门吗」的判定在 shared/lang-tags.js，由 content-language.js
   // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
   const isSameLanguage = ctx.isSameLanguage;
+  const refineScriptTag = ctx.refineScriptTag;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
@@ -234,11 +235,15 @@
   /**
    * 这段文字是什么语言 —— 只在够有把握时回答。
    *
-   * 回的是**整码**（'en'、'zh-CN'、'zh-TW' …），不砍成基码。chrome.i18n 的
-   * 检测器本来就分得出简繁，砍掉那个子标签就等于把这个区别丢在这里：一份繁体
-   * 的正文配简体的目标语言，下一步会认成「本来就是目标语言」，整页一个字也不
-   * 翻——而那正是用户要的那一件事。要基码的调用方自己取（getLangBase 在
-   * shared/lang-tags.js），因为砍了就再也接不回来。
+   * 回的是**整码**（'en'、'zh-Hant' …），不砍成基码：砍了就再也接不回来，而
+   * 下一步要拿它去判「这一段是不是已经是目标语言了」。
+   *
+   * 中文还要多走一步。chrome.i18n.detectLanguage **分不出简繁**——真实 Chrome
+   * 里繁体和简体都回答 `zh`（两边都是 100%、isReliable），实测过。光把这个 `zh`
+   * 交出去，一份繁体正文配简体的目标语言仍旧会被判成「本来就是目标语言」，整页
+   * 一个字不翻，而那正是用户要的那一件事。所以这里按正文的字把 `zh` 补成
+   * zh-Hans / zh-Hant（refineScript 在 shared/lang-tags.js），补不出来就维持
+   * `zh`。
    *
    * @returns {Promise<?string>} 语言标签，判不出或不够有把握时 null
    */
@@ -253,7 +258,7 @@
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
     if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
 
-    return topLang.language || null;
+    return refineScriptTag(topLang.language, detectText) || null;
   }
 
   // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。

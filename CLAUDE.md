@@ -214,7 +214,14 @@ Two rules the generic provider exists to keep:
   language?" differently on the same tab. Anything that loads
   `shared/caption-core.js` or `shared/site-rules.js` must load `lang-tags.js`
   first; both throw at load without it, and `test/unit/site-rules.test.mjs`
-  checks the order in all four load lists. And **the
+  checks the order in all four load lists. For page text there is one more
+  step before that question can be asked at all: `chrome.i18n.detectLanguage`
+  answers a plain `zh` for both scripts (measured in the e2e Chrome — 100%,
+  `isReliable`, no subtag), so `LangTags.refineScript()` reads the script off
+  the characters and only then is the tag whole enough to compare. Its table
+  holds only characters that exist on one side and not the other — 后, 几, 台,
+  里 are ordinary Traditional words, and a table containing them would read a
+  Traditional page as Simplified. And **the
   heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the
