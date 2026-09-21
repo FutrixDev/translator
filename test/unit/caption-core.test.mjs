@@ -18,6 +18,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 
 // No `export` — it is also loaded as a classic script by the content scripts,
 // so importing it for its side effect publishes globalThis.CaptionCore.
+await import('../../shared/lang-tags.js');
 await import('../../shared/caption-core.js');
 const core = globalThis.CaptionCore;
 
@@ -972,36 +973,23 @@ test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏�
   );
 });
 
-test('简体和繁体不是同一门语言，别的语言的地区码则是', () => {
-  // 一条繁体轨道配简体目标，正是观众要的那一件事。按基码判，两边都是 zh，
-  // 「本来就是目标语言」就成立了——handleTimeUpdate 在那道闸门上返回，一个字也不译。
-  assert.equal(core.isSameLanguage('zh-TW', 'zh-CN'), false);
-  assert.equal(core.isSameLanguage('zh-Hant', 'zh-Hans'), false);
-  assert.equal(core.isSameLanguage('zh-HK', 'zh-CN'), false);
-  assert.equal(core.isSameLanguage('zh-Hant-TW', 'zh-SG'), false);
-
-  // 同一套字就是同一门语言，大小写和写法都不算数。
-  assert.equal(core.isSameLanguage('zh-TW', 'zh-hant'), true);
-  assert.equal(core.isSameLanguage('ZH-CN', 'zh-Hans'), true);
-
-  // 说不准的那一边按「同语言」算：这是一道花钱的闸，猜「不同」是替观众买一次
-  // 多半什么也没变的翻译。
-  assert.equal(core.isSameLanguage('zh', 'zh-CN'), true);
-  assert.equal(core.isSameLanguage('zh-TW', 'zh'), true);
-
-  // 别的语言，地区码不分家——en-GB 配 en 去译一遍才是 bug。
-  assert.equal(core.isSameLanguage('en-GB', 'en'), true);
-  assert.equal(core.isSameLanguage('pt-BR', 'pt-PT'), true);
-  assert.equal(core.isSameLanguage('en', 'ja'), false);
-  assert.equal(core.isSameLanguage('', 'en'), false);
-  assert.equal(core.isSameLanguage('en', ''), false);
-
-  // 引擎走的是这一个判定，不是自己再写一遍基码比较。
+test('字幕引擎问的是那一个共用的语言判定，不是自己再写一遍', () => {
+  // 简繁不是同一门语言、en-GB 和 en 是——这些的行为断言在
+  // test/unit/lang-tags.test.mjs，判定本身在 shared/lang-tags.js。这里只守一件
+  // 事：引擎问的是**那一份**。一条繁体轨道配简体目标正是观众要的那件事，按基码
+  // 判两边都是 zh，「本来就是目标语言」成立，handleTimeUpdate 在那道闸门上返回，
+  // 一个字也不译。
   const engine = repoFile('content/content-video-captions.js');
   const fn = engine.match(/function sameLanguage\(\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 sameLanguage()');
-  assert.match(fn[0], /core\.isSameLanguage\(/);
+  assert.match(fn[0], /langTags\.isSameLanguage\(/);
   assert.ok(!/getLangBase/.test(fn[0]), 'sameLanguage() 又砍回基码了');
+
+  // 而且 caption-core 不再转卖这三个函数：两个名字指同一件事，迟早有人改其中
+  // 一个。
+  for (const name of ['getLangBase', 'getScriptVariant', 'isSameLanguage']) {
+    assert.equal(core[name], undefined, `CaptionCore 又把 ${name} 转出去了`);
+  }
 });
 
 test('一轮译文有主，换了视频的那一轮不许接着跑', () => {

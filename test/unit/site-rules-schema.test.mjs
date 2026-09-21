@@ -15,6 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/site-rules.js');
 const { SiteRules, SiteRulesBuiltin } = globalThis;

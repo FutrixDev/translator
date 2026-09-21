@@ -38,10 +38,11 @@
     }).join('');
   };
 
-  ctx.getLangBase = function(lang) {
-    if (!lang) return '';
-    return lang.split('-')[0].toLowerCase();
-  };
+  // 语言标签的判定只有一个主人：shared/lang-tags.js。这里是转手，不是副本。
+  // ctx.getLangBase 这个名字留着，是因为 content/page/batch.js 一族都按它取。
+  ctx.getLangBase = globalThis.LangTags.getLangBase;
+  ctx.isSameLanguage = globalThis.LangTags.isSameLanguage;
+  ctx.refineScriptTag = globalThis.LangTags.refineScript;
 
   ctx.getLanguageDetectionText = function(text) {
     if (!text) return '';

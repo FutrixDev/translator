@@ -20,6 +20,12 @@
   const ctx = window.AI_TRANSLATOR_CONTENT || (window.AI_TRANSLATOR_CONTENT = {});
   const settings = ctx.settings || (ctx.settings = {});
 
+  // 「这两门语言是同一门吗」「这段文字是简体还是繁体」的唯一出处，见
+  // shared/lang-tags.js。manifest 和设置页都把它排在这个文件前面；拿不到就直接
+  // 抛，别让整条内置链路在「源语言永远是个 zh」上静静地跑偏。
+  const LangTags = globalThis.LangTags;
+  if (!LangTags) throw new Error('content-translation-engine.js 要先装 shared/lang-tags.js');
+
   // ==================== 语言码 ====================
 
   // Translator API 认的是 BCP-47 基础码，扩展内部用的是带地区的码（zh-CN / zh-TW）。
@@ -159,7 +165,12 @@
       if (requireReliable && (result.isReliable !== true || (top.percentage || 0) < 70)) {
         return '';
       }
-      return top.language;
+      // 检测器分不出简繁：繁体和简体它都答一个光秃秃的 `zh`，两边都是 100%、
+      // isReliable。而内置引擎认的是 'zh'（简）和 'zh-Hant'（繁）两门语言——
+      // 一整页繁体配 zh-CN 的目标，源语言压成 zh 就正好撞上 src === tgt 那一档，
+      // 原样返回，整页一个字都不译。所以中文的书写系统在这里就从字里数出来：
+      // 判过语言的是这一份 sample，补书写系统的也该是它。
+      return LangTags.refineScript(top.language, sample);
     } catch (error) {
       return '';
     }

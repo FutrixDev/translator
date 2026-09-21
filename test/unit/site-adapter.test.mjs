@@ -23,6 +23,7 @@ globalThis.document = {
 // 坏选择器会被这一层叫一声；断言在下面说话。
 console.warn = () => {};
 
+await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/site-rules.js');
 await import('../../content/page/site-adapter.js');

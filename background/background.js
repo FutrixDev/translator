@@ -1,6 +1,9 @@
 // Blab Translation Background Script
 import '../shared/api-compat.js';
 import '../shared/account-gate.js';
+// 语言标签的判定（基码、简繁、同语言）只有这一份，site-rules.js 在加载时就取走
+// 它，所以它要排在前面。
+import '../shared/lang-tags.js';
 // 内置名单排在 site-rules.js 之前：它是那个模块 table() 的数据源。没有它
 // table() 会静静地退回一张空表，而空表的 isBlocked() 对每一个域名都答「不在
 // 黑名单里」—— 银行、网页邮箱、政务表单那份禁翻清单就这么没了，不报错。

@@ -53,6 +53,30 @@
 
 ### Fixes
 
+- **A page and its subtitles no longer disagree about what language you
+  read.** Page translation compared base codes (`zh`) while the caption engine
+  compared whole tags (`zh-TW`), so on a Traditional Chinese page with
+  Simplified as your target the subtitles were translated and the body text was
+  silently skipped — the same question, two routes, two answers. There is now
+  one owner of that judgement, `shared/lang-tags.js`, and both routes ask it:
+  whole tags, so Simplified↔Traditional is a real translation and `en-GB` to
+  `en` is still not. The language list in the settings page keeps working on
+  base codes, because what you tick there is 「中文」, not 「简体中文」.
+
+  Chrome's own language detector cannot tell the two scripts apart — it answers
+  a plain `zh` for both — so for Chinese the script is now read off the
+  characters themselves before that judgement is made. Only characters that
+  exist on one side and not the other count; 后, 几, 台 and 里 are ordinary
+  words in Traditional text too, and counting them would have read a Traditional
+  page as Simplified.
+
+  The default engine asks the same question a second time, one layer down, and
+  it was getting the same bare `zh`: Chrome's built-in translator knows
+  Simplified and Traditional as two separate languages, so a Traditional page
+  with Simplified as the target came back as "source and target are the same
+  language" and every block was handed back untranslated. It now reads the
+  script the same way the gate above it does.
+
 - A page stuck on a missing built-in language pack now recovers by itself the
   moment the pack lands, whether it was downloaded by the page's own prefetch
   or by the button in the settings page — previously it stayed blank until a

@@ -204,10 +204,33 @@ Two rules the generic provider exists to keep:
   providers: "this track is already in the target language" is `sameLanguage()`,
   computed on every read, because the viewer can change the target halfway
   through a video and nothing would go back to revise a stored answer — and it
-  compares **whole tags**, through `CaptionCore.isSameLanguage()`. `zh-CN` and
+  compares **whole tags**, through `LangTags.isSameLanguage()`. `zh-CN` and
   `zh-TW` share a base code and are two writing systems, so base equality would
   answer "already in your language" to exactly the conversion the viewer wants;
-  the cue cache is keyed on the whole tag for the same reason. And **the
+  the cue cache is keyed on the whole tag for the same reason. That judgement
+  is **not the caption engine's own** — `shared/lang-tags.js` is the single
+  owner, and `SiteRules.decide()` and `content/page/batch.js` ask the same one,
+  so a page and its subtitles can no longer answer "is this already your
+  language?" differently on the same tab. Anything that loads
+  `shared/caption-core.js` or `shared/site-rules.js` must load `lang-tags.js`
+  first; both throw at load without it, and `test/unit/site-rules.test.mjs`
+  checks the order in all four load lists. For page text there is one more
+  step before that question can be asked at all: `chrome.i18n.detectLanguage`
+  answers a plain `zh` for both scripts (measured in the e2e Chrome — 100%,
+  `isReliable`, no subtag), so `LangTags.refineScript()` reads the script off
+  the characters and only then is the tag whole enough to compare. Its table
+  holds only characters that exist on one side and not the other — 后, 几, 台,
+  里 are ordinary Traditional words, and a table containing them would read a
+  Traditional page as Simplified. That refinement belongs to
+  `detectLanguageOf()` in `content/content-translation-engine.js`, not to any
+  one caller, because the built-in engine asks the same question again one
+  layer below the gate: it knows Simplified (`zh`) and Traditional
+  (`zh-Hant`) as two languages, and a bare `zh` source against a `zh` target
+  trips its own equal-language short-circuit — the gate opens and the page
+  still comes back untranslated. Both harnesses that load the engine in Node
+  (`test/unit/helpers/engine-harness.mjs`,
+  `test/unit/builtin-translator-stall.test.mjs`) must load `lang-tags.js`
+  first. And **the
   heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the

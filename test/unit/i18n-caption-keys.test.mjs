@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 
 // No `export` — messages.js is a classic script that publishes onto globalThis.
 await import('../../i18n/messages.js');
+await import('../../shared/lang-tags.js');
 await import('../../shared/caption-core.js');
 const MESSAGES = globalThis.I18N_MESSAGES;
 const core = globalThis.CaptionCore;

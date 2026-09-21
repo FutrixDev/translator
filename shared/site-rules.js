@@ -212,12 +212,13 @@
 
   // ---------------------------------------------------------------- 语言
 
-  // 与 content-language.js 的 ctx.getLangBase、caption-core 的 getLangBase 同一个
-  // 口径，site-rules.test.mjs 拿一张表逐项比对两者的输出。
-  function baseLang(lang) {
-    if (!lang) return '';
-    return String(lang).split('-')[0].toLowerCase();
-  }
+  // 语言标签的判定只有一个主人：shared/lang-tags.js。这里连一份副本都不留，
+  // 就是转手——曾经这里、caption-core 和 content-language.js 各写过一份，
+  // 于是同一对语言在整页翻译里算「同语言」、在字幕里不算。
+  // 取不到就立刻炸：装载顺序错了的表现否则是「语言那几档静静地判错」。
+  const LangTags = root.LangTags;
+  if (!LangTags) throw new Error('site-rules.js 要先装 shared/lang-tags.js');
+  const baseLang = LangTags.getLangBase;
 
   // ---------------------------------------------------------------- 用户规则
 
@@ -299,10 +300,15 @@
     if (userRule === 'always') return out('auto', REASONS.USER_ALWAYS);
     if (rule && rule.state === 'always') return out('auto', REASONS.BUILTIN_ALWAYS);
 
-    const page = baseLang(pageLang);
-    const target = baseLang(targetLang);
-    if (page && target && page === target) return out('off', REASONS.SAME_LANGUAGE);
+    // 比整码，不比基码：zh-CN 的页面配 zh-TW 的目标是两套字，而「繁转简」正是
+    // 用户要的那一件事——按基码判，这一档会答「这一页本来就是你的语言」，整页
+    // 一个字也不翻。字幕那边早就是这个口径了，这里曾经不是。
+    if (LangTags.isSameLanguage(pageLang, targetLang)) return out('off', REASONS.SAME_LANGUAGE);
 
+    // 下面这一档反过来，**必须**按基码：autoTranslateLangs 是用户在设置里勾的
+    // 语言，勾的是「中文」不是「简体中文」。拿整码比，一个勾了 zh 的用户会被
+    // 这一档挡在所有 zh-CN 的页面外面。
+    const page = baseLang(pageLang);
     const listed = Array.isArray(prefs.autoTranslateLangs) ? prefs.autoTranslateLangs : [];
     if (listed.length && page && !listed.some((lang) => baseLang(lang) === page)) {
       return out('off', REASONS.LANG_NOT_LISTED);

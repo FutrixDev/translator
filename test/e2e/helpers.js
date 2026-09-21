@@ -45,6 +45,11 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 里——site-adapter 对 `globalThis.SiteRules` 是运行时软读，拿不到就安静地退回
   // 通用启发式，于是站点规则的 spec 全都「翻是翻了，只是没按规则翻」。
   'shared/site-rules-builtin.js',
+  // site-rules.js 在加载时就取走 LangTags，缺了它整个文件抛错——而一个抛了错
+  // 的 <script> 照样触发 load，addScriptTag 照样 resolve，于是 `globalThis.
+  // SiteRules` 悄悄成了 undefined，正好落进上面那段说的软读退路里：spec 全绿，
+  // 站点规则全没生效。
+  'shared/lang-tags.js',
   'shared/site-rules.js',
   'content/page/batch.js',
   'content/page/site-adapter.js',

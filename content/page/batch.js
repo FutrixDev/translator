@@ -16,6 +16,10 @@
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getLangBase = ctx.getLangBase;
+  // 「这两门语言算一门吗」的判定在 shared/lang-tags.js，由 content-language.js
+  // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
+  const isSameLanguage = ctx.isSameLanguage;
+  const refineScriptTag = ctx.refineScriptTag;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
@@ -230,7 +234,18 @@
 
   /**
    * 这段文字是什么语言 —— 只在够有把握时回答。
-   * @returns {Promise<?string>} 语言基码（'en' / 'zh' …），判不出或不够有把握时 null
+   *
+   * 回的是**整码**（'en'、'zh-Hant' …），不砍成基码：砍了就再也接不回来，而
+   * 下一步要拿它去判「这一段是不是已经是目标语言了」。
+   *
+   * 中文还要多走一步。chrome.i18n.detectLanguage **分不出简繁**——真实 Chrome
+   * 里繁体和简体都回答 `zh`（两边都是 100%、isReliable），实测过。光把这个 `zh`
+   * 交出去，一份繁体正文配简体的目标语言仍旧会被判成「本来就是目标语言」，整页
+   * 一个字不翻，而那正是用户要的那一件事。所以这里按正文的字把 `zh` 补成
+   * zh-Hans / zh-Hant（refineScript 在 shared/lang-tags.js），补不出来就维持
+   * `zh`。
+   *
+   * @returns {Promise<?string>} 语言标签，判不出或不够有把握时 null
    */
   async function detectReliableLanguage(text) {
     const detectText = getLanguageDetectionText(text);
@@ -243,7 +258,7 @@
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
     if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
 
-    return getLangBase(topLang.language);
+    return refineScriptTag(topLang.language, detectText) || null;
   }
 
   // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。
@@ -271,9 +286,11 @@
   // 那时候还没有「这一轮」，现问就是对的）。一轮之内的调用一律把 target.request
   // 传进来 —— 那一门在开跑时就定死了，见 passTarget。
   async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
-    const targetBase = getLangBase(targetLang);
-    if (!targetBase) return false;
-    return (await detectReliableLanguage(text)) === targetBase;
+    if (!getLangBase(targetLang)) return false;
+    // 比整码，走的是和字幕引擎、和自动翻译决策层同一个判定
+    // （shared/lang-tags.js）。曾经这里比基码而字幕那边比整码：一页 zh-TW 的正文
+    // 配 zh-CN 的目标，字幕翻、正文不翻，同一个问题两条路两个答案。
+    return isSameLanguage(await detectReliableLanguage(text), targetLang);
   }
 
   async function shouldSkipTranslation(block, translation, target) {

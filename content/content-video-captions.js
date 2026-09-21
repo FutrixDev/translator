@@ -16,6 +16,7 @@
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
   const core = globalThis.CaptionCore;
+  const langTags = globalThis.LangTags;
   if (!core) return;
 
   const DELIMITER = '⟪⟫⟪⟫⟪⟫';
@@ -101,11 +102,12 @@
    * 是同一条。
    *
    * 比的是**整码**，不是基码：zh-CN 和 zh-TW 的基码都是 zh，可它们是两套字，而
-   * 「繁转简」正是观众要的那一件事。判定在 caption-core（isSameLanguage），和
-   * getCueKey 的理由一模一样——缓存键当初就是为这件事从基码改成整码的。
+   * 「繁转简」正是观众要的那一件事。判定在 shared/lang-tags.js（isSameLanguage），
+   * 和整页翻译、和自动翻译的决策层问的是同一个函数——和 getCueKey 的理由一模一样，
+   * 缓存键当初就是为这件事从基码改成整码的。
    */
   function sameLanguage() {
-    return core.isSameLanguage(state.trackLang || '', getTargetLang());
+    return langTags.isSameLanguage(state.trackLang || '', getTargetLang());
   }
 
   function getVideoElement() {
