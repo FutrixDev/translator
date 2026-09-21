@@ -83,14 +83,26 @@
         blockIdAttr: null,
       },
       {
-        // Hugging Face 的 Daily Papers：/papers 是当天的榜单，/papers/<id> 是单篇
-        // 的摘要页，一个模式管两个。
+        // Hugging Face 的 Daily Papers 榜单。
+        //
+        // 写成两条而不是 `/papers*` 一条，是因为 pathMatches 把 `*` 展开成 `.*`，
+        // 不带 `/` 的通配没有段边界：`/papers*` 会连 `/paperswithcode` 这样的
+        // 组织主页一起认下来，而内置规则是 always——认错的代价是在一个从没问过
+        // 用户的页面上自己动手，还花他的额度。
         //
         // 一条选择器都没有是查过之后的结论，不是没来得及写：这一页的 class 全是
         // Tailwind 那种工具类（flex、text-sm），没有一个能当锚点的语义 class，
         // 标题就是 article h3 a 里的纯文本。拿工具类当选择器，人家调一次样式我们
         // 就悄悄失效。真需要排除时再补，那天它得有个稳定的钩子。
-        match: 'huggingface.co/papers*',
+        match: 'huggingface.co/papers',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 单篇的摘要页，外加 /papers/date/<日期> 这种榜单归档。
+        match: 'huggingface.co/papers/*',
         state: 'always',
         atomicBlockSelectors: [],
         excludeSelectors: [],

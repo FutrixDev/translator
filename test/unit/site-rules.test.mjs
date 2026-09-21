@@ -285,6 +285,13 @@ test('论文页的四条规则都真的自动翻，不是只命中', () => {
   // Hugging Face 只有 /papers 那一段：模型页、数据集页、讨论区不在内置名单上。
   assert.equal(at('huggingface.co', '/').verdict, 'ask');
   assert.equal(at('huggingface.co', '/models').verdict, 'ask');
+
+  // 而且是**整段**的 /papers，不是以 papers 开头的任何一段。pathMatches 把 `*`
+  // 展开成 `.*`，所以写 `/papers*` 会把别人的组织主页也收进来——内置规则是
+  // always，认错就是在一个从没问过用户的页面上自己动手。
+  assert.equal(at('huggingface.co', '/paperswithcode').verdict, 'ask');
+  assert.equal(at('huggingface.co', '/papers-reading-group').verdict, 'ask');
+  assert.equal(at('huggingface.co', '/papers/date/2026-09-21').verdict, 'auto');
 });
 
 test('the matched rule rides along with every verdict, including the off ones', () => {
