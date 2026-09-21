@@ -23,7 +23,13 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
  * @param {...string} modules repo-relative paths, e.g. ...PAGE_TRANSLATION_MODULES
  * @returns {string[]} absolute paths, ready for page.addScriptTag({ path })
  */
+// 界面文案是十一个文件了：一门语言一个表，加上取文案的那几个函数。语言清单不在
+// 这里重抄一遍——UI_LANGUAGES 就在 messages.js 里，将来加一门语言这份夹具自己跟上。
+const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
+  .UI_LANGUAGES.map(lang => `i18n/lang/${lang}.js`);
+
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
+  ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
   'shared/default-settings.js',
   'content/content-bootstrap.js',

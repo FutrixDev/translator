@@ -20,6 +20,18 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
+// 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
+// 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
+import '../i18n/lang/en.js';
+import '../i18n/lang/zh-CN.js';
+import '../i18n/lang/zh-TW.js';
+import '../i18n/lang/ja.js';
+import '../i18n/lang/ko.js';
+import '../i18n/lang/fr.js';
+import '../i18n/lang/de.js';
+import '../i18n/lang/es.js';
+import '../i18n/lang/pt.js';
+import '../i18n/lang/ru.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';

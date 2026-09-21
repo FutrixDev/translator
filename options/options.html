@@ -798,6 +798,18 @@
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->
   <script src="../shared/caption-core.js"></script>
+  <!-- 界面文案：一门语言一个文件，彼此和 messages.js 之间没有先后 —— 前十个把
+       自己那格挂进同一张注册表，messages.js 拿的是同一个对象。 -->
+  <script src="../i18n/lang/en.js"></script>
+  <script src="../i18n/lang/zh-CN.js"></script>
+  <script src="../i18n/lang/zh-TW.js"></script>
+  <script src="../i18n/lang/ja.js"></script>
+  <script src="../i18n/lang/ko.js"></script>
+  <script src="../i18n/lang/fr.js"></script>
+  <script src="../i18n/lang/de.js"></script>
+  <script src="../i18n/lang/es.js"></script>
+  <script src="../i18n/lang/pt.js"></script>
+  <script src="../i18n/lang/ru.js"></script>
   <script src="../i18n/messages.js"></script>
   <!-- 站点规则的写入协议（单写者、父域查找）和内容脚本共用一份；内置名单
        是它 table() 的数据源，一起加载省得将来有人调 matchBuiltin 时炸。 -->

@@ -64,6 +64,16 @@
         "<all_urls>"
       ],
       "js": [
+        "i18n/lang/en.js",
+        "i18n/lang/zh-CN.js",
+        "i18n/lang/zh-TW.js",
+        "i18n/lang/ja.js",
+        "i18n/lang/ko.js",
+        "i18n/lang/fr.js",
+        "i18n/lang/de.js",
+        "i18n/lang/es.js",
+        "i18n/lang/pt.js",
+        "i18n/lang/ru.js",
         "i18n/messages.js",
         "shared/account-gate.js",
         "shared/default-settings.js",

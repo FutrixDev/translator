@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoPath = (rel) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
 const repoFile = (rel) => readFileSync(repoPath(rel), 'utf8');
-const { workerSource } = await import('./helpers/sources.mjs');
+const { workerSource, messageCatalog } = await import('./helpers/sources.mjs');
 
 await import('../../shared/ocr.js');
 await import('../../shared/api-compat.js');
@@ -781,10 +781,7 @@ test('the packaged zip carries the engine and the offscreen document', () => {
 });
 
 test('every locale carries the OCR strings the worker, popup and options look up', () => {
-  const source = repoFile('i18n/messages.js');
-  // messages.js is a classic script; run it for its globalThis side effect.
-  new Function(source)();
-  const messages = globalThis.I18N_MESSAGES;
+  const messages = messageCatalog();
   const keys = [
     'contextOcrImage',
     'ocrExtracting',

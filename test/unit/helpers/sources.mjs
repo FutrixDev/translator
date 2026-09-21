@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const require = createRequire(import.meta.url);
 
 /**
  * 一个「面」的全部源码，按文件名排序拼起来。
@@ -35,4 +37,26 @@ export function workerSource() {
  */
 export function optionsSource() {
   return surfaceSource('options', (name) => /^options.*\.js$/.test(name));
+}
+
+/**
+ * 界面文案全体：十门语言的表（i18n/lang/*.js）加上 i18n/messages.js 自己。
+ *
+ * 「这句话所有语言都有吗」问的是这一面，不是某个文件 —— 表拆开之后，某个 key 落
+ * 在哪个文件里只由它是哪门语言决定。
+ */
+export function messagesSource() {
+  return [surfaceSource('i18n/lang', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'i18n/messages.js'), 'utf8')].join('\n');
+}
+
+/**
+ * 装好的那份文案目录（globalThis.I18N_MESSAGES）。
+ *
+ * 以前有两处 `new Function(repoFile('i18n/messages.js'))()` —— 表还在同一个文件
+ * 里的时候那样能跑，现在跑出来是一张空表：new Function 的作用域里没有 require，
+ * messages.js 的 Node 自装那一段不会触发。问目录就直接 require 它。
+ */
+export function messageCatalog() {
+  return require('../../../i18n/messages.js').I18N_MESSAGES;
 }

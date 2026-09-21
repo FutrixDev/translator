@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { messagesSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -408,7 +409,7 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   assert.match(popup, /const blocked = !!pageState\.blocked;/);
   assert.match(popup, /elements\.toggleSiteAuto\.disabled = blocked;/);
   assert.match(popup, /elements\.toggleSiteAuto\.title = blocked \? t\('autoReasonBlocklist'\)/);
-  assert.match(read('i18n/messages.js'), /autoReasonBlocklist:/, '理由那句话得真有');
+  assert.match(messagesSource(), /autoReasonBlocklist:/, '理由那句话得真有');
 
   // 画面灰掉之外再挡一道：键盘走得到 disabled 的按钮，扩展页面也点得动。
   const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),

@@ -29,6 +29,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { messageCatalog } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -348,7 +349,7 @@ test('content-utils.js loads before the surfaces that use it', () => {
 
 test('the "content is not translatable here" notice exists in every locale', () => {
   // A missing key renders the key name into the progress toast.
-  const messages = loadMessages();
+  const messages = messageCatalog();
   assert.ok(Object.keys(messages).length >= 10, 'expected the full locale table');
   for (const [locale, table] of Object.entries(messages)) {
     assert.equal(typeof table.pageContentNotTranslatable, 'string', `${locale} is missing pageContentNotTranslatable`);
@@ -356,10 +357,3 @@ test('the "content is not translatable here" notice exists in every locale', () 
   }
 });
 
-function loadMessages() {
-  // messages.js is a classic script; run it for its globalThis side effect.
-  const source = repoFile('i18n/messages.js');
-  // eslint-disable-next-line no-new-func
-  new Function(source)();
-  return globalThis.I18N_MESSAGES;
-}
