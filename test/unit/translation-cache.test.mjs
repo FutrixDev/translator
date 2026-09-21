@@ -10,6 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { optionsSource } from './helpers/sources.mjs';
 
 // 被测的那个文件是一段直接往 globalThis 上挂的 IIFE（MV3 的 content script 没有
 // 模块系统），所以「再来一份」只能靠把源码再求值一次 —— 每求值一次就是一套新的
@@ -411,7 +412,7 @@ test('三份装载清单里都有缓存模块', async () => {
   const optionsHtml = read('options/options.html');
   assert.match(optionsHtml, /<script src="\.\.\/shared\/translation-cache\.js"><\/script>/,
     '设置页要 clear()，就得先加载模块');
-  assert.match(read('options/options.js'), /await TranslationCache\.clear\(\);/,
+  assert.match(optionsSource(), /await TranslationCache\.clear\(\);/,
     '设置页按自己的路清缓存，就会漏掉 tc: 前缀这条只有模块知道的事');
 });
 

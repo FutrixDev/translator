@@ -811,6 +811,17 @@
   <!-- 内置引擎的语言码映射、可用性查询和首次下载都在这里；设置页复用同一份实现，
        避免和 content script 各写一套语言码映射后慢慢走偏。 -->
   <script src="../content/content-translation-engine.js"></script>
+  <!-- 设置项多到一个文件装不下，按卡片拆成了几个同级脚本；它们共用一个全局词法
+       作用域，互相叫名字就能用，所以顺序只关系到加载时就要求值的那几个常量
+       （options-pdf-tasks.js 顶上读 AI_TRANSLATOR_PDF_UI，要排在 pdf-ui.js 之后）。
+       options.js 是入口，绑事件和引导都在它末尾，所以排最后。 -->
+  <script src="options-i18n.js"></script>
+  <script src="options-models.js"></script>
+  <script src="options-account.js"></script>
+  <script src="options-pdf-tasks.js"></script>
+  <script src="options-auto.js"></script>
+  <script src="options-connection.js"></script>
+  <script src="options-builtin.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

@@ -26,3 +26,13 @@ function surfaceSource(dir, matches) {
 export function workerSource() {
   return surfaceSource('background', (name) => name.endsWith('.js'));
 }
+
+/**
+ * 设置页全体：options/options*.js（options.js 自己也在内）。
+ *
+ * 这一页按卡片拆成了一组同级脚本，共用一个全局词法作用域 —— 哪个函数落在哪个
+ * 文件里是排版，不是契约。
+ */
+export function optionsSource() {
+  return surfaceSource('options', (name) => /^options.*\.js$/.test(name));
+}

@@ -16,6 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { optionsSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -444,7 +445,8 @@ test('every locale carries the new copy, and none leaks the placeholder', () => 
 });
 
 test('the settings page asks the worker for the origin instead of hardcoding one', () => {
-  const options = repoFile('options/options.js');
+  // 设置页拆成了一组同级脚本，哪一行落在哪个文件里是排版；这里问的是这一页。
+  const options = optionsSource();
   assert.match(options, /ACCOUNT_SITE_BASE/);
   assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase, job\.jobId\)/);
   // The default origin lives in comic-client.js; a second copy here would be
