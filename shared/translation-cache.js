@@ -8,15 +8,22 @@
 // **只缓存 AI 引擎的结果。** 内置引擎（Chrome 端上的 Translator）零网络、零费用，
 // 把它的译文也塞进来，省下的是几十毫秒，花掉的是用户 chrome.storage.local 那
 // 10 MB 配额里的一大块（本扩展没申请 unlimitedStorage，PDF 任务和漫画令牌也住在
-// 同一块地方）。顺带省掉了一个真问题：内置引擎的源语言是按页面语言推断的，
-// 同一段英文出现在法语页面和英语页面上，译出来可以不一样，跨页复用就会串味。
-// AI 那条路压根不声明源语言，没有这个洞。
+// 同一块地方）。顺带省掉了一个真问题：内置引擎的源语言是按**页面语言**推断出来
+// 的，同一段英文出现在法语页面和英语页面上，译出来可以不一样 —— 而推断出来的那
+// 个值不在请求里，键因子看不见它，跨页复用就会串味。（请求里**声明**的源语言是
+// 另一回事，它看得见，见下面的 sourceLang。）
 //
-// 键里有六个因子，少一个都会在某个时刻无声地供应错误的译文：
+// 键里有七个因子，少一个都会在某个时刻无声地供应错误的译文：
 //
 //   text        —— 原样，不做归一化。缓存的是「这一串字符换来的那个回答」，
 //                  折叠空白能提高命中率，但也就把两串不同的输入并成了一个答案。
 //   targetLang  —— 显然。
+//   sourceLang  —— 请求里声明的源语言。整页翻译从不声明（引擎自己去认），字幕
+//                  声明：一条字幕轨道自己说得出它是哪门语言，而一句台词短到测不
+//                  出来（见 shared/caption-core.js 的 buildTranslationRequest）。
+//                  同一句 "Yes." 来自英语轨和来自法语轨是两件事。服务工作者今天
+//                  那条 AI 路径还不读这个字段，但键不该押在别人此刻的实现细节
+//                  上 —— 哪天它开始读了，缓存会一声不响地继续按旧口径供货。
 //   endpoint    —— 同名模型挂在不同网关（OpenAI / OpenRouter / 本地 Ollama）后面
 //                  是两个东西。
 //   model       —— 显然。
@@ -92,7 +99,7 @@
   }
 
   // 因子顺序是键的一部分，别调整，调整了等于清空所有人的缓存。
-  const FACTORS = ['text', 'targetLang', 'endpoint', 'model', 'prompt', 'version'];
+  const FACTORS = ['text', 'targetLang', 'sourceLang', 'endpoint', 'model', 'prompt', 'version'];
 
   function buildKey(factors) {
     return KEY_PREFIX + hash(FACTORS.map((name) => {
@@ -173,7 +180,7 @@
    * 单独成一批发走，回来再按原位置塞回去，而不是把整批打散重排。
    *
    * @param {string[]} texts
-   * @param {object} factors 除 text 之外的键因子（targetLang / endpoint / model / prompt / version）
+   * @param {object} factors 除 text 之外的键因子（targetLang / sourceLang / endpoint / model / prompt / version）
    * @param {(missing: string[]) => Promise<string[]|null>} fetchMissing
    *        只会收到**去重后**的未命中文本，必须返回等长数组；返回 null 表示这批失败了。
    * @returns {Promise<string[]|null>} 与 texts 等长；fetchMissing 失败时原样返回 null

@@ -78,7 +78,11 @@
     let response;
     let threw = false;
     try {
-      response = await ctx.requestTranslation(core.buildTranslationRequest({
+      // 走缓存层（content/content-translation-cache.js）：它与 ctx.requestTranslation
+      // 同形，只是先去缓存里看一眼。**同一部片重看一遍不该再付一次钱** —— 内存里
+      // 那张 state.cueCache 只活到 clearTrack()，换一集、刷一次页面就空了，而一部
+      // 两小时的片子是两千来条句子。没加载到它就走原路（单元测试只装 captions/*）。
+      response = await (ctx.requestTranslationCached || ctx.requestTranslation)(core.buildTranslationRequest({
         texts,
         targetLang: ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '',
         trackLang: state.trackLang,

@@ -1,4 +1,4 @@
-// Blab Translation — 页面翻译与译文缓存之间的那一层。
+// Blab Translation — 翻译请求与译文缓存之间的那一层。
 //
 // shared/translation-cache.js 只认「一批文本 + 一组键因子」，对 chrome.storage、
 // 对当前用哪个引擎、对请求长什么样一无所知 —— 那是它能被单元测试整个跑通的原因。
@@ -58,9 +58,10 @@
    */
   ctx.requestTranslationCached = async function (message) {
     const cache = globalThis.TranslationCache;
-    // 只缓存整页快速批量这一种请求。划词、悬停、输入框是用户一次一次点出来的，
-    // 量小且几乎不重复；而且 TRANSLATE 的返回是 {translation, phonetic, isWord}，
-    // 另一种形状，给它做缓存等于在这里再养一套回写规则。
+    // 只缓存快速批量这一种请求 —— 整页翻译和字幕都发它。划词、悬停、输入框是
+    // 用户一次一次点出来的，量小且几乎不重复；而且 TRANSLATE 的返回是
+    // {translation, phonetic, isWord}，另一种形状，给它做缓存等于在这里再养一套
+    // 回写规则。
     if (!cache || message.type !== 'TRANSLATE_BATCH_FAST' || !Array.isArray(message.texts)) {
       return ctx.requestTranslation(message);
     }
@@ -74,7 +75,14 @@
     const profile = await loadProfile();
     if (!profile) return ctx.requestTranslation(message);
 
-    const factors = { targetLang: message.targetLang || '', ...profile };
+    // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
+    // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
+    // 顶上那张因子表。
+    const factors = {
+      targetLang: message.targetLang || '',
+      sourceLang: message.sourceLang || '',
+      ...profile
+    };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。
     let failure = null;
