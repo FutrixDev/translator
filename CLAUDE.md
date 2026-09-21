@@ -39,21 +39,53 @@ No build step required - the extension loads directly in Chrome as an unpacked e
 
 ### Main Components
 
-1. **Background Service Worker** (`background/background.js`)
-   - Handles all API requests to translation endpoints
-   - Manages context menus and theme icon updates
-   - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
-   - Stores default settings and translation prompts
+**Nothing here is one file any more.** Every part below is a *family* of
+ES-module or classic-script files under one directory; which function lives in
+which file is layout, not contract. The rule that makes that safe is the same
+everywhere: **ask the surface, not the file** — the helpers in
+`test/unit/helpers/sources.mjs` (`workerSource()`, `optionsSource()`,
+`messagesSource()`, `contentCss()`, `comicSource()`, `captionEngineSource()`,
+`hoverSource()`) read a whole family, so adding a module never means editing a
+test. Only assertions about **load order** read `manifest.json` or the entry
+file directly.
 
-2. **Content Script** (`content/content.js`)
+1. **Background Service Worker** (`background/*.js`, entry `background.js` —
+   a real ES module, so these are `import`s)
+   - Handles all API requests to translation endpoints (`api-client.js`,
+     `ai-translate.js`, `prompts.js`)
+   - Manages context menus and theme icon updates (`context-menus.js`, `icon.js`)
+   - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
+   - Stores default settings and translation prompts (`settings.js`)
+   - The account-backed clients live beside it: `comic-client.js`,
+     `pdf-client.js`, `pdf-jobs.js`, `pdf-notify.js`, `ocr-recognize.js`,
+     `feature-gate.js`
+
+2. **Content Script** (`content/*.js` + the sub-families below)
    - Injected into all webpages for DOM interaction
-   - Text extraction with code/math detection
-   - Batch translation with concurrency control (8 workers, max 2500 chars or 25 items per batch)
+   - Text extraction with code/math detection, batch translation with
+     concurrency control (8 workers, max 2500 chars or 25 items per batch) —
+     `content/page/*.js` (collect, insert, batch, visibility, progress,
+     site-adapter) behind the entry `content-page-translation.js`
    - UI components: selection button, float ball, translation popup, progress bar
+   - Three more families have sections of their own below: comic
+     (`content/comic/`), hover/selection (`content/hover/`), captions
+     (`content/captions/`)
+
+   **Content scripts are classic scripts sharing one global lexical
+   environment**, so `manifest.json`'s order *is* the dependency graph, and a
+   file that throws at load fails silently rather than loudly. That is why each
+   sub-family hangs its cross-file names on one shelf object
+   (`ctx.comic` / `ctx.hover` / `ctx.captions`) and reads them at call time:
+   order then stops mattering. A name that crosses a file and is *not* written
+   `comic.foo` is a bug waiting for a reload — including after `...`, where the
+   spread operator's dots look exactly like a property access.
 
 3. **Popup** (`popup/`) - Quick access panel for common actions
 
-4. **Options** (`options/`) - Full settings page with API configuration and feature toggles
+4. **Options** (`options/options*.js` + `options.html`) - Full settings page
+   with API configuration and feature toggles, one script per card
+   (connection, models, builtin, account, auto, pdf-tasks, i18n) over the
+   shared `options.js`
 
 5. **i18n** (`i18n/messages.js` + `i18n/lang/<tag>.js`) - one string table per
    language, registered onto one catalog; `messages.js` holds only the lookup and
