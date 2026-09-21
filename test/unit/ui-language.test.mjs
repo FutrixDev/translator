@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -70,17 +71,21 @@ test('every language it can return has a string block', () => {
 // the regression this suite exists to stop is any of them going back to
 // targetLang, which no test at runtime would notice because the UI would simply
 // render in a language the user did not ask for.
+//
+// 服务工作者整个算一个调用方：它自己拆成了一组模块（background/*.js），
+// getUILanguage 具体落在哪个文件里是实现细节，这里问的是「worker 有没有拿
+// targetLang 去喂它」。
 const CALLERS = [
-  'background/background.js',
-  'popup/popup.js',
-  'options/options.js',
-  'pdf/upload.js',
-  'content/content-bootstrap.js',
+  ['the service worker', workerSource],
+  ['popup/popup.js', () => repoFile('popup/popup.js')],
+  ['options/options.js', () => repoFile('options/options.js')],
+  ['pdf/upload.js', () => repoFile('pdf/upload.js')],
+  ['content/content-bootstrap.js', () => repoFile('content/content-bootstrap.js')],
 ];
 
 test('no caller feeds getUILanguage a target language', () => {
-  for (const rel of CALLERS) {
-    const source = repoFile(rel);
+  for (const [rel, load] of CALLERS) {
+    const source = load();
     const calls = [...source.matchAll(/getUILanguage\(([^)]*)\)/g)].map((m) => m[1].trim());
     assert.ok(calls.length > 0, `${rel} no longer calls getUILanguage`);
     for (const argument of calls) {

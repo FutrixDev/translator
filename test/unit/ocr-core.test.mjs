@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoPath = (rel) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
 const repoFile = (rel) => readFileSync(repoPath(rel), 'utf8');
+const { workerSource } = await import('./helpers/sources.mjs');
 
 await import('../../shared/ocr.js');
 await import('../../shared/api-compat.js');
@@ -198,10 +199,9 @@ test('there is no user-facing OCR language setting feeding the plan', () => {
   // so the plan is derived from the UI language alone and the text's actual
   // language is detected after recognition (detectScriptLanguage). The old
   // ocrSourceLanguage setting must stay gone from every surface.
-  const background = readFileSync(repoPath('background/background.js'), 'utf8');
   const optionsJs = readFileSync(repoPath('options/options.js'), 'utf8');
   const optionsHtml = readFileSync(repoPath('options/options.html'), 'utf8');
-  for (const [name, src] of [['background.js', background], ['options.js', optionsJs], ['options.html', optionsHtml]]) {
+  for (const [name, src] of [['the service worker', workerSource()], ['options.js', optionsJs], ['options.html', optionsHtml]]) {
     assert.ok(!src.includes('ocrSourceLanguage'), `${name} must not reference ocrSourceLanguage`);
   }
 });
@@ -644,11 +644,11 @@ test('the Claude vision content is image first with raw base64 fields, then text
 // --- Wiring contracts --------------------------------------------------------
 
 test('the service worker loads shared/ocr.js and answers OCR_IMAGE', () => {
-  const background = repoFile('background/background.js');
-  assert.ok(background.includes("import '../shared/ocr.js'"), 'background must import the OCR core');
-  assert.ok(background.includes("'OCR_IMAGE'"), 'background must handle the OCR_IMAGE message');
+  const entry = repoFile('background/background.js');
+  assert.ok(entry.includes("import '../shared/ocr.js'"), 'background must import the OCR core');
+  assert.ok(entry.includes("'OCR_IMAGE'"), 'background must handle the OCR_IMAGE message');
   assert.ok(
-    !/function\s+parseOcrResponse|function\s+canSendImageDirectly/.test(background),
+    !/function\s+parseOcrResponse|function\s+canSendImageDirectly/.test(workerSource()),
     'OCR parsing/limits live in shared/ocr.js only'
   );
 });
@@ -657,11 +657,10 @@ test('recognition stops at the worker — translating is the content script job'
   // The one thing that would quietly undo the two-step split: a worker that
   // helpfully translates, giving the two engines different response shapes and
   // cutting the free built-in translator out of the vision path.
-  const background = repoFile('background/background.js');
-  const start = background.indexOf('async function recognizeLocally');
-  const end = background.indexOf('async function translateWithAI');
-  assert.ok(start !== -1 && end > start, 'the OCR handlers should sit above the translation ones');
-  const ocrSection = background.slice(start, end);
+  // 这条以前靠「recognizeLocally 在 translateWithAI 上面」划出一段来读；worker 拆成
+  // 模块之后，认字那一半自己就是一个文件，整份读它比切一段更接近要说的话。
+  const ocrSection = repoFile('background/ocr-recognize.js');
+  assert.ok(ocrSection.includes('async function recognizeLocally'), 'the recognition handlers live in background/ocr-recognize.js');
   assert.ok(
     !/translateWithAI\(|translateTextWithMode\(|translationEngine/.test(ocrSection),
     'the OCR handlers must not translate'
@@ -674,12 +673,13 @@ test('recognition stops at the worker — translating is the content script job'
   // Recognise-first is not a preference: every entry point must say
   // translate: false explicitly, because the content script treats an absent
   // flag as the old translate-too path.
+  const worker = workerSource();
   assert.ok(
-    background.includes('translate: false'),
+    worker.includes('translate: false'),
     'the menu click must send the recognise-first flag to the content script'
   );
   assert.ok(
-    !background.includes('settings.ocrTranslate') && !background.includes('ocrTranslate:'),
+    !worker.includes('settings.ocrTranslate') && !worker.includes('ocrTranslate:'),
     'there is no auto-translate setting any more — the popup Translate button is step 2'
   );
   assert.ok(
@@ -695,12 +695,12 @@ test('recognition stops at the worker — translating is the content script job'
 test('the local engine runs in the offscreen document, not the worker', () => {
   // A service worker cannot spawn a nested Worker or instantiate this WASM, so
   // an import here would fail at runtime rather than at review.
-  const background = repoFile('background/background.js');
+  const worker = workerSource();
   assert.ok(
-    !/importScripts\(|tesseract\.min\.js|Tesseract\.createWorker|createWorker\(/.test(background),
+    !/importScripts\(|tesseract\.min\.js|Tesseract\.createWorker|createWorker\(/.test(worker),
     'the engine must not be loaded or driven from the service worker'
   );
-  assert.ok(background.includes('chrome.offscreen.createDocument'), 'the worker opens the offscreen document');
+  assert.ok(worker.includes('chrome.offscreen.createDocument'), 'the worker opens the offscreen document');
 
   const manifest = JSON.parse(repoFile('manifest.json'));
   assert.ok(manifest.permissions.includes('offscreen'), 'the offscreen permission is required');
@@ -762,10 +762,11 @@ test('the OCR language list and the default engine are stated once', () => {
     !/value="(eng|chi_sim|chi_tra|jpn|kor)"/.test(optionsHtml),
     'the language options are rendered from OCR_LANGUAGES, not written into the markup'
   );
-  for (const file of ['options/options.js', 'background/background.js']) {
+  for (const [name, src] of [['options/options.js', repoFile('options/options.js')],
+                             ['the service worker', workerSource()]]) {
     assert.ok(
-      repoFile(file).includes('DEFAULT_OCR_ENGINE'),
-      `${file} must take the default engine from shared/ocr.js`
+      src.includes('DEFAULT_OCR_ENGINE'),
+      `${name} must take the default engine from shared/ocr.js`
     );
   }
 });
