@@ -36,9 +36,15 @@
     ERROR: 'autoStateError'
   };
 
-  // decide() 的十一个理由 → 一句人话。这是状态点展开那一行的后半句：状态说的是
+  // 调度层给出的理由 → 一句人话。这是状态点展开那一行的后半句：状态说的是
   // 「现在怎么样」，理由说的是「为什么是这样」，少了后半句，一个安安静静什么都
   // 没翻的页面和一个被黑名单挡住的页面在用户眼里一模一样。
+  //
+  // 前十一条是 decide() 的阶梯（shared/site-rules.js 的 REASONS，
+  // test/unit/pdf-offer.test.mjs 盯着这张表要把它们全收齐）；末尾两条是阶梯之外
+  // 那道费用闸（content/content-auto-translate.js 的 COST_REASONS）。这张表比
+  // decide() 宽一点是有意的：它答的是「调度层为什么这样」，而 decide() 只是其中
+  // 一个出处。
   const REASON_KEYS = {
     GLOBAL_OFF: 'autoReasonGlobalOff',
     BLOCKLIST: 'autoReasonBlocklist',
@@ -50,7 +56,9 @@
     SAME_LANGUAGE: 'autoReasonSameLanguage',
     LANG_NOT_LISTED: 'autoReasonLangNotListed',
     UNKNOWN_LANGUAGE: 'autoReasonUnknownLanguage',
-    DEFAULT_ASK: 'autoReasonDefaultAsk'
+    DEFAULT_ASK: 'autoReasonDefaultAsk',
+    COST_ENGINE: 'autoReasonCostEngine',
+    COST_BUDGET: 'autoReasonCostBudget'
   };
 
   let latest = null;

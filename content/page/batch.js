@@ -356,7 +356,7 @@
   // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
   async function applyFastBatchTranslations(
     batch, translations,
-    { onFailure, isAborted, accept, allowDownload, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload, auto, onSettled, target = passTarget() } = {}
   ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
@@ -364,7 +364,7 @@
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled, target });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, auto, onSettled, target });
       return;
     }
 
@@ -376,7 +376,7 @@
 
   async function translateBlocksOneByOne(
     batch,
-    { onFailure, isAborted, accept, allowDownload = true, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload = true, auto, onSettled, target = passTarget() } = {}
   ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
@@ -386,7 +386,8 @@
           texts: [block.text],
           targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload
+          allowDownload,
+          auto
         });
         if (response.error) {
           if (onFailure) onFailure(response.error);
@@ -448,6 +449,12 @@
     // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
     // needsDownload 那条回落路 —— 和悬停、字幕这两条同样没有手势的路一致。
     const allowDownload = options.allowDownload !== false;
+    // 「这一批是自动模式发出去的」。跟着 allowDownload 同一条道走到三个发消息的
+    // 地方，因为它要回答的是同一类问题：这一轮有没有用户的手在上面。引擎层拿它
+    // 判 FR-9 那道费用闸（content/content-translation-engine.js 的
+    // refuseAutoAiSpend）—— 判定必须在最后那次 sendMessage 旁边，而不是在这里，
+    // 否则内置引擎跑到一半回落 AI 的那一下会绕过去。
+    const auto = options.auto === true;
     // 这一轮的目标语言，只在这里读一次。见 passTarget。
     const target = passTarget();
     const total = blocks.length;
@@ -524,7 +531,8 @@
             texts: sb.map(x => x.text),
             targetLang: target.request,
             delimiter: DELIMITER,
-            allowDownload
+            allowDownload,
+            auto
           });
 
           if (response.error) {
@@ -587,7 +595,8 @@
           texts: texts,
           targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload
+          allowDownload,
+          auto
         });
 
         // Check for error in response
@@ -598,6 +607,7 @@
           // 走逐块回退，而不是无声丢掉整批。
           await applyFastBatchTranslations(batch, response.translations, {
             allowDownload,
+            auto,
             onFailure: noteBatchFailure,
             isAborted: aborted,
             accept,

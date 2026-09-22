@@ -1,4 +1,4 @@
-// 本机统计。四个计数、一个月一清、写入收在服务工作者里。
+// 本机统计。四个按月的计数 + 一个按天的预算读数，写入收在服务工作者里。
 //
 // 上半段是纯函数，直接跑。下半段要一个假的 chrome.storage.local —— 那正是这个
 // 模块最容易错的地方：每个标签页都在往里记，读—改—写撞车丢的是用户看得见的数字。
@@ -16,30 +16,78 @@ test('月份按本地时区，不是 UTC', () => {
   assert.equal(AutoStats.currentMonth(new Date('2026-03-05T12:00:00')), '2026-03');
 });
 
-test('mergeDelta 只加，跨月整份丢掉', () => {
-  const first = AutoStats.mergeDelta(null, { pages: 1, aiChars: 200 }, '2026-09');
-  assert.deepEqual(first, { month: '2026-09', pages: 1, aiChars: 200, cacheHits: 0, cacheMisses: 0 });
+test('日期也按本地时区，个位数补零', () => {
+  assert.equal(AutoStats.currentDay(new Date('2026-01-01T00:30:00')), '2026-01-01');
+  assert.equal(AutoStats.currentDay(new Date('2026-09-20T23:59:00')), '2026-09-20');
+  assert.equal(AutoStats.currentDay(new Date('2026-03-05T12:00:00')), '2026-03-05');
+});
 
-  const second = AutoStats.mergeDelta(first, { pages: 2, cacheHits: 5 }, '2026-09');
-  assert.deepEqual(second, { month: '2026-09', pages: 3, aiChars: 200, cacheHits: 5, cacheMisses: 0 });
+test('mergeDelta 只加，跨月整份丢掉', () => {
+  const first = AutoStats.mergeDelta(null, { pages: 1, aiChars: 200 }, '2026-09', '2026-09-20');
+  assert.deepEqual(first,
+    { month: '2026-09', pages: 1, aiChars: 200, cacheHits: 0, cacheMisses: 0, day: '2026-09-20', autoAiChars: 0 });
+
+  const second = AutoStats.mergeDelta(first, { pages: 2, cacheHits: 5 }, '2026-09', '2026-09-20');
+  assert.deepEqual(second,
+    { month: '2026-09', pages: 3, aiChars: 200, cacheHits: 5, cacheMisses: 0, day: '2026-09-20', autoAiChars: 0 });
 
   // 新的月份：上个月那份不是「基数」，是别人的账。
-  const october = AutoStats.mergeDelta(second, { pages: 1 }, '2026-10');
-  assert.deepEqual(october, { month: '2026-10', pages: 1, aiChars: 0, cacheHits: 0, cacheMisses: 0 });
+  const october = AutoStats.mergeDelta(second, { pages: 1 }, '2026-10', '2026-10-01');
+  assert.deepEqual(october,
+    { month: '2026-10', pages: 1, aiChars: 0, cacheHits: 0, cacheMisses: 0, day: '2026-10-01', autoAiChars: 0 });
+});
+
+test('两个窗口各清各的期 —— 跨日不跨月，和跨月不跨日', () => {
+  // 一条记录跨日不跨月是每天都在发生的事；跨月的那一天则是跨月又跨日。共用
+  // 一个 base 会让其中一半在该清零的时候没清，那时「本月已用」和闸门认的
+  // 「今天已用」就是两笔互相矛盾的账。
+  const monday = AutoStats.mergeDelta(null, { pages: 2, autoAiChars: 500 }, '2026-09', '2026-09-21');
+
+  // 第二天：按月的照加，按天的从零开始。
+  const tuesday = AutoStats.mergeDelta(monday, { pages: 1, autoAiChars: 40 }, '2026-09', '2026-09-22');
+  assert.equal(tuesday.pages, 3);
+  assert.equal(tuesday.autoAiChars, 40);
+
+  // 同一天里追加：两边都加。
+  const later = AutoStats.mergeDelta(tuesday, { autoAiChars: 10 }, '2026-09', '2026-09-22');
+  assert.equal(later.autoAiChars, 50);
+  assert.equal(later.pages, 3);
+});
+
+test('budgetExceeded：0 和负数是不限，比的是 >=', () => {
+  // 设置页那个框留空、或者填 0，说的都是「别管我」——和 autoTranslateLangs
+  // 空数组同一个约定。
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, 0), false);
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, -1), false);
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, undefined), false);
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, NaN), false);
+
+  // 刚好填满就该停，而不是等下一批把它顶破。
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 99 }, 100), false);
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 100 }, 100), true);
+  assert.equal(AutoStats.budgetExceeded({ autoAiChars: 101 }, 100), true);
+  assert.equal(AutoStats.budgetExceeded(null, 100), false);
 });
 
 test('不是正数的值一律当零 —— 一个 NaN 不该毁掉一整个月', () => {
-  const poisoned = { month: '2026-09', pages: NaN, aiChars: '900', cacheHits: -3, cacheMisses: Infinity };
-  const fixed = AutoStats.mergeDelta(poisoned, { pages: 1.7 }, '2026-09');
-  assert.deepEqual(fixed, { month: '2026-09', pages: 1, aiChars: 0, cacheHits: 0, cacheMisses: 0 });
+  const poisoned = {
+    month: '2026-09', pages: NaN, aiChars: '900', cacheHits: -3, cacheMisses: Infinity,
+    day: '2026-09-22', autoAiChars: NaN
+  };
+  const fixed = AutoStats.mergeDelta(poisoned, { pages: 1.7 }, '2026-09', '2026-09-22');
+  assert.deepEqual(fixed,
+    { month: '2026-09', pages: 1, aiChars: 0, cacheHits: 0, cacheMisses: 0, day: '2026-09-22', autoAiChars: 0 });
 });
 
 test('空增量就是「读出来该显示的样子」', () => {
   // read() 就是这么用它的：归一化和累加是同一个函数，两者不会走偏。
-  const stored = { month: '2026-09', pages: 4, aiChars: 10, cacheHits: 1, cacheMisses: 1 };
-  assert.deepEqual(AutoStats.mergeDelta(stored, null, '2026-09'), stored);
-  assert.deepEqual(AutoStats.mergeDelta(stored, null, '2026-10'),
-    { month: '2026-10', pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0 });
+  const stored = {
+    month: '2026-09', pages: 4, aiChars: 10, cacheHits: 1, cacheMisses: 1,
+    day: '2026-09-22', autoAiChars: 7
+  };
+  assert.deepEqual(AutoStats.mergeDelta(stored, null, '2026-09', '2026-09-22'), stored);
+  assert.deepEqual(AutoStats.mergeDelta(stored, null, '2026-10', '2026-10-01'),
+    { month: '2026-10', pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0, day: '2026-10-01', autoAiChars: 0 });
 });
 
 test('textsChars 数的是源文本，不是请求体', () => {
@@ -86,7 +134,7 @@ test('read 读不到存储也给一份空的，而不是让设置页整页报错
   globalThis.chrome = undefined;
   try {
     const stats = await AutoStats.read(new Date('2026-09-20T12:00:00'));
-    assert.deepEqual(stats, AutoStats.emptyStats('2026-09'));
+    assert.deepEqual(stats, AutoStats.emptyStats('2026-09', '2026-09-20'));
   } finally {
     globalThis.chrome = saved;
   }
@@ -94,31 +142,97 @@ test('read 读不到存储也给一份空的，而不是让设置页整页报错
 
 test('read 把上个月那份归一化成这个月的空表', async () => {
   const saved = globalThis.chrome;
-  globalThis.chrome = fakeStorage({ month: '2026-08', pages: 99, aiChars: 1, cacheHits: 1, cacheMisses: 1 });
+  globalThis.chrome = fakeStorage({
+    month: '2026-08', pages: 99, aiChars: 1, cacheHits: 1, cacheMisses: 1,
+    day: '2026-08-31', autoAiChars: 4000
+  });
   try {
     const stats = await AutoStats.read(new Date('2026-09-20T12:00:00'));
-    assert.deepEqual(stats, AutoStats.emptyStats('2026-09'));
+    assert.deepEqual(stats, AutoStats.emptyStats('2026-09', '2026-09-20'));
   } finally {
     globalThis.chrome = saved;
   }
 });
 
-test('applyWrite 认得 add 和 reset，别的一律拒绝', async () => {
+test('applyWrite 认得 add / reset / charge，别的一律拒绝', async () => {
   const saved = globalThis.chrome;
   const store = fakeStorage(null);
   globalThis.chrome = store;
   try {
     const month = AutoStats.currentMonth();
+    const day = AutoStats.currentDay();
     await AutoStats.applyWrite({ kind: 'add', delta: { pages: 1, aiChars: 30 } });
     await AutoStats.applyWrite({ kind: 'add', delta: { cacheHits: 2, cacheMisses: 1 } });
     assert.deepEqual(store.calls.autoStats,
-      { month, pages: 1, aiChars: 30, cacheHits: 2, cacheMisses: 1 });
+      { month, pages: 1, aiChars: 30, cacheHits: 2, cacheMisses: 1, day, autoAiChars: 0 });
 
     await AutoStats.applyWrite({ kind: 'reset' });
-    assert.deepEqual(store.calls.autoStats, AutoStats.emptyStats(month));
+    assert.deepEqual(store.calls.autoStats, AutoStats.emptyStats(month, day));
 
     await assert.rejects(() => AutoStats.applyWrite({ kind: 'nonsense' }), /unknown auto-stats write/);
     await assert.rejects(() => AutoStats.applyWrite(null), /unknown auto-stats write/);
+  } finally {
+    globalThis.chrome = saved;
+  }
+});
+
+test('charge 问和记是同一次操作，拒了就一个字都不记', async () => {
+  const saved = globalThis.chrome;
+  const store = fakeStorage(null);
+  globalThis.chrome = store;
+  try {
+    const first = await AutoStats.applyWrite({ kind: 'charge', chars: 60, budget: 100 });
+    assert.equal(first.allowed, true);
+    assert.equal(store.calls.autoStats.autoAiChars, 60);
+
+    // 还没到顶：放行，并且记上，于是正好填满。
+    const second = await AutoStats.applyWrite({ kind: 'charge', chars: 40, budget: 100 });
+    assert.equal(second.allowed, true);
+    assert.equal(store.calls.autoStats.autoAiChars, 100);
+
+    // 填满之后再问就是拒，而且**一个字都不记** —— 没发出去的字符不该算用量。
+    const third = await AutoStats.applyWrite({ kind: 'charge', chars: 5, budget: 100 });
+    assert.equal(third.allowed, false);
+    assert.equal(store.calls.autoStats.autoAiChars, 100);
+  } finally {
+    globalThis.chrome = saved;
+  }
+});
+
+test('同时来的八批不会一起挤过闸门', async () => {
+  // 这是 charge 存在的理由。read + add 两步的话，八个批次都在各自的 read 里
+  // 看到「还没超」，然后八个一起记账 —— 闸门不能有八个人同时通过的写法。
+  const saved = globalThis.chrome;
+  const store = fakeStorage(null);
+  globalThis.chrome = store;
+  try {
+    const verdicts = await Promise.all(Array.from({ length: 8 },
+      () => AutoStats.applyWrite({ kind: 'charge', chars: 100, budget: 250 })));
+    assert.equal(verdicts.filter(v => v.allowed).length, 3);
+    assert.equal(store.calls.autoStats.autoAiChars, 300);
+  } finally {
+    globalThis.chrome = saved;
+  }
+});
+
+test('读不到存储时 charge 放行 —— 预算是自我约束，不是权限', async () => {
+  const saved = globalThis.chrome;
+  globalThis.chrome = undefined;
+  try {
+    const verdict = await AutoStats.applyWrite({ kind: 'charge', chars: 999999, budget: 1 });
+    assert.equal(verdict.allowed, true);
+    assert.equal(verdict.stats, null);
+  } finally {
+    globalThis.chrome = saved;
+  }
+});
+
+test('消息发不出去时 charge 也放行', async () => {
+  // 页面卸载、扩展刚更新完的那一瞬 sendMessage 会抛，request 给回 null。
+  const saved = globalThis.chrome;
+  globalThis.chrome = { runtime: { sendMessage: async () => { throw new Error('no receiving end'); } } };
+  try {
+    assert.deepEqual(await AutoStats.charge(500, 100), { allowed: true, stats: null });
   } finally {
     globalThis.chrome = saved;
   }

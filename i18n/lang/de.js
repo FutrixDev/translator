@@ -368,6 +368,12 @@
     autoReasonUnknownLanguage: 'Sprache nicht erkannt',
     autoReasonDefaultAsk: 'Bei neuen Websites wird zuerst gefragt',
 
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: 'Die automatische Übersetzung nutzt nur die kostenlose eingebaute Engine',
+    autoReasonCostBudget: 'Das KI-Budget für heute ist aufgebraucht',
+    autoEngineAiOff: 'Für die automatische Übersetzung ist die KI-Engine nicht aktiviert',
+    autoBudgetSpent: 'Das Budget für automatische Übersetzungen ist für heute aufgebraucht. Diese Seite können Sie weiterhin selbst übersetzen; das Limit steht in den Einstellungen.',
+
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Mehr',
     popupSiteAuto: 'Diese Website automatisch übersetzen',
@@ -380,6 +386,15 @@
     hintAutoTranslate: 'Der Hauptschalter. Eingeschaltet öffnen sich Seiten, für die Sie „Immer“ gewählt haben — und die Seiten der eingebauten Liste — bereits übersetzt; überall sonst werden Sie einmal gefragt. Aus heißt: keine automatische Übersetzung mehr, nirgends.',
     autoTranslateLangsLabel: 'Nur diese Sprachen',
     hintAutoTranslateLangs: 'Das schränkt nur das Nachfragen ein, sonst nichts. Auf einer Website, über die Sie noch nicht entschieden haben — und die unsere eingebaute Liste nicht abdeckt —, wird eine Seite in einer nicht angehakten Sprache stillschweigend übergangen, statt Sie zu fragen. Haken Sie nichts an, wird nichts herausgefiltert. Es löst nie eine Übersetzung aus und setzt sich nie über eine auf „Immer“ gestellte Website hinweg.',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: 'Engine für die automatische Übersetzung',
+    autoTranslateEngineBuiltin: 'Eingebaute Übersetzung von Chrome (kostenlos)',
+    autoTranslateEngineAi: 'Meine eigene KI-API (wird mir berechnet)',
+    hintAutoTranslateEngine: 'Etwas anderes als „Übersetzungs-Engine“ weiter oben: Die dort gilt für Übersetzungen, die Sie anstoßen, diese hier für die, die niemand angeklickt hat. Voreingestellt ist die kostenlose eingebaute Engine — die automatische Übersetzung darf nur deshalb standardmäßig an sein, weil sie nichts kostet. Stellen Sie auf KI um, verbraucht jede infrage kommende Seite, die Sie öffnen, Ihr eigenes API-Guthaben; dafür gibt es das Tageslimit weiter unten.',
+    autoAiDailyBudgetLabel: 'Tägliches Zeichenbudget für die automatische Übersetzung',
+    hintAutoAiDailyBudget: 'Gilt nur, wenn oben KI ausgewählt ist. Gezählt werden die Quellzeichen, die der Automatikmodus tatsächlich an das Modell schickt; der Zähler wird um Mitternacht in Ihrer Zeitzone zurückgesetzt. Übersetzungen, die Sie selbst anstoßen, zählen nicht mit. Ist das Budget aufgebraucht, hält die automatische Übersetzung an und meldet sich einmal — von Hand lässt sich die Seite weiterhin übersetzen. 0 bedeutet kein Limit.',
+    autoTranslateEngineAiConfirm: 'Soll die automatische Übersetzung Ihre eigene KI-API verwenden?\n\nVon da an ruft jede infrage kommende Seite, die Sie öffnen, Ihre API auf und wird Ihnen berechnet, ganz ohne Klick. Es empfiehlt sich, zugleich ein tägliches Zeichenlimit zu setzen.',
     siteRulesTitle: 'Seiten, über die Sie entschieden haben',
     siteRulesEmpty: 'Noch hat keine Seite eine eigene Regel. Wählen Sie im Pop-up für eine Seite Immer oder Nie, dann erscheint sie hier.',
     siteRuleAlways: 'Immer übersetzen',

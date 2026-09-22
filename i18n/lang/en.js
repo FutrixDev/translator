@@ -405,6 +405,12 @@ Rules:
     autoReasonUnknownLanguage: 'Couldn\'t tell what language this is',
     autoReasonDefaultAsk: 'Asking first on a new site',
 
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: 'Automatic translation only uses the free built-in engine',
+    autoReasonCostBudget: 'Today\'s AI budget is used up',
+    autoEngineAiOff: 'Automatic translation is not set to use the AI engine',
+    autoBudgetSpent: 'Today\'s automatic-translation budget is used up. You can still translate this page yourself; the limit is in Settings.',
+
     // Auto-translate: float ball and popup
     floatBallMore: 'More',
     popupSiteAuto: 'Auto-translate this site',
@@ -418,6 +424,15 @@ Rules:
     hintAutoTranslate: 'The master switch. With it on, a site you set to Always — and the sites on the built-in list — open already translated; on any other site you are asked once. Off stops all of it, everywhere.',
     autoTranslateLangsLabel: 'Only these languages',
     hintAutoTranslateLangs: 'This narrows the asking, and does nothing else. On a site you have not decided about — and that our built-in list does not cover — a page in a language you did not tick is passed over in silence instead of asking you. Tick nothing and nothing is filtered out. It never makes a page translate, and it never overrules a site you set to Always.',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: 'Engine for automatic translation',
+    autoTranslateEngineBuiltin: 'Chrome built-in translation (free)',
+    autoTranslateEngineAi: 'My own AI API (billed to me)',
+    hintAutoTranslateEngine: 'A different thing from Translation Engine above: that one covers the translations you ask for, this one covers the ones nobody clicked. It defaults to the free built-in engine — automatic translation dares to be on by default only because it costs nothing. Switch it to AI and every eligible page you open spends your own API credit, which is what the daily limit below is for.',
+    autoAiDailyBudgetLabel: 'Daily character budget for automatic translation',
+    hintAutoAiDailyBudget: 'Only matters when the engine above is AI. It counts the source characters automatic mode actually sends to the model, and resets at midnight in your own time zone; translations you ask for yourself are not counted. When it runs out, automatic translation stops and tells you once — you can still translate the page by hand. 0 means no limit.',
+    autoTranslateEngineAiConfirm: 'Let automatic translation use your own AI API?\n\nFrom then on, every eligible page you open calls your API and is billed to you, without you clicking anything. Setting a daily character limit as well is a good idea.',
     siteRulesTitle: 'Sites you have decided about',
     siteRulesEmpty: 'No site has a rule of its own yet. Choose Always or Never for a site in the popup and it appears here.',
     siteRuleAlways: 'Always translate',

@@ -368,6 +368,12 @@
     autoReasonUnknownLanguage: '判不出這一頁是什麼語言',
     autoReasonDefaultAsk: '新站點先問一句',
 
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: '自動翻譯只用免費的內建引擎',
+    autoReasonCostBudget: '今天的 AI 額度用完了',
+    autoEngineAiOff: '自動翻譯沒有開啟 AI 引擎',
+    autoBudgetSpent: '今天的自動翻譯額度用完了，這一頁可以手動翻譯。額度在設定裡改。',
+
     // 自动翻译：悬浮球与 popup
     floatBallMore: '更多',
     popupSiteAuto: '自動翻譯這個站點',
@@ -380,6 +386,15 @@
     hintAutoTranslate: '總開關。開著時，你設成「總是翻譯」的站點、以及內建名單裡的站點，打開就是譯文；別的站點會先問你一次。關掉它，所有自動翻譯立刻全部停下。',
     autoTranslateLangsLabel: '只自動翻這些語言',
     hintAutoTranslateLangs: '它只把「問」收窄，別的什麼也不做。在你還沒表過態、內建名單也沒涵蓋的站點上，沒勾中的那些語言的頁面會被直接放過，而不是來問你一句；一個都不勾，就什麼都不篩。它不會讓任何一頁翻起來，也蓋不過你設成「總是翻譯」的站點。',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: '自動翻譯用哪個引擎',
+    autoTranslateEngineBuiltin: 'Chrome 內建翻譯（免費）',
+    autoTranslateEngineAi: '我自己的 AI 介面（算我的帳）',
+    hintAutoTranslateEngine: '和上面那顆「翻譯引擎」是兩回事：那一顆管你自己點出來的翻譯，這一顆管沒人點的那些。預設走免費的內建引擎 —— 自動翻譯之所以敢預設開著，就是因為它不花錢。改成 AI 之後，你打開的每一個符合條件的頁面都在花你自己的介面額度，下面那個每日上限也就跟著生效。',
+    autoAiDailyBudgetLabel: '自動翻譯每天最多用多少字元',
+    hintAutoAiDailyBudget: '只在上面選了 AI 時才管用。數的是自動模式真的送給模型的原文字數，按你本機時區每天零點歸零；你自己點出來的翻譯不算在裡面。用完之後自動翻譯停下並提示你一次，這一頁仍然可以手動翻。填 0 表示不限。',
+    autoTranslateEngineAiConfirm: '讓自動翻譯改用你自己的 AI 介面？\n\n此後你打開的每一個符合條件的頁面都會自動呼叫你的介面，按你自己的帳單計費，中間不需要你點任何一下。建議同時設一個每日字元上限。',
     siteRulesTitle: '你表過態的網站',
     siteRulesEmpty: '還沒有哪個網站單獨設過規則。在彈出視窗裡給某個網站選「總是」或「從不」，這裡就會出現一條。',
     siteRuleAlways: '總是翻譯',

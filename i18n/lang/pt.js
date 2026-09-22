@@ -368,6 +368,12 @@
     autoReasonUnknownLanguage: 'Não foi possível identificar o idioma',
     autoReasonDefaultAsk: 'Em um site novo, perguntamos primeiro',
 
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: 'A tradução automática só usa o motor integrado gratuito',
+    autoReasonCostBudget: 'O orçamento de IA de hoje acabou',
+    autoEngineAiOff: 'O motor de IA não está ativado para a tradução automática',
+    autoBudgetSpent: 'O orçamento de tradução automática de hoje acabou. Esta página você ainda pode traduzir manualmente; o limite fica nas configurações.',
+
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Mais',
     popupSiteAuto: 'Traduzir este site automaticamente',
@@ -380,6 +386,15 @@
     hintAutoTranslate: 'O interruptor principal. Ligado, os sites que você definiu como Sempre — e os da lista embutida — abrem já traduzidos; nos demais, você é perguntado uma vez. Ao desligar, toda a tradução automática para, em qualquer lugar.',
     autoTranslateLangsLabel: 'Somente estes idiomas',
     hintAutoTranslateLangs: 'Isto apenas restringe as perguntas, nada mais. Num site sobre o qual você ainda não decidiu — e que nossa lista interna não cobre —, uma página num idioma que você não marcou passa em silêncio em vez de perguntar. Não marque nada e nada é filtrado. Nunca faz uma página se traduzir nem se sobrepõe a um site definido como Sempre.',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: 'Motor para a tradução automática',
+    autoTranslateEngineBuiltin: 'Tradução integrada do Chrome (grátis)',
+    autoTranslateEngineAi: 'Minha própria API de IA (cobrada de mim)',
+    hintAutoTranslateEngine: 'Não é a mesma coisa que «Motor de tradução» acima: aquele cuida das traduções que você pede, este das que ninguém clicou. Por padrão usa o motor integrado gratuito — a tradução automática só pode vir ligada porque não custa nada. Mude para IA e cada página elegível que você abrir gasta o seu próprio crédito de API; é para isso que serve o limite diário abaixo.',
+    autoAiDailyBudgetLabel: 'Orçamento diário de caracteres para a tradução automática',
+    hintAutoAiDailyBudget: 'Só vale se o motor acima for IA. Conta os caracteres do texto original que o modo automático realmente envia ao modelo, e zera à meia-noite no seu fuso horário; as traduções que você mesmo pede não contam. Quando acaba, a tradução automática para e avisa uma vez — a página continua podendo ser traduzida à mão. 0 significa sem limite.',
+    autoTranslateEngineAiConfirm: 'Deixar a tradução automática usar a sua própria API de IA?\n\nA partir daí, cada página elegível que você abrir chama a sua API e é cobrada de você, sem nenhum clique. Vale a pena definir também um limite diário de caracteres.',
     siteRulesTitle: 'Sites sobre os quais você já decidiu',
     siteRulesEmpty: 'Nenhum site tem regra própria ainda. Escolha Sempre ou Nunca para um site na janela da extensão e ele aparece aqui.',
     siteRuleAlways: 'Sempre traduzir',

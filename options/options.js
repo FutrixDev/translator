@@ -56,6 +56,9 @@ const elements = {
   autoTranslate: document.getElementById('autoTranslate'),
   autoSubOptions: document.getElementById('autoSubOptions'),
   autoTranslateLangs: document.getElementById('autoTranslateLangs'),
+  autoTranslateEngine: document.getElementById('autoTranslateEngine'),
+  autoAiDailyBudget: document.getElementById('autoAiDailyBudget'),
+  autoAiBudgetGroup: document.getElementById('autoAiBudgetGroup'),
   siteRules: document.getElementById('siteRules'),
   statPages: document.getElementById('statPages'),
   statCacheHit: document.getElementById('statCacheHit'),
@@ -153,6 +156,10 @@ const defaultSettings = {
   // 它不经 collectSettings 那次整份写入（见下面「自动翻译」那一节）。
   autoTranslate: true,
   autoTranslateLangs: [],
+  // 和 shared/default-settings.js 的 CONTENT_DEFAULTS 对齐，
+  // test/unit/default-settings-agree.test.mjs 盯着这两处不许漂。
+  autoTranslateEngine: 'builtin',
+  autoAiDailyBudget: 200000,
   // Image OCR: on the default engine it is free and local, so on by default.
   // See the notes on defaultSettings in background/background.js.
   enableImageOcrTranslation: true,
@@ -234,7 +241,14 @@ async function loadSettings() {
     // 默认开，所以只有存着的 false 才关得掉它。
     elements.autoTranslate.checked = result.autoTranslate !== false;
     showAutoTranslateLangs(result.autoTranslateLangs);
+    elements.autoTranslateEngine.value = result.autoTranslateEngine === 'ai' ? 'ai' : 'builtin';
+    elements.autoAiDailyBudget.value = String(
+      Number.isFinite(result.autoAiDailyBudget) && result.autoAiDailyBudget > 0
+        ? Math.floor(result.autoAiDailyBudget)
+        : 0
+    );
     syncAutoSubState();
+    syncAutoEngineState();
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
     elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
     // Default-on, so only a stored false turns it off.
@@ -361,6 +375,9 @@ function collectSettings() {
     showTranslationOnly: elements.showTranslationOnly.checked,
     autoTranslate: elements.autoTranslate.checked,
     autoTranslateLangs: collectAutoTranslateLangs(),
+    autoTranslateEngine: elements.autoTranslateEngine.value === 'ai' ? 'ai' : 'builtin',
+    // 空着、负数、写了字母，都是「不限」——和 AutoStats.budgetExceeded 同一个约定。
+    autoAiDailyBudget: Math.max(0, Math.floor(Number(elements.autoAiDailyBudget.value) || 0)),
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
@@ -590,6 +607,7 @@ const IMMEDIATE_SAVE_FIELDS = [
 // Controls that fire on every keystroke or drag frame: debounce, and flush on
 // blur so leaving a field always commits it.
 const DEBOUNCED_SAVE_FIELDS = [
+  'autoAiDailyBudget',
   'apiEndpoint',
   'apiKey',
   'modelName',
@@ -713,6 +731,9 @@ function setupEventListeners() {
   // 字幕那张卡也跟着这一个开关灰：字幕翻不翻由主开关加站点规则说了算。
   elements.autoTranslate.addEventListener('change', syncYoutubeSubState);
   autoLangChips().forEach(box => box.addEventListener('change', () => persistSettings()));
+  // 这一颗有意不进 IMMEDIATE_SAVE_FIELDS：那条路线是「变了就存」，而这里可能
+  // 要把值退回去（用户在二次确认里说了不）。
+  elements.autoTranslateEngine.addEventListener('change', onAutoEngineChange);
   elements.resetAutoStats.addEventListener('click', resetAutoStats);
   elements.clearTranslationCache.addEventListener('click', clearTranslationCache);
 

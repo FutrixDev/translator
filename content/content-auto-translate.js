@@ -48,6 +48,22 @@
     ERROR: 'error'      // 一轮整体失败，这一页不再重试
   });
 
+  // 两个**不属于 decide()** 的停翻理由（PRD FR-9 的费用闸）。
+  //
+  // 有意不放进 shared/site-rules.js 的 REASONS：decide() 回答的是「这个站点、
+  // 这门语言，该不该自动翻」，它永远不会返回这两个。混进去只会让那张表变成一句
+  // 假话 —— 那里的每一个 key 都对应阶梯上的一级，这两个对应的是阶梯之外的一道
+  // 闸。呈现层照样认得它们：content/content-auto-status.js 的 REASON_KEYS 是
+  // 「理由 → 人话」的那张表，它比 decide() 的阶梯宽一点。
+  const COST_REASONS = Object.freeze({
+    // 自动模式没被允许用 AI，而这一页只有 AI 这条路（选了 AI，或者内置顶不住
+    // 且开了回退）。默认状态，所以不弹提示 —— 它是设定，不是意外。
+    ENGINE: 'COST_ENGINE',
+    // 今天的字符预算用完了。这一条要提示一次：用户上午还好好的，下午打开一个
+    // 页面它不翻了，不说一声就只是「坏了」。
+    BUDGET: 'COST_BUDGET'
+  });
+
   function setupAutoTranslate() {
     if (!document.body) return null;
 
@@ -109,6 +125,10 @@
     // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
     // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
     let gaveUp = 0;
+    // 预算那句话在这个文档上说过了。**按文档记，不按代次记**：SPA 里翻一篇帖子
+    // 就翻篇一次代次，跟着代次重置等于每点一下都再说一遍同一句话，而 FR-9 要的
+    // 是「提示一次」。
+    let budgetNoticed = false;
     // 本机统计里「这个月自动翻了几页」已经替这个 URL 记过一笔了。
     //
     // 按 URL 记，不按代次记：同一页会因为设置变动、暂停后继续重开好几轮代次，那
@@ -437,6 +457,30 @@
       return blocks;
     }
 
+    /**
+     * 费用闸（PRD FR-9）：这一轮该不该花钱。返回停翻的理由，没有就返回 null。
+     *
+     * 只在这一页**只剩 AI 这条路**时才问 —— 内置引擎在本机跑，不计费也不限量，
+     * 自动翻译默认开着的全部底气就在这里。
+     *
+     * 这是一次**预判**，不是那道闸本身。真正花不花得出去由
+     * content/content-translation-engine.js 的 refuseAutoAiSpend 在最后那次
+     * sendMessage 旁边说了算 —— 那里拦得住内置引擎跑到一半回落 AI 的那一下，这里
+     * 拦不住。两边问的是同一个设置、同一个 AutoStats.budgetExceeded，分工不同：
+     * 那边不会说话，只会拒；这里不花钱，只负责让用户看见「为什么停了」。少了这
+     * 里，超预算的页面会一批批撞在那道闸上，攒够三次批次失败，最后以一句「翻译
+     * 失败」收场 —— 而真实情况是额度用完了。
+     */
+    async function costRefusal() {
+      if ((await ctx.builtinTranslator.effectiveEngine()) !== 'ai') return null;
+      if (ctx.settings.autoTranslateEngine !== 'ai') return COST_REASONS.ENGINE;
+      const stats = await globalThis.AutoStats.read();
+      if (globalThis.AutoStats.budgetExceeded(stats, ctx.settings.autoAiDailyBudget)) {
+        return COST_REASONS.BUDGET;
+      }
+      return null;
+    }
+
     async function pump() {
       startTimer = null;
       if (running || broken) return;
@@ -447,6 +491,25 @@
       // 同时往页面上写只会互相打架。等它 —— 不抢、也不改它那份状态。
       if (ctx.state.isTranslatingPage) {
         scheduleStart(MANUAL_RETRY_MS);
+        return;
+      }
+
+      // 问在 takeBatch 之前：takeBatch 会把队列抽干、把块记进 inflight，而被费用
+      // 闸拦下的这一轮根本不会跑，那些块就此无声消失 —— 用户后来把 AI 打开，页面
+      // 上仍旧一片原文，没有任何东西会把它们送回来。
+      const costSession = guard.version();
+      const refused = await costRefusal();
+      if (guard.version() !== costSession) return;
+      if (refused) {
+        reason = refused;
+        setStatus(STATUS.OFF);
+        stopDiscovery();
+        // 「退回手动模式并提示一次」。引擎那一条不提示：自动模式不用 AI 是默认
+        // 设定，不是意外，每开一个页面弹一次是在为一件他没做过的事道歉。
+        if (refused === COST_REASONS.BUDGET && !budgetNoticed) {
+          budgetNoticed = true;
+          if (ctx.showAutoStatusNotice) ctx.showAutoStatusNotice(ctx.t('autoBudgetSpent'));
+        }
         return;
       }
 
@@ -498,6 +561,9 @@
               commit(block.element);
             },
             allowDownload: false,
+            // 这一轮是自动模式发出去的。引擎层据此判 FR-9 的费用闸，本机统计
+            // 也据此把「自动模式今天花掉多少字符」和手动那部分分开记。
+            auto: true,
             isAborted: () => guard.version() !== session,
           });
         }
@@ -711,7 +777,11 @@
     const RESTART_KEYS = [
       'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
       'skipTargetLanguageText',
-      'translationEngine', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback'
+      'translationEngine', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback',
+      // 费用闸的两个（costRefusal）。少了它们，用户在设置页把自动模式的 AI 打开、
+      // 或者把预算调大之后，已经停在 OFF 上的那些页面要刷新才活得过来 —— 而他
+      // 刚刚做的正是「让它们继续翻」这件事。
+      'autoTranslateEngine', 'autoAiDailyBudget'
     ];
 
     function onSettingsChanged(changes) {

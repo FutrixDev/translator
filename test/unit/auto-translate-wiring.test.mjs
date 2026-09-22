@@ -430,7 +430,10 @@ test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
   // 「这一页翻不翻」和「这一块翻不翻」，两个判定各自读了哪些设置键。
   const sources = {
     'shared/site-rules.js': /\bprefs\.([A-Za-z_$][\w$]*)/g,
-    'content/page/batch.js': /\bsettings\.([A-Za-z_$][\w$]*)/g
+    'content/page/batch.js': /\bsettings\.([A-Za-z_$][\w$]*)/g,
+    // 调度层自己也读设置 —— 费用闸那两个键（costRefusal）就只在这里出现，
+    // decide() 一个都不认识。它在 ctx 上读，所以是另一个正则。
+    'content/content-auto-translate.js': /\bctx\.settings\.([A-Za-z_$][\w$]*)/g
   };
   // decide() 另外两个入参的出处：调用点从 ctx.settings 上取，名字和这里对不上。
   const viaParams = ['siteRules', 'targetLang'];
@@ -442,6 +445,7 @@ test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
     for (const hit of code(file).matchAll(pattern)) found.add(hit[1]);
   }
   assert.ok(found.has('skipTargetLanguageText'), '扫描没扫到已知的键，正则该修了');
+  assert.ok(found.has('autoTranslateEngine'), '费用闸那两个键没被扫到，第三条正则该修了');
 
   for (const key of found) {
     if (deliberately.has(key)) continue;

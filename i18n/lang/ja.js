@@ -368,6 +368,12 @@
     autoReasonUnknownLanguage: '言語を判定できませんでした',
     autoReasonDefaultAsk: '新しいサイトではまず確認します',
 
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: '自動翻訳は無料の内蔵エンジンのみを使います',
+    autoReasonCostBudget: '今日の AI 予算を使い切りました',
+    autoEngineAiOff: '自動翻訳で AI エンジンが有効になっていません',
+    autoBudgetSpent: '今日の自動翻訳の予算を使い切りました。このページは手動で翻訳できます。上限は設定で変更できます。',
+
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'その他',
     popupSiteAuto: 'このサイトを自動翻訳',
@@ -380,6 +386,15 @@
     hintAutoTranslate: 'メインスイッチです。オンのとき、「常に翻訳」にしたサイトと組み込みリストのサイトは開いた時点で訳文になります。それ以外のサイトでは一度だけ確認します。オフにすると、自動翻訳はどこでもすべて止まります。',
     autoTranslateLangsLabel: 'この言語だけ自動で翻訳する',
     hintAutoTranslateLangs: 'これは「尋ねる」範囲を狭めるだけで、ほかには何もしません。まだ決めていないサイト（内蔵リストにも載っていないサイト）では、選んでいない言語のページは尋ねられることなくそのまま見送られます。何も選ばなければ、何も絞り込みません。これだけでページが翻訳されることはなく、「常に翻訳」にしたサイトを覆すこともありません。',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: '自動翻訳に使うエンジン',
+    autoTranslateEngineBuiltin: 'Chrome の内蔵翻訳（無料）',
+    autoTranslateEngineAi: '自分の AI API（自分に課金）',
+    hintAutoTranslateEngine: '上の「翻訳エンジン」とは別物です。あちらは自分でクリックした翻訳、こちらは誰もクリックしていない翻訳を受け持ちます。既定は無料の内蔵エンジンです —— 自動翻訳を既定でオンにできるのは、それが無料だからです。AI に切り替えると、開いた対象ページのすべてが自分の API 残高を消費します。下の 1 日の上限はそのためにあります。',
+    autoAiDailyBudgetLabel: '自動翻訳の 1 日あたりの文字数上限',
+    hintAutoAiDailyBudget: '上で AI を選んだときだけ効きます。自動モードが実際にモデルへ送った原文の文字数を数え、お使いのタイムゾーンの午前 0 時にリセットします。自分でクリックした翻訳は含みません。使い切ると自動翻訳は止まり、一度だけ通知します。ページは手動で翻訳できます。0 は無制限です。',
+    autoTranslateEngineAiConfirm: '自動翻訳に自分の AI API を使いますか？\n\n以後、開いた対象ページはすべて自動的に API を呼び出し、自分に課金されます。クリックは不要です。1 日あたりの文字数上限もあわせて設定することをおすすめします。',
     siteRulesTitle: 'あなたが決めたサイト',
     siteRulesEmpty: '個別に決めたサイトはまだありません。ポップアップでサイトに「常に」または「しない」を選ぶと、ここに並びます。',
     siteRuleAlways: '常に翻訳する',
