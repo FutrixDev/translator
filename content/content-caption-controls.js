@@ -265,15 +265,12 @@
   }
 
   /**
-   * 这个 host 上的规则写得进去吗。黑名单站点写进去也不算数（BLOCKLIST 在
-   * decide() 的阶梯上排在 USER_ALWAYS 前面），file:// 这类没有 host 的页面根本
-   * 生不出键来 —— 两种都得让这一行看起来就点不动，否则按下去要么毫无动静，要么
-   * 只剩「顺带打开总开关」那半边副作用。
+   * 这个 host 上的规则写得进去吗 —— 判断在 SiteRules.siteRuleWritable()，这里
+   * 只是把这一页的 host/path 递过去。悬浮球菜单第一项画的是同一句话。
    */
   function ruleWritable() {
     if (!globalThis.SiteRules) return false;
-    if (!globalThis.SiteRules.normalizeHost(location.hostname)) return false;
-    return !globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname);
+    return globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname);
   }
 
   /** Push the current settings and track state into the open (or closed) menu. */

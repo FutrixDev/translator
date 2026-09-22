@@ -134,15 +134,25 @@ test('写不进规则的站点，那一行点不动', () => {
   // 黑名单：BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算
   // 数。没有 host（file://）：normalizeHost 给不出键，规则一声不响地没写上，而
   // 「顺带打开总开关」那半边会照跑——他要的是这一个站点，拿到的是整个浏览器。
+  // 判断只有一份，在 shared/site-rules.js —— 三处画这一行的地方（popup、字幕
+  // 菜单、悬浮球菜单第一项）问的是同一句话。从前它是字幕菜单里的私有函数，第二
+  // 处要用的时候差一点就被抄成第二份。
+  const rules = repoFile('shared/site-rules.js');
+  const shared = rules.match(/function siteRuleWritable\(hostname, path\)[\s\S]*?\n  \}/);
+  assert.ok(shared, '找不到 SiteRules.siteRuleWritable()');
+  assert.match(shared[0], /normalizeHost\(hostname\)/);
+  assert.match(shared[0], /isBlocklisted\(hostname, path\)/);
+  assert.match(rules, /^\s*siteRuleWritable,$/m, 'siteRuleWritable 没导出去');
+
   const controls = repoFile('content/content-caption-controls.js');
   const fn = controls.match(/function ruleWritable\(\)[\s\S]*?\n  \}/);
   assert.ok(fn, '找不到 ruleWritable()');
-  assert.match(fn[0], /normalizeHost\(location\.hostname\)/);
-  assert.match(fn[0], /isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(fn[0], /SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
+  // 抄回来的第二份长这样：自己拼那两问。
+  assert.doesNotMatch(fn[0], /isBlocklisted\(/, 'ruleWritable 又自己判了一遍');
   assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\)/);
 
   // 写入口那边再挡一道：画面灰着只是画面，别的调用方照样能递个空 host 进来。
-  const rules = repoFile('shared/site-rules.js');
   const set = rules.slice(rules.indexOf('async function setSiteAuto(hostname, on)'));
   const guard = set.indexOf('if (!normalizeHost(hostname)) throw');
   assert.ok(guard > 0, 'setSiteAuto 没有挡住存不进去的 host');

@@ -7,8 +7,9 @@
 // ---------------------------------------------------------------------------
 // 自动翻译：总开关、语言名单、站点审计表、本机统计
 //
-// 卡片里四块东西，只有前两块是普通设置项（走 collectSettings 那次整份写入）。
-// 后两块各有各的写入通道，而且**必须**如此：
+// 卡片里六块东西，只有前四块是普通设置项（走 collectSettings 那次整份写入）：
+// 总开关、自动模式的引擎、语言名单、每日字符预算。后两块各有各的写入通道，
+// 而且**必须**如此：
 //
 //   siteRules   是一张共享表，弹出窗口、内容脚本、设置页都在改它，所以写入收
 //               在服务工作者里（SiteRules.writeUserRule）。把它塞进
@@ -23,6 +24,38 @@
 function syncAutoSubState() {
   if (!elements.autoSubOptions) return;
   elements.autoSubOptions.classList.toggle('disabled', !elements.autoTranslate.checked);
+}
+
+/**
+ * 预算那一格只在自动模式真的会花钱时才有意义，跟着引擎选择器一起灰。
+ *
+ * 只变灰、不隐藏：一个填了数字的框突然消失，用户会以为那个数字也一起没了。
+ */
+function syncAutoEngineState() {
+  if (!elements.autoAiBudgetGroup) return;
+  elements.autoAiBudgetGroup.classList.toggle('disabled', elements.autoTranslateEngine.value !== 'ai');
+}
+
+/**
+ * 把自动模式切到 AI 之前的那道二次确认（PRD FR-3.5 / FR-9）。
+ *
+ * 这是整个扩展里唯一一处 window.confirm，而且是有意的：别的设置改错了，用户
+ * 下次打开这一页就能看见并改回来；这一个改错了，代价是接下来每一个自动翻译
+ * 的页面都在花他自己的钱，而他不会点任何一下，所以也不会有任何一刻回到这一
+ * 页来看。要拦住这件事，需要的正是 confirm 那种**必须回答才能继续**的性质，
+ * 一条事后才出现的提示条做不到。
+ *
+ * 说了不，就把值退回 builtin 并且**什么都不写** —— 退回之后再存一次是多余
+ * 的：存起来的本来就是 builtin。
+ */
+function onAutoEngineChange() {
+  if (elements.autoTranslateEngine.value === 'ai' && !window.confirm(t('autoTranslateEngineAiConfirm'))) {
+    elements.autoTranslateEngine.value = 'builtin';
+    syncAutoEngineState();
+    return;
+  }
+  syncAutoEngineState();
+  persistSettings();
 }
 
 function autoLangChips() {

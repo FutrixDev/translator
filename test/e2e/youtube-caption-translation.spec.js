@@ -47,7 +47,6 @@ const html = `<!doctype html>
 // has to ask for Chinese.
 const BASE_SETTINGS = {
   targetLang: 'zh-CN',
-  targetLangSetByUser: true,
   uiLanguage: 'zh-CN',
   apiKey: 'sk-test',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',

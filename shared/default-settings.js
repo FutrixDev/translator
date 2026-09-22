@@ -9,11 +9,18 @@
 // `showTranslationOnly` was in two of them.
 //
 // The service worker and the options page keep their own lists on purpose.
-// background.js needs the API credentials and resolves an empty `targetLang`
-// against the browser language; options.js needs every form control's initial
-// value. Those are different sets, not copies of this one, and folding them in
-// would mean one object whose entries are right for one reader and wrong for
-// another.
+// background.js needs the API credentials; options.js needs every form
+// control's initial value. Those are different sets, not copies of this one,
+// and folding them in would mean one object whose entries are right for one
+// reader and wrong for another.
+//
+// **But where two of the lists name the same key, they must give it the same
+// value**, and that is now asserted rather than assumed
+// (`test/unit/default-settings-agree.test.mjs`). It is not a hypothetical: this
+// table said `targetLang: 'zh-CN'` while the worker's said `''`, so on a fresh
+// install a French user got a context menu offering Français and a page
+// translated into Chinese. Empty means "follow the browser" everywhere now —
+// see shared/target-lang.js.
 //
 // Loaded as a classic script by the content scripts, so it publishes onto the
 // global object rather than using `export`.
@@ -43,6 +50,9 @@
     selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
     selectionTranslationMode: 'inline',
     showFloatBall: true,
+    // 输入框旁边那颗「译成 X」。默认开：它只在输入内容的语言和页面语言对不上
+    // 时才出现，也就是说不写字、或者写的就是这一页的语言，整页上根本看不见它。
+    showInputTranslateChip: true,
     // 名字说的是“检测语言”，做的事是“已经是目标语言的段落就别译了”。
     skipTargetLanguageText: true,
     showTranslationOnly: false,
@@ -79,7 +89,9 @@
     youtubeCaptionPosYPct: null,
     youtubeCaptionWidthPct: null,
     youtubeCaptionScale: 1,
-    targetLang: 'zh-CN',
+    // 空 = 跟随浏览器语言，解析在 shared/target-lang.js。这里曾经写死 'zh-CN'，
+    // 而 worker 那张表写的是空 —— 同一次全新安装，两边译成两门语言。
+    targetLang: '',
     // 界面语言，与翻译目标语言彻底分开。'' = 跟随浏览器。
     uiLanguage: '',
     theme: 'light',
@@ -97,6 +109,24 @@
     siteRules: Object.freeze({}),
     // 只自动翻这些源语言；空数组 = 不限制。装的是语言基码（'en'、'ja'）。
     autoTranslateLangs: Object.freeze([]),
+    // 自动模式走哪个引擎，和上面那颗 translationEngine（手动翻译走哪个）是**两
+    // 件事**，所以是两个键。
+    //
+    // 默认 'builtin'，而且这不是偏好，是「默认开启自动翻译」这件事能成立的唯一
+    // 前提（PRD FR-9）：内置引擎在本机跑、不花钱、没有额度。一个为了手动翻译把
+    // translationEngine 切到 'ai' 的用户，如果自动模式跟着切过去，此后他打开的
+    // 每一个外文页面都在无声地花他的钱 —— 他同意的是「我点一下，你用我的接口
+    // 翻」，不是「你替我点」。
+    //
+    // 切到 'ai' 要在设置页上过一道二次确认，确认框里写明这是在花他自己的钱。
+    autoTranslateEngine: 'builtin',
+    // 自动模式一天最多发给模型多少字符。0 = 不限。
+    //
+    // 只有 autoTranslateEngine === 'ai' 时才有意义：内置引擎不计费，也不记账。
+    // 20 万字符大约是二三十篇长文，按主流小模型的价钱是一天几分钱；它挡的不是
+    // 正常使用，是「一个循环加载的页面替我把一个月的额度烧掉」。超了就退回手动
+    // 模式并提示一次（FR-9）。
+    autoAiDailyBudget: 200000,
     // 每个域名追问过几次：{ 'example.com': 2 }。问到 3 次还没换来一次「翻译」
     // 就永远不再问（content/content-auto-status.js 的 MAX_ASKS）。
     //

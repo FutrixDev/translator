@@ -23,8 +23,26 @@
   // 除，是这件事唯一不会算错的做法。
   const FIELDS = Object.freeze(['pages', 'aiChars', 'cacheHits', 'cacheMisses']);
 
-  function emptyStats(month) {
-    return { month: month || '', pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0 };
+  // 按天清零的那一格，和上面四个装在同一条记录里。
+  //
+  // 它不是「统计」而是**闸门的读数**（FR-9 的每日预算），可还是放在这里：两边
+  // 数的是同一件事——真的发给模型的字符数，只是窗口不一样。分成两条记录就有了
+  // 两个读—改—写的主人、两套跨期清零的判断，而它们迟早会对不上；那时用户看到
+  // 的「本月已用」和闸门认的「今天已用」会是两笔互相矛盾的账。
+  //
+  // 只数**自动模式**发出去的那部分：手动翻译是用户一次一次点出来的，他知道自己
+  // 在花钱；闸门要挡的是零点击的那条路。所以它不和 aiChars 共用记账点 ——
+  // aiChars 记在 background/api-client.js 的 countCharsSentToModel()，那里每一次
+  // 调模型都过，分不出是谁点的；autoAiChars 记在闸门自己那一处，
+  // content/content-translation-engine.js 的 refuseAutoAiSpend()，而且和「还够
+  // 吗」是同一次操作（见下面的 applyCharge）。
+  const DAY_FIELDS = Object.freeze(['autoAiChars']);
+
+  function emptyStats(month, day) {
+    return {
+      month: month || '', pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0,
+      day: day || '', autoAiChars: 0
+    };
   }
 
   /**
@@ -36,6 +54,19 @@
     const date = now instanceof Date ? now : new Date();
     const month = date.getMonth() + 1;
     return `${date.getFullYear()}-${month < 10 ? '0' : ''}${month}`;
+  }
+
+  /**
+   * `'YYYY-MM-DD'`，同样按**本地**时区。
+   *
+   * 预算说的是「今天」，而今天什么时候结束由用户的时区说了算：按 UTC 切的话，
+   * 东八区的用户在早上八点就会莫名其妙地多出一天的额度，而美西的用户下午五点
+   * 就被清零一次。
+   */
+  function currentDay(now) {
+    const date = now instanceof Date ? now : new Date();
+    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
   // 存进去的东西不一定是我们上次写的：用户可能手动改过，旧版本可能写过别的形状。
@@ -55,11 +86,17 @@
    * @param {Object|null} delta 这一笔增量
    * @param {string} month 现在是哪个月
    */
-  function mergeDelta(stats, delta, month) {
+  function mergeDelta(stats, delta, month, day) {
     const base = stats && stats.month === month ? stats : null;
-    const next = emptyStats(month);
+    // 两个窗口各自判各自的期：一条记录跨月不跨日（月初那一天）和跨日不跨月
+    // （每天）都是常态，共用一个 base 会让其中一半在该清零的时候没清。
+    const dayBase = stats && stats.day === day ? stats : null;
+    const next = emptyStats(month, day);
     for (const field of FIELDS) {
       next[field] = count(base && base[field]) + count(delta && delta[field]);
+    }
+    for (const field of DAY_FIELDS) {
+      next[field] = count(dayBase && dayBase[field]) + count(delta && delta[field]);
     }
     return next;
   }
@@ -90,6 +127,21 @@
     return total > 0 ? hits / total : null;
   }
 
+  /**
+   * 今天的自动模式还有预算吗（FR-9）。
+   *
+   * `budget <= 0` 是**不限制**，不是「一个字符都不许」：设置页那个输入框留空、
+   * 或者用户填了 0，说的都是「别管我」。和 autoTranslateLangs 空数组同一个约定。
+   *
+   * 比的是 `>=`：预算是「今天最多发这么多」，刚好填满就该停，而不是等下一批
+   * 把它顶破。
+   */
+  function budgetExceeded(stats, budget) {
+    const limit = typeof budget === 'number' && Number.isFinite(budget) ? Math.floor(budget) : 0;
+    if (limit <= 0) return false;
+    return count(stats && stats.autoAiChars) >= limit;
+  }
+
   // -------------------------------------------------------------- 存储
 
   function storage() {
@@ -102,12 +154,13 @@
    */
   function read(now) {
     const month = currentMonth(now);
+    const day = currentDay(now);
     const store = storage();
-    if (!store) return Promise.resolve(emptyStats(month));
+    if (!store) return Promise.resolve(emptyStats(month, day));
     return store
       .get({ [STORAGE_KEY]: null })
-      .then((stored) => mergeDelta(stored && stored[STORAGE_KEY], null, month))
-      .catch(() => emptyStats(month));
+      .then((stored) => mergeDelta(stored && stored[STORAGE_KEY], null, month, day))
+      .catch(() => emptyStats(month, day));
   }
 
   const IN_SERVICE_WORKER =
@@ -126,8 +179,9 @@
     const store = storage();
     if (!store) return null;
     const month = currentMonth();
+    const day = currentDay();
     const stored = await store.get({ [STORAGE_KEY]: null });
-    const next = mergeDelta(stored && stored[STORAGE_KEY], message.delta, month);
+    const next = mergeDelta(stored && stored[STORAGE_KEY], message.delta, month, day);
     await store.set({ [STORAGE_KEY]: next });
     return next;
   }
@@ -135,12 +189,37 @@
   async function applyReset() {
     const store = storage();
     if (!store) return null;
-    const next = emptyStats(currentMonth());
+    const next = emptyStats(currentMonth(), currentDay());
     await store.set({ [STORAGE_KEY]: next });
     return next;
   }
 
-  const WRITES = { add: applyAdd, reset: applyReset };
+  /**
+   * 「今天还有额度吗？有就把这一笔记上。」—— **问和记是同一次操作**。
+   *
+   * 分成 read + add 两步是错的，而且错得看不出来：一轮自动翻译会同时放出八个
+   * 批次，八个都在各自的 read 里看到「还没超」，然后八个一起记账。预算是一道
+   * 闸门，闸门不能有八个人同时通过的写法。这里走的是下面那条单写者队列，所以
+   * 判定用的数字就是写入时的数字。
+   *
+   * 拒了就一个字都不记 —— 没发出去的字符不该算进今天的用量。
+   */
+  async function applyCharge(message) {
+    const store = storage();
+    // 读不到存储就不设闸：预算是本机的一层自我约束，不是权限。存储坏了的时候
+    // 把用户的自动翻译整个停掉，比超一点预算糟糕得多。
+    if (!store) return { allowed: true, stats: null };
+    const month = currentMonth();
+    const day = currentDay();
+    const stored = await store.get({ [STORAGE_KEY]: null });
+    const current = mergeDelta(stored && stored[STORAGE_KEY], null, month, day);
+    if (budgetExceeded(current, message.budget)) return { allowed: false, stats: current };
+    const next = mergeDelta(current, { autoAiChars: count(message.chars) }, month, day);
+    await store.set({ [STORAGE_KEY]: next });
+    return { allowed: true, stats: next };
+  }
+
+  const WRITES = { add: applyAdd, reset: applyReset, charge: applyCharge };
 
   /**
    * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接
@@ -169,7 +248,7 @@
 
   /**
    * 记一笔。`delta` 里给哪几个键就加哪几个：
-   * `{ pages, aiChars, cacheHits, cacheMisses }`。
+   * `{ pages, aiChars, cacheHits, cacheMisses, autoAiChars }`。
    */
   function add(delta) {
     return request('add', { delta });
@@ -180,16 +259,31 @@
     return request('reset');
   }
 
+  /**
+   * 自动模式要发 `chars` 个字符给模型，今天的上限是 `budget`（0 = 不限）。
+   * 返回 `{allowed, stats}`。
+   *
+   * 消息发不出去时（页面正在卸载、扩展刚更新）request 给回 null —— 当成放行：
+   * 见 applyCharge 里那句「预算不是权限」。
+   */
+  function charge(chars, budget) {
+    return request('charge', { chars, budget }).then((value) => value || { allowed: true, stats: null });
+  }
+
   root.AutoStats = {
     STORAGE_KEY,
     FIELDS,
+    DAY_FIELDS,
     emptyStats,
     currentMonth,
+    currentDay,
     mergeDelta,
     textsChars,
     cacheHitRate,
+    budgetExceeded,
     read,
     add,
+    charge,
     reset,
     applyWrite,
   };

@@ -188,3 +188,54 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 .ai-translator-input-error {
   color: #ff6b6b;
 }
+
+/* ==================== Input Translate Chip ====================
+
+   输入框旁边那颗极小的「译成 X」（showInputTranslateChip，默认开）。
+   只在输入内容的语言和页面语言对不上时出现，点一下把文字送进上面那个对话框。
+
+   和 OCR 悬浮按钮一样按 #id 写：(1,0,0) 压得过任何主题的 `.kit div:hover`，也
+   压得过容纳复位里的每一条，所以不需要 `html body` 前缀。它仍然要出现在复位的
+   `:is()` 清单里 —— 页面那条 `div { opacity: .8 }` 照样打得到它。 */
+
+#ai-translator-input-chip {
+  position: fixed;
+  z-index: 2147483646;
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(21, 22, 28, 0.92);
+  border: 1px solid #2a2d36;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+  animation: ai-translator-btn-pop 0.15s ease;
+}
+
+#ai-translator-input-chip:hover {
+  background: rgba(38, 40, 50, 0.96);
+  border-color: #6f63ff;
+}
+
+/* Light theme, per the data-ai-translator-theme convention on <html>. */
+html[data-ai-translator-theme="light"] #ai-translator-input-chip {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #d9d9e3;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.16);
+  color: #1f2330;
+}
+
+html[data-ai-translator-theme="light"] #ai-translator-input-chip:hover {
+  background: #f4f3ff;
+  border-color: #6f63ff;
+}

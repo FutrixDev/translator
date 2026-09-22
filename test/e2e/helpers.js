@@ -264,6 +264,22 @@ async function getCurrentTheme(page) {
  * exercise the built-in engine passes `translationEngine` explicitly to
  * setExtensionSettings and wins over this.
  *
+ * `autoTranslateEngine` is the same fact stated for the other half of the
+ * extension. Automatic translation has an engine switch of its own (PRD FR-9),
+ * defaulting to the free built-in one, and FR-9.1 says a page with no built-in
+ * engine and no fallback is simply not translated automatically — quietly, by
+ * design. That rule is right and it is exactly what this headless Chrome
+ * triggers: pinning only `translationEngine` leaves every auto-translate spec
+ * waiting on a page that has correctly decided to do nothing.
+ *
+ * Which makes the override rule above a rule about **both** keys, not one: a
+ * spec that means to exercise the built-in engine has to say so twice. Clicking
+ * 「翻译整页」 calls markPageExplicit(), so an automatic round runs on that same
+ * page moments later — and it is judged by `autoTranslateEngine`. Override only
+ * the manual half and the spec is really asking "what does the harness think
+ * automatic translation may spend?", which is not a question any spec means to
+ * ask. popup-status.spec.js's three built-in-engine specs pin both.
+ *
  * `uiLanguage` is here for the same reason. Left unset it means "follow the
  * browser", so every label a spec reads — the OCR popup's "Source · English",
  * the caption menu's rows, every error string — would be drawn in whatever
@@ -273,6 +289,7 @@ async function getCurrentTheme(page) {
  */
 const E2E_BASE_SETTINGS = Object.freeze({
   translationEngine: 'ai',
+  autoTranslateEngine: 'ai',
   uiLanguage: 'en',
 });
 

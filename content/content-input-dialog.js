@@ -105,10 +105,19 @@
     return segments.length >= 1 && segments.length <= 4;
   }
 
-  function showInputTranslateDialog() {
+  function showInputTranslateDialog(options = {}) {
     if (state.inputDialog) {
       hideInputDialog();
     }
+
+    // 输入框上那颗芯片（content/content-input-chip.js）带着两样东西来开这个
+    // 框：用户已经敲好的文字，和它判出来的目标语言。那个目标语言只算这一次 ——
+    // 这里不调 rememberTargetLang()，所以下次从悬浮球菜单打开还是老样子。芯片
+    // 是「这段话我想看另一种语言」，不是「以后都往这边译」。
+    const initialText = typeof options.text === 'string' ? options.text : '';
+    const initialLang = options.targetLang
+      ? ctx.normalizeTargetLang(options.targetLang)
+      : getInputTargetLang();
 
     // Ensure theme is applied
     applyTheme(settings.theme);
@@ -130,13 +139,13 @@
             <span class="ai-translator-lang-hint">${t('translateTo')}</span>
             <div class="ai-translator-lang-dropdown">
               <button class="ai-translator-lang-trigger" type="button" title="${t('targetLanguage')}" aria-expanded="false">
-                <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(getInputTargetLang()))}</span>
+                <span class="ai-translator-lang-label">${escapeHtml(getTargetLangLabel(initialLang))}</span>
                 <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
               </button>
               <div class="ai-translator-lang-menu" hidden>
-                ${buildTargetLangMenu(getInputTargetLang())}
+                ${buildTargetLangMenu(initialLang)}
               </div>
             </div>
             <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
@@ -195,12 +204,17 @@
     document.body.appendChild(state.inputDialog);
 
     const dialog = state.inputDialog;
+    // setupLanguageDropdown 一会儿会再写一次（写的是规范化后的值）。先写在这里
+    // 是因为 getShownTargetLang() 只认 dataset，而下拉在某些加载顺序下可能还没到。
+    dialog.dataset.targetLang = initialLang;
     const textarea = dialog.querySelector('#ai-translator-input-text');
     const resultSection = dialog.querySelector('#ai-translator-result-section');
     const resultText = dialog.querySelector('#ai-translator-result-text');
     const phoneticEl = dialog.querySelector('#ai-translator-input-phonetic');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
+
+    if (initialText) textarea.value = initialText;
 
     setTimeout(() => textarea.focus(), 100);
 
@@ -313,7 +327,7 @@
     });
 
     if (ctx.setupLanguageDropdown) {
-      ctx.setupLanguageDropdown(dialog, getInputTargetLang(), (lang) => {
+      ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
         rememberTargetLang(lang);
         // Picking a language with the box empty is someone setting up before
         // they type, not asking for a translation.
@@ -335,6 +349,10 @@
     // stop them before the host page's bubble-phase listeners can react.
     document.addEventListener('focusin', blockHostFocusTrap, true);
     document.addEventListener('focusout', blockHostFocusTrap, true);
+
+    // 带着文字进来的，只有芯片一条路，而点芯片本身就是那一下「点击才译」。
+    // 再让用户在框里按一次「翻译」是把同一个动作要两遍。
+    if (initialText) translateInputText(initialLang);
   }
 
   function handleInputDialogEscape(e) {

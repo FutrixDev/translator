@@ -146,6 +146,11 @@
         }
       }
 
+      if (changes.showInputTranslateChip && changes.showInputTranslateChip.newValue === false) {
+        // 关掉开关的人多半正看着那颗芯片。等下一次敲键才消失，看着像没生效。
+        if (ctx.hideInputTranslateChip) ctx.hideInputTranslateChip();
+      }
+
       if (changes.theme) {
         ctx.applyTheme(ctx.settings.theme);
       }
@@ -190,6 +195,7 @@
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
       if (ctx.setupHoverTranslation) ctx.setupHoverTranslation();
       if (ctx.setupImageOcrHoverButton) ctx.setupImageOcrHoverButton();
+      if (ctx.setupInputTranslateChip) ctx.setupInputTranslateChip();
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();
@@ -203,6 +209,9 @@
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
       if (ctx.setupAutoStatus) ctx.setupAutoStatus();
+      // 条子由 setupAutoStatus() 那一层画，所以排在它后面。PDF 文档上没有正文
+      // 可翻，这条是那一页唯一能办事的入口。
+      if (ctx.setupPdfPrompt) ctx.setupPdfPrompt();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.

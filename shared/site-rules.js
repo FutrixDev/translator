@@ -19,6 +19,7 @@
   const REASONS = Object.freeze({
     GLOBAL_OFF: 'GLOBAL_OFF',
     BLOCKLIST: 'BLOCKLIST',
+    BUILTIN_NEVER: 'BUILTIN_NEVER',
     USER_NEVER: 'USER_NEVER',
     USER_EXPLICIT: 'USER_EXPLICIT',
     USER_ALWAYS: 'USER_ALWAYS',
@@ -29,7 +30,7 @@
     DEFAULT_ASK: 'DEFAULT_ASK',
   });
 
-  // 阶梯最上面那三级：**这个站点不许我们自己动手**。
+  // 阶梯最上面那四级：**这个站点不许我们自己动手**。
   //
   // 和「verdict === 'off'」不是一回事，这才是它值得单独有个名字的原因。下面还有
   // 三级也答 off，但它们量的是语言——「页面已经是你的语言了」「这门语言不在你的
@@ -39,8 +40,10 @@
   // 之外的自动化（比如替观众点开播放器的原字幕）发生的地方，decide() 多半答的是
   // ask——视频站点没上过内置 always 名单，页面语言又常常和声道语言不是一回事。拿
   // 「开着自动翻」当闸门，那些事在它们最该发生的地方一次也不会发生；拿「被明令拒
-  // 绝」当闸门，被拒的三种情形一个不漏，其余照常。
-  const REFUSALS = Object.freeze([REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.USER_NEVER]);
+  // 绝」当闸门，被拒的四种情形一个不漏，其余照常。
+  const REFUSALS = Object.freeze([
+    REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.BUILTIN_NEVER, REASONS.USER_NEVER,
+  ]);
 
   // ---------------------------------------------------------------- 主机名
 
@@ -210,6 +213,27 @@
     return !!(rule && rule.state === 'never');
   }
 
+  /**
+   * 「界面上那一行『自动翻译这个站点』写得进去吗」。
+   *
+   * 写不进去的有两种，都得让那一行看起来就点不动：黑名单站点（BLOCKLIST 在
+   * decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算数），和 normalizeHost
+   * 生不出键来的页面（file:// 上 location.hostname 是空串）。后一种按下去
+   * setSiteAuto 会抛，前一种按下去更糟：规则存了、也读回来了，可这一页照样不
+   * 翻，而用户以为他刚刚打开了它。
+   *
+   * 画这一行的地方 —— popup、播放器里的字幕菜单、悬浮球菜单第一项 —— 问的是同
+   * 一句话，所以只有这一份实现。从前它是字幕菜单里的一个私有函数，第二处要用的
+   * 时候差一点就被抄成第二份；popup 那一处则长期只问了黑名单那一半，于是同一个
+   * file:// 页面上，两处把这一行灰掉、第三处让它看起来能点。
+   *
+   * 参数而不是读 location：这个文件在服务工作者里也装着，那边没有 location。
+   */
+  function siteRuleWritable(hostname, path) {
+    if (!normalizeHost(hostname)) return false;
+    return !isBlocklisted(hostname, path);
+  }
+
   // ---------------------------------------------------------------- 语言
 
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里连一份副本都不留，
@@ -289,7 +313,20 @@
     // 禁翻的三条在所有「要翻」的理由之前，包括用户自己设的总是翻译。它防的不
     // 是「用户想翻银行页面」，是「用户在某个域名上点过一次总是翻译，此后我们
     // 往他的邮箱、在线文档编辑器、政务表单里插节点」。
-    if (isBlocklisted(host, path)) return out('off', REASONS.BLOCKLIST);
+    //
+    // 同一个结论有两种来源，而用户看到的那句话不一样：黑名单说的是「这类页面
+    // 我们不碰」，内置 never 说的是「这一条路径我们另有安排」—— arxiv 的
+    // /pdf/ 就是后者，那里不是不该翻，是该走另一条（收费的）路，页面上那条
+    // 提示条正等着他点。两句话混成一句，用户在论文 PDF 上看到的会是「这个站点
+    // 在黑名单里」，而他上一秒还在同一个域名下读着被自动翻好的摘要页。
+    //
+    // 判断仍然只问 isBlocklisted() 这一个主人，问完再回头看是哪一半答的是。
+    // 反过来把两半就地展开，就等于在这里复制了一遍那个函数：哪天它多认一种
+    // never，这条阶梯会悄悄漏掉。落到 BUILTIN_NEVER 是安全的那一边 —— 结论
+    // 一模一样，只是措辞按「内置规则说不」来。
+    if (isBlocklisted(host, path)) {
+      return out('off', isBlocked(host, path) ? REASONS.BLOCKLIST : REASONS.BUILTIN_NEVER);
+    }
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 
@@ -508,8 +545,10 @@
    * 边照跑：一个写着「这个站点」的开关，按下去把整个浏览器的总开关打开了。抛出
    * 去而不是默默返回，调用方才说得出「没存上」。
    *
-   * 两个调用点：popup 那一行，和播放器里字幕菜单的第一项。字幕翻译并进主开关之
-   * 后它们说的是同一句话，所以也只该有一份实现。
+   * 界面上写「这个站点自动翻」的地方都走这里 —— popup 那一行、播放器里字幕菜单
+   * 的第一项、追问条上的「总是」、悬浮球菜单第一项。数它们没有意义，还会过期
+   * （这句话上一版写的是「两个调用点」，那时已经有三个）：要紧的是那一句话只有
+   * 一句，所以只该有一份实现。
    */
   async function setSiteAuto(hostname, on) {
     if (!normalizeHost(hostname)) throw new Error(`site rules: unusable host ${hostname}`);
@@ -535,6 +574,7 @@
     applyWrite,
     matchBuiltin,
     isBlocklisted,
+    siteRuleWritable,
     loadTable,
   };
 })(globalThis);

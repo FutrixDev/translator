@@ -274,6 +274,9 @@
     hoverHotkeyMeta: 'Meta',
     showFloatBall: '显示翻译球',
     hintShowFloatBall: '页面右下角显示快捷翻译按钮',
+    showInputTranslateChip: '输入框显示「译成…」芯片',
+    hintShowInputTranslateChip: '在输入框里写下和页面语言不同的文字时，框边出现一颗小芯片。点了才翻译，永远不改写你输入的内容。',
+    inputChipTranslateTo: '译成 {lang}',
     skipTargetLanguageText: '跳过已是目标语言的内容',
     showTranslationOnly: '仅显示译文',
     hintShowTranslationOnly: '整页翻译时隐藏原文，只保留译文',
@@ -357,7 +360,9 @@
     autoAskPrompt: '这一页要翻译吗？',
     autoAskTranslate: '翻译',
     autoAskDismiss: '不用',
+    pdfAskPrompt: '这是一份 PDF 文档，翻译它会按页数消耗额度',
     autoAskAlways: '总是翻译 {site}',
+    autoStopSite: '不再自动翻译 {site}',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '这一页不翻译',
@@ -372,6 +377,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '自动翻译已关闭',
     autoReasonBlocklist: '这个站点从不自动翻译',
+    autoReasonBuiltinNever: '这一页不自动翻译整页文本',
     autoReasonUserNever: '你选过这个站点「从不翻译」',
     autoReasonUserExplicit: '这一页是你自己要翻的',
     autoReasonUserAlways: '你选过这个站点「总是翻译」',
@@ -380,6 +386,12 @@
     autoReasonLangNotListed: '这一页的语言不在你的名单里',
     autoReasonUnknownLanguage: '判不出这一页是什么语言',
     autoReasonDefaultAsk: '新站点先问一句',
+
+    // 自动翻译：费用闸拦下来时说的话（FR-9）。前两条是状态点展开的后半句，
+    // 后两条是引擎层拒绝一批翻译时回给调用方的那句。
+    autoReasonCostEngine: '自动翻译只用免费的内置引擎，而这一页用不了它',
+    autoReasonCostBudget: '今天的 AI 额度用完了',
+    autoBudgetSpent: '今天的自动翻译额度用完了，这一页可以手动翻译。额度在设置里改。',
 
     // 自动翻译：悬浮球与 popup
     floatBallMore: '更多',
@@ -395,6 +407,15 @@
     hintAutoTranslate: '总开关。开着时，你设成「总是翻译」的站点、以及内置名单里的站点，打开就是译文；别的站点会先问你一次。关掉它，所有自动翻译立刻全部停下。',
     autoTranslateLangsLabel: '只自动翻这些语言',
     hintAutoTranslateLangs: '它只把「问」收窄，别的什么也不做。在你还没表过态、内置名单也没覆盖的站点上，没勾中的那些语言的页面会被直接放过，而不是来问你一句；一个都不勾，就什么都不筛。它不会让任何一页翻起来，也盖不过你设成「总是翻译」的站点。',
+
+    // 自动翻译卡片里的两个高级字段：自动模式走哪个引擎、每天最多花多少。
+    autoTranslateEngineLabel: '自动翻译用哪个引擎',
+    autoTranslateEngineBuiltin: 'Chrome 内置翻译（免费）',
+    autoTranslateEngineAi: '我自己的 AI 接口（算我的账）',
+    hintAutoTranslateEngine: '和上面那颗「翻译引擎」是两件事：那一颗管你自己点出来的翻译，这一颗管没人点的那些。默认走免费的内置引擎 —— 自动翻译之所以敢默认开着，就是因为它不花钱。改成 AI 之后，你打开的每一个符合条件的页面都在花你自己的接口额度，下面那个每日上限也就跟着生效。',
+    autoAiDailyBudgetLabel: '自动翻译每天最多用多少字符',
+    hintAutoAiDailyBudget: '只在上面选了 AI 时才管用。数的是自动模式真的发给模型的原文字数，按你本机时区每天零点清零；你自己点出来的翻译不算在里面。用完之后自动翻译停下并提示你一次，这一页仍然可以手动翻。填 0 表示不限。',
+    autoTranslateEngineAiConfirm: '让自动翻译改用你自己的 AI 接口？\n\n此后你打开的每一个符合条件的页面都会自动调用你的接口，按你自己的账单计费，中间不需要你点任何一下。建议同时设一个每日字符上限。',
     siteRulesTitle: '你表过态的网站',
     siteRulesEmpty: '还没有哪个网站单独设过规则。在弹出窗口里给某个网站选「总是」或「从不」，这里就会出现一条。',
     siteRuleAlways: '总是翻译',

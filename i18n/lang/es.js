@@ -244,6 +244,9 @@
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'Mostrar bola flotante',
     hintShowFloatBall: 'Mostrar botón de traducción rápida en la esquina de la página',
+    showInputTranslateChip: 'Chip de traducción en el campo de texto',
+    hintShowInputTranslateChip: 'Cuando lo que escribes está en un idioma distinto al de la página, aparece un pequeño chip junto al campo. Solo traduce al hacer clic y nunca reescribe lo que has escrito.',
+    inputChipTranslateTo: 'Traducir al {lang}',
     skipTargetLanguageText: 'Omitir el texto que ya está en el idioma de destino',
     showTranslationOnly: 'Mostrar solo la traducción',
     hintShowTranslationOnly: 'En la traducción de la página completa, oculta el texto original y deja solo la traducción',
@@ -341,7 +344,9 @@
     autoAskPrompt: '¿Traducir esta página?',
     autoAskTranslate: 'Traducir',
     autoAskDismiss: 'Ahora no',
+    pdfAskPrompt: 'Esto es un PDF. Traducirlo consume créditos de páginas.',
     autoAskAlways: 'Traducir siempre {site}',
+    autoStopSite: 'Dejar de traducir {site} automáticamente',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'Esta página no se traduce',
@@ -356,6 +361,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: 'La traducción automática está desactivada',
     autoReasonBlocklist: 'Este sitio nunca se traduce automáticamente',
+    autoReasonBuiltinNever: 'El texto de esta página no se traduce automáticamente',
     autoReasonUserNever: 'Elegiste «nunca» para este sitio',
     autoReasonUserExplicit: 'Pediste traducir esta página',
     autoReasonUserAlways: 'Elegiste «siempre» para este sitio',
@@ -364,6 +370,11 @@
     autoReasonLangNotListed: 'El idioma de esta página no está en tu lista',
     autoReasonUnknownLanguage: 'No se pudo identificar el idioma',
     autoReasonDefaultAsk: 'En un sitio nuevo preguntamos primero',
+
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: 'La traducción automática solo usa el motor integrado gratuito, no disponible en esta página',
+    autoReasonCostBudget: 'El presupuesto de IA de hoy se ha agotado',
+    autoBudgetSpent: 'El presupuesto de traducción automática de hoy se ha agotado. Esta página puedes traducirla tú mismo; el límite está en los ajustes.',
 
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'Más',
@@ -377,6 +388,15 @@
     hintAutoTranslate: 'El interruptor principal. Activado, los sitios que pusiste en Siempre —y los de la lista integrada— se abren ya traducidos; en los demás se te pregunta una vez. Desactivado, se detiene toda la traducción automática, en todas partes.',
     autoTranslateLangsLabel: 'Solo estos idiomas',
     hintAutoTranslateLangs: 'Esto solo reduce las preguntas, nada más. En un sitio sobre el que aún no has decidido —y que nuestra lista integrada no cubre—, una página en un idioma que no marcaste se deja pasar en silencio en vez de preguntarte. No marques nada y no se filtra nada. Nunca hace que una página se traduzca ni anula un sitio puesto en Siempre.',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: 'Motor para la traducción automática',
+    autoTranslateEngineBuiltin: 'Traducción integrada de Chrome (gratis)',
+    autoTranslateEngineAi: 'Mi propia API de IA (se me factura a mí)',
+    hintAutoTranslateEngine: 'No es lo mismo que «Motor de traducción» de arriba: aquel se ocupa de las traducciones que pides tú, este de las que nadie ha pedido. De serie usa el motor integrado gratuito: la traducción automática puede venir activada precisamente porque no cuesta nada. Si lo cambias a IA, cada página elegible que abras gasta tu propio crédito de API, y para eso está el límite diario de abajo.',
+    autoAiDailyBudgetLabel: 'Presupuesto diario de caracteres para la traducción automática',
+    hintAutoAiDailyBudget: 'Solo cuenta si arriba has elegido IA. Se cuentan los caracteres del texto original que el modo automático envía realmente al modelo, y se pone a cero a medianoche en tu zona horaria; las traducciones que pides tú no cuentan. Cuando se agota, la traducción automática se detiene y te avisa una vez: la página sigue pudiendo traducirse a mano. 0 significa sin límite.',
+    autoTranslateEngineAiConfirm: '¿Dejar que la traducción automática use tu propia API de IA?\n\nA partir de ese momento, cada página elegible que abras llamará a tu API y se te facturará a ti, sin que hagas clic en nada. Conviene fijar también un límite diario de caracteres.',
     siteRulesTitle: 'Sitios sobre los que ya has decidido',
     siteRulesEmpty: 'Todavía ningún sitio tiene una regla propia. Elige Siempre o Nunca para un sitio en la ventana de la extensión y aparecerá aquí.',
     siteRuleAlways: 'Traducir siempre',

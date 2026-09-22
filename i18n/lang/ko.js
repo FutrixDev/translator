@@ -244,6 +244,9 @@
     hoverHotkeyMeta: 'Meta',
     showFloatBall: '플로팅 볼 표시',
     hintShowFloatBall: '페이지 모서리에 빠른 번역 버튼 표시',
+    showInputTranslateChip: '입력창 번역 칩 표시',
+    hintShowInputTranslateChip: '입력한 글이 페이지 언어와 다를 때 입력창 옆에 작은 칩이 나타납니다. 클릭할 때만 번역하며, 입력한 내용을 고치지 않습니다.',
+    inputChipTranslateTo: '{lang}(으)로 번역',
     skipTargetLanguageText: '이미 목표 언어인 문장은 건너뛰기',
     showTranslationOnly: '번역문만 표시',
     hintShowTranslationOnly: '전체 페이지 번역에서 원문을 숨기고 번역문만 남깁니다',
@@ -341,7 +344,9 @@
     autoAskPrompt: '이 페이지를 번역할까요?',
     autoAskTranslate: '번역',
     autoAskDismiss: '나중에',
+    pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
     autoAskAlways: '{site} 항상 번역',
+    autoStopSite: '{site} 자동 번역 중지',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '이 페이지는 번역하지 않습니다',
@@ -356,6 +361,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '자동 번역이 꺼져 있습니다',
     autoReasonBlocklist: '이 사이트는 자동 번역하지 않습니다',
+    autoReasonBuiltinNever: '이 페이지의 본문은 자동 번역하지 않습니다',
     autoReasonUserNever: '이 사이트를 “번역 안 함”으로 설정했습니다',
     autoReasonUserExplicit: '직접 이 페이지를 번역했습니다',
     autoReasonUserAlways: '이 사이트를 “항상 번역”으로 설정했습니다',
@@ -364,6 +370,11 @@
     autoReasonLangNotListed: '이 페이지의 언어가 목록에 없습니다',
     autoReasonUnknownLanguage: '언어를 판별할 수 없습니다',
     autoReasonDefaultAsk: '새 사이트에서는 먼저 물어봅니다',
+
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: '자동 번역은 무료 내장 엔진만 사용하는데, 이 페이지에서는 사용할 수 없습니다',
+    autoReasonCostBudget: '오늘의 AI 예산을 모두 썼습니다',
+    autoBudgetSpent: '오늘의 자동 번역 예산을 모두 썼습니다. 이 페이지는 직접 번역할 수 있고, 한도는 설정에서 바꿀 수 있습니다.',
 
     // 自动翻译：悬浮球与 popup
     floatBallMore: '더보기',
@@ -377,6 +388,15 @@
     hintAutoTranslate: '기본 스위치입니다. 켜져 있으면 「항상 번역」으로 정한 사이트와 기본 목록의 사이트는 열자마자 번역되어 있고, 다른 사이트에서는 한 번 물어봅니다. 끄면 모든 곳에서 자동 번역이 멈춥니다.',
     autoTranslateLangsLabel: '이 언어만 자동으로 번역',
     hintAutoTranslateLangs: '이것은 「묻는 범위」를 좁힐 뿐, 그 밖에는 아무 일도 하지 않습니다. 아직 정하지 않은 사이트(내장 목록에도 없는 사이트)에서는, 선택하지 않은 언어의 페이지를 묻지 않고 그냥 지나갑니다. 아무것도 선택하지 않으면 아무것도 걸러내지 않습니다. 이것만으로 페이지가 번역되지 않으며, 「항상 번역」으로 정한 사이트를 뒤집지도 않습니다.',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: '자동 번역에 쓸 엔진',
+    autoTranslateEngineBuiltin: 'Chrome 내장 번역(무료)',
+    autoTranslateEngineAi: '내 AI API(내 요금으로 청구)',
+    hintAutoTranslateEngine: '위의 「번역 엔진」과는 다른 항목입니다. 그쪽은 직접 누른 번역을, 이쪽은 아무도 누르지 않은 번역을 맡습니다. 기본값은 무료 내장 엔진입니다 —— 자동 번역을 기본으로 켜 둘 수 있는 이유가 바로 비용이 들지 않기 때문입니다. AI 로 바꾸면 여는 모든 대상 페이지가 내 API 크레딧을 씁니다. 아래의 하루 한도가 그래서 있습니다.',
+    autoAiDailyBudgetLabel: '자동 번역의 하루 문자 수 한도',
+    hintAutoAiDailyBudget: '위에서 AI 를 골랐을 때만 적용됩니다. 자동 모드가 실제로 모델에 보낸 원문 문자 수를 세며, 내 시간대의 자정에 초기화됩니다. 직접 누른 번역은 세지 않습니다. 다 쓰면 자동 번역이 멈추고 한 번 알려 줍니다 —— 페이지는 직접 번역할 수 있습니다. 0 은 무제한입니다.',
+    autoTranslateEngineAiConfirm: '자동 번역에 내 AI API 를 쓸까요?\n\n이후 여는 모든 대상 페이지가 클릭 없이 내 API 를 호출하고 내 요금으로 청구됩니다. 하루 문자 수 한도도 함께 정해 두는 편이 좋습니다.',
     siteRulesTitle: '내가 정해 둔 사이트',
     siteRulesEmpty: "아직 따로 정해 둔 사이트가 없습니다. 팝업에서 사이트에 '항상' 또는 '안 함'을 고르면 여기에 나타납니다.",
     siteRuleAlways: '항상 번역',

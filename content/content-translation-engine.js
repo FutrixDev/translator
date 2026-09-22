@@ -107,13 +107,23 @@
     });
   }
 
-  function isBuiltinSelected() {
-    // 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
-    return settings.translationEngine !== 'ai';
+  /**
+   * 选的是内置引擎吗。`auto` 为真时问的是自动模式那一边。
+   *
+   * 自动模式有**自己的**引擎设置（PRD FR-9 的 `autoTranslateEngine`，默认
+   * `builtin`），手动那一边选了什么与它无关。这不是一条可以省的分支：「自动翻译
+   * 默认开着」能成立的全部底气就是它默认免费，而把两边合成一个问题的后果是，一
+   * 个为了划词翻译把引擎切到 AI 的用户，从此每一个页面的自动翻译都被费用闸整个
+   * 拦掉 —— 满屏原文，没有任何解释。
+   *
+   * 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
+   */
+  function isBuiltinSelected(auto) {
+    return (auto ? settings.autoTranslateEngine : settings.translationEngine) !== 'ai';
   }
 
-  function shouldUseBuiltin() {
-    return isBuiltinSelected() && isBuiltinSupported();
+  function shouldUseBuiltin(auto) {
+    return isBuiltinSelected(auto) && isBuiltinSupported();
   }
 
   // ==================== 错误分级 ====================
@@ -240,12 +250,31 @@
    * 拉丁语言在一两个词上本来就分不开。所以只在文本自身带非拉丁字符时才采信
    * “判得不准”的结果，纯拉丁文本仍旧要求 isReliable。
    */
-  async function resolveStandaloneSourceLang(trimmed) {
-    const nonLatinText = HAS_NON_LATIN_CHARS.test(trimmed);
-    const detected = toApiLang(await detectLanguageOf(trimmed, {
+  function hasNonLatinChars(text) {
+    return HAS_NON_LATIN_CHARS.test(text);
+  }
+
+  /**
+   * 「这段文字自己是什么语言」，判不出来就是空串 —— **不猜、不兜底**。
+   *
+   * 上面那段注释里的两档门槛（非拉丁放宽到两个字符、纯拉丁仍要求 isReliable）
+   * 就是这个函数的全部内容。单独拆出来是因为有两个调用方，而它们要的东西不同：
+   * 翻译那一路（resolveStandaloneSourceLang）判不出来也得给引擎一个源语言，所以
+   * 它在这之后还有两级兜底；输入框那颗芯片（content/content-input-chip.js）要的
+   * 恰恰是「没把握就别出声」—— 一颗因为把 "hello" 判成塞尔维亚语而冒出来的芯片
+   * 比没有芯片糟。两边各写一次探测就会各有一套门槛，而门槛正是这件事的全部难点。
+   */
+  function detectStandaloneLang(trimmed) {
+    const nonLatinText = hasNonLatinChars(trimmed);
+    return detectLanguageOf(trimmed, {
       minChars: nonLatinText ? 2 : DETECT_MIN_CHARS,
       requireReliable: !nonLatinText
-    }));
+    });
+  }
+
+  async function resolveStandaloneSourceLang(trimmed) {
+    const nonLatinText = hasNonLatinChars(trimmed);
+    const detected = toApiLang(await detectStandaloneLang(trimmed));
     if (detected && SUPPORTED_LANGS.has(detected)) return detected;
 
     const pageLang = toApiLang(await getPageSourceLang());
@@ -646,6 +675,58 @@
     return hasApiKey;
   }
 
+  /**
+   * 这一刻，一次翻译请求实际会走到哪里：`'builtin'` | `'ai'` | `'none'`。
+   * `{ auto: true }` 问的是自动模式那一边（它有自己的引擎设置，见
+   * isBuiltinSelected）。
+   *
+   * 三个谓词（isBuiltinSelected / isBuiltinSupported / canFallBackToAI）拼出来的
+   * 那句话，调度层要问、而它一个都不该自己重算 —— 重算就是第二个答案，而两个
+   * 答案迟早会在某个 http:// 页面上分叉。
+   *
+   * `'none'` 是 FR-9.1 的那一格：选了「仅本地引擎」，而这一页给不出内置引擎。
+   * 对自动模式它意味着**这一页不自动翻**，不是「试试看再说」—— 试的结果是三次
+   * 批次失败之后一句「翻译失败」，而真实情况是用户自己选的。
+   *
+   * 说的是「会走到哪」，不是「一定走到那」：判 'builtin' 之后，某一批仍可能在
+   * 内置引擎上失败并按 engineFallback 回落到 AI。那一下花的钱由下面
+   * requestTranslation 末尾那道预算闸把关。
+   */
+  async function effectiveEngine({ auto = false } = {}) {
+    if (shouldUseBuiltin(auto)) return 'builtin';
+    if (!isBuiltinSelected(auto)) return 'ai';
+    return (await canFallBackToAI()) ? 'ai' : 'none';
+  }
+
+  /**
+   * 自动模式要花钱之前的那道闸（PRD FR-9）。
+   *
+   * 只有 `message.auto` 的请求经过这里 —— 手动翻译是用户一次一次点出来的，他
+   * 知道自己在花钱；要挡的是零点击的那条路。
+   *
+   * 这里**只问预算**，不再问「自动模式允不允许用 AI」。那个问题上面已经答过
+   * 了，而且答得更细：自动模式选的引擎由 isBuiltinSelected(true) 决定，内置顶
+   * 不住时能不能改走 AI 由 canFallBackToAI() 决定。能走到这一行的自动请求只有
+   * 两种，两种都是用户点过头的 —— 他把自动模式的引擎切成了 AI（要过一道二次确
+   * 认），或者他开了「本地不可用时允许用我配置的接口」。在这里再问一遍，就是
+   * 同一个问题的第二个答案，而它会把后一种人的回退整个吃掉：内置引擎在 http://
+   * 页面上本来就不存在，那正是回退存在的理由。
+   *
+   * 预算这一问，问和记是同一次操作，走服务工作者那条单写者队列 —— 一轮里八个
+   * 批次同时出发，八次各读各的再各记各的，闸门等于不存在。
+   *
+   * 返回一句给用户看的话表示拒绝，`null` 表示放行。
+   */
+  async function refuseAutoAiSpend(message) {
+    if (!message || !message.auto) return null;
+    const t = ctx.t || ((key) => key);
+    const chars = Array.isArray(message.texts)
+      ? globalThis.AutoStats.textsChars(message.texts)
+      : String(message.text == null ? '' : message.text).length;
+    const verdict = await globalThis.AutoStats.charge(chars, settings.autoAiDailyBudget);
+    return verdict.allowed ? null : t('autoBudgetSpent');
+  }
+
   // 真的回退了就留一条痕迹，本页内存里，popup 一问就报出来。
   // 不落存储：这件事是这一页的事，页面走了它就该消失。
   let lastFallback = null;
@@ -754,7 +835,10 @@
    * 调用方不需要知道这次走的是内置还是 AI。
    */
   ctx.requestTranslation = async function(message) {
-    if (isBuiltinSelected() && !isBuiltinSupported()) {
+    // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
+    // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
+    const auto = !!(message && message.auto);
+    if (isBuiltinSelected(auto) && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
       // 用户开了回退就顶上，并留痕；没开就把真实原因说清楚，别让他收到一句
@@ -764,7 +848,7 @@
       }
       // 环境这条路能问出更细的原因（版本 / http），比笼统的 unsupportedEnv 好。
       noteFallback(builtinUnsupportedReason() || ENGINE_REASONS.UNSUPPORTED_ENV);
-    } else if (shouldUseBuiltin()) {
+    } else if (shouldUseBuiltin(auto)) {
       try {
         const result = await handleWithBuiltin(message);
         if (result) return result;
@@ -785,6 +869,11 @@
         }
       }
     }
+    // 这一行是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这
+    // 个环境/这门语言顶不住、而且用户开了回退，也走到这里。自动模式的预算闸
+    // 因此只能装在这里 —— 装在调度层只挡得住前一半，运行中那次回落会绕过去。
+    const refusal = await refuseAutoAiSpend(message);
+    if (refusal) return { error: refusal };
     return chrome.runtime.sendMessage(message);
   };
 
@@ -829,7 +918,11 @@
       result.reason = builtinUnsupportedReason();
       return result;
     }
-    const tgt = toApiLang(settings.targetLang);
+    // 这里问的是「这一页现在能不能用内置引擎」，要的是真会发出去的那一门语言，
+    // 所以读解析后的结果而不是 settings.targetLang 的原值：空串在身份那一侧是
+    // 「跟随浏览器」的哨兵（见 currentTargetLang），在这里当成它自己会让所有还
+    // 没选过语言的用户看到「不可用」。
+    const tgt = toApiLang(TargetLang.effective(settings));
     if (!tgt || !SUPPORTED_LANGS.has(tgt)) {
       result.availability = 'unavailable';
       return result;
@@ -849,6 +942,7 @@
     isSupported: isBuiltinSupported,
     isSelected: isBuiltinSelected,
     isActive: shouldUseBuiltin,
+    effectiveEngine,
     unsupportedReason: builtinUnsupportedReason,
     probeStatus,
     toApiLang,
@@ -860,6 +954,10 @@
     // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
     supportsLang: (code) => SUPPORTED_LANGS.has(code),
     pageSourceLang: getPageSourceLang,
+
+    // 输入框芯片（content/content-input-chip.js）问的那一句：这段刚敲进去的字
+    // 是什么语言。判不出来答空串 —— 它据此决定不出声。
+    detectStandaloneLang,
 
     async availability(sourceLang, targetLang) {
       if (!isBuiltinSupported()) return 'unavailable';

@@ -4,12 +4,15 @@
 // 串起来的那一层：右键点下去到底创不创任务、要不要先问价、结果怎么打开。
 
 import '../shared/comic-charge.js';
+import '../shared/pdf-url.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import {
   notifyPdfError,
+  notifyPdfNotAPdf,
+  notifyPdfRunning,
   notifyPdfStarted,
   notifyPdfTerminal,
   pdfMessage,
@@ -17,6 +20,9 @@ import {
 } from './pdf-notify.js';
 
 const ChargeConfirm = globalThis.ChargeConfirm;
+// 「这是不是一份 PDF」「它叫什么名字」的唯一实现，见 shared/pdf-url.js。
+// 从这里再导出去，是因为右键菜单那一层本来就从这个模块要它们。
+const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
 
 // ---------------------------------------------------------------------------
 // PDF translation jobs (account-backed, see pdf-client.js)
@@ -29,32 +35,6 @@ const ChargeConfirm = globalThis.ChargeConfirm;
 // ---------------------------------------------------------------------------
 
 const PDF_POLL_ALARM = 'pdf-job-poll';
-
-function isLikelyPdfUrl(url) {
-  if (!url) return false;
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (!/^(https?|file):$/.test(parsed.protocol)) return false;
-  if (/\.pdf$/i.test(parsed.pathname)) return true;
-  // arXiv serves PDFs from extensionless /pdf/<id> paths.
-  if (/(^|\.)arxiv\.org$/i.test(parsed.hostname) && /^\/pdf\//.test(parsed.pathname)) return true;
-  return false;
-}
-
-function pdfFileNameFromUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const segment = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
-    if (segment) return /\.pdf$/i.test(segment) ? segment : `${segment}.pdf`;
-  } catch {
-    // Fall through to the generic name.
-  }
-  return 'document.pdf';
-}
 
 /** Base64 → ArrayBuffer, chunk-free: atob handles the whole string at once. */
 function base64ToArrayBuffer(base64) {
@@ -89,13 +69,17 @@ async function refreshPdfJobs() {
 }
 
 // ---------------------------------------------------------------------------
-// The context menu's charge confirmation
+// The URL path's charge confirmation
 //
 // Every other PDF surface asks the question on the surface the user is looking
-// at — the upload page in its job card, the popup in its task list. The context
-// menu has no surface at all (Chrome's PDF viewer admits no content script), so
-// it asks in the one place it already speaks: a notification, with the answer
-// as its buttons.
+// at — the upload page in its job card, the popup in its task list. The entries
+// that come through startPdfUrlTranslation() have no such surface in common: a
+// right-click on a link and the toolbar button can fire from any page at all,
+// and that page has no job card to put the question in. (Not for want of a
+// content script on the PDF itself — Chrome's viewer does run one, which is
+// what content/content-pdf-prompt.js draws its offer bar on. The click simply
+// is not tied to any one document.) So this path asks in the one place all of
+// its entries already speak: a notification, with the answer as its buttons.
 //
 // That makes the answer arrive out-of-band, minutes later, quite possibly after
 // this worker has been torn down and restarted — which is why the round trip is
@@ -156,6 +140,51 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
     }
     notifyPdfError(error);
   }
+}
+
+/**
+ * 「把这个网址上的 PDF 译了」的唯一入口。
+ *
+ * 三个地方按下这句话：右键菜单的链接条目、页面条目、工具栏条目
+ * （background/context-menus.js），以及 PDF 文档上那条提示条点下的「翻译」
+ * （content/content-pdf-prompt.js → PDF_TRANSLATE_URL）。它们看见的是同一套
+ * 拦路检查——开关、是不是 PDF、file:// 改走上传页、同一份文档已经在跑——所以检查
+ * 写在这里一份，而不是在每个入口各写一遍：少写一条的那个入口会重复扣一次额度。
+ *
+ * `notifyNotAPdf` 只有工具栏那一个条目是 true：它在任何标签页上都在，是唯一一个
+ * 可能正当地落在非 PDF 上的点击，得说一声而不是默不作声。其余入口都是先看见了
+ * PDF 才出现的，那里弹一条通知只会是噪音。
+ */
+async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false }) {
+  const settings = await chrome.storage.sync.get(defaultSettings);
+  // Same racing-click guard as the comic entries: this costs money.
+  if (!settings.enablePdfTranslation) return { started: false, reason: 'disabled' };
+  if (!isLikelyPdfUrl(url)) {
+    if (notifyNotAPdf) notifyPdfNotAPdf();
+    return { started: false, reason: 'not_a_pdf' };
+  }
+  // file:// can't be fetched from the worker — hand local PDFs to the
+  // upload page's file picker instead (PR #26 review).
+  if (url.startsWith('file:')) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
+    return { started: false, reason: 'local_file' };
+  }
+  const fileName = pdfFileNameFromUrl(url);
+  // Resolved here rather than inside the create so a second click on the same
+  // PDF can be recognised as one: the id is per-URL and stable.
+  const operationId = await pdfClient.getOrCreateUrlOperationId(url);
+  const records = await pdfClient.listJobRecords();
+  const running = records.find(r => r.operationId === operationId &&
+    (r.status === 'queued' || r.status === 'running'));
+  if (running) {
+    notifyPdfRunning(running.fileName || fileName);
+    return { started: false, reason: 'already_running' };
+  }
+  // Before the await, not after: the whole point is that the click stops
+  // looking like it did nothing.
+  notifyPdfStarted(fileName);
+  await runPdfUrlJob({ url, operationId, fileName, pageUrl });
+  return { started: true };
 }
 
 /** "This costs N credits — spend them?", as a notification with two buttons. */
@@ -442,6 +471,7 @@ export {
   ensurePdfPollAlarm,
   refreshPdfJobs,
   runPdfUrlJob,
+  startPdfUrlTranslation,
   handlePdfCreateJob,
   handlePdfJobsHistory,
   handlePdfJobGet,

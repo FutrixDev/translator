@@ -56,6 +56,7 @@ import {
   handlePdfJobsHistory,
   handlePdfOpenResult,
   refreshPdfJobs,
+  startPdfUrlTranslation,
 } from './pdf-jobs.js';
 
 // Message listener
@@ -203,6 +204,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'PDF_OPEN_RESULT':
       replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
+      return true;
+
+    // PDF 文档上那条提示条按下的「翻译」（content/content-pdf-prompt.js）。走的
+    // 是右键菜单那三个条目同一个函数，检查一条不少。
+    //
+    // 网址以发信那个标签页的为准，message.url 只在没有标签页时兜底：内容脚本报
+    // 的是它自己那一页，而 sender.tab.url 是浏览器说的那一页——要花钱的那一步
+    // 上，宁可信浏览器。notifyNotAPdf 不开：这条提示条只在一份 PDF 上出现过，
+    // 真走到「这不是 PDF」只能是页面在这中间换掉了，那时弹通知只是噪音。
+    case 'PDF_TRANSLATE_URL':
+      replyComic(startPdfUrlTranslation({
+        url: (sender.tab && sender.tab.url) || message.url || '',
+        pageUrl: (sender.tab && sender.tab.url) || message.url || '',
+      }), sendResponse);
       return true;
 
     // Where the account lives on the web, so the settings page can link a job

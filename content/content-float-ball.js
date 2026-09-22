@@ -453,10 +453,38 @@
     // and there is actually a page-sized image on screen to redraw.
     const showComic = !!settings.enableComicTranslation &&
       !!(ctx.hasComicPageOnScreen && ctx.hasComicPageOnScreen());
+    // 「不再自动翻译这个站点」。**只在这个站点此刻正自动翻的时候出现**，而且排
+    // 在第一行：它是自动化里唯一高频的「后悔」操作，而在此之前撤销它的唯一办法
+    // 是进设置页翻那张列表。
+    //
+    // 画的是 siteAuto（这个站点自己会不会翻这一页），不是状态、也不是闸门 ——
+    // 和 popup 上那一行、播放器字幕菜单第一项是同一句话，理由写在
+    // content-auto-translate.js 的 siteAuto() 上：拿状态画的话，用户在一个没设过
+    // 规则的站点上点一次「翻译整页」，这一行就会冒出来，而他点下去写进去的是一条
+    // 永久的 never。
+    //
+    // 写不进去就干脆不画。siteAuto 为真的站点按阶梯本来就不可能是黑名单
+    // （BLOCKLIST 排在 USER_ALWAYS 前面），所以这一问平时总是真；留着它是因为一
+    // 行点下去没反应、或者只剩「顺带打开总开关」那半边副作用，比少一行糟得多。
+    const stopSiteHost = (globalThis.SiteRules &&
+      globalThis.SiteRules.normalizeHost(location.hostname)) || location.hostname;
+    const showStopSite = !!(ctx.autoTranslate && ctx.autoTranslate.state().siteAuto) &&
+      !!(globalThis.SiteRules &&
+        globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname));
 
     state.floatMenu = document.createElement('div');
     state.floatMenu.id = 'ai-translator-float-menu';
     state.floatMenu.innerHTML = `
+      ${showStopSite ? `
+      <button class="ai-translator-menu-item" data-action="stop-site-auto">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>
+        </svg>
+        <span>${t('autoStopSite').replace('{site}', stopSiteHost)}</span>
+      </button>
+      <div class="ai-translator-menu-divider"></div>
+      ` : ''}
       <button class="ai-translator-menu-item" data-action="translate-input">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -520,7 +548,9 @@
     // Position menu above the ball
     const ballRect = state.floatBall.getBoundingClientRect();
     const menuWidth = 180;
-    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 80 : 0);
+    // 一行 40，一条分隔线 9。多算了只是菜单往上多飘几像素，少算了它会压住球。
+    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 80 : 0) +
+      (showStopSite ? 49 : 0);
 
     let left = ballRect.left + (ballRect.width / 2) - (menuWidth / 2);
     let top = ballRect.top - menuHeight - 10;
@@ -603,6 +633,9 @@
         }
         break;
       }
+      case 'stop-site-auto':
+        stopSiteAuto();
+        break;
       case 'translate-page':
         if (ctx.translatePage) ctx.translatePage();
         break;
@@ -619,6 +652,36 @@
         chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
         break;
     }
+  }
+
+  /**
+   * 「不再自动翻译这个站点」—— 置 never，并且立刻把这一页还原。
+   *
+   * 两件事的顺序不能反。先还原再写规则的话，还原已经跑完而规则还在路上，调度层
+   * 此刻判的仍然是 auto —— 它会把刚还原的这一页重新翻一遍，用户看到的是自己点完
+   * 之后译文又长了回来。
+   *
+   * 走 SiteRules.setSiteAuto 而不是 writeUserRule：这一行和 popup 那一行、字幕
+   * 菜单第一项说的是同一句话，只该有一份实现（顺带它替我们挡住了存不进规则表的
+   * host）。还原走 ctx.setTranslationsVisible(false)：显隐只有一个主人
+   * （content/page/visibility.js），它顺手把受管容器、「仅显示译文」和调度层的
+   * 暂停一起处理了 —— 自己去摘节点就是第二份实现，而且摘不干净。
+   *
+   * 写失败要说出来。菜单是按下去就收的，用户看到的是「关掉了」，而下一次打开这
+   * 个站点照样自动翻，中间没有任何地方提起过这件事；那句话和 popup 上说的是同
+   * 一句（popupSiteRuleFailed）。这一路也不还原 —— 规则没落地，还原只会被调度层
+   * 立刻推翻。
+   */
+  async function stopSiteAuto() {
+    if (!globalThis.SiteRules) return;
+    try {
+      await globalThis.SiteRules.setSiteAuto(location.hostname, false);
+    } catch (error) {
+      console.warn('Blab Translation: site rule write failed', error);
+      if (ctx.showAutoStatusNotice) ctx.showAutoStatusNotice(t('popupSiteRuleFailed'));
+      return;
+    }
+    if (ctx.setTranslationsVisible) ctx.setTranslationsVisible(false);
   }
 
   // 译文显隐的实现在 content/page/visibility.js —— 悬浮球、popup、Alt+A、

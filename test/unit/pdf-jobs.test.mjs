@@ -43,7 +43,10 @@ function withStorage(initial = {}) {
 withStorage();
 const pdf = await import('../../background/pdf-client.js');
 
-// The popup and the upload page get the same helpers as a classic script.
+// The popup and the upload page get the same helpers as a classic script —
+// in the same order their <script> tags do, because pdf-ui.js reads the URL
+// predicates off globalThis rather than keeping a second copy of them.
+await import('../../shared/pdf-url.js');
 await import('../../pdf/pdf-ui.js');
 const ui = globalThis.AI_TRANSLATOR_PDF_UI;
 

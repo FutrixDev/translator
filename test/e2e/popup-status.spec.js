@@ -121,6 +121,8 @@ test('local-only spends nothing when the built-in engine cannot do the job', asy
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'local-only',
       // Afrikaans is not in the Translator API's language list, so the
       // built-in engine gives up on every block for a reason that does not
@@ -153,6 +155,8 @@ test('allow-ai is the same page, with permission', async ({ page }) => {
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'allow-ai',
       targetLang: 'af',
       skipTargetLanguageText: false,
@@ -182,6 +186,8 @@ test('a fallback that happened is on the footer, not just in the log', async ({ 
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'allow-ai',
       targetLang: 'af',
       skipTargetLanguageText: false,
@@ -229,7 +235,7 @@ test('页面在他看着按钮的时候出错了：那一下不该把 ERROR 抹�
     chrome.tabs.sendMessage = async (tabId, message) => {
       window.__sent.push(message);
       if (message.type === 'AUTO_PAGE_STATE') {
-        return { host: 'example.com', blocked: false, auto: { status: window.__status, siteAuto: true } };
+        return { host: 'example.com', blocked: false, ruleWritable: true, auto: { status: window.__status, siteAuto: true } };
       }
       if (message.type === 'SET_AUTO_PAUSED') {
         window.__status = message.paused ? 'paused' : 'running';

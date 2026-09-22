@@ -244,6 +244,9 @@
     hoverHotkeyMeta: 'Meta',
     showFloatBall: 'フロートボールを表示',
     hintShowFloatBall: 'ページの角にクイック翻訳ボタンを表示',
+    showInputTranslateChip: '入力欄に翻訳チップを表示',
+    hintShowInputTranslateChip: '入力した文字がページの言語と違うとき、入力欄の横に小さなチップが出ます。クリックしたときだけ翻訳し、入力内容を書き換えることはありません。',
+    inputChipTranslateTo: '{lang}に翻訳',
     skipTargetLanguageText: 'すでに翻訳先の言語である文はスキップ',
     showTranslationOnly: '訳文のみ表示',
     hintShowTranslationOnly: 'ページ全体の翻訳で原文を隠し、訳文だけを残します',
@@ -341,7 +344,9 @@
     autoAskPrompt: 'このページを翻訳しますか？',
     autoAskTranslate: '翻訳',
     autoAskDismiss: '今はしない',
+    pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
     autoAskAlways: '{site} を常に翻訳',
+    autoStopSite: '{site} の自動翻訳をやめる',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'このページは翻訳しません',
@@ -356,6 +361,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '自動翻訳がオフです',
     autoReasonBlocklist: 'このサイトは自動翻訳しません',
+    autoReasonBuiltinNever: 'このページの本文は自動翻訳しません',
     autoReasonUserNever: 'このサイトを「翻訳しない」に設定しています',
     autoReasonUserExplicit: 'あなたがこのページを翻訳しました',
     autoReasonUserAlways: 'このサイトを「常に翻訳」に設定しています',
@@ -364,6 +370,11 @@
     autoReasonLangNotListed: 'このページの言語はリストにありません',
     autoReasonUnknownLanguage: '言語を判定できませんでした',
     autoReasonDefaultAsk: '新しいサイトではまず確認します',
+
+    // Automatic translation: what the cost gate says when it stops a page (FR-9).
+    autoReasonCostEngine: '自動翻訳は無料の内蔵エンジンのみを使いますが、このページでは使えません',
+    autoReasonCostBudget: '今日の AI 予算を使い切りました',
+    autoBudgetSpent: '今日の自動翻訳の予算を使い切りました。このページは手動で翻訳できます。上限は設定で変更できます。',
 
     // 自动翻译：悬浮球与 popup
     floatBallMore: 'その他',
@@ -377,6 +388,15 @@
     hintAutoTranslate: 'メインスイッチです。オンのとき、「常に翻訳」にしたサイトと組み込みリストのサイトは開いた時点で訳文になります。それ以外のサイトでは一度だけ確認します。オフにすると、自動翻訳はどこでもすべて止まります。',
     autoTranslateLangsLabel: 'この言語だけ自動で翻訳する',
     hintAutoTranslateLangs: 'これは「尋ねる」範囲を狭めるだけで、ほかには何もしません。まだ決めていないサイト（内蔵リストにも載っていないサイト）では、選んでいない言語のページは尋ねられることなくそのまま見送られます。何も選ばなければ、何も絞り込みません。これだけでページが翻訳されることはなく、「常に翻訳」にしたサイトを覆すこともありません。',
+
+    // The two advanced fields on the automatic-translation card.
+    autoTranslateEngineLabel: '自動翻訳に使うエンジン',
+    autoTranslateEngineBuiltin: 'Chrome の内蔵翻訳（無料）',
+    autoTranslateEngineAi: '自分の AI API（自分に課金）',
+    hintAutoTranslateEngine: '上の「翻訳エンジン」とは別物です。あちらは自分でクリックした翻訳、こちらは誰もクリックしていない翻訳を受け持ちます。既定は無料の内蔵エンジンです —— 自動翻訳を既定でオンにできるのは、それが無料だからです。AI に切り替えると、開いた対象ページのすべてが自分の API 残高を消費します。下の 1 日の上限はそのためにあります。',
+    autoAiDailyBudgetLabel: '自動翻訳の 1 日あたりの文字数上限',
+    hintAutoAiDailyBudget: '上で AI を選んだときだけ効きます。自動モードが実際にモデルへ送った原文の文字数を数え、お使いのタイムゾーンの午前 0 時にリセットします。自分でクリックした翻訳は含みません。使い切ると自動翻訳は止まり、一度だけ通知します。ページは手動で翻訳できます。0 は無制限です。',
+    autoTranslateEngineAiConfirm: '自動翻訳に自分の AI API を使いますか？\n\n以後、開いた対象ページはすべて自動的に API を呼び出し、自分に課金されます。クリックは不要です。1 日あたりの文字数上限もあわせて設定することをおすすめします。',
     siteRulesTitle: 'あなたが決めたサイト',
     siteRulesEmpty: '個別に決めたサイトはまだありません。ポップアップでサイトに「常に」または「しない」を選ぶと、ここに並びます。',
     siteRuleAlways: '常に翻訳する',

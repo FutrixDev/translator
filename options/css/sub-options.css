@@ -2,7 +2,13 @@
    Settings that only mean anything while their feature is on: the indent and
    rule say they belong to the toggle above, and `.disabled` says the toggle
    is off without hiding them — a setting that vanishes is one the user cannot
-   discover. Used by the video-caption and image-OCR toggles. */
+   discover. Used by the video-caption, image-OCR and automatic-translation
+   toggles.
+
+   A single field inside such a block can be off on its own — the AI daily
+   budget only means anything while the automatic engine is AI — so
+   `.form-group.disabled` says the same thing one level down, through the same
+   declaration rather than a second one that would drift from it. */
 .feature-suboptions {
   margin-top: 4px;
   padding-left: 14px;
@@ -12,7 +18,8 @@
   gap: 14px;
 }
 
-.feature-suboptions.disabled {
+.feature-suboptions.disabled,
+.form-group.disabled {
   opacity: 0.45;
   pointer-events: none;
 }

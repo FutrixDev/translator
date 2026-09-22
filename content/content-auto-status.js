@@ -36,12 +36,19 @@
     ERROR: 'autoStateError'
   };
 
-  // decide() 的十个理由 → 一句人话。这是状态点展开那一行的后半句：状态说的是
+  // 调度层给出的理由 → 一句人话。这是状态点展开那一行的后半句：状态说的是
   // 「现在怎么样」，理由说的是「为什么是这样」，少了后半句，一个安安静静什么都
   // 没翻的页面和一个被黑名单挡住的页面在用户眼里一模一样。
+  //
+  // 前十一条是 decide() 的阶梯（shared/site-rules.js 的 REASONS，
+  // test/unit/pdf-offer.test.mjs 盯着这张表要把它们全收齐）；末尾两条是阶梯之外
+  // 那道费用闸（content/content-auto-translate.js 的 COST_REASONS）。这张表比
+  // decide() 宽一点是有意的：它答的是「调度层为什么这样」，而 decide() 只是其中
+  // 一个出处。
   const REASON_KEYS = {
     GLOBAL_OFF: 'autoReasonGlobalOff',
     BLOCKLIST: 'autoReasonBlocklist',
+    BUILTIN_NEVER: 'autoReasonBuiltinNever',
     USER_NEVER: 'autoReasonUserNever',
     USER_EXPLICIT: 'autoReasonUserExplicit',
     USER_ALWAYS: 'autoReasonUserAlways',
@@ -49,7 +56,9 @@
     SAME_LANGUAGE: 'autoReasonSameLanguage',
     LANG_NOT_LISTED: 'autoReasonLangNotListed',
     UNKNOWN_LANGUAGE: 'autoReasonUnknownLanguage',
-    DEFAULT_ASK: 'autoReasonDefaultAsk'
+    DEFAULT_ASK: 'autoReasonDefaultAsk',
+    COST_ENGINE: 'autoReasonCostEngine',
+    COST_BUDGET: 'autoReasonCostBudget'
   };
 
   let latest = null;
@@ -69,6 +78,14 @@
   // 看到的是「记住了」，而下一次打开这个站点还会再问一遍，中间没有任何地方提起过
   // 这件事。（popup 上同一件事说的是同一句话，见 popupSiteRuleFailed。）
   let notice = '';
+
+  // 「这一页还有另一件事可以做」。今天只有一个来源：PDF 文档上的
+  // content/content-pdf-prompt.js（那一页没有正文可翻，它是唯一能办事的入口）。
+  //
+  // 形状是 { text, accept, dismiss } 而不是一个 mode 名：这一层不认识 PDF，也
+  // 不该认识。它认识的只是「有人要借这条窄条说一句话、再收一次点击」——右下角
+  // 就这一条窄条，第二条会和第一条叠在一起（和 notice 同一个道理）。
+  let offer = null;
 
   // ------------------------------------------------------------------ 计数
 
@@ -228,6 +245,13 @@
     const act = button.dataset.act;
 
     if (act === 'translate') {
+      // 借条子说话的那一位（offer）自己收这一下：它要办的事和追问不是一回事，
+      // 也不该被当成「这一页开译」。
+      if (bar.dataset.mode === 'offer') {
+        button.disabled = true;
+        if (offer) offer.accept();
+        return;
+      }
       const remember = bar.querySelector('.ai-translator-auto-remember input');
       // 这一下要落两笔存储再开译，而开译会把条子收走 —— 收走之前先把按钮钉住，
       // 免得用户连点两下、记两次数。
@@ -243,6 +267,9 @@
     if (act === 'dismiss' || act === 'close') {
       if (notice) notice = '';
       else if (explaining) explaining = false;
+      // 条子此刻显示的是谁的话，这一下就收谁 —— offer 自己记自己的「不用」，
+      // 记在这一层就等于让站点的追问额度替它背账。
+      else if (bar.dataset.mode === 'offer') { if (offer && offer.dismiss) offer.dismiss(); }
       else dismissed = true;
       render();
     }
@@ -279,8 +306,34 @@
     // 表过态了，前面问过几次都不算数：下次再来这个站点，三次的额度是满的。
     await clearAskCount();
     dismissed = true;
-    notice = failed ? t('popupSiteRuleFailed') : '';
     if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
+    setNotice(failed ? t('popupSiteRuleFailed') : '');
+  }
+
+  /**
+   * 「有一句话要让用户看见」。
+   *
+   * 今天两个来源，说的是同一件事：站点规则没能写进去。一处是追问条上勾了「总
+   * 是」（上面 acceptAsk），一处是悬浮球菜单第一行「不再自动翻译这个站点」——
+   * 两处都是乐观控件，按下去界面就收了，不说的话用户看到的是「记住了」，而下次
+   * 打开这个站点还是老样子。
+   *
+   * 摆在这里是因为条子只有这一层画得出来。别的层要说话就叫这一句，而不是自己
+   * 再造一条窄条 —— 两条窄条会在右下角叠在一起。
+   */
+  function setNotice(text) {
+    notice = text || '';
+    render();
+  }
+
+  /**
+   * 「有别的层要借这条窄条」。传 null 收回。
+   *
+   * 和 setNotice 是同一个道理的两半：那一句是**说给用户听**的结果，这一条是
+   * **等用户点**的入口。两者都摆在这一层，因为右下角只画得出一条窄条。
+   */
+  function setOffer(next) {
+    offer = next && typeof next.accept === 'function' ? next : null;
     render();
   }
 
@@ -302,7 +355,12 @@
     // 压在最上面的是那句「没存上」：它是对用户刚按下的那一下的回答，而且他不关
     // 掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是那一
     // 行字），再往下才是追问。
-    const mode = notice ? 'notice' : (explaining ? 'explain' : (asking ? 'ask' : ''));
+    // offer 压在 ask 上面：会走到这里两者都在的只有 PDF 文档——整页翻译那一问在
+    // 那里答的是一句办不到的话（正文在一个外进程 <embed> 里，收集层看到的是空
+    // body），而 offer 是那一页真办得成的那件事。顺带它还护住了追问额度：要号那
+    // 一步压在 mode === 'ask' 下面，一份 PDF 不会去花掉这个域名三次里的一次。
+    const mode = notice ? 'notice' :
+      (explaining ? 'explain' : (offer ? 'offer' : (asking ? 'ask' : '')));
     if (!mode) {
       removeBar();
       return;
@@ -323,6 +381,15 @@
     if (!bar || !document.body.contains(bar)) bar = buildBar();
     bar.dataset.mode = mode;
 
+    if (mode === 'offer') {
+      bar.querySelector('.ai-translator-auto-text').textContent = offer.text || '';
+      bar.querySelector('[data-act="translate"]').textContent = t('autoAskTranslate');
+      bar.querySelector('[data-act="dismiss"]').textContent = t('autoAskDismiss');
+      // 追问用过的按钮可能还钉着（同一份 DOM 不重建，见 buildBar 的注释）。
+      bar.querySelector('[data-act="translate"]').disabled = false;
+      return;
+    }
+
     if (mode === 'ask') {
       const site = askKey();
       bar.querySelector('.ai-translator-auto-text').textContent = t('autoAskPrompt');
@@ -340,6 +407,8 @@
   // ------------------------------------------------------------------ 装配
 
   ctx.paintAutoStatusDot = paintDot;
+  ctx.showAutoStatusNotice = setNotice;
+  ctx.showAutoStatusOffer = setOffer;
 
   /**
    * 点状态点 → 展开一行说明；再点一下收回去。

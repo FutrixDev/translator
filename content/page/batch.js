@@ -134,16 +134,26 @@
     return chunks.filter(c => c.length > 0);
   }
 
-  function usingBuiltinEngine() {
-    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive());
+  /**
+   * 这一轮实际跑在内置引擎上吗。`auto` 为真时问的是自动模式那一边。
+   *
+   * 引擎是两张开关（手动 translationEngine / 自动 autoTranslateEngine，PRD
+   * FR-9），所以这个问题也有两个答案，而这一轮只认自己那一个。不带 auto 去问
+   * 的后果是两种，都不响：默认设置（手动 AI、自动内置）下，自动那一轮会按 AI
+   * 的形状攒批，25 段一发地丢给一个按段调用的端上引擎，用户要等一整批才看见第
+   * 一段；反过来（手动内置、自动 AI），自动那一轮会一块一批地发出去 —— 40 段
+   * 的页面变成 40 次 HTTPS 往返、40 份提示词开销，记在用户自己的账上。
+   */
+  function usingBuiltinEngine(auto) {
+    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive(auto));
   }
 
   // 智能分批：根据 token/字符数/段落数限制
-  function createSmartBatches(blocks) {
+  function createSmartBatches(blocks, auto) {
     // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
     // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
     // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
-    if (usingBuiltinEngine()) {
+    if (usingBuiltinEngine(auto)) {
       return blocks.map((block) => [block]);
     }
 
@@ -356,7 +366,7 @@
   // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
   async function applyFastBatchTranslations(
     batch, translations,
-    { onFailure, isAborted, accept, allowDownload, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload, auto, onSettled, target = passTarget() } = {}
   ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
@@ -364,7 +374,7 @@
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, onSettled, target });
+      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, auto, onSettled, target });
       return;
     }
 
@@ -376,7 +386,7 @@
 
   async function translateBlocksOneByOne(
     batch,
-    { onFailure, isAborted, accept, allowDownload = true, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload = true, auto, onSettled, target = passTarget() } = {}
   ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
@@ -386,7 +396,8 @@
           texts: [block.text],
           targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload
+          allowDownload,
+          auto
         });
         if (response.error) {
           if (onFailure) onFailure(response.error);
@@ -448,6 +459,12 @@
     // NotAllowedError，白等一次创建超时再回落。所以它明确传 false，直接走
     // needsDownload 那条回落路 —— 和悬停、字幕这两条同样没有手势的路一致。
     const allowDownload = options.allowDownload !== false;
+    // 「这一批是自动模式发出去的」。跟着 allowDownload 同一条道走到三个发消息的
+    // 地方，因为它要回答的是同一类问题：这一轮有没有用户的手在上面。引擎层拿它
+    // 判 FR-9 那道费用闸（content/content-translation-engine.js 的
+    // refuseAutoAiSpend）—— 判定必须在最后那次 sendMessage 旁边，而不是在这里，
+    // 否则内置引擎跑到一半回落 AI 的那一下会绕过去。
+    const auto = options.auto === true;
     // 这一轮的目标语言，只在这里读一次。见 passTarget。
     const target = passTarget();
     const total = blocks.length;
@@ -457,11 +474,11 @@
     const { priorityBlocks, deferredBlocks } = splitBlocksByViewport(blocks);
 
     // 按 token/字符数/段落数智能分批
-    const priorityBatches = createSmartBatches(priorityBlocks);
-    const deferredBatches = createSmartBatches(deferredBlocks);
+    const priorityBatches = createSmartBatches(priorityBlocks, auto);
+    const deferredBatches = createSmartBatches(deferredBlocks, auto);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = usingBuiltinEngine() ? CONCURRENCY.builtin : CONCURRENCY.ai;
+    const concurrency = usingBuiltinEngine(auto) ? CONCURRENCY.builtin : CONCURRENCY.ai;
 
     console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 
@@ -524,7 +541,8 @@
             texts: sb.map(x => x.text),
             targetLang: target.request,
             delimiter: DELIMITER,
-            allowDownload
+            allowDownload,
+            auto
           });
 
           if (response.error) {
@@ -587,7 +605,8 @@
           texts: texts,
           targetLang: target.request,
           delimiter: DELIMITER,
-          allowDownload
+          allowDownload,
+          auto
         });
 
         // Check for error in response
@@ -598,6 +617,7 @@
           // 走逐块回退，而不是无声丢掉整批。
           await applyFastBatchTranslations(batch, response.translations, {
             allowDownload,
+            auto,
             onFailure: noteBatchFailure,
             isAborted: aborted,
             accept,

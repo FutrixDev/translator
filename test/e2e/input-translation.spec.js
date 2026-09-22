@@ -56,7 +56,6 @@ test('input translation shows phonetic for words and read-aloud for anything typ
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
 
     await page.goto('https://example.com');
@@ -243,7 +242,6 @@ test('the input dialog translates into the language picked in it, not the one in
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
 
     await page.goto(fixture.url);
@@ -282,7 +280,6 @@ test('setting a target language in settings overrides what the input dialog reme
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
 
     await page.goto(fixture.url);
@@ -294,7 +291,7 @@ test('setting a target language in settings overrides what the input dialog reme
     // An explicit choice on the settings page is the stronger signal — a dialog
     // that quietly kept translating into Japanese would be the same complaint
     // the dialog's own picker exists to answer.
-    await setExtensionSettings(page, { targetLang: 'fr', targetLangSetByUser: true });
+    await setExtensionSettings(page, { targetLang: 'fr' });
 
     await openInputDialog(page);
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText('Français');
@@ -362,7 +359,6 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
 
     await page.goto(fixture.url);
@@ -447,7 +443,6 @@ test('a hostile host stylesheet cannot reach into the dialog', async ({ page }) 
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
 
     await page.goto(fixture.url);

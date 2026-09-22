@@ -13,7 +13,6 @@ const ORIGIN = 'https://video.test';
 // test about captions, not about which translation backend gets picked.
 const BASE_SETTINGS = {
   targetLang: 'zh-CN',
-  targetLangSetByUser: true,
   apiKey: 'sk-test',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   modelName: 'gpt-4.1-mini',

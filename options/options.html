@@ -200,6 +200,19 @@
           </div>
 
           <div class="feature-suboptions" id="autoSubOptions">
+            <!-- 自动模式走哪个引擎，和「翻译引擎」那张卡上的选择是两件事，所以
+                 是两个字段。FR-9：默认 builtin，因为自动翻译能默认开着的前提就
+                 是它不花钱；切到 AI 要过一道二次确认，确认框里写明这是在花用户
+                 自己的钱（options-auto.js 的 onAutoEngineChange）。 -->
+            <div class="form-group">
+              <label for="autoTranslateEngine" data-i18n="autoTranslateEngineLabel">Engine for automatic translation</label>
+              <select id="autoTranslateEngine">
+                <option value="builtin" data-i18n="autoTranslateEngineBuiltin"></option>
+                <option value="ai" data-i18n="autoTranslateEngineAi"></option>
+              </select>
+              <span class="hint" data-i18n-hint="hintAutoTranslateEngine"></span>
+            </div>
+
             <!-- Base codes, because that is what THIS rung is judged on:
                  decide() puts both sides of the language list through
                  baseLang(), so zh-CN and zh-TW are one tick here. (Its
@@ -225,6 +238,14 @@
                 <label class="lang-chip"><input type="checkbox" data-lang="ru"><span data-i18n="langRu"></span></label>
               </div>
               <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
+            </div>
+
+            <!-- 每天最多替用户自动发出去多少字符。0 = 不限。只在上面那颗选择器
+                 选了 AI 时才有意义，所以跟着它一起灰（syncAutoEngineState）。 -->
+            <div class="form-group" id="autoAiBudgetGroup">
+              <label for="autoAiDailyBudget" data-i18n="autoAiDailyBudgetLabel">Daily character budget</label>
+              <input type="number" id="autoAiDailyBudget" min="0" step="10000">
+              <span class="hint" data-i18n-hint="hintAutoAiDailyBudget"></span>
             </div>
           </div>
 
@@ -396,6 +417,15 @@
               <span class="toggle-slider"></span>
             </label>
             <span class="hint" data-i18n-hint="hintShowFloatBall"></span>
+          </div>
+
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <span data-i18n="showInputTranslateChip">Input box translate chip</span>
+              <input type="checkbox" id="showInputTranslateChip" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="hint" data-i18n-hint="hintShowInputTranslateChip"></span>
           </div>
 
           <div class="toggle-group">
@@ -802,6 +832,7 @@
   <!-- 语言标签的判定（基码、简繁、同语言）只有这一份，caption-core 和
        site-rules 都在加载时就取走它，所以它要排在两者之前。 -->
   <script src="../shared/lang-tags.js"></script>
+  <script src="../shared/target-lang.js"></script>
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->
   <script src="../shared/caption-core.js"></script>
@@ -826,6 +857,7 @@
   <script src="../shared/translation-cache.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/pdf-errors.js"></script>
+  <script src="../shared/pdf-url.js"></script>
   <script src="../pdf/pdf-ui.js"></script>
   <!-- 内置引擎的语言码映射、可用性查询和首次下载都在这里；设置页复用同一份实现，
        避免和 content script 各写一套语言码映射后慢慢走偏。 -->

@@ -79,7 +79,7 @@ test('a spec that asks for the built-in engine still gets it', async () => {
 test('a spec that sets no settings at all is covered by the fixture', async () => {
   const { writes, context } = fakePage();
   await helpers.applyBaseSettings(context);
-  assert.deepEqual(writes, [{ translationEngine: 'ai', uiLanguage: 'en' }]);
+  assert.deepEqual(writes, [{ translationEngine: 'ai', autoTranslateEngine: 'ai', uiLanguage: 'en' }]);
 
   // Most of hover-translation.spec.js never calls setExtensionSettings, so the
   // baseline has to be applied per context rather than per settings call.
@@ -117,9 +117,19 @@ test('a spec that asserts labels in another language says so', () => {
 
 test("'ai' is the only value that turns the built-in engine off", () => {
   // isBuiltinSelected() treats every other value — including a missing one — as
-  // built-in, so the baseline has to spell this one exactly.
-  assert.match(repoFile('content/content-translation-engine.js'), /settings\.translationEngine !== 'ai'/,
+  // built-in, so the baseline has to spell this one exactly. And it reads one of
+  // two keys: automatic translation picks its engine separately (PRD FR-9), so
+  // pinning only the manual one leaves every auto spec on the built-in engine
+  // this browser does not have.
+  assert.match(repoFile('content/content-translation-engine.js'),
+    /return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/,
     'the content script decides the engine by this comparison; E2E_BASE_SETTINGS has to match it');
+  const baseline = repoFile('test/e2e/helpers.js');
+  const literal = baseline.slice(baseline.indexOf('const E2E_BASE_SETTINGS'));
+  for (const key of ['translationEngine', 'autoTranslateEngine']) {
+    assert.match(literal.slice(0, literal.indexOf('});')), new RegExp(`${key}: 'ai'`),
+      `E2E_BASE_SETTINGS has to pin ${key}`);
+  }
 });
 
 const specFiles = () => readdirSync(fileURLToPath(new URL('../e2e/', import.meta.url)))

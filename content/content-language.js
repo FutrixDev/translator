@@ -7,21 +7,20 @@
 
   const options = ctx.constants.TARGET_LANGUAGE_OPTIONS;
 
+  // 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js —— service
+  // worker 和设置页读的是同一份。这里曾经自己写过一份：直接返回
+  // navigator.language 而不做映射，于是一个 fr-FR 的浏览器在这一侧得到
+  // 'fr-FR'、在 worker 那一侧得到 'fr'。
   ctx.getEffectiveTargetLang = function() {
-    if (ctx.settings.targetLang) return ctx.settings.targetLang;
-    return navigator.language || navigator.userLanguage || 'en';
+    return TargetLang.effective(ctx.settings);
   };
 
+  // 「任意标签收进那十门里」也只有一个实现，和上面同一个主人。这里曾经自己写过
+  // 一份前缀匹配，而它把所有认不出的 zh-* 都落成简体 —— 于是一个繁体页面长出
+  // 「译成简体中文」。两份实现只要有一处不一样，同一次安装里两个界面就会对同一
+  // 件事各说各话。
   ctx.normalizeTargetLang = function(lang) {
-    if (!lang) return 'en';
-    if (options.some((option) => option.value === lang)) {
-      return lang;
-    }
-    const base = lang.split('-')[0];
-    const baseMatch = options.find((option) => option.value === base);
-    if (baseMatch) return baseMatch.value;
-    if (base === 'zh') return 'zh-CN';
-    return 'en';
+    return TargetLang.fromTag(lang);
   };
 
   ctx.getTargetLangLabel = function(lang) {
