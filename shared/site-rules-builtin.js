@@ -23,7 +23,7 @@
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-21',
+    rulesVersion: '2026-09-22',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -139,6 +139,79 @@
         state: 'always',
         atomicBlockSelectors: [],
         excludeSelectors: ['.subtext', '.rank', '.age'],
+        blockIdAttr: null,
+      },
+      {
+        // Lobsters —— 和 HN 同一个场景（一屏几十条标题），排版也同样朴素。
+        // .byline 是「via <用户名> 5 小时前 | caches … | 16 comments」，.tags 是
+        // 版块代号（privacy、rust、plt）：那些代号同时是站内的筛选链接，翻出来
+        // 就和他自己的标签页对不上了。
+        match: 'lobste.rs',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: ['.byline', '.tags'],
+        blockIdAttr: null,
+      },
+      {
+        // bioRxiv 的预印本页，模板是 HighWire（class 全是 highwire- 开头）。
+        // 只排两块：作者行（人名 + ORCID 链接文字）和 doi 那一行。
+        // 摘要、正文、图注都留着——这一页读者要的就是它们。
+        //
+        // 故意**不**排 .pane-highwire-article-citation：它是整块引文面板，标题
+        // 和摘要都在里面，排掉等于一页什么都不翻。
+        match: 'biorxiv.org/content/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: ['.highwire-cite-authors', '.highwire-cite-metadata'],
+        blockIdAttr: null,
+      },
+      {
+        // Nature 的文章页。排除的五块和 arxiv/html 那条是同一个道理：人名翻了
+        // 认不出是谁，参考文献翻了搜不到原文。
+        // .c-article-info-details 是「Nature 卷 625，页 468–475 (2024)」这种
+        // 出处行，.c-bibliographic-information 是「Cite this article」那一段。
+        match: 'nature.com/articles/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: [
+          '.c-article-author-list',
+          '.c-article-references',
+          '.c-bibliographic-information',
+          '.c-article-info-details',
+          '#author-information-content',
+        ],
+        blockIdAttr: null,
+      },
+      {
+        // Science 的文章页。
+        //
+        // **这条的空名单是「没验过」，不是「验过之后没有」** —— 和上面
+        // huggingface 那条不是一回事。science.org 挡在 Cloudflare 的 JS 挑战
+        // 后面，抓不到真实 DOM，凭印象写 selector 只会写出一组悄悄失效的字符串。
+        // 空名单的代价是作者名和参考文献也跟着翻，那是翻得糙；写错的 selector
+        // 是看着有规则、其实一条没生效。哪天能拿到真实结构再补。
+        match: 'science.org/doi/*',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // Google 学术的结果页。路径写死 /scholar：同一个域名下还有 /citations
+        // （作者主页）和 /scholar_lookup 这些，它们不是「扫一眼今天有什么」的
+        // 场景，没必要一起认下来。
+        //
+        // 只覆盖 scholar.google.com —— hostMatches 是后缀匹配，
+        // scholar.google.co.jp 不以 scholar.google.com 结尾，命不中。各国镜像
+        // 要一条一条加，而在此之前它们走的是通用启发式，不是坏结果。
+        //
+        // .gs_a 是「作者 - 期刊, 年份 - 站点」那一行（作者名 + 刊名 + 域名），
+        // .gs_fl 是「[PDF] neurips.cc」和「保存 引用 被引用次数 相关文章」
+        // 那两排功能链接。
+        match: 'scholar.google.com/scholar',
+        state: 'always',
+        atomicBlockSelectors: [],
+        excludeSelectors: ['.gs_a', '.gs_fl'],
         blockIdAttr: null,
       },
     ],

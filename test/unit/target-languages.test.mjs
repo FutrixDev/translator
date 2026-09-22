@@ -85,11 +85,17 @@ test('the built-in engine derives its non-Latin set instead of hand-listing it',
   }
 });
 
-test('both surfaces agree with the list of accepted targets', () => {
-  // Normalization in the service worker and the options page decides what
-  // counts as a supported target; anything offered has to survive it.
-  const accepted = readStringArray(workerSource(), 'const supportedLangs = [');
-  const acceptedInOptions = readStringArray(repoFile('options/options.js'), 'const supportedLangs = [');
-  assert.deepEqual(accepted, acceptedInOptions);
+test('the accepted-target list is one list, and the pickers match it', () => {
+  // Which tags count as a supported target used to be written out twice more —
+  // `const supportedLangs = [...]` inside the service worker's
+  // getBrowserLanguage() and again inside the options page's copy of the same
+  // function. Both now delegate to shared/target-lang.js, which is the only
+  // place the list exists.
+  const accepted = readStringArray(repoFile('shared/target-lang.js'), 'const SUPPORTED = [');
   assert.deepEqual(accepted.slice().sort(), settingsLanguages().slice().sort());
+
+  for (const [rel, source] of [['the service worker', workerSource()], ['options.js', repoFile('options/options.js')]]) {
+    assert.equal(source.includes('const supportedLangs = ['), false,
+      `${rel} grew its own copy of the supported-language list again`);
+  }
 });

@@ -9,11 +9,18 @@
 // `showTranslationOnly` was in two of them.
 //
 // The service worker and the options page keep their own lists on purpose.
-// background.js needs the API credentials and resolves an empty `targetLang`
-// against the browser language; options.js needs every form control's initial
-// value. Those are different sets, not copies of this one, and folding them in
-// would mean one object whose entries are right for one reader and wrong for
-// another.
+// background.js needs the API credentials; options.js needs every form
+// control's initial value. Those are different sets, not copies of this one,
+// and folding them in would mean one object whose entries are right for one
+// reader and wrong for another.
+//
+// **But where two of the lists name the same key, they must give it the same
+// value**, and that is now asserted rather than assumed
+// (`test/unit/default-settings-agree.test.mjs`). It is not a hypothetical: this
+// table said `targetLang: 'zh-CN'` while the worker's said `''`, so on a fresh
+// install a French user got a context menu offering Français and a page
+// translated into Chinese. Empty means "follow the browser" everywhere now —
+// see shared/target-lang.js.
 //
 // Loaded as a classic script by the content scripts, so it publishes onto the
 // global object rather than using `export`.
@@ -79,7 +86,9 @@
     youtubeCaptionPosYPct: null,
     youtubeCaptionWidthPct: null,
     youtubeCaptionScale: 1,
-    targetLang: 'zh-CN',
+    // 空 = 跟随浏览器语言，解析在 shared/target-lang.js。这里曾经写死 'zh-CN'，
+    // 而 worker 那张表写的是空 —— 同一次全新安装，两边译成两门语言。
+    targetLang: '',
     // 界面语言，与翻译目标语言彻底分开。'' = 跟随浏览器。
     uiLanguage: '',
     theme: 'light',

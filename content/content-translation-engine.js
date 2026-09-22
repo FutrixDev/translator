@@ -829,7 +829,11 @@
       result.reason = builtinUnsupportedReason();
       return result;
     }
-    const tgt = toApiLang(settings.targetLang);
+    // 这里问的是「这一页现在能不能用内置引擎」，要的是真会发出去的那一门语言，
+    // 所以读解析后的结果而不是 settings.targetLang 的原值：空串在身份那一侧是
+    // 「跟随浏览器」的哨兵（见 currentTargetLang），在这里当成它自己会让所有还
+    // 没选过语言的用户看到「不可用」。
+    const tgt = toApiLang(TargetLang.effective(settings));
     if (!tgt || !SUPPORTED_LANGS.has(tgt)) {
       result.availability = 'unavailable';
       return result;

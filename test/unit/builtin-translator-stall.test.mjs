@@ -85,6 +85,7 @@ console.info = () => {};
 console.warn = () => {};
 
 await import('../../shared/lang-tags.js');
+await import('../../shared/target-lang.js');
 await import('../../content/content-translation-engine.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 

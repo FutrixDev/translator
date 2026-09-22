@@ -10,6 +10,8 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
@@ -283,9 +285,9 @@ test('ar5iv 走的是 arxiv.org/html/* 那一条，不另写一条', () => {
   assert.equal(table.rules.filter((rule) => rule.match.includes('ar5iv')).length, 0);
 });
 
-// 论文这一族现在有四条规则，而「自动翻译」这件事只在 verdict 是 auto 时发生 ——
-// matchBuiltin 命中了但 state 不是 always，结论会一路掉到语言那几档去。
-test('论文页的四条规则都真的自动翻，不是只命中', () => {
+// 论文这一族的规则都是 always，而「自动翻译」这件事只在 verdict 是 auto 时发生
+// —— matchBuiltin 命中了但 state 不是 always，结论会一路掉到语言那几档去。
+test('论文页的规则都真的自动翻，不是只命中', () => {
   const at = (host, path) => SiteRules.decide({
     host, path, pageLang: 'en', targetLang: 'zh-CN',
     settings: { autoTranslate: true }, userRules: {},
@@ -297,6 +299,10 @@ test('论文页的四条规则都真的自动翻，不是只命中', () => {
     ['arxiv.org', '/list/cs.CL/recent'],
     ['huggingface.co', '/papers'],
     ['huggingface.co', '/papers/2609.05571'],
+    ['www.biorxiv.org', '/content/10.1101/2020.03.03.975250v1'],
+    ['www.nature.com', '/articles/s41586-024-07421-0'],
+    ['www.science.org', '/doi/10.1126/science.adi2336'],
+    ['scholar.google.com', '/scholar'],
   ]) {
     const out = at(host, path);
     assert.equal(out.verdict, 'auto', `${host}${path} 应当自动翻`);
@@ -313,6 +319,35 @@ test('论文页的四条规则都真的自动翻，不是只命中', () => {
   assert.equal(at('huggingface.co', '/paperswithcode').verdict, 'ask');
   assert.equal(at('huggingface.co', '/papers-reading-group').verdict, 'ask');
   assert.equal(at('huggingface.co', '/papers/date/2026-09-21').verdict, 'auto');
+
+  // Google 学术同样是路径写死的一段：同域下的作者主页不是「扫一眼今天有什么」
+  // 的场景，没被收进来。
+  assert.equal(at('scholar.google.com', '/citations?user=x').verdict, 'ask');
+  // 后缀匹配不向上生效：各国镜像不以 scholar.google.com 结尾，命不中，走通用
+  // 启发式——这不是坏结果，只是没有站点级的 selector。
+  assert.equal(at('scholar.google.co.jp', '/scholar').verdict, 'ask');
+  // 期刊站也一样只认文章路径，首页和栏目页不在内置名单上。
+  assert.equal(at('www.nature.com', '/').verdict, 'ask');
+  assert.equal(at('www.science.org', '/journals').verdict, 'ask');
+});
+
+// 一条内置规则的 selector 写错了不会报错：它只是一条谁也匹配不上的字符串，页面
+// 照翻，作者名和参考文献一起翻进去。所以这几条的名单是「查过页面真实 DOM 之后
+// 写下来的」还是「凭印象写的」，必须留下痕迹——science.org 挡在 Cloudflare 的 JS
+// 挑战后面，拿不到真实结构，那一条的空名单是「没验过」，不是「验过之后没有」。
+test('空的 excludeSelectors 各有各的理由，且都写在规则旁边', () => {
+  const source = readFileSync(fileURLToPath(new URL('../../shared/site-rules-builtin.js', import.meta.url)), 'utf8');
+  for (const [match, needle] of [
+    ['huggingface.co/papers', '查过之后的结论'],
+    ['science.org/doi/*', '没验过'],
+  ]) {
+    const rule = SiteRulesBuiltin.rules.find((r) => r.match === match);
+    assert.ok(rule, `内置表里没有 ${match}`);
+    assert.deepEqual(rule.excludeSelectors, [], `${match} 现在有 selector 了，注释该跟着改`);
+    const at = source.indexOf(`match: '${match}'`);
+    const comment = source.slice(Math.max(0, at - 1200), at);
+    assert.ok(comment.includes(needle), `${match} 的空名单没说清是「查过」还是「没查」`);
+  }
 });
 
 test('the matched rule rides along with every verdict, including the off ones', () => {

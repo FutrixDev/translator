@@ -353,8 +353,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   // 语言说）和目标语言（targetLang，说的是「译成 X」里的那个 X）。少听前者的后果
   // 不是没刷新那么轻——内容脚本和 popup 都当场跟着界面语言改了，只有右键菜单还是
   // 旧的那门语言，要等 service worker 下次醒来才对得上。
-  if (namespace === 'sync'
-      && (changes.uiLanguage || changes.targetLang || changes.targetLangSetByUser)) {
+  if (namespace === 'sync' && (changes.uiLanguage || changes.targetLang)) {
     refreshContextMenuTitles();
   }
   if (namespace === 'sync' && changes.enableComicTranslation) {

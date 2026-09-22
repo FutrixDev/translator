@@ -7,9 +7,12 @@
 
   const options = ctx.constants.TARGET_LANGUAGE_OPTIONS;
 
+  // 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js —— service
+  // worker 和设置页读的是同一份。这里曾经自己写过一份：直接返回
+  // navigator.language 而不做映射，于是一个 fr-FR 的浏览器在这一侧得到
+  // 'fr-FR'、在 worker 那一侧得到 'fr'。
   ctx.getEffectiveTargetLang = function() {
-    if (ctx.settings.targetLang) return ctx.settings.targetLang;
-    return navigator.language || navigator.userLanguage || 'en';
+    return TargetLang.effective(ctx.settings);
   };
 
   ctx.normalizeTargetLang = function(lang) {

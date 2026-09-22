@@ -79,6 +79,7 @@
         "shared/default-settings.js",
         "shared/engine-status.js",
         "shared/lang-tags.js",
+        "shared/target-lang.js",
         "shared/caption-core.js",
         "shared/comic-charge.js",
         "shared/ocr.js",

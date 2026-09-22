@@ -8,6 +8,7 @@
 // i18n/messages.js —— 两个都得先装好，所以在这里自己 import 一遍：ESM 会去重，
 // 而这样一来这个模块从哪儿被装进来都成立，不必指望入口文件的 import 顺序。
 import '../shared/ocr.js';
+import '../shared/target-lang.js';
 import '../i18n/messages.js';
 
 // Language display names
@@ -24,42 +25,10 @@ const languageNames = {
   'ru': 'Русский'
 };
 
-// Get browser language and map to supported language
+// 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js。这里只是转接：
+// 设置页和内容脚本读的是同一份映射，三边不会再各答各的。
 function getBrowserLanguage() {
-  const browserLang = navigator.language || 'en';
-  const supportedLangs = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
-
-  if (supportedLangs.includes(browserLang)) {
-    return browserLang;
-  }
-
-  const langMap = {
-    'zh': 'zh-CN',
-    'zh-Hans': 'zh-CN',
-    'zh-Hant': 'zh-TW',
-    'en-US': 'en',
-    'en-GB': 'en',
-    'ja-JP': 'ja',
-    'ko-KR': 'ko',
-    'fr-FR': 'fr',
-    'de-DE': 'de',
-    'es-ES': 'es',
-    'pt-BR': 'pt',
-    'pt-PT': 'pt',
-    'ru-RU': 'ru'
-  };
-
-  if (langMap[browserLang]) {
-    return langMap[browserLang];
-  }
-
-  const prefix = browserLang.split('-')[0];
-  const prefixMatch = supportedLangs.find(lang => lang.startsWith(prefix));
-  if (prefixMatch) {
-    return prefixMatch;
-  }
-
-  return 'en';
+  return globalThis.TargetLang.browserLanguage();
 }
 
 
@@ -73,8 +42,9 @@ const defaultSettings = {
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   modelName: 'gpt-4.1-mini',
-  targetLang: '', // Empty means use browser language
-  targetLangSetByUser: false,
+  // 空 = 跟随浏览器语言。空**就是**「用户没选过」这个哨兵，不再另有一个布尔量
+  // 记它：设置页在用户动过语言选择器之前写的就是空串。见 shared/target-lang.js。
+  targetLang: '',
   // The extension's own UI language. Empty means follow the browser. Kept
   // apart from targetLang on purpose — see getUILanguage in i18n/messages.js.
   uiLanguage: '',
@@ -110,12 +80,9 @@ const defaultSettings = {
   theme: 'light'
 };
 
-// Get effective target language (browser language if not set by user)
+// Get effective target language (browser language if the user never picked one)
 function getEffectiveTargetLang(settings) {
-  if (settings.targetLangSetByUser && settings.targetLang) {
-    return settings.targetLang;
-  }
-  return getBrowserLanguage();
+  return globalThis.TargetLang.effective(settings);
 }
 
 /**

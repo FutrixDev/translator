@@ -17,11 +17,14 @@ const elements = {
 };
 
 // Default settings
+//
+// 只列这个面板真正读的那几个键。targetLang 曾经也在这里，写死 'zh-CN'，而面板
+// 里没有一行代码读它 —— 一个从不被读、却和另外三张默认值表不一致的键，是下一个
+// 人照着它改出 bug 的地方。
 const defaultSettings = {
   apiKey: '',
   translationEngine: 'builtin',
   autoTranslate: true,
-  targetLang: 'zh-CN',
   uiLanguage: '',
   theme: 'light'
 };

@@ -87,10 +87,11 @@ export async function installEngineHarness({ pageText }) {
   console.info = () => {};
   console.warn = () => {};
 
-  // manifest 里 shared/lang-tags.js 排在引擎前面，引擎加载时就取走它。夹具漏掉
-  // 它，引擎整个文件抛错——而抛错的模块 import 照样 resolve，于是 ctx 上什么都
-  // 没有，红在三步之后。
+  // manifest 里 shared/lang-tags.js 和 shared/target-lang.js 都排在引擎前面，
+  // 引擎加载时就取走它们。夹具漏掉任何一个，引擎整个文件抛错——而抛错的模块
+  // import 照样 resolve，于是 ctx 上什么都没有，红在三步之后。
   await import('../../../shared/lang-tags.js');
+  await import('../../../shared/target-lang.js');
   await import('../../../content/content-translation-engine.js');
 
   return {

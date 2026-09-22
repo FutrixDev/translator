@@ -117,47 +117,11 @@ const PROMPT_PRESETS = {
   creative: 'promptCreative'
 };
 
-// Get browser language and map to supported language
+// 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js。
 function getBrowserLanguage() {
-  const browserLang = navigator.language || navigator.userLanguage || 'en';
-  const supportedLangs = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
-
-  // Exact match
-  if (supportedLangs.includes(browserLang)) {
-    return browserLang;
-  }
-
-  // Map common variants
-  const langMap = {
-    'zh': 'zh-CN',
-    'zh-Hans': 'zh-CN',
-    'zh-Hant': 'zh-TW',
-    'en-US': 'en',
-    'en-GB': 'en',
-    'ja-JP': 'ja',
-    'ko-KR': 'ko',
-    'fr-FR': 'fr',
-    'de-DE': 'de',
-    'es-ES': 'es',
-    'pt-BR': 'pt',
-    'pt-PT': 'pt',
-    'ru-RU': 'ru'
-  };
-
-  if (langMap[browserLang]) {
-    return langMap[browserLang];
-  }
-
-  // Try prefix match
-  const prefix = browserLang.split('-')[0];
-  const prefixMatch = supportedLangs.find(lang => lang.startsWith(prefix));
-  if (prefixMatch) {
-    return prefixMatch;
-  }
-
-  // Default to English
-  return 'en';
+  return TargetLang.browserLanguage();
 }
+
 
 // Default settings
 const defaultSettings = {
@@ -169,8 +133,9 @@ const defaultSettings = {
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   modelName: 'gpt-4.1-mini',
-  targetLang: '', // Empty means use browser language
-  targetLangSetByUser: false, // Track if user ever set the language
+  // 空 = 跟随浏览器语言，也**就是**「用户没选过」：下面的 collectSettings 在用户
+  // 动过语言选择器之前写的一直是空串，所以非空即选过。见 shared/target-lang.js。
+  targetLang: '',
   // 界面语言，与目标语言解耦：'' = 跟随浏览器。见 i18n/messages.js getUILanguage。
   uiLanguage: '',
   enableSelection: true,
@@ -227,14 +192,10 @@ async function loadSettings() {
   try {
     const result = await chrome.storage.sync.get(defaultSettings);
 
-    // Determine target language: use browser language if user never set it
-    let targetLang = result.targetLang;
-    if (!result.targetLangSetByUser || !targetLang) {
-      targetLang = getBrowserLanguage();
-    }
-    // Carried forward by every autosave, and only flipped by the language
-    // select itself — see the autosave block.
-    targetLangSetByUser = !!result.targetLangSetByUser;
+    // 选择器里要显示一门具体语言（它没有「自动」这一项），所以没选过就把浏览器
+    // 语言填进去显示；存回去的仍是空串，见 collectSettings。
+    targetLangChosen = !!result.targetLang;
+    const targetLang = TargetLang.effective(result);
 
     // Determine provider from saved settings or detect from endpoint
     let provider = result.provider;
@@ -354,15 +315,16 @@ function toggleTheme() {
 //    change ANY setting: turning the float ball off would silently do nothing.
 //    Judging credentials is now Test Connection's job, and it sits with the
 //    fields it judges.
-//  - targetLangSetByUser only flips when the user actually touches the
-//    language. It records an explicit choice, so writing it on an unrelated
-//    toggle would permanently freeze the language at whatever the browser
-//    happened to imply.
+//  - 语言只有在用户真的动过那颗选择器之后才写下去。选择器上显示的可能只是
+//    浏览器语言的回显，把它当成用户的选择写进 storage，就等于在一次无关的
+//    开关切换里，把语言永久钉死在浏览器当时碰巧是什么上。
 // ---------------------------------------------------------------------------
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
 let autosaveTimer = null;
-let targetLangSetByUser = false;
+// 用户这一次开着设置页期间，动过语言选择器没有。跨次打开靠 targetLang 非空还原
+// （loadSettings），不另存一个布尔量——两个来源就是两个会吵架的答案。
+let targetLangChosen = false;
 
 // Read the whole form. Cheap enough to do wholesale on every change, and
 // writing every key each time keeps storage consistent with what is on screen.
@@ -386,8 +348,8 @@ function collectSettings() {
     apiEndpoint: apiEndpoint,
     apiKey: elements.apiKey.value.trim(),
     modelName: modelName,
-    targetLang: elements.targetLang.value,
-    targetLangSetByUser: targetLangSetByUser,
+    // 没选过就存空串：空是「跟随浏览器」的哨兵，选择器上那个值只是回显。
+    targetLang: targetLangChosen ? elements.targetLang.value : '',
     uiLanguage: elements.uiLanguage.value,
     enableSelection: elements.enableSelection.checked,
     enableHoverTranslation: elements.enableHoverTranslation.checked,
@@ -656,7 +618,7 @@ function setupEventListeners() {
   });
 
   elements.targetLang.addEventListener('change', () => {
-    targetLangSetByUser = true;
+    targetLangChosen = true;
     // 换目标语言等于换了语言对，内置引擎的状态得重查。界面语言不再跟着它走，
     // 所以这里不重跑 i18n——只有下面那颗选择器才会。
     persistSettings().then(refreshBuiltinStatus);
