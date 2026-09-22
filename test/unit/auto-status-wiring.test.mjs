@@ -480,7 +480,10 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
     /blocked: globalThis\.SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
   const rules = code('shared/site-rules.js');
   assert.match(rules, /function isBlocklisted\(host, path\)/);
-  assert.match(rules, /if \(isBlocklisted\(host, path\)\) return out\('off', REASONS\.BLOCKLIST\);/,
+  // 阶梯自己也得问这一问，否则两处迟早不一致。它问完之后还要再问一次 isBlocked()，
+  // 那一问只决定说辞：内置表里的 never（arxiv 的 /pdf/）和黑名单（网银）都是「翻
+  // 不过来」，但对用户说的不是同一句话。
+  assert.match(rules, /if \(isBlocklisted\(host, path\)\) \{\s*\n\s*return out\('off', isBlocked\(host, path\) \? REASONS\.BLOCKLIST : REASONS\.BUILTIN_NEVER\);/,
     '阶梯自己也得问这一问，否则两处迟早不一致');
   assert.doesNotMatch(popup, /isBlocklisted/, 'popup 手上没有内置表，判不了');
 });

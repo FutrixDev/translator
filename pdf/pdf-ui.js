@@ -8,6 +8,11 @@
   'use strict';
 
   const { pdfErrorMessageKey, pdfErrorMessage } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
+  // 网址那两问的唯一实现（shared/pdf-url.js，装在这个文件之前）。这里曾经
+  // 各抄了一份，其中一份还注着「Mirrors … in background/background.js」——
+  // 指的函数早搬走了。
+  if (!globalThis.PdfUrl) throw new Error('pdf-ui.js 要先装 shared/pdf-url.js');
+  const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
 
   /**
    * A job view/record → the i18n key of what to show for it.
@@ -41,21 +46,6 @@
     return !!view && (view.status === 'queued' || view.status === 'running');
   }
 
-  /** Mirrors isLikelyPdfUrl in background/background.js. */
-  function isLikelyPdfUrl(url) {
-    if (!url) return false;
-    let parsed;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return false;
-    }
-    if (!/^(https?|file):$/.test(parsed.protocol)) return false;
-    if (/\.pdf$/i.test(parsed.pathname)) return true;
-    if (/(^|\.)arxiv\.org$/i.test(parsed.hostname) && /^\/pdf\//.test(parsed.pathname)) return true;
-    return false;
-  }
-
   /**
    * The web library's URL for a job — the page that renders the document
    * itself, original and translation side by side, which the extension cannot
@@ -84,17 +74,6 @@
     const id = String(jobId);
     if (id.startsWith('local:')) return '';
     return `${path}?job=${encodeURIComponent(id)}`;
-  }
-
-  function pdfFileNameFromUrl(url) {
-    try {
-      const parsed = new URL(url);
-      const segment = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
-      if (segment) return /\.pdf$/i.test(segment) ? segment : `${segment}.pdf`;
-    } catch {
-      // Fall through to the generic name.
-    }
-    return 'document.pdf';
   }
 
   globalThis.AI_TRANSLATOR_PDF_UI = {

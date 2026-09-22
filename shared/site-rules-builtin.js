@@ -51,6 +51,29 @@
         blockIdAttr: null,
       },
       {
+        // 论文的 PDF —— 这张表里第一条、也是目前唯一一条 never。
+        //
+        // 它不是「这一页不该翻」，是「这一页不走这条路」：PDF 走的是服务端的
+        // 排版任务（background/pdf-jobs.js），按页扣额度，而额度是钱。内置
+        // always 的代价不过是在一个没问过用户的页面上插几个节点，这里的代价是
+        // 一份**账单**，所以两者不能同一个默认值。
+        //
+        // 落成 never 而不是「什么都不写」，因为不写的结果是落到阶梯底下的
+        // ask —— 整页翻译的那条追问条会出现在一份 PDF 上，而点下去它一个字也
+        // 翻不出来（文档在一个闭合影子 DOM 的外进程 <embed> 里，收集层看到的是
+        // 一个空 body）。never 把那条追问条按住，换上真正能办事的那一条：
+        // content/content-pdf-prompt.js 的「翻译这篇文档」，点了才发请求。
+        //
+        // 只写 arxiv：别处的 .pdf 网址同样翻不了整页文本，但那条提示条本来就
+        // 压在追问条上面（见 content/content-auto-status.js 的模式阶梯），不必
+        // 为每一个域名各写一行永远写不全的规则。
+        match: 'arxiv.org/pdf/*',
+        state: 'never',
+        atomicBlockSelectors: [],
+        excludeSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         // 全文的 HTML 版，LaTeXML 出的（class 全是 ltx_ 开头）。
         //
         // **ar5iv 不用单开一条**：它的域名是 ar5iv.labs.arxiv.org，以 arxiv.org

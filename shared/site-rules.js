@@ -19,6 +19,7 @@
   const REASONS = Object.freeze({
     GLOBAL_OFF: 'GLOBAL_OFF',
     BLOCKLIST: 'BLOCKLIST',
+    BUILTIN_NEVER: 'BUILTIN_NEVER',
     USER_NEVER: 'USER_NEVER',
     USER_EXPLICIT: 'USER_EXPLICIT',
     USER_ALWAYS: 'USER_ALWAYS',
@@ -29,7 +30,7 @@
     DEFAULT_ASK: 'DEFAULT_ASK',
   });
 
-  // 阶梯最上面那三级：**这个站点不许我们自己动手**。
+  // 阶梯最上面那四级：**这个站点不许我们自己动手**。
   //
   // 和「verdict === 'off'」不是一回事，这才是它值得单独有个名字的原因。下面还有
   // 三级也答 off，但它们量的是语言——「页面已经是你的语言了」「这门语言不在你的
@@ -39,8 +40,10 @@
   // 之外的自动化（比如替观众点开播放器的原字幕）发生的地方，decide() 多半答的是
   // ask——视频站点没上过内置 always 名单，页面语言又常常和声道语言不是一回事。拿
   // 「开着自动翻」当闸门，那些事在它们最该发生的地方一次也不会发生；拿「被明令拒
-  // 绝」当闸门，被拒的三种情形一个不漏，其余照常。
-  const REFUSALS = Object.freeze([REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.USER_NEVER]);
+  // 绝」当闸门，被拒的四种情形一个不漏，其余照常。
+  const REFUSALS = Object.freeze([
+    REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.BUILTIN_NEVER, REASONS.USER_NEVER,
+  ]);
 
   // ---------------------------------------------------------------- 主机名
 
@@ -309,7 +312,20 @@
     // 禁翻的三条在所有「要翻」的理由之前，包括用户自己设的总是翻译。它防的不
     // 是「用户想翻银行页面」，是「用户在某个域名上点过一次总是翻译，此后我们
     // 往他的邮箱、在线文档编辑器、政务表单里插节点」。
-    if (isBlocklisted(host, path)) return out('off', REASONS.BLOCKLIST);
+    //
+    // 同一个结论有两种来源，而用户看到的那句话不一样：黑名单说的是「这类页面
+    // 我们不碰」，内置 never 说的是「这一条路径我们另有安排」—— arxiv 的
+    // /pdf/ 就是后者，那里不是不该翻，是该走另一条（收费的）路，页面上那条
+    // 提示条正等着他点。两句话混成一句，用户在论文 PDF 上看到的会是「这个站点
+    // 在黑名单里」，而他上一秒还在同一个域名下读着被自动翻好的摘要页。
+    //
+    // 判断仍然只问 isBlocklisted() 这一个主人，问完再回头看是哪一半答的是。
+    // 反过来把两半就地展开，就等于在这里复制了一遍那个函数：哪天它多认一种
+    // never，这条阶梯会悄悄漏掉。落到 BUILTIN_NEVER 是安全的那一边 —— 结论
+    // 一模一样，只是措辞按「内置规则说不」来。
+    if (isBlocklisted(host, path)) {
+      return out('off', isBlocked(host, path) ? REASONS.BLOCKLIST : REASONS.BUILTIN_NEVER);
+    }
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 

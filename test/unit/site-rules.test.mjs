@@ -263,10 +263,13 @@ test('a built-in rule matches its subdomains and its path glob', () => {
   assert.equal(m('arxiv.org', '/abs/2401.00001').match, 'arxiv.org/abs/*');
   assert.equal(m('arxiv.org', '/html/2310.03714v1').match, 'arxiv.org/html/*');
   assert.equal(m('arxiv.org', '/list/cs.CL/recent').match, 'arxiv.org/list/*');
-  // 带路径的规则不能整站生效：首页、PDF 页和这三条的结构都不一样，
+  // 带路径的规则不能整站生效：首页和这三条的结构都不一样，
   // 而 /abs/* 那条的 `blockquote.abstract` 只在摘要页存在。
   assert.equal(m('arxiv.org', '/'), null);
-  assert.equal(m('arxiv.org', '/pdf/2401.00001'), null);
+  // PDF 页有自己的一条，而且是这张表里唯一一条 never：那一页不走整页翻译这条路，
+  // 走的是按页扣额度的服务端任务（见 test/unit/pdf-offer.test.mjs）。
+  assert.equal(m('arxiv.org', '/pdf/2401.00001').match, 'arxiv.org/pdf/*');
+  assert.equal(m('arxiv.org', '/pdf/2401.00001').state, 'never');
 
   assert.equal(m('mobile.x.com', '/home').match, 'x.com');
   assert.equal(m('old.reddit.com', '/r/rust/').match, 'reddit.com');
@@ -378,13 +381,19 @@ test('the shipped table is internally consistent', () => {
   assert.ok(table.rules.length > 0 && table.blocklist.length > 0);
 
   // 一条内置 always 的规则同时又在黑名单上，就是表自己跟自己打架：黑名单赢，
-  // 那条规则永远不会生效，而写它的人不会知道。
+  // 那条规则永远不会生效，而写它的人不会知道。反过来，一条 never 必须真的落到
+  // BUILTIN_NEVER —— 被黑名单抢先答成 BLOCKLIST，说出来的就是另一句话。
   for (const rule of table.rules) {
-    const { verdict: v } = SiteRules.decide(ask({
+    const { verdict: v, reason } = SiteRules.decide(ask({
       host: rule.match.split('/')[0],
       path: rule.match.includes('/') ? `/${rule.match.split('/').slice(1).join('/').replace('*', 'x')}` : '/',
     }));
-    assert.notEqual(v, 'off', `${rule.match} is shadowed by the blocklist`);
+    if (rule.state === 'never') {
+      assert.equal(v, 'off', `${rule.match} is a never rule that does not refuse`);
+      assert.equal(reason, R.BUILTIN_NEVER, `${rule.match} is shadowed by the blocklist`);
+    } else {
+      assert.notEqual(v, 'off', `${rule.match} is shadowed by the blocklist`);
+    }
   }
 });
 
@@ -395,6 +404,7 @@ test('reasons are an enum, and every verdict is one of three words', () => {
 
   const inputs = [
     {}, { host: 'x.com' }, { host: 'mail.qq.com' }, { pageLang: null },
+    { host: 'arxiv.org', path: '/pdf/2501.00001' },
     { explicit: true }, { settings: { autoTranslate: false } },
     { userRules: { 'example.com': 'never' } }, { userRules: { 'example.com': 'always' } },
     { pageLang: 'zh', targetLang: 'zh-CN' },

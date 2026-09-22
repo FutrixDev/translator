@@ -10,9 +10,7 @@ import '../i18n/messages.js';
 import '../shared/account-gate.js';
 import { defaultSettings, uiLanguageOf, getEffectiveTargetLang } from './settings.js';
 import { getGatedSettings } from './feature-gate.js';
-import * as pdfClient from './pdf-client.js';
-import { isLikelyPdfUrl, pdfFileNameFromUrl, runPdfUrlJob } from './pdf-jobs.js';
-import { notifyPdfNotAPdf, notifyPdfRunning, notifyPdfStarted } from './pdf-notify.js';
+import { startPdfUrlTranslation } from './pdf-jobs.js';
 
 const MENU_IDS = {
   translateSelection: 'translate-selection',
@@ -303,43 +301,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } else if (info.menuItemId === MENU_IDS.translatePdfLink ||
              info.menuItemId === MENU_IDS.translatePdfPage ||
              info.menuItemId === MENU_IDS.translatePdfAction) {
-    const settings = await chrome.storage.sync.get(defaultSettings);
-    // Same racing-click guard as the comic entries: this costs money.
-    if (!settings.enablePdfTranslation) return;
-    const url = info.menuItemId === MENU_IDS.translatePdfLink
-      ? info.linkUrl
-      : (info.pageUrl || (tab && tab.url) || '');
-    if (!isLikelyPdfUrl(url)) {
-      // The toolbar entry is always there, whatever the tab is showing, so it
-      // is the one click that can legitimately land on a non-PDF — and it has
-      // to say so rather than do nothing.
-      if (info.menuItemId === MENU_IDS.translatePdfAction) notifyPdfNotAPdf();
-      return;
-    }
-    // file:// can't be fetched from the worker — hand local PDFs to the
-    // upload page's file picker instead (PR #26 review).
-    if (url.startsWith('file:')) {
-      chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
-      return;
-    }
-    // Unlike comics there is no content-script UI to hand off to — the Chrome
-    // PDF viewer admits no content scripts — so the worker owns the job and
-    // reports through notifications and the popup's task list.
-    const fileName = pdfFileNameFromUrl(url);
-    // Resolved here rather than inside the create so a second click on the same
-    // PDF can be recognised as one: the id is per-URL and stable.
-    const operationId = await pdfClient.getOrCreateUrlOperationId(url);
-    const records = await pdfClient.listJobRecords();
-    const running = records.find(r => r.operationId === operationId &&
-      (r.status === 'queued' || r.status === 'running'));
-    if (running) {
-      notifyPdfRunning(running.fileName || fileName);
-      return;
-    }
-    // Before the await, not after: the whole point is that the click stops
-    // looking like it did nothing.
-    notifyPdfStarted(fileName);
-    await runPdfUrlJob({ url, operationId, fileName, pageUrl: info.pageUrl || '' });
+    // 开关、是不是 PDF、file://、已经在跑——这一串检查在 pdf-jobs.js 那一份，
+    // PDF 文档上那条提示条走的是同一个函数。
+    await startPdfUrlTranslation({
+      url: info.menuItemId === MENU_IDS.translatePdfLink
+        ? info.linkUrl
+        : (info.pageUrl || (tab && tab.url) || ''),
+      pageUrl: info.pageUrl || '',
+      // 工具栏那一条在任何页面上都在，是唯一一个可能正当地落在非 PDF 上的点击。
+      notifyNotAPdf: info.menuItemId === MENU_IDS.translatePdfAction,
+    });
   } else if (info.menuItemId === MENU_IDS.removeInlineTranslation) {
     chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' });
   }

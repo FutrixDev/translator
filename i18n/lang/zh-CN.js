@@ -357,6 +357,7 @@
     autoAskPrompt: '这一页要翻译吗？',
     autoAskTranslate: '翻译',
     autoAskDismiss: '不用',
+    pdfAskPrompt: '这是一份 PDF 文档，翻译它会按页数消耗额度',
     autoAskAlways: '总是翻译 {site}',
     autoStopSite: '不再自动翻译 {site}',
 
@@ -373,6 +374,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '自动翻译已关闭',
     autoReasonBlocklist: '这个站点从不自动翻译',
+    autoReasonBuiltinNever: '这一页不自动翻译整页文本',
     autoReasonUserNever: '你选过这个站点「从不翻译」',
     autoReasonUserExplicit: '这一页是你自己要翻的',
     autoReasonUserAlways: '你选过这个站点「总是翻译」',

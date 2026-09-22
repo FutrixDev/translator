@@ -341,6 +341,7 @@
     autoAskPrompt: 'Diese Seite übersetzen?',
     autoAskTranslate: 'Übersetzen',
     autoAskDismiss: 'Jetzt nicht',
+    pdfAskPrompt: 'Dies ist ein PDF. Die Übersetzung verbraucht Seiten-Guthaben.',
     autoAskAlways: '{site} immer übersetzen',
     autoStopSite: '{site} nicht mehr automatisch übersetzen',
 
@@ -357,6 +358,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: 'Automatische Übersetzung ist aus',
     autoReasonBlocklist: 'Diese Website wird nie automatisch übersetzt',
+    autoReasonBuiltinNever: 'Der Text dieser Seite wird nicht automatisch übersetzt',
     autoReasonUserNever: 'Du hast „nie“ für diese Website gewählt',
     autoReasonUserExplicit: 'Du hast diese Seite angefordert',
     autoReasonUserAlways: 'Du hast „immer“ für diese Website gewählt',

@@ -341,6 +341,7 @@
     autoAskPrompt: 'Перевести эту страницу?',
     autoAskTranslate: 'Перевести',
     autoAskDismiss: 'Не сейчас',
+    pdfAskPrompt: 'Это PDF. Перевод расходует постраничные кредиты.',
     autoAskAlways: 'Всегда переводить {site}',
     autoStopSite: 'Не переводить {site} автоматически',
 
@@ -357,6 +358,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: 'Автоперевод выключен',
     autoReasonBlocklist: 'Этот сайт никогда не переводится автоматически',
+    autoReasonBuiltinNever: 'Текст этой страницы не переводится автоматически',
     autoReasonUserNever: 'Вы выбрали «никогда» для этого сайта',
     autoReasonUserExplicit: 'Вы сами запросили эту страницу',
     autoReasonUserAlways: 'Вы выбрали «всегда» для этого сайта',

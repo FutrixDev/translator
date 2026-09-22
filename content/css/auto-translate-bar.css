@@ -101,8 +101,10 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"
 }
 
 /* 展开说明和「没存上」都只剩一行字和一个关闭。追问那几个控件留在 DOM 里不重建
-   —— 用户点掉说明之后，还没回答的那一问要原样回来。 */
-#ai-translator-auto-bar:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-remember {
+   —— 用户点掉说明之后，还没回答的那一问要原样回来。
+   offer（今天是 PDF 那条）只去掉勾选框：它要的正是那两个按钮，而「记住这个站
+   点」是整页翻译的话，一份文档上没有对应的意思。 */
+#ai-translator-auto-bar:is([data-mode="explain"], [data-mode="notice"], [data-mode="offer"]) .ai-translator-auto-remember {
   display: none;
 }
 

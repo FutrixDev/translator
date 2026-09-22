@@ -341,6 +341,7 @@
     autoAskPrompt: 'このページを翻訳しますか？',
     autoAskTranslate: '翻訳',
     autoAskDismiss: '今はしない',
+    pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
     autoAskAlways: '{site} を常に翻訳',
     autoStopSite: '{site} の自動翻訳をやめる',
 
@@ -357,6 +358,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '自動翻訳がオフです',
     autoReasonBlocklist: 'このサイトは自動翻訳しません',
+    autoReasonBuiltinNever: 'このページの本文は自動翻訳しません',
     autoReasonUserNever: 'このサイトを「翻訳しない」に設定しています',
     autoReasonUserExplicit: 'あなたがこのページを翻訳しました',
     autoReasonUserAlways: 'このサイトを「常に翻訳」に設定しています',

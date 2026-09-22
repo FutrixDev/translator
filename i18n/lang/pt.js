@@ -341,6 +341,7 @@
     autoAskPrompt: 'Traduzir esta página?',
     autoAskTranslate: 'Traduzir',
     autoAskDismiss: 'Agora não',
+    pdfAskPrompt: 'Isto é um PDF. Traduzi-lo consome créditos de páginas.',
     autoAskAlways: 'Sempre traduzir {site}',
     autoStopSite: 'Parar de traduzir {site} automaticamente',
 
@@ -357,6 +358,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: 'A tradução automática está desligada',
     autoReasonBlocklist: 'Este site nunca é traduzido automaticamente',
+    autoReasonBuiltinNever: 'O texto desta página não é traduzido automaticamente',
     autoReasonUserNever: 'Você escolheu «nunca» para este site',
     autoReasonUserExplicit: 'Você pediu esta página',
     autoReasonUserAlways: 'Você escolheu «sempre» para este site',

@@ -341,6 +341,7 @@
     autoAskPrompt: '이 페이지를 번역할까요?',
     autoAskTranslate: '번역',
     autoAskDismiss: '나중에',
+    pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
     autoAskAlways: '{site} 항상 번역',
     autoStopSite: '{site} 자동 번역 중지',
 
@@ -357,6 +358,7 @@
     // 自动翻译：状态点展开那一行的后半句 —— decide() 的十个理由
     autoReasonGlobalOff: '자동 번역이 꺼져 있습니다',
     autoReasonBlocklist: '이 사이트는 자동 번역하지 않습니다',
+    autoReasonBuiltinNever: '이 페이지의 본문은 자동 번역하지 않습니다',
     autoReasonUserNever: '이 사이트를 “번역 안 함”으로 설정했습니다',
     autoReasonUserExplicit: '직접 이 페이지를 번역했습니다',
     autoReasonUserAlways: '이 사이트를 “항상 번역”으로 설정했습니다',

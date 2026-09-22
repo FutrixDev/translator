@@ -378,6 +378,7 @@ Rules:
     autoAskPrompt: 'Translate this page?',
     autoAskTranslate: 'Translate',
     autoAskDismiss: 'Not now',
+    pdfAskPrompt: 'This is a PDF. Translating it spends page credits.',
     autoAskAlways: 'Always translate {site}',
     autoStopSite: 'Stop auto-translating {site}',
 
@@ -394,6 +395,7 @@ Rules:
     // Auto-translate: why the page is in that state
     autoReasonGlobalOff: 'Auto-translate is off',
     autoReasonBlocklist: 'This site is never translated automatically',
+    autoReasonBuiltinNever: "This page's text is not auto-translated",
     autoReasonUserNever: 'You chose never for this site',
     autoReasonUserExplicit: 'You asked for this page',
     autoReasonUserAlways: 'You chose always for this site',
