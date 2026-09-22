@@ -240,12 +240,31 @@
    * 拉丁语言在一两个词上本来就分不开。所以只在文本自身带非拉丁字符时才采信
    * “判得不准”的结果，纯拉丁文本仍旧要求 isReliable。
    */
-  async function resolveStandaloneSourceLang(trimmed) {
-    const nonLatinText = HAS_NON_LATIN_CHARS.test(trimmed);
-    const detected = toApiLang(await detectLanguageOf(trimmed, {
+  function hasNonLatinChars(text) {
+    return HAS_NON_LATIN_CHARS.test(text);
+  }
+
+  /**
+   * 「这段文字自己是什么语言」，判不出来就是空串 —— **不猜、不兜底**。
+   *
+   * 上面那段注释里的两档门槛（非拉丁放宽到两个字符、纯拉丁仍要求 isReliable）
+   * 就是这个函数的全部内容。单独拆出来是因为有两个调用方，而它们要的东西不同：
+   * 翻译那一路（resolveStandaloneSourceLang）判不出来也得给引擎一个源语言，所以
+   * 它在这之后还有两级兜底；输入框那颗芯片（content/content-input-chip.js）要的
+   * 恰恰是「没把握就别出声」—— 一颗因为把 "hello" 判成塞尔维亚语而冒出来的芯片
+   * 比没有芯片糟。两边各写一次探测就会各有一套门槛，而门槛正是这件事的全部难点。
+   */
+  function detectStandaloneLang(trimmed) {
+    const nonLatinText = hasNonLatinChars(trimmed);
+    return detectLanguageOf(trimmed, {
       minChars: nonLatinText ? 2 : DETECT_MIN_CHARS,
       requireReliable: !nonLatinText
-    }));
+    });
+  }
+
+  async function resolveStandaloneSourceLang(trimmed) {
+    const nonLatinText = hasNonLatinChars(trimmed);
+    const detected = toApiLang(await detectStandaloneLang(trimmed));
     if (detected && SUPPORTED_LANGS.has(detected)) return detected;
 
     const pageLang = toApiLang(await getPageSourceLang());
@@ -913,6 +932,10 @@
     // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
     supportsLang: (code) => SUPPORTED_LANGS.has(code),
     pageSourceLang: getPageSourceLang,
+
+    // 输入框芯片（content/content-input-chip.js）问的那一句：这段刚敲进去的字
+    // 是什么语言。判不出来答空串 —— 它据此决定不出声。
+    detectStandaloneLang,
 
     async availability(sourceLang, targetLang) {
       if (!isBuiltinSupported()) return 'unavailable';

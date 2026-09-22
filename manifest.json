@@ -113,6 +113,7 @@
         "content/content-float-ball.js",
         "content/content-popup.js",
         "content/content-input-dialog.js",
+        "content/content-input-chip.js",
         "content/page/batch.js",
         "content/page/site-adapter.js",
         "content/page/collect.js",

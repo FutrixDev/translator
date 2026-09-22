@@ -146,6 +146,11 @@
         }
       }
 
+      if (changes.showInputTranslateChip && changes.showInputTranslateChip.newValue === false) {
+        // 关掉开关的人多半正看着那颗芯片。等下一次敲键才消失，看着像没生效。
+        if (ctx.hideInputTranslateChip) ctx.hideInputTranslateChip();
+      }
+
       if (changes.theme) {
         ctx.applyTheme(ctx.settings.theme);
       }
@@ -190,6 +195,7 @@
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
       if (ctx.setupHoverTranslation) ctx.setupHoverTranslation();
       if (ctx.setupImageOcrHoverButton) ctx.setupImageOcrHoverButton();
+      if (ctx.setupInputTranslateChip) ctx.setupInputTranslateChip();
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
       if (ctx.createFloatBall) ctx.createFloatBall();

@@ -50,6 +50,9 @@
     selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
     selectionTranslationMode: 'inline',
     showFloatBall: true,
+    // 输入框旁边那颗「译成 X」。默认开：它只在输入内容的语言和页面语言对不上
+    // 时才出现，也就是说不写字、或者写的就是这一页的语言，整页上根本看不见它。
+    showInputTranslateChip: true,
     // 名字说的是“检测语言”，做的事是“已经是目标语言的段落就别译了”。
     skipTargetLanguageText: true,
     showTranslationOnly: false,

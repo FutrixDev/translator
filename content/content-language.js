@@ -23,7 +23,11 @@
     const base = lang.split('-')[0];
     const baseMatch = options.find((option) => option.value === base);
     if (baseMatch) return baseMatch.value;
-    if (base === 'zh') return 'zh-CN';
+    if (base === 'zh') {
+      // zh-Hant / zh-HK / zh-MO 也归到这里（它们不在选项里）。落成简体是把用户
+      // 要的那一件事反着做了一遍，所以书写系统在这里要认。
+      return globalThis.LangTags?.getScriptVariant(lang) === 'hant' ? 'zh-TW' : 'zh-CN';
+    }
     return 'en';
   };
 

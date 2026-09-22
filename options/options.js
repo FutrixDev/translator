@@ -50,6 +50,7 @@ const elements = {
   enableHoverTranslation: document.getElementById('enableHoverTranslation'),
   hoverTranslationHotkey: document.getElementById('hoverTranslationHotkey'),
   showFloatBall: document.getElementById('showFloatBall'),
+  showInputTranslateChip: document.getElementById('showInputTranslateChip'),
   skipTargetLanguageText: document.getElementById('skipTargetLanguageText'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
   // Automatic translation
@@ -147,6 +148,7 @@ const defaultSettings = {
   selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
+  showInputTranslateChip: true,
   // 名字要说实话：这颗开关做的是“已经是目标语言的段落就别译了”。
   skipTargetLanguageText: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
@@ -236,6 +238,7 @@ async function loadSettings() {
     elements.enableHoverTranslation.checked = result.enableHoverTranslation;
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
     elements.showFloatBall.checked = result.showFloatBall;
+    elements.showInputTranslateChip.checked = result.showInputTranslateChip;
     elements.skipTargetLanguageText.checked = result.skipTargetLanguageText;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     // 默认开，所以只有存着的 false 才关得掉它。
@@ -371,6 +374,7 @@ function collectSettings() {
     selectionTranslationHotkey: elements.selectionTranslationHotkey.value,
     hoverTranslationHotkey: elements.hoverTranslationHotkey.value,
     showFloatBall: elements.showFloatBall.checked,
+    showInputTranslateChip: elements.showInputTranslateChip.checked,
     skipTargetLanguageText: elements.skipTargetLanguageText.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
     autoTranslate: elements.autoTranslate.checked,
@@ -592,6 +596,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'enableHoverTranslation',
   'hoverTranslationHotkey',
   'showFloatBall',
+  'showInputTranslateChip',
   'skipTargetLanguageText',
   'showTranslationOnly',
   'autoTranslate',
