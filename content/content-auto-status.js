@@ -279,8 +279,23 @@
     // 表过态了，前面问过几次都不算数：下次再来这个站点，三次的额度是满的。
     await clearAskCount();
     dismissed = true;
-    notice = failed ? t('popupSiteRuleFailed') : '';
     if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
+    setNotice(failed ? t('popupSiteRuleFailed') : '');
+  }
+
+  /**
+   * 「有一句话要让用户看见」。
+   *
+   * 今天两个来源，说的是同一件事：站点规则没能写进去。一处是追问条上勾了「总
+   * 是」（上面 acceptAsk），一处是悬浮球菜单第一行「不再自动翻译这个站点」——
+   * 两处都是乐观控件，按下去界面就收了，不说的话用户看到的是「记住了」，而下次
+   * 打开这个站点还是老样子。
+   *
+   * 摆在这里是因为条子只有这一层画得出来。别的层要说话就叫这一句，而不是自己
+   * 再造一条窄条 —— 两条窄条会在右下角叠在一起。
+   */
+  function setNotice(text) {
+    notice = text || '';
     render();
   }
 
@@ -340,6 +355,7 @@
   // ------------------------------------------------------------------ 装配
 
   ctx.paintAutoStatusDot = paintDot;
+  ctx.showAutoStatusNotice = setNotice;
 
   /**
    * 点状态点 → 展开一行说明；再点一下收回去。

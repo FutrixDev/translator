@@ -342,6 +342,7 @@
     autoAskTranslate: 'Übersetzen',
     autoAskDismiss: 'Jetzt nicht',
     autoAskAlways: '{site} immer übersetzen',
+    autoStopSite: '{site} nicht mehr automatisch übersetzen',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'Diese Seite wird nicht übersetzt',

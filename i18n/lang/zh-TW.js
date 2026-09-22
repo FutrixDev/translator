@@ -342,6 +342,7 @@
     autoAskTranslate: '翻譯',
     autoAskDismiss: '不用',
     autoAskAlways: '總是翻譯 {site}',
+    autoStopSite: '不再自動翻譯 {site}',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '這一頁不翻譯',

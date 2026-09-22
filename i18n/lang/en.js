@@ -379,6 +379,7 @@ Rules:
     autoAskTranslate: 'Translate',
     autoAskDismiss: 'Not now',
     autoAskAlways: 'Always translate {site}',
+    autoStopSite: 'Stop auto-translating {site}',
 
     // Auto-translate: the status dot
     autoStateOff: 'Not translating this page',

@@ -246,7 +246,12 @@ test('规则没存上要说一声，不能只留一行控制台日志', () => {
   // 住事。file:// 页面（location.hostname 是空串）每一次都走这条路。
   const status = code('content/content-auto-status.js');
   assert.match(status, /failed = true;/);
-  assert.match(status, /notice = failed \? t\('popupSiteRuleFailed'\) : '';/);
+  assert.match(status, /setNotice\(failed \? t\('popupSiteRuleFailed'\) : ''\)/);
+  // 同一句话的第二个来源：悬浮球菜单第一行「不再自动翻译这个站点」。那一行也是
+  // 乐观控件，按下去菜单就收了。它不自己造条子 —— 两条窄条会在右下角叠在一起。
+  assert.match(status, /ctx\.showAutoStatusNotice = setNotice;/);
+  assert.match(code('content/content-float-ball.js'),
+    /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
   // 那句话得真画到条子上，而且压在追问和展开说明之上。
   assert.match(status, /const mode = notice \? 'notice' :/);
   assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
@@ -457,7 +462,7 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 播放器里那一行是同一个开关的第二块画布，同样得挡住：写 always 下去不算数，
   // 而「顺带打开总开关」那个副作用会照跑。
   const controls = code('content/content-caption-controls.js');
-  assert.match(controls, /isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(controls, /siteRuleWritable\(location\.hostname, location\.pathname\)/);
   assert.match(controls,
     /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\);/);
   const click = controls.slice(controls.indexOf("enableItem.addEventListener('click'"));
@@ -738,4 +743,51 @@ test('出错停下的那一页，看一眼原文不算「重试」', () => {
   assert.match(resume,
     /ctx\.revealHiddenTranslations\(\);[\s\S]*?if \(status !== STATUS\.ERROR\) return;\s*\}\s*start\('resume'\);/,
     '藏着译文的 ERROR 页，「继续」得由这一次自己接上');
+});
+
+test('悬浮球菜单第一行是「不再自动翻译这个站点」，而且只在它真在翻的时候才有', () => {
+  // 关掉一个站点的自动翻译在此之前只有一条路：进设置页，在列表里找到它。那是这
+  // 类功能差评的第一来源 —— 撤销比开启难。所以这一行排在菜单最前面。
+  const ball = code('content/content-float-ball.js');
+  const menu = ball.slice(ball.indexOf('state.floatMenu.innerHTML = `'));
+
+  const stop = menu.indexOf("data-action=\"stop-site-auto\"");
+  assert.ok(stop > 0, '悬浮球菜单里没有「不再自动翻译这个站点」那一行');
+  for (const action of ['translate-input', 'translate-selection', 'translate-page', 'settings']) {
+    assert.ok(stop < menu.indexOf(`data-action="${action}"`), `那一行得排在 ${action} 前面`);
+  }
+  // 站点名要真印出来。一行不带站名的「不再自动翻译」，在一个 iframe 套着三个域
+  // 名的页面上说的是哪一个，用户无从知道。
+  assert.match(menu, /t\('autoStopSite'\)\.replace\('\{site\}', stopSiteHost\)/);
+  assert.match(messagesSource(), /autoStopSite:/, '那句话得真有');
+
+  // 画的是 siteAuto，不是状态、也不是闸门。拿状态画的话，用户在一个没设过规则的
+  // 站点上点一次「翻译整页」，这一行就会冒出来 —— 而他点下去写进去的是一条永久
+  // 的 never（同一个坑在 popup 和字幕菜单上各踩过一次，见 siteAuto() 的注释）。
+  assert.match(ball, /ctx\.autoTranslate\.state\(\)\.siteAuto/);
+  assert.doesNotMatch(ball, /state\(\)\.status/, '别拿状态画站点规则');
+  // 写不进去的站点不画：点下去要么毫无动静，要么只剩「顺带打开总开关」那半边。
+  assert.match(ball, /SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
+});
+
+test('「不再自动翻译」先落规则再还原 —— 反过来译文会自己长回来', () => {
+  const ball = code('content/content-float-ball.js');
+  const fn = ball.slice(ball.indexOf('async function stopSiteAuto()'));
+  const body = fn.slice(0, fn.indexOf('\n  }') + 4);
+
+  const write = body.indexOf('SiteRules.setSiteAuto(location.hostname, false)');
+  const restore = body.indexOf('ctx.setTranslationsVisible(false)');
+  assert.ok(write > 0, '没走 setSiteAuto —— popup 那一行和字幕菜单第一项说的是同一句话');
+  assert.ok(restore > 0, '置了 never 却没还原这一页');
+  assert.ok(write < restore,
+    '还原跑在写规则前面的话，调度层此刻判的仍是 auto，它会把刚还原的这一页重新翻一遍');
+
+  // 还原走显隐层那唯一的入口：自己去摘节点是第二份实现，而且摘不干净（受管容器
+  // 那一批没有自己的节点，「仅显示译文」那一半也得跟着回来）。
+  assert.doesNotMatch(body, /querySelectorAll|\.remove\(\)/, '别自己动手摘译文');
+
+  // 写失败那一路不还原 —— 规则没落地，还原只会被调度层立刻推翻。
+  const fail = body.indexOf("ctx.showAutoStatusNotice(t('popupSiteRuleFailed'))");
+  assert.ok(fail > 0 && fail < restore, '写失败得说一声');
+  assert.match(body.slice(fail), /^[\s\S]{0,80}?return;/, '写失败之后不该接着还原');
 });

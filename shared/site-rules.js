@@ -210,6 +210,26 @@
     return !!(rule && rule.state === 'never');
   }
 
+  /**
+   * 「界面上那一行『自动翻译这个站点』写得进去吗」。
+   *
+   * 写不进去的有两种，都得让那一行看起来就点不动：黑名单站点（BLOCKLIST 在
+   * decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算数），和 normalizeHost
+   * 生不出键来的页面（file:// 上 location.hostname 是空串）。后一种按下去
+   * setSiteAuto 会抛，前一种按下去更糟：规则存了、也读回来了，可这一页照样不
+   * 翻，而用户以为他刚刚打开了它。
+   *
+   * 三处画这一行的地方 —— popup、播放器里的字幕菜单、悬浮球菜单第一项 —— 问的
+   * 是同一句话，所以只有这一份实现。从前它是字幕菜单里的一个私有函数，第二处要
+   * 用的时候差一点就被抄成第二份。
+   *
+   * 参数而不是读 location：这个文件在服务工作者里也装着，那边没有 location。
+   */
+  function siteRuleWritable(hostname, path) {
+    if (!normalizeHost(hostname)) return false;
+    return !isBlocklisted(hostname, path);
+  }
+
   // ---------------------------------------------------------------- 语言
 
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里连一份副本都不留，
@@ -535,6 +555,7 @@
     applyWrite,
     matchBuiltin,
     isBlocklisted,
+    siteRuleWritable,
     loadTable,
   };
 })(globalThis);
