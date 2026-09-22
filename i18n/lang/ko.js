@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: '새 사이트에서는 먼저 물어봅니다',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: '자동 번역은 무료 내장 엔진만 사용합니다',
+    autoReasonCostEngine: '자동 번역은 무료 내장 엔진만 사용하는데, 이 페이지에서는 사용할 수 없습니다',
     autoReasonCostBudget: '오늘의 AI 예산을 모두 썼습니다',
-    autoEngineAiOff: '자동 번역에 AI 엔진이 켜져 있지 않습니다',
     autoBudgetSpent: '오늘의 자동 번역 예산을 모두 썼습니다. 이 페이지는 직접 번역할 수 있고, 한도는 설정에서 바꿀 수 있습니다.',
 
     // 自动翻译：悬浮球与 popup

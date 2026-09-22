@@ -134,16 +134,26 @@
     return chunks.filter(c => c.length > 0);
   }
 
-  function usingBuiltinEngine() {
-    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive());
+  /**
+   * 这一轮实际跑在内置引擎上吗。`auto` 为真时问的是自动模式那一边。
+   *
+   * 引擎是两张开关（手动 translationEngine / 自动 autoTranslateEngine，PRD
+   * FR-9），所以这个问题也有两个答案，而这一轮只认自己那一个。不带 auto 去问
+   * 的后果是两种，都不响：默认设置（手动 AI、自动内置）下，自动那一轮会按 AI
+   * 的形状攒批，25 段一发地丢给一个按段调用的端上引擎，用户要等一整批才看见第
+   * 一段；反过来（手动内置、自动 AI），自动那一轮会一块一批地发出去 —— 40 段
+   * 的页面变成 40 次 HTTPS 往返、40 份提示词开销，记在用户自己的账上。
+   */
+  function usingBuiltinEngine(auto) {
+    return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive(auto));
   }
 
   // 智能分批：根据 token/字符数/段落数限制
-  function createSmartBatches(blocks) {
+  function createSmartBatches(blocks, auto) {
     // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
     // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
     // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
-    if (usingBuiltinEngine()) {
+    if (usingBuiltinEngine(auto)) {
       return blocks.map((block) => [block]);
     }
 
@@ -464,11 +474,11 @@
     const { priorityBlocks, deferredBlocks } = splitBlocksByViewport(blocks);
 
     // 按 token/字符数/段落数智能分批
-    const priorityBatches = createSmartBatches(priorityBlocks);
-    const deferredBatches = createSmartBatches(deferredBlocks);
+    const priorityBatches = createSmartBatches(priorityBlocks, auto);
+    const deferredBatches = createSmartBatches(deferredBlocks, auto);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = usingBuiltinEngine() ? CONCURRENCY.builtin : CONCURRENCY.ai;
+    const concurrency = usingBuiltinEngine(auto) ? CONCURRENCY.builtin : CONCURRENCY.ai;
 
     console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 

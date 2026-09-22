@@ -409,9 +409,8 @@ Rules:
     autoReasonDefaultAsk: 'Asking first on a new site',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: 'Automatic translation only uses the free built-in engine',
+    autoReasonCostEngine: 'Automatic translation only uses the free built-in engine, which this page cannot run',
     autoReasonCostBudget: 'Today\'s AI budget is used up',
-    autoEngineAiOff: 'Automatic translation is not set to use the AI engine',
     autoBudgetSpent: 'Today\'s automatic-translation budget is used up. You can still translate this page yourself; the limit is in Settings.',
 
     // Auto-translate: float ball and popup

@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: '新站點先問一句',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: '自動翻譯只用免費的內建引擎',
+    autoReasonCostEngine: '自動翻譯只用免費的內建引擎，而這一頁用不了它',
     autoReasonCostBudget: '今天的 AI 額度用完了',
-    autoEngineAiOff: '自動翻譯沒有開啟 AI 引擎',
     autoBudgetSpent: '今天的自動翻譯額度用完了，這一頁可以手動翻譯。額度在設定裡改。',
 
     // 自动翻译：悬浮球与 popup

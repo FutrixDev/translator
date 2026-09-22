@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: '新しいサイトではまず確認します',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: '自動翻訳は無料の内蔵エンジンのみを使います',
+    autoReasonCostEngine: '自動翻訳は無料の内蔵エンジンのみを使いますが、このページでは使えません',
     autoReasonCostBudget: '今日の AI 予算を使い切りました',
-    autoEngineAiOff: '自動翻訳で AI エンジンが有効になっていません',
     autoBudgetSpent: '今日の自動翻訳の予算を使い切りました。このページは手動で翻訳できます。上限は設定で変更できます。',
 
     // 自动翻译：悬浮球与 popup

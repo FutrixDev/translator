@@ -44,9 +44,17 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   );
   // 只拦自动模式。手动翻译是用户一次一次点出来的，他知道自己在花钱。
   assert.match(engine, /if \(!message \|\| !message\.auto\) return null;/);
-  // 两道：允不允许用 AI，和今天还够不够。
-  assert.match(engine, /settings\.autoTranslateEngine !== 'ai'/);
+  // 这里**只问额度**。「自动模式允不允许用 AI」是上游那两个谓词的事
+  // （isBuiltinSelected(auto) / canFallBackToAI），在这里再问一遍就是同一个问题
+  // 的第二个答案 —— 而它会把「本地不可用时允许用我配置的接口」那半个人的回退
+  // 整个吃掉：http:// 页面上根本没有内置引擎，那正是回退存在的理由。
   assert.match(engine, /AutoStats\.charge\(chars, settings\.autoAiDailyBudget\)/);
+  const gate = engine.slice(engine.indexOf('async function refuseAutoAiSpend('));
+  assert.doesNotMatch(gate.slice(0, gate.indexOf('\n  }')), /autoTranslateEngine/,
+    '预算闸又自己判了一遍「允不允许用 AI」');
+  // 而那个判断在谓词里，并且真的分得清问的是哪一边 —— 行为在
+  // auto-engine-choice.test.mjs 上验。
+  assert.match(engine, /function isBuiltinSelected\(auto\) \{\s*\n\s*return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/);
 });
 
 test('「这一批是自动发的」一路带到三个发消息的地方', () => {
@@ -68,9 +76,15 @@ test('调度层的预判和闸问的是同一个设置、同一个函数', () =>
   // 预判不花钱，只负责让用户看见「为什么停了」；闸不说话，只会拒。两边各算各
   // 的就会出现「状态说没超、翻译却被拒」这种没人能解释的页面。
   assert.match(auto, /AutoStats\.budgetExceeded\(stats, ctx\.settings\.autoAiDailyBudget\)/);
-  assert.match(auto, /ctx\.settings\.autoTranslateEngine !== 'ai'/);
-  // 只在这一页**只剩 AI 这条路**时才问 —— 内置引擎跑得动的页面不花钱。
-  assert.match(auto, /ctx\.builtinTranslator\.effectiveEngine\(\)\) !== 'ai'/);
+  // 「自动模式这一刻走哪个引擎」不在调度层算 —— 它只有一个主人，而
+  // requestTranslation 还要按同一句话分路。自己再算一遍就会分叉成「状态说在
+  // 翻、页面却一片原文」。
+  assert.match(auto, /ctx\.builtinTranslator\.effectiveEngine\(\{ auto: true \}\)/);
+  assert.doesNotMatch(auto, /ctx\.settings\.autoTranslateEngine/,
+    '调度层又自己读了一遍自动模式的引擎设置');
+  // 内置引擎跑得动的页面不花钱，直接放行；给不出引擎又没开回退的那一格安静地停。
+  assert.match(auto, /if \(engine === 'builtin'\) return null;/);
+  assert.match(auto, /if \(engine === 'none'\) return COST_REASONS\.ENGINE;/);
   // 问在 takeBatch 之前：takeBatch 会把队列抽干、把块记进 inflight，被拦下的
   // 这一轮根本不会跑，那些块就此无声消失。
   const gate = auto.indexOf('const refused = await costRefusal();');
@@ -123,7 +137,7 @@ test('确认文案写明花的是用户自己的钱，而且十门语言都有',
   const { I18N_MESSAGES, UI_LANGUAGES } = globalThis;
   const keys = ['autoTranslateEngineAiConfirm', 'autoTranslateEngineLabel', 'autoTranslateEngineBuiltin',
     'autoTranslateEngineAi', 'hintAutoTranslateEngine', 'autoAiDailyBudgetLabel', 'hintAutoAiDailyBudget',
-    'autoEngineAiOff', 'autoBudgetSpent', 'autoReasonCostEngine', 'autoReasonCostBudget'];
+    'autoBudgetSpent', 'autoReasonCostEngine', 'autoReasonCostBudget'];
   for (const lang of UI_LANGUAGES) {
     for (const key of keys) {
       assert.ok(I18N_MESSAGES[lang] && I18N_MESSAGES[lang][key], `${lang} 少了 ${key}`);

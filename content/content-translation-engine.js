@@ -107,13 +107,23 @@
     });
   }
 
-  function isBuiltinSelected() {
-    // 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
-    return settings.translationEngine !== 'ai';
+  /**
+   * 选的是内置引擎吗。`auto` 为真时问的是自动模式那一边。
+   *
+   * 自动模式有**自己的**引擎设置（PRD FR-9 的 `autoTranslateEngine`，默认
+   * `builtin`），手动那一边选了什么与它无关。这不是一条可以省的分支：「自动翻译
+   * 默认开着」能成立的全部底气就是它默认免费，而把两边合成一个问题的后果是，一
+   * 个为了划词翻译把引擎切到 AI 的用户，从此每一个页面的自动翻译都被费用闸整个
+   * 拦掉 —— 满屏原文，没有任何解释。
+   *
+   * 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
+   */
+  function isBuiltinSelected(auto) {
+    return (auto ? settings.autoTranslateEngine : settings.translationEngine) !== 'ai';
   }
 
-  function shouldUseBuiltin() {
-    return isBuiltinSelected() && isBuiltinSupported();
+  function shouldUseBuiltin(auto) {
+    return isBuiltinSelected(auto) && isBuiltinSupported();
   }
 
   // ==================== 错误分级 ====================
@@ -667,18 +677,24 @@
 
   /**
    * 这一刻，一次翻译请求实际会走到哪里：`'builtin'` | `'ai'` | `'none'`。
+   * `{ auto: true }` 问的是自动模式那一边（它有自己的引擎设置，见
+   * isBuiltinSelected）。
    *
    * 三个谓词（isBuiltinSelected / isBuiltinSupported / canFallBackToAI）拼出来的
    * 那句话，调度层要问、而它一个都不该自己重算 —— 重算就是第二个答案，而两个
    * 答案迟早会在某个 http:// 页面上分叉。
    *
+   * `'none'` 是 FR-9.1 的那一格：选了「仅本地引擎」，而这一页给不出内置引擎。
+   * 对自动模式它意味着**这一页不自动翻**，不是「试试看再说」—— 试的结果是三次
+   * 批次失败之后一句「翻译失败」，而真实情况是用户自己选的。
+   *
    * 说的是「会走到哪」，不是「一定走到那」：判 'builtin' 之后，某一批仍可能在
-   * 内置引擎上失败并按 engineFallback 回落到 AI。那一下由下面
-   * requestTranslation 末尾那道闸把关，两处问的是同一个 autoTranslateEngine。
+   * 内置引擎上失败并按 engineFallback 回落到 AI。那一下花的钱由下面
+   * requestTranslation 末尾那道预算闸把关。
    */
-  async function effectiveEngine() {
-    if (shouldUseBuiltin()) return 'builtin';
-    if (!isBuiltinSelected()) return 'ai';
+  async function effectiveEngine({ auto = false } = {}) {
+    if (shouldUseBuiltin(auto)) return 'builtin';
+    if (!isBuiltinSelected(auto)) return 'ai';
     return (await canFallBackToAI()) ? 'ai' : 'none';
   }
 
@@ -688,19 +704,22 @@
    * 只有 `message.auto` 的请求经过这里 —— 手动翻译是用户一次一次点出来的，他
    * 知道自己在花钱；要挡的是零点击的那条路。
    *
-   * 两问，顺序有意义：
+   * 这里**只问预算**，不再问「自动模式允不允许用 AI」。那个问题上面已经答过
+   * 了，而且答得更细：自动模式选的引擎由 isBuiltinSelected(true) 决定，内置顶
+   * 不住时能不能改走 AI 由 canFallBackToAI() 决定。能走到这一行的自动请求只有
+   * 两种，两种都是用户点过头的 —— 他把自动模式的引擎切成了 AI（要过一道二次确
+   * 认），或者他开了「本地不可用时允许用我配置的接口」。在这里再问一遍，就是
+   * 同一个问题的第二个答案，而它会把后一种人的回退整个吃掉：内置引擎在 http://
+   * 页面上本来就不存在，那正是回退存在的理由。
    *
-   * 1. **自动模式允许用 AI 吗**（`autoTranslateEngine`）。默认不允许。一个为了
-   *    手动翻译把引擎切到 'ai' 的用户，不该因此让每一个自动翻译的页面都走 AI。
-   * 2. **今天的预算还够吗**。问和记是同一次操作，走服务工作者那条单写者队列 ——
-   *    一轮里八个批次同时出发，八次各读各的再各记各的，闸门等于不存在。
+   * 预算这一问，问和记是同一次操作，走服务工作者那条单写者队列 —— 一轮里八个
+   * 批次同时出发，八次各读各的再各记各的，闸门等于不存在。
    *
    * 返回一句给用户看的话表示拒绝，`null` 表示放行。
    */
   async function refuseAutoAiSpend(message) {
     if (!message || !message.auto) return null;
     const t = ctx.t || ((key) => key);
-    if (settings.autoTranslateEngine !== 'ai') return t('autoEngineAiOff');
     const chars = Array.isArray(message.texts)
       ? globalThis.AutoStats.textsChars(message.texts)
       : String(message.text == null ? '' : message.text).length;
@@ -816,7 +835,10 @@
    * 调用方不需要知道这次走的是内置还是 AI。
    */
   ctx.requestTranslation = async function(message) {
-    if (isBuiltinSelected() && !isBuiltinSupported()) {
+    // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
+    // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
+    const auto = !!(message && message.auto);
+    if (isBuiltinSelected(auto) && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
       // 用户开了回退就顶上，并留痕；没开就把真实原因说清楚，别让他收到一句
@@ -826,7 +848,7 @@
       }
       // 环境这条路能问出更细的原因（版本 / http），比笼统的 unsupportedEnv 好。
       noteFallback(builtinUnsupportedReason() || ENGINE_REASONS.UNSUPPORTED_ENV);
-    } else if (shouldUseBuiltin()) {
+    } else if (shouldUseBuiltin(auto)) {
       try {
         const result = await handleWithBuiltin(message);
         if (result) return result;
@@ -848,7 +870,7 @@
       }
     }
     // 这一行是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这
-    // 个环境/这门语言顶不住、而且用户开了回退，也走到这里。自动模式的费用闸
+    // 个环境/这门语言顶不住、而且用户开了回退，也走到这里。自动模式的预算闸
     // 因此只能装在这里 —— 装在调度层只挡得住前一半，运行中那次回落会绕过去。
     const refusal = await refuseAutoAiSpend(message);
     if (refusal) return { error: refusal };

@@ -87,6 +87,12 @@ test('没有第二处地方再写一遍这套映射', () => {
     assert.equal(/langMap\s*=/.test(source), false, `${rel} 又抄了一份语言映射表`);
     assert.equal(/navigator\.(userL|l)anguage/.test(source), false,
       `${rel} 直接读了 navigator.language，应当走 TargetLang`);
+    // 连一个只会转接的空壳都不留。收编那三份实现的第一版留下了两个这样的壳，
+    // 各自一行 `return TargetLang.browserLanguage()` —— 没有错，但下一个人会
+    // 照着最近的那个名字调，而把壳填回去只要一次「顺手内联一下」。名字只剩
+    // 一个，那一步就没地方落脚。
+    assert.equal(/function getBrowserLanguage/.test(source), false,
+      `${rel} 又留了一个 getBrowserLanguage 空壳，直接调 TargetLang.browserLanguage()`);
   }
 
   // 「任意标签收进那十门里」是同一个问题的另一半，曾经也有第二份：

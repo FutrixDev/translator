@@ -121,12 +121,6 @@ const PROMPT_PRESETS = {
   creative: 'promptCreative'
 };
 
-// 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js。
-function getBrowserLanguage() {
-  return TargetLang.browserLanguage();
-}
-
-
 // Default settings
 const defaultSettings = {
   // 默认走浏览器内置翻译（端上 NMT，零网络零费用）。下面那一整套 API 配置

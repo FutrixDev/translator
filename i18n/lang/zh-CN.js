@@ -389,9 +389,8 @@
 
     // 自动翻译：费用闸拦下来时说的话（FR-9）。前两条是状态点展开的后半句，
     // 后两条是引擎层拒绝一批翻译时回给调用方的那句。
-    autoReasonCostEngine: '自动翻译只用免费的内置引擎',
+    autoReasonCostEngine: '自动翻译只用免费的内置引擎，而这一页用不了它',
     autoReasonCostBudget: '今天的 AI 额度用完了',
-    autoEngineAiOff: '自动翻译没有开启 AI 引擎',
     autoBudgetSpent: '今天的自动翻译额度用完了，这一页可以手动翻译。额度在设置里改。',
 
     // 自动翻译：悬浮球与 popup

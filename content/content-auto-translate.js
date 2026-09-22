@@ -56,8 +56,9 @@
   // 闸。呈现层照样认得它们：content/content-auto-status.js 的 REASON_KEYS 是
   // 「理由 → 人话」的那张表，它比 decide() 的阶梯宽一点。
   const COST_REASONS = Object.freeze({
-    // 自动模式没被允许用 AI，而这一页只有 AI 这条路（选了 AI，或者内置顶不住
-    // 且开了回退）。默认状态，所以不弹提示 —— 它是设定，不是意外。
+    // 自动模式要用的引擎这一刻给不出译文，而用户没开回退：选的是「仅本地」，
+    // 而这一页（http://、Chrome 版本太低）没有内置引擎。默认状态，所以不弹提示
+    // —— 它是设定，不是意外。
     ENGINE: 'COST_ENGINE',
     // 今天的字符预算用完了。这一条要提示一次：用户上午还好好的，下午打开一个
     // 页面它不翻了，不说一声就只是「坏了」。
@@ -458,22 +459,33 @@
     }
 
     /**
-     * 费用闸（PRD FR-9）：这一轮该不该花钱。返回停翻的理由，没有就返回 null。
+     * 费用闸（PRD FR-9）：这一轮该不该跑。返回停翻的理由，没有就返回 null。
      *
-     * 只在这一页**只剩 AI 这条路**时才问 —— 内置引擎在本机跑，不计费也不限量，
-     * 自动翻译默认开着的全部底气就在这里。
+     * 第一问是「自动模式这一刻走哪个引擎」，而**这个问题不在这里算**：
+     * effectiveEngine({ auto: true }) 是它唯一的主人，因为同一句话
+     * requestTranslation 还要再问一次，两边各算各的迟早会在某个 http:// 页面上
+     * 分叉成「状态说在翻、页面却一片原文」。三个答案对应三件事：
      *
-     * 这是一次**预判**，不是那道闸本身。真正花不花得出去由
+     * - `'builtin'` —— 本机跑，不计费也不限量。自动翻译默认开着的全部底气就在
+     *   这里，所以直接放行，一个字符都不用记。
+     * - `'none'` —— FR-9.1：选了「仅本地引擎」而这一页给不出内置引擎。这一页不
+     *   自动翻，安静地停（状态点上说得出理由，不弹窗）。不拦的话就是三次批次失
+     *   败换一句「翻译失败」，而真实情况是用户自己的选择。
+     * - `'ai'` —— 他点过头了（自动引擎切成 AI，或者开了回退），于是只剩额度这
+     *   一问。
+     *
+     * 这是一次**预判**，不是那道闸本身。钱真花不花得出去由
      * content/content-translation-engine.js 的 refuseAutoAiSpend 在最后那次
      * sendMessage 旁边说了算 —— 那里拦得住内置引擎跑到一半回落 AI 的那一下，这里
-     * 拦不住。两边问的是同一个设置、同一个 AutoStats.budgetExceeded，分工不同：
-     * 那边不会说话，只会拒；这里不花钱，只负责让用户看见「为什么停了」。少了这
-     * 里，超预算的页面会一批批撞在那道闸上，攒够三次批次失败，最后以一句「翻译
-     * 失败」收场 —— 而真实情况是额度用完了。
+     * 拦不住。两边问的是同一个 autoAiDailyBudget，分工不同：那边不会说话，只会
+     * 拒；这里不花钱，只负责让用户看见「为什么停了」。少了这里，超预算的页面会
+     * 一批批撞在那道闸上，攒够三次批次失败，最后以一句「翻译失败」收场 —— 而真
+     * 实情况是额度用完了。
      */
     async function costRefusal() {
-      if ((await ctx.builtinTranslator.effectiveEngine()) !== 'ai') return null;
-      if (ctx.settings.autoTranslateEngine !== 'ai') return COST_REASONS.ENGINE;
+      const engine = await ctx.builtinTranslator.effectiveEngine({ auto: true });
+      if (engine === 'builtin') return null;
+      if (engine === 'none') return COST_REASONS.ENGINE;
       const stats = await globalThis.AutoStats.read();
       if (globalThis.AutoStats.budgetExceeded(stats, ctx.settings.autoAiDailyBudget)) {
         return COST_REASONS.BUDGET;

@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: 'Bei neuen Websites wird zuerst gefragt',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: 'Die automatische Übersetzung nutzt nur die kostenlose eingebaute Engine',
+    autoReasonCostEngine: 'Die automatische Übersetzung nutzt nur die kostenlose eingebaute Engine, die auf dieser Seite nicht verfügbar ist',
     autoReasonCostBudget: 'Das KI-Budget für heute ist aufgebraucht',
-    autoEngineAiOff: 'Für die automatische Übersetzung ist die KI-Engine nicht aktiviert',
     autoBudgetSpent: 'Das Budget für automatische Übersetzungen ist für heute aufgebraucht. Diese Seite können Sie weiterhin selbst übersetzen; das Limit steht in den Einstellungen.',
 
     // 自动翻译：悬浮球与 popup

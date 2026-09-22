@@ -68,7 +68,11 @@
     // 内置引擎（Chrome 端上的 Translator）零网络零费用，缓存它省下的是几十毫秒，
     // 花掉的是用户那 10 MB storage 配额。更要紧的是它按页面语言推断源语言，
     // 同一段英文在法语页面和英语页面上译出来可以不一样，跨页复用会串味。
-    if (ctx.builtinTranslator && ctx.builtinTranslator.isActive()) {
+    // 问的是**这一条请求**那一边的引擎：自动模式有自己的开关（PRD FR-9 的
+    // autoTranslateEngine），而这一层两边的流量都经手。默认设置（手动 AI、自动
+    // 内置）下不带 auto 去问，就会把端上引擎的译文一条条写进 storage —— 正是上
+    // 面那段说的串味和配额；反过来则是自动那一轮整个绕过缓存，每一页重新计费。
+    if (ctx.builtinTranslator && ctx.builtinTranslator.isActive(message.auto === true)) {
       return ctx.requestTranslation(message);
     }
 

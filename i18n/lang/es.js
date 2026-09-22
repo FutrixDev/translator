@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: 'En un sitio nuevo preguntamos primero',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: 'La traducción automática solo usa el motor integrado gratuito',
+    autoReasonCostEngine: 'La traducción automática solo usa el motor integrado gratuito, no disponible en esta página',
     autoReasonCostBudget: 'El presupuesto de IA de hoy se ha agotado',
-    autoEngineAiOff: 'El motor de IA no está activado para la traducción automática',
     autoBudgetSpent: 'El presupuesto de traducción automática de hoy se ha agotado. Esta página puedes traducirla tú mismo; el límite está en los ajustes.',
 
     // 自动翻译：悬浮球与 popup

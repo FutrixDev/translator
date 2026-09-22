@@ -121,6 +121,8 @@ test('local-only spends nothing when the built-in engine cannot do the job', asy
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'local-only',
       // Afrikaans is not in the Translator API's language list, so the
       // built-in engine gives up on every block for a reason that does not
@@ -153,6 +155,8 @@ test('allow-ai is the same page, with permission', async ({ page }) => {
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'allow-ai',
       targetLang: 'af',
       skipTargetLanguageText: false,
@@ -182,6 +186,8 @@ test('a fallback that happened is on the footer, not just in the log', async ({ 
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       translationEngine: 'builtin',
+      // 自动那一边有自己的引擎设置，要一起说 —— 见 helpers.js 的 E2E_BASE_SETTINGS。
+      autoTranslateEngine: 'builtin',
       engineFallback: 'allow-ai',
       targetLang: 'af',
       skipTargetLanguageText: false,

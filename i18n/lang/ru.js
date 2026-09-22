@@ -372,9 +372,8 @@
     autoReasonDefaultAsk: 'На новом сайте сначала спрашиваем',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
-    autoReasonCostEngine: 'Автоперевод использует только бесплатный встроенный движок',
+    autoReasonCostEngine: 'Автоперевод использует только бесплатный встроенный движок, недоступный на этой странице',
     autoReasonCostBudget: 'Сегодняшний лимит ИИ израсходован',
-    autoEngineAiOff: 'Для автоперевода не включён движок ИИ',
     autoBudgetSpent: 'Сегодняшний лимит автоперевода израсходован. Эту страницу можно перевести вручную, а лимит изменить в настройках.',
 
     // 自动翻译：悬浮球与 popup

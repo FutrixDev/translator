@@ -26,13 +26,6 @@ const languageNames = {
   'ru': 'Русский'
 };
 
-// 「跟随浏览器」算哪门语言，唯一实现在 shared/target-lang.js。这里只是转接：
-// 设置页和内容脚本读的是同一份映射，三边不会再各答各的。
-function getBrowserLanguage() {
-  return globalThis.TargetLang.browserLanguage();
-}
-
-
 // Default settings
 const defaultSettings = {
   // 'builtin' = 浏览器内置的 Translator API（端上 NMT，零网络、零费用），默认引擎。
@@ -99,4 +92,4 @@ export function uiLanguageOf(settings) {
   return 'en';
 }
 
-export { languageNames, getBrowserLanguage, defaultSettings, getEffectiveTargetLang };
+export { languageNames, defaultSettings, getEffectiveTargetLang };
