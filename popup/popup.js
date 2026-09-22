@@ -584,12 +584,21 @@ function renderPageRows() {
     // 糟的是这一点顺手把总开关打开了，别的站点全跟着自动翻起来，而他本来只想管
     // 眼前这一个。灰掉，并且把为什么写在 title 上。
     //
-    // 问的是页面单独回的那一句，不是 auto.reason：总开关关着时 reason 是
+    // 问的是页面单独回的那两句，不是 auto.reason：总开关关着时 reason 是
     // GLOBAL_OFF，黑名单被它整个遮住 —— 那正是这个开关最该灰着的时候。
-    const blocked = !!pageState.blocked;
-    elements.toggleSiteAuto.disabled = blocked;
+    //
+    // 「灰不灰」和「为什么灰」是两个问题，答案来自两处但同一个主人：
+    // 前者是 SiteRules.siteRuleWritable()，和字幕菜单、悬浮球菜单第一项问的
+    // 是同一句话；后者只有黑名单说得出一句人话。从前这里只问黑名单，于是
+    // file:// 页面上这一行看起来能点 —— 按下去 setSiteAuto 抛，用户拿到的是
+    // 一句「没存上」，而另外两处早就把它灰掉了。
+    //
+    // 缺省朝「灰掉」那边倒：扩展刚更新、这一个标签页里跑的还是旧的内容脚本时，
+    // 这个字段是 undefined。灰着的行点不动，画成能点的行按下去会把总开关打开。
+    const writable = !!pageState.ruleWritable;
+    elements.toggleSiteAuto.disabled = !writable;
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
-    elements.toggleSiteAuto.title = blocked ? t('autoReasonBlocklist') : pageState.host;
+    elements.toggleSiteAuto.title = pageState.blocked ? t('autoReasonBlocklist') : pageState.host;
   }
 
   // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
@@ -613,14 +622,14 @@ async function refreshPageRows() {
 
 /**
  * 站点开关。开写 always、关写 never，开的时候顺带打开总开关 —— 这几条规矩和
- * 它们的理由都在 SiteRules.setSiteAuto() 里，播放器里字幕菜单的第一项说的是同
- * 一句话，走的是同一份实现。
+ * 它们的理由都在 SiteRules.setSiteAuto() 里。界面上每一处写「这个站点自动翻」
+ * 的地方说的都是这同一句话，所以走的都是那一份实现。
  */
 async function toggleSiteAuto() {
   if (!pageState || !pageState.host) return;
   // 键盘能走到一个 disabled 的按钮上、扩展页面也能被脚本点，所以画面上灰掉之外
-  // 这里再挡一道：黑名单改不动，别让这一下的副作用（开总开关）自己跑掉。
-  if (pageState.blocked) return;
+  // 这里再挡一道：写不进去的站点，别让这一下的副作用（开总开关）自己跑掉。
+  if (!pageState.ruleWritable) return;
   const on = siteAutoOn();
   try {
     await SiteRules.setSiteAuto(pageState.host, !on);

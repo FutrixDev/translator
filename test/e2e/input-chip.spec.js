@@ -50,7 +50,6 @@ test('输入框芯片：英文页面上敲中文，框边出现「译成 English
       // 设置里的目标语言是中文，而芯片说的是「译成 English」：芯片的方向是从
       // **页面语言**算出来的，不是从这一条。下面那句 toContainText 守的就是它。
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
     });
     await serve(context);
     await page.goto(`${ORIGIN}/thread`);

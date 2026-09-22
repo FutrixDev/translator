@@ -4,7 +4,6 @@ const { setExtensionSettings, getSyncSetting } = require('./helpers');
 async function openOptions(page, extensionId, settings) {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     apiKey: 'sk-test',
     ...settings
   });

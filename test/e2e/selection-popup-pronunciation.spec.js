@@ -29,7 +29,6 @@ test('the selection popup can read out both the original and the translation', a
       apiKey: 'test-key',
       modelName: 'gpt-4.1-mini',
       targetLang: 'zh-CN',
-      targetLangSetByUser: true,
       enableSelection: true,
       // The popup surface, not the inline one.
       selectionTranslationMode: 'popup',

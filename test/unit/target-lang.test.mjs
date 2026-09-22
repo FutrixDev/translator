@@ -25,6 +25,8 @@ function withBrowserLanguage(tag, run) {
   }
 }
 
+// 简繁的判定归 shared/lang-tags.js —— target-lang.js 在加载时就取走它，漏了会抛。
+await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
 const TargetLang = globalThis.TargetLang;
 
@@ -54,6 +56,19 @@ test('中文的两种字形不能靠前缀匹配', () => {
   assert.equal(TargetLang.fromTag('zh-Hans'), 'zh-CN');
   assert.equal(TargetLang.fromTag('zh'), 'zh-CN');
   assert.equal(TargetLang.fromTag('zh-SG'), 'zh-CN');
+  // 也不能靠一张写死的表：中文标签的写法数不完，多一个子标签就漏一个。
+  assert.equal(TargetLang.fromTag('zh-Hant-TW'), 'zh-TW');
+  assert.equal(TargetLang.fromTag('zh-Hans-CN'), 'zh-CN');
+  assert.equal(TargetLang.fromTag('zh-MO'), 'zh-TW');
+});
+
+// 这张表如果在这里再抄一份，「哪些标签是繁体」就有了两个答案，而漏掉的那一个
+// 会把繁体页面译成简体。
+test('简繁的判定问 lang-tags.js，不在这里另立一张表', () => {
+  const source = repoFile('shared/target-lang.js');
+  assert.match(source, /LangTags\.getScriptVariant\(/);
+  assert.equal(source.match(/'zh-(Hant|HK|MO)':/), null, 'target-lang.js 又抄了一张繁体标签表');
+  assert.match(source, /if \(!LangTags\) throw new Error/, 'target-lang.js 没在加载时检查 lang-tags.js');
 });
 
 test('地区变体落到它的语言上', () => {
@@ -73,6 +88,12 @@ test('没有第二处地方再写一遍这套映射', () => {
     assert.equal(/navigator\.(userL|l)anguage/.test(source), false,
       `${rel} 直接读了 navigator.language，应当走 TargetLang`);
   }
+
+  // 「任意标签收进那十门里」是同一个问题的另一半，曾经也有第二份：
+  // content-language.js 自己写了一套前缀匹配，把所有认不出的 zh-* 落成简体。
+  assert.match(repoFile('content/content-language.js'),
+    /ctx\.normalizeTargetLang = function\(lang\) \{\s*return TargetLang\.fromTag\(lang\);\s*\};/,
+    'content-language.js 的 normalizeTargetLang 又自己算了一遍');
 });
 
 test('四份装载清单里，解析器排在读它的人前面', () => {
@@ -99,4 +120,35 @@ test('四份装载清单里，解析器排在读它的人前面', () => {
 
   assert.match(repoFile('background/settings.js'), /import '\.\.\/shared\/target-lang\.js';/,
     'background/settings.js 没 import shared/target-lang.js');
+});
+
+// target-lang.js 自己也有个依赖：简繁归谁判。同一张清单再查一遍，因为漏掉它的
+// 后果不是 undefined，而是加载时抛错、整份解析器静静地不存在。
+test('四份装载清单里，lang-tags.js 又排在 target-lang.js 前面', () => {
+  const manifest = JSON.parse(repoFile('manifest.json'));
+  for (const cs of manifest.content_scripts) {
+    const order = cs.js || [];
+    const at = order.indexOf('shared/target-lang.js');
+    if (at < 0) continue;
+    const dep = order.indexOf('shared/lang-tags.js');
+    assert.ok(dep >= 0 && dep < at, `${cs.matches} 里 shared/lang-tags.js 必须排在 target-lang.js 之前`);
+  }
+
+  const html = repoFile('options/options.html');
+  assert.ok(html.indexOf('<script src="../shared/lang-tags.js"></script>')
+    < html.indexOf('<script src="../shared/target-lang.js"></script>'),
+    'options.html 里 shared/lang-tags.js 要排在 target-lang.js 之前');
+
+  const settings = repoFile('background/settings.js');
+  assert.ok(settings.indexOf("import '../shared/lang-tags.js';")
+    >= 0 && settings.indexOf("import '../shared/lang-tags.js';")
+    < settings.indexOf("import '../shared/target-lang.js';"),
+    'background/settings.js 要先 import shared/lang-tags.js');
+
+  for (const rel of ['test/unit/helpers/engine-harness.mjs', 'test/unit/builtin-translator-stall.test.mjs']) {
+    const src = repoFile(rel);
+    const dep = src.indexOf('shared/lang-tags.js');
+    const at = src.indexOf('shared/target-lang.js');
+    assert.ok(dep >= 0 && dep < at, `${rel} 要先装 shared/lang-tags.js`);
+  }
 });

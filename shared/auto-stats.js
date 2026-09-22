@@ -31,8 +31,11 @@
   // 的「本月已用」和闸门认的「今天已用」会是两笔互相矛盾的账。
   //
   // 只数**自动模式**发出去的那部分：手动翻译是用户一次一次点出来的，他知道自己
-  // 在花钱；闸门要挡的是零点击的那条路（见 background/api-client.js 的
-  // countCharsSentToModel）。
+  // 在花钱；闸门要挡的是零点击的那条路。所以它不和 aiChars 共用记账点 ——
+  // aiChars 记在 background/api-client.js 的 countCharsSentToModel()，那里每一次
+  // 调模型都过，分不出是谁点的；autoAiChars 记在闸门自己那一处，
+  // content/content-translation-engine.js 的 refuseAutoAiSpend()，而且和「还够
+  // 吗」是同一次操作（见下面的 applyCharge）。
   const DAY_FIELDS = Object.freeze(['autoAiChars']);
 
   function emptyStats(month, day) {

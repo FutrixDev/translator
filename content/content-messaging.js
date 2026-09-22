@@ -52,6 +52,11 @@
             // 关着的时候 auto.reason 是 GLOBAL_OFF，把黑名单整个遮住了，popup
             // 照着那个 reason 判就会把一个点不动的开关画成能点的。
             blocked: globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname),
+            // 「那一行写得进去吗」是另一个问题，比黑名单宽一格：file:// 上
+            // location.hostname 是空串，规则存不下键，而它并不在黑名单里。
+            // 画这一行的另外两处（字幕菜单、悬浮球菜单第一项）问的就是这一句，
+            // popup 只问黑名单的那阵子，三处里有一处把点不动的行画成了能点的。
+            ruleWritable: globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname),
             hasTranslations: ctx.hasPageTranslations ? ctx.hasPageTranslations() : false,
             translationsVisible: state.translationsVisible !== false,
             auto

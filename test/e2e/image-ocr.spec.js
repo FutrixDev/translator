@@ -151,7 +151,6 @@ test.describe('image OCR', () => {
     apiKey: 'test-key',
     modelName: 'gpt-4.1-mini',
     targetLang: 'zh-CN',
-    targetLangSetByUser: true,
     uiLanguage: 'zh-CN',
   });
 

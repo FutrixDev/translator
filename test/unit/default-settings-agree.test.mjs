@@ -15,7 +15,7 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -87,5 +87,17 @@ test('empty targetLang is what "follow the browser" is written as, wherever it a
   // targetLang 非空本身就是那个信号。留着它等于留下第二个会和第一个吵架的答案。
   for (const [name, table] of TABLES) {
     assert.equal('targetLangSetByUser' in table, false, `${name} still carries targetLangSetByUser`);
+  }
+});
+
+// 退休的键最容易活在夹具里：没人读它，所以删掉它谁也不会红，而它会一直教下一个
+// 人「设目标语言要配一个布尔量」—— 新写的 spec 照着抄，一抄就是一份。
+test('e2e 夹具里也没有退休的那个布尔量', () => {
+  const dir = new URL('../e2e/', import.meta.url);
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.js')) continue;
+    const source = readFileSync(new URL(name, dir), 'utf8');
+    assert.equal(source.includes('targetLangSetByUser'), false,
+      `test/e2e/${name} 还在写 targetLangSetByUser`);
   }
 });

@@ -447,16 +447,18 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 没变已经够糟，而它真正会变的那件事更糟：顺手把总开关打开，别的站点全自动翻
   // 起来，他本来只想管眼前这一个。
   const popup = code('popup/popup.js');
-  assert.match(popup, /const blocked = !!pageState\.blocked;/);
-  assert.match(popup, /elements\.toggleSiteAuto\.disabled = blocked;/);
-  assert.match(popup, /elements\.toggleSiteAuto\.title = blocked \? t\('autoReasonBlocklist'\)/);
+  // 「灰不灰」问的是写得进去吗（比黑名单宽一格，file:// 也写不进去），
+  // 「为什么灰」才是黑名单那句人话。
+  assert.match(popup, /const writable = !!pageState\.ruleWritable;/);
+  assert.match(popup, /elements\.toggleSiteAuto\.disabled = !writable;/);
+  assert.match(popup, /elements\.toggleSiteAuto\.title = pageState\.blocked \? t\('autoReasonBlocklist'\)/);
   assert.match(messagesSource(), /autoReasonBlocklist:/, '理由那句话得真有');
 
   // 画面灰掉之外再挡一道：键盘走得到 disabled 的按钮，扩展页面也点得动。
   const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
     popup.indexOf('async function togglePageTranslation()'));
-  const guard = body.indexOf('pageState.blocked');
-  assert.ok(guard > 0, 'toggleSiteAuto 里没有黑名单闸');
+  const guard = body.indexOf('!pageState.ruleWritable');
+  assert.ok(guard > 0, 'toggleSiteAuto 里没有那道闸');
   assert.ok(guard < body.indexOf('SiteRules.setSiteAuto('), '闸必须在写规则之前');
 
   // 播放器里那一行是同一个开关的第二块画布，同样得挡住：写 always 下去不算数，
@@ -476,8 +478,11 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
 
   // 这一句只有页面答得了（popup 自己的 location 是 chrome-extension://），
   // 而且答的必须是判定层那一个主人，不是 popup 自己再判一遍。
-  assert.match(code('content/content-messaging.js'),
+  const messaging = code('content/content-messaging.js');
+  assert.match(messaging,
     /blocked: globalThis\.SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
+  assert.match(messaging,
+    /ruleWritable: globalThis\.SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
   const rules = code('shared/site-rules.js');
   assert.match(rules, /function isBlocklisted\(host, path\)/);
   // 阶梯自己也得问这一问，否则两处迟早不一致。它问完之后还要再问一次 isBlocked()，
@@ -486,6 +491,13 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   assert.match(rules, /if \(isBlocklisted\(host, path\)\) \{\s*\n\s*return out\('off', isBlocked\(host, path\) \? REASONS\.BLOCKLIST : REASONS\.BUILTIN_NEVER\);/,
     '阶梯自己也得问这一问，否则两处迟早不一致');
   assert.doesNotMatch(popup, /isBlocklisted/, 'popup 手上没有内置表，判不了');
+
+  // 三块画布同一问。两处直接问，popup 问的是页面替它算好的那一格 —— 它手上没有
+  // 内置表，自己判不了，但判据必须是同一个函数，不是「黑名单」那半边。
+  assert.match(code('content/content-float-ball.js'),
+    /siteRuleWritable\(location\.hostname, location\.pathname\)/);
+  assert.doesNotMatch(popup, /pageState\.blocked\s*\)\s*return/,
+    'popup 又拿黑名单当「写得进去吗」用了');
 });
 
 test('站点规则先落地，总开关才跟着开', () => {

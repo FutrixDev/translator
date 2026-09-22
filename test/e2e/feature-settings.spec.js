@@ -7,7 +7,6 @@ const { getMessage } = require('../../i18n/messages');
 test('options toggle updates a caption setting', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     apiKey: 'sk-test',
     apiEndpoint: 'https://api.openai.com/v1/chat/completions',
     modelName: 'gpt-4.1-mini',
@@ -35,7 +34,6 @@ test('options toggle updates a caption setting', async ({ page, context, extensi
 test('settings save without an API key configured', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     apiKey: '',
     apiEndpoint: '',
     modelName: '',
@@ -59,7 +57,6 @@ test('settings save without an API key configured', async ({ page, context, exte
 test('typed fields autosave after the debounce', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     provider: 'custom',
     apiKey: '',
   });
@@ -79,7 +76,6 @@ test('typed fields autosave after the debounce', async ({ page, context, extensi
 test('test connection sits in the API card and reports the missing field', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     provider: 'openai',
     apiKey: '',
     modelName: 'gpt-4.1-mini',
@@ -105,7 +101,6 @@ test('test connection sits in the API card and reports the missing field', async
 test('changing a setting says nothing', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     provider: 'openai',
     apiKey: '',
     modelName: 'gpt-4.1-mini',
@@ -132,7 +127,6 @@ test('changing a setting says nothing', async ({ page, context, extensionId }) =
 test('a success message does not blank a later message when it expires', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     provider: 'openai',
     apiKey: '',
     modelName: 'gpt-4.1-mini',
@@ -161,7 +155,6 @@ test('a success message does not blank a later message when it expires', async (
 test('an autosave flush stays quiet while a connection test is in flight', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     provider: 'openai',
     apiKey: 'sk-old',
     modelName: 'gpt-4.1-mini',
@@ -197,7 +190,7 @@ test('an autosave flush stays quiet while a connection test is in flight', async
  * context menu entries — not just grey out the settings card.
  */
 test('the PDF switch is on by default and its entry points follow it', async ({ page, context, extensionId }) => {
-  await setExtensionSettings(page, { targetLang: 'en', targetLangSetByUser: true });
+  await setExtensionSettings(page, { targetLang: 'en' });
   // "On by default" is a statement about the preference, and the preference
   // only reaches the screen on a device that has the account the feature runs
   // on. Signed out it is off no matter what — the test below this one.
@@ -249,7 +242,6 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
 test('signed out, both account features read off however the preference arrived', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     // Exactly what sync delivers from a device that IS signed in.
     enableComicTranslation: true,
     enablePdfTranslation: true,
@@ -284,7 +276,6 @@ test('signed out, both account features read off however the preference arrived'
 test('signing in restores the preference the signed-out device was hiding', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     enableComicTranslation: true,
     enablePdfTranslation: true,
   });
@@ -313,7 +304,7 @@ test('signing in restores the preference the signed-out device was hiding', asyn
  * with the two account-backed features side by side.
  */
 test('YouTube has its own card and Advanced Settings holds the two account features', async ({ page, extensionId }) => {
-  await setExtensionSettings(page, { targetLang: 'en', targetLangSetByUser: true });
+  await setExtensionSettings(page, { targetLang: 'en' });
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
   // Read the heading through the i18n key, not through a copy of the English

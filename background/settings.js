@@ -8,6 +8,7 @@
 // i18n/messages.js —— 两个都得先装好，所以在这里自己 import 一遍：ESM 会去重，
 // 而这样一来这个模块从哪儿被装进来都成立，不必指望入口文件的 import 顺序。
 import '../shared/ocr.js';
+import '../shared/lang-tags.js';
 import '../shared/target-lang.js';
 import '../i18n/messages.js';
 

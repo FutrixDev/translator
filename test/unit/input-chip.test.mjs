@@ -142,11 +142,14 @@ test('带着文字进来的那一次，不用再按一次「翻译」', () => {
 
 // 繁体页面上的「译成中文」不能译成简体 —— 那正好是用户要的转换反过来做一遍。
 test('zh-Hant 归一到繁体，不是简体', async () => {
+  // 真的把 shared/ 那两份装进来，不塞替身：这一条要证的就是内容脚本这一侧和
+  // 别的界面读的是同一个答案，而替身正好会把那件事盖掉。
   await import('../../shared/lang-tags.js');
+  await import('../../shared/target-lang.js');
   const ctx = { escapeHtml: (s) => s };
   const stub = {
     AI_TRANSLATOR_CONTENT: ctx,
-    TargetLang: { effective: () => 'en' },
+    TargetLang: globalThis.TargetLang,
     LangTags: globalThis.LangTags,
   };
   const source = read('content/content-language.js');

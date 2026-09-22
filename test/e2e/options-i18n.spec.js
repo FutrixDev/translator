@@ -5,7 +5,6 @@ const { setExtensionSettings, getSyncSettings } = require('./helpers');
 test('options hints use i18n keys', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
   });
 
   const optionsUrl = `chrome-extension://${extensionId}/options/options.html`;
@@ -29,7 +28,6 @@ test('options hints use i18n keys', async ({ page, extensionId }) => {
 test('options disable selects when toggles are off', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
   });
 
   const optionsUrl = `chrome-extension://${extensionId}/options/options.html`;
@@ -63,7 +61,6 @@ test('options disable selects when toggles are off', async ({ page, extensionId 
 test('options refuse to persist a conflicting hotkey and snap the control back', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     apiKey: 'sk-test',
     apiEndpoint: 'https://api.openai.com/v1/chat/completions',
     modelName: 'gpt-4.1-mini',
@@ -99,7 +96,6 @@ test('options refuse to persist a conflicting hotkey and snap the control back',
 test('a conflicting pair already in storage is resolved on load', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
     enableSelection: true,
     enableHoverTranslation: true,
     selectionTranslationHotkey: 'Control',
@@ -130,7 +126,6 @@ test('a conflicting pair already in storage is resolved on load', async ({ page,
 test('the interface language is chosen on its own, and the target language no longer drives it', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
-    targetLangSetByUser: true,
   });
 
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);

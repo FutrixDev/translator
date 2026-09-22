@@ -21,20 +21,20 @@
 (function (root) {
   'use strict';
 
+  // 简繁的判定只有一个主人。装它的四张单子（manifest、options.html、
+  // background/settings.js、两个测试夹具）都把 lang-tags.js 排在前面；漏了就在
+  // 这里响，而不是在某个繁体用户的页面上悄悄译成简体。
+  const LangTags = root.LangTags;
+  if (!LangTags) throw new Error('target-lang.js 要先装 shared/lang-tags.js');
+
   // 十门语言，和 content/content-bootstrap.js 的 TARGET_LANGUAGE_OPTIONS、
   // options.html 的 <select id="targetLang">、prompts 那边必须一致——
   // test/unit/target-languages.test.mjs 拿这四处互相对。
   const SUPPORTED = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
 
-  // 前缀匹配答不对的那几个：zh 的两种字形不是同一门语言（zh-Hant 前缀是 zh，
-  // 前缀匹配会给出 zh-CN，正好是用户不要的那一种）。其余 en-GB/pt-PT 这类
-  // 前缀匹配本来就对，列在这里只是省一次查找。
+  // 中文不列在这里：见 fromTag() 里那一段。en-GB/pt-PT 这类前缀匹配本来就对，
+  // 列在这里只是省一次查找。
   const VARIANTS = {
-    'zh': 'zh-CN',
-    'zh-Hans': 'zh-CN',
-    'zh-Hant': 'zh-TW',
-    'zh-HK': 'zh-TW',
-    'zh-MO': 'zh-TW',
     'en-US': 'en',
     'en-GB': 'en',
     'ja-JP': 'ja',
@@ -54,6 +54,12 @@
     if (SUPPORTED.includes(raw)) return raw;
     if (VARIANTS[raw]) return VARIANTS[raw];
     const base = raw.split('-')[0];
+    // 中文的两种字形是两门语言，而写法数不完：zh-Hant、zh-HK、zh-Hant-TW、
+    // zh-MO……任何一张写死的表都会漏掉几种，而漏掉的后果是把一个繁体页面译成
+    // 简体 —— 正好是用户要的那一件事反着做一遍。所以这里不列表，问书写系统的
+    // 那个主人。按基码前缀匹配在这一门上也答不对：zh-Hant 的基码是 zh，
+    // SUPPORTED 里第一个 zh 是 zh-CN。
+    if (base === 'zh') return LangTags.getScriptVariant(raw) === 'hant' ? 'zh-TW' : 'zh-CN';
     if (VARIANTS[base]) return VARIANTS[base];
     return SUPPORTED.find((lang) => lang.split('-')[0] === base) || 'en';
   }

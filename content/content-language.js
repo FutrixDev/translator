@@ -15,20 +15,12 @@
     return TargetLang.effective(ctx.settings);
   };
 
+  // 「任意标签收进那十门里」也只有一个实现，和上面同一个主人。这里曾经自己写过
+  // 一份前缀匹配，而它把所有认不出的 zh-* 都落成简体 —— 于是一个繁体页面长出
+  // 「译成简体中文」。两份实现只要有一处不一样，同一次安装里两个界面就会对同一
+  // 件事各说各话。
   ctx.normalizeTargetLang = function(lang) {
-    if (!lang) return 'en';
-    if (options.some((option) => option.value === lang)) {
-      return lang;
-    }
-    const base = lang.split('-')[0];
-    const baseMatch = options.find((option) => option.value === base);
-    if (baseMatch) return baseMatch.value;
-    if (base === 'zh') {
-      // zh-Hant / zh-HK / zh-MO 也归到这里（它们不在选项里）。落成简体是把用户
-      // 要的那一件事反着做了一遍，所以书写系统在这里要认。
-      return globalThis.LangTags?.getScriptVariant(lang) === 'hant' ? 'zh-TW' : 'zh-CN';
-    }
-    return 'en';
+    return TargetLang.fromTag(lang);
   };
 
   ctx.getTargetLangLabel = function(lang) {

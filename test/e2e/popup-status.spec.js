@@ -229,7 +229,7 @@ test('页面在他看着按钮的时候出错了：那一下不该把 ERROR 抹�
     chrome.tabs.sendMessage = async (tabId, message) => {
       window.__sent.push(message);
       if (message.type === 'AUTO_PAGE_STATE') {
-        return { host: 'example.com', blocked: false, auto: { status: window.__status, siteAuto: true } };
+        return { host: 'example.com', blocked: false, ruleWritable: true, auto: { status: window.__status, siteAuto: true } };
       }
       if (message.type === 'SET_AUTO_PAUSED') {
         window.__status = message.paused ? 'paused' : 'running';
