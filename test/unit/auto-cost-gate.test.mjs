@@ -14,7 +14,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { optionsSource } from './helpers/sources.mjs';
+import { engineSource, optionsSource } from './helpers/sources.mjs';
 
 const code = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -34,16 +34,17 @@ test('自动模式的引擎是自己的一个键，而且默认不花钱', () =>
 });
 
 test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
-  const engine = code('content/content-translation-engine.js');
+  const engine = engineSource();
   // requestTranslation 最后那一行是**唯一**一个 sendMessage 出口：选了 AI 走到
   // 这里，选了内置但这个环境顶不住、而且开了回退，也走到这里。判定必须紧挨着
   // 它 —— 装在调度层只挡得住前一半，运行中那次回落会从旁边绕过去。
   assert.match(
     engine,
-    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal \};\s*\n\s*return chrome\.runtime\.sendMessage\(message\);/
+    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true \};\s*\n\s*return chrome\.runtime\.sendMessage\(message\);/
   );
-  // 只拦自动模式。手动翻译是用户一次一次点出来的，他知道自己在花钱。
-  assert.match(engine, /if \(!message \|\| !message\.auto\) return null;/);
+  // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
+  // 翻译是用户一次一次点出来的，他知道自己在花钱。
+  assert.match(engine, /if \(!message \|\| !\(message\.auto \|\| message\.unattended\)\) return null;/);
   // 这里**只问额度**。「自动模式允不允许用 AI」是上游那两个谓词的事
   // （isBuiltinSelected(auto) / canFallBackToAI），在这里再问一遍就是同一个问题
   // 的第二个答案 —— 而它会把「本地不可用时允许用我配置的接口」那半个人的回退
@@ -130,6 +131,24 @@ test('设置页把它切到 AI 要过一道二次确认，说了不就退回去'
   assert.ok(subEnd > 0, 'autoSubOptions 的结尾标记找不到了');
   assert.ok(sub.slice(0, subEnd).includes('id="autoTranslateEngine"'));
   assert.ok(sub.slice(0, subEnd).includes('id="autoAiDailyBudget"'));
+});
+
+// 额度那一格什么时候是灰的，要和闸拦的是哪几条路说同一句话。字幕沿用**手动**
+// 那张引擎开关，所以「自动模式走内置」不再等于「今天不会有零点击的 AI 花费」：
+// 手动选了 AI，播着的字幕就在花；开了回退，内置顶不住的那几页也在花。只看
+// autoTranslateEngine 就灰掉，是把一个仍在生效的上限画成了不生效。行为在
+// test/e2e/feature-settings.spec.js 上走。
+test('额度那一格灰不灰，看的是三条零点击的 AI 路里还有没有一条通着', () => {
+  const options = optionsSource();
+  const reach = options.match(/function unattendedAiReachable\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(reach, 'unattendedAiReachable 不见了');
+  assert.match(reach[1], /elements\.autoTranslateEngine\.value === 'ai'/);
+  assert.match(reach[1], /elements\.translationEngine\.value === 'ai'/);
+  assert.match(reach[1], /elements\.engineFallback\.value === 'allow-ai'/);
+  assert.match(options, /classList\.toggle\('disabled', !unattendedAiReachable\(\)\)/);
+  // 三个下拉任何一个变了都要重画，不止自动那一个。
+  assert.match(options, /elements\.translationEngine\.addEventListener\('change', syncAutoEngineState\)/);
+  assert.match(options, /elements\.engineFallback\.addEventListener\('change', syncAutoEngineState\)/);
 });
 
 test('确认文案写明花的是用户自己的钱，而且十门语言都有', async () => {

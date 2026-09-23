@@ -285,7 +285,8 @@ test('ar5iv 走的是 arxiv.org/html/* 那一条，不另写一条', () => {
   assert.equal(m('ar5iv.org', '/html/1706.03762'), null);
 
   const table = SiteRules.loadTable(globalThis.SiteRulesBuiltin);
-  assert.equal(table.rules.filter((rule) => rule.match.includes('ar5iv')).length, 0);
+  const patterns = table.rules.flatMap((rule) => [].concat(rule.match));
+  assert.equal(patterns.filter((pattern) => pattern.includes('ar5iv')).length, 0);
 });
 
 // 论文这一族的规则都是 always，而「自动翻译」这件事只在 verdict 是 auto 时发生
@@ -306,6 +307,9 @@ test('论文页的规则都真的自动翻，不是只命中', () => {
     ['www.nature.com', '/articles/s41586-024-07421-0'],
     ['www.science.org', '/doi/10.1126/science.adi2336'],
     ['scholar.google.com', '/scholar'],
+    ['scholar.google.com.hk', '/scholar'],
+    ['scholar.google.co.jp', '/scholar'],
+    ['scholar.google.de', '/scholar'],
   ]) {
     const out = at(host, path);
     assert.equal(out.verdict, 'auto', `${host}${path} 应当自动翻`);
@@ -326,9 +330,11 @@ test('论文页的规则都真的自动翻，不是只命中', () => {
   // Google 学术同样是路径写死的一段：同域下的作者主页不是「扫一眼今天有什么」
   // 的场景，没被收进来。
   assert.equal(at('scholar.google.com', '/citations?user=x').verdict, 'ask');
-  // 后缀匹配不向上生效：各国镜像不以 scholar.google.com 结尾，命不中，走通用
-  // 启发式——这不是坏结果，只是没有站点级的 selector。
-  assert.equal(at('scholar.google.co.jp', '/scholar').verdict, 'ask');
+  assert.equal(at('scholar.google.co.jp', '/citations?user=x').verdict, 'ask');
+  // 各国门牌是一个一个列出来的，不是 scholar.google.* —— 没有公共后缀表，那个
+  // 通配会把别人注册的 scholar.google.<随便什么>.com 一起认成 Google 学术。
+  assert.equal(at('scholar.google.evil.com', '/scholar').verdict, 'ask');
+  assert.equal(at('scholar.google.com.evil.net', '/scholar').verdict, 'ask');
   // 期刊站也一样只认文章路径，首页和栏目页不在内置名单上。
   assert.equal(at('www.nature.com', '/').verdict, 'ask');
   assert.equal(at('www.science.org', '/journals').verdict, 'ask');
@@ -336,20 +342,27 @@ test('论文页的规则都真的自动翻，不是只命中', () => {
 
 // 一条内置规则的 selector 写错了不会报错：它只是一条谁也匹配不上的字符串，页面
 // 照翻，作者名和参考文献一起翻进去。所以这几条的名单是「查过页面真实 DOM 之后
-// 写下来的」还是「凭印象写的」，必须留下痕迹——science.org 挡在 Cloudflare 的 JS
-// 挑战后面，拿不到真实结构，那一条的空名单是「没验过」，不是「验过之后没有」。
-test('空的 excludeSelectors 各有各的理由，且都写在规则旁边', () => {
+// 写下来的」还是「凭印象写的」，必须留下痕迹：空名单要说清是查过之后没有，拿不
+// 到现场的（science.org 挡在 Cloudflare 的 JS 挑战后面）要说清是对着什么查的。
+test('选择器名单查没查过，都写在规则旁边', () => {
   const source = readFileSync(fileURLToPath(new URL('../../shared/site-rules-builtin.js', import.meta.url)), 'utf8');
-  for (const [match, needle] of [
-    ['huggingface.co/papers', '查过之后的结论'],
-    ['science.org/doi/*', '没验过'],
-  ]) {
-    const rule = SiteRulesBuiltin.rules.find((r) => r.match === match);
-    assert.ok(rule, `内置表里没有 ${match}`);
-    assert.deepEqual(rule.excludeSelectors, [], `${match} 现在有 selector 了，注释该跟着改`);
+  const commentAbove = (match) => {
     const at = source.indexOf(`match: '${match}'`);
-    const comment = source.slice(Math.max(0, at - 1200), at);
-    assert.ok(comment.includes(needle), `${match} 的空名单没说清是「查过」还是「没查」`);
+    assert.ok(at >= 0, `内置表里没有 ${match}`);
+    return source.slice(Math.max(0, at - 1200), at);
+  };
+
+  const hf = SiteRulesBuiltin.rules.find((r) => r.match === 'huggingface.co/papers');
+  assert.deepEqual(hf.excludeSelectors, [], 'huggingface.co/papers 现在有 selector 了，注释该跟着改');
+  assert.ok(commentAbove('huggingface.co/papers').includes('查过之后的结论'),
+    'huggingface.co/papers 的空名单没说清是「查过」还是「没查」');
+
+  const science = SiteRulesBuiltin.rules.find((r) => r.match === 'science.org/doi/*');
+  assert.ok(science.excludeSelectors.length > 0);
+  const comment = commentAbove('science.org/doi/*');
+  assert.ok(comment.includes('Wayback'), 'science.org 的名单没说是对着哪份 DOM 查的');
+  for (const selector of science.excludeSelectors) {
+    assert.ok(comment.includes(selector), `${selector} 没在注释里说它摘掉的是什么`);
   }
 });
 
@@ -383,16 +396,19 @@ test('the shipped table is internally consistent', () => {
   // 一条内置 always 的规则同时又在黑名单上，就是表自己跟自己打架：黑名单赢，
   // 那条规则永远不会生效，而写它的人不会知道。反过来，一条 never 必须真的落到
   // BUILTIN_NEVER —— 被黑名单抢先答成 BLOCKLIST，说出来的就是另一句话。
+  // 按门牌逐个问：一组 match 里有一个被黑名单盖住，别的门牌照常生效也藏不住它。
   for (const rule of table.rules) {
-    const { verdict: v, reason } = SiteRules.decide(ask({
-      host: rule.match.split('/')[0],
-      path: rule.match.includes('/') ? `/${rule.match.split('/').slice(1).join('/').replace('*', 'x')}` : '/',
-    }));
-    if (rule.state === 'never') {
-      assert.equal(v, 'off', `${rule.match} is a never rule that does not refuse`);
-      assert.equal(reason, R.BUILTIN_NEVER, `${rule.match} is shadowed by the blocklist`);
-    } else {
-      assert.notEqual(v, 'off', `${rule.match} is shadowed by the blocklist`);
+    for (const pattern of [].concat(rule.match)) {
+      const { verdict: v, reason } = SiteRules.decide(ask({
+        host: pattern.split('/')[0],
+        path: pattern.includes('/') ? `/${pattern.split('/').slice(1).join('/').replace('*', 'x')}` : '/',
+      }));
+      if (rule.state === 'never') {
+        assert.equal(v, 'off', `${pattern} is a never rule that does not refuse`);
+        assert.equal(reason, R.BUILTIN_NEVER, `${pattern} is shadowed by the blocklist`);
+      } else {
+        assert.notEqual(v, 'off', `${pattern} is shadowed by the blocklist`);
+      }
     }
   }
 });

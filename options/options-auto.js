@@ -27,13 +27,27 @@ function syncAutoSubState() {
 }
 
 /**
- * 预算那一格只在自动模式真的会花钱时才有意义，跟着引擎选择器一起灰。
+ * 预算那一格管的是「没人点也会花到 AI」的那几条路，所以只要其中一条开着它就
+ * 该亮着（内容脚本里的闸认的是同一张清单，见 refuseAutoAiSpend）：
+ *
+ *   - 自动模式的引擎选了 AI；
+ *   - 手动那颗「翻译引擎」选了 AI —— 视频字幕沿用它，而字幕是一句一句自己在花；
+ *   - 允许内置引擎顶不住时回退到用户自己的接口 —— 自动页面和字幕都可能走到。
+ *
+ * 只看第一条的话，一个手动选了 AI、字幕正在花钱的人面对的是一个灰掉的框，
+ * 而那个框恰恰是在替他数钱。
  *
  * 只变灰、不隐藏：一个填了数字的框突然消失，用户会以为那个数字也一起没了。
  */
+function unattendedAiReachable() {
+  return elements.autoTranslateEngine.value === 'ai'
+    || elements.translationEngine.value === 'ai'
+    || elements.engineFallback.value === 'allow-ai';
+}
+
 function syncAutoEngineState() {
   if (!elements.autoAiBudgetGroup) return;
-  elements.autoAiBudgetGroup.classList.toggle('disabled', elements.autoTranslateEngine.value !== 'ai');
+  elements.autoAiBudgetGroup.classList.toggle('disabled', !unattendedAiReachable());
 }
 
 /**

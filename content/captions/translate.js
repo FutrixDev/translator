@@ -26,6 +26,7 @@
     state.cueCache.clear();
     state.pendingKeys.clear();
     state.failedUntil.clear();
+    state.budgetSpent = false;
   }
 
   function getActiveCue(nowMs) {
@@ -113,6 +114,9 @@
     }
 
     if (!response || response.error || !Array.isArray(response.translations)) {
+      // 额度用完和别的失败走同一条冷却：隔几秒再试一次不花钱（闸在发出去之前
+      // 就拒了），而额度调高或者过了零点之后，正是这一次重试把字幕接回来。
+      state.budgetSpent = !!(response && response.budgetSpent);
       markBatchFailed(keys);
       return false;
     }
@@ -126,6 +130,7 @@
       return false;
     }
 
+    state.budgetSpent = false;
     response.translations.forEach((translation, index) => {
       const cue = cues[index];
       if (!cue) return;

@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { captionEngineSource } from './helpers/sources.mjs';
+import { captionEngineSource, engineSource } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
 const L = globalThis.LangTags;
@@ -76,8 +76,8 @@ test('全仓只有这一份实现：别处不许再写一遍 split(\'-\')[0]', (
     'shared/site-rules.js',
     'content/content-language.js',
     'content/page/batch.js',
-    'content/content-translation-engine.js',
   ].map((rel) => [rel, repoFile(rel)]);
+  sources.push(['翻译引擎那一族', engineSource()]);
   // 字幕引擎是一族文件，整族一起读 —— 第二份实现躲进 content/captions/ 里也算数。
   sources.push(['字幕引擎那一族', captionEngineSource()]);
   for (const [rel, text] of sources) {
@@ -128,7 +128,7 @@ test('三条路问的是同一句：字幕、整页正文、自动翻译的决�
   // 下游又问了一次「这段文字是什么语言」，问到的要是个光秃秃的 zh，它自己的
   // 「源语言等于目标语言就原样返回」那一档照样会把整页吃掉。
   assert.match(
-    repoFile('content/content-translation-engine.js'),
+    engineSource(),
     /return LangTags\.refineScript\(top\.language, sample\);/,
     'detectLanguageOf 要交出补过简繁的整码',
   );

@@ -307,6 +307,8 @@
 
     if (status.kind === 'same-language') {
       parts.status.textContent = t('captionStatusSameLang', 'Already in your language');
+    } else if (status.kind === 'budget-spent') {
+      parts.status.textContent = t('captionStatusBudgetSpent', 'Today’s AI allowance is used up');
     } else if (status.kind === 'track') {
       parts.status.textContent = `${t('captionStatusTrack', 'Subtitle track')}: ${status.label || ''}`;
     } else if (needsNative) {

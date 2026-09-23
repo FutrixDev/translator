@@ -32,7 +32,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { workerSource } from './helpers/sources.mjs';
+import { engineSource, workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const require = createRequire(import.meta.url);
@@ -121,7 +121,7 @@ test("'ai' is the only value that turns the built-in engine off", () => {
   // two keys: automatic translation picks its engine separately (PRD FR-9), so
   // pinning only the manual one leaves every auto spec on the built-in engine
   // this browser does not have.
-  assert.match(repoFile('content/content-translation-engine.js'),
+  assert.match(engineSource(),
     /return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/,
     'the content script decides the engine by this comparison; E2E_BASE_SETTINGS has to match it');
   const baseline = repoFile('test/e2e/helpers.js');

@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { workerSource } from './helpers/sources.mjs';
+import { engineSource, workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -71,7 +71,7 @@ test('the built-in engine derives its non-Latin set instead of hand-listing it',
   // be a fifth list to keep in step, and forgetting one non-Latin language
   // there brings back exactly the bug it exists to prevent: the typed text
   // takes the page's language as its source and comes back untranslated.
-  const source = repoFile('content/content-translation-engine.js');
+  const source = engineSource();
   const start = source.indexOf('const NON_LATIN_LANGS =');
   assert.notEqual(start, -1, 'could not find NON_LATIN_LANGS');
   const block = source.slice(start, source.indexOf('}));', start));

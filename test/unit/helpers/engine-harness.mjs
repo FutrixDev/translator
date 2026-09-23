@@ -1,5 +1,5 @@
-// Enough of a browser for content/content-translation-engine.js to install
-// itself and run in Node.
+// Enough of a browser for the engine family (content/engine/*.js and
+// content/content-translation-engine.js) to install itself and run in Node.
 //
 // The engine caches the page's language for the life of the document, so a
 // test file gets exactly one page language. Anything that needs a different
@@ -92,6 +92,8 @@ export async function installEngineHarness({ pageText }) {
   // import 照样 resolve，于是 ctx 上什么都没有，红在三步之后。
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
+  await import('../../../content/engine/languages.js');
+  await import('../../../content/engine/watchdog.js');
   await import('../../../content/content-translation-engine.js');
 
   return {

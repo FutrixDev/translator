@@ -338,3 +338,34 @@ test('YouTube has its own card and Advanced Settings holds the two account featu
   expect(order.youtube).toBe(order.translation + 1);
   expect(order.advanced).toBeGreaterThan(order.youtube);
 });
+
+/**
+ * 每日 AI 额度那一格数的是**所有**没人点就花到 AI 的字：自动翻译的页面，和
+ * 沿用手动引擎的视频字幕。它曾经只跟着「自动模式的引擎」亮 —— 于是一个手动选了
+ * AI、字幕正在花钱的人，面对的是一个灰掉的框，而那个框恰恰在替他数钱。
+ */
+test('the daily AI budget stays live while any unattended path can reach AI', async ({ page, extensionId }) => {
+  // 从三条路都关着开始：手动内置、仅本地、自动模式也是内置。这时它才没什么可数的。
+  await setExtensionSettings(page, {
+    targetLang: 'en',
+    apiKey: 'sk-test',
+    autoTranslate: true,
+    translationEngine: 'builtin',
+    autoTranslateEngine: 'builtin',
+    engineFallback: 'local-only',
+  });
+
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  const budget = page.locator('#autoAiBudgetGroup');
+  await expect(budget).toHaveClass(/\bdisabled\b/);
+
+  // 手动引擎选了 AI：字幕走它，额度要管。
+  await page.selectOption('#translationEngine', 'ai');
+  await expect(budget).not.toHaveClass(/\bdisabled\b/);
+  await page.selectOption('#translationEngine', 'builtin');
+  await expect(budget).toHaveClass(/\bdisabled\b/);
+
+  // 允许回退到自己的接口：内置顶不住时自动页面和字幕都会花到 AI。
+  await page.selectOption('#engineFallback', 'allow-ai');
+  await expect(budget).not.toHaveClass(/\bdisabled\b/);
+});

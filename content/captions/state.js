@@ -55,6 +55,11 @@
     trackLabel: '',
     dismissed: false,
     translating: false,
+    // 上一批是不是因为今日 AI 额度用完被拒的（引擎的预算闸回的 budgetSpent）。
+    // 菜单的状态行靠它说「今日 AI 额度已用完」，而不是让观众对着一行没译的字幕
+    // 猜。下一批译成了就清掉 —— 额度调高了、过了零点、或者引擎换回了内置，都是
+    // 在下一次重试（RETRY_COOLDOWN_MS 之后）自己好的，不需要谁来通知这里。
+    budgetSpent: false,
     lastTriggerMs: 0,
     // 「原字幕此刻是开着的吗」的上一次观察，和「别再替他开了」那道闩。
     // 两者的生命周期不同，见 syncNativeCaptions() / resetForVideo()。

@@ -240,8 +240,10 @@
               <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
             </div>
 
-            <!-- 每天最多替用户自动发出去多少字符。0 = 不限。只在上面那颗选择器
-                 选了 AI 时才有意义，所以跟着它一起灰（syncAutoEngineState）。 -->
+            <!-- 每天最多替用户、在他没点的时候发给 AI 多少字符：自动翻译的页面
+                 和视频字幕。0 = 不限。只要有一条零点击的路会花到 AI（自动模式
+                 选了 AI、手动引擎选了 AI、或允许回退）它就亮着，三条都关着才灰
+                 （syncAutoEngineState）。 -->
             <div class="form-group" id="autoAiBudgetGroup">
               <label for="autoAiDailyBudget" data-i18n="autoAiDailyBudgetLabel">Daily character budget</label>
               <input type="number" id="autoAiDailyBudget" min="0" step="10000">
@@ -859,8 +861,10 @@
   <script src="../shared/pdf-errors.js"></script>
   <script src="../shared/pdf-url.js"></script>
   <script src="../pdf/pdf-ui.js"></script>
-  <!-- 内置引擎的语言码映射、可用性查询和首次下载都在这里；设置页复用同一份实现，
+  <!-- 内置引擎的语言码映射、可用性查询和首次下载都在这一族里；设置页复用同一份实现，
        避免和 content script 各写一套语言码映射后慢慢走偏。 -->
+  <script src="../content/engine/languages.js"></script>
+  <script src="../content/engine/watchdog.js"></script>
   <script src="../content/content-translation-engine.js"></script>
   <!-- 设置项多到一个文件装不下，按卡片拆成了几个同级脚本；它们共用一个全局词法
        作用域，互相叫名字就能用，所以顺序只关系到加载时就要求值的那几个常量

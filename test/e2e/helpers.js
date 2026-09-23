@@ -254,7 +254,7 @@ async function getCurrentTheme(page) {
  * That used to hang the page outright, which is what made the failure so hard
  * to read — a spec that stood up mock-openai-server.js saw zero requests and
  * timed out saying nothing about the engine. The stall watchdog in
- * content/content-translation-engine.js (8d182bb) fixed the hang: the built-in
+ * content/engine/watchdog.js (8d182bb) fixed the hang: the built-in
  * engine now gives up after ~30s and falls back to the AI path. But falling
  * back is not the same as being pointed at the right backend to begin with —
  * every such spec would pay 30s and depend on a timeout firing to pass.

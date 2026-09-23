@@ -92,6 +92,47 @@ test('额度用完了就拒，而且是在发出去之前拒', async () => {
   assert.ok(result.error, '被拒了却没给出一句话');
 });
 
+// 字幕是第二条零点击的路：视频一播，每一句都在花钱，没有人一句一句点。它沿用
+// **手动**那张引擎开关（换引擎等于换一种译法，跟着播放头走的东西不该中途换），
+// 但花出去的 AI 字数记在同一本日额度上。请求用字幕引擎真实的那个构造器造 ——
+// 标记漏在构造器里，比漏在引擎里更常见。
+await import('../../shared/caption-core.js');
+const captionRequest = () => globalThis.CaptionCore.buildTranslationRequest({
+  texts: [BLOCK], targetLang: 'zh-CN', trackLang: 'en', delimiter: '\n%%\n'
+});
+
+test('字幕请求是 unattended，不是 auto', () => {
+  const message = captionRequest();
+  assert.equal(message.unattended, true);
+  assert.equal(message.auto, undefined, '字幕带上 auto 就会被换到自动模式那一个引擎上');
+});
+
+test('字幕沿用手动那张开关：手动选了 AI 就走 AI，而且记额度', async () => {
+  configure({ translationEngine: 'ai' });
+  await ctx.requestTranslation(captionRequest());
+  assert.equal(sentToAI.length, 1, '手动选了 AI，字幕却没走 AI');
+  assert.equal(charged.length, 1, '字幕花了 AI 却没记进日额度');
+  assert.equal(charged[0].chars, BLOCK.length);
+});
+
+test('字幕沿用手动那张开关：自动那边选了 AI 不影响字幕', async () => {
+  configure({ autoTranslateEngine: 'ai' });
+  await ctx.requestTranslation(captionRequest());
+  assert.equal(translateCalls.length, 1, '字幕被自动模式那张开关换到了 AI');
+  assert.equal(sentToAI.length, 0);
+  assert.equal(charged.length, 0, '走内置的字幕不该记额度');
+});
+
+test('额度用完，字幕请求不发出去，并且说得出是额度的缘故', async () => {
+  configure({ translationEngine: 'ai' });
+  allow = false;
+  const result = await ctx.requestTranslation(captionRequest());
+  assert.equal(sentToAI.length, 0, '额度说不了，字幕还是发出去了');
+  assert.ok(result.error);
+  // 字幕菜单靠这一位把「今日额度已用完」和「这一批出错了」分开。
+  assert.equal(result.budgetSpent, true);
+});
+
 test('内置引擎给不出译文、又没开回退：自动模式判 none，不是 ai', async () => {
   // FR-9.1 的那一格。判 'ai' 的后果是一批批撞在下游的错误上，攒够三次以一句
   // 「翻译失败」收场；判 'none' 调度层才说得出「你选的是仅本地引擎」。

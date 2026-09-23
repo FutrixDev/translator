@@ -5,7 +5,7 @@
 // — it goes through a provider that observes the player's network traffic,
 // where this one reads cues the browser has already parsed.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, expectCaptionMenuAnchoredAboveButton } = require('./helpers');
+const { setExtensionSettings, expectCaptionMenuAnchoredAboveButton, getServiceWorker } = require('./helpers');
 
 const ORIGIN = 'https://video.test';
 
@@ -638,4 +638,74 @@ test('规则改在播放当中：字幕当场停，不必刷新', async ({ page:
   await expect
     .poll(() => p.evaluate(() => document.querySelector('video').textTracks[0].mode), { timeout: 8000 })
     .toBe('showing');
+});
+
+// ---------------------------------------------------------------- 日额度
+// 字幕是第二条零点击的路：视频一播，每一句都在花钱，没有人一句一句点。所以它的
+// AI 花费和自动翻译记在同一本日额度上（引擎的预算闸看 message.unattended），而
+// 额度花完的那一刻，字幕菜单要说得出原因 —— 不然用户看到的只是「字幕不翻了」。
+
+/** 今天的自动模式用量，按 AutoStats 自己的本地时区日历写进去。 */
+async function seedTodaysAutoAiChars(context, chars) {
+  const worker = await getServiceWorker(context);
+  await worker.evaluate(async (used) => {
+    const now = new Date();
+    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+    const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const day = `${month}-${pad(now.getDate())}`;
+    await chrome.storage.local.set({
+      autoStats: { month, day, pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0, autoAiChars: used },
+    });
+  }, chars);
+}
+
+async function todaysAutoAiChars(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => {
+    const { autoStats } = await chrome.storage.local.get('autoStats');
+    return (autoStats && autoStats.autoAiChars) || 0;
+  });
+}
+
+test('字幕花的 AI 字数记进今天的额度', async ({ page: p, context }) => {
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoAiDailyBudget: 200000 });
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+  expect(await todaysAutoAiChars(context)).toBe(0);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await expect.poll(() => todaysAutoAiChars(context), { timeout: 8000 }).toBeGreaterThan(0);
+});
+
+test('额度用完：字幕不再发请求，菜单说是额度的缘故；额度一放开就接着翻', async ({ page: p, context }) => {
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoAiDailyBudget: 50 });
+  await seedTodaysAutoAiChars(context, 50);
+  await serve(context, WITH_TRACK);
+  let apiCalls = 0;
+  await mockTranslation(context, () => { apiCalls += 1; });
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await p.waitForTimeout(2000);
+
+  expect(apiCalls).toBe(0);
+  await expect(p.locator('#ai-translator-caption-overlay')).not.toContainText('你好世界');
+
+  await p.mouse.move(320, 180);
+  await p.locator('#ai-translator-caption-btn').click();
+  await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
+    .toContainText('Today’s AI allowance is used up');
+  await p.keyboard.press('Escape');
+
+  // 用户在设置页把额度调成不限：不必刷新，下一批冷却过后自己就译上了。
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoAiDailyBudget: 0 });
+  for (let i = 0; i < 12 && apiCalls === 0; i += 1) {
+    await seekIntoFirstCue(p);
+    await p.waitForTimeout(1000);
+  }
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界', { timeout: 5000 });
+  expect(apiCalls).toBeGreaterThan(0);
 });

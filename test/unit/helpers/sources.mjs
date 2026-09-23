@@ -113,6 +113,17 @@ export function hoverSource() {
 }
 
 /**
+ * 翻译引擎全体：content/engine/*.js 加上入口 content/content-translation-engine.js。
+ *
+ * 「引擎有没有做某件事」问的是这一族 —— 语言码与源语言、看门狗、选后端与预算闸
+ * 分在三个文件里，哪个函数落在哪一份是排版，不是契约。
+ */
+export function engineSource() {
+  return [surfaceSource('content/engine', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'content/content-translation-engine.js'), 'utf8')].join('\n');
+}
+
+/**
  * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
  */
 export function contentBundle(marker = 'content/content-utils.js') {

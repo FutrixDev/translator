@@ -84,6 +84,42 @@ test('two rules for the same match are a merge accident, and are caught', () => 
   assert.match(loaded.errors.join(' '), /duplicate/);
 });
 
+// 一条规则、一组门牌：同一个站点在各国的域名（Google 学术）只写一遍 selector。
+test('match may be a list of addresses, and every one of them is checked', () => {
+  const loaded = SiteRules.loadTable(table({
+    rules: [rule({ match: ['a.example/x', 'a.example.jp/x'] })],
+  }));
+  assert.deepEqual(loaded.errors, []);
+  assert.equal(loaded.ok, true);
+
+  for (const match of [
+    [],                        // 一个门牌都没有：这条规则永远不生效，等于没写
+    ['a.example', ''],         // 空串会匹配到所有站点
+    ['a.example', 7],
+    // 主机通配从不展开（hostMatches 是字面后缀），写了就是一条悄悄失效的规则；
+    // 真展开了更糟 —— 没有公共后缀表，scholar.google.* 会认下 scholar.google.evil.com。
+    'scholar.google.*/scholar',
+    ['scholar.google.com/scholar', 'scholar.google.*/scholar'],
+    '*.example',
+    '/papers',                 // 没有主机：一条只看路径的规则会跨站生效
+  ]) {
+    const bad = SiteRules.loadTable(table({ rules: [rule({ match: 'good.example' }), rule({ match })] }));
+    assert.equal(bad.ok, false, `${JSON.stringify(match)} was accepted`);
+    assert.deepEqual(bad.rules, []);
+  }
+});
+
+test('the same address in two rules is a duplicate, whether or not it sits in a list', () => {
+  for (const rules of [
+    [rule({ match: 'a.example' }), rule({ match: ['b.example', 'a.example'] })],
+    [rule({ match: ['a.example', 'a.example'] })],
+  ]) {
+    const loaded = SiteRules.loadTable(table({ rules }));
+    assert.equal(loaded.ok, false);
+    assert.match(loaded.errors.join(' '), /duplicate rule for a\.example/);
+  }
+});
+
 test('a table that is not a table at all degrades instead of throwing', () => {
   for (const raw of [undefined, null, 'x', 42, [], {}]) {
     const loaded = SiteRules.loadTable(raw);

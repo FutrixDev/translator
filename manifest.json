@@ -99,6 +99,8 @@
         "content/content-fit-guard.js",
         "content/content-language.js",
         "content/content-speech.js",
+        "content/engine/languages.js",
+        "content/engine/watchdog.js",
         "content/content-translation-engine.js",
         "content/content-language-pack.js",
         "content/content-translation-cache.js",

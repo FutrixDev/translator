@@ -163,7 +163,7 @@ test('auto translation: pausing one article does not follow the reader into the 
 
 test('auto translation: a hidden route change is judged on its own language, not the last page\'s', async ({ page, context }) => {
   // 换了一页，语言就得重新量 —— 上一页量到的那门语言是**那一页**的测量结果。
-  // 引擎那份语言缓存早就是这么做的（content-translation-engine.js 在路由变化时
+  // 引擎那份语言缓存早就是这么做的（content/engine/languages.js 在路由变化时
   // 自己把它清掉），调度层这一份一直漏在外面。
   //
   // 漏掉的样子：用户正把译文藏着对着原文看，此时点进下一份列表。start() 走的是
