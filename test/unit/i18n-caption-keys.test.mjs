@@ -61,6 +61,8 @@ const CAPTION_KEYS = [
   // 同一个 key；设置页那张卡剩下的是一句「跟着主开关走」的说明。
   'popupSiteAuto',
   'captionFollowsAutoTranslate',
+  // 字幕的 AI 花费算进自动翻译那一份日额度，花完那一刻菜单要说得出原因。
+  'captionStatusBudgetSpent',
 ];
 
 test('every UI language block exists', () => {

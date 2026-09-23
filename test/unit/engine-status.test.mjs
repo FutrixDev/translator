@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { engineSource, familyPaths } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -127,8 +128,8 @@ test('a fallback that already happened outranks whatever the engine says now', (
 });
 
 test('every reason the engine can raise has a sentence', () => {
-  // The translate path's own reason codes, from content-translation-engine.js.
-  const source = repoFile('content/content-translation-engine.js');
+  // The translate path's own reason codes, from the engine family.
+  const source = engineSource();
   const block = source.slice(source.indexOf('const ENGINE_REASONS'));
   const codes = [...block.slice(0, block.indexOf('};')).matchAll(/:\s*'([a-zA-Z]+)'/g)].map(m => m[1]);
   assert.ok(codes.length >= 5, 'ENGINE_REASONS moved — this test is reading the wrong block');
@@ -157,7 +158,7 @@ test('every key the status line can name exists in every language', () => {
 // ------------------------------------------------------- the money question
 
 test('falling back to the user own API is off unless they asked for it', () => {
-  const source = repoFile('content/content-translation-engine.js');
+  const source = engineSource();
   const fn = source.slice(source.indexOf('async function canFallBackToAI'));
   const body = fn.slice(0, fn.indexOf('\n  }'));
   assert.match(body, /settings\.engineFallback !== 'allow-ai'/,
@@ -176,7 +177,7 @@ test('local-only is the default, in the one dictionary the content scripts read'
 });
 
 test('a fallback that does happen leaves a trace the popup can read', () => {
-  const source = repoFile('content/content-translation-engine.js');
+  const source = engineSource();
   // Every branch that gives up on the built-in engine and posts to the service
   // worker instead has to say so.
   const calls = source.match(/noteFallback\(/g) || [];
@@ -226,4 +227,25 @@ test('engine-status.js is loaded wherever it is read', () => {
   // No module system in the content scripts — order is the dependency graph.
   assert.ok(js.indexOf('shared/engine-status.js') >= 0, 'not in the content scripts at all');
   assert.ok(js.indexOf('shared/engine-status.js') < js.indexOf('content/content-translation-engine.js'));
+});
+
+test('both load lists carry the whole engine family, after the lang-tags it needs', () => {
+  // The options page does not go through the manifest; it lists its own
+  // <script> tags one by one. A new file in the family that only makes it into
+  // the manifest leaves the options page calling an eng.toApiLang nobody put on
+  // the shelf the moment "download language pack" is clicked — and no e2e
+  // clicks that page every day.
+  const html = repoFile('options/options.html');
+  const js = JSON.parse(repoFile('manifest.json')).content_scripts
+    .find(entry => entry.matches.includes('<all_urls>')).js;
+  const lists = {
+    'manifest.json': (file) => js.indexOf(file),
+    'options/options.html': (file) => html.indexOf(`<script src="../${file}"></script>`),
+  };
+  for (const [name, at] of Object.entries(lists)) {
+    for (const file of familyPaths('content/engine', 'content/content-translation-engine.js')) {
+      assert.ok(at(file) >= 0, `${name} is missing ${file}`);
+      assert.ok(at('shared/lang-tags.js') < at(file), `${name} must load shared/lang-tags.js before ${file}`);
+    }
+  }
 });

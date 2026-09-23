@@ -15,17 +15,21 @@
   stays alone even after it changes language, and the built-in list of sites
   worth translating (`shared/site-rules-builtin.js`) never overrules something
   you decided yourself.
-- **One click is a permanent answer.** The bar that appears on an undecided
-  page has two buttons and they are not "yes/no for now" — 「总是翻译」 and
-  「不再翻译」 write a rule for that host, and the bar never appears there
-  again. Rules apply down parent domains, so a decision about `reddit.com`
-  covers `old.reddit.com`. Every rule you have made is listed in the settings
-  page, and **every one of them can be deleted there** — an answer you gave by
-  accident is one click from being unmade.
+- **One click can be a permanent answer.** The bar that appears on an
+  undecided page asks 「这一页要翻译吗？」 with 「翻译」 and 「不用」, and a
+  「总是翻译 <site>」 box: ticked, 「翻译」 writes a rule for that host and the
+  bar never appears there again. A site that has been asked three times
+  without a yes is not asked again. The other answer — never — is the
+  「自动翻译这个站点」 switch in the toolbar popup (or the in-player menu)
+  turned off, or 「不再自动翻译 <site>」 on the float ball. Rules apply down
+  parent domains, so a decision about `reddit.com` covers `old.reddit.com`.
+  Every rule you have made is listed in the settings page, and **every one of
+  them can be deleted there** — an answer you gave by accident is one click
+  from being unmade.
 - **Subtitles are part of that same decision.** Video subtitle translation used
   to be a switch of its own, off by default, on the second card of the settings
   page — which meant that on a site you had told us to translate, the page was
-  translated and the subtitles were not, and that telling us 「不再翻译」 on
+  translated and the subtitles were not, and that telling us to stop on
   youtube.com stopped the page text while the subtitles carried on. It is now
   the same gate: a site you have not refused gets translated subtitles, and a
   site you have refused gets none. The switch is gone from the settings page,
@@ -33,9 +37,10 @@
   popup says — 「自动翻译这个站点」 — reading and writing the same rule, so it
   shows what the popup shows: on for a site you have turned on, off for a site
   you have said nothing about. **If you had the subtitle switch off, note that
-  subtitles will now be translated on sites you have not turned off**; a site
-  you want left alone is 「不再翻译」 in the popup, or the same row in the
-  player, and it is remembered.
+  subtitles will now be translated on sites you have not turned off**. On a
+  site you have said nothing about that switch reads off while subtitles are
+  translated, so leaving the site alone takes switching it on and then off —
+  a rough edge noted for the next round; once off, it is remembered.
 - **A page can be paused without a decision.** Alt+A, the toolbar popup and the
   float ball all toggle the page you are looking at, for this visit only, and
   leave no rule behind.
@@ -56,9 +61,46 @@
   HTML papers (`/html/*`, which is also ar5iv — same domain suffix, same
   paths), its listing pages (`/list/*`) and Hugging Face's Daily Papers.
   Author blocks and bibliographies are skipped on the full-text pages: a
-  translated reference list is one you can no longer search with. arXiv PDFs
-  are not covered and cannot be — Chrome's built-in PDF viewer takes no
-  content scripts; the toolbar popup offers to open them in ours instead.
+  translated reference list is one you can no longer search with.
+- **Five more reading sites** on the built-in list: Lobsters, bioRxiv, Nature,
+  Science and Google Scholar — each skipping what is not prose there (author
+  lines, citation and DOI lines, reference lists, tag and link rows), with
+  every selector checked against the site's real
+  markup (Science sits behind a Cloudflare challenge, so its selectors were
+  checked against archived copies of two article pages). Google Scholar is
+  covered on its country domains too — `scholar.google.co.jp`,
+  `scholar.google.de` and fourteen more — because a rule's `match` may now
+  list several addresses for one site. They are listed one by one, not as
+  `scholar.google.*`: without a public-suffix list that wildcard would also
+  claim `scholar.google.evil.com`, so the table rejects a `*` in a host.
+- **arXiv PDFs get an offer, never a job.** On `arxiv.org/pdf/*` a bar says
+  this is a PDF and that translating it spends page credits; the server-side
+  PDF translation behind it is billed per page, so **nothing is sent to it
+  until the bar is clicked** — not even a price check. A path-level `never` rule keeps whole-page translation off those
+  pages, since the document is not in the page's DOM and the ask bar would
+  have translated nothing.
+- **Automatic translation has an engine of its own, and a daily AI
+  allowance.** 「自动翻译用哪个引擎」 defaults to Chrome's on-device
+  translator whatever the manual engine is, so switching to AI for your own
+  selections no longer turns every automatic page into a paid one; choosing
+  AI for automatic translation asks first. What the zero-click paths spend on
+  AI is capped per day (200,000 characters by default, 0 for no cap),
+  checked before anything is sent and counted on this computer only. Video
+  subtitles keep following the manual engine — swapping engines mid-video
+  would change the translation style under the playhead — but their AI
+  characters count toward the same allowance; when it runs out the in-player
+  menu says 「今日 AI 额度已用完」 and subtitles resume on their own once the
+  allowance is raised or the day turns. The allowance field in Settings is
+  greyed only when no zero-click path can reach AI at all.
+- **Stop a site from the float ball.** The first row of the float-ball menu is
+  「不再自动翻译 <site>」 — undoing an automatic decision should not take a
+  trip to Settings. It writes the same rule as the popup and the in-player
+  menu, then restores the page.
+- **A translate chip in text boxes.** When what you type is not in the page's
+  language, a small 「译成 English」 chip appears at the box's corner; a click
+  opens the input translator with your text. It never rewrites your input,
+  language detection is local, and nothing is sent until you click. Settings
+  has a switch for it.
 - **On this computer** — a small panel in the settings page counting the pages
   translated this month, how much the cache saved, and how many characters
   actually went to the model. It lives in `chrome.storage.local`
@@ -91,6 +133,19 @@
   language" and every block was handed back untranslated. It now reads the
   script the same way the gate above it does.
 
+- **One answer to 「which language do I translate into」.** Three copies of
+  「follow the browser」 disagreed, so a fresh install on a French browser had a
+  context menu reading 「译成 Français」 while page translation went to
+  Simplified Chinese, and a `zh-Hant-TW` browser got Simplified text under a
+  Traditional label. `shared/target-lang.js` is now the only copy.
+- The context menu follows a change of interface language at once, instead of
+  at the service worker's next cold start.
+- Subtitles use the persistent translation cache, so watching the same video
+  again, or the next day, does not pay for the same lines twice.
+- 「总是」 on the ask bar now goes through the same write as the popup and the
+  player menu; on a page whose site cannot hold a rule (a `file://` page) it
+  says the setting could not be saved, instead of looking saved and asking
+  again next time.
 - A page stuck on a missing built-in language pack now recovers by itself the
   moment the pack lands, whether it was downloaded by the page's own prefetch
   or by the button in the settings page — previously it stayed blank until a

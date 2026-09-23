@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contentBundle, contentCss, messageCatalog } from './helpers/sources.mjs';
+import { contentBundle, contentCss, engineSource, messageCatalog } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -17,7 +17,7 @@ const strip = (source) => source
   .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '');
 
 const CHIP = strip(read('content/content-input-chip.js'));
-const ENGINE = strip(read('content/content-translation-engine.js'));
+const ENGINE = strip(engineSource());
 
 test('芯片装进了 manifest，也接进了初始化链', () => {
   assert.ok(contentBundle().includes('content/content-input-chip.js'),
@@ -54,7 +54,8 @@ test('判语言只有一个主人', () => {
   assert.match(CHIP, /ctx\.builtinTranslator\?\.detectStandaloneLang/,
     '芯片没走引擎导出的那一份判断');
   assert.match(ENGINE, /function detectStandaloneLang\(/, '引擎里没有 detectStandaloneLang');
-  assert.match(ENGINE, /\n\s*detectStandaloneLang,/, 'detectStandaloneLang 没挂上 builtinTranslator');
+  assert.match(ENGINE, /detectStandaloneLang: \(text\) => eng\.detectStandaloneLang\(text\),/,
+    'detectStandaloneLang 没挂上 builtinTranslator');
   const thresholds = ENGINE.match(/minChars: nonLatinText \? 2 : DETECT_MIN_CHARS/g) || [];
   assert.equal(thresholds.length, 1, '那两档门槛被写了不止一遍');
 });

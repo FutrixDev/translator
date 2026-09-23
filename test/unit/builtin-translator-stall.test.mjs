@@ -1,4 +1,5 @@
-// Guards for the stall watchdog in content/content-translation-engine.js.
+// Guards for the stall watchdog in the engine family (content/engine/watchdog.js
+// and its callers in content/content-translation-engine.js).
 //
 // The Translator API's three entry points — availability(), create() and
 // translate() — have no timeout. When one of them wedges (a language-pack
@@ -25,7 +26,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { hoverSource } from './helpers/sources.mjs';
+import { engineSource, hoverSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -86,6 +87,8 @@ console.warn = () => {};
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
+await import('../../content/engine/languages.js');
+await import('../../content/engine/watchdog.js');
 await import('../../content/content-translation-engine.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
@@ -412,7 +415,7 @@ test('every call into the Translator API goes through the watchdog', async () =>
   // One call site each: availability() behind probeAvailability, create()
   // behind getTranslator. A second, unwrapped call site is exactly how this bug
   // comes back — it would hang with no timeout and no way to fall back.
-  const src = repoFile('content/content-translation-engine.js');
+  const src = engineSource();
   assert.equal((src.match(/self\.Translator\.availability\(/g) || []).length, 1);
   assert.equal((src.match(/self\.Translator\.create\(/g) || []).length, 1);
   assert.match(src, /function stallWatchdog\(/);

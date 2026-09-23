@@ -110,9 +110,32 @@
     return Array.isArray(value) && value.every((item) => typeof item === 'string' && item);
   }
 
+  /**
+   * 一条规则认的地址：match 可以是一个模式，也可以是一组。
+   *
+   * 一组是给「同一个站点、好几个门牌」的：Google 学术在各国的域名
+   * （scholar.google.co.jp、scholar.google.de……）是同一套页面，selector 只该
+   * 写一遍。拆成十几条一模一样的规则，就是十几份要同时改的东西。
+   *
+   * 不认 `scholar.google.*` 这种主机通配：浏览器里没有公共后缀表，
+   * scholar.google.evil.com 也会被它圈进来 —— 内置规则是 always，认错一个站就是
+   * 在一个没问过用户的页面上自己动手。主机部分一律是字面后缀，validRule 把带 `*`
+   * 的拒在门外（hostMatches 从不展开它，写了只会是一条悄悄失效的规则）。
+   */
+  function rulePatterns(rule) {
+    return Array.isArray(rule.match) ? rule.match : [rule.match];
+  }
+
+  function validPattern(pattern) {
+    if (typeof pattern !== 'string' || !pattern) return false;
+    const { host } = splitPattern(pattern);
+    return !!host && !host.includes('*');
+  }
+
   function validRule(rule) {
     if (!rule || typeof rule !== 'object') return false;
-    if (typeof rule.match !== 'string' || !rule.match) return false;
+    const patterns = rulePatterns(rule);
+    if (!patterns.length || !patterns.every(validPattern)) return false;
     if (!STATES.has(rule.state)) return false;
     if (STRING_ARRAY_FIELDS.some((field) => !isStringArray(rule[field]))) return false;
     if (rule.blockIdAttr !== null && typeof rule.blockIdAttr !== 'string') return false;
@@ -140,11 +163,16 @@
       if (!validRule(rule)) errors.push(`rules[${i}] (${rule && rule.match}) is malformed`);
     });
 
+    // 按模式查重，不按规则：同一个地址写在两条规则里（哪怕一条是数组的一员），
+    // 赢的那条就取决于声明顺序了。
     const seen = new Set();
     for (const rule of rules) {
-      if (!rule || typeof rule.match !== 'string') continue;
-      if (seen.has(rule.match)) errors.push(`duplicate rule for ${rule.match}`);
-      seen.add(rule.match);
+      if (!rule || typeof rule !== 'object') continue;
+      for (const pattern of rulePatterns(rule)) {
+        if (typeof pattern !== 'string') continue;
+        if (seen.has(pattern)) errors.push(`duplicate rule for ${pattern}`);
+        seen.add(pattern);
+      }
     }
 
     const blocklist = Array.isArray(table.blocklist)
@@ -182,13 +210,19 @@
 
   /**
    * 命中的内置规则，没有就是 null。
-   * 同时命中多条时取 match 最长的那条（最具体的赢），与声明顺序无关。
+   * 同时命中多条时取命中的那个模式最长的（最具体的赢），与声明顺序无关。比的是
+   * **命中的那个模式**，不是规则里最长的那个 —— 一组门牌里有一个长域名，不该让
+   * 整条规则在别的门牌上也显得更具体。
    */
   function matchBuiltin(host, path) {
     let best = null;
+    let bestLength = -1;
     for (const rule of table().rules) {
-      if (!patternMatches(rule.match, host, path)) continue;
-      if (!best || rule.match.length > best.match.length) best = rule;
+      for (const pattern of rulePatterns(rule)) {
+        if (pattern.length <= bestLength || !patternMatches(pattern, host, path)) continue;
+        best = rule;
+        bestLength = pattern.length;
+      }
     }
     return best;
   }

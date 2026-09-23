@@ -11,6 +11,14 @@
 // [Exposed=Window, SecureContext]，MV3 的 background 是 service worker，
 // 拿不到这个接口。所以整条内置链路只能在 content script 里跑，
 // background 那条 AI 老路原样保留，一行没动。
+//
+// 引擎是一族经典脚本，共用一个架子 `ctx.engine`：
+//
+//   content/engine/languages.js   语言码、引擎认哪些语言、源语言探测（整页/单段/输入框）
+//   content/engine/watchdog.js    进 Translator API 的每一次调用都要有的那条死线
+//   这一份（入口）                选哪条后端、内置翻译本身、回落与预算闸、对外接口
+//
+// 跨文件的名字一律写成 `eng.foo`、调用时才取，所以这一族谁先装都行。
 (function() {
   'use strict';
 
@@ -19,50 +27,7 @@
   // 只有 ctx.builtinTranslator 那部分会被设置页用到。
   const ctx = window.AI_TRANSLATOR_CONTENT || (window.AI_TRANSLATOR_CONTENT = {});
   const settings = ctx.settings || (ctx.settings = {});
-
-  // 「这两门语言是同一门吗」「这段文字是简体还是繁体」的唯一出处，见
-  // shared/lang-tags.js。manifest 和设置页都把它排在这个文件前面；拿不到就直接
-  // 抛，别让整条内置链路在「源语言永远是个 zh」上静静地跑偏。
-  const LangTags = globalThis.LangTags;
-  if (!LangTags) throw new Error('content-translation-engine.js 要先装 shared/lang-tags.js');
-
-  // ==================== 语言码 ====================
-
-  // Translator API 认的是 BCP-47 基础码，扩展内部用的是带地区的码（zh-CN / zh-TW）。
-  // 中文这一组必须显式映射：API 侧简体是 'zh'、繁体是 'zh-Hant'，直接取 split('-')[0]
-  // 会把繁体也压成 'zh'，用户选了繁体却收到简体译文。
-  const LANG_ALIASES = {
-    'zh': 'zh',
-    'zh-cn': 'zh',
-    'zh-hans': 'zh',
-    'zh-sg': 'zh',
-    'zh-tw': 'zh-Hant',
-    'zh-hk': 'zh-Hant',
-    'zh-mo': 'zh-Hant',
-    'zh-hant': 'zh-Hant',
-    'nb': 'no',
-    'nn': 'no',
-    'iw': 'he',
-    'in': 'id'
-  };
-
-  // Chrome 文档给出的 Translator API 支持列表。不在表里的语言直接判 unavailable，
-  // 而不是等 create() 抛错——后者要等到用户点了翻译才暴露，还会白等一次往返。
-  const SUPPORTED_LANGS = new Set([
-    'ar', 'bn', 'bg', 'zh', 'zh-Hant', 'hr', 'cs', 'da', 'nl', 'en', 'fi', 'fr',
-    'de', 'el', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'kn', 'ko', 'lt', 'mr', 'no',
-    'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'es', 'sv', 'ta', 'te', 'th', 'tr', 'uk',
-    'vi'
-  ]);
-
-  function toApiLang(lang) {
-    if (!lang) return '';
-    const lower = String(lang).trim().toLowerCase();
-    if (LANG_ALIASES[lower]) return LANG_ALIASES[lower];
-    const base = lower.split('-')[0];
-    if (LANG_ALIASES[base]) return LANG_ALIASES[base];
-    return base;
-  }
+  const eng = (ctx.engine = ctx.engine || {});
 
   // ==================== 环境探测 ====================
 
@@ -135,7 +100,7 @@
     UNSUPPORTED_PAIR: 'unsupportedPair',
     NEEDS_DOWNLOAD: 'needsDownload',
     CREATE_FAILED: 'createFailed',
-    // 内置 API 卡住了（见下面的看门狗）。对用户来说和“暂时用不了”是一回事，
+    // 内置 API 卡住了（见 content/engine/watchdog.js）。对用户来说和“暂时用不了”是一回事，
     // engineErrorMessage 的 default 分支就是它的文案；单独列一档是为了让日志和
     // 回落决策能把“报错了”和“没反应”分开。
     TIMED_OUT: 'timedOut'
@@ -147,238 +112,6 @@
       this.name = 'EngineUnavailableError';
       this.reason = reason;
     }
-  }
-
-  // ==================== 源语言 ====================
-
-  // 逐块探测语言在整页翻译上代价不小：每次 detectLanguage 都是一次到浏览器进程的
-  // IPC，一个两百块的页面就是两百次。整页的主语言只需要判一次，取全文样本反而比
-  // 逐块判更准，所以这里缓存页面级结果。
-  let pageSourceLangPromise = null;
-
-  // CLD 在几个字符上基本是在猜，短样本直接不问。独立文本（输入框）会按字母体系
-  // 放宽这个下限——一两个汉字或假名已经足够定语言，见 resolveStandaloneSourceLang。
-  const DETECT_MIN_CHARS = 8;
-
-  // requireReliable 默认关：页面级取样 4000 字，本来就稳，卡这道门槛只会让整页
-  // 退化成没有源语言可用。块级和纯拉丁的独立文本才打开它。
-  async function detectLanguageOf(text, { requireReliable = false, minChars = DETECT_MIN_CHARS } = {}) {
-    if (!chrome?.i18n?.detectLanguage) return '';
-    const sample = ctx.getLanguageDetectionText
-      ? ctx.getLanguageDetectionText(text)
-      : String(text || '').slice(0, 400);
-    if (!sample || sample.length < minChars) return '';
-    try {
-      const result = await chrome.i18n.detectLanguage(sample);
-      const top = result?.languages?.[0];
-      if (!top || !top.language || top.language === 'und') return '';
-      if (requireReliable && (result.isReliable !== true || (top.percentage || 0) < 70)) {
-        return '';
-      }
-      // 检测器分不出简繁：繁体和简体它都答一个光秃秃的 `zh`，两边都是 100%、
-      // isReliable。而内置引擎认的是 'zh'（简）和 'zh-Hant'（繁）两门语言——
-      // 一整页繁体配 zh-CN 的目标，源语言压成 zh 就正好撞上 src === tgt 那一档，
-      // 原样返回，整页一个字都不译。所以中文的书写系统在这里就从字里数出来：
-      // 判过语言的是这一份 sample，补书写系统的也该是它。
-      return LangTags.refineScript(top.language, sample);
-    } catch (error) {
-      return '';
-    }
-  }
-
-  function getPageSourceLang() {
-    if (!pageSourceLangPromise) {
-      pageSourceLangPromise = (async () => {
-        const body = document.body ? (document.body.innerText || '') : '';
-        // 样本取大一些：CLD 在几十字符上很容易判错，整页翻译一旦源语言判错，
-        // 会导致整页语言对不可用而白白回落 AI。
-        const lang = await detectLanguageOf(body.replace(/\s+/g, ' ').trim().slice(0, 4000));
-        // 判不出来就不留缓存。预取会在 document_end 提前问一次，那时候 SPA 的正文
-        // 可能还没渲染，缓存一个空结果会让之后真正的翻译也跟着没有源语言可用。
-        if (!lang) pageSourceLangPromise = null;
-        return lang;
-      })();
-    }
-    return pageSourceLangPromise;
-  }
-
-  // 单页应用换页时 document 从头到尾是同一个，这个模块级缓存也就一直是上一篇文章
-  // 的语言。中文页跳到英文页之后，凡是短于 SELF_DETECT_MIN_CHARS 的块都不自己探，
-  // 直接拿缓存里的 zh 当源语言 —— 目标语言也是 zh，于是判成「已经是目标语言」，
-  // 原样退回，一个字不译。页面上看不出任何异样，只有短句永远是英文。
-  //
-  // 清缓存放在引擎这一层、由它自己订路由，而不是让自动翻译那一层换页时顺手清一下：
-  // 划词、悬停、字幕走的是同一个 resolveSourceLang，自动翻译关着的时候它们照样在
-  // 这条路上。谁拥有这个缓存，谁负责让它过期。
-  if (globalThis.SpaNavigation) {
-    globalThis.SpaNavigation.onRouteChange(() => {
-      pageSourceLangPromise = null;
-    });
-  }
-
-  // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
-  const SELF_DETECT_MIN_CHARS = 40;
-
-  // SUPPORTED_LANGS 里用非拉丁字母书写的那些。判断“页面语言可不可能是这段文字的
-  // 语言”只需要这一条：字母体系对不上就一定不是。
-  //
-  // 从 SUPPORTED_LANGS 派生，不另抄一张表：zh→Hans、bg→Cyrl 这些 Intl 自己就
-  // 知道，而往 SUPPORTED_LANGS 里加语言的人不该还要记得同步第二处——漏掉一门
-  // 非拉丁语言，正是下面这个 bug 原样复发。
-  const NON_LATIN_LANGS = new Set([...SUPPORTED_LANGS].filter((lang) => {
-    try {
-      return new Intl.Locale(lang).maximize().script !== 'Latn';
-    } catch (error) {
-      // 认不出来就当非拉丁：这个集合只用来否决页面语言，多否决一次最多是源语言
-      // 猜成 en（拉丁文本照样译得出来），少否决一次就是原文原样退回。
-      return true;
-    }
-  }));
-  // Script=Common 涵盖数字、标点、空白和 emoji，Inherited 涵盖组合用附加符号，
-  // 所以 "hello 😀" 和 "café" 都仍算纯拉丁。
-  const HAS_NON_LATIN_CHARS = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
-
-  /**
-   * 输入框里的文字不属于这个页面：读英文页面时想把“动画”翻成英文是常事。拿页面
-   * 语言当源语言会得出 src='en'、tgt='en'，被同语言短路原样返回——用户选了目标
-   * 语言、点了翻译，拿回来的还是自己输入的那行字。反过来同样成立：在中文页面上
-   * 输入 "animation" 想要中文，会被判成 zh→zh 原样退回。
-   *
-   * 短文本上 CLD 唯一可靠的线索是字母体系。实测（headless Chrome，全部
-   * isReliable=false）：动画→zh、アニメ→ja、안녕→ko、привет→ru 都对，而同样
-   * 长度的拉丁字母全错——hello→sr、animation→ja、Bonjour→no、ok→pl。几十种
-   * 拉丁语言在一两个词上本来就分不开。所以只在文本自身带非拉丁字符时才采信
-   * “判得不准”的结果，纯拉丁文本仍旧要求 isReliable。
-   */
-  function hasNonLatinChars(text) {
-    return HAS_NON_LATIN_CHARS.test(text);
-  }
-
-  /**
-   * 「这段文字自己是什么语言」，判不出来就是空串 —— **不猜、不兜底**。
-   *
-   * 上面那段注释里的两档门槛（非拉丁放宽到两个字符、纯拉丁仍要求 isReliable）
-   * 就是这个函数的全部内容。单独拆出来是因为有两个调用方，而它们要的东西不同：
-   * 翻译那一路（resolveStandaloneSourceLang）判不出来也得给引擎一个源语言，所以
-   * 它在这之后还有两级兜底；输入框那颗芯片（content/content-input-chip.js）要的
-   * 恰恰是「没把握就别出声」—— 一颗因为把 "hello" 判成塞尔维亚语而冒出来的芯片
-   * 比没有芯片糟。两边各写一次探测就会各有一套门槛，而门槛正是这件事的全部难点。
-   */
-  function detectStandaloneLang(trimmed) {
-    const nonLatinText = hasNonLatinChars(trimmed);
-    return detectLanguageOf(trimmed, {
-      minChars: nonLatinText ? 2 : DETECT_MIN_CHARS,
-      requireReliable: !nonLatinText
-    });
-  }
-
-  async function resolveStandaloneSourceLang(trimmed) {
-    const nonLatinText = hasNonLatinChars(trimmed);
-    const detected = toApiLang(await detectStandaloneLang(trimmed));
-    if (detected && SUPPORTED_LANGS.has(detected)) return detected;
-
-    const pageLang = toApiLang(await getPageSourceLang());
-    if (pageLang && NON_LATIN_LANGS.has(pageLang) === nonLatinText) return pageLang;
-    // 字母体系对不上，页面语言出局。剩下的拉丁文本按英文处理：拉丁字母里英文
-    // 是压倒性的多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走
-    // 到这里说明连字母体系都没给出答案，那就交给 AI，模型自己会认源语言。
-    return nonLatinText ? '' : 'en';
-  }
-
-  async function resolveSourceLang(text, hint, standalone) {
-    if (hint) return toApiLang(hint);
-    const trimmed = String(text || '').trim();
-    if (standalone) return resolveStandaloneSourceLang(trimmed);
-    const pageLang = toApiLang(await getPageSourceLang());
-    if (trimmed.length >= SELF_DETECT_MIN_CHARS) {
-      // 块级结果只在“判得准、且判出来的语言内置引擎确实支持”时才采信。
-      // 逐块探测存在的意义是混合语言页面（英文正文里夹日文引用），那是少数派；
-      // 而技术文章里满是型号名、版本号和百分数，CLD 判歪一段很常见 —— 一旦判歪，
-      // 这一段就变成不支持的语言对。宁可整段按页面主语言处理，也不能被一次误判带走。
-      const own = toApiLang(await detectLanguageOf(trimmed, { requireReliable: true }));
-      if (own && SUPPORTED_LANGS.has(own)) return own;
-    }
-    return pageLang;
-  }
-
-  // ==================== 卡死看门狗 ====================
-
-  // Translator API 的三个入口（availability / create / translate）都没有超时：
-  // 出问题时它们不 reject，只是永远不 settle。而下面缓存的是 Promise，整页几十个
-  // 块会一起 await 同一个不会 settle 的 create()——进度条停在 0%、不报错，也永远
-  // 走不到回落 AI 那一步。回落逻辑一直是好的，缺的是有人先认输。
-  //
-  // 所以规则是：进内置 API 的每一次调用都必须有上限。这个边界到 Translator 为止，
-  // 再往外（chrome.i18n.detectLanguage 之类）不在此列。
-  //
-  // 但 create() 不能简单地设一个总时长上限：首次下载语言包是几十 MB，慢网上花几
-  // 分钟属于正常，一刀切只会砍掉一个本来能成的功能。所以下载这条路不看总时长，
-  // 只看“还动不动”——每个 downloadprogress 事件把死线往后推。设置页那个用户手点
-  // 的下载按钮因此不受影响：只要还在下，死线就一直在往后走；而它真卡住时，按钮
-  // 也不会再一直转下去。
-  //
-  // “还没开始”和“下得慢”是两回事，窗口也分两档。实测（headless Chrome，
-  // en→zh，availability 返回 downloadable）：卡住的 create() 一个
-  // downloadprogress 都不发，一个事件都等不到。所以第一个事件之前给的是短窗口
-  // ——真的开始下了，浏览器很快就会报第一次进度；等不到就是根本没动起来。
-  // 一旦有了第一个事件，窗口放宽到一分钟：慢链路上两次进度之间安静一阵是正常的。
-  const AVAILABILITY_TIMEOUT_MS = 15000;
-  const CREATE_TIMEOUT_MS = 20000;
-  const DOWNLOAD_START_MS = 30000;
-  const DOWNLOAD_STALL_MS = 60000;
-  // translate() 是端上推理，不走网络，一段正常一两秒。但整页翻译有 12 路并发压在
-  // 同一个模型上，排队会把单次观察到的耗时放大好几倍，所以这条线要留得很宽：
-  // 它的作用是给“永远不返回”封顶，不是给延迟设指标。
-  const TRANSLATE_TIMEOUT_MS = 120000;
-
-  class TimeoutError extends Error {
-    constructor(what) {
-      super(`builtin translator ${what} timed out`);
-      this.name = 'TimeoutError';
-    }
-  }
-
-  /**
-   * 给一个可能永远不 settle 的 Promise 加一条死线。
-   * bump() 把死线整体往后推，用来表达“只要还在动就继续等”；
-   * 带上 nextMs 则同时换掉之后的窗口（第一次进度之后要放宽，见上）。
-   */
-  function stallWatchdog(ms, what) {
-    let timer = null;
-    let stopped = false;
-    let onStall;
-    const stalled = new Promise((resolve, reject) => {
-      onStall = () => reject(new TimeoutError(what));
-    });
-
-    function bump(nextMs) {
-      if (stopped) return;
-      if (typeof nextMs === 'number') ms = nextMs;
-      clearTimeout(timer);
-      timer = setTimeout(onStall, ms);
-    }
-
-    function stop() {
-      stopped = true;
-      clearTimeout(timer);
-    }
-
-    bump();
-    return {
-      bump,
-      /**
-       * race 会给 call 挂上处理函数，所以输的那一路之后再 reject 也只是被丢掉，
-       * 不会变成 unhandled rejection。call 用函数传进来，是为了让同步抛出的异常
-       * 也落进这条链，而不是绕过看门狗直接炸给调用方。
-       */
-      guard(call) {
-        const promise = new Promise((resolve) => resolve(call()));
-        return Promise.race([promise, stalled]).then(
-          (value) => { stop(); return value; },
-          (error) => { stop(); throw error; }
-        );
-      }
-    };
   }
 
   // ==================== Translator 实例 ====================
@@ -394,7 +127,7 @@
   // 三处都要问可用性（翻译前、预取、设置页探测），走同一个入口，
   // 免得有一处漏了超时又能一直挂着。
   function probeAvailability(src, tgt) {
-    return stallWatchdog(AVAILABILITY_TIMEOUT_MS, 'availability').guard(
+    return eng.stallWatchdog(eng.TIMEOUTS.AVAILABILITY, 'availability').guard(
       () => self.Translator.availability({ sourceLanguage: src, targetLanguage: tgt })
     );
   }
@@ -406,7 +139,7 @@
 
     // 有下载才有 downloadprogress 可看；语言包已就绪时 create() 只是建个会话，
     // 是本地操作，给一个固定的短上限就够。
-    const watchdog = stallWatchdog(allowDownload ? DOWNLOAD_START_MS : CREATE_TIMEOUT_MS, 'create');
+    const watchdog = eng.stallWatchdog(allowDownload ? eng.TIMEOUTS.DOWNLOAD_START : eng.TIMEOUTS.CREATE, 'create');
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
 
     const options = { sourceLanguage: src, targetLanguage: tgt };
@@ -415,7 +148,7 @@
       options.monitor = (monitor) => {
         monitor.addEventListener('downloadprogress', (event) => {
           // 有动静了：死线往后推，并且从这里开始用宽窗口。
-          watchdog.bump(DOWNLOAD_STALL_MS);
+          watchdog.bump(eng.TIMEOUTS.DOWNLOAD_STALL);
           const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
           const handler = onProgress || ctx.onBuiltinDownloadProgress;
           if (typeof handler === 'function') handler(loaded, src, tgt);
@@ -433,7 +166,7 @@
         // 用户改完设置重试也还是同一个错误。
         translators.delete(key);
         // 卡住的下载不会自己好，别让浏览器还挂着它。
-        if (error instanceof TimeoutError && controller) {
+        if (error instanceof eng.TimeoutError && controller) {
           try { controller.abort(error); } catch (abortError) { /* 已经结束了 */ }
         }
         if (allowDownload) notifyDownloadEnded();
@@ -532,7 +265,7 @@
   }
 
   function translateOnce(translator, text) {
-    return stallWatchdog(TRANSLATE_TIMEOUT_MS, 'translate').guard(() => translator.translate(text));
+    return eng.stallWatchdog(eng.TIMEOUTS.TRANSLATE, 'translate').guard(() => translator.translate(text));
   }
 
   async function runTranslate(translator, text) {
@@ -566,13 +299,13 @@
     const source = String(text == null ? '' : text);
     if (!source.trim()) return source;
 
-    const tgt = toApiLang(targetLang);
-    const src = await resolveSourceLang(source, options.sourceLang, options.standaloneText);
+    const tgt = eng.toApiLang(targetLang);
+    const src = await eng.resolveSourceLang(source, options.sourceLang, options.standaloneText);
 
     if (!src || !tgt) throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
     // 同语言不需要翻译。原样返回，与 AI 那条路“已是目标语言则原样返回”的约定一致。
     if (src === tgt) return source;
-    if (!SUPPORTED_LANGS.has(src) || !SUPPORTED_LANGS.has(tgt)) {
+    if (!eng.supportsLang(src) || !eng.supportsLang(tgt)) {
       throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
     }
 
@@ -586,7 +319,7 @@
       } catch (error) {
         // 问都问不出来，那不是这个语言对的问题：判成 UNSUPPORTED_PAIR 的话，
         // 批量里每一段都会再问一次、再等一次超时。
-        if (error instanceof TimeoutError) throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
+        if (error instanceof eng.TimeoutError) throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
         throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
       }
       if (status === 'unavailable') {
@@ -621,7 +354,7 @@
         if (ctx.armLanguagePackPrefetch) ctx.armLanguagePackPrefetch(src, tgt);
         throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
       }
-      if (error instanceof TimeoutError) {
+      if (error instanceof eng.TimeoutError) {
         throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
       }
       throw new EngineUnavailableError(ENGINE_REASONS.CREATE_FAILED);
@@ -633,7 +366,7 @@
     } catch (error) {
       // 会话卡住是整条链路的事，不是这一段的事：扔掉它，让整批回落 AI，
       // 否则后面每一段都会在同一个坏会话上再耗一次超时。
-      if (error instanceof TimeoutError) {
+      if (error instanceof eng.TimeoutError) {
         dropTranslator(src, tgt);
         throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
       }
@@ -701,8 +434,14 @@
   /**
    * 自动模式要花钱之前的那道闸（PRD FR-9）。
    *
-   * 只有 `message.auto` 的请求经过这里 —— 手动翻译是用户一次一次点出来的，他
-   * 知道自己在花钱；要挡的是零点击的那条路。
+   * 只有零点击的请求经过这里 —— 手动翻译是用户一次一次点出来的，他知道自己
+   * 在花钱。零点击的有两条路，两条都记在同一个 autoAiChars 上：
+   *
+   * - `message.auto`：自动整页翻译。它同时决定走哪个引擎（自动模式那一个）。
+   * - `message.unattended`：视频字幕（shared/caption-core.js 的
+   *   buildTranslationRequest）。它沿用手动那个引擎 —— 字幕跟着播放头走，
+   *   换引擎等于换一种译法 —— 但视频一播，每一句都在花钱，没人一句一句点。
+   *   只挡 auto 的时候，一部两小时的电影可以在额度用完之后照样把 AI 花下去。
    *
    * 这里**只问预算**，不再问「自动模式允不允许用 AI」。那个问题上面已经答过
    * 了，而且答得更细：自动模式选的引擎由 isBuiltinSelected(true) 决定，内置顶
@@ -718,7 +457,7 @@
    * 返回一句给用户看的话表示拒绝，`null` 表示放行。
    */
   async function refuseAutoAiSpend(message) {
-    if (!message || !message.auto) return null;
+    if (!message || !(message.auto || message.unattended)) return null;
     const t = ctx.t || ((key) => key);
     const chars = Array.isArray(message.texts)
       ? globalThis.AutoStats.textsChars(message.texts)
@@ -768,7 +507,8 @@
     const shared = {
       sourceLang: message.sourceLang,
       allowDownload: message.allowDownload,
-      // 输入框的文本是用户自己敲的，与页面无关。见 resolveSourceLang。
+      // 输入框的文本是用户自己敲的，与页面无关。见 content/engine/languages.js 的
+      // resolveSourceLang。
       standaloneText: message.standaloneText === true
     };
 
@@ -785,8 +525,8 @@
         const texts = Array.isArray(message.texts) ? message.texts : [];
         // 目标语言不支持是整批（乃至整页）都成立的事实，先判掉整批抛出去，
         // 别让每一段各自撞一次同一堵墙。
-        const batchTarget = toApiLang(targetLang);
-        if (!batchTarget || !SUPPORTED_LANGS.has(batchTarget)) {
+        const batchTarget = eng.toApiLang(targetLang);
+        if (!batchTarget || !eng.supportsLang(batchTarget)) {
           throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
         }
         const translations = [];
@@ -872,8 +612,10 @@
     // 这一行是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这
     // 个环境/这门语言顶不住、而且用户开了回退，也走到这里。自动模式的预算闸
     // 因此只能装在这里 —— 装在调度层只挡得住前一半，运行中那次回落会绕过去。
+    // 拒绝带上 budgetSpent：调用方要分得清「今天的额度花完了」和「这一批出错
+    // 了」—— 前者要跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
     const refusal = await refuseAutoAiSpend(message);
-    if (refusal) return { error: refusal };
+    if (refusal) return { error: refusal, budgetSpent: true };
     return chrome.runtime.sendMessage(message);
   };
 
@@ -890,7 +632,7 @@
    * 整页重翻一遍。空（跟随浏览器语言）归一成空串。
    */
   function currentTargetLang() {
-    return toApiLang(settings.targetLang) || '';
+    return eng.toApiLang(settings.targetLang) || '';
   }
 
   ctx.currentTargetLang = currentTargetLang;
@@ -922,16 +664,16 @@
     // 所以读解析后的结果而不是 settings.targetLang 的原值：空串在身份那一侧是
     // 「跟随浏览器」的哨兵（见 currentTargetLang），在这里当成它自己会让所有还
     // 没选过语言的用户看到「不可用」。
-    const tgt = toApiLang(TargetLang.effective(settings));
-    if (!tgt || !SUPPORTED_LANGS.has(tgt)) {
+    const tgt = eng.toApiLang(TargetLang.effective(settings));
+    if (!tgt || !eng.supportsLang(tgt)) {
       result.availability = 'unavailable';
       return result;
     }
     result.availability = await withinBudget(budgetMs, async () => {
-      const src = toApiLang(await getPageSourceLang());
+      const src = eng.toApiLang(await eng.pageSourceLang());
       // 判不出页面语言不等于坏了：真翻译时会再判一次，这里只能说“不知道”。
       if (!src) return 'unknown';
-      if (!SUPPORTED_LANGS.has(src)) return 'unavailable';
+      if (!eng.supportsLang(src)) return 'unavailable';
       if (src === tgt) return 'available';
       return await probeAvailability(src, tgt);
     });
@@ -945,27 +687,29 @@
     effectiveEngine,
     unsupportedReason: builtinUnsupportedReason,
     probeStatus,
-    toApiLang,
+    // 这三个的主人是 content/engine/languages.js。包一层而不是直接交出函数：
+    // 调用时才取架子，这一族的装载顺序就不是契约。
+    toApiLang: (lang) => eng.toApiLang(lang),
     translate: translateWithBuiltin,
     destroyAll,
 
     // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
     // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎
     // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
-    supportsLang: (code) => SUPPORTED_LANGS.has(code),
-    pageSourceLang: getPageSourceLang,
+    supportsLang: (code) => eng.supportsLang(code),
+    pageSourceLang: () => eng.pageSourceLang(),
 
     // 输入框芯片（content/content-input-chip.js）问的那一句：这段刚敲进去的字
     // 是什么语言。判不出来答空串 —— 它据此决定不出声。
-    detectStandaloneLang,
+    detectStandaloneLang: (text) => eng.detectStandaloneLang(text),
 
     async availability(sourceLang, targetLang) {
       if (!isBuiltinSupported()) return 'unavailable';
-      const src = toApiLang(sourceLang);
-      const tgt = toApiLang(targetLang);
+      const src = eng.toApiLang(sourceLang);
+      const tgt = eng.toApiLang(targetLang);
       if (!src || !tgt) return 'unavailable';
       if (src === tgt) return 'available';
-      if (!SUPPORTED_LANGS.has(src) || !SUPPORTED_LANGS.has(tgt)) return 'unavailable';
+      if (!eng.supportsLang(src) || !eng.supportsLang(tgt)) return 'unavailable';
       try {
         return await probeAvailability(src, tgt);
       } catch (error) {
@@ -983,9 +727,9 @@
       if (!isBuiltinSupported()) {
         throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_ENV);
       }
-      const src = toApiLang(sourceLang);
-      const tgt = toApiLang(targetLang);
-      if (!src || !tgt || !SUPPORTED_LANGS.has(src) || !SUPPORTED_LANGS.has(tgt)) {
+      const src = eng.toApiLang(sourceLang);
+      const tgt = eng.toApiLang(targetLang);
+      if (!src || !tgt || !eng.supportsLang(src) || !eng.supportsLang(tgt)) {
         throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
       }
       if (src === tgt) return 'available';
@@ -997,7 +741,7 @@
         if (isActivationError(error)) {
           throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
         }
-        if (error instanceof TimeoutError) {
+        if (error instanceof eng.TimeoutError) {
           throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
         }
         throw new EngineUnavailableError(ENGINE_REASONS.CREATE_FAILED);

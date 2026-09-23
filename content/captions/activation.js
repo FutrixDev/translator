@@ -313,6 +313,11 @@
     // 和第 9 条（轨道名排在原字幕后面）是同一句话，只是往上又挪了一格。
     if (caps.sameLanguage()) return { kind: 'same-language' };
 
+    // 今日 AI 额度用完了：轨道还在，句子也还在，只是这几句不会再被译出来。报轨道
+    // 名等于说「一切正常」，观众只会看见字幕停在原文上而不知道为什么。这一行排在
+    // 轨道名前面、原字幕那一问后面 —— 原字幕关着的时候屏幕上本来就没有要译的东西。
+    if (state.active && state.budgetSpent) return { kind: 'budget-spent' };
+
     if (state.cues.length) return { kind: 'track', label: state.trackLabel || state.trackLang };
     let label = '';
     try {

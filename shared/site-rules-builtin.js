@@ -23,7 +23,7 @@
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-22',
+    rulesVersion: '2026-09-23',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -206,17 +206,31 @@
         blockIdAttr: null,
       },
       {
-        // Science 的文章页。
+        // Science 的文章页，模板是 Atypon（class 多是 core- 开头）。
         //
-        // **这条的空名单是「没验过」，不是「验过之后没有」** —— 和上面
-        // huggingface 那条不是一回事。science.org 挡在 Cloudflare 的 JS 挑战
-        // 后面，抓不到真实 DOM，凭印象写 selector 只会写出一组悄悄失效的字符串。
-        // 空名单的代价是作者名和参考文献也跟着翻，那是翻得糙；写错的 selector
-        // 是看着有规则、其实一条没生效。哪天能拿到真实结构再补。
+        // 现场挡在 Cloudflare 的 JS 挑战后面，抓不到；下面五个是对着 Wayback
+        // 存下的两篇真实文章页查过的（science.adc8714 存于 2025-10-13、
+        // science.adc8743 存于 2025-07-21），两篇上每个都在、都只摘掉它该摘的：
+        //   - .contributors        标题下那一行作者名，带 ORCID 链接
+        //   - .core-self-citation  「SCIENCE 23 Feb 2023 Vol 379, Issue 6634
+        //                          pp. 811-814 DOI: …」那种出处行（一页两处）
+        //   - .core-authors        「Information & Authors」页签：单位、邮箱、ORCID
+        //   - #bibliography        「References and Notes」
+        //   - #tab-citations       「Cite as」和被引列表
+        // 摘要（#abstract、#editor-abstract）、正文（#bodymatter）、致谢、图注
+        // 都不在这五块里面 —— 这一页读者要的就是它们。
+        // 顶上那行文章类型（.meta-panel，「REPORT」这种）和投稿日期
+        // （.core-history）是人话，留着。
         match: 'science.org/doi/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [],
+        excludeSelectors: [
+          '.contributors',
+          '.core-self-citation',
+          '.core-authors',
+          '#bibliography',
+          '#tab-citations',
+        ],
         blockIdAttr: null,
       },
       {
@@ -224,14 +238,35 @@
         // （作者主页）和 /scholar_lookup 这些，它们不是「扫一眼今天有什么」的
         // 场景，没必要一起认下来。
         //
-        // 只覆盖 scholar.google.com —— hostMatches 是后缀匹配，
-        // scholar.google.co.jp 不以 scholar.google.com 结尾，命不中。各国镜像
-        // 要一条一条加，而在此之前它们走的是通用启发式，不是坏结果。
+        // 各国的域名是同一套页面，所以是一条规则、一组门牌（match 可以是数组，
+        // 见 site-rules.js 的 rulePatterns）。它们各自直接出结果页、不跳回
+        // .com，而 hostMatches 是后缀匹配 —— scholar.google.co.jp 不以
+        // scholar.google.com 结尾，不写进来就命不中。
+        //
+        // 只列门牌，不写 scholar.google.*：没有公共后缀表，那个通配会把
+        // scholar.google.evil.com 一起认下来。列不全的那些走通用启发式，不是
+        // 坏结果，只是没有下面这两个 selector。
         //
         // .gs_a 是「作者 - 期刊, 年份 - 站点」那一行（作者名 + 刊名 + 域名），
         // .gs_fl 是「[PDF] neurips.cc」和「保存 引用 被引用次数 相关文章」
         // 那两排功能链接。
-        match: 'scholar.google.com/scholar',
+        match: [
+          'scholar.google.com/scholar',
+          // 大中华
+          'scholar.google.com.hk/scholar', 'scholar.google.com.tw/scholar',
+          // 东亚
+          'scholar.google.co.jp/scholar', 'scholar.google.co.kr/scholar',
+          // 欧洲
+          'scholar.google.de/scholar', 'scholar.google.co.uk/scholar',
+          'scholar.google.fr/scholar', 'scholar.google.es/scholar',
+          'scholar.google.it/scholar', 'scholar.google.nl/scholar',
+          'scholar.google.ru/scholar',
+          // 美洲
+          'scholar.google.ca/scholar', 'scholar.google.com.br/scholar',
+          // 亚太
+          'scholar.google.com.au/scholar', 'scholar.google.co.in/scholar',
+          'scholar.google.com.sg/scholar',
+        ],
         state: 'always',
         atomicBlockSelectors: [],
         excludeSelectors: ['.gs_a', '.gs_fl'],

@@ -618,6 +618,10 @@ const DEBOUNCED_SAVE_FIELDS = [
 // Setup event listeners
 function setupEventListeners() {
   elements.translationEngine.addEventListener('change', refreshBuiltinStatus);
+  // 每日 AI 额度那一格亮不亮，问的是「有没有哪条零点击的路会花到 AI」，这两颗
+  // 各是那个问题的一半（另一半是自动模式的引擎，见 onAutoEngineChange）。
+  elements.translationEngine.addEventListener('change', syncAutoEngineState);
+  elements.engineFallback.addEventListener('change', syncAutoEngineState);
   elements.downloadLanguagePack.addEventListener('click', downloadLanguagePack);
 
   elements.testConnection.addEventListener('click', testConnection);

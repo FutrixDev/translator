@@ -437,6 +437,12 @@
       // Subtitles run with the playhead, so they cannot wait on a language
       // pack download the way a page translation can.
       allowDownload: false,
+      // Nobody clicked for these: they are spent because a video is playing.
+      // So they answer to the daily AI allowance the way auto page
+      // translation does — but they are not `auto`, which would also move
+      // them onto the auto engine. Subtitles keep the manual engine; this
+      // flag only puts their AI spend behind the same gate.
+      unattended: true,
     };
     const trackLang = String(opts.trackLang == null ? '' : opts.trackLang).trim();
     if (trackLang) message.sourceLang = trackLang;

@@ -744,7 +744,7 @@ test('there is still one language-code table, and OCR is not a second one', () =
   const ocr = repoFile('shared/ocr.js');
   assert.ok(
     !/LANG_ALIASES|toApiLang\s*[=(]|toTranslatorLanguage/.test(ocr),
-    'normalising language codes belongs to content-translation-engine.js'
+    'normalising language codes belongs to content/engine/languages.js'
   );
   const ocrUi = repoFile('content/content-image-ocr.js');
   assert.ok(

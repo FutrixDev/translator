@@ -39,22 +39,26 @@ account and none of that exists.** Section 2 is the itemised list.
 | 功能 | 去向 | 说明 |
 | --- | --- | --- |
 | 网页翻译（含自动翻译） | **Chrome 内置翻译引擎（默认，完全离线）**，或你在设置里填的 OpenAI 兼容接口 | 默认引擎是 Chrome 端上的 Translator API，译文在你的电脑里算出来，一个字节都不出去。改成 API 引擎后，要翻译的那几段文字会发到**你填的那个地址**，用**你自己的 API key**。我们看不到，也收不到。 |
-| 划词 / 悬停 / 输入框翻译 | 同上 | 同一条路，同一个引擎设置。 |
-| 视频字幕翻译 | 同上 | 发出去的是字幕文本，不是视频、不是音频。 |
+| 划词 / 悬停 / 输入框翻译 | 同上 | 同一条路，同一个引擎设置。输入框角上那颗「译成 …」的小芯片是在本机判断你打的是哪门语言，**你点它之前什么都不发**。 |
+| 视频字幕翻译 | 同上 | 发出去的是字幕文本，不是视频、不是音频。跟着自动翻译走：没被你设成「从不翻译」的站点上，字幕随播放自动翻。 |
 | 图片文字识别（OCR） | **默认在本机**（打包在扩展里的 Tesseract，离线运行）；也可以选用你自己的视觉模型 | 选本机引擎时图片不出电脑。选视觉模型时，图片会发到你填的那个接口。 |
 | **漫画翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。图片上传到我们的服务器处理，处理完返回结果。连同上传的还有**那张图所在的网址**，见第二节。 |
 | **PDF 翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。整个 PDF 文件会上传，文件名跟着任务记录一起存下来。任务在服务器上排队，完成后通知你。 |
 
 **自动翻译不改变这张表。** 它改变的只是「什么时候开始翻译」—— 从「你点一下」
-变成「这一页符合你设的规则时自动开始」。发出去的还是同样的文字，发到同样的地方，
-用同样的引擎。默认引擎是离线的那个，所以**一台没改过设置的机器上，自动翻译不产生
-任何网络请求**。
+变成「这一页符合你设的规则时自动开始」，视频字幕也一样。发出去的还是同样的文字，
+发到同样的地方，用同样的引擎。默认引擎是离线的那个，所以**一台没改过设置的机器上，
+自动翻译不产生任何网络请求**。你让这些不用点的翻译走 AI 接口时，它们每天最多花
+多少字符由你在设置页里定（默认 20 万），这个数在本机记账，不上传。
 
 **Automatic translation does not change that table.** It changes *when*
-translation starts — from "you clicked" to "this page matches a rule you set."
-The same text goes to the same place through the same engine. The default
-engine is the offline one, so on a machine with default settings, automatic
-translation makes no network request at all.
+translation starts — from "you clicked" to "this page matches a rule you set,"
+and the same goes for video subtitles. The same text goes to the same place
+through the same engine. The default engine is the offline one, so on a machine
+with default settings, automatic translation makes no network request at all.
+If you point these no-click translations at an AI endpoint, you set how many
+characters they may spend per day (200,000 by default); that tally is kept on
+your computer and never uploaded.
 
 ---
 
@@ -96,10 +100,10 @@ and only at the moment you click "translate this image".
 | 内容 | 位置 | 跟着账号同步吗 |
 | --- | --- | --- |
 | 设置（接口地址、模型、目标语言、各种开关） | `chrome.storage.sync` | 是 —— 这是 Chrome 的账号同步，数据在 Google 那里，不经过我们 |
-| 站点规则（你对每个网站按下的「总是翻译 / 不再翻译」） | `chrome.storage.sync` | 是，同上 |
+| 站点规则（你对每个网站定下的「总是翻译 / 从不翻译」） | `chrome.storage.sync` | 是，同上 |
 | API key | `chrome.storage.sync` | 是，同上。**我们从不读取、不上传它**；它只在你的浏览器里被拼进发给你自己接口的请求 |
 | 登录令牌（漫画 / PDF 用） | `chrome.storage.local` | **否**，只在这台设备上 |
-| 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
+| 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符，以及今天不用点的翻译用掉了多少 AI 字符 —— 每日额度靠它算） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
 | 译文缓存（30 天过期） | `chrome.storage.local` | 否 |
 
 **「本机统计」那一块是给你自己看的镜子，不是我们的埋点。** 它之所以放在
@@ -132,7 +136,7 @@ button that clears it.
 - 不出售数据，不把数据用于与功能无关的任何用途，不做信用评估或贷款审批。
 - 不收集浏览历史。扩展知道你打开了哪一页，**是因为它要在那一页上干活**，这件事
   不会被记录，也不会被发送 —— 自动翻译尤其不会。两处例外，都写在别处了：你自己
-  按下的「总是翻译 / 不再翻译」存在你的浏览器里（第三节），而漫画翻译会把那张图
+  定下的「总是翻译 / 从不翻译」存在你的浏览器里（第三节），而漫画翻译会把那张图
   所在页面的网址发给我们（第二节）。
 - 不使用任何第三方分析 SDK。整个代码库里搜不到一个。
 - 不下载或执行远程代码。所有 JS 和 WASM 都在安装包里。

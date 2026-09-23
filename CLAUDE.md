@@ -45,7 +45,7 @@ which file is layout, not contract. The rule that makes that safe is the same
 everywhere: **ask the surface, not the file** — the helpers in
 `test/unit/helpers/sources.mjs` (`workerSource()`, `optionsSource()`,
 `messagesSource()`, `contentCss()`, `comicSource()`, `captionEngineSource()`,
-`hoverSource()`) read a whole family, so adding a module never means editing a
+`hoverSource()`, `engineSource()`) read a whole family, so adding a module never means editing a
 test. Only assertions about **load order** read `manifest.json` or the entry
 file directly.
 
@@ -67,15 +67,15 @@ file directly.
      `content/page/*.js` (collect, insert, batch, visibility, progress,
      site-adapter) behind the entry `content-page-translation.js`
    - UI components: selection button, float ball, translation popup, progress bar
-   - Three more families have sections of their own below: comic
-     (`content/comic/`), hover/selection (`content/hover/`), captions
-     (`content/captions/`)
+   - Four more families have sections of their own below: the translation
+     engine (`content/engine/`), comic (`content/comic/`), hover/selection
+     (`content/hover/`), captions (`content/captions/`)
 
    **Content scripts are classic scripts sharing one global lexical
    environment**, so `manifest.json`'s order *is* the dependency graph, and a
    file that throws at load fails silently rather than loudly. That is why each
    sub-family hangs its cross-file names on one shelf object
-   (`ctx.comic` / `ctx.hover` / `ctx.captions`) and reads them at call time:
+   (`ctx.engine` / `ctx.comic` / `ctx.hover` / `ctx.captions`) and reads them at call time:
    order then stops mattering. A name that crosses a file and is *not* written
    `comic.foo` is a bug waiting for a reload — including after `...`, where the
    spread operator's dots look exactly like a property access.
@@ -177,6 +177,47 @@ shelf, `ctx.hover`:
 Every reference crossing a file goes through the shelf (`hov.foo`), so no file
 depends on being loaded before another. Tests ask the **family**, not a file:
 `hoverSource()` in `test/unit/helpers/sources.mjs`.
+
+### Translation Engine
+
+Every translation a content script asks for — page, hover, selection, input
+box, subtitles, OCR — goes through one call, `ctx.requestTranslation`, which
+picks a backend (Chrome's built-in Translator API or the user's own AI
+endpoint) and is the **only** place a request leaves for the model. It is a
+family of classic scripts sharing one shelf, `ctx.engine`:
+
+| file | what it owns |
+| --- | --- |
+| `content/engine/languages.js` | extension codes ↔ Translator API codes (`toApiLang`), which languages the built-in engine knows, `detectLanguageOf()`, the page's and a snippet's source language |
+| `content/engine/watchdog.js` | the stall watchdog: every call into the Translator API gets a deadline, and a download's deadline moves with its progress events |
+| `content/content-translation-engine.js` | the entry: backend choice, the budget gate, `ctx.requestTranslation`, `ctx.builtinTranslator` |
+
+The options page loads the same family (language-pack status and download), so
+both load lists — `manifest.json` and `options/options.html` — carry every file,
+after `shared/lang-tags.js`; `test/unit/engine-status.test.mjs` checks both.
+Tests ask the **family**, not a file: `engineSource()`.
+
+**Two engine switches, one per half of the extension.** `translationEngine` is
+for what the user clicks (and for subtitles, below); `autoTranslateEngine` is
+for pages translated automatically, and defaults to the free built-in engine.
+Every predicate that asks "built-in or AI?" takes the `auto` bit
+(`isBuiltinSelected(auto)`, `effectiveEngine({ auto })`), and
+`test/unit/auto-engine-choice.test.mjs` fails on a bare `isActive()` — a caller
+that has no automatic half writes `isActive(false)` to say so.
+
+**The daily AI budget gates zero-click spend, and there are two zero-click
+paths.** `refuseAutoAiSpend()` sits right before the one `sendMessage` exit and
+charges `AutoStats` (`shared/auto-stats.js`, a single-writer queue in the
+service worker) for requests marked either `auto` (page auto-translation) or
+`unattended` (subtitles: `CaptionCore.buildTranslationRequest` sets it). They
+are different flags on purpose: subtitles keep the **manual** engine — `auto`
+would also move them onto `autoTranslateEngine` — but nobody clicks per line, so
+their AI spend counts toward the same `autoAiDailyBudget`. A refusal comes back
+as `{ error, budgetSpent: true }`; the caption menu turns that into
+「今日 AI 额度已用完」 and the next batch after the cooldown tries again, so
+raising the budget or a new day heals it without a reload. The options page
+greys the budget field only when none of the three unattended AI paths is open
+(auto engine = AI, manual engine = AI, or fallback allowed).
 
 ### Video Subtitle Translation
 
@@ -332,7 +373,7 @@ Two rules the generic provider exists to keep:
   holds only characters that exist on one side and not the other — 后, 几, 台,
   里 are ordinary Traditional words, and a table containing them would read a
   Traditional page as Simplified. That refinement belongs to
-  `detectLanguageOf()` in `content/content-translation-engine.js`, not to any
+  `detectLanguageOf()` in `content/engine/languages.js`, not to any
   one caller, because the built-in engine asks the same question again one
   layer below the gate: it knows Simplified (`zh`) and Traditional
   (`zh-Hant`) as two languages, and a bare `zh` source against a `zh` target
@@ -410,7 +451,7 @@ Two things it deliberately does not own:
 
 - **Language-code normalisation.** `shouldTranslate` takes codes the caller has
   already put through `ctx.builtinTranslator.toApiLang`. A second alias table
-  here would have to agree with `content/content-translation-engine.js` forever.
+  here would have to agree with `content/engine/languages.js` forever.
 - **Detecting the language during recognition.** Tesseract must be told its
   languages up front and Chrome's `LanguageDetector` reports `unavailable` on
   plenty of profiles, so the language is worked out *after* the text exists, by

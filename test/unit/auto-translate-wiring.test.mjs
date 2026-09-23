@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { workerSource } from './helpers/sources.mjs';
+import { engineSource, familyPaths, workerSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -22,6 +22,8 @@ const code = (rel) => strip(read(rel));
 // service worker 拆成了一组模块（background/*.js），一个 handler 落在哪个文件里
 // 是实现细节 —— 这里问的都是「worker 有没有这么做」，所以整份读它。
 const workerCode = () => strip(workerSource());
+// 翻译引擎也是一族（content/engine/*.js 加入口），同样整族读。
+const engineCode = () => strip(engineSource());
 
 const manifest = JSON.parse(read('manifest.json'));
 const isolated = manifest.content_scripts.find((entry) => (entry.world || 'ISOLATED') === 'ISOLATED').js;
@@ -250,16 +252,19 @@ test('换了路由或关掉自动翻译之后，在途的那一轮不再发下�
 });
 
 test('换页要让页面语言的缓存过期，且这件事归引擎自己管', () => {
-  const engine = code('content/content-translation-engine.js');
+  const engine = engineCode();
   assert.match(engine, /SpaNavigation\.onRouteChange\(\(\) => \{\s*pageSourceLangPromise = null;/);
   // 缓存归引擎所有，过期也归它。放到自动翻译那一层去清的话，自动翻译关着的时候
   // 划词/悬停/字幕照样在用一份上一页的语言。
   assert.doesNotMatch(code('content/content-auto-translate.js'), /pageSourceLangPromise/);
-  // 订阅要真订得上：引擎必须排在 spa-navigation 后面。
-  assert.ok(
-    isolated.indexOf('shared/spa-navigation.js') < isolated.indexOf('content/content-translation-engine.js'),
-    'shared/spa-navigation.js 必须排在 content-translation-engine.js 前面'
-  );
+  // 订阅要真订得上：引擎这一族（订阅是在装载时做的）必须整族排在 spa-navigation 后面。
+  for (const file of familyPaths('content/engine', 'content/content-translation-engine.js')) {
+    assert.ok(isolated.indexOf(file) >= 0, `${file} 不在内容脚本里`);
+    assert.ok(
+      isolated.indexOf('shared/spa-navigation.js') < isolated.indexOf(file),
+      `shared/spa-navigation.js 必须排在 ${file} 前面`
+    );
+  }
 });
 
 test('跳转这道门量的是真正在滚的那个容器，不是 window', () => {
@@ -320,7 +325,7 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   assert.match(code('content/content-auto-translate.js'), /identity\.isStale\(element, textFingerprint, target\)/);
 
   // 目标语言的规范化归引擎所有（toApiLang 那套别名表只有一份）。
-  assert.match(code('content/content-translation-engine.js'), /ctx\.currentTargetLang = currentTargetLang;/);
+  assert.match(engineCode(), /ctx\.currentTargetLang = currentTargetLang;/);
   assert.ok(
     isolated.indexOf('content/content-translation-engine.js') < isolated.indexOf('content/page/insert.js'),
     'content-translation-engine.js 必须排在 page/insert.js 前面'
@@ -436,9 +441,10 @@ test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
     'content/content-auto-translate.js': /\bctx\.settings\.([A-Za-z_$][\w$]*)/g,
     // 费用闸的另一半在引擎里：「自动模式这一刻走哪个引擎」由
     // isBuiltinSelected(auto) / canFallBackToAI() 回答，调度层只是问它。判定的
-    // 入参因此有一段住在这个文件里，漏掉它就等于把那几个键从对账里摘掉。
-    'content/content-translation-engine.js': /\bsettings\.([A-Za-z_$][\w$]*)/g
+    // 入参因此有一段住在引擎那一族里，漏掉它就等于把那几个键从对账里摘掉。
+    '翻译引擎那一族': /\bsettings\.([A-Za-z_$][\w$]*)/g
   };
+  const readSource = (file) => (file === '翻译引擎那一族' ? engineCode() : code(file));
   // decide() 另外两个入参的出处：调用点从 ctx.settings 上取，名字和这里对不上。
   const viaParams = ['siteRules', 'targetLang'];
   // 读了但**故意**不重来的键写在这里，连同理由 —— 空着就是「一个也没有」。
@@ -446,7 +452,7 @@ test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
 
   const found = new Set(viaParams);
   for (const [file, pattern] of Object.entries(sources)) {
-    for (const hit of code(file).matchAll(pattern)) found.add(hit[1]);
+    for (const hit of readSource(file).matchAll(pattern)) found.add(hit[1]);
   }
   assert.ok(found.has('skipTargetLanguageText'), '扫描没扫到已知的键，正则该修了');
   assert.ok(found.has('autoAiDailyBudget'), '费用闸的预算键没被扫到，第三条正则该修了');
@@ -545,7 +551,7 @@ test('一轮翻译只读一次目标语言，然后一路带到落笔', () => {
 // 语言对的监听比没有更糟：用户的下一次点击会把**别的**包下下来，真正缺的那个永远
 // 没人下。
 test('语言包预取记着自己是为哪个语言对挂的，过期了要换掉', () => {
-  const engine = code('content/content-translation-engine.js');
+  const engine = engineCode();
   const pack = code('content/content-language-pack.js');
 
   // 同一时刻只有一份，换语言对时先摘掉旧的。
