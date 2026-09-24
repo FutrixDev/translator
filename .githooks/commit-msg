@@ -1,0 +1,4 @@
+#!/bin/sh
+# Commit messages here are English; scripts/check-commit-message.mjs says why
+# and how. `npm install` points core.hooksPath at this directory.
+exec node "$(dirname "$0")/../scripts/check-commit-message.mjs" "$1"
