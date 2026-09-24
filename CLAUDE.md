@@ -270,6 +270,30 @@ a key — `file://` pages have no hostname, and there the rule would silently no
 be stored while the "also open the main switch" half still ran.
 `SiteRules.setSiteAuto()` throws on such a host rather than half-succeeding.
 
+That leaves a band where the two answers disagree: a site with no rule, gate
+open, subtitles being translated, first row reading off. Stopping there used to
+take two clicks (on writes `always`, off writes `never`). It is covered by a
+**second row, not a second meaning of the first**: 「不再自动翻译 {site}」
+(`autoStopSite`, the float ball's key and wording), right under the first row
+in both the player menu and the popup, writing `SiteRules.setSiteAuto(host,
+false)` in one click. All three rows print the site through
+`SiteRules.siteLabel()` — the key the rule is written under, so the button and
+the Settings list name the same site. Whether it shows is one function,
+`stopSiteOffered()` in `content/captions/activation.js` — a provider on this
+page, gate open, `siteAuto` off, and `siteRuleWritable()` — and neither
+surface recomputes it:
+the engine hands it to the menu as `controls.sync({ …, stopSite })`, computed
+from the same `state` the first row is drawn from, and the popup reads
+`captionStopSite` off the same `AUTO_PAGE_STATE` reply as `auto.siteAuto`
+(`ctx.captionStopSiteOffered()`). Once the `never` lands the gate is shut, so
+the row disappears and the first row — still off — is the way back on. A
+tri-state first row was the alternative and was rejected: its middle state
+("follow the default") means deleting the rule, which is a no-op on a
+built-in-list site and under `GLOBAL_OFF`, and changing what an off switch
+writes depending on context the user cannot see is the bug the first
+paragraph exists to prevent. The float ball's own stop row is separate and
+still shows only when `siteAuto` is on — it also hides the page's translations.
+
 A provider in `content/content-caption-providers.js` answers four questions:
 
 | question | method |

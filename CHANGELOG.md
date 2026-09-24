@@ -38,9 +38,12 @@
   shows what the popup shows: on for a site you have turned on, off for a site
   you have said nothing about. **If you had the subtitle switch off, note that
   subtitles will now be translated on sites you have not turned off**. On a
-  site you have said nothing about that switch reads off while subtitles are
-  translated, so leaving the site alone takes switching it on and then off —
-  a rough edge noted for the next round; once off, it is remembered.
+  site you have said nothing about, that row reads off while subtitles are
+  being translated — it answers "is this site set to translate?", not "are
+  subtitles on?" — so the menu and the popup show one more row right under it
+  there, 「不再自动翻译 youtube.com」 ("Stop auto-translating youtube.com"),
+  the float ball's own wording. One click stores a never rule for the site,
+  subtitles stop on the spot, and the row goes away; it is remembered.
 - **A page can be paused without a decision.** Alt+A, the toolbar popup and the
   float ball all toggle the page you are looking at, for this visit only, and
   leave no rule behind.

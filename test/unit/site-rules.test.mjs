@@ -222,6 +222,17 @@ test('one tenant choice does not decide for the tenant next door', () => {
   assert.equal(verdict({ host: 'b.blogspot.com', userRules: never }).verdict, 'ask');
 });
 
+test('siteLabel prints the key the rule is stored under, and the raw host where there is none', () => {
+  // 「不再自动翻译 {site}」上印的名字。和写进去的键不一样的话，按钮说的是
+  // www.youtube.com，设置页列表里出现的却是 youtube.com。
+  assert.equal(SiteRules.siteLabel('www.youtube.com'), 'youtube.com');
+  assert.equal(SiteRules.siteLabel('www.youtube.com'), SiteRules.normalizeHost('www.youtube.com'));
+  assert.equal(SiteRules.siteLabel('old.reddit.com'), 'old.reddit.com');
+  // file:// 上没有键可存：印个空串也比 undefined 强，但那一行本来就不露。
+  assert.equal(SiteRules.siteLabel(''), '');
+  assert.equal(SiteRules.siteLabel(undefined), '');
+});
+
 test('a user rule is looked up along the parent chain, so normalizeHost is a convenience', () => {
   // 归一化只决定“点总是翻译时存在哪个键下”，而它现在存的就是这台主机本身。
   // 想覆盖整个站点靠的是查找这一头：沿父域一路往上，所以在 example.co.uk 上表

@@ -457,19 +457,52 @@ test('the button is there with the gate shut, and opens it', async ({ page, cont
   }).toBe('always');
 });
 
-// A2 — the menu's five rows, in order, in the reader's language.
-test('the menu lists the five rows in order', async ({ page, context }) => {
+// 反过来那一半：youtube.com 不在内置 Always 名单上，没设过规则时第一行印着「关」，
+// 字幕却照翻（闸门问的是 siteRefused）。菜单在这里多一行，一下写 never —— 以前得
+// 先把第一行点开（always）再点关（never）。
+test('on a site with no rule, one row stops subtitles there for good', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  await playCue(page);
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await page.locator('#ai-translator-caption-btn').click();
+  const toggle = page.locator('#ai-translator-caption-menu .ai-translator-caption-switch');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  const stop = page.locator('#ai-translator-caption-menu [data-action="stop-site"]');
+  await expect(stop).toHaveText('不再自动翻译 youtube.com');
+
+  await stop.click();
+
+  await expect.poll(async () => {
+    const rules = await getSyncSetting(context, 'siteRules');
+    return (rules || {})['youtube.com'];
+  }).toBe('never');
+  // 只是这个站点：总开关不动。
+  expect(await getSyncSetting(context, 'autoTranslate')).not.toBe(false);
+  await expect(page.locator('#ai-translator-caption-overlay')).toHaveCount(0);
+
+  // 按钮还在，这一行收起来了，第一行还是那个「关」—— 按它就是重新打开。
+  await page.locator('#ai-translator-caption-btn').click();
+  await expect(stop).toBeHidden();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+});
+
+// A2 — the menu's rows, in order, in the reader's language.
+test('the menu lists its rows in order', async ({ page, context }) => {
   await openPlayer(page, context, BASE_SETTINGS);
   await page.locator('#ai-translator-caption-btn').click();
 
   const menu = page.locator('#ai-translator-caption-menu');
   await expect(menu).toBeVisible();
-  // :not([hidden]) — the menu carries one conditional row («开启原字幕», for a
-  // video whose subtitles are off), and allTextContents() does not care about
-  // visibility. This player has subtitles on, so five is the whole menu.
-  const labels = await menu.locator('[role="menuitem"]:not([hidden]) .ai-translator-caption-menu-label').allTextContents();
-  expect(labels).toEqual([
+  // :not([hidden]) — the menu carries two conditional rows: «开启原字幕», for a
+  // video whose subtitles are off, and «不再自动翻译 {site}», for a site with no
+  // rule where subtitles are being translated anyway. This player has subtitles
+  // on and youtube.com has no rule, so the second one is in and the first is
+  // not. toHaveText retries: the gate is only decided once the scheduler is up.
+  await expect(menu.locator('[role="menuitem"]:not([hidden]) .ai-translator-caption-menu-label')).toHaveText([
     '自动翻译这个站点',
+    // 键过了 normalizeHost：www. 被剥掉，和写进去的那条规则是同一个名字。
+    '不再自动翻译 youtube.com',
     '字幕显示类型',
     '译文位置',
     '字幕样式',

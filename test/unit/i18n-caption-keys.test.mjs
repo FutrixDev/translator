@@ -61,6 +61,9 @@ const CAPTION_KEYS = [
   // 同一个 key；设置页那张卡剩下的是一句「跟着主开关走」的说明。
   'popupSiteAuto',
   'captionFollowsAutoTranslate',
+  // 没设过规则的站点上字幕照翻、第一行却印着「关」：菜单和 popup 都多一行「不
+  // 再自动翻译 {site}」，和悬浮球那一行同一个 key。
+  'autoStopSite',
   // 字幕的 AI 花费算进自动翻译那一份日额度，花完那一刻菜单要说得出原因。
   'captionStatusBudgetSpent',
 ];

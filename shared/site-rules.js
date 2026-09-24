@@ -70,6 +70,15 @@
     return cleanHost(hostname).replace(/^www\./, '');
   }
 
+  /**
+   * 印在按钮上的站点名：规则存在哪个键下就印哪个，存不下键的页面（file://）
+   * 退回原样。「不再自动翻译 {site}」在悬浮球、字幕菜单、popup 三处都有，印的
+   * 都是它 —— 按钮上的名字和写进去的键是同一个，三处也不会一处带 www. 一处不带。
+   */
+  function siteLabel(hostname) {
+    return normalizeHost(hostname) || String(hostname || '');
+  }
+
   // 后缀匹配：模式命中它自己，以及它的子域。反过来不成立——规则写 x.com 命中
   // mobile.x.com，规则写 mobile.x.com 不命中 x.com。
   function hostMatches(host, pattern) {
@@ -598,6 +607,7 @@
     REASONS,
     decide,
     normalizeHost,
+    siteLabel,
     // 导出是为了设置页：那份语言名单画在界面上，勾哪几个得和 decide() 认哪几个
     // 是同一个口径。设置页再抄一份 split('-')[0] 就是这张表的第四份副本。
     baseLang,

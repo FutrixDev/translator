@@ -49,7 +49,8 @@ the user asks"，**现在这句话不成立了**）。
 >   只管这一次访问，不写任何规则。
 > - 新增：视频字幕跟着同一个决定走。没被你设成「从不翻译」的网站上，字幕随播放
 >   自动翻；设了的，字幕也不翻。播放器菜单第一行就是「自动翻译这个站点」，和
->   工具栏弹窗是同一条规则。
+>   工具栏弹窗是同一条规则。没设过规则的网站上它是关着的、字幕却在翻，所以它
+>   下面多一行「不再自动翻译 这个网站」，点一下这个网站的字幕就停了。
 > - 新增：不用离开页面就能叫停。悬浮球菜单第一行「不再自动翻译 这个网站」，
 >   一下写好规则、页面恢复原文。
 > - 新增：单页应用跟得上了。站内换一篇文章，和打开一个新页面是一样的待遇。
@@ -102,7 +103,10 @@ the user asks"，**现在这句话不成立了**）。
 > - New: video subtitles follow the same decision. On a site you have not
 >   turned off, subtitles are translated as they play; on one you have, they
 >   are not. The first row of the in-player menu is the same "translate this
->   site automatically" rule the toolbar popup shows.
+>   site automatically" rule the toolbar popup shows. On a site you have said
+>   nothing about it reads off while subtitles are translated, so both show a
+>   row under it, "Stop auto-translating" the site, that stops them in one
+>   click.
 > - New: stop a site without leaving the page — the float-ball menu's first
 >   row writes the rule and restores the original text.
 > - New: single-page apps are followed — a new article on a site that never
@@ -220,10 +224,14 @@ communications、Location。
 >    (`shared/translation-cache.js`).
 > 6. Open a YouTube video in another language and turn its captions on. The
 >    translated line appears under the original — subtitles follow the same
->    site decision as the page: on a site set to never translate ("Auto-
->    translate this site" switched off in the toolbar popup or in the
->    extension's menu inside the player) neither the page nor its subtitles
->    are translated, and that is remembered.
+>    site decision as the page, and youtube.com has none yet, so they are
+>    translated while "Auto-translate this site" reads Off (in the toolbar
+>    popup and in the extension's menu inside the player; it shows the site's
+>    rule, not the subtitles). Right under it, "Stop auto-translating
+>    youtube.com" stores a never rule in one click: the subtitles stop at
+>    once, the row goes away, and neither the page nor its subtitles are
+>    translated on that site again. Switching "Auto-translate this site" on
+>    turns it back on.
 >
 > On default settings the translation engine is Chrome's on-device Translator,
 > so steps 1–6 send **no text anywhere**. Chrome may download a language pack
@@ -234,8 +242,8 @@ communications、Location。
 - [x] `manifest.json` 版本已升到 1.4.0（高于已提交的 1.3.1）
 - [x] `permissions` / `host_permissions` 未新增任何项
 - [x] `_locales/` 十种语言的 `appDescription` 已重写并全部 ≤132 字符
-- [x] `npm run test:unit` 全绿（733 passed）
-- [x] `npm run test:e2e` 全绿（229 passed, 9 skipped）
+- [x] `npm run test:unit` 全绿（742 passed）
+- [x] `npm run test:e2e` 全绿（233 passed, 9 skipped）
 - [ ] `npm run zip` 产物已校验：十种 `_locales` 齐全、Tesseract 核心与语言包在内、
       无 `.DS_Store`、无 source map、无测试文件
 - [ ] 在 `chrome://extensions/` 用「加载已解压的扩展程序」实测一遍第四节那六步
