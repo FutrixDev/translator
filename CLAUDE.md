@@ -527,6 +527,18 @@ Follow this process when fixing bugs:
    exist because of exactly this), and add a unit test that fails if the
    duplicate comes back.
 
+3. **Commit messages are English — never Chinese.** Subject and body both,
+   and the PR title too: GitHub writes it into the commit that lands on
+   `main` (a merge commit's body, the subject of a squash of several commits),
+   and nothing checks it mechanically. No Chinese characters and no full-width
+   punctuation (`，` `。` `「」`); a change about a UI string names its i18n
+   key (`autoStopSite`) or its English text rather than quoting the zh-CN one.
+   `.githooks/commit-msg` refuses a message that breaks this
+   (`scripts/check-commit-message.mjs`) — don't `--no-verify` past it — and
+   `npm install` switches it on for the whole clone (`core.hooksPath`, which
+   every worktree shares). Commits from before the rule keep their messages:
+   published history is not rewritten to translate them.
+
 ## Default Configuration
 
 ```javascript
