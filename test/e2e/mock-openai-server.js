@@ -57,12 +57,17 @@ function pngDataUrlSize(dataUrl) {
  *   A 崩了，而两种结局里只有一种在测那件事。
  *
  *   和上面两个不叠加使用：这一条先判，命中就不再数次数。
+ * @param {?number} [options.status]
+ *   Answer every request with this HTTP status and an empty body, whatever it
+ *   asked. A local model server that refuses the extension looks exactly like
+ *   this: Ollama answers a chrome-extension:// origin missing from
+ *   OLLAMA_ORIGINS with a bare 403 and nothing to parse.
  * @param {number} [options.delayMs]
  *   每次作答前先拖这么久。整页翻译在真实页面上要跑几十秒，一批批往回落 ——
  *   「翻到一半用户按了显示原文」这类旅程，只有在一轮还没跑完的时候才存在，
  *   而答得太快的服务器把那个窗口压成了零。
  */
-async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failWhen = null, delayMs = 0 } = {}) {
+async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failWhen = null, status = null, delayMs = 0 } = {}) {
   let remainingFailures = failRequests;
   let served = 0;
   // One entry per request that took the fast-batch path, so tests can assert the mock
@@ -77,6 +82,10 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   // than a string. Recorded so specs can assert the image really left the browser in the
   // OpenAI shape, not just that a popup rendered something.
   const visionRequests = [];
+  // The credentials each POST carried, in arrival order: `null` where a header
+  // was not sent at all. A request with no key must leave with no auth header —
+  // an empty `Bearer ` is still a header, and some servers reject it.
+  const authHeaders = [];
 
   const { origin, close } = await startMockServer((req, res) => {
     if (req.method !== 'POST') {
@@ -90,6 +99,16 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
       body += chunk;
     });
     req.on('end', () => {
+      authHeaders.push({
+        authorization: req.headers.authorization ?? null,
+        xApiKey: req.headers['x-api-key'] ?? null,
+      });
+      if (status !== null) {
+        res.writeHead(status);
+        res.end();
+        return;
+      }
+
       let content = '';
       let systemPrompt = '';
       try {
@@ -176,6 +195,7 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
     fastBatchRequests,
     sentTexts,
     visionRequests,
+    authHeaders,
     endpoint: `${origin}/v1/chat/completions`,
     close
   };

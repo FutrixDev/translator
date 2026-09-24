@@ -11,18 +11,34 @@
 // module the service worker uses, so the connection test below proves the
 // exact request translation will make.
 
+// The connection the form describes: a preset's own endpoint unless the preset
+// is "custom", whatever the hidden endpoint box still holds. Saving and the
+// connection test both read it here, so they cannot judge two different URLs.
+function formConnection() {
+  const provider = elements.provider.value;
+  const preset = PROVIDERS[provider];
+  const apiEndpoint = provider !== 'custom' && preset
+    ? preset.endpoint
+    : elements.apiEndpoint.value.trim();
+  return { provider, apiEndpoint, apiKey: elements.apiKey.value.trim() };
+}
+
+// The key box says "optional" where no key is needed: a local model server
+// (the Ollama / LM Studio presets, or a loopback / LAN endpoint). The rule is
+// APICompat.requiresApiKey, the same one translation is refused by. Writing the
+// data attribute too keeps the right text when the UI language is re-applied.
+function syncApiKeyPlaceholder() {
+  const key = globalThis.APICompat.requiresApiKey(formConnection())
+    ? 'placeholderApiKey'
+    : 'placeholderApiKeyOptional';
+  elements.apiKey.setAttribute('data-i18n-placeholder', key);
+  elements.apiKey.setAttribute('placeholder', t(key));
+}
+
 // Test API connection
 async function testConnection() {
-  const providerKey = elements.provider.value;
-  const provider = PROVIDERS[providerKey];
-
-  // Get endpoint
-  let apiEndpoint = elements.apiEndpoint.value.trim();
-  if (providerKey !== 'custom' && provider) {
-    apiEndpoint = provider.endpoint;
-  }
-
-  const apiKey = elements.apiKey.value.trim();
+  const connection = formConnection();
+  const { provider: providerKey, apiEndpoint, apiKey } = connection;
   const modelName = getEffectiveModelName();
 
   // This button is now the only thing on the page that judges the API config,
@@ -32,7 +48,8 @@ async function testConnection() {
     if (providerKey === 'custom') elements.apiEndpoint.focus();
     return;
   }
-  if (!apiKey) {
+  // A local model server needs no key; everything else still does.
+  if (globalThis.APICompat.isApiKeyMissing(connection)) {
     showStatus(t('pleaseEnterApiKey'), 'warning');
     elements.apiKey.focus();
     return;
@@ -69,14 +86,22 @@ async function testConnection() {
     // so always read the body rather than trusting response.ok alone.
     const data = await response.json().catch(() => ({}));
     const result = readAPIResponse(data, response.status, response.ok, claudeShape);
-    if (result.error) {
-      showStatus(`${t('connectionFailed')}: ${result.error}`, 'error');
+    if (result.failure) {
+      showConnectionFailure({ ...result.failure, endpoint: apiEndpoint }, providerKey);
     } else {
       showStatus(t('connectionSuccess'), 'success');
     }
-  } catch (error) {
-    showStatus(`${t('connectionFailed')}: ${error.message}`, 'error');
+  } catch (_) {
+    // fetch rejects only when no answer came back at all (server down, DNS).
+    showConnectionFailure({ network: true, endpoint: apiEndpoint }, providerKey);
   }
+}
+
+// Same wording the service worker gives a failed translation, in this page's
+// language, through the one describer in shared/api-compat.js.
+function showConnectionFailure(failure, provider) {
+  const text = globalThis.APICompat.describeAPIFailure(failure, t, { provider });
+  showStatus(`${t('connectionFailed')}: ${text}`, 'error');
 }
 
 // Reset prompt to default

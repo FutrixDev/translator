@@ -183,22 +183,35 @@ test('the packaged zip includes the shared module', () => {
 });
 
 test('vendor error shapes are all recognised', () => {
+  // A failure comes back as data, { status, detail }, not as a sentence: this
+  // layer does not know the reader's language. Wording is describeAPIFailure's
+  // job (test/unit/api-key-rule.test.mjs).
   const openai = A.readAPIResponse({ error: { message: 'bad key', code: 401 } }, 401, false, false);
-  assert.match(openai.error, /bad key/);
-  // Known statuses get an explanation prepended.
-  assert.match(openai.error, /API Key/);
+  assert.deepEqual(openai, { failure: { status: 401, detail: 'bad key' } });
 
   const anthropic = A.readAPIResponse(
     { type: 'error', error: { type: 'invalid_request_error', message: 'bad model' } }, 400, false, true);
-  assert.match(anthropic.error, /bad model/);
+  assert.deepEqual(anthropic, { failure: { status: 400, detail: 'bad model' } });
 
   const ollama = A.readAPIResponse({ error: 'model not found' }, 404, false, false);
-  assert.match(ollama.error, /model not found/);
+  assert.deepEqual(ollama, { failure: { status: 404, detail: 'model not found' } });
 
-  // OpenRouter reports some failures with HTTP 200 and an error payload.
+  // OpenRouter reports some failures with HTTP 200 and an error payload; the
+  // HTTP status it puts in `code` is the one that counts.
   const soft = A.readAPIResponse({ error: { message: 'rate limited' } }, 200, true, false);
-  assert.match(soft.error, /rate limited/);
+  assert.deepEqual(soft, { failure: { status: 200, detail: 'rate limited' } });
+  const softCoded = A.readAPIResponse({ error: { message: 'rate limited', code: 429 } }, 200, true, false);
+  assert.equal(softCoded.failure.status, 429);
+  // A vendor's private number or string code is not an HTTP status.
+  assert.equal(A.readAPIResponse({ error: { message: 'x', code: 1113 } }, 400, false, false).failure.status, 400);
+  assert.equal(A.readAPIResponse({ error: { message: 'x', code: 'invalid_api_key' } }, 401, false, false).failure.status, 401);
+
+  // A refusal with no body at all (a local server's 403) is still a failure.
+  assert.deepEqual(A.readAPIResponse({}, 403, false, false), { failure: { status: 403, detail: '' } });
 
   assert.equal(A.readAPIResponse({ choices: [{ message: { content: ' hi ' } }] }, 200, true, false).text, 'hi');
   assert.equal(A.readAPIResponse({ content: [{ text: ' hi ' }] }, 200, true, true).text, 'hi');
+  // The old shape is gone, not kept alongside.
+  assert.equal('error' in A.readAPIResponse({}, 500, false, false), false);
+  assert.equal(A.formatErrorMessage, undefined);
 });

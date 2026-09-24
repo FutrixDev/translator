@@ -17,6 +17,9 @@ import { engineSource, familyPaths } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
+// engine-status.js reads APICompat at call time (the AI engine's readiness is
+// APICompat.isApiKeyMissing), and every page loads api-compat.js before it.
+await import('../../shared/api-compat.js');
 await import('../../shared/engine-status.js');
 await import('../../shared/default-settings.js');
 await import('../../i18n/messages.js');
@@ -71,6 +74,23 @@ test('only the AI engine is judged by the API key', () => {
   assert.deepEqual(
     ES.describeEngineStatus({ translationEngine: 'ai', apiKey: 'sk-x' }, null),
     { key: 'ready', detailKey: '', ok: true });
+
+  // A local model server needs no key: the Ollama / LM Studio presets, or any
+  // loopback / LAN endpoint. The rule is APICompat's, not a second copy here.
+  for (const local of [
+    { provider: 'ollama', apiEndpoint: 'http://localhost:11434/v1/chat/completions' },
+    { provider: 'lmstudio', apiEndpoint: 'http://localhost:1234/v1/chat/completions' },
+    { provider: 'custom', apiEndpoint: 'http://127.0.0.1:8080/v1/chat/completions' },
+    { provider: 'custom', apiEndpoint: 'http://192.168.1.20:11434/v1/chat/completions' },
+  ]) {
+    assert.deepEqual(
+      ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '', ...local }, null),
+      { key: 'ready', detailKey: '', ok: true }, JSON.stringify(local));
+  }
+  // A remote endpoint still does, whatever the preset is called.
+  assert.equal(ES.describeEngineStatus({
+    translationEngine: 'ai', apiKey: '  ', provider: 'custom', apiEndpoint: 'https://api.example.com/v1/chat/completions',
+  }, null).key, 'apiNotConfigured');
 
   // The regression this file is named after: the default engine is key-free,
   // so a missing key is not an error and must not be reported as one.
@@ -163,9 +183,10 @@ test('falling back to the user own API is off unless they asked for it', () => {
   const body = fn.slice(0, fn.indexOf('\n  }'));
   assert.match(body, /settings\.engineFallback !== 'allow-ai'/,
     'canFallBackToAI no longer consults engineFallback, so the built-in engine can quietly start billing again');
-  // And the gate comes before the key lookup, so no storage read happens for
-  // a decision that is already made.
-  assert.ok(body.indexOf('engineFallback') < body.indexOf('apiKeyKnown'));
+  // And the gate comes before the AI-config lookup, so no storage read happens
+  // for a decision that is already made.
+  assert.ok(body.indexOf('aiConfig') > 0, 'the AI-config lookup moved; re-judge this ordering');
+  assert.ok(body.indexOf('engineFallback') < body.indexOf('aiConfig'));
 });
 
 test('local-only is the default, in the one dictionary the content scripts read', () => {
@@ -227,6 +248,20 @@ test('engine-status.js is loaded wherever it is read', () => {
   // No module system in the content scripts — order is the dependency graph.
   assert.ok(js.indexOf('shared/engine-status.js') >= 0, 'not in the content scripts at all');
   assert.ok(js.indexOf('shared/engine-status.js') < js.indexOf('content/content-translation-engine.js'));
+
+  // And engine-status.js asks APICompat whether the AI engine has what it needs,
+  // so shared/api-compat.js comes before it in all three load lists. A page
+  // without it throws on the first status line drawn with the AI engine.
+  const lists = {
+    'manifest.json': (file) => js.indexOf(file),
+    'popup/popup.html': (file) => repoFile('popup/popup.html').indexOf(`<script src="../${file}"></script>`),
+    'options/options.html': (file) => repoFile('options/options.html').indexOf(`<script src="../${file}"></script>`),
+  };
+  for (const [name, at] of Object.entries(lists)) {
+    assert.ok(at('shared/api-compat.js') >= 0, `${name} does not load shared/api-compat.js`);
+    assert.ok(at('shared/api-compat.js') < at('shared/engine-status.js'),
+      `${name} must load shared/api-compat.js before shared/engine-status.js`);
+  }
 });
 
 test('both load lists carry the whole engine family, after the lang-tags it needs', () => {

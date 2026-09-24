@@ -644,7 +644,8 @@ test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
   const body = popup.slice(popup.indexOf('async function translateCurrentPage()'),
     popup.indexOf('function openSettings()'));
   assert.match(body, /const willTranslate = !isHideAction\(\);/);
-  assert.match(body, /if \(willTranslate && settings\.translationEngine === 'ai' && !settings\.apiKey\)/);
+  // 「缺不缺 Key」问的是 APICompat.isApiKeyMissing：本地模型不要 Key，弹窗不能拦它。
+  assert.match(body, /if \(willTranslate && settings\.translationEngine === 'ai' && APICompat\.isApiKeyMissing\(settings\)\)/);
 });
 
 test('「这一下是不是收起」只有一个出处 —— 按钮上那行字和那道门问的是同一句', () => {

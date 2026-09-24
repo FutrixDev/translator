@@ -73,6 +73,7 @@ function onProviderChange() {
 
   // Update model dropdown
   updateModelDropdown(providerKey);
+  syncApiKeyPlaceholder();
 }
 
 // ---------------------------------------------------------------------------

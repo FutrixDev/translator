@@ -10,7 +10,10 @@
 // judge readiness by `!settings.apiKey` and told every default user "API Not
 // Configured" — an error about a thing they were never meant to configure.
 // Readiness is a property of the *engine in this tab*, and that is what these
-// two functions compute.
+// two functions compute. Even the AI engine is not judged by the key alone: a
+// local model server needs none, and whether one is needed is
+// APICompat.isApiKeyMissing's answer (shared/api-compat.js, which every load
+// list carries ahead of this file).
 //
 // Loaded as a classic script by the popup and by the content scripts, so it
 // publishes onto the global object rather than using `export`.
@@ -95,10 +98,11 @@
     const engine = (probe && probe.engine) || (settings && settings.translationEngine) || 'builtin';
 
     if (engine === 'ai') {
-      // The only engine that needs a key, and the only case the old code was
-      // ever right about.
-      const hasKey = !!(settings && settings.apiKey && String(settings.apiKey).trim());
-      return status(hasKey ? 'ready' : 'apiNotConfigured', '', hasKey);
+      // The only engine that can need a key. APICompat is read here, at call
+      // time, so a load list that forgot shared/api-compat.js fails at this
+      // line rather than silently at load.
+      const ready = !root.APICompat.isApiKeyMissing(settings);
+      return status(ready ? 'ready' : 'apiNotConfigured', '', ready);
     }
 
     if (probe === null) {

@@ -17,20 +17,41 @@ const {
   readAPIResponse
 } = globalThis.APICompat;
 
-// Issue one translation request and return its text, or throw with a
-// user-facing message. Both vendors are handled the same way: some APIs report
-// failures with HTTP 200 and an error payload, so the body is always parsed.
+// Issue one translation request and return its text, or throw. Both vendors
+// are handled the same way: some APIs report failures with HTTP 200 and an
+// error payload, so the body is always parsed.
+//
+// A thrown error carries `apiFailure` ({ network, status, detail, endpoint }),
+// which the handler turns into the reader's language with
+// APICompat.describeAPIFailure. Its `message` is a language-neutral technical
+// string for logs only.
 async function callTranslationAPI(endpoint, headers, body, isClaudeShape) {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body)
-  });
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    });
+  } catch (_) {
+    throw apiError(`Network error: ${endpoint}`,
+      { network: true, status: 0, detail: '', endpoint });
+  }
 
   const data = await response.json().catch(() => ({}));
   const result = readAPIResponse(data, response.status, response.ok, isClaudeShape);
-  if (result.error) throw new Error(result.error);
+  if (result.failure) {
+    const { status, detail } = result.failure;
+    throw apiError(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`,
+      { ...result.failure, network: false, endpoint });
+  }
   return result.text;
+}
+
+function apiError(message, apiFailure) {
+  const error = new Error(message);
+  error.apiFailure = apiFailure;
+  return error;
 }
 
 // Call Claude API with Anthropic-specific format
@@ -61,16 +82,17 @@ async function callOpenAIAPI(endpoint, apiKey, model, systemPrompt, userContent,
 // 消息监听器里。
 //
 // 监听器看着像那条路上唯一的收口，其实不是，两头都漏：
-//   - 漏在前面：三个 handler 都以 `if (!settings.apiKey) return { error }` 开头，
-//     没配 Key 时一个字符也不会离开浏览器。而自动翻译一页最多同时开 12 批、失败
-//     的块下一轮还会再来，于是没配 Key 的人每打开一页，就有整整一页的字符被记进
-//     「发给模型」，而浏览器一个字节都没往外送。
+//   - 漏在前面：三个 handler 都以缺 Key 的那一关开头（`APICompat.isApiKeyMissing`
+//     —— 远端端点没填 Key 时直接回错，本地模型不需要 Key，照常放行）。被拦下的
+//     请求一个字符也不会离开浏览器。而自动翻译一页最多同时开 12 批、失败的块下一
+//     轮还会再来，于是在监听器里记账，被拦的人每打开一页，就有整整一页的字符被记
+//     进「发给模型」，而浏览器一个字节都没往外送。
 //   - 漏在后面：一条消息不一定只对应一次调用。快速分批的分隔符数量对不上时会**
 //     整批重发一次**（走编号法，见 translateBatchFastWithAI 末尾），按消息记账就
 //     会少算掉那一整批。
 //
 // 记在这三个函数上就没有这两个口子：它们各自只有一个外部调用点（就是自己的
-// handler，在 apiKey 那一关之后），加上回退那一次内部调用 —— 一次调用一笔账，不
+// handler，在缺 Key 那一关之后），加上回退那一次内部调用 —— 一次调用一笔账，不
 // 多不少。
 //
 // 数的是源文本的字符数，不是请求体。发出去之后才失败的（网络错误、限流、500）

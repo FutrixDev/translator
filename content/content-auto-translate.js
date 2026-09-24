@@ -780,7 +780,7 @@
     //                                          外加它另外两个入参的出处 siteRules、targetLang
     //   译（content/page/batch.js）            skipTargetLanguageText
     //   engine（哪条路、回落到哪、拿什么去调）  translationEngine、engineFallback、
-    //                                          apiKey、apiEndpoint、modelName
+    //                                          provider、apiKey、apiEndpoint、modelName
     //
     // 漏一个的后果都一样，而且都不报错：skipTargetLanguageText 从开改成关之后，
     // 之前被误判成「已经是目标语言」而跳过的那些块，key 还在台账里、元素早被
@@ -789,7 +789,7 @@
     const RESTART_KEYS = [
       'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
       'skipTargetLanguageText',
-      'translationEngine', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback',
+      'translationEngine', 'provider', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback',
       // 费用闸的两个（costRefusal）。少了它们，用户在设置页把自动模式的 AI 打开、
       // 或者把预算调大之后，已经停在 OFF 上的那些页面要刷新才活得过来 —— 而他
       // 刚刚做的正是「让它们继续翻」这件事。

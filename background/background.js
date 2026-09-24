@@ -42,6 +42,7 @@ import './icon.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
+import { apiErrorMessage, missingApiKeyMessage } from './api-errors.js';
 import {
   translateBatchFastWithAI,
   translateBatchWithAI,
@@ -306,8 +307,9 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 async function handleTranslate(text, targetLang, mode) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
-  if (!settings.apiKey) {
-    return { error: '请先在设置中配置 API Key' };
+  const missingKey = missingApiKeyMessage(settings);
+  if (missingKey) {
+    return { error: missingKey };
   }
 
   try {
@@ -316,7 +318,7 @@ async function handleTranslate(text, targetLang, mode) {
     return result;
   } catch (error) {
     console.error('Translation error:', error);
-    return { error: error.message || '翻译失败，请重试' };
+    return { error: apiErrorMessage(error, settings) };
   }
 }
 
@@ -324,8 +326,9 @@ async function handleTranslate(text, targetLang, mode) {
 async function handleBatchTranslate(texts, targetLang) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
-  if (!settings.apiKey) {
-    return { error: '请先在设置中配置 API Key' };
+  const missingKey = missingApiKeyMessage(settings);
+  if (missingKey) {
+    return { error: missingKey };
   }
 
   try {
@@ -334,7 +337,7 @@ async function handleBatchTranslate(texts, targetLang) {
     return { translations };
   } catch (error) {
     console.error('Batch translation error:', error);
-    return { error: error.message || '翻译失败，请重试' };
+    return { error: apiErrorMessage(error, settings) };
   }
 }
 
@@ -342,8 +345,9 @@ async function handleBatchTranslate(texts, targetLang) {
 async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
-  if (!settings.apiKey) {
-    return { error: '请先在设置中配置 API Key' };
+  const missingKey = missingApiKeyMessage(settings);
+  if (missingKey) {
+    return { error: missingKey };
   }
 
   try {
@@ -352,6 +356,6 @@ async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
     return { translations };
   } catch (error) {
     console.error('Fast batch translation error:', error);
-    return { error: error.message || '翻译失败，请重试' };
+    return { error: apiErrorMessage(error, settings) };
   }
 }

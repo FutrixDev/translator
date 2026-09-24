@@ -33,6 +33,9 @@ const defaultSettings = {
   // 真正的内置调用发生在 content script（Translator 是 [Exposed=Window]，
   // service worker 里拿不到），这里只负责存这个开关。
   translationEngine: 'builtin',
+  // 设置页选的预设（shared/api-compat.js 的 PROVIDERS 键）。worker 只拿它问一件
+  // 事：这份配置要不要 Key（APICompat.requiresApiKey —— Ollama / LM Studio 不要）。
+  provider: 'openai',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   modelName: 'gpt-4.1-mini',
