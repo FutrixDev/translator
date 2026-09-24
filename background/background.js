@@ -287,7 +287,9 @@ chrome.runtime.onStartup.addListener(() => {
 
 // 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文）。分派表和每一项的实现在
 // ./commands.js；监听必须在 worker 入口顶层同步注册，所以只有这一行留在这里。
-chrome.commands.onCommand.addListener((command, tab) => runCommand(command, tab));
+chrome.commands.onCommand.addListener((command, tab) => {
+  runCommand(command, tab).catch(error => console.error('Shortcut failed:', command, error));
+});
 
 // Handle single text translation
 async function handleTranslate(text, targetLang, mode) {

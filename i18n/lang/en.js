@@ -481,7 +481,7 @@ Rules:
     translationStyleQuote: 'Quote bar',
     translationStyleBlur: 'Blur until hovered',
     hintTranslationStyle: 'How translations look on the page. Switching takes effect at once and translates nothing again. Blur is off in translation-only mode.',
-    translationStylePreviewSource: 'Reading in two languages at once.',
+    translationStylePreviewSource: 'Lire dans deux langues à la fois.',
     translationStylePreviewTranslation: 'Reading in two languages at once.',
     displayModeLabel: 'Display',
     displayBilingual: 'Bilingual',
