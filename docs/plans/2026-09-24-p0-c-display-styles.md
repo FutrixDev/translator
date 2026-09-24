@@ -108,7 +108,7 @@ html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-t
 | `dashed` | `outline: 1px dashed #4f6ef7; outline-offset: 1px; border-radius: 3px`（外扩合计 2px，约等于配对间距 0.15em，不碰原文字形） |
 | `highlight` | `background-color: rgba(79,110,247,.16)`，外加只向左右延伸的 `box-shadow: -4px 0 0 <同色>, 4px 0 0 <同色>`（不往上下压到原文），`border-radius: 2px` |
 | `quote` | `border-inline-start: 3px solid #4f6ef7; padding-inline-start: .6em` |
-| `blur` | `filter: blur(5px); transition: filter .15s`；`:hover`、`:focus-within`、`.ai-translator-revealed` 时 `filter: none`。`prefers-reduced-motion` 下不过渡 |
+| `blur` | `filter: blur(5px); transition: filter .15s`；`:focus-within`、`.ai-translator-revealed` 时 `filter: none`；`:hover` 揭开只写在 `@media (hover: hover)` 里（见 §11-2）。`prefers-reduced-motion` 下不过渡 |
 
 `blur` 的两条限定：
 
@@ -130,7 +130,7 @@ html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-t
 
 `translationStyle: 'default'` 加进四张默认值表：
 `shared/default-settings.js`、`background/settings.js`、`options/options.js` 的字面量、`popup/popup.js` 的 `defaultSettings`。
-`default-settings-agree` 单测会比对。`showTranslationOnly` 已在四张表里。
+`default-settings-agree` 单测会比对。`showTranslationOnly` 实际只在其中两张表里，实现时补进了另外两张（见 §11-4）。
 两个键都不是 batch.js 或引擎读的，所以 `RESTART_KEYS` 不动。
 
 ### 3.2 `<html>` 上的两个属性
@@ -251,7 +251,7 @@ html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-t
 | `displayModeLabel` | Display |
 | `displayBilingual` | Bilingual |
 | `displayTranslationOnly` | Translation only |
-| `showBilingual` | Show bilingual |
+| `showBilingual` | Show Bilingual（见 §11-3） |
 | `sourcePeekLabel` | Original |
 
 `_locales/*/messages.json` 只加 `cmdToggleTranslationOnly`：「Switch between bilingual and translation only」。
@@ -334,3 +334,27 @@ P1-A 与本项并行开发（设计 `docs/plans/2026-09-24-p1-a-page-coverage.md
 9. peek 卡的规则放 popup.css，不放 translation.css：后者只装页面译文节点，还要被 P1-A2 注进 shadow root。
 10. 悬浮球菜单改为先挂再量高度，删掉 `menuHeight` 估算。
 11. 与 P1-A 的五条接口见 §9.1，其中选择器形状由单测守。
+
+## 11. 实现偏差（实现时登记）
+
+1. **quote 在导航 inline-right 上会推后面的兄弟。** §2.2 说 quote「原文不动」，对块状译文成立（e2e J-C1 量过）。
+   导航里的译文是 `a` 里面的 `span.ai-translator-inline-right`，处在横向 flex 行里：这条译文加宽 3px + 0.6em，就把同一行后面的每一项往后推同样的距离，推移逐项累加。
+   这是「只许在译文自己的起始侧加边线和内边距」的直接后果，不改 insert.js 就消不掉。保留，J-C1 按累计位移断言（`translation-styles.spec.js` 的 `navShift`）。
+2. **blur 的悬停揭开只给能悬停的指针。** `translation.css` 把 `:hover` 那条放进 `@media (hover: hover)`。
+   原因：触屏点按之后，被点的元素会一直留在 `:hover`，直到点别处（CDP 实测，鼠标移走也不清）。第二下点按摘掉 `.ai-translator-revealed` 后它仍是清晰的，点按切换就失效了。
+   触屏只认 `.ai-translator-revealed` 这一条路。headless Chrome 模拟不出 `hover: none`（`Emulation.setEmulatedMedia` 不改这个特性），这一条由单测守（`translation-display.test.mjs`「blur is revealed by hover only where the pointer can hover」，改成别的媒体查询会红）。
+3. **`showBilingual` 的英文是 `Show Bilingual`。** 与同一菜单里现有的 `Show Translation Only` 同一种首字母大写，不按 §6 表里的小写。
+4. **`showTranslationOnly` 补进了两张默认值表。** §3.1 说它已在四张表里，实际只在 `shared/default-settings.js` 和 `options/options.js`。
+   补进 `background/settings.js`（Alt+T 读它）和 `popup/popup.js`（显示行读它）。
+5. **J-C4 不按真键。** headless 下 Chrome 不派发扩展快捷键。e2e 在 SW 里重放 `toggleTranslationOnly()` 的两步（读缺省 false → 写取反），按键到 `runCommand` 这一段由单测「Alt+T flips showTranslationOnly and writes nothing else」覆盖。
+6. **受管容器（`::after` 译文）不接样式，列为遗留。** 同构规则写得出来（`html[data-ai-translator-style=…] [data-ai-translator-managed]:not([data-ai-translator-managed-one-off])::after`），但：
+   - blur 的点按揭开要在原文块上切属性，悬停揭开会变成「悬停原文块」，都是另一套交互；
+   - 这些规则住在 `content-managed-translation.js` 注入的 `<style>` 里，不在 translation.css，§7.1 的白名单与选择器形状单测管不到；
+   - 受管容器里本来就没有「仅译文」（原文块藏了，它的 `::after` 一起藏）。
+   按最小改动不做，留给后续。
+7. **图标块的 quote 例外没有 e2e 夹具。** §2.2 说原文前有图标的块只内移 3px；J-C1 的夹具没有这种块，这条只靠代码阅读，没有量过。
+8. **链接里的译文点不开。** 导航的 inline-right 译文在 `a[href]` 里，点按走的是页面的链接（`display.js` 的 `INTERACTIVE_SELECTOR`），所以触屏上它的 blur 揭不开、peek 也开不出来；鼠标悬停不受影响。与 §4 已知限制（锚点译文）同类，不在本项内动。
+9. **peek 卡不在收集的排除名单里，靠「不在场」躲开。** `content/page/collect.js:309` 的排除列表没有 `#ai-translator-source-peek`，而 collect.js 归 P1，本项只读。
+   所以卡在显示时才创建、收起时就从 DOM 摘掉，平时页面里没有它；`content-auto-discover.js` 的 `OWN_UI_SELECTOR` 加了它，卡的出现和消失不会触发自动发现。
+   残余风险：卡开着的那一刻恰好开始一轮整页收集（例如用户开着卡按了 Alt+A），卡里的原文会被当成页面内容收进去。建议 P1 把它加进 collect.js:309。
+

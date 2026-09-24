@@ -44,6 +44,16 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - Toggle show/hide translations
 - High-performance batch translation (100 items/batch, 8 concurrent)
 
+#### Translation Styles and Display
+- Six looks for page translations: Default, Underline, Dashed box, Highlight,
+  Quote bar, and Blur until hovered (hover, focus or tap a blurred translation
+  to read it). Switching restyles the page at once and translates nothing again
+- Bilingual or translation only, switched from any of four places: the Display
+  row in the popup, the float ball menu, the Settings page, or `Alt+T`
+  (rebind it at `chrome://extensions/shortcuts`)
+- In translation-only mode, point at (or tap) a translation to see its
+  original in a small card; move away, tap again or press `Esc` to close it
+
 #### Image Text (OCR)
 - Right-click any image to read the text in it — screenshots, signs, menus, comics
 - Recognition runs on your own device by default: free, offline, no API key
@@ -269,6 +279,11 @@ MIT License
 - 继承原文样式（字体、颜色、大小）
 - 支持显示/隐藏译文切换
 - 高性能批量翻译（100条/批，8并发）
+
+#### 译文样式与显示
+- 网页译文有六种样式：默认、下划线、虚线框、高亮、引用竖线、模糊（悬停显示；悬停、聚焦或轻点模糊的译文即可看清）。切换立即生效，不会重新翻译
+- 双语 / 仅译文可从四处切换：弹窗里的「显示」一行、悬浮球菜单、设置页，或快捷键 `Alt+T`（可在 `chrome://extensions/shortcuts` 改键）
+- 仅译文模式下，指向（或轻点）一段译文会弹出小卡片显示原文；移开、再点一次或按 `Esc` 关闭
 
 #### 图片文字（OCR）
 - 右键任意图片即可读出其中的文字——截图、路牌、菜单、漫画
