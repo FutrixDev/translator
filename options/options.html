@@ -12,6 +12,9 @@
   <link rel="stylesheet" href="css/account.css">
   <link rel="stylesheet" href="css/pdf-tasks.css">
   <link rel="stylesheet" href="css/auto-translate.css">
+  <!-- The translation-style preview is a real page-translation node, drawn by
+       the very rules the page uses (options-display.js). -->
+  <link rel="stylesheet" href="../content/css/translation.css">
 </head>
 <body>
   <div class="container">
@@ -447,6 +450,16 @@
             <span class="hint" data-i18n-hint="hintShowTranslationOnly"></span>
           </div>
 
+          <div class="form-group">
+            <label for="translationStyle" data-i18n="translationStyleLabel">Translation style</label>
+            <select id="translationStyle"></select>
+            <div class="translation-style-preview" id="translationStylePreview">
+              <p data-i18n="translationStylePreviewSource">Reading in two languages at once.</p>
+              <span class="ai-translator-inline-block" style="opacity: 0.85" data-i18n="translationStylePreviewTranslation"></span>
+            </div>
+            <span class="hint" data-i18n-hint="hintTranslationStyle"></span>
+          </div>
+
         </section>
 
         <!-- YouTube captions. A normal one-column card so the grid seats it
@@ -877,6 +890,9 @@
   <script src="options-auto.js"></script>
   <script src="options-connection.js"></script>
   <script src="options-builtin.js"></script>
+  <script src="../shared/translation-display.js"></script>
+  <script src="options-display.js"></script>
+  <script src="options-sync-mirror.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

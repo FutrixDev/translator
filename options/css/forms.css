@@ -97,6 +97,23 @@
   color: var(--accent-primary);
 }
 
+/* Translation-style preview (options-display.js): a source line and a real
+   .ai-translator-inline-block under it, styled by content/css/translation.css. */
+.translation-style-preview {
+  margin-top: 10px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.translation-style-preview p {
+  margin: 0;
+}
+
 /* Input with toggle */
 .input-with-toggle {
   position: relative;

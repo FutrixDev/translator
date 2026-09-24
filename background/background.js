@@ -35,6 +35,7 @@ import '../i18n/lang/ru.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
+import { runCommand } from './commands.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
 // handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
@@ -284,24 +285,9 @@ chrome.runtime.onStartup.addListener(() => {
   ensureCacheSweepAlarm();
 });
 
-// Alt+A —— 翻译 / 还原当前页面。
-//
-// 和右键菜单、popup 那一行走的是同一条消息，因为它们是同一个动作；键位在
-// manifest 的 commands 里声明，用户可以在 chrome://extensions/shortcuts 改掉。
-//
-// content script 不在的页面（chrome:// 、Web Store、一个还没跑完的标签页）
-// sendMessage 会 reject，这里咽掉 —— 一个快捷键按不动是本来就该安静的事，
-// 抛出去只会在 service worker 的控制台里堆未处理的 rejection。
-chrome.commands.onCommand.addListener(async (command, tab) => {
-  if (command !== 'toggle-translate-page') return;
-  const target = tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  if (!target || typeof target.id !== 'number') return;
-  try {
-    await chrome.tabs.sendMessage(target.id, { type: 'TOGGLE_PAGE_TRANSLATION' });
-  } catch (error) {
-    console.log('Blab Translation: toggle shortcut had no receiver', error && error.message);
-  }
-});
+// 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文）。分派表和每一项的实现在
+// ./commands.js；监听必须在 worker 入口顶层同步注册，所以只有这一行留在这里。
+chrome.commands.onCommand.addListener((command, tab) => runCommand(command, tab));
 
 // Handle single text translation
 async function handleTranslate(text, targetLang, mode) {

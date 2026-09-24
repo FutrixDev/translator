@@ -53,6 +53,7 @@ const elements = {
   showInputTranslateChip: document.getElementById('showInputTranslateChip'),
   skipTargetLanguageText: document.getElementById('skipTargetLanguageText'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
+  translationStyle: document.getElementById('translationStyle'),
   // Automatic translation
   autoTranslate: document.getElementById('autoTranslate'),
   autoSubOptions: document.getElementById('autoSubOptions'),
@@ -147,6 +148,8 @@ const defaultSettings = {
   skipTargetLanguageText: true,
   // 整页翻译“仅显示译文”，默认关：默认行为保持双语对照
   showTranslationOnly: false,
+  // 译文样式，集合在 shared/translation-display.js；控件在 options-display.js
+  translationStyle: 'default',
   // 自动翻译。默认开，理由写在 shared/default-settings.js 的 CONTENT_DEFAULTS
   // 里——那份是内容脚本这一侧的出处，改默认值要两边一起改。siteRules 不在这里：
   // 它不经 collectSettings 那次整份写入（见下面「自动翻译」那一节）。
@@ -236,6 +239,8 @@ async function loadSettings() {
     elements.showInputTranslateChip.checked = result.showInputTranslateChip;
     elements.skipTargetLanguageText.checked = result.skipTargetLanguageText;
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
+    elements.translationStyle.value = TranslationDisplay.normalizeStyle(result.translationStyle);
+    syncTranslationStylePreview();
     // 默认开，所以只有存着的 false 才关得掉它。
     elements.autoTranslate.checked = result.autoTranslate !== false;
     showAutoTranslateLangs(result.autoTranslateLangs);
@@ -364,6 +369,7 @@ function collectSettings() {
     showInputTranslateChip: elements.showInputTranslateChip.checked,
     skipTargetLanguageText: elements.skipTargetLanguageText.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
+    translationStyle: elements.translationStyle.value,
     autoTranslate: elements.autoTranslate.checked,
     autoTranslateLangs: collectAutoTranslateLangs(),
     autoTranslateEngine: elements.autoTranslateEngine.value === 'ai' ? 'ai' : 'builtin',
@@ -586,6 +592,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'showInputTranslateChip',
   'skipTargetLanguageText',
   'showTranslationOnly',
+  'translationStyle',
   'autoTranslate',
   'enableImageOcrTranslation',
   'ocrEngine',
@@ -882,6 +889,7 @@ function updateCaptionPreview() {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
+  setupSyncMirror();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row
   // without its link to the web library.

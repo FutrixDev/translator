@@ -522,6 +522,12 @@
         <span>${t('comicColorizeThisPage')}</span>
       </button>
       ` : ''}
+      <button class="ai-translator-menu-item" data-action="toggle-translation-only">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16M4 12h10M4 18h16"/>
+        </svg>
+        <span>${settings.showTranslationOnly ? t('showBilingual') : t('showTranslationOnly')}</span>
+      </button>
       ${hasTranslations ? `
       <button class="ai-translator-menu-item" data-action="toggle-translations">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -543,12 +549,13 @@
       </button>
     `;
 
-    // Position menu above the ball
+    // Position menu above the ball. Mounted first and measured, in the same
+    // frame (no paint in between, so no flash): an estimate would restate every
+    // row, and one row it forgot would put the menu over the ball.
+    document.body.appendChild(state.floatMenu);
     const ballRect = state.floatBall.getBoundingClientRect();
-    const menuWidth = 180;
-    // 一行 40，一条分隔线 9。多算了只是菜单往上多飘几像素，少算了它会压住球。
-    const menuHeight = 180 + (hasTranslations ? 40 : 0) + (showComic ? 80 : 0) +
-      (showStopSite ? 49 : 0);
+    const menuWidth = state.floatMenu.offsetWidth;
+    const menuHeight = state.floatMenu.offsetHeight;
 
     let left = ballRect.left + (ballRect.width / 2) - (menuWidth / 2);
     let top = ballRect.top - menuHeight - 10;
@@ -560,8 +567,6 @@
 
     state.floatMenu.style.left = `${left}px`;
     state.floatMenu.style.top = `${top}px`;
-
-    document.body.appendChild(state.floatMenu);
     setMoreExpanded(true);
 
     // Menu item click handlers
@@ -633,6 +638,9 @@
       }
       case 'stop-site-auto':
         stopSiteAuto();
+        break;
+      case 'toggle-translation-only':
+        ctx.setTranslationDisplay({ showTranslationOnly: !settings.showTranslationOnly });
         break;
       case 'translate-page':
         if (ctx.translatePage) ctx.translatePage();

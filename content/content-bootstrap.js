@@ -168,9 +168,10 @@
         if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
       }
 
-      if (changes.showTranslationOnly) {
-        // 已翻译的页面上实时生效：开 → 藏原文；关 → 原文放回来
-        if (ctx.applyTranslationOnlyMode) ctx.applyTranslationOnlyMode();
+      if (changes.showTranslationOnly || changes.translationStyle) {
+        // 已翻译的页面上实时生效：样式换一个属性，仅译文开 → 藏原文、关 → 放回来。
+        // 四个入口（设置页、popup、悬浮球、Alt+T）都只写存储，都从这里落到页面。
+        if (ctx.applyTranslationDisplay) ctx.applyTranslationDisplay();
       }
 
       // One entry point for the caption keys: they only change what is drawn
@@ -192,6 +193,9 @@
     console.log('Blab Translation: Initializing...');
     try {
       await ctx.loadSettings();
+      // 还没有译文，这一遍只为把 <html> 上的样式 / 仅译文两个属性写对。每个 frame
+      // 都要跑：子 frame 里的译文同样要有样式、同样受仅译文控制。
+      if (ctx.applyTranslationDisplay) ctx.applyTranslationDisplay();
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
       if (ctx.setupHoverTranslation) ctx.setupHoverTranslation();
       if (ctx.setupImageOcrHoverButton) ctx.setupImageOcrHoverButton();

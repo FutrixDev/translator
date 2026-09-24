@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contentCss, hoverSource, messagesSource } from './helpers/sources.mjs';
+import { contentCss, hoverSource, messagesSource, workerSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -360,9 +360,12 @@ test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {
   assert.ok(command, 'toggle-translate-page 没声明');
   assert.equal(command.suggested_key.default, 'Alt+A');
 
+  // The listener has to be registered synchronously at the worker's entry, so
+  // that half asks the entry file. What the command does lives in the command
+  // table (background/commands.js), so that half asks the whole worker.
   const background = code('background/background.js');
   assert.match(background, /chrome\.commands\.onCommand\.addListener/);
-  assert.match(background, /type: 'TOGGLE_PAGE_TRANSLATION'/);
+  assert.match(workerSource(), /type: 'TOGGLE_PAGE_TRANSLATION'/);
 
   // popup 印的键位从 chrome.commands.getAll() 读：用户改过之后 manifest 那行
   // 就是假话。

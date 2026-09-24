@@ -4,18 +4,6 @@
   /* Keep original styling */
 }
 
-.ai-translator-inline {
-  display: block;
-  margin-top: 4px;
-  padding: 6px 10px;
-  background: linear-gradient(135deg, rgba(124, 92, 255, 0.08) 0%, rgba(92, 140, 255, 0.05) 100%);
-  border-left: 3px solid #7c5cff;
-  border-radius: 0 6px 6px 0;
-  font-size: 0.95em;
-  color: #5c8cff;
-  line-height: 1.5;
-}
-
 /* ==================== Block Translation (Page Translation) ==================== */
 
 .ai-translator-translated {
@@ -142,6 +130,78 @@ a.ai-translator-inline-block {
   text-decoration: none !important;
   pointer-events: none !important;
   cursor: default !important;
+}
+
+/* ==================== Translation styles (settings.translationStyle) ====================
+
+   `<html data-ai-translator-style="X">` is written by content/page/display.js;
+   the set of X lives in shared/translation-display.js (STYLES), and
+   test/unit/translation-display.test.mjs checks the two agree.
+
+   Two rules hold for every style here:
+   - Nothing reflows. Only properties painted outside the box and taking no
+     space: text-decoration, outline, box-shadow, background-color,
+     border-radius, filter, transition. `quote` alone may add
+     border-inline-start and padding-inline-start, on the translation's own
+     start side. No style touches margin: pages centre a block with
+     `margin-inline: auto`, and overriding it throws the translation to the
+     container's start edge.
+   - Page translations only. Selection and hover translations share the class
+     and are excluded by the two :not()s.
+
+   (0,4,1) plus !important outranks the base rule's background:none /
+   border:none / padding:0 and a.ai-translator-inline-block's
+   text-decoration:none. The accent #4f6ef7 keeps >= 3:1 against both white and
+   near-black after the translation's own opacity .85 is composited. */
+html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  text-decoration: underline 2px #4f6ef7 !important;
+  text-underline-offset: 3px !important;
+}
+
+html[data-ai-translator-style="dashed"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  outline: 1px dashed #4f6ef7 !important;
+  outline-offset: 1px !important;
+  border-radius: 3px !important;
+}
+
+/* The shadow extends the tint sideways only, never up into the source line. */
+html[data-ai-translator-style="highlight"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  background-color: rgba(79, 110, 247, 0.16) !important;
+  box-shadow: -4px 0 0 rgba(79, 110, 247, 0.16), 4px 0 0 rgba(79, 110, 247, 0.16) !important;
+  border-radius: 2px !important;
+}
+
+html[data-ai-translator-style="quote"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  border-inline-start: 3px solid #4f6ef7 !important;
+  padding-inline-start: 0.6em !important;
+}
+
+/* Blur is off in translation-only mode (the source is hidden, a blurred
+   translation would leave nothing readable) and on link translations, which
+   are pointer-events:none above and could never be hovered open. Tap or click
+   reveals one (.ai-translator-revealed, toggled by display.js). */
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  filter: blur(5px) !important;
+  transition: filter 0.15s !important;
+}
+
+/* 悬停揭开只给真有悬停的指针：触屏点按后元素会一直留在 :hover（粘滞悬停），
+   第二下点按摘掉 revealed 也糊不回去。触屏只认 revealed 这一条路。 */
+@media (hover: hover) {
+  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):hover {
+    filter: none !important;
+  }
+}
+
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):focus-within,
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block.ai-translator-revealed:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  filter: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+    transition: none !important;
+  }
 }
 
 /* 按钮翻译 */
