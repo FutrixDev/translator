@@ -37,7 +37,7 @@
 | 6 | **与内置适配器合并**：atomic 只来自内置；exclude = 内置 ∪ 用户；keepOriginal、include、CSS、引擎只来自用户 | atomic 是内置适配器针对特定 DOM 调出来的整块翻译，不向用户开放。exclude 取并集，保证内置排除（多半是登录框、代码块）不会被一条用户规则意外放开 |
 | 7 | **exclude 与 keepOriginal 的分工**。exclude 表示不翻译、也不送出：命中块则跳过整块；命中块内的行内元素，则把它的文字从原文里拿掉。keepOriginal 表示不翻译、但原样保留：命中块则跳过整块，且在 translate judge 之前判定；命中行内元素，则按 `translate="no"` 处理，送出占位符，译文里原样出现 | 照搬沉浸式翻译 `excludeSelectors` / `stayOriginalSelectors` 的分工，用户从那边迁过来的规则语义一致。行内保留复用 A2 的 notranslate 占位符（A2 collect.js:710-714），不另造机制。块级 keepOriginal 在 judge 之前判，所以页面里的 `translate="yes"` 重开不了它：用户规则优先于页面声明。行内 exclude 的新行为对内置适配器的 exclude 同样生效，实现时要把内置规则里会命中行内元素的选择器列出来，作为偏差申报 |
 | 8 | **范围阶梯**，从高到低：临时「整页」覆盖 → 用户 include（至少命中一个已渲染元素）→ 设置为 'page' 或 `matchBuiltin` 命中 → 'main'。include 零命中时不缓存结果 | 「翻译整个页面」是用户当下的明确动作，应当压过一切。include 是用户专门为这个站点写的范围，比全局设置和内置规则更具体。零命中时往下回落：站点改版后选择器失效，不能让整页一个字都不翻。零命中不缓存：SPA 的正文常常晚于首轮渲染 |
-| 9 | **CSS 注入方式**：用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，退路是 `<style>`。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js:169-183`）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜出 |
+| 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜出。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
 | 10 | **CSS 清洗**。先去掉注释，再不区分大小写地查以下写法，出现任何一个就拒绝：`url(`、`image-set(`、`image(`、`cross-fade(`、`src(`、`attr(`、`@import`、`@font-face`，以及任何反斜杠。长度 ≤ 4096 字符。SW 写入时查一遍，内容脚本应用前再查一遍。只拒绝、不改写 | 规则会经 sync 和导入文件流转，导入的文件可能出自别人之手。CSS 里一切能发请求的构造都能把页面信息带给第三方，「属性选择器 + 背景图」就是已知的 CSS 外泄手法。反斜杠转义能拼出任意关键字，所以一律拒绝。先去注释是为了防 `u/**/rl(` 这种拼接。只拒不改，保证用户看到的就是实际生效的。内容侧再查一遍，是因为 sync 里的数据不一定都经过本机 SW。代价是 `content: "\201C"` 这类合法写法也会被拒，提示文案里要说明 |
 | 11 | **引擎覆盖**：手动、自动、无人值守三类请求都认，`effectiveEngine` 也反映覆盖结果。规则选了 'ai' 但没配 Key 时，走现有的「没配 Key」路径。预算闸的代码不改，只改它上面的注释 | 引擎是按站点的偏好，用户说「这个站点用 AI」时，不会区分是点出来的翻译还是自动的。自动和无人值守请求照旧带 `auto` / `unattended` 标记，过闸时照样扣额度；只是能走到闸前的组合多了一种，注释跟着改 |
 | 12 | **frames**：`engineOverride` 加进顶层指令，子 frame 照单继承。选择器与 CSS 按子 frame 自己的 URL 解析 | 这是 A1 偏差 #7 附带的约束：子 frame 本地回答 `effectiveEngine` / `isActive`。有了按站点引擎后，子 frame 必须跟随顶层 frame 的规则，否则一个页面会出现两种引擎。选择器和 CSS 作用于 DOM，只对子 frame 自己的文档有意义。实际执行本来就在顶层（A1 偏差 #15） |
@@ -207,7 +207,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 
 - `custom-rule.js` 只持有一个 `CSSStyleSheet`，用 `replaceSync(清洗后的文本)` 填充，挂载写法为 `document.adoptedStyleSheets = [...当前列表去掉我们那张, 我们那张]`，页面自己的 sheet 保留。
 - 两个时机重新挂载：每轮翻译开始时（按当前 URL 重算 `current()`）；每次规则变化时。这是因为有些页面会整体重写 `adoptedStyleSheets`，把我们那张冲掉。
-- 构造或挂载抛错时，退路是 `document.head` 里的 `<style id="ai-translator-custom-css">`，用 `textContent` 写入，不解析标记。
+- 构造或挂载抛错时，在接住的地方打一条日志（操作名 + 原始错误），本页不应用这段自定义 CSS；规则的其余字段照常生效。没有 `<style>` 退路（D-297）。
 - 内容侧清洗不过，就不应用这段 CSS，只打一条 `console.warn`；规则的其余字段照常生效。
 - 不注入 shadow root。
 
