@@ -210,6 +210,7 @@ test('popup: 没有可操作的页面时只剩一行，键位印的是真注册�
   await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
 
   await expect(page.locator('#toggleSiteAuto')).toBeHidden();
+  await expect(page.locator('#stopSiteAuto')).toBeHidden();
   await expect(page.locator('#togglePagePause')).toBeHidden();
   await expect(page.locator('#translatePage')).toBeVisible();
 

@@ -466,8 +466,6 @@
     // 写不进去就干脆不画。siteAuto 为真的站点按阶梯本来就不可能是黑名单
     // （BLOCKLIST 排在 USER_ALWAYS 前面），所以这一问平时总是真；留着它是因为一
     // 行点下去没反应、或者只剩「顺带打开总开关」那半边副作用，比少一行糟得多。
-    const stopSiteHost = (globalThis.SiteRules &&
-      globalThis.SiteRules.normalizeHost(location.hostname)) || location.hostname;
     const showStopSite = !!(ctx.autoTranslate && ctx.autoTranslate.state().siteAuto) &&
       !!(globalThis.SiteRules &&
         globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname));
@@ -481,7 +479,7 @@
           <circle cx="12" cy="12" r="10"/>
           <line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>
         </svg>
-        <span>${t('autoStopSite').replace('{site}', stopSiteHost)}</span>
+        <span>${t('autoStopSite').replace('{site}', SiteRules.siteLabel(location.hostname))}</span>
       </button>
       <div class="ai-translator-menu-divider"></div>
       ` : ''}

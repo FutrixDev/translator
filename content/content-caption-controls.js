@@ -174,6 +174,26 @@
       });
     });
 
+    // 1a — 「不再自动翻译 {site}」。一个没设过规则的视频站上，字幕照翻，而上面
+    // 那一行印着「关」—— 要停下，从前得先点开（always）再点关（never）。这一行
+    // 一下写 never，和悬浮球那一行同一句话、同一次写入（SiteRules.setSiteAuto）。
+    //
+    // 露不露由引擎说（info.stopSite，见 activation.js 的 stopSiteOffered()），
+    // 这里不自己拿 enabled 和 siteAuto 再拼一遍。平时藏着。
+    const stopSiteItem = menuItem('stop-site', 'autoStopSite', 'Stop auto-translating {site}');
+    const stopSiteLabel = stopSiteItem.querySelector('.ai-translator-caption-menu-label');
+    stopSiteLabel.textContent = stopSiteLabel.textContent
+      .replace('{site}', SiteRules.siteLabel(location.hostname));
+    stopSiteItem.hidden = true;
+    stopSiteItem.addEventListener('click', () => {
+      closeMenu();
+      // 落地之后闸门经调度层的广播关上（siteRules 在 RESTART_KEYS 里），字幕当
+      // 场停，这一行跟着消失。写失败的话下一拍它还在，控制台留一行给我们自己。
+      SiteRules.setSiteAuto(location.hostname, false).catch((error) => {
+        console.error('Blab Translation: failed to write site rule', error);
+      });
+    });
+
     // 1b — 唯一一项「现在能做的事」。原字幕没开的时候，前面那个开关已经是开的，
     // 而屏幕上什么都不会发生——因为根本没有 cue 送进来。此前这里只有一行死话
     // 「未检测到字幕轨道」，看到它的人无路可走。这一项是那条路：按下去就是按播放
@@ -236,6 +256,7 @@
     status.className = 'ai-translator-caption-menu-status';
 
     menu.appendChild(enableItem);
+    menu.appendChild(stopSiteItem);
     menu.appendChild(nativeItem);
     menu.appendChild(modeItem);
     menu.appendChild(posItem);
@@ -243,7 +264,9 @@
     menu.appendChild(hideItem);
     menu.appendChild(status);
 
-    ui.parts = { enableItem, enableSwitch, nativeItem, modeItem, modeSelect, posItem, posSelect, status };
+    ui.parts = {
+      enableItem, enableSwitch, stopSiteItem, nativeItem, modeItem, modeSelect, posItem, posSelect, status,
+    };
     return menu;
   }
 
@@ -288,6 +311,7 @@
     // 这一行画的是站点规则，不是闸门：见 siteAutoOn()。
     parts.enableSwitch.setAttribute('aria-checked', siteAuto ? 'true' : 'false');
     parts.enableSwitch.classList.toggle('ai-cap-on', siteAuto);
+    parts.stopSiteItem.hidden = !(ui.info || {}).stopSite;
     parts.modeSelect.value = display.mode;
     parts.posSelect.value = settings.captionTranslationPosition === 'above' ? 'above' : 'below';
 
@@ -533,12 +557,14 @@
      * the menu shows. Called by the engine whenever anything it knows changes:
      * a media event, a settings change, a track arriving, the playhead moving.
      *
-     * `info` is `{ host, video, enabled, siteAuto, status }` — `host` is the
-     * provider's docked slot or null, `enabled` is the gate the engine just
-     * computed (this site has not refused us), `siteAuto` is whether this site
-     * is set to auto-translate (what the first menu row draws and writes — the
-     * two are not the same answer, there is a whole band of "ask" between
-     * them), `status` is `{ kind, label }` for the menu's status line.
+     * `info` is `{ host, video, enabled, siteAuto, stopSite, status }` — `host`
+     * is the provider's docked slot or null, `enabled` is the gate the engine
+     * just computed (this site has not refused us), `siteAuto` is whether this
+     * site is set to auto-translate (what the first menu row draws and writes —
+     * the two are not the same answer, there is a whole band of "ask" between
+     * them), `stopSite` is whether subtitles are being translated in that band
+     * and the one-step "stop auto-translating {site}" row should show,
+     * `status` is `{ kind, label }` for the menu's status line.
      */
     sync(info) {
       ui.info = info || {};

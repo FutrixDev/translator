@@ -5,6 +5,8 @@ const elements = {
   translatePageShortcut: document.getElementById('translatePageShortcut'),
   toggleSiteAuto: document.getElementById('toggleSiteAuto'),
   siteAutoStatus: document.getElementById('siteAutoStatus'),
+  stopSiteAuto: document.getElementById('stopSiteAuto'),
+  stopSiteAutoLabel: document.getElementById('stopSiteAutoLabel'),
   togglePagePause: document.getElementById('togglePagePause'),
   pagePauseLabel: document.getElementById('pagePauseLabel'),
   openSettings: document.getElementById('openSettings'),
@@ -601,6 +603,16 @@ function renderPageRows() {
     elements.toggleSiteAuto.title = pageState.blocked ? t('autoReasonBlocklist') : pageState.host;
   }
 
+  // ①b 不再自动翻译这个站点。字幕在一个没设过规则的站点上照翻（闸门问的是「没
+  //    被明令拒绝」），上一行却印着「关」—— 那一行不改画法，理由见 siteAutoOn()。
+  //    露不露由页面答（captionStopSite），和播放器菜单里同一行是同一个函数。
+  const stopRow = !!(siteRow && pageState.captionStopSite);
+  elements.stopSiteAuto.hidden = !stopRow;
+  if (stopRow) {
+    elements.stopSiteAutoLabel.textContent =
+      t('autoStopSite').replace('{site}', SiteRules.siteLabel(pageState.host));
+  }
+
   // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
   //    那一遍要花的是用户自己的钱。
   const showing = isHideAction();
@@ -645,6 +657,21 @@ async function toggleSiteAuto() {
   }
   // 规则一落地，页面那边的调度层就会重判重跑（siteRules 在 RESTART_KEYS 里）。
   // 它跑完才知道新状态是什么，所以这里重新问一次页面，而不是自己猜一个画上去。
+  await refreshPageRows();
+}
+
+/**
+ * 「不再自动翻译 {site}」—— 只写 never，写入还是 SiteRules.setSiteAuto 那一份。
+ * 失败的处理、写完重新问页面，都和上面那一行一样。
+ */
+async function stopSiteAuto() {
+  if (!pageState || !pageState.host || !pageState.captionStopSite) return;
+  try {
+    await SiteRules.setSiteAuto(pageState.host, false);
+  } catch (error) {
+    console.error('Failed to write site rule:', error);
+    showStatus('popupSiteRuleFailed', false);
+  }
   await refreshPageRows();
 }
 
@@ -808,6 +835,7 @@ function openSettings() {
 function setupEventListeners() {
   elements.translatePage.addEventListener('click', translateCurrentPage);
   elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
+  elements.stopSiteAuto.addEventListener('click', stopSiteAuto);
   elements.togglePagePause.addEventListener('click', togglePagePause);
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));

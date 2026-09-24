@@ -96,6 +96,43 @@ test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
     /SiteRules\.setSiteAuto\(location\.hostname, !siteAutoOn\(\)\)/);
   assert.match(code('content/content-auto-status.js'),
     /SiteRules\.setSiteAuto\(location\.hostname, true\)/);
+  // 「不再自动翻译 {site}」—— 悬浮球、字幕菜单、popup 三处，只写 never，也走它。
+  assert.match(code('content/content-float-ball.js'),
+    /SiteRules\.setSiteAuto\(location\.hostname, false\)/);
+  assert.match(code('content/content-caption-controls.js'),
+    /SiteRules\.setSiteAuto\(location\.hostname, false\)/);
+  assert.match(code('popup/popup.js'), /SiteRules\.setSiteAuto\(pageState\.host, false\)/);
+});
+
+test('「不再自动翻译 {site}」露不露只有一个答案，两处都不自己拼', () => {
+  // 字幕在一个没设过规则的站点上照翻，而第一行印着「关」。那一行露不露由字幕引
+  // 擎的 stopSiteOffered() 说了算；菜单拿 controls.sync 的 stopSite，popup 拿
+  // AUTO_PAGE_STATE 的 captionStopSite。任何一处自己拿 enabled / siteAuto 再拼一
+  // 遍，就是第二个答案。
+  const engine = code('content/captions/activation.js');
+  assert.match(engine, /function stopSiteOffered\(provider, gateOpen, siteAutoOn\)/);
+  assert.match(engine, /stopSite: stopSiteOffered\(provider, state\.enabled, state\.siteAuto\)/);
+  assert.match(engine,
+    /ctx\.captionStopSiteOffered = function\(\) \{\s*return stopSiteOffered\(candidateProvider\(\), !siteRefused\(\), siteAuto\(\)\);/);
+
+  assert.match(code('content/content-messaging.js'),
+    /captionStopSite: ctx\.captionStopSiteOffered \? ctx\.captionStopSiteOffered\(\) : false/);
+
+  const controls = code('content/content-caption-controls.js');
+  assert.match(controls, /parts\.stopSiteItem\.hidden = !\(ui\.info \|\| \{\}\)\.stopSite;/);
+  const popup = code('popup/popup.js');
+  assert.match(popup, /const stopRow = !!\(siteRow && pageState\.captionStopSite\);/);
+  // popup 那一行只在页面说该露的时候才能点 —— 键盘能走到藏着的按钮上。
+  assert.match(popup, /if \(!pageState \|\| !pageState\.host \|\| !pageState\.captionStopSite\) return;/);
+
+  // 字样是悬浮球那一行的同一个 key：同一次写入，同一句话。站点名也只有一个
+  // 来源 —— SiteRules.siteLabel()，就是写进去的那个键 —— 三处谁自己拿
+  // normalizeHost 再兜一遍底，就是第二份。
+  for (const source of [controls, popup, code('content/content-float-ball.js')]) {
+    assert.match(source, /'autoStopSite'/);
+    assert.match(source, /SiteRules\.siteLabel\(/);
+    assert.doesNotMatch(source, /normalizeHost\([^)]*\)\)? \|\|/);
+  }
 });
 
 test('「关」写的是 never，不是把规则删掉', () => {
@@ -773,7 +810,7 @@ test('悬浮球菜单第一行是「不再自动翻译这个站点」，而且�
   }
   // 站点名要真印出来。一行不带站名的「不再自动翻译」，在一个 iframe 套着三个域
   // 名的页面上说的是哪一个，用户无从知道。
-  assert.match(menu, /t\('autoStopSite'\)\.replace\('\{site\}', stopSiteHost\)/);
+  assert.match(menu, /t\('autoStopSite'\)\.replace\('\{site\}', SiteRules\.siteLabel\(location\.hostname\)\)/);
   assert.match(messagesSource(), /autoStopSite:/, '那句话得真有');
 
   // 画的是 siteAuto，不是状态、也不是闸门。拿状态画的话，用户在一个没设过规则的

@@ -510,6 +510,7 @@ test('菜单里那一项是按情况露出来的，CSS 得让 hidden 真的藏�
   // 同一件事单独写过一条（`#ai-translator-caption-menu[hidden]`），这是第二处。
   const controls = repoFile('content/content-caption-controls.js');
   assert.match(controls, /parts\.nativeItem\.hidden = !needsNative;/);
+  assert.match(controls, /parts\.stopSiteItem\.hidden = !\(ui\.info \|\| \{\}\)\.stopSite;/);
   const css = contentCss();
   assert.match(
     css,

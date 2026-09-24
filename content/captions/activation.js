@@ -174,6 +174,40 @@
     return state.provider || core.selectProvider(ctx.captionProviders || []);
   }
 
+  /**
+   * 「不再自动翻译 {site}」那一行露不露 —— 播放器菜单和 popup 画的是同一句话，
+   * 只有这一份。
+   *
+   * 它补的是闸门和站点规则之间那一整片 ask：一个没设过规则的视频站上，闸门开
+   * 着（没被明令拒绝），字幕照翻；而第一行画的是 siteAuto，印着「关」。想让字
+   * 幕停下，从前得先把那一行点开（写 always）再点关（写 never）。这一行一下写
+   * never，走的仍是 SiteRules.setSiteAuto —— 和悬浮球那一行同一句话、同一次写入。
+   *
+   * 第一行不改画法：拿闸门去画它，它在这里会印成「开」，而按下去写的是一条永久
+   * 的 never，popup 上同一行按下去写的却是 always（见 siteAuto()）。
+   *
+   * 三个条件缺一不露：
+   *   - 有 provider：这一页有字幕可翻（YouTube 上是整个站点，别处是一段带轨道的
+   *     视频）。没有字幕的 ask 站点上，这一行说的是一件没在发生的事；
+   *   - 闸门开着而站点规则没说「自动」：已经 always 的，第一行本身就是关的路；
+   *     已经被拒绝的，字幕本来就不翻；
+   *   - 规则写得进去：file:// 上存不下键，setSiteAuto 会抛。
+   *
+   * 闸门和站点规则由调用方递进来，不在这里再问一遍：菜单那一路拿的是和第一行同
+   * 一拍的 state，popup 那一路拿的是和同一次回话里 auto 快照同一拍的答案 ——
+   * 各自那一次画面里只有一个答案。
+   */
+  function stopSiteOffered(provider, gateOpen, siteAutoOn) {
+    if (!provider || !gateOpen || siteAutoOn) return false;
+    const rules = globalThis.SiteRules;
+    return !!rules && rules.siteRuleWritable(location.hostname, location.pathname);
+  }
+
+  /** popup 那一路（AUTO_PAGE_STATE）问的就是这一句，见 stopSiteOffered()。 */
+  ctx.captionStopSiteOffered = function() {
+    return stopSiteOffered(candidateProvider(), !siteRefused(), siteAuto());
+  };
+
   // --------------------------------------------- turning the page's own on
   // 「没开原字幕的视频，替我把原字幕点开」。整轮自动化里只有这一件事**改动播放器
   // 自己的状态**，所以它有自己的开关（autoEnableCaptions，默认关），而且有一道只
@@ -369,13 +403,14 @@
     try {
       video = provider.getVideo ? provider.getVideo() : document.querySelector('video');
     } catch (e) { /* keep null */ }
-    // enabled（闸门）和 siteAuto（站点规则）都从这里过去，而不是让控件自己去读
-    // 设置或者再问一遍调度层：两边各算一遍就是两个答案。
+    // enabled（闸门）、siteAuto（站点规则）和由这两句推出来的 stopSite 都从这里
+    // 过去，而不是让控件自己去读设置或者再问一遍调度层：两边各算一遍就是两个答案。
     controls.sync({
       host,
       video,
       enabled: state.enabled,
       siteAuto: state.siteAuto,
+      stopSite: stopSiteOffered(provider, state.enabled, state.siteAuto),
       status: captionStatus(provider),
     });
   }

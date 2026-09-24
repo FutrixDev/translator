@@ -5,7 +5,9 @@
 // — it goes through a provider that observes the player's network traffic,
 // where this one reads cues the browser has already parsed.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, expectCaptionMenuAnchoredAboveButton, getServiceWorker } = require('./helpers');
+const {
+  setExtensionSettings, expectCaptionMenuAnchoredAboveButton, getServiceWorker, getSyncSetting,
+} = require('./helpers');
 
 const ORIGIN = 'https://video.test';
 
@@ -638,6 +640,118 @@ test('规则改在播放当中：字幕当场停，不必刷新', async ({ page:
   await expect
     .poll(() => p.evaluate(() => document.querySelector('video').textTracks[0].mode), { timeout: 8000 })
     .toBe('showing');
+});
+
+// ---------------------------------------------------------------- 没设过规则的站点
+// 闸门问的是「没被拒绝」，第一行画的是「站点规则是不是 always」—— 两者中间是一片
+// ask：没设过规则的视频站上字幕照翻，第一行却印着「关」。以前要在这里停下字幕得先
+// 把第一行点开（写 always）再点关（写 never）。现在菜单和 popup 在这一片里多一行
+// 「不再自动翻译 {site}」，一下写 never；第一行照旧画 siteAuto，不跟着闸门变。
+
+const menuRow = (p, action) => p.locator(`#ai-translator-caption-menu [data-action="${action}"]`);
+const firstRowSwitch = (p) => p.locator('#ai-translator-caption-menu .ai-translator-caption-switch');
+
+async function openCaptionMenu(p) {
+  await p.mouse.move(320, 180);
+  await p.locator('#ai-translator-caption-btn').click();
+  await expect(p.locator('#ai-translator-caption-menu')).toBeVisible();
+}
+
+test('没设过规则的站点：字幕在翻，菜单一下就能让这个站点以后都不翻', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await openCaptionMenu(p);
+  // 第一行还是站点规则：没设过就是关，哪怕字幕正在翻。
+  await expect(firstRowSwitch(p)).toHaveAttribute('aria-checked', 'false');
+  const stop = menuRow(p, 'stop-site');
+  await expect(stop).toBeVisible();
+  // 紧挨在第一行下面，名字说的是这个站点（和悬浮球那一行同一个 key、同一个键）。
+  await expect(stop).toHaveText('Stop auto-translating video.test');
+  expect(await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('#ai-translator-caption-menu [role="menuitem"]')];
+    return rows.indexOf(document.querySelector('#ai-translator-caption-menu [data-action="stop-site"]'));
+  })).toBe(1);
+
+  await stop.click();
+
+  // 一下，写的就是 never —— 不是 always 再 never 两下，也不碰总开关。
+  await expect.poll(() => getSyncSetting(context, 'siteRules')).toEqual({ 'video.test': 'never' });
+  expect(await getSyncSetting(context, 'autoTranslate')).not.toBe(false);
+  // 而且当场生效，和 popup 上关掉站点是同一条路。
+  await expect(p.locator('.ai-translator-caption-host')).toHaveCount(0);
+  await expect
+    .poll(() => p.evaluate(() => document.querySelector('video').textTracks[0].mode), { timeout: 8000 })
+    .toBe('showing');
+
+  // 按钮还在（它是把站点重新打开的地方）；这一行自己收起来了 —— 站点已经被拒绝，
+  // 再说一遍「不再翻」是句空话 —— 第一行照旧是关，按下去就是重新打开。
+  await openCaptionMenu(p);
+  await expect(stop).toBeHidden();
+  await expect(firstRowSwitch(p)).toHaveAttribute('aria-checked', 'false');
+});
+
+test('第一行自己就是关的路时，「不再自动翻译」那一行不出现', async ({ page: p, context }) => {
+  // 站点已经是 always：第一行是开的，按一下就是 never。再多一行就是同一件事说两遍。
+  await setExtensionSettings(p, { ...BASE_SETTINGS, siteRules: { 'video.test': 'always' } });
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  await openCaptionMenu(p);
+  await expect(firstRowSwitch(p)).toHaveAttribute('aria-checked', 'true');
+  await expect(menuRow(p, 'stop-site')).toBeHidden();
+
+  // 闸门关上（主开关关）：字幕本来就不翻，这一行说的是一件没在发生的事。菜单开
+  // 着也跟着收，不必重开。
+  await setExtensionSettings(p, GATE_SHUT);
+  await expect(firstRowSwitch(p)).toHaveAttribute('aria-checked', 'false');
+  await expect(menuRow(p, 'stop-site')).toBeHidden();
+  await expect(p.locator('.ai-translator-caption-host')).toHaveCount(0);
+});
+
+test('popup 上同一行：同一个答案、同一次写入', async ({ context, extensionId }) => {
+  // popup 那一行问的是内容脚本（AUTO_PAGE_STATE 的 captionStopSite），和菜单是
+  // 同一个函数；这里走真的往返：内容页在前台，popup 问「当前标签页」。
+  const content = await context.newPage();
+  await setExtensionSettings(content, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  await mockTranslation(context);
+  await content.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(content);
+  await expect(content.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  await content.bringToFront();
+  await popup.reload();
+
+  // 站点行照旧印「关」，它下面多出来的那一行说的是这个站点。
+  await expect(popup.locator('#toggleSiteAuto')).toBeVisible();
+  await expect(popup.locator('#siteAutoStatus')).toHaveText(/^off$/i);
+  const stop = popup.locator('#stopSiteAuto');
+  await expect(stop).toBeVisible();
+  await expect(stop).toHaveText('Stop auto-translating video.test');
+
+  await stop.click();
+  await expect.poll(() => getSyncSetting(context, 'siteRules')).toEqual({ 'video.test': 'never' });
+  expect(await getSyncSetting(context, 'autoTranslate')).not.toBe(false);
+  await expect(content.locator('.ai-translator-caption-host')).toHaveCount(0);
+
+  // 再打开 popup：站点已被拒绝，这一行不再出现，站点行还是那个「关」。
+  await content.bringToFront();
+  await popup.reload();
+  await expect(popup.locator('#toggleSiteAuto')).toBeVisible();
+  await expect(popup.locator('#siteAutoStatus')).toHaveText(/^off$/i);
+  await expect(stop).toBeHidden();
 });
 
 // ---------------------------------------------------------------- 日额度

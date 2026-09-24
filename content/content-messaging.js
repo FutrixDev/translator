@@ -59,6 +59,10 @@
             ruleWritable: globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname),
             hasTranslations: ctx.hasPageTranslations ? ctx.hasPageTranslations() : false,
             translationsVisible: state.translationsVisible !== false,
+            // 「字幕正在一个没设过规则的站点上翻」—— popup 那一行「不再自动翻译
+            // {site}」露不露。播放器菜单里同一行问的是同一个函数
+            // （content/captions/activation.js 的 stopSiteOffered()）。
+            captionStopSite: ctx.captionStopSiteOffered ? ctx.captionStopSiteOffered() : false,
             auto
           });
           break;
