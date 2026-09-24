@@ -78,6 +78,7 @@
       if (e.key === 'Escape') {
         if (ctx.hideTranslationPopup) ctx.hideTranslationPopup();
         if (ctx.hideFloatMenu) ctx.hideFloatMenu();
+        if (ctx.hideSourcePeek) ctx.hideSourcePeek();
         if (ctx.clearHoverTranslation) ctx.clearHoverTranslation();
         if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
         state.selectionTranslationPending = false;

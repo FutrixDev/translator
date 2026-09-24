@@ -58,11 +58,15 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 站点规则全没生效。
   'shared/lang-tags.js',
   'shared/site-rules.js',
+  // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
+  // shared/default-settings.js 之后、整页翻译的所有模块之前。
+  'shared/translation-display.js',
   'content/page/batch.js',
   'content/page/site-adapter.js',
   'content/page/collect.js',
   'content/page/insert.js',
   'content/page/visibility.js',
+  'content/page/display.js',
   'content/page/progress.js',
   'content/content-page-translation.js',
 ]);

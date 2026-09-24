@@ -10,5 +10,9 @@
   "cmdTogglePage": {
     "message": "이 페이지 번역 / 원문 복원",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "이중 언어와 번역문만 보기 전환",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

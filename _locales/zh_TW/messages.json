@@ -10,5 +10,9 @@
   "cmdTogglePage": {
     "message": "翻譯 / 還原目前頁面",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "在雙語與僅譯文之間切換",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

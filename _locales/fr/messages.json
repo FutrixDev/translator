@@ -10,5 +10,9 @@
   "cmdTogglePage": {
     "message": "Traduire ou restaurer cette page",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "Basculer entre bilingue et traduction seule",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

@@ -3,6 +3,7 @@ const elements = {
   translatePage: document.getElementById('translatePage'),
   translatePageLabel: document.getElementById('translatePageLabel'),
   translatePageShortcut: document.getElementById('translatePageShortcut'),
+  translationOnlyShortcut: document.getElementById('translationOnlyShortcut'),
   toggleSiteAuto: document.getElementById('toggleSiteAuto'),
   siteAutoStatus: document.getElementById('siteAutoStatus'),
   stopSiteAuto: document.getElementById('stopSiteAuto'),
@@ -32,7 +33,10 @@ const defaultSettings = {
   translationEngine: 'builtin',
   autoTranslate: true,
   uiLanguage: '',
-  theme: 'light'
+  theme: 'light',
+  // 「显示」那一行（popup-display.js）
+  showTranslationOnly: false,
+  translationStyle: 'default'
 };
 
 // 内置引擎只有已注入的 content script 答得出（见 content-messaging.js 的
@@ -527,20 +531,29 @@ async function sendToActiveTab(message) {
   }
 }
 
+// 命令名 → 印它键位的那块 kbd。
+const SHORTCUT_KBDS = {
+  'toggle-translate-page': elements.translatePageShortcut,
+  'toggle-translation-only': elements.translationOnlyShortcut,
+};
+
 /**
  * 键位印的是 chrome.commands.getAll() 报的那一个，不是 manifest 里写的那一个。
  * 用户在 chrome://extensions/shortcuts 里改掉、或者和别的扩展撞了被 Chrome 收
  * 走之后，manifest 那行就成了假话；Chrome 报空字符串时这块 kbd 直接不出现。
  */
 async function refreshShortcutHint() {
+  let commands = [];
   try {
-    const commands = await chrome.commands.getAll();
-    const found = commands.find((command) => command.name === 'toggle-translate-page');
-    const shortcut = (found && found.shortcut) || '';
-    elements.translatePageShortcut.textContent = shortcut;
-    elements.translatePageShortcut.hidden = !shortcut;
+    commands = await chrome.commands.getAll();
   } catch (error) {
-    elements.translatePageShortcut.hidden = true;
+    console.warn('Blab Translation: could not read shortcuts', error);
+  }
+  for (const [name, kbd] of Object.entries(SHORTCUT_KBDS)) {
+    const found = commands.find((command) => command.name === name);
+    const shortcut = (found && found.shortcut) || '';
+    kbd.textContent = shortcut;
+    kbd.hidden = !shortcut;
   }
 }
 
@@ -728,6 +741,7 @@ async function checkStatus() {
     applyTheme(settings.theme || 'light');
     
     applyI18n(settings.uiLanguage);
+    setupDisplayRow(settings);
     
     globalAuto = settings.autoTranslate !== false;
     await Promise.all([refreshPageRows(), refreshShortcutHint()]);
