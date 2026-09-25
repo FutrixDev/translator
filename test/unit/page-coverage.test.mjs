@@ -7,8 +7,9 @@
 //   - shadow root 里的译文靠 SW 递过去的样式文本活着。样式表清单漏一份、文档里的
 //     `html body` 前缀没去掉，译文在 shadow 里就是一段没样式的字——e2e 只在一个
 //     夹具上看得见，这里对每一份注入的 CSS 都看。
-//   - Alt+W 只发给顶层 frame（子 frame 的覆盖值由顶层的手动轮带下去），别的命令
-//     一概不接；样式消息的监听器不能替别人的消息关通道。
+//   - Alt+W 是快捷键表（background/commands.js）的一行，只发给顶层 frame（子
+//     frame 的覆盖值由顶层的手动轮带下去）；表与 manifest 的 commands 一一对上，
+//     整个 worker 只有一个 onCommand 监听；样式消息的监听器不能替别人的消息关通道。
 //   - 整页翻译里凡是「文档里的译文节点有哪些」的查询都得走 ctx.queryAllDeep，
 //     否则 shadow 里的译文收不起来、也数不到。
 //
@@ -17,26 +18,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { contentBundle, pageSource } from './helpers/sources.mjs';
+import { contentBundle, pageSource, workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 // 模块顶层看见 chrome 才注册监听——在 import 之前装好替身，把注册下来的监听器
 // 捉住，下面的用例调的就是生产注册的那一个。
+//
+// background/commands.js 连带 background/settings.js，后者在顶层读 chrome.i18n 和
+// globalThis.OCRCore（写法同 translation-display.test.mjs 开头）。storage 与 tabs
+// 在调用时才读，下面的命令用例各自换上替身。
 const listeners = { message: [], command: [] };
-const sent = [];
-let sendMessageImpl = async (...args) => { sent.push(args); };
 globalThis.chrome = {
+  i18n: { getUILanguage: () => 'en' },
   runtime: {
     onMessage: { addListener: (fn) => listeners.message.push(fn) },
     getURL: (rel) => `chrome-extension://test-id/${rel}`,
   },
   commands: { onCommand: { addListener: (fn) => listeners.command.push(fn) } },
-  tabs: {
-    sendMessage: (...args) => sendMessageImpl(...args),
-    query: async () => [{ id: 42 }],
-  },
 };
 let fetchCount = 0;
 globalThis.fetch = async (url) => {
@@ -45,8 +45,11 @@ globalThis.fetch = async (url) => {
   return { ok: true, status: 200, text: async () => repoFile(rel) };
 };
 
-const { SHADOW_STYLE_FILES, toShadowCss, handleMessage, handleCommand } =
+const { SHADOW_STYLE_FILES, toShadowCss, handleMessage } =
   await import('../../background/page-coverage.js');
+await import('../../shared/default-settings.js');
+await import('../../shared/ocr.js');
+const { runCommand } = await import('../../background/commands.js');
 
 const manifest = JSON.parse(repoFile('manifest.json'));
 const injectedCss = manifest.content_scripts.flatMap((cs) => cs.css || []);
@@ -74,38 +77,6 @@ test('every injected stylesheet that styles translation nodes is shipped into sh
   // 反方向：清单里的每一份都真是 manifest 注入的（改了名的文件会 404，样式静默丢失）。
   assert.deepEqual(SHADOW_STYLE_FILES.filter((rel) => !injectedCss.includes(rel)), []);
 });
-
-// 夹具：抄自 P0-C 提交 b26f6ef，#105 合入后改读真文件。
-// content/css/translation.css 的 :50-51（逗号成对的 html body 前缀）与 :156-202
-// （挂在 <html> 属性上的译文样式、blur 的 :not(...)、@media 里缩进的 :hover 行、
-// 逗号成对的 focus-within / revealed 行）。
-const P0C_FIXTURE = `
-html body .ai-translator-inline-block::before,
-html body .ai-translator-inline-block::after {
-  content: none !important;
-}
-
-html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
-  text-decoration: underline 2px #4f6ef7 !important;
-  text-underline-offset: 3px !important;
-}
-
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
-  filter: blur(5px) !important;
-  transition: filter 0.15s !important;
-}
-
-@media (hover: hover) {
-  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):hover {
-    filter: none !important;
-  }
-}
-
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):focus-within,
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block.ai-translator-revealed:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
-  filter: none !important;
-}
-`;
 
 // `:host-context(` 起到配平的 `)` 为止；参数必须恰好是一个以 html 开头的复合选择器
 // （html 加属性选择器与 :not(...)）。不合格的抛错，合格的整组去掉，留下的再去查前缀。
@@ -138,6 +109,8 @@ function anchoredOnHtmlOrBody(css) {
     .filter((sel) => /(^|[\s,>+~(])(html|body)(?![\w-])/.test(sel));
 }
 
+const TRANSLATION_CSS = 'content/css/translation.css';
+
 test('the shadow copy of the styles has no html/body prefix left', () => {
   // shadow 树里没有 <html>/<body>，留下任何一个前缀，那条规则在 shadow 里就一个
   // 元素都匹配不上。`html[data-ai-translator-theme=...] body` 这类变体也算——它们
@@ -146,10 +119,15 @@ test('the shadow copy of the styles has no html/body prefix left', () => {
     assert.deepEqual(anchoredOnHtmlOrBody(toShadowCss(repoFile(rel))), [],
       `${rel}: selectors still anchored on html/body in the shadow copy`);
   }
-  assert.deepEqual(anchoredOnHtmlOrBody(toShadowCss(P0C_FIXTURE)), [],
-    'P0-C fixture: selectors still anchored on html/body in the shadow copy');
-  // 反面对照：检查器真认得出前缀（没改写的原文，五条规则的选择器条条都算）。
-  assert.equal(anchoredOnHtmlOrBody(P0C_FIXTURE).length, 5);
+  // 反面对照：检查器真认得出前缀。没改写的真 translation.css 里，每一条以 html
+  // 开头的规则它都得算上——条数从文件里另数一遍，不写死（样式表加一条规则，这里
+  // 不用跟着改）。下限 2：文件里至少有一条无条件的 `html body` 前缀（伪元素那条）
+  // 和一条挂在 <html> 条件上的（P0-C 的译文样式），两种改写都要被检查器看见，
+  // 少于两条这个对照就证明不了什么。
+  const raw = repoFile(TRANSLATION_CSS);
+  const htmlLed = selectorsOf(raw).filter((sel) => /^html(?![\w-])/.test(sel)).length;
+  assert.ok(htmlLed >= 2, `${TRANSLATION_CSS} has ${htmlLed} html-led rules; the check below needs both kinds`);
+  assert.equal(anchoredOnHtmlOrBody(raw).length, htmlLed);
   assert.equal(toShadowCss('html body .a, html body .b{x:1}'), '.a, .b{x:1}');
   assert.equal(toShadowCss('}\nhtml  body .a{}'), '}\n.a{}');
   // 类名里恰好带着 html/body 的不动。
@@ -159,19 +137,22 @@ test('the shadow copy of the styles has no html/body prefix left', () => {
 
 test('conditions on <html> become :host-context(html...) in the shadow copy', () => {
   assert.equal(toShadowCss('html[data-x="y"] body .a{}'), ':host-context(html[data-x="y"]) .a{}');
-  const out = toShadowCss(P0C_FIXTURE);
+  // 断言按真 translation.css 的原文写：规则的形状变了，这里先红。
+  const out = toShadowCss(repoFile(TRANSLATION_CSS));
   const PAIR = '.ai-translator-inline-block';
-  // 普通的一行。
-  assert.ok(out.includes(`\n:host-context(html[data-ai-translator-style="underline"]) ${PAIR}:not(`), out);
-  // blur 带 :not([data-ai-translator-only]) 的那一行：:not 整个进 :host-context。
+  const PAGE_ONLY = ':not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+  // underline：普通的一行，条件整个进 :host-context。
+  assert.ok(out.includes(`\n:host-context(html[data-ai-translator-style="underline"]) ${PAIR}${PAGE_ONLY} {\n  text-decoration: underline`), out);
+  // blur 带 :not([data-ai-translator-only]) 的那一行：:not 落在 :host-context 里面，
+  // 不是挂在 shadow 里的译文上。
   const BLUR = ':host-context(html[data-ai-translator-style="blur"]:not([data-ai-translator-only]))';
-  assert.ok(out.includes(`\n${BLUR} ${PAIR}:not(a):not(`), out);
+  assert.ok(out.includes(`\n${BLUR} ${PAIR}:not(a)${PAGE_ONLY} {\n  filter: blur(`), out);
+  assert.ok(!out.includes(`${PAIR}:not([data-ai-translator-only])`), out);
   // @media 里缩进的 :hover 行。
-  assert.ok(out.includes(`@media (hover: hover) {\n  ${BLUR} ${PAIR}:not(a)`), out);
-  assert.ok(/:hover \{\n\s+filter: none/.test(out), out);
-  // 逗号成对的第二项。
-  assert.ok(out.includes(`:focus-within,\n${BLUR} ${PAIR}.ai-translator-revealed`), out);
-  // 没有条件的 html body 前缀照旧整段去掉。
+  assert.ok(out.includes(`@media (hover: hover) {\n  ${BLUR} ${PAIR}:not(a)${PAGE_ONLY}:hover {\n    filter: none`), out);
+  // 逗号成对：focus-within 那项与第二项 revealed 都改写。
+  assert.ok(out.includes(`\n${BLUR} ${PAIR}:not(a)${PAGE_ONLY}:focus-within,\n${BLUR} ${PAIR}.ai-translator-revealed:not(a)${PAGE_ONLY} {`), out);
+  // 没有条件的 html body 前缀照旧整段去掉（逗号成对的两项都去）。
   assert.ok(out.includes(`\n${PAIR}::before,\n${PAIR}::after {`), out);
   // 组合子不是后代、body 本身是主体、html 后面不是复合选择器的，都不是这条规则。
   for (const css of ['html > body .a{}', 'html body{}', 'html {x:1}', 'html:hover .a{}', 'html, body{}']) {
@@ -179,12 +160,12 @@ test('conditions on <html> become :host-context(html...) in the shadow copy', ()
   }
 });
 
-test('the worker registers one message listener and one command listener', () => {
+test('page-coverage.js registers one message listener and no command listener', () => {
   assert.equal(listeners.message.length, 1);
-  assert.equal(listeners.command.length, 1);
   assert.equal(listeners.message[0], handleMessage);
-  assert.equal(listeners.command[0], handleCommand);
-  // 入口真的 import 了它（不 import，上面那两个监听在 SW 里根本不存在）。
+  // 快捷键是 background/commands.js 那张表的事，这个模块不挂 onCommand。
+  assert.equal(listeners.command.length, 0);
+  // 入口真的 import 了它（不 import，上面那个监听在 SW 里根本不存在）。
   assert.match(repoFile('background/background.js'), /^import '\.\/page-coverage\.js';$/m);
 });
 
@@ -215,34 +196,71 @@ test('other messages are left alone: no reply, no open channel', () => {
   }
 });
 
+// storage 与 tabs 在调用时才读：每条命令用例换一套只记账的替身。
+function stubCommandChrome({ sendFails = false } = {}) {
+  const calls = { sent: [], set: [] };
+  globalThis.chrome.storage = {
+    sync: {
+      get: async (defaults) => ({ ...defaults }),
+      set: async (values) => { calls.set.push(values); },
+    },
+  };
+  globalThis.chrome.tabs = {
+    query: async () => [{ id: 42 }],
+    sendMessage: async (...args) => {
+      calls.sent.push(args);
+      if (sendFails) throw new Error('Could not establish connection. Receiving end does not exist.');
+    },
+  };
+  return calls;
+}
+
 test('Alt+W sends TRANSLATE_WHOLE_PAGE to the top frame only', async () => {
-  const onCommand = listeners.command[0];
-  sent.length = 0;
-  await onCommand('translate-whole-page', { id: 7 });
-  assert.deepEqual(sent, [[7, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 }]]);
+  let calls = stubCommandChrome();
+  await runCommand('translate-whole-page', { id: 7 });
+  assert.deepEqual(calls.sent, [[7, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 }]]);
 
   // 没带 tab（某些 Chrome 版本的命令事件）：取当前窗口的活动标签页。
-  sent.length = 0;
-  await onCommand('translate-whole-page', undefined);
-  assert.deepEqual(sent, [[42, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 }]]);
+  calls = stubCommandChrome();
+  await runCommand('translate-whole-page', undefined);
+  assert.deepEqual(calls.sent, [[42, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 }]]);
 });
 
-test('other commands are not ours, and a missing receiver stays quiet', async () => {
-  const onCommand = listeners.command[0];
-  sent.length = 0;
-  await onCommand('toggle-translate-page', { id: 7 });
-  await onCommand('_execute_action', { id: 7 });
-  assert.deepEqual(sent, []);
-
-  sendMessageImpl = async () => { throw new Error('Could not establish connection. Receiving end does not exist.'); };
+test('Alt+W with no receiver stays quiet and logs once under its own label', async () => {
+  const calls = stubCommandChrome({ sendFails: true });
   const log = console.log;
-  console.log = () => {};
+  const logged = [];
+  console.log = (...args) => { logged.push(args); };
   try {
-    await assert.doesNotReject(onCommand('translate-whole-page', { id: 7 }));
+    await assert.doesNotReject(runCommand('translate-whole-page', { id: 7 }));
   } finally {
     console.log = log;
-    sendMessageImpl = async (...args) => { sent.push(args); };
   }
+  assert.equal(calls.sent.length, 1);
+  assert.deepEqual(logged, [['Blab Translation: whole-page shortcut had no receiver',
+    'Could not establish connection. Receiving end does not exist.']]);
+});
+
+test('the shortcut table and manifest.commands name the same commands', async () => {
+  // 行为对齐，不导出表：manifest 声明的每一条命令，runCommand 都恰好做一件事
+  // ——发一条消息或写一次设置。表里少一行，那个键按下去什么都不发生；
+  // 不存在的命令什么都不做。
+  for (const name of Object.keys(manifest.commands)) {
+    const calls = stubCommandChrome();
+    await runCommand(name, { id: 3 });
+    assert.equal(calls.sent.length + calls.set.length, 1,
+      `${name}: expected exactly one sendMessage or storage.set, got ${JSON.stringify(calls)}`);
+  }
+  const calls = stubCommandChrome();
+  await runCommand('no-such-command', { id: 3 });
+  assert.deepEqual([calls.sent, calls.set], [[], []]);
+});
+
+test('the whole worker registers exactly one onCommand listener', () => {
+  // 快捷键只有一张表（background/commands.js），监听只挂在入口那一处。第二个
+  // onCommand 监听回来——比如某个模块又给自己的命令单挂一个——这里就红。
+  const hits = workerSource().match(/chrome\.commands\.onCommand\.addListener/g) || [];
+  assert.equal(hits.length, 1);
 });
 
 test('the manifest declares the shortcut with a localized description', () => {

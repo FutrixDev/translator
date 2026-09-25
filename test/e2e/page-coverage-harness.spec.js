@@ -213,11 +213,25 @@ test('notranslate: <body class="notranslate"> is a document-level declaration an
 // ---- 我们自己的界面不进收集 ----
 
 test('own UI: the text in the source peek card is never collected', async ({ page }) => {
-  // 夹具：P0-C 的 peek 卡尚未合入，id 按 b26f6ef 合成。
-  // 仅译文模式下点开的原文卡，挂在页面文档里，里面是原文段落。
+  // 卡走 content/page/display.js 的真路径：仅译文下一条整页译文的原文藏着，鼠标停在
+  // 译文上，卡挂进页面文档，里面装着原文。原文段落本身已翻过、不再收，所以收到的
+  // 块里只要出现这段原文，就只能是从卡里收来的。
+  const SOURCE = 'The original text shown back to the reader in the peek card.';
   await loadHarness(page, doc(`
     <p id="page-p">A paragraph of the page itself, which is collected as usual.</p>
-    <div id="ai-translator-source-peek"><p id="peek-p">The original text shown back to the reader in the peek card.</p></div>`));
+    <p id="source-p">${SOURCE}</p>`));
+  await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    ctx.settings.showTranslationOnly = true;
+    const block = ctx.collectTranslatableBlocks(document.body).find((b) => b.element.id === 'source-p');
+    ctx.insertTranslationBlock(block, '[T] The reader sees this translation instead.');
+  });
+  const translation = page.locator('#source-p + .ai-translator-inline-block');
+  const box = await translation.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const card = page.locator('#ai-translator-source-peek');
+  await expect(card.locator('.ai-translator-source-peek-text')).toHaveText(SOURCE);
+
   const r = await page.evaluate(() => {
     const ctx = window.AI_TRANSLATOR_CONTENT;
     const texts = (blocks) => blocks.map((b) => b.text);
@@ -232,6 +246,8 @@ test('own UI: the text in the source peek card is never collected', async ({ pag
   expect(r.ids).toEqual(['page-p']);
   expect(r.texts.join('\n')).not.toContain('peek card');
   expect(r.asRoot).toEqual([]);
+  // 收集时卡一直开着：上面的空结果不是因为卡已经收走了。
+  await expect(card).toHaveCount(1);
 });
 
 // ---- MAIN_TEXT_SHARE 调参夹具 ----
@@ -476,18 +492,6 @@ test('scope cache (b): the next manual page translation sees a <main> that grew'
 
 // ---- shadow 样式：:host-context 改写真的生效 ----
 
-// 夹具：抄自 P0-C 提交 b26f6ef，#105 合入后改读真文件。
-// content/css/translation.css :156-202 里挂在 <html> 属性上的译文样式（下划线一行、
-// blur 带 :not([data-ai-translator-only]) 的一行）。
-const P0C_STYLE_FIXTURE = `
-html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
-  text-decoration: underline 2px #4f6ef7 !important;
-}
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
-  filter: blur(5px) !important;
-}
-`;
-
 test('shadow styles: :host-context rules follow <html>, and the real stylesheet applies in a root', async ({ page }) => {
   // Node 这一侧用生产的那一个改写函数，不在测试里另写一份。Playwright 的加载器
   // 把仓库里的 .js 一律按 CommonJS 编（package.json 没有 "type": "module"），直接
@@ -495,24 +499,23 @@ test('shadow styles: :host-context rules follow <html>, and the real stylesheet 
   // 拿到的是同一份源码。
   const source = fs.readFileSync(path.join(REPO, 'background/page-coverage.js'), 'utf8');
   const { toShadowCss } = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`);
-  const fixtureCss = toShadowCss(P0C_STYLE_FIXTURE);
-  const realCss = toShadowCss(fs.readFileSync(path.join(REPO, 'content/css/translation.css'), 'utf8'));
-  expect(fixtureCss).toContain(':host-context(html[data-ai-translator-style="underline"])');
+  const css = toShadowCss(fs.readFileSync(path.join(REPO, 'content/css/translation.css'), 'utf8'));
+  // blur 的值照 translation.css 里真写的读，不在这里另记一份。
+  const blur = /filter:\s*(blur\([^)]*\))/.exec(css)[1];
 
-  await page.setContent(doc('<div id="fixture-host"></div><div id="real-host"></div>'), { waitUntil: 'load' });
-  const probe = (css, id) => page.evaluate(({ css, id }) => {
-    const root = document.getElementById(id).attachShadow({ mode: 'open' });
+  await page.setContent(doc('<div id="host"></div>'), { waitUntil: 'load' });
+  await page.evaluate((css) => {
+    const root = document.getElementById('host').attachShadow({ mode: 'open' });
     root.innerHTML = '<p class="ai-translator-inline-block">translation</p><span class="ai-translator-inline-block">span</span>';
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(css);
     root.adoptedStyleSheets = [sheet];
-  }, { css, id });
-  await probe(fixtureCss, 'fixture-host');
-  await probe(realCss, 'real-host');
+  }, css);
 
+  // blur 那条带 `transition: filter`：切换属性后读到的可能是过渡中的值，所以轮询到
+  // 终值为止。
   const read = () => page.evaluate(() => {
-    const node = document.getElementById('fixture-host').shadowRoot.querySelector('p');
-    const style = getComputedStyle(node);
+    const style = getComputedStyle(document.getElementById('host').shadowRoot.querySelector('p'));
     return { line: style.textDecorationLine, filter: style.filter };
   });
   const html = (attrs) => page.evaluate((attrs) => {
@@ -523,20 +526,19 @@ test('shadow styles: :host-context rules follow <html>, and the real stylesheet 
   }, attrs);
 
   // 1. 宿主文档 <html> 上的译文样式一变，shadow 里的译文跟着变。
-  expect(await read()).toEqual({ line: 'none', filter: 'none' });
+  await expect.poll(read).toEqual({ line: 'none', filter: 'none' });
   await html({ 'data-ai-translator-style': 'underline' });
-  expect((await read()).line).toBe('underline');
+  await expect.poll(read).toEqual({ line: 'underline', filter: 'none' });
   await html({ 'data-ai-translator-style': 'blur' });
-  expect(await read()).toEqual({ line: 'none', filter: 'blur(5px)' });
+  await expect.poll(read).toEqual({ line: 'none', filter: blur });
   // 2. 仅显示译文（<html data-ai-translator-only>）关掉 blur 那一条。
   await html({ 'data-ai-translator-style': 'blur', 'data-ai-translator-only': '' });
-  expect((await read()).filter).toBe('none');
+  await expect.poll(read).toEqual({ line: 'none', filter: 'none' });
 
-  // 3. 改写后的真 translation.css 在 root 里至少有一条规则生效：
+  // 3. 没有条件的那条也生效：
   //    `.ai-translator-inline-block { display: block !important; animation: ... }`。
   const real = await page.evaluate(() => {
-    const root = document.getElementById('real-host').shadowRoot;
-    const span = getComputedStyle(root.querySelector('span'));
+    const span = getComputedStyle(document.getElementById('host').shadowRoot.querySelector('span'));
     return { display: span.display, animation: span.animationName };
   });
   expect(real).toEqual({ display: 'block', animation: 'ai-translator-block-fade-in' });

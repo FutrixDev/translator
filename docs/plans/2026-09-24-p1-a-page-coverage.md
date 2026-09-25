@@ -228,7 +228,7 @@ directive = {
 
 ### 3.4 「翻译整个页面」入口
 
-- manifest `commands.translate-whole-page`：`suggested_key` `Alt+W`，`description` `__MSG_cmdTranslateWholePage__`。`background/page-coverage.js` 自己加一个 `chrome.commands.onCommand` 监听，只认这条命令，发 `{type: 'TRANSLATE_WHOLE_PAGE'}` 到 `{frameId: 0}`。P0 若也新增命令且撞了 Alt+W，谁后合谁改键（截至 2026-09-24 P0 各 worktree 均未动 `commands`）。
+- manifest `commands.translate-whole-page`：`suggested_key` `Alt+W`，`description` `__MSG_cmdTranslateWholePage__`。`background/commands.js` 的 `COMMANDS` 表加一行 `'translate-whole-page': translateWholePage`，发 `{type: 'TRANSLATE_WHOLE_PAGE'}` 到 `{frameId: 0}`，与 Alt+A 共用同一个发往顶层 frame 的函数；不另挂 `onCommand` 监听（快捷键只有一张表，见 P0-C 设计 `docs/plans/2026-09-24-p0-c-display-styles.md:318`）。P0-C 新增的是 Alt+T（`toggle-translation-only`），与 Alt+W 不撞键。
 - 悬浮球菜单在 `translate-page` 之后加 `data-action="translate-whole-page"`（`t('floatMenuTranslateWholePage')`），**只在当前有效范围是 `'main'` 时出现**（设置已是整页时，原来那一项就是整页，不出重复项）。
 - `ctx.translateWholePage()`（放 scope 模块）：写 `state.pageScopeOverride = 'page'`、清范围缓存；若这一页在整页范围下已翻完且译文可见 → 与 Alt+A 同样藏起来；否则 `ctx.translatePage()`（已翻的块收集器本来就跳过，只补范围外的那部分）。
 - `content-messaging.js` 加 `case 'TRANSLATE_WHOLE_PAGE'`。
@@ -286,6 +286,7 @@ A1 预期不新增用户可见文案；万不得已要加，追加在各语言�
 |---|---|---|
 | `manifest.json` | `content_scripts[1]` 三个标志；`shared/frame-eligibility.js`、`content/frames/*` 入表 | `content/page/{shadow,notranslate,scope}.js` 入表（`site-adapter.js` 之后、`collect.js` 之前）；`commands.translate-whole-page` |
 | `background/background.js` | `:50` 之后 import `frame-relay.js`；`:299` 钉 frameId | `:41` 之后 import `page-coverage.js` |
+| `background/commands.js` | — | `COMMANDS` 加 `translate-whole-page` 一行 |
 | `background/context-menus.js`、`background/ocr-recognize.js`、`popup/popup.js` | 钉 frameId | — |
 | `content/content-bootstrap.js` | dormant 闸、`frameRole`、init 闸 | — |
 | `content/content-messaging.js` | 子 frame 过滤 | `TRANSLATE_WHOLE_PAGE` 分支 |

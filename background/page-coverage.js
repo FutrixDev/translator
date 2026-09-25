@@ -1,16 +1,15 @@
 // Blab Translation — 整页翻译覆盖面：service worker 这一半
 //
-// 两件事，都只服务于内容脚本的整页翻译：
+// 只做一件事：GET_SHADOW_STYLES。shadow root 里的译文拿不到 manifest 注入的样式表
+// （那些只进文档，不进 shadow 树）。内容脚本（content/page/shadow.js）在第一次往
+// 某个 root 里插译文时来要一份样式文本，自己装进那个 root。SW 用 fetch 读自家包里
+// 的文件——扩展自己读自己的文件不需要 web_accessible_resources。
 //
-// 1. GET_SHADOW_STYLES：shadow root 里的译文拿不到 manifest 注入的样式表（那些
-//    只进文档，不进 shadow 树）。内容脚本（content/page/shadow.js）在第一次往某个
-//    root 里插译文时来要一份样式文本，自己装进那个 root。SW 用 fetch 读自家包里的
-//    文件——扩展自己读自己的文件不需要 web_accessible_resources。
-// 2. translate-whole-page（Alt+W）：本页临时改成整页范围再翻。只发给顶层 frame：
-//    子 frame 各自的覆盖值由顶层的手动轮带下去（设计 §2），这里不替它们做主。
+// 「翻译整个页面」的快捷键（Alt+W）不在这里：它是 background/commands.js 快捷键表
+// 里的一行。
 //
-// 两个监听都是独立注册的，只认自己的那一条：别的消息既不回话也不 return true
-// ——回一个 undefined 会抢在真正的处理者前面把通道关掉。
+// 消息监听只认 GET_SHADOW_STYLES 这一条：别的消息既不回话也不 return true——回一个
+// undefined 会抢在真正的处理者前面把通道关掉。
 
 // 注入到文档、且定义了 shadow 里译文要用的类的样式表。单测守着：凡是
 // content_scripts 注入的 CSS 里写了这些类的文件，都必须列在这里。
@@ -108,21 +107,7 @@ export function handleMessage(message, _sender, sendResponse) {
   return true;
 }
 
-// 写法同 background.js 里 Alt+A 的处理器：没有接收方（chrome:// 页、脚本还没
-// 注入完的标签页）时 sendMessage 会 reject，一个按不动的快捷键本来就该安静。
-export async function handleCommand(command, tab) {
-  if (command !== 'translate-whole-page') return;
-  const target = tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  if (!target || typeof target.id !== 'number') return;
-  try {
-    await chrome.tabs.sendMessage(target.id, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 });
-  } catch (error) {
-    console.log('Blab Translation: whole-page shortcut had no receiver', error && error.message);
-  }
-}
-
 // 单测直接 import 这个文件取纯函数，那里没有 chrome 全局。
 if (globalThis.chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(handleMessage);
-  chrome.commands.onCommand.addListener(handleCommand);
 }
