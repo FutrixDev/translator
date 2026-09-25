@@ -14,5 +14,9 @@
   "cmdToggleTranslationOnly": {
     "message": "Alternar entre bilíngue e somente tradução",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Traduzir a página inteira, incluindo navegação e barras laterais",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

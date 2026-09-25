@@ -186,6 +186,7 @@
    * @returns {Promise<string[]|null>} 与 texts 等长；fetchMissing 失败时原样返回 null
    */
   async function serve(texts, factors, fetchMissing) {
+    followClears();
     const keys = texts.map((text) => buildKey({ ...factors, text }));
     // 本次调用自己的账本。**刻意不拿 L1 当账本**：L1 有容量上限，一次足够大的
     // 调用能把自己早先放进去的条目挤出去，回填时就成了一个空洞 —— 而空洞在
@@ -358,14 +359,23 @@
   //
   // 正在路上的请求（inflight）不受影响，这是对的：它们是清空**之后**才会回来的
   // 新译文，本来就该留下。这里丢的只有清空之前就已经攒下的东西。
-  try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && EPOCH_KEY in changes) dropLocalState();
-    });
-  } catch (error) {
-    // 拿不到 onChanged（受限上下文、测试替身）就只是少了这层加固，缓存本身照常
-    // 工作，所以不抛。
-    console.warn('Blab Translation: translation cache clear broadcast unavailable', error);
+  //
+  // 惰性挂：第一次 serve() 时才挂。要丢的东西只有 serve() 攒得出来，没供过货的
+  // 上下文没什么可丢；而这个文件也进 dormant frame（广告、支付……，见
+  // shared/frame-eligibility.js），那里加载时挂监听就不叫 dormant 了。
+  let followingClears = false;
+  function followClears() {
+    if (followingClears) return;
+    followingClears = true;
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && EPOCH_KEY in changes) dropLocalState();
+      });
+    } catch (error) {
+      // 拿不到 onChanged（受限上下文、测试替身）就只是少了这层加固，缓存本身照常
+      // 工作，所以不抛。
+      console.warn('Blab Translation: translation cache clear broadcast unavailable', error);
+    }
   }
 
   root.TranslationCache = {

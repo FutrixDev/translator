@@ -14,5 +14,9 @@
   "cmdToggleTranslationOnly": {
     "message": "対訳表示と訳文のみ表示を切り替え",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "ページ全体を翻訳（ナビゲーションとサイドバーを含む）",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

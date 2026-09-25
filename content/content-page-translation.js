@@ -54,16 +54,25 @@
     ctx.showPageTranslationProgress();
     // 用户在这一页表过态了。此后长出来的新内容跟着翻，不必再点一次。
     if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
+    // 子 frame 跟着翻：各自静默跑一轮（content/frames/）。
+    ctx.frames.onManualTranslate();
 
     try {
       // 收集需要翻译的元素（以块级元素为单位）
-      let translatableBlocks = ctx.collectTranslatableBlocks(document.body);
+      ctx.beginScopeRound();
+      let translatableBlocks = ctx.collectPageBlocks();
       // 紧挨着上一行读，中间不能有 await。这个计数是收集器的模块级变量，每次
       // collectTranslatableBlocks 进门就清零 —— 自动翻译的发现层也在调它。隔着
       // 一次 await 去读，读到的可能是发现层那一次收集的结果。
       const managedSkipped = ctx.getManagedSkipCount();
       translatableBlocks = await ctx.filterBlocksByLanguage(translatableBlocks);
 
+      if (translatableBlocks.length === 0 && ctx.frames.hasSizedChildren()) {
+        // 这一层没东西可翻，内容在 iframe 里：它们各自静默翻，这里报「已翻译」或
+        // 「无可译内容」都是错话。
+        ctx.hidePageTranslationProgress();
+        return;
+      }
       if (translatableBlocks.length === 0) {
         // 一块也收不到有两种完全不同的原因，不能都报“页面已翻译”：真的翻完了，
         // 还是正文整个落在受管容器里、且那里的块连生成内容都承不住。后者报
@@ -106,6 +115,7 @@
     } finally {
       state.isTranslatingPage = false;
       state.translationProgress = { current: 0, total: 0 };
+      ctx.frames.onManualTranslateEnd();
     }
   }
 
@@ -127,7 +137,7 @@
   function hasPageTranslations() {
     const selector = ctx.PAGE_TRANSLATION_SELECTOR;
     if (!selector) return false;
-    for (const el of document.querySelectorAll(selector)) {
+    for (const el of ctx.queryAllDeep(selector)) {
       // 受管译文没有自己的节点：句柄只是个挂在离屏 holder 上的替身，译文是原文
       // 块的那条 ::after。原文块离开文档之后（单页应用换页把那段子树整个换掉，
       // Lexical 这类编辑器自己重建子树也一样），::after 跟着没了，替身却还在
@@ -143,7 +153,8 @@
       if (block && !block.isConnected) continue;
       return true;
     }
-    return false;
+    // 只有 iframe 里翻过的页面，Alt+A / 悬浮球 / popup 的「隐藏译文」照样要对。
+    return ctx.frames.childrenHaveTranslations();
   }
 
   /**

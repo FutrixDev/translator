@@ -7,12 +7,13 @@
 (globalThis.I18N_MESSAGES = globalThis.I18N_MESSAGES || {})['zh-TW'] = {
     inputTranslate: '輸入文本翻譯',
     translateSelection: '翻譯選中文本',
-    translatePage: '翻譯整個頁面',
+    translatePage: '翻譯此頁面',
+    floatMenuTranslateWholePage: '翻譯整個頁面',
     hideTranslations: '隱藏譯文',
     showTranslations: '顯示譯文',
     openSettings: '打開設置',
     contextTranslateSelection: '翻譯選中文本',
-    contextTranslatePage: '翻譯整個頁面',
+    contextTranslatePage: '翻譯此頁面',
     contextRemoveInlineTranslation: '取消譯文',
 
     // Comic page translation (account-backed, see content-comic-translation.js)
@@ -264,6 +265,10 @@
     skipTargetLanguageText: '跳過已是目標語言的內容',
     showTranslationOnly: '僅顯示譯文',
     hintShowTranslationOnly: '整頁翻譯時隱藏原文，只保留譯文',
+    pageTranslateScopeLabel: '整頁翻譯範圍',
+    pageTranslateScopeMain: '只翻譯正文（推薦）',
+    pageTranslateScopePage: '翻譯整個頁面',
+    pageTranslateScopeHint: '只翻譯正文時，網站的導覽、側欄、選單和頁首頁尾不翻。想讓某一頁全部翻譯，可以在翻譯球選單裡點「翻譯整個頁面」，或按 Alt+W。',
     advancedSettings: '進階設定',
     youtubeSettings: '影片字幕',
     captionFollowsAutoTranslate: '字幕跟著主開關走：你讓我們翻譯的網站，上面的影片字幕也一併翻譯。',

@@ -95,6 +95,12 @@ async function refreshComicSection() {
   elements.comicColorizePage.hidden = !enableComicTranslation;
 }
 
+// Everything the popup asks a tab is about the page the address bar shows, and
+// the content script runs in every frame of it (all_frames): without a frameId
+// the first frame to answer wins, and an iframe's answer would paint the
+// iframe's host as "this site".
+const TOP_FRAME = { frameId: 0 };
+
 // The context menu is the natural home for this, but comic hosts disable it
 // often enough that the popup has to be able to start a page on its own. No
 // srcUrl to send — the content script picks the page(s) on screen.
@@ -106,7 +112,7 @@ async function onComicPageAction(mode) {
       type: 'COMIC_TRANSLATE_PAGE',
       mode,
       pageUrl: tabs[0].url || ''
-    });
+    }, TOP_FRAME);
     window.close();
   } catch (error) {
     console.error('Failed to start comic job:', error);
@@ -150,7 +156,7 @@ async function sendToActiveTab(message) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tabId = tabs[0] && tabs[0].id;
     if (typeof tabId !== 'number') return null;
-    return (await chrome.tabs.sendMessage(tabId, message)) || null;
+    return (await chrome.tabs.sendMessage(tabId, message, TOP_FRAME)) || null;
   } catch (error) {
     // “Could not establish connection” —— 这一页没有 content script。是答案，不是故障。
     return null;
@@ -400,7 +406,7 @@ async function probeActiveTabEngine() {
   const timeout = new Promise((resolve) => setTimeout(() => resolve(PROBE_TIMED_OUT), ENGINE_PROBE_TIMEOUT_MS));
   try {
     const reply = await Promise.race([
-      chrome.tabs.sendMessage(tabId, { type: 'PROBE_ENGINE' }),
+      chrome.tabs.sendMessage(tabId, { type: 'PROBE_ENGINE' }, TOP_FRAME),
       timeout
     ]);
     return reply || null;

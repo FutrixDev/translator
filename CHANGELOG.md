@@ -154,6 +154,32 @@
   translated file at the end, the upload page no longer drops back to
   "Translating…" after "Retypesetting…"; the same goes for PDFs.
 
+### Page translation reaches more of the page
+
+- **Embedded frames.** Page translation now follows the text into iframes
+  (including `about:blank` and `srcdoc` frames): the top frame drives, every
+  eligible frame translates its own text through the same engine, and showing
+  or hiding translations applies to all of them. Ad, payment, captcha and sign-in frames
+  are never read at all: the content script stops before it builds anything
+  there (`shared/frame-eligibility.js`).
+- **Shadow DOM, open and closed.** Text inside web components is collected and
+  translated in place, and our translation styles reach inside the shadow root.
+- **`translate="no"` and `.notranslate` are respected.** A block the page marks
+  that way is skipped (a `translate="yes"` inside it is honoured); a word marked
+  that way inside a sentence, such as a product name, is kept as it is and not
+  sent.
+- **Main content only, by default.** Navigation, sidebars, menus, headers and
+  footers are left alone. Settings has a new "Page translation scope" choice
+  (Main content only / Whole page).
+- **Whole page on demand.** "Translate Whole Page" in the float ball's menu, or
+  Alt+W, translates everything on this page once, without changing the setting.
+- **The context menu item now reads like the float ball's.** In Simplified
+  Chinese, Traditional Chinese, Japanese and Korean the right-click item used
+  the "whole page" wording while running the main-content scope; it now says
+  "Translate Page", like the float ball and the popup.
+
+No new permission.
+
 ## 1.4.0 — 2026-09-20
 
 ### New features

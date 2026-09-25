@@ -34,6 +34,14 @@ globalThis.document = {};
 globalThis.chrome = {};
 
 await import('../../shared/block-identity.js');
+// 收集器在调用时读 shadow / notranslate / scope 挂的 ctx.x，这里装真模块，不手写替身；
+// scope.js 读 globalThis.SiteRules，所以 lang-tags、site-rules-builtin、site-rules 排在它前面。
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/site-rules.js');
+await import('../../content/page/shadow.js');
+await import('../../content/page/notranslate.js');
+await import('../../content/page/scope.js');
 await import('../../content/page/collect.js');
 await import('../../content/page/insert.js');
 
@@ -45,6 +53,7 @@ function el(tag = 'DIV', children = []) {
   return {
     nodeType: 1,
     tagName: tag,
+    localName: tag.toLowerCase(),
     childNodes: children,
     removed: false,
     classList: {
@@ -229,7 +238,8 @@ test('releasing an element that was never translated is a no-op, not a crash', (
 test('the recycle check runs before the closest() that would swallow it', () => {
   const source = repoFile('content/page/collect.js');
   const check = source.indexOf('identity.lookup(element)');
-  const closest = source.indexOf(".closest('.ai-translator-popup");
+  // 这一跳穿 shadow 边界（closestAcross → ctx.closestComposed），同样从元素自己开始找。
+  const closest = source.indexOf("closestAcross(element, '.ai-translator-popup");
   assert.ok(check !== -1, 'processElement no longer asks whether this block was recycled');
   assert.ok(closest !== -1, 'the skip chain moved; re-check where the recycle test belongs');
   // closest() 从元素自己开始找，而它的选择器串里就有 `.ai-translator-translated`。

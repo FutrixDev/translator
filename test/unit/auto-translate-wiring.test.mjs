@@ -118,7 +118,7 @@ test('自己插的译文不算页面变了 —— 否则翻译会把自己再触
 
 test('管控容器的漏收计数，读的那一行紧挨着收集，中间没有 await', () => {
   const source = code('content/content-page-translation.js');
-  const collect = source.indexOf('ctx.collectTranslatableBlocks(document.body)');
+  const collect = source.indexOf('ctx.collectPageBlocks()');
   const skip = source.indexOf('ctx.getManagedSkipCount()');
   assert.ok(collect >= 0 && skip > collect);
   assert.doesNotMatch(source.slice(collect, skip), /await/, '中间夹一次 await，读到的就可能是发现层那次收集的结果');

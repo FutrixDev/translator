@@ -14,5 +14,9 @@
   "cmdToggleTranslationOnly": {
     "message": "Переключить: два языка или только перевод",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Перевести всю страницу, включая навигацию и боковые панели",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

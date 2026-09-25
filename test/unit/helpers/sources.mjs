@@ -141,6 +141,27 @@ export function engineSource() {
 }
 
 /**
+ * 整页翻译进 iframe 的内容脚本一族：content/frames/*.js（共用的 shelf、顶层、子
+ * frame）。这一族没有入口文件 —— 外面只通过 ctx.frames 上的钩子调它。
+ *
+ * 服务工作者那一半（background/frame-relay.js）属于 workerSource()。
+ */
+export function framesSource() {
+  return surfaceSource('content/frames', (name) => name.endsWith('.js'));
+}
+
+/**
+ * 整页翻译全体：content/page/*.js 加上入口 content/content-page-translation.js。
+ *
+ * 「整页翻译有没有做某件事」问的是这一族 —— 收块、范围、shadow、插入、批量、显隐
+ * 分在十来个文件里，哪个函数落在哪一份是排版，不是契约。
+ */
+export function pageSource() {
+  return [surfaceSource('content/page', (name) => name.endsWith('.js')),
+          readFileSync(path.join(ROOT, 'content/content-page-translation.js'), 'utf8')].join('\n');
+}
+
+/**
  * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
  */
 export function contentBundle(marker = 'content/content-utils.js') {

@@ -193,6 +193,7 @@
     // ------------------------------------------------------------------ 判
 
     function resolve(lang, options) {
+      if (ctx.frameRole === 'child') return ctx.frameDecision(lang, options);
       return globalThis.SiteRules.decide({
         host: location.hostname,
         path: location.pathname,
@@ -622,7 +623,7 @@
       // 门槛，页面上是真有译文摆着的 —— 而「这个月自动翻了几页」问的是「这一页
       // 翻过没有」，不是「这一轮有没有出错」。记在下面那个 return 后头，就是把
       // 一页看得见译文的页面记成零。
-      if (translated && countedUrl !== location.href) {
+      if (translated && countedUrl !== location.href && ctx.frameRole !== 'child') {
         countedUrl = location.href;
         globalThis.AutoStats.add({ pages: 1 });
       }
@@ -830,6 +831,8 @@
       pauseCurrentPage,
       resumeCurrentPage,
       markPageExplicit,
+      // 子 frame 的指令变了（content/frames/child.js）：重新判、重新扫。
+      restart: start,
       bumpSession,
       onSettingsChanged
     };

@@ -14,5 +14,9 @@
   "cmdToggleTranslationOnly": {
     "message": "이중 언어와 번역문만 보기 전환",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "전체 페이지 번역 (내비게이션과 사이드바 포함)",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

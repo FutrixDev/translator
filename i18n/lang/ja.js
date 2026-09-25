@@ -7,12 +7,13 @@
 (globalThis.I18N_MESSAGES = globalThis.I18N_MESSAGES || {})['ja'] = {
     inputTranslate: 'テキスト入力翻訳',
     translateSelection: '選択テキストを翻訳',
-    translatePage: 'ページ全体を翻訳',
+    translatePage: 'このページを翻訳',
+    floatMenuTranslateWholePage: 'ページ全体を翻訳',
     hideTranslations: '翻訳を隠す',
     showTranslations: '翻訳を表示',
     openSettings: '設定',
     contextTranslateSelection: '選択テキストを翻訳',
-    contextTranslatePage: 'ページ全体を翻訳',
+    contextTranslatePage: 'このページを翻訳',
     contextRemoveInlineTranslation: '翻訳を解除',
 
     // Comic page translation (account-backed, see content-comic-translation.js)
@@ -264,6 +265,10 @@
     skipTargetLanguageText: 'すでに翻訳先の言語である文はスキップ',
     showTranslationOnly: '訳文のみ表示',
     hintShowTranslationOnly: 'ページ全体の翻訳で原文を隠し、訳文だけを残します',
+    pageTranslateScopeLabel: 'ページ翻訳の範囲',
+    pageTranslateScopeMain: '本文のみ（推奨）',
+    pageTranslateScopePage: 'ページ全体',
+    pageTranslateScopeHint: '本文のみの場合、サイトのナビゲーション、サイドバー、メニュー、ヘッダー、フッターは翻訳しません。あるページを丸ごと翻訳するには、フロートボールのメニューで「ページ全体を翻訳」を選ぶか、Alt+W を押してください。',
     advancedSettings: '詳細設定',
     youtubeSettings: '動画字幕',
     captionFollowsAutoTranslate: '字幕は自動翻訳のメインスイッチに従います。翻訳を許可したサイトでは、その動画の字幕も翻訳されます。',

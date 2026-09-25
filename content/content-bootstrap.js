@@ -2,8 +2,14 @@
 (function() {
   'use strict';
 
+  // 广告 / 验证码 / 支付 / 登录 / 播放器 frame 不建 ctx（dormant）：后面每个模块都
+  // 在 `if (!ctx) return;` 处退出，一个监听都不挂。判定表在 shared/frame-eligibility.js。
+  if (!globalThis.FrameEligibility.shouldActivate()) return;
+
   const ctx = window.AI_TRANSLATOR_CONTENT || {};
   window.AI_TRANSLATOR_CONTENT = ctx;
+  // 'top' 画悬浮球、答 popup、执行引擎；'child' 跟着顶层翻（content/frames/）。
+  ctx.frameRole = window.top === window ? 'top' : 'child';
 
   if (!ctx.constants) {
     ctx.constants = {
@@ -194,26 +200,33 @@
       if (ctx.setupInputTranslateChip) ctx.setupInputTranslateChip();
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();
-      if (ctx.createFloatBall) ctx.createFloatBall();
+      // 页面级功能（悬浮球、字幕、状态条、PDF 提示、语言包预取、漫画续跑）只在
+      // 顶层；子 frame 只留划词 / 悬停 / 输入框这些作用于 frame 内的，外加跟随
+      // 顶层的自动翻译。
+      const top = ctx.frameRole === 'top';
+      if (top && ctx.createFloatBall) ctx.createFloatBall();
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
       // 字幕排在调度层后面，因为字幕翻不翻由它说了算：字幕这一面一装起来就去订
       // 阅（subscribeToGate），顺序反了就得等下一次状态变化才上闸 —— 而一个判完
       // 就定下来不再动的页面（黑名单、语言相同、要追问）永远等不到那一次。
-      if (ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
+      if (top && ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
-      if (ctx.setupAutoStatus) ctx.setupAutoStatus();
+      if (top && ctx.setupAutoStatus) ctx.setupAutoStatus();
       // 条子由 setupAutoStatus() 那一层画，所以排在它后面。PDF 文档上没有正文
       // 可翻，这条是那一页唯一能办事的入口。
-      if (ctx.setupPdfPrompt) ctx.setupPdfPrompt();
+      if (top && ctx.setupPdfPrompt) ctx.setupPdfPrompt();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
-      if (ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
+      if (top && ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.
       // A redraw outlives the page that ordered it, so this is where a reader
       // who paged ahead and came back gets their translation put back.
-      if (ctx.resumeComicJobs) ctx.resumeComicJobs();
+      if (top && ctx.resumeComicJobs) ctx.resumeComicJobs();
+      // 最后一步：顶层此时才答得出指令（自动翻译已订阅好），子 frame 此时才有
+      // 设置可判。
+      ctx.frames.setup();
       console.log('Blab Translation: Initialization complete, showFloatBall =', ctx.settings.showFloatBall);
     } catch (error) {
       console.error('Blab Translation: Initialization failed', error);

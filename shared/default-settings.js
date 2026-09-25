@@ -58,6 +58,10 @@
     showTranslationOnly: false,
     // 译文样式，集合在 shared/translation-display.js。缺省 default：老用户观感不变。
     translationStyle: 'default',
+    // 整页翻译的范围。'main' 只翻页面自己标明的正文（跳过导航、侧栏、站点页眉
+    // 页脚，信任作者写的 <main>），'page' 从 <body> 起整页翻。判定在
+    // content/page/scope.js；悬浮菜单「翻译整个页面」和 Alt+W 临时改成整页。
+    pageTranslateScope: 'main',
     // 「没开原字幕的视频，替我把原字幕点开」。默认关，而且是本轮唯一保留的独立
     // 开关：它**改动播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的
     // mode），而其余的自动化只是往页面里插我们自己的节点。有副作用的那一件事要

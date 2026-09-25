@@ -8,6 +8,7 @@
   'use strict';
 
   const ctx = window.AI_TRANSLATOR_CONTENT;
+  if (!ctx) return;
   // 引擎模块在真实页面上一定在；只装几个模块的单测夹具里不一定。
   const builtin = () => ctx.builtinTranslator;
 

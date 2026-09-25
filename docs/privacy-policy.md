@@ -60,6 +60,39 @@ If you point these no-click translations at an AI endpoint, you set how many
 characters they may spend per day (200,000 by default); that tally is kept on
 your computer and never uploaded.
 
+**整页翻译读哪些内容、不读哪些：**
+
+- **嵌在页面里的 frame 和 shadow DOM 里的正文也会翻译。** 文章嵌在 iframe 里、
+  网页组件把正文放进 shadow DOM，这些文字和页面上别的正文一样，走上面那张表里
+  同一个引擎、同一条路。
+- **广告、支付、验证码、登录这几类 frame，扩展从不读取。** 这样的 frame 里扩展的
+  脚本在启动那一刻就停下，不读页面内容、不发消息（`shared/frame-eligibility.js`）。
+- **网页标了 `translate="no"` 或 `.notranslate` 的内容，永远不会发出去。** 整块
+  这样标的跳过；句子里这样标的词（产品名、人名）原样留在本机，不进翻译请求。
+- **默认只翻正文。** 导航、侧栏、页眉页脚不送去翻译；要翻整页，用悬浮球菜单里的
+  「翻译整个页面」，或在设置里把范围改成整页。
+- **这些都没有新增权限。** 权限清单和上一版一样，见第四节。
+
+**What page translation reads, and what it never reads:**
+
+- **Text inside embedded frames and shadow DOM is translated too.** An article
+  inside an iframe, or a web component that keeps its text in a shadow root,
+  goes through the same engine and the same path as the rest of the page, per
+  the table above.
+- **Ad, payment, captcha and sign-in frames are never read.** In such a frame
+  the extension's script stops the moment it starts: it reads none of the
+  page's content and sends nothing (`shared/frame-eligibility.js`).
+- **Content the page marks `translate="no"` or `.notranslate` is never sent.**
+  A block marked that way is skipped; a word marked that way inside a sentence
+  (a product or person name) stays on your machine and is not part of the
+  request.
+- **Only the main content is translated by default.** Navigation, sidebars,
+  headers and footers are not sent; to translate the whole page, use
+  "Translate Whole Page" in the float ball's menu, or change the scope in
+  Settings.
+- **None of this adds a permission.** The permission list is unchanged; see
+  section four.
+
 ---
 
 ## 二、账号：漫画和文档那一半 / The account behind comic and document translation
@@ -120,7 +153,7 @@ button that clears it.
 
 | 权限 | 用途 |
 | --- | --- |
-| `<all_urls>` | 扩展的功能就是翻译你正在看的那一页，而那可以是任何一页 |
+| `<all_urls>` | 扩展的功能就是翻译你正在看的那一页，而那可以是任何一页；也包括页面里嵌入的 frame（广告、支付、验证码、登录类的除外，见第一节） / Translating the page you are reading, which can be any page, including the frames embedded in it (except the ad, payment, captcha and sign-in frames listed in section one) |
 | `storage` | 存上面那张表里的东西 |
 | `activeTab` | 你从工具栏或右键菜单发起的那一次翻译 |
 | `contextMenus` | 右键菜单里的那几条 |
