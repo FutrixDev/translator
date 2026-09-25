@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { optionsSource, popupSource, workerSource } from './helpers/sources.mjs';
+import { optionsSource, popupSource, uploadPageSource, workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -79,7 +79,7 @@ const CALLERS = [
   ['the service worker', workerSource],
   ['the popup', popupSource],
   ['the settings page', optionsSource],
-  ['pdf/upload.js', () => repoFile('pdf/upload.js')],
+  ['the upload page', uploadPageSource],
   ['content/content-bootstrap.js', () => repoFile('content/content-bootstrap.js')],
 ];
 

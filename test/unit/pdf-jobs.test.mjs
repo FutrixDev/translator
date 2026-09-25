@@ -16,7 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { optionsSource, popupSource } from './helpers/sources.mjs';
+import { optionsSource, popupSource, uploadPageSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -46,6 +46,7 @@ const pdf = await import('../../background/pdf-client.js');
 // The popup and the upload page get the same helpers as a classic script —
 // in the same order their <script> tags do, because pdf-ui.js reads the URL
 // predicates off globalThis rather than keeping a second copy of them.
+await import('../../shared/doc-jobs.js');
 await import('../../shared/pdf-url.js');
 await import('../../pdf/pdf-ui.js');
 const ui = globalThis.AI_TRANSLATOR_PDF_UI;
@@ -76,9 +77,11 @@ test('a pending record does not hold the poll alarm open', async () => {
 });
 
 test('a pending record that outlived its worker stops claiming to be in flight', async () => {
-  const elevenMinutesAgo = Date.now() - 11 * 60 * 1000;
+  // 20 minutes, counted from the create (which resets the receipt), so a slow
+  // 50 MiB upload is not buried while it is still going up.
+  const twentyOneMinutesAgo = Date.now() - 21 * 60 * 1000;
   withStorage({
-    pdfJobs: [{ jobId: 'local:op-1', status: 'queued', pending: true, createdAt: elevenMinutesAgo }]
+    pdfJobs: [{ jobId: 'local:op-1', status: 'queued', pending: true, createdAt: twentyOneMinutesAgo }]
   });
   const [record] = await pdf.listJobRecords();
   assert.equal(record.status, 'failed');
@@ -87,7 +90,7 @@ test('a pending record that outlived its worker stops claiming to be in flight',
 
 test('a fresh pending record is left alone', async () => {
   withStorage({
-    pdfJobs: [{ jobId: 'local:op-1', status: 'queued', pending: true, createdAt: Date.now() }]
+    pdfJobs: [{ jobId: 'local:op-1', status: 'queued', pending: true, createdAt: Date.now() - 19 * 60 * 1000 }]
   });
   const [record] = await pdf.listJobRecords();
   assert.equal(record.status, 'queued');
@@ -150,19 +153,23 @@ test('dismissing a job drops this device\'s row and leaves the rest alone', asyn
 
 test('a job that finished stamps when it finished', async () => {
   // The popup ages a finished row out by this; without it a failure sits in the
-  // menu for the record's whole 24-hour life.
-  const source = repoFile('background/pdf-client.js');
-  const body = source.slice(source.indexOf('export async function refreshJobRecords'));
-  assert.ok(
-    /settledAt: Date\.now\(\)/.test(body),
-    'the terminal transition must stamp settledAt'
-  );
-  const create = repoFile('background/pdf-jobs.js');
-  const createBody = create.slice(create.indexOf('async function handlePdfCreateJob'));
-  assert.ok(
-    /settledAt: Date\.now\(\)/.test(createBody),
-    'a create that fails outright must stamp settledAt too — no poll will ever visit it'
-  );
+  // menu for the record's whole 24-hour life. Every write goes through one
+  // invariant (settledAt iff terminal), so a create that fails outright — which
+  // no poll will ever visit — is stamped by the same write that fails it.
+  const store = withStorage({
+    pdfJobs: [{ jobId: 'local:op-1', status: 'queued', pending: true, createdAt: Date.now() }]
+  });
+  const failed = await pdf.saveJobRecord({ jobId: 'local:op-1', status: 'failed', error: { code: 'engine_error' } });
+  assert.ok(Number.isFinite(failed.settledAt), 'the terminal write must stamp settledAt');
+  assert.equal(store.pdfJobs[0].settledAt, failed.settledAt);
+
+  // A job waiting for the user is not over, whatever wrote it.
+  const awaiting = await pdf.replaceJobRecord('local:op-1', { jobId: 'job-1', status: 'awaiting_confirm' });
+  assert.equal(awaiting.settledAt, null, 'awaiting_confirm must not read as finished');
+
+  // And a poll that sees it end stamps it there.
+  const { record } = pdf.applyJobView(awaiting, { status: 'abandoned', progress: 0 });
+  assert.ok(Number.isFinite(record.settledAt));
 });
 
 // ---------------------------------------------------------------------------
@@ -193,15 +200,27 @@ test('the settings history merges only the local rows still in flight', () => {
 
 test('the record is written before the work that can fail, not after it', () => {
   const source = repoFile('background/pdf-jobs.js');
+  // URL source: the worker downloads, takes a ticket and PUTs — the receipt
+  // comes before all of it. Uploaded source: the create upserts the receipt
+  // (resetting its clock) before it asks the server for the job.
   const body = source.slice(source.indexOf('async function handlePdfCreateJob'));
-  const pendingAt = body.indexOf('pending: true');
-  const createAt = body.indexOf('pdfClient.createPdfJob');
-  assert.ok(pendingAt > -1, 'handlePdfCreateJob must write a pending record');
-  assert.ok(createAt > -1);
-  assert.ok(
-    pendingAt < createAt,
-    'the pending record must be written before the create, or the silent window is back'
-  );
+  const receiptAt = body.indexOf('pdfClient.saveJobRecord(receipt)');
+  assert.ok(receiptAt > -1, 'handlePdfCreateJob must write the receipt');
+  assert.ok(receiptAt < body.indexOf('pdfClient.fetchPdfFromUrl'),
+    'the receipt must be written before the URL download, or the silent window is back');
+  assert.ok(receiptAt < body.indexOf('pdfClient.createJobFromUpload'),
+    'and before the create');
+  // The upload page's own receipt: written by the ticket handler, and only
+  // once the ticket is granted — a refusal has no job to show.
+  const ticket = source.slice(source.indexOf('async function handlePdfUploadTicket'),
+    source.indexOf('async function handlePdfCreateJob'));
+  const grantedAt = ticket.indexOf('await pdfClient.requestUploadTicket');
+  const savedAt = ticket.indexOf('pdfClient.saveJobRecord(receipt)');
+  assert.ok(grantedAt > -1 && savedAt > grantedAt,
+    'the ticket handler writes the receipt after the ticket is granted');
+  // Both are the same row, built once.
+  assert.equal((source.match(/pending: true/g) || []).length, 0,
+    'the receipt is pdfClient.receiptRecord, not a hand-built row');
 });
 
 test('polling steps over records that name no server job', () => {
@@ -327,8 +346,8 @@ test('a poll that sees the job die releases the binding; a success keeps it', as
       ? { jobId: 'job-dead', status: 'failed', progress: 40, error: { code: 'budget_exceeded', message: '', refunded: true } }
       : { jobId: 'job-live', status: 'succeeded', progress: 100, results: {} })
   });
-  const { transitions } = await pdf.refreshJobRecords();
-  assert.equal(transitions.length, 2);
+  const { changes } = await pdf.refreshJobRecords();
+  assert.equal(changes.length, 2);
   assert.equal(store.pdfUrlOps['https://a.example/dead.pdf'], undefined,
     'the failed job burned its id — the binding must go');
   assert.ok(store.pdfUrlOps['https://a.example/live.pdf'],
@@ -344,9 +363,10 @@ test('a job the server has forgotten releases its binding too', async () => {
     pdfUrlOps: { 'https://a.example/gone.pdf': { opId: 'op-gone', createdAt: Date.now() } }
   });
   globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({ error: 'not_found' }) });
-  const { transitions } = await pdf.refreshJobRecords();
-  assert.equal(transitions.length, 1);
-  assert.equal(transitions[0].status, 'failed');
+  const { changes } = await pdf.refreshJobRecords();
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].record.status, 'failed');
+  assert.equal(changes[0].transition, 'settled');
   assert.deepEqual(store.pdfUrlOps, {});
 });
 
@@ -371,13 +391,17 @@ test('the upload page re-mints a burned operation id before offering retry', () 
   // Same class of bug as the URL binding, bytes edition: the page keeps one
   // operationId per chosen file, and a Retry replaying it after a terminal
   // job would only re-adopt the same dead job.
-  const source = repoFile('pdf/upload.js');
-  const view = source.slice(source.indexOf('function renderView'), source.indexOf('function renderFailure'));
-  assert.match(view, /currentFile\.operationId = crypto\.randomUUID\(\)/,
+  const source = uploadPageSource();
+  const remint = source.slice(source.indexOf('function remint'), source.indexOf('function remint') + 200);
+  assert.match(remint, /\.operationId = crypto\.randomUUID\(\)/,
+    'remint must mint a fresh id');
+  const view = source.slice(source.indexOf('function handleView'), source.indexOf('async function poll'));
+  assert.match(view, /\(view\.status === 'failed' \|\| view\.status === 'abandoned'\) && currentFile\) remint\(currentFile\)/,
     'a terminal job must burn the id the next retry would otherwise replay');
   const start = source.slice(source.indexOf('async function startJob'));
-  assert.ok(start.includes("'operation_already_finished'"),
+  assert.match(source, /BURNED_ID_CODES = new Set\(\['operation_already_finished'/,
     'a settled-operation 409 must re-mint too');
+  assert.match(start, /BURNED_ID_CODES\.has\(error\.code\)\) remint\(file\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -393,10 +417,13 @@ test('the worker and the pages read the same error map', () => {
   const pages = ['popup/popup.html', 'pdf/upload.html', 'options/options.html'];
   for (const page of pages) {
     const html = repoFile(page);
+    const docJobs = html.indexOf('shared/doc-jobs.js');
     const shared = html.indexOf('shared/pdf-errors.js');
     const uiAt = html.indexOf('pdf-ui.js');
     assert.ok(shared > -1, `${page} must load shared/pdf-errors.js`);
     assert.ok(shared < uiAt, `${page} must load it before pdf-ui.js, which reads it`);
+    // The map reads DocJobs (megabyteLabel, the format table) at call time.
+    assert.ok(docJobs > -1 && docJobs < shared, `${page} must load shared/doc-jobs.js before pdf-errors.js`);
   }
 });
 
@@ -420,30 +447,54 @@ test('the page-limit message shows the cap the server actually enforced', () => 
   // it under details, its toMessage() flattening carries it at the top level.
   assert.equal(
     ui.pdfErrorMessage({ code: 'too_many_pages', details: { maxPages: 32 } }, t),
-    'This PDF has too many pages (32 max)'
+    'This document has too many pages (32 max)'
   );
   assert.equal(
     ui.pdfErrorMessage({ code: 'too_many_pages', maxPages: 48 }, t),
-    'This PDF has too many pages (48 max)'
+    'This document has too many pages (48 max)'
   );
-  // A stored record error has no details; the message still shows a number,
-  // never the raw placeholder.
-  assert.match(ui.pdfErrorMessage({ code: 'too_many_pages' }, t), /\(\d+ max\)$/);
+  // A stored record error without the cap says so in words — never a made-up
+  // number, never the raw placeholder.
+  assert.equal(ui.pdfErrorMessage({ code: 'too_many_pages' }, t), 'This document has too many pages');
+  assert.equal(ui.pdfErrorMessageKey('too_many_pages', {}), 'docErrTooManyPagesNoMax');
 });
 
 test('every locale carries the new copy, and none leaks the placeholder', () => {
+  const PLACEHOLDERS = ['{max}', '{pageCount}', '{maxPages}', '{measured}', '{reserved}',
+    '{extra}', '{expires}', '{percent}', '{pdf}', '{book}', '{text}'];
+  const holes = (text) => [...new Set(String(text).match(/\{[a-zA-Z]+\}/g) || [])].sort().join(',');
+  const en = globalThis.I18N_MESSAGES.en;
+  // Every document/PDF string that interpolates anything, as English has it.
+  const keyed = Object.keys(en).filter((k) => /^(pdf|doc)/.test(k) && holes(en[k]));
+  const covered = keyed.map((k) => holes(en[k])).join(',');
+  for (const hole of PLACEHOLDERS) assert.ok(covered.includes(hole), `no document string carries ${hole}`);
   for (const [lang, table] of Object.entries(globalThis.I18N_MESSAGES)) {
-    if (!table.pdfFailed) continue; // a locale without the PDF feature strings
-    for (const key of ['pdfErrBusy', 'pdfErrRetry', 'pdfErrOutputConflict']) {
+    for (const key of ['pdfErrBusy', 'pdfErrRetry', 'pdfErrOutputConflict', 'docErrTooManyPagesNoMax']) {
       assert.ok(table[key], `${lang} is missing ${key}`);
+    }
+    // Same holes as English, key by key: a translation that drops {max} shows
+    // a sentence with no number; one that invents {pages} shows the braces.
+    for (const key of keyed) {
+      assert.ok(table[key], `${lang} is missing ${key}`);
+      assert.equal(holes(table[key]), holes(en[key]), `${lang}.${key} placeholders differ from en`);
     }
     assert.match(table.pdfErrTooManyPages, /\{maxPages\}/,
       `${lang}.pdfErrTooManyPages must interpolate the server's cap, not hardcode one`);
-    const rendered = ui.pdfErrorMessage(
+    const tr = (key) => globalThis.getMessage(key, lang);
+    const errors = [
       { code: 'too_many_pages', maxPages: 32 },
-      (key) => globalThis.getMessage(key, lang)
-    );
-    assert.doesNotMatch(rendered, /\{maxPages\}/, `${lang} leaked the placeholder`);
+      { code: 'too_many_pages' },
+      { code: 'too_many_pages', details: { maxPages: 300, pageCount: 412, format: 'epub' } },
+      { code: 'file_too_large', details: { format: 'pdf' } },
+      { code: 'file_too_large' },
+      { code: 'unsupported_format', details: { format: 'docx' } },
+      { code: 'unsupported_format' }
+    ];
+    for (const error of errors) {
+      const rendered = ui.pdfErrorMessage(error, tr);
+      assert.ok(rendered && rendered !== 'undefined', `${lang} rendered nothing for ${error.code}`);
+      assert.doesNotMatch(rendered, /\{[a-zA-Z]+\}/, `${lang} leaked a placeholder for ${JSON.stringify(error)}: ${rendered}`);
+    }
   }
 });
 

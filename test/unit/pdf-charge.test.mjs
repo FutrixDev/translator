@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const { comicSource, popupSource, workerSource } = await import('./helpers/sources.mjs');
+const { comicSource, popupSource, uploadPageSource, workerSource } = await import('./helpers/sources.mjs');
 
 // No `export`: the extension's own pages load it as a classic script, so
 // importing it for its side effect publishes globalThis.ChargeConfirm.
@@ -40,7 +40,7 @@ await import('../../shared/comic-charge.js');
 const ChargeConfirm = globalThis.ChargeConfirm;
 
 const OPERATION_ID = 'b1b7f0de-2f2e-4a1f-9a0a-6c0f1f2d3e40';
-const PDF_BYTES = new TextEncoder().encode('%PDF-1.7\n%…\n').buffer;
+const SOURCE_KEY = 'src/1';
 
 /** A signed-in service worker: a live token and nothing else. */
 function installChrome() {
@@ -64,9 +64,10 @@ function installChrome() {
 }
 
 /**
- * A fake fetch covering the three hops a PDF create makes — presign ticket,
- * the storage PUT, then the job creation — and answering only the last one
- * from a script, since that is the hop the handshake happens on.
+ * A fake fetch that records the job creations and answers them from a script,
+ * since that is the hop the handshake happens on. The ticket and storage hops
+ * are answered too, so a create that wrongly re-uploads is still recorded
+ * apart from the creates rather than crashing the fake.
  */
 function installFetch(responses) {
   const creates = [];
@@ -122,9 +123,12 @@ const pdf = await import('../../background/pdf-client.js');
  * to either error shape breaks these tests rather than only production.
  */
 function submitOnce(confirmCharge) {
-  return pdf.createPdfJob({
+  // The bytes are already in storage (the ticket and the PUT came first); the
+  // handshake happens on the create, which names the stored source.
+  return pdf.createJobFromUpload({
     operationId: OPERATION_ID,
-    bytes: PDF_BYTES,
+    sourceKey: SOURCE_KEY,
+    sourceFormat: 'pdf',
     fileName: '2312.03724.pdf',
     targetLang: 'zh-CN',
     confirmCharge
@@ -162,7 +166,8 @@ test('a 409 the user confirms is resent as the SAME operation, with confirmCharg
   assert.equal(creates[1].body.confirmCharge, true);
 
   // And the same source is re-used rather than re-uploaded under a new key.
-  assert.equal(creates[0].body.sourceKey, creates[1].body.sourceKey);
+  assert.equal(creates[0].body.sourceKey, SOURCE_KEY);
+  assert.equal(creates[1].body.sourceKey, SOURCE_KEY);
 
   // The user was shown the server's own numbers, not a client-side estimate.
   assert.equal(asked.length, 1);
@@ -261,7 +266,7 @@ test('the PDF create path asks through the shared module, and only that one', ()
   // the day the server changes the handshake.
   for (const [name, src] of [['the service worker', workerSource()],
     ['the popup', popupSource()],
-    ['pdf/upload.js', repoFile('pdf/upload.js')],
+    ['the upload page', uploadPageSource()],
     ['漫画翻译那一族', comicSource()]]) {
     assert.doesNotMatch(src, /function submitWithConfirmation/,
       `${name} must call the shared handshake, not restate it`);
@@ -300,7 +305,8 @@ test('the context menu asks with a notification and only spends on the yes butto
 });
 
 test('every page that asks about a charge loads the module before its own script', () => {
-  for (const [page, own] of [['pdf/upload.html', 'src="upload.js"'], ['popup/popup.html', 'src="popup.js"']]) {
+  // The popup's create lives in popup-pdf.js, which loads before popup.js.
+  for (const [page, own] of [['pdf/upload.html', 'src="upload.js"'], ['popup/popup.html', 'src="popup-pdf.js"']]) {
     const html = repoFile(page);
     const shared = html.indexOf('shared/comic-charge.js');
     assert.ok(shared > -1, `${page} must load shared/comic-charge.js`);
@@ -309,7 +315,7 @@ test('every page that asks about a charge loads the module before its own script
 });
 
 test('both PDF pages create through the handshake and treat a decline as a cancel', () => {
-  for (const [file, source] of [['pdf/upload.js', repoFile('pdf/upload.js')], ['the popup', popupSource()]]) {
+  for (const [file, source] of [['the upload page', uploadPageSource()], ['the popup', popupSource()]]) {
     assert.match(source, /ChargeConfirm\.submitWithConfirmation\(/,
       `${file} must create through the handshake`);
     assert.match(source, /confirmCharge: confirmCharge === true/,
