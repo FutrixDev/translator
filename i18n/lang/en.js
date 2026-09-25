@@ -254,7 +254,7 @@
     enableSelectionTranslation: 'Enable Selection Translation',
     hintEnableSelection: 'Show translate button on text selection',
     selectionTranslationMode: 'Selection Translation Display',
-    hintSelectionTranslationMode: 'Select text to show the translate button. Display inline below the paragraph or in a popup.',
+    hintSelectionTranslationMode: 'Where a translation from the modifier key, the float ball or the right-click menu appears: inline below the paragraph, or in a popup card. The selection icon always opens a card.',
     selectionTranslationInline: 'Inline (below paragraph)',
     selectionTranslationPopup: 'Popup window',
     selectionTranslationHotkey: 'Selection Hotkey',
@@ -559,4 +559,17 @@ Rules:
     onboardingOpenSettings: 'Open Full Settings',
     onboardingDone: 'Done',
     onboardingSaveFailed: 'Could not save: {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: 'Selection trigger',
+    selectionTriggerIcon: 'Icon',
+    selectionTriggerModifier: 'Modifier key',
+    selectionTriggerBoth: 'Icon and modifier key',
+    hintSelectionTrigger: 'Icon: a small button appears next to the selected text; click it to open a translation card. Modifier key: press the key below to translate at once.',
+    selectionIconLabel: 'Translate selection',
+    cardRetranslate: 'Retranslate',
+    cardUseBuiltin: 'Use Chrome built-in',
+    cardUseAi: 'Use my AI model',
+    cardEngineBuiltin: 'Chrome built-in',
+    cardEngineAi: 'My AI',
 };

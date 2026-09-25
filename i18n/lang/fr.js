@@ -222,7 +222,7 @@
     enableSelectionTranslation: 'Activer la traduction de sélection',
     hintEnableSelection: 'Afficher le bouton de traduction lors de la sélection de texte',
     selectionTranslationMode: 'Affichage de la traduction de sélection',
-    hintSelectionTranslationMode: 'Sélectionnez du texte pour afficher le bouton de traduction. Affichage sous le paragraphe ou en pop-up.',
+    hintSelectionTranslationMode: "Où s'affiche la traduction lancée par la touche de modification, la bulle flottante ou le menu contextuel : sous le paragraphe, ou dans une carte pop-up. L'icône de sélection ouvre toujours une carte.",
     selectionTranslationInline: 'Sous le paragraphe',
     selectionTranslationPopup: 'Fenêtre pop-up',
     selectionTranslationHotkey: 'Raccourci de sélection',
@@ -518,4 +518,17 @@
     onboardingOpenSettings: 'Ouvrir tous les paramètres',
     onboardingDone: 'Terminé',
     onboardingSaveFailed: 'Enregistrement impossible : {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: 'Déclenchement de la sélection',
+    selectionTriggerIcon: 'Icône',
+    selectionTriggerModifier: 'Touche de modification',
+    selectionTriggerBoth: 'Icône et touche de modification',
+    hintSelectionTrigger: 'Icône : un petit bouton apparaît à côté du texte sélectionné ; cliquez dessus pour ouvrir une carte de traduction. Touche de modification : appuyez sur la touche ci-dessous pour traduire aussitôt.',
+    selectionIconLabel: 'Traduire la sélection',
+    cardRetranslate: 'Retraduire',
+    cardUseBuiltin: 'Utiliser la traduction intégrée de Chrome',
+    cardUseAi: "Utiliser mon modèle d'IA",
+    cardEngineBuiltin: 'Intégrée à Chrome',
+    cardEngineAi: 'Mon IA',
 };

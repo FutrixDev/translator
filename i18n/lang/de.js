@@ -222,7 +222,7 @@
     enableSelectionTranslation: 'Auswahlübersetzung aktivieren',
     hintEnableSelection: 'Übersetzungsschaltfläche bei Textauswahl anzeigen',
     selectionTranslationMode: 'Anzeige der Auswahlübersetzung',
-    hintSelectionTranslationMode: 'Text auswählen, um die Übersetzungsschaltfläche anzuzeigen. Unter dem Absatz oder im Pop-up anzeigen.',
+    hintSelectionTranslationMode: 'Wo Übersetzungen über die Modifikatortaste, den schwebenden Button oder das Kontextmenü erscheinen: unter dem Absatz oder in einer Pop-up-Karte. Das Auswahlsymbol öffnet immer eine Karte.',
     selectionTranslationInline: 'Unter dem Absatz',
     selectionTranslationPopup: 'Pop-up Fenster',
     selectionTranslationHotkey: 'Tastenkürzel für Auswahl',
@@ -518,4 +518,17 @@
     onboardingOpenSettings: 'Alle Einstellungen öffnen',
     onboardingDone: 'Fertig',
     onboardingSaveFailed: 'Speichern fehlgeschlagen: {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: 'Auslöser für Auswahl',
+    selectionTriggerIcon: 'Symbol',
+    selectionTriggerModifier: 'Modifikatortaste',
+    selectionTriggerBoth: 'Symbol und Modifikatortaste',
+    hintSelectionTrigger: 'Symbol: Neben dem markierten Text erscheint eine kleine Schaltfläche; ein Klick öffnet eine Übersetzungskarte. Modifikatortaste: Die unten eingestellte Taste übersetzt sofort.',
+    selectionIconLabel: 'Auswahl übersetzen',
+    cardRetranslate: 'Neu übersetzen',
+    cardUseBuiltin: 'Chrome-Übersetzung verwenden',
+    cardUseAi: 'Mein KI-Modell verwenden',
+    cardEngineBuiltin: 'In Chrome integriert',
+    cardEngineAi: 'Meine KI',
 };

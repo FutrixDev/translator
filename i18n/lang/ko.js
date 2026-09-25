@@ -222,7 +222,7 @@
     enableSelectionTranslation: '선택 번역 활성화',
     hintEnableSelection: '텍스트 선택 시 번역 버튼 표시',
     selectionTranslationMode: '선택 번역 표시 방식',
-    hintSelectionTranslationMode: '텍스트 선택 시 번역 버튼 표시. 문단 아래 또는 팝업으로 표시합니다.',
+    hintSelectionTranslationMode: '보조 키, 플로팅 볼, 우클릭 메뉴로 번역한 결과를 어디에 표시할지: 문단 아래 또는 팝업 카드. 선택 아이콘은 항상 카드를 엽니다.',
     selectionTranslationInline: '문단 아래 표시',
     selectionTranslationPopup: '팝업 표시',
     selectionTranslationHotkey: '선택 번역 단축키',
@@ -518,4 +518,17 @@
     onboardingOpenSettings: '전체 설정 열기',
     onboardingDone: '완료',
     onboardingSaveFailed: '저장하지 못했습니다: {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: '선택 번역 실행 방식',
+    selectionTriggerIcon: '아이콘',
+    selectionTriggerModifier: '보조 키',
+    selectionTriggerBoth: '아이콘과 보조 키',
+    hintSelectionTrigger: '아이콘: 텍스트를 선택하면 옆에 작은 버튼이 나타나고, 누르면 번역 카드가 열립니다. 보조 키: 아래에서 설정한 키를 누르면 바로 번역합니다.',
+    selectionIconLabel: '선택한 텍스트 번역',
+    cardRetranslate: '다시 번역',
+    cardUseBuiltin: 'Chrome 내장 번역 사용',
+    cardUseAi: '내 AI 모델 사용',
+    cardEngineBuiltin: 'Chrome 내장',
+    cardEngineAi: '내 AI',
 };

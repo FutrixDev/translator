@@ -222,7 +222,7 @@
     enableSelectionTranslation: '選択翻訳を有効にする',
     hintEnableSelection: 'テキスト選択時に翻訳ボタンを表示',
     selectionTranslationMode: '選択翻訳の表示方法',
-    hintSelectionTranslationMode: 'テキスト選択時に翻訳ボタンを表示。段落下またはポップアップで表示します。',
+    hintSelectionTranslationMode: '修飾キー、フローティングボール、右クリックメニューからの訳文をどこに表示するか：段落の下、またはポップアップカード。選択アイコンは常にカードを開きます。',
     selectionTranslationInline: '段落下に表示',
     selectionTranslationPopup: 'ポップアップ表示',
     selectionTranslationHotkey: '選択翻訳のショートカット',
@@ -518,4 +518,17 @@
     onboardingOpenSettings: 'すべての設定を開く',
     onboardingDone: '完了',
     onboardingSaveFailed: '保存できませんでした：{message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: '選択翻訳のきっかけ',
+    selectionTriggerIcon: 'アイコン',
+    selectionTriggerModifier: '修飾キー',
+    selectionTriggerBoth: 'アイコンと修飾キー',
+    hintSelectionTrigger: 'アイコン：テキストを選択すると横に小さなボタンが出ます。クリックすると翻訳カードが開きます。修飾キー：下で設定したキーを押すとすぐに翻訳します。',
+    selectionIconLabel: '選択テキストを翻訳',
+    cardRetranslate: '再翻訳',
+    cardUseBuiltin: 'Chrome 内蔵翻訳を使う',
+    cardUseAi: '自分の AI モデルを使う',
+    cardEngineBuiltin: 'Chrome 内蔵',
+    cardEngineAi: '自分の AI',
 };

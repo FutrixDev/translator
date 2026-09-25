@@ -222,7 +222,7 @@
     enableSelectionTranslation: 'Включить перевод выделения',
     hintEnableSelection: 'Показывать кнопку перевода при выделении текста',
     selectionTranslationMode: 'Способ отображения перевода выделения',
-    hintSelectionTranslationMode: 'Выделите текст, чтобы показать кнопку перевода. Отображение под абзацем или во всплывающем окне.',
+    hintSelectionTranslationMode: 'Где показывать перевод, вызванный клавишей-модификатором, плавающей кнопкой или контекстным меню: под абзацем или во всплывающей карточке. Значок выделения всегда открывает карточку.',
     selectionTranslationInline: 'Под абзацем',
     selectionTranslationPopup: 'Всплывающее окно',
     selectionTranslationHotkey: 'Горячая клавиша для выделения',
@@ -518,4 +518,17 @@
     onboardingOpenSettings: 'Открыть все настройки',
     onboardingDone: 'Готово',
     onboardingSaveFailed: 'Не удалось сохранить: {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: 'Способ вызова перевода выделения',
+    selectionTriggerIcon: 'Значок',
+    selectionTriggerModifier: 'Клавиша-модификатор',
+    selectionTriggerBoth: 'Значок и клавиша-модификатор',
+    hintSelectionTrigger: 'Значок: рядом с выделенным текстом появляется маленькая кнопка, по нажатию открывается карточка перевода. Клавиша-модификатор: нажмите клавишу, выбранную ниже, чтобы сразу перевести.',
+    selectionIconLabel: 'Перевести выделенное',
+    cardRetranslate: 'Перевести заново',
+    cardUseBuiltin: 'Встроенный перевод Chrome',
+    cardUseAi: 'Моя модель ИИ',
+    cardEngineBuiltin: 'Встроенный Chrome',
+    cardEngineAi: 'Мой ИИ',
 };

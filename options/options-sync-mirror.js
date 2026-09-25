@@ -26,6 +26,7 @@ const SYNC_MIRROR_DERIVED = {
   translationEngine: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
   engineFallback: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
   enableSelection: () => syncInlineSettingState(),
+  selectionTrigger: () => syncSelectionControls(),
   enableHoverTranslation: () => syncInlineSettingState(),
   enableImageOcrTranslation: () => syncOcrSubState(),
   autoTranslate: () => { syncAutoSubState(); syncYoutubeSubState(); },

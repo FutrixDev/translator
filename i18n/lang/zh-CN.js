@@ -254,7 +254,7 @@
     enableSelectionTranslation: '启用划词翻译',
     hintEnableSelection: '选中文本后显示翻译按钮',
     selectionTranslationMode: '划词翻译显示方式',
-    hintSelectionTranslationMode: '选中文本后显示翻译按钮，可选择段落下方或弹窗显示。',
+    hintSelectionTranslationMode: '修饰键、悬浮球和右键菜单的译文显示在哪里：段落下方，或弹出卡片。划词图标总是打开卡片。',
     selectionTranslationInline: '段落下方显示',
     selectionTranslationPopup: '弹窗显示',
     selectionTranslationHotkey: '划词快捷键',
@@ -537,4 +537,17 @@
     onboardingOpenSettings: '打开完整设置',
     onboardingDone: '完成',
     onboardingSaveFailed: '保存失败：{message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: '划词触发方式',
+    selectionTriggerIcon: '图标',
+    selectionTriggerModifier: '修饰键',
+    selectionTriggerBoth: '图标和修饰键',
+    hintSelectionTrigger: '图标：选中文本后旁边出现一个小按钮，点它打开译文卡片。修饰键：按下方设置的键直接翻译。',
+    selectionIconLabel: '翻译选中文本',
+    cardRetranslate: '重译',
+    cardUseBuiltin: '改用 Chrome 内置翻译',
+    cardUseAi: '改用我的 AI 模型',
+    cardEngineBuiltin: 'Chrome 内置',
+    cardEngineAi: '我的 AI',
 };

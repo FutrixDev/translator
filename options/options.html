@@ -363,6 +363,21 @@
 
           <div class="inline-setting">
             <div class="inline-setting-title">
+              <label id="selectionTriggerLabel" for="selectionTrigger" data-i18n="selectionTrigger">Selection trigger</label>
+            </div>
+            <div class="inline-setting-controls">
+              <select id="selectionTrigger" aria-labelledby="selectionTriggerLabel">
+                <option value="icon" data-i18n="selectionTriggerIcon">Icon</option>
+                <option value="modifier" data-i18n="selectionTriggerModifier">Modifier key</option>
+                <option value="both" data-i18n="selectionTriggerBoth">Icon and modifier key</option>
+              </select>
+              <span aria-hidden="true"></span>
+            </div>
+            <span class="hint" data-i18n-hint="hintSelectionTrigger"></span>
+          </div>
+
+          <div class="inline-setting">
+            <div class="inline-setting-title">
               <label id="selectionHotkeyLabel" for="selectionTranslationHotkey" data-i18n="selectionTranslationHotkey">Selection Hotkey</label>
             </div>
             <div class="inline-setting-controls">
@@ -906,6 +921,7 @@
   <script src="options-builtin.js"></script>
   <script src="../shared/translation-display.js"></script>
   <script src="options-display.js"></script>
+  <script src="options-selection.js"></script>
   <script src="options-sync-mirror.js"></script>
   <!-- 导入导出：格式与校验是纯函数（shared/settings-transfer.js），这一页的 section
        表和控件在 options-transfer.js。它读 options.js 的 defaultSettings，但只在
