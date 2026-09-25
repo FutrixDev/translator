@@ -2,7 +2,7 @@
 
 - 日期：2026-09-24
 - 基线：`origin/main@8a10465`（manifest 1.4.0）；分支 `feat/p1-b-site-rules@c98d4ca`（= 8a10465 + P1-A 两个文档提交）
-- 行号口径：不标注的 = `8a10465`；标「A1」的 = `feat/p1-a1-frames@3102fcb`；标「A2」的 = `feat/p1-a2-shadow-scope@6a369ba`；标「A」的 = `3d66dc7`（P1-A 整合批，#107 头）；标「D」的 = `feat/p0-d@31043f2`。P1-A 整合后，任务书按整合结果重新对锚
+- 行号口径：不标注的 = `8a10465`；标「A1」的 = `feat/p1-a1-frames@3102fcb`；标「A2」的 = `feat/p1-a2-shadow-scope@6a369ba`；标「A」的 = `3d66dc7`（P1-A 整合批，#107 头）；标「D」的 = `feat/p0-d@31043f2`（P0-D 之后又动过，写本修订时头是 `d44f5f0`）。#107 与 P0-D 合入后，任务书按合入后的 main 重新对锚
 - 所属：P1 功能对标回合（台账 D-291），本设计的自决登记为 D-296
 - 修订 2026-09-25（台账 D-302、D-303），为 P1-C 术语表铺路，同时对齐 P0-D 的引擎契约：
   - 抽出 `shared/sync-collection.js`（§0.1-20、§2.6）；
@@ -16,7 +16,8 @@
   - `whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，规则和词表共用（§2.6）；
   - 镜像的主机由调用方传入（`mirror({request, host})`），模块里不读 `location`：规则传本 frame 的主机，与 SW 按 `sender.url` 取的一致；词表只在顶层建镜像，传顶层主机（§2.6、§3.1、§12.3）；
   - 写消息的判别字段叫 `kind`，与 StorageWriter 和 site-rules 的 `WRITES` 表同名（§2.4）；
-  - 额度检查抽成 `SyncCollection.assertFits`，写入和导入预览共用；导入预览收成一个函数，卡片和整份导入共用；`TRANSFER_SECTIONS` 加 `customRules` 一行；预算格的规则项放在 `syncAutoEngineState()`，不进 `unattendedAiReachable`（§0.1-19、§2.6、§4、§9、§12.4）。
+  - 额度检查抽成 `SyncCollection.assertFits`，写入和导入预览共用；导入预览收成一个函数，卡片和整份导入共用；`TRANSFER_SECTIONS` 加 `customRules` 一行；预算格的规则项放在 `syncAutoEngineState()`，不进 `unattendedAiReachable`（§0.1-19、§2.6、§4、§9、§12.4）；
+  - §12.4 按 P0-F 合入后的实际接口（`main@8d5e8df`）重写：每个小节多一个 `preview`，`validate` 返回 `{value, accepted, dropped}`；新增小节名、集合拒绝归类表 `COLLECTION_REFUSALS`、原因短语表 `TRANSFER_REASON_KEYS`，以及两个集合共用的行工厂 `collectionSection`；`transferDesc` 随小节一起更新；`mergeImport` 遇到任何一条无效也只抛 `customRulesImportInvalid`（§2.3、§4、§6、§8、§9、§12.4）。
 - 交付：一个 PR `feat/p1-b-site-rules`，由两批串行拼装——B1 数据层与页面接线、B2 入口与界面。合并顺序在 P1-A 之后（A 若 squash 合入，B 用 `rebase --onto` 接上）。「按站点译文样式」拆成 P1-B·style，等 #105 合入后再做（D-294 #2）
 
 ## 0. 结论
@@ -157,7 +158,7 @@
 | `applyChanges(rules, changes, host)` | 纯函数，把 `storage.onChanged` 的增量应用到规则集上（增、替、删，别的主机的规则忽略） |
 | `usage(rules)` | `{bytes, count}`，供用量表和额度检查共用 |
 | `assertFits(rules)` | 额度检查（单条、合计、条数），超了抛对应的错误键；写入和导入预览共用 |
-| `mergeImport(existing, file)` | 返回 `{rules, added, replaced, aiCount}`，`aiCount` 是文件里 `engine: 'ai'` 的条数；格式不对或任一条无效就整体抛错 |
+| `mergeImport(existing, file)` | 返回 `{rules, added, replaced, aiCount}`，`aiCount` 是文件里 `engine: 'ai'` 的条数；格式不对或任一条无效，都整体抛 `customRulesImportInvalid`（单条的具体原因放在 `cause` 里） |
 | `toExportFile(rules)` | 生成 §0.1-16 的对象 |
 | `applyWrite` / `request` | 由 `StorageWriter.create({type: 'CUSTOM_RULES_WRITE', writes, errors: 'throw'})` 给出 |
 
@@ -387,7 +388,7 @@ async function canFallBackToAI() {
   1. 用户选文件，前端解析后给出预览：「将新增 N 条、替换 M 条」。预览只由一个函数算：`previewCustomRulesImport(file)`（options-custom-rules.js 的全局函数），对卡片当前的规则跑 `CustomRules.mergeImport`，再用 `CustomRules.assertFits` 查合并后的额度，返回 `{added, replaced, aiCount}`，出错抛错误键。卡片和设置整份导入（§12.4）共用它（D-306）。
   2. 若 `aiCount` 大于 0，预览里多一行 AI 提示：「其中 K 条会让这些网站的自动翻译使用你的 AI 接口，并计入每日 AI 额度」，K 即 `aiCount`。
   3. 按钮「导入」「取消」。
-  4. 格式不对报 `customRulesImportInvalid`，超额报 `customRulesBudgetFull`；两种情况存储都不变。
+  4. 格式不对或有无效条目报 `customRulesImportInvalid`，超额报 `customRulesBudgetFull`（单条超 6 KiB 报 `customRuleTooLarge`）；这几种情况存储都不变。
 - **联动**：设置页挂自己的 `storage.onChanged` 监听（sync 区的 `customRule:` 键），变化后重绘。P0-B 的 `options/options-sync-mirror.js` 只镜像 `IMMEDIATE_SAVE_FIELDS`，两边的键不相交，设置页不需要登记表。全局函数 `customRulesUseAi()` 判断是否有规则 `engine === 'ai'`。每次重绘后调 `syncAutoEngineState()`，让每日额度输入框的启用状态跟上。
 - **`options-auto.js` 的改动**：抽出 `confirmUnattendedAiSpend(messageKey)`，`onAutoEngineChange` 改为调用它；`:53-64` 的注释同步改；`syncAutoEngineState()` 在 `unattendedAiReachable(...)` 之外直接并上 `customRulesUseAi()`，不加 `typeof` 守卫：设置页脚本共用一个全局作用域，调用都发生在 DOMContentLoaded 之后，守卫只会把漏加载变成静默的「没有规则」。`unattendedAiReachable` 在 P0-F 之后只吃一个设置对象，B2 不动它，也不往里并规则项（§0.1-19、§12.4）。
 
@@ -436,14 +437,14 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | J-8 | 跨标签即时生效 | 全局自动翻译关，夹具页手动点「翻译」→ 在另一个标签的设置页里新增一条排除规则 → 夹具页 1 s 内该区域译文消失，没有重载 → 从 SW 上下文直接删掉这条规则（模拟另一台设备同步下来的变化）→ 1 s 内夹具页该区域重新出现译文，靠的是 §3.6 第 3 步的增量那一轮 → 全局自动翻译开着再走一遍：手动点「翻译」后调度器接手这一页（`markPageExplicit`），加规则、删规则 → 该区域 1 s 内重新出现译文，这段文字在 mock AI 服务器上恰好被请求一次（第 3 步被 `isOn()` 挡住，只有第 5 步的重启在收块） |
 | J-9 | iframe | 顶层夹具（主机 T）嵌一个 iframe（主机 F）。规则 A 匹配 F，exclude `.side-note`；规则 B 匹配 T，引擎 'ai'；全局引擎为内置 → 翻译 → iframe 里 `.side-note` 没有译文，其他段落有译文；iframe 里的段落文本出现在 mock AI 服务器的请求里 |
 | J-10 | 停住的页面被规则叫醒 | 全局的手动和自动引擎都是「内置」，不允许回退，站点设为「总是」→ 打开 http 夹具主机（http 上没有内置引擎，`effectiveEngine` 答 'none'，调度器停在 OFF）→ 页面保持原文，mock AI 服务器零请求 → 在另一个标签的设置页给这个主机新建规则，引擎选「我的 AI」并接受确认 → 保存 → 夹具页不重载，1 s 内出现译文，请求打到 mock AI 服务器。<br>额度用完停在 OFF 走的是同一段代码（`setStatus(OFF)` + `stopDiscovery()`，A :513-527）；那条路要内置引擎真能出译文，而 e2e 的无头 Chrome 里内置 `create()` 永不返回（`test/e2e/helpers.js` 的说明），所以不单列 |
-| J-11 | 设置整份导出 / 导入带上规则（P0-F 接缝，§12.4） | 设置页已有规则 A（引擎跟随全局）和 B（`engine: 'ai'`），全局的手动和自动引擎都是「内置」，不允许回退 → 用 P0-F 的整份导出 → 文件里 `customRules` 小节与卡片导出的对象逐字段相同 → 在卡片里删掉 A、B，每日额度输入框变灰 → 整份导入这份文件 → 预览里规则小节显示「新增 2 条」，并有 `customRulesImportAiNote` 那一行（K = 1）→ 确认 → 卡片列表恢复两条，额度输入框变为可用 → 再整份导入一份规则小节超额的文件 → 预览报 `customRulesBudgetFull`，没有任何小节被写入（存储逐字节不变） |
+| J-11 | 设置整份导出 / 导入带上规则（P0-F 接缝，§12.4） | 导入导出卡片的说明里列着「站点翻译规则」→ 设置页已有规则 A（引擎跟随全局）和 B（`engine: 'ai'`），全局的手动和自动引擎都是「内置」，不允许回退 → 用 P0-F 的整份导出 → 文件里 `customRules` 小节与卡片导出的对象逐字段相同 → 在卡片里删掉 A、B，每日额度输入框变灰 → 整份导入这份文件 → 预览里有一行「站点翻译规则：将新增 2 条、替换 0 条。」，警告里有 `customRulesImportAiNote` 那一句（K = 1）→ 确认 → 卡片列表恢复两条，额度输入框变为可用 → 再整份导入一份规则小节超额的文件 → 不出预览，报「导入后「站点翻译规则」会超出同步空间，没有导入任何内容。」，存储逐字节不变 → 写入中途失败：删掉 A、B，整份导入原文件，预览出来后从 SW 上下文写入占满额度的规则（J-7 的预置），再点确认 → 报 `transferErrorApplyFailed` 那一句：停在「站点翻译规则」，原因是「超出同步空间」，「已导入」如实列出写进去的小节（至少有「设置」）；规则还是预置的那些，一条没多 → 两处报错里都不出现 i18n 键名 |
 
 单测清单：
 
 | 批 | 覆盖 |
 |---|---|
 | B1 | storage-writer：串行、'throw' / 'swallow'、`ITEM_BUDGET`、无 runtime 时的行为；另有一条守卫，`shared/` 与 `background/` 里不许出现第二个 `writeQueue` / `enqueue` |
-| B1 | custom-rules：`validateRule`、`sanitizeCss` 表（每个禁用写法、`u/**/rl(`、`URL(` 大写、反斜杠转义、4096 上限）、`pick` 的三级平局、`applyChanges`、`mergeImport`（全有或全无、按合并后结果算额度、计数含 `aiCount`）、`addSelector`（追加去重、新建时 `normalizeHost`）、额度三条上限、`newId` 格式 |
+| B1 | custom-rules：`validateRule`、`sanitizeCss` 表（每个禁用写法、`u/**/rl(`、`URL(` 大写、反斜杠转义、4096 上限）、`pick` 的三级平局、`applyChanges`、`mergeImport`（全有或全无、按合并后结果算额度、计数含 `aiCount`；有一条无效就整体抛 `customRulesImportInvalid`，`cause` 是那一条的具体原因）、`addSelector`（追加去重、新建时 `normalizeHost`）、额度三条上限、`newId` 格式 |
 | B1 | sync-collection：`test/unit/sync-collection.test.mjs` 逐个覆盖 §2.6 表的成员，其中 `collect` 只从键取 id、值里带的不认，`write` 存进去的值不带 id，`usage` 按键名加值算，`write` 超额时抛的键与直接调 `assertFits` 相同；防抄写扫描（§2.6） |
 | B1 | bootstrap 登记表（§1）：命中 `ctx.syncMirrors` 前缀的键交给那一项的 `onStorageChange`，不进 `ctx.settings`；没命中的照旧进；`content-bootstrap.js` 里不出现 `customRule:` 字面量 |
 | B1 | 加载顺序（`site-rules.test.mjs` 的 `LOAD_ORDER` / `LOAD_LISTS`）；Node harness 先加载 storage-writer |
@@ -458,6 +459,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | B2 | picker selector：优先级、`isVolatileClass` 表、唯一性、5 层上限 |
 | B2 | `auto-cost-gate`：确认助手的两个调用点，且只有一个 `window.confirm(`；`syncAutoEngineState` 并上 `customRulesUseAi()`，`unattendedAiReachable` 的函数体里没有规则项 |
 | B2 | 导入预览（§4、§12.4）：`previewCustomRulesImport` 的返回值与抛错；`optionsSource()` 里卡片导入和 `TRANSFER_SECTIONS` 的 `customRules` 一行都调它，没有第二份合并或额度计算 |
+| B2 | 整份导入的规则小节（§12.4，options 的 vm 装载）：`COLLECTION_REFUSALS` 的每个键在 10 种语言里都有文案，并且在 `shared/` 或 `background/` 的源码里以字面量出现（表里没有死键）；`validate` 遇到表里的键抛 `TransferError(报错码, 'customRules')`，`apply` 遇到表里的键抛以原因短语为 `message`、原错误为 `cause` 的 Error，表外的错误两处都原样抛出同一个对象；`transferErrorText` 对这两种情况给出的句子里没有键名；zh-CN 与 en 的 `transferDesc` 包含 `TRANSFER_SECTION_NAMES` 每一项的文案 |
 | B2 | `host-css-containment`：新根节点在 `:is()` 列表里 |
 
 ### 6.1 承诺清单 → 断言
@@ -472,6 +474,9 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | 用量表「x KiB / 24 KiB · n / 50 条」 | J-7 |
 | 「匹配 {n} 处」 | J-1（n = 1）、J-3 |
 | 隐私政策新行「自定义站点翻译规则 … `chrome.storage.sync`」 | J-1：键在 sync 区 |
+| 导入导出卡片说明「把设置、站点规则和站点翻译规则存成一个文件」（`transferDesc`） | J-11：整份导出的文件里有 `customRules` 小节，导回去规则恢复；单测：zh-CN 与 en 的说明包含每个小节名 |
+| 整份导入报错「……没有导入任何内容」 | J-11：超额文件导入后存储逐字节不变 |
+| 写入中途失败「……已导入：{written}」 | J-11：列出的小节正是写进去的那些，规则小节一条没写 |
 
 ## 7. 已知限制（写进 PR 与 backlog）
 
@@ -501,6 +506,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | `customRuleEngineAiConfirm` | 确认框 |
 | `pickSiteRegion` | 悬浮菜单项和 popup 按钮 |
 | `pickerHint` / `pickerMatches` / `pickerParent` / `pickerExclude` / `pickerKeepOriginal` / `pickerInclude` / `pickerCancel` / `pickerSaved` | 拾取器 |
+| `transferSectionCustomRules` / `transferPreviewCustomRules` / `transferErrorSectionInvalid` / `transferErrorSectionBudgetFull` / `transferReasonInvalid` / `transferReasonBudgetFull` / `transferReasonSaveFailed`，以及改 `transferDesc` | 设置整份导入导出里的规则小节（§12.4） |
 
 ## 9. 文件归属与切批
 
@@ -522,7 +528,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | `options/options.html`、`popup/popup.html` | 脚本表（options 加 storage-writer、sync-collection、custom-rules 三个 shared 文件，popup 只加 storage-writer） | options 新卡片与脚本；popup 按钮 |
 | 新增 `content/picker/{selector,toolbar,picker}.js`、`content/css/rule-picker.css`、`options/options-custom-rules.js` | — | ✔ |
 | `options/options-auto.js`、`test/unit/auto-cost-gate.test.mjs` | — | 确认助手；`syncAutoEngineState` 并上规则项 |
-| `options/options-transfer.js`（P0-F 所有） | — | `TRANSFER_SECTIONS` 加 `customRules` 一行（§12.4） |
+| `options/options-transfer.js`（P0-F 所有） | — | `TRANSFER_SECTIONS` 加 `customRules` 一行、`TRANSFER_SECTION_NAMES` 加一行、`TRANSFER_ERROR_KEYS` 加两行；新增 `COLLECTION_REFUSALS`、`TRANSFER_REASON_KEYS` 两张表和行工厂 `collectionSection`（§12.4） |
 | `popup/popup.js` | 总是探测标签页；「没配 Key」拦截改用 `EngineStatus.selectedEngine`（§3.7） | 按钮 |
 | `content/css/popup.css` | — | `:is()` 列表 |
 | `i18n/lang/*`（10 种） | — | ✔ |
@@ -530,7 +536,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | 加载清单守卫 | 按新增文件同步 `test/unit` 里所有 load-list 守卫，以及 e2e 的 `PAGE_TRANSLATION_MODULES` / `contentHarnessScripts` | 同左 |
 | 单测 | §6 单测表的 B1 行，含新增 `test/unit/sync-collection.test.mjs`，以及改 `auto-engine-choice.test.mjs`、`auto-translate-wiring.test.mjs`、`engine-status.test.mjs` | §6 单测表的 B2 行 |
 
-不碰：`content/page/insert.js`（P0-C，只调用 `ctx.releaseTranslation`）、`content/content-selection.js` / `content/content-popup.js`（P0-D）、`background/commands.js`（P0-C）、目标语言、语言列表与 RTL（P0）、`pdf/`（P0）、`shared/api-compat.js` 与后台 Key 检查（P0-A）、`options/options-transfer.js` 里 `customRules` 一行以外的部分与 `onboarding/`（P0-F）、`options/options-sync-mirror.js`（P0-B）。
+不碰：`content/page/insert.js`（P0-C，只调用 `ctx.releaseTranslation`）、`content/content-selection.js` / `content/content-popup.js`（P0-D）、`background/commands.js`（P0-C）、目标语言、语言列表与 RTL（P0）、`pdf/`（P0）、`shared/api-compat.js` 与后台 Key 检查（P0-A）、`options/options-transfer.js` 里除 §12.4 列出的几样以外的部分与 `onboarding/`（P0-F）、`options/options-sync-mirror.js`（P0-B）。
 
 与 P0-D 同改的两个文件：`content/content-translation-engine.js` 和 `popup/popup.js`。B1 里改这两个文件的部分排在 P0-D 合入之后，rebase 到它上面做（§3.7 排期），不做过渡版本。
 
@@ -566,11 +572,12 @@ npm run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
   - `child.js` 手动一轮的回落分支已收掉，只走 `ctx.collectPageBlocks()`（`:131`）；
   - B-P0C-4：`#ai-translator-source-peek` 已进 collect 排除（`collect.js:321`）；
   - D-294 #1：`content/` 下已没有 `:host-context`。
-- **留给 B-P1A-9**（#106 合入后、#107 合入前做）：
-  - D-294 #4：Alt+W 并进 P0-C `background/commands.js` 的 `runCommand` 表；
-  - 悬浮球菜单自己量高度，替掉 `showWholePage ? 40 : 0`；
-  - 三处夹具。
-  - B1 在 `content-float-ball.js` 里改「`showWholePage` 的条件」（§9），要在它之后做。
+- **B-P1A-9 已在 #107 里做完**（rebase 到 `main@8d5e8df` 之后的 `d5d268b`）：
+  - D-294 #4：Alt+W 是 P0-C `background/commands.js` 里 `COMMANDS` 表的一行，经 `runCommand` 触发；
+  - 悬浮球菜单自己量高度（`content-float-ball.js` 读 `floatMenu.offsetHeight`），不再按 `showWholePage ? 40 : 0` 估；
+  - 三处替身都换成了真东西。
+  - B1 在 `content-float-ball.js` 里改「`showWholePage` 的条件」（§9），排在 #107 合入之后。
+- 本节的 A 行号取自 #107 rebase 前的头 `3d66dc7`；#107 合入后写 B 的任务书时，按合入后的 main 逐个重新核对。
 - **B 依赖 A 的名字**：`ctx.collectPageBlocks`、`ctx.invalidatePageScope`、`state.pageScopeOverride`、`ctx.frames.onVisibilityChanged`、`closestAcross`、`queryAllDeep`、`installStyle` / `hasStyle`、`computeDirective` / `sameDirective` / `applyDirective`，以及 D-303 用到的 `ctx.autoTranslate.restart`（A :835）、`ctx.autoTranslate.onStateChange`、`refreshDirective`（A top.js:74-80）。A 若再改其中任何一个，B 的任务书跟着改。
 
 ### 12.2 与 P0-D（`feat/p0-d@31043f2`）
@@ -590,12 +597,40 @@ npm run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
 
 ### 12.4 与 P0-F（设置整份导入导出，`options/options-transfer.js`）
 
-- P0-F 定义 `TRANSFER_SECTIONS`，每行 `{key, collect, validate, apply}`。整份导入先对所有小节跑完 `validate`，再按固定顺序 `apply`；第一处失败就停，告诉用户哪几节已经写入，不回滚也不吞错；文件里有、当前版本不认识的小节在预览里列出来。
-- B2 加 `customRules` 一行（P0 已同意由 P1 在自己的 PR 里加；按排期 P0-F 先合）：
+本节按 P0-F 合入后的实际接口写，行号都是 `main@8d5e8df` 的（D-306）。
+
+- **P0-F 的契约**（`options/options-transfer.js:11-26` 的注释是原文）。`TRANSFER_SECTIONS`（:121）每行 `{key, collect, validate, preview, apply}`：
+  - `collect({includeApiKey})` 给出这一小节的值；
+  - `validate(raw)` 可以是 async，返回 `{value, accepted, dropped}`，别的字段原样带给 `preview`；整个小节不能要时抛 `TransferError(code, 小节键)`，整份文件都不导入；
+  - `preview(result)` 返回 `{lines, warnings}`；
+  - `apply(value)` 失败就抛。
+
+  `SettingsTransfer.validateAll`（`shared/settings-transfer.js:224-235`）按表的顺序校验完所有小节，全部 `accepted === 0` 时报 `nothingValid`。`applyAll`（:244-259）按表的顺序写，跳过 `accepted === 0` 的小节；第一处失败就停，抛 `TransferApplyError(已写入, 失败的小节, 原错误)`，不回滚。文件里有、当前版本不认识的小节在预览里列出来。报错句由 `transferErrorText`（options-transfer.js:165-178）给出：`TransferError` 按 `TRANSFER_ERROR_KEYS`（:155）取句子，只填 `{section}`；`TransferApplyError` 用 `transferErrorApplyFailed`，其中 `{message}` 填原错误的 `message`；其余一律 `transferErrorUnexpected`。
+- **B2 加 `customRules` 一行**，排在 `siteRules` 之后（P0 已同意由 P1 在自己的 PR 里加）：
   - `collect`：`CustomRules.toExportFile(全部规则)`，即 §0.1-16 的对象，小节的值就是它，不另包一层；
-  - `validate`：`previewCustomRulesImport(section)`，与卡片导入预览是同一个函数（§4），返回 `{added, replaced, aiCount}`，出错抛错误键；
-  - `apply`：`CustomRules.request('import', {file: section})`，走 §2.4 的 `import`，原样传解析后的对象，不 stringify。
+  - `validate(raw)`：`await previewCustomRulesImport(raw)`，与卡片导入预览是同一个函数（§4），返回 `{value: raw, accepted: added + replaced, dropped: [], added, replaced, aiCount}`。集合的导入全有或全无，所以 `dropped` 恒为空；
+  - `preview`：一行 `transferPreviewCustomRules`（「站点翻译规则：将新增 {added} 条、替换 {replaced} 条。」）。`aiCount > 0` 时，`warnings` 里放卡片那一句 AI 提示（`customRulesImportAiNote`，K 的算法相同）；这句话由卡片和这一行共用的一个函数产出，不在两处各填一次；
+  - `apply(value)`：`CustomRules.request('import', {file: value})`，走 §2.4 的 `import`，原样传解析后的对象，不 stringify。
+- **小节名**：`TRANSFER_SECTION_NAMES`（:146）加 `customRules: 'transferSectionCustomRules'`，文案与卡片标题相同：「站点翻译规则」/ "Site translation rules"。
+- **集合的拒绝怎么告诉用户**。集合报错时抛 `Error(<i18n 键>)`（§2.3、§2.4），那些句子是写给卡片的，放不进整份导入的两种句式：`transferErrorText` 不认识这些键，校验时会落成「出错了：customRulesBudgetFull」；写入时 `{message}` 会原样填进键名。所以 P1 在 options-transfer.js 里加三样东西，P1-B 和 P1-C 两行共用：
+  1. 表 `COLLECTION_REFUSALS`：集合的错误键 → 报错码。
+
+     | 错误键 | 报错码 |
+     |---|---|
+     | `customRulesImportInvalid`、`customRuleTooLarge` | `sectionInvalid` |
+     | `customRulesBudgetFull` | `sectionBudgetFull` |
+     | `customRuleSaveFailed` | `sectionSaveFailed`（只在写入时出现） |
+
+     P1-C 的 C2 往同一张表里加词表的键（P1-C 文档 §12）。
+  2. 报错句与原因短语。`TRANSFER_ERROR_KEYS` 加两行：`sectionInvalid: 'transferErrorSectionInvalid'`（「文件里「{section}」这一部分有无效条目，没有导入任何内容。」）和 `sectionBudgetFull: 'transferErrorSectionBudgetFull'`（「导入后「{section}」会超出同步空间，没有导入任何内容。」）。另加表 `TRANSFER_REASON_KEYS`，把报错码映射成写入中途失败时的原因短语：`transferReasonInvalid`「有无效条目」、`transferReasonBudgetFull`「超出同步空间」、`transferReasonSaveFailed`「没能写入同步存储」。
+  3. 行工厂 `collectionSection(spec)`，包住一行的 `validate` 和 `apply`：
+     - 表里的键，在 `validate` 里换成 `TransferError(报错码, 小节键)`；在 `apply` 里换成 `Error(<原因短语>, {cause: 原错误})`，于是 `transferErrorApplyFailed` 读出来是「导入在「站点翻译规则」这一步停下：超出同步空间。已导入：……」；
+     - 表外的错误在两处都原样往上抛（同一个对象），由 P0-F 现有的两处 catch 各记一次日志（`Settings import rejected:` / `Settings import failed:`）；
+     - 卡片自己的导入照旧直接显示集合的句子。
+
+  按排期 B2 先合，由 B2 建这三样；若 C2 先合，就由 C2 建，另一方只加自己的行。
+- **`transferDesc` 是一条承诺**：「把设置和站点规则存成一个文件……」列的是文件里有什么。B2 把 10 种语言的 `transferDesc` 都补上「站点翻译规则」，C2 再补「术语表」。单测：zh-CN 与 en 的 `transferDesc` 不分大小写地包含该语言里 `TRANSFER_SECTION_NAMES` 每一项的文案。
 - AI 同意：整份导入同样不弹确认框，前提是整份预览里出现同样的 AI 提示。规则小节用卡片同一行 `customRulesImportAiNote`，K 同算法；设置小节在导入后的设置会打开一条现在关着的无人值守 AI 路径时，出现与 `autoTranslateEngineAiConfirm` 同一句话（P0-F 实现：`unattendedAiReachable(settings)` 对导入前后各算一次）。
 - 预算格：B2 不往 `unattendedAiReachable` 里并规则项，规则项放在 `syncAutoEngineState()`（§0.1-19、§4）。
-- `shared/site-rules.js`：P0-F 在 `WRITES` 末尾追加 `import`（载荷 `{map}`）和一行 `importUserRules(map)` = `request('import', { map })`，不动 `applyWrite` / `request` / `enqueue` 的函数体。B1 把队列搬进 StorageWriter 时 `WRITES` 原地留下，P0-F 的条目照常生效；两边只有文本冲突，后合的一方消解。三份集合的导入是同一个动词：`import {map}` / `import {file}` / `import {csv}`（P1-C 词表）。
-- `background/background.js`：P0-F 的 onInstalled（约 :275）只在 `reason === 'install'` 时打开 `onboarding/`，与 B1 的分派表（:127-144）不重叠。P0-F 顺带改 README 的批量数字和 CLAUDE.md 的并发描述，B 不动 `batch.js` 的常量。
+- `shared/site-rules.js`：P0-F 已在 `WRITES`（:564）末尾加了 `import`（载荷 `{map}`），另加一行 `importUserRules(map)` = `request('import', { map })`（:595-596），没动 `applyWrite` / `request` / `enqueue` 的函数体。B1 把队列搬进 StorageWriter 时 `WRITES` 原地留下，P0-F 的条目照常生效。三份集合的导入是同一个动词：`import {map}` / `import {file}` / `import {csv}`（P1-C 词表）。
+- `background/background.js`：P0-F 的 onInstalled（:287-295）只在 `reason === 'install'` 时打开 `onboarding/`，与 B1 的分派表不重叠。P0-F 顺带改 README 的批量数字和 CLAUDE.md 的并发描述，B 不动 `batch.js` 的常量。
