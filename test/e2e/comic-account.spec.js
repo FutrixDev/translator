@@ -409,11 +409,18 @@ test.describe('Advanced Settings login gate', () => {
       const pdf = await page.evaluate(() => chrome.runtime.sendMessage({
         type: 'PDF_CREATE_JOB', source: { kind: 'url', url: 'https://example.com/doc.pdf' },
       }));
+      // An upload page left open asks for a ticket first: refused the same way,
+      // before any storage URL is minted.
+      const ticket = await page.evaluate(() => chrome.runtime.sendMessage({
+        type: 'PDF_UPLOAD_TICKET', operationId: 'op-disabled', byteSize: 10, sourceFormat: 'docx',
+      }));
 
       expect(comic.ok).toBe(false);
       expect(comic.error.code).toBe('feature_disabled');
       expect(pdf.ok).toBe(false);
       expect(pdf.error.code).toBe('feature_disabled');
+      expect(ticket.ok).toBe(false);
+      expect(ticket.error.code).toBe('feature_disabled');
     } finally {
       await service.close();
     }
