@@ -1,4 +1,4 @@
-// Blab Translation — shared helpers for the PDF surfaces (popup + upload page).
+// Blab Translation — shared helpers for the document surfaces (popup, upload page, settings).
 //
 // A classic script on purpose: both pages load it with a plain <script> tag,
 // the same way i18n/messages.js is shared. The error map itself lives in
@@ -7,7 +7,11 @@
 (function () {
   'use strict';
 
-  const { pdfErrorMessageKey, pdfErrorMessage } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
+  const { pdfErrorMessageKey, pdfErrorMessage, pdfAbandonedKey, isRetryablePdfFailure } =
+    globalThis.AI_TRANSLATOR_PDF_ERRORS;
+  // Formats and the status sets have one owner, shared/doc-jobs.js, loaded
+  // before shared/pdf-errors.js on every page that loads this file.
+  if (!globalThis.DocJobs) throw new Error('pdf-ui.js needs shared/doc-jobs.js loaded first');
   // 网址那两问的唯一实现（shared/pdf-url.js，装在这个文件之前）。这里曾经
   // 各抄了一份，其中一份还注着「Mirrors … in background/background.js」——
   // 指的函数早搬走了。
@@ -35,6 +39,9 @@
         if (/typeset|render|assemble|compose|write|export|merge|save/.test(stage)) return 'pdfStageTypesetting';
         return 'pdfStageTranslating';
       }
+      // Waiting on the user, not on us: the document was longer than the
+      // pages reserved for it, and nothing moves until they answer.
+      case 'awaiting_confirm': return 'docStatusAwaitingConfirm';
       case 'succeeded': return 'pdfStatusSucceeded';
       case 'failed': return 'pdfStatusFailed';
       case 'abandoned': return 'pdfStatusAbandoned';
@@ -42,8 +49,23 @@
     }
   }
 
-  function isPdfJobActive(view) {
-    return !!view && (view.status === 'queued' || view.status === 'running');
+  /**
+   * The one status line every surface draws for a job: `{text, isError}`.
+   *
+   * Only a failure is an error. A cancelled task is the user's decision (or
+   * the server giving the pages back), so it is worded but never painted red;
+   * the popup, the settings page and the job card all ask this instead of each
+   * deciding what is red.
+   */
+  function pdfStatusLine(view, t) {
+    const status = view && view.status;
+    if (status === 'failed') {
+      return { text: pdfErrorMessage(view.error || {}, t), isError: true };
+    }
+    if (status === 'abandoned') {
+      return { text: t(pdfAbandonedKey(view.error || {})), isError: false };
+    }
+    return { text: t(pdfStatusKey(view)), isError: false };
   }
 
   /**
@@ -80,7 +102,8 @@
     pdfErrorMessageKey,
     pdfErrorMessage,
     pdfStatusKey,
-    isPdfJobActive,
+    pdfStatusLine,
+    isRetryablePdfFailure,
     isLikelyPdfUrl,
     pdfLibraryUrl,
     pdfFileNameFromUrl

@@ -13,9 +13,6 @@ const elements = {
   openSettings: document.getElementById('openSettings'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
-  pdfTranslateCurrent: document.getElementById('pdfTranslateCurrent'),
-  pdfTranslateLocal: document.getElementById('pdfTranslateLocal'),
-  pdfJobs: document.getElementById('pdfJobs'),
   statusText: document.getElementById('statusText')
 };
 
@@ -77,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkStatus();
   setupEventListeners();
   refreshComicSection();
-  refreshPdfSection();
+  setupPdfSection();
 });
 
 /**
@@ -487,6 +484,4 @@ function setupEventListeners() {
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));
-  elements.pdfTranslateCurrent.addEventListener('click', onPdfTranslateCurrent);
-  elements.pdfTranslateLocal.addEventListener('click', onPdfTranslateLocal);
 }

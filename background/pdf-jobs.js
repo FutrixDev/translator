@@ -1,7 +1,8 @@
-// Blab Translation background — PDF 翻译任务。
+// Blab Translation background — document translation jobs.
 //
-// 接上 pdf-client.js（账号、上传、轮询）和 pdf-notify.js（通知），这里是把它们
-// 串起来的那一层：右键点下去到底创不创任务、要不要先问价、结果怎么打开。
+// 接上 pdf-client.js（账号、领票、建作业、轮询）和 pdf-notify.js（通知），这里是
+// 把它们串起来的那一层：领票、建作业、确认超页、结果怎么打开、右键菜单的 URL 路径。
+// 名字还叫 pdf-*：消息名与存储键是已经交出去的契约，格式由 shared/doc-jobs.js 说了算。
 
 import '../shared/comic-charge.js';
 import '../shared/pdf-url.js';
@@ -10,6 +11,10 @@ import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import {
+  clearPdfConfirmNotification,
+  jobIdFromNotificationId,
+  logIfFailed,
+  notifyPdfConfirm,
   notifyPdfError,
   notifyPdfNotAPdf,
   notifyPdfRunning,
@@ -20,29 +25,25 @@ import {
 } from './pdf-notify.js';
 
 const ChargeConfirm = globalThis.ChargeConfirm;
+// pdf-client.js imports shared/doc-jobs.js, and imports are evaluated before
+// this body runs, so the shelf is there by now.
+const DocJobs = globalThis.DocJobs;
 // 「这是不是一份 PDF」「它叫什么名字」的唯一实现，见 shared/pdf-url.js。
 // 从这里再导出去，是因为右键菜单那一层本来就从这个模块要它们。
 const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
+const { ComicApiError } = comicClient;
 
 // ---------------------------------------------------------------------------
-// PDF translation jobs (account-backed, see pdf-client.js)
+// Document translation jobs (account-backed, see pdf-client.js)
 //
-// A PDF job runs for minutes — far past the service worker's ~30s idle
-// teardown — so nothing here holds a poll loop open. Instead: the popup and
-// the upload page poll fast while they are open, and a 1-minute chrome.alarm
-// covers the stretches when no UI is looking, firing a notification when a job
-// crosses into a terminal state.
+// A job runs for minutes — far past the service worker's ~30s idle teardown —
+// so nothing here holds a poll loop open. Instead: the popup and the upload
+// page poll fast while they are open, and a 1-minute chrome.alarm covers the
+// stretches when no UI is looking, firing a notification when a job crosses
+// into a state someone has to hear about.
 // ---------------------------------------------------------------------------
 
 const PDF_POLL_ALARM = 'pdf-job-poll';
-
-/** Base64 → ArrayBuffer, chunk-free: atob handles the whole string at once. */
-function base64ToArrayBuffer(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
 
 async function ensurePdfPollAlarm() {
   if (await pdfClient.hasActiveJobs()) {
@@ -58,15 +59,40 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   refreshPdfJobs().catch(error => console.error('PDF poll failed:', error));
 });
 
-/** Refresh every active record; notify for jobs that just finished. */
+/**
+ * Refresh every unsettled record and tell the user what changed.
+ *
+ * The ONLY place a job's own progress turns into a notification. Every handler
+ * a page calls answers a page someone is looking at, and a notification there
+ * would announce what the page already shows.
+ */
 async function refreshPdfJobs() {
-  const { records, transitions } = await pdfClient.refreshJobRecords();
-  for (const record of transitions) {
-    notifyPdfTerminal(record);
+  const { records, changes } = await pdfClient.refreshJobRecords();
+  for (const change of changes) {
+    if (change.leftAwaiting) clearPdfConfirmNotification(change.record.jobId);
+    if (change.transition === 'settled') notifyPdfTerminal(change.record);
+    else if (change.transition === 'awaiting') notifyPdfConfirm(change.record);
   }
   await ensurePdfPollAlarm();
   return records;
 }
+
+// A notification about one job opens that job. Registered at the top level so
+// a click that wakes a torn-down worker still finds its listener.
+chrome.notifications.onClicked.addListener((notificationId) => {
+  const jobId = jobIdFromNotificationId(notificationId);
+  if (!jobId) return;
+  const clear = () => chrome.notifications.clear(notificationId, logIfFailed);
+  // A receipt names no server job: there is nothing to open.
+  if (pdfClient.isPendingRecord({ jobId })) {
+    clear();
+    return;
+  }
+  openPdfJob(jobId)
+    .catch(error => console.warn(`[pdf] opening job ${jobId} from its notification failed:`,
+      error?.code || error?.message || error))
+    .finally(clear);
+});
 
 // ---------------------------------------------------------------------------
 // The URL path's charge confirmation
@@ -126,6 +152,10 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
     // "try again" in the failure copy is true.)
     if (job && (job.status === 'failed' || job.status === 'abandoned')) {
       notifyPdfError(job.error || { code: job.status });
+    } else if (job && DocJobs.isAwaitingStatus(job.status)) {
+      // Adopted an earlier attempt that is waiting on the user. The record is
+      // already awaiting, so no poll will see it arrive there: ask now.
+      notifyPdfConfirm(job);
     }
   } catch (error) {
     if (ChargeConfirm.isConfirmRequired(error)) {
@@ -174,10 +204,15 @@ async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false
   // PDF can be recognised as one: the id is per-URL and stable.
   const operationId = await pdfClient.getOrCreateUrlOperationId(url);
   const records = await pdfClient.listJobRecords();
-  const running = records.find(r => r.operationId === operationId &&
-    (r.status === 'queued' || r.status === 'running'));
-  if (running) {
-    notifyPdfRunning(running.fileName || fileName);
+  const existing = records.find(r => r.operationId === operationId && DocJobs.isUnsettledStatus(r.status));
+  if (existing) {
+    // Waiting on the user is not "still running": the click is answered by
+    // putting the question back in front of them.
+    if (DocJobs.isAwaitingStatus(existing.status)) {
+      notifyPdfConfirm(existing);
+      return { started: false, reason: 'awaiting_confirm' };
+    }
+    notifyPdfRunning(existing.fileName || fileName);
     return { started: false, reason: 'already_running' };
   }
   // Before the await, not after: the whole point is that the click stops
@@ -200,11 +235,7 @@ async function askPdfCharge(operationId, fileName, quote) {
     // The question stays until it is answered. A price that scrolled away after
     // a few seconds would leave a click looking like it silently did nothing.
     requireInteraction: true
-  }, () => {
-    if (chrome.runtime.lastError) {
-      console.warn('PDF notification failed:', chrome.runtime.lastError.message);
-    }
-  });
+  }, logIfFailed);
 }
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
@@ -227,24 +258,55 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
   await runPdfUrlJob({ url, operationId, fileName, confirmCharge: true });
 });
 
+// ---------------------------------------------------------------------------
+// Upload and create
+// ---------------------------------------------------------------------------
+
+function invalidSource(message) {
+  return new ComicApiError('invalid_pdf', message, 400);
+}
+
 /**
- * The single entry point every PDF surface funnels into: popup button, context
- * menus, and the upload page all end up here.
+ * PDF_UPLOAD_TICKET: the upload page asks where to PUT the file.
  *
- * `source` is either `{kind: 'url', url}` — the worker fetches it, carrying
- * the user's cookies — or `{kind: 'bytes', bytesBase64}` from the upload page
- * (base64 because an ArrayBuffer does not survive runtime messaging).
+ * The page PUTs the File itself (IRON RULE: the bytes never pass through the
+ * Worker, and a 50 MiB file does not fit through runtime messaging either).
+ * Only a granted ticket writes the receipt: a refusal has nothing to show.
+ */
+async function handlePdfUploadTicket(message) {
+  await assertFeatureEnabled('enablePdfTranslation');
+  const { operationId, byteSize, sourceFormat, fileName } = message;
+  if (!DocJobs.isDocumentFormat(sourceFormat)) {
+    throw new ComicApiError('unsupported_format', 'This file type is not supported', 400,
+      typeof sourceFormat === 'string' && sourceFormat ? { format: sourceFormat } : {});
+  }
+  if (!Number.isInteger(byteSize) || byteSize <= 0 || !operationId) {
+    throw invalidSource('An upload needs an operation id and a positive byte size');
+  }
+  const ticket = await pdfClient.requestUploadTicket({ operationId, byteSize, sourceFormat });
+  const receipt = pdfClient.receiptRecord({ operationId, fileName, sourceFormat });
+  await pdfClient.saveJobRecord(receipt);
+  return { ...ticket, pendingJobId: receipt.jobId };
+}
+
+/**
+ * The single entry point every create funnels into: the upload page after its
+ * PUT, and the URL path (context menus, toolbar, the PDF offer bar).
+ *
+ * `source` is `{kind: 'uploaded', sourceKey, sourceFormat}` — the page already
+ * PUT the file to the ticket's URL — or `{kind: 'url', url}`, where the worker
+ * fetches the PDF (carrying the user's cookies), takes a ticket and PUTs it
+ * itself. Either way the create names a storage key, never bytes.
  */
 async function handlePdfCreateJob(message) {
   await assertFeatureEnabled('enablePdfTranslation');
   const settings = await chrome.storage.sync.get(defaultSettings);
   const source = message.source || {};
 
-  const isBytes = source.kind === 'bytes' && !!source.bytesBase64;
+  const isUploaded = source.kind === 'uploaded' && !!source.sourceKey &&
+    DocJobs.isDocumentFormat(source.sourceFormat);
   const isUrl = source.kind === 'url' && !!source.url;
-  if (!isBytes && !isUrl) {
-    throw new comicClient.ComicApiError('invalid_pdf', 'No PDF source was provided');
-  }
+  if (!isUploaded && !isUrl) throw invalidSource('No document source was provided');
 
   let operationId = message.operationId;
   if (!operationId && isUrl) {
@@ -253,44 +315,42 @@ async function handlePdfCreateJob(message) {
     // PDF twice (PR #26 review).
     operationId = await pdfClient.getOrCreateUrlOperationId(source.url);
   }
-  if (!operationId) operationId = crypto.randomUUID();
+  // An uploaded source's key belongs to the operation that took the ticket;
+  // a create under any other id would be refused as missing_source.
+  if (!operationId) throw invalidSource('A create needs the operation id its upload was made under');
 
-  const fileName = message.fileName ||
-    (isUrl ? pdfFileNameFromUrl(source.url) : 'document.pdf');
+  const sourceFormat = isUploaded ? source.sourceFormat : 'pdf';
+  const fileName = message.fileName || (isUrl ? pdfFileNameFromUrl(source.url) : '');
 
-  // The click's receipt, written before any network work. Download + presign +
-  // PUT + create is several seconds of silence, and every surface reads only
-  // these records — without a row here the user sees nothing at all and clicks
-  // again. It is also what carries a failure back to a popup that has since
-  // closed: the awaited sendMessage promise dies with the popup, this does not.
-  const pendingId = pdfClient.pendingJobId(operationId);
-  await pdfClient.saveJobRecord({
-    jobId: pendingId,
-    operationId,
-    fileName,
-    status: 'queued',
-    stage: 'uploading',
-    progress: 0,
-    results: null,
-    error: null,
-    pending: true,
-    createdAt: Date.now()
-  });
+  // The click's receipt, written (or reset) before any network work. For the
+  // URL path it is the only row there is during download + ticket + PUT; for
+  // an upload it restarts the stale clock at the create and clears a failed
+  // row an earlier create left. Every surface reads only these records, and
+  // they carry a failure back to a popup that has since closed: the awaited
+  // sendMessage promise dies with the popup, this does not.
+  const receipt = pdfClient.receiptRecord({ operationId, fileName, sourceFormat });
+  const pendingId = receipt.jobId;
+  await pdfClient.saveJobRecord(receipt);
 
   let job;
   try {
-    const bytes = isBytes
-      ? base64ToArrayBuffer(source.bytesBase64)
-      : await pdfClient.fetchPdfFromUrl(source.url);
-
-    job = await pdfClient.createPdfJob({
+    let upload = source;
+    if (isUrl) {
+      const bytes = await pdfClient.fetchPdfFromUrl(source.url);
+      upload = await pdfClient.requestUploadTicket({ operationId, byteSize: bytes.byteLength, sourceFormat });
+      await pdfClient.putSource(upload.uploadUrl, bytes, sourceFormat, operationId);
+    }
+    job = await pdfClient.createJobFromUpload({
       operationId,
-      bytes,
-      fileName,
+      sourceKey: upload.sourceKey,
+      sourceFormat,
+      fileName: receipt.fileName,
       targetLang: message.targetLang || settings.pdfTargetLang || getEffectiveTargetLang(settings),
       // Only ever true, and only because a surface asked the user first. The
       // worker never decides this on anyone's behalf.
-      confirmCharge: message.confirmCharge === true
+      confirmCharge: message.confirmCharge === true,
+      // Only the page measures (shared/doc-measure.js); a URL job is a PDF.
+      declaredUnits: isUploaded ? message.declaredUnits : undefined
     });
   } catch (error) {
     const code = (error && error.code) || 'engine_error';
@@ -313,7 +373,8 @@ async function handlePdfCreateJob(message) {
     // a job with different settings (the target language changed). Replaying
     // it can never succeed, so drop the URL binding: the NEXT click mints a
     // fresh id and actually runs. Everything else (network, auth, quota)
-    // keeps the binding — those retries must stay idempotent.
+    // keeps the binding — those retries must stay idempotent. (An uploaded
+    // source's id has no binding; releasing it is a no-op.)
     if (code === 'operation_already_finished' || code === 'output_conflict' || code === 'job_conflict') {
       await pdfClient.releaseUrlOperationId(operationId);
     }
@@ -321,36 +382,24 @@ async function handlePdfCreateJob(message) {
       jobId: pendingId,
       status: 'failed',
       stage: null,
-      error: {
-        code,
-        message: (error && error.message) || '',
-        // too_many_pages carries the server's actual cap; keep it on the
-        // record so the popup can render the honest number, not a stale one.
-        ...(error && error.details && error.details.maxPages
-          ? { maxPages: error.details.maxPages }
-          : {})
-      },
-      settledAt: Date.now()
+      // The facts the copy interpolates (maxPages, maxBytes, format, …) stay
+      // on the record so every surface renders the honest number.
+      error: pdfClient.errorRecordFrom(error)
     });
     throw error;
   }
 
-  // `error` too: a job can come back already terminal (a dispatch failure, or
-  // an idempotent re-post of a finished operation), and it will never get an
-  // alarm poll to fill that in later.
+  // The record takes the view's own fields (error and confirm too): a job can
+  // come back already terminal — a dispatch failure, or an idempotent re-post
+  // of a finished operation — or already awaiting, and it will never get an
+  // alarm poll to fill that in later. settledAt follows the status inside
+  // replaceJobRecord: terminal only, never for awaiting_confirm.
   await pdfClient.replaceJobRecord(pendingId, {
     jobId: job.jobId,
     operationId: job.operationId,
-    fileName,
-    status: job.status,
-    progress: job.progress || 0,
-    stage: job.stage || null,
-    pageCount: job.pageCount,
-    results: job.results || null,
-    error: job.error || null,
-    // Already over on arrival: no alarm poll will ever run for it, so this is
-    // the only place its finish time can be stamped.
-    ...(job.status === 'queued' || job.status === 'running' ? {} : { settledAt: Date.now() })
+    fileName: receipt.fileName,
+    sourceFormat,
+    ...pdfClient.recordFieldsFromView(job)
   });
   if (job.status === 'failed' || job.status === 'abandoned') {
     // Terminal on arrival: either the dispatch just failed, or the create
@@ -361,14 +410,18 @@ async function handlePdfCreateJob(message) {
     await pdfClient.releaseUrlOperationId(operationId);
   }
   await ensurePdfPollAlarm();
-  return { ...job, fileName };
+  return { ...job, fileName: receipt.fileName, sourceFormat };
 }
+
+// ---------------------------------------------------------------------------
+// One job: history, get, confirm, abandon, open
+// ---------------------------------------------------------------------------
 
 /**
  * The settings page's task list: the account's own history, from the server.
  *
  * Server-authoritative on purpose. The local records are a device's cache — 20
- * rows, a 24-hour TTL, gone with the profile — while "my translations" means
+ * rows, a TTL, gone with the profile — while "my translations" means
  * everything this account ever ran, from any device. The only rows added on top
  * are the ones the server cannot know about: a create still uploading from
  * here, or one that failed before it ever reached the server. Both carry a
@@ -404,65 +457,87 @@ async function handlePdfJobsHistory() {
   };
 }
 
-/** Poll one job and keep the local record in step with what came back. */
+/**
+ * A job's format and name. The server's view carries no format (saas backlog
+ * §11.3), so this device's record is asked first and the view's own file name
+ * second; with neither, DocJobs.jobFormat floors at pdf.
+ */
+function jobFacts(record, view) {
+  const fileName = record?.fileName || view?.fileName || '';
+  return {
+    fileName,
+    sourceFormat: DocJobs.jobFormat({ sourceFormat: record?.sourceFormat, fileName })
+  };
+}
+
+/**
+ * Fold a view a page just fetched into this device's record — only if there is
+ * one (never mint a record: the settings page lists the whole account, and a
+ * row for another device's job would jump to the top of this device's list).
+ * Returns the record after the fold, or null.
+ */
+async function foldPageView(jobId, view) {
+  const change = await pdfClient.updateRecordFromView(jobId, view);
+  // The question the confirm notification asked is answered or moot.
+  if (change?.leftAwaiting) clearPdfConfirmNotification(jobId);
+  await ensurePdfPollAlarm();
+  return change ? change.record : null;
+}
+
+/** Poll one job for a page. Never creates a record (defect 4). */
 async function handlePdfJobGet(jobId) {
   const view = await pdfClient.getPdfJob(jobId);
-  await pdfClient.saveJobRecord({
-    jobId: view.jobId,
-    status: view.status,
-    progress: view.progress,
-    stage: view.stage || null,
-    pageCount: view.pageCount,
-    results: view.results || null,
-    error: view.error || null
-  });
-  await ensurePdfPollAlarm();
-  return view;
+  const record = await foldPageView(jobId, view);
+  return { ...view, ...jobFacts(record, view) };
+}
+
+/**
+ * The user agreed to pay for what the document turned out to be. The job goes
+ * back in the queue, so the fold re-arms the alarm, and the notification that
+ * asked is withdrawn whatever the fold saw.
+ */
+async function handlePdfJobConfirm(jobId) {
+  const view = await pdfClient.confirmPdfJob(jobId);
+  const record = await foldPageView(jobId, view);
+  clearPdfConfirmNotification(jobId);
+  return { ...view, ...jobFacts(record, view) };
 }
 
 async function handlePdfJobAbandon(jobId) {
   const view = await pdfClient.abandonPdfJob(jobId);
-  await pdfClient.saveJobRecord({
-    jobId: view.jobId,
-    status: view.status,
-    error: view.error || null
-  });
-  await ensurePdfPollAlarm();
-  return view;
+  const record = await foldPageView(jobId, view);
+  clearPdfConfirmNotification(jobId);
+  return { ...view, ...jobFacts(record, view) };
 }
 
 /**
- * Open a finished PDF in a new tab. Always via a fresh poll: the presigned
- * URL a record might hold is minutes old and probably expired.
+ * PDF_OPEN_JOB: open a job from a list row or a notification.
+ *
+ * A finished PDF opens its file (Chrome shows it); everything else opens the
+ * job page, which can save a file, ask for a confirmation or say what went
+ * wrong. Always via a fresh poll: a presigned URL a record might hold is
+ * minutes old and probably expired. If that poll fails the job page is still
+ * the right place — it polls again and shows the error in context.
  */
-async function handlePdfOpenResult(jobId, which) {
-  const view = await pdfClient.getPdfJob(jobId);
-  // Refresh the local record only when there already is one. The settings page
-  // lists the whole account, so this can be a job another device started, and
-  // minting a record for it would push it to the top of this device's list as
-  // if it had just run here.
+async function openPdfJob(jobId, which) {
+  if (!jobId || pdfClient.isPendingRecord({ jobId })) {
+    throw new ComicApiError('result_unavailable', 'This job has not reached the service yet', 404);
+  }
   const records = await pdfClient.listJobRecords();
-  if (records.some(r => r.jobId === view.jobId)) {
-    await pdfClient.saveJobRecord({
-      jobId: view.jobId,
-      status: view.status,
-      progress: view.progress,
-      stage: view.stage || null,
-      pageCount: view.pageCount,
-      results: view.results || null,
-      error: view.error || null
-    });
-    await ensurePdfPollAlarm();
+  let record = records.find(r => r.jobId === jobId) || null;
+  let target = { kind: 'page' };
+  try {
+    const view = await pdfClient.getPdfJob(jobId);
+    record = (await foldPageView(jobId, view)) || record;
+    const { sourceFormat } = jobFacts(record, view);
+    target = DocJobs.openTargetFor({ status: view.status, format: sourceFormat, results: view.results }, which);
+  } catch (error) {
+    console.warn(`[pdf] refreshing job ${jobId} before opening it failed; opening its page:`,
+      error?.code || error?.message || error);
   }
-  const results = view.results || {};
-  const url = which === 'mono'
-    ? (results.monoUrl || results.dualUrl)
-    : (results.dualUrl || results.monoUrl);
-  if (!url) {
-    throw new comicClient.ComicApiError('result_unavailable', 'The translated PDF is not available', 404);
-  }
+  const url = target.kind === 'result' ? target.url : chrome.runtime.getURL(DocJobs.jobPagePath(jobId));
   await chrome.tabs.create({ url });
-  return { opened: true };
+  return { opened: target.kind };
 }
 
 export {
@@ -472,9 +547,11 @@ export {
   refreshPdfJobs,
   runPdfUrlJob,
   startPdfUrlTranslation,
+  handlePdfUploadTicket,
   handlePdfCreateJob,
   handlePdfJobsHistory,
   handlePdfJobGet,
+  handlePdfJobConfirm,
   handlePdfJobAbandon,
-  handlePdfOpenResult,
+  openPdfJob,
 };

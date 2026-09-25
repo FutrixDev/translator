@@ -14,7 +14,10 @@
 // the one thing the server cannot know yet — an upload still in flight from
 // this device — and hands back the combined list.
 //
-// Polled only while something is running, and only while this page is visible.
+// Split by whether the job is over: a job waiting on the user's answer to the
+// over-page question is not history yet. Polled only while something is
+// actually running (a question does not change by itself), and only while this
+// page is visible.
 // ---------------------------------------------------------------------------
 
 const PDF_TASKS_POLL_MS = 5000;
@@ -105,14 +108,14 @@ async function refreshPdfTasks({ quiet = false } = {}) {
   }
 
   const jobs = (response.data && response.data.jobs) || [];
-  const active = jobs.filter(job => PDF_UI.isPdfJobActive(job));
-  showPdfTaskGroups(active, jobs.filter(job => !PDF_UI.isPdfJobActive(job)));
+  const unsettled = jobs.filter(job => DocJobs.isUnsettledStatus(job.status));
+  showPdfTaskGroups(unsettled, jobs.filter(job => !DocJobs.isUnsettledStatus(job.status)));
 
   if (!jobs.length) setPdfTasksMessage(t('pdfTasksEmpty'));
   else if (response.data && response.data.stale) setPdfTasksMessage(t('pdfTasksOffline'));
   else setPdfTasksMessage('');
 
-  schedulePdfTasksPoll(active.length > 0);
+  schedulePdfTasksPoll(jobs.some(job => DocJobs.isActiveStatus(job.status)));
 }
 
 function setPdfTasksMessage(text, extraNode = null) {
@@ -167,7 +170,7 @@ function pdfTaskRow(job) {
   main.appendChild(meta);
   row.appendChild(main);
 
-  if (PDF_UI.isPdfJobActive(job)) {
+  if (DocJobs.isActiveStatus(job.status)) {
     const track = document.createElement('div');
     track.className = 'pdf-task-track';
     const bar = document.createElement('div');
@@ -196,15 +199,21 @@ function pdfTaskRow(job) {
     actions.appendChild(view);
   }
 
-  if (!PDF_UI.isPdfJobActive(job) && job.status === 'succeeded' && !job.pending) {
+  // Open: a finished PDF opens its file, every other format its job page.
+  // Review: the over-page question is answered on the job page. Both go
+  // through the worker, never the URL the list came with: presigned links
+  // expire in minutes and this page can sit open for hours.
+  const openKey = job.pending ? null
+    : job.status === 'succeeded' ? 'pdfOpen'
+      : DocJobs.isAwaitingStatus(job.status) ? 'docReview'
+        : null;
+  if (openKey) {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'btn btn-text pdf-task-open';
-    open.textContent = t('pdfOpen');
-    // Never the URL the list came with: presigned links expire in minutes and
-    // this page can sit open for hours, so the worker re-signs at click time.
+    open.textContent = t(openKey);
     open.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'PDF_OPEN_RESULT', jobId: job.jobId, which: 'dual' });
+      chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId, which: 'dual' });
     });
     actions.appendChild(open);
   }
@@ -220,9 +229,8 @@ function pdfTaskMeta(job) {
   if (job.pageCount) parts.push(t('pdfTasksPages').replace('{count}', job.pageCount));
   const langKey = PDF_TASK_LANG_KEYS[job.targetLang];
   if (langKey) parts.push(t(langKey));
-  parts.push(job.status === 'failed' && job.error
-    ? PDF_UI.pdfErrorMessage(job.error, t)
-    : t(PDF_UI.pdfStatusKey(job)));
+  // The one status line every surface draws.
+  parts.push(PDF_UI.pdfStatusLine(job, t).text);
   if (job.createdAt) {
     const at = new Date(job.createdAt);
     if (!Number.isNaN(at.getTime())) {

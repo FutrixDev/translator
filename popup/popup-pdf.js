@@ -1,13 +1,18 @@
 // ---------------------------------------------------------------------------
-// PDF translation — entry points and the compact task list
+// Document translation — entry points and the compact task list
 //
 // The jobs live on the server and outlast this popup by minutes; the popup is
 // only a viewport onto the records the service worker keeps in
 // chrome.storage.local['pdfJobs']. While open it polls every 3 seconds so a
 // running job visibly moves; the background alarm covers the rest of the time.
+//
+// A classic script loaded before popup.js, in the same global lexical scope:
+// it looks up its own elements and wires its own listeners in
+// setupPdfSection(), and borrows only t() from popup.js, resolved at call time.
 // ---------------------------------------------------------------------------
 
 const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
+const DocJobs = globalThis.DocJobs;
 // D9's charge handshake — one implementation, shared with the comic overlay,
 // the upload page and the service worker (shared/comic-charge.js).
 const ChargeConfirm = globalThis.ChargeConfirm;
@@ -34,25 +39,50 @@ let pdfInlinePrompt = null;
 // to survive the few milliseconds until the worker's own pending record lands;
 // renderPdfJobs drops it the moment it sees one.
 let pdfPlaceholder = null;
+// This section's own elements, looked up by setupPdfSection().
+let pdfEls = null;
+
+/** The popup's one call into this file, from its DOMContentLoaded. */
+function setupPdfSection() {
+  pdfEls = {
+    translateCurrent: document.getElementById('pdfTranslateCurrent'),
+    translateLocal: document.getElementById('pdfTranslateLocal'),
+    jobs: document.getElementById('pdfJobs')
+  };
+  pdfEls.translateCurrent.addEventListener('click', onPdfTranslateCurrent);
+  pdfEls.translateLocal.addEventListener('click', onPdfTranslateLocal);
+  // The worker writes its records to storage.local; watching them is what
+  // makes the list move between polls — including the pending row it writes
+  // the instant a create starts, from the context menu as much as from here.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.pdfJobs) return;
+    // Gated off on this device: refreshPdfSection has hidden the whole
+    // section and rendering would put it back on screen.
+    if (pdfEls.translateLocal.hidden) return;
+    const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
+    renderPdfJobs(records);
+  });
+  refreshPdfSection();
+}
 
 async function refreshPdfSection() {
   const { enablePdfTranslation } = await AccountGate.applyAccountGate(
     await chrome.storage.sync.get({ enablePdfTranslation: true })
   );
   if (!enablePdfTranslation) {
-    elements.pdfTranslateCurrent.hidden = true;
-    elements.pdfTranslateLocal.hidden = true;
-    elements.pdfJobs.hidden = true;
+    pdfEls.translateCurrent.hidden = true;
+    pdfEls.translateLocal.hidden = true;
+    pdfEls.jobs.hidden = true;
     return;
   }
-  elements.pdfTranslateLocal.hidden = false;
+  pdfEls.translateLocal.hidden = false;
 
   // "Translate this PDF" only where it can mean something: the tab is a PDF.
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    elements.pdfTranslateCurrent.hidden = !(tabs[0] && PDF_UI.isLikelyPdfUrl(tabs[0].url));
+    pdfEls.translateCurrent.hidden = !(tabs[0] && PDF_UI.isLikelyPdfUrl(tabs[0].url));
   } catch (error) {
-    elements.pdfTranslateCurrent.hidden = true;
+    pdfEls.translateCurrent.hidden = true;
   }
 
   await refreshPdfJobs({ refresh: false });
@@ -81,28 +111,17 @@ async function refreshPdfJobs({ refresh }) {
   renderPdfJobs(await listPdfRecords(refresh));
 }
 
-// The worker writes its records to storage.local; watching them is what makes
-// the list move between polls — including the pending row it writes the instant
-// a create starts, from the context menu as much as from here.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.pdfJobs) return;
-  // Gated off on this device: refreshPdfSection has hidden the whole section
-  // and rendering would put it back on screen.
-  if (elements.pdfTranslateLocal.hidden) return;
-  const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
-  renderPdfJobs(records);
-});
-
 /**
- * Anything in flight, and anything that finished recently enough to still be
- * about what the user just did.
+ * Anything not over yet — running, or waiting on the user's answer to the
+ * over-page question, however long ago it started — and anything that
+ * finished recently enough to still be about what the user just did.
  *
  * `settledAt` is stamped when a job crosses into a terminal state. Records
  * written before that field existed fall back to `createdAt`, which ages them
  * out at least as fast — the point is that they go.
  */
 function isPdfJobStillWorthShowing(record) {
-  if (PDF_UI.isPdfJobActive(record)) return true;
+  if (DocJobs.isUnsettledStatus(record.status)) return true;
   const settled = record.settledAt || record.createdAt || 0;
   return Date.now() - settled < PDF_SETTLED_VISIBLE_MS;
 }
@@ -116,7 +135,7 @@ async function dismissPdfJob(jobId) {
 }
 
 function renderPdfJobs(records) {
-  const list = elements.pdfJobs;
+  const list = pdfEls.jobs;
   list.textContent = '';
 
   if (pdfInlineError) list.appendChild(pdfInlineError);
@@ -138,16 +157,20 @@ function renderPdfJobs(records) {
     head.className = 'pdf-job-head';
     const name = document.createElement('span');
     name.className = 'pdf-job-name';
-    name.textContent = record.fileName || 'PDF';
+    name.textContent = record.fileName || t('pdfTasksUnnamed');
     name.title = record.fileName || '';
     const status = document.createElement('span');
     status.className = 'pdf-job-status';
-    status.textContent = t(PDF_UI.pdfStatusKey(record));
+    // The same line the job card and the settings page draw; only a failure
+    // is red, a cancelled task is worded without being painted as one.
+    const line = PDF_UI.pdfStatusLine(record, t);
+    status.textContent = line.text;
+    status.classList.toggle('is-error', line.isError);
     head.appendChild(name);
     head.appendChild(status);
     row.appendChild(head);
 
-    if (PDF_UI.isPdfJobActive(record)) {
+    if (DocJobs.isActiveStatus(record.status)) {
       const track = document.createElement('div');
       track.className = 'pdf-job-track';
       const bar = document.createElement('div');
@@ -156,23 +179,18 @@ function renderPdfJobs(records) {
       track.appendChild(bar);
       row.appendChild(track);
     } else if (record.status === 'succeeded') {
-      const open = document.createElement('button');
-      open.className = 'pdf-job-open';
-      open.textContent = t('pdfOpen');
-      open.addEventListener('click', () => {
-        // dual first; the worker falls back to mono when there is none.
-        chrome.runtime.sendMessage({ type: 'PDF_OPEN_RESULT', jobId: record.jobId, which: 'dual' });
-        window.close();
-      });
-      head.appendChild(open);
-    } else if (record.error) {
-      status.classList.add('is-error');
-      status.textContent = PDF_UI.pdfErrorMessage(record.error, t);
+      // dual first; the worker falls back to mono when there is none, and
+      // opens the job page instead for every format Chrome cannot show.
+      head.appendChild(pdfOpenJobButton(record, 'pdfOpen'));
+    } else if (DocJobs.isAwaitingStatus(record.status) && !record.pending) {
+      // The over-page question is answered on the job page.
+      head.appendChild(pdfOpenJobButton(record, 'docReview'));
     }
 
-    // A finished row is dismissable — the placeholder has no jobId yet, and a
-    // running job has abandon, not dismiss, as its way out.
-    if (!PDF_UI.isPdfJobActive(record) && record.jobId) {
+    // Only a finished row is dismissable — the placeholder has no jobId yet,
+    // a running job has abandon as its way out, and a job waiting on its
+    // confirmation is still owed an answer.
+    if (DocJobs.isTerminalStatus(record.status) && record.jobId) {
       const dismiss = document.createElement('button');
       dismiss.className = 'pdf-job-dismiss';
       dismiss.textContent = '×';
@@ -192,6 +210,18 @@ function renderPdfJobs(records) {
   });
 
   list.hidden = !list.childElementCount;
+}
+
+/** A row's button that hands the job to the worker's PDF_OPEN_JOB. */
+function pdfOpenJobButton(record, labelKey) {
+  const button = document.createElement('button');
+  button.className = 'pdf-job-open';
+  button.textContent = t(labelKey);
+  button.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId, which: 'dual' });
+    window.close();
+  });
+  return button;
 }
 
 /**
@@ -358,7 +388,7 @@ async function onPdfTranslateCurrent() {
  * and this also swaps the label to say what is happening.
  */
 function setPdfBusy(busy) {
-  const button = elements.pdfTranslateCurrent;
+  const button = pdfEls.translateCurrent;
   button.disabled = busy;
   const label = button.querySelector('[data-i18n="pdfTranslateThis"]') || button;
   label.textContent = busy ? t('pdfStatusUploading') : t('pdfTranslateThis');
