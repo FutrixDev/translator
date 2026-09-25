@@ -51,7 +51,7 @@ function nonEmptyString(value) {
 /**
  * Fetch a PDF the user is looking at, from the worker.
  *
- * `credentials: 'include'` for the same reason as fetchImageAsBase64: a paper
+ * `credentials: 'include'` for the same reason as the comic image fetch: a paper
  * behind an institutional login serves its bytes only to a cookie-bearing
  * request. Any failure — network, login wall, HTML interstitial — collapses to
  * `source_fetch_failed`, whose user-facing answer is always the same: download
