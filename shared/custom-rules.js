@@ -119,6 +119,8 @@
 
   /**
    * 返回规范化后的规则（不带 id，未知字段丢掉），或抛 Error(<i18n 键>)。
+   * 写入口（设置页、导入、拾取器、SW 的 CUSTOM_RULES_WRITE）都走这里，CSS 要过
+   * 清洗。
    *
    * @param {Object} rule
    * @param {{checkSelector?: function(string): boolean}} [options]
@@ -126,7 +128,17 @@
    *   SW 只查形状和长度。
    */
   function validateRule(rule, options) {
-    const checkSelector = options && options.checkSelector;
+    const out = normalizeRule(rule, options && options.checkSelector);
+    if (out.css) sanitizeCss(out.css);
+    return out;
+  }
+
+  /**
+   * validateRule 只查形状的那一半：CSS 只要求是不超长的字符串，不清洗。存储里
+   * 读出来的条目（decode）走这一半 —— 绕过写入口写进去的不安全 CSS 不该让整条
+   * 规则作废，它由内容侧挂载前的清洗拒掉，规则的其余字段照常生效（设计 §3.5）。
+   */
+  function normalizeRule(rule, checkSelector) {
     if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw new Error('customRuleInvalid');
     if (rule.v !== undefined && rule.v !== VERSION) throw new Error('customRuleInvalid');
 
@@ -147,8 +159,8 @@
       if (selectors.length) out[field] = selectors;
     }
     if (rule.css != null && rule.css !== '') {
-      if (typeof rule.css !== 'string') throw new Error('customRuleCssUnsafe');
-      if (rule.css.trim()) out.css = sanitizeCss(rule.css);
+      if (typeof rule.css !== 'string' || rule.css.length > LIMITS.maxCss) throw new Error('customRuleCssUnsafe');
+      if (rule.css.trim()) out.css = rule.css;
     }
     if (rule.engine != null && rule.engine !== '') {
       if (!ENGINES.has(rule.engine)) throw new Error('customRuleInvalid');
@@ -162,11 +174,11 @@
   }
 
   // 存储里的一项 -> 规则，或 null：不认识的版本、坏条目都跳过（集合只记数目）。
-  // 这里是 validateRule 被接住的那一层，错误变成「跳过」，日志由集合打。
+  // 这里是 normalizeRule 被接住的那一层，错误变成「跳过」，日志由集合打。
   function decode(value) {
     if (!value || value.v !== VERSION) return null;
     try {
-      return validateRule(value);
+      return normalizeRule(value, null);
     } catch (error) {
       return null;
     }

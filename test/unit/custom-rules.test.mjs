@@ -187,7 +187,7 @@ test('custom-rules: pick takes the longest matched pattern, then the newer rule,
 
 // ------------------------------------------------------------ collect / applyChanges
 
-test('custom-rules: collect skips newer versions, unsafe CSS and bad keys; the id comes from the key', () => {
+test('custom-rules: collect skips newer versions and bad keys, keeps unsafe CSS for the page to refuse; the id comes from the key', () => {
   const warn = captureConsole('warn');
   let rules;
   try {
@@ -201,9 +201,15 @@ test('custom-rules: collect skips newer versions, unsafe CSS and bad keys; the i
   } finally {
     warn.restore();
   }
-  assert.deepEqual(rules, [{ v: 1, match: ['a.com'], exclude: ['.x'], updatedAt: 1, id: 'aaaa1111' }]);
+  // 绕过写入口写进去的不安全 CSS 不让整条规则作废（设计 :199 decode 只查形状、
+  // §3.5 内容侧清洗不过只丢 CSS）：条目留着，CSS 原样带着，挂载前再拒。
+  assert.deepEqual(rules.map((rule) => ({ ...rule })), [
+    { v: 1, match: ['a.com'], exclude: ['.x'], updatedAt: 1, id: 'aaaa1111' },
+    { v: 1, match: ['a.com'], css: 'body{background:url(x)}', id: 'cccc3333' },
+  ]);
+  assert.throws(() => CustomRules.sanitizeCss(rules[1].css), { message: 'customRuleCssUnsafe' });
   assert.equal(warn.calls.length, 1);
-  assert.match(warn.calls[0][0], /customRule: collect: skipped 3/);
+  assert.match(warn.calls[0][0], /customRule: collect: skipped 2/);
 });
 
 test('custom-rules: applyChanges adds, replaces and removes, and ignores other hosts', () => {
