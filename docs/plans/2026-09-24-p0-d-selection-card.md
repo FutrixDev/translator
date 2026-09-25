@@ -367,10 +367,14 @@ maxHeight = null，除非是「缩高」那一步选出来的
 - 不加 content 脚本文件，manifest `content_scripts` 的 js 和 css 数组都不动。`selection-button.css` 已在 manifest 里，只重写内容。
 - `content-selection.js`、`content-popup.js` 归 P0-D。P1 的「加入术语表」按钮等 P0-D 合入后，加在操作行「换引擎」和「复制」之间。操作行已经 `flex-wrap`，J-D9 会替它检查十语言下放不放得下。
 - `message.engine` 与 P1-B 的 `engineOverride`：显式请求 > 站点覆盖 > 设置（§6.4）。
-- P1-A 的中继（子 frame 的请求）会把 `engine` 字段一起带过去。子 frame 里 `ctx.engineChoices(targetLang)` 的回答偏保守，#107 合入后与 P1-A 核对，列为遗留。
+- P1-A 的中继（子 frame 的请求）会把 `engine` 字段一起带过去。#107 合入后由 J-D11 实测：换内置后，顶层的打桩被调 1 次，子 frame 的 0 次。
+- 遗留（#107 合入后核对的结果）：
+  - 子 frame 里给不给「换引擎」，由 `ctx.engineChoices(targetLang)` 在子 frame 自己的上下文里判断（有没有 Translator、是不是安全上下文），真正执行请求的却是顶层。两层环境不一致时（比如 https 页面里嵌一个 http frame，或者反过来），卡片可能漏掉顶层能用的引擎，也可能给出一个点了只换来报错的引擎（钉选不回落）。
+  - #107 让子 frame 的请求恒带 `allowDownload: false`（请求到顶层时已经没有用户手势），所以在子 frame 里，对还没下载语言包的语言点「改用内置」，拿回的是「需要下载」的报错，不会触发下载。这一条是读代码所得，没有实测。
+  - 修法是让子 frame 经中继去问顶层。
 - 以后给 `TRANSLATE` 加缓存的改动必须让重译绕过缓存，J-D1 守着。
 - 可能的文本冲突：`content-translation-engine.js`（P1-A 中继）、`content-messaging.js`、`test/e2e/helpers.js`、i18n 表尾部、CHANGELOG、README。谁后合谁 rebase 消解。
-  #107 先合的话，`frames.spec.js` 改为从 helpers.js 导入 `evaluateInContentScript`（机械改动，告知 P1）。
+  #107 先合了。#111 把 main 合进分支时已消解冲突，`frames.spec.js` 也改为从 helpers.js 导入 `evaluateInContentScript`，见 §14 第 5 条。
 - 不做：键盘选区出图标、图标跟随滚动、卡片跟随滚动、生词本、多引擎并排对照。
 
 ## 13. 决策登记（台账 D-301）
