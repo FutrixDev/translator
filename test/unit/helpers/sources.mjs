@@ -47,6 +47,31 @@ export function popupSource() {
 }
 
 /**
+ * 首装引导页全体：onboarding/*.js。
+ */
+export function onboardingSource() {
+  return surfaceSource('onboarding', (name) => name.endsWith('.js'));
+}
+
+/**
+ * offscreen 文档全体：offscreen/*.js。
+ */
+export function offscreenSource() {
+  return surfaceSource('offscreen', (name) => name.endsWith('.js'));
+}
+
+/**
+ * 扩展页面共用的普通脚本：shared/*.js。
+ *
+ * 它们被设置页、首装引导页、弹窗和 service worker 各自装进去，调的是装它的那一页
+ * 的 chrome.*。「扩展页面有没有做某件事」要连这一层一起问 —— 两页共用的广播
+ * （shared/tab-broadcast.js）就落在这里，不在任何一页自己的文件里。
+ */
+export function sharedSource() {
+  return surfaceSource('shared', (name) => name.endsWith('.js'));
+}
+
+/**
  * 文档上传页全体：pdf/*.js（upload.js、job-view.js、pdf-ui.js 共用一个全局词法作用域）。
  *
  * 「上传页有没有做某件事」问的是这一页 —— 状态机在 upload.js、作业卡怎么画在

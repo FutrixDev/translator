@@ -15,7 +15,10 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contentBundle, workerSource, framesSource, optionsSource } from './helpers/sources.mjs';
+import {
+  contentBundle, workerSource, framesSource, optionsSource, popupSource, onboardingSource,
+  uploadPageSource, offscreenSource, sharedSource,
+} from './helpers/sources.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
@@ -320,12 +323,14 @@ test('a child frame ignores the messages only the top frame answers', () => {
  * 发给所有 frame 的那几条。新增一处不带 frameId 的，这里红。
  */
 const BROADCASTS = [
-  // 设置页：设置变了、语言包好了 —— 每个 frame 都该知道。
-  { surface: 'options', message: 'SETTINGS_UPDATED' },
-  { surface: 'options', message: 'LANGUAGE_PACK_READY' },
   // 中继：顶层的指令本来就是发给所有子 frame 的。
   { surface: 'worker', message: 'FRAME_DIRECTIVE' },
 ];
+
+// 设置页和首装引导页都经 shared/tab-broadcast.js 广播：设置变了、语言包好了 ——
+// 每个 frame 都该知道。那里只有一个出口 sendToAllTabs，它体内那一处两参调用是
+// shared/ 里唯一允许的；经它发出的类型恰好是这两种。
+const TAB_BROADCAST_TYPES = ['SETTINGS_UPDATED', 'LANGUAGE_PACK_READY'];
 
 /** 从 `tabs.sendMessage(` 起，数括号找到调用的结尾，返回顶层逗号分出的参数个数与原文。 */
 function sendMessageCalls(source) {
@@ -349,12 +354,41 @@ function sendMessageCalls(source) {
   return calls;
 }
 
+// 能调 chrome.tabs 的每一面都在这里；漏一面，那一面的两参调用就没人拦。
 const SURFACES = {
   worker: workerSource(),
-  popup: read('popup/popup.js'),
+  popup: popupSource(),
   options: optionsSource(),
+  onboarding: onboardingSource(),
+  upload: uploadPageSource(),
+  offscreen: offscreenSource(),
+  shared: sharedSource(),
   content: framesSource(),
 };
+
+const stripLineComments = (source) => source.replace(/\/\/[^\n]*/g, '');
+
+/** shared/ 里 `function sendToAllTabs(` 的函数体（恰好一处定义）。 */
+function sendToAllTabsBody() {
+  const code = stripLineComments(SURFACES.shared);
+  const defs = [...code.matchAll(/function\s+sendToAllTabs\s*\(/g)];
+  assert.equal(defs.length, 1, `shared/ defines sendToAllTabs ${defs.length} times`);
+  const open = code.indexOf('{', defs[0].index);
+  let depth = 0;
+  let i = open;
+  for (; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}' && --depth === 0) break;
+  }
+  return code.slice(open, i + 1);
+}
+
+/** sendToAllTabs 体内那一处不带 frameId 的调用：shared/ 里唯一的全标签页出口。 */
+function tabBroadcastExit() {
+  const calls = sendMessageCalls(sendToAllTabsBody()).filter((call) => call.args < 3);
+  assert.equal(calls.length, 1, 'sendToAllTabs holds exactly one frame-less tabs.sendMessage');
+  return calls[0].text;
+}
 
 test('every tabs.sendMessage names its frame, or is a declared broadcast', () => {
   const offenders = [];
@@ -363,7 +397,8 @@ test('every tabs.sendMessage names its frame, or is a declared broadcast', () =>
     for (const call of sendMessageCalls(source)) {
       seen++;
       if (call.args >= 3) continue;
-      const declared = BROADCASTS.some((b) => b.surface === surface && call.text.includes(b.message));
+      const declared = BROADCASTS.some((b) => b.surface === surface && call.text.includes(b.message)) ||
+        (surface === 'shared' && call.text === tabBroadcastExit());
       if (!declared) offenders.push(`${surface}: ${call.text.replace(/\s+/g, ' ').slice(0, 120)}`);
     }
   }
@@ -377,6 +412,26 @@ test('the broadcast whitelist names calls that still exist', () => {
     const hit = sendMessageCalls(SURFACES[surface]).some((call) => call.args < 3 && call.text.includes(message));
     assert.ok(hit, `${surface} no longer broadcasts ${message}; drop it from BROADCASTS`);
   }
+});
+
+test('tab-wide broadcasts leave through sendToAllTabs alone, and carry only the declared types', () => {
+  const exit = tabBroadcastExit();
+  const frameless = sendMessageCalls(SURFACES.shared).filter((call) => call.args < 3).map((call) => call.text);
+  assert.deepEqual(frameless, [exit], 'shared/ sends a frame-less tab message outside sendToAllTabs');
+
+  const types = [];
+  const untyped = [];
+  for (const [surface, source] of Object.entries(SURFACES)) {
+    const code = stripLineComments(source);
+    for (const m of code.matchAll(/(?<!function\s+)\bsendToAllTabs\(/g)) {
+      const typed = code.slice(m.index).match(/^sendToAllTabs\(\s*\{\s*type:\s*'([A-Z_]+)'/);
+      if (typed) types.push(typed[1]);
+      else untyped.push(`${surface}: ${code.slice(m.index, m.index + 80).replace(/\s+/g, ' ')}`);
+    }
+  }
+  assert.deepEqual(untyped, [], 'a sendToAllTabs call must name its type as a literal');
+  assert.deepEqual([...types].sort(), [...TAB_BROADCAST_TYPES].sort(),
+    'the types sent through sendToAllTabs drifted from TAB_BROADCAST_TYPES');
 });
 
 test('the relay is loaded by the service worker', () => {
