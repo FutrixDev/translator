@@ -20,99 +20,15 @@
  */
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
-const { startMockServer } = require('./mock-server');
+const { startDocService, TINY_PDF } = require('./doc-service-mock');
 
 /**
- * 一份最小的 PDF。
- *
- * 这里没人渲染它的内容：要的是 Chrome 认出 `%PDF-` 魔数、挂起自己的查看器，
- * 于是内容脚本落在一个 contentType 是 application/pdf 的文档上。
+ * A service that counts: the shared document mock (doc-service-mock.js) keeps
+ * `apiHits`, every method and path that reaches /api/pdf/*, and the assertions
+ * count off it. Its /paper.pdf is the PDF the URL half opens.
  */
-const TINY_PDF = Buffer.from(
-  `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>
-endobj
-trailer
-<< /Root 1 0 R >>
-%%EOF
-`,
-  'latin1',
-);
-
-/**
- * 一台会数数的翻译服务。
- *
- * 和 pdf-translation.spec.js 那台的区别只有一个：这里记的不是「请求带了什么」，
- * 而是「有没有请求」——`apiHits` 收下每一个落到 /api/pdf/* 的方法和路径，断言就
- * 照着它数。
- */
-async function startCountingService() {
-  const state = { apiHits: [], pdfBytesServed: 0 };
-
-  const { origin, close } = await startMockServer((req, res, base) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const send = (status, body, type = 'application/json') => {
-      res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
-      if (Buffer.isBuffer(body) || typeof body === 'string') return res.end(body);
-      res.end(JSON.stringify(body));
-    };
-    const readBody = (cb) => {
-      const chunks = [];
-      req.on('data', c => chunks.push(c));
-      req.on('end', () => cb(Buffer.concat(chunks)));
-    };
-
-    if (url.pathname.startsWith('/api/pdf/')) {
-      state.apiHits.push(`${req.method} ${url.pathname}`);
-    }
-
-    if (url.pathname === '/api/pdf/uploads' && req.method === 'POST') {
-      return readBody((raw) => {
-        const body = JSON.parse(raw.toString() || '{}');
-        const sourceKey = `pdf/u1/${body.operationId}/source.pdf`;
-        send(200, {
-          sourceKey,
-          uploadUrl: `${base}/upload-sink?key=${encodeURIComponent(sourceKey)}`,
-          maxBytes: 30 * 1024 * 1024,
-        });
-      });
-    }
-
-    if (url.pathname === '/upload-sink' && req.method === 'PUT') {
-      return readBody(() => send(200, ''));
-    }
-
-    if (url.pathname === '/api/pdf/jobs' && req.method === 'POST') {
-      return readBody(() => send(202, {
-        jobId: 'pdf_job_1', status: 'queued', progress: 0, pageCount: 1,
-      }));
-    }
-
-    if (url.pathname.startsWith('/api/pdf/jobs/') && req.method === 'GET') {
-      return send(200, {
-        jobId: 'pdf_job_1', status: 'succeeded', progress: 100, pageCount: 1,
-        results: { dualUrl: `${base}/result-dual.pdf` },
-      });
-    }
-
-    if (url.pathname === '/paper.pdf' && req.method === 'GET') {
-      state.pdfBytesServed += 1;
-      return send(200, TINY_PDF, 'application/pdf');
-    }
-
-    if (url.pathname.startsWith('/result-')) return send(200, TINY_PDF, 'application/pdf');
-
-    send(404, { error: 'not_found' });
-  });
-
-  return { base: origin, state, close };
+function startCountingService() {
+  return startDocService();
 }
 
 /** 把扩展指向 mock，并给它一张登录凭证 —— PDF 功能的账号闸要的就是这张。 */

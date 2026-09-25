@@ -45,8 +45,8 @@ which file is layout, not contract. The rule that makes that safe is the same
 everywhere: **ask the surface, not the file** — the helpers in
 `test/unit/helpers/sources.mjs` (`workerSource()`, `optionsSource()`,
 `messagesSource()`, `contentCss()`, `comicSource()`, `captionEngineSource()`,
-`hoverSource()`, `engineSource()`) read a whole family, so adding a module never means editing a
-test. Only assertions about **load order** read `manifest.json` or the entry
+`hoverSource()`, `engineSource()`, `popupSource()`, `uploadPageSource()`) read
+a whole family, so adding a module never means editing a test. Only assertions about **load order** read `manifest.json` or the entry
 file directly.
 
 1. **Background Service Worker** (`background/*.js`, entry `background.js` —
@@ -118,7 +118,7 @@ file directly.
 
 ### Account-Backed Features
 
-Comic translation and PDF translation are the two features that do NOT use the
+Comic translation and document translation are the two features that do NOT use the
 user's own API key: they run on our servers against a monthly free page
 allowance, so both require a signed-in account. That makes their switches a
 preference with a precondition, and the two halves live in different storage
@@ -158,6 +158,47 @@ Comic translation is a family of classic scripts sharing one shelf, `ctx.comic`:
 Every reference crossing a file goes through the shelf (`comic.foo`), so no file
 depends on being loaded before another. Tests ask the **family**, not a file:
 `comicSource()` in `test/unit/helpers/sources.mjs`.
+
+### Document Translation
+
+Six formats — PDF, Word (`.docx`), EPUB, MOBI (`.mobi`/`.azw3`), TXT, Markdown —
+through one upload page (`pdf/upload.html`, its card drawn by
+`pdf/job-view.js`) and one set of worker messages. The file and
+message names still say `pdf`; what they carry does not.
+
+- **`shared/doc-jobs.js` (`DocJobs`) is the only place a format or a status set
+  is written down**: the formats, their extensions and content types, the byte
+  caps (`maxBytesFor`, mirroring the server's env), the magic-byte sniff,
+  `isActiveStatus` / `isAwaitingStatus` / `isTerminalStatus` /
+  `isUnsettledStatus`, the result file name, and where "Open" goes
+  (`openTargetFor`). It loads before `shared/pdf-errors.js` in every load list.
+  `shared/doc-measure.js` (`DocMeasure`) counts a flow document's standard pages
+  (3,000 characters each) on the page, so an over-800-page book is refused
+  before any request; PDF and MOBI are not measured and declare nothing.
+  `test/unit/doc-guards.test.mjs` fails on a byte cap, a hand-built
+  `queued`/`running` set or base64 anywhere in the document surfaces.
+- **The page PUTs the bytes; the worker never holds them.** The page asks the
+  worker for a ticket (`PDF_UPLOAD_TICKET`), PUTs the file itself to the
+  one-time presigned `uploadUrl` (no bearer token — the signature is the
+  authorization), then asks the worker to create the job (`PDF_CREATE_JOB`
+  with `source: {kind: 'uploaded', sourceKey, sourceFormat}` and
+  `declaredUnits` when measured). Only the web-PDF path (`PDF_TRANSLATE_URL`)
+  still fetches and PUTs from the worker, and it takes PDFs only.
+- **`awaiting_confirm` is a status of its own**, neither active nor terminal: a
+  job that measured longer than it reserved stops and asks. The page shows
+  `#docConfirmPanel` (`PDF_JOB_CONFIRM` / `PDF_JOB_ABANDON`), the popup's row
+  offers **Review**, and records keep it for 96 h (unsettled) rather than the
+  24 h a settled job gets.
+- **Only the poll raises a job's notification.** `refreshPdfJobs()` in
+  `background/pdf-jobs.js` compares each refreshed record with the one it
+  replaced and notifies on what changed — settled, now awaiting, or no longer
+  awaiting (which clears `pdf-confirm-<id>`). A page handler that learns the
+  same fact from its own fetch must not notify; the guard test checks.
+- **`PDF_OPEN_JOB` is the one way "Open" leaves a surface** — the popup row,
+  the settings list and a clicked notification. A succeeded PDF opens its
+  result URL in a tab; everything else opens `pdf/upload.html#job=<id>`,
+  where write-back formats are saved as `<name> (bilingual).<ext>` and MOBI
+  links to the website.
 
 ### Hover / Selection Translation
 

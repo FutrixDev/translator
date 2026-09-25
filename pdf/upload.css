@@ -207,3 +207,47 @@ body {
 .btn-text:hover {
   color: var(--error);
 }
+
+/* A message that is not an error: a cancellation, or "someone already
+   answered this". Same place as an error, not painted as one. */
+.job-error.is-note {
+  color: var(--text-secondary);
+}
+
+/* The over-page question (awaiting_confirm). */
+.confirm-panel {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.confirm-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+/* MOBI: no file comes back, the result is read on the website. */
+.job-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.job-link {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.job-link:hover {
+  text-decoration: underline;
+}
+
+.job-link[hidden] {
+  display: none;
+}

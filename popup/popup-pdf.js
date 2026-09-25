@@ -1,0 +1,400 @@
+// ---------------------------------------------------------------------------
+// Document translation — entry points and the compact task list
+//
+// The jobs live on the server and outlast this popup by minutes; the popup is
+// only a viewport onto the records the service worker keeps in
+// chrome.storage.local['pdfJobs']. While open it polls every 3 seconds so a
+// running job visibly moves; the background alarm covers the rest of the time.
+//
+// A classic script loaded before popup.js, in the same global lexical scope:
+// it looks up its own elements and wires its own listeners in
+// setupPdfSection(), and borrows only t() from popup.js, resolved at call time.
+// ---------------------------------------------------------------------------
+
+const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
+const DocJobs = globalThis.DocJobs;
+// D9's charge handshake — one implementation, shared with the comic overlay,
+// the upload page and the service worker (shared/comic-charge.js).
+const ChargeConfirm = globalThis.ChargeConfirm;
+// This surface's wording of the shared price sentence.
+const PDF_CHARGE_KEYS = { required: 'pdfChargeRequired', fallback: 'pdfChargeConfirm' };
+const PDF_POPUP_POLL_MS = 3000;
+const PDF_LIST_LIMIT = 3;
+// How long a finished job stays in this menu. The records live for a day so the
+// settings page has something to show while offline, but this list is not a
+// history — it is the readout for what you just started. A failure that outlasts
+// the session it belongs to stops being information and becomes a thing you
+// have to look at every time you open the menu, which is what a day of
+// "翻译超时" was. The full account, kept as long as the server keeps it, is in
+// settings; the × below is the way to drop one sooner.
+const PDF_SETTLED_VISIBLE_MS = 60 * 60 * 1000;
+let pdfPollTimer = null;
+// A create error shown inline above the list (sign-in, an exhausted allowance,
+// …). Cleared by the next successful action.
+let pdfInlineError = null;
+// The charge question, when the server has refused an unconfirmed create and
+// named its price. One at a time, and only while it is unanswered.
+let pdfInlinePrompt = null;
+// The row painted on click, before the worker has written anything. It only has
+// to survive the few milliseconds until the worker's own pending record lands;
+// renderPdfJobs drops it the moment it sees one.
+let pdfPlaceholder = null;
+// This section's own elements, looked up by setupPdfSection().
+let pdfEls = null;
+
+/** The popup's one call into this file, from its DOMContentLoaded. */
+function setupPdfSection() {
+  pdfEls = {
+    translateCurrent: document.getElementById('pdfTranslateCurrent'),
+    translateLocal: document.getElementById('pdfTranslateLocal'),
+    jobs: document.getElementById('pdfJobs')
+  };
+  pdfEls.translateCurrent.addEventListener('click', onPdfTranslateCurrent);
+  pdfEls.translateLocal.addEventListener('click', onPdfTranslateLocal);
+  // The worker writes its records to storage.local; watching them is what
+  // makes the list move between polls — including the pending row it writes
+  // the instant a create starts, from the context menu as much as from here.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.pdfJobs) return;
+    // Gated off on this device: refreshPdfSection has hidden the whole
+    // section and rendering would put it back on screen.
+    if (pdfEls.translateLocal.hidden) return;
+    const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
+    renderPdfJobs(records);
+  });
+  refreshPdfSection();
+}
+
+async function refreshPdfSection() {
+  const { enablePdfTranslation } = await AccountGate.applyAccountGate(
+    await chrome.storage.sync.get({ enablePdfTranslation: true })
+  );
+  if (!enablePdfTranslation) {
+    pdfEls.translateCurrent.hidden = true;
+    pdfEls.translateLocal.hidden = true;
+    pdfEls.jobs.hidden = true;
+    return;
+  }
+  pdfEls.translateLocal.hidden = false;
+
+  // "Translate this PDF" only where it can mean something: the tab is a PDF.
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    pdfEls.translateCurrent.hidden = !(tabs[0] && PDF_UI.isLikelyPdfUrl(tabs[0].url));
+  } catch (error) {
+    pdfEls.translateCurrent.hidden = true;
+  }
+
+  await refreshPdfJobs({ refresh: false });
+  schedulePdfPoll();
+}
+
+function schedulePdfPoll() {
+  if (pdfPollTimer) clearTimeout(pdfPollTimer);
+  pdfPollTimer = setTimeout(async () => {
+    await refreshPdfJobs({ refresh: true });
+    schedulePdfPoll();
+  }, PDF_POPUP_POLL_MS);
+}
+
+async function listPdfRecords(refresh = false) {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'PDF_JOBS_LIST', refresh });
+    if (response && response.ok) return response.data || [];
+  } catch (error) {
+    console.error('Failed to list PDF jobs:', error);
+  }
+  return [];
+}
+
+async function refreshPdfJobs({ refresh }) {
+  renderPdfJobs(await listPdfRecords(refresh));
+}
+
+/**
+ * Anything not over yet — running, or waiting on the user's answer to the
+ * over-page question, however long ago it started — and anything that
+ * finished recently enough to still be about what the user just did.
+ *
+ * `settledAt` is stamped when a job crosses into a terminal state. Records
+ * written before that field existed fall back to `createdAt`, which ages them
+ * out at least as fast — the point is that they go.
+ */
+function isPdfJobStillWorthShowing(record) {
+  if (DocJobs.isUnsettledStatus(record.status)) return true;
+  const settled = record.settledAt || record.createdAt || 0;
+  return Date.now() - settled < PDF_SETTLED_VISIBLE_MS;
+}
+
+async function dismissPdfJob(jobId) {
+  try {
+    await chrome.runtime.sendMessage({ type: 'PDF_JOB_DISMISS', jobId });
+  } catch (error) {
+    console.error('Failed to dismiss PDF job:', error);
+  }
+}
+
+function renderPdfJobs(records) {
+  const list = pdfEls.jobs;
+  list.textContent = '';
+
+  if (pdfInlineError) list.appendChild(pdfInlineError);
+  // Re-appended on every repaint, so the poll's 3-second cadence cannot wipe
+  // an unanswered question off the screen.
+  if (pdfInlinePrompt) list.appendChild(pdfInlinePrompt);
+
+  // The worker's own pending record supersedes the placeholder — same row, but
+  // one that outlives this popup.
+  if (pdfPlaceholder && records.some(r => r.pending)) pdfPlaceholder = null;
+  const fresh = records.filter(isPdfJobStillWorthShowing);
+  const rows = pdfPlaceholder ? [pdfPlaceholder, ...fresh] : fresh;
+
+  rows.slice(0, PDF_LIST_LIMIT).forEach((record) => {
+    const row = document.createElement('div');
+    row.className = 'pdf-job';
+
+    const head = document.createElement('div');
+    head.className = 'pdf-job-head';
+    const name = document.createElement('span');
+    name.className = 'pdf-job-name';
+    name.textContent = record.fileName || t('pdfTasksUnnamed');
+    name.title = record.fileName || '';
+    const status = document.createElement('span');
+    status.className = 'pdf-job-status';
+    // The same line the job card and the settings page draw; only a failure
+    // is red, a cancelled task is worded without being painted as one.
+    const line = PDF_UI.pdfStatusLine(record, t);
+    status.textContent = line.text;
+    status.classList.toggle('is-error', line.isError);
+    head.appendChild(name);
+    head.appendChild(status);
+    row.appendChild(head);
+
+    if (DocJobs.isActiveStatus(record.status)) {
+      const track = document.createElement('div');
+      track.className = 'pdf-job-track';
+      const bar = document.createElement('div');
+      bar.className = 'pdf-job-bar';
+      bar.style.width = `${Math.max(2, Math.min(100, Math.round(record.progress || 0)))}%`;
+      track.appendChild(bar);
+      row.appendChild(track);
+    } else if (record.status === 'succeeded') {
+      // dual first; the worker falls back to mono when there is none, and
+      // opens the job page instead for every format Chrome cannot show.
+      head.appendChild(pdfOpenJobButton(record, 'pdfOpen'));
+    } else if (DocJobs.isAwaitingStatus(record.status) && !record.pending) {
+      // The over-page question is answered on the job page.
+      head.appendChild(pdfOpenJobButton(record, 'docReview'));
+    }
+
+    // Only a finished row is dismissable — the placeholder has no jobId yet,
+    // a running job has abandon as its way out, and a job waiting on its
+    // confirmation is still owed an answer.
+    if (DocJobs.isTerminalStatus(record.status) && record.jobId) {
+      const dismiss = document.createElement('button');
+      dismiss.className = 'pdf-job-dismiss';
+      dismiss.textContent = '×';
+      dismiss.title = t('pdfDismiss');
+      dismiss.setAttribute('aria-label', t('pdfDismiss'));
+      dismiss.addEventListener('click', () => {
+        // Repaint from what is left rather than waiting for the storage event,
+        // so the row goes the moment it is clicked.
+        row.remove();
+        list.hidden = !list.childElementCount;
+        dismissPdfJob(record.jobId);
+      });
+      head.appendChild(dismiss);
+    }
+
+    list.appendChild(row);
+  });
+
+  list.hidden = !list.childElementCount;
+}
+
+/** A row's button that hands the job to the worker's PDF_OPEN_JOB. */
+function pdfOpenJobButton(record, labelKey) {
+  const button = document.createElement('button');
+  button.className = 'pdf-job-open';
+  button.textContent = t(labelKey);
+  button.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId, which: 'dual' });
+    window.close();
+  });
+  return button;
+}
+
+/**
+ * Ask the user to spend credits on this PDF, in the list they started it from.
+ *
+ * Only ever reached from the server's 409: the monthly allowance covers a
+ * document without any confirmation at all, so this appears exactly when real
+ * credits are about to be spent and never for free work. It is a question, not
+ * a failure, so it borrows the error row's layout and none of its red.
+ *
+ * Resolves true to spend, false to leave the balance alone.
+ */
+function promptPdfCharge(quote) {
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'pdf-job pdf-job-ask';
+
+    const text = document.createElement('span');
+    text.className = 'pdf-job-status';
+    text.textContent = ChargeConfirm.chargeText(quote, t, PDF_CHARGE_KEYS);
+
+    const answer = (approved) => {
+      // The question is over, so its buttons go with it — a late click on a
+      // stale Cancel must not land on a paid create that is already in flight.
+      pdfInlinePrompt = null;
+      box.remove();
+      resolve(approved);
+    };
+
+    const approve = document.createElement('button');
+    approve.className = 'pdf-job-open';
+    approve.textContent = t('comicChargeApprove');
+    approve.addEventListener('click', () => answer(true));
+
+    const decline = document.createElement('button');
+    decline.className = 'pdf-job-decline';
+    decline.textContent = t('comicCancel');
+    decline.addEventListener('click', () => answer(false));
+
+    box.append(text, approve, decline);
+    pdfInlinePrompt = box;
+    refreshPdfJobs({ refresh: false });
+  });
+}
+
+/**
+ * Create errors the user can act on right here: a sign-in for 401. Everything
+ * else — including a used-up monthly allowance, which nothing but waiting
+ * fixes — becomes a plain error line.
+ */
+function showPdfCreateError(error) {
+  const box = document.createElement('div');
+  box.className = 'pdf-job pdf-job-error';
+  const text = document.createElement('span');
+  text.className = 'pdf-job-status is-error';
+  text.textContent = PDF_UI.pdfErrorMessage(error, t);
+  box.appendChild(text);
+
+  if (error && (error.code === 'unauthorized' || error.loginRequired)) {
+    const button = document.createElement('button');
+    button.className = 'pdf-job-open';
+    button.textContent = t('comicSignIn');
+    button.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+      window.close();
+    });
+    box.appendChild(button);
+  }
+
+  pdfInlineError = box;
+  refreshPdfJobs({ refresh: false });
+}
+
+async function onPdfTranslateCurrent() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+    if (!tab || !PDF_UI.isLikelyPdfUrl(tab.url)) return;
+
+    // The background can't fetch file:// URLs — local PDFs go through the
+    // upload page's file picker instead (PR #26 review).
+    if (tab.url.startsWith('file:')) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
+      window.close();
+      return;
+    }
+
+    pdfInlineError = null;
+    pdfInlinePrompt = null;
+    const fileName = PDF_UI.pdfFileNameFromUrl(tab.url);
+
+    // Paint before sending, not after: creating a job is a download, a
+    // presign, an upload and a create — several seconds during which the user
+    // would otherwise see nothing and click again. The awaited response below
+    // dies with the popup, so it is never what puts the first row on screen.
+    const paintUploading = async () => {
+      pdfPlaceholder = {
+        jobId: 'placeholder',
+        fileName,
+        status: 'queued',
+        pending: true,
+        progress: 0
+      };
+      setPdfBusy(true);
+      renderPdfJobs(await listPdfRecords());
+    };
+    await paintUploading();
+
+    // The operation id the worker minted for this URL, echoed back on a 409.
+    // Sending it out again with the confirmation is what makes the paid create
+    // the SAME operation rather than a second charge for one document.
+    let operationId = null;
+    const response = await ChargeConfirm.submitWithConfirmation({
+      submit: async (confirmCharge) => {
+        const reply = await chrome.runtime.sendMessage({
+          type: 'PDF_CREATE_JOB',
+          source: { kind: 'url', url: tab.url },
+          fileName,
+          pageUrl: tab.url,
+          ...(operationId ? { operationId } : {}),
+          // Only ever true, and only after the user has said so.
+          confirmCharge: confirmCharge === true
+        }) || { ok: false, error: { code: 'no_response' } };
+        if (!reply.ok && reply.error && reply.error.operationId) {
+          operationId = reply.error.operationId;
+        }
+        return reply;
+      },
+      confirm: async (quote) => {
+        // Nothing is uploading while the question stands: the 409 reserved
+        // nothing, and a progress row under a price would be a lie.
+        setPdfBusy(false);
+        pdfPlaceholder = null;
+        const approved = await promptPdfCharge(quote);
+        if (!approved) return false;
+        await paintUploading();
+        return true;
+      }
+    });
+    setPdfBusy(false);
+    pdfPlaceholder = null;
+
+    // Declining is a cancel, not a failure — nothing was reserved, no job
+    // exists, and there is nothing to show but the list as it was.
+    if (!response.ok && response.declined) {
+      await refreshPdfJobs({ refresh: false });
+      return;
+    }
+    if (!response.ok) {
+      showPdfCreateError(response.error);
+      return;
+    }
+    await refreshPdfJobs({ refresh: false });
+  } catch (error) {
+    console.error('Failed to start PDF job:', error);
+    setPdfBusy(false);
+    pdfPlaceholder = null;
+  }
+}
+
+/**
+ * The button's in-flight state. Disabling alone is invisible in this popup —
+ * .menu-item sets an explicit colour — so popup.css carries a :disabled rule
+ * and this also swaps the label to say what is happening.
+ */
+function setPdfBusy(busy) {
+  const button = pdfEls.translateCurrent;
+  button.disabled = busy;
+  const label = button.querySelector('[data-i18n="pdfTranslateThis"]') || button;
+  label.textContent = busy ? t('pdfStatusUploading') : t('pdfTranslateThis');
+}
+
+function onPdfTranslateLocal() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
+  window.close();
+}

@@ -153,6 +153,43 @@ After translation:
 2. Select "Hide Translations" or "Show Translations"
 3. Translations are preserved, no need to re-translate
 
+#### Document Translation
+
+Runs on our servers against your monthly free page allowance, so it needs a
+signed-in account.
+
+1. Open the upload page: the popup's **Translate a Local Document…**, or the
+   same item in the toolbar icon's right-click menu.
+2. Drop a file on the page or click to pick one. Accepted: PDF (`.pdf`), Word
+   (`.docx`), EPUB (`.epub`), MOBI (`.mobi`, `.azw3`), plain text (`.txt`) and
+   Markdown (`.md`, `.markdown`).
+3. Size limits: PDF 30 MB; Word, EPUB and MOBI 50 MB; TXT and Markdown 10 MB.
+   Word, EPUB, TXT and Markdown are measured on your computer first (one page
+   = 3,000 characters); anything over 800 pages, an empty file, or a file whose
+   contents do not match its extension is refused on the spot, before
+   anything is uploaded.
+4. The file goes straight to storage through a one-time signed address, and
+   the page shows the job's progress. You can close it: the job keeps running,
+   the popup lists it, and a notification says when it is done.
+5. **If the document turns out longer than estimated**, the job stops and
+   asks. The popup's row reads "Needs your confirmation" with a **Review**
+   button (the notification is clickable too); the page says how many more
+   pages continuing will use. **Continue** carries on; **Cancel Task**, or
+   doing nothing until the stated time, cancels it with a full refund.
+6. When it is done:
+   - **PDF**: **Open Bilingual PDF** / **Open Translated PDF** open the result
+     in a tab. **Open** in the popup does the same.
+   - **Word, EPUB, TXT, Markdown**: **Save Bilingual File** / **Save
+     Translated File** save it as `<name> (bilingual).<ext>` /
+     `<name> (translated).<ext>`. **Open** in the popup brings you back to the
+     job's page.
+   - **MOBI**: the result is read on the website (**View on the web**); there
+     is no file to download.
+
+Web PDFs (an open PDF tab, or a link to one) can also be translated from the
+popup's **Translate This PDF** and the right-click menu; that path takes PDFs
+only.
+
 ### ⚙️ Supported APIs
 
 **Works with any OpenAI-compatible API endpoint.** Just configure the endpoint URL, API key, and model name.
@@ -379,6 +416,33 @@ cd translator
 1. 点击悬浮球
 2. 选择「隐藏译文」或「显示译文」
 3. 译文会被保留，再次显示无需重新翻译
+
+#### 文档翻译
+
+跑在我们的服务器上、按月度免费页数计，所以需要先登录账号。
+
+1. 打开上传页：弹窗里的「翻译本地文档…」，或工具栏图标右键菜单里的同名一项。
+2. 把文件拖到页面上，或点击选择。支持 PDF（`.pdf`）、Word（`.docx`）、EPUB
+   （`.epub`）、MOBI（`.mobi`、`.azw3`）、纯文本（`.txt`）、Markdown（`.md`、
+   `.markdown`）。
+3. 大小上限：PDF 30 MB；Word、EPUB、MOBI 50 MB；TXT、Markdown 10 MB。Word、EPUB、
+   TXT、Markdown 会先在本机数篇幅（3000 字符算一页）；超过 800 页、空文件、内容与扩展名
+   对不上的文件当场拒收，什么都不上传。
+4. 文件经一次性签名地址直接传到存储，页面显示任务进度。可以关掉页面：任务照常跑，
+   弹窗里能看到它，完成时有通知。
+5. **文档比预计长时**，任务会停下来问你。弹窗那一行显示「需要你确认」和「查看」按钮
+   （通知也可以点）；页面上写明继续要多用几页。点「继续」接着翻；点「取消任务」，
+   或到页面写的时间还没处理，任务取消并全额退回。
+6. 完成后：
+   - **PDF**：「打开双语 PDF」/「打开译文 PDF」在新标签页打开结果；弹窗里的「打开」
+     也一样。
+   - **Word、EPUB、TXT、Markdown**：「保存双语文件」/「保存译文文件」存成
+     `<文件名> (双语).<扩展名>` / `<文件名> (译文).<扩展名>`；弹窗里的「打开」回到这个
+     任务的页面。
+   - **MOBI**：结果在网站上阅读（「在网页中查看」），没有可下载的文件。
+
+网页上的 PDF（打开着的 PDF 标签页，或指向 PDF 的链接）也可以从弹窗的「翻译此 PDF」
+和右键菜单翻译；这条路只接 PDF。
 
 ### ⚙️ 支持的 API
 

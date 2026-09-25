@@ -1,46 +1,57 @@
-// Blab Translation — PDF translation API client (service worker side)
+// Blab Translation — document translation API client (service worker side)
 //
-// PDF translation is the comic pipeline's shape with a bigger document in the
-// middle: it runs on our servers, draws on the same monthly free page
-// allowance, and needs the same signed-in
-// account. Everything auth-related is therefore imported from comic-client.js
-// rather than duplicated — one token, one sign-in, one error model.
+// Document translation is the comic pipeline's shape with a bigger document in
+// the middle: it runs on our servers, draws on the same monthly free page
+// allowance, and needs the same signed-in account. Everything auth-related is
+// therefore imported from comic-client.js rather than duplicated — one token,
+// one sign-in, one error model.
 //
 // The transport differs from comics in one deliberate way: the bytes never
-// travel through the API Worker. The extension asks /api/pdf/uploads for a
-// presigned PUT, uploads straight to object storage, and only then creates the
-// job against the storage key. See the server design doc
-// (2026-08-02-pdf-translation-server-retypeset-design.md §3.1).
+// travel through the API Worker. The client asks /api/pdf/uploads for a
+// presigned PUT, the bytes go straight to object storage, and only then is the
+// job created against the storage key. For a file the user picked, the upload
+// PAGE does that PUT itself (it holds the File, and only its XHR reports
+// progress); this module hands it the ticket. For a PDF fetched from a URL the
+// worker has the bytes, so it PUTs them here (putSource).
+//
+// What a document is — formats, limits, MIME types, the sniff, the status sets
+// — lives in shared/doc-jobs.js. Nothing here keeps a copy.
 
 import { apiFetch, getToken, ComicApiError } from './comic-client.js';
-// Side-effect module (no exports): publishes the shared error map on
-// globalThis, the same dual-mode arrangement as i18n/messages.js. The pages
-// load the identical file with a <script> tag via pdf/pdf-ui.js.
+// Side-effect modules (no exports): each publishes itself on globalThis, the
+// same dual-mode arrangement as i18n/messages.js. doc-jobs first, because the
+// error map reads it.
+import '../shared/doc-jobs.js';
 import '../shared/pdf-errors.js';
 
-// Kept in sync with pdfMaxBytes() on the server. Checking here saves the user
-// a 30 MiB upload that would only be refused at job creation.
-const MAX_PDF_BYTES = 30 * 1024 * 1024;
+const DocJobs = globalThis.DocJobs;
 
-// ---------------------------------------------------------------------------
-// Byte validation
-// ---------------------------------------------------------------------------
+function signInError() {
+  return new ComicApiError('unauthorized', 'Sign in to translate documents', 401, { loginRequired: true });
+}
 
-/** Magic-byte sniff: every real PDF starts with "%PDF-". */
-export function isPdfBytes(buffer) {
-  const b = new Uint8Array(buffer);
-  if (b.length < 5) return false;
-  return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d;
+/** The size refusal, in the server's own shape (createPdfUploadTicket). */
+function tooLargeError(format, bytes) {
+  return new ComicApiError(
+    format === 'pdf' ? 'pdf_too_large' : 'file_too_large',
+    'The document exceeds the size limit',
+    413,
+    { maxBytes: DocJobs.maxBytesFor(format), bytes, format }
+  );
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
 }
 
 // ---------------------------------------------------------------------------
-// Source acquisition
+// Source acquisition (the URL path: PDF only)
 // ---------------------------------------------------------------------------
 
 /**
  * Fetch a PDF the user is looking at, from the worker.
  *
- * `credentials: 'include'` for the same reason as fetchImageAsBase64: a paper
+ * `credentials: 'include'` for the same reason as the comic image fetch: a paper
  * behind an institutional login serves its bytes only to a cookie-bearing
  * request. Any failure — network, login wall, HTML interstitial — collapses to
  * `source_fetch_failed`, whose user-facing answer is always the same: download
@@ -63,122 +74,133 @@ export async function fetchPdfFromUrl(url) {
     throw new ComicApiError('source_fetch_failed', `The PDF could not be downloaded (HTTP ${response.status})`, response.status);
   }
   const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > MAX_PDF_BYTES) {
-    throw new ComicApiError('pdf_too_large', 'The PDF exceeds the size limit', 413, { maxBytes: MAX_PDF_BYTES });
+  if (buffer.byteLength > DocJobs.maxBytesFor('pdf')) {
+    throw tooLargeError('pdf', buffer.byteLength);
   }
   // A login wall's HTML answered with a 200 is not a PDF; catching it here is
   // what turns "engine failed minutes later" into "could not fetch, upload it
   // yourself" at click time.
-  if (!isPdfBytes(buffer)) {
+  const head = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, DocJobs.SNIFF_BYTES));
+  if (!DocJobs.matchesDeclaredFormat(head, 'pdf')) {
     throw new ComicApiError('source_fetch_failed', 'The URL did not return a PDF');
   }
   return buffer;
 }
 
 // ---------------------------------------------------------------------------
-// Jobs
+// Transport: ticket → PUT → create
 // ---------------------------------------------------------------------------
 
 /**
- * Start a PDF translation. Returns the 202 job view: `{jobId, status,
- * progress, pageCount, quote, ...}`.
+ * Ask for a presigned PUT for one operation. Returns `{sourceKey, uploadUrl,
+ * maxBytes, sourceFormat}`.
  *
- * Three hops, all idempotent under `operationId`: ticket → presigned PUT →
- * job creation. Re-running the whole sequence with the same operationId lands
- * on the same storage key and adopts the same job instead of paying twice.
+ * The token is checked first and the size second, both before any request: a
+ * signed-out click must not learn it needed a sign-in only after an upload,
+ * and an oversized file must not cost a round trip to be refused.
  *
- * `confirmCharge` is D9's answer to "this will spend credits, is that alright",
- * and the PDF half of the same handshake comic jobs run (app/api/pdf/jobs
- * /route.ts): a job that would cost credits and did not say yes is refused with
- * 409 QUOTE_CONFIRM_REQUIRED carrying the server's own quote, having reserved
- * nothing. The caller shows that quote and comes back through here with the
- * SAME operationId and `confirmCharge: true`, which is the same operation and
- * therefore cannot be charged twice. Work the monthly allowance covers is never
- * refused, so the question is only ever asked about real credits. Deciding to
- * ask is not this layer's job — see shared/comic-charge.js and the three
- * surfaces that own the asking (the upload page, the popup, and the
- * context-menu notification).
+ * Neither `fileName` nor the deprecated `format` alias is sent. The server only
+ * guesses a format from a name when none is declared, and this client always
+ * declares one.
  */
-export async function createPdfJob({
-  operationId,
-  bytes,
-  fileName,
-  targetLang,
-  outputKind = 'dual',
-  dualLayout = 'side-by-side',
-  confirmCharge
-}) {
-  // Ask for the token before touching the bytes: a signed-out click must not
-  // wait through a 30 MiB upload to learn it needed a sign-in.
-  if (!(await getToken())) {
-    throw new ComicApiError('unauthorized', 'Sign in to translate PDFs', 401, { loginRequired: true });
-  }
-
-  if (!bytes || !bytes.byteLength) {
-    throw new ComicApiError('invalid_pdf', 'No PDF bytes to upload');
-  }
-  if (bytes.byteLength > MAX_PDF_BYTES) {
-    throw new ComicApiError('pdf_too_large', 'The PDF exceeds the size limit', 413, {
-      maxBytes: MAX_PDF_BYTES,
-      bytes: bytes.byteLength
-    });
-  }
-  if (!isPdfBytes(bytes)) {
-    throw new ComicApiError('invalid_pdf', 'This file is not a PDF');
-  }
-
-  const opId = operationId || crypto.randomUUID();
+export async function requestUploadTicket({ operationId, byteSize, sourceFormat }) {
+  if (!(await getToken())) throw signInError();
+  if (byteSize > DocJobs.maxBytesFor(sourceFormat)) throw tooLargeError(sourceFormat, byteSize);
 
   const ticket = await apiFetch('/api/pdf/uploads', {
     method: 'POST',
-    body: { operationId: opId, byteSize: bytes.byteLength }
+    body: { operationId, byteSize, sourceFormat }
   });
-  if (!ticket || !ticket.uploadUrl || !ticket.sourceKey) {
-    throw new ComicApiError('upload_failed', 'The service returned no upload ticket');
+  // A ticket for a different format would name a key ending in the wrong
+  // extension, and the create would refuse it a round trip later.
+  if (!ticket || !nonEmptyString(ticket.sourceKey) || !nonEmptyString(ticket.uploadUrl) ||
+      ticket.sourceFormat !== sourceFormat) {
+    throw new ComicApiError('upload_failed', 'The service returned no usable upload ticket');
   }
+  return {
+    sourceKey: ticket.sourceKey,
+    uploadUrl: ticket.uploadUrl,
+    maxBytes: ticket.maxBytes || DocJobs.maxBytesFor(sourceFormat),
+    sourceFormat
+  };
+}
 
-  // The presigned PUT goes to object storage, not the API — no bearer token,
-  // and the signature in the URL is the entire authorization.
-  let putResponse;
+/**
+ * The worker's own presigned PUT (the URL path). No bearer token: the
+ * signature in the URL is the entire authorization.
+ *
+ * The log line carries the status and the operation id and nothing else — the
+ * URL is a credential for as long as it lives, and a storage error body can
+ * echo it back.
+ */
+export async function putSource(uploadUrl, bytes, format, operationId) {
+  let response;
   try {
-    putResponse = await fetch(ticket.uploadUrl, {
+    response = await fetch(uploadUrl, {
       method: 'PUT',
-      headers: { 'content-type': 'application/pdf' },
+      headers: { 'content-type': DocJobs.contentTypeFor(format) },
       body: bytes
     });
   } catch (error) {
-    throw new ComicApiError('upload_failed', error?.message || 'Uploading the PDF failed');
+    console.warn(`[pdf] presigned PUT failed: network op=${operationId}`);
+    throw new ComicApiError('upload_failed', error?.message || 'Uploading the document failed');
   }
-  if (!putResponse.ok) {
-    // The storage PUT does not go through apiFetch, so it gets its own line in
-    // the SW console — without one, "upload_failed" is undiagnosable later.
-    const bodySnippet = await putResponse.text().then(t => t.slice(0, 200)).catch(() => '');
-    console.warn(`[pdf] presigned PUT failed: HTTP ${putResponse.status} op=${opId} ${bodySnippet}`);
-    throw new ComicApiError('upload_failed', `Uploading the PDF failed (HTTP ${putResponse.status})`, putResponse.status);
+  if (!response.ok) {
+    console.warn(`[pdf] presigned PUT failed: HTTP ${response.status} op=${operationId}`);
+    throw new ComicApiError('upload_failed', `Uploading the document failed (HTTP ${response.status})`, response.status);
   }
+}
 
+/**
+ * Create the job against an uploaded source. Returns the 202 job view plus the
+ * operation id and file name it was created under.
+ *
+ * Idempotent under `operationId`: re-posting it adopts the existing job instead
+ * of paying twice.
+ *
+ * `confirmCharge` is D9's answer to "this will spend credits, is that alright":
+ * a job that would cost credits and did not say yes is refused with 409
+ * QUOTE_CONFIRM_REQUIRED carrying the server's quote, having reserved nothing.
+ * The caller shows that quote and comes back with the SAME operationId and
+ * `confirmCharge: true`, which is the same operation and cannot be charged
+ * twice. Deciding to ask is not this layer's job — see shared/comic-charge.js.
+ *
+ * `declaredUnits` is the flow-document measurement (shared/doc-measure.js), in
+ * standard pages. Sent only as a positive integer: the server reserves one page
+ * for a document that says nothing, and asks again once it has counted.
+ */
+export async function createJobFromUpload({
+  operationId,
+  sourceKey,
+  sourceFormat,
+  fileName,
+  targetLang,
+  confirmCharge,
+  declaredUnits
+}) {
   const job = await apiFetch('/api/pdf/jobs', {
     method: 'POST',
     body: {
-      operationId: opId,
-      sourceKey: ticket.sourceKey,
+      operationId,
+      sourceKey,
+      sourceFormat,
       // Cosmetic, but it has to travel: the name lives on the job row so the
       // website's history can label a job this extension created.
       fileName: fileName || '',
       targetLang: targetLang || 'zh-CN',
       output: {
-        kind: outputKind,
-        dualLayout,
+        kind: 'dual',
+        dualLayout: 'side-by-side',
         watermark: false
       },
+      ...(Number.isInteger(declaredUnits) && declaredUnits > 0 ? { declaredUnits } : {}),
       // Sent only to say yes. Absent is the server's default and already means
-      // "not confirmed", so an unconfirmed create carries no claim at all —
-      // and the server refuses anything that is not a boolean outright
-      // (400 invalid_confirm_charge), which is why nothing else is ever sent.
+      // "not confirmed", and the server refuses anything that is not a boolean
+      // outright (400 invalid_confirm_charge).
       ...(confirmCharge === true ? { confirmCharge: true } : {})
     }
   });
-  return { ...job, operationId: opId, fileName: fileName || '' };
+  return { ...job, operationId, fileName: fileName || '' };
 }
 
 export function getPdfJob(jobId) {
@@ -186,13 +208,18 @@ export function getPdfJob(jobId) {
 }
 
 /**
+ * The user agreed to pay for what the document turned out to be. No body: the
+ * number being confirmed is the one in the job's own view, and a client naming
+ * its own price is exactly what the server refuses to accept.
+ */
+export function confirmPdfJob(jobId) {
+  return apiFetch(`/api/pdf/jobs/${encodeURIComponent(jobId)}/confirm`, { method: 'POST' });
+}
+
+/**
  * The account's own job list, newest first — every device it ever translated
- * from, not just this one.
- *
- * The local records in this file are a device's cache and outlive nothing: 24h
- * TTL, 20 rows, gone with the browser profile. The settings page shows the
- * history a user actually means when they say "my translations", so it reads
- * the server and treats this as the truth.
+ * from, not just this one. The local records below are a device's cache; the
+ * settings page shows the history a user actually means.
  */
 export async function listPdfJobs() {
   const data = await apiFetch('/api/pdf/jobs');
@@ -210,26 +237,50 @@ export function abandonPdfJob(jobId) {
 // chrome.storage.local: the records name server jobs bound to this device's
 // token, exactly like the token itself. An array ordered newest-first.
 const JOBS_KEY = 'pdfJobs';
-const JOB_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_JOB_RECORDS = 20;
+const HOUR_MS = 60 * 60 * 1000;
+// A finished job stays a day after it finished.
+const SETTLED_TTL_MS = 24 * HOUR_MS;
+// A job not over yet stays four days from its creation: the server holds an
+// awaiting_confirm job for 72 h, and the record must outlive that window or the
+// one row that asks the user to confirm vanishes while the question is open.
+const UNSETTLED_TTL_MS = 96 * HOUR_MS;
 
-// A record written the moment the user clicks, before the download, the
-// presigned PUT and the create have run — the several seconds during which
-// nothing else exists to look at. It carries `pending: true` and a synthetic
-// `local:<operationId>` id, and is replaced by the real record (or marked
-// failed) as soon as the create settles.
+// A record written before the job exists — the ticket, the upload, the create.
+// It carries `pending: true` and a synthetic `local:<operationId>` id, and is
+// replaced by the real record (or marked failed) as soon as the create settles.
 const PENDING_ID_PREFIX = 'local:';
-// A pending record older than this belongs to a worker that was killed
-// mid-upload: nothing will ever come back to replace it, so stop showing it as
-// in-flight. Generous enough to cover a 30 MiB upload on a slow link.
-const PENDING_STALE_MS = 10 * 60 * 1000;
-
-function isActiveStatus(status) {
-  return status === 'queued' || status === 'running';
-}
+// A pending record older than this belongs to a worker or a page that died
+// mid-upload: nothing will come back to replace it, so stop showing it as in
+// flight. The create resets the clock (handlePdfCreateJob), so this bounds the
+// silence after the upload, not the upload itself.
+const PENDING_STALE_MS = 20 * 60 * 1000;
 
 export function pendingJobId(operationId) {
   return `${PENDING_ID_PREFIX}${operationId}`;
+}
+
+/**
+ * The click's receipt: a row written before the server has a job to name, so
+ * the surfaces have something to show during the upload. Both creates write
+ * it — the upload ticket (after the ticket is granted) and the create itself
+ * (which resets it, so the stale clock starts at the create, not the upload).
+ */
+export function receiptRecord({ operationId, fileName, sourceFormat }) {
+  return {
+    jobId: pendingJobId(operationId),
+    operationId,
+    fileName: fileName || `document.${DocJobs.extensionFor(sourceFormat)}`,
+    sourceFormat,
+    status: 'queued',
+    stage: null,
+    progress: 0,
+    results: null,
+    error: null,
+    confirm: null,
+    pending: true,
+    createdAt: Date.now()
+  };
 }
 
 export function isPendingRecord(record) {
@@ -242,32 +293,72 @@ export function isPendingRecord(record) {
  * Only while it is in flight. Once it has failed it names no server job and
  * carries no jobId to match one by, so a settled pending row cannot be told
  * apart from the case that matters: the create reached the server, the response
- * was lost on the way back, and the job it made is in that list already. Keeping
- * the row would show one operation twice — a failed upload beside the job that
- * is actually running. The popup showed that error live when it happened; the
- * history is the server's account.
+ * was lost on the way back, and the job it made is in that list already.
  */
 export function isPendingInFlight(record) {
-  return isPendingRecord(record) && isActiveStatus(record && record.status);
+  return isPendingRecord(record) && DocJobs.isActiveStatus(record && record.status);
+}
+
+/** Has this record outlived its TTL? Finished jobs age from when they finished. */
+function isExpired(record, now) {
+  if (DocJobs.isTerminalStatus(record.status)) {
+    return (record.settledAt || record.createdAt || 0) + SETTLED_TTL_MS <= now;
+  }
+  return (record.createdAt || 0) + UNSETTLED_TTL_MS <= now;
+}
+
+/**
+ * The invariant every write goes through: `settledAt` is set if and only if the
+ * status is terminal. An awaiting_confirm job is not over, and a record that
+ * said it was would age out of the popup while it still needs an answer.
+ */
+function withSettledAt(record) {
+  if (DocJobs.isTerminalStatus(record.status)) {
+    return record.settledAt ? record : { ...record, settledAt: Date.now() };
+  }
+  return { ...record, settledAt: null };
+}
+
+/**
+ * Newest first, at most `max`. Over the cap, finished records go before
+ * unfinished ones, oldest first: a job still running or waiting on the user is
+ * the last thing this list may forget.
+ */
+export function capRecords(records, max = MAX_JOB_RECORDS) {
+  const sorted = [...records].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  let excess = sorted.length - max;
+  if (excess <= 0) return sorted;
+  const drop = new Set();
+  const evict = (eligible) => {
+    for (let i = sorted.length - 1; i >= 0 && excess > 0; i--) {
+      if (!drop.has(sorted[i]) && eligible(sorted[i])) {
+        drop.add(sorted[i]);
+        excess--;
+      }
+    }
+  };
+  evict(r => DocJobs.isTerminalStatus(r.status));
+  evict(() => true);
+  return sorted.filter(r => !drop.has(r));
 }
 
 export async function listJobRecords() {
   const stored = await chrome.storage.local.get({ [JOBS_KEY]: [] });
   const records = Array.isArray(stored[JOBS_KEY]) ? stored[JOBS_KEY] : [];
-  const cutoff = Date.now() - JOB_TTL_MS;
-  const staleCutoff = Date.now() - PENDING_STALE_MS;
+  const now = Date.now();
   let swept = false;
   const live = [];
   for (const record of records) {
-    if (!record || !record.jobId || (record.createdAt || 0) <= cutoff) {
+    if (!record || !record.jobId || isExpired(record, now)) {
       swept = true;
       continue;
     }
-    if (isPendingRecord(record) && isActiveStatus(record.status) && (record.createdAt || 0) <= staleCutoff) {
+    if (isPendingRecord(record) && DocJobs.isActiveStatus(record.status) &&
+        (record.createdAt || 0) <= now - PENDING_STALE_MS) {
       record.status = 'failed';
       record.stage = null;
       record.error = { code: 'no_response', message: 'The upload did not finish' };
-      record.settledAt = Date.now();
+      record.settledAt = now;
       swept = true;
     }
     live.push(record);
@@ -288,12 +379,9 @@ export async function replaceJobRecord(oldJobId, record) {
   const records = await listJobRecords();
   const previous = records.find(r => r.jobId === oldJobId);
   const rest = records.filter(r => r.jobId !== oldJobId && r.jobId !== record.jobId);
-  const merged = { ...(previous || {}), ...record, pending: false };
+  const merged = withSettledAt({ ...(previous || {}), ...record, pending: false });
   if (!merged.createdAt) merged.createdAt = previous?.createdAt || Date.now();
-  const next = [merged, ...rest]
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    .slice(0, MAX_JOB_RECORDS);
-  await chrome.storage.local.set({ [JOBS_KEY]: next });
+  await chrome.storage.local.set({ [JOBS_KEY]: capRecords([merged, ...rest]) });
   return merged;
 }
 
@@ -302,12 +390,9 @@ export async function saveJobRecord(record) {
   const records = await listJobRecords();
   const rest = records.filter(r => r.jobId !== record.jobId);
   const existing = records.find(r => r.jobId === record.jobId);
-  const merged = { ...(existing || {}), ...record };
+  const merged = withSettledAt({ ...(existing || {}), ...record });
   if (!merged.createdAt) merged.createdAt = Date.now();
-  const next = [merged, ...rest]
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    .slice(0, MAX_JOB_RECORDS);
-  await chrome.storage.local.set({ [JOBS_KEY]: next });
+  await chrome.storage.local.set({ [JOBS_KEY]: capRecords([merged, ...rest]) });
   return merged;
 }
 
@@ -315,9 +400,7 @@ export async function saveJobRecord(record) {
  * Forget one job on this device.
  *
  * Local only, and deliberately so: the row it removes is the popup's copy, not
- * the job. A dismissed success is still downloadable from the settings history,
- * and a dismissed failure was still charged or refunded exactly as it was — the
- * server's account of both is untouched.
+ * the job. The server's account of it is untouched.
  */
 export async function dismissJobRecord(jobId) {
   const records = await listJobRecords();
@@ -328,12 +411,96 @@ export async function dismissJobRecord(jobId) {
   return next;
 }
 
+/**
+ * Is there anything for the poll alarm to watch?
+ *
+ * Active jobs only. A job awaiting confirmation does not move until the user
+ * answers (the confirm handler re-arms the alarm) or the server gives up after
+ * 72 h — waking the worker every minute for three days to learn nothing is the
+ * wrong trade. Pending records have no server job behind them yet.
+ */
 export async function hasActiveJobs() {
   const records = await listJobRecords();
-  // Pending records deliberately do not hold the alarm open: there is no
-  // server job behind them yet to poll, and the create path re-arms the alarm
-  // itself the moment there is one.
-  return records.some(r => !isPendingRecord(r) && isActiveStatus(r.status));
+  return records.some(r => !isPendingRecord(r) && DocJobs.isActiveStatus(r.status));
+}
+
+// ---------------------------------------------------------------------------
+// Server view → record
+// ---------------------------------------------------------------------------
+
+/** The fields of a record that the server's view owns. */
+export function recordFieldsFromView(view) {
+  return {
+    status: view.status,
+    progress: view.progress,
+    stage: view.stage || null,
+    pageCount: view.pageCount,
+    results: view.results || null,
+    error: view.error || null,
+    confirm: view.confirm || null
+  };
+}
+
+/**
+ * Fold a server view into a record. Pure.
+ *
+ * `transition` names what the change means to someone not looking:
+ * `'settled'` when the job just became terminal, `'awaiting'` when it just
+ * started waiting for a confirmation, null otherwise. `leftAwaiting` is set
+ * when it stopped waiting, whichever way — the question it posed is gone.
+ */
+export function applyJobView(record, view) {
+  const before = record.status;
+  const next = withSettledAt({ ...record, ...recordFieldsFromView(view) });
+  const settled = DocJobs.isTerminalStatus(next.status) && !DocJobs.isTerminalStatus(before);
+  const awaiting = DocJobs.isAwaitingStatus(next.status) && !DocJobs.isAwaitingStatus(before);
+  return {
+    record: next,
+    transition: settled ? 'settled' : (awaiting ? 'awaiting' : null),
+    leftAwaiting: DocJobs.isAwaitingStatus(before) && !DocJobs.isAwaitingStatus(next.status)
+  };
+}
+
+/**
+ * The part of a failure worth keeping on a record: the code, the message, and
+ * the facts the copy interpolates. A ComicApiError keeps the body's extra
+ * fields under `details`; a messaging error has them flattened.
+ */
+export function errorRecordFrom(error) {
+  const out = {
+    code: (error && error.code) || 'engine_error',
+    message: (error && error.message) || ''
+  };
+  for (const name of ['maxPages', 'maxBytes', 'format', 'pageCount', 'refunded']) {
+    const value = error?.[name] ?? error?.details?.[name];
+    if (value !== undefined && value !== null) out[name] = value;
+  }
+  return out;
+}
+
+/** A job is dead and its operation id with it: a replay would adopt the corpse. */
+async function releaseIfBurned(record) {
+  if (record.status === 'failed' || record.status === 'abandoned') {
+    await releaseUrlOperationId(record.operationId);
+  }
+}
+
+/**
+ * The page-driven update: a surface just fetched this view. Only a record that
+ * already exists is touched — the settings page lists the whole account, and
+ * minting a record for another device's job would push it to the top of this
+ * device's list as if it had just run here. Returns the applyJobView result, or
+ * null when there was no record.
+ */
+export async function updateRecordFromView(jobId, view) {
+  const records = await listJobRecords();
+  const index = records.findIndex(r => r.jobId === jobId);
+  if (index === -1) return null;
+  const change = applyJobView(records[index], view);
+  records[index] = change.record;
+  await chrome.storage.local.set({ [JOBS_KEY]: records });
+  if (change.transition === 'settled') await releaseIfBurned(change.record);
+  return change;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,20 +511,19 @@ export async function hasActiveJobs() {
 // (and reserved points for) a create we never heard back from, a retry with a
 // FRESH id would be a second paid job for the same PDF (PR #26 review). So the
 // id is minted once per URL and persisted BEFORE the first attempt; every
-// retry reuses it and lands on the server's idempotent adopt path — including
-// the happy accident that retrying an already-finished operation resolves
-// instantly and free.
+// retry reuses it and lands on the server's idempotent adopt path.
 //
 // The idempotency is for LIVE work only, though. The server adopts a job for
 // (user, operationId) whatever its status, and billing refuses to reserve
 // under an id it already settled — so once the job behind an id is failed,
-// abandoned, or gone, every replay of that id is the same dead end, for the
-// whole 24h TTL. That was the "翻译此PDF fails forever after one hiccup" bug:
+// abandoned, or gone, every replay of that id is the same dead end.
 // releaseUrlOperationId() below is called the moment an id is seen to be
 // burned, so the NEXT click mints a fresh id, a fresh reservation, a fresh
-// dispatch. (The web app never had the bug — it mints a UUID per submit.)
+// dispatch.
 const URL_OPS_KEY = 'pdfUrlOps';
-const URL_OP_TTL_MS = JOB_TTL_MS; // aligned with the job records they map to
+// Its own number, not the records' TTL: a binding answers "is this click a
+// replay?", which stops mattering a day after the click whatever the job did.
+const URL_OP_TTL_MS = 24 * HOUR_MS;
 const MAX_URL_OPS = 40;
 
 export async function getOrCreateUrlOperationId(url) {
@@ -389,15 +555,13 @@ export async function getOrCreateUrlOperationId(url) {
  * Forget a URL → operationId binding whose id can never run again.
  *
  * Called when the id is known to be burned: the job behind it ended in
- * `failed`/`abandoned`, the server no longer knows the job (404 — e.g. deleted
- * from the web history), or the create was refused with
- * `operation_already_finished` / `output_conflict` / `job_conflict`. NOT
- * called for queued/running/succeeded — those are exactly the states the
- * binding exists to make replays converge on.
+ * `failed`/`abandoned`, the server no longer knows the job (404), or the create
+ * was refused with `operation_already_finished` / `output_conflict` /
+ * `job_conflict`. NOT called for queued/running/awaiting/succeeded — those are
+ * exactly the states the binding exists to make replays converge on.
  *
- * Keyed by the id, not the URL: the callers that observe a burned id (a poll
- * transition, a create rejection) hold the record, which no longer remembers
- * which URL minted it.
+ * Keyed by the id, not the URL: the callers that observe a burned id hold the
+ * record, which no longer remembers which URL minted it.
  */
 export async function releaseUrlOperationId(operationId) {
   if (!operationId) return;
@@ -418,13 +582,10 @@ export async function releaseUrlOperationId(operationId) {
 /**
  * The URL an operation id was minted for, or null.
  *
- * The reverse of getOrCreateUrlOperationId, and it exists for the context
- * menu's charge confirmation: that question is asked in a notification, whose
- * answer can arrive minutes later and after the service worker has been torn
- * down and restarted. Rather than persist a second copy of the request, the
- * notification carries the operation id in its own id and the URL is looked
- * back up here — the binding that already outlives the worker is the only
- * state involved, so there is nothing extra to keep in sync or expire.
+ * It exists for the context menu's charge confirmation: that question is asked
+ * in a notification, whose answer can arrive minutes later and after the
+ * service worker has been torn down. The notification carries the operation id
+ * in its own id and the URL is looked back up here.
  */
 export async function findUrlForOperationId(operationId) {
   if (!operationId) return null;
@@ -438,20 +599,26 @@ export async function findUrlForOperationId(operationId) {
 }
 
 /**
- * Re-poll every non-terminal record and persist what came back.
+ * Re-poll every record that is not over and names a server job, and persist
+ * what came back.
  *
- * Returns `{records, transitions}` — `transitions` are the records that just
- * crossed into a terminal state on THIS refresh, which is exactly the set the
- * caller may want to notify about. A job the server no longer knows (404 after
- * a sweep) is marked failed rather than left "running" forever.
+ * Awaiting records are polled too: this runs when someone opens the popup, and
+ * a job the user confirmed from the website, or that the server gave up on,
+ * must not read "needs your confirmation" here forever.
+ *
+ * Returns `{records, changes}` — each change is an applyJobView result
+ * (`{record, transition, leftAwaiting}`), which is exactly what the caller
+ * decides notifications from. A job the server no longer knows (404 after a
+ * sweep) is marked failed rather than left "running" forever.
  */
 export async function refreshJobRecords() {
   const records = await listJobRecords();
-  const transitions = [];
+  const changes = [];
   let changed = false;
 
-  for (const record of records) {
-    if (!isActiveStatus(record.status)) continue;
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    if (!DocJobs.isUnsettledStatus(record.status)) continue;
     // A pending record names no server job — `getPdfJob('local:…')` would 404
     // and the 404 branch below would wrongly bury a job still uploading.
     if (isPendingRecord(record)) continue;
@@ -460,50 +627,38 @@ export async function refreshJobRecords() {
       view = await getPdfJob(record.jobId);
     } catch (error) {
       if (error instanceof ComicApiError && error.status === 404) {
-        Object.assign(record, {
+        view = {
           status: 'failed',
-          error: { code: 'engine_error', message: 'The job is no longer known to the service' },
-          settledAt: Date.now()
-        });
-        // The server forgot the job (swept, or deleted from the web history);
-        // its billing reservation is settled, so a replay of this id would
-        // only 409. Release it so the next click starts clean.
-        await releaseUrlOperationId(record.operationId);
-        transitions.push(record);
-        changed = true;
-      }
-      // Auth or network trouble: leave the record as-is, a later poll retries.
-      continue;
-    }
-    const before = record.status;
-    Object.assign(record, {
-      status: view.status,
-      progress: view.progress,
-      stage: view.stage || null,
-      pageCount: view.pageCount,
-      results: view.results || null,
-      error: view.error || null
-    });
-    if (before !== view.status) changed = true;
-    if (isActiveStatus(before) && !isActiveStatus(view.status)) {
-      // When it stopped, which is what the popup ages a finished row out by.
-      record.settledAt = Date.now();
-      transitions.push(record);
-      // A failure burns the operation id (see releaseUrlOperationId); a
-      // success keeps it — replaying a succeeded id resolves instantly, free.
-      if (view.status === 'failed' || view.status === 'abandoned') {
-        await releaseUrlOperationId(record.operationId);
+          progress: record.progress,
+          stage: null,
+          pageCount: record.pageCount,
+          error: { code: 'engine_error', message: 'The job is no longer known to the service' }
+        };
+      } else {
+        // Auth or network trouble: leave the record as-is, a later poll retries.
+        continue;
       }
     }
+    const change = applyJobView(record, view);
+    records[i] = change.record;
+    if (change.record.status !== record.status || change.transition || change.leftAwaiting) {
+      changed = true;
+      changes.push(change);
+    } else if (change.record.progress !== record.progress) {
+      changed = true;
+    }
+    // A failure burns the operation id (see releaseUrlOperationId); a success
+    // keeps it — replaying a succeeded id resolves instantly, free.
+    if (change.transition === 'settled') await releaseIfBurned(change.record);
   }
 
-  if (changed || transitions.length) {
+  if (changed) {
     await chrome.storage.local.set({ [JOBS_KEY]: records });
   }
-  return { records, transitions };
+  return { records, changes };
 }
 
 /** The shared map from shared/pdf-errors.js, re-exported for the worker. */
-export const { pdfErrorMessageKey, pdfErrorMessage } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
+export const { pdfErrorMessageKey, pdfErrorMessage, pdfAbandonedKey } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
 
-export { MAX_PDF_BYTES, ComicApiError };
+export { ComicApiError };

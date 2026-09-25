@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title data-i18n="pdfUploadTitle">Translate a PDF</title>
+  <title data-i18n="pdfUploadTitle">Translate a Document</title>
   <link rel="stylesheet" href="upload.css">
 </head>
 <body>
@@ -11,13 +11,13 @@
     <header class="header">
       <img src="../icons/icon48.png" width="36" height="36" alt="">
       <div class="header-text">
-        <h1 data-i18n="pdfUploadTitle">Translate a PDF</h1>
-        <p class="hint" data-i18n="pdfAccountShared">Same account as comic translation. 20 PDF pages free every month.</p>
+        <h1 data-i18n="pdfUploadTitle">Translate a Document</h1>
+        <p class="hint" data-i18n="pdfAccountShared">Same account as comic translation. 20 document pages free every month.</p>
       </div>
     </header>
 
     <main class="main">
-      <!-- Local file entry: drag a PDF anywhere onto the zone, or click it. -->
+      <!-- Local file entry: drag a document anywhere onto the zone, or click it. -->
       <div id="pdfDrop" class="drop-zone" tabindex="0" role="button">
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -25,9 +25,10 @@
           <path d="M12 18v-6"/>
           <path d="M9 15l3-3 3 3"/>
         </svg>
-        <p class="drop-text" data-i18n="pdfUploadDrop">Drop a PDF here, or click to choose a file</p>
-        <p class="hint" data-i18n="pdfUploadLimit">Up to 30 MB and 200 pages. Scanned PDFs are not supported.</p>
-        <input type="file" id="pdfFileInput" accept="application/pdf,.pdf" hidden>
+        <p class="drop-text" data-i18n="pdfUploadDrop">Drop a document here, or click to choose a file</p>
+        <p class="hint" data-i18n="pdfUploadLimit">PDF up to 30 MB; Word, EPUB and MOBI up to 50 MB; TXT and Markdown up to 10 MB. Scanned PDFs are not supported.</p>
+        <!-- accept is filled in at load from DocJobs.acceptList(). -->
+        <input type="file" id="pdfFileInput" hidden>
       </div>
 
       <!-- The current job. One at a time: this page exists to shepherd the
@@ -41,12 +42,27 @@
           <div class="progress-bar" id="pdfProgressBar"></div>
         </div>
         <p id="pdfError" class="job-error" hidden></p>
+        <!-- The over-page question: the document turned out longer than the
+             pages reserved for it. Answered by Continue or Cancel Task. -->
+        <div id="docConfirmPanel" class="confirm-panel" hidden>
+          <p id="docConfirmText" class="confirm-text"></p>
+        </div>
+        <p id="docNoFile" class="job-note" data-i18n="docNoFile" hidden>This result is read on the website — there is no file to download.</p>
         <div class="job-actions">
           <button type="button" id="pdfOpenDual" class="btn btn-primary" hidden>
             <span data-i18n="pdfOpenDual">Open Bilingual PDF</span>
           </button>
           <button type="button" id="pdfOpenMono" class="btn btn-secondary" hidden>
             <span data-i18n="pdfOpenMono">Open Translated PDF</span>
+          </button>
+          <button type="button" id="docSaveDual" class="btn btn-primary" hidden>
+            <span data-i18n="docSaveDual">Save Bilingual File</span>
+          </button>
+          <button type="button" id="docSaveMono" class="btn btn-secondary" hidden>
+            <span data-i18n="docSaveMono">Save Translated File</span>
+          </button>
+          <button type="button" id="docConfirmContinue" class="btn btn-primary" hidden>
+            <span data-i18n="docConfirmContinue">Continue</span>
           </button>
           <!-- The charge confirmation: shown only when the server has refused
                an unconfirmed create with its quote (D9). Free work never sees
@@ -67,6 +83,7 @@
             <span data-i18n="pdfAbandon">Cancel Task</span>
           </button>
         </div>
+        <a id="docWebLink" class="job-link" target="_blank" rel="noopener" data-i18n="pdfTasksViewOnWeb" hidden>View on the web</a>
       </section>
     </main>
   </div>
@@ -85,9 +102,12 @@
   <script src="../i18n/lang/ru.js"></script>
   <script src="../i18n/messages.js"></script>
   <script src="../shared/comic-charge.js"></script>
+  <script src="../shared/doc-jobs.js"></script>
   <script src="../shared/pdf-errors.js"></script>
   <script src="../shared/pdf-url.js"></script>
   <script src="pdf-ui.js"></script>
+  <script src="../shared/doc-measure.js"></script>
+  <script src="job-view.js"></script>
   <script src="upload.js"></script>
 </body>
 </html>

@@ -54,9 +54,11 @@ import {
   ensurePdfPollAlarm,
   handlePdfCreateJob,
   handlePdfJobAbandon,
+  handlePdfJobConfirm,
   handlePdfJobGet,
   handlePdfJobsHistory,
-  handlePdfOpenResult,
+  handlePdfUploadTicket,
+  openPdfJob,
   refreshPdfJobs,
   startPdfUrlTranslation,
 } from './pdf-jobs.js';
@@ -174,13 +176,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.abandonJob(message.jobId), sendResponse);
       return true;
 
-    // --- PDF translation (account-backed, see pdf-client.js) -----------------
+    // --- Document translation (account-backed, see pdf-client.js) ------------
+    // The upload page asks where to PUT the file, PUTs it itself, then creates.
+    case 'PDF_UPLOAD_TICKET':
+      replyComic(handlePdfUploadTicket(message), sendResponse);
+      return true;
+
     case 'PDF_CREATE_JOB':
       replyComic(handlePdfCreateJob(message), sendResponse);
       return true;
 
     case 'PDF_JOB_GET':
       replyComic(handlePdfJobGet(message.jobId), sendResponse);
+      return true;
+
+    case 'PDF_JOB_CONFIRM':
+      replyComic(handlePdfJobConfirm(message.jobId), sendResponse);
       return true;
 
     case 'PDF_JOB_ABANDON':
@@ -204,8 +215,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(pdfClient.dismissJobRecord(message.jobId), sendResponse);
       return true;
 
-    case 'PDF_OPEN_RESULT':
-      replyComic(handlePdfOpenResult(message.jobId, message.which), sendResponse);
+    case 'PDF_OPEN_JOB':
+      replyComic(openPdfJob(message.jobId, message.which), sendResponse);
       return true;
 
     // PDF 文档上那条提示条按下的「翻译」（content/content-pdf-prompt.js）。走的

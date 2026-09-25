@@ -57,6 +57,34 @@
   controls (`options/options-sync-mirror.js`) without saving them again.
   Text fields you type into are not followed, so typing is never overwritten.
 
+### Document translation: Word, EPUB, MOBI, TXT and Markdown
+
+- **The upload page takes six formats**: PDF, Word (`.docx`), EPUB, MOBI
+  (`.mobi`, `.azw3`), TXT and Markdown (`.md`, `.markdown`), up to 30 MB for a
+  PDF, 50 MB for Word, EPUB and MOBI, and 10 MB for text. An empty file, a
+  file whose contents do not match its extension, an unknown type, an
+  oversize file or a book over 800 pages is refused on the page, with the
+  reason, before anything is uploaded.
+- **The page uploads the file itself**, straight to storage through a
+  one-time signed address; the background worker no longer carries the bytes.
+  Word, EPUB, TXT and Markdown are measured on your computer and the page
+  count goes with the job, so the estimate is right the first time.
+- **A document that turns out longer than estimated asks before it
+  continues.** The popup shows the job as "Needs your confirmation" with a
+  **Review** button, a notification says so, and the page shows how many more
+  pages continuing uses. **Continue** or **Cancel Task**; doing nothing
+  cancels it at the stated time with a full refund. This state used to raise
+  a false "failed" notification, read "Queued", sit under History in Settings,
+  and be forgotten after 24 hours of a 72-hour window.
+- **Results by format.** A PDF opens in a tab as before; Word, EPUB, TXT and
+  Markdown are saved as `<name> (bilingual).<ext>` or
+  `<name> (translated).<ext>`; a MOBI is read on the website. **Open** in the
+  popup, the settings list and a clicked notification all go to the same
+  place: the result for a finished PDF, the job's page for everything else.
+- **The status line only moves forward.** While a task writes out the
+  translated file at the end, the upload page no longer drops back to
+  "Translating…" after "Retypesetting…"; the same goes for PDFs.
+
 ## 1.4.0 — 2026-09-20
 
 ### New features

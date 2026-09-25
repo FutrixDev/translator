@@ -1,7 +1,7 @@
 # 隐私政策 — 叭叭翻译 / Blab Translation Privacy Policy
 
 最后更新：2026-09-21 ｜ 适用版本：1.4.0 起
-Last updated: 2026-09-21 ｜ Applies from: version 1.4.0
+Last updated: 2026-09-25 ｜ Applies from: version 1.4.0
 
 > 这一页要能贴到 Chrome 网上应用店的 **Privacy policy URL** 里，所以它写的是
 > 事实，不是承诺：每一条都能在源码里指到具体文件。哪天代码改了而这一页没改，
@@ -15,7 +15,7 @@ Last updated: 2026-09-21 ｜ Applies from: version 1.4.0
 默认引擎跑在你自己的电脑上，连这一步都不出去。没有埋点、没有统计上报、没有第三方
 分析。
 
-**有例外，而且只有一处：漫画翻译和 PDF 翻译。** 这两项跑在我们的服务器上，所以
+**有例外，而且只有一处：漫画翻译和文档翻译（PDF、Word、EPUB、MOBI、TXT、Markdown）。** 这两项跑在我们的服务器上，所以
 要先登录。一旦你用了它们，我们这边就有一个属于你的账号：你的邮箱、你这个月还剩
 多少免费页数、以及你跑过的每一个任务；文件本身也会上传给我们处理。**不碰这两项
 功能，就没有账号，上面这些东西一样都不存在。** 细账见第二节。
@@ -25,11 +25,11 @@ to the API **you configured yourself**, and on default settings that engine runs
 on your own computer, so not even that leaves. There is no analytics, no
 telemetry, no third-party SDK.
 
-**There is one exception, and only one: comic translation and PDF translation.**
+**There is one exception, and only one: comic translation and document translation (PDF, Word, EPUB, MOBI, TXT, Markdown).**
 They run on our servers, so they require signing in. Once you use them we hold an
 account for you — your email address, how many free pages you have left this
-month, and a record of every job you have run — and the file itself is uploaded
-to us to do the work. **If you never touch those two features there is no
+month, and a record of every job you have run — and the file itself (the image, or
+the whole document) is uploaded to us to do the work. **If you never touch those two features there is no
 account and none of that exists.** Section 2 is the itemised list.
 
 ---
@@ -43,7 +43,7 @@ account and none of that exists.** Section 2 is the itemised list.
 | 视频字幕翻译 | 同上 | 发出去的是字幕文本，不是视频、不是音频。跟着自动翻译走：没被你设成「从不翻译」的站点上，字幕随播放自动翻。 |
 | 图片文字识别（OCR） | **默认在本机**（打包在扩展里的 Tesseract，离线运行）；也可以选用你自己的视觉模型 | 选本机引擎时图片不出电脑。选视觉模型时，图片会发到你填的那个接口。 |
 | **漫画翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。图片上传到我们的服务器处理，处理完返回结果。连同上传的还有**那张图所在的网址**，见第二节。 |
-| **PDF 翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。整个 PDF 文件会上传，文件名跟着任务记录一起存下来。任务在服务器上排队，完成后通知你。 |
+| **文档翻译**（PDF、Word、EPUB、MOBI、TXT、Markdown） | **我们的服务器**（`blab-translation.com`） | 需要登录。整个文件经一次性预签名地址直接上传到对象存储（本机文件由扩展的上传页上传；网页上的 PDF 由扩展后台下载后上传），文件名跟着任务记录一起存下来。Word、EPUB、TXT、Markdown 在上传前会在本机数一下篇幅（只把页数报给服务器，不另外发送内容）。任务在服务器上排队；比预计长时会先问你，完成后通知你。 |
 
 **自动翻译不改变这张表。** 它改变的只是「什么时候开始翻译」—— 从「你点一下」
 变成「这一页符合你设的规则时自动开始」，视频字幕也一样。发出去的还是同样的文字，
@@ -62,9 +62,9 @@ your computer and never uploaded.
 
 ---
 
-## 二、账号：漫画和 PDF 那一半 / The account behind comic and PDF translation
+## 二、账号：漫画和文档那一半 / The account behind comic and document translation
 
-漫画翻译和 PDF 翻译是仅有的两项不用你自己 API key 的功能 —— 它们跑在我们的服务器
+漫画翻译和文档翻译是仅有的两项不用你自己 API key 的功能 —— 它们跑在我们的服务器
 上，靠一个按月重置的免费页数额度。要有额度就要有账号，所以**这两项功能的代价就是
 这一节**。
 
@@ -72,8 +72,8 @@ your computer and never uploaded.
 | --- | --- | --- |
 | 你的邮箱，可能还有显示名 —— 由 Google 或 GitHub 在你授权时提供 | 第一次登录 | 登录发生在 `blab-translation.com/ext/connect` 这个网页上，OAuth 全程在那里完成，扩展只拿回一个令牌（`background/comic-client.js` 的 `signIn()`） |
 | 免费额度：这个月还剩几页、几号重置 | 每次用这两项功能 | `GET /api/billing/me`；设置页上那几个数字就是它 |
-| 任务记录：每个漫画 / PDF 任务的状态、PDF 的**文件名**、漫画那张图**所在页面的网址** | 每次发起一个任务 | `/api/comic/jobs`、`/api/pdf/jobs`（`background/comic-client.js`、`background/pdf-client.js`） |
-| 文件本身：漫画的那张图、PDF 的整个文件 | 每次发起一个任务 | 字节由扩展上传；PDF 走一次性预签名直传对象存储 |
+| 任务记录：每个漫画 / 文档任务的状态、文档的**文件名**和格式、漫画那张图**所在页面的网址** | 每次发起一个任务 | `/api/comic/jobs`、`/api/pdf/jobs`（`background/comic-client.js`、`background/pdf-client.js`） |
+| 文件本身：漫画的那张图、文档的整个文件 | 每次发起一个任务 | 字节由扩展上传；六种文档格式都经一次性预签名地址直传对象存储（本机文件由 `pdf/upload.js` 上传，网页上的 PDF 由 `background/pdf-client.js` 上传），不经过我们的 API 服务器 |
 
 两件值得单独说的事：
 
@@ -83,11 +83,11 @@ your computer and never uploaded.
   你电脑的地方，而且只发生在你亲手点下「翻译这张图」的那一刻。网页翻译、划词、
   字幕、OCR 都不发送任何网址，自动翻译也不发送。
 
-Comic and PDF translation are the only two features that do not use your own API
+Comic and document translation are the only two features that do not use your own API
 key: they run on our servers against a monthly free page allowance, which is why
 they need an account. Using them means we hold your email address (supplied by
 Google or GitHub when you authorise the sign-in), your remaining free pages, and
-a record of every job — with the file name for a PDF, and **the address of the
+a record of every job — with the file name and format for a document, and **the address of the
 page the image came from** for a comic. That job history belongs to the account,
 not to the device, which is why the settings page can list jobs you started
 elsewhere. The comic page URL is the only address that ever leaves your computer,
@@ -102,7 +102,7 @@ and only at the moment you click "translate this image".
 | 设置（接口地址、模型、目标语言、各种开关） | `chrome.storage.sync` | 是 —— 这是 Chrome 的账号同步，数据在 Google 那里，不经过我们 |
 | 站点规则（你对每个网站定下的「总是翻译 / 从不翻译」） | `chrome.storage.sync` | 是，同上 |
 | API key | `chrome.storage.sync` | 是，同上。**我们从不读取、不上传它**；它只在你的浏览器里被拼进发给你自己接口的请求 |
-| 登录令牌（漫画 / PDF 用） | `chrome.storage.local` | **否**，只在这台设备上 |
+| 登录令牌（漫画 / 文档翻译用） | `chrome.storage.local` | **否**，只在这台设备上 |
 | 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符，以及今天不用点的翻译用掉了多少 AI 字符 —— 每日额度靠它算） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
 | 译文缓存（30 天过期） | `chrome.storage.local` | 否 |
 
@@ -124,9 +124,9 @@ button that clears it.
 | `storage` | 存上面那张表里的东西 |
 | `activeTab` | 你从工具栏或右键菜单发起的那一次翻译 |
 | `contextMenus` | 右键菜单里的那几条 |
-| `identity` | 漫画 / PDF 的登录流程 |
-| `notifications` | PDF 在服务器上跑完时告诉你 |
-| `alarms` | 每分钟查一次 PDF 任务状态（MV3 的 service worker 不能长期挂定时器） |
+| `identity` | 漫画 / 文档翻译的登录流程 |
+| `notifications` | 文档任务完成、需要你确认（比预计长）、已取消时告诉你 |
+| `alarms` | 只在有文档任务运行时，每分钟查一次它的状态（MV3 的 service worker 不能长期挂定时器）；没有运行中的任务就撤掉 |
 | `offscreen` | 跑本机 OCR 引擎（它需要 Web Worker 和 WebAssembly，service worker 里跑不了） |
 
 ---

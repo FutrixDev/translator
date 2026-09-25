@@ -40,6 +40,23 @@ export function optionsSource() {
 }
 
 /**
+ * 弹窗全体：popup/*.js（popup.js 与 popup-pdf.js 等同级脚本，共用一个全局词法作用域）。
+ */
+export function popupSource() {
+  return surfaceSource('popup', (name) => name.endsWith('.js'));
+}
+
+/**
+ * 文档上传页全体：pdf/*.js（upload.js、job-view.js、pdf-ui.js 共用一个全局词法作用域）。
+ *
+ * 「上传页有没有做某件事」问的是这一页 —— 状态机在 upload.js、作业卡怎么画在
+ * job-view.js，哪个函数落在哪一份是排版，不是契约。
+ */
+export function uploadPageSource() {
+  return surfaceSource('pdf', (name) => name.endsWith('.js'));
+}
+
+/**
  * 界面文案全体：十门语言的表（i18n/lang/*.js）加上 i18n/messages.js 自己。
  *
  * 「这句话所有语言都有吗」问的是这一面，不是某个文件 —— 表拆开之后，某个 key 落

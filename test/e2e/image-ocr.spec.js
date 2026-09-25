@@ -19,24 +19,7 @@ const { test, expect } = require('./fixtures');
 const { setExtensionSettings, sendMessageToActiveTab } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { startMockServer } = require('./mock-server');
-
-// CRC-32 for PNG chunks; hand-rolled for the same runtime reason as the comic
-// spec (zlib.crc32 needs Node 20.15/22.2).
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
+const { crc32 } = require('./crc32');
 
 // A real PNG, solid colour: the worker sniffs nothing here, but the media type
 // it fetches must be one the pass-through accepts or the spec would exercise

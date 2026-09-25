@@ -1,4 +1,4 @@
-// Blab Translation — the ONE PDF error-code → user-facing message map.
+// Blab Translation — the ONE document error-code → user-facing message map.
 //
 // Dual-mode on purpose, exactly like i18n/messages.js: the popup, the upload
 // page and the options page load it with a plain <script> tag, while the
@@ -13,31 +13,77 @@
 (function () {
   'use strict';
 
-  // The server cap today, used only when an old server answers without a
-  // maxPages field. The real number always comes from the error payload
-  // (server/lib/pdf/source.ts sends { maxPages, pageCount }), so this constant
-  // going stale costs one wrong number in one message, not a wrong refusal.
-  var FALLBACK_MAX_PAGES = 32;
+  // Read at call time, not load time: unit tests require this file on its own,
+  // and every page loads shared/doc-jobs.js before it.
+  function docJobs() {
+    return globalThis.DocJobs || null;
+  }
 
-  /** Server/client error codes → i18n message keys (see i18n/messages.js). */
-  function pdfErrorMessageKey(code) {
+  // Codes whose answer is the same the second time: the file, the account or
+  // the user's own decision is what is wrong, so a "Try again" would only
+  // repeat the refusal.
+  var NOT_RETRYABLE = [
+    'unsupported_format', 'empty_document', 'file_too_large', 'pdf_too_large',
+    'too_many_pages', 'page_count_unknown', 'encrypted_pdf', 'scanned_unsupported',
+    'invalid_pdf', 'insufficient_points', 'feature_disabled', 'abandoned'
+  ];
+
+  /** A field of an error in any shape: flattened by toMessage(), or under details. */
+  function field(error, name) {
+    if (!error) return undefined;
+    if (error[name] !== undefined && error[name] !== null) return error[name];
+    return error.details ? error.details[name] : undefined;
+  }
+
+  /**
+   * Server/client error codes → i18n message keys (see i18n/lang/*.js).
+   *
+   * `error` is optional: with only a code this answers the base key; with the
+   * error it tells apart what the fields say (which format, whether the pages
+   * were refunded, whether the server named its cap).
+   */
+  function pdfErrorMessageKey(code, error) {
     switch (code) {
       case 'insufficient_points': return 'pdfErrInsufficientPoints';
-      case 'too_many_pages': return 'pdfErrTooManyPages';
+      case 'too_many_pages': {
+        if (!error) return 'pdfErrTooManyPages';
+        if (!field(error, 'maxPages')) return 'docErrTooManyPagesNoMax';
+        var jobs = docJobs();
+        var format = field(error, 'format');
+        if (field(error, 'pageCount') && format && jobs && jobs.familyOf(format) === 'flow') {
+          return 'docErrTooLongFlow';
+        }
+        return 'pdfErrTooManyPages';
+      }
       case 'encrypted_pdf': return 'pdfErrEncrypted';
       case 'invalid_pdf':
       case 'invalid_source_key':
       case 'invalid_output':
       case 'invalid_operation_id':
       case 'missing_operation_id':
-      case 'invalid_byte_size':
-      case 'missing_source': return 'pdfErrInvalid';
+      case 'invalid_byte_size': return 'pdfErrInvalid';
+      // The upload never arrived. The page re-uploads on retry, so this is a
+      // network story, not a broken file.
+      case 'missing_source': return 'pdfErrNetwork';
       case 'scanned_unsupported': return 'pdfErrScanned';
+      case 'file_too_large':
       case 'pdf_too_large': return 'pdfErrTooLarge';
+      case 'unsupported_format': {
+        var known = docJobs();
+        return known && known.isDocumentFormat(field(error, 'format'))
+          ? 'docErrMismatch' : 'docErrUnsupported';
+      }
+      case 'empty_document': return 'docErrEmpty';
+      case 'page_count_unknown': return 'docErrPageCountUnknown';
+      case 'not_awaiting_confirm': return 'docErrNotAwaiting';
+      case 'queue_timeout': return 'docErrQueueTimeout';
+      case 'abandoned':
+        return field(error, 'refunded') ? 'docErrAbandonedRefunded' : 'docErrAbandoned';
       case 'source_fetch_failed': return 'pdfErrSourceFetch';
       case 'engine_error':
       case 'delivery_unreadable': return 'pdfErrEngine';
       case 'budget_exceeded': return 'pdfErrBudget';
+      case 'create_timeout':
       case 'container_unavailable':
       case 'gateway_unavailable':
       case 'source_download_failed':
@@ -70,22 +116,55 @@
    * The rendered message for an error-like object, in one step.
    *
    * `error` is any of the shapes this codebase passes around: a ComicApiError
-   * (`details.maxPages`), its toMessage() flattening (`maxPages` at top level),
-   * or a stored record error (`{code, message}` — no details, hence the
-   * fallback). `translate` is the page's `t` / the worker's key→string lookup.
+   * (fields under `details`), its toMessage() flattening (fields at the top
+   * level), or a stored record error (`{code, message, maxPages?, ...}`).
+   * `translate` is the page's `t` / the worker's key→string lookup.
+   *
+   * A placeholder whose number is unknown is never printed raw: the key choice
+   * above already avoids the `{maxPages}` sentence when there is no cap.
    */
   function pdfErrorMessage(error, translate) {
     var code = error && error.code;
-    var text = String(translate(pdfErrorMessageKey(code)) || '');
-    if (text.indexOf('{maxPages}') !== -1) {
-      var max = error && (error.maxPages ||
-        (error.details && error.details.maxPages));
-      text = text.replace('{maxPages}', String(max || FALLBACK_MAX_PAGES));
+    var text = String(translate(pdfErrorMessageKey(code, error || {})) || '');
+    if (text.indexOf('{max}') !== -1) {
+      var jobs = docJobs();
+      var bytes = field(error, 'maxBytes') ||
+        (jobs ? jobs.maxBytesFor(field(error, 'format') || 'pdf') : 0);
+      text = text.split('{max}').join(jobs && bytes ? jobs.megabyteLabel(bytes) : '');
     }
+    ['maxPages', 'pageCount'].forEach(function (name) {
+      var value = field(error, name);
+      if (value !== undefined && value !== null) {
+        text = text.split('{' + name + '}').join(String(value));
+      }
+    });
     return text;
   }
 
-  var api = { pdfErrorMessageKey: pdfErrorMessageKey, pdfErrorMessage: pdfErrorMessage };
+  /**
+   * What to say about a cancelled job. Not an error key: a cancellation is the
+   * user's decision or the server handing the pages back, so every surface
+   * words it without painting it red. One answer for the status line and the
+   * notification alike.
+   */
+  function pdfAbandonedKey(error) {
+    if (field(error, 'code') === 'queue_timeout') return 'docErrQueueTimeout';
+    if (field(error, 'refunded')) return 'docErrAbandonedRefunded';
+    return 'pdfStatusAbandoned';
+  }
+
+  /** Is "Try again" worth offering for this failure? */
+  function isRetryablePdfFailure(error) {
+    var code = error && error.code;
+    return NOT_RETRYABLE.indexOf(code) === -1;
+  }
+
+  var api = {
+    pdfErrorMessageKey: pdfErrorMessageKey,
+    pdfErrorMessage: pdfErrorMessage,
+    pdfAbandonedKey: pdfAbandonedKey,
+    isRetryablePdfFailure: isRetryablePdfFailure
+  };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   }

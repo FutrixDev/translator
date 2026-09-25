@@ -152,6 +152,14 @@ test('用到它的每一面都装了 shared/pdf-url.js', () => {
   }
 });
 
+test('用到格式表的每一面都装了 shared/doc-jobs.js', () => {
+  // 格式、字节上限、状态谓词只有 DocJobs 一份；少装一面，读 globalThis.DocJobs 就是 undefined。
+  assert.match(repoFile('background/pdf-client.js'), /import '\.\.\/shared\/doc-jobs\.js'/);
+  for (const page of ['options/options.html', 'popup/popup.html', 'pdf/upload.html']) {
+    assert.match(repoFile(page), /shared\/doc-jobs\.js/, `${page} 没装 doc-jobs.js`);
+  }
+});
+
 test('提示条排在画条子的那一层后面', () => {
   const bundle = contentBundle();
   assert.ok(bundle.indexOf('content/content-pdf-prompt.js') > bundle.indexOf('content/content-auto-status.js'));

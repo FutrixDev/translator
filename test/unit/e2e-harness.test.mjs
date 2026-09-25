@@ -202,3 +202,35 @@ test('no spec re-derives the extension service worker', () => {
   assert.deepEqual(offenders, [],
     'use getServiceWorker / getSyncSetting / getSyncSettings from test/e2e/helpers.js');
 });
+
+// CRC-32 is written once, in test/e2e/crc32.js. Three fixture builders each
+// kept their own table — comic-fixtures.js and image-ocr.spec.js for PNG
+// chunks, doc-fixtures.js for zip headers — every copy carrying its own
+// paraphrase of why zlib.crc32 is not used, and one of them already spelled
+// differently (a for...of over the bytes). The polynomial is the one thing no
+// copy can do without, so it is what this looks for, in every source file
+// under test/ except that one. Playwright's output directories are skipped:
+// they are generated, gitignored, and a report may embed whatever it likes.
+test('CRC-32 lives only in test/e2e/crc32.js', () => {
+  const testDir = fileURLToPath(new URL('../', import.meta.url));
+  const generated = new Set(['results', 'reports']);
+  const home = 'e2e/crc32.js';
+  // Spelled in two pieces so this file does not match itself.
+  const polynomial = new RegExp('0x' + 'edb88320', 'i');
+  const sources = [];
+  const walk = (rel) => {
+    for (const entry of readdirSync(testDir + rel, { withFileTypes: true })) {
+      const path = rel + entry.name;
+      if (entry.isDirectory()) {
+        if (!(rel === '' && generated.has(entry.name))) walk(`${path}/`);
+      } else if (/\.(?:js|mjs|cjs)$/.test(entry.name)) {
+        sources.push(path);
+      }
+    }
+  };
+  walk('');
+  assert.ok(sources.includes(home), `${home} is gone, so this guard would pass on nothing`);
+  const offenders = sources
+    .filter(path => path !== home && polynomial.test(readFileSync(testDir + path, 'utf8')));
+  assert.deepEqual(offenders, [], "require('./crc32') instead of carrying another CRC table");
+});
