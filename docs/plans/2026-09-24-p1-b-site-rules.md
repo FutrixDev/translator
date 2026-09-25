@@ -14,6 +14,7 @@
   - 条目 id 只存在键里，值里不带（§2.2、§2.6）；
   - 内容脚本的增量经一张登记表 `ctx.syncMirrors` 转发，bootstrap 不再点名具体集合；P1-C 的词表前缀每个 frame 都登记，只有顶层建镜像（§1、§3.1）；
   - `whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，规则和词表共用（§2.6）；
+  - 镜像的主机由调用方传入（`mirror({request, host})`），模块里不读 `location`：规则传本 frame 的主机，与 SW 按 `sender.url` 取的一致；词表只在顶层建镜像，传顶层主机（§2.6、§3.1、§12.3）；
   - 写消息的判别字段叫 `kind`，与 StorageWriter 和 site-rules 的 `WRITES` 表同名（§2.4）；
   - 额度检查抽成 `SyncCollection.assertFits`，写入和导入预览共用；导入预览收成一个函数，卡片和整份导入共用；`TRANSFER_SECTIONS` 加 `customRules` 一行；预算格的规则项放在 `syncAutoEngineState()`，不进 `unattendedAiReachable`（§0.1-19、§2.6、§4、§9、§12.4）。
 - 交付：一个 PR `feat/p1-b-site-rules`，由两批串行拼装——B1 数据层与页面接线、B2 入口与界面。合并顺序在 P1-A 之后（A 若 squash 合入，B 用 `rebase --onto` 接上）。「按站点译文样式」拆成 P1-B·style，等 #105 合入后再做（D-294 #2）
@@ -212,7 +213,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | `merge(existing, incoming, keyOf)` | 导入 | 按 `keyOf` 合并。键相同就替换，并沿用原来的 id；否则新增，没有 id 的发一个新 id。返回 `{entries, added, replaced}` |
 | `write(compute)` | SW 的写队列 | `get(null)` → `collect` → `compute(entries)`，它返回 `{put, remove, result}` → `assertFits(写后的集合)` → 一次多键 `set`（键为 `prefix + id`，值去掉 `id`）加一次 `remove` → 返回 `result` |
 | `cached()` | SW | 记住 `collect(get(null))` 的结果。`create` 在 SW 里挂一个 `storage.onChanged`，键前缀命中就作废 |
-| `mirror({request})` | 内容脚本 | 返回 `{whenReady(), onStorageChange(changes), entries(), version, subscribe(fn)}`，即 §2.5 内容脚本那一条：每个文档只 `request()` 一次，缓冲在途增量，去抖 150 ms，递增版本号并通知订阅者。首个回话到达、或超过 1500 ms，`whenReady()` 就 resolve：超时按空集合处理，回话晚到仍照常生效。这个上限只写在这里，规则和 P1-C 的词表共用（D-306） |
+| `mirror({request, host})` | 内容脚本 | 返回 `{whenReady(), onStorageChange(changes), entries(), version, subscribe(fn)}`，即 §2.5 内容脚本那一条：每个文档只 `request()` 一次，缓冲在途增量，去抖 150 ms，递增版本号并通知订阅者。增量经 `applyChanges(entries, changes, host)` 应用，`host` 由调用方传入，模块里不读 `location`：这个文件在 SW、设置页和内容脚本里都加载，隐式取主机只在其中一处对。镜像的主机必须和 SW 回话时用的主机相同：规则传本 frame 的 `location.hostname`，与 SW 用 `sender.url` 取的一致；词表只在顶层建镜像，传顶层主机。首个回话到达、或超过 1500 ms，`whenReady()` 就 resolve：超时按空集合处理，回话晚到仍照常生效。这个上限只写在这里，规则和 P1-C 的词表共用（D-306） |
 
 - 「是否在 SW 里」沿用 `StorageWriter` 的同一个谓词，不另写一份。
 - 加载位置与 custom-rules 相同，排在 storage-writer、site-rules 之后。
@@ -225,7 +226,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 
 | 成员 | 作用 |
 |---|---|
-| `init()` | 发出 `CUSTOM_RULES_FOR_HOST`。dormant frame 根本不建 ctx，自然什么也不发 |
+| `init()` | 建镜像 `SyncCollection.mirror({request, host: location.hostname})`，由它发出 `CUSTOM_RULES_FOR_HOST`；主机取本 frame 的，与 SW 用 `sender.url` 取的一致（§2.5、§2.6）。dormant frame 根本不建 ctx，自然什么也不发 |
 | `whenReady()` | 就是镜像的 `whenReady()`（§2.6）：首个回话到达，或超过 1500 ms，Promise 就 resolve。超时按「无规则、全局引擎」处理，回话晚到仍照常生效 |
 | `current()` | 本 URL 的胜出规则，形状 `{id, include, exclude, keepOriginal, css, engine}`，或 null。以 `location.href` + `version` 记忆，SPA 换路径后自然重算 |
 | `version` | 规则集每变一次加 1。它只是记忆键：别的站点的规则变了也会加，不表示本页规则变了 |
@@ -585,7 +586,7 @@ npm run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
 - 词表的站点作用域用 `SiteRules.hostMatches`，靠 B1 补上的导出（§1）。
 - 规则的 `domain` 字段（按站点选领域）由 P1-C 的 C3 加进规则结构，B1 不预留。按 §2.2 的版本规则，带 `domain` 的规则写成 `v: 2`，不带的仍是 v1。只装了 B1 的版本写入时丢弃未知字段，但它会跳过 v2 的规则，所以不会在拾取器 `addSelector` 或设置页保存时把 `domain` 丢掉。B1 与 C3 之间发没发过商店版本都这样做，不设条件。
 - 词表变化时，内容脚本也要按「本页生效的集合变了才回调」来门控，做法和 §3.1 的签名门一样。
-- 词表前缀在每个 frame 都登记进 `ctx.syncMirrors`，只有顶层建镜像（§1）；`whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，两边共用（§2.6）。
+- 词表前缀在每个 frame 都登记进 `ctx.syncMirrors`，只有顶层建镜像（§1），建时传顶层主机（`mirror({request, host})`，§2.6）；`whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，两边共用（§2.6）。
 
 ### 12.4 与 P0-F（设置整份导入导出，`options/options-transfer.js`）
 
