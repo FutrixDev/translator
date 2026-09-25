@@ -205,6 +205,9 @@ test('J-F7 site rules survive an export and import, merged into the list that is
     'news.example.org': 'never',
   });
   await expect(page.locator('#transferError')).toBeHidden();
+  // The settings page's own list draws what is now stored, without a reload.
+  await expect.poll(async () => (await page.locator('#siteRules .site-rule-host').allInnerTexts()).map((h) => h.trim()).sort())
+    .toEqual(['example.com', 'keep.example.net', 'news.example.org']);
 });
 
 test('J-F8 a bad file changes nothing in storage', async ({ page, context, extensionId }) => {
@@ -229,6 +232,7 @@ test('J-F8 a bad file changes nothing in storage', async ({ page, context, exten
     // everything is checked before anything is written.
     ['one damaged part', blabFile({ settings: { targetLang: 'ja' }, siteRules: ['example.com'] }),
       en('transferErrorNotObject').replace('{section}', en('transferSectionSiteRules'))],
+    ['nothing usable', blabFile({ settings: { notASetting: 1, targetLang: 42 } }), en('transferErrorNothingValid')],
     ['a hotkey conflict', blabFile({ settings: { targetLang: 'ja', selectionTranslationHotkey: 'Shift' } }),
       en('transferErrorHotkeyConflict')],
   ];
