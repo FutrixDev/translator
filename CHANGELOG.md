@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Local models without an API key
+
+- **Ollama, LM Studio and other local model servers work with the API Key box
+  left empty.** Before, every surface checked for a key on its own and refused
+  a local setup before any request was sent. There is now one rule,
+  `APICompat.requiresApiKey()` in `shared/api-compat.js`: the Ollama and LM
+  Studio presets, and any endpoint on a loopback address, a private LAN
+  address or a `.local` name, need no key. Remote endpoints still do. An empty
+  key sends no `Authorization` / `x-api-key` header at all.
+- **API errors are shown in your UI language.** They used to be Chinese
+  sentences written in the shared API layer, whatever language the extension
+  was set to. That layer now reports what happened (an HTTP status, or no
+  answer at all), and the page, the popup or the settings page words it in the
+  UI language, in all ten.
+- **A local server that refuses the extension says how to fix it.** Ollama's
+  403 names `OLLAMA_ORIGINS=chrome-extension://*`, LM Studio's names its CORS
+  switch and `lms server start --cors`, and a server that is not running is
+  named by its address.
+- **The settings page says the key is optional** when the chosen provider or
+  endpoint is local, and **Test Connection** goes through to the local server
+  instead of asking for a key.
+
 ## 1.4.0 — 2026-09-20
 
 ### New features

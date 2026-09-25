@@ -498,6 +498,16 @@ Both the service worker (`import '../shared/api-compat.js'`) and the options
 page (`<script src="../shared/api-compat.js">`) consume it, so the "test
 connection" button sends exactly the request translation will send.
 
+**Whether a key is needed is one question with one answer**,
+`APICompat.requiresApiKey()` / `isApiKeyMissing()`: the Ollama and LM Studio
+presets and any loopback, private-LAN or `.local` endpoint take none. No caller
+tests `apiKey` for truthiness itself; `test/unit/api-key-rule.test.mjs` scans
+for it. A failed request is a structured failure (`readAPIResponse` returns
+`{ failure: { status, detail } }`, `callTranslationAPI` throws with
+`err.apiFailure`), worded only at a boundary that knows the UI language, through
+`APICompat.describeAPIFailure(failure, t)` — `background/api-errors.js` in the
+service worker, `showConnectionFailure()` on the settings page.
+
 When a vendor ships a new model generation, `shared/api-compat.js` should be
 the only file that changes. Do not reimplement these checks in a caller —
 `npm run test:unit` fails if `background.js` or `options.js` redeclares them.

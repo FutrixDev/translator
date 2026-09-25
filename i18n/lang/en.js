@@ -457,4 +457,19 @@ Rules:
     
     // Errors
     configureApiKeyFirst: 'Please configure API Key in settings first',
+    apiErrorAuth: 'Authentication failed: check that the API key is correct',
+    apiErrorQuota: 'Out of credit: check your account balance or plan',
+    apiErrorForbidden: 'Access denied: the API key may not have permission for this',
+    apiErrorModelNotFound: 'Model not found: check the model name',
+    apiErrorRateLimited: 'Too many requests: please try again later',
+    apiErrorServer: 'Server error: the API service is temporarily unavailable',
+    apiErrorGateway: 'Gateway error: the API service is temporarily unavailable',
+    apiErrorUnavailable: 'Service unavailable: the API service is temporarily unavailable',
+    apiErrorStatus: 'Request failed (HTTP {status})',
+    apiErrorNetwork: 'Can\'t reach {endpoint}. Check your network connection and the API endpoint.',
+    apiErrorLocalUnreachable: 'Can\'t reach {endpoint}. Make sure the local model server is running. Ollama: ollama serve. LM Studio: start the server in the Developer tab, or run lms server start.',
+    apiErrorOllamaOrigins: 'Ollama refused the request (HTTP 403). By default it only accepts browser extensions listed in OLLAMA_ORIGINS. Set OLLAMA_ORIGINS=chrome-extension://* and restart Ollama.',
+    apiErrorLmStudioCors: 'LM Studio refused the request (HTTP 403). Turn on CORS in LM Studio\'s server settings, or start the server with: lms server start --cors',
+    apiErrorLocalRefused: 'The local model server refused the request (HTTP 403). Ollama: set OLLAMA_ORIGINS=chrome-extension://* and restart it. LM Studio: turn on CORS in its server settings, or run lms server start --cors.',
+    placeholderApiKeyOptional: 'Optional for local models (Ollama, LM Studio)',
 };

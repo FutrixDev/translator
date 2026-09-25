@@ -98,11 +98,12 @@ cd translator
 1. Click the extension icon in the browser toolbar
 2. Click "Settings"
 3. Fill in API configuration:
-   - **API Endpoint**: e.g., `https://api.openai.com/v1/chat/completions`
-   - **API Key**: Your API key
+   - **Provider**: pick your service; **Custom** shows the **API Endpoint** field
+   - **API Endpoint** (Custom only): e.g., `https://api.openai.com/v1/chat/completions`
+   - **API Key**: Your API key. Leave it empty for a local model server (see [Local models](#local-models-ollama-lm-studio))
    - **Model Name**: e.g., `gpt-4.1-mini` (pick from the dropdown, or type any model your endpoint serves)
 4. Select target translation language
-5. Click "Save Settings"
+5. Click **Test Connection** to check it. Settings save as you type; there is no save button
 
 ### 📖 Usage
 
@@ -158,6 +159,29 @@ After translation:
 | LM Studio (Local) | `http://localhost:1234/v1/chat/completions` | Local models |
 
 > **Auto-detection**: The extension automatically detects Anthropic Claude API (by domain or `/v1/messages` path) and uses the correct request/response format.
+
+#### Local models (Ollama, LM Studio)
+
+A model server on your own machine or local network needs **no API key**.
+Choose **Ollama (Local)** or **LM Studio (Local)** as the Provider, or choose
+**Custom** and enter an endpoint on `localhost`, `127.0.0.1`, a private LAN
+address (`10.x`, `172.16-31.x`, `192.168.x`) or a `.local` name, and leave
+**API Key** empty. No authorization header is sent when the key is empty; if
+your server does require one (LM Studio's "Require Authentication"), fill it in
+and it is sent as usual.
+
+Both servers have to be told to accept requests from a browser extension:
+
+- **Ollama** only accepts browser extensions listed in `OLLAMA_ORIGINS`, and
+  answers anything else with HTTP 403. Set
+  `OLLAMA_ORIGINS=chrome-extension://*` in Ollama's environment and restart it
+  (on macOS: `launchctl setenv OLLAMA_ORIGINS "chrome-extension://*"`, then quit
+  and reopen the Ollama app).
+- **LM Studio**: turn on **CORS** in the server settings of the Developer tab,
+  or start the server with `lms server start --cors`.
+
+If a request fails, the error names the fix: a 403 from a local server shows
+these instructions, and a server that is not running is named by its address.
 
 ### 🌍 Supported Languages
 
@@ -296,11 +320,12 @@ cd translator
 1. 点击浏览器工具栏中的插件图标
 2. 点击「打开设置」
 3. 填写 API 配置：
-   - **API 地址**: 如 `https://api.openai.com/v1/chat/completions`
-   - **API Key**: 你的 API 密钥
+   - **服务商**: 选择你用的服务；选 **Custom** 才会出现 **API 地址** 一栏
+   - **API 地址**（仅 Custom）: 如 `https://api.openai.com/v1/chat/completions`
+   - **API Key**: 你的 API 密钥。用本地模型服务时留空即可（见[本地模型](#本地模型ollamalm-studio)）
    - **模型名称**: 如 `gpt-4.1-mini`（可从下拉列表选择，也可直接填写你的接口支持的任意模型）
 4. 选择目标翻译语言
-5. 点击「保存设置」
+5. 点「测试连接」检查一下。设置边填边自动保存，没有保存按钮
 
 ### 📖 使用方法
 
@@ -356,6 +381,26 @@ cd translator
 | LM Studio (本地) | `http://localhost:1234/v1/chat/completions` | 本地模型 |
 
 > **自动检测**：插件会自动检测 Anthropic Claude API（通过域名或 `/v1/messages` 路径），并使用正确的请求/响应格式。
+
+#### 本地模型（Ollama、LM Studio）
+
+跑在本机或局域网里的模型服务**不需要 API Key**。服务商选 **Ollama (Local)** 或
+**LM Studio (Local)**，或者选 **Custom** 并填一个 `localhost`、`127.0.0.1`、
+局域网私有地址（`10.x`、`172.16-31.x`、`192.168.x`）或 `.local` 主机名的地址，
+**API Key** 留空即可。Key 为空时不发送任何认证头；如果你的服务确实要 Key
+（LM Studio 的「Require Authentication」），照常填上就会照常发送。
+
+两种服务都要先允许浏览器扩展访问：
+
+- **Ollama** 只接受 `OLLAMA_ORIGINS` 里列出的浏览器扩展，其余一律回 HTTP 403。
+  在 Ollama 的环境里设置 `OLLAMA_ORIGINS=chrome-extension://*` 后重启（macOS：
+  `launchctl setenv OLLAMA_ORIGINS "chrome-extension://*"`，再退出并重新打开
+  Ollama 应用）。
+- **LM Studio**：在 Developer 标签页的服务器设置里打开 **CORS**，或者用
+  `lms server start --cors` 启动服务。
+
+请求失败时，错误提示会直接给出做法：本地服务回 403 时显示上面的设置方法，
+服务没启动时会写明它的地址。
 
 ### 🌍 支持的语言
 

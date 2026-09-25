@@ -110,19 +110,113 @@
 
   const CLAUDE_API_VERSION = '2023-06-01';
 
+  // An empty key sends no credential header at all. A local model server
+  // (Ollama, LM Studio) takes none, and "Bearer " with nothing after it is not
+  // a credential, it is noise some servers answer with 401. A key that is set is
+  // always sent, local endpoint or not: LM Studio's "Require Authentication"
+  // wants one.
   function openAIHeaders(apiKey) {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    };
+    const key = String(apiKey || '').trim();
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers.Authorization = `Bearer ${key}`;
+    return headers;
   }
 
   function claudeHeaders(apiKey) {
-    return {
+    const key = String(apiKey || '').trim();
+    const headers = {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
       'anthropic-version': CLAUDE_API_VERSION
     };
+    if (key) headers['x-api-key'] = key;
+    return headers;
+  }
+
+  // --- Does this configuration need an API key? -----------------------------
+  //
+  // The one answer every surface asks: the service worker before it sends,
+  // the content engine before it falls back to AI, the popup and the options
+  // page before they say "not configured". Anything else that looks at whether
+  // `apiKey` is empty is a second answer, and test/unit/api-key-rule.test.mjs
+  // fails on it.
+  //
+  // "Local" is Chrome's Local Network Access definition of loopback plus local
+  // network, judged on the URL literal alone. There is no DNS lookup: a public
+  // name that happens to resolve to a LAN address is not local, which is the
+  // same "known before the request" rule LNA itself uses.
+
+  function parseIPv4(host) {
+    const parts = host.split('.');
+    if (parts.length !== 4) return null;
+    const bytes = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+    return bytes.every((b) => b >= 0 && b <= 255) ? bytes : null;
+  }
+
+  function isLocalIPv4([a, b]) {
+    return a === 127                          // loopback 127/8
+      || a === 10                             // 10/8
+      || (a === 172 && b >= 16 && b <= 31)    // 172.16/12
+      || (a === 192 && b === 168)             // 192.168/16
+      || (a === 169 && b === 254);            // link-local 169.254/16
+  }
+
+  // Eight 16-bit groups, or null. `new URL` has already normalised the literal
+  // (lower case, embedded IPv4 rewritten as two hex groups), so only the "::"
+  // shorthand is left to expand.
+  function parseIPv6(text) {
+    const halves = text.split('::');
+    if (halves.length > 2) return null;
+    const split = (half) => (half ? half.split(':') : []);
+    const head = split(halves[0]);
+    const tail = halves.length === 2 ? split(halves[1]) : [];
+    const gap = 8 - head.length - tail.length;
+    if (halves.length === 1 ? gap !== 0 : gap < 1) return null;
+    const groups = [...head, ...new Array(halves.length === 2 ? gap : 0).fill('0'), ...tail];
+    if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+    return groups.map((g) => parseInt(g, 16));
+  }
+
+  function isLocalIPv6(text) {
+    const g = parseIPv6(text);
+    if (!g) return false;
+    const zeroUpTo = (n) => g.slice(0, n).every((x) => x === 0);
+    if (zeroUpTo(7) && g[7] === 1) return true;       // ::1
+    if ((g[0] & 0xfe00) === 0xfc00) return true;      // unique local fc00::/7
+    if ((g[0] & 0xffc0) === 0xfe80) return true;      // link-local fe80::/10
+    if (zeroUpTo(5) && g[5] === 0xffff) {             // IPv4-mapped ::ffff:a.b.c.d
+      return isLocalIPv4([g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff]);
+    }
+    return false;
+  }
+
+  function isLocalEndpoint(url) {
+    let host;
+    try {
+      host = new URL(String(url || '')).hostname.toLowerCase();
+    } catch (_) {
+      return false;
+    }
+    if (!host) return false;
+    if (host.startsWith('[') && host.endsWith(']')) return isLocalIPv6(host.slice(1, -1));
+    if (host === 'localhost' || host.endsWith('.localhost')) return true;
+    if (host.endsWith('.local')) return true;
+    const v4 = parseIPv4(host);
+    return v4 ? isLocalIPv4(v4) : false;
+  }
+
+  // Reads only `provider`, `apiEndpoint` and `apiKey`. A key that is missing
+  // counts as "remote, key required": an unknown provider is not keyOptional,
+  // an empty endpoint is not local.
+  function requiresApiKey(settings) {
+    const s = settings || {};
+    const preset = Object.prototype.hasOwnProperty.call(PROVIDERS, s.provider)
+      ? PROVIDERS[s.provider]
+      : null;
+    return !((preset && preset.keyOptional) || isLocalEndpoint(s.apiEndpoint));
+  }
+
+  function isApiKeyMissing(settings) {
+    return requiresApiKey(settings) && !String((settings && settings.apiKey) || '').trim();
   }
 
   // --- Request bodies -------------------------------------------------------
@@ -223,34 +317,24 @@
     return { isError: false };
   }
 
-  // Turn a parsed error into the string shown to the user. Errors that carry a
-  // familiar HTTP status get an explanation prepended, because vendor messages
-  // for these are often opaque.
-  const ERROR_CODE_MESSAGES = {
-    401: '认证失败：请检查 API Key 是否正确',
-    402: '额度不足：请检查账户余额或升级套餐',
-    403: '访问被拒绝：API Key 可能没有权限',
-    404: '模型不存在：请检查模型名称是否正确',
-    429: '请求过于频繁：请稍后重试',
-    500: '服务器错误：API 服务暂时不可用',
-    502: '网关错误：API 服务暂时不可用',
-    503: '服务不可用：API 服务暂时不可用'
-  };
-
-  function formatErrorMessage(message, code) {
-    const explanation = ERROR_CODE_MESSAGES[parseInt(code, 10)];
-    return explanation ? `${explanation}\n${message}` : message;
-  }
-
-  // Read one response body and return either its text or a thrown-ready error
-  // message. Returns { text } on success, { error } otherwise.
+  // Read one response body. Returns { text } on success, { failure } otherwise,
+  // where failure = { status, detail }: the HTTP status (or the vendor's own
+  // HTTP-shaped code when it reports an error inside a 200), and the vendor's
+  // message, '' when there is none. No wording is decided here: this layer does
+  // not know the reader's language. describeAPIFailure() below turns a failure
+  // into a sentence, at the boundary that does.
   function readAPIResponse(data, httpStatus, ok, isClaudeShape) {
     const errorInfo = parseAPIError(data, httpStatus);
     if (errorInfo.isError) {
-      return { error: formatErrorMessage(errorInfo.message, errorInfo.code) };
+      // OpenRouter puts a real HTTP status in `code` of a 200 reply; other
+      // vendors put a string ('invalid_api_key') or a private number (1113)
+      // there. Only a number that is an HTTP status replaces the reply's own.
+      const code = parseInt(errorInfo.code, 10);
+      const status = code >= 100 && code <= 599 ? code : httpStatus;
+      return { failure: { status, detail: String(errorInfo.message || '') } };
     }
     if (!ok) {
-      return { error: `API 错误: ${httpStatus}` };
+      return { failure: { status: httpStatus, detail: '' } };
     }
     const text = isClaudeShape
       // Claude: { content: [{ type: "text", text: "..." }] }
@@ -259,6 +343,76 @@
       : (data && data.choices && data.choices[0] && data.choices[0].message
         && data.choices[0].message.content);
     return { text: (text || '').trim() };
+  }
+
+  // --- Saying what went wrong -------------------------------------------------
+
+  const API_ERROR_KEYS = {
+    401: 'apiErrorAuth',
+    402: 'apiErrorQuota',
+    403: 'apiErrorForbidden',
+    404: 'apiErrorModelNotFound',
+    429: 'apiErrorRateLimited',
+    500: 'apiErrorServer',
+    502: 'apiErrorGateway',
+    503: 'apiErrorUnavailable'
+  };
+
+  function urlPart(url, part) {
+    try {
+      return new URL(String(url || ''))[part];
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // A failure as the reader should see it, in the reader's language.
+  //
+  //   failure  { status, detail } from readAPIResponse, or
+  //            { network: true, endpoint } when the request never got an answer;
+  //            `endpoint` is what was called, and is read for both.
+  //   t        the caller's lookup, t(key) -> string. This module does not load
+  //            i18n; the service worker passes getMessage bound to the UI
+  //            language, the options page passes its own t.
+  //   provider the configured preset, which names the local server when the
+  //            port alone cannot.
+  //
+  // A local server that refuses with 403 answers with an empty body (measured
+  // on Ollama 0.20 without OLLAMA_ORIGINS), so the hint has to come from the
+  // status and the endpoint alone. The vendor's own text, when there is one,
+  // goes on the next line: it is often the only thing that names the model or
+  // the account at fault.
+  function describeAPIFailure(failure, t, { provider } = {}) {
+    const f = failure || {};
+    const say = (key) => {
+      let text = '';
+      try {
+        text = typeof t === 'function' ? t(key) : '';
+      } catch (_) {
+        text = '';
+      }
+      return typeof text === 'string' && text ? text : key;
+    };
+
+    if (f.network) {
+      const key = isLocalEndpoint(f.endpoint) ? 'apiErrorLocalUnreachable' : 'apiErrorNetwork';
+      return say(key).replace('{endpoint}', urlPart(f.endpoint, 'origin') || String(f.endpoint || ''));
+    }
+
+    const status = Number(f.status);
+    let text;
+    if (status === 403 && isLocalEndpoint(f.endpoint)) {
+      const port = urlPart(f.endpoint, 'port');
+      if (provider === 'ollama' || port === '11434') text = say('apiErrorOllamaOrigins');
+      else if (provider === 'lmstudio' || port === '1234') text = say('apiErrorLmStudioCors');
+      else text = say('apiErrorLocalRefused');
+    } else if (API_ERROR_KEYS[status]) {
+      text = say(API_ERROR_KEYS[status]);
+    } else {
+      text = say('apiErrorStatus').replace('{status}', String(f.status));
+    }
+    const detail = String(f.detail || '').trim();
+    return detail ? `${text}\n${detail}` : text;
   }
 
   // --- Provider catalog -----------------------------------------------------
@@ -342,13 +496,16 @@
       name: 'Ollama (Local)',
       endpoint: 'http://localhost:11434/v1/chat/completions',
       models: ['llama3.3', 'qwen2.5', 'deepseek-r1', 'gemma2'],
-      defaultModel: 'llama3.3'
+      defaultModel: 'llama3.3',
+      // Local servers take no key. See requiresApiKey().
+      keyOptional: true
     },
     lmstudio: {
       name: 'LM Studio (Local)',
       endpoint: 'http://localhost:1234/v1/chat/completions',
       models: [],
-      defaultModel: ''
+      defaultModel: '',
+      keyOptional: true
     },
     custom: {
       name: 'Custom',
@@ -377,9 +534,12 @@
     buildClaudeRequestBody,
     buildOpenAIVisionUserContent,
     buildClaudeVisionUserContent,
+    isLocalEndpoint,
+    requiresApiKey,
+    isApiKeyMissing,
     parseAPIError,
-    formatErrorMessage,
     readAPIResponse,
+    describeAPIFailure,
     PROVIDERS
   };
 })(globalThis);

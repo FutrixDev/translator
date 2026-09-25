@@ -90,6 +90,9 @@ export async function installEngineHarness({ pageText }) {
   // manifest 里 shared/lang-tags.js 和 shared/target-lang.js 都排在引擎前面，
   // 引擎加载时就取走它们。夹具漏掉任何一个，引擎整个文件抛错——而抛错的模块
   // import 照样 resolve，于是 ctx 上什么都没有，红在三步之后。
+  // shared/api-compat.js 也排在引擎前面：回落前问「AI 接口配好没有」的那条规则
+  // （APICompat.isApiKeyMissing）住在那里。
+  await import('../../../shared/api-compat.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
   await import('../../../content/engine/languages.js');

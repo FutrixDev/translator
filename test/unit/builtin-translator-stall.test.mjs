@@ -85,6 +85,9 @@ globalThis.chrome = {
 console.info = () => {};
 console.warn = () => {};
 
+// The engine asks APICompat.isApiKeyMissing before falling back to AI, and the
+// manifest loads shared/api-compat.js ahead of it; so must this harness.
+await import('../../shared/api-compat.js');
 await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
 await import('../../content/engine/languages.js');

@@ -383,29 +383,35 @@
 
   // ==================== AI 回落判定 ====================
 
-  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于用户到底配没配。
-  // 没配 API Key 却回落过去，用户只会收到一句“请先配置 API Key”——
+  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于用户的接口配没配好。
+  // 没配好却回落过去，用户只会收到一句“请先配置 API Key”——
   // 而真正的原因是“这个语言对内置引擎不支持”或“语言包还没下”。
-  let apiKeyKnown = false;
-  let hasApiKey = false;
+  //
+  // 「配好」不是「有 Key」：本地模型（Ollama / LM Studio、回环或局域网端点）不要
+  // Key。答案只有一处，APICompat.isApiKeyMissing（shared/api-compat.js），它只看
+  // 这三个键，于是这里缓存的也就是这三个键。null = 还没读过。
+  const AI_CONFIG_KEYS = ['provider', 'apiEndpoint', 'apiKey'];
+  let aiConfig = null;
 
-  async function refreshApiKeyPresence() {
+  async function refreshAiConfig() {
     try {
-      const result = await chrome.storage.sync.get({ apiKey: '' });
-      hasApiKey = !!(result.apiKey && String(result.apiKey).trim());
+      aiConfig = await chrome.storage.sync.get({ provider: '', apiEndpoint: '', apiKey: '' });
     } catch (error) {
-      hasApiKey = false;
+      aiConfig = { provider: '', apiEndpoint: '', apiKey: '' };
     }
-    apiKeyKnown = true;
-    return hasApiKey;
+    return aiConfig;
+  }
+
+  function aiConfigured() {
+    return !!aiConfig && !globalThis.APICompat.isApiKeyMissing(aiConfig);
   }
 
   // 选内置引擎就是选了“零费用”。内置这条路走不通时悄悄改走用户自己的接口，
   // 花的是他的钱，而他从没同意过这件事——所以回退默认关闭，开了才回退。
   async function canFallBackToAI() {
     if (settings.engineFallback !== 'allow-ai') return false;
-    if (!apiKeyKnown) await refreshApiKeyPresence();
-    return hasApiKey;
+    if (!aiConfig) await refreshAiConfig();
+    return aiConfigured();
   }
 
   /**
@@ -477,9 +483,12 @@
   if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, namespace) => {
       if (namespace !== 'sync') return;
-      if (changes.apiKey) {
-        hasApiKey = !!(changes.apiKey.newValue && String(changes.apiKey.newValue).trim());
-        apiKeyKnown = true;
+      // 三个键任一变了就把新值并进缓存；还没读过就不并 —— 只并进一个键会把另外
+      // 两个当成空，下一次 canFallBackToAI 自己去读整份就是了。
+      if (aiConfig) {
+        for (const key of AI_CONFIG_KEYS) {
+          if (changes[key]) aiConfig = { ...aiConfig, [key]: changes[key].newValue };
+        }
       }
       // 语言对可能因为设置改了目标语言而变化，页面语言缓存不受影响，
       // 但已建好的实例是按语言对缓存的，无需清理。

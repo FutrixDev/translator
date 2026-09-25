@@ -24,6 +24,10 @@ const elements = {
 // 里没有一行代码读它 —— 一个从不被读、却和另外三张默认值表不一致的键，是下一个
 // 人照着它改出 bug 的地方。
 const defaultSettings = {
+  // 这三个只为问一件事：AI 引擎要不要 Key（APICompat.isApiKeyMissing，本地模型
+  // 不要）。两个字面量与 background/settings.js 一致，default-settings-agree 守。
+  provider: 'openai',
+  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   translationEngine: 'builtin',
   autoTranslate: true,
@@ -813,7 +817,7 @@ async function translateCurrentPage() {
   try {
     const willTranslate = !isHideAction();
     const settings = await chrome.storage.sync.get(defaultSettings);
-    if (willTranslate && settings.translationEngine === 'ai' && !settings.apiKey) {
+    if (willTranslate && settings.translationEngine === 'ai' && APICompat.isApiKeyMissing(settings)) {
       showStatus('configureApiKeyFirst', false);
       chrome.runtime.openOptionsPage();
       return;

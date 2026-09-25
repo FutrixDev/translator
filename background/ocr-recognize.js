@@ -7,6 +7,7 @@ import '../shared/api-compat.js';
 import '../i18n/messages.js';
 import { defaultSettings, uiLanguageOf } from './settings.js';
 import { callClaudeAPI, callOpenAIAPI, isClaudeAPI } from './api-client.js';
+import { apiErrorMessage, missingApiKeyMessage } from './api-errors.js';
 
 // ---------------------------------------------------------------------------
 // Image OCR, step 1: recognition. Two engines — Tesseract in the offscreen
@@ -191,8 +192,9 @@ async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, ui
 
 /** Recognise with the user's own vision model. */
 async function recognizeWithVision({ srcUrl, crop }, settings, uiLang) {
-  if (!settings.apiKey) {
-    throw new Error(getMessage('configureApiKeyFirst', uiLang));
+  const missingKey = missingApiKeyMessage(settings);
+  if (missingKey) {
+    throw new Error(missingKey);
   }
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
   const systemPrompt = globalThis.OCRCore.OCR_SYSTEM_PROMPT;
@@ -260,7 +262,7 @@ async function handleOcrImage(message, sender) {
       : await recognizeLocally(request, settings, uiLang);
   } catch (error) {
     console.error('OCR error:', error);
-    return { error: error.message || getMessage('translationFailed', uiLang) };
+    return { error: apiErrorMessage(error, settings) };
   }
 }
 

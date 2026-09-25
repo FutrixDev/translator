@@ -363,14 +363,14 @@ test('「发给模型的字符数」一次调用记一笔，不多不少', () =>
   const bg = workerCode();
 
   // 记在三个真发请求的函数上，不记在消息监听器里。监听器两头都漏：前面漏掉
-  // `if (!settings.apiKey)` 那一关（没配 Key 时一个字符也没发出去，而自动翻译
+  // 缺 Key 那一关（missingApiKeyMessage，没配 Key 时一个字符也没发出去，而自动翻译
   // 一页最多同时开 12 批，整页整页地虚记），后面漏掉快速分批分隔符对不上时的
   // 整批重发（一条消息两次调用）。
   for (const fn of ['handleTranslate', 'handleBatchTranslate', 'handleBatchTranslateFast']) {
     const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
     assert.ok(body, `${fn} 不见了`);
-    assert.match(body[0], /if \(!settings\.apiKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
-    assert.doesNotMatch(body[0], /countCharsSentToModel/, `${fn} 在 apiKey 那一关这一侧，记不得账`);
+    assert.match(body[0], /const missingKey = missingApiKeyMessage\(settings\);\s*if \(missingKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
+    assert.doesNotMatch(body[0], /countCharsSentToModel/, `${fn} 在缺 Key 那一关这一侧，记不得账`);
   }
 
   for (const fn of ['translateTextWithMode', 'translateBatchWithAI', 'translateBatchFastWithAI']) {

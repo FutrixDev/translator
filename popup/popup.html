@@ -148,6 +148,8 @@
   <script src="../shared/site-rules-builtin.js"></script>
   <script src="../shared/site-rules.js"></script>
   <script src="../shared/account-gate.js"></script>
+  <!-- engine-status.js 在调用时问它「这份配置要不要 Key」，所以排在前面。 -->
+  <script src="../shared/api-compat.js"></script>
   <script src="../shared/engine-status.js"></script>
   <script src="../shared/comic-charge.js"></script>
   <script src="../shared/pdf-errors.js"></script>

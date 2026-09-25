@@ -211,6 +211,7 @@ async function loadSettings() {
 
     // Set endpoint
     elements.apiEndpoint.value = result.apiEndpoint;
+    syncApiKeyPlaceholder();
 
     // Show/hide custom endpoint group
     if (provider === 'custom') {
@@ -340,14 +341,8 @@ let targetLangChosen = false;
 // Read the whole form. Cheap enough to do wholesale on every change, and
 // writing every key each time keeps storage consistent with what is on screen.
 function collectSettings() {
-  const providerKey = elements.provider.value;
-  const provider = PROVIDERS[providerKey];
-
-  // Get endpoint: use provider's endpoint unless custom
-  let apiEndpoint = elements.apiEndpoint.value.trim();
-  if (providerKey !== 'custom' && provider) {
-    apiEndpoint = provider.endpoint;
-  }
+  // provider / apiEndpoint / apiKey, read the way the connection test reads them.
+  const connection = formConnection();
 
   // Get model name from dropdown or custom input
   const modelName = getEffectiveModelName();
@@ -355,9 +350,7 @@ function collectSettings() {
   return {
     translationEngine: elements.translationEngine.value,
     engineFallback: elements.engineFallback.value,
-    provider: providerKey,
-    apiEndpoint: apiEndpoint,
-    apiKey: elements.apiKey.value.trim(),
+    ...connection,
     modelName: modelName,
     // 没选过就存空串：空是「跟随浏览器」的哨兵，选择器上那个值只是回显。
     targetLang: targetLangChosen ? elements.targetLang.value : '',
@@ -625,6 +618,8 @@ function setupEventListeners() {
   elements.downloadLanguagePack.addEventListener('click', downloadLanguagePack);
 
   elements.testConnection.addEventListener('click', testConnection);
+  // A loopback / LAN endpoint makes the key optional; say so as it is typed.
+  elements.apiEndpoint.addEventListener('input', syncApiKeyPlaceholder);
   elements.resetPrompt.addEventListener('click', resetPrompt);
   elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
   elements.themeToggle.addEventListener('click', toggleTheme);
