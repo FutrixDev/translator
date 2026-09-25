@@ -533,7 +533,35 @@
     return op === 'clear' ? 0 : current + 1;
   }
 
-  const WRITES = { rule: applyUserRule, ask: applyAskCount };
+  /**
+   * 设置导入：一次合并一整张表（options/options-transfer.js）。
+   *
+   * 和单条写入走同一条队列、同一把归一化的钥匙、同一道预算。导入的条目覆盖同名
+   * 键，表里别的条目原样留着。收拾完多余条目还挤不下就抛 —— 不挑几条扔掉凑数，
+   * 那是替用户改主意；也不写一半。整张表只 set 一次。
+   *
+   * @returns {Promise<number>} 收下的条数
+   */
+  async function applyImportedRules({ map }) {
+    const store = root.chrome.storage.sync;
+    const stored = await store.get({ siteRules: {} });
+    const rules = Object.assign({}, stored.siteRules);
+    let accepted = 0;
+    for (const [host, state] of Object.entries(map || {})) {
+      const key = normalizeHost(host);
+      if (!key || !STATES.has(state)) continue;
+      rules[key] = state;
+      accepted += 1;
+    }
+    compactUserRules(rules);
+    if (itemBytes(rules) > MAX_ITEM_BYTES) {
+      throw new Error(`site rules: import needs ${itemBytes(rules)} bytes, over the ${MAX_ITEM_BYTES}-byte budget`);
+    }
+    await store.set({ siteRules: rules });
+    return accepted;
+  }
+
+  const WRITES = { rule: applyUserRule, ask: applyAskCount, import: applyImportedRules };
 
   /**
    * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接，规则
@@ -562,6 +590,10 @@
 
   function updateAskCount(hostname, op) {
     return request('ask', { host: hostname, op });
+  }
+
+  function importUserRules(map) {
+    return request('import', { map });
   }
 
   /**
@@ -620,5 +652,6 @@
     isBlocklisted,
     siteRuleWritable,
     loadTable,
+    importUserRules,
   };
 })(globalThis);

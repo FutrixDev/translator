@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="onboardingPageTitle">Welcome to Blab Translation</title>
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <!-- 首装引导页：只在 onInstalled 的 reason === 'install' 时由
+       background/install.js 打开。每一项改动即写即存，没有「保存」按钮；
+       设计见 docs/plans/2026-09-25-p0-f-onboarding-transfer.md §2。 -->
+  <div class="container">
+    <header class="header">
+      <img src="../icons/icon48.png" width="40" height="40" alt="">
+      <div class="header-text">
+        <h1 id="onboardingTitle" data-i18n="onboardingPageTitle">Welcome to Blab Translation</h1>
+        <p class="lead" data-i18n="onboardingIntro">A few quick choices and you are ready.</p>
+      </div>
+    </header>
+
+    <p id="onboardingError" class="error" role="alert" hidden></p>
+
+    <main class="sections">
+      <!-- 1. 端上翻译：状态和下载按钮（shared/language-pack.js） -->
+      <section id="builtinSection" class="card">
+        <h2 data-i18n="onboardingBuiltinTitle">Offline translation</h2>
+        <p class="desc" data-i18n="onboardingBuiltinDesc">Chrome can translate on this device for free.</p>
+        <div class="status-row">
+          <p id="builtinStatus" class="status" aria-live="polite"></p>
+          <button type="button" id="downloadLanguagePack" class="btn btn-primary" hidden>
+            <span data-i18n="downloadLanguagePack">Download Language Pack</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 2. 目标语言 -->
+      <section id="targetSection" class="card">
+        <h2><label for="targetLang" data-i18n="onboardingTargetTitle">Translate into</label></h2>
+        <p class="desc" data-i18n="onboardingTargetDesc">Translations appear in this language.</p>
+        <select id="targetLang" class="select"></select>
+      </section>
+
+      <!-- 3. 翻译引擎：端上 / 配置 AI（连接表单不抄，送到设置页的 API 卡片） -->
+      <section id="engineSection" class="card">
+        <h2 data-i18n="onboardingEngineTitle">Translation engine</h2>
+        <div class="choices" role="radiogroup">
+          <label class="choice">
+            <input type="radio" name="engine" value="builtin" id="engineBuiltin">
+            <span class="choice-text">
+              <span class="choice-title" data-i18n="onboardingEngineBuiltin">Built-in (recommended)</span>
+              <span class="choice-desc" data-i18n="onboardingEngineBuiltinDesc">Free and private.</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="engine" value="ai" id="engineAi">
+            <span class="choice-text">
+              <span class="choice-title" data-i18n="onboardingEngineAi">Set up AI</span>
+              <span class="choice-desc" data-i18n="onboardingEngineAiDesc">Use a model you choose.</span>
+            </span>
+          </label>
+        </div>
+        <div id="aiProviders" class="ai-providers" hidden>
+          <div class="ai-buttons">
+            <button type="button" id="aiOllama" class="btn btn-secondary" data-i18n="onboardingAiOllama">Ollama</button>
+            <button type="button" id="aiLmStudio" class="btn btn-secondary" data-i18n="onboardingAiLmStudio">LM Studio</button>
+            <button type="button" id="aiCloud" class="btn btn-secondary" data-i18n="onboardingAiCloud">Cloud API</button>
+          </div>
+          <p class="desc" data-i18n="onboardingAiNote">Settings opens in a new tab.</p>
+        </div>
+      </section>
+
+      <!-- 4. 快捷键（chrome.commands.getAll，只读） -->
+      <section id="shortcutSection" class="card">
+        <h2 data-i18n="onboardingShortcutsTitle">Keyboard shortcuts</h2>
+        <ul id="shortcutList" class="shortcuts"></ul>
+        <p class="desc" data-i18n="onboardingShortcutsHint">To change them, type chrome://extensions/shortcuts into the address bar.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <button type="button" id="openSettings" class="btn btn-secondary" data-i18n="onboardingOpenSettings">Open Full Settings</button>
+      <button type="button" id="done" class="btn btn-primary" data-i18n="onboardingDone">Done</button>
+    </footer>
+  </div>
+
+  <!-- 顺序和设置页一致：引擎族依赖 lang-tags，端上状态依赖 engine-status，
+       后者依赖 api-compat。test/unit/engine-status.test.mjs 检查这张清单。 -->
+  <script src="../shared/api-compat.js"></script>
+  <script src="../shared/default-settings.js"></script>
+  <script src="../shared/engine-status.js"></script>
+  <script src="../shared/lang-tags.js"></script>
+  <script src="../shared/target-lang.js"></script>
+  <script src="../i18n/lang/en.js"></script>
+  <script src="../i18n/lang/zh-CN.js"></script>
+  <script src="../i18n/lang/zh-TW.js"></script>
+  <script src="../i18n/lang/ja.js"></script>
+  <script src="../i18n/lang/ko.js"></script>
+  <script src="../i18n/lang/fr.js"></script>
+  <script src="../i18n/lang/de.js"></script>
+  <script src="../i18n/lang/es.js"></script>
+  <script src="../i18n/lang/pt.js"></script>
+  <script src="../i18n/lang/ru.js"></script>
+  <script src="../i18n/messages.js"></script>
+  <script src="../shared/tab-broadcast.js"></script>
+  <script src="../shared/language-pack.js"></script>
+  <script src="../content/engine/languages.js"></script>
+  <script src="../content/engine/watchdog.js"></script>
+  <script src="../content/content-translation-engine.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>

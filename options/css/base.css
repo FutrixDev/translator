@@ -1,4 +1,4 @@
-/* Blab Translation 设置页样式，第 1 份（共 7 份）
+/* Blab Translation 设置页样式，第 1 份（共 8 份）
 
    一千二百行拆成了 options/css/ 下的一组文件，切口就是原来那些段落注释。
    **options.html 里 <link> 的顺序就是层叠顺序**：拆分严格照原顺序切，没有动过

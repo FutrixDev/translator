@@ -317,7 +317,7 @@ function toggleTheme() {
   chrome.storage.sync.set({ theme: newTheme });
   
   // Notify content scripts
-  notifyContentScripts({ theme: newTheme });
+  TabBroadcast.settingsUpdated({ theme: newTheme });
 }
 // ---------------------------------------------------------------------------
 // Autosave
@@ -475,7 +475,7 @@ async function persistSettings({ reapplyI18n = false } = {}) {
     lastGoodSettings = settings;
 
     // Notify all tabs about settings change
-    notifyContentScripts(settings);
+    TabBroadcast.settingsUpdated(settings);
 
     if (reapplyI18n) {
       applyI18n(settings.uiLanguage);
@@ -507,51 +507,6 @@ function flushAutosave() {
   if (autosaveTimer) persistSettings();
 }
 
-// Notify content scripts
-async function notifyContentScripts(settings) {
-  try {
-    const tabs = await chrome.tabs.query({});
-    tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'SETTINGS_UPDATED',
-        settings
-      }).catch(() => {});
-    });
-  } catch (error) {
-    // Ignore errors
-  }
-}
-
-/**
- * Tell the open tabs a language pack just landed.
- *
- * A tab that opened before the pack existed is most likely parked on ERROR: the
- * automatic round runs without a user gesture, so it passes
- * `allowDownload: false` and every batch comes back `builtinNeedsDownload`. The
- * scheduler does not retry on its own — deliberately, because retrying against
- * an engine that is plainly broken is how you burn a user's quota — so without
- * this message those pages stay blank until a reload.
- *
- * The content script has the same notification for the pack it downloads
- * itself (`ctx.onLanguagePackReady`, content/content-language-pack.js); this is
- * the half that cannot reach it, because the download that just finished ran in
- * this page's context, not theirs. The receiving end ignores it unless that tab
- * is actually on the built-in engine.
- */
-async function broadcastLanguagePackReady(targetLang) {
-  try {
-    const tabs = await chrome.tabs.query({});
-    tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'LANGUAGE_PACK_READY',
-        sourceLang: BUILTIN_PROBE_SOURCE,
-        targetLang
-      }).catch(() => {});
-    });
-  } catch (error) {
-    // A tab with no content script rejects; nothing here is worth reporting.
-  }
-}
 // ---------------------------------------------------------------------------
 // Status area
 //
@@ -891,6 +846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
   setupSyncMirror();
+  setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row
   // without its link to the web library.

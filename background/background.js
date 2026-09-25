@@ -36,6 +36,7 @@ import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
+import { openOnboardingOnInstall } from './install.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
 // handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
@@ -283,11 +284,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Context menu for right-click translation
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   createContextMenus();
   // Jobs survive a browser restart; the alarm that watches them must too.
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
+  // First install only: the welcome page (./install.js decides which reasons).
+  Promise.resolve(openOnboardingOnInstall(details))
+    .catch(error => console.error('Opening the onboarding page failed:', error));
 });
 
 chrome.runtime.onStartup.addListener(() => {
