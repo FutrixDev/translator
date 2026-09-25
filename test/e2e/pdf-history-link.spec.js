@@ -82,6 +82,14 @@ test.describe('PDF history → web library', () => {
       const history = page.locator('#pdfTasksHistoryList');
       await expect(history.locator('.pdf-task')).toHaveCount(2, { timeout: 15000 });
 
+      // J-B11: each row names its target language in the UI language (en here),
+      // as Intl names it — worked out in the browser, not by the page under
+      // test. zh-CN is looked up as zh-Hans, the way every name for it is.
+      const intlName = (tag) => page.evaluate((code) => new Intl.DisplayNames(['en'], { type: 'language' }).of(code), tag);
+      await expect(history.locator('.pdf-task-meta').first()).toContainText(` · ${await intlName('zh-Hans')} · `);
+      await expect(history.locator('.pdf-task-meta').nth(1)).toContainText(` · ${await intlName('en')} · `);
+      await expect(page.locator('#pdfTasksActiveList .pdf-task-meta')).toContainText(` · ${await intlName('ja')} · `);
+
       // The link carries the job, so the library opens on the document the
       // reader clicked rather than on whatever is newest.
       await expect(history.locator('.pdf-task-view').first())

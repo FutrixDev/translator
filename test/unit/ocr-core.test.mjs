@@ -572,24 +572,34 @@ test('nothing recognised and no target are both nothing to translate', () => {
 
 // --- Detected-language labels ------------------------------------------------
 
-test('detected language codes map to i18n keys, case and variant insensitively', () => {
-  assert.equal(OCR.detectedLanguageLabelKey('zh-Hans'), 'langZhCN');
-  assert.equal(OCR.detectedLanguageLabelKey('zh-CN'), 'langZhCN');
-  assert.equal(OCR.detectedLanguageLabelKey('zh-Hant'), 'langZhTW');
-  assert.equal(OCR.detectedLanguageLabelKey('JA'), 'langJa');
-});
-
-test('everything detectScriptLanguage can return has a label', () => {
-  // Otherwise the popup shows a raw subtag for a language we ourselves named.
+// The popup names the detected language with TargetLang.nameOf in the UI
+// language (content-image-ocr.js sourceLabelFor → ctx.languageName). There is
+// no key table any more: whatever the OCR step answers goes straight to Intl.
+test('everything detectScriptLanguage can return is named by Intl, in the UI language', async () => {
+  await import('../../shared/lang-tags.js');
+  await import('../../shared/target-lang.js');
+  const { TargetLang } = globalThis;
   for (const code of ['en', 'ja', 'ko', 'ru', 'zh-Hans', 'zh-Hant']) {
-    assert.notEqual(OCR.detectedLanguageLabelKey(code), '', `${code} needs a label key`);
+    for (const ui of ['en', 'zh-CN']) {
+      const name = TargetLang.nameOf(code, ui);
+      assert.equal(name, new Intl.DisplayNames([ui], { type: 'language' }).of(code),
+        `${code} in ${ui}`);
+      assert.notEqual(name, code, `${code} has no ${ui} name`);
+    }
   }
+  assert.equal(TargetLang.nameOf('zh-Hans', 'zh-CN'), '简体中文');
+  // A vision model's bare `zh` is Chinese, no longer forced to Simplified.
+  assert.equal(TargetLang.nameOf('zh', 'en'), 'Chinese');
+  // A code Intl cannot name is shown raw, and nothing is nothing.
+  assert.equal(TargetLang.nameOf('qaa', 'en'), 'qaa');
+  assert.equal(TargetLang.nameOf('', 'en'), '');
 });
 
-test('an unmapped code yields no key, so the caller shows it raw', () => {
-  assert.equal(OCR.detectedLanguageLabelKey('th'), '');
-  assert.equal(OCR.detectedLanguageLabelKey(''), '');
-  assert.equal(OCR.detectedLanguageLabelKey(null), '');
+test('the OCR popup names the language through ctx.languageName, not a key table', () => {
+  const source = readFileSync(repoPath('content/content-image-ocr.js'), 'utf8');
+  assert.match(source, /return `\$\{t\('original'\)\} · \$\{ctx\.languageName\(language\)\}`;/);
+  assert.equal('detectedLanguageLabelKey' in OCR, false);
+  for (const lang of OCR.OCR_LANGUAGES) assert.equal('labelKey' in lang, false, lang.code);
 });
 
 // --- Encoding limits ---------------------------------------------------------
@@ -806,8 +816,6 @@ test('every locale carries the OCR strings the worker, popup and options look up
     'ocrRegionHint',
     'imageOcrSettings'
   ];
-  // The labels the recognised-language line resolves through.
-  for (const lang of OCR.OCR_LANGUAGES) keys.push(lang.labelKey);
   for (const [locale, table] of Object.entries(messages)) {
     for (const key of keys) {
       assert.equal(typeof table[key], 'string', `${locale} is missing ${key}`);

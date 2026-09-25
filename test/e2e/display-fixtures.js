@@ -21,8 +21,12 @@ const HOSTS = Object.freeze({
   dark: Object.freeze({ bg: '#111111', fg: '#e8e8e8' }),
 });
 
+// Each translation ("[T] " + the text) must stay on its own line count under
+// quote's inset (J-C1: no source moves). The translation carries lang=zh-CN,
+// and Chrome's zh-Hans sans-serif sets Latin about 6% wider than the page's
+// own, so a line wider than the 640px column less that inset (about 627px) wraps.
 const PARAGRAPHS = Object.freeze([
-  'The harbour master keeps a separate ledger for the boats that never came back.',
+  'The harbour master keeps a ledger for the boats that never came back.',
   'Every entry is written in the same brown ink, and none of them has ever been crossed out.',
   'On calm evenings he reads a page aloud to whoever is still waiting on the quay.',
 ]);

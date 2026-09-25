@@ -766,13 +766,17 @@
   // @param {{fromContentBox?: boolean}} options 译文插到元素【内部】时传 true：
   //   元素那圈 padding/border 译文已经继承了，再按外边框算一次就是双份缩进
   //   （.code-box 的 16px padding 会变成 32px）。
-  function getTextOffsetLeft(element, options) {
+  function getTextInset(element, options) {
     const elementRect = element.getBoundingClientRect();
     if (elementRect.width === 0) return 0;
+    // 量的是原文的起始边：RTL 原文的文字从右边起，缩进就是文字右边离盒子右边多远。
+    const style = window.getComputedStyle(element);
+    const rtl = style.direction === 'rtl';
     let originLeft = elementRect.left;
+    let originRight = elementRect.right;
     if (options && options.fromContentBox) {
-      const style = window.getComputedStyle(element);
       originLeft += (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0);
+      originRight -= (parseFloat(style.borderRightWidth) || 0) + (parseFloat(style.paddingRight) || 0);
     }
 
     // 递归查找第一个文本节点的位置
@@ -804,7 +808,7 @@
 
     const textRect = findFirstTextRect(element);
     if (textRect) {
-      return Math.max(0, textRect.left - originLeft);
+      return Math.max(0, rtl ? originRight - textRect.right : textRect.left - originLeft);
     }
 
     return 0;
@@ -864,7 +868,7 @@
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
   ctx.readSourceText = readSourceText;
-  ctx.getTextOffsetLeft = getTextOffsetLeft;
+  ctx.getTextInset = getTextInset;
   ctx.normalizeComparableText = normalizeComparableText;
   // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
   // “页面已经翻完了”和“正文没能翻”，所以计数跟着收集走，读的人只读。

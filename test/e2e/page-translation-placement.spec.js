@@ -57,7 +57,7 @@ test('page translation placement: box-painting elements, list items, and stray t
       .filter((b) => b.element.classList.contains(ctx.TEXT_RUN_CLASS))
       .map((b) => b.text);
 
-    blocks.forEach((b) => ctx.insertTranslationBlock(b, '[T] ' + b.text.replace(/<\/?[a-z]+\d+>/gi, '')));
+    blocks.forEach((b) => ctx.insertTranslationBlock(b, '[T] ' + b.text.replace(/<\/?[a-z]+\d+>/gi, ''), { textLang: 'zh-CN' }));
 
     const rect = (sel) => {
       const el = document.querySelector(sel);

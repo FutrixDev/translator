@@ -202,6 +202,7 @@ async function loadSettings() {
     // 语言填进去显示；存回去的仍是空串，见 collectSettings。
     targetLangChosen = !!result.targetLang;
     const targetLang = TargetLang.effective(result);
+    renderLanguageOptions(getUILanguage(result.uiLanguage));
 
     // Determine provider from saved settings or detect from endpoint
     let provider = result.provider;

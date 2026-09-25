@@ -18,7 +18,10 @@ test('options hints use i18n keys', async ({ page, extensionId }) => {
   await expect(page.locator('#apiKey')).toHaveAttribute('placeholder', getMessage('placeholderApiKey', 'en'));
   await expect(page.locator('#toggleApiKey')).toHaveAttribute('title', getMessage('toggleApiKey', 'en'));
   await expect(page.locator('#provider option[value="openai"]')).toHaveText(getMessage('providerOpenai', 'en'));
-  await expect(page.locator('#targetLang option[value="zh-CN"]')).toHaveText(getMessage('langZhCN', 'en'));
+  // Language names are Intl's, computed in the page's own browser — zh-CN is
+  // named through zh-Hans, "Simplified Chinese" rather than "Chinese (China)".
+  const zhHans = await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('zh-Hans'));
+  await expect(page.locator('#targetLang option[value="zh-CN"]')).toHaveText(zhHans);
 
   // There is deliberately no OCR language picker: nobody can pre-declare what
   // language an image will contain, so recognition always runs the auto plan.

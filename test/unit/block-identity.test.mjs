@@ -244,7 +244,7 @@ test('every insertion registers an identity — including the one with no node t
   // 走不到那里，所以它必须自己登记一次。
   assert.match(body, /registerTranslation\(element, handle, true, lang\)/,
     'the managed (::after) branch inserts a translation nobody can later release');
-  assert.match(source, /function finishTranslationInsert\(element, translationEl, sourceWidthBefore, lang\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang\);/,
+  assert.match(source, /function finishTranslationInsert\(element, translationEl, sourceWidthBefore, lang, textLang\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang\);/,
     'the shared post-insert path no longer registers the block identity');
 });
 

@@ -83,7 +83,8 @@ An AI-powered Chrome browser translation extension that supports selection trans
 #### Other Features
 - Right-click context menu translation
 - Dark/Light theme toggle
-- Multi-language support (10+ languages)
+- 76 target languages (39 translated free on-device by Chrome's built-in Translator, the rest through your AI service)
+- Right-to-left targets (Arabic, Hebrew, Persian, Urdu) are laid out right-to-left, and a right-to-left page translated into a left-to-right language is laid out left-to-right
 - Input text translation dialog
 
 ### 🚀 Installation
@@ -232,7 +233,9 @@ these instructions, and a server that is not running is named by its address.
 
 ### 🌍 Supported Languages
 
-简体中文 • 繁体中文 • English • 日本語 • 한국어 • Français • Deutsch • Español • Português • Русский
+**Translation targets:** 76 languages, named in your interface language. 39 of them can be translated free on-device by Chrome's built-in Translator; the other 37 are marked "AI only" in the language menus and go through your AI service.
+
+**Interface:** 简体中文 • 繁体中文 • English • 日本語 • 한국어 • Français • Deutsch • Español • Português • Русский
 
 ### 📁 Project Structure
 
@@ -347,7 +350,8 @@ MIT License
 #### 其他功能
 - 右键菜单快速翻译
 - 深色/浅色主题切换
-- 支持多种目标语言（10+语言）
+- 支持 76 门目标语言：其中 39 门可用 Chrome 内置翻译免费在本机完成，其余 37 门走 AI
+- 阿拉伯语、希伯来语、波斯语、乌尔都语等右到左语言的译文按右到左排版；右到左的页面译成左到右语言时同样按译文自己的方向排版
 - 输入文本翻译对话框
 
 ### 🚀 安装使用
@@ -483,7 +487,9 @@ cd translator
 
 ### 🌍 支持的语言
 
-简体中文 • 繁体中文 • English • 日本語 • 한국어 • Français • Deutsch • Español • Português • Русский
+**目标语言：** 76 门，名字按界面语言显示。其中 39 门可用 Chrome 内置翻译免费在本机完成；其余 37 门在语言菜单里标「仅 AI」，走你配置的 AI 服务。
+
+**界面语言：** 简体中文 • 繁体中文 • English • 日本語 • 한국어 • Français • Deutsch • Español • Português • Русский
 
 ### 📁 项目结构
 

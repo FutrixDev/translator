@@ -123,11 +123,14 @@
     }
   }
 
-  function putRule(sheet, id, text) {
+  // 伪元素上写不了 lang 属性，方向只能进规则：direction 加 isolate，让译文的方向
+  // 不和原文块的方向搅在一起；对齐按 translationTextAlign 的同一条规则算。
+  function putRule(sheet, id, text, layout) {
     dropRule(id);
     try {
       const index = sheet.insertRule(
-        `[${BLOCK_ATTR}="${id}"]::after{content:${cssString(text)};}`,
+        `[${BLOCK_ATTR}="${id}"]::after{content:${cssString(text)};` +
+          `direction:${layout.dir};unicode-bidi:isolate;text-align:${layout.align};}`,
         sheet.cssRules.length
       );
       rulesById.set(id, sheet.cssRules[index]);
@@ -165,8 +168,10 @@
   // 句柄不是译文本身 —— 译文是原文块上的一条 ::after 规则，没有对应节点。句柄存在
   // 只是因为现有的记账（Map、inlineTranslationSources、浮球的 querySelectorAll）
   // 都以“译文是一个元素”为前提，所以给它一个不显示的替身，带上同样的类名。
+  // options.textLang：这段文字是哪门语言（译文是目标语言，加载态是界面语言），必传。
   ctx.renderManagedTranslation = function(block, text, options = {}) {
-    const { kind, state, className } = options;
+    const { kind, state, className, textLang } = options;
+    if (!textLang) throw new Error('renderManagedTranslation: textLang is required');
     if (!block || block.nodeType !== Node.ELEMENT_NODE) return null;
     const sheet = getSheet();
     if (!sheet) return null;
@@ -174,7 +179,9 @@
     // 一个块同时只有一条译文：悬停改划词、加载态换成结果，都复用同一个 id，
     // 免得规则在表里越堆越多。
     const id = block.getAttribute(BLOCK_ATTR) || String(nextId++);
-    if (!putRule(sheet, id, text)) return null;
+    const dir = TargetLang.direction(textLang);
+    const align = ctx.translationTextAlign(window.getComputedStyle(block), dir);
+    if (!putRule(sheet, id, text, { dir, align })) return null;
 
     block.setAttribute(BLOCK_ATTR, id);
     if (state) {

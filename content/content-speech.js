@@ -79,8 +79,21 @@
     return voicesReady;
   }
 
+  // No installed voice speaks the language. Handing the text to the engine
+  // anyway reads it with the system default voice — noise, or silence — so the
+  // button says so instead. applyButtonState is what takes the state off again.
+  const NO_VOICE_CLASS = 'is-no-voice';
+  function applyNoVoiceState(button) {
+    if (!button) return;
+    button.classList.add(NO_VOICE_CLASS);
+    const label = ctx.t('speechNoVoice');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+  }
+
   function applyButtonState(button, speaking) {
     if (!button) return;
+    button.classList.remove(NO_VOICE_CLASS);
     button.classList.toggle('is-speaking', speaking);
     button.setAttribute('aria-pressed', speaking ? 'true' : 'false');
     const label = speaking
@@ -118,6 +131,8 @@
     const isStopClick = button !== null && button === activeButton;
 
     stopSpeaking();
+    // A retry starts from the button's ordinary state, not the last verdict.
+    applyButtonState(button, false);
     if (!trimmed || isStopClick) return false;
 
     const token = ++requestToken;
@@ -125,11 +140,19 @@
     await whenVoicesReady();
     if (token !== requestToken) return false;
 
+    const voices = window.speechSynthesis.getVoices();
+    // An empty list is "not enumerated yet" on some platforms, not "no voices":
+    // speak as before and let the engine choose. A known language with a
+    // non-empty list and no voice for it is the case worth saying out loud.
+    if (spokenLang && voices.length && !SpeechLang.hasVoiceFor(spokenLang, voices)) {
+      applyNoVoiceState(button);
+      return false;
+    }
+
     const utterance = new SpeechSynthesisUtterance(trimmed);
     // The voice is set explicitly, not left to the tag: Chrome answers a bare
     // tag with the first listed match, and macOS lists its novelty voices
     // first — `en-US` alone means Albert, the hoarse croak.
-    const voices = window.speechSynthesis.getVoices();
     const voice = SpeechLang.pickVoice(spokenLang, voices);
     if (voice) {
       utterance.voice = voice;
@@ -186,6 +209,9 @@
 
     return (visible) => {
       button.hidden = !visible;
+      // Shown again means new text, maybe in another language: the last
+      // no-voice verdict was about the old one.
+      if (visible && activeButton !== button) applyButtonState(button, false);
       // A button that leaves the screen mid-utterance would otherwise keep
       // talking with no way left to stop it.
       if (!visible && activeButton === button) stopSpeaking();

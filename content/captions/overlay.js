@@ -25,6 +25,8 @@
     block.className = 'ai-translator-caption-block';
     const original = document.createElement('div');
     original.className = 'ai-translator-caption-original';
+    // 原文是别人的字幕，哪门语言我们不知道：让浏览器按第一个强方向字符定方向。
+    original.dir = 'auto';
     const line = document.createElement('div');
     line.className = 'ai-translator-caption-line';
     block.appendChild(original);
@@ -51,6 +53,9 @@
       origEl.style.display = (display.showOriginal && original) ? '' : 'none';
     }
     if (transEl) {
+      // 译文行每次落字都按此刻的目标语言打标：观众可以在视频中途换目标语言，
+      // 而缓存键里带着它，所以这一行的字总是这门语言。
+      ctx.markLanguage(transEl, ctx.getEffectiveTargetLang());
       transEl.textContent = translation || '';
       transEl.style.display = (display.showTranslation && translation) ? '' : 'none';
     }

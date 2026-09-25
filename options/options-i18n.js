@@ -93,6 +93,9 @@ function applyI18n(lang) {
       // getManifest() may be unavailable in some contexts; keep the i18n fallback.
     }
   }
+
+  // 语言名由 Intl 按界面语言现算，身上没有 data-i18n，切界面语言要跟着重画。
+  renderLanguageOptions(currentUILang);
 }
 
 function applyPlatformHotkeyLabels() {

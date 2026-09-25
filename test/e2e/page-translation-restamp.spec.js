@@ -45,8 +45,8 @@ async function insertTwice(page, first, second, current) {
     // 只有这样才轮得到落笔端裁决。收完第一条译文再收第二次的话，收集端自己那
     // 道陈旧判定会先把旧译文摘掉，落笔端根本碰不到这一局。
     const blocks = [pick(), pick()];
-    ctx.insertTranslationBlock(blocks[0], a.text, a.lang === undefined ? {} : { lang: a.lang });
-    ctx.insertTranslationBlock(blocks[1], b.text, b.lang === undefined ? {} : { lang: b.lang });
+    ctx.insertTranslationBlock(blocks[0], a.text, a.lang === undefined ? { textLang: now } : { lang: a.lang, textLang: a.lang });
+    ctx.insertTranslationBlock(blocks[1], b.text, b.lang === undefined ? { textLang: now } : { lang: b.lang, textLang: b.lang });
 
     const shown = Array.from(document.querySelectorAll('.ai-translator-inline-block'))
       .map((el) => el.textContent.trim());

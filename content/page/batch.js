@@ -344,7 +344,7 @@
       return;
     }
     if (accept && !accept(block)) return;
-    ctx.insertTranslationBlock(block, translation, { lang: target.stamp });
+    ctx.insertTranslationBlock(block, translation, { lang: target.stamp, textLang: target.request });
     // 无条件报结果，不去问插入端「真写进去了吗」。它拒收的三种情形都是终局：
     //   · 这一块上已经挂着一条同语言的译文 —— 那就是有结果了；
     //   · 这一轮译成的已经不是用户此刻要的那门语言了（并发的另一轮把页面翻成了

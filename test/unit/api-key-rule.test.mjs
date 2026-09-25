@@ -397,8 +397,6 @@ test('the remedies are commands, and commands are not translated', () => {
 
 // No CJK character in the code of the files that used to write the error
 // text themselves. Comments do not reach the reader and are not scanned.
-// background/settings.js is left out on purpose: its languageNames table is
-// P0-B's.
 const CJK = new RegExp(
   String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]|[`
     + String.fromCharCode(0x3000) + '-' + String.fromCharCode(0x303f)
@@ -422,6 +420,7 @@ test('no Chinese literal is left where the reader could see it', () => {
     'background/api-errors.js',
     'background/ai-translate.js',
     'background/ocr-recognize.js',
+    'background/settings.js',
     'shared/api-compat.js',
     'options/options-connection.js',
     'popup/popup.js',

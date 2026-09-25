@@ -32,9 +32,9 @@
   'use strict';
 
   // Widening a bare code needs a region, and the region is a real choice: to a
-  // listener pt-BR and pt-PT are not interchangeable. Every language the
-  // pickers offer needs an entry here, which test/unit/content-speech.test.mjs
-  // checks against content/content-bootstrap.js so the two cannot drift.
+  // listener pt-BR and pt-PT are not interchangeable. Add an entry only where
+  // that choice actually matters; every other language falls through to
+  // whichever region of it is installed (see resolveSpeechLang).
   const SPEECH_REGION = {
     zh: 'zh-CN',
     en: 'en-US',
@@ -171,6 +171,34 @@
     return best;
   }
 
+  // A voice's tag and ours may spell one language two ways: Chrome reports
+  // Norwegian voices as nb-NO while our list says `no`, and a system can still
+  // report the retired iw/in codes. Intl.getCanonicalLocales folds the retired
+  // codes (iw→he, in→id, tl→fil); nb/nn→no is a macrolanguage step it does not
+  // take, so that one is ours. A tag it cannot parse names no language.
+  const TAG_SHAPE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
+  const MACRO_BASE = { nb: 'no', nn: 'no' };
+  function canonicalBase(tag) {
+    const value = String(tag || '').replace(/_/g, '-');
+    if (!TAG_SHAPE.test(value)) return '';
+    const base = baseOf(Intl.getCanonicalLocales(value)[0]);
+    return MACRO_BASE[base] || base;
+  }
+
+  /**
+   * Whether any installed voice speaks `lang` at all, whatever its region.
+   * An empty list answers false; the caller decides what an empty list means
+   * (on some platforms it is only "not enumerated yet").
+   *
+   * @param {string} lang
+   * @param {Array<{lang: string}>} voices
+   */
+  function hasVoiceFor(lang, voices) {
+    const want = canonicalBase(lang);
+    if (!want || !Array.isArray(voices)) return false;
+    return voices.some((voice) => canonicalBase(voice?.lang) === want);
+  }
+
   /**
    * Which language `text` should actually be spoken in.
    *
@@ -202,5 +230,5 @@
     return detected || declared || '';
   }
 
-  root.SpeechLang = { SPEECH_REGION, CJK_SCRIPT, scriptOf, resolveSpeechLang, resolveSpokenLang, pickVoice };
+  root.SpeechLang = { SPEECH_REGION, CJK_SCRIPT, scriptOf, resolveSpeechLang, resolveSpokenLang, pickVoice, hasVoiceFor };
 })(globalThis);

@@ -297,6 +297,13 @@
   transition: all 0.2s ease;
 }
 
+/* The display above outranks the UA's [hidden] rule, so a button the script
+   hides (the language-pack download for a target the built-in engine has no
+   pack for) would otherwise stay on screen. */
+.btn[hidden] {
+  display: none;
+}
+
 .btn-primary {
   background: var(--accent-gradient);
   color: white;

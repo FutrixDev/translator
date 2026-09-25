@@ -54,7 +54,7 @@ test('translation-only mode hides sources, and unwinds without a trace', async (
     const blocks = ctx.collectTranslatableBlocks(document.body);
     blocks
       .filter((b) => ['para', 'cell'].includes(b.element.id))
-      .forEach((b) => ctx.insertTranslationBlock(b, '[译] ' + b.text));
+      .forEach((b) => ctx.insertTranslationBlock(b, '[译] ' + b.text, { textLang: 'zh-CN' }));
   });
 
   const on = await snapshot(page);
@@ -98,7 +98,7 @@ test('a page that removes the translation gets its original back on the next app
     const blocks = ctx.collectTranslatableBlocks(document.body);
     blocks
       .filter((b) => ['para', 'cell'].includes(b.element.id))
-      .forEach((b) => ctx.insertTranslationBlock(b, '[译] ' + b.text));
+      .forEach((b) => ctx.insertTranslationBlock(b, '[译] ' + b.text, { textLang: 'zh-CN' }));
 
     // Simulate a page script deleting both inserted translations.
     document.querySelectorAll('.ai-translator-inline-block:not(.ai-translator-hover-translation)')
@@ -128,7 +128,7 @@ test('float ball "hide translations" brings the originals back', async ({ page }
     ctx.settings.showTranslationOnly = true;
     const blocks = ctx.collectTranslatableBlocks(document.body);
     const para = blocks.find((b) => b.element.id === 'para');
-    ctx.insertTranslationBlock(para, '[译] ' + para.text);
+    ctx.insertTranslationBlock(para, '[译] ' + para.text, { textLang: 'zh-CN' });
 
     const whileVisible = document.getElementById('para').classList.contains('ai-translator-source-hidden');
 

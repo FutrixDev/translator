@@ -251,7 +251,7 @@ test('the input dialog translates into the language picked in it, not the one in
     // Clicking through to a language is the assertion here: on a page like this
     // one the menu used to be unreachable behind the textarea.
     await pickInputTargetLang(page, 'ja');
-    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText('日本語');
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
     await page.fill('#ai-translator-input-text', 'a full sentence for translation');
     await page.click('#ai-translator-do-translate');
@@ -261,7 +261,7 @@ test('the input dialog translates into the language picked in it, not the one in
     // re-pick, or go to the settings page, for the next paste.
     await page.click('#ai-translator-input-dialog .ai-translator-close');
     await openInputDialog(page);
-    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText('日本語');
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
     await page.fill('#ai-translator-input-text', 'another sentence');
     await page.click('#ai-translator-do-translate');
@@ -294,7 +294,7 @@ test('setting a target language in settings overrides what the input dialog reme
     await setExtensionSettings(page, { targetLang: 'fr' });
 
     await openInputDialog(page);
-    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText('Français');
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('fr')));
 
     await page.fill('#ai-translator-input-text', 'a full sentence for translation');
     await page.click('#ai-translator-do-translate');

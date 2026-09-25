@@ -495,13 +495,22 @@
     });
   }
 
-  function engineErrorMessage(reason) {
+  // targetLang 是这次请求的目标语言。语言对不行时先分清是不是目标语言本身端上译不了：
+  // 是的话点名（76 门里大半只有 AI 能译），否则才是笼统的「这一对不行」（多半是源语言）。
+  // 走到这里的都是不能回退 AI 的请求，所以只有 LocalOnly 那一句。
+  function engineErrorMessage(reason, targetLang) {
     const t = ctx.t || ((key) => key);
     switch (reason) {
       case ENGINE_REASONS.NEEDS_DOWNLOAD:
         return t('builtinNeedsDownload');
-      case ENGINE_REASONS.UNSUPPORTED_PAIR:
+      case ENGINE_REASONS.UNSUPPORTED_PAIR: {
+        const tgt = eng.toApiLang(targetLang);
+        if (tgt && !eng.supportsLang(tgt)) {
+          return t('builtinTargetUnsupportedLocalOnly')
+            .replace('{lang}', ctx.languageName(targetLang, { inSentence: true }));
+        }
         return t('builtinUnsupportedPair');
+      }
       case ENGINE_REASONS.UNSUPPORTED_ENV:
         return t('builtinUnsupportedEnv');
       default:
@@ -607,7 +616,7 @@
             console.info('Blab Translation: builtin unavailable (%s), falling back to AI', error.reason);
             noteFallback(error.reason);
           } else {
-            return { error: engineErrorMessage(error.reason) };
+            return { error: engineErrorMessage(error.reason, message.targetLang) };
           }
         } else {
           console.warn('Blab Translation: builtin translation failed', error);

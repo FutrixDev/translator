@@ -111,18 +111,18 @@
 
   function showChip(field, targetLang) {
     const node = ensureChip();
-    node.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.getTargetLangLabel(targetLang));
+    node.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.languageName(targetLang, { inSentence: true }));
     node.dataset.targetLang = targetLang;
     chipField = field;
     if (!node.isConnected) document.body.appendChild(node);
     positionChip(field);
   }
 
-  // 这一页是什么语言，以及「译成它」该写成十个选项里的哪一个。
+  // 这一页是什么语言，以及「译成它」该写成 76 个选项里的哪一个。
   //
   // 页面语言走引擎那份缓存（SPA 换路由时自己过期），不另开一份 —— 两份缓存迟早
   // 会对同一页给出两个答案。normalizeTargetLang 对认不出的语言一律回落 'en'，
-  // 所以这里要回头核对一遍：一个瑞典语页面不该长出一颗「译成 English」的芯片。
+  // 所以这里要回头核对一遍：一个科萨语（xh）页面不该长出一颗「译成 English」的芯片。
   async function pageTargetLang() {
     const pageLang = await ctx.builtinTranslator?.pageSourceLang?.();
     if (!pageLang) return null;

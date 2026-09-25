@@ -19,17 +19,26 @@
 
 
 
-  function buildBaseStyle(computedStyle, omitColor = false) {
+  // dir：这段文字自己的方向。对齐照抄原文，方向相反时按 translationTextAlign 改。
+  function buildBaseStyle(computedStyle, dir, omitColor = false) {
     return `
       font-size: ${computedStyle.fontSize};
       font-family: ${computedStyle.fontFamily};
       font-weight: ${computedStyle.fontWeight};
       line-height: ${computedStyle.lineHeight};
-      text-align: ${computedStyle.textAlign};
+      text-align: ${ctx.translationTextAlign(computedStyle, dir)};
       ${omitColor ? '' : `color: ${computedStyle.color};`}
       letter-spacing: ${computedStyle.letterSpacing};
       opacity: 0.85;
     `;
+  }
+
+  // 这段文字是哪门语言。加载态和错误提示是界面文字，按界面语言；译文是这次请求的
+  // 目标语言，由调用方带进来 —— 漏带是程序错误，猜一门写进 dir 只会把排版悄悄弄反。
+  function textLangOf(options) {
+    if (options.loading || options.isError) return ctx.uiLanguage();
+    if (!options.textLang) throw new Error('hover render: textLang is required');
+    return options.textLang;
   }
 
   function createLoadingDots() {
@@ -44,7 +53,9 @@
 
     // 受管容器先问一句：那里的译文是原文块的 ::after，下面这一整套建节点、抄样式、
     // 挑插入位置都用不上。动画点点也做不到生成内容上，加载态用一句静态文案。
-    const managedLoading = hov.renderManaged(block, t('translating'), { kind, state: 'loading', className });
+    const textLang = textLangOf({ loading: true });
+    const dir = TargetLang.direction(textLang);
+    const managedLoading = hov.renderManaged(block, t('translating'), { kind, state: 'loading', className, textLang });
     if (managedLoading) return managedLoading;
 
     const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
@@ -68,6 +79,9 @@
         margin: 0;
         padding: 0;
       `;
+      // 和原文隔开 4px，开在原文方向的起始边（见 insertTranslationBlock）。
+      loadingEl.style.setProperty(`margin-${ctx.startSide(computedStyle)}`, '4px', 'important');
+      ctx.markLanguage(loadingEl, textLang);
       inlineTarget.appendChild(loadingEl);
       return loadingEl;
     }
@@ -86,28 +100,25 @@
         .trim();
     }
     loadingEl.classList.add('ai-translator-inline-block', className, hov.INLINE_LOADING_CLASS);
-    loadingEl.style.cssText = buildBaseStyle(computedStyle) + `
+    loadingEl.style.cssText = buildBaseStyle(computedStyle, dir) + `
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     `;
+    ctx.markLanguage(loadingEl, textLang);
 
-    if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
-      if (textOffset > 0) {
-        loadingEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
-      }
-    }
+    ctx.applyTextInset(loadingEl, block, { fromContentBox: placement.inside });
 
     if (block.hasAttribute('slot')) {
       const internalLoading = document.createElement('span');
       internalLoading.className = `ai-translator-inline-block ${className} ${hov.INLINE_LOADING_CLASS}`;
-      internalLoading.style.cssText = buildBaseStyle(computedStyle) + `
+      internalLoading.style.cssText = buildBaseStyle(computedStyle, dir) + `
         display: block;
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       `;
+      ctx.markLanguage(internalLoading, textLang);
       block.appendChild(internalLoading);
       return internalLoading;
     }
@@ -124,13 +135,16 @@
   function renderInlineTranslation(block, translation, mathElements = [], options = {}) {
     const { kind, isError } = options;
     const className = kind === 'hover' ? 'ai-translator-hover-translation' : 'ai-translator-selection-translation';
+    const textLang = textLangOf(options);
+    const dir = TargetLang.direction(textLang);
 
     // 见 renderInlineLoading：受管容器走生成内容，下面那套插节点的路都用不上。
     const managed = hov.renderManaged(block, translation, {
       kind,
       state: isError ? 'error' : null,
       className,
-      hasMath: mathElements.length > 0
+      hasMath: mathElements.length > 0,
+      textLang
     });
     if (managed) return managed;
 
@@ -163,6 +177,9 @@
         padding: 0;
       `;
 
+      translationEl.style.setProperty(`margin-${ctx.startSide(computedStyle)}`, '4px', 'important');
+      ctx.markLanguage(translationEl, textLang);
+
       if (isError) {
         translationEl.classList.add('ai-translator-error');
       }
@@ -189,23 +206,19 @@
       translationEl.style.opacity = '0.85';
     } else {
       translationEl.textContent = translation;
-      translationEl.style.cssText = buildBaseStyle(computedStyle, isError) + `
+      translationEl.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       `;
     }
+    ctx.markLanguage(translationEl, textLang);
 
     if (isError) {
       translationEl.classList.add('ai-translator-error');
     }
 
-    if (ctx.getTextOffsetLeft) {
-      const textOffset = ctx.getTextOffsetLeft(block, { fromContentBox: placement.inside });
-      if (textOffset > 0) {
-        translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
-      }
-    }
+    ctx.applyTextInset(translationEl, block, { fromContentBox: placement.inside });
 
     if (block.hasAttribute('slot')) {
       const internalTranslation = document.createElement('span');
@@ -216,13 +229,14 @@
         internalTranslation.style.opacity = '0.85';
       } else {
         internalTranslation.textContent = translation;
-        internalTranslation.style.cssText = buildBaseStyle(computedStyle, isError) + `
+        internalTranslation.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
           display: block;
           margin: 0;
           padding: 0;
           box-sizing: border-box;
         `;
       }
+      ctx.markLanguage(internalTranslation, textLang);
 
       if (isError) {
         internalTranslation.classList.add('ai-translator-error');
@@ -242,6 +256,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(hov, {
-    buildBaseStyle, createLoadingDots, renderInlineLoading, renderInlineTranslation,
+    buildBaseStyle, createLoadingDots, renderInlineLoading, renderInlineTranslation, textLangOf,
   });
 })();

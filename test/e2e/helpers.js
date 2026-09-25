@@ -57,10 +57,15 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // SiteRules` 悄悄成了 undefined，正好落进上面那段说的软读退路里：spec 全绿，
   // 站点规则全没生效。
   'shared/lang-tags.js',
+  // insert.js 按译文的语言写 dir 和对齐（TargetLang.direction），打标、缩进和行内
+  // 间隙经 ctx.markLanguage / applyTextInset / startSide，后三者在
+  // content-language.js。manifest 里两者都排在整页翻译的模块之前。
+  'shared/target-lang.js',
   'shared/site-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。
   'shared/translation-display.js',
+  'content/content-language.js',
   'content/page/batch.js',
   'content/page/site-adapter.js',
   'content/page/collect.js',

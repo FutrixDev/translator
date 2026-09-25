@@ -12,19 +12,7 @@
       DOCK_PADDING_FRONT: -6,
       DOCK_PADDING_BACK: 8,
       DOCK_PADDING_VERTICAL: 4,
-      MATH_CONTAINER_SELECTOR: 'math, mjx-container, mjx-math, .MathJax, .MathJax_Display, .MathJax_CHTML, .mjx-chtml, .mjx-math, .MJXc-display, .katex, .katex-display, .ltx_Math',
-      TARGET_LANGUAGE_OPTIONS: [
-        { value: 'zh-CN', label: '简体中文' },
-        { value: 'zh-TW', label: '繁体中文' },
-        { value: 'en', label: 'English' },
-        { value: 'ja', label: '日本語' },
-        { value: 'ko', label: '한국어' },
-        { value: 'fr', label: 'Français' },
-        { value: 'de', label: 'Deutsch' },
-        { value: 'es', label: 'Español' },
-        { value: 'pt', label: 'Português' },
-        { value: 'ru', label: 'Русский' }
-      ]
+      MATH_CONTAINER_SELECTOR: 'math, mjx-container, mjx-math, .MathJax, .MathJax_Display, .MathJax_CHTML, .mjx-chtml, .mjx-math, .MJXc-display, .katex, .katex-display, .ltx_Math'
     };
   }
 
@@ -54,10 +42,14 @@
     };
   }
 
+  // 界面语言，不是翻译目标语言：把一页译成日文不该把悬浮球菜单也变成日文。
+  // 文案（ctx.t）、语言名（ctx.languageName）和加载态的 lang 标记都问这一处。
+  ctx.uiLanguage = function() {
+    return getUILanguage(ctx.settings.uiLanguage);
+  };
+
   ctx.t = function(key) {
-    // 界面语言，不是翻译目标语言：把一页译成日文不该把悬浮球菜单也变成日文。
-    const uiLang = getUILanguage(ctx.settings.uiLanguage);
-    return getMessage(key, uiLang);
+    return getMessage(key, ctx.uiLanguage());
   };
 
   ctx.isSelectionInlineEnabled = function() {

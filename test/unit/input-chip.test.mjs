@@ -156,15 +156,12 @@ test('zh-Hant 归一到繁体，不是简体', async () => {
   const source = read('content/content-language.js');
   new Function('window', 'globalThis', 'TargetLang', 'LangTags', `
     const self = window;
-    window.AI_TRANSLATOR_CONTENT.constants = { TARGET_LANGUAGE_OPTIONS: ${JSON.stringify([
-      { value: 'zh-CN', label: '简体中文' },
-      { value: 'zh-TW', label: '繁体中文' },
-      { value: 'en', label: 'English' },
-    ])} };
     ${source}
   `)(stub, stub, stub.TargetLang, stub.LangTags);
   assert.equal(ctx.normalizeTargetLang('zh-Hant'), 'zh-TW');
   assert.equal(ctx.normalizeTargetLang('zh-HK'), 'zh-TW');
   assert.equal(ctx.normalizeTargetLang('zh-Hans'), 'zh-CN');
-  assert.equal(ctx.normalizeTargetLang('sv'), 'en');
+  // 76 门之内的语言原样保留；只有不在表上的才落到英文。
+  assert.equal(ctx.normalizeTargetLang('sv'), 'sv');
+  assert.equal(ctx.normalizeTargetLang('xh'), 'en');
 });

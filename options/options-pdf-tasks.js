@@ -22,10 +22,6 @@
 
 const PDF_TASKS_POLL_MS = 5000;
 const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
-const PDF_TASK_LANG_KEYS = {
-  'zh-CN': 'langZhCN', 'zh-TW': 'langZhTW', en: 'langEn', ja: 'langJa', ko: 'langKo',
-  fr: 'langFr', de: 'langDe', es: 'langEs', pt: 'langPt', ru: 'langRu'
-};
 let pdfTasksTimer = null;
 /** What the last fetch was made for. renderAccountFeatures runs on every load
  *  and every account change; only a change in either half is worth a request. */
@@ -227,8 +223,7 @@ function pdfTaskRow(job) {
 function pdfTaskMeta(job) {
   const parts = [];
   if (job.pageCount) parts.push(t('pdfTasksPages').replace('{count}', job.pageCount));
-  const langKey = PDF_TASK_LANG_KEYS[job.targetLang];
-  if (langKey) parts.push(t(langKey));
+  if (job.targetLang) parts.push(TargetLang.nameOf(job.targetLang, currentUILang));
   // The one status line every surface draws.
   parts.push(PDF_UI.pdfStatusLine(job, t).text);
   if (job.createdAt) {

@@ -177,6 +177,7 @@
     pronounceOriginal: '朗读原文',
     pronounceTranslation: '朗读译文',
     stopPronunciation: '停止朗读',
+    speechNoVoice: '本机没有这门语言的朗读声音',
     
     // Input Dialog
     inputTextTranslation: '输入文本翻译',
@@ -215,6 +216,8 @@
     builtinDownloadFailed: '语言包下载失败',
     builtinNeedsDownload: '语言包还在下载中，请稍后重试',
     builtinUnsupportedPair: '内置翻译不支持这个语言对',
+    builtinTargetUnsupportedLocalOnly: '内置翻译无法译成{lang}。要用这门语言，请把引擎换成 AI，或允许回退到 AI。',
+    builtinTargetUnsupportedAllowAi: '内置翻译无法译成{lang}，这类网页会交给你的 AI 服务翻译。',
     builtinUnsupportedEnv: '当前环境无法使用内置翻译，需要桌面版 Chrome 138 及以上',
     builtinUnavailable: '内置翻译暂时不可用',
 
@@ -245,17 +248,7 @@
     interfaceLanguage: '界面语言',
     interfaceLanguageFollowBrowser: '跟随浏览器',
     hintInterfaceLanguage: '扩展自己的界面用哪种语言，与上面的目标语言互不影响。',
-    langZh: '中文',
-    langZhCN: '简体中文',
-    langZhTW: '繁体中文',
-    langEn: 'English',
-    langJa: '日本語',
-    langKo: '한국어',
-    langFr: 'Français',
-    langDe: 'Deutsch',
-    langEs: 'Español',
-    langPt: 'Português',
-    langRu: 'Русский',
+    langAiOnly: '仅 AI',
 
     translationSettings: '翻译设置',
     enableSelectionTranslation: '启用划词翻译',
