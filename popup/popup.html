@@ -57,6 +57,19 @@
         <span id="pagePauseLabel" data-i18n="popupPausePage">Pause on this page</span>
       </button>
 
+      <!-- 显示：双语 / 仅译文，加上译文样式。常显：这是偏好，下一次翻译就按它来。
+           只写存储，页面由内容脚本的 storage 监听落地（popup-display.js）。 -->
+      <div id="displayRow" class="display-row" role="group" aria-label="Display">
+        <div class="display-segment">
+          <button type="button" id="displayBilingual" aria-pressed="true" data-i18n="displayBilingual">Bilingual</button>
+          <button type="button" id="displayTranslationOnly" aria-pressed="false" data-i18n="displayTranslationOnly">Translation only</button>
+        </div>
+        <div class="display-style">
+          <select id="translationStyleSelect"></select>
+          <kbd id="translationOnlyShortcut" hidden></kbd>
+        </div>
+      </div>
+
       <!-- The entry point that does not depend on the context menu, which comic
            hosts routinely disable. -->
       <button id="comicTranslatePage" class="menu-item" hidden>
@@ -155,6 +168,8 @@
   <script src="../shared/pdf-errors.js"></script>
   <script src="../shared/pdf-url.js"></script>
   <script src="../pdf/pdf-ui.js"></script>
+  <script src="../shared/translation-display.js"></script>
+  <script src="popup-display.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

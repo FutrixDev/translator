@@ -73,7 +73,8 @@
     '#ai-translator-float-menu',
     '#ai-translator-input-dialog',
     '#ai-translator-selection-btn',
-    '#ai-translator-caption-overlay'
+    '#ai-translator-caption-overlay',
+    '#ai-translator-source-peek'
   ].join(', ');
 
   function ownNode(node) {

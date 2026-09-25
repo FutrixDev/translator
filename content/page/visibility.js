@@ -186,6 +186,10 @@
     document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
       if (shouldHideSource(el)) hideSourceForTranslation(el);
     });
+    // 「仅译文此刻生不生效」公布在 <html> 上，CSS 靠它把 blur 样式关掉（原文藏着、
+    // 译文又糊着，这一块就什么都读不到）。改变它的每条路都经过这里：设置变化、
+    // 显隐开关、fit guard。
+    document.documentElement.toggleAttribute('data-ai-translator-only', isTranslationOnlyActive());
   }
 
   // fit guard 判定这一块挤不下两种语言时调用：给译文打上 crowded 标记，把原文让出来。
@@ -201,14 +205,21 @@
   // ——译文没了还藏着原文，那一块彻底空白，比重叠糟得多。
   function releaseSourceForTranslation(translationEl) {
     translationEl.removeAttribute(CROWDED_ATTR);
+    const hidden = hiddenSourceOf(translationEl);
+    if (hidden) releaseHiddenSource(hidden);
+  }
+
+  // 「这条译文藏起来的原文」—— 只有这一处实现。fit guard 撤译文时放回它，
+  // 仅译文下的看原文卡（content/page/display.js）读它。两种形态与
+  // hideSourceForTranslation 对应：加了类名的前一个兄弟，或 holder 里藏着的 wrap。
+  // 没藏着就是 null。
+  function hiddenSourceOf(translationEl) {
+    if (!translationEl) return null;
     const prev = translationEl.previousElementSibling;
-    if (prev && prev.classList && prev.classList.contains('ai-translator-source-hidden')) {
-      releaseHiddenSource(prev);
-      return;
-    }
+    if (prev && prev.classList && prev.classList.contains('ai-translator-source-hidden')) return prev;
     const holder = translationEl.parentElement;
-    const wrap = holder && holder.querySelector(':scope > .ai-translator-source-wrap');
-    if (wrap) releaseHiddenSource(wrap);
+    return (holder && holder.querySelector(
+      ':scope > .ai-translator-source-wrap.ai-translator-source-hidden')) || null;
   }
 
 
@@ -222,4 +233,5 @@
   // content-fit-guard.js 用：挤不下两种语言时让原文，撤译文时把原文放回来
   ctx.hideCrowdedSource = hideCrowdedSource;
   ctx.releaseSourceForTranslation = releaseSourceForTranslation;
+  ctx.hiddenSourceOf = hiddenSourceOf;
 })();

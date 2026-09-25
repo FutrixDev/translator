@@ -46,6 +46,12 @@
         "default": "Alt+A"
       },
       "description": "__MSG_cmdTogglePage__"
+    },
+    "toggle-translation-only": {
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "__MSG_cmdToggleTranslationOnly__"
     }
   },
   "content_scripts": [
@@ -77,6 +83,7 @@
         "i18n/messages.js",
         "shared/account-gate.js",
         "shared/default-settings.js",
+        "shared/translation-display.js",
         "shared/api-compat.js",
         "shared/engine-status.js",
         "shared/lang-tags.js",
@@ -122,6 +129,7 @@
         "content/page/collect.js",
         "content/page/insert.js",
         "content/page/visibility.js",
+        "content/page/display.js",
         "content/page/progress.js",
         "content/content-page-translation.js",
         "content/content-auto-discover.js",

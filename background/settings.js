@@ -74,7 +74,11 @@ const defaultSettings = {
   // door, and it only appears over images big enough to plausibly hold text.
   enableImageOcrHoverButton: true,
   customPrompt: '',
-  theme: 'light'
+  theme: 'light',
+  // 页面上译文怎么显示。worker 只有 Alt+T（background/commands.js）读前者；
+  // 后者列在这里是为了四张默认值表对得上（default-settings-agree 单测）。
+  showTranslationOnly: false,
+  translationStyle: 'default'
 };
 
 // Get effective target language (browser language if the user never picked one)

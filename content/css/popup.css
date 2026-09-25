@@ -92,10 +92,10 @@
 
 /* Not inherited — a bare-tag rule can hit any single node in the subtree, and
    opacity/filter/transform compound as it descends. Pin them on every node. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]),
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]),
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *::after {
   box-sizing: border-box;
   opacity: 1;
   filter: none;
@@ -107,16 +107,16 @@
    box's line-height would stop reaching the text it wraps. `inherit` still
    blocks a direct hit like `button { text-transform: uppercase }` or
    `body { line-height: 1.8 }` without breaking the chain. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) {
   visibility: visible;
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *::before,
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) *::after {
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *::before,
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) *::after {
   visibility: inherit;
   line-height: inherit;
   letter-spacing: inherit;
@@ -176,7 +176,7 @@
    Adding a control to a panel needs nothing here; adding a *rule* for one
    needs the `html body` + root prefix, or the theme's hover takes it back.
    That is asserted by test/unit/host-css-containment.test.mjs. */
-body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
+body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"]) :is(button, input, textarea, select):is(:enabled, :disabled) {
   box-sizing: border-box;
   appearance: none;
   background: transparent;
@@ -630,4 +630,50 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 .ai-translator-popup ::-webkit-scrollbar-thumb {
   background: var(--divider);
   border-radius: 2px;
+}
+
+/* ==================== Source peek ====================
+
+   The card that shows a translation's hidden source in translation-only mode
+   (content/page/display.js). A panel, not a page-translation node: it is in
+   the reset's :is() lists above, scoped by its id — (1,0,0) outranks the reset's
+   (0,1,0) — and carries no !important. It holds no form controls, so it needs
+   no `html body` control rule. Created on show, removed on hide. */
+#ai-translator-source-peek {
+  position: fixed;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  margin: 0;
+  padding: 8px 12px 10px;
+  background: #15161c;
+  border: 1px solid #2a2d36;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: #f4f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#ai-translator-source-peek .ai-translator-source-peek-label {
+  display: block;
+  margin: 0 0 4px;
+  color: #8a8f9f;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+#ai-translator-source-peek .ai-translator-source-peek-text {
+  display: block;
+  margin: 0;
+  color: #f4f5f9;
+  font-size: 14px;
+  line-height: 1.5;
 }

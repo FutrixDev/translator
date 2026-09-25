@@ -10,5 +10,9 @@
   "cmdTogglePage": {
     "message": "Перевести страницу или вернуть оригинал",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "Переключить: два языка или только перевод",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

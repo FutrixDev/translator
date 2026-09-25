@@ -24,6 +24,39 @@
   endpoint is local, and **Test Connection** goes through to the local server
   instead of asking for a key.
 
+### Translation styles and display switch
+
+- **Six translation styles.** Settings → Translation style, or the style
+  select in the popup: Default, Underline, Dashed box, Highlight, Quote bar,
+  and Blur until hovered. A style is one attribute on the page's `<html>` and
+  one CSS rule (`content/css/translation.css`); switching restyles translations
+  already on the page and sends nothing to the model. Every style keeps a
+  translation's box where it was, except Quote bar, which indents it by its
+  bar. The list lives in one place, `shared/translation-display.js`.
+- **Blur** clears on hover, on keyboard focus, and on a tap (a second tap
+  blurs it again). Hover only counts on devices that can hover, because a
+  touch screen leaves the tapped element "hovered" until you tap elsewhere.
+  Blur is off in translation-only mode, where there is no source to read
+  instead, and on the translation of a link that is itself a block: that
+  translation is drawn as a link taking no pointer events, so nothing could
+  reveal it.
+- **Bilingual or translation only from four places:** the new Display row in
+  the popup, the float ball menu row (**Show Translation Only** /
+  **Show Bilingual**), the Settings checkbox, and a new shortcut, `Alt+T`
+  (`toggle-translation-only`, rebindable at `chrome://extensions/shortcuts`).
+  All four only write `showTranslationOnly` to sync storage; open pages switch
+  from their storage listener, without a reload and without a request.
+- **See the original in translation-only mode.** Point at a page translation,
+  or tap it, and its source text opens in a small card beside it. The card
+  never covers the pointer, stays inside the window, and closes when the
+  pointer leaves, on a second tap, or on `Esc`.
+- **Fix: the settings page no longer writes stale values back.** It saves the
+  whole form at once, so a switch changed elsewhere while it was open (from
+  the popup, the float ball, `Alt+T`) was silently reverted the next time you
+  touched any other control there. The page now follows those changes into its
+  controls (`options/options-sync-mirror.js`) without saving them again.
+  Text fields you type into are not followed, so typing is never overwritten.
+
 ## 1.4.0 — 2026-09-20
 
 ### New features
