@@ -56,6 +56,7 @@ await import('../../shared/block-identity.js');
 // scope.js 读 globalThis.SiteRules，所以 lang-tags、site-rules-builtin、site-rules 排在它前面。
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');

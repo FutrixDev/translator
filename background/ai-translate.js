@@ -7,6 +7,7 @@
 // [Exposed=Window, SecureContext]，service worker 里根本不存在，那一路在内容脚本
 // 里跑。
 
+import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
 import { languageNames } from './settings.js';
 import {

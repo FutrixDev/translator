@@ -25,6 +25,7 @@ const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/frame-eligibility.js');
 const { FrameEligibility, SiteRules } = globalThis;

@@ -16,6 +16,9 @@
 (function (root) {
   'use strict';
 
+  const StorageWriter = root.StorageWriter;
+  if (!StorageWriter) throw new Error('auto-stats.js 要先装 shared/storage-writer.js');
+
   const STORAGE_KEY = 'autoStats';
 
   // 四个都是单调累加的计数。命中率不在里面，因为**比率没法累加**：这个月前半
@@ -163,18 +166,6 @@
       .catch(() => emptyStats(month, day));
   }
 
-  const IN_SERVICE_WORKER =
-    typeof ServiceWorkerGlobalScope !== 'undefined' && root instanceof ServiceWorkerGlobalScope;
-
-  // 只保证顺序，不传播失败：一次写崩了不该把后面的全卡死（同 site-rules.js）。
-  let writeQueue = Promise.resolve();
-
-  function enqueue(run) {
-    const result = writeQueue.then(run, run);
-    writeQueue = result.catch(() => {});
-    return result;
-  }
-
   async function applyAdd(message) {
     const store = storage();
     if (!store) return null;
@@ -221,30 +212,18 @@
 
   const WRITES = { add: applyAdd, reset: applyReset, charge: applyCharge };
 
-  /**
-   * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接
-   * （background.js 的 `AUTO_STATS_WRITE`）。
-   */
-  function applyWrite(message) {
-    const write = message && WRITES[message.kind];
-    if (!write) return Promise.reject(new Error(`unknown auto-stats write: ${message && message.kind}`));
-    return enqueue(() => write(message));
-  }
-
-  // 在服务工作者里就自己写，在别处就把这件事交给它 —— 调用方两边共用一个名字。
-  function request(kind, payload) {
-    const message = Object.assign({ type: 'AUTO_STATS_WRITE', kind }, payload);
-    if (IN_SERVICE_WORKER) return applyWrite(message);
-    if (!root.chrome || !root.chrome.runtime || !root.chrome.runtime.sendMessage) {
-      return Promise.resolve(null);
-    }
-    // 统计记不上不是错误，别让它把调用方那条正事的错误处理占了。内容脚本在
-    // 页面卸载、扩展刚更新完的那一瞬 sendMessage 本来就会抛。
-    return root.chrome.runtime
-      .sendMessage(message)
-      .then((reply) => (reply && reply.value) || null)
-      .catch(() => null);
-  }
+  // 单写者队列在 shared/storage-writer.js（三家共用一份）。applyWrite 是服务工作者
+  // 的入口（background.js 的 `AUTO_STATS_WRITE` 只管转接），request 在服务工作者
+  // 里就自己写，在别处就交给它。
+  //
+  // 统计记不上不是错误，别让它把调用方那条正事的错误处理占了 —— 内容脚本在页面
+  // 卸载、扩展刚更新完的那一瞬 sendMessage 本来就会抛。所以是 'swallow'：失败在
+  // 那边记一条 warn，这里得 null。
+  const { applyWrite, request } = StorageWriter.create({
+    type: 'AUTO_STATS_WRITE',
+    writes: WRITES,
+    errors: 'swallow',
+  });
 
   /**
    * 记一笔。`delta` 里给哪几个键就加哪几个：

@@ -240,12 +240,17 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   // 站点规则和追问计数都是「整份对象读出来、改一个键、整份写回」。同一个域名开
   // 着三个标签页，三页各自读出同一份旧对象再各自写回，后写的把先写的整个盖掉：
   // 「问三次就不再问」一次都攒不满，用户在 popup 上点的「关」也会凭空消失。
+  // 队列本身在 shared/storage-writer.js（三家共用一份），这张表拿它造自己那一条。
+  const writer = code('shared/storage-writer.js');
+  assert.match(writer, /const IN_SERVICE_WORKER\s*=/);
+  assert.match(writer, /function applyWrite\(message\)/);
+  // 一个 writer 一条队列，applyWrite 是唯一排队的地方 —— 各排各的等于没排。
+  assert.equal((writer.match(/queue\.then\(/g) || []).length, 1, '只有 applyWrite 排队');
+  assert.match(writer, /queue = result\.catch/);
   const rules = code('shared/site-rules.js');
-  assert.match(rules, /const IN_SERVICE_WORKER\s*=/);
-  assert.match(rules, /function applyWrite\(message\)/);
-  // 两条写入路径共用同一条队列 —— 各排各的等于没排。
-  assert.equal((rules.match(/enqueue\(/g) || []).length, 2, '一处定义一处使用');
-  assert.match(rules, /writeQueue = result\.catch/);
+  // 两条写入路径共用同一个 writer，也就是同一条队列。
+  assert.equal((rules.match(/StorageWriter\.create\(/g) || []).length, 1, '站点规则只有一个 writer');
+  assert.match(rules, /StorageWriter\.create\(\{\s*type: 'SITE_RULES_WRITE',\s*writes: WRITES,/);
   for (const fn of ['applyUserRule', 'applyAskCount']) {
     assert.match(rules, new RegExp(`WRITES = \\{[^}]*${fn}`), `${fn} 必须挂在同一张表上`);
   }

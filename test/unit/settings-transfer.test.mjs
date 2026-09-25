@@ -23,6 +23,7 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
 await import('../../shared/translation-display.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../i18n/messages.js');
 await import('../../shared/settings-transfer.js');
@@ -415,7 +416,7 @@ test('the settings page loads the transfer card after everything it reads by nam
   assert.ok(card > 0, 'options.html does not load options-transfer.js');
   assert.ok(at('../shared/settings-transfer.js') > 0 && at('../shared/settings-transfer.js') < card);
   for (const dep of ['../shared/api-compat.js', '../shared/default-settings.js', '../shared/target-lang.js',
-    '../i18n/messages.js', '../shared/site-rules.js', '../shared/tab-broadcast.js', '../shared/translation-display.js']) {
+    '../i18n/messages.js', '../shared/storage-writer.js', '../shared/site-rules.js', '../shared/tab-broadcast.js', '../shared/translation-display.js']) {
     assert.ok(at(dep) >= 0 && at(dep) < card, `${dep} must load before options-transfer.js`);
   }
   // options.js 的 DOMContentLoaded 才调用 setupTransfer，所以它在后面。

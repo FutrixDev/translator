@@ -23,6 +23,7 @@ globalThis.SiteRulesBuiltin = {
     rule(['news.example.jp', 'news.example.de'], '.mirror'),
   ],
 };
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 const { SiteRules } = globalThis;
 

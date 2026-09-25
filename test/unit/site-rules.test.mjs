@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 const { SiteRules, SiteRulesBuiltin, LangTags } = globalThis;
 const R = SiteRules.REASONS;
@@ -570,7 +571,7 @@ test('表态之后计数清零，清的是这一条不是整张表', async () =>
   }
 });
 
-// 和 shared/site-rules.js 里的 MAX_ITEM_BYTES 一致。
+// 和 shared/storage-writer.js 里的 ITEM_BUDGET 一致。
 const MAX_ASK_BYTES = 6 * 1024;
 const askBytes = (counts) => new TextEncoder().encode(JSON.stringify(counts)).length;
 
@@ -780,11 +781,13 @@ test('总开关关着但用户已经在这一页表过态，就不算这个站�
   assert.equal(held.refused, false);
 });
 
-// 四份装载清单，一份都不能漏：manifest 的 <all_urls> 那一条、service worker 的
-// import、设置页和弹窗的 <script>。共用模块是按顺序加载的经典脚本，**谁在谁前面
+// 装载清单，一份都不能漏：manifest 的 <all_urls> 那一条、service worker 的
+// import（入口和两个自己 import 统计模块的文件）、设置页和弹窗的 <script>。共用模块是按顺序加载的经典脚本，**谁在谁前面
 // 就是依赖关系本身**——漏一处的表现不是报错，是那一处静静地换了一套行为。
 const LOAD_LISTS = [
   ['background/background.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['background/ai-translate.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['background/api-client.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
   ['options/options.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
   ['popup/popup.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
 ];
@@ -799,6 +802,23 @@ const LOAD_ORDER = [
    'site-rules.js 在加载时就把 getLangBase 取走了。'],
   ['shared/caption-core.js', 'shared/lang-tags.js',
    'caption-core.js 在加载时就把 getLangBase 取走了。'],
+  // 同步存储的单写者队列：三家写入在加载时就取走 StorageWriter，没有它就抛。
+  // 服务工作者是 ES 模块图，按深度优先求值 —— 哪个文件先 import 了写入方，那个
+  // 文件就得先 import 它。
+  ['shared/site-rules.js', 'shared/storage-writer.js',
+   'site-rules.js 在加载时就把 StorageWriter.create 取走了。'],
+  ['shared/auto-stats.js', 'shared/storage-writer.js',
+   'auto-stats.js 在加载时就把 StorageWriter.create 取走了。'],
+  ['shared/sync-collection.js', 'shared/storage-writer.js',
+   'sync-collection.js 在加载时就把 StorageWriter 取走了。'],
+  ['shared/sync-collection.js', 'shared/site-rules.js',
+   'sync-collection.js 的 forHost 用 SiteRules.hostMatches 认地址。'],
+  ['shared/custom-rules.js', 'shared/storage-writer.js',
+   'custom-rules.js 在加载时就把 StorageWriter.create 取走了。'],
+  ['shared/custom-rules.js', 'shared/site-rules.js',
+   'custom-rules.js 的 match 用 SiteRules.validPattern / patternMatches。'],
+  ['shared/custom-rules.js', 'shared/sync-collection.js',
+   'custom-rules.js 在加载时就把 SyncCollection.create 取走了。'],
 ];
 
 test('四份装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {

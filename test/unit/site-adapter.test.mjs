@@ -25,6 +25,7 @@ console.warn = () => {};
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../content/page/site-adapter.js');
 

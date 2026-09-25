@@ -21,6 +21,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const SOURCES = [
   'shared/lang-tags.js',
   'shared/site-rules-builtin.js',
+  'shared/storage-writer.js',
   'shared/site-rules.js',
   'content/captions/activation.js',
 ].map((rel) => [rel, read(rel)]);

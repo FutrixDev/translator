@@ -402,52 +402,29 @@
 
   // ---------------------------------------------------------------- 写规则
 
-  // 同步存储上的「读—改—写」只能有一个主人。
+  // 同步存储上的「读—改—写」只能有一个主人：队列、字节量法和「我在不在服务
+  // 工作者里」都在 shared/storage-writer.js，三家写入共用一份（为什么要单写者
+  // 也写在那边）。
   //
-  // 站点规则和追问计数各自是一整个对象里的一个键：读出来、改一个键、整份写回。
-  // 同一个域名开着三个标签页，或者用户一边在 popup 上点「关」、一边追问条在给
-  // 另一个域名记数，两边都会先读到同一份旧对象，后写的那份把先写的整个盖掉 ——
-  // 用户点下的选择就这么没了，而且哪里都不报错。
-  //
-  // 所以写入点收到服务工作者里：它是单实例，配上一条队列（两条消息的处理照样
-  // 能在 await 处交错）就能把这些改动串成一条线。队列只保证顺序、不传播失败：
-  // 一次写崩了不该把后面的全卡死。
-  const IN_SERVICE_WORKER =
-    typeof ServiceWorkerGlobalScope !== 'undefined' && root instanceof ServiceWorkerGlobalScope;
-
-  let writeQueue = Promise.resolve();
-
-  function enqueue(run) {
-    const result = writeQueue.then(run, run);
-    writeQueue = result.catch(() => {});
-    return result;
-  }
-
-  // 两张表都按域名一路长下去，而同步存储是**每项** 8KB：撑爆的那天 set() 直接
-  // 失败。追问计数失败了是上限静悄悄不再生效，站点规则失败了是用户刚点下的选择
-  // 根本没存上。所以两张表共用一道预算，也共用一个量法。
-  //
-  // 按**序列化之后的字节数**算，不按条数。撑爆配额的是字节：一条记录占多少取决
-  // 于主机名有多长，两百个 40 字符的域名就已经贴着 8KB，而域名可以长得多。按条
-  // 数封顶只是把那天推远一点，并没有堵上。8KB 里只留 6KB，剩下的是给键名本身和
-  // 「Chrome 怎么数」留的余量 —— 差那一点就写不进去，代价是整张表。
-  const MAX_ITEM_BYTES = 6 * 1024;
-
-  function itemBytes(value) {
-    return new TextEncoder().encode(JSON.stringify(value)).length;
-  }
+  // 两张表都按域名一路长下去，而同步存储是**每项** 8KB。追问计数失败了是上限
+  // 静悄悄不再生效，站点规则失败了是用户刚点下的选择根本没存上。所以两张表共用
+  // 一道预算（StorageWriter.ITEM_BUDGET），也共用一个量法（itemBytes）。按条数
+  // 封顶只是把撑爆那天推远一点：两百个 40 字符的域名就已经贴着 8KB。
+  const StorageWriter = root.StorageWriter;
+  if (!StorageWriter) throw new Error('site-rules.js 要先装 shared/storage-writer.js');
+  const { ITEM_BUDGET, itemBytes } = StorageWriter;
 
   // 追问计数满了先扔计数最小的（被问得最少的那几个，重新问一次的代价也最小），
   // 刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过的态一点没丢
   // —— 那些在 siteRules 里，是另一张表。
   function pruneAskCounts(counts, keep) {
-    if (itemBytes(counts) <= MAX_ITEM_BYTES) return counts;
+    if (itemBytes(counts) <= ITEM_BUDGET) return counts;
     const victims = Object.keys(counts)
       .filter((key) => key !== keep)
       .sort((a, b) => counts[a] - counts[b]);
     for (const key of victims) {
       delete counts[key];
-      if (itemBytes(counts) <= MAX_ITEM_BYTES) break;
+      if (itemBytes(counts) <= ITEM_BUDGET) break;
     }
     return counts;
   }
@@ -471,7 +448,7 @@
    * 平白无故去换不值得。真正的泄压阀是设置页里那张能删的审计表（PR-10）。
    */
   function compactUserRules(rules, keep) {
-    if (itemBytes(rules) <= MAX_ITEM_BYTES) return rules;
+    if (itemBytes(rules) <= ITEM_BUDGET) return rules;
     const keys = Object.keys(rules)
       .filter((key) => key !== keep)
       .sort((a, b) => b.length - a.length);
@@ -479,7 +456,7 @@
       const state = rules[key];
       delete rules[key];
       if (lookupUserRule(rules, key) !== state) rules[key] = state;
-      else if (itemBytes(rules) <= MAX_ITEM_BYTES) break;
+      else if (itemBytes(rules) <= ITEM_BUDGET) break;
     }
     return rules;
   }
@@ -554,8 +531,8 @@
       accepted += 1;
     }
     compactUserRules(rules);
-    if (itemBytes(rules) > MAX_ITEM_BYTES) {
-      throw new Error(`site rules: import needs ${itemBytes(rules)} bytes, over the ${MAX_ITEM_BYTES}-byte budget`);
+    if (itemBytes(rules) > ITEM_BUDGET) {
+      throw new Error(`site rules: import needs ${itemBytes(rules)} bytes, over the ${ITEM_BUDGET}-byte budget`);
     }
     await store.set({ siteRules: rules });
     return accepted;
@@ -563,26 +540,14 @@
 
   const WRITES = { rule: applyUserRule, ask: applyAskCount, import: applyImportedRules };
 
-  /**
-   * 服务工作者的入口：把一条写入请求排进队列。背景页的消息分发只管转接，规则
-   * 本身不在那边（background.js 的 SITE_RULES_WRITE）。
-   */
-  function applyWrite(message) {
-    const write = message && WRITES[message.kind];
-    if (!write) return Promise.reject(new Error(`unknown site-rules write: ${message && message.kind}`));
-    return enqueue(() => write(message));
-  }
-
-  // 在服务工作者里就自己写，在别处就把这件事交给它。调用方两边共用一个名字，
-  // 省得每个写入点都要记得自己是谁、该不该发消息。
-  function request(kind, payload) {
-    const message = Object.assign({ type: 'SITE_RULES_WRITE', kind }, payload);
-    if (IN_SERVICE_WORKER) return applyWrite(message);
-    return root.chrome.runtime.sendMessage(message).then((reply) => {
-      if (reply && reply.error) throw new Error(reply.error);
-      return reply ? reply.value : undefined;
-    });
-  }
+  // applyWrite 是服务工作者的入口（背景页的消息分发只管转接，规则本身不在那边）；
+  // request 在服务工作者里就自己写，在别处就把这件事交给它。用户点下的选择没存
+  // 上，调用方要说得出口，所以失败照抛（'throw'）。
+  const { applyWrite, request } = StorageWriter.create({
+    type: 'SITE_RULES_WRITE',
+    writes: WRITES,
+    errors: 'throw',
+  });
 
   function writeUserRule(hostname, state) {
     return request('rule', { host: hostname, state });
@@ -640,6 +605,11 @@
     decide,
     normalizeHost,
     siteLabel,
+    // 自定义规则（shared/custom-rules.js）的 match 用同一套地址写法：一种写法
+    // 两份解析，迟早一个认 *.example.com 一个不认。
+    hostMatches,
+    patternMatches,
+    validPattern,
     // 导出是为了设置页：那份语言名单画在界面上，勾哪几个得和 decide() 认哪几个
     // 是同一个口径。设置页再抄一份 split('-')[0] 就是这张表的第四份副本。
     baseLang,

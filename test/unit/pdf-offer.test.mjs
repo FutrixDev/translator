@@ -18,6 +18,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/pdf-url.js');
 const { SiteRules, PdfUrl } = globalThis;

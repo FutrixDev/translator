@@ -65,6 +65,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 间隙经 ctx.markLanguage / applyTextInset / startSide，后三者在
   // content-language.js。manifest 里两者都排在整页翻译的模块之前。
   'shared/target-lang.js',
+  // site-rules.js 在加载时同样取走 StorageWriter（同步存储的单写者队列），缺了它
+  // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
+  'shared/storage-writer.js',
   'shared/site-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。

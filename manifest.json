@@ -100,6 +100,7 @@
         "shared/ocr.js",
         "shared/speech-lang.js",
         "shared/site-rules-builtin.js",
+        "shared/storage-writer.js",
         "shared/site-rules.js",
         "shared/auto-stats.js",
         "shared/block-identity.js",
