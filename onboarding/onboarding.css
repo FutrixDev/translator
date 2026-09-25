@@ -7,7 +7,8 @@
   --bg-tertiary: #1f1f2b;
   --text-primary: #f0f0f5;
   --text-secondary: #a8a8b8;
-  --accent-primary: #7c5cff;
+  /* 不用设置页暗色的 #7c5cff：白字压在它上面只有 4.35:1，J-F3 量出来的。 */
+  --accent-primary: #6a48f0;
   --accent-text: #b3a1ff;
   --on-accent: #ffffff;
   --error: #f87171;
