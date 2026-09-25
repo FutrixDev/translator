@@ -164,41 +164,25 @@
     return null;
   }
 
-  function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), Math.max(min, max));
-  }
-
   /**
    * 放在译文下方 6px；放不下放上方；两边都放不下（译文比视口还高）就贴着指针所在
-   * 的行。水平与译文的起始边对齐（RTL 对右边），夹在视口内、两侧各留 8px。
+   * 的行。水平与译文的起始边对齐（RTL 对右边），夹在视口内、两侧各留 8px。算术在
+   * ctx.placeBeside（content-utils.js），三个浮层共用一份。
    * 卡绝不能盖住指针：盖住了，指针就「离开」了译文，卡会立刻被收掉。
    */
   function placeCard(card, translation, pointer) {
-    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const rect = translation.getBoundingClientRect();
     const width = card.offsetWidth;
     const height = card.offsetHeight;
-    const rtl = window.getComputedStyle(translation).direction === 'rtl';
-
-    const left = clamp(rtl ? rect.right - width : rect.left,
-      VIEWPORT_MARGIN_PX, viewportWidth - VIEWPORT_MARGIN_PX - width);
-
-    const fitsBelow = (edge) => edge + PEEK_GAP_PX + height <= viewportHeight - VIEWPORT_MARGIN_PX;
-    const fitsAbove = (edge) => edge - PEEK_GAP_PX - height >= VIEWPORT_MARGIN_PX;
-    let top;
-    if (fitsBelow(rect.bottom)) {
-      top = rect.bottom + PEEK_GAP_PX;
-    } else if (fitsAbove(rect.top)) {
-      top = rect.top - PEEK_GAP_PX - height;
-    } else {
-      const line = lineRectAt(translation, pointer) ||
-        { top: pointer.y - 1, bottom: pointer.y + 1 };
-      top = fitsBelow(line.bottom) || !fitsAbove(line.top)
-        ? line.bottom + PEEK_GAP_PX
-        : line.top - PEEK_GAP_PX - height;
-    }
-    top = clamp(top, VIEWPORT_MARGIN_PX, viewportHeight - VIEWPORT_MARGIN_PX - height);
+    const placed = ctx.placeBeside({ width, height }, translation.getBoundingClientRect(), {
+      viewport: { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight },
+      gap: PEEK_GAP_PX,
+      margin: VIEWPORT_MARGIN_PX,
+      prefer: 'below',
+      rtl: window.getComputedStyle(translation).direction === 'rtl',
+      fallback: lineRectAt(translation, pointer) || { top: pointer.y - 1, bottom: pointer.y + 1 },
+    });
+    const { left } = placed;
+    let { top } = placed;
     // 夹进视口之后仍可能罩住指针（行在视口最底下、卡又高）：翻到指针上方。
     if (pointer.y >= top && pointer.y <= top + height &&
         pointer.x >= left && pointer.x <= left + width) {

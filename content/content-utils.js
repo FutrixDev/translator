@@ -129,6 +129,72 @@
     }
   };
 
+  // ==================== 浮层放在锚点旁边 ====================
+
+  /**
+   * 三个浮层（看原文卡、划词卡片、划词图标）共用的唯一放置实现，纯函数，只做算术。
+   *
+   * size = { width, height }；anchor = { left, top, right, bottom }，视口坐标。
+   * options = { viewport: { width, height }, gap = 6, margin = 8,
+   *             prefer = 'below' | 'above', x, rtl = false,
+   *             fallback = null（另一个矩形）, minHeight }
+   * 返回 { left, top, maxHeight }；maxHeight 只在「缩高」那一步选中时不为 null。
+   *
+   * 竖直方向按顺序取第一个成立的：
+   *   1. 优先的那一侧放得下；2. 另一侧放得下；
+   *   3. 给了 minHeight：空间大的那侧只要不小于 minHeight，就放那侧、缩到那侧的空间；
+   *   4. 给了 fallback：贴着它放——下方放得下放下方，否则上方，否则空间大的一侧；
+   *   5. 最后把 top 夹进视口。
+   * 水平方向：给了 x 就用 x（左边缘），否则对齐锚点起始边（RTL 对右边），再夹进视口。
+   */
+  ctx.placeBeside = function(size, anchor, options) {
+    const { viewport, gap = 6, margin = 8, prefer = 'below', x, rtl = false,
+      fallback = null, minHeight } = options;
+    const { width, height } = size;
+    const spaceBelow = (rect) => viewport.height - margin - (rect.bottom + gap);
+    const spaceAbove = (rect) => rect.top - gap - margin;
+    const at = (side, rect, shown) => (side === 'below' ? rect.bottom + gap : rect.top - gap - shown);
+
+    const side = pickSide(anchor);
+    let top;
+    let maxHeight = null;
+    if (side) {
+      top = at(side, anchor, height);
+    } else if (minHeight != null && Math.max(spaceBelow(anchor), spaceAbove(anchor)) >= minHeight) {
+      const larger = spaceBelow(anchor) >= spaceAbove(anchor) ? 'below' : 'above';
+      maxHeight = larger === 'below' ? spaceBelow(anchor) : spaceAbove(anchor);
+      top = at(larger, anchor, Math.min(height, maxHeight));
+    } else if (fallback) {
+      const fits = height <= spaceBelow(fallback) ? 'below'
+        : height <= spaceAbove(fallback) ? 'above' : null;
+      const chosen = fits || (spaceBelow(fallback) >= spaceAbove(fallback) ? 'below' : 'above');
+      if (!fits && minHeight != null) {
+        maxHeight = Math.max(minHeight, chosen === 'below' ? spaceBelow(fallback) : spaceAbove(fallback));
+      }
+      top = at(chosen, fallback, maxHeight == null ? height : Math.min(height, maxHeight));
+    } else {
+      top = at(prefer, anchor, height);
+    }
+    const shown = maxHeight == null ? height : Math.min(height, maxHeight);
+    top = clampInto(top, margin, viewport.height - margin - shown);
+
+    const start = x != null ? x : (rtl ? anchor.right - width : anchor.left);
+    const left = clampInto(start, margin, viewport.width - margin - width);
+    return { left, top, maxHeight };
+
+    function pickSide(rect) {
+      const other = prefer === 'above' ? 'below' : 'above';
+      const room = (s) => (s === 'below' ? spaceBelow(rect) : spaceAbove(rect));
+      if (height <= room(prefer)) return prefer;
+      if (height <= room(other)) return other;
+      return null;
+    }
+  };
+
+  function clampInto(value, min, max) {
+    return Math.min(Math.max(value, min), Math.max(min, max));
+  }
+
   // ==================== 单修饰键快捷键：等一下再动手 ====================
 
   // 划词翻译和悬停翻译的快捷键都是「单独一个修饰键」（Control / Shift / Alt / Meta）。
