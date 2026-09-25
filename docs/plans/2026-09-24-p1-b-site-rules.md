@@ -12,7 +12,8 @@
   - D-303：钉住落在谓词 `isBuiltinSelected` / `fallbackAllowed` 上，不进 `pinnedEngine`；popup 和字幕绕过谓词的三处直读收口；本页规则变了要重启自动调度器（§3.6 第 5 步、§3.7）。
 - 修订 2026-09-25（台账 D-306），与 P1-C 设计对齐，并接上 P0-F「设置整份导入导出」：
   - 条目 id 只存在键里，值里不带（§2.2、§2.6）；
-  - 内容脚本的增量经一张登记表 `ctx.syncMirrors` 转发，bootstrap 不再点名具体集合（§1、§3.1）；
+  - 内容脚本的增量经一张登记表 `ctx.syncMirrors` 转发，bootstrap 不再点名具体集合；P1-C 的词表前缀每个 frame 都登记，只有顶层建镜像（§1、§3.1）；
+  - `whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，规则和词表共用（§2.6）；
   - 写消息的判别字段叫 `kind`，与 StorageWriter 和 site-rules 的 `WRITES` 表同名（§2.4）；
   - 额度检查抽成 `SyncCollection.assertFits`，写入和导入预览共用；导入预览收成一个函数，卡片和整份导入共用；`TRANSFER_SECTIONS` 加 `customRules` 一行；预算格的规则项放在 `syncAutoEngineState()`，不进 `unattendedAiReachable`（§0.1-19、§2.6、§4、§9、§12.4）。
 - 交付：一个 PR `feat/p1-b-site-rules`，由两批串行拼装——B1 数据层与页面接线、B2 入口与界面。合并顺序在 P1-A 之后（A 若 squash 合入，B 用 `rebase --onto` 接上）。「按站点译文样式」拆成 P1-B·style，等 #105 合入后再做（D-294 #2）
@@ -90,7 +91,7 @@
 | `content/content-auto-translate.js`（D）`:485-525`、`:767-802`；（A）`:835` | 费用闸拒绝后停在 OFF 并停掉发现层；只有 RESTART_KEYS 设置键、换路由、语言包就绪会 `start()`；A 导出 `restart: start` | B1：订阅 `ctx.customRules.onChange`，调 `restart('custom-rule')`（§3.6 第 5 步）；新导出 `isOn()`（状态为 IDLE 或 RUNNING） |
 | `content/frames/top.js`（A1）`:45/:54/:62`；（A）`:38-43`、`:74-80` | `computeDirective` / `sameDirective` / `broadcastDirective`，指令形状为 `{translate, manualEpoch, visible, scopeOverride}`；`currentTranslate()` 自己判断调度器开没开；`refreshDirective()` | B1：加 `engineOverride`；`currentTranslate()` 改用 `ctx.autoTranslate.isOn()`；`ctx.customRules.onChange` 触发 `refreshDirective()`（§3.6 第 4 步） |
 | `content/frames/child.js`（A1）`:176-182` | `applyDirective` | B1：`ctx.customRules.inherit(engineOverride)`，null 也照传 |
-| `content/content-bootstrap.js:120-133`、`:191-200` | `setupStorageListener` 在 `:131-133` 把 sync 区变了的每个键都写进 `ctx.settings`；`ctx.init` | B1：新设登记表 `ctx.syncMirrors`，元素为 `{prefix, onStorageChange}`。登记方在加载时 `(ctx.syncMirrors \|\| (ctx.syncMirrors = [])).push(…)`，和各文件取 ctx 的写法一样；监听器在事件到达时才读这张表。键命中某个前缀，就交给那一项的 `onStorageChange`，不进 `ctx.settings`。custom-rule.js 登记 `CustomRules.KEY_PREFIX`，P1-C 的词表以后登记自己的前缀（只在顶层），bootstrap 一行不用改（D-306）。`ctx.init` 在启动调度器之前等 `whenReady()` |
+| `content/content-bootstrap.js:120-133`、`:191-200` | `setupStorageListener` 在 `:131-133` 把 sync 区变了的每个键都写进 `ctx.settings`；`ctx.init` | B1：新设登记表 `ctx.syncMirrors`，元素为 `{prefix, onStorageChange}`。登记方在加载时 `(ctx.syncMirrors \|\| (ctx.syncMirrors = [])).push(…)`，和各文件取 ctx 的写法一样；监听器在事件到达时才读这张表。键命中某个前缀，就交给那一项的 `onStorageChange`，不进 `ctx.settings`。custom-rule.js 登记 `CustomRules.KEY_PREFIX`。P1-C 的词表以后登记自己的前缀：每个 frame 都登记，但只有顶层建镜像；子 frame 那一项什么都不做，只为让 `glossary:` 键不进 `ctx.settings`。bootstrap 一行不用改（D-306）。`ctx.init` 在启动调度器之前等 `whenReady()` |
 | `content/content-messaging.js:24/:167` | `switch (message.type)`；`SETTINGS_UPDATED` | B2：加 `OPEN_RULE_PICKER`，只由顶层 frame 应答 |
 | `options/options-auto.js:42-73` | `unattendedAiReachable()` `:42-46`；`syncAutoEngineState()` `:48-51`；`:53-64` 的注释自称是唯一的 `window.confirm`；`onAutoEngineChange` `:65-73` | B2：抽出 `confirmUnattendedAiSpend`，改注释；`syncAutoEngineState` 在 `unattendedAiReachable(...)` 之外并上 `customRulesUseAi()`。`unattendedAiReachable` 不动，P0-F 之后它只吃一个设置对象（§12.4） |
 | `test/unit/auto-cost-gate.test.mjs:109-120` | `:118` 断言 `window.confirm(t('autoTranslateEngineAiConfirm'))`，`:120` 断言回退 | B2：改为断言两个调用点，且 `optionsSource()` 里恰好一个 `window.confirm(` |
@@ -211,7 +212,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | `merge(existing, incoming, keyOf)` | 导入 | 按 `keyOf` 合并。键相同就替换，并沿用原来的 id；否则新增，没有 id 的发一个新 id。返回 `{entries, added, replaced}` |
 | `write(compute)` | SW 的写队列 | `get(null)` → `collect` → `compute(entries)`，它返回 `{put, remove, result}` → `assertFits(写后的集合)` → 一次多键 `set`（键为 `prefix + id`，值去掉 `id`）加一次 `remove` → 返回 `result` |
 | `cached()` | SW | 记住 `collect(get(null))` 的结果。`create` 在 SW 里挂一个 `storage.onChanged`，键前缀命中就作废 |
-| `mirror({request})` | 内容脚本 | 返回 `{whenReady(), onStorageChange(changes), entries(), version, subscribe(fn)}`，即 §2.5 内容脚本那一条：每个文档只 `request()` 一次，缓冲在途增量，去抖 150 ms，递增版本号并通知订阅者 |
+| `mirror({request})` | 内容脚本 | 返回 `{whenReady(), onStorageChange(changes), entries(), version, subscribe(fn)}`，即 §2.5 内容脚本那一条：每个文档只 `request()` 一次，缓冲在途增量，去抖 150 ms，递增版本号并通知订阅者。首个回话到达、或超过 1500 ms，`whenReady()` 就 resolve：超时按空集合处理，回话晚到仍照常生效。这个上限只写在这里，规则和 P1-C 的词表共用（D-306） |
 
 - 「是否在 SW 里」沿用 `StorageWriter` 的同一个谓词，不另写一份。
 - 加载位置与 custom-rules 相同，排在 storage-writer、site-rules 之后。
@@ -225,7 +226,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | 成员 | 作用 |
 |---|---|
 | `init()` | 发出 `CUSTOM_RULES_FOR_HOST`。dormant frame 根本不建 ctx，自然什么也不发 |
-| `whenReady()` | 首个回话到达，或超过 1500 ms，Promise 就 resolve。超时按「无规则、全局引擎」处理，回话晚到仍照常生效 |
+| `whenReady()` | 就是镜像的 `whenReady()`（§2.6）：首个回话到达，或超过 1500 ms，Promise 就 resolve。超时按「无规则、全局引擎」处理，回话晚到仍照常生效 |
 | `current()` | 本 URL 的胜出规则，形状 `{id, include, exclude, keepOriginal, css, engine}`，或 null。以 `location.href` + `version` 记忆，SPA 换路径后自然重算 |
 | `version` | 规则集每变一次加 1。它只是记忆键：别的站点的规则变了也会加，不表示本页规则变了 |
 | `onStorageChange(changes)` | 经 `ctx.syncMirrors` 登记（§1），接收 bootstrap 转来的 `customRule:` 增量 |
@@ -584,6 +585,7 @@ npm run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
 - 词表的站点作用域用 `SiteRules.hostMatches`，靠 B1 补上的导出（§1）。
 - 规则的 `domain` 字段（按站点选领域）由 P1-C 的 C3 加进规则结构，B1 不预留。按 §2.2 的版本规则，带 `domain` 的规则写成 `v: 2`，不带的仍是 v1。只装了 B1 的版本写入时丢弃未知字段，但它会跳过 v2 的规则，所以不会在拾取器 `addSelector` 或设置页保存时把 `domain` 丢掉。B1 与 C3 之间发没发过商店版本都这样做，不设条件。
 - 词表变化时，内容脚本也要按「本页生效的集合变了才回调」来门控，做法和 §3.1 的签名门一样。
+- 词表前缀在每个 frame 都登记进 `ctx.syncMirrors`，只有顶层建镜像（§1）；`whenReady()` 的 1500 ms 上限写在 `SyncCollection.mirror` 里，两边共用（§2.6）。
 
 ### 12.4 与 P0-F（设置整份导入导出，`options/options-transfer.js`）
 
