@@ -800,9 +800,15 @@
   // @param {{fromContentBox?: boolean}} options 译文插到元素【内部】时传 true：
   //   元素那圈 padding/border 译文已经继承了，再按外边框算一次就是双份缩进
   //   （.code-box 的 16px padding 会变成 32px）。
+  //
+  // 起点是元素的【第一个片段】，不是包围盒。内联原文折成几行时，包围盒的左边是后面
+  // 几行的行首，而第一行是从行中间、接在别人的字后面开始的：reddit 信息流摘要把每个
+  // <p> 都压成 display:inline，拿包围盒量出来的「缩进」就是第一行前面那截别人的字
+  // （实测 152px / 194px），整块译文被推到右边。块级元素只有一个片段，和包围盒相同；
+  // 没有盒子（display:contents、没挂上文档）就没有片段，也就没有缩进。
   function getTextInset(element, options) {
-    const elementRect = element.getBoundingClientRect();
-    if (elementRect.width === 0) return 0;
+    const elementRect = element.getClientRects()[0];
+    if (!elementRect || elementRect.width === 0) return 0;
     // 量的是原文的起始边：RTL 原文的文字从右边起，缩进就是文字右边离盒子右边多远。
     const style = window.getComputedStyle(element);
     const rtl = style.direction === 'rtl';

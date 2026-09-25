@@ -129,6 +129,21 @@ file directly.
   theme's `:hover` takes back every property the rule leaves to the base rule.
   Guarded by `test/unit/host-css-containment.test.mjs` and the
   hostile-stylesheet spec in `test/e2e/input-translation.spec.js`.
+- **Translation display is the one property a page cannot win.** Translations
+  sit inside the page's own content, where a page rule like reddit's
+  `.feed-card-text-preview :not(ol,ul,li,h1) { display: inline !important }`
+  (0,2,2) outweighs any class of ours. That rule once put every translation
+  inline and broke both "hide translations" and translation-only. So every
+  `display … !important` in `content/css/translation.css` sits in
+  `@layer ai-translator-display`: a layered `!important` beats every unlayered
+  one, whatever its specificity. **Only display goes in the layer.** A layered
+  `!important` also beats our own unlayered rules, such as the translation
+  styles and the source-hidden margin reset, and those win today on
+  specificity alone. Normal (non-important) display stays out too, because
+  inside a layer it is weaker, not stronger. Guarded by
+  `test/unit/translation-display-layer.test.mjs` and
+  `test/e2e/hostile-display-css.spec.js`, which asserts computed display,
+  not just the class.
 
 ### Account-Backed Features
 
