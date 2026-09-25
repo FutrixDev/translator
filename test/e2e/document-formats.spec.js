@@ -22,7 +22,7 @@ const MIB = 1024 * 1024;
 async function connectExtension(context, base) {
   const worker = await getServiceWorker(context);
   await worker.evaluate(async (apiBase) => {
-    await chrome.storage.sync.set({ enablePdfTranslation: true, uiLanguage: 'en' });
+    await chrome.storage.sync.set({ enablePdfTranslation: true });
     await chrome.storage.local.remove(['comicAccountCache', 'pdfJobs', 'pdfUrlOps']);
     await chrome.storage.local.set({
       comicApiBase: apiBase, comicToken: 'test-token', comicTokenExpiresAt: Date.now() + 3600_000,
