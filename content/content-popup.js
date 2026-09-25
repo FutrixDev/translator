@@ -9,7 +9,6 @@
   const t = ctx.t;
   const applyTheme = ctx.applyTheme;
   const escapeHtml = ctx.escapeHtml;
-  const copyToClipboard = ctx.copyToClipboard;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const normalizeTargetLang = ctx.normalizeTargetLang;
   const getTargetLangLabel = ctx.getTargetLangLabel;
@@ -111,14 +110,8 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden></button>
-        <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-          </svg>
-          ${t('copy')}
-        </button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin')])}</button>
+        <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
     `;
   }
@@ -231,11 +224,11 @@
 
     // Event listeners
     popup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
-    popup.querySelector('.ai-translator-copy').addEventListener('click', () => {
+    const copyBtn = popup.querySelector('.ai-translator-copy');
+    copyBtn.addEventListener('click', () => {
       const translationText = popup.querySelector('.ai-translator-translation-text')?.textContent;
       if (translationText && !translationText.includes(t('translating'))) {
-        copyToClipboard(translationText);
-        showCopyFeedback();
+        ctx.copyWithFeedback(copyBtn, translationText);
       }
     });
     setupPopupSpeech(popup);
@@ -306,7 +299,8 @@
 
     // Event listeners
     state.translationPopup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
-    state.translationPopup.querySelector('.ai-translator-copy').addEventListener('click', () => {
+    const copyBtn = state.translationPopup.querySelector('.ai-translator-copy');
+    copyBtn.addEventListener('click', () => {
       const popup = state.translationPopup;
       if (!popup) return;
       // With the translation half hidden there is nothing else to copy, and the
@@ -316,8 +310,7 @@
         ? popup.dataset.sourceText
         : popup.querySelector('.ai-translator-translation-text')?.textContent;
       if (wanted && !wanted.includes(t('translating'))) {
-        copyToClipboard(wanted);
-        showCopyFeedback();
+        ctx.copyWithFeedback(copyBtn, wanted);
       }
     });
     const showTranslationSpeak = setupPopupSpeech(state.translationPopup);
@@ -535,6 +528,9 @@
   /**
    * 一次请求结算（成功或失败）之后：重译出现；引擎标签说这次是谁译的；另一边
    * 此刻能用才给「换引擎」，按钮文字说换到哪边。
+   *
+   * 换引擎按钮在答案回来之前保持原样，答案回来一次定下藏或露。先藏再露的话，每点一次
+   * 动作行就折一次行再并回来，鼠标下面换成别的按钮。文字换了宽度不变，靠的是 fitLabel。
    */
   async function settleCardActions(popup, engine) {
     const retranslate = popup.querySelector('.ai-translator-retranslate');
@@ -544,23 +540,27 @@
     retranslate.disabled = false;
     tag.textContent = engine ? t(engine === 'builtin' ? 'cardEngineBuiltin' : 'cardEngineAi') : '';
     tag.hidden = !engine;
-    switchBtn.hidden = true;
-    if (!engine) return;
     const requestId = popup.dataset.requestId;
-    let choices;
+    const other = await switchOffer(engine, popup.dataset.targetLang);
+    if (state.translationPopup !== popup || popup.dataset.requestId !== requestId) return;
+    switchBtn.hidden = !other;
+    if (!other) return;
+    switchBtn.dataset.engine = other;
+    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(other === 'builtin' ? 'cardUseBuiltin' : 'cardUseAi');
+    switchBtn.disabled = false;
+  }
+
+  // 这次是 engine 答的，另一边此刻能不能接这张卡的目标语言：能就是另一边，不能是 null。
+  async function switchOffer(engine, targetLang) {
+    if (!engine) return null;
+    const other = engine === 'builtin' ? 'ai' : 'builtin';
     try {
-      choices = await ctx.engineChoices(popup.dataset.targetLang);
+      const choices = await ctx.engineChoices(targetLang);
+      return choices[other] ? other : null;
     } catch (error) {
       console.error('Blab Translation: reading engine choices for the card failed', error);
-      return;
+      return null;
     }
-    if (state.translationPopup !== popup || popup.dataset.requestId !== requestId) return;
-    const other = engine === 'builtin' ? 'ai' : 'builtin';
-    if (!choices[other]) return;
-    switchBtn.dataset.engine = other;
-    switchBtn.textContent = t(other === 'builtin' ? 'cardUseBuiltin' : 'cardUseAi');
-    switchBtn.disabled = false;
-    switchBtn.hidden = false;
   }
 
   // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
@@ -660,22 +660,6 @@
           : t('translationFailed'));
         settleCardActions(popup, undefined);
       }
-    }
-  }
-
-  function showCopyFeedback() {
-    const copyBtn = state.translationPopup?.querySelector('.ai-translator-copy');
-    if (copyBtn) {
-      const originalText = copyBtn.innerHTML;
-      copyBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20 6L9 17l-5-5"/>
-        </svg>
-        ${t('copied')}
-      `;
-      setTimeout(() => {
-        if (copyBtn) copyBtn.innerHTML = originalText;
-      }, 1500);
     }
   }
 

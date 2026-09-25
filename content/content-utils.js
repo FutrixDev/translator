@@ -5,10 +5,12 @@
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
 
+  // 结果既进正文也进属性（aria-label、data-tag、data-fit）。innerHTML 只转义 & < >，
+  // 引号要自己补：属性值里一个 " 就把属性截断了。
   ctx.escapeHtml = function(text) {
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   };
 
   // ==================== 受管 DOM 容器 ====================
@@ -127,6 +129,41 @@
       document.execCommand('copy');
       document.body.removeChild(textarea);
     }
+  };
+
+  // ==================== 点了会换字的按钮 ====================
+
+  // 换引擎（两种说法）和复制（→ 已复制）点一下就换字，按钮宽度不能跟着字变：划词卡片的
+  // 动作行会折行，一个按钮宽窄几个像素，整行就可能从两行并成一行或者反过来 —— 鼠标下面
+  // 换成了另一个按钮，卡片高度也跟着跳。labels 列出按钮会显示的每一种字，写进 data-fit；
+  // popup.css 的 .ai-translator-btn-label::after 把它们排成一列看不见的影子，按钮始终按
+  // 最宽的那种字定宽。换字只改这个 span 的 textContent。
+  ctx.fitLabel = function(text, labels) {
+    return `<span class="ai-translator-btn-label" data-fit="${ctx.escapeHtml(labels.join('\n'))}">${ctx.escapeHtml(text)}</span>`;
+  };
+
+  const COPY_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+  const COPIED_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+  const COPIED_MS = 1500;
+  const copiedTimers = new WeakMap();
+
+  // 复制按钮的内容，划词卡片、图片 OCR 卡片和输入框对话框共用。idleLabel 是按钮平时的字。
+  ctx.copyButtonContent = function(idleLabel, copied = false) {
+    const labels = [idleLabel, ctx.t('copied')];
+    return (copied ? COPIED_ICON : COPY_ICON) + ctx.fitLabel(labels[copied ? 1 : 0], labels);
+  };
+
+  // 写进剪贴板，按钮显示「已复制」一会儿再换回来。平时的字取自按钮自己的 data-fit（第一
+  // 项），不存点击那一刻的 innerHTML：原来的两份实现（划词卡片和 OCR 卡片共用的一份、输入
+  // 框对话框一份）都那么存，1.5 秒内连点两下，存下的就是「已复制」，按钮从此停在「已复制」。
+  ctx.copyWithFeedback = async function(button, text) {
+    const [idleLabel] = button.querySelector('.ai-translator-btn-label').dataset.fit.split('\n');
+    await ctx.copyToClipboard(text);
+    button.innerHTML = ctx.copyButtonContent(idleLabel, true);
+    clearTimeout(copiedTimers.get(button));
+    copiedTimers.set(button, setTimeout(() => {
+      button.innerHTML = ctx.copyButtonContent(idleLabel);
+    }, COPIED_MS));
   };
 
   // ==================== 浮层放在锚点旁边 ====================

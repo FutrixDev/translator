@@ -131,13 +131,58 @@ function expectInViewport(rect, margin = MARGIN) {
   expect(rect.bottom).toBeLessThanOrEqual(VIEWPORT.height - margin + 0.5);
 }
 
+// Wait until nothing under selector is still animating or transitioning.
+async function settle(page, selector) {
+  await page.waitForFunction((sel) => {
+    const root = document.querySelector(sel);
+    return !!root && root.getAnimations({ subtree: true }).every((a) => a.playState === 'finished');
+  }, selector);
+}
+
 // The icon pops in (a 0.2 s scale + translateY); measure it where it lands.
 async function settledIconRect(page) {
-  await page.waitForFunction(() => {
-    const root = document.getElementById('ai-translator-selection-btn');
-    return !!root && root.getAnimations({ subtree: true }).every((a) => a.playState === 'finished');
-  });
+  await settle(page, '#ai-translator-selection-btn');
   return rectOf(icon(page));
+}
+
+// The card's action row, and each visible button in it relative to the row.
+// The card itself is re-placed as its content changes, so positions on the
+// page are not what stays put — positions inside the row are.
+async function actionRow(page) {
+  await settle(page, '.ai-translator-popup');
+  return page.evaluate(() => {
+    const row = document.querySelector('.ai-translator-popup .ai-translator-actions');
+    const box = row.getBoundingClientRect();
+    return {
+      origin: { x: box.left, y: box.top },
+      width: box.width,
+      height: box.height,
+      buttons: Array.from(row.querySelectorAll('button'))
+        .filter((b) => !b.hidden && b.offsetParent)
+        .map((b) => {
+          const r = b.getBoundingClientRect();
+          return {
+            cls: b.className,
+            text: b.textContent.trim(),
+            left: r.left - box.left,
+            top: r.top - box.top,
+            width: r.width,
+            height: r.height,
+          };
+        }),
+    };
+  });
+}
+
+// Same buttons, same places, same row size: nothing moved under the pointer.
+function expectRowUnchanged(after, before, where) {
+  const near = (a, b) => Math.abs(a - b) <= 0.5;
+  const same = after.buttons.length === before.buttons.length
+    && after.buttons.every((b, i) => b.cls === before.buttons[i].cls
+      && ['left', 'top', 'width', 'height'].every((k) => near(b[k], before.buttons[i][k])))
+    && near(after.width, before.width)
+    && near(after.height, before.height);
+  expect(same, `${where}\nbefore ${JSON.stringify(before)}\nafter  ${JSON.stringify(after)}`).toBe(true);
 }
 
 // A new drag that starts on selected text would drag that text instead of
@@ -154,6 +199,7 @@ const cardError = (page) => page.locator('.ai-translator-popup .ai-translator-er
 const engineTag = (page) => page.locator('.ai-translator-popup .ai-translator-engine-tag');
 const retranslateBtn = (page) => page.locator('.ai-translator-popup .ai-translator-retranslate');
 const switchBtn = (page) => page.locator('.ai-translator-popup .ai-translator-switch-engine');
+const copyBtn = (page) => page.locator('.ai-translator-popup .ai-translator-copy');
 
 // The icon's mouseup settle is 100 ms; anything that would have shown it has
 // by this point.
@@ -220,8 +266,16 @@ test.describe('selection icon and card actions', () => {
       await expect(cardText(page)).toContainText('[T]');
       await expect(engineTag(page)).toHaveText(en('cardEngineAi'));
 
-      await page.locator('.ai-translator-popup .ai-translator-copy').click();
-      await expect(page.locator('.ai-translator-popup .ai-translator-copy')).toContainText(en('copied'));
+      await copyBtn(page).click();
+      await expect(copyBtn(page)).toHaveText(en('copied'));
+      // A second click while "Copied" shows must not leave it there: copy
+      // feedback used to save the button's HTML at click time, so the second
+      // click saved "Copied" as the thing to go back to. Read once after both
+      // timers are due — polling would pass on the moment the first click's
+      // timer briefly puts "Copy" back.
+      await copyBtn(page).click();
+      await page.waitForTimeout(2000);
+      expect((await copyBtn(page).textContent()).trim()).toBe(en('copy'));
       await expect(page.locator('.ai-translator-popup .ai-translator-speak-translation')).toBeVisible();
 
       // Switch engine follows the card's target language: the built-in engine
@@ -508,8 +562,8 @@ test.describe('selection icon and card actions', () => {
     }
   });
 
-  test('J-D9: the action row fits the card in all ten interface languages', async ({ page, context }) => {
-    test.setTimeout(240_000);
+  test('J-D9: the action row fits the card and stays put when a label changes, in all ten interface languages', async ({ page, context }) => {
+    test.setTimeout(300_000);
     const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
@@ -548,6 +602,41 @@ test.describe('selection icon and card actions', () => {
           expect(rect.top, where).toBeGreaterThanOrEqual(layout.card.top - 0.5);
           expect(rect.bottom, where).toBeLessThanOrEqual(layout.card.bottom + 0.5);
         }
+
+        // A label that changes must not move anything under the pointer. The
+        // row wraps, so a button whose width followed its label ("Use Chrome
+        // built-in" / "Use my AI model", "Copy" / "Copied") reflowed the row
+        // and put a different button under the mouse that had just clicked.
+        const before = await actionRow(page);
+        await page.evaluate(() => {
+          window.__rowHides = [];
+          const row = document.querySelector('.ai-translator-popup .ai-translator-actions');
+          new MutationObserver((records) => {
+            for (const r of records) if (r.oldValue === null) window.__rowHides.push(r.target.className);
+          }).observe(row, { subtree: true, attributes: true, attributeFilter: ['hidden'], attributeOldValue: true });
+        });
+        await switchBtn(page).click();
+        await expect(engineTag(page)).toHaveText(getMessage('cardEngineBuiltin', lang));
+        await expect(switchBtn(page)).toHaveText(getMessage('cardUseAi', lang));
+        await expect(switchBtn(page)).toBeEnabled();
+        const switched = await actionRow(page);
+        expectRowUnchanged(switched, before, `${lang} after switching engine`);
+        // Nor may a button blink out while the answer comes back.
+        expect(await page.evaluate(() => window.__rowHides), lang).toEqual([]);
+        // Where the switch was clicked is still the switch.
+        const sw = before.buttons.find((b) => b.cls.includes('ai-translator-switch-engine'));
+        const under = await page.evaluate(
+          ({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.className ?? null,
+          { x: switched.origin.x + sw.left + sw.width / 2, y: switched.origin.y + sw.top + sw.height / 2 });
+        expect(under, lang).toContain('ai-translator-switch-engine');
+
+        await copyBtn(page).click();
+        await expect(copyBtn(page)).toHaveText(getMessage('copied', lang));
+        const copied = await actionRow(page);
+        // Measured while "Copied" still shows (it goes back after 1.5 s).
+        expect(copied.buttons.find((b) => b.cls.includes('ai-translator-copy')).text, lang)
+          .toBe(getMessage('copied', lang));
+        expectRowUnchanged(copied, before, `${lang} after copy`);
         await page.keyboard.press('Escape');
       }
     } finally {

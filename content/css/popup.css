@@ -669,6 +669,26 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   border-color: var(--accent);
 }
 
+/* 点了会换字的按钮（换引擎、复制 → 已复制）按它会显示的最宽那种字定宽，换字时宽度不动
+   （ctx.fitLabel 把每一种字写进 data-fit）。动作行是会折行的，按钮宽窄一变，整行就可能
+   从两行并成一行，鼠标下面换成另一个按钮。
+   影子是 ::after：一列看不见的字，只撑宽度。height: 0 加 overflow: hidden 让它不占高度，
+   也不算进可滚动溢出（flex 子项有了 overflow: hidden，最小高度才按 0 算）；pre-line 让每种字
+   各占一行，窄屏时照样折行。visibility: hidden 同时把它挡在无障碍树外，读屏只读真字。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn-label::after {
+  content: attr(data-fit);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: pre-line;
+}
+
 
 /* Scrollbar */
 .ai-translator-popup ::-webkit-scrollbar {

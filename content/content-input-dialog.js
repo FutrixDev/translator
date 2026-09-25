@@ -9,7 +9,6 @@
   const t = ctx.t;
   const applyTheme = ctx.applyTheme;
   const escapeHtml = ctx.escapeHtml;
-  const copyToClipboard = ctx.copyToClipboard;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getTargetLangLabel = ctx.getTargetLangLabel;
   const buildTargetLangMenu = ctx.buildTargetLangMenu;
@@ -183,13 +182,7 @@
           </div>
         </div>
         <div class="ai-translator-input-footer">
-          <button class="ai-translator-btn ai-translator-input-btn-copy" id="ai-translator-copy-result" type="button" hidden>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-            </svg>
-            ${t('copyTranslation')}
-          </button>
+          <button class="ai-translator-btn ai-translator-input-btn-copy" id="ai-translator-copy-result" type="button" hidden>${ctx.copyButtonContent(t('copyTranslation'))}</button>
           <button class="ai-translator-btn ai-translator-btn-primary" id="ai-translator-do-translate" type="button">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35"/>
@@ -307,15 +300,7 @@
     copyBtn.addEventListener('click', async () => {
       const text = resultText.textContent;
       if (!text || text.includes(t('translating'))) return;
-      await copyToClipboard(text);
-      const originalHTML = copyBtn.innerHTML;
-      copyBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M20 6L9 17l-5-5"/>
-        </svg>
-        ${t('copied')}
-      `;
-      setTimeout(() => copyBtn.innerHTML = originalHTML, 1500);
+      await ctx.copyWithFeedback(copyBtn, text);
     });
 
     // Enter key to translate (Ctrl+Enter or Cmd+Enter)

@@ -233,7 +233,13 @@ floating layers (source peek, card, icon) are placed by one pure function,
 card goes beside the selection, never over it, and is re-placed by a
 ResizeObserver until the user drags it. The card's action row is retranslate,
 switch engine, copy; errors go to its single `.ai-translator-error` element
-(`ctx.showCardError`), never into the translation text. Journeys J-D1–J-D10 in
+(`ctx.showCardError`), never into the translation text. The row wraps, so a
+button whose width followed its label moved a different button under the
+pointer: a button whose label changes is drawn with `ctx.fitLabel(text,
+labels)`, sized for every label it will show, and every copy button is
+`ctx.copyButtonContent(label)` + `ctx.copyWithFeedback(button, text)` — the one
+place "Copied" is shown and the clipboard written
+(`test/unit/copy-feedback.test.mjs`). Journeys J-D1–J-D10 in
 `test/e2e/selection-card.spec.js`.
 
 ### Translation Engine

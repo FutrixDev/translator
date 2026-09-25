@@ -22,6 +22,10 @@
   engine again; switch engine translates this card with the other engine,
   when it is usable, without changing your settings and without falling back
   to anything else.
+- **The card's buttons stay where they are.** A button whose label changes —
+  Copy to Copied, or the switch-engine label after a switch — is as wide as
+  its longest label, so the row never rewraps and no other button moves under
+  the pointer, in all ten interface languages.
 - **Errors show on the card, not as a translation.** A failed request — from
   the icon, the modifier key, the float ball or the right-click menu — shows
   its reason in the card's error line, and Retranslate tries again.
@@ -37,6 +41,10 @@
   (the ones the menu tags "AI only").
 - **Importing settings checks the selection trigger.** A value other than
   icon, modifier key or both is left out of the import and listed as skipped.
+- **Fix: a copy button clicked twice no longer stays on "Copied".** The card
+  and the input box each put back the label they found when clicked, which on
+  a second click within 1.5 s was "Copied" itself. They now share one copy
+  button that returns to its own label 1.5 s after the last click.
 
 ### Onboarding page and settings import/export
 

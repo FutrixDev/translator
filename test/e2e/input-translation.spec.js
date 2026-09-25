@@ -1,6 +1,9 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
 const { startMockServer } = require('./mock-server');
+const { getMessage } = require('../../i18n/messages');
+
+const en = (key) => getMessage(key, 'en');
 
 async function startInputDictionaryMockServer() {
   const { origin, close } = await startMockServer((req, res) => {
@@ -88,6 +91,20 @@ test('input translation shows phonetic for words and read-aloud for anything typ
     await expect(page.locator('#ai-translator-input-phonetic')).toBeHidden();
     await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
+
+    // Copy says so without changing size (ctx.copyWithFeedback, shared with
+    // the selection card), and a second click while "Copied" shows does not
+    // leave it there. Read once after both timers are due — polling would pass
+    // on the moment the first click's timer briefly puts the label back.
+    const copyResult = page.locator('#ai-translator-copy-result');
+    await expect(copyResult).toHaveText(en('copyTranslation'));
+    const idleWidth = (await copyResult.boundingBox()).width;
+    await copyResult.click();
+    await expect(copyResult).toHaveText(en('copied'));
+    expect(Math.abs((await copyResult.boundingBox()).width - idleWidth)).toBeLessThanOrEqual(0.5);
+    await copyResult.click();
+    await page.waitForTimeout(2000);
+    expect((await copyResult.textContent()).trim()).toBe(en('copyTranslation'));
 
     // Nothing typed, nothing to read.
     await page.fill('#ai-translator-input-text', '');
