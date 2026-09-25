@@ -55,7 +55,8 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
     '预算闸又自己判了一遍「允不允许用 AI」');
   // 而那个判断在谓词里，并且真的分得清问的是哪一边 —— 行为在
   // auto-engine-choice.test.mjs 上验。
-  assert.match(engine, /function isBuiltinSelected\(auto\) \{\s*\n\s*return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/);
+  // 本站规则钉住的引擎（P1-B）排在设置前面，两半答同一个值；没钉就按 auto 分。
+  assert.match(engine, /function isBuiltinSelected\(auto\) \{\s*\n\s*const site = siteEngine\(\);\s*\n\s*if \(site\) return site === 'builtin';\s*\n\s*return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/);
 });
 
 test('「这一批是自动发的」一路带到三个发消息的地方', () => {

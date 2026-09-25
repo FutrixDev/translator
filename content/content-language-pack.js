@@ -92,13 +92,22 @@
     window.addEventListener('keydown', onGesture, true);
   }
 
+  // 这一页有没有哪一半在用内置引擎：手动那一半，或者自动那一半。下面两处问的都是
+  // 这一句 —— 要叫醒的正是停在 ERROR 上的**自动**那一轮，只问手动那一半的话，
+  // 手动选 AI、自动保持默认内置的页面既不预取、装好了也醒不过来。站点规则钉住引擎
+  // 时两半答同一个值，这里跟着站点走。
+  function inUse() {
+    const engine = builtin();
+    return !!engine && (engine.isActive(false) || engine.isActive(true));
+  }
+
   // 加载后那一次：代价是用户可能从没打算在这个页面上翻译，包却下了。只在「这个
   // 页面的语言对确实还没下载」时才做，一个语言对一辈子只有一次，权衡下来是值的。
   async function setupLanguagePackPrefetch() {
     // iframe 里的语言对和主文档一样，跟着做纯属重复。
     if (window.top !== window) return;
+    if (!inUse()) return;
     const engine = builtin();
-    if (!engine || !engine.isActive()) return;
 
     try {
       const tgt = downloadTargetLang();
@@ -157,8 +166,7 @@
   // ERROR，什么都不花；而用它挡，会把「源语言恰好就是英语」的那些页面也一起挡掉。
   chrome.runtime.onMessage.addListener((message) => {
     if (!message || message.type !== 'LANGUAGE_PACK_READY') return;
-    const engine = builtin();
-    if (!engine || !engine.isActive()) return;
+    if (!inUse()) return;
     notifyLanguagePackReady({ sourceLang: message.sourceLang, targetLang: message.targetLang });
   });
 

@@ -492,6 +492,12 @@ test('语言包装好了，停在错误上的那一页要自己活过来', () =>
   assert.match(pack, /ctx\.onLanguagePackReady = onLanguagePackReady;/);
   // 监听器自己抛不能把别的监听器带走。
   assert.match(pack, /function notifyLanguagePackReady\([\s\S]*?try \{[\s\S]*?\} catch/);
+  // 「这一页有没有哪一半在用内置引擎」是 inUse() 一句：两半都问，预取和唤醒两处
+  // 都经过它。只问手动那一半（裸的 isActive()）时，手动 AI、自动内置的页面停在
+  // 缺包的 ERROR 上永远醒不过来。
+  assert.match(pack, /function inUse\(\) \{[\s\S]*?engine\.isActive\(false\) \|\| engine\.isActive\(true\)/);
+  assert.equal((pack.match(/if \(!inUse\(\)\) return;/g) || []).length, 2);
+  assert.doesNotMatch(pack, /isActive\(\s*\)/);
 
   const auto = code('content/content-auto-translate.js');
   // 调度层订阅，并且走 start() —— 它会把 broken 放掉、重新判、重新扫。只作废不

@@ -82,6 +82,24 @@
    */
 
   /**
+   * The engine a click on this tab will use: 'builtin' | 'ai'.
+   *
+   * The page answers first (`probe.engine`): it knows this site's custom rule,
+   * which can pin an engine and outranks the setting. Only when there is no
+   * page answer — the probe timed out, or the tab has no content script — does
+   * the setting speak. The popup footer and the popup's "no API key" gate both
+   * ask this one function, so they cannot disagree about which engine it is.
+   *
+   * @param {Object} settings
+   * @param {EngineProbe|null} probe
+   * @returns {'builtin'|'ai'}
+   */
+  function selectedEngine(settings, probe) {
+    if (probe && probe.engine) return probe.engine;
+    return settings && settings.translationEngine === 'ai' ? 'ai' : 'builtin';
+  }
+
+  /**
    * One line of truth for the popup footer.
    *
    * `probe` is null when the content script could not be reached — a
@@ -95,7 +113,7 @@
    * @returns {EngineStatus}
    */
   function describeEngineStatus(settings, probe) {
-    const engine = (probe && probe.engine) || (settings && settings.translationEngine) || 'builtin';
+    const engine = selectedEngine(settings, probe);
 
     if (engine === 'ai') {
       // The only engine that can need a key. APICompat is read here, at call
@@ -160,6 +178,7 @@
     REASON_MESSAGE_KEYS,
     UNKNOWN_PROBE,
     builtinUnsupportedReason,
+    selectedEngine,
     describeEngineStatus
   };
 })(globalThis);
