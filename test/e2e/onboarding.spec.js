@@ -39,9 +39,9 @@ test.describe('the welcome page a fresh install opens', () => {
     expect(opened).toHaveLength(1);
     const page = opened[0];
 
-    // It opened before the harness's base settings landed; draw it again with
-    // them, in the dark palette first.
-    await writeSyncSettings(context, { uiLanguage: 'en', theme: 'dark' });
+    // It opened before the fixture wrote the harness's base settings; draw it
+    // again with them, in the dark palette first.
+    await writeSyncSettings(context, { theme: 'dark' });
     await page.reload();
     await page.waitForFunction(() => document.documentElement.dataset.ready === 'true');
     await expect(page).toHaveTitle(en('onboardingPageTitle'));
