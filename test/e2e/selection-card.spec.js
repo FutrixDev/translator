@@ -161,10 +161,10 @@ const SETTLE_MS = 400;
 
 test.describe('selection icon and card actions', () => {
   test('J-D1: icon beside the last line, card beside the selection, all four actions', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint));
+      await setExtensionSettings(page, aiSettings(mock.endpoint));
       await openPage(page);
       await stubBuiltinTranslator(page);
 
@@ -199,24 +199,24 @@ test.describe('selection icon and card actions', () => {
 
       // Retranslate goes back to the engine: one more request reaches the API.
       await expect(retranslateBtn(page)).toBeEnabled();
-      const beforeRetranslate = server.sentTexts.length;
+      const beforeRetranslate = mock.sentTexts.length;
       await retranslateBtn(page).click();
-      await expect.poll(() => server.sentTexts.length).toBe(beforeRetranslate + 1);
+      await expect.poll(() => mock.sentTexts.length).toBe(beforeRetranslate + 1);
       await expect(cardText(page)).toContainText('[T]');
       await expect(retranslateBtn(page)).toBeEnabled();
 
       // Switch to the built-in engine (stub): no API request, '[B] ' answer.
       await expect(switchBtn(page)).toHaveText(en('cardUseBuiltin'));
-      const beforeBuiltin = server.sentTexts.length;
+      const beforeBuiltin = mock.sentTexts.length;
       await switchBtn(page).click();
       await expect(cardText(page)).toHaveText(/^\[B\] /);
       await expect(engineTag(page)).toHaveText(en('cardEngineBuiltin'));
-      expect(server.sentTexts.length).toBe(beforeBuiltin);
+      expect(mock.sentTexts.length).toBe(beforeBuiltin);
 
       // And back to the AI engine: one more request.
       await expect(switchBtn(page)).toHaveText(en('cardUseAi'));
       await switchBtn(page).click();
-      await expect.poll(() => server.sentTexts.length).toBe(beforeBuiltin + 1);
+      await expect.poll(() => mock.sentTexts.length).toBe(beforeBuiltin + 1);
       await expect(cardText(page)).toContainText('[T]');
       await expect(engineTag(page)).toHaveText(en('cardEngineAi'));
 
@@ -224,15 +224,15 @@ test.describe('selection icon and card actions', () => {
       await expect(page.locator('.ai-translator-popup .ai-translator-copy')).toContainText(en('copied'));
       await expect(page.locator('.ai-translator-popup .ai-translator-speak-translation')).toBeVisible();
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
   test('J-D2: a failed request shows on the card, and retranslate recovers', async ({ page, context }) => {
-    const server = await startMockOpenAIServer({ failRequests: 1 });
+    const mock = await startMockOpenAIServer({ failRequests: 1 });
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint));
+      await setExtensionSettings(page, aiSettings(mock.endpoint));
       await openPage(page);
 
       await dragSelect(page, '#lead');
@@ -248,7 +248,7 @@ test.describe('selection icon and card actions', () => {
       await expect(cardText(page)).toBeVisible();
       await expect(cardError(page)).toBeHidden();
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
@@ -314,10 +314,10 @@ test.describe('selection icon and card actions', () => {
   });
 
   test('J-D4: trigger "modifier" shows no icon, the modifier still translates', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint, { selectionTrigger: 'modifier' }));
+      await setExtensionSettings(page, aiSettings(mock.endpoint, { selectionTrigger: 'modifier' }));
       await openPage(page);
 
       await dragSelect(page, '#lead');
@@ -326,32 +326,32 @@ test.describe('selection icon and card actions', () => {
 
       await triggerSelectionHotkey(page);
       await expect(cardText(page)).toContainText('[T]');
-      expect(server.sentTexts.length).toBe(1);
+      expect(mock.sentTexts.length).toBe(1);
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
   test('J-D5: trigger "icon" ignores the modifier, the icon still translates', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint, { selectionTrigger: 'icon' }));
+      await setExtensionSettings(page, aiSettings(mock.endpoint, { selectionTrigger: 'icon' }));
       await openPage(page);
 
       await dragSelect(page, '#lead');
       await expect(icon(page)).toBeVisible();
       await triggerSelectionHotkey(page);
       await page.waitForTimeout(SETTLE_MS);
-      expect(server.sentTexts.length).toBe(0);
+      expect(mock.sentTexts.length).toBe(0);
       await expect(card(page)).toHaveCount(0);
       await expect(page.locator('.ai-translator-selection-translation')).toHaveCount(0);
 
       await icon(page).click();
       await expect(cardText(page)).toContainText('[T]');
-      expect(server.sentTexts.length).toBe(1);
+      expect(mock.sentTexts.length).toBe(1);
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
@@ -425,10 +425,10 @@ test.describe('selection icon and card actions', () => {
   });
 
   test('J-D7: the icon goes away on scroll, Esc, a press outside and a cleared selection', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint));
+      await setExtensionSettings(page, aiSettings(mock.endpoint));
       await openPage(page);
       const btn = page.locator('#ai-translator-selection-btn');
 
@@ -456,17 +456,17 @@ test.describe('selection icon and card actions', () => {
       await page.evaluate(() => window.getSelection().removeAllRanges());
       await expect(btn).toHaveCount(0);
 
-      expect(server.sentTexts.length).toBe(0);
+      expect(mock.sentTexts.length).toBe(0);
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
   test('J-D8: selecting inside input, textarea and contenteditable shows no icon', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint));
+      await setExtensionSettings(page, aiSettings(mock.endpoint));
       await openPage(page);
       const btn = page.locator('#ai-translator-selection-btn');
 
@@ -486,17 +486,17 @@ test.describe('selection icon and card actions', () => {
       await page.waitForTimeout(SETTLE_MS);
       await expect(btn).toHaveCount(0);
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
   test('J-D9: the action row fits the card in all ten interface languages', async ({ page, context }) => {
     test.setTimeout(240_000);
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
       for (const lang of UI_LANGUAGES) {
-        await setExtensionSettings(page, aiSettings(server.endpoint, { uiLanguage: lang }));
+        await setExtensionSettings(page, aiSettings(mock.endpoint, { uiLanguage: lang }));
         await openPage(page);
         await stubBuiltinTranslator(page);
         await dragSelect(page, '#lead');
@@ -533,15 +533,15 @@ test.describe('selection icon and card actions', () => {
         await page.keyboard.press('Escape');
       }
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 
   test('J-D10: near the bottom the card goes above; a long selection shrinks it and scrolls inside', async ({ page, context }) => {
-    const server = await startMockOpenAIServer();
+    const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      await setExtensionSettings(page, aiSettings(server.endpoint));
+      await setExtensionSettings(page, aiSettings(mock.endpoint));
       await openPage(page);
 
       await page.evaluate(() => {
@@ -580,7 +580,7 @@ test.describe('selection icon and card actions', () => {
       expectInViewport(longCard);
       expect(intersects(longCard, long.box)).toBe(false);
     } finally {
-      await server.close();
+      await mock.close();
     }
   });
 });
