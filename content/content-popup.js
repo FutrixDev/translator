@@ -19,6 +19,15 @@
   const speech = ctx.speech;
   const SPEAKER_ICON = speech.SPEAKER_ICON;
 
+  // 翻译图标：卡片标题、OCR 的「翻译」按钮和划词图标共用这一份路径。
+  const TRANSLATE_ICON_PATHS = '<path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>'
+    + '<path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>';
+
+  function translateIconSvg(size, className = '') {
+    const cls = className ? ` class="${className}"` : '';
+    return `<svg${cls} width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${TRANSLATE_ICON_PATHS}</svg>`;
+  }
+
   /**
    * The popup markup, shared by the live-translation and the
    * already-translated entry points. They rendered two near-identical copies
@@ -37,10 +46,7 @@
     return `
       <div class="ai-translator-header">
         <div class="ai-translator-header-left">
-          <svg class="ai-translator-title-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
-            <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
-          </svg>
+          ${translateIconSvg(20, 'ai-translator-title-icon')}
           <span class="ai-translator-title">${t('aiTranslate')}</span>
         </div>
         <div class="ai-translator-header-right">
@@ -75,6 +81,7 @@
         <div class="ai-translator-result">
           <div class="ai-translator-label-row">
             <div class="ai-translator-label">${t('translation')}</div>
+            <span class="ai-translator-engine-tag" hidden></span>
             <div class="ai-translator-label-tools">
               <button class="ai-translator-icon-btn ai-translator-speak-translation" type="button" aria-label="${t('pronounceTranslation')}" hidden>
                 ${SPEAKER_ICON}
@@ -94,17 +101,17 @@
             <div class="ai-translator-result-body" ${pending ? 'hidden' : ''}>
               <div class="ai-translator-translation-text">${escapeHtml(translation)}</div>
             </div>
+            <div class="ai-translator-error" role="alert" hidden></div>
           </div>
         </div>
       </div>
       <div class="ai-translator-actions">
         <button class="ai-translator-btn ai-translator-btn-primary ai-translator-translate-btn" type="button" title="${t('translate')}" hidden>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
-            <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
-          </svg>
+          ${translateIconSvg(16)}
           ${t('translate')}
         </button>
+        <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden></button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -141,54 +148,104 @@
     return showTranslationSpeak;
   }
 
-  function showTranslationPopup(text, x, y) {
+  // 缩高时卡片至少留这么高：标题、原文一行、译文几行、操作行。
+  const CARD_MIN_HEIGHT = 160;
+
+  function rectOf(rect) {
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  }
+
+  function isEmptyRect(rect) {
+    return !rect || (rect.left === 0 && rect.top === 0 && rect.right === 0 && rect.bottom === 0);
+  }
+
+  /**
+   * 划词卡片贴着选区放。打开时存下 Range 的克隆和当时的外接矩形、末行矩形；
+   * 每次重新放先用 Range 现算，Range 的节点已不在文档里（矩形全 0）就用存下的。
+   * 没有 Range（悬浮球、右键菜单拿不到选区时）居中。
+   */
+  function anchorCard(range) {
+    if (!range) return null;
+    const saved = range.cloneRange();
+    const rects = saved.getClientRects();
+    const lastLine = rects.length ? rectOf(rects[rects.length - 1]) : null;
+    const node = saved.commonAncestorContainer;
+    const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    return {
+      range: saved,
+      rect: rectOf(saved.getBoundingClientRect()),
+      lastLine,
+      rtl: !!element && getComputedStyle(element).direction === 'rtl',
+    };
+  }
+
+  function placeCard(popup, anchor) {
+    popup.style.maxHeight = '';
+    const size = { width: popup.offsetWidth, height: popup.offsetHeight };
+    const viewport = {
+      width: document.documentElement.clientWidth || window.innerWidth,
+      height: window.innerHeight,
+    };
+    if (!anchor) {
+      popup.style.left = `${Math.max(0, (viewport.width - size.width) / 2)}px`;
+      popup.style.top = `${Math.max(0, (viewport.height - size.height) / 2)}px`;
+      return;
+    }
+    const live = rectOf(anchor.range.getBoundingClientRect());
+    const place = ctx.placeBeside(size, isEmptyRect(live) ? anchor.rect : live, {
+      viewport,
+      prefer: 'below',
+      rtl: anchor.rtl,
+      minHeight: CARD_MIN_HEIGHT,
+      fallback: anchor.lastLine,
+    });
+    popup.style.left = `${place.left}px`;
+    popup.style.top = `${place.top}px`;
+    if (place.maxHeight != null) popup.style.maxHeight = `${place.maxHeight}px`;
+  }
+
+  // 卡片尺寸每变一次（加载 → 结果 → 错误 → 操作行出现）就重新放，用户拖过就不再管。
+  function keepCardPlaced(popup, anchor) {
+    placeCard(popup, anchor);
+    const observer = new ResizeObserver(() => {
+      if (popup._userMoved || !popup.isConnected) return;
+      placeCard(popup, anchor);
+    });
+    observer.observe(popup);
+    popup._resizeObserver = observer;
+  }
+
+  function showTranslationPopup(text, { range = null } = {}) {
     hideTranslationPopup();
 
     // Ensure theme is applied
     applyTheme(settings.theme);
 
-    state.translationPopup = document.createElement('div');
-    state.translationPopup.className = 'ai-translator-popup';
-    state.translationPopup.dataset.sourceText = text;
-    state.translationPopup.innerHTML = buildPopupMarkup({ text, pending: true });
-
-    // Position popup
-    const popupWidth = 400;
-    const popupHeight = 250;
-    let posX = x + 10;
-    let posY = y + 10;
-
-    // Adjust position to stay within viewport
-    if (posX + popupWidth > window.innerWidth) {
-      posX = window.innerWidth - popupWidth - 20;
-    }
-    if (posY + popupHeight > window.innerHeight) {
-      posY = y - popupHeight - 10;
-    }
-    if (posX < 10) posX = 10;
-    if (posY < 10) posY = 10;
-
-    state.translationPopup.style.left = `${posX}px`;
-    state.translationPopup.style.top = `${posY}px`;
-
-    document.body.appendChild(state.translationPopup);
+    const popup = document.createElement('div');
+    state.translationPopup = popup;
+    popup.className = 'ai-translator-popup';
+    popup.dataset.sourceText = text;
+    popup.innerHTML = buildPopupMarkup({ text, pending: true });
+    document.body.appendChild(popup);
+    keepCardPlaced(popup, anchorCard(range));
 
     // Event listeners
-    state.translationPopup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
-    state.translationPopup.querySelector('.ai-translator-copy').addEventListener('click', () => {
-      const translationText = state.translationPopup.querySelector('.ai-translator-translation-text')?.textContent;
+    popup.querySelector('.ai-translator-close').addEventListener('click', hideTranslationPopup);
+    popup.querySelector('.ai-translator-copy').addEventListener('click', () => {
+      const translationText = popup.querySelector('.ai-translator-translation-text')?.textContent;
       if (translationText && !translationText.includes(t('translating'))) {
         copyToClipboard(translationText);
         showCopyFeedback();
       }
     });
-    setupPopupSpeech(state.translationPopup);
-    const initialLang = setupLanguageDropdown(state.translationPopup, getEffectiveTargetLang(), (lang) => {
-      translateText(state.translationPopup?.dataset.sourceText || text, lang);
+    setupPopupSpeech(popup);
+    const initialLang = setupLanguageDropdown(popup, getEffectiveTargetLang(), (lang) => {
+      translateText(popup.dataset.sourceText || text, lang);
     });
+    wireCardActions(popup);
 
     // 添加拖动功能
-    setupPopupDrag(state.translationPopup);
+    setupPopupDrag(popup);
 
     // Trigger translation
     translateText(text, initialLang);
@@ -278,6 +335,8 @@
       translationTextEl.classList.add('ai-translator-translation-flow');
     }
 
+    wireCardActions(state.translationPopup);
+
     // 添加拖动功能
     setupPopupDrag(state.translationPopup);
   }
@@ -301,6 +360,8 @@
       if (e.target.closest('button, select, option')) return;
 
       isDragging = true;
+      // 用户拖过的卡片不再被 ResizeObserver 挪回去。
+      popup._userMoved = true;
       startX = e.clientX;
       startY = e.clientY;
 
@@ -346,6 +407,7 @@
       if (state.translationPopup._dragAbortController) {
         state.translationPopup._dragAbortController.abort();
       }
+      state.translationPopup._resizeObserver?.disconnect();
       speech.stopSpeaking();
       state.translationPopup.remove();
       state.translationPopup = null;
@@ -428,110 +490,167 @@
     return trimmed.length <= 40;
   }
 
+  // 卡片「译文」一格里的几块：加载态、译文、错误、音标。
+  function cardParts(popup) {
+    const q = (selector) => popup.querySelector(selector);
+    return {
+      loading: [q('.ai-translator-loading'), q('.ai-translator-loading-lines')].filter(Boolean),
+      resultBody: q('.ai-translator-result-body'),
+      text: q('.ai-translator-translation-text'),
+      error: q('.ai-translator-error'),
+      phonetic: q('.ai-translator-phonetic'),
+    };
+  }
+
+  function setCardLoading(parts, loading) {
+    for (const el of parts.loading) el.style.display = loading ? 'flex' : 'none';
+  }
+
+  /**
+   * 卡片出错只有这一种画法：错误写进独立的错误元素（textContent，不拼 HTML），
+   * 译文清空藏起 —— 旧译文是另一次请求的结果，留着会被当成这一次的。
+   */
+  function showCardError(popup, message) {
+    const parts = cardParts(popup);
+    setCardLoading(parts, false);
+    if (parts.text) parts.text.textContent = '';
+    if (parts.resultBody) parts.resultBody.hidden = true;
+    parts.error.textContent = message;
+    parts.error.hidden = false;
+    popup._showTranslationSpeak?.(false);
+  }
+
+  // 重译 / 换引擎：请求在路上时禁用。
+  function setCardActionsBusy(popup, busy) {
+    for (const btn of popup.querySelectorAll('.ai-translator-retranslate, .ai-translator-switch-engine')) {
+      btn.disabled = busy;
+    }
+  }
+
+  /**
+   * 一次请求结算（成功或失败）之后：重译出现；引擎标签说这次是谁译的；另一边
+   * 此刻能用才给「换引擎」，按钮文字说换到哪边。
+   */
+  async function settleCardActions(popup, engine) {
+    const retranslate = popup.querySelector('.ai-translator-retranslate');
+    const switchBtn = popup.querySelector('.ai-translator-switch-engine');
+    const tag = popup.querySelector('.ai-translator-engine-tag');
+    retranslate.hidden = false;
+    retranslate.disabled = false;
+    tag.textContent = engine ? t(engine === 'builtin' ? 'cardEngineBuiltin' : 'cardEngineAi') : '';
+    tag.hidden = !engine;
+    switchBtn.hidden = true;
+    if (!engine) return;
+    const requestId = popup.dataset.requestId;
+    let choices;
+    try {
+      choices = await ctx.engineChoices();
+    } catch (error) {
+      console.error('Blab Translation: reading engine choices for the card failed', error);
+      return;
+    }
+    if (state.translationPopup !== popup || popup.dataset.requestId !== requestId) return;
+    const other = engine === 'builtin' ? 'ai' : 'builtin';
+    if (!choices[other]) return;
+    switchBtn.dataset.engine = other;
+    switchBtn.textContent = t(other === 'builtin' ? 'cardUseBuiltin' : 'cardUseAi');
+    switchBtn.disabled = false;
+    switchBtn.hidden = false;
+  }
+
+  // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
+  // 什么都不写进设置。
+  function wireCardActions(popup) {
+    const resend = () => {
+      if (state.translationPopup !== popup) return;
+      translateText(popup.dataset.sourceText || '', popup.dataset.targetLang || '');
+    };
+    popup.querySelector('.ai-translator-retranslate').addEventListener('click', resend);
+    const switchBtn = popup.querySelector('.ai-translator-switch-engine');
+    switchBtn.addEventListener('click', () => {
+      popup.dataset.pinnedEngine = switchBtn.dataset.engine;
+      resend();
+    });
+  }
+
   async function translateText(text, targetLangOverride = '') {
     const requestId = String(++state.translationRequestId);
+    const popup = state.translationPopup;
+    const isCurrent = () => !!popup && state.translationPopup === popup && popup.dataset.requestId === requestId;
     try {
       const isWord = isSingleWordText(text);
       const targetLang = targetLangOverride || getEffectiveTargetLang();
       if (!isExtensionContextAvailable()) {
-        if (state.translationPopup) {
-          const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
-          const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
-          const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
-          if (loadingEl) loadingEl.style.display = 'none';
-          if (loadingLines) loadingLines.style.display = 'none';
-          if (resultBody) {
-            resultBody.hidden = false;
-            resultBody.innerHTML = `<div class="ai-translator-error">${t('extensionContextInvalidated')}</div>`;
-          }
+        if (popup) {
+          showCardError(popup, t('extensionContextInvalidated'));
+          settleCardActions(popup, undefined);
         }
         return;
       }
-      if (state.translationPopup) {
-        state.translationPopup.dataset.requestId = requestId;
-        state.translationPopup.dataset.targetLang = targetLang;
+      if (popup) {
+        popup.dataset.requestId = requestId;
+        popup.dataset.targetLang = targetLang;
         // A recognise-only popup (image OCR with the auto-translate step off)
         // has its translation half hidden and a Translate button in its place.
         // Getting here means something asked for a translation anyway — that
         // button, or the language dropdown — so the half comes back and the
         // button, its job done, goes away.
-        state.translationPopup.querySelector('.ai-translator-divider')?.removeAttribute('hidden');
-        state.translationPopup.querySelector('.ai-translator-result')?.removeAttribute('hidden');
-        state.translationPopup.querySelector('.ai-translator-translate-btn')?.setAttribute('hidden', '');
-        const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
-        const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
-        const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
-        const phoneticEl = state.translationPopup.querySelector('.ai-translator-phonetic');
-        if (loadingEl) loadingEl.style.display = 'flex';
-        if (loadingLines) loadingLines.style.display = 'flex';
-        if (resultBody) resultBody.hidden = true;
-        if (phoneticEl) phoneticEl.hidden = true;
-        state.translationPopup._showTranslationSpeak?.(false);
+        popup.querySelector('.ai-translator-divider')?.removeAttribute('hidden');
+        popup.querySelector('.ai-translator-result')?.removeAttribute('hidden');
+        popup.querySelector('.ai-translator-translate-btn')?.setAttribute('hidden', '');
+        const parts = cardParts(popup);
+        setCardLoading(parts, true);
+        if (parts.resultBody) parts.resultBody.hidden = true;
+        if (parts.phonetic) parts.phonetic.hidden = true;
+        parts.error.hidden = true;
+        parts.error.textContent = '';
+        popup._showTranslationSpeak?.(false);
+        setCardActionsBusy(popup, true);
       }
+      // 这张卡点过「换引擎」才带 engine；否则按设置走。
+      const pinned = popup?.dataset.pinnedEngine;
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
         text: text,
         targetLang: targetLang,
-        mode: isWord ? 'word' : 'text'
+        mode: isWord ? 'word' : 'text',
+        ...(pinned ? { engine: pinned } : {})
       });
 
-      if (!state.translationPopup || state.translationPopup.dataset.requestId !== requestId) return;
-
-      const translationTextEl = state.translationPopup.querySelector('.ai-translator-translation-text');
-      const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
-      const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
-      const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
-      const phoneticEl = state.translationPopup.querySelector('.ai-translator-phonetic');
-      const showTranslationSpeak = state.translationPopup._showTranslationSpeak;
+      if (!isCurrent()) return;
 
       if (response.error) {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (loadingLines) loadingLines.style.display = 'none';
-        if (resultBody) {
-          resultBody.hidden = false;
-          resultBody.innerHTML = `<div class="ai-translator-error">${escapeHtml(response.error)}</div>`;
-        }
+        showCardError(popup, response.error);
       } else {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (loadingLines) loadingLines.style.display = 'none';
-        if (translationTextEl) {
-          translationTextEl.textContent = response.translation || '';
-          translationTextEl.classList.remove('ai-translator-translation-flow');
+        const parts = cardParts(popup);
+        setCardLoading(parts, false);
+        if (parts.text) {
+          parts.text.textContent = response.translation || '';
+          parts.text.classList.remove('ai-translator-translation-flow');
           // Trigger flow animation
-          void translationTextEl.offsetWidth;
-          translationTextEl.classList.add('ai-translator-translation-flow');
+          void parts.text.offsetWidth;
+          parts.text.classList.add('ai-translator-translation-flow');
         }
-        if (phoneticEl) {
-          if (response.phonetic) {
-            phoneticEl.textContent = response.phonetic;
-            phoneticEl.hidden = false;
-          } else {
-            phoneticEl.hidden = true;
-          }
+        if (parts.phonetic) {
+          parts.phonetic.textContent = response.phonetic || '';
+          parts.phonetic.hidden = !response.phonetic;
         }
-        showTranslationSpeak?.(!!response.translation);
-        if (resultBody) {
-          resultBody.hidden = false;
-          resultBody.classList.remove('ai-translator-reveal');
-          void resultBody.offsetWidth;
-          resultBody.classList.add('ai-translator-reveal');
+        popup._showTranslationSpeak?.(!!response.translation);
+        if (parts.resultBody) {
+          parts.resultBody.hidden = false;
+          parts.resultBody.classList.remove('ai-translator-reveal');
+          void parts.resultBody.offsetWidth;
+          parts.resultBody.classList.add('ai-translator-reveal');
         }
       }
+      settleCardActions(popup, response.engine);
     } catch (error) {
       console.error('Blab Translation: Translation failed', error);
-      if (state.translationPopup && state.translationPopup.dataset.requestId === requestId) {
-        const resultBody = state.translationPopup.querySelector('.ai-translator-result-body');
-        const loadingEl = state.translationPopup.querySelector('.ai-translator-loading');
-        const loadingLines = state.translationPopup.querySelector('.ai-translator-loading-lines');
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (loadingLines) loadingLines.style.display = 'none';
-        if (resultBody) {
-          resultBody.hidden = false;
-          const message = isExtensionContextInvalidated(error)
-            ? t('extensionContextInvalidated')
-            : t('translationFailed');
-          resultBody.innerHTML = `<div class="ai-translator-error">${message}</div>`;
-        }
+      if (isCurrent()) {
+        showCardError(popup, isExtensionContextInvalidated(error)
+          ? t('extensionContextInvalidated')
+          : t('translationFailed'));
+        settleCardActions(popup, undefined);
       }
     }
   }
@@ -557,6 +676,8 @@
   // For content-image-ocr.js, whose pending state has no source text yet and
   // therefore cannot go through the two entry points above.
   ctx.buildPopupMarkup = buildPopupMarkup;
+  ctx.translateIconSvg = translateIconSvg;
+  ctx.showCardError = showCardError;
   ctx.setupPopupDrag = setupPopupDrag;
   ctx.hideTranslationPopup = hideTranslationPopup;
   ctx.setupLanguageDropdown = setupLanguageDropdown;

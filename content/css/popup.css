@@ -13,7 +13,12 @@
 .ai-translator-popup {
   position: fixed;
   z-index: 2147483647;
-  width: 400px;
+  /* Column flex so a capped height (the inline max-height placeBeside hands
+     back when neither side of the selection has room) shrinks the content
+     block, which scrolls, while the header and actions keep their size. */
+  display: flex;
+  flex-direction: column;
+  width: min(400px, calc(100vw - 16px));
   max-height: 480px;
   --popup-bg: #15161c;
   --popup-border: #2a2d36;
@@ -232,6 +237,7 @@ body :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-transl
 .ai-translator-header {
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -290,6 +296,8 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 }
 
 .ai-translator-content {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px 18px 16px;
   max-height: 340px;
   overflow-y: auto;
@@ -483,6 +491,19 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   margin-bottom: 0;
 }
 
+/* Which engine produced this translation; sits right after the label. */
+.ai-translator-engine-tag {
+  margin-right: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--pill-border);
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
 .ai-translator-label-tools {
   display: inline-flex;
   align-items: center;
@@ -601,11 +622,15 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 .ai-translator-error {
   color: #f87171;
   font-size: 13px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 /* Actions */
 .ai-translator-actions {
   display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 8px;
   justify-content: flex-end;
   padding: 12px 18px 14px;
@@ -626,6 +651,11 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-btn:hover {

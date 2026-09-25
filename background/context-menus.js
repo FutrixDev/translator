@@ -248,12 +248,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // 翻译动作交给 content script，而不是像以前那样在这里译完把结果推过去。
     // 内置引擎的 Translator 接口是 [Exposed=Window, SecureContext]，service worker
     // 里根本不存在；只有 content script 能按当前引擎设置正确分流（内置 / 自定义接口）。
-    // 这里只负责把“用户点了右键翻译”这件事转达过去。
-    const settings = await chrome.storage.sync.get(defaultSettings);
+    // 这里只负责把“用户点了右键翻译”这件事转达过去；目标语言和其它入口一样
+    // 由 content 决定，只有一个决定者。
     chrome.tabs.sendMessage(tab.id, {
       type: 'TRANSLATE_SELECTION_TEXT',
-      text: info.selectionText,
-      targetLang: getEffectiveTargetLang(settings)
+      text: info.selectionText
     });
   } else if (info.menuItemId === MENU_IDS.translatePage) {
     chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' });

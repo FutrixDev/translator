@@ -84,7 +84,7 @@ test('J-A1: selection translation works against a local server with no key', asy
 
     const card = await translateHeadingSelection(page);
     await expect(card.locator('.ai-translator-translation-text')).toContainText('[T]');
-    await expect(card.locator('.ai-translator-error')).toHaveCount(0);
+    await expect(card.locator('.ai-translator-error')).toBeHidden();
     await expectCardOnScreen(page, card);
 
     // It really went to the server, and with no credentials at all: an empty

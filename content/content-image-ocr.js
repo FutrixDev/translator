@@ -27,18 +27,6 @@
   const { settings, state } = ctx;
   const t = ctx.t;
 
-  function renderOcrFailure(popup, message) {
-    const loadingEl = popup.querySelector('.ai-translator-loading');
-    const loadingLines = popup.querySelector('.ai-translator-loading-lines');
-    const resultBody = popup.querySelector('.ai-translator-result-body');
-    if (loadingEl) loadingEl.style.display = 'none';
-    if (loadingLines) loadingLines.style.display = 'none';
-    if (resultBody) {
-      resultBody.hidden = false;
-      resultBody.innerHTML = `<div class="ai-translator-error">${ctx.escapeHtml(message)}</div>`;
-    }
-  }
-
   /**
    * The source heading for the finished popup: "Original · Japanese" (the
    * language named in the UI language) when it is known, nothing when it is
@@ -352,12 +340,12 @@
     if (state.translationPopup !== popup) return;
 
     if (!response || response.error) {
-      renderOcrFailure(popup, response?.error || t('translationFailed'));
+      ctx.showCardError(popup, response?.error || t('translationFailed'));
       return;
     }
     const text = response.text || '';
     if (!text) {
-      renderOcrFailure(popup, t('ocrNoTextDetected'));
+      ctx.showCardError(popup, t('ocrNoTextDetected'));
       return;
     }
 
