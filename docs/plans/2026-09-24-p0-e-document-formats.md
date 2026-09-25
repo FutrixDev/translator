@@ -667,6 +667,7 @@ P0-C rebase 之后的顺序是 `pdf-ui.js → translation-display.js → popup-d
 | J-E4 | MOBI | 建作业体没有 `declaredUnits`；PUT 的 MIME 是 `application/x-mobipocket-ebook`；成功后出 `docNoFile` 和网站链接，href 等于 `pdfLibraryUrl(base, id)`；几何 |
 | J-E5 | 五种本地拒收 | 未知类型、空文件、超上限（10 MiB + 1 的 txt）、嗅探不符（内容不是 ZIP 的 .docx）、过长（超过 2 400 000 字符的 txt）；领票请求数为 0；每种文案逐字等于对应键的译文；「重试」隐藏 |
 | J-E6 | 路由 | popup 里点成功流式作业的「打开」，开出作业页（URL 以 `pdf/upload.html#job=<id>` 结尾）；点成功 PDF 作业的「打开」，开出结果 URL |
+| J-E7 | 只有译文的 docx（验收时补，§13.3 H） | mock 只给 `monoUrl`（网站上建的 mono 作业）；「保存译文」可见、「保存双语文件」隐藏；下载文件名 `<名> (translated).docx`，内容等于 mock 给的 mono 字节；几何 |
 
 J-E3 的步骤：
 1. mock 的第一次 GET 回 queued；建作业后关掉上传页。
@@ -750,6 +751,8 @@ J-E3 的步骤：
 11. 实测后的 `too_many_pages` 不带 maxPages。
 12. MOBI 只预留 1 页，几乎必然进确认。
 13. 领票的格式错误（400）不带细节。
+14. 计量按压缩包里的 xhtml 文件名数页，引擎按 OPF spine 读：spine 为空的 EPUB 先计页扣费，再以 `empty_document` 失败、退款（§13.3 C）。
+15. 阶段字没有对外契约：扩展只能镜像引擎的 `STAGES`、`FLOW_STAGES` 和 `PDF_MERGING_STAGE`。引擎新增一个阶段字，扩展查不到表，状态行就回落到「翻译中」（§13.3 F）。
 
 ## 12. 决策登记（台账 D-299）
 
@@ -766,4 +769,102 @@ j. **URL 路径仍只接 PDF**。
 
 ## 13. 实现偏差（实现时登记）
 
-（空。实现 agent 在交付报告里逐条申报，主控审过后按「原前提 → 新前提 → 为什么」补进这里。）
+实现 agent 的交付报告申报了 32 条。主控逐条对照代码和本设计，分三类登记：
+- 13.1 是真偏差，按「原前提 → 新前提 → 为什么」写；
+- 13.2 是报告当成偏差、其实照设计原文实现的；
+- 13.3 是主控验收时补记的事实和修正。
+
+行号指本 worktree 的产品代码；13.3 H 只改测试，不影响这些行号。
+
+### 13.1 真偏差
+
+| 报告条 | 原前提 | 新前提 | 为什么 |
+| --- | --- | --- | --- |
+| 2、21 | 领票处理器和建作业各拼一份回执 | 回执只由 `pdfClient.receiptRecord` 生成（pdf-client.js:269，调用点 pdf-jobs.js:287、:331）；判断待定记录一律用 `isPendingRecord`（pdf-client.js:286），`pending: true` 只在 `receiptRecord` 里写一次 | 同一形状写两处，迟早漂移 |
+| 4 | `jobFacts` 只读本机记录 | 本机没有记录时回落到视图的 `fileName`，再由 `DocJobs.jobFormat` 按扩展名推格式（pdf-jobs.js:465） | 视图不带 `sourceFormat`（§11.3 第 2 条）；手贴 `#job=`、换设备、记录过期时，只剩文件名可用 |
+| 5 | 只要求领票时有 operationId（§3.2 :170） | 建作业缺 operationId 也拒，码为 `invalid_pdf`（pdf-jobs.js:320） | 没有 operationId 就不能幂等重提，也对不上领票时的 sourceKey |
+| 7 | §5.5 只在 CONFIRM 第 3 步补闹钟 | `foldPageView` 每次都补（pdf-jobs.js:483） | §12 e「只有轮询发通知」的前提是：有活跃作业时，闹钟一定在 |
+| 8 | `unsupported_format` 一律带 `{format}` | 只有格式是非空字符串才带（pdf-jobs.js:280–281） | 文案的占位符不能填空值 |
+| 12 | 确认时的 409 按错误显示 | 先重拉一次作业，再给中性提示，不标红（upload.js:344–347） | 409 说明作业已不在待确认：别处答过了，或窗口已过。用户没做错什么 |
+| 20 | 提交统一署 Opus 5.5 | 9c0e3b2–2760df6 署 Opus 5.5，a00ac7b–8ec60ff 署 Opus 5；e3816c5、c21446f 署 Opus 5.5，核实结果见 13.3 H | 署名写实际写出提交的模型 |
+| 31 | 新文件不超过 300 行（:593） | popup-pdf.js 400 行（纯搬家 370 行，另加 30 行） | 纯搬家的提交里再拆，就不纯了；拆分登记 backlog。pdf-client.js 664 行，一并登记 |
+
+### 13.2 照设计实现（报告申报为偏差）
+
+§9.1 的「前提变化」清单让报告把这些改动也当偏差申报。它们都能在设计里找到原文：
+
+| 报告条 | 设计出处 |
+| --- | --- |
+| 1 | §5.4 :342–352，落点 shared/pdf-errors.js:150 |
+| 3 | :307 |
+| 6 | :198 |
+| 9、25 | :82 |
+| 10 | :640 |
+| 11 | :371、:413 |
+| 13 | :378 |
+| 14 | §7 :473；docx、epub、mobi 的上限同为 50 MiB，取 epub 为代表 |
+| 15 | :382 |
+| 16 | :306 |
+| 17、24 | :250 |
+| 18 | §9.1 行为测试 |
+| 19 | 决策 g |
+| 22 | §9.1 :644–648，锚点 :270–285 原样保留 |
+| 28 | :654–655 |
+
+设计没写、实现时定下的细节，主控认可：
+- 23：e2e 夹具里又抄了一份 crc32，成了第三份；13.3 H 合成一份。
+- 26：mock 的作业 id 用顺序的 `pdf_job_N`。
+- 27、32：重复派发留下 4 个提交（82710bd、8360e61、c678f66、d18a054），内容被后续提交覆盖，保留；squash 合并后不留痕。
+- 29：UI 语言交给 e2e harness 固定（d756441），旅程不再各设各的。
+- 30：缺陷 5 用源码守卫加变异自检，因为设置页没有行为测试台。
+
+### 13.3 主控验收补记
+
+证据在 `/Users/dylanwang/translator-g/docs/delivery/evidence/p0-e/`，真环境部分在其下 `real-env/`。
+
+**A. 流式格式只出一个文件，是双语的。**
+- 引擎：rewrite.py 的 `rewrite()` 按输出种类只写一个文件；saas 把扩展请求的 `dual` 映射成 `both`（service.ts:1821），流式作业照样只写双语那一份。`UNWRITABLE = {"mobi"}`，MOBI 只产出阅读数据。
+- 视图：`pdfJobView` 只为作业实际有的结果键签 URL（service.ts:3838–3845）。
+- 所以成功后的 `results` 是：
+
+  | 作业 | `results` |
+  | --- | --- |
+  | PDF | `dualUrl`、`monoUrl` 都有 |
+  | docx、epub、txt、md | 只有 `dualUrl` |
+  | 网站上建的 mono 作业 | 只有 `monoUrl` |
+  | MOBI | `{}` |
+
+- 真环境：run-docx.log 里视图只带 `["dualUrl"]`，「保存译文」隐藏。
+- 结论：§6.3「有哪个 URL 就显示哪个按钮」成立，不改代码。扩展建的流式作业要拿纯译文，只能靠 §11.1 列为不做的输出选择，登记 backlog。
+
+**B. 扣费确认和待确认是两回事。**
+- 真环境每次建作业都先回 409 报价，点确认后带 `confirmCharge:true` 重提，得 202。这是余额确认。
+- `awaiting_confirm` 是实测页数超过预留，本回合真环境没有触发，由 J-E3 的 mock 覆盖。
+
+**C. spine 为空的 EPUB 先扣费，后失败退款。**
+- 计量按文件名数出 4 页、扣 12 积分；引擎按 spine 读不到正文，以 `empty_document` 失败；saas 退款。
+- 证据：worker-empty-spine.txt、server-routes.txt 的余额算术。
+- 这是服务端计量与引擎不一致，登记 §11.3 第 14 条。夹具 `NOVEL_EPUB` 也是空 OPF，但 e2e 走 mock，不受影响。
+
+**D. 计量对拍 10 例，全部相等。**
+- 扩展、saas CLI、saas 服务端三方的 `characters`、`units` 逐个相等（measure-parity.txt）。
+- 事先预测「两个 BOM 开头」会差 1，实测相等：JS 的 `\s` 含 U+FEFF，剩下那个 BOM 在三边都被当空白折掉。
+
+**E. 报告 §12「e2e 没有真实下载」不属实。** document-formats.spec.js :108–114 用 `download.path()` 读盘，与 mock 给的字节逐字比对。
+
+**F. 状态行回跳，本回合修（e3816c5）。**
+- 现象：真环境 docx 的状态行走 Translating → Retypesetting → **Translating** → Done。
+- 根因：旧代码用正则猜阶段字。流式引擎的 `rewrite` 含 `write`，被归到「重排」；最后的 `emit` 两条正则都不中，回落到「翻译中」。PDF 的阶段字过同一套正则，main 上就有这个缺陷。
+- 修法：pdf-ui.js 改用 `PDF_STAGE_KEYS` 一张表精确查。表里收齐引擎的 `STAGES`、`FLOW_STAGES`、`names` 和 `merging`；pdf-jobs.test.mjs 加 3 条。查不到的阶段字仍回落到「翻译中」，这是 §11.3 第 15 条。
+- 证据：stage-sequence-docx.txt。同一份 real.docx 修前跑一次（run-docx-before-stage-fix.log），修后跑一次（run-docx.log），与 worker 的阶段事件逐条对照。
+
+**G. docx 译文逐段核对。** 32 段里，每个英文段后面都跟着中文译段；引擎的 `flow.untranslated` 报 5 块。
+
+**H. mock 的结果形状照真服务端改（c21446f）。**
+- 原来 mock 除 MOBI 外都发 `dualUrl` 和 `monoUrl`，J-E1、J-E2 还断言了「保存译文」的几何；真服务端的流式作业根本不给 `monoUrl`（见 A）。
+- 改后 mock 按 A 的表给结果，某一步也可以显式点名要哪些文件。
+- J-E1、J-E2 改为断言「保存译文」隐藏。
+- 新增 J-E7：只有 `monoUrl` 的 docx 作业（§9.2）。
+- 三份相同的 crc32 合成 `test/e2e/crc32.js`。守卫单测断言多项式常量 `0xedb88320` 只出现在这一个文件，并做了变异自检。
+- 署名核实：e3816c5 与 c21446f 由同一个实现 agent 写成，它自报 Claude Opus 5.5（`claude-opus-5-5`），两个提交的 Co-Authored-By 都写 Opus 5.5，与自报一致。
+- 门禁（c21446f）：单测 822/822；e2e 246 过、9 跳，J-E7 在 `document-formats.spec.js:267`。
