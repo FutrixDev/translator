@@ -333,6 +333,8 @@
     const translationTextEl = state.translationPopup.querySelector('.ai-translator-translation-text');
     if (translationTextEl) {
       translationTextEl.classList.add('ai-translator-translation-flow');
+      // 现成的译文是按设置里的目标语言译的，就是 setupLanguageDropdown 刚写下的那门。
+      if (translation) ctx.markLanguage(translationTextEl, state.translationPopup.dataset.targetLang);
     }
 
     wireCardActions(state.translationPopup);
@@ -435,9 +437,12 @@
       trigger.setAttribute('aria-expanded', 'false');
     };
 
+    // 76 项里已选的那一项多半在可视区外：打开时把它滚进来。只动菜单自己的
+    // scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
     const openMenu = () => {
       if (!menu.hidden) return;
       menu.hidden = false;
+      ctx.revealSelectedLanguage(menu);
       trigger.setAttribute('aria-expanded', 'true');
     };
 
@@ -626,6 +631,9 @@
         setCardLoading(parts, false);
         if (parts.text) {
           parts.text.textContent = response.translation || '';
+          // 每次结算都重写：换了语言、重译之后，lang/dir 跟着这一次的目标语言走。
+          // 只标译文这一块 —— 加载态、错误和原文是别的元素，不是目标语言。
+          ctx.markLanguage(parts.text, targetLang);
           parts.text.classList.remove('ai-translator-translation-flow');
           // Trigger flow animation
           void parts.text.offsetWidth;

@@ -214,3 +214,17 @@ test('every place a translation lands requires the language of its text', () => 
   const render = read('content/hover/render.js');
   assert.match(render, /function textLangOf\(options\) \{\s*\n\s*if \(options\.loading \|\| options\.isError\) return ctx\.uiLanguage\(\);\s*\n\s*if \(!options\.textLang\) throw /);
 });
+
+// 划词卡和输入框对话框共用 content-popup.js 的语言下拉：打开时滚到已选项这一行在
+// 那里，两处一起覆盖。卡片译文每次结算都按这次的目标语言打标，对齐取 start —— 不写
+// 就继承宿主页面的 text-align，一段希伯来语会被 `body { text-align: left }` 压到左边。
+// 整条旅程（几何、换语言后标记跟着变）在 test/e2e/target-languages.spec.js 的 J-B8/J-B9。
+test('the card reveals the selected language and marks its translation', () => {
+  const popup = read('content/content-popup.js');
+  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
+  assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
+  const css = read('content/css/popup.css');
+  const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);
+  assert.ok(rule, '.ai-translator-translation-text rule not found');
+  assert.match(rule[0], /text-align: start;/);
+});
