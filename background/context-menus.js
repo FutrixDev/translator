@@ -179,7 +179,7 @@ function createContextMenus() {
 
     chrome.contextMenus.create({
       id: MENU_IDS.translatePdfLocalAction,
-      title: 'Translate a Local PDF…',
+      title: 'Translate a Local Document…',
       contexts: ['action'],
       visible: false
     });
