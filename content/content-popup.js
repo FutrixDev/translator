@@ -544,7 +544,7 @@
     const requestId = popup.dataset.requestId;
     let choices;
     try {
-      choices = await ctx.engineChoices();
+      choices = await ctx.engineChoices(popup.dataset.targetLang);
     } catch (error) {
       console.error('Blab Translation: reading engine choices for the card failed', error);
       return;

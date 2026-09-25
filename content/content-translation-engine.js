@@ -674,12 +674,18 @@
   };
 
   /**
-   * 卡片上「换引擎」问的：两边此刻各能不能用。AI 那边先重读一次配置 —— 设置页
-   * 刚填好 Key，这一页的缓存还是旧的。
+   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边先重读一次
+   * 配置 —— 设置页刚填好 Key，这一页的缓存还是旧的。内置那边除了环境，还要端上
+   * 有这门目标语言：谓词和页内语言菜单标「仅 AI」的是同一个
+   * （content/content-language.js 的 buildTargetLangMenu），不然卡片会对一门「仅 AI」
+   * 的语言提供「改用内置」，点了只换来一句报错。
    */
-  ctx.engineChoices = async function() {
+  ctx.engineChoices = async function(targetLang) {
     await refreshAiConfig();
-    return { builtin: isBuiltinSupported(), ai: aiConfigured() };
+    return {
+      builtin: isBuiltinSupported() && eng.supportsLang(eng.toApiLang(targetLang)),
+      ai: aiConfigured(),
+    };
   };
 
   // ==================== 对外接口 ====================
