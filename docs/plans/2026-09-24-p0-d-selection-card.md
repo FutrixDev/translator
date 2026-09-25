@@ -387,3 +387,10 @@ maxHeight = null，除非是「缩高」那一步选出来的
 ## 14. 实现偏差（实现时登记）
 
 （实现方在此逐条登记与本设计不一致之处、原因和证据。）
+
+1. **末行的取法（§4.4）**：`selectionLineRect`（`content/content-selection.js:114`）用焦点处折叠 Range 的矩形只判定「是哪一行」，锚点取选区 `getClientRects()` 里落在这一行上的那段矩形，而不是折叠 Range 本身那个零宽矩形——§4.4 的「水平先夹到末行左右范围内」需要这一行被选中部分的左右边。折叠 Range 矩形为空时，用 mouseup 的 y 在选区矩形里取竖直距离最近的一段。J-D1 断言图标离这一段不超过 12px。
+2. **OCR 出错也走 `showCardError`（§7）**：§7 只点名了 `content-popup.js` 里的三处出错；OCR 自己的 `renderOcrFailure` 是第四份同样的「关加载态、写错误」，已删，两处调用改为 `ctx.showCardError`（`content/content-image-ocr.js:344`、`:349`）。错误元素因此在 OCR 卡片上也是同一个 `.ai-translator-error`。
+3. **`ctx.engineChoices()` 自身失败（§6.3 未写）**：`settleCardActions`（`content/content-popup.js:534`）在它抛错时打一行 `console.error`（`:549`）并保持「换引擎」隐藏；重译照常可用。不猜另一边能不能用。
+4. **禁用态样式（§6.2 未写）**：「有请求在路上时禁用」需要看得出来，`content/css/popup.css:639` 加 `.ai-translator-btn:disabled`（半透明、默认光标），作用域只到卡片和输入框对话框。
+5. **e2e 助手的来源**：J-D1/J-D9 要在 content script 的隔离世界里给 `self.Translator` 打桩，`test/e2e/helpers.js:475` 的 `evaluateInContentScript` 照搬自 P1-A 分支 `test/e2e/frames.spec.js:318`（CDP 找扩展的 isolated context）。两边合入后应只留 helpers.js 这一份。打桩本身是 `stubBuiltinTranslator`（`helpers.js:498`），回答 `'[B] ' + text`，明写为 STUB。
+6. **既有测试的一处改动**：`test/e2e/local-model-no-key.spec.js:87` 由 `toHaveCount(0)` 改为 `toBeHidden()`。旧前提：成功时卡片里没有错误元素；新前提：错误元素常驻、成功时隐藏（§7 的单一错误元素）。

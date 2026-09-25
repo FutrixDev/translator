@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Selection icon and card actions
+
+- **A translate icon next to your selection.** Select text and a small round
+  icon appears beside the line you released the mouse on; click it for the
+  translation card. It goes away when you scroll, press `Esc`, click
+  elsewhere or clear the selection, and never appears inside input boxes,
+  text areas or editable text.
+- **Choose how a selection starts translating.** Settings → Selection
+  trigger: the icon, the modifier key, or both (the default, so nobody who
+  relied on the modifier key loses it). The hotkey conflict check ignores the
+  modifier key when the trigger is icon only.
+- **The card sits beside the selection, not on top of it.** It opens below
+  the selection, or above it near the bottom of the window; long text shrinks
+  the card and scrolls inside it, and the card stays inside the window. Once
+  you drag the card it stays where you put it.
+- **Card actions: retranslate, switch engine, copy, read aloud.** The card
+  says which engine answered (Chrome built-in or My AI). Retranslate asks the
+  engine again; switch engine translates this card with the other engine,
+  when it is usable, without changing your settings and without falling back
+  to anything else.
+- **Errors show on the card, not as a translation.** A failed request — from
+  the icon, the modifier key, the float ball or the right-click menu — shows
+  its reason in the card's error line, and Retranslate tries again.
+
 ### Onboarding page and settings import/export
 
 - **A welcome page on first install.** A fresh install (not an update) opens

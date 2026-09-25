@@ -25,10 +25,12 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - **Custom Prompts**: Customize translation style with your own prompts (formal, casual, technical, etc.)
 
 #### Selection Translation
-- Shows a translate button when text is selected
-- Click the button to translate (popup or inline based on settings)
-- Copy translation with one click
-- Translations stay visible until explicitly cleared
+- A small translate icon appears next to the last line of a selection; click it to open the translation card
+- Or press the modifier key (⌘ on Mac, Ctrl elsewhere); Settings → Selection trigger picks icon, modifier key, or both
+- The card sits beside the selection instead of covering it, and shrinks and scrolls when the text is long
+- Card actions: retranslate, switch between Chrome built-in and your AI for this card, copy, and read aloud
+- The card shows which engine translated it; errors show on the card, never as a translation
+- The modifier key, float ball and right-click menu follow the display setting (card or inline)
 
 #### Hover Translation
 - Hover a paragraph and press the hotkey (default: Shift) to translate inline
@@ -122,8 +124,8 @@ cd translator
 #### Selection Translation
 
 1. Select text on any webpage
-2. Click the "Translate" button that appears
-3. View translation in popup or inline (based on settings), click to copy
+2. Click the translate icon next to the selection, or press the modifier key
+3. Read the translation in the card; retranslate, switch engine, copy or listen from its action row
 4. Press `Esc` or click × to close/clear
 
 #### Hover Translation
@@ -342,10 +344,12 @@ MIT License
 - **自定义 Prompt**：支持自定义翻译风格（正式、口语化、技术文档等）
 
 #### 划词翻译
-- 选中文本后显示翻译按钮
-- 点击按钮进行翻译（弹窗或段落内显示，可在设置中切换）
-- 支持复制译文
-- 译文会保留，需手动清除
+- 选中文字后，末行旁边出一个小翻译图标，点它打开翻译卡片
+- 也可以按修饰键（Mac 上是 ⌘，其他系统是 Ctrl）；设置 → 触发方式可选图标、修饰键或两者都要
+- 卡片贴着选区放，不盖住选中的字；原文很长时卡片缩高、内容区内部滚动
+- 卡片操作：重新翻译、在 Chrome 内置和我的 AI 之间换引擎（只对这张卡片）、复制、朗读
+- 卡片标出这次是哪个引擎译的；出错显示在卡片上，不会当成译文
+- 修饰键、悬浮球和右键菜单按显示方式设置出卡片或段落下方译文
 
 #### 悬停翻译
 - 鼠标悬停段落并按下快捷键（默认：Shift）触发翻译
@@ -429,8 +433,8 @@ cd translator
 #### 划词翻译
 
 1. 在网页中选中需要翻译的文字
-2. 点击出现的「翻译」按钮
-3. 在弹窗或段落内查看译文（取决于设置），可点击复制
+2. 点选区旁边的翻译图标，或按修饰键
+3. 在卡片里看译文；操作行可以重新翻译、换引擎、复制、朗读
 4. 按 `Esc` 或点击 × 关闭/清除
 
 #### 悬停翻译

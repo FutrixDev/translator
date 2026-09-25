@@ -203,7 +203,7 @@ message names still say `pdf`; what they carry does not.
 
 ### Hover / Selection Translation
 
-Hold the hotkey and point at a paragraph, or select text and press the button —
+Hold the hotkey and point at a paragraph, or select text and click the icon —
 both land in the same place. It is a family of classic scripts sharing one
 shelf, `ctx.hover`:
 
@@ -219,6 +219,22 @@ shelf, `ctx.hover`:
 Every reference crossing a file goes through the shelf (`hov.foo`), so no file
 depends on being loaded before another. Tests ask the **family**, not a file:
 `hoverSource()` in `test/unit/helpers/sources.mjs`.
+
+**The selection icon and card live outside the shelf**, in
+`content/content-selection.js` and `content/content-popup.js`. After a mouseup
+settles, a 28×28 icon sits next to the selection's last line (the line the
+mouse was released on); `selectionTrigger` (`icon` / `modifier` / `both`)
+decides whether the icon, the modifier key, or both start a translation.
+Every selection translation except the icon goes through one function,
+`ctx.translateSelection(text, { range, element })`, which picks inline or card
+from `selectionTranslationMode`; the icon always opens the card. All three
+floating layers (source peek, card, icon) are placed by one pure function,
+`ctx.placeBeside(size, anchor, options)` in `content/content-utils.js`: the
+card goes beside the selection, never over it, and is re-placed by a
+ResizeObserver until the user drags it. The card's action row is retranslate,
+switch engine, copy; errors go to its single `.ai-translator-error` element
+(`ctx.showCardError`), never into the translation text. Journeys J-D1–J-D10 in
+`test/e2e/selection-card.spec.js`.
 
 ### Translation Engine
 
@@ -238,6 +254,15 @@ The options page loads the same family (language-pack status and download), so
 both load lists — `manifest.json` and `options/options.html` — carry every file,
 after `shared/lang-tags.js`; `test/unit/engine-status.test.mjs` checks both.
 Tests ask the **family**, not a file: `engineSource()`.
+
+**A request can pin its engine, and every response says who answered.**
+`message.engine` (`'builtin'` | `'ai'`, anything else throws) is read in one
+place, `pinnedEngine(message)` in `content/content-translation-engine.js`; it
+outranks the settings and a pinned engine **never falls back** — its failure is
+the answer. Nothing is persisted. Every response from `ctx.requestTranslation`
+carries `engine: 'builtin' | 'ai'` (on errors: the engine that failed). The
+card's switch-engine button is the only caller that pins, and it asks
+`ctx.engineChoices()` (`{ builtin, ai }`) which engines are usable right now.
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is
