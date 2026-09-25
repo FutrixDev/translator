@@ -184,17 +184,25 @@
     });
   }
 
+  // 页面语言可不可能是这段文字的语言：字母体系对不上就一定不是。
+  function pageLangFits(pageLang, text) {
+    return NON_LATIN_LANGS.has(pageLang) === hasNonLatinChars(text);
+  }
+
+  // 页面语言出局之后的最后一步。拉丁文本按英文处理：拉丁字母里英文是压倒性的
+  // 多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走到这里说明连
+  // 字母体系都没给出答案，那就交给 AI，模型自己会认源语言。
+  function lastResortLang(text) {
+    return hasNonLatinChars(text) ? '' : 'en';
+  }
+
   async function resolveStandaloneSourceLang(trimmed, pageSource) {
-    const nonLatinText = hasNonLatinChars(trimmed);
     const detected = toApiLang(await detectStandaloneLang(trimmed));
     if (detected && SUPPORTED_LANGS.has(detected)) return detected;
 
     const pageLang = toApiLang(await pageSource());
-    if (pageLang && NON_LATIN_LANGS.has(pageLang) === nonLatinText) return pageLang;
-    // 字母体系对不上，页面语言出局。剩下的拉丁文本按英文处理：拉丁字母里英文
-    // 是压倒性的多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走
-    // 到这里说明连字母体系都没给出答案，那就交给 AI，模型自己会认源语言。
-    return nonLatinText ? '' : 'en';
+    if (pageLang && pageLangFits(pageLang, trimmed)) return pageLang;
+    return lastResortLang(trimmed);
   }
 
   // pageFallback：页面级源语言由调用方代答（字符串，空串也算答过）。子 frame 的
@@ -215,7 +223,16 @@
       const own = toApiLang(await detectLanguageOf(trimmed, { requireReliable: true }));
       if (own && SUPPORTED_LANGS.has(own)) return own;
     }
-    return pageLang;
+    if (!pageLang || pageLangFits(pageLang, trimmed)) return pageLang;
+    // 页面语言连字母体系都对不上，照用就是拿错的模型硬译：英文时间线里一条中文
+    // 推文（x.com，`<span1>谁懂这个座位的含金量啊</span1>` 不到 40 字）被当成
+    // en→zh 送进内置翻译器，实测回来的是 `<span1> span1>`，页面上只剩一截
+    // 「span1>」；长一点的推文 CLD 判不准，同样落到这里，译出一串「多伦多 250
+    // 卡拉德 API」。这时候短文本自己的字母体系比页面可靠，按独立文本那两档门槛
+    // 自己判（中文判成 zh，目标也是 zh 就原样退回、不插译文）。
+    const own = toApiLang(await detectStandaloneLang(trimmed));
+    if (own && SUPPORTED_LANGS.has(own)) return own;
+    return lastResortLang(trimmed);
   }
 
   eng.toApiLang = toApiLang;
