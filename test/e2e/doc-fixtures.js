@@ -16,28 +16,9 @@
  * standard page, at least one.
  */
 const zlib = require('node:zlib');
-
-/**
- * CRC-32 for the zip headers. The measurement never checks it, but `unzip -l`
- * and the server's reader do, and a fixture only the code under test accepts
- * proves nothing. Hand-rolled for the same reason as comic-fixtures.js:
- * zlib.crc32 is too new to count on.
- */
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (const byte of buf) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
+// The measurement never checks the CRC, but `unzip -l` and the server's reader
+// do, and a fixture only the code under test accepts proves nothing.
+const { crc32 } = require('./crc32');
 
 /**
  * A zip archive from `[{ name, data, method }]`. `method` is 'stored',
@@ -178,4 +159,4 @@ function mobiBytes(size = 256) {
   return bytes;
 }
 
-module.exports = { buildZip, crc32, docxFromParagraphs, FIXTURES, mobiBytes };
+module.exports = { buildZip, docxFromParagraphs, FIXTURES, mobiBytes };

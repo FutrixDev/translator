@@ -12,30 +12,7 @@
 const zlib = require('node:zlib');
 const { getServiceWorker } = require('./helpers');
 const { startMockServer } = require('./mock-server');
-
-/**
- * CRC-32 of a PNG chunk.
- *
- * Hand-rolled rather than `zlib.crc32`, which landed in Node 20.15/22.2. This
- * module builds its fixtures at load time, so on an older runtime the whole
- * spec file dies on import with a TypeError — before a single test reports, and
- * looking nothing like the missing-API problem it is.
- */
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
+const { crc32 } = require('./crc32');
 
 /**
  * A real PNG, because the format is now load-bearing.
@@ -401,7 +378,6 @@ async function triggerComicPageTranslation(worker, pageUrl) {
 }
 
 module.exports = {
-  crc32,
   makePng,
   noisePng,
   encodePng,

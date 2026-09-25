@@ -61,6 +61,31 @@ const RESULT_TYPES = {
   md: 'text/markdown; charset=utf-8',
 };
 
+/**
+ * Which result files a succeeded job carries, by source format, as the real
+ * service signs them: pdfJobView (translator-saas server/lib/pdf/service.ts)
+ * signs a URL only for a result key the job has, and each key is a file the
+ * engine wrote.
+ *
+ * - pdf: both. `engineOutputKind` turns a dual order into dual + mono, and
+ *   only for PDF.
+ * - docx, epub, txt, md: the dual file alone. The engine's rewrite() writes one
+ *   file, the kind the order asked for; the extension always orders dual.
+ * - mobi: none. pdf-worker engine/rewrite.py lists it in UNWRITABLE, so the job
+ *   is read on the website, and `results` is there but empty.
+ *
+ * A job created on the website as translated-only has `{ monoUrl }` and
+ * nothing else; a journey names that with `files: ['mono']` on its step.
+ */
+const RESULT_FILES = {
+  pdf: ['dual', 'mono'],
+  docx: ['dual'],
+  epub: ['dual'],
+  txt: ['dual'],
+  md: ['dual'],
+  mobi: [],
+};
+
 /** The views a job walks by default: one poll still running, then done. */
 function defaultViews() {
   return [
@@ -83,7 +108,8 @@ function defaultAfterConfirm() {
  *   Overrides the ticket answer (e.g. a 413); null keeps the default.
  * @param {string | ((body: object, state: object) => ([number, object] | null))} [options.create]
  *   A CREATE_BEHAVIOURS name, or an override of the create answer; null keeps the default.
- * @param {(body: object) => object[]} [options.views] The GET sequence for a new job.
+ * @param {(body: object) => object[]} [options.views] The GET sequence for a new job;
+ *   a succeeded step may name its result files, `files: ['mono']`.
  * @param {() => object[]} [options.afterConfirm] The GET sequence once confirmed.
  * @param {Record<string, {bytes: Buffer, type: string}>} [options.files] Static files.
  */
@@ -109,15 +135,27 @@ async function startDocService(options = {}) {
   /** The bytes a non-PDF result download must equal. */
   const resultBytes = (jobId, which) => Buffer.from(`translated ${which} of ${jobId}\n`, 'utf8');
 
-  /** The job's current view, with the facts every view carries and fresh signatures. */
+  /** `{ dualUrl?, monoUrl? }` for the named files, freshly signed as every poll is. */
+  function resultUrls(job, files) {
+    const { jobId, sourceFormat } = job.facts;
+    const sig = `?sig=${state.polls}`;
+    const urls = {};
+    for (const which of files) urls[`${which}Url`] = `${origin}${resultPath(jobId, which, sourceFormat)}${sig}`;
+    return urls;
+  }
+
+  /**
+   * The job's current view, with the facts every view carries. A succeeded
+   * step carries the files RESULT_FILES gives its format, or the ones it names
+   * in `files`.
+   */
   function viewOf(job, step) {
-    const view = { ...job.facts, ...step };
-    if (view.status === 'succeeded' && !('results' in step) && job.facts.sourceFormat !== 'mobi') {
-      const sig = `?sig=${state.polls}`;
-      view.results = {
-        dualUrl: `${origin}${resultPath(job.facts.jobId, 'dual', job.facts.sourceFormat)}${sig}`,
-        monoUrl: `${origin}${resultPath(job.facts.jobId, 'mono', job.facts.sourceFormat)}${sig}`,
-      };
+    const { files, ...rest } = step;
+    const view = { ...job.facts, ...rest };
+    if (view.status === 'succeeded') {
+      const named = files || RESULT_FILES[job.facts.sourceFormat];
+      if (!named) throw new Error(`no result files for ${job.facts.sourceFormat}`);
+      view.results = resultUrls(job, named);
     }
     return view;
   }

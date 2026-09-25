@@ -1,6 +1,6 @@
 /**
  * Document formats — the upload page's journeys for everything that is not a
- * PDF (spec docs/plans/2026-09-24-p0-e-document-formats.md §9.2, J-E1–J-E6).
+ * PDF (spec docs/plans/2026-09-24-p0-e-document-formats.md §9.2, J-E1–J-E7).
  *
  * The service is the shared mock (doc-service-mock.js); everything on this
  * side is real: the page's local refusals and measurement, its own presigned
@@ -102,8 +102,10 @@ for (const format of ['docx', 'epub']) {
         // 1199-character nav.xhtml was left out.
         expect(created.declaredUnits).toBe(fixture.units);
 
+        // The extension orders dual, and the engine writes that one file back.
+        await expect(page.locator('#docSaveMono')).toBeHidden();
         await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docSaveDual'),
-          page.locator('#docSaveMono'), page.locator('#docWebLink')]);
+          page.locator('#docWebLink')]);
 
         const [download] = await Promise.all([
           page.waitForEvent('download'),
@@ -257,6 +259,39 @@ test('J-E6: "Open" in the popup shows a finished PDF, and takes every other form
       await expect.poll(() => txtTab.url()).toBe(`chrome-extension://${extensionId}/pdf/upload.html#job=pdf_job_2`);
       await expect(txtTab.locator('#docSaveDual')).toBeVisible({ timeout: 20000 });
       await expect(txtTab.locator('#pdfFileName')).toHaveText(FIXTURES.txt.fileName);
+    } finally {
+      await service.close();
+    }
+  });
+
+test('J-E7: a docx job holding only the translated file offers and saves that file',
+  async ({ context, page, extensionId }) => {
+    const fixture = FIXTURES.docx;
+    // Named, not left to the mock's default: a job ordered translated-only on
+    // the website comes back with `results` holding the mono URL alone, and
+    // the page must offer that file rather than nothing.
+    const service = await startDocService({
+      views: () => [
+        { status: 'running', progress: 40, stage: 'translate' },
+        { status: 'succeeded', progress: 100, pointsCharged: 3, files: ['mono'] },
+      ],
+    });
+    try {
+      await connectExtension(context, service.base);
+      await upload(page, extensionId, fixture.fileName, fixture.bytes);
+      await expect(page.locator('#docSaveMono')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('#docSaveDual')).toBeHidden();
+      await expect(page.locator('#pdfError')).toBeHidden();
+      await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docSaveMono'),
+        page.locator('#docWebLink')]);
+
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.locator('#docSaveMono').click(),
+      ]);
+      const stem = fixture.fileName.replace(/\.[a-z]+$/, '');
+      expect(download.suggestedFilename()).toBe(`${stem} (translated).docx`);
+      expect(fs.readFileSync(await download.path())).toEqual(service.resultBytes('pdf_job_1', 'mono'));
     } finally {
       await service.close();
     }
