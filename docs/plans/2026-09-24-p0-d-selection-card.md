@@ -347,6 +347,7 @@ maxHeight = null，除非是「缩高」那一步选出来的
 | J-D8 | 在 input、textarea、contenteditable 里选中不出图标 |
 | J-D9 | 十种界面语言下，重译和换引擎都显示时操作行不溢出卡片 |
 | J-D10 | 选区贴近视口底部时卡片放到选区上方；超长原文时卡片缩高、内容区内部滚动，卡片仍在视口内 |
+| J-D11 | 跨源子 frame（合入 #107 后补）：真鼠标跨进 iframe 拖选 → 图标出在 frame 里、贴末行、不盖选区、在 frame 视口内（留 8px），顶层不出图标 → 点图标 → 卡片在 frame 视口内、不盖选区，译文经顶层 frame 的引擎回来（`sentTexts` 为 1） → 换内置：钉选随中转上行，顶层的打桩被调 1 次、子 frame 的 0 次，`sentTexts` 不变 → 复制：从顶层读回剪贴板等于译文。跨源 frame 没有 `allow="clipboard-write"`，`navigator.clipboard.writeText` 被权限策略拒（实测 NotAllowedError），写进去的是 `ctx.copyToClipboard` 的 `execCommand` 兜底 |
 
 必须保持绿：J-C5（看原文卡，`placeCard` 重构后）、image-ocr、hover-translation，以及现有的划词、右键菜单相关 spec。
 
@@ -392,7 +393,7 @@ maxHeight = null，除非是「缩高」那一步选出来的
 2. **OCR 出错也走 `showCardError`（§7）**：§7 只点名了 `content-popup.js` 里的三处出错；OCR 自己的 `renderOcrFailure` 是第四份同样的「关加载态、写错误」，已删，两处调用改为 `ctx.showCardError`（`content/content-image-ocr.js:344`、`:349`）。错误元素因此在 OCR 卡片上也是同一个 `.ai-translator-error`。
 3. **`ctx.engineChoices(targetLang)` 自身失败（§6.3 未写）**：`settleCardActions`（`content/content-popup.js:534`）在它抛错时打一行 `console.error`（`:549`）并保持「换引擎」隐藏；重译照常可用。不猜另一边能不能用。
 4. **禁用态样式（§6.2 未写）**：「有请求在路上时禁用」需要看得出来，`content/css/popup.css:639` 加 `.ai-translator-btn:disabled`（半透明、默认光标），作用域只到卡片和输入框对话框。
-5. **e2e 助手的来源**：J-D1/J-D9 要在 content script 的隔离世界里给 `self.Translator` 打桩，`test/e2e/helpers.js:475` 的 `evaluateInContentScript` 照搬自 P1-A 分支 `test/e2e/frames.spec.js:318`（CDP 找扩展的 isolated context）。两边合入后应只留 helpers.js 这一份。打桩本身是 `stubBuiltinTranslator`（`helpers.js:498`），回答 `'[B] ' + text`，明写为 STUB。
+5. **e2e 助手的来源**：J-D1/J-D9 要在 content script 的隔离世界里给 `self.Translator` 打桩，`test/e2e/helpers.js:492` 的 `evaluateInContentScript` 照搬自 P1-A 分支 `test/e2e/frames.spec.js:318`（CDP 找扩展的 isolated context）。合并 #107 时已收成 helpers.js 这一份：`frames.spec.js` 改为从 helpers.js 导入，`test/unit/e2e-harness.test.mjs` 在 helpers.js 以外再出现一份时失败（变异证过）。打桩本身是 `stubBuiltinTranslator`（`helpers.js:516`），回答 `'[B] ' + text`，明写为 STUB；传 Page 打在顶层，传 Frame 打在那个子 frame（J-D11 两边各打一份）。
 6. **既有测试的一处改动**：`test/e2e/local-model-no-key.spec.js:87` 由 `toHaveCount(0)` 改为 `toBeHidden()`。旧前提：成功时卡片里没有错误元素；新前提：错误元素常驻、成功时隐藏（§7 的单一错误元素）。
 
 ## 15. rebase 到 P0-B / P0-F 之后的接缝

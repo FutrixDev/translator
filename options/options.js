@@ -55,6 +55,7 @@ const elements = {
   skipTargetLanguageText: document.getElementById('skipTargetLanguageText'),
   showTranslationOnly: document.getElementById('showTranslationOnly'),
   translationStyle: document.getElementById('translationStyle'),
+  pageTranslateScope: document.getElementById('pageTranslateScope'),
   // Automatic translation
   autoTranslate: document.getElementById('autoTranslate'),
   autoSubOptions: document.getElementById('autoSubOptions'),
@@ -152,6 +153,8 @@ const defaultSettings = {
   showTranslationOnly: false,
   // 译文样式，集合在 shared/translation-display.js；控件在 options-display.js
   translationStyle: 'default',
+  // 整页翻译的范围，出处同上：shared/default-settings.js 的 CONTENT_DEFAULTS。
+  pageTranslateScope: 'main',
   // 自动翻译。默认开，理由写在 shared/default-settings.js 的 CONTENT_DEFAULTS
   // 里——那份是内容脚本这一侧的出处，改默认值要两边一起改。siteRules 不在这里：
   // 它不经 collectSettings 那次整份写入（见下面「自动翻译」那一节）。
@@ -245,6 +248,8 @@ async function loadSettings() {
     elements.showTranslationOnly.checked = !!result.showTranslationOnly;
     elements.translationStyle.value = TranslationDisplay.normalizeStyle(result.translationStyle);
     syncTranslationStylePreview();
+    // 只认 'page'；别的值（包括没存过）都是默认的正文范围。
+    elements.pageTranslateScope.value = result.pageTranslateScope === 'page' ? 'page' : 'main';
     // 默认开，所以只有存着的 false 才关得掉它。
     elements.autoTranslate.checked = result.autoTranslate !== false;
     showAutoTranslateLangs(result.autoTranslateLangs);
@@ -375,6 +380,7 @@ function collectSettings() {
     skipTargetLanguageText: elements.skipTargetLanguageText.checked,
     showTranslationOnly: elements.showTranslationOnly.checked,
     translationStyle: elements.translationStyle.value,
+    pageTranslateScope: elements.pageTranslateScope.value === 'page' ? 'page' : 'main',
     autoTranslate: elements.autoTranslate.checked,
     autoTranslateLangs: collectAutoTranslateLangs(),
     autoTranslateEngine: elements.autoTranslateEngine.value === 'ai' ? 'ai' : 'builtin',
@@ -555,6 +561,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'skipTargetLanguageText',
   'showTranslationOnly',
   'translationStyle',
+  'pageTranslateScope',
   'autoTranslate',
   'enableImageOcrTranslation',
   'ocrEngine',

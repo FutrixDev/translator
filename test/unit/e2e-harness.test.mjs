@@ -203,6 +203,22 @@ test('no spec re-derives the extension service worker', () => {
     'use getServiceWorker / getSyncSetting / getSyncSettings from test/e2e/helpers.js');
 });
 
+// Reaching a frame's content-script world is the same habit again: frames.spec.js
+// and helpers.js each carried their own copy of the CDP lookup for the
+// isolated context, written on two branches that met in one merge. The lookup
+// listens for Runtime.executionContextCreated, so that is what this looks for,
+// in every e2e source but the one that owns it.
+test("only helpers.js finds a frame's content-script world", () => {
+  const home = 'helpers.js';
+  const e2eFiles = readdirSync(fileURLToPath(new URL('../e2e/', import.meta.url)))
+    .filter(name => name.endsWith('.js'));
+  assert.match(repoFile(`test/e2e/${home}`), /Runtime\.executionContextCreated/,
+    `${home} no longer does the lookup, so this guard would pass on nothing`);
+  const offenders = e2eFiles.filter(name => name !== home
+    && /Runtime\.executionContextCreated/.test(repoFile(`test/e2e/${name}`)));
+  assert.deepEqual(offenders, [], 'use evaluateInContentScript from test/e2e/helpers.js');
+});
+
 // CRC-32 is written once, in test/e2e/crc32.js. Three fixture builders each
 // kept their own table — comic-fixtures.js and image-ocr.spec.js for PNG
 // chunks, doc-fixtures.js for zip headers — every copy carrying its own

@@ -55,6 +55,8 @@
   const BAND_MARGIN = '100% 0px';
   // capture: 内层滚动容器（侧栏、虚拟列表）的 scroll 不冒泡，捕获才收得到。
   const SCROLL_LISTENER = Object.freeze({ passive: true, capture: true });
+  // 文档和每个 shadow root 用同一份观察选项。
+  const OBSERVE_OPTIONS = Object.freeze({ childList: true, subtree: true, characterData: true });
 
   // 我们自己的界面。译文块、悬浮球、进度条、各种弹层改自己的 DOM 是常态
   // （进度条每译完一块就改一次文字），把这些当成「页面变了」会变成一个自激循环。
@@ -107,7 +109,15 @@
     const target = record.target;
     if (!target) return null;
     if (target.nodeType === Node.ELEMENT_NODE) return target;
-    return target.parentElement || null;
+    // shadow root 自己的 childList 变动，或者 shadow root 直属的文本节点变了
+    // （它的 parentElement 是 null）：脏的是宿主那棵组合子树。
+    if (isShadowRoot(target)) return target.host;
+    if (target.parentElement) return target.parentElement;
+    return isShadowRoot(target.parentNode) ? target.parentNode.host : null;
+  }
+
+  function isShadowRoot(node) {
+    return !!node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && !!node.host;
   }
 
   /**
@@ -170,6 +180,7 @@
       dirtyRoots.clear();
       collapsed = false;
       if (roots.length === 0) return;
+      ctx.beginScopeRound();
 
       // 脏根之间可能互相嵌套（父子都变了），同一个块会被收到两次。按元素去重，
       // 不按根去重：判断两个根是否嵌套要 contains()，比直接收完再去重还贵。
@@ -187,7 +198,7 @@
 
     function collect(root) {
       try {
-        return ctx.collectTranslatableBlocks(root) || [];
+        return ctx.collectPageBlocks(root) || [];
       } catch (error) {
         console.warn('Blab Translation: auto discovery collect failed', error);
         return [];
@@ -393,6 +404,7 @@
       if (stopped) return;
       stopped = true;
       domObserver.disconnect();
+      unsubscribeShadowRoots();
       bandObserver.disconnect();
       if (timer !== null) {
         clearTimeout(timer);
@@ -411,11 +423,12 @@
 
     window.addEventListener('scroll', onScroll, SCROLL_LISTENER);
 
-    domObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
+    domObserver.observe(document.body, OBSERVE_OPTIONS);
+    // 文档上的 subtree 观察看不进 shadow 树：收集器每发现一个 shadow root
+    // （content/page/shadow.js 的登记表），就给它追加一份同样的观察。
+    const observeShadowRoot = (root) => domObserver.observe(root, OBSERVE_OPTIONS);
+    const unsubscribeShadowRoots = ctx.onShadowRoot(observeShadowRoot);
+    ctx.shadowRoots().forEach(observeShadowRoot);
 
     return { stop, rescan, suspend, resume };
   }

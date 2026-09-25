@@ -20,6 +20,9 @@
 
   function setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // 子 frame 不答顶层专属的消息：哪天有个发送点忘了钉 frameId，第一个回话
+      // 的也只会是顶层（名单在 content/frames/shelf.js）。
+      if (ctx.frames.ignores(message && message.type)) return;
       console.log('Blab Translation: Received message', message.type, message);
       switch (message.type) {
         case 'TRANSLATE_PAGE':
@@ -31,6 +34,10 @@
           // popup 那一行和悬浮球那一下点的是同一个动作，所以走同一个函数：
           // 「有译文就收起来，没有就译」这条规则只能有一个地方说了算。
           sendResponse(ctx.togglePageTranslation ? { action: ctx.togglePageTranslation() } : null);
+          break;
+        case 'TRANSLATE_WHOLE_PAGE':
+          // Alt+W（background/page-coverage.js 只发顶层 frame）：本页改成整页范围再翻。
+          sendResponse({ action: ctx.translateWholePage() });
           break;
         case 'SET_AUTO_PAUSED':
           if (ctx.autoTranslate) {

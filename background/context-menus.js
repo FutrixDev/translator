@@ -243,6 +243,18 @@ async function refreshPdfMenuVisibility() {
     .catch(() => {});
 }
 
+// Which frame answers a menu click. The content script runs in every frame
+// (all_frames), and a tabs.sendMessage with no frameId reaches all of them.
+// What the click was ON - a selection, an image to read, an inline translation
+// - lives in the frame it was clicked in; the page-level actions belong to the
+// top document alone (content/frames/shelf.js lists them), including a comic
+// image, whose job ledger and progress UI are the top page's (so an image
+// inside an iframe is not reachable from this menu yet - a known gap).
+const TOP_FRAME = { frameId: 0 };
+function inFrame(info) {
+  return { frameId: typeof info.frameId === 'number' ? info.frameId : 0 };
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === MENU_IDS.translateSelection && info.selectionText) {
     // 翻译动作交给 content script，而不是像以前那样在这里译完把结果推过去。
@@ -253,9 +265,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.tabs.sendMessage(tab.id, {
       type: 'TRANSLATE_SELECTION_TEXT',
       text: info.selectionText
-    });
+    }, inFrame(info));
   } else if (info.menuItemId === MENU_IDS.translatePage) {
-    chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' });
+    chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' }, TOP_FRAME);
   } else if (info.menuItemId === MENU_IDS.translateComicImage ||
              info.menuItemId === MENU_IDS.colorizeComicImage) {
     const settings = await chrome.storage.sync.get(defaultSettings);
@@ -272,7 +284,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       srcUrl: info.srcUrl,
       pageUrl: info.pageUrl || (tab && tab.url) || '',
       targetLang: settings.comicTargetLang || getEffectiveTargetLang(settings)
-    });
+    }, TOP_FRAME);
   } else if (info.menuItemId === MENU_IDS.ocrTranslateImage ||
              info.menuItemId === MENU_IDS.ocrTranslateImageRegion) {
     const settings = await chrome.storage.sync.get(defaultSettings);
@@ -294,7 +306,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // offers a Translate button for step 2. Explicit false, because the
       // content script treats an absent flag as the old translate-too path.
       translate: false
-    });
+    }, inFrame(info));
   } else if (info.menuItemId === MENU_IDS.translatePdfLocalAction) {
     chrome.tabs.create({ url: chrome.runtime.getURL('pdf/upload.html') });
   } else if (info.menuItemId === MENU_IDS.translatePdfLink ||
@@ -311,7 +323,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       notifyNotAPdf: info.menuItemId === MENU_IDS.translatePdfAction,
     });
   } else if (info.menuItemId === MENU_IDS.removeInlineTranslation) {
-    chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' });
+    chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_INLINE_TRANSLATION_CONTEXT' }, inFrame(info));
   }
 });
 

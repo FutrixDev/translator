@@ -8,12 +8,13 @@
     // Float Ball Menu
     inputTranslate: '输入文本翻译',
     translateSelection: '翻译选中文本',
-    translatePage: '翻译整个页面',
+    translatePage: '翻译此页面',
+    floatMenuTranslateWholePage: '翻译整个页面',
     hideTranslations: '隐藏译文',
     showTranslations: '显示译文',
     openSettings: '打开设置',
     contextTranslateSelection: '翻译选中文本',
-    contextTranslatePage: '翻译整个页面',
+    contextTranslatePage: '翻译此页面',
     contextRemoveInlineTranslation: '取消译文',
 
     // Comic page translation (account-backed, see content-comic-translation.js)
@@ -296,6 +297,10 @@
     skipTargetLanguageText: '跳过已是目标语言的内容',
     showTranslationOnly: '仅显示译文',
     hintShowTranslationOnly: '整页翻译时隐藏原文，只保留译文',
+    pageTranslateScopeLabel: '整页翻译范围',
+    pageTranslateScopeMain: '只翻译正文（推荐）',
+    pageTranslateScopePage: '翻译整个页面',
+    pageTranslateScopeHint: '只翻译正文时，网站的导航、侧栏、菜单和页眉页脚不翻。想让某一页全部翻译，可以在翻译球菜单里点「翻译整个页面」，或按 Alt+W。',
     advancedSettings: '高级设置',
     youtubeSettings: '视频字幕',
     captionFollowsAutoTranslate: '字幕跟着主开关走：你让我们翻译的站点，上面的视频字幕也一并翻译。',

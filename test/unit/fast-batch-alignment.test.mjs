@@ -52,9 +52,19 @@ console.error = () => {};
 // 分批器要落笔就得有 insert.js，比对原文要有 collect.js 的 normalizeComparableText。
 // 按 manifest 顺序加载，跨文件引用全是 ctx.x() 的运行时读取，顺序其实无所谓。
 await import('../../shared/block-identity.js');
+// 收集器在调用时读 shadow / notranslate / scope 挂的 ctx.x，这里装真模块，不手写替身；
+// scope.js 读 globalThis.SiteRules，所以 lang-tags、site-rules-builtin、site-rules 排在它前面。
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/site-rules.js');
+await import('../../content/page/shadow.js');
+await import('../../content/page/notranslate.js');
+await import('../../content/page/scope.js');
 for (const module of ['batch', 'collect', 'insert', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }
+// visibility.js 调 ctx.frames 的钩子：装真的 shelf（默认全是空操作），不手写 ctx.frames。
+await import('../../content/frames/shelf.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
 // ==================== helpers ====================
@@ -76,6 +86,7 @@ function makeBlock(text) {
     text,
     element: {
       nodeType: 1,
+      localName: 'p',
       childNodes: [],
       parentNode: {},
       classList: {

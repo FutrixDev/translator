@@ -52,6 +52,12 @@
         "default": "Alt+T"
       },
       "description": "__MSG_cmdToggleTranslationOnly__"
+    },
+    "translate-whole-page": {
+      "suggested_key": {
+        "default": "Alt+W"
+      },
+      "description": "__MSG_cmdTranslateWholePage__"
     }
   },
   "content_scripts": [
@@ -100,6 +106,7 @@
         "shared/translation-cache.js",
         "shared/spa-navigation.js",
         "shared/session-guard.js",
+        "shared/frame-eligibility.js",
         "content/content-bootstrap.js",
         "content/content-utils.js",
         "content/content-managed-translation.js",
@@ -126,6 +133,9 @@
         "content/content-input-chip.js",
         "content/page/batch.js",
         "content/page/site-adapter.js",
+        "content/page/shadow.js",
+        "content/page/notranslate.js",
+        "content/page/scope.js",
         "content/page/collect.js",
         "content/page/insert.js",
         "content/page/visibility.js",
@@ -149,6 +159,9 @@
         "content/comic/memory.js",
         "content/comic/prompts.js",
         "content/content-comic-translation.js",
+        "content/frames/shelf.js",
+        "content/frames/top.js",
+        "content/frames/child.js",
         "content/content-messaging.js",
         "content/content.js"
       ],
@@ -166,7 +179,10 @@
         "content/css/comic.css",
         "content/css/image-ocr.css"
       ],
-      "run_at": "document_end"
+      "run_at": "document_end",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
     }
   ]
 }

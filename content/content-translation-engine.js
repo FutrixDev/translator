@@ -25,6 +25,9 @@
   // 设置页也加载这个文件，用来查语言包状态、按钮触发首次下载（那里有真实用户手势）。
   // 设置页没有 content script 那套 ctx，所以这里自己兜一个空壳：
   // 只有 ctx.builtinTranslator 那部分会被设置页用到。
+  // dormant frame（见 shared/frame-eligibility.js）里连空壳也不兜：兜了，后面每个
+  // 模块的 `if (!ctx) return;` 就拦不住了。设置页没有 FrameEligibility，照旧兜。
+  if (globalThis.FrameEligibility && !globalThis.FrameEligibility.shouldActivate()) return;
   const ctx = window.AI_TRANSLATOR_CONTENT || (window.AI_TRANSLATOR_CONTENT = {});
   const settings = ctx.settings || (ctx.settings = {});
   const eng = (ctx.engine = ctx.engine || {});
@@ -300,7 +303,7 @@
     if (!source.trim()) return source;
 
     const tgt = eng.toApiLang(targetLang);
-    const src = await eng.resolveSourceLang(source, options.sourceLang, options.standaloneText);
+    const src = await eng.resolveSourceLang(source, options.sourceLang, options.standaloneText, options.pageSourceLang);
 
     if (!src || !tgt) throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
     // 同语言不需要翻译。原样返回，与 AI 那条路“已是目标语言则原样返回”的约定一致。
@@ -525,7 +528,9 @@
       allowDownload: message.allowDownload,
       // 输入框的文本是用户自己敲的，与页面无关。见 content/engine/languages.js 的
       // resolveSourceLang。
-      standaloneText: message.standaloneText === true
+      standaloneText: message.standaloneText === true,
+      // 子 frame 经中继发来的请求自带页面语言（content/frames/child.js）。
+      pageSourceLang: message.pageSourceLang
     };
 
     switch (message.type) {

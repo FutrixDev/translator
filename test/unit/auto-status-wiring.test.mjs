@@ -192,7 +192,8 @@ test('显隐开关只收整页那一批 —— 划词译出来的一句不归它
   const visibility = code('content/page/visibility.js');
   const fn = visibility.slice(visibility.indexOf('function setTranslationsVisible(visible)'),
     visibility.indexOf('function revealHiddenTranslations()'));
-  assert.match(fn, /document\.querySelectorAll\(PAGE_TRANSLATION_SELECTOR\)/);
+  // queryAllDeep = 文档 + 登记过的 shadow root（content/page/shadow.js），收的仍是整页那一批。
+  assert.match(fn, /ctx\.queryAllDeep\(PAGE_TRANSLATION_SELECTOR\)/);
   assert.doesNotMatch(fn, /'\.ai-translator-inline-block'/, '收的是整页那一批，不是页面上所有译文块');
 
   // 划词/悬停那条插入路径确实不读这个标记 —— 上面那句话的依据。它只在整页那条

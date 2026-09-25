@@ -39,7 +39,8 @@
     // 话说「这句什么意思」，答案不该被一个管着整页的开关收走。而且那条插入路径
     // （content-hover-translation.js）根本不读这个标记 —— 藏旧的、不藏新的，用户
     // 看到的就是这个开关时灵时不灵。一次性的结果由它自己那条路收（点别处、Esc）。
-    document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
+    // queryAllDeep：shadow root 里的译文也在这一批里（content/page/shadow.js）。
+    ctx.queryAllDeep(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
       el.classList.toggle('ai-translator-hidden', !visible);
     });
     // 受管容器里的译文整体开关（见 content-managed-translation.js）：它没有自己
@@ -57,6 +58,7 @@
       if (visible) ctx.autoTranslate.resumeCurrentPage('hidden');
       else ctx.autoTranslate.pauseCurrentPage('hidden');
     }
+    ctx.frames.onVisibilityChanged(visible);
   }
 
   function revealHiddenTranslations() {
@@ -174,16 +176,16 @@
   // 个（见 shouldHideSource），逐条问一次是唯一不会把两个理由搞混的写法。释放这一
   // 遍同时修掉页面脚本删掉译文之后留下的孤儿原文——译文没了原文不能跟着陪葬。
   function applyTranslationOnlyMode() {
-    document.querySelectorAll('.ai-translator-source-hidden').forEach((el) => {
+    ctx.queryAllDeep('.ai-translator-source-hidden').forEach((el) => {
       const translation = pairedTranslation(el);
       if (translation && shouldHideSource(translation)) return;
       releaseHiddenSource(el);
     });
     // 释放之后还剩下的 wrap 是上一轮留下的空壳，原样解包，不给页面留多余结构
-    document.querySelectorAll('.ai-translator-source-wrap:not(.ai-translator-source-hidden)')
+    ctx.queryAllDeep('.ai-translator-source-wrap:not(.ai-translator-source-hidden)')
       .forEach((wrap) => releaseHiddenSource(wrap));
 
-    document.querySelectorAll(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
+    ctx.queryAllDeep(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
       if (shouldHideSource(el)) hideSourceForTranslation(el);
     });
     // 「仅译文此刻生不生效」公布在 <html> 上，CSS 靠它把 blur 样式关掉（原文藏着、

@@ -48,7 +48,15 @@
   // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
   let managedSkipCount = 0;
 
-  function collectTranslatableBlocks(root) {
+  // 组合树（content/page/shadow.js）：宿主元素的子节点包括它 shadow root 里的，
+  // <slot> 按分配结果取。没有 shadow root 时原样返回 el.children / el.childNodes。
+  const kids = (el) => ctx.composedChildren(el);
+  const nodesOf = (el) => ctx.composedChildNodes(el);
+  const closestAcross = (el, selector) => ctx.closestComposed(el, selector);
+
+  // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
+  // 不做任何范围过滤——e2e 直接调这个函数的地方都是这样用的。
+  function collectTranslatableBlocks(root, options) {
     // 单块上限是分批器的口径（content/page/batch.js）：那边按它切块，
     // 这边按它决定一块算不算 oversized，两处必须是同一个数。
     const { MAX_BLOCK_CHARS } = ctx.PAGE_LIMITS;
@@ -68,6 +76,9 @@
     // 表格标签作为容器递归下探到单元格（TD/TH 在 blockTags 中）：很多站点（如 Hacker News）
     // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
     const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
+    const scope = options && options.scope;
+    const scopeCut = scope && scope.skip ? (el) => ctx.pageScopeCut(el, scope) : null;
+    const allowed = ctx.createTranslateJudge();
     // 用于检测代码/脚本内容的模式
     const codePatterns = [
       /^[\s\S]*<script[\s>]/i,       // 包含 <script 标签
@@ -125,7 +136,7 @@
       return tagName === 'PRE' || tagName === 'CODE' || !!el.querySelector('pre, code');
     }
     function isInsideCodeContainer(element) {
-      for (let el = element; el; el = el.parentElement) {
+      for (let el = element; el; el = ctx.composedParent(el)) {
         const classList = el.classList;
         if (!classList) continue;
         for (const cls of classList) {
@@ -184,7 +195,7 @@
 
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
     function hasTranslatableChildren(element) {
-      for (const child of element.children) {
+      for (const child of kids(element)) {
         // 跳过数学公式元素 - 数学公式应该作为整体保留，不应该导致父元素被拆分
         if (isMathElement(child)) {
           continue;
@@ -215,9 +226,10 @@
     function wrapDirectTextRuns(element) {
       const runs = [];
       let current = null;
-      for (const node of element.childNodes) {
+      for (const node of nodesOf(element)) {
         if (node.nodeType === Node.TEXT_NODE) {
-          if (!current) {
+          // 组合子节点跨了 shadow root 与 light 树：父亲换了就是另一段
+          if (!current || current[0].parentNode !== node.parentNode) {
             current = [];
             runs.push(current);
           }
@@ -232,7 +244,7 @@
         if (looksLikeCode(text) || isMainlyUrl(text) || isNumericOrSymbolOnly(text)) continue;
         const wrap = document.createElement('span');
         wrap.className = TEXT_RUN_CLASS;
-        element.insertBefore(wrap, run[0]);
+        run[0].parentNode.insertBefore(wrap, run[0]);
         for (const node of run) wrap.appendChild(node);
       }
     }
@@ -241,7 +253,7 @@
     // 这对于导航菜单等结构很重要，避免将整个菜单作为一个块翻译
     function hasMultipleTranslatableDirectChildren(element) {
       let count = 0;
-      for (const child of element.children) {
+      for (const child of kids(element)) {
         const childTag = child.tagName;
         // 如果子元素是块级或内联可翻译元素，且有文本内容
         if ((blockTags.includes(childTag) || inlineTags.includes(childTag)) &&
@@ -256,7 +268,7 @@
     // 获取元素的直接文本内容（不包括子元素的文本）
     function getDirectText(element) {
       let text = '';
-      for (const child of element.childNodes) {
+      for (const child of nodesOf(element)) {
         if (child.nodeType === Node.TEXT_NODE) {
           const content = child.textContent.trim();
           if (content) {
@@ -278,7 +290,7 @@
       // 站点规则说这一块不必翻：作者名、时间戳、票数、"reply"。这些在形状上和正文
       // 没有区别，通用启发式挡不住。用 closest 而不是 matches，因为排除的是整块——
       // Hacker News 的 `.subtext` 底下还有一串 <a>，它们也在排除之列。
-      if (excludeSelector && element.closest(excludeSelector)) return;
+      if (excludeSelector && closestAcross(element, excludeSelector)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
       // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
@@ -306,19 +318,19 @@
         if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }
-      if (element.closest('.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn')) return;
+      if (closestAcross(element, '.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn, #ai-translator-source-peek')) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
 
       // 跳过被 skipTags 包含的元素
-      if (element.closest(skipTags.map(t => t.toLowerCase()).join(','))) return;
+      if (closestAcross(element, skipTags.map(t => t.toLowerCase()).join(','))) return;
 
       // 跳过代码块容器（codehilite / sourceCode / highlight 变体 / Prism language-*，
       // 统一在 isInsideCodeContainer 里按完整 class token 匹配）
       if (isInsideCodeContainer(element)) return;
 
       // 跳过数学公式内部的所有元素 - 数学公式应该整体保留，不单独翻译内部元素
-      if (element.closest(MATH_CONTAINER_SELECTOR)) return;
+      if (closestAcross(element, MATH_CONTAINER_SELECTOR)) return;
 
       // 跳过数学公式的隐藏辅助元素（只跳过重复的隐藏版本）
       if (element.classList.contains('MJX_Assistive_MathML') ||
@@ -341,6 +353,19 @@
         }
       }
 
+      // 正文范围（'main' 模式）：导航、侧栏、站点页眉页脚整棵不收，只收里面的 h1。
+      const keep = scopeCut && scopeCut(element);
+      if (keep) {
+        for (const heading of keep) processElement(heading);
+        return;
+      }
+      // 作者说了别翻（translate="no" / .notranslate）：这一块不收，往下找被
+      // translate="yes" 重新打开的子树。
+      if (!allowed(element)) {
+        for (const child of kids(element)) processElement(child);
+        return;
+      }
+
       // 检查是否有直接文本内容
       const directText = getDirectText(element);
       const hasDirectText = directText.length >= 2;
@@ -357,7 +382,7 @@
       // 注意：只有当子元素是【块级元素】时才递归，内联元素（如 <a>、<span>）应该包含在整体翻译中
       if (!atomic && hasTranslatableChildren(element)) {
         let shouldRecurse = false;
-        for (const child of element.children) {
+        for (const child of kids(element)) {
           // 跳过数学公式和图标
           if (isMathElement(child) || isIconElement(child)) {
             continue;
@@ -370,7 +395,9 @@
             break;
           }
           // 情况2：直接子元素是容器元素（如 div, ul）且包含可翻译内容
-          if (containerTags.includes(childTag) && hasTranslatableChildren(child)) {
+          // shadow 宿主和自定义元素也按容器处理（content/page/shadow.js）
+          if ((containerTags.includes(childTag) || ctx.isShadowContainer(child)) &&
+              hasTranslatableChildren(child)) {
             shouldRecurse = true;
             break;
           }
@@ -386,7 +413,7 @@
           // 翻译，页面上只剩 <span>Human:</span> 的译文孤零零挂在原文右边。
           // 同一个坑在超长块那条路上已经栽过一次，见 MAX_BLOCK_CHARS 附近的注释。
           wrapDirectTextRuns(element);
-          for (const child of element.children) {
+          for (const child of kids(element)) {
             processElement(child);
           }
           return;
@@ -437,7 +464,7 @@
           }
           if (textWithoutMath && (looksLikeCode(textWithoutMath) || isMainlyUrl(textWithoutMath))) {
             // 递归处理子元素，可能有非代码/非URL的部分
-            for (const child of element.children) {
+            for (const child of kids(element)) {
               processElement(child);
             }
             return;
@@ -471,12 +498,13 @@
       }
 
       // 递归处理子元素
-      for (const child of element.children) {
+      for (const child of kids(element)) {
         processElement(child);
       }
     }
 
-    processElement(root);
+    const starts = scopeCut ? ctx.pageScopeStarts(root, scope) : [root];
+    for (const start of starts) processElement(start);
     return blocks;
   }
 
@@ -551,7 +579,7 @@
     if (el.hasAttribute?.('data-mathml') || el.hasAttribute?.('data-latex')) return true;
 
     // 检查是否在数学容器内部（通过 closest 查找祖先）
-    if (el.closest(MATH_CONTAINER_SELECTOR)) return true;
+    if (closestAcross(el, MATH_CONTAINER_SELECTOR)) return true;
 
     return false;
   }
@@ -679,6 +707,12 @@
           return;
         }
 
+        // 行内的 notranslate（产品名、人名）：整个元素当占位符，插入时原样克隆回去
+        if (ctx.ownTranslateDeclaration(node) === 'no') {
+          text += addMathPlaceholder({ type: 'element', element: node });
+          return;
+        }
+
         // 检测是否是数学公式 - 使用锚点占位符
         // 使用 {{1}}、{{2}} 格式，LLM 熟悉模板语法，会保持原样
         if (isMathElement(node)) {
@@ -696,7 +730,7 @@
           const before = text.length;
           text += open;
           markupElements.push({ index, tag, element: node });
-          for (const child of node.childNodes) {
+          for (const child of nodesOf(node)) {
             processNode(child);
           }
           if (text.length === before + open.length) {
@@ -709,13 +743,13 @@
         }
 
         // 递归处理子节点
-        for (const child of node.childNodes) {
+        for (const child of nodesOf(node)) {
           processNode(child);
         }
       }
     }
 
-    for (const child of element.childNodes) {
+    for (const child of nodesOf(element)) {
       processNode(child);
     }
 
@@ -750,7 +784,7 @@
   function readSourceText(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return '';
     let text = '';
-    for (const node of element.childNodes) {
+    for (const node of nodesOf(element)) {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.nodeType === Node.ELEMENT_NODE &&
@@ -781,7 +815,7 @@
 
     // 递归查找第一个文本节点的位置
     function findFirstTextRect(node) {
-      for (const child of node.childNodes) {
+      for (const child of nodesOf(node)) {
         if (child.nodeType === Node.TEXT_NODE && child.textContent.trim()) {
           // 使用 Range 获取文本节点的位置
           const range = document.createRange();

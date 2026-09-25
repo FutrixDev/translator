@@ -236,20 +236,30 @@
     dialog.querySelector('.ai-translator-close').addEventListener('click', hideInputDialog);
     dialog.querySelector('.ai-translator-input-overlay').addEventListener('click', hideInputDialog);
 
+    // #ai-translator-result-text 一个节点轮流装加载态、错误提示和译文，所以每次写都
+    // 在这一处连 lang / dir 一起重标：加载态和错误是界面文字，按界面语言（与悬浮译文
+    // 的 textLangOf 同一约定，content/hover/render.js）；译文是这次请求的目标语言。
+    // 漏标一处，阿拉伯语译文之后的下一个加载态就还挂着 dir=rtl。
+    function showResult(content, lang) {
+      ctx.markLanguage(resultText, lang);
+      if ('text' in content) resultText.textContent = content.text;
+      else resultText.innerHTML = content.html;
+    }
+
     const translateInputText = async (targetLangOverride = '') => {
       const text = textarea.value.trim();
       if (!text) return;
 
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
-      resultText.innerHTML = `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>`;
+      showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
       setPhonetic('');
       showResultSpeak(false);
       copyBtn.hidden = true;
 
       try {
         if (!isExtensionContextAvailable()) {
-          resultText.innerHTML = `<div class="ai-translator-input-error">${t('extensionContextInvalidated')}</div>`;
+          showResult({ html: `<div class="ai-translator-input-error">${t('extensionContextInvalidated')}</div>` }, ctx.uiLanguage());
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
@@ -265,11 +275,11 @@
         });
 
         if (response.error) {
-          resultText.innerHTML = `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>`;
+          showResult({ html: `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>` }, ctx.uiLanguage());
           return;
         }
 
-        resultText.textContent = response.translation;
+        showResult({ text: response.translation }, targetLang);
         // The phonetic belongs to the word that was typed, not to its
         // translation, so it sits beside the input — matching where the
         // selection popup puts it.
@@ -280,7 +290,7 @@
         const message = isExtensionContextInvalidated(error)
           ? t('extensionContextInvalidated')
           : t('translationFailed');
-        resultText.innerHTML = `<div class="ai-translator-input-error">${message}</div>`;
+        showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
         setPhonetic('');
         showResultSpeak(false);
         copyBtn.hidden = true;

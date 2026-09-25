@@ -22,6 +22,8 @@ const FAMILIES = [
   { dir: 'content/comic', entry: 'content/content-comic-translation.js', alias: 'comic' },
   { dir: 'content/captions', entry: 'content/content-video-captions.js', alias: 'caps' },
   { dir: 'content/hover', entry: 'content/content-hover-translation.js', alias: 'hov' },
+  // 这一族没有入口文件：外面的文件只调 ctx.frames 上的钩子。
+  { dir: 'content/frames', entry: null, alias: 'frames' },
 ];
 
 /** 注释和字面量里的字不是标识符，先抹掉，免得一句中文注释提到某个函数名就算数。 */
@@ -42,7 +44,7 @@ function exportBlocks(source, alias) {
 function familyFiles({ dir, entry }) {
   return [
     ...readdirSync(path.join(ROOT, dir)).filter((n) => n.endsWith('.js')).sort().map((n) => `${dir}/${n}`),
-    entry,
+    ...(entry ? [entry] : []),
   ];
 }
 

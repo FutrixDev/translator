@@ -1,6 +1,7 @@
-// P0-D journeys J-D1 .. J-D10 (docs/plans/2026-09-24-p0-d-selection-card.md §10.2):
+// P0-D journeys J-D1 .. J-D11 (docs/plans/2026-09-24-p0-d-selection-card.md §10.2):
 // the selection icon, the card anchored to the selection, and the card's four
-// actions (retranslate, switch engine, copy, speak).
+// actions (retranslate, switch engine, copy, speak). J-D11 runs them inside a
+// cross-origin child frame, whose translations go through the top frame.
 //
 // Every page is served through context.route on an https origin: the built-in
 // engine is a SecureContext API, so the switch-engine journey only exists on
@@ -12,6 +13,7 @@ const {
   getSyncSettings,
   sendMessageToActiveTab,
   triggerSelectionHotkey,
+  evaluateInContentScript,
   stubBuiltinTranslator,
   waitForFloatBall,
 } = require('./helpers');
@@ -56,11 +58,33 @@ const LONG_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Harbour log</title><style>${STYLE}</style></head>
 <body><p id="long">${LONG_TEXT}</p></body></html>`;
 
+// J-D11: a letter embedded from another site. The frame has no border, so its
+// box on the page is its viewport.
+const EMBED = 'https://letters.test';
+
+const LETTER = 'Dear harbour office, the ferry to the island left twenty minutes early on Friday, '
+  + 'and three of us watched it go from the end of the pier. Please post the changed times '
+  + 'on the notice board as well as online, so that nobody misses the boat again.';
+
+const FRAMED_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Harbour letters</title><style>${STYLE}</style></head>
+<body>
+  <p id="intro">Letters from readers, as the harbour office received them.</p>
+  <iframe id="embed" src="${EMBED}/letter" width="900" height="480" style="border:0;display:block"></iframe>
+</body></html>`;
+
+const LETTER_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Letter</title><style>${STYLE}</style></head>
+<body><p id="letter">${LETTER}</p></body></html>`;
+
 async function servePages(context) {
+  const pages = { '/long': LONG_PAGE, '/framed': FRAMED_PAGE };
   await context.route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
-    const body = url.pathname === '/long' ? LONG_PAGE : MAIN_PAGE;
-    route.fulfill({ status: 200, contentType: 'text/html', body });
+    route.fulfill({ status: 200, contentType: 'text/html', body: pages[url.pathname] || MAIN_PAGE });
+  });
+  await context.route(`${EMBED}/**`, (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: LETTER_PAGE });
   });
 }
 
@@ -91,9 +115,14 @@ async function drag(page, from, to) {
 }
 
 // Drag from the start of an element's first line to the middle of its second
-// line (or across its only line).
+// line (or across its only line). The element may be in a child frame: its
+// box is measured on the page, where the mouse is.
 async function dragSelect(page, selector) {
-  const box = await page.locator(selector).boundingBox();
+  await dragAcross(page, page.locator(selector));
+}
+
+async function dragAcross(page, target) {
+  const box = await target.boundingBox();
   const lineMid = 14;
   const twoLines = box.height > 40;
   await drag(page,
@@ -124,11 +153,43 @@ function intersects(a, b) {
   return a.left < b.right - eps && b.left < a.right - eps && a.top < b.bottom - eps && b.top < a.bottom - eps;
 }
 
+// A rect measured inside a child frame, moved onto the page.
+function inPage(rect, frameBox) {
+  return {
+    left: rect.left + frameBox.left,
+    top: rect.top + frameBox.top,
+    right: rect.right + frameBox.left,
+    bottom: rect.bottom + frameBox.top,
+  };
+}
+
+function expectInside(rect, box, margin = MARGIN) {
+  expect(rect.left).toBeGreaterThanOrEqual(box.left + margin - 0.5);
+  expect(rect.top).toBeGreaterThanOrEqual(box.top + margin - 0.5);
+  expect(rect.right).toBeLessThanOrEqual(box.right - margin + 0.5);
+  expect(rect.bottom).toBeLessThanOrEqual(box.bottom - margin + 0.5);
+}
+
 function expectInViewport(rect, margin = MARGIN) {
-  expect(rect.left).toBeGreaterThanOrEqual(margin - 0.5);
-  expect(rect.top).toBeGreaterThanOrEqual(margin - 0.5);
-  expect(rect.right).toBeLessThanOrEqual(VIEWPORT.width - margin + 0.5);
-  expect(rect.bottom).toBeLessThanOrEqual(VIEWPORT.height - margin + 0.5);
+  expectInside(rect, { left: 0, top: 0, right: VIEWPORT.width, bottom: VIEWPORT.height }, margin);
+}
+
+// The icon is within 12 px above or below the selection's last line (the line
+// the mouse was released on), and over none of the selected lines.
+function expectBesideLastLine(iconRect, rects) {
+  const lastBottom = Math.max(...rects.map((r) => r.bottom));
+  const lastLine = rects.filter((r) => Math.abs(r.bottom - lastBottom) < 1);
+  const line = {
+    left: Math.min(...lastLine.map((r) => r.left)),
+    right: Math.max(...lastLine.map((r) => r.right)),
+    top: Math.min(...lastLine.map((r) => r.top)),
+    bottom: lastBottom,
+  };
+  const below = iconRect.top - line.bottom;
+  const above = line.top - iconRect.bottom;
+  expect((below >= 0 && below <= 12) || (above >= 0 && above <= 12),
+    JSON.stringify({ iconRect, line, rects })).toBe(true);
+  for (const r of rects) expect(intersects(iconRect, r)).toBe(false);
 }
 
 // Wait until nothing under selector is still animating or transitioning.
@@ -219,21 +280,9 @@ test.describe('selection icon and card actions', () => {
 
       const sel = await selectionGeometry(page);
       expect(sel.rects.length).toBeGreaterThan(1);
-      const lastBottom = Math.max(...sel.rects.map((r) => r.bottom));
-      const lastLine = sel.rects.filter((r) => Math.abs(r.bottom - lastBottom) < 1);
-      const line = {
-        left: Math.min(...lastLine.map((r) => r.left)),
-        right: Math.max(...lastLine.map((r) => r.right)),
-        top: Math.min(...lastLine.map((r) => r.top)),
-        bottom: lastBottom,
-      };
       const iconRect = await settledIconRect(page);
-      const below = iconRect.top - line.bottom;
-      const above = line.top - iconRect.bottom;
-      expect((below >= 0 && below <= 12) || (above >= 0 && above <= 12),
-        JSON.stringify({ iconRect, line, rects: sel.rects })).toBe(true);
+      expectBesideLastLine(iconRect, sel.rects);
       expectInViewport(iconRect);
-      for (const r of sel.rects) expect(intersects(iconRect, r)).toBe(false);
 
       await icon(page).click();
       await expect(cardText(page)).toContainText('[T]');
@@ -686,6 +735,70 @@ test.describe('selection icon and card actions', () => {
       const longCard = await rectOf(card(page));
       expectInViewport(longCard);
       expect(intersects(longCard, long.box)).toBe(false);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J-D11: in a cross-origin frame the icon and card stay inside it, and the top frame translates', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer();
+    try {
+      await servePages(context);
+      await setExtensionSettings(page, aiSettings(mock.endpoint, { translationStyle: 'underline' }));
+      await openPage(page, '/framed');
+      await expect(page.frameLocator('#embed').locator('#letter')).toBeVisible();
+      const frame = page.frames().find((f) => f.url().startsWith(EMBED));
+      // A child frame has no float ball to wait for. ctx.init writes the style
+      // attribute on <html> in the same synchronous step that attaches the
+      // selection listener, so once it is there the listener is too.
+      await expect.poll(() => frame.evaluate(
+        () => document.documentElement.getAttribute('data-ai-translator-style'))).toBe('underline');
+      // The child frame decides whether to offer the built-in engine; the top
+      // frame runs it. Each world gets its own stub and its own counter.
+      await stubBuiltinTranslator(page);
+      await stubBuiltinTranslator(frame);
+
+      await dragAcross(page, frame.locator('#letter'));
+      await expect(icon(frame)).toBeVisible();
+      await expect(page.locator('#ai-translator-selection-btn')).toHaveCount(0);
+
+      const embedBox = await rectOf(page.locator('#embed'));
+      const sel = await selectionGeometry(frame);
+      expect(sel.rects.length).toBeGreaterThan(1);
+      const rects = sel.rects.map((r) => inPage(r, embedBox));
+      const iconRect = await settledIconRect(frame);
+      expectBesideLastLine(iconRect, rects);
+      expectInside(iconRect, embedBox);
+
+      await icon(frame).click();
+      await expect(cardText(frame)).toContainText('[T]');
+      expect(mock.sentTexts).toHaveLength(1);
+      expect(mock.sentTexts[0]).toContain('harbour office');
+      const cardRect = await rectOf(card(frame));
+      expectInside(cardRect, embedBox);
+      for (const r of rects) expect(intersects(cardRect, r)).toBe(false);
+      await expect(engineTag(frame)).toHaveText(en('cardEngineAi'));
+
+      // The pin travels up with the request: the top frame's built-in engine
+      // answers, the child's is never called, and nothing reaches the API.
+      await expect(switchBtn(frame)).toHaveText(en('cardUseBuiltin'));
+      await switchBtn(frame).click();
+      await expect(cardText(frame)).toHaveText(/^\[B\] /);
+      await expect(engineTag(frame)).toHaveText(en('cardEngineBuiltin'));
+      expect(mock.sentTexts).toHaveLength(1);
+      expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(1);
+      expect(await evaluateInContentScript(context, frame, 'self.__builtinCalls')).toBe(0);
+
+      // A cross-origin frame without allow="clipboard-write" is refused
+      // navigator.clipboard (NotAllowedError, measured), so what writes here is
+      // the execCommand fallback in ctx.copyToClipboard. "Copied" shows either
+      // way, so read the clipboard back, over a sentinel, from the top page.
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGIN });
+      await page.evaluate(() => navigator.clipboard.writeText('clipboard sentinel'));
+      const translation = await cardText(frame).textContent();
+      await copyBtn(frame).click();
+      await expect(copyBtn(frame)).toHaveText(en('copied'));
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(translation);
     } finally {
       await mock.close();
     }

@@ -13,24 +13,39 @@ async function targetTab(tab) {
   return target && typeof target.id === 'number' ? target : null;
 }
 
-// Alt+A — translate or restore this page. The same message the context menu and
-// the popup row send, because it is the same action.
+// Send a page-level message to the top frame of the target tab.
 //
-// frameId 0: only the top frame owns "the page". Content scripts run in the top
-// frame alone today, so this is what already happens; it stays true once child
-// frames get content scripts of their own.
+// frameId 0: content scripts run in every frame (manifest `all_frames`), but
+// only the top frame owns "the page"; child frames do not answer top-only
+// messages (content/frames/shelf.js). Whatever a child frame should do follows
+// from the top frame's own round.
 //
 // A page with no content script (chrome://, the Web Store, a tab still loading)
 // rejects sendMessage. A shortcut that does nothing there is expected, so the
-// rejection is logged here and not rethrown into an unhandled rejection.
-async function togglePageTranslation(tab) {
+// rejection is logged here, under the caller's label, and not rethrown into an
+// unhandled rejection.
+async function sendToTopFrame(tab, message, label) {
   const target = await targetTab(tab);
   if (!target) return;
   try {
-    await chrome.tabs.sendMessage(target.id, { type: 'TOGGLE_PAGE_TRANSLATION' }, { frameId: 0 });
+    await chrome.tabs.sendMessage(target.id, message, { frameId: 0 });
   } catch (error) {
-    console.log('Blab Translation: toggle shortcut had no receiver', error && error.message);
+    console.log(`Blab Translation: ${label} shortcut had no receiver`, error && error.message);
   }
+}
+
+// Alt+A — translate or restore this page. The same message the context menu and
+// the popup row send, because it is the same action.
+async function togglePageTranslation(tab) {
+  await sendToTopFrame(tab, { type: 'TOGGLE_PAGE_TRANSLATION' }, 'toggle');
+}
+
+// Alt+W — widen this page to whole-page scope for now, then translate. Sent to
+// the top frame only: each child frame's scope override is carried down by the
+// top frame's manual round (docs/plans/2026-09-24-p1-a-page-coverage.md
+// §2.6), not decided here on its behalf.
+async function translateWholePage(tab) {
+  await sendToTopFrame(tab, { type: 'TRANSLATE_WHOLE_PAGE' }, 'whole-page');
 }
 
 // Alt+T — bilingual ↔ translation only. It only writes the setting: every tab's
@@ -47,6 +62,7 @@ async function toggleTranslationOnly() {
 const COMMANDS = {
   'toggle-translate-page': togglePageTranslation,
   'toggle-translation-only': toggleTranslationOnly,
+  'translate-whole-page': translateWholePage,
 };
 
 export async function runCommand(command, tab) {
