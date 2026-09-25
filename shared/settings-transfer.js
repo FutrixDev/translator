@@ -105,6 +105,7 @@
       engineFallback: ['local-only', 'allow-ai'],
       provider: [...providers],
       selectionTranslationMode: ['inline', 'popup'],
+      selectionTrigger: ['icon', 'modifier', 'both'],
       selectionTranslationHotkey: ['Shift', 'Alt', 'Control', 'Meta'],
       hoverTranslationHotkey: ['Shift', 'Alt', 'Control', 'Meta'],
       translationStyle: [...styles],
