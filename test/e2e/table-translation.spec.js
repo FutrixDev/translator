@@ -39,7 +39,7 @@ test('table layout: cells translate inside the cell, grid intact, numeric cells 
     const collectedIds = blocks.map((b) => b.element.id).filter(Boolean).sort();
 
     // Run the real insertion for every collected block.
-    blocks.forEach((b) => ctx.insertTranslationBlock(b, '[T] ' + b.text));
+    blocks.forEach((b) => ctx.insertTranslationBlock(b, '[T] ' + b.text, { textLang: 'zh-CN' }));
 
     const info = (id) => {
       const el = document.getElementById(id);

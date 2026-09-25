@@ -536,8 +536,9 @@ test('一轮翻译只读一次目标语言，然后一路带到落笔', () => {
   assert.doesNotMatch(batch, /targetLang: getEffectiveTargetLang\(\)/);
 
   // 落笔时把它交给唯一的登记口。
-  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp \}\)/);
-  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null \} = \{\}\)/);
+  // 译文的 lang/dir 也是这一轮请求的那门语言（request），不是登记用的 stamp。
+  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp, textLang: target\.request \}\)/);
+  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null, textLang \} = \{\}\)/);
 
   // 「这块是不是本来就已经是目标语言」也要按这一轮的那门语言问，否则同一轮里
   // 前后两批会按两门语言判该不该跳过。

@@ -682,4 +682,49 @@ if (!engine.supportsLang(engine.toApiLang(targetLang))) {
 
 ## 15. 实现偏差（实现时登记）
 
-（空）
+行号以分支 `feat/p0-b` 终版为准。「自决」指设计没写到、按最小改动定下的；「偏差」指与设计原文不一致的。
+
+### 15.1 代码
+
+1. 自决：`TargetLang.nameOf` 接受任何合法标签，Intl 不认识的码原样返回（`shared/target-lang.js:136`）；`direction` 对不合法标签答 `'ltr'`（`:164-166`）。OCR 和 PDF 任务元信息要给识别出的、清单外的语言起名，只接受 76 门会让这两处报错。
+2. 自决：`fromTag` 先过 `Intl.getCanonicalLocales`，再把 `nb`/`nn` 并到 `no`（`shared/target-lang.js:67-81`）。Intl 只折叠 iw/in/tl 这类退役码，不做宏语言这一步。
+3. 自决：设置页引擎回退下拉框变更时重算内置引擎状态（`options/options-builtin.js:87`），同步镜像里 `engineFallback` 也一并重算（`options/options-sync-mirror.js:27`）。点名句分 LocalOnly / AllowAi 两种说法，回退设置一变，句子必须跟着换。
+4. 自决：静态判定为端上不支持的目标，不再调 `availability()`（`options/options-builtin.js:47-57`）。
+5. 自决：PDF 任务元信息只在任务带 `targetLang` 时才写语言名（`options/options-pdf-tasks.js:217`）。「跟随」透传的任务没有这个字段。
+6. 偏差：`shared/ocr.js` 删掉了 `detectedLanguageLabelKey` 和 `OCR_LANGUAGES[].labelKey`。OCR 标签改由 `ctx.languageName` 现算（`content/content-image-ocr.js:50`），对应单测按新前提重写。
+7. 自决：加载态和错误文字标界面语言（`content/hover/render.js:38-39` `textLangOf`），不标目标语言；其余情况必须有 `textLang`，缺了就抛错。
+8. 自决：`renderManagedTranslation` 缺 `textLang` 时抛错（`content/content-managed-translation.js:173-174`）。
+9. 偏差：`buildBaseStyle` 签名改成 `(computedStyle, dir, omitColor)`（`content/hover/render.js:23`）。对齐要按译文方向算。
+10. 自决：选区内联译文用 `ctx.getEffectiveTargetLang()` 打标（`content/hover/selection.js:341`），不用未归一化的 `settings.targetLang`。
+11. 自决：字幕只在 `setOverlayContent` 处打标：原文行 `dir="auto"`（`content/captions/overlay.js:29`），译文行打有效目标语言（`:58`）。原文语言在字幕里拿不到可靠值，交给浏览器按首个强字符判定。
+12. 偏差：`ctx.revealSelectedLanguage`（`content/content-language.js:90`）只导出、没有接线。菜单打开的入口在禁改文件 `content/content-popup.js` 里。J-B8 因此也不断言滚动到已选项（见 15.2 第 8 条）。
+13. 自决：公式路径只打 `lang`/`dir`，不改对齐。
+14. 自决：「仅 AI」标记（`data-tag` 的 `::after`，`content/css/popup.css:391-394`）不做浅色主题覆盖，沿用继承色加透明度。
+15. 自决：无语音态透明度 0.45（`content/css/popup.css:457`）。以下两处都会清掉这个状态：`applyButtonState`（`content/content-speech.js:96`），以及按钮重新显示时（`:214`）。重试也从常态开始（`:135`）。
+16. 自决：`spokenLang` 为空、或语音列表为空时不做无语音判定，照旧朗读（`content/content-speech.js:147`）。有的平台首次拿到的列表是空的，意思是「还没枚举」，不是「没有语音」。
+17. 自决：`hasVoiceFor` 先用正则校验标签形状，再调 `Intl.getCanonicalLocales`（`shared/speech-lang.js:174-200`）。系统报来的畸形 voice.lang 不应让朗读抛错。
+18. 自决：运行时点名报错只在 `targetLang` 非空时写语言名（`content/content-translation-engine.js:501-515`）。环境不支持、创建失败这两类原因与语言无关，调用处不传。
+19. 偏差：`ctx.getTargetLangLabel` 保留（`content/content-language.js:31`）。禁改文件（`content/content-popup.js`、`content/content-selection.js`、`content/content-input-dialog.js`）还在调它；它现在转给 `ctx.languageName`，不再查表。
+20. 自决：`background/settings.js:18` 的 `languageNames` 由 `TargetLang.promptName` 生成，覆盖 76 门。
+21. 自决：删掉 `content/css/translation.css` 里 `.ai-translator-inline-right` 写死的 `margin-left: 4px`。改由插入方按原文方向写内联 `margin-${startSide}: 4px !important`（`content/page/insert.js:443`，`content/hover/render.js:83`、`:180`）。LTR 页几何不变（仍是左侧 4px），RTL 页改成右侧 4px、左侧 0。
+22. 自决：新增 `ctx.uiLanguage()`（`content/content-bootstrap.js:47`），`ctx.t` 与加载态打标共用这一处。
+23. 偏差：修了一个既有缺陷，文件是 `options/css/forms.css:300-305` 的 `.btn[hidden]{display:none}`。`.btn{display:inline-flex}` 压过了 UA 的 `[hidden]`，脚本把 `#downloadLanguagePack` 设为 hidden 后它仍在屏上。J-B2 要断言「fa 时隐藏」，必须先修。
+
+### 15.2 测试
+
+1. 偏差：`test/e2e/helpers.js:63`、`:68` 的 `PAGE_TRANSLATION_MODULES` 补上 `shared/target-lang.js` 和 `content/content-language.js`。这个文件不在任务书的 P1 允许列表里，也不在禁改列表里。直接注入整页翻译模块的 spec 缺了这两个文件，`markLanguage`/`startSide` 就不存在。
+2. 前提变更：五个 spec 共 10 处 `insertTranslationBlock` 调用补上 `textLang`，因为 `textLang` 现在是必传项。旧前提是可省略，新前提是缺了就抛。涉及的 spec 是 markup-preservation、page-translation-placement、table-translation、translation-only-mode、page-translation-restamp。restamp（`test/e2e/page-translation-restamp.spec.js:48-49`）取 `a.lang`，没有时取当前目标语言。
+3. 偏差、前提变更：`test/e2e/input-translation.spec.js:297` 不在 P1 允许列表（只列了 :254/:264）。旧前提是标签显示本名「Français」；新前提是 Intl 按界面语言算出的名字（en 界面下是「French」）；原因见 §2.5，菜单名一律用界面语言。:254/:264 同理改用 Intl 现算。
+4. 偏差：设计要 J-B11 带一个「en 界面 + zh-Hans 识别」的用例。en 界面下本地 OCR 只加载 eng，vision mock 固定回英文，所以做不到。现在的用例是 en 界面 + vision 引擎 + 识别为 en，断言 `Original · <Intl en 名>`（`test/e2e/image-ocr.spec.js:281`）。en 界面的来历：从 `baseSettings()` 里去掉 zh-CN，沿用 harness 的英文，因为 `test/unit/e2e-harness.test.mjs:151` 禁止 spec 重写 `uiLanguage: 'en'`。zh-Hans 的查名由既有的大字号中文用例覆盖（`:243`，原先写死「简体中文」，现改为 Intl 现算）。
+5. 自决：PDF 任务元信息的 Intl 名断言放在 `test/e2e/pdf-history-link.spec.js:88` 起的既有用例里：历史第 0 行 zh-Hans、第 1 行 en、进行中 ja。
+6. 偏差：J-B2 的 Translator 桩返回 `'downloadable'`，设计写的是 `'available'`（`test/e2e/target-languages.spec.js:117-122`）。只有 `'downloadable'` 会让下载按钮出现，「选 fa 后隐藏」才是一条真断言。
+7. 自决：J-B8 的页面由 `test/e2e/mock-server.js` 的 `startMockServer` 提供（`test/e2e/target-languages.spec.js:148`），spec 自己不起 http 服务。
+8. 偏差：J-B8 不断言「打开时滚动到已选项」，原因见 15.1 第 12 条。
+9. 自决：`test/e2e/rtl-fixtures.js:55-60` 让 `#p2` 带物理对齐（LTR 页 `left`、RTL 页 `right`）。没有它，「照抄原文对齐」的变异在 J-B3/J-B5 上不会变红。
+10. 自决：mock server 与 mock-openai-server 都没有加选项。J-B7 用的 `delayMs` 是现成的。
+11. 偏差：`content/content-input-chip.js:125` 的注释在允许范围 :120-124 之外一行。原注释拿瑞典语举「不在表上、会回落 en」的例子，sv 现在在 76 门里，改成 xh（科萨语）。`test/unit/input-chip.test.mjs:163-166` 同步改为 sv→sv、xh→en。
+12. 前提变更：`test/e2e/display-fixtures.js:24-30` 的第一段原文删掉「separate」一词（P0-C 夹具，不在 P1 允许列表也不在禁改列表）。旧前提：J-C1（`test/e2e/translation-styles.spec.js:160`）的 `[T] …` 译文在 quote 的起始边内距（3px 边框 + 0.6em）下仍是一行。新前提：译文带 `lang="zh-CN"`，Chrome 对 zh-Hans 的 sans-serif 用另一套字体，拉丁字母宽约 6%，第一段译文从 594.7px 变成 630.2px，超过 quote 下约 627px 的内容宽，折成两行，把 `#p2` 往下推 24px。原因：给译文打 lang 是本批的要求（J-B3/J-B4），这一行的余量是夹具数据问题，不是 quote 样式引起的回流。删词后是 560.2px，default/quote 都是一行；三个 display spec 12 条全绿。第三段在 quote 下是 620.9px，余量约 6.5px，没有改。
+
+### 15.3 文档
+
+1. 自决：README 中英两段的「Supported Languages」拆成「翻译目标 76 门（39 门端上 / 37 门仅 AI）」和「界面 10 种」两条。

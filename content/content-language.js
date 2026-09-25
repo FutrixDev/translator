@@ -50,6 +50,51 @@
     }).join('');
   };
 
+  // 我们放进页面的每一段文字都带上自己的 lang / dir：屏读按 lang 选语音、浏览器按
+  // lang 选字形，dir 决定标点和换行往哪边走。LTR 也明写 —— 译文常常挂在一个方向
+  // 相反的原文块里，靠继承就继承到了原文的方向。
+  ctx.markLanguage = function(el, code) {
+    el.lang = code;
+    el.dir = TargetLang.direction(code);
+  };
+
+  // 原文方向的起始边：LTR 是左，RTL 是右。缩进和行内译文的间隙都开在这一边。
+  ctx.startSide = function(style) {
+    return style.direction === 'rtl' ? 'right' : 'left';
+  };
+
+  // 译文照抄原文的对齐，只在两边方向一致时成立。方向相反时，除了居中和两端对齐，
+  // 一律靠译文自己的起始边：原文靠起始边时这是对的；原文靠结束边时（LTR 页里右对齐
+  // 的数字列），那个物理位置恰好就是异向译文的起始边。把 left/right 逻辑对调反而
+  // 会把那一列的阿拉伯语译文压到错的一边。
+  ctx.translationTextAlign = function(sourceStyle, dir) {
+    const align = sourceStyle.textAlign;
+    if (sourceStyle.direction === dir) return align;
+    if (align === 'center' || align === '-webkit-center') return 'center';
+    if (align === 'justify') return 'justify';
+    return 'start';
+  };
+
+  // 原文前面有图标之类的前置元素时，译文让出同样的缩进，和原文文字对齐。量和写都在
+  // 原文的起始边：缩进说的是「原文文字所在的那条带」，与译文的方向无关。
+  ctx.applyTextInset = function(translationEl, sourceEl, options) {
+    const px = ctx.getTextInset(sourceEl, options);
+    if (px > 0) {
+      const side = ctx.startSide(window.getComputedStyle(sourceEl));
+      translationEl.style.setProperty(`padding-${side}`, `${px}px`, 'important');
+    }
+  };
+
+  // 76 项的菜单打开时，已选项多半在视口外。只动菜单自己的 scrollTop，把它放到可见区
+  // 中部；不用 scrollIntoView，那会连宿主页面一起滚。
+  ctx.revealSelectedLanguage = function(menu) {
+    const item = menu.querySelector('.is-selected');
+    if (!item) return;
+    const menuTop = menu.getBoundingClientRect().top + menu.clientTop;
+    const itemRect = item.getBoundingClientRect();
+    menu.scrollTop += itemRect.top - menuTop - (menu.clientHeight - itemRect.height) / 2;
+  };
+
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里是转手，不是副本。
   // ctx.getLangBase 这个名字留着，是因为 content/page/batch.js 一族都按它取。
   ctx.getLangBase = globalThis.LangTags.getLangBase;

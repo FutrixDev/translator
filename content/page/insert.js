@@ -188,8 +188,10 @@
   //   flex 内联四种形态里，从译文往回找原文各有各的走法，所以由插入方传进来。
   // @param {number} sourceWidthBefore 插译文之前原文块的宽度。fit guard 的横向判据
   //   要「页面原本给这一块多少地方」，插完就量不到了，只能在插之前记下来传进去。
-  function finishTranslationInsert(element, translationEl, sourceWidthBefore, lang) {
+  // @param {string} textLang 译文实际是哪门语言（这一轮请求的目标），打进 lang / dir。
+  function finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang) {
     registerTranslation(element, translationEl, false, lang);
+    ctx.markLanguage(translationEl, textLang);
     keepTranslationVisible(translationEl);
     // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
     // 才是它真实的处境。反过来先量就会按「原文 + 译文」的高度白撤一批译文。
@@ -345,7 +347,11 @@
   // 插入翻译块
   // lang：见 registerTranslation —— 这一轮译成的是哪门语言，由调用方带进来；
   // 不带就是「没说」，这一块的身份里不记语言。
-  function insertTranslationBlock(block, translation, { lang = null } = {}) {
+  // textLang：译文文字本身的语言（请求的目标，从不为空），决定 lang / dir 和对齐。
+  // 它和 lang 不是一回事：lang 的空串是「跟随浏览器」这个身份，不是一门语言。
+  // 必传 —— 漏传是调用方的程序错误，猜一门语言写进 dir 只会把排版悄悄弄反。
+  function insertTranslationBlock(block, translation, { lang = null, textLang } = {}) {
+    if (!textLang) throw new Error('insertTranslationBlock: textLang is required');
     const element = block.element;
     if (!element || !element.parentNode) return;
 
@@ -377,7 +383,7 @@
       const handle = ctx.renderManagedTranslation(
         element,
         managedDebrisRe ? translation.replace(managedDebrisRe, '') : translation,
-        {}
+        { textLang }
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
       registerTranslation(element, handle, true, lang);
@@ -401,7 +407,7 @@
       font-family: ${computedStyle.fontFamily};
       font-weight: ${computedStyle.fontWeight};
       line-height: ${computedStyle.lineHeight};
-      text-align: ${computedStyle.textAlign};
+      text-align: ${ctx.translationTextAlign(computedStyle, TargetLang.direction(textLang))};
       color: ${computedStyle.color};
       letter-spacing: ${computedStyle.letterSpacing};
       opacity: 0.85;
@@ -432,10 +438,13 @@
         margin: 0;
         padding: 0;
       `;
+      // 和原文隔开 4px，开在原文方向的起始边：LTR 流里译文在原文右边，间隙在它左边；
+      // RTL 流里译文在原文左边，间隙在它右边。
+      translationEl.style.setProperty(`margin-${ctx.startSide(computedStyle)}`, '4px', 'important');
 
-      // 将翻译作为子元素追加到原元素内部（显示在原文右侧）
+      // 将翻译作为子元素追加到原元素内部（跟在原文后面）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
+      finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -506,13 +515,8 @@
           'margin-bottom', `${Math.round(Math.max(sourceMarginBottom, gap))}px`, 'important');
       }
 
-      // 计算原文文本相对于元素的偏移量（跳过 icon 等前置元素）
-      const textOffset = ctx.getTextOffsetLeft(element, { fromContentBox: placement.inside });
-
-      // 使用 setProperty 设置 padding-left，加 !important 防止被页面 CSS 覆盖
-      if (textOffset > 0) {
-        translationEl.style.setProperty('padding-left', `${textOffset}px`, 'important');
-      }
+      // 原文文字前面有 icon 等前置元素时，译文让出同样的缩进（写在原文的起始边）
+      ctx.applyTextInset(translationEl, element, { fromContentBox: placement.inside });
 
       // 检查元素是否有 slot 属性（Web Components 的内容分发机制）
       // 如果有 slot 属性，在元素旁边插入兄弟元素会破坏 Shadow DOM 的结构
@@ -535,16 +539,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        finishTranslationInsert(element, internalTranslation, sourceWidthBefore, lang);
+        finishTranslationInsert(element, internalTranslation, sourceWidthBefore, lang, textLang);
       } else if (placement.inside) {
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         element.appendChild(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang);
+        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
       }
     }
   }

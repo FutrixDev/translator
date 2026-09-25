@@ -46,8 +46,8 @@ test('AI engine: inline markup becomes paired markers and survives round-trip', 
     const plain = blocks.find((b) => b.element.id === 'plain');
 
     // Simulate a well-behaved model: markers preserved, text "translated".
-    ctx.insertTranslationBlock(rich, rich.text.replace('Please read', '[译]请阅读'));
-    ctx.insertTranslationBlock(plain, '[译]' + plain.text);
+    ctx.insertTranslationBlock(rich, rich.text.replace('Please read', '[译]请阅读'), { textLang: 'zh-CN' });
+    ctx.insertTranslationBlock(plain, '[译]' + plain.text, { textLang: 'zh-CN' });
 
     const translationEl = document.getElementById('rich').nextElementSibling;
     const a = translationEl.querySelector('a');
@@ -106,7 +106,7 @@ test('builtin engine: markers are generated too, and NMT-style casing rebuilds',
 
     // Exactly what Chrome's on-device translator returned for this shape:
     // the opening marker uppercased, the closing one left alone.
-    ctx.insertTranslationBlock(rich, '请仔细阅读<A1>文档</a1>，然后再<STRONG2>开始工作</strong2>。');
+    ctx.insertTranslationBlock(rich, '请仔细阅读<A1>文档</a1>，然后再<STRONG2>开始工作</strong2>。', { textLang: 'zh-CN' });
 
     const translationEl = document.getElementById('rich').nextElementSibling;
     const a = translationEl.querySelector('a');

@@ -114,8 +114,10 @@
     return insertionRange;
   }
 
+  // options.textLang：译文的语言（请求的目标），错误提示不带 —— 它按界面语言打标。
   function renderSelectionTranslation(block, translation, mathElements, selectionRange, options = {}) {
-    const { isError, selectionText } = options;
+    const { isError, selectionText, textLang } = options;
+    const markLang = hov.textLangOf(options);
     const blockText = hov.getBlockText(block).text;
     const range = resolveSelectionRange(selectionRange);
     const shouldInline = selectionText && !isFullBlockSelection(selectionText, blockText);
@@ -123,14 +125,14 @@
     // 受管容器里 insertNode 插进去的节点同样会被撤销，回到 renderInlineTranslation
     // 那条路，由它渲染成原文块的 ::after。
     if (hov.shouldUseManagedRendering(block) || !shouldInline || !isSelectionRangeInsideBlock(range, block)) {
-      return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
+      return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError, textLang });
     }
 
     const translationEl = document.createElement('span');
     translationEl.className = 'ai-translator-inline-block ai-translator-selection-translation';
 
     const computedStyle = window.getComputedStyle(block);
-    translationEl.style.cssText = hov.buildBaseStyle(computedStyle, isError) + `
+    translationEl.style.cssText = hov.buildBaseStyle(computedStyle, TargetLang.direction(markLang), isError) + `
       display: inline;
       margin: 0;
       padding: 0;
@@ -141,6 +143,7 @@
     translationEl.style.setProperty('margin-bottom', '0', 'important');
     translationEl.style.setProperty('padding', '0', 'important');
 
+    ctx.markLanguage(translationEl, markLang);
     if (isError) {
       translationEl.classList.add('ai-translator-error');
     }
@@ -156,12 +159,12 @@
     try {
       const insertionRange = resolveSafeInsertionRange(range, block);
       if (!insertionRange || !block.contains(insertionRange.startContainer)) {
-        return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
+        return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError, textLang });
       }
       insertionRange.insertNode(translationEl);
       return translationEl;
     } catch (error) {
-      return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError });
+      return hov.renderInlineTranslation(block, translation, mathElements, { kind: 'selection', isError, textLang });
     }
   }
 
@@ -181,7 +184,8 @@
     loadingEl.className = 'ai-translator-inline-block ai-translator-selection-translation';
 
     const computedStyle = window.getComputedStyle(block);
-    loadingEl.style.cssText = hov.buildBaseStyle(computedStyle) + `
+    const loadingLang = hov.textLangOf({ loading: true });
+    loadingEl.style.cssText = hov.buildBaseStyle(computedStyle, TargetLang.direction(loadingLang)) + `
       display: inline;
       margin: 0;
       padding: 0;
@@ -192,6 +196,7 @@
     loadingEl.style.setProperty('margin-bottom', '0', 'important');
     loadingEl.style.setProperty('padding', '0', 'important');
 
+    ctx.markLanguage(loadingEl, loadingLang);
     loadingEl.appendChild(document.createTextNode(' ('));
     const dots = hov.createLoadingDots();
     loadingEl.appendChild(dots);
@@ -228,7 +233,8 @@
     const cached = hov.getCachedTranslation(block, cacheKey);
     if (cached) {
       const render = () => renderSelectionTranslation(block, cached, mathElements, selectionRange, {
-        selectionText: safeText
+        selectionText: safeText,
+        textLang: targetLang
       });
       hov.trackInlineTranslation(block, render(), 'selection', render);
       state.selectionTranslationPending = false;
@@ -291,7 +297,8 @@
         'selection',
         requestId,
         () => renderSelectionTranslation(block, translation, mathElements, selectionRange, {
-          selectionText: safeText
+          selectionText: safeText,
+          textLang: targetLang
         }),
         () => {
           state.selectionTranslationPending = false;
@@ -329,8 +336,12 @@
 
     const extracted = hov.extractSelectionPlaceholders(text, selectionRange);
     hov.clearSelectionTranslation();
+    // 右键菜单那条路的译文由 service worker 译好推过来，消息里不带语言；它译成的就是
+    // 此刻的有效目标语言，所以按同一个答案打标。
+    const textLang = ctx.getEffectiveTargetLang();
     const render = () => renderSelectionTranslation(block, translation || '', extracted.mathElements, selectionRange, {
-      selectionText: extracted.text || text
+      selectionText: extracted.text || text,
+      textLang
     });
     hov.trackInlineTranslation(block, render(), 'selection', render);
   }

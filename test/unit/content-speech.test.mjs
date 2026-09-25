@@ -238,3 +238,114 @@ test('every string this feature added has a translation in all locales', () => {
     assert.deepEqual(missing, [], `${key} is missing from ${missing.join(', ')}`);
   }
 });
+
+// ==================== U-B10: a language no installed voice speaks ====================
+
+test('hasVoiceFor matches on the language, whatever the region or spelling', async () => {
+  await import('../../shared/speech-lang.js');
+  const { hasVoiceFor } = globalThis.SpeechLang;
+  const voices = ['nb-NO', 'he-IL', 'id-ID', 'fil-PH', 'en_GB', 'zh-TW', 'pt-PT'].map((lang) => ({ lang }));
+  const CASES = [
+    // Chrome reports Norwegian as nb-NO; our list says `no`.
+    ['no', true],
+    ['nb', true],
+    ['nn', true],
+    // Retired codes a platform can still hand back, folded by getCanonicalLocales.
+    ['iw', true],
+    ['in', true],
+    ['tl', true],
+    ['en', true],
+    ['en-US', true],
+    ['zh-CN', true],
+    ['pt-BR', true],
+    ['fa', false],
+    ['ar', false],
+    ['', false],
+    ['not a tag', false],
+  ];
+  for (const [lang, expected] of CASES) {
+    assert.equal(hasVoiceFor(lang, voices), expected, `hasVoiceFor('${lang}')`);
+  }
+  // A voice whose tag cannot be parsed speaks no language, and does not throw.
+  assert.equal(hasVoiceFor('en', [{ lang: '' }, { lang: '??' }]), false);
+  assert.equal(hasVoiceFor('en', []), false);
+});
+
+function fakeButton(label) {
+  const classes = new Set();
+  const attrs = { 'aria-label': label };
+  const listeners = {};
+  return {
+    classList: {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
+      contains: (name) => classes.has(name),
+    },
+    dataset: {},
+    title: label,
+    hidden: false,
+    getAttribute: (name) => attrs[name] ?? null,
+    setAttribute: (name, value) => { attrs[name] = value; },
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    click() { listeners.click({ preventDefault() {}, stopPropagation() {} }); },
+  };
+}
+
+// content/content-speech.js in a fake window: a speech engine that records what it
+// was asked to say, over whatever voice list the test hands it.
+function loadSpeech(voiceList) {
+  const T = messageCatalog().en;
+  const spoken = [];
+  const synth = {
+    voices: voiceList,
+    getVoices() { return this.voices; },
+    speak: (utterance) => spoken.push(utterance),
+    cancel() {},
+    addEventListener() {},
+  };
+  class Utterance { constructor(text) { this.text = text; } }
+  const ctx = { t: (key) => T[key] };
+  const win = { AI_TRANSLATOR_CONTENT: ctx, speechSynthesis: synth, SpeechSynthesisUtterance: Utterance };
+  new Function('window', 'chrome', 'SpeechSynthesisUtterance', 'globalThis', repoFile(OWNER))(
+    win, undefined, Utterance, { SpeechLang: globalThis.SpeechLang });
+  return { speech: ctx.speech, spoken, synth, T };
+}
+
+test('a language no installed voice speaks puts the button in the no-voice state, and a later success clears it', async () => {
+  const { speech, spoken, synth, T } = loadSpeech([{ lang: 'en-US', name: 'Samantha' }]);
+  const button = fakeButton('Read aloud');
+  const setVisible = speech.bindSpeakButton(button, () => ({ text: 'سلام دنیا', lang: 'fa' }));
+
+  const started = await speech.speakText('سلام دنیا', { lang: 'fa', button });
+  assert.equal(started, false, 'speakText must refuse, not hand the text to the default voice');
+  assert.equal(spoken.length, 0);
+  assert.ok(button.classList.contains('is-no-voice'));
+  assert.equal(button.title, T.speechNoVoice);
+  assert.equal(button.getAttribute('aria-label'), T.speechNoVoice);
+
+  // New text on the same button: the verdict was about the old text.
+  setVisible(true);
+  assert.equal(button.classList.contains('is-no-voice'), false);
+  assert.equal(button.title, 'Read aloud');
+
+  // And a language that has a voice speaks, from a button left in the no-voice state.
+  await speech.speakText('سلام دنیا', { lang: 'fa', button });
+  assert.ok(button.classList.contains('is-no-voice'));
+  synth.voices = [{ lang: 'en-US', name: 'Samantha' }, { lang: 'fa-IR', name: 'Dariush' }];
+  assert.equal(await speech.speakText('سلام دنیا', { lang: 'fa', button }), true);
+  assert.equal(spoken.length, 1);
+  assert.equal(button.classList.contains('is-no-voice'), false);
+  assert.equal(button.getAttribute('aria-label'), T.stopPronunciation);
+});
+
+test('an empty voice list keeps the old behaviour: speak, and let the engine choose', async () => {
+  // Some platforms enumerate voices asynchronously; empty there means "not yet".
+  const { speech, spoken } = loadSpeech([]);
+  const button = fakeButton('Read aloud');
+  speech.bindSpeakButton(button, () => ({}));
+  assert.equal(await speech.speakText('سلام دنیا', { lang: 'fa', button }), true);
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].lang, 'fa');
+  assert.equal(button.classList.contains('is-no-voice'), false);
+});

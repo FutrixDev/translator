@@ -235,12 +235,13 @@ button.ai-translator-inline-block {
   clip: rect(0, 0, 0, 0) !important;
 }
 
-/* 水平 flex 布局中的内嵌翻译（如顶部导航） - 显示在原文右侧 */
+/* 水平 flex 布局中的内嵌翻译（如顶部导航） - 跟在原文后面。
+   和原文之间那 4px 不写在这里：它开在原文方向的起始边（LTR 页在左、RTL 页在右），
+   只有插入方看得到原文的 direction，由它写成内联 margin-left / margin-right。 */
 .ai-translator-inline-right {
   display: inline !important;
   font-size: 0.85em !important;
   opacity: 0.7 !important;
-  margin-left: 4px !important;
 }
 
 /* 内嵌翻译中的数学公式也需要正确显示 */

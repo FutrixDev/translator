@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### 76 target languages and right-to-left layout
+
+- **76 target languages instead of 10.** The list is Chrome's own interface
+  languages, which include all 39 that Chrome's built-in Translator can
+  translate on-device; the other 37 go through your AI service. There is one
+  list in the extension, `TargetLang.SUPPORTED` in `shared/target-lang.js`.
+- **Language names are in your interface language** and sorted the way that
+  language sorts, computed by `Intl.DisplayNames` rather than written out: an
+  English interface says "Japanese", not "日本語". The interface-language picker
+  still names each language in itself. Comic and PDF translation keep their 10
+  languages, named the same way.
+- **A language the built-in engine cannot translate into is named, not
+  swallowed.** The settings page says so for the chosen target, in the sentence
+  your fallback setting calls for, and hides the language-pack download button.
+  The in-page language menus tag such languages "AI only". A page that asks the
+  built-in engine for one, with AI fallback off, fails with an error that names
+  the language; nothing falls back to AI or to English on its own.
+- **Every translation on a page carries its own `lang` and `dir`.** A
+  translation into Arabic, Hebrew, Persian or Urdu is laid out right-to-left and
+  aligned to its own start edge when the page runs the other way; a
+  right-to-left page translated into English is laid out left-to-right. The
+  indent next to a leading icon and the 4px gap beside a translated nav link
+  stay on the source's start side. Loading and error text is marked with the
+  interface language.
+- **Read-aloud says when this device has no voice for the language**, instead of
+  staying silent: the button shows a no-voice state.
+- **Compatibility.** Stored values do not change: `targetLang` still holds a
+  code, `zh-CN` / `zh-TW` keep their names, and `''` still means "follow the
+  browser". Every code an older version could store is still in the list. What
+  changes is "follow the browser": a browser language outside the old ten used
+  to be translated into English and is now followed. For the 37 AI-only
+  languages under the default setup (built-in engine, AI fallback off) that
+  means a named error in place of an English translation, telling you to switch
+  the engine to AI, allow AI fallback, or pick another target. Cached
+  translations are keyed by request language, so none is reused for the new
+  one.
+
 ### Local models without an API key
 
 - **Ollama, LM Studio and other local model servers work with the API Key box

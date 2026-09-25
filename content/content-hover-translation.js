@@ -159,7 +159,7 @@
     const cacheKey = hov.buildCacheKey(text, targetLang);
     const cached = hov.getCachedTranslation(block, cacheKey);
     if (cached) {
-      const render = () => hov.renderInlineTranslation(block, cached, mathElements, { kind: 'hover' });
+      const render = () => hov.renderInlineTranslation(block, cached, mathElements, { kind: 'hover', textLang: targetLang });
       hov.trackInlineTranslation(block, render(), 'hover', render);
       return;
     }
@@ -207,7 +207,7 @@
         block,
         'hover',
         requestId,
-        () => hov.renderInlineTranslation(block, translation, mathElements, { kind: 'hover' })
+        () => hov.renderInlineTranslation(block, translation, mathElements, { kind: 'hover', textLang: targetLang })
       );
     } catch (error) {
       if (hov.hoverRequestIds.get(block) !== requestId) return;

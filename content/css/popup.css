@@ -377,7 +377,7 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item {
   width: 100%;
-  text-align: left;
+  text-align: start;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -385,6 +385,17 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   padding: 8px 10px;
   border-radius: 10px;
   cursor: pointer;
+}
+
+/* 手动引擎是内置时，端上译不了的语言带一个「仅 AI」标记（ctx.buildTargetLangMenu 写进
+   data-tag）。只能由这里画：选中时 content-popup.js 把 item.textContent 当标签文字。
+   颜色走 --text-muted，两种主题在两个面板根上各自定义了它，所以不需要浅色覆盖。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item[data-tag]::after {
+  content: attr(data-tag);
+  float: inline-end;
+  margin-inline-start: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item:hover {
@@ -439,6 +450,12 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn.is-speaking {
   background: var(--icon-hover-bg);
   border-color: var(--icon-hover-border);
+}
+
+/* No installed voice speaks this language (content-speech.js): the button stays
+   clickable, so a retry after a voice is installed works, but reads as off. */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-icon-btn.is-no-voice {
+  opacity: 0.45;
 }
 
 .ai-translator-icon-btn.is-speaking svg {

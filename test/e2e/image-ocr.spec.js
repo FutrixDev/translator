@@ -114,6 +114,12 @@ async function drawTextImage(page, text) {
   }, text);
 }
 
+// A language's name as Intl gives it in a UI language, worked out in the
+// browser: the expectation must not come from the implementation under test.
+function intlLanguageName(page, uiLang, code) {
+  return page.evaluate(([ui, tag]) => new Intl.DisplayNames([ui], { type: 'language' }).of(tag), [uiLang, code]);
+}
+
 // The OCR round trip crosses the service worker twice (image fetch, then either
 // the offscreen engine or a vision call); on a loaded machine the worker can
 // wait tens of seconds for CPU, and the local engine also pays a one-off ~2s to
@@ -161,10 +167,10 @@ test.describe('image OCR', () => {
     await expect(popup).toBeVisible({ timeout: 30000 });
     // Waits out engine start plus recognition.
     await expect(popup.locator('.ai-translator-text')).toContainText('EXIT', { timeout: 90000 });
-    // Latin script, so the label names the language the heuristic settled on.
-    // Language names are endonyms everywhere in the extension, so this one stays
-    // "English" even though the surrounding UI is in Chinese.
-    await expect(popup.locator('.ai-translator-label').first()).toContainText('原文 · English');
+    // Latin script, so the label names the language the heuristic settled on —
+    // in the UI language, like every language name the extension shows.
+    await expect(popup.locator('.ai-translator-label').first())
+      .toContainText(`原文 · ${await intlLanguageName(page, 'zh-CN', 'en')}`);
     // Step 2 ran, as an ordinary text translation — the mock's echo protocol,
     // not a vision reply.
     await expect(popup.locator('.ai-translator-translation-text')).toContainText('[T]', { timeout: 60000 });
@@ -216,7 +222,8 @@ test.describe('image OCR', () => {
     await expect(text).not.toContainText(/[A-Za-z]{3,}/);
     // And the language followed the text: Han codepoints plus the chi_sim
     // hint, not the English the garbage used to be labelled as.
-    await expect(popup.locator('.ai-translator-label').first()).toContainText('简体中文');
+    await expect(popup.locator('.ai-translator-label').first())
+      .toContainText(await intlLanguageName(page, 'zh-CN', 'zh-Hans'));
     expect(mock.visionRequests).toHaveLength(0);
   });
 
@@ -234,7 +241,8 @@ test.describe('image OCR', () => {
     const popup = page.locator('.ai-translator-popup');
     await expect(popup).toBeVisible({ timeout: 30000 });
     await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
-    await expect(popup.locator('.ai-translator-label').first()).toContainText('原文 · English');
+    await expect(popup.locator('.ai-translator-label').first())
+      .toContainText(`原文 · ${await intlLanguageName(page, 'zh-CN', 'en')}`);
     await expect(popup.locator('.ai-translator-translation-text')).toContainText('[T] HELLO WORLD');
     await expect(popup.locator('.ai-translator-speak-source')).toBeVisible();
     await expect(popup.locator('.ai-translator-copy')).toBeVisible();
@@ -248,6 +256,29 @@ test.describe('image OCR', () => {
     // And the translation was a second, image-free request — which is what lets
     // a free translator serve the vision path too.
     expect(mock.sentTexts).toContain('HELLO WORLD');
+  });
+
+  // J-B11: the same label in an English UI. The vision engine, because in an
+  // English UI the local engine loads only eng; the mock's vision reply is
+  // English. The oversized-Chinese case above covers the zh-Hans lookup.
+  test('the source label names the recognised language in the UI language', async ({ page }) => {
+    // Without baseSettings' zh-CN the harness's English UI applies.
+    const { uiLanguage: _zhUi, ...settings } = baseSettings();
+    await setExtensionSettings(page, { ...settings, ocrEngine: 'vision' });
+    await page.goto(`${pageServer.origin}/`);
+    await page.waitForSelector('#sign');
+
+    await sendMessageToActiveTab(page, {
+      type: 'OCR_TRANSLATE_IMAGE',
+      srcUrl: `${pageServer.origin}/sign.png`,
+      targetLang: 'zh-CN',
+      translate: false,
+    });
+
+    const popup = page.locator('.ai-translator-popup');
+    await expect(popup.locator('.ai-translator-text')).toContainText('HELLO WORLD', { timeout: 60000 });
+    await expect(popup.locator('.ai-translator-label').first())
+      .toContainText(`Original · ${await intlLanguageName(page, 'en', 'en')}`);
   });
 
   test('with the translate step off, the popup stops at the recognised text', async ({ page }) => {
