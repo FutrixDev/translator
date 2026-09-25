@@ -42,7 +42,8 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - Translations appear below original text, preserving layout
 - Inherits original styling (font, color, size)
 - Toggle show/hide translations
-- High-performance batch translation (100 items/batch, 8 concurrent)
+- Batched translation: at most 40 paragraphs or 9,000 characters per batch,
+  4 batches at a time on the built-in engine and 12 on an AI service
 
 #### Translation Styles and Display
 - Six looks for page translations: Default, Underline, Dashed box, Highlight,
@@ -92,7 +93,7 @@ An AI-powered Chrome browser translation extension that supports selection trans
 #### 1. Download
 
 ```bash
-git clone https://github.com/wangqianqianjun/translator.git
+git clone https://github.com/FutrixDev/translator.git
 cd translator
 ```
 
@@ -190,6 +191,46 @@ signed-in account.
 Web PDFs (an open PDF tab, or a link to one) can also be translated from the
 popup's **Translate This PDF** and the right-click menu; that path takes PDFs
 only.
+
+#### First Run
+
+Installing the extension opens a welcome page (only on a fresh install, never on
+an update). Every choice on it is saved the moment you make it:
+
+1. **Offline translation** shows whether Chrome's on-device language pack for
+   your target language is ready. If it can be downloaded, a download button
+   appears; nothing is downloaded until you press it.
+2. **Translate into** picks the target language.
+3. **Translation engine**: keep **Built-in (recommended)**, or choose **Set up
+   AI** and then where the model runs: **Ollama** or **LM Studio** on this
+   computer (the connection is filled in for you), or **Cloud API**. Each opens
+   Settings at the connection card so you can pick a model and test it.
+4. **Keyboard shortcuts** lists the extension's commands and their keys. Change
+   them at `chrome://extensions/shortcuts`.
+
+**Open Full Settings** and **Done** are at the bottom of the page.
+
+#### Import and Export Settings
+
+The **Import & Export** card is the last card on the Settings page.
+
+- **Export Settings** saves `blab-settings-YYYYMMDD.json` with your settings
+  and site rules. Your API key is left out unless you tick **Include my API
+  key**. Caches, usage statistics, your account sign-in, per-site prompt
+  counters and panel positions stay on this device.
+- **Import Settings…** reads such a file and shows what it would change before
+  anything is written: which settings change, which are skipped (unknown or
+  invalid), how many site rules are merged in, and any part of the file this
+  version does not recognise. Press **Import** to apply it or **Cancel** to
+  leave everything as it is. Settings are merged over yours; site rules are
+  merged into your list, the file winning for a site in both.
+- The preview warns when importing would let AI translate without a click
+  (for example, turning the automatic engine to AI), and when the file points
+  the API endpoint somewhere new while your saved key stays.
+- A file that is not JSON, not a Blab Translation settings file, from another
+  file version, damaged in any part, over 1 MB, or that would give selection
+  and hover translation the same hotkey is refused as a whole, and nothing is
+  written.
 
 ### ⚙️ Supported APIs
 
@@ -318,7 +359,7 @@ MIT License
 - 译文显示在原文下方，保持原网页布局
 - 继承原文样式（字体、颜色、大小）
 - 支持显示/隐藏译文切换
-- 高性能批量翻译（100条/批，8并发）
+- 批量翻译：每批最多 40 段、9000 字符；内置引擎同时跑 4 批，AI 服务 12 批
 
 #### 译文样式与显示
 - 网页译文有六种样式：默认、下划线、虚线框、高亮、引用竖线、模糊（悬停显示；悬停、聚焦或轻点模糊的译文即可看清）。切换立即生效，不会重新翻译
@@ -359,7 +400,7 @@ MIT License
 #### 1. 下载插件
 
 ```bash
-git clone https://github.com/wangqianqianjun/translator.git
+git clone https://github.com/FutrixDev/translator.git
 cd translator
 ```
 
@@ -447,6 +488,26 @@ cd translator
 
 网页上的 PDF（打开着的 PDF 标签页，或指向 PDF 的链接）也可以从弹窗的「翻译此 PDF」
 和右键菜单翻译；这条路只接 PDF。
+
+#### 首次安装
+
+装好扩展会打开一个欢迎页（只在全新安装时打开，更新不会）。页面上的每个选择都会立即保存：
+
+1. **离线翻译**：显示 Chrome 端上翻译所需的目标语言语言包是否就绪。可以下载时会出现下载按钮，不点就不会下载。
+2. **翻译成**：选择目标语言。
+3. **翻译引擎**：保留 **内置（推荐）**，或选 **配置 AI** 再选模型在哪里运行：本机的 **Ollama** 或 **LM Studio**（连接会替你填好），或 **云端 API**。三者都会打开设置页并定位到连接卡片，在那里选模型、测试连接。
+4. **快捷键**：列出扩展的命令和对应按键，在 `chrome://extensions/shortcuts` 修改。
+
+页面底部是 **打开完整设置** 和 **完成**。
+
+#### 导入与导出设置
+
+设置页最后一张卡片是 **导入与导出**。
+
+- **导出设置**：保存为 `blab-settings-YYYYMMDD.json`，包含设置和站点规则。API 密钥默认不导出，勾选 **包含我的 API 密钥** 才会写进文件。缓存、使用统计、账号登录、各站点的询问计数和面板位置只留在这台设备上。
+- **导入设置…**：读取这样的文件，写入之前先列出会发生什么：哪些设置会改变、哪些被跳过（不认识或取值不合法）、多少条站点规则会并入、文件里有哪些部分此版本不认识。点 **确认导入** 才写入，点 **取消** 一切不变。设置按项合并到你现有的设置上；站点规则并入你的列表，同一站点以文件为准。
+- 导入后 AI 会在无人点击时翻译（例如自动翻译引擎改成 AI），或文件把 API 接口地址改到别处而你已保存的密钥会发往那里时，预览里会给出提示。
+- 文件不是 JSON、不是 Blab Translation 的设置文件、来自另一个文件版本、任何一部分损坏、超过 1 MB，或会让划词翻译和悬停翻译用同一个快捷键时，整个文件被拒绝，什么都不会写入。
 
 ### ⚙️ 支持的 API
 

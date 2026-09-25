@@ -63,7 +63,8 @@ file directly.
 2. **Content Script** (`content/*.js` + the sub-families below)
    - Injected into all webpages for DOM interaction
    - Text extraction with code/math detection, batch translation with
-     concurrency control (8 workers, max 2500 chars or 25 items per batch) —
+     concurrency control (at most 40 items or 9000 chars per batch; 4 batches
+     at a time on the built-in engine, 12 on AI — `content/page/batch.js`) —
      `content/page/*.js` (collect, insert, batch, visibility, progress,
      site-adapter) behind the entry `content-page-translation.js`
    - UI components: selection button, float ball, translation popup, progress bar

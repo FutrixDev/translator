@@ -430,4 +430,42 @@ const TRANSFER_SECTIONS = [
 
 ## 15. 实现偏差（实现时登记）
 
-（实现完成后补）
+**界面与行为**
+
+1. **卡片位置（§4.6）。** 导入导出卡片放在「自定义提示词」卡片之后，是设置页的最后一张卡片。原计划是放在「高级设置」之后，但那张卡片后面还有提示词卡片，放在最后更容易找到。
+2. **提示区（§4.6）。** 预览区多了一个 `#transferWarnings` 容器，每条提示是一个 `p.transfer-warning`。AI 提示放在里面，下面第 3 条的密钥提示也放在里面。
+3. **校验比 §4.4 严（§4.4）。**
+   - 新增一条提示 `transferEndpointKeyWarning`：文件改了 `apiEndpoint`、文件里没有 apiKey、本地又存着密钥时出现，因为这时已存的密钥会发往新地址。
+   - 文件超过 1 MB 直接拒绝（`transferErrorTooLarge`）。
+   - 颜色键校验 hex，URL 键校验 http(s)，数值键校验范围。
+4. **引导页的写入（§2.3）。** 选 Ollama / LM Studio 时，引导页同时写入 `modelName`。取值是预设的 `defaultModel`；LM Studio 没有默认模型，写 `''`。这样设置页的模型框不会残留上一个云端模型的名字。
+5. **状态探测失败（§3.1）。** `availability()` 抛错时，状态行显示 `builtinUnavailable`，不显示下载按钮。
+
+**接口与工具**
+
+6. **广播签名（§3.2）。** `TabBroadcast.languagePackReady(sourceLang, targetLang)` 由调用方传入源语言，不在广播模块里写死 `'en'`。`LanguagePack.download` 传入 `PROBE_SOURCE`。
+7. **新增 `APICompat.carriesApiKey(apiKey)`。** 导出页需要判断「本地有没有存密钥」，而 `api-key-rule.test.mjs` 禁止调用方自己对 apiKey 做真值判断。所以这个判断收进 api-compat。`openAIHeaders` / `claudeHeaders` / `isApiKeyMissing` 也改用它，全仓只剩这一个答案。
+8. **测试放置（§10.1）。**
+   - install 和 language-pack 的单测合并在 `test/unit/onboarding.test.mjs`。
+   - `applyImportedRules` / `importUserRules` 的单测在 `test/unit/settings-transfer.test.mjs`。
+   - `site-rules.test.mjs` 没有动，它属于 P1 地盘，只允许追加，放在导入这一侧更少碰撞。
+9. **e2e 钩子。** 引导页初始化完成后设 `document.documentElement.dataset.ready = 'true'`，e2e 等这个值，不靠固定延时。
+
+**对比度修正**
+
+10. **对比度实测不达标，已修（§10.2）。**
+    - 引导页暗色 `--accent-primary` 从 `#7c5cff` 改为 `#6a48f0`：白字对比度 4.35 → 5.53。
+    - 设置页 `.btn-primary` 改用新变量 `--accent-fill`（`#6a48f0 → #3a66d9`）。原渐变的浅端 `#5c8cff` 上白字只有 3.16:1。
+    - `--accent-gradient` 保持不变，因为页头标题用它做暗底上的渐变字。
+    - 这会改变设置页所有主按钮的颜色。popup 有自己的一套变量，本批没有动。
+
+**e2e 实现**
+
+11. **e2e fixture（§10.2）。** 按设计实现 `keepOnboarding`，另加两点：
+    - 等不到引导页（10 s）直接抛错，不静默跳过；
+    - 共用的几何/对比度检查抽成 `test/e2e/layout-checks.js`。它会先等页面上有限时长的动画和过渡结束（设置页切到亮色主题时，卡片颜色有过渡动画），并把渐变的每个色标都当作可能的背景，取最低对比度。
+12. **旅程细节（§10.2）。**
+    - J-F6 用 `translationEngine → ai` 触发 AI 提示（手动引擎为 AI 时，字幕路径就会无人值守地花钱），反例有两个：不改引擎的文件，以及 `engineFallback: 'allow-ai'` 下的同一份 AI 文件（路径本来就开着）。
+    - J-F7 没有先清空规则，而是换成另一份含冲突站点的列表，这样同时验证了合并和「文件优先」。
+    - J-F8 在设计的三类坏文件之外，还加了：版本不对、某一部分损坏（`settings` 合法、`siteRules` 是数组）、热键冲突。
+    - J-F5 / J-F7 在亮色主题下测，J-F1 亮暗两套都测，J-F3 / J-F6 / J-F8 在暗色下测。
