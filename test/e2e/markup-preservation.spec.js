@@ -203,3 +203,62 @@ test('a model that mangles or drops markers degrades to plain text', async ({ pa
   expect(result.unclosedLinks).toBe(1);
   expect(result.unclosedLinkText).toBe('文档');
 });
+
+test('a marker whose number the model fused is scrubbed, the page\'s own <b2> is not', async ({ page }) => {
+  // Reddit's feed-card header carried eleven class-bearing spans, so its markers
+  // ran span1…span11, and the builtin engine wrote <span11> back as <span1111>.
+  // An exact-match scrub cannot see that: no marker 1111 was ever handed out.
+  // Every digit of it splits into issued numbers (11 + 11), so it is debris of
+  // ours; <b2> is not — no <b> marker was issued — and stays as page prose.
+  const words = Array.from({ length: 11 }, (_, i) => `<span class="w">word${i + 1}</span>`).join(' ');
+  await page.setContent(`<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <p id="many">${words} and then the sentence finally ends.</p>
+  </body></html>`, { waitUntil: 'load' });
+  for (const s of SCRIPTS) await page.addScriptTag({ path: s });
+
+  const result = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const block = ctx.collectTranslatableBlocks(document.body).find((b) => b.element.id === 'many');
+    const out = document.createElement('div');
+    ctx.buildTranslationContent(out, '帖子<span1111>报告</span1111>，HTML 里 <b2> 是粗体。', block);
+    return {
+      issued: block.markupElements.map((mk) => `${mk.tag}${mk.index}`),
+      text: out.textContent,
+    };
+  });
+
+  expect(result.issued).toContain('span11');
+  expect(result.issued).not.toContain('span1111');
+  expect(result.text).toBe('帖子报告，HTML 里 <b2> 是粗体。');
+});
+
+test('a site-excluded element is a placeholder only when page collection asks for it', async ({ page }) => {
+  // Page collection passes the site rule's exclude selector, so a timestamp
+  // inside a collected block goes out as {{n}} and is cloned back untouched.
+  // Hover and selection call the same reader without it: that is text the user
+  // picked, and a site rule does not choose which words of it stay English.
+  await page.setContent(`<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <p id="edited">Edited <time datetime="2026-09-25">4 hr. ago</time> to fix a typo.</p>
+  </body></html>`, { waitUntil: 'load' });
+  for (const s of SCRIPTS) await page.addScriptTag({ path: s });
+
+  const result = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    // This page has a rule excluding <time>; the reader must still not look it up.
+    ctx.resolveSiteAdapter = () => ({ atomic: '', exclude: 'time' });
+    const el = document.getElementById('edited');
+    const collected = ctx.getTextWithMathPlaceholders(el, { exclude: 'time' });
+    const picked = ctx.getTextWithMathPlaceholders(el);
+    return {
+      collectedText: collected.text,
+      collectedTags: collected.mathElements.map((m) => m.element && m.element.localName),
+      pickedText: picked.text,
+      pickedCount: picked.mathElements.length,
+    };
+  });
+
+  expect(result.collectedText).toMatch(/^Edited \{\{\d+\}\} to fix a typo\.$/);
+  expect(result.collectedTags).toEqual(['time']);
+  expect(result.pickedText).toBe('Edited 4 hr. ago to fix a typo.');
+  expect(result.pickedCount).toBe(0);
+});

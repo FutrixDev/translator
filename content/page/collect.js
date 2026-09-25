@@ -68,6 +68,9 @@
     const adapter = ctx.resolveSiteAdapter ? ctx.resolveSiteAdapter() : null;
     const atomicSelector = (adapter && adapter.atomic) || '';
     const excludeSelector = (adapter && adapter.exclude) || '';
+    // 读块文本时，块里含着的排除元素变占位符（getTextWithMathPlaceholders 的 exclude）。
+    const readMarked = { preserveMarkup: true, exclude: excludeSelector };
+    const readPlain = { exclude: excludeSelector };
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
@@ -422,7 +425,7 @@
 
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
-        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup: true });
+        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
         // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
         const plainText = stripPlaceholders(text).trim();
         if (text && plainText.length >= 2 && plainText.length <= 500) {
@@ -445,7 +448,7 @@
 
       // 对于块级元素
       if (atomic || blockTags.includes(tagName) || hasDirectText) {
-        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, { preserveMarkup: true });
+        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
           const textWithoutMath = stripPlaceholders(text).trim();
@@ -477,7 +480,7 @@
           // 超长块回退成纯文本提取：splitTextIntoChunks 只认得 {{n}} 占位符，
           // 会把成对的内联标记从中间切开、拆进不同请求，重建必然错乱。
           if (text.length > MAX_BLOCK_CHARS && markupElements && markupElements.length > 0) {
-            const plain = getTextWithMathPlaceholders(element);
+            const plain = getTextWithMathPlaceholders(element, readPlain);
             text = plain.text;
             mathElements = plain.mathElements;
             markupElements = [];
@@ -627,6 +630,9 @@
     const mathElements = [];
     const markupElements = [];
     let mathIndex = 0;
+    // 站点规则的排除选择器，只有整页收集传（见 collectTranslatableBlocks）。悬停和
+    // 划词是用户点名要翻的那一段，站点规则不替用户挑哪几个字不翻。
+    const excludeSelector = (options && options.exclude) || '';
 
     // 跳过的隐藏类名
     const hiddenClasses = [
@@ -674,6 +680,10 @@
     }
 
     function processNode(node) {
+      // 分进一个藏起来的 slot 里的节点没有渲染，读者看不见（见 ctx.inHiddenSlot）。
+      // 下面逐节点的 display:none 判断查不到它：节点自己的 display 是正常的，藏
+      // 起来的是 slot 在 shadow 树里的祖先。
+      if (ctx.inHiddenSlot(node)) return;
       if (node.nodeType === Node.TEXT_NODE) {
         let content = node.textContent;
         if (content) {
@@ -707,8 +717,13 @@
           return;
         }
 
-        // 行内的 notranslate（产品名、人名）：整个元素当占位符，插入时原样克隆回去
-        if (ctx.ownTranslateDeclaration(node) === 'no') {
+        // 行内的 notranslate（产品名、人名）：整个元素当占位符，插入时原样克隆回去。
+        // 整页收集时，站点规则排除的元素（作者名、时间戳）是站点级的 notranslate，
+        // 照同一条路走：收集器的排除只挡住「块就是它或在它里面」，挡不住「块里含着它」——
+        // Reddit 卡片头一整行被收成一块时，里面的 <faceplate-timeago> 就这样被
+        // 翻成了「4 小时。 过去」。
+        if (ctx.ownTranslateDeclaration(node) === 'no' ||
+            (excludeSelector && node.matches(excludeSelector))) {
           text += addMathPlaceholder({ type: 'element', element: node });
           return;
         }
