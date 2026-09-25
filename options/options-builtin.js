@@ -44,6 +44,18 @@ async function refreshBuiltinStatus() {
   }
 
   const targetLang = elements.targetLang.value;
+  if (!engine.supportsLang(engine.toApiLang(targetLang))) {
+    // 端上根本没有这门语言（「仅 AI」那 37 门）：答案我们已经知道，不交给
+    // availability() —— 它对这类语言在不同 Chrome 上答法不一，还只能换来一句
+    // 含糊的「这一对不支持」。按回退设置点名说清楚会发生什么，下载按钮保持隐藏。
+    const key = elements.engineFallback.value === 'allow-ai'
+      ? 'builtinTargetUnsupportedAllowAi'
+      : 'builtinTargetUnsupportedLocalOnly';
+    elements.builtinStatus.textContent = t(key)
+      .replace('{lang}', TargetLang.nameOf(targetLang, currentUILang, { inSentence: true }));
+    return;
+  }
+
   if (engine.toApiLang(targetLang) === BUILTIN_PROBE_SOURCE) {
     // 目标语言就是英语，探测 en→en 没有意义。
     elements.builtinStatus.textContent = t('builtinReady');
@@ -69,6 +81,10 @@ async function refreshBuiltinStatus() {
       elements.builtinStatus.textContent = t('builtinUnsupportedPair');
   }
 }
+
+// 静态判定的两种说法由回退设置决定，所以它一变也要重画。options.html 把本文件
+// 放在 body 末尾，加载时这个控件已经在 DOM 里了。
+document.getElementById('engineFallback').addEventListener('change', () => refreshBuiltinStatus());
 
 async function downloadLanguagePack() {
   const engine = getBuiltinEngine();

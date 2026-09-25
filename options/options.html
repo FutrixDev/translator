@@ -230,15 +230,15 @@
             <div class="form-group">
               <label data-i18n="autoTranslateLangsLabel">Only these languages</label>
               <div class="lang-chips" id="autoTranslateLangs">
-                <label class="lang-chip"><input type="checkbox" data-lang="zh"><span data-i18n="langZh"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="en"><span data-i18n="langEn"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ja"><span data-i18n="langJa"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ko"><span data-i18n="langKo"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="fr"><span data-i18n="langFr"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="de"><span data-i18n="langDe"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="es"><span data-i18n="langEs"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="pt"><span data-i18n="langPt"></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ru"><span data-i18n="langRu"></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="zh"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="en"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ja"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ko"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="fr"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="de"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="es"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="pt"><span></span></label>
+                <label class="lang-chip"><input type="checkbox" data-lang="ru"><span></span></label>
               </div>
               <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
             </div>
@@ -330,16 +330,6 @@
           <div class="form-group">
             <label for="targetLang" data-i18n="targetLanguage">Target Language</label>
             <select id="targetLang">
-              <option value="zh-CN" data-i18n="langZhCN"></option>
-              <option value="zh-TW" data-i18n="langZhTW"></option>
-              <option value="en" data-i18n="langEn"></option>
-              <option value="ja" data-i18n="langJa"></option>
-              <option value="ko" data-i18n="langKo"></option>
-              <option value="fr" data-i18n="langFr"></option>
-              <option value="de" data-i18n="langDe"></option>
-              <option value="es" data-i18n="langEs"></option>
-              <option value="pt" data-i18n="langPt"></option>
-              <option value="ru" data-i18n="langRu"></option>
             </select>
           </div>
 
@@ -347,16 +337,6 @@
             <label for="uiLanguage" data-i18n="interfaceLanguage">Interface Language</label>
             <select id="uiLanguage">
               <option value="" data-i18n="interfaceLanguageFollowBrowser"></option>
-              <option value="en" data-i18n="langEn"></option>
-              <option value="zh-CN" data-i18n="langZhCN"></option>
-              <option value="zh-TW" data-i18n="langZhTW"></option>
-              <option value="ja" data-i18n="langJa"></option>
-              <option value="ko" data-i18n="langKo"></option>
-              <option value="fr" data-i18n="langFr"></option>
-              <option value="de" data-i18n="langDe"></option>
-              <option value="es" data-i18n="langEs"></option>
-              <option value="pt" data-i18n="langPt"></option>
-              <option value="ru" data-i18n="langRu"></option>
             </select>
             <span class="hint" data-i18n-hint="hintInterfaceLanguage"></span>
           </div>
@@ -669,16 +649,6 @@
                 <div class="inline-setting-controls">
                   <select id="comicTargetLang" aria-labelledby="enableComicTranslationLabel">
                     <option value="" data-i18n="comicTargetLangFollow"></option>
-                    <option value="zh-CN" data-i18n="langZhCN"></option>
-                    <option value="zh-TW" data-i18n="langZhTW"></option>
-                    <option value="en" data-i18n="langEn"></option>
-                    <option value="ja" data-i18n="langJa"></option>
-                    <option value="ko" data-i18n="langKo"></option>
-                    <option value="fr" data-i18n="langFr"></option>
-                    <option value="de" data-i18n="langDe"></option>
-                    <option value="es" data-i18n="langEs"></option>
-                    <option value="pt" data-i18n="langPt"></option>
-                    <option value="ru" data-i18n="langRu"></option>
                   </select>
                   <label class="toggle-label toggle-only" for="enableComicTranslation">
                     <input type="checkbox" id="enableComicTranslation" checked>
@@ -701,16 +671,6 @@
                 <div class="inline-setting-controls">
                   <select id="pdfTargetLang" aria-labelledby="enablePdfTranslationLabel">
                     <option value="" data-i18n="comicTargetLangFollow"></option>
-                    <option value="zh-CN" data-i18n="langZhCN"></option>
-                    <option value="zh-TW" data-i18n="langZhTW"></option>
-                    <option value="en" data-i18n="langEn"></option>
-                    <option value="ja" data-i18n="langJa"></option>
-                    <option value="ko" data-i18n="langKo"></option>
-                    <option value="fr" data-i18n="langFr"></option>
-                    <option value="de" data-i18n="langDe"></option>
-                    <option value="es" data-i18n="langEs"></option>
-                    <option value="pt" data-i18n="langPt"></option>
-                    <option value="ru" data-i18n="langRu"></option>
                   </select>
                   <label class="toggle-label toggle-only" for="enablePdfTranslation">
                     <input type="checkbox" id="enablePdfTranslation" checked>
@@ -885,6 +845,9 @@
        （options-pdf-tasks.js 顶上读 AI_TRANSLATOR_PDF_UI，要排在 pdf-ui.js 之后）。
        options.js 是入口，绑事件和引导都在它末尾，所以排最后。 -->
   <script src="options-i18n.js"></script>
+  <!-- 语言名由 Intl 现算：五处选择器和芯片都由它画，要排在 options.js 之前，
+       loadSettings 给 select 赋值前得先有 option。 -->
+  <script src="options-languages.js"></script>
   <script src="options-models.js"></script>
   <script src="options-account.js"></script>
   <script src="options-pdf-tasks.js"></script>

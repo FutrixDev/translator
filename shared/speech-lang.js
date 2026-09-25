@@ -32,9 +32,9 @@
   'use strict';
 
   // Widening a bare code needs a region, and the region is a real choice: to a
-  // listener pt-BR and pt-PT are not interchangeable. Every language the
-  // pickers offer needs an entry here, which test/unit/content-speech.test.mjs
-  // checks against content/content-bootstrap.js so the two cannot drift.
+  // listener pt-BR and pt-PT are not interchangeable. Add an entry only where
+  // that choice actually matters; every other language falls through to
+  // whichever region of it is installed (see resolveSpeechLang).
   const SPEECH_REGION = {
     zh: 'zh-CN',
     en: 'en-US',

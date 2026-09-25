@@ -100,18 +100,21 @@ test('a bare target language is widened to a tag some voice answers to', () => {
   }
 });
 
-test('every language the picker offers can be spoken', () => {
-  // The same drift target/unit/target-languages.test.mjs guards for the prompt:
-  // a language offered but not mapped here is silently read in the wrong voice.
-  const bootstrap = repoFile('content/content-bootstrap.js');
-  const block = bootstrap.slice(bootstrap.indexOf('TARGET_LANGUAGE_OPTIONS: ['));
-  const offered = [...block.slice(0, block.indexOf(']')).matchAll(/value: '([^']+)'/g)].map((m) => m[1]);
-  assert.ok(offered.length >= 10, `expected the full target list, saw ${offered.join(', ')}`);
-
-  for (const lang of offered) {
-    const resolved = resolveSpeechLang(lang, VOICES);
-    assert.ok(VOICES.some((v) => v.lang === resolved),
-      `target '${lang}' resolves to '${resolved}', which no voice answers to — add it to SPEECH_REGION`);
+test('every target language resolves to a voice that speaks it, when one is installed', async () => {
+  // 76 targets is too many to hand-map a region for each, and most do not need
+  // one: SPEECH_REGION only settles the languages whose regions a listener
+  // tells apart. For every other language, resolveSpeechLang has to find
+  // whatever region of it is installed on its own.
+  await import('../../shared/lang-tags.js');
+  await import('../../shared/target-lang.js');
+  const voices = globalThis.TargetLang.SUPPORTED.map((code) => {
+    const { language, region } = new Intl.Locale(code).maximize();
+    return { lang: `${language}-${region}` };
+  });
+  for (const lang of globalThis.TargetLang.SUPPORTED) {
+    const resolved = resolveSpeechLang(lang, voices);
+    assert.ok(voices.some((v) => v.lang === resolved),
+      `target '${lang}' resolves to '${resolved}', which no voice answers to`);
   }
 });
 

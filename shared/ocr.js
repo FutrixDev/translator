@@ -203,11 +203,11 @@
   // Bundled from tessdata_fast, which is what `vendor/tesseract/lang` holds.
   // Adding a language here means adding its .traineddata to that directory.
   const OCR_LANGUAGES = [
-    { code: 'eng', bcp47: 'en', labelKey: 'langEn' },
-    { code: 'chi_sim', bcp47: 'zh-Hans', labelKey: 'langZhCN' },
-    { code: 'chi_tra', bcp47: 'zh-Hant', labelKey: 'langZhTW' },
-    { code: 'jpn', bcp47: 'ja', labelKey: 'langJa' },
-    { code: 'kor', bcp47: 'ko', labelKey: 'langKo' }
+    { code: 'eng', bcp47: 'en' },
+    { code: 'chi_sim', bcp47: 'zh-Hans' },
+    { code: 'chi_tra', bcp47: 'zh-Hant' },
+    { code: 'jpn', bcp47: 'ja' },
+    { code: 'kor', bcp47: 'ko' }
   ];
 
   // Which language 'auto' recognises WITH, keyed by the UI/target language:
@@ -592,33 +592,6 @@ Rules:
   // all live in the system prompt above.
   const OCR_USER_INSTRUCTION = 'Extract the text from this image and detect its language.';
 
-  // --- Detected-language labels ----------------------------------------------
-
-  // i18n keys for everything detectScriptLanguage can return, plus the codes a
-  // vision model tends to answer with for the same languages. Not a general
-  // BCP 47 table: an unrecognised code is shown as-is, which is honest and
-  // still readable ("Detected language: pt").
-  const DETECTED_LANGUAGE_LABEL_KEYS = {
-    en: 'langEn',
-    ja: 'langJa',
-    ko: 'langKo',
-    ru: 'langRu',
-    fr: 'langFr',
-    de: 'langDe',
-    es: 'langEs',
-    pt: 'langPt',
-    'zh-hans': 'langZhCN',
-    'zh-cn': 'langZhCN',
-    zh: 'langZhCN',
-    'zh-hant': 'langZhTW',
-    'zh-tw': 'langZhTW'
-  };
-
-  /** The i18n key naming `langCode` in the UI's language, or '' if unknown. */
-  function detectedLanguageLabelKey(langCode) {
-    return DETECTED_LANGUAGE_LABEL_KEYS[String(langCode || '').trim().toLowerCase()] || '';
-  }
-
   // --- Response parsing ------------------------------------------------------
 
   // The prompt asks for line breaks preserved, and weaker models take that
@@ -726,7 +699,6 @@ Rules:
     OCR_CJK_LINE_CONFIDENCE_THRESHOLD,
     filterRecognizedLines,
     normalizeRecognizedText,
-    detectedLanguageLabelKey,
     shouldTranslate,
     OCR_SYSTEM_PROMPT,
     OCR_USER_INSTRUCTION,

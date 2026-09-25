@@ -40,15 +40,14 @@
   }
 
   /**
-   * The source heading for the finished popup: "Original · 日本語" when the
-   * language is known, plain "Original" when it is not. An unrecognised code is
-   * shown raw rather than dropped — "Original · pt" still tells the user
-   * something true.
+   * The source heading for the finished popup: "Original · Japanese" (the
+   * language named in the UI language) when it is known, nothing when it is
+   * not. A code Intl cannot name is shown raw rather than dropped —
+   * "Original · qaa" still tells the user something true.
    */
   function sourceLabelFor(language) {
     if (!language) return '';
-    const key = window.OCRCore.detectedLanguageLabelKey(language);
-    return `${t('original')} · ${key ? t(key) : language}`;
+    return `${t('original')} · ${ctx.languageName(language)}`;
   }
 
   /**

@@ -119,6 +119,10 @@ test('the settings page offers the choice, and "follow browser" is the empty val
   assert.notEqual(start, -1, 'options.html has no uiLanguage select');
   const block = html.slice(start, html.indexOf('</select>', start));
   const values = [...block.matchAll(/value="([^"]*)"/g)].map((m) => m[1]);
-  assert.equal(values[0], '', 'the first option must be the empty "follow browser" value');
-  assert.deepEqual(values.slice(1).sort(), [...UI_LANGUAGES].sort());
+  assert.deepEqual(values, [''], 'the one hand-written option must be the empty "follow browser" value');
+  // The languages themselves are drawn by options-languages.js, straight from
+  // UI_LANGUAGES, each under its own name.
+  const draw = repoFile('options/options-languages.js');
+  assert.match(draw,
+    /fillLanguageSelect\(document\.getElementById\('uiLanguage'\),\s*UI_LANGUAGES\.map\(\(code\) => \(\{ value: code, label: TargetLang\.autonym\(code\) \}\)\)\);/);
 });

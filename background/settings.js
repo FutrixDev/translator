@@ -12,19 +12,10 @@ import '../shared/lang-tags.js';
 import '../shared/target-lang.js';
 import '../i18n/messages.js';
 
-// Language display names
-const languageNames = {
-  'zh-CN': '简体中文',
-  'zh-TW': '繁体中文',
-  'en': 'English',
-  'ja': '日本語',
-  'ko': '한국어',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'es': 'Español',
-  'pt': 'Português',
-  'ru': 'Русский'
-};
+// 拼进提示词的语言名：英文名加本名作佐证（'Japanese (日本語)'），由 Intl 现算。
+// 清单只有 TargetLang.SUPPORTED 一份。
+const { TargetLang } = globalThis;
+const languageNames = Object.fromEntries(TargetLang.SUPPORTED.map((c) => [c, TargetLang.promptName(c)]));
 
 // Default settings
 const defaultSettings = {
@@ -83,7 +74,7 @@ const defaultSettings = {
 
 // Get effective target language (browser language if the user never picked one)
 function getEffectiveTargetLang(settings) {
-  return globalThis.TargetLang.effective(settings);
+  return TargetLang.effective(settings);
 }
 
 /**

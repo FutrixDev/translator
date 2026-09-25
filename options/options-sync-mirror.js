@@ -24,7 +24,7 @@
 // 本文件加载时它们还没求值。
 const SYNC_MIRROR_DERIVED = {
   translationEngine: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
-  engineFallback: () => syncAutoEngineState(),
+  engineFallback: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
   enableSelection: () => syncInlineSettingState(),
   enableHoverTranslation: () => syncInlineSettingState(),
   enableImageOcrTranslation: () => syncOcrSubState(),

@@ -177,6 +177,7 @@
     pronounceOriginal: 'Pronounce original',
     pronounceTranslation: 'Pronounce translation',
     stopPronunciation: 'Stop reading aloud',
+    speechNoVoice: 'No voice for this language on this device',
     
     // Input Dialog
     inputTextTranslation: 'Input Text Translation',
@@ -215,6 +216,8 @@
     builtinDownloadFailed: 'Language pack download failed',
     builtinNeedsDownload: 'The language pack is still downloading. Please try again shortly.',
     builtinUnsupportedPair: 'Built-in translation does not support this language pair',
+    builtinTargetUnsupportedLocalOnly: 'Built-in translation can\'t translate into {lang}. Switch the engine to AI, or allow AI fallback, to use it.',
+    builtinTargetUnsupportedAllowAi: 'Built-in translation can\'t translate into {lang}, so these pages will go to your AI service.',
     builtinUnsupportedEnv: 'Built-in translation is unavailable here. It needs Chrome 138+ on desktop.',
     builtinUnavailable: 'Built-in translation is unavailable right now',
 
@@ -245,17 +248,7 @@
     interfaceLanguage: 'Interface Language',
     interfaceLanguageFollowBrowser: 'Follow browser',
     hintInterfaceLanguage: 'The language this extension speaks to you in. Independent of the target language above.',
-    langZh: '中文',
-    langZhCN: '简体中文',
-    langZhTW: '繁体中文',
-    langEn: 'English',
-    langJa: '日本語',
-    langKo: '한국어',
-    langFr: 'Français',
-    langDe: 'Deutsch',
-    langEs: 'Español',
-    langPt: 'Português',
-    langRu: 'Русский',
+    langAiOnly: 'AI only',
 
     translationSettings: 'Translation Settings',
     enableSelectionTranslation: 'Enable Selection Translation',
