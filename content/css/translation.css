@@ -10,8 +10,37 @@
   /* 原文保持不变 */
 }
 
+/* 本文件里每一条 `display … !important` 都写在 @layer ai-translator-display 里，
+   别的属性都不进。
+
+   页面可以用一条更重的 !important 规则改我们节点的 display，而这是译文唯一
+   不能输的属性：它决定了译文是不是另起一块，也决定了隐藏译文、仅显示译文这两个
+   开关到底灵不灵。reddit 信息流卡片的摘要是这样写的：
+
+     shreddit-post .feed-card-text-preview :not(ol,ul,li,h1) {
+       all: revert; display: inline !important; … }
+
+   特异性 (0,2,2)，比 `.ai-translator-inline-block` (0,1,0) 和
+   `.ai-translator-inline-block.ai-translator-hidden` (0,2,0) 都重，结果是译文
+   被压成一行接在原文后面，点隐藏译文也藏不掉。拼特异性拼不过：页面随时可以
+   再加一层。
+
+   级联层能一次解决：同一来源里，层内的 !important 压过层外的 !important，
+   不看特异性（CSS Cascade 5，重要声明的层顺序是反过来的，未分层的最弱）。
+   只有 style 属性上的 !important 还压得过它，那是我们自己的 JS 写的。
+
+   只放 display 进层是有意的：层内 !important 也会压过我们自己层外的 !important。
+   译文样式那几条 (0,4,1)、`.ai-translator-source-hidden + .ai-translator-inline-block`
+   的 margin-top 都靠层外的特异性压过基础规则；把它们的对手挪进层，它们就反过来输了。
+   test/unit/translation-display-layer.test.mjs 守这两条：层外没有 display !important，
+   层里只有 display !important。（普通的 display 不进层：层内的普通声明反而比层外的弱。） */
+@layer ai-translator-display {
+  .ai-translator-inline-block {
+    display: block !important;
+  }
+}
+
 .ai-translator-inline-block {
-  display: block !important;
   /* 兄弟译文和原文之间隔多远，不是这条 0.15em 说了算：相邻外边距会合并，原文的
      margin-bottom 站在同一道缝里。补偿量由 JS 按原文实际的下外边距算好交过来
      （--ai-translator-pair-margin-top，见 insertTranslationBlock），页面没给原文
@@ -52,15 +81,17 @@ html body .ai-translator-inline-block::after {
   content: none !important;
 }
 
-/* 隐藏译文 */
-.ai-translator-inline-block.ai-translator-hidden {
-  display: none !important;
-}
+@layer ai-translator-display {
+  /* 隐藏译文 */
+  .ai-translator-inline-block.ai-translator-hidden {
+    display: none !important;
+  }
 
-/* 仅显示译文（settings.showTranslationOnly）：隐藏已翻译块的原文。
-   这两个类加在【页面自己的元素】上，不属于面板 reset 那套特异性阶梯 */
-.ai-translator-source-hidden {
-  display: none !important;
+  /* 仅显示译文（settings.showTranslationOnly）：隐藏已翻译块的原文。
+     这两个类加在【页面自己的元素】上，不属于面板 reset 那套特异性阶梯 */
+  .ai-translator-source-hidden {
+    display: none !important;
+  }
 }
 
 /* 原文一藏（仅显示译文，或 fit guard 为译文让位），上面那份补偿就没有东西可抵消
@@ -113,8 +144,13 @@ html body .ai-translator-inline-block::after {
 
 /* 直属文本节点的锚点（wrapDirectTextRuns）。它只是个挂译文用的壳，页面针对
    `span` 写的规则不该借它改变原文的样子，所以把排版和字体钉回继承值。 */
+@layer ai-translator-display {
+  span.ai-translator-text-run {
+    display: inline !important;
+  }
+}
+
 span.ai-translator-text-run {
-  display: inline !important;
   font: inherit !important;
   color: inherit !important;
   letter-spacing: inherit !important;
@@ -211,23 +247,23 @@ button.ai-translator-inline-block {
   cursor: default !important;
 }
 
-/* 数学公式样式：使用 cloneNode 复制原始元素，让页面原生 CSS 控制显示 */
-/* 只隐藏辅助元素，不强制设置 display 属性 */
-.ai-translator-inline-block .MJX_Assistive_MathML,
-.ai-translator-inline-block .mjx-assistive-mml,
-.ai-translator-inline-block .katex-mathml,
-.ai-translator-inline-block .sr-only,
-.ai-translator-inline-block .visually-hidden {
-  display: none !important;
+/* 数学公式样式：使用 cloneNode 复制原始元素，让页面原生 CSS 控制显示；
+   只隐藏辅助元素（屏幕阅读器用），公式本身的 display 不动 */
+@layer ai-translator-display {
+  .ai-translator-inline-block .MJX_Assistive_MathML,
+  .ai-translator-inline-block .mjx-assistive-mml,
+  .ai-translator-inline-block .katex-mathml,
+  .ai-translator-inline-block .sr-only,
+  .ai-translator-inline-block .visually-hidden {
+    display: none !important;
+  }
 }
 
-/* 隐藏数学公式的辅助元素（屏幕阅读器用） */
 .ai-translator-inline-block .MJX_Assistive_MathML,
 .ai-translator-inline-block .mjx-assistive-mml,
 .ai-translator-inline-block .katex-mathml,
 .ai-translator-inline-block .sr-only,
 .ai-translator-inline-block .visually-hidden {
-  display: none !important;
   position: absolute !important;
   width: 1px !important;
   height: 1px !important;
@@ -239,7 +275,6 @@ button.ai-translator-inline-block {
    和原文之间那 4px 不写在这里：它开在原文方向的起始边（LTR 页在左、RTL 页在右），
    只有插入方看得到原文的 direction，由它写成内联 margin-left / margin-right。 */
 .ai-translator-inline-right {
-  display: inline !important;
   font-size: 0.85em !important;
   opacity: 0.7 !important;
 }
@@ -249,29 +284,44 @@ button.ai-translator-inline-block {
 .ai-translator-inline-right .MathJax,
 .ai-translator-inline-right .katex,
 .ai-translator-inline-right math {
-  display: inline !important;
   vertical-align: baseline !important;
 }
 
-/* MathJax 3 内部元素 - 全部强制内联 */
-.ai-translator-inline-right mjx-container *,
-.ai-translator-inline-right mjx-math,
-.ai-translator-inline-right mjx-mrow {
-  display: inline !important;
-}
+/* 这一段的 display 全部排在 .ai-translator-inline-block 那条后面：同一层里特异性
+   打平时靠出现顺序，内嵌译文同时带着两个类，得是 inline 赢。隐藏译文那条是
+   (0,2,0)，照样压得过这里的 (0,1,0)。 */
+@layer ai-translator-display {
+  .ai-translator-inline-right {
+    display: inline !important;
+  }
 
-/* 隐藏 MathML 语义注释 */
-.ai-translator-inline-right math annotation,
-.ai-translator-inline-right math annotation-xml {
-  display: none !important;
-}
+  .ai-translator-inline-right mjx-container,
+  .ai-translator-inline-right .MathJax,
+  .ai-translator-inline-right .katex,
+  .ai-translator-inline-right math {
+    display: inline !important;
+  }
 
-.ai-translator-inline-right .MJX_Assistive_MathML,
-.ai-translator-inline-right .mjx-assistive-mml,
-.ai-translator-inline-right .katex-mathml,
-.ai-translator-inline-right .sr-only,
-.ai-translator-inline-right .visually-hidden {
-  display: none !important;
+  /* MathJax 3 内部元素 - 全部强制内联 */
+  .ai-translator-inline-right mjx-container *,
+  .ai-translator-inline-right mjx-math,
+  .ai-translator-inline-right mjx-mrow {
+    display: inline !important;
+  }
+
+  /* 隐藏 MathML 语义注释 */
+  .ai-translator-inline-right math annotation,
+  .ai-translator-inline-right math annotation-xml {
+    display: none !important;
+  }
+
+  .ai-translator-inline-right .MJX_Assistive_MathML,
+  .ai-translator-inline-right .mjx-assistive-mml,
+  .ai-translator-inline-right .katex-mathml,
+  .ai-translator-inline-right .sr-only,
+  .ai-translator-inline-right .visually-hidden {
+    display: none !important;
+  }
 }
 
 /* ==================== Page Translation Progress ==================== */

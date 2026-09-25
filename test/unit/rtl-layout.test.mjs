@@ -133,10 +133,11 @@ function loadGetTextInset() {
 
 const getTextInset = loadGetTextInset();
 
-// 一个 left..right 的块，里面一段文字占 textLeft..textRight。
-function block({ direction, left = 100, right = 500, textLeft, textRight, padding = {}, border = {} }) {
+// 一个 left..right 的块，里面一段文字占 textLeft..textRight。`fragments` 给内联
+// 原文用：每个行盒一个片段，第一个就是 getClientRects()[0]。
+function block({ direction, left = 100, right = 500, textLeft, textRight, padding = {}, border = {}, fragments }) {
   return {
-    getBoundingClientRect: () => ({ left, right, width: right - left }),
+    getClientRects: () => fragments || [{ left, right, width: right - left }],
     computed: {
       direction,
       paddingLeft: `${padding.left || 0}px`,
@@ -167,6 +168,42 @@ test('getTextInset measures an RTL block from its right edge', () => {
 test('getTextInset never answers a negative inset', () => {
   const el = block({ direction: 'rtl', textLeft: 150, textRight: 520 });
   assert.equal(getTextInset(el), 0);
+});
+
+// reddit 信息流摘要里的 <p> 被页面压成 display:inline，第一行接在别人的字后面、从
+// 行中间开始。包围盒是 100..500（后面几行的行首），拿它当起点，量出来的就是第一行
+// 前面那 152px 别人的字 —— 实测的那道空白。
+test('getTextInset measures an inline source from its first line fragment, not its bounding box', () => {
+  const ltr = block({
+    direction: 'ltr', textLeft: 252, textRight: 500,
+    fragments: [{ left: 252, right: 500, width: 248 }, { left: 100, right: 500, width: 400 }],
+  });
+  assert.equal(getTextInset(ltr), 0);
+
+  const rtl = block({
+    direction: 'rtl', textLeft: 100, textRight: 306,
+    fragments: [{ left: 100, right: 306, width: 206 }, { left: 100, right: 500, width: 400 }],
+  });
+  assert.equal(getTextInset(rtl), 0);
+
+  // 片段里文字前面的图标照样让出来：量的只是起点换了。
+  const withIcon = block({
+    direction: 'ltr', textLeft: 272, textRight: 500,
+    fragments: [{ left: 252, right: 500, width: 248 }, { left: 100, right: 500, width: 400 }],
+  });
+  assert.equal(getTextInset(withIcon), 20);
+
+  // 第一个片段是上一行末尾一道零宽的边、文字从下一行行首起：没有缩进。
+  const wrapped = block({
+    direction: 'ltr', textLeft: 100, textRight: 500,
+    fragments: [{ left: 500, right: 500, width: 0 }, { left: 100, right: 500, width: 400 }],
+  });
+  assert.equal(getTextInset(wrapped), 0);
+});
+
+test('getTextInset answers 0 for an element with no box', () => {
+  const contents = block({ direction: 'ltr', textLeft: 130, textRight: 480, fragments: [] });
+  assert.equal(getTextInset(contents), 0);
 });
 
 // ==================== revealSelectedLanguage ====================
