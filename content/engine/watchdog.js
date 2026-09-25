@@ -6,6 +6,9 @@
 (function() {
   'use strict';
 
+  // dormant frame（见 shared/frame-eligibility.js）里连空壳也不兜：兜了，后面每个
+  // 模块的 `if (!ctx) return;` 就拦不住了。设置页没有 FrameEligibility，照旧兜。
+  if (globalThis.FrameEligibility && !globalThis.FrameEligibility.shouldActivate()) return;
   const ctx = window.AI_TRANSLATOR_CONTENT || (window.AI_TRANSLATOR_CONTENT = {});
   // 这一族共用的架子，说明见 content/content-translation-engine.js 顶上。
   const eng = (ctx.engine = ctx.engine || {});

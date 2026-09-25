@@ -108,6 +108,7 @@
       selectionTranslationHotkey: ['Shift', 'Alt', 'Control', 'Meta'],
       hoverTranslationHotkey: ['Shift', 'Alt', 'Control', 'Meta'],
       translationStyle: [...styles],
+      pageTranslateScope: ['main', 'page'],
       captionDisplayMode: ['', 'bilingual', 'translation', 'original'],
       captionTranslationPosition: ['below', 'above'],
       ocrEngine: ['local', 'vision'],

@@ -88,6 +88,11 @@ async function openPage(page, context, endpoint, { path, targetLang, settings = 
     skipTargetLanguageText: false,
     // No ask bar over the page: these journeys translate by hand.
     autoTranslate: false,
+    // The nav sits outside <main> on purpose (the inline-right shape), and the
+    // default scope 'main' skips it (content/page/scope.js). These journeys are
+    // about direction and alignment, not which blocks are collected: translate
+    // the whole page.
+    pageTranslateScope: 'page',
     ...settings,
   });
   await context.route(`${ORIGIN}/**`, (route) => {

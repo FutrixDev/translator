@@ -41,6 +41,7 @@ import { openOnboardingOnInstall } from './install.js';
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
 // handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
 import './icon.js';
+import './page-coverage.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
@@ -51,6 +52,7 @@ import {
   translateTextWithMode,
 } from './ai-translate.js';
 import { handleOcrImage, relayOcrProgress } from './ocr-recognize.js';
+import './frame-relay.js';
 import {
   ensurePdfPollAlarm,
   handlePdfCreateJob,
@@ -300,8 +302,9 @@ chrome.runtime.onStartup.addListener(() => {
   ensureCacheSweepAlarm();
 });
 
-// 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文）。分派表和每一项的实现在
-// ./commands.js；监听必须在 worker 入口顶层同步注册，所以只有这一行留在这里。
+// 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文、Alt+W 翻译整个页面）。分派表和
+// 每一项的实现在 ./commands.js；监听必须在 worker 入口顶层同步注册，所以只有这一行
+// 留在这里。
 chrome.commands.onCommand.addListener((command, tab) => {
   runCommand(command, tab).catch(error => console.error('Shortcut failed:', command, error));
 });

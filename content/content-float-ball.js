@@ -469,6 +469,8 @@
     const showStopSite = !!(ctx.autoTranslate && ctx.autoTranslate.state().siteAuto) &&
       !!(globalThis.SiteRules &&
         globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname));
+    // 「翻译整个页面」只在默认只翻正文时有意义；每次打开都重问（content/page/scope.js）。
+    const showWholePage = ctx.pageScopeMode() === 'main';
 
     state.floatMenu = document.createElement('div');
     state.floatMenu.id = 'ai-translator-float-menu';
@@ -504,6 +506,15 @@
         </svg>
         <span>${t('translatePage')}</span>
       </button>
+      ${showWholePage ? `
+      <button class="ai-translator-menu-item" data-action="translate-whole-page">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M3 9h18M3 15h18"/>
+        </svg>
+        <span>${t('floatMenuTranslateWholePage')}</span>
+      </button>
+      ` : ''}
       ${showComic ? `
       <button class="ai-translator-menu-item" data-action="translate-comic">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -644,6 +655,9 @@
         break;
       case 'translate-page':
         if (ctx.translatePage) ctx.translatePage();
+        break;
+      case 'translate-whole-page':
+        ctx.translateWholePage();
         break;
       case 'translate-comic':
         if (ctx.startComicPageTranslation) ctx.startComicPageTranslation({ pageUrl: location.href });

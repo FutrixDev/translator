@@ -7,12 +7,13 @@
 (globalThis.I18N_MESSAGES = globalThis.I18N_MESSAGES || {})['ko'] = {
     inputTranslate: '텍스트 입력 번역',
     translateSelection: '선택 텍스트 번역',
-    translatePage: '전체 페이지 번역',
+    translatePage: '이 페이지 번역',
+    floatMenuTranslateWholePage: '전체 페이지 번역',
     hideTranslations: '번역 숨기기',
     showTranslations: '번역 표시',
     openSettings: '설정',
     contextTranslateSelection: '선택 텍스트 번역',
-    contextTranslatePage: '페이지 전체 번역',
+    contextTranslatePage: '이 페이지 번역',
     contextRemoveInlineTranslation: '번역 제거',
 
     // Comic page translation (account-backed, see content-comic-translation.js)
@@ -264,6 +265,10 @@
     skipTargetLanguageText: '이미 목표 언어인 문장은 건너뛰기',
     showTranslationOnly: '번역문만 표시',
     hintShowTranslationOnly: '전체 페이지 번역에서 원문을 숨기고 번역문만 남깁니다',
+    pageTranslateScopeLabel: '페이지 번역 범위',
+    pageTranslateScopeMain: '본문만 (권장)',
+    pageTranslateScopePage: '전체 페이지',
+    pageTranslateScopeHint: '본문만 번역하면 사이트의 내비게이션, 사이드바, 메뉴, 헤더와 푸터는 번역하지 않습니다. 한 페이지를 모두 번역하려면 플로팅 볼 메뉴에서 「전체 페이지 번역」을 누르거나 Alt+W를 누르세요.',
     advancedSettings: '고급 설정',
     youtubeSettings: '동영상 자막',
     captionFollowsAutoTranslate: '자막은 자동 번역 기본 스위치를 따릅니다. 번역을 허용한 사이트에서는 그 동영상의 자막도 번역됩니다.',

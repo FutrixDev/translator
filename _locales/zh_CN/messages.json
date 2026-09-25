@@ -14,5 +14,9 @@
   "cmdToggleTranslationOnly": {
     "message": "在双语和仅译文之间切换",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "翻译整个页面（含导航和侧栏）",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

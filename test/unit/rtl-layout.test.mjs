@@ -2,8 +2,10 @@
 // lang/dir、对齐跟着方向走、图标缩进和行内间隙开在原文的起始边、76 项的菜单打开时
 // 已选项在可见区里。
 //
-// 函数本身都在 content/content-language.js 和 content/page/collect.js，这里把两份
-// 真文件装进一个假 window 里跑，不塞替身：要证的就是扩展里那一份的行为。
+// 函数本身都在 content/content-language.js 和 content/page/collect.js，这里把真文件
+// 装进一个假 window 里跑，不塞替身：要证的就是扩展里那一份的行为。collect.js 取子节点
+// 走 ctx.composedChildNodes（content/page/shadow.js 挂的组合树工具），所以 shadow.js
+// 也按 manifest 顺序先装进同一个假 window；假块没有 shadow root，它原样交回 childNodes。
 // 页面上的整条旅程归 test/e2e/rtl-*.spec.js。
 //
 // Run with: npm run test:unit
@@ -122,8 +124,10 @@ function loadGetTextInset() {
       };
     },
   };
-  new Function('window', 'Node', 'document', read('content/page/collect.js'))(
-    win, { TEXT_NODE, ELEMENT_NODE }, doc);
+  const node = { TEXT_NODE, ELEMENT_NODE };
+  for (const file of ['content/page/shadow.js', 'content/page/collect.js']) {
+    new Function('window', 'Node', 'document', read(file))(win, node, doc);
+  }
   return shelf.getTextInset;
 }
 

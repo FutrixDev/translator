@@ -137,31 +137,33 @@ async function ensureOffscreenDocument() {
   }
 }
 
-// Which tab asked for each in-flight recognition, so the offscreen document's
-// progress can reach the popup that is waiting for it. The offscreen document
-// has no idea a tab exists; it only knows the request id it was given.
+// Which tab - and which frame in it - asked for each in-flight recognition, so
+// the offscreen document's progress can reach the popup that is waiting for
+// it. The offscreen document has no idea a tab exists; it only knows the
+// request id it was given. The frame matters because the content script runs
+// in every frame: the popup is in the one the image was clicked in.
 const ocrProgressTabs = new Map();
 
 function relayOcrProgress(message) {
-  const tabId = ocrProgressTabs.get(message.requestId);
-  if (tabId === undefined) return;
-  chrome.tabs.sendMessage(tabId, {
+  const origin = ocrProgressTabs.get(message.requestId);
+  if (origin === undefined) return;
+  chrome.tabs.sendMessage(origin.tabId, {
     type: 'OCR_PROGRESS',
     requestId: message.requestId,
     stage: message.stage,
     progress: message.progress
-  }).catch(() => {});
+  }, { frameId: origin.frameId }).catch(() => {});
 }
 
 // --- Recognition -----------------------------------------------------------
 
 /** Recognise with the local engine. Free, offline, no API key. */
-async function recognizeLocally({ srcUrl, crop, requestId, tabId }, settings, uiLang) {
+async function recognizeLocally({ srcUrl, crop, requestId, tabId, frameId }, settings, uiLang) {
   await ensureOffscreenDocument();
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
   const plan = globalThis.OCRCore.resolveOcrLanguagePlan(uiLang);
 
-  if (tabId !== undefined) ocrProgressTabs.set(requestId, tabId);
+  if (tabId !== undefined) ocrProgressTabs.set(requestId, { tabId, frameId });
   let result;
   try {
     result = await chrome.runtime.sendMessage({
@@ -253,7 +255,8 @@ async function handleOcrImage(message, sender) {
     // the same crop because it is applied once, on the way in.
     crop: message.crop,
     requestId: message.requestId || `ocr-${Date.now()}`,
-    tabId: sender && sender.tab ? sender.tab.id : undefined
+    tabId: sender && sender.tab ? sender.tab.id : undefined,
+    frameId: sender && typeof sender.frameId === 'number' ? sender.frameId : 0
   };
 
   try {

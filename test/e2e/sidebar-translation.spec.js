@@ -9,6 +9,7 @@ const {
   triggerPageTranslation,
   waitForTranslationComplete,
   verifyAlignment,
+  setExtensionSettings,
 } = require('./helpers');
 
 test.describe('Sidebar Translation Alignment', () => {
@@ -17,6 +18,9 @@ test.describe('Sidebar Translation Alignment', () => {
 
   for (const site of testSites.sidebarWithIcons) {
     test(`should align translation with original text on ${site.name}`, async ({ page }) => {
+      // These specs are about navigation and sidebar translation; the default
+      // 'main' scope skips exactly those regions, so pin the whole-page scope.
+      await setExtensionSettings(page, { pageTranslateScope: 'page' });
       await page.goto(site.url);
       await page.waitForLoadState('networkidle');
       await waitForFloatBall(page);
@@ -75,6 +79,9 @@ test.describe('Sidebar Translation Alignment', () => {
 
   test('translation should not align with icon', async ({ page }) => {
     const site = testSites.sidebarWithIcons[0];
+    // These specs are about navigation and sidebar translation; the default
+    // 'main' scope skips exactly those regions, so pin the whole-page scope.
+    await setExtensionSettings(page, { pageTranslateScope: 'page' });
     await page.goto(site.url);
     await page.waitForLoadState('networkidle');
     await waitForFloatBall(page);
@@ -115,6 +122,9 @@ test.describe('Sidebar Translation Alignment', () => {
 test.describe('Sidebar Translation - Visual Check', () => {
   test('should take screenshot of translated sidebar', async ({ page }) => {
     const site = testSites.sidebarWithIcons[0];
+    // These specs are about navigation and sidebar translation; the default
+    // 'main' scope skips exactly those regions, so pin the whole-page scope.
+    await setExtensionSettings(page, { pageTranslateScope: 'page' });
     await page.goto(site.url);
     await page.waitForLoadState('networkidle');
     await waitForFloatBall(page);

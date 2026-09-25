@@ -8,6 +8,7 @@ const {
   waitForFloatBall,
   triggerPageTranslation,
   waitForTranslationComplete,
+  setExtensionSettings,
 } = require('./helpers');
 
 test.describe('Horizontal Navigation Translation', () => {
@@ -16,6 +17,9 @@ test.describe('Horizontal Navigation Translation', () => {
 
   test('translation should display inline (right of original)', async ({ page }) => {
     const site = testSites.horizontalNav[0];
+    // These specs are about navigation and sidebar translation; the default
+    // 'main' scope skips exactly those regions, so pin the whole-page scope.
+    await setExtensionSettings(page, { pageTranslateScope: 'page' });
     await page.goto(site.url);
     await page.waitForLoadState('networkidle');
     await waitForFloatBall(page);
@@ -60,6 +64,9 @@ test.describe('Horizontal Navigation Translation', () => {
 
   test('horizontal nav should not increase height after translation', async ({ page }) => {
     const site = testSites.horizontalNav[0];
+    // These specs are about navigation and sidebar translation; the default
+    // 'main' scope skips exactly those regions, so pin the whole-page scope.
+    await setExtensionSettings(page, { pageTranslateScope: 'page' });
     await page.goto(site.url);
     await page.waitForLoadState('networkidle');
     await waitForFloatBall(page);

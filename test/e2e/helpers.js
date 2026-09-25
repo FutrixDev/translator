@@ -33,6 +33,10 @@ const CONTENT_HARNESS_PRELUDE = Object.freeze([
   ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
   'shared/default-settings.js',
+  // manifest 里它紧挨在 content-bootstrap.js 之前：bootstrap 建 ctx 之前先问它
+  // 「这个 frame 进不进」。夹具页是顶层，答案恒为进；带上它是为了夹具与 manifest
+  // 走同一条路，而不是靠 bootstrap 对它的软读退路。
+  'shared/frame-eligibility.js',
   'content/content-bootstrap.js',
 ]);
 
@@ -68,12 +72,20 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/content-language.js',
   'content/page/batch.js',
   'content/page/site-adapter.js',
+  // 组合树（shadow.js）、notranslate、正文范围（scope.js）：收集器和门面在调用时
+  // 读它们挂的 ctx.x，门面收块走的就是 scope.js 的 ctx.collectPageBlocks。
+  'content/page/shadow.js',
+  'content/page/notranslate.js',
+  'content/page/scope.js',
   'content/page/collect.js',
   'content/page/insert.js',
   'content/page/visibility.js',
   'content/page/display.js',
   'content/page/progress.js',
   'content/content-page-translation.js',
+  // 门面和显隐调 ctx.frames 的钩子（手动一轮开始 / 结束、显隐变了）。shelf 给的默认
+  // 全是空操作，夹具里没有子 frame，照常可调、什么也不做——不手写 ctx.frames 替身。
+  'content/frames/shelf.js',
 ]);
 
 function contentHarnessScripts(...modules) {

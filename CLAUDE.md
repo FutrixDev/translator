@@ -45,8 +45,9 @@ which file is layout, not contract. The rule that makes that safe is the same
 everywhere: **ask the surface, not the file** — the helpers in
 `test/unit/helpers/sources.mjs` (`workerSource()`, `optionsSource()`,
 `messagesSource()`, `contentCss()`, `comicSource()`, `captionEngineSource()`,
-`hoverSource()`, `engineSource()`, `popupSource()`, `uploadPageSource()`) read
-a whole family, so adding a module never means editing a test. Only assertions about **load order** read `manifest.json` or the entry
+`hoverSource()`, `engineSource()`, `popupSource()`, `uploadPageSource()`,
+`framesSource()`, `pageSource()`) read a whole family, so adding a module never
+means editing a test. Only assertions about **load order** read `manifest.json` or the entry
 file directly.
 
 1. **Background Service Worker** (`background/*.js`, entry `background.js` —
@@ -59,6 +60,11 @@ file directly.
    - The account-backed clients live beside it: `comic-client.js`,
      `pdf-client.js`, `pdf-jobs.js`, `pdf-notify.js`, `ocr-recognize.js`,
      `feature-gate.js`
+   - Page coverage: `frame-relay.js` (relays `FRAME_*` messages between a
+     child frame and the top frame of the same tab) and `page-coverage.js`
+     (answers `GET_SHADOW_STYLES` with the translation stylesheet rewritten for
+     shadow roots). The Alt+W whole-page shortcut is a row in the `COMMANDS`
+     table of `commands.js`, beside Alt+A, not a listener of its own
 
 2. **Content Script** (`content/*.js` + the sub-families below)
    - Injected into all webpages for DOM interaction
@@ -66,7 +72,14 @@ file directly.
      concurrency control (at most 40 items or 9000 chars per batch; 4 batches
      at a time on the built-in engine, 12 on AI — `content/page/batch.js`) —
      `content/page/*.js` (collect, insert, batch, visibility, progress,
-     site-adapter) behind the entry `content-page-translation.js`
+     site-adapter, plus `scope.js` for the main-content scope, `shadow.js` for
+     open and closed shadow roots, `notranslate.js` for `translate="no"` /
+     `.notranslate`) behind the entry `content-page-translation.js`
+   - Frames: `content/frames/` (`shelf.js`, `top.js`, `child.js`, shelf
+     `ctx.frames`) — the top frame drives, child frames follow its directive.
+     Whether a frame runs at all is `shared/frame-eligibility.js`: ad, captcha,
+     payment, sign-in and player frames stop at the first statement of
+     `content-bootstrap.js` and never build `ctx`
    - UI components: selection button, float ball, translation popup, progress bar
    - Four more families have sections of their own below: the translation
      engine (`content/engine/`), comic (`content/comic/`), hover/selection
@@ -76,7 +89,7 @@ file directly.
    environment**, so `manifest.json`'s order *is* the dependency graph, and a
    file that throws at load fails silently rather than loudly. That is why each
    sub-family hangs its cross-file names on one shelf object
-   (`ctx.engine` / `ctx.comic` / `ctx.hover` / `ctx.captions`) and reads them at call time:
+   (`ctx.engine` / `ctx.comic` / `ctx.hover` / `ctx.captions` / `ctx.frames`) and reads them at call time:
    order then stops mattering. A name that crosses a file and is *not* written
    `comic.foo` is a bug waiting for a reload — including after `...`, where the
    spread operator's dots look exactly like a property access.

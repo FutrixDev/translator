@@ -156,6 +156,19 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
   assert.equal(good.accepted, 5);
 });
 
+test('an imported page scope must be one the settings page offers', () => {
+  // 没有枚举时 valueOk 只查类型，'everything' 这种字符串会原样写进 sync，
+  // content/page/scope.js 只认 'main' / 'page'。
+  const bad = ST.validateSettings({ pageTranslateScope: 'everything' }, schema, enums);
+  assert.deepEqual(bad.dropped, ['pageTranslateScope']);
+  assert.ok(!('pageTranslateScope' in bad.value));
+  assert.equal(bad.accepted, 0);
+
+  const good = ST.validateSettings({ pageTranslateScope: 'page' }, schema, enums);
+  assert.equal(good.value.pageTranslateScope, 'page');
+  assert.equal(good.accepted, 1);
+});
+
 test('a settings section that is not an object is refused as a whole', () => {
   for (const raw of [null, [], 'theme=dark', 3]) {
     assert.throws(() => ST.validateSettings(raw, schema, enums),

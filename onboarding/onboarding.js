@@ -16,6 +16,7 @@
   const COMMAND_LABELS = {
     'toggle-translate-page': 'translatePage',
     'toggle-translation-only': 'showTranslationOnly',
+    'translate-whole-page': 'floatMenuTranslateWholePage',
   };
 
   const AI_BUTTONS = {

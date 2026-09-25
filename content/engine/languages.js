@@ -10,6 +10,9 @@
 (function() {
   'use strict';
 
+  // dormant frame（见 shared/frame-eligibility.js）里连空壳也不兜：兜了，后面每个
+  // 模块的 `if (!ctx) return;` 就拦不住了。设置页没有 FrameEligibility，照旧兜。
+  if (globalThis.FrameEligibility && !globalThis.FrameEligibility.shouldActivate()) return;
   const ctx = window.AI_TRANSLATOR_CONTENT || (window.AI_TRANSLATOR_CONTENT = {});
   // 这一族共用的架子，说明见 content/content-translation-engine.js 顶上。
   const eng = (ctx.engine = ctx.engine || {});
@@ -181,12 +184,12 @@
     });
   }
 
-  async function resolveStandaloneSourceLang(trimmed) {
+  async function resolveStandaloneSourceLang(trimmed, pageSource) {
     const nonLatinText = hasNonLatinChars(trimmed);
     const detected = toApiLang(await detectStandaloneLang(trimmed));
     if (detected && SUPPORTED_LANGS.has(detected)) return detected;
 
-    const pageLang = toApiLang(await getPageSourceLang());
+    const pageLang = toApiLang(await pageSource());
     if (pageLang && NON_LATIN_LANGS.has(pageLang) === nonLatinText) return pageLang;
     // 字母体系对不上，页面语言出局。剩下的拉丁文本按英文处理：拉丁字母里英文
     // 是压倒性的多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走
@@ -194,11 +197,16 @@
     return nonLatinText ? '' : 'en';
   }
 
-  async function resolveSourceLang(text, hint, standalone) {
+  // pageFallback：页面级源语言由调用方代答（字符串，空串也算答过）。子 frame 的
+  // 请求经中继在顶层执行（content/frames/child.js），顶层自己的 document 答不了
+  // 「那个 frame 是什么语言」，所以子 frame 量好了写进消息。它只是**兜底**，不是
+  // hint：hint 会跳过逐块自测，混合语言的 frame 会被整片判成一种语言。
+  async function resolveSourceLang(text, hint, standalone, pageFallback) {
     if (hint) return toApiLang(hint);
     const trimmed = String(text || '').trim();
-    if (standalone) return resolveStandaloneSourceLang(trimmed);
-    const pageLang = toApiLang(await getPageSourceLang());
+    const pageSource = typeof pageFallback === 'string' ? async () => pageFallback : getPageSourceLang;
+    if (standalone) return resolveStandaloneSourceLang(trimmed, pageSource);
+    const pageLang = toApiLang(await pageSource());
     if (trimmed.length >= SELF_DETECT_MIN_CHARS) {
       // 块级结果只在“判得准、且判出来的语言内置引擎确实支持”时才采信。
       // 逐块探测存在的意义是混合语言页面（英文正文里夹日文引用），那是少数派；

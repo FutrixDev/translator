@@ -1,6 +1,7 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
 const { startMockServer } = require('./mock-server');
+const { startMockOpenAIServer } = require('./mock-openai-server');
 
 async function startInputDictionaryMockServer() {
   const { origin, close } = await startMockServer((req, res) => {
@@ -301,6 +302,57 @@ test('setting a target language in settings overrides what the input dialog reme
     await expect(page.locator('#ai-translator-result-text')).toContainText('[fr]');
   } finally {
     await fixture.close();
+  }
+});
+
+test('the result box carries the language of what it shows: the UI language while loading or failing, the target once translated', async ({ page }) => {
+  // Slow enough to read the loading state before the result replaces it. A 500
+  // answers at once, so the error is read after the loading states, not raced.
+  const api = await startMockOpenAIServer({ delayMs: 1000, failWhen: (text) => text.includes('cannot be translated') });
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><html lang="en"><body><p>A plain page.</p></body></html>');
+  });
+
+  try {
+    await setExtensionSettings(page, {
+      apiEndpoint: api.endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      targetLang: 'zh-CN',
+    });
+    // 界面语言是 E2E_BASE_SETTINGS 钉死的英语，下面加载态和错误要的 'en' 就是它。
+    await page.goto(`${site.origin}/`);
+    await page.waitForSelector('#ai-translator-float-ball');
+    await openInputDialog(page);
+    await pickInputTargetLang(page, 'ar');
+
+    const box = page.locator('#ai-translator-result-text');
+    const marked = () => box.evaluate((el) => ({ lang: el.lang, dir: el.dir }));
+    const translate = async (text) => {
+      await page.fill('#ai-translator-input-text', text);
+      await page.click('#ai-translator-do-translate');
+    };
+
+    await translate('a full sentence for translation');
+    await expect(box.locator('.ai-translator-input-loading')).toBeVisible();
+    expect(await marked()).toEqual({ lang: 'en', dir: 'ltr' });
+    await expect(box).toContainText('[T] ');
+    expect(await marked()).toEqual({ lang: 'ar', dir: 'rtl' });
+
+    // Same node, next request: the spinner must not inherit the Arabic result's rtl.
+    await translate('another sentence for translation');
+    await expect(box.locator('.ai-translator-input-loading')).toBeVisible();
+    expect(await marked()).toEqual({ lang: 'en', dir: 'ltr' });
+    await expect(box).toContainText('another sentence');
+    expect(await marked()).toEqual({ lang: 'ar', dir: 'rtl' });
+
+    // An error is UI text too, even right after an Arabic result.
+    await translate('this sentence cannot be translated');
+    await expect(box.locator('.ai-translator-input-error')).toBeVisible();
+    expect(await marked()).toEqual({ lang: 'en', dir: 'ltr' });
+  } finally {
+    await Promise.all([api.close(), site.close()]);
   }
 });
 
