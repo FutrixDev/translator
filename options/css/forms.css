@@ -305,7 +305,7 @@
 }
 
 .btn-primary {
-  background: var(--accent-gradient);
+  background: var(--accent-fill);
   color: white;
   box-shadow: 0 4px 16px rgba(124, 92, 255, 0.3);
 }

@@ -240,7 +240,7 @@ test('engine-status.js is loaded wherever it is read', () => {
   // The engine module calls into it, so every page that loads the engine needs
   // it too — the settings page loads content-translation-engine.js to drive the
   // language-pack button, and reads the reason for its own status line.
-  for (const page of ['popup/popup.html', 'options/options.html']) {
+  for (const page of ['popup/popup.html', 'options/options.html', 'onboarding/onboarding.html']) {
     assert.match(repoFile(page), /shared\/engine-status\.js/, `${page} is missing it`);
   }
   const js = JSON.parse(repoFile('manifest.json')).content_scripts
@@ -256,6 +256,7 @@ test('engine-status.js is loaded wherever it is read', () => {
     'manifest.json': (file) => js.indexOf(file),
     'popup/popup.html': (file) => repoFile('popup/popup.html').indexOf(`<script src="../${file}"></script>`),
     'options/options.html': (file) => repoFile('options/options.html').indexOf(`<script src="../${file}"></script>`),
+    'onboarding/onboarding.html': (file) => repoFile('onboarding/onboarding.html').indexOf(`<script src="../${file}"></script>`),
   };
   for (const [name, at] of Object.entries(lists)) {
     assert.ok(at('shared/api-compat.js') >= 0, `${name} does not load shared/api-compat.js`);
@@ -264,18 +265,20 @@ test('engine-status.js is loaded wherever it is read', () => {
   }
 });
 
-test('both load lists carry the whole engine family, after the lang-tags it needs', () => {
-  // The options page does not go through the manifest; it lists its own
-  // <script> tags one by one. A new file in the family that only makes it into
-  // the manifest leaves the options page calling an eng.toApiLang nobody put on
-  // the shelf the moment "download language pack" is clicked — and no e2e
-  // clicks that page every day.
+test('every load list carries the whole engine family, after the lang-tags it needs', () => {
+  // The options page and the onboarding page do not go through the manifest;
+  // each lists its own <script> tags one by one. A new file in the family that
+  // only makes it into the manifest leaves those pages calling an
+  // eng.toApiLang nobody put on the shelf the moment "download language pack"
+  // is clicked — and no e2e clicks that button every day.
   const html = repoFile('options/options.html');
+  const onboarding = repoFile('onboarding/onboarding.html');
   const js = JSON.parse(repoFile('manifest.json')).content_scripts
     .find(entry => entry.matches.includes('<all_urls>')).js;
   const lists = {
     'manifest.json': (file) => js.indexOf(file),
     'options/options.html': (file) => html.indexOf(`<script src="../${file}"></script>`),
+    'onboarding/onboarding.html': (file) => onboarding.indexOf(`<script src="../${file}"></script>`),
   };
   for (const [name, at] of Object.entries(lists)) {
     for (const file of familyPaths('content/engine', 'content/content-translation-engine.js')) {

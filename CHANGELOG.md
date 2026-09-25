@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Onboarding page and settings import/export
+
+- **A welcome page on first install.** A fresh install (not an update) opens
+  `onboarding/onboarding.html`: whether the on-device language pack for your
+  target language is ready, with a download button that only runs when you
+  press it; the target language; the engine, built-in or AI, where choosing
+  Ollama or LM Studio fills in the local connection and opens Settings at the
+  connection card; and the extension's keyboard
+  shortcuts as Chrome reports them. Every choice is saved at once and sent to
+  open tabs.
+- **Export and import settings** from a new Import & Export card on the
+  Settings page. The file is `blab-settings-YYYYMMDD.json`
+  (`{format: 'blab-settings', version: 1, exportedAt, settings, siteRules}`).
+  The API key is only included when you tick the box; device-local data
+  (caches, usage statistics, account sign-in, per-site prompt counters,
+  panel positions) never is.
+- **An import is previewed before anything is written**: settings that
+  change, settings skipped as unknown or invalid, site rules merged in, and
+  parts of the file this version does not recognise. It warns when the import
+  would let AI translate without a click, and when it moves the API endpoint
+  while your saved key stays. Confirming merges the file over your settings
+  and tells open tabs.
+- **A bad file changes nothing.** Not JSON, not a Blab Translation file, a
+  different file version, a damaged part, over 1 MB, or a selection/hover
+  hotkey clash: the whole file is refused before any write.
+- **Primary buttons meet 4.5:1.** White text on the settings page's primary
+  buttons and the welcome page's accent buttons was 4.35:1 or lower; they now
+  use darker accent fills.
+- README: the repository address is `github.com/FutrixDev/translator`, and the
+  page-translation batch sizes match the code (40 paragraphs or 9,000
+  characters per batch, 4 concurrent on the built-in engine, 12 on AI).
+
 ### 76 target languages and right-to-left layout
 
 - **76 target languages instead of 10.** The list is Chrome's own interface

@@ -1,4 +1,4 @@
-/* Blab Translation 设置页样式，第 1 份（共 7 份）
+/* Blab Translation 设置页样式，第 1 份（共 8 份）
 
    一千二百行拆成了 options/css/ 下的一组文件，切口就是原来那些段落注释。
    **options.html 里 <link> 的顺序就是层叠顺序**：拆分严格照原顺序切，没有动过
@@ -17,6 +17,10 @@
   --accent-primary: #7c5cff;
   --accent-secondary: #5c8cff;
   --accent-gradient: linear-gradient(135deg, #7c5cff 0%, #5c8cff 100%);
+  /* 白字铺在上面的填充（.btn-primary）另用一条更深的渐变：白字在 #7c5cff 上
+     只有 4.35:1、在 #5c8cff 上 3.16:1，都不到 4.5。这两个端点是 5.53:1 和
+     5.15:1（onboarding.css 的强调色同为 #6a48f0）。标题的渐变字仍用上一条。 */
+  --accent-fill: linear-gradient(135deg, #6a48f0 0%, #3a66d9 100%);
   --success: #4ade80;
   --error: #f87171;
   --warning: #fbbf24;

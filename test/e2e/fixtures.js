@@ -9,15 +9,44 @@ const { applyBaseSettings } = require('./helpers');
 // Path to the extension
 const extensionPath = path.resolve(__dirname, '../../');
 
+const ONBOARDING_PATH = '/onboarding/onboarding.html';
+const ONBOARDING_WAIT_MS = 10_000;
+
+/**
+ * Every context is a fresh profile, so the extension is freshly *installed* in
+ * each one, and background/install.js opens the welcome page on that. Left
+ * alone it becomes the active tab a moment after the test's own page opens, and
+ * everything that asks for "the active tab" (sendMessageToActiveTab, the popup)
+ * would be talking to the welcome page instead. So it is closed before the test
+ * body runs — unless the spec is about it (`test.use({ keepOnboarding: true })`).
+ *
+ * Not finding it is a failure, not a skip: a fresh install that opens no welcome
+ * page is exactly the regression onboarding.spec.js J-F1 exists to catch, and a
+ * fixture that shrugged would hide it from every other spec too.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function waitForOnboardingPage(context) {
+  const deadline = Date.now() + ONBOARDING_WAIT_MS;
+  for (;;) {
+    const found = context.pages().find((p) => p.url().startsWith('chrome-extension://') && p.url().includes(ONBOARDING_PATH));
+    if (found) return found;
+    if (Date.now() > deadline) throw new Error(`the onboarding page did not open within ${ONBOARDING_WAIT_MS} ms of install`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 /**
  * Extended test fixture that loads the Chrome extension
  */
 const test = base.extend({
+  /** Keep the welcome page a fresh install opens (onboarding.spec.js). */
+  keepOnboarding: [false, { option: true }],
+
   /**
    * Browser context with extension loaded
    * Uses persistent context to support Chrome extensions
    */
-  context: async ({}, use) => {
+  context: async ({ keepOnboarding }, use) => {
     const context = await chromium.launchPersistentContext('', {
       // Chrome's newer headless shell loads unpacked extensions, so the suite no
       // longer has to steal window focus and the pointer while it runs. The
@@ -38,6 +67,14 @@ const test = base.extend({
     // Ensure at least one page exists to avoid hanging on page event
     if (context.pages().length === 0) {
       await context.newPage();
+    }
+
+    const onboarding = await waitForOnboardingPage(context);
+    if (!keepOnboarding) {
+      // Closing the last tab would close the window; the blank page above is
+      // normally still there, but make sure.
+      if (context.pages().length === 1) await context.newPage();
+      await onboarding.close();
     }
 
     // Every context, not only the ones a spec configures: a spec that calls no
@@ -93,4 +130,4 @@ const test = base.extend({
 
 const { expect } = require('@playwright/test');
 
-module.exports = { test, expect, extensionPath };
+module.exports = { test, expect, extensionPath, waitForOnboardingPage };

@@ -140,12 +140,17 @@ test('设置页把它切到 AI 要过一道二次确认，说了不就退回去'
 // test/e2e/feature-settings.spec.js 上走。
 test('额度那一格灰不灰，看的是三条零点击的 AI 路里还有没有一条通着', () => {
   const options = optionsSource();
-  const reach = options.match(/function unattendedAiReachable\(\) \{([\s\S]*?)\n\}/);
+  // 它问的是一份设置对象（导入预览拿「当前」和「导入之后」各问一次），所以
+  // 直接抠出来跑，而不是认它的写法。
+  const reach = options.match(/function unattendedAiReachable\(settings\) \{[\s\S]*?\n\}/);
   assert.ok(reach, 'unattendedAiReachable 不见了');
-  assert.match(reach[1], /elements\.autoTranslateEngine\.value === 'ai'/);
-  assert.match(reach[1], /elements\.translationEngine\.value === 'ai'/);
-  assert.match(reach[1], /elements\.engineFallback\.value === 'allow-ai'/);
-  assert.match(options, /classList\.toggle\('disabled', !unattendedAiReachable\(\)\)/);
+  const reachable = new Function(`${reach[0]}; return unattendedAiReachable;`)();
+  const closed = { autoTranslateEngine: 'builtin', translationEngine: 'builtin', engineFallback: 'local-only' };
+  assert.equal(reachable(closed), false);
+  assert.equal(reachable({ ...closed, autoTranslateEngine: 'ai' }), true);
+  assert.equal(reachable({ ...closed, translationEngine: 'ai' }), true);
+  assert.equal(reachable({ ...closed, engineFallback: 'allow-ai' }), true);
+  assert.match(options, /classList\.toggle\('disabled', !unattendedAiReachable\(collectSettings\(\)\)\)/);
   // 三个下拉任何一个变了都要重画，不止自动那一个。
   assert.match(options, /elements\.translationEngine\.addEventListener\('change', syncAutoEngineState\)/);
   assert.match(options, /elements\.engineFallback\.addEventListener\('change', syncAutoEngineState\)/);

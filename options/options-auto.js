@@ -38,16 +38,19 @@ function syncAutoSubState() {
  * 而那个框恰恰是在替他数钱。
  *
  * 只变灰、不隐藏：一个填了数字的框突然消失，用户会以为那个数字也一起没了。
+ *
+ * 问的是一份设置对象而不是表单：导入预览要拿「当前」和「导入之后」各问一次，
+ * 看导入会不会打开一条原本关着的路（options-transfer.js）。三条路只在这里写。
  */
-function unattendedAiReachable() {
-  return elements.autoTranslateEngine.value === 'ai'
-    || elements.translationEngine.value === 'ai'
-    || elements.engineFallback.value === 'allow-ai';
+function unattendedAiReachable(settings) {
+  return settings.autoTranslateEngine === 'ai'
+    || settings.translationEngine === 'ai'
+    || settings.engineFallback === 'allow-ai';
 }
 
 function syncAutoEngineState() {
   if (!elements.autoAiBudgetGroup) return;
-  elements.autoAiBudgetGroup.classList.toggle('disabled', !unattendedAiReachable());
+  elements.autoAiBudgetGroup.classList.toggle('disabled', !unattendedAiReachable(collectSettings()));
 }
 
 /**

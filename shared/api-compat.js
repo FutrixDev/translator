@@ -115,20 +115,26 @@
   // a credential, it is noise some servers answer with 401. A key that is set is
   // always sent, local endpoint or not: LM Studio's "Require Authentication"
   // wants one.
+  //
+  // carriesApiKey is the one place that decides whether a stored key is "set":
+  // other code (the import preview warning, say) asks it rather than testing
+  // apiKey's truthiness itself.
+  function carriesApiKey(apiKey) {
+    return String(apiKey || '').trim() !== '';
+  }
+
   function openAIHeaders(apiKey) {
-    const key = String(apiKey || '').trim();
     const headers = { 'Content-Type': 'application/json' };
-    if (key) headers.Authorization = `Bearer ${key}`;
+    if (carriesApiKey(apiKey)) headers.Authorization = `Bearer ${String(apiKey).trim()}`;
     return headers;
   }
 
   function claudeHeaders(apiKey) {
-    const key = String(apiKey || '').trim();
     const headers = {
       'Content-Type': 'application/json',
       'anthropic-version': CLAUDE_API_VERSION
     };
-    if (key) headers['x-api-key'] = key;
+    if (carriesApiKey(apiKey)) headers['x-api-key'] = String(apiKey).trim();
     return headers;
   }
 
@@ -216,7 +222,7 @@
   }
 
   function isApiKeyMissing(settings) {
-    return requiresApiKey(settings) && !String((settings && settings.apiKey) || '').trim();
+    return requiresApiKey(settings) && !carriesApiKey(settings && settings.apiKey);
   }
 
   // --- Request bodies -------------------------------------------------------
@@ -528,6 +534,7 @@
     DEFAULT_TEMPERATURE,
     isClaudeAPI,
     CLAUDE_API_VERSION,
+    carriesApiKey,
     openAIHeaders,
     claudeHeaders,
     buildOpenAIRequestBody,

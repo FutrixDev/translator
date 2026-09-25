@@ -1,0 +1,75 @@
+/* Blab Translation 设置页样式 —— 导入 / 导出卡片（options-transfer.js）。
+   排在所有卡片样式之后，只用 base.css 的变量，亮暗两套跟着 data-theme 走。 */
+
+.transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.transfer-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.transfer-secret input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+}
+
+/* 失败信息留在卡片里，不走会自己消失的状态条：用户要对着它改文件。 */
+.transfer-error {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  background: var(--bg-tertiary);
+  font-size: 14px;
+  white-space: pre-line;
+}
+
+.transfer-error[hidden],
+.transfer-preview[hidden] {
+  display: none;
+}
+
+.transfer-preview {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.transfer-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.transfer-preview-list {
+  margin: 10px 0 0 18px;
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.transfer-preview-list li + li {
+  margin-top: 6px;
+}
+
+.transfer-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warning);
+  font-size: 14px;
+  color: var(--text-primary);
+}

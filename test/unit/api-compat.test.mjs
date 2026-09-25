@@ -182,6 +182,13 @@ test('the packaged zip includes the shared module', () => {
   assert.match(pkg.scripts.zip, /\bshared\/\s/, 'npm run zip must package shared/');
 });
 
+test('the packaged zip includes the onboarding page', () => {
+  // background/install.js opens onboarding/onboarding.html on first install; a
+  // zip without the directory opens a tab that says "file not found".
+  const pkg = JSON.parse(repoFile('package.json'));
+  assert.match(pkg.scripts.zip, /\bonboarding\/\s/, 'npm run zip must package onboarding/');
+});
+
 test('vendor error shapes are all recognised', () => {
   // A failure comes back as data, { status, detail }, not as a sentence: this
   // layer does not know the reader's language. Wording is describeAPIFailure's
