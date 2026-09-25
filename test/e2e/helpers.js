@@ -471,7 +471,52 @@ function contentStylesheet() {
     .join('\n');
 }
 
+/**
+ * Evaluate an expression in a frame's content-script isolated world. The tests
+ * have no scripting permission and Playwright's evaluate only reaches the page's
+ * main world, so this goes through CDP: find the isolated context in that frame
+ * whose origin is the extension.
+ */
+async function evaluateInContentScript(context, pageOrFrame, expression) {
+  const session = await context.newCDPSession(pageOrFrame);
+  const contexts = [];
+  session.on('Runtime.executionContextCreated', (event) => contexts.push(event.context));
+  await session.send('Runtime.enable');
+  const isIsolated = (c) => c.auxData && c.auxData.type === 'isolated'
+    && String(c.origin).startsWith('chrome-extension://');
+  await expect.poll(() => contexts.some(isIsolated)).toBe(true);
+  const isolated = contexts.find(isIsolated);
+  const { result, exceptionDetails } = await session.send('Runtime.evaluate', {
+    expression, contextId: isolated.id, awaitPromise: true, returnByValue: true,
+  });
+  await session.detach();
+  if (exceptionDetails) throw new Error(`content-script evaluate failed: ${exceptionDetails.text}`);
+  return result.value;
+}
+
+/**
+ * STUB, not the real engine: replaces `self.Translator` in the page's
+ * content-script world with one that answers `'[B] ' + text`. Chromium in the
+ * e2e run has no on-device model, so the built-in path can only be proven
+ * against a stand-in. Every call is counted on `self.__builtinCalls`.
+ */
+async function stubBuiltinTranslator(page) {
+  return evaluateInContentScript(page.context(), page, `(() => {
+    self.__builtinCalls = 0;
+    self.Translator = {
+      availability: async () => 'available',
+      create: async () => ({
+        translate: async (text) => { self.__builtinCalls += 1; return '[B] ' + text; },
+        destroy() {},
+      }),
+    };
+    return true;
+  })()`);
+}
+
 module.exports = {
+  evaluateInContentScript,
+  stubBuiltinTranslator,
   E2E_BASE_SETTINGS,
   REPO_ROOT,
   CONTENT_HARNESS_PRELUDE,
