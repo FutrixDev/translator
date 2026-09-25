@@ -223,6 +223,24 @@ test.describe('selection icon and card actions', () => {
       await page.locator('.ai-translator-popup .ai-translator-copy').click();
       await expect(page.locator('.ai-translator-popup .ai-translator-copy')).toContainText(en('copied'));
       await expect(page.locator('.ai-translator-popup .ai-translator-speak-translation')).toBeVisible();
+
+      // Switch engine follows the card's target language: the built-in engine
+      // cannot translate into fa, so an AI answer in fa offers no switch; fr it
+      // can, so the offer comes back. The stub answers any language — the gate
+      // is the engine's language list, not the model.
+      const pickTarget = async (lang) => {
+        await page.locator('.ai-translator-popup .ai-translator-lang-trigger').click();
+        await page.locator(`.ai-translator-popup .ai-translator-lang-item[data-lang="${lang}"]`).click();
+        await expect(cardText(page)).toHaveAttribute('lang', lang);
+        await expect(cardText(page)).toContainText('[T]');
+        await expect(engineTag(page)).toHaveText(en('cardEngineAi'));
+      };
+      await pickTarget('fa');
+      await page.waitForTimeout(SETTLE_MS);
+      await expect(switchBtn(page)).toBeHidden();
+      await pickTarget('fr');
+      await expect(switchBtn(page)).toBeVisible();
+      await expect(switchBtn(page)).toHaveText(en('cardUseBuiltin'));
     } finally {
       await mock.close();
     }
