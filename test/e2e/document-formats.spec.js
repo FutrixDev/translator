@@ -96,6 +96,8 @@ for (const format of ['docx', 'epub']) {
         expect(created.sourceKey).toBe(`pdf/u1/${ticket.operationId}/source.${format}`);
         expect(created.sourceFormat).toBe(format);
         expect(created.fileName).toBe(fixture.fileName);
+        expect(created.targetLang).toBeTruthy();
+        expect(created.output).toEqual({ kind: 'dual', dualLayout: 'side-by-side', watermark: false });
         // docx 4235 characters -> 2; epub 2413 -> 1, which only holds if the
         // 1199-character nav.xhtml was left out.
         expect(created.declaredUnits).toBe(fixture.units);

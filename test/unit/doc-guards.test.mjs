@@ -203,3 +203,20 @@ test('the notification click listener is registered at the top level', () => {
     'self-check');
   assert.ok(TOP_LEVEL.test(jobs));
 });
+
+// ---------------------------------------------------------------------------
+// The settings page's two groups (spec §5.1 defect 5)
+// ---------------------------------------------------------------------------
+
+/** Does the settings page split its list on "unsettled", and only on that? */
+function groupsByUnsettled(source) {
+  return /const unsettled = jobs\.filter\(job => DocJobs\.isUnsettledStatus\(job\.status\)\);/.test(source) &&
+    /showPdfTaskGroups\(unsettled, jobs\.filter\(job => !DocJobs\.isUnsettledStatus\(job\.status\)\)\)/.test(source);
+}
+
+test('the settings page keeps an awaiting job out of the history', () => {
+  const tasks = read('options/options-pdf-tasks.js');
+  // The defect: splitting on "active" filed an awaiting job under History.
+  assert.equal(groupsByUnsettled(tasks.replace(/isUnsettledStatus/g, 'isActiveStatus')), false, 'self-check');
+  assert.ok(groupsByUnsettled(tasks));
+});
