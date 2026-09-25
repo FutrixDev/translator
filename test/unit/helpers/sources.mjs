@@ -40,6 +40,13 @@ export function optionsSource() {
 }
 
 /**
+ * 弹窗全体：popup/*.js（popup.js 与 popup-pdf.js 等同级脚本，共用一个全局词法作用域）。
+ */
+export function popupSource() {
+  return surfaceSource('popup', (name) => name.endsWith('.js'));
+}
+
+/**
  * 界面文案全体：十门语言的表（i18n/lang/*.js）加上 i18n/messages.js 自己。
  *
  * 「这句话所有语言都有吗」问的是这一面，不是某个文件 —— 表拆开之后，某个 key 落

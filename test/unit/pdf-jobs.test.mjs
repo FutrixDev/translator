@@ -16,7 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { optionsSource } from './helpers/sources.mjs';
+import { optionsSource, popupSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -170,7 +170,7 @@ test('a job that finished stamps when it finished', async () => {
 // ---------------------------------------------------------------------------
 
 test('the popup stops showing a job that finished long ago', () => {
-  const source = repoFile('popup/popup.js');
+  const source = popupSource();
   assert.ok(
     /PDF_SETTLED_VISIBLE_MS/.test(source) &&
       /records\.filter\(isPdfJobStillWorthShowing\)/.test(source),

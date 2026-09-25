@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const { comicSource, workerSource } = await import('./helpers/sources.mjs');
+const { comicSource, popupSource, workerSource } = await import('./helpers/sources.mjs');
 
 // No `export`: the extension's own pages load it as a classic script, so
 // importing it for its side effect publishes globalThis.ChargeConfirm.
@@ -260,7 +260,7 @@ test('the PDF create path asks through the shared module, and only that one', ()
   // One implementation, repo-wide. A second copy is the one that goes stale on
   // the day the server changes the handshake.
   for (const [name, src] of [['the service worker', workerSource()],
-    ['popup/popup.js', repoFile('popup/popup.js')],
+    ['the popup', popupSource()],
     ['pdf/upload.js', repoFile('pdf/upload.js')],
     ['漫画翻译那一族', comicSource()]]) {
     assert.doesNotMatch(src, /function submitWithConfirmation/,
@@ -309,8 +309,7 @@ test('every page that asks about a charge loads the module before its own script
 });
 
 test('both PDF pages create through the handshake and treat a decline as a cancel', () => {
-  for (const file of ['pdf/upload.js', 'popup/popup.js']) {
-    const source = repoFile(file);
+  for (const [file, source] of [['pdf/upload.js', repoFile('pdf/upload.js')], ['the popup', popupSource()]]) {
     assert.match(source, /ChargeConfirm\.submitWithConfirmation\(/,
       `${file} must create through the handshake`);
     assert.match(source, /confirmCharge: confirmCharge === true/,
@@ -322,7 +321,7 @@ test('both PDF pages create through the handshake and treat a decline as a cance
   }
   // The popup does not mint the id, so its retry can only be the same operation
   // if it sends back the one the 409 echoed.
-  assert.match(repoFile('popup/popup.js'), /reply\.error\.operationId/);
+  assert.match(popupSource(), /reply\.error\.operationId/);
 });
 
 // ---------------------------------------------------------------------------

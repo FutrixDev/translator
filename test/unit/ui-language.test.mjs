@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { optionsSource, workerSource } from './helpers/sources.mjs';
+import { optionsSource, popupSource, workerSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -77,7 +77,7 @@ test('every language it can return has a string block', () => {
 // targetLang 去喂它」。
 const CALLERS = [
   ['the service worker', workerSource],
-  ['popup/popup.js', () => repoFile('popup/popup.js')],
+  ['the popup', popupSource],
   ['the settings page', optionsSource],
   ['pdf/upload.js', () => repoFile('pdf/upload.js')],
   ['content/content-bootstrap.js', () => repoFile('content/content-bootstrap.js')],
