@@ -479,6 +479,7 @@
     transferPreviewDroppedKeys: 'Ignorés (paramètre inconnu ou valeur non valide) : {keys}',
     transferPreviewSiteRules: 'Règles de sites : {count} seront fusionnées avec votre liste, {dropped} ignorées.',
     transferPreviewUnknownSections: 'Non reconnu par cette version, sera ignoré : {sections}',
+    transferUnattendedAiWarning: 'Après l’import, les traductions qui se font sans clic, comme les pages traduites automatiquement ou les sous-titres d’une vidéo en cours de lecture, pourront appeler votre propre API IA et vous seront facturées. Il est conseillé de fixer aussi une limite quotidienne de caractères.',
     transferEndpointKeyWarning: 'Le point d’accès de l’API va devenir {endpoint}. Le fichier ne contient pas de clé API : la clé déjà enregistrée ici sera donc envoyée à cette adresse. Assurez-vous de lui faire confiance.',
     transferSectionSettings: 'Paramètres',
     transferSectionSiteRules: 'Règles de sites',

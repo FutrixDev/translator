@@ -161,7 +161,7 @@ test('J-F6 an import is previewed, merged on confirm, and announced to open tabs
     const aiFile = blabFile({ settings: { translationEngine: 'ai' } });
     await chooseFile(options, aiFile);
     await expect(preview).toBeVisible();
-    await expect(options.locator('#transferWarnings .transfer-warning')).toHaveText([en('autoTranslateEngineAiConfirm')]);
+    await expect(options.locator('#transferWarnings .transfer-warning')).toHaveText([en('transferUnattendedAiWarning')]);
     await centre(options, '#transferPreview');
     report('J-F6 dark notice', await expectLaidOut(options,
       ['#transferPreviewList', '#transferWarnings .transfer-warning', '#transferConfirm', '#transferCancel'], 'J-F6 dark notice'));

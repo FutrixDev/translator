@@ -479,6 +479,7 @@
     transferPreviewDroppedKeys: '건너뜀(알 수 없는 설정 또는 잘못된 값): {keys}',
     transferPreviewSiteRules: '사이트 규칙: {count}개를 목록에 합치고 {dropped}개는 건너뜁니다.',
     transferPreviewUnknownSections: '이 버전에서 인식하지 못해 무시합니다: {sections}',
+    transferUnattendedAiWarning: '가져온 뒤에는 클릭 없이 이루어지는 번역(자동 번역되는 페이지, 재생 중인 동영상 자막)이 내 AI API 를 호출하고 내 요금으로 청구될 수 있습니다. 하루 문자 수 한도도 함께 정해 두는 편이 좋습니다.',
     transferEndpointKeyWarning: 'API 엔드포인트가 {endpoint}(으)로 바뀝니다. 파일에 API 키가 없으므로 여기에 저장된 키가 그 주소로 전송됩니다. 믿을 수 있는 주소인지 확인하세요.',
     transferSectionSettings: '설정',
     transferSectionSiteRules: '사이트 규칙',

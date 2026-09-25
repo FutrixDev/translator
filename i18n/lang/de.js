@@ -479,6 +479,7 @@
     transferPreviewDroppedKeys: 'Übersprungen (unbekannte Einstellung oder ungültiger Wert): {keys}',
     transferPreviewSiteRules: 'Seitenregeln: {count} werden mit Ihrer Liste zusammengeführt, {dropped} übersprungen.',
     transferPreviewUnknownSections: 'Von dieser Version nicht erkannt, wird ignoriert: {sections}',
+    transferUnattendedAiWarning: 'Nach dem Import können Übersetzungen, die ohne Klick laufen, etwa automatisch übersetzte Seiten oder die Untertitel eines laufenden Videos, Ihre eigene KI-API aufrufen und werden Ihnen berechnet. Es empfiehlt sich, zugleich ein tägliches Zeichenlimit zu setzen.',
     transferEndpointKeyWarning: 'Der API-Endpunkt ändert sich zu {endpoint}. Die Datei enthält keinen API-Schlüssel, daher wird der hier gespeicherte Schlüssel an diese Adresse gesendet. Vergewissern Sie sich, dass Sie ihr vertrauen.',
     transferSectionSettings: 'Einstellungen',
     transferSectionSiteRules: 'Seitenregeln',

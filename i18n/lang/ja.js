@@ -479,6 +479,7 @@
     transferPreviewDroppedKeys: 'スキップ（不明な設定または無効な値）：{keys}',
     transferPreviewSiteRules: 'サイトルール：{count} 件をリストに統合し、{dropped} 件はスキップします。',
     transferPreviewUnknownSections: 'このバージョンでは認識できないため無視します：{sections}',
+    transferUnattendedAiWarning: 'インポート後は、クリックなしで行われる翻訳（自動翻訳されるページや再生中の動画の字幕）が自分の AI API を呼び出し、自分に課金されることがあります。1 日あたりの文字数上限もあわせて設定することをおすすめします。',
     transferEndpointKeyWarning: 'API エンドポイントが {endpoint} に変わります。ファイルに API キーが含まれていないため、ここに保存済みのキーがそのアドレスに送信されます。信頼できる送信先か確認してください。',
     transferSectionSettings: '設定',
     transferSectionSiteRules: 'サイトルール',

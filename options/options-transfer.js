@@ -71,11 +71,13 @@ const settingsSection = {
     if (dropped.length) lines.push(fill(t('transferPreviewDroppedKeys'), { keys: dropped.join(', ') }));
 
     const warnings = [];
-    // 导入会打开一条原本关着的「没人点也会花到 AI」的路：说的是和设置页切到 AI
-    // 时同一句话。点「确认导入」就算答应了，不再另弹一次确认。
+    // 导入会打开一条原本关着的「没人点也会花到 AI」的路。三条路里哪一条都算
+    // （options-auto.js 的 unattendedAiReachable），所以不借设置页那句「让自动
+    // 翻译改用 AI？」：文件只改了手动引擎时，自动翻译仍是内置，那句话就不对了。
+    // 点「确认导入」就算答应了，不再另弹一次确认。
     const current = collectSettings();
     if (!unattendedAiReachable(current) && unattendedAiReachable(Object.assign({}, current, value))) {
-      warnings.push(t('autoTranslateEngineAiConfirm'));
+      warnings.push(t('transferUnattendedAiWarning'));
     }
     // 换了接口地址、文件里却没带 Key：已经存着的那把 Key 会发到新地址去。
     if (changed.includes('apiEndpoint') && !('apiKey' in value) && APICompat.carriesApiKey(stored.apiKey)) {

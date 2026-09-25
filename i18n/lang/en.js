@@ -520,6 +520,7 @@ Rules:
     transferPreviewDroppedKeys: 'Skipped (unknown setting or invalid value): {keys}',
     transferPreviewSiteRules: 'Site rules: {count} will be merged into your list, {dropped} skipped.',
     transferPreviewUnknownSections: 'Not recognised by this version, will be ignored: {sections}',
+    transferUnattendedAiWarning: 'After this import, translations that run without a click, such as automatically translated pages or the subtitles of a playing video, can call your own AI API and are billed to you. Setting a daily character limit as well is a good idea.',
     transferEndpointKeyWarning: 'The API endpoint will change to {endpoint}. The file has no API key, so the key already saved here will be sent to that address. Make sure you trust it.',
     transferSectionSettings: 'Settings',
     transferSectionSiteRules: 'Site rules',

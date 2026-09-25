@@ -479,6 +479,7 @@
     transferPreviewDroppedKeys: 'Ignoradas (configuração desconhecida ou valor inválido): {keys}',
     transferPreviewSiteRules: 'Regras de sites: {count} serão mescladas à sua lista, {dropped} ignoradas.',
     transferPreviewUnknownSections: 'Não reconhecido por esta versão, será ignorado: {sections}',
+    transferUnattendedAiWarning: 'Depois da importação, as traduções que acontecem sem nenhum clique, como as páginas traduzidas automaticamente ou as legendas de um vídeo em reprodução, podem chamar a sua própria API de IA e são cobradas de você. Vale a pena definir também um limite diário de caracteres.',
     transferEndpointKeyWarning: 'O endpoint da API vai mudar para {endpoint}. O arquivo não tem chave da API, então a chave já salva aqui será enviada para esse endereço. Confirme que você confia nele.',
     transferSectionSettings: 'Configurações',
     transferSectionSiteRules: 'Regras de sites',

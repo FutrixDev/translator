@@ -270,7 +270,7 @@ const TRANSFER_SECTIONS = [
 
 #### AI 路径提示（P1 协调 2026-09-25）
 
-- 如果导入会打开一条目前关着的无人值守 AI 路径，预览里显示 `autoTranslateEngineAiConfirm` 那句话。这三条路径是：
+- 如果导入会打开一条目前关着的无人值守 AI 路径，预览里显示 `transferUnattendedAiWarning`（原计划借用设置页的 `autoTranslateEngineAiConfirm`，改动见 §15 第 13 条）。这三条路径是：
   - 自动模式引擎为 AI；
   - 手动引擎为 AI；
   - 回退为 `allow-ai`。
@@ -469,3 +469,11 @@ const TRANSFER_SECTIONS = [
     - J-F7 没有先清空规则，而是换成另一份含冲突站点的列表，这样同时验证了合并和「文件优先」。
     - J-F8 在设计的三类坏文件之外，还加了：版本不对、某一部分损坏（`settings` 合法、`siteRules` 是数组）、热键冲突。
     - J-F5 / J-F7 在亮色主题下测，J-F1 亮暗两套都测，J-F3 / J-F6 / J-F8 在暗色下测。
+
+**主控验收时的修正**
+
+13. **AI 提示改用专门的一句（§4.4）。**
+    - 原先借用设置页的 `autoTranslateEngineAiConfirm`，那句话问的是「让自动翻译改用你自己的 AI 接口？」，后面说「你打开的每一个符合条件的页面」都会调用接口。
+    - 三条路径里只有一条是自动模式引擎。J-F6 的文件只把手动引擎改成 AI，自动翻译仍是内置，花钱的是视频字幕，那句话就说错了。
+    - 改为新键 `transferUnattendedAiWarning`，10 种语言各写一句完整的陈述句：导入之后，自动翻译的网页、正在播放的视频字幕这类不用点就发生的翻译可能调用用户自己的接口并计费，建议设每日上限。J-F6 的断言随之改为这个键。
+14. **中文产品名。** zh-CN / zh-TW 的界面文案里产品名统一为「叭叭翻译 / 叭叭翻譯」，与 `appName` 和 `_locales` 一致。本批新增的 `onboardingPageTitle`、`transferErrorWrongFormat`、`transferErrorWrongVersion` 原写作 Blab Translation，已改；旧文案 `hintCaptionPlayerButton` 同类问题一并改掉。
