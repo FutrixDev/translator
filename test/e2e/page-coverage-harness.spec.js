@@ -224,7 +224,9 @@ test('own UI: the text in the source peek card is never collected', async ({ pag
     const ctx = window.AI_TRANSLATOR_CONTENT;
     ctx.settings.showTranslationOnly = true;
     const block = ctx.collectTranslatableBlocks(document.body).find((b) => b.element.id === 'source-p');
-    ctx.insertTranslationBlock(block, '[T] The reader sees this translation instead.');
+    // textLang 取这个夹具真会请求的那门语言，和 content/page/batch.js 落笔时同一个来源。
+    ctx.insertTranslationBlock(block, '[T] The reader sees this translation instead.',
+      { textLang: ctx.getEffectiveTargetLang() });
   });
   const translation = page.locator('#source-p + .ai-translator-inline-block');
   const box = await translation.boundingBox();

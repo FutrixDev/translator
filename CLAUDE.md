@@ -62,7 +62,9 @@ file directly.
      `feature-gate.js`
    - Page coverage: `frame-relay.js` (relays `FRAME_*` messages between a
      child frame and the top frame of the same tab) and `page-coverage.js`
-     (the Alt+W whole-page command and the shadow-DOM stylesheet)
+     (answers `GET_SHADOW_STYLES` with the translation stylesheet rewritten for
+     shadow roots). The Alt+W whole-page shortcut is a row in the `COMMANDS`
+     table of `commands.js`, beside Alt+A, not a listener of its own
 
 2. **Content Script** (`content/*.js` + the sub-families below)
    - Injected into all webpages for DOM interaction
