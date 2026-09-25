@@ -27,9 +27,11 @@ const SOURCE = readFileSync(path.join(ROOT, 'content/page/scope.js'), 'utf8');
  * body 的字数 = bodyChars，<main> 的字数 = mainChars；两者都可以在测试中途改。
  */
 function load({ bodyChars, mainChars }) {
-  const counts = { body: 0 };
+  const counts = { body: 0, cssRounds: 0 };
   const registrations = [];
-  const page = { bodyChars, mainChars, mainConnected: true };
+  // rule / ruleVersion：用户站点规则（ctx.customRules 的桩）；includeHits：include
+  // 选择器在页面上命中的元素（ctx.queryAllDeep 的桩）；builtin：内置规则表命中与否。
+  const page = { bodyChars, mainChars, mainConnected: true, rule: null, ruleVersion: 0, includeHits: [], builtin: null };
 
   const element = (localName, chars, extra = {}) => ({
     localName,
@@ -50,6 +52,16 @@ function load({ bodyChars, mainChars }) {
   const ctx = {
     state: { pageScopeOverride: null },
     settings: { pageTranslateScope: 'main' },
+    customRules: {
+      current: () => page.rule,
+      get version() {
+        return page.ruleVersion;
+      },
+      beginRound: () => { counts.cssRounds += 1; },
+    },
+    usableSelector: (list) => list.join(','),
+    queryAllDeep: () => page.includeHits,
+    composedContains: (ancestor, node) => ancestor === node || ancestor.contains(node),
   };
   const sandbox = {
     console,
@@ -58,7 +70,8 @@ function load({ bodyChars, mainChars }) {
       body,
       querySelectorAll: () => (page.mainConnected ? [main] : []),
     },
-    SiteRules: { matchBuiltin: () => null },
+    SiteRules: { matchBuiltin: () => page.builtin },
+    Node: { DOCUMENT_POSITION_FOLLOWING: 4 },
     // 加载时若有人挂观察者或监听，这里记下来。
     MutationObserver: class { constructor() { registrations.push('MutationObserver'); } observe() {} },
     IntersectionObserver: class { constructor() { registrations.push('IntersectionObserver'); } observe() {} },
@@ -146,4 +159,142 @@ test('(c) what else drops the cache: a new key, or invalidatePageScope()', () =>
   assert.equal(counts.body, 4);
   ctx.resolvePageScope();
   assert.equal(counts.body, 4);
+});
+
+// ---------------------------------------------------------------- 用户规则 include（P1-B §3.3）
+
+// 一个 include 区域的桩：order 是文档顺序，children 是它包含的别的区域。
+function region(order, { rendered = true, children = [] } = {}) {
+  const el = {
+    order,
+    isConnected: true,
+    getClientRects: () => (rendered ? [{}] : []),
+    contains: (node) => children.some((child) => child === node || child.contains(node)),
+    compareDocumentPosition: (other) => (other.order > order ? 4 : 2),
+  };
+  return el;
+}
+
+function withInclude(fixture, hits) {
+  fixture.page.rule = { include: ['.faq'], exclude: [], keepOriginal: [], css: '', engine: null };
+  fixture.page.ruleVersion += 1;
+  fixture.page.includeHits = hits;
+}
+
+test('include: rendered hits become the roots, outermost only', () => {
+  const fixture = load(SHELL);
+  const inner = region(2);
+  const outer = region(1, { children: [inner] });
+  const hidden = region(3, { rendered: false });
+  const other = region(4);
+  withInclude(fixture, [outer, inner, hidden, other]);
+  const scope = fixture.ctx.resolvePageScope();
+  assert.equal(scope.mode, 'include');
+  assert.deepEqual(scope.roots, [outer, other]);
+  assert.equal(scope.skip, null, 'include regions are translated whole, nav and all');
+  assert.equal(fixture.ctx.pageScopeMode(), 'include');
+  assert.equal(fixture.counts.body, 0, 'include mode counted body');
+});
+
+test('the ladder: override page, then include, then setting page or builtin, then main', () => {
+  const fixture = load(SHELL);
+  const { ctx, page } = fixture;
+  withInclude(fixture, [region(1)]);
+  ctx.settings.pageTranslateScope = 'page';
+  page.builtin = { match: 'news.example.com' };
+  assert.equal(ctx.pageScopeMode(), 'include', 'include outranks the setting and the builtin table');
+  ctx.state.pageScopeOverride = 'page';
+  assert.equal(ctx.pageScopeMode(), 'page');
+  assert.equal(ctx.resolvePageScope().mode, 'page', 'the whole-page entry outranks include');
+  ctx.state.pageScopeOverride = null;
+  page.includeHits = [];
+  assert.equal(ctx.pageScopeMode(), 'page', 'zero hits fall through to the setting');
+  ctx.settings.pageTranslateScope = 'main';
+  assert.equal(ctx.pageScopeMode(), 'page', 'then to the builtin table');
+  page.builtin = null;
+  assert.equal(ctx.pageScopeMode(), 'main');
+});
+
+test('include with zero hits is not cached: a region that renders later is picked up', () => {
+  const fixture = load(SHELL);
+  const { ctx, page } = fixture;
+  withInclude(fixture, []);
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+  const late = region(1);
+  page.includeHits = [late];
+  // 同一轮、同一个键：没有 beginScopeRound()，也没有 invalidatePageScope()。
+  // 退下去的答案照样缓存，但零命中不算结果，取用前要再问一次 include。
+  const scope = ctx.resolvePageScope();
+  assert.equal(scope.mode, 'include', 'a zero-hit answer was cached');
+  assert.deepEqual(scope.roots, [late]);
+});
+
+test('include is cached while its regions stay connected, and the rule version is in the key', () => {
+  const fixture = load(SHELL);
+  const { ctx, page } = fixture;
+  const first = region(1);
+  withInclude(fixture, [first]);
+  const scope = ctx.resolvePageScope();
+  page.includeHits = [region(2)];
+  assert.equal(ctx.resolvePageScope(), scope, 'a connected include scope was recomputed');
+  first.isConnected = false;
+  assert.notEqual(ctx.resolvePageScope(), scope);
+  const again = ctx.resolvePageScope();
+  page.includeHits = [region(3)];
+  page.ruleVersion += 1;
+  assert.notEqual(ctx.resolvePageScope(), again, 'a new rule set did not change the key');
+  page.rule = null;
+  page.ruleVersion += 1;
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+});
+
+test('every scope round remounts the rule CSS', () => {
+  const { ctx, counts } = load(SHELL);
+  ctx.beginScopeRound();
+  ctx.beginScopeRound();
+  assert.equal(counts.cssRounds, 2);
+});
+
+test('include starts: inside a region, containing regions, disjoint', () => {
+  const fixture = load(SHELL);
+  const { ctx } = fixture;
+  const leaf = region(2);
+  const a = region(1, { children: [leaf] });
+  const b = region(5);
+  withInclude(fixture, [b, a]);
+  const scope = ctx.resolvePageScope();
+  // 数组在 vm 的上下文里造出来，原型不是这边的 Array：展开成本域数组再比。
+  const starts = (dirty) => [...ctx.pageScopeStarts(dirty, scope)];
+  assert.deepEqual(starts(leaf), [leaf], 'a dirty root inside a region is itself');
+  const wrapper = region(0, { children: [a, b] });
+  assert.deepEqual(starts(wrapper), [a, b], 'the regions it contains, in document order');
+  assert.deepEqual(starts(region(9)), [], 'a dirty root outside every region');
+});
+
+test('outsidePageScope is only ever true in include mode', () => {
+  const fixture = load(SHELL);
+  const { ctx } = fixture;
+  const leaf = region(2);
+  const a = region(1, { children: [leaf] });
+  const stray = region(9);
+  assert.equal(ctx.outsidePageScope(stray, ctx.resolvePageScope()), false, 'main mode');
+  withInclude(fixture, [a]);
+  const scope = ctx.resolvePageScope();
+  assert.equal(ctx.outsidePageScope(leaf, scope), false);
+  assert.equal(ctx.outsidePageScope(a, scope), false);
+  assert.equal(ctx.outsidePageScope(stray, scope), true);
+  assert.equal(ctx.outsidePageScope(stray, null), false);
+});
+
+test('a recognised <main> is cached across rounds, yet a late include region still wins', () => {
+  const fixture = load({ bodyChars: 100, mainChars: 80 });
+  const { ctx, page, main, counts } = fixture;
+  withInclude(fixture, []);
+  assert.equal(ctx.resolvePageScope().roots[0], main);
+  ctx.beginScopeRound();
+  assert.equal(ctx.resolvePageScope().roots[0], main);
+  assert.equal(counts.body, 1, 'the found <main> was recounted');
+  const late = region(1);
+  page.includeHits = [late];
+  assert.deepEqual(ctx.resolvePageScope().roots, [late]);
 });

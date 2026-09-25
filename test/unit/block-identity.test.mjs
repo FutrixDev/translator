@@ -40,6 +40,8 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
+// scope.js 在调用时读 ctx.customRules（P1-B 用户站点规则）；不调 init() 就是「没有规则」。
+await import('../../content/page/custom-rule.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');

@@ -294,6 +294,12 @@
       startDiscovery();
     }
 
+    // 「在跟这一页」：IDLE 或 RUNNING。frames/top.js 的指令与站点规则流水线
+    // （content/page/custom-rule.js）读的也是这一个判断。
+    function isOn() {
+      return status === STATUS.IDLE || status === STATUS.RUNNING;
+    }
+
     function clearSample() {
       sampleText = '';
       if (sampleTimer !== null) {
@@ -377,7 +383,7 @@
         sample(blocks);
         return;
       }
-      if (status !== STATUS.IDLE && status !== STATUS.RUNNING) return;
+      if (!isOn()) return;
 
       let added = false;
       for (const block of blocks) {
@@ -497,7 +503,7 @@
     async function pump() {
       startTimer = null;
       if (running || broken) return;
-      if (status !== STATUS.IDLE && status !== STATUS.RUNNING) return;
+      if (!isOn()) return;
       if (queue.size === 0) return;
 
       // 手动整页翻译正在跑。它有自己的进度条、自己的「整页翻过了」状态，两轮
@@ -615,7 +621,7 @@
       // 把新一页的发现层停掉。
       if (guard.version() !== session) {
         // 新的一代有自己的队要排 —— 刚才 running 挡回去的那次 pump 没有重排。
-        if (queue.size > 0 && (status === STATUS.IDLE || status === STATUS.RUNNING)) scheduleStart();
+        if (queue.size > 0 && isOn()) scheduleStart();
         return;
       }
 
@@ -807,6 +813,9 @@
     // 不带 user activation，拿回的是 builtinNeedsDownload），而 start() 会把
     // broken 放掉、重新判、重新扫 —— 这是这一页唯一不用刷新就能活过来的时刻。
     ctx.onLanguagePackReady(() => start('language-pack'));
+    // 本页生效的用户站点规则变了：与 RESTART_KEYS 同一条路。引擎改成内置能叫醒
+    // 费用闸停下的页面；删掉一条 exclude，进带时被摘掉的块也要重扫才回得来。
+    ctx.customRules.onChange(() => start('custom-rule'));
     start('load');
 
     return {
@@ -833,6 +842,7 @@
       markPageExplicit,
       // 子 frame 的指令变了（content/frames/child.js）：重新判、重新扫。
       restart: start,
+      isOn,
       bumpSession,
       onSettingsChanged
     };

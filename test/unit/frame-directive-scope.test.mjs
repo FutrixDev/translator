@@ -18,7 +18,7 @@ const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 function loadChildFrame() {
   const listeners = [];
-  const calls = { invalidatePageScope: 0, restart: 0 };
+  const calls = { invalidatePageScope: 0, restart: 0, inherited: [] };
   // 夹具：content-bootstrap.js 建好的 ctx 里，child.js 用得到的那几样，逐个写成桩。
   const ctx = {
     frameRole: 'child',
@@ -29,6 +29,8 @@ function loadChildFrame() {
     invalidatePageScope: () => { calls.invalidatePageScope += 1; },
     setTranslationsVisible: (visible) => { ctx.state.translationsVisible = visible; },
     autoTranslate: { restart: () => { calls.restart += 1; }, onStateChange() {} },
+    // content/page/custom-rule.js 的 ctx.customRules：子 frame 只用 inherit（P1-B）。
+    customRules: { inherit: (engine) => { calls.inherited.push(engine); } },
     t: (key) => key,
   };
   const sandbox = {
@@ -64,7 +66,7 @@ function loadChildFrame() {
   };
   let epoch = 0;
   const directive = (scopeOverride) => send({ epoch: ++epoch, scopeOverride });
-  return { ctx, calls, directive, send };
+  return { ctx, calls, directive, send, nextEpoch: () => ++epoch };
 }
 
 test('the child mirrors the top frame scope override: set, same value, clear', () => {
@@ -101,4 +103,17 @@ test('a stale directive (epoch not newer) changes nothing', () => {
   send({ epoch: 3, scopeOverride: null });
   assert.equal(ctx.state.pageScopeOverride, 'page');
   assert.equal(calls.invalidatePageScope, 1);
+});
+
+// P1-B §3.8：子 frame 的引擎听顶层那一条站点规则，不听自己的（嵌入的 frame 属于
+// 另一个主机，它自己那条规则里的 engine 不算）。指令带 engineOverride，缺字段与
+// null 同义；过期指令不动它。
+test('the child inherits the top frame engine override from the directive', () => {
+  const { calls, send, nextEpoch } = loadChildFrame();
+  send({ epoch: nextEpoch(), engineOverride: 'ai' });
+  send({ epoch: nextEpoch(), engineOverride: null });
+  send({ epoch: nextEpoch() });
+  assert.deepEqual(calls.inherited, ['ai', null, null]);
+  send({ epoch: 1, engineOverride: 'builtin' });
+  assert.deepEqual(calls.inherited, ['ai', null, null], 'a stale directive reached the engine');
 });

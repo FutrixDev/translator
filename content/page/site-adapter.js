@@ -23,11 +23,14 @@
   if (!ctx) return;
 
   // 规则按 host + path 选中（内置表里就有 `arxiv.org/abs/*` 这种按路径的），所以
-  // 缓存的键是这两样。单页应用换了路由，键跟着变，下一轮收集自己就重新解析了。
+  // 缓存的键是这两样，再加上用户规则集的版本号（ctx.customRules.version，P1-B
+  // §3.2）：单页应用换了路由、用户改了规则，键都跟着变，下一轮收集自己就重新解析。
   let cacheKey = null;
   let cached = null;
 
-  function usableSelector(list) {
+  // owner 是 'builtin' 或 'user'：用户规则的选择器是用户数据，丢弃时日志里既不写
+  // 选择器本身，也不写错误消息（SyntaxError 的消息里就是那串选择器），只写错误名。
+  function usableSelector(list, owner) {
     if (!Array.isArray(list) || list.length === 0) return '';
     const kept = [];
     for (const one of list) {
@@ -38,36 +41,51 @@
       } catch (err) {
         // 坏选择器只丢自己那一条：同一条规则里另一串多半还是好的，把整条规则
         // 丢掉等于白白退回通用启发式。
-        console.warn('Blab Translation: site rule selector rejected, skipping it', one, err);
+        if (owner === 'user') {
+          console.warn('Blab Translation: custom rule selector rejected, skipping it:', err.name);
+        } else {
+          console.warn('Blab Translation: site rule selector rejected, skipping it', one, err);
+        }
       }
     }
     return kept.join(',');
   }
 
   /**
-   * 当前这一页的站点适配。
+   * 当前这一页的站点适配：内置规则表与用户站点规则（ctx.customRules）合在一起。
    *
-   * @returns {{atomic: string, exclude: string}|null} 两串已经并成一条的选择器；
-   *   这一页没有规则、或者规则里两串都空/都不合法时是 null，调用方照通用启发式走。
+   * - atomic：只有内置表提供；
+   * - exclude：内置 ∪ 用户。用户规则只能加，撤不掉内置的；
+   * - keepOriginal：只有用户规则提供（整块跳过 / 行内按 translate="no" 送占位符）。
+   *
+   * 用户规则的选择器在设置页写入时校验过，但规则可能来自别的设备或更老的版本，
+   * 这里照样逐条过 usableSelector：它们也落在收块热路径的 matches()/closest() 上。
+   *
+   * @returns {{atomic: string, exclude: string, keepOriginal: string}|null} 三串已经
+   *   并成一条的选择器；三串都空/都不合法时是 null，调用方照通用启发式走。
    */
   function resolveSiteAdapter() {
-    const key = `${location.hostname}\n${location.pathname}`;
+    const custom = ctx.customRules.current();
+    const version = ctx.customRules.version;
+    const key = `${location.hostname}\n${location.pathname}\n${version}`;
     if (key === cacheKey) return cached;
     cacheKey = key;
     cached = null;
 
-    const rules = globalThis.SiteRules;
-    if (!rules || !rules.matchBuiltin) return cached;
-    const rule = rules.matchBuiltin(location.hostname, location.pathname);
-    if (!rule) return cached;
+    const builtin = globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname);
+    const atomic = builtin ? usableSelector(builtin.atomicBlockSelectors, 'builtin') : '';
+    const exclude = [
+      builtin ? usableSelector(builtin.excludeSelectors, 'builtin') : '',
+      custom ? usableSelector(custom.exclude, 'user') : '',
+    ].filter(Boolean).join(',');
+    const keepOriginal = custom ? usableSelector(custom.keepOriginal, 'user') : '';
+    if (!atomic && !exclude && !keepOriginal) return cached;
 
-    const atomic = usableSelector(rule.atomicBlockSelectors);
-    const exclude = usableSelector(rule.excludeSelectors);
-    if (!atomic && !exclude) return cached;
-
-    cached = { atomic, exclude };
+    cached = { atomic, exclude, keepOriginal };
     return cached;
   }
 
   ctx.resolveSiteAdapter = resolveSiteAdapter;
+  // scope.js 的 include 选择器也走同一道校验。
+  ctx.usableSelector = usableSelector;
 })();

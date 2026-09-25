@@ -69,11 +69,21 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
   'shared/storage-writer.js',
   'shared/site-rules.js',
+  // 用户站点规则（P1-B）：custom-rules.js 加载时取走 SiteRules / StorageWriter /
+  // SyncCollection，manifest 里它们紧跟在 auto-stats 之后。夹具不调
+  // ctx.customRules.init()（没有扩展运行时），所以本页恒为「没有规则」。
+  // custom-rule.js 在 init() 里订阅 SpaNavigation 的路由信号；不调 init() 它
+  // 就不接线，加载本身没有副作用。
+  'shared/spa-navigation.js',
+  'shared/sync-collection.js',
+  'shared/custom-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。
   'shared/translation-display.js',
   'content/content-language.js',
   'content/page/batch.js',
+  // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
+  'content/page/custom-rule.js',
   'content/page/site-adapter.js',
   // 组合树（shadow.js）、notranslate、正文范围（scope.js）：收集器和门面在调用时
   // 读它们挂的 ctx.x，门面收块走的就是 scope.js 的 ctx.collectPageBlocks。

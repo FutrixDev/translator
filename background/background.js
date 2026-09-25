@@ -14,6 +14,10 @@ import '../shared/site-rules.js';
 // Side-effect module: publishes globalThis.AutoStats. 统计的写入点全在这里 ——
 // 每个标签页都在记，读—改—写必须收进单实例（见 shared/auto-stats.js 开头）。
 import '../shared/auto-stats.js';
+// 「一条一个 sync 键」的集合（sync-collection）和建在它上面的用户站点规则。两者
+// 在加载时就取走 StorageWriter 与 SiteRules，所以排在它们之后。
+import '../shared/sync-collection.js';
+import '../shared/custom-rules.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -67,6 +71,14 @@ import {
   refreshPdfJobs,
   startPdfUrlTranslation,
 } from './pdf-jobs.js';
+
+// 写消息 → 持有那份数据的模块。取的是 globalThis 上的名字：这些共用模块是双模
+// 经典脚本，只挂全局、不导出。
+const STORAGE_WRITERS = {
+  SITE_RULES_WRITE: () => globalThis.SiteRules,
+  AUTO_STATS_WRITE: () => globalThis.AutoStats,
+  CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
+};
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -133,23 +145,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 站点规则和追问计数的读—改—写。内容脚本和 popup 不自己动这两张表：它们是
-    // 整份对象读出来、改一个键、整份写回，两个标签页同时来就会互相盖掉 ——
-    // 用户点下的选择没了，而且哪里都不报错。规则本身在 shared/site-rules.js，
-    // 这里只管转接。
+    // 同步存储的三个写消息：站点规则与追问计数、本机统计、用户站点规则。内容
+    // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
+    // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
+    // 自己的模块里（STORAGE_WRITERS），这里只管转接。
     case 'SITE_RULES_WRITE':
-      globalThis.SiteRules.applyWrite(message)
+    case 'AUTO_STATS_WRITE':
+    case 'CUSTOM_RULES_WRITE':
+      STORAGE_WRITERS[message.type]().applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
 
-    // 本机统计的读—改—写。内容脚本和设置页不自己动这份记录：每个标签页都在往
-    // 里记，两边先读到同一份旧数字、后写的整份盖掉，丢的就是那几笔。规则在
-    // shared/auto-stats.js，这里只管转接。
-    case 'AUTO_STATS_WRITE':
-      globalThis.AutoStats.applyWrite(message)
-        .then(value => sendResponse({ value }))
-        .catch(error => sendResponse({ error: error.message }));
+    // 本页用得上的用户站点规则。主机取发信的那一帧的地址（sender.url），不信
+    // 消息里带来的：内容脚本的镜像按同一个主机建（content/page/custom-rule.js）。
+    // 回的是这个主机的全部规则，按路径挑胜出的那条是页面自己的事。
+    case 'CUSTOM_RULES_FOR_HOST':
+      globalThis.CustomRules.cached()
+        .then(rules => sendResponse({
+          rules: globalThis.CustomRules.forHost(rules, new URL(sender.url).hostname),
+        }))
+        .catch(error => {
+          console.error('CUSTOM_RULES_FOR_HOST failed:', error);
+          sendResponse({ error: error.message });
+        });
       return true;
 
     // --- Comic translation (account-backed, see comic-client.js) -------------

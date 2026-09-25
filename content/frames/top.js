@@ -8,7 +8,7 @@
 //
 // 指令是子 frame 唯一要知道的东西：
 //
-//   { epoch, translate, manualEpoch, visible, scopeOverride }
+//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride }
 //
 //   epoch          每变一次 +1。子 frame 只认更大的，所以 HELLO 的回话和广播谁先
 //                  到都一样。
@@ -16,6 +16,8 @@
 //   manualEpoch    顶层每点一次「翻译整页」+1。子 frame 看到它变大就静默跑一轮。
 //   visible        「此刻想不想看译文」（Alt+A、悬浮球的隐藏）。
 //   scopeOverride  整页覆盖（state.pageScopeOverride，并行批的正文范围）。
+//   engineOverride 顶层这一页的用户站点规则指定的引擎（'builtin' | 'ai' | null）。
+//                  子 frame 的引擎谓词跟顶层走，不看自己 URL 上的规则（P1-B §3.8）。
 //
 // 登记表在这里，不在服务工作者里：服务工作者随时会被回收，而顶层文档活多久，
 // 这张表就该活多久。
@@ -36,10 +38,7 @@
   let ready = false;
 
   function currentTranslate() {
-    const auto = ctx.autoTranslate.state();
-    const STATUS = ctx.STATUS_AUTO;
-    const autoOn = auto.status === STATUS.IDLE || auto.status === STATUS.RUNNING;
-    return autoOn || !!state.isTranslatingPage;
+    return ctx.autoTranslate.isOn() || !!state.isTranslatingPage;
   }
 
   function computeDirective() {
@@ -48,6 +47,7 @@
       manualEpoch,
       visible: state.translationsVisible !== false,
       scopeOverride: state.pageScopeOverride || null,
+      engineOverride: ctx.customRules.engineOverride() || null,
     };
   }
 
@@ -56,7 +56,8 @@
       && a.translate === b.translate
       && a.manualEpoch === b.manualEpoch
       && a.visible === b.visible
-      && a.scopeOverride === b.scopeOverride;
+      && a.scopeOverride === b.scopeOverride
+      && a.engineOverride === b.engineOverride;
   }
 
   function broadcastDirective() {
@@ -162,6 +163,8 @@
     // 自动翻译的状态一变（开始翻、翻完、被关掉），translate 可能跟着变。
     // onStateChange 订阅时会立刻回调一次，那一次正好算出第一版指令。
     ctx.autoTranslate.onStateChange(refreshDirective);
+    // 本页生效的用户站点规则变了（含换路由换到另一条规则），引擎覆盖可能跟着变。
+    ctx.customRules.onChange(refreshDirective);
     // 比顶层早起的子 frame 的 HELLO 落了空，这一次广播是它们唯一的补课。
     // window.length 数的是这个文档的子浏览上下文（Shadow DOM 里的 iframe 也算），
     // 为零就没有谁要补。

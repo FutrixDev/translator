@@ -469,8 +469,9 @@
     const showStopSite = !!(ctx.autoTranslate && ctx.autoTranslate.state().siteAuto) &&
       !!(globalThis.SiteRules &&
         globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname));
-    // 「翻译整个页面」只在默认只翻正文时有意义；每次打开都重问（content/page/scope.js）。
-    const showWholePage = ctx.pageScopeMode() === 'main';
+    // 「翻译整个页面」在范围不是整页时都有意义：默认只翻正文，或站点规则只翻某些区域
+    // （include）。每次打开都重问（content/page/scope.js）。
+    const showWholePage = ctx.pageScopeMode() !== 'page';
 
     state.floatMenu = document.createElement('div');
     state.floatMenu.id = 'ai-translator-float-menu';

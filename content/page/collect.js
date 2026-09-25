@@ -62,15 +62,16 @@
     const { MAX_BLOCK_CHARS } = ctx.PAGE_LIMITS;
     managedSkipCount = 0;
     const blocks = [];
-    // 站点适配：内置规则表里那两串选择器（见 content/page/site-adapter.js）。整轮
-    // 收集只解析一次——规则按 host + path 选中，一轮里不会变。这一页没有规则时两
-    // 串都是空串，下面所有用到它们的地方都短路掉，走的还是原来的通用启发式。
-    const adapter = ctx.resolveSiteAdapter ? ctx.resolveSiteAdapter() : null;
+    // 站点适配：内置规则表与用户站点规则并好的几串选择器（见
+    // content/page/site-adapter.js）。整轮收集只解析一次——规则按 host + path +
+    // 规则集版本选中，一轮里不会变。这一页没有规则时都是空串，下面所有用到它们的
+    // 地方都短路掉，走的还是原来的通用启发式。
+    const adapter = ctx.resolveSiteAdapter();
     const atomicSelector = (adapter && adapter.atomic) || '';
     const excludeSelector = (adapter && adapter.exclude) || '';
-    // 读块文本时，块里含着的排除元素变占位符（getTextWithMathPlaceholders 的 exclude）。
-    const readMarked = { preserveMarkup: true, exclude: excludeSelector };
-    const readPlain = { exclude: excludeSelector };
+    const keepSelector = (adapter && adapter.keepOriginal) || '';
+    // 块里的行内元素：exclude 的字拿掉，keepOriginal 的整个当占位符原样带回。
+    const textOptions = { preserveMarkup: true, exclude: excludeSelector, keep: keepSelector };
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
@@ -294,6 +295,9 @@
       // 没有区别，通用启发式挡不住。用 closest 而不是 matches，因为排除的是整块——
       // Hacker News 的 `.subtext` 底下还有一串 <a>，它们也在排除之列。
       if (excludeSelector && closestAcross(element, excludeSelector)) return;
+      // 用户规则「保留原文」命中整块：不收。排在作者声明（translate="yes" 能在里面
+      // 重新打开子树）之前，所以它连子树一起关掉。
+      if (keepSelector && closestAcross(element, keepSelector)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
       // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
@@ -425,7 +429,7 @@
 
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
-        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
+        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
         const plainText = stripPlaceholders(text).trim();
         if (text && plainText.length >= 2 && plainText.length <= 500) {
@@ -448,7 +452,7 @@
 
       // 对于块级元素
       if (atomic || blockTags.includes(tagName) || hasDirectText) {
-        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
+        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
           const textWithoutMath = stripPlaceholders(text).trim();
@@ -480,7 +484,7 @@
           // 超长块回退成纯文本提取：splitTextIntoChunks 只认得 {{n}} 占位符，
           // 会把成对的内联标记从中间切开、拆进不同请求，重建必然错乱。
           if (text.length > MAX_BLOCK_CHARS && markupElements && markupElements.length > 0) {
-            const plain = getTextWithMathPlaceholders(element, readPlain);
+            const plain = getTextWithMathPlaceholders(element, { ...textOptions, preserveMarkup: false });
             text = plain.text;
             mathElements = plain.mathElements;
             markupElements = [];
@@ -506,7 +510,7 @@
       }
     }
 
-    const starts = scopeCut ? ctx.pageScopeStarts(root, scope) : [root];
+    const starts = scope ? ctx.pageScopeStarts(root, scope) : [root];
     for (const start of starts) processElement(start);
     return blocks;
   }
@@ -624,15 +628,16 @@
   // - mathElements 保存 DOM 引用或 LaTeX 文本，用于后续还原
   // - markupElements 仅在 options.preserveMarkup 时非空，保存内联格式元素的引用，
   //   文本里对应成对的 <a1>…</a1> 标记（标签名小写 + 序号，序号即数组下标 + 1）
+  // options.exclude / options.keep：整页收块传进来的站点规则选择器（悬停、划词不带）。
+  //   命中 exclude 的行内元素整个不读；命中 keep 的按 translate="no" 处理。
   function getTextWithMathPlaceholders(element, options) {
     const preserveMarkup = !!(options && options.preserveMarkup);
+    const excludeSelector = (options && options.exclude) || '';
+    const keepSelector = (options && options.keep) || '';
     let text = '';
     const mathElements = [];
     const markupElements = [];
     let mathIndex = 0;
-    // 站点规则的排除选择器，只有整页收集传（见 collectTranslatableBlocks）。悬停和
-    // 划词是用户点名要翻的那一段，站点规则不替用户挑哪几个字不翻。
-    const excludeSelector = (options && options.exclude) || '';
 
     // 跳过的隐藏类名
     const hiddenClasses = [
@@ -717,13 +722,13 @@
           return;
         }
 
-        // 行内的 notranslate（产品名、人名）：整个元素当占位符，插入时原样克隆回去。
-        // 整页收集时，站点规则排除的元素（作者名、时间戳）是站点级的 notranslate，
-        // 照同一条路走：收集器的排除只挡住「块就是它或在它里面」，挡不住「块里含着它」——
-        // Reddit 卡片头一整行被收成一块时，里面的 <faceplate-timeago> 就这样被
-        // 翻成了「4 小时。 过去」。
+        // 站点规则排除的行内元素（时间戳、票数……）：不送去翻译，译文里也不出现。
+        if (excludeSelector && node.matches(excludeSelector)) return;
+
+        // 行内的 notranslate（产品名、人名），以及用户规则「保留原文」命中的行内
+        // 元素：整个元素当占位符，插入时原样克隆回去
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
-            (excludeSelector && node.matches(excludeSelector))) {
+            (keepSelector && node.matches(keepSelector))) {
           text += addMathPlaceholder({ type: 'element', element: node });
           return;
         }
@@ -928,4 +933,16 @@
   // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
   // “页面已经翻完了”和“正文没能翻”，所以计数跟着收集走，读的人只读。
   ctx.getManagedSkipCount = () => managedSkipCount;
+
+  /**
+   * 站点规则现在禁不禁这一块：落在 exclude（内置 ∪ 用户）或「保留原文」里，或者
+   * 在 include 范围之外。规则变化后的清扫（content/page/custom-rule.js）拿它筛已
+   * 挂上的译文。
+   */
+  ctx.ruleForbids = function ruleForbids(el, scope) {
+    const adapter = ctx.resolveSiteAdapter();
+    const forbidden = adapter && [adapter.exclude, adapter.keepOriginal].filter(Boolean).join(',');
+    if (forbidden && closestAcross(el, forbidden)) return true;
+    return ctx.outsidePageScope(el, scope);
+  };
 })();

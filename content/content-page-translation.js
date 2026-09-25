@@ -58,6 +58,8 @@
     ctx.frames.onManualTranslate();
 
     try {
+      // 本页的站点规则（范围、排除、引擎）要先到：SW 冷启动时最多等 1.5 s。
+      await ctx.customRules.whenReady();
       // 收集需要翻译的元素（以块级元素为单位）
       ctx.beginScopeRound();
       let translatableBlocks = ctx.collectPageBlocks();

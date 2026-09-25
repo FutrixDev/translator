@@ -32,6 +32,28 @@ await import('../../content/page/site-adapter.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 const realRules = globalThis.SiteRules;
 
+// 用户站点规则（content/page/custom-rule.js 挂的 ctx.customRules）：这一层只读
+// current() 与 version。桩默认「没有规则」，下面几条用户规则的测试临时换掉它。
+let userRule = null;
+let userVersion = 0;
+ctx.customRules = {
+  current: () => userRule,
+  get version() {
+    return userVersion;
+  },
+};
+
+function withUserRule(rule, run) {
+  userRule = { include: [], exclude: [], keepOriginal: [], css: '', engine: null, ...rule };
+  userVersion += 1;
+  try {
+    return run();
+  } finally {
+    userRule = null;
+    userVersion += 1;
+  }
+}
+
 function at(hostname, pathname = '/') {
   globalThis.location = { hostname, pathname };
   return ctx.resolveSiteAdapter();
@@ -103,4 +125,58 @@ test('the cache follows the path, not just the host', () => {
   assert.ok(abs);
   assert.equal(at('arxiv.org', '/'), null);
   assert.deepEqual(at('arxiv.org', '/abs/2401.00002'), abs);
+});
+
+// ---------------------------------------------------------------- 用户站点规则（P1-B §3.2）
+
+test('user exclude is added to the builtin one, and keepOriginal comes only from the user', () => {
+  const adapter = withUserRule({ exclude: ['.promo'], keepOriginal: ['.brand', '.code-name'] },
+    () => at('x.com', '/alice/status/1'));
+  assert.equal(adapter.atomic, '[data-testid="tweetText"]', 'the user rule does not touch atomic');
+  assert.match(adapter.exclude, /User-Name/, 'the builtin exclude is still there');
+  assert.ok(adapter.exclude.endsWith(',.promo'), adapter.exclude);
+  assert.equal(adapter.keepOriginal, '.brand,.code-name');
+  // 没有用户规则：keepOriginal 是空串，内置表从来不给。
+  assert.equal(at('x.com', '/alice/status/2').keepOriginal, '');
+});
+
+test('a user rule on a site with no builtin rule is an adapter of its own', () => {
+  const adapter = withUserRule({ exclude: ['.side-note'] }, () => at('nowhere.example', '/'));
+  assert.deepEqual(adapter, { atomic: '', exclude: '.side-note', keepOriginal: '' });
+});
+
+test('a malformed user selector is dropped, and the log carries neither it nor the error text', () => {
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => warned.push(args);
+  try {
+    const adapter = withUserRule({ exclude: ['.secret-((', '.fine'], keepOriginal: ['((brand'] },
+      () => at('nowhere.example', '/'));
+    assert.deepEqual(adapter, { atomic: '', exclude: '.fine', keepOriginal: '' });
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.equal(warned.length, 2);
+  for (const args of warned) {
+    const text = args.map(String).join(' ');
+    assert.doesNotMatch(text, /secret|brand|\(\(/, 'a user selector reached the log');
+    assert.match(text, /SyntaxError/);
+  }
+});
+
+test('the cache follows the rule set version', () => {
+  userRule = { include: [], exclude: ['.one'], keepOriginal: [], css: '', engine: null };
+  userVersion += 1;
+  try {
+    assert.equal(at('nowhere.example', '/v').exclude, '.one');
+    // 同一版本号下换了内容：不重新解析——版本号是唯一的作废信号。
+    userRule = { ...userRule, exclude: ['.two'] };
+    assert.equal(at('nowhere.example', '/v').exclude, '.one');
+    userVersion += 1;
+    assert.equal(at('nowhere.example', '/v').exclude, '.two');
+  } finally {
+    userRule = null;
+    userVersion += 1;
+  }
+  assert.equal(at('nowhere.example', '/v'), null);
 });

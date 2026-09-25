@@ -233,7 +233,7 @@ test('a marker whose number the model fused is scrubbed, the page\'s own <b2> is
 });
 
 test('a site-excluded element is a placeholder only when page collection asks for it', async ({ page }) => {
-  // Page collection passes the site rule's exclude selector, so a timestamp
+  // Page collection passes the site rule's keep-original selector (D-315), so a timestamp
   // inside a collected block goes out as {{n}} and is cloned back untouched.
   // Hover and selection call the same reader without it: that is text the user
   // picked, and a site rule does not choose which words of it stay English.
@@ -244,10 +244,10 @@ test('a site-excluded element is a placeholder only when page collection asks fo
 
   const result = await page.evaluate(() => {
     const ctx = window.AI_TRANSLATOR_CONTENT;
-    // This page has a rule excluding <time>; the reader must still not look it up.
-    ctx.resolveSiteAdapter = () => ({ atomic: '', exclude: 'time' });
+    // This page has a rule keeping <time> original; the reader must still not look it up.
+    ctx.resolveSiteAdapter = () => ({ atomic: '', exclude: '', keepOriginal: 'time' });
     const el = document.getElementById('edited');
-    const collected = ctx.getTextWithMathPlaceholders(el, { exclude: 'time' });
+    const collected = ctx.getTextWithMathPlaceholders(el, { keep: 'time' });
     const picked = ctx.getTextWithMathPlaceholders(el);
     return {
       collectedText: collected.text,

@@ -184,6 +184,9 @@
       runManualRound();
     }
     if (!prev || prev.translate !== next.translate) restartAuto();
+    // 引擎覆盖跟顶层走，null 也照传（「顶层没有覆盖」）。放在最后：上面的手动轮
+    // 已同步置上 isTranslatingPage，规则流水线见了就不再补一轮。
+    ctx.customRules.inherit(next.engineOverride ?? null);
   }
 
   function listenToTop() {
