@@ -37,8 +37,13 @@
             ? selection.getRangeAt(0).cloneRange()
             : null;
           state.lastSelectedText = selectedText;
-          state.lastSelectionPos = { x: e.clientX, y: e.clientY };
           state.lastSelectionElement = getSelectionElement();
+          if (triggerAllows('icon') && !isSelectionTriggerIgnored(e.target)
+            && !isSelectionTriggerIgnored(state.lastSelectionElement)) {
+            showSelectionIcon(selection, { x: e.clientX, y: e.clientY });
+          } else {
+            hideSelectionButton();
+          }
         } else {
           state.lastSelectionElement = null;
           state.lastSelectionRange = null;
@@ -61,7 +66,8 @@
       if (!settings.enableSelection) return;
       const selectedText = getSelectedText();
       if (selectedText) return;
-      if (state.selectionButton || state.selectionTranslationPending) return;
+      // 图标的 mousedown 不丢选区，所以选区清空时图标也该走了，这里不再替它挡。
+      if (state.selectionTranslationPending) return;
       // Don't clear state while a context menu is likely open (right-click translation in progress)
       // The context menu handler in background.js needs lastSelectionElement to show inline translation
       if (document.visibilityState === 'visible' && document.hasFocus && !document.hasFocus()) return;
@@ -87,53 +93,105 @@
     });
   }
 
-  // Show small translate button near selection
-  function showSelectionButton(x, y) {
+  // 划词图标：mouseup 结算后贴着选区末行出一颗 28×28 的圆钮，点了开卡片（卡片是
+  // 四个操作所在的地方；段落下方模式没有它们，所以图标不跟显示方式走）。
+  const ICON_SIZE = 28;
+
+  function triggerAllows(kind) {
+    if (!settings.enableSelection) return false;
+    const trigger = settings.selectionTrigger;
+    return trigger === kind || trigger === 'both';
+  }
+
+  function isBackwardSelection(selection) {
+    const { anchorNode, focusNode } = selection;
+    if (anchorNode === focusNode) return selection.focusOffset < selection.anchorOffset;
+    return !!(anchorNode.compareDocumentPosition(focusNode) & Node.DOCUMENT_POSITION_PRECEDING);
+  }
+
+  // 末行：鼠标松开那一端所在的行。焦点处折叠 Range 的矩形给出是哪一行；再取选区在
+  // 这一行上的那段矩形，图标的水平范围才是选中的字，而不是一个零宽的插入点。
+  function selectionLineRect(selection, range, point) {
+    const caret = document.createRange();
+    caret.setStart(selection.focusNode, selection.focusOffset);
+    caret.collapse(true);
+    const caretRect = caret.getBoundingClientRect();
+    const y = caretRect.height ? caretRect.top + caretRect.height / 2 : point.y;
+    const rects = Array.from(range.getClientRects()).filter((r) => r.width && r.height);
+    let best = null;
+    let bestScore = Infinity;
+    for (const r of rects) {
+      const off = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+      const score = off * 1e6 + r.height;
+      if (score < bestScore) { best = r; bestScore = score; }
+    }
+    return best || { left: point.x, right: point.x, top: point.y - 1, bottom: point.y + 1 };
+  }
+
+  function onIconViewportChange() {
     hideSelectionButton();
+  }
 
-    state.selectionButton = document.createElement('div');
-    state.selectionButton.id = 'ai-translator-selection-btn';
-    state.selectionButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35"/>
-        <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2z"/>
-      </svg>
-      <span>${t('translate')}</span>
-    `;
+  function showSelectionIcon(selection, point) {
+    hideSelectionButton();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const line = selectionLineRect(selection, range, point);
+    const whole = range.getBoundingClientRect();
+    // 反向拖出来的多行选区，末行是第一行：放上方才不盖住选区。
+    const prefer = isBackwardSelection(selection) && whole.bottom - line.bottom > 1 ? 'above' : 'below';
+    const x = Math.min(Math.max(point.x, line.left), line.right) - ICON_SIZE / 2;
+    const viewport = { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
+    const pos = ctx.placeBeside({ width: ICON_SIZE, height: ICON_SIZE }, line, { viewport, prefer, x });
 
-    // Position button above the selection
-    let posX = x - 40;
-    let posY = y - 45;
-
-    // Keep within viewport
-    if (posX < 10) posX = 10;
-    if (posX + 80 > window.innerWidth) posX = window.innerWidth - 90;
-    if (posY < 10) posY = y + 20;
-
-    state.selectionButton.style.left = `${posX}px`;
-    state.selectionButton.style.top = `${posY}px`;
-
-    document.body.appendChild(state.selectionButton);
-
-    // Click to translate
-    state.selectionButton.addEventListener('click', (e) => {
+    const root = document.createElement('div');
+    root.id = 'ai-translator-selection-btn';
+    const label = ctx.escapeHtml(t('selectionIconLabel'));
+    root.innerHTML = `<button type="button" class="ai-translator-selection-icon" aria-label="${label}" title="${label}">${ctx.translateIconSvg(16)}</button>`;
+    root.style.left = `${pos.left}px`;
+    root.style.top = `${pos.top}px`;
+    // 点图标不能把选区点没了：按下时就拦住，焦点和选区都留在页面上。
+    root.addEventListener('mousedown', (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      if (!state.lastSelectedText) return;
-      if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.translateSelectionInline) {
-        ctx.translateSelectionInline(state.lastSelectedText, state.lastSelectionElement, state.lastSelectionRange);
-      } else if (ctx.showTranslationPopup) {
-        ctx.showTranslationPopup(state.lastSelectedText, state.lastSelectionPos.x, state.lastSelectionPos.y);
-      }
-      state.lastSelectionRange = null;
-      hideSelectionButton();
     });
+    root.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const text = state.lastSelectedText;
+      const selectionRange = state.lastSelectionRange;
+      hideSelectionButton();
+      if (!text) return;
+      ctx.showTranslationPopup(text, { range: selectionRange });
+    });
+    document.body.appendChild(root);
+    state.selectionButton = root;
+    window.addEventListener('scroll', onIconViewportChange, { capture: true, passive: true });
+    window.addEventListener('resize', onIconViewportChange, { passive: true });
   }
 
   function hideSelectionButton() {
+    window.removeEventListener('scroll', onIconViewportChange, { capture: true });
+    window.removeEventListener('resize', onIconViewportChange);
     if (state.selectionButton) {
       state.selectionButton.remove();
       state.selectionButton = null;
     }
+  }
+
+  // 设置变了（关了划词、只留修饰键）就收起已经出着的图标。
+  function syncSelectionIcon() {
+    if (!triggerAllows('icon')) hideSelectionButton();
+  }
+
+  // 选区翻译只有这一条路：按显示方式分派到段落下方或卡片。修饰键、悬浮球、
+  // 右键菜单都走这里；图标不走（它总是开卡片）。
+  function translateSelection(text, { range = null, element = null } = {}) {
+    hideSelectionButton();
+    if (ctx.isSelectionInlineEnabled()) {
+      ctx.translateSelectionInline(text, element, range);
+      return;
+    }
+    ctx.showTranslationPopup(text, { range });
   }
 
   function getSelectionHotkey() {
@@ -177,26 +235,17 @@
 
   function resolveSelectionRange() {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return null;
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
     return selection.getRangeAt(0).cloneRange();
   }
 
-  function resolveSelectionPosition(selectionRange, fallbackEvent) {
-    if (selectionRange && selectionRange.getBoundingClientRect) {
-      const rect = selectionRange.getBoundingClientRect();
-      if (rect && (rect.width || rect.height)) {
-        return { x: rect.left + rect.width / 2, y: rect.top };
-      }
-    }
-    if (state.lastSelectionPos) return state.lastSelectionPos;
-    if (fallbackEvent && typeof fallbackEvent.clientX === 'number') {
-      return { x: fallbackEvent.clientX, y: fallbackEvent.clientY };
-    }
-    return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  // 页面上此刻的选区（修饰键与右键菜单同用这一个解析）。
+  function currentSelectionTarget() {
+    return { range: resolveSelectionRange(), element: getSelectionElement() };
   }
 
   function handleSelectionHotkey(event) {
-    if (!settings.enableSelection) return;
+    if (!triggerAllows('modifier')) return;
     if (!isSelectionHotkeyEvent(event)) return;
     if (event.repeat) return;
     if (isSelectionTriggerIgnored(event.target)) return;
@@ -205,10 +254,10 @@
     // 只按了它再译（见 content-utils.js 的 armModifierTap）。划词是「点一下」的
     // 手势，所以不开 hold —— 松开才算数，按住多久都不动手。用户按着 Ctrl 伸手
     // 去够 C 的那半秒，不该变成一次翻译。
-    ctx.armModifierTap(event.key, () => runSelectionHotkey(event));
+    ctx.armModifierTap(event.key, runSelectionHotkey);
   }
 
-  function runSelectionHotkey(event) {
+  function runSelectionHotkey() {
     if (hasSelectionTranslationVisible()) {
       cancelSelectionTranslation();
       return;
@@ -217,21 +266,13 @@
     const selectedText = getSelectedText();
     if (!selectedText || selectedText.length < 2 || selectedText.length > 5000) return;
 
-    const selectionRange = resolveSelectionRange();
-    if (!selectionRange) return;
-    const anchorEl = getSelectionElement();
-    const pos = resolveSelectionPosition(selectionRange, event);
+    const { range, element } = currentSelectionTarget();
+    if (!range) return;
 
     state.lastSelectedText = selectedText;
-    state.lastSelectionRange = selectionRange;
-    state.lastSelectionElement = anchorEl;
-    state.lastSelectionPos = pos;
-
-    if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.translateSelectionInline) {
-      ctx.translateSelectionInline(selectedText, anchorEl, selectionRange);
-    } else if (ctx.showTranslationPopup) {
-      ctx.showTranslationPopup(selectedText, pos.x, pos.y);
-    }
+    state.lastSelectionRange = range;
+    state.lastSelectionElement = element;
+    translateSelection(selectedText, { range, element });
   }
 
   function getSelectedText() {
@@ -249,8 +290,10 @@
   }
 
   ctx.setupSelectionListener = setupSelectionListener;
-  ctx.showSelectionButton = showSelectionButton;
   ctx.hideSelectionButton = hideSelectionButton;
+  ctx.syncSelectionIcon = syncSelectionIcon;
+  ctx.translateSelection = translateSelection;
+  ctx.currentSelectionTarget = currentSelectionTarget;
   ctx.getSelectedText = getSelectedText;
   ctx.getSelectionElement = getSelectionElement;
 })();

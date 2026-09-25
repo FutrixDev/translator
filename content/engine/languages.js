@@ -220,6 +220,11 @@
 
   eng.toApiLang = toApiLang;
   eng.supportsLang = (code) => SUPPORTED_LANGS.has(code);
+  // 扩展自己的目标语言码（zh-TW、fa……）端上有没有。语言菜单标「仅 AI」、划词卡给不给
+  // 「改用内置」、语言包状态、引擎报错点不点名目标语言，问的都是这一句，所以只在
+  // 这里写一次，调用方不再自己把 toApiLang 和 supportsLang 串起来问
+  // （test/unit/target-languages.test.mjs 扫这个写法）。
+  eng.supportsTarget = (lang) => SUPPORTED_LANGS.has(toApiLang(lang));
   eng.pageSourceLang = getPageSourceLang;
   eng.detectStandaloneLang = detectStandaloneLang;
   eng.resolveSourceLang = resolveSourceLang;

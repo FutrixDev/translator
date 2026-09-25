@@ -43,7 +43,7 @@
     const aiOnlyTag = ctx.escapeHtml(ctx.t('langAiOnly'));
     return TargetLang.options(ctx.uiLanguage()).map((option) => {
       const isSelected = option.value === normalized ? ' is-selected' : '';
-      const tag = tagAiOnly && !bt.supportsLang(bt.toApiLang(option.value))
+      const tag = tagAiOnly && !bt.supportsTarget(option.value)
         ? ` data-tag="${aiOnlyTag}"`
         : '';
       return `<button class="ai-translator-lang-item${isSelected}" type="button" data-lang="${option.value}"${tag}>${ctx.escapeHtml(option.label)}</button>`;

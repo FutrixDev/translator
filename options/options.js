@@ -46,6 +46,7 @@ const elements = {
   uiLanguage: document.getElementById('uiLanguage'),
   enableSelection: document.getElementById('enableSelection'),
   selectionTranslationMode: document.getElementById('selectionTranslationMode'),
+  selectionTrigger: document.getElementById('selectionTrigger'),
   selectionTranslationHotkey: document.getElementById('selectionTranslationHotkey'),
   enableHoverTranslation: document.getElementById('enableHoverTranslation'),
   hoverTranslationHotkey: document.getElementById('hoverTranslationHotkey'),
@@ -141,6 +142,7 @@ const defaultSettings = {
   enableSelection: true,
   enableHoverTranslation: true,
   selectionTranslationMode: 'inline',
+  selectionTrigger: 'both',
   selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
   hoverTranslationHotkey: 'Shift',
   showFloatBall: true,
@@ -236,6 +238,7 @@ async function loadSettings() {
     elements.targetLang.value = targetLang;
     elements.enableSelection.checked = result.enableSelection;
     elements.selectionTranslationMode.value = result.selectionTranslationMode || 'inline';
+    elements.selectionTrigger.value = result.selectionTrigger;
     elements.selectionTranslationHotkey.value = result.selectionTranslationHotkey || DEFAULT_SELECTION_HOTKEY;
     elements.enableHoverTranslation.checked = result.enableHoverTranslation;
     elements.hoverTranslationHotkey.value = result.hoverTranslationHotkey || 'Shift';
@@ -369,6 +372,7 @@ function collectSettings() {
     enableSelection: elements.enableSelection.checked,
     enableHoverTranslation: elements.enableHoverTranslation.checked,
     selectionTranslationMode: elements.selectionTranslationMode.value,
+    selectionTrigger: elements.selectionTrigger.value,
     selectionTranslationHotkey: elements.selectionTranslationHotkey.value,
     hoverTranslationHotkey: elements.hoverTranslationHotkey.value,
     showFloatBall: elements.showFloatBall.checked,
@@ -419,7 +423,7 @@ function collectSettings() {
 // back to the stored value instead, and the strip says why.
 // ---------------------------------------------------------------------------
 const CONFLICT_FIELDS = [
-  'enableSelection', 'enableHoverTranslation',
+  'enableSelection', 'enableHoverTranslation', 'selectionTrigger',
   'selectionTranslationHotkey', 'hoverTranslationHotkey'
 ];
 
@@ -427,6 +431,7 @@ let lastGoodSettings = null;
 
 function hasHotkeyConflict(settings) {
   return settings.enableSelection
+    && settings.selectionTrigger !== 'icon'
     && settings.enableHoverTranslation
     && settings.selectionTranslationHotkey === settings.hoverTranslationHotkey;
 }
@@ -547,6 +552,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'engineFallback',
   'enableSelection',
   'selectionTranslationMode',
+  'selectionTrigger',
   'selectionTranslationHotkey',
   'enableHoverTranslation',
   'hoverTranslationHotkey',
@@ -783,13 +789,10 @@ async function savePdfSettings({ gate = false } = {}) {
   }
 }
 
+// 划词那几颗控件的灰态在 options-selection.js。
 function syncInlineSettingState() {
-  const selectionEnabled = elements.enableSelection.checked;
-  const hoverEnabled = elements.enableHoverTranslation.checked;
-
-  elements.selectionTranslationMode.disabled = !selectionEnabled;
-  elements.selectionTranslationHotkey.disabled = !selectionEnabled;
-  elements.hoverTranslationHotkey.disabled = !hoverEnabled;
+  syncSelectionControls();
+  elements.hoverTranslationHotkey.disabled = !elements.enableHoverTranslation.checked;
 }
 
 // 字幕的选项跟着主开关灰掉。字幕自己没有开关了：翻不翻由主开关加站点规则说了

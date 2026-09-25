@@ -156,6 +156,17 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
   assert.equal(good.accepted, 5);
 });
 
+test('an import value the selection-trigger dropdown does not offer is dropped', () => {
+  const result = ST.validateSettings({ selectionTrigger: 'quantum' }, schema, enums);
+  assert.deepEqual(result.dropped, ['selectionTrigger']);
+  assert.equal(result.accepted, 0);
+  for (const value of ['icon', 'modifier', 'both']) {
+    const ok = ST.validateSettings({ selectionTrigger: value }, schema, enums);
+    assert.deepEqual(ok.value, { selectionTrigger: value });
+    assert.deepEqual(ok.dropped, []);
+  }
+});
+
 test('an imported page scope must be one the settings page offers', () => {
   // 没有枚举时 valueOk 只查类型，'everything' 这种字符串会原样写进 sync，
   // content/page/scope.js 只认 'main' / 'page'。
@@ -195,6 +206,15 @@ test('every enum names a real setting, and agrees with the choices on the settin
     assert.deepEqual([...options].sort(), values.filter((v) => v !== '').sort(), `${key} drifted from its <select>`);
   }
   assert.ok(compared >= 8, `only ${compared} selects compared — the lookup is broken`);
+  // 反方向：设置页上每一个是设置键的 <select> 都得有枚举，否则导入文件里随便写个值
+  // （selectionTrigger: 'quantum'）也会被收下，写进去之后下拉一项都对不上。
+  // modelSelect 这类不是设置键的下拉不算。下一个新加的下拉漏不过这里。
+  const selects = [...html.matchAll(/<select id="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(selects.length >= 10, `only ${selects.length} selects found — the lookup is broken`);
+  for (const id of selects) {
+    if (!(id in schema)) continue;
+    assert.ok(id in enums, `<select id="${id}"> is a setting with no enum: an import would take any value for it`);
+  }
   assert.deepEqual(enums.translationStyle, [...TranslationDisplay.STYLES]);
   assert.deepEqual(enums.uiLanguage, ['', ...UI_LANGUAGES]);
   assert.deepEqual(enums.provider, Object.keys(APICompat.PROVIDERS));

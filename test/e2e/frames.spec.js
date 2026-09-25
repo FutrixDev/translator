@@ -13,6 +13,7 @@
 // 上干不干净不能说明这一点。
 const { test, expect } = require('./fixtures');
 const {
+  evaluateInContentScript,
   setExtensionSettings,
   getServiceWorker,
   sendMessageToActiveTab,
@@ -310,27 +311,8 @@ test('J-4: the popup and the page state it reads always describe the top page, n
 });
 
 // ------------------------------------------------------------------ 取证
-
-/**
- * 在一个 frame 的内容脚本隔离世界里求值。测试没有 scripting 权限，Playwright 的
- * evaluate 只到页面主世界，所以走 CDP：找这个 frame 里 origin 是扩展的那个隔离上下文。
- */
-async function evaluateInContentScript(context, pageOrFrame, expression) {
-  const session = await context.newCDPSession(pageOrFrame);
-  const contexts = [];
-  session.on('Runtime.executionContextCreated', (event) => contexts.push(event.context));
-  await session.send('Runtime.enable');
-  await expect.poll(() => contexts.some((c) => c.auxData && c.auxData.type === 'isolated'
-    && String(c.origin).startsWith('chrome-extension://'))).toBe(true);
-  const isolated = contexts.find((c) => c.auxData && c.auxData.type === 'isolated'
-    && String(c.origin).startsWith('chrome-extension://'));
-  const { result, exceptionDetails } = await session.send('Runtime.evaluate', {
-    expression, contextId: isolated.id, awaitPromise: true, returnByValue: true,
-  });
-  await session.detach();
-  if (exceptionDetails) throw new Error(`content-script evaluate failed: ${exceptionDetails.text}`);
-  return result.value;
-}
+//
+// 在 frame 的内容脚本隔离世界里求值用 helpers.js 的 evaluateInContentScript。
 
 test('console capture: the no-log check hears the service worker and both frames\' content scripts', async ({ page, context }) => {
   // J-1～J-4 的「零条」的正面对照：同一个 watchSwallowedErrors，让那几句日志在

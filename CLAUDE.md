@@ -216,7 +216,7 @@ message names still say `pdf`; what they carry does not.
 
 ### Hover / Selection Translation
 
-Hold the hotkey and point at a paragraph, or select text and press the button —
+Hold the hotkey and point at a paragraph, or select text and click the icon —
 both land in the same place. It is a family of classic scripts sharing one
 shelf, `ctx.hover`:
 
@@ -232,6 +232,32 @@ shelf, `ctx.hover`:
 Every reference crossing a file goes through the shelf (`hov.foo`), so no file
 depends on being loaded before another. Tests ask the **family**, not a file:
 `hoverSource()` in `test/unit/helpers/sources.mjs`.
+
+**The selection icon and card live outside the shelf**, in
+`content/content-selection.js` and `content/content-popup.js`. After a mouseup
+settles, a 28×28 icon sits next to the selection's last line (the line the
+mouse was released on); `selectionTrigger` (`icon` / `modifier` / `both`)
+decides whether the icon, the modifier key, or both start a translation.
+Every selection translation except the icon goes through one function,
+`ctx.translateSelection(text, { range, element })`, which picks inline or card
+from `selectionTranslationMode`; the icon always opens the card. All three
+floating layers (source peek, card, icon) are placed by one pure function,
+`ctx.placeBeside(size, anchor, options)` in `content/content-utils.js`: the
+card goes beside the selection, never over it, and is re-placed by a
+ResizeObserver until the user drags it. The card's action row is retranslate,
+switch engine, copy; errors go to its single `.ai-translator-error` element
+(`ctx.showCardError`), never into the translation text. The row wraps, so a
+button whose width followed its label moved a different button under the
+pointer: a button whose label changes is drawn with `ctx.fitLabel(text,
+labels)`, sized for every label it will show, and every copy button is
+`ctx.copyButtonContent(label)` + `ctx.copyWithFeedback(button, text)` — the one
+place "Copied" is shown and the clipboard written
+(`test/unit/copy-feedback.test.mjs`). The `execCommand` fallback in
+`ctx.copyToClipboard` is not dead code: a cross-origin frame without
+`allow="clipboard-write"` is refused `navigator.clipboard`, and the fallback is
+what copies there. Journeys J-D1–J-D11 in `test/e2e/selection-card.spec.js`;
+J-D11 runs the icon and card in a cross-origin frame, whose translations go
+through the top frame's engine.
 
 ### Translation Engine
 
@@ -251,6 +277,21 @@ The options page loads the same family (language-pack status and download), so
 both load lists — `manifest.json` and `options/options.html` — carry every file,
 after `shared/lang-tags.js`; `test/unit/engine-status.test.mjs` checks both.
 Tests ask the **family**, not a file: `engineSource()`.
+
+**A request can pin its engine, and every response says who answered.**
+`message.engine` (`'builtin'` | `'ai'`, anything else throws) is read in one
+place, `pinnedEngine(message)` in `content/content-translation-engine.js`; it
+outranks the settings and a pinned engine **never falls back** — its failure is
+the answer. Nothing is persisted. Every response from `ctx.requestTranslation`
+carries `engine: 'builtin' | 'ai'` (on errors: the engine that failed). The
+card's switch-engine button is the only caller that pins, and it asks
+`ctx.engineChoices(targetLang)` (`{ builtin, ai }`) which engines are usable
+right now for the card's target language: `builtin` also needs the built-in
+engine to know that target. That is `eng.supportsTarget(targetLang)` in
+`content/engine/languages.js`, the one predicate for "can the built-in engine
+translate into this extension code": the language menus' "AI only" tag, the
+language-pack status and the engine's own error wording ask it too, and no
+caller rebuilds it from `supportsLang(toApiLang(…))`.
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is

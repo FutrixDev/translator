@@ -223,7 +223,7 @@
     enableSelectionTranslation: 'Habilitar traducción de selección',
     hintEnableSelection: 'Mostrar botón de traducción al seleccionar texto',
     selectionTranslationMode: 'Mostrar traducción de selección',
-    hintSelectionTranslationMode: 'Selecciona texto para mostrar el botón de traducción. Se muestra debajo del párrafo o en una ventana emergente.',
+    hintSelectionTranslationMode: 'Dónde aparece la traducción de la tecla modificadora, la burbuja flotante o el menú contextual: debajo del párrafo o en una tarjeta emergente. El icono de selección siempre abre una tarjeta.',
     selectionTranslationInline: 'Debajo del párrafo',
     selectionTranslationPopup: 'Ventana emergente',
     selectionTranslationHotkey: 'Atajo para la selección',
@@ -523,4 +523,17 @@
     onboardingOpenSettings: 'Abrir toda la configuración',
     onboardingDone: 'Listo',
     onboardingSaveFailed: 'No se pudo guardar: {message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: 'Activación de la selección',
+    selectionTriggerIcon: 'Icono',
+    selectionTriggerModifier: 'Tecla modificadora',
+    selectionTriggerBoth: 'Icono y tecla modificadora',
+    hintSelectionTrigger: 'Icono: aparece un pequeño botón junto al texto seleccionado; haz clic en él para abrir una tarjeta de traducción. Tecla modificadora: pulsa la tecla de abajo para traducir al instante.',
+    selectionIconLabel: 'Traducir selección',
+    cardRetranslate: 'Volver a traducir',
+    cardUseBuiltin: 'Usar la traducción integrada de Chrome',
+    cardUseAi: 'Usar mi modelo de IA',
+    cardEngineBuiltin: 'Integrada en Chrome',
+    cardEngineAi: 'Mi IA',
 };

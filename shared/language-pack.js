@@ -32,7 +32,7 @@
         downloadable: false,
       };
     }
-    if (!engine.supportsLang(engine.toApiLang(targetLang))) {
+    if (!engine.supportsTarget(targetLang)) {
       // 端上根本没有这门语言（「仅 AI」那 37 门）：答案已经知道，不交给
       // availability() —— 它对这类语言在不同 Chrome 上答法不一，还只能换来一句
       // 含糊的「这一对不支持」。按回退设置点名说清楚会发生什么。

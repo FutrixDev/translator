@@ -1,38 +1,50 @@
-/* ==================== Selection Button ==================== */
+/* ==================== Selection Icon ==================== */
 
-#ai-translator-selection-btn {
+/* The root is a plain positioned box; the 28px round button inside it is the
+   control. Control rules sit on (0,2,2) — `html body` + the root's id as an
+   attribute selector — so a page theme's `button:hover` cannot take them back.
+   The root is already in popup.css's reset list;
+   test/unit/host-css-containment.test.mjs holds both. */
+html body [id="ai-translator-selection-btn"] {
   position: fixed;
   z-index: 2147483647;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: linear-gradient(135deg, #7c5cff 0%, #6366f1 100%);
-  border: none;
-  border-radius: 20px;
-  color: white;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(124, 92, 255, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  width: 28px;
+  height: 28px;
   animation: ai-translator-btn-pop 0.2s ease;
   user-select: none;
 }
 
-#ai-translator-selection-btn:hover {
+html body [id="ai-translator-selection-btn"] .ai-translator-selection-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c5cff 0%, #6366f1 100%);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+html body [id="ai-translator-selection-btn"] .ai-translator-selection-icon:hover {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-  transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(124, 92, 255, 0.5);
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(124, 92, 255, 0.5);
 }
 
-#ai-translator-selection-btn:active {
-  transform: scale(0.98);
+html body [id="ai-translator-selection-btn"] .ai-translator-selection-icon:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
 }
 
-#ai-translator-selection-btn svg {
-  width: 16px;
-  height: 16px;
+html[data-ai-translator-theme="light"] body [id="ai-translator-selection-btn"] .ai-translator-selection-icon {
+  box-shadow: 0 4px 12px rgba(111, 99, 255, 0.28), 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+html[data-ai-translator-theme="light"] body [id="ai-translator-selection-btn"] .ai-translator-selection-icon:focus-visible {
+  outline-color: #6f63ff;
 }
 
 @keyframes ai-translator-btn-pop {

@@ -40,7 +40,7 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   // 它 —— 装在调度层只挡得住前一半，运行中那次回落会从旁边绕过去。
   assert.match(
     engine,
-    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true \};\s*\n\s*return chrome\.runtime\.sendMessage\(message\);/
+    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n\s*const response = await chrome\.runtime\.sendMessage\(message\);/
   );
   // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
   // 翻译是用户一次一次点出来的，他知道自己在花钱。

@@ -11,7 +11,7 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { engineSource, workerSource } from './helpers/sources.mjs';
 
@@ -52,8 +52,37 @@ test('every language the built-in engine knows is a target we offer', () => {
     assert.ok(offered.has(api), `built-in language '${api}' has no target code`);
   }
   // …and exactly 39 of the 76 map onto one — the rest are AI only.
-  const local = TargetLang.SUPPORTED.filter((code) => eng.supportsLang(eng.toApiLang(code)));
+  const local = TargetLang.SUPPORTED.filter((code) => eng.supportsTarget(code));
   assert.equal(local.length, 39);
+});
+
+// "Can the built-in engine translate into this target?" is eng.supportsTarget.
+// Before it existed, supportsLang(toApiLang(target)) was spelled out in five
+// places: the menus' "AI only" tag, the language-pack status, the engine's
+// error wording, the batch pre-check and the card's switch-engine button.
+const REBUILT_TARGET_CHECK = /supportsLang\(\s*[\w.]*toApiLang\(/;
+
+test('the scan sees supportsLang(toApiLang(...)) however it is spelled (self-check)', () => {
+  for (const line of [
+    'bt.supportsLang(bt.toApiLang(option.value))',
+    'engine.supportsLang(engine.toApiLang(targetLang))',
+    'eng.supportsLang( eng.toApiLang(x) )',
+  ]) assert.match(line, REBUILT_TARGET_CHECK, line);
+  // An API code in hand is a different question, asked with supportsLang.
+  assert.doesNotMatch('eng.supportsLang(src) || !eng.supportsLang(tgt)', REBUILT_TARGET_CHECK);
+});
+
+test('no caller rebuilds supportsTarget out of supportsLang and toApiLang', () => {
+  const dirs = ['background', 'content', 'i18n', 'offscreen', 'onboarding', 'options', 'popup', 'pdf', 'shared'];
+  const jsFiles = (dir) => readdirSync(fileURLToPath(new URL(`../../${dir}/`, import.meta.url)), { withFileTypes: true })
+    .flatMap((entry) => entry.isDirectory() ? jsFiles(`${dir}/${entry.name}`)
+      : entry.name.endsWith('.js') ? [`${dir}/${entry.name}`] : []);
+  const files = dirs.flatMap(jsFiles);
+  assert.ok(files.length > 50, `only ${files.length} files scanned; the scan may be looking in the wrong place`);
+  const offenders = files.flatMap((rel) => repoFile(rel).split('\n')
+    .map((line, index) => REBUILT_TARGET_CHECK.test(line) ? `${rel}:${index + 1}` : null)
+    .filter(Boolean));
+  assert.deepEqual(offenders, [], 'ask eng.supportsTarget (ctx.builtinTranslator.supportsTarget) instead');
 });
 
 test('the cloud selectors keep the old ten, all of them valid targets', () => {

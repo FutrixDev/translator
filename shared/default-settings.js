@@ -49,6 +49,8 @@
     hoverTranslationHotkey: 'Shift',
     selectionTranslationHotkey: DEFAULT_SELECTION_HOTKEY,
     selectionTranslationMode: 'inline',
+    // 选中之后怎么触发：'icon' 出图标、'modifier' 按修饰键、'both' 两者都要。
+    selectionTrigger: 'both',
     showFloatBall: true,
     // 输入框旁边那颗「译成 X」。默认开：它只在输入内容的语言和页面语言对不上
     // 时才出现，也就是说不写字、或者写的就是这一页的语言，整页上根本看不见它。

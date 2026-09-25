@@ -35,7 +35,6 @@
       inputDialog: null,
       selectionButton: null,
       lastSelectedText: '',
-      lastSelectionPos: { x: 0, y: 0 },
       lastSelectionElement: null,
       lastSelectionRange: null,
       isTranslatingPage: false,
@@ -159,7 +158,10 @@
 
       if (changes.enableSelection && !ctx.settings.enableSelection) {
         if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
-        if (ctx.hideSelectionButton) ctx.hideSelectionButton();
+      }
+
+      if (changes.enableSelection || changes.selectionTrigger) {
+        ctx.syncSelectionIcon();
       }
 
       if (changes.selectionTranslationMode && ctx.settings.selectionTranslationMode !== 'inline') {

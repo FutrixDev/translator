@@ -223,7 +223,7 @@
     enableSelectionTranslation: '啟用劃詞翻譯',
     hintEnableSelection: '選中文本後顯示翻譯按鈕',
     selectionTranslationMode: '劃詞翻譯顯示方式',
-    hintSelectionTranslationMode: '選中文本後顯示翻譯按鈕，可選擇段落下方或彈窗顯示。',
+    hintSelectionTranslationMode: '修飾鍵、懸浮球和右鍵選單的譯文顯示在哪裡：段落下方，或彈出卡片。劃詞圖示總是開啟卡片。',
     selectionTranslationInline: '段落下方顯示',
     selectionTranslationPopup: '彈窗顯示',
     selectionTranslationHotkey: '劃詞快捷鍵',
@@ -523,4 +523,17 @@
     onboardingOpenSettings: '開啟完整設置',
     onboardingDone: '完成',
     onboardingSaveFailed: '儲存失敗：{message}',
+
+    // Selection icon and card actions (P0-D)
+    selectionTrigger: '劃詞觸發方式',
+    selectionTriggerIcon: '圖示',
+    selectionTriggerModifier: '修飾鍵',
+    selectionTriggerBoth: '圖示和修飾鍵',
+    hintSelectionTrigger: '圖示：選中文本後旁邊出現一個小按鈕，點它開啟譯文卡片。修飾鍵：按下方設定的鍵直接翻譯。',
+    selectionIconLabel: '翻譯選中文本',
+    cardRetranslate: '重譯',
+    cardUseBuiltin: '改用 Chrome 內建翻譯',
+    cardUseAi: '改用我的 AI 模型',
+    cardEngineBuiltin: 'Chrome 內建',
+    cardEngineAi: '我的 AI',
 };

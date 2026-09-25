@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Selection icon and card actions
+
+- **A translate icon next to your selection.** Select text and a small round
+  icon appears beside the line you released the mouse on; click it for the
+  translation card. It goes away when you scroll, press `Esc`, click
+  elsewhere or clear the selection, and never appears inside input boxes,
+  text areas or editable text.
+- **Choose how a selection starts translating.** Settings → Selection
+  trigger: the icon, the modifier key, or both (the default, so nobody who
+  relied on the modifier key loses it). The hotkey conflict check ignores the
+  modifier key when the trigger is icon only.
+- **The card sits beside the selection, not on top of it.** It opens below
+  the selection, or above it near the bottom of the window; long text shrinks
+  the card and scrolls inside it, and the card stays inside the window. Once
+  you drag the card it stays where you put it.
+- **Card actions: retranslate, switch engine, copy, read aloud.** The card
+  says which engine answered (Chrome built-in or My AI). Retranslate asks the
+  engine again; switch engine translates this card with the other engine,
+  when it is usable, without changing your settings and without falling back
+  to anything else.
+- **The card's buttons stay where they are.** A button whose label changes —
+  Copy to Copied, or the switch-engine label after a switch — is as wide as
+  its longest label, so the row never rewraps and no other button moves under
+  the pointer, in all ten interface languages.
+- **Errors show on the card, not as a translation.** A failed request — from
+  the icon, the modifier key, the float ball or the right-click menu — shows
+  its reason in the card's error line, and Retranslate tries again.
+- **The language menu opens at your language.** Opening the target language
+  menu on the card or the input box scrolls the selected language into view,
+  inside the menu only; the page stays where it was.
+- **Right-to-left translations read from the right.** The card marks its
+  translation with the target language and its direction, so Arabic, Hebrew,
+  Persian or Urdu start at the right edge even on a page that aligns
+  everything left.
+- **Switch engine only offers what can answer.** The card no longer offers
+  the Chrome built-in engine for a target language it cannot translate into
+  (the ones the menu tags "AI only").
+- **Importing settings checks the selection trigger.** A value other than
+  icon, modifier key or both is left out of the import and listed as skipped.
+- **Fix: a copy button clicked twice no longer stays on "Copied".** The card
+  and the input box each put back the label they found when clicked, which on
+  a second click within 1.5 s was "Copied" itself. They now share one copy
+  button that returns to its own label 1.5 s after the last click.
+
 ### Onboarding page and settings import/export
 
 - **A welcome page on first install.** A fresh install (not an update) opens

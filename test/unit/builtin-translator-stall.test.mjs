@@ -158,7 +158,9 @@ function translateRequest(targetLang, extra = {}) {
   return ctx.requestTranslation({ type: 'TRANSLATE', text: ENGLISH, targetLang, ...extra });
 }
 
-const AI_RESULT = { translation: `AI:${ENGLISH}`, phonetic: '', isWord: false };
+// Every answer carries the engine that produced it, so a fallback is visible in
+// the result itself: `engine: 'ai'` here is what proves the AI path answered.
+const AI_RESULT = { translation: `AI:${ENGLISH}`, phonetic: '', isWord: false, engine: 'ai' };
 
 // ==================== the core failure ====================
 
@@ -195,7 +197,7 @@ test('a whole-page batch gives up once, not once per block', async (t) => {
   await waitFor(() => calls.length === 1, 'create() to be called');
   t.mock.timers.tick(21_000);
 
-  assert.deepEqual(await pending, { translations: texts.map((x) => `AI:${x}`) });
+  assert.deepEqual(await pending, { translations: texts.map((x) => `AI:${x}`), engine: 'ai' });
   assert.equal(calls.length, 1, 'each block waited out its own create() timeout');
   assert.equal(sentToAI.at(-1).type, 'TRANSLATE_BATCH_FAST', 'the batch did not reach the AI path intact');
 });
@@ -279,7 +281,7 @@ test('a timed-out create is not cached, so the next attempt really retries', asy
 
   self.Translator.create = async () => fakeTranslator();
   assert.deepEqual(await translateRequest('fr'), {
-    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false,
+    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false, engine: 'builtin',
   });
 });
 
@@ -299,7 +301,7 @@ test('an availability() that never answers is an engine failure, not a bad pair'
   await waitFor(() => asked === 1, 'availability() to be called');
   t.mock.timers.tick(16_000);
 
-  assert.deepEqual(await pending, { translations: texts.map((x) => `AI:${x}`) });
+  assert.deepEqual(await pending, { translations: texts.map((x) => `AI:${x}`), engine: 'ai' });
   assert.equal(asked, 1, 'every block asked again and waited out its own timeout');
 });
 
@@ -323,7 +325,7 @@ test('a translate() that never returns drops the wedged session and falls back',
   // And the session really is gone: the next attempt builds a fresh one.
   self.Translator.create = async () => fakeTranslator();
   assert.deepEqual(await translateRequest('pl'), {
-    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false,
+    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false, engine: 'builtin',
   });
 });
 
@@ -343,7 +345,7 @@ test('with no API key there is nothing to fall back to, so the reason is shown',
   await waitFor(() => calls.length === 1, 'create() to be called');
   t.mock.timers.tick(21_000);
 
-  assert.deepEqual(await pending, { error: 'builtinUnavailable' });
+  assert.deepEqual(await pending, { error: 'builtinUnavailable', engine: 'builtin' });
   storageListener({ apiKey: { newValue: 'sk-test' } }, 'sync');
 });
 

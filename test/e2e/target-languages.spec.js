@@ -9,7 +9,12 @@
  *   J-B2  the settings page names a target the built-in engine cannot
  *         translate into, in the sentence the fallback setting calls for
  *   J-B8  the in-page language menu: 76 items, "AI only" tags drawn by CSS
- *         and never part of the label
+ *         and never part of the label; opening it scrolls the selected
+ *         language into the menu's view without scrolling the page
+ *   J-B9  the selection card in an RTL target: the translation carries the
+ *         target's lang and dir and its line starts at the right edge; the
+ *         card's menu reveals the selected language; picking an LTR target
+ *         turns the next translation back to the left edge
  *
  * Expected names are always computed here, in the browser, with Intl — never
  * written out and never asked of the code under test. zh-CN / zh-TW are the
@@ -18,8 +23,9 @@
  */
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings, getSyncSettings, openFloatBallMenu } = require('./helpers');
+const { setExtensionSettings, getSyncSettings, openFloatBallMenu, waitForFloatBall } = require('./helpers');
 const { startMockServer } = require('./mock-server');
+const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
 
@@ -54,6 +60,31 @@ async function expectIntlNames(page, selector, uiLang, count) {
   expect(await isCollated(page, names.map((n) => n.text), uiLang)).toBe(true);
   return names;
 }
+
+/**
+ * The open menu shows its selected item inside its own visible box (±1 px),
+ * got there by scrolling itself, and left the page where it was.
+ */
+async function expectSelectedRevealed(page, menu, scrollYBefore) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const top = box.top + el.clientTop;
+    const item = el.querySelector('.is-selected').getBoundingClientRect();
+    return {
+      top, bottom: top + el.clientHeight, itemTop: item.top, itemBottom: item.bottom,
+      scrollTop: el.scrollTop, lang: el.querySelector('.is-selected').dataset.lang,
+    };
+  });
+  expect(view.itemTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
+  expect(view.itemBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  expect(view.scrollTop, JSON.stringify(view)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+}
+
+// A page taller than the viewport, scrolled a little: a menu that scrolled the
+// page to reveal its item would show up as a changed scrollY.
+const TALL = '<div style="height: 3000px"></div>';
+const SCROLLED_Y = 120;
 
 async function openOptions(page, extensionId) {
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
@@ -147,7 +178,7 @@ test('J-B2 the settings page names a target the built-in engine cannot translate
 test('J-B8 the in-page language menu lists 76 languages and tags the AI-only ones outside their label', async ({ page }) => {
   const site = await startMockServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><html lang="en"><body><p>A page with a language menu.</p></body></html>');
+    res.end(`<!doctype html><html lang="en"><body><p>A page with a language menu.</p>${TALL}</body></html>`);
   });
   try {
     await setExtensionSettings(page, {
@@ -158,13 +189,18 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     });
     await page.goto(`${site.origin}/`);
     await page.waitForSelector('#ai-translator-float-ball');
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
     await openFloatBallMenu(page);
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');
     await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
 
     const dialog = page.locator('#ai-translator-input-dialog');
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    expect(scrollYBefore).toBe(SCROLLED_Y);
     await dialog.locator('.ai-translator-lang-trigger').click();
     await expect(dialog.locator('.ai-translator-lang-menu')).toBeVisible();
+    await expectSelectedRevealed(page, dialog.locator('.ai-translator-lang-menu'), scrollYBefore);
+    await expect(dialog.locator('.ai-translator-lang-item.is-selected')).toHaveAttribute('data-lang', 'fr');
 
     const items = await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item', 'en', 76);
     expect(items.map((i) => i.value)).toContain('fa');
@@ -187,5 +223,115 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     await expect(dialog.locator('.ai-translator-lang-label')).toHaveText(faName);
   } finally {
     await site.close();
+  }
+});
+
+/**
+ * The translation element's content box and its first line (every client rect
+ * of its text that shares the first rect's top — bidi may split one line into
+ * runs), once the card's pop-in and the text's flow animation have finished.
+ */
+async function firstLineGeometry(locator) {
+  await locator.evaluate((el) => Promise.all(
+    el.closest('.ai-translator-popup').getAnimations({ subtree: true }).map((a) => a.finished),
+  ));
+  return locator.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    const px = (v) => parseFloat(v) || 0;
+    const contentLeft = box.left + px(cs.borderLeftWidth) + px(cs.paddingLeft);
+    const contentRight = box.right - px(cs.borderRightWidth) - px(cs.paddingRight);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    const line = rects.filter((r) => Math.abs(r.top - rects[0].top) < 1);
+    const tops = new Set(rects.map((r) => Math.round(r.top)));
+    return {
+      contentLeft,
+      contentRight,
+      left: Math.min(...line.map((r) => r.left)),
+      right: Math.max(...line.map((r) => r.right)),
+      lines: tops.size,
+    };
+  });
+}
+
+test('J-B9 the selection card lays an RTL translation out from the right and an LTR one from the left', async ({ page }) => {
+  const mock = await startMockOpenAIServer();
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!doctype html><html lang="en" dir="ltr"><head><style>
+      body { margin: 0; padding: 300px 60px 40px; font: 18px/28px Georgia, serif; text-align: left; }
+    </style></head><body><p><span id="phrase">Tide table</span> for the harbour.</p>${TALL}</body></html>`);
+  });
+  try {
+    await setExtensionSettings(page, {
+      provider: 'custom',
+      apiEndpoint: mock.endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      translationEngine: 'ai',
+      targetLang: 'he',
+      enableSelection: true,
+      selectionTrigger: 'icon',
+      selectionTranslationMode: 'popup',
+      autoTranslate: false,
+    });
+    await page.goto(`${site.origin}/`);
+    await waitForFloatBall(page);
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
+
+    // A real drag across the two words, then the selection icon.
+    const phrase = await page.locator('#phrase').boundingBox();
+    const y = phrase.y + phrase.height / 2;
+    await page.mouse.move(phrase.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(phrase.x + phrase.width - 1, y, { steps: 10 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.getSelection().toString())).toBe('Tide table');
+    await page.locator('#ai-translator-selection-btn .ai-translator-selection-icon').click();
+
+    const card = page.locator('.ai-translator-popup');
+    const text = card.locator('.ai-translator-translation-text');
+    await expect(text).toHaveText('[T] Tide table');
+    await expect(text).toHaveAttribute('lang', 'he');
+    await expect(text).toHaveAttribute('dir', 'rtl');
+
+    const rtl = await firstLineGeometry(text);
+    expect(rtl.lines, JSON.stringify(rtl)).toBe(1);
+    expect(Math.abs(rtl.right - rtl.contentRight), JSON.stringify(rtl)).toBeLessThanOrEqual(1);
+    expect(rtl.left - rtl.contentLeft, JSON.stringify(rtl)).toBeGreaterThan(10);
+
+    const cardBox = await card.boundingBox();
+    const viewport = page.viewportSize();
+    expect(cardBox.x).toBeGreaterThanOrEqual(0);
+    expect(cardBox.y).toBeGreaterThanOrEqual(0);
+    expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height);
+
+    // The card's own menu: the selected language (he) in view, the page still.
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    expect(scrollYBefore).toBe(SCROLLED_Y);
+    await card.locator('.ai-translator-lang-trigger').click();
+    const menu = card.locator('.ai-translator-lang-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('.is-selected')).toHaveAttribute('data-lang', 'he');
+    await expectSelectedRevealed(page, menu, scrollYBefore);
+
+    // An LTR target: the next translation carries en / ltr and starts at the left.
+    const names = await namesOf(page, '.ai-translator-popup .ai-translator-lang-item', 'en');
+    await menu.locator('.ai-translator-lang-item[data-lang="en"]').click();
+    await expect(card.locator('.ai-translator-lang-label')).toHaveText(names.find((n) => n.value === 'en').want);
+    await expect.poll(() => mock.sentTexts.length).toBe(2);
+    await expect(text).toHaveAttribute('lang', 'en');
+    await expect(text).toHaveAttribute('dir', 'ltr');
+    await expect(text).toHaveText('[T] Tide table');
+
+    const ltr = await firstLineGeometry(text);
+    expect(ltr.lines, JSON.stringify(ltr)).toBe(1);
+    expect(Math.abs(ltr.left - ltr.contentLeft), JSON.stringify(ltr)).toBeLessThanOrEqual(1);
+  } finally {
+    await site.close();
+    await mock.close();
   }
 });

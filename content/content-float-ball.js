@@ -637,13 +637,7 @@
         const selectedText = (ctx.getSelectedText ? ctx.getSelectedText() : '') || state.lastSelectedText;
         if (selectedText) {
           if (!settings.enableSelection) break;
-          if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.translateSelectionInline) {
-            ctx.translateSelectionInline(selectedText, state.lastSelectionElement, state.lastSelectionRange);
-          } else {
-            const pos = state.lastSelectionPos.x ? state.lastSelectionPos : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            if (ctx.showTranslationPopup) ctx.showTranslationPopup(selectedText, pos.x, pos.y);
-          }
-          if (ctx.hideSelectionButton) ctx.hideSelectionButton();
+          ctx.translateSelection(selectedText, { range: state.lastSelectionRange, element: state.lastSelectionElement });
         }
         break;
       }

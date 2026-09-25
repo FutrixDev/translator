@@ -2,7 +2,7 @@
 //
 // 两条翻译后端，一个统一入口：
 //
-//   ctx.requestTranslation(message)  ——  与 chrome.runtime.sendMessage 完全同形
+//   ctx.requestTranslation(message)  ——  与 chrome.runtime.sendMessage 同形，响应多盖一个 engine
 //
 // 默认走浏览器内置的 Translator API（Chrome 138+，端上 NMT，零网络、零费用）；
 // 内置这条路走不通时，再回落到 background service worker 里的自定义 AI 接口。
@@ -506,14 +506,12 @@
     switch (reason) {
       case ENGINE_REASONS.NEEDS_DOWNLOAD:
         return t('builtinNeedsDownload');
-      case ENGINE_REASONS.UNSUPPORTED_PAIR: {
-        const tgt = eng.toApiLang(targetLang);
-        if (tgt && !eng.supportsLang(tgt)) {
+      case ENGINE_REASONS.UNSUPPORTED_PAIR:
+        if (targetLang && !eng.supportsTarget(targetLang)) {
           return t('builtinTargetUnsupportedLocalOnly')
             .replace('{lang}', ctx.languageName(targetLang, { inSentence: true }));
         }
         return t('builtinUnsupportedPair');
-      }
       case ENGINE_REASONS.UNSUPPORTED_ENV:
         return t('builtinUnsupportedEnv');
       default:
@@ -548,8 +546,7 @@
         const texts = Array.isArray(message.texts) ? message.texts : [];
         // 目标语言不支持是整批（乃至整页）都成立的事实，先判掉整批抛出去，
         // 别让每一段各自撞一次同一堵墙。
-        const batchTarget = eng.toApiLang(targetLang);
-        if (!batchTarget || !eng.supportsLang(batchTarget)) {
+        if (!eng.supportsTarget(targetLang)) {
           throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
         }
         const translations = [];
@@ -593,43 +590,78 @@
     }
   }
 
+  // 一次请求可以指名要哪个引擎（划词卡片上的「换引擎」）。只认这两个值：写错了
+  // 是调用方的 bug，当成没传就会悄悄按设置走，和用户点的那颗按钮对不上。
+  const PINNABLE_ENGINES = new Set(['builtin', 'ai']);
+
   /**
-   * 翻译请求统一入口，与 chrome.runtime.sendMessage 同形（同样的入参、同样的返回）。
-   * 调用方不需要知道这次走的是内置还是 AI。
+   * 这一次请求指名的引擎：'builtin' | 'ai'，没指名是 undefined。「指名」只在这一
+   * 处判定，优先级（wantsBuiltin）与不回落（requestTranslation）都问它。
+   */
+  function pinnedEngine(message) {
+    const engine = message.engine;
+    if (engine !== undefined && !PINNABLE_ENGINES.has(engine)) {
+      throw new Error(`requestTranslation: unknown engine ${JSON.stringify(engine)}`);
+    }
+    return engine;
+  }
+
+  /**
+   * 这一次要不要走内置引擎。优先级：这一次请求指名的 message.engine > 站点覆盖
+   * （P1-B 的 engineOverride，将来加在这里）> 设置（isBuiltinSelected）。显式的
+   * 一次请求压过任何偏好。
+   */
+  function wantsBuiltin(message, auto) {
+    const pinned = pinnedEngine(message);
+    if (pinned !== undefined) return pinned === 'builtin';
+    return isBuiltinSelected(auto);
+  }
+
+  /**
+   * 翻译请求统一入口，与 chrome.runtime.sendMessage 同形（同样的入参、同样的返回），
+   * 只多一个字段：每个响应都盖上 `engine`（'builtin' | 'ai'），说这一次是谁译的
+   * （出错时说是谁没译成）。调用方不需要知道这次走的是内置还是 AI，但卡片要告诉
+   * 用户。
+   *
+   * `message.engine` 指名了引擎就**不回落**：用户点的就是「用内置」，内置顶不住
+   * 就把真实原因给他看，不能换一个引擎、花他的钱把结果递回去（engineFallback 为
+   * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
    */
   ctx.requestTranslation = async function(message) {
+    const pinned = pinnedEngine(message);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
-    const auto = !!(message && message.auto);
-    if (isBuiltinSelected(auto) && !isBuiltinSupported()) {
+    const auto = !!message.auto;
+    const builtin = wantsBuiltin(message, auto);
+    // 回落只在没指名引擎时才有：指名了就是这一个引擎的答案，成败都是它的。
+    const mayFallBack = async () => pinned === undefined && canFallBackToAI();
+    if (builtin && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
       // 用户开了回退就顶上，并留痕；没开就把真实原因说清楚，别让他收到一句
       // 与实际问题无关的“请先配置 API Key”。
-      if (!(await canFallBackToAI())) {
-        return { error: engineErrorMessage(ENGINE_REASONS.UNSUPPORTED_ENV) };
+      if (!(await mayFallBack())) {
+        return { error: engineErrorMessage(ENGINE_REASONS.UNSUPPORTED_ENV), engine: 'builtin' };
       }
       // 环境这条路能问出更细的原因（版本 / http），比笼统的 unsupportedEnv 好。
       noteFallback(builtinUnsupportedReason() || ENGINE_REASONS.UNSUPPORTED_ENV);
-    } else if (shouldUseBuiltin(auto)) {
+    } else if (builtin) {
+      let result = null;
       try {
-        const result = await handleWithBuiltin(message);
-        if (result) return result;
+        result = await handleWithBuiltin(message);
       } catch (error) {
-        if (error instanceof EngineUnavailableError) {
-          if (await canFallBackToAI()) {
-            console.info('Blab Translation: builtin unavailable (%s), falling back to AI', error.reason);
-            noteFallback(error.reason);
-          } else {
-            return { error: engineErrorMessage(error.reason, message.targetLang) };
-          }
-        } else {
-          console.warn('Blab Translation: builtin translation failed', error);
-          if (!(await canFallBackToAI())) {
-            return { error: engineErrorMessage(ENGINE_REASONS.CREATE_FAILED) };
-          }
-          noteFallback(ENGINE_REASONS.CREATE_FAILED);
-        }
+        const unavailable = error instanceof EngineUnavailableError;
+        const reason = unavailable ? error.reason : ENGINE_REASONS.CREATE_FAILED;
+        if (!unavailable) console.warn('Blab Translation: builtin translation failed', error);
+        if (!(await mayFallBack())) return { error: engineErrorMessage(reason, message.targetLang), engine: 'builtin' };
+        if (unavailable) console.info('Blab Translation: builtin unavailable (%s), falling back to AI', reason);
+        noteFallback(reason);
+      }
+      if (result) return { ...result, engine: 'builtin' };
+      // 走到这里而指名了内置，只可能是内置引擎不认识这种请求类型（不是 TRANSLATE /
+      // 批量；那种请求一向交给 AI）——指名了内置却发来它，是调用方写错了。
+      if (pinned) {
+        throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
     // 这一行是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这
@@ -638,8 +670,23 @@
     // 拒绝带上 budgetSpent：调用方要分得清「今天的额度花完了」和「这一批出错
     // 了」—— 前者要跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
     const refusal = await refuseAutoAiSpend(message);
-    if (refusal) return { error: refusal, budgetSpent: true };
-    return chrome.runtime.sendMessage(message);
+    if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
+    const response = await chrome.runtime.sendMessage(message);
+    return response && { ...response, engine: 'ai' };
+  };
+
+  /**
+   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边先重读一次
+   * 配置 —— 设置页刚填好 Key，这一页的缓存还是旧的。内置那边除了环境，还要端上
+   * 有这门目标语言：问的是 eng.supportsTarget，和页内语言菜单标「仅 AI」的是同一个
+   * 谓词，不然卡片会对一门「仅 AI」的语言提供「改用内置」，点了只换来一句报错。
+   */
+  ctx.engineChoices = async function(targetLang) {
+    await refreshAiConfig();
+    return {
+      builtin: isBuiltinSupported() && eng.supportsTarget(targetLang),
+      ai: aiConfigured(),
+    };
   };
 
   // ==================== 对外接口 ====================
@@ -715,6 +762,11 @@
     toApiLang: (lang) => eng.toApiLang(lang),
     translate: translateWithBuiltin,
     destroyAll,
+
+    // 一门目标语言（扩展自己的码）端上有没有：页内语言菜单标「仅 AI」、设置页和
+    // 引导页的语言包状态（shared/language-pack.js）问的都是这一句，主人同样是
+    // content/engine/languages.js。
+    supportsTarget: (lang) => eng.supportsTarget(lang),
 
     // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
     // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎

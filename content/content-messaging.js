@@ -8,8 +8,8 @@
   const { settings, state } = ctx;
   const applyTheme = ctx.applyTheme;
 
-  // 把一条译文送到划词翻译的展示层。SHOW_TRANSLATION（旧的 background 直推结果）
-  // 和 TRANSLATE_SELECTION_TEXT（content script 自己译）共用这一处，避免两边跑偏。
+  // 把一条现成的译文送到划词翻译的展示层。只有 SHOW_TRANSLATION（旧的 background
+  // 直推结果）用它；生产代码已不发这条消息，只有 e2e 还在用，登记为遗留。
   function displaySelectionTranslation({ text, translation, phonetic, isWord }) {
     if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.showInlineSelectionTranslation) {
       ctx.showInlineSelectionTranslation(text, translation, state.lastSelectionElement, state.lastSelectionRange);
@@ -103,24 +103,14 @@
           // 右键菜单翻译：background 只转达意图，翻译在这里做，
           // 这样才能走到内置引擎（Translator 在 service worker 里不存在）。
           if (!settings.enableSelection) break;
+          // 和修饰键、悬浮球同一条路：显示方式决定画在段落下方还是卡片，
+          // 两边都有等待状态，出错画成错误而不是译文。
           const selectionText = message.text || '';
           if (!selectionText.trim()) break;
-          ctx.requestTranslation({
-            type: 'TRANSLATE',
-            text: selectionText,
-            targetLang: message.targetLang,
-            mode: 'text'
-          }).then((response) => {
-            // 出错时把错误文案顶到同一个展示位。以前这条路失败是只往控制台打一行、
-            // 页面上毫无反应，用户只会以为右键翻译坏了。
-            displaySelectionTranslation({
-              text: selectionText,
-              translation: response?.error || response?.translation || '',
-              phonetic: response?.phonetic || '',
-              isWord: response?.isWord === true
-            });
-          }).catch((error) => {
-            console.error('Blab Translation: Context menu translation failed', error);
+          const target = ctx.currentSelectionTarget();
+          ctx.translateSelection(selectionText, {
+            range: target.range || state.lastSelectionRange,
+            element: target.element || state.lastSelectionElement
           });
           break;
         }
@@ -191,7 +181,9 @@
           }
           if ('enableSelection' in message.settings && !message.settings.enableSelection) {
             if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
-            if (ctx.hideSelectionButton) ctx.hideSelectionButton();
+          }
+          if ('enableSelection' in message.settings || 'selectionTrigger' in message.settings) {
+            ctx.syncSelectionIcon();
           }
           if ('selectionTranslationMode' in message.settings && message.settings.selectionTranslationMode !== 'inline') {
             if (ctx.clearSelectionTranslation) ctx.clearSelectionTranslation();
