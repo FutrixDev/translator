@@ -128,6 +128,53 @@ test('a pending record reads as uploading, not as a queued server job', () => {
   assert.equal(ui.pdfStatusKey({ status: 'failed', pending: true }), 'pdfStatusFailed');
 });
 
+// The engine's own stage words (pipeline.py STAGES / FLOW_STAGES, the `names`
+// pass in server.py, and saas's PDF_MERGING_STAGE) and the phase each reads as.
+const running = (stage) => ui.pdfStatusKey({ status: 'running', stage });
+
+test('each engine stage word reads as its phase', () => {
+  assert.equal(running('parse'), 'pdfStageLayout');
+  assert.equal(running('structure'), 'pdfStageLayout');
+  assert.equal(running('names'), 'pdfStageTranslating');
+  assert.equal(running('normalize'), 'pdfStageTranslating');
+  assert.equal(running('translate'), 'pdfStageTranslating');
+  assert.equal(running('typeset'), 'pdfStageTypesetting');
+  assert.equal(running('rewrite'), 'pdfStageTypesetting');
+  assert.equal(running('emit'), 'pdfStageTypesetting');
+  assert.equal(running('merging'), 'pdfStageTypesetting');
+});
+
+test('the status line never steps back through a whole run', () => {
+  // The bug: `emit` (writing the result file) matched neither loose pattern
+  // and read as "Translating…" again after "Retypesetting…".
+  const phase = { pdfStageLayout: 0, pdfStageTranslating: 1, pdfStageTypesetting: 2 };
+  const runs = {
+    pdf: ['parse', 'structure', 'names', 'translate', 'typeset', 'emit'],
+    'split pdf': ['parse', 'structure', 'translate', 'typeset', 'emit', 'merging'],
+    document: ['names', 'normalize', 'translate', 'rewrite', 'emit']
+  };
+  for (const [name, stages] of Object.entries(runs)) {
+    const keys = stages.map(running);
+    for (let i = 1; i < keys.length; i += 1) {
+      assert.ok(
+        phase[keys[i]] >= phase[keys[i - 1]],
+        `${name}: ${stages[i - 1]}→${stages[i]} steps back (${keys.join(' → ')})`
+      );
+    }
+    assert.equal(keys.at(-1), 'pdfStageTypesetting', `${name} ends on the last phase`);
+  }
+});
+
+test('an unknown or missing stage word reads as the neutral "Translating…"', () => {
+  assert.equal(running('some_future_stage'), 'pdfStageTranslating');
+  assert.equal(running(''), 'pdfStageTranslating');
+  assert.equal(running(null), 'pdfStageTranslating');
+  assert.equal(running(undefined), 'pdfStageTranslating');
+  // Looked up exactly: the pdf2zh-era words the old patterns caught are gone.
+  assert.equal(running('render'), 'pdfStageTranslating');
+  assert.equal(running('toString'), 'pdfStageTranslating');
+});
+
 test('a settled pending record stops standing in for the job the server has', () => {
   // In flight, it is the only trace of the click and the history must show it.
   assert.equal(pdf.isPendingInFlight({ jobId: 'local:op-1', status: 'queued' }), true);

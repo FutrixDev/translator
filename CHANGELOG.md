@@ -81,6 +81,9 @@
   `<name> (translated).<ext>`; a MOBI is read on the website. **Open** in the
   popup, the settings list and a clicked notification all go to the same
   place: the result for a finished PDF, the job's page for everything else.
+- **The status line only moves forward.** While a task writes out the
+  translated file at the end, the upload page no longer drops back to
+  "Translating…" after "Retypesetting…"; the same goes for PDFs.
 
 ## 1.4.0 — 2026-09-20
 

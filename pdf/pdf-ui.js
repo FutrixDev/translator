@@ -19,12 +19,39 @@
   const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
 
   /**
-   * A job view/record → the i18n key of what to show for it.
+   * A running job's stage word → the i18n key of the phase it belongs to.
    *
-   * The engine's stage names are internal strings (pdf2zh event stages), so
-   * they are matched loosely and never shown raw: layout detection, then
-   * translation, then retypesetting is the whole visible story.
+   * The words are the engine's, looked up exactly, never shown raw:
+   * - translator-saas server/containers/pdf-worker/worker/engine/pipeline.py
+   *   `STAGES` (PDF: parse, structure, translate, typeset, emit) and
+   *   `FLOW_STAGES` (Word/EPUB/MOBI/TXT/Markdown: normalize, translate,
+   *   rewrite, emit);
+   * - translator-saas server/containers/pdf-worker/worker/server.py, the
+   *   `names` pass that builds the glossary before translation;
+   * - translator-saas server/lib/pdf-copy.ts `PDF_MERGING_STAGE` ("merging",
+   *   the split parts being joined back into one file).
+   * Layout, then translation, then writing the result is the whole visible
+   * story, and it only ever moves forward: `emit` writes the result file, so
+   * it reads as the last phase, not as translation again.
+   *
+   * A word missing here (none yet, or one the engine adds later) reads as the
+   * neutral "Translating…": the stage is display-only — the Worker forwards it
+   * without reading its meaning — so a new word on the server must not break
+   * the page.
    */
+  const PDF_STAGE_KEYS = new Map([
+    ['parse', 'pdfStageLayout'],
+    ['structure', 'pdfStageLayout'],
+    ['names', 'pdfStageTranslating'],
+    ['normalize', 'pdfStageTranslating'],
+    ['translate', 'pdfStageTranslating'],
+    ['typeset', 'pdfStageTypesetting'],
+    ['rewrite', 'pdfStageTypesetting'],
+    ['emit', 'pdfStageTypesetting'],
+    ['merging', 'pdfStageTypesetting']
+  ]);
+
+  /** A job view/record → the i18n key of what to show for it. */
   function pdfStatusKey(view) {
     // The local pending record: the click has landed, the bytes are still on
     // their way up, and there is no server job yet to have a status.
@@ -33,12 +60,8 @@
     }
     switch (view && view.status) {
       case 'queued': return 'pdfStatusQueued';
-      case 'running': {
-        const stage = String(view.stage || '').toLowerCase();
-        if (/layout|parse|detect|analy/.test(stage)) return 'pdfStageLayout';
-        if (/typeset|render|assemble|compose|write|export|merge|save/.test(stage)) return 'pdfStageTypesetting';
-        return 'pdfStageTranslating';
-      }
+      case 'running':
+        return PDF_STAGE_KEYS.get(view.stage) || 'pdfStageTranslating';
       // Waiting on the user, not on us: the document was longer than the
       // pages reserved for it, and nothing moves until they answer.
       case 'awaiting_confirm': return 'docStatusAwaitingConfirm';
