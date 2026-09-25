@@ -67,6 +67,8 @@ function fakeEngine(over = {}) {
     unsupportedReason: () => '',
     supportsLang: (lang) => ['en', 'ja', 'zh'].includes(lang),
     toApiLang: (lang) => ({ 'zh-CN': 'zh', en: 'en', ja: 'ja', 'zu-ZA': 'zu' }[lang] || lang),
+    // 和门面一样由上面两个合成：覆盖了 supportsLang 或 toApiLang 的用例照样生效。
+    supportsTarget(lang) { return this.supportsLang(this.toApiLang(lang)); },
     availability: async () => 'available',
     ensureDownloaded: async () => {},
   }, over);

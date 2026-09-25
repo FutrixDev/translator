@@ -264,8 +264,11 @@ carries `engine: 'builtin' | 'ai'` (on errors: the engine that failed). The
 card's switch-engine button is the only caller that pins, and it asks
 `ctx.engineChoices(targetLang)` (`{ builtin, ai }`) which engines are usable
 right now for the card's target language: `builtin` also needs the built-in
-engine to know that target (`eng.supportsLang(eng.toApiLang(targetLang))`, the
-same test that tags a language "AI only" in the language menus).
+engine to know that target. That is `eng.supportsTarget(targetLang)` in
+`content/engine/languages.js`, the one predicate for "can the built-in engine
+translate into this extension code": the language menus' "AI only" tag, the
+language-pack status and the engine's own error wording ask it too, and no
+caller rebuilds it from `supportsLang(toApiLang(…))`.
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is

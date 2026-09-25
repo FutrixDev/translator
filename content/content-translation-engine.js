@@ -503,14 +503,12 @@
     switch (reason) {
       case ENGINE_REASONS.NEEDS_DOWNLOAD:
         return t('builtinNeedsDownload');
-      case ENGINE_REASONS.UNSUPPORTED_PAIR: {
-        const tgt = eng.toApiLang(targetLang);
-        if (tgt && !eng.supportsLang(tgt)) {
+      case ENGINE_REASONS.UNSUPPORTED_PAIR:
+        if (targetLang && !eng.supportsTarget(targetLang)) {
           return t('builtinTargetUnsupportedLocalOnly')
             .replace('{lang}', ctx.languageName(targetLang, { inSentence: true }));
         }
         return t('builtinUnsupportedPair');
-      }
       case ENGINE_REASONS.UNSUPPORTED_ENV:
         return t('builtinUnsupportedEnv');
       default:
@@ -543,8 +541,7 @@
         const texts = Array.isArray(message.texts) ? message.texts : [];
         // 目标语言不支持是整批（乃至整页）都成立的事实，先判掉整批抛出去，
         // 别让每一段各自撞一次同一堵墙。
-        const batchTarget = eng.toApiLang(targetLang);
-        if (!batchTarget || !eng.supportsLang(batchTarget)) {
+        if (!eng.supportsTarget(targetLang)) {
           throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
         }
         const translations = [];
@@ -676,14 +673,13 @@
   /**
    * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边先重读一次
    * 配置 —— 设置页刚填好 Key，这一页的缓存还是旧的。内置那边除了环境，还要端上
-   * 有这门目标语言：谓词和页内语言菜单标「仅 AI」的是同一个
-   * （content/content-language.js 的 buildTargetLangMenu），不然卡片会对一门「仅 AI」
-   * 的语言提供「改用内置」，点了只换来一句报错。
+   * 有这门目标语言：问的是 eng.supportsTarget，和页内语言菜单标「仅 AI」的是同一个
+   * 谓词，不然卡片会对一门「仅 AI」的语言提供「改用内置」，点了只换来一句报错。
    */
   ctx.engineChoices = async function(targetLang) {
     await refreshAiConfig();
     return {
-      builtin: isBuiltinSupported() && eng.supportsLang(eng.toApiLang(targetLang)),
+      builtin: isBuiltinSupported() && eng.supportsTarget(targetLang),
       ai: aiConfigured(),
     };
   };
@@ -761,6 +757,11 @@
     toApiLang: (lang) => eng.toApiLang(lang),
     translate: translateWithBuiltin,
     destroyAll,
+
+    // 一门目标语言（扩展自己的码）端上有没有：页内语言菜单标「仅 AI」、设置页和
+    // 引导页的语言包状态（shared/language-pack.js）问的都是这一句，主人同样是
+    // content/engine/languages.js。
+    supportsTarget: (lang) => eng.supportsTarget(lang),
 
     // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
     // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎

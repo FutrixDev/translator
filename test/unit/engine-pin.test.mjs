@@ -138,6 +138,6 @@ test('engineChoices offers builtin only for a target the builtin engine knows', 
   assert.equal((await ctx.engineChoices('zh-TW')).builtin, true);
   const bt = ctx.builtinTranslator;
   for (const code of ['fa', 'fr', 'ur', 'he', 'zh-TW', 'sw']) {
-    assert.equal((await ctx.engineChoices(code)).builtin, bt.supportsLang(bt.toApiLang(code)), code);
+    assert.equal((await ctx.engineChoices(code)).builtin, bt.supportsTarget(code), code);
   }
 });

@@ -248,7 +248,7 @@ maxHeight = null，除非是「缩高」那一步选出来的
 - 三个条件都满足才显示：
   1. 卡片已结算；
   2. `response.engine` 已知；
-  3. 另一边此刻可用。由异步的 `ctx.engineChoices(targetLang)` 回答：先 `refreshAiConfig()`，再返回 `{ builtin: isBuiltinSupported() && eng.supportsLang(eng.toApiLang(targetLang)), ai: aiConfigured() }`。`targetLang` 是卡片当前的目标语言（`dataset.targetLang`）。内置一侧与语言菜单的「仅 AI」标记用同一个判定（见 §15）。
+  3. 另一边此刻可用。由异步的 `ctx.engineChoices(targetLang)` 回答：先 `refreshAiConfig()`，再返回 `{ builtin: isBuiltinSupported() && eng.supportsTarget(targetLang), ai: aiConfigured() }`。`targetLang` 是卡片当前的目标语言（`dataset.targetLang`）。内置一侧与语言菜单的「仅 AI」标记用同一个判定（见 §15）。
 - 点击：写 `dataset.pinnedEngine`，带 `engine` 重发。之后换语言下拉和重译都带这个 `engine`。按钮随即改为提供换回去。
 - 只按目标语言判断内置翻译能不能用：目标语言不在内置引擎的清单里（菜单标「仅 AI」的那些），就不给「换到内置」。不预先判断源语言这一侧；这一对不支持时返回真实原因（`UNSUPPORTED_PAIR` 的文案），按 §7 显示为错误。
 - 什么都不写进设置：这是对一张卡的一次比较，全局引擎在设置页和 popup 里另有入口。
@@ -405,5 +405,6 @@ maxHeight = null，除非是「缩高」那一步选出来的
 
 另外两处：
 
-4. **换引擎按目标语言**：`ctx.engineChoices()` 改为 `ctx.engineChoices(targetLang)`。内置一侧用 `eng.supportsLang(eng.toApiLang(targetLang))`，与 `buildTargetLangMenu` 标「仅 AI」的判定是同一个组合。例如目标 `fa` 时不给「换到内置」，目标 `fr` 时给。单测 `test/unit/engine-pin.test.mjs` 逐语言对照判定；J-D1 在卡片上依次改选 `fa`、`fr` 断言按钮随之隐藏、出现。
+4. **换引擎按目标语言**：`ctx.engineChoices()` 改为 `ctx.engineChoices(targetLang)`。内置一侧用 `eng.supportsTarget(targetLang)`，与 `buildTargetLangMenu` 标「仅 AI」的判定是同一个谓词（见第 6 条）。例如目标 `fa` 时不给「换到内置」，目标 `fr` 时给。单测 `test/unit/engine-pin.test.mjs` 逐语言对照判定；J-D1 在卡片上依次改选 `fa`、`fr` 断言按钮随之隐藏、出现。
 5. **导入校验 `selectionTrigger`**：`shared/settings-transfer.js` 的 `buildEnums` 加上 `selectionTrigger: ['icon', 'modifier', 'both']`，导入文件里不在这三个值里的值落进 `dropped`。`test/unit/settings-transfer.test.mjs` 加了反向检查：`options.html` 里每个 id 属于设置 schema 的 `<select>`，都必须在 enums 里有一项，下一个漏登记的下拉框会在单测里变红。
+6. **一个谓词回答「内置引擎能不能译成这门目标语言」**（验收时主控改）：第 4 条写成时，`supportsLang(toApiLang(扩展码))` 这个组合已经分散在五处：语言菜单的「仅 AI」标记、`shared/language-pack.js` 的语言包状态、引擎报错时点名目标语言的分支、整批翻译的预检，加上 D 新增的 `engineChoices`。现在收成 `content/engine/languages.js` 的 `eng.supportsTarget(lang)`，门面 `ctx.builtinTranslator.supportsTarget` 转发给它，五处都改为调用它。手里已经换成 API 码、还要拿它比对源语言或建实例的地方（`translateWithBuiltin`、`availability`、`ensureDownloaded`、`probeStatus`）照旧用 `supportsLang`。
