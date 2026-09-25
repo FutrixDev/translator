@@ -593,12 +593,25 @@
   const PINNABLE_ENGINES = new Set(['builtin', 'ai']);
 
   /**
+   * 这一次请求指名的引擎：'builtin' | 'ai'，没指名是 undefined。「指名」只在这一
+   * 处判定，优先级（wantsBuiltin）与不回落（requestTranslation）都问它。
+   */
+  function pinnedEngine(message) {
+    const engine = message.engine;
+    if (engine !== undefined && !PINNABLE_ENGINES.has(engine)) {
+      throw new Error(`requestTranslation: unknown engine ${JSON.stringify(engine)}`);
+    }
+    return engine;
+  }
+
+  /**
    * 这一次要不要走内置引擎。优先级：这一次请求指名的 message.engine > 站点覆盖
    * （P1-B 的 engineOverride，将来加在这里）> 设置（isBuiltinSelected）。显式的
    * 一次请求压过任何偏好。
    */
   function wantsBuiltin(message, auto) {
-    if (message.engine !== undefined) return message.engine === 'builtin';
+    const pinned = pinnedEngine(message);
+    if (pinned !== undefined) return pinned === 'builtin';
     return isBuiltinSelected(auto);
   }
 
@@ -613,10 +626,7 @@
    * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
    */
   ctx.requestTranslation = async function(message) {
-    const pinned = message.engine;
-    if (pinned !== undefined && !PINNABLE_ENGINES.has(pinned)) {
-      throw new Error(`requestTranslation: unknown engine ${JSON.stringify(pinned)}`);
-    }
+    const pinned = pinnedEngine(message);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
     const auto = !!message.auto;
