@@ -248,9 +248,9 @@ maxHeight = null，除非是「缩高」那一步选出来的
 - 三个条件都满足才显示：
   1. 卡片已结算；
   2. `response.engine` 已知；
-  3. 另一边此刻可用。由异步的 `ctx.engineChoices()` 回答：先 `refreshAiConfig()`，再返回 `{ builtin: isBuiltinSupported(), ai: aiConfigured() }`。
+  3. 另一边此刻可用。由异步的 `ctx.engineChoices(targetLang)` 回答：先 `refreshAiConfig()`，再返回 `{ builtin: isBuiltinSupported() && eng.supportsLang(eng.toApiLang(targetLang)), ai: aiConfigured() }`。`targetLang` 是卡片当前的目标语言（`dataset.targetLang`）。内置一侧与语言菜单的「仅 AI」标记用同一个判定（见 §15）。
 - 点击：写 `dataset.pinnedEngine`，带 `engine` 重发。之后换语言下拉和重译都带这个 `engine`。按钮随即改为提供换回去。
-- 不预先判断内置翻译是否支持这对语言。不支持就返回真实原因（`UNSUPPORTED_PAIR` 的文案），按 §7 显示为错误。
+- 只按目标语言判断内置翻译能不能用：目标语言不在内置引擎的清单里（菜单标「仅 AI」的那些），就不给「换到内置」。不预先判断源语言这一侧；这一对不支持时返回真实原因（`UNSUPPORTED_PAIR` 的文案），按 §7 显示为错误。
 - 什么都不写进设置：这是对一张卡的一次比较，全局引擎在设置页和 popup 里另有入口。
 
 ### 6.4 引擎契约（`content/content-translation-engine.js`）
@@ -366,7 +366,7 @@ maxHeight = null，除非是「缩高」那一步选出来的
 - 不加 content 脚本文件，manifest `content_scripts` 的 js 和 css 数组都不动。`selection-button.css` 已在 manifest 里，只重写内容。
 - `content-selection.js`、`content-popup.js` 归 P0-D。P1 的「加入术语表」按钮等 P0-D 合入后，加在操作行「换引擎」和「复制」之间。操作行已经 `flex-wrap`，J-D9 会替它检查十语言下放不放得下。
 - `message.engine` 与 P1-B 的 `engineOverride`：显式请求 > 站点覆盖 > 设置（§6.4）。
-- P1-A 的中继（子 frame 的请求）会把 `engine` 字段一起带过去。子 frame 里 `ctx.engineChoices()` 的回答偏保守，#107 合入后与 P1-A 核对，列为遗留。
+- P1-A 的中继（子 frame 的请求）会把 `engine` 字段一起带过去。子 frame 里 `ctx.engineChoices(targetLang)` 的回答偏保守，#107 合入后与 P1-A 核对，列为遗留。
 - 以后给 `TRANSLATE` 加缓存的改动必须让重译绕过缓存，J-D1 守着。
 - 可能的文本冲突：`content-translation-engine.js`（P1-A 中继）、`content-messaging.js`、`test/e2e/helpers.js`、i18n 表尾部、CHANGELOG、README。谁后合谁 rebase 消解。
   #107 先合的话，`frames.spec.js` 改为从 helpers.js 导入 `evaluateInContentScript`（机械改动，告知 P1）。
@@ -390,7 +390,20 @@ maxHeight = null，除非是「缩高」那一步选出来的
 
 1. **末行的取法（§4.4）**：`selectionLineRect`（`content/content-selection.js:114`）用焦点处折叠 Range 的矩形只判定「是哪一行」，锚点取选区 `getClientRects()` 里落在这一行上的那段矩形，而不是折叠 Range 本身那个零宽矩形——§4.4 的「水平先夹到末行左右范围内」需要这一行被选中部分的左右边。折叠 Range 矩形为空时，用 mouseup 的 y 在选区矩形里取竖直距离最近的一段。J-D1 断言图标离这一段不超过 12px。
 2. **OCR 出错也走 `showCardError`（§7）**：§7 只点名了 `content-popup.js` 里的三处出错；OCR 自己的 `renderOcrFailure` 是第四份同样的「关加载态、写错误」，已删，两处调用改为 `ctx.showCardError`（`content/content-image-ocr.js:344`、`:349`）。错误元素因此在 OCR 卡片上也是同一个 `.ai-translator-error`。
-3. **`ctx.engineChoices()` 自身失败（§6.3 未写）**：`settleCardActions`（`content/content-popup.js:534`）在它抛错时打一行 `console.error`（`:549`）并保持「换引擎」隐藏；重译照常可用。不猜另一边能不能用。
+3. **`ctx.engineChoices(targetLang)` 自身失败（§6.3 未写）**：`settleCardActions`（`content/content-popup.js:534`）在它抛错时打一行 `console.error`（`:549`）并保持「换引擎」隐藏；重译照常可用。不猜另一边能不能用。
 4. **禁用态样式（§6.2 未写）**：「有请求在路上时禁用」需要看得出来，`content/css/popup.css:639` 加 `.ai-translator-btn:disabled`（半透明、默认光标），作用域只到卡片和输入框对话框。
 5. **e2e 助手的来源**：J-D1/J-D9 要在 content script 的隔离世界里给 `self.Translator` 打桩，`test/e2e/helpers.js:475` 的 `evaluateInContentScript` 照搬自 P1-A 分支 `test/e2e/frames.spec.js:318`（CDP 找扩展的 isolated context）。两边合入后应只留 helpers.js 这一份。打桩本身是 `stubBuiltinTranslator`（`helpers.js:498`），回答 `'[B] ' + text`，明写为 STUB。
 6. **既有测试的一处改动**：`test/e2e/local-model-no-key.spec.js:87` 由 `toHaveCount(0)` 改为 `toBeHidden()`。旧前提：成功时卡片里没有错误元素；新前提：错误元素常驻、成功时隐藏（§7 的单一错误元素）。
+
+## 15. rebase 到 P0-B / P0-F 之后的接缝
+
+分支 rebase 到 P0-F（其下是已合入的 P0-B）之后补的几处。B 的设计 §12 把三件事交给后合入的一方，这里由 D 做：
+
+1. **打开语言菜单时把已选项滚进视野**：`setupLanguageDropdown` 的 `openMenu` 在 `menu.hidden = false` 之后调用 `ctx.revealSelectedLanguage(menu)`（`content/content-popup.js`）。只改菜单自己的 `scrollTop`，宿主页面不滚。划词卡和输入框对话框共用这个函数，一行两处都覆盖。J-B8（输入框对话框）和 J-B9（划词卡）断言：已选项落在菜单可视框内（±1px）、`scrollTop > 0`、`window.scrollY` 不变。
+2. **划词卡译文标 `lang` / `dir`**：`translateText` 每次成功结算都对译文元素调用 `ctx.markLanguage(el, targetLang)`；右键菜单的 `showTranslationResult` 在 `setupLanguageDropdown` 写下规范化目标语言之后同样标一次。只标译文元素，加载态、错误和原文是别的元素，不标。`popup.css` 的 `.ai-translator-translation-text` 加 `text-align: start`，否则宿主页面 `body` 上的 `text-align: left` 会继承进来，把 RTL 译文钉在左边。J-B9 在 `he` 下量第一行右缘贴内容框右缘（±1px）、左缘离内容框左缘大于 10px；改选 `en` 后重译，量第一行左缘贴内容框左缘（±1px）。
+3. **J-B9 旅程**：放在 `test/e2e/target-languages.spec.js`，文件头注释已登记。
+
+另外两处：
+
+4. **换引擎按目标语言**：`ctx.engineChoices()` 改为 `ctx.engineChoices(targetLang)`。内置一侧用 `eng.supportsLang(eng.toApiLang(targetLang))`，与 `buildTargetLangMenu` 标「仅 AI」的判定是同一个组合。例如目标 `fa` 时不给「换到内置」，目标 `fr` 时给。单测 `test/unit/engine-pin.test.mjs` 逐语言对照判定；J-D1 在卡片上依次改选 `fa`、`fr` 断言按钮随之隐藏、出现。
+5. **导入校验 `selectionTrigger`**：`shared/settings-transfer.js` 的 `buildEnums` 加上 `selectionTrigger: ['icon', 'modifier', 'both']`，导入文件里不在这三个值里的值落进 `dropped`。`test/unit/settings-transfer.test.mjs` 加了反向检查：`options.html` 里每个 id 属于设置 schema 的 `<select>`，都必须在 enums 里有一项，下一个漏登记的下拉框会在单测里变红。

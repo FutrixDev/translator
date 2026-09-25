@@ -25,6 +25,18 @@
 - **Errors show on the card, not as a translation.** A failed request — from
   the icon, the modifier key, the float ball or the right-click menu — shows
   its reason in the card's error line, and Retranslate tries again.
+- **The language menu opens at your language.** Opening the target language
+  menu on the card or the input box scrolls the selected language into view,
+  inside the menu only; the page stays where it was.
+- **Right-to-left translations read from the right.** The card marks its
+  translation with the target language and its direction, so Arabic, Hebrew,
+  Persian or Urdu start at the right edge even on a page that aligns
+  everything left.
+- **Switch engine only offers what can answer.** The card no longer offers
+  the Chrome built-in engine for a target language it cannot translate into
+  (the ones the menu tags "AI only").
+- **Importing settings checks the selection trigger.** A value other than
+  icon, modifier key or both is left out of the import and listed as skipped.
 
 ### Onboarding page and settings import/export
 

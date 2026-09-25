@@ -262,7 +262,10 @@ outranks the settings and a pinned engine **never falls back** — its failure i
 the answer. Nothing is persisted. Every response from `ctx.requestTranslation`
 carries `engine: 'builtin' | 'ai'` (on errors: the engine that failed). The
 card's switch-engine button is the only caller that pins, and it asks
-`ctx.engineChoices()` (`{ builtin, ai }`) which engines are usable right now.
+`ctx.engineChoices(targetLang)` (`{ builtin, ai }`) which engines are usable
+right now for the card's target language: `builtin` also needs the built-in
+engine to know that target (`eng.supportsLang(eng.toApiLang(targetLang))`, the
+same test that tags a language "AI only" in the language menus).
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is
