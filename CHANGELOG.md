@@ -2,14 +2,14 @@
 
 ## Unreleased
 
-### Onboarding page and settings import/export (P0-F)
+### Onboarding page and settings import/export
 
 - **A welcome page on first install.** A fresh install (not an update) opens
   `onboarding/onboarding.html`: whether the on-device language pack for your
   target language is ready, with a download button that only runs when you
   press it; the target language; the engine, built-in or AI, where choosing
   Ollama or LM Studio fills in the local connection and opens Settings at the
-  connection card (`#apiSettingsCard`); and the extension's keyboard
+  connection card; and the extension's keyboard
   shortcuts as Chrome reports them. Every choice is saved at once and sent to
   open tabs.
 - **Export and import settings** from a new Import & Export card on the

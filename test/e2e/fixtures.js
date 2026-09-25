@@ -9,9 +9,6 @@ const { applyBaseSettings } = require('./helpers');
 // Path to the extension
 const extensionPath = path.resolve(__dirname, '../../');
 
-/**
- * Extended test fixture that loads the Chrome extension
- */
 const ONBOARDING_PATH = '/onboarding/onboarding.html';
 const ONBOARDING_WAIT_MS = 10_000;
 
@@ -38,6 +35,9 @@ async function waitForOnboardingPage(context) {
   }
 }
 
+/**
+ * Extended test fixture that loads the Chrome extension
+ */
 const test = base.extend({
   /** Keep the welcome page a fresh install opens (onboarding.spec.js). */
   keepOnboarding: [false, { option: true }],
