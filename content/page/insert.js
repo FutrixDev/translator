@@ -490,9 +490,10 @@
       } else {
         translationEl.textContent = translation;
       }
-      if (hasMathElements) {
+      if (ctx.hasRealMath(block.mathElements)) {
         // 有数学公式时，尽量少设置内联样式，让页面 CSS 控制布局
-        // 只设置 opacity 来区分译文
+        // 只设置 opacity 来区分译文。只有 translate="no" /「保留原文」的原样元素
+        // 不算公式（collect.js 的 hasRealMath），走下面的完整样式
         translationEl.style.opacity = '0.85';
       } else {
         // 无数学公式时，设置完整样式（含只带内联标记的富文本块——克隆出来的

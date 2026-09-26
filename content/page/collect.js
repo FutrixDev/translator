@@ -742,10 +742,11 @@
         if (excludeSelector && node.matches(excludeSelector)) return;
 
         // 行内的 notranslate（产品名、人名），以及「保留原文」（内置规则表的时间戳、
-        // 票数……与用户规则）命中的行内元素：整个元素当占位符，插入时原样克隆回去
+        // 票数……与用户规则）命中的行内元素：整个元素当占位符，插入时原样克隆回去。
+        // verbatim 标明它不是公式：译文照样套页面排版（见 hasRealMath）。
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
             (keepSelector && node.matches(keepSelector))) {
-          text += addMathPlaceholder({ type: 'element', element: node });
+          text += addMathPlaceholder({ type: 'element', element: node, verbatim: true });
           return;
         }
 
@@ -943,6 +944,15 @@
   ctx.isIconElement = isIconElement;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
+  /**
+   * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
+   * 原文」的原样元素）。插入层和悬停层只拿它决定译文的样式——有真公式时只写
+   * opacity，让页面 CSS 管公式排版；只有原样元素时照常套原文的字体、字号、颜色。
+   * 「有没有占位符」（选哪个内容构建器、managed 判定）仍然问 mathElements.length。
+   *
+   * @param {Array<{verbatim?: boolean}>|undefined} mathElements getTextWithMathPlaceholders 的结果
+   */
+  ctx.hasRealMath = (mathElements) => !!mathElements && mathElements.some((entry) => !entry.verbatim);
   ctx.readSourceText = readSourceText;
   ctx.getTextInset = getTextInset;
   ctx.normalizeComparableText = normalizeComparableText;

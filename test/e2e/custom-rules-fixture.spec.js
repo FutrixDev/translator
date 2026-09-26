@@ -1,4 +1,4 @@
-// 用户站点规则（P1-B）B1 的整扩展旅程：J-2、J-3、J-4（第 1、3 步）、J-8、J-9、J-10。
+// 用户站点规则（P1-B）B1 的整扩展旅程：J-2（含排版）、J-3、J-4（第 1、3 步）、J-8、J-9、J-10。
 //
 // 夹具隔离子步骤：写规则这一步 B2 改走真实入口。B1 还没有写规则的界面（设置页卡片、
 // 悬浮球「不翻译此区域」都在 B2），所以规则由服务工作者直接写进 chrome.storage.sync
@@ -160,6 +160,91 @@ test('[fixture] J-2: keepOriginal keeps an inline brand verbatim inside the tran
     // 块级 keepOriginal：零我们的节点，原文不在 sentTexts 里。
     expect(await oursIn(page, 'code-box')).toBe(0);
     expect(sent(sentTexts, J2.codeName)).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+// ------------------------------------------------------------------ J-2 排版
+
+// 行内「保留原文」和 translate="no" 的元素在送出文本里是占位符，和公式同一种。只有
+// 真公式的块，译文才只写 opacity、把排版让给页面 CSS；只有原样元素的段落，译文照样
+// 套原文的字体字号颜色（RJ-5）。
+//
+// 断言不能用 getComputedStyle().fontFamily：两种情况它都报原文的 Times，可实际渲
+// 染的字体在丢了排版时按 lang 落到目标语言的默认字体（macOS 上 zh-CN 是 PingFang
+// SC）。这里用 CDP 的 CSS.getPlatformFontsForNode 问实际用的字体，再用可见文字一样
+// 的孪生段量宽度：命中规则的段落和不命中的孪生段，译文字体相同、宽度差 ≤ 1 px。
+const J2T = {
+  sentence: 'kettle comes with a two year warranty and a spare filter in the box.',
+  formula: 'is the energy each particle carries through the whole box.',
+};
+
+const J2T_PAGE = html(`
+  <p id="kept">Our <span class="brand">BrandX</span> ${J2T.sentence}</p>
+  <p id="kept-twin">Our <span class="other">BrandX</span> ${J2T.sentence}</p>
+  <p id="notr">The <span translate="no">Acme</span> ${J2T.sentence}</p>
+  <p id="notr-twin">The <span>Acme</span> ${J2T.sentence}</p>
+  <p id="formula"><span class="katex">E=mc2</span> ${J2T.formula}</p>`);
+
+async function platformFont(client, rootId, selector) {
+  const { nodeId } = await client.send('DOM.querySelector', { nodeId: rootId, selector });
+  expect(nodeId, selector).toBeGreaterThan(0);
+  const { fonts } = await client.send('CSS.getPlatformFontsForNode', { nodeId });
+  // 用得最多的那一款：译文里原样克隆回来的元素也可能带自己的字体。
+  return [...fonts].sort((a, b) => b.glyphCount - a.glyphCount)[0].familyName;
+}
+
+test('[fixture] J-2 typography: a verbatim placeholder keeps the page typography, a real formula keeps only opacity', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await writeRule(context, 'j2type', rule(['rules.test'], { keepOriginal: ['.brand'] }));
+    await serve(context, { [`${RULES}/typography`]: J2T_PAGE });
+    await page.goto(`${RULES}/typography`);
+    await waitForFloatBall(page);
+
+    await triggerPageTranslation(page);
+    for (const id of ['kept', 'kept-twin', 'notr', 'notr-twin', 'formula']) {
+      await expect(page.locator(translationOf(id))).toContainText('[T]', { timeout: 30000 });
+    }
+    // 前提：两个原样元素确实走了占位符，孪生段没有——名字只随孪生段送出一次。
+    expect(sendCount(sentTexts, 'BrandX')).toBe(1);
+    expect(sendCount(sentTexts, 'Acme')).toBe(1);
+    await expect(page.locator(translationOf('kept')).locator('span.brand')).toHaveText('BrandX');
+    await expect(page.locator(translationOf('notr')).locator('span[translate="no"]')).toHaveText('Acme');
+
+    const client = await context.newCDPSession(page);
+    await client.send('DOM.enable');
+    await client.send('CSS.enable');
+    const { root } = await client.send('DOM.getDocument', { depth: -1 });
+    for (const [hit, twin] of [['kept', 'kept-twin'], ['notr', 'notr-twin']]) {
+      const hitFont = await platformFont(client, root.nodeId, `#${hit} + ${TRANSLATED}`);
+      const twinFont = await platformFont(client, root.nodeId, `#${twin} + ${TRANSLATED}`);
+      console.log(`[typography] ${hit}=${hitFont} ${twin}=${twinFont}`);
+      // soft：两组都要报出来，一组红了另一组照样量。
+      expect.soft(hitFont, `${hit} renders in the twin's font`).toBe(twinFont);
+    }
+
+    const widths = await page.evaluate((sel) => Object.fromEntries(
+      ['kept', 'kept-twin', 'notr', 'notr-twin'].map((id) => {
+        const node = document.querySelector(`#${id} + ${sel}`);
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return [id, { text: node.textContent, width: range.getBoundingClientRect().width }];
+      })), TRANSLATED);
+    console.log(`[typography] widths=${JSON.stringify(widths)}`);
+    for (const [hit, twin] of [['kept', 'kept-twin'], ['notr', 'notr-twin']]) {
+      expect(widths[hit].text).toBe(widths[twin].text);
+      expect.soft(Math.abs(widths[hit].width - widths[twin].width), `${hit} vs ${twin}`).toBeLessThanOrEqual(1);
+    }
+
+    // 真公式照旧：只写 opacity，不写字体。
+    const formulaStyle = await page.locator(translationOf('formula')).evaluate((node) => ({
+      fontFamily: node.style.fontFamily,
+      opacity: node.style.opacity,
+    }));
+    expect(formulaStyle).toEqual({ fontFamily: '', opacity: '0.85' });
   } finally {
     await close();
   }

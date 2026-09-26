@@ -166,3 +166,59 @@ test('ruleForbids: none of the three answers false', () => {
   assert.equal(forbids(t.para, { adapter, scope }), false);
   assert.equal(forbids(t.para, { adapter: null, scope: null }), false);
 });
+
+// ---------------------------------------------------------------- 原样占位符不算公式（RJ-5）
+
+// translate="no" 与「保留原文」的占位符和公式同一种形状（{type: 'element'}），只多一个
+// verbatim。插入层、悬停层按 hasRealMath 决定样式：只有原样元素时译文照样套原文排版。
+test('placeholder entries: translate="no" and keepOriginal are verbatim, math and LaTeX text are not', () => {
+  const noTranslate = el('SPAN', [], [text('Acme')]);
+  noTranslate.getAttribute = (name) => (name === 'translate' ? 'no' : null);
+  const brand = el('SPAN', ['brand'], [text('BrandX')]);
+  const math = el('MATH', [], [text('x')]);
+  const p = el('P', [], [
+    text('Use '), noTranslate, text(' with '), brand, text(' when '), math,
+    text(' holds and $a^2$ is small'),
+  ]);
+  const out = ctx.getTextWithMathPlaceholders(p, { preserveMarkup: true, keep: '.brand' });
+  const byElement = (node) => out.mathElements.find((entry) => entry.element === node);
+  assert.equal(byElement(noTranslate).verbatim, true);
+  assert.equal(byElement(brand).verbatim, true);
+  assert.equal('verbatim' in byElement(math), false, 'a math element is not verbatim');
+  const latex = out.mathElements.find((entry) => entry.type === 'text');
+  assert.equal(latex.text, '$a^2$');
+  assert.equal('verbatim' in latex, false, 'a LaTeX text placeholder is not verbatim');
+  // 其余形状不动。
+  assert.deepEqual(Object.keys(byElement(brand)).sort(), ['element', 'placeholder', 'type', 'verbatim']);
+  assert.equal(byElement(brand).type, 'element');
+});
+
+test('hasRealMath: true only when some placeholder is not verbatim', () => {
+  const verbatim = { placeholder: '{{1}}', type: 'element', verbatim: true };
+  const mathEl = { placeholder: '{{2}}', type: 'element' };
+  const latex = { placeholder: '{{3}}', type: 'text', text: '$x$' };
+  assert.equal(ctx.hasRealMath(undefined), false);
+  assert.equal(ctx.hasRealMath([]), false);
+  assert.equal(ctx.hasRealMath([verbatim]), false);
+  assert.equal(ctx.hasRealMath([verbatim, verbatim]), false);
+  assert.equal(ctx.hasRealMath([mathEl]), true);
+  assert.equal(ctx.hasRealMath([latex]), true);
+  assert.equal(ctx.hasRealMath([verbatim, mathEl]), true);
+});
+
+// 防重复：样式分支只问这一个谓词。哪天有人在插入层或悬停层重新写一遍「有占位符
+// 就只写 opacity」，原样元素的段落又会丢页面排版。
+test('the style branches in insert.js and hover/render.js ask hasRealMath, not the placeholder count', () => {
+  const insert = repoFile('content/page/insert.js');
+  const hover = repoFile('content/hover/render.js');
+  const opacityBranches = (source) => [...source.matchAll(/if \(([^\n]*)\) \{\n(?:\s*\/\/[^\n]*\n)*\s*\w+\.style\.opacity = '0\.85';/g)]
+    .map((m) => m[1]);
+  const insertBranches = opacityBranches(insert);
+  const hoverBranches = opacityBranches(hover);
+  assert.equal(insertBranches.length, 1, insertBranches.join(' | '));
+  assert.equal(hoverBranches.length, 2, hoverBranches.join(' | '));
+  for (const condition of [...insertBranches, ...hoverBranches]) {
+    assert.match(condition, /ctx\.hasRealMath\(/);
+    assert.doesNotMatch(condition, /mathElements\.length|hasMathElements/);
+  }
+});
