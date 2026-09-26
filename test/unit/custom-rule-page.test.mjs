@@ -31,10 +31,29 @@ const RULE_A = { v: 1, match: ['example.com'], exclude: ['.ad'], updatedAt: 1 };
 const RULE_DOCS = { v: 1, match: ['example.com/docs/*'], exclude: ['.toc'], updatedAt: 1 };
 const RULE_OTHER = { v: 1, match: ['other.org'], exclude: ['.x'], updatedAt: 1 };
 
+// 计数：replaceSync 几次、adoptedStyleSheets 赋了几次值（F4）；onAdopt 让管线测试
+// 把「挂 CSS」记进事件序列（M19）。
+const sheetStats = { fills: 0, assigns: 0, onAdopt: null };
+
 class FakeSheet {
   replaceSync(text) {
+    sheetStats.fills += 1;
     this.text = text;
   }
+}
+
+function fakeDocument() {
+  let list = [];
+  return {
+    get adoptedStyleSheets() {
+      return list;
+    },
+    set adoptedStyleSheets(next) {
+      sheetStats.assigns += 1;
+      list = next;
+      if (sheetStats.onAdopt) sheetStats.onAdopt(next);
+    },
+  };
 }
 
 /**
@@ -44,7 +63,8 @@ class FakeSheet {
 function load({ rules = [], reply = { rules }, frameRole = 'top', href = 'https://example.com/news/1' } = {}) {
   const url = new URL(href);
   globalThis.location = { href, hostname: url.hostname, pathname: url.pathname };
-  globalThis.document = { adoptedStyleSheets: [] };
+  globalThis.document = fakeDocument();
+  Object.assign(sheetStats, { fills: 0, assigns: 0, onAdopt: null });
   globalThis.CSSStyleSheet = FakeSheet;
   const routes = [];
   globalThis.SpaNavigation = { onRouteChange: (fn) => routes.push(fn) };
@@ -174,10 +194,11 @@ test('the pipeline: CSS, then the sweep, then the subscribers', async () => {
     { name: 'ad', forbidden: () => excluded },
   );
   rules.onChange(() => events.push(`sheets:${globalThis.document.adoptedStyleSheets.length}`));
+  sheetStats.onAdopt = (list) => events.push(`adopt:${list.length}`);
   excluded = true;
   ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, css: '.ai-translator-inline-block { color: rgb(1, 2, 3) }' }));
   await sleep(DEBOUNCE_WAIT);
-  assert.deepEqual(events, ['release:ad', 'changed', 'sheets:1']);
+  assert.deepEqual(events, ['adopt:1', 'release:ad', 'changed', 'sheets:1'], 'CSS is mounted before the sweep');
   const [sheet] = globalThis.document.adoptedStyleSheets;
   assert.match(sheet.text, /rgb\(1, 2, 3\)/);
 
@@ -204,8 +225,74 @@ test('unsafe CSS is never mounted, and the log carries no rule content', async (
     console.warn = realWarn;
   }
   assert.deepEqual(globalThis.document.adoptedStyleSheets, []);
-  assert.ok(warned.length >= 1);
+  assert.equal(warned.length, 1, 'the change and the round after it are one warning');
   for (const line of warned) assert.doesNotMatch(line, /leak|127\.0\.0\.1|background/);
+});
+
+test('unsafe CSS warns once per rule and text: not per round, not per rebuilt object', async () => {
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => warned.push(args.map(String).join(' '));
+  const unsafe = { ...RULE_A, css: 'body { background: url(http://127.0.0.1/leak) }' };
+  try {
+    const { rules, ctx } = load({ rules: [{ id: 'a', ...unsafe }] });
+    rules.init();
+    await rules.whenReady();
+    rules.beginRound();
+    rules.beginRound();
+    assert.equal(warned.length, 1, 'two rounds on the same rule');
+
+    // 镜像重建：同内容的新对象，版本变了，不再告警。
+    ctx.syncMirrors[0].onStorageChange(put('a', { ...unsafe }));
+    await sleep(DEBOUNCE_WAIT);
+    rules.beginRound();
+    assert.equal(warned.length, 1, 'the same text in a new object');
+
+    // 同一条规则换一段不安全 CSS：再告警一次。
+    ctx.syncMirrors[0].onStorageChange(put('a', { ...unsafe, css: '@import "http://127.0.0.1/x.css";' }));
+    await sleep(DEBOUNCE_WAIT);
+    rules.beginRound();
+    assert.equal(warned.length, 2, 'new unsafe text');
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.deepEqual(globalThis.document.adoptedStyleSheets, []);
+});
+
+test('the sheet is filled only when its text changes and assigned only when it is not last', async () => {
+  const css = '.ai-translator-inline-block { color: rgb(1, 2, 3) }';
+  const { rules, ctx } = load({ rules: [{ id: 'a', ...RULE_A, css }] });
+  rules.init();
+  await rules.whenReady();
+  rules.beginRound();
+  rules.beginRound();
+  assert.equal(sheetStats.fills, 1, 'the arrival fills it once');
+  assert.equal(sheetStats.assigns, 1, 'and adopts it once');
+  const [ours] = globalThis.document.adoptedStyleSheets;
+
+  // 页面把列表整个换掉：下一轮挂回最后，页面自己的 sheet 留着，不重填。
+  const pageSheet = { page: true };
+  globalThis.document.adoptedStyleSheets = [pageSheet];
+  const pageAssigns = sheetStats.assigns;
+  rules.beginRound();
+  assert.deepEqual(globalThis.document.adoptedStyleSheets, [pageSheet, ours]);
+  assert.equal(sheetStats.assigns, pageAssigns + 1);
+  assert.equal(sheetStats.fills, 1);
+
+  // 页面把一张新的排在我们后面：挪回最后。
+  const later = { page: 'later' };
+  globalThis.document.adoptedStyleSheets = [pageSheet, ours, later];
+  rules.beginRound();
+  assert.deepEqual(globalThis.document.adoptedStyleSheets, [pageSheet, later, ours]);
+
+  // CSS 清空：摘掉一次，之后的轮次不再赋值。
+  ctx.syncMirrors[0].onStorageChange(put('a', RULE_A));
+  await sleep(DEBOUNCE_WAIT);
+  assert.deepEqual(globalThis.document.adoptedStyleSheets, [pageSheet, later]);
+  const cleared = sheetStats.assigns;
+  rules.beginRound();
+  rules.beginRound();
+  assert.equal(sheetStats.assigns, cleared, 'nothing to remove, nothing assigned');
 });
 
 test('a catch-up round runs only after a manual translation the scheduler is not following', async () => {

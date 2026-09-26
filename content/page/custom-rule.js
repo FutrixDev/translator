@@ -27,6 +27,7 @@
   let memo = null;
   let signature = null;
   let sheet = null;
+  let sheetText = null;
   const subscribers = new Set();
 
   function request() {
@@ -80,30 +81,49 @@
 
   // ------------------------------------------------------------ CSS（§3.5）
 
+  // 清洗结果按「规则 id + CSS 原文」记：同一段不安全 CSS 在一个页面里只清洗、只告警
+  // 一次（§3.5）。不按规则对象记：镜像重建时对象会换，内容没变。
+  const cleaned = new Map();
+
   function cssText() {
     const rule = current();
     if (!rule || !rule.css) return '';
+    const key = `${rule.id}\n${rule.css}`;
+    if (cleaned.has(key)) return cleaned.get(key);
+    let text = '';
     try {
-      return CustomRules.sanitizeCss(rule.css);
+      text = CustomRules.sanitizeCss(rule.css);
     } catch (error) {
       // 错误是 i18n 键（customRuleCssUnsafe），不含规则内容。
       console.warn('Blab Translation: custom rule CSS not applied:', error.message);
-      return '';
     }
+    cleaned.set(key, text);
+    return text;
   }
 
   /**
    * 把本页规则的 CSS 挂成我们那一张 adopted sheet，并排在页面自己的 sheet 之后。
-   * 每轮翻译开始、每次规则变化各挂一次：有的页面会整体重写 adoptedStyleSheets。
+   * 每轮翻译开始、每次规则变化各调一次：有的页面会整体重写 adoptedStyleSheets，
+   * 被冲掉的下一轮挂回去。文本没变不重填；我们那张已经排在最后就不赋值（每次赋值
+   * 都让页面样式重算）；文本清空时摘掉一次。
    */
   function mountCss() {
     const text = cssText();
     if (!text && !sheet) return;
     try {
+      const list = document.adoptedStyleSheets;
+      if (!text) {
+        if (list.includes(sheet)) document.adoptedStyleSheets = list.filter((each) => each !== sheet);
+        return;
+      }
       if (!sheet) sheet = new CSSStyleSheet();
-      sheet.replaceSync(text);
-      const others = document.adoptedStyleSheets.filter((each) => each !== sheet);
-      document.adoptedStyleSheets = text ? [...others, sheet] : others;
+      if (sheetText !== text) {
+        sheet.replaceSync(text);
+        sheetText = text;
+      }
+      if (list[list.length - 1] !== sheet) {
+        document.adoptedStyleSheets = [...list.filter((each) => each !== sheet), sheet];
+      }
     } catch (error) {
       console.error('Blab Translation: mounting custom rule CSS failed', error);
     }
