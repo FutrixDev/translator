@@ -41,7 +41,7 @@ class FakeSheet {
  * 装一份 custom-rule.js。rules：CUSTOM_RULES_FOR_HOST 回的那一包（带 id）。
  * 返回 ctx 与记录：订阅回调、清扫收回的元素、路由监听。
  */
-function load({ rules = [], frameRole = 'top', href = 'https://example.com/news/1' } = {}) {
+function load({ rules = [], reply = { rules }, frameRole = 'top', href = 'https://example.com/news/1' } = {}) {
   const url = new URL(href);
   globalThis.location = { href, hostname: url.hostname, pathname: url.pathname };
   globalThis.document = { adoptedStyleSheets: [] };
@@ -53,7 +53,7 @@ function load({ rules = [], frameRole = 'top', href = 'https://example.com/news/
     runtime: {
       sendMessage: async (message) => {
         requests.push(message);
-        return { rules };
+        return reply;
       },
     },
   };
@@ -110,6 +110,25 @@ test('init asks once, registers the customRule: prefix, and the winning rule ans
   assert.deepEqual(rules.current().include, [], 'missing groups are filled in');
   assert.equal(rules.engineOverride(), 'ai');
   assert.equal(events.filter((e) => e === 'changed').length, 1, 'the arrival is one change');
+});
+
+test('a reply without a rules list is a failed request, not an empty one', async () => {
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => warned.push(args.map(String).join(' '));
+  try {
+    for (const reply of [{}, { rules: 'a' }, { rules: { id: 'a' } }]) {
+      warned.length = 0;
+      const { rules } = load({ reply });
+      rules.init();
+      await rules.whenReady();
+      assert.equal(rules.current(), null);
+      assert.equal(warned.length, 1, JSON.stringify(reply));
+      assert.match(warned[0], /mirror request failed.*CUSTOM_RULES_FOR_HOST reply has no rules list/);
+    }
+  } finally {
+    console.warn = realWarn;
+  }
 });
 
 test('a change to another host is no change here; a change to this page is exactly one', async () => {
@@ -291,9 +310,27 @@ test('subscribers: the scheduler restarts and the top frame re-broadcasts on a r
   assert.match(content, /ctx\.customRules\.inherit\(next\.engineOverride \?\? null\);/);
 });
 
+// 「调度器在不在跟」两种拼法：肯定式 `=== IDLE || === RUNNING`，否定式
+// `!== IDLE && !== RUNNING`，两个名字谁先都算。同一个名字前后比两次（child.js 的
+// `was === RUNNING && status !== RUNNING`，问的是「刚跑完」）不算。
+const SPELLED_OUT = /STATUS\.IDLE\s*(\|\||&&)[^\n]*STATUS\.RUNNING|STATUS\.RUNNING\s*(\|\||&&)[^\n]*STATUS\.IDLE/g;
+
+test('the IDLE/RUNNING scan catches both spellings', () => {
+  const samples = [
+    'return status === STATUS.IDLE || status === STATUS.RUNNING;',
+    'if (status !== STATUS.IDLE && status !== STATUS.RUNNING) return;',
+    'const on = status === STATUS.RUNNING || status === STATUS.IDLE;',
+  ];
+  for (const sample of samples) assert.equal((sample.match(SPELLED_OUT) || []).length, 1, sample);
+  for (const other of [
+    'if (status === STATUS.IDLE) return;',
+    'if (was === STATUS.RUNNING && snap.status !== STATUS.RUNNING) {',
+  ]) assert.equal((other.match(SPELLED_OUT) || []).length, 0, other);
+});
+
 test('"is the scheduler following this page" is asked in one place: autoTranslate.isOn()', () => {
   const content = contentSource();
-  const direct = content.match(/STATUS\.(IDLE|RUNNING) \|\| [^\n]*STATUS\.(IDLE|RUNNING)/g) || [];
+  const direct = content.match(SPELLED_OUT) || [];
   assert.equal(direct.length, 1, `IDLE/RUNNING spelled out more than once: ${direct.join(' | ')}`);
   assert.match(content, /function isOn\(\) \{\n\s*return status === STATUS\.IDLE \|\| status === STATUS\.RUNNING;/);
   assert.match(content, /return ctx\.autoTranslate\.isOn\(\) \|\| !!state\.isTranslatingPage;/, 'frames/top.js');

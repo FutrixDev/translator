@@ -33,6 +33,7 @@
     return chrome.runtime.sendMessage({ type: 'CUSTOM_RULES_FOR_HOST' }).then((reply) => {
       if (!reply) throw new Error('CUSTOM_RULES_FOR_HOST got no reply');
       if (reply.error) throw new Error(reply.error);
+      if (!Array.isArray(reply.rules)) throw new Error('CUSTOM_RULES_FOR_HOST reply has no rules list');
       return reply.rules;
     });
   }

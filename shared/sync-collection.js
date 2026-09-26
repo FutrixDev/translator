@@ -288,7 +288,7 @@
       Promise.resolve()
         .then(request)
         .then(
-          (list) => settle(Array.isArray(list) ? list : []),
+          settle,
           (error) => {
             console.warn(`SyncCollection ${prefix} mirror request failed:`, error);
             settle([]);
