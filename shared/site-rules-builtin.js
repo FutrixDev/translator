@@ -41,13 +41,16 @@
       'docs.google.com', 'notion.so', 'notion.com', 'figma.com', 'overleaf.com',
     ],
 
+    // 每条规则的 keepOriginalSelectors 是「保留原文」（D-315）：命中的块整块不翻；
+    // 块内命中的行内元素（作者名、时间戳、票数）按 translate="no" 的占位符原样带回
+    // 译文，不从译文里消失。
     rules: [
       {
         // 摘要页结构十年没大改，风险最低，所以拿它做第一个内置 always。
         match: 'arxiv.org/abs/*',
         state: 'always',
         atomicBlockSelectors: ['blockquote.abstract'],
-        excludeSelectors: ['.authors', '.dateline', '.submission-history'],
+        keepOriginalSelectors: ['.authors', '.dateline', '.submission-history'],
         blockIdAttr: null,
       },
       {
@@ -70,7 +73,7 @@
         match: 'arxiv.org/pdf/*',
         state: 'never',
         atomicBlockSelectors: [],
-        excludeSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -89,7 +92,7 @@
         match: 'arxiv.org/html/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.ltx_authors', '.ltx_bibliography'],
+        keepOriginalSelectors: ['.ltx_authors', '.ltx_bibliography'],
         blockIdAttr: null,
       },
       {
@@ -102,7 +105,7 @@
         match: 'arxiv.org/list/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.list-authors', '.list-identifier', '.list-subjects'],
+        keepOriginalSelectors: ['.list-authors', '.list-identifier', '.list-subjects'],
         blockIdAttr: null,
       },
       {
@@ -120,7 +123,7 @@
         match: 'huggingface.co/papers',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -128,7 +131,7 @@
         match: 'huggingface.co/papers/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -136,14 +139,14 @@
         state: 'always',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         // 用户名、时间、互动条（回复/转推/喜欢的计数）都不是正文。
-        excludeSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
         blockIdAttr: null,
       },
       {
         match: 'twitter.com',
         state: 'always',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
-        excludeSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
         blockIdAttr: null,
       },
       {
@@ -157,7 +160,7 @@
         match: 'reddit.com',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [
+        keepOriginalSelectors: [
           '.tagline', '.score', 'time', 'faceplate-timeago',
           '[slot="credit-bar"]', '[slot="commentMeta"]',
         ],
@@ -168,7 +171,7 @@
         match: 'news.ycombinator.com',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.subtext', '.rank', '.age'],
+        keepOriginalSelectors: ['.subtext', '.rank', '.age'],
         blockIdAttr: null,
       },
       {
@@ -179,7 +182,7 @@
         match: 'lobste.rs',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.byline', '.tags'],
+        keepOriginalSelectors: ['.byline', '.tags'],
         blockIdAttr: null,
       },
       {
@@ -192,7 +195,7 @@
         match: 'biorxiv.org/content/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.highwire-cite-authors', '.highwire-cite-metadata'],
+        keepOriginalSelectors: ['.highwire-cite-authors', '.highwire-cite-metadata'],
         blockIdAttr: null,
       },
       {
@@ -203,7 +206,7 @@
         match: 'nature.com/articles/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [
+        keepOriginalSelectors: [
           '.c-article-author-list',
           '.c-article-references',
           '.c-bibliographic-information',
@@ -231,7 +234,7 @@
         match: 'science.org/doi/*',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: [
+        keepOriginalSelectors: [
           '.contributors',
           '.core-self-citation',
           '.core-authors',
@@ -276,7 +279,7 @@
         ],
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.gs_a', '.gs_fl'],
+        keepOriginalSelectors: ['.gs_a', '.gs_fl'],
         blockIdAttr: null,
       },
     ],

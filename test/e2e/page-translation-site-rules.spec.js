@@ -11,7 +11,8 @@
 //
 // 内置表（shared/site-rules-builtin.js）对这两件事各写了一串选择器，
 // content/page/site-adapter.js 把它们解析出来，collect.js 照着走。这条 spec 检验
-// 的就是「照着走」：原子块整块翻，排除块一个字都不送。
+// 的就是「照着走」：原子块整块翻，保留原文的块一个字都不送；保留原文的行内元素
+// 当占位符走，译文里原样出现（内置表是「保留原文」语义，D-315）。
 //
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
@@ -227,7 +228,7 @@ test('site rules: a Reddit post keeps its title and body, and loses its score, t
     const all = sentTexts.join('\n');
     expect(all).toContain(RD_TITLE);
     expect(all).toContain(RD_BODY);
-    // `.score` / `.tagline` / `time` / `faceplate-timeago` 四条都在排除表里。没有
+    // `.score` / `.tagline` / `time` / `faceplate-timeago` 四条都在保留原文表里。没有
     // 规则时这三块都会被翻：它们各自有直属文本，通用启发式看不出和正文的区别。
     expect(all).not.toContain(RD_SCORE);
     expect(all).not.toContain(RD_TAGLINE);
@@ -334,6 +335,48 @@ test('site rules: a new-Reddit feed card keeps its title and body, and its credi
     expect(editedSent).toMatch(/\{\{\d+\}\}/);
     expect(editedSent).not.toContain(NR_EDITED_AGO);
     await expect(translationOf(NR_EDITED).locator('faceplate-timeago')).toHaveText(NR_EDITED_AGO);
+  } finally {
+    await close();
+  }
+});
+
+// D-315：内置表命中的是**行内**元素时，它不从译文里消失——当占位符送出，模型原样
+// 带回，插回时 clone 回原来那个元素。改名前（B1）这里的字被拿掉，时间戳在译文里就
+// 没了。
+const RD_LINE_HEAD = 'The maintainer merged the rewrite';
+const RD_LINE_TAIL = 'and the benchmark numbers doubled across the board.';
+const RD_INLINE_AGO = 'nine hours ago';
+
+const REDDIT_INLINE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>reddit</title></head>
+<body>
+  <div id="thing">
+    <div class="usertext-body" id="line">${RD_LINE_HEAD} <time id="inline-ago">${RD_INLINE_AGO}</time> ${RD_LINE_TAIL}</div>
+  </div>
+</body></html>`;
+
+test('site rules: a builtin inline hit on Reddit travels as a placeholder and comes back verbatim', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://old.reddit.com/**', REDDIT_INLINE_PAGE);
+
+    await page.goto('https://old.reddit.com/r/rust/comments/1/');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#thing .ai-translator-inline-block', { timeout: 30000 });
+
+    // 这一句去了，时间戳的字没去：它在送出文本里只是一个 {{n}}。
+    const sent = sentTexts.find((text) => text.includes(RD_LINE_HEAD));
+    expect(sent).toBeTruthy();
+    expect(sent).toContain(RD_LINE_TAIL);
+    expect(sent).not.toContain(RD_INLINE_AGO);
+    expect(sent).toMatch(/\{\{\d+\}\}/);
+
+    // 译文块里原样出现那个 <time>，字一个不差。
+    const kept = page.locator('#thing .ai-translator-inline-block time');
+    await expect(kept).toHaveCount(1);
+    await expect(kept).toHaveText(RD_INLINE_AGO);
   } finally {
     await close();
   }

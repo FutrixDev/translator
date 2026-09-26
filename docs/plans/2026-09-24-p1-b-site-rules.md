@@ -32,7 +32,7 @@
 
 | # | 能力 | 边界（刻意不做的） |
 |---|---|---|
-| 1 | **翻译范围 / 排除 / 保留原文**：include、exclude、keepOriginal 三组选择器 | 同一 URL 命中多条规则时不叠加，只取一条（§0.1-5）；内置适配器的 exclude 用户撤不掉 |
+| 1 | **翻译范围 / 排除 / 保留原文**：include、exclude、keepOriginal 三组选择器 | 同一 URL 命中多条规则时不叠加，只取一条（§0.1-5）；内置规则表的保留原文用户撤不掉 |
 | 2 | **自定义 CSS**：作用于本站页面，用 constructable stylesheet 注入 | 不进 shadow DOM；凡是会发网络请求的写法一律拒绝 |
 | 3 | **按站点引擎**：可选内置 / 我的 AI / 跟随全局；选定即钉住，不回退 | 不能选模型或配置档（归 P1-D）；只管两个引擎都能处理的请求（§0.1-11） |
 | 4 | **页内拾取器**：悬停描框、点选、「↑上一层」、选择器可编辑、实时显示命中数 | 只在顶层 frame 工作；没有撤销，删规则去设置页 |
@@ -48,8 +48,8 @@
 | 3 | **抽出 `shared/storage-writer.js`**（`globalThis.StorageWriter`）。`create({type, writes, errors})` 返回 `{applyWrite, request}`。它统一持有 `IN_SERVICE_WORKER` 判断、每个 writer 一条队列、`itemBytes`、`ITEM_BUDGET = 6 * 1024`（从 site-rules 的 `MAX_ITEM_BYTES` 搬过来）。site-rules、auto-stats、custom-rules 三家共用 | 「SW 单写者队列」这是第三次出现。前两份（`shared/site-rules.js:413-438/:564-585`、`shared/auto-stats.js:166-176/:222-247`）已经是同一段代码抄了两遍，再抄第三遍正是 CLAUDE.md「Shipping Changes」第 2 条说的漂移。两家对错误的处理本来就不同，所以做成参数：site-rules 出错时抛出，auto-stats 吞掉错误回 null |
 | 4 | **读取**：内容脚本不调 `get(null)`，也不镜像全部规则。SW 应答 `CUSTOM_RULES_FOR_HOST`，host 取 `sender.url`。之后内容脚本只吃 `storage.onChanged` 里 `customRule:` 键的增量，由 bootstrap 经登记表 `ctx.syncMirrors` 转来（§1）。设置页读全部 | 沿用只读需要的键的既有做法（`content/content-bootstrap.js:129-131` 只镜像设置键）。一个页面只关心自己主机的那几条规则 |
 | 5 | **胜出规则**：同一 URL 命中多条时只取一条。先比命中模式串的长度，最长者胜；一样长时取 `updatedAt` 较新的；再一样取 id 较小的 | 叠加的语义用户既看不见也猜不到：两条规则的 include 该取并集还是交集？CSS 谁在前？「最具体的赢」是 CSS 优先级、路由表、site-rules 共同的直觉 |
-| 6 | **与内置适配器合并**：atomic 只来自内置；exclude = 内置 ∪ 用户；keepOriginal、include、CSS、引擎只来自用户 | atomic 是内置适配器针对特定 DOM 调出来的整块翻译，不向用户开放。exclude 取并集，保证内置排除（多半是登录框、代码块）不会被一条用户规则意外放开 |
-| 7 | **exclude 与 keepOriginal 的分工**。exclude 表示不翻译、也不送出：命中块则跳过整块；命中块内的行内元素，则把它的文字从原文里拿掉。keepOriginal 表示不翻译、但原样保留：命中块则跳过整块，且在 translate judge 之前判定；命中行内元素，则按 `translate="no"` 处理，送出占位符，译文里原样出现 | 照搬沉浸式翻译 `excludeSelectors` / `stayOriginalSelectors` 的分工，用户从那边迁过来的规则语义一致。行内保留复用 A2 的 notranslate 占位符（collect.js:710-714），不另造机制。块级 keepOriginal 在 judge 之前判，所以页面里的 `translate="yes"` 重开不了它：用户规则优先于页面声明。行内 exclude 的新行为对内置适配器的 exclude 同样生效，实现时要把内置规则里会命中行内元素的选择器列出来，作为偏差申报 |
+| 6 | **与内置适配器合并**：atomic 只来自内置；exclude 只来自用户；keepOriginal = 内置 ∪ 用户；include、CSS、引擎只来自用户 | atomic 是内置适配器针对特定 DOM 调出来的整块翻译，不向用户开放。keepOriginal 取并集，保证内置规则表保留原文的那些元素（作者名、时间戳、票数）不会被一条用户规则意外放开：用户撤不掉内置的 |
+| 7 | **exclude 与 keepOriginal 的分工**。exclude 表示不翻译、也不送出：命中块则跳过整块；命中块内的行内元素，则把它的文字从原文里拿掉。keepOriginal 表示不翻译、但原样保留：命中块则跳过整块，且在 translate judge 之前判定；命中行内元素，则按 `translate="no"` 处理，送出占位符，译文里原样出现 | 照搬沉浸式翻译 `excludeSelectors` / `stayOriginalSelectors` 的分工，用户从那边迁过来的规则语义一致。行内保留复用 A2 的 notranslate 占位符（collect.js:710-714），不另造机制。块级 keepOriginal 在 judge 之前判，所以页面里的 `translate="yes"` 重开不了它：用户规则优先于页面声明。内置规则表按 keepOriginal 语义（D-315）：字段名 `keepOriginalSelectors`，作者名、时间戳、票数不翻译，但也不从译文里消失 |
 | 8 | **范围阶梯**，从高到低：临时「整页」覆盖 → 用户 include（至少命中一个已渲染元素）→ 设置为 'page' 或 `matchBuiltin` 命中 → 'main'。include 零命中时不缓存结果 | 「翻译整个页面」是用户当下的明确动作，应当压过一切。include 是用户专门为这个站点写的范围，比全局设置和内置规则更具体。零命中时往下回落：站点改版后选择器失效，不能让整页一个字都不翻。零命中不缓存：SPA 的正文常常晚于首轮渲染 |
 | 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜出。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
 | 10 | **CSS 清洗**。先去掉注释，再不区分大小写地查以下写法，出现任何一个就拒绝：`url(`、`image-set(`、`image(`、`cross-fade(`、`src(`、`attr(`、`@import`、`@font-face`，以及任何反斜杠。长度 ≤ 4096 字符。SW 写入时查一遍，内容脚本应用前再查一遍。只拒绝、不改写 | 规则会经 sync 和导入文件流转，导入的文件可能出自别人之手。CSS 里一切能发请求的构造都能把页面信息带给第三方，「属性选择器 + 背景图」就是已知的 CSS 外泄手法。反斜杠转义能拼出任意关键字，所以一律拒绝。先去注释是为了防 `u/**/rl(` 这种拼接。只拒不改，保证用户看到的就是实际生效的。内容侧再查一遍，是因为 sync 里的数据不一定都经过本机 SW。代价是 `content: "\201C"` 这类合法写法也会被拒，提示文案里要说明 |
@@ -75,7 +75,7 @@
 | `background/background.js:134-151` | `onMessage` 里两段 if：`SITE_RULES_WRITE` → `SiteRules.applyWrite`，`AUTO_STATS_WRITE` → `AutoStats.applyWrite` | B1：改成一张分派表，新增 `CUSTOM_RULES_WRITE`、`CUSTOM_RULES_FOR_HOST` |
 | `background/background.js:10-14`、`background/ai-translate.js:10`、`background/api-client.js:7` | 各 SW 模块各自 import site-rules / auto-stats | B1：三个文件都在这些 import 之前自行 import `shared/storage-writer.js`（SW 模块图深度优先求值，只靠入口 import 一次不够）；`background.js:11` 之后依次 import `shared/sync-collection.js`、`shared/custom-rules.js` |
 | `test/unit/site-rules.test.mjs` 约 `:786-803` | `LOAD_LISTS`（background.js、options.html、popup.html）、`LOAD_ORDER` | B1：`LOAD_ORDER` 加 site-rules → storage-writer、auto-stats → storage-writer、sync-collection → storage-writer、sync-collection → site-rules、custom-rules → storage-writer、custom-rules → site-rules、custom-rules → sync-collection；`LOAD_LISTS` 加 `background/ai-translate.js`、`background/api-client.js` |
-| `content/page/site-adapter.js:24-68` | `resolveSiteAdapter()` 以 `hostname\npathname` 为缓存键，返回内置规则的 `{atomic, exclude}` 或 null；`:28-43` 的 `usableSelector` 在使用时滤掉无效选择器 | B1：exclude 并入用户规则，缓存键加上 `ctx.customRules.version`；用户选择器同样过 `usableSelector` |
+| `content/page/site-adapter.js:24-68` | `resolveSiteAdapter()` 以 `hostname\npathname` 为缓存键，返回内置规则的 `{atomic, exclude}` 或 null；`:28-43` 的 `usableSelector` 在使用时滤掉无效选择器 | B1：返回 `{atomic, exclude, keepOriginal}`（§3.2），缓存键加上 `ctx.customRules.version`；用户选择器同样过 `usableSelector` |
 | `content/page/collect.js:55`、`:293`、`:321` | `closestAcross`（`(el, selector) => ctx.closestComposed(el, selector)`）可跨 shadow 找祖先；块级 exclude；自家 UI 排除列表 | B1：新增 `ctx.ruleForbids`；B2：拾取器根节点加进 `:321` 的列表 |
 | `content/page/collect.js:79-81`、`:506-508` | `scope` / `scopeCut` / `allowed`；`scopeCut ? ctx.pageScopeStarts(root, scope) : [root]` | B1：`:506` 的条件改成按 `scope` 判（include 模式没有 cut）；include 模式下 `allowed` = 落在某个 root 里 |
 | `content/page/collect.js:710-714` | 行内 notranslate 元素 → 占位符原样保留 | B1：行内 keepOriginal 走同一条路 |
@@ -240,14 +240,20 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 
 ### 3.2 与内置适配器合并
 
-`resolveSiteAdapter()` 返回 `{atomic: 内置.atomic, exclude: 内置.exclude ∪ 用户.exclude}`，缓存键加上 `version`。include 由 scope.js 读 `current()`；keepOriginal 由 collect.js / notranslate.js 读 `current()`。「用户优先」只体现在两处：exclude 可以加，但撤不掉内置的；include、keepOriginal 只有用户规则提供。
+`resolveSiteAdapter()` 返回 `{atomic, exclude, keepOriginal}` 或 null（三串都空时），缓存键加上 `version`：
+
+- atomic：只来自内置 `atomicBlockSelectors`；
+- exclude：只来自用户规则；
+- keepOriginal：内置 `keepOriginalSelectors` ∪ 用户 keepOriginal（D-315）。
+
+三串各自逐条过 `usableSelector`，owner 分别标 'builtin' / 'user'，坏选择器只丢那一条。site-adapter.js 同时把 `usableSelector` 导出为 `ctx.usableSelector`，scope.js 的 include 选择器走同一道校验。include 由 scope.js 读 `current()`；exclude 与 keepOriginal 由 collect.js 从适配器读。「用户优先」只体现在一处：keepOriginal 可以加，但撤不掉内置的。
 
 ### 3.3 exclude / keepOriginal
 
 | | 命中一个块 | 命中块里的行内元素 |
 |---|---|---|
-| exclude（内置 ∪ 用户） | 整块跳过（`closestAcross`，与内置 exclude 走同一条路，collect.js:293） | 它的文字从原文里拿掉：不送去翻译，译文里也不出现 |
-| keepOriginal | 整块跳过（`ctx.ruleForbids`，在 translate judge 之前判） | 按 `translate="no"` 处理：送出占位符，译文里原样出现（collect.js:710-714） |
+| exclude（用户） | 整块跳过（`closestAcross`，collect.js:293） | 它的文字从原文里拿掉：不送去翻译，译文里也不出现 |
+| keepOriginal（内置 ∪ 用户） | 整块跳过（`ctx.ruleForbids`，在 translate judge 之前判） | 按 `translate="no"` 处理：送出占位符，译文里原样出现（collect.js:710-714） |
 
 `ctx.ruleForbids(el, scope)` 定义在 collect.js：`closestAcross(el, exclude ∪ keepOriginal)` 为真，或 `ctx.outsidePageScope(el, scope)` 为真。
 
@@ -486,7 +492,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 - 拾取器够不着 iframe 里的元素（只在顶层工作），iframe 的规则只能在设置页写；closed shadow root 里的元素只能选到它的宿主。
 - popup 打开得太早时（规则还没从后台回来，最多 1.5 s）显示的是全局引擎。
 - 页面整体重写 `document.adoptedStyleSheets` 后，自定义 CSS 要等下一轮翻译或下一次规则变化才会回来。
-- 内置适配器的 exclude 用户撤不掉。
+- 内置规则表的保留原文用户撤不掉。
 - 改引擎不会重译已有译文。
 - 行内 exclude 的文字在「仅译文」模式下看不见：它不在送出的原文里，所以也不在译文里。
 - CSS 里的反斜杠一律拒绝，`content: "\201C"` 这类合法写法也在其列（提示里说明，请改用字面字符）。
@@ -559,7 +565,7 @@ npm --prefix <W> run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
 - 规则市场 / 订阅。
 - P1-B·style：按站点译文样式（等 #105）。
 - 改引擎后重译已有译文。
-- 允许撤销内置 exclude。
+- 允许撤销内置规则表的保留原文。
 - closed shadow root 内拾取（`chrome.dom.openOrClosedShadowRoot` 加 `elementsFromPoint`）。
 
 ## 12. 接缝

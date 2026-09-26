@@ -27,7 +27,7 @@ const rule = (over = {}) => Object.assign({
   match: 'example.com',
   state: 'always',
   atomicBlockSelectors: [],
-  excludeSelectors: [],
+  keepOriginalSelectors: [],
   blockIdAttr: null,
 }, over);
 
@@ -52,7 +52,7 @@ test('one malformed rule rolls back the whole table, and keeps the blocklist', (
     rule({ match: '' }),                        // 空 match 会匹配到所有站点
     rule({ match: 42 }),
     rule({ atomicBlockSelectors: '.abstract' }), // 字符串不是数组：.some 会抛
-    rule({ excludeSelectors: [null] }),
+    rule({ keepOriginalSelectors: [null] }),
     rule({ blockIdAttr: 7 }),
     'not an object',
     null,
@@ -80,7 +80,7 @@ test('a schema bump is a rollback, not a silent reinterpretation', () => {
 test('two rules for the same match are a merge accident, and are caught', () => {
   // 同一个 match 写两遍，赢的那条取决于声明顺序——而顺序是这套匹配里唯一不该
   // 有意义的东西（命中多条时取最长的那条）。
-  const loaded = SiteRules.loadTable(table({ rules: [rule(), rule({ excludeSelectors: ['.x'] })] }));
+  const loaded = SiteRules.loadTable(table({ rules: [rule(), rule({ keepOriginalSelectors: ['.x'] })] }));
   assert.equal(loaded.ok, false);
   assert.match(loaded.errors.join(' '), /duplicate/);
 });

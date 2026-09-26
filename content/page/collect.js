@@ -291,12 +291,13 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
-      // 站点规则说这一块不必翻：作者名、时间戳、票数、"reply"。这些在形状上和正文
-      // 没有区别，通用启发式挡不住。用 closest 而不是 matches，因为排除的是整块——
-      // Hacker News 的 `.subtext` 底下还有一串 <a>，它们也在排除之列。
+      // 用户规则 exclude 命中整块：不收。用 closest 而不是 matches，因为排除的是
+      // 整块，底下的子元素也在排除之列。
       if (excludeSelector && closestAcross(element, excludeSelector)) return;
-      // 用户规则「保留原文」命中整块：不收。排在作者声明（translate="yes" 能在里面
-      // 重新打开子树）之前，所以它连子树一起关掉。
+      // 「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收。作者名、时间戳、票数、
+      // "reply"，这些在形状上和正文没有区别，通用启发式挡不住；Hacker News 的
+      // `.subtext` 底下还有一串 <a>，它们也一起跳过。排在作者声明（translate="yes"
+      // 能在里面重新打开子树）之前，所以它连子树一起关掉。
       if (keepSelector && closestAcross(element, keepSelector)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
@@ -722,11 +723,11 @@
           return;
         }
 
-        // 站点规则排除的行内元素（时间戳、票数……）：不送去翻译，译文里也不出现。
+        // 用户规则 exclude 命中的行内元素：不送去翻译，译文里也不出现。
         if (excludeSelector && node.matches(excludeSelector)) return;
 
-        // 行内的 notranslate（产品名、人名），以及用户规则「保留原文」命中的行内
-        // 元素：整个元素当占位符，插入时原样克隆回去
+        // 行内的 notranslate（产品名、人名），以及「保留原文」（内置规则表的时间戳、
+        // 票数……与用户规则）命中的行内元素：整个元素当占位符，插入时原样克隆回去
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
             (keepSelector && node.matches(keepSelector))) {
           text += addMathPlaceholder({ type: 'element', element: node });
@@ -935,8 +936,8 @@
   ctx.getManagedSkipCount = () => managedSkipCount;
 
   /**
-   * 站点规则现在禁不禁这一块：落在 exclude（内置 ∪ 用户）或「保留原文」里，或者
-   * 在 include 范围之外。规则变化后的清扫（content/page/custom-rule.js）拿它筛已
+   * 站点规则现在禁不禁这一块：落在用户的 exclude，或「保留原文」（内置 ∪ 用户）
+   * 里，或者在 include 范围之外。规则变化后的清扫（content/page/custom-rule.js）拿它筛已
    * 挂上的译文。
    */
   ctx.ruleForbids = function ruleForbids(el, scope) {

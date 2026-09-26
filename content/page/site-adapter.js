@@ -7,10 +7,10 @@
 //     `<div data-testid="tweetText">` 里一串 `<span>`，收集器的通则是「有块级可
 //     翻子元素就递归下探」，于是一条推文被切成一句一请求，@提及和话题标签各自
 //     成块，译文按句子插回去，读起来是碎的，钱也是按块付的。
-//   - `excludeSelectors`——「这一块根本不该翻」。作者名、时间戳、票数、
-//     "reply"。翻出来只是把时间线塞满没人看的译文。块本身是它、或在它里面，
-//     整块不收；块里**含着**它（一行里的 <time>），它在块文本里变成元素占位符、
-//     原样克隆回译文，同行内的 `translate="no"`。只管整页收集，悬停和划词不看。
+//   - `keepOriginalSelectors`——「这里保留原文」。作者名、时间戳、票数、
+//     "reply"：翻出来只是把时间线塞满没人看的译文，但也不该从译文里消失。命中的
+//     块整块不翻；块内命中的行内元素按 translate="no" 的占位符原样带回（D-315）。
+//     只管整页收集，悬停和划词不看。
 //
 // 这一层只管**解析和校验**，判断留在 collect.js 里。分开是因为规则表是会随版本
 // 更新的数据：里面一个写错的选择器会让 `matches()` / `closest()` 当场抛，而这两
@@ -55,8 +55,9 @@
    * 当前这一页的站点适配：内置规则表与用户站点规则（ctx.customRules）合在一起。
    *
    * - atomic：只有内置表提供；
-   * - exclude：内置 ∪ 用户。用户规则只能加，撤不掉内置的；
-   * - keepOriginal：只有用户规则提供（整块跳过 / 行内按 translate="no" 送占位符）。
+   * - exclude：只有用户规则提供（整块跳过 / 行内的字拿掉、不送出）；
+   * - keepOriginal：内置 keepOriginalSelectors ∪ 用户 keepOriginal（整块跳过 / 行内
+   *   按 translate="no" 送占位符、原样带回）。用户规则只能加，撤不掉内置的。
    *
    * 用户规则的选择器在设置页写入时校验过，但规则可能来自别的设备或更老的版本，
    * 这里照样逐条过 usableSelector：它们也落在收块热路径的 matches()/closest() 上。
@@ -74,11 +75,11 @@
 
     const builtin = globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname);
     const atomic = builtin ? usableSelector(builtin.atomicBlockSelectors, 'builtin') : '';
-    const exclude = [
-      builtin ? usableSelector(builtin.excludeSelectors, 'builtin') : '',
-      custom ? usableSelector(custom.exclude, 'user') : '',
+    const exclude = custom ? usableSelector(custom.exclude, 'user') : '';
+    const keepOriginal = [
+      builtin ? usableSelector(builtin.keepOriginalSelectors, 'builtin') : '',
+      custom ? usableSelector(custom.keepOriginal, 'user') : '',
     ].filter(Boolean).join(',');
-    const keepOriginal = custom ? usableSelector(custom.keepOriginal, 'user') : '';
     if (!atomic && !exclude && !keepOriginal) return cached;
 
     cached = { atomic, exclude, keepOriginal };

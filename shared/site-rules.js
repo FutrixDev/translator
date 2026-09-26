@@ -113,7 +113,7 @@
   // ---------------------------------------------------------------- 规则表
 
   const STATES = new Set(['always', 'never']);
-  const STRING_ARRAY_FIELDS = ['atomicBlockSelectors', 'excludeSelectors'];
+  const STRING_ARRAY_FIELDS = ['atomicBlockSelectors', 'keepOriginalSelectors'];
 
   function isStringArray(value) {
     return Array.isArray(value) && value.every((item) => typeof item === 'string' && item);
@@ -194,7 +194,7 @@
   }
 
   // 这张表是进程里唯一的一份，而 decide() 会把命中的规则原样交出去——适配层要
-  // 它的 selector。不冻的话，一句 rule.excludeSelectors.push() 就永久改写了本次
+  // 它的 selector。不冻的话，一句 rule.keepOriginalSelectors.push() 就永久改写了本次
   // 会话的内置表，而且改的是别的站点的行为，下次读到时没有任何痕迹。
   //
   // 冻的是 table() 缓存的那一份，不是 loadTable()：后者是纯校验器，不该动调用

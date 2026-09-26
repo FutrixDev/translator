@@ -365,15 +365,15 @@ test('选择器名单查没查过，都写在规则旁边', () => {
   };
 
   const hf = SiteRulesBuiltin.rules.find((r) => r.match === 'huggingface.co/papers');
-  assert.deepEqual(hf.excludeSelectors, [], 'huggingface.co/papers 现在有 selector 了，注释该跟着改');
+  assert.deepEqual(hf.keepOriginalSelectors, [], 'huggingface.co/papers 现在有 selector 了，注释该跟着改');
   assert.ok(commentAbove('huggingface.co/papers').includes('查过之后的结论'),
     'huggingface.co/papers 的空名单没说清是「查过」还是「没查」');
 
   const science = SiteRulesBuiltin.rules.find((r) => r.match === 'science.org/doi/*');
-  assert.ok(science.excludeSelectors.length > 0);
+  assert.ok(science.keepOriginalSelectors.length > 0);
   const comment = commentAbove('science.org/doi/*');
   assert.ok(comment.includes('Wayback'), 'science.org 的名单没说是对着哪份 DOM 查的');
-  for (const selector of science.excludeSelectors) {
+  for (const selector of science.keepOriginalSelectors) {
     assert.ok(comment.includes(selector), `${selector} 没在注释里说它摘掉的是什么`);
   }
 });
@@ -388,14 +388,14 @@ test('the matched rule rides along with every verdict, including the off ones', 
 });
 
 test('the rule handed out is frozen — the adapter layer gets a copy of nothing', () => {
-  // 交出去的是进程里唯一的那一份。适配层往 excludeSelectors 里 push 一条，就是
+  // 交出去的是进程里唯一的那一份。适配层往 keepOriginalSelectors 里 push 一条，就是
   // 永久改写了所有 x.com 标签页的行为，而且下次读到时没有任何痕迹。
   const rule = SiteRules.matchBuiltin('x.com', '/home');
   assert.ok(Object.isFrozen(rule));
-  assert.ok(Object.isFrozen(rule.excludeSelectors));
-  assert.throws(() => rule.excludeSelectors.push('.injected'), TypeError);
+  assert.ok(Object.isFrozen(rule.keepOriginalSelectors));
+  assert.throws(() => rule.keepOriginalSelectors.push('.injected'), TypeError);
   assert.throws(() => { rule.state = 'never'; }, TypeError);
-  assert.deepEqual(SiteRules.matchBuiltin('x.com', '/home').excludeSelectors,
+  assert.deepEqual(SiteRules.matchBuiltin('x.com', '/home').keepOriginalSelectors,
     ['[data-testid="User-Name"] a', 'time', '[role="group"]']);
 });
 

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 await import('../../shared/lang-tags.js');
 const rule = (match, tag) => ({
-  match, state: 'always', atomicBlockSelectors: [], excludeSelectors: [tag], blockIdAttr: null,
+  match, state: 'always', atomicBlockSelectors: [], keepOriginalSelectors: [tag], blockIdAttr: null,
 });
 globalThis.SiteRulesBuiltin = {
   schemaVersion: 1,
@@ -29,7 +29,7 @@ const { SiteRules } = globalThis;
 
 const picked = (host, path) => {
   const hit = SiteRules.matchBuiltin(host, path);
-  return hit && hit.excludeSelectors[0];
+  return hit && hit.keepOriginalSelectors[0];
 };
 
 test('the more specific address wins, not the rule with the longest address somewhere in it', () => {
