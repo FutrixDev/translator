@@ -27,7 +27,7 @@ const SOURCE = readFileSync(path.join(ROOT, 'content/page/scope.js'), 'utf8');
  * body 的字数 = bodyChars，<main> 的字数 = mainChars；两者都可以在测试中途改。
  */
 function load({ bodyChars, mainChars }) {
-  const counts = { body: 0, cssRounds: 0, sweeps: 0 };
+  const counts = { body: 0, cssRounds: 0, sweeps: 0, includeQueries: 0 };
   const registrations = [];
   // rule / ruleVersion：用户站点规则（ctx.customRules 的桩）；includeHits：include
   // 选择器在页面上命中的元素（ctx.queryAllDeep 的桩）；builtin：内置规则表命中与否。
@@ -69,8 +69,13 @@ function load({ bodyChars, mainChars }) {
       },
     },
     usableSelector: (list) => list.join(','),
-    queryAllDeep: () => page.includeHits,
+    queryAllDeep: () => {
+      counts.includeQueries += 1;
+      return page.includeHits;
+    },
     composedContains: (ancestor, node) => ancestor === node || ancestor.contains(node),
+    // 跨 shadow root 的父：region() 的 parent（shadow 里的顶层元素，父是宿主）。
+    composedParent: (el) => el.parent || null,
   };
   const sandbox = {
     console,
@@ -172,15 +177,23 @@ test('(c) what else drops the cache: a new key, or invalidatePageScope()', () =>
 
 // ---------------------------------------------------------------- 用户规则 include（P1-B §3.3）
 
-// 一个 include 区域的桩：order 是文档顺序，children 是它包含的别的区域。
-function region(order, { rendered = true, children = [] } = {}) {
+// 一个 include 区域的桩：order 是文档顺序，children 是它包含的别的区域（父指针
+// 跟着挂上）；shadowChildren 是它 shadow root 里的区域：composedParent 走得到，
+// Node.contains 看不见。rects 数 getClientRects 被调了几次。
+function region(order, { rendered = true, children = [], shadowChildren = [] } = {}) {
   const el = {
     order,
     isConnected: true,
-    getClientRects: () => (rendered ? [{}] : []),
+    rects: 0,
+    parent: null,
+    getClientRects: () => {
+      el.rects += 1;
+      return rendered ? [{}] : [];
+    },
     contains: (node) => children.some((child) => child === node || child.contains(node)),
     compareDocumentPosition: (other) => (other.order > order ? 4 : 2),
   };
+  for (const child of [...children, ...shadowChildren]) child.parent = el;
   return el;
 }
 
@@ -374,4 +387,30 @@ for (const drop of ['invalidatePageScope', 'beginScopeRound']) test(`${drop}() b
   assert.equal(ctx.resolvePageScope().mode, 'include');
   assert.equal(counts.sweeps, 1);
   assert.deepEqual(page.released, [outside]);
+});
+
+// F9：只问「有没有命中」的地方遇到第一个就答；零命中的解析只查一次 include；去内层
+// 命中沿 composedParent 走，跨 shadow 也认得。
+test('pageScopeMode() stops at the first rendered include hit', () => {
+  const fixture = load(SHELL);
+  const hits = [region(1), region(2), region(3)];
+  withInclude(fixture, hits);
+  assert.equal(fixture.ctx.pageScopeMode(), 'include');
+  assert.deepEqual(hits.map((each) => each.rects), [1, 0, 0]);
+});
+
+test('one resolvePageScope() with zero include hits queries include once', () => {
+  const fixture = load(SHELL);
+  withInclude(fixture, []);
+  assert.equal(fixture.ctx.resolvePageScope().mode, 'main');
+  assert.equal(fixture.counts.includeQueries, 1);
+});
+
+test('include roots: a hit inside another hit through a shadow root is dropped, whatever the order', () => {
+  const fixture = load(SHELL);
+  const inner = region(2);
+  const host = region(1, { shadowChildren: [inner] });
+  assert.equal(host.contains(inner), false, 'Node.contains does not cross the shadow root');
+  withInclude(fixture, [inner, host]);
+  assert.deepEqual([...fixture.ctx.resolvePageScope().roots], [host]);
 });

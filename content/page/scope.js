@@ -47,15 +47,42 @@
     return el.getClientRects().length > 0;
   }
 
-  // 用户规则 include 选择器命中的、渲染出来的元素里最外层的那些（被别的命中元素
-  // 包含的去掉）。没有规则、没有 include、零命中都是空数组。
-  function includeRoots() {
+  // 用户规则的 include 选择器；没有规则、没有 include、选择器全不可用都是 null。
+  function includeSelector() {
     const rule = ctx.customRules.current();
-    if (!rule || !rule.include.length) return [];
-    const selector = ctx.usableSelector(rule.include, 'user');
+    if (!rule || !rule.include.length) return null;
+    return ctx.usableSelector(rule.include, 'user') || null;
+  }
+
+  // 有没有至少一个渲染出来的命中：遇到第一个就答，不找根。悬浮菜单每次打开、等
+  // include 的页面每次取缓存都问它。
+  function hasIncludeHit() {
+    const selector = includeSelector();
+    return Boolean(selector) && ctx.queryAllDeep(selector).some(isRendered);
+  }
+
+  // include 选择器命中的、渲染出来的元素里最外层的那些（祖先也是命中的去掉）。
+  // 每个命中沿 composedParent 往上走（跨 shadow root 走到宿主），碰到别的命中就是
+  // 内层：O(命中数 × 深度)，不依赖 queryAllDeep 的返回顺序。零命中是空数组。
+  function includeRoots() {
+    const selector = includeSelector();
     if (!selector) return [];
     const hits = ctx.queryAllDeep(selector).filter(isRendered);
-    return hits.filter((el) => !hits.some((other) => other !== el && contains(other, el)));
+    const hitSet = new Set(hits);
+    return hits.filter((el) => {
+      for (let up = parentOf(el); up; up = parentOf(up)) {
+        if (hitSet.has(up)) return false;
+      }
+      return true;
+    });
+  }
+
+  // include 之外的那几档：设置是 'page'，或者命中内置规则（X、Hacker News……已经按
+  // 站点调过收块），否则 'main'。
+  function fallbackMode() {
+    if (ctx.settings.pageTranslateScope === 'page') return 'page';
+    if (globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname)) return 'page';
+    return 'main';
   }
 
   /**
@@ -70,10 +97,8 @@
     //   3. 设置是 'page'，或者命中内置规则（X、Hacker News……已经按站点调过收块）；
     //   4. 默认 'main'。
     if (state.pageScopeOverride === 'page') return 'page';
-    if (includeRoots().length) return 'include';
-    if (ctx.settings.pageTranslateScope === 'page') return 'page';
-    if (globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname)) return 'page';
-    return 'main';
+    if (hasIncludeHit()) return 'include';
+    return fallbackMode();
   }
 
   // 可见文字量：去掉空白，也去掉 <script>/<style> 里的字（Next.js 的
@@ -130,7 +155,7 @@
     const version = ctx.customRules.version;
     const key = `${location.href}\n${setting}\n${state.pageScopeOverride || ''}\n${version}`;
     if (cache && cache.key === key && cache.scope.roots.every((root) => root.isConnected) &&
-        !(cache.awaitsInclude && includeRoots().length)) {
+        !(cache.awaitsInclude && hasIncludeHit())) {
       return cache.scope;
     }
     cache = null;
@@ -149,7 +174,8 @@
       }
     }
     fellBack = awaitsInclude;
-    const mode = pageScopeMode();
+    // include 上面刚问过（零命中），或者这一页根本不看 include：不再查一遍。
+    const mode = state.pageScopeOverride === 'page' ? 'page' : fallbackMode();
     if (mode === 'page') {
       const scope = { mode, roots: [document.body], skip: null, share: null };
       cache = { key, scope, awaitsInclude };
