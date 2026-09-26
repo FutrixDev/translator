@@ -319,12 +319,56 @@ test('the popup asks selectedEngine for both the footer and the no-key gate', ()
 });
 
 // 引擎设置（手动 / 自动两张开关与回退）只有这几处直接读：引擎一族自己
-// （engineSource()，站点规则的钉住在那里并进来）、EngineStatus.selectedEngine、
-// 以及编辑这些设置的两张页面（options/、onboarding/）。别处直接读就是绕过了站点
-// 规则的第二个答案 —— P1-B 之前 popup 两处、字幕一处就是这样。
+// （engineSource()，站点规则的钉住在那里并进来）和 EngineStatus.selectedEngine。
+// 别处直接读就是绕过了站点规则的第二个答案 —— P1-B 之前 popup 两处、字幕一处就是
+// 这样。
+//
+// 扫描范围是扩展里跑的全部产品代码目录（SCANNED）。不扫的目录各有理由，列在
+// EXEMPT / NOT_PRODUCT 里；仓库顶层再多出一个带 .js 的目录，这条测试先红，逼着
+// 新目录进其中一张表，而不是悄悄漏在扫描外面。
+const SCANNED = ['background/', 'content/', 'offscreen/', 'pdf/', 'popup/', 'shared/'];
+const EXEMPT = {
+  // 设置页就是编辑这几项设置的地方：读出来填表、写回去。
+  'options/': 'the settings page edits these settings',
+  // 首次引导把设置读出来填进表单（onboarding.js 的引擎选单）。
+  'onboarding/': 'onboarding reads the settings to fill its engine form',
+};
+const NOT_PRODUCT = {
+  // 十个语言文件里的同名键是文案键（`translationEngine: '翻译引擎'`），不是读设置。
+  'i18n/': 'copy strings keyed by the same names',
+  // 开发脚本（提交信息检查、图标生成、注入测量），不进扩展包。
+  'scripts/': 'development scripts, not shipped',
+  // 第三方库，不归我们管。
+  'vendor/': 'third party code',
+  'test/': 'tests',
+  'node_modules/': 'dependencies',
+};
+
+// 四种直读写法：点号、getSetting('…')、方括号、解构赋值（`const { x } = settings`、
+// 带改名的 `{ x: y } =`）。函数参数里的解构（`function f({ engineFallback })`）不认：
+// 值是调用方传进来的，读在调用方那里——shared/language-pack.js 的 describe 就是这
+// 种，调用方只有 options/ 和 onboarding/。
+const NAMES = 'engineFallback|translationEngine|autoTranslateEngine';
+const READS = [
+  new RegExp(`(?:\\.|getSetting\\(\\s*['"\`])(?:${NAMES})\\b`, 'g'),
+  new RegExp(`\\[\\s*(['"\`])(?:${NAMES})\\1\\s*\\]`, 'g'),
+  new RegExp(`\\{[^{}]*\\b(?:${NAMES})\\b[^{}]*\\}\\s*=(?![=>])`, 'g'),
+];
+const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+const directReads = (text) => READS.flatMap((re) => [...stripComments(text).matchAll(re)].map((m) => m[0]));
+
 test('nobody outside the engine reads the engine settings directly', () => {
   const root = new URL('../../', import.meta.url);
   const allowed = new Set(['shared/engine-status.js', 'content/content-translation-engine.js']);
+  const hasJs = (rel) => readdirSync(new URL(rel, root), { withFileTypes: true, recursive: true })
+    .some((entry) => entry.isFile() && entry.name.endsWith('.js'));
+  const topDirs = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => `${entry.name}/`)
+    .filter((rel) => rel === 'node_modules/' || hasJs(rel));
+  const unclassified = topDirs.filter((rel) => !SCANNED.includes(rel) && !(rel in EXEMPT) && !(rel in NOT_PRODUCT));
+  assert.deepEqual(unclassified, [], 'every top level directory with scripts is scanned or listed with a reason');
+
   const files = [];
   const walk = (rel) => {
     for (const entry of readdirSync(new URL(rel, root), { withFileTypes: true })) {
@@ -333,16 +377,30 @@ test('nobody outside the engine reads the engine settings directly', () => {
       else if (entry.name.endsWith('.js') && !allowed.has(next) && !next.startsWith('content/engine/')) files.push(next);
     }
   };
-  for (const dir of ['content/', 'popup/', 'shared/', 'background/']) walk(dir);
-  assert.ok(files.length >= 60, `only ${files.length} files scanned`);
-  const READ = /(?:\.|getSetting\(\s*['"])(engineFallback|translationEngine|autoTranslateEngine)\b/g;
-  const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+  for (const dir of SCANNED) walk(dir);
+  assert.ok(files.length >= 105, `only ${files.length} files scanned`);
+  assert.ok(files.some((rel) => rel.startsWith('offscreen/')) && files.some((rel) => rel.startsWith('pdf/')));
   const offenders = [];
   for (const rel of files) {
-    for (const match of stripComments(repoFile(rel)).matchAll(READ)) offenders.push(`${rel}: ${match[0]}`);
+    for (const read of directReads(repoFile(rel))) offenders.push(`${rel}: ${read}`);
   }
   assert.deepEqual(offenders, []);
-  // 自检：同一个扫描认得出 P1-B 之前的那三种写法。
-  const before = "settings.translationEngine === 'ai'; caps.getSetting('engineFallback') !== 'allow-ai';";
-  assert.equal([...stripComments(before).matchAll(READ)].length, 2);
+});
+
+test('the direct read scan knows each way of writing a read, and not a parameter or a literal', () => {
+  const reads = [
+    "settings.translationEngine === 'ai';",
+    "caps.getSetting('engineFallback') !== 'allow-ai';",
+    "const engine = settings['autoTranslateEngine'];",
+    'const { translationEngine } = settings;',
+    'const { apiKey, engineFallback: fallback } = await load();',
+  ];
+  for (const sample of reads) assert.equal(directReads(sample).length, 1, sample);
+  const notReads = [
+    'function describe(engine, { targetLang, engineFallback }) {',
+    "ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '' }, null);",
+    "if (a === { translationEngine: 'ai' }) return;",
+    "// settings.translationEngine in a comment",
+  ];
+  for (const sample of notReads) assert.equal(directReads(sample).length, 0, sample);
 });
