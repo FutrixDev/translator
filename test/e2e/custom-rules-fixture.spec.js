@@ -1,4 +1,4 @@
-// 用户站点规则（P1-B）B1 的整扩展旅程：J-2（含排版）、J-3、J-4（第 1、3 步）、J-8、J-9、J-10。
+// 用户站点规则（P1-B）B1 的整扩展旅程：J-2（含排版）、J-3（含晚到的 include）、J-4（第 1、3 步）、J-8、J-9、J-10。
 //
 // 夹具隔离子步骤：写规则这一步 B2 改走真实入口。B1 还没有写规则的界面（设置页卡片、
 // 悬浮球「不翻译此区域」都在 B2），所以规则由服务工作者直接写进 chrome.storage.sync
@@ -266,7 +266,7 @@ const J3_PAGE = html(`
   <main id="main"><article><p id="main1">${J3.main1}</p><p id="main2">${J3.main2}</p></article></main>
   <aside id="sidebar">
     <div class="faq" id="faq"><p id="faq-q">${J3.faqQ}</p><p id="faq-a">${J3.faqA}</p></div>
-    <p id="aside-p">${J3.aside}</p>
+    <div id="aside-box"><p id="aside-p">${J3.aside}</p></div>
   </aside>`);
 
 test('[fixture] J-3: include narrows even a whole-page setting to the FAQ, and "Translate Whole Page" widens it again', async ({ page, context }) => {
@@ -285,6 +285,7 @@ test('[fixture] J-3: include narrows even a whole-page setting to the FAQ, and "
     await page.waitForTimeout(1500);
     expect(await oursIn(page, 'site-nav')).toBe(0);
     expect(await oursIn(page, 'main')).toBe(0);
+    expect(await oursIn(page, 'aside-box')).toBe(0);
     await expect(page.locator(translationOf('aside-p'))).toHaveCount(0);
     for (const text of [J3.nav, J3.main1, J3.main2, J3.aside]) {
       expect(sent(sentTexts, text), `sent: ${text}`).toBe(false);
@@ -320,6 +321,51 @@ test('[fixture] J-3: include narrows even a whole-page setting to the FAQ, and "
     }
     expect(sendCount(sentTexts, J3.faqQ)).toBe(faqSends);
     await expect(page.locator(translationOf('faq-q'))).toHaveCount(1);
+    // 正向对照：第 1 步那条 aside-box 为 0 的断言，用的是看得见我们节点的 oursIn。
+    expect(await oursIn(page, 'aside-box')).toBeGreaterThan(0);
+  } finally {
+    await close();
+  }
+});
+
+const LATE = {
+  outside: 'The timetable office on the quay is open from eight in the morning until noon.',
+  faqQ: 'Can passengers bring a dog on board the morning ferry to the island?',
+};
+
+const LATE_PAGE = html(`
+  <div id="outside-box"><p id="outside">${LATE.outside}</p></div>
+  <div id="slot"></div>`);
+
+test('[fixture] J-3 late include: when the included region renders late, the translations outside it are taken back within 1 s', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint, {
+      autoTranslate: true,
+      autoTranslateEngine: 'ai',
+      siteRules: { 'rules.test': 'always' },
+    }));
+    await writeRule(context, 'j3late', rule(['rules.test/late'], { include: ['.faq'] }));
+    await serve(context, { [`${RULES}/late`]: LATE_PAGE });
+    await page.goto(`${RULES}/late`);
+    await waitForFloatBall(page);
+
+    // 区域还没渲染：范围退回正文 / 整页，自动翻译把区域外的段落翻上。
+    await expect(page.locator(translationOf('outside'))).toHaveText(`[T] ${LATE.outside}`, { timeout: 30000 });
+
+    // 区域长出来：1 s 内区域外零节点，区域里出现译文，不刷新。
+    // 「没翻」这里只断言 DOM 一半：区域外那段原文在区域出现之前确实送过，发送一半不适用。
+    const t0 = Date.now();
+    await page.evaluate((text) => {
+      const box = document.createElement('div');
+      box.className = 'faq';
+      box.id = 'faq-box';
+      box.innerHTML = `<p id="faq-q">${text}</p>`;
+      document.getElementById('slot').appendChild(box);
+    }, LATE.faqQ);
+    await withinOneSecond(t0, async () => (await oursIn(page, 'outside-box')) === 0
+      && isTranslated(page, 'faq-q'), 'J-3 late include swept');
+    expect(sent(sentTexts, LATE.faqQ)).toBe(true);
   } finally {
     await close();
   }
@@ -388,7 +434,22 @@ test('[fixture] J-4: rule CSS restyles a translated tab within 1 s; unsafe CSS i
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toBe('none');
     await page.waitForTimeout(1500);
     expect(leaks).toBe(0);
-    expect(cssRefusals.length).toBeGreaterThan(0);
+    // 同一段不安全 CSS 在这个页面里只告警一次：写入那一刻挂一次，之后每一轮
+    // （自动翻译那一轮也算）都用记下的清洗结果（§3.5）。
+    expect(cssRefusals.length).toBe(1);
+
+    // 3b. 同一条规则换一段 CSS：两个字符串里的 `/*` 与 `*/` 把真正生效的 url( 夹在
+    //     中间。只查去掉注释后的文本会漏掉它（D-315），原文那一遍兜住。断言同上。
+    await writeRule(context, 'j4css', rule(['rules.test'], {
+      exclude: ['.promo'],
+      css: `a { content: "/*" } body { background: url(${leakUrl}) } b { content: "*/" }`,
+    }));
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toBe('none');
+    expect(leaks).toBe(0);
+    // 换了一段不安全 CSS，再告警一次，恰好两条。
+    expect(cssRefusals.length).toBe(2);
+    expect(await oursIn(page, 'promo-box')).toBe(0);
     // 拒绝日志只带错误键，不带规则内容。
     for (const line of cssRefusals) expect(line).not.toContain('leak');
 
@@ -412,11 +473,21 @@ const J8_PAGE = html(`
   <div id="keep-box"><p id="keep">${J8.keep}</p></div>
   <div id="region-box" class="comments"><p id="region">${J8.region}</p></div>`);
 
+/** 自动翻译的 AI 用量账：SW 里 chrome.storage.local 的 autoStats.autoAiChars。 */
+async function autoAiChars(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => {
+    const { autoStats } = await chrome.storage.local.get({ autoStats: null });
+    return (autoStats && autoStats.autoAiChars) || 0;
+  });
+}
+
 /**
  * 一轮：手动翻 → 加 exclude（1 s 内收回）→ 清两半缓存 → 删规则（1 s 内回来，
- * 原文恰好多发一次）。
+ * 原文恰好多发一次）。byScheduler：这次重译必须是调度器收的，也就是记在自动翻译
+ * 的用量里 —— 「恰好多发一次」分不出是调度器还是补翻轮收的（两条路收同一块）。
  */
-async function excludeRoundTrip(page, context, sentTexts, label) {
+async function excludeRoundTrip(page, context, sentTexts, label, { byScheduler = false } = {}) {
   await triggerPageTranslation(page);
   await expect(page.locator(translationOf('keep'))).toHaveText(`[T] ${J8.keep}`, { timeout: 30000 });
   await expect(page.locator(translationOf('region'))).toHaveText(`[T] ${J8.region}`, { timeout: 30000 });
@@ -431,6 +502,7 @@ async function excludeRoundTrip(page, context, sentTexts, label) {
   await clearTranslationCache(context);
   const before = sendCount(sentTexts, J8.region);
   const keepBefore = sendCount(sentTexts, J8.keep);
+  const charsBefore = await autoAiChars(context);
 
   t0 = Date.now();
   await removeRules(context, ['j8excl']);
@@ -439,6 +511,11 @@ async function excludeRoundTrip(page, context, sentTexts, label) {
   await page.waitForTimeout(1500);
   expect(sendCount(sentTexts, J8.region)).toBe(before + 1);
   expect(sendCount(sentTexts, J8.keep)).toBe(keepBefore);
+  if (byScheduler) {
+    const delta = (await autoAiChars(context)) - charsBefore;
+    console.log(`[J-8] ${label}: autoStats.autoAiChars +${delta}`);
+    expect(delta).toBeGreaterThan(0);
+  }
   await expect(page.locator(translationOf('region'))).toHaveCount(1);
 }
 
@@ -458,7 +535,7 @@ test('[fixture] J-8: adding an exclude takes a translation back within 1 s, remo
     await setExtensionSettings(page, settings(endpoint, { autoTranslate: true }));
     await page.goto(`${RULES}/ferry`);
     await waitForFloatBall(page);
-    await excludeRoundTrip(page, context, sentTexts, 'J-8 autoTranslate on');
+    await excludeRoundTrip(page, context, sentTexts, 'J-8 autoTranslate on', { byScheduler: true });
   } finally {
     await close();
   }
@@ -475,28 +552,38 @@ const J9 = {
   side: 'Internal note for editors about image licensing which should never be shown translated.',
 };
 
-const J9_PAGES = {
-  [`${TOP}/museum`]: html(`
-    <p id="top-lead">${J9.top}</p>
-    <iframe id="note-frame" src="${NOTE}/guide" width="640" height="260" style="border:0;display:block"></iframe>`),
-  [`${NOTE}/guide`]: html(`
-    <p id="guide-body">${J9.body}</p>
-    <div id="side-box" class="side-note"><p id="side">${J9.side}</p></div>
-    <p id="guide-more">${J9.more}</p>`),
-};
+/** 顶层页面嵌一个另一主机的 iframe；两条 J-9 用同一对页面，只是协议不同。 */
+function j9Pages(top, note) {
+  return {
+    [`${top}/museum`]: html(`
+      <p id="top-lead">${J9.top}</p>
+      <iframe id="note-frame" src="${note}/guide" width="640" height="260" style="border:0;display:block"></iframe>`),
+    [`${note}/guide`]: html(`
+      <p id="guide-body">${J9.body}</p>
+      <div id="side-box" class="side-note"><p id="side">${J9.side}</p></div>
+      <p id="guide-more">${J9.more}</p>`),
+  };
+}
 
-test('[fixture] J-9: an iframe follows its own host rule for regions and the top host rule for the engine', async ({ page, context }) => {
+/** J-9 的两条规则：iframe 主机排除 .side-note，顶层主机钉 AI。 */
+async function writeJ9Rules(context) {
+  await writeRule(context, 'j9note', rule(['rules-note.test'], { exclude: ['.side-note'] }));
+  await writeRule(context, 'j9top', rule(['rules-top.test'], { engine: 'ai' }));
+}
+
+test('[fixture] J-9 manual: an iframe follows its own host rule for regions', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
-    // 全局两张引擎开关都是内置；e2e 的 Chromium 没有 Translator API，内置引擎翻不
-    // 出任何东西 —— iframe 的段落出现在 sentTexts 里，只能是继承了顶层规则的 AI。
+    // 这一条不证明 iframe 继承了顶层钉住的引擎：手动路径上，子 frame 的翻译请求转给
+    // 顶层、用顶层自己的引擎，继承与否结果都一样；https 页面上 e2e Chromium 的
+    // Translator 也在，内置引擎算「可用」，也区分不出来。它证明的是 iframe 主机自己
+    // 的区域规则。继承由下面那条 http 自动模式的用例证明。
     await setExtensionSettings(page, settings(endpoint, {
       translationEngine: 'builtin',
       autoTranslateEngine: 'builtin',
     }));
-    await writeRule(context, 'j9note', rule(['rules-note.test'], { exclude: ['.side-note'] }));
-    await writeRule(context, 'j9top', rule(['rules-top.test'], { engine: 'ai' }));
-    await serve(context, J9_PAGES);
+    await writeJ9Rules(context);
+    await serve(context, j9Pages(TOP, NOTE));
     await page.goto(`${TOP}/museum`);
     await waitForFloatBall(page);
     const frame = page.frameLocator('#note-frame');
@@ -513,6 +600,48 @@ test('[fixture] J-9: an iframe follows its own host rule for regions and the top
     await page.waitForTimeout(1500);
     const noteFrame = page.frames().find((f) => f.url().startsWith(NOTE));
     expect(noteFrame, 'the rules-note.test frame').toBeTruthy();
+    expect(await oursIn(noteFrame, 'side-box')).toBe(0);
+    expect(sent(sentTexts, J9.side)).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+const TOP_HTTP = 'http://rules-top.test';
+const NOTE_HTTP = 'http://rules-note.test';
+
+test('[fixture] J-9 auto: on http an iframe translates with the engine the top host rule pins', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    // 自动模式、http：子 frame 自己的调度器先问自己的 effectiveEngine({ auto: true })
+    // 再送块。两张开关都是内置、回退只许本地，http 页面没有 Translator —— 除了从顶层
+    // 指令继承来的 'ai'，子 frame 没有可用的引擎。不点悬浮球。
+    await setExtensionSettings(page, settings(endpoint, {
+      translationEngine: 'builtin',
+      autoTranslateEngine: 'builtin',
+      engineFallback: 'local-only',
+      autoTranslate: true,
+      siteRules: { 'rules-top.test': 'always' },
+    }));
+    await writeJ9Rules(context);
+    await serve(context, j9Pages(TOP_HTTP, NOTE_HTTP));
+    await page.goto(`${TOP_HTTP}/museum`);
+    await waitForFloatBall(page);
+    const frame = page.frameLocator('#note-frame');
+    await expect(frame.locator('#guide-body')).toBeVisible();
+
+    // 前提：iframe 里内置引擎确实不可用。
+    const noteFrame = page.frames().find((f) => f.url().startsWith(NOTE_HTTP));
+    expect(noteFrame, 'the rules-note.test frame').toBeTruthy();
+    expect(await noteFrame.evaluate(() => self.isSecureContext)).toBe(false);
+    expect(await noteFrame.evaluate(() => typeof self.Translator)).toBe('undefined');
+
+    await expect(page.locator(translationOf('top-lead'))).toHaveText(`[T] ${J9.top}`, { timeout: 30000 });
+    await expect(frame.locator(translationOf('guide-body'))).toHaveText(`[T] ${J9.body}`, { timeout: 30000 });
+    expect(sent(sentTexts, J9.body)).toBe(true);
+
+    // iframe 主机自己的规则照样生效：.side-note 零节点、零发送。
+    await page.waitForTimeout(1500);
     expect(await oursIn(noteFrame, 'side-box')).toBe(0);
     expect(sent(sentTexts, J9.side)).toBe(false);
   } finally {
@@ -551,6 +680,8 @@ test('[fixture] J-10: on an http page with no usable engine, a rule pinning AI s
     // 探语言最多等 1.2 s，再过一轮攒批防抖；给到 4 s。
     await page.waitForTimeout(4000);
     await expect(page.locator(TRANSLATED)).toHaveCount(0);
+    expect(await oursIn(page, 'lead-box')).toBe(0);
+    expect(await oursIn(page, 'body-box')).toBe(0);
     expect(sentTexts).toEqual([]);
 
     // 写一条钉 AI 的规则：1 s 内、不刷新，译文出现，mock 收到请求。
@@ -559,6 +690,9 @@ test('[fixture] J-10: on an http page with no usable engine, a rule pinning AI s
     await withinOneSecond(t0, () => isTranslated(page, 'lead'), 'J-10 AI pinned');
     expect(sent(sentTexts, J10.lead)).toBe(true);
     await expect(page.locator(translationOf('body'))).toHaveText(`[T] ${J10.body}`, { timeout: 30000 });
+    // 正向对照：停住期间那两条 oursIn 为 0，用的是叫醒后看得见译文的同一个查询。
+    expect(await oursIn(page, 'lead-box')).toBeGreaterThan(0);
+    expect(await oursIn(page, 'body-box')).toBeGreaterThan(0);
   } finally {
     await close();
   }
