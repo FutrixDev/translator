@@ -72,7 +72,7 @@
 | `shared/site-rules.js:226-237` | `matchBuiltin()` | 不改 |
 | `shared/site-rules.js:413-438`、`:564-585` | SW 单写者队列：`IN_SERVICE_WORKER`、`writeQueue` / `enqueue`、`MAX_ITEM_BYTES = 6 * 1024`、`itemBytes`、`WRITES`、`applyWrite`、`request`（`:578-585`，出错即抛） | B1：改用 `StorageWriter.create({errors: 'throw'})` |
 | `shared/auto-stats.js:166-176`、`:222-247` | 同一套队列的第二份抄本；`request` 吞掉错误回 null | B1：改用 `StorageWriter.create({errors: 'swallow'})` |
-| `background/background.js:134-151` | `onMessage` 里两段 if：`SITE_RULES_WRITE` → `SiteRules.applyWrite`，`AUTO_STATS_WRITE` → `AutoStats.applyWrite` | B1：改成一张分派表，新增 `CUSTOM_RULES_WRITE`、`CUSTOM_RULES_FOR_HOST` |
+| `background/background.js:134-151` | `onMessage` 里两段 if：`SITE_RULES_WRITE` → `SiteRules.applyWrite`，`AUTO_STATS_WRITE` → `AutoStats.applyWrite` | B1：改成一张分派表，新增 `CUSTOM_RULES_WRITE`。`CUSTOM_RULES_FOR_HOST` 在它自己的模块 `background/custom-rules-host.js`（顶层注册 `onMessage`、导出 `handleMessage`，照 `page-coverage.js` 的先例），入口只 `import './custom-rules-host.js';`，单测 `test/unit/custom-rules-host.test.mjs` 守「只认 `sender.url` 的主机」 |
 | `background/background.js:10-14`、`background/ai-translate.js:10`、`background/api-client.js:7` | 各 SW 模块各自 import site-rules / auto-stats | B1：三个文件都在这些 import 之前自行 import `shared/storage-writer.js`（SW 模块图深度优先求值，只靠入口 import 一次不够）；`background.js:11` 之后依次 import `shared/sync-collection.js`、`shared/custom-rules.js` |
 | `test/unit/site-rules.test.mjs` 约 `:786-803` | `LOAD_LISTS`（background.js、options.html、popup.html）、`LOAD_ORDER` | B1：`LOAD_ORDER` 加 site-rules → storage-writer、auto-stats → storage-writer、sync-collection → storage-writer、sync-collection → site-rules、custom-rules → storage-writer、custom-rules → site-rules、custom-rules → sync-collection；`LOAD_LISTS` 加 `background/ai-translate.js`、`background/api-client.js` |
 | `content/page/site-adapter.js:24-68` | `resolveSiteAdapter()` 以 `hostname\npathname` 为缓存键，返回内置规则的 `{atomic, exclude}` 或 null；`:28-43` 的 `usableSelector` 在使用时滤掉无效选择器 | B1：返回 `{atomic, exclude, keepOriginal}`（§3.2），缓存键加上 `ctx.customRules.version`；用户选择器同样过 `usableSelector` |
@@ -185,7 +185,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 
 下面三种读法都由 `SyncCollection` 实现（§2.6），custom-rules 只提供参数。
 
-- **SW** 处理 `CUSTOM_RULES_FOR_HOST`：用 `new URL(sender.url).hostname` 取主机 → `get(null)` → `collect` → `forHost` → 回 `{rules}`。这里回的是该主机的全部规则，路径交给内容脚本去挑。SW 在模块内存里记住 `collect` 的结果，收到 `customRule:` 键的 `storage.onChanged` 就作废。SW 随时可能被回收，这份记忆只是缓存。
+- **SW** 处理 `CUSTOM_RULES_FOR_HOST`（`background/custom-rules-host.js`）：用 `new URL(sender.url).hostname` 取主机 → `get(null)` → `collect` → `forHost` → 回 `{rules}`。这里回的是该主机的全部规则，路径交给内容脚本去挑。SW 在模块内存里记住 `collect` 的结果，收到 `customRule:` 键的 `storage.onChanged` 就作废。SW 随时可能被回收，这份记忆只是缓存。
 - **内容脚本**：每个文档只发一次请求。请求在路上时收到的增量先按顺序缓冲，回话到了再依次应用。此后的增量经 `applyChanges` 处理，去抖约 150 ms，然后 `version++` 并通知订阅者。
 - **设置页**：`get(null)` → `collect`，并挂自己的 `onChanged` 监听。
 
@@ -520,7 +520,7 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 |---|---|---|
 | 新增 `shared/storage-writer.js`、`shared/sync-collection.js`、`shared/custom-rules.js`、`content/page/custom-rule.js` | ✔ | — |
 | `shared/site-rules.js`、`shared/auto-stats.js` | 改用 StorageWriter；site-rules 补导出 `hostMatches` / `patternMatches` / `validPattern`（§1） | — |
-| `background/background.js`、`background/ai-translate.js`、`background/api-client.js` | import 顺序、分派表、两个新消息 | — |
+| `background/background.js`、`background/ai-translate.js`、`background/api-client.js`、`background/custom-rules-host.js` | import 顺序、分派表、两个新消息 | — |
 | `manifest.json` | 四个新文件入表 | `content/picker/*`、`content/css/rule-picker.css` 入表 |
 | `content/page/site-adapter.js`、`collect.js`、`notranslate.js`、`scope.js` | ✔ | `collect.js:321` 自家 UI 列表加拾取器根 |
 | `content/content-translation-engine.js` | 谓词 `isBuiltinSelected` / `fallbackAllowed`、`BUILTIN_TYPES`、`whenReady`、预算注释、导出 `fallbackAllowed`（§3.7） | — |

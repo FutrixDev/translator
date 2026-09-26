@@ -48,6 +48,7 @@ import { openOnboardingOnInstall } from './install.js';
 // handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
 import './icon.js';
 import './page-coverage.js';
+import './custom-rules-host.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
@@ -155,20 +156,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       STORAGE_WRITERS[message.type]().applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
-      return true;
-
-    // 本页用得上的用户站点规则。主机取发信的那一帧的地址（sender.url），不信
-    // 消息里带来的：内容脚本的镜像按同一个主机建（content/page/custom-rule.js）。
-    // 回的是这个主机的全部规则，按路径挑胜出的那条是页面自己的事。
-    case 'CUSTOM_RULES_FOR_HOST':
-      globalThis.CustomRules.cached()
-        .then(rules => sendResponse({
-          rules: globalThis.CustomRules.forHost(rules, new URL(sender.url).hostname),
-        }))
-        .catch(error => {
-          console.error('CUSTOM_RULES_FOR_HOST failed:', error);
-          sendResponse({ error: error.message });
-        });
       return true;
 
     // --- Comic translation (account-backed, see comic-client.js) -------------
