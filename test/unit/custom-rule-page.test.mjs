@@ -302,7 +302,7 @@ test('a catch-up round runs only after a manual translation the scheduler is not
   ctx.collectPageBlocks = () => ['block'];
   ctx.filterBlocksByLanguage = async (blocks) => blocks;
   ctx.runTranslationPass = async (blocks) => {
-    events.push(`pass:${blocks.length}:${ctx.state.isTranslatingPage}`);
+    events.push(`pass:${blocks.length}:${ctx.state.isTranslatingPage}:${ctx.customRules.isCatchingUp()}`);
     return null;
   };
   let following = true;
@@ -323,13 +323,132 @@ test('a catch-up round runs only after a manual translation the scheduler is not
   await sleep(DEBOUNCE_WAIT);
   assert.deepEqual(events, ['changed']);
 
-  // 翻过、调度器没在跟：补一轮，isTranslatingPage 在这一轮里是 true，完了复原。
+  // 翻过、调度器没在跟：补一轮。这一轮举的是补翻自己的旗标（isCatchingUp），
+  // 手动整页翻译的 isTranslatingPage 不动；完了复原。
   following = false;
   events.length = 0;
   ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude: ['.d'] }));
   await sleep(DEBOUNCE_WAIT);
-  assert.deepEqual(events, ['round', 'changed', 'pass:1:true']);
+  assert.deepEqual(events, ['round', 'changed', 'pass:1:false:true']);
   assert.equal(ctx.state.isTranslatingPage, false);
+  assert.equal(rules.isCatchingUp(), false);
+});
+
+// ---------------------------------------------------------------- 轮次收尾（afterRound）
+
+/**
+ * 装好规则、接上收块 / 送翻的桩；runTranslationPass 停住由测试放行。
+ * sweeps 数清扫走了几次 queryAllDeep。
+ */
+async function loadRounds({ following = false } = {}) {
+  const fixture = load({ rules: [{ id: 'a', ...RULE_A }] });
+  const { ctx, events } = fixture;
+  const held = [];
+  let sweeps = 0;
+  const query = ctx.queryAllDeep;
+  ctx.queryAllDeep = (...args) => {
+    sweeps += 1;
+    return query(...args);
+  };
+  ctx.beginScopeRound = () => events.push('round');
+  ctx.collectPageBlocks = () => ['block'];
+  ctx.filterBlocksByLanguage = async (blocks) => blocks;
+  ctx.runTranslationPass = () => new Promise((resolve) => {
+    events.push(`pass:${ctx.state.isTranslatingPage}:${ctx.customRules.isCatchingUp()}`);
+    held.push(() => resolve(null));
+  });
+  ctx.autoTranslate.isOn = () => following;
+  fixture.rules.init();
+  await fixture.rules.whenReady();
+  ctx.state.pageHasBeenTranslated = true;
+  events.length = 0;
+  const change = async (exclude) => {
+    ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude }));
+    await sleep(DEBOUNCE_WAIT);
+  };
+  const finish = async (n) => {
+    held[n - 1]();
+    await sleep(0);
+  };
+  return { ...fixture, held, change, finish, sweeps: () => sweeps };
+}
+
+test('a manual round that saw a rule change recalls, when it ends, a late translation in the new excluded area', async () => {
+  const { ctx, rules, events, translated, change } = await loadRounds({ following: true });
+  ctx.state.isTranslatingPage = true;
+  // 规则变化时那一块还在路上：当场的清扫看不见它。
+  let excluded = false;
+  await change(['.ad', '.late']);
+  excluded = true;
+  assert.deepEqual(events, ['changed']);
+
+  translated.push({ name: 'late', forbidden: () => excluded });
+  ctx.state.isTranslatingPage = false;
+  rules.afterRound();
+  assert.deepEqual(events, ['changed', 'release:late']);
+  assert.equal(rules.isCatchingUp(), false, 'the scheduler is following: no catch-up round');
+});
+
+test('a manual round that saw an exclude removed (scheduler off) opens a catch-up round when it ends', async () => {
+  const { ctx, rules, events, change } = await loadRounds();
+  ctx.state.isTranslatingPage = true;
+  await change([]);
+  assert.deepEqual(events, ['changed'], 'no catch-up round while the manual round runs');
+
+  ctx.state.isTranslatingPage = false;
+  rules.afterRound();
+  await sleep(0);
+  assert.deepEqual(events, ['changed', 'round', 'pass:false:true']);
+});
+
+test('no catch-up round during a round; afterRound() with nothing pending neither sweeps nor translates', async () => {
+  const { ctx, rules, events, change, finish, sweeps } = await loadRounds();
+  await change(['.b']);
+  assert.deepEqual(events, ['round', 'changed', 'pass:false:true']);
+
+  // 补翻轮进行中再改一次：不叠第二轮。
+  await change(['.c']);
+  assert.deepEqual(events, ['round', 'changed', 'pass:false:true', 'changed']);
+
+  // 补翻轮收尾：补做清扫，再补一轮（变化发生在这一轮收块之后）。
+  const before = sweeps();
+  await finish(1);
+  assert.equal(sweeps(), before + 1);
+  assert.deepEqual(events.slice(4), ['round', 'pass:false:true']);
+  await finish(2);
+  assert.equal(rules.isCatchingUp(), false);
+
+  // 没有待补：什么都不做。
+  const quiet = sweeps();
+  const length = events.length;
+  ctx.state.isTranslatingPage = false;
+  rules.afterRound();
+  rules.afterRound();
+  await sleep(0);
+  assert.equal(sweeps(), quiet, 'afterRound() swept with nothing pending');
+  assert.equal(events.length, length);
+});
+
+test('a catch-up round that ends with a manual round waiting starts no second catch-up', async () => {
+  const { ctx, rules, events, change, finish, sweeps } = await loadRounds();
+  await change(['.b']);
+  assert.deepEqual(events, ['round', 'changed', 'pass:false:true']);
+
+  // 补翻轮进行中：规则又变了，同时一下手动整页翻译在等它（F3）。
+  await change(['.c']);
+  ctx.state.isTranslatingPage = true;
+  const before = sweeps();
+  await finish(1);
+  assert.equal(sweeps(), before + 1, 'the pending sweep still runs');
+  assert.equal(rules.isCatchingUp(), false);
+  assert.deepEqual(events, ['round', 'changed', 'pass:false:true', 'changed'], 'the waiting manual round takes over');
+
+  // 手动轮结束：待补已经做完，不再补。
+  ctx.state.isTranslatingPage = false;
+  rules.afterRound();
+  await sleep(0);
+  assert.equal(rules.isCatchingUp(), false);
+  assert.equal(events.length, 4);
 });
 
 test('a child frame takes the engine from the directive, not from its own rule', async () => {

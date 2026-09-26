@@ -8,7 +8,8 @@
 //     site-adapter、引擎谓词读；
 //   - 本页生效的规则变了，按设计 §3.6 走流水线：CSS 重新挂载 → 清扫被规则禁止的
 //     译文 → 必要时补一轮增量收块 → 回调外部订阅者（frames/top.js 广播指令，
-//     调度器重启）。前三步是这里自己的，一定赶在订阅者之前做完。
+//     调度器重启）。前三步是这里自己的，一定赶在订阅者之前做完。手动轮或补翻轮
+//     进行中的变化，第 2、3 步在那一轮结束时（afterRound）补做。
 //
 // 调 init() 之前（DOM 夹具里只装整页翻译那几个模块时也一样）：current() 与
 // engineOverride() 答 null，whenReady() 立即 resolve —— 等于「没有规则」。
@@ -142,8 +143,24 @@
   // 第 3 步：整页翻过、调度器又没在跟这一页时，补一轮把新放开的块翻上。调度器在
   // 跟时由第 5 步的重启接手，两条路不收同一批块。必须在回调订阅者（重启）之前读
   // isOn()：重启之后它一定答「在跟」。
+  //
+  // 补翻轮用自己的旗标（catching），不碰 state.isTranslatingPage：那个旗标是手动整页
+  // 翻译的，顶层指令（frames/top.js）和「翻译整页」的忙分支都读它，补翻不是用户表态。
+  // 手动整页翻译与子 frame 的手动轮等补翻结束（whenCaughtUp）再收块，两轮不同时收。
+  let catching = null;
+
+  function isCatchingUp() {
+    return catching !== null;
+  }
+
+  function whenCaughtUp() {
+    return catching ? catching.done : Promise.resolve();
+  }
+
   async function catchUpRound() {
-    state.isTranslatingPage = true;
+    // 在任何 await、任何可能抛错的调用之前同步置上。
+    let release = null;
+    catching = { done: new Promise((resolve) => { release = resolve; }) };
     try {
       ctx.beginScopeRound();
       const blocks = await ctx.filterBlocksByLanguage(ctx.collectPageBlocks());
@@ -153,13 +170,39 @@
     } catch (error) {
       console.error('Blab Translation: custom rule catch-up round failed', error);
     } finally {
-      state.isTranslatingPage = false;
+      catching = null;
+      release();
+      afterRound();
     }
   }
 
+  function roundRunning() {
+    return !!state.isTranslatingPage || isCatchingUp();
+  }
+
+  // 四个条件都成立才补（§3.6 第 3 步）：整页翻过；调度器没在跟；没有手动整页翻译
+  // 在跑；没有补翻轮在跑。
   function wantsCatchUp() {
-    if (!state.pageHasBeenTranslated || state.isTranslatingPage) return false;
+    if (!state.pageHasBeenTranslated || roundRunning()) return false;
     return !(ctx.autoTranslate && ctx.autoTranslate.isOn());
+  }
+
+  // 手动轮或补翻轮进行中规则变了：CSS 与清扫当场做，补翻留给那一轮的收尾
+  // （afterRound）。这两种轮次挂译文时没有 accept 守卫，变化前送出去的块，译文回来
+  // 照样挂进新禁止的区域，所以收尾时再清扫一次。自动轮不走这条：它有 accept 守卫，
+  // 规则变化后由第 5 步的调度器重启接手。
+  let pending = false;
+
+  /**
+   * 一轮手动整页翻译、子 frame 手动轮或补翻轮结束时调（旗标已经清掉之后）。这一轮
+   * 进行中规则变过：先清扫，收回晚到、挂进新禁止区域的译文；再按第 3 步的条件补一轮。
+   * 没变过就什么都不做。
+   */
+  function afterRound() {
+    if (!pending) return;
+    pending = false;
+    sweep();
+    if (wantsCatchUp()) catchUpRound();
   }
 
   function recompute() {
@@ -168,7 +211,8 @@
     signature = next;
     mountCss();
     sweep();
-    if (wantsCatchUp()) catchUpRound();
+    if (roundRunning()) pending = true;
+    else if (wantsCatchUp()) catchUpRound();
     for (const fn of Array.from(subscribers)) {
       try {
         fn();
@@ -213,5 +257,8 @@
     },
     // 每轮收块开始时由 scope.js 的 beginScopeRound() 调（§3.5 第一个挂载时机）。
     beginRound: mountCss,
+    isCatchingUp,
+    whenCaughtUp,
+    afterRound,
   };
 })();

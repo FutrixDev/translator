@@ -507,8 +507,9 @@
       if (queue.size === 0) return;
 
       // 手动整页翻译正在跑。它有自己的进度条、自己的「整页翻过了」状态，两轮
-      // 同时往页面上写只会互相打架。等它 —— 不抢、也不改它那份状态。
-      if (ctx.state.isTranslatingPage) {
+      // 同时往页面上写只会互相打架。等它 —— 不抢、也不改它那份状态。规则变化补的
+      // 那一轮（custom-rule.js）同理。
+      if (ctx.state.isTranslatingPage || ctx.customRules.isCatchingUp()) {
         scheduleStart(MANUAL_RETRY_MS);
         return;
       }

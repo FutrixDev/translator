@@ -18,7 +18,12 @@ const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 function loadChildFrame() {
   const listeners = [];
-  const calls = { invalidatePageScope: 0, restart: 0, inherited: [] };
+  const calls = { invalidatePageScope: 0, restart: 0, inherited: [], round: [] };
+  // 本 frame 自己的补翻轮：测试用 catchUp.hold() 举起、catchUp.end() 放下。
+  const catchUp = { done: Promise.resolve(), end: null };
+  catchUp.hold = () => {
+    catchUp.done = new Promise((resolve) => { catchUp.end = resolve; });
+  };
   // 夹具：content-bootstrap.js 建好的 ctx 里，child.js 用得到的那几样，逐个写成桩。
   const ctx = {
     frameRole: 'child',
@@ -29,8 +34,26 @@ function loadChildFrame() {
     invalidatePageScope: () => { calls.invalidatePageScope += 1; },
     setTranslationsVisible: (visible) => { ctx.state.translationsVisible = visible; },
     autoTranslate: { restart: () => { calls.restart += 1; }, onStateChange() {} },
-    // content/page/custom-rule.js 的 ctx.customRules：子 frame 只用 inherit（P1-B）。
-    customRules: { inherit: (engine) => { calls.inherited.push(engine); } },
+    // content/page/custom-rule.js 的 ctx.customRules：子 frame 用 inherit（P1-B），
+    // 手动轮用 whenCaughtUp / afterRound（B1 修复回合 1，F3 / F7）。
+    customRules: {
+      inherit: (engine) => { calls.inherited.push(engine); },
+      whenCaughtUp: () => catchUp.done,
+      afterRound: () => calls.round.push(`afterRound:${ctx.state.isTranslatingPage}`),
+    },
+    // 手动轮收块、送翻那几样。
+    beginScopeRound: () => calls.round.push('begin'),
+    collectPageBlocks: () => {
+      calls.round.push('collect');
+      return ['block'];
+    },
+    filterBlocksByLanguage: async (blocks) => blocks,
+    runTranslationPass: async (blocks) => {
+      calls.round.push(`pass:${blocks.length}`);
+      return null;
+    },
+    // 手动轮收尾向顶层报数。
+    hasPageTranslations: () => false,
     t: (key) => key,
   };
   const sandbox = {
@@ -66,7 +89,7 @@ function loadChildFrame() {
   };
   let epoch = 0;
   const directive = (scopeOverride) => send({ epoch: ++epoch, scopeOverride });
-  return { ctx, calls, directive, send, nextEpoch: () => ++epoch };
+  return { ctx, calls, catchUp, directive, send, nextEpoch: () => ++epoch };
 }
 
 test('the child mirrors the top frame scope override: set, same value, clear', () => {
@@ -116,4 +139,22 @@ test('the child inherits the top frame engine override from the directive', () =
   assert.deepEqual(calls.inherited, ['ai', null, null]);
   send({ epoch: 1, engineOverride: 'builtin' });
   assert.deepEqual(calls.inherited, ['ai', null, null], 'a stale directive reached the engine');
+});
+
+// 子 frame 补翻期间收到手动指令（F3）：手动轮等本 frame 的补翻轮收完再收块，
+// 不因「正在补翻」丢掉这一下；收尾先清旗标、再调 afterRound（F7）。
+test('a manual directive during the child frame catch-up round runs after it, not lost', async () => {
+  const { ctx, calls, catchUp, send, nextEpoch } = loadChildFrame();
+  send({ epoch: nextEpoch(), manualEpoch: 0 });
+  catchUp.hold();
+  send({ epoch: nextEpoch(), manualEpoch: 1 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ctx.state.isTranslatingPage, true, 'the manual round has started');
+  assert.deepEqual(calls.round, [], 'it collected while the catch-up round ran');
+
+  catchUp.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls.round, ['begin', 'collect', 'pass:1', 'afterRound:false']);
+  assert.equal(ctx.state.isTranslatingPage, false);
+  assert.equal(ctx.state.pageHasBeenTranslated, true);
 });

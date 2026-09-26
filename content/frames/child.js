@@ -127,6 +127,8 @@
     let total = 0;
     let error = null;
     try {
+      // 顶层规则补翻那一轮是顶层的；这里等的是本 frame 自己的补翻轮（custom-rule.js）。
+      await ctx.customRules.whenCaughtUp();
       ctx.beginScopeRound();
       let blocks = ctx.collectPageBlocks();
       blocks = await ctx.filterBlocksByLanguage(blocks);
@@ -138,6 +140,7 @@
       error = (caught && caught.message) || ctx.t('translationFailed');
     } finally {
       state.isTranslatingPage = false;
+      ctx.customRules.afterRound();
     }
     reportToTop({ manual: true, total, error });
   }

@@ -60,6 +60,9 @@
     try {
       // 本页的站点规则（范围、排除、引擎）要先到：SW 冷启动时最多等 1.5 s。
       await ctx.customRules.whenReady();
+      // 规则变化补的那一轮（custom-rule.js）还在跑：等它收完再收，两轮不同时收块。
+      // 它不置 isTranslatingPage，所以这一下点击走的是上面的正常分支，不是忙分支。
+      await ctx.customRules.whenCaughtUp();
       // 收集需要翻译的元素（以块级元素为单位）
       ctx.beginScopeRound();
       let translatableBlocks = ctx.collectPageBlocks();
@@ -118,6 +121,9 @@
       state.isTranslatingPage = false;
       state.translationProgress = { current: 0, total: 0 };
       ctx.frames.onManualTranslateEnd();
+      // 这一轮进行中规则变过的，补做清扫与补翻。放在最后：它和手动轮的成对收尾
+      // （onManualTranslateEnd）无关，也不该因为它出错而漏掉那一步。
+      ctx.customRules.afterRound();
     }
   }
 
