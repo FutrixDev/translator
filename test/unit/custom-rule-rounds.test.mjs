@@ -42,8 +42,10 @@ const RULE = { id: 'a', v: 1, match: ['example.com'], exclude: ['.ad'], updatedA
 /**
  * 顶层 frame：自动翻译关着（调度器不在跟）、整页翻过一次、本页有一条规则。
  * 每一次 runTranslationPass 都停住，由测试放行（release）。
+ * holdRules：CUSTOM_RULES_FOR_HOST 的回话先不给，由测试 answerRules() 放行；这时
+ * 不等规则到、也不算「整页翻过」。
  */
-async function loadTopFrame() {
+async function loadTopFrame({ holdRules = false } = {}) {
   const href = 'https://example.com/news/1';
   const url = new URL(href);
   globalThis.location = { href, hostname: url.hostname, pathname: url.pathname };
@@ -58,9 +60,13 @@ async function loadTopFrame() {
   globalThis.CSSStyleSheet = class { replaceSync() {} };
   globalThis.SpaNavigation = { onRouteChange() {} };
   const listeners = [];
+  let answerRules = null;
+  const rulesReply = holdRules
+    ? new Promise((resolve) => { answerRules = () => resolve({ rules: [RULE] }); })
+    : Promise.resolve({ rules: [RULE] });
   globalThis.chrome = {
     runtime: {
-      sendMessage: async () => ({ rules: [RULE] }),
+      sendMessage: () => rulesReply,
       onMessage: { addListener: (fn) => listeners.push(fn) },
     },
   };
@@ -118,9 +124,11 @@ async function loadTopFrame() {
   for (const source of PAGE_SOURCES) new Function(source)();
 
   ctx.customRules.init();
-  await ctx.customRules.whenReady();
-  // 规则装载完之后才算「整页翻过」：装载本身不该起补翻轮。
-  ctx.state.pageHasBeenTranslated = true;
+  if (!holdRules) {
+    await ctx.customRules.whenReady();
+    // 规则装载完之后才算「整页翻过」：装载本身不该起补翻轮。
+    ctx.state.pageHasBeenTranslated = true;
+  }
   ctx.frames.setup();
   assert.equal(listeners.length, 1, 'top.js listens to its children');
 
@@ -139,7 +147,10 @@ async function loadTopFrame() {
     passes[n - 1]();
     await sleep(0);
   };
-  return { ctx, log, passes, broadcasts, translated, counts, hello, changeRule, release, progress: () => progress };
+  return {
+    ctx, log, passes, broadcasts, translated, counts, hello, changeRule, release, answerRules,
+    progress: () => progress,
+  };
 }
 
 test('a catch-up round leaves the top frame directive at "do not translate", before, during and after', async () => {
@@ -158,6 +169,19 @@ test('a catch-up round leaves the top frame directive at "do not translate", bef
   assert.equal(hello().translate, false, 'a frame that registers after the round');
   assert.ok(broadcasts.length >= 1);
   for (const directive of broadcasts) assert.equal(directive.translate, false, JSON.stringify(directive));
+});
+
+test('translatePage() collects nothing until this page\'s rules have arrived', async () => {
+  const top = await loadTopFrame({ holdRules: true });
+  const { ctx, log, answerRules } = top;
+  ctx.translatePage();
+  await sleep(10);
+  assert.equal(ctx.state.isTranslatingPage, true, 'the click started a round');
+  assert.deepEqual(log, [], 'the round collected before the rules arrived');
+  answerRules();
+  await sleep(10);
+  assert.deepEqual(log, ['collect:main', 'pass:1'], 'the round collects once the rules are ready');
+  assert.deepEqual(ctx.customRules.current().exclude, ['.ad']);
 });
 
 for (const entry of ['translatePage', 'translateWholePage']) {

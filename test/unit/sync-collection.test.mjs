@@ -19,8 +19,13 @@ const SHARED = fileURLToPath(new URL('../../shared/', import.meta.url));
 const readShared = (name) => readFileSync(`${SHARED}${name}`, 'utf8');
 
 const PREFIX = 'note:';
+// 存储值里带的 id 原样带出来（真实的解码器不带，可集合不能靠这一点）：下面凡是
+// 值里写了 `id: 'forged'` 的用例，都在钉「条目的 id 以键上的为准」。
 const decode = (value) => (value && value.v === 1 && typeof value.text === 'string'
-  ? { v: 1, text: value.text, hosts: Array.isArray(value.hosts) ? value.hosts : [] }
+  ? Object.assign(
+    { v: 1, text: value.text, hosts: Array.isArray(value.hosts) ? value.hosts : [] },
+    'id' in value ? { id: value.id } : {},
+  )
   : null);
 
 function makeCollection(over = {}) {

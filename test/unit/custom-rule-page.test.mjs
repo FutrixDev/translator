@@ -506,6 +506,61 @@ test('bootstrap: routing happens before settings are written, and names no colle
   assert.match(source, /ctx\.syncMirrors = \[\];/);
 });
 
+// bootstrap 的 ctx.init() 原样跑：浏览器那几样换成桩，本页规则的 whenReady() 由
+// 测试放行。调度器的第一个判断就要用到规则钉住的引擎，所以规则到之前不能起调度器。
+function runBootstrapInit() {
+  const saved = {};
+  for (const name of ['window', 'document', 'chrome', 'FrameEligibility', 'DefaultSettings', 'AccountGate']) {
+    saved[name] = globalThis[name];
+  }
+  let ready;
+  const log = [];
+  const ctx = {
+    customRules: {
+      init: () => log.push('rules:init'),
+      whenReady: () => new Promise((resolve) => { ready = resolve; }),
+    },
+    frames: { setup: () => log.push('frames:setup') },
+    createFloatBall: () => log.push('floatBall'),
+    setupAutoTranslate: () => log.push('autoTranslate'),
+  };
+  const win = { AI_TRANSLATOR_CONTENT: ctx };
+  win.top = win;
+  Object.assign(globalThis, {
+    window: win,
+    document: { documentElement: { setAttribute() {} } },
+    chrome: {
+      runtime: { sendMessage() {} },
+      storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+    },
+    FrameEligibility: { shouldActivate: () => true },
+    DefaultSettings: { contentDefaults: () => ({}) },
+    AccountGate: { applyAccountGate: async () => {} },
+  });
+  const restore = () => Object.assign(globalThis, saved);
+  try {
+    new Function(repoFile('content/content-bootstrap.js'))();
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  const done = ctx.init();
+  return { log, done, restore, release: () => ready() };
+}
+
+test('bootstrap: the scheduler starts only after this page\'s rules are ready', async () => {
+  const boot = runBootstrapInit();
+  try {
+    await sleep(10);
+    assert.deepEqual(boot.log, ['rules:init', 'floatBall'], 'the float ball does not wait; the scheduler does');
+    boot.release();
+    await boot.done;
+    assert.deepEqual(boot.log, ['rules:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+  } finally {
+    boot.restore();
+  }
+});
+
 test('subscribers: the scheduler restarts and the top frame re-broadcasts on a rule change', () => {
   const content = contentSource();
   assert.match(content, /ctx\.customRules\.onChange\(\(\) => start\('custom-rule'\)\);/);

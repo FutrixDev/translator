@@ -458,7 +458,8 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | B1 | 直读扫描（§3.7）：白名单外不许读 `engineFallback` / `translationEngine` / `autoTranslateEngine`；`EngineStatus.selectedEngine` 的取值（有 `probe.engine`、没有探测）；popup 的「没配 Key」拦截和 `describeEngineStatus` 都经过它 |
 | B1 | 裸调用扫描（`auto-engine-choice.test.mjs`，§3.7）：正则放宽到任意接收者，`content/` 下零命中；`content-language-pack.js` 的两处都调 `inUse()`，`inUse()` 两半都问（源码断言，放在 `auto-translate-wiring.test.mjs` 现有的语言包那一条里） |
 | B1 | custom-rule 的 `onChange` 签名门（vm 装载 `content/page/custom-rule.js`，桩掉 `chrome.runtime` 与 `SpaNavigation`）：别的主机的规则变了不回调；本页规则变了回调一次；换路由到另一条规则管的路径时回调，到同一条规则管的路径时不回调；子 frame `inherit` 同值不回调、换值回调 |
-| B1 | 调度器接线（`auto-translate-wiring.test.mjs`）：订阅 `ctx.customRules.onChange` 并调 `restart('custom-rule')`；`isOn()` 是 IDLE / RUNNING 判断唯一的一处，`frames/top.js` 与 §3.6 第 3 步都调它 |
+| B1 | 调度器接线（`test/unit/custom-rule-page.test.mjs`，「subscribers」与「is asked in one place」两条）：订阅 `ctx.customRules.onChange` 并调 `restart('custom-rule')`；`isOn()` 是 IDLE / RUNNING 判断唯一的一处，`frames/top.js` 与 §3.6 第 3 步都调它 |
+| B1 | 规则先到：`whenReady()` 之前 `translatePage()` 不收块（`custom-rule-rounds.test.mjs`）；bootstrap 的 `ctx.init()` 在 `whenReady()` 之前不调 `setupAutoTranslate`（`custom-rule-page.test.mjs`，原样跑 `content-bootstrap.js`） |
 | B1 | frames：`computeDirective` / `sameDirective` 含 `engineOverride`；子 frame `inherit(null)`；顶层订阅 `ctx.customRules.onChange(refreshDirective)` |
 | B1 | scope：阶梯四档、include 零命中不缓存、`pageScopeStarts` include 分支三种情况、`outsidePageScope` |
 | B1 | collect：行内 exclude 被拿掉、行内 keepOriginal 用占位符、块级 keepOriginal 压过 `translate="yes"` |
