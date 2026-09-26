@@ -821,7 +821,7 @@ const LOAD_ORDER = [
    'custom-rules.js 在加载时就把 SyncCollection.create 取走了。'],
 ];
 
-test('四份装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {
+test('装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('../../', import.meta.url));
