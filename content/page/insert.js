@@ -10,16 +10,36 @@
   if (!ctx) return;
 
 
-  // 由本块**真正生成过**的标签名与编号拼出的正则，用来清掉解析后仍留在译文里的
-  // 标记残骸（模型把 <a1>/<strong2> 串成了 <strong1> 这种，配不上任何一对，
-  // 重建时只能原样跳过）。
-  // 只认自己用过的标签名和编号，是为了不动页面正文：讲 HTML 的页面正文里就写着
-  // <b2> 这类字样，我们没生成过 b 标记时它一个字都不该被删。
-  function markupDebrisRe(markupElements) {
-    if (!markupElements || markupElements.length === 0) return null;
-    const tags = [...new Set(markupElements.map((mk) => mk.tag))].join('|');
-    const nums = [...new Set(markupElements.map((mk) => String(mk.index)))].join('|');
-    return new RegExp(`<\\s*/?\\s*(?:${tags})\\s*(?:${nums})\\s*>`, 'gi');
+  // 清掉解析后仍留在译文里的标记残骸（配不上任何一对、重建时只能原样跳过的
+  // 标记），返回 (text) => text。两种残骸：
+  //   - 串号：模型把 <a1>/<strong2> 串成了 <strong1>；
+  //   - 粘号：模型把编号叠写或把相邻标记粘成一个。实测内置引擎把 Reddit 卡片
+  //     头的 <span11> 写成了 <span1111>，四个数字配不上任何一个编号，原样显示
+  //     给了读者。
+  // 只认本块**真正生成过**的标签名，编号那一段要能整个拆成本块发过的编号
+  // （1111 = 11·11）——这是为了不动页面正文：讲 HTML 的页面正文里就写着 <b2>
+  // 这类字样，我们没生成过 b 标记时它一个字都不该被删。
+  // 拆分放在替换回调里做，不写进正则：`(?:1|11|…)+` 这种编号互为前缀的交替
+  // 遇上一长串数字会指数回溯。
+  function markupDebrisScrubber(markupElements) {
+    if (!markupElements || markupElements.length === 0) return (text) => text;
+    const tags = new Set(markupElements.map((mk) => mk.tag));
+    const nums = new Set(markupElements.map((mk) => String(mk.index)));
+    const widest = Math.max(...[...nums].map((n) => n.length));
+    // ok[end]：digits 的前 end 位能拆成本块的编号
+    const splitsIntoOwnNumbers = (digits) => {
+      const ok = [true];
+      for (let end = 1; end <= digits.length; end++) {
+        ok[end] = false;
+        for (let start = Math.max(0, end - widest); start < end && !ok[end]; start++) {
+          ok[end] = ok[start] && nums.has(digits.slice(start, end));
+        }
+      }
+      return ok[digits.length];
+    };
+    const re = /<\s*\/?\s*([a-z]+)\s*(\d+)\s*>/gi;
+    return (text) => text.replace(re, (marker, tag, digits) =>
+      (tags.has(tag.toLowerCase()) && splitsIntoOwnNumbers(digits) ? '' : marker));
   }
 
   function getInlineTranslationTarget(element) {
@@ -125,10 +145,10 @@
     // 建不出来，`<A1>` 四个字符还会原样显示给读者。见 MARKUP_MARKER_RE 处。
     const markerRe = /<\s*(\/?)\s*([a-z]+)\s*(\d+)\s*>/gi;
     // 解析完仍留在正文里的标记残骸（配不上任何一对，上面 continue 掉的那些）不
-    // 能直接给读者看，落笔前清掉。只认本块生成过的标签名和编号，见 markupDebrisRe。
-    const debrisRe = markupDebrisRe(markupElements);
+    // 能直接给读者看，落笔前清掉。只认本块生成过的标签名和编号，见 markupDebrisScrubber。
+    const scrubDebris = markupDebrisScrubber(markupElements);
     const emit = (node, chunk) => {
-      appendTextWithMath(node, debrisRe ? chunk.replace(debrisRe, '') : chunk, mathByNumber);
+      appendTextWithMath(node, scrubDebris(chunk), mathByNumber);
     };
     const stack = [{ node: container, index: null }];
     let lastIndex = 0;
@@ -377,12 +397,11 @@
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
       // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
-      // 用 markupDebrisRe 而不是笼统的 MARKUP_MARKER_RE：只剥本块真生成过的标签
-      // 名+编号，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
-      const managedDebrisRe = markupDebrisRe(block.markupElements);
+      // 用 markupDebrisScrubber 而不是笼统的 MARKUP_MARKER_RE：只剥本块真生成过的
+      // 标签名+编号，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
       const handle = ctx.renderManagedTranslation(
         element,
-        managedDebrisRe ? translation.replace(managedDebrisRe, '') : translation,
+        markupDebrisScrubber(block.markupElements)(translation),
         { textLang }
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。

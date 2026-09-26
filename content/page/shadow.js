@@ -11,6 +11,9 @@
 // - 组合子节点：宿主的子节点 = shadow 树 + 已分进 slot 的 light 子节点；<slot>
 //   只在一个节点都没分进来时才算它的后备内容。每个渲染出来的节点恰好走到一次，
 //   没渲染的（没分进 slot 的 light 子节点）一次都不走。
+// - 藏起来的 slot：分进 slot 的节点是从宿主下面走到的，slot 在 shadow 树里的那几
+//   层祖先不在这条路上。inHiddenSlot 补上这一段：slot 放在 display:none 的容器里
+//   时，分进去的节点没有渲染。
 // - 样式：译文的样式表（content/css/translation.css）是注入文档的，进不了 shadow
 //   树。只给**收到译文的** root 装一份，由 afterInsertTranslation 每次插入时复核。
 //   只走 constructable stylesheet（adoptedStyleSheets），装不上就记一条日志，这个
@@ -89,6 +92,30 @@
     if (el.parentElement) return el.parentElement;
     const parent = el.parentNode;
     return parent && parent.nodeType === Node.DOCUMENT_FRAGMENT_NODE && parent.host ? parent.host : null;
+  }
+
+  // 扁平树（渲染树）上的父元素：分进 slot 的节点认它的 slot，shadow root 的顶层
+  // 认宿主。和 composedParent 不同，那条按作者写的 light 结构走。
+  function flatParent(el) {
+    return el.assignedSlot || composedParent(el);
+  }
+
+  // 分进 slot 的节点从宿主下面走到（见 composed），走不到 slot 在 shadow 树里的那
+  // 几层祖先。slot 放在 display:none 的容器里时，节点自己的 display 照样正常，
+  // 逐节点查 display 看不出它没渲染。实测 Reddit 卡片头：「更多」菜单
+  // faceplate-menu 分进 rpl-dropdown 里一个 hidden 的弹层，菜单项 Award / Share /
+  // Report 就这样混进了作者名那一行的原文。这里沿扁平树从 slot 往上走到宿主，路上
+  // 有 display:none 就是没渲染。文本节点也会被分进 slot，一样问。
+  // 不用 checkVisibility()：它对所有 display:contents 的元素（<slot> 本身就是）
+  // 都答 false，实测 Chromium 143 / Chrome 153。
+  function inHiddenSlot(node) {
+    const slot = node.assignedSlot;
+    if (!slot) return false;
+    const host = slot.getRootNode().host;
+    for (let el = slot; el && el !== host; el = flatParent(el)) {
+      if (getComputedStyle(el).display === 'none') return true;
+    }
+    return false;
   }
 
   // closest 撞到 shadow root 就从宿主接着找。
@@ -222,6 +249,7 @@
   ctx.closestComposed = closestComposed;
   ctx.composedContains = composedContains;
   ctx.isShadowContainer = isShadowContainer;
+  ctx.inHiddenSlot = inHiddenSlot;
   ctx.queryAllDeep = queryAllDeep;
   ctx.afterInsertTranslation = afterInsertTranslation;
 })();

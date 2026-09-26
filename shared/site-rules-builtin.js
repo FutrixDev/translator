@@ -150,10 +150,17 @@
         // old.reddit.com 以 .reddit.com 结尾，这一条已经覆盖它。等它的 selector
         // 真和新版分叉了再给它单开一条——现在写两条一模一样的，只是两份要同时
         // 改的东西。
+        // 新版的卡片头（帖子的 credit-bar、评论的 commentMeta）就是旧版的
+        // .tagline：作者名、「4 hr. ago」、徽章和「更多」菜单，没有一句要读的话。
+        // 它整行只有 <span> 子元素，通则会把它当一个内联块整块翻，实测翻成
+        // 「u/xxx • 4 小时。 过去 奖励这个。 帖子…」。
         match: 'reddit.com',
         state: 'always',
         atomicBlockSelectors: [],
-        excludeSelectors: ['.tagline', '.score', 'time', 'faceplate-timeago'],
+        excludeSelectors: [
+          '.tagline', '.score', 'time', 'faceplate-timeago',
+          '[slot="credit-bar"]', '[slot="commentMeta"]',
+        ],
         blockIdAttr: null,
       },
       {

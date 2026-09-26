@@ -14,6 +14,8 @@
 //   5. 我们自己的界面（原文速览卡）不进收集。
 //   6. 正文范围的缓存接在真入口上：发现层一批只数一次 body，后来长大的 <main>
 //      下一批发现、下一次手动翻译都认得出。
+//   7. 分进 shadow 里隐藏 slot 的内容不读：它自己的 display 正常，藏住它的是
+//      shadow 树里 slot 的祖先。
 const path = require('path');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
@@ -208,6 +210,69 @@ test('notranslate: <body class="notranslate"> is a document-level declaration an
     return window.AI_TRANSLATOR_CONTENT.collectTranslatableBlocks(document.body).map((b) => b.element.id);
   });
   expect(ids).toEqual(['p']);
+});
+
+// ---- 分进隐藏 slot 的内容 ----
+//
+// Reddit 卡片头那一行（`span[slot=credit-bar]`）直属子元素全是 <span>，整行是一个
+// 内联块。行里的「更多」菜单是 <faceplate-menu slot="content">，分进 <rpl-dropdown>
+// shadow 里一个 hidden 的弹层——菜单项自己的 computed display 是 inline，逐个看
+// display 的判断看不出它不渲染，于是「Award / Share / Report」进了这一行的原文。
+// 这里用同形的组件夹具：一个弹层 hidden，一个不 hidden，只差这一处。
+async function defineMenus(page) {
+  await page.evaluate(() => {
+    const define = (name, popover) => customElements.define(name, class extends HTMLElement {
+      connectedCallback() {
+        if (this.shadowRoot) return;
+        this.attachShadow({ mode: 'open' }).innerHTML = `<slot></slot><div ${popover}><slot name="content"></slot></div>`;
+      }
+    });
+    define('x-menu-closed', 'hidden');
+    define('x-menu-open', '');
+  });
+}
+
+// 行本身是 <span>、直属子元素也只有 <span>，和真页面一样：整行走内联分支，一次读完。
+const HIDDEN_SLOT_FIXTURE = doc(`
+  <div><span id="closed-row"><span class="author">Posted by a reader who likes long walks by the river</span>
+    <span class="menu"><x-menu-closed><button>More</button><span slot="content" id="closed-item">Award this post</span></x-menu-closed></span></span></div>
+  <div><span id="open-row"><span class="author">Posted by another reader who prefers the mountains</span>
+    <span class="menu"><x-menu-open><button>More</button><span slot="content" id="open-item">Share this post</span></x-menu-open></span></span></div>
+`);
+
+test('hidden slot: text slotted into a hidden part of a shadow tree is not read into its row', async ({ page }) => {
+  await page.setContent(HIDDEN_SLOT_FIXTURE, { waitUntil: 'load' });
+  await defineMenus(page);
+  for (const s of SCRIPTS) await page.addScriptTag({ path: s });
+
+  const r = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const blocks = ctx.collectTranslatableBlocks(document.body);
+    const textOf = (id) => (blocks.find((b) => b.element.id === id) || {}).text;
+    const closedItem = document.getElementById('closed-item');
+    return {
+      ids: blocks.map((b) => b.element.id || b.element.localName),
+      closedRow: textOf('closed-row'),
+      openRow: textOf('open-row'),
+      // 根因的形状：菜单项自己的 display 正常，藏住它的是 shadow 里 slot 的祖先。
+      ownDisplay: getComputedStyle(closedItem).display,
+      closedHidden: ctx.inHiddenSlot(closedItem),
+      openHidden: ctx.inHiddenSlot(document.getElementById('open-item')),
+      authorHidden: ctx.inHiddenSlot(document.querySelector('#closed-row .author')),
+    };
+  });
+
+  expect(r.ownDisplay).toBe('inline');
+  expect(r.closedHidden).toBe(true);
+  expect(r.openHidden).toBe(false);
+  expect(r.authorHidden).toBe(false);
+
+  // 两行各是一块，菜单项没有被拆出去单独成块。
+  expect(r.ids).toEqual(['closed-row', 'open-row']);
+  expect(r.closedRow).toContain('long walks by the river');
+  expect(r.closedRow).not.toContain('Award this post');
+  // 反例：弹层没藏，分进去的字就是看得见的字，照读。
+  expect(r.openRow).toContain('Share this post');
 });
 
 // ---- 我们自己的界面不进收集 ----

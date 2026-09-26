@@ -12,6 +12,7 @@
 //   一步就命中记忆。
 // - `ctx.ownTranslateDeclaration(el)`：元素**自己**的声明，'no' / 'yes' / null。
 //   行内的 no 在 getTextWithMathPlaceholders 里变成元素占位符，原样克隆回译文。
+//   整页收集时，站点规则排除的元素（site-adapter.js 的 excludeSelectors）也走这条路。
 //
 // 同一元素上 class 与属性同时出现时 class 赢（`notranslate` 是更明确的退出信号，
 // 谷歌翻译也这么处理）。属性值去空白、不区分大小写；不是 yes / no / 空串的值等于

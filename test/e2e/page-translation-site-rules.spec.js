@@ -239,3 +239,102 @@ test('site rules: a Reddit post keeps its title and body, and loses its score, t
     await close();
   }
 });
+
+const NR_AUTHOR = 'u/Stunning_Log_9814';
+const NR_AGO = '4 hr. ago';
+const NR_MENU = ['Award this post', 'Hide this post', 'Report this post'];
+const NR_TITLE = 'Which editor do you reach for when a client sends forty hours of raw footage';
+const NR_BODY = 'I have tried three of them this month and every one of them stalls on the proxy step.';
+const NR_EDITED = 'The export presets were updated';
+const NR_EDITED_AGO = 'two hours ago';
+
+// 新版 Reddit 的一张信息流卡片，形状照 r/VideoEditors 实测的 DOM 缩出来：
+//
+//   - <shreddit-post> 把卡片各段 slot 进自己 shadow 里的版式。卡片头
+//     `span[slot=credit-bar]` 装着作者名、「•」、<faceplate-timeago> 和「更多」菜单；
+//     它的直接子元素只有 <span>，通则会把整行当一个内联块整块翻。
+//   - 「更多」菜单 <faceplate-menu slot="content"> 分进 <rpl-dropdown> shadow 里一个
+//     hidden 的弹层，点开之前没有渲染。菜单项自己的 display 是正常的。
+//
+// 实测这一行被翻成「u/xxx • 4 小时。 过去 奖励这个。 帖子<span1111>报告」：时间戳被
+// 拆开翻，看不见的菜单项进了原文。这条旅程守住规则那一半：卡片头整行不收，一个字
+// 都不送。看不见的 slot 和粘号标记各有一条夹具（page-coverage-harness /
+// markup-preservation）。
+//
+// 正文里那段 `#edited` 守的是另一件事：站点排除的元素出现在一个照翻的块**里面**
+// 时，它是占位符，原样克隆回译文——而不是被当成正文的一部分翻掉。
+const NEW_REDDIT_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>r/VideoEditors</title>
+<script>
+  customElements.define('shreddit-post', class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' }).innerHTML =
+        '<article><slot name="credit-bar"></slot><slot name="title"></slot><slot name="text-body"></slot></article>';
+    }
+  });
+  customElements.define('rpl-dropdown', class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' }).innerHTML =
+        '<slot></slot><div id="hovercard" hidden><slot name="content"></slot></div>';
+    }
+  });
+</script></head>
+<body>
+  <shreddit-post id="post">
+    <span slot="credit-bar" id="credit" class="flex justify-between">
+      <span class="flex flex-wrap">
+        <a class="author" href="/user/Stunning_Log_9814/">${NR_AUTHOR}</a>
+        <span class="created-separator" aria-hidden="true">•</span>
+        <faceplate-timeago><time datetime="2026-09-25T08:21:21Z">${NR_AGO}</time></faceplate-timeago>
+      </span>
+      <span class="flex items-center">
+        <rpl-dropdown>
+          <button aria-label="Open post options"><svg width="16" height="16"></svg></button>
+          <faceplate-menu slot="content">
+            ${NR_MENU.map((item) => `<li><span class="label">${item}</span></li>`).join('')}
+          </faceplate-menu>
+        </rpl-dropdown>
+      </span>
+    </span>
+    <a slot="title" id="title" href="/r/VideoEditors/comments/1wpqr9n/">${NR_TITLE}</a>
+    <div slot="text-body" id="body"><div class="md">
+      <p id="para">${NR_BODY}</p>
+      <p id="edited">${NR_EDITED} <faceplate-timeago id="edited-ago"><time datetime="2026-09-25T10:00:00Z">${NR_EDITED_AGO}</time></faceplate-timeago> to cover the new codec as well.</p>
+    </div></div>
+  </shreddit-post>
+</body></html>`;
+
+test('site rules: a new-Reddit feed card keeps its title and body, and its credit bar is not sent at all', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://www.reddit.com/**', NEW_REDDIT_PAGE);
+
+    await page.goto('https://www.reddit.com/r/VideoEditors/');
+    await page.waitForSelector('#ai-translator-float-ball');
+    // 译文插在块里还是块旁边由版式决定，这里只按内容认它。
+    const translationOf = (text) => page.locator('.ai-translator-inline-block').filter({ hasText: text });
+    await translationOf(NR_BODY).waitFor({ timeout: 30000 });
+    await translationOf(NR_EDITED).waitFor({ timeout: 30000 });
+
+    const all = sentTexts.join('\n');
+    expect(all).toContain(NR_TITLE);
+    expect(all).toContain(NR_BODY);
+    // 卡片头：作者名、时间戳、菜单项，一个字都没送出去。
+    expect(all).not.toContain(NR_AUTHOR);
+    expect(all).not.toContain(NR_AGO);
+    for (const item of NR_MENU) expect(all).not.toContain(item);
+    await expect(page.locator('#credit .ai-translator-inline-block')).toHaveCount(0);
+
+    // 块里的时间戳：送出去的是占位符，译文里是原来那个元素的克隆。
+    const editedSent = sentTexts.find((text) => text.includes(NR_EDITED));
+    expect(editedSent).toMatch(/\{\{\d+\}\}/);
+    expect(editedSent).not.toContain(NR_EDITED_AGO);
+    await expect(translationOf(NR_EDITED).locator('faceplate-timeago')).toHaveText(NR_EDITED_AGO);
+  } finally {
+    await close();
+  }
+});
