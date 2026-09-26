@@ -51,8 +51,8 @@
 | 6 | **与内置适配器合并**：atomic 只来自内置；exclude 只来自用户；keepOriginal = 内置 ∪ 用户；include、CSS、引擎只来自用户 | atomic 是内置适配器针对特定 DOM 调出来的整块翻译，不向用户开放。keepOriginal 取并集，保证内置规则表保留原文的那些元素（作者名、时间戳、票数）不会被一条用户规则意外放开：用户撤不掉内置的 |
 | 7 | **exclude 与 keepOriginal 的分工**。exclude 表示不翻译、也不送出：命中块则跳过整块；命中块内的行内元素，则把它的文字从原文里拿掉。keepOriginal 表示不翻译、但原样保留：命中块则跳过整块，且在 translate judge 之前判定；命中行内元素，则按 `translate="no"` 处理，送出占位符，译文里原样出现 | 照搬沉浸式翻译 `excludeSelectors` / `stayOriginalSelectors` 的分工，用户从那边迁过来的规则语义一致。行内保留复用 A2 的 notranslate 占位符（collect.js:710-714），不另造机制。块级 keepOriginal 在 judge 之前判，所以页面里的 `translate="yes"` 重开不了它：用户规则优先于页面声明。内置规则表按 keepOriginal 语义（D-315）：字段名 `keepOriginalSelectors`，作者名、时间戳、票数不翻译，但也不从译文里消失 |
 | 8 | **范围阶梯**，从高到低：临时「整页」覆盖 → 用户 include（至少命中一个已渲染元素）→ 设置为 'page' 或 `matchBuiltin` 命中 → 'main'。include 零命中时不缓存结果 | 「翻译整个页面」是用户当下的明确动作，应当压过一切。include 是用户专门为这个站点写的范围，比全局设置和内置规则更具体。零命中时往下回落：站点改版后选择器失效，不能让整页一个字都不翻。零命中不缓存：SPA 的正文常常晚于首轮渲染 |
-| 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜出。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
-| 10 | **CSS 清洗**。先去掉注释，再不区分大小写地查以下写法，出现任何一个就拒绝：`url(`、`image-set(`、`image(`、`cross-fade(`、`src(`、`attr(`、`@import`、`@font-face`，以及任何反斜杠。长度 ≤ 4096 字符。SW 写入时查一遍，内容脚本应用前再查一遍。只拒绝、不改写 | 规则会经 sync 和导入文件流转，导入的文件可能出自别人之手。CSS 里一切能发请求的构造都能把页面信息带给第三方，「属性选择器 + 背景图」就是已知的 CSS 外泄手法。反斜杠转义能拼出任意关键字，所以一律拒绝。先去注释是为了防 `u/**/rl(` 这种拼接。只拒不改，保证用户看到的就是实际生效的。内容侧再查一遍，是因为 sync 里的数据不一定都经过本机 SW。代价是 `content: "\201C"` 这类合法写法也会被拒，提示文案里要说明 |
+| 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜过页面样式表。译文节点的字号、字体、字重、行高、对齐、颜色、字距和 opacity 是行内样式，用户 CSS 要改这几项必须加 `!important`（J-4 的夹具就是这么写的）。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
+| 10 | **CSS 清洗**。原文和去掉注释后的文本各查一遍（不区分大小写），出现任何一个就拒绝，注释里的也算：`url(`、`image-set(`、`image(`、`cross-fade(`、`src(`、`attr(`、`@import`、`@font-face`，以及任何反斜杠。长度 ≤ 4096 字符。SW 写入时查一遍，内容脚本应用前再查一遍。只拒绝、不改写 | 规则会经 sync 和导入文件流转，导入的文件可能出自别人之手。CSS 里一切能发请求的构造都能把页面信息带给第三方，「属性选择器 + 背景图」就是已知的 CSS 外泄手法。反斜杠转义能拼出任意关键字，所以一律拒绝。查去注释后的文本是为了防 `u/**/rl(` 这种拼接；只查去注释后的文本，会被字符串里的 `/*` 绕过（D-315），所以原文也查。只拒不改，保证用户看到的就是实际生效的。内容侧再查一遍，是因为 sync 里的数据不一定都经过本机 SW。代价是 `content: "\201C"` 这类合法写法也会被拒，提示文案里要说明 |
 | 11 | **引擎覆盖是钉住**（D-302 修订）。<br>• 手动、自动、无人值守三类请求都认，`effectiveEngine` 也反映覆盖结果。<br>• 优先级：`message.engine`（P0-D）> 规则的 `engine` > 两个全局开关。<br>• 钉住的引擎永不回退。规则选内置而内置不可用时，按内置报错；即使 `engineFallback: 'allow-ai'`，也不转 AI。规则选 'ai' 但没配 Key 时，走现有的「没配 Key」路径。<br>• 只管两个引擎都能处理的请求（TRANSLATE / TRANSLATE_BATCH / TRANSLATE_BATCH_FAST）。钉内置时，查词退化成没有音标的普通翻译，和全局选内置时一样。内置处理不了的请求类型本来就只走 AI，规则不影响它们。<br>• OCR 的识别步骤不归规则管；识别出的文字经 TRANSLATE 翻译，跟随钉住的引擎。<br>• 预算闸的代码不改，只改它上面的注释。<br>• **落点在谓词**（D-303）：`isBuiltinSelected` 和新的同步谓词 `fallbackAllowed` 先问站点，`pinnedEngine` 和它那行抛错都不动。popup 和字幕绕过谓词直读设置的三处，以及现有裸调用扫描漏过的语言包两处，一并收口（§3.7） | 引擎是按站点的偏好，用户说「这个站点用 AI」时，不会区分是点出来的翻译还是自动的。自动和无人值守请求照旧带 `auto` / `unattended` 标记，过闸时照样扣额度；只是能走到闸前的组合多了一种，注释跟着改。<br>给站点钉内置，是为了省 AI 额度，或者不让这个站的文字进第三方模型；回退到 AI 恰好违背这两个目的。<br>「内置处理不了就抛错」只针对显式的 `message.engine`：那是调用方契约检查，不是选引擎。规则是把设置收窄到一个站点，设置从来不管只有 AI 能处理的请求类型 |
 | 12 | **frames**：`engineOverride` 加进顶层指令，子 frame 照单继承。选择器与 CSS 按子 frame 自己的 URL 解析 | 这是 A1 偏差 #7 附带的约束：子 frame 本地回答 `effectiveEngine` / `isActive`。有了按站点引擎后，子 frame 必须跟随顶层 frame 的规则，否则一个页面会出现两种引擎。选择器和 CSS 作用于 DOM，只对子 frame 自己的文档有意义。实际执行本来就在顶层（A1 偏差 #15） |
 | 13 | **规则变更即时生效**（≤ 1 s，不用重载） | 拾取器的价值就在「点完立刻看到」。要重载才生效的编辑器，用户会以为没保存。增量去抖 150 ms 再加一轮收块，远低于 1 s |
@@ -93,7 +93,7 @@
 | `content/content-auto-translate.js:486-526`、`:768-803`、`:835` | 费用闸拒绝后停在 OFF 并停掉发现层；只有 RESTART_KEYS 设置键、换路由、语言包就绪会 `start()`；`:835` 导出 `restart: start` | B1：订阅 `ctx.customRules.onChange`，调 `restart('custom-rule')`（§3.6 第 5 步）；新导出 `isOn()`（状态为 IDLE 或 RUNNING） |
 | `content/frames/top.js:45/:54/:62`、`:38-43`、`:74-80` | `computeDirective` / `sameDirective` / `broadcastDirective`，指令形状为 `{translate, manualEpoch, visible, scopeOverride}`；`currentTranslate()` 自己判断调度器开没开；`refreshDirective()` | B1：加 `engineOverride`；`currentTranslate()` 改用 `ctx.autoTranslate.isOn()`；`ctx.customRules.onChange` 触发 `refreshDirective()`（§3.6 第 4 步） |
 | `content/frames/child.js:164-187` | `applyDirective`（`scopeOverride` 那段在 `:169-174`） | B1：`ctx.customRules.inherit(engineOverride)`，null 也照传 |
-| `content/content-bootstrap.js:117-131`、`:192-204` | `setupStorageListener` 在 `:129-131` 把 sync 区变了的每个键都写进 `ctx.settings`；`ctx.init` | B1：新设登记表 `ctx.syncMirrors`，元素为 `{prefix, onStorageChange}`。登记方在加载时 `(ctx.syncMirrors \|\| (ctx.syncMirrors = [])).push(…)`，和各文件取 ctx 的写法一样；监听器在事件到达时才读这张表。键命中某个前缀，就交给那一项的 `onStorageChange`，不进 `ctx.settings`。custom-rule.js 登记 `CustomRules.KEY_PREFIX`。P1-C 的词表以后登记自己的前缀：每个 frame 都登记，但只有顶层建镜像；子 frame 那一项什么都不做，只为让 `glossary:` 键不进 `ctx.settings`。bootstrap 一行不用改（D-306）。`ctx.init` 在启动调度器之前等 `whenReady()` |
+| `content/content-bootstrap.js:117-131`、`:192-204` | `setupStorageListener` 在 `:129-131` 把 sync 区变了的每个键都写进 `ctx.settings`；`ctx.init` | B1：新设登记表 `ctx.syncMirrors`，元素为 `{prefix, onStorageChange}`。bootstrap 在加载时（`content-bootstrap.js:119`）就建好这张空表，早于 `:226` 调 `ctx.customRules.init()`，所以登记方在 `init()` 里直接 `ctx.syncMirrors.push(…)`；监听器在事件到达时才读这张表。键命中某个前缀，就交给那一项的 `onStorageChange`，不进 `ctx.settings`。custom-rule.js 登记 `CustomRules.KEY_PREFIX`。P1-C 的词表以后登记自己的前缀：每个 frame 都登记，但只有顶层建镜像；子 frame 那一项什么都不做，只为让 `glossary:` 键不进 `ctx.settings`。bootstrap 一行不用改（D-306）。`ctx.init` 在启动调度器之前等 `whenReady()` |
 | `content/content-messaging.js:27/:164` | `switch (message.type)`；`SETTINGS_UPDATED` | B2：加 `OPEN_RULE_PICKER`，只由顶层 frame 应答 |
 | `options/options-auto.js:45-76` | `unattendedAiReachable()` `:45-49`；`syncAutoEngineState()` `:51-54`；`:56-67` 的注释自称是唯一的 `window.confirm`；`onAutoEngineChange` `:68-76` | B2：抽出 `confirmUnattendedAiSpend`，改注释；`syncAutoEngineState` 在 `unattendedAiReachable(...)` 之外并上 `customRulesUseAi()`。`unattendedAiReachable` 不动，P0-F 之后它只吃一个设置对象（§12.4） |
 | `test/unit/auto-cost-gate.test.mjs:109-120` | `:118` 断言 `window.confirm(t('autoTranslateEngineAiConfirm'))`，`:120` 断言回退 | B2：改为断言两个调用点，且 `optionsSource()` 里恰好一个 `window.confirm(` |
@@ -152,7 +152,7 @@
 | `KEY_PREFIX`、`LIMITS` | `'customRule:'`；`{ruleBytes: 6144, totalBytes: 24576, maxRules: 50, maxPatterns: 8, maxSelectors: 50, maxSelectorLength: 500, maxCss: 4096}` |
 | `newId()` | 8 位 base36 |
 | `validateRule(rule, {checkSelector})` | 返回规范化后的规则，或抛 `Error(<i18n 键>)` |
-| `sanitizeCss(css)` | 返回清洗后的文本，或抛 `Error('customRuleCssUnsafe')`（§0.1-10） |
+| `sanitizeCss(css)` | 原样返回（只拒不改），或抛 `Error('customRuleCssUnsafe')`（§0.1-10） |
 | `collect(items)` | 把 `get(null)` 的结果变成规则数组：前缀过滤、校验，坏条目跳过 |
 | `forHost(rules, host)` / `pick(rules, host, path)` | 按主机过滤 / 求胜出规则（§0.1-5），没有则为 null |
 | `applyChanges(rules, changes, host)` | 纯函数，把 `storage.onChanged` 的增量应用到规则集上（增、替、删，别的主机的规则忽略） |
@@ -235,6 +235,10 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | `engineOverride()` | 顶层返回 `current().engine`；子 frame 返回从顶层指令继承来的值 |
 | `inherit(engine)` | 子 frame 专用；null 也要照传，表示「顶层没有覆盖」 |
 | `onChange(fn)` | **本页生效的规则**变了才回调（D-303）。<br>• 本页生效的规则 = `current()` 的 id、include、exclude、keepOriginal、css，加上 `engineOverride()`。规范化成 JSON，作为签名。<br>• 三个时机重算签名：规则集增量去抖之后；换路由之后（`SpaNavigation.onRouteChange`）；子 frame 的 `inherit` 收到新值之后。<br>• 签名和上次一样就不回调。所以改别的站点的规则，这一页什么都不做。<br>• 签名里取 `engineOverride()`，不取规则自己的 `engine` 字段，这样顶层和子 frame 用同一个定义 |
+| `beginRound()` | 每轮收块开始时由 scope.js 的 `beginScopeRound()` 调，按当前 URL 重新挂一次 CSS（§3.5） |
+| `isCatchingUp()` / `whenCaughtUp()` | 补翻轮（§3.6 第 3 步）是否在跑 / 它结束时 resolve 的 Promise（没在跑就立即 resolve）。调度器在 `isCatchingUp()` 为真时和手动整页翻译一样让路；手动整页翻译与子 frame 手动轮先等 `whenCaughtUp()` 再收块 |
+| `sweepWith(scope)` | §3.6 第 2 步的清扫，只有这一份：拿给定的范围筛 `ctx.ruleForbids`、逐个 `ctx.releaseTranslation`。规则变化时用 `resolvePageScope()` 的结果调；include 晚到命中时 scope.js 拿刚算出的范围直接调（§3.4） |
+| `afterRound()` | 一轮手动整页翻译、子 frame 手动轮或补翻轮结束时调（旗标已清）。这一轮进行中规则变过，就补做第 2、3 步（§3.6）；没变过什么都不做 |
 
 有三处要等 `whenReady()`：`ctx.init` 启动自动翻译调度器之前；整页翻译入口；`ctx.requestTranslation` 开头。SW 冷启动时，这最多让首轮推迟 1.5 s。
 
@@ -269,6 +273,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 - **`ctx.outsidePageScope(el, scope)`** 定义在 scope.js，只在 include 模式下可能为真：`el` 不在任何 root 里时为真。
 - **`pageScopeMode()` 多了一个取值 'include'**。所有写 `=== 'main'` / `=== 'page'` 的调用点要逐个核对，交付时列出来。悬浮球的 `showWholePage` 改成 `!== 'page'`，所以 include 模式下也提供「翻译整个页面」。
 - **缓存**：`resolvePageScope()` 的缓存键加上 `ctx.customRules.version`，这是规则变化唯一需要的作废手段。范围从别的模式切到 include 时，同样走 §3.6 第 2 步的清扫；无论是规则变更引起的，还是 include 晚到命中引起的。
+- **晚到命中的清扫时机**：规则变更引起的，在 §3.6 的流水线里做。include 晚到命中引起的（规则没变，区域后渲染出来），发生在晚到之后第一次解析范围时：上一次解析零命中、退回了下一档，这一次命中，`resolvePageScope()` 就拿刚算出的 include 范围调 `ctx.customRules.sweepWith(scope)`。自动模式下这一次是发现层的下一轮（区域插入本身就触发一轮）；手动模式下是下一次整页翻译或补翻。
 
 ### 3.5 CSS
 
@@ -287,8 +292,10 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 1. CSS 重新挂载（§3.5）。
 2. **清扫**：`queryAllDeep('.ai-translator-translated')`，筛出 `ctx.ruleForbids(el, scope)` 为真的元素，逐个 `ctx.releaseTranslation(el)`（P0-C 的导出，只调用）。
 3. **补一轮增量收块**，把新放开的块（比如删掉了一条 exclude）翻上。
-   - 只在两个条件同时成立时做：页面整页翻过（`state.pageHasBeenTranslated`）；调度器没在跟这一页。
+   - 只在四个条件都成立时做：页面整页翻过（`state.pageHasBeenTranslated`）；调度器没在跟这一页；没有手动整页翻译在跑；没有补翻轮在跑。
    - 调度器在跟时，由第 5 步的重启接手，免得两条路收同一批块。
+   - 后两个条件不成立（手动整页翻译、子 frame 手动轮或补翻轮进行中）时，第 1、2 步照常当场做，并记下这次变化；由那一轮结束时的 `afterRound()` 再做第 2、3 步。这几种轮次挂译文时没有 accept 守卫，变化前送出去的块，译文回来照样挂进新禁止的区域，所以收尾时要再清扫一次。
+   - 补翻轮用自己的旗标，不改 `state.isTranslatingPage`，也不改顶层指令：那个旗标是手动整页翻译的，顶层指令和「翻译整页」的忙分支都读它，补翻不是用户表态。手动整页翻译与子 frame 手动轮等补翻轮结束（`whenCaughtUp()`）再收块，调度器在 `isCatchingUp()` 为真时让路，两轮不同时收。
    - 「在跟」= 调度器状态是 IDLE 或 RUNNING。今天这个判断写在 `frames/top.js` 的 `currentTranslate()` 里（:38-43）。B1 把它提成调度器的导出 `ctx.autoTranslate.isOn()`，两处共用。
 4. 顶层 frame 调 `refreshDirective()`。`computeDirective()` 带上了 `engineOverride`（§3.8），变了就广播。
 5. **重启自动调度器**：`ctx.autoTranslate.restart('custom-rule')`（content-auto-translate.js :835 的导出 `restart: start`）。
@@ -298,7 +305,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
      - 删掉一条 exclude 后：被排除过的块早在进带时就被摘掉了，不会自己回来。
    - 换路由时，调度器自己也会 `start` 一次（:747-766）。这里再 restart 一次无害：同一拍里的第二次 `start` 只会作废第一次刚起的那一轮。
 
-执行顺序：第 1～3 步是 `content/page/custom-rule.js` 自己的，在回调任何外部订阅者之前做完；然后按订阅顺序回调外部订阅者，`frames/top.js` 做第 4 步，调度器做第 5 步。第 3 步必须赶在第 5 步之前读 `isOn()`：重启之后调度器一定在跟，这时再读，停在 OFF 的页面（比如额度用完）就会跳过手动的增量收块。
+执行顺序：第 1～3 步是 `content/page/custom-rule.js` 自己的，在回调任何外部订阅者之前做完；然后按订阅顺序回调外部订阅者。调度器（`content/content-auto-translate.js:819`）比顶层（`content/frames/top.js:167`）先订阅，所以第 5 步先于第 4 步。两种顺序结果一样：顶层还订阅了调度器的状态变化（`top.js:165` `onStateChange(refreshDirective)`），调度器重启引起的状态变化同样会让它重算指令，最后广播的指令已带上新的 `engineOverride`。第 3 步必须赶在第 5 步之前读 `isOn()`：重启之后调度器一定在跟，这时再读，停在 OFF 的页面（比如额度用完）就会跳过手动的增量收块。
 
 子 frame 的流水线相同，只是没有第 4 步（指令由顶层发）。顶层第 4 步广播之后，子 frame 的 `inherit` 收到新引擎，签名随之变化，子 frame 再走自己的一遍。
 
@@ -440,8 +447,8 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | J-5 | 导出 / 导入 | 设置页已有规则 A → 点导出，下载的 JSON 里 `format`、`version`、`rules` 都正确 → 准备一个文件：A 改一个字段，再加一条 `engine: 'ai'` 的新规则 B → 导入 → 预览显示「新增 1 条、替换 1 条」，并有 AI 提示 → 点「导入」→ 列表两条，A 为新内容 → 再导入一个坏 JSON → 报错，存储逐字节不变 |
 | J-6 | 按站点引擎 | 全局的手动和自动引擎都是「内置」，不允许回退 → 设置页每日额度输入框为灰 → 新建规则，引擎选「我的 AI」→ 弹出确认框，文案为 `customRuleEngineAiConfirm` → 点取消，下拉框回到原值，规则没有保存 → 再选一次并接受 → 保存 → 额度输入框变为可用 → 站点设为「总是」→ 打开夹具 → 自动翻译的请求打到 mock AI 服务器，页面出现译文，今天的 AI 用量 > 0（从设置页的用量行或存储里读回）→ 在夹具页打开 popup → 引擎状态行是 AI 那一句，不是内置（popup 总是探测标签页，`probe.engine` 跟随站点，§3.7） |
 | J-7 | 用量表 | 预置 49 条规则，体积接近 24 KiB → 设置页用量表显示对应的 KiB 数和「49 / 50」→ 再新建一条会超额的规则 → 被拒，出现 `customRulesBudgetFull` 的文案，存储不变 |
-| J-8 | 跨标签即时生效 | 全局自动翻译关，夹具页手动点「翻译」→ 在另一个标签的设置页里新增一条排除规则 → 夹具页 1 s 内该区域译文消失，没有重载 → 从 SW 上下文直接删掉这条规则（模拟另一台设备同步下来的变化）→ 1 s 内夹具页该区域重新出现译文，靠的是 §3.6 第 3 步的增量那一轮 → 全局自动翻译开着再走一遍：手动点「翻译」后调度器接手这一页（`markPageExplicit`），加规则、删规则 → 该区域 1 s 内重新出现译文，这段文字在 mock AI 服务器上恰好被请求一次（第 3 步被 `isOn()` 挡住，只有第 5 步的重启在收块） |
-| J-9 | iframe | 顶层夹具（主机 T）嵌一个 iframe（主机 F）。规则 A 匹配 F，exclude `.side-note`；规则 B 匹配 T，引擎 'ai'；全局引擎为内置 → 翻译 → iframe 里 `.side-note` 没有译文，其他段落有译文；iframe 里的段落文本出现在 mock AI 服务器的请求里 |
+| J-8 | 跨标签即时生效 | 全局自动翻译关，夹具页手动点「翻译」→ 在另一个标签的设置页里新增一条排除规则 → 夹具页 1 s 内该区域译文消失，没有重载 → 从 SW 上下文直接删掉这条规则（模拟另一台设备同步下来的变化）→ 1 s 内夹具页该区域重新出现译文，靠的是 §3.6 第 3 步的增量那一轮 → 全局自动翻译开着再走一遍：手动点「翻译」后调度器接手这一页（`markPageExplicit`），加规则、删规则 → 该区域 1 s 内重新出现译文，这段文字在 mock AI 服务器上恰好被请求一次（第 3 步被 `isOn()` 挡住，只有第 5 步的重启在收块）；这次重译记在自动翻译的用量里（`autoStats.autoAiChars` 增量 > 0） |
+| J-9 | iframe | 顶层夹具（主机 T）嵌一个 iframe（主机 F）。规则 A 匹配 F，exclude `.side-note`；规则 B 匹配 T，引擎 'ai'；全局引擎为内置 → 翻译 → iframe 里 `.side-note` 没有译文，其他段落有译文；iframe 里的段落文本出现在 mock AI 服务器的请求里。<br>• 引擎继承在自动模式、http 页面上验证（顶层与 iframe 都是 http 主机，不点「翻译」，靠自动翻译收块）。<br>• 手动路径区分不出来：子 frame 的手动轮把请求转给顶层，由顶层的引擎发出，子 frame 不继承也照样走 AI；https 也区分不出来：e2e Chromium 在 https 页面上有 `Translator`，内置引擎算可用，子 frame 没继承到 'ai' 也照样有引擎可用。http 页面没有 `Translator`，两张引擎开关都是内置、回退只许本地，除了从顶层指令继承来的 'ai'，子 frame 没有可用的引擎，没继承到就不出译文。<br>• 手动那一条只验区域按 iframe 自己的主机规则解析 |
 | J-10 | 停住的页面被规则叫醒 | 全局的手动和自动引擎都是「内置」，不允许回退，站点设为「总是」→ 打开 http 夹具主机（http 上没有内置引擎，`effectiveEngine` 答 'none'，调度器停在 OFF）→ 页面保持原文，mock AI 服务器零请求 → 在另一个标签的设置页给这个主机新建规则，引擎选「我的 AI」并接受确认 → 保存 → 夹具页不重载，1 s 内出现译文，请求打到 mock AI 服务器。<br>额度用完停在 OFF 走的是同一段代码（`setStatus(OFF)` + `stopDiscovery()`，content-auto-translate.js :514-526）；那条路要内置引擎真能出译文，而 e2e 的无头 Chrome 里内置 `create()` 永不返回（`test/e2e/helpers.js` 的说明），所以不单列 |
 | J-11 | 设置整份导出 / 导入带上规则（P0-F 接缝，§12.4） | 导入导出卡片的说明里列着「站点翻译规则」→ 设置页已有规则 A（引擎跟随全局）和 B（`engine: 'ai'`），全局的手动和自动引擎都是「内置」，不允许回退 → 用 P0-F 的整份导出 → 文件里 `customRules` 小节与卡片导出的对象逐字段相同 → 在卡片里删掉 A、B，每日额度输入框变灰 → 整份导入这份文件 → 预览里有一行「站点翻译规则：将新增 2 条、替换 0 条。」，警告里有 `customRulesImportAiNote` 那一句（K = 1）→ 确认 → 卡片列表恢复两条，额度输入框变为可用 → 再整份导入一份规则小节超额的文件 → 不出预览，报「导入后「站点翻译规则」会超出同步空间，没有导入任何内容。」，存储逐字节不变 → 写入中途失败：删掉 A、B，整份导入原文件，预览出来后从 SW 上下文写入占满额度的规则（J-7 的预置），再点确认 → 报 `transferErrorApplyFailed` 那一句：停在「站点翻译规则」，原因是「超出同步空间」，「已导入」如实列出写进去的小节（至少有「设置」）；规则还是预置的那些，一条没多 → 两处报错里都不出现 i18n 键名 |
 
