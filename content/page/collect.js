@@ -54,6 +54,25 @@
   const nodesOf = (el) => ctx.composedChildNodes(el);
   const closestAcross = (el, selector) => ctx.closestComposed(el, selector);
 
+  /**
+   * 块级「不翻」：适配器的 exclude 或「保留原文」命中这个元素或它的祖先（跨
+   * shadow）。收块（processElement）和规则变化后的清扫（ctx.ruleForbids）共用这
+   * 一个判法，哪天多一种「不翻」，两边一起变。
+   *
+   * @param {Element} el
+   * @param {{exclude?: string, keepOriginal?: string}|null} adapter resolveSiteAdapter() 的结果
+   */
+  function ruleBlocksElement(el, adapter) {
+    if (!adapter) return false;
+    // 用户规则 exclude 命中整块：不收。用 closest 而不是 matches，因为排除的是
+    // 整块，底下的子元素也在排除之列。
+    if (adapter.exclude && closestAcross(el, adapter.exclude)) return true;
+    // 「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收。作者名、时间戳、票数、
+    // "reply"，这些在形状上和正文没有区别，通用启发式挡不住；Hacker News 的
+    // `.subtext` 底下还有一串 <a>，它们也一起跳过。
+    return !!(adapter.keepOriginal && closestAcross(el, adapter.keepOriginal));
+  }
+
   // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
   // 不做任何范围过滤——e2e 直接调这个函数的地方都是这样用的。
   function collectTranslatableBlocks(root, options) {
@@ -291,14 +310,10 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
-      // 用户规则 exclude 命中整块：不收。用 closest 而不是 matches，因为排除的是
-      // 整块，底下的子元素也在排除之列。
-      if (excludeSelector && closestAcross(element, excludeSelector)) return;
-      // 「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收。作者名、时间戳、票数、
-      // "reply"，这些在形状上和正文没有区别，通用启发式挡不住；Hacker News 的
-      // `.subtext` 底下还有一串 <a>，它们也一起跳过。排在作者声明（translate="yes"
+      // 用户规则 exclude、「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收（先
+      // 判 exclude 再判保留原文，见 ruleBlocksElement）。排在作者声明（translate="yes"
       // 能在里面重新打开子树）之前，所以它连子树一起关掉。
-      if (keepSelector && closestAcross(element, keepSelector)) return;
+      if (ruleBlocksElement(element, adapter)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
       // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
@@ -941,9 +956,7 @@
    * 挂上的译文。
    */
   ctx.ruleForbids = function ruleForbids(el, scope) {
-    const adapter = ctx.resolveSiteAdapter();
-    const forbidden = adapter && [adapter.exclude, adapter.keepOriginal].filter(Boolean).join(',');
-    if (forbidden && closestAcross(el, forbidden)) return true;
+    if (ruleBlocksElement(el, ctx.resolveSiteAdapter())) return true;
     return ctx.outsidePageScope(el, scope);
   };
 })();

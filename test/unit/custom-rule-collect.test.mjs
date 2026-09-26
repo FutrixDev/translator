@@ -86,11 +86,83 @@ test('without the rule selectors (hover, selection) both inline elements are rea
 test('a block keepOriginal is checked before the author translate="yes" can reopen it', () => {
   const source = repoFile('content/page/collect.js');
   const body = source.slice(source.indexOf('    function processElement(element) {'));
-  const keep = body.indexOf('if (keepSelector && closestAcross(element, keepSelector)) return;');
-  const exclude = body.indexOf('if (excludeSelector && closestAcross(element, excludeSelector)) return;');
+  const rule = body.indexOf('if (ruleBlocksElement(element, adapter)) return;');
   const judge = body.indexOf('if (!allowed(element)) {');
-  assert.ok(exclude > 0 && keep > exclude, 'the block exclude check moved');
-  assert.ok(judge > keep, 'translate="yes" is judged before the keepOriginal rule');
+  assert.ok(rule > 0, 'the block rule check moved');
+  assert.ok(judge > rule, 'translate="yes" is judged before the keepOriginal rule');
+  // 谓词里先 exclude 后保留原文。
+  const predicate = source.slice(source.indexOf('  function ruleBlocksElement(el, adapter) {'));
+  const exclude = predicate.indexOf('closestAcross(el, adapter.exclude)');
+  const keep = predicate.indexOf('closestAcross(el, adapter.keepOriginal)');
+  assert.ok(exclude > 0 && keep > exclude, 'exclude is judged before keepOriginal');
   // 整页收块把两串选择器都交给行内读法。
   assert.match(source, /const textOptions = \{ preserveMarkup: true, exclude: excludeSelector, keep: keepSelector \};/);
+});
+
+// ---------------------------------------------------------------- 块级「不翻」只有一份判法（F10）
+
+// 收块和清扫共用 ruleBlocksElement；清扫（ctx.ruleForbids）另外再问 include 范围。
+// 一棵带父指针的小树：closest / contains 顺着 parent 走，getRootNode 回 document。
+function tree() {
+  const make = (classes, parent) => {
+    const node = el('DIV', classes, []);
+    node.parent = parent;
+    node.closest = (selector) => {
+      for (let at = node; at; at = at.parent) if (at.matches(selector)) return at;
+      return null;
+    };
+    node.contains = (other) => {
+      for (let at = other; at; at = at.parent) if (at === node) return true;
+      return false;
+    };
+    return node;
+  };
+  const body = make([], null);
+  const main = make(['main'], body);
+  const promo = make(['promo'], main);
+  const promoLine = make([], promo);
+  const byline = make(['byline'], main);
+  const bylineName = make([], byline);
+  const para = make([], main);
+  const side = make(['side'], body);
+  return { body, main, promo, promoLine, byline, bylineName, para, side };
+}
+
+function forbids(el, { adapter, scope }) {
+  const previous = ctx.resolveSiteAdapter;
+  ctx.resolveSiteAdapter = () => adapter;
+  try {
+    return ctx.ruleForbids(el, scope);
+  } finally {
+    ctx.resolveSiteAdapter = previous;
+  }
+}
+
+test('ruleForbids: an element under the exclude selector is forbidden', () => {
+  const t = tree();
+  const adapter = { atomic: '', exclude: '.promo', keepOriginal: '' };
+  assert.equal(forbids(t.promoLine, { adapter, scope: null }), true);
+  assert.equal(forbids(t.para, { adapter, scope: null }), false);
+});
+
+test('ruleForbids: an element under the keepOriginal selector is forbidden', () => {
+  const t = tree();
+  const adapter = { atomic: '', exclude: '.promo', keepOriginal: '.byline' };
+  assert.equal(forbids(t.bylineName, { adapter, scope: null }), true);
+  assert.equal(forbids(t.byline, { adapter, scope: null }), true);
+});
+
+test('ruleForbids: an element outside the include scope is forbidden', () => {
+  const t = tree();
+  const scope = { mode: 'include', roots: [t.main] };
+  assert.equal(forbids(t.side, { adapter: null, scope }), true);
+  assert.equal(forbids(t.para, { adapter: null, scope }), false);
+});
+
+test('ruleForbids: none of the three answers false', () => {
+  const t = tree();
+  const adapter = { atomic: '', exclude: '.promo', keepOriginal: '.byline' };
+  const scope = { mode: 'include', roots: [t.main] };
+  assert.equal(forbids(t.para, { adapter, scope }), false);
+  assert.equal(forbids(t.para, { adapter: null, scope: null }), false);
 });

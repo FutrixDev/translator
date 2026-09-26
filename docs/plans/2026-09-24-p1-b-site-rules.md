@@ -79,7 +79,7 @@
 | `content/page/collect.js:55`、`:293`、`:321` | `closestAcross`（`(el, selector) => ctx.closestComposed(el, selector)`）可跨 shadow 找祖先；块级 exclude；自家 UI 排除列表 | B1：新增 `ctx.ruleForbids`；B2：拾取器根节点加进 `:321` 的列表 |
 | `content/page/collect.js:79-81`、`:506-508` | `scope` / `scopeCut` / `allowed`；`scopeCut ? ctx.pageScopeStarts(root, scope) : [root]` | B1：`:506` 的条件改成按 `scope` 判（include 模式没有 cut）；include 模式下 `allowed` = 落在某个 root 里 |
 | `content/page/collect.js:710-714` | 行内 notranslate 元素 → 占位符原样保留 | B1：行内 keepOriginal 走同一条路 |
-| `content/page/notranslate.js:29/:44` | `ownTranslateDeclaration` / `createTranslateJudge` | B1：judge 接收 keepOriginal 选择器，命中的行内元素答 'no' |
+| `content/page/notranslate.js:29/:44` | `ownTranslateDeclaration` / `createTranslateJudge` | B1 不改：keepOriginal 不经 judge，在 collect.js 判——块级走 `ruleBlocksElement`（排在 judge 之前），行内走 `getTextWithMathPlaceholders` 的 `keep` 选项，与 notranslate 占位符同一条路 |
 | `content/page/scope.js:49-60` | `pageScopeMode()` 阶梯：临时覆盖 `:56`、设置 `:57`、内置规则 `:58`、默认 `'main'` `:59`；`:50-55` 的注释已按 P1-B 写好（include 是第 2 步，命中记为 `'include'`） | B1：在 `:56` 之后插入用户 include 一档，`@returns`（`:47`）加上 `'include'`；注释不用再改 |
 | `content/page/scope.js:101-103`、`:120` | `resolvePageScope()` 的缓存键为 `href\nsetting\noverride`；`invalidatePageScope()` | B1：缓存键加 `ctx.customRules.version` |
 | `content/page/scope.js:176-177` | `pageScopeStarts(dirty, scope)` 第一行是 `if (!scope \|\| !scope.skip) return [dirty];` | B1：include 分支放在这一行之前 |
@@ -255,7 +255,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | exclude（用户） | 整块跳过（`closestAcross`，collect.js:293） | 它的文字从原文里拿掉：不送去翻译，译文里也不出现 |
 | keepOriginal（内置 ∪ 用户） | 整块跳过（`ctx.ruleForbids`，在 translate judge 之前判） | 按 `translate="no"` 处理：送出占位符，译文里原样出现（collect.js:710-714） |
 
-`ctx.ruleForbids(el, scope)` 定义在 collect.js：`closestAcross(el, exclude ∪ keepOriginal)` 为真，或 `ctx.outsidePageScope(el, scope)` 为真。
+块级判法只有一份：collect.js 的 `ruleBlocksElement(el, adapter)`，答「exclude 或 keepOriginal 命中这个元素或它的祖先（`closestAcross`，跨 shadow）」。收块的 `processElement` 和清扫的 `ctx.ruleForbids` 都调它。`ctx.ruleForbids(el, scope)` 定义在 collect.js：`ruleBlocksElement(el, resolveSiteAdapter())` 为真，或 `ctx.outsidePageScope(el, scope)` 为真。
 
 ### 3.4 范围阶梯（改 `content/page/scope.js` 的 `pageScopeMode` / `resolvePageScope`）
 
