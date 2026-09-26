@@ -132,12 +132,16 @@
 
   // ------------------------------------------------------------ 流水线（§3.6）
 
-  // 第 2 步：规则现在禁止的块，把已有的译文收回去。
-  function sweep() {
-    const scope = ctx.resolvePageScope();
+  // 第 2 步：规则现在禁止的块，把已有的译文收回去。清扫只有 sweepWith 这一份：
+  // scope.js 在 include 区域晚到命中时拿刚算出的范围直接调它（不再解析一次）。
+  function sweepWith(scope) {
     for (const el of ctx.queryAllDeep('.ai-translator-translated')) {
       if (ctx.ruleForbids(el, scope)) ctx.releaseTranslation(el);
     }
+  }
+
+  function sweep() {
+    sweepWith(ctx.resolvePageScope());
   }
 
   // 第 3 步：整页翻过、调度器又没在跟这一页时，补一轮把新放开的块翻上。调度器在
@@ -260,5 +264,6 @@
     isCatchingUp,
     whenCaughtUp,
     afterRound,
+    sweepWith,
   };
 })();

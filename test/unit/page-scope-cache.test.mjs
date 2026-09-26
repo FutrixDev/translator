@@ -27,11 +27,15 @@ const SOURCE = readFileSync(path.join(ROOT, 'content/page/scope.js'), 'utf8');
  * body 的字数 = bodyChars，<main> 的字数 = mainChars；两者都可以在测试中途改。
  */
 function load({ bodyChars, mainChars }) {
-  const counts = { body: 0, cssRounds: 0 };
+  const counts = { body: 0, cssRounds: 0, sweeps: 0 };
   const registrations = [];
   // rule / ruleVersion：用户站点规则（ctx.customRules 的桩）；includeHits：include
   // 选择器在页面上命中的元素（ctx.queryAllDeep 的桩）；builtin：内置规则表命中与否。
-  const page = { bodyChars, mainChars, mainConnected: true, rule: null, ruleVersion: 0, includeHits: [], builtin: null };
+  // translated：页面上已挂的译文；released：清扫收回的那些。
+  const page = {
+    bodyChars, mainChars, mainConnected: true, rule: null, ruleVersion: 0, includeHits: [], builtin: null,
+    translated: [], released: [],
+  };
 
   const element = (localName, chars, extra = {}) => ({
     localName,
@@ -58,6 +62,11 @@ function load({ bodyChars, mainChars }) {
         return page.ruleVersion;
       },
       beginRound: () => { counts.cssRounds += 1; },
+      // custom-rule.js 的 sweepWith 在这份夹具里只看范围（ruleForbids 的 include 一半）。
+      sweepWith: (scope) => {
+        counts.sweeps += 1;
+        for (const el of page.translated) if (ctx.outsidePageScope(el, scope)) page.released.push(el);
+      },
     },
     usableSelector: (list) => list.join(','),
     queryAllDeep: () => page.includeHits,
@@ -297,4 +306,72 @@ test('a recognised <main> is cached across rounds, yet a late include region sti
   const late = region(1);
   page.includeHits = [late];
   assert.deepEqual(ctx.resolvePageScope().roots, [late]);
+});
+
+// F2：区域晚到时，退下去那几轮在区域外挂的译文，范围第一次切到 include 时收回。
+test('a late include region recalls the translations the fallback rounds left outside it, once', () => {
+  const fixture = load(SHELL);
+  const { ctx, page, counts } = fixture;
+  withInclude(fixture, []);
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+  // 作废缓存不清「上一次是退下去的」这条记录。
+  ctx.invalidatePageScope();
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+  assert.equal(counts.sweeps, 0);
+
+  const inside = region(2);
+  const late = region(1, { children: [inside] });
+  const outside = region(5);
+  page.translated = [inside, outside];
+  page.includeHits = [late];
+  assert.equal(ctx.resolvePageScope().mode, 'include');
+  assert.equal(counts.sweeps, 1);
+  assert.deepEqual(page.released, [outside], 'only the translation outside the region is recalled');
+
+  // 之后的解析（走缓存、作废之后重算、新的一轮）都不再清扫。
+  ctx.resolvePageScope();
+  ctx.invalidatePageScope();
+  assert.equal(ctx.resolvePageScope().mode, 'include');
+  ctx.beginScopeRound();
+  ctx.resolvePageScope();
+  assert.equal(counts.sweeps, 1);
+});
+
+test('switching to include after the whole-page override is cleared does not sweep', () => {
+  const fixture = load(SHELL);
+  const { ctx, page, counts } = fixture;
+  withInclude(fixture, [region(1)]);
+  ctx.state.pageScopeOverride = 'page';
+  assert.equal(ctx.resolvePageScope().mode, 'page');
+  page.translated = [region(5)];
+  ctx.state.pageScopeOverride = null;
+  ctx.invalidatePageScope();
+  assert.equal(ctx.resolvePageScope().mode, 'include');
+  assert.equal(counts.sweeps, 0, 'the user asked for the whole page; its translations stay');
+  assert.deepEqual(page.released, []);
+});
+
+test('an include that hits at once never sweeps from here (recompute sweeps a rule change)', () => {
+  const fixture = load(SHELL);
+  const { ctx, counts } = fixture;
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+  withInclude(fixture, [region(1)]);
+  assert.equal(ctx.resolvePageScope().mode, 'include');
+  assert.equal(counts.sweeps, 0);
+});
+
+for (const drop of ['invalidatePageScope', 'beginScopeRound']) test(`${drop}() between the fallback and the late hit still sweeps`, () => {
+  const fixture = load(SHELL);
+  const { ctx, page, counts } = fixture;
+  withInclude(fixture, []);
+  assert.equal(ctx.resolvePageScope().mode, 'main');
+  const outside = region(5);
+  page.translated = [outside];
+  page.includeHits = [region(1)];
+  // 区域出现后、下一次解析前，缓存先被作废：新的一轮（发现层的 flush），或者子
+  // frame 跟顶层换了覆盖值。
+  ctx[drop]();
+  assert.equal(ctx.resolvePageScope().mode, 'include');
+  assert.equal(counts.sweeps, 1);
+  assert.deepEqual(page.released, [outside]);
 });
