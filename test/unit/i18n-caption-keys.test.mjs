@@ -113,13 +113,21 @@ test('the display modes and positions the menu offers are the ones the core reso
   }
 });
 
-test('the auto-enable hint describes a per-tab latch, not a per-video one (R33 S2)', () => {
+test('the auto-enable hint names our menu and the reload that release the latch (R33 D-360 F7)', () => {
   // content/captions/activation.js：观众在播放器里关掉原字幕，autoEnableBlocked 按
-  // 会话留下，换一个视频照样不再自动开，只有菜单里「开启原字幕」越得过去。说明
-  // 文字要说的是这件事。只能钉英文这一份的措辞；另外九种语言由译者对照英文改。
+  // 内容脚本会话留下，换一个视频照样不再自动开；刷新页面（会话重来）或我们播放器
+  // 菜单里的「开启原字幕」（enableNativeCaptions 清闩）才放开。播放器自己也有字幕
+  // 菜单，所以说明要点名是 Blab Translation 的那个，并用菜单那一行的原话。
   const en = MESSAGES.en.hintAutoEnableCaptions;
-  assert.match(en, /this tab/);
+  assert.ok(en.includes(`"${MESSAGES.en.captionMenuEnableNative}"`), en);
+  assert.match(en, /reload the page/);
   assert.match(en, /later videos too/);
-  assert.match(en, /from the subtitle menu/);
+  assert.match(en, /Blab Translation's subtitle menu in the player/);
   assert.doesNotMatch(en, /for that video/);
+  // 另外九种语言钉不住措辞，但钉得住两个名字：自家菜单那一行的原文和产品名。
+  for (const lang of LANGS) {
+    const hint = MESSAGES[lang].hintAutoEnableCaptions;
+    assert.ok(hint.includes(MESSAGES[lang].captionMenuEnableNative), `${lang}: ${hint}`);
+    assert.ok(hint.includes(MESSAGES[lang].appName), `${lang}: ${hint}`);
+  }
 });

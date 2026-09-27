@@ -301,7 +301,7 @@
     captionStatusBudgetSpent: 'A cota de IA de hoje acabou',
     captionMenuEnableNative: 'Ativar as legendas',
     autoEnableCaptions: 'Ativar as legendas automaticamente',
-    hintAutoEnableCaptions: 'Ativado por predefinição. Num vídeo com as legendas desativadas, ativa-as para haver algo a traduzir. Se as desativar no leitor, não as voltamos a ativar neste separador, nem nos vídeos seguintes, até as ativar de novo no menu de legendas.',
+    hintAutoEnableCaptions: "Ativado por predefinição. Num vídeo com as legendas desativadas, ativa-as para haver algo a traduzir. Se as desativar no leitor, não as voltamos a ativar, nem nos vídeos seguintes, até recarregar a página ou escolher «Ativar as legendas» no menu de legendas do Blab Translation no leitor (a pequena seta junto ao seu ícone).",
     captionPlayerButton: 'Mostrar o botão de atalho no player',
     hintCaptionPlayerButton: 'Adiciona um botão do Blab Translation aos controles do player de vídeo',
     customPrompt: 'Prompt personalizado',

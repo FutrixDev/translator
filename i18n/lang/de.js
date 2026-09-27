@@ -301,7 +301,7 @@
     captionStatusBudgetSpent: 'Das KI-Kontingent für heute ist aufgebraucht',
     captionMenuEnableNative: 'Untertitel einschalten',
     autoEnableCaptions: 'Untertitel automatisch einschalten',
-    hintAutoEnableCaptions: 'Standardmäßig an. Schaltet bei einem Video mit ausgeschalteten Untertiteln diese ein, damit es etwas zu übersetzen gibt. Schalten Sie sie im Player selbst aus, bleiben sie in diesem Tab auch bei weiteren Videos aus, bis Sie sie über das Untertitelmenü wieder einschalten.',
+    hintAutoEnableCaptions: "Standardmäßig an. Schaltet bei einem Video mit ausgeschalteten Untertiteln diese ein, damit es etwas zu übersetzen gibt. Schalten Sie sie im Player selbst aus, bleiben sie auch bei weiteren Videos aus, bis Sie die Seite neu laden oder im Untertitelmenü von Blab Translation im Player (der kleine Pfeil neben dem Symbol) „Untertitel einschalten“ wählen.",
     captionPlayerButton: 'Schaltfläche im Player anzeigen',
     hintCaptionPlayerButton: 'Fügt den Bedienelementen des Videoplayers eine Blab-Translation-Schaltfläche hinzu',
     customPrompt: 'Benutzerdefinierte Eingabeaufforderung',
