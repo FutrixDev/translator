@@ -275,6 +275,55 @@ test('watch reports each change once, polls for web fullscreen, and stops with i
   assert.ok(!page.listeners.document.has('fullscreenchange'));
 });
 
+test('stepAside watches only while the surface is wanted, and repaints it on each change', () => {
+  const page = load({ videos: [{ rect: INLINE }] });
+  const repaints = [];
+  const shown = page.stage.stepAside(() => repaints.push('repaint'));
+  const polls = () => page.timers.filter(Boolean).length;
+  const tick = () => page.timers.filter(Boolean).forEach((fn) => fn());
+
+  assert.equal(shown(false), false, 'nothing to show is never shown');
+  assert.equal(polls(), 0, 'a surface with nothing to show watches nothing');
+
+  assert.equal(shown(true), true, 'an inline player does not hide it');
+  assert.equal(polls(), 1);
+  shown(true);
+  assert.equal(polls(), 1, 'one watch however often it is asked');
+
+  // The video goes web fullscreen: the surface is told to repaint, and steps aside.
+  page.videoEls[0].getBoundingClientRect = () => FULL;
+  tick();
+  assert.deepEqual(repaints, ['repaint']);
+  assert.equal(shown(true), false, 'shown over a video that fills the screen');
+
+  // And back.
+  page.videoEls[0].getBoundingClientRect = () => INLINE;
+  tick();
+  assert.deepEqual(repaints, ['repaint', 'repaint']);
+  assert.equal(shown(true), true);
+
+  assert.equal(shown(false), false);
+  assert.equal(polls(), 0, 'the watch ends when the surface has nothing to show');
+  assert.ok(!page.listeners.document.has('fullscreenchange'));
+});
+
+test('a watched page with no <video> is never measured', () => {
+  // The poll runs every 400 ms on every page the float ball is on (the
+  // default): on a page with no video it must not force layout or hit-test.
+  const page = load();
+  const measured = (what) => () => assert.fail(`measured a page with no video: ${what}`);
+  page.document.body.getBoundingClientRect = measured('body box');
+  page.document.documentElement.getBoundingClientRect = measured('html box');
+  page.document.elementsFromPoint = measured('elementsFromPoint');
+  const unwatch = page.stage.watch(() => assert.fail('a page with no video changed state'));
+  const shown = page.stage.stepAside(() => {});
+  assert.equal(shown(true), true);
+  for (let i = 0; i < 5; i++) page.timers.filter(Boolean).forEach((fn) => fn());
+  page.listeners.window.get('resize')();
+  unwatch();
+  shown(false);
+});
+
 // ---------------------------------------------------------------- one mechanism
 
 function contentSources() {
@@ -303,15 +352,13 @@ test('the fullscreen state is read in one place, and the top layer entered in on
 
 test('the float ball and the auto-status bar step aside through the stage, not a listener of their own', () => {
   // The auto-status bar is also where the PDF / comic hint (content-media-hints.js)
-  // is drawn, so this one check covers that hint too.
+  // is drawn, so this one check covers that hint too. How a surface subscribes
+  // and unsubscribes is stepAside's, pinned by its behaviour test above.
   for (const file of ['content/content-float-ball.js', 'content/content-auto-status.js']) {
     const source = read(file);
     assert.doesNotMatch(source, /fullscreenchange/, file);
-    assert.match(source, /ctx\.videoStage\.watch\(/, file);
-    assert.match(source, /wanted && !ctx\.videoStage\.videoFillsScreen\(\)/, file);
-    // The stage polls while watched: a surface with nothing to show stops
-    // watching, so a page where nobody sees it is not measured.
-    assert.match(source, /if \(!wanted && stageWatch\) \{\s*stageWatch\(\);\s*stageWatch = null;/, file);
+    assert.match(source, /ctx\.videoStage\.stepAside\(/, file);
+    assert.doesNotMatch(source, /ctx\.videoStage\.(watch|videoFillsScreen)\(/, `${file} re-derives stepAside`);
   }
 });
 

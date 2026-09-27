@@ -96,6 +96,9 @@
     return !!first && frame.contains(first);
   }
 
+  // Asked on every poll tick of watch(), so on a page with no <video> it has
+  // to cost nothing: the loop below is the only place anything is measured,
+  // and with no video it does not run — no layout, no hit test.
   function videoFillsScreen() {
     if (fullscreenElement()) return true;
     const videos = document.getElementsByTagName('video');
@@ -176,5 +179,23 @@
     };
   }
 
-  ctx.videoStage = { fullscreenElement, videoFillsScreen, overlaySpot, placeOverlay, setTopLayer, watch };
+  // For a surface that steps aside while a video fills the screen (the float
+  // ball, the auto-status bar). Returns `shown(wanted)`: whether to draw now,
+  // given whether the surface has anything to show. While it is wanted, a watch
+  // calls `repaint()` on every change so the surface can step aside and come
+  // back; while it is not, there is no watch, so a surface with nothing to
+  // show measures nothing.
+  function stepAside(repaint) {
+    let unwatch = null;
+    return (wanted) => {
+      if (wanted && !unwatch) unwatch = watch(() => repaint());
+      if (!wanted && unwatch) {
+        unwatch();
+        unwatch = null;
+      }
+      return wanted && !videoFillsScreen();
+    };
+  }
+
+  ctx.videoStage = { fullscreenElement, videoFillsScreen, overlaySpot, placeOverlay, setTopLayer, watch, stepAside };
 })();

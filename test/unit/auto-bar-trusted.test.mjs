@@ -57,15 +57,20 @@ function load() {
     contains: (el) => body.children.includes(el),
   };
   const calls = [];
-  // ctx.videoStage, reduced to what the bar asks: is a video filling the screen,
-  // and tell me when that changes. `set(filled)` plays the stage's poll.
+  // ctx.videoStage, reduced to what the bar asks: stepAside's contract (watch
+  // only while wanted, repaint on each change, shown unless a video fills the
+  // screen; the real one is pinned in video-stage.test.mjs). `set(filled)`
+  // plays the stage's poll.
   const stage = {
     filled: false,
     listeners: new Set(),
-    videoFillsScreen: () => stage.filled,
-    watch(listener) {
-      stage.listeners.add(listener);
-      return () => stage.listeners.delete(listener);
+    stepAside(repaint) {
+      let watching = false;
+      return (wanted) => {
+        if (wanted && !watching) { stage.listeners.add(repaint); watching = true; }
+        if (!wanted && watching) { stage.listeners.delete(repaint); watching = false; }
+        return wanted && !stage.filled;
+      };
     },
     set(filled) {
       stage.filled = filled;

@@ -57,11 +57,11 @@
   // 他没关就照样回来）。
   let yielding = false;
 
-  // 视频铺满屏幕（标准全屏或网页全屏）时窄条让位：它就压在画面右下角。铺没铺满
-  // 问 ctx.videoStage，和悬浮球同一问、同一个写法（wanted && !videoFillsScreen()）。
-  // 网页全屏没有事件，舞台只能在有人订阅时轮询，所以和悬浮球一样只在窄条有话要说
-  // 时才订阅：mode 为空就退订，页面上什么都不画时不必每 400ms 量一次。
-  let stageWatch = null;
+  // 视频铺满屏幕（标准全屏或网页全屏）时窄条让位：它就压在画面右下角。让不让位
+  // 问 ctx.videoStage.stepAside，和悬浮球同一个 owner：窄条有话要说时它才订阅
+  // 舞台（网页全屏没有事件，只能轮询），mode 为空就退订，页面上什么都不画时不必
+  // 每 400ms 量一次。
+  const shownOverVideo = ctx.videoStage.stepAside(() => render());
 
   // ------------------------------------------------------------------ 文案
 
@@ -211,15 +211,9 @@
     // 不关掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是
     // 那一行字），再往下是 offer。
     const mode = yielding ? '' : (notice ? 'notice' : (explaining ? 'explain' : (offer ? 'offer' : '')));
-    const wanted = !!mode;
-    if (wanted && !stageWatch) stageWatch = ctx.videoStage.watch(() => render());
-    if (!wanted && stageWatch) {
-      stageWatch();
-      stageWatch = null;
-    }
     // 让位时整条拿掉而不是藏起来：要说的话都在上面这几个变量里，视频退出铺满
-    // 那一刻 watch 回调 render()，照原样画回来。
-    if (!(wanted && !ctx.videoStage.videoFillsScreen())) {
+    // 那一刻 stepAside 回调 render()，照原样画回来。
+    if (!shownOverVideo(!!mode)) {
       removeBar();
       return;
     }
