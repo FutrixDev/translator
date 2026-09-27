@@ -187,9 +187,9 @@ const defaultSettings = {
   captionDisplayMode: '',
   captionTranslationPosition: 'below',
   captionPlayerButton: true,
-  // 本轮自动化里唯一一件**改动播放器自己状态**的事，所以它单独一个开关，而且默认
-  // 关着：关着的时候，字幕这一面和从前一模一样。
-  autoEnableCaptions: false,
+  // 本轮自动化里唯一一件**改动播放器自己状态**的事，所以它单独一个开关。默认开，
+  // 和 shared/default-settings.js 同一个值（理由写在那边）。
+  autoEnableCaptions: true,
   youtubeCaptionFontColor: '#ffffff',
   youtubeCaptionBgColor: '#080808',
   youtubeCaptionBgOpacity: 82,

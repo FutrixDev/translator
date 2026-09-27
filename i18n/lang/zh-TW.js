@@ -300,7 +300,7 @@
     captionStatusBudgetSpent: '今日 AI 額度已用完',
     captionMenuEnableNative: '開啟原字幕',
     autoEnableCaptions: '自動開啟原字幕',
-    hintAutoEnableCaptions: '影片沒開原字幕時，替你開啟，這樣才有字幕可翻。你自己關掉後，本次不再自動開啟。',
+    hintAutoEnableCaptions: '預設開啟。影片沒開原字幕時，替你開啟，這樣才有字幕可翻。你在播放器裡關掉後，這部影片不再自動開啟。',
     captionPlayerButton: '在播放器內顯示快捷按鈕',
     hintCaptionPlayerButton: '在影片播放器的控制列裡放一個叭叭翻譯快捷按鈕',
     customPrompt: '自定義 Prompt',

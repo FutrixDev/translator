@@ -332,7 +332,7 @@
     captionStatusBudgetSpent: 'Today’s AI allowance is used up',
     captionMenuEnableNative: 'Turn on subtitles',
     autoEnableCaptions: 'Turn Subtitles On Automatically',
-    hintAutoEnableCaptions: 'On a video whose subtitles are off, switch them on so there is something to translate. Turn them off yourself and we leave them off.',
+    hintAutoEnableCaptions: 'On by default. On a video whose subtitles are off, switch them on so there is something to translate. Turn them off in the player and we leave them off for that video.',
     captionPlayerButton: 'Show the shortcut button in the player',
     hintCaptionPlayerButton: 'Puts a Blab Translation button in the video player controls',
     customPrompt: 'Custom Prompt',

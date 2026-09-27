@@ -300,7 +300,7 @@
     captionStatusBudgetSpent: 'Se ha agotado el cupo de IA de hoy',
     captionMenuEnableNative: 'Activar los subtítulos',
     autoEnableCaptions: 'Activar los subtítulos automáticamente',
-    hintAutoEnableCaptions: 'En un vídeo con los subtítulos desactivados, los activa para que haya algo que traducir. Si los desactivas tú, los dejamos así.',
+    hintAutoEnableCaptions: 'Activado de forma predeterminada. En un vídeo con los subtítulos desactivados, los activa para que haya algo que traducir. Si los desactivas en el reproductor, los dejamos así en ese vídeo.',
     captionPlayerButton: 'Mostrar el botón de acceso directo en el reproductor',
     hintCaptionPlayerButton: 'Añade un botón de Blab Translation a los controles del reproductor de vídeo',
     customPrompt: 'Indicación personalizada',

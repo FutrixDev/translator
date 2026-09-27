@@ -300,7 +300,7 @@
     captionStatusBudgetSpent: 'Le quota d’IA du jour est épuisé',
     captionMenuEnableNative: 'Activer les sous-titres',
     autoEnableCaptions: 'Activer automatiquement les sous-titres',
-    hintAutoEnableCaptions: 'Sur une vidéo dont les sous-titres sont désactivés, les active pour qu’il y ait quelque chose à traduire. Si vous les désactivez vous-même, nous n’y touchons plus.',
+    hintAutoEnableCaptions: 'Activé par défaut. Sur une vidéo dont les sous-titres sont désactivés, les active pour qu’il y ait quelque chose à traduire. Si vous les désactivez dans le lecteur, nous n’y touchons plus pour cette vidéo.',
     captionPlayerButton: 'Afficher le bouton de raccourci dans le lecteur',
     hintCaptionPlayerButton: 'Ajoute un bouton Blab Translation aux commandes du lecteur vidéo',
     customPrompt: 'Invite personnalisée',

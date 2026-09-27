@@ -64,11 +64,13 @@
     // 页脚，信任作者写的 <main>），'page' 从 <body> 起整页翻。判定在
     // content/page/scope.js；悬浮菜单「翻译整个页面」和 Alt+W 临时改成整页。
     pageTranslateScope: 'main',
-    // 「没开原字幕的视频，替我把原字幕点开」。默认关，而且是本轮唯一保留的独立
-    // 开关：它**改动播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的
-    // mode），而其余的自动化只是往页面里插我们自己的节点。有副作用的那一件事要
-    // 单独同意 —— 关着的时候，字幕这一面的行为和从前一模一样。
-    autoEnableCaptions: false,
+    // 「没开原字幕的视频，替我把原字幕点开」。本轮唯一保留的独立开关：它**改动
+    // 播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的 mode），而其余的
+    // 自动化只是往页面里插我们自己的节点。R33（D-351）起默认开：没开原字幕的视频
+    // 上字幕翻译无从谈起，而「装了插件看 YouTube」正是用户期待它自己动的地方。
+    // 副作用由 syncNativeCaptions() 那道只合不开的闩收着：观众自己关掉一次，这
+    // 个视频就再也不替他开。
+    autoEnableCaptions: true,
     enableImageOcrTranslation: true,
     // The hover shortcut button defaults on, matching background.js
     // defaultSettings. (There is no auto-translate setting: OCR is always

@@ -23,6 +23,10 @@
   CNN, the Financial Times and The Economist) join the built-in list. YouTube
   is listed as a captions site: its page text stays as it is while its
   captions are translated. Your own rule for any of them still wins.
+- **Videos get their own subtitles switched on for you.** "Turn subtitles on
+  automatically" is now on by default, so a video whose subtitles are off has
+  something to translate. Switch them off in the player and that video is
+  left alone; the setting itself is still under Video captions.
 
 ### Selection icon and card actions
 

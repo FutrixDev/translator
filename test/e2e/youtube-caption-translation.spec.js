@@ -673,8 +673,14 @@ test('with the setting on, the player’s own CC button gets pressed — once', 
   expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
 });
 
-test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+test('the default install presses the CC button too', async ({ page, context }) => {
+  // R33（D-351）：autoEnableCaptions 默认开。没开原字幕的视频上字幕翻译无从谈起。
   await openPlayer(page, context, BASE_SETTINGS, ccOff());
+  await expect.poll(() => page.evaluate(() => window.__ccClicks), { timeout: 8000 }).toBe(1);
+});
+
+test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: false }, ccOff());
   await page.waitForTimeout(3500);
 
   expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
@@ -685,7 +691,9 @@ test('a video with no captions at all says so, instead of offering a dead button
   // YouTube disables its own CC button on a video with no tracks. Pressing our
   // row there would press nothing, so the row is never offered in the first
   // place and the menu says what is going on instead.
-  await openPlayer(page, context, BASE_SETTINGS, ccOff('disabled'));
+  // The setting is off so that the one press counted below is the row's, not
+  // the heartbeat's the moment the button comes alive.
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: false }, ccOff('disabled'));
 
   await page.locator('#ai-translator-caption-btn').click();
   const menu = page.locator('#ai-translator-caption-menu');

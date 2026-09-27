@@ -27,10 +27,15 @@ const core = globalThis.CaptionCore;
 // -------------------------------------------------- turning subtitles on
 // 这一轮的自动化里，只有这一件事**改动播放器自己的状态**。其余的（整页翻译、字
 // 幕覆盖层）都只是往页面里插我们自己的节点，插错了刷新一下就没了；把播放器的 CC
-// 点开是留在观众账号里的。所以它有自己的开关、默认关着，而且有一道只合不开的闩。
-test('替观众开原字幕是一个单独的开关，默认关着', () => {
+// 点开是留在观众账号里的。所以它有自己的开关和一道只合不开的闩。R33（D-351）
+// 起默认开：没开原字幕的视频上字幕翻译无从谈起。
+test('替观众开原字幕是一个单独的开关，默认开着', () => {
   const defaults = repoFile('shared/default-settings.js');
-  assert.match(defaults, /autoEnableCaptions:\s*false/);
+  assert.match(defaults, /autoEnableCaptions:\s*true/);
+  // 设置页自己那份读取默认值和它是同一个值，否则一个从没碰过它的用户在设置页看
+  // 到的是「关」，页面上却在替他开字幕。
+  assert.match(repoFile('options/options.js'), /autoEnableCaptions:\s*true,/);
+  assert.match(repoFile('options/options.html'), /id="autoEnableCaptions" checked/);
 
   // 设置页那一格要写得进去，也要读得回来。
   const options = repoFile('options/options.js');
@@ -52,7 +57,7 @@ test('自动开原字幕过不了两道闸门：开关，和这个站点被不�
   assert.match(gate[0], /state\.autoEnableBlocked/);
 
   // 闸门问的是「被拒绝了吗」而不是「开着自动翻吗」：视频站点在整页那一面多半是
-  // ask，拿 siteAuto 当闸门等于这件事永远不发生。
+  // 安静的 off，拿 siteAuto 当闸门等于这件事永远不发生。
   assert.equal(/autoEnableAllowed[\s\S]{0,400}?siteAuto/.test(engine), false);
 
   // 调度层只是转述 SiteRules 的答案，分类留在阶梯那边。

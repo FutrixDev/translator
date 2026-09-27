@@ -263,8 +263,10 @@ test('subtitles the page only offers are left off until the viewer asks', async 
   // Vimeo's player lists four languages and shows none until asked. Choosing
   // one there would put subtitles on screen that nobody turned on — in
   // whichever language the page listed first, German for an English video.
+  // That is the rule for picking a track; turning one on is autoEnableCaptions
+  // (on by default since R33), switched off here so it cannot answer instead.
   let apiCalls = 0;
-  await setExtensionSettings(p, BASE_SETTINGS);
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, page(`
     <video id="v" width="640" height="360">
       <track kind="subtitles" srclang="de" label="Deutsch" src="/subs.vtt">
@@ -412,7 +414,7 @@ test('original-only gives the page its own captions back', async ({ page: p, con
 
 // ------------------------------------------------------------------- PR-9
 // 「没开原字幕的视频，替我把原字幕点开」—— autoEnableCaptions。本轮唯一会改动播放
-// 器自己状态的自动化，所以它单独一个开关、默认关，而且只合不开。
+// 器自己状态的自动化，所以它单独一个开关，而且只合不开。R33（D-351）起默认开。
 
 /** The track modes as the page sees them, e.g. ['de:disabled', 'en:hidden']. */
 function trackModes(p) {
@@ -435,9 +437,19 @@ test('turning subtitles on picks the language the audio is in, not the first lis
   await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 });
 
-test('with the setting off, subtitles the page only offers stay off', async ({ page: p, context }) => {
-  // The same page as above, minus the one setting. This is the default install.
+test('the default install turns subtitles on as well', async ({ page: p, context }) => {
+  // The same page, with the setting never touched.
   await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+});
+
+test('with the setting off, subtitles the page only offers stay off', async ({ page: p, context }) => {
+  // The same page as above, with the one setting switched off.
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, TWO_OFF_EN_AUDIO);
   await mockTranslation(context);
 
@@ -581,7 +593,7 @@ test('the menu offers to turn subtitles on even with the setting off', async ({ 
   // The setting is for "do it without asking". Pressing the item in the menu
   // *is* asking, so it goes through whatever the setting says — and through the
   // latch, because this is the viewer changing his mind.
-  await setExtensionSettings(p, BASE_SETTINGS);
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, TWO_OFF_EN_AUDIO);
   await mockTranslation(context);
 

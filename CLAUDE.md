@@ -469,15 +469,17 @@ Two ship today:
 
 Two rules the generic provider exists to keep:
 
-- **We translate the subtitles the viewer already has on, and by default we
-  turn none on ourselves.** A track at `showing` or `hidden` is on (`hidden` is a
+- **We translate the subtitles the viewer already has on; picking a track
+  never turns one on by itself.** A track at `showing` or `hidden` is on (`hidden` is a
   player drawing the cues itself); everything at `disabled` is a language the
   page merely offers, and `pickSubtitleTrack()` returns null rather than choose
   among them. Vimeo lists four and shows none.
 
-  The exception is `autoEnableCaptions` — off by default, and the only
-  automation in the extension that changes the **player's own** state rather
-  than adding nodes of ours, which is why it is a switch of its own. With it on,
+  The exception is `autoEnableCaptions` — on by default since R33 (a video
+  with its subtitles off has nothing to translate), and the only automation in
+  the extension that changes the **player's own** state rather than adding
+  nodes of ours, which is why it is a switch of its own and why the latch in
+  `syncNativeCaptions()` stops it for good once the viewer turns them off. With it on,
   `pickSubtitleTrack({allowDisabled, audioLang})` may promote a disabled track:
   audio-language match, then `default`, then the first. `allowDisabled` is a
   permission for one call, never a mode a provider stays in — the engine asks

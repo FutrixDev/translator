@@ -18,10 +18,12 @@ test('options toggle updates a caption setting', async ({ page, context, extensi
 
   const toggleLabel = page.locator('label:has(#autoEnableCaptions)');
   await expect(toggleLabel).toBeVisible();
+  // On by default (R33, D-351), and the page shows it that way.
+  await expect(page.locator('#autoEnableCaptions')).toBeChecked();
   // No Save button any more: the toggle is the whole interaction.
   await toggleLabel.click();
 
-  await expect.poll(async () => getSyncSetting(context, 'autoEnableCaptions')).toBe(true);
+  await expect.poll(async () => getSyncSetting(context, 'autoEnableCaptions')).toBe(false);
 });
 
 /**
