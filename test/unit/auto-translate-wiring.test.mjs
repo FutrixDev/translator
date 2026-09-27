@@ -246,10 +246,15 @@ test('换了路由或关掉自动翻译之后，在途的那一轮不再发下�
   assert.equal(batch.match(/if \(aborted\(\)\) return;/g).length, 2);
 
   const scheduler = code('content/content-auto-translate.js');
-  assert.match(scheduler, /isAborted: \(\) => guard\.version\(\) !== session,/);
+  // 「这一轮还算数吗」只有一个谓词 superseded()：代次变了就不算；地址变了而路由
+  // 信号还没到，它先把信号补上（重判会让代次变），再答（R33 D-360 F1，行为断言在
+  // auto-translate-route-send.test.mjs）。
+  assert.match(scheduler, /isAborted: \(\) => superseded\(session\),/);
+  assert.match(scheduler,
+    /function superseded\(session\) \{\s*if \(location\.href !== decidedHref\) globalThis\.SpaNavigation\.check\('send'\);\s*return guard\.version\(\) !== session;/);
   // 探语言本身就是一串 await，回来时这一页可能已经不归这一轮管了 —— 那就一块
   // 都别发，而不是发完再一条条拒。
-  assert.match(scheduler, /if \(fresh\.length > 0 && guard\.version\(\) === session\)/);
+  assert.match(scheduler, /if \(fresh\.length > 0 && !superseded\(session\)\)/);
 });
 
 test('换页要让页面语言的缓存过期，且这件事归引擎自己管', () => {
