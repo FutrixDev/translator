@@ -25,7 +25,8 @@
 //   那一块读回模型（真 Draft 的 RESOLVE_DELAY）。
 // - 页面脚本里几种不接管 paste 的 contenteditable（写回会退到 execCommand）：什么
 //   都不接的普通框；paste 时把焦点挪去另一个框的（Quill 1.x 的隐藏剪贴板框就这样）；
-//   paste 时不取消、却在下一拍自己又把 text/plain 接到末尾的。
+//   paste 时不取消、却在下一拍自己又把 text/plain 接到末尾的；paste 时不取消、当场就
+//   自己把 text/plain 接到末尾的。
 //
 // 它们只是形状，不是 Draft、Lexical 本身：真编辑器的回归由主控在真站点上复走。
 
@@ -252,6 +253,8 @@ const PAGE = `<!doctype html>
   <div id="thief-clipboard" contenteditable="true" style="min-height:1em;border:1px dashed #ccc"></div>
   <p>Editor that pastes on the next tick</p>
   <div id="async-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
+  <p>Editor that pastes without cancelling</p>
+  <div id="sync-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
   <script>
     ${mountModelEditor}
     ${mountDraftEditor}
@@ -280,6 +283,10 @@ const PAGE = `<!doctype html>
     asyncEditor.addEventListener('paste', (e) => {
       const data = e.clipboardData.getData('text/plain');
       setTimeout(() => asyncEditor.append(data), 0);
+    });
+    const syncEditor = document.getElementById('sync-editor');
+    syncEditor.addEventListener('paste', (e) => {
+      syncEditor.append(e.clipboardData.getData('text/plain'));
     });
   </script>
 </body></html>`;

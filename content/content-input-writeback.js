@@ -47,10 +47,11 @@
 // 读一遍（assertWritable）：不对就抛，一个字不写 —— execCommand 写的是焦点所在
 // 的地方，不是 field。
 //
-// 核对失败不等于没写：编辑器可能晚一拍才把字画进来，也可能写了两份、改了写法。
-// 这一次写之前的样子记下来（missed），下一次芯片被点、或者框被重新判定时先看一眼
-// （landed）—— 框里的字只要不再是写之前的样子，就当写过了，绝不再追加一份
-// （D-361 S2）。
+// 没写成不等于没写：编辑器可能晚一拍才把字画进来，也可能写了两份、改了写法；
+// paste 处理器可能自己插了一份、却没取消 paste，复读才发现框变了。所以从第一个可能
+// 动到框的动作（递 paste、execCommand）起，写之前的样子就记下来（missed），写成了
+// 才抹掉。下一次芯片被点、或者框被重新判定时先看一眼（landed）—— 框里的字只要
+// 不再是写之前的样子，就当写过了，绝不再追加一份（D-361 S2）。
 //
 // 翻译请求本身没有超时：请求一直不回，芯片就一直是「翻译中」，直到用户接着敲字、
 // 按 Esc、或者离开这个框（芯片那边收回）。
@@ -143,12 +144,12 @@
     }
   }
 
-  // 核对没过的那一次：{ before: 写之前框里的字, expected: 本该是的样子 }。见文件头
-  // 「核对失败不等于没写」。
+  // 动过框、却没写成的那一次：{ before: 写之前框里的字, expected: 本该是的样子 }。
+  // 见文件头「没写成不等于没写」。
   const missed = new WeakMap();
 
   /**
-   * 上一次核对没过的写入之后，框里的字是不是已经不是写之前的样子了。是就忘掉这条
+   * 上一次没写成的写入之后，框里的字是不是已经不是写之前的样子了。是就忘掉这条
    * 记录并答 true —— 调用方把它当成写过了，不再发请求、不再追加。字晚一拍落成
    * 预期的样子是一种；写了两份、被编辑器改了写法、用户又接着敲了字也都是：这时
    * 再追加一份只会更糟。还是写之前的样子，就是真没写，答 false，重试照常。
@@ -167,8 +168,8 @@
 
   /**
    * 把译文写进 field。单行 input 替换原文；其余在末尾换一行追加。
-   * 写不了（超长、浏览器拒绝）就抛，框里的字不动；写了但核对没过也抛，这时框里
-   * 可能已经变了 —— 见 landed()。
+   * 写不了（超长、复读不过、浏览器拒绝）就抛；写了但核对没过也抛。递出 paste、
+   * 调过 execCommand 之后才抛的，框里可能已经变了 —— 见 landed()。
    */
   async function write(field, translation) {
     const text = String(translation || '').trim();
@@ -185,22 +186,26 @@
         throw new Error('input writeback: the translation exceeds maxlength');
       }
       field.setSelectionRange(replace ? 0 : current.length, current.length);
-      insertText(data);
     } else {
       caretToEnd(field);
       await settle();
       assertWritable(field, current);
-      if (!offerPaste(field, data)) {
-        assertWritable(field, current);
-        insertText(data);
-      }
+    }
+
+    // 从这里起页面或浏览器可能动了框。
+    missed.set(field, { before: current, expected });
+    if (isTextControl(field)) {
+      insertText(data);
+    } else if (!offerPaste(field, data)) {
+      assertWritable(field, current);
+      insertText(data);
     }
 
     await settle();
     if (!sameText(fieldText(field), expected)) {
-      missed.set(field, { before: current, expected });
       throw new Error('input writeback: the field does not read as expected');
     }
+    missed.delete(field);
   }
 
   ctx.inputWriteback = { fieldText, hasFocus, landed, sameText, write };

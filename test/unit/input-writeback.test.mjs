@@ -303,16 +303,20 @@ test('复读：等光标那一拍里框被换掉、焦点走了、选区走了�
     await assert.rejects(writeback.write(field, 'Hello'), new RegExp(message));
     assert.deepEqual(pastes, [], `${message}：paste 照样递出去了`);
     assert.deepEqual(calls, []);
+    // 一个字没动过：框里的字是用户或页面改的，重试照常。
+    field.innerText = '你好世界!!';
+    assert.equal(writeback.landed(field), false, `${message}：还没动手，就把框记成了写过`);
   }
 });
 
-test('复读：没人接 paste，但 paste 处理器同步改了字：不再退到 execCommand', async () => {
+test('复读：没人接 paste，但 paste 处理器同步改了字：不再退到 execCommand，重试也不追加', async () => {
   const { writeback, document, calls } = load();
   const field = new EditableDiv('你好世界');
   document.target = field;
   field.addEventListener('paste', (e) => { field.innerText += e.clipboardData.getData('text/plain'); });
   await assert.rejects(writeback.write(field, 'Hello'), /changed before writing/);
   assert.deepEqual(calls, [], '页面已经写了一份，又用 execCommand 插了一份');
+  assert.equal(writeback.landed(field), true, '页面已经写了一份，重试还会再追加一份');
 });
 
 // shadow root 里的框：document 的选区在那里被改写成 shadow host，要问 shadow root。

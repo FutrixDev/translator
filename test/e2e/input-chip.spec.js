@@ -13,7 +13,8 @@
 // - Draft 形状的块编辑器：不看原生 beforeinput，input 时按锚点所在的块从 DOM 反推
 //   模型，光标只从 selectionchange 学，接 paste；输入法组合期间不接 paste。
 // - 不接管 paste 的 contenteditable（写回退到 execCommand）：普通框，有、无末尾
-//   <br> 各一个；paste 时挪走焦点的；paste 不取消却下一拍自己又插一份的。
+//   <br> 各一个；paste 时挪走焦点的；paste 不取消却下一拍自己又插一份的；paste 不
+//   取消却当场自己插一份的。
 // 模型之外的 DOM 改动会被重画抹掉，所以断言读的是模型，不是 DOM。真 Draft、真
 // Lexical 不在这里：它们的回归靠 evidence/r33/b/controller-walk 的真站复走。
 const { test, expect } = require('./fixtures');
@@ -482,6 +483,37 @@ test('输入框芯片：页面下一拍又插了一份，报错；重试不发�
     await expect(chip).toHaveAttribute('data-state', 'error', { timeout: 15000 });
     const after = await text();
     expect(after.split(TRANSLATION).length - 1).toBe(2);
+
+    await chip.click();
+    await expect(chip).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+    expect(await text()).toBe(after);
+    expect(sentTexts).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
+// 页面没取消 paste，却当场自己插了一份：退到 execCommand 之前的复读发现框变了，
+// 不再插第二份，芯片报错。再点一下 —— 框已经不是写之前的样子了，就当写过了：不发
+// 请求、不追加（D-361 S1 + S2）。
+test('输入框芯片：页面没取消 paste 却当场插了一份，不补第二份；重试不发请求', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const text = () => page.evaluate(() => document.querySelector('#sync-editor').innerText);
+
+  try {
+    await openPage(page, context, endpoint);
+    await page.click('#sync-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect(chip).toHaveAttribute('data-state', 'error', { timeout: 15000 });
+    const after = await text();
+    expect(after.split(TRANSLATION).length - 1).toBe(1);
 
     await chip.click();
     await expect(chip).toHaveCount(0);
