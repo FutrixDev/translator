@@ -575,9 +575,24 @@ function ourNodesAt(target, elementId) {
   }, [elementId, '[class*="ai-translator-"]', '.ai-translator-inline-block']);
 }
 
+/**
+ * mock-openai-server 收到的原文按段拆开：每次请求按快速批的分隔符拆；不走快速
+ * 批的请求整条就是一段。
+ * @param {string[]} sentTexts
+ * @param {{delimiter: string}[]} fastBatchRequests
+ */
+function sentSegments(sentTexts, fastBatchRequests) {
+  const delimiters = [...new Set(fastBatchRequests.map((request) => request.delimiter))];
+  return sentTexts.flatMap((text) => delimiters.reduce(
+    (pieces, delimiter) => pieces.flatMap((piece) => piece.split(delimiter)),
+    [text],
+  ));
+}
+
 module.exports = {
   oursIn,
   ourNodesAt,
+  sentSegments,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

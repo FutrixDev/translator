@@ -17,7 +17,7 @@
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, oursIn, ourNodesAt } = require('./helpers');
+const { setExtensionSettings, oursIn, ourNodesAt, sentSegments } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
@@ -68,15 +68,6 @@ const HN_COMMENT_PAGE = `<!doctype html>
     <div id="comhead-wrap"><span class="comhead"><a class="hnuser" href="user?id=someone">${HN_HEAD_USER}</a> <span class="age" id="head-age"><a href="item?id=2">${HN_HEAD_AGE}</a></span><span class="navs"> | <a href="#c0">parent</a> | <a href="#c2">next</a></span></span></div>
   </td></tr></tbody></table>
 </body></html>`;
-
-/** 每次请求按快速批的分隔符拆成段；不走快速批的请求整条就是一段。 */
-function sentSegments(sentTexts, fastBatchRequests) {
-  const delimiters = [...new Set(fastBatchRequests.map((request) => request.delimiter))];
-  return sentTexts.flatMap((text) => delimiters.reduce(
-    (pieces, delimiter) => pieces.flatMap((piece) => piece.split(delimiter)),
-    [text],
-  ));
-}
 
 test('site rules: a Hacker News comment header keeps the space before its verbatim time, and a rank-only cell is not sent', async ({ page, context }) => {
   const { close, endpoint, sentTexts, fastBatchRequests } = await startMockOpenAIServer();
