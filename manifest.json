@@ -102,6 +102,7 @@
         "shared/site-rules-builtin.js",
         "shared/storage-writer.js",
         "shared/site-rules.js",
+        "shared/auto-reason-keys.js",
         "shared/auto-stats.js",
         "shared/sync-collection.js",
         "shared/custom-rules.js",

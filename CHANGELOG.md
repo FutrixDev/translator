@@ -32,7 +32,9 @@
   conversation when you ask. This also holds when you click into a
   conversation from the home timeline: the address is checked again right
   before anything is sent, so a message is never sent under the timeline's
-  verdict while the site's router is still finishing the navigation.
+  verdict while the site's router is still finishing the navigation. On such a
+  page the tooltip on the popup's greyed site row now says the page is not
+  auto-translated, where it used to say the whole site was on the blocklist.
 - **Videos get their own subtitles switched on for you.** "Turn subtitles on
   automatically" is now on by default, so a video whose subtitles are off has
   something to translate. Switch them off in the player and they stay off in
@@ -42,7 +44,8 @@
   automatic translation on or off everywhere. It is the same setting as
   "Translate pages automatically" in Settings, and switching it off stops the
   current page on the spot: nothing new is sent, while what is already
-  translated stays.
+  translated stays. Its On/Off label appears once the setting has been
+  read, so there is no empty box beside it while the popup opens.
 - **Manage sites from Settings.** Under "Translate pages automatically" you
   can now type a site (a whole address works too: `https://www.` and the
   path are dropped) and set it to always or never translate, switch a rule

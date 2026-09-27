@@ -21,6 +21,7 @@ const {
   setExtensionSettings, oursIn, ourNodesAt, sentSegments, evaluateInContentScript, triggerPageTranslation,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { getMessage } = require('../../i18n/messages');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
 const TWEET_B = 'Every number in table three was reproduced from scratch, with no tuning at all.';
@@ -174,7 +175,7 @@ const DM_PAGE = `<!doctype html>
   <main><section id="dm"><div data-testid="messageEntry"><p id="dm-text">${DM_TEXT}</p></div></section></main>
 </body></html>`;
 
-test('site rules: a direct-message page is not translated by itself, and Translate this page still works there', async ({ page, context }) => {
+test('site rules: a direct-message page is not translated by itself, and Translate this page still works there', async ({ page, context, extensionId }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
@@ -191,6 +192,18 @@ test('site rules: a direct-message page is not translated by itself, and Transla
     await page.waitForTimeout(1500);
     expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
     expect(await oursIn(page, 'dm')).toBe(0);
+
+    // popup 的站点行灰着，title 说的是内置 never 那句，不是「在黑名单里」（R33
+    // D-360 F3）：页面回的是 blockReason 枚举，popup 只按它取话。
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    await page.bringToFront();
+    await popup.reload();
+    const siteRow = popup.locator('#toggleSiteAuto');
+    await expect(siteRow).toBeVisible();
+    await expect(siteRow).toBeDisabled();
+    await expect(siteRow).toHaveAttribute('title', getMessage('autoReasonBuiltinNever', 'en'));
+    await popup.close();
 
     await triggerPageTranslation(page);
     await expect(page.locator('#dm .ai-translator-inline-block')).toContainText('[T]', { timeout: 30000 });

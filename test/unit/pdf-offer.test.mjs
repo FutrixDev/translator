@@ -64,9 +64,9 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
   assert.equal(pdf.refused, true);
 
   // 而界面得有话说 —— 每个理由都要有一句对应的文案，少一个条子上就是空白。
-  const status = repoFile('content/content-auto-status.js');
+  const keys = repoFile('shared/auto-reason-keys.js');
   for (const reason of Object.keys(R)) {
-    assert.match(status, new RegExp(`\\b${reason}: '`), `REASON_KEYS 里没有 ${reason}`);
+    assert.match(keys, new RegExp(`\\b${reason}: '`), `AutoReasonKeys 里没有 ${reason}`);
   }
   const catalog = messageCatalog();
   for (const lang of Object.keys(catalog)) {

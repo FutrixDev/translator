@@ -101,11 +101,11 @@ test('调度层的预判和闸问的是同一个设置、同一个函数', () =>
 
 test('两个停翻理由不混进 decide() 那张表', () => {
   // decide() 永远不会返回这两个 —— 塞进 SiteRules.REASONS 会让那张表变成一句
-  // 谎话。状态条那张 REASON_KEYS 有意比它宽。
+  // 谎话。理由 → 人话那张表（shared/auto-reason-keys.js）有意比它宽。
   assert.doesNotMatch(code('shared/site-rules.js'), /COST_ENGINE|COST_BUDGET/);
-  const status = code('content/content-auto-status.js');
-  assert.match(status, /COST_ENGINE: 'autoReasonCostEngine'/);
-  assert.match(status, /COST_BUDGET: 'autoReasonCostBudget'/);
+  const keys = code('shared/auto-reason-keys.js');
+  assert.match(keys, /COST_ENGINE: 'autoReasonCostEngine'/);
+  assert.match(keys, /COST_BUDGET: 'autoReasonCostBudget'/);
 });
 
 test('设置页把它切到 AI 要过一道二次确认，说了不就退回去', () => {

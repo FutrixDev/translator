@@ -162,7 +162,7 @@ test('写不进规则的站点，那一行点不动', () => {
   const shared = rules.match(/function siteRuleWritable\(hostname, path\)[\s\S]*?\n  \}/);
   assert.ok(shared, '找不到 SiteRules.siteRuleWritable()');
   assert.match(shared[0], /normalizeHost\(hostname\)/);
-  assert.match(shared[0], /isBlocklisted\(hostname, path\)/);
+  assert.match(shared[0], /blockReason\(hostname, path\) === null/);
   assert.match(rules, /^\s*siteRuleWritable,$/m, 'siteRuleWritable 没导出去');
 
   const controls = repoFile('content/content-caption-controls.js');
@@ -170,7 +170,7 @@ test('写不进规则的站点，那一行点不动', () => {
   assert.ok(fn, '找不到 ruleWritable()');
   assert.match(fn[0], /SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
   // 抄回来的第二份长这样：自己拼那两问。
-  assert.doesNotMatch(fn[0], /isBlocklisted\(/, 'ruleWritable 又自己判了一遍');
+  assert.doesNotMatch(fn[0], /blockReason\(/, 'ruleWritable 又自己判了一遍');
   assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\)/);
 
   // 写入口那边再挡一道：画面灰着只是画面，别的调用方照样能递个空 host 进来。

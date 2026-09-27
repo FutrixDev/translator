@@ -122,6 +122,8 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
     SiteRules: { siteLabel: (host) => host },
   };
   vm.createContext(sandbox);
+  // 理由 → 人话那张表跑真的：popup 按页面回的枚举取话，表是共用的那一张。
+  vm.runInContext(repoSource('shared/auto-reason-keys.js'), sandbox, { filename: 'shared/auto-reason-keys.js' });
   vm.runInContext(POPUP, sandbox, { filename: 'popup/popup.js' });
   return {
     element: (id) => document.getElementById(id),
@@ -283,4 +285,24 @@ test('the master switch stays disabled when storage cannot be read', async () =>
   assert.equal(popup.element('toggleGlobalAuto').disabled, true);
   assert.equal(popup.element('globalAutoStatus').hidden, true, 'an unread state must not draw a pill');
   assert.ok(errors.some((args) => /Failed to check status/.test(String(args[0]))), 'the failure was not logged');
+});
+
+test('the site row says which refusal greys it out, as the page named it', async () => {
+  // R33 D-360 F3：页面以前只回一个 blocked 布尔值，popup 在 title 上一律写「在黑
+  // 名单里」—— x.com 的私信页、arxiv 的 /pdf/ 是内置 never，不是黑名单。现在页面
+  // 回的是 SiteRules.blockReason() 的枚举，popup 只按它取话，不自己重判。
+  const cases = [
+    [{ ruleWritable: false, blockReason: 'BUILTIN_NEVER' }, 'autoReasonBuiltinNever'],
+    [{ ruleWritable: false, blockReason: 'BLOCKLIST' }, 'autoReasonBlocklist'],
+    [{ ruleWritable: true, blockReason: null }, 'slow.test'],
+  ];
+  for (const [extra, title] of cases) {
+    const popup = load({ reply: () => Promise.resolve({ ...PAGE, ...extra }) });
+    popup.fire();
+    await wait(10);
+    const site = popup.element('toggleSiteAuto');
+    assert.equal(site.hidden, false, 'the site row was not drawn');
+    assert.equal(site.title, title, `blockReason ${extra.blockReason}`);
+    assert.equal(site.disabled, !extra.ruleWritable);
+  }
 });

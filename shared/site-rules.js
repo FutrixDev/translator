@@ -259,19 +259,23 @@
   }
 
   /**
-   * 「这一页永远不自己翻，用户说了也不算」。
+   * 「这一页永远不自己翻，用户说了也不算」—— 是，就答是哪一种；不是，答 null。
    *
-   * 黑名单和内置表里的 never 是同一件事的两种写法，对外只有一个说法 —— 所以这
-   * 一问必须有一个主人，下面的阶梯自己也问它。
+   * 黑名单（BLOCKLIST）和内置表里的 never（BUILTIN_NEVER）是同一个结论的两种来
+   * 源，这一问是它们唯一的主人：下面的阶梯问它，popup 的站点行也问它（经由内容
+   * 脚本的 AUTO_PAGE_STATE），两处拿到的是同一个枚举。黑名单先问：两者都中时，
+   * 「这类页面我们不碰」比「这一条路径另有安排」更靠前。
    *
    * 单拎出来是因为 decide() 的答案在这个问题上**会被遮住**：总开关关着时它第一
    * 档就回 GLOBAL_OFF，谁也看不出这一页其实还被拉着黑。要据此把界面上那个站点
-   * 开关灰掉的调用方，问的就得是这一问，不能去读那个被遮住的 reason。
+   * 开关灰掉、并说出为什么灰的调用方，问的就得是这一问，不能去读那个被遮住的
+   * reason（R33 D-360 F3：只回一个布尔值时，popup 在 x.com/messages 上把内置
+   * never 说成了「在黑名单里」）。
    */
-  function isBlocklisted(host, path) {
-    if (isBlocked(host, path)) return true;
+  function blockReason(host, path) {
+    if (isBlocked(host, path)) return REASONS.BLOCKLIST;
     const rule = matchBuiltin(host, path);
-    return !!(rule && rule.state === 'never');
+    return rule && rule.state === 'never' ? REASONS.BUILTIN_NEVER : null;
   }
 
   /**
@@ -292,7 +296,7 @@
    */
   function siteRuleWritable(hostname, path) {
     if (!normalizeHost(hostname)) return false;
-    return !isBlocklisted(hostname, path);
+    return blockReason(hostname, path) === null;
   }
 
   // 一个 DNS 主机名（含 punycode 的 xn-- 标签和 IPv4），整串不超过 253 字符。
@@ -332,7 +336,7 @@
   /**
    * 内置名单，按「设置页怎么给人看」排好：always / captions / never 三组，每组
    * 一行一个主机，带上这个主机在表里的那几个模式（arxiv.org 只有几条路径在
-   * always 上）。黑名单并进 never —— 对用户来说它们是同一件事（见 isBlocklisted）。
+   * always 上）。黑名单并进 never —— 对用户来说它们是同一件事（见 blockReason）。
    *
    * 每行带 writable：那一行能不能一键写一条用户规则盖过去。never 组一律不能
    * （阶梯上它们排在用户规则前面），其余问的是 siteRuleWritable。
@@ -433,13 +437,10 @@
     // 提示条正等着他点。两句话混成一句，用户在论文 PDF 上看到的会是「这个站点
     // 在黑名单里」，而他上一秒还在同一个域名下读着被自动翻好的摘要页。
     //
-    // 判断仍然只问 isBlocklisted() 这一个主人，问完再回头看是哪一半答的是。
-    // 反过来把两半就地展开，就等于在这里复制了一遍那个函数：哪天它多认一种
-    // never，这条阶梯会悄悄漏掉。落到 BUILTIN_NEVER 是安全的那一边 —— 结论
-    // 一模一样，只是措辞按「内置规则说不」来。
-    if (isBlocklisted(host, path)) {
-      return out('off', isBlocked(host, path) ? REASONS.BLOCKLIST : REASONS.BUILTIN_NEVER);
-    }
+    // 是哪一种由 blockReason() 一处答，这里不就地展开：哪天它多认一种 never，
+    // 这条阶梯和 popup 的站点行会一起认得。
+    const blocked = blockReason(host, path);
+    if (blocked) return out('off', blocked);
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 
@@ -633,7 +634,7 @@
     applyWrite,
     matchBuiltin,
     register,
-    isBlocklisted,
+    blockReason,
     siteRuleWritable,
     parseSiteInput,
     builtinSites,

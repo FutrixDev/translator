@@ -260,7 +260,9 @@ function renderPageRows() {
     //
     // 「灰不灰」和「为什么灰」是两个问题，答案来自两处但同一个主人：
     // 前者是 SiteRules.siteRuleWritable()，和字幕菜单、悬浮球菜单第一项问的
-    // 是同一句话；后者只有黑名单说得出一句人话。从前这里只问黑名单，于是
+    // 是同一句话；后者是页面回的 blockReason 枚举（SiteRules.blockReason()），
+    // popup 只按它在 AutoReasonKeys 里取那句话，不自己重判是黑名单还是内置
+    // never —— 手上没有内置表，判了也是猜（R33 D-360 F3）。从前这里只问黑名单，于是
     // file:// 页面上这一行看起来能点 —— 按下去 setSiteAuto 抛，用户拿到的是
     // 一句「没存上」，而另外两处早就把它灰掉了。
     //
@@ -269,7 +271,9 @@ function renderPageRows() {
     const writable = !!pageState.ruleWritable;
     elements.toggleSiteAuto.disabled = !writable;
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
-    elements.toggleSiteAuto.title = pageState.blocked ? t('autoReasonBlocklist') : pageState.host;
+    elements.toggleSiteAuto.title = pageState.blockReason
+      ? t(AutoReasonKeys[pageState.blockReason])
+      : pageState.host;
   }
 
   // ①b 不再自动翻译这个站点。字幕在一个没设过规则的站点上照翻（闸门问的是「没

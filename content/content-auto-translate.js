@@ -42,8 +42,8 @@
   // 有意不放进 shared/site-rules.js 的 REASONS：decide() 回答的是「这个站点、
   // 这门语言，该不该自动翻」，它永远不会返回这两个。混进去只会让那张表变成一句
   // 假话 —— 那里的每一个 key 都对应阶梯上的一级，这两个对应的是阶梯之外的一道
-  // 闸。呈现层照样认得它们：content/content-auto-status.js 的 REASON_KEYS 是
-  // 「理由 → 人话」的那张表，它比 decide() 的阶梯宽一点。
+  // 闸。呈现层照样认得它们：shared/auto-reason-keys.js 是「理由 → 人话」的
+  // 那张表，它比 decide() 的阶梯宽一点。
   const COST_REASONS = Object.freeze({
     // 自动模式要用的引擎这一刻给不出译文，而用户没开回退：选的是「仅本地」，
     // 而这一页（http://、Chrome 版本太低）没有内置引擎。默认状态，所以不弹提示

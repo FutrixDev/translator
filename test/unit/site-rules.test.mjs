@@ -48,27 +48,34 @@ test('the blocklist outranks the user own always — that is what it is for', ()
 
 test('总开关关着也答得出「这一页拉黑了」—— decide() 的那个答案会被遮住', () => {
   // 阶梯第一档就回 GLOBAL_OFF，黑名单被它整个遮住。界面上要据此把站点开关灰掉
-  // 的地方，问的必须是 isBlocklisted() 这一问：总开关关着恰恰是那个开关最该灰
+  // 的地方，问的必须是 blockReason() 这一问：总开关关着恰恰是那个开关最该灰
   // 着的时候 —— 点下去写的是一条永远生效不了的 always，还顺手把总开关替所有别
   // 的站点打开了。
   const off = { autoTranslate: false };
   assert.equal(verdict({ host: 'secure.chase.com', settings: off }).reason, R.GLOBAL_OFF);
-  assert.equal(SiteRules.isBlocklisted('secure.chase.com', '/'), true);
+  assert.equal(SiteRules.blockReason('secure.chase.com', '/'), R.BLOCKLIST);
+  assert.equal(verdict({ host: 'x.com', path: '/messages/abc', settings: off }).reason, R.GLOBAL_OFF);
+  assert.equal(SiteRules.blockReason('x.com', '/messages/abc'), R.BUILTIN_NEVER);
 
   // 而它和阶梯给的答案必须是同一个 —— 两处各判一遍，迟早不一致。黑名单表和内
-  // 置表里的 never 都算，对外只有一个说法。
+  // 置表里的 never 都算，但各是各的枚举：popup 站点行按这个枚举取话，内置 never
+  // 不能被说成「在黑名单里」（R33 D-360 F3）。
   const probes = [
     ['secure.chase.com', '/'], ['mail.google.com', '/'], ['hmrc.gov.uk', '/'],
-    ['x.com', '/home'], ['news.google.com', '/'], ['example.com', '/article/1'],
-    ['govtech.com', '/'],
+    ['x.com', '/home'], ['x.com', '/messages/abc'], ['x.com', '/i/chat/123'],
+    ['arxiv.org', '/pdf/2501.00001'], ['arxiv.org', '/abs/2501.00001'],
+    ['news.google.com', '/'], ['example.com', '/article/1'], ['govtech.com', '/'],
   ];
+  const refusedBySite = [R.BLOCKLIST, R.BUILTIN_NEVER];
+  const seen = new Set();
   for (const [host, path] of probes) {
-    assert.equal(
-      SiteRules.isBlocklisted(host, path),
-      verdict({ host, path }).reason === R.BLOCKLIST,
-      `${host}${path}`,
-    );
+    const { reason } = verdict({ host, path });
+    const expected = refusedBySite.includes(reason) ? reason : null;
+    assert.equal(SiteRules.blockReason(host, path), expected, `${host}${path}`);
+    seen.add(expected);
   }
+  assert.deepEqual([...seen].sort(), [R.BLOCKLIST, R.BUILTIN_NEVER, null].sort(),
+    'the probes must exercise both refusals and a site that is neither');
 });
 
 test('the blocklist matches subdomains, and does not match a longer public suffix', () => {
