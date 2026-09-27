@@ -46,6 +46,40 @@
   a second click within 1.5 s was "Copied" itself. They now share one copy
   button that returns to its own label 1.5 s after the last click.
 
+### Site translation rules
+
+- **Tell a site what to translate.** A new Site Translation Rules card in
+  Settings holds rules of your own, one per set of sites
+  (`example.com`, `*.example.com`, `example.com/docs/*`). A rule can say
+  which areas to translate, which to leave out of the translation, which to
+  keep as the original inside it, add CSS for the translations on that site,
+  and pin the engine (built-in or your own AI) for that site. Rules take
+  effect on open pages as soon as they are saved, with no reload.
+- **Pick an area on the page.** "Adjust what gets translated here" in the
+  float-ball menu and in the toolbar popup outlines what the pointer is over;
+  click, move up with Parent, check the match count, then choose Don't
+  translate here, Keep original or Only translate here. The selector it
+  writes can be edited before saving.
+- **Don't translate versus keep original.** On a whole block both mean the
+  block is not translated. On a word or link inside a paragraph, Don't
+  translate here leaves it out of the translation, while Keep original keeps
+  it, unchanged, inside the translation.
+- **Your rules win over the built-in site list**, which can only keep text
+  as the original. A pinned engine never falls back to the other one.
+- **CSS stays local.** Anything in a rule's CSS that can load something from
+  the network (`url(`, `@import`, `@font-face`, `image(`, `attr(` and
+  similar), a backslash, or more than 4096 characters is refused, even inside
+  a comment, both when saving and again on the page.
+- **Rules sync with your browser account** (one sync key per rule, at most
+  6 KiB each, 24 KiB and 50 rules in total) and can be exported and imported
+  as `blab-site-rules-YYYYMMDD.json`. The Import & Export file now carries
+  them too; an import is previewed (added, replaced, and how many would let
+  automatic translation use your AI) and is all or nothing.
+- Choosing AI as a rule's engine asks first, like choosing AI for automatic
+  translation, and the daily AI limit field is enabled while any rule uses
+  AI.
+- No new permissions.
+
 ### Onboarding page and settings import/export
 
 - **A welcome page on first install.** A fresh install (not an update) opens

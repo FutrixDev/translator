@@ -134,6 +134,7 @@ and only at the moment you click "translate this image".
 | --- | --- | --- |
 | 设置（接口地址、模型、目标语言、各种开关） | `chrome.storage.sync` | 是 —— 这是 Chrome 的账号同步，数据在 Google 那里，不经过我们 |
 | 站点规则（你对每个网站定下的「总是翻译 / 从不翻译」） | `chrome.storage.sync` | 是，同上 |
+| 自定义站点翻译规则（你给网站写的翻译区域、排除和保留原文的选择器、自定义 CSS、按站点的翻译引擎） | `chrome.storage.sync` | 是，同上。规则里的 CSS 不许加载任何网络资源，保存时和页面上各查一遍 |
 | API key | `chrome.storage.sync` | 是，同上。**我们从不读取、不上传它**；它只在你的浏览器里被拼进发给你自己接口的请求 |
 | 登录令牌（漫画 / 文档翻译用） | `chrome.storage.local` | **否**，只在这台设备上 |
 | 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符，以及今天不用点的翻译用掉了多少 AI 字符 —— 每日额度靠它算） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |

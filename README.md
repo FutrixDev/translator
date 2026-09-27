@@ -44,6 +44,9 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - Translations appear below original text, preserving layout
 - Inherits original styling (font, color, size)
 - Toggle show/hide translations
+- Site translation rules: choose, per site, which areas to translate, which
+  to leave out, which to keep as the original, extra CSS for the
+  translations, and the engine
 - Batched translation: at most 40 paragraphs or 9,000 characters per batch,
   4 batches at a time on the built-in engine and 12 on an AI service
 
@@ -157,6 +160,29 @@ After translation:
 2. Select "Hide Translations" or "Show Translations"
 3. Translations are preserved, no need to re-translate
 
+#### Site Translation Rules
+
+On a page, open the float ball's `···` menu (or the toolbar popup) and choose
+**Adjust what gets translated here**. Point at an area and click it, press
+**↑ Parent** to take the enclosing block, check the **Matches** count, and
+edit the selector if you like. Then choose:
+
+- **Don't translate here**: a whole block is not translated; a word or link
+  inside a paragraph is left out of that paragraph's translation.
+- **Keep original**: a whole block is not translated; a word or link inside a
+  paragraph stays, unchanged, inside the translation.
+- **Only translate here**: translate just this area on this site.
+
+Every rule is listed under **Settings → Site translation rules**, where you
+can also write one by hand: the sites it matches (`example.com`,
+`*.example.com`, `example.com/docs/*`), the areas as CSS selectors, custom
+CSS for the translations (anything that loads from the network is refused),
+and the engine for that site. Rules sync with your browser account (at most
+50 rules, 24 KiB), take effect on open pages as soon as they are saved, and
+win over the built-in site list. **Export rules** saves
+`blab-site-rules-YYYYMMDD.json`; **Import rules…** previews what it adds and
+replaces first.
+
 #### Document Translation
 
 Runs on our servers against your monthly free page allowance, so it needs a
@@ -216,18 +242,20 @@ an update). Every choice on it is saved the moment you make it:
 
 The **Import & Export** card is the last card on the Settings page.
 
-- **Export Settings** saves `blab-settings-YYYYMMDD.json` with your settings
-  and site rules. Your API key is left out unless you tick **Include my API
+- **Export Settings** saves `blab-settings-YYYYMMDD.json` with your settings,
+  site rules and site translation rules. Your API key is left out unless you tick **Include my API
   key**. Caches, usage statistics, your account sign-in, per-site prompt
   counters and panel positions stay on this device.
 - **Import Settings…** reads such a file and shows what it would change before
   anything is written: which settings change, which are skipped (unknown or
-  invalid), how many site rules are merged in, and any part of the file this
-  version does not recognise. Press **Import** to apply it or **Cancel** to
+  invalid), how many site rules are merged in, how many site translation rules
+  are added or replaced, and any part of the file this version does not
+  recognise. Press **Import** to apply it or **Cancel** to
   leave everything as it is. Settings are merged over yours; site rules are
   merged into your list, the file winning for a site in both.
 - The preview warns when importing would let AI translate without a click
-  (for example, turning the automatic engine to AI), and when the file points
+  (for example, turning the automatic engine to AI, or a site translation
+  rule whose engine is AI), and when the file points
   the API endpoint somewhere new while your saved key stays.
 - A file that is not JSON, not a Blab Translation settings file, from another
   file version, damaged in any part, over 1 MB, or that would give selection
@@ -365,6 +393,7 @@ MIT License
 - 译文显示在原文下方，保持原网页布局
 - 继承原文样式（字体、颜色、大小）
 - 支持显示/隐藏译文切换
+- 站点翻译规则：按网站指定翻哪些区域、哪些不翻、哪些保留原文，给译文加 CSS，指定翻译引擎
 - 批量翻译：每批最多 40 段、9000 字符；内置引擎同时跑 4 批，AI 服务 12 批
 
 #### 译文样式与显示
@@ -473,6 +502,16 @@ cd translator
 2. 选择「隐藏译文」或「显示译文」
 3. 译文会被保留，再次显示无需重新翻译
 
+#### 站点翻译规则
+
+在网页上打开悬浮球的 `···` 菜单（或工具栏弹窗），选 **调整本站翻译区域**。把鼠标移到某块区域上点一下，点 **↑上一层** 换成外面那一块，看一眼 **匹配 N 处** 的数，需要的话直接改选择器，然后选：
+
+- **不翻译这里**：整块不翻译；段落里的一个词或链接会从这段的译文里拿掉。
+- **保留原文**：整块不翻译；段落里的一个词或链接原样留在译文里。
+- **只翻译这里**：这个网站只翻这块区域。
+
+所有规则都列在 **设置 → 站点翻译规则**，也可以在那里手写：匹配的网站（`example.com`、`*.example.com`、`example.com/docs/*`）、用 CSS 选择器写的区域、给译文加的 CSS（会从网络加载东西的写法一律拒绝），以及这个网站用的翻译引擎。规则随浏览器账号同步（最多 50 条、24 KiB），保存后已打开的页面立即生效，优先于内置的网站列表。**导出规则** 保存为 `blab-site-rules-YYYYMMDD.json`；**导入规则…** 先预览会新增和替换几条。
+
 #### 文档翻译
 
 跑在我们的服务器上、按月度免费页数计，所以需要先登录账号。
@@ -515,9 +554,9 @@ cd translator
 
 设置页最后一张卡片是 **导入与导出**。
 
-- **导出设置**：保存为 `blab-settings-YYYYMMDD.json`，包含设置和站点规则。API 密钥默认不导出，勾选 **包含我的 API 密钥** 才会写进文件。缓存、使用统计、账号登录、各站点的询问计数和面板位置只留在这台设备上。
-- **导入设置…**：读取这样的文件，写入之前先列出会发生什么：哪些设置会改变、哪些被跳过（不认识或取值不合法）、多少条站点规则会并入、文件里有哪些部分此版本不认识。点 **确认导入** 才写入，点 **取消** 一切不变。设置按项合并到你现有的设置上；站点规则并入你的列表，同一站点以文件为准。
-- 导入后 AI 会在无人点击时翻译（例如自动翻译引擎改成 AI），或文件把 API 接口地址改到别处而你已保存的密钥会发往那里时，预览里会给出提示。
+- **导出设置**：保存为 `blab-settings-YYYYMMDD.json`，包含设置、站点规则和站点翻译规则。API 密钥默认不导出，勾选 **包含我的 API 密钥** 才会写进文件。缓存、使用统计、账号登录、各站点的询问计数和面板位置只留在这台设备上。
+- **导入设置…**：读取这样的文件，写入之前先列出会发生什么：哪些设置会改变、哪些被跳过（不认识或取值不合法）、多少条站点规则会并入、站点翻译规则会新增和替换几条、文件里有哪些部分此版本不认识。点 **确认导入** 才写入，点 **取消** 一切不变。设置按项合并到你现有的设置上；站点规则并入你的列表，同一站点以文件为准。
+- 导入后 AI 会在无人点击时翻译（例如自动翻译引擎改成 AI，或某条站点翻译规则的引擎是 AI），或文件把 API 接口地址改到别处而你已保存的密钥会发往那里时，预览里会给出提示。
 - 文件不是 JSON、不是叭叭翻译的设置文件、来自另一个文件版本、任何一部分损坏、超过 1 MB，或会让划词翻译和悬停翻译用同一个快捷键时，整个文件被拒绝，什么都不会写入。
 
 ### ⚙️ 支持的 API

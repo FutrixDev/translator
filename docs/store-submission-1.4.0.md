@@ -71,6 +71,11 @@ the user asks"，**现在这句话不成立了**）。
 > - 新增：设置页里的「本机统计」。这个月自动翻了几页、缓存替你省下多少、真正
 >   发给模型多少字符。**这几个数字只存在你这台电脑上，不同步、不上传**，
 >   旁边就有清除按钮。
+> - 新增：站点翻译规则。在网页上选「调整本站翻译区域」，点一块区域，选「不翻译
+>   这里」「保留原文」或「只翻译这里」；也可以在设置里手写规则：匹配哪些网站、
+>   哪些区域、给译文加什么 CSS、这个网站用哪个引擎。规则随浏览器账号同步，
+>   保存后立即生效，可以导出、导入。规则里的 CSS **不许从网络加载任何东西**，
+>   保存时和页面上各查一遍。
 > - 修复：「译成哪门语言」只剩一个答案。法语浏览器上右键菜单写着「译成
 >   Français」、整页却译成了简体中文，这类前后不一致没有了；繁体浏览器也不会
 >   再在繁体标签下拿到简体译文。
@@ -135,6 +140,14 @@ the user asks"，**现在这句话不成立了**）。
 >   the cache saved, and the characters that actually reached the model.
 >   **These numbers stay on your machine: not synced, never uploaded**, and
 >   there is a button that clears them.
+> - New: site translation rules. Choose "Adjust what gets translated here" on
+>   a page, click an area and pick "Don't translate here", "Keep original" or
+>   "Only translate here"; or write a rule in Settings: which sites, which
+>   areas, extra CSS for the translations, and which engine that site uses.
+>   Rules sync with your browser account, take effect as soon as they are
+>   saved, and can be exported and imported. A rule's CSS **may not load
+>   anything from the network**; that is checked when it is saved and again on
+>   the page.
 > - Fixed: one answer to "which language do I translate into" — no more
 >   context menu offering French while the page is translated into Chinese.
 > - Fixed: the context menu follows a change of interface language at once.

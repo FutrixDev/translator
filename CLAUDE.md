@@ -327,8 +327,48 @@ their AI spend counts toward the same `autoAiDailyBudget`. A refusal comes back
 as `{ error, budgetSpent: true }`; the caption menu turns that into
 「今日 AI 额度已用完」 and the next batch after the cooldown tries again, so
 raising the budget or a new day heals it without a reload. The options page
-greys the budget field only when none of the three unattended AI paths is open
-(auto engine = AI, manual engine = AI, or fallback allowed).
+greys the budget field only when none of the four unattended AI paths is open
+(auto engine = AI, manual engine = AI, fallback allowed, or a site rule with
+engine = AI).
+
+### User Site Rules
+
+Per-site rules the user writes: which part of a page to translate
+(`include`), what to leave out of the translation (`exclude`), what to keep
+as the original inside it (`keepOriginal`), a stylesheet for the page, and an
+engine pinned for the site. Written from the Settings page's Site
+Translation Rules card (`options/options-custom-rules.js`) or the in-page
+picker (`content/picker/`, opened by `OPEN_RULE_PICKER` from the float-ball
+menu or the popup; top frame only).
+
+- **One resolver**: `shared/custom-rules.js` (`CustomRules`) validates a
+  rule, sanitizes its CSS (`sanitizeCss`, the only CSS check anywhere — the
+  settings page's live hint and the content side both call it), picks the
+  one winning rule for a URL, and merges an import. The page side reads it
+  through `content/page/custom-rule.js` (`ctx.customRules`); user rules
+  outrank the built-in site adapter, and `SiteRules.decide()` does not
+  change.
+- **Key layout**: one `chrome.storage.sync` key per rule, `customRule:<id>`,
+  and no index key — two devices adding rules at once would overwrite an
+  index. Reading every rule is `get(null)` filtered by
+  `CustomRules.KEY_PREFIX` (Chrome 116 has no `getKeys()`).
+- **Writes** go through the service worker's single-writer queue built by
+  `shared/storage-writer.js` (`StorageWriter.create`), shared with
+  `SiteRules` and `AutoStats`; the quota check is
+  `SyncCollection.assertFits`, the one check behind every write and the
+  import preview. No page writes a `customRule:` key itself.
+- **Content-side mirror**: `shared/sync-collection.js` (`SyncCollection`).
+  A frame asks the worker once for its own host's rules
+  (`CUSTOM_RULES_FOR_HOST`, host taken from `sender.url`), then follows the
+  `customRule:` deltas that `content-bootstrap.js` hands out through the
+  `ctx.syncMirrors` registry; those keys never enter `ctx.settings`.
+- **Exclude and keepOriginal differ only on inline elements**: a block hit
+  skips the whole block for both; an inline exclude hit is removed from the
+  text sent and from the translation, an inline keepOriginal hit is sent as a
+  placeholder and comes back unchanged. The built-in table is keepOriginal
+  only.
+- A rule's engine is a pin: it never falls back, and child frames inherit the
+  top frame's through the frame directive (`engineOverride`).
 
 ### Video Subtitle Translation
 
