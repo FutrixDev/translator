@@ -198,7 +198,6 @@ const J4_PAGE = html(`
 
 // 插入译文时会把原文的计算样式（含 color）抄进译文节点的行内 style，任何选择器都
 // 压不过行内样式，所以这条用户 CSS 带 `!important`（规则数据，不是我们的样式表）。
-// 设计 §6 J-4 写的是不带 `!important` 的版本，那样第 1 步永远不成立（偏差已登记）。
 const J4_CSS = '.ai-translator-inline-block { color: rgb(1, 2, 3) !important }';
 
 /** J-4 两条用例共用的开头：夹具页翻好，设置页开在另一个标签页里。 */
