@@ -466,7 +466,7 @@ J-7 的 49 条预置是前提，不是旅程步骤。J-11 在预览之后用同�
 | J-8 | 跨标签即时生效 | 全局自动翻译关，夹具页手动点「翻译」→ 在另一个标签的设置页里新增一条排除规则 → 夹具页 1 s 内该区域译文消失，没有重载 → 在设置页里删掉这条规则（另一台设备同步下来的删除由 `[fixture]` 子步骤从 SW 上下文直删模拟，两条用例走同样的断言）→ 1 s 内夹具页该区域重新出现译文，靠的是 §3.6 第 3 步的增量那一轮 → 全局自动翻译开着再走一遍：手动点「翻译」后调度器接手这一页（`markPageExplicit`），加规则、删规则 → 该区域 1 s 内重新出现译文，这段文字在 mock AI 服务器上恰好被请求一次（第 3 步被 `isOn()` 挡住，只有第 5 步的重启在收块）；这次重译记在自动翻译的用量里（`autoStats.autoAiChars` 增量 > 0） |
 | J-9 | iframe | 顶层夹具（主机 T）嵌一个 iframe（主机 F）。规则 A 匹配 F，exclude `.side-note`；规则 B 匹配 T，引擎 'ai'；全局引擎为内置 → 翻译 → iframe 里 `.side-note` 没有译文，其他段落有译文；iframe 里的段落文本出现在 mock AI 服务器的请求里。<br>• 引擎继承在自动模式、http 页面上验证（顶层与 iframe 都是 http 主机，不点「翻译」，靠自动翻译收块）。<br>• 手动路径区分不出来：子 frame 的手动轮把请求转给顶层，由顶层的引擎发出，子 frame 不继承也照样走 AI；https 也区分不出来：e2e Chromium 在 https 页面上有 `Translator`，内置引擎算可用，子 frame 没继承到 'ai' 也照样有引擎可用。http 页面没有 `Translator`，两张引擎开关都是内置、回退只许本地，除了从顶层指令继承来的 'ai'，子 frame 没有可用的引擎，没继承到就不出译文。<br>• 手动那一条只验区域按 iframe 自己的主机规则解析 |
 | J-10 | 停住的页面被规则叫醒 | 全局的手动和自动引擎都是「内置」，不允许回退，站点设为「总是」→ 打开 http 夹具主机（http 上没有内置引擎，`effectiveEngine` 答 'none'，调度器停在 OFF）→ 页面保持原文，mock AI 服务器零请求 → 在另一个标签的设置页给这个主机新建规则，引擎选「我的 AI」并接受确认 → 保存 → 夹具页不重载，1 s 内出现译文，请求打到 mock AI 服务器。<br>额度用完停在 OFF 走的是同一段代码（`setStatus(OFF)` + `stopDiscovery()`，content-auto-translate.js :514-526）；那条路要内置引擎真能出译文，而 e2e 的无头 Chrome 里内置 `create()` 永不返回（`test/e2e/helpers.js` 的说明），所以不单列 |
-| J-11 | 设置整份导出 / 导入带上规则（P0-F 接缝，§12.4） | 导入导出卡片的说明里列着「站点翻译规则」→ 设置页已有规则 A（引擎跟随全局）和 B（`engine: 'ai'`），全局的手动和自动引擎都是「内置」，不允许回退 → 用 P0-F 的整份导出 → 文件里 `customRules` 小节与卡片导出的对象逐字段相同 → 在卡片里删掉 A，把 B 的引擎改回跟随全局，每日额度输入框变灰 → 整份导入这份文件 → 预览里有一行「站点翻译规则：将新增 1 条、替换 1 条。」，警告里有 `customRulesImportAiNote` 那一句（K = 1：文件里 AI 规则 1 条，是替换的那条 B，新增的 AI 规则 0 条）→ 确认 → 卡片列表恢复两条，额度输入框变为可用 → 再整份导入一份规则小节超额的文件 → 不出预览，报「导入后「站点翻译规则」会超出同步空间，没有导入任何内容。」，存储逐字节不变 → 写入中途失败：删掉 A、B，整份导入原文件，预览出来后从 SW 上下文写入占满额度的规则（J-7 的预置），再点确认 → 报 `transferErrorApplyFailed` 那一句：停在「站点翻译规则」，原因是「超出同步空间」，「已导入」如实列出写进去的小节（至少有「设置」）；规则还是预置的那些，一条没多 → 两处报错里都不出现 i18n 键名 |
+| J-11 | 设置整份导出 / 导入带上规则（P0-F 接缝，§12.4） | 导入导出卡片的说明里列着「站点翻译规则」→ 设置页已有规则 A（引擎跟随全局）和 B（`engine: 'ai'`），全局的手动和自动引擎都是「内置」，不允许回退 → 用 P0-F 的整份导出 → 文件里 `customRules` 小节与卡片导出的对象逐字段相同 → 在卡片里删掉 A，把 B 的引擎改回跟随全局，每日额度输入框变灰 → 整份导入这份文件 → 预览里有一行「站点翻译规则：将新增 1 条、替换 1 条。」，警告里有 `customRulesImportAiNoteOne` 那一句（K = 1 用单数键：文件里 AI 规则 1 条，是替换的那条 B，新增的 AI 规则 0 条）→ 确认 → 卡片列表恢复两条，额度输入框变为可用 → 再整份导入一份规则小节超额的文件 → 不出预览，报「导入后「站点翻译规则」会超出同步空间，没有导入任何内容。」，存储逐字节不变 → 写入中途失败：删掉 A、B，整份导入原文件，预览出来后从 SW 上下文写入占满额度的规则（J-7 的预置），再点确认 → 报 `transferErrorApplyFailed` 那一句：停在「站点翻译规则」，原因是「超出同步空间」，「已导入」如实列出写进去的小节（至少有「设置」）；规则还是预置的那些，一条没多 → 两处报错里都不出现 i18n 键名 |
 
 单测清单：
 
@@ -544,13 +544,13 @@ J-7 的 49 条预置是前提，不是旅程步骤。J-11 在预览之后用同�
 | 键 | 用途 |
 |---|---|
 | `customRulesTitle` / `customRulesDesc` / `customRulesAdd` / `customRulesEmpty` / `customRulesUsage` | 卡片标题、说明、新建、空态、用量表 |
-| `customRulesExport` / `customRulesImport` / `customRulesImportPreview` / `customRulesImportAiNote` / `customRulesImportConfirm` / `customRulesImportInvalid` | 导出与导入 |
+| `customRulesExport` / `customRulesImport` / `customRulesImportPreview` / `customRulesImportAiNote` / `customRulesImportAiNoteOne` / `customRulesImportConfirm` / `customRulesImportInvalid` | 导出与导入。AI 提示分单复数：K 为 1 用 `customRulesImportAiNoteOne`（仓里没有复数规则的先例，就是两个键） |
 | `customRuleMatch` / `customRuleInclude` / `customRuleIncludeHint` / `customRuleExclude` / `customRuleKeepOriginal` / `customRuleCss` / `customRuleCssHint` / `customRuleEngine` / `customRuleEngineFollow` | 编辑器字段；列表里的字段小标签也用这几个标签键，没有自己的一套。引擎的另两个选项复用 `autoTranslateEngineBuiltin` / `autoTranslateEngineAi` |
 | `customRuleEdit` / `customRuleDelete` / `customRuleDeleteConfirm` / `customRuleSave` / `customRuleCancel` | 行内按钮；「保存」「取消」若已有通用键就复用，交付时列出。B2 交付：没有通用的保存 / 取消键（现有的 `comicCancel`、`transferCancel` 都属于各自的功能），所以新增 `customRuleSave` / `customRuleCancel` |
 | `customRuleInvalid` / `customRuleCssUnsafe` / `customRuleMatchInvalid` / `customRuleSelectorInvalid` / `customRuleTooLarge` / `customRulesBudgetFull` / `customRuleSaveFailed` | 错误 |
 | `customRuleEngineAiConfirm` | 确认框 |
 | `pickSiteRegion` | 悬浮菜单项和 popup 按钮 |
-| `pickerHint` / `pickerMatches` / `pickerParent` / `pickerExclude` / `pickerKeepOriginal` / `pickerInclude` / `pickerCancel` / `pickerSaved` / `pickerExcludeTip` / `pickerKeepOriginalTip` / `pickerCssUnsafe` | 拾取器。两条 Tip 是按钮下的说明，设置页编辑器的两个字段也用（§5.1）；`pickerCssUnsafe` 是本站规则 CSS 不安全时拾取器的报错 |
+| `pickerHint` / `pickerMatches` / `pickerParent` / `pickerExclude` / `pickerKeepOriginal` / `pickerInclude` / `pickerCancel` / `pickerSaved` / `pickerExcludeTip` / `pickerKeepOriginalTip` / `pickerTipLine` / `pickerCssUnsafe` | 拾取器。两条 Tip 是按钮下的说明，设置页编辑器的两个字段也用（§5.1）；工具条上一行说明按 `pickerTipLine`（`{label}：{tip}`，冒号跟语言走）拼；`pickerCssUnsafe` 是本站规则 CSS 不安全时拾取器的报错 |
 | `transferSectionCustomRules` / `transferPreviewCustomRules` / `transferErrorSectionInvalid` / `transferErrorSectionBudgetFull` / `transferReasonInvalid` / `transferReasonBudgetFull` / `transferReasonSaveFailed`，以及改 `transferDesc` | 设置整份导入导出里的规则小节（§12.4） |
 
 ## 9. 文件归属与切批
