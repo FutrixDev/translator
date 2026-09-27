@@ -8,6 +8,14 @@
  *         notice shows exactly when the import opens that path
  *   J-F7  site rules survive an export → import round trip, merged
  *   J-F8  a bad file changes nothing in storage, not one byte
+ *   J-11  the site translation rules ride along (P1-B design
+ *         docs/plans/2026-09-24-p1-b-site-rules.md §12.4, §6 J-11): the
+ *         customRules section equals the card's own export, an import puts
+ *         deleted rules back, an over-budget section is refused before
+ *         anything is written, and a write that fails half way says which
+ *         sections already went in. Rules are made and deleted in the card;
+ *         the one service worker write is the J-7 preset that fills the
+ *         budget between the preview and the confirm, as the design says.
  *
  * The API key below is a placeholder string; no credential is involved.
  * Every journey ends in a geometry check (layout-checks.js), in the dark
@@ -21,6 +29,14 @@ const {
 } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { expectLaidOut } = require('./layout-checks');
+const {
+  fill,
+  storedRules,
+  presetRules,
+  createRule,
+  deleteRule,
+  openOptions: openRulesCard,
+} = require('./custom-rules-fixtures');
 
 const en = (key) => getMessage(key, 'en');
 const PLACEHOLDER_KEY = 'e2e-placeholder-not-a-key';
@@ -241,4 +257,139 @@ test('J-F8 a bad file changes nothing in storage', async ({ page, context, exten
   report('J-F8 dark error', await expectLaidOut(page, ['#transferError', '#transferExport', '#transferImport'], 'J-F8 dark error'));
   // The form still shows what is stored.
   await expect(page.locator('#targetLang')).toHaveValue('fr');
+});
+
+// ------------------------------------------------------------------ J-11
+
+const DISABLED = /(^|\s)disabled(\s|$)/;
+const withoutStamp = ({ exportedAt, ...rest }) => rest;
+
+/** 45 条、每条两段 280 字的选择器：条数放得下（≤ 50），字节放不下（> 24 KiB）。 */
+function oversizedRules() {
+  return Array.from({ length: 45 }, (_, i) => {
+    const n = String(i).padStart(2, '0');
+    return {
+      id: `big${n}`,
+      v: 1,
+      match: [`big-${n}.test`],
+      exclude: [`.a${'y'.repeat(280)}`, `.b${'y'.repeat(280)}`],
+      updatedAt: 1790000000000,
+    };
+  });
+}
+
+/** 报错是给人看的一句话：不带 i18n 键名（camelCase），也没有没填上的 `{占位}`。 */
+function expectNoKeyNames(text, label) {
+  expect(text, `${label}: no i18n key name`).not.toMatch(/\b[a-z]+[A-Z][A-Za-z]*\b/);
+  expect(text, `${label}: no unfilled placeholder`).not.toMatch(/[{}]/);
+}
+
+test('J-11 a whole-settings export carries the site translation rules, and an import puts them back', async ({ page, context, extensionId }) => {
+  await setExtensionSettings(page, {
+    translationEngine: 'builtin',
+    autoTranslateEngine: 'builtin',
+    engineFallback: 'local-only',
+    autoTranslate: false,
+    targetLang: 'zh-CN',
+  });
+  await openRulesCard(page, extensionId);
+
+  // 导入导出卡片的说明里列着「站点翻译规则」。
+  await expect(page.locator('span.hint[data-i18n-hint="transferDesc"]')).toHaveText(en('transferDesc'));
+  expect(en('transferDesc').toLowerCase()).toContain(en('transferSectionCustomRules').toLowerCase());
+
+  // 规则 A（引擎跟随全局）和 B（钉 AI），都在卡片里建。B 一存，额度那一格亮起来。
+  const budget = page.locator('#autoAiBudgetGroup');
+  await expect(budget).toHaveClass(DISABLED);
+  const { id: idA } = await createRule(page, context, { match: ['rules.test'], exclude: ['.comments'] });
+  const { id: idB } = await createRule(page, context, { match: ['rules-ai.test'] }, { engineAi: true });
+  await expect(budget).not.toHaveClass(DISABLED);
+  const stored = await storedRules(context);
+  expect(Object.keys(stored).sort()).toEqual([`customRule:${idA}`, `customRule:${idB}`].sort());
+
+  // 整份导出里的 customRules 小节，和卡片自己导出的文件逐字段相同（导出时刻除外）。
+  const { body } = await exportFile(page);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#customRulesExport')]);
+  const card = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+  expect(body.customRules.format).toBe('blab-site-rules');
+  expect(body.customRules.version).toBe(1);
+  expect(withoutStamp(body.customRules)).toEqual(withoutStamp(card));
+  expect(body.customRules.rules.map((r) => r.id).sort()).toEqual([idA, idB].sort());
+
+  // 在卡片里删掉 A、B：额度那一格变灰。
+  await deleteRule(page, idA);
+  await deleteRule(page, idB);
+  await expect.poll(() => storedRules(context)).toEqual({});
+  await expect(budget).toHaveClass(DISABLED);
+
+  // 整份导入：预览里有规则那一行，警告里有 AI 那一句（K = 1）。
+  const preview = page.locator('#transferPreview');
+  const rulesLine = fill(en('transferPreviewCustomRules'), { added: 2, replaced: 0 });
+  const aiNote = fill(en('customRulesImportAiNote'), { count: 1 });
+  await chooseFile(page, body);
+  await expect(preview).toBeVisible();
+  await expect(page.locator('#transferPreviewList li', { hasText: en('transferSectionCustomRules') }))
+    .toHaveText(rulesLine);
+  await expect(page.locator('#transferWarnings .transfer-warning', { hasText: aiNote })).toHaveCount(1);
+  report('J-11 warnings', (await page.locator('#transferWarnings .transfer-warning').allInnerTexts()).join(' | '));
+  expect(await storedRules(context), 'previewing wrote nothing').toEqual({});
+  await centre(page, '#transferPreview');
+  report('J-11 preview', await expectLaidOut(page,
+    ['#transferPreviewList', '#transferWarnings .transfer-warning', '#transferConfirm', '#transferCancel'], 'J-11 preview'));
+
+  // 确认：列表回到两条，存进去的就是导出时那两条，额度那一格亮起来。导入的规则
+  // updatedAt 一律记为导入那一刻（设计 §1 第 16 条），所以除它之外逐字段相同。
+  const importedFrom = Date.now();
+  await page.click('#transferConfirm');
+  await expect(preview).toBeHidden();
+  await expect(page.locator('#statusMessage')).toHaveText(en('transferImported'));
+  await expect(page.locator('.custom-rule')).toHaveCount(2);
+  await expect(page.locator(`.custom-rule[data-rule-id="${idA}"]`)).toHaveCount(1);
+  await expect(page.locator(`.custom-rule[data-rule-id="${idB}"]`)).toHaveCount(1);
+  const restored = await storedRules(context);
+  const unstamped = (rules) => Object.fromEntries(
+    Object.entries(rules).map(([key, { updatedAt, ...rule }]) => [key, rule]));
+  expect(unstamped(restored)).toEqual(unstamped(stored));
+  const stamps = Object.values(restored).map((rule) => rule.updatedAt);
+  expect(new Set(stamps).size, 'one import, one timestamp').toBe(1);
+  expect(stamps[0]).toBeGreaterThanOrEqual(importedFrom);
+  expect(stamps[0]).toBeLessThanOrEqual(Date.now());
+  await expect(budget).not.toHaveClass(DISABLED);
+
+  // 规则小节超额的文件：不出预览，报超额那一句，存储逐字节不变。
+  const error = page.locator('#transferError');
+  const before = await syncSnapshot(context);
+  await chooseFile(page, { ...body, customRules: { ...body.customRules, rules: oversizedRules() } });
+  const budgetText = fill(en('transferErrorSectionBudgetFull'), { section: en('transferSectionCustomRules') });
+  await expect(error).toBeVisible();
+  await expect(error).toHaveText(budgetText);
+  await expect(preview).toBeHidden();
+  expect(await syncSnapshot(context)).toEqual(before);
+  expectNoKeyNames(await error.innerText(), 'budget error');
+
+  // 写入中途失败：删掉 A、B，整份导入原文件；预览出来以后另一头把额度占满（J-7 的
+  // 预置，SW 写入），再点确认。设置那一节已经写进去了，规则那一节被拒。
+  await deleteRule(page, idA);
+  await deleteRule(page, idB);
+  await expect.poll(() => storedRules(context)).toEqual({});
+  await chooseFile(page, body);
+  await expect(preview).toBeVisible();
+  await expect(page.locator('#transferPreviewList li', { hasText: en('transferSectionCustomRules') }))
+    .toHaveText(rulesLine);
+  const presets = presetRules();
+  await writeSyncSettings(context, presets);
+  await page.click('#transferConfirm');
+  const applyText = fill(en('transferErrorApplyFailed'), {
+    failed: en('transferSectionCustomRules'),
+    message: en('transferReasonBudgetFull'),
+    written: en('transferSectionSettings'),
+  });
+  await expect(error).toBeVisible();
+  await expect(error).toHaveText(applyText);
+  expect(Object.keys(await storedRules(context)).sort(), 'only the presets, not one rule more')
+    .toEqual(Object.keys(presets).sort());
+  expectNoKeyNames(await error.innerText(), 'apply error');
+
+  await centre(page, '#transferError');
+  report('J-11 error', await expectLaidOut(page, ['#transferError', '#transferExport', '#transferImport'], 'J-11 error'));
 });
