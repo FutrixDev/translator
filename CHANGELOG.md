@@ -29,7 +29,10 @@
   alone even though the rest of the site translates by itself, and even if you
   set the whole site to always translate: nothing from a conversation is sent
   to the AI without a click. "Translate this page" and Alt+A still translate a
-  conversation when you ask.
+  conversation when you ask. This also holds when you click into a
+  conversation from the home timeline: the address is checked again right
+  before anything is sent, so a message is never sent under the timeline's
+  verdict while the site's router is still finishing the navigation.
 - **Videos get their own subtitles switched on for you.** "Turn subtitles on
   automatically" is now on by default, so a video whose subtitles are off has
   something to translate. Switch them off in the player and they stay off in

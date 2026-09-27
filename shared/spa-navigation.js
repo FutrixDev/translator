@@ -141,7 +141,8 @@
 
   /**
    * 订阅路由变化。回调收到 { from, to, via }，via 是三路里先看见的那一路
-   * （'popstate' | 'hashchange' | 'navigation' | 'poll'），只作排障用。
+   * （'popstate' | 'hashchange' | 'navigation' | 'poll'），或者 check() 的调用方
+   * 报的名字，只作排障用。
    * 返回退订函数；最后一个订阅者退订后监听与轮询一并撤掉，空转的页面上这个
    * 模块不该有心跳。
    */
@@ -155,5 +156,21 @@
     };
   }
 
-  root.SpaNavigation = { POLL_INTERVAL_MS, currentUrl, onRouteChange };
+  /**
+   * 「现在就比一次」：地址变了就照常播报，via 由调用方报。给那些**不能等下一个
+   * 触发器**的人用 —— 自动翻译发请求之前（content/content-auto-translate.js 的
+   * superseded()）：页面的路由器拦下 Navigation API 的 navigate 事件时，
+   * navigatesuccess 要等它的处理函数落定才来，于是只剩轮询，最慢 800ms；而那一
+   * 批已经在路上了。
+   *
+   * 走的是同一个 announce：lastUrl 跟着更新，所以随后赶到的轮询或事件对同一次
+   * 导航不会再喊一声；别的订阅者（页面语言、站点规则范围）也在同一刻知道换了页，
+   * 否则新一轮会拿上一页的语言和范围去收块。没订阅过（wired 为假）就什么都不做。
+   */
+  function check(via) {
+    if (!wired) return;
+    announce(via);
+  }
+
+  root.SpaNavigation = { POLL_INTERVAL_MS, currentUrl, onRouteChange, check };
 })(globalThis);

@@ -197,6 +197,74 @@ test('site rules: a direct-message page is not translated by itself, and Transla
   }
 });
 
+// 从首页点进私信（R33 D-360 F1）。x.com 这类单页应用的路由器会拦下 Navigation API
+// 的 navigate 事件（intercept），于是隔离世界的 navigatesuccess 要等它的处理函数落定，
+// 只剩 800ms 一次的轮询能听见换了页；而私信正文一插进来，发现层 400ms + 起跑 250ms
+// 之后那一批就出门了。按首页的判定出门，私信就发给了 AI。
+//
+// 修法在发请求之前：先拿地址对一次这一代是替哪个地址判的，对不上就当场补上路由信号
+// （content/content-auto-translate.js 的 superseded()）。
+//
+// 要让错的实现确定地红，时序得排好：先推一个判定不变的探针地址，等轮询把它报上来
+// （会话号一变就是轮询那一拍），紧接着在同一个任务里推私信地址、插私信正文 —— 离
+// 下一拍轮询还有将近 800ms，发送窗口先到。确定性的那一份在
+// test/unit/auto-translate-route-send.test.mjs。
+test('site rules: moving from the home timeline into a direct message sends nothing from the message, even before the route signal arrives', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://x.com/**', X_PAGE);
+
+    await page.goto('https://x.com/home');
+    await page.waitForSelector('#ai-translator-float-ball');
+    // 首页照常自己翻：这一页的判定是开着的。
+    await page.waitForSelector('#tweet .ai-translator-inline-block', { timeout: 30000 });
+    expect(sentTexts.join('\n')).toContain(TWEET_A);
+
+    // 页面自己的路由器：拦下每一次 push 导航，处理函数 5 秒才落定。两个按钮由隔离
+    // 世界按（DOM 事件跨世界同步派发），真正的 pushState 在页面自己的世界里。
+    await page.evaluate((dmText) => {
+      navigation.addEventListener('navigate', (event) => {
+        if (event.canIntercept && event.navigationType === 'push') {
+          event.intercept({ handler: () => new Promise((resolve) => setTimeout(resolve, 5000)) });
+        }
+      });
+      document.addEventListener('test:probe', () => history.pushState({}, '', '/home?probe=1'));
+      document.addEventListener('test:open-dm', () => {
+        history.pushState({}, '', '/messages/abc');
+        const entry = document.createElement('div');
+        entry.setAttribute('data-testid', 'messageEntry');
+        entry.innerHTML = `<p id="dm-text">${dmText}</p>`;
+        document.body.appendChild(entry);
+      });
+    }, DM_TEXT);
+
+    const waited = await evaluateInContentScript(context, page, `(async () => {
+      const version = () => AI_TRANSLATOR_CONTENT.autoTranslate.state().sessionVersion;
+      const before = version();
+      const t0 = performance.now();
+      document.dispatchEvent(new CustomEvent('test:probe'));
+      await new Promise((resolve) => {
+        const id = setInterval(() => {
+          if (version() !== before) { clearInterval(id); resolve(); }
+        }, 2);
+      });
+      document.dispatchEvent(new CustomEvent('test:open-dm'));
+      return Math.round(performance.now() - t0);
+    })()`);
+    console.log(`[F1] probe route heard after ${waited} ms; DM opened right after that poll tick`);
+
+    // 过一个完整的发送窗口（650ms 起跑）再加上下一拍轮询之后的余量。
+    await page.waitForTimeout(3000);
+    expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
+    expect(await evaluateInContentScript(context, page, 'AI_TRANSLATOR_CONTENT.autoTranslate.state().reason'))
+      .toBe('BUILTIN_NEVER');
+  } finally {
+    await close();
+  }
+});
+
 test('site rules: a Hacker News subtext line is skipped while the story title is translated', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 

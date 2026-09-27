@@ -127,6 +127,35 @@ test('轮询: 一个事件都没有也能发现，每 800ms 比一次', async (t
   assert.equal(w.seen[0].via, 'poll');
 });
 
+test('check(): 调用方现在就要答案 —— 地址变了当场播报，via 报调用方的名字；随后赶到的轮询不再喊第二声', async (t) => {
+  fakeClock(t);
+  const w = await freshNavigation({ href: 'https://x.com/home' });
+  const stop = w.listen();
+  w.api.check('send');
+  assert.equal(w.seen.length, 0, '地址没变就什么都不播');
+  w.go('https://x.com/messages/abc');
+  w.api.check('send');
+  assert.deepEqual(w.seen, [{ from: 'https://x.com/home', to: 'https://x.com/messages/abc', via: 'send' }]);
+  t.mock.timers.tick(800);
+  w.nav.dispatch('navigatesuccess');
+  stop();
+  assert.equal(w.seen.length, 1, 'lastUrl 跟着 check() 更新，同一次导航只播一次');
+});
+
+test('check(): 没人订阅时什么都不做 —— 不会凭空把模块接上线', async (t) => {
+  fakeClock(t);
+  const w = await freshNavigation({ href: 'https://x.com/home' });
+  w.go('https://x.com/messages/abc');
+  w.api.check('send');
+  assert.equal(w.win.count('popstate'), 0, '没有订阅就没有监听');
+  const stop = w.listen();
+  w.go('https://x.com/messages/def');
+  w.api.check('send');
+  stop();
+  assert.deepEqual(w.seen.map((e) => e.from), ['https://x.com/messages/abc'],
+    '订阅那一刻起算，check() 之前的地址不补播');
+});
+
 test('去重: 三路对同一次导航各喊一声，只播一次 —— 哪怕相隔远超 250ms', async (t) => {
   fakeClock(t);
   const w = await freshNavigation();

@@ -94,6 +94,8 @@
     let lastError = null;
     // 用户在这一页已经表过态（点过「翻译整页」）。换路由就忘掉。
     let explicit = false;
+    // 这一代是替哪个地址判的。start() 一进来就记，superseded() 发请求前拿它对。
+    let decidedHref = '';
     // 「这一页先别翻了」—— popup 上按的暂停，或者把译文藏起来（两条都走
     // pauseCurrentPage）。
     //
@@ -230,6 +232,7 @@
      * ai-translator-hidden，那个开关就此成了摆设。
      */
     function start(why) {
+      decidedHref = location.href;
       bumpSession(why || 'start');
       stopDiscovery();
       if (ctx.state.translationsVisible === false || pausedByUser) {
@@ -458,13 +461,13 @@
         const fresh = await ctx.filterBlocksByLanguage(blocks);
         // 探语言本身就是一串 await。期间换了路由或者关掉了自动翻译，这一轮的结果
         // 一条都不会被采纳 —— 那就一条都别发，也别往（早已作废重建的）台账里记。
-        if (guard.version() === session) {
+        if (!superseded(session)) {
           // 被语言滤掉的是**有意跳过**，和失败是两回事：这一轮不发它，下一轮也不
           // 该再发。记账。
           const keep = new Set(fresh.map((block) => block.element));
           for (const block of blocks) if (!keep.has(block.element)) commit(block.element);
         }
-        if (fresh.length > 0 && guard.version() === session) {
+        if (fresh.length > 0 && !superseded(session)) {
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
           //
@@ -484,7 +487,9 @@
             // 这一轮是自动模式发出去的。引擎层据此判 FR-9 的费用闸，本机统计
             // 也据此把「自动模式今天花掉多少字符」和手动那部分分开记。
             auto: true,
-            isAborted: () => guard.version() !== session,
+            // 每一批发出去之前都问一次 superseded()：地址可能是在这一轮跑到一半
+            // 时才换的。
+            isAborted: () => superseded(session),
           });
         }
       } catch (thrown) {
@@ -546,6 +551,23 @@
 
       setStatus(STATUS.IDLE);
       if (queue.size > 0) scheduleStart();
+    }
+
+    /**
+     * 「这一轮还算数吗」—— 每一批发出去之前问（R33 D-360 F1）。
+     *
+     * 地址先对一次：这一代是替 decidedHref 判的，页面若已经走到别的地址，就把
+     * 路由信号当场补上 —— SpaNavigation.check() 走的是和 popstate / navigatesuccess /
+     * 轮询同一个 announce，于是进的是同一个 onRouteChange，重新判定只有那一条路。
+     * 不对的话：页面的路由器拦下 Navigation API 的 navigate 事件时，隔离世界要到
+     * 下一次轮询（最慢 800ms）才听说换了页，而发现层 400ms、起跑 250ms 之后这一
+     * 批就出门了 —— x.com 从首页点进私信，私信正文会按首页的判定送出去。
+     *
+     * 补上信号之后代次已经翻篇，照常由代次作答。
+     */
+    function superseded(session) {
+      if (location.href !== decidedHref) globalThis.SpaNavigation.check('send');
+      return guard.version() !== session;
     }
 
     // ------------------------------------------------------------------ 代次
