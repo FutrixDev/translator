@@ -399,7 +399,7 @@ async function canFallBackToAI() {
 - **用量表**：「已用 x KiB / 24 KiB · n / 50 条」，数字来自 `CustomRules.usage`。
 - **导出**：Blob 加 `<a download="blab-site-rules-YYYYMMDD.json">`。
 - **导入**：
-  1. 用户选文件，前端解析后给出预览：「将新增 N 条、替换 M 条」。预览只由一个函数算：`previewCustomRulesImport(file)`（options-custom-rules.js 的全局函数），对卡片当前的规则跑 `CustomRules.mergeImport`，再用 `CustomRules.assertFits` 查合并后的额度，返回 `{added, replaced, aiCount}`，出错抛错误键。卡片和设置整份导入（§12.4）共用它（D-306）。
+  1. 用户选文件，前端解析后给出预览：「将新增 N 条、替换 M 条」。预览只由一个函数算：`previewCustomRulesImport(file)`（options-custom-rules.js 的全局函数），对存储里现有的规则（现读）跑 `CustomRules.mergeImport`，不用卡片手里那份（整份导入可能在卡片读回来之前就点了），再用 `CustomRules.assertFits` 查合并后的额度，返回 `{added, replaced, aiCount}`，出错抛错误键。卡片和设置整份导入（§12.4）共用它（D-306）。
   2. 若 `aiCount` 大于 0，预览里多一行 AI 提示：「其中 K 条会让这些网站的自动翻译使用你的 AI 接口，并计入每日 AI 额度」，K 即 `aiCount`。
   3. 按钮「导入」「取消」。
   4. 格式不对或有无效条目报 `customRulesImportInvalid`，超额报 `customRulesBudgetFull`（单条超 6 KiB 报 `customRuleTooLarge`）；这几种情况存储都不变。
