@@ -79,11 +79,30 @@
     parts.input.focus({ preventScroll: true });
   }
 
+  /**
+   * 拾取器开着时焦点只在工具条里转：Tab 往后、Shift+Tab 往前，两头绕回来。焦点
+   * 还在页面上时，第一下 Tab 把它带进工具条。不交给浏览器走：工具条挂在 body 最
+   * 后，浏览器的下一站是页面或地址栏，而页面上的按键全被截住，出去就回不来了。
+   */
+  function cycleFocus(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const stops = picker.focusables(parts);
+    const at = stops.indexOf(document.activeElement);
+    const step = event.shiftKey ? -1 : 1;
+    const next = at === -1 ? (step > 0 ? 0 : stops.length - 1) : (at + step + stops.length) % stops.length;
+    stops[next].focus({ preventScroll: true });
+  }
+
   function onBlocked(event) {
     if (event.type === 'keydown' && event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
       close();
+      return;
+    }
+    if (event.type === 'keydown' && event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      cycleFocus(event);
       return;
     }
     if (inRoot(event)) return;

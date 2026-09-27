@@ -125,6 +125,15 @@
     for (const field of FIELDS) parts.buttons[field].disabled = !count;
   }
 
+  /**
+   * 工具条里此刻能拿到焦点的控件，按文档顺序（输入框在按钮那一排上面，parts.buttons
+   * 按标记顺序填）：藏着的一排和置灰的按钮不算。「取消」一直在，所以不会是空的。
+   */
+  function focusables(parts) {
+    return [parts.input, ...Object.values(parts.buttons)]
+      .filter((el) => !el.disabled && !el.closest('[hidden]'));
+  }
+
   function showStatus(parts, text) {
     parts.status.hidden = !text;
     parts.status.textContent = text || '';
@@ -138,6 +147,7 @@
     placeBar,
     setLocked,
     showCount,
+    focusables,
     showStatus,
   });
 })();

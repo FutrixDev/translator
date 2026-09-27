@@ -448,6 +448,56 @@ test('picker: a click the page script makes neither locks a target nor writes a 
     .toEqual([['#lead']]);
 });
 
+// ------------------------------------------------------------------ 键盘焦点
+
+const FOCUS = {
+  lead: 'The harbour ferry leaves the pier every hour and returns at twenty past.',
+};
+
+test('picker: Tab and Shift+Tab cycle through the toolbar and never leave it', async ({ page, context }) => {
+  await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+  await serve(context, { [`${RULES}/harbour`]: html(`<p id="lead">${FOCUS.lead}</p><a href="#x">a page link</a>`) });
+  await page.goto(`${RULES}/harbour`);
+  await waitForFloatBall(page);
+  await openPickerFromMenu(page);
+
+  // 焦点落在哪：工具条控件报 data-act（输入框报 input），别的报标签名（BODY、A…）。
+  const focused = () => page.evaluate((root) => {
+    const el = document.activeElement;
+    if (!el || !el.closest(root)) return el ? el.tagName : null;
+    return el.dataset.act || (el.classList.contains('ai-translator-picker-input') ? 'input' : el.tagName);
+  }, PICKER);
+  const walk = async (key, times) => {
+    const seen = [];
+    for (let i = 0; i < times; i += 1) {
+      await page.keyboard.press(key);
+      seen.push(await focused());
+    }
+    return seen;
+  };
+
+  // 还没点中：工具条上只有「取消」。焦点从页面上被 Tab 带进来，之后停在它身上。
+  expect(await walk('Tab', 2)).toEqual(['cancel', 'cancel']);
+  expect(await walk('Shift+Tab', 1)).toEqual(['cancel']);
+
+  // 点中后焦点在输入框。Tab 走完一圈绕回来，Shift+Tab 反着绕，一步都不落到页面上。
+  await pickWithPointer(page, page.locator('#lead'), 'focus lead');
+  expect(await focused()).toBe('input');
+  expect(await walk('Tab', 7)).toEqual(['parent', 'exclude', 'keepOriginal', 'include', 'cancel', 'input', 'parent']);
+  expect(await walk('Shift+Tab', 3)).toEqual(['input', 'cancel', 'include']);
+
+  // 三个动作置灰时它们不在这一圈里。
+  await page.locator(`${PICKER} .ai-translator-picker-input`).fill('#no-such-element');
+  await expectPickerMatches(page, 0);
+  await page.locator(`${PICKER} .ai-translator-picker-input`).focus();
+  expect(await walk('Tab', 3)).toEqual(['parent', 'cancel', 'input']);
+
+  // Esc 照旧关掉；关掉之后 Tab 还给页面。
+  await page.keyboard.press('Escape');
+  await expectPickerGone(page);
+  expect(await walk('Tab', 1)).not.toEqual(['cancel']);
+});
+
 // ------------------------------------------------------------------ popup 入口
 
 test('the popup button opens the picker on the page in front', async ({ context, extensionId }) => {
