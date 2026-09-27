@@ -123,7 +123,7 @@ async function renderCustomRules() {
   }
   // 两次读交错回来时，只认后发的那一次。
   if (seq !== customRulesReadSeq) return;
-  customRulesList = rules.sort((a, b) => a.match[0].localeCompare(b.match[0]) || a.id.localeCompare(b.id));
+  customRulesList = rules.sort(CustomRules.compareRules);
   customRulesLoaded = true;
   drawCustomRules();
   syncAutoEngineState();

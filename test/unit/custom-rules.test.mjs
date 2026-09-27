@@ -368,6 +368,25 @@ test('custom-rules: toExportFile carries the id on each rule and round-trips thr
   assert.equal(merged.replaced, 1, '导出 → 导入是幂等的');
 });
 
+test('custom-rules: toExportFile orders rules by first match, then id, whatever order they come in', () => {
+  const rules = [
+    { id: 'zz000001', v: 1, match: ['b.com'], engine: 'ai' },
+    { id: 'aa000002', v: 1, match: ['a.com', 'z.com'], engine: 'ai' },
+    { id: 'mm000003', v: 1, match: ['b.com'], exclude: ['.x'] },
+    { id: 'bb000004', v: 1, match: ['a.com'], keepOriginal: ['.y'] },
+  ];
+  const expected = ['aa000002', 'bb000004', 'mm000003', 'zz000001'];
+  // 四条的全部 24 种排列，输出都是同一个顺序；输入数组本身不被改动。
+  const permute = (list) => (list.length <= 1 ? [list] : list.flatMap((item, i) => (
+    permute([...list.slice(0, i), ...list.slice(i + 1)]).map((rest) => [item, ...rest])
+  )));
+  for (const order of permute(rules)) {
+    const before = order.map((rule) => rule.id);
+    assert.deepEqual(CustomRules.toExportFile(order).rules.map((rule) => rule.id), expected);
+    assert.deepEqual(order.map((rule) => rule.id), before);
+  }
+});
+
 // ------------------------------------------------------------ 写入
 
 test('custom-rules write put: a new rule gets an id, lands without it in the value, and is stamped', async () => {

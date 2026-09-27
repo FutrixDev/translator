@@ -283,13 +283,19 @@
     };
   }
 
+  // 规则的唯一一种顺序：先按第一个匹配串，再按 id。id 是随机的，存储里的顺序
+  // 不稳定，所以设置页列表和两条导出路径都按它排，同一份规则导出来的文件一样。
+  function compareRules(a, b) {
+    return a.match[0].localeCompare(b.match[0]) || a.id.localeCompare(b.id);
+  }
+
   // 文件里每条规则带 id（集合从键上取回来的那个），id 排在最前面好读。
   function toExportFile(rules) {
     return {
       format: FILE_FORMAT,
       version: FILE_VERSION,
       exportedAt: Date.now(),
-      rules: (rules || []).map((rule) => Object.assign({ id: rule.id }, rule)),
+      rules: (rules || []).slice().sort(compareRules).map((rule) => Object.assign({ id: rule.id }, rule)),
     };
   }
 
@@ -406,6 +412,7 @@
     usage: collection.usage,
     assertFits: collection.assertFits,
     mergeImport,
+    compareRules,
     toExportFile,
     applyWrite,
     request,
