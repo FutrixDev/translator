@@ -14,20 +14,36 @@
 // - Open chrome://extensions/shortcuts. Pages cannot navigate to chrome://
 //   URLs; chrome.tabs.create can.
 import '../shared/storage-writer.js';
+import '../shared/site-rules.js';
 
 // sync key: hosts that have been shown the comic hint once.
 export const COMIC_HINT_HOSTS_KEY = 'comicHintHosts';
-// Oldest dropped first. Sync is 8 KB per item; 200 host names stay well under
-// the writer's budget, and a site seen 200 sites ago can hear about it again.
+// Oldest dropped first, and a site seen that many sites ago can hear about it
+// again. A count alone does not keep the item under sync's 8 KB per item (200
+// hosts of 40+ characters do not fit), so the list is also cut by its encoded
+// bytes against the budget every sync writer shares (StorageWriter.ITEM_BUDGET,
+// which leaves room for the key).
 const MAX_HOSTS = 200;
 
+/** Newest last; oldest dropped until the count and the encoded bytes fit. */
+function fitHosts(hosts) {
+  const { ITEM_BUDGET, itemBytes } = StorageWriter;
+  let next = hosts.slice(-MAX_HOSTS);
+  while (next.length > 1 && itemBytes(next) > ITEM_BUDGET) next = next.slice(1);
+  return next;
+}
+
 async function claim({ host }) {
-  if (!host) return false;
+  // One key per site, as the site rules count it: www.example.com and
+  // example.com are the same site and are told once.
+  const key = SiteRules.normalizeHost(host);
+  if (!key) return false;
   const stored = await chrome.storage.sync.get({ [COMIC_HINT_HOSTS_KEY]: [] });
   const hosts = Array.isArray(stored[COMIC_HINT_HOSTS_KEY]) ? stored[COMIC_HINT_HOSTS_KEY] : [];
-  if (hosts.includes(host)) return false;
-  const next = [...hosts, host].slice(-MAX_HOSTS);
-  await chrome.storage.sync.set({ [COMIC_HINT_HOSTS_KEY]: next });
+  if (hosts.includes(key)) return false;
+  // Cut before every write: a list stored before this cut existed, already too
+  // big for its item, heals on the next claim instead of failing it forever.
+  await chrome.storage.sync.set({ [COMIC_HINT_HOSTS_KEY]: fitHosts([...hosts, key]) });
   return true;
 }
 

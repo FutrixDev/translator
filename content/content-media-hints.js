@@ -185,6 +185,8 @@
     comicClaimed = true;
     const reply = await ctx.comic.sendMessage({ type: 'COMIC_HINT_WRITE', kind: 'claim', host: location.hostname });
     if (reply.error) {
+      // 没认领到：闩放开，下一次 detect()（滚动、visibilitychange）再问一次。
+      comicClaimed = false;
       console.warn('Blab Translation: comic hint claim failed', reply.error);
       return;
     }

@@ -338,6 +338,23 @@ test('a send that throws at once (the extension is gone) says so, and the hint c
   assert.equal(page.lastOffer().busy, false);
 });
 
+test('a comic claim that failed is asked again on the next look, and then the hint shows', async () => {
+  const replies = { COMIC_HINT_WRITE: { ok: false, error: { code: 'extension_context', message: 'gone' } } };
+  const page = load({ kind: 'comic', replies });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer(), null);
+  assert.equal(page.warnings.length > 0, true, 'the failed claim was not logged');
+  // The worker is back; the user switches back to the tab.
+  replies.COMIC_HINT_WRITE = { value: true };
+  page.show();
+  await flush();
+  await flush();
+  assert.equal(types(page.sent).filter((type) => type === 'COMIC_HINT_WRITE').length >= 2, true, 'never asked again');
+  assert.equal(page.lastOffer() && page.lastOffer().text, 'mediaHintComic');
+});
+
 // ------------------------------------------------------------ the comic start it hands off to
 
 /** content/content-comic-translation.js alone, over a comic shelf this test writes. */
@@ -486,16 +503,33 @@ test('a stack counts only once one of its pages is on screen', () => {
 
 // ------------------------------------------------------------ the service-worker half
 
-test('a host is claimed once: the first tab wins, every later one loses', async () => {
-  const sync = {};
+/** The worker's sync area, in memory; `stored` is what is already in it. */
+function workerSync(stored = {}) {
+  const sync = { ...stored };
   globalThis.chrome = {
     storage: {
       sync: {
         get: async (defaults) => ({ ...defaults, ...sync }),
-        set: async (values) => { Object.assign(sync, values); },
+        set: async (values) => {
+          // Chrome refuses an item over QUOTA_BYTES_PER_ITEM (key + JSON value).
+          for (const [key, value] of Object.entries(values)) {
+            const bytes = new TextEncoder().encode(key + JSON.stringify(value)).length;
+            if (bytes > 8192) throw new Error(`QUOTA_BYTES_PER_ITEM quota exceeded (${key}: ${bytes})`);
+          }
+          Object.assign(sync, values);
+        },
       },
     },
   };
+  return sync;
+}
+
+// A host name as long as DNS allows (253), made of 63-character labels.
+const longHost = (tag) => `${tag}.${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}`.padEnd(249, 'd') + '.com';
+const jsonBytes = (value) => new TextEncoder().encode(JSON.stringify(value)).length;
+
+test('a host is claimed once: the first tab wins, every later one loses', async () => {
+  const sync = workerSync();
   const { comicHintWriter, COMIC_HINT_HOSTS_KEY } = await import('../../background/media-hints.js');
   const claims = await Promise.all([
     comicHintWriter.applyWrite({ kind: 'claim', host: 'comics.example' }),
@@ -504,6 +538,45 @@ test('a host is claimed once: the first tab wins, every later one loses', async 
   ]);
   assert.deepEqual(claims, [true, false, true]);
   assert.deepEqual(sync[COMIC_HINT_HOSTS_KEY], ['comics.example', 'other.example']);
+});
+
+test('www. and the bare host are one site, claimed once', async () => {
+  const sync = workerSync();
+  const { comicHintWriter, COMIC_HINT_HOSTS_KEY } = await import('../../background/media-hints.js');
+  const claims = [];
+  for (const host of ['WWW.Comics.Example', 'comics.example', 'www.comics.example.']) {
+    claims.push(await comicHintWriter.applyWrite({ kind: 'claim', host }));
+  }
+  assert.deepEqual(claims, [true, false, false]);
+  assert.deepEqual(sync[COMIC_HINT_HOSTS_KEY], ['comics.example']);
+});
+
+test('near the item quota a long host still fits: the oldest hosts make room', async () => {
+  const { comicHintWriter, COMIC_HINT_HOSTS_KEY } = await import('../../background/media-hints.js');
+  // 23 long hosts: about 5.9 KB, just under the shared budget, far under 200 entries.
+  const full = Array.from({ length: 23 }, (_, i) => longHost(`h${String(i).padStart(2, '0')}`));
+  assert.ok(jsonBytes(full) < 6 * 1024 && jsonBytes([...full, longHost('new')]) > 6 * 1024, 'fixture is not near the limit');
+  const sync = workerSync({ [COMIC_HINT_HOSTS_KEY]: full });
+  assert.equal(longHost('new').length, 253);
+  assert.equal(await comicHintWriter.applyWrite({ kind: 'claim', host: longHost('new') }), true);
+  const list = sync[COMIC_HINT_HOSTS_KEY];
+  assert.equal(list[list.length - 1], longHost('new'));
+  assert.equal(list.includes(full[0]), false, 'the oldest host was kept');
+  assert.deepEqual(list.slice(0, -1), full.slice(full.length - list.length + 1), 'a host other than the oldest was dropped');
+  assert.ok(jsonBytes(list) <= 6 * 1024, `${jsonBytes(list)} bytes`);
+});
+
+test('a stored list already over the item quota heals on the next claim', async () => {
+  const { comicHintWriter, COMIC_HINT_HOSTS_KEY } = await import('../../background/media-hints.js');
+  // 200 long hosts, written before the byte cut: ~50 KB, which no write of it
+  // could ever store again.
+  const oversized = Array.from({ length: 200 }, (_, i) => longHost(`o${String(i).padStart(3, '0')}`));
+  const sync = workerSync({ [COMIC_HINT_HOSTS_KEY]: oversized });
+  assert.equal(await comicHintWriter.applyWrite({ kind: 'claim', host: 'fresh.example' }), true);
+  const list = sync[COMIC_HINT_HOSTS_KEY];
+  assert.equal(list[list.length - 1], 'fresh.example');
+  assert.ok(jsonBytes(list) <= 6 * 1024, `${jsonBytes(list)} bytes`);
+  assert.deepEqual(list.slice(0, -1), oversized.slice(oversized.length - list.length + 1), 'kept hosts are not the newest');
 });
 
 // ------------------------------------------------------------ the failure notification
