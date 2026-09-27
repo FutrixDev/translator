@@ -51,7 +51,7 @@
 | 6 | **与内置适配器合并**：atomic 只来自内置；exclude 只来自用户；keepOriginal = 内置 ∪ 用户；include、CSS、引擎只来自用户 | atomic 是内置适配器针对特定 DOM 调出来的整块翻译，不向用户开放。keepOriginal 取并集，保证内置规则表保留原文的那些元素（作者名、时间戳、票数）不会被一条用户规则意外放开：用户撤不掉内置的 |
 | 7 | **exclude 与 keepOriginal 的分工**。exclude 表示不翻译、也不送出：命中块则跳过整块；命中块内的行内元素，则把它的文字从原文里拿掉。keepOriginal 表示不翻译、但原样保留：命中块则跳过整块，且在 translate judge 之前判定；命中行内元素，则按 `translate="no"` 处理，送出占位符，译文里原样出现 | 照搬沉浸式翻译 `excludeSelectors` / `stayOriginalSelectors` 的分工，用户从那边迁过来的规则语义一致。行内保留复用 A2 的 notranslate 占位符（collect.js:710-714），不另造机制。块级 keepOriginal 在 judge 之前判，所以页面里的 `translate="yes"` 重开不了它：用户规则优先于页面声明。内置规则表按 keepOriginal 语义（D-315）：字段名 `keepOriginalSelectors`，作者名、时间戳、票数不翻译，但也不从译文里消失 |
 | 8 | **范围阶梯**，从高到低：临时「整页」覆盖 → 用户 include（至少命中一个已渲染元素）→ 设置为 'page' 或 `matchBuiltin` 命中 → 'main'。include 零命中时不缓存结果 | 「翻译整个页面」是用户当下的明确动作，应当压过一切。include 是用户专门为这个站点写的范围，比全局设置和内置规则更具体。零命中时往下回落：站点改版后选择器失效，不能让整页一个字都不翻。零命中不缓存：SPA 的正文常常晚于首轮渲染 |
-| 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜过页面样式表。译文节点的字号、字体、字重、行高、对齐、颜色、字距和 opacity 是行内样式，用户 CSS 要改这几项必须加 `!important`（J-4 的夹具就是这么写的）。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
+| 9 | **CSS 注入方式**：只用 constructable `CSSStyleSheet`，挂到 `document.adoptedStyleSheets`，没有 `<style>` 退路（D-297 修订 D-296 第 6 条）。不用 `chrome.scripting.insertCSS` | `insertCSS` 需要 `scripting` 权限，本轮不加新权限。A2 已经用过同一手法（`content/page/shadow.js` 的 `installStyle`，整合批同样删掉了它的 `<style>` 退路）。adopted sheet 排在文档样式表之后，同等特异度时用户 CSS 胜过页面样式表。译文节点带着行内样式，清单按 `content/page/insert.js` 的实际写入数（B2 终态）：<br>• 普通块（无真公式，`insert.js:506`）：`baseStyle`（:424-433）的字号、字体、字重、行高、对齐、颜色、字距、opacity 0.85，外加 padding（0，四边）和 box-sizing；<br>• slot 元素内插（:555）：`baseStyle` 加 display:block、margin 0、padding 0、box-sizing；<br>• 含真公式的块（:497）：只有 opacity 0.85；<br>• 水平 flex 那一支（:448-462）另列：字号 0.85em、字体、字重、行高、颜色、字距、opacity 0.7、display:inline、margin 0、padding 0；<br>• 兄弟位置的译文（`!placement.inside`，:532-535）另有自定义属性 `--ai-translator-pair-margin-top`（不带 `!important`）和带 `!important` 的 margin-bottom；<br>• 原文前面有图标缩进时，`applyTextInset`（`content/content-language.js:84`）写带 `!important` 的起始边 padding；水平 flex 那一支同样写带 `!important` 的起始边 margin 4px（:462）。<br>不带 `!important` 的那些，用户 CSS 要改必须加 `!important`（设置页 J-4 就是这么写的）；带 `!important` 的三项（兄弟译文的 margin-bottom、图标缩进的起始边 padding、flex 译文的起始边 margin）用户 CSS 怎么写都改不了，编辑器提示 `customRuleCssHint` 照实写了这三项。只留一条路径：最低版本 Chrome 116 上两个 API 都在，构造或挂载失败只可能来自页面环境异常，这时应当打日志让它被看见，而不是悄悄换一条没人测的路 |
 | 10 | **CSS 清洗**。原文和去掉注释后的文本各查一遍（不区分大小写），出现任何一个就拒绝，注释里的也算：`url(`、`image-set(`、`image(`、`cross-fade(`、`src(`、`attr(`、`@import`、`@font-face`，以及任何反斜杠。长度 ≤ 4096 字符。SW 写入时查一遍，内容脚本应用前再查一遍。只拒绝、不改写 | 规则会经 sync 和导入文件流转，导入的文件可能出自别人之手。CSS 里一切能发请求的构造都能把页面信息带给第三方，「属性选择器 + 背景图」就是已知的 CSS 外泄手法。反斜杠转义能拼出任意关键字，所以一律拒绝。查去注释后的文本是为了防 `u/**/rl(` 这种拼接；只查去注释后的文本，会被字符串里的 `/*` 绕过（D-315），所以原文也查。只拒不改，保证用户看到的就是实际生效的。内容侧再查一遍，是因为 sync 里的数据不一定都经过本机 SW。代价是 `content: "\201C"` 这类合法写法也会被拒，提示文案里要说明 |
 | 11 | **引擎覆盖是钉住**（D-302 修订）。<br>• 手动、自动、无人值守三类请求都认，`effectiveEngine` 也反映覆盖结果。<br>• 优先级：`message.engine`（P0-D）> 规则的 `engine` > 两个全局开关。<br>• 钉住的引擎永不回退。规则选内置而内置不可用时，按内置报错；即使 `engineFallback: 'allow-ai'`，也不转 AI。规则选 'ai' 但没配 Key 时，走现有的「没配 Key」路径。<br>• 只管两个引擎都能处理的请求（TRANSLATE / TRANSLATE_BATCH / TRANSLATE_BATCH_FAST）。钉内置时，查词退化成没有音标的普通翻译，和全局选内置时一样。内置处理不了的请求类型本来就只走 AI，规则不影响它们。<br>• OCR 的识别步骤不归规则管；识别出的文字经 TRANSLATE 翻译，跟随钉住的引擎。<br>• 预算闸的代码不改，只改它上面的注释。<br>• **落点在谓词**（D-303）：`isBuiltinSelected` 和新的同步谓词 `fallbackAllowed` 先问站点，`pinnedEngine` 和它那行抛错都不动。popup 和字幕绕过谓词直读设置的三处，以及现有裸调用扫描漏过的语言包两处，一并收口（§3.7） | 引擎是按站点的偏好，用户说「这个站点用 AI」时，不会区分是点出来的翻译还是自动的。自动和无人值守请求照旧带 `auto` / `unattended` 标记，过闸时照样扣额度；只是能走到闸前的组合多了一种，注释跟着改。<br>给站点钉内置，是为了省 AI 额度，或者不让这个站的文字进第三方模型；回退到 AI 恰好违背这两个目的。<br>「内置处理不了就抛错」只针对显式的 `message.engine`：那是调用方契约检查，不是选引擎。规则是把设置收窄到一个站点，设置从来不管只有 AI 能处理的请求类型 |
 | 12 | **frames**：`engineOverride` 加进顶层指令，子 frame 照单继承。选择器与 CSS 按子 frame 自己的 URL 解析 | 这是 A1 偏差 #7 附带的约束：子 frame 本地回答 `effectiveEngine` / `isActive`。有了按站点引擎后，子 frame 必须跟随顶层 frame 的规则，否则一个页面会出现两种引擎。选择器和 CSS 作用于 DOM，只对子 frame 自己的文档有意义。实际执行本来就在顶层（A1 偏差 #15） |
@@ -90,7 +90,7 @@
 | `popup/popup.js:421`、`:466` | `refreshEngineStatus` 在 `translationEngine === 'ai'` 时不探测标签页；`translateCurrentPage` 的「没配 Key」拦截读 `settings.translationEngine` | B1：总是探测；拦截改读 `EngineStatus.selectedEngine(settings, probe)`（§3.7） |
 | `shared/engine-status.js:98` | `describeEngineStatus` 取 `probe.engine`，没有就退回 `settings.translationEngine` | B1：这一步抽成 `EngineStatus.selectedEngine(settings, probe)`，与 popup 的拦截共用 |
 | `content/captions/translate.js:219-225` | `translationWindowMs()` 用 `isActive()` 加直读 `engineFallback` 判断「免费」 | B1：改成 `builtin.isActive(false) && !builtin.fallbackAllowed()` |
-| `content/content-auto-translate.js:486-526`、`:768-803`、`:835` | 费用闸拒绝后停在 OFF 并停掉发现层；只有 RESTART_KEYS 设置键、换路由、语言包就绪会 `start()`；`:835` 导出 `restart: start` | B1：订阅 `ctx.customRules.onChange`，调 `restart('custom-rule')`（§3.6 第 5 步）；新导出 `isOn()`（状态为 IDLE 或 RUNNING） |
+| `content/content-auto-translate.js:486-526`、`:768-803`、导出 `restart: start`（B2 终态 :845） | 费用闸拒绝后停在 OFF 并停掉发现层；只有 RESTART_KEYS 设置键、换路由、语言包就绪会 `start()`；`restart: start` 是这里的导出 | B1：订阅 `ctx.customRules.onChange`，调 `restart('custom-rule')`（§3.6 第 5 步）；新导出 `isOn()`（状态为 IDLE 或 RUNNING） |
 | `content/frames/top.js:45/:54/:62`、`:38-43`、`:74-80` | `computeDirective` / `sameDirective` / `broadcastDirective`，指令形状为 `{translate, manualEpoch, visible, scopeOverride}`；`currentTranslate()` 自己判断调度器开没开；`refreshDirective()` | B1：加 `engineOverride`；`currentTranslate()` 改用 `ctx.autoTranslate.isOn()`；`ctx.customRules.onChange` 触发 `refreshDirective()`（§3.6 第 4 步） |
 | `content/frames/child.js:164-187` | `applyDirective`（`scopeOverride` 那段在 `:169-174`） | B1：`ctx.customRules.inherit(engineOverride)`，null 也照传 |
 | `content/content-bootstrap.js:117-131`、`:192-204` | `setupStorageListener` 在 `:129-131` 把 sync 区变了的每个键都写进 `ctx.settings`；`ctx.init` | B1：新设登记表 `ctx.syncMirrors`，元素为 `{prefix, onStorageChange}`。bootstrap 在加载时（`content-bootstrap.js:119`）就建好这张空表，早于 `:226` 调 `ctx.customRules.init()`，所以登记方在 `init()` 里直接 `ctx.syncMirrors.push(…)`；监听器在事件到达时才读这张表。键命中某个前缀，就交给那一项的 `onStorageChange`，不进 `ctx.settings`。custom-rule.js 登记 `CustomRules.KEY_PREFIX`。P1-C 的词表以后登记自己的前缀：每个 frame 都登记，但只有顶层建镜像；子 frame 那一项什么都不做，只为让 `glossary:` 键不进 `ctx.settings`。bootstrap 一行不用改（D-306）。`ctx.init` 在启动调度器之前等 `whenReady()` |
@@ -299,7 +299,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
    - 补翻轮用自己的旗标，不改 `state.isTranslatingPage`，也不改顶层指令：那个旗标是手动整页翻译的，顶层指令和「翻译整页」的忙分支都读它，补翻不是用户表态。手动整页翻译与子 frame 手动轮等补翻轮结束（`whenCaughtUp()`）再收块，调度器在 `isCatchingUp()` 为真时让路，两轮不同时收。
    - 「在跟」= 调度器状态是 IDLE 或 RUNNING。今天这个判断写在 `frames/top.js` 的 `currentTranslate()` 里（:38-43）。B1 把它提成调度器的导出 `ctx.autoTranslate.isOn()`，两处共用。
 4. 顶层 frame 调 `refreshDirective()`。`computeDirective()` 带上了 `engineOverride`（§3.8），变了就广播。
-5. **重启自动调度器**：`ctx.autoTranslate.restart('custom-rule')`（content-auto-translate.js :835 的导出 `restart: start`）。
+5. **重启自动调度器**：`ctx.autoTranslate.restart('custom-rule')`（content-auto-translate.js 的导出 `restart: start`，B2 终态在 :845）。
    - 和 RESTART_KEYS 里的设置键变化走同一条路。
    - 没有这一步，有两种页面会卡住，要刷新才能恢复：
      - 费用闸拒绝后停在 OFF 的页面（content-auto-translate.js :514-526）：规则把引擎改成内置，它也醒不过来；
@@ -427,7 +427,14 @@ async function canFallBackToAI() {
   - 「取消」。
 
   选择器无效或命中 0 处时，三个动作按钮置灰。
+
+  「不翻译这里」和「保留原文」两个按钮下面各有一行可见的说明（B2），把两者只在行内元素上才有的区别说出来：
+  - `pickerExcludeTip`：「这段文字不进译文（仅译文模式下它在页面上就看不到了）。选中整块时，整块不翻。」
+  - `pickerKeepOriginalTip`：「这段文字原样留在译文里。选中整块时，整块不翻。」
+
+  设置页编辑器的「排除」「保留原文」两个字段用同两句作字段提示（`options/options-custom-rules.js:303`、`:306`），不另写文案。
 - **保存**：发 `CUSTOM_RULES_WRITE`，`kind` 为 `addSelector`，参数 `{host: location.hostname, path: location.pathname, field, selector}`。成功后提示 `pickerSaved`（「已保存，可在 设置 → 站点翻译规则 里修改」），关闭拾取器；§3.6 的流水线会让页面在 1 s 内变化。失败时提示错误键对应的文案，拾取器保持打开。
+  - 本站胜出规则的 CSS 不安全时（`writeAddSelector` 对整条规则跑 `validateRule`，追加选择器也被拒），错误键 `customRuleCssUnsafe` 在拾取器里换成 `pickerCssUnsafe`（「本站规则里的 CSS 含被禁止的写法，这里没法往规则里加内容。请先到 设置 → 站点翻译规则 里改掉那段 CSS。」，`content/picker/picker.js:117`）：拾取器里改不了 CSS，所以这句指向设置页。存储不变，拾取器保持打开。
 - **Esc 或「取消」**：移除全部节点和监听器，不留痕迹（e2e 断言残留为零）。
 - **几何**：视口 1280×800 与 375×812 下，工具条都完整落在视口内，描框与目标 rect 的误差 ≤ 1 px。
 - **入口**：
@@ -437,14 +444,16 @@ async function canFallBackToAI() {
 
 ## 6. 旅程规格（e2e，一条旅程至少一个 spec）
 
-B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规则」的形式跑：直接往 `storage.sync` 写 `customRule:` 键，spec 标题带 `[fixture]`。B2 把 J-1 到 J-10 全部改成走真实入口（拾取器、设置页）；夹具版要么删掉，要么保留为隔离某个子步骤用，并标注清楚。J-11 由 B2 交付，从一开始就走真实入口（P0-F 已合入，#110）。夹具主机一律用 `context.route` 路由的假主机；AI 走 `test/e2e/mock-openai-server.js`。
+B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规则」的形式跑：直接往 `storage.sync` 写 `customRule:` 键，spec 标题带 `[fixture]`。B2 把 J-1 到 J-10 全部改成走真实入口（拾取器、设置页）；夹具版要么删掉，要么保留为隔离某个子步骤用，并标注清楚。
+
+B2 终态：B1 的夹具 spec `test/e2e/custom-rules-fixture.spec.js` 已删除，J-1 到 J-11 全部走真实入口。只留一条 `[fixture]` 用例：`test/e2e/custom-rules-picker.spec.js` 里「本站规则 CSS 不安全时拾取器拒绝追加」那条，它要的正是一条设置页存不进去的规则，只能从 SW 上下文预置。J-4、J-8、J-11 里「从 SW 上下文直接写 / 删」的步骤模拟的是绕过设置页的写入或另一台设备同步下来的变化，属于旅程本身，不算夹具。J-11 由 B2 交付，从一开始就走真实入口（P0-F 已合入，#110）。夹具主机一律用 `context.route` 路由的假主机；AI 走 `test/e2e/mock-openai-server.js`。
 
 | # | 旅程 | 步骤 → 用户可观察结果 |
 |---|---|---|
-| J-1 | 拾取器排除（用户点名的旅程） | 夹具页含正文和评论区 `.comments`。点悬浮球「翻译」→ 正文和评论区都出现译文 → 打开悬浮菜单，「调整本站翻译区域」项的几何落在菜单盒内，菜单在视口内 → 点它 → 悬停评论区，描框与评论区 rect 一致 → 点击 → 工具条显示选择器和「匹配 1 处」→ 点「不翻译这里」→ 1 s 内评论区译文消失、正文译文仍在，并出现保存提示 → `storage.sync` 里恰好一个 `customRule:` 键，其 `exclude` 含该选择器 → 重载页面再翻译 → 评论区译文节点为 0，正文有译文 |
+| J-1 | 拾取器排除（用户点名的旅程） | 夹具页含正文和评论区 `.comments`。点悬浮球「翻译」→ 正文和评论区都出现译文 → 打开悬浮菜单，「调整本站翻译区域」项的几何落在菜单盒内，菜单在视口内 → 点它 → 悬停评论区，描框与评论区 rect 一致 → 点击 → 工具条显示选择器和「匹配 1 处」→ 点「不翻译这里」→ 1 s 内评论区译文消失、正文译文仍在，并出现保存提示 → `storage.sync` 里恰好一个 `customRule:` 键，其 `exclude` 含该选择器 → 重载页面再翻译 → 评论区译文节点为 0，正文有译文<br>行内 exclude 这一步（B2，`test/e2e/custom-rules-picker.spec.js:150`）：用拾取器点中正文段落里的一个行内元素，点「不翻译这里」→ 重新翻译后，送到 mock AI 服务器的文本里没有它；**译文节点里也没有它**（这一条区分 exclude 和 keepOriginal）；原文里它照旧在 |
 | J-2 | 保留原文 | 在设置页新建规则：匹配夹具主机，保留原文填 `.brand`（行内）和 `.code-name`（块）→ 保存 → 打开夹具翻译 → `.code-name` 块没有译文；含 `<span class="brand">BrandX</span>` 的段落有译文，且译文里原样出现 BrandX |
 | J-3 | 只翻译这里 + 整页入口 | 夹具含 nav、main、aside，设置为 `pageTranslateScope: 'page'` → 用拾取器选 aside 里的 `.faq`，点「只翻译这里」→ 翻译 → 只有 `.faq` 有译文，nav 和 main 都没有 → 悬浮菜单里出现「翻译整个页面」，且几何在菜单盒内 → 点它 → 全页都有译文 |
-| J-4 | 自定义 CSS 与安全 | 在设置页给夹具主机的规则写 CSS `.ai-translator-inline-block { color: rgb(1, 2, 3) }` → 保存 → 另一个已打开并已翻译的夹具标签页里，1 s 内译文的计算色变为 `rgb(1, 2, 3)`，没有重载 → 在编辑器里追加 `body { background: url(http://127.0.0.1:<port>/leak) }` → 保存被拒，字段下出现 `customRuleCssUnsafe` 的文案，存储不变 → 从 SW 上下文直接往 `storage.sync` 写一条带这段 CSS 的规则（模拟绕过设置页的写入）→ 页面不应用它，mock 服务器收到的 `/leak` 请求为 0 |
+| J-4 | 自定义 CSS 与安全 | 在设置页给夹具主机的规则写 CSS `.ai-translator-inline-block { color: rgb(1, 2, 3) !important }`（译文节点带行内颜色，不加 `!important` 改不动，见 §0.1-9） → 保存 → 另一个已打开并已翻译的夹具标签页里，1 s 内译文的计算色变为 `rgb(1, 2, 3)`，没有重载 → 在编辑器里追加 `body { background: url(http://127.0.0.1:<port>/leak) }` → 保存被拒，字段下出现 `customRuleCssUnsafe` 的文案，存储不变 → 从 SW 上下文直接往 `storage.sync` 写一条带这段 CSS 的规则（模拟绕过设置页的写入）→ 页面不应用它，mock 服务器收到的 `/leak` 请求为 0 |
 | J-5 | 导出 / 导入 | 设置页已有规则 A → 点导出，下载的 JSON 里 `format`、`version`、`rules` 都正确 → 准备一个文件：A 改一个字段，再加一条 `engine: 'ai'` 的新规则 B → 导入 → 预览显示「新增 1 条、替换 1 条」，并有 AI 提示 → 点「导入」→ 列表两条，A 为新内容 → 再导入一个坏 JSON → 报错，存储逐字节不变 |
 | J-6 | 按站点引擎 | 全局的手动和自动引擎都是「内置」，不允许回退 → 设置页每日额度输入框为灰 → 新建规则，引擎选「我的 AI」→ 弹出确认框，文案为 `customRuleEngineAiConfirm` → 点取消，下拉框回到原值，规则没有保存 → 再选一次并接受 → 保存 → 额度输入框变为可用 → 站点设为「总是」→ 打开夹具 → 自动翻译的请求打到 mock AI 服务器，页面出现译文，今天的 AI 用量 > 0（从设置页的用量行或存储里读回）→ 在夹具页打开 popup → 引擎状态行是 AI 那一句，不是内置（popup 总是探测标签页，`probe.engine` 跟随站点，§3.7） |
 | J-7 | 用量表 | 预置 49 条规则，体积接近 24 KiB → 设置页用量表显示对应的 KiB 数和「49 / 50」→ 再新建一条会超额的规则 → 被拒，出现 `customRulesBudgetFull` 的文案，存储不变 |
@@ -505,6 +514,23 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 - 改引擎不会重译已有译文。
 - 行内 exclude 的文字在「仅译文」模式下看不见：它不在送出的原文里，所以也不在译文里。
 - CSS 里的反斜杠一律拒绝，`content: "\201C"` 这类合法写法也在其列（提示里说明，请改用字面字符）。
+- 自定义 CSS 改颜色、字号这类属性要加 `!important`：译文节点带着从原文复制来的行内样式（清单见 §0.1-9）。兄弟译文的 margin-bottom、图标缩进的起始边 padding、flex 译文的起始边 margin 本身是带 `!important` 的行内声明，用户 CSS 改不了。
+- 悬停翻译与划词翻译不受行内 exclude / keepOriginal 影响：规则只作用于整页翻译的收块；悬停路径里的原样占位符只来自页面自己的 `translate="no"`。
+- 内置规则表（D-315，只有 keepOriginal）命中整块时整块不翻；命中块内行内元素时，那段文字经占位符原样带回译文。一个选择器命中的是行内元素还是整块，除了标签本来就是行内的以外，都取决于站点当时的模板，站点改版可能由行内变整块，或者反过来。
+- 内置规则表的 keepOriginal 选择器逐条（`shared/site-rules-builtin.js`）。判断依据分三类：**A** 标签本来就是行内的，确定；**B** 按站点模板推断，没有在线核实过，以站点当前模板为准；**C** 由页面结构决定，页面变了它就变，以站点当前模板为准。
+  - arXiv 摘要页（:53）：`.authors`、`.dateline`、`.submission-history` 为整块（B）。
+  - arXiv HTML 全文（:95）：`.ltx_authors`、`.ltx_bibliography` 为整块（B）。
+  - arXiv 列表页（:108）：`.list-authors`、`.list-identifier`、`.list-subjects` 为整块（B）。
+  - x.com / twitter.com（:142 / :149）：`[data-testid="User-Name"] a` 为行内（A，链接）；`time` 为行内（A）；`[role="group"]` 为整块（C，操作栏容器）。
+  - reddit.com（:163-166）：`time`、`faceplate-timeago` 为行内（A）；`.tagline`、`.score` 视模板为行内或整块（B）；`[slot="credit-bar"]`、`[slot="commentMeta"]` 为整块（C，slot 分发到的容器）。
+  - news.ycombinator.com（:174）：`.subtext` 为整块（B）；`.rank`、`.age` 为行内（B，今天的模板里是 span）。
+  - lobste.rs（:185）：`.byline` 为整块（B）；`.tags` 为行内容器（B）。
+  - bioRxiv / medRxiv（:198）：`.highwire-cite-authors`、`.highwire-cite-metadata` 为整块（B）。
+  - nature.com（:209-215）：`.c-article-author-list`、`.c-article-references`、`.c-bibliographic-information`、`.c-article-info-details` 为整块（B）；`#author-information-content` 为整块（C，按 id 找区块）。
+  - science.org（:237-243）：`.contributors`、`.core-self-citation`、`.core-authors` 为整块（B）；`#bibliography`、`#tab-citations` 为整块（C，按 id 找区块）。
+  - scholar.google（:282）：`.gs_a`、`.gs_fl` 为整块（B）。
+  - arXiv PDF 页与 Hugging Face 两条没有 keepOriginal 选择器。
+- 拾取器几何用例关掉了自动翻译：自动翻译的询问条贴在视口底部，会盖住落在那里的拾取目标（375×812 下实测盖住 y≈644 起的一段）。拾取器不为它让位。
 
 ## 8. i18n
 
@@ -516,11 +542,11 @@ B1 交付时，J-2、J-3、J-4 的后半、J-9、J-10 先以「夹具预置规�
 | `customRulesExport` / `customRulesImport` / `customRulesImportPreview` / `customRulesImportAiNote` / `customRulesImportConfirm` / `customRulesImportInvalid` | 导出与导入 |
 | `customRuleMatch` / `customRuleInclude` / `customRuleExclude` / `customRuleKeepOriginal` / `customRuleCss` / `customRuleCssHint` / `customRuleEngine` / `customRuleEngineFollow` | 编辑器字段。引擎的另两个选项复用 `autoTranslateEngineBuiltin` / `autoTranslateEngineAi` |
 | `customRuleChipScope` / `customRuleChipExclude` / `customRuleChipKeep` / `customRuleChipCss` / `customRuleChipEngine` | 列表里的字段小标签 |
-| `customRuleEdit` / `customRuleDelete` / `customRuleDeleteConfirm` | 行内按钮；「保存」「取消」若已有通用键就复用，交付时列出 |
+| `customRuleEdit` / `customRuleDelete` / `customRuleDeleteConfirm` / `customRuleSave` / `customRuleCancel` | 行内按钮；「保存」「取消」若已有通用键就复用，交付时列出。B2 交付：没有通用的保存 / 取消键（现有的 `comicCancel`、`transferCancel` 都属于各自的功能），所以新增 `customRuleSave` / `customRuleCancel` |
 | `customRuleInvalid` / `customRuleCssUnsafe` / `customRuleMatchInvalid` / `customRuleSelectorInvalid` / `customRuleTooLarge` / `customRulesBudgetFull` / `customRuleSaveFailed` | 错误 |
 | `customRuleEngineAiConfirm` | 确认框 |
 | `pickSiteRegion` | 悬浮菜单项和 popup 按钮 |
-| `pickerHint` / `pickerMatches` / `pickerParent` / `pickerExclude` / `pickerKeepOriginal` / `pickerInclude` / `pickerCancel` / `pickerSaved` | 拾取器 |
+| `pickerHint` / `pickerMatches` / `pickerParent` / `pickerExclude` / `pickerKeepOriginal` / `pickerInclude` / `pickerCancel` / `pickerSaved` / `pickerExcludeTip` / `pickerKeepOriginalTip` / `pickerCssUnsafe` | 拾取器。两条 Tip 是按钮下的说明，设置页编辑器的两个字段也用（§5.1）；`pickerCssUnsafe` 是本站规则 CSS 不安全时拾取器的报错 |
 | `transferSectionCustomRules` / `transferPreviewCustomRules` / `transferErrorSectionInvalid` / `transferErrorSectionBudgetFull` / `transferReasonInvalid` / `transferReasonBudgetFull` / `transferReasonSaveFailed`，以及改 `transferDesc` | 设置整份导入导出里的规则小节（§12.4） |
 
 ## 9. 文件归属与切批
@@ -593,7 +619,7 @@ npm --prefix <W> run test:e2e > <log> 2>&1; echo "GATE e2e exit=$?"
   - 三处替身都换成了真东西。
   - B1 在 `content-float-ball.js` 里改「`showWholePage` 的条件」（§9）。
 - 本节行号已按 `main@a99435d` 核对（D-314）。
-- **B 依赖 A 的名字**：`ctx.collectPageBlocks`、`ctx.invalidatePageScope`、`state.pageScopeOverride`、`ctx.frames.onVisibilityChanged`、`closestAcross`、`queryAllDeep`、`installStyle` / `hasStyle`、`computeDirective` / `sameDirective` / `applyDirective`，以及 D-303 用到的 `ctx.autoTranslate.restart`（content-auto-translate.js :835）、`ctx.autoTranslate.onStateChange`、`refreshDirective`（top.js:74-80）。A 若再改其中任何一个，B 的任务书跟着改。
+- **B 依赖 A 的名字**：`ctx.collectPageBlocks`、`ctx.invalidatePageScope`、`state.pageScopeOverride`、`ctx.frames.onVisibilityChanged`、`closestAcross`、`queryAllDeep`、`installStyle` / `hasStyle`、`computeDirective` / `sameDirective` / `applyDirective`，以及 D-303 用到的 `ctx.autoTranslate.restart`（content-auto-translate.js 的导出 `restart: start`，B2 终态在 :845）、`ctx.autoTranslate.onStateChange`、`refreshDirective`（top.js:74-80）。A 若再改其中任何一个，B 的任务书跟着改。
 
 ### 12.2 与 P0-D（#111，已合入）
 
