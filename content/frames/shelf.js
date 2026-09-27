@@ -47,6 +47,7 @@
     'COMIC_TRANSLATE_PAGE',
     'TRANSLATE_WHOLE_PAGE',
     'OPEN_RULE_PICKER',
+    'MEDIA_SHORTCUT',
   ]);
 
   function ignoresTopOnly(type) {

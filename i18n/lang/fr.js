@@ -367,6 +367,12 @@
     autoAskTranslate: 'Traduire',
     autoAskDismiss: 'Pas maintenant',
     pdfAskPrompt: 'Ceci est un PDF. Le traduire consomme des crédits de pages.',
+    mediaHintPdf: 'Appuyez sur {shortcut} pour traduire ce PDF (crédits de pages consommés).',
+    mediaHintComic: 'Appuyez sur {shortcut} pour traduire la BD à l’écran.',
+    mediaHintComicNoShortcut: 'Traduire la BD à l’écran ?',
+    mediaHintSetShortcut: 'Définir un raccourci',
+    mediaShortcutNothing: 'Aucun PDF ni BD à traduire sur cette page.',
+    mediaShortcutLabel: 'Traduire ce PDF ou la BD à l’écran',
     autoAskAlways: 'Toujours traduire {site}',
     autoStopSite: 'Ne plus traduire {site} automatiquement',
 

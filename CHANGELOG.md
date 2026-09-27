@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### PDF and comic shortcut
+
+- **`Alt+M` translates the PDF or the comic on screen.** On a PDF it starts
+  the PDF translation; on a comic reader it translates the pages on screen;
+  anywhere else it says there is nothing to translate. Change the key at
+  `chrome://extensions/shortcuts`.
+- **A hint that names the shortcut.** A PDF shows a small bar, "Press Alt+M
+  to translate this PDF", with a Translate button. A comic reader (three or
+  more pages stacked top to bottom) shows the same kind of bar once per site.
+  Nothing is sent until you press the key or the button. If the shortcut is
+  unbound, the bar offers a link to set one.
+- **Not signed in? Sign in, then it carries on.** The key and the button open
+  the sign-in first and start the translation as soon as you are back.
+  Closing the sign-in tab cancels quietly. The "sign in to translate
+  documents" notification now has a Sign In button too.
+- **Turned off stays off.** If you switched PDF or comic translation off in
+  settings, the hint no longer appears. The key and the button still work on
+  the page you use them on, and your setting is left as it is.
+- **Comic translation is on by default,** like PDF translation.
+
 ### Selection icon and card actions
 
 - **A translate icon next to your selection.** Select text and a small round

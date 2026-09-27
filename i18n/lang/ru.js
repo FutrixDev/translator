@@ -367,6 +367,12 @@
     autoAskTranslate: 'Перевести',
     autoAskDismiss: 'Не сейчас',
     pdfAskPrompt: 'Это PDF. Перевод расходует постраничные кредиты.',
+    mediaHintPdf: 'Нажмите {shortcut}, чтобы перевести этот PDF (расходует постраничные кредиты).',
+    mediaHintComic: 'Нажмите {shortcut}, чтобы перевести комикс на экране.',
+    mediaHintComicNoShortcut: 'Перевести комикс на экране?',
+    mediaHintSetShortcut: 'Назначить сочетание клавиш',
+    mediaShortcutNothing: 'На этой странице нет PDF или комикса для перевода.',
+    mediaShortcutLabel: 'Перевести этот PDF или комикс на экране',
     autoAskAlways: 'Всегда переводить {site}',
     autoStopSite: 'Не переводить {site} автоматически',
 

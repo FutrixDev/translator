@@ -39,6 +39,10 @@
           // Alt+W（background/page-coverage.js 只发顶层 frame）：本页改成整页范围再翻。
           sendResponse({ action: ctx.translateWholePage() });
           break;
+        case 'MEDIA_SHORTCUT':
+          // Alt+M（background/commands.js 只发顶层 frame）：这一页的 PDF 或屏上的漫画。
+          sendResponse({ kind: ctx.runMediaShortcut() });
+          break;
         case 'OPEN_RULE_PICKER':
           // popup 的「调整本站翻译区域」（只发顶层 frame）；悬浮球菜单直接调同一个函数。
           sendResponse({ opened: ctx.picker.open() });

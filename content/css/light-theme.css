@@ -187,6 +187,10 @@ html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
   color: #6b7280;
 }
 
+html[data-ai-translator-theme="light"] body [id="ai-translator-auto-bar"] .ai-translator-auto-link {
+  color: #5b3fd9;
+}
+
 html[data-ai-translator-theme="light"] body .ai-translator-auto-btn {
   border-color: #d8d8e0;
   color: #1d1d1f;

@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "翻譯整個頁面（含導覽和側欄）",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "翻譯這份 PDF，或螢幕上的漫畫",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

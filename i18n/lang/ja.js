@@ -367,6 +367,12 @@
     autoAskTranslate: '翻訳',
     autoAskDismiss: '今はしない',
     pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
+    mediaHintPdf: '{shortcut} でこの PDF を翻訳（ページ数分のクレジットを消費）',
+    mediaHintComic: '{shortcut} で画面上の漫画を翻訳',
+    mediaHintComicNoShortcut: '画面上の漫画を翻訳しますか？',
+    mediaHintSetShortcut: 'ショートカットを設定',
+    mediaShortcutNothing: 'このページには翻訳できる PDF や漫画がありません',
+    mediaShortcutLabel: 'PDF または画面上の漫画を翻訳',
     autoAskAlways: '{site} を常に翻訳',
     autoStopSite: '{site} の自動翻訳をやめる',
 

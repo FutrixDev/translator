@@ -79,18 +79,26 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
 
 // ---------------------------------------------------- 点了才跑
 
-test('提示条自己不发请求 —— 唯一那一句在 accept() 里', () => {
-  const src = repoFile('content/content-pdf-prompt.js');
-  const sends = [...src.matchAll(/chrome\.runtime\.sendMessage/g)];
-  assert.equal(sends.length, 1, '提示条里出现了第二处 sendMessage');
-  const accept = src.slice(src.indexOf('function accept('), src.indexOf('function dismiss('));
-  assert.match(accept, /chrome\.runtime\.sendMessage/, '那一句不在 accept() 里');
+test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里，dispatch 只由 run() 叫', () => {
+  // Code only: the comments name these messages while explaining them.
+  const src = repoFile('content/content-media-hints.js')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const dispatch = src.slice(src.indexOf('function dispatch('), src.indexOf('async function run('));
+  for (const job of ['PDF_TRANSLATE_URL', 'startComicPageTranslation']) {
+    const at = [...src.matchAll(new RegExp(job, 'g'))].map((m) => m.index);
+    assert.equal(at.length, 1, `${job} 出现在 dispatch() 之外`);
+    assert.ok(dispatch.includes(job), `${job} 不在 dispatch() 里`);
+  }
+  const calls = [...src.matchAll(/\bdispatch\(/g)].length;
+  assert.equal(calls, 2, 'dispatch() 多了一个调用点');
+  const run = src.slice(src.indexOf('async function run('), src.indexOf('function runMediaShortcut('));
+  assert.match(run, /\bdispatch\(kind\)/);
   // fetch 一次都不能有：这一层的职责是问，不是办。
   assert.equal(/\bfetch\s*\(/.test(src), false);
 });
 
 test('提示条只在真是一份 PDF 文档、而且开关开着的时候出现', () => {
-  const src = repoFile('content/content-pdf-prompt.js');
+  const src = repoFile('content/content-media-hints.js');
   assert.match(src, /enablePdfTranslation/);
   assert.match(src, /PdfUrl\.isLikelyPdfUrl/);
   assert.match(src, /application\/pdf/);
@@ -121,7 +129,7 @@ test('四个入口走同一个 startPdfUrlTranslation()', () => {
     assert.equal(menus.includes(own), false, `右键菜单又自己做了一遍 ${own}`);
   }
   // 提示条那一路：内容脚本发消息，worker 落到同一个函数上。
-  assert.match(repoFile('content/content-pdf-prompt.js'), /PDF_TRANSLATE_URL/);
+  assert.match(repoFile('content/content-media-hints.js'), /PDF_TRANSLATE_URL/);
   assert.match(workerSource(), /case 'PDF_TRANSLATE_URL':/);
   const worker = workerSource();
   const arm = worker.slice(worker.indexOf("case 'PDF_TRANSLATE_URL':"));
@@ -163,7 +171,7 @@ test('用到格式表的每一面都装了 shared/doc-jobs.js', () => {
 
 test('提示条排在画条子的那一层后面', () => {
   const bundle = contentBundle();
-  assert.ok(bundle.indexOf('content/content-pdf-prompt.js') > bundle.indexOf('content/content-auto-status.js'));
+  assert.ok(bundle.indexOf('content/content-media-hints.js') > bundle.indexOf('content/content-auto-status.js'));
 });
 
 test('两个网址判断的边界没变', () => {

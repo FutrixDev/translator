@@ -367,6 +367,12 @@
     autoAskTranslate: '번역',
     autoAskDismiss: '나중에',
     pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
+    mediaHintPdf: '{shortcut} 키로 이 PDF 번역 (페이지 수만큼 크레딧 소모)',
+    mediaHintComic: '{shortcut} 키로 화면의 만화 번역',
+    mediaHintComicNoShortcut: '화면의 만화를 번역할까요?',
+    mediaHintSetShortcut: '단축키 설정',
+    mediaShortcutNothing: '이 페이지에는 번역할 PDF나 만화가 없습니다',
+    mediaShortcutLabel: 'PDF 또는 화면의 만화 번역',
     autoAskAlways: '{site} 항상 번역',
     autoStopSite: '{site} 자동 번역 중지',
 

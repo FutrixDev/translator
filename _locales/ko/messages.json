@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "전체 페이지 번역 (내비게이션과 사이드바 포함)",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "이 PDF 또는 화면의 만화 번역",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

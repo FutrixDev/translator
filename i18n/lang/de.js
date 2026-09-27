@@ -367,6 +367,12 @@
     autoAskTranslate: 'Übersetzen',
     autoAskDismiss: 'Jetzt nicht',
     pdfAskPrompt: 'Dies ist ein PDF. Die Übersetzung verbraucht Seiten-Guthaben.',
+    mediaHintPdf: 'Drücken Sie {shortcut}, um dieses PDF zu übersetzen (verbraucht Seiten-Guthaben).',
+    mediaHintComic: 'Drücken Sie {shortcut}, um den Comic auf dem Bildschirm zu übersetzen.',
+    mediaHintComicNoShortcut: 'Den Comic auf dem Bildschirm übersetzen?',
+    mediaHintSetShortcut: 'Tastenkürzel festlegen',
+    mediaShortcutNothing: 'Auf dieser Seite gibt es kein PDF und keinen Comic zum Übersetzen.',
+    mediaShortcutLabel: 'Dieses PDF oder den Comic auf dem Bildschirm übersetzen',
     autoAskAlways: '{site} immer übersetzen',
     autoStopSite: '{site} nicht mehr automatisch übersetzen',
 

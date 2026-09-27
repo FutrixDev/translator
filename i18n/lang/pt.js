@@ -367,6 +367,12 @@
     autoAskTranslate: 'Traduzir',
     autoAskDismiss: 'Agora não',
     pdfAskPrompt: 'Isto é um PDF. Traduzi-lo consome créditos de páginas.',
+    mediaHintPdf: 'Pressione {shortcut} para traduzir este PDF (consome créditos de páginas).',
+    mediaHintComic: 'Pressione {shortcut} para traduzir a HQ na tela.',
+    mediaHintComicNoShortcut: 'Traduzir a HQ na tela?',
+    mediaHintSetShortcut: 'Definir atalho',
+    mediaShortcutNothing: 'Não há PDF nem HQ para traduzir nesta página.',
+    mediaShortcutLabel: 'Traduzir este PDF ou a HQ na tela',
     autoAskAlways: 'Sempre traduzir {site}',
     autoStopSite: 'Parar de traduzir {site} automaticamente',
 

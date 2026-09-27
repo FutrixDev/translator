@@ -48,6 +48,14 @@ async function translateWholePage(tab) {
   await sendToTopFrame(tab, { type: 'TRANSLATE_WHOLE_PAGE' }, 'whole-page');
 }
 
+// Alt+M — translate the PDF this tab shows, or the comic on screen. The page
+// knows which it is (and whether to sign in first), so the top frame decides:
+// content/content-media-hints.js. Alt+M because Chrome binds nothing to it;
+// on macOS Option+M types µ, the same trade Alt+A/T/W already make.
+async function translateMedia(tab) {
+  await sendToTopFrame(tab, { type: 'MEDIA_SHORTCUT' }, 'media');
+}
+
 // Alt+T — bilingual ↔ translation only. It only writes the setting: every tab's
 // content script applies it from its storage listener, the same path the options
 // page, the popup and the float ball take. So it works on every page, with or
@@ -63,6 +71,7 @@ const COMMANDS = {
   'toggle-translate-page': togglePageTranslation,
   'toggle-translation-only': toggleTranslationOnly,
   'translate-whole-page': translateWholePage,
+  'translate-media': translateMedia,
 };
 
 export async function runCommand(command, tab) {

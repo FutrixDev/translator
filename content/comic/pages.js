@@ -258,10 +258,44 @@
     return distinct.filter(img => renderedArea(img) >= largest * SPREAD_AREA_RATIO);
   }
 
+  // A reader page stacks its pages one under the next; a gallery lays them out in
+  // a grid, and an article has one big picture. Three is where "a column of
+  // artwork" stops being a coincidence of layout.
+  const STACK_MIN_PAGES = 3;
+  // Page boxes may touch or overlap by a few pixels (borders, rounding).
+  const STACK_GAP_TOLERANCE = 8;
+
+  /**
+   * Is this a comic reader: at least three pages stacked top to bottom?
+   *
+   * Asked of the whole document, not only the viewport: pages in a vertical
+   * reader are taller than the screen, so three of them are never on screen at
+   * once. Only the media hint (content/content-media-hints.js) asks; the
+   * translate entry points still work on whatever is on screen (pickComicImages).
+   */
+  function hasComicStack() {
+    const pages = Array.from(document.images)
+      .filter(isComicPage)
+      .map(img => img.getBoundingClientRect())
+      .sort((a, b) => a.top - b.top);
+    let run = 0;
+    let previous = null;
+    for (const rect of pages) {
+      const centre = (rect.left + rect.right) / 2;
+      const below = previous && rect.top >= previous.bottom - STACK_GAP_TOLERANCE;
+      const aligned = previous && centre > previous.left && centre < previous.right;
+      // A picture beside the previous one (a grid row, a spread) starts over.
+      run = below && aligned ? run + 1 : 1;
+      previous = rect;
+      if (run >= STACK_MIN_PAGES) return true;
+    }
+    return false;
+  }
+
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resultLabel, statusText,
   });
 })();

@@ -404,6 +404,12 @@ Rules:
     autoAskTranslate: 'Translate',
     autoAskDismiss: 'Not now',
     pdfAskPrompt: 'This is a PDF. Translating it spends page credits.',
+    mediaHintPdf: 'Press {shortcut} to translate this PDF. It spends page credits.',
+    mediaHintComic: 'Press {shortcut} to translate the comic on screen.',
+    mediaHintComicNoShortcut: 'Translate the comic on screen?',
+    mediaHintSetShortcut: 'Set a shortcut',
+    mediaShortcutNothing: 'No PDF or comic to translate on this page.',
+    mediaShortcutLabel: 'Translate this PDF or the comic on screen',
     autoAskAlways: 'Always translate {site}',
     autoStopSite: 'Stop auto-translating {site}',
 

@@ -79,10 +79,12 @@
   // 这件事。（popup 上同一件事说的是同一句话，见 popupSiteRuleFailed。）
   let notice = '';
 
-  // 「这一页还有另一件事可以做」。今天只有一个来源：PDF 文档上的
-  // content/content-pdf-prompt.js（那一页没有正文可翻，它是唯一能办事的入口）。
+  // 「这一页还有另一件事可以做」。今天只有一个来源：content/content-media-hints.js
+  // （PDF 文档或漫画阅读页上的「按 {快捷键} 翻译」）。
   //
-  // 形状是 { text, accept, dismiss } 而不是一个 mode 名：这一层不认识 PDF，也
+  // 形状是 { text, accept, dismiss, link?, busy? } 而不是一个 mode 名：link 是
+  // 文字后面的一个附带链接 { text, onClick }，busy 把「翻译」按钮钉住（登录中）。
+  // 这一层不认识 PDF，也
   // 不该认识。它认识的只是「有人要借这条窄条说一句话、再收一次点击」——右下角
   // 就这一条窄条，第二条会和第一条叠在一起（和 notice 同一个道理）。
   let offer = null;
@@ -233,6 +235,7 @@
     el.id = BAR_ID;
     el.innerHTML = `
       <span class="ai-translator-auto-text"></span>
+      <button class="ai-translator-auto-link" data-act="link" hidden></button>
       <label class="ai-translator-auto-remember">
         <input type="checkbox">
         <span class="ai-translator-auto-remember-text"></span>
@@ -250,6 +253,12 @@
     const button = event.target.closest && event.target.closest('[data-act]');
     if (!button || !bar) return;
     const act = button.dataset.act;
+
+    // offer 附带的那个链接（媒体提示的「设置快捷键」）：它自己的事，条子不动。
+    if (act === 'link') {
+      if (offer && offer.link) offer.link.onClick();
+      return;
+    }
 
     if (act === 'translate') {
       // 借条子说话的那一位（offer）自己收这一下：它要办的事和追问不是一回事，
@@ -392,13 +401,17 @@
     if (!bar) bar = buildBar();
     else if (!document.body.contains(bar)) document.body.appendChild(bar);
     bar.dataset.mode = mode;
+    const link = bar.querySelector('[data-act="link"]');
+    link.hidden = !(mode === 'offer' && offer.link);
 
     if (mode === 'offer') {
       bar.querySelector('.ai-translator-auto-text').textContent = offer.text || '';
+      if (offer.link) link.textContent = offer.link.text;
       bar.querySelector('[data-act="translate"]').textContent = t('autoAskTranslate');
       bar.querySelector('[data-act="dismiss"]').textContent = t('autoAskDismiss');
-      // 追问用过的按钮可能还钉着（同一份 DOM 不重建，见 buildBar 的注释）。
-      bar.querySelector('[data-act="translate"]').disabled = false;
+      // 追问用过的按钮可能还钉着（同一份 DOM 不重建，见 buildBar 的注释）；offer
+      // 自己说还在忙（登录中）时照它的。
+      bar.querySelector('[data-act="translate"]').disabled = !!offer.busy;
       return;
     }
 

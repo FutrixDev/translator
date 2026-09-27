@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "Ganze Seite übersetzen, einschließlich Navigation und Seitenleisten",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Diese PDF oder den Comic auf dem Bildschirm übersetzen",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

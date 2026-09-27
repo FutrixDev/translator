@@ -55,7 +55,7 @@ function load({ commands = { 'toggle-translate-page': { suggested_key: { default
           if (live === null) return;
           // 真实世界里这是异步的，但测试要的是「答回来之后名单对不对」，
           // 所以同步交付，省掉每条用例一个 await。
-          callback({ shortcuts: live });
+          callback({ commands: live.map((shortcut, i) => ({ name: `command-${i}`, shortcut })) });
         },
       },
     },
@@ -175,7 +175,7 @@ test('真实键位只有服务工作者答得上来 —— 那半边也得在', 
   const arm = bg.slice(bg.indexOf("case 'COMMAND_SHORTCUTS':"));
   assert.ok(arm.startsWith("case 'COMMAND_SHORTCUTS':"), '后台没有人应答这条消息，名单就永远只有 manifest 那份');
   assert.match(arm.slice(0, 600), /chrome\.commands\.getAll\(/, '答的必须是现在真的绑着的键位，不是 manifest 的建议值');
-  assert.match(arm.slice(0, 600), /sendResponse\(\{ shortcuts:[\s\S]*?\}\);\s*\}\);\s*return true;/,
+  assert.match(arm.slice(0, 600), /sendResponse\(\{ commands:[\s\S]*?\}\);\s*\}\);\s*return true;/,
     'getAll 是异步的，不 return true 这条消息的通道当场就关了，回调答给空气');
 });
 
