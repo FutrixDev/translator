@@ -134,6 +134,17 @@ test('SiteRules.register reads the built-in table by host and path', () => {
   }
 });
 
+test('a built-in rule whose register is not a non-empty string makes the table malformed', () => {
+  // 形状在 site-rules.js 的 validRule 里查；取值（是不是 REGISTERS 之一）由下一条
+  // 对照，服务工作者收到时再 validate 一遍。
+  const reddit = SiteRulesBuiltin.rules.find((rule) => rule.match === 'reddit.com');
+  for (const register of [7, '', null, ['forum']]) {
+    const table = SiteRules.loadTable({ ...SiteRulesBuiltin, rules: [{ ...reddit, register }] });
+    assert.equal(table.ok, false, `register ${JSON.stringify(register)} passed`);
+  }
+  assert.equal(SiteRules.loadTable({ ...SiteRulesBuiltin, rules: [reddit] }).ok, true);
+});
+
 test('every register in the built-in table is one the prompt knows', () => {
   const used = SiteRulesBuiltin.rules.filter((rule) => rule.register !== undefined);
   assert.ok(used.length > 20, `only ${used.length} rules carry a register`);
