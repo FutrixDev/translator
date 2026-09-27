@@ -558,8 +558,26 @@ function oursIn(target, containerId) {
   }, [containerId, '[class*="ai-translator-"]']);
 }
 
+/**
+ * oursIn for an element that cannot get a box of its own without changing what is collected: an
+ * inline element among blocks, or a slotted element whose slot name has to stay on it. Counts
+ * our nodes on and inside the element, plus its next element sibling when that sibling is a
+ * translation node (a block translation lands there, insert.js `element.after`). The sibling test
+ * is the translation class only: a translated neighbour carries `ai-translator-translated` and is
+ * not this element's translation.
+ */
+function ourNodesAt(target, elementId) {
+  return target.evaluate(([id, any, translation]) => {
+    const el = document.getElementById(id);
+    const inside = (el.matches(any) ? 1 : 0) + el.querySelectorAll(any).length;
+    const next = el.nextElementSibling;
+    return inside + (next && next.matches(translation) ? 1 : 0);
+  }, [elementId, '[class*="ai-translator-"]', '.ai-translator-inline-block']);
+}
+
 module.exports = {
   oursIn,
+  ourNodesAt,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

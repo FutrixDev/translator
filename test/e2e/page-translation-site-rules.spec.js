@@ -17,7 +17,7 @@
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, oursIn } = require('./helpers');
+const { setExtensionSettings, oursIn, ourNodesAt } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
@@ -29,10 +29,10 @@ const X_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>X</title></head>
 <body>
   <article id="tweet">
-    <div data-testid="User-Name"><a href="/alice" id="author">${AUTHOR}</a></div>
+    <div id="author-box"><div data-testid="User-Name"><a href="/alice" id="author">${AUTHOR}</a></div></div>
     <time id="stamp" datetime="2026-09-19">${STAMP}</time>
     <div data-testid="tweetText" id="tweet-text"><span>${TWEET_A}</span><span> ${TWEET_B}</span></div>
-    <div role="group" id="actions"><span>Reply to this post</span><span>Repost this post</span></div>
+    <div id="actions-box"><div role="group" id="actions"><span>Reply to this post</span><span>Repost this post</span></div></div>
   </article>
 </body></html>`;
 
@@ -44,7 +44,7 @@ const HN_PAGE = `<!doctype html>
 <body>
   <table><tbody>
     <tr class="athing"><td class="rank">1.</td><td class="title"><span id="story">${HN_STORY}</span></td></tr>
-    <tr><td class="subtext"><span id="sub">${HN_SUBTEXT}</span></td></tr>
+    <tr id="sub-row"><td class="subtext"><span id="sub">${HN_SUBTEXT}</span></td></tr>
   </tbody></table>
 </body></html>`;
 
@@ -118,8 +118,8 @@ const ARXIV_PAGE = `<!doctype html>
 <body>
   <div id="abs">
     <blockquote class="abstract" id="abstract"><span class="descriptor">Abstract:</span> ${ABSTRACT}</blockquote>
-    <div class="authors" id="authors">${AUTHORS}</div>
-    <div class="submission-history" id="history">${HISTORY}</div>
+    <div id="authors-box"><div class="authors" id="authors">${AUTHORS}</div></div>
+    <div id="history-box"><div class="submission-history" id="history">${HISTORY}</div></div>
   </div>
 </body></html>`;
 
@@ -163,8 +163,9 @@ test('site rules: a tweet is translated as one block, and its chrome is not tran
     expect(all).not.toContain(AUTHOR);
     expect(all).not.toContain(STAMP);
     expect(all).not.toContain('Repost this post');
-    await expect(page.locator('#author .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#actions .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'author-box')).toBe(0);
+    expect(await oursIn(page, 'actions-box')).toBe(0);
+    expect(await ourNodesAt(page, 'stamp')).toBe(0);
   } finally {
     await close();
   }
@@ -186,7 +187,7 @@ test('site rules: a Hacker News subtext line is skipped while the story title is
     const all = sentTexts.join('\n');
     expect(all).toContain(HN_STORY);
     expect(all).not.toContain(HN_SUBTEXT);
-    await expect(page.locator('.subtext .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'sub-row')).toBe(0);
   } finally {
     await close();
   }
@@ -207,8 +208,8 @@ test('site rules: an arXiv abstract is translated whole, its author and history 
     expect(all).toContain(ABSTRACT);
     expect(all).not.toContain(AUTHORS);
     expect(all).not.toContain(HISTORY);
-    await expect(page.locator('#authors .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#history .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'authors-box')).toBe(0);
+    expect(await oursIn(page, 'history-box')).toBe(0);
   } finally {
     await close();
   }
@@ -225,9 +226,9 @@ const LTX_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>ar5iv</title></head>
 <body>
   <div class="ltx_page_content" id="doc">
-    <div class="ltx_authors" id="ltx-authors"><span class="ltx_personname">${LTX_AUTHORS}</span></div>
+    <div id="ltx-authors-box"><div class="ltx_authors" id="ltx-authors"><span class="ltx_personname">${LTX_AUTHORS}</span></div></div>
     <div class="ltx_para" id="para"><p class="ltx_p">${LTX_PROSE}</p></div>
-    <ul class="ltx_bibliography" id="bib"><li class="ltx_bibitem">${LTX_BIB}</li></ul>
+    <div id="bib-box"><ul class="ltx_bibliography" id="bib"><li class="ltx_bibitem">${LTX_BIB}</li></ul></div>
   </div>
 </body></html>`;
 
@@ -248,8 +249,8 @@ test('site rules: an arXiv HTML paper is translated on ar5iv too, minus its auth
     // 两块都有直属文本，没有规则时通用启发式会照翻。
     expect(all).not.toContain(LTX_BIB);
     expect(all).not.toContain(LTX_AUTHORS);
-    await expect(page.locator('#bib .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#ltx-authors .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'bib-box')).toBe(0);
+    expect(await oursIn(page, 'ltx-authors-box')).toBe(0);
   } finally {
     await close();
   }
@@ -268,8 +269,8 @@ const REDDIT_PAGE = `<!doctype html>
 <body>
   <div id="thing">
     <p class="title" id="title">${RD_TITLE}</p>
-    <div class="score" id="score">${RD_SCORE}</div>
-    <p class="tagline" id="tagline">${RD_TAGLINE}</p>
+    <div id="score-box"><div class="score" id="score">${RD_SCORE}</div></div>
+    <div id="tagline-box"><p class="tagline" id="tagline">${RD_TAGLINE}</p></div>
     <faceplate-timeago id="ago">${RD_AGO}</faceplate-timeago>
     <div class="usertext-body" id="body">${RD_BODY}</div>
   </div>
@@ -294,9 +295,9 @@ test('site rules: a Reddit post keeps its title and body, and loses its score, t
     expect(all).not.toContain(RD_SCORE);
     expect(all).not.toContain(RD_TAGLINE);
     expect(all).not.toContain(RD_AGO);
-    await expect(page.locator('#score .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#tagline .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#ago .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'score-box')).toBe(0);
+    expect(await oursIn(page, 'tagline-box')).toBe(0);
+    expect(await ourNodesAt(page, 'ago')).toBe(0);
   } finally {
     await close();
   }
@@ -389,7 +390,7 @@ test('site rules: a new-Reddit feed card keeps its title and body, and its credi
     expect(all).not.toContain(NR_AUTHOR);
     expect(all).not.toContain(NR_AGO);
     for (const item of NR_MENU) expect(all).not.toContain(item);
-    await expect(page.locator('#credit .ai-translator-inline-block')).toHaveCount(0);
+    expect(await ourNodesAt(page, 'credit')).toBe(0);
 
     // 块里的时间戳：送出去的是占位符，译文里是原来那个元素的克隆。
     const editedSent = sentTexts.find((text) => text.includes(NR_EDITED));
