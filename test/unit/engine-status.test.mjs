@@ -338,6 +338,8 @@ const NOT_PRODUCT = {
   'i18n/': 'copy strings keyed by the same names',
   // 开发脚本（提交信息检查、图标生成、注入测量），不进扩展包。
   'scripts/': 'development scripts, not shipped',
+  // 品牌图标与宣传图的绘制脚本（npm run icons），只产出 PNG，不进扩展包。
+  'brand/': 'brand artwork drawing scripts, not shipped',
   // 第三方库，不归我们管。
   'vendor/': 'third party code',
   'test/': 'tests',

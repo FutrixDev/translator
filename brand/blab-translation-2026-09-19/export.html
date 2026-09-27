@@ -5,6 +5,74 @@
 <script>
   // 每项按精确像素原生绘制（不做 dpr 缩放）
   const B = window.BlabR7;
+  const INK = '#10172A';
+  const ACCENT = '#4A55E8';
+  const FONT = '"SF Pro Rounded", "Nunito", system-ui, sans-serif';
+
+  // 商店宣传图的插画底（promo/*-art.jpg，Magic Art 出图、画面不含文字），标志和文字在这里叠上去。
+  const ART = {};
+  window.ready = Promise.all(['marquee', 'small'].map((key) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(ART[key] = img);
+    img.onerror = () => reject(new Error(`promo/${key}-art.jpg failed to load`));
+    img.src = `promo/${key}-art.jpg`;
+  })));
+
+  // 插画按宽铺满、竖向居中裁；左侧再压一层暖白，保证字的对比度
+  function paintArt(ctx, img, w, h, washTo) {
+    const s = w / img.width, ih = img.height * s;
+    ctx.drawImage(img, 0, (h - ih) / 2, w, ih);
+    const g = ctx.createLinearGradient(0, 0, washTo, 0);
+    g.addColorStop(0, 'rgba(255,247,240,0.9)');
+    g.addColorStop(0.6, 'rgba(255,247,240,0.55)');
+    g.addColorStop(1, 'rgba(255,247,240,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, washTo, h);
+  }
+  function text(ctx, str, x, y, weight, size, color) {
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    ctx.fillStyle = color;
+    ctx.fillText(str, x, y);
+  }
+  // 三个用途胶囊，颜色取自扇页
+  const USES = [['网页', '#F0605A'], ['PDF · 电子书', '#E89A1C'], ['视频字幕', '#2FB67E']];
+  function pills(ctx, x, y, size) {
+    ctx.font = `700 ${size}px ${FONT}`;
+    const padX = size * 0.8, hgt = size * 2;
+    for (const [label, color] of USES) {
+      const w = ctx.measureText(label).width + padX * 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, hgt, hgt / 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = Math.max(1, size / 10);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.fillText(label, x + padX, y + size * 1.36);
+      x += w + size * 0.6;
+    }
+  }
+  // Chrome 应用店大图 1400×560
+  function drawPromoMarquee(ctx) {
+    paintArt(ctx, ART.marquee, 1400, 560, 760);
+    B.drawTile(ctx, 112, 96, 108);
+    ctx.textBaseline = 'alphabetic';
+    text(ctx, 'Blab Translation', 96, 318, 800, 76, INK);
+    text(ctx, '叭叭翻译，翻译一切', 98, 384, 700, 40, ACCENT);
+    pills(ctx, 98, 420, 22);
+  }
+  // Chrome 应用店小图 440×280
+  function drawPromoSmall(ctx) {
+    paintArt(ctx, ART.small, 440, 280, 260);
+    B.drawTile(ctx, 52, 26, 30);
+    ctx.textBaseline = 'alphabetic';
+    text(ctx, 'Blab', 26, 138, 800, 50, INK);
+    text(ctx, 'Translation', 27, 172, 700, 28, INK);
+    text(ctx, '叭叭翻译，翻译一切', 27, 212, 700, 18, ACCENT);
+  }
   const sq = (file, size, draw) => ({ file, w: size, h: size, draw: (ctx) => draw(ctx, size) });
   const EXPORTS = [
     ...[16, 32, 48, 128].map((s) => sq(`chrome/icon${s}.png`, s, B.drawTile)),
@@ -14,11 +82,15 @@
     sq('android/mipmap-xxxhdpi/ic_launcher_foreground.png', 432, B.drawAdaptiveForeground),
     sq('android/mipmap-xxxhdpi/ic_launcher_background.png', 432, B.drawAdaptiveBackground),
     sq('android/play-store-512.png', 512, B.drawFullBleed),
+    // The TV onboarding header's 30 design px land at 45 device px on a 1080p panel.
+    sq('android/drawable-nodpi/brand_tile.png', 48, B.drawTile),
     { file: 'android/drawable-xhdpi/banner.png', w: 320, h: 180, draw: (ctx) => B.drawBanner(ctx, 320, 'TV Caption') },
     { file: 'android/drawable-zh-xhdpi/banner.png', w: 320, h: 180, draw: (ctx) => B.drawBanner(ctx, 320, '电视字幕') },
     { file: 'banner-translation-640x360.png', w: 640, h: 360, draw: (ctx) => B.drawBanner(ctx, 640) },
     sq('mark-1024.png', 1024, B.drawMark),
     sq('tile-1024.png', 1024, B.drawTile),
+    { file: 'chrome/promo-large.png', w: 1400, h: 560, draw: drawPromoMarquee },
+    { file: 'chrome/promo-small.png', w: 440, h: 280, draw: drawPromoSmall },
   ];
   function renderExport(i) {
     const e = EXPORTS[i];
