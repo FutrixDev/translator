@@ -2,8 +2,9 @@
 // J-5、J-6、J-7）。
 //
 // 规则全部在设置页的卡片里建、改、导入：点「新建规则」或某一行的「编辑」，填表，
-// 点保存。服务工作者直写只出现在设计点名的两处：J-4 第 3 步「绕过设置页的写入」、
-// J-7 的 49 条预置（见 custom-rules-fixtures.js 文件头）。
+// 点保存。服务工作者直写只出现在两处：J-4 第 3/3b 步「绕过设置页的写入」拆成了单独
+// 的 `[fixture]` 用例；J-7 的 49 条预置是前提，不是旅程步骤（见
+// custom-rules-fixtures.js 文件头）。
 const fs = require('fs');
 const { test, expect } = require('./fixtures');
 const {
@@ -201,8 +202,62 @@ const J4_PAGE = html(`
 // 设计 §6 J-4 写的是不带 `!important` 的版本，那样第 1 步永远不成立（偏差已登记）。
 const J4_CSS = '.ai-translator-inline-block { color: rgb(1, 2, 3) !important }';
 
-test('J-4: CSS saved in Settings restyles another translated tab within 1 s; unsafe CSS is refused there, and ignored when written around it', async ({ page, context, extensionId }) => {
+/** J-4 两条用例共用的开头：夹具页翻好，设置页开在另一个标签页里。 */
+async function j4Start(page, context, extensionId, endpoint) {
+  await setExtensionSettings(page, settings(endpoint));
+  await serve(context, { [`${RULES}/tides`]: J4_PAGE });
+  await page.goto(`${RULES}/tides`);
+  await waitForFloatBall(page);
+  await triggerPageTranslation(page);
+  await expect(page.locator(translationOf('lead'))).toHaveText(`[T] ${J4.lead}`, { timeout: 30000 });
+  await expect(page.locator(translationOf('promo'))).toHaveText(`[T] ${J4.promo}`, { timeout: 30000 });
+  expect(await j4LeadColor(page)).not.toBe('rgb(1, 2, 3)');
+  return newOptionsTab(context, extensionId);
+}
+
+const j4LeadColor = (page) => page.evaluate((selector) =>
+  getComputedStyle(document.querySelector(selector)).color, translationOf('lead'));
+
+const leakUrlOf = (endpoint) => `${new URL(endpoint).origin}/leak`;
+
+test('J-4: CSS saved in Settings restyles another translated tab within 1 s, and unsafe CSS is refused there', async ({ page, context, extensionId }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    const options = await j4Start(page, context, extensionId, endpoint);
+
+    // 1. 另一个标签页里的设置页：新建一条只有 CSS 的规则，点保存。已翻好的那一页
+    //    1 s 内译文的计算颜色变过去，不刷新。
+    await fillRuleEditor(options, { match: ['rules.test'], css: J4_CSS });
+    const t0 = Date.now();
+    await saveRuleEditor(options);
+    await withinOneSecond(t0, async () => (await j4LeadColor(page)) === 'rgb(1, 2, 3)', 'J-4 step 1 CSS applied');
+    const stored = await storedRules(context);
+    const [key] = Object.keys(stored);
+    const id = key.slice('customRule:'.length);
+
+    // 2. 编辑这一条，在 CSS 后面追加一段取外链的规则：字段下出现 customRuleCssUnsafe
+    //    的文案，保存被拒，编辑器还开着，存储一个字不变。
+    await fillRuleEditor(options, { css: `${J4_CSS}\nbody { background: url(${leakUrlOf(endpoint)}) }` }, id);
+    await options.click('.custom-rule-save');
+    const cssError = options.locator('#customRule-css ~ .custom-rule-field-error');
+    await expect(cssError).toBeVisible();
+    await expect(cssError).toHaveText(en('customRuleCssUnsafe'));
+    await expect(options.locator('.custom-rule-editor')).toHaveCount(1);
+    expect(await storedRules(context)).toEqual(stored);
+    await options.click('.custom-rule-cancel');
+    await expect(options.locator('.custom-rule-editor')).toHaveCount(0);
+    expect(await j4LeadColor(page)).toBe('rgb(1, 2, 3)');
+    expect(sent(sentTexts, J4.lead)).toBe(true);
+  } finally {
+    await close();
+  }
+});
+
+test('[fixture] J-4 steps 3/3b: unsafe CSS written around Settings is not applied, the rest of that rule is, and nothing is fetched', async ({ page, context, extensionId }) => {
+  // 隔离的是 J-4 第 3/3b 步：绕过设置页的写入（别的设备或手改的 sync 数据）。设置页
+  // 存不进不安全的 CSS（主用例第 2 步），所以这一步只能由服务工作者直写。前提（第
+  // 1 步那条 CSS 规则）照样在设置页里建。
+  const { close, endpoint } = await startMockOpenAIServer();
   // /leak 计数：context.route 截下所有指向 /leak 的请求（哪个 frame、哪个来源都算）。
   // 末尾有一步正向对照：页面自己去取一次，计数必须变成 1 —— 证明计数器是接上的。
   let leaks = 0;
@@ -214,48 +269,15 @@ test('J-4: CSS saved in Settings restyles another translated tab within 1 s; uns
   page.on('console', (msg) => {
     if (msg.text().startsWith('Blab Translation: custom rule CSS not applied')) cssRefusals.push(msg.text());
   });
+  const leakUrl = leakUrlOf(endpoint);
   try {
-    await setExtensionSettings(page, settings(endpoint));
-    await serve(context, { [`${RULES}/tides`]: J4_PAGE });
-    await page.goto(`${RULES}/tides`);
-    await waitForFloatBall(page);
-    await triggerPageTranslation(page);
-    await expect(page.locator(translationOf('lead'))).toHaveText(`[T] ${J4.lead}`, { timeout: 30000 });
-    await expect(page.locator(translationOf('promo'))).toHaveText(`[T] ${J4.promo}`, { timeout: 30000 });
+    const options = await j4Start(page, context, extensionId, endpoint);
+    const { id } = await createRule(options, context, { match: ['rules.test'], css: J4_CSS });
+    await expect.poll(() => j4LeadColor(page)).toBe('rgb(1, 2, 3)');
 
-    const leadColor = () => page.evaluate((selector) =>
-      getComputedStyle(document.querySelector(selector)).color, translationOf('lead'));
-    expect(await leadColor()).not.toBe('rgb(1, 2, 3)');
-
-    // 1. 另一个标签页里的设置页：新建一条只有 CSS 的规则，点保存。已翻好的那一页
-    //    1 s 内译文的计算颜色变过去，不刷新。
-    const options = await newOptionsTab(context, extensionId);
-    await fillRuleEditor(options, { match: ['rules.test'], css: J4_CSS });
-    let t0 = Date.now();
-    await saveRuleEditor(options);
-    await withinOneSecond(t0, async () => (await leadColor()) === 'rgb(1, 2, 3)', 'J-4 step 1 CSS applied');
-    const stored = await storedRules(context);
-    const [key] = Object.keys(stored);
-    const id = key.slice('customRule:'.length);
-
-    // 2. 编辑这一条，在 CSS 后面追加一段取外链的规则：字段下出现 customRuleCssUnsafe
-    //    的文案，保存被拒，编辑器还开着，存储一个字不变。
-    const leakUrl = `${new URL(endpoint).origin}/leak`;
-    await fillRuleEditor(options, { css: `${J4_CSS}\nbody { background: url(${leakUrl}) }` }, id);
-    await options.click('.custom-rule-save');
-    const cssError = options.locator('#customRule-css ~ .custom-rule-field-error');
-    await expect(cssError).toBeVisible();
-    await expect(cssError).toHaveText(en('customRuleCssUnsafe'));
-    await expect(options.locator('.custom-rule-editor')).toHaveCount(1);
-    expect(await storedRules(context)).toEqual(stored);
-    await options.click('.custom-rule-cancel');
-    await expect(options.locator('.custom-rule-editor')).toHaveCount(0);
-    expect(await leadColor()).toBe('rgb(1, 2, 3)');
-
-    // 3. SW 直接写同一条规则（设计点名的「绕过设置页的写入」，等于别的设备或手改
-    //    的 sync 数据），同一条里还有 exclude。exclude 照常生效；CSS 一个字都不挂；
-    //    /leak 零请求。
-    t0 = Date.now();
+    // 3. 服务工作者直写同一条规则，同一条里还有 exclude。exclude 照常生效；CSS 一个
+    //    字都不挂；/leak 零请求。
+    const t0 = Date.now();
     await writeRule(context, id, rule(['rules.test'], {
       exclude: ['.promo'],
       css: `body { background: url(${leakUrl}) }`,
@@ -263,13 +285,12 @@ test('J-4: CSS saved in Settings restyles another translated tab within 1 s; uns
     await withinOneSecond(t0, async () => (await oursIn(page, 'promo-box')) === 0, 'J-4 step 3 exclude applied');
     expect(await isTranslated(page, 'lead')).toBe(true);
     // 第 1 步的 CSS 也随之卸下：本页生效的规则只有这一条，它的 CSS 被拒了。
-    expect(await leadColor()).not.toBe('rgb(1, 2, 3)');
+    expect(await j4LeadColor(page)).not.toBe('rgb(1, 2, 3)');
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundImage)).toBe('none');
     await page.waitForTimeout(1500);
     expect(leaks).toBe(0);
     // 同一段不安全 CSS 在这个页面里只告警一次：写入那一刻挂一次，之后每一轮
-    // （自动翻译那一轮也算）都用记下的清洗结果（§3.5）。第 2 步被设置页拒掉，页面
-    // 根本没见过那一段，所以不算。
+    // （自动翻译那一轮也算）都用记下的清洗结果（§3.5）。
     expect(cssRefusals.length).toBe(1);
 
     // 3b. 同一条规则换一段 CSS：两个字符串里的 `/*` 与 `*/` 把真正生效的 url( 夹在
@@ -290,7 +311,6 @@ test('J-4: CSS saved in Settings restyles another translated tab within 1 s; uns
     // 正向对照：页面自己取一次 /leak，计数器看得见。
     await page.evaluate((url) => { new Image().src = `${url}?control`; }, leakUrl);
     await expect.poll(() => leaks, { timeout: 5000 }).toBe(1);
-    expect(sent(sentTexts, J4.lead)).toBe(true);
   } finally {
     await close();
   }

@@ -1,9 +1,9 @@
 // 用户站点规则（P1-B）：规则在已经打开的页面上生效（设计 §3.6、§6 J-3 的迟到区域、
 // J-8、J-9、J-10）。
 //
-// 规则在设置页的卡片里建（多数是另一个标签页里的设置页，页面不刷新）。服务工作者
-// 直写只有 J-8 的「另一台设备同步下来的删除」这一处，是设计点名的（见
-// custom-rules-fixtures.js 文件头）。
+// 规则在设置页的卡片里建、删（多数是另一个标签页里的设置页，页面不刷新）。服务工作者
+// 直写只有 J-8 的「另一台设备同步下来的删除」这一处，拆成了单独的 `[fixture]` 用例
+// （见 custom-rules-fixtures.js 文件头）。
 const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
@@ -18,6 +18,7 @@ const {
   html,
   serve,
   removeRules,
+  deleteRule,
   clearTranslationCache,
   autoAiChars,
   sent,
@@ -91,12 +92,12 @@ const J8_PAGE = html(`
   <div id="region-box" class="comments"><p id="region">${J8.region}</p></div>`);
 
 /**
- * 一轮：手动翻 → 另一个标签页的设置页加 exclude（1 s 内收回）→ 清两半缓存 → SW
- * 删规则（另一台设备同步下来的变化；1 s 内回来，原文恰好多发一次）。
+ * 一轮：手动翻 → 另一个标签页的设置页加 exclude（1 s 内收回）→ 清两半缓存 → 删规则
+ * （remove(id) 删掉并回点下删除那一刻；1 s 内回来，原文恰好多发一次）。
  * byScheduler：这次重译必须是调度器收的，也就是记在自动翻译的用量里 —— 「恰好多
  * 发一次」分不出是调度器还是补翻轮收的（两条路收同一块）。
  */
-async function excludeRoundTrip(page, options, context, sentTexts, label, { byScheduler = false } = {}) {
+async function excludeRoundTrip(page, options, context, sentTexts, label, { remove, byScheduler = false }) {
   await triggerPageTranslation(page);
   await expect(page.locator(translationOf('keep'))).toHaveText(`[T] ${J8.keep}`, { timeout: 30000 });
   await expect(page.locator(translationOf('region'))).toHaveText(`[T] ${J8.region}`, { timeout: 30000 });
@@ -112,8 +113,7 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { bySc
   const keepBefore = sendCount(sentTexts, J8.keep);
   const charsBefore = await autoAiChars(context);
 
-  const t0 = Date.now();
-  await removeRules(context, [id]);
+  const t0 = await remove(id);
   await withinOneSecond(t0, () => isTranslated(page, 'region'), `${label} exclude removed`);
   // 再等一会儿：确认没有第二条路径把同一块再送一次。
   await page.waitForTimeout(1500);
@@ -129,24 +129,50 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { bySc
   await expect(options.locator(`.custom-rule[data-rule-id="${id}"]`)).toHaveCount(0);
 }
 
-test('J-8: an exclude added in Settings in another tab takes a translation back within 1 s, and a synced delete brings it back within 1 s', async ({ page, context, extensionId }) => {
+/**
+ * J-8 的两遍：总开关关着一遍、开着一遍。remove 是删规则的那一下，两条用例只差在它。
+ *
+ * 总开关关着：删规则后由 custom-rule.js 自己补的那一轮接回来。总开关开着：手动翻译
+ * 把本页交给调度器（markPageExplicit），删规则后由调度器重启接回来 —— 两条路不收
+ * 同一批块，所以原文依旧恰好多发一次。
+ */
+async function j8Journey(page, context, extensionId, endpoint, sentTexts, label, remove) {
+  await serve(context, { [`${RULES}/ferry`]: J8_PAGE });
+  await setExtensionSettings(page, settings(endpoint, { autoTranslate: false }));
+  await page.goto(`${RULES}/ferry`);
+  await waitForFloatBall(page);
+  const options = await newOptionsTab(context, extensionId);
+  await excludeRoundTrip(page, options, context, sentTexts, `${label} autoTranslate off`,
+    { remove: (id) => remove(options, id) });
+
+  await setExtensionSettings(page, settings(endpoint, { autoTranslate: true }));
+  await page.goto(`${RULES}/ferry`);
+  await waitForFloatBall(page);
+  await excludeRoundTrip(page, options, context, sentTexts, `${label} autoTranslate on`,
+    { remove: (id) => remove(options, id), byScheduler: true });
+}
+
+test('J-8: an exclude added in Settings in another tab takes a translation back within 1 s, and deleting it there brings it back within 1 s', async ({ page, context, extensionId }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
-    await serve(context, { [`${RULES}/ferry`]: J8_PAGE });
+    await j8Journey(page, context, extensionId, endpoint, sentTexts, 'J-8', (options, id) => deleteRule(options, id));
+  } finally {
+    await close();
+  }
+});
 
-    // 自动翻译总开关关着：删规则后由 custom-rule.js 自己补的那一轮接回来。
-    await setExtensionSettings(page, settings(endpoint, { autoTranslate: false }));
-    await page.goto(`${RULES}/ferry`);
-    await waitForFloatBall(page);
-    const options = await newOptionsTab(context, extensionId);
-    await excludeRoundTrip(page, options, context, sentTexts, 'J-8 autoTranslate off');
-
-    // 总开关开着：手动翻译把本页交给调度器（markPageExplicit），删规则后由调度器
-    // 重启接回来 —— 两条路不收同一批块，所以原文依旧恰好多发一次。
-    await setExtensionSettings(page, settings(endpoint, { autoTranslate: true }));
-    await page.goto(`${RULES}/ferry`);
-    await waitForFloatBall(page);
-    await excludeRoundTrip(page, options, context, sentTexts, 'J-8 autoTranslate on', { byScheduler: true });
+test('[fixture] J-8 synced delete: a rule deleted on another device brings the translation back within 1 s', async ({ page, context, extensionId }) => {
+  // 隔离的是 J-8 的「另一台设备同步下来的删除」：storage.sync 里的外来变化。测试里
+  // 只有这一个浏览器配置，没有真实入口能造出别的设备，所以这一下由服务工作者直删
+  // （删得和别的设备同步下来的一样：页面只看到 storage.onChanged）。其余每一步照样
+  // 走设置页。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await j8Journey(page, context, extensionId, endpoint, sentTexts, 'J-8 synced', async (_options, id) => {
+      const t0 = Date.now();
+      await removeRules(context, [id]);
+      return t0;
+    });
   } finally {
     await close();
   }

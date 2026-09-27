@@ -6,8 +6,10 @@
  *   settings-transfer.spec.js      J-11
  *
  * 写规则走真实入口（设置页卡片、拾取器）。这里另有 writeRule / removeRules 两个
- * 服务工作者直写的助手，只给设计里点名「从 SW 上下文直接写」的那几步（J-4 第 3
- * 步的绕过写入、J-7 的预置、J-8 的「另一台设备」、J-11 的写入中途失败）用。
+ * 服务工作者直写的助手，只给标题带 `[fixture]` 的用例用：J-4 第 3/3b 步的绕过写入、
+ * J-8 的「另一台设备同步下来的删除」、拾取器遇到本站规则 CSS 不安全。J-7 的 49 条
+ * 预置（writeSyncSettings）是前提，不是旅程步骤；J-11 在预览之后用同一份预置把额度
+ * 占满，造的是「另一头同时在写」，导入本身走真实入口，不在此列。
  *
  * 页面全部由 context.route 供给，翻译走 mock-openai-server（回 `[T] 原文`）：
  *   - 「翻了」= 原位出现以 `[T] ` 开头的译文节点；
@@ -292,15 +294,20 @@ async function createRule(options, context, fields, { engineAi = false } = {}) {
   return { id: added[0].slice('customRule:'.length), t0 };
 }
 
-/** 卡片里删一行：第一下变成「再点一次确认」，第二下才删；等这一行从列表里消失。 */
+/**
+ * 卡片里删一行：第一下变成「再点一次确认」，第二下才删；等这一行从列表里消失。
+ * 回第二下点下去的那一刻（「1 s 内」从这里起算）。
+ */
 async function deleteRule(options, id) {
   const row = options.locator(`.custom-rule[data-rule-id="${id}"]`);
   const button = row.locator('.custom-rule-delete');
   await button.click();
   await expect(button).toHaveAttribute('data-armed', 'true');
   await expect(button).toHaveText(en('customRuleDeleteConfirm'));
+  const t0 = Date.now();
   await button.click();
   await expect(row).toHaveCount(0);
+  return t0;
 }
 
 /** 49 条预置规则（设计点名的 SW 写入）：每条（键名 + 存进去的 JSON）恰好 PER_RULE 字节。 */
