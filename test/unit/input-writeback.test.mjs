@@ -160,6 +160,9 @@ test('多行框：光标放到末尾，换一行接上译文，只走 insertText
   assert.deepEqual(calls, [{ command: 'insertText', ui: false, data: '\nHello world' }]);
   assert.deepEqual(field.events, [], '原生框上不该派发任何合成事件（beforeinput、paste、input）');
   assert.equal(field.setterCalls, 0);
+  // 写成了就没有「没写成」的记录：用户接着改字，重试照常翻译。
+  field.raw = '你好世界\nHello world!';
+  assert.equal(writeback.landed(field), false, '写成之后用户的改动被当成了「晚到」');
 });
 
 test('多行框已经以换行结尾：不再多补一个换行', async () => {
@@ -236,6 +239,8 @@ test('contenteditable：光标到末尾、等 selectionchange 过去，再递一
   assert.equal(paste.cancelable, true);
   assert.equal(paste.composed, true, 'shadow root 里的编辑器收不到不 composed 的事件');
   assert.ok(!field.events.some((e) => e.type === 'beforeinput'), '合成 beforeinput 的旧路又回来了');
+  field.innerText = '你好世界\nHello!';
+  assert.equal(writeback.landed(field), false, '写成之后用户的改动被当成了「晚到」');
 });
 
 test('contenteditable 没人接 paste：退到 execCommand insertText', async () => {
