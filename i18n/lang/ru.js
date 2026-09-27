@@ -553,7 +553,7 @@
     customRuleExclude: 'Не переводить эти области',
     customRuleKeepOriginal: 'Оставить оригинал',
     customRuleCss: 'Свой CSS',
-    customRuleCssHint: 'У переводов класс .ai-translator-inline-block. На них стоят встроенные стили, скопированные с оригинала: font-size, font-family, font-weight, line-height, text-align, color, letter-spacing и opacity, а также padding и box-sizing — чтобы их изменить, добавьте !important. Нижний отступ и начальный отступ перевода, стоящего рядом со своей строкой, изменить нельзя. url(, @import, @font-face, image(, attr( и подобное отклоняются, даже в комментарии. Обратная косая черта (\\) тоже отклоняется: вводите сам символ, а не escape-последовательность.',
+    customRuleCssHint: 'У переводов класс .ai-translator-inline-block. На них стоят встроенные стили, скопированные с оригинала: font-size, font-family, font-weight, line-height, text-align, color, letter-spacing и opacity, а также padding и box-sizing — чтобы их изменить, добавьте !important. Нижний отступ, внутренний отступ в начале, которым перевод выравнивается по тексту после значка, и начальный отступ перевода, стоящего рядом со своей строкой, изменить нельзя. url(, @import, @font-face, image(, attr( и подобное отклоняются, даже в комментарии. Обратная косая черта (\\) тоже отклоняется: вводите сам символ, а не escape-последовательность.',
     customRuleEngine: 'Движок перевода',
     customRuleEngineFollow: 'Как в общих настройках',
     customRuleChipScope: 'Область',

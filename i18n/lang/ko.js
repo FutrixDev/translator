@@ -553,7 +553,7 @@
     customRuleExclude: '이 영역은 번역 안 함',
     customRuleKeepOriginal: '원문 유지',
     customRuleCss: '사용자 CSS',
-    customRuleCssHint: '번역문의 클래스 이름은 .ai-translator-inline-block 입니다. 번역문에는 원문에서 복사한 인라인 font-size, font-family, font-weight, line-height, text-align, color, letter-spacing, opacity 와 padding, box-sizing 이 붙어 있어, 바꾸려면 !important 가 필요합니다. 아래 여백과, 원문과 같은 줄 뒤에 놓인 번역문의 시작 쪽 여백은 바꿀 수 없습니다. url(, @import, @font-face, image(, attr( 같은 표기는 주석 안에 있어도 거부됩니다. 백슬래시(\\)도 거부되므로 이스케이프 대신 문자 자체를 입력하세요.',
+    customRuleCssHint: '번역문의 클래스 이름은 .ai-translator-inline-block 입니다. 번역문에는 원문에서 복사한 인라인 font-size, font-family, font-weight, line-height, text-align, color, letter-spacing, opacity 와 padding, box-sizing 이 붙어 있어, 바꾸려면 !important 가 필요합니다. 아래 여백, 원문 앞에 아이콘이 있을 때 글자를 맞추려고 넣은 시작 쪽 안쪽 여백, 원문과 같은 줄 뒤에 놓인 번역문의 시작 쪽 여백은 바꿀 수 없습니다. url(, @import, @font-face, image(, attr( 같은 표기는 주석 안에 있어도 거부됩니다. 백슬래시(\\)도 거부되므로 이스케이프 대신 문자 자체를 입력하세요.',
     customRuleEngine: '번역 엔진',
     customRuleEngineFollow: '전체 설정 따르기',
     customRuleChipScope: '범위',

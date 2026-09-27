@@ -594,7 +594,7 @@ Rules:
     customRuleExclude: 'Don\'t translate these areas',
     customRuleKeepOriginal: 'Keep original',
     customRuleCss: 'Custom CSS',
-    customRuleCssHint: 'Translations have the class .ai-translator-inline-block. They carry inline font-size, font-family, font-weight, line-height, text-align, color, letter-spacing and opacity copied from the original, plus padding and box-sizing, so add !important to change any of these. The bottom margin, and the start margin of a translation placed beside its line, cannot be changed. url(, @import, @font-face, image(, attr( and similar are rejected, even inside a comment. A backslash (\\) is rejected too: type the character itself instead of an escape.',
+    customRuleCssHint: 'Translations have the class .ai-translator-inline-block. They carry inline font-size, font-family, font-weight, line-height, text-align, color, letter-spacing and opacity copied from the original, plus padding and box-sizing, so add !important to change any of these. The bottom margin, the start padding that lines a translation up with text after an icon, and the start margin of a translation placed beside its line cannot be changed. url(, @import, @font-face, image(, attr( and similar are rejected, even inside a comment. A backslash (\\) is rejected too: type the character itself instead of an escape.',
     customRuleEngine: 'Translation engine',
     customRuleEngineFollow: 'Follow the global setting',
     customRuleChipScope: 'Scope',

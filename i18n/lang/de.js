@@ -553,7 +553,7 @@
     customRuleExclude: 'Diese Bereiche nicht übersetzen',
     customRuleKeepOriginal: 'Original beibehalten',
     customRuleCss: 'Eigenes CSS',
-    customRuleCssHint: 'Übersetzungen tragen die Klasse .ai-translator-inline-block. Sie haben aus dem Original kopierte Inline-Stile für font-size, font-family, font-weight, line-height, text-align, color, letter-spacing und opacity sowie padding und box-sizing; um diese zu ändern, braucht es !important. Der untere Außenabstand und der Anfangsabstand einer neben ihrer Zeile platzierten Übersetzung lassen sich nicht ändern. url(, @import, @font-face, image(, attr( und Ähnliches werden abgelehnt, auch in einem Kommentar. Ein Backslash (\\) wird ebenfalls abgelehnt: Geben Sie das Zeichen selbst statt einer Escape-Sequenz ein.',
+    customRuleCssHint: 'Übersetzungen tragen die Klasse .ai-translator-inline-block. Sie haben aus dem Original kopierte Inline-Stile für font-size, font-family, font-weight, line-height, text-align, color, letter-spacing und opacity sowie padding und box-sizing; um diese zu ändern, braucht es !important. Der untere Außenabstand, der Innenabstand am Anfang, mit dem eine Übersetzung am Text hinter einem Symbol ausgerichtet wird, und der Anfangsabstand einer neben ihrer Zeile platzierten Übersetzung lassen sich nicht ändern. url(, @import, @font-face, image(, attr( und Ähnliches werden abgelehnt, auch in einem Kommentar. Ein Backslash (\\) wird ebenfalls abgelehnt: Geben Sie das Zeichen selbst statt einer Escape-Sequenz ein.',
     customRuleEngine: 'Übersetzungs-Engine',
     customRuleEngineFollow: 'Globale Einstellung verwenden',
     customRuleChipScope: 'Bereich',
