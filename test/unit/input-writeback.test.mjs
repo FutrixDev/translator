@@ -1,10 +1,11 @@
 // content/content-input-writeback.js 在 Node 里对着一个假 DOM 跑（D-352，写法按 D-357）。
 //
 // 真浏览器里的那一半 —— 原生撤销栈是不是一步、Draft/Lexical 那类编辑器的模型收没
-// 收到 —— 归 test/e2e/input-chip.spec.js。这里钉的是浏览器不好造出来的分支：
-// 页面接了 paste 我们就不再插、没接才退到 execCommand、execCommand 答 false 就报错、
-// maxlength 装不下就一个字不碰、写完核对要「正好等于」而不是「包含」、核对没过但
-// 字晚一拍落进来时 landed() 认得出。
+// 收到、不接 paste 的普通 contenteditable、paste 里挪焦点的编辑器 —— 归
+// test/e2e/input-chip.spec.js。这里钉的是浏览器不好造出来的分支：页面接了 paste 我们
+// 就不再插、没接才退到 execCommand、execCommand 答 false 就报错、maxlength 装不下就
+// 一个字不碰、写完核对要「正好读作」而不是「包含」且换行要对上、动手前复读四项、
+// 核对没过之后框只要变了 landed() 就认。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource } from './helpers/sources.mjs';
@@ -48,6 +49,7 @@ class FakeElement {
 
   contains(node) { return node === this; }
 }
+FakeElement.prototype.isConnected = true;
 
 // value 访问器数着被直接赋值的次数：写回只许走编辑命令，setter 一次都不该被碰。
 class HTMLTextAreaElement extends FakeElement {
@@ -76,6 +78,13 @@ function load({ answer = true, apply = true } = {}) {
   const ranges = [];
   const document = {
     activeElement: null,
+    // 用例把要写的框交给 target：它就是焦点所在，它的根就是这个 document。
+    get target() { return this.field; },
+    set target(field) {
+      this.field = field;
+      this.activeElement = field;
+      field.getRootNode = () => document;
+    },
     execCommand(command, ui, data) {
       calls.push({ command, ui, data });
       if (answer && apply && document.target) {
@@ -92,6 +101,7 @@ function load({ answer = true, apply = true } = {}) {
     getSelection() {
       return {
         rangeCount: ranges.length,
+        get anchorNode() { return ranges.length ? ranges[0].startContainer : null; },
         getRangeAt: (i) => ranges[i],
         removeAllRanges: () => { ranges.length = 0; },
         addRange: (range) => {
@@ -237,6 +247,93 @@ test('contenteditable 没人接 paste：退到 execCommand insertText', async ()
   assert.equal(field.innerText, '你好世界\nHello');
 });
 
+// `你好<br>` 的 innerText 以换行结尾，可字会插进 <br> 前面那一行（D-361 S3）。
+test('contenteditable 的字已经以换行结尾：照样先换一行', async () => {
+  const { writeback, document } = load();
+  const field = new EditableDiv('你好世界\n');
+  document.target = field;
+  const pastes = takesPaste(field, (data) => { field.innerText = `你好世界\n${data}`; });
+  await writeback.write(field, 'Hello');
+  assert.equal(pastes[0].data, '\nHello');
+});
+
+// 核对要认换行：把全部空白压掉的比法放得过「译文粘在原文同一行」。
+test('写完核对认换行：译文粘在原文同一行，核对不过', async () => {
+  const { writeback, document } = load();
+  const field = new EditableDiv('你好世界\n');
+  document.target = field;
+  takesPaste(field, (data) => { field.innerText = `你好世界${data.trim()}\n`; });
+  await assert.rejects(writeback.write(field, 'Hello world'), /does not read as expected/);
+});
+
+test('sameText：行内空白、空行不算，换行算', () => {
+  const { writeback } = load();
+  assert.equal(writeback.sameText('你好\n\n Hello\u00a0world ', '你好\nHello world'), true);
+  assert.equal(writeback.sameText('你好Hello world\n', '你好\nHello world'), false);
+  assert.equal(writeback.sameText('你好\nHello', '你好\nHello\nHello'), false);
+});
+
+// 动手之前的复读（D-361 S1）：contenteditable 那条路中间有 await，页面可能已经挪了
+// 焦点、换了框、动了字。execCommand 写的是焦点所在的地方，不是 field。
+test('复读：paste 处理器挪走了焦点，不退到 execCommand，一个字不写', async () => {
+  const { writeback, document, calls } = load();
+  const field = new EditableDiv('你好世界');
+  const other = new EditableDiv('');
+  document.target = field;
+  field.addEventListener('paste', () => { document.activeElement = other; });
+  await assert.rejects(writeback.write(field, 'Hello'), /lost focus/);
+  assert.deepEqual(calls, []);
+  assert.equal(field.innerText, '你好世界');
+  assert.equal(writeback.landed(field), false, '一个字没写，不该记成「写过了」');
+});
+
+test('复读：等光标那一拍里框被换掉、焦点走了、选区走了、字变了，都不写', async () => {
+  const cases = [
+    ['left the page', (field) => { field.isConnected = false; }],
+    ['lost focus', (field, document) => { document.activeElement = null; }],
+    ['caret left the field', (field, document) => { document.getSelection().removeAllRanges(); }],
+    ['changed before writing', (field) => { field.innerText = '你好世界!'; }],
+  ];
+  for (const [message, meddle] of cases) {
+    const { writeback, document, calls } = load();
+    const field = new EditableDiv('你好世界');
+    document.target = field;
+    const pastes = takesPaste(field);
+    setTimeout(() => meddle(field, document), 0);
+    await assert.rejects(writeback.write(field, 'Hello'), new RegExp(message));
+    assert.deepEqual(pastes, [], `${message}：paste 照样递出去了`);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('复读：没人接 paste，但 paste 处理器同步改了字：不再退到 execCommand', async () => {
+  const { writeback, document, calls } = load();
+  const field = new EditableDiv('你好世界');
+  document.target = field;
+  field.addEventListener('paste', (e) => { field.innerText += e.clipboardData.getData('text/plain'); });
+  await assert.rejects(writeback.write(field, 'Hello'), /changed before writing/);
+  assert.deepEqual(calls, [], '页面已经写了一份，又用 execCommand 插了一份');
+});
+
+// shadow root 里的框：document 的选区在那里被改写成 shadow host，要问 shadow root。
+test('复读：shadow root 里的框问的是 shadow root 自己的选区', async () => {
+  const { writeback, document, calls } = load();
+  const field = new EditableDiv('你好世界');
+  document.target = field;
+  let asked = 0;
+  field.getRootNode = () => ({ getSelection: () => { asked += 1; return { anchorNode: field }; } });
+  await writeback.write(field, 'Hello');
+  assert.equal(asked, 2, '没用 shadow root 的选区复读两次');
+  assert.equal(calls.length, 1);
+
+  const bare = load();
+  const lost = new EditableDiv('你好世界');
+  bare.document.target = lost;
+  lost.getRootNode = () => ({});
+  await assert.rejects(bare.writeback.write(lost, 'Hello'), /caret left the field/);
+  assert.deepEqual(bare.calls, []);
+});
+
 test('contenteditable 没人接 paste、execCommand 也答 false：报错', async () => {
   const { writeback, document } = load({ answer: false });
   const field = new EditableDiv('你好世界');
@@ -267,21 +364,34 @@ test('编辑器多画了一份（译文两遍）：核对不过', async () => {
 
 // 编辑器晚一拍才把字画进来：这一次报错了，但框里其实已经是「原文 + 译文」。重试
 // 之前先问 landed() —— 认得出来，就不会再追加一份。
-test('核对没过、字晚一拍落进来：landed() 认得出，只认一次；框里是别的样子就不认', async () => {
+test('核对没过、字晚一拍落进来：landed() 认得出，只认一次', async () => {
   const { writeback, document } = load();
   const field = new EditableDiv('你好');
   document.target = field;
   let late = null;
   takesPaste(field, (data) => { late = () => { field.innerText += data; }; });
   await assert.rejects(writeback.write(field, 'Hello'), /does not read as expected/);
-  assert.equal(writeback.landed(field), false, '字还没落进来就说落进来了');
+  field.innerText = ' 你好 ';
+  assert.equal(writeback.landed(field), false, '框里还是写之前的样子（只多了空白），就说写过了');
 
   late();
-  field.innerText += '!';
-  assert.equal(writeback.landed(field), false, '框里的字已经不是预期的样子，也认成了写成');
-  field.innerText = '你好\n\nHello';
-  assert.equal(writeback.landed(field), true, 'Lexical 那样多一个空段落也是写成了');
+  assert.equal(writeback.landed(field), true);
   assert.equal(writeback.landed(field), false, '同一次写入被认了两次');
+});
+
+// 核对没过之后，框里只要不再是写之前的样子，就一律当写过了（D-361 S2）：页面异步
+// 又插了一份、编辑器改了写法、用户接着敲了字 —— 哪一种再追加一份都只会更糟。
+test('核对没过、框被写成了别的样子：landed() 也认，重试绝不追加', async () => {
+  for (const after of ['你好\nHello\nHello', '你好\n“Hello”', '你好\nHello!', '你好!']) {
+    const { writeback, document } = load();
+    const field = new EditableDiv('你好');
+    document.target = field;
+    takesPaste(field, () => {});
+    await assert.rejects(writeback.write(field, 'Hello'), /does not read as expected/);
+    assert.equal(writeback.landed(field), false, '框没动过，重试却被拦下了');
+    field.innerText = after;
+    assert.equal(writeback.landed(field), true, `框已经变成 ${JSON.stringify(after)}，重试还会再追加一份`);
+  }
 });
 
 test('新的一次写入把上一次「晚到」的记录清掉', async () => {

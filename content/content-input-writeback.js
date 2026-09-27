@@ -33,13 +33,24 @@
 // 写之前：原生框设了 maxlength、写完会超长的，一个字都不碰，直接报错 —— 否则
 // 浏览器会悄悄截断，用户得到半截译文。
 //
-// 写完回头看一眼：框里的字（压掉空白后）必须**正好等于**预期的「原文 + 译文」
-// （单行框是「译文」）。只看「包含译文」不够：译文恰好是原文的一段时，页面取消了
-// paste 却什么都没写也会被当成成功。
+// contenteditable 一律先换一行再接译文，不看 innerText 是不是已经以换行结尾：
+// `你好<br>` 的 innerText 以 \n 结尾，可光标落在 <br> 前面的那一行上，不补换行，
+// 译文就粘在原文同一行（D-361 S3）。多出来的空行无害，Lexical 本来就是 \n\n。
 //
-// 核对失败不等于没写：编辑器可能晚一拍才把字画进来。这一次预期的样子记下来
-// （landed），下一次芯片被点、或者框被重新判定时先看一眼 —— 字已经在了，就当写成
-// 了，绝不再追加一份。
+// 写完回头看一眼：框里的字必须**正好读作**预期的「原文 + 译文」（单行框是
+// 「译文」）。比法是 sameText：行内的空白全压掉、空行去掉，但**换行本身要对得上**
+// —— 译文粘在原文同一行就是没对上。只看「包含译文」不够：译文恰好是原文的一段时，
+// 页面取消了 paste 却什么都没写也会被当成成功。
+//
+// contenteditable 那条路中间有 await，页面在这段时间里可能已经换了焦点、换了框、
+// 改了字（paste 处理器里挪焦点的编辑器就是这样，D-361 S1）。所以真正动手之前再
+// 读一遍（assertWritable）：不对就抛，一个字不写 —— execCommand 写的是焦点所在
+// 的地方，不是 field。
+//
+// 核对失败不等于没写：编辑器可能晚一拍才把字画进来，也可能写了两份、改了写法。
+// 这一次写之前的样子记下来（missed），下一次芯片被点、或者框被重新判定时先看一眼
+// （landed）—— 框里的字只要不再是写之前的样子，就当写过了，绝不再追加一份
+// （D-361 S2）。
 //
 // 翻译请求本身没有超时：请求一直不回，芯片就一直是「翻译中」，直到用户接着敲字、
 // 按 Esc、或者离开这个框（芯片那边收回）。
@@ -75,7 +86,11 @@
     return !!active && (active === field || field.contains(active));
   }
 
-  const squash = (text) => String(text).replace(/\s+/g, '');
+  // 两段字读起来是不是一样：行内空白全不算（编辑器会把空格换成 &nbsp;、会重排
+  // 段落间距），空行不算，换行算。见文件头。写后核对、landed、芯片的「已写入」
+  // 判定都用这一把尺子。
+  const lines = (text) => String(text).split('\n').map((line) => line.replace(/\s+/g, '')).filter(Boolean);
+  const sameText = (a, b) => lines(a).join('\n') === lines(b).join('\n');
 
   // 宏任务边界。两处要等：
   // - 光标挪到末尾之后、派发 paste 之前：Draft、Lexical 的模型选区是从
@@ -83,6 +98,22 @@
   //   字插在用户原来的光标处。
   // - 写完之后、核对之前：编辑器可能在微任务里才把模型画回 DOM（Lexical 就是）。
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  // 选区锚点在不在 field 里。shadow root 里的框要问 shadow root 自己的选区：
+  // document 的选区在那里被改写成了 shadow host。
+  function caretInside(field) {
+    const selection = field.getRootNode().getSelection?.();
+    return !!selection && !!selection.anchorNode && field.contains(selection.anchorNode);
+  }
+
+  // 动手之前的复读，见文件头。只有这一道，contenteditable 路上 await 之后、退到
+  // execCommand 之前各用一次。
+  function assertWritable(field, current) {
+    if (!field.isConnected) throw new Error('input writeback: the field left the page');
+    if (!hasFocus(field)) throw new Error('input writeback: the field lost focus');
+    if (!caretInside(field)) throw new Error('input writeback: the caret left the field');
+    if (fieldText(field) !== current) throw new Error('input writeback: the field changed before writing');
+  }
 
   function caretToEnd(field) {
     const selection = document.getSelection();
@@ -112,17 +143,25 @@
     }
   }
 
-  // 核对没过的那一次，框里「本该是」的样子。见文件头「核对失败不等于没写」。
+  // 核对没过的那一次：{ before: 写之前框里的字, expected: 本该是的样子 }。见文件头
+  // 「核对失败不等于没写」。
   const missed = new WeakMap();
 
   /**
-   * 上一次核对没过的写入，现在是不是已经落进框里了。是就忘掉这条记录并答 true
-   * —— 调用方把它当成一次写成，不再发请求、不再追加。
+   * 上一次核对没过的写入之后，框里的字是不是已经不是写之前的样子了。是就忘掉这条
+   * 记录并答 true —— 调用方把它当成写过了，不再发请求、不再追加。字晚一拍落成
+   * 预期的样子是一种；写了两份、被编辑器改了写法、用户又接着敲了字也都是：这时
+   * 再追加一份只会更糟。还是写之前的样子，就是真没写，答 false，重试照常。
    */
   function landed(field) {
-    if (!missed.has(field)) return false;
-    if (squash(fieldText(field)) !== squash(missed.get(field))) return false;
+    const miss = missed.get(field);
+    if (!miss) return false;
+    const now = fieldText(field);
+    if (sameText(now, miss.before)) return false;
     missed.delete(field);
+    if (!sameText(now, miss.expected)) {
+      console.warn('Blab Translation: input writeback left the field in an unexpected state; not writing again');
+    }
     return true;
   }
 
@@ -138,7 +177,7 @@
 
     const replace = field.tagName === 'INPUT';
     const current = fieldText(field);
-    const data = replace || current.endsWith('\n') ? text : `\n${text}`;
+    const data = replace || (isTextControl(field) && current.endsWith('\n')) ? text : `\n${text}`;
     const expected = replace ? text : current + data;
 
     if (isTextControl(field)) {
@@ -150,15 +189,19 @@
     } else {
       caretToEnd(field);
       await settle();
-      if (!offerPaste(field, data)) insertText(data);
+      assertWritable(field, current);
+      if (!offerPaste(field, data)) {
+        assertWritable(field, current);
+        insertText(data);
+      }
     }
 
     await settle();
-    if (squash(fieldText(field)) !== squash(expected)) {
-      missed.set(field, expected);
+    if (!sameText(fieldText(field), expected)) {
+      missed.set(field, { before: current, expected });
       throw new Error('input writeback: the field does not read as expected');
     }
   }
 
-  ctx.inputWriteback = { fieldText, hasFocus, landed, write };
+  ctx.inputWriteback = { fieldText, hasFocus, landed, sameText, write };
 })();
