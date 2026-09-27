@@ -16,7 +16,9 @@
 const fs = require('fs');
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings, getSyncSettings, writeSyncSettings, getServiceWorker } = require('./helpers');
+const {
+  setExtensionSettings, getSyncSettings, writeSyncSettings, syncSnapshot,
+} = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { expectLaidOut } = require('./layout-checks');
 
@@ -50,15 +52,6 @@ async function exportFile(page) {
 
 async function centre(page, selector) {
   await page.locator(selector).evaluate((el) => el.scrollIntoView({ block: 'center' }));
-}
-
-/** Everything in sync storage, and how many bytes it takes. */
-async function syncSnapshot(context) {
-  const worker = await getServiceWorker(context);
-  return worker.evaluate(async () => ({
-    items: await chrome.storage.sync.get(null),
-    bytes: await chrome.storage.sync.getBytesInUse(null),
-  }));
 }
 
 test('J-F5 an export leaves the API key out unless the box is ticked', async ({ page, extensionId }) => {

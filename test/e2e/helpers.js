@@ -589,10 +589,20 @@ function sentSegments(sentTexts, fastBatchRequests) {
   ));
 }
 
+/** Everything in sync storage, and how many bytes it takes. */
+async function syncSnapshot(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => ({
+    items: await chrome.storage.sync.get(null),
+    bytes: await chrome.storage.sync.getBytesInUse(null),
+  }));
+}
+
 module.exports = {
   oursIn,
   ourNodesAt,
   sentSegments,
+  syncSnapshot,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,
