@@ -171,9 +171,9 @@ const defaultSettings = {
   // The hover shortcut over large images — on by default, it is the flow's
   // front door. Matches background.js.
   enableImageOcrHoverButton: true,
-  // Off by default: this is the one feature that spends money, so it is opted
-  // into rather than out of. Empty comicTargetLang follows targetLang above.
-  enableComicTranslation: false,
+  // On by default — see the note on defaultSettings in background/settings.js.
+  // Empty comicTargetLang follows targetLang above.
+  enableComicTranslation: true,
   comicTargetLang: '',
   // On by default — see the note on defaultSettings in background/background.js.
   // Empty pdfTargetLang follows targetLang.
