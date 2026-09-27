@@ -187,6 +187,14 @@ export function pageSource() {
 }
 
 /**
+ * 输入框「译成 X」芯片一族：content/content-input-chip.js（什么时候译、写之前核对
+ * 什么）加上 content/content-input-writeback.js（译文怎么写回那个框）。
+ */
+export function inputChipSource() {
+  return surfaceSource('content', (name) => /^content-input-(chip|writeback)\.js$/.test(name));
+}
+
+/**
  * 页内拾取器一族：content/picker/*.js。给了文件名就只读那一份（单测要把
  * selector.js 单独装进 vm）；不给就读整族。
  */

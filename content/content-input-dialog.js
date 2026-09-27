@@ -104,19 +104,12 @@
     return segments.length >= 1 && segments.length <= 4;
   }
 
-  function showInputTranslateDialog(options = {}) {
+  function showInputTranslateDialog() {
     if (state.inputDialog) {
       hideInputDialog();
     }
 
-    // 输入框上那颗芯片（content/content-input-chip.js）带着两样东西来开这个
-    // 框：用户已经敲好的文字，和它判出来的目标语言。那个目标语言只算这一次 ——
-    // 这里不调 rememberTargetLang()，所以下次从悬浮球菜单打开还是老样子。芯片
-    // 是「这段话我想看另一种语言」，不是「以后都往这边译」。
-    const initialText = typeof options.text === 'string' ? options.text : '';
-    const initialLang = options.targetLang
-      ? ctx.normalizeTargetLang(options.targetLang)
-      : getInputTargetLang();
+    const initialLang = getInputTargetLang();
 
     // Ensure theme is applied
     applyTheme(settings.theme);
@@ -206,8 +199,6 @@
     const phoneticEl = dialog.querySelector('#ai-translator-input-phonetic');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
-
-    if (initialText) textarea.value = initialText;
 
     setTimeout(() => textarea.focus(), 100);
 
@@ -344,10 +335,6 @@
     // stop them before the host page's bubble-phase listeners can react.
     document.addEventListener('focusin', blockHostFocusTrap, true);
     document.addEventListener('focusout', blockHostFocusTrap, true);
-
-    // 带着文字进来的，只有芯片一条路，而点芯片本身就是那一下「点击才译」。
-    // 再让用户在框里按一次「翻译」是把同一个动作要两遍。
-    if (initialText) translateInputText(initialLang);
   }
 
   function handleInputDialogEscape(e) {
