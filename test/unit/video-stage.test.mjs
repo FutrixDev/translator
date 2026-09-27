@@ -237,10 +237,15 @@ test('placeOverlay moves the box to the spot and in or out of the top layer', ()
   assert.deepEqual(plain.calls, []);
 });
 
-test('setTopLayer without the popover API leaves the box where it is', () => {
+test('setTopLayer does not swallow an error: an unexpected throw reaches the caller', () => {
+  // The popover API is in every supported Chrome and the states it throws on
+  // are checked first, so a throw here is a bug, not a missing feature.
   const page = load();
-  const box = { ...popoverBox(), showPopover() { throw new TypeError('showPopover is not a function'); } };
-  assert.doesNotThrow(() => page.stage.setTopLayer(box, true));
+  const box = { ...popoverBox(), showPopover() { throw new DOMException('not connected', 'InvalidStateError'); } };
+  assert.throws(() => page.stage.setTopLayer(box, true), { name: 'InvalidStateError' });
+  const closing = { ...popoverBox(), matches: () => true, hidePopover() { throw new Error('boom'); } };
+  closing.setAttribute('popover', 'manual');
+  assert.throws(() => page.stage.setTopLayer(closing, false), /boom/);
 });
 
 test('watch reports each change once, polls for web fullscreen, and stops with its last listener', () => {

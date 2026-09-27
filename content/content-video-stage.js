@@ -124,18 +124,20 @@
   // Promote `el` into the top layer so it paints above a fullscreen <video>,
   // or take it back out. Only while that is the case: a popover that is not
   // open is display:none, which would hide the box the rest of the time.
+  //
+  // No catch: the popover API is in every Chrome the manifest allows (114+,
+  // minimum_chrome_version 116), and the states showPopover / hidePopover
+  // throw on are checked first. It has the popover attribute; it is shown only
+  // when not already open, and only from placeOverlay, after the box is in
+  // the document; it is hidden only while open (a box removed from the page
+  // has already closed). Anything thrown here is a bug and goes up.
   function setTopLayer(el, on) {
-    try {
-      if (on) {
-        if (!el.hasAttribute('popover')) el.setAttribute('popover', 'manual');
-        if (!el.matches(':popover-open')) el.showPopover();
-      } else if (el.hasAttribute('popover')) {
-        if (el.matches(':popover-open')) el.hidePopover();
-        el.removeAttribute('popover');
-      }
-    } catch (e) {
-      // Chrome without the popover API: a box over a fullscreen <video> simply
-      // isn't available there, everything else still works.
+    if (on) {
+      if (!el.hasAttribute('popover')) el.setAttribute('popover', 'manual');
+      if (!el.matches(':popover-open')) el.showPopover();
+    } else if (el.hasAttribute('popover')) {
+      if (el.matches(':popover-open')) el.hidePopover();
+      el.removeAttribute('popover');
     }
   }
 
