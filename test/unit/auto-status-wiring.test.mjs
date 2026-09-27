@@ -287,12 +287,8 @@ test('规则没存上要说一声，不能只留一行控制台日志', () => {
   assert.match(status, /ctx\.showAutoStatusNotice = setNotice;/);
   assert.match(code('content/content-float-ball.js'),
     /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
-  // 那句话得真画到条子上，而且压在 offer 和展开说明之上。只有拾取器开着时整条让位
-  // 盖过它（关掉后照样回来）。
-  assert.match(status, /const mode = yielding \? '' : \(notice \? 'notice' :/);
-  assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
-  // 关掉一次只关掉一层：他关的是这句话，底下没答完的那个 offer 不该跟着一起没。
-  assert.match(status, /if \(notice\) notice = '';\s*\n\s*else if \(explaining\)/);
+  // 那句话真画到条子上、压在 offer 和展开说明之上、拾取器开着时让位、关掉一次
+  // 只关一层：auto-bar-trusted.test.mjs「one priority」跑着问。
   // 这个模式在样式表里得和 explain 一样只剩一行字和一个关闭，否则那两个按钮会
   // 挂在一句「没能保存」下面，按下去是「翻译」和「不用」。
   const css = contentCss();

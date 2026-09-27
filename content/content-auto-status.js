@@ -159,19 +159,20 @@
     // 「翻译」按钮只在 offer 那一档露出来（见 render），这一下归借条子说话的
     // 那一位：它要办的事它自己知道。先把按钮钉住，免得连点两下办两次。
     if (act === 'translate') {
-      if (bar.dataset.mode !== 'offer' || !offer) return;
+      if (currentMode() !== 'offer') return;
       button.disabled = true;
       offer.accept();
       return;
     }
 
     // dismiss 和 close 是同一件事的两个说法。一次关掉一层：条子此刻显示的是哪一
-    // 样，这一下关掉的就是哪一样。
+    // 样（currentMode），这一下关掉的就是哪一样。
     if (act === 'dismiss' || act === 'close') {
-      if (notice) notice = '';
-      else if (explaining) explaining = false;
+      const mode = currentMode();
+      if (mode === 'notice') notice = '';
+      else if (mode === 'explain') explaining = false;
       // offer 自己记自己的「不用」。
-      else if (bar.dataset.mode === 'offer') { if (offer && offer.dismiss) offer.dismiss(); }
+      else if (mode === 'offer' && offer.dismiss) offer.dismiss();
       render();
     }
   }
@@ -202,15 +203,28 @@
     render();
   }
 
+  /**
+   * 条子此刻在说哪一样 —— 优先级只写在这里一处，render、点击、关掉都问它；
+   * bar.dataset.mode 只是把答案写出去给 CSS 看，不读回来当状态。
+   *
+   * 拾取器开着时什么都不说（见 yielding），notice 留着，关掉后照样回来。其余
+   * 时候压在最上面的是那句「没存上」：它是对用户刚按下的那一下的回答，而且他
+   * 不关掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是
+   * 那一行字），再往下是 offer。
+   */
+  function currentMode() {
+    if (yielding) return '';
+    if (notice) return 'notice';
+    if (explaining) return 'explain';
+    if (offer) return 'offer';
+    return '';
+  }
+
   function render() {
     paintDot();
 
     const snap = latest;
-    // 拾取器开着时什么都不画（见 yielding），notice 留着，关掉后照样回来。其余
-    // 时候压在最上面的是那句「没存上」：它是对用户刚按下的那一下的回答，而且他
-    // 不关掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是
-    // 那一行字），再往下是 offer。
-    const mode = yielding ? '' : (notice ? 'notice' : (explaining ? 'explain' : (offer ? 'offer' : '')));
+    const mode = currentMode();
     // 让位时整条拿掉而不是藏起来：要说的话都在上面这几个变量里，视频退出铺满
     // 那一刻 stepAside 回调 render()，照原样画回来。
     if (!shownOverVideo(!!mode)) {

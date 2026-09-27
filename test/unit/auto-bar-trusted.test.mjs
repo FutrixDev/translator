@@ -83,7 +83,8 @@ function load() {
     settings: {},
     STATUS_AUTO: { OFF: 'OFF', IDLE: 'IDLE', RUNNING: 'RUNNING', PAUSED: 'PAUSED', ERROR: 'ERROR' },
     autoTranslate: {
-      onStateChange() {},
+      // Subscribing replays the current state at once, as the scheduler does.
+      onStateChange(listener) { listener({ status: 'IDLE', gaveUp: 0 }); },
     },
   };
   const sandbox = {
@@ -99,6 +100,9 @@ function load() {
   sandbox.globalThis = sandbox;
   sandbox.window = { AI_TRANSLATOR_CONTENT: ctx };
   vm.createContext(sandbox);
+  // The manifest loads the reason table before the bar; the explain line reads it.
+  const reasons = 'shared/auto-reason-keys.js';
+  vm.runInContext(fs.readFileSync(path.join(ROOT, reasons), 'utf8'), sandbox, { filename: reasons });
   vm.runInContext(SOURCE, sandbox, { filename: 'content/content-auto-status.js' });
   ctx.setupAutoStatus();
 
@@ -154,4 +158,33 @@ test('the bar steps aside while a video fills the screen, and comes back as it w
   assert.equal(page.bar(), null);
   page.stage.set(false);
   assert.equal(page.bar().dataset.mode, 'offer');
+});
+
+test('one priority: notice over the explain line over the offer, and nothing while the picker is open', () => {
+  const page = load();
+  const mode = () => (page.bar() ? page.bar().dataset.mode : null);
+  offerOn(page);
+  page.ctx.toggleAutoStatusExplain();
+  assert.equal(mode(), 'explain', 'the line the user asked for sits over the offer');
+  page.ctx.showAutoStatusNotice('popupSiteRuleFailed');
+  assert.equal(mode(), 'notice');
+  assert.equal(page.bar().querySelector('.ai-translator-auto-text').textContent, 'popupSiteRuleFailed');
+
+  page.ctx.yieldAutoStatus(true);
+  assert.equal(page.bar(), null, 'the bar stayed under the picker');
+  page.ctx.yieldAutoStatus(false);
+  assert.equal(mode(), 'notice', 'the notice came back after the picker');
+
+  // "Translate" belongs to the offer: under a notice it is not the offer's button.
+  page.click('translate', true);
+  assert.deepEqual(page.calls, [], 'the offer was accepted while the bar was saying something else');
+
+  // Each close takes away the layer the bar is showing, one at a time.
+  page.click('close', true);
+  assert.equal(mode(), 'explain');
+  page.click('dismiss', true);
+  assert.equal(mode(), 'offer');
+  assert.deepEqual(page.calls, [], 'closing the notice or the explain line dismissed the offer');
+  page.click('close', true);
+  assert.deepEqual(page.calls, ['dismiss']);
 });

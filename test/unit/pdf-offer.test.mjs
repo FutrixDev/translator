@@ -105,8 +105,7 @@ test('提示条只在真是一份 PDF 文档、而且开关开着的时候出现
 
 test('offer 有自己的一档和自己的两句按钮文案', () => {
   const src = repoFile('content/content-auto-status.js');
-  // 模式阶梯：notice > explain > offer，没有追问那一档（D-351）。
-  assert.match(src, /notice \? 'notice' : \(explaining \? 'explain' : \(offer \? 'offer' : ''\)\)/);
+  // 模式阶梯 notice > explain > offer 由 auto-bar-trusted.test.mjs 跑着问（currentMode）。
   // 按钮说的是 offer 自己的话，不借已删掉的追问文案。
   assert.match(src, /t\('autoOfferAccept'\)/);
   assert.match(src, /t\('autoOfferDismiss'\)/);
