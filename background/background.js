@@ -171,9 +171,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.signOut().then(() => ({ signedIn: false })), sendResponse);
       return true;
 
+    // `consent`: the media shortcut or the comic hint asked for this page
+    // (content/content-media-hints.js), which runs it even with the switch off.
     case 'COMIC_JOB_CREATE':
       replyComic(
-        assertFeatureEnabled('enableComicTranslation')
+        assertFeatureEnabled('enableComicTranslation', { consent: message.consent === true })
           .then(() => comicClient.createJob(message.job || {})),
         sendResponse,
       );
@@ -230,8 +232,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(openPdfJob(message.jobId, message.which), sendResponse);
       return true;
 
-    // PDF 文档上那条提示条按下的「翻译」（content/content-pdf-prompt.js）。走的
-    // 是右键菜单那三个条目同一个函数，检查一条不少。
+    // PDF 文档上那条提示条按下的「翻译」或媒体快捷键（content/content-media-hints.js）。
+    // 走的是右键菜单那三个条目同一个函数，检查一条不少；consent 见
+    // startPdfUrlTranslation。
     //
     // 网址以发信那个标签页的为准，message.url 只在没有标签页时兜底：内容脚本报
     // 的是它自己那一页，而 sender.tab.url 是浏览器说的那一页——要花钱的那一步
@@ -241,6 +244,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(startPdfUrlTranslation({
         url: (sender.tab && sender.tab.url) || message.url || '',
         pageUrl: (sender.tab && sender.tab.url) || message.url || '',
+        consent: message.consent === true,
       }), sendResponse);
       return true;
 

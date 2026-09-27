@@ -9,7 +9,7 @@ import '../shared/pdf-url.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
-import { assertFeatureEnabled } from './feature-gate.js';
+import { assertFeatureEnabled, featureState } from './feature-gate.js';
 import {
   clearPdfConfirmNotification,
   jobIdFromNotificationId,
@@ -134,9 +134,10 @@ const PDF_CHARGE_KEYS = { required: 'pdfChargeRequired', fallback: 'pdfChargeCon
  * says there is one.
  *
  * `confirmCharge` is true only on the second pass — the one the notification's
- * own button starts.
+ * own button starts. `consent` is the page-level consent of D-353, passed on to
+ * the create's feature check (see assertFeatureEnabled).
  */
-async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge = false }) {
+async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge = false, consent = false }) {
   try {
     const job = await handlePdfCreateJob({
       source: { kind: 'url', url },
@@ -144,7 +145,7 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
       fileName,
       pageUrl: pageUrl || '',
       confirmCharge
-    });
+    }, { consent });
     // A create can resolve to a job that is already over — the idempotent
     // adopt of an earlier attempt that died. No poll transition will ever
     // fire for it, so without this the user saw "started" and then nothing.
@@ -184,11 +185,15 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
  * `notifyNotAPdf` 只有工具栏那一个条目是 true：它在任何标签页上都在，是唯一一个
  * 可能正当地落在非 PDF 上的点击，得说一声而不是默不作声。其余入口都是先看见了
  * PDF 才出现的，那里弹一条通知只会是噪音。
+ *
+ * `consent` 只有媒体快捷键和提示条的按钮给（content/content-media-hints.js）：
+ * 用户在这一页明确要译，即便设置里亲手关了 PDF 翻译也照做这一页，设置不动（D-353）。
  */
-async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false }) {
-  const settings = await chrome.storage.sync.get(defaultSettings);
+async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false, consent = false }) {
   // Same racing-click guard as the comic entries: this costs money.
-  if (!settings.enablePdfTranslation) return { started: false, reason: 'disabled' };
+  if (!consent && await featureState('enablePdfTranslation') === AccountGate.FEATURE_STATES.OFF) {
+    return { started: false, reason: 'disabled' };
+  }
   if (!isLikelyPdfUrl(url)) {
     if (notifyNotAPdf) notifyPdfNotAPdf();
     return { started: false, reason: 'not_a_pdf' };
@@ -218,7 +223,7 @@ async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false
   // Before the await, not after: the whole point is that the click stops
   // looking like it did nothing.
   notifyPdfStarted(fileName);
-  await runPdfUrlJob({ url, operationId, fileName, pageUrl });
+  await runPdfUrlJob({ url, operationId, fileName, pageUrl, consent });
   return { started: true };
 }
 
@@ -255,7 +260,9 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 
   const fileName = pdfFileNameFromUrl(url);
   notifyPdfStarted(fileName);
-  await runPdfUrlJob({ url, operationId, fileName, confirmCharge: true });
+  // Approving a price for this one document is itself an explicit request for
+  // it, so it carries consent past a switch turned off in the meantime.
+  await runPdfUrlJob({ url, operationId, fileName, confirmCharge: true, consent: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -297,9 +304,12 @@ async function handlePdfUploadTicket(message) {
  * PUT the file to the ticket's URL — or `{kind: 'url', url}`, where the worker
  * fetches the PDF (carrying the user's cookies), takes a ticket and PUTs it
  * itself. Either way the create names a storage key, never bytes.
+ *
+ * `consent` is a separate argument, never read from `message`: only the URL
+ * path above, which knows what the user pressed, can give it.
  */
-async function handlePdfCreateJob(message) {
-  await assertFeatureEnabled('enablePdfTranslation');
+async function handlePdfCreateJob(message, { consent = false } = {}) {
+  await assertFeatureEnabled('enablePdfTranslation', { consent });
   const settings = await chrome.storage.sync.get(defaultSettings);
   const source = message.source || {};
 

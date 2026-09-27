@@ -451,7 +451,7 @@
     const hasTranslations = !!(ctx.hasPageTranslations && ctx.hasPageTranslations());
     // The comic entry only appears where it can do something: the feature is on
     // and there is actually a page-sized image on screen to redraw.
-    const showComic = !!settings.enableComicTranslation &&
+    const showComic = ctx.featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY &&
       !!(ctx.hasComicPageOnScreen && ctx.hasComicPageOnScreen());
     // 「不再自动翻译这个站点」。**只在这个站点此刻正自动翻的时候出现**，而且排
     // 在第一行：它是自动化里唯一高频的「后悔」操作，而在此之前撤销它的唯一办法

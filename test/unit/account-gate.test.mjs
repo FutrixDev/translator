@@ -1,5 +1,5 @@
-// Guards for shared/account-gate.js — the module that decides whether comic and
-// PDF translation are on, from the switch in sync storage AND the account token
+// Guards for shared/account-gate.js — the module that answers what comic and PDF
+// translation can do here, from the switch in sync storage AND the account token
 // in local storage.
 //
 // The rule it enforces is easy to defeat by accident: a new surface reads
@@ -30,37 +30,48 @@ test('both account-backed switches are governed, and nothing else is', () => {
   assert.deepEqual(gate.ACCOUNT_FEATURE_KEYS, ['enableComicTranslation', 'enablePdfTranslation']);
 });
 
-test('a device with no token cannot have either feature on', async () => {
-  withToken('');
-  const settings = await gate.applyAccountGate({
-    enableComicTranslation: true,
-    enablePdfTranslation: true,
-    showFloatBall: true,
-  });
-  assert.equal(settings.enableComicTranslation, false);
-  assert.equal(settings.enablePdfTranslation, false);
-  // Every other setting is none of this module's business.
-  assert.equal(settings.showFloatBall, true);
+// The three answers, and the one thing the old gate could not say: "turned
+// off" and "not signed in" are different states (D-353). A switch the user
+// turned off keeps every hint away; a switch that is on for a signed-out device
+// is an invitation to sign in, not a missing feature.
+test('featureState tells "turned off" apart from "not signed in"', () => {
+  const S = gate.FEATURE_STATES;
+  for (const key of gate.ACCOUNT_FEATURE_KEYS) {
+    assert.equal(gate.featureState({ [key]: false }, key, true), S.OFF, `${key} off, signed in`);
+    assert.equal(gate.featureState({ [key]: false }, key, false), S.OFF, `${key} off, signed out`);
+    assert.equal(gate.featureState({ [key]: true }, key, false), S.SIGNED_OUT, `${key} on, signed out`);
+    assert.equal(gate.featureState({ [key]: true }, key, true), S.READY, `${key} on, signed in`);
+  }
+  assert.deepEqual(Object.values(S).sort(), ['off', 'ready', 'signed_out']);
 });
 
-test('a device with a token keeps the stored preference exactly', async () => {
+test('featureState never rewrites the settings it is asked about', () => {
+  const settings = Object.freeze({ enableComicTranslation: true, enablePdfTranslation: true, showFloatBall: true });
+  assert.equal(gate.featureState(settings, 'enablePdfTranslation', false), 'signed_out');
+  assert.equal(settings.enablePdfTranslation, true);
+});
+
+test('featureState refuses a key it does not govern', () => {
+  assert.throws(() => gate.featureState({ showFloatBall: true }, 'showFloatBall', true), /not an account-backed feature/);
+});
+
+test('hasAccount reads the token, and a storage failure fails closed', async () => {
   withToken('a-token');
-  assert.deepEqual(
-    await gate.applyAccountGate({ enableComicTranslation: true, enablePdfTranslation: false }),
-    { enableComicTranslation: true, enablePdfTranslation: false },
-  );
-});
-
-test('a storage failure fails closed', async () => {
+  assert.equal(await gate.hasAccount(), true);
+  withToken('');
+  assert.equal(await gate.hasAccount(), false);
   globalThis.chrome = { storage: { local: { get: async () => { throw new Error('context invalidated'); } } } };
-  assert.equal((await gate.applyAccountGate({ enableComicTranslation: true })).enableComicTranslation, false);
+  assert.equal(await gate.hasAccount(), false);
 });
 
-test('both off skips the token read entirely', async () => {
-  let reads = 0;
-  globalThis.chrome = { storage: { local: { get: async () => { reads += 1; return { comicToken: '' }; } } } };
-  await gate.applyAccountGate({ enableComicTranslation: false, enablePdfTranslation: false });
-  assert.equal(reads, 0, 'the common case must not cost a storage read on every settings load');
+// The superseded mechanism, applyAccountGate, rewrote both switches to false on
+// a signed-out device. Nothing may bring that shape back: one mechanism only.
+test('no surface rewrites the switches to express sign-in any more', () => {
+  assert.equal(gate.applyAccountGate, undefined);
+  for (const file of ['content/content-bootstrap.js', 'popup/popup.js', 'popup/popup-pdf.js',
+    'background/feature-gate.js', 'background/context-menus.js', 'options/options-account.js']) {
+    assert.doesNotMatch(repoFile(file), /applyAccountGate|getGatedSettings/, `${file} still uses the old gate`);
+  }
 });
 
 test('the token key matches the one comic-client.js writes', () => {

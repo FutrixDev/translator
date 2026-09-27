@@ -549,7 +549,7 @@ function runBootstrapInit() {
     },
     FrameEligibility: { shouldActivate: () => true },
     DefaultSettings: { contentDefaults: () => ({}) },
-    AccountGate: { applyAccountGate: async () => {} },
+    AccountGate: { hasAccount: async () => false },
   });
   const restore = () => Object.assign(globalThis, saved);
   try {

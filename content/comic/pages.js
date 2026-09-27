@@ -147,8 +147,9 @@
     return shown === requested ? requested : 'translate_colorize';
   }
 
+  /** Ready to run here: switched on and signed in (ctx.featureState). */
   function comicEnabled() {
-    return !!(ctx.settings && ctx.settings.enableComicTranslation);
+    return ctx.featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
   }
 
   // The right-click target — the only unambiguous way to know WHICH image the

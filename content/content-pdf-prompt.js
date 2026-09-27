@@ -50,13 +50,13 @@
   /**
    * 该不该露这条。
    *
-   * 三问，缺一不可：功能开着（enablePdfTranslation 在 content-bootstrap.js 里
-   * 已经过了账号闸，没登录的设备上它是 false），这个网址确实是一份 PDF（和右键
-   * 菜单同一问，shared/pdf-url.js），以及用户还没把这条关掉。
+   * 三问，缺一不可：功能能用（ctx.featureState('enablePdfTranslation') 是 ready），
+   * 这个网址确实是一份 PDF（和右键菜单同一问，shared/pdf-url.js），以及用户还没
+   * 把这条关掉。
    */
   function shouldOffer() {
     if (dismissed || sent) return false;
-    if (!ctx.settings || !ctx.settings.enablePdfTranslation) return false;
+    if (ctx.featureState('enablePdfTranslation') !== AccountGate.FEATURE_STATES.READY) return false;
     if (!globalThis.PdfUrl || !globalThis.PdfUrl.isLikelyPdfUrl(location.href)) return false;
     return isPdfDocument();
   }

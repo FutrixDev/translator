@@ -73,13 +73,20 @@ let storedPdfEnabled = false;
  * answer is still outstanding — see the declaration.
  */
 function renderAccountFeatures() {
-  const comicOn = storedComicEnabled && comicSignedIn !== false;
-  const pdfOn = storedPdfEnabled && comicSignedIn !== false;
+  const comicOn = featureReady('enableComicTranslation', storedComicEnabled);
+  const pdfOn = featureReady('enablePdfTranslation', storedPdfEnabled);
   elements.enableComicTranslation.checked = comicOn;
   elements.comicTargetLang.disabled = !comicOn;
   elements.enablePdfTranslation.checked = pdfOn;
   elements.pdfTargetLang.disabled = !pdfOn;
   syncPdfTasksVisibility(pdfOn);
+}
+
+/** A switch is drawn on only when the feature can run here — the one answer
+ *  every surface takes from AccountGate.featureState(). An outstanding account
+ *  check (`comicSignedIn === null`) keeps the stored preference on screen. */
+function featureReady(key, stored) {
+  return AccountGate.featureState({ [key]: stored }, key, comicSignedIn !== false) === AccountGate.FEATURE_STATES.READY;
 }
 
 /** Pages left this month for one operation. Older servers report only the comic
