@@ -111,9 +111,32 @@ test('Settings built-in lists are read-only and one click overrides an entry', a
   await expect(x.locator('.site-rule-override')).toHaveCount(0);
   await expect(options.locator('#siteRules .site-rule-host')).toHaveText(['x.com']);
 
-  // 字幕站：一键「连页面一起翻」写的是 always。
+  // always 组那一行只有一颗：「不翻译」。
+  await expect(always.locator('.site-rule[data-host="bsky.app"] .site-rule-override'))
+    .toHaveText([en('siteRuleOverrideNever')]);
+
+  // 字幕站两颗（R33 N6）：「连页面一起翻」写 always，「不翻译」写 never，写法同上。
   await captions.locator('summary').click();
-  await captions.locator('.site-rule[data-host="youtube.com"] .site-rule-override').click();
+  const youtube = captions.locator('.site-rule[data-host="youtube.com"]');
+  await expect(youtube.locator('.site-rule-override'))
+    .toHaveText([en('siteRuleOverrideAlways'), en('siteRuleOverrideNever')]);
+  await youtube.locator('.site-rule-override[data-state="always"]').click();
   await expect.poll(() => getSyncSetting(context, 'siteRules')).toEqual({ 'x.com': 'never', 'youtube.com': 'always' });
+  await expect(youtube.locator('.site-rule-override')).toHaveCount(0);
+
+  await options.close();
+});
+
+test('Settings: a captions-only site stops with one click, the same way as the other groups', async ({ context, extensionId }) => {
+  // R33 N6：字幕站以前只有「连页面一起翻」；字幕照翻不是他要的，得能一下停掉。
+  const options = await openOptions(context, extensionId);
+  const captions = options.locator('#siteRulesBuiltin details[data-state="captions"]');
+  await captions.locator('summary').click();
+  const youtube = captions.locator('.site-rule[data-host="youtube.com"]');
+  await youtube.locator('.site-rule-override[data-state="never"]').click();
+  await expect.poll(() => getSyncSetting(context, 'siteRules')).toEqual({ 'youtube.com': 'never' });
+  await expect(youtube).toContainText(en('siteRuleOverridden'));
+  await expect(youtube.locator('.site-rule-override')).toHaveCount(0);
+  await expect(options.locator('#siteRules .site-rule-host')).toHaveText(['youtube.com']);
   await options.close();
 });

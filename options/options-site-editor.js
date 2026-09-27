@@ -150,11 +150,15 @@ function userSiteRuleRow(host, state) {
   return row;
 }
 
-// 内置那三组：标题键、一键盖过去写的是什么（null = 盖不过）。
+// 内置那三组：标题键、一键盖过去能写的规则（每个一颗按钮；空 = 盖不过）。
+// 字幕站两颗：「连页面一起翻」写 always，「不翻译」写 never —— 字幕照翻不是他
+// 要的，一下就停，和 always 组那颗一个写法（R33 N6）。
+const OVERRIDE_NEVER = { state: 'never', key: 'siteRuleOverrideNever' };
+const OVERRIDE_ALWAYS = { state: 'always', key: 'siteRuleOverrideAlways' };
 const BUILTIN_GROUPS = [
-  { state: 'always', titleKey: 'siteRulesBuiltinAlways', override: 'never', overrideKey: 'siteRuleOverrideNever' },
-  { state: 'captions', titleKey: 'siteRulesBuiltinCaptions', override: 'always', overrideKey: 'siteRuleOverrideAlways' },
-  { state: 'never', titleKey: 'siteRulesBuiltinNever', override: null, hintKey: 'siteRulesBuiltinNeverHint' },
+  { state: 'always', titleKey: 'siteRulesBuiltinAlways', overrides: [OVERRIDE_NEVER] },
+  { state: 'captions', titleKey: 'siteRulesBuiltinCaptions', overrides: [OVERRIDE_ALWAYS, OVERRIDE_NEVER] },
+  { state: 'never', titleKey: 'siteRulesBuiltinNever', overrides: [], hintKey: 'siteRulesBuiltinNeverHint' },
 ];
 
 function renderBuiltinSites(rules) {
@@ -201,7 +205,7 @@ function builtinSiteRow(site, group, rules) {
     row.appendChild(scope);
   }
 
-  if (!group.override || !site.writable) return row;
+  if (!group.overrides.length || !site.writable) return row;
 
   // 用户已经在这个主机（或它的父域）上表过态：那条规则赢，这一行不再给按钮。
   if (SiteRules.lookupUserRule(rules, site.host)) {
@@ -212,14 +216,18 @@ function builtinSiteRow(site, group, rules) {
     return row;
   }
 
-  const override = document.createElement('button');
-  override.type = 'button';
-  override.className = 'btn btn-text site-rule-override';
-  override.textContent = t(group.overrideKey);
-  override.addEventListener('click', () => {
-    override.disabled = true;
-    writeSiteRule(site.host, group.override);
+  const buttons = group.overrides.map(({ state, key }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-text site-rule-override';
+    button.dataset.state = state;
+    button.textContent = t(key);
+    button.addEventListener('click', () => {
+      for (const other of buttons) other.disabled = true;
+      writeSiteRule(site.host, state);
+    });
+    return button;
   });
-  row.appendChild(override);
+  row.append(...buttons);
   return row;
 }
