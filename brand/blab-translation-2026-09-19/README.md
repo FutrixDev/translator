@@ -13,11 +13,32 @@ all sits on a warm tile.
   - Larger: text lines.
 - `export.html` lists every output (`EXPORTS`). `export.mjs` renders them with
   Playwright's Chromium.
-- `npm run icons` rewrites `icons/icon{16,32,48,128}.png`.
+- `npm run icons` rewrites everything under `chrome/` in `EXPORTS` into
+  `icons/`: `icon{16,32,48,128}.png` and the two Chrome Web Store promo tiles,
+  `promo-large.png` (1400×560 marquee) and `promo-small.png` (440×280).
+- The promo tiles are an illustration with the brand laid over it. The
+  illustrations in `promo/` (`marquee-art.jpg`, `small-art.jpg`) came from
+  Magic Art (poster mode, project `t9wetyqm3l`), prompted for no lettering at
+  all. The tile, the wordmark, the slogan and the three feature pills are drawn
+  in `export.html`, because an image model cannot be trusted to spell or to
+  reproduce the mark. To change the copy, edit `drawPromoMarquee` /
+  `drawPromoSmall`. To change the picture, replace the JPEG. The export
+  launches Chromium with `--allow-file-access-from-files`, so the file://
+  JPEG does not taint the canvas.
+- All text (promo copy and the TV banners) is set in two fonts bundled in
+  `fonts/`, never the host's: Nunito for Latin, Noto Sans SC for Chinese (SIL
+  OFL 1.1, `fonts/OFL.txt`). Both are variable-weight woff2 files cut down to
+  the glyphs the drawings print. After changing any text, add its characters
+  to `fonts/subset.sh` and rerun it against the full TTFs: a character
+  missing from a subset is drawn in whatever host font has it. `export.mjs`
+  stops if either font fails to load. Canvas rasterisation still differs
+  slightly between operating systems, so the PNGs are not byte-identical
+  everywhere.
 - `node brand/blab-translation-2026-09-19/export.mjs --all <dir>` writes the
   full set:
   - the website's `server/public/assets/icon*.png` (translator-site);
-  - the TV app's mipmaps, adaptive layers and banner (subtitle-translator);
+  - the TV app's mipmaps, adaptive layers, banner and the onboarding
+    header's `drawable-nodpi/brand_tile.png` (subtitle-translator);
   - a full-bleed Play Store 512 and 1024 masters.
 
   Copy those files into the other two repos when the mark changes.

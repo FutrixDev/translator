@@ -4,6 +4,13 @@
 // 经典脚本，file:// 直接打开可跑；导出脚本注入同一份。
 (function (root) {
   const INK = '#10172A';
+  // 字只用 fonts/ 里随仓库带的两款可变字重子集（fonts/subset.sh 生成，export.html 注册），
+  // 不回退到宿主字体；拉丁字母取 Nunito，中文落到 Noto Sans SC
+  const FACES = [
+    { family: 'Blab Nunito', file: 'fonts/nunito.woff2', weight: '200 1000' },
+    { family: 'Blab Noto Sans SC', file: 'fonts/noto-sans-sc.woff2', weight: '100 900' },
+  ];
+  const FONT = FACES.map((f) => `"${f.family}"`).join(', ');
     const PIVOT = [50, 90];
   const CARD = { x: 32, y: 22, w: 36, h: 48, r: 9 };
   // 背后四页，由外向内绘制；沿扇面按彩虹顺序排开
@@ -266,9 +273,9 @@
     ctx.save();
     ctx.fillStyle = INK;
     ctx.textBaseline = 'alphabetic';
-    ctx.font = `800 ${44 * s}px "SF Pro Rounded", "Nunito", system-ui, sans-serif`;
+    ctx.font = `800 ${44 * s}px ${FONT}`;
     ctx.fillText('Blab', 176 * s, 98 * s);
-    ctx.font = `600 ${19 * s}px "SF Pro Rounded", "Nunito", system-ui, sans-serif`;
+    ctx.font = `600 ${19 * s}px ${FONT}`;
     ctx.fillStyle = '#4A55E8';
     ctx.fillText(tagline, 178 * s, 126 * s);
     ctx.restore();
@@ -277,6 +284,6 @@
 
   root.BlabR7 = {
     STYLES: [{ key: 'C1', zh: 'C1 晨光 · 打磨', en: 'Dawn, polished', draw: (ctx, size) => drawTile(ctx, size) }],
-    drawTile, drawMark, drawFullBleed, drawAdaptiveForeground, drawAdaptiveBackground, drawBanner,
+    FACES, FONT, drawTile, drawMark, drawFullBleed, drawAdaptiveForeground, drawAdaptiveBackground, drawBanner,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
