@@ -146,13 +146,24 @@ test('the reset\'s root list and the content script\'s own-UI selector name the 
     .map((s) => s.trim().replace(/^\[id="([^"]+)"\]$/, '#$1'))
     .filter((root) => !NOT_OWN_UI.has(root))
     .sort();
-  const own = contentConstants().OWN_UI_SELECTOR.split(',').map((s) => s.trim()).sort();
+  const constants = contentConstants();
+  const own = constants.OWN_UI_SELECTOR.split(',').map((s) => s.trim()).sort();
   assert.deepEqual(own, cssRoots, 'ctx.constants.OWN_UI_SELECTOR and the reset\'s :is() roots have drifted apart');
-  // 两个用它的地方都只引用这一份，不再自己列 id。
-  for (const rel of ['content/page/collect.js', 'content/content-auto-discover.js']) {
+  // 划词与悬停用的那一份是界面根再加上插进页面的译文，界面根一个不少。
+  const nodes = constants.OWN_NODES_SELECTOR.split(',').map((s) => s.trim());
+  assert.deepEqual(own.filter((root) => !nodes.includes(root)), [],
+    'ctx.constants.OWN_NODES_SELECTOR dropped a UI root');
+  // 用它的地方都只引用这一份，源码里一个 #ai-translator- 都不再出现：模板串中间
+  // 再夹一个 id 也是私列。这四份文件没有别的正当用途要写这个前缀。
+  for (const [rel, name] of [
+    ['content/page/collect.js', 'OWN_UI_SELECTOR'],
+    ['content/content-auto-discover.js', 'OWN_UI_SELECTOR'],
+    ['content/content-selection.js', 'OWN_NODES_SELECTOR'],
+    ['content/hover/blocks.js', 'OWN_NODES_SELECTOR'],
+  ]) {
     const source = repoFile(rel);
-    assert.match(source, /OWN_UI_SELECTOR/, `${rel} no longer uses ctx.constants.OWN_UI_SELECTOR`);
-    assert.doesNotMatch(source, /['"`]#ai-translator-[a-z-]+['"`,]/, `${rel} lists a UI root of its own again`);
+    assert.match(source, new RegExp(`\\b${name}\\b`), `${rel} no longer uses ctx.constants.${name}`);
+    assert.doesNotMatch(source, /#ai-translator-/, `${rel} lists a UI root of its own again`);
   }
 });
 
