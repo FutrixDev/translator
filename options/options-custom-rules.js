@@ -190,9 +190,12 @@ function customRuleRow(rule) {
   edit.className = 'btn btn-text custom-rule-edit';
   edit.textContent = t('customRuleEdit');
   edit.addEventListener('click', () => openCustomRuleEditor(rule));
-  row.appendChild(edit);
 
-  row.appendChild(customRuleDeleteButton(rule));
+  // 编辑和删除是一组，折行时一起折，不会一个留在行尾、一个掉到下一行。
+  const actions = document.createElement('span');
+  actions.className = 'custom-rule-actions';
+  actions.append(edit, customRuleDeleteButton(rule));
+  row.appendChild(actions);
   return row;
 }
 

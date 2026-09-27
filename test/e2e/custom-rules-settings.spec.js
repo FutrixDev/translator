@@ -495,3 +495,25 @@ test('J-7: the usage line counts KiB and rules, and a rule that would go over th
   expect(await syncSnapshot(context)).toEqual(before);
   await expect(page.locator('#customRulesUsage')).toContainText('49 / 50');
 });
+
+// ------------------------------------------------------------------ N-12 行排版
+
+// 五个小标签都在的一行里「编辑」「删除」是一组，折行时一起折：en 的小标签最长，
+// 1280 宽下以前「删除」一个人掉到第二行。375 宽下同样不许拆开。
+test('N-12: a rule row keeps Edit and Delete on one line together, at 1280 and at 375 wide', async ({ page, context, extensionId }) => {
+  await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+  await page.setViewportSize({ width: 1280, height: 812 });
+  await openOptions(page, extensionId);
+  const { id } = await createRule(page, context, {
+    match: ['rules.test'], include: ['main'], exclude: ['.ad'], keepOriginal: ['code'], css: 'p { color: red; }',
+  }, { engineAi: true });
+  const row = page.locator(`.custom-rule[data-rule-id="${id}"]`);
+  await expect(row.locator('.custom-rule-chip')).toHaveCount(5);
+
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 812 });
+    const tops = await row.evaluate((node) => ['.custom-rule-edit', '.custom-rule-delete']
+      .map((selector) => node.querySelector(selector).getBoundingClientRect().top));
+    expect(tops[1], `Edit and Delete sit on different lines at ${width} wide: ${tops.join(' vs ')}`).toBe(tops[0]);
+  }
+});

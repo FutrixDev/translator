@@ -55,6 +55,14 @@
   color: var(--text-secondary);
 }
 
+/* 编辑和删除成组：整组不收缩，折行只会整组折。 */
+.custom-rule-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
 .custom-rule-delete[data-armed] {
   color: var(--error);
 }
