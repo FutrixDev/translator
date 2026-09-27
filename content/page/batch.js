@@ -656,8 +656,5 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
-  // 自动翻译的调度层判「这一页是什么语言」用的也是它 —— 同一个阈值，
-  // 同一份清洗（见上面 LANGUAGE_CONFIDENCE_MIN 的注释）。
-  ctx.detectReliableLanguage = detectReliableLanguage;
   ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
 })();

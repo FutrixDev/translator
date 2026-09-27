@@ -26,6 +26,9 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
+// Side-effect module: publishes globalThis.PromptAddenda — the shape of the
+// register addenda the three TRANSLATE handlers validate.
+import '../shared/prompt-addenda.js';
 // 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
 // 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
 import '../i18n/lang/en.js';
@@ -42,6 +45,7 @@ import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
+import { comicHintWriter, openShortcutSettings } from './media-hints.js';
 import { openOnboardingOnInstall } from './install.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
@@ -78,6 +82,7 @@ const STORAGE_WRITERS = {
   SITE_RULES_WRITE: () => globalThis.SiteRules,
   AUTO_STATS_WRITE: () => globalThis.AutoStats,
   CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
+  COMIC_HINT_WRITE: () => comicHintWriter,
 };
 
 // Message listener
@@ -101,24 +106,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // content/content-utils.js 的 commandModifiers）。键位用户改得掉，所以
       // 答的是**现在真的绑着**的那一份，不是 manifest 里那份建议值。
       chrome.commands.getAll((commands) => {
-        sendResponse({ shortcuts: (commands || []).map((c) => c.shortcut).filter(Boolean) });
+        // 按名字答：修饰键名单只要键位，提示条还要知道哪一条是它的命令、解没解绑。
+        sendResponse({ commands: (commands || []).map((c) => ({ name: c.name, shortcut: c.shortcut || '' })) });
       });
       return true;
 
     case 'TRANSLATE':
-      handleTranslate(message.text, message.targetLang, message.mode)
+      handleTranslate(message.text, message.targetLang, message.mode, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true; // Keep channel open for async response
 
     case 'TRANSLATE_BATCH':
-      handleBatchTranslate(message.texts, message.targetLang)
+      handleBatchTranslate(message.texts, message.targetLang, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
 
     case 'TRANSLATE_BATCH_FAST':
-      handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter)
+      handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -145,13 +151,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 同步存储的三个写消息：站点规则与追问计数、本机统计、用户站点规则。内容
+    // 媒体提示条上的「设置快捷键」：页面打不开 chrome:// 网址。
+    case 'OPEN_SHORTCUT_SETTINGS':
+      openShortcutSettings().catch(error => console.warn('Blab Translation: opening shortcut settings failed', error));
+      break;
+
+    // 同步存储的三个写消息：站点规则、本机统计、用户站点规则。内容
     // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
     // 自己的模块里（STORAGE_WRITERS），这里只管转接。
     case 'SITE_RULES_WRITE':
     case 'AUTO_STATS_WRITE':
     case 'CUSTOM_RULES_WRITE':
+    case 'COMIC_HINT_WRITE':
       STORAGE_WRITERS[message.type]().applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
@@ -170,9 +182,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.signOut().then(() => ({ signedIn: false })), sendResponse);
       return true;
 
+    // `consent`: the media shortcut or the comic hint asked for this page
+    // (content/content-media-hints.js), which runs it even with the switch off.
     case 'COMIC_JOB_CREATE':
       replyComic(
-        assertFeatureEnabled('enableComicTranslation')
+        assertFeatureEnabled('enableComicTranslation', { consent: message.consent === true })
           .then(() => comicClient.createJob(message.job || {})),
         sendResponse,
       );
@@ -229,8 +243,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(openPdfJob(message.jobId, message.which), sendResponse);
       return true;
 
-    // PDF 文档上那条提示条按下的「翻译」（content/content-pdf-prompt.js）。走的
-    // 是右键菜单那三个条目同一个函数，检查一条不少。
+    // PDF 文档上那条提示条按下的「翻译」或媒体快捷键（content/content-media-hints.js）。
+    // 走的是右键菜单那三个条目同一个函数，检查一条不少；consent 见
+    // startPdfUrlTranslation。
     //
     // 网址以发信那个标签页的为准，message.url 只在没有标签页时兜底：内容脚本报
     // 的是它自己那一页，而 sender.tab.url 是浏览器说的那一页——要花钱的那一步
@@ -240,6 +255,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(startPdfUrlTranslation({
         url: (sender.tab && sender.tab.url) || message.url || '',
         pageUrl: (sender.tab && sender.tab.url) || message.url || '',
+        consent: message.consent === true,
       }), sendResponse);
       return true;
 
@@ -316,8 +332,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
   runCommand(command, tab).catch(error => console.error('Shortcut failed:', command, error));
 });
 
+// 三个翻译处理函数的次序一样：缺 Key 就回话；然后先把关附加说明
+// （PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能是
+// 缺陷，所以抛、不截断），再调模型。
+
 // Handle single text translation
-async function handleTranslate(text, targetLang, mode) {
+async function handleTranslate(text, targetLang, mode, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -326,8 +346,9 @@ async function handleTranslate(text, targetLang, mode) {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const result = await translateTextWithMode(text, effectiveLang, settings, mode === 'word');
+    const result = await translateTextWithMode(text, effectiveLang, settings, mode === 'word', addenda);
     return result;
   } catch (error) {
     console.error('Translation error:', error);
@@ -336,7 +357,7 @@ async function handleTranslate(text, targetLang, mode) {
 }
 
 // Handle batch translation
-async function handleBatchTranslate(texts, targetLang) {
+async function handleBatchTranslate(texts, targetLang, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -345,8 +366,9 @@ async function handleBatchTranslate(texts, targetLang) {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchWithAI(texts, effectiveLang, settings);
+    const translations = await translateBatchWithAI(texts, effectiveLang, settings, addenda);
     return { translations };
   } catch (error) {
     console.error('Batch translation error:', error);
@@ -355,7 +377,7 @@ async function handleBatchTranslate(texts, targetLang) {
 }
 
 // Handle fast batch translation with delimiter
-async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
+async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||', addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -364,8 +386,9 @@ async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchFastWithAI(texts, effectiveLang, settings, delimiter);
+    const translations = await translateBatchFastWithAI(texts, effectiveLang, settings, delimiter, addenda);
     return { translations };
   } catch (error) {
     console.error('Fast batch translation error:', error);

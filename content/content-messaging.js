@@ -39,6 +39,10 @@
           // Alt+W（background/page-coverage.js 只发顶层 frame）：本页改成整页范围再翻。
           sendResponse({ action: ctx.translateWholePage() });
           break;
+        case 'MEDIA_SHORTCUT':
+          // Alt+M（background/commands.js 只发顶层 frame）：这一页的 PDF 或屏上的漫画。
+          sendResponse({ kind: ctx.runMediaShortcut() });
+          break;
         case 'OPEN_RULE_PICKER':
           // popup 的「调整本站翻译区域」（只发顶层 frame）；悬浮球菜单直接调同一个函数。
           sendResponse({ opened: ctx.picker.open() });
@@ -61,8 +65,10 @@
             host: location.hostname,
             // 「这一页永远不自己翻」也只有页面答得了，而且得单独答一句：总开关
             // 关着的时候 auto.reason 是 GLOBAL_OFF，把黑名单整个遮住了，popup
-            // 照着那个 reason 判就会把一个点不动的开关画成能点的。
-            blocked: globalThis.SiteRules.isBlocklisted(location.hostname, location.pathname),
+            // 照着那个 reason 判就会把一个点不动的开关画成能点的。回的是枚举
+            // （BLOCKLIST / BUILTIN_NEVER / null），不是布尔值：popup 要说出
+            // 为什么灰，而内置 never 不是「在黑名单里」（R33 D-360 F3）。
+            blockReason: globalThis.SiteRules.blockReason(location.hostname, location.pathname),
             // 「那一行写得进去吗」是另一个问题，比黑名单宽一格：file:// 上
             // location.hostname 是空串，规则存不下键，而它并不在黑名单里。
             // 画这一行的另外两处（字幕菜单、悬浮球菜单第一项）问的就是这一句，

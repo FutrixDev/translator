@@ -31,8 +31,12 @@ export function detectLanguage(sample) {
 /**
  * Install the fakes and load the engine. Must be awaited before anything
  * touches `ctx`, and called once per process.
+ *
+ * `url` is the page the engine thinks it is on: the AI exit asks
+ * SiteRules.register() about `location` for the prompt addenda (R33 A4).
+ * `location` stays writable so a test can move the page afterwards.
  */
-export async function installEngineHarness({ pageText }) {
+export async function installEngineHarness({ pageText, url = 'https://example.test/' }) {
   const translateCalls = [];
   const sentToAI = [];
   const state = { apiKey: '' };
@@ -69,6 +73,11 @@ export async function installEngineHarness({ pageText }) {
   };
   globalThis.window.top = globalThis.window;
   globalThis.document = { body: { innerText: pageText } };
+  Object.defineProperty(globalThis, 'location', {
+    value: new URL(url),
+    configurable: true,
+    writable: true,
+  });
   globalThis.chrome = {
     i18n: { detectLanguage: async (sample) => detectLanguage(sample) },
     storage: {
@@ -95,6 +104,13 @@ export async function installEngineHarness({ pageText }) {
   await import('../../../shared/api-compat.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
+  // 发给模型的出口问 SiteRules.register() 这一页的语域（R33 A4）；site-rules.js
+  // 加载时取走内置表和 StorageWriter，manifest 里三者都排在引擎前面。
+  // prompt-addenda.js 同样排在前面（缓存键的 stamp() 在它那里）。
+  await import('../../../shared/site-rules-builtin.js');
+  await import('../../../shared/storage-writer.js');
+  await import('../../../shared/site-rules.js');
+  await import('../../../shared/prompt-addenda.js');
   await import('../../../content/engine/languages.js');
   await import('../../../content/engine/watchdog.js');
   await import('../../../content/content-translation-engine.js');

@@ -33,7 +33,6 @@
   // 是因为这里压根不去读它。
   const EXCLUDED = Object.freeze({
     siteRules: '自己是一个 section，不在 settings 里重复',
-    siteAskCount: '本机追问次数，不是用户的选择',
     youtubeCaptionPosXPct: '拖出来的设备几何，换一块屏幕就不对',
     youtubeCaptionPosYPct: '拖出来的设备几何，换一块屏幕就不对',
     youtubeCaptionWidthPct: '拖出来的设备几何，换一块屏幕就不对',
@@ -54,10 +53,6 @@
   const RANGES = Object.freeze({
     autoAiDailyBudget: [0, Number.MAX_SAFE_INTEGER],
     youtubeCaptionBgOpacity: [0, 100],
-  });
-  // 数组值的元素：自动翻译的语言芯片存的是基码（SiteRules.baseLang）。
-  const ARRAY_ITEMS = Object.freeze({
-    autoTranslateLangs: /^[a-z]{2,3}$/,
   });
 
   class TransferError extends Error {
@@ -137,10 +132,6 @@
 
   function valueOk(key, value, schema, enums) {
     const fallback = schema[key];
-    if (Array.isArray(fallback)) {
-      const item = ARRAY_ITEMS[key];
-      return Array.isArray(value) && !!item && value.every((v) => typeof v === 'string' && item.test(v));
-    }
     if (fallback === null || typeof fallback === 'object') return false;
     if (typeof value !== typeof fallback) return false;
     if (typeof value === 'number') {

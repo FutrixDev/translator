@@ -10,6 +10,11 @@
 //      允许，规则更新就是发一次版。rulesVersion 只是给日志和问题排查用的。
 //   2. **不建模现在不需要的字段。** 每站的引擎、每站的延迟、每站要注入的 CSS 都
 //      曾经在草稿里出现过；加进来就要一直维护它们，而今天没有任何一条规则需要。
+//      register（R33 A4）是后来有了用处才加的：可选，social / forum / news /
+//      academic 之一（取值表在 shared/prompt-addenda.js），告诉模型这一页是什么
+//      体裁，好让梗和俚语译成目标语言里自然的说法、正式的文字保持正式。只有标签
+//      进请求，域名不进。没有明确体裁的站（medium、substack 这类什么都有的平台）
+//      不写。
 //
 // 黑名单的优先级高于用户自己设的“总是翻译”（见 site-rules.js 的决策阶梯）。它防
 // 的不是“用户想翻银行页面”，而是“用户在某个域名上点过一次总是翻译，此后我们往
@@ -17,13 +22,14 @@
 // 好不好的地方。
 //
 // 它也不是一份“安全站点清单”：域名列不全，也永远列不全。真正兜底的是默认值
-// 本身——decide() 的默认结论是 ask，没上过 always 名单的站点不会自己动。
+// 本身——decide() 的默认结论是不翻（DEFAULT_OFF），没上过 always 名单的站点不会
+// 自己动。
 (function (root) {
   'use strict';
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-23',
+    rulesVersion: '2026-09-28',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -49,27 +55,29 @@
         // 摘要页结构十年没大改，风险最低，所以拿它做第一个内置 always。
         match: 'arxiv.org/abs/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: ['blockquote.abstract'],
         keepOriginalSelectors: ['.authors', '.dateline', '.submission-history'],
         blockIdAttr: null,
       },
       {
-        // 论文的 PDF —— 这张表里第一条、也是目前唯一一条 never。
+        // 论文的 PDF —— 这张表里第一条 never。另一类是私信路径（x.com 那几条下面）。
         //
         // 它不是「这一页不该翻」，是「这一页不走这条路」：PDF 走的是服务端的
         // 排版任务（background/pdf-jobs.js），按页扣额度，而额度是钱。内置
         // always 的代价不过是在一个没问过用户的页面上插几个节点，这里的代价是
         // 一份**账单**，所以两者不能同一个默认值。
         //
-        // 落成 never 而不是「什么都不写」，因为不写的结果是落到阶梯底下的
-        // ask —— 整页翻译的那条追问条会出现在一份 PDF 上，而点下去它一个字也
-        // 翻不出来（文档在一个闭合影子 DOM 的外进程 <embed> 里，收集层看到的是
-        // 一个空 body）。never 把那条追问条按住，换上真正能办事的那一条：
-        // content/content-pdf-prompt.js 的「翻译这篇文档」，点了才发请求。
+        // 落成 never 而不是「什么都不写」：arxiv.org 的别的路径是 always，
+        // 而这一页整页翻译一个字也翻不出来（文档在一个闭合影子 DOM 的外进程
+        // <embed> 里，收集层看到的是一个空 body）。never 让状态条的说明行答
+        // 「这一页不自动翻译整页文本」（BUILTIN_NEVER），而不是去试一次注定
+        // 空手而归的整页翻译。真正能办事的那一条不看这张表：
+        // content/content-media-hints.js 在每一份 PDF 上都挂出 offer 提示
+        // （「按 Alt+M 翻译这份 PDF」），点了或按了快捷键才发请求。
         //
-        // 只写 arxiv：别处的 .pdf 网址同样翻不了整页文本，但那条提示条本来就
-        // 压在追问条上面（见 content/content-auto-status.js 的模式阶梯），不必
-        // 为每一个域名各写一行永远写不全的规则。
+        // 只写 arxiv：别处的 .pdf 网址同样翻不了整页文本，但它们本来就落在默认
+        // 的不翻上，那条提示照样出来，不必为每一个域名各写一行永远写不全的规则。
         match: 'arxiv.org/pdf/*',
         state: 'never',
         atomicBlockSelectors: [],
@@ -91,6 +99,7 @@
         // collect.js 的代码容器名单认得 ltx_listing 那一族，两者都已经跳过了。
         match: 'arxiv.org/html/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.ltx_authors', '.ltx_bibliography'],
         blockIdAttr: null,
@@ -104,6 +113,7 @@
         // .list-comments（"17 pages, 6 figures"）是人写的，留着。
         match: 'arxiv.org/list/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.list-authors', '.list-identifier', '.list-subjects'],
         blockIdAttr: null,
@@ -122,6 +132,7 @@
         // 就悄悄失效。真需要排除时再补，那天它得有个稳定的钩子。
         match: 'huggingface.co/papers',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -130,6 +141,7 @@
         // 单篇的摘要页，外加 /papers/date/<日期> 这种榜单归档。
         match: 'huggingface.co/papers/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -137,16 +149,47 @@
       {
         match: 'x.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         // 用户名、时间、互动条（回复/转推/喜欢的计数）都不是正文。
         keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
         blockIdAttr: null,
       },
       {
+        // 私信（R33 Q1）：整站 always 会把私信也一起翻 —— 零点击就把别人发给他的私信
+        // 送去了 AI，而他从没为这一页点过什么。私信不是时间线，是信件；自动翻它和往
+        // 他的邮箱里插节点是同一类事，只是这里只拦这几条路径，站点的其余部分照旧。
+        //
+        // 落成 never，不是「不写」：不写的话最长匹配落回整站那条 always。never 排在
+        // 用户规则前面，所以他在 x.com 上写的整站 always 也打不开私信 —— 那条规则说
+        // 的是时间线。他自己伸手（「翻译此页」、快捷键）照样翻：手动翻译不问 decide()。
+        //
+        // 根路径与 `/*` 各一个门牌：pathMatches 把 `*` 展开成 `.*`、没有段边界，
+        // `/messages*` 会把 /messagesboard 这样的用户主页一起圈进来（见 huggingface
+        // 那两条）。语域照整站的写：这里的字仍是那个站点上的字，手动翻时语气要对。
+        // /messages 与 /i/chat 两个私信入口都列上。
+        match: ['x.com/messages', 'x.com/messages/*', 'x.com/i/chat', 'x.com/i/chat/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         match: 'twitter.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['twitter.com/messages', 'twitter.com/messages/*', 'twitter.com/i/chat', 'twitter.com/i/chat/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -159,6 +202,7 @@
         // 「u/xxx • 4 小时。 过去 奖励这个。 帖子…」。
         match: 'reddit.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.tagline', '.score', 'time', 'faceplate-timeago',
@@ -167,9 +211,21 @@
         blockIdAttr: null,
       },
       {
+        // 私信与聊天（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        // chat.reddit.com 是整个主机都是聊天，不带路径；它比 reddit.com 长，最长匹配
+        // 让它赢过整站那条 always。
+        match: ['reddit.com/chat', 'reddit.com/chat/*', 'chat.reddit.com'],
+        state: 'never',
+        register: 'forum',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         // 结构极简，拿来当回归基线：这里翻不好，通用启发式一定也翻不好。
         match: 'news.ycombinator.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.subtext', '.rank', '.age'],
         blockIdAttr: null,
@@ -181,6 +237,7 @@
         // 就和他自己的标签页对不上了。
         match: 'lobste.rs',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.byline', '.tags'],
         blockIdAttr: null,
@@ -194,6 +251,7 @@
         // 和摘要都在里面，排掉等于一页什么都不翻。
         match: 'biorxiv.org/content/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.highwire-cite-authors', '.highwire-cite-metadata'],
         blockIdAttr: null,
@@ -205,6 +263,7 @@
         // 出处行，.c-bibliographic-information 是「Cite this article」那一段。
         match: 'nature.com/articles/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.c-article-author-list',
@@ -233,6 +292,7 @@
         // （.core-history）是人话，留着。
         match: 'science.org/doi/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.contributors',
@@ -278,8 +338,217 @@
           'scholar.google.com.sg/scholar',
         ],
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.gs_a', '.gs_fl'],
+        blockIdAttr: null,
+      },
+      // ---- R33（D-351）：名单外的站点不再问，常用的社交、问答、新闻站点直接进
+      // always。**一个 selector 都不写**：这些站点都没对着真页面查过，写一个猜的
+      // atomicBlockSelectors 比不写更糟 —— 猜错了整块不翻，而且没有任何报错。通
+      // 用启发式在这些站上是「翻得碎一点」，不是「翻不了」；哪天查实了再补。
+      //
+      // 主机名是后缀匹配：medium.com 也认 *.medium.com 上的个人博客，
+      // substack.com 认 *.substack.com，stackexchange.com 认各个子站。
+      {
+        // 社交
+        match: 'threads.net',
+        state: 'always',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'bsky.app',
+        state: 'always',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['bsky.app/messages', 'bsky.app/messages/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'facebook.com',
+        state: 'always',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['facebook.com/messages', 'facebook.com/messages/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'instagram.com',
+        state: 'always',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['instagram.com/direct', 'instagram.com/direct/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 长文与通讯
+        match: 'medium.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'substack.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 问答
+        match: 'quora.com',
+        state: 'always',
+        register: 'forum',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'stackoverflow.com',
+        state: 'always',
+        register: 'forum',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'stackexchange.com',
+        state: 'always',
+        register: 'forum',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 新闻
+        match: 'nytimes.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'theguardian.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 同一家的两个门牌，写成一条（见 Google 学术那条）。
+        match: ['bbc.com', 'bbc.co.uk'],
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'reuters.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'apnews.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'washingtonpost.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'wsj.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'bloomberg.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'cnn.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'ft.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'economist.com',
+        state: 'always',
+        register: 'news',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 字幕站（D-351）：正文 —— 标题、简介、评论 —— 不自己翻，也不问；字幕照翻，
+        // 而且默认替他把原字幕点开（autoEnableCaptions，见 content/captions/activation.js）。
+        // 它不是拒绝：用户写一条 always，正文也跟着翻；写一条 never，字幕一起停。
+        // m.youtube.com 以 youtube.com 结尾，这一条已经覆盖它。
+        match: 'youtube.com',
+        state: 'captions',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
     ],

@@ -1,4 +1,4 @@
-// 交互四触点（追问条、状态点、popup、Alt+A）靠的还是「装载顺序 + 同一个全局
+// 交互四触点（右下角的条子、状态点、popup、Alt+A）靠的还是「装载顺序 + 同一个全局
 // 对象 + 三份必须对齐的清单」，编辑器一条都提醒不了。这一组测的不是界面长什么
 // 样，是这四个触点背后那几根线有没有接上、有没有接成两份。
 import test from 'node:test';
@@ -41,19 +41,29 @@ test('呈现层只画，不碰队列、不碰代次、不自己判一遍', () =>
   assert.doesNotMatch(view, /collectTranslatableBlocks|insertTranslationBlock|runTranslationPass/);
   assert.doesNotMatch(view, /SiteRules\.decide\(/, '判定只有调度层问，问第二遍就会有第二个答案');
   assert.doesNotMatch(view, /bumpSession\(/, '代次归调度层，这一层翻篇会把正在跑的那一轮作废');
-  // 用户表态走的是调度层的入口，不是自己去改 explicit 或者直接开译。
-  assert.match(view, /ctx\.autoTranslate\.markPageExplicit\(\)/);
+  // 它也不替用户表态：站点规则只从 popup、字幕菜单、悬浮球和设置页写。
+  assert.doesNotMatch(view, /SiteRules\.(setSiteAuto|writeUserRule)\(|markPageExplicit\(/);
 });
 
-test('追问条的上限和计数是同一处说了算', () => {
+test('名单外的站点不问：追问那一整条路删干净了', () => {
+  // D-351：名单外的站点安静地不翻，没有追问条、没有计数、没有「总是」勾选框。
+  // 留一个开关或一个没人调的计数，就是一条没人测的第二条路。
   const view = code('content/content-auto-status.js');
-  // 一处定义，两处比较：领号回来的那个权威计数，和省一趟往返的本地预检（见
-  // 「追问的号要先领到手才画条子」）。两处比的都得是这个常量 —— 谁把 3 直接写
-  // 进判断里，改上限的时候就只会改到一半。
-  assert.equal((view.match(/MAX_ASKS/g) || []).length, 3, '一处定义，两处比较');
-  // 加一这件事本身在服务工作者里（见「追问计数只有服务工作者一个人写」），这里
-  // 只确认本页没有自己拿内存那份加一 —— 那会让上限永远够不着。
-  assert.doesNotMatch(view, /ctx\.settings\.siteAskCount\[[^\]]*\]\s*(\+\+|=[^=])/);
+  for (const gone of [/MAX_ASKS/, /siteAskCount/, /acceptAsk|shouldAsk|reserveAskSlot|askSlot/,
+    /data-mode="ask"|mode === 'ask'/, /autoAsk/, /visibilitychange/]) {
+    assert.doesNotMatch(view, gone, `${gone} 还在呈现层里`);
+  }
+  const rules = code('shared/site-rules.js');
+  assert.doesNotMatch(rules, /updateAskCount|applyAskCount|siteAskCount|DEFAULT_ASK|UNKNOWN_LANGUAGE/);
+  assert.doesNotMatch(rules, /out\('ask'/, 'decide() 只答 auto 或 off');
+  const scheduler = code('content/content-auto-translate.js');
+  assert.doesNotMatch(scheduler, /STATUS\.(ASK|PENDING)|detectReliableLanguage|pageLang/);
+  assert.doesNotMatch(code('content/content-messaging.js'), /'ask'|'pending'/);
+  // 设置里也没有它的键了。
+  assert.doesNotMatch(code('shared/default-settings.js'), /siteAskCount|autoTranslateLangs/);
+  // 文案表里也没有：窄条剩下的按钮是 offer 的（autoOffer*），PDF 那句是媒体提示的
+  // （mediaHint*）。一个还叫「追问」的键，要么没人调，要么在借一条已删掉的路的名字。
+  assert.doesNotMatch(messagesSource(), /^\s*(autoAsk\w*|pdfAskPrompt):/m);
 });
 
 test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
@@ -61,10 +71,9 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
   assert.match(rules, /async function applyUserRule\(\{ host, state \}\)/);
   assert.match(rules, /const key = normalizeHost\(host\);/);
 
-  // 四个写入点（追问条、popup、播放器里的字幕菜单、设置页）都得走它。各自拼一
-  // 次键，写进去的和 decide() 读出来的迟早不是同一个。
+  // 写入点（popup、播放器里的字幕菜单、设置页）都得走它。各自拼一次键，写进
+  // 去的和 decide() 读出来的迟早不是同一个。
   const WRITERS = [
-    'content/content-auto-status.js',
     'popup/popup.js',
     'content/content-caption-controls.js',
   ];
@@ -84,9 +93,8 @@ test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {
 });
 
 test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
-  // popup 上那一行、播放器里字幕菜单的第一行、追问条上那个「总是」勾选框，说的
-  // 都是同一句话（字幕并进主开关之后）。三处各写一遍，迟早一处写 never、另一处
-  // 写「把规则删掉」。
+  // popup 上那一行、播放器里字幕菜单的第一行，说的都是同一句话（字幕并进主开关
+  // 之后）。两处各写一遍，迟早一处写 never、另一处写「把规则删掉」。
   const rules = code('shared/site-rules.js');
   assert.match(rules, /async function setSiteAuto\(hostname, on\)/);
   assert.match(rules, /^\s*setSiteAuto,$/m, 'setSiteAuto 没有导出');
@@ -94,8 +102,6 @@ test('「这个站点自动翻 / 不自动翻」只有一份实现', () => {
   assert.match(code('popup/popup.js'), /SiteRules\.setSiteAuto\(pageState\.host, !on\)/);
   assert.match(code('content/content-caption-controls.js'),
     /SiteRules\.setSiteAuto\(location\.hostname, !siteAutoOn\(\)\)/);
-  assert.match(code('content/content-auto-status.js'),
-    /SiteRules\.setSiteAuto\(location\.hostname, true\)/);
   // 「不再自动翻译 {site}」—— 悬浮球、字幕菜单、popup 三处，只写 never，也走它。
   assert.match(code('content/content-float-ball.js'),
     /SiteRules\.setSiteAuto\(location\.hostname, false\)/);
@@ -237,9 +243,9 @@ test('一轮翻译跑到一半藏译文，后面插进来的也得是藏着的',
 });
 
 test('同步存储上的读—改—写只有服务工作者一个人做', () => {
-  // 站点规则和追问计数都是「整份对象读出来、改一个键、整份写回」。同一个域名开
-  // 着三个标签页，三页各自读出同一份旧对象再各自写回，后写的把先写的整个盖掉：
-  // 「问三次就不再问」一次都攒不满，用户在 popup 上点的「关」也会凭空消失。
+  // 站点规则是「整份对象读出来、改一个键、整份写回」。同一个域名开着三个标签
+  // 页，三页各自读出同一份旧对象再各自写回，后写的把先写的整个盖掉：用户在
+  // popup 上点的「关」会凭空消失。
   // 队列本身在 shared/storage-writer.js（三家共用一份），这张表拿它造自己那一条。
   const writer = code('shared/storage-writer.js');
   assert.match(writer, /const IN_SERVICE_WORKER\s*=/);
@@ -251,18 +257,17 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   // 两条写入路径共用同一个 writer，也就是同一条队列。
   assert.equal((rules.match(/StorageWriter\.create\(/g) || []).length, 1, '站点规则只有一个 writer');
   assert.match(rules, /StorageWriter\.create\(\{\s*type: 'SITE_RULES_WRITE',\s*writes: WRITES,/);
-  for (const fn of ['applyUserRule', 'applyAskCount']) {
+  for (const fn of ['applyUserRule', 'applyImportedRules']) {
     assert.match(rules, new RegExp(`WRITES = \\{[^}]*${fn}`), `${fn} 必须挂在同一张表上`);
   }
   // 写入点两边共用一个名字：调用方不该自己判断「我现在是不是服务工作者」。
   assert.match(rules, /function writeUserRule\(hostname, state\) \{\s*return request\('rule'/);
-  assert.match(rules, /function updateAskCount\(hostname, op\) \{\s*return request\('ask'/);
 
   for (const file of ['content/content-auto-status.js', 'popup/popup.js', 'options/options.js']) {
     assert.doesNotMatch(
       code(file),
-      /storage\.sync\.set\([^)]*site(Rules|AskCount)/,
-      `${file} 不该自己写这两张表`
+      /storage\.sync\.set\([^)]*siteRules/,
+      `${file} 不该自己写站点规则表`
     );
   }
 
@@ -274,35 +279,16 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   assert.match(background, /import '\.\.\/shared\/site-rules\.js';/);
 });
 
-test('勾了「总是」就要等规则落地再翻', () => {
-  // 不等的话，用户在写落地之前切走这一页，这个站点就只翻了这一次 —— 条子已经
-  // 收走，没有任何地方会再提起他说过「总是」。
-  const status = code('content/content-auto-status.js');
-  assert.match(status, /async function acceptAsk\(always\)/);
-  assert.match(status, /await globalThis\.SiteRules\.setSiteAuto\(location\.hostname, true\)/);
-  assert.match(status, /await clearAskCount\(\);[\s\S]{0,200}?markPageExplicit\(\)/);
-  // 写失败不拦着这一页翻：他要的就是现在这一页。
-  assert.match(status, /catch \(error\) \{[\s\S]{0,160}?site rule write failed/);
-});
-
 test('规则没存上要说一声，不能只留一行控制台日志', () => {
-  // 勾选框是个乐观控件：用户看到的是「记住了」。规则没落地的话，下一次打开这个
-  // 站点还会再问一遍，而中间没有任何地方提起过这件事 —— 他只会觉得这个扩展记不
-  // 住事。file:// 页面（location.hostname 是空串）每一次都走这条路。
+  // 悬浮球菜单第一行「不再自动翻译这个站点」是个乐观控件，按下去菜单就收了。
+  // 规则没落地的话，下一次打开这个站点照样自己翻，而中间没有任何地方提起过这件
+  // 事。它不自己造条子 —— 两条窄条会在右下角叠在一起。
   const status = code('content/content-auto-status.js');
-  assert.match(status, /failed = true;/);
-  assert.match(status, /setNotice\(failed \? t\('popupSiteRuleFailed'\) : ''\)/);
-  // 同一句话的第二个来源：悬浮球菜单第一行「不再自动翻译这个站点」。那一行也是
-  // 乐观控件，按下去菜单就收了。它不自己造条子 —— 两条窄条会在右下角叠在一起。
   assert.match(status, /ctx\.showAutoStatusNotice = setNotice;/);
   assert.match(code('content/content-float-ball.js'),
     /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
-  // 那句话得真画到条子上，而且压在追问和展开说明之上。只有拾取器开着时整条让位
-  // 盖过它（关掉后照样回来）。
-  assert.match(status, /const mode = yielding \? '' : \(notice \? 'notice' :/);
-  assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
-  // 关掉一次只关掉一层：他关的是这句话，底下没答完的那一问不该跟着一起没。
-  assert.match(status, /if \(notice\) notice = '';\s*\n\s*else if \(explaining\)/);
+  // 那句话真画到条子上、压在 offer 和展开说明之上、拾取器开着时让位、关掉一次
+  // 只关一层：auto-bar-trusted.test.mjs「one priority」跑着问。
   // 这个模式在样式表里得和 explain 一样只剩一行字和一个关闭，否则那两个按钮会
   // 挂在一句「没能保存」下面，按下去是「翻译」和「不用」。
   const css = contentCss();
@@ -396,7 +382,7 @@ test('manifest 里每个 __MSG__ 占位符，十个 _locales 都得有', () => {
   }
 });
 
-test('追问条也是一个面板根，进了那道防护栏的名单', () => {
+test('右下角的条子也是一个面板根，进了那道防护栏的名单', () => {
   const css = contentCss();
   const reset = css.slice(
     css.indexOf('/* ==================== Host-page containment'),
@@ -405,7 +391,7 @@ test('追问条也是一个面板根，进了那道防护栏的名单', () => {
   assert.ok(reset.length > 0, '找不到防护栏那一段');
   const bar = (reset.match(/\[id="ai-translator-auto-bar"\]/g) || []).length;
   const ocr = (reset.match(/\[id="ai-translator-ocr-hover-btn"\]/g) || []).length;
-  assert.equal(bar, ocr, '每一条 :is() 名单都要带上追问条，漏一条就是漏一类样式');
+  assert.equal(bar, ocr, '每一条 :is() 名单都要带上那张条子，漏一条就是漏一类样式');
 });
 
 test('状态点的显隐只有一套机制', () => {
@@ -466,30 +452,6 @@ test('单修饰键的快捷键要等一等，别和 Alt+A 的第一下撞上', (
   assert.match(hover, /event\.key === chordKey\) chordKey = null;/);
 });
 
-test('追问的号要先领到手才画条子 —— 三次额度经不起两个标签页同时开', () => {
-  // 三次是硬上限，而「现在问到第几次了」这件事同一时刻可能有好几个标签页在读。
-  // 各读各的本地快照，读到的都是 2，于是四张条子一起画出来，问了四次。所以顺序
-  // 反过来：先向唯一的主人（服务工作者）要一个号，它加完把真数发回来，够了才画。
-  const status = code('content/content-auto-status.js');
-  assert.match(status, /function reserveAskSlot\(\) \{\s*if \(askSlot !== 'none'\) return;\s*askSlot = 'pending';/);
-  assert.match(status, /updateAskCount\('bump'\)\.then\(\(count\) => \{[\s\S]*?count > MAX_ASKS[\s\S]*?askSlot = 'denied'/);
-
-  // 画之前的那道闸门：号没到手就先把条子收了，等 then 回来再 render 一次。
-  // 领号那一下还得先问这一页看不看得见（见「追问的号只在看得见的标签页里领」）。
-  assert.match(status, /if \(mode === 'ask' && askSlot !== 'granted'\) \{\s*if \(document\.visibilityState === 'visible'\) reserveAskSlot\(\);\s*removeBar\(\);\s*return;\s*\}/);
-
-  // 而领到号之后，本地那个数已经被自己这一次加过了 —— 第三次正好等于 3，再拿
-  // 它和上限比就会把自己问掉。所以 granted 直接放行，本地判断只是省一趟往返。
-  const should = status.slice(status.indexOf('function shouldAsk'));
-  const shouldFn = should.slice(0, should.indexOf('\n  }') + 4);
-  assert.ok(shouldFn.indexOf("askSlot === 'granted'") < shouldFn.indexOf('askCount() < MAX_ASKS'),
-    '本地预检必须排在「号已到手」后面，否则第三次追问会被自己的计数挡掉');
-
-  // 旧的「画完再记一笔」那个闩不能还留着：它和领号是同一件事的两种记法。
-  assert.doesNotMatch(status, /bumpAskCount/);
-  assert.doesNotMatch(status, /\blet counted\b/);
-});
-
 test('黑名单那一行是死的，不是关着的 —— 点不动，也带不动总开关', () => {
   // 前提在 site-rules.test.mjs：「the blocklist outranks the user own always」。
   // 既然写 always 下去也翻不了，这一行就不能装成一个能开的开关 —— 点一下什么都
@@ -497,11 +459,13 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 起来，他本来只想管眼前这一个。
   const popup = code('popup/popup.js');
   // 「灰不灰」问的是写得进去吗（比黑名单宽一格，file:// 也写不进去），
-  // 「为什么灰」才是黑名单那句人话。
+  // 「为什么灰」是页面回的那个枚举，按共用的那张表取话（行为断言在
+  // popup-first-paint.test.mjs：内置 never 不能被说成黑名单）。
   assert.match(popup, /const writable = !!pageState\.ruleWritable;/);
   assert.match(popup, /elements\.toggleSiteAuto\.disabled = !writable;/);
-  assert.match(popup, /elements\.toggleSiteAuto\.title = pageState\.blocked \? t\('autoReasonBlocklist'\)/);
+  assert.match(popup, /t\(AutoReasonKeys\[pageState\.blockReason\]\)/);
   assert.match(messagesSource(), /autoReasonBlocklist:/, '理由那句话得真有');
+  assert.match(messagesSource(), /autoReasonBuiltinNever:/, '理由那句话得真有');
 
   // 画面灰掉之外再挡一道：键盘走得到 disabled 的按钮，扩展页面也点得动。
   const body = popup.slice(popup.indexOf('async function toggleSiteAuto()'),
@@ -529,23 +493,23 @@ test('黑名单那一行是死的，不是关着的 —— 点不动，也带不
   // 而且答的必须是判定层那一个主人，不是 popup 自己再判一遍。
   const messaging = code('content/content-messaging.js');
   assert.match(messaging,
-    /blocked: globalThis\.SiteRules\.isBlocklisted\(location\.hostname, location\.pathname\)/);
+    /blockReason: globalThis\.SiteRules\.blockReason\(location\.hostname, location\.pathname\)/);
   assert.match(messaging,
     /ruleWritable: globalThis\.SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
   const rules = code('shared/site-rules.js');
-  assert.match(rules, /function isBlocklisted\(host, path\)/);
-  // 阶梯自己也得问这一问，否则两处迟早不一致。它问完之后还要再问一次 isBlocked()，
-  // 那一问只决定说辞：内置表里的 never（arxiv 的 /pdf/）和黑名单（网银）都是「翻
-  // 不过来」，但对用户说的不是同一句话。
-  assert.match(rules, /if \(isBlocklisted\(host, path\)\) \{\s*\n\s*return out\('off', isBlocked\(host, path\) \? REASONS\.BLOCKLIST : REASONS\.BUILTIN_NEVER\);/,
+  assert.match(rules, /function blockReason\(host, path\)/);
+  // 阶梯自己也得问这一问，否则两处迟早不一致：内置表里的 never（arxiv 的 /pdf/）
+  // 和黑名单（网银）都是「翻不过来」，但对用户说的不是同一句话，是哪一种也由
+  // 这一问答（行为断言在 site-rules.test.mjs）。
+  assert.match(rules, /const blocked = blockReason\(host, path\);\s*\n\s*if \(blocked\) return out\('off', blocked\);/,
     '阶梯自己也得问这一问，否则两处迟早不一致');
-  assert.doesNotMatch(popup, /isBlocklisted/, 'popup 手上没有内置表，判不了');
+  assert.doesNotMatch(popup, /blockReason\(|isBlocked\(|matchBuiltin\(/, 'popup 手上没有内置表，判不了');
 
   // 三块画布同一问。两处直接问，popup 问的是页面替它算好的那一格 —— 它手上没有
   // 内置表，自己判不了，但判据必须是同一个函数，不是「黑名单」那半边。
   assert.match(code('content/content-float-ball.js'),
     /siteRuleWritable\(location\.hostname, location\.pathname\)/);
-  assert.doesNotMatch(popup, /pageState\.blocked\s*\)\s*return/,
+  assert.doesNotMatch(popup, /pageState\.blockReason\s*\)\s*return/,
     'popup 又拿黑名单当「写得进去吗」用了');
 });
 
@@ -578,7 +542,7 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
   const auto = code('content/content-auto-translate.js');
   const guard = auto.slice(auto.indexOf('if (ctx.state.translationsVisible === false || pausedByUser)'));
   assert.match(guard.slice(0, 900),
-    /const held = resolve\(pageLang\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
+    /const held = resolve\(\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
     '隐藏闩得先重判再返回，不能原地掉头');
   // 规则改了确实会重开一轮，否则上面那段永远跑不到。
   const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));
@@ -594,13 +558,13 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
 });
 
 test('一次性的「翻译这一页」不能让站点开关翻成「开」', () => {
-  // 没设过规则的站点，追问条上点「翻译」而没勾「总是」：markPageExplicit() 把这
-  // 一页推进 idle/running，可规则表里一条都没落地，下次再来照样问他。那一行照着
+  // 没设过规则的站点，popup 或 Alt+A 点了一次「翻译这一页」：markPageExplicit()
+  // 把这一页推进 idle/running，可规则表里一条都没落地，下次再来照样不翻。那一行照着
   // status 画就会写「开」—— 而他顺手去点那个看起来已经开着的开关，写下的是一条
   // **永久的 never**：他想开，反倒关死了。行为断言在
   // test/e2e/auto-translate-touchpoints.spec.js 的同名旅程里。
   const auto = code('content/content-auto-translate.js');
-  assert.match(auto, /function siteAuto\(\) \{\s*return resolve\(pageLang, \{ explicit: false \}\)\.verdict === 'auto';\s*\}/,
+  assert.match(auto, /function siteAuto\(\) \{\s*return resolve\(\{ explicit: false \}\)\.verdict === 'auto';\s*\}/,
     '站点那一句得把用户在这一页表过的那一下刨掉再判');
   assert.match(auto, /siteAuto: siteAuto\(\),/, '它得跟着快照一起回 popup');
   // 默认那一头不许跟着改：resolve() 不带参数问的仍是「这一页此刻该不该翻」，
@@ -619,14 +583,12 @@ test('一次性的「翻译这一页」不能让站点开关翻成「开」', ()
   assert.doesNotMatch(popup, /siteAutoOn\(status\)/, '站点那一行不看 status');
 });
 
-test('pending 不能画出一行「暂停这一页」—— 它只会走到 ask 或 off，没有什么可停', () => {
-  // 走到 pending 的前提就是第一问已经答了 ask（off 和 auto 都当场返回了），而
-  // 第二问带上语言之后，decide() 的阶梯上剩给它的只有 off 和 ask。所以一个
-  // pending 的页面永远不会变成「在自动翻」—— 给它画一行「暂停这一页」，用户按
-  // 下去停的是一件从来没开始的事，而按钮会就此改口写「继续」。
+test('「暂停这一页」只画给真在管这一页的状态', () => {
+  // off 的页面没有什么可停：给它画一行「暂停这一页」，用户按下去停的是一件从来
+  // 没开始的事，而按钮会就此改口写「继续」。
   const popup = code('popup/popup.js');
   const set = popup.slice(popup.indexOf('const AUTO_ACTIVE'), popup.indexOf('const AUTO_RESUMABLE'));
-  assert.doesNotMatch(set, /'pending'/, 'pending 不是「自动翻译在管这一页」');
+  assert.doesNotMatch(set, /'off'/, 'off 不是「自动翻译在管这一页」');
   for (const s of ['idle', 'running', 'paused', 'error']) assert.match(set, new RegExp(`'${s}'`));
 
   // 这个集合只管这一行。站点那一行问的是另一句话（见 siteAutoOn()）。
@@ -642,11 +604,11 @@ test('pending 不能画出一行「暂停这一页」—— 它只会走到 ask 
     assert.doesNotMatch(literals, new RegExp(`'${s}'`), `'${s}' 只许写在集合的定义里`);
   }
 
-  // 上面那段推理的依据：decide() 里 off 和 auto 都当场返回，ask 是阶梯的末端。
-  const rules = code('shared/site-rules.js');
-  const ladder = rules.slice(rules.indexOf('function decide(input)'));
-  assert.match(ladder.slice(0, 2000), /if \(!pageLang\) return out\('ask', REASONS\.UNKNOWN_LANGUAGE\);\s*return out\('ask', REASONS\.DEFAULT_ASK\);/,
-    '语言那一段之后没有通往 auto 的路 —— 这条一旦变了，pending 的含义也变了');
+  // 调度层的状态表里也没有 ask / pending 了：decide() 只答 auto 或 off。
+  const scheduler = code('content/content-auto-translate.js');
+  const states = scheduler.slice(scheduler.indexOf('const STATUS = Object.freeze({'));
+  assert.deepEqual(states.slice(0, states.indexOf('});')).match(/[A-Z]+(?=:)/g),
+    ['OFF', 'IDLE', 'RUNNING', 'PAUSED', 'ERROR']);
 });
 
 test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
@@ -678,25 +640,10 @@ test('「这一下是不是收起」只有一个出处 —— 按钮上那行字
   assert.match(toggle.slice(0, 500), /translationsVisible !== false\)[\s\S]*?return 'restored';[\s\S]*?translatePage\(\);/);
 });
 
-test('追问的号只在看得见的标签页里领 —— 后台那一串不能把三次机会花光', () => {
-  // 中键点开的十条链接、浏览器预渲染的那一份，都会一路跑到 render()。条子在那些
-  // 标签页里谁也没见过，号却照领 —— 三次机会在用户面前一次没露过的情况下花光，
-  // 这个域名从此永远安静。
-  const view = code('content/content-auto-status.js');
-  assert.match(view,
-    /if \(document\.visibilityState === 'visible'\) reserveAskSlot\(\);/,
-    '领号前得先确认这一页看得见');
-  assert.equal((view.match(/reserveAskSlot\(\)/g) || []).length, 2, '一处定义一处调用，多一处就是又开了一条不看可见性的路');
-  // 而且「等它被看见了再领」得真有人来叫第二遍：预渲染转正走的也是这个事件。
-  assert.match(view,
-    /document\.addEventListener\('visibilitychange', \(\) => \{\s*if \(document\.visibilityState === 'visible'\) render\(\);\s*\}\);/,
-    '页面转到前台时必须重画一次，否则那张条子永远不会出现');
-});
-
 test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把它顶开', () => {
   // status 会被下一次 start() 覆盖，而 start() 常常是别人替他叫的：另一个标签页
-  // 在追问条上点了「总是」，siteRules 一落地，这一页的 onSettingsChanged 就重开
-  // 一轮 —— 他按下的暂停当场失效，页面自己又翻起来了。
+  // 在 popup 上把这个站点设成「总是」，siteRules 一落地，这一页的
+  // onSettingsChanged 就重开一轮 —— 他按下的暂停当场失效，页面自己又翻起来了。
   const auto = code('content/content-auto-translate.js');
   assert.match(auto, /let pausedByUser = false;/);
   assert.match(auto, /if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{/, 'start() 得认这道闩');
@@ -731,17 +678,8 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
   // 的话往后全是原文，而「继续」那颗按钮此刻指着的是他早就离开的那一页。
   const route = auto.slice(auto.indexOf('function onRouteChange('), auto.indexOf('const RESTART_KEYS'));
   assert.match(route,
-    /explicit = false;[\s\S]*pausedByUser = false;[\s\S]*pageLang = null;\s*langResolved = false;\s*start\(`route:/,
-    '换了一页，表态、闩和上一页量到的语言都归零');
-
-  // 语言是**一页**的测量结果，清它的只有「换了一页」那一下 —— 声明一处、过期一
-  // 处，多一处就是又多了一个主人。尤其是 start()：它说的是「重新判」，同一个文档
-  // 上量到的语言照样作数；反过来，这一处要是没有，藏着译文时换一页就会被上一页
-  // 的语言判成 off，而「显示译文」只叫得醒 PAUSED / ERROR，那一页再也问不出来。
-  assert.equal((auto.match(/pageLang = null;/g) || []).length, 2,
-    '一处声明、一处过期（onRouteChange）');
-  const startBody = auto.slice(auto.indexOf('function start(why)'), auto.indexOf('function stopDiscovery('));
-  assert.doesNotMatch(startBody, /pageLang = null;/, 'start() 不清语言：它不是「换了一页」');
+    /explicit = false;[\s\S]*pausedByUser = false;\s*start\(`route:/,
+    '换了一页，表态和闩都归零');
 });
 
 test('球上那两颗按钮键盘够得着', () => {

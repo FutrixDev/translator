@@ -263,8 +263,10 @@ test('subtitles the page only offers are left off until the viewer asks', async 
   // Vimeo's player lists four languages and shows none until asked. Choosing
   // one there would put subtitles on screen that nobody turned on — in
   // whichever language the page listed first, German for an English video.
+  // That is the rule for picking a track; turning one on is autoEnableCaptions
+  // (on by default since R33), switched off here so it cannot answer instead.
   let apiCalls = 0;
-  await setExtensionSettings(p, BASE_SETTINGS);
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, page(`
     <video id="v" width="640" height="360">
       <track kind="subtitles" srclang="de" label="Deutsch" src="/subs.vtt">
@@ -360,18 +362,22 @@ test('with no player control bar the button sits in the video corner', async ({ 
   // and only shows while there is activity.
   await p.mouse.move(320, 180);
 
+  // The pair sits in the corner: the chevron outermost, the icon right beside it.
   const gaps = await p.evaluate(() => {
     const v = document.querySelector('video').getBoundingClientRect();
     const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
-    return { right: v.right - b.right, bottom: v.bottom - b.bottom };
+    const m = document.getElementById('ai-translator-caption-more').getBoundingClientRect();
+    return { right: v.right - m.right, bottom: v.bottom - b.bottom, between: m.left - b.right };
   });
   expect(gaps.right).toBeLessThanOrEqual(16);
   expect(gaps.bottom).toBeLessThanOrEqual(16);
   expect(gaps.right).toBeGreaterThanOrEqual(0);
   expect(gaps.bottom).toBeGreaterThanOrEqual(0);
+  expect(gaps.between).toBeGreaterThanOrEqual(0);
+  expect(gaps.between).toBeLessThanOrEqual(4);
 
   // The menu's status line names the track it found, read without adopting it.
-  await button.click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText('English');
 
@@ -391,6 +397,7 @@ test('a page with no subtitle track gets no button', async ({ page: p, context }
   await p.mouse.move(320, 180);
 
   await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(0);
+  await expect(p.locator('#ai-translator-caption-more')).toHaveCount(0);
   await expect(p.locator('#ai-translator-caption-controls')).toHaveCount(0);
 });
 
@@ -412,7 +419,7 @@ test('original-only gives the page its own captions back', async ({ page: p, con
 
 // ------------------------------------------------------------------- PR-9
 // 「没开原字幕的视频，替我把原字幕点开」—— autoEnableCaptions。本轮唯一会改动播放
-// 器自己状态的自动化，所以它单独一个开关、默认关，而且只合不开。
+// 器自己状态的自动化，所以它单独一个开关，而且只合不开。R33（D-351）起默认开。
 
 /** The track modes as the page sees them, e.g. ['de:disabled', 'en:hidden']. */
 function trackModes(p) {
@@ -435,9 +442,19 @@ test('turning subtitles on picks the language the audio is in, not the first lis
   await expect(p.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 });
 
-test('with the setting off, subtitles the page only offers stay off', async ({ page: p, context }) => {
-  // The same page as above, minus the one setting. This is the default install.
+test('the default install turns subtitles on as well', async ({ page: p, context }) => {
+  // The same page, with the setting never touched.
   await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, TWO_OFF_EN_AUDIO);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await expect.poll(() => trackModes(p), { timeout: 8000 }).toEqual(['de:disabled', 'en:hidden']);
+});
+
+test('with the setting off, subtitles the page only offers stay off', async ({ page: p, context }) => {
+  // The same page as above, with the one setting switched off.
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, TWO_OFF_EN_AUDIO);
   await mockTranslation(context);
 
@@ -561,7 +578,7 @@ test('after the viewer switches subtitles off, the menu can switch them back on'
   await expect(overlay).toBeHidden();
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText(/subtitles are off/i);
   await p.locator('#ai-translator-caption-menu [data-action="native"]').click();
@@ -581,7 +598,7 @@ test('the menu offers to turn subtitles on even with the setting off', async ({ 
   // The setting is for "do it without asking". Pressing the item in the menu
   // *is* asking, so it goes through whatever the setting says — and through the
   // latch, because this is the viewer changing his mind.
-  await setExtensionSettings(p, BASE_SETTINGS);
+  await setExtensionSettings(p, { ...BASE_SETTINGS, autoEnableCaptions: false });
   await serve(context, TWO_OFF_EN_AUDIO);
   await mockTranslation(context);
 
@@ -590,7 +607,7 @@ test('the menu offers to turn subtitles on even with the setting off', async ({ 
   expect(await trackModes(p)).toEqual(['de:disabled', 'en:disabled']);
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
 
   // Not "this video has no subtitles" — that is a sentence we cannot say. The
   // menu says what is actually true and gives him the button.
@@ -653,7 +670,7 @@ const firstRowSwitch = (p) => p.locator('#ai-translator-caption-menu .ai-transla
 
 async function openCaptionMenu(p) {
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu')).toBeVisible();
 }
 
@@ -809,7 +826,7 @@ test('额度用完：字幕不再发请求，菜单说是额度的缘故；额�
   await expect(p.locator('#ai-translator-caption-overlay')).not.toContainText('你好世界');
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText('Today’s AI allowance is used up');
   await p.keyboard.press('Escape');

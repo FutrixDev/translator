@@ -2,6 +2,123 @@
 
 ## Unreleased
 
+### Popup, site policy and prompt register
+
+- **The popup's buttons work the moment it opens.** Clicking the toolbar icon
+  no longer leaves "Translate this page" dead while a busy tab takes seconds
+  to report its state: the buttons are wired before the popup asks the page
+  anything, the page's rows wait at most 300 ms before drawing as unknown and
+  repaint when the late answer lands, and the engine probe runs alongside
+  instead of after it.
+- **Sites nobody has ruled on stay quiet.** The "Translate this page?" bar is
+  gone, along with its three-asks counter and the list of page languages that
+  decided whether to ask. A site that is on no list is simply left alone: no
+  bar, no request, and it does not count as a refusal, so video captions and
+  other page-level helpers still work there. Turning a site on is one click in
+  the popup, the settings page or Alt+A.
+- **Common social, Q&A and news sites translate by themselves.** Threads,
+  Bluesky, Facebook, Instagram, Medium, Substack, Quora, Stack Overflow, Stack
+  Exchange and eleven major news sites (The New York Times, The Guardian, BBC,
+  Reuters, AP News, The Washington Post, The Wall Street Journal, Bloomberg,
+  CNN, the Financial Times and The Economist) join the built-in list. YouTube
+  is listed as a captions site: its page text stays as it is while its
+  captions are translated. Your own rule for any of them still wins.
+- **Direct messages are never translated on their own.** On X, Twitter,
+  Facebook, Instagram, Reddit and Bluesky the private-message pages
+  (`/messages`, `/i/chat`, `/direct`, `/chat` and chat.reddit.com) are left
+  alone even though the rest of the site translates by itself, and even if you
+  set the whole site to always translate: nothing from a conversation is sent
+  to the AI without a click. "Translate this page" and Alt+A still translate a
+  conversation when you ask. This also holds when you click into a
+  conversation from the home timeline: the address is checked again right
+  before anything is sent, so a message is never sent under the timeline's
+  verdict while the site's router is still finishing the navigation. On such a
+  page the tooltip on the popup's greyed site row now says the page is not
+  auto-translated, where it used to say the whole site was on the blocklist.
+- **Videos get their own subtitles switched on for you.** "Turn subtitles on
+  automatically" is now on by default, so a video whose subtitles are off has
+  something to translate. Switch them off in the player and they stay off in
+  that tab, on later videos too, until you reload the page or choose "Turn on
+  subtitles" in Blab Translation's own subtitle menu in the player (the small
+  arrow next to its icon), which is what the setting's description under Video
+  captions now says.
+- **An auto-translate switch in the popup.** The popup's first row turns
+  automatic translation on or off everywhere. It is the same setting as
+  "Translate pages automatically" in Settings, and switching it off stops the
+  current page on the spot: nothing new is sent, while what is already
+  translated stays. Its On/Off label appears once the setting has been
+  read, so there is no empty box beside it while the popup opens.
+- **Manage sites from Settings.** Under "Translate pages automatically" you
+  can now type a site (a whole address works too: `https://www.` and the
+  path are dropped) and set it to always or never translate, switch a rule
+  between the two, or remove it. A mistyped address, or a site that is never
+  translated, is explained under the box. The built-in lists are shown below,
+  folded: turn off a listed site with one click. The note under the sites that
+  are never translated says what that means: never automatically, while
+  "Translate Page" in the popup still translates one when you ask. A captions-only site gets
+  two buttons, one to translate its page too and one to stop translating it,
+  subtitles included. An open tab of that site follows at once.
+- **One click in the player turns subtitle translation off and on.** The
+  icon in the video's control bar is now a switch for this video: pressed, the
+  translated subtitles show; click it and they go away and the video's own
+  subtitles come back; click again to bring them back. On YouTube it sits
+  right before the CC button. The menu it used to open is still there, behind
+  the small arrow next to the icon, and is reachable from the keyboard.
+- **AI translations keep the tone of the page.** Every prompt that
+  translates text now tells the model to match the register of the source: a
+  meme or a slang reply stays casual instead of turning formal or being
+  explained. A custom prompt keeps its own wording and gets that rule added
+  after it. Looking up a single word is a dictionary entry and has no tone to
+  keep, so its prompt does not carry the rule. On the social, forum, news and
+  academic sites in the built-in list, the AI engine is also told which of
+  the four kinds of page it is reading. Only that label is sent, never the
+  site's address, and a page inside a frame is described by its own address,
+  not the page around it. Chrome's built-in translator reads no prompt and
+  is unchanged. Cached translations are kept apart per kind of page. A
+  custom prompt left as nothing but spaces or blank lines now counts as no
+  custom prompt on every path; translating one paragraph used to send it as
+  the whole instruction instead of the default one.
+
+### PDF and comic shortcut
+
+- **`Alt+M` translates the PDF or the comic on screen.** On a PDF it starts
+  the PDF translation; on a comic reader it translates the pages on screen;
+  anywhere else it says there is nothing to translate. Change the key at
+  `chrome://extensions/shortcuts`.
+- **A hint that names the shortcut.** A PDF shows a small bar, "Press Alt+M
+  to translate this PDF", with a Translate button. A comic reader (three or
+  more wide pages stacked one right under the next, taller together than the
+  window) shows the same kind of bar once per site, as soon as one of its
+  pages is on screen; a feed or an article with pictures a post apart, or a
+  sidebar column of thumbnails, does not. Nothing is sent until you press the
+  key or the button, and pressing either with no comic page on screen says so
+  and keeps the bar. If the shortcut is unbound, the bar offers a link to set
+  one.
+- **Not signed in? Sign in, then it carries on.** The key and the button open
+  the sign-in first and start the translation as soon as you are back.
+  Closing the sign-in tab cancels quietly. The "sign in to translate
+  documents" notification now has a Sign In button too.
+- **Turned off stays off.** If you switched PDF or comic translation off in
+  settings, the hint no longer appears. The key still works on the page you
+  use it on, and your setting is left as it is. You can switch either one off
+  without signing in; while you are signed out, a switch that is on says it
+  takes effect once you sign in.
+- **Comic translation is on by default,** like PDF translation.
+
+### Float ball over full-screen video
+
+- **The float ball steps aside for "web fullscreen" too.** Players that fill
+  the page without the browser's fullscreen mode (a site's own "web
+  fullscreen" button, or a player filling a fullscreen browser window) used
+  to leave the ball on top of the video. It now hides while a video fills the
+  window and comes back when the player shrinks. A muted, looping background
+  video does not count, and neither does a video the page draws its own
+  content over.
+- **So does the bar in the bottom-right corner.** The PDF and comic hint, the
+  status line you open from the ball's dot, and the "couldn't save" notice
+  all share that bar; in standard or web fullscreen it now hides with the
+  ball and comes back, unchanged, when the video leaves the screen.
+
 ### Selection icon and card actions
 
 - **A translate icon next to your selection.** Select text and a small round
@@ -358,10 +475,30 @@ No new permission.
   trip to Settings. It writes the same rule as the popup and the in-player
   menu, then restores the page.
 - **A translate chip in text boxes.** When what you type is not in the page's
-  language, a small 「译成 English」 chip appears at the box's corner; a click
-  opens the input translator with your text. It never rewrites your input,
-  language detection is local, and nothing is sent until you click. Settings
-  has a switch for it.
+  language, a small "Translate to English" chip appears at the box's corner. A
+  click writes the translation straight into the box: a multi-line box (a text
+  area, or a rich editor such as a comment box) keeps what you wrote and adds
+  the translation on a new line below it, and a single-line box has its text
+  replaced. One Ctrl/Cmd+Z takes it back. The chip reads "Translating..." while
+  it works and goes away once the translation is in. If the request fails, or
+  the translation would not fit the box's length limit, the box is not touched
+  and the chip turns red with "Translation failed, please retry"; clicking it
+  again retries. The chip also turns red when the box, read back after the
+  write, does not hold your text with the translation on its own line below
+  it; the box may already have changed then (an editor can take the text a
+  moment late, or insert it twice), so if the box no longer holds just your
+  text, a retry treats the translation as written and clears the chip instead
+  of adding it again. If you keep typing or move to another box before the
+  answer arrives, nothing is written; the same holds if, just before writing,
+  the box has lost focus, lost the cursor, changed or left the page. While an
+  input method is still composing (a pinyin candidate window is open, say)
+  the chip does not appear, and a click on it does nothing. There is no time
+  limit on the request: the chip stays busy until the answer arrives or you
+  type, press Esc or leave the box. It never submits, never presses Enter and
+  never moves the cursor to another box. Language detection is local and
+  nothing is sent until you click. Password, username, one-time-code and card
+  fields never get the chip. Settings has a switch for it; the float ball's
+  input translator still opens its own window.
 - **On this computer** — a small panel in the settings page counting the pages
   translated this month, how much the cache saved, and how many characters
   actually went to the model. It lives in `chrome.storage.local`

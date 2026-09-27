@@ -27,6 +27,7 @@
       '#ai-translator-caption-overlay',
       '#ai-translator-caption-controls',
       '#ai-translator-caption-btn',
+      '#ai-translator-caption-more',
       '#ai-translator-caption-menu',
       '#ai-translator-ocr-region',
       '#ai-translator-ocr-hover-btn',
@@ -103,6 +104,15 @@
     return message.includes('Extension context invalidated');
   };
 
+  // Fails closed until loadSettings() has asked.
+  ctx.signedIn = false;
+
+  /** 'ready' | 'signed_out' | 'off' for comic or PDF translation — the one way
+   *  content code asks, so "turned off" and "not signed in" stay apart. */
+  ctx.featureState = function(key) {
+    return AccountGate.featureState(ctx.settings, key, ctx.signedIn);
+  };
+
   ctx.loadSettings = async function() {
     try {
       const result = await chrome.storage.sync.get(DefaultSettings.contentDefaults());
@@ -112,12 +122,10 @@
       console.error('Blab Translation: Failed to load settings', error);
       Object.assign(ctx.settings, DefaultSettings.contentDefaults());
     }
-    // After both branches, so the fallback above cannot leave PDF translation
-    // on either. Comic and PDF translation need an account this device may not
-    // have; applied once here so every consumer of ctx.settings — the float
-    // ball menu, the comic overlay — reads a switch that is true only when the
-    // feature can actually run. See shared/account-gate.js.
-    await AccountGate.applyAccountGate(ctx.settings);
+    // ctx.settings keeps the raw switches; whether this device has the account
+    // comic and PDF translation need is tracked beside them, and the two are
+    // only ever combined by ctx.featureState(). See shared/account-gate.js.
+    ctx.signedIn = await AccountGate.hasAccount();
     console.log('Blab Translation: Settings loaded', {
       showFloatBall: ctx.settings.showFloatBall,
       theme: ctx.settings.theme
@@ -169,11 +177,10 @@
   ctx.setupStorageListener = function() {
     chrome.storage.onChanged.addListener((changes, namespace) => {
       // The account token is per device and lives in local storage, and it is
-      // half of whether comic and PDF translation are on. Signing in or out
-      // therefore changes the answer without any sync key moving — re-derive it
-      // from what sync already holds rather than mirror the token here.
+      // half of ctx.featureState(). Signing in or out changes that answer
+      // without any sync key moving.
       if (namespace === 'local' && changes[AccountGate.TOKEN_KEY]) {
-        ctx.loadSettings();
+        ctx.signedIn = !!changes[AccountGate.TOKEN_KEY].newValue;
         return;
       }
       if (namespace !== 'sync') return;
@@ -186,13 +193,6 @@
       Object.keys(changes).forEach((key) => {
         ctx.settings[key] = changes[key].newValue;
       });
-      // A switch synced down from a device that IS signed in must not turn the
-      // feature on here. Not awaited — the listener is synchronous and the only
-      // readers are menus built on a later user gesture.
-      if (AccountGate.ACCOUNT_FEATURE_KEYS.some((key) => key in changes)) {
-        AccountGate.applyAccountGate(ctx.settings);
-      }
-
       if (changes.showFloatBall) {
         console.log('Blab Translation: Storage changed, showFloatBall:', changes.showFloatBall.oldValue, '->', changes.showFloatBall.newValue);
         if (ctx.updateFloatBallVisibility) {
@@ -274,14 +274,14 @@
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
       // 字幕排在调度层后面，因为字幕翻不翻由它说了算：字幕这一面一装起来就去订
       // 阅（subscribeToGate），顺序反了就得等下一次状态变化才上闸 —— 而一个判完
-      // 就定下来不再动的页面（黑名单、语言相同、要追问）永远等不到那一次。
+      // 就定下来不再动的页面（黑名单、名单外的安静 off）永远等不到那一次。
       if (top && ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
       if (top && ctx.setupAutoStatus) ctx.setupAutoStatus();
       // 条子由 setupAutoStatus() 那一层画，所以排在它后面。PDF 文档上没有正文
-      // 可翻，这条是那一页唯一能办事的入口。
-      if (top && ctx.setupPdfPrompt) ctx.setupPdfPrompt();
+      // 可翻，这条是那一页唯一能办事的入口；漫画阅读页上它告诉人快捷键。
+      if (top && ctx.setupMediaHints) ctx.setupMediaHints();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (top && ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
       // After loadSettings, because it checks whether the comic feature is on.

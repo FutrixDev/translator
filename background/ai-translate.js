@@ -6,6 +6,10 @@
 // 内置引擎（Chrome 的 Translator API）不走这里，也走不了：它是
 // [Exposed=Window, SecureContext]，service worker 里根本不存在，那一路在内容脚本
 // 里跑。
+//
+// 五个翻译函数都收一个可选的 addenda（这一页的语域，形状见
+// shared/prompt-addenda.js，处理函数已把过关），原样交给 buildPrompt 的
+// options.addenda；快速分批回落到编号法时也带着它。
 
 import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
@@ -15,6 +19,7 @@ import {
   DEFAULT_BATCH_PROMPT,
   DEFAULT_PROMPT,
   FAST_BATCH_PROMPT,
+  REGISTER_RULE,
   SINGLE_WORD_PROMPT,
   WORD_OUTPUT_RULES,
   buildPrompt,
@@ -86,13 +91,22 @@ function parseWordTranslation(content) {
   return { translation, phonetic };
 }
 
+// Whether the user's own prompt replaces the default template. One answer for
+// all four paths: a prompt of only whitespace is no prompt, or the single path
+// would send a blank system prompt where the batch paths send the default.
+function usesCustomPrompt(settings) {
+  return Boolean(settings.customPrompt && settings.customPrompt.trim());
+}
+
 // Translate single text with AI
-async function translateWithAI(text, targetLang, settings) {
+async function translateWithAI(text, targetLang, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
 
-  // Use custom prompt if provided, otherwise use default
-  const promptTemplate = settings.customPrompt || DEFAULT_PROMPT;
-  const systemPrompt = buildPrompt(promptTemplate, targetLangName);
+  // A custom prompt gets the register rule appended, as the batch paths append
+  // their format rules; the default template already carries it.
+  const systemPrompt = usesCustomPrompt(settings)
+    ? buildPrompt(settings.customPrompt, targetLangName, {}, REGISTER_RULE, { addenda })
+    : buildPrompt(DEFAULT_PROMPT, targetLangName, {}, '', { addenda });
 
   // Auto-detect API type and call appropriate function
   if (isClaudeAPI(settings.apiEndpoint)) {
@@ -120,12 +134,11 @@ async function translateWithAI(text, targetLang, settings) {
 }
 
 // Translate single word with IPA (no math placeholder rule)
-async function translateSingleWordWithAI(text, targetLang, settings) {
+async function translateSingleWordWithAI(text, targetLang, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
-    ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false })
-    : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false });
+  const systemPrompt = usesCustomPrompt(settings)
+    ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda })
+    : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false, addenda });
 
   let content;
   if (isClaudeAPI(settings.apiEndpoint)) {
@@ -156,20 +169,20 @@ async function translateSingleWordWithAI(text, targetLang, settings) {
   return parsed;
 }
 
-async function translateTextWithMode(text, targetLang, settings, forceWord = false) {
+async function translateTextWithMode(text, targetLang, settings, forceWord = false, addenda) {
   countCharsSentToModel(typeof text === 'string' ? text.length : 0);
 
   if (forceWord || isSingleWordText(text)) {
-    const result = await translateSingleWordWithAI(text, targetLang, settings);
+    const result = await translateSingleWordWithAI(text, targetLang, settings, addenda);
     return { ...result, isWord: true };
   }
 
-  const translation = await translateWithAI(text, targetLang, settings);
+  const translation = await translateWithAI(text, targetLang, settings, addenda);
   return { translation, phonetic: '', isWord: false };
 }
 
 // Translate batch of texts with AI (numbered format)
-async function translateBatchWithAI(texts, targetLang, settings) {
+async function translateBatchWithAI(texts, targetLang, settings, addenda) {
   // 快速分批回退到这里时会再走一遍这一句 —— 那本来就是第二次真发出去的请求。
   countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
 
@@ -179,10 +192,9 @@ async function translateBatchWithAI(texts, targetLang, settings) {
   const numberedTexts = texts.map((text, i) => `[${i + 1}] ${text}`).join('\n\n');
 
   // For batch translation, apply custom prompt with enforced output format
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
-    ? buildPrompt(settings.customPrompt, targetLangName, {}, BATCH_OUTPUT_RULES)
-    : buildPrompt(DEFAULT_BATCH_PROMPT, targetLangName);
+  const systemPrompt = usesCustomPrompt(settings)
+    ? buildPrompt(settings.customPrompt, targetLangName, {}, BATCH_OUTPUT_RULES, { addenda })
+    : buildPrompt(DEFAULT_BATCH_PROMPT, targetLangName, {}, '', { addenda });
 
   // Auto-detect API type and call appropriate function
   let content;
@@ -213,7 +225,7 @@ async function translateBatchWithAI(texts, targetLang, settings) {
 }
 
 // Fast batch translation with delimiter
-async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫') {
+async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫', addenda) {
   countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
 
   const targetLangName = languageNames[targetLang] || targetLang;
@@ -221,10 +233,9 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
   // Join texts with delimiter
   const joinedTexts = texts.join(delimiter);
 
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
-    ? buildPrompt(settings.customPrompt, targetLangName, { delimiter }, getFastBatchOutputRules(delimiter))
-    : buildPrompt(FAST_BATCH_PROMPT, targetLangName, { delimiter });
+  const systemPrompt = usesCustomPrompt(settings)
+    ? buildPrompt(settings.customPrompt, targetLangName, { delimiter }, getFastBatchOutputRules(delimiter), { addenda })
+    : buildPrompt(FAST_BATCH_PROMPT, targetLangName, { delimiter }, '', { addenda });
 
   // Auto-detect API type and call appropriate function
   let content;
@@ -262,7 +273,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
       `Blab Translation: fast-batch delimiter split produced ${segments.length} segments ` +
       `for ${texts.length} inputs; falling back to numbered batch to avoid misaligned translations`
     );
-    return translateBatchWithAI(texts, targetLang, settings);
+    return translateBatchWithAI(texts, targetLang, settings, addenda);
   }
 
   return segments;

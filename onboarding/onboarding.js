@@ -17,6 +17,7 @@
     'toggle-translate-page': 'translatePage',
     'toggle-translation-only': 'showTranslationOnly',
     'translate-whole-page': 'floatMenuTranslateWholePage',
+    'translate-media': 'mediaShortcutLabel',
   };
 
   const AI_BUTTONS = {

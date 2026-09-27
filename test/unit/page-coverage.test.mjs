@@ -47,6 +47,7 @@ globalThis.fetch = async (url) => {
 
 const { SHADOW_STYLE_FILES, toShadowCss, handleMessage } =
   await import('../../background/page-coverage.js');
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 const { runCommand } = await import('../../background/commands.js');
@@ -224,6 +225,17 @@ test('Alt+W sends TRANSLATE_WHOLE_PAGE to the top frame only', async () => {
   calls = stubCommandChrome();
   await runCommand('translate-whole-page', undefined);
   assert.deepEqual(calls.sent, [[42, { type: 'TRANSLATE_WHOLE_PAGE' }, { frameId: 0 }]]);
+});
+
+test('Alt+M sends MEDIA_SHORTCUT to the top frame, which decides PDF or comic', async () => {
+  const calls = stubCommandChrome();
+  await runCommand('translate-media', { id: 9 });
+  assert.deepEqual(calls.sent, [[9, { type: 'MEDIA_SHORTCUT' }, { frameId: 0 }]]);
+  const command = manifest.commands['translate-media'];
+  assert.equal(command.suggested_key.default, 'Alt+M');
+  assert.equal(command.description, '__MSG_cmdTranslateMedia__');
+  // Chrome takes at most four suggested keys; a fifth is dropped without a word.
+  assert.ok(Object.keys(manifest.commands).length <= 4);
 });
 
 test('Alt+W with no receiver stays quiet and logs once under its own label', async () => {

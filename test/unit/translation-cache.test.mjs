@@ -134,7 +134,9 @@ const FACTORS = {
   endpoint: 'https://api.openai.com/v1/chat/completions',
   model: 'gpt-4.1-mini',
   prompt: '',
-  version: '1.0.0'
+  version: '1.0.0',
+  // 附加说明的戳（shared/prompt-addenda.js 的 stamp()）：没有语域的页面是空串。
+  addenda: ''
 };
 
 /** fetchMissing 的假件：记下每一次被要到的文本，回 `译:<text>`。 */
@@ -163,11 +165,23 @@ test('键因子少一个都不行：每一个都改变键', async () => {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     model: 'gpt-4.1',
     prompt: '请用口语化的中文',
-    version: '1.0.1'
+    version: '1.0.1',
+    addenda: 'forum'
   })) {
     assert.notEqual(cache.buildKey({ ...base, [name]: changed }), key,
       `改了 ${name} 还命中同一个键 —— 旧译文会被当成新译文供出去`);
   }
+});
+
+test('键的拼法钉死：八个因子、这个顺序（R33 A4 加了第八个 addenda）', async () => {
+  // 因子顺序和个数都是键的一部分：调一下顺序、少拼一个、多拼一个，都等于悄悄
+  // 清空所有人的缓存（或者更糟，让两种请求撞进同一个键）。钉一个具体的键值，
+  // 这三种改动都会让它变。
+  const { cache } = await freshCache();
+  assert.equal(cache.buildKey({ text: 'hello', ...FACTORS }), 'tc:67706396d353e3f5');
+  // 论坛上的同一句话和没有语域的页面上的同一句话，不是同一条译文。
+  assert.notEqual(cache.buildKey({ text: 'hello', ...FACTORS, addenda: 'forum' }),
+    cache.buildKey({ text: 'hello', ...FACTORS, addenda: 'news' }));
 });
 
 test('同一句台词，英语轨和法语轨不是同一条译文', async () => {

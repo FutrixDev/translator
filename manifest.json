@@ -58,6 +58,12 @@
         "default": "Alt+W"
       },
       "description": "__MSG_cmdTranslateWholePage__"
+    },
+    "translate-media": {
+      "suggested_key": {
+        "default": "Alt+M"
+      },
+      "description": "__MSG_cmdTranslateMedia__"
     }
   },
   "content_scripts": [
@@ -102,10 +108,12 @@
         "shared/site-rules-builtin.js",
         "shared/storage-writer.js",
         "shared/site-rules.js",
+        "shared/auto-reason-keys.js",
         "shared/auto-stats.js",
         "shared/sync-collection.js",
         "shared/custom-rules.js",
         "shared/block-identity.js",
+        "shared/prompt-addenda.js",
         "shared/translation-cache.js",
         "shared/spa-navigation.js",
         "shared/session-guard.js",
@@ -122,6 +130,7 @@
         "content/content-translation-engine.js",
         "content/content-language-pack.js",
         "content/content-translation-cache.js",
+        "content/content-video-stage.js",
         "content/content-caption-providers.js",
         "content/content-caption-controls.js",
         "content/captions/state.js",
@@ -133,6 +142,7 @@
         "content/content-float-ball.js",
         "content/content-popup.js",
         "content/content-input-dialog.js",
+        "content/content-input-writeback.js",
         "content/content-input-chip.js",
         "content/page/batch.js",
         "content/page/custom-rule.js",
@@ -149,7 +159,7 @@
         "content/content-auto-discover.js",
         "content/content-auto-translate.js",
         "content/content-auto-status.js",
-        "content/content-pdf-prompt.js",
+        "content/content-media-hints.js",
         "content/hover/blocks.js",
         "content/hover/inline.js",
         "content/hover/latex.js",

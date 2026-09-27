@@ -1,49 +1,84 @@
-// 输入框上那颗「译成 X」芯片（PRD FR-8）。
+// 输入框上那颗「译成 X」芯片（PRD FR-8，写回见 D-352）。
 //
-// 这颗芯片贴在用户正在写字的框旁边，所以它最要紧的三条性质都是「它**不**做什么」：
-// 不改写输入、不在点击前发请求、判不准就不出声。三条都能在源码这一层守住，而
-// 「点下去之后真的能译」那一半是旅程，归 test/e2e/input-chip.spec.js。
+// 点下去，译文直接写回那个框：多行的框在原文后换一行接上，单行的框整段换掉，
+// 一步撤回。这里守的是源码这一层能守住的性质 —— 写只有一条路、点击才译、判不准
+// 就不出声 —— 外加写回模块在 Node 里对着一个假 DOM 跑的行为。「真的写进了
+// Draft/Lexical 那类编辑器的模型」是旅程，归 test/e2e/input-chip.spec.js。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { contentBundle, contentCss, engineSource, messageCatalog } from './helpers/sources.mjs';
+import { contentBundle, contentCss, engineSource, inputChipSource, messageCatalog, repoSource } from './helpers/sources.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const read = repoSource;
 const strip = (source) => source
   .replace(/^[ \t]*\/\/.*$/gm, '')
   .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '');
 
-const CHIP = strip(read('content/content-input-chip.js'));
+const CHIP = strip(inputChipSource());
+const CHIP_ONLY = strip(read('content/content-input-chip.js'));
+const WRITEBACK = strip(read('content/content-input-writeback.js'));
 const ENGINE = strip(engineSource());
 
-test('芯片装进了 manifest，也接进了初始化链', () => {
-  assert.ok(contentBundle().includes('content/content-input-chip.js'),
-    'content/content-input-chip.js 没装进内容脚本');
+test('芯片和写回模块装进了 manifest，写回排在芯片前面，也接进了初始化链', () => {
+  const bundle = contentBundle();
+  const chipAt = bundle.indexOf('content/content-input-chip.js');
+  const writebackAt = bundle.indexOf('content/content-input-writeback.js');
+  assert.ok(chipAt >= 0, 'content/content-input-chip.js 没装进内容脚本');
+  assert.ok(writebackAt >= 0, 'content/content-input-writeback.js 没装进内容脚本');
+  assert.ok(writebackAt < chipAt, '写回模块排在了芯片后面');
   assert.match(strip(read('content/content-bootstrap.js')),
     /ctx\.setupInputTranslateChip\(\)/,
     'ctx.init 里没人叫醒这颗芯片，它永远不会出现');
 });
 
-// FR-8 的那一句：**永不自动改写用户输入。**
-//
-// 这是整颗芯片唯一不能出错的地方 —— 用户正在写的东西被替换掉，是这个扩展能对
-// 一个人做的最糟的事。所以这里不问「有没有 bug」，问的是「有没有那一类语句」。
-test('芯片不往用户的输入框里写任何东西', () => {
-  const writes = CHIP.match(/\b(field|el|chipField)\s*\.\s*(value|innerText|textContent|innerHTML)\s*=/g);
-  assert.equal(writes, null, `芯片写了输入框：${writes}`);
-  assert.ok(!/execCommand|insertText/.test(CHIP), '芯片在往编辑区里插内容');
+// 写只有一条路：写回模块。芯片自己一个字都不往框里写，写回模块也只递 paste 给
+// 编辑器、或者用浏览器的编辑命令，从不直接改 DOM —— 直接改的字会被 Draft、
+// Lexical 下一次重画抹掉，发帖时模型里也没有。合成 beforeinput 和原生 value setter
+// 那两条旧路（c5d37ea）在 D-357 删掉了，不许回来。
+test('写只有一条路：芯片交给写回模块，写回模块不直接改 DOM', () => {
+  // 芯片给自己那颗节点写字（chip.textContent）不算。
+  const chipWrites = CHIP_ONLY.match(/(?<!\bchip)\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]/g);
+  assert.equal(chipWrites, null, `芯片自己写了输入框：${chipWrites}`);
+  assert.ok(!/execCommand|insertText|setRangeText/.test(CHIP_ONLY), '芯片绕过写回模块往编辑区里插内容');
+  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.write\(field, response\.translation\)/,
+    '芯片没把译文交给写回模块');
+
+  const direct = WRITEBACK.match(/\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]|insertAdjacent|appendChild|\.append\(|replaceChildren|setRangeText/g);
+  assert.equal(direct, null, `写回模块直接改了 DOM：${direct}`);
+  assert.match(WRITEBACK, /document\.execCommand\('insertText', false, data\)/);
+  assert.match(WRITEBACK, /new ClipboardEvent\('paste', \{/);
+  assert.ok(!/new InputEvent|getOwnPropertyDescriptor/.test(WRITEBACK),
+    '写回模块又在合成 beforeinput / input，或者绕过编辑命令用 value setter');
 });
 
-test('点击前不发请求：语言判断走本地的 detectLanguage，翻译只由点击触发', () => {
-  // 芯片自己不调翻译，它只是把文字交给对话框 —— 对话框是用户看得见、还能改目标
-  // 语言的那一层。少了这一跳，点一下就等于直接花钱。
-  assert.ok(!/requestTranslation|translateText/.test(CHIP),
-    '芯片自己发起了翻译，那就不是「点击才译」而是「点击就扣钱」');
-  assert.match(CHIP, /ctx\.showInputTranslateDialog\(\s*\{\s*text,\s*targetLang\s*\}\s*\)/,
-    '芯片没有把文字和目标语言一起交给对话框');
+test('不替用户提交：不发 Enter、不发 submit、不挪焦点', () => {
+  assert.ok(!/KeyboardEvent|requestSubmit|\.submit\(|\.focus\(|\.blur\(/.test(CHIP),
+    '芯片或写回模块里出现了按键、提交或挪焦点');
+});
+
+test('点击才译：翻译请求只在点击处理里发，而且声明是独立文字', () => {
+  const calls = CHIP.match(/ctx\.requestTranslation\(/g) || [];
+  assert.equal(calls.length, 1, `芯片发翻译请求的地方有 ${calls.length} 处`);
+  const click = CHIP_ONLY.slice(CHIP_ONLY.indexOf('async function onChipClick('));
+  const body = click.slice(0, click.indexOf('\n  function onFocusIn('));
+  assert.match(body, /ctx\.requestTranslation\(\{[\s\S]*type: 'TRANSLATE'[\s\S]*mode: 'text'[\s\S]*standaloneText: true[\s\S]*\}\)/,
+    '请求不在点击处理里，或者没声明 standaloneText');
+  assert.ok(!/showInputTranslateDialog/.test(CHIP), '芯片还在开对话框');
+});
+
+// 译文回来时的核对（同一请求、字没变、焦点还在、不在组合里）、shadow root 里的框、
+// 只发 beforeinput 的模型编辑器，都由跑着的测试问：input-chip-behaviour.test.mjs 和
+// test/e2e/input-chip.spec.js（Lexical / open shadow root / 译文回来之前字变了）。
+
+test('芯片的三种状态用的是现成的文案', () => {
+  assert.match(CHIP_ONLY, /t\(state === 'busy' \? 'translating' : 'translationFailed'\)/);
+  const css = contentCss();
+  assert.match(css, /#ai-translator-input-chip\[data-state="busy"\]/);
+  assert.match(css, /#ai-translator-input-chip\[data-state="error"\]/);
+  const catalog = messageCatalog();
+  for (const tag of Object.keys(catalog)) {
+    assert.ok(catalog[tag].translating, `${tag} 没有 translating`);
+    assert.ok(catalog[tag].translationFailed, `${tag} 没有 translationFailed`);
+  }
 });
 
 // 语言判断的两档门槛（非拉丁两字、拉丁八字且要 isReliable）只能有一份。两处各写
@@ -123,22 +158,11 @@ test('开关关掉时，正显示的那一颗立刻被收走', () => {
     /changes\.showInputTranslateChip[\s\S]{0,200}ctx\.hideInputTranslateChip\(\)/);
 });
 
-// 对话框原本不接参数，只有悬浮球菜单一个调用方。芯片给它加了第二个入口，而那
-// 个入口带着一次性的目标语言 —— 它不能变成「以后都往这边译」。
-test('芯片给的目标语言只算这一次，不写进对话框的记忆', () => {
+// 芯片不再开对话框，对话框又回到只有悬浮球菜单一个调用方、不接参数。
+test('对话框只剩悬浮球一个入口，不再接芯片带来的文字', () => {
   const dialog = strip(read('content/content-input-dialog.js'));
-  assert.match(dialog, /function showInputTranslateDialog\(options = \{\}\)/);
-  assert.match(dialog, /const initialLang = options\.targetLang/);
-  const remembers = dialog.match(/rememberTargetLang\(/g) || [];
-  // 定义一次，设置变化时清一次，用户在下拉里亲手挑时记一次。没有第四次。
-  assert.equal(remembers.length, 3, `rememberTargetLang 被调用了 ${remembers.length} 次`);
-  assert.ok(!/rememberTargetLang\(initialLang\)/.test(dialog),
-    '芯片带来的目标语言被记成了默认值');
-});
-
-test('带着文字进来的那一次，不用再按一次「翻译」', () => {
-  const dialog = strip(read('content/content-input-dialog.js'));
-  assert.match(dialog, /if \(initialText\) translateInputText\(initialLang\);/);
+  assert.match(dialog, /function showInputTranslateDialog\(\) \{/);
+  assert.ok(!/initialText|options\.targetLang/.test(dialog), '对话框里还留着芯片那条入口');
 });
 
 // 繁体页面上的「译成中文」不能译成简体 —— 那正好是用户要的转换反过来做一遍。

@@ -34,7 +34,7 @@ export function isNoReceiver(error) {
 // 顶层不在（还没起来、正在卸载、页面没有内容脚本）时回话是 null，由发信的一方补：
 //   - FRAME_HELLO：子 frame 不登记，等顶层起来时 setup 的那一次广播再来 HELLO（top.js）；
 //   - FRAME_REPORT / FRAME_BYE：顶层文档已经不在了，没有谁要这份汇报；
-//   - FRAME_ENGINE_RELAY：子 frame 报「翻译失败」（child.js 的 requestTranslationViaTop）。
+//   - FRAME_ENGINE_RELAY：子 frame 报「翻译失败」（child.js 的 sendTranslationViaTop）。
 // 别的错记一条日志，回话同样是 null。
 function sendToTop(tabId, message) {
   return chrome.tabs.sendMessage(tabId, message, { frameId: 0 }).catch((error) => {

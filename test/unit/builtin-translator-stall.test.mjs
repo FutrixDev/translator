@@ -61,6 +61,13 @@ globalThis.window = {
 };
 globalThis.window.top = globalThis.window;
 globalThis.document = { body: { innerText: ENGLISH.repeat(20) } };
+// The AI exit asks SiteRules.register() about the page for the prompt addenda
+// (R33 A4); an address on no built-in rule, so nothing is attached.
+Object.defineProperty(globalThis, 'location', {
+  value: new URL('https://example.test/'),
+  configurable: true,
+  writable: true,
+});
 globalThis.chrome = {
   i18n: {
     detectLanguage: async () => ({ isReliable: true, languages: [{ language: 'en', percentage: 99 }] }),
@@ -90,6 +97,12 @@ console.warn = () => {};
 await import('../../shared/api-compat.js');
 await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
+// site-rules.js takes the built-in table and StorageWriter at load; the manifest
+// loads all three, and prompt-addenda.js, ahead of the engine.
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../content/engine/languages.js');
 await import('../../content/engine/watchdog.js');
 await import('../../content/content-translation-engine.js');

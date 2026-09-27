@@ -7,7 +7,7 @@
 //      - 自动：content-auto-translate.js 的 resolve() 改问 ctx.frameDecision；
 //      - 手动：顶层每点一次「翻译整页」，这里静默跑一轮（不画进度条）；
 //      - 显隐：顶层藏译文，这里一起藏。
-//   2. 引擎请求交给顶层执行（ctx.requestTranslation 在这里被覆写）；
+//   2. 引擎请求交给顶层执行（ctx.sendTranslation 在这里被覆写）；
 //   3. 每轮结束汇报一次，顶层据此回答「这一页翻过没有」、替手动轮报错。
 //
 // 所有来往都经服务工作者的中继（background/frame-relay.js），消息名都以 FRAME_
@@ -60,8 +60,10 @@
 
   /**
    * 子 frame 的每一次翻译请求都交给顶层执行：引擎选择、回落、每日 AI 额度闸只有
-   * 顶层那一份。缓存层（ctx.requestTranslationCached）在调用时才读
-   * ctx.requestTranslation，所以它照常留在这里先查，只有没命中的走中继。
+   * 顶层那一份。覆写的是「送出」那一步（ctx.sendTranslation），不是入口：入口
+   * ctx.requestTranslation 仍在这个 frame 里按**这个文档**的地址盖语域
+   * （ctx.withPromptAddenda），顶层原样送出，不拿自己的地址重算。缓存层
+   * （ctx.requestTranslationCached）也在这里盖、在这里查，只有没命中的走中继。
    *
    * 凡是要读「本文档」才答得出的量，都在这里算好写进消息，不能让顶层拿自己的
    * 文档去答：
@@ -71,7 +73,7 @@
    *   - pageSourceLang：这个 frame 的页面语言，给短文本自测不可靠时兜底
    *     （content/engine/languages.js 的 resolveSourceLang）。
    */
-  async function requestTranslationViaTop(message) {
+  async function sendTranslationViaTop(message) {
     const builtin = ctx.builtinTranslator;
     const pageSourceLang = (builtin && (await builtin.pageSourceLang())) || '';
     const reply = await frames.sendToRelay({
@@ -223,7 +225,7 @@
   // 判定就得问 frameDecision（没有指令 → 不翻）；页面上第一个翻译请求也可能先于
   // setup 发出（划词）。
   ctx.frameDecision = frameDecision;
-  ctx.requestTranslation = requestTranslationViaTop;
+  ctx.sendTranslation = sendTranslationViaTop;
 
   Object.assign(frames, {
     setup: setupChildFrame,

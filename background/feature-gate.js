@@ -1,27 +1,33 @@
 // Blab Translation background — 功能开关的判定。
 //
 // 两个服务端功能（漫画、PDF）由「设置里的开关」和「这台设备登没登录」共同决定，
-// 菜单要不要画读的是合成之后那一份，真要动手花钱之前读的是开关那一半（登录那一
-// 半在 apiFetch 里答 unauthorized，每个界面都会把它变成一次登录邀请）。
+// 答案是 AccountGate.featureState() 的三态之一：off（用户亲手关了）、signed_out
+// （开着但没登录——该邀请登录，而不是装作没有这个功能）、ready。
 //
 // 单独成一个模块，是为了让菜单和 PDF 两边都能用它而不互相 import —— 它本来也不
 // 是菜单的代码。
 
 import '../shared/account-gate.js';
 import * as comicClient from './comic-client.js';
-import { defaultSettings } from './settings.js';
 
-/**
- * Settings with the account gate applied — the only shape the rest of this
- * worker should judge the two server-backed features from. See
- * shared/account-gate.js.
- */
-async function getGatedSettings() {
-  return AccountGate.applyAccountGate(await chrome.storage.sync.get(defaultSettings));
+/** The state of one account-backed feature on this device, right now. */
+function featureState(key) {
+  return AccountGate.readFeatureState(key);
 }
 
 /**
- * Refuse a job for a feature whose switch is off.
+ * Whether a job for `key` is refused: only when the user turned the feature
+ * off, and never when this request carries the user's consent for this page.
+ * The one statement of that rule; assertFeatureEnabled and the PDF URL entry
+ * (pdf-jobs.js startPdfUrlTranslation) both ask it.
+ */
+async function featureRefused(key, { consent = false } = {}) {
+  if (consent) return false;
+  return await featureState(key) === AccountGate.FEATURE_STATES.OFF;
+}
+
+/**
+ * Refuse a job for a feature the user turned off.
  *
  * Hiding entry points only governs what gets rendered next. A surface that was
  * already open when the switch went off keeps its buttons — an upload page, the
@@ -30,17 +36,27 @@ async function getGatedSettings() {
  * answer can be relied on; without it a switched-off feature can still upload a
  * document and spend the month's allowance.
  *
- * Reads the raw switch, NOT getGatedSettings(): the account half of the gate is
- * already enforced one layer down, where apiFetch answers a create with no
- * token as `unauthorized` — and every surface turns that into a sign-in offer.
- * Answering `feature_disabled` instead would name the wrong problem and leave
- * the user nothing to do about it.
+ * `consent` is the one way past it: the user pressed the media shortcut or the
+ * page hint's button on this page, which is an explicit request for this page
+ * alone (D-353) — the switch itself is left as it is. It arrives as a field on a
+ * message from our own content script (content/content-media-hints.js), which
+ * sends it only after a trusted click on the hint (the bar ignores events whose
+ * isTrusted is false) or after Alt+M, which reaches the page through
+ * chrome.commands and never through a page event. A page script cannot put it
+ * there itself: it cannot reach the content script's isolated world, and the
+ * manifest declares no externally_connectable, so it cannot message the
+ * worker at all. (The worker also sets it itself when the user approves a price
+ * on the PDF charge notification: pdf-jobs.js, a chrome.notifications click.)
+ *
+ * Only `off` refuses. `signed_out` is enforced one layer down, where apiFetch
+ * answers a create with no token as `unauthorized` — and every surface turns
+ * that into a sign-in offer. Answering `feature_disabled` instead would name the
+ * wrong problem and leave the user nothing to do about it.
  */
-async function assertFeatureEnabled(key) {
-  const settings = await chrome.storage.sync.get(defaultSettings);
-  if (!settings[key]) {
+async function assertFeatureEnabled(key, { consent = false } = {}) {
+  if (await featureRefused(key, { consent })) {
     throw new comicClient.ComicApiError('feature_disabled', `${key} is turned off`);
   }
 }
 
-export { getGatedSettings, assertFeatureEnabled };
+export { featureState, featureRefused, assertFeatureEnabled };

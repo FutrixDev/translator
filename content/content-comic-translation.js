@@ -284,19 +284,26 @@
   }
 
   /**
-   * Float-ball and popup entry: nothing was clicked, so the page is found by
-   * looking at what is on screen.
+   * Float-ball, popup and media-shortcut entry: nothing was clicked, so the page
+   * is found by looking at what is on screen. `consent` comes only from the
+   * media shortcut or hint (content-media-hints.js) — see assertFeatureEnabled.
+   *
+   * Returns whether anything was started: false when no page is on screen (the
+   * reader has already been told), so the hint keeps its bar. Not a promise —
+   * the jobs report through their own cards, and nobody waits on them here.
    */
-  async function startComicPageTranslation({ pageUrl, targetLang, mode } = {}) {
+  function startComicPageTranslation({ pageUrl, targetLang, mode, consent = false } = {}) {
     const images = comic.pickComicImages();
     if (!images.length) {
       comic.showDetachedError(t('comicNoPageFound'));
-      return;
+      return false;
     }
     const lang = targetLang || comicTargetLang();
     // In parallel: a spread is two independent jobs and running them one after
     // the other would double the wait for no reason.
-    await Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode })));
+    Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode, consent })))
+      .catch(error => console.warn('Blab Translation: comic page translation failed', error));
+    return true;
   }
 
   function comicTargetLang() {
@@ -305,7 +312,7 @@
     return ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
   }
 
-  async function translateImage(img, { pageUrl, targetLang, mode }) {
+  async function translateImage(img, { pageUrl, targetLang, mode, consent = false }) {
     mode = comic.normalizeMode(mode);
     // Keyed by the page, so a recycled slot answers null here rather than
     // handing back whatever the reader had in it two pages ago.
@@ -326,6 +333,11 @@
       return;
     }
     const entry = existing || comic.newEntry(img);
+    // Kept on the entry, not passed down: every create for this page reads it
+    // there (createJob), including the re-sends inside one run — after a
+    // sign-in, a charge confirmation, a re-upload — and a later trigger on the
+    // same page that arrives without consent (the float ball) cannot take it back.
+    if (consent) entry.consent = true;
     // The same page can be back in a different slot than the one it was
     // translated in; the entry follows the page, so it has to be re-pointed.
     if (entry.img !== img || entry.detached) comic.bindEntry(entry, img);
@@ -657,6 +669,7 @@
   function createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }) {
     return sendMessage({
       type: 'COMIC_JOB_CREATE',
+      consent: entry.consent === true,
       job: {
         operationId: entry.operationId,
         // Only ever true, and only after the reader said so — see submitJob.

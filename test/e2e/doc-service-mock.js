@@ -120,6 +120,8 @@ async function startDocService(options = {}) {
     uploadPuts: [],
     createBodies: [],
     confirms: [],
+    // Sign-ins through /ext/connect (the popup's, the page hint's).
+    connects: 0,
     polls: 0,
     // jobId → { facts, views, at }
     jobs: new Map(),
@@ -203,6 +205,19 @@ async function startDocService(options = {}) {
       // A PDF result is a real PDF, so Chrome's viewer takes it when a tab opens it.
       const bytes = result[3] === 'pdf' ? TINY_PDF : resultBytes(result[1], result[2]);
       return send(200, bytes, type);
+    }
+
+    // The sign-in tab: the real page bounces to the extension's redirect URI
+    // with the token in the fragment, and comic-client.js settles as soon as
+    // the tab starts navigating there (chromiumapp.org itself never loads).
+    if (url.pathname === '/ext/connect') {
+      state.connects += 1;
+      const redirect = url.searchParams.get('redirect_uri');
+      res.writeHead(302, {
+        location: `${redirect}#token=granted-token&expires_at=${Date.now() + 3600_000}`,
+        'cache-control': 'no-store',
+      });
+      return res.end();
     }
 
     if (!url.pathname.startsWith('/api/')) return send(404, { error: 'not_found' });

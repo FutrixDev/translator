@@ -62,14 +62,12 @@ function setupPdfSection() {
     const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
     renderPdfJobs(records);
   });
-  refreshPdfSection();
+  refreshPdfSection().catch((error) => console.error('Failed to read PDF settings:', error));
 }
 
 async function refreshPdfSection() {
-  const { enablePdfTranslation } = await AccountGate.applyAccountGate(
-    await chrome.storage.sync.get({ enablePdfTranslation: true })
-  );
-  if (!enablePdfTranslation) {
+  const pdfState = await AccountGate.readFeatureState('enablePdfTranslation');
+  if (pdfState !== AccountGate.FEATURE_STATES.READY) {
     pdfEls.translateCurrent.hidden = true;
     pdfEls.translateLocal.hidden = true;
     pdfEls.jobs.hidden = true;

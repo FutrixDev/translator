@@ -4,10 +4,9 @@
 // 三件事，缺一不可：
 //
 //   **判**  这一页该不该自己动手 —— 全交给 shared/site-rules.js 的 decide()。
-//           这里只负责把事实（域名、路径、页面语言、用户规则）凑齐了递进去。
-//           分两次问：第一次不带语言，能定的就定了（黑名单、用户设的总是/永不、
-//           用户已经表过态）；只有第一次答「要问」时，语言才成为一个问题 ——
-//           那时候才去探一次页面语言，再问第二次。**大多数页面探都不用探。**
+//           这里只负责把事实（域名、路径、用户规则、用户是否已经表过态）凑齐了
+//           递进去，一问就是终局：auto 或 off。不量页面语言 —— 谁都没替它说过
+//           话的站点不翻也不问（D-351），语言不再改变任何结论。
 //
 //   **译**  攒一批块，调 ctx.runTranslationPass。它是手动整页翻译用的同一个函数
 //           （PR-1 把进度条和「整页翻过了」那类状态搬出去之后，它就只剩翻译本身
@@ -17,7 +16,7 @@
 //           一个章（shared/session-guard.js），写回前验一次。**不取消请求** ——
 //           钱已经花了，取消也拿不回来；能做干净的只有「不写上去」。
 //
-// 它不画任何东西。询问条、状态点、悬浮球的样子都是 content/content-auto-status.js
+// 它不画任何东西。状态条、状态点、悬浮球的样子都是 content/content-auto-status.js
 // 的事，这一层只把 state() 摆在那里给它们读，再用 onStateChange() 在变了的时候
 // 喊一声 —— 呈现层不轮询，见下面 setStatus() 的注释。
 (function () {
@@ -30,18 +29,8 @@
   const START_DEBOUNCE_MS = 250;
   // 手动整页翻译正在跑时的重试间隔。
   const MANUAL_RETRY_MS = 500;
-  // 探页面语言的取样：够这么多字就探，不再等。
-  const SAMPLE_MIN_CHARS = 200;
-  // 取样上限。getLanguageDetectionText 清洗完只取前 400 字，这里留足余量即可。
-  const SAMPLE_MAX_CHARS = 1000;
-  // 正文来得零零碎碎时，最多等这么久就拿手上的去探。等不到更多文字的页面
-  // （一句话的错误页、还在转圈的应用）不该把整条链路卡在这里。
-  const SAMPLE_WAIT_MS = 1200;
-
   const STATUS = Object.freeze({
     OFF: 'off',         // 判过了，这一页不自动翻
-    ASK: 'ask',         // 判过了，该问用户 —— 问的界面是 PR-7
-    PENDING: 'pending', // 在等正文，好探出页面语言
     IDLE: 'idle',       // 开着，没有待译的块
     RUNNING: 'running', // 一轮正在跑
     PAUSED: 'paused',   // 用户在这一页喊停了
@@ -53,8 +42,8 @@
   // 有意不放进 shared/site-rules.js 的 REASONS：decide() 回答的是「这个站点、
   // 这门语言，该不该自动翻」，它永远不会返回这两个。混进去只会让那张表变成一句
   // 假话 —— 那里的每一个 key 都对应阶梯上的一级，这两个对应的是阶梯之外的一道
-  // 闸。呈现层照样认得它们：content/content-auto-status.js 的 REASON_KEYS 是
-  // 「理由 → 人话」的那张表，它比 decide() 的阶梯宽一点。
+  // 闸。呈现层照样认得它们：shared/auto-reason-keys.js 是「理由 → 人话」的
+  // 那张表，它比 decide() 的阶梯宽一点。
   const COST_REASONS = Object.freeze({
     // 自动模式要用的引擎这一刻给不出译文，而用户没开回退：选的是「仅本地」，
     // 而这一页（http://、Chrome 版本太低）没有内置引擎。默认状态，所以不弹提示
@@ -105,18 +94,16 @@
     let lastError = null;
     // 用户在这一页已经表过态（点过「翻译整页」）。换路由就忘掉。
     let explicit = false;
+    // 这一代是替哪个地址判的。start() 一进来就记，superseded() 发请求前拿它对。
+    let decidedHref = '';
     // 「这一页先别翻了」—— popup 上按的暂停，或者把译文藏起来（两条都走
     // pauseCurrentPage）。
     //
     // 必须记成一道闩，不能只把状态改成 PAUSED：状态会被下一次 start() 覆盖，而
-    // start() 是别人替他叫的 —— 另一个标签页在追问条上点了「总是」，siteRules
+    // start() 是别人替他叫的 —— 另一个标签页在 popup 上点了「总是」，siteRules
     // 一落地，这一页的 onSettingsChanged 就重开一轮，他按下的暂停当场失效，页面
     // 自己又翻起来了。闩只有他自己解得开（继续 / 翻译整页），或者换一个文档。
     let pausedByUser = false;
-    let pageLang = null;
-    let langResolved = false;
-    let sampleText = '';
-    let sampleTimer = null;
     let startTimer = null;
     let running = false;
     // 一轮整体失败就不再自动重试。runTranslationPass 返回错误本身已经意味着它
@@ -148,7 +135,6 @@
       return {
         status,
         reason,
-        pageLang,
         // 「这个站点开着自动翻」是一句和 status 不同的话，见 siteAuto()。
         siteAuto: siteAuto(),
         // 「这个站点是被明令拒绝的」—— 和 siteAuto 不是一对反义词，见 siteRefused()。
@@ -192,13 +178,11 @@
 
     // ------------------------------------------------------------------ 判
 
-    function resolve(lang, options) {
-      if (ctx.frameRole === 'child') return ctx.frameDecision(lang, options);
+    function resolve(options) {
+      if (ctx.frameRole === 'child') return ctx.frameDecision(options);
       return globalThis.SiteRules.decide({
         host: location.hostname,
         path: location.pathname,
-        pageLang: lang,
-        targetLang: ctx.getEffectiveTargetLang(),
         userRules: ctx.settings.siteRules,
         settings: ctx.settings,
         // 默认连同用户在这一页上表过的态一起问 —— 那正是「这一页此刻该不该翻」。
@@ -214,26 +198,24 @@
      * popup 上「自动翻译这个站点」那一行画的是这句话。用 status 画的话（idle /
      * running 就算开），用户在一个没设过规则的站点上点一次「翻译这一页」（没勾
      * 「总是」）就会看见那一行翻成「开」—— 可规则表里一条都没写，下次再来还是
-     * 照样问他；而他顺手去点那个看起来已经开着的开关，写进去的是一条**永久的
+     * 照样不翻；而他顺手去点那个看起来已经开着的开关，写进去的是一条**永久的
      * never**，从此这个站点再也不翻。他想开，结果关死了。
      *
      * 必须刨掉 explicit 才问得对，而不是换一组 reason 去认：decide() 的阶梯上
      * explicit 那一级排在所有站点规则之前，一旦表过态，USER_ALWAYS 和
      * BUILTIN_ALWAYS 都被它挡在后面 —— 只认那两个 reason 的话，在 x.com 上点一
      * 次「翻译这一页」，这一行反倒会从「开」翻成「关」。
-     *
-     * 语言用此刻量到的那一门（量不出就是 null）：这一行问的是站点，而能答「auto」
-     * 的三级全在语言之前，语言到底是什么对它没有影响。
      */
     function siteAuto() {
-      return resolve(pageLang, { explicit: false }).verdict === 'auto';
+      return resolve({ explicit: false }).verdict === 'auto';
     }
 
     // 「这个站点不许我们自己动手」——哪几种情形算，由 SiteRules 自己说（它的
     // REFUSALS），这里只是把答案转述出去。整页之外的自动化拿它当闸门，而不是拿
-    // siteAuto：两者中间隔着一大片 ask，理由写在 REFUSALS 那段注释里。
+    // siteAuto：两者中间隔着一大片「没人说过话」的站点（DEFAULT_OFF），理由写在
+    // REFUSALS 那段注释里。
     function siteRefused() {
-      return resolve(pageLang, { explicit: false }).refused === true;
+      return resolve({ explicit: false }).refused === true;
     }
 
     /**
@@ -250,9 +232,9 @@
      * ai-translator-hidden，那个开关就此成了摆设。
      */
     function start(why) {
+      decidedHref = location.href;
       bumpSession(why || 'start');
       stopDiscovery();
-      clearSample();
       if (ctx.state.translationsVisible === false || pausedByUser) {
         // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
         // 还得跟上：用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮
@@ -261,36 +243,21 @@
         //
         // 判出 off 就如实说 off（这一页往后也不会自己翻了）；还该翻的照旧停着 ——
         // 停着的那一页就是暂停，这两条闩都不动。
-        const held = resolve(pageLang);
+        const held = resolve();
         reason = held.reason;
         setStatus(held.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
       broken = false;
       lastError = null;
-      // 语言要重新量，但**不清**：这还是同一个文档，上一次量到的就是它的语言。
-      // 清掉它的是「换了一页」那一下（见 onRouteChange）—— 谁拥有这个值，谁负责
-      // 让它过期，而 start() 说的是「重新判」，不是「换了一页」。
-      langResolved = false;
 
-      // 第一问：不带语言。decide() 的阶梯上，语言之前的每一条都在这里定下来，
-      // 而语言之后的条目在 pageLang 为空时只会落到「要问」—— 所以这一问要么给
-      // 出终局答案，要么明确告诉我们「语言说了算」。
-      const first = resolve(null);
-      reason = first.reason;
-
-      if (first.verdict === 'off') {
+      const verdict = resolve();
+      reason = verdict.reason;
+      if (verdict.verdict !== 'auto') {
         setStatus(STATUS.OFF);
         return;
       }
-      if (first.verdict === 'auto') {
-        langResolved = true;
-        setStatus(STATUS.IDLE);
-        startDiscovery();
-        return;
-      }
-
-      setStatus(STATUS.PENDING);
+      setStatus(STATUS.IDLE);
       startDiscovery();
     }
 
@@ -298,65 +265,6 @@
     // （content/page/custom-rule.js）读的也是这一个判断。
     function isOn() {
       return status === STATUS.IDLE || status === STATUS.RUNNING;
-    }
-
-    function clearSample() {
-      sampleText = '';
-      if (sampleTimer !== null) {
-        clearTimeout(sampleTimer);
-        sampleTimer = null;
-      }
-    }
-
-    // 页面语言不另外扫一遍 DOM：发现层送来的头几块本来就是正文，而且是按阅读
-    // 顺序来的。取样和翻译共用同一次收集。
-    function sample(blocks) {
-      for (const block of blocks) {
-        if (sampleText.length >= SAMPLE_MAX_CHARS) break;
-        sampleText += (sampleText ? '\n' : '') + block.text;
-      }
-      if (sampleText.length >= SAMPLE_MIN_CHARS) {
-        detectAndResolve();
-        return;
-      }
-      if (sampleTimer === null) sampleTimer = setTimeout(detectAndResolve, SAMPLE_WAIT_MS);
-    }
-
-    async function detectAndResolve() {
-      if (status !== STATUS.PENDING || langResolved) return;
-      langResolved = true;
-      const text = sampleText;
-      clearSample();
-
-      // 探语言也是一次 await。期间换了路由的话，start() 把新的一页也放回了
-      // PENDING —— 只看状态的话，上一页的语言会被拿来判这一页。
-      const session = guard.version();
-      let lang = null;
-      try {
-        // 和「这一段已经是目标语言了」用的是同一个判定和同一个阈值
-        // （content/page/batch.js 的 LANGUAGE_CONFIDENCE_MIN）。
-        lang = await ctx.detectReliableLanguage(text);
-      } catch (error) {
-        console.warn('Blab Translation: auto language detection failed', error);
-      }
-      // 期间被暂停、换了路由或改了设置。
-      if (guard.version() !== session || status !== STATUS.PENDING) return;
-
-      pageLang = lang;
-      const final = resolve(lang);
-      reason = final.reason;
-
-      if (final.verdict === 'auto') {
-        // 第二问答不出 auto —— 所有「要翻」的理由都在第一问里定了。留着这一支
-        // 是因为「该不该翻」只有 decide() 一个权威，这里不该替它推断。
-        setStatus(STATUS.IDLE);
-        if (discovery) discovery.rescan();
-        return;
-      }
-      // off 就是不翻；ask 要问用户，而问的界面还不存在（PR-7）。两者都不再需要
-      // 发现层 —— 一个没人看的观察器在每个页面上白跑，是实打实的耗电。
-      setStatus(final.verdict === 'ask' ? STATUS.ASK : STATUS.OFF);
-      stopDiscovery();
     }
 
     // ------------------------------------------------------------------ 发现
@@ -378,11 +286,6 @@
     }
 
     function onCandidates(blocks) {
-      if (status === STATUS.PENDING) {
-        // 语言还没判出来之前不排队：判出来多半是「这一页不翻」，排了也是白排。
-        sample(blocks);
-        return;
-      }
       if (!isOn()) return;
 
       let added = false;
@@ -558,13 +461,13 @@
         const fresh = await ctx.filterBlocksByLanguage(blocks);
         // 探语言本身就是一串 await。期间换了路由或者关掉了自动翻译，这一轮的结果
         // 一条都不会被采纳 —— 那就一条都别发，也别往（早已作废重建的）台账里记。
-        if (guard.version() === session) {
+        if (!superseded(session)) {
           // 被语言滤掉的是**有意跳过**，和失败是两回事：这一轮不发它，下一轮也不
           // 该再发。记账。
           const keep = new Set(fresh.map((block) => block.element));
           for (const block of blocks) if (!keep.has(block.element)) commit(block.element);
         }
-        if (fresh.length > 0 && guard.version() === session) {
+        if (fresh.length > 0 && !superseded(session)) {
           // 自动这一轮没有 user activation，不触发语言包下载 —— 见
           // content/page/batch.js 里 runTranslationPass 开头那段。
           //
@@ -584,7 +487,9 @@
             // 这一轮是自动模式发出去的。引擎层据此判 FR-9 的费用闸，本机统计
             // 也据此把「自动模式今天花掉多少字符」和手动那部分分开记。
             auto: true,
-            isAborted: () => guard.version() !== session,
+            // 每一批发出去之前都问一次 superseded()：地址可能是在这一轮跑到一半
+            // 时才换的。
+            isAborted: () => superseded(session),
           });
         }
       } catch (thrown) {
@@ -618,8 +523,8 @@
       }
 
       // 翻篇了。这一轮的成败是上一页的事，这一页刚刚判完、状态是新定的，
-      // 覆盖它会让 PENDING 变回 IDLE（语言再也探不出来），或者让一次旧的失败
-      // 把新一页的发现层停掉。
+      // 覆盖它会让 OFF 变回 IDLE（一个不该翻的页面自己翻起来），或者让一次旧的
+      // 失败把新一页的发现层停掉。
       if (guard.version() !== session) {
         // 新的一代有自己的队要排 —— 刚才 running 挡回去的那次 pump 没有重排。
         if (queue.size > 0 && isOn()) scheduleStart();
@@ -646,6 +551,23 @@
 
       setStatus(STATUS.IDLE);
       if (queue.size > 0) scheduleStart();
+    }
+
+    /**
+     * 「这一轮还算数吗」—— 每一批发出去之前问（R33 D-360 F1）。
+     *
+     * 地址先对一次：这一代是替 decidedHref 判的，页面若已经走到别的地址，就把
+     * 路由信号当场补上 —— SpaNavigation.check() 走的是和 popstate / navigatesuccess /
+     * 轮询同一个 announce，于是进的是同一个 onRouteChange，重新判定只有那一条路。
+     * 不对的话：页面的路由器拦下 Navigation API 的 navigate 事件时，隔离世界要到
+     * 下一次轮询（最慢 800ms）才听说换了页，而发现层 400ms、起跑 250ms 之后这一
+     * 批就出门了 —— x.com 从首页点进私信，私信正文会按首页的判定送出去。
+     *
+     * 补上信号之后代次已经翻篇，照常由代次作答。
+     */
+    function superseded(session) {
+      if (location.href !== decidedHref) globalThis.SpaNavigation.check('send');
+      return guard.version() !== session;
     }
 
     // ------------------------------------------------------------------ 代次
@@ -686,7 +608,6 @@
       if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
       stopDiscovery();
-      clearSample();
       setStatus(STATUS.PAUSED);
     }
 
@@ -759,16 +680,6 @@
       // 不解的话，SPA 里点进下一篇文章起就全是原文，而且他没有任何理由想到要去
       // 点「继续」：那颗按钮此刻指着的是他早就离开的那一页。
       pausedByUser = false;
-      // 上一页量到的语言也留不得：它是**那一页**的测量结果，而这一层是它的主人
-      // （引擎那份缓存同理，由引擎自己订路由过期 —— 见 content-translation-engine.js）。
-      //
-      // 漏掉这一行的样子最难自己想到：用户正把译文藏着看原文，此时换了一页 ——
-      // start() 走的是「先看原文」那条捷径，判完就 return，于是新的一页被**上一页
-      // 的语言**判了一次。判出 off（语言和目标语言相同、或者不在他勾的语言里）就
-      // 再也回不来了：把译文放回来那一下只叫得醒 PAUSED / ERROR，OFF 停在那儿，
-      // 追问条一次都不会出现，直到他整页刷新。
-      pageLang = null;
-      langResolved = false;
       start(`route:${change && change.via}`);
     }
 
@@ -784,9 +695,9 @@
     // 这份名单不是随手攒的，它有一条可以对照的来源：**凡是喂进「这一页翻不翻」
     // 或者「这一块翻不翻」的设置键，都得在里面**。
     //
-    //   判（shared/site-rules.js 的 decide）   autoTranslate、autoTranslateLangs，
-    //                                          外加它另外两个入参的出处 siteRules、targetLang
-    //   译（content/page/batch.js）            skipTargetLanguageText
+    //   判（shared/site-rules.js 的 decide）   autoTranslate，外加入参的出处 siteRules
+    //   译（content/page/batch.js）            skipTargetLanguageText，以及目标语言
+    //                                          targetLang（换了语言，同样的文字要重翻）
     //   engine（哪条路、回落到哪、拿什么去调）  translationEngine、engineFallback、
     //                                          provider、apiKey、apiEndpoint、modelName
     //
@@ -795,7 +706,7 @@
     // 发现层摘了，新设置永远轮不到它们。test/unit/auto-translate-wiring.test.mjs
     // 会去那两个文件里把实际读到的键扫出来对账。
     const RESTART_KEYS = [
-      'autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
+      'autoTranslate', 'siteRules', 'targetLang',
       'skipTargetLanguageText',
       'translationEngine', 'provider', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback',
       // 费用闸的两个（costRefusal）。少了它们，用户在设置页把自动模式的 AI 打开、
@@ -827,7 +738,7 @@
        * **订阅的那一刻就先回调一次当前状态。** 呈现层是在调度层之后才装起来的
        * （content/content-bootstrap.js 的 init 就是这个顺序），那时 start('load')
        * 早已跑完 —— 只等「下一次变化」的话，一个判完就定下来不再动的页面（黑名单、
-       * 语言相同、要追问）永远等不到那一次，追问条根本不会出现。
+       * 内置 never）永远等不到那一次，那条说明为什么不翻的状态条根本不会出现。
        */
       onStateChange: (listener) => {
         listeners.add(listener);

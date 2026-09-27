@@ -27,10 +27,15 @@ const core = globalThis.CaptionCore;
 // -------------------------------------------------- turning subtitles on
 // 这一轮的自动化里，只有这一件事**改动播放器自己的状态**。其余的（整页翻译、字
 // 幕覆盖层）都只是往页面里插我们自己的节点，插错了刷新一下就没了；把播放器的 CC
-// 点开是留在观众账号里的。所以它有自己的开关、默认关着，而且有一道只合不开的闩。
-test('替观众开原字幕是一个单独的开关，默认关着', () => {
+// 点开是留在观众账号里的。所以它有自己的开关和一道只合不开的闩。R33（D-351）
+// 起默认开：没开原字幕的视频上字幕翻译无从谈起。
+test('替观众开原字幕是一个单独的开关，默认开着', () => {
   const defaults = repoFile('shared/default-settings.js');
-  assert.match(defaults, /autoEnableCaptions:\s*false/);
+  assert.match(defaults, /autoEnableCaptions:\s*true/);
+  // 设置页自己那份读取默认值和它是同一个值，否则一个从没碰过它的用户在设置页看
+  // 到的是「关」，页面上却在替他开字幕。
+  assert.match(repoFile('options/options.js'), /autoEnableCaptions:\s*true,/);
+  assert.match(repoFile('options/options.html'), /id="autoEnableCaptions" checked/);
 
   // 设置页那一格要写得进去，也要读得回来。
   const options = repoFile('options/options.js');
@@ -52,7 +57,7 @@ test('自动开原字幕过不了两道闸门：开关，和这个站点被不�
   assert.match(gate[0], /state\.autoEnableBlocked/);
 
   // 闸门问的是「被拒绝了吗」而不是「开着自动翻吗」：视频站点在整页那一面多半是
-  // ask，拿 siteAuto 当闸门等于这件事永远不发生。
+  // 安静的 off，拿 siteAuto 当闸门等于这件事永远不发生。
   assert.equal(/autoEnableAllowed[\s\S]{0,400}?siteAuto/.test(engine), false);
 
   // 调度层只是转述 SiteRules 的答案，分类留在阶梯那边。
@@ -130,6 +135,22 @@ test('菜单第一行画的是站点规则，不是闸门', () => {
   assert.match(controls, /parts\.modeItem\.classList\.toggle\('ai-cap-disabled', !enabled\)/);
 });
 
+test('播放器图标直接调字幕开关，缺了就抛，不悄悄当没点（R33 N3）', () => {
+  // 引擎（content-video-captions.js）挂上 ctx.setVideoCaptionsOn；控件点击时
+  // 直接调它。前面加一句「有才调」就是一条没人测的第二条路：装载坏了，图标
+  // 按下去什么也不发生，也没有错误。
+  assert.match(captionEngineSource(), /ctx\.setVideoCaptionsOn = setVideoCaptionsOn;/);
+  const controls = repoFile('content/content-caption-controls.js');
+  assert.match(controls, /^\s*ctx\.setVideoCaptionsOn\(!captionsPressed\(\)\);$/m);
+  assert.doesNotMatch(controls, /if \(ctx\.setVideoCaptionsOn\)/, '点击前又问了一遍有没有');
+  // 同一类的另外两处：改设置、「开启原字幕」，也都只在事件里调、也都由后面那一族挂上。
+  assert.match(captionEngineSource(), /ctx\.applyCaptionSettings = function/);
+  assert.match(captionEngineSource(), /ctx\.enableNativeCaptions = function/);
+  assert.match(controls, /^\s*ctx\.applyCaptionSettings\(\);$/m);
+  assert.match(controls, /if \(ctx\.enableNativeCaptions\(\)\) closeMenu\(\);/);
+  assert.doesNotMatch(controls, /if \(ctx\.\w+\) ctx\.\w+\(|ctx\.(\w+) && ctx\.\1\(/, '又有一处先问有没有再调');
+});
+
 test('写不进规则的站点，那一行点不动', () => {
   // 黑名单：BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算
   // 数。没有 host（file://）：normalizeHost 给不出键，规则一声不响地没写上，而
@@ -141,7 +162,7 @@ test('写不进规则的站点，那一行点不动', () => {
   const shared = rules.match(/function siteRuleWritable\(hostname, path\)[\s\S]*?\n  \}/);
   assert.ok(shared, '找不到 SiteRules.siteRuleWritable()');
   assert.match(shared[0], /normalizeHost\(hostname\)/);
-  assert.match(shared[0], /isBlocklisted\(hostname, path\)/);
+  assert.match(shared[0], /blockReason\(hostname, path\) === null/);
   assert.match(rules, /^\s*siteRuleWritable,$/m, 'siteRuleWritable 没导出去');
 
   const controls = repoFile('content/content-caption-controls.js');
@@ -149,7 +170,7 @@ test('写不进规则的站点，那一行点不动', () => {
   assert.ok(fn, '找不到 ruleWritable()');
   assert.match(fn[0], /SiteRules\.siteRuleWritable\(location\.hostname, location\.pathname\)/);
   // 抄回来的第二份长这样：自己拼那两问。
-  assert.doesNotMatch(fn[0], /isBlocklisted\(/, 'ruleWritable 又自己判了一遍');
+  assert.doesNotMatch(fn[0], /blockReason\(/, 'ruleWritable 又自己判了一遍');
   assert.match(controls, /parts\.enableItem\.classList\.toggle\('ai-cap-disabled', !ruleWritable\(\)\)/);
 
   // 写入口那边再挡一道：画面灰着只是画面，别的调用方照样能递个空 host 进来。

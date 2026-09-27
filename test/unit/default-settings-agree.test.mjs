@@ -23,6 +23,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 // background/settings.js 顶层就读 globalThis.OCRCore 和 getUILanguage。
 globalThis.chrome = { i18n: { getUILanguage: () => 'en' } };
 
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 const { defaultSettings: workerDefaults } = await import('../../background/settings.js');
@@ -30,7 +31,7 @@ const contentDefaults = globalThis.DefaultSettings.contentDefaults();
 
 /**
  * 设置页和弹窗那两张表读不成模块 —— 都是经典脚本，顶层就去 getElementById。
- * 所以把对象字面量单独抠出来求值，两个标识符绑到它们在浏览器里拿到的同一份共享
+ * 所以把对象字面量单独抠出来求值，三个标识符绑到它们在浏览器里拿到的同一份共享
  * 常量上（这正是要验的东西之一：几边引用的是同一个来源）。
  */
 function pageDefaults(rel) {
@@ -39,8 +40,8 @@ function pageDefaults(rel) {
   assert.notEqual(start, -1, `could not find the defaults in ${rel}`);
   const end = source.indexOf('\n};', start);
   const literal = source.slice(source.indexOf('{', start), end + 2);
-  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', `return (${literal});`);
-  return make(globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore);
+  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', 'AccountGate', `return (${literal});`);
+  return make(globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore, globalThis.AccountGate);
 }
 
 const TABLES = [
@@ -73,6 +74,21 @@ test('the tables really do overlap, so the comparison above means something', ()
   assert.ok(shared.length >= 8, `only ${shared.length} keys overlap; the assertion above may be vacuous`);
   assert.ok(shared.includes('translationEngine'));
   assert.ok(shared.includes('targetLang'));
+});
+
+test('both account-backed features ship switched on, in every table that has them', () => {
+  // AccountGate.featureState reads a false switch as "the user turned it off"
+  // and keeps the PDF / comic hint away. An off default would therefore hide
+  // the hint from everyone who never touched the setting. Signed out, the
+  // gate answers signed_out, not off, and nothing is spent before a click.
+  const missing = [];
+  for (const [name, table] of TABLES) {
+    for (const key of ['enablePdfTranslation', 'enableComicTranslation']) {
+      if (key in table && table[key] !== true) missing.push(`${key} in ${name}`);
+    }
+  }
+  assert.deepEqual(missing, []);
+  assert.equal(contentDefaults.enableComicTranslation, true, 'the content defaults carry the comic switch');
 });
 
 test('empty targetLang is what "follow the browser" is written as, wherever it appears', () => {

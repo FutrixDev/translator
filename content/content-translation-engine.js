@@ -4,6 +4,11 @@
 //
 //   ctx.requestTranslation(message)  ——  与 chrome.runtime.sendMessage 同形，响应多盖一个 engine
 //
+// 它是两步：ctx.withPromptAddenda 按**这个文档**的地址给请求盖一次语域，
+// ctx.sendTranslation 把盖好的请求原样送出（选后端、回落、预算闸都在这一步）。
+// 子 frame 只覆写后一步（content/frames/child.js 改成交给顶层），顶层的中继直接
+// 调后一步，所以语域是发起请求的那个 frame 的，一路不被重算。
+//
 // 默认走浏览器内置的 Translator API（Chrome 138+，端上 NMT，零网络、零费用）；
 // 内置这条路走不通时，再回落到 background service worker 里的自定义 AI 接口。
 //
@@ -643,8 +648,37 @@
   }
 
   /**
-   * 翻译请求统一入口，与 chrome.runtime.sendMessage 同形（同样的入参、同样的返回），
-   * 只多一个字段：每个响应都盖上 `engine`（'builtin' | 'ai'），说这一次是谁译的
+   * 给一次请求盖上这个文档的附加说明（R33 A4，形状见 shared/prompt-addenda.js）：
+   * 内置站点表给这个地址标的语域。**只带标签，不带域名** —— 模型要知道的是「这是
+   * 论坛上的讨论」，不是用户在看哪个站。只盖三种翻译消息，而且**一律盖**：这一页
+   * 没有语域也写 `addenda: {}`（R33 D-360 F8）。地址在调用时读，单页应用换了路由，
+   * 下一次请求就按新地址盖。
+   *
+   * 每个请求只盖一次，在发起它的那个 frame 里：已经带着 addenda 的请求再进来，
+   * 是有人把「送出」接成了「发起」（中继又过了一遍这里），直接抛。正因为一律盖，
+   * 这道守卫在没有语域的站上也生效 —— 以前那里不写字段，盖两次也看不出来。
+   * 缓存层（content-translation-cache.js）也调它，键和送出去的是同一个对象。
+   */
+  ctx.withPromptAddenda = function(message) {
+    if ('addenda' in message) {
+      throw new Error('withPromptAddenda: this request was already stamped');
+    }
+    if (!BUILTIN_TYPES.has(message.type)) return message;
+    const register = globalThis.SiteRules.register(location.hostname, location.pathname);
+    return { ...message, addenda: register ? { register } : {} };
+  };
+
+  /**
+   * 翻译请求统一入口：按这个文档盖语域，再送出。同形、同返回、同样会抛的异常，
+   * 见下面的 ctx.sendTranslation。
+   */
+  ctx.requestTranslation = async function(message) {
+    return ctx.sendTranslation(ctx.withPromptAddenda(message));
+  };
+
+  /**
+   * 把一个已经盖好语域的请求送出，与 chrome.runtime.sendMessage 同形（同样的入参、
+   * 同样的返回），只多一个字段：每个响应都盖上 `engine`（'builtin' | 'ai'），说这一次是谁译的
    * （出错时说是谁没译成）。调用方不需要知道这次走的是内置还是 AI，但卡片要告诉
    * 用户。
    *
@@ -652,7 +686,7 @@
    * 就把真实原因给他看，不能换一个引擎、花他的钱把结果递回去（engineFallback 为
    * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
    */
-  ctx.requestTranslation = async function(message) {
+  ctx.sendTranslation = async function(message) {
     // 引擎谓词要问本站规则（siteEngine），规则先到再选。设置页也加载这一族，
     // 那里没有 ctx.customRules。
     if (ctx.customRules) await ctx.customRules.whenReady();
@@ -699,6 +733,8 @@
     // 了」—— 前者要跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
     const refusal = await refuseAutoAiSpend(message);
     if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
+    // 请求原样送出：addenda 在发起它的那个 frame 里盖过了（ctx.withPromptAddenda），
+    // 这里不再读地址 —— 顶层替子 frame 送的请求，语域是子 frame 的。
     const response = await chrome.runtime.sendMessage(message);
     return response && { ...response, engine: 'ai' };
   };

@@ -88,6 +88,13 @@
   margin-top: 6px;
 }
 
+/* The display above outranks the UA's [hidden] rule; a hint the script shows
+   only in one state (the account switches' "takes effect once you sign in")
+   has to be able to go away. */
+.hint[hidden] {
+  display: none;
+}
+
 .hint code {
   background: var(--bg-tertiary);
   padding: 2px 6px;

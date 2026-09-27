@@ -5,7 +5,7 @@
 // 浏览器，也不需要造一个假的 document。
 //
 // **边界（别读错）**：decide() 回答的是自动触发。用户自己点「翻译整页」不经过
-// 这里——那条路直接走 ctx.translatePage()，黑名单也好、语言规则也好，都管不到
+// 这里——那条路直接走 ctx.translatePage()，黑名单也好、站点规则也好，都管不到
 // 它。explicit 参数也不是「用户点了翻译」的开关，它是「这一页用户已经表过态」
 // 的事实：页面后来长出来的新内容该不该跟上，问的还是这个函数，答案就得是 auto，
 // 否则调度层只能绕过 decide() 自己判一遍——同一个问题两个地方回答，迟早不一致。
@@ -24,23 +24,21 @@
     USER_EXPLICIT: 'USER_EXPLICIT',
     USER_ALWAYS: 'USER_ALWAYS',
     BUILTIN_ALWAYS: 'BUILTIN_ALWAYS',
-    SAME_LANGUAGE: 'SAME_LANGUAGE',
-    LANG_NOT_LISTED: 'LANG_NOT_LISTED',
-    UNKNOWN_LANGUAGE: 'UNKNOWN_LANGUAGE',
-    DEFAULT_ASK: 'DEFAULT_ASK',
+    BUILTIN_CAPTIONS: 'BUILTIN_CAPTIONS',
+    DEFAULT_OFF: 'DEFAULT_OFF',
   });
 
   // 阶梯最上面那四级：**这个站点不许我们自己动手**。
   //
-  // 和「verdict === 'off'」不是一回事，这才是它值得单独有个名字的原因。下面还有
-  // 三级也答 off，但它们量的是语言——「页面已经是你的语言了」「这门语言不在你的
-  // 名单里」——那是「这一页不必翻」，不是「这个站点别碰」。
+  // 和「verdict === 'off'」不是一回事，这才是它值得单独有个名字的原因。阶梯最底下
+  // 那一级（DEFAULT_OFF，谁都没替这个站点说过话）也答 off，但那是「正文不自己翻」，
+  // 不是「这个站点别碰」。
   //
   // 谁需要分清这两句话：一件自动化要的闸门不总是「这个站点开着自动翻」。整页翻译
-  // 之外的自动化（比如替观众点开播放器的原字幕）发生的地方，decide() 多半答的是
-  // ask——视频站点没上过内置 always 名单，页面语言又常常和声道语言不是一回事。拿
-  // 「开着自动翻」当闸门，那些事在它们最该发生的地方一次也不会发生；拿「被明令拒
-  // 绝」当闸门，被拒的四种情形一个不漏，其余照常。
+  // 之外的自动化（比如翻播放器里的字幕）发生的地方，decide() 多半答的是
+  // DEFAULT_OFF——大多数视频站点不在内置 always 名单上。拿「开着自动翻」当闸门，
+  // 那些事在它们最该发生的地方一次也不会发生；拿「被明令拒绝」当闸门，被拒的四种
+  // 情形一个不漏，其余照常。
   const REFUSALS = Object.freeze([
     REASONS.GLOBAL_OFF, REASONS.BLOCKLIST, REASONS.BUILTIN_NEVER, REASONS.USER_NEVER,
   ]);
@@ -112,7 +110,12 @@
 
   // ---------------------------------------------------------------- 规则表
 
+  // 用户能写的只有两种。内置表多一种 captions（D-351）：这个站点的正文不自己翻，
+  // 但它是字幕站 —— 不是拒绝，字幕照翻（闸门问的是 REFUSALS，见上）。它和
+  // DEFAULT_OFF 的结论一样，多出来的是一句说得出口的理由，以及设置页里那张
+  // 「内置名单」上的一行，用户看得见、一键就能改。
   const STATES = new Set(['always', 'never']);
+  const BUILTIN_STATES = new Set(['always', 'never', 'captions']);
   const STRING_ARRAY_FIELDS = ['atomicBlockSelectors', 'keepOriginalSelectors'];
 
   function isStringArray(value) {
@@ -145,9 +148,12 @@
     if (!rule || typeof rule !== 'object') return false;
     const patterns = rulePatterns(rule);
     if (!patterns.length || !patterns.every(validPattern)) return false;
-    if (!STATES.has(rule.state)) return false;
+    if (!BUILTIN_STATES.has(rule.state)) return false;
     if (STRING_ARRAY_FIELDS.some((field) => !isStringArray(rule[field]))) return false;
     if (rule.blockIdAttr !== null && typeof rule.blockIdAttr !== 'string') return false;
+    // 语域只查形状：取值表在 shared/prompt-addenda.js（REGISTERS），这里不另抄一份，
+    // 也不为它多一条装载依赖。内置表的取值由单测对照那张表；服务工作者收到时再把关。
+    if (rule.register !== undefined && (typeof rule.register !== 'string' || !rule.register)) return false;
     return true;
   }
 
@@ -236,24 +242,40 @@
     return best;
   }
 
+  /**
+   * 这一页的语域（social / forum / news / academic），没有就是 null。
+   *
+   * 只读内置表，不看用户规则：语域说的是「这个站点上的文字是什么体裁」，不是
+   * 「翻不翻」—— 用户把某站设成 never 或 always，那里的帖子还是帖子。给模型的
+   * 只是这个标签（shared/prompt-addenda.js），不是域名。
+   */
+  function register(host, path) {
+    const rule = matchBuiltin(host, path);
+    return (rule && rule.register) || null;
+  }
+
   function isBlocked(host, path) {
     return table().blocklist.some((pattern) => patternMatches(pattern, host, path));
   }
 
   /**
-   * 「这一页永远不自己翻，用户说了也不算」。
+   * 「这一页永远不自己翻，用户说了也不算」—— 是，就答是哪一种；不是，答 null。
    *
-   * 黑名单和内置表里的 never 是同一件事的两种写法，对外只有一个说法 —— 所以这
-   * 一问必须有一个主人，下面的阶梯自己也问它。
+   * 黑名单（BLOCKLIST）和内置表里的 never（BUILTIN_NEVER）是同一个结论的两种来
+   * 源，这一问是它们唯一的主人：下面的阶梯问它，popup 的站点行也问它（经由内容
+   * 脚本的 AUTO_PAGE_STATE），两处拿到的是同一个枚举。黑名单先问：两者都中时，
+   * 「这类页面我们不碰」比「这一条路径另有安排」更靠前。
    *
    * 单拎出来是因为 decide() 的答案在这个问题上**会被遮住**：总开关关着时它第一
    * 档就回 GLOBAL_OFF，谁也看不出这一页其实还被拉着黑。要据此把界面上那个站点
-   * 开关灰掉的调用方，问的就得是这一问，不能去读那个被遮住的 reason。
+   * 开关灰掉、并说出为什么灰的调用方，问的就得是这一问，不能去读那个被遮住的
+   * reason（R33 D-360 F3：只回一个布尔值时，popup 在 x.com/messages 上把内置
+   * never 说成了「在黑名单里」）。
    */
-  function isBlocklisted(host, path) {
-    if (isBlocked(host, path)) return true;
+  function blockReason(host, path) {
+    if (isBlocked(host, path)) return REASONS.BLOCKLIST;
     const rule = matchBuiltin(host, path);
-    return !!(rule && rule.state === 'never');
+    return rule && rule.state === 'never' ? REASONS.BUILTIN_NEVER : null;
   }
 
   /**
@@ -274,18 +296,71 @@
    */
   function siteRuleWritable(hostname, path) {
     if (!normalizeHost(hostname)) return false;
-    return !isBlocklisted(hostname, path);
+    return blockReason(hostname, path) === null;
   }
 
-  // ---------------------------------------------------------------- 语言
+  // 一个 DNS 主机名（含 punycode 的 xn-- 标签和 IPv4），整串不超过 253 字符。
+  const HOSTNAME_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
-  // 语言标签的判定只有一个主人：shared/lang-tags.js。这里连一份副本都不留，
-  // 就是转手——曾经这里、caption-core 和 content-language.js 各写过一份，
-  // 于是同一对语言在整页翻译里算「同语言」、在字幕里不算。
-  // 取不到就立刻炸：装载顺序错了的表现否则是「语言那几档静静地判错」。
-  const LangTags = root.LangTags;
-  if (!LangTags) throw new Error('site-rules.js 要先装 shared/lang-tags.js');
-  const baseLang = LangTags.getLangBase;
+  /**
+   * 设置页「添加站点」那个框里敲进来的一串字，变成规则表的键。
+   *
+   * 人会贴整条地址（https://www.Example.com/a?b）、会带端口、会敲中文域名。键
+   * 必须和 decide() 查的是同一把，所以归一化只能在这里做一次，设置页不自己拼：
+   * 脱协议、路径、查询、端口，经 URL 解析把中文域名转成 punycode（地址栏里的
+   * location.hostname 也是 punycode），再交给 normalizeHost 脱 www. 和小写。
+   *
+   * 两种拒绝，调用方各印一句话：
+   *   invalid  —— 不是一个主机名（带空格、通配符、IPv6 字面量、解析不了）；
+   *   blocked  —— 黑名单或内置 never 上的站点。写 always 进去不算数（阶梯上黑
+   *               名单排在用户规则前面），写 never 进去是多余的；两种都让用户以
+   *               为他改了什么。和 siteRuleWritable 问的是同一句话。
+   *
+   * @returns {{host: string} | {error: 'invalid'|'blocked', host?: string}}
+   */
+  function parseSiteInput(text) {
+    const raw = String(text == null ? '' : text).trim();
+    if (!raw || /\s/.test(raw)) return { error: 'invalid' };
+    let hostname;
+    try {
+      hostname = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`).hostname;
+    } catch (error) {
+      return { error: 'invalid' };
+    }
+    const host = normalizeHost(hostname);
+    if (!HOSTNAME_RE.test(host)) return { error: 'invalid' };
+    if (!siteRuleWritable(host)) return { error: 'blocked', host };
+    return { host };
+  }
+
+  /**
+   * 内置名单，按「设置页怎么给人看」排好：always / captions / never 三组，每组
+   * 一行一个主机，带上这个主机在表里的那几个模式（arxiv.org 只有几条路径在
+   * always 上）。黑名单并进 never —— 对用户来说它们是同一件事（见 blockReason）。
+   *
+   * 每行带 writable：那一行能不能一键写一条用户规则盖过去。never 组一律不能
+   * （阶梯上它们排在用户规则前面），其余问的是 siteRuleWritable。
+   */
+  function builtinSites() {
+    const groups = { always: new Map(), captions: new Map(), never: new Map() };
+    const add = (state, pattern) => {
+      const { host } = splitPattern(pattern);
+      const group = groups[state];
+      if (!group.has(host)) group.set(host, []);
+      group.get(host).push(pattern);
+    };
+    for (const rule of table().rules) rulePatterns(rule).forEach((pattern) => add(rule.state, pattern));
+    table().blocklist.forEach((pattern) => add('never', pattern));
+    const out = {};
+    for (const [state, group] of Object.entries(groups)) {
+      out[state] = [...group].map(([host, patterns]) => ({
+        host,
+        patterns,
+        writable: state !== 'never' && siteRuleWritable(host),
+      }));
+    }
+    return out;
+  }
 
   // ---------------------------------------------------------------- 用户规则
 
@@ -325,19 +400,18 @@
    * @param {Object} input
    * @param {string}  input.host        location.hostname
    * @param {string}  input.path        location.pathname
-   * @param {?string} input.pageLang    页面语言，判不出时为 null
-   * @param {string}  input.targetLang  已经解析过的目标语言（空 = 还不知道）
    * @param {Object}  input.userRules   { 'x.com': 'always' | 'never' }
-   * @param {Object}  input.settings    { autoTranslate, autoTranslateLangs }
+   * @param {Object}  input.settings    { autoTranslate }
    * @param {boolean} input.explicit    用户已经在这一页表过态
-   * @returns {{verdict: 'auto'|'ask'|'off', reason: string, rule: ?Object,
-   *            refused: boolean}} refused 见 REFUSALS：站点级的拒绝，不含语言结论。
+   * @returns {{verdict: 'auto'|'off', reason: string, rule: ?Object,
+   *            refused: boolean}} refused 见 REFUSALS：站点级的拒绝。
+   *
+   * 页面语言不是入参（R33 D-351）：从前谁都没替它说过话的站点要先量一次语言再
+   * 「问一句」，询问条删掉之后那一档只剩一个答案 —— 不翻 —— 量语言就只是白量。
+   * 「这一块已经是目标语言了」仍然逐块判，在 content/page/batch.js。
    */
   function decide(input) {
-    const {
-      host = '', path = '/', pageLang = null, targetLang = '',
-      userRules, settings, explicit = false,
-    } = input || {};
+    const { host = '', path = '/', userRules, settings, explicit = false } = input || {};
     // 解构的默认值只补 undefined。设置还没读回来时传进来的是 null，那时候
     // settings.autoTranslate 会直接抛——而这个函数的整个价值就在于它不抛。
     const prefs = settings || {};
@@ -363,41 +437,27 @@
     // 提示条正等着他点。两句话混成一句，用户在论文 PDF 上看到的会是「这个站点
     // 在黑名单里」，而他上一秒还在同一个域名下读着被自动翻好的摘要页。
     //
-    // 判断仍然只问 isBlocklisted() 这一个主人，问完再回头看是哪一半答的是。
-    // 反过来把两半就地展开，就等于在这里复制了一遍那个函数：哪天它多认一种
-    // never，这条阶梯会悄悄漏掉。落到 BUILTIN_NEVER 是安全的那一边 —— 结论
-    // 一模一样，只是措辞按「内置规则说不」来。
-    if (isBlocklisted(host, path)) {
-      return out('off', isBlocked(host, path) ? REASONS.BLOCKLIST : REASONS.BUILTIN_NEVER);
-    }
+    // 是哪一种由 blockReason() 一处答，这里不就地展开：哪天它多认一种 never，
+    // 这条阶梯和 popup 的站点行会一起认得。
+    const blocked = blockReason(host, path);
+    if (blocked) return out('off', blocked);
     const userRule = lookupUserRule(userRules, host);
     if (userRule === 'never') return out('off', REASONS.USER_NEVER);
 
     // 用户在这一页已经动过手了。后面长出来的内容跟上是在兑现那次点击，不是替
-    // 他做主，所以语言规则也好、总开关也好，都不该在这里再拦一次。
+    // 他做主，所以总开关也好、「没人替这个站点说过话」也好，都不该在这里再拦一次。
     if (explicit) return out('auto', REASONS.USER_EXPLICIT);
 
     if (userRule === 'always') return out('auto', REASONS.USER_ALWAYS);
     if (rule && rule.state === 'always') return out('auto', REASONS.BUILTIN_ALWAYS);
+    // 字幕站：正文不翻，也不算拒绝 —— 字幕照翻。用户写过规则的，上面两级已经
+    // 答完了：always 连正文一起翻，never 连字幕一起停。
+    if (rule && rule.state === 'captions') return out('off', REASONS.BUILTIN_CAPTIONS);
 
-    // 比整码，不比基码：zh-CN 的页面配 zh-TW 的目标是两套字，而「繁转简」正是
-    // 用户要的那一件事——按基码判，这一档会答「这一页本来就是你的语言」，整页
-    // 一个字也不翻。字幕那边早就是这个口径了，这里曾经不是。
-    if (LangTags.isSameLanguage(pageLang, targetLang)) return out('off', REASONS.SAME_LANGUAGE);
-
-    // 下面这一档反过来，**必须**按基码：autoTranslateLangs 是用户在设置里勾的
-    // 语言，勾的是「中文」不是「简体中文」。拿整码比，一个勾了 zh 的用户会被
-    // 这一档挡在所有 zh-CN 的页面外面。
-    const page = baseLang(pageLang);
-    const listed = Array.isArray(prefs.autoTranslateLangs) ? prefs.autoTranslateLangs : [];
-    if (listed.length && page && !listed.some((lang) => baseLang(lang) === page)) {
-      return out('off', REASONS.LANG_NOT_LISTED);
-    }
-
-    // 判不出语言就不赌：问一句，不自作主张。
-    if (!pageLang) return out('ask', REASONS.UNKNOWN_LANGUAGE);
-
-    return out('ask', REASONS.DEFAULT_ASK);
+    // 谁都没替这个站点说过话：不翻，也不问（D-351）。从前这里是一条追问条，每个
+    // 外语站点问三次 —— 用户要的是「别每页都问我」。想翻的人有三个入口，都是他
+    // 自己伸手：popup 的「翻译此页 / 总是翻译此网站」、悬浮球、快捷键。
+    return out('off', REASONS.DEFAULT_OFF);
   }
 
   // ---------------------------------------------------------------- 写规则
@@ -406,33 +466,18 @@
   // 工作者里」都在 shared/storage-writer.js，三家写入共用一份（为什么要单写者
   // 也写在那边）。
   //
-  // 两张表都按域名一路长下去，而同步存储是**每项** 8KB。追问计数失败了是上限
-  // 静悄悄不再生效，站点规则失败了是用户刚点下的选择根本没存上。所以两张表共用
-  // 一道预算（StorageWriter.ITEM_BUDGET），也共用一个量法（itemBytes）。按条数
-  // 封顶只是把撑爆那天推远一点：两百个 40 字符的域名就已经贴着 8KB。
+  // 这张表按域名一路长下去，而同步存储是**每项** 8KB：写失败了是用户刚点下的
+  // 选择根本没存上。预算（StorageWriter.ITEM_BUDGET）和量法（itemBytes）与另外
+  // 几家写入共用。按条数封顶只是把撑爆那天推远一点：两百个 40 字符的域名就已经
+  // 贴着 8KB。
   const StorageWriter = root.StorageWriter;
   if (!StorageWriter) throw new Error('site-rules.js 要先装 shared/storage-writer.js');
   const { ITEM_BUDGET, itemBytes } = StorageWriter;
 
-  // 追问计数满了先扔计数最小的（被问得最少的那几个，重新问一次的代价也最小），
-  // 刚动过的那条永远留着。被扔掉的站点最多是多被问几次，用户表过的态一点没丢
-  // —— 那些在 siteRules 里，是另一张表。
-  function pruneAskCounts(counts, keep) {
-    if (itemBytes(counts) <= ITEM_BUDGET) return counts;
-    const victims = Object.keys(counts)
-      .filter((key) => key !== keep)
-      .sort((a, b) => counts[a] - counts[b]);
-    for (const key of victims) {
-      delete counts[key];
-      if (itemBytes(counts) <= ITEM_BUDGET) break;
-    }
-    return counts;
-  }
-
   /**
    * 站点规则满了：扔掉**扔了也不改变任何判定**的那些。
    *
-   * 这张表不能像计数那样挑一条扔 —— 每一条都是用户亲口说过的话，扔掉哪一条都
+   * 这张表不能挑一条扔 —— 每一条都是用户亲口说过的话，扔掉哪一条都
    * 是替他改主意。但表里会有真正多余的条目：用户先在 x.com 上点了「总是翻译」，
    * 后来又在 mobile.x.com 上点了一次同样的，而 lookupUserRule 本来就会沿父域
    * 往上找 —— 删掉子域那条，mobile.x.com 查出来还是 always。
@@ -464,8 +509,8 @@
   /**
    * 写下一条用户站点规则，或把它抹掉（state 不是 always/never 时）。
    *
-   * 放在这里而不是三个调用方各写一遍：**存进去的那把钥匙必须和 decide() 查的
-   * 那把是同一把**。追问条、popup、设置页都要写这张表，只要有一处忘了
+   * 放在这里而不是几个调用方各写一遍：**存进去的那把钥匙必须和 decide() 查的
+   * 那把是同一把**。popup、悬浮球、字幕菜单、设置页都要写这张表，只要有一处忘了
    * normalizeHost（或者哪天归一化规则变了而只改了两处），用户点下的「总是翻译」
    * 就存在一个永远查不到的键上 —— 按钮有反应、规则也确实写进去了，页面就是不
    * 翻，而且哪里都不报错。
@@ -485,29 +530,6 @@
     // 出口；吞掉它才是那种「按钮动了、设置没存上」的坏结局。
     await store.set({ siteRules: rules });
     return key;
-  }
-
-  /**
-   * 这个域名被追问过几次：读出来、加一、写回去。`'clear'` 是把整条记录删掉
-   * ——用户表过态了，前面问过几次都不算数。
-   *
-   * @returns {Promise<number>} 写完之后的次数
-   */
-  async function applyAskCount({ host, op }) {
-    const key = normalizeHost(host);
-    const store = root.chrome && root.chrome.storage && root.chrome.storage.sync;
-    if (!key || !store) return 0;
-    const stored = await store.get({ siteAskCount: {} });
-    const counts = Object.assign({}, stored.siteAskCount);
-    const current = typeof counts[key] === 'number' && counts[key] > 0 ? counts[key] : 0;
-    if (op === 'clear') {
-      delete counts[key];
-    } else {
-      counts[key] = current + 1;
-      pruneAskCounts(counts, key);
-    }
-    await store.set({ siteAskCount: counts });
-    return op === 'clear' ? 0 : current + 1;
   }
 
   /**
@@ -538,7 +560,7 @@
     return accepted;
   }
 
-  const WRITES = { rule: applyUserRule, ask: applyAskCount, import: applyImportedRules };
+  const WRITES = { rule: applyUserRule, import: applyImportedRules };
 
   // applyWrite 是服务工作者的入口（背景页的消息分发只管转接，规则本身不在那边）；
   // request 在服务工作者里就自己写，在别处就把这件事交给它。用户点下的选择没存
@@ -551,10 +573,6 @@
 
   function writeUserRule(hostname, state) {
     return request('rule', { host: hostname, state });
-  }
-
-  function updateAskCount(hostname, op) {
-    return request('ask', { host: hostname, op });
   }
 
   function importUserRules(map) {
@@ -586,7 +604,7 @@
    * 去而不是默默返回，调用方才说得出「没存上」。
    *
    * 界面上写「这个站点自动翻」的地方都走这里 —— popup 那一行、播放器里字幕菜单
-   * 的第一项、追问条上的「总是」、悬浮球菜单第一项。数它们没有意义，还会过期
+   * 的第一项、悬浮球菜单第一项。数它们没有意义，还会过期
    * （这句话上一版写的是「两个调用点」，那时已经有三个）：要紧的是那一句话只有
    * 一句，所以只该有一份实现。
    */
@@ -610,17 +628,16 @@
     hostMatches,
     patternMatches,
     validPattern,
-    // 导出是为了设置页：那份语言名单画在界面上，勾哪几个得和 decide() 认哪几个
-    // 是同一个口径。设置页再抄一份 split('-')[0] 就是这张表的第四份副本。
-    baseLang,
     lookupUserRule,
     writeUserRule,
     setSiteAuto,
-    updateAskCount,
     applyWrite,
     matchBuiltin,
-    isBlocklisted,
+    register,
+    blockReason,
     siteRuleWritable,
+    parseSiteInput,
+    builtinSites,
     loadTable,
     importUserRules,
   };

@@ -82,10 +82,16 @@
     // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
     // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
     // 顶上那张因子表。
+    // addenda 是这一页的语域（R33 A4）：同一段文字在论坛上和在新闻站上可以译得
+    // 不一样。这里盖一次（与 ctx.requestTranslation 同一个函数），键读它，没命中
+    // 的那几条也带着它经 ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会
+    // 各算各的。
+    const stamped = ctx.withPromptAddenda(message);
     const factors = {
       targetLang: message.targetLang || '',
       sourceLang: message.sourceLang || '',
-      ...profile
+      ...profile,
+      addenda: globalThis.PromptAddenda.stamp(stamped.addenda)
     };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。
@@ -97,7 +103,7 @@
     let missingCount = 0;
     const translations = await cache.serve(message.texts, factors, async (missing) => {
       missingCount = missing.length;
-      const response = await ctx.requestTranslation({ ...message, texts: missing });
+      const response = await ctx.sendTranslation({ ...stamped, texts: missing });
       if (!response || response.error) {
         failure = response || { error: 'unknown' };
         return null;

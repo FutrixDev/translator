@@ -17,20 +17,11 @@
   const t = ctx.t;
   const applyTheme = ctx.applyTheme;
   let floatBallWatchdog = null;
-  let isFullscreenActive = false;
-  let fullscreenListenerAttached = false;
-
-  function handleFullscreenChange() {
-    isFullscreenActive = !!document.fullscreenElement;
-    updateFloatBallVisibility();
-  }
-
-  function ensureFullscreenListener() {
-    if (fullscreenListenerAttached) return;
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    fullscreenListenerAttached = true;
-    handleFullscreenChange();
-  }
+  // Stepping aside for a video that fills the screen — standard or web
+  // fullscreen — is content/content-video-stage.js's call, not ours. The stage
+  // is watched only while the ball is wanted at all: switched off in settings,
+  // nothing measures the page.
+  const shownOverVideo = ctx.videoStage.stepAside(() => updateFloatBallVisibility());
 
   // Ensure float ball exists in DOM (recreate if removed by page's JS)
   function ensureFloatBallExists() {
@@ -168,7 +159,6 @@
     // Setup drag and click handling
     setupFloatBallInteraction();
     startFloatBallWatchdog();
-    ensureFullscreenListener();
 
     // Update visibility based on settings
     // Re-read from storage to ensure we have the latest value
@@ -448,11 +438,12 @@
 
     // 这一页有没有译文，问的是 content-page-translation.js 那一处 —— 它还算上
     // PDF、漫画这类不在正文 DOM 里的管控译文，自己数一遍 inline-block 会漏掉。
-    const hasTranslations = !!(ctx.hasPageTranslations && ctx.hasPageTranslations());
+    const hasTranslations = ctx.hasPageTranslations();
     // The comic entry only appears where it can do something: the feature is on
     // and there is actually a page-sized image on screen to redraw.
-    const showComic = !!settings.enableComicTranslation &&
-      !!(ctx.hasComicPageOnScreen && ctx.hasComicPageOnScreen());
+    // Both are set up by scripts later in the manifest; a menu opens only on a
+    // click, long after every content script has run.
+    const showComic = ctx.comic.comicEnabled() && ctx.hasComicPageOnScreen();
     // 「不再自动翻译这个站点」。**只在这个站点此刻正自动翻的时候出现**，而且排
     // 在第一行：它是自动化里唯一高频的「后悔」操作，而在此之前撤销它的唯一办法
     // 是进设置页翻那张列表。
@@ -726,8 +717,7 @@
   }
 
   function updateFloatBallVisibility() {
-    // Ensure showFloatBall has a valid boolean value
-    const shouldShow = settings.showFloatBall !== false && !isFullscreenActive;
+    const shouldShow = shownOverVideo(settings.showFloatBall !== false);
 
     // Start or stop the watchdog based on visibility
     if (shouldShow) {

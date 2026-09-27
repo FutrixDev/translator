@@ -4,6 +4,7 @@ const {
   getSyncSetting,
   writeSyncSettings,
   expectCaptionMenuAnchoredAboveButton,
+  sendMessageToActiveTab,
 } = require('./helpers');
 
 const html = `<!doctype html>
@@ -102,6 +103,52 @@ test('renders translated line when captions on and language differs', async ({ p
   });
 
   await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
+// R33（D-351）：YouTube 在内置名单上是 captions —— 页面正文不动、不弹询问条，
+// 字幕照翻。默认安装（没有任何站点规则），正文是一段够长的英文，引擎走 AI 好
+// 让每一次送出都记在账上。
+test('YouTube out of the box: captions are translated, the page text is not, nothing asks', async ({ page, context }) => {
+  const DESCRIPTION = 'This video walks through the whole release, from the first sketch to the final cut, and explains every decision along the way.';
+  await setExtensionSettings(page, { ...BASE_SETTINGS, autoTranslateEngine: 'ai' });
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: html.replace('<body>', `<body><h1>Release walkthrough for the spring edition</h1><p id="desc">${DESCRIPTION}</p>`),
+    });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  const sent = [];
+  await context.route('https://api.openai.com/**', (route) => {
+    sent.push(route.request().postData() || '');
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    video.currentTime = 0.5;
+    video.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  const state = await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' });
+  expect(state.auto.reason).toBe('BUILTIN_CAPTIONS');
+  // 给调度层足够的时间：它要是会翻正文，这会儿早送出去了。
+  await page.waitForTimeout(1500);
+  await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
+  await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
+  expect(sent.length).toBeGreaterThan(0);
+  expect(sent.join('\n')).not.toContain('first sketch');
 });
 
 test('skips translation when track language matches target', async ({ page, context }) => {
@@ -391,7 +438,9 @@ async function playCue(page) {
 }
 
 // The live player splits its right-hand cluster into two groups; the fixture
-// above is the flat older layout. Both have to place the button.
+// above is the flat older layout. Both have to place the button. The left group
+// opens with YouTube's own expand chevron, as the live player does (crawl of
+// youtube.com/watch, 2026-09-27).
 const splitBarHtml = html.replace(
   `      <div class="ytp-right-controls">
         <button class="ytp-settings-button ytp-button"></button>
@@ -399,6 +448,7 @@ const splitBarHtml = html.replace(
       </div>`,
   `      <div class="ytp-right-controls">
         <div class="ytp-right-controls-left">
+          <button class="ytp-expand-right-bottom-section-button ytp-button"></button>
           <button class="ytp-subtitles-button ytp-button"></button>
           <button class="ytp-settings-button ytp-button"></button>
         </div>
@@ -421,8 +471,69 @@ test('the button docks into the player control bar, first in the right cluster',
 
   // It wears the player's own button class, so it inherits that bar's sizing.
   await expect(page.locator('.ytp-right-controls > .ai-translator-caption-btn')).toHaveClass(/ytp-button/);
+  // The chevron that opens the menu sits right after it.
+  await expect(page.locator('.ytp-right-controls > .ai-translator-caption-btn + #ai-translator-caption-more')).toHaveCount(1);
   // Docked means docked: no floating box over the video as well.
   await expect(page.locator('#ai-translator-caption-controls')).toHaveCount(0);
+});
+
+// R33 A3 — the icon is a switch for this video's subtitle translation, the same
+// switch as the overlay's close button; the chevron beside it opens the menu.
+// No onboarding bubble on the way: the first thing on screen is the icon.
+test('one click on the icon switches this video\'s subtitle translation off and back on', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  const icon = page.locator('.ytp-right-controls > #ai-translator-caption-btn');
+  const more = page.locator('#ai-translator-caption-more');
+  const overlay = page.locator('#ai-translator-caption-overlay');
+  const menu = page.locator('#ai-translator-caption-menu');
+  const nativeLayer = page.locator('.ytp-caption-window-container');
+
+  await expect(icon).toHaveCount(1);
+  await playCue(page);
+  await expect(overlay).toContainText('你好世界');
+  await expect(icon).toHaveAttribute('aria-pressed', 'true');
+  await expect(nativeLayer).toHaveClass(/ai-translator-hide-native/);
+
+  // Off: our line goes, the player's own captions come back, no menu opens and
+  // nothing is written — this is one video, not a site rule.
+  await icon.click();
+  await expect(icon).toHaveAttribute('aria-pressed', 'false');
+  await expect(overlay).toBeHidden();
+  await expect(nativeLayer).not.toHaveClass(/ai-translator-hide-native/);
+  await expect(menu).toBeHidden();
+  // The playhead moving on does not bring it back.
+  await page.evaluate(() => {
+    const v = document.querySelector('video');
+    v.currentTime = 0.8;
+    v.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(overlay).toBeHidden();
+  expect(await getSyncSetting(context, 'siteRules')).toBeFalsy();
+
+  // On again, straight away — no waiting for the next timeupdate.
+  await icon.click();
+  await expect(icon).toHaveAttribute('aria-pressed', 'true');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toContainText('你好世界');
+
+  // The overlay's close button is the same switch: the icon follows it.
+  await page.locator('#ai-translator-caption-overlay .ai-translator-caption-close').click({ force: true });
+  await expect(overlay).toBeHidden();
+  await expect(icon).toHaveAttribute('aria-pressed', 'false');
+  await icon.click();
+  await expect(overlay).toBeVisible();
+
+  // The chevron opens the unchanged menu, from the keyboard too.
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('[data-action="enable"]')).toBeVisible();
+  await expectCaptionMenuAnchoredAboveButton(page, '#movie_player');
+  // And the icon is still a switch while the menu is open.
+  await icon.click();
+  await expect(icon).toHaveAttribute('aria-pressed', 'false');
 });
 
 // The whole point of watching with the gate shut: the button is how you open
@@ -435,8 +546,12 @@ test('the button is there with the gate shut, and opens it', async ({ page, cont
 
   const button = page.locator('#ai-translator-caption-btn');
   await expect(button).toHaveCount(1);
+  // Nothing to switch on while the gate is shut: the icon reads off, and a
+  // click on it opens the menu, whose first row opens the gate.
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
 
   await button.click();
+  await expect(page.locator('#ai-translator-caption-more')).toHaveAttribute('aria-expanded', 'true');
   const toggle = page.locator('#ai-translator-caption-menu .ai-translator-caption-switch');
   // 画的是这个站点的规则，不是字幕闸门。没设过规则的时候它是关的——拿闸门去画
   // 的话，在一个没被拒绝的站点上它会显示成「开」，而按下去写进去的是 never。
@@ -465,7 +580,7 @@ test('on a site with no rule, one row stops subtitles there for good', async ({ 
   await playCue(page);
   await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
 
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   const toggle = page.locator('#ai-translator-caption-menu .ai-translator-caption-switch');
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   const stop = page.locator('#ai-translator-caption-menu [data-action="stop-site"]');
@@ -482,7 +597,7 @@ test('on a site with no rule, one row stops subtitles there for good', async ({ 
   await expect(page.locator('#ai-translator-caption-overlay')).toHaveCount(0);
 
   // 按钮还在，这一行收起来了，第一行还是那个「关」—— 按它就是重新打开。
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   await expect(stop).toBeHidden();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
 });
@@ -490,7 +605,7 @@ test('on a site with no rule, one row stops subtitles there for good', async ({ 
 // A2 — the menu's rows, in order, in the reader's language.
 test('the menu lists its rows in order', async ({ page, context }) => {
   await openPlayer(page, context, BASE_SETTINGS);
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
 
   const menu = page.locator('#ai-translator-caption-menu');
   await expect(menu).toBeVisible();
@@ -530,6 +645,7 @@ test('clicking the button and the menu never reaches the player', async ({ page,
 
   const paused = await page.evaluate(() => document.querySelector('video').paused);
   await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   await page.locator('#ai-translator-caption-menu .ai-translator-caption-menu-item').first().click();
 
   expect(await page.evaluate(() => window.__playerClicks)).toBe(0);
@@ -547,7 +663,7 @@ test('the display type decides which lines are drawn', async ({ page, context })
   await expect(original).toBeVisible();
 
   const pick = async (mode) => {
-    await page.locator('#ai-translator-caption-btn').click();
+    await page.locator('#ai-translator-caption-more').click();
     await page.selectOption('#ai-translator-caption-menu .ai-translator-caption-select', mode);
     await page.keyboard.press('Escape');
   };
@@ -586,7 +702,7 @@ test('a pre-F17 profile with the checkbox off still shows the translation alone'
 
   // And the migrated mode is what the in-player select shows, so the reader is
   // not told "bilingual" while looking at one line.
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   await expect(
     page.locator('#ai-translator-caption-menu [data-action="mode"] .ai-translator-caption-select'),
   ).toHaveValue('translation');
@@ -621,24 +737,31 @@ test('hiding the shortcut removes the button, and restoring it brings it back', 
   await openPlayer(page, context, BASE_SETTINGS);
   await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(1);
 
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   await page.locator('#ai-translator-caption-menu .ai-translator-caption-menu-item').last().click();
   await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(0);
+  await expect(page.locator('#ai-translator-caption-more')).toHaveCount(0);
 
   await writeSyncSettings(context, { captionPlayerButton: true });
   await expect(page.locator('#ai-translator-caption-btn')).toHaveCount(1);
 });
 
-// The bar YouTube actually ships: two nested groups, with CC and the gear in
-// the left one. The button belongs beside those, not beside fullscreen.
-test('on the split control bar the button joins the caption-side group', async ({ page, context }) => {
+// The bar YouTube actually ships: two nested groups, with YouTube's own expand
+// chevron, CC and the gear in the left one. The button belongs right beside CC,
+// not beside fullscreen and not in front of YouTube's chevron.
+test('on the split control bar the button joins the caption-side group, beside CC', async ({ page, context }) => {
   await openPlayer(page, context, BASE_SETTINGS, splitBarHtml);
 
   await expect.poll(async () => page.evaluate(() => {
     const group = document.querySelector('.ytp-right-controls-left');
-    const first = group && group.firstElementChild;
-    return !!first && first.classList.contains('ai-translator-caption-btn');
-  })).toBe(true);
+    return group ? [...group.children].map((el) => el.id || el.classList[0]) : [];
+  })).toEqual([
+    'ytp-expand-right-bottom-section-button',
+    'ai-translator-caption-btn',
+    'ai-translator-caption-more',
+    'ytp-subtitles-button',
+    'ytp-settings-button',
+  ]);
 });
 
 // ------------------------------------------------------------------- PR-9
@@ -673,8 +796,14 @@ test('with the setting on, the player’s own CC button gets pressed — once', 
   expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
 });
 
-test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+test('the default install presses the CC button too', async ({ page, context }) => {
+  // R33（D-351）：autoEnableCaptions 默认开。没开原字幕的视频上字幕翻译无从谈起。
   await openPlayer(page, context, BASE_SETTINGS, ccOff());
+  await expect.poll(() => page.evaluate(() => window.__ccClicks), { timeout: 8000 }).toBe(1);
+});
+
+test('with the setting off, the CC button is left alone', async ({ page, context }) => {
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: false }, ccOff());
   await page.waitForTimeout(3500);
 
   expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
@@ -685,9 +814,11 @@ test('a video with no captions at all says so, instead of offering a dead button
   // YouTube disables its own CC button on a video with no tracks. Pressing our
   // row there would press nothing, so the row is never offered in the first
   // place and the menu says what is going on instead.
-  await openPlayer(page, context, BASE_SETTINGS, ccOff('disabled'));
+  // The setting is off so that the one press counted below is the row's, not
+  // the heartbeat's the moment the button comes alive.
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: false }, ccOff('disabled'));
 
-  await page.locator('#ai-translator-caption-btn').click();
+  await page.locator('#ai-translator-caption-more').click();
   const menu = page.locator('#ai-translator-caption-menu');
   const nativeRow = menu.locator('[data-action="native"]');
   await expect(menu.locator('.ai-translator-caption-menu-status')).toHaveText('未检测到字幕轨');

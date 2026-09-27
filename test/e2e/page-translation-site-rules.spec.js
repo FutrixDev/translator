@@ -17,8 +17,11 @@
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, oursIn, ourNodesAt, sentSegments } = require('./helpers');
+const {
+  setExtensionSettings, oursIn, ourNodesAt, sentSegments, evaluateInContentScript, triggerPageTranslation,
+} = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { getMessage } = require('../../i18n/messages');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
 const TWEET_B = 'Every number in table three was reproduced from scratch, with no tuning at all.';
@@ -157,6 +160,122 @@ test('site rules: a tweet is translated as one block, and its chrome is not tran
     expect(await oursIn(page, 'author-box')).toBe(0);
     expect(await oursIn(page, 'actions-box')).toBe(0);
     expect(await ourNodesAt(page, 'stamp')).toBe(0);
+  } finally {
+    await close();
+  }
+});
+
+// 私信（R33 Q1）：x.com 整站 always，私信那几条路径是内置 never —— 零点击就把私信
+// 发给 AI。落地什么都不送；他自己点「翻译此页」照样翻。手动这一半只能在真页面上
+// 证：手动翻译不问 decide()，单测里没有一个函数能代表「点了之后真的翻了」。
+const DM_TEXT = 'Are you still coming over for dinner on Friday, or should we move it to next week?';
+const DM_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Messages / X</title></head>
+<body>
+  <main><section id="dm"><div data-testid="messageEntry"><p id="dm-text">${DM_TEXT}</p></div></section></main>
+</body></html>`;
+
+test('site rules: a direct-message page is not translated by itself, and Translate this page still works there', async ({ page, context, extensionId }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://x.com/**', DM_PAGE);
+
+    await page.goto('https://x.com/messages/abc');
+    await page.waitForSelector('#ai-translator-float-ball');
+    const autoState = () => evaluateInContentScript(context, page, 'AI_TRANSLATOR_CONTENT.autoTranslate.state().reason');
+    await expect.poll(autoState).toBe('BUILTIN_NEVER');
+    // 判完了就是判完了：不发现、不送。判定一落地就断言的话，「送」这件事还没有
+    // 机会发生（发现层 400ms + 起跑 250ms 之后才出门），断言会在错的实现下也绿。
+    // 等过一个完整的发送窗口再看。
+    await page.waitForTimeout(1500);
+    expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
+    expect(await oursIn(page, 'dm')).toBe(0);
+
+    // popup 的站点行灰着，title 说的是内置 never 那句，不是「在黑名单里」（R33
+    // D-360 F3）：页面回的是 blockReason 枚举，popup 只按它取话。
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    await page.bringToFront();
+    await popup.reload();
+    const siteRow = popup.locator('#toggleSiteAuto');
+    await expect(siteRow).toBeVisible();
+    await expect(siteRow).toBeDisabled();
+    await expect(siteRow).toHaveAttribute('title', getMessage('autoReasonBuiltinNever', 'en'));
+    await popup.close();
+
+    await triggerPageTranslation(page);
+    await expect(page.locator('#dm .ai-translator-inline-block')).toContainText('[T]', { timeout: 30000 });
+    expect(sentTexts.join('\n')).toContain(DM_TEXT);
+  } finally {
+    await close();
+  }
+});
+
+// 从首页点进私信（R33 D-360 F1）。x.com 这类单页应用的路由器会拦下 Navigation API
+// 的 navigate 事件（intercept），于是隔离世界的 navigatesuccess 要等它的处理函数落定，
+// 只剩 800ms 一次的轮询能听见换了页；而私信正文一插进来，发现层 400ms + 起跑 250ms
+// 之后那一批就出门了。按首页的判定出门，私信就发给了 AI。
+//
+// 修法在发请求之前：先拿地址对一次这一代是替哪个地址判的，对不上就当场补上路由信号
+// （content/content-auto-translate.js 的 superseded()）。
+//
+// 要让错的实现确定地红，时序得排好：先推一个判定不变的探针地址，等轮询把它报上来
+// （会话号一变就是轮询那一拍），紧接着在同一个任务里推私信地址、插私信正文 —— 离
+// 下一拍轮询还有将近 800ms，发送窗口先到。确定性的那一份在
+// test/unit/auto-translate-route-send.test.mjs。
+test('site rules: moving from the home timeline into a direct message sends nothing from the message, even before the route signal arrives', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://x.com/**', X_PAGE);
+
+    await page.goto('https://x.com/home');
+    await page.waitForSelector('#ai-translator-float-ball');
+    // 首页照常自己翻：这一页的判定是开着的。
+    await page.waitForSelector('#tweet .ai-translator-inline-block', { timeout: 30000 });
+    expect(sentTexts.join('\n')).toContain(TWEET_A);
+
+    // 页面自己的路由器：拦下每一次 push 导航，处理函数 5 秒才落定。两个按钮由隔离
+    // 世界按（DOM 事件跨世界同步派发），真正的 pushState 在页面自己的世界里。
+    await page.evaluate((dmText) => {
+      navigation.addEventListener('navigate', (event) => {
+        if (event.canIntercept && event.navigationType === 'push') {
+          event.intercept({ handler: () => new Promise((resolve) => setTimeout(resolve, 5000)) });
+        }
+      });
+      document.addEventListener('test:probe', () => history.pushState({}, '', '/home?probe=1'));
+      document.addEventListener('test:open-dm', () => {
+        history.pushState({}, '', '/messages/abc');
+        const entry = document.createElement('div');
+        entry.setAttribute('data-testid', 'messageEntry');
+        entry.innerHTML = `<p id="dm-text">${dmText}</p>`;
+        document.body.appendChild(entry);
+      });
+    }, DM_TEXT);
+
+    const waited = await evaluateInContentScript(context, page, `(async () => {
+      const version = () => AI_TRANSLATOR_CONTENT.autoTranslate.state().sessionVersion;
+      const before = version();
+      const t0 = performance.now();
+      document.dispatchEvent(new CustomEvent('test:probe'));
+      await new Promise((resolve) => {
+        const id = setInterval(() => {
+          if (version() !== before) { clearInterval(id); resolve(); }
+        }, 2);
+      });
+      document.dispatchEvent(new CustomEvent('test:open-dm'));
+      return Math.round(performance.now() - t0);
+    })()`);
+    console.log(`[F1] probe route heard after ${waited} ms; DM opened right after that poll tick`);
+
+    // 过一个完整的发送窗口（650ms 起跑）再加上下一拍轮询之后的余量。
+    await page.waitForTimeout(3000);
+    expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
+    expect(await evaluateInContentScript(context, page, 'AI_TRANSLATOR_CONTENT.autoTranslate.state().reason'))
+      .toBe('BUILTIN_NEVER');
   } finally {
     await close();
   }

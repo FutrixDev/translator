@@ -16,7 +16,6 @@ import { workerSource, messageCatalog, contentBundle, contentCss } from './helpe
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
-await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
@@ -28,8 +27,8 @@ const R = SiteRules.REASONS;
 
 test('arXiv 的 /pdf/ 不走整页翻译，而它的 /abs/ 照常走', () => {
   const ask = (path) => SiteRules.decide({
-    host: 'arxiv.org', path, pageLang: 'en', targetLang: 'zh-CN',
-    userRules: {}, settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    host: 'arxiv.org', path,
+    userRules: {}, settings: { autoTranslate: true }, explicit: false,
   });
   const pdf = ask('/pdf/2501.00001');
   assert.equal(pdf.verdict, 'off');
@@ -42,9 +41,9 @@ test('内置的 never 用户翻不过来，而它不是黑名单', () => {
   // 是「这一页不走这条路」，不是一条可以覆盖的偏好）；但它说出来的理由不能是
   // 「这个网站被拉黑了」—— 那句话在 /abs/ 上是假的，而条子上照着理由说话。
   const over = SiteRules.decide({
-    host: 'arxiv.org', path: '/pdf/2501.00001', pageLang: 'en', targetLang: 'zh-CN',
+    host: 'arxiv.org', path: '/pdf/2501.00001',
     userRules: { 'arxiv.org': 'always' },
-    settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    settings: { autoTranslate: true }, explicit: false,
   });
   assert.equal(over.verdict, 'off');
   assert.equal(over.reason, R.BUILTIN_NEVER);
@@ -59,19 +58,19 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
   // refused 那一位，而它由 REFUSALS 决定。少收这一档，一份 PDF 上的 <video>
   // 就会自己开始往第三方送字幕。
   const pdf = SiteRules.decide({
-    host: 'arxiv.org', path: '/pdf/2501.00001', pageLang: 'en', targetLang: 'zh-CN',
-    userRules: {}, settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    host: 'arxiv.org', path: '/pdf/2501.00001',
+    userRules: {}, settings: { autoTranslate: true }, explicit: false,
   });
   assert.equal(pdf.refused, true);
 
   // 而界面得有话说 —— 每个理由都要有一句对应的文案，少一个条子上就是空白。
-  const status = repoFile('content/content-auto-status.js');
+  const keys = repoFile('shared/auto-reason-keys.js');
   for (const reason of Object.keys(R)) {
-    assert.match(status, new RegExp(`\\b${reason}: '`), `REASON_KEYS 里没有 ${reason}`);
+    assert.match(keys, new RegExp(`\\b${reason}: '`), `AutoReasonKeys 里没有 ${reason}`);
   }
   const catalog = messageCatalog();
   for (const lang of Object.keys(catalog)) {
-    for (const k of ['autoReasonBuiltinNever', 'pdfAskPrompt']) {
+    for (const k of ['autoReasonBuiltinNever', 'mediaHintPdfNoShortcut']) {
       assert.ok(catalog[lang][k], `${lang} 缺 ${k}`);
     }
   }
@@ -79,34 +78,38 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
 
 // ---------------------------------------------------- 点了才跑
 
-test('提示条自己不发请求 —— 唯一那一句在 accept() 里', () => {
-  const src = repoFile('content/content-pdf-prompt.js');
-  const sends = [...src.matchAll(/chrome\.runtime\.sendMessage/g)];
-  assert.equal(sends.length, 1, '提示条里出现了第二处 sendMessage');
-  const accept = src.slice(src.indexOf('function accept('), src.indexOf('function dismiss('));
-  assert.match(accept, /chrome\.runtime\.sendMessage/, '那一句不在 accept() 里');
+test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里，dispatch 只由 run() 叫', () => {
+  // Code only: the comments name these messages while explaining them.
+  const src = repoFile('content/content-media-hints.js')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const dispatch = src.slice(src.indexOf('function dispatch('), src.indexOf('async function run('));
+  for (const job of ['PDF_TRANSLATE_URL', 'startComicPageTranslation']) {
+    const at = [...src.matchAll(new RegExp(job, 'g'))].map((m) => m.index);
+    assert.equal(at.length, 1, `${job} 出现在 dispatch() 之外`);
+    assert.ok(dispatch.includes(job), `${job} 不在 dispatch() 里`);
+  }
+  const calls = [...src.matchAll(/\bdispatch\(/g)].length;
+  assert.equal(calls, 2, 'dispatch() 多了一个调用点');
+  const run = src.slice(src.indexOf('async function run('), src.indexOf('function runMediaShortcut('));
+  assert.match(run, /\bdispatch\(kind\)/);
   // fetch 一次都不能有：这一层的职责是问，不是办。
   assert.equal(/\bfetch\s*\(/.test(src), false);
 });
 
-test('提示条只在真是一份 PDF 文档、而且开关开着的时候出现', () => {
-  const src = repoFile('content/content-pdf-prompt.js');
-  assert.match(src, /enablePdfTranslation/);
-  assert.match(src, /PdfUrl\.isLikelyPdfUrl/);
-  assert.match(src, /application\/pdf/);
-});
+// PDF 提示条什么时候出现，由 media-hints.test.mjs 的 PDF 用例跑着问（未登录、被关掉）。
 
-test('条子让位给 offer，而且不花掉这个站点的追问额度', () => {
+test('offer 有自己的一档和自己的两句按钮文案', () => {
   const src = repoFile('content/content-auto-status.js');
-  // 模式阶梯：offer 排在 ask 前面。一份 PDF 上的正文是空的，「翻译这一页？」
-  // 点下去一个字也出不来。
-  assert.match(src, /offer \? 'offer' : \(asking \? 'ask' : ''\)/);
-  // 要号那一步压在 mode === 'ask' 下面，所以 offer 不经过它。
-  assert.match(src, /mode === 'ask' && askSlot/);
-  // 勾选框在 offer 下藏起来（「记住这个站点」在一份文档上没有对应的意思），
-  // 而两个按钮正是它要的，不能跟着藏。
+  // 模式阶梯 notice > explain > offer 由 auto-bar-trusted.test.mjs 跑着问（currentMode）。
+  // 按钮说的是 offer 自己的话，不借已删掉的追问文案。
+  assert.match(src, /t\('autoOfferAccept'\)/);
+  assert.match(src, /t\('autoOfferDismiss'\)/);
+  const catalog = messageCatalog();
+  for (const lang of Object.keys(catalog)) {
+    for (const k of ['autoOfferAccept', 'autoOfferDismiss']) assert.ok(catalog[lang][k], `${lang} 缺 ${k}`);
+  }
+  // 两个按钮正是 offer 要的，CSS 不能把它们藏掉。
   const css = contentCss();
-  assert.match(css, /\[data-mode="notice"\], \[data-mode="offer"\]\) \.ai-translator-auto-remember/);
   assert.equal(
     /\[data-mode="offer"\][^\n]*data-act="translate"/.test(css), false,
     'offer 把自己的按钮藏掉了');
@@ -121,7 +124,7 @@ test('四个入口走同一个 startPdfUrlTranslation()', () => {
     assert.equal(menus.includes(own), false, `右键菜单又自己做了一遍 ${own}`);
   }
   // 提示条那一路：内容脚本发消息，worker 落到同一个函数上。
-  assert.match(repoFile('content/content-pdf-prompt.js'), /PDF_TRANSLATE_URL/);
+  assert.match(repoFile('content/content-media-hints.js'), /PDF_TRANSLATE_URL/);
   assert.match(workerSource(), /case 'PDF_TRANSLATE_URL':/);
   const worker = workerSource();
   const arm = worker.slice(worker.indexOf("case 'PDF_TRANSLATE_URL':"));
@@ -163,7 +166,7 @@ test('用到格式表的每一面都装了 shared/doc-jobs.js', () => {
 
 test('提示条排在画条子的那一层后面', () => {
   const bundle = contentBundle();
-  assert.ok(bundle.indexOf('content/content-pdf-prompt.js') > bundle.indexOf('content/content-auto-status.js'));
+  assert.ok(bundle.indexOf('content/content-media-hints.js') > bundle.indexOf('content/content-auto-status.js'));
 });
 
 test('两个网址判断的边界没变', () => {

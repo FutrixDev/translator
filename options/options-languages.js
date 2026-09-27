@@ -35,8 +35,4 @@ function renderLanguageOptions(uiLang) {
   // 还能认出自己那门。
   fillLanguageSelect(document.getElementById('uiLanguage'),
     UI_LANGUAGES.map((code) => ({ value: code, label: TargetLang.autonym(code) })));
-
-  for (const input of document.querySelectorAll('#autoTranslateLangs input[data-lang]')) {
-    input.nextElementSibling.textContent = TargetLang.nameOf(input.dataset.lang, uiLang);
-  }
 }

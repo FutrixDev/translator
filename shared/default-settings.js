@@ -23,7 +23,9 @@
 // see shared/target-lang.js.
 //
 // Loaded as a classic script by the content scripts, so it publishes onto the
-// global object rather than using `export`.
+// global object rather than using `export`. It reads AccountGate at load (the
+// account features' defaults live there), so shared/account-gate.js loads
+// before it in every list that loads it.
 (function (root) {
   'use strict';
 
@@ -64,19 +66,21 @@
     // 页脚，信任作者写的 <main>），'page' 从 <body> 起整页翻。判定在
     // content/page/scope.js；悬浮菜单「翻译整个页面」和 Alt+W 临时改成整页。
     pageTranslateScope: 'main',
-    // 「没开原字幕的视频，替我把原字幕点开」。默认关，而且是本轮唯一保留的独立
-    // 开关：它**改动播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的
-    // mode），而其余的自动化只是往页面里插我们自己的节点。有副作用的那一件事要
-    // 单独同意 —— 关着的时候，字幕这一面的行为和从前一模一样。
-    autoEnableCaptions: false,
+    // 「没开原字幕的视频，替我把原字幕点开」。本轮唯一保留的独立开关：它**改动
+    // 播放器自己的状态**（YouTube 的 CC 按钮、一条 <track> 的 mode），而其余的
+    // 自动化只是往页面里插我们自己的节点。R33（D-351）起默认开：没开原字幕的视频
+    // 上字幕翻译无从谈起，而「装了插件看 YouTube」正是用户期待它自己动的地方。
+    // 副作用由 syncNativeCaptions() 那道只合不开的闩收着：观众自己关掉一次，这
+    // 个视频就再也不替他开。
+    autoEnableCaptions: true,
     enableImageOcrTranslation: true,
     // The hover shortcut button defaults on, matching background.js
     // defaultSettings. (There is no auto-translate setting: OCR is always
     // recognise-first, with a Translate button in the popup.)
     enableImageOcrHoverButton: true,
-    enableComicTranslation: false,
+    // enableComicTranslation / enablePdfTranslation: shared/account-gate.js.
+    ...root.AccountGate.FEATURE_DEFAULTS,
     comicTargetLang: '',
-    enablePdfTranslation: true,
     pdfTargetLang: '',
     // Superseded by captionDisplayMode; still read so a profile that only
     // has the old boolean migrates instead of resetting to bilingual.
@@ -105,18 +109,16 @@
     theme: 'light',
 
     // —— 自动翻译 ——
-    // 一个总开关，一份站点名单，一份语言名单。三者的判定顺序全在
-    // shared/site-rules.js 的 decide() 里，这里只放数据。
+    // 一个总开关，一份站点名单。判定顺序全在 shared/site-rules.js 的 decide()
+    // 里，这里只放数据。
     //
     // 默认开：这个功能的价值是「打开外文页面就已经是中文的」，默认关等于
     // 让每个用户先发现它、再打开它，绝大多数人两件事都不会做。关掉它的成本
-    // 是一次点击，而且总开关一关，整条链路（发现层、调度层、询问条）全停。
+    // 是一次点击，而且总开关一关，整条链路（发现层、调度层、字幕）全停。
     autoTranslate: true,
     // 站点级覆盖：{ 'example.com': 'always' | 'never' }。域名是归一化后的主机名，
     // 查找时会向上逐级找父域（见 SiteRules.decide）。
     siteRules: Object.freeze({}),
-    // 只自动翻这些源语言；空数组 = 不限制。装的是语言基码（'en'、'ja'）。
-    autoTranslateLangs: Object.freeze([]),
     // 自动模式走哪个引擎，和上面那颗 translationEngine（手动翻译走哪个）是**两
     // 件事**，所以是两个键。
     //
@@ -137,13 +139,7 @@
     // 是一天几分钱；它挡的不是正常使用，是「一个循环加载的页面替我把一个月的额度
     // 烧掉」。超了就停下并说清楚：页面上提示一次「这一页可以手动翻译」，字幕菜单里
     // 是「今日 AI 额度已用完」，第二天自己恢复（FR-9）。
-    autoAiDailyBudget: 200000,
-    // 每个域名追问过几次：{ 'example.com': 2 }。问到 3 次还没换来一次「翻译」
-    // 就永远不再问（content/content-auto-status.js 的 MAX_ASKS）。
-    //
-    // 跟着 sync 走是有意的：用户在笔记本上把某个站点的追问条关掉三次，换台机器
-    // 不该从头再问三次 —— 他已经回答过了，只是用的是关掉它这个动作。
-    siteAskCount: Object.freeze({})
+    autoAiDailyBudget: 200000
   });
 
   /**
@@ -157,8 +153,6 @@
     // 时，一处往 siteRules 里记一条站点规则，同一页面里其他拿到「默认值」的地方
     // 就跟着有了这条规则 —— 而且 CONTENT_DEFAULTS 是冻的，严格模式下直接抛。
     defaults.siteRules = {};
-    defaults.autoTranslateLangs = [];
-    defaults.siteAskCount = {};
     return defaults;
   }
 

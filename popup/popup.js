@@ -4,6 +4,8 @@ const elements = {
   translatePageLabel: document.getElementById('translatePageLabel'),
   translatePageShortcut: document.getElementById('translatePageShortcut'),
   translationOnlyShortcut: document.getElementById('translationOnlyShortcut'),
+  toggleGlobalAuto: document.getElementById('toggleGlobalAuto'),
+  globalAutoStatus: document.getElementById('globalAutoStatus'),
   toggleSiteAuto: document.getElementById('toggleSiteAuto'),
   siteAutoStatus: document.getElementById('siteAutoStatus'),
   stopSiteAuto: document.getElementById('stopSiteAuto'),
@@ -37,11 +39,27 @@ const defaultSettings = {
   translationStyle: 'default'
 };
 
-// 内置引擎只有已注入的 content script 答得出（见 content-messaging.js 的
-// PROBE_ENGINE）。这条往返要有上限：popup 是个当场要出结果的面板，宁可说
-// “不知道”，也不能挂在那儿转。
-const ENGINE_PROBE_TIMEOUT_MS = 300;
+// popup 开着时问标签页的两件事 —— 内置引擎能不能用（PROBE_ENGINE）、这一页的
+// 状态（AUTO_PAGE_STATE）—— 都只有已注入的 content script 答得出，而它可能正
+// 忙。这两条往返要有上限：popup 是个当场要出结果的面板，宁可先说「不知道」，也
+// 不能挂在那儿转。两处共用 raceReply() 这一个上限。
+const TAB_REPLY_TIMEOUT_MS = 300;
 const PROBE_TIMED_OUT = 'timeout';
+
+/**
+ * 等 `pending` 至多 `ms` 毫秒；过了就先答 PROBE_TIMED_OUT。
+ *
+ * 不取消 `pending` —— 调用方手里还攥着它，迟到的答复照样拿得到（见
+ * refreshPageRows 的补画）。哨兵是个字符串，和 sendToActiveTab 的 null（「这一页
+ * 没有接收端」）是两句不同的话，别把它们揉成一个。
+ */
+function raceReply(pending, ms) {
+  let timer = null;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(PROBE_TIMED_OUT), ms);
+  });
+  return Promise.race([pending, deadline]).finally(() => clearTimeout(timer));
+}
 
 // Apply theme
 function applyTheme(theme) {
@@ -71,11 +89,16 @@ function applyI18n(lang) {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', async () => {
-  await checkStatus();
+//
+// 按钮先接上，再去问任何人。这一页的每一个问题（存储、标签页、service worker）
+// 都可能慢：内容脚本正忙着译一大页时，AUTO_PAGE_STATE 能晚回好几秒。以前监听器
+// 排在那一问后面，点「翻译此页」在这几秒里什么都不会发生 —— 按钮画出来了，却是
+// 死的。所以这里一个 await 都没有：监听器同步绑上，其余的各自跑、各自画。
+document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-  refreshComicSection();
   setupPdfSection();
+  refreshComicSection().catch((error) => console.error('Failed to read comic settings:', error));
+  checkStatus();
 });
 
 /**
@@ -89,11 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function refreshComicSection() {
   // Off means gone, not greyed out: these rows would otherwise advertise a
   // feature with no entry point behind it.
-  const { enableComicTranslation } = await AccountGate.applyAccountGate(
-    await chrome.storage.sync.get({ enableComicTranslation: false })
-  );
-  elements.comicTranslatePage.hidden = !enableComicTranslation;
-  elements.comicColorizePage.hidden = !enableComicTranslation;
+  const comicReady = await AccountGate.readFeatureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
+  elements.comicTranslatePage.hidden = !comicReady;
+  elements.comicColorizePage.hidden = !comicReady;
 }
 
 // Everything the popup asks a tab is about the page the address bar shows, and
@@ -134,10 +155,7 @@ async function onComicPageAction(mode) {
 
 // 自动翻译真的在管这一页的那几个状态 —— **只决定「暂停这一页」那一行在不在**。
 //
-// off / ask 不在其中：那时「暂停」无事可停。pending 也不在 —— 它看着像「正要
-// 开翻」，其实不是：走到 pending 的**前提**就是第一问已经答了 ask（off 和 auto
-// 都当场返回了），而第二问带上语言之后，decide() 的阶梯上剩给它的只有 off
-// （同语言 / 不在语言名单里）和 ask 两条，再没有一条通往 auto。
+// off 不在其中：那时「暂停」无事可停。
 //
 // **站点那一行不看它。**「这一页此刻在不在翻」和「这个站点开着自动翻」是两句
 // 话，中间隔着一次一次性的「翻译这一页」（见 siteAutoOn()）。
@@ -150,7 +168,6 @@ const AUTO_ACTIVE = new Set(['idle', 'running', 'paused', 'error']);
 const AUTO_RESUMABLE = new Set(['paused', 'error']);
 
 let pageState = null;
-let globalAuto = true;
 
 async function sendToActiveTab(message) {
   try {
@@ -241,7 +258,9 @@ function renderPageRows() {
     //
     // 「灰不灰」和「为什么灰」是两个问题，答案来自两处但同一个主人：
     // 前者是 SiteRules.siteRuleWritable()，和字幕菜单、悬浮球菜单第一项问的
-    // 是同一句话；后者只有黑名单说得出一句人话。从前这里只问黑名单，于是
+    // 是同一句话；后者是页面回的 blockReason 枚举（SiteRules.blockReason()），
+    // popup 只按它在 AutoReasonKeys 里取那句话，不自己重判是黑名单还是内置
+    // never —— 手上没有内置表，判了也是猜（R33 D-360 F3）。从前这里只问黑名单，于是
     // file:// 页面上这一行看起来能点 —— 按下去 setSiteAuto 抛，用户拿到的是
     // 一句「没存上」，而另外两处早就把它灰掉了。
     //
@@ -250,7 +269,9 @@ function renderPageRows() {
     const writable = !!pageState.ruleWritable;
     elements.toggleSiteAuto.disabled = !writable;
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
-    elements.toggleSiteAuto.title = pageState.blocked ? t('autoReasonBlocklist') : pageState.host;
+    elements.toggleSiteAuto.title = pageState.blockReason
+      ? t(AutoReasonKeys[pageState.blockReason])
+      : pageState.host;
   }
 
   // ①b 不再自动翻译这个站点。字幕在一个没设过规则的站点上照翻（闸门问的是「没
@@ -281,8 +302,30 @@ function renderPageRows() {
   elements.pickSiteRegion.hidden = !(pageState && pageState.pickerAvailable);
 }
 
-async function refreshPageRows() {
-  pageState = await sendToActiveTab({ type: 'AUTO_PAGE_STATE' });
+// 每问一次页面状态就翻一页。迟到的答复只在它还是最新一问时才画 —— 否则一次
+// 点击之后的新快照会被开 popup 时那一问的旧答复盖掉。
+let pageStateGeneration = 0;
+
+/**
+ * 问页面要一份快照，画那三行。
+ *
+ * `deadline` 只给 popup 刚打开的那一次：内容脚本忙的时候，那几行先按「不知道」
+ * 画（pageState = null，和没有内容脚本的页面同一个样子：只剩「翻译此页」），答复
+ * 迟到了再补画。点击之后的重问不带上限 —— 暂停那一行要拿**真**状态来决定这一下
+ * 按不按，超时的「不知道」会让那一下静静地什么都不做。
+ */
+async function refreshPageRows({ deadline = false } = {}) {
+  const generation = ++pageStateGeneration;
+  const pending = sendToActiveTab({ type: 'AUTO_PAGE_STATE' });
+  const first = deadline ? await raceReply(pending, TAB_REPLY_TIMEOUT_MS) : await pending;
+  if (generation !== pageStateGeneration) return;
+  pageState = first === PROBE_TIMED_OUT ? null : first;
+  renderPageRows();
+  if (first !== PROBE_TIMED_OUT) return;
+
+  const late = await pending;
+  if (generation !== pageStateGeneration) return;
+  pageState = late;
   renderPageRows();
 }
 
@@ -299,7 +342,6 @@ async function toggleSiteAuto() {
   const on = siteAutoOn();
   try {
     await SiteRules.setSiteAuto(pageState.host, !on);
-    if (!on) globalAuto = true;
   } catch (error) {
     // 这条写入是会失败的：同步存储每项 8KB，站点规则表按域名一路长下去。
     // 失败了就得说一声——开关是个乐观控件，它已经在用户眼里动过了，而规则没
@@ -312,6 +354,47 @@ async function toggleSiteAuto() {
   // 规则一落地，页面那边的调度层就会重判重跑（siteRules 在 RESTART_KEYS 里）。
   // 它跑完才知道新状态是什么，所以这里重新问一次页面，而不是自己猜一个画上去。
   await refreshPageRows();
+}
+
+/**
+ * 自动翻译总开关那一行。只从存储画：checkStatus 读的那一次，之后是 onChanged ——
+ * 设置页、站点那一行（开一个站点顺带打开总开关，见 SiteRules.setSiteAuto）写的
+ * 都是同一个键，这一行跟着存储走，不自己猜。写失败时存储没变，这一行也就不动。
+ *
+ * 存储答复以前没有值：popup.html 里按钮是 disabled、没有 aria-pressed。这里第一次
+ * 画才把它启用，而且先写 aria-pressed 再启用 —— 能按的那一刻它说的就是存储里的
+ * 值。读存储失败就一直灰着（checkStatus 打日志），不拿一个默认值冒充。
+ */
+let globalAuto;
+
+function renderGlobalAuto(on) {
+  globalAuto = on;
+  elements.toggleGlobalAuto.setAttribute('aria-pressed', String(on));
+  elements.globalAutoStatus.textContent = on ? t('on') : t('off');
+  elements.globalAutoStatus.hidden = false;
+  elements.toggleGlobalAuto.disabled = false;
+}
+
+/**
+ * 点总开关：写 autoTranslate 的反面。页面那边的调度层听着这个键（RESTART_KEYS），
+ * 关掉的那一刻当场停；写完重新问一次页面，暂停那一行和站点那一行跟着变。
+ */
+async function toggleGlobalAuto() {
+  try {
+    await chrome.storage.sync.set({ autoTranslate: !globalAuto });
+  } catch (error) {
+    console.error('Failed to write autoTranslate:', error);
+    showStatus('popupAutoSettingFailed', false);
+    return;
+  }
+  await refreshPageRows();
+}
+
+function watchGlobalAuto() {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !('autoTranslate' in changes)) return;
+    renderGlobalAuto(changes.autoTranslate.newValue !== false);
+  });
 }
 
 /**
@@ -390,10 +473,13 @@ async function checkStatus() {
     applyI18n(settings.uiLanguage);
     setupDisplayRow(settings);
     
-    globalAuto = settings.autoTranslate !== false;
-    await Promise.all([refreshPageRows(), refreshShortcutHint()]);
-
-    await refreshEngineStatus(settings);
+    renderGlobalAuto(settings.autoTranslate !== false);
+    // 三问互不相干，一起发：引擎那一问以前排在页面状态后面，平白多等一轮。
+    await Promise.all([
+      refreshPageRows({ deadline: true }),
+      refreshShortcutHint(),
+      refreshEngineStatus(settings)
+    ]);
   } catch (error) {
     console.error('Failed to check status:', error);
   }
@@ -409,26 +495,8 @@ async function checkStatus() {
  *                      未注入的标签页），那是个答案，不是一次失败
  */
 async function probeActiveTabEngine() {
-  let tabId;
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    tabId = tabs[0] && tabs[0].id;
-  } catch (error) {
-    return null;
-  }
-  if (!tabId) return null;
-
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(PROBE_TIMED_OUT), ENGINE_PROBE_TIMEOUT_MS));
-  try {
-    const reply = await Promise.race([
-      chrome.tabs.sendMessage(tabId, { type: 'PROBE_ENGINE' }, TOP_FRAME),
-      timeout
-    ]);
-    return reply || null;
-  } catch (error) {
-    // “Could not establish connection” 之类：这一页没有接收端。
-    return null;
-  }
+  // sendToActiveTab 已经把「没有接收端」「没有标签页」都答成 null。
+  return raceReply(sendToActiveTab({ type: 'PROBE_ENGINE' }), TAB_REPLY_TIMEOUT_MS);
 }
 
 // 最近一次探测的答复（refreshEngineStatus 写）。「翻译此页」的 key 拦截也读它：
@@ -503,6 +571,8 @@ function openSettings() {
 // Setup event listeners
 function setupEventListeners() {
   elements.translatePage.addEventListener('click', translateCurrentPage);
+  elements.toggleGlobalAuto.addEventListener('click', toggleGlobalAuto);
+  watchGlobalAuto();
   elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
   elements.stopSiteAuto.addEventListener('click', stopSiteAuto);
   elements.togglePagePause.addEventListener('click', togglePagePause);

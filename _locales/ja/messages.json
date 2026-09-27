@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "ページ全体を翻訳（ナビゲーションとサイドバーを含む）",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "この PDF、または画面上の漫画を翻訳",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

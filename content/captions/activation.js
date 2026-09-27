@@ -103,8 +103,9 @@
   // 一个默认关着、藏在设置页第二张卡里的独立开关，做得再好也等于不存在；而两个
   // 开关意味着用户在一个视频站上点了「不再翻译」，字幕却照翻不误。
   //
-  // 问的是 siteRefused 而不是「这个站点开着自动翻」。视频站没上过内置 always 名
-  // 单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false —— 拿它当闸门，
+  // 问的是 siteRefused 而不是「这个站点开着自动翻」。视频站多半不在内置 always
+  // 名单上，整页那一面在那里的结论是安静的 off（DEFAULT_OFF，或 YouTube 的
+  // BUILTIN_CAPTIONS，都不是拒绝），siteAuto 永远是 false —— 拿它当闸门，
   // 字幕在它最该工作的地方一次也不会工作。要问的是「这个站点是不是被明令拒绝
   // 的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
 
@@ -126,7 +127,7 @@
   /**
    * 「这个站点开着自动翻」。**闸门不问这一句**（见上），菜单第一行问它：那一行
    * 写的是站点规则，和 popup 上那一行是同一句话、同一份实现。拿闸门去画它，会
-   * 在一个 ask 站点上画成「开」，而用户按下去写进去的是一条永久的 never。
+   * 在一个没上 always 名单的视频站上画成「开」，而用户按下去写进去的是一条永久的 never。
    */
   function siteAuto() {
     const snap = autoSnapshot();
@@ -178,7 +179,7 @@
    * 「不再自动翻译 {site}」那一行露不露 —— 播放器菜单和 popup 画的是同一句话，
    * 只有这一份。
    *
-   * 它补的是闸门和站点规则之间那一整片 ask：一个没设过规则的视频站上，闸门开
+   * 它补的是闸门和站点规则之间那一段安静的 off：一个没设过规则的视频站上，闸门开
    * 着（没被明令拒绝），字幕照翻；而第一行画的是 siteAuto，印着「关」。想让字
    * 幕停下，从前得先把那一行点开（写 always）再点关（写 never）。这一行一下写
    * never，走的仍是 SiteRules.setSiteAuto —— 和悬浮球那一行同一句话、同一次写入。
@@ -188,7 +189,7 @@
    *
    * 三个条件缺一不露：
    *   - 有 provider：这一页有字幕可翻（YouTube 上是整个站点，别处是一段带轨道的
-   *     视频）。没有字幕的 ask 站点上，这一行说的是一件没在发生的事；
+   *     视频）。没有字幕的页面上，这一行说的是一件没在发生的事；
    *   - 闸门开着而站点规则没说「自动」：已经 always 的，第一行本身就是关的路；
    *     已经被拒绝的，字幕本来就不翻；
    *   - 规则写得进去：file:// 上存不下键，setSiteAuto 会抛。
@@ -210,11 +211,11 @@
 
   // --------------------------------------------- turning the page's own on
   // 「没开原字幕的视频，替我把原字幕点开」。整轮自动化里只有这一件事**改动播放器
-  // 自己的状态**，所以它有自己的开关（autoEnableCaptions，默认关），而且有一道只
+  // 自己的状态**，所以它有自己的开关（autoEnableCaptions，R33 起默认开），而且有一道只
   // 合不开的闩：见 syncNativeCaptions()。
   //
-  // 闸门用的是 siteRefused 而不是「这个站点开着自动翻」。视频站点没上过内置
-  // always 名单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false——拿它
+  // 闸门用的是 siteRefused 而不是「这个站点开着自动翻」。视频站点多半不在内置
+  // always 名单上，整页那一面在那里的结论是 DEFAULT_OFF，siteAuto 永远是 false——拿它
   // 当闸门，这件事在它最该发生的地方一次也不会发生。要问的是「这个站点是不是被
   // 明令拒绝的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
   function autoEnableAllowed() {
@@ -409,6 +410,7 @@
       host,
       video,
       enabled: state.enabled,
+      dismissed: state.dismissed,
       siteAuto: state.siteAuto,
       stopSite: stopSiteOffered(provider, state.enabled, state.siteAuto),
       status: captionStatus(provider),

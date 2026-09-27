@@ -27,6 +27,7 @@ const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, impor
 globalThis.chrome = { i18n: { getUILanguage: () => 'en' } };
 
 await import('../../shared/translation-display.js');
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 const Display = globalThis.TranslationDisplay;
@@ -411,8 +412,8 @@ function pageDefaults(rel) {
   const start = source.indexOf('const defaultSettings = {');
   assert.notEqual(start, -1, `could not find the defaults in ${rel}`);
   const literal = source.slice(source.indexOf('{', start), source.indexOf('\n};', start) + 2);
-  return new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', `return (${literal});`)(
-    globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore);
+  return new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', 'AccountGate', `return (${literal});`)(
+    globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore, globalThis.AccountGate);
 }
 
 test('all four default tables say translationStyle "default" and translation-only off', () => {

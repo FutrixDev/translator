@@ -158,20 +158,38 @@ areas on purpose:
 | `enableComicTranslation` / `enablePdfTranslation` | `chrome.storage.sync` | per account |
 | `comicToken` | `chrome.storage.local` | per device |
 
-**A device with no token has both features off, whatever sync says.** That
-answer is derived on every read by `shared/account-gate.js` — never written back
-to sync. A new install syncs the switches down before it has ever signed in
-(PDF ships on), so a signed-out device that "corrected" the preference would
-reach across and disable the feature on the device that is still signed in.
+**"Turned off" and "not signed in" are two different answers** (D-353), and
+`AccountGate.featureState(settings, key, signedIn)` in `shared/account-gate.js`
+is the one place they are told apart. It never rewrites a setting; it answers
+one of three states:
 
-Every surface that reads either switch must run it through
-`AccountGate.applyAccountGate()` first: the options page, the popup, the content
-scripts and the service worker's context menu entries all do, and
-`npm run test:unit` asserts each of them loads the module. The one deliberate
-exception is `assertFeatureEnabled()` in `background.js`, which judges the raw
-switch — the account half is enforced one layer down, where `apiFetch` answers a
-create with no token as `unauthorized`, and every surface turns that into a
-sign-in offer.
+| state | meaning | what surfaces do |
+| --- | --- | --- |
+| `off` | the user turned the switch off | nothing appears on its own; only the media shortcut (this page's consent) still works |
+| `signed_out` | switch on, no token on this device | the PDF/comic hints show, and using one signs in first |
+| `ready` | switch on, signed in | every entry point, menus included |
+
+The options page draws `signed_out` as **the switch on plus a pending line**
+under it — `featureOnAfterSignIn` ("On. Takes effect once you sign in.",
+`#comicSignInPending` / `#pdfSignInPending`) — never as a switch drawn off.
+The switch shows the stored preference, which is what a click would change;
+drawing it off would read as `off` and hide the fact that signing in is all
+that is missing. `renderAccountFeature()` in `options/options-account.js`
+takes all three states from `featureState()`, and an account check still in
+flight counts as signed in, so the signed-in majority never sees the line
+flash on load. Only `ready` shows the PDF task list.
+
+Nothing is written back to sync: a new install syncs the switches down before
+it has ever signed in (both ship on), so a signed-out device that "corrected"
+the preference would reach across and disable the feature on the device that is
+still signed in.
+
+Every surface asks through it: content scripts via `ctx.featureState(key)`
+(`ctx.signedIn` is tracked beside the raw `ctx.settings`), the service worker via
+`featureState(key)` in `background/feature-gate.js`, the popup and the options
+page directly. `assertFeatureEnabled(key, {consent})` refuses only `off` — the
+account half is enforced one layer down, where `apiFetch` answers a create with
+no token as `unauthorized`, and every surface turns that into a sign-in offer.
 
 Comic translation is a family of classic scripts sharing one shelf, `ctx.comic`:
 
@@ -279,14 +297,20 @@ through the top frame's engine.
 Every translation a content script asks for — page, hover, selection, input
 box, subtitles, OCR — goes through one call, `ctx.requestTranslation`, which
 picks a backend (Chrome's built-in Translator API or the user's own AI
-endpoint) and is the **only** place a request leaves for the model. It is a
-family of classic scripts sharing one shelf, `ctx.engine`:
+endpoint) and is the **only** place a request leaves for the model. It is two
+steps: `ctx.withPromptAddenda(message)` stamps the request once with this
+document's register (below), and `ctx.sendTranslation(message)` sends a stamped
+request as it is — backend choice, fallback and the budget gate live there. A
+child frame overrides only `ctx.sendTranslation` (it hands the request to the
+top frame), and the top frame's relay calls `ctx.sendTranslation` directly, so
+a relayed request keeps the child's stamp. It is a family of classic scripts
+sharing one shelf, `ctx.engine`:
 
 | file | what it owns |
 | --- | --- |
 | `content/engine/languages.js` | extension codes ↔ Translator API codes (`toApiLang`), which languages the built-in engine knows, `detectLanguageOf()`, the page's and a snippet's source language |
 | `content/engine/watchdog.js` | the stall watchdog: every call into the Translator API gets a deadline, and a download's deadline moves with its progress events |
-| `content/content-translation-engine.js` | the entry: backend choice, the budget gate, `ctx.requestTranslation`, `ctx.builtinTranslator` |
+| `content/content-translation-engine.js` | the entry: backend choice, the budget gate, `ctx.requestTranslation` (`ctx.withPromptAddenda` + `ctx.sendTranslation`), `ctx.builtinTranslator` |
 
 The options page loads the same family (language-pack status and download), so
 both load lists — `manifest.json` and `options/options.html` — carry every file,
@@ -330,6 +354,42 @@ raising the budget or a new day heals it without a reload. The options page
 greys the budget field only when none of the four unattended AI paths is open
 (auto engine = AI, manual engine = AI, fallback allowed, or a site rule with
 engine = AI).
+
+**The model is told what kind of page it is reading, and only that.** Built-in
+site rules may carry a `register` (`social` / `forum` / `news` / `academic`,
+the table in `shared/prompt-addenda.js`), read by `SiteRules.register(host,
+path)`. That reader looks only at the built-in table: user rules have no
+register. `ctx.withPromptAddenda()` attaches `addenda` to every one of the
+three translate messages: `{ register }` when this page has one, `{}` when it
+has none. It runs once per request, in the frame that asked, reading `location`
+at call time (an SPA route change is a new register), and throws on a request
+that already carries `addenda`; because every request carries the field, that
+guard also fires on a page with no register. A child frame's request crosses the
+relay untouched, so a child page with no register sends `{}` even under a news
+top page. The translation
+cache stamps once too, keys on that stamp and sends its misses through
+`ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
+label and never the host. The service
+worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
+translating, and it throws on a missing `addenda`, an unknown register or any
+extra field. The
+handlers pass the addenda down every `ai-translate.js` path, including the
+fast batch's numbered fallback and the single-word prompt. There
+`composePromptAddenda()` places the addenda after the template and before the
+math placeholder rule. Separately, every text path carries `REGISTER_RULE`
+(casual stays casual, formal stays formal): the default single, numbered-batch
+and fast-batch templates, and the rules appended to a custom prompt on those
+same three paths, the single-text one included. The word/dictionary path never
+carries it, neither `SINGLE_WORD_PROMPT` nor `WORD_OUTPUT_RULES`: a dictionary
+entry has no register to keep, though its addenda still arrive. The register is the eighth translation-cache
+factor (`addenda`, a `PromptAddenda.stamp()` string). The built-in engine
+reads no prompt and never sees it. Captions need nothing of their own, because
+they go through `ctx.requestTranslation` too. Covered by
+`test/unit/prompt-addenda.test.mjs`,
+`test/unit/prompt-register-engine.test.mjs`,
+`test/unit/frame-relay-addenda.test.mjs` (both relay directions, real
+`child.js` → `frame-relay.js` → `top.js`) and
+`test/e2e/prompt-register.spec.js`.
 
 ### User Site Rules
 
@@ -400,8 +460,8 @@ this site's rule — and the engine reads it off the scheduler's snapshot
 (`siteRefused()` in `content/captions/activation.js`, subscribed through
 `ctx.autoTranslate.onStateChange`, which is why `ctx.init` starts the scheduler
 first). It asks `siteRefused`, **not** `siteAuto`: video sites are not on the
-built-in Always list, so the page-text answer there is usually `ask` and
-`siteAuto` is permanently false — gating on it would mean subtitles never work
+built-in Always list, so the page-text answer there is usually a quiet off
+(`DEFAULT_OFF`, not a refusal) and `siteAuto` is permanently false — gating on it would mean subtitles never work
 where they matter most. What has to be true is only that this site is not
 *refused* (`GLOBAL_OFF` / `BLOCKLIST` / `USER_NEVER`, the `REFUSALS` list in
 `shared/site-rules.js`). Anything the answer is not yet — the scheduler has not
@@ -445,6 +505,22 @@ writes depending on context the user cannot see is the bug the first
 paragraph exists to prevent. The float ball's own stop row is separate and
 still shows only when `siteAuto` is on — it also hides the page's translations.
 
+**The player icon is a per-video switch; the menu sits behind the chevron
+beside it.** A click on `#ai-translator-caption-btn` calls
+`ctx.setVideoCaptionsOn()` in `content/content-video-captions.js`, which flips
+`state.dismissed` — the same flag the overlay's close button sets, reset for
+every new video — and writes no storage: turning translation off for one video
+must not turn it off for the site, and on a captions-only site (YouTube) turning
+it on must not start translating the page text. The engine hands the flag down
+as `controls.sync({ …, dismissed })`, and the icon draws `aria-pressed` from it
+(on only while the gate is open and the video is not dismissed). While the gate
+is shut the icon has nothing to switch, so a click opens the menu instead. The
+menu itself is unchanged and opens from `#ai-translator-caption-more`, the small
+chevron right after the icon (`aria-haspopup="menu"`, `aria-expanded`), which is
+also the menu's anchor. On YouTube the pair is inserted before
+`.ytp-subtitles-button`, not at the start of the right-hand group: the real bar
+opens that group with the player's own expand chevron.
+
 A provider in `content/content-caption-providers.js` answers four questions:
 
 | question | method |
@@ -469,15 +545,17 @@ Two ship today:
 
 Two rules the generic provider exists to keep:
 
-- **We translate the subtitles the viewer already has on, and by default we
-  turn none on ourselves.** A track at `showing` or `hidden` is on (`hidden` is a
+- **We translate the subtitles the viewer already has on; picking a track
+  never turns one on by itself.** A track at `showing` or `hidden` is on (`hidden` is a
   player drawing the cues itself); everything at `disabled` is a language the
   page merely offers, and `pickSubtitleTrack()` returns null rather than choose
   among them. Vimeo lists four and shows none.
 
-  The exception is `autoEnableCaptions` — off by default, and the only
-  automation in the extension that changes the **player's own** state rather
-  than adding nodes of ours, which is why it is a switch of its own. With it on,
+  The exception is `autoEnableCaptions` — on by default since R33 (a video
+  with its subtitles off has nothing to translate), and the only automation in
+  the extension that changes the **player's own** state rather than adding
+  nodes of ours, which is why it is a switch of its own and why the latch in
+  `syncNativeCaptions()` stops it for good once the viewer turns them off. With it on,
   `pickSubtitleTrack({allowDisabled, audioLang})` may promote a disabled track:
   audio-language match, then `default`, then the first. `allowDisabled` is a
   permission for one call, never a mode a provider stays in — the engine asks
@@ -535,12 +613,10 @@ Two rules the generic provider exists to keep:
   answer "already in your language" to exactly the conversion the viewer wants;
   the cue cache is keyed on the whole tag for the same reason. That judgement
   is **not the caption engine's own** — `shared/lang-tags.js` is the single
-  owner, and `SiteRules.decide()` and `content/page/batch.js` ask the same one,
-  so a page and its subtitles can no longer answer "is this already your
-  language?" differently on the same tab. Anything that loads
-  `shared/caption-core.js` or `shared/site-rules.js` must load `lang-tags.js`
-  first; both throw at load without it, and `test/unit/site-rules.test.mjs`
-  checks the order in all four load lists. For page text there is one more
+  owner, and `content/page/batch.js` asks the same one, so a page and its
+  subtitles can no longer answer "is this already your language?"
+  differently on the same tab. Anything that loads `shared/caption-core.js`
+  must load `lang-tags.js` first; it throws at load without it. For page text there is one more
   step before that question can be asked at all: `chrome.i18n.detectLanguage`
   answers a plain `zh` for both scripts (measured in the e2e Chrome — 100%,
   `isReliable`, no subtag), so `LangTags.refineScript()` reads the script off
@@ -556,7 +632,10 @@ Two rules the generic provider exists to keep:
   still comes back untranslated. Both harnesses that load the engine in Node
   (`test/unit/helpers/engine-harness.mjs`,
   `test/unit/builtin-translator-stall.test.mjs`) must load `lang-tags.js`
-  first. And **the
+  first. They also load the site-rules chain (`site-rules-builtin.js`,
+  `storage-writer.js`, `site-rules.js`) and `prompt-addenda.js`, and define
+  `location`, because the engine's exit asks `SiteRules.register()` about the
+  page. And **the
   heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the

@@ -1,9 +1,17 @@
 // Blab Translation — the in-player caption control.
 //
-// One small brand button, and the menu behind it. It is the only place a
-// viewer can reach subtitle translation without leaving the video: the popup
-// and the options page are both a tab away, and a player is exactly where the
-// decision ("翻译一下这个字幕") gets made.
+// One small brand button, a chevron beside it, and the menu behind the
+// chevron. It is the only place a viewer can reach subtitle translation without
+// leaving the video: the popup and the options page are both a tab away, and a
+// player is exactly where the decision ("翻译一下这个字幕") gets made.
+//
+// The brand button is a switch (aria-pressed): one click turns this video's
+// subtitle translation off or back on — the same per-video switch as the
+// overlay's ✕, ctx.setVideoCaptionsOn(). It writes no setting. The chevron
+// opens the menu, whose contents are unchanged. While the gate is shut (this
+// site refused, or the main switch off) there is nothing for the switch to turn
+// on, so the brand button opens the menu instead, where the first row is the
+// way to open the gate.
 //
 // Two ways it mounts, and the engine picks between them from what the active
 // provider offers — this file knows no site:
@@ -28,6 +36,7 @@
   if (!ctx) return;
 
   const BTN_ID = 'ai-translator-caption-btn';
+  const MORE_ID = 'ai-translator-caption-more';
   const MENU_ID = 'ai-translator-caption-menu';
   const ROOT_ID = 'ai-translator-caption-controls';
   const IDLE_HIDE_MS = 2500;
@@ -48,8 +57,15 @@
       </defs>
     </svg>`;
 
+  // Points up: the menu opens above the control bar.
+  const CHEVRON_SVG = `
+    <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path d="M2.5 7.5L6 4l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
   const ui = {
     button: null,
+    more: null,        // the chevron that opens the menu
     menu: null,
     root: null,        // floating mode only: our own box over the video
     docked: false,
@@ -87,7 +103,7 @@
    */
   function writeSettings(patch) {
     Object.assign(ctx.settings, patch);
-    if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
+    ctx.applyCaptionSettings();
     try {
       chrome.storage.sync.set(patch);
     } catch (e) { /* extension context gone; the in-page value still applies */ }
@@ -99,8 +115,7 @@
     button.id = BTN_ID;
     button.className = 'ai-translator-caption-btn';
     button.type = 'button';
-    button.setAttribute('aria-haspopup', 'menu');
-    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-pressed', 'false');
     const label = t('captionControlsLabel', 'Subtitle translation');
     button.setAttribute('aria-label', label);
     button.setAttribute('title', label);
@@ -109,9 +124,36 @@
     stopEvents(button);
     button.addEventListener('click', (e) => {
       e.preventDefault();
-      toggleMenu();
+      // 闸门关着（站点被拒、总开关关着）：没有东西可开，打开菜单，第一行就是开
+      // 闸门的那条路。开着：翻转这个视频的字幕译文，和覆盖层的 ✕ 同一个开关。
+      if (!captionsOn()) {
+        toggleMenu();
+        return;
+      }
+      // content-video-captions.js 在 manifest 里排在这份之后，点击时它早已装好；
+      // 缺了就是装载坏了，让它抛出来，不悄悄当没点。
+      ctx.setVideoCaptionsOn(!captionsPressed());
     });
     return button;
+  }
+
+  function buildMoreButton() {
+    const more = document.createElement('button');
+    more.id = MORE_ID;
+    more.className = 'ai-translator-caption-more';
+    more.type = 'button';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    const label = t('captionMenuMore', 'Subtitle translation options');
+    more.setAttribute('aria-label', label);
+    more.setAttribute('title', label);
+    more.innerHTML = CHEVRON_SVG;
+    stopEvents(more);
+    more.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMenu();
+    });
+    return more;
   }
 
   // -------------------------------------------------------------------- menu
@@ -206,7 +248,7 @@
     nativeItem.addEventListener('click', () => {
       // 成功就收起菜单。失败的话什么都不用做：ctx.enableNativeCaptions() 在返回前
       // 已经把菜单刷成了「未检测到字幕轨道」并收起这一项——那句话留在屏幕上。
-      if (ctx.enableNativeCaptions && ctx.enableNativeCaptions()) closeMenu();
+      if (ctx.enableNativeCaptions()) closeMenu();
     });
 
     // 2 — display type.
@@ -279,6 +321,14 @@
   }
 
   /**
+   * 图标按下没有：闸门开着，而且这个视频的译文没被关掉（✕ 或者图标本身）。
+   * dismissed 同样随 controls.sync() 过来，是引擎那一份。
+   */
+  function captionsPressed() {
+    return captionsOn() && !(ui.info || {}).dismissed;
+  }
+
+  /**
    * 这个站点开着自动翻没有。和上面那句不是一回事：闸门问的是「没被明令拒绝」，
    * 中间隔着一大片「要问过才翻」。菜单第一行画的、点的都是这一句 —— 它就是
    * popup 上那一行。同样随 controls.sync() 过来，控件不自己再算一遍。
@@ -345,7 +395,7 @@
   // --------------------------------------------------------- open / close
   function positionMenu() {
     const menu = ui.menu;
-    const button = ui.button;
+    const button = ui.more;
     if (!menu || !button || !menu.parentElement) return;
     const anchor = menu.parentElement.getBoundingClientRect();
     const rect = button.getBoundingClientRect();
@@ -364,7 +414,7 @@
     if (!ui.menu || ui.open) return;
     ui.open = true;
     ui.menu.hidden = false;
-    if (ui.button) ui.button.setAttribute('aria-expanded', 'true');
+    if (ui.more) ui.more.setAttribute('aria-expanded', 'true');
     refreshMenu();
     positionMenu();
     showFloating();
@@ -373,6 +423,7 @@
         const target = e.target;
         if (ui.menu && ui.menu.contains(target)) return;
         if (ui.button && ui.button.contains(target)) return;
+        if (ui.more && ui.more.contains(target)) return;
         closeMenu();
       };
       document.addEventListener('pointerdown', ui.onDocumentPointer, true);
@@ -387,7 +438,7 @@
     if (!ui.open) return;
     ui.open = false;
     if (ui.menu) ui.menu.hidden = true;
-    if (ui.button) ui.button.setAttribute('aria-expanded', 'false');
+    if (ui.more) ui.more.setAttribute('aria-expanded', 'false');
     if (ui.onDocumentPointer) {
       document.removeEventListener('pointerdown', ui.onDocumentPointer, true);
       ui.onDocumentPointer = null;
@@ -439,38 +490,13 @@
     return root;
   }
 
-  /**
-   * Nothing outside a fullscreen element is rendered, so the box has to move
-   * inside it — except when the fullscreen element is the <video> itself,
-   * which draws no children; the top layer is the only way over that.
-   */
-  function floatingParent() {
-    const fullscreen = document.fullscreenElement;
-    if (!fullscreen || fullscreen.tagName === 'VIDEO') return document.body;
-    return fullscreen;
-  }
-
-  function setTopLayer(on) {
-    const root = ui.root;
-    if (!root) return;
-    try {
-      if (on) {
-        if (!root.hasAttribute('popover')) root.setAttribute('popover', 'manual');
-        if (!root.matches(':popover-open')) root.showPopover();
-      } else if (root.hasAttribute('popover')) {
-        if (root.matches(':popover-open')) root.hidePopover();
-        root.removeAttribute('popover');
-      }
-    } catch (e) { /* no popover API: the button is simply not available there */ }
-  }
-
   function syncFloatingRect() {
     const root = ui.root;
     const video = ui.video;
     if (!root || !video || ui.docked || !document.body) return;
-    const parent = floatingParent();
-    if (root.parentElement !== parent) parent.appendChild(root);
-    setTopLayer(!!document.fullscreenElement && parent === document.body);
+    // Inside a fullscreen element, or in the top layer over a fullscreen
+    // <video>: content/content-video-stage.js decides which.
+    ctx.videoStage.placeOverlay(root);
     const rect = video.getBoundingClientRect();
     const onScreen = rect.width > 1 && rect.height > 1
       && rect.bottom > 0 && rect.right > 0
@@ -505,6 +531,7 @@
   // ------------------------------------------------------------- mounting
   function detachButton() {
     if (ui.button && ui.button.parentElement) ui.button.remove();
+    if (ui.more && ui.more.parentElement) ui.more.remove();
     if (ui.menu && ui.menu.parentElement) ui.menu.remove();
   }
 
@@ -526,7 +553,7 @@
     applyHostClass(host.buttonClass);
     if (ui.root) {
       ui.root.remove();
-      setTopLayer(false);
+      ctx.videoStage.setTopLayer(ui.root, false);
     }
     const parent = host.parent;
     if (ui.button.parentElement !== parent) {
@@ -536,6 +563,9 @@
       const before = host.before && host.before.parentElement === parent ? host.before : null;
       parent.insertBefore(ui.button, before);
     }
+    // The chevron always sits right after the icon; a player that moved the icon
+    // (or rebuilt its bar) gets the pair put back together.
+    if (ui.button.nextSibling !== ui.more) parent.insertBefore(ui.more, ui.button.nextSibling);
     const menuRoot = host.menuRoot || parent;
     if (ui.menu.parentElement !== menuRoot) menuRoot.appendChild(ui.menu);
   }
@@ -545,6 +575,7 @@
     applyHostClass('');
     const root = ensureFloatingRoot();
     if (ui.button.parentElement !== root) root.appendChild(ui.button);
+    if (ui.more.parentElement !== root) root.appendChild(ui.more);
     if (ui.menu.parentElement !== root) root.appendChild(ui.menu);
     ui.video = video;
     syncFloatingRect();
@@ -557,12 +588,14 @@
      * the menu shows. Called by the engine whenever anything it knows changes:
      * a media event, a settings change, a track arriving, the playhead moving.
      *
-     * `info` is `{ host, video, enabled, siteAuto, stopSite, status }` — `host`
-     * is the provider's docked slot or null, `enabled` is the gate the engine
-     * just computed (this site has not refused us), `siteAuto` is whether this
+     * `info` is `{ host, video, enabled, dismissed, siteAuto, stopSite, status }`
+     * — `host` is the provider's docked slot or null, `enabled` is the gate the
+     * engine just computed (this site has not refused us), `dismissed` is
+     * whether this video's translation was switched off (the ✕ or the icon),
+     * `siteAuto` is whether this
      * site is set to auto-translate (what the first menu row draws and writes —
-     * the two are not the same answer, there is a whole band of "ask" between
-     * them), `stopSite` is whether subtitles are being translated in that band
+     * the two are not the same answer, there is a whole band of sites that are
+     * neither refused nor set to auto between them), `stopSite` is whether subtitles are being translated in that band
      * and the one-step "stop auto-translating {site}" row should show,
      * `status` is `{ kind, label }` for the menu's status line.
      */
@@ -575,6 +608,7 @@
         return;
       }
       if (!ui.button) ui.button = buildButton();
+      if (!ui.more) ui.more = buildMoreButton();
       if (!ui.menu) ui.menu = buildMenu();
       ui.video = video;
 
@@ -587,8 +621,7 @@
         return;
       }
 
-      const active = captionsOn() && (ui.info.status || {}).kind === 'track';
-      ui.button.classList.toggle('ai-cap-active', active);
+      ui.button.setAttribute('aria-pressed', captionsPressed() ? 'true' : 'false');
       refreshMenu();
       if (ui.open) positionMenu();
       if (!ui.docked) syncFloatingRect();
@@ -603,7 +636,7 @@
         ui.hideTimer = null;
       }
       if (ui.root) {
-        setTopLayer(false);
+        ctx.videoStage.setTopLayer(ui.root, false);
         ui.root.remove();
       }
     },
@@ -626,6 +659,7 @@
       }
       ui.root = null;
       ui.button = null;
+      ui.more = null;
       ui.menu = null;
       ui.parts = {};
       ui.video = null;

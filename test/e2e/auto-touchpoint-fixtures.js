@@ -1,8 +1,8 @@
 /**
- * 自动翻译触点 e2e 的共用夹具：一个我们拿不准的站点、一段不像任何语言样本的正文、
+ * 自动翻译触点 e2e 的共用夹具：一个不在任何名单上的站点、一段不像任何语言样本的正文、
  * 以及「装好设置、把这个站点接上、等悬浮球出来」这三步。
  *
- * 用它的三份 spec：auto-translate-touchpoints.spec.js（问与开关）、
+ * 用它的三份 spec：auto-translate-touchpoints.spec.js（安静与开关）、
  * auto-translate-hidden.spec.js（藏起译文那条路）、
  * auto-translate-hotkey.spec.js（键位相撞）。
  */

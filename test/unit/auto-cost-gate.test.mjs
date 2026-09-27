@@ -18,6 +18,7 @@ import { engineSource, optionsSource } from './helpers/sources.mjs';
 
 const code = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 const { CONTENT_DEFAULTS } = globalThis.DefaultSettings;
 
@@ -38,9 +39,10 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   // requestTranslation 最后那一行是**唯一**一个 sendMessage 出口：选了 AI 走到
   // 这里，选了内置但这个环境顶不住、而且开了回退，也走到这里。判定必须紧挨着
   // 它 —— 装在调度层只挡得住前一半，运行中那次回落会从旁边绕过去。
+  // 两者之间只允许注释，不允许别的分支；请求原样送出（语域在入口盖过，R33 A4）。
   assert.match(
     engine,
-    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n\s*const response = await chrome\.runtime\.sendMessage\(message\);/
+    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const response = await chrome\.runtime\.sendMessage\(message\);/
   );
   // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
   // 翻译是用户一次一次点出来的，他知道自己在花钱。
@@ -100,11 +102,11 @@ test('调度层的预判和闸问的是同一个设置、同一个函数', () =>
 
 test('两个停翻理由不混进 decide() 那张表', () => {
   // decide() 永远不会返回这两个 —— 塞进 SiteRules.REASONS 会让那张表变成一句
-  // 谎话。状态条那张 REASON_KEYS 有意比它宽。
+  // 谎话。理由 → 人话那张表（shared/auto-reason-keys.js）有意比它宽。
   assert.doesNotMatch(code('shared/site-rules.js'), /COST_ENGINE|COST_BUDGET/);
-  const status = code('content/content-auto-status.js');
-  assert.match(status, /COST_ENGINE: 'autoReasonCostEngine'/);
-  assert.match(status, /COST_BUDGET: 'autoReasonCostBudget'/);
+  const keys = code('shared/auto-reason-keys.js');
+  assert.match(keys, /COST_ENGINE: 'autoReasonCostEngine'/);
+  assert.match(keys, /COST_BUDGET: 'autoReasonCostBudget'/);
 });
 
 test('设置页把它切到 AI 要过一道二次确认，说了不就退回去', () => {

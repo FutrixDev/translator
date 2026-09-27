@@ -147,8 +147,9 @@
     return shown === requested ? requested : 'translate_colorize';
   }
 
+  /** Ready to run here: switched on and signed in (ctx.featureState). */
   function comicEnabled() {
-    return !!(ctx.settings && ctx.settings.enableComicTranslation);
+    return ctx.featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
   }
 
   // The right-click target — the only unambiguous way to know WHICH image the
@@ -171,8 +172,11 @@
 
   /** How much of the smaller of two images the intersection covers, 0–1. */
   function overlapRatio(a, b) {
-    const rectA = a.getBoundingClientRect();
-    const rectB = b.getBoundingClientRect();
+    return rectOverlap(a.getBoundingClientRect(), b.getBoundingClientRect());
+  }
+
+  /** How much of the smaller of two boxes the intersection covers, 0–1. */
+  function rectOverlap(rectA, rectB) {
     const width = Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left);
     const height = Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top);
     if (width <= 0 || height <= 0) return 0;
@@ -243,24 +247,101 @@
     });
     if (!onScreen.length) return [];
 
-    // Highest resolution first, then drop anything sharing a box with something
-    // already kept — otherwise a decoy overlay becomes a second paid job.
-    const distinct = [];
-    onScreen
-      .slice()
-      .sort((a, b) => naturalArea(b) - naturalArea(a))
-      .forEach(img => {
-        if (!distinct.some(kept => overlapRatio(kept, img) > SAME_SPOT_RATIO)) distinct.push(img);
-      });
-
+    const distinct = distinctPages(onScreen).map(page => page.img);
     const largest = Math.max(...distinct.map(renderedArea));
     return distinct.filter(img => renderedArea(img) >= largest * SPREAD_AREA_RATIO);
+  }
+
+  /**
+   * One entry per spot on the page: `{img, rect}` for the highest-resolution
+   * image in each box.
+   *
+   * Lazy readers keep a low-resolution placeholder in the same box as the
+   * artwork, and a decoy overlay sits on top of it. Counted twice, the spot
+   * becomes a second paid job (pickComicImages) or two pages overlapping each
+   * other that no longer read as a stack (hasComicStack).
+   */
+  function distinctPages(images) {
+    const kept = [];
+    images
+      .map(img => ({ img, rect: img.getBoundingClientRect() }))
+      .sort((a, b) => naturalArea(b.img) - naturalArea(a.img))
+      .forEach(page => {
+        if (!kept.some(other => rectOverlap(other.rect, page.rect) > SAME_SPOT_RATIO)) kept.push(page);
+      });
+    return kept;
+  }
+
+  // A reader page stacks its pages one under the next; a gallery lays them out in
+  // a grid, and an article has one big picture. Three is where "a column of
+  // artwork" stops being a coincidence of layout.
+  const STACK_MIN_PAGES = 3;
+  // Page boxes may touch or overlap by a few pixels (borders, rounding).
+  const STACK_GAP_TOLERANCE = 8;
+  // ...and may sit only a little apart. A reader joins its pages into one strip
+  // (webtoons.com: gap 0 between every slice of an episode); 40 px leaves room
+  // for a reader that frames each page with a margin. A feed or an article is
+  // also a column of pictures, but with a caption, a byline or a row of buttons
+  // between them — about 800 px on X, 1200 on reddit, thousands in a news
+  // article. The limit shrinks with the picture, so a column of small pictures
+  // has to sit nearly flush to count.
+  const STACK_MAX_GAP = 40;
+  const STACK_MAX_GAP_RATIO = 0.1;
+  // A flush column is still not a reader when its pictures are thumbnails: the
+  // sspai.com sidebar stacks four 222x139 cards with no gap at all. A page is
+  // drawn to be read, so it is wide — a webtoons.com slice is 700 px (the last
+  // one 800), and on a phone a strip spans the screen, 360 to 430 CSS px. 300
+  // keeps both and drops the cards.
+  const STACK_MIN_PAGE_WIDTH = 300;
+  // ...and the run has to be taller than the screen, which is what makes it
+  // something to scroll through: those four cards come to 556 px against a
+  // 720 px window, three webtoons slices to 3420.
+
+  /**
+   * Is this a comic reader being read: at least three wide pages stacked top to
+   * bottom, each close under the one before, together taller than the window —
+   * and one of them on screen now?
+   *
+   * The stack is looked for in the whole document, not only the viewport: pages
+   * in a vertical reader are taller than the screen, so three of them are never
+   * on screen at once. But the offer it leads to acts on what is on screen
+   * (pickComicImages, the one "is a page showing" answer the bar and the
+   * shortcut share), so a stack that is all below the fold does not count yet;
+   * the media hint asks again as the page scrolls.
+   */
+  function hasComicStack() {
+    const shown = pickComicImages().map(img => img.getBoundingClientRect());
+    const pages = distinctPages(Array.from(document.images).filter(isComicPage))
+      .map(page => page.rect)
+      .filter(rect => rect.width >= STACK_MIN_PAGE_WIDTH)
+      .sort((a, b) => a.top - b.top);
+    let run = 0;
+    let runHeight = 0;
+    let runShown = false;
+    let previous = null;
+    for (const rect of pages) {
+      const centre = (rect.left + rect.right) / 2;
+      const gap = previous ? rect.top - previous.bottom : 0;
+      const below = previous && gap >= -STACK_GAP_TOLERANCE;
+      const close = previous && gap <= Math.min(STACK_MAX_GAP, STACK_MAX_GAP_RATIO * previous.height);
+      const aligned = previous && centre > previous.left && centre < previous.right;
+      // A picture beside the previous one (a grid row, a spread) or far below it
+      // (the next post in a feed) starts over.
+      const joined = below && close && aligned;
+      const isShown = shown.some(box => rectOverlap(box, rect) > SAME_SPOT_RATIO);
+      run = joined ? run + 1 : 1;
+      runHeight = joined ? runHeight + rect.height : rect.height;
+      runShown = joined ? runShown || isShown : isShown;
+      previous = rect;
+      if (run >= STACK_MIN_PAGES && runHeight >= window.innerHeight && runShown) return true;
+    }
+    return false;
   }
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resultLabel, statusText,
   });
 })();

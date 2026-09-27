@@ -219,33 +219,6 @@
               <span class="hint" data-i18n-hint="hintAutoTranslateEngine"></span>
             </div>
 
-            <!-- Base codes, because that is what THIS rung is judged on:
-                 decide() puts both sides of the language list through
-                 baseLang(), so zh-CN and zh-TW are one tick here. (Its
-                 same-language rung compares whole tags — a Traditional page
-                 with a Simplified target is a real translation. Two rungs, two
-                 questions; see shared/lang-tags.js.) A tick means "a page written in this
-                 language may be translated automatically" — not "translate
-                 into this language", which is the Target Language select
-                 above, and not "I read it, so leave it alone" either: a
-                 language that is NOT ticked is the one decide() answers
-                 LANG_NOT_LISTED for and leaves untranslated. -->
-            <div class="form-group">
-              <label data-i18n="autoTranslateLangsLabel">Only these languages</label>
-              <div class="lang-chips" id="autoTranslateLangs">
-                <label class="lang-chip"><input type="checkbox" data-lang="zh"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="en"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ja"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ko"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="fr"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="de"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="es"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="pt"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ru"><span></span></label>
-              </div>
-              <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
-            </div>
-
             <!-- 每天最多替用户、在他没点的时候发给 AI 多少字符：自动翻译的页面
                  和视频字幕。0 = 不限。只要有一条零点击的路会花到 AI（自动模式
                  选了 AI、手动引擎选了 AI、或允许回退）它就亮着，三条都关着才灰
@@ -272,7 +245,20 @@
                showing them at all. -->
           <div class="form-group">
             <label data-i18n="siteRulesTitle">Sites you have decided about</label>
+            <!-- 编辑器在 options-site-editor.js：添加、always↔never、忘掉，以及只读的
+                 内置名单（一键盖过去）。键由 SiteRules.parseSiteInput 生成。 -->
+            <form class="site-rule-add" id="siteRuleAdd" novalidate>
+              <input type="text" id="siteRuleInput" placeholder="example.com" autocomplete="off" spellcheck="false"
+                aria-describedby="siteRuleError" data-i18n-title="siteRuleInputLabel" title="Site to add, such as example.com">
+              <select id="siteRuleState">
+                <option value="always" data-i18n="siteRuleAlways">Always translate</option>
+                <option value="never" data-i18n="siteRuleNever">Never translate</option>
+              </select>
+              <button type="submit" class="btn btn-secondary" id="siteRuleAddButton" data-i18n="siteRuleAdd">Add</button>
+            </form>
+            <p class="site-rule-error" id="siteRuleError" role="alert" hidden></p>
             <div class="site-rules" id="siteRules"></div>
+            <div class="site-rules-builtin" id="siteRulesBuiltin"></div>
             <span class="hint" data-i18n-hint="hintSiteRules"></span>
           </div>
 
@@ -550,7 +536,7 @@
             <div class="toggle-group">
               <label class="toggle-label">
                 <span data-i18n="autoEnableCaptions">Turn subtitles on automatically</span>
-                <input type="checkbox" id="autoEnableCaptions">
+                <input type="checkbox" id="autoEnableCaptions" checked>
                 <span class="toggle-slider"></span>
               </label>
               <span class="hint" data-i18n-hint="hintAutoEnableCaptions"></span>
@@ -721,6 +707,9 @@
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
+                <!-- Signed out with the switch on: it is on, and nothing runs
+                     until there is an account. Shown by renderAccountFeatures. -->
+                <span class="hint" id="comicSignInPending" data-i18n="featureOnAfterSignIn" hidden></span>
                 <span class="hint" data-i18n-hint="comicAccountDesc"></span>
               </div>
               <span class="hint" data-i18n-hint="comicHowTo"></span>
@@ -743,6 +732,9 @@
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
+                <!-- Signed out with the switch on: it is on, and nothing runs
+                     until there is an account. Shown by renderAccountFeatures. -->
+                <span class="hint" id="pdfSignInPending" data-i18n="featureOnAfterSignIn" hidden></span>
                 <span class="hint" data-i18n-hint="pdfAccountShared"></span>
               </div>
               <span class="hint" data-i18n-hint="pdfHowTo"></span>
@@ -943,6 +935,7 @@
   <script src="../shared/auto-stats.js"></script>
   <script src="../shared/sync-collection.js"></script>
   <script src="../shared/custom-rules.js"></script>
+  <script src="../shared/prompt-addenda.js"></script>
   <script src="../shared/translation-cache.js"></script>
   <!-- PDF 任务列表的状态/错误文案映射，和 popup、上传页、service worker 共用同一份。 -->
   <script src="../shared/doc-jobs.js"></script>
@@ -966,6 +959,7 @@
   <script src="options-account.js"></script>
   <script src="options-pdf-tasks.js"></script>
   <script src="options-auto.js"></script>
+  <script src="options-site-editor.js"></script>
   <script src="options-connection.js"></script>
   <!-- 广播和语言包状态由设置页与首装引导页共用，options-builtin.js 调它们。 -->
   <script src="../shared/tab-broadcast.js"></script>

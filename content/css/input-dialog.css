@@ -192,7 +192,8 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 /* ==================== Input Translate Chip ====================
 
    输入框旁边那颗极小的「译成 X」（showInputTranslateChip，默认开）。
-   只在输入内容的语言和页面语言对不上时出现，点一下把文字送进上面那个对话框。
+   只在输入内容的语言和页面语言对不上时出现，点一下把译文直接写回那个输入框（D-352）。
+   正在译时是 busy（不可再点），没译成是 error（再点就是重试，框里的字没动）。
 
    和 OCR 悬浮按钮一样按 #id 写：(1,0,0) 压得过任何主题的 `.kit div:hover`，也
    压得过容纳复位里的每一条，所以不需要 `html body` 前缀。它仍然要出现在复位的
@@ -238,4 +239,19 @@ html[data-ai-translator-theme="light"] #ai-translator-input-chip {
 html[data-ai-translator-theme="light"] #ai-translator-input-chip:hover {
   background: #f4f3ff;
   border-color: #6f63ff;
+}
+
+#ai-translator-input-chip[data-state="busy"] {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+#ai-translator-input-chip[data-state="error"] {
+  border-color: #e5484d;
+  color: #ff9592;
+}
+
+html[data-ai-translator-theme="light"] #ai-translator-input-chip[data-state="error"] {
+  border-color: #e5484d;
+  color: #ce2c31;
 }

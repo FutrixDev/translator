@@ -78,6 +78,26 @@
     caps.ensureTrackTranslated(!!force);
   }
 
+  /**
+   * 这个视频的字幕译文，开还是关 —— 覆盖层的 ✕ 和播放器里那个图标按的是同一个
+   * 开关，都走这里。它只管这一个视频（state.dismissed，换视频由 resetForVideo
+   * 清掉），不写任何设置：站点规则是菜单第一行的事，图标按下去不该连带把整页
+   * 正文也开译或者给站点记一条 never。
+   */
+  function setVideoCaptionsOn(on) {
+    state.dismissed = !on;
+    if (on) {
+      // 关着的那段时间翻译循环已经停了（translate.js 看 dismissed），force 让它
+      // 当场重开，而不是等下一次 timeupdate 的 2 秒节流。
+      handleTimeUpdate(true);
+    } else {
+      caps.setOverlayVisible(false);
+      caps.setNativeCaptionsHidden(false);
+    }
+    caps.syncControls();
+  }
+  ctx.setVideoCaptionsOn = setVideoCaptionsOn;
+
   // ---------------------------------------------------- provider activation
   // Videos and their tracks appear late — after a click, after an SPA route
   // change, after the player attaches a track element. Capture-phase media
@@ -199,6 +219,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(caps, {
-    engineApi, ensureVideoListener,
+    engineApi, ensureVideoListener, setVideoCaptionsOn,
   });
 })();

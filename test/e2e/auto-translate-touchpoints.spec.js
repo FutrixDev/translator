@@ -1,17 +1,13 @@
 // 自动翻译的第三条旅程：**用户怎么开、怎么关**。
 //
 // 前两条旅程（判定、滚动续译）证的都是「该翻的翻了」。这一条证的是那之前和之后
-// 的两下：一个我们拿不准的站点上，问得有多轻；以及用户说「不用」之后，这件事停
-// 得有多干净。
+// 的两下：一个不在任何名单上的站点上，我们安静到什么程度；以及用户说「开」或
+// 「不用」之后，这件事变得有多干净。
 //
-// 三条硬指标，来自实现文档 PR-7 那一行：
-//   · 启用 ≤3 次点击 —— 条子上勾一下、点一下「翻译」，这一页翻了，这个站点以后
-//     也都翻。两下。
-//   · 关闭不离开页面 —— 「不用」就地把条子收走，不跳设置页、不刷新。
-//   · Alt+A 可用 —— 键位真的注册在 manifest 的 commands 里，而它触发的那个动作
-//     和悬浮球、popup 点的是同一个。
+// 名单外的站点从 R33 起是安静的 off（D-351）：不翻、不问、也不算拒绝。开它的路
+// 只有用户自己点的那几处 —— popup 的站点开关、设置页的站点表、Alt+A。
 //
-// 这一份问的是问与开关本身：条子、键位注册、状态点、popup。另外两段旅程分在
+// 这一份问的是安静本身和开关：键位注册、状态点、popup。另外两段旅程分在
 // auto-translate-hidden.spec.js（按下之后把译文藏起来那条路）和
 // auto-translate-hotkey.spec.js（Alt+A 和划词/悬停键位撞在一起）。
 // 夹具在 auto-touchpoint-fixtures.js。
@@ -20,31 +16,31 @@ const { getSyncSetting, getServiceWorker, sendMessageToActiveTab } = require('./
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { BODY, serve } = require('./auto-touchpoint-fixtures');
 
-test('ask bar: 勾一下、点一下，这一页翻了，这个站点以后也都翻', async ({ page, context }) => {
-  const { close, endpoint } = await startMockOpenAIServer();
+test('名单外的站点安静地不翻：没有追问条，一个请求都不发；写一条「总是」当场开译', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const auto = async () => {
+    const { status, reason, siteRefused } = (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto;
+    return { status, reason, siteRefused };
+  };
 
   try {
     await serve(page, context, endpoint);
 
-    // 没有规则命中的站点上，自动翻译什么都不做 —— 先问。
-    const bar = page.locator('#ai-translator-auto-bar');
-    await expect(bar).toBeVisible();
-    await expect(bar).toHaveAttribute('data-mode', 'ask');
-    // 问的时候一个字都还没翻。条子后面已经偷偷翻好了的话，问本身就是假的。
+    // 给它足够的时间去判、去画。什么都不该出现 —— 从前这里会冒出一条追问条。
+    await page.waitForTimeout(2000);
+    await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
     await expect(page.locator('#box .ai-translator-inline-block')).toHaveCount(0);
+    expect(sentTexts.join('\n')).not.toContain(BODY);
+    // 安静的 off 不是拒绝：popup 上不会写成「这个站点你关掉了」。
+    expect(await auto()).toEqual({ status: 'off', reason: 'DEFAULT_OFF', siteRefused: false });
 
-    // —— 两下 ——
-    await bar.locator('input[type="checkbox"]').check();
-    await bar.locator('[data-act="translate"]').click();
-
+    // 用户在 popup / 设置页里把这个站点设成「总是」：写的是 decide() 查的那张表，
+    // 页面不用刷新就开译。
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.writeUserRule('ask.test', 'always'));
     await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
     await expect(page.locator('#box .ai-translator-inline-block')).toContainText(BODY);
-    // 表过态了就不该还挂在那儿。
-    await expect(bar).toHaveCount(0);
-
-    // 「总是」落到了盘上，而且落在 decide() 查的那个键上（归一化后的主机名）。
-    await expect.poll(() => getSyncSetting(context, 'siteRules'), { timeout: 5000 })
-      .toEqual({ 'ask.test': 'always' });
+    await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
   } finally {
     await close();
   }
@@ -52,9 +48,10 @@ test('ask bar: 勾一下、点一下，这一页翻了，这个站点以后也�
 
 test('一次性的「翻译这一页」不会让站点开关说成「开」', async ({ page, context }) => {
   // popup 上「自动翻译这个站点」那一行画的要是 status，这一条就是它的账单：
-  // 用户在追问条上点「翻译」而**没勾「总是」**—— 这一页翻了（idle/running），
-  // 规则表里一条都没落地，下次再来照样问他。那一行却写着「开」；他顺手去点那个
-  // 看起来已经开着的开关，写进去的是一条**永久的 never**。他想开，反倒关死了。
+  // 用户按 Alt+A（或 popup 上的「翻译此页」）只翻了这一页 —— 这一页翻了
+  // （idle/running），规则表里一条都没落地，下次再来照样不翻。那一行却写着
+  // 「开」；他顺手去点那个看起来已经开着的开关，写进去的是一条**永久的 never**。
+  // 他想开，反倒关死了。
   //
   // 断言落在 auto.siteAuto 上 —— popup 那一行读的就是这一个字段。
   const { close, endpoint } = await startMockOpenAIServer();
@@ -64,10 +61,8 @@ test('一次性的「翻译这一页」不会让站点开关说成「开」', as
   try {
     await serve(page, context, endpoint);
 
-    const bar = page.locator('#ai-translator-auto-bar');
-    await expect(bar).toBeVisible();
-    // 只点「翻译」。「总是」那一格一下都不碰 —— 这一下只对这一页算数。
-    await bar.locator('[data-act="translate"]').click();
+    expect(await sendMessageToActiveTab(page, { type: 'TOGGLE_PAGE_TRANSLATION' }))
+      .toEqual({ action: 'translating' });
     await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
 
     const after = (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto;
@@ -84,53 +79,6 @@ test('一次性的「翻译这一页」不会让站点开关说成「开」', as
     const worker = await getServiceWorker(context);
     await worker.evaluate(() => globalThis.SiteRules.writeUserRule('ask.test', 'always'));
     await expect.poll(siteAuto, { timeout: 5000 }).toBe(true);
-  } finally {
-    await close();
-  }
-});
-
-test('ask bar: 「不用」就地收走，不跳页、不翻译', async ({ page, context }) => {
-  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
-
-  try {
-    await serve(page, context, endpoint);
-
-    const bar = page.locator('#ai-translator-auto-bar');
-    await expect(bar).toBeVisible();
-    const before = page.url();
-
-    await bar.locator('[data-act="dismiss"]').click();
-    await expect(bar).toHaveCount(0);
-
-    // 「不离开页面」不是修辞：地址没变，页面上那一段原文还是它自己。
-    expect(page.url()).toBe(before);
-    await expect(page.locator('#para')).toHaveText(BODY);
-    await expect(page.locator('#box .ai-translator-inline-block')).toHaveCount(0);
-
-    // 计数记了一笔 —— 「不用」正是三次额度里的一次。
-    await expect.poll(() => getSyncSetting(context, 'siteAskCount'), { timeout: 5000 })
-      .toEqual({ 'ask.test': 1 });
-
-    // 关掉之后这一页不该再冒出来，也不该背着用户把请求发出去。
-    await page.waitForTimeout(1500);
-    await expect(bar).toHaveCount(0);
-    expect(sentTexts.join('\n')).not.toContain(BODY);
-  } finally {
-    await close();
-  }
-});
-
-test('ask bar: 问满三次就再也不问了', async ({ page, context }) => {
-  const { close, endpoint } = await startMockOpenAIServer();
-
-  try {
-    // 前三次已经问过（换过设备也算 —— 这条计数跟着 sync 走）。
-    await serve(page, context, endpoint, { siteAskCount: { 'ask.test': 3 } });
-
-    // 给它足够的时间去判、去画。什么都不该出现。
-    await page.waitForTimeout(2000);
-    await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
-    await expect(page.locator('#box .ai-translator-inline-block')).toHaveCount(0);
   } finally {
     await close();
   }
@@ -218,4 +166,51 @@ test('popup: 没有可操作的页面时只剩一行，键位印的是真注册�
   // 的那个；这条同时也是「新代码在 popup 里没抛异常」的证据 —— 抛了的话这一行
   // 会停在 hidden。
   await expect(page.locator('#translatePageShortcut')).toHaveText(/^(Alt\+|⌥)A$/);
+});
+
+test('popup 总开关：关掉就是 autoTranslate=false，这一页当场停，新长出来的段落不再送', async ({ page, context, extensionId }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const append = (id, text) => page.evaluate(([id, text]) => {
+    const p = document.createElement('p');
+    p.id = id;
+    p.textContent = text;
+    document.getElementById('box').appendChild(p);
+  }, [id, text]);
+  const BEFORE = 'The lighthouse keeper wrote down every ship that passed the northern rocks.';
+  const AFTER = 'The ferry timetable was pinned to the door of the harbour office each spring.';
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
+    // 对照：开着的时候，新长出来的段落是会被接着翻的。
+    await append('before', BEFORE);
+    await expect.poll(() => sentTexts.some((text) => text.includes(BEFORE)), { timeout: 15000 }).toBe(true);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    // goto() 把 popup 推到了前面；把窗口还给页面，让 popup 问到的是这一页。
+    await page.bringToFront();
+    await popup.reload();
+    const master = popup.locator('#toggleGlobalAuto');
+    await expect(master).toBeVisible();
+    await expect(master).toHaveAttribute('aria-pressed', 'true');
+
+    await master.click();
+    // 写的是设置页 #autoTranslate 那一个键。
+    await expect.poll(() => getSyncSetting(context, 'autoTranslate'), { timeout: 5000 }).toBe(false);
+    await expect(master).toHaveAttribute('aria-pressed', 'false');
+    await expect(popup.locator('#globalAutoStatus')).toHaveText('Off');
+
+    // 这一页当场停：调度层重判，答的是总开关关着。
+    await expect.poll(async () =>
+      (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.reason, { timeout: 5000 })
+      .toBe('GLOBAL_OFF');
+    await append('after', AFTER);
+    await page.waitForTimeout(2500);
+    expect(sentTexts.join('\n')).not.toContain(AFTER);
+    await expect(page.locator('#after + .ai-translator-inline-block, #after .ai-translator-inline-block')).toHaveCount(0);
+    await popup.close();
+  } finally {
+    await close();
+  }
 });

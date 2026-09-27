@@ -453,9 +453,10 @@ test('一轮里前面几块翻成了、后面崩了，这一页照样记进「�
   // 把这一页记成零，用户看到的就是「明明翻出来了，计数没动」—— 而他没有别的办
   // 法知道这一格到底在数什么，于是整块面板一起失去可信度。
   //
-  // 这里刻意走询问条而不是 siteRules:always：always 的话第一轮只有 #para，干干
-  // 净净地成功、当场记上一笔，后面崩不崩都不影响那个 1，这条测试就什么都没证。
-  // 要崩的那几块必须和 #para **同在第一轮里**。
+  // 这里刻意先让页面安静地不翻（名单外），把要崩的几块摆好，**再**写一条
+  // always：一上来就 always 的话第一轮只有 #para，干干净净地成功、当场记上一笔，
+  // 后面崩不崩都不影响那个 1，这条测试就什么都没证。要崩的那几块必须和 #para
+  // **同在第一轮里**。
   //
   // 也刻意用 failWhen 而不是 failAfter：八个并发批次谁先到是赛跑，按次数挑的话
   // 有时崩的是 #para 那一批 —— 那一轮一个字都没翻成，本来就该记零。
@@ -468,8 +469,7 @@ test('一轮里前面几块翻成了、后面崩了，这一页照样记进「�
 
   try {
     await serve(page, context, endpoint);
-    const bar = page.locator('#ai-translator-auto-bar');
-    await expect(bar).toBeVisible();
+    await expect.poll(autoStatus, { timeout: 10000 }).toBe('off');
 
     // 四段各自超过 MAX_BLOCK_CHARS，于是各自成批，一批一次失败，攒够
     // MAX_BATCH_FAILURES（3）就是整体故障。排得紧一点是为了让它们全落进发现层
@@ -488,14 +488,14 @@ test('一轮里前面几块翻成了、后面崩了，这一页照样记进「�
       document.getElementById('box').appendChild(wrap);
     }, MARK);
 
-    await bar.locator('[data-act="translate"]').click();
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.writeUserRule('ask.test', 'always'));
 
     await expect.poll(autoStatus, { timeout: 30000 }).toBe('error');
     // 出错了，而 #para 的译文就在页面上 —— 这一页确实被自动翻过。少了这一条，
     // 下面那个 1 有可能来自一轮根本没翻成的空转。
     await expect(page.locator('#para + .ai-translator-inline-block')).toHaveCount(1);
 
-    const worker = await getServiceWorker(context);
     await expect.poll(
       () => worker.evaluate(async () => (await chrome.storage.local.get('autoStats')).autoStats?.pages ?? 0),
       { timeout: 5000 }

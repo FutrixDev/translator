@@ -8,6 +8,8 @@
 // i18n/messages.js —— 两个都得先装好，所以在这里自己 import 一遍：ESM 会去重，
 // 而这样一来这个模块从哪儿被装进来都成立，不必指望入口文件的 import 顺序。
 import '../shared/ocr.js';
+// enableComicTranslation / enablePdfTranslation 的默认值只在 AccountGate 那一份。
+import '../shared/account-gate.js';
 import '../shared/lang-tags.js';
 import '../shared/target-lang.js';
 import '../i18n/messages.js';
@@ -36,19 +38,18 @@ const defaultSettings = {
   // The extension's own UI language. Empty means follow the browser. Kept
   // apart from targetLang on purpose — see getUILanguage in i18n/messages.js.
   uiLanguage: '',
-  // Comic translation is the one feature that spends money on a server-side
-  // account, so it is opted into. Empty comicTargetLang means "follow
-  // targetLang" — the page a reader wants in Japanese is not always the
-  // language they read articles in.
-  enableComicTranslation: false,
+  // enableComicTranslation / enablePdfTranslation, both on by default (D-353):
+  // nothing is spent until an explicit click, and an off-by-default switch would
+  // read as "the user turned it off" to AccountGate.featureState(), which keeps
+  // every hint away. A PDF is also the case where the extension has no fallback
+  // to offer — Chrome's built-in viewer renders in a closed shadow DOM that
+  // content scripts cannot reach, so a reader who never finds the switch
+  // concludes the product simply does not do PDFs. The values live in
+  // shared/account-gate.js.
+  ...AccountGate.FEATURE_DEFAULTS,
+  // Empty comicTargetLang means "follow targetLang" — the page a reader wants in
+  // Japanese is not always the language they read articles in. Same for PDFs.
   comicTargetLang: '',
-  // On by default, unlike comics: a PDF is the case where the extension has no
-  // fallback to offer — Chrome's built-in viewer renders in a closed shadow DOM
-  // that content scripts cannot reach, so a reader who never finds this toggle
-  // concludes the product simply does not do PDFs. Nothing is spent until an
-  // explicit click, and the first 20 pages are free.
-  // Empty pdfTargetLang follows targetLang.
-  enablePdfTranslation: true,
   pdfTargetLang: '',
   // Image OCR needs no account, and on the default engine no API key either,
   // so unlike comics/PDF it defaults on. The context menu entry is the only

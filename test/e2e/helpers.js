@@ -32,6 +32,9 @@ const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
   ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
+  // default-settings.js 在加载时读 AccountGate.FEATURE_DEFAULTS；manifest 里它
+  // 排在前面。
+  'shared/account-gate.js',
   'shared/default-settings.js',
   // manifest 里它紧挨在 content-bootstrap.js 之前：bootstrap 建 ctx 之前先问它
   // 「这个 frame 进不进」。夹具页是顶层，答案恒为进；带上它是为了夹具与 manifest
@@ -69,6 +72,10 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
   'shared/storage-writer.js',
   'shared/site-rules.js',
+  // 附加说明（R33 A4）：content-translation-cache.js 建键时取 PromptAddenda.stamp。
+  // 这串模块里今天没有谁读它，照 manifest 的次序带上，免得哪天夹具加了缓存层、
+  // 红在三步之后。
+  'shared/prompt-addenda.js',
   // 用户站点规则（P1-B）：custom-rules.js 加载时取走 SiteRules / StorageWriter /
   // SyncCollection，manifest 里它们紧跟在 auto-stats 之后。夹具不调
   // ctx.customRules.init()（没有扩展运行时），所以本页恒为「没有规则」。
@@ -463,7 +470,8 @@ async function expectCaptionMenuAnchoredAboveButton(page, anchorSelector) {
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height };
     };
     const menu = document.getElementById('ai-translator-caption-menu');
-    const button = document.getElementById('ai-translator-caption-btn');
+    // 菜单挂在展开按钮上（R33 A3：图标本身是开关，菜单从它旁边那个小按钮出来）。
+    const button = document.getElementById('ai-translator-caption-more');
     const anchor = document.querySelector(sel);
     if (!menu || !button || !anchor) return null;
     return { menu: box(menu), button: box(button), anchor: box(anchor) };
