@@ -4,9 +4,11 @@
 //   - 它举自己的旗标（isCatchingUp / whenCaughtUp），不碰手动整页翻译的
 //     state.isTranslatingPage：顶层指令（frames/top.js）不因它变成「翻」，「翻译整页」
 //     也不因它走忙分支；
-//   - 手动整页翻译等它收完再收块，这一下点击不丢；
+//   - 手动整页翻译等它收完再收块，这一下点击不丢；它的旗标在第一个 await 之前就
+//     置上，等语言过滤的那一段也算「在收」；
 //   - 调度器的 pump 等它收完再收块；
-//   - 手动轮进行中规则变了，那一轮结束时补做清扫（afterRound）。
+//   - 手动轮进行中规则变了，那一轮结束时补做清扫（afterRound）；补做出错也不影响
+//     手动轮成对的收尾（onManualTranslateEnd）。
 //
 // 前两组在同一个 ctx 里装真实的 custom-rule.js、scope.js、frames/top.js 与
 // content-page-translation.js，只把收块、送翻、进度条、chrome 这几样换成桩。pump
@@ -235,6 +237,72 @@ test('a manual round recalls, when it ends, a late translation that landed in a 
   // 收尾：先收回挂进新禁止区域的那条，再按第 3 步补一轮（调度器没在跟）。
   assert.deepEqual(log, ['collect:main', 'pass:1', 'progress:1/1', 'release:late', 'collect:main', 'pass:2']);
   assert.equal(ctx.customRules.isCatchingUp(), true);
+});
+
+// 补翻轮的旗标必须在它的任何 await 之前同步置上（B1r1 源码层复验 R11）。晚一拍的话，
+// 补翻还在等语言过滤的那一段里 whenCaughtUp() 立刻放行，手动轮与补翻轮同时收块。
+test('a catch-up round raises its flag before its first await, and translatePage() waits for it', async () => {
+  const top = await loadTopFrame();
+  const { ctx, log, changeRule, release } = top;
+  // 补翻轮的语言过滤先停住；之后的调用照常放行。
+  let answerFilter = null;
+  let flagAtFilter = null;
+  ctx.filterBlocksByLanguage = (blocks) => {
+    if (answerFilter) return Promise.resolve(blocks);
+    flagAtFilter = ctx.customRules.isCatchingUp();
+    return new Promise((resolve) => { answerFilter = () => resolve(blocks); });
+  };
+
+  await changeRule({ exclude: ['.b'] });
+  assert.ok(answerFilter, 'the rule change started a catch-up round');
+  assert.equal(flagAtFilter, true, 'the flag was up when the round reached its first await');
+  assert.equal(ctx.customRules.isCatchingUp(), true);
+  assert.deepEqual(log, ['collect:main'], 'the catch-up round collected and is filtering');
+
+  ctx.translatePage();
+  await sleep(10);
+  assert.equal(ctx.state.isTranslatingPage, true, 'the click started a round');
+  assert.deepEqual(log, ['collect:main'], 'the manual round collected while the catch-up round filtered');
+
+  answerFilter();
+  await sleep(10);
+  assert.deepEqual(log, ['collect:main', 'pass:1'], 'still only the catch-up round');
+  await release(1);
+  assert.deepEqual(log, ['collect:main', 'pass:1', 'collect:main', 'pass:2'], 'then the manual round');
+  await release(2);
+  assert.equal(ctx.state.isTranslatingPage, false);
+  assert.equal(ctx.customRules.isCatchingUp(), false);
+});
+
+// 手动轮的成对收尾（onManualTranslateEnd）放在 afterRound() 之前：规则变化的补做出错，
+// 也不能让子 frame 的指令停在「翻」（B1r1 源码层复验 R47）。
+test('a manual round still ends its frame directive when the pending sweep in afterRound() throws', async () => {
+  const top = await loadTopFrame();
+  const { ctx, log, changeRule, release } = top;
+  let ends = 0;
+  const end = ctx.frames.onManualTranslateEnd;
+  ctx.frames.onManualTranslateEnd = () => {
+    ends += 1;
+    end();
+  };
+
+  const round = ctx.translatePage();
+  const outcome = round.then(() => null, (error) => error);
+  await sleep(10);
+  assert.deepEqual(log, ['collect:main', 'pass:1']);
+  await changeRule({ exclude: ['.b'] });
+  assert.equal(ctx.customRules.isCatchingUp(), false, 'no catch-up round while the manual round runs');
+
+  // 这一轮收尾时 afterRound() 看到 pending，清扫在它里面抛错。
+  ctx.queryAllDeep = () => {
+    throw new Error('sweep failed');
+  };
+  await release(1);
+  const error = await outcome;
+  assert.equal(error && error.message, 'sweep failed', 'afterRound() ran and its error surfaced');
+  assert.equal(ends, 1, 'onManualTranslateEnd() ran before afterRound() threw');
+  assert.equal(ctx.state.isTranslatingPage, false);
+  assert.deepEqual(ctx.state.translationProgress, { current: 0, total: 0 });
 });
 
 // ---------------------------------------------------------------- 调度器的 pump
