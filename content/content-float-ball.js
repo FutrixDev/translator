@@ -438,11 +438,12 @@
 
     // 这一页有没有译文，问的是 content-page-translation.js 那一处 —— 它还算上
     // PDF、漫画这类不在正文 DOM 里的管控译文，自己数一遍 inline-block 会漏掉。
-    const hasTranslations = !!(ctx.hasPageTranslations && ctx.hasPageTranslations());
+    const hasTranslations = ctx.hasPageTranslations();
     // The comic entry only appears where it can do something: the feature is on
     // and there is actually a page-sized image on screen to redraw.
-    const showComic = ctx.featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY &&
-      !!(ctx.hasComicPageOnScreen && ctx.hasComicPageOnScreen());
+    // Both are set up by scripts later in the manifest; a menu opens only on a
+    // click, long after every content script has run.
+    const showComic = ctx.comic.comicEnabled() && ctx.hasComicPageOnScreen();
     // 「不再自动翻译这个站点」。**只在这个站点此刻正自动翻的时候出现**，而且排
     // 在第一行：它是自动化里唯一高频的「后悔」操作，而在此之前撤销它的唯一办法
     // 是进设置页翻那张列表。

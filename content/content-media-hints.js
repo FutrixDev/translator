@@ -86,7 +86,7 @@
     if (result.ok) return true;
     if (result.error && result.error.code === 'sign_in_cancelled') return false;
     console.warn('Blab Translation: sign-in before media translation failed', result.error);
-    if (ctx.showAutoStatusNotice) ctx.showAutoStatusNotice(t('comicSignInFailed'));
+    ctx.showAutoStatusNotice(t('comicSignInFailed'));
     return false;
   }
 
@@ -100,7 +100,7 @@
         // 工作者被回收、扩展刚重载过：消息没送到。说一声，不然这一下看起来就是
         // 什么都没发生。其余的失败由服务工作者的通知来说（和右键菜单同一路）。
         if (result.ok || !result.error || result.error.code !== 'extension_context') return true;
-        if (ctx.showAutoStatusNotice) ctx.showAutoStatusNotice(t('pdfErrNetwork'));
+        ctx.showAutoStatusNotice(t('pdfErrNetwork'));
         return false;
       });
     }
@@ -135,7 +135,7 @@
   function runMediaShortcut() {
     const kind = isPdfPage() ? 'pdf' : (ctx.hasComicPageOnScreen() ? 'comic' : null);
     if (!kind) {
-      if (ctx.showAutoStatusNotice) ctx.showAutoStatusNotice(t('mediaShortcutNothing'));
+      ctx.showAutoStatusNotice(t('mediaShortcutNothing'));
       return null;
     }
     run(kind);
