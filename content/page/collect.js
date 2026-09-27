@@ -661,6 +661,24 @@
       'visually-hidden', 'MathJax_Preview'
     ];
 
+    // 只含空白的文本节点（用户名链接和时间之间的那一个）不直接写进 text：记下它在
+    // 哪，等后面真有文字或占位符时补成一个空格。段首前面没有内容、段尾后面没有内容，
+    // 两头都不会多出空格；空格前已是空白、或后面的文字自己以空白开头时也不补。
+    // 补在记下的位置而不是紧挨着新内容，所以中间开出来的标记（<a2>）在空格后面。
+    let hasContent = false;
+    let pendingSpaceAt = -1;
+    function emit(piece) {
+      if (pendingSpaceAt >= 0) {
+        const at = Math.min(pendingSpaceAt, text.length);
+        if (!/^\s/.test(piece) && !/\s/.test(text.charAt(at - 1))) {
+          text = `${text.slice(0, at)} ${text.slice(at)}`;
+        }
+        pendingSpaceAt = -1;
+      }
+      text += piece;
+      hasContent = true;
+    }
+
     function addMathPlaceholder(entry) {
       mathIndex += 1;
       const placeholder = `{{${mathIndex}}}`;
@@ -718,7 +736,9 @@
           // HTML 源码中的换行符仅用于可读性，不应影响翻译格式
           content = content.replace(/\s+/g, ' ');
           if (content.trim()) {
-            text += content;
+            emit(content);
+          } else if (content && hasContent && pendingSpaceAt < 0) {
+            pendingSpaceAt = text.length;
           }
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -746,15 +766,14 @@
         // verbatim 标明它不是公式：译文照样套页面排版（见 hasRealMath）。
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
             (keepSelector && node.matches(keepSelector))) {
-          text += addMathPlaceholder({ type: 'element', element: node, verbatim: true });
+          emit(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
           return;
         }
 
         // 检测是否是数学公式 - 使用锚点占位符
         // 使用 {{1}}、{{2}} 格式，LLM 熟悉模板语法，会保持原样
         if (isMathElement(node)) {
-          const placeholder = addMathPlaceholder({ type: 'element', element: node });
-          text += placeholder;
+          emit(addMathPlaceholder({ type: 'element', element: node }));
           return;
         }
 

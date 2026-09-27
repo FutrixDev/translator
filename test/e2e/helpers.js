@@ -541,7 +541,25 @@ async function stubBuiltinTranslator(pageOrFrame) {
   })()`);
 }
 
+/**
+ * How many of our nodes (any class that starts with `ai-translator-`) sit in the box with this
+ * id, the box itself included, in a page or a frame.
+ *
+ * "This region was not translated" has two halves (RJ-3): this is 0 for the region's own box,
+ * and the source text is not in the mock's sentTexts. A descendant lookup inside a block misses
+ * the block's translation, which is inserted as its next sibling; one class name over the whole
+ * page misses the other kinds of node; every node on the page also counts the float ball. So
+ * wrap the region in a box of its own and count inside that.
+ */
+function oursIn(target, containerId) {
+  return target.evaluate(([id, any]) => {
+    const box = document.getElementById(id);
+    return box.matches(any) ? 1 + box.querySelectorAll(any).length : box.querySelectorAll(any).length;
+  }, [containerId, '[class*="ai-translator-"]']);
+}
+
 module.exports = {
+  oursIn,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

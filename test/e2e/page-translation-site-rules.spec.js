@@ -17,7 +17,7 @@
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, oursIn } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
@@ -47,6 +47,67 @@ const HN_PAGE = `<!doctype html>
     <tr><td class="subtext"><span id="sub">${HN_SUBTEXT}</span></td></tr>
   </tbody></table>
 </body></html>`;
+
+// Hacker News 评论页。内置表的保留原文是 `.subtext`、`.rank`、`.age`（shared/site-rules-builtin.js）。
+//
+//   - 评论头：用户名链接、一个空格、`span.age`（时间）。D-315 之后时间当占位符送出、原样
+//     带回；两者之间那个只含空白的文本节点要作为一个空格一起送出，不然译文里名字和时间
+//     连成一个词（「someonethree hours ago」）。
+//   - 排名单元格：`td.title` 里只有一个 `span.rank`。块里除了占位符什么都没有，这一块
+//     不送——送出去也只是一个 `{{1}}`，模型原样带回，页面上多出第二个「1.」。
+const HN_HEAD_USER = 'someone';
+const HN_HEAD_AGE = 'three hours ago';
+
+const HN_COMMENT_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hacker News</title></head>
+<body>
+  <table><tbody>
+    <tr class="athing"><td class="title" id="rank-cell"><span class="rank">1.</span></td><td class="title"><span class="titleline" id="story">${HN_STORY}</span></td></tr>
+  </tbody></table>
+  <table class="comment-tree"><tbody><tr class="athing comtr"><td class="default">
+    <div id="comhead-wrap"><span class="comhead"><a class="hnuser" href="user?id=someone">${HN_HEAD_USER}</a> <span class="age" id="head-age"><a href="item?id=2">${HN_HEAD_AGE}</a></span><span class="navs"> | <a href="#c0">parent</a> | <a href="#c2">next</a></span></span></div>
+  </td></tr></tbody></table>
+</body></html>`;
+
+/** 每次请求按快速批的分隔符拆成段；不走快速批的请求整条就是一段。 */
+function sentSegments(sentTexts, fastBatchRequests) {
+  const delimiters = [...new Set(fastBatchRequests.map((request) => request.delimiter))];
+  return sentTexts.flatMap((text) => delimiters.reduce(
+    (pieces, delimiter) => pieces.flatMap((piece) => piece.split(delimiter)),
+    [text],
+  ));
+}
+
+test('site rules: a Hacker News comment header keeps the space before its verbatim time, and a rank-only cell is not sent', async ({ page, context }) => {
+  const { close, endpoint, sentTexts, fastBatchRequests } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://news.ycombinator.com/**', HN_COMMENT_PAGE);
+
+    await page.goto('https://news.ycombinator.com/item?id=1');
+    await page.waitForSelector('#ai-translator-float-ball');
+    const head = page.locator('#comhead-wrap + .ai-translator-inline-block, #comhead-wrap .ai-translator-inline-block');
+    await expect(head).toContainText('[T]', { timeout: 30000 });
+    await expect(page.locator('#story + .ai-translator-inline-block, #story > .ai-translator-inline-block'))
+      .toContainText('[T]', { timeout: 30000 });
+
+    // 第 20 条：送出的段里用户名和占位符之间正好一个空格；译文里名字和时间之间有空格。
+    const segments = sentSegments(sentTexts, fastBatchRequests);
+    const headSent = segments.find((segment) => segment.includes(HN_HEAD_USER));
+    expect(headSent).toMatch(/<a\d+>someone<\/a\d+> \{\{\d+\}\}/);
+    expect(headSent).not.toContain(HN_HEAD_AGE);
+    await expect(head).toContainText(`${HN_HEAD_USER} ${HN_HEAD_AGE}`);
+    await expect(head.locator('span.age')).toHaveText(HN_HEAD_AGE);
+
+    // 第 21 条：没有哪一段只是占位符；排名单元格里没有我们的节点。
+    expect(segments.length).toBeGreaterThan(0);
+    for (const segment of segments) expect(segment.replace(/\{\{\d+\}\}/g, '').trim()).not.toBe('');
+    expect(await oursIn(page, 'rank-cell')).toBe(0);
+  } finally {
+    await close();
+  }
+});
 
 const ABSTRACT = 'We describe a decoder that keeps the two halves of a long document aligned without supervision.';
 const AUTHORS = 'Alice Researcher, Bob Engineer and Carol Scientist';

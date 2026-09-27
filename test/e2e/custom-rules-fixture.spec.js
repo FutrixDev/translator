@@ -19,12 +19,12 @@ const {
   openFloatBallMenu,
   triggerPageTranslation,
   waitForFloatBall,
+  oursIn,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SECOND = 1000;
 const TRANSLATED = '.ai-translator-inline-block';
-const ANY_OURS = '[class*="ai-translator-"]';
 
 function settings(endpoint, extra) {
   return {
@@ -105,14 +105,6 @@ function isTranslated(target, id) {
     const node = document.querySelector(selector);
     return Boolean(node && node.textContent.startsWith('[T] '));
   }, translationOf(id));
-}
-
-/** 容器里（含它自己）有没有任何我们的节点。 */
-function oursIn(target, containerId) {
-  return target.evaluate(([id, any]) => {
-    const box = document.getElementById(id);
-    return box.matches(any) ? 1 + box.querySelectorAll(any).length : box.querySelectorAll(any).length;
-  }, [containerId, ANY_OURS]);
 }
 
 // ------------------------------------------------------------------ J-2

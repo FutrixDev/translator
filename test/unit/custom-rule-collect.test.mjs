@@ -222,3 +222,48 @@ test('the style branches in insert.js and hover/render.js ask hasRealMath, not t
     assert.doesNotMatch(condition, /mathElements\.length|hasMathElements/);
   }
 });
+
+// ---------------------------------------------------------------- 行内元素之间的空白（B2 第 20 条）
+
+// 两段行内内容之间只含空白的文本节点，送出时是一个空格。D-315 之后 Hacker News 评论头
+// 的时间原样带回，这个空格丢了，译文里用户名和时间就连成一个词（someonethree hours ago）。
+const link = (label) => el('A', [], [text(label)]);
+
+function commentHead() {
+  const age = el('SPAN', ['age'], [link('three hours ago')]);
+  const navs = el('SPAN', ['navs'], [text(' | '), link('parent')]);
+  const head = el('SPAN', ['comhead'], [link('someone'), text(' '), age, navs]);
+  return { head, age };
+}
+
+test('whitespace between two inline elements travels as one space (HN comment header)', () => {
+  const { head, age } = commentHead();
+  const out = ctx.getTextWithMathPlaceholders(head, { preserveMarkup: true, keep: '.age' });
+  assert.equal(out.text, '<a1>someone</a1> {{1}}<span2> | <a3>parent</a3></span2>');
+  assert.equal(out.mathElements[0].element, age);
+  // 悬停、划词不带规则选择器：时间照常读成字，名字和它之间同样是一个空格。
+  const plain = ctx.getTextWithMathPlaceholders(head, {});
+  assert.equal(plain.text, 'someone three hours ago | parent');
+});
+
+test('the space is never at either end, never doubled, and sits before a markup that opens after it', () => {
+  const lead = el('P', [], [text('\n  '), link('x'), text('\n    '), link('y'), text('\n')]);
+  assert.equal(ctx.getTextWithMathPlaceholders(lead, { preserveMarkup: true }).text, '<a1>x</a1> <a2>y</a2>');
+  assert.equal(ctx.getTextWithMathPlaceholders(lead, {}).text, 'x y');
+  // 后面的字自己带空白、或空格前已经是空白：不补第二个。
+  const own = el('P', [], [link('x'), text(' '), text(' next'), text(' '), text('  '), link('y')]);
+  assert.equal(ctx.getTextWithMathPlaceholders(own, { preserveMarkup: true }).text, '<a1>x</a1> next <a2>y</a2>');
+  // 两个空白节点挨着：还是一个空格。
+  const twice = el('P', [], [link('x'), text(' '), text('\n'), link('y')]);
+  assert.equal(ctx.getTextWithMathPlaceholders(twice, { preserveMarkup: true }).text, '<a1>x</a1> <a2>y</a2>');
+  // 只含空白的链接回滚掉，它那个空格留在两段字之间。
+  const blank = el('P', [], [text('a'), link(' '), text('b')]);
+  assert.equal(ctx.getTextWithMathPlaceholders(blank, { preserveMarkup: true }).text, 'a b');
+  // 占位符前后同样。
+  const kept = el('SPAN', ['brand'], [text('BrandX')]);
+  const around = el('P', [], [link('x'), text(' '), kept, text(' '), link('y')]);
+  assert.equal(
+    ctx.getTextWithMathPlaceholders(around, { preserveMarkup: true, keep: '.brand' }).text,
+    '<a1>x</a1> {{1}} <a2>y</a2>',
+  );
+});
