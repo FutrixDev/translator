@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: 'Переводятся автоматически',
     siteRulesBuiltinCaptions: 'Только субтитры',
     siteRulesBuiltinNever: 'Никогда не переводятся',
-    siteRulesBuiltinNeverHint: 'Эти страницы никогда не переводятся на месте, и ваши правила этого не меняют.',
+    siteRulesBuiltinNeverHint: "Эти страницы никогда не переводятся автоматически, и ваши правила этого не меняют. Кнопка «Перевести страницу» во всплывающем окне по-прежнему переводит их по запросу.",
     siteRuleOverrideNever: 'Не переводить',
     siteRuleOverrideAlways: 'Переводить и страницу',
     siteRuleOverridden: 'Действует ваше правило',

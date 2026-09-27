@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: 'Se traducen automáticamente',
     siteRulesBuiltinCaptions: 'Solo subtítulos',
     siteRulesBuiltinNever: 'Nunca se traducen',
-    siteRulesBuiltinNeverHint: 'Estas páginas nunca se traducen en el sitio, y ninguna regla tuya lo cambia.',
+    siteRulesBuiltinNeverHint: "Estas páginas nunca se traducen automáticamente, y ninguna regla tuya lo cambia. «Traducir página» en la ventana emergente sigue traduciéndolas cuando lo pides.",
     siteRuleOverrideNever: 'No traducir',
     siteRuleOverrideAlways: 'Traducir también la página',
     siteRuleOverridden: 'Se aplica tu regla',

@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: 'Traduzidos automaticamente',
     siteRulesBuiltinCaptions: 'Só legendas',
     siteRulesBuiltinNever: 'Nunca traduzidos',
-    siteRulesBuiltinNeverHint: 'Estas páginas nunca são traduzidas no próprio lugar, e nenhuma regra sua muda isso.',
+    siteRulesBuiltinNeverHint: "Estas páginas nunca são traduzidas automaticamente, e nenhuma regra sua muda isso. «Traduzir página» na janela pop-up continua a traduzi-las quando pedir.",
     siteRuleOverrideNever: 'Não traduzir',
     siteRuleOverrideAlways: 'Traduzir a página também',
     siteRuleOverridden: 'Sua regra vale',

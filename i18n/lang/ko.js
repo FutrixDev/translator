@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: '자동 번역',
     siteRulesBuiltinCaptions: '자막만',
     siteRulesBuiltinNever: '번역 안 함',
-    siteRulesBuiltinNeverHint: '이 페이지들은 페이지 안에서 번역되지 않으며, 규칙을 설정해도 바뀌지 않습니다.',
+    siteRulesBuiltinNeverHint: "이 페이지들은 자동으로 번역되지 않으며, 규칙을 설정해도 바뀌지 않습니다. 팝업의 \"이 페이지 번역\"을 누르면 번역할 수 있습니다.",
     siteRuleOverrideNever: '번역 안 함',
     siteRuleOverrideAlways: '페이지도 번역',
     siteRuleOverridden: '내 규칙 적용 중',

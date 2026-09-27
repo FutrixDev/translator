@@ -51,7 +51,9 @@
   path are dropped) and set it to always or never translate, switch a rule
   between the two, or remove it. A mistyped address, or a site that is never
   translated, is explained under the box. The built-in lists are shown below,
-  folded: turn off a listed site with one click. A captions-only site gets
+  folded: turn off a listed site with one click. The note under the sites that
+  are never translated says what that means: never automatically, while
+  "Translate Page" in the popup still translates one when you ask. A captions-only site gets
   two buttons, one to translate its page too and one to stop translating it,
   subtitles included. An open tab of that site follows at once.
 - **One click in the player turns subtitle translation off and on.** The

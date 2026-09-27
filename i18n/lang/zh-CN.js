@@ -445,7 +445,7 @@
     siteRulesBuiltinAlways: '自动翻译',
     siteRulesBuiltinCaptions: '只翻字幕',
     siteRulesBuiltinNever: '从不翻译',
-    siteRulesBuiltinNeverHint: '这些页面从不在页内翻译，你设的规则也改变不了。',
+    siteRulesBuiltinNeverHint: "这些页面从不自动翻译，你设的规则也改变不了；在弹窗里点「翻译此页面」仍然可以翻译。",
     siteRuleOverrideNever: '不翻译',
     siteRuleOverrideAlways: '连页面一起翻',
     siteRuleOverridden: '按你的规则',

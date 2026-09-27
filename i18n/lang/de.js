@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: 'Automatisch übersetzt',
     siteRulesBuiltinCaptions: 'Nur Untertitel',
     siteRulesBuiltinNever: 'Nie übersetzt',
-    siteRulesBuiltinNeverHint: 'Diese Seiten werden nie direkt auf der Seite übersetzt, und keine deiner Regeln ändert das.',
+    siteRulesBuiltinNeverHint: "Diese Seiten werden nie automatisch übersetzt, und keine deiner Regeln ändert das. Mit „Seite übersetzen“ im Pop-up lässt sich eine trotzdem übersetzen.",
     siteRuleOverrideNever: 'Nicht übersetzen',
     siteRuleOverrideAlways: 'Auch die Seite übersetzen',
     siteRuleOverridden: 'Deine Regel gilt',

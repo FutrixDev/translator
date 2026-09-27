@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: '自動で翻訳',
     siteRulesBuiltinCaptions: '字幕のみ',
     siteRulesBuiltinNever: '翻訳しない',
-    siteRulesBuiltinNeverHint: 'これらのページはページ内で翻訳されることはなく、ルールを設定しても変わりません。',
+    siteRulesBuiltinNeverHint: "これらのページが自動で翻訳されることはなく、ルールを設定しても変わりません。ポップアップの「このページを翻訳」を押せば翻訳できます。",
     siteRuleOverrideNever: '翻訳しない',
     siteRuleOverrideAlways: 'ページも翻訳する',
     siteRuleOverridden: 'あなたのルールを適用中',

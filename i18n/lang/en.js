@@ -464,7 +464,7 @@ Rules:
     siteRulesBuiltinAlways: 'Translated automatically',
     siteRulesBuiltinCaptions: 'Captions only',
     siteRulesBuiltinNever: 'Never translated',
-    siteRulesBuiltinNeverHint: 'These pages are never translated in place, and no rule of yours changes that.',
+    siteRulesBuiltinNeverHint: 'These pages are never translated automatically, and no rule of yours changes that. "Translate Page" in the popup still translates one when you ask.',
     siteRuleOverrideNever: "Don't translate",
     siteRuleOverrideAlways: 'Translate the page too',
     siteRuleOverridden: 'Your rule applies',

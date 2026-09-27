@@ -426,7 +426,7 @@
     siteRulesBuiltinAlways: '自動翻譯',
     siteRulesBuiltinCaptions: '只翻字幕',
     siteRulesBuiltinNever: '從不翻譯',
-    siteRulesBuiltinNeverHint: '這些頁面從不在頁內翻譯，你設的規則也改變不了。',
+    siteRulesBuiltinNeverHint: "這些頁面從不自動翻譯，你設的規則也改變不了；在彈出視窗裡點「翻譯此頁面」仍然可以翻譯。",
     siteRuleOverrideNever: '不翻譯',
     siteRuleOverrideAlways: '連頁面一起翻',
     siteRuleOverridden: '依你的規則',
