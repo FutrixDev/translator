@@ -11,7 +11,9 @@
 //   撤销栈、每次改完从模型重画 DOM；同一个放进 open shadow root 再来一遍（reddit
 //   的评论框在 shadow DOM 里）；再来一个晚一拍才把 paste 写进模型的。
 // - Draft 形状的块编辑器：不看原生 beforeinput，input 时按锚点所在的块从 DOM 反推
-//   模型，光标只从 selectionchange 学，接 paste。
+//   模型，光标只从 selectionchange 学，接 paste；输入法组合期间不接 paste。
+// - 不接管 paste 的 contenteditable（写回退到 execCommand）：普通框，有、无末尾
+//   <br> 各一个；paste 时挪走焦点的；paste 不取消却下一拍自己又插一份的。
 // 模型之外的 DOM 改动会被重画抹掉，所以断言读的是模型，不是 DOM。真 Draft、真
 // Lexical 不在这里：它们的回归靠 evidence/r33/b/controller-walk 的真站复走。
 const { test, expect } = require('./fixtures');
@@ -384,6 +386,175 @@ test('输入框芯片：密码框上不长，开关关掉后哪儿都不长', as
     await typeInto(page, '#reply', `${CHINESE}再问一句。`);
     await page.waitForTimeout(2500);
     await expect(page.locator(CHIP)).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+// 框里的字按行读：空行不算，行内空白不算。「原文、译文」必须是两行，不能粘成一行。
+const linesOf = (page, selector) => page.evaluate((sel) => document.querySelector(sel).innerText
+  .split('\n').map((line) => line.trim()).filter(Boolean), selector);
+
+// 没有任何编辑器脚本的 contenteditable：paste 没人接，写回退到 execCommand。以 <br>
+// 结尾的那一个，innerText 已经以换行结尾，可光标还在原文那一行上 —— 不补换行，译文
+// 就粘在原文后面（D-361 S3）。
+test('输入框芯片：不接 paste 的普通 contenteditable，有无末尾 <br> 都换一行接上，一步撤回', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await openPage(page, context, endpoint);
+    const chip = page.locator(CHIP);
+
+    await page.click('#plain-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect.poll(() => linesOf(page, '#plain-editor'), { timeout: 15000 }).toEqual([CHINESE, TRANSLATION]);
+    await expect(chip).toHaveCount(0);
+    await undo(page);
+    await expect.poll(() => linesOf(page, '#plain-editor')).toEqual([CHINESE]);
+
+    await page.evaluate((text) => {
+      document.querySelector('#plain-br-editor').innerHTML = `${text}<br>`;
+    }, CHINESE);
+    await page.click('#plain-br-editor');
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect.poll(() => linesOf(page, '#plain-br-editor'), { timeout: 15000 }).toEqual([CHINESE, TRANSLATION]);
+    await expect(chip).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+    await undo(page);
+    await expect.poll(() => linesOf(page, '#plain-br-editor')).toEqual([CHINESE]);
+
+    expect(sentTexts).toHaveLength(2);
+    await expect(page.locator('#plain-br-editor')).toBeFocused();
+  } finally {
+    await close();
+  }
+});
+
+// paste 处理器把焦点挪去了另一个框、又没取消 paste（Quill 1.x 的隐藏剪贴板框）：
+// execCommand 写的是焦点所在的地方，退过去就把译文写进了用户没选的框。写前复读
+// 发现焦点走了，一个字不写（D-361 S1）。
+test('输入框芯片：paste 处理器挪走了焦点，哪个框都不写', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await openPage(page, context, endpoint);
+    await page.click('#thief-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
+    await page.waitForTimeout(1500);
+
+    await expect.poll(() => linesOf(page, '#thief-editor')).toEqual([CHINESE]);
+    expect(await linesOf(page, '#thief-clipboard')).toEqual([]);
+    await expect(page.locator('#thief-clipboard')).toBeFocused();
+    // 焦点去了别的框，芯片跟着收起。
+    await expect(chip).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+// 页面没取消 paste，写回自己插了一份，页面下一拍又插了一份：核对不过，芯片报错。
+// 再点一下 —— 框已经不是写之前的样子了，就当写过了：不发请求、不追加第三份
+// （D-361 S2）。
+test('输入框芯片：页面下一拍又插了一份，报错；重试不发请求、不再追加', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const text = () => page.evaluate(() => document.querySelector('#async-editor').innerText);
+
+  try {
+    await openPage(page, context, endpoint);
+    await page.click('#async-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect(chip).toHaveAttribute('data-state', 'error', { timeout: 15000 });
+    const after = await text();
+    expect(after.split(TRANSLATION).length - 1).toBe(2);
+
+    await chip.click();
+    await expect(chip).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+    expect(await text()).toBe(after);
+    expect(sentTexts).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
+// 拼音候选框开着的时候（Draft 在组合模式里，不接 paste），芯片不出来；已经挂着的
+// 芯片被点了，不发请求、不写；组合刚结束、Draft 还没把字读回模型的那一小段也一样。
+// 组合结束一会儿之后，一切照常（D-361 S4）。输入法事件由 CDP 的 Input.imeSetComposition
+// 和 Input.insertText 造：compositionstart/update、带 isComposing 的 beforeinput/input、
+// 提交时的 compositionend，都是浏览器自己发的。
+test('输入框芯片：Draft 形状的编辑器里用输入法，组合期间不挂、不写，结束后照常', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const cdp = await context.newCDPSession(page);
+  const compose = (text) => cdp.send('Input.imeSetComposition', {
+    text, selectionStart: text.length, selectionEnd: text.length,
+  });
+  const commit = (text) => cdp.send('Input.insertText', { text });
+  const model = () => page.evaluate(() => window.draftEditor.text());
+  const composing = () => page.evaluate(() => window.draftEditor.composing);
+
+  try {
+    await openPage(page, context, endpoint);
+    const chip = page.locator(CHIP);
+    await page.click('#draft-editor');
+    await page.waitForTimeout(1000);
+
+    await compose(CHINESE);
+    expect(await composing()).toBe(true);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+
+    await commit(CHINESE);
+    await expect.poll(model).toBe(CHINESE);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+
+    // 芯片挂着，用户接着用输入法敲下一个字，候选框还开着就点了芯片。
+    const more = `${CHINESE}再`;
+    await compose('再');
+    expect(await composing()).toBe(true);
+    await chip.click();
+    await page.waitForTimeout(1000);
+    expect(sentTexts).toEqual([]);
+    expect(await page.evaluate(() => window.draftEditor.pastes)).toBe(0);
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
+
+    await commit('再');
+    await expect.poll(model).toBe(more);
+    await expect.poll(composing).toBe(false);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+
+    // 组合刚结束的那一拍里点芯片：Draft 还没读回模型、不接 paste，照样不写。
+    await page.evaluate((sel) => {
+      document.querySelector('#draft-editor').dispatchEvent(
+        new CompositionEvent('compositionend', { bubbles: true, composed: true, data: '' }));
+      document.querySelector(sel).click();
+    }, CHIP);
+    await page.waitForTimeout(1000);
+    expect(sentTexts).toEqual([]);
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
+
+    await chip.click();
+    await expect.poll(model, { timeout: 15000 }).toBe(`${more}\n[T] ${more}`);
+    expect(await page.evaluate(() => window.draftEditor.pastes)).toBe(1);
+    expect(sentTexts).toHaveLength(1);
+    await undo(page);
+    await expect.poll(model).toBe(more);
   } finally {
     await close();
   }

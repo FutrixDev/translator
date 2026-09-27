@@ -4,7 +4,7 @@
 // 源码，不用在模板字符串里一层层转义。它们跑在页面里，不许引用这个文件里的任何
 // 东西。
 //
-// 仿的是两种形状，只有这两种：
+// 仿的编辑器形状只有下面这些：
 //
 // - mountModelEditor：Lexical 的形状（reddit 评论框）。模型是一串字，只从
 //   beforeinput 读意图（取消它、自己改模型），接 paste（取消它、把 text/plain 接到
@@ -20,6 +20,12 @@
 //   execCommand 插一段带换行的字，Chromium 会把锚点所在的块连同 data-offset-key
 //   复制一份，input 时这一块被新块的字覆盖 —— 原文就这么没了。真 Draft 在
 //   x.com 上就是这个症状（evidence/r33/b/controller-walk）。
+//   输入法组合（compositionstart 起）期间它在组合模式里：不理 input，也不接 paste
+//   （真 Draft 的组合处理器没有 onPaste）；compositionend 之后 20ms 才从 DOM 把锚点
+//   那一块读回模型（真 Draft 的 RESOLVE_DELAY）。
+// - 页面脚本里几种不接管 paste 的 contenteditable（写回会退到 execCommand）：什么
+//   都不接的普通框；paste 时把焦点挪去另一个框的（Quill 1.x 的隐藏剪贴板框就这样）；
+//   paste 时不取消、却在下一拍自己又把 text/plain 接到末尾的。
 //
 // 它们只是形状，不是 Draft、Lexical 本身：真编辑器的回归由主控在真站点上复走。
 
@@ -96,7 +102,7 @@ function mountModelEditor(el, { pasteDelayMs = 0 } = {}) {
 function mountDraftEditor(el) {
   let seq = 0;
   const newKey = () => `k${(seq += 1)}-0-0`;
-  const editor = { blocks: [{ key: newKey(), text: '' }], caret: null, history: [], pastes: 0 };
+  const editor = { blocks: [{ key: newKey(), text: '' }], caret: null, history: [], pastes: 0, composing: false };
   editor.text = () => editor.blocks.map((block) => block.text).join('\n');
   el.contentEditable = 'true';
   el.setAttribute('role', 'textbox');
@@ -156,7 +162,7 @@ function mountDraftEditor(el) {
   });
 
   // editOnInput：只认锚点所在的那一块，从 DOM 读回它的字。
-  el.addEventListener('input', () => {
+  function readBack() {
     const selection = document.getSelection();
     const row = rowOf(selection.anchorNode);
     const block = row && editor.blocks.find((b) => b.key === row.dataset.offsetKey);
@@ -165,9 +171,20 @@ function mountDraftEditor(el) {
     block.text = row.textContent;
     editor.caret = caretOf(selection.anchorNode, selection.anchorOffset);
     render();
+  }
+  el.addEventListener('input', () => {
+    if (!editor.composing) readBack();
+  });
+  el.addEventListener('compositionstart', () => { editor.composing = true; });
+  el.addEventListener('compositionend', () => {
+    setTimeout(() => {
+      editor.composing = false;
+      readBack();
+    }, 20);
   });
 
   el.addEventListener('paste', (e) => {
+    if (editor.composing) return;
     e.preventDefault();
     const data = e.clipboardData.getData('text/plain');
     if (!data || !editor.caret) return;
@@ -226,6 +243,15 @@ const PAGE = `<!doctype html>
   <div id="late-editor" style="min-height:3em;border:1px solid #999"></div>
   <p>Comment box</p>
   <div id="shadow-host"></div>
+  <p>Plain editor</p>
+  <div id="plain-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
+  <p>Plain editor ending in a line break</p>
+  <div id="plain-br-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
+  <p>Editor with a clipboard box</p>
+  <div id="thief-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
+  <div id="thief-clipboard" contenteditable="true" style="min-height:1em;border:1px dashed #ccc"></div>
+  <p>Editor that pastes on the next tick</p>
+  <div id="async-editor" contenteditable="true" style="min-height:3em;border:1px solid #999"></div>
   <script>
     ${mountModelEditor}
     ${mountDraftEditor}
@@ -247,6 +273,14 @@ const PAGE = `<!doctype html>
     inner.style.cssText = 'min-height:3em;border:1px solid #999';
     shadow.appendChild(inner);
     window.shadowEditor = mountModelEditor(inner);
+    document.getElementById('thief-editor').addEventListener('paste', () => {
+      document.getElementById('thief-clipboard').focus();
+    });
+    const asyncEditor = document.getElementById('async-editor');
+    asyncEditor.addEventListener('paste', (e) => {
+      const data = e.clipboardData.getData('text/plain');
+      setTimeout(() => asyncEditor.append(data), 0);
+    });
   </script>
 </body></html>`;
 
