@@ -358,10 +358,18 @@ No new permission.
   trip to Settings. It writes the same rule as the popup and the in-player
   menu, then restores the page.
 - **A translate chip in text boxes.** When what you type is not in the page's
-  language, a small 「译成 English」 chip appears at the box's corner; a click
-  opens the input translator with your text. It never rewrites your input,
-  language detection is local, and nothing is sent until you click. Settings
-  has a switch for it.
+  language, a small 「译成 English」 chip appears at the box's corner. A click
+  writes the translation straight into the box: a multi-line box (a text
+  area, or a rich editor such as a comment box) keeps what you wrote and adds
+  the translation on a new line below it, and a single-line box has its text
+  replaced. One Ctrl/Cmd+Z takes it back. The chip reads 「翻译中...」 while it
+  works and goes away once the translation is in; if the request or the write
+  fails the box is left untouched and the chip turns red with
+  「翻译失败，请重试」; clicking it again retries. If you keep typing or move to another box before the answer
+  arrives, nothing is written. It never submits, never presses Enter and
+  never moves the cursor to another box. Language detection is local and
+  nothing is sent until you click. Settings has a switch for it; the float
+  ball's input translator still opens its own window.
 - **On this computer** — a small panel in the settings page counting the pages
   translated this month, how much the cache saved, and how many characters
   actually went to the model. It lives in `chrome.storage.local`
