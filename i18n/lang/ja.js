@@ -301,7 +301,7 @@
     captionStatusBudgetSpent: '本日の AI 利用枠を使い切りました',
     captionMenuEnableNative: '字幕をオンにする',
     autoEnableCaptions: '字幕を自動的にオンにする',
-    hintAutoEnableCaptions: '既定でオン。字幕がオフの動画で字幕をオンにし、翻訳できる状態にします。プレーヤーでご自身がオフにした動画では、そのままにします。',
+    hintAutoEnableCaptions: '既定でオン。字幕がオフの動画で字幕をオンにし、翻訳できる状態にします。プレーヤーでご自身がオフにすると、このタブではその後の動画でも自動ではオンにしません。字幕メニューから再びオンにすれば元に戻ります。',
     captionPlayerButton: 'プレーヤー内にショートカットボタンを表示',
     hintCaptionPlayerButton: '動画プレーヤーのコントロールに Blab Translation のボタンを追加します',
     customPrompt: 'カスタムプロンプト',

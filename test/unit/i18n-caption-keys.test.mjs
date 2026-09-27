@@ -112,3 +112,14 @@ test('the display modes and positions the menu offers are the ones the core reso
     assert.ok(MESSAGES.en[key], `${key} has no label`);
   }
 });
+
+test('the auto-enable hint describes a per-tab latch, not a per-video one (R33 S2)', () => {
+  // content/captions/activation.js：观众在播放器里关掉原字幕，autoEnableBlocked 按
+  // 会话留下，换一个视频照样不再自动开，只有菜单里「开启原字幕」越得过去。说明
+  // 文字要说的是这件事。只能钉英文这一份的措辞；另外九种语言由译者对照英文改。
+  const en = MESSAGES.en.hintAutoEnableCaptions;
+  assert.match(en, /this tab/);
+  assert.match(en, /later videos too/);
+  assert.match(en, /from the subtitle menu/);
+  assert.doesNotMatch(en, /for that video/);
+});

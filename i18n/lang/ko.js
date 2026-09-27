@@ -301,7 +301,7 @@
     captionStatusBudgetSpent: '오늘의 AI 한도를 다 썼습니다',
     captionMenuEnableNative: '자막 켜기',
     autoEnableCaptions: '자막 자동 켜기',
-    hintAutoEnableCaptions: '기본으로 켜져 있습니다. 자막이 꺼진 동영상에서 자막을 켜 번역할 내용이 생기게 합니다. 플레이어에서 직접 끄시면 그 동영상에서는 다시 켜지 않습니다.',
+    hintAutoEnableCaptions: '기본으로 켜져 있습니다. 자막이 꺼진 동영상에서 자막을 켜 번역할 내용이 생기게 합니다. 플레이어에서 직접 끄시면 이 탭에서는 이후 동영상에서도 자동으로 켜지 않으며, 자막 메뉴에서 다시 켜시면 됩니다.',
     captionPlayerButton: '플레이어에 바로가기 버튼 표시',
     hintCaptionPlayerButton: '동영상 플레이어 컨트롤에 Blab Translation 버튼을 추가합니다',
     customPrompt: '사용자 정의 프롬프트',

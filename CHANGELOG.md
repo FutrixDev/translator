@@ -25,8 +25,9 @@
   captions are translated. Your own rule for any of them still wins.
 - **Videos get their own subtitles switched on for you.** "Turn subtitles on
   automatically" is now on by default, so a video whose subtitles are off has
-  something to translate. Switch them off in the player and that video is
-  left alone; the setting itself is still under Video captions.
+  something to translate. Switch them off in the player and they stay off in
+  that tab, on later videos too, until you turn them on again from the
+  subtitle menu; the setting itself is still under Video captions.
 - **An auto-translate switch in the popup.** The popup's first row turns
   automatic translation on or off everywhere. It is the same setting as
   "Translate pages automatically" in Settings, and switching it off stops the
