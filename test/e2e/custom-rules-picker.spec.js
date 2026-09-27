@@ -11,6 +11,7 @@ const {
   waitForFloatBall,
   oursIn,
   sentSegments,
+  openFloatBallMenu,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
@@ -239,13 +240,13 @@ test('J-3: the picker narrows a whole-page setting to the FAQ, and "Translate Wh
     expect(await oursIn(page, 'site-nav')).toBe(0);
     expect(await oursIn(page, 'main')).toBe(0);
     expect(await oursIn(page, 'aside-box')).toBe(0);
+    await expect(page.locator(translationOf('aside-p'))).toHaveCount(0);
     for (const text of [J3.nav, J3.main1, J3.main2, J3.aside]) {
       expect(sent(sentTexts, text), `sent: ${text}`).toBe(false);
     }
 
     // 3. 设置是 'page'，但规则把范围收到了 include：菜单里有「翻译整个页面」，几何
     //    在菜单盒内，菜单在视口内。
-    const { openFloatBallMenu } = require('./helpers');
     await openFloatBallMenu(page);
     const item = await expectMenuItemLaidOut(page, 'translate-whole-page', 'Translate Whole Page');
 
@@ -285,7 +286,10 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   const size = `${viewport.width}x${viewport.height}`;
   test(`picker geometry ${size}: toolbar inside the viewport, outline on the target, nothing left behind`, async ({ page, context }) => {
     await page.setViewportSize(viewport);
-    await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+    // 自动翻译关掉：不然「要不要翻译这一页」的追问条过一会儿才冒出来，375 宽时它横
+    // 在底边那一带，正好压在 #low-p 上 —— 指针落到我们自己的条子上，拾取器不认它，
+    // 描框和锁定都看运气。这里量的是工具条躲目标，不是追问条。
+    await setExtensionSettings(page, settings('http://127.0.0.1:9', { autoTranslate: false }));
     await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
     await page.goto(`${RULES}/locks`);
     await waitForFloatBall(page);

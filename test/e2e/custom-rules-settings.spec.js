@@ -35,30 +35,16 @@ const {
   fillRuleEditor,
   saveRuleEditor,
   chooseAiEngine,
+  newOptionsTab,
+  createRule,
+  presetRules,
+  PRESET_COUNT,
+  PER_RULE,
+  fill,
 } = require('./custom-rules-fixtures');
 
 const RULES = 'https://rules.test';
 const popupUrl = (extensionId) => `chrome-extension://${extensionId}/popup/popup.html`;
-const fill = (template, values) => Object.entries(values).reduce(
-  (text, [name, value]) => text.split(`{${name}}`).join(String(value)), template);
-
-/** 在一个新标签页里打开设置页。 */
-async function newOptionsTab(context, extensionId) {
-  const options = await context.newPage();
-  await openOptions(options, extensionId);
-  return options;
-}
-
-/** 卡片里新建一条规则并保存，返回它的 id（sync 里唯一的那一条新键）。 */
-async function createRule(options, context, fields) {
-  const before = Object.keys(await storedRules(context));
-  await fillRuleEditor(options, fields);
-  await saveRuleEditor(options);
-  const added = Object.keys(await storedRules(context)).filter((key) => !before.includes(key));
-  expect(added, 'the card stored exactly one new rule').toHaveLength(1);
-  return added[0].slice('customRule:'.length);
-}
-
 // ------------------------------------------------------------------ J-2
 
 const J2 = {
@@ -315,7 +301,7 @@ test('J-4: CSS saved in Settings restyles another translated tab within 1 s; uns
 test('J-5: rules export from the card, and an import is previewed, merged by id, and a bad file changes nothing', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { targetLang: 'zh-CN' });
   await openOptions(page, extensionId);
-  const idA = await createRule(page, context, { match: ['rules.test'], exclude: ['.comments'] });
+  const { id: idA } = await createRule(page, context, { match: ['rules.test'], exclude: ['.comments'] });
   const storedA = (await storedRules(context))[`customRule:${idA}`];
 
   // 导出：下载的文件 format / version / rules 都对，规则就是存着的那一条带上 id。
@@ -435,24 +421,6 @@ test('J-6: a rule that pins AI asks first, opens the daily budget, and auto-tran
 });
 
 // ------------------------------------------------------------------ J-7
-
-/** 49 条预置规则：每条（键名 + 存进去的 JSON）恰好 PER_RULE 字节。 */
-const PRESET_COUNT = 49;
-const PER_RULE = 490;
-
-function presetRules() {
-  const updatedAt = 1790000000000;
-  const rules = {};
-  for (let i = 0; i < PRESET_COUNT; i += 1) {
-    const id = `preset${String(i).padStart(2, '0')}`;
-    const value = { v: 1, match: [`preset-${String(i).padStart(2, '0')}.test`], exclude: ['.x'], updatedAt };
-    const bytes = (v) => Buffer.byteLength(`customRule:${id}`) + Buffer.byteLength(JSON.stringify(v));
-    value.exclude = [`.x${'y'.repeat(PER_RULE - bytes(value))}`];
-    expect(bytes(value)).toBe(PER_RULE);
-    rules[`customRule:${id}`] = value;
-  }
-  return rules;
-}
 
 test('J-7: the usage line counts KiB and rules, and a rule that would go over the budget is refused', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { targetLang: 'zh-CN' });

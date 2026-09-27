@@ -24,6 +24,9 @@ const TRANSLATED = '.ai-translator-inline-block';
 const PICKER = '#ai-translator-rule-picker';
 
 const en = (key) => getMessage(key, 'en');
+/** 把 `{name}` 占位换成值（文案模板和页面上的实际句子对得上）。 */
+const fill = (template, values) => Object.entries(values).reduce(
+  (text, [name, value]) => text.split(`{${name}}`).join(String(value)), template);
 
 function settings(endpoint, extra) {
   return {
@@ -122,14 +125,15 @@ function isTranslated(target, id) {
   }, translationOf(id));
 }
 
-/** inner 的框完整落在 outer 的框里（容差 0.5 px，亚像素取整）。 */
-function expectInsideBox(inner, outer, label) {
+/** inner 的框完整落在 outer 的框里（默认容差 0.5 px，亚像素取整；slack 可收紧到 0）。 */
+function expectInsideBox(inner, outer, label, slack = 0.5) {
   expect(inner.width, `${label}: has a width`).toBeGreaterThan(0);
   expect(inner.height, `${label}: has a height`).toBeGreaterThan(0);
-  expect(inner.x, `${label}: left edge`).toBeGreaterThanOrEqual(outer.x - 0.5);
-  expect(inner.y, `${label}: top edge`).toBeGreaterThanOrEqual(outer.y - 0.5);
-  expect(inner.x + inner.width, `${label}: right edge`).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
-  expect(inner.y + inner.height, `${label}: bottom edge`).toBeLessThanOrEqual(outer.y + outer.height + 0.5);
+  expect(inner.x, `${label}: left edge`).toBeGreaterThanOrEqual(outer.x - slack);
+  expect(inner.y, `${label}: top edge`).toBeGreaterThanOrEqual(outer.y - slack);
+  expect(inner.x + inner.width, `${label}: right edge`).toBeLessThanOrEqual(outer.x + outer.width + slack);
+  expect(inner.y + inner.height, `${label}: bottom edge`)
+    .toBeLessThanOrEqual(outer.y + outer.height + slack);
 }
 
 /** 页面的视口当成一个框。 */
@@ -145,7 +149,8 @@ async function expectMenuItemLaidOut(page, action, text) {
   await expect(item).toContainText(text);
   const menuBox = await page.locator('#ai-translator-float-menu').boundingBox();
   expectInsideBox(await item.boundingBox(), menuBox, `menu item ${action}`);
-  expectInsideBox(menuBox, viewportBox(page), 'float menu');
+  // 菜单在视口里不给容差（B1 的 J-3 就是这么断言的）。
+  expectInsideBox(menuBox, viewportBox(page), 'float menu', 0);
   return item;
 }
 
@@ -265,11 +270,65 @@ async function chooseAiEngine(options, accept) {
   await selecting;
 }
 
+/** 在一个新标签页里打开设置页。 */
+async function newOptionsTab(context, extensionId) {
+  const options = await context.newPage();
+  await openOptions(options, extensionId);
+  return options;
+}
+
+/**
+ * 卡片里新建一条规则：填表、（要钉 AI 就过确认框）、点保存。t0 在点保存之前取。
+ * 返回 {id, t0}，id 是 sync 里唯一的那一条新键。
+ */
+async function createRule(options, context, fields, { engineAi = false } = {}) {
+  const before = Object.keys(await storedRules(context));
+  await fillRuleEditor(options, fields);
+  if (engineAi) await chooseAiEngine(options, true);
+  const t0 = Date.now();
+  await saveRuleEditor(options);
+  const added = Object.keys(await storedRules(context)).filter((key) => !before.includes(key));
+  expect(added, 'the card stored exactly one new rule').toHaveLength(1);
+  return { id: added[0].slice('customRule:'.length), t0 };
+}
+
+/** 卡片里删一行：第一下变成「再点一次确认」，第二下才删；等这一行从列表里消失。 */
+async function deleteRule(options, id) {
+  const row = options.locator(`.custom-rule[data-rule-id="${id}"]`);
+  const button = row.locator('.custom-rule-delete');
+  await button.click();
+  await expect(button).toHaveAttribute('data-armed', 'true');
+  await expect(button).toHaveText(en('customRuleDeleteConfirm'));
+  await button.click();
+  await expect(row).toHaveCount(0);
+}
+
+/** 49 条预置规则（设计点名的 SW 写入）：每条（键名 + 存进去的 JSON）恰好 PER_RULE 字节。 */
+const PRESET_COUNT = 49;
+const PER_RULE = 490;
+
+function presetRules() {
+  const updatedAt = 1790000000000;
+  const rules = {};
+  for (let i = 0; i < PRESET_COUNT; i += 1) {
+    const id = `preset${String(i).padStart(2, '0')}`;
+    const value = { v: 1, match: [`preset-${String(i).padStart(2, '0')}.test`], exclude: ['.x'], updatedAt };
+    const bytes = (v) => Buffer.byteLength(`customRule:${id}`) + Buffer.byteLength(JSON.stringify(v));
+    value.exclude = [`.x${'y'.repeat(PER_RULE - bytes(value))}`];
+    expect(bytes(value)).toBe(PER_RULE);
+    rules[`customRule:${id}`] = value;
+  }
+  return rules;
+}
+
 module.exports = {
   SECOND,
   TRANSLATED,
   PICKER,
+  PRESET_COUNT,
+  PER_RULE,
   en,
+  fill,
   settings,
   html,
   serve,
@@ -298,4 +357,8 @@ module.exports = {
   fillRuleEditor,
   saveRuleEditor,
   chooseAiEngine,
+  newOptionsTab,
+  createRule,
+  deleteRule,
+  presetRules,
 };
