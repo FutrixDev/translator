@@ -391,7 +391,7 @@ async function canFallBackToAI() {
 
 新卡片「站点翻译规则」放在「你表过态的网站」卡（`siteRulesTitle`）之后，两者标题不冲突。
 
-- **列表**：每条规则一行，显示第一条匹配模式（多于一条时加「+N」），以及字段小标签（范围 / 排除 / 保留原文 / CSS / 引擎）。按钮是「编辑」「删除」；删除分两步，先点「删除」再点「确认删除」。
+- **列表**：每条规则一行，显示第一条匹配模式（多于一条时加「+N」），以及字段小标签。小标签就是编辑器里那个字段的标签（只翻译这些区域 / 不翻译这些区域 / 保留原文 / 自定义 CSS / 翻译引擎），两处读同一张表 `CUSTOM_RULE_FIELD_LABELS`，叫法分不开。按钮是「编辑」「删除」；删除分两步，先点「删除」再点「确认删除」。
 - **编辑器**：在原位展开，列表顶上有「新建规则」按钮。
   - 字段：匹配网址、只翻译这些区域、不翻译这些区域、保留原文，都是每行一条；自定义 CSS 用等宽 textarea，提示里写明译文的类名 `.ai-translator-inline-block`、被禁止的写法，以及反斜杠会被拒；翻译引擎是下拉框，选项为「跟随全局设置」（`customRuleEngineFollow`）/ 复用 `autoTranslateEngineBuiltin` / 复用 `autoTranslateEngineAi`。
   - 按钮「保存」「取消」。错误显示在对应字段下方，选择器逐条用 `checkSelector` 检查。
@@ -545,8 +545,7 @@ J-7 的 49 条预置是前提，不是旅程步骤。J-11 在预览之后用同�
 |---|---|
 | `customRulesTitle` / `customRulesDesc` / `customRulesAdd` / `customRulesEmpty` / `customRulesUsage` | 卡片标题、说明、新建、空态、用量表 |
 | `customRulesExport` / `customRulesImport` / `customRulesImportPreview` / `customRulesImportAiNote` / `customRulesImportConfirm` / `customRulesImportInvalid` | 导出与导入 |
-| `customRuleMatch` / `customRuleInclude` / `customRuleExclude` / `customRuleKeepOriginal` / `customRuleCss` / `customRuleCssHint` / `customRuleEngine` / `customRuleEngineFollow` | 编辑器字段。引擎的另两个选项复用 `autoTranslateEngineBuiltin` / `autoTranslateEngineAi` |
-| `customRuleChipScope` / `customRuleChipExclude` / `customRuleChipKeep` / `customRuleChipCss` / `customRuleChipEngine` | 列表里的字段小标签 |
+| `customRuleMatch` / `customRuleInclude` / `customRuleIncludeHint` / `customRuleExclude` / `customRuleKeepOriginal` / `customRuleCss` / `customRuleCssHint` / `customRuleEngine` / `customRuleEngineFollow` | 编辑器字段；列表里的字段小标签也用这几个标签键，没有自己的一套。引擎的另两个选项复用 `autoTranslateEngineBuiltin` / `autoTranslateEngineAi` |
 | `customRuleEdit` / `customRuleDelete` / `customRuleDeleteConfirm` / `customRuleSave` / `customRuleCancel` | 行内按钮；「保存」「取消」若已有通用键就复用，交付时列出。B2 交付：没有通用的保存 / 取消键（现有的 `comicCancel`、`transferCancel` 都属于各自的功能），所以新增 `customRuleSave` / `customRuleCancel` |
 | `customRuleInvalid` / `customRuleCssUnsafe` / `customRuleMatchInvalid` / `customRuleSelectorInvalid` / `customRuleTooLarge` / `customRulesBudgetFull` / `customRuleSaveFailed` | 错误 |
 | `customRuleEngineAiConfirm` | 确认框 |

@@ -19,6 +19,19 @@ const { CustomRules, SettingsTransfer } = globalThis;
 
 const file = (rules, over = {}) => Object.assign({ format: 'blab-site-rules', version: 1, exportedAt: 1, rules }, over);
 
+// 画列表行和编辑器用的最小元素：只记标签名、文字、子节点和 htmlFor。
+function fakeElement(tagName) {
+  return {
+    tagName, children: [], dataset: {}, textContent: '', className: '',
+    classList: { add() {} },
+    appendChild(child) { this.children.push(child); return child; },
+    append(...children) { this.children.push(...children); },
+    addEventListener() {},
+    setAttribute() {},
+    focus() {},
+  };
+}
+
 // 卡片脚本加载时只 getElementById；预览只读 storage.sync、只用 querySelector 查选择器。
 function loadCard(stored) {
   const reads = [];
@@ -28,6 +41,7 @@ function loadCard(stored) {
     console,
     document: {
       getElementById: (id) => ({ id, replaceChildren() {} }),
+      createElement: fakeElement,
       querySelector: (selector) => {
         if (selector.includes('!')) throw new SyntaxError(`bad selector ${selector}`);
         return null;
@@ -43,6 +57,7 @@ function loadCard(stored) {
         },
       },
     },
+    Option: function Option(text, value) { Object.assign(this, { text, value }); },
     t: (key) => key,
     fill: (template, values) => template.replace(/\{(\w+)\}/g, (_, name) => String(values[name])),
   };
@@ -146,4 +161,34 @@ test('the import AI note takes the singular key for one rule and the plural key 
   const en = messageCatalog().en;
   assert.match(en.customRulesImportAiNoteOne, /^\{count\} of them makes /);
   assert.match(en.customRulesImportAiNote, /^\{count\} of them make /);
+});
+
+// 列表里的小标签和编辑器的字段标签是同一个叫法（N-12）：画一行五个字段都有的规则、
+// 再打开它的编辑器，每个小标签的文字都得等于编辑器里那个字段的标签。t 原样返回键名，
+// 所以这里比的是两处用的是不是同一个键；小标签自己的一套键也不许再出现。
+test('the list chips name each field exactly as the editor labels it', () => {
+  const { card } = loadCard({});
+  const rule = {
+    id: 'aaaa1111', match: ['a.com'], include: ['main'], exclude: ['.ad'], keepOriginal: ['code'],
+    css: 'p { color: red; }', engine: 'ai',
+  };
+  const row = card.customRuleRow(rule);
+  const chips = row.children.find((node) => node.className === 'custom-rule-chips').children
+    .map((chip) => chip.textContent);
+
+  const labels = [];
+  const createElement = card.document.createElement;
+  card.document.createElement = (tag) => {
+    const node = createElement(tag);
+    if (tag === 'label') labels.push(node);
+    return node;
+  };
+  card.openCustomRuleEditor(rule);
+  const labelOf = (field) => labels.find((node) => node.htmlFor === `customRule-${field}`).textContent;
+
+  const fields = ['include', 'exclude', 'keepOriginal', 'css', 'engine'];
+  assert.deepEqual(chips, fields.map(labelOf));
+  for (const [lang, table] of Object.entries(messageCatalog())) {
+    assert.deepEqual(Object.keys(table).filter((key) => key.startsWith('customRuleChip')), [], lang);
+  }
 });

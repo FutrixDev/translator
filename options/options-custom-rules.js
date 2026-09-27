@@ -34,14 +34,16 @@ const customRuleElements = {
   list: document.getElementById('customRulesList'),
 };
 
-// 列表里的字段小标签，按规则里出现的顺序画。
-const CUSTOM_RULE_CHIPS = [
-  ['include', 'customRuleChipScope'],
-  ['exclude', 'customRuleChipExclude'],
-  ['keepOriginal', 'customRuleChipKeep'],
-  ['css', 'customRuleChipCss'],
-  ['engine', 'customRuleChipEngine'],
+// 规则每个字段叫什么只有这一张表：编辑器的字段标签和列表里的小标签都读它，
+// 两处叫法就分不开（N-12）。列表按这里的顺序画。
+const CUSTOM_RULE_FIELD_LABELS = [
+  ['include', 'customRuleInclude'],
+  ['exclude', 'customRuleExclude'],
+  ['keepOriginal', 'customRuleKeepOriginal'],
+  ['css', 'customRuleCss'],
+  ['engine', 'customRuleEngine'],
 ];
+const fieldLabel = (field) => CUSTOM_RULE_FIELD_LABELS.find(([name]) => name === field)[1];
 
 // ---------------------------------------------------------------------------
 // 共用给整份导入导出的三个函数（options-transfer.js 的 customRules 一行）
@@ -174,7 +176,7 @@ function customRuleRow(rule) {
 
   const chips = document.createElement('span');
   chips.className = 'custom-rule-chips';
-  for (const [field, key] of CUSTOM_RULE_CHIPS) {
+  for (const [field, key] of CUSTOM_RULE_FIELD_LABELS) {
     if (!rule[field]) continue;
     const chip = document.createElement('span');
     chip.className = 'custom-rule-chip';
@@ -268,7 +270,7 @@ function engineField(form, value) {
   group.className = 'form-group custom-rule-field';
   const caption = document.createElement('label');
   caption.htmlFor = 'customRule-engine';
-  caption.textContent = t('customRuleEngine');
+  caption.textContent = t(fieldLabel('engine'));
   group.appendChild(caption);
 
   const select = document.createElement('select');
@@ -301,16 +303,18 @@ function openCustomRuleEditor(rule) {
   node.className = 'custom-rule-editor';
   const fields = {
     match: editorField(node, { key: 'match', label: 'customRuleMatch', value: lines(source.match) }),
-    include: editorField(node, { key: 'include', label: 'customRuleInclude', value: lines(source.include) }),
+    include: editorField(node, {
+      key: 'include', label: fieldLabel('include'), hint: 'customRuleIncludeHint', value: lines(source.include),
+    }),
     exclude: editorField(node, {
-      key: 'exclude', label: 'customRuleExclude', hint: 'pickerExcludeTip', value: lines(source.exclude),
+      key: 'exclude', label: fieldLabel('exclude'), hint: 'pickerExcludeTip', value: lines(source.exclude),
     }),
     keepOriginal: editorField(node, {
-      key: 'keepOriginal', label: 'customRuleKeepOriginal', hint: 'pickerKeepOriginalTip',
+      key: 'keepOriginal', label: fieldLabel('keepOriginal'), hint: 'pickerKeepOriginalTip',
       value: lines(source.keepOriginal),
     }),
     css: editorField(node, {
-      key: 'css', label: 'customRuleCss', hint: 'customRuleCssHint', value: source.css || '', mono: true,
+      key: 'css', label: fieldLabel('css'), hint: 'customRuleCssHint', value: source.css || '', mono: true,
     }),
   };
   const engine = engineField(node, source.engine);
