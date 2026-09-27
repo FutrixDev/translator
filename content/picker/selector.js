@@ -13,7 +13,7 @@
 // 正好。
 //
 // 这里只用元素的一小撮接口（tagName、id、classList、attributes、
-// parentElement、children、getRootNode、querySelectorAll），单测拿假节点在 vm
+// parentElement、children、getRootNode、querySelectorAll、closest），单测拿假节点在 vm
 // 里跑（test/unit/picker-selector.test.mjs）。
 (function() {
   'use strict';
@@ -69,13 +69,25 @@
     return el.getRootNode ? el.getRootNode() : null;
   }
 
-  /** 在 el 自己的 root 里，selector 是否只中 el 一个。无效选择器算不唯一。 */
+  /**
+   * 页面自己的节点，不是我们画的：不在界面根（ctx.constants.OWN_UI_SELECTOR，拾取
+   * 器工具条也在里面）里，也不在译文节点（.ai-translator-inline-block）里。
+   *
+   * 译文会克隆原文里的行内元素（span.promo-tag 在译文里还有一份）。把克隆也算上，
+   * 翻过的页面上每条类名选择器都「命中两处」，拾取器只好退到位置链，计数也翻倍。
+   * 唯一性和工具条的计数都问这一处。
+   */
+  function isPageNode(el) {
+    return !el.closest(`${ctx.constants.OWN_UI_SELECTOR}, .ai-translator-inline-block`);
+  }
+
+  /** 在 el 自己的 root 里，selector 是否只中 el 一个页面节点。无效选择器算不唯一。 */
   function uniqueIn(el, selector) {
     const root = rootOf(el);
     if (!root || !root.querySelectorAll) return false;
     let hits;
     try {
-      hits = root.querySelectorAll(selector);
+      hits = Array.from(root.querySelectorAll(selector)).filter(isPageNode);
     } catch (_) {
       return false;
     }
@@ -144,5 +156,5 @@
     return chainFor(el);
   }
 
-  Object.assign(picker, { isVolatileClass, selectorFor, MAX_CHAIN });
+  Object.assign(picker, { isVolatileClass, isPageNode, selectorFor, MAX_CHAIN });
 })();

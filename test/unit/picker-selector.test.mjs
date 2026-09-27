@@ -5,7 +5,8 @@
 // 唯一性只在元素自己的 root 里判。
 //
 // 没有 DOM 库可用，这里拿一小撮假节点在 vm 里跑：selector.js 只用 tagName、id、
-// classList、attributes、parentElement、children、getRootNode、querySelectorAll。
+// classList、attributes、parentElement、children、getRootNode、querySelectorAll、
+// closest。
 // 假 querySelectorAll 只认 selector.js 会写出来的那几种形状（复合选择器 + `>`），
 // 认不出的形状抛错 —— 和浏览器对无效选择器的反应一样。
 import test from 'node:test';
@@ -86,6 +87,13 @@ class FakeElement {
     return name in this.attrMap ? this.attrMap[name] : null;
   }
   getRootNode() { return this.root; }
+  closest(selector) {
+    const list = selector.split(/\s*,\s*/);
+    for (let cur = this; cur; cur = cur.parentElement) {
+      if (list.some((one) => matches(cur, one))) return cur;
+    }
+    return null;
+  }
   append(...kids) {
     for (const kid of kids) {
       kid.parentElement = this;
@@ -111,7 +119,8 @@ function tree(build) {
 const el = (tag, opts) => new FakeElement(tag, opts);
 
 function loadPicker() {
-  const ctx = {};
+  // 界面根清单取一小段就够：假 closest 按逗号拆开逐条比。
+  const ctx = { constants: { OWN_UI_SELECTOR: '.ai-translator-popup, #ai-translator-rule-picker' } };
   const sandbox = { window: { AI_TRANSLATOR_CONTENT: ctx } };
   vm.runInNewContext(pickerSource('selector.js'), sandbox);
   return ctx.picker;
@@ -215,4 +224,23 @@ test('uniqueness is judged inside the element\'s own root', () => {
   let dup;
   tree((body) => body.append(el('div', { id: 'x' }), dup = el('div', { id: 'x' })));
   assert.equal(picker.selectorFor(dup), 'div:nth-of-type(2)');
+});
+
+test('a clone inside our translation does not make a page element ambiguous', () => {
+  // 整页翻译把段落里的行内元素克隆进译文节点：span.promo-tag 在页面上有两份，
+  // 一份是我们的。它不算，选择器照样是 span.promo-tag，不退到位置链。
+  let target;
+  let clone;
+  tree((body) => body.append(
+    el('p', { id: 'inline', classes: ['ai-translator-translated'] }).append(
+      target = el('span', { classes: ['promo-tag'] }),
+      el('font', { classes: ['ai-translator-inline-block'] }).append(
+        clone = el('span', { classes: ['promo-tag'] }),
+      ),
+    ),
+    el('div', { id: 'ai-translator-rule-picker' }).append(el('span', { classes: ['promo-tag'] })),
+  ));
+  assert.equal(picker.selectorFor(target), 'span.promo-tag');
+  assert.equal(picker.isPageNode(target), true);
+  assert.equal(picker.isPageNode(clone), false);
 });

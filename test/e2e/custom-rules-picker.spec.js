@@ -140,6 +140,11 @@ test('J-1: the picker excludes the comments of a translated page within 1 s, and
 // B2 第 23 条：用户 exclude 落在段落里的一个行内元素上。这一步区分 exclude 和
 // keepOriginal：keepOriginal 让它以占位符送出、原样回到译文里；exclude 让它整个
 // 不进送出文本，所以译文里也没有它。原文里它照旧在。
+//
+// 走的是「已经翻过，再排除，再翻译」这条路（设计 §6 J-1「重新翻译后」）：行内命中
+// 不禁止整块，已有的译文不被清扫，新规则在下一次收块时生效。重新翻译的真实入口是
+// 重载后再点「翻译」—— 同一页上再点一下是把译文藏起来，不会重收已经翻过的块。
+// 缓存不清：段落的送出文本变了，旧译文不该被按原来那段文字命中。
 const J1I = {
   lead: 'The ferry company publishes a new winter timetable at the start of every November.',
   before: 'Please read',
@@ -151,15 +156,28 @@ const J1I_PAGE = html(`
   <div id="lead-box"><p id="lead">${J1I.lead}</p></div>
   <div id="inline-box"><p id="inline">${J1I.before} <span class="promo-tag">${J1I.tag}</span> ${J1I.after}</p></div>`);
 
-test('J-1 inline: excluding an inline element leaves it out of the sent text and the translation, not out of the page', async ({ page, context }) => {
+/** 第 from 条请求之后送出的、含段落后半句的那一段。分隔符从全部快速批次里取。 */
+function inlineSegment(sentTexts, fastBatchRequests, from) {
+  return sentSegments(sentTexts.slice(from), fastBatchRequests).find((text) => text.includes(J1I.after));
+}
+
+test('J-1 inline: excluding an inline element of a translated page leaves it out of the next translation, not out of the page', async ({ page, context }) => {
   const { close, endpoint, sentTexts, fastBatchRequests } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
     await serve(context, { [`${RULES}/inline`]: J1I_PAGE });
     await page.goto(`${RULES}/inline`);
     await waitForFloatBall(page);
+    const translation = page.locator(translationOf('inline'));
 
-    // 1. 拾取器点中段落里的 span，选择器就是它，「不翻译这里」。
+    // 1. 先翻一遍：没有规则时它在送出的文本里，也在译文里。
+    await triggerPageTranslation(page);
+    await expect(page.locator(translationOf('lead'))).toHaveText(`[T] ${J1I.lead}`, { timeout: 30000 });
+    await expect(translation).toContainText(J1I.after, { timeout: 30000 });
+    await expect(translation).toContainText(J1I.tag);
+    expect(inlineSegment(sentTexts, fastBatchRequests, 0), 'first round').toContain(J1I.tag);
+
+    // 2. 拾取器点中段落里的 span，选择器就是它，「不翻译这里」。
     await openPickerFromMenu(page);
     await pickWithPointer(page, page.locator('#inline span.promo-tag'), 'J-1 inline tag');
     await expect(page.locator(`${PICKER} .ai-translator-picker-input`)).toHaveValue('span.promo-tag');
@@ -169,20 +187,21 @@ test('J-1 inline: excluding an inline element leaves it out of the sent text and
     await expectPickerGone(page);
     expect(Object.values(await storedRules(context)).map((r) => r.exclude)).toEqual([['span.promo-tag']]);
 
-    // 2. 翻译：段落翻了。
+    // 3. 重新翻译：重载，再点「翻译」。
+    const from = sentTexts.length;
+    await page.reload();
+    await waitForFloatBall(page);
     await triggerPageTranslation(page);
     await expect(page.locator(translationOf('lead'))).toHaveText(`[T] ${J1I.lead}`, { timeout: 30000 });
-    const translation = page.locator(translationOf('inline'));
     await expect(translation).toContainText('[T]', { timeout: 30000 });
     await expect(translation).toContainText(J1I.after);
 
-    // 3a. 送出文本里没有它，也没有替它占位的记号（keepOriginal 会留一个 {{n}}）。
-    const segments = sentSegments(sentTexts, fastBatchRequests);
-    const segment = segments.find((text) => text.includes(J1I.after));
-    expect(segment, 'the paragraph was sent').toBeTruthy();
+    // 3a. 这一轮送出的文本里没有它，也没有替它占位的记号（keepOriginal 会留一个 {{n}}）。
+    const segment = inlineSegment(sentTexts, fastBatchRequests, from);
+    expect(segment, 'the paragraph was sent again').toBeTruthy();
     expect(segment).not.toContain(J1I.tag);
     expect(segment).not.toMatch(/\{\{\d+\}\}/);
-    expect(sent(sentTexts, J1I.tag)).toBe(false);
+    expect(sent(sentTexts.slice(from), J1I.tag)).toBe(false);
 
     // 3b. 译文节点里也没有它：没有克隆回来的 span，也没有这几个字。
     await expect(translation.locator('span.promo-tag')).toHaveCount(0);

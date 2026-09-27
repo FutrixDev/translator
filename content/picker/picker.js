@@ -54,12 +54,12 @@
     picker.placeBar(parts, locked && rect);
   }
 
-  /** 当前输入框里的选择器命中几处；无效是 null。我们自己的节点不算。 */
+  /** 当前输入框里的选择器命中几处；无效是 null。我们自己的节点（含译文里的克隆）不算。 */
   function countMatches() {
     const selector = parts.input.value.trim();
     if (!selector) return null;
     try {
-      return ctx.queryAllDeep(selector).filter((el) => !parts.root.contains(el)).length;
+      return ctx.queryAllDeep(selector).filter(picker.isPageNode).length;
     } catch (_) {
       return null;
     }
