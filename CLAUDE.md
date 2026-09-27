@@ -9,7 +9,7 @@ Blab Translation is a Chrome Extension (Manifest V3) that translates web content
 ## Commands
 
 ```bash
-npm run icons      # Generate extension icons (requires canvas package)
+npm run icons      # Redraw icons/icon{16,32,48,128}.png from brand/blab-translation-2026-09-19/icon.js
 npm run zip        # Create distributable zip file
 npm run test:unit  # Fast, no browser — API compatibility rules (test/unit/)
 npm run test:e2e   # Playwright, loads the extension in Chrome (test/e2e/)
@@ -54,7 +54,7 @@ file directly.
    a real ES module, so these are `import`s)
    - Handles all API requests to translation endpoints (`api-client.js`,
      `ai-translate.js`, `prompts.js`)
-   - Manages context menus and theme icon updates (`context-menus.js`, `icon.js`)
+   - Manages context menus (`context-menus.js`)
    - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
    - Stores default settings and translation prompts (`settings.js`)
    - The account-backed clients live beside it: `comic-client.js`,

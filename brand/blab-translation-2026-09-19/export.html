@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Blab 导出</title>
+<script src="icon.js"></script>
+<script>
+  // 每项按精确像素原生绘制（不做 dpr 缩放）
+  const B = window.BlabR7;
+  const sq = (file, size, draw) => ({ file, w: size, h: size, draw: (ctx) => draw(ctx, size) });
+  const EXPORTS = [
+    ...[16, 32, 48, 128].map((s) => sq(`chrome/icon${s}.png`, s, B.drawTile)),
+    ...[16, 32, 48, 128, 180, 192, 512].map((s) => sq(`web/icon${s}.png`, s, B.drawTile)),
+    ...[['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]]
+      .map(([d, s]) => sq(`android/mipmap-${d}/ic_launcher.png`, s, B.drawTile)),
+    sq('android/mipmap-xxxhdpi/ic_launcher_foreground.png', 432, B.drawAdaptiveForeground),
+    sq('android/mipmap-xxxhdpi/ic_launcher_background.png', 432, B.drawAdaptiveBackground),
+    sq('android/play-store-512.png', 512, B.drawFullBleed),
+    { file: 'android/drawable-xhdpi/banner.png', w: 320, h: 180, draw: (ctx) => B.drawBanner(ctx, 320, 'TV Caption') },
+    { file: 'android/drawable-zh-xhdpi/banner.png', w: 320, h: 180, draw: (ctx) => B.drawBanner(ctx, 320, '电视字幕') },
+    { file: 'banner-translation-640x360.png', w: 640, h: 360, draw: (ctx) => B.drawBanner(ctx, 640) },
+    sq('mark-1024.png', 1024, B.drawMark),
+    sq('tile-1024.png', 1024, B.drawTile),
+  ];
+  function renderExport(i) {
+    const e = EXPORTS[i];
+    const c = document.createElement('canvas');
+    c.width = e.w; c.height = e.h;
+    e.draw(c.getContext('2d'));
+    return c.toDataURL('image/png');
+  }
+</script>
