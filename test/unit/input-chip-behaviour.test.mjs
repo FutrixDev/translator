@@ -121,7 +121,8 @@ function load({ landed = () => false, autocomplete = null } = {}) {
     },
     press(key) { fire('keydown', { key }); },
     fire,
-    clickChip(chip) { for (const fn of chip.listeners.click) fn(); },
+    // 用户自己的手是 isTrusted: true；页面脚本的 .click() 是 false。
+    clickChip(chip, { isTrusted = true } = {}) { for (const fn of chip.listeners.click) fn({ isTrusted }); },
   };
 }
 
@@ -144,6 +145,26 @@ test('译文在路上时按了 Esc：字没变、焦点没走，这份译文照�
   await flush();
   assert.deepEqual(harness.writes, [], '芯片收走之后回来的译文还是被写进了框');
   assert.equal(harness.field.value, '你好世界');
+});
+
+test('页面脚本 .click() 芯片：不发翻译请求，不写回，芯片照旧可点', async () => {
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  assert.ok(chip && chip.isConnected, '芯片没出现，后面的核对无从谈起');
+
+  harness.clickChip(chip, { isTrusted: false });
+  await flush();
+  await flush();
+  assert.equal(harness.requests.length, 0, '合成的点击发出了翻译请求');
+  assert.deepEqual(harness.writes, []);
+  assert.equal(harness.field.value, '你好世界');
+  assert.notEqual(chip.dataset.state, 'busy');
+
+  // 同一颗芯片，用户自己点照常译。
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 1);
 });
 
 test('上一次写入晚一拍落进来了：点芯片直接认成写成，不再发请求', async () => {

@@ -241,7 +241,11 @@
 
   // 点下去：译，然后写回。译文回来时逐条核对 —— 还是不是这一次请求、框里的字
   // 变没变、焦点还在不在这个框上 —— 任何一条对不上都不写，芯片回到可点。
-  async function onChipClick() {
+  async function onChipClick(event) {
+    // 芯片是页面 DOM 里的普通节点，页面脚本一句 .click() 就能替用户点它 —— 那一下
+    // 会把框里的字发去翻译（可能花额度）、再改写他正在写的内容。只认用户自己的手，
+    // 和状态条（content-auto-status.js 的 onBarClick）同一写法。
+    if (!event.isTrusted) return;
     const field = chipField;
     if (!field || pending) return;
     if (inComposition()) {
