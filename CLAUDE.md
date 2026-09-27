@@ -169,6 +169,16 @@ one of three states:
 | `signed_out` | switch on, no token on this device | the PDF/comic hints show, and using one signs in first |
 | `ready` | switch on, signed in | every entry point, menus included |
 
+The options page draws `signed_out` as **the switch on plus a pending line**
+under it — `featureOnAfterSignIn` ("On. Takes effect once you sign in.",
+`#comicSignInPending` / `#pdfSignInPending`) — never as a switch drawn off.
+The switch shows the stored preference, which is what a click would change;
+drawing it off would read as `off` and hide the fact that signing in is all
+that is missing. `renderAccountFeature()` in `options/options-account.js`
+takes all three states from `featureState()`, and an account check still in
+flight counts as signed in, so the signed-in majority never sees the line
+flash on load. Only `ready` shows the PDF task list.
+
 Nothing is written back to sync: a new install syncs the switches down before
 it has ever signed in (both ship on), so a signed-out device that "corrected"
 the preference would reach across and disable the feature on the device that is
