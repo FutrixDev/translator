@@ -14,7 +14,8 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/custom-rules.js');
-const { CustomRules } = globalThis;
+await import('../../shared/settings-transfer.js');
+const { CustomRules, SettingsTransfer } = globalThis;
 
 const file = (rules, over = {}) => Object.assign({ format: 'blab-site-rules', version: 1, exportedAt: 1, rules }, over);
 
@@ -23,9 +24,10 @@ function loadCard(stored) {
   const reads = [];
   const sandbox = {
     CustomRules,
+    SettingsTransfer,
     console,
     document: {
-      getElementById: (id) => ({ id }),
+      getElementById: (id) => ({ id, replaceChildren() {} }),
       querySelector: (selector) => {
         if (selector.includes('!')) throw new SyntaxError(`bad selector ${selector}`);
         return null;
@@ -89,6 +91,22 @@ test('import preview: the one place in the settings page that merges or checks t
   assert.ok(preview[0].includes('CustomRules.mergeImport('), 'mergeImport 只在预览函数里');
   // 额度在 mergeImport 里面查（CustomRules.assertFits），设置页不再查第二遍。
   assert.doesNotMatch(options, /assertFits\(/);
+});
+
+test('card import: a file over the shared import cap is refused unread, one at the cap is read', async () => {
+  assert.equal(SettingsTransfer.MAX_FILE_BYTES, 1024 * 1024);
+  const { card } = loadCard({});
+  let reads = 0;
+  const upload = (size, body) => ({ size, text: async () => { reads += 1; return body; } });
+  await assert.rejects(card.readRulesImportFile(upload(SettingsTransfer.MAX_FILE_BYTES + 1, '{}')),
+    { message: 'customRulesImportInvalid' });
+  assert.equal(reads, 0, '超限的文件一个字都不读');
+  // 正好在上限上的照常读、照常走预览（这份内容本身不合格式，报的还是同一个键）。
+  await assert.rejects(card.readRulesImportFile(upload(SettingsTransfer.MAX_FILE_BYTES, '{}')),
+    { message: 'customRulesImportInvalid' });
+  assert.equal(reads, 1);
+  // 数字只写在 SettingsTransfer 一处：设置页族里不许再出现第二份。
+  assert.doesNotMatch(optionsSource(), /1024\s*\*\s*1024|1048576/);
 });
 
 test('userErrorKey: the collection keys and customRuleSaveFailed, nothing else', () => {

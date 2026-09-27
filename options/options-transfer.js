@@ -197,9 +197,6 @@ const TRANSFER_SECTIONS = [settingsSection, siteRulesSection, customRulesSection
 // 控件
 // ---------------------------------------------------------------------------
 
-// 同步存储整个才 100KB，一份正常的导出只有几 KB。再大就不是我们的文件。
-const TRANSFER_MAX_BYTES = 1024 * 1024;
-
 const transferElements = {
   exportButton: document.getElementById('transferExport'),
   importButton: document.getElementById('transferImport'),
@@ -286,7 +283,7 @@ async function exportSettings() {
 
 async function readImportFile(file) {
   resetTransferUi();
-  if (file.size > TRANSFER_MAX_BYTES) throw new SettingsTransfer.TransferError('tooLarge');
+  if (file.size > SettingsTransfer.MAX_FILE_BYTES) throw new SettingsTransfer.TransferError('tooLarge');
   const parsed = SettingsTransfer.parseFile(await file.text());
   const validated = await SettingsTransfer.validateAll(parsed, TRANSFER_SECTIONS);
 

@@ -459,6 +459,8 @@ function resetRulesImport() {
 async function readRulesImportFile(file) {
   resetRulesImport();
   hideCustomRulesError();
+  // 上限和整份导入是同一个数（SettingsTransfer.MAX_FILE_BYTES），超了不读内容。
+  if (file.size > SettingsTransfer.MAX_FILE_BYTES) throw new Error('customRulesImportInvalid');
   let parsed;
   try {
     parsed = JSON.parse(await file.text());
