@@ -70,15 +70,15 @@
   }
 
   /**
-   * 页面自己的节点，不是我们画的：不在界面根（ctx.constants.OWN_UI_SELECTOR，拾取
-   * 器工具条也在里面）里，也不在译文节点（.ai-translator-inline-block）里。
+   * 页面自己的节点，不是我们画的：不在界面根（拾取器工具条也在里面）里，也不在
+   * 插进页面的译文节点里。两样合起来只有一份清单：ctx.constants.OWN_NODES_SELECTOR。
    *
    * 译文会克隆原文里的行内元素（span.promo-tag 在译文里还有一份）。把克隆也算上，
    * 翻过的页面上每条类名选择器都「命中两处」，拾取器只好退到位置链，计数也翻倍。
    * 唯一性和工具条的计数都问这一处。
    */
   function isPageNode(el) {
-    return !el.closest(`${ctx.constants.OWN_UI_SELECTOR}, .ai-translator-inline-block`);
+    return !el.closest(ctx.constants.OWN_NODES_SELECTOR);
   }
 
   /** 在 el 自己的 root 里，selector 是否只中 el 一个页面节点。无效选择器算不唯一。 */

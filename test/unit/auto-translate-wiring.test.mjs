@@ -109,10 +109,12 @@ test('发现层只回答「轮到谁了」：不发请求，也不碰页面状�
 
 test('自己插的译文不算页面变了 —— 否则翻译会把自己再触发一遍', () => {
   const discover = code('content/content-auto-discover.js');
-  assert.match(discover, /ai-translator-inline-block/);
+  // 译文块在 ctx.constants.OWN_NODES_SELECTOR 里（清单本身由 host-css-containment
+  // 守着），发现层只引用这一份。
+  assert.match(discover, /ctx\.constants\.OWN_NODES_SELECTOR/);
   assert.match(discover, /function ownMutation\(record\)/);
   // 文本裹套用的 class 挂在页面自己的文字上，认作我们的就会让页面后续的改动
-  // 全部失声。见该文件 OWN_UI_SELECTOR 上方的注释。
+  // 全部失声。见该文件 OWN_NODES_SELECTOR 上方的注释。
   assert.doesNotMatch(discover, /ai-translator-text-run/);
 });
 

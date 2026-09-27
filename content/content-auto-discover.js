@@ -66,9 +66,9 @@
   // 真改了那段文字就再也看不见了。代价是每轮翻译后会多收集一遍（裹文本节点本身
   // 是一次 DOM 变动），而那一遍收不到任何新候选：已翻的被同一性守卫挡掉，翻过
   // 的被调度层的台账挡掉。多一次扫描，不会循环。
-  // 界面根的清单只有一份（ctx.constants.OWN_UI_SELECTOR），这里再加上插进页面的
-  // 译文块和悬停译文。
-  const OWN_UI_SELECTOR = `${ctx.constants.OWN_UI_SELECTOR}, .ai-translator-inline-block, .ai-translator-hover-translation`;
+  // 界面根加插进页面的译文（译文块、悬停译文、划词译文），清单只有一份：
+  // ctx.constants.OWN_NODES_SELECTOR。
+  const OWN_NODES_SELECTOR = ctx.constants.OWN_NODES_SELECTOR;
 
   function ownNode(node) {
     if (!node) return false;
@@ -76,7 +76,7 @@
       ? node
       : (node.nodeType === Node.TEXT_NODE ? node.parentElement : null);
     if (!element || typeof element.closest !== 'function') return false;
-    return !!element.closest(OWN_UI_SELECTOR);
+    return !!element.closest(OWN_NODES_SELECTOR);
   }
 
   // 一条变动记录是不是我们自己弄出来的。

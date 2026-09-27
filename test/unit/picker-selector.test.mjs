@@ -119,8 +119,12 @@ function tree(build) {
 const el = (tag, opts) => new FakeElement(tag, opts);
 
 function loadPicker() {
-  // 界面根清单取一小段就够：假 closest 按逗号拆开逐条比。
-  const ctx = { constants: { OWN_UI_SELECTOR: '.ai-translator-popup, #ai-translator-rule-picker' } };
+  // 界面根加译文节点的清单取一小段就够：假 closest 按逗号拆开逐条比。
+  const ctx = {
+    constants: {
+      OWN_NODES_SELECTOR: '.ai-translator-popup, #ai-translator-rule-picker, .ai-translator-inline-block',
+    },
+  };
   const sandbox = { window: { AI_TRANSLATOR_CONTENT: ctx } };
   vm.runInNewContext(pickerSource('selector.js'), sandbox);
   return ctx.picker;
