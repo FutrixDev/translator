@@ -395,6 +395,43 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   });
 }
 
+// 右下角那条窄条也是我们画的界面：在它的字上划选，不该弹「划词翻译」按钮叠在
+// 它上面。划词与悬停读的是 ctx.constants.OWN_NODES_SELECTOR，同一份界面根清单。
+test('selecting the ask bar\'s own text shows no selection button', async ({ page, context }) => {
+  await setExtensionSettings(page, settings('http://127.0.0.1:9', { enableSelection: true }));
+  await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
+  await page.goto(`${RULES}/locks`);
+  await waitForFloatBall(page);
+  const ask = page.locator('#ai-translator-auto-bar');
+  await expect(ask).toHaveAttribute('data-mode', 'ask');
+  const button = page.locator('#ai-translator-selection-btn');
+
+  async function dragAcross(target) {
+    const box = await target.boundingBox();
+    await page.evaluate(() => window.getSelection().removeAllRanges());
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up();
+  }
+
+  // 对照：页面正文上划选，按钮照常出来 —— 这一页的划词是开着的。
+  await dragAcross(page.locator('#top-p'));
+  await expect(button, 'selecting page text shows the button').toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(button).toHaveCount(0);
+
+  const prompt = ask.locator('.ai-translator-auto-text');
+  await dragAcross(prompt);
+  const selected = await page.evaluate(() => window.getSelection().toString());
+  expect(selected.length, 'the drag selected text on the ask bar').toBeGreaterThan(1);
+  expect(en('autoAskPrompt')).toContain(selected.trim());
+  // 划词在 mouseup 后等 100 ms 才决定出不出按钮。
+  await page.waitForTimeout(400);
+  await expect(button, 'no selection button over our own ask bar').toHaveCount(0);
+  await expect(ask).toHaveAttribute('data-mode', 'ask');
+});
+
 // ------------------------------------------------------------------ 置灰
 
 const GREY = {

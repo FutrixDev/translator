@@ -12,6 +12,29 @@
   ctx.frameRole = window.top === window ? 'top' : 'child';
 
   if (!ctx.constants) {
+    // 我们自己画的界面根：收集不把它们当正文（page/collect.js），发现层不把它们
+    // 的变动当页面变了（content-auto-discover.js）。与 content/css/popup.css
+    // 宿主隔离重置里的 :is() 根清单是同一份，由
+    // test/unit/host-css-containment.test.mjs 守着不分叉；加一个界面根，两处都要加。
+    const ownUi = [
+      '.ai-translator-popup',
+      '#ai-translator-input-dialog',
+      '#ai-translator-float-menu',
+      '#ai-translator-float-ball',
+      '#ai-translator-float-ball-container',
+      '#ai-translator-progress',
+      '#ai-translator-selection-btn',
+      '#ai-translator-caption-overlay',
+      '#ai-translator-caption-controls',
+      '#ai-translator-caption-btn',
+      '#ai-translator-caption-menu',
+      '#ai-translator-ocr-region',
+      '#ai-translator-ocr-hover-btn',
+      '#ai-translator-input-chip',
+      '#ai-translator-auto-bar',
+      '#ai-translator-source-peek',
+      '#ai-translator-rule-picker'
+    ].join(', ');
     ctx.constants = {
       FLOAT_BALL_SIZE: 36,
       EDGE_SNAP_THRESHOLD: 100,
@@ -19,29 +42,10 @@
       DOCK_PADDING_BACK: 8,
       DOCK_PADDING_VERTICAL: 4,
       MATH_CONTAINER_SELECTOR: 'math, mjx-container, mjx-math, .MathJax, .MathJax_Display, .MathJax_CHTML, .mjx-chtml, .mjx-math, .MJXc-display, .katex, .katex-display, .ltx_Math',
-      // 我们自己画的界面根：收集不把它们当正文（page/collect.js），发现层不把它们
-      // 的变动当页面变了（content-auto-discover.js）。与 content/css/popup.css
-      // 宿主隔离重置里的 :is() 根清单是同一份，由
-      // test/unit/host-css-containment.test.mjs 守着不分叉；加一个界面根，两处都要加。
-      OWN_UI_SELECTOR: [
-        '.ai-translator-popup',
-        '#ai-translator-input-dialog',
-        '#ai-translator-float-menu',
-        '#ai-translator-float-ball',
-        '#ai-translator-float-ball-container',
-        '#ai-translator-progress',
-        '#ai-translator-selection-btn',
-        '#ai-translator-caption-overlay',
-        '#ai-translator-caption-controls',
-        '#ai-translator-caption-btn',
-        '#ai-translator-caption-menu',
-        '#ai-translator-ocr-region',
-        '#ai-translator-ocr-hover-btn',
-        '#ai-translator-input-chip',
-        '#ai-translator-auto-bar',
-        '#ai-translator-source-peek',
-        '#ai-translator-rule-picker'
-      ].join(', ')
+      OWN_UI_SELECTOR: ownUi,
+      // 界面根再加上我们插进页面的译文：划词（content-selection.js）不在这些字上
+      // 弹「划词翻译」按钮，悬停（hover/blocks.js）不把它们当一块正文去翻。
+      OWN_NODES_SELECTOR: `${ownUi}, .ai-translator-inline-block, .ai-translator-hover-translation, .ai-translator-selection-translation`
     };
   }
 
