@@ -285,8 +285,13 @@
 
   // 规则的唯一一种顺序：先按第一个匹配串，再按 id。id 是随机的，存储里的顺序
   // 不稳定，所以设置页列表和两条导出路径都按它排，同一份规则导出来的文件一样。
+  // 按码位比，不用 localeCompare：那个跟界面语言走，换个语言导出的文件就不一样。
+  function compareByCodePoint(a, b) {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+
   function compareRules(a, b) {
-    return a.match[0].localeCompare(b.match[0]) || a.id.localeCompare(b.id);
+    return compareByCodePoint(a.match[0], b.match[0]) || compareByCodePoint(a.id, b.id);
   }
 
   // 文件里每条规则带 id（集合从键上取回来的那个），id 排在最前面好读。

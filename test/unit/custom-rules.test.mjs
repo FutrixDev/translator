@@ -387,6 +387,29 @@ test('custom-rules: toExportFile orders rules by first match, then id, whatever 
   }
 });
 
+// 顺序不跟界面语言走（R1-S-6）：大小写混排、带非 ASCII 的匹配串按码位排，
+// 大写在小写前、ä 在 z 后、汉字最后；同一个匹配串再按 id 的码位排。
+test('custom-rules: compareRules orders by code point, not by locale', () => {
+  const rules = [
+    { id: 'aa000001', v: 1, match: ['例子.com'], engine: 'ai' },
+    { id: 'aa000002', v: 1, match: ['ä.com'], engine: 'ai' },
+    { id: 'aa000003', v: 1, match: ['a.com'], engine: 'ai' },
+    { id: 'aa000004', v: 1, match: ['Z.com'], engine: 'ai' },
+    { id: 'b0000005', v: 1, match: ['B.com'], engine: 'ai' },
+    { id: 'a0000006', v: 1, match: ['B.com'], engine: 'ai' },
+    { id: 'aa000007', v: 1, match: ['z.com'], engine: 'ai' },
+  ];
+  const byCodePoint = rules.slice().sort((a, b) => {
+    const [x, y] = [a.match[0], b.match[0]];
+    if (x !== y) return x < y ? -1 : 1;
+    return a.id < b.id ? -1 : 1;
+  }).map((rule) => rule.id);
+  const expected = ['a0000006', 'b0000005', 'aa000004', 'aa000003', 'aa000007', 'aa000002', 'aa000001'];
+  assert.deepEqual(byCodePoint, expected);
+  assert.deepEqual(rules.slice().sort(CustomRules.compareRules).map((rule) => rule.id), expected);
+  assert.deepEqual(CustomRules.toExportFile(rules.slice().reverse()).rules.map((rule) => rule.id), expected);
+});
+
 // ------------------------------------------------------------ 写入
 
 test('custom-rules write put: a new rule gets an id, lands without it in the value, and is stamped', async () => {
