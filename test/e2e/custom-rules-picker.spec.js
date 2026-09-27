@@ -413,9 +413,11 @@ test('selecting the status bar\'s own text shows no selection button', async ({ 
   async function dragAcross(target) {
     const box = await target.boundingBox();
     await page.evaluate(() => window.getSelection().removeAllRanges());
-    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    // 第一行的开头拖到最后一行的结尾：保存提示折成两行，取竖直中线会正好落在
+    // 两行之间，什么都选不上。
+    await page.mouse.move(box.x + 2, box.y + 4);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 12 });
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height - 4, { steps: 12 });
     await page.mouse.up();
   }
 
