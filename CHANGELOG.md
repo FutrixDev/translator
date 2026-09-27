@@ -367,16 +367,21 @@ No new permission.
   the translation would not fit the box's length limit, the box is not touched
   and the chip turns red with "Translation failed, please retry"; clicking it
   again retries. The chip also turns red when the box, read back after the
-  write, does not hold exactly your text plus the translation; the box may
-  already have changed then (an editor can take the text a moment late), so a
-  retry first checks whether the translation has since landed and, if it has,
-  just clears the chip instead of adding it again. If you keep typing or move
-  to another box before the answer arrives, nothing is written. There is no
-  time limit on the request: the chip stays busy until the answer arrives or
-  you type, press Esc or leave the box. It never submits, never presses Enter
-  and never moves the cursor to another box. Language detection is local and
-  nothing is sent until you click. Settings has a switch for it; the float
-  ball's input translator still opens its own window.
+  write, does not hold your text with the translation on its own line below
+  it; the box may already have changed then (an editor can take the text a
+  moment late, or insert it twice), so if the box no longer holds just your
+  text, a retry treats the translation as written and clears the chip instead
+  of adding it again. If you keep typing or move to another box before the
+  answer arrives, nothing is written; the same holds if, just before writing,
+  the box has lost focus, lost the cursor, changed or left the page. While an
+  input method is still composing (a pinyin candidate window is open, say)
+  the chip does not appear, and a click on it does nothing. There is no time
+  limit on the request: the chip stays busy until the answer arrives or you
+  type, press Esc or leave the box. It never submits, never presses Enter and
+  never moves the cursor to another box. Language detection is local and
+  nothing is sent until you click. Password, username, one-time-code and card
+  fields never get the chip. Settings has a switch for it; the float ball's
+  input translator still opens its own window.
 - **On this computer** — a small panel in the settings page counting the pages
   translated this month, how much the cache saved, and how many characters
   actually went to the model. It lives in `chrome.storage.local`
