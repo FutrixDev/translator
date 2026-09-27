@@ -49,6 +49,17 @@
   // 的「原文 + 译文」又会被判成外语，同一段原文被追加第二遍。
   const written = new WeakMap();
 
+  // 输入法组合（拼音候选框开着）期间，以及结束后这一小段，编辑器还在它的组合模式
+  // 里：Draft 要到 compositionend 之后 20ms 才把组合出来的字读回模型，这期间它不接
+  // paste，写回就掉到 execCommand 上 —— 正是 c5d37ea 写坏 Draft 的那条路
+  // （D-361 S4）。所以这段时间里不判语言、不新挂芯片；已经挂着的芯片被点了，只回到
+  // 可点，一个字不写。组合结束前最后那个 input 会照常排一轮判定（400ms 之后），
+  // 芯片自己会醒过来。
+  const COMPOSITION_SETTLE_MS = 50;
+  let composing = false;
+  let compositionEndedAt = -Infinity;
+  const inComposition = () => composing || performance.now() - compositionEndedAt < COMPOSITION_SETTLE_MS;
+
   function chipEnabled() {
     return settings.showInputTranslateChip !== false;
   }
@@ -170,6 +181,7 @@
   async function evaluateField(field) {
     // 这个框的译文还在路上：芯片正显示「翻译中」，不能被一次重新判语言改回「译成 X」。
     if (pending && pending.field === field) return;
+    if (inComposition()) return;
     const token = (detectToken += 1);
     if (!chipEnabled() || !isEligibleField(field)) {
       hideChip();
@@ -203,7 +215,9 @@
       return;
     }
 
-    // 上面两个 await 之间用户可能已经点去了别处。芯片只贴着焦点所在的那个框。
+    // 上面两个 await 之间用户可能已经点去了别处，或者开始用输入法了。芯片只贴着
+    // 焦点所在的那个框。
+    if (inComposition()) return;
     if (!ctx.inputWriteback.hasFocus(field)) {
       if (chipField === field) hideChip();
       return;
@@ -230,6 +244,10 @@
   async function onChipClick() {
     const field = chipField;
     if (!field || pending) return;
+    if (inComposition()) {
+      setChipState('idle');
+      return;
+    }
     if (settleLateWrite(field)) return;
     const targetLang = chip.dataset.targetLang || '';
     const snapshot = fieldText(field);
@@ -252,7 +270,7 @@
       });
       if (pending !== request) return;
       if (response.error) throw new Error(response.error);
-      if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field)) {
+      if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field) || inComposition()) {
         pending = null;
         setChipState('idle');
         return;
@@ -314,6 +332,11 @@
     // 自己维护模型的编辑器（Lexical 这一类）取消 beforeinput、自己重画，浏览器就
     // 不再发 input —— 只听 input，在这类框里敲多少字芯片都不会醒。
     document.addEventListener('beforeinput', onInput, true);
+    document.addEventListener('compositionstart', () => { composing = true; }, true);
+    document.addEventListener('compositionend', () => {
+      composing = false;
+      compositionEndedAt = performance.now();
+    }, true);
     document.addEventListener('scroll', onViewportChange, true);
     window.addEventListener('resize', onViewportChange, true);
     document.addEventListener('keydown', (e) => {

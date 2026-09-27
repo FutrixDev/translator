@@ -7,7 +7,8 @@
 //   焦点也没走 —— 只有身份核对拦得住这份没人要的译文。
 // - 晚到的写入（writeback.landed）：点芯片、框被重新判定时先问一句，认出来就当
 //   写成了，不再发请求。
-// - 框离开了页面，芯片收起（D-361 M1）；登录名、密码、验证码、卡号框不挂芯片（M4）。
+// - 框离开了页面，芯片收起（D-361 M1）；登录名、密码、验证码、卡号框不挂芯片（M4）；
+//   输入法组合期间与刚结束那一小段不判、不写（S4）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource } from './helpers/sources.mjs';
@@ -214,4 +215,56 @@ test('登录名、密码、验证码、卡号框：不挂芯片', async () => {
     await harness.focus();
     assert.ok(harness.chip()?.isConnected, `autocomplete="${autocomplete}" 的框不该被排除`);
   }
+});
+
+test('输入法组合开着：不判语言、不挂芯片；组合结束后照常', async () => {
+  const harness = load();
+  harness.fire('compositionstart', {});
+  await harness.focus();
+  assert.equal(harness.chip(), undefined, '拼音候选框还开着，芯片就挂出来了');
+
+  harness.fire('compositionend', {});
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await harness.focus();
+  assert.ok(harness.chip()?.isConnected, '组合结束之后芯片没醒过来');
+});
+
+test('组合刚结束那一小段里点芯片：不发请求、不写，芯片回到可点', async () => {
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  assert.ok(chip && chip.isConnected);
+
+  harness.fire('compositionstart', {});
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 0, '组合还开着就发了翻译请求');
+
+  harness.fire('compositionend', {});
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 0, '组合刚结束（编辑器还没把字读回模型）就发了翻译请求');
+  assert.equal(chip.dataset.state, undefined, '芯片没回到可点');
+  assert.equal(chip.isConnected, true);
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 1, '组合结束一会儿之后，点芯片还是不译');
+});
+
+test('译文在路上时开始了输入法组合：译文回来不写，芯片回到可点', async () => {
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 1);
+
+  harness.fire('compositionstart', {});
+  harness.requests[0].answer.resolve({ translation: 'Hello world' });
+  await flush();
+  await flush();
+  assert.deepEqual(harness.writes, [], '组合开着，译文照样写了进去');
+  assert.equal(chip.dataset.state, undefined);
 });

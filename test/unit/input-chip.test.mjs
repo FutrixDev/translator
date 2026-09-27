@@ -70,7 +70,7 @@ test('点击才译：翻译请求只在点击处理里发，而且声明是独�
 test('译文回来先核对，再写', () => {
   const click = CHIP_ONLY.slice(CHIP_ONLY.indexOf('async function onChipClick('));
   const identity = click.indexOf('if (pending !== request) return;');
-  const changed = click.indexOf('if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field))');
+  const changed = click.indexOf('if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field) || inComposition())');
   const write = click.indexOf('await ctx.inputWriteback.write(');
   assert.ok(identity > 0 && changed > identity && write > changed,
     '译文回来后没有按「同一请求 → 字没变 → 焦点还在」的顺序核对完再写');
