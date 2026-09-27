@@ -54,7 +54,7 @@ file directly.
    a real ES module, so these are `import`s)
    - Handles all API requests to translation endpoints (`api-client.js`,
      `ai-translate.js`, `prompts.js`)
-   - Manages context menus and theme icon updates (`context-menus.js`, `icon.js`)
+   - Manages context menus (`context-menus.js`)
    - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
    - Stores default settings and translation prompts (`settings.js`)
    - The account-backed clients live beside it: `comic-client.js`,

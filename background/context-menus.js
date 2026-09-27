@@ -328,8 +328,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 
-// 菜单跟着设置走：语言变了改标题，开关变了改可见性。图标主题那一路在 icon.js
-// 自己听自己的 —— 两个监听器互不相干，MV3 允许注册多个。
+// 菜单跟着设置走：语言变了改标题，开关变了改可见性。
 chrome.storage.onChanged.addListener((changes, namespace) => {
   // 标题读两样东西，所以两样都要听：界面语言（uiLanguage，菜单这句话本身用哪门
   // 语言说）和目标语言（targetLang，说的是「译成 X」里的那个 X）。少听前者的后果

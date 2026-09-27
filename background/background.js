@@ -45,8 +45,7 @@ import { runCommand } from './commands.js';
 import { openOnboardingOnInstall } from './install.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
-// handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
-import './icon.js';
+// handler。每一样具体的活都在隔壁模块里 —— 菜单、PDF、OCR、AI 翻译。
 import './page-coverage.js';
 import './custom-rules-host.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
