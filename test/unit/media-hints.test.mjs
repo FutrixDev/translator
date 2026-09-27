@@ -34,8 +34,18 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  * - `enabled`: the raw sync switch; `signedIn`: the device holds a token.
  * - `replies`: message type -> reply the service worker gives.
  * - `shortcut`: what chrome.commands says for translate-media (null = not asked yet).
+ * - `onScreen`: a comic page is on screen now (the one answer the bar and the
+ *   shortcut share); `started`: what startComicPageTranslation answers.
+ *   Both live on the returned `state`, so a test can scroll the page away.
+ * - `rejects`: message types whose promise-form send rejects (the extension
+ *   was reloaded under the page).
  */
-function load({ kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true } = {}) {
+function load({
+  kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
+  onScreen = kind === 'comic', started = true, rejects = {},
+} = {}) {
+  const state = { onScreen, started };
+  const warnings = [];
   const sent = [];
   const documentListeners = {};
   const offers = [];
@@ -47,15 +57,18 @@ function load({ kind = 'pdf', enabled = true, signedIn = false, replies = {}, sh
     settings,
     signedIn,
     comic: { hasComicStack: () => kind === 'comic' },
-    hasComicPageOnScreen: () => kind === 'comic',
-    startComicPageTranslation: (options) => { comicStarts.push(JSON.parse(JSON.stringify(options))); },
+    hasComicPageOnScreen: () => state.onScreen,
+    startComicPageTranslation: (options) => {
+      comicStarts.push(JSON.parse(JSON.stringify(options)));
+      return state.started;
+    },
     showAutoStatusOffer: (offer) => { offers.push(offer); },
     showAutoStatusNotice: (text) => { notices.push(text); },
     commandShortcut: () => shortcut,
     onCommandShortcuts() {},
   };
   const sandbox = {
-    console: { warn() {}, log() {}, error() {} },
+    console: { warn: (...args) => { warnings.push(args.map(String).join(' ')); }, log() {}, error() {} },
     setTimeout,
     URL,
     requestAnimationFrame: () => 0,
@@ -67,7 +80,14 @@ function load({ kind = 'pdf', enabled = true, signedIn = false, replies = {}, sh
           // against this realm's literals on prototype alone.
           sent.push(JSON.parse(JSON.stringify(message)));
           const reply = replies[message.type] || { ok: true };
-          if (callback) setImmediate(() => callback(reply));
+          if (callback) {
+            setImmediate(() => callback(reply));
+            return undefined;
+          }
+          // The promise form: a listener that never replies resolves undefined.
+          return rejects[message.type]
+            ? Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'))
+            : Promise.resolve(undefined);
         },
       },
     },
@@ -91,7 +111,7 @@ function load({ kind = 'pdf', enabled = true, signedIn = false, replies = {}, sh
     sandbox.document.visibilityState = 'visible';
     documentListeners.visibilitychange();
   };
-  return { ctx, sent, offers, notices, comicStarts, settings, lastOffer, show };
+  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, lastOffer, show };
 }
 
 const types = (sent) => sent.map((m) => m.type);
@@ -126,6 +146,19 @@ test('an unbound shortcut turns the text generic and adds the settings link', as
   assert.equal(offer.link.text, 'mediaHintSetShortcut');
   offer.link.onClick();
   assert.deepEqual(types(page.sent), ['OPEN_SHORTCUT_SETTINGS']);
+  await flush();
+  assert.deepEqual(page.warnings, []);
+});
+
+test('opening the shortcut settings says so in the console when the worker is out of reach', async () => {
+  const page = load({ kind: 'pdf', shortcut: '', rejects: { OPEN_SHORTCUT_SETTINGS: true } });
+  page.ctx.setupMediaHints();
+  await flush();
+  page.lastOffer().link.onClick();
+  await flush();
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /open shortcut settings failed/);
+  assert.match(page.warnings[0], /Receiving end does not exist/);
 });
 
 test('comic stack signed out: the host is claimed, and the hint shows only on a won claim', async () => {
@@ -184,6 +217,43 @@ test('the shortcut dispatches on what the page is', async () => {
   assert.deepEqual(plain.notices, ['mediaShortcutNothing']);
 });
 
+test('the bar asks the same question as the shortcut: nothing on screen is not a click used up', async () => {
+  const page = load({ kind: 'comic', signedIn: true, replies: { COMIC_HINT_WRITE: { value: true } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  // Claimed while a page was showing; the reader has since scrolled past the
+  // strip to the comments.
+  page.state.onScreen = false;
+  page.lastOffer().accept();
+  await flush();
+  assert.deepEqual(page.comicStarts, []);
+  assert.deepEqual(page.notices, ['mediaShortcutNothing']);
+  assert.equal(page.lastOffer().text, 'mediaHintComic', 'the bar went away with nothing started');
+
+  // Back on a page: the same bar still works.
+  page.state.onScreen = true;
+  page.lastOffer().accept();
+  await flush();
+  assert.deepEqual(page.comicStarts, [{ pageUrl: COMIC_URL, consent: true }]);
+  assert.equal(page.lastOffer(), null);
+});
+
+test('a comic start that found no page puts the bar back', async () => {
+  // On screen when asked, gone by the time the start looked (a reader that
+  // swaps its slots): startComicPageTranslation answers false.
+  const page = load({ kind: 'comic', signedIn: true, started: false, replies: { COMIC_HINT_WRITE: { value: true } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  page.lastOffer().accept();
+  await flush();
+  await flush();
+  assert.equal(page.comicStarts.length, 1);
+  const offer = page.lastOffer();
+  assert.ok(offer, 'the bar was used up by a start that started nothing');
+  assert.equal(offer.text, 'mediaHintComic');
+  assert.equal(offer.busy, false);
+});
+
 test('signed out: sign in first, then carry on with the same PDF', async () => {
   const page = load({ kind: 'pdf', signedIn: false });
   page.ctx.setupMediaHints();
@@ -239,6 +309,45 @@ test('a second press while the first is still signing in does not dispatch twice
   await flush();
   await flush();
   assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+});
+
+// ------------------------------------------------------------ the comic start it hands off to
+
+/** content/content-comic-translation.js alone, over a comic shelf this test writes. */
+function comicEntry(shelf) {
+  const errors = [];
+  const warnings = [];
+  const ctx = {
+    t: (key) => key,
+    settings: { comicTargetLang: 'zh-CN' },
+    comic: { ...shelf, showDetachedError: (text) => { errors.push(text); } },
+  };
+  const sandbox = {
+    window: { AI_TRANSLATOR_CONTENT: ctx },
+    console: { warn: (...args) => { warnings.push(args.map(String).join(' ')); }, log() {}, error() {} },
+    setTimeout,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(read('content/content-comic-translation.js'), sandbox, { filename: 'content/content-comic-translation.js' });
+  return { ctx, errors, warnings };
+}
+
+test('the comic start answers whether it started anything', () => {
+  const none = comicEntry({ pickComicImages: () => [] });
+  assert.equal(none.ctx.startComicPageTranslation({ consent: true }), false);
+  assert.deepEqual(none.errors, ['comicNoPageFound']);
+});
+
+test('a comic start nobody awaits still says in the console when it fails', async () => {
+  const broken = comicEntry({
+    pickComicImages: () => [{}],
+    normalizeMode: () => { throw new Error('boom'); },
+  });
+  assert.equal(broken.ctx.startComicPageTranslation({ consent: true }), true);
+  await flush();
+  assert.equal(broken.warnings.length, 1);
+  assert.match(broken.warnings[0], /comic page translation failed/);
+  assert.match(broken.warnings[0], /boom/);
 });
 
 // ------------------------------------------------------------ what counts as a comic reader
