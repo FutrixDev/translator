@@ -332,12 +332,13 @@ test('J-5: rules export from the card, and an import is previewed, merged by id,
   expect(exported.version).toBe(1);
   expect(exported.rules).toEqual([{ id: idA, ...storedA }]);
 
-  // 准备一份文件：A 改一个字段，再加一条钉 AI 的新规则 B。
+  // 准备一份文件：A 改一个字段并钉 AI，再加一条钉 AI 的新规则 B。AI 提示里的 K 数的
+  // 是文件里全部 engine:'ai' 的条数（§6.1），替换的也算：这里是 2，新增的只有 1。
   const idB = 'jfivebee';
   const file = {
     ...exported,
     rules: [
-      { ...exported.rules[0], exclude: ['.comments', '.footer'] },
+      { ...exported.rules[0], exclude: ['.comments', '.footer'], engine: 'ai' },
       { id: idB, v: 1, match: ['other.test'], engine: 'ai' },
     ],
   };
@@ -348,7 +349,7 @@ test('J-5: rules export from the card, and an import is previewed, merged by id,
   await expect(page.locator('#customRulesPreviewText'))
     .toHaveText(fill(en('customRulesImportPreview'), { added: 1, replaced: 1 }));
   await expect(page.locator('#customRulesPreviewWarnings .transfer-warning'))
-    .toHaveText([fill(en('customRulesImportAiNote'), { count: 1 })]);
+    .toHaveText([fill(en('customRulesImportAiNote'), { count: 2 })]);
   // 预览时什么都还没写。
   expect(Object.keys(await storedRules(context))).toEqual([`customRule:${idA}`]);
 
@@ -360,7 +361,7 @@ test('J-5: rules export from the card, and an import is previewed, merged by id,
   await expect(page.locator(`.custom-rule[data-rule-id="${idB}"]`)).toHaveCount(1);
   const imported = await storedRules(context);
   expect(Object.keys(imported).sort()).toEqual([`customRule:${idA}`, `customRule:${idB}`].sort());
-  expect(imported[`customRule:${idA}`].exclude).toEqual(['.comments', '.footer']);
+  expect(imported[`customRule:${idA}`]).toMatchObject({ exclude: ['.comments', '.footer'], engine: 'ai' });
   expect(imported[`customRule:${idB}`]).toMatchObject({ v: 1, match: ['other.test'], engine: 'ai' });
 
   // 坏 JSON：报错，预览不出，存储逐字节不变。

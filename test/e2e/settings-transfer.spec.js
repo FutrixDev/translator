@@ -35,6 +35,8 @@ const {
   presetRules,
   createRule,
   deleteRule,
+  fillRuleEditor,
+  saveRuleEditor,
   openOptions: openRulesCard,
 } = require('./custom-rules-fixtures');
 
@@ -302,7 +304,8 @@ test('J-11 a whole-settings export carries the site translation rules, and an im
   const budget = page.locator('#autoAiBudgetGroup');
   await expect(budget).toHaveClass(DISABLED);
   const { id: idA } = await createRule(page, context, { match: ['rules.test'], exclude: ['.comments'] });
-  const { id: idB } = await createRule(page, context, { match: ['rules-ai.test'] }, { engineAi: true });
+  // B 另带一个字段：引擎改回跟随全局以后它还得是一条有效规则。
+  const { id: idB } = await createRule(page, context, { match: ['rules-ai.test'], exclude: ['.ads'] }, { engineAi: true });
   await expect(budget).not.toHaveClass(DISABLED);
   const stored = await storedRules(context);
   expect(Object.keys(stored).sort()).toEqual([`customRule:${idA}`, `customRule:${idB}`].sort());
@@ -316,15 +319,21 @@ test('J-11 a whole-settings export carries the site translation rules, and an im
   expect(withoutStamp(body.customRules)).toEqual(withoutStamp(card));
   expect(body.customRules.rules.map((r) => r.id).sort()).toEqual([idA, idB].sort());
 
-  // 在卡片里删掉 A、B：额度那一格变灰。
+  // 在卡片里删掉 A，把 B 的引擎改回跟随全局：一条钉 AI 的规则都不剩，额度那一格变灰。
+  // B 留着，导入时它就是一条「替换的」AI 规则。
   await deleteRule(page, idA);
-  await deleteRule(page, idB);
-  await expect.poll(() => storedRules(context)).toEqual({});
+  await fillRuleEditor(page, {}, idB);
+  await page.selectOption('#customRule-engine', '');
+  await saveRuleEditor(page);
+  const kept = await storedRules(context);
+  expect(Object.keys(kept)).toEqual([`customRule:${idB}`]);
+  expect(kept[`customRule:${idB}`].engine).toBeUndefined();
   await expect(budget).toHaveClass(DISABLED);
 
-  // 整份导入：预览里有规则那一行，警告里有 AI 那一句（K = 1）。
+  // 整份导入：预览里有规则那一行，警告里有 AI 那一句。K 数的是文件里全部
+  // engine:'ai' 的条数（§6.1）：B 是替换的，新增的 AI 规则是 0 条，K 仍是 1。
   const preview = page.locator('#transferPreview');
-  const rulesLine = fill(en('transferPreviewCustomRules'), { added: 2, replaced: 0 });
+  const rulesLine = fill(en('transferPreviewCustomRules'), { added: 1, replaced: 1 });
   const aiNote = fill(en('customRulesImportAiNote'), { count: 1 });
   await chooseFile(page, body);
   await expect(preview).toBeVisible();
@@ -332,7 +341,7 @@ test('J-11 a whole-settings export carries the site translation rules, and an im
     .toHaveText(rulesLine);
   await expect(page.locator('#transferWarnings .transfer-warning', { hasText: aiNote })).toHaveCount(1);
   report('J-11 warnings', (await page.locator('#transferWarnings .transfer-warning').allInnerTexts()).join(' | '));
-  expect(await storedRules(context), 'previewing wrote nothing').toEqual({});
+  expect(await storedRules(context), 'previewing wrote nothing').toEqual(kept);
   await centre(page, '#transferPreview');
   report('J-11 preview', await expectLaidOut(page,
     ['#transferPreviewList', '#transferWarnings .transfer-warning', '#transferConfirm', '#transferCancel'], 'J-11 preview'));
@@ -375,7 +384,7 @@ test('J-11 a whole-settings export carries the site translation rules, and an im
   await chooseFile(page, body);
   await expect(preview).toBeVisible();
   await expect(page.locator('#transferPreviewList li', { hasText: en('transferSectionCustomRules') }))
-    .toHaveText(rulesLine);
+    .toHaveText(fill(en('transferPreviewCustomRules'), { added: 2, replaced: 0 }));
   const presets = presetRules();
   await writeSyncSettings(context, presets);
   await page.click('#transferConfirm');
