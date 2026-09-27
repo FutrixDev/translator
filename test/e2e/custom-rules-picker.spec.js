@@ -364,6 +364,32 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await page.keyboard.press('Escape');
     await expectPickerGone(page);
     await expect(ask, 'the ask bar comes back once the picker closes').toHaveAttribute('data-mode', 'ask');
+
+    // 存好一条后立刻再开拾取器去排低处那一块。保存提示不会自己消失，拾取器开着
+    // 时它的 × 又点不动：它也得让位，低处目标的中心取到的是目标本身；关掉拾取器
+    // 后那句提示照样回来。
+    await openPickerFromMenu(page);
+    await pickWithPointer(page, page.locator('#leave'), `${size} link to save`);
+    await pickerButton(page, 'exclude').click();
+    await expectPickerGone(page);
+    await expect(ask, 'the saved notice shows').toHaveAttribute('data-mode', 'notice');
+    await openPickerFromMenu(page);
+    await expect(ask, 'the saved notice steps aside while the picker is open').toHaveCount(0);
+    const lowAgain = await low.boundingBox();
+    const center = { x: lowAgain.x + lowAgain.width / 2, y: lowAgain.y + lowAgain.height / 2 };
+    const hit = await page.evaluate(({ x, y }) => {
+      const node = document.elementFromPoint(x, y);
+      if (!node) return 'nothing';
+      return node.closest('#low-p') ? 'low-p' : `${node.tagName}#${node.id}.${node.className}`;
+    }, center);
+    expect(hit, `${size} the low target's centre after a save`).toBe('low-p');
+    await page.mouse.move(center.x, center.y);
+    await page.mouse.click(center.x, center.y);
+    await expect(page.locator(`${PICKER} .ai-translator-picker-input`)).toBeVisible();
+    await expectOutlineOn(page, low, `${size} low after a save (locked)`);
+    await page.keyboard.press('Escape');
+    await expectPickerGone(page);
+    await expect(ask, 'the saved notice comes back once the picker closes').toHaveAttribute('data-mode', 'notice');
     await page.click('#leave');
     await expect(page).toHaveURL(`${RULES}/elsewhere`);
   });

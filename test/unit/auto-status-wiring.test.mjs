@@ -297,8 +297,9 @@ test('规则没存上要说一声，不能只留一行控制台日志', () => {
   assert.match(status, /ctx\.showAutoStatusNotice = setNotice;/);
   assert.match(code('content/content-float-ball.js'),
     /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
-  // 那句话得真画到条子上，而且压在追问和展开说明之上。
-  assert.match(status, /const mode = notice \? 'notice' :/);
+  // 那句话得真画到条子上，而且压在追问和展开说明之上。只有拾取器开着时整条让位
+  // 盖过它（关掉后照样回来）。
+  assert.match(status, /const mode = yielding \? '' : \(notice \? 'notice' :/);
   assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
   // 关掉一次只关掉一层：他关的是这句话，底下没答完的那一问不该跟着一起没。
   assert.match(status, /if \(notice\) notice = '';\s*\n\s*else if \(explaining\)/);
