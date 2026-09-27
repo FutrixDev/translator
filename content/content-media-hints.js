@@ -71,17 +71,9 @@
     return ctx.featureState(FEATURE_KEYS[kind]) === FEATURE_STATES.OFF;
   }
 
-  function sendMessage(message) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ ok: false, error: { code: 'extension_context', message: chrome.runtime.lastError.message } });
-          return;
-        }
-        resolve(response || { ok: false, error: { code: 'no_response', message: '' } });
-      });
-    });
-  }
+  // 发给服务工作者的消息都走 ctx.comic.sendMessage（content-comic-translation.js
+  // 那一份，同一个 manifest 条目、装在这个文件之后，所以调用时再取）：送不到、
+  // 没人回、上下文失效时同步抛，它都折成 { ok: false, error } 回来。
 
   // ------------------------------------------------------------------ 做
 
@@ -90,7 +82,7 @@
    */
   async function ensureSignedIn() {
     if (ctx.signedIn) return true;
-    const result = await sendMessage({ type: 'COMIC_SIGN_IN' });
+    const result = await ctx.comic.sendMessage({ type: 'COMIC_SIGN_IN' });
     if (result.ok) return true;
     if (result.error && result.error.code === 'sign_in_cancelled') return false;
     console.warn('Blab Translation: sign-in before media translation failed', result.error);
@@ -104,7 +96,7 @@
    */
   function dispatch(kind) {
     if (kind === 'pdf') {
-      return sendMessage({ type: 'PDF_TRANSLATE_URL', url: location.href, consent: true }).then((result) => {
+      return ctx.comic.sendMessage({ type: 'PDF_TRANSLATE_URL', url: location.href, consent: true }).then((result) => {
         // 工作者被回收、扩展刚重载过：消息没送到。说一声，不然这一下看起来就是
         // 什么都没发生。其余的失败由服务工作者的通知来说（和右键菜单同一路）。
         if (result.ok || !result.error || result.error.code !== 'extension_context') return true;
@@ -191,7 +183,7 @@
   async function claimComicHint() {
     if (comicClaimed) return;
     comicClaimed = true;
-    const reply = await sendMessage({ type: 'COMIC_HINT_WRITE', kind: 'claim', host: location.hostname });
+    const reply = await ctx.comic.sendMessage({ type: 'COMIC_HINT_WRITE', kind: 'claim', host: location.hostname });
     if (reply.error) {
       console.warn('Blab Translation: comic hint claim failed', reply.error);
       return;

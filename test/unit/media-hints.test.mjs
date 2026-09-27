@@ -4,7 +4,9 @@
 // source cannot tell "sent on click" from "sent on load".
 //
 // AccountGate and PdfUrl are the real shared modules, so "off" versus "signed
-// out" is answered by the one gate the rest of the extension uses.
+// out" is answered by the one gate the rest of the extension uses; messages go
+// out through the real owner, ctx.comic.sendMessage from
+// content/content-comic-translation.js.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -21,6 +23,7 @@ const SOURCES = [
   'shared/pdf-url.js',
   'content/content-media-hints.js',
 ].map((rel) => [rel, read(rel)]);
+const COMIC_OWNER = read('content/content-comic-translation.js');
 
 const PDF_URL = 'https://arxiv.org/pdf/2501.00001';
 const COMIC_URL = 'https://comics.example/read/1';
@@ -39,10 +42,12 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  *   Both live on the returned `state`, so a test can scroll the page away.
  * - `rejects`: message types whose promise-form send rejects (the extension
  *   was reloaded under the page).
+ * - `throws`: message types whose send throws at once (the extension context
+ *   is already gone: chrome.runtime.sendMessage throws synchronously).
  */
 function load({
   kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
-  onScreen = kind === 'comic', started = true, rejects = {},
+  onScreen = kind === 'comic', started = true, rejects = {}, throws = {},
 } = {}) {
   const state = { onScreen, started };
   const warnings = [];
@@ -78,6 +83,7 @@ function load({
         sendMessage(message, callback) {
           // Plain copies: objects built in the vm realm fail deepStrictEqual
           // against this realm's literals on prototype alone.
+          if (throws[message.type]) throw new Error('Extension context invalidated.');
           sent.push(JSON.parse(JSON.stringify(message)));
           const reply = replies[message.type] || { ok: true };
           if (callback) {
@@ -104,6 +110,12 @@ function load({
   sandbox.window = { AI_TRANSLATOR_CONTENT: ctx, addEventListener() {} };
   vm.createContext(sandbox);
   for (const [filename, source] of SOURCES) vm.runInContext(source, sandbox, { filename });
+  // The message owner, alone: it puts sendMessage on the shared comic shelf; the
+  // rest of what it wires (the comic start, the on-screen answer) stays this
+  // page's stand-ins above, on a context of its own.
+  sandbox.window = { AI_TRANSLATOR_CONTENT: { t: ctx.t, settings, comic: ctx.comic } };
+  vm.runInContext(COMIC_OWNER, sandbox, { filename: 'content/content-comic-translation.js' });
+  sandbox.window = { AI_TRANSLATOR_CONTENT: ctx, addEventListener() {} };
   // The page's featureState is the gate's, over this page's settings and sign-in.
   ctx.featureState = (key) => sandbox.AccountGate.featureState(ctx.settings, key, ctx.signedIn);
   const lastOffer = () => offers[offers.length - 1] || null;
@@ -309,6 +321,21 @@ test('a second press while the first is still signing in does not dispatch twice
   await flush();
   await flush();
   assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+});
+
+test('a send that throws at once (the extension is gone) says so, and the hint comes back', async () => {
+  // chrome.runtime.sendMessage throws synchronously once the extension context
+  // is invalidated. The owner folds that into { ok: false, extension_context },
+  // so the click answers with a notice instead of an unhandled rejection.
+  const page = load({ kind: 'pdf', signedIn: true, throws: { PDF_TRANSLATE_URL: true } });
+  page.ctx.setupMediaHints();
+  await flush();
+  page.lastOffer().accept();
+  await flush();
+  await flush();
+  assert.deepEqual(page.notices, ['pdfErrNetwork']);
+  assert.ok(page.lastOffer(), 'the hint did not come back to click again');
+  assert.equal(page.lastOffer().busy, false);
 });
 
 // ------------------------------------------------------------ the comic start it hands off to
