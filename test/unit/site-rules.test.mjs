@@ -720,7 +720,7 @@ const LOAD_ORDER = [
   // 语域附加说明（R33 A4）：两处都在调用时才取，缺了不是加载时抛，是每一次
   // 翻译请求都抛 —— 整页、划词、字幕一起停。
   ['content/content-translation-engine.js', 'shared/site-rules.js',
-   'ctx.requestTranslation 发给模型之前问 SiteRules.register() 这一页的语域。'],
+   'ctx.withPromptAddenda 给每个翻译请求问 SiteRules.register() 这一页的语域。'],
   ['content/content-translation-cache.js', 'shared/prompt-addenda.js',
    '译文缓存的键因子 addenda 是 PromptAddenda.stamp() 算的。'],
 ];

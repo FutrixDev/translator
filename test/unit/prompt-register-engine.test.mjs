@@ -1,4 +1,4 @@
-// 语域附加说明在内容脚本这一半（R33 A4）：ctx.requestTranslation 这个唯一出口
+// 语域附加说明在内容脚本这一半（R33 A4）：ctx.requestTranslation 入口用 ctx.withPromptAddenda
 // 把这一页的语域挂到发给服务工作者的消息上，译文缓存把它放进键。
 //
 // 契约：

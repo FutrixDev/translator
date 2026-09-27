@@ -2,8 +2,9 @@
 //
 // 今天只有一项：register —— 这一页是什么体裁（社交帖子、论坛讨论、新闻、论文）。
 // 它从内置站点表来（shared/site-rules-builtin.js 每条规则可选的 register 字段，
-// SiteRules.register() 读），由内容脚本在唯一的出口 ctx.requestTranslation 挂上
-// 消息的 `addenda` 字段；服务工作者的三个翻译处理函数先用 validate() 把关，再由
+// SiteRules.register() 读），由发起请求的那个 frame 的内容脚本用
+// ctx.withPromptAddenda 挂上消息的 `addenda` 字段（子 frame 的请求经顶层转发时
+// 原样不动）；服务工作者的三个翻译处理函数先用 validate() 把关，再由
 // background/prompts.js 的 composePromptAddenda() 拼成系统提示词里的一句话。
 //
 // **只送标签，不送域名。** 模型要知道的是「这是论坛上的讨论」，不是「这是

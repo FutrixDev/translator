@@ -279,14 +279,20 @@ through the top frame's engine.
 Every translation a content script asks for — page, hover, selection, input
 box, subtitles, OCR — goes through one call, `ctx.requestTranslation`, which
 picks a backend (Chrome's built-in Translator API or the user's own AI
-endpoint) and is the **only** place a request leaves for the model. It is a
-family of classic scripts sharing one shelf, `ctx.engine`:
+endpoint) and is the **only** place a request leaves for the model. It is two
+steps: `ctx.withPromptAddenda(message)` stamps the request once with this
+document's register (below), and `ctx.sendTranslation(message)` sends a stamped
+request as it is — backend choice, fallback and the budget gate live there. A
+child frame overrides only `ctx.sendTranslation` (it hands the request to the
+top frame), and the top frame's relay calls `ctx.sendTranslation` directly, so
+a relayed request keeps the child's stamp. It is a family of classic scripts
+sharing one shelf, `ctx.engine`:
 
 | file | what it owns |
 | --- | --- |
 | `content/engine/languages.js` | extension codes ↔ Translator API codes (`toApiLang`), which languages the built-in engine knows, `detectLanguageOf()`, the page's and a snippet's source language |
 | `content/engine/watchdog.js` | the stall watchdog: every call into the Translator API gets a deadline, and a download's deadline moves with its progress events |
-| `content/content-translation-engine.js` | the entry: backend choice, the budget gate, `ctx.requestTranslation`, `ctx.builtinTranslator` |
+| `content/content-translation-engine.js` | the entry: backend choice, the budget gate, `ctx.requestTranslation` (`ctx.withPromptAddenda` + `ctx.sendTranslation`), `ctx.builtinTranslator` |
 
 The options page loads the same family (language-pack status and download), so
 both load lists — `manifest.json` and `options/options.html` — carry every file,
@@ -335,9 +341,15 @@ engine = AI).
 site rules may carry a `register` (`social` / `forum` / `news` / `academic`,
 the table in `shared/prompt-addenda.js`), read by `SiteRules.register(host,
 path)`. That reader looks only at the built-in table: user rules have no
-register. At the same `sendMessage` exit, `ctx.promptAddenda()` attaches
-`addenda: { register }` to the three translate messages, and only when this
-page has a register. It sends the label and never the host. The service
+register. `ctx.withPromptAddenda()` attaches `addenda: { register }` to the
+three translate messages, and only when this page has a register. It runs once
+per request, in the frame that asked, reading `location` at call time (an SPA
+route change is a new register), and throws on a request that already carries
+`addenda`. A child frame's request crosses the relay untouched, so a child page
+with no register sends no `addenda` even under a news top page. The translation
+cache stamps once too, keys on that stamp and sends its misses through
+`ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
+label and never the host. The service
 worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
 translating, and it throws on an unknown register or any extra field. The
 handlers pass the addenda down every `ai-translate.js` path, including the
@@ -350,7 +362,9 @@ factor (`addenda`, a `PromptAddenda.stamp()` string). The built-in engine
 reads no prompt and never sees it. Captions need nothing of their own, because
 they go through `ctx.requestTranslation` too. Covered by
 `test/unit/prompt-addenda.test.mjs`,
-`test/unit/prompt-register-engine.test.mjs` and
+`test/unit/prompt-register-engine.test.mjs`,
+`test/unit/frame-relay-addenda.test.mjs` (both relay directions, real
+`child.js` → `frame-relay.js` → `top.js`) and
 `test/e2e/prompt-register.spec.js`.
 
 ### User Site Rules

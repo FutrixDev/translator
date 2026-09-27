@@ -38,10 +38,10 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   // requestTranslation 最后那一行是**唯一**一个 sendMessage 出口：选了 AI 走到
   // 这里，选了内置但这个环境顶不住、而且开了回退，也走到这里。判定必须紧挨着
   // 它 —— 装在调度层只挡得住前一半，运行中那次回落会从旁边绕过去。
-  // 两者之间只允许注释和挂语域附加说明那一行（R33 A4），不允许别的分支。
+  // 两者之间只允许注释，不允许别的分支；请求原样送出（语域在入口盖过，R33 A4）。
   assert.match(
     engine,
-    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const addenda = BUILTIN_TYPES\.has\(message\.type\) \? ctx\.promptAddenda\(\) : undefined;\s*\n\s*const response = await chrome\.runtime\.sendMessage\(addenda \? \{ \.\.\.message, addenda \} : message\);/
+    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const response = await chrome\.runtime\.sendMessage\(message\);/
   );
   // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
   // 翻译是用户一次一次点出来的，他知道自己在花钱。
