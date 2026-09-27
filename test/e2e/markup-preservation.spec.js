@@ -232,7 +232,7 @@ test('a marker whose number the model fused is scrubbed, the page\'s own <b2> is
   expect(result.text).toBe('帖子报告，HTML 里 <b2> 是粗体。');
 });
 
-test('a site-excluded element is a placeholder only when page collection asks for it', async ({ page }) => {
+test('a site keep-original element is a placeholder only when page collection asks for it', async ({ page }) => {
   // Page collection passes the site rule's keep-original selector (D-315), so a timestamp
   // inside a collected block goes out as {{n}} and is cloned back untouched.
   // Hover and selection call the same reader without it: that is text the user
