@@ -65,40 +65,9 @@ test('点击才译：翻译请求只在点击处理里发，而且声明是独�
   assert.ok(!/showInputTranslateDialog/.test(CHIP), '芯片还在开对话框');
 });
 
-// 译文回来的那一刻，逐条核对再写：还是不是这一次请求、框里的字变没变、焦点还在
-// 不在这个框上。顺序也要紧 —— 写在核对之后。
-test('译文回来先核对，再写', () => {
-  const click = CHIP_ONLY.slice(CHIP_ONLY.indexOf('async function onChipClick('));
-  const identity = click.indexOf('if (pending !== request) return;');
-  const changed = click.indexOf('if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field) || inComposition())');
-  const write = click.indexOf('await ctx.inputWriteback.write(');
-  assert.ok(identity > 0 && changed > identity && write > changed,
-    '译文回来后没有按「同一请求 → 字没变 → 焦点还在」的顺序核对完再写');
-  assert.match(CHIP_ONLY, /if \(pending && pending\.field === field\) \{\s*pending = null;\s*setChipState\('idle'\);/,
-    '译文还在路上用户改了字，芯片没回到可点');
-  assert.match(CHIP_ONLY, /if \(settleLateWrite\(field\)\) return;\s*const current = fieldText\(field\);\s*if \(written\.has\(field\) && ctx\.inputWriteback\.sameText\(written\.get\(field\), current\)\)/,
-    '写完之后芯片会对「原文 + 译文」再冒出来，同一段原文会被追加第二遍');
-});
-
-// shadow root 里的输入框（reddit 的评论框）：document 上的监听看到的 e.target
-// 是 shadow host，焦点在 document.activeElement 上也只是 host。
-test('shadow root 里的框：事件取 composedPath，焦点往 shadow 里追', () => {
-  assert.match(CHIP_ONLY, /const eventField = \(e\) => \(e\.composedPath \? e\.composedPath\(\)\[0\] : e\.target\);/);
-  for (const handler of ['onFocusIn', 'onFocusOut', 'onInput']) {
-    const at = CHIP_ONLY.indexOf(`function ${handler}(e)`);
-    assert.ok(at > 0, `没有 ${handler}`);
-    assert.match(CHIP_ONLY.slice(at, at + 200), /eventField\(e\)/, `${handler} 还在用 e.target`);
-  }
-  assert.ok(!/document\.activeElement !== field/.test(CHIP_ONLY), '芯片用 document.activeElement 判焦点，shadow 里的框永远不算');
-  assert.match(WRITEBACK, /active\.shadowRoot\.activeElement/);
-});
-
-// Draft、Lexical 这类编辑器取消 beforeinput、自己重画，浏览器就不再发 input。
-test('自己维护模型的编辑器里敲字，芯片也醒：beforeinput 和 input 走同一个处理', () => {
-  assert.match(CHIP_ONLY, /document\.addEventListener\('input', onInput, true\);/);
-  assert.match(CHIP_ONLY, /document\.addEventListener\('beforeinput', onInput, true\);/,
-    '只听 input：Lexical 那种框里敲多少字芯片都不出来');
-});
+// 译文回来时的核对（同一请求、字没变、焦点还在、不在组合里）、shadow root 里的框、
+// 只发 beforeinput 的模型编辑器，都由跑着的测试问：input-chip-behaviour.test.mjs 和
+// test/e2e/input-chip.spec.js（Lexical / open shadow root / 译文回来之前字变了）。
 
 test('芯片的三种状态用的是现成的文案', () => {
   assert.match(CHIP_ONLY, /t\(state === 'busy' \? 'translating' : 'translationFailed'\)/);

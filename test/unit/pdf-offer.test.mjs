@@ -96,12 +96,7 @@ test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里
   assert.equal(/\bfetch\s*\(/.test(src), false);
 });
 
-test('提示条只在真是一份 PDF 文档、而且开关开着的时候出现', () => {
-  const src = repoFile('content/content-media-hints.js');
-  assert.match(src, /enablePdfTranslation/);
-  assert.match(src, /PdfUrl\.isLikelyPdfUrl/);
-  assert.match(src, /application\/pdf/);
-});
+// PDF 提示条什么时候出现，由 media-hints.test.mjs 的 PDF 用例跑着问（未登录、被关掉）。
 
 test('offer 有自己的一档和自己的两句按钮文案', () => {
   const src = repoFile('content/content-auto-status.js');
