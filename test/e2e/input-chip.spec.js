@@ -228,6 +228,10 @@ test('输入框芯片：单行 input 用译文替换原文，一步撤回', asyn
 // 帖子里就没有译文。
 async function writeIntoModelEditor(page, { selector, handle }) {
   await page.click(selector);
+  // 聚焦之后先停一会儿，让 focusin 那一轮判定（400ms 防抖）在空框上跑完；不然字在
+  // 防抖窗口里就进了框，芯片是 focusin 叫醒的，beforeinput 那条路就没被测到。这类
+  // 编辑器取消 beforeinput，不再有 input 事件，之后能叫醒芯片的只有 beforeinput。
+  await page.waitForTimeout(1000);
   await page.keyboard.insertText(CHINESE);
   await expect.poll(() => page.evaluate((name) => window[name].model, handle)).toBe(CHINESE);
 
