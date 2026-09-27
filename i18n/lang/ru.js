@@ -36,6 +36,7 @@
     comicChargeConfirm: 'Эта страница стоит кредитов. Перевести её?',
     comicChargeApprove: 'Использовать кредиты',
     accountRequired: 'Войдите, чтобы включить эту функцию',
+    featureOnAfterSignIn: 'Включено. Заработает, как только вы войдёте.',
     featureDisabled: 'Эта функция отключена в настройках',
     comicImageNotFound: 'Не удалось найти это изображение на странице',
     comicImageUnavailable: 'Это изображение не удаётся прочитать',

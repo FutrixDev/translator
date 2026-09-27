@@ -19,8 +19,10 @@
   Closing the sign-in tab cancels quietly. The "sign in to translate
   documents" notification now has a Sign In button too.
 - **Turned off stays off.** If you switched PDF or comic translation off in
-  settings, the hint no longer appears. The key and the button still work on
-  the page you use them on, and your setting is left as it is.
+  settings, the hint no longer appears. The key still works on the page you
+  use it on, and your setting is left as it is. You can switch either one off
+  without signing in; while you are signed out, a switch that is on says it
+  takes effect once you sign in.
 - **Comic translation is on by default,** like PDF translation.
 
 ### Float ball over full-screen video

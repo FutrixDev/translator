@@ -36,6 +36,7 @@
     comicChargeConfirm: 'Cette page coûte des crédits. La traduire ?',
     comicChargeApprove: 'Utiliser des crédits',
     accountRequired: 'Connectez-vous pour activer cette fonction',
+    featureOnAfterSignIn: 'Activé. Prend effet dès que vous vous connectez.',
     featureDisabled: 'Cette fonction est désactivée dans les paramètres',
     comicImageNotFound: 'Image introuvable sur la page',
     comicImageUnavailable: 'Cette image ne peut pas être lue',

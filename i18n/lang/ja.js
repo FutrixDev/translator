@@ -36,6 +36,7 @@
     comicChargeConfirm: 'このページにはポイントがかかります。翻訳しますか？',
     comicChargeApprove: 'ポイントを使う',
     accountRequired: 'この機能を有効にするにはサインインしてください',
+    featureOnAfterSignIn: 'オンです。サインインすると有効になります。',
     featureDisabled: 'この機能は設定でオフになっています',
     comicImageNotFound: 'ページ内でその画像が見つかりませんでした',
     comicImageUnavailable: 'この画像は読み込めません',

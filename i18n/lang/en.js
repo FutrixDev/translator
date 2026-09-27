@@ -37,6 +37,7 @@
     comicChargeConfirm: 'This page costs credits. Translate it?',
     comicChargeApprove: 'Use Credits',
     accountRequired: 'Sign in to turn this on',
+    featureOnAfterSignIn: 'On. Takes effect once you sign in.',
     featureDisabled: 'This feature is turned off in settings',
     comicImageNotFound: 'Could not find that image on the page',
     comicImageUnavailable: 'This image cannot be read for translation',

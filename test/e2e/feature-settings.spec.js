@@ -191,9 +191,9 @@ test('an autosave flush stays quiet while a connection test is in flight', async
  */
 test('the PDF switch is on by default and its entry points follow it', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { targetLang: 'en' });
-  // "On by default" is a statement about the preference, and the preference
-  // only reaches the screen on a device that has the account the feature runs
-  // on. Signed out it is off no matter what — the test below this one.
+  // "On by default" is a statement about the preference; the entry points
+  // below also need the account the feature runs on (see the next test for a
+  // device without one).
   await setExtensionAccount(page);
 
   const popupUrl = `chrome-extension://${extensionId}/popup/popup.html`;
@@ -231,15 +231,15 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
 });
 
 /**
- * The rule the two account-backed features are subject to and no other setting
- * is: a device with no account cannot run either, so neither may show as on.
+ * The two account-backed features, on a device with no account.
  *
  * The switches sync and the token does not, so this is the state EVERY new
- * install starts in — PDF ships on, so its preference arrives switched on
- * before the user has ever signed in. Showing that as an on switch offers a
- * feature whose every entry point can only answer "sign in".
+ * install starts in — both features ship on, so their preference arrives
+ * switched on before the user has ever signed in. The settings page shows it as
+ * it is (on) and says what is missing, so the user can turn it off without an
+ * account (D-365); the entry points that can only answer "sign in" stay hidden.
  */
-test('signed out, both account features read off however the preference arrived', async ({ page, context, extensionId }) => {
+test('signed out, a switch that is on shows on and says it waits for a sign-in', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     // Exactly what sync delivers from a device that IS signed in.
@@ -250,30 +250,29 @@ test('signed out, both account features read off however the preference arrived'
 
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
   await expect(page.locator('#comicSignedOut')).toBeVisible();
-  await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
-  await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
-  // A switch that reads off must not leave its language select live.
-  await expect(page.locator('#comicTargetLang')).toBeDisabled();
-  await expect(page.locator('#pdfTargetLang')).toBeDisabled();
+  await expect(page.locator('#enableComicTranslation')).toBeChecked();
+  await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+  await expect(page.locator('#comicSignInPending')).toHaveText('On. Takes effect once you sign in.');
+  await expect(page.locator('#pdfSignInPending')).toHaveText('On. Takes effect once you sign in.');
+  // The task list belongs to the account.
+  await expect(page.locator('#pdfTasksCard')).toBeHidden();
 
-  // Every other way in is gone too — the switch is not merely cosmetic.
+  // The popup rows can only answer "sign in", so they stay away.
   await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
   await expect(page.locator('#comicTranslatePage')).toBeHidden();
   await expect(page.locator('#comicColorizePage')).toBeHidden();
   await expect(page.locator('#pdfTranslateLocal')).toBeHidden();
 
-  // And the preference itself is untouched: it belongs to the account, not to
-  // this device. Writing it off here would sync back and disable the feature on
-  // the device that is still signed in.
+  // And drawing the page wrote nothing: the preference belongs to the account.
   expect(await getSyncSetting(context, 'enableComicTranslation')).toBe(true);
   expect(await getSyncSetting(context, 'enablePdfTranslation')).toBe(true);
 });
 
 /**
  * The other half of the same rule: signing in is what makes the preference
- * count again, without the user having to re-flip anything.
+ * count, without the user having to re-flip anything.
  */
-test('signing in restores the preference the signed-out device was hiding', async ({ page, context, extensionId }) => {
+test('signing in makes the stored preference count', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     enableComicTranslation: true,
@@ -282,7 +281,8 @@ test('signing in restores the preference the signed-out device was hiding', asyn
   await setExtensionAccount(page, false);
 
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
+  await expect(page.locator('#enableComicTranslation')).toBeChecked();
+  await expect(page.locator('#comicSignInPending')).toBeVisible();
 
   await setExtensionAccount(page, true);
   await page.reload();
@@ -290,6 +290,8 @@ test('signing in restores the preference the signed-out device was hiding', asyn
   await expect(page.locator('#comicSignedIn')).toBeVisible();
   await expect(page.locator('#enableComicTranslation')).toBeChecked();
   await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+  await expect(page.locator('#comicSignInPending')).toBeHidden();
+  await expect(page.locator('#pdfSignInPending')).toBeHidden();
   await expect(page.locator('#comicTargetLang')).toBeEnabled();
   await expect(page.locator('#pdfTargetLang')).toBeEnabled();
 

@@ -23,13 +23,12 @@ function showComicState(name) {
  * Whether this device has an account: true, false, or null while the answer is
  * outstanding or the service could not be reached.
  *
- * Three states rather than two because the two feature switches render from it.
- * Collapsing "not answered yet" into "signed out" would flash both switches off
- * on every load for the signed-in majority; collapsing it into "signed in"
- * would show a signed-out user a switch that is about to retract. Unknown
- * renders the stored preference and corrects itself, which for a signed-out
- * device is a message round-trip — getAccount() answers `{signedIn: false}` off
- * the local token without touching the network.
+ * Three states rather than two because the line under each switch reads from
+ * it. Collapsing "not answered yet" into "signed out" would flash "takes effect
+ * once you sign in" on every load for the signed-in majority; unknown draws as
+ * signed in and corrects itself, which for a signed-out device is a message
+ * round-trip — getAccount() answers `{signedIn: false}` off the local token
+ * without touching the network.
  */
 let comicSignedIn = null;
 
@@ -47,46 +46,53 @@ let comicAccountGeneration = 0;
 let comicSignInInFlight = null;
 
 /**
- * The stored preference behind each account-backed switch, kept apart from what
- * the checkbox shows.
+ * The stored preference behind each account-backed switch.
  *
- * These two are the only settings on the page whose displayed state is not
- * simply what storage says: both features run on our servers against a monthly
- * allowance, so a device with no account cannot have them on however the
- * preference arrived — and it arrives on every new install, because the
- * switches sync and the token does not.
+ * The switch shows this preference whether or not the device is signed in, and
+ * says so when it is on with no account behind it ("takes effect once you sign
+ * in"). A signed-out user must be able to see the setting in order to turn it
+ * off: the preference is what decides whether the PDF and comic hints appear
+ * on pages (shared/account-gate.js), and both features ship switched on.
  *
- * The preference itself is left alone rather than corrected. Writing false from
- * a signed-out device would sync back and turn the feature off on the device
- * that is still signed in, which is not what "sign out here" asked for. See
- * shared/account-gate.js, which derives the same answer for every other
- * surface.
+ * Only turning a switch ON asks for an account (requireAccountFor). Turning it
+ * off writes false straight away, signed in or not.
  */
 let storedComicEnabled = false;
 let storedPdfEnabled = false;
 
 /**
- * Draw the two switches from preference AND account.
- *
- * Called on load and on every account transition, so the switches can never sit
- * on for a feature this device cannot run. `comicSignedIn === null` means the
- * answer is still outstanding — see the declaration.
+ * Draw the two switches from the stored preference, and the account state
+ * under them. Called on load and on every account transition.
  */
 function renderAccountFeatures() {
-  const comicOn = featureReady('enableComicTranslation', storedComicEnabled);
-  const pdfOn = featureReady('enablePdfTranslation', storedPdfEnabled);
-  elements.enableComicTranslation.checked = comicOn;
-  elements.comicTargetLang.disabled = !comicOn;
-  elements.enablePdfTranslation.checked = pdfOn;
-  elements.pdfTargetLang.disabled = !pdfOn;
-  syncPdfTasksVisibility(pdfOn);
+  renderAccountFeature('enableComicTranslation', storedComicEnabled, {
+    toggle: elements.enableComicTranslation,
+    lang: elements.comicTargetLang,
+    pending: elements.comicSignInPending,
+  });
+  const pdf = renderAccountFeature('enablePdfTranslation', storedPdfEnabled, {
+    toggle: elements.enablePdfTranslation,
+    lang: elements.pdfTargetLang,
+    pending: elements.pdfSignInPending,
+  });
+  // The task list belongs to the account: it is shown only when the feature can
+  // actually run here.
+  syncPdfTasksVisibility(pdf === AccountGate.FEATURE_STATES.READY);
 }
 
-/** A switch is drawn on only when the feature can run here — the one answer
- *  every surface takes from AccountGate.featureState(). An outstanding account
- *  check (`comicSignedIn === null`) keeps the stored preference on screen. */
-function featureReady(key, stored) {
-  return AccountGate.featureState({ [key]: stored }, key, comicSignedIn !== false) === AccountGate.FEATURE_STATES.READY;
+/**
+ * One switch, in the three states every surface takes from
+ * AccountGate.featureState(). An outstanding account check
+ * (`comicSignedIn === null`) is drawn as signed in, so the signed-in majority
+ * never sees the "sign in" line flash on load.
+ */
+function renderAccountFeature(key, stored, { toggle, lang, pending }) {
+  const state = AccountGate.featureState({ [key]: stored }, key, comicSignedIn !== false);
+  const on = state !== AccountGate.FEATURE_STATES.OFF;
+  toggle.checked = on;
+  lang.disabled = !on;
+  pending.hidden = state !== AccountGate.FEATURE_STATES.SIGNED_OUT;
+  return state;
 }
 
 /** Pages left this month for one operation. Older servers report only the comic
@@ -211,15 +217,11 @@ async function comicSignOut() {
   comicAccountGeneration += 1;
   await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_OUT' });
   comicSignedIn = false;
-  // Both switches go off with the token: neither feature can run on a device
-  // with no account, so leaving one on would be a switch that promises a
-  // sign-in prompt rather than a translation.
-  //
-  // The stored preference behind them is deliberately NOT written off. It lives
-  // in sync storage while the token lives in local, so clobbering it here would
-  // reach across to every other device the account is still signed in on and
-  // disable the feature there — a sign-out is about this device's credential,
-  // nothing more. Signing back in restores what the user had.
+  // The switches keep their position and say they wait for a sign-in. The
+  // stored preference is deliberately NOT written off: it lives in sync storage
+  // while the token lives in local, so clobbering it here would reach across to
+  // every other device the account is still signed in on and disable the
+  // feature there — a sign-out is about this device's credential, nothing more.
   renderAccountFeatures();
   showComicState('signedOut');
 }
@@ -242,9 +244,9 @@ async function requireAccountFor(checkbox) {
   if (comicSignedIn) return true;
   const signedIn = await comicSignIn();
   if (!signedIn) {
-    // Back to preference-AND-account, which with no account is off. The failed
-    // sign-in itself has already rendered that; this covers the checkbox the
-    // user just clicked in the same pass.
+    // Back to the stored preference, which the click has not changed. The
+    // failed sign-in itself has already rendered that; this covers the checkbox
+    // the user just clicked in the same pass.
     renderAccountFeatures();
     showStatus(t('accountRequired'), 'error');
   }

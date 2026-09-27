@@ -36,6 +36,7 @@
     comicChargeConfirm: '這一頁需要消耗點數，確定翻譯嗎？',
     comicChargeApprove: '使用點數',
     accountRequired: '請先登入再開啟此功能',
+    featureOnAfterSignIn: '已開啟，登入後生效。',
     featureDisabled: '此功能已在設定中關閉',
     comicImageNotFound: '未能在頁面上找到該圖片',
     comicImageUnavailable: '無法讀取這張圖片',

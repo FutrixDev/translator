@@ -36,6 +36,7 @@
     comicChargeConfirm: '이 페이지는 포인트가 필요합니다. 번역할까요?',
     comicChargeApprove: '포인트 사용',
     accountRequired: '이 기능을 켜려면 로그인하세요',
+    featureOnAfterSignIn: '켜져 있습니다. 로그인하면 적용됩니다.',
     featureDisabled: '이 기능은 설정에서 꺼져 있습니다',
     comicImageNotFound: '페이지에서 해당 이미지를 찾을 수 없습니다',
     comicImageUnavailable: '이 이미지를 읽을 수 없습니다',

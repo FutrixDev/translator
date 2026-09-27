@@ -289,8 +289,9 @@ test.describe('Comic translation switch', () => {
 
 /**
  * Requirement of the free model: both server-backed features need an account,
- * so the switch itself is the sign-in prompt. Turning one ON without one must
+ * so turning a switch ON is the sign-in prompt. Turning one ON without one must
  * not leave a switch claiming a feature that can only ever answer "sign in".
+ * Turning one OFF never asks (D-365).
  */
 test.describe('Advanced Settings login gate', () => {
   test('a failed sign-in snaps the switch back and stores nothing', async ({ context, page, extensionId }) => {
@@ -342,10 +343,9 @@ test.describe('Advanced Settings login gate', () => {
   });
 
   // The state a signed-out device is in the moment sync delivers a preference
-  // from a device that is signed in. Both features run on our servers, so this
-  // one cannot have them on — and must not answer by writing the preference off
-  // and syncing that back to the device that can.
-  test('a synced-on switch stays off while this device has no account', async ({ context, page, extensionId }) => {
+  // from a device that is signed in. The switch shows what is stored (D-365):
+  // off must be reachable without an account, and only on asks for one.
+  test('signed out, a synced-on switch goes off without a sign-in and back on only with one', async ({ context, page, extensionId }) => {
     const service = await startMockService({ connect: 'no-token' });
     try {
       const worker = await connectExtension(context, service.base, { withToken: false, enabled: true });
@@ -353,17 +353,35 @@ test.describe('Advanced Settings login gate', () => {
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedOut')).toBeVisible();
 
-      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
-      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
-      await expect(page.locator('#comicTargetLang')).toBeDisabled();
-      await expect(page.locator('#pdfTargetLang')).toBeDisabled();
-
-      // Rendering it off is not the same as answering it off.
+      const toggle = page.locator('#enableComicTranslation');
+      await expect(toggle).toBeChecked();
+      await expect(page.locator('#comicSignInPending')).toBeVisible();
+      await expect(page.locator('#comicTargetLang')).toBeEnabled();
+      // Drawing the page went looking for no account and wrote nothing.
+      expect(service.state.connectRequests).toBe(0);
       expect(await worker.evaluate(
         () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
       )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });
-      // And nothing about drawing the page went looking for an account.
+
+      // On -> off: written at once, no sign-in.
+      await page.locator('label:has(#enableComicTranslation)').click();
+      await expect(toggle).not.toBeChecked();
+      await expect(page.locator('#comicSignInPending')).toBeHidden();
+      await expect(page.locator('#comicTargetLang')).toBeDisabled();
+      await expect.poll(() => worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: true }),
+      )).toEqual({ enableComicTranslation: false });
       expect(service.state.connectRequests).toBe(0);
+
+      // Off -> on: the sign-in opens; declined, the switch stays off.
+      await page.locator('label:has(#enableComicTranslation)').click();
+      await expect.poll(() => service.state.connectRequests, { timeout: 15000 }).toBe(1);
+      await expect(toggle).not.toBeChecked();
+      expect(await worker.evaluate(
+        () => chrome.storage.sync.get({ enableComicTranslation: true }),
+      )).toEqual({ enableComicTranslation: false });
+      // The other switch was never touched.
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
     } finally {
       await service.close();
     }
@@ -516,11 +534,11 @@ test.describe('Advanced Settings login gate', () => {
     }
   });
 
-  // Signing out takes both switches off screen with the token — neither feature
-  // can run without one — but writes neither off. They are synced, so answering
+  // Signing out leaves both switches where they are and says they now wait for
+  // a sign-in (D-365). Neither is written off: they are synced, so answering
   // the preference would disable the feature on every other device the account
-  // is still signed in on; signing back in is what restores them here.
-  test('signing out turns both switches off without answering the synced preference', async ({ context, page, extensionId }) => {
+  // is still signed in on.
+  test('signing out leaves both switches on, waiting for a sign-in, and the preference alone', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       const worker = await connectExtension(context, service.base);
@@ -536,10 +554,11 @@ test.describe('Advanced Settings login gate', () => {
       await expect.poll(async () => worker.evaluate(
         () => chrome.storage.local.get({ comicToken: '' }),
       )).toEqual({ comicToken: '' });
-      await expect(page.locator('#enableComicTranslation')).not.toBeChecked();
-      await expect(page.locator('#enablePdfTranslation')).not.toBeChecked();
-      await expect(page.locator('#comicTargetLang')).toBeDisabled();
-      await expect(page.locator('#pdfTargetLang')).toBeDisabled();
+      await expect(page.locator('#enableComicTranslation')).toBeChecked();
+      await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+      await expect(page.locator('#comicSignInPending')).toBeVisible();
+      await expect(page.locator('#pdfSignInPending')).toBeVisible();
+      await expect(page.locator('#pdfTasksCard')).toBeHidden();
       await expect.poll(async () => worker.evaluate(
         () => chrome.storage.sync.get({ enableComicTranslation: false, enablePdfTranslation: false }),
       )).toEqual({ enableComicTranslation: true, enablePdfTranslation: true });
