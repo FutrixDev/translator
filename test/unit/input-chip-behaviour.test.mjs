@@ -7,7 +7,7 @@
 //   焦点也没走 —— 只有身份核对拦得住这份没人要的译文。
 // - 晚到的写入（writeback.landed）：点芯片、框被重新判定时先问一句，认出来就当
 //   写成了，不再发请求。
-// - 框离开了页面，芯片收起（D-361 M1）。
+// - 框离开了页面，芯片收起（D-361 M1）；登录名、密码、验证码、卡号框不挂芯片（M4）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource } from './helpers/sources.mjs';
@@ -34,6 +34,7 @@ class FakeNode {
   }
 
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+  getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   removeAttribute(name) { delete this.attributes[name]; }
   remove() { this.isConnected = false; }
@@ -50,7 +51,7 @@ function deferred() {
 // 宏任务边界：芯片里那几个 await 都是 promise，排干它们要等一个 setImmediate。
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function load({ landed = () => false } = {}) {
+function load({ landed = () => false, autocomplete = null } = {}) {
   const listeners = {};
   const timers = [];
   const created = [];
@@ -103,6 +104,7 @@ function load({ landed = () => false } = {}) {
   const field = new FakeNode('TEXTAREA');
   field.value = '你好世界';
   field.isConnected = true;
+  if (autocomplete !== null) field.setAttribute('autocomplete', autocomplete);
   const event = { composedPath: () => [field] };
 
   return {
@@ -196,4 +198,20 @@ test('框离开了页面（React 换掉了整个输入框）：芯片收起，�
   harness.field.isConnected = false;
   harness.fire('scroll', {});
   assert.equal(chip.isConnected, false, '框已经不在页面上了，芯片还挂着');
+});
+
+test('登录名、密码、验证码、卡号框：不挂芯片', async () => {
+  for (const autocomplete of [
+    'username', 'current-password', 'new-password', 'one-time-code',
+    'cc-number', 'cc-name', 'section-a shipping cc-csc', 'webauthn USERNAME',
+  ]) {
+    const harness = load({ autocomplete });
+    await harness.focus();
+    assert.equal(harness.chip(), undefined, `autocomplete="${autocomplete}" 的框挂出了芯片`);
+  }
+  for (const autocomplete of ['off', 'on', 'name', 'street-address', '']) {
+    const harness = load({ autocomplete });
+    await harness.focus();
+    assert.ok(harness.chip()?.isConnected, `autocomplete="${autocomplete}" 的框不该被排除`);
+  }
 });

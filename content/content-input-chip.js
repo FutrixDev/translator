@@ -60,11 +60,20 @@
   // 能敲字、而且敲的是「话」的框。密码、邮箱、网址、电话、数字都排除：那些框里
   // 的内容没有语言可言，一颗「译成英语」的芯片挂在密码框上只会吓人。
   const TEXTUAL_INPUT_TYPES = new Set(['text', 'search']);
+  // type=text 的框也可能是登录名、验证码、卡号：页面用 autocomplete 说了它是什么。
+  // autocomplete 是一串记号（`shipping cc-number`、`section-a username`），逐个看。
+  const NON_PROSE_AUTOCOMPLETE = new Set(['one-time-code', 'username', 'current-password', 'new-password']);
+
+  function isCredentialField(el) {
+    const tokens = (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
+    return tokens.some((token) => token.startsWith('cc-') || NON_PROSE_AUTOCOMPLETE.has(token));
+  }
 
   function isEligibleField(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.disabled || el.readOnly) return false;
     if (isOurNode(el)) return false;
+    if (isCredentialField(el)) return false;
 
     const tag = el.tagName;
     if (tag === 'TEXTAREA') return true;
