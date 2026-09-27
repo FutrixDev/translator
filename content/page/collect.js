@@ -11,7 +11,9 @@
   if (!ctx) return;
 
   const { constants } = ctx;
-  const { MATH_CONTAINER_SELECTOR } = constants;
+  const { MATH_CONTAINER_SELECTOR, OWN_UI_SELECTOR } = constants;
+  // 我们的界面根，加上挂在页面块上的译文标记。
+  const SKIP_OURS = `${OWN_UI_SELECTOR}, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block`;
   // 内联格式标记：整页翻译提取文本时，把 <a>/<strong>/<em> 等内联格式元素编码成
   // 成对的 <a1>…</a1> 标记随正文一起送翻，译文再按标记克隆原元素重建（见
   // buildTranslationContent），从而保留超链接（href）和内联样式（class/style）。
@@ -341,7 +343,7 @@
         if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }
-      if (closestAcross(element, '.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn, #ai-translator-source-peek, #ai-translator-rule-picker')) return;
+      if (closestAcross(element, SKIP_OURS)) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
 

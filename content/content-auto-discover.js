@@ -66,18 +66,9 @@
   // 真改了那段文字就再也看不见了。代价是每轮翻译后会多收集一遍（裹文本节点本身
   // 是一次 DOM 变动），而那一遍收不到任何新候选：已翻的被同一性守卫挡掉，翻过
   // 的被调度层的台账挡掉。多一次扫描，不会循环。
-  const OWN_UI_SELECTOR = [
-    '.ai-translator-popup',
-    '.ai-translator-inline-block',
-    '.ai-translator-hover-translation',
-    '#ai-translator-progress',
-    '#ai-translator-float-ball-container',
-    '#ai-translator-float-menu',
-    '#ai-translator-input-dialog',
-    '#ai-translator-selection-btn',
-    '#ai-translator-caption-overlay',
-    '#ai-translator-source-peek'
-  ].join(', ');
+  // 界面根的清单只有一份（ctx.constants.OWN_UI_SELECTOR），这里再加上插进页面的
+  // 译文块和悬停译文。
+  const OWN_UI_SELECTOR = `${ctx.constants.OWN_UI_SELECTOR}, .ai-translator-inline-block, .ai-translator-hover-translation`;
 
   function ownNode(node) {
     if (!node) return false;

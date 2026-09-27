@@ -242,7 +242,7 @@ test('the recycle check runs before the closest() that would swallow it', () => 
   const source = repoFile('content/page/collect.js');
   const check = source.indexOf('identity.lookup(element)');
   // 这一跳穿 shadow 边界（closestAcross → ctx.closestComposed），同样从元素自己开始找。
-  const closest = source.indexOf("closestAcross(element, '.ai-translator-popup");
+  const closest = source.indexOf('closestAcross(element, SKIP_OURS)');
   assert.ok(check !== -1, 'processElement no longer asks whether this block was recycled');
   assert.ok(closest !== -1, 'the skip chain moved; re-check where the recycle test belongs');
   // closest() 从元素自己开始找，而它的选择器串里就有 `.ai-translator-translated`。

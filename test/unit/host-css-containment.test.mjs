@@ -113,6 +113,49 @@ test('every root list in the reset names the same roots, the rule picker among t
   );
 });
 
+// ctx.constants 由 content-bootstrap.js 定；浏览器那几样换成桩，原样跑一遍取回来。
+function contentConstants() {
+  const names = ['window', 'document', 'FrameEligibility', 'DefaultSettings'];
+  const saved = Object.fromEntries(names.map((name) => [name, globalThis[name]]));
+  const win = { AI_TRANSLATOR_CONTENT: {} };
+  win.top = win;
+  Object.assign(globalThis, {
+    window: win,
+    document: { documentElement: { setAttribute() {} } },
+    FrameEligibility: { shouldActivate: () => true },
+    DefaultSettings: { contentDefaults: () => ({}) },
+  });
+  try {
+    new Function(repoFile('content/content-bootstrap.js'))();
+    return win.AI_TRANSLATOR_CONTENT.constants;
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+}
+
+// 界面根里确实不该被收集层和发现层当成「我们的」的那几个，写在这里并带上理由。
+// 现在一个都没有：重置清单里每个根都是我们画的界面，里面的字不是页面正文。
+const NOT_OWN_UI = new Map();
+
+test('the reset\'s root list and the content script\'s own-UI selector name the same roots', () => {
+  // 同一份「我们自己的界面根」以前在 popup.css 与 collect.js 各写一遍，两边对不上：
+  // 拾取器的保存提示挂在 #ai-translator-auto-bar 里，重置清单有它、收集排除表没有，
+  // 提示文字就被当正文送去翻译。
+  const [inner] = resetBlock().match(/:is\((\.ai-translator-popup,[^)]*)\)/).slice(1);
+  const cssRoots = splitSelectorList(inner)
+    .map((s) => s.trim().replace(/^\[id="([^"]+)"\]$/, '#$1'))
+    .filter((root) => !NOT_OWN_UI.has(root))
+    .sort();
+  const own = contentConstants().OWN_UI_SELECTOR.split(',').map((s) => s.trim()).sort();
+  assert.deepEqual(own, cssRoots, 'ctx.constants.OWN_UI_SELECTOR and the reset\'s :is() roots have drifted apart');
+  // 两个用它的地方都只引用这一份，不再自己列 id。
+  for (const rel of ['content/page/collect.js', 'content/content-auto-discover.js']) {
+    const source = repoFile(rel);
+    assert.match(source, /OWN_UI_SELECTOR/, `${rel} no longer uses ctx.constants.OWN_UI_SELECTOR`);
+    assert.doesNotMatch(source, /['"`]#ai-translator-[a-z-]+['"`,]/, `${rel} lists a UI root of its own again`);
+  }
+});
+
 test('the reset covers the roots and their descendants', () => {
   const list = selectors(resetBlock());
   assert.ok(

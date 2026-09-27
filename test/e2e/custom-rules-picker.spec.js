@@ -106,6 +106,10 @@ test('J-1: the picker excludes the comments of a translated page within 1 s, and
     expect(await isTranslated(page, 'body2')).toBe(true);
     await expectPickerSavedNotice(page);
     await expectPickerGone(page);
+    // 保存提示是我们的界面，不是正文：发现层的防抖过去以后，它的文字也没被送去翻译。
+    await page.waitForTimeout(1500);
+    expect(sentTexts.some((text) => text.includes(en('pickerSaved'))), 'the saved notice was sent for translation')
+      .toBe(false);
 
     // 5. sync 区里恰好一个规则键，exclude 就是这一条选择器。
     const rules = await storedRules(context);
