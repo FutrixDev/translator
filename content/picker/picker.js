@@ -96,6 +96,9 @@
         redraw();
       }
     } else if (event.type === 'click') {
+      // 页面脚本合成的点击照样截下，但不锁定：选中什么只由用户的真指针决定
+      // （同 content-utils.js 的 contextmenu）。
+      if (!event.isTrusted) return;
       const el = targetOf(event);
       if (el && !saving) lock(el);
     }
@@ -159,6 +162,9 @@
   }
 
   function onBarClick(event) {
+    // 工具条在页面自己的 DOM 里，页面脚本 button.click() 就能替用户写一条规则。
+    // 只认浏览器发的点击；键盘在按钮上按回车或空格发出的 click 也是可信的。
+    if (!event.isTrusted) return;
     const button = event.target.closest('[data-act]');
     if (!button || button.disabled) return;
     const act = button.dataset.act;

@@ -416,6 +416,38 @@ test('picker: a selector that is invalid or matches nothing greys the three acti
   expect(await storedRules(context)).toEqual({});
 });
 
+// ------------------------------------------------------------------ 只认真实点击
+
+const TRUSTED = {
+  lead: 'The night bus runs every thirty minutes from the station square until two in the morning.',
+};
+
+test('picker: a click the page script makes neither locks a target nor writes a rule', async ({ page, context }) => {
+  await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+  await serve(context, { [`${RULES}/night`]: html(`<p id="lead">${TRUSTED.lead}</p>`) });
+  await page.goto(`${RULES}/night`);
+  await waitForFloatBall(page);
+  await openPickerFromMenu(page);
+  const input = page.locator(`${PICKER} .ai-translator-picker-input`);
+
+  // 页面脚本点页面元素：截下了（isTrusted 为假），但什么都没锁上。
+  await page.evaluate(() => document.getElementById('lead').click());
+  await expect(input).toBeHidden();
+
+  // 真指针锁定；页面脚本再去点工具条上的「排除」：规则不写，拾取器还开着。
+  await pickWithPointer(page, page.locator('#lead'), 'trusted lead');
+  await page.evaluate((root) => document.querySelector(`${root} [data-act="exclude"]`).click(), PICKER);
+  await page.waitForTimeout(500);
+  expect(await storedRules(context)).toEqual({});
+  await expect(page.locator(PICKER)).toHaveCount(1);
+
+  // 正向对照：同一个按钮用户真点一下，规则写进去。
+  await pickerButton(page, 'exclude').click();
+  await expectPickerSavedNotice(page);
+  await expect.poll(async () => Object.values(await storedRules(context)).map((r) => r.exclude))
+    .toEqual([['#lead']]);
+});
+
 // ------------------------------------------------------------------ popup 入口
 
 test('the popup button opens the picker on the page in front', async ({ context, extensionId }) => {
