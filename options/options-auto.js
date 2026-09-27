@@ -48,25 +48,35 @@ function unattendedAiReachable(settings) {
     || settings.engineFallback === 'allow-ai';
 }
 
+// 第四条路是站点翻译规则：一条规则可以把某些网站的自动翻译钉在 AI 上
+// （options-custom-rules.js）。它不并进上面那个谓词 —— 整份导入的预览拿那个谓
+// 词比较导入前后的「设置」，规则项并在里面，规则里已有 AI 时设置小节的提示就
+// 永远不会出现。
 function syncAutoEngineState() {
   if (!elements.autoAiBudgetGroup) return;
-  elements.autoAiBudgetGroup.classList.toggle('disabled', !unattendedAiReachable(collectSettings()));
+  elements.autoAiBudgetGroup.classList.toggle('disabled',
+    !(unattendedAiReachable(collectSettings()) || customRulesUseAi()));
 }
 
 /**
- * 把自动模式切到 AI 之前的那道二次确认（PRD FR-3.5 / FR-9）。
+ * 让「没人点也会花到用户自己的 AI」的那种改动先过一道二次确认（PRD FR-3.5 /
+ * FR-9）。两个调用方：自动模式的引擎切到 AI；站点翻译规则的引擎新改成 AI
+ * （options-custom-rules.js）。两者花的是同一笔钱，所以是同一种形状。
  *
  * 这是整个扩展里唯一一处 window.confirm，而且是有意的：别的设置改错了，用户
  * 下次打开这一页就能看见并改回来；这一个改错了，代价是接下来每一个自动翻译
  * 的页面都在花他自己的钱，而他不会点任何一下，所以也不会有任何一刻回到这一
  * 页来看。要拦住这件事，需要的正是 confirm 那种**必须回答才能继续**的性质，
  * 一条事后才出现的提示条做不到。
- *
- * 说了不，就把值退回 builtin 并且**什么都不写** —— 退回之后再存一次是多余
- * 的：存起来的本来就是 builtin。
  */
+function confirmUnattendedAiSpend(messageKey) {
+  return window.confirm(t(messageKey));
+}
+
+// 说了不，就把值退回 builtin 并且**什么都不写** —— 退回之后再存一次是多余
+// 的：存起来的本来就是 builtin。
 function onAutoEngineChange() {
-  if (elements.autoTranslateEngine.value === 'ai' && !window.confirm(t('autoTranslateEngineAiConfirm'))) {
+  if (elements.autoTranslateEngine.value === 'ai' && !confirmUnattendedAiSpend('autoTranslateEngineAiConfirm')) {
     elements.autoTranslateEngine.value = 'builtin';
     syncAutoEngineState();
     return;

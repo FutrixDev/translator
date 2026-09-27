@@ -856,6 +856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
   setupSyncMirror();
+  setupCustomRules();
   setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row

@@ -113,11 +113,9 @@
    * - 表外的错误（扩展上下文失效之类）在这一层被接住，在这一层记一条。
    */
   function errorText(error, selector) {
-    const key = error && error.message;
+    const key = globalThis.CustomRules.userErrorKey(error);
     if (key === 'customRuleCssUnsafe') return t('pickerCssUnsafe');
-    if (globalThis.CustomRules.ERROR_KEYS.has(key) || key === 'customRuleSaveFailed') {
-      return t(key).replace('{selector}', selector);
-    }
+    if (key) return t(key).replace('{selector}', selector);
     console.error('Blab Translation: rule picker save failed', error);
     return t('customRuleSaveFailed');
   }

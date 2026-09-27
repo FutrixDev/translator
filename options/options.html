@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/pdf-tasks.css">
   <link rel="stylesheet" href="css/auto-translate.css">
   <link rel="stylesheet" href="css/transfer.css">
+  <link rel="stylesheet" href="css/custom-rules.css">
   <!-- The translation-style preview is a real page-translation node, drawn by
        the very rules the page uses (options-display.js). -->
   <link rel="stylesheet" href="../content/css/translation.css">
@@ -317,6 +318,45 @@
             </button>
             <span class="hint" data-i18n-hint="hintTranslationCache"></span>
           </div>
+        </section>
+
+        <!-- 站点翻译规则（options-custom-rules.js）：放在「你表过态的网站」之后。 -->
+        <section class="settings-card settings-card-span" id="customRulesCard">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h10M4 18h6"/>
+              <path d="M17 15l2 2 3-4"/>
+            </svg>
+            <span data-i18n="customRulesTitle">Site translation rules</span>
+          </h2>
+          <span class="hint" data-i18n-hint="customRulesDesc"></span>
+          <div class="transfer-actions">
+            <button type="button" id="customRulesAdd" class="btn btn-primary btn-inline">
+              <span data-i18n="customRulesAdd">New rule</span>
+            </button>
+            <button type="button" id="customRulesExport" class="btn btn-secondary btn-inline">
+              <span data-i18n="customRulesExport">Export rules</span>
+            </button>
+            <button type="button" id="customRulesImport" class="btn btn-secondary btn-inline">
+              <span data-i18n="customRulesImport">Import rules…</span>
+            </button>
+            <input type="file" id="customRulesFile" accept=".json,application/json" hidden>
+          </div>
+          <p class="custom-rules-usage" id="customRulesUsage"></p>
+          <div id="customRulesError" class="transfer-error" role="alert" hidden></div>
+          <div id="customRulesPreview" class="transfer-preview" hidden>
+            <p id="customRulesPreviewText" class="transfer-preview-list"></p>
+            <div id="customRulesPreviewWarnings" class="transfer-warnings"></div>
+            <div class="transfer-actions">
+              <button type="button" id="customRulesImportConfirm" class="btn btn-primary btn-inline">
+                <span data-i18n="customRulesImportConfirm">Import</span>
+              </button>
+              <button type="button" id="customRulesImportCancel" class="btn btn-secondary btn-inline">
+                <span data-i18n="customRuleCancel">Cancel</span>
+              </button>
+            </div>
+          </div>
+          <div class="custom-rules-list" id="customRulesList"></div>
         </section>
 
         <!-- Translation Settings -->
@@ -935,6 +975,8 @@
   <script src="options-display.js"></script>
   <script src="options-selection.js"></script>
   <script src="options-sync-mirror.js"></script>
+  <!-- 站点翻译规则卡片；整份导入的规则小节调它的 previewCustomRulesImport。 -->
+  <script src="options-custom-rules.js"></script>
   <!-- 导入导出：格式与校验是纯函数（shared/settings-transfer.js），这一页的 section
        表和控件在 options-transfer.js。它读 options.js 的 defaultSettings，但只在
        点击时读，所以排在前面也行；排在 translation-display.js 之后是因为枚举表要

@@ -358,6 +358,16 @@
     throw new Error('customRuleSaveFailed');
   }
 
+  /**
+   * 界面拿到一个错误时能直接查文案的键：集合的错误键，或服务工作者那一层记过日志
+   * 以后换成的 customRuleSaveFailed。别的一律 null —— 调用方在自己那一层接住、
+   * 记一条，再显示 customRuleSaveFailed。拾取器和设置页卡片都只问这一句。
+   */
+  function userErrorKey(error) {
+    const key = error && error.message;
+    return ERROR_KEYS.has(key) || key === 'customRuleSaveFailed' ? key : null;
+  }
+
   function guarded(kind, write) {
     return (message) => Promise.resolve()
       .then(() => write(message))
@@ -385,6 +395,7 @@
     LIMITS,
     SELECTOR_FIELDS,
     ERROR_KEYS,
+    userErrorKey,
     newId: collection.newId,
     validateRule,
     sanitizeCss,

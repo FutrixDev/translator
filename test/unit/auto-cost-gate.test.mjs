@@ -116,7 +116,13 @@ test('设置页把它切到 AI 要过一道二次确认，说了不就退回去'
   assert.ok(!immediate[1].includes("'autoTranslateEngine'"),
     'autoTranslateEngine 不能走「变了就存」那条路线：二次确认要能拦住写入');
   assert.match(options, /elements\.autoTranslateEngine\.addEventListener\('change', onAutoEngineChange\)/);
-  assert.match(options, /window\.confirm\(t\('autoTranslateEngineAiConfirm'\)\)/);
+  // 「会花钱」的确认只有一个形状（设计 §0.1-19）：全设置页只有一处
+  // window.confirm，收在 confirmUnattendedAiSpend 里，两个调用方都走它。第三个
+  // 调用方也绕不开它。
+  assert.equal(options.split('window.confirm(').length - 1, 1, '设置页只能有一处 window.confirm');
+  assert.match(options, /function confirmUnattendedAiSpend\(messageKey\) \{\s*return window\.confirm\(t\(messageKey\)\);/);
+  assert.match(options, /!confirmUnattendedAiSpend\('autoTranslateEngineAiConfirm'\)/);
+  assert.match(options, /!confirmUnattendedAiSpend\('customRuleEngineAiConfirm'\)/);
   // 说了不：值退回 builtin，并且**不**存。
   assert.match(options, /elements\.autoTranslateEngine\.value = 'builtin';\s*\n\s*syncAutoEngineState\(\);\s*\n\s*return;/);
   // 两个字段都真的读进来、也真的写回去。
@@ -151,7 +157,11 @@ test('额度那一格灰不灰，看的是三条零点击的 AI 路里还有没�
   assert.equal(reachable({ ...closed, autoTranslateEngine: 'ai' }), true);
   assert.equal(reachable({ ...closed, translationEngine: 'ai' }), true);
   assert.equal(reachable({ ...closed, engineFallback: 'allow-ai' }), true);
-  assert.match(options, /classList\.toggle\('disabled', !unattendedAiReachable\(collectSettings\(\)\)\)/);
+  // 第四条路（站点翻译规则钉了 AI）在谓词之外并上，不进谓词：整份导入的预览拿
+  // 谓词比较导入前后的设置（设计 §0.1-19、§12.4）。
+  assert.match(options,
+    /classList\.toggle\('disabled',\s*!\(unattendedAiReachable\(collectSettings\(\)\) \|\| customRulesUseAi\(\)\)\)/);
+  assert.doesNotMatch(reach[0], /customRule/);
   // 三个下拉任何一个变了都要重画，不止自动那一个。
   assert.match(options, /elements\.translationEngine\.addEventListener\('change', syncAutoEngineState\)/);
   assert.match(options, /elements\.engineFallback\.addEventListener\('change', syncAutoEngineState\)/);
