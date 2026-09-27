@@ -3,8 +3,8 @@
 // 今天只有一项：register —— 这一页是什么体裁（社交帖子、论坛讨论、新闻、论文）。
 // 它从内置站点表来（shared/site-rules-builtin.js 每条规则可选的 register 字段，
 // SiteRules.register() 读），由发起请求的那个 frame 的内容脚本用
-// ctx.withPromptAddenda 挂上消息的 `addenda` 字段（子 frame 的请求经顶层转发时
-// 原样不动）；服务工作者的三个翻译处理函数先用 validate() 把关，再由
+// ctx.withPromptAddenda 挂上消息的 `addenda` 字段（一律挂，没有语域就是 `{}`；
+// 子 frame 的请求经顶层转发时原样不动）；服务工作者的三个翻译处理函数先用 validate() 把关，再由
 // background/prompts.js 的 composePromptAddenda() 拼成系统提示词里的一句话。
 //
 // **只送标签，不送域名。** 模型要知道的是「这是论坛上的讨论」，不是「这是
@@ -49,12 +49,12 @@
   }
 
   /**
-   * 把关：缺省（undefined）合法，消息上的这个字段本来就是可选的。形状是
-   * `{register?}`，register 是 REGISTERS 之一；多出字段或未知语域都抛。
-   * 空的 `{}` 形状合法，拼出来是空串（内容脚本不会这样发）。
+   * 把关：内容脚本给三种翻译消息一律盖 addenda（没有语域就是 `{}`，拼出来是
+   * 空串），所以缺了这个字段也是缺陷，和形状不对一样抛。形状是 `{register?}`，
+   * register 是 REGISTERS 之一；多出字段或未知语域都抛。
    */
   function validate(addenda) {
-    if (addenda === undefined) return;
+    if (addenda === undefined) throw invalid('missing');
     if (!isPlainObject(addenda)) throw invalid('not an object');
     for (const key of Object.keys(addenda)) {
       if (!TOP_FIELDS.includes(key)) throw invalid('unexpected field in addenda');

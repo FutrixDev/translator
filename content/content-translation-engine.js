@@ -650,12 +650,14 @@
   /**
    * 给一次请求盖上这个文档的附加说明（R33 A4，形状见 shared/prompt-addenda.js）：
    * 内置站点表给这个地址标的语域。**只带标签，不带域名** —— 模型要知道的是「这是
-   * 论坛上的讨论」，不是用户在看哪个站。只盖三种翻译消息；这一页没有语域就不加
-   * 这个字段。地址在调用时读，单页应用换了路由，下一次请求就按新地址盖。
+   * 论坛上的讨论」，不是用户在看哪个站。只盖三种翻译消息，而且**一律盖**：这一页
+   * 没有语域也写 `addenda: {}`（R33 D-360 F8）。地址在调用时读，单页应用换了路由，
+   * 下一次请求就按新地址盖。
    *
    * 每个请求只盖一次，在发起它的那个 frame 里：已经带着 addenda 的请求再进来，
-   * 是有人把「送出」接成了「发起」（中继又过了一遍这里），直接抛。缓存层
-   * （content-translation-cache.js）也调它，键和送出去的是同一个对象。
+   * 是有人把「送出」接成了「发起」（中继又过了一遍这里），直接抛。正因为一律盖，
+   * 这道守卫在没有语域的站上也生效 —— 以前那里不写字段，盖两次也看不出来。
+   * 缓存层（content-translation-cache.js）也调它，键和送出去的是同一个对象。
    */
   ctx.withPromptAddenda = function(message) {
     if ('addenda' in message) {
@@ -663,7 +665,7 @@
     }
     if (!BUILTIN_TYPES.has(message.type)) return message;
     const register = globalThis.SiteRules.register(location.hostname, location.pathname);
-    return register ? { ...message, addenda: { register } } : message;
+    return { ...message, addenda: register ? { register } : {} };
   };
 
   /**

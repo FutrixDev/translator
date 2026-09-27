@@ -3,7 +3,7 @@
 // 的那个 frame** 的：
 //
 //   - 子 frame 那一页有语域，请求带的是它自己的；
-//   - 子 frame 那一页没有语域，请求里就没有 addenda 这个字段 —— 顶层是新闻站也
+//   - 子 frame 那一页没有语域，请求带的是空的 `addenda: {}` —— 顶层是新闻站也
 //     不许替它补一个 news；
 //   - 顶层自己发的请求照旧按顶层的地址盖。
 //
@@ -159,14 +159,14 @@ test('a child frame with a register sends its own, not the top page one', async 
   assert.equal(sentToAI[0].allowDownload, false);
 });
 
-test('a child frame without a register sends no addenda under a news top page', async () => {
+test('a child frame without a register sends empty addenda under a news top page', async () => {
   sentToAI.length = 0;
   const child = childFrame(PLAIN);
   await translate(child.ctx);
   await child.ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN', delimiter: '@@' });
   assert.equal(sentToAI.length, 2);
   for (const message of sentToAI) {
-    assert.ok(!('addenda' in message), `${message.type} grew addenda: ${JSON.stringify(message.addenda)}`);
+    assert.deepEqual(message.addenda, {}, `${message.type} carried ${JSON.stringify(message.addenda)}`);
   }
 });
 
@@ -180,9 +180,18 @@ test('a request is stamped once: stamping a stamped request throws', () => {
   const stamped = top.ctx.withPromptAddenda({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN' });
   assert.deepEqual(clone(stamped.addenda), { register: 'news' });
   assert.throws(() => top.ctx.withPromptAddenda(stamped), /already stamped/);
-  // 没有语域的那一页盖出来也没有这个字段，于是不会被当成「盖过」。
-  const bare = { type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN' };
+});
+
+test('on a page with no register a second stamp throws too (R33 D-360 F8)', () => {
+  // 没有语域的那一页也盖 `{}`：以前那里不写字段，盖两次守卫也看不出来。
   const child = childFrame(PLAIN);
-  const once = child.ctx.withPromptAddenda(bare);
-  assert.ok(!('addenda' in once));
+  for (const message of [
+    { type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN' },
+    { type: 'TRANSLATE_BATCH', texts: [BLOCK], targetLang: 'zh-CN' },
+    { type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN', delimiter: '@@' },
+  ]) {
+    const once = child.ctx.withPromptAddenda(message);
+    assert.deepEqual(clone(once.addenda), {}, message.type);
+    assert.throws(() => child.ctx.withPromptAddenda(once), /already stamped/, message.type);
+  }
 });

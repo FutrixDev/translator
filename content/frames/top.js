@@ -124,8 +124,8 @@
     }
   }
 
-  // 子 frame 的请求已经在它自己那里盖过语域（或者它那一页没有语域、就没有这个
-  // 字段），这里原样送出：走 ctx.requestTranslation 会拿顶层的地址再盖一次。
+  // 子 frame 的请求已经在它自己那里盖过语域（它那一页没有语域就是 `{}`），这里
+  // 原样送出：走 ctx.requestTranslation 会撞上「已经盖过」的守卫而抛。
   async function relayEngineRequest(message, sendResponse) {
     try {
       sendResponse(await ctx.sendTranslation(message));

@@ -2,7 +2,7 @@
 // 服务工作者把关后拼进系统提示词。
 //
 // 契约：
-//   - shared/prompt-addenda.js 的 validate() 只收 undefined 或 `{register?}`，
+//   - shared/prompt-addenda.js 的 validate() 只收 `{register?}`（缺了也抛），
 //     register 是 REGISTERS 之一；多一个字段（比如 host）就抛。
 //   - SiteRules.register(host, path) 只读内置表，没有就是 null。
 //   - buildPrompt 的顺序：模板 → 附加说明块 → 公式占位符规则 → extraRules。
@@ -64,14 +64,15 @@ function systemPrompts() {
 
 // ---- validate / stamp ------------------------------------------------------
 
-test('validate accepts no addenda, an empty one and every register', () => {
-  assert.equal(PromptAddenda.validate(undefined), undefined);
+test('validate accepts an empty addenda and every register', () => {
   PromptAddenda.validate({});
   for (const register of PromptAddenda.REGISTERS) PromptAddenda.validate({ register });
 });
 
 test('validate refuses anything else, including a label that also carries the host', () => {
   const bad = [
+    // 内容脚本一律盖（没有语域是 `{}`），缺了这个字段也是缺陷（R33 D-360 F8）。
+    undefined,
     null, [], 'forum', 7, Object.create(null),
     { register: 'forum', host: 'reddit.com' },
     { domain: 'forum' },

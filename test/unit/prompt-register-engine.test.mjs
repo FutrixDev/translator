@@ -2,7 +2,8 @@
 // 把这一页的语域挂到发给服务工作者的消息上，译文缓存把它放进键。
 //
 // 契约：
-//   - 挂的是 `addenda: {register}`，只有标签；消息里不出现这一页的域名。
+//   - 挂的是 `addenda: {register}`，只有标签；消息里不出现这一页的域名；没有
+//     语域的页面挂 `{}`。
 //   - 只挂在三种翻译消息上；这一页内置表里没有语域就不挂这个字段。
 //   - 同一段文字在论坛页和新闻页上是两个缓存键。
 //   - 两头接起来（R33 N4）：这一半发出的消息交给服务工作者那一半真的翻译函数，
@@ -74,7 +75,7 @@ test('the one exit to the model carries the register label, and only the label',
   }
 });
 
-test('each page gets its own register, and a page without one sends no addenda field', async () => {
+test('each page gets its own register, and a page without one sends empty addenda', async () => {
   useAI();
   goTo('https://x.com/someone/status/1');
   await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
@@ -82,8 +83,8 @@ test('each page gets its own register, and a page without one sends no addenda f
   await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   goTo('https://example.test/');
   await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  assert.deepEqual(sentToAI.map((m) => m.addenda && m.addenda.register), ['social', 'news', undefined]);
-  assert.ok(!('addenda' in sentToAI[2]), 'a page with no register still grew an addenda key');
+  assert.deepEqual(sentToAI.map((m) => m.addenda.register), ['social', 'news', undefined]);
+  assert.equal(JSON.stringify(sentToAI[2].addenda), '{}', 'a page with no register still sends the field, empty');
 });
 
 test('the built-in engine gets no addenda and other message types are left alone', async () => {

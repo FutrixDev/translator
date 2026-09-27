@@ -341,17 +341,20 @@ engine = AI).
 site rules may carry a `register` (`social` / `forum` / `news` / `academic`,
 the table in `shared/prompt-addenda.js`), read by `SiteRules.register(host,
 path)`. That reader looks only at the built-in table: user rules have no
-register. `ctx.withPromptAddenda()` attaches `addenda: { register }` to the
-three translate messages, and only when this page has a register. It runs once
-per request, in the frame that asked, reading `location` at call time (an SPA
-route change is a new register), and throws on a request that already carries
-`addenda`. A child frame's request crosses the relay untouched, so a child page
-with no register sends no `addenda` even under a news top page. The translation
+register. `ctx.withPromptAddenda()` attaches `addenda` to every one of the
+three translate messages: `{ register }` when this page has one, `{}` when it
+has none. It runs once per request, in the frame that asked, reading `location`
+at call time (an SPA route change is a new register), and throws on a request
+that already carries `addenda`; because every request carries the field, that
+guard also fires on a page with no register. A child frame's request crosses the
+relay untouched, so a child page with no register sends `{}` even under a news
+top page. The translation
 cache stamps once too, keys on that stamp and sends its misses through
 `ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
 label and never the host. The service
 worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
-translating, and it throws on an unknown register or any extra field. The
+translating, and it throws on a missing `addenda`, an unknown register or any
+extra field. The
 handlers pass the addenda down every `ai-translate.js` path, including the
 fast batch's numbered fallback and the single-word prompt. There
 `composePromptAddenda()` places the addenda after the template and before the
