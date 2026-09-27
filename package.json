@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "叭叭翻译 — AI 驱动的 Chrome 智能翻译插件",
   "scripts": {
+    "icons": "node brand/blab-translation-2026-09-19/export.mjs",
     "build": "echo 'No build required - load directly in Chrome'",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "zip": "V=$(node -p \"require('./manifest.json').version\") && rm -f blab-translation-$V.zip && zip -r blab-translation-$V.zip manifest.json _locales/ background/ content/ i18n/ offscreen/ onboarding/ options/ popup/ pdf/ shared/ vendor/ icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png -x '*.DS_Store'",
