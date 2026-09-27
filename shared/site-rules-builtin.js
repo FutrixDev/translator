@@ -70,12 +70,14 @@
         //
         // 落成 never 而不是「什么都不写」：arxiv.org 的别的路径是 always，
         // 而这一页整页翻译一个字也翻不出来（文档在一个闭合影子 DOM 的外进程
-        // <embed> 里，收集层看到的是一个空 body）。never 让状态条说「这一条路径
-        // 另有安排」，换上真正能办事的那一条：content/content-pdf-prompt.js 的
-        // 「翻译这篇文档」，点了才发请求。
+        // <embed> 里，收集层看到的是一个空 body）。never 让状态条的说明行答
+        // 「这一页不自动翻译整页文本」（BUILTIN_NEVER），而不是去试一次注定
+        // 空手而归的整页翻译。真正能办事的那一条不看这张表：
+        // content/content-media-hints.js 在每一份 PDF 上都挂出 offer 提示
+        // （「按 Alt+M 翻译这份 PDF」），点了或按了快捷键才发请求。
         //
         // 只写 arxiv：别处的 .pdf 网址同样翻不了整页文本，但它们本来就落在默认
-        // 的不翻上，那条提示条照样出来，不必为每一个域名各写一行永远写不全的规则。
+        // 的不翻上，那条提示照样出来，不必为每一个域名各写一行永远写不全的规则。
         match: 'arxiv.org/pdf/*',
         state: 'never',
         atomicBlockSelectors: [],
