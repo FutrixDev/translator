@@ -13,6 +13,13 @@ import { repoSource } from './helpers/sources.mjs';
 
 const SOURCE = repoSource('content/content-input-chip.js');
 
+// 「已写入」判定用的是写回模块自己那把尺子（sameText），这里直接借真的来，不另写一份。
+const { sameText } = (() => {
+  const window = { AI_TRANSLATOR_CONTENT: {} };
+  new Function('window', 'document', repoSource('content/content-input-writeback.js'))(window, {});
+  return window.AI_TRANSLATOR_CONTENT.inputWriteback;
+})();
+
 class FakeNode {
   constructor(tagName) {
     this.tagName = tagName;
@@ -81,6 +88,7 @@ function load({ landed = () => false } = {}) {
       fieldText: (field) => field.value,
       hasFocus: () => true,
       landed,
+      sameText,
       async write(field, translation) { writes.push(translation); field.value += `\n${translation}`; },
     },
   };
@@ -157,4 +165,21 @@ test('框被重新判定时先问 landed：认出来就不挂芯片', async () =
   await harness.focus();
   assert.equal(harness.chip(), undefined, '晚到的写入已经落进来了，芯片还是挂了出来');
   assert.equal(harness.requests.length, 0);
+});
+
+// 写完之后编辑器把空格换成了 &nbsp;、段落之间多了一个空行：还是那段「原文 + 译文」，
+// 芯片不能因为逐字不等就又冒出来、再追加一遍（D-361 M2）。
+test('写完之后编辑器改了空白：芯片不再冒出来', async () => {
+  const harness = load();
+  await harness.focus();
+  harness.clickChip(harness.chip());
+  await flush();
+  harness.requests[0].answer.resolve({ translation: 'Hello world' });
+  await flush();
+  await flush();
+  assert.deepEqual(harness.writes, ['Hello world']);
+
+  harness.field.value = '你好世界\n\nHello\u00a0world';
+  await harness.focus();
+  assert.equal(harness.chip().isConnected, false, '编辑器只改了空白，芯片又冒了出来');
 });

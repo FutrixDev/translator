@@ -162,7 +162,7 @@
 
     if (settleLateWrite(field)) return;
     const current = fieldText(field);
-    if (written.get(field) === current) {
+    if (written.has(field) && ctx.inputWriteback.sameText(written.get(field), current)) {
       if (chipField === field) hideChip();
       return;
     }

@@ -76,7 +76,7 @@ test('译文回来先核对，再写', () => {
     '译文回来后没有按「同一请求 → 字没变 → 焦点还在」的顺序核对完再写');
   assert.match(CHIP_ONLY, /if \(pending && pending\.field === field\) \{\s*pending = null;\s*setChipState\('idle'\);/,
     '译文还在路上用户改了字，芯片没回到可点');
-  assert.match(CHIP_ONLY, /if \(settleLateWrite\(field\)\) return;\s*const current = fieldText\(field\);\s*if \(written\.get\(field\) === current\)/,
+  assert.match(CHIP_ONLY, /if \(settleLateWrite\(field\)\) return;\s*const current = fieldText\(field\);\s*if \(written\.has\(field\) && ctx\.inputWriteback\.sameText\(written\.get\(field\), current\)\)/,
     '写完之后芯片会对「原文 + 译文」再冒出来，同一段原文会被追加第二遍');
 });
 
