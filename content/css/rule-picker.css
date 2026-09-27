@@ -157,6 +157,12 @@ html[data-ai-translator-theme="light"] body [id="ai-translator-rule-picker"] .ai
   color: #1d1d1f;
 }
 
+/* 上面那条的特异性和通用的 :focus 一样、又排在后面，会把聚焦时的紫边盖回灰色；
+   浅色主题的焦点指示单独再写一条。 */
+html[data-ai-translator-theme="light"] body [id="ai-translator-rule-picker"] .ai-translator-picker-input:focus-visible {
+  border-color: #7c5cff;
+}
+
 html[data-ai-translator-theme="light"] body [id="ai-translator-rule-picker"] .ai-translator-picker-btn {
   background: #f0f0f5;
   border-color: #d2d2d7;

@@ -519,7 +519,7 @@ const FOCUS = {
 };
 
 test('picker: Tab and Shift+Tab cycle through the toolbar and never leave it', async ({ page, context }) => {
-  await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+  await setExtensionSettings(page, settings('http://127.0.0.1:9', { theme: 'light' }));
   await serve(context, { [`${RULES}/harbour`]: html(`<p id="lead">${FOCUS.lead}</p><a href="#x">a page link</a>`) });
   await page.goto(`${RULES}/harbour`);
   await waitForFloatBall(page);
@@ -547,13 +547,26 @@ test('picker: Tab and Shift+Tab cycle through the toolbar and never leave it', a
   // 点中后焦点在输入框。Tab 走完一圈绕回来，Shift+Tab 反着绕，一步都不落到页面上。
   await pickWithPointer(page, page.locator('#lead'), 'focus lead');
   expect(await focused()).toBe('input');
-  expect(await walk('Tab', 7)).toEqual(['parent', 'exclude', 'keepOriginal', 'include', 'cancel', 'input', 'parent']);
+  // 浅色主题下 Tab 回到输入框时看得出焦点在它身上：outline 或边框颜色和它没焦点时不一样。
+  const input = page.locator(`${PICKER} .ai-translator-picker-input`);
+  const look = () => input.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { outline: style.outlineStyle, border: style.borderTopColor };
+  });
+  expect(await page.evaluate(() => document.documentElement.getAttribute('data-ai-translator-theme'))).toBe('light');
+  expect(await walk('Tab', 5)).toEqual(['parent', 'exclude', 'keepOriginal', 'include', 'cancel']);
+  const idle = await look();
+  expect(await walk('Tab', 1)).toEqual(['input']);
+  const focusedLook = await look();
+  expect(focusedLook.outline !== 'none' || focusedLook.border !== idle.border,
+    `the focused input looks exactly like the idle one in the light theme: ${JSON.stringify(focusedLook)}`).toBe(true);
+  expect(await walk('Tab', 1)).toEqual(['parent']);
   expect(await walk('Shift+Tab', 3)).toEqual(['input', 'cancel', 'include']);
 
   // 三个动作置灰时它们不在这一圈里。
-  await page.locator(`${PICKER} .ai-translator-picker-input`).fill('#no-such-element');
+  await input.fill('#no-such-element');
   await expectPickerMatches(page, 0);
-  await page.locator(`${PICKER} .ai-translator-picker-input`).focus();
+  await input.focus();
   expect(await walk('Tab', 3)).toEqual(['parent', 'cancel', 'input']);
 
   // Esc 照旧关掉；关掉之后 Tab 还给页面。
