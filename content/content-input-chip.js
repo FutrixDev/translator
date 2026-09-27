@@ -284,6 +284,9 @@
     document.addEventListener('focusin', onFocusIn, true);
     document.addEventListener('focusout', onFocusOut, true);
     document.addEventListener('input', onInput, true);
+    // 自己维护模型的编辑器（Draft、Lexical）取消 beforeinput、自己重画，浏览器就
+    // 不再发 input —— 只听 input，在这类框里敲多少字芯片都不会醒。
+    document.addEventListener('beforeinput', onInput, true);
     document.addEventListener('scroll', onViewportChange, true);
     window.addEventListener('resize', onViewportChange, true);
     document.addEventListener('keydown', (e) => {

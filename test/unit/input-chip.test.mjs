@@ -89,6 +89,13 @@ test('shadow root 里的框：事件取 composedPath，焦点往 shadow 里追',
   assert.match(WRITEBACK, /active\.shadowRoot\.activeElement/);
 });
 
+// Draft、Lexical 这类编辑器取消 beforeinput、自己重画，浏览器就不再发 input。
+test('自己维护模型的编辑器里敲字，芯片也醒：beforeinput 和 input 走同一个处理', () => {
+  assert.match(CHIP_ONLY, /document\.addEventListener\('input', onInput, true\);/);
+  assert.match(CHIP_ONLY, /document\.addEventListener\('beforeinput', onInput, true\);/,
+    '只听 input：Lexical 那种框里敲多少字芯片都不出来');
+});
+
 test('芯片的三种状态用的是现成的文案', () => {
   assert.match(CHIP_ONLY, /t\(state === 'busy' \? 'translating' : 'translationFailed'\)/);
   const css = contentCss();
