@@ -1,8 +1,8 @@
 // shared/lang-tags.js —— 「这两门语言是同一门吗」的唯一出处。
 //
-// 这一问在扩展里被四处问过：字幕引擎（声道语言 vs 目标语言）、整页翻译（某一段
-// 正文 vs 目标语言）、自动翻译的决策层（页面语言 vs 目标语言）、界面层（哪个选项
-// 该标成选中）。它们曾经各写各的，于是同一对语言在不同地方得到不同答案——而这种
+// 这一问在扩展里被几处问过：字幕引擎（声道语言 vs 目标语言）、整页翻译（某一段
+// 正文 vs 目标语言）、界面层（哪个选项该标成选中）。自动翻译的决策层从前也问，
+// 名单外站点改成安静 off（D-351）以后它不再看页面语言。它们曾经各写各的，于是同一对语言在不同地方得到不同答案——而这种
 // 不一致只会以「有时候翻、有时候不翻」的形式被用户看见。
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -96,18 +96,13 @@ test('全仓只有这一份实现：别处不许再写一遍 split(\'-\')[0]', (
   assert.match(repoFile('content/content-language.js'), /ctx\.getLangBase = globalThis\.LangTags\.getLangBase;/);
 });
 
-test('三条路问的是同一句：字幕、整页正文、自动翻译的决策层', () => {
+test('两条路问的是同一句：字幕、整页正文', () => {
   // 这一条守的是「同一个问题只有一个答案」。上一条守的是别处没有第二份实现，
   // 这一条守的是**调用方真的去问了**——一个没人调的共用模块，和没有是一样的。
   assert.match(
     captionEngineSource(),
     /langTags\.isSameLanguage\(/,
     '字幕的 sameLanguage() 要走共用判定',
-  );
-  assert.match(
-    repoFile('shared/site-rules.js'),
-    /LangTags\.isSameLanguage\(pageLang, targetLang\)/,
-    'decide() 的 SAME_LANGUAGE 那一档要走共用判定',
   );
   assert.match(
     repoFile('content/page/batch.js'),
@@ -124,7 +119,7 @@ test('三条路问的是同一句：字幕、整页正文、自动翻译的决�
     'detectReliableLanguage 要交出补过简繁的整码',
   );
 
-  // 第四条路：内置引擎自己判源语言。上游的闸门放行了不等于译得出来——引擎在
+  // 第三条路：内置引擎自己判源语言。上游的闸门放行了不等于译得出来——引擎在
   // 下游又问了一次「这段文字是什么语言」，问到的要是个光秃秃的 zh，它自己的
   // 「源语言等于目标语言就原样返回」那一档照样会把整页吃掉。
   assert.match(

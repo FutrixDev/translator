@@ -68,8 +68,8 @@ test.describe('PDF offer bar', () => {
 
       await page.goto('https://arxiv.org/pdf/2401.00001');
 
-      // 条子自己出来了，而且是 offer 那一模式 —— 不是整页翻译的追问。那一问在
-      // 这一页上办不到（正文在外进程的 <embed> 里），内置表的 never 把它按住了。
+      // 条子自己出来了，而且是 offer 那一模式。整页翻译在这一页上办不到（正文在
+      // 外进程的 <embed> 里），内置表的 never 把它按住了。
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
       await expect(page.locator(`${BAR} [data-act="translate"]`)).toBeVisible();
 
@@ -77,9 +77,6 @@ test.describe('PDF offer bar', () => {
       expect(service.state.apiHits).toEqual([]);
       const worker = await getServiceWorker(context);
       expect(await jobRecords(worker)).toEqual([]);
-
-      // 而「记住这个站点」不在场：这一条问的是一份文档，不是一个站点的长期规则。
-      await expect(page.locator(`${BAR} .ai-translator-auto-remember`)).toBeHidden();
     } finally {
       await service.close();
     }

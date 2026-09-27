@@ -111,7 +111,7 @@ const siteRulesSection = {
     };
   },
 
-  // 走服务工作者的单写者队列：和追问条、popup 写的是同一张表。
+  // 走服务工作者的单写者队列：和 popup、设置页的站点表写的是同一张表。
   apply(value) {
     return SiteRules.importUserRules(value);
   },

@@ -96,7 +96,7 @@ test('device geometry, the local ask counter and the site rules never ride in se
   // 排除表里的名字都得是真的键 —— 改了名却没改这张表，被排除的就只剩一个空名字。
   const every = Object.assign({}, DefaultSettings.contentDefaults(), optionsDefaults());
   for (const key of Object.keys(ST.EXCLUDED)) {
-    assert.ok(key in every || key === 'siteRules' || key === 'siteAskCount', `${key} is in no default table`);
+    assert.ok(key in every || key === 'siteRules', `${key} is in no default table`);
   }
   // 反过来，确实是设置的那些键都在。
   for (const key of ['translationEngine', 'autoTranslateEngine', 'engineFallback', 'targetLang',
@@ -110,7 +110,6 @@ test('the API key leaves only when the box is ticked', () => {
     apiKey: 'placeholder-not-a-key',
     theme: 'dark',
     youtubeCaptionPosXPct: 12,
-    siteAskCount: { 'example.com': 2 },
     comicToken: 'never-exported',
   });
   const plain = ST.pickExport(stored, schema, { includeApiKey: false });
@@ -136,8 +135,8 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
     apiEndpoint: 'javascript:alert(1)',              // not http(s)
     autoAiDailyBudget: -1,                           // out of range
     youtubeCaptionBgOpacity: Number.NaN,             // not finite
-    autoTranslateLangs: ['en', 'EN-us'],             // item not a base code
-    siteAskCount: { 'x.com': 1 },                    // excluded
+    autoTranslateLangs: ['en'],                      // removed in R33 (D-351): unknown now
+    siteAskCount: { 'x.com': 1 },                    // removed in R33 (D-351): unknown now
   }, schema, enums);
   assert.deepEqual(result.value, { theme: 'dark', youtubeCaptionBgColor: '#00FF7f' });
   assert.equal(result.accepted, 2);
@@ -148,13 +147,12 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
 
   const good = ST.validateSettings({
     apiEndpoint: 'http://localhost:11434/v1/chat/completions',
-    autoTranslateLangs: ['en', 'ja'],
     autoAiDailyBudget: 0,
     targetLang: '',
     uiLanguage: 'zh-TW',
   }, schema, enums);
   assert.deepEqual(good.dropped, []);
-  assert.equal(good.accepted, 5);
+  assert.equal(good.accepted, 4);
 });
 
 test('an import value the selection-trigger dropdown does not offer is dropped', () => {

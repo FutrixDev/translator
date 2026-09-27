@@ -59,7 +59,6 @@ const elements = {
   // Automatic translation
   autoTranslate: document.getElementById('autoTranslate'),
   autoSubOptions: document.getElementById('autoSubOptions'),
-  autoTranslateLangs: document.getElementById('autoTranslateLangs'),
   autoTranslateEngine: document.getElementById('autoTranslateEngine'),
   autoAiDailyBudget: document.getElementById('autoAiDailyBudget'),
   autoAiBudgetGroup: document.getElementById('autoAiBudgetGroup'),
@@ -159,7 +158,6 @@ const defaultSettings = {
   // 里——那份是内容脚本这一侧的出处，改默认值要两边一起改。siteRules 不在这里：
   // 它不经 collectSettings 那次整份写入（见下面「自动翻译」那一节）。
   autoTranslate: true,
-  autoTranslateLangs: [],
   // 和 shared/default-settings.js 的 CONTENT_DEFAULTS 对齐，
   // test/unit/default-settings-agree.test.mjs 盯着这两处不许漂。
   autoTranslateEngine: 'builtin',
@@ -252,7 +250,6 @@ async function loadSettings() {
     elements.pageTranslateScope.value = result.pageTranslateScope === 'page' ? 'page' : 'main';
     // 默认开，所以只有存着的 false 才关得掉它。
     elements.autoTranslate.checked = result.autoTranslate !== false;
-    showAutoTranslateLangs(result.autoTranslateLangs);
     elements.autoTranslateEngine.value = result.autoTranslateEngine === 'ai' ? 'ai' : 'builtin';
     elements.autoAiDailyBudget.value = String(
       Number.isFinite(result.autoAiDailyBudget) && result.autoAiDailyBudget > 0
@@ -382,7 +379,6 @@ function collectSettings() {
     translationStyle: elements.translationStyle.value,
     pageTranslateScope: elements.pageTranslateScope.value === 'page' ? 'page' : 'main',
     autoTranslate: elements.autoTranslate.checked,
-    autoTranslateLangs: collectAutoTranslateLangs(),
     autoTranslateEngine: elements.autoTranslateEngine.value === 'ai' ? 'ai' : 'builtin',
     // 空着、负数、写了字母，都是「不限」——和 AutoStats.budgetExceeded 同一个约定。
     autoAiDailyBudget: Math.max(0, Math.floor(Number(elements.autoAiDailyBudget.value) || 0)),
@@ -699,12 +695,10 @@ function setupEventListeners() {
   // YouTube caption sub-options (enable/disable + live style preview)
   elements.enableImageOcrTranslation.addEventListener('change', syncOcrSubState);
 
-  // 总开关自己进了 IMMEDIATE_SAVE_FIELDS，这里只管把下面那块变灰。语言勾没有
-  // 单独的 id，逐个挂：它们写的是同一个 autoTranslateLangs，一次点击一次写。
+  // 总开关自己进了 IMMEDIATE_SAVE_FIELDS，这里只管把下面那块变灰。
   elements.autoTranslate.addEventListener('change', syncAutoSubState);
   // 字幕那张卡也跟着这一个开关灰：字幕翻不翻由主开关加站点规则说了算。
   elements.autoTranslate.addEventListener('change', syncYoutubeSubState);
-  autoLangChips().forEach(box => box.addEventListener('change', () => persistSettings()));
   // 这一颗有意不进 IMMEDIATE_SAVE_FIELDS：那条路线是「变了就存」，而这里可能
   // 要把值退回去（用户在二次确认里说了不）。
   elements.autoTranslateEngine.addEventListener('change', onAutoEngineChange);

@@ -77,7 +77,7 @@ test('J-F5 an export leaves the API key out unless the box is ticked', async ({ 
     apiKey: PLACEHOLDER_KEY,
     targetLang: 'de',
     siteRules: { 'example.com': 'always' },
-    siteAskCount: { 'example.org': 2 },
+    youtubeCaptionPosXPct: 12,
   });
   await openOptions(page, extensionId);
   await centre(page, '#transferCard');
@@ -94,8 +94,8 @@ test('J-F5 an export leaves the API key out unless the box is ticked', async ({ 
   expect(plain.body.version).toBe(1);
   expect(plain.body.settings.targetLang).toBe('de');
   expect(plain.body.settings).not.toHaveProperty('apiKey');
-  // Per-device counters and window geometry never travel.
-  expect(plain.body.settings).not.toHaveProperty('siteAskCount');
+  // Window geometry never travels.
+  expect(plain.body.settings).not.toHaveProperty('youtubeCaptionPosXPct');
   expect(plain.body.settings).not.toHaveProperty('siteRules');
   expect(plain.body.siteRules).toEqual({ 'example.com': 'always' });
   expect(JSON.stringify(plain.body)).not.toContain(PLACEHOLDER_KEY);

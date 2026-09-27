@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 同步存储的三个写消息：站点规则与追问计数、本机统计、用户站点规则。内容
+    // 同步存储的三个写消息：站点规则、本机统计、用户站点规则。内容
     // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
     // 自己的模块里（STORAGE_WRITERS），这里只管转接。

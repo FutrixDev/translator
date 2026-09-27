@@ -56,8 +56,7 @@ test('两个窗口各清各的期 —— 跨日不跨月，和跨月不跨日', 
 });
 
 test('budgetExceeded：0 和负数是不限，比的是 >=', () => {
-  // 设置页那个框留空、或者填 0，说的都是「别管我」——和 autoTranslateLangs
-  // 空数组同一个约定。
+  // 设置页那个框留空、或者填 0，说的都是「别管我」。
   assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, 0), false);
   assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, -1), false);
   assert.equal(AutoStats.budgetExceeded({ autoAiChars: 999999 }, undefined), false);

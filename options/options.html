@@ -219,33 +219,6 @@
               <span class="hint" data-i18n-hint="hintAutoTranslateEngine"></span>
             </div>
 
-            <!-- Base codes, because that is what THIS rung is judged on:
-                 decide() puts both sides of the language list through
-                 baseLang(), so zh-CN and zh-TW are one tick here. (Its
-                 same-language rung compares whole tags — a Traditional page
-                 with a Simplified target is a real translation. Two rungs, two
-                 questions; see shared/lang-tags.js.) A tick means "a page written in this
-                 language may be translated automatically" — not "translate
-                 into this language", which is the Target Language select
-                 above, and not "I read it, so leave it alone" either: a
-                 language that is NOT ticked is the one decide() answers
-                 LANG_NOT_LISTED for and leaves untranslated. -->
-            <div class="form-group">
-              <label data-i18n="autoTranslateLangsLabel">Only these languages</label>
-              <div class="lang-chips" id="autoTranslateLangs">
-                <label class="lang-chip"><input type="checkbox" data-lang="zh"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="en"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ja"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ko"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="fr"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="de"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="es"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="pt"><span></span></label>
-                <label class="lang-chip"><input type="checkbox" data-lang="ru"><span></span></label>
-              </div>
-              <span class="hint" data-i18n-hint="hintAutoTranslateLangs"></span>
-            </div>
-
             <!-- 每天最多替用户、在他没点的时候发给 AI 多少字符：自动翻译的页面
                  和视频字幕。0 = 不限。只要有一条零点击的路会花到 AI（自动模式
                  选了 AI、手动引擎选了 AI、或允许回退）它就亮着，三条都关着才灰

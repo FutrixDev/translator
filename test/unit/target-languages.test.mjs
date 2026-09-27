@@ -238,9 +238,8 @@ test('the settings page writes no language option by hand', () => {
     assert.match(options[0], /value=""/, `#${id}'s one option should be the empty one`);
   }
   assert.doesNotMatch(html, /data-i18n="lang(?:Zh|ZhCN|ZhTW|En|Ja|Ko|Fr|De|Es|Pt|Ru)"/);
-  // The chips keep their codes; only their names moved to Intl.
-  const chips = [...html.matchAll(/data-lang="([^"]+)"><span><\/span>/g)].map((m) => m[1]);
-  assert.deepEqual(chips, ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru']);
+  // The auto-translate language chips went with the ask bar (R33, D-351).
+  assert.doesNotMatch(html, /data-lang="/);
 });
 
 test('the prompt names every target: English name plus autonym', async () => {

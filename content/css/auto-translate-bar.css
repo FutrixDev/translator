@@ -1,7 +1,7 @@
 /* ==================== Auto-translate bar ==================== */
 
-/* 追问条和状态说明共用这一条，data-mode 决定哪几个孩子在场。两份 DOM 会带来两
-   套定位、两套主题覆盖，以及迟早对不齐的两个右下角。 */
+/* 「没存上」、状态说明和 offer 共用这一条，data-mode 决定哪几个孩子在场。两份
+   DOM 会带来两套定位、两套主题覆盖，以及迟早对不齐的两个右下角。 */
 #ai-translator-auto-bar {
   position: fixed;
   right: 24px;
@@ -27,34 +27,6 @@
 #ai-translator-auto-bar .ai-translator-auto-text {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-#ai-translator-auto-bar .ai-translator-auto-remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #a8a8b8;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-#ai-translator-auto-bar .ai-translator-auto-remember-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-/* 上面那道防护栏给每个 input 都上了 appearance:none —— 对文本框是保护，对勾选
-   框是直接抹掉。这里单独把它还回来，选择器按标签写而不是给它一个类名：类名一
-   加，它就成了「我们的控件」，得连同主题覆盖一起重画一遍。 */
-#ai-translator-auto-bar input[type="checkbox"] {
-  appearance: auto;
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  accent-color: #7c5cff;
-  cursor: pointer;
 }
 
 html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn {
@@ -100,14 +72,8 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"
   color: #e8e8f0;
 }
 
-/* 展开说明和「没存上」都只剩一行字和一个关闭。追问那几个控件留在 DOM 里不重建
-   —— 用户点掉说明之后，还没回答的那一问要原样回来。
-   offer（今天是 PDF 那条）只去掉勾选框：它要的正是那两个按钮，而「记住这个站
-   点」是整页翻译的话，一份文档上没有对应的意思。 */
-#ai-translator-auto-bar:is([data-mode="explain"], [data-mode="notice"], [data-mode="offer"]) .ai-translator-auto-remember {
-  display: none;
-}
-
+/* 展开说明和「没存上」都只剩一行字和一个关闭。offer 那两个按钮留在 DOM 里不重建
+   —— 用户点掉说明之后，还没回答的 offer 要原样回来。 */
 html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="translate"],
 html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="dismiss"] {
   display: none;

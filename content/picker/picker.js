@@ -222,7 +222,7 @@
     locked = null;
     picker.setLocked(parts, false);
     document.body.appendChild(parts.root);
-    // 右下角的追问条会压在低处的目标上：开着的这段时间它让位。
+    // 右下角的窄条（保存提示、说明）会压在低处的目标上：开着的这段时间它让位。
     ctx.yieldAutoStatus(true);
     redraw();
     listen(true);

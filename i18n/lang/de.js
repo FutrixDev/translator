@@ -363,17 +363,13 @@
     hintEngineFallback: 'Die integrierte Engine ist kostenlos, Ihre eigene API nicht. Das Ausweichen verbraucht Ihr Kontingent und passiert deshalb nur, wenn Sie es hier verlangen.',
 
     // 自动翻译：追问条
-    autoAskPrompt: 'Diese Seite übersetzen?',
-    autoAskTranslate: 'Übersetzen',
-    autoAskDismiss: 'Jetzt nicht',
+    autoOfferAccept: 'Übersetzen',
+    autoOfferDismiss: 'Jetzt nicht',
     pdfAskPrompt: 'Dies ist ein PDF. Die Übersetzung verbraucht Seiten-Guthaben.',
-    autoAskAlways: '{site} immer übersetzen',
     autoStopSite: '{site} nicht mehr automatisch übersetzen',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'Diese Seite wird nicht übersetzt',
-    autoStateAsk: 'Warte auf deine Entscheidung',
-    autoStatePending: 'Warte, bis die Seite ruhig ist',
     autoStateIdle: 'Diese Seite ist übersetzt',
     autoStateRunning: 'Übersetze…',
     autoStatePartial: '{count} Blöcke sind noch nicht übersetzt',
@@ -388,10 +384,7 @@
     autoReasonUserExplicit: 'Du hast diese Seite angefordert',
     autoReasonUserAlways: 'Du hast „immer“ für diese Website gewählt',
     autoReasonBuiltinAlways: 'Diese Website wird automatisch übersetzt',
-    autoReasonSameLanguage: 'Bereits in deiner Sprache',
-    autoReasonLangNotListed: 'Die Sprache dieser Seite steht nicht auf deiner Liste',
-    autoReasonUnknownLanguage: 'Sprache nicht erkannt',
-    autoReasonDefaultAsk: 'Bei neuen Websites wird zuerst gefragt',
+    autoReasonDefaultOff: 'Websites, die auf keiner Liste stehen, bleiben unverändert',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: 'Die automatische Übersetzung nutzt nur die kostenlose eingebaute Engine, die auf dieser Seite nicht verfügbar ist',
@@ -407,9 +400,7 @@
 
     autoTranslateSection: 'Automatische Übersetzung',
     autoTranslateEnable: 'Seiten automatisch übersetzen',
-    hintAutoTranslate: 'Der Hauptschalter. Eingeschaltet öffnen sich Seiten, für die Sie „Immer“ gewählt haben — und die Seiten der eingebauten Liste — bereits übersetzt; überall sonst werden Sie einmal gefragt. Aus heißt: keine automatische Übersetzung mehr, nirgends.',
-    autoTranslateLangsLabel: 'Nur diese Sprachen',
-    hintAutoTranslateLangs: 'Das schränkt nur das Nachfragen ein, sonst nichts. Auf einer Website, über die Sie noch nicht entschieden haben — und die unsere eingebaute Liste nicht abdeckt —, wird eine Seite in einer nicht angehakten Sprache stillschweigend übergangen, statt Sie zu fragen. Haken Sie nichts an, wird nichts herausgefiltert. Es löst nie eine Übersetzung aus und setzt sich nie über eine auf „Immer“ gestellte Website hinweg.',
+    hintAutoTranslate: 'Der Hauptschalter. Eingeschaltet öffnen sich Seiten, für die Sie „Immer“ gewählt haben — und die Seiten der eingebauten Liste — bereits übersetzt; alle anderen bleiben unverändert, bis Sie sie über das Symbol in der Symbolleiste, die Schwebekugel oder das Tastenkürzel übersetzen. Aus heißt: keine automatische Übersetzung mehr, nirgends.',
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: 'Engine für die automatische Übersetzung',

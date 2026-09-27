@@ -561,8 +561,8 @@
      * is the provider's docked slot or null, `enabled` is the gate the engine
      * just computed (this site has not refused us), `siteAuto` is whether this
      * site is set to auto-translate (what the first menu row draws and writes —
-     * the two are not the same answer, there is a whole band of "ask" between
-     * them), `stopSite` is whether subtitles are being translated in that band
+     * the two are not the same answer, there is a whole band of sites that are
+     * neither refused nor set to auto between them), `stopSite` is whether subtitles are being translated in that band
      * and the one-step "stop auto-translating {site}" row should show,
      * `status` is `{ kind, label }` for the menu's status line.
      */

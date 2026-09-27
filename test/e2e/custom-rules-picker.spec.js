@@ -310,14 +310,15 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   const size = `${viewport.width}x${viewport.height}`;
   test(`picker geometry ${size}: toolbar inside the viewport, outline on the target, nothing left behind`, async ({ page, context }) => {
     await page.setViewportSize(viewport);
-    // 自动翻译照常开着：「要不要翻译这一页」的追问条先冒出来。375 宽时它横在底边
-    // 那一带，正好压在 #low-p 上 —— 拾取器开着的时候它要让位，关掉后原样回来。
+    // 右下角那条窄条（这里是保存提示）375 宽时横在底边那一带，正好压在 #low-p
+    // 上 —— 拾取器开着的时候它要让位，关掉后原样回来。名单外的站点不再冒追问条
+    // （D-351），所以窄条要等第一次保存后才出现。
     await setExtensionSettings(page, settings('http://127.0.0.1:9'));
     await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
     await page.goto(`${RULES}/locks`);
     await waitForFloatBall(page);
-    const ask = page.locator('#ai-translator-auto-bar');
-    await expect(ask, 'the ask bar is up before the picker opens').toHaveAttribute('data-mode', 'ask');
+    const bar = page.locator('#ai-translator-auto-bar');
+    await expect(bar, 'an unlisted site shows no bar before the picker opens').toHaveCount(0);
 
     // 目标在上半截：工具条贴底边。页面上的链接点不动，它只是被选中。
     await openPickerFromMenu(page);
@@ -331,10 +332,9 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await pickerButton(page, 'cancel').click();
     await expectPickerGone(page);
 
-    // 目标压在底边那一带：追问条让了位，低处的目标上面没有任何我方节点（描框不接
-    // 指针，不算）；工具条挪到顶边，仍完整落在视口里，不挡住目标。
+    // 目标压在底边那一带：低处的目标上面没有任何我方节点（描框不接指针，不算）；
+    // 工具条挪到顶边，仍完整落在视口里，不挡住目标。
     await openPickerFromMenu(page);
-    await expect(ask, 'the ask bar steps aside while the picker is open').toHaveCount(0);
     const low = page.locator('#low-p');
     const lowBox = await low.boundingBox();
     expect(lowBox.y + lowBox.height, 'the low target starts inside the viewport').toBeLessThanOrEqual(viewport.height);
@@ -360,10 +360,9 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     const barBox = await page.locator(`${PICKER} .ai-translator-picker-bar`).boundingBox();
     expect(barBox.y + barBox.height, 'the toolbar clears the target').toBeLessThanOrEqual(lowBox.y);
 
-    // Esc 也拆干净，追问条按原来的样子回来；之后页面上的链接照常能点。
+    // Esc 也拆干净；之后页面上的链接照常能点。
     await page.keyboard.press('Escape');
     await expectPickerGone(page);
-    await expect(ask, 'the ask bar comes back once the picker closes').toHaveAttribute('data-mode', 'ask');
 
     // 存好一条后立刻再开拾取器去排低处那一块。保存提示不会自己消失，拾取器开着
     // 时它的 × 又点不动：它也得让位，低处目标的中心取到的是目标本身；关掉拾取器
@@ -372,9 +371,9 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await pickWithPointer(page, page.locator('#leave'), `${size} link to save`);
     await pickerButton(page, 'exclude').click();
     await expectPickerGone(page);
-    await expect(ask, 'the saved notice shows').toHaveAttribute('data-mode', 'notice');
+    await expect(bar, 'the saved notice shows').toHaveAttribute('data-mode', 'notice');
     await openPickerFromMenu(page);
-    await expect(ask, 'the saved notice steps aside while the picker is open').toHaveCount(0);
+    await expect(bar, 'the saved notice steps aside while the picker is open').toHaveCount(0);
     const lowAgain = await low.boundingBox();
     const center = { x: lowAgain.x + lowAgain.width / 2, y: lowAgain.y + lowAgain.height / 2 };
     const hit = await page.evaluate(({ x, y }) => {
@@ -389,7 +388,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await expectOutlineOn(page, low, `${size} low after a save (locked)`);
     await page.keyboard.press('Escape');
     await expectPickerGone(page);
-    await expect(ask, 'the saved notice comes back once the picker closes').toHaveAttribute('data-mode', 'notice');
+    await expect(bar, 'the saved notice comes back once the picker closes').toHaveAttribute('data-mode', 'notice');
     await page.click('#leave');
     await expect(page).toHaveURL(`${RULES}/elsewhere`);
   });
@@ -397,13 +396,18 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
 
 // 右下角那条窄条也是我们画的界面：在它的字上划选，不该弹「划词翻译」按钮叠在
 // 它上面。划词与悬停读的是 ctx.constants.OWN_NODES_SELECTOR，同一份界面根清单。
-test('selecting the ask bar\'s own text shows no selection button', async ({ page, context }) => {
+test('selecting the status bar\'s own text shows no selection button', async ({ page, context }) => {
   await setExtensionSettings(page, settings('http://127.0.0.1:9', { enableSelection: true }));
   await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
   await page.goto(`${RULES}/locks`);
   await waitForFloatBall(page);
-  const ask = page.locator('#ai-translator-auto-bar');
-  await expect(ask).toHaveAttribute('data-mode', 'ask');
+  // 让窄条露出来：存一条排除规则，保存提示会一直挂着，直到用户点它的 ×。
+  await openPickerFromMenu(page);
+  await pickWithPointer(page, page.locator('#leave'), 'link to save');
+  await pickerButton(page, 'exclude').click();
+  await expectPickerGone(page);
+  const bar = page.locator('#ai-translator-auto-bar');
+  await expect(bar).toHaveAttribute('data-mode', 'notice');
   const button = page.locator('#ai-translator-selection-btn');
 
   async function dragAcross(target) {
@@ -421,15 +425,15 @@ test('selecting the ask bar\'s own text shows no selection button', async ({ pag
   await page.keyboard.press('Escape');
   await expect(button).toHaveCount(0);
 
-  const prompt = ask.locator('.ai-translator-auto-text');
-  await dragAcross(prompt);
+  const text = bar.locator('.ai-translator-auto-text');
+  await dragAcross(text);
   const selected = await page.evaluate(() => window.getSelection().toString());
-  expect(selected.length, 'the drag selected text on the ask bar').toBeGreaterThan(1);
-  expect(en('autoAskPrompt')).toContain(selected.trim());
+  expect(selected.length, 'the drag selected text on the status bar').toBeGreaterThan(1);
+  expect(en('pickerSaved')).toContain(selected.trim());
   // 划词在 mouseup 后等 100 ms 才决定出不出按钮。
   await page.waitForTimeout(400);
-  await expect(button, 'no selection button over our own ask bar').toHaveCount(0);
-  await expect(ask).toHaveAttribute('data-mode', 'ask');
+  await expect(button, 'no selection button over our own status bar').toHaveCount(0);
+  await expect(bar).toHaveAttribute('data-mode', 'notice');
 });
 
 // ------------------------------------------------------------------ 置灰

@@ -274,7 +274,7 @@
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();
       // 字幕排在调度层后面，因为字幕翻不翻由它说了算：字幕这一面一装起来就去订
       // 阅（subscribeToGate），顺序反了就得等下一次状态变化才上闸 —— 而一个判完
-      // 就定下来不再动的页面（黑名单、语言相同、要追问）永远等不到那一次。
+      // 就定下来不再动的页面（黑名单、名单外的安静 off）永远等不到那一次。
       if (top && ctx.setupVideoCaptionTranslation) ctx.setupVideoCaptionTranslation();
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。

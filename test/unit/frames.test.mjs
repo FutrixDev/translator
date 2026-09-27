@@ -262,7 +262,7 @@ function loadShelf() {
 }
 
 const frames = loadShelf();
-const SETTINGS = { autoTranslate: true, autoTranslateLangs: [] };
+const SETTINGS = { autoTranslate: true };
 // 结果对象造在 vm 上下文里，原型不是本进程的 Object.prototype —— 摊开一次再比。
 const decideAs = (over) => ({ ...frames.decideForFrame({
   host: 'embed.example.com', path: '/widget', userRules: {}, settings: SETTINGS, follow: true, ...over,

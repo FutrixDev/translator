@@ -363,17 +363,13 @@
     hintEngineFallback: 'Le moteur intégré est gratuit, pas votre API. Le repli consomme votre quota : il n\'a donc lieu que si vous le demandez ici.',
 
     // 自动翻译：追问条
-    autoAskPrompt: 'Traduire cette page ?',
-    autoAskTranslate: 'Traduire',
-    autoAskDismiss: 'Pas maintenant',
+    autoOfferAccept: 'Traduire',
+    autoOfferDismiss: 'Pas maintenant',
     pdfAskPrompt: 'Ceci est un PDF. Le traduire consomme des crédits de pages.',
-    autoAskAlways: 'Toujours traduire {site}',
     autoStopSite: 'Ne plus traduire {site} automatiquement',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'Cette page n\'est pas traduite',
-    autoStateAsk: 'En attente de votre choix',
-    autoStatePending: 'En attente de la stabilisation de la page',
     autoStateIdle: 'Cette page est traduite',
     autoStateRunning: 'Traduction en cours…',
     autoStatePartial: '{count} blocs encore non traduits',
@@ -388,10 +384,7 @@
     autoReasonUserExplicit: 'Vous avez demandé cette page',
     autoReasonUserAlways: 'Vous avez choisi « toujours » pour ce site',
     autoReasonBuiltinAlways: 'Ce site est traduit automatiquement',
-    autoReasonSameLanguage: 'Déjà dans votre langue',
-    autoReasonLangNotListed: 'La langue de cette page n\'est pas dans votre liste',
-    autoReasonUnknownLanguage: 'Impossible d\'identifier la langue',
-    autoReasonDefaultAsk: 'On demande d’abord sur un nouveau site',
+    autoReasonDefaultOff: 'Les sites absents des listes restent tels quels',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: 'La traduction automatique n\'utilise que le moteur intégré gratuit, indisponible sur cette page',
@@ -407,9 +400,7 @@
 
     autoTranslateSection: 'Traduction automatique',
     autoTranslateEnable: 'Traduire les pages automatiquement',
-    hintAutoTranslate: "L'interrupteur principal. Activé, les sites que vous avez réglés sur Toujours — et ceux de la liste intégrée — s'ouvrent déjà traduits ; ailleurs, la question vous est posée une fois. Désactivé, toute traduction automatique s'arrête, partout.",
-    autoTranslateLangsLabel: 'Uniquement ces langues',
-    hintAutoTranslateLangs: "Cela restreint seulement les questions posées, rien d'autre. Sur un site dont vous n'avez pas encore décidé — et que notre liste intégrée ne couvre pas — une page dans une langue non cochée est ignorée en silence au lieu de vous être soumise. Ne cochez rien et rien n'est filtré. Cela ne déclenche jamais une traduction et ne passe jamais outre un site réglé sur Toujours.",
+    hintAutoTranslate: "L'interrupteur principal. Activé, les sites que vous avez réglés sur Toujours — et ceux de la liste intégrée — s'ouvrent déjà traduits ; les autres restent tels quels jusqu'à ce que vous les traduisiez depuis l'icône de la barre d'outils, la bulle flottante ou le raccourci. Désactivé, toute traduction automatique s'arrête, partout.",
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: 'Moteur pour la traduction automatique',

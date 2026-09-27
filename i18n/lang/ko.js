@@ -363,17 +363,13 @@
     hintEngineFallback: '내장 엔진은 무료지만 내 API는 아닙니다. 대체 사용은 내 사용량을 쓰므로 여기서 선택한 경우에만 일어납니다.',
 
     // 自动翻译：追问条
-    autoAskPrompt: '이 페이지를 번역할까요?',
-    autoAskTranslate: '번역',
-    autoAskDismiss: '나중에',
+    autoOfferAccept: '번역',
+    autoOfferDismiss: '나중에',
     pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
-    autoAskAlways: '{site} 항상 번역',
     autoStopSite: '{site} 자동 번역 중지',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '이 페이지는 번역하지 않습니다',
-    autoStateAsk: '선택을 기다리는 중',
-    autoStatePending: '페이지가 안정되기를 기다리는 중',
     autoStateIdle: '이 페이지는 번역되었습니다',
     autoStateRunning: '번역 중…',
     autoStatePartial: '{count}개가 아직 번역되지 않았습니다',
@@ -388,10 +384,7 @@
     autoReasonUserExplicit: '직접 이 페이지를 번역했습니다',
     autoReasonUserAlways: '이 사이트를 “항상 번역”으로 설정했습니다',
     autoReasonBuiltinAlways: '이 사이트는 자동으로 번역됩니다',
-    autoReasonSameLanguage: '이미 대상 언어입니다',
-    autoReasonLangNotListed: '이 페이지의 언어가 목록에 없습니다',
-    autoReasonUnknownLanguage: '언어를 판별할 수 없습니다',
-    autoReasonDefaultAsk: '새 사이트에서는 먼저 물어봅니다',
+    autoReasonDefaultOff: '목록에 없는 사이트는 그대로 둡니다',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: '자동 번역은 무료 내장 엔진만 사용하는데, 이 페이지에서는 사용할 수 없습니다',
@@ -407,9 +400,7 @@
 
     autoTranslateSection: '자동 번역',
     autoTranslateEnable: '페이지를 자동으로 번역',
-    hintAutoTranslate: '기본 스위치입니다. 켜져 있으면 「항상 번역」으로 정한 사이트와 기본 목록의 사이트는 열자마자 번역되어 있고, 다른 사이트에서는 한 번 물어봅니다. 끄면 모든 곳에서 자동 번역이 멈춥니다.',
-    autoTranslateLangsLabel: '이 언어만 자동으로 번역',
-    hintAutoTranslateLangs: '이것은 「묻는 범위」를 좁힐 뿐, 그 밖에는 아무 일도 하지 않습니다. 아직 정하지 않은 사이트(내장 목록에도 없는 사이트)에서는, 선택하지 않은 언어의 페이지를 묻지 않고 그냥 지나갑니다. 아무것도 선택하지 않으면 아무것도 걸러내지 않습니다. 이것만으로 페이지가 번역되지 않으며, 「항상 번역」으로 정한 사이트를 뒤집지도 않습니다.',
+    hintAutoTranslate: '기본 스위치입니다. 켜져 있으면 「항상 번역」으로 정한 사이트와 기본 목록의 사이트는 열자마자 번역되어 있고, 다른 사이트는 그대로 두었다가 툴바 아이콘, 플로팅 볼 또는 단축키로 번역할 때만 번역합니다. 끄면 모든 곳에서 자동 번역이 멈춥니다.',
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: '자동 번역에 쓸 엔진',

@@ -110,14 +110,6 @@ test('J-B1 the settings page lists 76 target languages by their Intl names and k
   // 1 + 10: the "follow" row is still there.
   await expect(page.locator('#comicTargetLang option')).toHaveCount(11);
   await expect(page.locator('#pdfTargetLang option')).toHaveCount(11);
-  const chips = await page.evaluate(({ scriptTags }) => {
-    const intl = new Intl.DisplayNames(['en'], { type: 'language' });
-    return [...document.querySelectorAll('#autoTranslateLangs input[data-lang]')]
-      .map((input) => ({ text: input.nextElementSibling.textContent, want: intl.of(scriptTags[input.dataset.lang] || input.dataset.lang) }));
-  }, { scriptTags: SCRIPT_TAGS });
-  expect(chips).toHaveLength(9);
-  for (const { text, want } of chips) expect(text).toBe(want);
-
   // The UI language picker names each language in itself.
   const autonyms = await page.evaluate(({ scriptTags }) => [...document.querySelectorAll('#uiLanguage option')]
     .filter((o) => o.value !== '')

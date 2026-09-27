@@ -5,10 +5,10 @@
 // DOMContentLoaded 之后，声明早就求值完了）。
 
 // ---------------------------------------------------------------------------
-// 自动翻译：总开关、语言名单、站点审计表、本机统计
+// 自动翻译：总开关、站点审计表、本机统计
 //
-// 卡片里六块东西，只有前四块是普通设置项（走 collectSettings 那次整份写入）：
-// 总开关、自动模式的引擎、语言名单、每日字符预算。后两块各有各的写入通道，
+// 卡片里五块东西，只有前三块是普通设置项（走 collectSettings 那次整份写入）：
+// 总开关、自动模式的引擎、每日字符预算。后两块各有各的写入通道，
 // 而且**必须**如此：
 //
 //   siteRules   是一张共享表，弹出窗口、内容脚本、设置页都在改它，所以写入收
@@ -83,26 +83,6 @@ function onAutoEngineChange() {
   }
   syncAutoEngineState();
   persistSettings();
-}
-
-function autoLangChips() {
-  return Array.from(elements.autoTranslateLangs.querySelectorAll('input[data-lang]'));
-}
-
-function collectAutoTranslateLangs() {
-  return autoLangChips().filter(box => box.checked).map(box => box.getAttribute('data-lang'));
-}
-
-/**
- * 勾上存着的那几门语言。
- *
- * 存的**应该**是基码，因为这些勾只写得出基码；但 decide() 读这份名单时两边都过
- * baseLang，所以一份手改过、或者从别处同步来的 'zh-CN' 在判定里是算数的。这里
- * 用同一个 baseLang 收一次，界面才不会告诉用户「你没选中文」而它其实正在生效。
- */
-function showAutoTranslateLangs(langs) {
-  const picked = new Set((Array.isArray(langs) ? langs : []).map(SiteRules.baseLang).filter(Boolean));
-  autoLangChips().forEach(box => { box.checked = picked.has(box.getAttribute('data-lang')); });
 }
 
 /**

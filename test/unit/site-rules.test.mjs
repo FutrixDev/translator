@@ -13,25 +13,22 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
-const { SiteRules, SiteRulesBuiltin, LangTags } = globalThis;
+const { SiteRules, SiteRulesBuiltin } = globalThis;
 const R = SiteRules.REASONS;
 
-// 一页普通的英文网页，开着自动翻译，什么规则都没命中——阶梯的中性起点。
-const ask = (over = {}) => Object.assign({
+// 一页普通的网页，开着自动翻译，什么规则都没命中——阶梯的中性起点。
+const input = (over = {}) => Object.assign({
   host: 'example.com',
   path: '/article/1',
-  pageLang: 'en',
-  targetLang: 'zh-CN',
   userRules: {},
-  settings: { autoTranslate: true, autoTranslateLangs: [] },
+  settings: { autoTranslate: true },
   explicit: false,
 }, over);
 
-const verdict = (over) => SiteRules.decide(ask(over));
+const verdict = (over) => SiteRules.decide(input(over));
 
 // ------------------------------------------------------------ 阶梯的顺序
 
@@ -54,7 +51,7 @@ test('总开关关着也答得出「这一页拉黑了」—— decide() 的那�
   // 的地方，问的必须是 isBlocklisted() 这一问：总开关关着恰恰是那个开关最该灰
   // 着的时候 —— 点下去写的是一条永远生效不了的 always，还顺手把总开关替所有别
   // 的站点打开了。
-  const off = { autoTranslate: false, autoTranslateLangs: [] };
+  const off = { autoTranslate: false };
   assert.equal(verdict({ host: 'secure.chase.com', settings: off }).reason, R.GLOBAL_OFF);
   assert.equal(SiteRules.isBlocklisted('secure.chase.com', '/'), true);
 
@@ -80,13 +77,13 @@ test('the blocklist matches subdomains, and does not match a longer public suffi
   // 'gov' 不以 '.gov' 结尾地命中 gov.uk —— 所以表里必须另有一行，而它有。
   assert.equal(verdict({ host: 'hmrc.gov.uk' }).reason, R.BLOCKLIST);
   // 后缀匹配不能退化成子串匹配：这两个域名都含 'gov'，都不该被拦。
-  assert.equal(verdict({ host: 'govtech.com' }).verdict, 'ask');
-  assert.equal(verdict({ host: 'mygov.example.com' }).verdict, 'ask');
+  assert.equal(verdict({ host: 'govtech.com' }).verdict, 'off');
+  assert.equal(verdict({ host: 'mygov.example.com' }).verdict, 'off');
 });
 
 test('an explicit page keeps going even with the global switch off', () => {
   // 用户自己点过翻译，页面后来长出来的内容跟上，是在兑现那次点击。
-  // 这一条要是答 off 或 ask，调度层就只能绕过 decide() 自己判一遍。
+  // 这一条要是答 off，调度层就只能绕过 decide() 自己判一遍。
   const d = verdict({ explicit: true, settings: { autoTranslate: false } });
   assert.equal(d.verdict, 'auto');
   assert.equal(d.reason, R.USER_EXPLICIT);
@@ -97,7 +94,7 @@ test('an explicit page keeps going even with the global switch off', () => {
 });
 
 test('the global switch stops everything else', () => {
-  const off = { autoTranslate: false, autoTranslateLangs: [] };
+  const off = { autoTranslate: false };
   assert.equal(verdict({ settings: off }).reason, R.GLOBAL_OFF);
   // 连内置 always 的站点也不例外——总开关关掉就是“我们自己不主动开始”。
   assert.equal(verdict({ host: 'x.com', settings: off }).reason, R.GLOBAL_OFF);
@@ -114,73 +111,17 @@ test('a user rule outranks the built-in table, in both directions', () => {
   assert.equal(verdict({ host: 'x.com' }).reason, R.BUILTIN_ALWAYS);
 });
 
-test('the language rules only gate the sites nobody has spoken for', () => {
-  // 同语言：翻了等于没翻。比的是整码——zh-TW 配 zh-CN 是两套字，不算同语言。
-  assert.equal(verdict({ pageLang: 'zh-Hans', targetLang: 'zh-CN' }).reason, R.SAME_LANGUAGE);
-  assert.notEqual(verdict({ pageLang: 'zh-TW', targetLang: 'zh-CN' }).reason, R.SAME_LANGUAGE);
-  // 不在名单里。
-  const listed = { autoTranslate: true, autoTranslateLangs: ['en', 'ja'] };
-  assert.equal(verdict({ pageLang: 'de', settings: listed }).reason, R.LANG_NOT_LISTED);
-  assert.equal(verdict({ pageLang: 'en-GB', settings: listed }).verdict, 'ask');
-
-  // 而用户/内置的 always 在语言规则之前，所以 x.com 上的德文推文照翻。
-  assert.equal(verdict({ host: 'x.com', pageLang: 'de', settings: listed }).reason, R.BUILTIN_ALWAYS);
-});
-
-test('an unread language is a question, not a guess', () => {
-  const unknown = verdict({ pageLang: null });
-  assert.equal(unknown.verdict, 'ask');
-  assert.equal(unknown.reason, R.UNKNOWN_LANGUAGE);
-  // 语言判不出来时，“不在名单里”这条不能顺手把它判死。
-  assert.equal(verdict({ pageLang: null, settings: { autoTranslate: true, autoTranslateLangs: ['ja'] } }).reason,
-    R.UNKNOWN_LANGUAGE);
-
-  const plain = verdict({});
-  assert.equal(plain.verdict, 'ask');
-  assert.equal(plain.reason, R.DEFAULT_ASK);
-});
-
-test('the default answer for an unknown site is ask, never auto', () => {
-  // 黑名单永远列不全，真正兜底的是这一条。
-  for (const host of ['some-bank-nobody-listed.com', 'intranet.corp', '10.0.0.7', 'localhost']) {
-    assert.equal(verdict({ host }).verdict, 'ask', `${host} translated itself`);
+test('an unlisted site is a quiet off: never auto, never a question, never a refusal', () => {
+  // D-351：名单外的站点不问也不翻。黑名单永远列不全，真正兜底的是这一条。
+  for (const host of ['some-bank-nobody-listed.com', 'intranet.corp', '10.0.0.7', 'localhost', 'example.com']) {
+    const d = verdict({ host });
+    assert.equal(d.verdict, 'off', `${host} translated itself`);
+    assert.equal(d.reason, R.DEFAULT_OFF, `${host} was answered by another rung`);
+    // 它不是拒绝：字幕闸门、弹窗的站点开关都照常可用。
+    assert.equal(d.refused, false, `${host} reads as refused`);
   }
-});
-
-test('「这一页已经是你的语言了」问的是那个共用的判定，而且比整码', () => {
-  // 判定只有一份（shared/lang-tags.js），行为断言在 lang-tags.test.mjs。这里守
-  // 的是**这一档确实在用它**：曾经这里比基码而字幕那边比整码，于是一页 zh-TW 的
-  // 正文配 zh-CN 的目标，字幕翻、正文不翻——同一个问题两条路两个答案。
-  for (const [a, b] of [
-    ['zh-CN', 'zh-Hans'], ['en-GB', 'en'], ['EN', 'en-US'],
-    ['pt-BR', 'pt-PT'], ['ja', 'ja-JP'],
-  ]) {
-    assert.ok(LangTags.isSameLanguage(a, b), `test data wrong for ${a}/${b}`);
-    assert.equal(verdict({ pageLang: a, targetLang: b }).reason, R.SAME_LANGUAGE,
-      `site-rules reads ${a}/${b} as different languages, lang-tags does not`);
-  }
-
-  // 简繁互换是用户要的那一件事，这一档不许把它挡掉。
-  for (const [a, b] of [['zh-TW', 'zh-CN'], ['zh-Hant', 'zh-Hans'], ['zh-HK', 'zh-CN']]) {
-    const out = verdict({ pageLang: a, targetLang: b });
-    assert.notEqual(out.reason, R.SAME_LANGUAGE, `${a} -> ${b} 被当成了同一门语言`);
-  }
-
-  // 基码不同当然更不是同语言。
-  assert.equal(verdict({ pageLang: 'en', targetLang: 'zh-CN' }).verdict, 'ask');
-});
-
-test('可翻语言名单反过来按基码，勾的是「中文」不是「简体中文」', () => {
-  // autoTranslateLangs 是设置页上那张勾选表，值是基码。拿整码比，一个勾了 zh 的
-  // 用户会被这一档挡在所有 zh-CN 的页面外面。
-  const listed = (pageLang) => SiteRules.decide(ask({
-    pageLang, targetLang: 'en',
-    settings: { autoTranslate: true, autoTranslateLangs: ['zh', 'ja'] },
-  }));
-  assert.equal(listed('zh-CN').reason, R.DEFAULT_ASK);
-  assert.equal(listed('zh-TW').reason, R.DEFAULT_ASK);
-  assert.equal(listed('ja-JP').reason, R.DEFAULT_ASK);
-  assert.equal(listed('de').reason, R.LANG_NOT_LISTED);
+  // 阶梯里再没有「问一句」这个答案。
+  assert.equal(Object.values(R).some((r) => /ASK|LANG/.test(r)), false);
 });
 
 // ------------------------------------------------------------ 主机名
@@ -215,12 +156,12 @@ test('one tenant choice does not decide for the tenant next door', () => {
   // 少剥一层只是范围小，多剥一层是替用户做了他没做的决定。
   const rules = { 'alice.github.io': 'always' };
   assert.equal(verdict({ host: 'alice.github.io', userRules: rules }).reason, R.USER_ALWAYS);
-  assert.equal(verdict({ host: 'bob.github.io', userRules: rules }).verdict, 'ask');
-  assert.equal(verdict({ host: 'github.io', userRules: rules }).verdict, 'ask');
+  assert.equal(verdict({ host: 'bob.github.io', userRules: rules }).verdict, 'off');
+  assert.equal(verdict({ host: 'github.io', userRules: rules }).verdict, 'off');
   // 「不要翻译」同理：blogspot 上拉黑一个博客不该拉黑所有博客。
   const never = { 'a.blogspot.com': 'never' };
   assert.equal(verdict({ host: 'a.blogspot.com', userRules: never }).reason, R.USER_NEVER);
-  assert.equal(verdict({ host: 'b.blogspot.com', userRules: never }).verdict, 'ask');
+  assert.equal(verdict({ host: 'b.blogspot.com', userRules: never }).verdict, 'off');
 });
 
 test('siteLabel prints the key the rule is stored under, and the raw host where there is none', () => {
@@ -243,7 +184,7 @@ test('a user rule is looked up along the parent chain, so normalizeHost is a con
   assert.equal(verdict({ host: 'example.co.uk', userRules: rules }).reason, R.USER_ALWAYS);
 
   // 父域不会因为子域的规则被圈进去。
-  assert.equal(verdict({ host: 'example.com', userRules: { 'a.example.com': 'never' } }).verdict, 'ask');
+  assert.equal(verdict({ host: 'example.com', userRules: { 'a.example.com': 'never' } }).verdict, 'off');
   // 更近的那条赢。
   assert.equal(verdict({
     host: 'a.example.com', userRules: { 'a.example.com': 'never', 'example.com': 'always' },
@@ -260,12 +201,12 @@ test('a single-label host can carry a user rule — it is where normalizeHost pu
   }
   // IP 同理：它只问它自己，不问不存在的「父域」。
   assert.equal(verdict({ host: '10.0.0.7', userRules: { '10.0.0.7': 'always' } }).reason, R.USER_ALWAYS);
-  assert.equal(verdict({ host: '10.0.0.7', userRules: { '0.0.7': 'always' } }).verdict, 'ask');
+  assert.equal(verdict({ host: '10.0.0.7', userRules: { '0.0.7': 'always' } }).verdict, 'off');
 });
 
 test('a bare TLD is never asked — that rule would cover half the web', () => {
-  assert.equal(verdict({ host: 'example.com', userRules: { com: 'always' } }).verdict, 'ask');
-  assert.equal(verdict({ host: 'shop.example.co.uk', userRules: { uk: 'never' } }).verdict, 'ask');
+  assert.equal(verdict({ host: 'example.com', userRules: { com: 'always' } }).verdict, 'off');
+  assert.equal(verdict({ host: 'shop.example.co.uk', userRules: { uk: 'never' } }).verdict, 'off');
 });
 
 // ------------------------------------------------------------ 内置规则
@@ -302,11 +243,10 @@ test('ar5iv 走的是 arxiv.org/html/* 那一条，不另写一条', () => {
 });
 
 // 论文这一族的规则都是 always，而「自动翻译」这件事只在 verdict 是 auto 时发生
-// —— matchBuiltin 命中了但 state 不是 always，结论会一路掉到语言那几档去。
+// —— matchBuiltin 命中了但 state 不是 always，结论会一路掉到 DEFAULT_OFF 去。
 test('论文页的规则都真的自动翻，不是只命中', () => {
   const at = (host, path) => SiteRules.decide({
-    host, path, pageLang: 'en', targetLang: 'zh-CN',
-    settings: { autoTranslate: true }, userRules: {},
+    host, path, settings: { autoTranslate: true }, userRules: {},
   });
   for (const [host, path] of [
     ['arxiv.org', '/abs/2401.00001'],
@@ -329,27 +269,27 @@ test('论文页的规则都真的自动翻，不是只命中', () => {
   }
 
   // Hugging Face 只有 /papers 那一段：模型页、数据集页、讨论区不在内置名单上。
-  assert.equal(at('huggingface.co', '/').verdict, 'ask');
-  assert.equal(at('huggingface.co', '/models').verdict, 'ask');
+  assert.equal(at('huggingface.co', '/').verdict, 'off');
+  assert.equal(at('huggingface.co', '/models').verdict, 'off');
 
   // 而且是**整段**的 /papers，不是以 papers 开头的任何一段。pathMatches 把 `*`
   // 展开成 `.*`，所以写 `/papers*` 会把别人的组织主页也收进来——内置规则是
   // always，认错就是在一个从没问过用户的页面上自己动手。
-  assert.equal(at('huggingface.co', '/paperswithcode').verdict, 'ask');
-  assert.equal(at('huggingface.co', '/papers-reading-group').verdict, 'ask');
+  assert.equal(at('huggingface.co', '/paperswithcode').verdict, 'off');
+  assert.equal(at('huggingface.co', '/papers-reading-group').verdict, 'off');
   assert.equal(at('huggingface.co', '/papers/date/2026-09-21').verdict, 'auto');
 
   // Google 学术同样是路径写死的一段：同域下的作者主页不是「扫一眼今天有什么」
   // 的场景，没被收进来。
-  assert.equal(at('scholar.google.com', '/citations?user=x').verdict, 'ask');
-  assert.equal(at('scholar.google.co.jp', '/citations?user=x').verdict, 'ask');
+  assert.equal(at('scholar.google.com', '/citations?user=x').verdict, 'off');
+  assert.equal(at('scholar.google.co.jp', '/citations?user=x').verdict, 'off');
   // 各国门牌是一个一个列出来的，不是 scholar.google.* —— 没有公共后缀表，那个
   // 通配会把别人注册的 scholar.google.<随便什么>.com 一起认成 Google 学术。
-  assert.equal(at('scholar.google.evil.com', '/scholar').verdict, 'ask');
-  assert.equal(at('scholar.google.com.evil.net', '/scholar').verdict, 'ask');
+  assert.equal(at('scholar.google.evil.com', '/scholar').verdict, 'off');
+  assert.equal(at('scholar.google.com.evil.net', '/scholar').verdict, 'off');
   // 期刊站也一样只认文章路径，首页和栏目页不在内置名单上。
-  assert.equal(at('www.nature.com', '/').verdict, 'ask');
-  assert.equal(at('www.science.org', '/journals').verdict, 'ask');
+  assert.equal(at('www.nature.com', '/').verdict, 'off');
+  assert.equal(at('www.science.org', '/journals').verdict, 'off');
 });
 
 // 一条内置规则的 selector 写错了不会报错：它只是一条谁也匹配不上的字符串，页面
@@ -380,11 +320,11 @@ test('选择器名单查没查过，都写在规则旁边', () => {
 
 test('the matched rule rides along with every verdict, including the off ones', () => {
   // 适配层要它的 selector，那和“这次翻不翻”是两件事。
-  const blocked = SiteRules.decide(ask({ host: 'x.com', userRules: { 'x.com': 'never' } }));
+  const blocked = SiteRules.decide(input({ host: 'x.com', userRules: { 'x.com': 'never' } }));
   assert.equal(blocked.verdict, 'off');
   assert.equal(blocked.rule.match, 'x.com');
   assert.deepEqual(blocked.rule.atomicBlockSelectors, ['[data-testid="tweetText"]']);
-  assert.equal(SiteRules.decide(ask({})).rule, null);
+  assert.equal(SiteRules.decide(input({})).rule, null);
 });
 
 test('the rule handed out is frozen — the adapter layer gets a copy of nothing', () => {
@@ -411,7 +351,7 @@ test('the shipped table is internally consistent', () => {
   // 按门牌逐个问：一组 match 里有一个被黑名单盖住，别的门牌照常生效也藏不住它。
   for (const rule of table.rules) {
     for (const pattern of [].concat(rule.match)) {
-      const { verdict: v, reason } = SiteRules.decide(ask({
+      const { verdict: v, reason } = SiteRules.decide(input({
         host: pattern.split('/')[0],
         path: pattern.includes('/') ? `/${pattern.split('/').slice(1).join('/').replace('*', 'x')}` : '/',
       }));
@@ -425,23 +365,21 @@ test('the shipped table is internally consistent', () => {
   }
 });
 
-test('reasons are an enum, and every verdict is one of three words', () => {
+test('reasons are an enum, and every verdict is one of two words', () => {
   // reason 一旦变成拼出来的句子，就既不能测也不能翻译。
   for (const value of Object.values(R)) assert.match(value, /^[A-Z_]+$/);
   assert.ok(Object.isFrozen(R));
 
   const inputs = [
-    {}, { host: 'x.com' }, { host: 'mail.qq.com' }, { pageLang: null },
+    {}, { host: 'x.com' }, { host: 'mail.qq.com' },
     { host: 'arxiv.org', path: '/pdf/2501.00001' },
     { explicit: true }, { settings: { autoTranslate: false } },
     { userRules: { 'example.com': 'never' } }, { userRules: { 'example.com': 'always' } },
-    { pageLang: 'zh', targetLang: 'zh-CN' },
-    { pageLang: 'de', settings: { autoTranslate: true, autoTranslateLangs: ['en'] } },
   ];
   const seen = new Set();
   for (const input of inputs) {
     const d = verdict(input);
-    assert.ok(['auto', 'ask', 'off'].includes(d.verdict));
+    assert.ok(['auto', 'off'].includes(d.verdict));
     assert.ok(Object.values(R).includes(d.reason), `${d.reason} is not in REASONS`);
     seen.add(d.reason);
   }
@@ -450,7 +388,7 @@ test('reasons are an enum, and every verdict is one of three words', () => {
 });
 
 test('decide survives being asked nothing at all', () => {
-  // 内容脚本在一个还没解析出语言、也还没读到设置的页面上就会这样调它。
+  // 内容脚本在一个还没读到设置的页面上就会这样调它。
   for (const input of [undefined, {}, { settings: null, userRules: null }]) {
     const d = SiteRules.decide(input);
     assert.equal(d.verdict, 'off');
@@ -496,7 +434,7 @@ function fakeChrome(initial = {}) {
 }
 
 test('writeUserRule 写的是 normalizeHost 认的那个键', async () => {
-  // 追问条拿到的是 location.hostname（`www.example.com`），decide() 查的是归一化
+  // 弹窗拿到的是 location.hostname（`www.example.com`），decide() 查的是归一化
   // 之后的 `example.com`。两边各自剥一次，迟早剥得不一样 —— 那时候规则写进去了，
   // 却永远查不出来。
   const fake = fakeChrome();
@@ -506,7 +444,7 @@ test('writeUserRule 写的是 normalizeHost 认的那个键', async () => {
     assert.equal(key, SiteRules.normalizeHost('www.example.com'));
     assert.deepEqual(fake.store.siteRules, { [key]: 'always' });
     // 写进去的立刻要能被判定读出来。
-    assert.equal(SiteRules.decide(ask({ userRules: fake.store.siteRules })).reason, R.USER_ALWAYS);
+    assert.equal(SiteRules.decide(input({ userRules: fake.store.siteRules })).reason, R.USER_ALWAYS);
   } finally {
     delete globalThis.chrome;
   }
@@ -520,7 +458,7 @@ test('关掉一个站点写的是 never，不是把它的规则删掉', async ()
   try {
     await SiteRules.writeUserRule('x.com', 'never');
     assert.deepEqual(fake.store.siteRules, { 'x.com': 'never' });
-    assert.equal(SiteRules.decide(ask({ host: 'x.com', userRules: fake.store.siteRules })).reason, R.USER_NEVER);
+    assert.equal(SiteRules.decide(input({ host: 'x.com', userRules: fake.store.siteRules })).reason, R.USER_NEVER);
   } finally {
     delete globalThis.chrome;
   }
@@ -549,98 +487,18 @@ test('两个页面同时写，谁的选择都不会被对方盖掉', async () =>
     await Promise.all([
       SiteRules.writeUserRule('a.test', 'always'),
       SiteRules.writeUserRule('b.test', 'never'),
-      SiteRules.updateAskCount('c.test', 'bump'),
-      SiteRules.updateAskCount('c.test', 'bump')
+      SiteRules.writeUserRule('c.test', 'always'),
     ]);
-    assert.deepEqual(fake.store.siteRules, { 'a.test': 'always', 'b.test': 'never' });
-    // 同一个域名被问了两次就是两次 —— 各读各的会停在 1，三次的额度永远攒不满。
-    assert.deepEqual(fake.store.siteAskCount, { 'c.test': 2 });
+    assert.deepEqual(fake.store.siteRules, { 'a.test': 'always', 'b.test': 'never', 'c.test': 'always' });
   } finally {
     delete globalThis.chrome;
   }
 });
 
-test('表态之后计数清零，清的是这一条不是整张表', async () => {
-  const fake = fakeChrome({ siteAskCount: { 'a.test': 2, 'b.test': 1 } });
-  globalThis.chrome = fake.chrome;
-  try {
-    assert.equal(await SiteRules.updateAskCount('a.test', 'clear'), 0);
-    assert.deepEqual(fake.store.siteAskCount, { 'b.test': 1 });
-  } finally {
-    delete globalThis.chrome;
-  }
-});
+// ------------------------------------------------ 站点规则表的字节预算
 
 // 和 shared/storage-writer.js 里的 ITEM_BUDGET 一致。
-const MAX_ASK_BYTES = 6 * 1024;
-const askBytes = (counts) => new TextEncoder().encode(JSON.stringify(counts)).length;
-
-// 撑到刚好超过预算为止。按条数算不出这个数：一条占多少字节取决于域名有多长，
-// 这正是上限要按字节而不是按条数的理由。
-function overflowingCounts(seed) {
-  const counts = Object.assign({}, seed);
-  for (let i = 0; askBytes(counts) <= MAX_ASK_BYTES; i++) {
-    counts[`host-${String(i).padStart(4, '0')}.example.test`] = 9;
-  }
-  return counts;
-}
-
-test('追问计数不会一路长到把同步配额撑爆', async () => {
-  // 这张表只为「同一个站点最多问几次」而存在，却按域名无限长。同步存储每项
-  // 8KB，撑满那天 set() 直接失败、调用方只打一行日志 —— 从此所有站点都记不上
-  // 数，追问上限静悄悄地不再生效。
-  const fake = fakeChrome({ siteAskCount: overflowingCounts({ 'seldom.test': 1 }) });
-  globalThis.chrome = fake.chrome;
-  try {
-    assert.equal(await SiteRules.updateAskCount('fresh.test', 'bump'), 1);
-    const kept = fake.store.siteAskCount;
-    assert.ok(askBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${askBytes(kept)} 字节`);
-    assert.equal(kept['fresh.test'], 1, '刚记下的这一条必须留着');
-    assert.equal(kept['seldom.test'], undefined, '先扔问得最少的：重新问一次的代价最小');
-  } finally {
-    delete globalThis.chrome;
-  }
-});
-
-test('域名越长，装得下的站点越少 —— 上限量的是字节', async () => {
-  // 按条数封顶的版本在这里会放行：两百条以内，可每条都是一个 200 字符的域名，
-  // 序列化出来远远超过 8KB，set() 照样会被拒。
-  const long = (i) => `${'sub.'.repeat(40)}h${i}.example.test`;
-  const counts = {};
-  for (let i = 0; i < 60; i++) counts[long(i)] = 5;
-  assert.ok(Object.keys(counts).length < 200, '条数还远没到两百');
-  assert.ok(askBytes(counts) > MAX_ASK_BYTES, '字节数却早就超了');
-
-  const fake = fakeChrome({ siteAskCount: counts });
-  globalThis.chrome = fake.chrome;
-  try {
-    await SiteRules.updateAskCount('fresh.test', 'bump');
-    assert.ok(askBytes(fake.store.siteAskCount) <= MAX_ASK_BYTES);
-    assert.equal(fake.store.siteAskCount['fresh.test'], 1);
-  } finally {
-    delete globalThis.chrome;
-  }
-});
-
-test('挤位置的时候，不挤掉刚刚动过的那一条', async () => {
-  // 正在追问的就是计数最小的那个站点：要是「扔最小的」连它一起扔了，这一条
-  // 计数永远停在 1，用户会被同一个站点问到天荒地老。
-  const fake = fakeChrome({
-    siteAskCount: overflowingCounts({ 'now.test': 1, 'idle.test': 1 })
-  });
-  globalThis.chrome = fake.chrome;
-  try {
-    assert.equal(await SiteRules.updateAskCount('now.test', 'bump'), 2);
-    const kept = fake.store.siteAskCount;
-    assert.ok(askBytes(kept) <= MAX_ASK_BYTES);
-    assert.equal(kept['now.test'], 2);
-    assert.equal(kept['idle.test'], undefined);
-  } finally {
-    delete globalThis.chrome;
-  }
-});
-
-// ------------------------------------------------ 站点规则表也有同一道预算
+const ITEM_BYTES = 6 * 1024;
 
 const ruleBytes = (rules) => new TextEncoder().encode(JSON.stringify(rules)).length;
 
@@ -649,7 +507,7 @@ const ruleBytes = (rules) => new TextEncoder().encode(JSON.stringify(rules)).len
 // 谁，压缩一条都动不了）。
 function overflowingRules(seed, under = '') {
   const rules = Object.assign({}, seed);
-  for (let i = 0; ruleBytes(rules) <= MAX_ASK_BYTES; i++) {
+  for (let i = 0; ruleBytes(rules) <= ITEM_BYTES; i++) {
     rules[under ? `sub-${i}.${under}` : `filler-${i}.example-${i}.test`] = 'always';
   }
   return rules;
@@ -665,7 +523,7 @@ test('规则表挤爆了，先收掉「收了也查不出差别」的那些', as
   try {
     await SiteRules.writeUserRule('new.test', 'never');
     const kept = fake.store.siteRules;
-    assert.ok(ruleBytes(kept) <= MAX_ASK_BYTES, `写回去的这张表是 ${ruleBytes(kept)} 字节`);
+    assert.ok(ruleBytes(kept) <= ITEM_BYTES, `写回去的这张表是 ${ruleBytes(kept)} 字节`);
     assert.ok(Object.keys(kept).length < Object.keys(before).length, '一条都没收');
     assert.equal(kept['x.com'], 'always', '盖住它们的那条不能跟着走');
     assert.equal(kept['new.test'], 'never', '刚写下的那一条永远留着');
@@ -748,35 +606,28 @@ test('压缩也腾不出地方，就让写入失败传出去', async () => {
 // 「这个站点不许我们自己动手」和「这一页不必翻」是两句话。整页翻译只看 verdict，
 // 所以从前不必分；字幕那一面（替观众点开播放器的原字幕）要的是前一句，于是
 // decide() 把它算成一个字段，分类留在阶梯自己这边。
-test('refused 只认站点级的三条拒绝，不认语言结论', () => {
-  const refused = (over) => SiteRules.decide(ask(over));
+test('refused 只认站点级的拒绝，不认名单外的安静 off', () => {
+  const refused = (over) => SiteRules.decide(input(over));
 
   // 站点级：总开关关着、在禁翻名单里、用户对这个域名写过 never。
   assert.equal(refused({ settings: { autoTranslate: false } }).refused, true);
   assert.equal(refused({ host: 'mail.google.com', path: '/mail/u/0/' }).refused, true);
   assert.equal(refused({ userRules: { 'example.com': 'never' } }).refused, true);
 
-  // 语言结论也答 off，但它量的是**页面**的语言。字幕说的是**声道**的语言，中文
-  // 界面的视频站放一场英文演讲，这两条会答「不必翻」，而要翻的是那条英文字幕轨。
-  const same = refused({ pageLang: 'zh-CN' });
-  assert.equal(same.verdict, 'off');
-  assert.equal(same.reason, R.SAME_LANGUAGE);
-  assert.equal(same.refused, false);
+  // 名单外的站点也答 off，但那只是「我们不主动动手」，不是「这里不许动」：字幕
+  // 在一个没上名单的视频站上照翻。
+  const quiet = refused({});
+  assert.equal(quiet.verdict, 'off');
+  assert.equal(quiet.reason, R.DEFAULT_OFF);
+  assert.equal(quiet.refused, false);
 
-  const notListed = refused({ settings: { autoTranslate: true, autoTranslateLangs: ['ja'] } });
-  assert.equal(notListed.verdict, 'off');
-  assert.equal(notListed.reason, R.LANG_NOT_LISTED);
-  assert.equal(notListed.refused, false);
-
-  // 中间那一大片 ask，以及所有 auto，都不是拒绝。
-  assert.equal(refused({}).refused, false);
-  assert.equal(refused({ pageLang: null }).refused, false);
+  // 所有 auto 都不是拒绝。
   assert.equal(refused({ userRules: { 'example.com': 'always' } }).refused, false);
 });
 
 test('总开关关着但用户已经在这一页表过态，就不算这个站点拒绝了我们', () => {
   // explicit 越过总开关是阶梯本来就有的行为；refused 跟着同一个结论走，不另算。
-  const held = SiteRules.decide(ask({ settings: { autoTranslate: false }, explicit: true }));
+  const held = SiteRules.decide(input({ settings: { autoTranslate: false }, explicit: true }));
   assert.equal(held.verdict, 'auto');
   assert.equal(held.refused, false);
 });
@@ -798,8 +649,6 @@ const LOAD_ORDER = [
    'table() 拿不到数据源时不抛，它退回一张空表 —— matchBuiltin() 谁也不认，'
    + 'isBlocked() 对每一个域名都答「不在黑名单里」。那份禁翻清单（网银、网页'
    + '邮箱、政务表单）就这么静静地没了，而控制台里只有一行 warn。'],
-  ['shared/site-rules.js', 'shared/lang-tags.js',
-   'site-rules.js 在加载时就把 getLangBase 取走了。'],
   ['shared/caption-core.js', 'shared/lang-tags.js',
    'caption-core.js 在加载时就把 getLangBase 取走了。'],
   // 同步存储的单写者队列：三家写入在加载时就取走 StorageWriter，没有它就抛。

@@ -16,7 +16,6 @@ import { workerSource, messageCatalog, contentBundle, contentCss } from './helpe
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
-await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
@@ -28,8 +27,8 @@ const R = SiteRules.REASONS;
 
 test('arXiv 的 /pdf/ 不走整页翻译，而它的 /abs/ 照常走', () => {
   const ask = (path) => SiteRules.decide({
-    host: 'arxiv.org', path, pageLang: 'en', targetLang: 'zh-CN',
-    userRules: {}, settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    host: 'arxiv.org', path,
+    userRules: {}, settings: { autoTranslate: true }, explicit: false,
   });
   const pdf = ask('/pdf/2501.00001');
   assert.equal(pdf.verdict, 'off');
@@ -42,9 +41,9 @@ test('内置的 never 用户翻不过来，而它不是黑名单', () => {
   // 是「这一页不走这条路」，不是一条可以覆盖的偏好）；但它说出来的理由不能是
   // 「这个网站被拉黑了」—— 那句话在 /abs/ 上是假的，而条子上照着理由说话。
   const over = SiteRules.decide({
-    host: 'arxiv.org', path: '/pdf/2501.00001', pageLang: 'en', targetLang: 'zh-CN',
+    host: 'arxiv.org', path: '/pdf/2501.00001',
     userRules: { 'arxiv.org': 'always' },
-    settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    settings: { autoTranslate: true }, explicit: false,
   });
   assert.equal(over.verdict, 'off');
   assert.equal(over.reason, R.BUILTIN_NEVER);
@@ -59,8 +58,8 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
   // refused 那一位，而它由 REFUSALS 决定。少收这一档，一份 PDF 上的 <video>
   // 就会自己开始往第三方送字幕。
   const pdf = SiteRules.decide({
-    host: 'arxiv.org', path: '/pdf/2501.00001', pageLang: 'en', targetLang: 'zh-CN',
-    userRules: {}, settings: { autoTranslate: true, autoTranslateLangs: [] }, explicit: false,
+    host: 'arxiv.org', path: '/pdf/2501.00001',
+    userRules: {}, settings: { autoTranslate: true }, explicit: false,
   });
   assert.equal(pdf.refused, true);
 
@@ -96,17 +95,19 @@ test('提示条只在真是一份 PDF 文档、而且开关开着的时候出现
   assert.match(src, /application\/pdf/);
 });
 
-test('条子让位给 offer，而且不花掉这个站点的追问额度', () => {
+test('offer 有自己的一档和自己的两句按钮文案', () => {
   const src = repoFile('content/content-auto-status.js');
-  // 模式阶梯：offer 排在 ask 前面。一份 PDF 上的正文是空的，「翻译这一页？」
-  // 点下去一个字也出不来。
-  assert.match(src, /offer \? 'offer' : \(asking \? 'ask' : ''\)/);
-  // 要号那一步压在 mode === 'ask' 下面，所以 offer 不经过它。
-  assert.match(src, /mode === 'ask' && askSlot/);
-  // 勾选框在 offer 下藏起来（「记住这个站点」在一份文档上没有对应的意思），
-  // 而两个按钮正是它要的，不能跟着藏。
+  // 模式阶梯：notice > explain > offer，没有追问那一档（D-351）。
+  assert.match(src, /notice \? 'notice' : \(explaining \? 'explain' : \(offer \? 'offer' : ''\)\)/);
+  // 按钮说的是 offer 自己的话，不借已删掉的追问文案。
+  assert.match(src, /t\('autoOfferAccept'\)/);
+  assert.match(src, /t\('autoOfferDismiss'\)/);
+  const catalog = messageCatalog();
+  for (const lang of Object.keys(catalog)) {
+    for (const k of ['autoOfferAccept', 'autoOfferDismiss']) assert.ok(catalog[lang][k], `${lang} 缺 ${k}`);
+  }
+  // 两个按钮正是 offer 要的，CSS 不能把它们藏掉。
   const css = contentCss();
-  assert.match(css, /\[data-mode="notice"\], \[data-mode="offer"\]\) \.ai-translator-auto-remember/);
   assert.equal(
     /\[data-mode="offer"\][^\n]*data-act="translate"/.test(css), false,
     'offer 把自己的按钮藏掉了');

@@ -54,22 +54,20 @@ test('调度层读的全局，都由排在它前面的文件提供', () => {
   }
 });
 
-test('默认设置里有自动翻译的三个键，而且总开关默认开', () => {
+test('默认设置里有自动翻译的两个键，而且总开关默认开', () => {
   const defaults = DefaultSettings.contentDefaults();
   assert.equal(defaults.autoTranslate, true);
   assert.deepEqual(defaults.siteRules, {});
-  assert.deepEqual(defaults.autoTranslateLangs, []);
+  // 可翻语言名单随追问一起删了（D-351）：名单外的站点不再按页面语言再问一句。
+  assert.equal('autoTranslateLangs' in defaults, false);
 });
 
 test('容器型默认值每次给一份新的：一处记下站点规则不会污染下一处', () => {
   const a = DefaultSettings.contentDefaults();
   const b = DefaultSettings.contentDefaults();
   assert.notEqual(a.siteRules, b.siteRules);
-  assert.notEqual(a.autoTranslateLangs, b.autoTranslateLangs);
   a.siteRules['example.com'] = 'always';
-  a.autoTranslateLangs.push('en');
   assert.deepEqual(b.siteRules, {});
-  assert.deepEqual(b.autoTranslateLangs, []);
   // 源头本身是冻的，谁想就地改它都会当场抛，而不是悄悄改掉所有人的默认值。
   assert.throws(() => { DefaultSettings.CONTENT_DEFAULTS.siteRules['x.com'] = 'never'; }, TypeError);
 });
@@ -83,14 +81,15 @@ test('译文写回页面只有一个入口 —— 迟到校验才不会漏在某
   assert.match(source, /if \(accept && !accept\(block\)\) return;/);
 });
 
-test('语言判定的阈值只有一处，且调度层用的是同一个函数', () => {
+test('语言判定的阈值只有一处，调度层不看页面语言', () => {
   const batch = code('content/page/batch.js');
   assert.equal((batch.match(/LANGUAGE_CONFIDENCE_MIN/g) || []).length, 2, '一处定义一处使用');
-  assert.match(batch, /ctx\.detectReliableLanguage = detectReliableLanguage;/);
+  // 调度层从前拿它判整页语言（给追问条的第二问用）。追问删了以后没有第二个调用
+  // 方，也就不再挂到 ctx 上。
+  assert.doesNotMatch(batch, /ctx\.detectReliableLanguage\s*=/);
 
   const scheduler = code('content/content-auto-translate.js');
-  assert.match(scheduler, /ctx\.detectReliableLanguage\(/);
-  assert.doesNotMatch(scheduler, /detectLanguage\s*\(/, '调度层不该自己再探一次语言');
+  assert.doesNotMatch(scheduler, /detectReliableLanguage|detectLanguage\s*\(/, '调度层不该探页面语言');
   assert.doesNotMatch(scheduler, /\b85\b/, '调度层不该有第二套把握程度阈值');
 });
 
@@ -165,7 +164,7 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // 都跑不了；而判定照常跟上，否则 popup 上那个站点开关会一直停在「开」。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(pageLang\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);
@@ -201,7 +200,7 @@ test('换引擎也要重开一轮 —— 只作废不重扫，页面会一直空
   const scheduler = code('content/content-auto-translate.js');
   const keys = scheduler.match(/const RESTART_KEYS = \[([^\]]*)\]/);
   assert.ok(keys, 'RESTART_KEYS 应当是一处列全的清单');
-  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang', 'translationEngine']) {
+  for (const key of ['autoTranslate', 'siteRules', 'targetLang', 'translationEngine']) {
     assert.ok(keys[1].includes(`'${key}'`), `${key} 变了这一页要从头来过`);
   }
 });
@@ -406,7 +405,7 @@ test('改对了密钥/地址/模型/回落，停在错误上的那一页要自�
   const auto = code('content/content-auto-translate.js');
   const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
   assert.ok(keys, 'RESTART_KEYS 不见了');
-  for (const key of ['autoTranslate', 'siteRules', 'autoTranslateLangs', 'targetLang',
+  for (const key of ['autoTranslate', 'siteRules', 'targetLang',
     'skipTargetLanguageText', 'translationEngine',
     'apiKey', 'apiEndpoint', 'modelName', 'engineFallback']) {
     assert.ok(keys[1].includes(`'${key}'`), `RESTART_KEYS 少了 ${key}`);

@@ -400,8 +400,8 @@ this site's rule — and the engine reads it off the scheduler's snapshot
 (`siteRefused()` in `content/captions/activation.js`, subscribed through
 `ctx.autoTranslate.onStateChange`, which is why `ctx.init` starts the scheduler
 first). It asks `siteRefused`, **not** `siteAuto`: video sites are not on the
-built-in Always list, so the page-text answer there is usually `ask` and
-`siteAuto` is permanently false — gating on it would mean subtitles never work
+built-in Always list, so the page-text answer there is usually a quiet off
+(`DEFAULT_OFF`, not a refusal) and `siteAuto` is permanently false — gating on it would mean subtitles never work
 where they matter most. What has to be true is only that this site is not
 *refused* (`GLOBAL_OFF` / `BLOCKLIST` / `USER_NEVER`, the `REFUSALS` list in
 `shared/site-rules.js`). Anything the answer is not yet — the scheduler has not
@@ -535,12 +535,10 @@ Two rules the generic provider exists to keep:
   answer "already in your language" to exactly the conversion the viewer wants;
   the cue cache is keyed on the whole tag for the same reason. That judgement
   is **not the caption engine's own** — `shared/lang-tags.js` is the single
-  owner, and `SiteRules.decide()` and `content/page/batch.js` ask the same one,
-  so a page and its subtitles can no longer answer "is this already your
-  language?" differently on the same tab. Anything that loads
-  `shared/caption-core.js` or `shared/site-rules.js` must load `lang-tags.js`
-  first; both throw at load without it, and `test/unit/site-rules.test.mjs`
-  checks the order in all four load lists. For page text there is one more
+  owner, and `content/page/batch.js` asks the same one, so a page and its
+  subtitles can no longer answer "is this already your language?"
+  differently on the same tab. Anything that loads `shared/caption-core.js`
+  must load `lang-tags.js` first; it throws at load without it. For page text there is one more
   step before that question can be asked at all: `chrome.i18n.detectLanguage`
   answers a plain `zh` for both scripts (measured in the e2e Chrome — 100%,
   `isReliable`, no subtag), so `LangTags.refineScript()` reads the script off

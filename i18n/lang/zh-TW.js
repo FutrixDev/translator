@@ -363,17 +363,13 @@
     hintEngineFallback: '內建引擎免費，你自己的介接不是。改用它會花你的額度，所以只有在這裡選了才會發生。',
 
     // 自动翻译：追问条
-    autoAskPrompt: '這一頁要翻譯嗎？',
-    autoAskTranslate: '翻譯',
-    autoAskDismiss: '不用',
+    autoOfferAccept: '翻譯',
+    autoOfferDismiss: '不用',
     pdfAskPrompt: '這是一份 PDF 文件，翻譯它會按頁數消耗額度',
-    autoAskAlways: '總是翻譯 {site}',
     autoStopSite: '不再自動翻譯 {site}',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '這一頁不翻譯',
-    autoStateAsk: '等你決定',
-    autoStatePending: '等頁面穩定下來',
     autoStateIdle: '這一頁已經翻好了',
     autoStateRunning: '正在翻譯…',
     autoStatePartial: '還有 {count} 段沒翻成',
@@ -388,10 +384,7 @@
     autoReasonUserExplicit: '這一頁是你自己要翻的',
     autoReasonUserAlways: '你選過這個站點「總是翻譯」',
     autoReasonBuiltinAlways: '這個站點預設自動翻譯',
-    autoReasonSameLanguage: '本來就是你的語言',
-    autoReasonLangNotListed: '這一頁的語言不在你的名單裡',
-    autoReasonUnknownLanguage: '判不出這一頁是什麼語言',
-    autoReasonDefaultAsk: '新站點先問一句',
+    autoReasonDefaultOff: '不在名單上的站點保持原樣',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: '自動翻譯只用免費的內建引擎，而這一頁用不了它',
@@ -407,9 +400,7 @@
 
     autoTranslateSection: '自動翻譯',
     autoTranslateEnable: '自動翻譯網頁',
-    hintAutoTranslate: '總開關。開著時，你設成「總是翻譯」的站點、以及內建名單裡的站點，打開就是譯文；別的站點會先問你一次。關掉它，所有自動翻譯立刻全部停下。',
-    autoTranslateLangsLabel: '只自動翻這些語言',
-    hintAutoTranslateLangs: '它只把「問」收窄，別的什麼也不做。在你還沒表過態、內建名單也沒涵蓋的站點上，沒勾中的那些語言的頁面會被直接放過，而不是來問你一句；一個都不勾，就什麼都不篩。它不會讓任何一頁翻起來，也蓋不過你設成「總是翻譯」的站點。',
+    hintAutoTranslate: '總開關。開著時，你設成「總是翻譯」的站點、以及內建名單裡的站點，打開就是譯文；別的站點保持原樣，要翻就點工具列圖示、翻譯球或按快捷鍵。關掉它，所有自動翻譯立刻全部停下。',
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: '自動翻譯用哪個引擎',

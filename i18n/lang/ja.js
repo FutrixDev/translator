@@ -363,17 +363,13 @@
     hintEngineFallback: '組み込みエンジンは無料ですが、自分の API は有料です。切り替えると自分の利用枠を消費するため、ここで選んだときだけ行われます。',
 
     // 自动翻译：追问条
-    autoAskPrompt: 'このページを翻訳しますか？',
-    autoAskTranslate: '翻訳',
-    autoAskDismiss: '今はしない',
+    autoOfferAccept: '翻訳',
+    autoOfferDismiss: '今はしない',
     pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
-    autoAskAlways: '{site} を常に翻訳',
     autoStopSite: '{site} の自動翻訳をやめる',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: 'このページは翻訳しません',
-    autoStateAsk: '選択待ちです',
-    autoStatePending: 'ページが落ち着くのを待っています',
     autoStateIdle: 'このページは翻訳済みです',
     autoStateRunning: '翻訳中…',
     autoStatePartial: '{count} 件が未翻訳です',
@@ -388,10 +384,7 @@
     autoReasonUserExplicit: 'あなたがこのページを翻訳しました',
     autoReasonUserAlways: 'このサイトを「常に翻訳」に設定しています',
     autoReasonBuiltinAlways: 'このサイトは自動的に翻訳されます',
-    autoReasonSameLanguage: 'すでに対象言語です',
-    autoReasonLangNotListed: 'このページの言語はリストにありません',
-    autoReasonUnknownLanguage: '言語を判定できませんでした',
-    autoReasonDefaultAsk: '新しいサイトではまず確認します',
+    autoReasonDefaultOff: 'リストにないサイトはそのままにします',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: '自動翻訳は無料の内蔵エンジンのみを使いますが、このページでは使えません',
@@ -407,9 +400,7 @@
 
     autoTranslateSection: '自動翻訳',
     autoTranslateEnable: 'ページを自動で翻訳する',
-    hintAutoTranslate: 'メインスイッチです。オンのとき、「常に翻訳」にしたサイトと組み込みリストのサイトは開いた時点で訳文になります。それ以外のサイトでは一度だけ確認します。オフにすると、自動翻訳はどこでもすべて止まります。',
-    autoTranslateLangsLabel: 'この言語だけ自動で翻訳する',
-    hintAutoTranslateLangs: 'これは「尋ねる」範囲を狭めるだけで、ほかには何もしません。まだ決めていないサイト（内蔵リストにも載っていないサイト）では、選んでいない言語のページは尋ねられることなくそのまま見送られます。何も選ばなければ、何も絞り込みません。これだけでページが翻訳されることはなく、「常に翻訳」にしたサイトを覆すこともありません。',
+    hintAutoTranslate: 'メインスイッチです。オンのとき、「常に翻訳」にしたサイトと組み込みリストのサイトは開いた時点で訳文になります。それ以外のサイトはそのままで、翻訳するときはツールバーのアイコン、フロートボール、またはショートカットから行います。オフにすると、自動翻訳はどこでもすべて止まります。',
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: '自動翻訳に使うエンジン',

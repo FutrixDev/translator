@@ -399,18 +399,14 @@ Rules:
     engineFallbackAllowAi: 'Use my own API (billed)',
     hintEngineFallback: 'The built-in engine is free; your own API is not. Falling back spends your quota, so it only happens if you ask for it here.',
 
-    // Auto-translate: the ask bar
-    autoAskPrompt: 'Translate this page?',
-    autoAskTranslate: 'Translate',
-    autoAskDismiss: 'Not now',
+    // Auto-translate: the bar at the bottom right
+    autoOfferAccept: 'Translate',
+    autoOfferDismiss: 'Not now',
     pdfAskPrompt: 'This is a PDF. Translating it spends page credits.',
-    autoAskAlways: 'Always translate {site}',
     autoStopSite: 'Stop auto-translating {site}',
 
     // Auto-translate: the status dot
     autoStateOff: 'Not translating this page',
-    autoStateAsk: 'Waiting for your answer',
-    autoStatePending: 'Waiting for the page to settle',
     autoStateIdle: 'This page is translated',
     autoStateRunning: 'Translating…',
     autoStatePartial: '{count} blocks are still untranslated',
@@ -425,10 +421,7 @@ Rules:
     autoReasonUserExplicit: 'You asked for this page',
     autoReasonUserAlways: 'You chose always for this site',
     autoReasonBuiltinAlways: 'This site is translated automatically',
-    autoReasonSameLanguage: 'Already in your language',
-    autoReasonLangNotListed: 'This page\'s language is not on your list',
-    autoReasonUnknownLanguage: 'Couldn\'t tell what language this is',
-    autoReasonDefaultAsk: 'Asking first on a new site',
+    autoReasonDefaultOff: 'Sites not on a list are left as they are',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
     autoReasonCostEngine: 'Automatic translation only uses the free built-in engine, which this page cannot run',
@@ -445,9 +438,7 @@ Rules:
     // Auto-translate: the settings page
     autoTranslateSection: 'Automatic Translation',
     autoTranslateEnable: 'Translate pages automatically',
-    hintAutoTranslate: 'The master switch. With it on, a site you set to Always — and the sites on the built-in list — open already translated; on any other site you are asked once. Off stops all of it, everywhere.',
-    autoTranslateLangsLabel: 'Only these languages',
-    hintAutoTranslateLangs: 'This narrows the asking, and does nothing else. On a site you have not decided about — and that our built-in list does not cover — a page in a language you did not tick is passed over in silence instead of asking you. Tick nothing and nothing is filtered out. It never makes a page translate, and it never overrules a site you set to Always.',
+    hintAutoTranslate: 'The master switch. With it on, a site you set to Always — and the sites on the built-in list — open already translated; any other site stays as it is until you translate it from the toolbar icon, the float ball or the shortcut. Off stops all of it, everywhere.',
 
     // The two advanced fields on the automatic-translation card.
     autoTranslateEngineLabel: 'Engine for automatic translation',

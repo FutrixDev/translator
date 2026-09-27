@@ -379,17 +379,13 @@
     hintEngineFallback: '内置引擎免费，你自己的接口不是。回退要花你的额度，所以只有在这里选了才会发生。',
 
     // 自动翻译：追问条
-    autoAskPrompt: '这一页要翻译吗？',
-    autoAskTranslate: '翻译',
-    autoAskDismiss: '不用',
+    autoOfferAccept: '翻译',
+    autoOfferDismiss: '不用',
     pdfAskPrompt: '这是一份 PDF 文档，翻译它会按页数消耗额度',
-    autoAskAlways: '总是翻译 {site}',
     autoStopSite: '不再自动翻译 {site}',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」
     autoStateOff: '这一页不翻译',
-    autoStateAsk: '等你决定',
-    autoStatePending: '等页面稳定下来',
     autoStateIdle: '这一页已经翻好了',
     autoStateRunning: '正在翻译…',
     autoStatePartial: '还有 {count} 段没翻成',
@@ -404,10 +400,7 @@
     autoReasonUserExplicit: '这一页是你自己要翻的',
     autoReasonUserAlways: '你选过这个站点「总是翻译」',
     autoReasonBuiltinAlways: '这个站点默认自动翻译',
-    autoReasonSameLanguage: '本来就是你的语言',
-    autoReasonLangNotListed: '这一页的语言不在你的名单里',
-    autoReasonUnknownLanguage: '判不出这一页是什么语言',
-    autoReasonDefaultAsk: '新站点先问一句',
+    autoReasonDefaultOff: '不在名单上的站点保持原样',
 
     // 自动翻译：费用闸拦下来时说的话（FR-9）。前两条是状态点展开的后半句，
     // 后两条是引擎层拒绝一批翻译时回给调用方的那句。
@@ -426,9 +419,7 @@
     // Errors
     autoTranslateSection: '自动翻译',
     autoTranslateEnable: '自动翻译网页',
-    hintAutoTranslate: '总开关。开着时，你设成「总是翻译」的站点、以及内置名单里的站点，打开就是译文；别的站点会先问你一次。关掉它，所有自动翻译立刻全部停下。',
-    autoTranslateLangsLabel: '只自动翻这些语言',
-    hintAutoTranslateLangs: '它只把「问」收窄，别的什么也不做。在你还没表过态、内置名单也没覆盖的站点上，没勾中的那些语言的页面会被直接放过，而不是来问你一句；一个都不勾，就什么都不筛。它不会让任何一页翻起来，也盖不过你设成「总是翻译」的站点。',
+    hintAutoTranslate: '总开关。开着时，你设成「总是翻译」的站点、以及内置名单里的站点，打开就是译文；别的站点保持原样，要翻就点工具栏图标、翻译球或按快捷键。关掉它，所有自动翻译立刻全部停下。',
 
     // 自动翻译卡片里的两个高级字段：自动模式走哪个引擎、每天最多花多少。
     autoTranslateEngineLabel: '自动翻译用哪个引擎',

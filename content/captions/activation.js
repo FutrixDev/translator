@@ -103,8 +103,9 @@
   // 一个默认关着、藏在设置页第二张卡里的独立开关，做得再好也等于不存在；而两个
   // 开关意味着用户在一个视频站上点了「不再翻译」，字幕却照翻不误。
   //
-  // 问的是 siteRefused 而不是「这个站点开着自动翻」。视频站没上过内置 always 名
-  // 单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false —— 拿它当闸门，
+  // 问的是 siteRefused 而不是「这个站点开着自动翻」。视频站多半不在内置 always
+  // 名单上，整页那一面在那里的结论是安静的 off（DEFAULT_OFF，不是拒绝），siteAuto
+  // 永远是 false —— 拿它当闸门，
   // 字幕在它最该工作的地方一次也不会工作。要问的是「这个站点是不是被明令拒绝
   // 的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
 
@@ -213,8 +214,8 @@
   // 自己的状态**，所以它有自己的开关（autoEnableCaptions，默认关），而且有一道只
   // 合不开的闩：见 syncNativeCaptions()。
   //
-  // 闸门用的是 siteRefused 而不是「这个站点开着自动翻」。视频站点没上过内置
-  // always 名单，整页那一面在那里的结论多半是 ask，siteAuto 永远是 false——拿它
+  // 闸门用的是 siteRefused 而不是「这个站点开着自动翻」。视频站点多半不在内置
+  // always 名单上，整页那一面在那里的结论是 DEFAULT_OFF，siteAuto 永远是 false——拿它
   // 当闸门，这件事在它最该发生的地方一次也不会发生。要问的是「这个站点是不是被
   // 明令拒绝的」，那句话由 shared/site-rules.js 的 REFUSALS 定义。
   function autoEnableAllowed() {

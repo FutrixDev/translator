@@ -10,6 +10,12 @@
   anything, the page's rows wait at most 300 ms before drawing as unknown and
   repaint when the late answer lands, and the engine probe runs alongside
   instead of after it.
+- **Sites nobody has ruled on stay quiet.** The "Translate this page?" bar is
+  gone, along with its three-asks counter and the list of page languages that
+  decided whether to ask. A site that is on no list is simply left alone: no
+  bar, no request, and it does not count as a refusal, so video captions and
+  other page-level helpers still work there. Turning a site on is one click in
+  the popup, the settings page or Alt+A.
 
 ### Selection icon and card actions
 
