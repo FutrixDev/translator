@@ -37,11 +37,27 @@ const defaultSettings = {
   translationStyle: 'default'
 };
 
-// 内置引擎只有已注入的 content script 答得出（见 content-messaging.js 的
-// PROBE_ENGINE）。这条往返要有上限：popup 是个当场要出结果的面板，宁可说
-// “不知道”，也不能挂在那儿转。
-const ENGINE_PROBE_TIMEOUT_MS = 300;
+// popup 开着时问标签页的两件事 —— 内置引擎能不能用（PROBE_ENGINE）、这一页的
+// 状态（AUTO_PAGE_STATE）—— 都只有已注入的 content script 答得出，而它可能正
+// 忙。这两条往返要有上限：popup 是个当场要出结果的面板，宁可先说「不知道」，也
+// 不能挂在那儿转。两处共用 raceReply() 这一个上限。
+const TAB_REPLY_TIMEOUT_MS = 300;
 const PROBE_TIMED_OUT = 'timeout';
+
+/**
+ * 等 `pending` 至多 `ms` 毫秒；过了就先答 PROBE_TIMED_OUT。
+ *
+ * 不取消 `pending` —— 调用方手里还攥着它，迟到的答复照样拿得到（见
+ * refreshPageRows 的补画）。哨兵是个字符串，和 sendToActiveTab 的 null（「这一页
+ * 没有接收端」）是两句不同的话，别把它们揉成一个。
+ */
+function raceReply(pending, ms) {
+  let timer = null;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(PROBE_TIMED_OUT), ms);
+  });
+  return Promise.race([pending, deadline]).finally(() => clearTimeout(timer));
+}
 
 // Apply theme
 function applyTheme(theme) {
@@ -71,11 +87,16 @@ function applyI18n(lang) {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', async () => {
-  await checkStatus();
+//
+// 按钮先接上，再去问任何人。这一页的每一个问题（存储、标签页、service worker）
+// 都可能慢：内容脚本正忙着译一大页时，AUTO_PAGE_STATE 能晚回好几秒。以前监听器
+// 排在那一问后面，点「翻译此页」在这几秒里什么都不会发生 —— 按钮画出来了，却是
+// 死的。所以这里一个 await 都没有：监听器同步绑上，其余的各自跑、各自画。
+document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-  refreshComicSection();
   setupPdfSection();
+  refreshComicSection().catch((error) => console.error('Failed to read comic settings:', error));
+  checkStatus();
 });
 
 /**
@@ -281,8 +302,30 @@ function renderPageRows() {
   elements.pickSiteRegion.hidden = !(pageState && pageState.pickerAvailable);
 }
 
-async function refreshPageRows() {
-  pageState = await sendToActiveTab({ type: 'AUTO_PAGE_STATE' });
+// 每问一次页面状态就翻一页。迟到的答复只在它还是最新一问时才画 —— 否则一次
+// 点击之后的新快照会被开 popup 时那一问的旧答复盖掉。
+let pageStateGeneration = 0;
+
+/**
+ * 问页面要一份快照，画那三行。
+ *
+ * `deadline` 只给 popup 刚打开的那一次：内容脚本忙的时候，那几行先按「不知道」
+ * 画（pageState = null，和没有内容脚本的页面同一个样子：只剩「翻译此页」），答复
+ * 迟到了再补画。点击之后的重问不带上限 —— 暂停那一行要拿**真**状态来决定这一下
+ * 按不按，超时的「不知道」会让那一下静静地什么都不做。
+ */
+async function refreshPageRows({ deadline = false } = {}) {
+  const generation = ++pageStateGeneration;
+  const pending = sendToActiveTab({ type: 'AUTO_PAGE_STATE' });
+  const first = deadline ? await raceReply(pending, TAB_REPLY_TIMEOUT_MS) : await pending;
+  if (generation !== pageStateGeneration) return;
+  pageState = first === PROBE_TIMED_OUT ? null : first;
+  renderPageRows();
+  if (first !== PROBE_TIMED_OUT) return;
+
+  const late = await pending;
+  if (generation !== pageStateGeneration) return;
+  pageState = late;
   renderPageRows();
 }
 
@@ -391,9 +434,12 @@ async function checkStatus() {
     setupDisplayRow(settings);
     
     globalAuto = settings.autoTranslate !== false;
-    await Promise.all([refreshPageRows(), refreshShortcutHint()]);
-
-    await refreshEngineStatus(settings);
+    // 三问互不相干，一起发：引擎那一问以前排在页面状态后面，平白多等一轮。
+    await Promise.all([
+      refreshPageRows({ deadline: true }),
+      refreshShortcutHint(),
+      refreshEngineStatus(settings)
+    ]);
   } catch (error) {
     console.error('Failed to check status:', error);
   }
@@ -409,26 +455,8 @@ async function checkStatus() {
  *                      未注入的标签页），那是个答案，不是一次失败
  */
 async function probeActiveTabEngine() {
-  let tabId;
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    tabId = tabs[0] && tabs[0].id;
-  } catch (error) {
-    return null;
-  }
-  if (!tabId) return null;
-
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(PROBE_TIMED_OUT), ENGINE_PROBE_TIMEOUT_MS));
-  try {
-    const reply = await Promise.race([
-      chrome.tabs.sendMessage(tabId, { type: 'PROBE_ENGINE' }, TOP_FRAME),
-      timeout
-    ]);
-    return reply || null;
-  } catch (error) {
-    // “Could not establish connection” 之类：这一页没有接收端。
-    return null;
-  }
+  // sendToActiveTab 已经把「没有接收端」「没有标签页」都答成 null。
+  return raceReply(sendToActiveTab({ type: 'PROBE_ENGINE' }), TAB_REPLY_TIMEOUT_MS);
 }
 
 // 最近一次探测的答复（refreshEngineStatus 写）。「翻译此页」的 key 拦截也读它：

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Popup, site policy and prompt register
+
+- **The popup's buttons work the moment it opens.** Clicking the toolbar icon
+  no longer leaves "Translate this page" dead while a busy tab takes seconds
+  to report its state: the buttons are wired before the popup asks the page
+  anything, the page's rows wait at most 300 ms before drawing as unknown and
+  repaint when the late answer lands, and the engine probe runs alongside
+  instead of after it.
+
 ### Selection icon and card actions
 
 - **A translate icon next to your selection.** Select text and a small round

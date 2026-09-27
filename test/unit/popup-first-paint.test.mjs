@@ -1,0 +1,186 @@
+// popup 刚打开的那一刻：按钮先活，页面慢了也不等它。
+//
+// R33 A1：内容脚本正忙时 AUTO_PAGE_STATE 能晚回好几秒，而监听器排在那一问的
+// await 后面 —— 「翻译此页」画出来了，点下去却什么都不会发生。这里执行真的
+// popup/popup.js：造一个最小的 document 和一个永远不答（或者由测试决定什么时候
+// 答）的 chrome.tabs.sendMessage，看三件事：
+//
+//   1. DOMContentLoaded 一跑完，按钮就接上了 —— 一个微任务都不用等；
+//   2. 页面状态过了上限就先按「不知道」画（那几行藏起来），迟到的答复补画；
+//   3. 迟到的答复只在它还是最新一问时才画，不会盖掉之后那一问的快照。
+//
+// Run with: npm run test:unit
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { repoSource } from './helpers/sources.mjs';
+
+const POPUP = repoSource('popup/popup.js');
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+function fakeElement(id) {
+  const listeners = {};
+  return {
+    id,
+    hidden: false,
+    disabled: false,
+    textContent: '',
+    title: '',
+    listeners,
+    classList: { toggle() {}, add() {}, remove() {} },
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    setAttribute() {},
+  };
+}
+
+/**
+ * 装一个 popup。`reply(message)` 决定 chrome.tabs.sendMessage 对每一问答什么：
+ * 返回一个 promise，测试可以攥着它的 resolve 决定什么时候答。
+ */
+function load({ reply }) {
+  const elements = new Map();
+  const docListeners = {};
+  const sent = [];
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, fakeElement(id));
+      return elements.get(id);
+    },
+    querySelectorAll: () => [],
+    documentElement: { setAttribute() {} },
+    body: { classList: { toggle() {} } },
+    addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
+  };
+  const chrome = {
+    storage: {
+      sync: { get: async (defaults) => ({ ...defaults }) },
+      onChanged: { addListener() {} },
+    },
+    tabs: {
+      query: async () => [{ id: 7, url: 'https://example.test/' }],
+      sendMessage: (tabId, message) => {
+        sent.push(message);
+        return reply(message);
+      },
+    },
+    commands: { getAll: async () => [] },
+    runtime: { openOptionsPage() {}, sendMessage: async () => ({ ok: true, data: [] }) },
+  };
+  const sandbox = {
+    document,
+    chrome,
+    window: { close() {} },
+    console,
+    setTimeout,
+    clearTimeout,
+    getMessage: (key) => key,
+    getUILanguage: () => 'en',
+    setupDisplayRow() {},
+    setupPdfSection() {},
+    AccountGate: { applyAccountGate: async (settings) => settings },
+    EngineStatus: {
+      UNKNOWN_PROBE: { unknown: true },
+      describeEngineStatus: () => ({ key: 'ready', detailKey: '', ok: true }),
+      selectedEngine: () => 'builtin',
+    },
+    APICompat: { isApiKeyMissing: () => false },
+    SiteRules: { siteLabel: (host) => host },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(POPUP, sandbox, { filename: 'popup/popup.js' });
+  return {
+    element: (id) => document.getElementById(id),
+    fire: () => docListeners.DOMContentLoaded.forEach((fn) => fn()),
+    sent,
+    run: (code) => vm.runInContext(code, sandbox),
+  };
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const PAGE = {
+  host: 'slow.test',
+  ruleWritable: true,
+  hasTranslations: false,
+  translationsVisible: false,
+  pickerAvailable: false,
+  auto: { status: 'idle', siteAuto: true },
+};
+
+test('the DOMContentLoaded handler binds the buttons before its first await', () => {
+  const start = POPUP.indexOf("document.addEventListener('DOMContentLoaded'");
+  assert.ok(start >= 0, 'popup.js has no DOMContentLoaded handler');
+  const body = POPUP.slice(start, POPUP.indexOf('\n});', start));
+  const bind = body.indexOf('setupEventListeners()');
+  assert.ok(bind >= 0, 'the handler no longer binds the listeners');
+  const firstAwait = body.indexOf('await ');
+  assert.ok(firstAwait === -1 || bind < firstAwait,
+    'a listener bound after an await is a dead button for as long as that await takes');
+});
+
+test('the buttons work while the tab never answers', () => {
+  const popup = load({ reply: () => new Promise(() => {}) });
+  popup.fire();
+  // 同步断言：一个微任务都没跑。
+  const translate = popup.element('translatePage');
+  assert.equal((translate.listeners.click || []).length, 1, 'translatePage has no click listener');
+  for (const id of ['toggleSiteAuto', 'stopSiteAuto', 'togglePagePause', 'pickSiteRegion', 'openSettings']) {
+    assert.equal((popup.element(id).listeners.click || []).length, 1, `${id} has no click listener`);
+  }
+});
+
+test('a slow page state draws as unknown, then repaints when it lands', async () => {
+  const state = deferred();
+  const popup = load({
+    reply: (message) => (message.type === 'AUTO_PAGE_STATE' ? state.promise : new Promise(() => {})),
+  });
+  const site = popup.element('toggleSiteAuto');
+  popup.fire();
+
+  await wait(450);
+  assert.equal(popup.run('pageState'), null, 'past the deadline the page is "unknown"');
+  assert.equal(site.hidden, true, 'the site row is drawn from a snapshot nobody gave');
+
+  state.resolve(PAGE);
+  await wait(10);
+  assert.equal(site.hidden, false, 'the late answer never repainted the rows');
+  assert.equal(popup.run('pageState && pageState.host'), 'slow.test');
+});
+
+test('a late answer does not overwrite a newer snapshot', async () => {
+  const first = deferred();
+  const second = deferred();
+  let asked = 0;
+  const popup = load({
+    reply: (message) => {
+      if (message.type !== 'AUTO_PAGE_STATE') return new Promise(() => {});
+      asked += 1;
+      return asked === 1 ? first.promise : second.promise;
+    },
+  });
+  popup.fire();
+  await wait(450);
+
+  // 他点了一下，popup 重新问了一次；新答复先到。
+  const again = popup.run('refreshPageRows()');
+  second.resolve({ ...PAGE, host: 'new.test' });
+  await again;
+  assert.equal(popup.run('pageState.host'), 'new.test');
+
+  // 开 popup 时那一问这才回来 —— 它说的是过去的事。
+  first.resolve({ ...PAGE, host: 'old.test' });
+  await wait(10);
+  assert.equal(popup.run('pageState.host'), 'new.test', 'a stale reply painted over the newer one');
+});
+
+test('both tab round-trips share one deadline helper', () => {
+  const races = POPUP.match(/Promise\.race\(/g) || [];
+  assert.equal(races.length, 1, 'a second hand-rolled race is a second timeout to drift');
+  assert.match(POPUP, /raceReply\(sendToActiveTab\(\{ type: 'PROBE_ENGINE' \}\)/);
+  assert.match(POPUP, /raceReply\(pending, TAB_REPLY_TIMEOUT_MS\)/);
+});
