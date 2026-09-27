@@ -16,6 +16,17 @@ function featureState(key) {
 }
 
 /**
+ * Whether a job for `key` is refused: only when the user turned the feature
+ * off, and never when this request carries the user's consent for this page.
+ * The one statement of that rule; assertFeatureEnabled and the PDF URL entry
+ * (pdf-jobs.js startPdfUrlTranslation) both ask it.
+ */
+async function featureRefused(key, { consent = false } = {}) {
+  if (consent) return false;
+  return await featureState(key) === AccountGate.FEATURE_STATES.OFF;
+}
+
+/**
  * Refuse a job for a feature the user turned off.
  *
  * Hiding entry points only governs what gets rendered next. A surface that was
@@ -27,8 +38,15 @@ function featureState(key) {
  *
  * `consent` is the one way past it: the user pressed the media shortcut or the
  * page hint's button on this page, which is an explicit request for this page
- * alone (D-353) — the switch itself is left as it is. Callers set it from what
- * the user did, never from a field a page could put in a message.
+ * alone (D-353) — the switch itself is left as it is. It arrives as a field on a
+ * message from our own content script (content/content-media-hints.js), which
+ * sends it only after a trusted click on the hint (the bar ignores events whose
+ * isTrusted is false) or after Alt+M, which reaches the page through
+ * chrome.commands and never through a page event. A page script cannot put it
+ * there itself: it cannot reach the content script's isolated world, and the
+ * manifest declares no externally_connectable, so it cannot message the
+ * worker at all. (The worker also sets it itself when the user approves a price
+ * on the PDF charge notification: pdf-jobs.js, a chrome.notifications click.)
  *
  * Only `off` refuses. `signed_out` is enforced one layer down, where apiFetch
  * answers a create with no token as `unauthorized` — and every surface turns
@@ -36,10 +54,9 @@ function featureState(key) {
  * wrong problem and leave the user nothing to do about it.
  */
 async function assertFeatureEnabled(key, { consent = false } = {}) {
-  if (consent) return;
-  if (await featureState(key) === AccountGate.FEATURE_STATES.OFF) {
+  if (await featureRefused(key, { consent })) {
     throw new comicClient.ComicApiError('feature_disabled', `${key} is turned off`);
   }
 }
 
-export { featureState, assertFeatureEnabled };
+export { featureState, featureRefused, assertFeatureEnabled };

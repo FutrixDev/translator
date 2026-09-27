@@ -9,7 +9,7 @@ import '../shared/pdf-url.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
-import { assertFeatureEnabled, featureState } from './feature-gate.js';
+import { assertFeatureEnabled, featureRefused } from './feature-gate.js';
 import {
   PDF_SIGNIN_NOTIFICATION_PREFIX,
   clearPdfConfirmNotification,
@@ -192,7 +192,7 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
  */
 async function startPdfUrlTranslation({ url, pageUrl = '', notifyNotAPdf = false, consent = false }) {
   // Same racing-click guard as the comic entries: this costs money.
-  if (!consent && await featureState('enablePdfTranslation') === AccountGate.FEATURE_STATES.OFF) {
+  if (await featureRefused('enablePdfTranslation', { consent })) {
     return { started: false, reason: 'disabled' };
   }
   if (!isLikelyPdfUrl(url)) {

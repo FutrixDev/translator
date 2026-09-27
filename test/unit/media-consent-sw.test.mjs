@@ -66,6 +66,7 @@ globalThis.fetch = async (url, init = {}) => {
 
 await import('../../background/background.js');
 const { startPdfUrlTranslation } = await import('../../background/pdf-jobs.js');
+const { featureRefused } = await import('../../background/feature-gate.js');
 
 function send(message) {
   return new Promise((resolve) => {
@@ -102,4 +103,20 @@ test('PDF, switched off: consent gets past the switch; no consent does not', asy
   const url = 'https://example.com/page';
   assert.deepEqual(await startPdfUrlTranslation({ url, consent: false }), { started: false, reason: 'disabled' });
   assert.deepEqual(await startPdfUrlTranslation({ url, consent: true }), { started: false, reason: 'not_a_pdf' });
+});
+
+test('featureRefused: consent passes, otherwise only "off" refuses (signed out is not refused here)', async () => {
+  assert.equal(await featureRefused('enablePdfTranslation', { consent: true }), false);
+  assert.equal(await featureRefused('enablePdfTranslation'), true);
+  const token = local.comicToken;
+  sync.enablePdfTranslation = true;
+  try {
+    assert.equal(await featureRefused('enablePdfTranslation'), false, 'on and signed in');
+    delete local.comicToken;
+    // signed_out is answered one layer down (apiFetch: unauthorized -> sign-in offer).
+    assert.equal(await featureRefused('enablePdfTranslation'), false, 'on but signed out');
+  } finally {
+    sync.enablePdfTranslation = false;
+    local.comicToken = token;
+  }
 });
