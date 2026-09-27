@@ -509,6 +509,13 @@ test('N-12: a rule row keeps Edit and Delete on one line together, at 1280 and a
   }, { engineAi: true });
   const row = page.locator(`.custom-rule[data-rule-id="${id}"]`);
   await expect(row.locator('.custom-rule-chip')).toHaveCount(5);
+  // 两个按钮同行靠的是这一组自己：不伸缩、不被挤窄、中间留 12px。样式表丢了这一段，
+  // 按钮碰巧还挨着时上面的同一行断言不一定红，这里直接问排版。
+  const actions = await row.locator('.custom-rule-actions').evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { display: style.display, flexShrink: style.flexShrink, columnGap: style.columnGap };
+  });
+  expect(actions).toEqual({ display: 'flex', flexShrink: '0', columnGap: '12px' });
 
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 812 });
