@@ -25,6 +25,15 @@ all sits on a warm tile.
   `drawPromoSmall`. To change the picture, replace the JPEG. The export
   launches Chromium with `--allow-file-access-from-files`, so the file://
   JPEG does not taint the canvas.
+- All text (promo copy and the TV banners) is set in two fonts bundled in
+  `fonts/`, never the host's: Nunito for Latin, Noto Sans SC for Chinese (SIL
+  OFL 1.1, `fonts/OFL.txt`). Both are variable-weight woff2 files cut down to
+  the glyphs the drawings print. After changing any text, add its characters
+  to `fonts/subset.sh` and rerun it against the full TTFs: a character
+  missing from a subset is drawn in whatever host font has it. `export.mjs`
+  stops if either font fails to load. Canvas rasterisation still differs
+  slightly between operating systems, so the PNGs are not byte-identical
+  everywhere.
 - `node brand/blab-translation-2026-09-19/export.mjs --all <dir>` writes the
   full set:
   - the website's `server/public/assets/icon*.png` (translator-site);

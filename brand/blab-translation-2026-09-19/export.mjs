@@ -24,8 +24,17 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e));
   await page.goto(pathToFileURL(join(HERE, 'export.html')).href);
-  await page.evaluate(() => Promise.all([document.fonts.ready, window.ready]));
+  await page.evaluate(() => window.ready);
   if (errors.length) throw errors[0];
+  // Every word is drawn in the two bundled fonts; a face that did not load would fall back to
+  // whatever the host has, so stop rather than write that.
+  const faces = await page.evaluate(() => ({
+    want: BlabR7.FACES.length,
+    got: [...document.fonts].map((f) => `${f.family}:${f.status}`),
+  }));
+  if (faces.got.length !== faces.want || faces.got.some((f) => !f.endsWith(':loaded'))) {
+    throw new Error(`bundled fonts not loaded: ${faces.got.join(', ')}`);
+  }
   const files = await page.evaluate(() => EXPORTS.map((e) => e.file));
   let written = 0;
   for (let i = 0; i < files.length; i++) {

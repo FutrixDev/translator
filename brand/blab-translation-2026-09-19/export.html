@@ -7,16 +7,21 @@
   const B = window.BlabR7;
   const INK = '#10172A';
   const ACCENT = '#4A55E8';
-  const FONT = '"SF Pro Rounded", "Nunito", system-ui, sans-serif';
+  const FONT = B.FONT;
 
   // 商店宣传图的插画底（promo/*-art.jpg，Magic Art 出图、画面不含文字），标志和文字在这里叠上去。
   const ART = {};
-  window.ready = Promise.all(['marquee', 'small'].map((key) => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(ART[key] = img);
-    img.onerror = () => reject(new Error(`promo/${key}-art.jpg failed to load`));
-    img.src = `promo/${key}-art.jpg`;
-  })));
+  // 可变字重要声明字重范围，否则 600–800 会被合成加粗
+  window.ready = Promise.all([
+    ...B.FACES.map(({ family, file, weight }) => new FontFace(family, `url(${file})`, { weight }).load()
+      .then((face) => document.fonts.add(face))),
+    ...['marquee', 'small'].map((key) => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(ART[key] = img);
+      img.onerror = () => reject(new Error(`promo/${key}-art.jpg failed to load`));
+      img.src = `promo/${key}-art.jpg`;
+    })),
+  ]);
 
   // 插画按宽铺满、竖向居中裁；左侧再压一层暖白，保证字的对比度
   function paintArt(ctx, img, w, h, washTo) {
