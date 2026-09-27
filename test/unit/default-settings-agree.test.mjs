@@ -75,6 +75,21 @@ test('the tables really do overlap, so the comparison above means something', ()
   assert.ok(shared.includes('targetLang'));
 });
 
+test('both account-backed features ship switched on, in every table that has them', () => {
+  // AccountGate.featureState reads a false switch as "the user turned it off"
+  // and keeps the PDF / comic hint away. An off default would therefore hide
+  // the hint from everyone who never touched the setting. Signed out, the
+  // gate answers signed_out, not off, and nothing is spent before a click.
+  const missing = [];
+  for (const [name, table] of TABLES) {
+    for (const key of ['enablePdfTranslation', 'enableComicTranslation']) {
+      if (key in table && table[key] !== true) missing.push(`${key} in ${name}`);
+    }
+  }
+  assert.deepEqual(missing, []);
+  assert.equal(contentDefaults.enableComicTranslation, true, 'the content defaults carry the comic switch');
+});
+
 test('empty targetLang is what "follow the browser" is written as, wherever it appears', () => {
   // 空串是哨兵，不是「还没填」。但凡有一张表写了具体语言，那张表的读者就会绕过
   // shared/target-lang.js 的解析，直接把它当成用户的选择。没列这个键的表（弹窗
