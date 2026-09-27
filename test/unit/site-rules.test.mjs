@@ -746,3 +746,51 @@ test('装载清单：共用模块和它依赖的那一份，顺序不能倒', as
     }
   }
 });
+
+// ------------------------------------------------------------ 设置页的站点编辑器
+
+test('parseSiteInput turns whatever was typed into the key decide() reads', () => {
+  const host = (text) => SiteRules.parseSiteInput(text).host;
+  assert.equal(host('example.com'), 'example.com');
+  assert.equal(host('  Example.COM  '), 'example.com');
+  assert.equal(host('https://www.Example.com/a/b?c=1#d'), 'example.com');
+  assert.equal(host('http://news.example.co.uk:8080/'), 'news.example.co.uk');
+  assert.equal(host('www.example.com/path'), 'example.com');
+  assert.equal(host('localhost'), 'localhost');
+  // 中文域名存成地址栏里 location.hostname 的那个样子：punycode。
+  assert.equal(host('例子.中国'), 'xn--fsqu00a.xn--fiqs8s');
+  // 键就是 decide() 查的那一把：写进去的站点真的会命中。
+  const typed = host('https://www.forum.example/thread/1');
+  assert.equal(verdict({ host: 'www.forum.example', userRules: { [typed]: 'always' } }).reason, R.USER_ALWAYS);
+});
+
+test('parseSiteInput names what is wrong instead of storing a key nobody can hit', () => {
+  for (const bad of ['', '   ', 'not a site', '*.example.com', 'exa_mple.com', '[::1]', 'http://', '-bad.com', 'a..b']) {
+    assert.deepEqual(SiteRules.parseSiteInput(bad), { error: 'invalid' }, bad);
+  }
+  // 黑名单和内置 never：写什么进去都不算数，所以不让写。
+  assert.deepEqual(SiteRules.parseSiteInput('https://mail.google.com/mail/u/0'), { error: 'blocked', host: 'mail.google.com' });
+  assert.deepEqual(SiteRules.parseSiteInput('irs.gov'), { error: 'blocked', host: 'irs.gov' });
+});
+
+test('builtinSites lists the shipped table by state, blocklist folded into never', () => {
+  const sites = SiteRules.builtinSites();
+  const hosts = (state) => sites[state].map((site) => site.host);
+  assert.ok(hosts('always').includes('x.com'));
+  assert.ok(hosts('always').includes('bbc.co.uk'));
+  assert.deepEqual(hosts('captions'), ['youtube.com']);
+  assert.ok(hosts('never').includes('mail.google.com'), 'the blocklist is part of never');
+  assert.ok(hosts('never').includes('arxiv.org'), 'the built-in never rule is part of never');
+  // 一个主机多条路径：合成一行，把路径带上。
+  const arxiv = sites.always.find((site) => site.host === 'arxiv.org');
+  assert.deepEqual(arxiv.patterns, ['arxiv.org/abs/*', 'arxiv.org/html/*', 'arxiv.org/list/*']);
+  // 一键盖过去：always / captions 行可以，never 行不行（阶梯上它排在用户规则前面）。
+  assert.ok(sites.always.every((site) => site.writable));
+  assert.ok(sites.captions.every((site) => site.writable));
+  assert.ok(sites.never.every((site) => !site.writable));
+  // 每一格都真的在表里：数目对得上（内置规则的模式 + 黑名单）。
+  const patterns = Object.values(sites).flat().reduce((n, site) => n + site.patterns.length, 0);
+  const shipped = SiteRulesBuiltin.rules.reduce((n, rule) => n + [].concat(rule.match).length, 0)
+    + SiteRulesBuiltin.blocklist.length;
+  assert.equal(patterns, shipped);
+});

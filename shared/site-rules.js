@@ -280,6 +280,69 @@
     return !isBlocklisted(hostname, path);
   }
 
+  // 一个 DNS 主机名（含 punycode 的 xn-- 标签和 IPv4），整串不超过 253 字符。
+  const HOSTNAME_RE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+  /**
+   * 设置页「添加站点」那个框里敲进来的一串字，变成规则表的键。
+   *
+   * 人会贴整条地址（https://www.Example.com/a?b）、会带端口、会敲中文域名。键
+   * 必须和 decide() 查的是同一把，所以归一化只能在这里做一次，设置页不自己拼：
+   * 脱协议、路径、查询、端口，经 URL 解析把中文域名转成 punycode（地址栏里的
+   * location.hostname 也是 punycode），再交给 normalizeHost 脱 www. 和小写。
+   *
+   * 两种拒绝，调用方各印一句话：
+   *   invalid  —— 不是一个主机名（带空格、通配符、IPv6 字面量、解析不了）；
+   *   blocked  —— 黑名单或内置 never 上的站点。写 always 进去不算数（阶梯上黑
+   *               名单排在用户规则前面），写 never 进去是多余的；两种都让用户以
+   *               为他改了什么。和 siteRuleWritable 问的是同一句话。
+   *
+   * @returns {{host: string} | {error: 'invalid'|'blocked', host?: string}}
+   */
+  function parseSiteInput(text) {
+    const raw = String(text == null ? '' : text).trim();
+    if (!raw || /\s/.test(raw)) return { error: 'invalid' };
+    let hostname;
+    try {
+      hostname = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`).hostname;
+    } catch (error) {
+      return { error: 'invalid' };
+    }
+    const host = normalizeHost(hostname);
+    if (!HOSTNAME_RE.test(host)) return { error: 'invalid' };
+    if (!siteRuleWritable(host)) return { error: 'blocked', host };
+    return { host };
+  }
+
+  /**
+   * 内置名单，按「设置页怎么给人看」排好：always / captions / never 三组，每组
+   * 一行一个主机，带上这个主机在表里的那几个模式（arxiv.org 只有几条路径在
+   * always 上）。黑名单并进 never —— 对用户来说它们是同一件事（见 isBlocklisted）。
+   *
+   * 每行带 writable：那一行能不能一键写一条用户规则盖过去。never 组一律不能
+   * （阶梯上它们排在用户规则前面），其余问的是 siteRuleWritable。
+   */
+  function builtinSites() {
+    const groups = { always: new Map(), captions: new Map(), never: new Map() };
+    const add = (state, pattern) => {
+      const { host } = splitPattern(pattern);
+      const group = groups[state];
+      if (!group.has(host)) group.set(host, []);
+      group.get(host).push(pattern);
+    };
+    for (const rule of table().rules) rulePatterns(rule).forEach((pattern) => add(rule.state, pattern));
+    table().blocklist.forEach((pattern) => add('never', pattern));
+    const out = {};
+    for (const [state, group] of Object.entries(groups)) {
+      out[state] = [...group].map(([host, patterns]) => ({
+        host,
+        patterns,
+        writable: state !== 'never' && siteRuleWritable(host),
+      }));
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- 用户规则
 
   // 沿父域往上找：a.b.x.com 依次问 a.b.x.com、b.x.com、x.com。用户显式写下的
@@ -556,6 +619,8 @@
     matchBuiltin,
     isBlocklisted,
     siteRuleWritable,
+    parseSiteInput,
+    builtinSites,
     loadTable,
     importUserRules,
   };

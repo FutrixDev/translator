@@ -245,7 +245,20 @@
                showing them at all. -->
           <div class="form-group">
             <label data-i18n="siteRulesTitle">Sites you have decided about</label>
+            <!-- 编辑器在 options-site-editor.js：添加、always↔never、忘掉，以及只读的
+                 内置名单（一键盖过去）。键由 SiteRules.parseSiteInput 生成。 -->
+            <form class="site-rule-add" id="siteRuleAdd" novalidate>
+              <input type="text" id="siteRuleInput" placeholder="example.com" autocomplete="off" spellcheck="false"
+                aria-describedby="siteRuleError" data-i18n-title="siteRuleInputLabel" title="Site to add, such as example.com">
+              <select id="siteRuleState">
+                <option value="always" data-i18n="siteRuleAlways">Always translate</option>
+                <option value="never" data-i18n="siteRuleNever">Never translate</option>
+              </select>
+              <button type="submit" class="btn btn-secondary" id="siteRuleAddButton" data-i18n="siteRuleAdd">Add</button>
+            </form>
+            <p class="site-rule-error" id="siteRuleError" role="alert" hidden></p>
             <div class="site-rules" id="siteRules"></div>
+            <div class="site-rules-builtin" id="siteRulesBuiltin"></div>
             <span class="hint" data-i18n-hint="hintSiteRules"></span>
           </div>
 
@@ -939,6 +952,7 @@
   <script src="options-account.js"></script>
   <script src="options-pdf-tasks.js"></script>
   <script src="options-auto.js"></script>
+  <script src="options-site-editor.js"></script>
   <script src="options-connection.js"></script>
   <!-- 广播和语言包状态由设置页与首装引导页共用，options-builtin.js 调它们。 -->
   <script src="../shared/tab-broadcast.js"></script>

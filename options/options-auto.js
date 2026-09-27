@@ -12,7 +12,8 @@
 // 而且**必须**如此：
 //
 //   siteRules   是一张共享表，弹出窗口、内容脚本、设置页都在改它，所以写入收
-//               在服务工作者里（SiteRules.writeUserRule）。把它塞进
+//               在服务工作者里（SiteRules.writeUserRule）。编辑器在
+//               options-site-editor.js。把它塞进
 //               collectSettings，等于用户在设置页改任何一项，都拿这一页打开时
 //               读到的那份快照去盖掉别的标签页刚写下的规则。
 //   autoStats   根本不在 sync 里 —— 它只属于这台电脑（shared/auto-stats.js）。
@@ -83,79 +84,6 @@ function onAutoEngineChange() {
   }
   syncAutoEngineState();
   persistSettings();
-}
-
-/**
- * 站点审计表：用户在弹出窗口里对哪些站点表过态，以及在这里把它收回来。
- *
- * 直接读 storage.sync，不等任何消息 —— 这张表是别的标签页写的，设置页打开的时候
- * 它早就在那儿了。删除也不自己写：走 SiteRules.writeUserRule(host, null) 那条单
- * 写者通道，于是同时删两个站点的两个标签页不会互相盖掉。删完不必通知内容脚本，
- * 调度层盯的是 storage.onChanged（content-auto-translate.js 的 RESTART_KEYS）。
- */
-async function renderSiteRules() {
-  const box = elements.siteRules;
-  if (!box) return;
-
-  let rules = {};
-  try {
-    const stored = await chrome.storage.sync.get({ siteRules: {} });
-    if (stored.siteRules && typeof stored.siteRules === 'object') rules = stored.siteRules;
-  } catch (error) {
-    console.error('Failed to read site rules:', error);
-  }
-
-  const hosts = Object.keys(rules)
-    .filter(host => rules[host] === 'always' || rules[host] === 'never')
-    .sort();
-
-  box.textContent = '';
-  if (!hosts.length) {
-    const empty = document.createElement('p');
-    empty.className = 'site-rules-empty';
-    empty.textContent = t('siteRulesEmpty');
-    box.appendChild(empty);
-    return;
-  }
-  hosts.forEach(host => box.appendChild(siteRuleRow(host, rules[host])));
-}
-
-function siteRuleRow(host, state) {
-  const row = document.createElement('div');
-  row.className = 'site-rule';
-
-  const name = document.createElement('span');
-  name.className = 'site-rule-host';
-  name.textContent = host;
-  name.title = host;
-  row.appendChild(name);
-
-  const badge = document.createElement('span');
-  badge.className = `site-rule-state site-rule-${state}`;
-  badge.textContent = t(state === 'always' ? 'siteRuleAlways' : 'siteRuleNever');
-  row.appendChild(badge);
-
-  const forget = document.createElement('button');
-  forget.type = 'button';
-  forget.className = 'btn btn-text site-rule-forget';
-  forget.textContent = t('siteRuleForget');
-  forget.addEventListener('click', async () => {
-    forget.disabled = true;
-    try {
-      await SiteRules.writeUserRule(host, null);
-    } catch (error) {
-      console.error('Failed to remove site rule:', error);
-      showStatus(t('connectionFailed'), 'error');
-      forget.disabled = false;
-      return;
-    }
-    // 重读一遍，而不是把这一行摘掉：规则是沿父域生效的，删掉 x.com 之后
-    // mobile.x.com 那一行还在不在，只有把表重新读出来才算数。
-    renderSiteRules();
-  });
-  row.appendChild(forget);
-
-  return row;
 }
 
 async function renderAutoStats() {

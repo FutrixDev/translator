@@ -62,7 +62,6 @@ const elements = {
   autoTranslateEngine: document.getElementById('autoTranslateEngine'),
   autoAiDailyBudget: document.getElementById('autoAiDailyBudget'),
   autoAiBudgetGroup: document.getElementById('autoAiBudgetGroup'),
-  siteRules: document.getElementById('siteRules'),
   statPages: document.getElementById('statPages'),
   statCacheHit: document.getElementById('statCacheHit'),
   statChars: document.getElementById('statChars'),
@@ -702,6 +701,7 @@ function setupEventListeners() {
   // 这一颗有意不进 IMMEDIATE_SAVE_FIELDS：那条路线是「变了就存」，而这里可能
   // 要把值退回去（用户在二次确认里说了不）。
   elements.autoTranslateEngine.addEventListener('change', onAutoEngineChange);
+  setupSiteEditor();
   elements.resetAutoStats.addEventListener('click', resetAutoStats);
   elements.clearTranslationCache.addEventListener('click', clearTranslationCache);
 

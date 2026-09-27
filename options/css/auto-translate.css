@@ -62,8 +62,84 @@
   color: var(--text-muted);
 }
 
-.site-rule-forget {
+.site-rule-forget,
+.site-rule-override {
   flex-shrink: 0;
+}
+
+/* The user's own rows: the state is a two-way select, styled as the pill it
+   replaced so the row keeps its shape. */
+.site-rule select.site-rule-state {
+  width: auto;
+  padding: 2px 28px 2px 10px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--bg-tertiary);
+  background-position: right 8px center;
+  font-size: 12px;
+}
+
+/* Add a site: the box grows, the state and the button keep their width. */
+.site-rule-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.site-rule-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.site-rule-add select,
+.site-rule-add button {
+  flex-shrink: 0;
+  width: auto;
+}
+
+.site-rule-error {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--error);
+}
+
+/* A built-in entry that only covers some paths prints them, muted. */
+.site-rule-scope {
+  flex-shrink: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The built-in lists: read-only, one collapsible group per state. */
+.site-rules-builtin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.site-rules-builtin-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.site-rules-builtin-group > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 4px 0;
+}
+
+.site-rules-builtin-group[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* This month's counters. auto-fit rather than three fixed columns: the card

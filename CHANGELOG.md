@@ -32,6 +32,13 @@
   "Translate pages automatically" in Settings, and switching it off stops the
   current page on the spot: nothing new is sent, while what is already
   translated stays.
+- **Manage sites from Settings.** Under "Translate pages automatically" you
+  can now type a site (a whole address works too: `https://www.` and the
+  path are dropped) and set it to always or never translate, switch a rule
+  between the two, or remove it. A mistyped address, or a site that is never
+  translated, is explained under the box. The built-in lists are shown below,
+  folded: turn off a listed site, or have a captions-only site translate its
+  page too, with one click. An open tab of that site follows at once.
 
 ### Selection icon and card actions
 
