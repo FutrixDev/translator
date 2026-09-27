@@ -384,6 +384,7 @@
     autoReasonUserExplicit: '직접 이 페이지를 번역했습니다',
     autoReasonUserAlways: '이 사이트를 “항상 번역”으로 설정했습니다',
     autoReasonBuiltinAlways: '이 사이트는 자동으로 번역됩니다',
+    autoReasonBuiltinCaptions: '이 동영상 사이트에서는 자막만 번역합니다',
     autoReasonDefaultOff: '목록에 없는 사이트는 그대로 둡니다',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

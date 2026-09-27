@@ -384,6 +384,7 @@
     autoReasonUserExplicit: 'Du hast diese Seite angefordert',
     autoReasonUserAlways: 'Du hast „immer“ für diese Website gewählt',
     autoReasonBuiltinAlways: 'Diese Website wird automatisch übersetzt',
+    autoReasonBuiltinCaptions: 'Auf dieser Videoseite werden nur die Untertitel übersetzt',
     autoReasonDefaultOff: 'Websites, die auf keiner Liste stehen, bleiben unverändert',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

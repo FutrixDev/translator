@@ -24,6 +24,7 @@
     USER_EXPLICIT: 'USER_EXPLICIT',
     USER_ALWAYS: 'USER_ALWAYS',
     BUILTIN_ALWAYS: 'BUILTIN_ALWAYS',
+    BUILTIN_CAPTIONS: 'BUILTIN_CAPTIONS',
     DEFAULT_OFF: 'DEFAULT_OFF',
   });
 
@@ -109,7 +110,12 @@
 
   // ---------------------------------------------------------------- 规则表
 
+  // 用户能写的只有两种。内置表多一种 captions（D-351）：这个站点的正文不自己翻，
+  // 但它是字幕站 —— 不是拒绝，字幕照翻（闸门问的是 REFUSALS，见上）。它和
+  // DEFAULT_OFF 的结论一样，多出来的是一句说得出口的理由，以及设置页里那张
+  // 「内置名单」上的一行，用户看得见、一键就能改。
   const STATES = new Set(['always', 'never']);
+  const BUILTIN_STATES = new Set(['always', 'never', 'captions']);
   const STRING_ARRAY_FIELDS = ['atomicBlockSelectors', 'keepOriginalSelectors'];
 
   function isStringArray(value) {
@@ -142,7 +148,7 @@
     if (!rule || typeof rule !== 'object') return false;
     const patterns = rulePatterns(rule);
     if (!patterns.length || !patterns.every(validPattern)) return false;
-    if (!STATES.has(rule.state)) return false;
+    if (!BUILTIN_STATES.has(rule.state)) return false;
     if (STRING_ARRAY_FIELDS.some((field) => !isStringArray(rule[field]))) return false;
     if (rule.blockIdAttr !== null && typeof rule.blockIdAttr !== 'string') return false;
     return true;
@@ -365,6 +371,9 @@
 
     if (userRule === 'always') return out('auto', REASONS.USER_ALWAYS);
     if (rule && rule.state === 'always') return out('auto', REASONS.BUILTIN_ALWAYS);
+    // 字幕站：正文不翻，也不算拒绝 —— 字幕照翻。用户写过规则的，上面两级已经
+    // 答完了：always 连正文一起翻，never 连字幕一起停。
+    if (rule && rule.state === 'captions') return out('off', REASONS.BUILTIN_CAPTIONS);
 
     // 谁都没替这个站点说过话：不翻，也不问（D-351）。从前这里是一条追问条，每个
     // 外语站点问三次 —— 用户要的是「别每页都问我」。想翻的人有三个入口，都是他

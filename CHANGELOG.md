@@ -16,6 +16,13 @@
   bar, no request, and it does not count as a refusal, so video captions and
   other page-level helpers still work there. Turning a site on is one click in
   the popup, the settings page or Alt+A.
+- **Common social, Q&A and news sites translate by themselves.** Threads,
+  Bluesky, Facebook, Instagram, Medium, Substack, Quora, Stack Overflow, Stack
+  Exchange and eleven major news sites (The New York Times, The Guardian, BBC,
+  Reuters, AP News, The Washington Post, The Wall Street Journal, Bloomberg,
+  CNN, the Financial Times and The Economist) join the built-in list. YouTube
+  is listed as a captions site: its page text stays as it is while its
+  captions are translated. Your own rule for any of them still wins.
 
 ### Selection icon and card actions
 

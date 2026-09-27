@@ -124,6 +124,52 @@ test('an unlisted site is a quiet off: never auto, never a question, never a ref
   assert.equal(Object.values(R).some((r) => /ASK|LANG/.test(r)), false);
 });
 
+// ------------------------------------------------------------ 内置表的 R33 扩充
+
+test('YouTube is a captions site: the page stays untranslated, and nothing refuses', () => {
+  // D-351：视频站的正文不自己翻 —— 标题、评论、推荐栏翻出来是噪音 —— 但字幕照翻。
+  // 字幕闸门问的是 refused，所以 captions 必须是一个不算拒绝的 off。
+  for (const host of ['youtube.com', 'www.youtube.com', 'm.youtube.com']) {
+    const d = verdict({ host, path: '/watch' });
+    assert.equal(d.verdict, 'off', `${host} translates its page`);
+    assert.equal(d.reason, R.BUILTIN_CAPTIONS, `${host} was answered by another rung`);
+    assert.equal(d.refused, false, `${host} reads as refused, so captions would stop too`);
+  }
+});
+
+test('a user rule outranks captions, both ways', () => {
+  // 用户说总是翻：整页也翻。用户说永不：那就是一个真正的拒绝，字幕也停。
+  const always = verdict({ host: 'www.youtube.com', userRules: { 'youtube.com': 'always' } });
+  assert.equal(always.verdict, 'auto');
+  assert.equal(always.reason, R.USER_ALWAYS);
+  const never = verdict({ host: 'www.youtube.com', userRules: { 'youtube.com': 'never' } });
+  assert.equal(never.reason, R.USER_NEVER);
+  assert.equal(never.refused, true);
+});
+
+test('captions is a built-in state only: a user rule cannot be written as captions', () => {
+  // 用户的选择只有 always / never 两个；存储里冒出一条 captions 是坏数据，丢掉，
+  // 不让它变成第三种用户状态。
+  const d = verdict({ host: 'example.com', userRules: { 'example.com': 'captions' } });
+  assert.equal(d.reason, R.DEFAULT_OFF);
+});
+
+test('the R33 social, forum and news sites translate by themselves', () => {
+  const hosts = [
+    'www.threads.net', 'bsky.app', 'www.facebook.com', 'www.instagram.com',
+    'medium.com', 'someone.medium.com', 'someone.substack.com', 'www.quora.com',
+    'stackoverflow.com', 'unix.stackexchange.com',
+    'www.nytimes.com', 'www.theguardian.com', 'www.bbc.com', 'www.bbc.co.uk',
+    'www.reuters.com', 'apnews.com', 'www.washingtonpost.com', 'www.wsj.com',
+    'www.bloomberg.com', 'edition.cnn.com', 'www.ft.com', 'www.economist.com',
+  ];
+  for (const host of hosts) {
+    const d = verdict({ host });
+    assert.equal(d.verdict, 'auto', `${host} did not translate by itself`);
+    assert.equal(d.reason, R.BUILTIN_ALWAYS, `${host} was answered by another rung`);
+  }
+});
+
 // ------------------------------------------------------------ 主机名
 
 test('normalizeHost keys a rule on the exact host — a shared suffix is not one site', () => {
@@ -358,6 +404,8 @@ test('the shipped table is internally consistent', () => {
       if (rule.state === 'never') {
         assert.equal(v, 'off', `${pattern} is a never rule that does not refuse`);
         assert.equal(reason, R.BUILTIN_NEVER, `${pattern} is shadowed by the blocklist`);
+      } else if (rule.state === 'captions') {
+        assert.equal(reason, R.BUILTIN_CAPTIONS, `${pattern} is shadowed by the blocklist`);
       } else {
         assert.notEqual(v, 'off', `${pattern} is shadowed by the blocklist`);
       }
@@ -373,6 +421,7 @@ test('reasons are an enum, and every verdict is one of two words', () => {
   const inputs = [
     {}, { host: 'x.com' }, { host: 'mail.qq.com' },
     { host: 'arxiv.org', path: '/pdf/2501.00001' },
+    { host: 'www.youtube.com' },
     { explicit: true }, { settings: { autoTranslate: false } },
     { userRules: { 'example.com': 'never' } }, { userRules: { 'example.com': 'always' } },
   ];

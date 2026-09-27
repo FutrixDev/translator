@@ -37,7 +37,7 @@
     // watcher runs regardless and only the translating half is gated.
     enabled: false,
     // 「这个站点开着自动翻」。**不是** enabled：闸门问的是「没被明令拒绝」，中
-    // 间隔着一大片 ask。菜单第一行画的是这一句（和 popup 上那一行同一句话），
+    // 间隔着名单外的安静 off 和字幕站（YouTube）。菜单第一行画的是这一句（和 popup 上那一行同一句话），
     // 闸门是另一句，见下面的 siteRefused() / siteAuto()。
     siteAuto: false,
     active: false,

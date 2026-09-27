@@ -24,7 +24,7 @@
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-23',
+    rulesVersion: '2026-09-27',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -280,6 +280,169 @@
         state: 'always',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.gs_a', '.gs_fl'],
+        blockIdAttr: null,
+      },
+      // ---- R33（D-351）：名单外的站点不再问，常用的社交、问答、新闻站点直接进
+      // always。**一个 selector 都不写**：这些站点都没对着真页面查过，写一个猜的
+      // atomicBlockSelectors 比不写更糟 —— 猜错了整块不翻，而且没有任何报错。通
+      // 用启发式在这些站上是「翻得碎一点」，不是「翻不了」；哪天查实了再补。
+      //
+      // 主机名是后缀匹配：medium.com 也认 *.medium.com 上的个人博客，
+      // substack.com 认 *.substack.com，stackexchange.com 认各个子站。
+      {
+        // 社交
+        match: 'threads.net',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'bsky.app',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'facebook.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'instagram.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 长文与通讯
+        match: 'medium.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'substack.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 问答
+        match: 'quora.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'stackoverflow.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'stackexchange.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 新闻
+        match: 'nytimes.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'theguardian.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 同一家的两个门牌，写成一条（见 Google 学术那条）。
+        match: ['bbc.com', 'bbc.co.uk'],
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'reuters.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'apnews.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'washingtonpost.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'wsj.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'bloomberg.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'cnn.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'ft.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        match: 'economist.com',
+        state: 'always',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 字幕站（D-351）：正文 —— 标题、简介、评论 —— 不自己翻，也不问；字幕照翻，
+        // 而且默认替他把原字幕点开（autoEnableCaptions，见 content/captions/activation.js）。
+        // 它不是拒绝：用户写一条 always，正文也跟着翻；写一条 never，字幕一起停。
+        // m.youtube.com 以 youtube.com 结尾，这一条已经覆盖它。
+        match: 'youtube.com',
+        state: 'captions',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
     ],

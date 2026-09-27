@@ -384,6 +384,7 @@
     autoReasonUserExplicit: 'あなたがこのページを翻訳しました',
     autoReasonUserAlways: 'このサイトを「常に翻訳」に設定しています',
     autoReasonBuiltinAlways: 'このサイトは自動的に翻訳されます',
+    autoReasonBuiltinCaptions: 'この動画サイトでは字幕だけを翻訳します',
     autoReasonDefaultOff: 'リストにないサイトはそのままにします',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

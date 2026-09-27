@@ -421,6 +421,7 @@ Rules:
     autoReasonUserExplicit: 'You asked for this page',
     autoReasonUserAlways: 'You chose always for this site',
     autoReasonBuiltinAlways: 'This site is translated automatically',
+    autoReasonBuiltinCaptions: "On this video site only the captions are translated",
     autoReasonDefaultOff: 'Sites not on a list are left as they are',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

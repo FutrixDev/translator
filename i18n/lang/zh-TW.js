@@ -384,6 +384,7 @@
     autoReasonUserExplicit: '這一頁是你自己要翻的',
     autoReasonUserAlways: '你選過這個站點「總是翻譯」',
     autoReasonBuiltinAlways: '這個站點預設自動翻譯',
+    autoReasonBuiltinCaptions: '這個影片站只翻譯字幕，不翻頁面文字',
     autoReasonDefaultOff: '不在名單上的站點保持原樣',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

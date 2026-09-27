@@ -384,6 +384,7 @@
     autoReasonUserExplicit: 'Você pediu esta página',
     autoReasonUserAlways: 'Você escolheu «sempre» para este site',
     autoReasonBuiltinAlways: 'Este site é traduzido automaticamente',
+    autoReasonBuiltinCaptions: 'Neste site de vídeo, só as legendas são traduzidas',
     autoReasonDefaultOff: 'Sites que não estão em nenhuma lista ficam como estão',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).

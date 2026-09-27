@@ -400,6 +400,7 @@
     autoReasonUserExplicit: '这一页是你自己要翻的',
     autoReasonUserAlways: '你选过这个站点「总是翻译」',
     autoReasonBuiltinAlways: '这个站点默认自动翻译',
+    autoReasonBuiltinCaptions: '这个视频站只翻译字幕，不翻页面文字',
     autoReasonDefaultOff: '不在名单上的站点保持原样',
 
     // 自动翻译：费用闸拦下来时说的话（FR-9）。前两条是状态点展开的后半句，

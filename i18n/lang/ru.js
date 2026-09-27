@@ -384,6 +384,7 @@
     autoReasonUserExplicit: 'Вы сами запросили эту страницу',
     autoReasonUserAlways: 'Вы выбрали «всегда» для этого сайта',
     autoReasonBuiltinAlways: 'Этот сайт переводится автоматически',
+    autoReasonBuiltinCaptions: 'На этом видеосайте переводятся только субтитры',
     autoReasonDefaultOff: 'Сайты не из списков остаются как есть',
 
     // Automatic translation: what the cost gate says when it stops a page (FR-9).
