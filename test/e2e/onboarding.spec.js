@@ -57,8 +57,10 @@ test.describe('the welcome page a fresh install opens', () => {
 
     // The shortcut list is the manifest's commands, each with its keys or "Not set".
     const rows = page.locator('#shortcutList .shortcut');
-    await expect(rows).toHaveCount(3);
-    await expect(rows.locator('.shortcut-label')).toHaveText([en('translatePage'), en('showTranslationOnly'), en('floatMenuTranslateWholePage')]);
+    await expect(rows).toHaveCount(4);
+    await expect(rows.locator('.shortcut-label')).toHaveText([
+      en('translatePage'), en('showTranslationOnly'), en('floatMenuTranslateWholePage'), en('mediaShortcutLabel'),
+    ]);
     for (const keys of await rows.locator('.shortcut-keys').allTextContents()) {
       expect(keys.trim().length).toBeGreaterThan(0);
     }
