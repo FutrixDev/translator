@@ -553,7 +553,7 @@
     customRuleExclude: 'この範囲は翻訳しない',
     customRuleKeepOriginal: '原文のまま残す',
     customRuleCss: 'カスタム CSS',
-    customRuleCssHint: '訳文のクラス名は .ai-translator-inline-block です。訳文には原文からコピーしたインラインの font-size、font-family、font-weight、line-height、text-align、color、letter-spacing、opacity と padding、box-sizing が付いているので、これらを変えるには !important が必要です。下マージン、原文の前にアイコンがあるときに文字をそろえるための開始側パディング、原文と同じ行の後ろに置かれた訳文の開始側マージンは変更できません。url(、@import、@font-face、image(、attr( などはコメント内でも拒否されます。バックスラッシュ（\\）も拒否されるので、エスケープではなく文字そのものを入力してください。',
+    customRuleCssHint: '訳文のクラス名は .ai-translator-inline-block です。訳文には原文からコピーしたインラインの font-size、font-family、font-weight、line-height、text-align、color、letter-spacing、opacity と padding、box-sizing が付いているので、これらを変えるには !important が必要です。置かれる場所によっては、訳文にインラインの display と margin も付くので、これらを変えるときも !important が必要です。下マージン、原文の前にアイコンがあるときに文字をそろえるための開始側パディング、原文と同じ行の後ろに置かれた訳文の開始側マージンは変更できません。url(、@import、@font-face、image(、attr( などはコメント内でも拒否されます。バックスラッシュ（\\）も拒否されるので、エスケープではなく文字そのものを入力してください。',
     customRuleEngine: '翻訳エンジン',
     customRuleEngineFollow: '全体の設定に従う',
     customRuleChipScope: '範囲',

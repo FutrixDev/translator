@@ -572,7 +572,7 @@
     customRuleExclude: '不翻译这些区域',
     customRuleKeepOriginal: '保留原文',
     customRuleCss: '自定义 CSS',
-    customRuleCssHint: '译文的类名是 .ai-translator-inline-block。译文节点带着从原文复制来的行内样式：font-size、font-family、font-weight、line-height、text-align、color、letter-spacing、opacity，以及 padding 和 box-sizing，改这些要加 !important。下外边距、原文前面有图标时为对齐文字而加的起始侧内边距、以及排在原文同一行后面的译文的起始侧外边距改不了。url(、@import、@font-face、image(、attr( 等写法会被拒，写在注释里也一样。反斜杠（\\）也会被拒，请直接输入字符本身，不要写转义。',
+    customRuleCssHint: '译文的类名是 .ai-translator-inline-block。译文节点带着从原文复制来的行内样式：font-size、font-family、font-weight、line-height、text-align、color、letter-spacing、opacity，以及 padding 和 box-sizing，改这些要加 !important。视所在位置，译文还可能带着行内的 display 和 margin，改它们同样要加 !important。下外边距、原文前面有图标时为对齐文字而加的起始侧内边距、以及排在原文同一行后面的译文的起始侧外边距改不了。url(、@import、@font-face、image(、attr( 等写法会被拒，写在注释里也一样。反斜杠（\\）也会被拒，请直接输入字符本身，不要写转义。',
     customRuleEngine: '翻译引擎',
     customRuleEngineFollow: '跟随全局设置',
     customRuleChipScope: '范围',

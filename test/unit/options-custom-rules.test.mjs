@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { optionsSource, repoSource } from './helpers/sources.mjs';
+import { messageCatalog, optionsSource, repoSource } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
@@ -117,4 +117,23 @@ test('userErrorKey: the collection keys and customRuleSaveFailed, nothing else',
   // 拾取器和卡片都问它，不各自拼一张表。
   assert.doesNotMatch(optionsSource(), /CustomRules\.ERROR_KEYS/);
   assert.doesNotMatch(repoSource('content/picker/picker.js'), /CustomRules\.ERROR_KEYS/);
+});
+
+// 编辑器提示（customRuleCssHint）承诺「这些是行内声明，改要加 !important」。清单从
+// 插入译文的代码里读：baseStyle 和每处 style.cssText 模板里写的属性，每门语言的提示
+// 都得点到名。代码多写一个行内属性而提示没跟上，这里就红。
+test('customRuleCssHint names every property a translation carries inline, in every language', () => {
+  const insert = repoSource('content/page/insert.js');
+  const templates = [...insert.matchAll(/(?:baseStyle = |style\.cssText = (?:baseStyle \+ )?)`([^`]*)`/g)]
+    .map((match) => match[1]);
+  assert.equal(templates.length, 4, 'baseStyle and three style.cssText templates');
+  const properties = new Set(templates.flatMap((body) => [...body.matchAll(/^\s*([a-z-]+):/gm)].map((m) => m[1])));
+  for (const name of ['display', 'margin', 'padding', 'box-sizing', 'color']) assert.ok(properties.has(name), name);
+  for (const [lang, table] of Object.entries(messageCatalog())) {
+    const hint = table.customRuleCssHint;
+    assert.ok(hint.includes('!important'), `${lang}: !important`);
+    for (const name of properties) {
+      assert.match(hint, new RegExp(`(^|[^a-z-])${name}([^a-z-]|$)`), `${lang}: customRuleCssHint does not name ${name}`);
+    }
+  }
 });

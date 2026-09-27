@@ -553,7 +553,7 @@
     customRuleExclude: 'No traducir estas zonas',
     customRuleKeepOriginal: 'Conservar el original',
     customRuleCss: 'CSS personalizado',
-    customRuleCssHint: 'Las traducciones tienen la clase .ai-translator-inline-block. Llevan en línea font-size, font-family, font-weight, line-height, text-align, color, letter-spacing y opacity copiados del original, además de padding y box-sizing, así que añade !important para cambiarlos. El margen inferior, el relleno inicial que alinea una traducción con el texto que sigue a un icono y el margen inicial de una traducción colocada junto a su línea no se pueden cambiar. url(, @import, @font-face, image(, attr( y similares se rechazan, incluso dentro de un comentario. La barra invertida (\\) también se rechaza: escribe el carácter en sí en lugar de un escape.',
+    customRuleCssHint: 'Las traducciones tienen la clase .ai-translator-inline-block. Llevan en línea font-size, font-family, font-weight, line-height, text-align, color, letter-spacing y opacity copiados del original, además de padding y box-sizing, así que añade !important para cambiarlos. Según dónde esté, una traducción también puede llevar en línea display y margin; para cambiarlos también hace falta !important. El margen inferior, el relleno inicial que alinea una traducción con el texto que sigue a un icono y el margen inicial de una traducción colocada junto a su línea no se pueden cambiar. url(, @import, @font-face, image(, attr( y similares se rechazan, incluso dentro de un comentario. La barra invertida (\\) también se rechaza: escribe el carácter en sí en lugar de un escape.',
     customRuleEngine: 'Motor de traducción',
     customRuleEngineFollow: 'Seguir el ajuste global',
     customRuleChipScope: 'Ámbito',
