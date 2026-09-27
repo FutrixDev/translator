@@ -98,7 +98,7 @@
       chip.setAttribute('aria-busy', state === 'busy' ? 'true' : 'false');
       chip.textContent = t(state === 'busy' ? 'translating' : 'translationFailed');
     }
-    if (chipField) positionChip(chipField);
+    placeChip();
   }
 
   function ensureChip() {
@@ -117,9 +117,16 @@
 
   // 贴在输入框右下角的**外面**，不是里面。里面会压住用户正在写的那一行 —— 单行
   // 输入框尤其如此。下面放不下就翻到上面去。
-  function positionChip(field) {
-    if (!chip || !field) return;
-    const rect = field.getBoundingClientRect();
+  //
+  // 框已经不在页面上了（React 换掉了整个输入框）：它的矩形是 0，芯片会跳到视口
+  // 左上角。收起来。
+  function placeChip() {
+    if (!chip || !chipField) return;
+    if (!chipField.isConnected) {
+      hideChip();
+      return;
+    }
+    const rect = chipField.getBoundingClientRect();
     const width = chip.offsetWidth || 0;
     const height = chip.offsetHeight || 0;
     const below = rect.bottom + GAP;
@@ -286,7 +293,7 @@
   }
 
   function onViewportChange() {
-    if (chipField) positionChip(chipField);
+    placeChip();
   }
 
   function setupInputTranslateChip() {

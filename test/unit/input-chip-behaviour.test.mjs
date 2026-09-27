@@ -2,11 +2,12 @@
 // **行为**（D-352、D-357）。
 //
 // test/unit/input-chip.test.mjs 守的是源码形状；e2e 走的是真浏览器。这里钉的是
-// 浏览器里不好单独造出来的两条：
+// 浏览器里不好单独造出来的几条：
 // - 身份核对（`pending !== request`）：译文在路上时按了 Esc，芯片收走了，但字没变、
 //   焦点也没走 —— 只有身份核对拦得住这份没人要的译文。
 // - 晚到的写入（writeback.landed）：点芯片、框被重新判定时先问一句，认出来就当
 //   写成了，不再发请求。
+// - 框离开了页面，芯片收起（D-361 M1）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource } from './helpers/sources.mjs';
@@ -101,6 +102,7 @@ function load({ landed = () => false } = {}) {
   const fire = (type, event) => { for (const fn of listeners[type] || []) fn(event); };
   const field = new FakeNode('TEXTAREA');
   field.value = '你好世界';
+  field.isConnected = true;
   const event = { composedPath: () => [field] };
 
   return {
@@ -115,6 +117,7 @@ function load({ landed = () => false } = {}) {
       await flush();
     },
     press(key) { fire('keydown', { key }); },
+    fire,
     clickChip(chip) { for (const fn of chip.listeners.click) fn(); },
   };
 }
@@ -182,4 +185,15 @@ test('写完之后编辑器改了空白：芯片不再冒出来', async () => {
   harness.field.value = '你好世界\n\nHello\u00a0world';
   await harness.focus();
   assert.equal(harness.chip().isConnected, false, '编辑器只改了空白，芯片又冒了出来');
+});
+
+test('框离开了页面（React 换掉了整个输入框）：芯片收起，不跳去视口左上角', async () => {
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  assert.ok(chip && chip.isConnected);
+
+  harness.field.isConnected = false;
+  harness.fire('scroll', {});
+  assert.equal(chip.isConnected, false, '框已经不在页面上了，芯片还挂着');
 });
