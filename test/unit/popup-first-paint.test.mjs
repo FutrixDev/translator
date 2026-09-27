@@ -16,6 +16,7 @@ import vm from 'node:vm';
 import { repoSource } from './helpers/sources.mjs';
 
 const POPUP = repoSource('popup/popup.js');
+const POPUP_HTML = repoSource('popup/popup.html');
 
 function deferred() {
   let resolve;
@@ -23,18 +24,41 @@ function deferred() {
   return { promise, resolve };
 }
 
+// 按钮在 popup.html 里的起始模样（disabled、aria-pressed）。popup.js 看不见 HTML，
+// 这里照 HTML 给假元素定初值，首帧问的就是真的那一份标记。
+function markupOf(id) {
+  const tag = POPUP_HTML.match(new RegExp(`<[a-z]+ id="${id}"[^>]*>`));
+  if (!tag) return { disabled: false, attributes: {} };
+  const pressed = tag[0].match(/aria-pressed="([^"]*)"/);
+  return {
+    disabled: /\sdisabled[\s>]/.test(tag[0]),
+    attributes: pressed ? { 'aria-pressed': pressed[1] } : {},
+  };
+}
+
 function fakeElement(id) {
   const listeners = {};
+  const initial = markupOf(id);
+  const attributes = { ...initial.attributes };
+  let disabled = initial.disabled;
+  // 每一次从灰变成能按，记下那一刻的 aria-pressed：能按的第一帧说的是什么。
+  const enabledWith = [];
   return {
     id,
     hidden: false,
-    disabled: false,
+    get disabled() { return disabled; },
+    set disabled(value) {
+      if (disabled && !value) enabledWith.push(attributes['aria-pressed']);
+      disabled = value;
+    },
+    enabledWith,
     textContent: '',
     title: '',
     listeners,
     classList: { toggle() {}, add() {}, remove() {} },
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
-    setAttribute() {},
+    setAttribute(name, value) { attributes[name] = String(value); },
+    getAttribute(name) { return name in attributes ? attributes[name] : null; },
   };
 }
 
@@ -42,7 +66,7 @@ function fakeElement(id) {
  * 装一个 popup。`reply(message)` 决定 chrome.tabs.sendMessage 对每一问答什么：
  * 返回一个 promise，测试可以攥着它的 resolve 决定什么时候答。
  */
-function load({ reply }) {
+function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
   const elements = new Map();
   const docListeners = {};
   const sent = [];
@@ -61,7 +85,7 @@ function load({ reply }) {
   const chrome = {
     storage: {
       sync: {
-        get: async (defaults) => ({ ...defaults }),
+        get: syncGet,
         set: async (patch) => { written.push(patch); },
       },
       onChanged: { addListener(fn) { storageListeners.push(fn); } },
@@ -213,4 +237,45 @@ test('the auto-translate master switch writes the options page key and follows s
   assert.equal(JSON.stringify(popup.written[1]), '{"autoTranslate":true}');
   popup.storageChanged({ autoTranslate: { newValue: true } });
   assert.equal(status.textContent, 'on');
+});
+
+test('the master switch is not drawn from a guess: disabled until storage answers, then right on its first frame', async () => {
+  // R33 N1：以前 popup.html 写死 aria-pressed="true"、状态格写死「On」，存储里是
+  // 关着的人打开 popup 先看见「开」，那一瞬点下去写的是 !true。
+  const stored = deferred();
+  const popup = load({
+    reply: () => Promise.resolve(PAGE),
+    syncGet: async (defaults) => ({ ...defaults, ...(await stored.promise) }),
+  });
+  const master = popup.element('toggleGlobalAuto');
+  const status = popup.element('globalAutoStatus');
+  popup.fire();
+  await wait(10);
+  // 存储还没答：灰着，不说开也不说关。
+  assert.equal(master.disabled, true, 'the switch can be pressed before anyone knows its state');
+  assert.equal(master.getAttribute('aria-pressed'), null, 'the switch claims a state before storage answered');
+  assert.equal(status.textContent, '');
+  // 监听器照样同步接上了（A1 不动）。
+  assert.equal((master.listeners.click || []).length, 1);
+
+  stored.resolve({ autoTranslate: false });
+  await wait(10);
+  assert.equal(master.disabled, false);
+  assert.deepEqual([...master.enabledWith], ['false'], 'the first pressable frame said something other than storage');
+  assert.equal(status.textContent, 'off');
+});
+
+test('the master switch stays disabled when storage cannot be read', async () => {
+  const popup = load({ reply: () => Promise.resolve(PAGE), syncGet: async () => { throw new Error('storage gone'); } });
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args);
+  try {
+    popup.fire();
+    await wait(10);
+  } finally {
+    console.error = original;
+  }
+  assert.equal(popup.element('toggleGlobalAuto').disabled, true);
+  assert.ok(errors.some((args) => /Failed to check status/.test(String(args[0]))), 'the failure was not logged');
 });

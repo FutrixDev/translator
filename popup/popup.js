@@ -358,13 +358,18 @@ async function toggleSiteAuto() {
  * 自动翻译总开关那一行。只从存储画：checkStatus 读的那一次，之后是 onChanged ——
  * 设置页、站点那一行（开一个站点顺带打开总开关，见 SiteRules.setSiteAuto）写的
  * 都是同一个键，这一行跟着存储走，不自己猜。写失败时存储没变，这一行也就不动。
+ *
+ * 存储答复以前没有值：popup.html 里按钮是 disabled、没有 aria-pressed。这里第一次
+ * 画才把它启用，而且先写 aria-pressed 再启用 —— 能按的那一刻它说的就是存储里的
+ * 值。读存储失败就一直灰着（checkStatus 打日志），不拿一个默认值冒充。
  */
-let globalAuto = true;
+let globalAuto;
 
 function renderGlobalAuto(on) {
   globalAuto = on;
   elements.toggleGlobalAuto.setAttribute('aria-pressed', String(on));
   elements.globalAutoStatus.textContent = on ? t('on') : t('off');
+  elements.toggleGlobalAuto.disabled = false;
 }
 
 /**

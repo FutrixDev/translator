@@ -7,6 +7,7 @@
 const { test, expect } = require('./fixtures');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { serve, BODY } = require('./auto-touchpoint-fixtures');
+const { writeSyncSettings } = require('./helpers');
 
 const popupUrl = (extensionId) => `chrome-extension://${extensionId}/popup/popup.html`;
 const SLOW_STATE_MS = 5000;
@@ -46,4 +47,44 @@ test('Translate this page answers within 500 ms while the tab is slow to report 
   } finally {
     await close();
   }
+});
+
+// R33 N1：总开关那一行只从存储画。存储晚答时它灰着、不说开也不说关；能按的第一帧
+// 说的就是存储里的值。这里把 popup 的 storage.sync.get 拖 1.5 秒，存储里是关着的，
+// 用 MutationObserver 从 DOMContentLoaded 起记下按钮的每一个样子。
+const SLOW_STORAGE_MS = 1500;
+
+test('the auto-translate master switch never shows a guessed state while storage is slow', async ({ context, extensionId }) => {
+  await writeSyncSettings(context, { autoTranslate: false });
+  const popup = await context.newPage();
+  await popup.addInitScript((delay) => {
+    const get = chrome.storage.sync.get.bind(chrome.storage.sync);
+    chrome.storage.sync.get = (...args) => new Promise((resolve) => setTimeout(resolve, delay)).then(() => get(...args));
+    window.__masterFrames = [];
+    document.addEventListener('DOMContentLoaded', () => {
+      const button = document.getElementById('toggleGlobalAuto');
+      const status = document.getElementById('globalAutoStatus');
+      const snap = () => window.__masterFrames.push({
+        disabled: button.disabled,
+        pressed: button.getAttribute('aria-pressed'),
+        status: status.textContent,
+      });
+      snap();
+      new MutationObserver(snap).observe(button, { attributes: true, attributeFilter: ['disabled', 'aria-pressed'] });
+    });
+  }, SLOW_STORAGE_MS);
+  await popup.goto(popupUrl(extensionId));
+
+  const master = popup.locator('#toggleGlobalAuto');
+  await expect(master).toBeDisabled();
+  expect(await master.getAttribute('aria-pressed')).toBeNull();
+
+  await expect(master).toBeEnabled({ timeout: SLOW_STORAGE_MS + 5000 });
+  await expect(master).toHaveAttribute('aria-pressed', 'false');
+  await expect(popup.locator('#globalAutoStatus')).toHaveText('Off');
+
+  const frames = await popup.evaluate(() => window.__masterFrames);
+  expect(frames[0]).toEqual({ disabled: true, pressed: null, status: '' });
+  expect(frames.filter((frame) => frame.pressed === 'true')).toEqual([]);
+  expect(frames.filter((frame) => !frame.disabled).map((frame) => frame.pressed)).not.toContain(null);
 });
