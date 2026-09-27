@@ -259,10 +259,12 @@ async function saveRuleEditor(options) {
 
 /**
  * 在编辑器里把引擎选成 AI，接住确认框：断言文案是 customRuleEngineAiConfirm，
- * accept 决定点确定还是取消。
+ * accept 决定点确定还是取消。确认框 3 s 内不出来就直说，不等到整条用例超时。
  */
 async function chooseAiEngine(options, accept) {
-  const dialog = new Promise((resolve) => options.once('dialog', resolve));
+  const dialog = options.waitForEvent('dialog', { timeout: 3 * SECOND }).catch((error) => {
+    throw new Error(`customRuleEngineAiConfirm did not appear within 3 s of choosing AI (${error.message})`);
+  });
   const selecting = options.selectOption('#customRule-engine', 'ai');
   const shown = await dialog;
   expect(shown.type()).toBe('confirm');
