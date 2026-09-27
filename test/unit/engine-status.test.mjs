@@ -21,6 +21,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 // APICompat.isApiKeyMissing), and every page loads api-compat.js before it.
 await import('../../shared/api-compat.js');
 await import('../../shared/engine-status.js');
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../i18n/messages.js');
 const ES = globalThis.EngineStatus;

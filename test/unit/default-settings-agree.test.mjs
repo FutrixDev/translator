@@ -23,6 +23,7 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 // background/settings.js 顶层就读 globalThis.OCRCore 和 getUILanguage。
 globalThis.chrome = { i18n: { getUILanguage: () => 'en' } };
 
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 const { defaultSettings: workerDefaults } = await import('../../background/settings.js');
@@ -30,7 +31,7 @@ const contentDefaults = globalThis.DefaultSettings.contentDefaults();
 
 /**
  * 设置页和弹窗那两张表读不成模块 —— 都是经典脚本，顶层就去 getElementById。
- * 所以把对象字面量单独抠出来求值，两个标识符绑到它们在浏览器里拿到的同一份共享
+ * 所以把对象字面量单独抠出来求值，三个标识符绑到它们在浏览器里拿到的同一份共享
  * 常量上（这正是要验的东西之一：几边引用的是同一个来源）。
  */
 function pageDefaults(rel) {
@@ -39,8 +40,8 @@ function pageDefaults(rel) {
   assert.notEqual(start, -1, `could not find the defaults in ${rel}`);
   const end = source.indexOf('\n};', start);
   const literal = source.slice(source.indexOf('{', start), end + 2);
-  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', `return (${literal});`);
-  return make(globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore);
+  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', 'AccountGate', `return (${literal});`);
+  return make(globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore, globalThis.AccountGate);
 }
 
 const TABLES = [

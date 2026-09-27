@@ -31,9 +31,17 @@
   // token, because a wrong local clock must not lock a user out.
   const TOKEN_KEY = 'comicToken';
 
-  // The two switches this gate governs. Both features share one account, so
-  // they share one precondition.
-  const ACCOUNT_FEATURE_KEYS = ['enableComicTranslation', 'enablePdfTranslation'];
+  // The two switches this gate governs, with their defaults. Both features
+  // share one account, so they share one precondition. Both default on (D-353):
+  // nothing is spent until an explicit click, and an off-by-default switch would
+  // read as "the user turned it off" below, which keeps every hint away.
+  //
+  // This is the one copy of those defaults. The three settings tables
+  // (shared/default-settings.js, background/settings.js, options/options.js)
+  // spread it, and readFeatureState() asks storage with it; a literal anywhere
+  // else is a second answer that can drift (test/unit/account-gate.test.mjs).
+  const FEATURE_DEFAULTS = Object.freeze({ enableComicTranslation: true, enablePdfTranslation: true });
+  const ACCOUNT_FEATURE_KEYS = Object.freeze(Object.keys(FEATURE_DEFAULTS));
 
   // What a surface can do with a feature:
   //   READY       switch on, signed in: every entry point works.
@@ -63,12 +71,33 @@
    * pay a storage read per question.
    */
   function featureState(settings, key, signedIn) {
-    if (!ACCOUNT_FEATURE_KEYS.includes(key)) {
-      throw new Error(`AccountGate: ${key} is not an account-backed feature`);
-    }
+    assertAccountFeature(key);
     if (!settings || !settings[key]) return FEATURE_STATES.OFF;
     return signedIn ? FEATURE_STATES.READY : FEATURE_STATES.SIGNED_OUT;
   }
 
-  root.AccountGate = { TOKEN_KEY, ACCOUNT_FEATURE_KEYS, FEATURE_STATES, hasAccount, featureState };
+  function assertAccountFeature(key) {
+    if (!ACCOUNT_FEATURE_KEYS.includes(key)) {
+      throw new Error(`AccountGate: ${key} is not an account-backed feature`);
+    }
+  }
+
+  /**
+   * The state of one account-backed feature on this device, read from storage
+   * now: the sync switch (missing means its default) and the device's sign-in.
+   * For the surfaces that do not already hold both — the service worker and the
+   * popup. Content scripts track both and call featureState() directly.
+   */
+  async function readFeatureState(key) {
+    assertAccountFeature(key);
+    const [settings, signedIn] = await Promise.all([
+      chrome.storage.sync.get({ [key]: FEATURE_DEFAULTS[key] }),
+      hasAccount(),
+    ]);
+    return featureState(settings, key, signedIn);
+  }
+
+  root.AccountGate = {
+    TOKEN_KEY, ACCOUNT_FEATURE_KEYS, FEATURE_DEFAULTS, FEATURE_STATES, hasAccount, featureState, readFeatureState,
+  };
 })(globalThis);

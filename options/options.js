@@ -170,13 +170,11 @@ const defaultSettings = {
   // The hover shortcut over large images — on by default, it is the flow's
   // front door. Matches background.js.
   enableImageOcrHoverButton: true,
-  // On by default — see the note on defaultSettings in background/settings.js.
-  // Empty comicTargetLang follows targetLang above.
-  enableComicTranslation: true,
+  // enableComicTranslation / enablePdfTranslation: shared/account-gate.js (see
+  // the note on defaultSettings in background/settings.js). Empty
+  // comicTargetLang / pdfTargetLang follow targetLang above.
+  ...AccountGate.FEATURE_DEFAULTS,
   comicTargetLang: '',
-  // On by default — see the note on defaultSettings in background/background.js.
-  // Empty pdfTargetLang follows targetLang.
-  enablePdfTranslation: true,
   pdfTargetLang: '',
   // Kept in the read set, not on the page any more: it is what a profile from
   // before the display-type select migrates from (CaptionCore does the sum).

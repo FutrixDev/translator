@@ -47,6 +47,7 @@ globalThis.fetch = async (url) => {
 
 const { SHADOW_STYLE_FILES, toShadowCss, handleMessage } =
   await import('../../background/page-coverage.js');
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 const { runCommand } = await import('../../background/commands.js');

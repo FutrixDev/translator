@@ -9,15 +9,10 @@
 
 import '../shared/account-gate.js';
 import * as comicClient from './comic-client.js';
-import { defaultSettings } from './settings.js';
 
 /** The state of one account-backed feature on this device, right now. */
-async function featureState(key) {
-  const [settings, signedIn] = await Promise.all([
-    chrome.storage.sync.get(defaultSettings),
-    AccountGate.hasAccount(),
-  ]);
-  return AccountGate.featureState(settings, key, signedIn);
+function featureState(key) {
+  return AccountGate.readFeatureState(key);
 }
 
 /**

@@ -18,6 +18,7 @@ import { engineSource, optionsSource } from './helpers/sources.mjs';
 
 const code = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 const { CONTENT_DEFAULTS } = globalThis.DefaultSettings;
 

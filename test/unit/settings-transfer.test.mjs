@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
 await import('../../shared/api-compat.js');
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 await import('../../shared/ocr.js');
 await import('../../shared/lang-tags.js');
@@ -38,8 +39,8 @@ function optionsDefaults() {
   const start = source.indexOf('const defaultSettings = {');
   assert.notEqual(start, -1, 'options.js has no defaultSettings');
   const literal = source.slice(source.indexOf('{', start), source.indexOf('\n};', start) + 2);
-  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', `return (${literal});`);
-  return make(DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore);
+  const make = new Function('DEFAULT_SELECTION_HOTKEY', 'OCRCore', 'AccountGate', `return (${literal});`);
+  return make(DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore, globalThis.AccountGate);
 }
 
 // 和 options-transfer.js 的 transferSchema() / transferEnums() 同一套入参。

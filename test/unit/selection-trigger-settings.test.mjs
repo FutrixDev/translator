@@ -78,6 +78,7 @@ test('modifier and both leave every control live', () => {
 });
 
 test('both default tables that know the trigger say "both"', async () => {
+  await import('../../shared/account-gate.js');
   await import('../../shared/default-settings.js');
   assert.equal(globalThis.DefaultSettings.contentDefaults().selectionTrigger, 'both');
   assert.match(repoFile('options/options.js'), /\n  selectionTrigger: 'both',\n/);

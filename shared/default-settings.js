@@ -23,7 +23,9 @@
 // see shared/target-lang.js.
 //
 // Loaded as a classic script by the content scripts, so it publishes onto the
-// global object rather than using `export`.
+// global object rather than using `export`. It reads AccountGate at load (the
+// account features' defaults live there), so shared/account-gate.js loads
+// before it in every list that loads it.
 (function (root) {
   'use strict';
 
@@ -76,9 +78,9 @@
     // defaultSettings. (There is no auto-translate setting: OCR is always
     // recognise-first, with a Translate button in the popup.)
     enableImageOcrHoverButton: true,
-    enableComicTranslation: true,
+    // enableComicTranslation / enablePdfTranslation: shared/account-gate.js.
+    ...root.AccountGate.FEATURE_DEFAULTS,
     comicTargetLang: '',
-    enablePdfTranslation: true,
     pdfTargetLang: '',
     // Superseded by captionDisplayMode; still read so a profile that only
     // has the old boolean migrates instead of resetting to bilingual.

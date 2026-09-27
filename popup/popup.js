@@ -112,8 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function refreshComicSection() {
   // Off means gone, not greyed out: these rows would otherwise advertise a
   // feature with no entry point behind it.
-  const comicReady = AccountGate.featureState(await chrome.storage.sync.get({ enableComicTranslation: true }),
-    'enableComicTranslation', await AccountGate.hasAccount()) === AccountGate.FEATURE_STATES.READY;
+  const comicReady = await AccountGate.readFeatureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
   elements.comicTranslatePage.hidden = !comicReady;
   elements.comicColorizePage.hidden = !comicReady;
 }

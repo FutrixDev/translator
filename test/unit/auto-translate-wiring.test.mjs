@@ -28,6 +28,7 @@ const engineCode = () => strip(engineSource());
 const manifest = JSON.parse(read('manifest.json'));
 const isolated = manifest.content_scripts.find((entry) => (entry.world || 'ISOLATED') === 'ISOLATED').js;
 
+await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
 const { DefaultSettings } = globalThis;
 

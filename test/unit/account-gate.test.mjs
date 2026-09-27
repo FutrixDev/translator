@@ -10,10 +10,12 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const repoFile = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 // The module has no `export` (it is also loaded as a classic script by the
 // popup, the options page and the content scripts), so importing it for its
@@ -53,6 +55,74 @@ test('featureState never rewrites the settings it is asked about', () => {
 
 test('featureState refuses a key it does not govern', () => {
   assert.throws(() => gate.featureState({ showFloatBall: true }, 'showFloatBall', true), /not an account-backed feature/);
+});
+
+/** Stand in for both storage areas readFeatureState() reads. */
+function withStorage({ sync = {}, token = '' } = {}) {
+  const reads = [];
+  globalThis.chrome = {
+    storage: {
+      sync: { get: async (defaults) => { reads.push(defaults); return { ...defaults, ...sync }; } },
+      local: { get: async (defaults) => ({ ...defaults, comicToken: token }) },
+    },
+  };
+  return reads;
+}
+
+test('readFeatureState reads the switch and the sign-in now, and a missing switch is its default', async () => {
+  const S = gate.FEATURE_STATES;
+  for (const key of gate.ACCOUNT_FEATURE_KEYS) {
+    const reads = withStorage();
+    assert.equal(await gate.readFeatureState(key), S.SIGNED_OUT, `${key} never set, signed out`);
+    assert.deepEqual(reads, [{ [key]: gate.FEATURE_DEFAULTS[key] }], 'asked storage without the one default');
+    withStorage({ token: 'a-token' });
+    assert.equal(await gate.readFeatureState(key), S.READY, `${key} never set, signed in`);
+    withStorage({ sync: { [key]: false }, token: 'a-token' });
+    assert.equal(await gate.readFeatureState(key), S.OFF, `${key} turned off, signed in`);
+  }
+  await assert.rejects(gate.readFeatureState('showFloatBall'), /not an account-backed feature/);
+});
+
+// One copy of the two defaults. The three settings tables spread
+// FEATURE_DEFAULTS and every storage read of the switch goes through
+// readFeatureState(); a literal default anywhere else is a second answer to
+// "is this feature on for someone who never touched it", and those drift.
+// Production sources only — tests set the switches to both values on purpose.
+test('no production source outside the gate spells out a default for the two switches', () => {
+  const SKIP = new Set(['.git', 'node_modules', 'test', 'docs', 'vendor', 'brand', 'icons', '_locales']);
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = dir ? `${dir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (!SKIP.has(entry.name) && !entry.name.startsWith('.')) walk(rel);
+      } else if (/\.(m?js|html)$/.test(entry.name)) {
+        files.push(rel);
+      }
+    }
+  };
+  walk('');
+  assert.ok(files.includes('shared/default-settings.js') && files.includes('options/options.js'),
+    'the walk no longer reaches the settings tables');
+  const literal = /['"]?enable(?:Comic|Pdf)Translation['"]?\s*:\s*(?:true|false)\b/;
+  const offenders = files
+    .filter((rel) => rel !== 'shared/account-gate.js' && literal.test(repoFile(rel)))
+    .map((rel) => `${rel}: ${repoFile(rel).match(literal)[0]}`);
+  assert.deepEqual(offenders, [], 'spread AccountGate.FEATURE_DEFAULTS or call AccountGate.readFeatureState()');
+});
+
+test('every list that loads default-settings.js loads the gate before it', () => {
+  // The content defaults spread AccountGate.FEATURE_DEFAULTS as they load.
+  const manifest = JSON.parse(repoFile('manifest.json'));
+  const scripts = manifest.content_scripts.find(entry => entry.js.includes('shared/default-settings.js')).js;
+  assert.ok(scripts.indexOf('shared/account-gate.js') !== -1 &&
+    scripts.indexOf('shared/account-gate.js') < scripts.indexOf('shared/default-settings.js'), 'manifest.json');
+  for (const file of ['options/options.html', 'onboarding/onboarding.html']) {
+    const html = repoFile(file);
+    const tag = (src) => html.indexOf(`<script src="${src}"`);
+    assert.ok(tag('../shared/account-gate.js') !== -1 &&
+      tag('../shared/account-gate.js') < tag('../shared/default-settings.js'), file);
+  }
 });
 
 test('hasAccount reads the token, and a storage failure fails closed', async () => {

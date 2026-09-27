@@ -32,6 +32,9 @@ const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
   ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
+  // default-settings.js 在加载时读 AccountGate.FEATURE_DEFAULTS；manifest 里它
+  // 排在前面。
+  'shared/account-gate.js',
   'shared/default-settings.js',
   // manifest 里它紧挨在 content-bootstrap.js 之前：bootstrap 建 ctx 之前先问它
   // 「这个 frame 进不进」。夹具页是顶层，答案恒为进；带上它是为了夹具与 manifest

@@ -67,7 +67,7 @@ function fakeElement(id) {
  * 装一个 popup。`reply(message)` 决定 chrome.tabs.sendMessage 对每一问答什么：
  * 返回一个 promise，测试可以攥着它的 resolve 决定什么时候答。
  */
-function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
+function load({ reply, syncGet = async (defaults) => ({ ...defaults }), token = '' }) {
   const elements = new Map();
   const docListeners = {};
   const sent = [];
@@ -89,6 +89,8 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
         get: syncGet,
         set: async (patch) => { written.push(patch); },
       },
+      // 这台设备有没有账号：AccountGate.hasAccount() 读的就是它。
+      local: { get: async (defaults) => ({ ...defaults, comicToken: token }) },
       onChanged: { addListener(fn) { storageListeners.push(fn); } },
     },
     tabs: {
@@ -112,7 +114,6 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
     getUILanguage: () => 'en',
     setupDisplayRow() {},
     setupPdfSection() {},
-    AccountGate: { applyAccountGate: async (settings) => settings },
     EngineStatus: {
       UNKNOWN_PROBE: { unknown: true },
       describeEngineStatus: () => ({ key: 'ready', detailKey: '', ok: true }),
@@ -124,6 +125,8 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }) }) {
   vm.createContext(sandbox);
   // 理由 → 人话那张表跑真的：popup 按页面回的枚举取话，表是共用的那一张。
   vm.runInContext(repoSource('shared/auto-reason-keys.js'), sandbox, { filename: 'shared/auto-reason-keys.js' });
+  // 漫画那两行问的是真的闸门：开关（sync）加这台设备的账号（local）。
+  vm.runInContext(repoSource('shared/account-gate.js'), sandbox, { filename: 'shared/account-gate.js' });
   vm.runInContext(POPUP, sandbox, { filename: 'popup/popup.js' });
   return {
     element: (id) => document.getElementById(id),
@@ -285,6 +288,23 @@ test('the master switch stays disabled when storage cannot be read', async () =>
   assert.equal(popup.element('toggleGlobalAuto').disabled, true);
   assert.equal(popup.element('globalAutoStatus').hidden, true, 'an unread state must not draw a pill');
   assert.ok(errors.some((args) => /Failed to check status/.test(String(args[0]))), 'the failure was not logged');
+});
+
+// 漫画那两行只在能用的时候出现：开关开着，这台设备也登录了（AccountGate 的
+// ready）。开关关着或没登录都藏起来 —— 点下去只能答「请登录」或什么都不做。
+test('the comic rows show only where the gate says ready', async () => {
+  const rows = (popup) => ['comicTranslatePage', 'comicColorizePage'].map((id) => popup.element(id).hidden);
+  const cases = [
+    [{ token: 'a-token' }, [false, false]],
+    [{ token: '' }, [true, true]],
+    [{ token: 'a-token', syncGet: async (defaults) => ({ ...defaults, enableComicTranslation: false }) }, [true, true]],
+  ];
+  for (const [options, hidden] of cases) {
+    const popup = load({ reply: () => new Promise(() => {}), ...options });
+    popup.fire();
+    await wait(10);
+    assert.deepEqual(rows(popup), hidden, JSON.stringify({ token: options.token, off: !!options.syncGet }));
+  }
 });
 
 test('the site row says which refusal greys it out, as the page named it', async () => {
