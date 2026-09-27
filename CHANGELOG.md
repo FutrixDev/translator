@@ -10,8 +10,9 @@
   `chrome://extensions/shortcuts`.
 - **A hint that names the shortcut.** A PDF shows a small bar, "Press Alt+M
   to translate this PDF", with a Translate button. A comic reader (three or
-  more pages stacked one right under the next) shows the same kind of bar
-  once per site; a feed or an article with pictures a post apart does not.
+  more wide pages stacked one right under the next, taller together than the
+  window) shows the same kind of bar once per site; a feed or an article with
+  pictures a post apart, or a sidebar column of thumbnails, does not.
   Nothing is sent until you press the key or the button. If the shortcut is
   unbound, the bar offers a link to set one.
 - **Not signed in? Sign in, then it carries on.** The key and the button open

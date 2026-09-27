@@ -2,7 +2,8 @@
  * The comic hint (content/content-media-hints.js, D-353): a reader page — at
  * least three comic pages stacked top to bottom — gets one bar naming the
  * media shortcut, once per site. A second visit, an article with one big
- * picture, or a feed of pictures a post apart gets nothing.
+ * picture, a feed of pictures a post apart, or a column of thumbnails gets
+ * nothing.
  *
  * Signed out on purpose: the hint is for the user who has not found the feature
  * yet, and nothing here is sent to the comic service (no job, no upload) — the
@@ -15,6 +16,7 @@ const { SOURCE_PNG } = require('./comic-fixtures');
 const READER = 'https://comics-reader.test';
 const ARTICLE = 'https://picture-article.test';
 const FEED = 'https://picture-feed.test';
+const CARDS = 'https://thumbnail-column.test';
 const BAR = '#ai-translator-auto-bar';
 
 const page = (images) => `<!doctype html><html><body style="margin:0">
@@ -23,6 +25,8 @@ const pageImg = (n) => `<img src="/p${n}.png" width="600" height="900" style="di
 // A post in a feed: the picture X draws (506x285) under a post's worth of text.
 const post = (n) => `<div style="height:800px">Post ${n}: a few lines of text, a name, a row of buttons.</div>
 <img src="/p${n}.png" width="506" height="285" style="display:block">`;
+// A sidebar of cards (sspai.com): 222x139 thumbnails, flush and centred.
+const card = (n) => `<img src="/p${n}.png" width="222" height="139" style="display:block;margin:0 auto">`;
 
 async function route(context) {
   await context.route(`${READER}/read/1`, (r) => r.fulfill({
@@ -34,7 +38,10 @@ async function route(context) {
   await context.route(`${FEED}/home`, (r) => r.fulfill({
     contentType: 'text/html', body: page([1, 2, 3].map(post).join('')),
   }));
-  for (const origin of [READER, ARTICLE, FEED]) {
+  await context.route(`${CARDS}/home`, (r) => r.fulfill({
+    contentType: 'text/html', body: page([1, 2, 3, 4].map(card).join('')),
+  }));
+  for (const origin of [READER, ARTICLE, FEED, CARDS]) {
     await context.route(`${origin}/p*.png`, (r) => r.fulfill({ contentType: 'image/png', body: SOURCE_PNG }));
   }
 }
@@ -85,6 +92,21 @@ test.describe('Comic hint', () => {
     // reader has except the pages touching.
     expect(await tab.evaluate(() => Array.from(document.images)
       .filter((img) => img.complete && img.naturalWidth > 0).length)).toBe(3);
+    await tab.mouse.wheel(0, 400);
+    await tab.waitForTimeout(1500);
+    await expect(tab.locator(`${BAR}[data-mode="offer"]`)).toBeHidden();
+    expect(await hintHosts(context)).toEqual([]);
+  });
+
+  test('a flush column of thumbnails is not a reader either', async ({ context, page: tab }) => {
+    await route(context);
+    await tab.goto(`${CARDS}/home`);
+    await waitForFloatBall(tab);
+    await tab.waitForLoadState('load');
+    // Four pictures, decoded, touching, one centred on the next: a reader in
+    // every way but size.
+    expect(await tab.evaluate(() => Array.from(document.images)
+      .filter((img) => img.complete && img.naturalWidth > 0).length)).toBe(4);
     await tab.mouse.wheel(0, 400);
     await tab.waitForTimeout(1500);
     await expect(tab.locator(`${BAR}[data-mode="offer"]`)).toBeHidden();

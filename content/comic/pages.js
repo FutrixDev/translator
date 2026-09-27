@@ -273,10 +273,19 @@
   // has to sit nearly flush to count.
   const STACK_MAX_GAP = 40;
   const STACK_MAX_GAP_RATIO = 0.1;
+  // A flush column is still not a reader when its pictures are thumbnails: the
+  // sspai.com sidebar stacks four 222x139 cards with no gap at all. A page is
+  // drawn to be read, so it is wide — a webtoons.com slice is 700 px (the last
+  // one 800), and on a phone a strip spans the screen, 360 to 430 CSS px. 300
+  // keeps both and drops the cards.
+  const STACK_MIN_PAGE_WIDTH = 300;
+  // ...and the run has to be taller than the screen, which is what makes it
+  // something to scroll through: those four cards come to 556 px against a
+  // 720 px window, three webtoons slices to 3420.
 
   /**
-   * Is this a comic reader: at least three pages stacked top to bottom, each
-   * close under the one before?
+   * Is this a comic reader: at least three wide pages stacked top to bottom,
+   * each close under the one before, together taller than the window?
    *
    * Asked of the whole document, not only the viewport: pages in a vertical
    * reader are taller than the screen, so three of them are never on screen at
@@ -287,8 +296,10 @@
     const pages = Array.from(document.images)
       .filter(isComicPage)
       .map(img => img.getBoundingClientRect())
+      .filter(rect => rect.width >= STACK_MIN_PAGE_WIDTH)
       .sort((a, b) => a.top - b.top);
     let run = 0;
+    let runHeight = 0;
     let previous = null;
     for (const rect of pages) {
       const centre = (rect.left + rect.right) / 2;
@@ -298,9 +309,11 @@
       const aligned = previous && centre > previous.left && centre < previous.right;
       // A picture beside the previous one (a grid row, a spread) or far below it
       // (the next post in a feed) starts over.
-      run = below && close && aligned ? run + 1 : 1;
+      const joined = below && close && aligned;
+      run = joined ? run + 1 : 1;
+      runHeight = joined ? runHeight + rect.height : rect.height;
       previous = rect;
-      if (run >= STACK_MIN_PAGES) return true;
+      if (run >= STACK_MIN_PAGES && runHeight >= window.innerHeight) return true;
     }
     return false;
   }

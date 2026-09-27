@@ -8,7 +8,8 @@
 //
 // 什么时候出现：
 // - PDF：这个网址是一份 PDF 文档（和右键菜单同一问，shared/pdf-url.js）。每次都出。
-// - 漫画：页面里至少三张漫画页上下叠着（comic.hasComicStack()）。**每个域名只出
+// - 漫画：页面里至少三张够宽的漫画页上下紧挨着、合起来比窗口还高
+//   （comic.hasComicStack()）。**每个域名只出
 //   一次**：一栏大图的文章也会长这样，第二次再跳出来就是打扰了。记在 sync 的
 //   comicHintHosts 里，由服务工作者排队写（background/media-hints.js）。
 // - 两者都只在用户**没亲手关掉**这项功能时出现（AccountGate 的 'off'）。没登录

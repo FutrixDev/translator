@@ -250,7 +250,9 @@ function img(left, top, width, height) {
 
 function comicShelf(images) {
   const ctx = { t: (key) => key };
-  const sandbox = { window: { AI_TRANSLATOR_CONTENT: ctx }, document: { images }, console };
+  // The e2e window: 1280x720.
+  const window = { AI_TRANSLATOR_CONTENT: ctx, innerWidth: 1280, innerHeight: 720 };
+  const sandbox = { window, document: { images }, console };
   vm.createContext(sandbox);
   vm.runInContext(read('content/comic/pages.js'), sandbox, { filename: 'content/comic/pages.js' });
   return ctx.comic;
@@ -282,11 +284,27 @@ test('a feed or an article is a column of pictures too far apart to be pages', (
   const article = [img(100, 0, 600, 900), img(100, 950, 600, 900), img(100, 1900, 600, 900)];
   assert.equal(comicShelf(article).hasComicStack(), false);
   // Small pictures a caption apart: under 40 px but past a tenth of the height.
-  const small = [img(100, 0, 300, 200), img(100, 230, 300, 200), img(100, 460, 300, 200)];
+  // Four of them, so the column is wide and tall enough and only the gap says no.
+  const small = [0, 1, 2, 3].map((i) => img(100, i * 230, 300, 200));
   assert.equal(comicShelf(small).hasComicStack(), false);
   // A reader that frames its pages with a margin still counts.
   const framed = [img(100, 0, 600, 900), img(100, 940, 600, 900), img(100, 1880, 600, 900)];
   assert.equal(comicShelf(framed).hasComicStack(), true);
+});
+
+test('a flush column of thumbnails is not a reader: pages are wide and outrun the screen', () => {
+  // The sspai.com sidebar: four 222x139 cards, no gap, one centred on the next.
+  const cards = [0, 1, 2, 3].map((i) => img(161, 332 + i * 139, 222, 139));
+  assert.equal(comicShelf(cards).hasComicStack(), false);
+  // Too narrow, however tall the column: 4 x 300 = 1200 px, but 222 wide.
+  const narrow = [0, 1, 2, 3].map((i) => img(161, i * 300, 222, 300));
+  assert.equal(comicShelf(narrow).hasComicStack(), false);
+  // Wide, but the whole run is shorter than the 720 px window: 3 x 200.
+  const short = [0, 1, 2].map((i) => img(100, i * 200, 600, 200));
+  assert.equal(comicShelf(short).hasComicStack(), false);
+  // webtoons.com: 700x1140 slices joined with no gap.
+  const strip = [0, 1, 2].map((i) => img(290, i * 1140, 700, 1140));
+  assert.equal(comicShelf(strip).hasComicStack(), true);
 });
 
 // ------------------------------------------------------------ the service-worker half
