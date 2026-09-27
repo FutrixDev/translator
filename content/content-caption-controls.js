@@ -103,7 +103,7 @@
    */
   function writeSettings(patch) {
     Object.assign(ctx.settings, patch);
-    if (ctx.applyCaptionSettings) ctx.applyCaptionSettings();
+    ctx.applyCaptionSettings();
     try {
       chrome.storage.sync.set(patch);
     } catch (e) { /* extension context gone; the in-page value still applies */ }
@@ -248,7 +248,7 @@
     nativeItem.addEventListener('click', () => {
       // 成功就收起菜单。失败的话什么都不用做：ctx.enableNativeCaptions() 在返回前
       // 已经把菜单刷成了「未检测到字幕轨道」并收起这一项——那句话留在屏幕上。
-      if (ctx.enableNativeCaptions && ctx.enableNativeCaptions()) closeMenu();
+      if (ctx.enableNativeCaptions()) closeMenu();
     });
 
     // 2 — display type.

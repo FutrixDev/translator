@@ -143,6 +143,12 @@ test('播放器图标直接调字幕开关，缺了就抛，不悄悄当没点�
   const controls = repoFile('content/content-caption-controls.js');
   assert.match(controls, /^\s*ctx\.setVideoCaptionsOn\(!captionsPressed\(\)\);$/m);
   assert.doesNotMatch(controls, /if \(ctx\.setVideoCaptionsOn\)/, '点击前又问了一遍有没有');
+  // 同一类的另外两处：改设置、「开启原字幕」，也都只在事件里调、也都由后面那一族挂上。
+  assert.match(captionEngineSource(), /ctx\.applyCaptionSettings = function/);
+  assert.match(captionEngineSource(), /ctx\.enableNativeCaptions = function/);
+  assert.match(controls, /^\s*ctx\.applyCaptionSettings\(\);$/m);
+  assert.match(controls, /if \(ctx\.enableNativeCaptions\(\)\) closeMenu\(\);/);
+  assert.doesNotMatch(controls, /if \(ctx\.\w+\) ctx\.\w+\(|ctx\.(\w+) && ctx\.\1\(/, '又有一处先问有没有再调');
 });
 
 test('写不进规则的站点，那一行点不动', () => {
