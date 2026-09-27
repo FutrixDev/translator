@@ -73,18 +73,23 @@ function loadCard(stored) {
 }
 
 // 列表只有一种顺序，和导出文件的一样（R1-S-2）：两条规则第一个匹配串相同、存储里
-// id 倒着放，卡片画出来的行序必须等于 toExportFile 排出来的序。
+// id 倒着放，卡片画出来的行序必须等于 toExportFile 排出来的序。匹配串里再混上大小写
+// 和非 ASCII：按码位 Z < a、s < ä，按 localeCompare 则是 a < Z、ä < s，哪边换成跟
+// 语言走的比较，这里都对不上。主机名存进去会转小写，大小写只能放在路径里。
 test('the card lists rules in exactly the order the export file writes them', async () => {
   const stored = {
+    'customRule:dddd4444': { v: 1, match: ['ä.com'], exclude: ['.d'] },
     'customRule:bbbb2222': { v: 1, match: ['same.com'], exclude: ['.b'] },
     'customRule:aaaa1111': { v: 1, match: ['same.com'], exclude: ['.a'] },
     'customRule:cccc3333': { v: 1, match: ['a.com'], exclude: ['.c'] },
+    'customRule:ffff6666': { v: 1, match: ['site.com/alpha'], exclude: ['.f'] },
+    'customRule:eeee5555': { v: 1, match: ['site.com/Zeta'], exclude: ['.e'] },
   };
   const { card, elements } = loadCard(stored);
   await card.renderCustomRules();
   const rows = elements.get('customRulesList').children.map((row) => row.dataset.ruleId);
   const exported = CustomRules.toExportFile(CustomRules.collect(stored)).rules.map((rule) => rule.id);
-  assert.deepEqual(exported, ['cccc3333', 'aaaa1111', 'bbbb2222']);
+  assert.deepEqual(exported, ['cccc3333', 'aaaa1111', 'bbbb2222', 'eeee5555', 'ffff6666', 'dddd4444']);
   assert.deepEqual(rows, exported);
 });
 
