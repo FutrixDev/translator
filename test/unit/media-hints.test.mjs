@@ -270,3 +270,30 @@ test('a host is claimed once: the first tab wins, every later one loses', async 
   assert.deepEqual(claims, [true, false, true]);
   assert.deepEqual(sync[COMIC_HINT_HOSTS_KEY], ['comics.example', 'other.example']);
 });
+
+// ------------------------------------------------------------ the failure notification
+
+test('"sign in to translate documents" carries a Sign In button; other failures do not', async () => {
+  const created = [];
+  globalThis.chrome = {
+    runtime: { getURL: (p) => `chrome-extension://x/${p}`, lastError: undefined },
+    storage: { sync: { get: async (defaults) => ({ ...defaults }) } },
+    notifications: { create: (...args) => { created.push(args); } },
+  };
+  const notify = await import('../../background/pdf-notify.js');
+  await notify.notifyPdfError({ error: { code: 'unauthorized', message: 'Sign in' } });
+  await notify.notifyPdfError({ code: 'network_error' });
+  const [signIn, other] = created;
+  assert.equal(typeof signIn[0], 'string');
+  assert.ok(signIn[0].startsWith(notify.PDF_SIGNIN_NOTIFICATION_PREFIX));
+  assert.equal(signIn[1].buttons.length, 1);
+  assert.equal(typeof other[0], 'object', 'an ordinary failure got an id of its own');
+  assert.equal(other[0].buttons, undefined);
+});
+
+test('the Sign In button opens the popup\'s own sign-in, and only that button does', () => {
+  const jobs = read('background/pdf-jobs.js');
+  const arm = jobs.slice(jobs.indexOf('startsWith(PDF_SIGNIN_NOTIFICATION_PREFIX)'));
+  assert.match(arm.slice(0, 400), /comicClient\.signIn\(\)/);
+  assert.equal([...jobs.matchAll(/comicClient\.signIn\(/g)].length, 1);
+});

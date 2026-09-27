@@ -11,6 +11,7 @@ import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { assertFeatureEnabled, featureState } from './feature-gate.js';
 import {
+  PDF_SIGNIN_NOTIFICATION_PREFIX,
   clearPdfConfirmNotification,
   jobIdFromNotificationId,
   logIfFailed,
@@ -103,7 +104,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 // right-click on a link and the toolbar button can fire from any page at all,
 // and that page has no job card to put the question in. (Not for want of a
 // content script on the PDF itself — Chrome's viewer does run one, which is
-// what content/content-pdf-prompt.js draws its offer bar on. The click simply
+// what content/content-media-hints.js draws its offer bar on. The click simply
 // is not tied to any one document.) So this path asks in the one place all of
 // its entries already speak: a notification, with the answer as its buttons.
 //
@@ -178,7 +179,7 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
  *
  * 三个地方按下这句话：右键菜单的链接条目、页面条目、工具栏条目
  * （background/context-menus.js），以及 PDF 文档上那条提示条点下的「翻译」
- * （content/content-pdf-prompt.js → PDF_TRANSLATE_URL）。它们看见的是同一套
+ * （content/content-media-hints.js → PDF_TRANSLATE_URL）。它们看见的是同一套
  * 拦路检查——开关、是不是 PDF、file:// 改走上传页、同一份文档已经在跑——所以检查
  * 写在这里一份，而不是在每个入口各写一遍：少写一条的那个入口会重复扣一次额度。
  *
@@ -242,6 +243,19 @@ async function askPdfCharge(operationId, fileName, quote) {
     requireInteraction: true
   }, logIfFailed);
 }
+
+// "Sign in to translate documents" carries a Sign In button (pdf-notify.js).
+// The sign-in is the popup's own one; the document is not retried behind it —
+// the user clicks the entry that failed again, now signed in. Closing the
+// sign-in tab is a cancel and says nothing.
+chrome.notifications.onButtonClicked.addListener((notificationId) => {
+  if (!notificationId.startsWith(PDF_SIGNIN_NOTIFICATION_PREFIX)) return;
+  chrome.notifications.clear(notificationId);
+  comicClient.signIn().catch((error) => {
+    if (error && error.code === 'sign_in_cancelled') return;
+    console.warn('PDF notification sign-in failed:', error);
+  });
+});
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
   if (!notificationId.startsWith(PDF_CHARGE_NOTIFICATION_PREFIX)) return;
