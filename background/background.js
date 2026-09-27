@@ -26,6 +26,9 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
+// Side-effect module: publishes globalThis.PromptAddenda — the shape of the
+// register addenda the three TRANSLATE handlers validate.
+import '../shared/prompt-addenda.js';
 // 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
 // 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
 import '../i18n/lang/en.js';
@@ -107,19 +110,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'TRANSLATE':
-      handleTranslate(message.text, message.targetLang, message.mode)
+      handleTranslate(message.text, message.targetLang, message.mode, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true; // Keep channel open for async response
 
     case 'TRANSLATE_BATCH':
-      handleBatchTranslate(message.texts, message.targetLang)
+      handleBatchTranslate(message.texts, message.targetLang, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
 
     case 'TRANSLATE_BATCH_FAST':
-      handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter)
+      handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -317,8 +320,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
   runCommand(command, tab).catch(error => console.error('Shortcut failed:', command, error));
 });
 
+// 三个翻译处理函数的次序一样：缺 Key 就回话；然后先把关附加说明
+// （PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能是
+// 缺陷，所以抛、不截断），再调模型。
+
 // Handle single text translation
-async function handleTranslate(text, targetLang, mode) {
+async function handleTranslate(text, targetLang, mode, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -327,8 +334,9 @@ async function handleTranslate(text, targetLang, mode) {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const result = await translateTextWithMode(text, effectiveLang, settings, mode === 'word');
+    const result = await translateTextWithMode(text, effectiveLang, settings, mode === 'word', addenda);
     return result;
   } catch (error) {
     console.error('Translation error:', error);
@@ -337,7 +345,7 @@ async function handleTranslate(text, targetLang, mode) {
 }
 
 // Handle batch translation
-async function handleBatchTranslate(texts, targetLang) {
+async function handleBatchTranslate(texts, targetLang, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -346,8 +354,9 @@ async function handleBatchTranslate(texts, targetLang) {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchWithAI(texts, effectiveLang, settings);
+    const translations = await translateBatchWithAI(texts, effectiveLang, settings, addenda);
     return { translations };
   } catch (error) {
     console.error('Batch translation error:', error);
@@ -356,7 +365,7 @@ async function handleBatchTranslate(texts, targetLang) {
 }
 
 // Handle fast batch translation with delimiter
-async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
+async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||', addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
 
   const missingKey = missingApiKeyMessage(settings);
@@ -365,8 +374,9 @@ async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||') {
   }
 
   try {
+    globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchFastWithAI(texts, effectiveLang, settings, delimiter);
+    const translations = await translateBatchFastWithAI(texts, effectiveLang, settings, delimiter, addenda);
     return { translations };
   } catch (error) {
     console.error('Fast batch translation error:', error);

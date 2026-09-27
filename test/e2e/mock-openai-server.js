@@ -86,6 +86,10 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   // was not sent at all. A request with no key must leave with no auth header —
   // an empty `Bearer ` is still a header, and some servers reject it.
   const authHeaders = [];
+  // The system prompt of every text request, in arrival order. What the model was
+  // told about the page (the register addendum, R33 A4) only exists here: the page
+  // sees the translation, never the instructions that shaped it.
+  const systemPrompts = [];
 
   const { origin, close } = await startMockServer((req, res) => {
     if (req.method !== 'POST') {
@@ -147,6 +151,7 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
       }
 
       if (content) sentTexts.push(content);
+      systemPrompts.push(systemPrompt);
 
       if (failWhen && typeof content === 'string' && failWhen(content)) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -194,6 +199,7 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   return {
     fastBatchRequests,
     sentTexts,
+    systemPrompts,
     visionRequests,
     authHeaders,
     endpoint: `${origin}/v1/chat/completions`,

@@ -13,7 +13,7 @@
 // 个值不在请求里，键因子看不见它，跨页复用就会串味。（请求里**声明**的源语言是
 // 另一回事，它看得见，见下面的 sourceLang。）
 //
-// 键里有七个因子，少一个都会在某个时刻无声地供应错误的译文：
+// 键里有八个因子，少一个都会在某个时刻无声地供应错误的译文：
 //
 //   text        —— 原样，不做归一化。缓存的是「这一串字符换来的那个回答」，
 //                  折叠空白能提高命中率，但也就把两串不同的输入并成了一个答案。
@@ -34,6 +34,10 @@
 //                  寿命等于「下一个改提示词的人记得同步 +1」，而版本号在每次发版时
 //                  自动就变了，忘不掉。代价是每次更新扩展作废一次缓存 —— 条目本来
 //                  也只活 30 天，一次重译而已。
+//   addenda     —— 随请求带去的附加说明的戳（shared/prompt-addenda.js 的 stamp()，
+//                  今天是这一页的语域，没有就是空串）。同一句话在论坛上和在新闻站
+//                  上可以译得不一样。上线那一刻所有键都变一次（拼接多了一段），而
+//                  version 本来就让每次发版全部键失效，所以不另做迁移。
 //
 // apiKey 不在键里，也永远不该在：它不改变译文，而键会以明文落进 storage。
 //
@@ -99,7 +103,7 @@
   }
 
   // 因子顺序是键的一部分，别调整，调整了等于清空所有人的缓存。
-  const FACTORS = ['text', 'targetLang', 'sourceLang', 'endpoint', 'model', 'prompt', 'version'];
+  const FACTORS = ['text', 'targetLang', 'sourceLang', 'endpoint', 'model', 'prompt', 'version', 'addenda'];
 
   function buildKey(factors) {
     return KEY_PREFIX + hash(FACTORS.map((name) => {
@@ -180,7 +184,7 @@
    * 单独成一批发走，回来再按原位置塞回去，而不是把整批打散重排。
    *
    * @param {string[]} texts
-   * @param {object} factors 除 text 之外的键因子（targetLang / sourceLang / endpoint / model / prompt / version）
+   * @param {object} factors 除 text 之外的键因子（targetLang / sourceLang / endpoint / model / prompt / version / addenda）
    * @param {(missing: string[]) => Promise<string[]|null>} fetchMissing
    *        只会收到**去重后**的未命中文本，必须返回等长数组；返回 null 表示这批失败了。
    * @returns {Promise<string[]|null>} 与 texts 等长；fetchMissing 失败时原样返回 null

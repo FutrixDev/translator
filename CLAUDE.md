@@ -331,6 +331,28 @@ greys the budget field only when none of the four unattended AI paths is open
 (auto engine = AI, manual engine = AI, fallback allowed, or a site rule with
 engine = AI).
 
+**The model is told what kind of page it is reading, and only that.** Built-in
+site rules may carry a `register` (`social` / `forum` / `news` / `academic`,
+the table in `shared/prompt-addenda.js`), read by `SiteRules.register(host,
+path)`. That reader looks only at the built-in table: user rules have no
+register. At the same `sendMessage` exit, `ctx.promptAddenda()` attaches
+`addenda: { register }` to the three translate messages, and only when this
+page has a register. It sends the label and never the host. The service
+worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
+translating, and it throws on an unknown register or any extra field. The
+handlers pass the addenda down every `ai-translate.js` path, including the
+fast batch's numbered fallback and the single-word prompt. There
+`composePromptAddenda()` places the addenda after the template and before the
+math placeholder rule. Separately, every default template, and every rule
+block appended to a custom prompt, carries `REGISTER_RULE` (casual stays
+casual, formal stays formal). The register is the eighth translation-cache
+factor (`addenda`, a `PromptAddenda.stamp()` string). The built-in engine
+reads no prompt and never sees it. Captions need nothing of their own, because
+they go through `ctx.requestTranslation` too. Covered by
+`test/unit/prompt-addenda.test.mjs`,
+`test/unit/prompt-register-engine.test.mjs` and
+`test/e2e/prompt-register.spec.js`.
+
 ### User Site Rules
 
 Per-site rules the user writes: which part of a page to translate
@@ -572,7 +594,10 @@ Two rules the generic provider exists to keep:
   still comes back untranslated. Both harnesses that load the engine in Node
   (`test/unit/helpers/engine-harness.mjs`,
   `test/unit/builtin-translator-stall.test.mjs`) must load `lang-tags.js`
-  first. And **the
+  first. They also load the site-rules chain (`site-rules-builtin.js`,
+  `storage-writer.js`, `site-rules.js`) and `prompt-addenda.js`, and define
+  `location`, because the engine's exit asks `SiteRules.register()` about the
+  page. And **the
   heartbeat runs all of this ahead of `captionPlayerButton`**:
   hiding our icon and turning subtitles on are separate settings, but
   `syncControls()` is the only thing driving either, and it returns early on the

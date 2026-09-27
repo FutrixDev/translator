@@ -10,6 +10,11 @@
 //      允许，规则更新就是发一次版。rulesVersion 只是给日志和问题排查用的。
 //   2. **不建模现在不需要的字段。** 每站的引擎、每站的延迟、每站要注入的 CSS 都
 //      曾经在草稿里出现过；加进来就要一直维护它们，而今天没有任何一条规则需要。
+//      register（R33 A4）是后来有了用处才加的：可选，social / forum / news /
+//      academic 之一（取值表在 shared/prompt-addenda.js），告诉模型这一页是什么
+//      体裁，好让梗和俚语译成目标语言里自然的说法、正式的文字保持正式。只有标签
+//      进请求，域名不进。没有明确体裁的站（medium、substack 这类什么都有的平台）
+//      不写。
 //
 // 黑名单的优先级高于用户自己设的“总是翻译”（见 site-rules.js 的决策阶梯）。它防
 // 的不是“用户想翻银行页面”，而是“用户在某个域名上点过一次总是翻译，此后我们往
@@ -50,6 +55,7 @@
         // 摘要页结构十年没大改，风险最低，所以拿它做第一个内置 always。
         match: 'arxiv.org/abs/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: ['blockquote.abstract'],
         keepOriginalSelectors: ['.authors', '.dateline', '.submission-history'],
         blockIdAttr: null,
@@ -91,6 +97,7 @@
         // collect.js 的代码容器名单认得 ltx_listing 那一族，两者都已经跳过了。
         match: 'arxiv.org/html/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.ltx_authors', '.ltx_bibliography'],
         blockIdAttr: null,
@@ -104,6 +111,7 @@
         // .list-comments（"17 pages, 6 figures"）是人写的，留着。
         match: 'arxiv.org/list/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.list-authors', '.list-identifier', '.list-subjects'],
         blockIdAttr: null,
@@ -122,6 +130,7 @@
         // 就悄悄失效。真需要排除时再补，那天它得有个稳定的钩子。
         match: 'huggingface.co/papers',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -130,6 +139,7 @@
         // 单篇的摘要页，外加 /papers/date/<日期> 这种榜单归档。
         match: 'huggingface.co/papers/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -137,6 +147,7 @@
       {
         match: 'x.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         // 用户名、时间、互动条（回复/转推/喜欢的计数）都不是正文。
         keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
@@ -145,6 +156,7 @@
       {
         match: 'twitter.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
         blockIdAttr: null,
@@ -159,6 +171,7 @@
         // 「u/xxx • 4 小时。 过去 奖励这个。 帖子…」。
         match: 'reddit.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.tagline', '.score', 'time', 'faceplate-timeago',
@@ -170,6 +183,7 @@
         // 结构极简，拿来当回归基线：这里翻不好，通用启发式一定也翻不好。
         match: 'news.ycombinator.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.subtext', '.rank', '.age'],
         blockIdAttr: null,
@@ -181,6 +195,7 @@
         // 就和他自己的标签页对不上了。
         match: 'lobste.rs',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.byline', '.tags'],
         blockIdAttr: null,
@@ -194,6 +209,7 @@
         // 和摘要都在里面，排掉等于一页什么都不翻。
         match: 'biorxiv.org/content/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.highwire-cite-authors', '.highwire-cite-metadata'],
         blockIdAttr: null,
@@ -205,6 +221,7 @@
         // 出处行，.c-bibliographic-information 是「Cite this article」那一段。
         match: 'nature.com/articles/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.c-article-author-list',
@@ -233,6 +250,7 @@
         // （.core-history）是人话，留着。
         match: 'science.org/doi/*',
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [
           '.contributors',
@@ -278,6 +296,7 @@
           'scholar.google.com.sg/scholar',
         ],
         state: 'always',
+        register: 'academic',
         atomicBlockSelectors: [],
         keepOriginalSelectors: ['.gs_a', '.gs_fl'],
         blockIdAttr: null,
@@ -293,6 +312,7 @@
         // 社交
         match: 'threads.net',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -300,6 +320,7 @@
       {
         match: 'bsky.app',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -307,6 +328,7 @@
       {
         match: 'facebook.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -314,6 +336,7 @@
       {
         match: 'instagram.com',
         state: 'always',
+        register: 'social',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -337,6 +360,7 @@
         // 问答
         match: 'quora.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -344,6 +368,7 @@
       {
         match: 'stackoverflow.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -351,6 +376,7 @@
       {
         match: 'stackexchange.com',
         state: 'always',
+        register: 'forum',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -359,6 +385,7 @@
         // 新闻
         match: 'nytimes.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -366,6 +393,7 @@
       {
         match: 'theguardian.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -374,6 +402,7 @@
         // 同一家的两个门牌，写成一条（见 Google 学术那条）。
         match: ['bbc.com', 'bbc.co.uk'],
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -381,6 +410,7 @@
       {
         match: 'reuters.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -388,6 +418,7 @@
       {
         match: 'apnews.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -395,6 +426,7 @@
       {
         match: 'washingtonpost.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -402,6 +434,7 @@
       {
         match: 'wsj.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -409,6 +442,7 @@
       {
         match: 'bloomberg.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -416,6 +450,7 @@
       {
         match: 'cnn.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -423,6 +458,7 @@
       {
         match: 'ft.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,
@@ -430,6 +466,7 @@
       {
         match: 'economist.com',
         state: 'always',
+        register: 'news',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
         blockIdAttr: null,

@@ -82,10 +82,13 @@
     // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
     // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
     // 顶上那张因子表。
+    // addenda 是这一页的语域（R33 A4）：同一段文字在论坛上和在新闻站上可以译得
+    // 不一样。问的是 ctx.requestTranslation 挂附加说明时问的同一个函数。
     const factors = {
       targetLang: message.targetLang || '',
       sourceLang: message.sourceLang || '',
-      ...profile
+      ...profile,
+      addenda: globalThis.PromptAddenda.stamp(ctx.promptAddenda())
     };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。

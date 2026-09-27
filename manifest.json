@@ -106,6 +106,7 @@
         "shared/sync-collection.js",
         "shared/custom-rules.js",
         "shared/block-identity.js",
+        "shared/prompt-addenda.js",
         "shared/translation-cache.js",
         "shared/spa-navigation.js",
         "shared/session-guard.js",

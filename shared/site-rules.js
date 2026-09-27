@@ -151,6 +151,9 @@
     if (!BUILTIN_STATES.has(rule.state)) return false;
     if (STRING_ARRAY_FIELDS.some((field) => !isStringArray(rule[field]))) return false;
     if (rule.blockIdAttr !== null && typeof rule.blockIdAttr !== 'string') return false;
+    // 语域只查形状：取值表在 shared/prompt-addenda.js（REGISTERS），这里不另抄一份，
+    // 也不为它多一条装载依赖。内置表的取值由单测对照那张表；服务工作者收到时再把关。
+    if (rule.register !== undefined && (typeof rule.register !== 'string' || !rule.register)) return false;
     return true;
   }
 
@@ -237,6 +240,18 @@
       }
     }
     return best;
+  }
+
+  /**
+   * 这一页的语域（social / forum / news / academic），没有就是 null。
+   *
+   * 只读内置表，不看用户规则：语域说的是「这个站点上的文字是什么体裁」，不是
+   * 「翻不翻」—— 用户把某站设成 never 或 always，那里的帖子还是帖子。给模型的
+   * 只是这个标签（shared/prompt-addenda.js），不是域名。
+   */
+  function register(host, path) {
+    const rule = matchBuiltin(host, path);
+    return (rule && rule.register) || null;
   }
 
   function isBlocked(host, path) {
@@ -617,6 +632,7 @@
     setSiteAuto,
     applyWrite,
     matchBuiltin,
+    register,
     isBlocklisted,
     siteRuleWritable,
     parseSiteInput,

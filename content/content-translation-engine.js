@@ -643,6 +643,17 @@
   }
 
   /**
+   * 这一页的附加说明（R33 A4，形状见 shared/prompt-addenda.js）：内置站点表给这个
+   * 地址标的语域。**只带标签，不带域名** —— 模型要知道的是「这是论坛上的讨论」，
+   * 不是用户在看哪个站。没有就是 undefined。子帧的请求由顶层帧转发（frames/top.js），
+   * 所以问的是顶层帧的地址。缓存键（content-translation-cache.js）问同一个函数。
+   */
+  ctx.promptAddenda = function() {
+    const register = globalThis.SiteRules.register(location.hostname, location.pathname);
+    return register ? { register } : undefined;
+  };
+
+  /**
    * 翻译请求统一入口，与 chrome.runtime.sendMessage 同形（同样的入参、同样的返回），
    * 只多一个字段：每个响应都盖上 `engine`（'builtin' | 'ai'），说这一次是谁译的
    * （出错时说是谁没译成）。调用方不需要知道这次走的是内置还是 AI，但卡片要告诉
@@ -699,7 +710,10 @@
     // 了」—— 前者要跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
     const refusal = await refuseAutoAiSpend(message);
     if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
-    const response = await chrome.runtime.sendMessage(message);
+    // 附加说明只挂在发给模型的这一份上：内置引擎不读提示词，三种翻译消息之外的
+    // 类型 SW 也不认它。
+    const addenda = BUILTIN_TYPES.has(message.type) ? ctx.promptAddenda() : undefined;
+    const response = await chrome.runtime.sendMessage(addenda ? { ...message, addenda } : message);
     return response && { ...response, engine: 'ai' };
   };
 

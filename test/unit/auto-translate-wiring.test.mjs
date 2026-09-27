@@ -381,8 +381,8 @@ test('「发给模型的字符数」一次调用记一笔，不多不少', () =>
   }
 
   // 回退那一次走的就是 translateBatchWithAI，于是自然记第二笔 —— 靠的是这一句，
-  // 不是在回退处另记一笔。
-  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings\);/);
+  // 不是在回退处另记一笔。回退也带着这一页的附加说明（R33 A4）。
+  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings, addenda\);/);
   // 求和只有一处（shared/auto-stats.js），三个调用点不各抄一遍。
   assert.equal((bg.match(/AutoStats\.textsChars\(/g) || []).length, 2);
   assert.equal((bg.match(/AutoStats\.add\(\{ aiChars/g) || []).length, 1);

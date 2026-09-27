@@ -45,6 +45,15 @@
   subtitles come back; click again to bring them back. On YouTube it sits
   right before the CC button. The menu it used to open is still there, behind
   the small arrow next to the icon, and is reachable from the keyboard.
+- **AI translations keep the tone of the page.** Every built-in prompt now
+  tells the model to match the register of the source: a meme or a slang
+  reply stays casual instead of turning formal or being explained. On the
+  social, forum, news and academic sites in the built-in list, the AI engine
+  is also told which of the four kinds of page it is reading. Only that
+  label is sent, never the site's address. A custom prompt keeps its own
+  wording, and the page-kind hint is added after it. Chrome's built-in translator reads
+  no prompt and is unchanged. Cached translations are kept apart per kind of
+  page.
 
 ### Selection icon and card actions
 
