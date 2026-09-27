@@ -341,7 +341,7 @@
         if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }
-      if (closestAcross(element, '.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn, #ai-translator-source-peek')) return;
+      if (closestAcross(element, '.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn, #ai-translator-source-peek, #ai-translator-rule-picker')) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
 

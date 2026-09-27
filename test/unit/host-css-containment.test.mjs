@@ -94,6 +94,23 @@ test('the reset covers both content-script roots', () => {
   }
 });
 
+test('every root list in the reset names the same roots, the rule picker among them', () => {
+  // The block restates one list of roots in nine places. A root added to eight
+  // of them is contained everywhere except in the one rule the ninth carries,
+  // and nothing on the page shows which one that is until a host stylesheet
+  // happens to hit it.
+  const lists = [...resetBlock().matchAll(/:is\((\.ai-translator-popup,[^)]*)\)/g)]
+    .map(([, inner]) => splitSelectorList(inner).map((s) => s.trim()).sort());
+  assert.equal(lists.length, 9, `expected nine root lists in the reset, found ${lists.length}`);
+  for (const roots of lists) {
+    assert.deepEqual(roots, lists[0], 'the root lists in the containment reset have drifted apart');
+  }
+  assert.ok(
+    lists[0].includes('[id="ai-translator-rule-picker"]'),
+    'the rule picker root is not in the containment reset',
+  );
+});
+
 test('the reset covers the roots and their descendants', () => {
   const list = selectors(resetBlock());
   assert.ok(
