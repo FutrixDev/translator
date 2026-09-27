@@ -1,126 +1,25 @@
-// 输入框上那颗「译成 X」芯片的旅程（PRD FR-8，写回见 D-352）。
+// 输入框上那颗「译成 X」芯片的旅程（PRD FR-8，写回见 D-352、D-357）。
 //
 // 在一个英文页面上敲中文，框边冒出一颗「译成 English」，点一下，译文直接写回这个
 // 框：多行的框在原文后面换一行接上，单行的框整段换掉，Ctrl/Cmd+Z 一步撤回。
 //
-// 这里的编辑器全是仿制品，不是真的 x.com 或 reddit：
-// - 原生 textarea / input：React 受控组件读的就是它们的原生 value 和 input 事件。
-// - 「模型编辑器」：一个 contenteditable，只从 beforeinput 读意图、自己维护一份
-//   模型和撤销栈、每次改完从模型重画 DOM —— Draft.js、Lexical（reddit 评论框）
-//   都是这个形状。模型之外的 DOM 改动会在下一次 input 时被重画抹掉，所以只改了
-//   DOM 的写法在这里过不了关；断言读的是模型，不是 DOM。
-// - 同一个模型编辑器放进 open shadow root：reddit 的评论框就在 shadow DOM 里。
+// 这里的编辑器全是仿制品，不是真的 x.com 或 reddit（页面和仿制编辑器在
+// test/e2e/input-chip-fixtures.js）。覆盖的形状只有这些：
+// - 原生 textarea / input，含设了 maxlength 的各一个：React 受控组件读的就是它们的
+//   原生 value 和 input 事件。
+// - Lexical 形状的模型编辑器：只从 beforeinput 读意图、接 paste、自己维护模型和
+//   撤销栈、每次改完从模型重画 DOM；同一个放进 open shadow root 再来一遍（reddit
+//   的评论框在 shadow DOM 里）；再来一个晚一拍才把 paste 写进模型的。
+// - Draft 形状的块编辑器：不看原生 beforeinput，input 时按锚点所在的块从 DOM 反推
+//   模型，光标只从 selectionchange 学，接 paste。
+// 模型之外的 DOM 改动会被重画抹掉，所以断言读的是模型，不是 DOM。真 Draft、真
+// Lexical 不在这里：它们的回归靠 evidence/r33/b/controller-walk 的真站复走。
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { PAGE } = require('./input-chip-fixtures');
 
 const ORIGIN = 'https://chip.test';
-
-// 一个 Draft/Lexical 形状的编辑器：模型是一串字，撤销栈是模型的快照。
-const MODEL_EDITOR = `
-function mountModelEditor(el) {
-  const editor = { model: '', history: [], types: [] };
-  el.contentEditable = 'true';
-  el.setAttribute('role', 'textbox');
-  const root = el.getRootNode();
-
-  function render() {
-    el.replaceChildren(...editor.model.split('\\n').map((line) => {
-      const row = document.createElement('div');
-      if (line) row.textContent = line;
-      else row.appendChild(document.createElement('br'));
-      return row;
-    }));
-    const selection = document.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-
-  function commit(next) {
-    editor.history.push(editor.model);
-    editor.model = next;
-    queueMicrotask(render);
-  }
-
-  el.addEventListener('beforeinput', (e) => {
-    e.preventDefault();
-    editor.types.push(e.inputType);
-    const data = e.data ?? (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
-    switch (e.inputType) {
-      case 'insertText':
-      case 'insertReplacementText':
-      case 'insertFromPaste':
-        if (data) commit(editor.model + data);
-        break;
-      case 'insertLineBreak':
-      case 'insertParagraph':
-        commit(editor.model + '\\n');
-        break;
-      case 'deleteContentBackward':
-        commit(editor.model.slice(0, -1));
-        break;
-      default:
-        break;
-    }
-  });
-  // 模型之外的改动（有人绕过 beforeinput 直接动了 DOM）在这里被抹掉。
-  el.addEventListener('input', () => queueMicrotask(render));
-  el.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-      e.preventDefault();
-      if (editor.history.length) {
-        editor.model = editor.history.pop();
-        queueMicrotask(render);
-      }
-    }
-  });
-  render();
-  return editor;
-}
-`;
-
-// 正文要够长、够像英语：页面语言是 chrome.i18n.detectLanguage 从整页正文里读出来
-// 的，几十个字符上它很容易判错。
-const PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Harbour forum</title></head>
-<body>
-  <p>The ferry leaves the northern pier every morning at a quarter past six, and the
-     afternoon crossing is posted on the noticeboard by the harbour master every Friday.</p>
-  <p>Passengers who miss the early boat can wait for the second sailing or take the
-     coastal road around the bay, which adds about forty minutes to the journey.</p>
-  <form id="reply-form" action="/posted" method="post">
-    <label>Reply <textarea id="reply" rows="4" cols="60"></textarea></label>
-    <label>Subject <input id="subject" type="text" size="60"></label>
-    <button type="submit">Post</button>
-  </form>
-  <label>Password <input id="secret" type="password"></label>
-  <p>Rich editor</p>
-  <div id="model-editor" style="min-height:3em;border:1px solid #999"></div>
-  <p>Comment box</p>
-  <div id="shadow-host"></div>
-  <script>
-    ${MODEL_EDITOR}
-    window.submits = 0;
-    window.enters = 0;
-    document.getElementById('reply-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      window.submits += 1;
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') window.enters += 1;
-    }, true);
-    window.lightEditor = mountModelEditor(document.getElementById('model-editor'));
-    const shadow = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
-    const inner = document.createElement('div');
-    inner.id = 'shadow-editor';
-    inner.style.cssText = 'min-height:3em;border:1px solid #999';
-    shadow.appendChild(inner);
-    window.shadowEditor = mountModelEditor(inner);
-  </script>
-</body></html>`;
 
 const CHINESE = '请问下午那班船还有座位吗，我想带两个孩子一起过去。';
 const TRANSLATION = `[T] ${CHINESE}`;
@@ -242,9 +141,12 @@ async function writeIntoModelEditor(page, { selector, handle }) {
   await expect.poll(() => page.evaluate((name) => window[name].model, handle), { timeout: 15000 })
     .toBe(`${CHINESE}\n${TRANSLATION}`);
   await expect(chip).toHaveCount(0);
-  // 模型收到的是一次 insertText，不是一段来历不明的 DOM 变化。
+  // 判语言有 400ms 防抖：等过去再看，芯片也没对「原文 + 译文」再冒出来。
+  await page.waitForTimeout(1500);
+  await expect(chip).toHaveCount(0);
+  // 模型收到的是一次 paste，不是一段来历不明的 DOM 变化。
   const types = await page.evaluate((name) => window[name].types, handle);
-  expect(types[types.length - 1]).toBe('insertText');
+  expect(types[types.length - 1]).toBe('paste');
   // 编辑器按模型重画之后，框里看到的也是这两段。
   await expect(page.locator(selector)).toContainText(TRANSLATION);
 
@@ -252,7 +154,7 @@ async function writeIntoModelEditor(page, { selector, handle }) {
   await expect.poll(() => page.evaluate((name) => window[name].model, handle)).toBe(CHINESE);
 }
 
-test('输入框芯片：Draft/Lexical 形状的编辑器，译文进了它的模型', async ({ page, context }) => {
+test('输入框芯片：Lexical 形状的编辑器，译文进了它的模型', async ({ page, context }) => {
   const { close, endpoint } = await startMockOpenAIServer();
 
   try {
@@ -271,6 +173,97 @@ test('输入框芯片：open shadow root 里的编辑器，芯片出现，译文
   try {
     await openPage(page, context, endpoint);
     await writeIntoModelEditor(page, { selector: '#shadow-host #shadow-editor', handle: 'shadowEditor' });
+  } finally {
+    await close();
+  }
+});
+
+// x.com 的发帖框就是这个形状。c5d37ea 在这里用 execCommand 插「\n译文」：Chromium
+// 把块连同 data-offset-key 复制一份，编辑器按锚点那一块从 DOM 反推，原文被冲掉。
+test('输入框芯片：Draft 形状的编辑器，原文还在、译文一份、一步撤回', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const model = () => page.evaluate(() => window.draftEditor.text());
+
+  try {
+    await openPage(page, context, endpoint);
+    await page.click('#draft-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+    await expect.poll(model).toBe(CHINESE);
+
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    // 光标停在开头：译文仍要接在末尾，而不是插在编辑器以为的光标处。
+    await page.keyboard.press('Home');
+    await expect.poll(() => page.evaluate(() => window.draftEditor.caret.offset)).toBe(0);
+    await chip.click();
+
+    await expect.poll(model, { timeout: 15000 }).toBe(`${CHINESE}\n${TRANSLATION}`);
+    expect(await page.evaluate(() => window.draftEditor.pastes)).toBe(1);
+    await expect(page.locator('#draft-editor > div')).toHaveCount(2);
+    await expect(chip).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+    expect(sentTexts).toHaveLength(1);
+    expect(await page.evaluate(() => ({ submits: window.submits, enters: window.enters })))
+      .toEqual({ submits: 0, enters: 0 });
+
+    await undo(page);
+    await expect.poll(model).toBe(CHINESE);
+  } finally {
+    await close();
+  }
+});
+
+// 编辑器接了 paste，却晚一拍才写进模型：写回那一刻核对不过，芯片报错。可字随后就
+// 落进来了 —— 用户再点一下，芯片认出这一份已经写了：不再发请求，不再追加。
+test('输入框芯片：编辑器晚一拍才写进去，报错；再点一下认出已经写了，不再追加', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const model = () => page.evaluate(() => window.lateEditor.model);
+
+  try {
+    await openPage(page, context, endpoint);
+    await page.click('#late-editor');
+    await page.waitForTimeout(1000);
+    await page.keyboard.insertText(CHINESE);
+    await expect.poll(model).toBe(CHINESE);
+
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await chip.click();
+    await expect(chip).toHaveAttribute('data-state', 'error', { timeout: 15000 });
+    await expect.poll(model).toBe(`${CHINESE}\n${TRANSLATION}`);
+
+    await chip.click();
+    await expect(chip).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(chip).toHaveCount(0);
+    expect(await model()).toBe(`${CHINESE}\n${TRANSLATION}`);
+    expect(sentTexts).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
+// 浏览器会把超出 maxlength 的那一截悄悄截掉。写回在动手之前就量好：装不下就一个字
+// 都不碰，芯片报错。
+test('输入框芯片：maxlength 装不下，框里的字一个不动，芯片显示出错', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await openPage(page, context, endpoint);
+    const chip = page.locator(CHIP);
+    // 原文 25 个字装得下；「原文 + 换行 + 译文」55 个装不进 50，译文 29 个装不进 28。
+    for (const [selector, max] of [['#short-reply', 50], ['#short-subject', 28]]) {
+      await typeInto(page, selector, CHINESE);
+      await expect(page.locator(selector)).toHaveAttribute('maxlength', String(max));
+      await expect(chip).toBeVisible({ timeout: 10000 });
+      await expect(chip).not.toHaveAttribute('data-state', /.+/);
+      await chip.click();
+      await expect(chip).toHaveAttribute('data-state', 'error', { timeout: 15000 });
+      await expect(page.locator(selector)).toHaveValue(CHINESE);
+    }
+    expect(sentTexts).toHaveLength(2);
   } finally {
     await close();
   }
