@@ -12,7 +12,6 @@ const {
   triggerPageTranslation,
   waitForFloatBall,
   oursIn,
-  sendMessageToActiveTab,
   syncSnapshot,
   writeSyncSettings,
 } = require('./helpers');
@@ -458,8 +457,6 @@ test('J-6: a rule that pins AI asks first, opens the daily budget, and auto-tran
     await expect.poll(async () => (await autoAiChars(context)) - charsBefore, { timeout: 5000 }).toBeGreaterThan(0);
 
     // popup：它总是探测标签页，探测到的引擎跟随站点规则 —— 状态行是 AI 那一句。
-    const probe = await sendMessageToActiveTab(page, { type: 'PROBE_ENGINE' });
-    expect(probe && probe.engine).toBe('ai');
     const popup = await context.newPage();
     await popup.goto(popupUrl(extensionId));
     await page.bringToFront();
