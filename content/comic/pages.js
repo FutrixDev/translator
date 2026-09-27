@@ -264,9 +264,19 @@
   const STACK_MIN_PAGES = 3;
   // Page boxes may touch or overlap by a few pixels (borders, rounding).
   const STACK_GAP_TOLERANCE = 8;
+  // ...and may sit only a little apart. A reader joins its pages into one strip
+  // (webtoons.com: gap 0 between every slice of an episode); 40 px leaves room
+  // for a reader that frames each page with a margin. A feed or an article is
+  // also a column of pictures, but with a caption, a byline or a row of buttons
+  // between them — about 800 px on X, 1200 on reddit, thousands in a news
+  // article. The limit shrinks with the picture, so a column of small pictures
+  // has to sit nearly flush to count.
+  const STACK_MAX_GAP = 40;
+  const STACK_MAX_GAP_RATIO = 0.1;
 
   /**
-   * Is this a comic reader: at least three pages stacked top to bottom?
+   * Is this a comic reader: at least three pages stacked top to bottom, each
+   * close under the one before?
    *
    * Asked of the whole document, not only the viewport: pages in a vertical
    * reader are taller than the screen, so three of them are never on screen at
@@ -282,10 +292,13 @@
     let previous = null;
     for (const rect of pages) {
       const centre = (rect.left + rect.right) / 2;
-      const below = previous && rect.top >= previous.bottom - STACK_GAP_TOLERANCE;
+      const gap = previous ? rect.top - previous.bottom : 0;
+      const below = previous && gap >= -STACK_GAP_TOLERANCE;
+      const close = previous && gap <= Math.min(STACK_MAX_GAP, STACK_MAX_GAP_RATIO * previous.height);
       const aligned = previous && centre > previous.left && centre < previous.right;
-      // A picture beside the previous one (a grid row, a spread) starts over.
-      run = below && aligned ? run + 1 : 1;
+      // A picture beside the previous one (a grid row, a spread) or far below it
+      // (the next post in a feed) starts over.
+      run = below && close && aligned ? run + 1 : 1;
       previous = rect;
       if (run >= STACK_MIN_PAGES) return true;
     }

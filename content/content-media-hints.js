@@ -203,6 +203,10 @@
       paint();
       return;
     }
+    // 认领只在看得见的标签页里做：一个域名只认领一次，后台标签页（中键点开的
+    // 那一串）和预渲染的那一份把它领走了，用户就永远见不到这句话。转到前台（预
+    // 渲染转正也算）时 visibilitychange 会再叫一遍 detect()。
+    if (document.visibilityState !== 'visible') return;
     if (location.hostname && !switchedOff('comic') && ctx.comic.hasComicStack()) claimComicHint();
   }
 
@@ -215,6 +219,7 @@
     detect();
     requestAnimationFrame(detect);
     window.addEventListener('load', detect, { once: true });
+    document.addEventListener('visibilitychange', detect);
     let scrollTimer = null;
     window.addEventListener('scroll', () => {
       if (hint || comicClaimed || scrollTimer) return;
