@@ -35,12 +35,18 @@ function fakeElement(tagName) {
 // 卡片脚本加载时只 getElementById；预览只读 storage.sync、只用 querySelector 查选择器。
 function loadCard(stored) {
   const reads = [];
+  const elements = new Map();
   const sandbox = {
     CustomRules,
     SettingsTransfer,
     console,
+    currentUILang: 'en',
+    syncAutoEngineState() {},
     document: {
-      getElementById: (id) => ({ id, replaceChildren() {} }),
+      getElementById: (id) => {
+        if (!elements.has(id)) elements.set(id, { id, children: [], replaceChildren(...nodes) { this.children = nodes; } });
+        return elements.get(id);
+      },
       createElement: fakeElement,
       querySelector: (selector) => {
         if (selector.includes('!')) throw new SyntaxError(`bad selector ${selector}`);
@@ -63,8 +69,24 @@ function loadCard(stored) {
   };
   vm.createContext(sandbox);
   vm.runInContext(repoSource('options/options-custom-rules.js'), sandbox);
-  return { card: sandbox, reads };
+  return { card: sandbox, reads, elements };
 }
+
+// 列表只有一种顺序，和导出文件的一样（R1-S-2）：两条规则第一个匹配串相同、存储里
+// id 倒着放，卡片画出来的行序必须等于 toExportFile 排出来的序。
+test('the card lists rules in exactly the order the export file writes them', async () => {
+  const stored = {
+    'customRule:bbbb2222': { v: 1, match: ['same.com'], exclude: ['.b'] },
+    'customRule:aaaa1111': { v: 1, match: ['same.com'], exclude: ['.a'] },
+    'customRule:cccc3333': { v: 1, match: ['a.com'], exclude: ['.c'] },
+  };
+  const { card, elements } = loadCard(stored);
+  await card.renderCustomRules();
+  const rows = elements.get('customRulesList').children.map((row) => row.dataset.ruleId);
+  const exported = CustomRules.toExportFile(CustomRules.collect(stored)).rules.map((rule) => rule.id);
+  assert.deepEqual(exported, ['cccc3333', 'aaaa1111', 'bbbb2222']);
+  assert.deepEqual(rows, exported);
+});
 
 test('import preview: counts added, replaced and AI rules against what storage holds now', async () => {
   const { card, reads } = loadCard({
