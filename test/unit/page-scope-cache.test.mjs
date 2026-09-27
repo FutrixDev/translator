@@ -62,9 +62,12 @@ function load({ bodyChars, mainChars }) {
         return page.ruleVersion;
       },
       beginRound: () => { counts.cssRounds += 1; },
-      // custom-rule.js 的 sweepWith 在这份夹具里只看范围（ruleForbids 的 include 一半）。
-      sweepWith: (scope) => {
+      // custom-rule.js 的 rescope() 在这份夹具里只做清扫，且与真的一样自己再解析一次
+      // 范围（scope.js 必须先写好缓存、清掉 fellBack），只看范围（ruleForbids 的
+      // include 一半）。
+      rescope: () => {
         counts.sweeps += 1;
+        const scope = ctx.resolvePageScope();
         for (const el of page.translated) if (ctx.outsidePageScope(el, scope)) page.released.push(el);
       },
     },

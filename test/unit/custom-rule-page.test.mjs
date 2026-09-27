@@ -26,6 +26,9 @@ const DEBOUNCE_WAIT = 220;
 // 整个内容脚本 bundle（manifest 里那一份清单），接线断言问的是它，不是某个文件。
 const contentSource = () => contentBundle().map(repoFile).join('\n');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// 范围变化的补翻与订阅者回调排在一个微任务里（custom-rule.js 的 rescope()），
+// 触发之后等一个微任务再看回调。
+const tick = () => Promise.resolve();
 
 const RULE_A = { v: 1, match: ['example.com'], exclude: ['.ad'], updatedAt: 1 };
 const RULE_DOCS = { v: 1, match: ['example.com/docs/*'], exclude: ['.toc'], updatedAt: 1 };
@@ -129,6 +132,7 @@ test('init asks once, registers the customRule: prefix, and the winning rule ans
   assert.deepEqual(rules.current().exclude, ['.ad']);
   assert.deepEqual(rules.current().include, [], 'missing groups are filled in');
   assert.equal(rules.engineOverride(), 'ai');
+  await tick();
   assert.equal(events.filter((e) => e === 'changed').length, 1, 'the arrival is one change');
 });
 
@@ -156,6 +160,7 @@ test('a change to another host is no change here; a change to this page is exact
   const { rules, ctx, events } = fixture;
   rules.init();
   await rules.whenReady();
+  await tick();
   events.length = 0;
 
   ctx.syncMirrors[0].onStorageChange(put('o', RULE_OTHER));
@@ -174,10 +179,13 @@ test('a route change re-picks: a different rule is a change, the same rule is no
   const { rules, events } = fixture;
   rules.init();
   await rules.whenReady();
+  await tick();
   events.length = 0;
   navigate(fixture, 'https://example.com/news/2');
+  await tick();
   assert.deepEqual(events, [], 'the same rule still wins');
   navigate(fixture, 'https://example.com/docs/intro');
+  await tick();
   assert.deepEqual(events, ['changed']);
   assert.equal(rules.current().id, 'd');
 });
@@ -187,6 +195,7 @@ test('the pipeline: CSS, then the sweep, then the subscribers', async () => {
   const { rules, ctx, events, translated } = fixture;
   rules.init();
   await rules.whenReady();
+  await tick();
   events.length = 0;
   let excluded = false;
   translated.push(
@@ -309,6 +318,7 @@ test('a catch-up round runs only after a manual translation the scheduler is not
   ctx.autoTranslate.isOn = () => following;
   rules.init();
   await rules.whenReady();
+  await tick();
   events.length = 0;
 
   // 没翻过：不补。
@@ -360,6 +370,7 @@ async function loadRounds({ following = false } = {}) {
   ctx.autoTranslate.isOn = () => following;
   fixture.rules.init();
   await fixture.rules.whenReady();
+  await tick();
   ctx.state.pageHasBeenTranslated = true;
   events.length = 0;
   const change = async (exclude) => {
@@ -459,11 +470,14 @@ test('a child frame takes the engine from the directive, not from its own rule',
   assert.equal(rules.engineOverride(), null, 'its own rule named an engine');
   events.length = 0;
   rules.inherit('ai');
+  await tick();
   assert.deepEqual(events, ['changed']);
   assert.equal(rules.engineOverride(), 'ai');
   rules.inherit('ai');
+  await tick();
   assert.deepEqual(events, ['changed'], 'the same directive twice is one change');
   rules.inherit(null);
+  await tick();
   assert.deepEqual(events, ['changed', 'changed']);
   assert.equal(rules.engineOverride(), null);
 });

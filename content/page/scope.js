@@ -141,13 +141,16 @@
 
   // 最近一次真正算出（不走缓存）的范围，是不是规则写了 include、区域还没出现时退
   // 下去的。它不跟缓存走：invalidatePageScope() 和缓存作废都不清它。退下去那几轮
-  // 把区域外的块也翻了；区域长出来、范围第一次切到 include 时，由这里把那些译文
-  // 收回（清扫，§3.4）。几种情况：
+  // 把区域外的块也翻了；区域长出来、范围第一次切到 include 时，这是「范围在轮次中
+  // 途变了」，与规则变化走同一条路：ctx.customRules.rescope()（§3.4、§3.6）——当场
+  // 清扫；有轮次在跑就记下，收尾时再扫；自动路径随后重启，在路上、在排队的退下去
+  // 那一轮的块都作废。几种情况：
   //   - 'page' 覆盖清掉后切到 include：覆盖是用户点「翻译整个页面」要的，那时
-  //     awaitsInclude 为假，这个变量也就是 false，不清扫；
-  //   - 规则变更新加 include 并当场命中：recompute() 自己清扫（§3.6 第 2 步），旧规则
-  //     没有 include，这个变量是 false，这里不再扫；
-  //   - 在 sweep() 里触发的解析恰好碰上晚到：会扫两遍，清扫是幂等的，可以接受。
+  //     awaitsInclude 为假，这个变量也就是 false，不走 rescope()；
+  //   - 规则变更新加 include 并当场命中：recompute() 自己走 rescope()，旧规则没有
+  //     include，这个变量是 false，这里不再走；
+  //   - 规则变化的清扫里触发的解析恰好碰上晚到：rescope() 嵌套一次，多扫一遍（清扫
+  //     幂等），补翻与订阅者只排一次。
   let fellBack = false;
 
   function resolvePageScope() {
@@ -167,8 +170,10 @@
         const scope = { mode: 'include', roots, skip: null, share: null };
         cache = { key, scope };
         if (fellBack) {
+          // 先写缓存、清 fellBack，再调 rescope()：它里面再解析范围，拿到的就是这个
+          // include，不会再进这条分支。
           fellBack = false;
-          ctx.customRules.sweepWith(scope);
+          ctx.customRules.rescope();
         }
         return scope;
       }

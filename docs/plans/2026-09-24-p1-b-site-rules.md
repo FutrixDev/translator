@@ -237,7 +237,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 | `onChange(fn)` | **本页生效的规则**变了才回调（D-303）。<br>• 本页生效的规则 = `current()` 的 id、include、exclude、keepOriginal、css，加上 `engineOverride()`。规范化成 JSON，作为签名。<br>• 三个时机重算签名：规则集增量去抖之后；换路由之后（`SpaNavigation.onRouteChange`）；子 frame 的 `inherit` 收到新值之后。<br>• 签名和上次一样就不回调。所以改别的站点的规则，这一页什么都不做。<br>• 签名里取 `engineOverride()`，不取规则自己的 `engine` 字段，这样顶层和子 frame 用同一个定义 |
 | `beginRound()` | 每轮收块开始时由 scope.js 的 `beginScopeRound()` 调，按当前 URL 重新挂一次 CSS（§3.5） |
 | `isCatchingUp()` / `whenCaughtUp()` | 补翻轮（§3.6 第 3 步）是否在跑 / 它结束时 resolve 的 Promise（没在跑就立即 resolve）。调度器在 `isCatchingUp()` 为真时和手动整页翻译一样让路；手动整页翻译与子 frame 手动轮先等 `whenCaughtUp()` 再收块 |
-| `sweepWith(scope)` | §3.6 第 2 步的清扫，只有这一份：拿给定的范围筛 `ctx.ruleForbids`、逐个 `ctx.releaseTranslation`。规则变化时用 `resolvePageScope()` 的结果调；include 晚到命中时 scope.js 拿刚算出的范围直接调（§3.4） |
+| `rescope()` | 「范围在轮次中途变了」唯一的一条路（T1）：§3.6 第 2 步当场清扫（解析 `resolvePageScope()`、筛 `ctx.ruleForbids`、逐个 `ctx.releaseTranslation`）；有轮次在跑就记 `pending`；第 3 步补翻与第 4、5 步回调订阅者排进一个微任务，同一个同步段里多次调用只排一次、只回调一次。规则变化由 `recompute()` 调；include 晚到命中时由 scope.js 调（§3.4） |
 | `afterRound()` | 一轮手动整页翻译、子 frame 手动轮或补翻轮结束时调（旗标已清）。这一轮进行中规则变过，就补做第 2、3 步（§3.6）；没变过什么都不做 |
 
 有三处要等 `whenReady()`：`ctx.init` 启动自动翻译调度器之前；整页翻译入口；`ctx.requestTranslation` 开头。SW 冷启动时，这最多让首轮推迟 1.5 s。
@@ -273,7 +273,8 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
 - **`ctx.outsidePageScope(el, scope)`** 定义在 scope.js，只在 include 模式下可能为真：`el` 不在任何 root 里时为真。
 - **`pageScopeMode()` 多了一个取值 'include'**。所有写 `=== 'main'` / `=== 'page'` 的调用点要逐个核对，交付时列出来。悬浮球的 `showWholePage` 改成 `!== 'page'`，所以 include 模式下也提供「翻译整个页面」。
 - **缓存**：`resolvePageScope()` 的缓存键加上 `ctx.customRules.version`，这是规则变化唯一需要的作废手段。范围从别的模式切到 include 时，同样走 §3.6 第 2 步的清扫；无论是规则变更引起的，还是 include 晚到命中引起的。
-- **晚到命中的清扫时机**：规则变更引起的，在 §3.6 的流水线里做。include 晚到命中引起的（规则没变，区域后渲染出来），发生在晚到之后第一次解析范围时：上一次解析零命中、退回了下一档，这一次命中，`resolvePageScope()` 就拿刚算出的 include 范围调 `ctx.customRules.sweepWith(scope)`。自动模式下这一次是发现层的下一轮（区域插入本身就触发一轮）；手动模式下是下一次整页翻译或补翻。
+- **晚到命中的清扫时机**：规则变更引起的，在 §3.6 的流水线里做。include 晚到命中引起的（规则没变，区域后渲染出来），发生在晚到之后第一次解析范围时：上一次解析零命中、退回了下一档，这一次命中，`resolvePageScope()` 先把 include 范围写进缓存、清掉「上一次是退下去的」标记，再调 `ctx.customRules.rescope()`（§3.1）。自动模式下这一次是发现层的下一轮（区域插入本身就触发一轮）；手动模式下是下一次整页翻译或补翻。
+- **晚到命中与规则变化走同一条路（T1）**：清扫那一刻，退下去的范围里收的块可能还没挂上——手动轮后面的批次、自动路径在路上或在排队的块。只扫一次收不回它们。所以晚到命中和规则变化一样：当场清扫；有手动轮或补翻轮在跑就记 `pending`，那一轮收尾时 `afterRound()` 再扫；自动路径的调度器重启（会话号 +1，队列清空，在路上的结果由会话守卫挡掉）。重启推迟到解析范围的同步段之后的微任务里：`resolvePageScope()` 是在收块途中被同步调到的，在那里重启会在发现层自己的回调里拆掉它；用微任务而不是下一轮事件循环，是要赶在调度器的启动防抖定时器之前把排队的块作废。收块处（`acceptBlock`、`takeBatch`、手动轮挂译文）不另加范围判定。
 
 ### 3.5 CSS
 
@@ -305,7 +306,7 @@ StorageWriter 的 'throw' 模式在没有 runtime 时返回一个被拒的 Promi
      - 删掉一条 exclude 后：被排除过的块早在进带时就被摘掉了，不会自己回来。
    - 换路由时，调度器自己也会 `start` 一次（:747-766）。这里再 restart 一次无害：同一拍里的第二次 `start` 只会作废第一次刚起的那一轮。
 
-执行顺序：第 1～3 步是 `content/page/custom-rule.js` 自己的，在回调任何外部订阅者之前做完；然后按订阅顺序回调外部订阅者。调度器（`content/content-auto-translate.js:819`）比顶层（`content/frames/top.js:167`）先订阅，所以第 5 步先于第 4 步。两种顺序结果一样：顶层还订阅了调度器的状态变化（`top.js:165` `onStateChange(refreshDirective)`），调度器重启引起的状态变化同样会让它重算指令，最后广播的指令已带上新的 `engineOverride`。第 3 步必须赶在第 5 步之前读 `isOn()`：重启之后调度器一定在跟，这时再读，停在 OFF 的页面（比如额度用完）就会跳过手动的增量收块。
+执行顺序：第 1～3 步是 `content/page/custom-rule.js` 自己的，在回调任何外部订阅者之前做完；然后按订阅顺序回调外部订阅者。第 1、2 步和「记 `pending`」当场做；第 3 步与回调订阅者由 `rescope()`（§3.1）排进同一个微任务，先补翻判定、后回调，订阅者取排进去那一刻的快照（加载时首个回话触发的那一次，调度器还没订阅，不补给它）。调度器（`content/content-auto-translate.js:819`）比顶层（`content/frames/top.js:167`）先订阅，所以第 5 步先于第 4 步。两种顺序结果一样：顶层还订阅了调度器的状态变化（`top.js:165` `onStateChange(refreshDirective)`），调度器重启引起的状态变化同样会让它重算指令，最后广播的指令已带上新的 `engineOverride`。第 3 步必须赶在第 5 步之前读 `isOn()`：重启之后调度器一定在跟，这时再读，停在 OFF 的页面（比如额度用完）就会跳过手动的增量收块。
 
 子 frame 的流水线相同，只是没有第 4 步（指令由顶层发）。顶层第 4 步广播之后，子 frame 的 `inherit` 收到新引擎，签名随之变化，子 frame 再走自己的一遍。
 

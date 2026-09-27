@@ -10,6 +10,8 @@
 //     译文 → 必要时补一轮增量收块 → 回调外部订阅者（frames/top.js 广播指令，
 //     调度器重启）。前三步是这里自己的，一定赶在订阅者之前做完。手动轮或补翻轮
 //     进行中的变化，第 2、3 步在那一轮结束时（afterRound）补做。
+//     include 区域晚到（scope.js）是同一类事——范围在轮次中途变了——走同一个
+//     rescope()，不另开一条路。
 //
 // 调 init() 之前（DOM 夹具里只装整页翻译那几个模块时也一样）：current() 与
 // engineOverride() 答 null，whenReady() 立即 resolve —— 等于「没有规则」。
@@ -132,16 +134,13 @@
 
   // ------------------------------------------------------------ 流水线（§3.6）
 
-  // 第 2 步：规则现在禁止的块，把已有的译文收回去。清扫只有 sweepWith 这一份：
-  // scope.js 在 include 区域晚到命中时拿刚算出的范围直接调它（不再解析一次）。
-  function sweepWith(scope) {
+  // 第 2 步：规则现在禁止的块，把已有的译文收回去。清扫只有这一份。include 晚到
+  // 时 scope.js 先把新范围写进缓存再调 rescope()，这里解析到的就是那个 include。
+  function sweep() {
+    const scope = ctx.resolvePageScope();
     for (const el of ctx.queryAllDeep('.ai-translator-translated')) {
       if (ctx.ruleForbids(el, scope)) ctx.releaseTranslation(el);
     }
-  }
-
-  function sweep() {
-    sweepWith(ctx.resolvePageScope());
   }
 
   // 第 3 步：整页翻过、调度器又没在跟这一页时，补一轮把新放开的块翻上。调度器在
@@ -209,21 +208,54 @@
     if (wantsCatchUp()) catchUpRound();
   }
 
-  function recompute() {
-    const next = signatureOf();
-    if (next === signature) return;
-    signature = next;
-    mountCss();
-    sweep();
-    if (roundRunning()) pending = true;
-    else if (wantsCatchUp()) catchUpRound();
-    for (const fn of Array.from(subscribers)) {
+  // 第 3 步与订阅者（第 4、5 步）排进一个微任务，同一个同步段里多次 rescope() 只
+  // 排一次。两个原因：
+  //   - include 晚到时 rescope() 是在收块途中（resolvePageScope 里）被同步调到的，
+  //     在这里补翻会嵌套收块，重启调度器会在发现层自己的回调里拆掉它；
+  //   - 规则变化的清扫本身会解析范围，恰好碰上 include 晚到时 rescope() 被嵌套调到，
+  //     两次合成一次回调。
+  // 用微任务而不是下一轮事件循环：调度器的 pump 由定时器起，排队的块要在它之前随
+  // 重启（会话号 +1、队列清空）作废；微任务一定先于任何定时器和消息回话。
+  //
+  // 回调的是排进去那一刻的订阅者快照：订阅者只听到它订阅之后发生的变化。加载时
+  // 首个回话触发的那一次，调度器还没订阅（它等 whenReady 之后才装），推迟之后也
+  // 不会把这一次补给它。
+  let due = null;
+
+  function settle() {
+    const subscribed = due;
+    due = null;
+    // 第 3 步必须赶在订阅者（调度器重启）之前读 isOn()。
+    if (wantsCatchUp()) catchUpRound();
+    for (const fn of subscribed) {
+      if (!subscribers.has(fn)) continue;
       try {
         fn();
       } catch (error) {
         console.error('Blab Translation: custom rule subscriber failed', error);
       }
     }
+  }
+
+  /**
+   * 范围在轮次中途变了：规则变化（recompute）与 include 区域晚到（scope.js）都只走
+   * 这里。当场清扫；有轮次在跑就记下，由那一轮收尾时 afterRound() 再扫、再判补翻；
+   * 补翻与回调订阅者推迟到当前同步段之后。
+   */
+  function rescope() {
+    sweep();
+    if (roundRunning()) pending = true;
+    if (due) return;
+    due = Array.from(subscribers);
+    queueMicrotask(settle);
+  }
+
+  function recompute() {
+    const next = signatureOf();
+    if (next === signature) return;
+    signature = next;
+    mountCss();
+    rescope();
   }
 
   // ------------------------------------------------------------ 导出
@@ -264,6 +296,6 @@
     isCatchingUp,
     whenCaughtUp,
     afterRound,
-    sweepWith,
+    rescope,
   };
 })();

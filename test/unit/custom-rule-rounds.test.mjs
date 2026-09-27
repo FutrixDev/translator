@@ -126,6 +126,8 @@ async function loadTopFrame({ holdRules = false } = {}) {
   ctx.customRules.init();
   if (!holdRules) {
     await ctx.customRules.whenReady();
+    // 装载那一次的补翻判断排在一个微任务里（custom-rule.js 的 rescope()），等它判完。
+    await Promise.resolve();
     // 规则装载完之后才算「整页翻过」：装载本身不该起补翻轮。
     ctx.state.pageHasBeenTranslated = true;
   }

@@ -187,6 +187,14 @@ export function pageSource() {
 }
 
 /**
+ * 仓库里的一份源码（相对仓库根的路径）。要把某个模块单独装进夹具（vm 或
+ * new Function）时用它，免得每份测试各自拼一次仓库根。
+ */
+export function repoSource(rel) {
+  return readFileSync(path.join(ROOT, rel), 'utf8');
+}
+
+/**
  * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
  */
 export function contentBundle(marker = 'content/content-utils.js') {
