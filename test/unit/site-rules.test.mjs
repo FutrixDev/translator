@@ -170,6 +170,57 @@ test('the R33 social, forum and news sites translate by themselves', () => {
   }
 });
 
+test('direct messages are never translated by themselves, the rest of the site still is (R33 Q1)', () => {
+  // 整站 always 的社交站，私信那几条路径是内置 never：零点击就把私信发给 AI。
+  const dm = verdict({ host: 'x.com', path: '/messages/abc' });
+  assert.equal(dm.verdict, 'off');
+  assert.equal(dm.reason, R.BUILTIN_NEVER);
+  assert.equal(dm.refused, true);
+  const profile = verdict({ host: 'x.com', path: '/NASA' });
+  assert.equal(profile.verdict, 'auto');
+  assert.equal(profile.reason, R.BUILTIN_ALWAYS);
+
+  const neverPaths = [
+    ['x.com', '/messages'], ['x.com', '/messages/abc-def'], ['mobile.x.com', '/messages/1'],
+    ['x.com', '/i/chat'], ['x.com', '/i/chat/123'],
+    ['twitter.com', '/messages'], ['twitter.com', '/i/chat/1'],
+    ['www.facebook.com', '/messages'], ['www.facebook.com', '/messages/t/1'],
+    ['www.instagram.com', '/direct'], ['www.instagram.com', '/direct/inbox/'],
+    ['www.reddit.com', '/chat'], ['www.reddit.com', '/chat/room/1'],
+    ['chat.reddit.com', '/'], ['chat.reddit.com', '/room/1'],
+    ['bsky.app', '/messages'], ['bsky.app', '/messages/1'],
+  ];
+  for (const [host, path] of neverPaths) {
+    assert.equal(verdict({ host, path }).reason, R.BUILTIN_NEVER, `${host}${path} is not a built-in never`);
+  }
+  // 根路径与 `/*` 各一个门牌，所以段边界守得住：一个叫 messagesboard 的用户主页不是私信。
+  const alwaysPaths = [
+    ['x.com', '/messagesboard'], ['x.com', '/i/chatter'], ['x.com', '/home'],
+    ['www.facebook.com', '/messenger_fan_page'], ['www.instagram.com', '/directors'],
+    ['www.reddit.com', '/r/chat'], ['www.reddit.com', '/chatgpt'], ['bsky.app', '/profile/alice'],
+  ];
+  for (const [host, path] of alwaysPaths) {
+    assert.equal(verdict({ host, path }).reason, R.BUILTIN_ALWAYS, `${host}${path} lost its site-wide always`);
+  }
+});
+
+test('a user site-wide always cannot open a direct-message path (R33 Q1)', () => {
+  // never 排在用户规则前面：他在 x.com 上写的「总是翻译」说的是时间线，不是私信。
+  const d = verdict({ host: 'x.com', path: '/messages/abc', userRules: { 'x.com': 'always' } });
+  assert.equal(d.verdict, 'off');
+  assert.equal(d.reason, R.BUILTIN_NEVER);
+  const reddit = verdict({ host: 'chat.reddit.com', path: '/', userRules: { 'reddit.com': 'always' } });
+  assert.equal(reddit.reason, R.BUILTIN_NEVER);
+  // 整站那一行照样写得进去；私信那一页写不进去（popup 那一行灰掉，写了也不算数）。
+  assert.equal(SiteRules.siteRuleWritable('x.com', '/home'), true);
+  assert.equal(SiteRules.siteRuleWritable('x.com'), true);
+  assert.equal(SiteRules.siteRuleWritable('x.com', '/messages/abc'), false);
+  assert.equal(SiteRules.siteRuleWritable('chat.reddit.com'), false);
+  // 语域照整站的写：手动翻私信时语气还是那个站点的。
+  assert.equal(SiteRules.register('x.com', '/messages/abc'), 'social');
+  assert.equal(SiteRules.register('chat.reddit.com', '/'), 'forum');
+});
+
 // ------------------------------------------------------------ 主机名
 
 test('normalizeHost keys a rule on the exact host — a shared suffix is not one site', () => {

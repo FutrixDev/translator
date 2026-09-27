@@ -23,6 +23,13 @@
   CNN, the Financial Times and The Economist) join the built-in list. YouTube
   is listed as a captions site: its page text stays as it is while its
   captions are translated. Your own rule for any of them still wins.
+- **Direct messages are never translated on their own.** On X, Twitter,
+  Facebook, Instagram, Reddit and Bluesky the private-message pages
+  (`/messages`, `/i/chat`, `/direct`, `/chat` and chat.reddit.com) are left
+  alone even though the rest of the site translates by itself, and even if you
+  set the whole site to always translate: nothing from a conversation is sent
+  to the AI without a click. "Translate this page" and Alt+A still translate a
+  conversation when you ask.
 - **Videos get their own subtitles switched on for you.** "Turn subtitles on
   automatically" is now on by default, so a video whose subtitles are off has
   something to translate. Switch them off in the player and they stay off in

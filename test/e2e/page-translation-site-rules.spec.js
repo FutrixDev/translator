@@ -17,7 +17,9 @@
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, oursIn, ourNodesAt, sentSegments } = require('./helpers');
+const {
+  setExtensionSettings, oursIn, ourNodesAt, sentSegments, evaluateInContentScript, triggerPageTranslation,
+} = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
@@ -157,6 +159,39 @@ test('site rules: a tweet is translated as one block, and its chrome is not tran
     expect(await oursIn(page, 'author-box')).toBe(0);
     expect(await oursIn(page, 'actions-box')).toBe(0);
     expect(await ourNodesAt(page, 'stamp')).toBe(0);
+  } finally {
+    await close();
+  }
+});
+
+// 私信（R33 Q1）：x.com 整站 always，私信那几条路径是内置 never —— 零点击就把私信
+// 发给 AI。落地什么都不送；他自己点「翻译此页」照样翻。手动这一半只能在真页面上
+// 证：手动翻译不问 decide()，单测里没有一个函数能代表「点了之后真的翻了」。
+const DM_TEXT = 'Are you still coming over for dinner on Friday, or should we move it to next week?';
+const DM_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Messages / X</title></head>
+<body>
+  <main><section id="dm"><div data-testid="messageEntry"><p id="dm-text">${DM_TEXT}</p></div></section></main>
+</body></html>`;
+
+test('site rules: a direct-message page is not translated by itself, and Translate this page still works there', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://x.com/**', DM_PAGE);
+
+    await page.goto('https://x.com/messages/abc');
+    await page.waitForSelector('#ai-translator-float-ball');
+    const autoState = () => evaluateInContentScript(context, page, 'AI_TRANSLATOR_CONTENT.autoTranslate.state().reason');
+    await expect.poll(autoState).toBe('BUILTIN_NEVER');
+    // 判完了就是判完了：不发现、不送。
+    expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
+    expect(await oursIn(page, 'dm')).toBe(0);
+
+    await triggerPageTranslation(page);
+    await expect(page.locator('#dm .ai-translator-inline-block')).toContainText('[T]', { timeout: 30000 });
+    expect(sentTexts.join('\n')).toContain(DM_TEXT);
   } finally {
     await close();
   }

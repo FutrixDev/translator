@@ -29,7 +29,7 @@
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-27',
+    rulesVersion: '2026-09-28',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -61,7 +61,7 @@
         blockIdAttr: null,
       },
       {
-        // 论文的 PDF —— 这张表里第一条、也是目前唯一一条 never。
+        // 论文的 PDF —— 这张表里第一条 never。另一类是私信路径（x.com 那几条下面）。
         //
         // 它不是「这一页不该翻」，是「这一页不走这条路」：PDF 走的是服务端的
         // 排版任务（background/pdf-jobs.js），按页扣额度，而额度是钱。内置
@@ -154,11 +154,40 @@
         blockIdAttr: null,
       },
       {
+        // 私信（R33 Q1）：整站 always 会把私信也一起翻 —— 零点击就把别人发给他的私信
+        // 送去了 AI，而他从没为这一页点过什么。私信不是时间线，是信件；自动翻它和往
+        // 他的邮箱里插节点是同一类事，只是这里只拦这几条路径，站点的其余部分照旧。
+        //
+        // 落成 never，不是「不写」：不写的话最长匹配落回整站那条 always。never 排在
+        // 用户规则前面，所以他在 x.com 上写的整站 always 也打不开私信 —— 那条规则说
+        // 的是时间线。他自己伸手（「翻译此页」、快捷键）照样翻：手动翻译不问 decide()。
+        //
+        // 根路径与 `/*` 各一个门牌：pathMatches 把 `*` 展开成 `.*`、没有段边界，
+        // `/messages*` 会把 /messagesboard 这样的用户主页一起圈进来（见 huggingface
+        // 那两条）。语域照整站的写：这里的字仍是那个站点上的字，手动翻时语气要对。
+        // /messages 与 /i/chat 两个私信入口都列上。
+        match: ['x.com/messages', 'x.com/messages/*', 'x.com/i/chat', 'x.com/i/chat/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         match: 'twitter.com',
         state: 'always',
         register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
         keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['twitter.com/messages', 'twitter.com/messages/*', 'twitter.com/i/chat', 'twitter.com/i/chat/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -177,6 +206,17 @@
           '.tagline', '.score', 'time', 'faceplate-timeago',
           '[slot="credit-bar"]', '[slot="commentMeta"]',
         ],
+        blockIdAttr: null,
+      },
+      {
+        // 私信与聊天（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        // chat.reddit.com 是整个主机都是聊天，不带路径；它比 reddit.com 长，最长匹配
+        // 让它赢过整站那条 always。
+        match: ['reddit.com/chat', 'reddit.com/chat/*', 'chat.reddit.com'],
+        state: 'never',
+        register: 'forum',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
         blockIdAttr: null,
       },
       {
@@ -326,6 +366,15 @@
         blockIdAttr: null,
       },
       {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['bsky.app/messages', 'bsky.app/messages/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         match: 'facebook.com',
         state: 'always',
         register: 'social',
@@ -334,8 +383,26 @@
         blockIdAttr: null,
       },
       {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['facebook.com/messages', 'facebook.com/messages/*'],
+        state: 'never',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
         match: 'instagram.com',
         state: 'always',
+        register: 'social',
+        atomicBlockSelectors: [],
+        keepOriginalSelectors: [],
+        blockIdAttr: null,
+      },
+      {
+        // 私信（R33 Q1）：零点击就把私信发给 AI。理由与写法见 x.com 那条。
+        match: ['instagram.com/direct', 'instagram.com/direct/*'],
+        state: 'never',
         register: 'social',
         atomicBlockSelectors: [],
         keepOriginalSelectors: [],
