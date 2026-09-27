@@ -135,6 +135,16 @@ test('菜单第一行画的是站点规则，不是闸门', () => {
   assert.match(controls, /parts\.modeItem\.classList\.toggle\('ai-cap-disabled', !enabled\)/);
 });
 
+test('播放器图标直接调字幕开关，缺了就抛，不悄悄当没点（R33 N3）', () => {
+  // 引擎（content-video-captions.js）挂上 ctx.setVideoCaptionsOn；控件点击时
+  // 直接调它。前面加一句「有才调」就是一条没人测的第二条路：装载坏了，图标
+  // 按下去什么也不发生，也没有错误。
+  assert.match(captionEngineSource(), /ctx\.setVideoCaptionsOn = setVideoCaptionsOn;/);
+  const controls = repoFile('content/content-caption-controls.js');
+  assert.match(controls, /^\s*ctx\.setVideoCaptionsOn\(!captionsPressed\(\)\);$/m);
+  assert.doesNotMatch(controls, /if \(ctx\.setVideoCaptionsOn\)/, '点击前又问了一遍有没有');
+});
+
 test('写不进规则的站点，那一行点不动', () => {
   // 黑名单：BLOCKLIST 在 decide() 的阶梯上排在 USER_ALWAYS 前面，写进去也不算
   // 数。没有 host（file://）：normalizeHost 给不出键，规则一声不响地没写上，而

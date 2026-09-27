@@ -130,7 +130,9 @@
         toggleMenu();
         return;
       }
-      if (ctx.setVideoCaptionsOn) ctx.setVideoCaptionsOn(!captionsPressed());
+      // content-video-captions.js 在 manifest 里排在这份之后，点击时它早已装好；
+      // 缺了就是装载坏了，让它抛出来，不悄悄当没点。
+      ctx.setVideoCaptionsOn(!captionsPressed());
     });
     return button;
   }
