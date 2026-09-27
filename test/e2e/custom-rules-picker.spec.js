@@ -368,6 +368,54 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   });
 }
 
+// ------------------------------------------------------------------ 置灰
+
+const GREY = {
+  lead: 'The ferry leaves the north pier every hour on the hour between April and October.',
+};
+
+test('picker: a selector that is invalid or matches nothing greys the three actions (§5.1)', async ({ page, context }) => {
+  await setExtensionSettings(page, settings('http://127.0.0.1:9'));
+  await serve(context, { [`${RULES}/ferry`]: html(`<p id="lead">${GREY.lead}</p>`) });
+  await page.goto(`${RULES}/ferry`);
+  await waitForFloatBall(page);
+
+  await openPickerFromMenu(page);
+  await pickWithPointer(page, page.locator('#lead'), 'grey lead');
+  const input = page.locator(`${PICKER} .ai-translator-picker-input`);
+  const count = page.locator(`${PICKER} .ai-translator-picker-count`);
+  const actions = ['exclude', 'keepOriginal', 'include'];
+  const expectActions = async (enabled, label) => {
+    for (const act of actions) {
+      const button = pickerButton(page, act);
+      if (enabled) await expect(button, `${label}: ${act}`).toBeEnabled();
+      else await expect(button, `${label}: ${act}`).toBeDisabled();
+    }
+  };
+  await expectPickerMatches(page, 1);
+  await expectActions(true, 'one match');
+
+  // 改成一条页面上找不到的：计数 0，三个动作灰掉；「上一层」和「取消」不受影响。
+  await input.fill('#no-such-element');
+  await expectPickerMatches(page, 0);
+  await expect(count).toHaveAttribute('data-invalid', 'false');
+  await expectActions(false, 'zero matches');
+  await expect(pickerButton(page, 'parent')).toBeEnabled();
+  await expect(pickerButton(page, 'cancel')).toBeEnabled();
+
+  // 写坏的选择器：计数那里换成 customRuleSelectorInvalid 的文案，三个动作灰掉。
+  await input.fill('p[');
+  await expect(count).toHaveText(en('customRuleSelectorInvalid').replace('{selector}', 'p['));
+  await expect(count).toHaveAttribute('data-invalid', 'true');
+  await expectActions(false, 'invalid');
+
+  // 改回能命中的，三个动作回来。整个过程存储里一条规则都没有。
+  await input.fill('#lead');
+  await expectPickerMatches(page, 1);
+  await expectActions(true, 'back to one match');
+  expect(await storedRules(context)).toEqual({});
+});
+
 // ------------------------------------------------------------------ popup 入口
 
 test('the popup button opens the picker on the page in front', async ({ context, extensionId }) => {

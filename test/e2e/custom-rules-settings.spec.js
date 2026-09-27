@@ -253,6 +253,36 @@ test('J-4: CSS saved in Settings restyles another translated tab within 1 s, and
   }
 });
 
+test('J-4 hint: a CSS color without !important does not reach a translation, with !important it does', async ({ page, context, extensionId }) => {
+  // customRuleCssHint 的承诺：译文节点带着抄来的行内 color，不加 !important 改不动。
+  // 同一段 CSS 里放一条行内样式里没有的属性（text-decoration-line）做正向对照：
+  // 它 1 s 内生效，证明这段 CSS 确实挂上了，color 没变是被行内样式压住，不是没挂。
+  const { close, endpoint } = await startMockOpenAIServer();
+  try {
+    const options = await j4Start(page, context, extensionId, endpoint);
+    const lead = () => page.evaluate((selector) => {
+      const style = getComputedStyle(document.querySelector(selector));
+      return { color: style.color, line: style.textDecorationLine };
+    }, translationOf('lead'));
+    const plain = '.ai-translator-inline-block { color: rgb(1, 2, 3); text-decoration-line: underline }';
+    await fillRuleEditor(options, { match: ['rules.test'], css: plain });
+    let t0 = Date.now();
+    await saveRuleEditor(options);
+    await withinOneSecond(t0, async () => (await lead()).line === 'underline', 'the plain CSS is mounted');
+    expect((await lead()).color, 'color without !important').not.toBe('rgb(1, 2, 3)');
+
+    const [key] = Object.keys(await storedRules(context));
+    const id = key.slice('customRule:'.length);
+    await fillRuleEditor(options, { css: plain.replace('rgb(1, 2, 3)', 'rgb(1, 2, 3) !important') }, id);
+    t0 = Date.now();
+    await saveRuleEditor(options);
+    await withinOneSecond(t0, async () => (await lead()).color === 'rgb(1, 2, 3)', 'color with !important');
+    expect((await lead()).line).toBe('underline');
+  } finally {
+    await close();
+  }
+});
+
 test('[fixture] J-4 steps 3/3b: unsafe CSS written around Settings is not applied, the rest of that rule is, and nothing is fetched', async ({ page, context, extensionId }) => {
   // 隔离的是 J-4 第 3/3b 步：绕过设置页的写入（别的设备或手改的 sync 数据）。设置页
   // 存不进不安全的 CSS（主用例第 2 步），所以这一步只能由服务工作者直写。前提（第
