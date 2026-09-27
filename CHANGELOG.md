@@ -358,16 +358,23 @@ No new permission.
   trip to Settings. It writes the same rule as the popup and the in-player
   menu, then restores the page.
 - **A translate chip in text boxes.** When what you type is not in the page's
-  language, a small 「译成 English」 chip appears at the box's corner. A click
-  writes the translation straight into the box: a multi-line box (a text
+  language, a small "Translate to English" chip appears at the box's corner. A
+  click writes the translation straight into the box: a multi-line box (a text
   area, or a rich editor such as a comment box) keeps what you wrote and adds
   the translation on a new line below it, and a single-line box has its text
-  replaced. One Ctrl/Cmd+Z takes it back. The chip reads 「翻译中...」 while it
-  works and goes away once the translation is in; if the request or the write
-  fails the box is left untouched and the chip turns red with
-  「翻译失败，请重试」; clicking it again retries. If you keep typing or move to another box before the answer
-  arrives, nothing is written. It never submits, never presses Enter and
-  never moves the cursor to another box. Language detection is local and
+  replaced. One Ctrl/Cmd+Z takes it back. The chip reads "Translating..." while
+  it works and goes away once the translation is in. If the request fails, or
+  the translation would not fit the box's length limit, the box is not touched
+  and the chip turns red with "Translation failed, please retry"; clicking it
+  again retries. The chip also turns red when the box, read back after the
+  write, does not hold exactly your text plus the translation; the box may
+  already have changed then (an editor can take the text a moment late), so a
+  retry first checks whether the translation has since landed and, if it has,
+  just clears the chip instead of adding it again. If you keep typing or move
+  to another box before the answer arrives, nothing is written. There is no
+  time limit on the request: the chip stays busy until the answer arrives or
+  you type, press Esc or leave the box. It never submits, never presses Enter
+  and never moves the cursor to another box. Language detection is local and
   nothing is sent until you click. Settings has a switch for it; the float
   ball's input translator still opens its own window.
 - **On this computer** — a small panel in the settings page counting the pages
