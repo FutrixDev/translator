@@ -70,7 +70,10 @@
   the four kinds of page it is reading. Only that label is sent, never the
   site's address, and a page inside a frame is described by its own address,
   not the page around it. Chrome's built-in translator reads no prompt and
-  is unchanged. Cached translations are kept apart per kind of page.
+  is unchanged. Cached translations are kept apart per kind of page. A
+  custom prompt left as nothing but spaces or blank lines now counts as no
+  custom prompt on every path; translating one paragraph used to send it as
+  the whole instruction instead of the default one.
 
 ### Selection icon and card actions
 

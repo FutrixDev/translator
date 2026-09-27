@@ -91,13 +91,20 @@ function parseWordTranslation(content) {
   return { translation, phonetic };
 }
 
+// Whether the user's own prompt replaces the default template. One answer for
+// all four paths: a prompt of only whitespace is no prompt, or the single path
+// would send a blank system prompt where the batch paths send the default.
+function usesCustomPrompt(settings) {
+  return Boolean(settings.customPrompt && settings.customPrompt.trim());
+}
+
 // Translate single text with AI
 async function translateWithAI(text, targetLang, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // A custom prompt gets the register rule appended, as the batch paths append
   // their format rules; the default template already carries it.
-  const systemPrompt = settings.customPrompt
+  const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, {}, REGISTER_RULE, { addenda })
     : buildPrompt(DEFAULT_PROMPT, targetLangName, {}, '', { addenda });
 
@@ -129,8 +136,7 @@ async function translateWithAI(text, targetLang, settings, addenda) {
 // Translate single word with IPA (no math placeholder rule)
 async function translateSingleWordWithAI(text, targetLang, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
+  const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda })
     : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false, addenda });
 
@@ -186,8 +192,7 @@ async function translateBatchWithAI(texts, targetLang, settings, addenda) {
   const numberedTexts = texts.map((text, i) => `[${i + 1}] ${text}`).join('\n\n');
 
   // For batch translation, apply custom prompt with enforced output format
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
+  const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, {}, BATCH_OUTPUT_RULES, { addenda })
     : buildPrompt(DEFAULT_BATCH_PROMPT, targetLangName, {}, '', { addenda });
 
@@ -228,8 +233,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
   // Join texts with delimiter
   const joinedTexts = texts.join(delimiter);
 
-  const hasCustomPrompt = settings.customPrompt && settings.customPrompt.trim();
-  const systemPrompt = hasCustomPrompt
+  const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, { delimiter }, getFastBatchOutputRules(delimiter), { addenda })
     : buildPrompt(FAST_BATCH_PROMPT, targetLangName, { delimiter }, '', { addenda });
 

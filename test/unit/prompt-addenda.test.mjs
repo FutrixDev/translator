@@ -250,11 +250,31 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
   });
 }
 
-test('with no addenda the system prompt carries no register line at all', async () => {
+test('with empty addenda the system prompt carries no register line at all', async () => {
   reply = () => 'translated';
   const sent = await sentWith(() => ai.translateTextWithMode(
-    'A sentence long enough not to count as one word.', 'zh-CN', SETTINGS, false, undefined));
+    'A sentence long enough not to count as one word.', 'zh-CN', SETTINGS, false, {}));
   assert.doesNotMatch(sent[0], new RegExp(PromptAddenda.HEADINGS.register));
+});
+
+test('a custom prompt of only whitespace is no custom prompt, on every path (R33 D-360 F5)', async () => {
+  // 以前单句那一路只看真值：'   ' 当成自定义提示词，系统提示词就只剩空白加规则，
+  // 而三条批量/单词路看 trim()，用的是默认模板。
+  const BLANK = { ...SETTINGS, customPrompt: ' \n\t ' };
+  const paths = {
+    single: [() => 'translated', (settings) => ai.translateTextWithMode(
+      'A sentence long enough not to count as one word.', 'zh-CN', settings, false, {})],
+    word: [() => 'translated', (settings) => ai.translateTextWithMode('hello', 'zh-CN', settings, true, {})],
+    numbered: [() => '[1] A\n\n[2] B', (settings) => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', settings, {})],
+    fast: [() => 'A@@B', (settings) => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', settings, '@@', {})],
+  };
+  for (const [path, [answer, run]] of Object.entries(paths)) {
+    reply = answer;
+    const blank = await sentWith(() => run(BLANK));
+    const plain = await sentWith(() => run(SETTINGS));
+    assert.equal(blank.length, 1, path);
+    assert.equal(blank[0], plain[0], `${path}: a blank custom prompt replaced the default template`);
+  }
 });
 
 // ---- 服务工作者的三个处理函数：先把关，再翻译 ------------------------------
