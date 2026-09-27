@@ -19,6 +19,7 @@ import {
   DEFAULT_BATCH_PROMPT,
   DEFAULT_PROMPT,
   FAST_BATCH_PROMPT,
+  REGISTER_RULE,
   SINGLE_WORD_PROMPT,
   WORD_OUTPUT_RULES,
   buildPrompt,
@@ -94,9 +95,11 @@ function parseWordTranslation(content) {
 async function translateWithAI(text, targetLang, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
 
-  // Use custom prompt if provided, otherwise use default
-  const promptTemplate = settings.customPrompt || DEFAULT_PROMPT;
-  const systemPrompt = buildPrompt(promptTemplate, targetLangName, {}, '', { addenda });
+  // A custom prompt gets the register rule appended, as the batch paths append
+  // their format rules; the default template already carries it.
+  const systemPrompt = settings.customPrompt
+    ? buildPrompt(settings.customPrompt, targetLangName, {}, REGISTER_RULE, { addenda })
+    : buildPrompt(DEFAULT_PROMPT, targetLangName, {}, '', { addenda });
 
   // Auto-detect API type and call appropriate function
   if (isClaudeAPI(settings.apiEndpoint)) {

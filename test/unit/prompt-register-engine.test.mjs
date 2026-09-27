@@ -5,6 +5,9 @@
 //   - 挂的是 `addenda: {register}`，只有标签；消息里不出现这一页的域名。
 //   - 只挂在三种翻译消息上；这一页内置表里没有语域就不挂这个字段。
 //   - 同一段文字在论坛页和新闻页上是两个缓存键。
+//   - 两头接起来（R33 N4）：这一半发出的消息交给服务工作者那一半真的翻译函数，
+//     文字路径（单句、编号批、快速批，默认模板与自定义提示词两支）的系统提示词
+//     带 REGISTER_RULE；单词/词典路径不带它，但这一页的体裁标签照样送到。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -118,4 +121,74 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   await ask();
   assert.equal(sentToAI.length, 2, 'a news page reused the forum translation');
   assert.equal(sentToAI[1].addenda.register, 'news');
+});
+
+// ---- 两头接起来：内容脚本发出的消息 → 服务工作者的翻译函数 → 系统提示词 ----
+// 放在最后：它把服务工作者那一半（连同真的 AutoStats）装进这个进程，上面缓存
+// 那条要的是桩。
+
+test('the register rule reaches every text prompt and no word prompt, default and custom', async () => {
+  // ai-translate.js 经 settings.js 摸到 chrome.i18n 与 fetch；fetch 记下系统提示词。
+  globalThis.chrome.i18n.getUILanguage = () => 'en';
+  const systems = [];
+  let reply = () => 'translated';
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    systems.push(body.messages[0].content);
+    return new Response(JSON.stringify({ choices: [{ message: { content: reply() } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const prompts = await import('../../background/prompts.js');
+  const ai = await import('../../background/ai-translate.js');
+  const { PromptAddenda } = globalThis;
+  const FORUM_LINE = `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`;
+
+  goTo(REDDIT);
+  useAI();
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    sentToAI.push(message);
+    return { translation: 'AI', phonetic: '', isWord: false, translations: [] };
+  };
+  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH', texts: ['a', 'b'], targetLang: 'zh-CN' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: ['a', 'b'], targetLang: 'zh-CN', delimiter: '@@' });
+  const [single, word, numbered, fast] = sentToAI;
+
+  // background.js 的三个处理函数怎么把消息交下去，这里就怎么交。
+  const base = {
+    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+    apiKey: 'test-key',
+    modelName: 'gpt-4.1-mini',
+  };
+  for (const [label, settings] of [
+    ['default template', { ...base, customPrompt: '' }],
+    ['custom prompt', { ...base, customPrompt: 'Translate into {targetLang}. Be brief.' }],
+  ]) {
+    const sent = async (run, answer) => {
+      systems.length = 0;
+      reply = answer;
+      await run();
+      assert.equal(systems.length, 1, `${label}: ${systems.length} requests`);
+      return systems[0];
+    };
+    const text = {
+      single: await sent(() => ai.translateTextWithMode(
+        single.text, single.targetLang, settings, single.mode === 'word', single.addenda), () => 'translated'),
+      numbered: await sent(() => ai.translateBatchWithAI(
+        numbered.texts, numbered.targetLang, settings, numbered.addenda), () => '[1] A\n\n[2] B'),
+      fast: await sent(() => ai.translateBatchFastWithAI(
+        fast.texts, fast.targetLang, settings, fast.delimiter, fast.addenda), () => 'A@@B'),
+    };
+    for (const [path, system] of Object.entries(text)) {
+      assert.ok(system.includes(prompts.REGISTER_RULE), `${label} ${path} lacks the register rule:\n${system}`);
+      assert.ok(system.includes(FORUM_LINE), `${label} ${path} lost the forum label`);
+    }
+    const dictionary = await sent(() => ai.translateTextWithMode(
+      word.text, word.targetLang, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好","phonetic":""}');
+    assert.ok(!dictionary.includes(prompts.REGISTER_RULE), `${label} word prompt carries the register rule:\n${dictionary}`);
+    assert.ok(dictionary.includes(FORUM_LINE), `${label} word prompt lost the forum label`);
+  }
 });

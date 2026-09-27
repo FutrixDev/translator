@@ -190,9 +190,15 @@ test('the fast batch prompt still announces its delimiter with an addendum on it
   }
 });
 
-test('the register rule is in every default template and every rule set a custom prompt gets', () => {
-  const texts = {
+test('the register rule is in every text template and text rule set, and in no word one', () => {
+  // 单词/词典那一路没有语域可守（R33 N4），只在文字路径上。
+  for (const [name, text] of Object.entries({
     SINGLE_WORD_PROMPT: prompts.SINGLE_WORD_PROMPT,
+    WORD_OUTPUT_RULES: prompts.WORD_OUTPUT_RULES,
+  })) {
+    assert.ok(!text.includes(prompts.REGISTER_RULE), `${name} carries the register rule`);
+  }
+  const texts = {
     DEFAULT_PROMPT: prompts.DEFAULT_PROMPT,
     DEFAULT_BATCH_PROMPT: prompts.DEFAULT_BATCH_PROMPT,
     BATCH_OUTPUT_RULES: prompts.BATCH_OUTPUT_RULES,

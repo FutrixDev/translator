@@ -13,18 +13,20 @@ import '../shared/prompt-addenda.js';
 const MATH_PLACEHOLDER_RULE = `
 Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Keep each one exactly as written, in place, with no line breaks added around it.`;
 
-// Register rule - part of every default template, and of the format rules appended
-// to a custom prompt. The model must not formalise a meme or explain a joke: casual
-// text stays casual, formal text stays formal. It is appended after variable
-// substitution in the custom-prompt branch, so it must not contain {placeholders}.
+// Register rule - part of every text path: every default text template, and the
+// rules appended to a custom prompt on the single-text, numbered-batch and
+// fast-batch paths. The model must not formalise a meme or explain a joke: casual
+// text stays casual, formal text stays formal. The word/dictionary path never
+// carries it: a dictionary entry has no register to keep. It is appended after
+// variable substitution in the custom-prompt branch, so it must not contain
+// {placeholders}.
 const REGISTER_RULE = 'Match the register of the source: casual posts stay casual, with memes and slang rendered as natural equivalents in the target language rather than formal wording or explanations; formal text stays formal';
 
 // Single word/phrase prompt template (no math placeholder rule)
 const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Translate the given word or short phrase to {targetLang}.
 Return JSON only with keys "translation" and "phonetic".
 - "phonetic" should be the IPA of the source word or phrase
-- If phonetic is unavailable, use an empty string
-- ${REGISTER_RULE}`;
+- If phonetic is unavailable, use an empty string`;
 
 const WORD_OUTPUT_RULES = `OUTPUT FORMAT:
 Return JSON only with keys "translation" and "phonetic".

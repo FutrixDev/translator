@@ -355,9 +355,12 @@ translating, and it throws on an unknown register or any extra field. The
 handlers pass the addenda down every `ai-translate.js` path, including the
 fast batch's numbered fallback and the single-word prompt. There
 `composePromptAddenda()` places the addenda after the template and before the
-math placeholder rule. Separately, every default template, and every rule
-block appended to a custom prompt, carries `REGISTER_RULE` (casual stays
-casual, formal stays formal). The register is the eighth translation-cache
+math placeholder rule. Separately, every text path carries `REGISTER_RULE`
+(casual stays casual, formal stays formal): the default single, numbered-batch
+and fast-batch templates, and the rules appended to a custom prompt on those
+same three paths, the single-text one included. The word/dictionary path never
+carries it, neither `SINGLE_WORD_PROMPT` nor `WORD_OUTPUT_RULES`: a dictionary
+entry has no register to keep, though its addenda still arrive. The register is the eighth translation-cache
 factor (`addenda`, a `PromptAddenda.stamp()` string). The built-in engine
 reads no prompt and never sees it. Captions need nothing of their own, because
 they go through `ctx.requestTranslation` too. Covered by
