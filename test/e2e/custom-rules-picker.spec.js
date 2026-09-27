@@ -290,13 +290,14 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   const size = `${viewport.width}x${viewport.height}`;
   test(`picker geometry ${size}: toolbar inside the viewport, outline on the target, nothing left behind`, async ({ page, context }) => {
     await page.setViewportSize(viewport);
-    // 自动翻译关掉：不然「要不要翻译这一页」的追问条过一会儿才冒出来，375 宽时它横
-    // 在底边那一带，正好压在 #low-p 上 —— 指针落到我们自己的条子上，拾取器不认它，
-    // 描框和锁定都看运气。这里量的是工具条躲目标，不是追问条。
-    await setExtensionSettings(page, settings('http://127.0.0.1:9', { autoTranslate: false }));
+    // 自动翻译照常开着：「要不要翻译这一页」的追问条先冒出来。375 宽时它横在底边
+    // 那一带，正好压在 #low-p 上 —— 拾取器开着的时候它要让位，关掉后原样回来。
+    await setExtensionSettings(page, settings('http://127.0.0.1:9'));
     await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
     await page.goto(`${RULES}/locks`);
     await waitForFloatBall(page);
+    const ask = page.locator('#ai-translator-auto-bar');
+    await expect(ask, 'the ask bar is up before the picker opens').toHaveAttribute('data-mode', 'ask');
 
     // 目标在上半截：工具条贴底边。页面上的链接点不动，它只是被选中。
     await openPickerFromMenu(page);
@@ -310,11 +311,25 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     await pickerButton(page, 'cancel').click();
     await expectPickerGone(page);
 
-    // 目标压在底边那一带：工具条挪到顶边，仍完整落在视口里，不挡住目标。
+    // 目标压在底边那一带：追问条让了位，低处的目标上面没有任何我方节点（描框不接
+    // 指针，不算）；工具条挪到顶边，仍完整落在视口里，不挡住目标。
     await openPickerFromMenu(page);
+    await expect(ask, 'the ask bar steps aside while the picker is open').toHaveCount(0);
     const low = page.locator('#low-p');
     const lowBox = await low.boundingBox();
     expect(lowBox.y + lowBox.height, 'the low target starts inside the viewport').toBeLessThanOrEqual(viewport.height);
+    const above = await low.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const y = box.top + box.height / 2;
+      return [0.1, 0.5, 0.9].flatMap((at) => {
+        const x = box.left + box.width * at;
+        const stack = document.elementsFromPoint(x, y);
+        return stack.slice(0, stack.indexOf(el))
+          .filter((node) => node.closest('[id^="ai-translator-"], .ai-translator-popup'))
+          .map((node) => `${Math.round(x)}: ${node.id || node.className}`);
+      });
+    });
+    expect(above, `${size} our nodes above the low target`).toEqual([]);
     await page.mouse.move(lowBox.x + lowBox.width / 2, lowBox.y + lowBox.height / 2);
     await expectOutlineOn(page, low, `${size} low (hover)`);
     await page.mouse.click(lowBox.x + lowBox.width / 2, lowBox.y + lowBox.height / 2);
@@ -325,9 +340,10 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     const barBox = await page.locator(`${PICKER} .ai-translator-picker-bar`).boundingBox();
     expect(barBox.y + barBox.height, 'the toolbar clears the target').toBeLessThanOrEqual(lowBox.y);
 
-    // Esc 也拆干净；之后页面上的链接照常能点。
+    // Esc 也拆干净，追问条按原来的样子回来；之后页面上的链接照常能点。
     await page.keyboard.press('Escape');
     await expectPickerGone(page);
+    await expect(ask, 'the ask bar comes back once the picker closes').toHaveAttribute('data-mode', 'ask');
     await page.click('#leave');
     await expect(page).toHaveURL(`${RULES}/elsewhere`);
   });

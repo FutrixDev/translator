@@ -87,6 +87,11 @@
   // 就这一条窄条，第二条会和第一条叠在一起（和 notice 同一个道理）。
   let offer = null;
 
+  // 拾取器开着（content/picker/picker.js）：右下角这条窄条让位。375 宽时它横在
+  // 底边那一带，正好压在用户要点的那一块上。只让追问、说明和 offer 让位 ——
+  // notice 是对用户刚按下那一下的回答（拾取器存好了那一句也走它），照常说。
+  let yielding = false;
+
   // ------------------------------------------------------------------ 计数
 
   function askKey() {
@@ -359,10 +364,13 @@
     // 那里答的是一句办不到的话（正文在一个外进程 <embed> 里，收集层看到的是空
     // body），而 offer 是那一页真办得成的那件事。顺带它还护住了追问额度：要号那
     // 一步压在 mode === 'ask' 下面，一份 PDF 不会去花掉这个域名三次里的一次。
-    const mode = notice ? 'notice' :
-      (explaining ? 'explain' : (offer ? 'offer' : (asking ? 'ask' : '')));
+    const mode = notice ? 'notice' : (yielding ? '' :
+      (explaining ? 'explain' : (offer ? 'offer' : (asking ? 'ask' : ''))));
     if (!mode) {
-      removeBar();
+      // 让位时条子只摘下来、不扔：他勾了「总是」还没点翻译，拾取器关掉后那个勾
+      // 还在。让位期间也不去要追问的号 —— 那张条子他看不见。
+      if (yielding && bar) bar.remove();
+      else removeBar();
       return;
     }
 
@@ -378,7 +386,8 @@
       return;
     }
 
-    if (!bar || !document.body.contains(bar)) bar = buildBar();
+    if (!bar) bar = buildBar();
+    else if (!document.body.contains(bar)) document.body.appendChild(bar);
     bar.dataset.mode = mode;
 
     if (mode === 'offer') {
@@ -409,6 +418,12 @@
   ctx.paintAutoStatusDot = paintDot;
   ctx.showAutoStatusNotice = setNotice;
   ctx.showAutoStatusOffer = setOffer;
+
+  /** 拾取器开着时让位（true），关掉后按原来的状态画回来（false）。 */
+  ctx.yieldAutoStatus = function (on) {
+    yielding = !!on;
+    render();
+  };
 
   /**
    * 点状态点 → 展开一行说明；再点一下收回去。

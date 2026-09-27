@@ -197,6 +197,8 @@
     locked = null;
     picker.setLocked(parts, false);
     document.body.appendChild(parts.root);
+    // 右下角的追问条会压在低处的目标上：开着的这段时间它让位。
+    ctx.yieldAutoStatus(true);
     redraw();
     listen(true);
     return true;
@@ -210,6 +212,7 @@
     parts = null;
     hovered = null;
     locked = null;
+    ctx.yieldAutoStatus(false);
   }
 
   function isOpen() {

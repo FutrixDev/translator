@@ -437,6 +437,7 @@ async function canFallBackToAI() {
   - 本站胜出规则的 CSS 不安全时（`writeAddSelector` 对整条规则跑 `validateRule`，追加选择器也被拒），错误键 `customRuleCssUnsafe` 在拾取器里换成 `pickerCssUnsafe`（「本站规则里的 CSS 含被禁止的写法，这里没法往规则里加内容。请先到 设置 → 站点翻译规则 里改掉那段 CSS。」，`content/picker/picker.js:117`）：拾取器里改不了 CSS，所以这句指向设置页。存储不变，拾取器保持打开。
 - **Esc 或「取消」**：移除全部节点和监听器，不留痕迹（e2e 断言残留为零）。
 - **几何**：视口 1280×800 与 375×812 下，工具条都完整落在视口内，描框与目标 rect 的误差 ≤ 1 px。
+- **询问条让位**：拾取器开着时，自动翻译的询问条（连同状态说明、offer）收起，关掉后按原状态画回来（`ctx.yieldAutoStatus`，`content/content-auto-status.js`）。保存提示（notice）照常显示。几何用例在询问条已出现的前提下断言：低处的目标上面没有任何我方节点，能锁定；关掉后询问条回来。
 - **入口**：
   - 悬浮球菜单项 `edit-site-rule`，文案 `pickSiteRegion`（「调整本站翻译区域」/ "Adjust what gets translated here"）。菜单已经自己量高度（`content/content-float-ball.js:566-569`），加一项不用算高度。
   - popup 按钮，文案同上，走 `sendToActiveTab({type: 'OPEN_RULE_PICKER'})`，发完 `window.close()`。
@@ -530,7 +531,6 @@ B2 终态：B1 的夹具 spec `test/e2e/custom-rules-fixture.spec.js` 已删除�
   - science.org（:237-243）：`.contributors`、`.core-self-citation`、`.core-authors` 为整块（B）；`#bibliography`、`#tab-citations` 为整块（C，按 id 找区块）。
   - scholar.google（:282）：`.gs_a`、`.gs_fl` 为整块（B）。
   - arXiv PDF 页与 Hugging Face 两条没有 keepOriginal 选择器。
-- 拾取器几何用例关掉了自动翻译：自动翻译的询问条贴在视口底部，会盖住落在那里的拾取目标（375×812 下实测盖住 y≈644 起的一段）。拾取器不为它让位。
 
 ## 8. i18n
 
