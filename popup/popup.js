@@ -112,11 +112,10 @@ document.addEventListener('DOMContentLoaded', () => {
 async function refreshComicSection() {
   // Off means gone, not greyed out: these rows would otherwise advertise a
   // feature with no entry point behind it.
-  const { enableComicTranslation } = await AccountGate.applyAccountGate(
-    await chrome.storage.sync.get({ enableComicTranslation: false })
-  );
-  elements.comicTranslatePage.hidden = !enableComicTranslation;
-  elements.comicColorizePage.hidden = !enableComicTranslation;
+  const comicReady = AccountGate.featureState(await chrome.storage.sync.get({ enableComicTranslation: true }),
+    'enableComicTranslation', await AccountGate.hasAccount()) === AccountGate.FEATURE_STATES.READY;
+  elements.comicTranslatePage.hidden = !comicReady;
+  elements.comicColorizePage.hidden = !comicReady;
 }
 
 // Everything the popup asks a tab is about the page the address bar shows, and

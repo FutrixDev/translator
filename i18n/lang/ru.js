@@ -36,6 +36,7 @@
     comicChargeConfirm: 'Эта страница стоит кредитов. Перевести её?',
     comicChargeApprove: 'Использовать кредиты',
     accountRequired: 'Войдите, чтобы включить эту функцию',
+    featureOnAfterSignIn: 'Включено. Заработает, как только вы войдёте.',
     featureDisabled: 'Эта функция отключена в настройках',
     comicImageNotFound: 'Не удалось найти это изображение на странице',
     comicImageUnavailable: 'Это изображение не удаётся прочитать',
@@ -367,6 +368,12 @@
     autoOfferAccept: 'Перевести',
     autoOfferDismiss: 'Не сейчас',
     pdfAskPrompt: 'Это PDF. Перевод расходует постраничные кредиты.',
+    mediaHintPdf: 'Нажмите {shortcut}, чтобы перевести этот PDF (расходует постраничные кредиты).',
+    mediaHintComic: 'Нажмите {shortcut}, чтобы перевести комикс на экране.',
+    mediaHintComicNoShortcut: 'Перевести комикс на экране?',
+    mediaHintSetShortcut: 'Назначить сочетание клавиш',
+    mediaShortcutNothing: 'На этой странице нет PDF или комикса для перевода.',
+    mediaShortcutLabel: 'Перевести этот PDF или комикс на экране',
     autoStopSite: 'Не переводить {site} автоматически',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」

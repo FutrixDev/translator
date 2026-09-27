@@ -76,7 +76,7 @@
     // defaultSettings. (There is no auto-translate setting: OCR is always
     // recognise-first, with a Translate button in the popup.)
     enableImageOcrHoverButton: true,
-    enableComicTranslation: false,
+    enableComicTranslation: true,
     comicTargetLang: '',
     enablePdfTranslation: true,
     pdfTargetLang: '',

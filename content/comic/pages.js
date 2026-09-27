@@ -147,8 +147,9 @@
     return shown === requested ? requested : 'translate_colorize';
   }
 
+  /** Ready to run here: switched on and signed in (ctx.featureState). */
   function comicEnabled() {
-    return !!(ctx.settings && ctx.settings.enableComicTranslation);
+    return ctx.featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
   }
 
   // The right-click target — the only unambiguous way to know WHICH image the
@@ -257,10 +258,70 @@
     return distinct.filter(img => renderedArea(img) >= largest * SPREAD_AREA_RATIO);
   }
 
+  // A reader page stacks its pages one under the next; a gallery lays them out in
+  // a grid, and an article has one big picture. Three is where "a column of
+  // artwork" stops being a coincidence of layout.
+  const STACK_MIN_PAGES = 3;
+  // Page boxes may touch or overlap by a few pixels (borders, rounding).
+  const STACK_GAP_TOLERANCE = 8;
+  // ...and may sit only a little apart. A reader joins its pages into one strip
+  // (webtoons.com: gap 0 between every slice of an episode); 40 px leaves room
+  // for a reader that frames each page with a margin. A feed or an article is
+  // also a column of pictures, but with a caption, a byline or a row of buttons
+  // between them — about 800 px on X, 1200 on reddit, thousands in a news
+  // article. The limit shrinks with the picture, so a column of small pictures
+  // has to sit nearly flush to count.
+  const STACK_MAX_GAP = 40;
+  const STACK_MAX_GAP_RATIO = 0.1;
+  // A flush column is still not a reader when its pictures are thumbnails: the
+  // sspai.com sidebar stacks four 222x139 cards with no gap at all. A page is
+  // drawn to be read, so it is wide — a webtoons.com slice is 700 px (the last
+  // one 800), and on a phone a strip spans the screen, 360 to 430 CSS px. 300
+  // keeps both and drops the cards.
+  const STACK_MIN_PAGE_WIDTH = 300;
+  // ...and the run has to be taller than the screen, which is what makes it
+  // something to scroll through: those four cards come to 556 px against a
+  // 720 px window, three webtoons slices to 3420.
+
+  /**
+   * Is this a comic reader: at least three wide pages stacked top to bottom,
+   * each close under the one before, together taller than the window?
+   *
+   * Asked of the whole document, not only the viewport: pages in a vertical
+   * reader are taller than the screen, so three of them are never on screen at
+   * once. Only the media hint (content/content-media-hints.js) asks; the
+   * translate entry points still work on whatever is on screen (pickComicImages).
+   */
+  function hasComicStack() {
+    const pages = Array.from(document.images)
+      .filter(isComicPage)
+      .map(img => img.getBoundingClientRect())
+      .filter(rect => rect.width >= STACK_MIN_PAGE_WIDTH)
+      .sort((a, b) => a.top - b.top);
+    let run = 0;
+    let runHeight = 0;
+    let previous = null;
+    for (const rect of pages) {
+      const centre = (rect.left + rect.right) / 2;
+      const gap = previous ? rect.top - previous.bottom : 0;
+      const below = previous && gap >= -STACK_GAP_TOLERANCE;
+      const close = previous && gap <= Math.min(STACK_MAX_GAP, STACK_MAX_GAP_RATIO * previous.height);
+      const aligned = previous && centre > previous.left && centre < previous.right;
+      // A picture beside the previous one (a grid row, a spread) or far below it
+      // (the next post in a feed) starts over.
+      const joined = below && close && aligned;
+      run = joined ? run + 1 : 1;
+      runHeight = joined ? runHeight + rect.height : rect.height;
+      previous = rect;
+      if (run >= STACK_MIN_PAGES && runHeight >= window.innerHeight) return true;
+    }
+    return false;
+  }
+
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resultLabel, statusText,
   });
 })();

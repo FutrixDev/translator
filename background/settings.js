@@ -36,13 +36,14 @@ const defaultSettings = {
   // The extension's own UI language. Empty means follow the browser. Kept
   // apart from targetLang on purpose — see getUILanguage in i18n/messages.js.
   uiLanguage: '',
-  // Comic translation is the one feature that spends money on a server-side
-  // account, so it is opted into. Empty comicTargetLang means "follow
-  // targetLang" — the page a reader wants in Japanese is not always the
-  // language they read articles in.
-  enableComicTranslation: false,
+  // On by default, like PDF below (D-353): nothing is spent until an explicit
+  // click, and an off-by-default switch would read as "the user turned it off"
+  // to AccountGate.featureState(), which keeps every comic hint away. Empty
+  // comicTargetLang means "follow targetLang" — the page a reader wants in
+  // Japanese is not always the language they read articles in.
+  enableComicTranslation: true,
   comicTargetLang: '',
-  // On by default, unlike comics: a PDF is the case where the extension has no
+  // On by default: a PDF is the case where the extension has no
   // fallback to offer — Chrome's built-in viewer renders in a closed shadow DOM
   // that content scripts cannot reach, so a reader who never finds this toggle
   // concludes the product simply does not do PDFs. Nothing is spent until an

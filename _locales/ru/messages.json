@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "Перевести всю страницу, включая навигацию и боковые панели",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Перевести этот PDF или комикс на экране",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

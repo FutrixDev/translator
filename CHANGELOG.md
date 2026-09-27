@@ -79,6 +79,40 @@
   custom prompt on every path; translating one paragraph used to send it as
   the whole instruction instead of the default one.
 
+### PDF and comic shortcut
+
+- **`Alt+M` translates the PDF or the comic on screen.** On a PDF it starts
+  the PDF translation; on a comic reader it translates the pages on screen;
+  anywhere else it says there is nothing to translate. Change the key at
+  `chrome://extensions/shortcuts`.
+- **A hint that names the shortcut.** A PDF shows a small bar, "Press Alt+M
+  to translate this PDF", with a Translate button. A comic reader (three or
+  more wide pages stacked one right under the next, taller together than the
+  window) shows the same kind of bar once per site; a feed or an article with
+  pictures a post apart, or a sidebar column of thumbnails, does not.
+  Nothing is sent until you press the key or the button. If the shortcut is
+  unbound, the bar offers a link to set one.
+- **Not signed in? Sign in, then it carries on.** The key and the button open
+  the sign-in first and start the translation as soon as you are back.
+  Closing the sign-in tab cancels quietly. The "sign in to translate
+  documents" notification now has a Sign In button too.
+- **Turned off stays off.** If you switched PDF or comic translation off in
+  settings, the hint no longer appears. The key still works on the page you
+  use it on, and your setting is left as it is. You can switch either one off
+  without signing in; while you are signed out, a switch that is on says it
+  takes effect once you sign in.
+- **Comic translation is on by default,** like PDF translation.
+
+### Float ball over full-screen video
+
+- **The float ball steps aside for "web fullscreen" too.** Players that fill
+  the page without the browser's fullscreen mode (a site's own "web
+  fullscreen" button, or a player filling a fullscreen browser window) used
+  to leave the ball on top of the video. It now hides while a video fills the
+  window and comes back when the player shrinks. A muted, looping background
+  video does not count, and neither does a video the page draws its own
+  content over.
+
 ### Selection icon and card actions
 
 - **A translate icon next to your selection.** Select text and a small round

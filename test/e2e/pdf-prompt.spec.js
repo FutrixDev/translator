@@ -31,20 +31,24 @@ function startCountingService() {
   return startDocService();
 }
 
-/** 把扩展指向 mock，并给它一张登录凭证 —— PDF 功能的账号闸要的就是这张。 */
-async function connectExtension(context, base) {
+/**
+ * 把扩展指向 mock。默认给它一张登录凭证 —— PDF 功能的账号闸要的就是这张；
+ * `signedIn: false` 是没登录的那台机器（提示条照样出，点下去先登录）。
+ */
+async function connectExtension(context, base, { signedIn = true } = {}) {
   const worker = await getServiceWorker(context);
-  await worker.evaluate(async ({ base }) => {
+  await worker.evaluate(async ({ base, signedIn }) => {
     await chrome.storage.sync.set({ enablePdfTranslation: true });
     await chrome.storage.local.remove([
       'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'pdfJobs', 'pdfUrlOps',
     ]);
-    await chrome.storage.local.set({
-      comicApiBase: base,
-      comicToken: 'test-token',
-      comicTokenExpiresAt: Date.now() + 3600_000,
-    });
-  }, { base });
+    const values = { comicApiBase: base };
+    if (signedIn) {
+      values.comicToken = 'test-token';
+      values.comicTokenExpiresAt = Date.now() + 3600_000;
+    }
+    await chrome.storage.local.set(values);
+  }, { base, signedIn });
   return worker;
 }
 
@@ -106,6 +110,36 @@ test.describe('PDF offer bar', () => {
       const records = await jobRecords(worker);
       expect(records.length).toBeGreaterThan(0);
       expect(records[0].fileName).toBe('paper.pdf');
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('signed out: the bar names the shortcut, and pressing it signs in and then starts the job', async ({ context, page }) => {
+    const service = await startCountingService();
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      await page.goto(`${service.base}/paper.pdf`);
+
+      // 没登录照样出（D-353）：这条提示就是给还没登录的人的。键位是 Chrome
+      // 按平台印的那一串（Windows/Linux 上 Alt+M，macOS 上 ⌥M）。
+      const bar = page.locator(`${BAR}[data-mode="offer"]`);
+      await expect(bar).toBeVisible({ timeout: 15000 });
+      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/(Alt\+|⌥)M/);
+      await expect(bar.locator('[data-act="link"]')).toBeHidden();
+      expect(service.state.apiHits).toEqual([]);
+      expect(service.state.connects).toBe(0);
+
+      await bar.locator('[data-act="translate"]').click();
+
+      // 先登录（和 popup 同一个 /ext/connect），登上了接着把这份 PDF 派出去，
+      // 不用他再点第二下。
+      await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
+      await expect.poll(() => service.state.apiHits.filter(h => h === 'POST /api/pdf/jobs').length,
+        { timeout: 20000 }).toBe(1);
+      const stored = await worker.evaluate(() => chrome.storage.local.get('comicToken'));
+      expect(stored.comicToken).toBe('granted-token');
+      await expect(bar).toBeHidden();
     } finally {
       await service.close();
     }

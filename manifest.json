@@ -58,6 +58,12 @@
         "default": "Alt+W"
       },
       "description": "__MSG_cmdTranslateWholePage__"
+    },
+    "translate-media": {
+      "suggested_key": {
+        "default": "Alt+M"
+      },
+      "description": "__MSG_cmdTranslateMedia__"
     }
   },
   "content_scripts": [
@@ -124,6 +130,7 @@
         "content/content-translation-engine.js",
         "content/content-language-pack.js",
         "content/content-translation-cache.js",
+        "content/content-video-stage.js",
         "content/content-caption-providers.js",
         "content/content-caption-controls.js",
         "content/captions/state.js",
@@ -152,7 +159,7 @@
         "content/content-auto-discover.js",
         "content/content-auto-translate.js",
         "content/content-auto-status.js",
-        "content/content-pdf-prompt.js",
+        "content/content-media-hints.js",
         "content/hover/blocks.js",
         "content/hover/inline.js",
         "content/hover/latex.js",

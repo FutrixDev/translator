@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "Translate the whole page, including navigation and sidebars",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Translate this PDF, or the comic on screen",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

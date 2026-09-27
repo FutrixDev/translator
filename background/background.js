@@ -45,6 +45,7 @@ import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
+import { comicHintWriter, openShortcutSettings } from './media-hints.js';
 import { openOnboardingOnInstall } from './install.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
@@ -82,6 +83,7 @@ const STORAGE_WRITERS = {
   SITE_RULES_WRITE: () => globalThis.SiteRules,
   AUTO_STATS_WRITE: () => globalThis.AutoStats,
   CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
+  COMIC_HINT_WRITE: () => comicHintWriter,
 };
 
 // Message listener
@@ -105,7 +107,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // content/content-utils.js 的 commandModifiers）。键位用户改得掉，所以
       // 答的是**现在真的绑着**的那一份，不是 manifest 里那份建议值。
       chrome.commands.getAll((commands) => {
-        sendResponse({ shortcuts: (commands || []).map((c) => c.shortcut).filter(Boolean) });
+        // 按名字答：修饰键名单只要键位，提示条还要知道哪一条是它的命令、解没解绑。
+        sendResponse({ commands: (commands || []).map((c) => ({ name: c.name, shortcut: c.shortcut || '' })) });
       });
       return true;
 
@@ -149,6 +152,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
+    // 媒体提示条上的「设置快捷键」：页面打不开 chrome:// 网址。
+    case 'OPEN_SHORTCUT_SETTINGS':
+      openShortcutSettings().catch(error => console.warn('Blab Translation: opening shortcut settings failed', error));
+      break;
+
     // 同步存储的三个写消息：站点规则、本机统计、用户站点规则。内容
     // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
@@ -156,6 +164,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'SITE_RULES_WRITE':
     case 'AUTO_STATS_WRITE':
     case 'CUSTOM_RULES_WRITE':
+    case 'COMIC_HINT_WRITE':
       STORAGE_WRITERS[message.type]().applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
@@ -174,9 +183,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.signOut().then(() => ({ signedIn: false })), sendResponse);
       return true;
 
+    // `consent`: the media shortcut or the comic hint asked for this page
+    // (content/content-media-hints.js), which runs it even with the switch off.
     case 'COMIC_JOB_CREATE':
       replyComic(
-        assertFeatureEnabled('enableComicTranslation')
+        assertFeatureEnabled('enableComicTranslation', { consent: message.consent === true })
           .then(() => comicClient.createJob(message.job || {})),
         sendResponse,
       );
@@ -233,8 +244,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(openPdfJob(message.jobId, message.which), sendResponse);
       return true;
 
-    // PDF 文档上那条提示条按下的「翻译」（content/content-pdf-prompt.js）。走的
-    // 是右键菜单那三个条目同一个函数，检查一条不少。
+    // PDF 文档上那条提示条按下的「翻译」或媒体快捷键（content/content-media-hints.js）。
+    // 走的是右键菜单那三个条目同一个函数，检查一条不少；consent 见
+    // startPdfUrlTranslation。
     //
     // 网址以发信那个标签页的为准，message.url 只在没有标签页时兜底：内容脚本报
     // 的是它自己那一页，而 sender.tab.url 是浏览器说的那一页——要花钱的那一步
@@ -244,6 +256,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(startPdfUrlTranslation({
         url: (sender.tab && sender.tab.url) || message.url || '',
         pageUrl: (sender.tab && sender.tab.url) || message.url || '',
+        consent: message.consent === true,
       }), sendResponse);
       return true;
 

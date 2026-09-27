@@ -37,6 +37,7 @@
     comicChargeConfirm: '这一页需要消耗点数，确定翻译吗？',
     comicChargeApprove: '使用点数',
     accountRequired: '请先登录再开启此功能',
+    featureOnAfterSignIn: '已开启，登录后生效。',
     featureDisabled: '该功能已在设置中关闭',
     comicImageNotFound: '未能在页面上找到该图片',
     comicImageUnavailable: '无法读取这张图片',
@@ -383,6 +384,12 @@
     autoOfferAccept: '翻译',
     autoOfferDismiss: '不用',
     pdfAskPrompt: '这是一份 PDF 文档，翻译它会按页数消耗额度',
+    mediaHintPdf: '按 {shortcut} 翻译这份 PDF，按页数消耗额度',
+    mediaHintComic: '按 {shortcut} 翻译屏幕上的漫画',
+    mediaHintComicNoShortcut: '翻译屏幕上的漫画？',
+    mediaHintSetShortcut: '设置快捷键',
+    mediaShortcutNothing: '这一页没有可翻译的 PDF 或漫画',
+    mediaShortcutLabel: '翻译 PDF 或屏幕上的漫画',
     autoStopSite: '不再自动翻译 {site}',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」

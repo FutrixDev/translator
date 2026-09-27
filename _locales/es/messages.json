@@ -18,5 +18,9 @@
   "cmdTranslateWholePage": {
     "message": "Traducir toda la página, incluidas la navegación y las barras laterales",
     "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Traducir este PDF o el cómic en pantalla",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
   }
 }

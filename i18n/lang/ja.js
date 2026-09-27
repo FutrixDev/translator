@@ -36,6 +36,7 @@
     comicChargeConfirm: 'このページにはポイントがかかります。翻訳しますか？',
     comicChargeApprove: 'ポイントを使う',
     accountRequired: 'この機能を有効にするにはサインインしてください',
+    featureOnAfterSignIn: 'オンです。サインインすると有効になります。',
     featureDisabled: 'この機能は設定でオフになっています',
     comicImageNotFound: 'ページ内でその画像が見つかりませんでした',
     comicImageUnavailable: 'この画像は読み込めません',
@@ -367,6 +368,12 @@
     autoOfferAccept: '翻訳',
     autoOfferDismiss: '今はしない',
     pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
+    mediaHintPdf: '{shortcut} でこの PDF を翻訳（ページ数分のクレジットを消費）',
+    mediaHintComic: '{shortcut} で画面上の漫画を翻訳',
+    mediaHintComicNoShortcut: '画面上の漫画を翻訳しますか？',
+    mediaHintSetShortcut: 'ショートカットを設定',
+    mediaShortcutNothing: 'このページには翻訳できる PDF や漫画がありません',
+    mediaShortcutLabel: 'PDF または画面上の漫画を翻訳',
     autoStopSite: '{site} の自動翻訳をやめる',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」

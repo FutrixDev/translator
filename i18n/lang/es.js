@@ -36,6 +36,7 @@
     comicChargeConfirm: 'Esta página cuesta créditos. ¿Traducirla?',
     comicChargeApprove: 'Usar créditos',
     accountRequired: 'Inicia sesión para activar esta función',
+    featureOnAfterSignIn: 'Activado. Se aplica en cuanto inicies sesión.',
     featureDisabled: 'Esta función está desactivada en los ajustes',
     comicImageNotFound: 'No se encontró esa imagen en la página',
     comicImageUnavailable: 'No se puede leer esta imagen',
@@ -367,6 +368,12 @@
     autoOfferAccept: 'Traducir',
     autoOfferDismiss: 'Ahora no',
     pdfAskPrompt: 'Esto es un PDF. Traducirlo consume créditos de páginas.',
+    mediaHintPdf: 'Pulsa {shortcut} para traducir este PDF (consume créditos de páginas).',
+    mediaHintComic: 'Pulsa {shortcut} para traducir el cómic en pantalla.',
+    mediaHintComicNoShortcut: '¿Traducir el cómic en pantalla?',
+    mediaHintSetShortcut: 'Configurar atajo',
+    mediaShortcutNothing: 'No hay ningún PDF ni cómic que traducir en esta página.',
+    mediaShortcutLabel: 'Traducir este PDF o el cómic en pantalla',
     autoStopSite: 'Dejar de traducir {site} automáticamente',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」

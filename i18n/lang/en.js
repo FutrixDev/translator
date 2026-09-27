@@ -37,6 +37,7 @@
     comicChargeConfirm: 'This page costs credits. Translate it?',
     comicChargeApprove: 'Use Credits',
     accountRequired: 'Sign in to turn this on',
+    featureOnAfterSignIn: 'On. Takes effect once you sign in.',
     featureDisabled: 'This feature is turned off in settings',
     comicImageNotFound: 'Could not find that image on the page',
     comicImageUnavailable: 'This image cannot be read for translation',
@@ -404,6 +405,12 @@ Rules:
     autoOfferAccept: 'Translate',
     autoOfferDismiss: 'Not now',
     pdfAskPrompt: 'This is a PDF. Translating it spends page credits.',
+    mediaHintPdf: 'Press {shortcut} to translate this PDF. It spends page credits.',
+    mediaHintComic: 'Press {shortcut} to translate the comic on screen.',
+    mediaHintComicNoShortcut: 'Translate the comic on screen?',
+    mediaHintSetShortcut: 'Set a shortcut',
+    mediaShortcutNothing: 'No PDF or comic to translate on this page.',
+    mediaShortcutLabel: 'Translate this PDF or the comic on screen',
     autoStopSite: 'Stop auto-translating {site}',
 
     // Auto-translate: the status dot

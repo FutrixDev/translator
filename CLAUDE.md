@@ -158,20 +158,28 @@ areas on purpose:
 | `enableComicTranslation` / `enablePdfTranslation` | `chrome.storage.sync` | per account |
 | `comicToken` | `chrome.storage.local` | per device |
 
-**A device with no token has both features off, whatever sync says.** That
-answer is derived on every read by `shared/account-gate.js` — never written back
-to sync. A new install syncs the switches down before it has ever signed in
-(PDF ships on), so a signed-out device that "corrected" the preference would
-reach across and disable the feature on the device that is still signed in.
+**"Turned off" and "not signed in" are two different answers** (D-353), and
+`AccountGate.featureState(settings, key, signedIn)` in `shared/account-gate.js`
+is the one place they are told apart. It never rewrites a setting; it answers
+one of three states:
 
-Every surface that reads either switch must run it through
-`AccountGate.applyAccountGate()` first: the options page, the popup, the content
-scripts and the service worker's context menu entries all do, and
-`npm run test:unit` asserts each of them loads the module. The one deliberate
-exception is `assertFeatureEnabled()` in `background.js`, which judges the raw
-switch — the account half is enforced one layer down, where `apiFetch` answers a
-create with no token as `unauthorized`, and every surface turns that into a
-sign-in offer.
+| state | meaning | what surfaces do |
+| --- | --- | --- |
+| `off` | the user turned the switch off | nothing appears on its own; only the media shortcut (this page's consent) still works |
+| `signed_out` | switch on, no token on this device | the PDF/comic hints show, and using one signs in first |
+| `ready` | switch on, signed in | every entry point, menus included |
+
+Nothing is written back to sync: a new install syncs the switches down before
+it has ever signed in (both ship on), so a signed-out device that "corrected"
+the preference would reach across and disable the feature on the device that is
+still signed in.
+
+Every surface asks through it: content scripts via `ctx.featureState(key)`
+(`ctx.signedIn` is tracked beside the raw `ctx.settings`), the service worker via
+`featureState(key)` in `background/feature-gate.js`, the popup and the options
+page directly. `assertFeatureEnabled(key, {consent})` refuses only `off` — the
+account half is enforced one layer down, where `apiFetch` answers a create with
+no token as `unauthorized`, and every surface turns that into a sign-in offer.
 
 Comic translation is a family of classic scripts sharing one shelf, `ctx.comic`:
 

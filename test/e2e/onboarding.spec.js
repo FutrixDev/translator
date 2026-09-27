@@ -55,10 +55,13 @@ test.describe('the welcome page a fresh install opens', () => {
       '#engineSection h2', '#shortcutSection h2', '#shortcutSection .desc', '#openSettings', '#done'];
     report('J-F1 dark text', await expectLaidOut(page, texts, 'J-F1 dark text'));
 
-    // The shortcut list is the manifest's commands, each with its keys or "Not set".
+    // The shortcut list is the manifest's commands, each with its keys or "Not set",
+    // in the order chrome.commands.getAll() gives them: sorted by command name.
     const rows = page.locator('#shortcutList .shortcut');
-    await expect(rows).toHaveCount(3);
-    await expect(rows.locator('.shortcut-label')).toHaveText([en('translatePage'), en('showTranslationOnly'), en('floatMenuTranslateWholePage')]);
+    await expect(rows).toHaveCount(4);
+    await expect(rows.locator('.shortcut-label')).toHaveText([
+      en('translatePage'), en('showTranslationOnly'), en('mediaShortcutLabel'), en('floatMenuTranslateWholePage'),
+    ]);
     for (const keys of await rows.locator('.shortcut-keys').allTextContents()) {
       expect(keys.trim().length).toBeGreaterThan(0);
     }

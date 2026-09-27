@@ -323,6 +323,13 @@
   // 回来才用得上，而 focus 一定排在他按下第一个键之前。节流是为了把 focus 和
   // visibilitychange 成对到达的那两下并成一次。
   const COMMAND_REFRESH_THROTTLE_MS = 1000;
+  // 同一次回答里按命令名记下的真实键位，给要把键位写给人看的那一层
+  // （content/content-media-hints.js 的「按 {快捷键} 翻译」）。问到之前是 null ——
+  // 不知道；'' 是用户解绑了。两者说出来的话不一样，所以不能混成一个空串。
+  let boundShortcuts = null;
+  const shortcutListeners = new Set();
+  ctx.commandShortcut = (name) => (boundShortcuts ? (boundShortcuts.get(name) || '') : null);
+  ctx.onCommandShortcuts = (listener) => { shortcutListeners.add(listener); };
   let commandRefreshedAt = 0;
 
   function refreshCommandModifiers() {
@@ -332,10 +339,12 @@
     try {
       chrome.runtime.sendMessage({ type: 'COMMAND_SHORTCUTS' }, (response) => {
         if (chrome.runtime.lastError) return;
-        if (!response || !Array.isArray(response.shortcuts)) return;
-        for (const modifier of collectCommandModifiers(response.shortcuts)) {
+        if (!response || !Array.isArray(response.commands)) return;
+        boundShortcuts = new Map(response.commands.map((c) => [c.name, c.shortcut || '']));
+        for (const modifier of collectCommandModifiers([...boundShortcuts.values()])) {
           commandModifiers.add(modifier);
         }
+        for (const listener of shortcutListeners) listener();
       });
     } catch (error) {
       // 上下文没了。垫着的那份 manifest 名单照样管用。

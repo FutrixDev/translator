@@ -36,6 +36,7 @@
     comicChargeConfirm: '이 페이지는 포인트가 필요합니다. 번역할까요?',
     comicChargeApprove: '포인트 사용',
     accountRequired: '이 기능을 켜려면 로그인하세요',
+    featureOnAfterSignIn: '켜져 있습니다. 로그인하면 적용됩니다.',
     featureDisabled: '이 기능은 설정에서 꺼져 있습니다',
     comicImageNotFound: '페이지에서 해당 이미지를 찾을 수 없습니다',
     comicImageUnavailable: '이 이미지를 읽을 수 없습니다',
@@ -367,6 +368,12 @@
     autoOfferAccept: '번역',
     autoOfferDismiss: '나중에',
     pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
+    mediaHintPdf: '{shortcut} 키로 이 PDF 번역 (페이지 수만큼 크레딧 소모)',
+    mediaHintComic: '{shortcut} 키로 화면의 만화 번역',
+    mediaHintComicNoShortcut: '화면의 만화를 번역할까요?',
+    mediaHintSetShortcut: '단축키 설정',
+    mediaShortcutNothing: '이 페이지에는 번역할 PDF나 만화가 없습니다',
+    mediaShortcutLabel: 'PDF 또는 화면의 만화 번역',
     autoStopSite: '{site} 자동 번역 중지',
 
     // 自动翻译：状态点的七个状态，外加「跑完了还有没翻成的」

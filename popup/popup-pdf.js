@@ -66,10 +66,9 @@ function setupPdfSection() {
 }
 
 async function refreshPdfSection() {
-  const { enablePdfTranslation } = await AccountGate.applyAccountGate(
-    await chrome.storage.sync.get({ enablePdfTranslation: true })
-  );
-  if (!enablePdfTranslation) {
+  const pdfState = AccountGate.featureState(await chrome.storage.sync.get({ enablePdfTranslation: true }),
+    'enablePdfTranslation', await AccountGate.hasAccount());
+  if (pdfState !== AccountGate.FEATURE_STATES.READY) {
     pdfEls.translateCurrent.hidden = true;
     pdfEls.translateLocal.hidden = true;
     pdfEls.jobs.hidden = true;

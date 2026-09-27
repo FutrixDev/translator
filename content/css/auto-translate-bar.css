@@ -78,3 +78,21 @@ html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="no
 html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="dismiss"] {
   display: none;
 }
+
+/* offer 附带的链接（媒体提示解绑了快捷键时的「设置快捷键」）。长得像链接，不像
+   第三个按钮：它把人领去别处，不办这一页的事。 */
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-link {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #9d85ff;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-link[hidden] {
+  display: none;
+}

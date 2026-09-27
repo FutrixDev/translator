@@ -26,6 +26,9 @@ function pdfMessage(key, uiLang) {
 // prefix (the URL path's `pdf-charge-`) is somebody else's.
 const PDF_JOB_NOTIFICATION_PREFIX = 'pdf-job-';
 const PDF_CONFIRM_NOTIFICATION_PREFIX = 'pdf-confirm-';
+// A failure that only a sign-in fixes. Its one button is the sign-in; the
+// click is routed in pdf-jobs.js, which owns the account entry points.
+const PDF_SIGNIN_NOTIFICATION_PREFIX = 'pdf-signin-';
 
 /** The job a notification is about, or null when it is not a job notification. */
 function jobIdFromNotificationId(notificationId) {
@@ -133,21 +136,39 @@ async function notifyPdfRunning(fileName) {
   }, logIfFailed);
 }
 
+/**
+ * A document could not be started or finished. When the reason is "not signed
+ * in", the notification carries the way out: a Sign In button, the same
+ * sign-in the popup and the page hint open (D-353). "Sign in to translate" with
+ * nothing to click leaves the user hunting for the toolbar icon.
+ */
 async function notifyPdfError(error) {
   const uiLang = await pdfNotificationLang();
   // Either the error itself or the {error: {...}} messaging envelope.
   const inner = error && error.error && error.error.code ? error.error : error;
-  chrome.notifications.create({
+  const signIn = !!inner && inner.code === 'unauthorized';
+  const options = {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title: pdfMessage('pdfNotifyFailTitle', uiLang),
     message: pdfClient.pdfErrorMessage(inner, key => pdfMessage(key, uiLang))
+  };
+  if (!signIn) {
+    chrome.notifications.create(options, logIfFailed);
+    return;
+  }
+  // An id of its own, so the button click can be told apart from every other
+  // PDF notification's.
+  chrome.notifications.create(`${PDF_SIGNIN_NOTIFICATION_PREFIX}${crypto.randomUUID()}`, {
+    ...options,
+    buttons: [{ title: pdfMessage('comicSignIn', uiLang) }]
   }, logIfFailed);
 }
 
 export {
   PDF_JOB_NOTIFICATION_PREFIX,
   PDF_CONFIRM_NOTIFICATION_PREFIX,
+  PDF_SIGNIN_NOTIFICATION_PREFIX,
   jobIdFromNotificationId,
   logIfFailed,
   pdfNotificationLang,

@@ -9,7 +9,7 @@
 import '../i18n/messages.js';
 import '../shared/account-gate.js';
 import { defaultSettings, uiLanguageOf, getEffectiveTargetLang } from './settings.js';
-import { getGatedSettings } from './feature-gate.js';
+import { featureState } from './feature-gate.js';
 import { startPdfUrlTranslation } from './pdf-jobs.js';
 
 const MENU_IDS = {
@@ -207,11 +207,11 @@ function createContextMenus() {
  * AND the token, so a changed switch is only half of it.
  */
 async function refreshComicMenuVisibility() {
-  const visible = (await getGatedSettings()).enableComicTranslation;
-  chrome.contextMenus.update(MENU_IDS.translateComicImage, { visible: !!visible })
+  const visible = await featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
+  chrome.contextMenus.update(MENU_IDS.translateComicImage, { visible })
     // The menu is gone during a rebuild; the rebuild itself will re-apply this.
     .catch(() => {});
-  chrome.contextMenus.update(MENU_IDS.colorizeComicImage, { visible: !!visible })
+  chrome.contextMenus.update(MENU_IDS.colorizeComicImage, { visible })
     .catch(() => {});
 }
 
@@ -232,14 +232,14 @@ async function refreshOcrMenuVisibility() {
 
 /** Same contract as refreshComicMenuVisibility, for the PDF entries. */
 async function refreshPdfMenuVisibility() {
-  const visible = (await getGatedSettings()).enablePdfTranslation;
-  chrome.contextMenus.update(MENU_IDS.translatePdfLink, { visible: !!visible })
+  const visible = await featureState('enablePdfTranslation') === AccountGate.FEATURE_STATES.READY;
+  chrome.contextMenus.update(MENU_IDS.translatePdfLink, { visible })
     .catch(() => {});
-  chrome.contextMenus.update(MENU_IDS.translatePdfPage, { visible: !!visible })
+  chrome.contextMenus.update(MENU_IDS.translatePdfPage, { visible })
     .catch(() => {});
-  chrome.contextMenus.update(MENU_IDS.translatePdfAction, { visible: !!visible })
+  chrome.contextMenus.update(MENU_IDS.translatePdfAction, { visible })
     .catch(() => {});
-  chrome.contextMenus.update(MENU_IDS.translatePdfLocalAction, { visible: !!visible })
+  chrome.contextMenus.update(MENU_IDS.translatePdfLocalAction, { visible })
     .catch(() => {});
 }
 
@@ -270,10 +270,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE' }, TOP_FRAME);
   } else if (info.menuItemId === MENU_IDS.translateComicImage ||
              info.menuItemId === MENU_IDS.colorizeComicImage) {
-    const settings = await chrome.storage.sync.get(defaultSettings);
     // Hiding the menu is what normally prevents this, but a click can race a
     // switch-off, and this one costs money — so the setting is checked here too.
-    if (!settings.enableComicTranslation) return;
+    // Only `off` stops it: a click racing a sign-out still reaches the content
+    // script, whose job answers `unauthorized` with a sign-in offer.
+    if (await featureState('enableComicTranslation') === AccountGate.FEATURE_STATES.OFF) return;
+    const settings = await chrome.storage.sync.get(defaultSettings);
     // The content script owns the whole job from here: it finds the <img>,
     // shows progress, and drives the poll loop. Polling from the page rather
     // than the worker is not a style choice — a service worker is torn down
