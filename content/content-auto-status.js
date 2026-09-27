@@ -250,6 +250,10 @@
   }
 
   function onBarClick(event) {
+    // 条子是页面 DOM 里的普通节点，页面脚本一句 .click() 就能替用户点「翻译」——
+    // 那一下要么扣额度，要么拉起登录。只认用户自己的手：合成的点击整条不理，
+    // 不论点的是哪一个按钮、条子此刻在说谁的话。
+    if (!event.isTrusted) return;
     const button = event.target.closest && event.target.closest('[data-act]');
     if (!button || !bar) return;
     const act = button.dataset.act;
@@ -372,10 +376,12 @@
     // 时候压在最上面的是那句「没存上」：它是对用户刚按下的那一下的回答，而且他
     // 不关掉就没有第二个地方会再提起它。往下是展开说明（他点了那颗点，要的就是
     // 那一行字），再往下才是追问。
-    // offer 压在 ask 上面：会走到这里两者都在的只有 PDF 文档——整页翻译那一问在
-    // 那里答的是一句办不到的话（正文在一个外进程 <embed> 里，收集层看到的是空
-    // body），而 offer 是那一页真办得成的那件事。顺带它还护住了追问额度：要号那
-    // 一步压在 mode === 'ask' 下面，一份 PDF 不会去花掉这个域名三次里的一次。
+    // offer 压在 ask 上面。两者会同时在的是 PDF 文档和漫画阅读页（offer 只从
+    // content/content-media-hints.js 来）。在 PDF 上，整页翻译那一问答的是一句
+    // 办不到的话（正文在一个外进程 <embed> 里，收集层看到的是空 body），offer 才
+    // 是那一页真办得成的事；在漫画页上，页面要讲的是图，用户先看到的应该是翻图
+    // 那一句，他把它关掉后追问照常出来。顺带它还护住了追问额度：要号那一步压在
+    // mode === 'ask' 下面，offer 挂着的时候不会去花掉这个域名三次里的一次。
     const mode = yielding ? '' : (notice ? 'notice' :
       (explaining ? 'explain' : (offer ? 'offer' : (asking ? 'ask' : ''))));
     if (!mode) {
