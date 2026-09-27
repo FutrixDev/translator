@@ -249,10 +249,14 @@ function img(left, top, width, height) {
 }
 
 function comicShelf(images) {
-  const ctx = { t: (key) => key };
+  const ctx = { t: (key) => key, renderedArea: (image) => {
+    const rect = image.getBoundingClientRect();
+    return rect.width * rect.height;
+  } };
   // The e2e window: 1280x720.
   const window = { AI_TRANSLATOR_CONTENT: ctx, innerWidth: 1280, innerHeight: 720 };
-  const sandbox = { window, document: { images }, console };
+  const getComputedStyle = () => ({ visibility: 'visible', display: 'block', opacity: '1' });
+  const sandbox = { window, document: { images }, console, getComputedStyle };
   vm.createContext(sandbox);
   vm.runInContext(read('content/comic/pages.js'), sandbox, { filename: 'content/comic/pages.js' });
   return ctx.comic;
@@ -305,6 +309,43 @@ test('a flush column of thumbnails is not a reader: pages are wide and outrun th
   // webtoons.com: 700x1140 slices joined with no gap.
   const strip = [0, 1, 2].map((i) => img(290, i * 1140, 700, 1140));
   assert.equal(comicShelf(strip).hasComicStack(), true);
+});
+
+test('pages side by side in a zigzag are not a stack, however flush', () => {
+  // Each one starts where the last one ended, but in the other column.
+  const zigzag = [img(0, 0, 600, 900), img(640, 900, 600, 900), img(0, 1800, 600, 900)];
+  assert.equal(comicShelf(zigzag).hasComicStack(), false);
+});
+
+test('pages overlapping half their height are a staircase, not a stack', () => {
+  // Offset sideways enough to be separate pictures (a quarter of each covers
+  // the next), centred over the one before, and each starting halfway up it.
+  const staircase = [img(0, 0, 600, 900), img(280, 450, 600, 900), img(0, 900, 600, 900)];
+  assert.equal(comicShelf(staircase).hasComicStack(), false);
+});
+
+test('a placeholder under each page is the same page, not a second one', () => {
+  // Lazy readers: a low-resolution copy in the box, the artwork loaded over it.
+  const layered = [0, 1, 2].flatMap((i) => [
+    { ...img(100, i * 900, 600, 900), naturalWidth: 400, naturalHeight: 600 },
+    img(100, i * 900, 600, 900),
+  ]);
+  assert.equal(comicShelf(layered).hasComicStack(), true);
+});
+
+test('a stack counts only once one of its pages is on screen', () => {
+  // All of it below the 720 px fold: the offer would act on nothing.
+  const below = [0, 1, 2].map((i) => img(100, 800 + i * 900, 600, 900));
+  assert.equal(comicShelf(below).hasComicStack(), false);
+  // A picture on screen that is not one of the pages does not make it count.
+  const beside = [img(760, 0, 400, 500), ...below];
+  assert.equal(comicShelf(beside).hasComicStack(), false);
+  // Scrolled down to it.
+  const reached = [0, 1, 2].map((i) => img(100, 300 + i * 900, 600, 900));
+  assert.equal(comicShelf(reached).hasComicStack(), true);
+  // Deep into a long strip: only the fourth page shows, and the run it ends counts.
+  const deep = [0, 1, 2, 3].map((i) => img(100, -2800 + i * 900, 600, 900));
+  assert.equal(comicShelf(deep).hasComicStack(), true);
 });
 
 // ------------------------------------------------------------ the service-worker half
