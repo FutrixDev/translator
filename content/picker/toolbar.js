@@ -79,7 +79,8 @@
     for (const tip of root.querySelectorAll('[data-tip]')) {
       const field = tip.dataset.tip;
       tip.id = `${ROOT_ID}-tip-${field}`;
-      tip.textContent = `${t(LABELS[field])}: ${t(TIPS[field])}`;
+      // 「按钮名：说明」的拼法跟语言走（中文是全角冒号，法文冒号前有空格）。
+      tip.textContent = t('pickerTipLine').replace('{label}', t(LABELS[field])).replace('{tip}', t(TIPS[field]));
       parts.buttons[field].setAttribute('aria-describedby', tip.id);
     }
     return parts;

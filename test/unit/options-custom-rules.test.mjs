@@ -137,3 +137,13 @@ test('customRuleCssHint names every property a translation carries inline, in ev
     }
   }
 });
+
+// 导入预览的 AI 提示分单复数：仓里没有复数规则的先例，K 为 1 用 customRulesImportAiNoteOne。
+test('the import AI note takes the singular key for one rule and the plural key otherwise', () => {
+  const { card } = loadCard({});
+  assert.equal(card.customRulesAiNote(1), 'customRulesImportAiNoteOne');
+  assert.equal(card.customRulesAiNote(2), 'customRulesImportAiNote');
+  const en = messageCatalog().en;
+  assert.match(en.customRulesImportAiNoteOne, /^\{count\} of them makes /);
+  assert.match(en.customRulesImportAiNote, /^\{count\} of them make /);
+});

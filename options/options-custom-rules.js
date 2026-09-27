@@ -76,9 +76,12 @@ async function previewCustomRulesImport(file) {
   return { added, replaced, aiCount };
 }
 
-/** 导入预览里的 AI 提示；卡片和整份导入同一句、同一个 K。 */
+/**
+ * 导入预览里的 AI 提示；卡片和整份导入同一句、同一个 K。K 为 1 时用单数那句
+ * （仓里没有复数规则的先例，就是两个键）。
+ */
 function customRulesAiNote(count) {
-  return fill(t('customRulesImportAiNote'), { count });
+  return fill(t(count === 1 ? 'customRulesImportAiNoteOne' : 'customRulesImportAiNote'), { count });
 }
 
 /** 有没有哪条规则把引擎钉在 AI 上 —— 每日额度那一格灰不灰的第四条路。 */

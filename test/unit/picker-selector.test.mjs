@@ -6,13 +6,13 @@
 //
 // 没有 DOM 库可用，这里拿一小撮假节点在 vm 里跑：selector.js 只用 tagName、id、
 // classList、attributes、parentElement、children、getRootNode、querySelectorAll、
-// closest。
+// closest。末尾另有一条工具条文案的检查（toolbar.js）。
 // 假 querySelectorAll 只认 selector.js 会写出来的那几种形状（复合选择器 + `>`），
 // 认不出的形状抛错 —— 和浏览器对无效选择器的反应一样。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { pickerSource } from './helpers/sources.mjs';
+import { messageCatalog, pickerSource } from './helpers/sources.mjs';
 
 function parseCompound(text) {
   const re = /^([a-z][a-z0-9]*)?((?:#[A-Za-z_][\w-]*|\.[A-Za-z_][\w-]*|\[[\w-]+="[^"]*"\]|:nth-of-type\(\d+\))*)$/;
@@ -245,4 +245,17 @@ test('a clone inside our translation does not make a page element ambiguous', ()
   assert.equal(picker.selectorFor(target), 'span.promo-tag');
   assert.equal(picker.isPageNode(target), true);
   assert.equal(picker.isPageNode(clone), false);
+});
+
+// 顺带一条工具条（toolbar.js）的文案：「按钮名：说明」那一行的拼法在 i18n 模板里，
+// 不在代码里写死半角冒号 —— 中文界面要全角。
+test('the toolbar tip line is an i18n template, with a full-width colon in Chinese and Japanese', () => {
+  const toolbar = pickerSource('toolbar.js');
+  assert.match(toolbar, /t\('pickerTipLine'\)/);
+  assert.doesNotMatch(toolbar, /\}: \$\{/, 'no hard-coded "label: tip" join');
+  const catalog = messageCatalog();
+  for (const lang of ['zh-CN', 'zh-TW', 'ja']) assert.equal(catalog[lang].pickerTipLine, '{label}：{tip}', lang);
+  for (const [lang, table] of Object.entries(catalog)) {
+    assert.match(table.pickerTipLine, /\{label\}.*\{tip\}/, `${lang}: both placeholders`);
+  }
 });

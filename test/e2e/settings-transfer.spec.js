@@ -334,7 +334,7 @@ test('J-11 a whole-settings export carries the site translation rules, and an im
   // engine:'ai' 的条数（§6.1）：B 是替换的，新增的 AI 规则是 0 条，K 仍是 1。
   const preview = page.locator('#transferPreview');
   const rulesLine = fill(en('transferPreviewCustomRules'), { added: 1, replaced: 1 });
-  const aiNote = fill(en('customRulesImportAiNote'), { count: 1 });
+  const aiNote = fill(en('customRulesImportAiNoteOne'), { count: 1 });
   await chooseFile(page, body);
   await expect(preview).toBeVisible();
   await expect(page.locator('#transferPreviewList li', { hasText: en('transferSectionCustomRules') }))

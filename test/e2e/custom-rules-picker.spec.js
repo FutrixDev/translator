@@ -17,6 +17,7 @@ const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
   PICKER,
   en,
+  fill,
   settings,
   html,
   serve,
@@ -93,9 +94,9 @@ test('J-1: the picker excludes the comments of a translated page within 1 s, and
     await expectBarInViewport(page, 'J-1 locked');
     // 两个动作各带一行看得见的说明（设计 §5.1「点选后」）。
     await expect(page.locator(`${PICKER} [data-tip="exclude"]`))
-      .toHaveText(`${en('pickerExclude')}: ${en('pickerExcludeTip')}`);
+      .toHaveText(fill(en('pickerTipLine'), { label: en('pickerExclude'), tip: en('pickerExcludeTip') }));
     await expect(page.locator(`${PICKER} [data-tip="keepOriginal"]`))
-      .toHaveText(`${en('pickerKeepOriginal')}: ${en('pickerKeepOriginalTip')}`);
+      .toHaveText(fill(en('pickerTipLine'), { label: en('pickerKeepOriginal'), tip: en('pickerKeepOriginalTip') }));
 
     // 4. 点「不翻译这里」：1 s 内评论区译文消失、正文译文仍在，不刷新；出现保存提示，
     //    拾取器拆干净。
