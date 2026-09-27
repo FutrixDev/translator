@@ -1,5 +1,5 @@
 // The auto-status bar (content/content-auto-status.js) answers only the user's
-// own clicks.
+// own clicks, and steps aside while a video fills the screen.
 //
 // The bar is an ordinary node in the page's DOM, so a page script can find its
 // "Translate" button and call .click() on it. Behind that button sits a paid job
@@ -57,7 +57,23 @@ function load() {
     contains: (el) => body.children.includes(el),
   };
   const calls = [];
+  // ctx.videoStage, reduced to what the bar asks: is a video filling the screen,
+  // and tell me when that changes. `set(filled)` plays the stage's poll.
+  const stage = {
+    filled: false,
+    listeners: new Set(),
+    videoFillsScreen: () => stage.filled,
+    watch(listener) {
+      stage.listeners.add(listener);
+      return () => stage.listeners.delete(listener);
+    },
+    set(filled) {
+      stage.filled = filled;
+      for (const listener of [...stage.listeners]) listener(filled);
+    },
+  };
   const ctx = {
+    videoStage: stage,
     t: (key) => key,
     settings: {},
     STATUS_AUTO: { OFF: 'OFF', IDLE: 'IDLE', RUNNING: 'RUNNING', PAUSED: 'PAUSED', ERROR: 'ERROR' },
@@ -86,7 +102,7 @@ function load() {
     const target = bar().querySelector(`[data-act="${act}"]`);
     bar().listeners.click({ isTrusted, target });
   };
-  return { ctx, calls, bar, click };
+  return { ctx, calls, bar, click, stage };
 }
 
 function offerOn(page) {
@@ -111,4 +127,26 @@ test('a synthetic click on the offer does nothing, on any of its buttons', () =>
   // The same buttons answer the user's own hand.
   page.click('translate', true);
   assert.deepEqual(page.calls, ['accept']);
+});
+
+test('the bar steps aside while a video fills the screen, and comes back as it was', () => {
+  const page = load();
+  assert.equal(page.stage.listeners.size, 0, 'nothing to show, yet the stage is being measured');
+  offerOn(page);
+  assert.equal(page.stage.listeners.size, 1);
+
+  page.stage.set(true);
+  assert.equal(page.bar(), null, 'the bar stayed over a full-screen video');
+  page.stage.set(false);
+  assert.equal(page.bar().dataset.mode, 'offer');
+  assert.equal(page.bar().querySelector('.ai-translator-auto-text').textContent, 'mediaHintComic');
+
+  // Already full screen when the offer arrives: never drawn over the video.
+  page.ctx.showAutoStatusOffer(null);
+  assert.equal(page.stage.listeners.size, 0, 'the bar went away but kept the stage polling');
+  page.stage.filled = true;
+  page.ctx.showAutoStatusOffer({ text: 'mediaHintPdf', accept() {}, dismiss() {} });
+  assert.equal(page.bar(), null);
+  page.stage.set(false);
+  assert.equal(page.bar().dataset.mode, 'offer');
 });

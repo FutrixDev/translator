@@ -301,14 +301,18 @@ test('the fullscreen state is read in one place, and the top layer entered in on
   assert.deepEqual(promoters, [MODULE]);
 });
 
-test('the float ball steps aside through the stage, not a listener of its own', () => {
-  const ball = read('content/content-float-ball.js');
-  assert.doesNotMatch(ball, /fullscreenchange/);
-  assert.match(ball, /ctx\.videoStage\.watch\(/);
-  assert.match(ball, /wanted && !ctx\.videoStage\.videoFillsScreen\(\)/);
-  // The stage polls while watched: a ball switched off in settings stops
-  // watching, so a page where nobody sees the ball is not measured.
-  assert.match(ball, /if \(!wanted && stageWatch\) \{\s*stageWatch\(\);\s*stageWatch = null;/);
+test('the float ball and the auto-status bar step aside through the stage, not a listener of their own', () => {
+  // The auto-status bar is also where the PDF / comic hint (content-media-hints.js)
+  // is drawn, so this one check covers that hint too.
+  for (const file of ['content/content-float-ball.js', 'content/content-auto-status.js']) {
+    const source = read(file);
+    assert.doesNotMatch(source, /fullscreenchange/, file);
+    assert.match(source, /ctx\.videoStage\.watch\(/, file);
+    assert.match(source, /wanted && !ctx\.videoStage\.videoFillsScreen\(\)/, file);
+    // The stage polls while watched: a surface with nothing to show stops
+    // watching, so a page where nobody sees it is not measured.
+    assert.match(source, /if \(!wanted && stageWatch\) \{\s*stageWatch\(\);\s*stageWatch = null;/, file);
+  }
 });
 
 test('the stage loads before everything that reads it', () => {
@@ -317,7 +321,7 @@ test('the stage loads before everything that reads it', () => {
   const at = (file) => bundle.indexOf(file);
   assert.ok(at(MODULE) > at('content/content-utils.js'), 'ctx must exist first');
   for (const file of ['content/content-caption-providers.js', 'content/content-caption-controls.js',
-    'content/content-float-ball.js']) {
+    'content/content-float-ball.js', 'content/content-auto-status.js']) {
     assert.ok(at(file) > at(MODULE), `${file} loads before ${MODULE}`);
   }
 });

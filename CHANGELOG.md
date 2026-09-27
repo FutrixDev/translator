@@ -112,6 +112,10 @@
   window and comes back when the player shrinks. A muted, looping background
   video does not count, and neither does a video the page draws its own
   content over.
+- **So does the bar in the bottom-right corner.** The PDF and comic hint, the
+  status line you open from the ball's dot, and the "couldn't save" notice
+  all share that bar; in standard or web fullscreen it now hides with the
+  ball and comes back, unchanged, when the video leaves the screen.
 
 ### Selection icon and card actions
 

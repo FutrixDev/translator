@@ -71,6 +71,43 @@ test.describe('Comic hint', () => {
     expect(await hintHosts(context)).toEqual(['comics-reader.test']);
   });
 
+  test('the hint steps aside while a video fills the screen, and comes back', async ({ context, page: tab }) => {
+    // The same bar carries the PDF hint, the explain line and the notice; it
+    // asks ctx.videoStage the float ball's question. Web fullscreen here (the
+    // player restyles itself over the viewport): no event fires, so this is
+    // the stage's poll at work, not a fullscreenchange listener.
+    await route(context);
+    await tab.goto(`${READER}/read/1`);
+    const bar = tab.locator(`${BAR}[data-mode="offer"]`);
+    await expect(bar).toBeVisible({ timeout: 15000 });
+    const text = await bar.locator('.ai-translator-auto-text').textContent();
+
+    const b = await bar.boundingBox();
+    const centre = [b.x + b.width / 2, b.y + b.height / 2];
+    const paintedAt = () => tab.evaluate(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return hit && hit.closest('#ai-translator-auto-bar') ? 'bar' : hit && hit.tagName;
+    }, centre);
+    expect(await paintedAt()).toBe('bar');
+
+    const FILLED = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:100000;background:#000';
+    await tab.evaluate((css) => {
+      const player = document.createElement('div');
+      player.id = 'player';
+      player.style.cssText = css;
+      player.innerHTML = '<video style="width:100%;height:100%;background:#000"></video>';
+      document.body.appendChild(player);
+    }, FILLED);
+    await expect(tab.locator(BAR)).toBeHidden();
+    // Where the hint was, the reader now sees the video.
+    expect(await paintedAt()).toBe('VIDEO');
+
+    await tab.evaluate(() => { document.getElementById('player').style.cssText = 'width:480px;height:270px'; });
+    await expect(bar).toBeVisible();
+    await expect(bar.locator('.ai-translator-auto-text')).toHaveText(text);
+    expect(await paintedAt()).toBe('bar');
+  });
+
   test('a page with one big picture is not a comic reader', async ({ context, page: tab }) => {
     await route(context);
     await tab.goto(`${ARTICLE}/story`);
