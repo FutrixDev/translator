@@ -1,22 +1,21 @@
 // Blab Translation —— 输入框上的「译成 X」芯片。
 //
 // 在一个英文页面上敲中文，或者在中文论坛上敲英文，是同一件事：你正在用一门
-// 不是这一页的语言写字，而你多半想让对面读得懂。输入翻译这个功能早就有了
-// （content/content-input-dialog.js），可它唯一的入口是悬浮球菜单里的一行 ——
-// 要想起它存在，要点两次，还要把刚敲的字再复制一遍。所以没人用。
+// 不是这一页的语言写字，而你多半想让对面读得懂。这颗芯片就开在输入框旁边，只在
+// 语言对不上的时候出现，点一下，译文直接写进这个框（D-352）：多行的框在原文
+// 后面换一行接上译文，单行的框用译文替换原文，Ctrl/Cmd+Z 一步撤回。怎么写进去
+// 归 content/content-input-writeback.js；这里管什么时候写、写之前核对什么。
 //
-// 这颗芯片就是那扇门，开在门本来该在的地方：输入框旁边，只在语言对不上的时候
-// 出现，点一下，文字和目标语言一起送进对话框。
+// 四条规矩，写死在这里：
 //
-// 三条规矩，写死在这里：
-//
-// 1. **永不自动改写用户输入。** 芯片只是把文字**复制**进对话框，原输入框一个
-//    字符都不动。用户自己决定要不要把译文拿回去。
-// 2. **点击才译。** 判语言用的是 chrome.i18n.detectLanguage，本地的，不出机器；
+// 1. **点击才译。** 判语言用的是 chrome.i18n.detectLanguage，本地的，不出机器；
 //    在点下去之前没有任何东西发往任何服务器。
-// 3. **判不准就不出声。** 语言判断走 ctx.builtinTranslator.detectStandaloneLang，
+// 2. **判不准就不出声。** 语言判断走 ctx.builtinTranslator.detectStandaloneLang，
 //    它没把握时答空串（见 content-translation-engine.js 里那段注释）。一颗因为
 //    把 "hello" 判成塞尔维亚语而冒出来的芯片，比没有芯片糟得多。
+// 3. **框变了就不写。** 点下去到译文回来之间，用户又改了字、或者焦点去了别的
+//    框，这份译文就是给一段已经不存在的文字的。不写，芯片回到可点的样子。
+// 4. **不替用户提交。** 不发 Enter、不发 submit、不把焦点挪去别处。
 (function () {
   'use strict';
 
@@ -43,6 +42,12 @@
   // 就说明这个答案是给上一段文字的，丢掉 —— 否则一个迟到的答案会给一段早就变了
   // 的文字挂上芯片。
   let detectToken = 0;
+  // 点下去之后、译文回来之前的那一次请求：{ field, text }。译文回来时拿身份比，
+  // 不是它了（芯片被收走、用户改了字、又点了一次）就说明这份译文没人要了。
+  let pending = null;
+  // 每个框最后一次写完之后的样子。框里还是这段字，芯片就不再出来 —— 否则写进去
+  // 的「原文 + 译文」又会被判成外语，同一段原文被追加第二遍。
+  const written = new WeakMap();
 
   function chipEnabled() {
     return settings.showInputTranslateChip !== false;
@@ -67,17 +72,33 @@
     return el.isContentEditable === true;
   }
 
-  function fieldText(el) {
-    if (!el) return '';
-    const tag = el.tagName;
-    if (tag === 'TEXTAREA' || tag === 'INPUT') return el.value || '';
-    return el.innerText || el.textContent || '';
-  }
+  const fieldText = (field) => ctx.inputWriteback.fieldText(field);
+
+  // 焦点事件和 input 事件从 shadow root 里冒出来时，e.target 已经被改写成了
+  // shadow host。真正在敲字的那个元素是 composedPath() 的第一个。
+  const eventField = (e) => (e.composedPath ? e.composedPath()[0] : e.target);
 
   function hideChip() {
     chipField = null;
+    pending = null;
     detectToken += 1;
     if (chip) chip.remove();
+  }
+
+  // idle：可点，写着「译成 X」。busy：正在译，点了不算。error：没译成，框里的字
+  // 没动，再点一下就是重试。
+  function setChipState(state) {
+    if (!chip) return;
+    if (state === 'idle') {
+      delete chip.dataset.state;
+      chip.removeAttribute('aria-busy');
+      chip.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.languageName(chip.dataset.targetLang, { inSentence: true }));
+    } else {
+      chip.dataset.state = state;
+      chip.setAttribute('aria-busy', state === 'busy' ? 'true' : 'false');
+      chip.textContent = t(state === 'busy' ? 'translating' : 'translationFailed');
+    }
+    if (chipField) positionChip(chipField);
   }
 
   function ensureChip() {
@@ -111,11 +132,10 @@
 
   function showChip(field, targetLang) {
     const node = ensureChip();
-    node.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.languageName(targetLang, { inSentence: true }));
     node.dataset.targetLang = targetLang;
     chipField = field;
     if (!node.isConnected) document.body.appendChild(node);
-    positionChip(field);
+    setChipState('idle');
   }
 
   // 这一页是什么语言，以及「译成它」该写成 76 个选项里的哪一个。
@@ -132,13 +152,20 @@
   }
 
   async function evaluateField(field) {
+    // 这个框的译文还在路上：芯片正显示「翻译中」，不能被一次重新判语言改回「译成 X」。
+    if (pending && pending.field === field) return;
     const token = (detectToken += 1);
     if (!chipEnabled() || !isEligibleField(field)) {
       hideChip();
       return;
     }
 
-    const text = fieldText(field).trim();
+    const current = fieldText(field);
+    if (written.get(field) === current) {
+      if (chipField === field) hideChip();
+      return;
+    }
+    const text = current.trim();
     if (text.length < MIN_TEXT_CHARS) {
       if (chipField === field) hideChip();
       return;
@@ -160,7 +187,7 @@
     }
 
     // 上面两个 await 之间用户可能已经点去了别处。芯片只贴着焦点所在的那个框。
-    if (document.activeElement !== field) {
+    if (!ctx.inputWriteback.hasFocus(field)) {
       if (chipField === field) hideChip();
       return;
     }
@@ -172,17 +199,54 @@
     debounceTimer = setTimeout(() => evaluateField(field), DETECT_DEBOUNCE_MS);
   }
 
-  function onChipClick() {
+  // 点下去：译，然后写回。译文回来时逐条核对 —— 还是不是这一次请求、框里的字
+  // 变没变、焦点还在不在这个框上 —— 任何一条对不上都不写，芯片回到可点。
+  async function onChipClick() {
     const field = chipField;
-    const targetLang = chip?.dataset.targetLang || '';
-    const text = fieldText(field).trim();
-    hideChip();
-    if (!text || !ctx.showInputTranslateDialog) return;
-    ctx.showInputTranslateDialog({ text, targetLang });
+    if (!field || pending) return;
+    const targetLang = chip.dataset.targetLang || '';
+    const snapshot = fieldText(field);
+    const text = snapshot.trim();
+    if (!text) return;
+
+    const request = { field, text: snapshot };
+    pending = request;
+    setChipState('busy');
+    let writing = false;
+    try {
+      const response = await ctx.requestTranslation({
+        type: 'TRANSLATE',
+        text,
+        targetLang,
+        mode: 'text',
+        // 用户敲的字跟这一页没有关系：不声明的话内置引擎拿页面语言当源语言，
+        // 英文页上敲的中文就成了 en→en，被同语言短路原样退回。
+        standaloneText: true
+      });
+      if (pending !== request) return;
+      if (response.error) throw new Error(response.error);
+      if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field)) {
+        pending = null;
+        setChipState('idle');
+        return;
+      }
+      // 先放掉 pending 再写：写进去时框会发 input 事件，那不是用户在改字。
+      pending = null;
+      writing = true;
+      await ctx.inputWriteback.write(field, response.translation);
+      written.set(field, fieldText(field));
+      if (chipField === field) hideChip();
+    } catch (error) {
+      console.warn('Blab Translation: input chip translate/write failed', error);
+      // 已经作废的请求（芯片收走了、用户改了字）失败了，芯片上没有它的位置。
+      if (!writing && pending !== request) return;
+      pending = null;
+      if (chipField === field) setChipState('error');
+    }
   }
 
   function onFocusIn(e) {
-    const field = e.target;
+    const field = eventField(e);
     if (chipField && chipField !== field) hideChip();
     if (!isEligibleField(field)) {
       // 焦点落到别处了。芯片自己不接管焦点（mousedown 被拦住了），所以这就是
@@ -196,12 +260,17 @@
   // 点到页面空白处不会有任何东西接管焦点，于是 focusin 根本不响 —— 光靠它，
   // 芯片会留在一个已经失焦的框旁边。
   function onFocusOut(e) {
-    if (chipField && e.target === chipField) hideChip();
+    if (chipField && eventField(e) === chipField) hideChip();
   }
 
   function onInput(e) {
-    const field = e.target;
+    const field = eventField(e);
     if (!isEligibleField(field)) return;
+    // 译文还在路上用户又改了字：那份译文作废，芯片回到可点，按新字重新判。
+    if (pending && pending.field === field) {
+      pending = null;
+      setChipState('idle');
+    }
     scheduleEvaluate(field);
   }
 
