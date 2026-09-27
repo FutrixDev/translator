@@ -193,6 +193,56 @@ test('overlaySpot: inside the fullscreen element, or the top layer over a fullsc
   assert.equal(page.stage.overlaySpot().topLayer, true);
 });
 
+// Just enough of an element for the popover calls, recording each one.
+function popoverBox() {
+  const calls = [];
+  const attrs = new Set();
+  let open = false;
+  return {
+    calls,
+    parentElement: null,
+    hasAttribute: (name) => attrs.has(name),
+    setAttribute: (name) => { calls.push(`set:${name}`); attrs.add(name); },
+    removeAttribute: (name) => { calls.push(`remove:${name}`); attrs.delete(name); },
+    matches: (selector) => selector === ':popover-open' && open,
+    showPopover: () => { calls.push('show'); open = true; },
+    hidePopover: () => { calls.push('hide'); open = false; },
+  };
+}
+
+test('placeOverlay moves the box to the spot and in or out of the top layer', () => {
+  const box = popoverBox();
+  const appended = [];
+  const into = (parent) => { parent.appendChild = (el) => { appended.push(parent); el.parentElement = parent; }; };
+
+  // A fullscreen <video>: stays in body, promoted once however often it is placed.
+  let page = load({ fullscreen: { tagName: 'VIDEO' } });
+  into(page.document.body);
+  page.stage.placeOverlay(box);
+  page.stage.placeOverlay(box);
+  assert.deepEqual(appended, [page.document.body]);
+  assert.deepEqual(box.calls, ['set:popover', 'show']);
+
+  // A fullscreen player <div>: moved inside it, and out of the top layer.
+  const player = { tagName: 'DIV' };
+  into(player);
+  page = load({ fullscreen: player });
+  page.stage.placeOverlay(box);
+  assert.equal(box.parentElement, player);
+  assert.deepEqual(box.calls.slice(2), ['hide', 'remove:popover']);
+
+  // Taking a box that was never promoted out of the top layer touches nothing.
+  const plain = popoverBox();
+  page.stage.setTopLayer(plain, false);
+  assert.deepEqual(plain.calls, []);
+});
+
+test('setTopLayer without the popover API leaves the box where it is', () => {
+  const page = load();
+  const box = { ...popoverBox(), showPopover() { throw new TypeError('showPopover is not a function'); } };
+  assert.doesNotThrow(() => page.stage.setTopLayer(box, true));
+});
+
 test('watch reports each change once, polls for web fullscreen, and stops with its last listener', () => {
   const page = load({ videos: [{ rect: INLINE }] });
   const seen = [];
@@ -240,15 +290,15 @@ function contentSources() {
   return out;
 }
 
-test('the fullscreen state is read in one place', () => {
-  // content/content-caption-controls.js keeps its own copy of overlaySpot()
-  // (floatingParent + setTopLayer) for now: that file belongs to batch A of
-  // R33, and moves onto ctx.videoStage.overlaySpot() when the two merge.
-  const PENDING = new Set(['content/content-caption-controls.js']);
-  const readers = contentSources()
-    .filter((rel) => /document\.fullscreenElement/.test(read(rel)))
-    .filter((rel) => !PENDING.has(rel));
+test('the fullscreen state is read in one place, and the top layer entered in one place', () => {
+  // Both caption boxes (the overlay in content-caption-providers.js and the
+  // controls' floating box in content-caption-controls.js) go through
+  // ctx.videoStage.placeOverlay(): a second copy of the spot or of the
+  // popover dance is a second answer that can drift from this one.
+  const readers = contentSources().filter((rel) => /document\.fullscreenElement/.test(read(rel)));
   assert.deepEqual(readers, [MODULE]);
+  const promoters = contentSources().filter((rel) => /showPopover|setAttribute\(\s*'popover'/.test(read(rel)));
+  assert.deepEqual(promoters, [MODULE]);
 });
 
 test('the float ball steps aside through the stage, not a listener of its own', () => {
@@ -266,7 +316,8 @@ test('the stage loads before everything that reads it', () => {
   const bundle = manifest.content_scripts.flatMap((entry) => entry.js || []);
   const at = (file) => bundle.indexOf(file);
   assert.ok(at(MODULE) > at('content/content-utils.js'), 'ctx must exist first');
-  for (const file of ['content/content-caption-providers.js', 'content/content-float-ball.js']) {
+  for (const file of ['content/content-caption-providers.js', 'content/content-caption-controls.js',
+    'content/content-float-ball.js']) {
     assert.ok(at(file) > at(MODULE), `${file} loads before ${MODULE}`);
   }
 });

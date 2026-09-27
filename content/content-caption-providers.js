@@ -471,35 +471,13 @@
   // breaks players that manage their own DOM. So the host is a fixed-position
   // box pinned to the video's rect — the same approach the comic overlay takes
   // over an <img>.
-  // Promote the host into the top layer so it paints above a fullscreen
-  // <video>. Only while that is the case: a popover that is not open is
-  // display:none, which would hide the overlay the rest of the time.
-  function setTopLayer(on) {
-    const host = tt.host;
-    if (!host) return;
-    try {
-      if (on) {
-        if (!host.hasAttribute('popover')) host.setAttribute('popover', 'manual');
-        if (!host.matches(':popover-open')) host.showPopover();
-      } else if (host.hasAttribute('popover')) {
-        if (host.matches(':popover-open')) host.hidePopover();
-        host.removeAttribute('popover');
-      }
-    } catch (e) {
-      // Chrome without the popover API: captions over a fullscreen <video>
-      // simply aren't available, everything else still works.
-    }
-  }
-
   function syncHost() {
     const host = tt.host;
     const video = tt.video;
     if (!host || !video || !document.body) return;
     // Inside a fullscreen element, or in the top layer over a fullscreen
     // <video>: content/content-video-stage.js decides which.
-    const spot = ctx.videoStage.overlaySpot();
-    if (host.parentElement !== spot.parent) spot.parent.appendChild(host);
-    setTopLayer(spot.topLayer);
+    ctx.videoStage.placeOverlay(host);
 
     const rect = video.getBoundingClientRect();
     const onScreen = rect.width > 1 && rect.height > 1
@@ -552,7 +530,7 @@
         tt.onViewportChange = null;
       }
       if (tt.host) {
-        setTopLayer(false);
+        ctx.videoStage.setTopLayer(tt.host, false);
         tt.host.remove();
         tt.host = null;
       }

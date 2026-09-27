@@ -490,38 +490,13 @@
     return root;
   }
 
-  /**
-   * Nothing outside a fullscreen element is rendered, so the box has to move
-   * inside it — except when the fullscreen element is the <video> itself,
-   * which draws no children; the top layer is the only way over that.
-   */
-  function floatingParent() {
-    const fullscreen = document.fullscreenElement;
-    if (!fullscreen || fullscreen.tagName === 'VIDEO') return document.body;
-    return fullscreen;
-  }
-
-  function setTopLayer(on) {
-    const root = ui.root;
-    if (!root) return;
-    try {
-      if (on) {
-        if (!root.hasAttribute('popover')) root.setAttribute('popover', 'manual');
-        if (!root.matches(':popover-open')) root.showPopover();
-      } else if (root.hasAttribute('popover')) {
-        if (root.matches(':popover-open')) root.hidePopover();
-        root.removeAttribute('popover');
-      }
-    } catch (e) { /* no popover API: the button is simply not available there */ }
-  }
-
   function syncFloatingRect() {
     const root = ui.root;
     const video = ui.video;
     if (!root || !video || ui.docked || !document.body) return;
-    const parent = floatingParent();
-    if (root.parentElement !== parent) parent.appendChild(root);
-    setTopLayer(!!document.fullscreenElement && parent === document.body);
+    // Inside a fullscreen element, or in the top layer over a fullscreen
+    // <video>: content/content-video-stage.js decides which.
+    ctx.videoStage.placeOverlay(root);
     const rect = video.getBoundingClientRect();
     const onScreen = rect.width > 1 && rect.height > 1
       && rect.bottom > 0 && rect.right > 0
@@ -578,7 +553,7 @@
     applyHostClass(host.buttonClass);
     if (ui.root) {
       ui.root.remove();
-      setTopLayer(false);
+      ctx.videoStage.setTopLayer(ui.root, false);
     }
     const parent = host.parent;
     if (ui.button.parentElement !== parent) {
@@ -661,7 +636,7 @@
         ui.hideTimer = null;
       }
       if (ui.root) {
-        setTopLayer(false);
+        ctx.videoStage.setTopLayer(ui.root, false);
         ui.root.remove();
       }
     },

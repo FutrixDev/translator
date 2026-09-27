@@ -1,6 +1,7 @@
 // Is a video what the reader is looking at, edge to edge? One answer for every
-// surface that has to step aside for it (the float ball) or stay over it (the
-// caption overlay), so the two cannot drift.
+// surface that has to step aside for it (the float ball, the auto-status bar)
+// or stay over it (the caption overlay and the caption controls' floating box),
+// so they cannot drift.
 //
 // Two ways a video fills the screen, and the page can only see one of them as
 // an event:
@@ -117,6 +118,33 @@
     return { parent: fullscreen, topLayer: false };
   }
 
+  // Promote `el` into the top layer so it paints above a fullscreen <video>,
+  // or take it back out. Only while that is the case: a popover that is not
+  // open is display:none, which would hide the box the rest of the time.
+  function setTopLayer(el, on) {
+    try {
+      if (on) {
+        if (!el.hasAttribute('popover')) el.setAttribute('popover', 'manual');
+        if (!el.matches(':popover-open')) el.showPopover();
+      } else if (el.hasAttribute('popover')) {
+        if (el.matches(':popover-open')) el.hidePopover();
+        el.removeAttribute('popover');
+      }
+    } catch (e) {
+      // Chrome without the popover API: a box over a fullscreen <video> simply
+      // isn't available there, everything else still works.
+    }
+  }
+
+  // Put a box that must stay over the playing video where overlaySpot() says,
+  // in or out of the top layer. Called on every reposition: a fullscreen change
+  // moves the spot, and a page that rebuilt its DOM may have dropped the box.
+  function placeOverlay(el) {
+    const spot = overlaySpot();
+    if (el.parentElement !== spot.parent) spot.parent.appendChild(el);
+    setTopLayer(el, spot.topLayer);
+  }
+
   const listeners = new Set();
   let last = null;
   let timer = null;
@@ -148,5 +176,5 @@
     };
   }
 
-  ctx.videoStage = { fullscreenElement, videoFillsScreen, overlaySpot, watch };
+  ctx.videoStage = { fullscreenElement, videoFillsScreen, overlaySpot, placeOverlay, setTopLayer, watch };
 })();
