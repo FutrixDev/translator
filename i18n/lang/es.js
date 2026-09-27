@@ -284,6 +284,7 @@
     closeCaption: 'Cerrar los subtítulos de este vídeo',
     youtubeCaptions: 'Traducción de subtítulos de vídeo',
     captionControlsLabel: 'Traducción de subtítulos',
+    captionMenuMore: 'Opciones de traducción de subtítulos',
     captionDisplayMode: 'Tipo de subtítulos',
     captionModeBilingual: 'Subtítulos bilingües',
     captionModeTranslation: 'Solo traducción',

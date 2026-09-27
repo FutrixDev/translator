@@ -316,6 +316,7 @@
     closeCaption: 'Close captions for this video',
     youtubeCaptions: 'Video Subtitle Translation',
     captionControlsLabel: 'Subtitle translation',
+    captionMenuMore: 'Subtitle translation options',
     captionDisplayMode: 'Subtitle display',
     captionModeBilingual: 'Bilingual',
     captionModeTranslation: 'Translation only',

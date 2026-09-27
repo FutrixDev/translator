@@ -316,6 +316,7 @@
     closeCaption: '关闭当前视频的字幕',
     youtubeCaptions: '视频字幕翻译',
     captionControlsLabel: '字幕翻译',
+    captionMenuMore: '字幕翻译选项',
     captionDisplayMode: '字幕显示类型',
     captionModeBilingual: '双语字幕',
     captionModeTranslation: '仅译文',

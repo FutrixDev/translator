@@ -183,9 +183,13 @@
       const parent = document.querySelector('.ytp-right-controls-left')
         || document.querySelector('.ytp-right-controls');
       if (!parent) return null;
+      // Right before the player's own CC button when it is in this group. The
+      // live left group opens with YouTube's own expand chevron
+      // (.ytp-expand-right-bottom-section-button, seen 2026-09-27), and first
+      // place put our icon and chevron in front of it, away from CC.
       return {
         parent,
-        before: parent.firstElementChild,
+        before: parent.querySelector(':scope > .ytp-subtitles-button') || parent.firstElementChild,
         menuRoot: document.querySelector('#movie_player') || parent,
         buttonClass: 'ytp-button',
       };

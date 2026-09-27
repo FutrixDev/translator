@@ -284,6 +284,7 @@
     closeCaption: '關閉目前影片的字幕',
     youtubeCaptions: '影片字幕翻譯',
     captionControlsLabel: '字幕翻譯',
+    captionMenuMore: '字幕翻譯選項',
     captionDisplayMode: '字幕顯示類型',
     captionModeBilingual: '雙語字幕',
     captionModeTranslation: '僅譯文',

@@ -284,6 +284,7 @@
     closeCaption: 'Закрыть субтитры для этого видео',
     youtubeCaptions: 'Перевод субтитров видео',
     captionControlsLabel: 'Перевод субтитров',
+    captionMenuMore: 'Параметры перевода субтитров',
     captionDisplayMode: 'Отображение субтитров',
     captionModeBilingual: 'Двуязычные субтитры',
     captionModeTranslation: 'Только перевод',

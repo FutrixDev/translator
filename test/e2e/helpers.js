@@ -463,7 +463,8 @@ async function expectCaptionMenuAnchoredAboveButton(page, anchorSelector) {
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height };
     };
     const menu = document.getElementById('ai-translator-caption-menu');
-    const button = document.getElementById('ai-translator-caption-btn');
+    // 菜单挂在展开按钮上（R33 A3：图标本身是开关，菜单从它旁边那个小按钮出来）。
+    const button = document.getElementById('ai-translator-caption-more');
     const anchor = document.querySelector(sel);
     if (!menu || !button || !anchor) return null;
     return { menu: box(menu), button: box(button), anchor: box(anchor) };

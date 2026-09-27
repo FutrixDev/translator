@@ -39,6 +39,12 @@
   translated, is explained under the box. The built-in lists are shown below,
   folded: turn off a listed site, or have a captions-only site translate its
   page too, with one click. An open tab of that site follows at once.
+- **One click in the player turns subtitle translation off and on.** The
+  icon in the video's control bar is now a switch for this video: pressed, the
+  translated subtitles show; click it and they go away and the video's own
+  subtitles come back; click again to bring them back. On YouTube it sits
+  right before the CC button. The menu it used to open is still there, behind
+  the small arrow next to the icon, and is reachable from the keyboard.
 
 ### Selection icon and card actions
 

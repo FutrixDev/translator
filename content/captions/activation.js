@@ -410,6 +410,7 @@
       host,
       video,
       enabled: state.enabled,
+      dismissed: state.dismissed,
       siteAuto: state.siteAuto,
       stopSite: stopSiteOffered(provider, state.enabled, state.siteAuto),
       status: captionStatus(provider),

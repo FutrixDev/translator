@@ -284,6 +284,7 @@
     closeCaption: 'Untertitel für dieses Video schließen',
     youtubeCaptions: 'Video-Untertitelübersetzung',
     captionControlsLabel: 'Untertitelübersetzung',
+    captionMenuMore: 'Optionen für Untertitelübersetzung',
     captionDisplayMode: 'Untertitelanzeige',
     captionModeBilingual: 'Zweisprachig',
     captionModeTranslation: 'Nur Übersetzung',

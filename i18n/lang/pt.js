@@ -284,6 +284,7 @@
     closeCaption: 'Fechar as legendas deste vídeo',
     youtubeCaptions: 'Tradução de legendas de vídeo',
     captionControlsLabel: 'Tradução de legendas',
+    captionMenuMore: 'Opções de tradução de legendas',
     captionDisplayMode: 'Tipo de legenda',
     captionModeBilingual: 'Legendas bilíngues',
     captionModeTranslation: 'Somente tradução',

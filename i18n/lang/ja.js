@@ -284,6 +284,7 @@
     closeCaption: 'この動画の字幕を閉じる',
     youtubeCaptions: '動画字幕の翻訳',
     captionControlsLabel: '字幕翻訳',
+    captionMenuMore: '字幕翻訳のオプション',
     captionDisplayMode: '字幕の表示形式',
     captionModeBilingual: 'バイリンガル字幕',
     captionModeTranslation: '訳文のみ',

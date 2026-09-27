@@ -362,18 +362,22 @@ test('with no player control bar the button sits in the video corner', async ({ 
   // and only shows while there is activity.
   await p.mouse.move(320, 180);
 
+  // The pair sits in the corner: the chevron outermost, the icon right beside it.
   const gaps = await p.evaluate(() => {
     const v = document.querySelector('video').getBoundingClientRect();
     const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
-    return { right: v.right - b.right, bottom: v.bottom - b.bottom };
+    const m = document.getElementById('ai-translator-caption-more').getBoundingClientRect();
+    return { right: v.right - m.right, bottom: v.bottom - b.bottom, between: m.left - b.right };
   });
   expect(gaps.right).toBeLessThanOrEqual(16);
   expect(gaps.bottom).toBeLessThanOrEqual(16);
   expect(gaps.right).toBeGreaterThanOrEqual(0);
   expect(gaps.bottom).toBeGreaterThanOrEqual(0);
+  expect(gaps.between).toBeGreaterThanOrEqual(0);
+  expect(gaps.between).toBeLessThanOrEqual(4);
 
   // The menu's status line names the track it found, read without adopting it.
-  await button.click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText('English');
 
@@ -393,6 +397,7 @@ test('a page with no subtitle track gets no button', async ({ page: p, context }
   await p.mouse.move(320, 180);
 
   await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(0);
+  await expect(p.locator('#ai-translator-caption-more')).toHaveCount(0);
   await expect(p.locator('#ai-translator-caption-controls')).toHaveCount(0);
 });
 
@@ -573,7 +578,7 @@ test('after the viewer switches subtitles off, the menu can switch them back on'
   await expect(overlay).toBeHidden();
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText(/subtitles are off/i);
   await p.locator('#ai-translator-caption-menu [data-action="native"]').click();
@@ -602,7 +607,7 @@ test('the menu offers to turn subtitles on even with the setting off', async ({ 
   expect(await trackModes(p)).toEqual(['de:disabled', 'en:disabled']);
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
 
   // Not "this video has no subtitles" — that is a sentence we cannot say. The
   // menu says what is actually true and gives him the button.
@@ -665,7 +670,7 @@ const firstRowSwitch = (p) => p.locator('#ai-translator-caption-menu .ai-transla
 
 async function openCaptionMenu(p) {
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu')).toBeVisible();
 }
 
@@ -821,7 +826,7 @@ test('额度用完：字幕不再发请求，菜单说是额度的缘故；额�
   await expect(p.locator('#ai-translator-caption-overlay')).not.toContainText('你好世界');
 
   await p.mouse.move(320, 180);
-  await p.locator('#ai-translator-caption-btn').click();
+  await p.locator('#ai-translator-caption-more').click();
   await expect(p.locator('#ai-translator-caption-menu .ai-translator-caption-menu-status'))
     .toContainText('Today’s AI allowance is used up');
   await p.keyboard.press('Escape');

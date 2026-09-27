@@ -55,10 +55,74 @@ html body #ai-translator-caption-btn:hover {
   background: rgba(255, 255, 255, 0.14);
 }
 
-/* Translating right now: the icon comes up to full strength and picks up the
-   brand tint, so the state is readable at a glance on a moving image. */
-html body #ai-translator-caption-btn.ai-cap-active {
+/* The icon is a switch (aria-pressed). Off: dimmed and struck through, so the
+   two states read apart at a glance on a moving image without relying on the
+   brand tint alone. On: full strength. */
+html body #ai-translator-caption-btn[aria-pressed="false"] {
+  opacity: 0.55;
+}
+
+html body #ai-translator-caption-btn[aria-pressed="false"]::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 2px;
+  margin: 0;
+  border-radius: 1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%) rotate(-45deg);
+  pointer-events: none;
+}
+
+html body #ai-translator-caption-btn[aria-pressed="true"] {
   opacity: 1;
+}
+
+/* The chevron beside the icon: opens the menu. Narrow, so the pair takes
+   little more of the control bar than the icon did alone. */
+html body #ai-translator-caption-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 36px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  border: 0 solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+  opacity: 0.8;
+  filter: none;
+  transform: none;
+  cursor: pointer;
+  pointer-events: auto;
+  vertical-align: middle;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+html body #ai-translator-caption-more:hover,
+html body #ai-translator-caption-more[aria-expanded="true"] {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+html body #ai-translator-caption-more svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+  opacity: 1;
+  filter: none;
+  transform: none;
+  pointer-events: none;
 }
 
 html body #ai-translator-caption-btn svg {
@@ -74,6 +138,13 @@ html body #ai-translator-caption-btn svg {
 /* Floating fallback only: without a control bar behind it the icon needs its
    own plate to stay legible over the picture. */
 #ai-translator-caption-controls > #ai-translator-caption-btn {
+  position: absolute;
+  right: 32px;
+  bottom: 12px;
+  background: rgba(20, 20, 20, 0.72);
+}
+
+#ai-translator-caption-controls > #ai-translator-caption-more {
   position: absolute;
   right: 12px;
   bottom: 12px;

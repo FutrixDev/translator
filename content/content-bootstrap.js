@@ -27,6 +27,7 @@
       '#ai-translator-caption-overlay',
       '#ai-translator-caption-controls',
       '#ai-translator-caption-btn',
+      '#ai-translator-caption-more',
       '#ai-translator-caption-menu',
       '#ai-translator-ocr-region',
       '#ai-translator-ocr-hover-btn',

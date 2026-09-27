@@ -284,6 +284,7 @@
     closeCaption: '이 동영상의 자막 닫기',
     youtubeCaptions: '동영상 자막 번역',
     captionControlsLabel: '자막 번역',
+    captionMenuMore: '자막 번역 옵션',
     captionDisplayMode: '자막 표시 방식',
     captionModeBilingual: '이중 자막',
     captionModeTranslation: '번역만',

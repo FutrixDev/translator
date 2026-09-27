@@ -445,6 +445,22 @@ writes depending on context the user cannot see is the bug the first
 paragraph exists to prevent. The float ball's own stop row is separate and
 still shows only when `siteAuto` is on — it also hides the page's translations.
 
+**The player icon is a per-video switch; the menu sits behind the chevron
+beside it.** A click on `#ai-translator-caption-btn` calls
+`ctx.setVideoCaptionsOn()` in `content/content-video-captions.js`, which flips
+`state.dismissed` — the same flag the overlay's close button sets, reset for
+every new video — and writes no storage: turning translation off for one video
+must not turn it off for the site, and on a captions-only site (YouTube) turning
+it on must not start translating the page text. The engine hands the flag down
+as `controls.sync({ …, dismissed })`, and the icon draws `aria-pressed` from it
+(on only while the gate is open and the video is not dismissed). While the gate
+is shut the icon has nothing to switch, so a click opens the menu instead. The
+menu itself is unchanged and opens from `#ai-translator-caption-more`, the small
+chevron right after the icon (`aria-haspopup="menu"`, `aria-expanded`), which is
+also the menu's anchor. On YouTube the pair is inserted before
+`.ytp-subtitles-button`, not at the start of the right-hand group: the real bar
+opens that group with the player's own expand chevron.
+
 A provider in `content/content-caption-providers.js` answers four questions:
 
 | question | method |

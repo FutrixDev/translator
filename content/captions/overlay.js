@@ -333,9 +333,8 @@
     closeBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      state.dismissed = true;
-      setOverlayVisible(false);
-      caps.setNativeCaptionsHidden(false);
+      // 和播放器里那个图标是同一个开关（caps.setVideoCaptionsOn），图标跟着变成「关」。
+      caps.setVideoCaptionsOn(false);
     });
 
     // reset (double-click)
