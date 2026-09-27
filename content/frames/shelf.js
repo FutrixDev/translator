@@ -46,6 +46,7 @@
     'COMIC_TRANSLATE_IMAGE',
     'COMIC_TRANSLATE_PAGE',
     'TRANSLATE_WHOLE_PAGE',
+    'OPEN_RULE_PICKER',
   ]);
 
   function ignoresTopOnly(type) {

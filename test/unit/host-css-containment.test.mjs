@@ -33,7 +33,9 @@ import { fileURLToPath } from 'node:url';
 import { contentCss } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
+// 递归：内容脚本早已按族分进子目录（content/picker/、content/captions/ …），只看顶层
+// 就漏掉了那些族画的控件。
+const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), { recursive: true });
 
 // 整张表，按 manifest 的顺序接起来：下面既看规则本身，也看它们相对这段重置的
 // 前后位置，而那个前后是由 manifest 的 css 数组定的，不是由文件名定的。
@@ -276,6 +278,7 @@ test('the markup still renders controls we have to defend', () => {
   const classes = controlClasses();
   assert.ok(classes.size >= 8, `only found ${classes.size} control classes; the markup scan has stopped matching`);
   assert.ok(classes.has('ai-translator-menu-item'), 'the float menu items are no longer buttons with that class');
+  assert.ok(classes.has('ai-translator-picker-btn'), 'the rule picker buttons are no longer found by the scan');
 });
 
 /** A theme's `.kit button` and its `:hover`/`:focus` twin — the two weights to clear. */

@@ -166,6 +166,9 @@
         "content/frames/shelf.js",
         "content/frames/top.js",
         "content/frames/child.js",
+        "content/picker/selector.js",
+        "content/picker/toolbar.js",
+        "content/picker/picker.js",
         "content/content-messaging.js",
         "content/content.js"
       ],
@@ -181,7 +184,8 @@
         "content/css/light-theme.css",
         "content/css/captions.css",
         "content/css/comic.css",
-        "content/css/image-ocr.css"
+        "content/css/image-ocr.css",
+        "content/css/rule-picker.css"
       ],
       "run_at": "document_end",
       "all_frames": true,

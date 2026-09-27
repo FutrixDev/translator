@@ -384,6 +384,7 @@
     KEY_PREFIX,
     LIMITS,
     SELECTOR_FIELDS,
+    ERROR_KEYS,
     newId: collection.newId,
     validateRule,
     sanitizeCss,

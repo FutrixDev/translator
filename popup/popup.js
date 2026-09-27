@@ -10,6 +10,7 @@ const elements = {
   stopSiteAutoLabel: document.getElementById('stopSiteAutoLabel'),
   togglePagePause: document.getElementById('togglePagePause'),
   pagePauseLabel: document.getElementById('pagePauseLabel'),
+  pickSiteRegion: document.getElementById('pickSiteRegion'),
   openSettings: document.getElementById('openSettings'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
@@ -274,6 +275,10 @@ function renderPageRows() {
     elements.pagePauseLabel.textContent =
       AUTO_RESUMABLE.has(status) ? t('popupResumePage') : t('popupPausePage');
   }
+
+  // ④ 调整本站翻译区域。开得了开不了只有页面知道（顶层 frame、主机名写得成
+  //    规则键），悬浮球菜单画不画这一项问的是同一个函数（ctx.picker.canOpen）。
+  elements.pickSiteRegion.hidden = !(pageState && pageState.pickerAvailable);
 }
 
 async function refreshPageRows() {
@@ -322,6 +327,16 @@ async function stopSiteAuto() {
     showStatus('popupSiteRuleFailed', false);
   }
   await refreshPageRows();
+}
+
+/** 打开页内拾取器。拾取器画在页面上，popup 留着会挡住它。 */
+async function openRulePicker() {
+  const reply = await sendToActiveTab({ type: 'OPEN_RULE_PICKER' });
+  if (!reply || !reply.opened) {
+    await refreshPageRows();
+    return;
+  }
+  window.close();
 }
 
 async function togglePageTranslation() {
@@ -491,6 +506,7 @@ function setupEventListeners() {
   elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
   elements.stopSiteAuto.addEventListener('click', stopSiteAuto);
   elements.togglePagePause.addEventListener('click', togglePagePause);
+  elements.pickSiteRegion.addEventListener('click', openRulePicker);
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));
