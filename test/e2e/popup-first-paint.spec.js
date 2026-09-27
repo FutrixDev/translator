@@ -68,6 +68,8 @@ test('the auto-translate master switch never shows a guessed state while storage
         disabled: button.disabled,
         pressed: button.getAttribute('aria-pressed'),
         status: status.textContent,
+        // kbd 自带底色和边框：空着也画得出一颗空药丸，所以问的是它画没画（D-360 F9）。
+        drawn: status.getClientRects().length > 0,
       });
       snap();
       new MutationObserver(snap).observe(button, { attributes: true, attributeFilter: ['disabled', 'aria-pressed'] });
@@ -78,13 +80,15 @@ test('the auto-translate master switch never shows a guessed state while storage
   const master = popup.locator('#toggleGlobalAuto');
   await expect(master).toBeDisabled();
   expect(await master.getAttribute('aria-pressed')).toBeNull();
+  await expect(popup.locator('#globalAutoStatus')).toBeHidden();
 
   await expect(master).toBeEnabled({ timeout: SLOW_STORAGE_MS + 5000 });
   await expect(master).toHaveAttribute('aria-pressed', 'false');
   await expect(popup.locator('#globalAutoStatus')).toHaveText('Off');
+  await expect(popup.locator('#globalAutoStatus')).toBeVisible();
 
   const frames = await popup.evaluate(() => window.__masterFrames);
-  expect(frames[0]).toEqual({ disabled: true, pressed: null, status: '' });
+  expect(frames[0]).toEqual({ disabled: true, pressed: null, status: '', drawn: false });
   expect(frames.filter((frame) => frame.pressed === 'true')).toEqual([]);
   expect(frames.filter((frame) => !frame.disabled).map((frame) => frame.pressed)).not.toContain(null);
 });

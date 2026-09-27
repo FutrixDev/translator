@@ -28,10 +28,11 @@ function deferred() {
 // 这里照 HTML 给假元素定初值，首帧问的就是真的那一份标记。
 function markupOf(id) {
   const tag = POPUP_HTML.match(new RegExp(`<[a-z]+ id="${id}"[^>]*>`));
-  if (!tag) return { disabled: false, attributes: {} };
+  if (!tag) return { disabled: false, hidden: false, attributes: {} };
   const pressed = tag[0].match(/aria-pressed="([^"]*)"/);
   return {
     disabled: /\sdisabled[\s>]/.test(tag[0]),
+    hidden: /\shidden[\s>]/.test(tag[0]),
     attributes: pressed ? { 'aria-pressed': pressed[1] } : {},
   };
 }
@@ -45,7 +46,7 @@ function fakeElement(id) {
   const enabledWith = [];
   return {
     id,
-    hidden: false,
+    hidden: initial.hidden,
     get disabled() { return disabled; },
     set disabled(value) {
       if (disabled && !value) enabledWith.push(attributes['aria-pressed']);
@@ -255,6 +256,8 @@ test('the master switch is not drawn from a guess: disabled until storage answer
   assert.equal(master.disabled, true, 'the switch can be pressed before anyone knows its state');
   assert.equal(master.getAttribute('aria-pressed'), null, 'the switch claims a state before storage answered');
   assert.equal(status.textContent, '');
+  // 空的也不行：kbd 有底色和边框，空格子画出来是一颗空药丸（D-360 F9）。
+  assert.equal(status.hidden, true, 'an empty status cell is drawn as an empty pill before storage answers');
   // 监听器照样同步接上了（A1 不动）。
   assert.equal((master.listeners.click || []).length, 1);
 
@@ -263,6 +266,7 @@ test('the master switch is not drawn from a guess: disabled until storage answer
   assert.equal(master.disabled, false);
   assert.deepEqual([...master.enabledWith], ['false'], 'the first pressable frame said something other than storage');
   assert.equal(status.textContent, 'off');
+  assert.equal(status.hidden, false, 'the answered state was never shown');
 });
 
 test('the master switch stays disabled when storage cannot be read', async () => {
@@ -277,5 +281,6 @@ test('the master switch stays disabled when storage cannot be read', async () =>
     console.error = original;
   }
   assert.equal(popup.element('toggleGlobalAuto').disabled, true);
+  assert.equal(popup.element('globalAutoStatus').hidden, true, 'an unread state must not draw a pill');
   assert.ok(errors.some((args) => /Failed to check status/.test(String(args[0]))), 'the failure was not logged');
 });

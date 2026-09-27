@@ -185,7 +185,10 @@ test('site rules: a direct-message page is not translated by itself, and Transla
     await page.waitForSelector('#ai-translator-float-ball');
     const autoState = () => evaluateInContentScript(context, page, 'AI_TRANSLATOR_CONTENT.autoTranslate.state().reason');
     await expect.poll(autoState).toBe('BUILTIN_NEVER');
-    // 判完了就是判完了：不发现、不送。
+    // 判完了就是判完了：不发现、不送。判定一落地就断言的话，「送」这件事还没有
+    // 机会发生（发现层 400ms + 起跑 250ms 之后才出门），断言会在错的实现下也绿。
+    // 等过一个完整的发送窗口再看。
+    await page.waitForTimeout(1500);
     expect(sentTexts.join('\n')).not.toContain(DM_TEXT);
     expect(await oursIn(page, 'dm')).toBe(0);
 

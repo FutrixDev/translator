@@ -369,6 +369,7 @@ function renderGlobalAuto(on) {
   globalAuto = on;
   elements.toggleGlobalAuto.setAttribute('aria-pressed', String(on));
   elements.globalAutoStatus.textContent = on ? t('on') : t('off');
+  elements.globalAutoStatus.hidden = false;
   elements.toggleGlobalAuto.disabled = false;
 }
 
