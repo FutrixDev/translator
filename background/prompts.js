@@ -16,10 +16,11 @@ Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Ke
 // Register rule - part of every text path: every default text template, and the
 // rules appended to a custom prompt on the single-text, numbered-batch and
 // fast-batch paths. The model must not formalise a meme or explain a joke: casual
-// text stays casual, formal text stays formal. The word/dictionary path never
-// carries it: a dictionary entry has no register to keep. It is appended after
-// variable substitution in the custom-prompt branch, so it must not contain
-// {placeholders}.
+// text stays casual, formal text stays formal. Only this rule stays off the
+// word/dictionary path, since a dictionary entry has no tone to match; that path
+// still gets the page-kind addenda (composePromptAddenda) like every other one.
+// It is appended after variable substitution in the custom-prompt branch, so it
+// must not contain {placeholders}.
 const REGISTER_RULE = 'Match the register of the source: casual posts stay casual, with memes and slang rendered as natural equivalents in the target language rather than formal wording or explanations; formal text stays formal';
 
 // Single word/phrase prompt template (no math placeholder rule)
