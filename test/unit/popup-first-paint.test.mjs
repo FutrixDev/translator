@@ -46,6 +46,8 @@ function load({ reply }) {
   const elements = new Map();
   const docListeners = {};
   const sent = [];
+  const written = [];
+  const storageListeners = [];
   const document = {
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, fakeElement(id));
@@ -58,8 +60,11 @@ function load({ reply }) {
   };
   const chrome = {
     storage: {
-      sync: { get: async (defaults) => ({ ...defaults }) },
-      onChanged: { addListener() {} },
+      sync: {
+        get: async (defaults) => ({ ...defaults }),
+        set: async (patch) => { written.push(patch); },
+      },
+      onChanged: { addListener(fn) { storageListeners.push(fn); } },
     },
     tabs: {
       query: async () => [{ id: 7, url: 'https://example.test/' }],
@@ -97,6 +102,8 @@ function load({ reply }) {
     element: (id) => document.getElementById(id),
     fire: () => docListeners.DOMContentLoaded.forEach((fn) => fn()),
     sent,
+    written,
+    storageChanged: (changes) => storageListeners.forEach((fn) => fn(changes, 'sync')),
     run: (code) => vm.runInContext(code, sandbox),
   };
 }
@@ -129,7 +136,7 @@ test('the buttons work while the tab never answers', () => {
   // 同步断言：一个微任务都没跑。
   const translate = popup.element('translatePage');
   assert.equal((translate.listeners.click || []).length, 1, 'translatePage has no click listener');
-  for (const id of ['toggleSiteAuto', 'stopSiteAuto', 'togglePagePause', 'pickSiteRegion', 'openSettings']) {
+  for (const id of ['toggleGlobalAuto', 'toggleSiteAuto', 'stopSiteAuto', 'togglePagePause', 'pickSiteRegion', 'openSettings']) {
     assert.equal((popup.element(id).listeners.click || []).length, 1, `${id} has no click listener`);
   }
 });
@@ -183,4 +190,27 @@ test('both tab round-trips share one deadline helper', () => {
   assert.equal(races.length, 1, 'a second hand-rolled race is a second timeout to drift');
   assert.match(POPUP, /raceReply\(sendToActiveTab\(\{ type: 'PROBE_ENGINE' \}\)/);
   assert.match(POPUP, /raceReply\(pending, TAB_REPLY_TIMEOUT_MS\)/);
+});
+
+test('the auto-translate master switch writes the options page key and follows storage', async () => {
+  const popup = load({ reply: () => Promise.resolve(PAGE) });
+  popup.fire();
+  await wait(10);
+  const status = popup.element('globalAutoStatus');
+  assert.equal(status.textContent, 'on', 'autoTranslate defaults to on');
+
+  // 点一下写的是设置页 #autoTranslate 那一个键，不是别的什么副本。
+  await popup.element('toggleGlobalAuto').listeners.click[0]();
+  // 沙箱里造的对象跨了 realm，按 JSON 比。
+  assert.equal(JSON.stringify(popup.written), '[{"autoTranslate":false}]');
+  // 写完问一次页面：调度层停下来以后的样子由页面答。
+  assert.ok(popup.sent.filter((m) => m.type === 'AUTO_PAGE_STATE').length >= 2);
+
+  // 画面只跟存储走：onChanged 到了才变。设置页那边打开，这里跟着亮。
+  popup.storageChanged({ autoTranslate: { newValue: false } });
+  assert.equal(status.textContent, 'off');
+  await popup.element('toggleGlobalAuto').listeners.click[0]();
+  assert.equal(JSON.stringify(popup.written[1]), '{"autoTranslate":true}');
+  popup.storageChanged({ autoTranslate: { newValue: true } });
+  assert.equal(status.textContent, 'on');
 });

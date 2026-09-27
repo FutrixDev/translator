@@ -396,6 +396,7 @@
     floatBallMore: 'Ещё',
     popupSiteAuto: 'Автоперевод этого сайта',
     popupSiteRuleFailed: 'Не удалось сохранить настройку для этого сайта',
+    popupAutoSettingFailed: 'Не удалось сохранить настройку автоперевода',
     popupPausePage: 'Приостановить на этой странице',
     popupResumePage: 'Продолжить на этой странице',
 

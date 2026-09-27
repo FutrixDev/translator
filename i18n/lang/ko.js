@@ -396,6 +396,7 @@
     floatBallMore: '더보기',
     popupSiteAuto: '이 사이트 자동 번역',
     popupSiteRuleFailed: '이 사이트 설정을 저장하지 못했습니다',
+    popupAutoSettingFailed: '자동 번역 설정을 저장하지 못했습니다',
     popupPausePage: '이 페이지에서 일시중지',
     popupResumePage: '이 페이지에서 계속',
 

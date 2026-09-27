@@ -413,6 +413,7 @@
     floatBallMore: '更多',
     popupSiteAuto: '自动翻译这个站点',
     popupSiteRuleFailed: '这个站点的设置没能保存',
+    popupAutoSettingFailed: '自动翻译的开关没能保存',
     popupPausePage: '在这一页暂停',
     popupResumePage: '在这一页继续',
 

@@ -396,6 +396,7 @@
     floatBallMore: '更多',
     popupSiteAuto: '自動翻譯這個站點',
     popupSiteRuleFailed: '這個站點的設定沒能儲存',
+    popupAutoSettingFailed: '自動翻譯的開關沒能儲存',
     popupPausePage: '在這一頁暫停',
     popupResumePage: '在這一頁繼續',
 

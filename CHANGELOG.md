@@ -27,6 +27,11 @@
   automatically" is now on by default, so a video whose subtitles are off has
   something to translate. Switch them off in the player and that video is
   left alone; the setting itself is still under Video captions.
+- **An auto-translate switch in the popup.** The popup's first row turns
+  automatic translation on or off everywhere. It is the same setting as
+  "Translate pages automatically" in Settings, and switching it off stops the
+  current page on the spot: nothing new is sent, while what is already
+  translated stays.
 
 ### Selection icon and card actions
 

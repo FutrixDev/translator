@@ -396,6 +396,7 @@
     floatBallMore: 'その他',
     popupSiteAuto: 'このサイトを自動翻訳',
     popupSiteRuleFailed: 'このサイトの設定を保存できませんでした',
+    popupAutoSettingFailed: '自動翻訳の設定を保存できませんでした',
     popupPausePage: 'このページで一時停止',
     popupResumePage: 'このページで再開',
 

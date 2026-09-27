@@ -4,6 +4,8 @@ const elements = {
   translatePageLabel: document.getElementById('translatePageLabel'),
   translatePageShortcut: document.getElementById('translatePageShortcut'),
   translationOnlyShortcut: document.getElementById('translationOnlyShortcut'),
+  toggleGlobalAuto: document.getElementById('toggleGlobalAuto'),
+  globalAutoStatus: document.getElementById('globalAutoStatus'),
   toggleSiteAuto: document.getElementById('toggleSiteAuto'),
   siteAutoStatus: document.getElementById('siteAutoStatus'),
   stopSiteAuto: document.getElementById('stopSiteAuto'),
@@ -168,7 +170,6 @@ const AUTO_ACTIVE = new Set(['idle', 'running', 'paused', 'error']);
 const AUTO_RESUMABLE = new Set(['paused', 'error']);
 
 let pageState = null;
-let globalAuto = true;
 
 async function sendToActiveTab(message) {
   try {
@@ -339,7 +340,6 @@ async function toggleSiteAuto() {
   const on = siteAutoOn();
   try {
     await SiteRules.setSiteAuto(pageState.host, !on);
-    if (!on) globalAuto = true;
   } catch (error) {
     // 这条写入是会失败的：同步存储每项 8KB，站点规则表按域名一路长下去。
     // 失败了就得说一声——开关是个乐观控件，它已经在用户眼里动过了，而规则没
@@ -352,6 +352,41 @@ async function toggleSiteAuto() {
   // 规则一落地，页面那边的调度层就会重判重跑（siteRules 在 RESTART_KEYS 里）。
   // 它跑完才知道新状态是什么，所以这里重新问一次页面，而不是自己猜一个画上去。
   await refreshPageRows();
+}
+
+/**
+ * 自动翻译总开关那一行。只从存储画：checkStatus 读的那一次，之后是 onChanged ——
+ * 设置页、站点那一行（开一个站点顺带打开总开关，见 SiteRules.setSiteAuto）写的
+ * 都是同一个键，这一行跟着存储走，不自己猜。写失败时存储没变，这一行也就不动。
+ */
+let globalAuto = true;
+
+function renderGlobalAuto(on) {
+  globalAuto = on;
+  elements.toggleGlobalAuto.setAttribute('aria-pressed', String(on));
+  elements.globalAutoStatus.textContent = on ? t('on') : t('off');
+}
+
+/**
+ * 点总开关：写 autoTranslate 的反面。页面那边的调度层听着这个键（RESTART_KEYS），
+ * 关掉的那一刻当场停；写完重新问一次页面，暂停那一行和站点那一行跟着变。
+ */
+async function toggleGlobalAuto() {
+  try {
+    await chrome.storage.sync.set({ autoTranslate: !globalAuto });
+  } catch (error) {
+    console.error('Failed to write autoTranslate:', error);
+    showStatus('popupAutoSettingFailed', false);
+    return;
+  }
+  await refreshPageRows();
+}
+
+function watchGlobalAuto() {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !('autoTranslate' in changes)) return;
+    renderGlobalAuto(changes.autoTranslate.newValue !== false);
+  });
 }
 
 /**
@@ -430,7 +465,7 @@ async function checkStatus() {
     applyI18n(settings.uiLanguage);
     setupDisplayRow(settings);
     
-    globalAuto = settings.autoTranslate !== false;
+    renderGlobalAuto(settings.autoTranslate !== false);
     // 三问互不相干，一起发：引擎那一问以前排在页面状态后面，平白多等一轮。
     await Promise.all([
       refreshPageRows({ deadline: true }),
@@ -528,6 +563,8 @@ function openSettings() {
 // Setup event listeners
 function setupEventListeners() {
   elements.translatePage.addEventListener('click', translateCurrentPage);
+  elements.toggleGlobalAuto.addEventListener('click', toggleGlobalAuto);
+  watchGlobalAuto();
   elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
   elements.stopSiteAuto.addEventListener('click', stopSiteAuto);
   elements.togglePagePause.addEventListener('click', togglePagePause);

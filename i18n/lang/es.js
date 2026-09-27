@@ -396,6 +396,7 @@
     floatBallMore: 'Más',
     popupSiteAuto: 'Traducir este sitio automáticamente',
     popupSiteRuleFailed: 'No se pudo guardar el ajuste de este sitio',
+    popupAutoSettingFailed: 'No se pudo guardar el ajuste de traducción automática',
     popupPausePage: 'Pausar en esta página',
     popupResumePage: 'Reanudar en esta página',
 

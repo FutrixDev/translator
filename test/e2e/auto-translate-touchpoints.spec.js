@@ -167,3 +167,50 @@ test('popup: 没有可操作的页面时只剩一行，键位印的是真注册�
   // 会停在 hidden。
   await expect(page.locator('#translatePageShortcut')).toHaveText(/^(Alt\+|⌥)A$/);
 });
+
+test('popup 总开关：关掉就是 autoTranslate=false，这一页当场停，新长出来的段落不再送', async ({ page, context, extensionId }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const append = (id, text) => page.evaluate(([id, text]) => {
+    const p = document.createElement('p');
+    p.id = id;
+    p.textContent = text;
+    document.getElementById('box').appendChild(p);
+  }, [id, text]);
+  const BEFORE = 'The lighthouse keeper wrote down every ship that passed the northern rocks.';
+  const AFTER = 'The ferry timetable was pinned to the door of the harbour office each spring.';
+
+  try {
+    await serve(page, context, endpoint, { siteRules: { 'ask.test': 'always' } });
+    await page.waitForSelector('#box .ai-translator-inline-block', { timeout: 30000 });
+    // 对照：开着的时候，新长出来的段落是会被接着翻的。
+    await append('before', BEFORE);
+    await expect.poll(() => sentTexts.some((text) => text.includes(BEFORE)), { timeout: 15000 }).toBe(true);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    // goto() 把 popup 推到了前面；把窗口还给页面，让 popup 问到的是这一页。
+    await page.bringToFront();
+    await popup.reload();
+    const master = popup.locator('#toggleGlobalAuto');
+    await expect(master).toBeVisible();
+    await expect(master).toHaveAttribute('aria-pressed', 'true');
+
+    await master.click();
+    // 写的是设置页 #autoTranslate 那一个键。
+    await expect.poll(() => getSyncSetting(context, 'autoTranslate'), { timeout: 5000 }).toBe(false);
+    await expect(master).toHaveAttribute('aria-pressed', 'false');
+    await expect(popup.locator('#globalAutoStatus')).toHaveText('Off');
+
+    // 这一页当场停：调度层重判，答的是总开关关着。
+    await expect.poll(async () =>
+      (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.reason, { timeout: 5000 })
+      .toBe('GLOBAL_OFF');
+    await append('after', AFTER);
+    await page.waitForTimeout(2500);
+    expect(sentTexts.join('\n')).not.toContain(AFTER);
+    await expect(page.locator('#after + .ai-translator-inline-block, #after .ai-translator-inline-block')).toHaveCount(0);
+    await popup.close();
+  } finally {
+    await close();
+  }
+});

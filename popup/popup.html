@@ -16,10 +16,23 @@
     </header>
 
     <main class="main">
-      <!-- 这一页的三行动作。顺序是「以后都这样」→「现在就这一次」→「先停一下」，
+      <!-- 这一页的几行动作。顺序是「以后都这样」→「现在就这一次」→「先停一下」，
            从最持久的决定走到最临时的那一个。
            悬浮球和视频字幕两行搬去了设置页：它们是偏好，不是此刻要做的事，而
            popup 每多一行，真正要点的那一行就更难找一次。 -->
+
+      <!-- 自动翻译总开关：读写 autoTranslate，和设置页 #autoTranslate 是同一个
+           键、同一句话。常显 —— 它不问页面，没有内容脚本的标签页上也关得掉。
+           关掉以后当前页的调度层当场停（autoTranslate 在 RESTART_KEYS 里）。 -->
+      <button id="toggleGlobalAuto" class="menu-item" aria-pressed="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v10" stroke-linecap="round"/>
+          <path d="M18.4 6.6a9 9 0 11-12.8 0" stroke-linecap="round"/>
+        </svg>
+        <span data-i18n="autoTranslateEnable">Translate pages automatically</span>
+        <kbd id="globalAutoStatus" data-i18n="on">On</kbd>
+      </button>
+
       <button id="toggleSiteAuto" class="menu-item" hidden>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l1-8z" stroke-linejoin="round"/>

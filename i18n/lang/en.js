@@ -433,6 +433,7 @@ Rules:
     floatBallMore: 'More',
     popupSiteAuto: 'Auto-translate this site',
     popupSiteRuleFailed: "Couldn't save this site's setting",
+    popupAutoSettingFailed: "Couldn't save the auto-translate setting",
     popupPausePage: 'Pause on this page',
     popupResumePage: 'Resume on this page',
 
