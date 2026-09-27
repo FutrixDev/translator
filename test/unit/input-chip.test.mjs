@@ -30,9 +30,10 @@ test('芯片和写回模块装进了 manifest，写回排在芯片前面，也�
     'ctx.init 里没人叫醒这颗芯片，它永远不会出现');
 });
 
-// 写只有一条路：写回模块。芯片自己一个字都不往框里写，写回模块也只用浏览器的
-// 编辑命令（或原生 setter 那条退路），从不直接改 DOM —— 直接改的字会被 Draft、
-// Lexical 下一次重画抹掉，发帖时模型里也没有。
+// 写只有一条路：写回模块。芯片自己一个字都不往框里写，写回模块也只递 paste 给
+// 编辑器、或者用浏览器的编辑命令，从不直接改 DOM —— 直接改的字会被 Draft、
+// Lexical 下一次重画抹掉，发帖时模型里也没有。合成 beforeinput 和原生 value setter
+// 那两条旧路（c5d37ea）在 D-357 删掉了，不许回来。
 test('写只有一条路：芯片交给写回模块，写回模块不直接改 DOM', () => {
   // 芯片给自己那颗节点写字（chip.textContent）不算。
   const chipWrites = CHIP_ONLY.match(/(?<!\bchip)\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]/g);
@@ -44,6 +45,9 @@ test('写只有一条路：芯片交给写回模块，写回模块不直接改 D
   const direct = WRITEBACK.match(/\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]|insertAdjacent|appendChild|\.append\(|replaceChildren|setRangeText/g);
   assert.equal(direct, null, `写回模块直接改了 DOM：${direct}`);
   assert.match(WRITEBACK, /document\.execCommand\('insertText', false, data\)/);
+  assert.match(WRITEBACK, /new ClipboardEvent\('paste', \{/);
+  assert.ok(!/new InputEvent|getOwnPropertyDescriptor/.test(WRITEBACK),
+    '写回模块又在合成 beforeinput / input，或者绕过编辑命令用 value setter');
 });
 
 test('不替用户提交：不发 Enter、不发 submit、不挪焦点', () => {
@@ -72,7 +76,7 @@ test('译文回来先核对，再写', () => {
     '译文回来后没有按「同一请求 → 字没变 → 焦点还在」的顺序核对完再写');
   assert.match(CHIP_ONLY, /if \(pending && pending\.field === field\) \{\s*pending = null;\s*setChipState\('idle'\);/,
     '译文还在路上用户改了字，芯片没回到可点');
-  assert.match(CHIP_ONLY, /if \(written\.get\(field\) === current\)/,
+  assert.match(CHIP_ONLY, /if \(settleLateWrite\(field\)\) return;\s*const current = fieldText\(field\);\s*if \(written\.get\(field\) === current\)/,
     '写完之后芯片会对「原文 + 译文」再冒出来，同一段原文会被追加第二遍');
 });
 

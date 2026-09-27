@@ -160,6 +160,7 @@
       return;
     }
 
+    if (settleLateWrite(field)) return;
     const current = fieldText(field);
     if (written.get(field) === current) {
       if (chipField === field) hideChip();
@@ -199,11 +200,21 @@
     debounceTimer = setTimeout(() => evaluateField(field), DETECT_DEBOUNCE_MS);
   }
 
+  // 上一次写回核对没过，但字晚一拍已经落进框里了（见 content-input-writeback.js 的
+  // landed）：就当写成了 —— 记下、芯片退场、不再发请求，更不再追加一份。
+  function settleLateWrite(field) {
+    if (!ctx.inputWriteback.landed(field)) return false;
+    written.set(field, fieldText(field));
+    if (chipField === field) hideChip();
+    return true;
+  }
+
   // 点下去：译，然后写回。译文回来时逐条核对 —— 还是不是这一次请求、框里的字
   // 变没变、焦点还在不在这个框上 —— 任何一条对不上都不写，芯片回到可点。
   async function onChipClick() {
     const field = chipField;
     if (!field || pending) return;
+    if (settleLateWrite(field)) return;
     const targetLang = chip.dataset.targetLang || '';
     const snapshot = fieldText(field);
     const text = snapshot.trim();
@@ -284,7 +295,7 @@
     document.addEventListener('focusin', onFocusIn, true);
     document.addEventListener('focusout', onFocusOut, true);
     document.addEventListener('input', onInput, true);
-    // 自己维护模型的编辑器（Draft、Lexical）取消 beforeinput、自己重画，浏览器就
+    // 自己维护模型的编辑器（Lexical 这一类）取消 beforeinput、自己重画，浏览器就
     // 不再发 input —— 只听 input，在这类框里敲多少字芯片都不会醒。
     document.addEventListener('beforeinput', onInput, true);
     document.addEventListener('scroll', onViewportChange, true);
