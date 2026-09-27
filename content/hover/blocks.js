@@ -19,7 +19,7 @@
     'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
     'BLOCKQUOTE', 'FIGCAPTION', 'DT', 'DD'
   ]);
-  const SKIP_SELECTOR = '.ai-translator-popup, .ai-translator-inline-block, .ai-translator-hover-translation, .ai-translator-selection-translation, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn';
+  const SKIP_SELECTOR = ctx.constants.OWN_NODES_SELECTOR;
   const SKIP_TAG_SELECTOR = 'script, style, noscript, iframe, textarea, input, select, code, pre, svg, canvas, kbd, samp, var';
 
   const translationCache = new WeakMap();

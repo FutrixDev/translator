@@ -23,6 +23,9 @@
 
   const FORMAT = 'blab-settings';
   const VERSION = 1;
+  // 导入文件的大小上限，整份导入和站点规则卡片的导入共用这一个数。同步存储整个才
+  // 100KB，一份正常的导出只有几 KB，再大就不是我们的文件。
+  const MAX_FILE_BYTES = 1024 * 1024;
   const META_KEYS = new Set(['format', 'version', 'exportedAt']);
 
   // 两张默认值表里有、但**不进** settings 的键，和不进的理由。chrome.storage.local
@@ -262,6 +265,7 @@
   root.SettingsTransfer = {
     FORMAT,
     VERSION,
+    MAX_FILE_BYTES,
     EXCLUDED,
     SECRET_KEYS,
     TransferError,

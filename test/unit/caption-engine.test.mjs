@@ -358,16 +358,17 @@ test('往前译有个窗，而且只有花钱的那条路才设窗', () => {
   const engine = captionEngineSource();
   const window = engine.match(/function translationWindowMs\(\)[\s\S]*?\n  \}/);
   assert.ok(window, '找不到 translationWindowMs()');
-  assert.match(window[0], /builtin\.isActive\(\)/);
+  assert.match(window[0], /builtin\.isActive\(false\)/);
   assert.match(window[0], /return Infinity/);
   assert.match(window[0], /useNative \? (?:caps\.)?NATIVE_WINDOW_MS : (?:caps\.)?WINDOW_MS/);
 
   // 「选了内置引擎」不等于「这一批不花钱」：语言包还没下到本地时内置会抛
   // EngineUnavailableError，而 engineFallback === 'allow-ai' 的用户会把这一批原
-  // 样转给他自己的接口。所以不设限得再加一条：回退关着。
+  // 样转给他自己的接口。所以不设限得再加一条：回退关着。「回退开没开」问引擎的
+  // fallbackAllowed()（站点规则钉住引擎时永不回退），不在这里另读设置。
   assert.match(
     window[0],
-    /engineFallback'\) !== 'allow-ai'/,
+    /!builtin\.fallbackAllowed\(\)/,
     '回退开着的时候也不设限：一场两小时的讲座会整片发去云端',
   );
 

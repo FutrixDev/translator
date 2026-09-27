@@ -10,6 +10,7 @@
 // 这个文件只回答「从哪儿开始收、哪些子树不收」，收块本身还是 collect.js：
 //   - `ctx.resolvePageScope()` → `{ mode, roots, skip, share }`
 //   - `ctx.pageScopeCut(el, scope)` / `ctx.pageScopeStarts(dirty, scope)`：collect.js 的两个挂钩
+//   - `ctx.outsidePageScope(el, scope)`：只翻用户规则 include 的区域时，el 在不在区域外
 //   - `ctx.collectPageBlocks(root)`：生产入口（手动翻译、发现层、A1 的子 frame 手动轮）
 //   - `ctx.beginScopeRound()`：上面三个入口每轮收集前调一次（缓存规则见 resolvePageScope）
 //   - `ctx.translateWholePage()`：悬浮菜单「翻译整个页面」与 Alt+W
@@ -42,21 +43,62 @@
   const parentOf = (el) => ctx.composedParent(el);
   const contains = (ancestor, node) => ctx.composedContains(ancestor, node);
 
+  function isRendered(el) {
+    return el.getClientRects().length > 0;
+  }
+
+  // 用户规则的 include 选择器；没有规则、没有 include、选择器全不可用都是 null。
+  function includeSelector() {
+    const rule = ctx.customRules.current();
+    if (!rule || !rule.include.length) return null;
+    return ctx.usableSelector(rule.include, 'user') || null;
+  }
+
+  // 有没有至少一个渲染出来的命中：遇到第一个就答，不找根。悬浮菜单每次打开、等
+  // include 的页面每次取缓存都问它。
+  function hasIncludeHit() {
+    const selector = includeSelector();
+    return Boolean(selector) && ctx.queryAllDeep(selector).some(isRendered);
+  }
+
+  // include 选择器命中的、渲染出来的元素里最外层的那些（祖先也是命中的去掉）。
+  // 每个命中沿 composedParent 往上走（跨 shadow root 走到宿主），碰到别的命中就是
+  // 内层：O(命中数 × 深度)，不依赖 queryAllDeep 的返回顺序。零命中是空数组。
+  function includeRoots() {
+    const selector = includeSelector();
+    if (!selector) return [];
+    const hits = ctx.queryAllDeep(selector).filter(isRendered);
+    const hitSet = new Set(hits);
+    return hits.filter((el) => {
+      for (let up = parentOf(el); up; up = parentOf(up)) {
+        if (hitSet.has(up)) return false;
+      }
+      return true;
+    });
+  }
+
+  // include 之外的那几档：设置是 'page'，或者命中内置规则（X、Hacker News……已经按
+  // 站点调过收块），否则 'main'。
+  function fallbackMode() {
+    if (ctx.settings.pageTranslateScope === 'page') return 'page';
+    if (globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname)) return 'page';
+    return 'main';
+  }
+
   /**
    * 当前有效模式，只判 mode、不找根——悬浮菜单每次打开都问一次，要便宜。
-   * @returns {'main'|'page'}
+   * @returns {'main'|'page'|'include'}
    */
   function pageScopeMode() {
-    // 判定顺序（P1-B 在第 2 步接入用户站点规则的 include 选择器）：
+    // 判定顺序：
     //   1. 本页的临时覆盖（「翻译整个页面」、Alt+W）；
     //   2. 用户规则的 include 选择器：至少命中一个渲染出来的元素才算，命中零个
     //      不缓存（下一次再问），命中时范围模式记为 'include'；
     //   3. 设置是 'page'，或者命中内置规则（X、Hacker News……已经按站点调过收块）；
     //   4. 默认 'main'。
     if (state.pageScopeOverride === 'page') return 'page';
-    if (ctx.settings.pageTranslateScope === 'page') return 'page';
-    if (globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname)) return 'page';
-    return 'main';
+    if (hasIncludeHit()) return 'include';
+    return fallbackMode();
   }
 
   // 可见文字量：去掉空白，也去掉 <script>/<style> 里的字（Next.js 的
@@ -74,10 +116,6 @@
     return Math.max(0, length);
   }
 
-  function isRendered(el) {
-    return el.getClientRects().length > 0;
-  }
-
   // 唯一的（最外层的、渲染出来的）main 且文字量够 → 它；否则 null（退回 body）。
   function findMainRoot() {
     const rendered = Array.from(document.querySelectorAll(MAIN_SELECTOR)).filter(isRendered);
@@ -88,32 +126,69 @@
     return { root: share >= MAIN_TEXT_SHARE ? outer[0] : null, share };
   }
 
-  // 缓存。键 = URL + 设置值 + 覆盖值：换页、改设置、点整页入口都换键，不必另挂
-  // 监听。不挂任何观察者，作废只有下面这几处：
+  // 缓存。键 = URL + 设置值 + 覆盖值 + 用户规则集版本：换页、改设置、点整页入口、
+  // 改规则都换键，不必另挂监听。不挂任何观察者，作废只有下面这几处：
   //   - 'page' 模式与认出来的 <main>：键不变、根还连着就一直有效；
   //   - 退回 body 的结果也缓存（一轮发现可能有好几个脏根，body 的字数只该数一次），
   //     但单页应用首屏往往先出一个空壳，<main> 晚一步才长出正文，所以它在每一轮
   //     收集开始时作废——发现层的 flush、手动整页翻译、子 frame 的手动轮各调一次
   //     beginScopeRound()；
+  //   - include 模式：命中的根都还连着就有效；零命中不是一个结果：规则写了 include
+  //     却一个也没命中时，退下去的那个答案照样缓存，但每次取用前再问一次 include
+  //     （awaitsInclude），晚长出来的区域下一次就能认出来；
   //   - invalidatePageScope() 整个丢掉（整页入口、子 frame 跟顶层换覆盖值）。
   let cache = null;
 
+  // 最近一次真正算出（不走缓存）的范围，是不是规则写了 include、区域还没出现时退
+  // 下去的。它不跟缓存走：invalidatePageScope() 和缓存作废都不清它。退下去那几轮
+  // 把区域外的块也翻了；区域长出来、范围第一次切到 include 时，这是「范围在轮次中
+  // 途变了」，与规则变化走同一条路：ctx.customRules.rescope()（§3.4、§3.6）——当场
+  // 清扫；有轮次在跑就记下，收尾时再扫；自动路径随后重启，在路上、在排队的退下去
+  // 那一轮的块都作废。几种情况：
+  //   - 'page' 覆盖清掉后切到 include：覆盖是用户点「翻译整个页面」要的，那时
+  //     awaitsInclude 为假，这个变量也就是 false，不走 rescope()；
+  //   - 规则变更新加 include 并当场命中：recompute() 自己走 rescope()，旧规则没有
+  //     include，这个变量是 false，这里不再走；
+  //   - 规则变化的清扫里触发的解析恰好碰上晚到：rescope() 嵌套一次，多扫一遍（清扫
+  //     幂等），补翻与订阅者只排一次。
+  let fellBack = false;
+
   function resolvePageScope() {
     const setting = ctx.settings.pageTranslateScope;
-    const key = `${location.href}\n${setting}\n${state.pageScopeOverride || ''}`;
-    if (cache && cache.key === key && cache.scope.roots.every((root) => root.isConnected)) {
+    const version = ctx.customRules.version;
+    const key = `${location.href}\n${setting}\n${state.pageScopeOverride || ''}\n${version}`;
+    if (cache && cache.key === key && cache.scope.roots.every((root) => root.isConnected) &&
+        !(cache.awaitsInclude && hasIncludeHit())) {
       return cache.scope;
     }
     cache = null;
-    const mode = pageScopeMode();
+    const rule = ctx.customRules.current();
+    const awaitsInclude = state.pageScopeOverride !== 'page' && Boolean(rule && rule.include.length);
+    if (awaitsInclude) {
+      const roots = includeRoots();
+      if (roots.length) {
+        const scope = { mode: 'include', roots, skip: null, share: null };
+        cache = { key, scope };
+        if (fellBack) {
+          // 先写缓存、清 fellBack，再调 rescope()：它里面再解析范围，拿到的就是这个
+          // include，不会再进这条分支。
+          fellBack = false;
+          ctx.customRules.rescope();
+        }
+        return scope;
+      }
+    }
+    fellBack = awaitsInclude;
+    // include 上面刚问过（零命中），或者这一页根本不看 include：不再查一遍。
+    const mode = state.pageScopeOverride === 'page' ? 'page' : fallbackMode();
     if (mode === 'page') {
       const scope = { mode, roots: [document.body], skip: null, share: null };
-      cache = { key, scope };
+      cache = { key, scope, awaitsInclude };
       return scope;
     }
     const { root, share } = findMainRoot();
     const scope = { mode, roots: [root || document.body], skip: SKIP, share };
-    cache = { key, scope, fallback: !root };
+    cache = { key, scope, fallback: !root, awaitsInclude };
     return scope;
   }
 
@@ -121,9 +196,11 @@
     cache = null;
   }
 
-  // 一轮收集开始：退回 body 的缓存作废，让晚长出正文的 <main> 有机会被认出来。
+  // 一轮收集开始：退回 body 的缓存作废，让晚长出正文的 <main> 有机会被认出来；
+  // 用户规则的 CSS 也在这时重新挂一次（有的页面会整体重写 adoptedStyleSheets）。
   function beginScopeRound() {
     if (cache && cache.fallback) cache = null;
+    ctx.customRules.beginRound();
   }
 
   function headingsIn(el) {
@@ -174,6 +251,7 @@
    *   - 两者无交集 → 只有脏根里的孤立 h1。
    */
   function pageScopeStarts(dirty, scope) {
+    if (scope && scope.mode === 'include') return includeStarts(dirty, scope);
     if (!scope || !scope.skip) return [dirty];
     const starts = [];
     let inside = false;
@@ -191,6 +269,22 @@
       }
     }
     return starts.sort(byDocumentOrder);
+  }
+
+  // include 模式：脏根在某个区域里 → 它自己；脏根包含若干区域 → 这些区域；
+  // 不相交 → 什么也不收。不做 'main' 模式那套孤儿 h1。
+  function includeStarts(dirty, scope) {
+    if (scope.roots.some((root) => contains(root, dirty))) return [dirty];
+    return scope.roots.filter((root) => contains(dirty, root)).sort(byDocumentOrder);
+  }
+
+  /**
+   * el 在不在范围之外：只有 include 模式下可能为真（其余模式的跳过规则在遍历里
+   * 由 pageScopeCut 套用，已挂上的译文不会因此被收回）。
+   */
+  function outsidePageScope(el, scope) {
+    if (!scope || scope.mode !== 'include') return false;
+    return !scope.roots.some((root) => contains(root, el));
   }
 
   // 生产入口：整页翻译、发现层、子 frame 的手动轮都走这里。
@@ -222,6 +316,7 @@
   ctx.beginScopeRound = beginScopeRound;
   ctx.pageScopeCut = pageScopeCut;
   ctx.pageScopeStarts = pageScopeStarts;
+  ctx.outsidePageScope = outsidePageScope;
   ctx.collectPageBlocks = collectPageBlocks;
   ctx.translateWholePage = translateWholePage;
 })();

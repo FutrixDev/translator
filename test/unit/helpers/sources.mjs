@@ -187,6 +187,23 @@ export function pageSource() {
 }
 
 /**
+ * 页内拾取器一族：content/picker/*.js。给了文件名就只读那一份（单测要把
+ * selector.js 单独装进 vm）；不给就读整族。
+ */
+export function pickerSource(name) {
+  if (name) return readFileSync(path.join(ROOT, 'content/picker', name), 'utf8');
+  return surfaceSource('content/picker', (n) => n.endsWith('.js'));
+}
+
+/**
+ * 仓库里的一份源码（相对仓库根的路径）。要把某个模块单独装进夹具（vm 或
+ * new Function）时用它，免得每份测试各自拼一次仓库根。
+ */
+export function repoSource(rel) {
+  return readFileSync(path.join(ROOT, rel), 'utf8');
+}
+
+/**
  * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
  */
 export function contentBundle(marker = 'content/content-utils.js') {

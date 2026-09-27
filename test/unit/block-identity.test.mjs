@@ -38,7 +38,10 @@ await import('../../shared/block-identity.js');
 // scope.js 读 globalThis.SiteRules，所以 lang-tags、site-rules-builtin、site-rules 排在它前面。
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
+// scope.js 在调用时读 ctx.customRules（P1-B 用户站点规则）；不调 init() 就是「没有规则」。
+await import('../../content/page/custom-rule.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
@@ -239,7 +242,7 @@ test('the recycle check runs before the closest() that would swallow it', () => 
   const source = repoFile('content/page/collect.js');
   const check = source.indexOf('identity.lookup(element)');
   // 这一跳穿 shadow 边界（closestAcross → ctx.closestComposed），同样从元素自己开始找。
-  const closest = source.indexOf("closestAcross(element, '.ai-translator-popup");
+  const closest = source.indexOf('closestAcross(element, SKIP_OURS)');
   assert.ok(check !== -1, 'processElement no longer asks whether this block was recycled');
   assert.ok(closest !== -1, 'the skip chain moved; re-check where the recycle test belongs');
   // closest() 从元素自己开始找，而它的选择器串里就有 `.ai-translator-translated`。

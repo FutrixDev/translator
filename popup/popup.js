@@ -10,6 +10,7 @@ const elements = {
   stopSiteAutoLabel: document.getElementById('stopSiteAutoLabel'),
   togglePagePause: document.getElementById('togglePagePause'),
   pagePauseLabel: document.getElementById('pagePauseLabel'),
+  pickSiteRegion: document.getElementById('pickSiteRegion'),
   openSettings: document.getElementById('openSettings'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
@@ -274,6 +275,10 @@ function renderPageRows() {
     elements.pagePauseLabel.textContent =
       AUTO_RESUMABLE.has(status) ? t('popupResumePage') : t('popupPausePage');
   }
+
+  // ④ 调整本站翻译区域。开得了开不了只有页面知道（顶层 frame、主机名写得成
+  //    规则键），悬浮球菜单画不画这一项问的是同一个函数（ctx.picker.canOpen）。
+  elements.pickSiteRegion.hidden = !(pageState && pageState.pickerAvailable);
 }
 
 async function refreshPageRows() {
@@ -322,6 +327,16 @@ async function stopSiteAuto() {
     showStatus('popupSiteRuleFailed', false);
   }
   await refreshPageRows();
+}
+
+/** 打开页内拾取器。拾取器画在页面上，popup 留着会挡住它。 */
+async function openRulePicker() {
+  const reply = await sendToActiveTab({ type: 'OPEN_RULE_PICKER' });
+  if (!reply || !reply.opened) {
+    await refreshPageRows();
+    return;
+  }
+  window.close();
 }
 
 async function togglePageTranslation() {
@@ -416,14 +431,17 @@ async function probeActiveTabEngine() {
   }
 }
 
+// 最近一次探测的答复（refreshEngineStatus 写）。「翻译此页」的 key 拦截也读它：
+// 这一页用哪个引擎要问页面（站点规则可能钉住了引擎），不能只看设置。还没探到、
+// 探测超时或页面没有内容脚本时，EngineStatus.selectedEngine 退回设置。
+let lastEngineProbe = null;
+
 async function refreshEngineStatus(settings) {
-  // 自定义接口那条路与页面无关，别为它多跑一次往返。
-  const probe = settings.translationEngine === 'ai' ? null : await probeActiveTabEngine();
-  const status = EngineStatus.describeEngineStatus(
-    settings,
-    probe === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : probe
-  );
-  renderStatus(status);
+  // 总是问页面：站点规则可能把这一页的引擎钉成了和设置不同的那个。
+  const reply = await probeActiveTabEngine();
+  const probe = reply === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : reply;
+  lastEngineProbe = probe;
+  renderStatus(EngineStatus.describeEngineStatus(settings, probe));
 }
 
 function renderStatus(status) {
@@ -463,7 +481,8 @@ async function translateCurrentPage() {
   try {
     const willTranslate = !isHideAction();
     const settings = await chrome.storage.sync.get(defaultSettings);
-    if (willTranslate && settings.translationEngine === 'ai' && APICompat.isApiKeyMissing(settings)) {
+    const engine = EngineStatus.selectedEngine(settings, lastEngineProbe);
+    if (willTranslate && engine === 'ai' && APICompat.isApiKeyMissing(settings)) {
       showStatus('configureApiKeyFirst', false);
       chrome.runtime.openOptionsPage();
       return;
@@ -487,6 +506,7 @@ function setupEventListeners() {
   elements.toggleSiteAuto.addEventListener('click', toggleSiteAuto);
   elements.stopSiteAuto.addEventListener('click', stopSiteAuto);
   elements.togglePagePause.addEventListener('click', togglePagePause);
+  elements.pickSiteRegion.addEventListener('click', openRulePicker);
   elements.openSettings.addEventListener('click', openSettings);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));

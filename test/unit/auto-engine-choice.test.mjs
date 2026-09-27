@@ -171,11 +171,12 @@ test('凡是问「这一轮跑在内置引擎上吗」的地方，都把 auto �
   // 空括号就是漏掉的那一下：isActive() / isSelected() 不带参数问的永远是手动那
   // 一边。调用方手上有没有 auto 是另一回事 —— 没有的（划词、悬停、字幕）要写成
   // isActive(false) 说出来，因为「这条路本来就没有自动的一半」和「忘了传」在源码
-  // 上长得一模一样，而后者不会红。
+  // 上长得一模一样，而后者不会红。接收者不限于 builtinTranslator：先把它取进
+  // 一个局部变量再问（content-language-pack.js 的 engine.isActive()）是同一个漏洞。
   const offenders = [];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(/builtinTranslator\.(isActive|isSelected)\(\s*\)/g)) {
+    for (const match of source.matchAll(/\.(isActive|isSelected)\(\s*\)/g)) {
       offenders.push(`${fileURLToPath(file).split('/content/')[1]}: ${match[0]}`);
     }
   }

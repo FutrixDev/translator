@@ -25,6 +25,7 @@ const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/frame-eligibility.js');
 const { FrameEligibility, SiteRules } = globalThis;
@@ -307,7 +308,8 @@ test('FRAME_FOLLOW and FRAME_IDLE never reach a surface that turns reasons into 
 });
 
 test('a child frame ignores the messages only the top frame answers', () => {
-  for (const type of ['TRANSLATE_PAGE', 'TOGGLE_PAGE_TRANSLATION', 'SET_AUTO_PAUSED', 'AUTO_PAGE_STATE', 'PROBE_ENGINE', 'COMIC_TRANSLATE_PAGE']) {
+  for (const type of ['TRANSLATE_PAGE', 'TOGGLE_PAGE_TRANSLATION', 'SET_AUTO_PAUSED', 'AUTO_PAGE_STATE', 'PROBE_ENGINE', 'COMIC_TRANSLATE_PAGE',
+    'OPEN_RULE_PICKER']) {
     assert.equal(frames.ignores(type), true, type);
   }
   // 作用于 frame 自身的照常答：划选、OCR、清掉行内译文、设置变更。

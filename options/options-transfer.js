@@ -20,10 +20,9 @@
 //
 // 值不一定是对象，预览也不假设它是 —— 每一行自己画自己。
 //
-// 后面会加的两行（本批不实现）：
-//   - P1-B `customRules`：值是 CustomRules.toExportFile() 给的对象，写入走
-//     CustomRules.request('import', { file })；
-//   - P1-C `glossary`：值是一段 CSV 字符串。
+// 「一条一个 sync 键」的集合（站点翻译规则，以后还有 P1-C 的术语表）由
+// collectionSection() 包一层：集合抛的是写给自己卡片的 i18n 键，这里换成整份
+// 导入的两种句式（校验时的 TransferError、写入中途的原因短语）。
 // ---------------------------------------------------------------------------
 
 function transferSchema() {
@@ -118,14 +117,85 @@ const siteRulesSection = {
   },
 };
 
-const TRANSFER_SECTIONS = [settingsSection, siteRulesSection];
+// 集合抛出的错误键 → 报错码。表里的键卡片自己也认（CustomRules.userErrorKey），
+// 这里只管它们在整份导入里怎么说。P1-C 往同一张表里加术语表的键。
+const COLLECTION_REFUSALS = {
+  customRulesImportInvalid: 'sectionInvalid',
+  customRuleTooLarge: 'sectionInvalid',
+  customRulesBudgetFull: 'sectionBudgetFull',
+  customRuleSaveFailed: 'sectionSaveFailed', // 只在写入时出现
+};
+
+// 写入中途失败时，transferErrorApplyFailed 里 {message} 填的原因短语。
+const TRANSFER_REASON_KEYS = {
+  sectionInvalid: 'transferReasonInvalid',
+  sectionBudgetFull: 'transferReasonBudgetFull',
+  sectionSaveFailed: 'transferReasonSaveFailed',
+};
+
+function collectionRefusal(error) {
+  const key = error && error.message;
+  return Object.prototype.hasOwnProperty.call(COLLECTION_REFUSALS, key) ? COLLECTION_REFUSALS[key] : null;
+}
+
+// 包住一行的 validate 和 apply。表外的错误两处都原样往上抛（同一个对象），由
+// readImportFile / confirmImport 的 catch 各记一次日志。
+function collectionSection(spec) {
+  return Object.assign({}, spec, {
+    async validate(raw) {
+      try {
+        return await spec.validate(raw);
+      } catch (error) {
+        const code = collectionRefusal(error);
+        if (code) throw new SettingsTransfer.TransferError(code, spec.key);
+        throw error;
+      }
+    },
+    async apply(value) {
+      try {
+        return await spec.apply(value);
+      } catch (error) {
+        const code = collectionRefusal(error);
+        if (code) throw new Error(t(TRANSFER_REASON_KEYS[code]), { cause: error });
+        throw error;
+      }
+    },
+  });
+}
+
+// 预览、合并和额度都在卡片那一个函数里算（previewCustomRulesImport，
+// options-custom-rules.js），这里不算第二遍。
+const customRulesSection = collectionSection({
+  key: 'customRules',
+
+  async collect() {
+    return CustomRules.toExportFile(await readCustomRules());
+  },
+
+  async validate(raw) {
+    const { added, replaced, aiCount } = await previewCustomRulesImport(raw);
+    // 集合的导入全有或全无，所以没有丢掉的条目。
+    return { value: raw, accepted: added + replaced, dropped: [], added, replaced, aiCount };
+  },
+
+  async preview({ added, replaced, aiCount }) {
+    return {
+      lines: [fill(t('transferPreviewCustomRules'), { added, replaced })],
+      warnings: aiCount > 0 ? [customRulesAiNote(aiCount)] : [],
+    };
+  },
+
+  // 走服务工作者的单写者队列，原样传解析后的对象。
+  apply(value) {
+    return CustomRules.request('import', { file: value });
+  },
+});
+
+const TRANSFER_SECTIONS = [settingsSection, siteRulesSection, customRulesSection];
 
 // ---------------------------------------------------------------------------
 // 控件
 // ---------------------------------------------------------------------------
-
-// 同步存储整个才 100KB，一份正常的导出只有几 KB。再大就不是我们的文件。
-const TRANSFER_MAX_BYTES = 1024 * 1024;
 
 const transferElements = {
   exportButton: document.getElementById('transferExport'),
@@ -146,6 +216,7 @@ let pendingImport = null;
 const TRANSFER_SECTION_NAMES = {
   settings: 'transferSectionSettings',
   siteRules: 'transferSectionSiteRules',
+  customRules: 'transferSectionCustomRules',
 };
 
 function sectionName(key) {
@@ -160,6 +231,8 @@ const TRANSFER_ERROR_KEYS = {
   nothingValid: 'transferErrorNothingValid',
   hotkeyConflict: 'transferErrorHotkeyConflict',
   tooLarge: 'transferErrorTooLarge',
+  sectionInvalid: 'transferErrorSectionInvalid',
+  sectionBudgetFull: 'transferErrorSectionBudgetFull',
 };
 
 function transferErrorText(error) {
@@ -210,7 +283,7 @@ async function exportSettings() {
 
 async function readImportFile(file) {
   resetTransferUi();
-  if (file.size > TRANSFER_MAX_BYTES) throw new SettingsTransfer.TransferError('tooLarge');
+  if (file.size > SettingsTransfer.MAX_FILE_BYTES) throw new SettingsTransfer.TransferError('tooLarge');
   const parsed = SettingsTransfer.parseFile(await file.text());
   const validated = await SettingsTransfer.validateAll(parsed, TRANSFER_SECTIONS);
 

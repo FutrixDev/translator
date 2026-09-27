@@ -240,12 +240,17 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   // 站点规则和追问计数都是「整份对象读出来、改一个键、整份写回」。同一个域名开
   // 着三个标签页，三页各自读出同一份旧对象再各自写回，后写的把先写的整个盖掉：
   // 「问三次就不再问」一次都攒不满，用户在 popup 上点的「关」也会凭空消失。
+  // 队列本身在 shared/storage-writer.js（三家共用一份），这张表拿它造自己那一条。
+  const writer = code('shared/storage-writer.js');
+  assert.match(writer, /const IN_SERVICE_WORKER\s*=/);
+  assert.match(writer, /function applyWrite\(message\)/);
+  // 一个 writer 一条队列，applyWrite 是唯一排队的地方 —— 各排各的等于没排。
+  assert.equal((writer.match(/queue\.then\(/g) || []).length, 1, '只有 applyWrite 排队');
+  assert.match(writer, /queue = result\.catch/);
   const rules = code('shared/site-rules.js');
-  assert.match(rules, /const IN_SERVICE_WORKER\s*=/);
-  assert.match(rules, /function applyWrite\(message\)/);
-  // 两条写入路径共用同一条队列 —— 各排各的等于没排。
-  assert.equal((rules.match(/enqueue\(/g) || []).length, 2, '一处定义一处使用');
-  assert.match(rules, /writeQueue = result\.catch/);
+  // 两条写入路径共用同一个 writer，也就是同一条队列。
+  assert.equal((rules.match(/StorageWriter\.create\(/g) || []).length, 1, '站点规则只有一个 writer');
+  assert.match(rules, /StorageWriter\.create\(\{\s*type: 'SITE_RULES_WRITE',\s*writes: WRITES,/);
   for (const fn of ['applyUserRule', 'applyAskCount']) {
     assert.match(rules, new RegExp(`WRITES = \\{[^}]*${fn}`), `${fn} 必须挂在同一张表上`);
   }
@@ -263,7 +268,9 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
 
   const background = code('background/background.js');
   assert.match(background, /case 'SITE_RULES_WRITE':/);
-  assert.match(background, /SiteRules\.applyWrite\(message\)/);
+  // 三个写消息共用一张转接表（STORAGE_WRITERS），站点规则那一行必须指向 SiteRules。
+  assert.match(background, /SITE_RULES_WRITE: \(\) => globalThis\.SiteRules,/);
+  assert.match(background, /STORAGE_WRITERS\[message\.type\]\(\)\.applyWrite\(message\)/);
   assert.match(background, /import '\.\.\/shared\/site-rules\.js';/);
 });
 
@@ -290,8 +297,9 @@ test('规则没存上要说一声，不能只留一行控制台日志', () => {
   assert.match(status, /ctx\.showAutoStatusNotice = setNotice;/);
   assert.match(code('content/content-float-ball.js'),
     /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
-  // 那句话得真画到条子上，而且压在追问和展开说明之上。
-  assert.match(status, /const mode = notice \? 'notice' :/);
+  // 那句话得真画到条子上，而且压在追问和展开说明之上。只有拾取器开着时整条让位
+  // 盖过它（关掉后照样回来）。
+  assert.match(status, /const mode = yielding \? '' : \(notice \? 'notice' :/);
   assert.match(status, /mode === 'notice' \? notice : explainLine\(snap\)/);
   // 关掉一次只关掉一层：他关的是这句话，底下没答完的那一问不该跟着一起没。
   assert.match(status, /if \(notice\) notice = '';\s*\n\s*else if \(explaining\)/);
@@ -649,7 +657,10 @@ test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
     popup.indexOf('function openSettings()'));
   assert.match(body, /const willTranslate = !isHideAction\(\);/);
   // 「缺不缺 Key」问的是 APICompat.isApiKeyMissing：本地模型不要 Key，弹窗不能拦它。
-  assert.match(body, /if \(willTranslate && settings\.translationEngine === 'ai' && APICompat\.isApiKeyMissing\(settings\)\)/);
+  // 这一页用哪个引擎问 EngineStatus.selectedEngine（页面的答复优先 —— 站点规则
+  // 可能钉住了引擎，没有答复才看设置），和页脚那行字问的是同一个函数。
+  assert.match(body, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);/);
+  assert.match(body, /if \(willTranslate && engine === 'ai' && APICompat\.isApiKeyMissing\(settings\)\)/);
 });
 
 test('「这一下是不是收起」只有一个出处 —— 按钮上那行字和那道门问的是同一句', () => {

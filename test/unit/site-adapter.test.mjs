@@ -25,11 +25,34 @@ console.warn = () => {};
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../content/page/site-adapter.js');
 
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 const realRules = globalThis.SiteRules;
+
+// 用户站点规则（content/page/custom-rule.js 挂的 ctx.customRules）：这一层只读
+// current() 与 version。桩默认「没有规则」，下面几条用户规则的测试临时换掉它。
+let userRule = null;
+let userVersion = 0;
+ctx.customRules = {
+  current: () => userRule,
+  get version() {
+    return userVersion;
+  },
+};
+
+function withUserRule(rule, run) {
+  userRule = { include: [], exclude: [], keepOriginal: [], css: '', engine: null, ...rule };
+  userVersion += 1;
+  try {
+    return run();
+  } finally {
+    userRule = null;
+    userVersion += 1;
+  }
+}
 
 function at(hostname, pathname = '/') {
   globalThis.location = { hostname, pathname };
@@ -49,13 +72,14 @@ test('a site in the builtin table hands over both selector strings', () => {
   const adapter = at('x.com', '/alice/status/1');
   assert.ok(adapter, 'x.com 在内置表里，应当有适配');
   assert.equal(adapter.atomic, '[data-testid="tweetText"]');
-  assert.match(adapter.exclude, /User-Name/);
+  assert.match(adapter.keepOriginal, /User-Name/);
+  assert.equal(adapter.exclude, '', 'the builtin table keeps the original, it never excludes (D-315)');
 });
 
 test('a subdomain gets the parent domain rule', () => {
   const adapter = at('www.reddit.com', '/r/rust/');
   assert.ok(adapter, 'www.reddit.com 应当命中 reddit.com 那条');
-  assert.match(adapter.exclude, /faceplate-timeago/);
+  assert.match(adapter.keepOriginal, /faceplate-timeago/);
 });
 
 // 内置表里 arXiv 那几条都是按路径写的，而且**各带各的选择器**：摘要页的
@@ -63,8 +87,8 @@ test('a subdomain gets the parent domain rule', () => {
 // 没有一个在别的路径下存在。串了就是每一块都白算一轮 closest()。
 test('a path-scoped rule does not leak to the rest of the site', () => {
   assert.match(at('arxiv.org', '/abs/2401.00001').atomic, /blockquote\.abstract/);
-  assert.match(at('arxiv.org', '/html/2310.03714v1').exclude, /ltx_bibliography/);
-  assert.match(at('arxiv.org', '/list/cs.CL/recent').exclude, /list-authors/);
+  assert.match(at('arxiv.org', '/html/2310.03714v1').keepOriginal, /ltx_bibliography/);
+  assert.match(at('arxiv.org', '/list/cs.CL/recent').keepOriginal, /list-authors/);
   assert.equal(at('arxiv.org', '/'), null, 'arXiv 首页不在任何一条规则下');
 });
 
@@ -77,11 +101,11 @@ test('a malformed selector is dropped, and the rest of the rule survives', () =>
     match: 'example.com',
     state: 'always',
     atomicBlockSelectors: ['div((', '.good'],
-    excludeSelectors: ['((', '.fine'],
+    keepOriginalSelectors: ['((', '.fine'],
     blockIdAttr: null,
   }, () => at('example.com', '/one'));
   assert.equal(adapter.atomic, '.good');
-  assert.equal(adapter.exclude, '.fine');
+  assert.equal(adapter.keepOriginal, '.fine');
 });
 
 test('a rule whose selectors are all malformed reads as no rule at all', () => {
@@ -89,7 +113,7 @@ test('a rule whose selectors are all malformed reads as no rule at all', () => {
     match: 'example.com',
     state: 'always',
     atomicBlockSelectors: ['div(('],
-    excludeSelectors: [],
+    keepOriginalSelectors: [],
     blockIdAttr: null,
   }, () => at('example.com', '/two'));
   assert.equal(adapter, null);
@@ -102,4 +126,64 @@ test('the cache follows the path, not just the host', () => {
   assert.ok(abs);
   assert.equal(at('arxiv.org', '/'), null);
   assert.deepEqual(at('arxiv.org', '/abs/2401.00002'), abs);
+});
+
+// ---------------------------------------------------------------- 用户站点规则（P1-B §3.2）
+
+// D-315：exclude 只来自用户规则；keepOriginal = 内置 keepOriginalSelectors ∪ 用户
+// keepOriginal。
+test('exclude comes only from the user; keepOriginal is the builtin table joined with the user', () => {
+  const adapter = withUserRule({ exclude: ['.promo'], keepOriginal: ['.brand', '.code-name'] },
+    () => at('x.com', '/alice/status/1'));
+  assert.equal(adapter.atomic, '[data-testid="tweetText"]', 'the user rule does not touch atomic');
+  assert.equal(adapter.exclude, '.promo', 'only the user exclude, no builtin selector');
+  assert.match(adapter.keepOriginal, /^\[data-testid="User-Name"\] a,time,\[role="group"\],/,
+    'the builtin selectors come first and the user cannot remove them');
+  assert.ok(adapter.keepOriginal.endsWith(',.brand,.code-name'), adapter.keepOriginal);
+  assert.doesNotMatch(adapter.keepOriginal, /promo/, 'the user exclude does not leak into keepOriginal');
+  // 没有用户规则：exclude 是空串，keepOriginal 只有内置的。
+  const plain = at('x.com', '/alice/status/2');
+  assert.equal(plain.exclude, '');
+  assert.equal(plain.keepOriginal, '[data-testid="User-Name"] a,time,[role="group"]');
+});
+
+test('a user rule on a site with no builtin rule is an adapter of its own', () => {
+  const adapter = withUserRule({ exclude: ['.side-note'] }, () => at('nowhere.example', '/'));
+  assert.deepEqual(adapter, { atomic: '', exclude: '.side-note', keepOriginal: '' });
+});
+
+test('a malformed user selector is dropped, and the log carries neither it nor the error text', () => {
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => warned.push(args);
+  try {
+    const adapter = withUserRule({ exclude: ['.secret-((', '.fine'], keepOriginal: ['((brand'] },
+      () => at('nowhere.example', '/'));
+    assert.deepEqual(adapter, { atomic: '', exclude: '.fine', keepOriginal: '' });
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.equal(warned.length, 2);
+  for (const args of warned) {
+    const text = args.map(String).join(' ');
+    assert.doesNotMatch(text, /secret|brand|\(\(/, 'a user selector reached the log');
+    assert.match(text, /SyntaxError/);
+  }
+});
+
+test('the cache follows the rule set version', () => {
+  userRule = { include: [], exclude: ['.one'], keepOriginal: [], css: '', engine: null };
+  userVersion += 1;
+  try {
+    assert.equal(at('nowhere.example', '/v').exclude, '.one');
+    // 同一版本号下换了内容：不重新解析——版本号是唯一的作废信号。
+    userRule = { ...userRule, exclude: ['.two'] };
+    assert.equal(at('nowhere.example', '/v').exclude, '.one');
+    userVersion += 1;
+    assert.equal(at('nowhere.example', '/v').exclude, '.two');
+  } finally {
+    userRule = null;
+    userVersion += 1;
+  }
+  assert.equal(at('nowhere.example', '/v'), null);
 });

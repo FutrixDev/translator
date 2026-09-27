@@ -44,6 +44,8 @@
   --text-muted: #8e8e93;
   --border: #d2d2d7;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  /* 暗色那一档 #f87171 在浅底上只有 2.3:1；与 onboarding 的浅色档同值。 */
+  --error: #c62828;
 }
 
 /* Reset & Base */

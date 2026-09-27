@@ -1,0 +1,101 @@
+/* Blab Translation 设置页样式 —— 站点翻译规则卡片（options-custom-rules.js）。
+   导入预览、报错框和按钮行借用 transfer.css 的 .transfer-*，这里只管列表和编辑器。 */
+
+.custom-rules-usage {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.custom-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.custom-rules-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.custom-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.custom-rule-match {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-rule-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-rule-chip {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+/* 编辑和删除成组：整组不收缩，折行只会整组折。 */
+.custom-rule-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.custom-rule-delete[data-armed] {
+  color: var(--error);
+}
+
+.custom-rule-editor {
+  padding: 16px;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+/* 一个字段写几行选择器就够，forms.css 给 textarea 的 120px 留给 CSS。 */
+.custom-rule-field textarea {
+  min-height: 64px;
+}
+
+.custom-rule-field textarea.custom-rule-css {
+  min-height: 120px;
+}
+
+.custom-rule-field .hint {
+  display: block;
+  margin-top: 6px;
+}
+
+.custom-rule-field-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+.custom-rule-field-error[hidden] {
+  display: none;
+}

@@ -76,11 +76,12 @@ function applyI18n(lang) {
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
 
-  // 站点审计表和本机统计是运行时画出来的（主机名、按 locale 格式化的数字、
-  // 「总是翻译」这类行内文案），身上没有 data-i18n，上面那几轮选择器一个也扫
-  // 不到。不在这里重画，换过界面语言的中文页面上就留着一排英文的按钮。
+  // 站点审计表、本机统计和站点翻译规则是运行时画出来的（主机名、按 locale 格式
+  // 化的数字、「总是翻译」这类行内文案），身上没有 data-i18n，上面那几轮选择器一
+  // 个也扫不到。不在这里重画，换过界面语言的中文页面上就留着一排英文的按钮。
   renderSiteRules();
   renderAutoStats();
+  drawCustomRules();
 
   // Show the real extension version from the manifest instead of a hard-coded
   // string, so the settings page never drifts from the released version.

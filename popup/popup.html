@@ -57,6 +57,15 @@
         <span id="pagePauseLabel" data-i18n="popupPausePage">Pause on this page</span>
       </button>
 
+      <!-- 打开页内拾取器（content/picker/）。露不露由页面答（pickerAvailable），
+           和悬浮球菜单里同一项问的是同一个函数。 -->
+      <button id="pickSiteRegion" class="menu-item" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3l7 17 2.5-7.5L20 10z" stroke-linejoin="round"/>
+        </svg>
+        <span data-i18n="pickSiteRegion">Adjust what gets translated here</span>
+      </button>
+
       <!-- 显示：双语 / 仅译文，加上译文样式。常显：这是偏好，下一次翻译就按它来。
            只写存储，页面由内容脚本的 storage 监听落地（popup-display.js）。 -->
       <div id="displayRow" class="display-row" role="group" aria-label="Display">
@@ -159,6 +168,7 @@
        答「不在黑名单里」。这里今天只用 writeUserRule，用不着判定；配一份数据源
        是为了将来有人在这里问一句 decide()，拿到的不是一张假的空表。 -->
   <script src="../shared/site-rules-builtin.js"></script>
+  <script src="../shared/storage-writer.js"></script>
   <script src="../shared/site-rules.js"></script>
   <script src="../shared/account-gate.js"></script>
   <!-- engine-status.js 在调用时问它「这份配置要不要 Key」，所以排在前面。 -->

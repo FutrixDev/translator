@@ -109,10 +109,12 @@ test('发现层只回答「轮到谁了」：不发请求，也不碰页面状�
 
 test('自己插的译文不算页面变了 —— 否则翻译会把自己再触发一遍', () => {
   const discover = code('content/content-auto-discover.js');
-  assert.match(discover, /ai-translator-inline-block/);
+  // 译文块在 ctx.constants.OWN_NODES_SELECTOR 里（清单本身由 host-css-containment
+  // 守着），发现层只引用这一份。
+  assert.match(discover, /ctx\.constants\.OWN_NODES_SELECTOR/);
   assert.match(discover, /function ownMutation\(record\)/);
   // 文本裹套用的 class 挂在页面自己的文字上，认作我们的就会让页面后续的改动
-  // 全部失声。见该文件 OWN_UI_SELECTOR 上方的注释。
+  // 全部失声。见该文件 OWN_NODES_SELECTOR 上方的注释。
   assert.doesNotMatch(discover, /ai-translator-text-run/);
 });
 
@@ -492,6 +494,12 @@ test('语言包装好了，停在错误上的那一页要自己活过来', () =>
   assert.match(pack, /ctx\.onLanguagePackReady = onLanguagePackReady;/);
   // 监听器自己抛不能把别的监听器带走。
   assert.match(pack, /function notifyLanguagePackReady\([\s\S]*?try \{[\s\S]*?\} catch/);
+  // 「这一页有没有哪一半在用内置引擎」是 inUse() 一句：两半都问，预取和唤醒两处
+  // 都经过它。只问手动那一半（裸的 isActive()）时，手动 AI、自动内置的页面停在
+  // 缺包的 ERROR 上永远醒不过来。
+  assert.match(pack, /function inUse\(\) \{[\s\S]*?engine\.isActive\(false\) \|\| engine\.isActive\(true\)/);
+  assert.equal((pack.match(/if \(!inUse\(\)\) return;/g) || []).length, 2);
+  assert.doesNotMatch(pack, /isActive\(\s*\)/);
 
   const auto = code('content/content-auto-translate.js');
   // 调度层订阅，并且走 start() —— 它会把 broken 放掉、重新判、重新扫。只作废不

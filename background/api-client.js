@@ -4,6 +4,7 @@
 // 设置页的「测试连接」走的是同一份，所以那里测通的就是这里发得出去的。
 
 import '../shared/api-compat.js';
+import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
 
 // Every provider/model shape decision lives in shared/api-compat.js so the

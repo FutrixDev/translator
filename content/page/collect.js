@@ -11,7 +11,9 @@
   if (!ctx) return;
 
   const { constants } = ctx;
-  const { MATH_CONTAINER_SELECTOR } = constants;
+  const { MATH_CONTAINER_SELECTOR, OWN_UI_SELECTOR } = constants;
+  // 我们的界面根，加上挂在页面块上的译文标记。
+  const SKIP_OURS = `${OWN_UI_SELECTOR}, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block`;
   // 内联格式标记：整页翻译提取文本时，把 <a>/<strong>/<em> 等内联格式元素编码成
   // 成对的 <a1>…</a1> 标记随正文一起送翻，译文再按标记克隆原元素重建（见
   // buildTranslationContent），从而保留超链接（href）和内联样式（class/style）。
@@ -54,6 +56,25 @@
   const nodesOf = (el) => ctx.composedChildNodes(el);
   const closestAcross = (el, selector) => ctx.closestComposed(el, selector);
 
+  /**
+   * 块级「不翻」：适配器的 exclude 或「保留原文」命中这个元素或它的祖先（跨
+   * shadow）。收块（processElement）和规则变化后的清扫（ctx.ruleForbids）共用这
+   * 一个判法，哪天多一种「不翻」，两边一起变。
+   *
+   * @param {Element} el
+   * @param {{exclude?: string, keepOriginal?: string}|null} adapter resolveSiteAdapter() 的结果
+   */
+  function ruleBlocksElement(el, adapter) {
+    if (!adapter) return false;
+    // 用户规则 exclude 命中整块：不收。用 closest 而不是 matches，因为排除的是
+    // 整块，底下的子元素也在排除之列。
+    if (adapter.exclude && closestAcross(el, adapter.exclude)) return true;
+    // 「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收。作者名、时间戳、票数、
+    // "reply"，这些在形状上和正文没有区别，通用启发式挡不住；Hacker News 的
+    // `.subtext` 底下还有一串 <a>，它们也一起跳过。
+    return !!(adapter.keepOriginal && closestAcross(el, adapter.keepOriginal));
+  }
+
   // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
   // 不做任何范围过滤——e2e 直接调这个函数的地方都是这样用的。
   function collectTranslatableBlocks(root, options) {
@@ -62,15 +83,16 @@
     const { MAX_BLOCK_CHARS } = ctx.PAGE_LIMITS;
     managedSkipCount = 0;
     const blocks = [];
-    // 站点适配：内置规则表里那两串选择器（见 content/page/site-adapter.js）。整轮
-    // 收集只解析一次——规则按 host + path 选中，一轮里不会变。这一页没有规则时两
-    // 串都是空串，下面所有用到它们的地方都短路掉，走的还是原来的通用启发式。
-    const adapter = ctx.resolveSiteAdapter ? ctx.resolveSiteAdapter() : null;
+    // 站点适配：内置规则表与用户站点规则并好的几串选择器（见
+    // content/page/site-adapter.js）。整轮收集只解析一次——规则按 host + path +
+    // 规则集版本选中，一轮里不会变。这一页没有规则时都是空串，下面所有用到它们的
+    // 地方都短路掉，走的还是原来的通用启发式。
+    const adapter = ctx.resolveSiteAdapter();
     const atomicSelector = (adapter && adapter.atomic) || '';
     const excludeSelector = (adapter && adapter.exclude) || '';
-    // 读块文本时，块里含着的排除元素变占位符（getTextWithMathPlaceholders 的 exclude）。
-    const readMarked = { preserveMarkup: true, exclude: excludeSelector };
-    const readPlain = { exclude: excludeSelector };
+    const keepSelector = (adapter && adapter.keepOriginal) || '';
+    // 块里的行内元素：exclude 的字拿掉，keepOriginal 的整个当占位符原样带回。
+    const textOptions = { preserveMarkup: true, exclude: excludeSelector, keep: keepSelector };
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
@@ -290,10 +312,10 @@
       // 跳过不需要翻译的元素
       if (skipTags.includes(tagName)) return;
       if (element.isContentEditable) return;
-      // 站点规则说这一块不必翻：作者名、时间戳、票数、"reply"。这些在形状上和正文
-      // 没有区别，通用启发式挡不住。用 closest 而不是 matches，因为排除的是整块——
-      // Hacker News 的 `.subtext` 底下还有一串 <a>，它们也在排除之列。
-      if (excludeSelector && closestAcross(element, excludeSelector)) return;
+      // 用户规则 exclude、「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收（先
+      // 判 exclude 再判保留原文，见 ruleBlocksElement）。排在作者声明（translate="yes"
+      // 能在里面重新打开子树）之前，所以它连子树一起关掉。
+      if (ruleBlocksElement(element, adapter)) return;
       // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
       // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
       // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
@@ -321,7 +343,7 @@
         if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }
-      if (closestAcross(element, '.ai-translator-popup, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn, #ai-translator-source-peek')) return;
+      if (closestAcross(element, SKIP_OURS)) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
 
@@ -425,7 +447,7 @@
 
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
-        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
+        const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
         const plainText = stripPlaceholders(text).trim();
         if (text && plainText.length >= 2 && plainText.length <= 500) {
@@ -448,7 +470,7 @@
 
       // 对于块级元素
       if (atomic || blockTags.includes(tagName) || hasDirectText) {
-        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, readMarked);
+        let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
           const textWithoutMath = stripPlaceholders(text).trim();
@@ -480,7 +502,7 @@
           // 超长块回退成纯文本提取：splitTextIntoChunks 只认得 {{n}} 占位符，
           // 会把成对的内联标记从中间切开、拆进不同请求，重建必然错乱。
           if (text.length > MAX_BLOCK_CHARS && markupElements && markupElements.length > 0) {
-            const plain = getTextWithMathPlaceholders(element, readPlain);
+            const plain = getTextWithMathPlaceholders(element, { ...textOptions, preserveMarkup: false });
             text = plain.text;
             mathElements = plain.mathElements;
             markupElements = [];
@@ -506,7 +528,7 @@
       }
     }
 
-    const starts = scopeCut ? ctx.pageScopeStarts(root, scope) : [root];
+    const starts = scope ? ctx.pageScopeStarts(root, scope) : [root];
     for (const start of starts) processElement(start);
     return blocks;
   }
@@ -624,21 +646,40 @@
   // - mathElements 保存 DOM 引用或 LaTeX 文本，用于后续还原
   // - markupElements 仅在 options.preserveMarkup 时非空，保存内联格式元素的引用，
   //   文本里对应成对的 <a1>…</a1> 标记（标签名小写 + 序号，序号即数组下标 + 1）
+  // options.exclude / options.keep：整页收块传进来的站点规则选择器（悬停、划词不带）。
+  //   命中 exclude 的行内元素整个不读；命中 keep 的按 translate="no" 处理。
   function getTextWithMathPlaceholders(element, options) {
     const preserveMarkup = !!(options && options.preserveMarkup);
+    const excludeSelector = (options && options.exclude) || '';
+    const keepSelector = (options && options.keep) || '';
     let text = '';
     const mathElements = [];
     const markupElements = [];
     let mathIndex = 0;
-    // 站点规则的排除选择器，只有整页收集传（见 collectTranslatableBlocks）。悬停和
-    // 划词是用户点名要翻的那一段，站点规则不替用户挑哪几个字不翻。
-    const excludeSelector = (options && options.exclude) || '';
 
     // 跳过的隐藏类名
     const hiddenClasses = [
       'MJX_Assistive_MathML', 'katex-mathml', 'sr-only',
       'visually-hidden', 'MathJax_Preview'
     ];
+
+    // 只含空白的文本节点（用户名链接和时间之间的那一个）不直接写进 text：记下它在
+    // 哪，等后面真有文字或占位符时补成一个空格。段首前面没有内容、段尾后面没有内容，
+    // 两头都不会多出空格；空格前已是空白、或后面的文字自己以空白开头时也不补。
+    // 补在记下的位置而不是紧挨着新内容，所以中间开出来的标记（<a2>）在空格后面。
+    let hasContent = false;
+    let pendingSpaceAt = -1;
+    function emit(piece) {
+      if (pendingSpaceAt >= 0) {
+        const at = Math.min(pendingSpaceAt, text.length);
+        if (!/^\s/.test(piece) && !/\s/.test(text.charAt(at - 1))) {
+          text = `${text.slice(0, at)} ${text.slice(at)}`;
+        }
+        pendingSpaceAt = -1;
+      }
+      text += piece;
+      hasContent = true;
+    }
 
     function addMathPlaceholder(entry) {
       mathIndex += 1;
@@ -697,7 +738,9 @@
           // HTML 源码中的换行符仅用于可读性，不应影响翻译格式
           content = content.replace(/\s+/g, ' ');
           if (content.trim()) {
-            text += content;
+            emit(content);
+          } else if (content && hasContent && pendingSpaceAt < 0) {
+            pendingSpaceAt = text.length;
           }
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -717,22 +760,22 @@
           return;
         }
 
-        // 行内的 notranslate（产品名、人名）：整个元素当占位符，插入时原样克隆回去。
-        // 整页收集时，站点规则排除的元素（作者名、时间戳）是站点级的 notranslate，
-        // 照同一条路走：收集器的排除只挡住「块就是它或在它里面」，挡不住「块里含着它」——
-        // Reddit 卡片头一整行被收成一块时，里面的 <faceplate-timeago> 就这样被
-        // 翻成了「4 小时。 过去」。
+        // 用户规则 exclude 命中的行内元素：不送去翻译，译文里也不出现。
+        if (excludeSelector && node.matches(excludeSelector)) return;
+
+        // 行内的 notranslate（产品名、人名），以及「保留原文」（内置规则表的时间戳、
+        // 票数……与用户规则）命中的行内元素：整个元素当占位符，插入时原样克隆回去。
+        // verbatim 标明它不是公式：译文照样套页面排版（见 hasRealMath）。
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
-            (excludeSelector && node.matches(excludeSelector))) {
-          text += addMathPlaceholder({ type: 'element', element: node });
+            (keepSelector && node.matches(keepSelector))) {
+          emit(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
           return;
         }
 
         // 检测是否是数学公式 - 使用锚点占位符
         // 使用 {{1}}、{{2}} 格式，LLM 熟悉模板语法，会保持原样
         if (isMathElement(node)) {
-          const placeholder = addMathPlaceholder({ type: 'element', element: node });
-          text += placeholder;
+          emit(addMathPlaceholder({ type: 'element', element: node }));
           return;
         }
 
@@ -922,10 +965,29 @@
   ctx.isIconElement = isIconElement;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
+  /**
+   * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
+   * 原文」的原样元素）。插入层和悬停层只拿它决定译文的样式——有真公式时只写
+   * opacity，让页面 CSS 管公式排版；只有原样元素时照常套原文的字体、字号、颜色。
+   * 「有没有占位符」（选哪个内容构建器、managed 判定）仍然问 mathElements.length。
+   *
+   * @param {Array<{verbatim?: boolean}>|undefined} mathElements getTextWithMathPlaceholders 的结果
+   */
+  ctx.hasRealMath = (mathElements) => !!mathElements && mathElements.some((entry) => !entry.verbatim);
   ctx.readSourceText = readSourceText;
   ctx.getTextInset = getTextInset;
   ctx.normalizeComparableText = normalizeComparableText;
   // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
   // “页面已经翻完了”和“正文没能翻”，所以计数跟着收集走，读的人只读。
   ctx.getManagedSkipCount = () => managedSkipCount;
+
+  /**
+   * 站点规则现在禁不禁这一块：落在用户的 exclude，或「保留原文」（内置 ∪ 用户）
+   * 里，或者在 include 范围之外。规则变化后的清扫（content/page/custom-rule.js）拿它筛已
+   * 挂上的译文。
+   */
+  ctx.ruleForbids = function ruleForbids(el, scope) {
+    if (ruleBlocksElement(el, ctx.resolveSiteAdapter())) return true;
+    return ctx.outsidePageScope(el, scope);
+  };
 })();

@@ -85,9 +85,20 @@
    * 拦掉 —— 满屏原文，没有任何解释。
    *
    * 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
+   *
+   * 本站的用户规则钉了引擎（siteEngine）就先听它的，两半答同一个值（P1-B）。钉住
+   * 落在谓词这一层：费用闸、持久缓存、批次并发、popup 的探测都由这几个谓词拼出来，
+   * 只要它们答对，请求走哪条路和它们说走哪条路就是同一句话。
    */
   function isBuiltinSelected(auto) {
+    const site = siteEngine();
+    if (site) return site === 'builtin';
     return (auto ? settings.autoTranslateEngine : settings.translationEngine) !== 'ai';
+  }
+
+  // 本站规则钉住的引擎：'builtin' | 'ai' | null。设置页也加载引擎这一族，那里没有站点。
+  function siteEngine() {
+    return ctx.customRules ? ctx.customRules.engineOverride() : null;
   }
 
   function shouldUseBuiltin(auto) {
@@ -411,8 +422,15 @@
 
   // 选内置引擎就是选了“零费用”。内置这条路走不通时悄悄改走用户自己的接口，
   // 花的是他的钱，而他从没同意过这件事——所以回退默认关闭，开了才回退。
+  //
+  // 同步的那一半单独导出（fallbackAllowed）：字幕判「免费」要问它。站点钉住的
+  // 引擎永不回退 —— 规则说的就是「这个站用这个引擎」。
+  function fallbackAllowed() {
+    return !siteEngine() && settings.engineFallback === 'allow-ai';
+  }
+
   async function canFallBackToAI() {
-    if (settings.engineFallback !== 'allow-ai') return false;
+    if (!fallbackAllowed()) return false;
     if (!aiConfig) await refreshAiConfig();
     return aiConfigured();
   }
@@ -455,8 +473,9 @@
    * 这里**只问预算**，不再问「自动模式允不允许用 AI」。那个问题上面已经答过
    * 了，而且答得更细：自动模式选的引擎由 isBuiltinSelected(true) 决定，内置顶
    * 不住时能不能改走 AI 由 canFallBackToAI() 决定。能走到这一行的自动请求只有
-   * 两种，两种都是用户点过头的 —— 他把自动模式的引擎切成了 AI（要过一道二次确
-   * 认），或者他开了「本地不可用时允许用我配置的接口」。在这里再问一遍，就是
+   * 三种，三种都是用户点过头的 —— 他把自动模式的引擎切成了 AI（要过一道二次确
+   * 认），或者他开了「本地不可用时允许用我配置的接口」，或者他给这个站写了一条
+   * 引擎为 AI 的站点规则（同样要过二次确认）。在这里再问一遍，就是
    * 同一个问题的第二个答案，而它会把后一种人的回退整个吃掉：内置引擎在 http://
    * 页面上本来就不存在，那正是回退存在的理由。
    *
@@ -520,6 +539,11 @@
   }
 
   // ==================== 统一入口 ====================
+
+  // 内置引擎能处理的请求类型，只此一份：wantsBuiltin 按它分流，handleWithBuiltin
+  // 的 case 标签与它相等（单测断言）。设置和站点规则只管这几种；别的类型没指名
+  // 引擎就直接走 AI，http 与 https 上行为一致。
+  const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']);
 
   async function handleWithBuiltin(message) {
     const targetLang = message.targetLang;
@@ -608,12 +632,13 @@
 
   /**
    * 这一次要不要走内置引擎。优先级：这一次请求指名的 message.engine > 站点覆盖
-   * （P1-B 的 engineOverride，将来加在这里）> 设置（isBuiltinSelected）。显式的
-   * 一次请求压过任何偏好。
+   * 与设置（都在谓词 isBuiltinSelected 里，站点在前）。显式的一次请求压过任何偏好。
+   * 没指名时，内置处理不了的类型（不在 BUILTIN_TYPES 里）直接走 AI。
    */
   function wantsBuiltin(message, auto) {
     const pinned = pinnedEngine(message);
     if (pinned !== undefined) return pinned === 'builtin';
+    if (!BUILTIN_TYPES.has(message.type)) return false;
     return isBuiltinSelected(auto);
   }
 
@@ -628,6 +653,9 @@
    * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
    */
   ctx.requestTranslation = async function(message) {
+    // 引擎谓词要问本站规则（siteEngine），规则先到再选。设置页也加载这一族，
+    // 那里没有 ctx.customRules。
+    if (ctx.customRules) await ctx.customRules.whenReady();
     const pinned = pinnedEngine(message);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
@@ -719,7 +747,7 @@
 
   async function probeStatus({ budgetMs = 250 } = {}) {
     const result = {
-      engine: isBuiltinSelected() ? 'builtin' : 'ai',
+      engine: isBuiltinSelected(false) ? 'builtin' : 'ai',
       supported: isBuiltinSupported(),
       reason: '',
       availability: 'unknown',
@@ -754,6 +782,7 @@
     isSupported: isBuiltinSupported,
     isSelected: isBuiltinSelected,
     isActive: shouldUseBuiltin,
+    fallbackAllowed,
     effectiveEngine,
     unsupportedReason: builtinUnsupportedReason,
     probeStatus,

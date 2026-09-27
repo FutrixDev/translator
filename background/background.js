@@ -8,10 +8,16 @@ import '../shared/lang-tags.js';
 // table() 会静静地退回一张空表，而空表的 isBlocked() 对每一个域名都答「不在
 // 黑名单里」—— 银行、网页邮箱、政务表单那份禁翻清单就这么没了，不报错。
 import '../shared/site-rules-builtin.js';
+// 同步存储的单写者队列：站点规则、统计、自定义规则三家共用，它们在加载时就取走它。
+import '../shared/storage-writer.js';
 import '../shared/site-rules.js';
 // Side-effect module: publishes globalThis.AutoStats. 统计的写入点全在这里 ——
 // 每个标签页都在记，读—改—写必须收进单实例（见 shared/auto-stats.js 开头）。
 import '../shared/auto-stats.js';
+// 「一条一个 sync 键」的集合（sync-collection）和建在它上面的用户站点规则。两者
+// 在加载时就取走 StorageWriter 与 SiteRules，所以排在它们之后。
+import '../shared/sync-collection.js';
+import '../shared/custom-rules.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -42,6 +48,7 @@ import { openOnboardingOnInstall } from './install.js';
 // handler。每一样具体的活都在隔壁模块里 —— 图标、菜单、PDF、OCR、AI 翻译。
 import './icon.js';
 import './page-coverage.js';
+import './custom-rules-host.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
@@ -65,6 +72,14 @@ import {
   refreshPdfJobs,
   startPdfUrlTranslation,
 } from './pdf-jobs.js';
+
+// 写消息 → 持有那份数据的模块。取的是 globalThis 上的名字：这些共用模块是双模
+// 经典脚本，只挂全局、不导出。
+const STORAGE_WRITERS = {
+  SITE_RULES_WRITE: () => globalThis.SiteRules,
+  AUTO_STATS_WRITE: () => globalThis.AutoStats,
+  CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
+};
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -131,21 +146,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 站点规则和追问计数的读—改—写。内容脚本和 popup 不自己动这两张表：它们是
-    // 整份对象读出来、改一个键、整份写回，两个标签页同时来就会互相盖掉 ——
-    // 用户点下的选择没了，而且哪里都不报错。规则本身在 shared/site-rules.js，
-    // 这里只管转接。
+    // 同步存储的三个写消息：站点规则与追问计数、本机统计、用户站点规则。内容
+    // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
+    // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
+    // 自己的模块里（STORAGE_WRITERS），这里只管转接。
     case 'SITE_RULES_WRITE':
-      globalThis.SiteRules.applyWrite(message)
-        .then(value => sendResponse({ value }))
-        .catch(error => sendResponse({ error: error.message }));
-      return true;
-
-    // 本机统计的读—改—写。内容脚本和设置页不自己动这份记录：每个标签页都在往
-    // 里记，两边先读到同一份旧数字、后写的整份盖掉，丢的就是那几笔。规则在
-    // shared/auto-stats.js，这里只管转接。
     case 'AUTO_STATS_WRITE':
-      globalThis.AutoStats.applyWrite(message)
+    case 'CUSTOM_RULES_WRITE':
+      STORAGE_WRITERS[message.type]().applyWrite(message)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
       return true;

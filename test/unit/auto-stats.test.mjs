@@ -5,6 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+await import('../../shared/storage-writer.js');
 await import('../../shared/auto-stats.js');
 const { AutoStats } = globalThis;
 
@@ -256,7 +257,7 @@ test('并发的写按顺序排队，一笔都不会被盖掉', async () => {
 });
 
 test('一次写崩了，后面的照跑', async () => {
-  // 队列只保证顺序，不传播失败（同 shared/site-rules.js）。
+  // 队列只保证顺序，不传播失败（shared/storage-writer.js，三家共用一条实现）。
   const saved = globalThis.chrome;
   const store = fakeStorage(null);
   let failNext = true;

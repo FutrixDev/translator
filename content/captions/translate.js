@@ -217,9 +217,10 @@
    * 代价只是译文晚一点点到（本机译本来就快）——比前一种便宜得多。
    */
   function translationWindowMs() {
+    // 字幕跟手动那个引擎走（isActive(false)）；能不能回退问引擎自己，站点规则钉住
+    // 引擎时永不回退，这里不另读设置。
     const builtin = ctx.builtinTranslator;
-    const free = builtin && builtin.isActive && builtin.isActive()
-      && caps.getSetting('engineFallback') !== 'allow-ai';
+    const free = builtin && builtin.isActive(false) && !builtin.fallbackAllowed();
     if (free) return Infinity;
     return caps.currentDisplay().useNative ? caps.NATIVE_WINDOW_MS : caps.WINDOW_MS;
   }

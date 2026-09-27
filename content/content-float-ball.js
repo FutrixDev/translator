@@ -469,8 +469,11 @@
     const showStopSite = !!(ctx.autoTranslate && ctx.autoTranslate.state().siteAuto) &&
       !!(globalThis.SiteRules &&
         globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname));
-    // 「翻译整个页面」只在默认只翻正文时有意义；每次打开都重问（content/page/scope.js）。
-    const showWholePage = ctx.pageScopeMode() === 'main';
+    // 「翻译整个页面」在范围不是整页时都有意义：默认只翻正文，或站点规则只翻某些区域
+    // （include）。每次打开都重问（content/page/scope.js）。
+    const showWholePage = ctx.pageScopeMode() !== 'page';
+    // 「调整本站翻译区域」：打开页内拾取器（content/picker/）。
+    const showPicker = ctx.picker.canOpen();
 
     state.floatMenu = document.createElement('div');
     state.floatMenu.id = 'ai-translator-float-menu';
@@ -513,6 +516,14 @@
           <path d="M3 9h18M3 15h18"/>
         </svg>
         <span>${t('floatMenuTranslateWholePage')}</span>
+      </button>
+      ` : ''}
+      ${showPicker ? `
+      <button class="ai-translator-menu-item" data-action="edit-site-rule">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3l7 17 2.5-7.5L20 10z"/>
+        </svg>
+        <span>${t('pickSiteRegion')}</span>
       </button>
       ` : ''}
       ${showComic ? `
@@ -652,6 +663,9 @@
         break;
       case 'translate-whole-page':
         ctx.translateWholePage();
+        break;
+      case 'edit-site-rule':
+        ctx.picker.open();
         break;
       case 'translate-comic':
         if (ctx.startComicPageTranslation) ctx.startComicPageTranslation({ pageUrl: location.href });

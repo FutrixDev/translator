@@ -39,6 +39,10 @@
           // Alt+W（background/page-coverage.js 只发顶层 frame）：本页改成整页范围再翻。
           sendResponse({ action: ctx.translateWholePage() });
           break;
+        case 'OPEN_RULE_PICKER':
+          // popup 的「调整本站翻译区域」（只发顶层 frame）；悬浮球菜单直接调同一个函数。
+          sendResponse({ opened: ctx.picker.open() });
+          break;
         case 'SET_AUTO_PAUSED':
           if (ctx.autoTranslate) {
             if (message.paused) ctx.autoTranslate.pauseCurrentPage();
@@ -70,6 +74,8 @@
             // {site}」露不露。播放器菜单里同一行问的是同一个函数
             // （content/captions/activation.js 的 stopSiteOffered()）。
             captionStopSite: ctx.captionStopSiteOffered ? ctx.captionStopSiteOffered() : false,
+            // popup 的「调整本站翻译区域」露不露；悬浮球菜单问的是同一个函数。
+            pickerAvailable: ctx.picker.canOpen(),
             auto
           });
           break;

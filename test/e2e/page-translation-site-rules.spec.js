@@ -11,12 +11,13 @@
 //
 // 内置表（shared/site-rules-builtin.js）对这两件事各写了一串选择器，
 // content/page/site-adapter.js 把它们解析出来，collect.js 照着走。这条 spec 检验
-// 的就是「照着走」：原子块整块翻，排除块一个字都不送。
+// 的就是「照着走」：原子块整块翻，保留原文的块一个字都不送；保留原文的行内元素
+// 当占位符走，译文里原样出现（内置表是「保留原文」语义，D-315）。
 //
 // 用的是自动翻译这条路——内置表里这几站都是 `state: 'always'`，页面一落地就该
 // 自己翻。手动触发反而会和自动翻译抢同一页（一个在翻，一个把译文收起来）。
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, oursIn, ourNodesAt, sentSegments } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const TWEET_A = 'The paper shows a clean separation between the two halves of the pipeline.';
@@ -28,10 +29,10 @@ const X_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>X</title></head>
 <body>
   <article id="tweet">
-    <div data-testid="User-Name"><a href="/alice" id="author">${AUTHOR}</a></div>
+    <div id="author-box"><div data-testid="User-Name"><a href="/alice" id="author">${AUTHOR}</a></div></div>
     <time id="stamp" datetime="2026-09-19">${STAMP}</time>
     <div data-testid="tweetText" id="tweet-text"><span>${TWEET_A}</span><span> ${TWEET_B}</span></div>
-    <div role="group" id="actions"><span>Reply to this post</span><span>Repost this post</span></div>
+    <div id="actions-box"><div role="group" id="actions"><span>Reply to this post</span><span>Repost this post</span></div></div>
   </article>
 </body></html>`;
 
@@ -43,9 +44,61 @@ const HN_PAGE = `<!doctype html>
 <body>
   <table><tbody>
     <tr class="athing"><td class="rank">1.</td><td class="title"><span id="story">${HN_STORY}</span></td></tr>
-    <tr><td class="subtext"><span id="sub">${HN_SUBTEXT}</span></td></tr>
+    <tr id="sub-row"><td class="subtext"><span id="sub">${HN_SUBTEXT}</span></td></tr>
   </tbody></table>
 </body></html>`;
+
+// Hacker News 评论页。内置表的保留原文是 `.subtext`、`.rank`、`.age`（shared/site-rules-builtin.js）。
+//
+//   - 评论头：用户名链接、一个空格、`span.age`（时间）。D-315 之后时间当占位符送出、原样
+//     带回；两者之间那个只含空白的文本节点要作为一个空格一起送出，不然译文里名字和时间
+//     连成一个词（「someonethree hours ago」）。
+//   - 排名单元格：`td.title` 里只有一个 `span.rank`。块里除了占位符什么都没有，这一块
+//     不送——送出去也只是一个 `{{1}}`，模型原样带回，页面上多出第二个「1.」。
+const HN_HEAD_USER = 'someone';
+const HN_HEAD_AGE = 'three hours ago';
+
+const HN_COMMENT_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hacker News</title></head>
+<body>
+  <table><tbody>
+    <tr class="athing"><td class="title" id="rank-cell"><span class="rank">1.</span></td><td class="title"><span class="titleline" id="story">${HN_STORY}</span></td></tr>
+  </tbody></table>
+  <table class="comment-tree"><tbody><tr class="athing comtr"><td class="default">
+    <div id="comhead-wrap"><span class="comhead"><a class="hnuser" href="user?id=someone">${HN_HEAD_USER}</a> <span class="age" id="head-age"><a href="item?id=2">${HN_HEAD_AGE}</a></span><span class="navs"> | <a href="#c0">parent</a> | <a href="#c2">next</a></span></span></div>
+  </td></tr></tbody></table>
+</body></html>`;
+
+test('site rules: a Hacker News comment header keeps the space before its verbatim time, and a rank-only cell is not sent', async ({ page, context }) => {
+  const { close, endpoint, sentTexts, fastBatchRequests } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://news.ycombinator.com/**', HN_COMMENT_PAGE);
+
+    await page.goto('https://news.ycombinator.com/item?id=1');
+    await page.waitForSelector('#ai-translator-float-ball');
+    const head = page.locator('#comhead-wrap + .ai-translator-inline-block, #comhead-wrap .ai-translator-inline-block');
+    await expect(head).toContainText('[T]', { timeout: 30000 });
+    await expect(page.locator('#story + .ai-translator-inline-block, #story > .ai-translator-inline-block'))
+      .toContainText('[T]', { timeout: 30000 });
+
+    // 第 20 条：送出的段里用户名和占位符之间正好一个空格；译文里名字和时间之间有空格。
+    const segments = sentSegments(sentTexts, fastBatchRequests);
+    const headSent = segments.find((segment) => segment.includes(HN_HEAD_USER));
+    expect(headSent).toMatch(/<a\d+>someone<\/a\d+> \{\{\d+\}\}/);
+    expect(headSent).not.toContain(HN_HEAD_AGE);
+    await expect(head).toContainText(`${HN_HEAD_USER} ${HN_HEAD_AGE}`);
+    await expect(head.locator('span.age')).toHaveText(HN_HEAD_AGE);
+
+    // 第 21 条：没有哪一段只是占位符；排名单元格里没有我们的节点。
+    expect(segments.length).toBeGreaterThan(0);
+    for (const segment of segments) expect(segment.replace(/\{\{\d+\}\}/g, '').trim()).not.toBe('');
+    expect(await oursIn(page, 'rank-cell')).toBe(0);
+  } finally {
+    await close();
+  }
+});
 
 const ABSTRACT = 'We describe a decoder that keeps the two halves of a long document aligned without supervision.';
 const AUTHORS = 'Alice Researcher, Bob Engineer and Carol Scientist';
@@ -56,8 +109,8 @@ const ARXIV_PAGE = `<!doctype html>
 <body>
   <div id="abs">
     <blockquote class="abstract" id="abstract"><span class="descriptor">Abstract:</span> ${ABSTRACT}</blockquote>
-    <div class="authors" id="authors">${AUTHORS}</div>
-    <div class="submission-history" id="history">${HISTORY}</div>
+    <div id="authors-box"><div class="authors" id="authors">${AUTHORS}</div></div>
+    <div id="history-box"><div class="submission-history" id="history">${HISTORY}</div></div>
   </div>
 </body></html>`;
 
@@ -101,8 +154,9 @@ test('site rules: a tweet is translated as one block, and its chrome is not tran
     expect(all).not.toContain(AUTHOR);
     expect(all).not.toContain(STAMP);
     expect(all).not.toContain('Repost this post');
-    await expect(page.locator('#author .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#actions .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'author-box')).toBe(0);
+    expect(await oursIn(page, 'actions-box')).toBe(0);
+    expect(await ourNodesAt(page, 'stamp')).toBe(0);
   } finally {
     await close();
   }
@@ -124,7 +178,7 @@ test('site rules: a Hacker News subtext line is skipped while the story title is
     const all = sentTexts.join('\n');
     expect(all).toContain(HN_STORY);
     expect(all).not.toContain(HN_SUBTEXT);
-    await expect(page.locator('.subtext .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'sub-row')).toBe(0);
   } finally {
     await close();
   }
@@ -145,8 +199,8 @@ test('site rules: an arXiv abstract is translated whole, its author and history 
     expect(all).toContain(ABSTRACT);
     expect(all).not.toContain(AUTHORS);
     expect(all).not.toContain(HISTORY);
-    await expect(page.locator('#authors .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#history .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'authors-box')).toBe(0);
+    expect(await oursIn(page, 'history-box')).toBe(0);
   } finally {
     await close();
   }
@@ -163,9 +217,9 @@ const LTX_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>ar5iv</title></head>
 <body>
   <div class="ltx_page_content" id="doc">
-    <div class="ltx_authors" id="ltx-authors"><span class="ltx_personname">${LTX_AUTHORS}</span></div>
+    <div id="ltx-authors-box"><div class="ltx_authors" id="ltx-authors"><span class="ltx_personname">${LTX_AUTHORS}</span></div></div>
     <div class="ltx_para" id="para"><p class="ltx_p">${LTX_PROSE}</p></div>
-    <ul class="ltx_bibliography" id="bib"><li class="ltx_bibitem">${LTX_BIB}</li></ul>
+    <div id="bib-box"><ul class="ltx_bibliography" id="bib"><li class="ltx_bibitem">${LTX_BIB}</li></ul></div>
   </div>
 </body></html>`;
 
@@ -186,8 +240,8 @@ test('site rules: an arXiv HTML paper is translated on ar5iv too, minus its auth
     // 两块都有直属文本，没有规则时通用启发式会照翻。
     expect(all).not.toContain(LTX_BIB);
     expect(all).not.toContain(LTX_AUTHORS);
-    await expect(page.locator('#bib .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#ltx-authors .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'bib-box')).toBe(0);
+    expect(await oursIn(page, 'ltx-authors-box')).toBe(0);
   } finally {
     await close();
   }
@@ -206,8 +260,8 @@ const REDDIT_PAGE = `<!doctype html>
 <body>
   <div id="thing">
     <p class="title" id="title">${RD_TITLE}</p>
-    <div class="score" id="score">${RD_SCORE}</div>
-    <p class="tagline" id="tagline">${RD_TAGLINE}</p>
+    <div id="score-box"><div class="score" id="score">${RD_SCORE}</div></div>
+    <div id="tagline-box"><p class="tagline" id="tagline">${RD_TAGLINE}</p></div>
     <faceplate-timeago id="ago">${RD_AGO}</faceplate-timeago>
     <div class="usertext-body" id="body">${RD_BODY}</div>
   </div>
@@ -227,14 +281,14 @@ test('site rules: a Reddit post keeps its title and body, and loses its score, t
     const all = sentTexts.join('\n');
     expect(all).toContain(RD_TITLE);
     expect(all).toContain(RD_BODY);
-    // `.score` / `.tagline` / `time` / `faceplate-timeago` 四条都在排除表里。没有
+    // `.score` / `.tagline` / `time` / `faceplate-timeago` 四条都在保留原文表里。没有
     // 规则时这三块都会被翻：它们各自有直属文本，通用启发式看不出和正文的区别。
     expect(all).not.toContain(RD_SCORE);
     expect(all).not.toContain(RD_TAGLINE);
     expect(all).not.toContain(RD_AGO);
-    await expect(page.locator('#score .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#tagline .ai-translator-inline-block')).toHaveCount(0);
-    await expect(page.locator('#ago .ai-translator-inline-block')).toHaveCount(0);
+    expect(await oursIn(page, 'score-box')).toBe(0);
+    expect(await oursIn(page, 'tagline-box')).toBe(0);
+    expect(await ourNodesAt(page, 'ago')).toBe(0);
   } finally {
     await close();
   }
@@ -327,13 +381,55 @@ test('site rules: a new-Reddit feed card keeps its title and body, and its credi
     expect(all).not.toContain(NR_AUTHOR);
     expect(all).not.toContain(NR_AGO);
     for (const item of NR_MENU) expect(all).not.toContain(item);
-    await expect(page.locator('#credit .ai-translator-inline-block')).toHaveCount(0);
+    expect(await ourNodesAt(page, 'credit')).toBe(0);
 
     // 块里的时间戳：送出去的是占位符，译文里是原来那个元素的克隆。
     const editedSent = sentTexts.find((text) => text.includes(NR_EDITED));
     expect(editedSent).toMatch(/\{\{\d+\}\}/);
     expect(editedSent).not.toContain(NR_EDITED_AGO);
     await expect(translationOf(NR_EDITED).locator('faceplate-timeago')).toHaveText(NR_EDITED_AGO);
+  } finally {
+    await close();
+  }
+});
+
+// D-315：内置表命中的是**行内**元素时，它不从译文里消失——当占位符送出，模型原样
+// 带回，插回时 clone 回原来那个元素。改名前（B1）这里的字被拿掉，时间戳在译文里就
+// 没了。
+const RD_LINE_HEAD = 'The maintainer merged the rewrite';
+const RD_LINE_TAIL = 'and the benchmark numbers doubled across the board.';
+const RD_INLINE_AGO = 'nine hours ago';
+
+const REDDIT_INLINE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>reddit</title></head>
+<body>
+  <div id="thing">
+    <div class="usertext-body" id="line">${RD_LINE_HEAD} <time id="inline-ago">${RD_INLINE_AGO}</time> ${RD_LINE_TAIL}</div>
+  </div>
+</body></html>`;
+
+test('site rules: a builtin inline hit on Reddit travels as a placeholder and comes back verbatim', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://old.reddit.com/**', REDDIT_INLINE_PAGE);
+
+    await page.goto('https://old.reddit.com/r/rust/comments/1/');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#thing .ai-translator-inline-block', { timeout: 30000 });
+
+    // 这一句去了，时间戳的字没去：它在送出文本里只是一个 {{n}}。
+    const sent = sentTexts.find((text) => text.includes(RD_LINE_HEAD));
+    expect(sent).toBeTruthy();
+    expect(sent).toContain(RD_LINE_TAIL);
+    expect(sent).not.toContain(RD_INLINE_AGO);
+    expect(sent).toMatch(/\{\{\d+\}\}/);
+
+    // 译文块里原样出现那个 <time>，字一个不差。
+    const kept = page.locator('#thing .ai-translator-inline-block time');
+    await expect(kept).toHaveCount(1);
+    await expect(kept).toHaveText(RD_INLINE_AGO);
   } finally {
     await close();
   }

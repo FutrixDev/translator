@@ -127,6 +127,8 @@
     let total = 0;
     let error = null;
     try {
+      // 顶层规则补翻那一轮是顶层的；这里等的是本 frame 自己的补翻轮（custom-rule.js）。
+      await ctx.customRules.whenCaughtUp();
       ctx.beginScopeRound();
       let blocks = ctx.collectPageBlocks();
       blocks = await ctx.filterBlocksByLanguage(blocks);
@@ -138,6 +140,7 @@
       error = (caught && caught.message) || ctx.t('translationFailed');
     } finally {
       state.isTranslatingPage = false;
+      ctx.customRules.afterRound();
     }
     reportToTop({ manual: true, total, error });
   }
@@ -184,6 +187,11 @@
       runManualRound();
     }
     if (!prev || prev.translate !== next.translate) restartAuto();
+    // 引擎覆盖跟顶层走，null 也照传（「顶层没有覆盖」）。放在最后：上面的手动轮
+    // 已同步置上 isTranslatingPage，规则流水线（custom-rule.js 的 rescope）见了不当
+    // 场补翻，只记下 pending；这一轮收尾时 afterRound() 再清扫，并按条件决定要不要
+    // 补一轮。
+    ctx.customRules.inherit(next.engineOverride ?? null);
   }
 
   function listenToTop() {

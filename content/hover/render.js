@@ -201,11 +201,17 @@
     }
     translationEl.classList.add('ai-translator-inline-block', className);
 
-    if (mathElements.length && ctx.buildTranslationContentWithMath) {
+    // 内容按「有没有占位符」选构建器；样式按「有没有真公式」（collect.js 的
+    // hasRealMath）选：只有 translate="no" 的原样元素时照常套原文排版。
+    const withPlaceholders = mathElements.length && ctx.buildTranslationContentWithMath;
+    if (withPlaceholders) {
       ctx.buildTranslationContentWithMath(translationEl, translation, mathElements);
-      translationEl.style.opacity = '0.85';
     } else {
       translationEl.textContent = translation;
+    }
+    if (withPlaceholders && ctx.hasRealMath(mathElements)) {
+      translationEl.style.opacity = '0.85';
+    } else {
       translationEl.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
         margin: 0;
         padding: 0;
@@ -224,11 +230,14 @@
       const internalTranslation = document.createElement('span');
       internalTranslation.className = `ai-translator-inline-block ${className}`;
 
-      if (mathElements.length && ctx.buildTranslationContentWithMath) {
+      if (withPlaceholders) {
         ctx.buildTranslationContentWithMath(internalTranslation, translation, mathElements);
-        internalTranslation.style.opacity = '0.85';
       } else {
         internalTranslation.textContent = translation;
+      }
+      if (withPlaceholders && ctx.hasRealMath(mathElements)) {
+        internalTranslation.style.opacity = '0.85';
+      } else {
         internalTranslation.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
           display: block;
           margin: 0;

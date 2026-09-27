@@ -12,13 +12,40 @@
   ctx.frameRole = window.top === window ? 'top' : 'child';
 
   if (!ctx.constants) {
+    // 我们自己画的界面根：收集不把它们当正文（page/collect.js），发现层不把它们
+    // 的变动当页面变了（content-auto-discover.js）。与 content/css/popup.css
+    // 宿主隔离重置里的 :is() 根清单是同一份，由
+    // test/unit/host-css-containment.test.mjs 守着不分叉；加一个界面根，两处都要加。
+    const ownUi = [
+      '.ai-translator-popup',
+      '#ai-translator-input-dialog',
+      '#ai-translator-float-menu',
+      '#ai-translator-float-ball',
+      '#ai-translator-float-ball-container',
+      '#ai-translator-progress',
+      '#ai-translator-selection-btn',
+      '#ai-translator-caption-overlay',
+      '#ai-translator-caption-controls',
+      '#ai-translator-caption-btn',
+      '#ai-translator-caption-menu',
+      '#ai-translator-ocr-region',
+      '#ai-translator-ocr-hover-btn',
+      '#ai-translator-input-chip',
+      '#ai-translator-auto-bar',
+      '#ai-translator-source-peek',
+      '#ai-translator-rule-picker'
+    ].join(', ');
     ctx.constants = {
       FLOAT_BALL_SIZE: 36,
       EDGE_SNAP_THRESHOLD: 100,
       DOCK_PADDING_FRONT: -6,
       DOCK_PADDING_BACK: 8,
       DOCK_PADDING_VERTICAL: 4,
-      MATH_CONTAINER_SELECTOR: 'math, mjx-container, mjx-math, .MathJax, .MathJax_Display, .MathJax_CHTML, .mjx-chtml, .mjx-math, .MJXc-display, .katex, .katex-display, .ltx_Math'
+      MATH_CONTAINER_SELECTOR: 'math, mjx-container, mjx-math, .MathJax, .MathJax_Display, .MathJax_CHTML, .mjx-chtml, .mjx-math, .MJXc-display, .katex, .katex-display, .ltx_Math',
+      OWN_UI_SELECTOR: ownUi,
+      // 界面根再加上我们插进页面的译文：划词（content-selection.js）不在这些字上
+      // 弹「划词翻译」按钮，悬停（hover/blocks.js）不把它们当一块正文去翻。
+      OWN_NODES_SELECTOR: `${ownUi}, .ai-translator-inline-block, .ai-translator-hover-translation, .ai-translator-selection-translation`
     };
   }
 
@@ -114,6 +141,31 @@
   ];
   ctx.captionSettingKeys = CAPTION_SETTING_KEYS;
 
+  // 「一条一个 sync 键」的集合的登记表：{ prefix, onStorageChange }，由各集合的
+  // 模块（content/page/custom-rule.js）在 init() 时登记。
+  ctx.syncMirrors = [];
+
+  // 把 sync 增量按 ctx.syncMirrors 的前缀分出去，交给各自的 onStorageChange；
+  // 返回剩下的（设置键）。一个集合的增量整包交一次，保持它在事件里的顺序。
+  function routeSyncMirrors(changes) {
+    const mirrors = ctx.syncMirrors;
+    if (!mirrors.length) return changes;
+    const rest = {};
+    const routed = mirrors.map(() => null);
+    for (const key of Object.keys(changes)) {
+      const at = mirrors.findIndex((mirror) => key.startsWith(mirror.prefix));
+      if (at < 0) {
+        rest[key] = changes[key];
+        continue;
+      }
+      (routed[at] || (routed[at] = {}))[key] = changes[key];
+    }
+    routed.forEach((part, at) => {
+      if (part) mirrors[at].onStorageChange(part);
+    });
+    return rest;
+  }
+
   ctx.setupStorageListener = function() {
     chrome.storage.onChanged.addListener((changes, namespace) => {
       // The account token is per device and lives in local storage, and it is
@@ -125,6 +177,11 @@
         return;
       }
       if (namespace !== 'sync') return;
+
+      // 「一条一个 sync 键」的集合（用户站点规则等）不是设置：命中登记表
+      // ctx.syncMirrors 里某个前缀的键交给那一项自己的镜像，不进 ctx.settings。
+      // 表在事件到达时才读 —— 登记方比这个文件晚加载，这里也不点名任何一个集合。
+      changes = routeSyncMirrors(changes);
 
       Object.keys(changes).forEach((key) => {
         ctx.settings[key] = changes[key].newValue;
@@ -192,6 +249,8 @@
   ctx.init = async function() {
     console.log('Blab Translation: Initializing...');
     try {
+      // 本页的用户站点规则：先把请求发出去，和读设置并行（content/page/custom-rule.js）。
+      ctx.customRules.init();
       await ctx.loadSettings();
       // 还没有译文，这一遍只为把 <html> 上的样式 / 仅译文两个属性写对。每个 frame
       // 都要跑：子 frame 里的译文同样要有样式、同样受仅译文控制。
@@ -207,6 +266,9 @@
       // 顶层的自动翻译。
       const top = ctx.frameRole === 'top';
       if (top && ctx.createFloatBall) ctx.createFloatBall();
+      // 调度器的第一个判断就要用到本站规则钉住的引擎。最多等 1.5 s（SW 冷启动），
+      // 放在悬浮球之后，好让悬浮球不跟着等。
+      await ctx.customRules.whenReady();
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();

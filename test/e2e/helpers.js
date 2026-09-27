@@ -65,12 +65,25 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 间隙经 ctx.markLanguage / applyTextInset / startSide，后三者在
   // content-language.js。manifest 里两者都排在整页翻译的模块之前。
   'shared/target-lang.js',
+  // site-rules.js 在加载时同样取走 StorageWriter（同步存储的单写者队列），缺了它
+  // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
+  'shared/storage-writer.js',
   'shared/site-rules.js',
+  // 用户站点规则（P1-B）：custom-rules.js 加载时取走 SiteRules / StorageWriter /
+  // SyncCollection，manifest 里它们紧跟在 auto-stats 之后。夹具不调
+  // ctx.customRules.init()（没有扩展运行时），所以本页恒为「没有规则」。
+  // custom-rule.js 在 init() 里订阅 SpaNavigation 的路由信号；不调 init() 它
+  // 就不接线，加载本身没有副作用。
+  'shared/spa-navigation.js',
+  'shared/sync-collection.js',
+  'shared/custom-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。
   'shared/translation-display.js',
   'content/content-language.js',
   'content/page/batch.js',
+  // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
+  'content/page/custom-rule.js',
   'content/page/site-adapter.js',
   // 组合树（shadow.js）、notranslate、正文范围（scope.js）：收集器和门面在调用时
   // 读它们挂的 ctx.x，门面收块走的就是 scope.js 的 ctx.collectPageBlocks。
@@ -528,7 +541,68 @@ async function stubBuiltinTranslator(pageOrFrame) {
   })()`);
 }
 
+/**
+ * How many of our nodes (any class that starts with `ai-translator-`) sit in the box with this
+ * id, the box itself included, in a page or a frame.
+ *
+ * "This region was not translated" has two halves (RJ-3): this is 0 for the region's own box,
+ * and the source text is not in the mock's sentTexts. A descendant lookup inside a block misses
+ * the block's translation, which is inserted as its next sibling; one class name over the whole
+ * page misses the other kinds of node; every node on the page also counts the float ball. So
+ * wrap the region in a box of its own and count inside that.
+ */
+function oursIn(target, containerId) {
+  return target.evaluate(([id, any]) => {
+    const box = document.getElementById(id);
+    return box.matches(any) ? 1 + box.querySelectorAll(any).length : box.querySelectorAll(any).length;
+  }, [containerId, '[class*="ai-translator-"]']);
+}
+
+/**
+ * oursIn for an element that cannot get a box of its own without changing what is collected: an
+ * inline element among blocks, or a slotted element whose slot name has to stay on it. Counts
+ * our nodes on and inside the element, plus its next element sibling when that sibling is a
+ * translation node (a block translation lands there, insert.js `element.after`). The sibling test
+ * is the translation class only: a translated neighbour carries `ai-translator-translated` and is
+ * not this element's translation.
+ */
+function ourNodesAt(target, elementId) {
+  return target.evaluate(([id, any, translation]) => {
+    const el = document.getElementById(id);
+    const inside = (el.matches(any) ? 1 : 0) + el.querySelectorAll(any).length;
+    const next = el.nextElementSibling;
+    return inside + (next && next.matches(translation) ? 1 : 0);
+  }, [elementId, '[class*="ai-translator-"]', '.ai-translator-inline-block']);
+}
+
+/**
+ * mock-openai-server 收到的原文按段拆开：每次请求按快速批的分隔符拆；不走快速
+ * 批的请求整条就是一段。
+ * @param {string[]} sentTexts
+ * @param {{delimiter: string}[]} fastBatchRequests
+ */
+function sentSegments(sentTexts, fastBatchRequests) {
+  const delimiters = [...new Set(fastBatchRequests.map((request) => request.delimiter))];
+  return sentTexts.flatMap((text) => delimiters.reduce(
+    (pieces, delimiter) => pieces.flatMap((piece) => piece.split(delimiter)),
+    [text],
+  ));
+}
+
+/** Everything in sync storage, and how many bytes it takes. */
+async function syncSnapshot(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => ({
+    items: await chrome.storage.sync.get(null),
+    bytes: await chrome.storage.sync.getBytesInUse(null),
+  }));
+}
+
 module.exports = {
+  oursIn,
+  ourNodesAt,
+  sentSegments,
+  syncSnapshot,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

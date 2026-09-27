@@ -33,7 +33,9 @@ import { fileURLToPath } from 'node:url';
 import { contentCss } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)));
+// 递归：内容脚本早已按族分进子目录（content/picker/、content/captions/ …），只看顶层
+// 就漏掉了那些族画的控件。
+const repoDir = (rel) => readdirSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), { recursive: true });
 
 // 整张表，按 manifest 的顺序接起来：下面既看规则本身，也看它们相对这段重置的
 // 前后位置，而那个前后是由 manifest 的 css 数组定的，不是由文件名定的。
@@ -91,6 +93,92 @@ test('the reset covers both content-script roots', () => {
   // below — so this looks for the name, not the selector spelling.
   for (const root of ['.ai-translator-popup', 'ai-translator-input-dialog']) {
     assert.ok(block.includes(root), `${root} is not covered by the containment reset`);
+  }
+});
+
+test('every root list in the reset names the same roots, the rule picker among them', () => {
+  // The block restates one list of roots in nine places. A root added to eight
+  // of them is contained everywhere except in the one rule the ninth carries,
+  // and nothing on the page shows which one that is until a host stylesheet
+  // happens to hit it.
+  const lists = [...resetBlock().matchAll(/:is\((\.ai-translator-popup,[^)]*)\)/g)]
+    .map(([, inner]) => splitSelectorList(inner).map((s) => s.trim()).sort());
+  assert.equal(lists.length, 9, `expected nine root lists in the reset, found ${lists.length}`);
+  for (const roots of lists) {
+    assert.deepEqual(roots, lists[0], 'the root lists in the containment reset have drifted apart');
+  }
+  assert.ok(
+    lists[0].includes('[id="ai-translator-rule-picker"]'),
+    'the rule picker root is not in the containment reset',
+  );
+});
+
+// ctx.constants 由 content-bootstrap.js 定；浏览器那几样换成桩，原样跑一遍取回来。
+function contentConstants() {
+  const names = ['window', 'document', 'FrameEligibility', 'DefaultSettings'];
+  const saved = Object.fromEntries(names.map((name) => [name, globalThis[name]]));
+  const win = { AI_TRANSLATOR_CONTENT: {} };
+  win.top = win;
+  Object.assign(globalThis, {
+    window: win,
+    document: { documentElement: { setAttribute() {} } },
+    FrameEligibility: { shouldActivate: () => true },
+    DefaultSettings: { contentDefaults: () => ({}) },
+  });
+  try {
+    new Function(repoFile('content/content-bootstrap.js'))();
+    return win.AI_TRANSLATOR_CONTENT.constants;
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+}
+
+// 界面根里确实不该被收集层和发现层当成「我们的」的那几个，写在这里并带上理由。
+// 现在一个都没有：重置清单里每个根都是我们画的界面，里面的字不是页面正文。
+const NOT_OWN_UI = new Map();
+
+test('the reset\'s root list and the content script\'s own-UI selector name the same roots', () => {
+  // 同一份「我们自己的界面根」以前在 popup.css 与 collect.js 各写一遍，两边对不上：
+  // 拾取器的保存提示挂在 #ai-translator-auto-bar 里，重置清单有它、收集排除表没有，
+  // 提示文字就被当正文送去翻译。
+  const [inner] = resetBlock().match(/:is\((\.ai-translator-popup,[^)]*)\)/).slice(1);
+  const cssRoots = splitSelectorList(inner)
+    .map((s) => s.trim().replace(/^\[id="([^"]+)"\]$/, '#$1'))
+    .filter((root) => !NOT_OWN_UI.has(root))
+    .sort();
+  const constants = contentConstants();
+  const own = constants.OWN_UI_SELECTOR.split(',').map((s) => s.trim()).sort();
+  assert.deepEqual(own, cssRoots, 'ctx.constants.OWN_UI_SELECTOR and the reset\'s :is() roots have drifted apart');
+  // 划词与悬停用的那一份是界面根再加上插进页面的译文，界面根一个不少。
+  const nodes = constants.OWN_NODES_SELECTOR.split(',').map((s) => s.trim());
+  assert.deepEqual(own.filter((root) => !nodes.includes(root)), [],
+    'ctx.constants.OWN_NODES_SELECTOR dropped a UI root');
+  // 发现层和拾取器以前各自在界面根后面拼译文类，现在都只读这一份，所以它得把
+  // 三种插进页面的译文都带上。
+  for (const translation of [
+    '.ai-translator-inline-block',
+    '.ai-translator-hover-translation',
+    '.ai-translator-selection-translation',
+  ]) {
+    assert.ok(nodes.includes(translation), `ctx.constants.OWN_NODES_SELECTOR dropped ${translation}`);
+  }
+  // 用它的地方都只引用这一份，源码里一个 #ai-translator- 都不再出现：模板串中间
+  // 再夹一个 id 也是私列。这几份文件没有别的正当用途要写这个前缀。引用看的是去掉
+  // 注释后的代码：注释里提一句常量名，不等于代码真在用它。
+  for (const [rel, name] of [
+    ['content/page/collect.js', 'OWN_UI_SELECTOR'],
+    ['content/content-auto-discover.js', 'OWN_NODES_SELECTOR'],
+    ['content/content-selection.js', 'OWN_NODES_SELECTOR'],
+    ['content/hover/blocks.js', 'OWN_NODES_SELECTOR'],
+    ['content/picker/selector.js', 'OWN_NODES_SELECTOR'],
+  ]) {
+    const source = repoFile(rel);
+    const code = source
+      .replace(/^[ \t]*\/\/.*$/gm, '')
+      .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '');
+    assert.match(code, new RegExp(`\\b${name}\\b`),
+      `${rel} no longer uses ctx.constants.${name}`);
+    assert.doesNotMatch(source, /#ai-translator-/, `${rel} lists a UI root of its own again`);
   }
 });
 
@@ -259,6 +347,7 @@ test('the markup still renders controls we have to defend', () => {
   const classes = controlClasses();
   assert.ok(classes.size >= 8, `only found ${classes.size} control classes; the markup scan has stopped matching`);
   assert.ok(classes.has('ai-translator-menu-item'), 'the float menu items are no longer buttons with that class');
+  assert.ok(classes.has('ai-translator-picker-btn'), 'the rule picker buttons are no longer found by the scan');
 });
 
 /** A theme's `.kit button` and its `:hover`/`:focus` twin — the two weights to clear. */

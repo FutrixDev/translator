@@ -8,7 +8,7 @@
   const { settings, state } = ctx;
   const t = ctx.t;
   const HOTKEYS = new Set(['Shift', 'Alt', 'Control', 'Meta']);
-  const SKIP_SELECTOR = '.ai-translator-popup, .ai-translator-inline-block, .ai-translator-hover-translation, .ai-translator-selection-translation, #ai-translator-float-ball, #ai-translator-float-menu, #ai-translator-progress, #ai-translator-selection-btn';
+  const SKIP_SELECTOR = ctx.constants.OWN_NODES_SELECTOR;
 
   function setupSelectionListener() {
     let selectionTimeout = null;
