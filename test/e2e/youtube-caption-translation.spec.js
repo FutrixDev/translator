@@ -4,6 +4,7 @@ const {
   getSyncSetting,
   writeSyncSettings,
   expectCaptionMenuAnchoredAboveButton,
+  sendMessageToActiveTab,
 } = require('./helpers');
 
 const html = `<!doctype html>
@@ -102,6 +103,52 @@ test('renders translated line when captions on and language differs', async ({ p
   });
 
   await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+});
+
+// R33（D-351）：YouTube 在内置名单上是 captions —— 页面正文不动、不弹询问条，
+// 字幕照翻。默认安装（没有任何站点规则），正文是一段够长的英文，引擎走 AI 好
+// 让每一次送出都记在账上。
+test('YouTube out of the box: captions are translated, the page text is not, nothing asks', async ({ page, context }) => {
+  const DESCRIPTION = 'This video walks through the whole release, from the first sketch to the final cut, and explains every decision along the way.';
+  await setExtensionSettings(page, { ...BASE_SETTINGS, autoTranslateEngine: 'ai' });
+  await context.route('https://www.youtube.com/watch**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: html.replace('<body>', `<body><h1>Release walkthrough for the spring edition</h1><p id="desc">${DESCRIPTION}</p>`),
+    });
+  });
+  await context.route('https://www.youtube.com/api/timedtext**', (route) => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: timedtextBody });
+  });
+  const sent = [];
+  await context.route('https://api.openai.com/**', (route) => {
+    sent.push(route.request().postData() || '');
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '你好世界' } }] }),
+    });
+  });
+
+  await page.goto('https://www.youtube.com/watch?v=abc123');
+  await page.waitForTimeout(500);
+  await simulatePlayerTimedtext(page, 'en');
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    video.currentTime = 0.5;
+    video.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(page.locator('#ai-translator-caption-overlay')).toContainText('你好世界');
+
+  const state = await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' });
+  expect(state.auto.reason).toBe('BUILTIN_CAPTIONS');
+  // 给调度层足够的时间：它要是会翻正文，这会儿早送出去了。
+  await page.waitForTimeout(1500);
+  await expect(page.locator('#ai-translator-auto-bar')).toHaveCount(0);
+  await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
+  expect(sent.length).toBeGreaterThan(0);
+  expect(sent.join('\n')).not.toContain('first sketch');
 });
 
 test('skips translation when track language matches target', async ({ page, context }) => {
