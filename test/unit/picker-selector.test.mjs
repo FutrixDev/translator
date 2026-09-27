@@ -163,7 +163,9 @@ test('tag plus stable classes, hashed classes dropped, at most three', () => {
 });
 
 test('the volatile-class table', () => {
-  const volatile = ['ember123', 'jss1234', 'css-1x2y3z', 'sc-AbCdE', '_3fX9a', 'Button__root__1a2b3',
+  // _1abc 只有「下划线打头接数字」一条规则认得（_3fX9a 同时是大小写混排带数字），
+  // 少了它那条规则，这张表就守不住。
+  const volatile = ['ember123', 'jss1234', 'css-1x2y3z', 'sc-AbCdE', '_3fX9a', '_1abc', 'Button__root__1a2b3',
     'kLmN3p', 'md:flex', ':r1:', ''];
   const stable = ['promo', 'nav-bar', 'comment_body', 'h2', 'col-12', 'Header', 'isActive'];
   for (const name of volatile) assert.equal(picker.isVolatileClass(name), true, `${name} should be volatile`);
