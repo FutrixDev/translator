@@ -61,6 +61,9 @@ test('名单外的站点不问：追问那一整条路删干净了', () => {
   assert.doesNotMatch(code('content/content-messaging.js'), /'ask'|'pending'/);
   // 设置里也没有它的键了。
   assert.doesNotMatch(code('shared/default-settings.js'), /siteAskCount|autoTranslateLangs/);
+  // 文案表里也没有：窄条剩下的按钮是 offer 的（autoOffer*），PDF 那句是媒体提示的
+  // （mediaHint*）。一个还叫「追问」的键，要么没人调，要么在借一条已删掉的路的名字。
+  assert.doesNotMatch(messagesSource(), /^\s*(autoAsk\w*|pdfAskPrompt):/m);
 });
 
 test('站点规则写在哪个键上只有 normalizeHost 说了算', () => {

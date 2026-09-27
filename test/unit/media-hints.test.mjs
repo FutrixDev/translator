@@ -122,7 +122,7 @@ test('an unbound shortcut turns the text generic and adds the settings link', as
   page.ctx.setupMediaHints();
   await flush();
   const offer = page.lastOffer();
-  assert.equal(offer.text, 'pdfAskPrompt');
+  assert.equal(offer.text, 'mediaHintPdfNoShortcut');
   assert.equal(offer.link.text, 'mediaHintSetShortcut');
   offer.link.onClick();
   assert.deepEqual(types(page.sent), ['OPEN_SHORTCUT_SETTINGS']);

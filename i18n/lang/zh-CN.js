@@ -383,8 +383,8 @@
     // 自动翻译：追问条
     autoOfferAccept: '翻译',
     autoOfferDismiss: '不用',
-    pdfAskPrompt: '这是一份 PDF 文档，翻译它会按页数消耗额度',
     mediaHintPdf: '按 {shortcut} 翻译这份 PDF，按页数消耗额度',
+    mediaHintPdfNoShortcut: '这是一份 PDF 文档，翻译它会按页数消耗额度',
     mediaHintComic: '按 {shortcut} 翻译屏幕上的漫画',
     mediaHintComicNoShortcut: '翻译屏幕上的漫画？',
     mediaHintSetShortcut: '设置快捷键',

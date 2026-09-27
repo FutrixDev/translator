@@ -367,8 +367,8 @@
     // 自动翻译：追问条
     autoOfferAccept: '翻譯',
     autoOfferDismiss: '不用',
-    pdfAskPrompt: '這是一份 PDF 文件，翻譯它會按頁數消耗額度',
     mediaHintPdf: '按 {shortcut} 翻譯這份 PDF，按頁數消耗額度',
+    mediaHintPdfNoShortcut: '這是一份 PDF 文件，翻譯它會按頁數消耗額度',
     mediaHintComic: '按 {shortcut} 翻譯螢幕上的漫畫',
     mediaHintComicNoShortcut: '翻譯螢幕上的漫畫？',
     mediaHintSetShortcut: '設定快捷鍵',

@@ -367,8 +367,8 @@
     // 自动翻译：追问条
     autoOfferAccept: 'Traduire',
     autoOfferDismiss: 'Pas maintenant',
-    pdfAskPrompt: 'Ceci est un PDF. Le traduire consomme des crédits de pages.',
     mediaHintPdf: 'Appuyez sur {shortcut} pour traduire ce PDF (crédits de pages consommés).',
+    mediaHintPdfNoShortcut: 'Ceci est un PDF. Le traduire consomme des crédits de pages.',
     mediaHintComic: 'Appuyez sur {shortcut} pour traduire la BD à l’écran.',
     mediaHintComicNoShortcut: 'Traduire la BD à l’écran ?',
     mediaHintSetShortcut: 'Définir un raccourci',

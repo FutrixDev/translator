@@ -367,8 +367,8 @@
     // 自动翻译：追问条
     autoOfferAccept: '翻訳',
     autoOfferDismiss: '今はしない',
-    pdfAskPrompt: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
     mediaHintPdf: '{shortcut} でこの PDF を翻訳（ページ数分のクレジットを消費）',
+    mediaHintPdfNoShortcut: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
     mediaHintComic: '{shortcut} で画面上の漫画を翻訳',
     mediaHintComicNoShortcut: '画面上の漫画を翻訳しますか？',
     mediaHintSetShortcut: 'ショートカットを設定',

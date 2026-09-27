@@ -70,7 +70,7 @@ test('BUILTIN_NEVER 算「被拒」，否则字幕引擎会在这一页上自己
   }
   const catalog = messageCatalog();
   for (const lang of Object.keys(catalog)) {
-    for (const k of ['autoReasonBuiltinNever', 'pdfAskPrompt']) {
+    for (const k of ['autoReasonBuiltinNever', 'mediaHintPdfNoShortcut']) {
       assert.ok(catalog[lang][k], `${lang} 缺 ${k}`);
     }
   }

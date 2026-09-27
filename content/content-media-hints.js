@@ -151,7 +151,7 @@
   // ------------------------------------------------------------------ 说
 
   function hintText(kind, shortcut) {
-    if (!shortcut) return t(kind === 'pdf' ? 'pdfAskPrompt' : 'mediaHintComicNoShortcut');
+    if (!shortcut) return t(kind === 'pdf' ? 'mediaHintPdfNoShortcut' : 'mediaHintComicNoShortcut');
     return t(kind === 'pdf' ? 'mediaHintPdf' : 'mediaHintComic').replace('{shortcut}', shortcut);
   }
 

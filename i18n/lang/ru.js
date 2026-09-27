@@ -367,8 +367,8 @@
     // 自动翻译：追问条
     autoOfferAccept: 'Перевести',
     autoOfferDismiss: 'Не сейчас',
-    pdfAskPrompt: 'Это PDF. Перевод расходует постраничные кредиты.',
     mediaHintPdf: 'Нажмите {shortcut}, чтобы перевести этот PDF (расходует постраничные кредиты).',
+    mediaHintPdfNoShortcut: 'Это PDF. Перевод расходует постраничные кредиты.',
     mediaHintComic: 'Нажмите {shortcut}, чтобы перевести комикс на экране.',
     mediaHintComicNoShortcut: 'Перевести комикс на экране?',
     mediaHintSetShortcut: 'Назначить сочетание клавиш',

@@ -367,8 +367,8 @@
     // 自动翻译：追问条
     autoOfferAccept: '번역',
     autoOfferDismiss: '나중에',
-    pdfAskPrompt: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
     mediaHintPdf: '{shortcut} 키로 이 PDF 번역 (페이지 수만큼 크레딧 소모)',
+    mediaHintPdfNoShortcut: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
     mediaHintComic: '{shortcut} 키로 화면의 만화 번역',
     mediaHintComicNoShortcut: '화면의 만화를 번역할까요?',
     mediaHintSetShortcut: '단축키 설정',
