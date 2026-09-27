@@ -467,16 +467,6 @@
   // breaks players that manage their own DOM. So the host is a fixed-position
   // box pinned to the video's rect — the same approach the comic overlay takes
   // over an <img>.
-  function hostParent() {
-    const fullscreen = document.fullscreenElement;
-    if (!fullscreen) return document.body;
-    // Nothing outside the fullscreen element is rendered, so the overlay has to
-    // move inside it. A fullscreen <video> is the exception: it draws no
-    // children, and the top layer (setTopLayer below) is the only way over it.
-    if (fullscreen.tagName === 'VIDEO') return document.body;
-    return fullscreen;
-  }
-
   // Promote the host into the top layer so it paints above a fullscreen
   // <video>. Only while that is the case: a popover that is not open is
   // display:none, which would hide the overlay the rest of the time.
@@ -501,9 +491,11 @@
     const host = tt.host;
     const video = tt.video;
     if (!host || !video || !document.body) return;
-    const parent = hostParent();
-    if (host.parentElement !== parent) parent.appendChild(host);
-    setTopLayer(!!document.fullscreenElement && parent === document.body);
+    // Inside a fullscreen element, or in the top layer over a fullscreen
+    // <video>: content/content-video-stage.js decides which.
+    const spot = ctx.videoStage.overlaySpot();
+    if (host.parentElement !== spot.parent) spot.parent.appendChild(host);
+    setTopLayer(spot.topLayer);
 
     const rect = video.getBoundingClientRect();
     const onScreen = rect.width > 1 && rect.height > 1

@@ -11,6 +11,20 @@ const {
   getCurrentTheme,
 } = require('./helpers');
 
+async function ballCentre(ball) {
+  const b = await ball.boundingBox();
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
+// What is painted at a point: 'ball' when it is our ball, the tag otherwise.
+function paintedAt(page, { x, y }) {
+  return page.evaluate(([px, py]) => {
+    const hit = document.elementFromPoint(px, py);
+    if (!hit) return null;
+    return hit.closest('#ai-translator-float-ball') ? 'ball' : hit.tagName;
+  }, [x, y]);
+}
+
 test.describe('Float Ball', () => {
   test('should appear on page load', async ({ page }) => {
     await page.goto('https://example.com');
@@ -85,6 +99,67 @@ test.describe('Float Ball', () => {
     await page.waitForFunction(() => !document.fullscreenElement);
 
     await expect(page.locator('#ai-translator-float-ball')).toBeVisible();
+  });
+
+  // Web fullscreen (bilibili, Youku, most embeds): the player restyles itself
+  // to cover the viewport and never calls the fullscreen API, so no
+  // fullscreenchange fires. Before content/content-video-stage.js the ball
+  // stayed painted over the video: elementFromPoint at the ball's own centre
+  // hit the ball.
+  test('should hide over a web-fullscreen player and restore when it shrinks', async ({ page }) => {
+    await page.goto('https://example.com');
+    await waitForFloatBall(page);
+    const ball = page.locator('#ai-translator-float-ball');
+
+    await page.evaluate(() => {
+      const player = document.createElement('div');
+      player.id = 'ai-web-fs-player';
+      player.style.cssText = 'width:480px;height:270px';
+      player.innerHTML = '<video style="width:100%;height:100%;background:#000"></video>';
+      document.body.appendChild(player);
+    });
+    await expect(ball).toBeVisible();
+    const centre = await ballCentre(ball);
+
+    await page.evaluate(() => {
+      document.getElementById('ai-web-fs-player').style.cssText =
+        'position:fixed;inset:0;width:100vw;height:100vh;z-index:100000;background:#000';
+    });
+    await expect(ball).toBeHidden();
+    expect(await paintedAt(page, centre)).toBe('VIDEO');
+
+    await page.evaluate(() => {
+      document.getElementById('ai-web-fs-player').style.cssText = 'width:480px;height:270px';
+    });
+    await expect(ball).toBeVisible();
+    expect(await paintedAt(page, centre)).toBe('ball');
+  });
+
+  // Filling the viewport is not being on screen: a video pinned behind the
+  // page's text (a background layer with no loop, so the backdrop rule does
+  // not catch it) must not take the ball away.
+  test('should stay over a full-viewport video the page covers', async ({ page }) => {
+    await page.goto('https://example.com');
+    await waitForFloatBall(page);
+    const ball = page.locator('#ai-translator-float-ball');
+
+    await page.evaluate(() => {
+      const video = document.createElement('video');
+      video.id = 'ai-covered-video';
+      video.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;background:#000';
+      const column = document.createElement('div');
+      column.style.cssText = 'min-height:100vh;background:#fff';
+      column.textContent = 'Page text over a background video.';
+      document.body.prepend(column);
+      document.body.appendChild(video);
+    });
+    // Let at least two stage polls (400 ms) pass: hiding would show by then.
+    await page.waitForTimeout(1000);
+    expect(await page.evaluate(() => {
+      const r = document.getElementById('ai-covered-video').getBoundingClientRect();
+      return r.width >= innerWidth - 4 && r.height >= innerHeight - 4;
+    })).toBe(true);
+    await expect(ball).toBeVisible();
   });
 
   test('should be draggable', async ({ page }) => {

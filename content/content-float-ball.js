@@ -17,20 +17,9 @@
   const t = ctx.t;
   const applyTheme = ctx.applyTheme;
   let floatBallWatchdog = null;
-  let isFullscreenActive = false;
-  let fullscreenListenerAttached = false;
-
-  function handleFullscreenChange() {
-    isFullscreenActive = !!document.fullscreenElement;
-    updateFloatBallVisibility();
-  }
-
-  function ensureFullscreenListener() {
-    if (fullscreenListenerAttached) return;
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    fullscreenListenerAttached = true;
-    handleFullscreenChange();
-  }
+  // Stepping aside for a video that fills the screen — standard or web
+  // fullscreen — is content/content-video-stage.js's call, not ours.
+  let stageWatch = null;
 
   // Ensure float ball exists in DOM (recreate if removed by page's JS)
   function ensureFloatBallExists() {
@@ -168,7 +157,6 @@
     // Setup drag and click handling
     setupFloatBallInteraction();
     startFloatBallWatchdog();
-    ensureFullscreenListener();
 
     // Update visibility based on settings
     // Re-read from storage to ensure we have the latest value
@@ -726,8 +714,15 @@
   }
 
   function updateFloatBallVisibility() {
-    // Ensure showFloatBall has a valid boolean value
-    const shouldShow = settings.showFloatBall !== false && !isFullscreenActive;
+    const wanted = settings.showFloatBall !== false;
+    // The stage polls while watched, so it is watched only while the ball is
+    // wanted at all: switched off in settings, nothing measures the page.
+    if (wanted && !stageWatch) stageWatch = ctx.videoStage.watch(() => updateFloatBallVisibility());
+    if (!wanted && stageWatch) {
+      stageWatch();
+      stageWatch = null;
+    }
+    const shouldShow = wanted && !ctx.videoStage.videoFillsScreen();
 
     // Start or stop the watchdog based on visibility
     if (shouldShow) {

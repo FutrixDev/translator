@@ -22,6 +22,16 @@
   the page you use them on, and your setting is left as it is.
 - **Comic translation is on by default,** like PDF translation.
 
+### Float ball over full-screen video
+
+- **The float ball steps aside for "web fullscreen" too.** Players that fill
+  the page without the browser's fullscreen mode (a site's own "web
+  fullscreen" button, or a player filling a fullscreen browser window) used
+  to leave the ball on top of the video. It now hides while a video fills the
+  window and comes back when the player shrinks. A muted, looping background
+  video does not count, and neither does a video the page draws its own
+  content over.
+
 ### Selection icon and card actions
 
 - **A translate icon next to your selection.** Select text and a small round
