@@ -92,6 +92,10 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   // was not sent at all. A request with no key must leave with no auth header —
   // an empty `Bearer ` is still a header, and some servers reject it.
   const authHeaders = [];
+  // The path of every POST, in arrival order. The mock answers on any path, so
+  // two AI profiles pointed at `${origin}/a/...` and `${origin}/b/...` are two
+  // endpoints on one server, and this is what says which one a request hit.
+  const requestPaths = [];
 
   const { origin, close } = await startMockServer((req, res) => {
     if (req.method !== 'POST') {
@@ -105,6 +109,7 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
       body += chunk;
     });
     req.on('end', () => {
+      requestPaths.push(req.url);
       authHeaders.push({
         authorization: req.headers.authorization ?? null,
         xApiKey: req.headers['x-api-key'] ?? null,
@@ -206,6 +211,8 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
     systemPrompts,
     visionRequests,
     authHeaders,
+    requestPaths,
+    origin,
     endpoint: `${origin}/v1/chat/completions`,
     close
   };
