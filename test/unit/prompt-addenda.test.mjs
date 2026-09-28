@@ -410,10 +410,10 @@ test('composePromptAddenda: the block of the design, strings through JSON.string
     context: { title: 'On "Attention"', before: 'line1\nline2', after: '' },
   });
   assert.equal(block, [
+    `DOMAIN: ${PromptAddenda.SENTENCES.tech}`,
     'GLOSSARY (user-defined; overrides any general rule about keeping terms in their original form):',
     '- "Transformer" → keep as written',
     '- "attention" → "注意力"',
-    `DOMAIN: ${PromptAddenda.SENTENCES.tech}`,
     'PAGE CONTEXT (reference only; do not translate it and do not include it in the output):',
     '{"title":"On \\"Attention\\"","before":"line1\\nline2"}',
   ].join('\n'));
@@ -423,6 +423,38 @@ test('composePromptAddenda: the block of the design, strings through JSON.string
     assert.equal(buildPrompt(DEFAULT_PROMPT, 'Chinese', {}, '', { addenda: empty }),
       buildPrompt(DEFAULT_PROMPT, 'Chinese'));
   }
+});
+
+test('composePromptAddenda: REGISTER, DOMAIN, GLOSSARY, PAGE CONTEXT, in that order (D-382)', () => {
+  const block = composePromptAddenda({
+    register: 'forum',
+    domain: 'legal',
+    glossary: [{ s: 'tort', t: '侵权' }],
+    context: { title: 'A thread' },
+  });
+  assert.equal(block, [
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`,
+    `DOMAIN: ${PromptAddenda.SENTENCES.legal}`,
+    'GLOSSARY (user-defined; overrides any general rule about keeping terms in their original form):',
+    '- "tort" → "侵权"',
+    'PAGE CONTEXT (reference only; do not translate it and do not include it in the output):',
+    '{"title":"A thread"}',
+  ].join('\n'));
+});
+
+test('composePromptAddenda: a register and a domain with the same id send the DOMAIN line only (D-382)', () => {
+  const shared = PromptAddenda.REGISTERS.filter((id) => PromptAddenda.DOMAINS.includes(id));
+  assert.deepEqual(shared, ['news', 'academic'], 'the ids both lists carry');
+  for (const id of shared) {
+    assert.equal(composePromptAddenda({ register: id, domain: id }), `DOMAIN: ${PromptAddenda.SENTENCES[id]}`, id);
+  }
+  // 不同的 id 两行都写；general 没有 DOMAIN 行，语域照写。
+  assert.equal(composePromptAddenda({ register: 'news', domain: 'academic' }), [
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.news}`,
+    `DOMAIN: ${PromptAddenda.SENTENCES.academic}`,
+  ].join('\n'));
+  assert.equal(composePromptAddenda({ register: 'news', domain: 'general' }),
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.news}`);
 });
 
 test('buildPrompt: the block sits after the template and before the math rule, in every branch', () => {

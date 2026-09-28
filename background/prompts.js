@@ -90,16 +90,24 @@ function getFastBatchOutputRules(delimiter) {
 6. ${REGISTER_RULE}`;
 }
 
-// 附加说明拼成的一块：REGISTER / GLOSSARY / DOMAIN / PAGE CONTEXT，各有内容才写。用户和
-// 页面来的字符串一律经 JSON.stringify —— 引号和换行都带反斜杠，块里就不会出现
+// 附加说明拼成的一块：REGISTER / DOMAIN / GLOSSARY / PAGE CONTEXT，各有内容才写。
+// 顺序（D-382）：语域和领域说的都是「这是什么样的文字」，相邻放；词表是落笔时逐条
+// 查的对照；页面上下文放最后，离模板最远、紧挨数学规则之前，不会被当成要译的正文。
+// 语域和有效领域是同一个 id（news、academic 两边都有）时只写 DOMAIN 那一行：同一件
+// 事说两遍，领域那句更具体。general 没有句子，不写 DOMAIN。
+// 用户和页面来的字符串一律经 JSON.stringify —— 引号和换行都带反斜杠，块里就不会出现
 // 「segments are separated by "」这句话（mock 服务器和模型都靠它认分隔符）。
 // 调用方（SW 的三个处理函数）已经 validate 过；没有内容时是空串。
 function composePromptAddenda(addenda) {
   if (!addenda) return '';
   const { REGISTER_SENTENCES, SENTENCES, HEADINGS } = globalThis.PromptAddenda;
   const lines = [];
-  if (addenda.register) {
+  const domain = addenda.domain && SENTENCES[addenda.domain] ? addenda.domain : null;
+  if (addenda.register && addenda.register !== domain) {
     lines.push(`${HEADINGS.register} ${REGISTER_SENTENCES[addenda.register]}`);
+  }
+  if (domain) {
+    lines.push(`${HEADINGS.domain} ${SENTENCES[domain]}`);
   }
   if (addenda.glossary && addenda.glossary.length > 0) {
     lines.push(HEADINGS.glossary);
@@ -107,9 +115,6 @@ function composePromptAddenda(addenda) {
       const target = entry.t === undefined ? HEADINGS.keep : JSON.stringify(entry.t);
       lines.push(`- ${JSON.stringify(entry.s)} → ${target}`);
     }
-  }
-  if (addenda.domain && SENTENCES[addenda.domain]) {
-    lines.push(`${HEADINGS.domain} ${SENTENCES[addenda.domain]}`);
   }
   if (addenda.context) {
     const context = {};
