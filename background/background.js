@@ -72,15 +72,12 @@ import { openOnboardingOnInstall } from './install.js';
 import './page-coverage.js';
 import './custom-rules-host.js';
 import './glossary-host.js';
+import { ensureMigrated, profileById } from './ai-profiles-host.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
-import { apiErrorMessage, missingApiKeyMessage } from './api-errors.js';
-import {
-  translateBatchFastWithAI,
-  translateBatchWithAI,
-  translateTextWithMode,
-} from './ai-translate.js';
+import { missingApiKeyMessage, replyError } from './api-errors.js';
+import { translateBatchFastWithAI, translateTextWithMode } from './ai-translate.js';
 import { handleOcrImage, relayOcrProgress } from './ocr-recognize.js';
 import './frame-relay.js';
 import {
@@ -104,6 +101,7 @@ const STORAGE_WRITERS = {
   CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
   COMIC_HINT_WRITE: () => comicHintWriter,
   GLOSSARY_WRITE: () => globalThis.Glossary,
+  AI_PROFILES_WRITE: () => globalThis.AIProfiles,
 };
 
 // Message listener
@@ -132,20 +130,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true;
 
+    // 两条翻译消息都带内容脚本选好的 profileId（和它为哪个功能选的 feature，只用来
+    // 记日志）；SW 不再替它选档。
     case 'TRANSLATE':
-      handleTranslate(message.text, message.targetLang, message.mode, message.addenda)
+      handleTranslate(message.text, message.targetLang, message.mode, message.profileId, message.feature, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true; // Keep channel open for async response
 
-    case 'TRANSLATE_BATCH':
-      handleBatchTranslate(message.texts, message.targetLang, message.addenda)
-        .then(sendResponse)
-        .catch(error => sendResponse({ error: error.message }));
-      return true;
-
     case 'TRANSLATE_BATCH_FAST':
-      handleBatchTranslateFast(message.texts, message.targetLang, message.delimiter, message.addenda)
+      handleBatchTranslateFast(message.texts, message.targetLang, message.profileId, message.feature, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -177,14 +171,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       openShortcutSettings().catch(error => console.warn('Blab Translation: opening shortcut settings failed', error));
       break;
 
-    // 同步存储的五个写消息：站点规则、本机统计、用户站点规则、漫画提示、术语表。内容
-    // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
+    // 同步存储的六个写消息：站点规则、本机统计、用户站点规则、漫画提示、AI 配置档、
+    // 术语表。内容脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
     // 自己的模块里（STORAGE_WRITERS），这里只管转接。
     case 'SITE_RULES_WRITE':
     case 'AUTO_STATS_WRITE':
     case 'CUSTOM_RULES_WRITE':
     case 'COMIC_HINT_WRITE':
+    case 'AI_PROFILES_WRITE':
     case 'GLOSSARY_WRITE':
       STORAGE_WRITERS[message.type]().applyWrite(message, sender)
         .then(value => sendResponse({ value }))
@@ -336,6 +331,8 @@ chrome.runtime.onInstalled.addListener((details) => {
   // Jobs survive a browser restart; the alarm that watches them must too.
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
+  // 旧四键 → AI 配置档（设计 §2.6）；失败下次读配置档时再试。
+  ensureMigrated().catch(error => console.error('AI profile migration failed:', error));
   // First install only: the welcome page (./install.js decides which reasons).
   Promise.resolve(openOnboardingOnInstall(details))
     .catch(error => console.error('Opening the onboarding page failed:', error));
@@ -345,6 +342,7 @@ chrome.runtime.onStartup.addListener(() => {
   createContextMenus();
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
+  ensureMigrated().catch(error => console.error('AI profile migration failed:', error));
 });
 
 // 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文、Alt+W 翻译整个页面）。分派表和
@@ -354,66 +352,45 @@ chrome.commands.onCommand.addListener((command, tab) => {
   runCommand(command, tab).catch(error => console.error('Shortcut failed:', command, error));
 });
 
-// 三个翻译处理函数的次序一样：缺 Key 就回话；然后先把关附加说明
-// （PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能是
-// 缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。
+// 两个翻译处理函数的次序一样：先按消息里的 profileId 取整档（没带是内容脚本的
+// 缺陷；带了却不在是用户能看到的「配置档不存在」）；缺 Key 就回话；然后把关附加
+// 说明（PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能
+// 是缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。失败
+// 只在 replyError 记一次日志（操作名、档 id、功能、原始错误）。
 
 // Handle single text translation
-async function handleTranslate(text, targetLang, mode, addenda) {
+async function handleTranslate(text, targetLang, mode, profileId, feature, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
-
-  const missingKey = missingApiKeyMessage(settings);
-  if (missingKey) {
-    return { error: missingKey };
-  }
-
+  let profile;
   try {
+    profile = await profileById(profileId);
+    const missingKey = missingApiKeyMessage(profile, settings);
+    if (missingKey) {
+      return { error: missingKey };
+    }
     globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const result = await translateTextWithMode(text, effectiveLang, settings, mode === 'word', addenda);
-    return result;
+    return await translateTextWithMode(text, effectiveLang, profile, settings, mode === 'word', addenda);
   } catch (error) {
-    console.error('Translation error:', error);
-    return { error: apiErrorMessage(error, settings) };
+    return replyError('TRANSLATE', error, { settings, profile, profileId, feature });
   }
 }
 
-// Handle batch translation
-async function handleBatchTranslate(texts, targetLang, addenda) {
+// Handle fast batch translation (the delimiter is shared/batch-delimiter.js)
+async function handleBatchTranslateFast(texts, targetLang, profileId, feature, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
-
-  const missingKey = missingApiKeyMessage(settings);
-  if (missingKey) {
-    return { error: missingKey };
-  }
-
+  let profile;
   try {
+    profile = await profileById(profileId);
+    const missingKey = missingApiKeyMessage(profile, settings);
+    if (missingKey) {
+      return { error: missingKey };
+    }
     globalThis.PromptAddenda.validate(addenda);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchWithAI(texts, effectiveLang, settings, addenda);
+    const translations = await translateBatchFastWithAI(texts, effectiveLang, profile, settings, addenda);
     return { translations };
   } catch (error) {
-    console.error('Batch translation error:', error);
-    return { error: apiErrorMessage(error, settings) };
-  }
-}
-
-// Handle fast batch translation with delimiter
-async function handleBatchTranslateFast(texts, targetLang, delimiter = '|||', addenda) {
-  const settings = await chrome.storage.sync.get(defaultSettings);
-
-  const missingKey = missingApiKeyMessage(settings);
-  if (missingKey) {
-    return { error: missingKey };
-  }
-
-  try {
-    globalThis.PromptAddenda.validate(addenda);
-    const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    const translations = await translateBatchFastWithAI(texts, effectiveLang, settings, delimiter, addenda);
-    return { translations };
-  } catch (error) {
-    console.error('Fast batch translation error:', error);
-    return { error: apiErrorMessage(error, settings) };
+    return replyError('TRANSLATE_BATCH_FAST', error, { settings, profile, profileId, feature });
   }
 }

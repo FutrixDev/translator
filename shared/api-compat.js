@@ -400,6 +400,10 @@
       return typeof text === 'string' && text ? text : key;
     };
 
+    // callModel 在 SW 里加的两种失败：档的 timeoutSec 到了，或者模型回了空答案。
+    if (f.timeout) return say('apiErrorTimeout').replace('{seconds}', String(f.seconds));
+    if (f.empty) return say('apiErrorEmpty');
+
     if (f.network) {
       const key = isLocalEndpoint(f.endpoint) ? 'apiErrorLocalUnreachable' : 'apiErrorNetwork';
       return say(key).replace('{endpoint}', urlPart(f.endpoint, 'origin') || String(f.endpoint || ''));

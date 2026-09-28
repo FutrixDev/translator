@@ -8,7 +8,7 @@
 //   - buildPrompt 的顺序：模板 → 附加说明块 → 公式占位符规则 → extraRules。
 //   - background/ai-translate.js 的每一条路（单句、单词、编号批、快速批、快速批
 //     回退编号批，各自的默认模板与自定义提示词两支）发出去的系统提示词都带那一句。
-//   - 三个处理函数先 validate 再翻译。
+//   - 两个处理函数先 validate 再翻译。
 //
 // shared/prompt-addenda.js 与 background/prompts.js 的 composePromptAddenda：
 // 附加说明（词表、领域、页面上下文）随 AI 请求去，形状在 SW 入口把关，拼成系统
@@ -63,12 +63,18 @@ const ai = await import('../../background/ai-translate.js');
 const { PromptAddenda, SiteRules, SiteRulesBuiltin } = globalThis;
 const FORUM = { register: 'forum' };
 const FORUM_LINE = `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`;
-const SETTINGS = {
+// 接口、Key、模型、超时属于 AI 配置档（P1-D），自定义提示词还在设置里。
+const PROFILE = {
+  id: 'default',
+  provider: 'openai',
   apiEndpoint: 'https://api.openai.com/v1/chat/completions',
   apiKey: 'test-key',
   modelName: 'gpt-4.1-mini',
-  customPrompt: '',
+  timeoutSec: 60,
 };
+const SETTINGS = { customPrompt: '' };
+// 快速批的分隔符只有一处（shared/batch-delimiter.js），消息里不再带。
+const FAST_REPLY = `A${globalThis.BATCH_DELIMITER}B`;
 const CUSTOM = { ...SETTINGS, customPrompt: 'Translate into {targetLang}. Be brief.' };
 
 function systemPrompts() {
@@ -238,14 +244,14 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
   test(`every AI path carries the addendum (${label})`, async () => {
     reply = () => 'translated';
     const single = await sentWith(() => ai.translateTextWithMode(
-      'A sentence long enough not to count as one word.', 'zh-CN', settings, false, FORUM));
-    const word = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', settings, true, FORUM));
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, FORUM));
+    const word = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, FORUM));
 
     reply = () => '[1] A\n\n[2] B';
-    const numbered = await sentWith(() => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', settings, FORUM));
+    const numbered = await sentWith(() => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, FORUM));
 
-    reply = () => 'A@@B';
-    const fast = await sentWith(() => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', settings, '@@', FORUM));
+    reply = () => FAST_REPLY;
+    const fast = await sentWith(() => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, FORUM));
 
     for (const [path, sent] of Object.entries({ single, word, numbered, fast })) {
       assert.equal(sent.length, 1, `${path}: ${sent.length} requests`);
@@ -256,7 +262,7 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
   test(`the fast batch's numbered fallback carries the addendum too (${label})`, async () => {
     // 快速批段数对不上就改发编号批 —— 第二个请求也得带着这一页的体裁。
     reply = (system) => (/segments are separated/.test(system) ? 'only one segment' : '[1] A\n\n[2] B');
-    const sent = await sentWith(() => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', settings, '@@', FORUM));
+    const sent = await sentWith(() => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, FORUM));
     assert.equal(sent.length, 2, 'the fallback did not happen');
     assert.doesNotMatch(sent[1], /segments are separated/);
     assert.ok(sent[1].includes(FORUM_LINE), `the fallback lost the addendum:\n${sent[1]}`);
@@ -266,7 +272,7 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
 test('with empty addenda the system prompt carries no register line at all', async () => {
   reply = () => 'translated';
   const sent = await sentWith(() => ai.translateTextWithMode(
-    'A sentence long enough not to count as one word.', 'zh-CN', SETTINGS, false, {}));
+    'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, SETTINGS, false, {}));
   assert.doesNotMatch(sent[0], new RegExp(PromptAddenda.HEADINGS.register));
 });
 
@@ -276,10 +282,10 @@ test('a custom prompt of only whitespace is no custom prompt, on every path (R33
   const BLANK = { ...SETTINGS, customPrompt: ' \n\t ' };
   const paths = {
     single: [() => 'translated', (settings) => ai.translateTextWithMode(
-      'A sentence long enough not to count as one word.', 'zh-CN', settings, false, {})],
-    word: [() => 'translated', (settings) => ai.translateTextWithMode('hello', 'zh-CN', settings, true, {})],
-    numbered: [() => '[1] A\n\n[2] B', (settings) => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', settings, {})],
-    fast: [() => 'A@@B', (settings) => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', settings, '@@', {})],
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, {})],
+    word: [() => 'translated', (settings) => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {})],
+    numbered: [() => '[1] A\n\n[2] B', (settings) => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
+    fast: [() => FAST_REPLY, (settings) => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
   };
   for (const [path, [answer, run]] of Object.entries(paths)) {
     reply = answer;
@@ -290,13 +296,14 @@ test('a custom prompt of only whitespace is no custom prompt, on every path (R33
   }
 });
 
-// ---- 服务工作者的三个处理函数：先把关，再翻译 ------------------------------
+// ---- 服务工作者的两个处理函数：先把关，再翻译 ------------------------------
 
 test('each TRANSLATE handler validates the addenda before it translates, and the switch hands them over', () => {
   const src = workerSource();
+  // P1-D 删了 TRANSLATE_BATCH 与 handleBatchTranslate：编号批只剩快速批的回退，
+  // 那一路由上面「fallback carries the addendum」钉住。
   const handlers = {
     handleTranslate: 'translateTextWithMode(',
-    handleBatchTranslate: 'translateBatchWithAI(',
     handleBatchTranslateFast: 'translateBatchFastWithAI(',
   };
   for (const [name, call] of Object.entries(handlers)) {

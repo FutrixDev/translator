@@ -1,7 +1,12 @@
 // Blab Translation background — 用用户自己的模型翻译。
 //
-// 这一层只管「怎么问模型、怎么读回答」。要不要问（有没有 Key、译成哪门语言）由
-// background.js 的三个 handler 答，怎么发出去由 api-client.js 答。
+// 这一层只管「怎么问模型、怎么读回答」。要不要问、问哪一档（有没有 Key、译成
+// 哪门语言、消息里的 profileId）由 background.js 的两个 handler 答，怎么发出去
+// 由 model-client.js 的 callModel 答。
+//
+// 五个翻译函数都收 (profile, settings)：profile 是整档（含 Key，发给谁、用哪个
+// 模型），settings 只剩提示词相关的键（customPrompt）。空答案由 callModel 抛
+// { empty }，这里不再拿原文当译文。
 //
 // 五个翻译函数都收一个可选的 addenda（语域、领域、词表、页面上下文，形状见
 // shared/prompt-addenda.js，处理函数已把过关），原样交给 buildPrompt 的
@@ -14,6 +19,7 @@
 
 import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
+import '../shared/batch-delimiter.js';
 import { languageNames } from './settings.js';
 import {
   BATCH_OUTPUT_RULES,
@@ -26,12 +32,8 @@ import {
   buildPrompt,
   getFastBatchOutputRules,
 } from './prompts.js';
-import {
-  callClaudeAPI,
-  callOpenAIAPI,
-  countCharsSentToModel,
-  isClaudeAPI,
-} from './api-client.js';
+import { countCharsSentToModel } from './api-client.js';
+import { callModel } from './model-client.js';
 
 function isSingleWordText(text) {
   if (!text) return false;
@@ -99,8 +101,16 @@ function usesCustomPrompt(settings) {
   return Boolean(settings.customPrompt && settings.customPrompt.trim());
 }
 
+// One call to this profile's model. callModel throws on an empty answer
+// ({ empty }), so every path below reads a non-empty `text`. Claude ignores
+// `temperature` (api-compat drops it for models that reject it).
+async function ask(profile, system, user, maxTokens, temperature) {
+  const { text } = await callModel(profile, { system, user, maxTokens, temperature });
+  return text;
+}
+
 // Translate single text with AI
-async function translateWithAI(text, targetLang, settings, addenda) {
+async function translateWithAI(text, targetLang, profile, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // A custom prompt gets the register rule appended, as the batch paths append
@@ -109,81 +119,34 @@ async function translateWithAI(text, targetLang, settings, addenda) {
     ? buildPrompt(settings.customPrompt, targetLangName, {}, REGISTER_RULE, { addenda })
     : buildPrompt(DEFAULT_PROMPT, targetLangName, {}, '', { addenda });
 
-  // Auto-detect API type and call appropriate function
-  if (isClaudeAPI(settings.apiEndpoint)) {
-    const result = await callClaudeAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      text,
-      2000
-    );
-    return result || text;
-  } else {
-    const result = await callOpenAIAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      text,
-      2000,
-      0.3
-    );
-    return result || text;
-  }
+  return ask(profile, systemPrompt, text, 2000, 0.3);
 }
 
 // Translate single word with IPA (no math placeholder rule)
-async function translateSingleWordWithAI(text, targetLang, settings, addenda) {
+async function translateSingleWordWithAI(text, targetLang, profile, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
   const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda })
     : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false, addenda });
 
-  let content;
-  if (isClaudeAPI(settings.apiEndpoint)) {
-    content = await callClaudeAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      text,
-      800
-    );
-  } else {
-    content = await callOpenAIAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      text,
-      800,
-      0.3
-    );
-  }
-
-  const parsed = parseWordTranslation(content);
-  if (!parsed.translation) {
-    parsed.translation = text.trim();
-  }
-  return parsed;
+  // A non-empty answer always parses to a non-empty translation.
+  return parseWordTranslation(await ask(profile, systemPrompt, text, 800, 0.3));
 }
 
-async function translateTextWithMode(text, targetLang, settings, forceWord = false, addenda) {
+async function translateTextWithMode(text, targetLang, profile, settings, forceWord = false, addenda) {
   countCharsSentToModel(globalThis.AutoStats.sentChars(text, addenda));
 
   if (forceWord || isSingleWordText(text)) {
-    const result = await translateSingleWordWithAI(text, targetLang, settings, addenda);
+    const result = await translateSingleWordWithAI(text, targetLang, profile, settings, addenda);
     return { ...result, isWord: true };
   }
 
-  const translation = await translateWithAI(text, targetLang, settings, addenda);
+  const translation = await translateWithAI(text, targetLang, profile, settings, addenda);
   return { translation, phonetic: '', isWord: false };
 }
 
 // Translate batch of texts with AI (numbered format)
-async function translateBatchWithAI(texts, targetLang, settings, addenda) {
+async function translateBatchWithAI(texts, targetLang, profile, settings, addenda) {
   // 快速分批回退到这里时会再走一遍这一句 —— 那本来就是第二次真发出去的请求。
   countCharsSentToModel(globalThis.AutoStats.sentChars(texts, addenda));
 
@@ -197,38 +160,15 @@ async function translateBatchWithAI(texts, targetLang, settings, addenda) {
     ? buildPrompt(settings.customPrompt, targetLangName, {}, BATCH_OUTPUT_RULES, { addenda })
     : buildPrompt(DEFAULT_BATCH_PROMPT, targetLangName, {}, '', { addenda });
 
-  // Auto-detect API type and call appropriate function
-  let content;
-  if (isClaudeAPI(settings.apiEndpoint)) {
-    content = await callClaudeAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      numberedTexts,
-      4000
-    );
-  } else {
-    content = await callOpenAIAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      numberedTexts,
-      4000,
-      0.3
-    );
-  }
-
-  // Parse numbered response
-  const translations = parseNumberedResponse(content, texts.length);
-  return translations;
+  const content = await ask(profile, systemPrompt, numberedTexts, 4000, 0.3);
+  return parseNumberedResponse(content, texts.length);
 }
 
-// Fast batch translation with delimiter
-async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫', addenda) {
+// Fast batch translation with the one delimiter (shared/batch-delimiter.js)
+async function translateBatchFastWithAI(texts, targetLang, profile, settings, addenda) {
   countCharsSentToModel(globalThis.AutoStats.sentChars(texts, addenda));
 
+  const delimiter = globalThis.BATCH_DELIMITER;
   const targetLangName = languageNames[targetLang] || targetLang;
 
   // Join texts with delimiter
@@ -238,28 +178,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
     ? buildPrompt(settings.customPrompt, targetLangName, { delimiter }, getFastBatchOutputRules(delimiter), { addenda })
     : buildPrompt(FAST_BATCH_PROMPT, targetLangName, { delimiter }, '', { addenda });
 
-  // Auto-detect API type and call appropriate function
-  let content;
-  if (isClaudeAPI(settings.apiEndpoint)) {
-    content = await callClaudeAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      joinedTexts,
-      16000
-    );
-  } else {
-    content = await callOpenAIAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      joinedTexts,
-      16000,
-      0.1
-    );
-  }
+  const content = await ask(profile, systemPrompt, joinedTexts, 16000, 0.1);
 
   // Parse by delimiter
   const segments = content.split(delimiter).map(t => t.trim());
@@ -274,7 +193,7 @@ async function translateBatchFastWithAI(texts, targetLang, settings, delimiter =
       `Blab Translation: fast-batch delimiter split produced ${segments.length} segments ` +
       `for ${texts.length} inputs; falling back to numbered batch to avoid misaligned translations`
     );
-    return translateBatchWithAI(texts, targetLang, settings, addenda);
+    return translateBatchWithAI(texts, targetLang, profile, settings, addenda);
   }
 
   return segments;

@@ -372,11 +372,12 @@ test('「发给模型的字符数」一次调用记一笔，不多不少', () =>
   // 记在三个真发请求的函数上，不记在消息监听器里。监听器两头都漏：前面漏掉
   // 缺 Key 那一关（missingApiKeyMessage，没配 Key 时一个字符也没发出去，而自动翻译
   // 一页最多同时开 12 批，整页整页地虚记），后面漏掉快速分批分隔符对不上时的
-  // 整批重发（一条消息两次调用）。
-  for (const fn of ['handleTranslate', 'handleBatchTranslate', 'handleBatchTranslateFast']) {
+  // 整批重发（一条消息两次调用）。编号批不再有自己的消息（P1-D 删了
+  // TRANSLATE_BATCH），只作快速批的回退；缺 Key 那一关问的是这一次请求用的配置档。
+  for (const fn of ['handleTranslate', 'handleBatchTranslateFast']) {
     const body = bg.match(new RegExp(`async function ${fn}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
     assert.ok(body, `${fn} 不见了`);
-    assert.match(body[0], /const missingKey = missingApiKeyMessage\(settings\);\s*if \(missingKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
+    assert.match(body[0], /const missingKey = missingApiKeyMessage\(profile, settings\);\s*if \(missingKey\) \{/, `${fn} 的前提变了，记账那一侧要跟着改`);
     assert.doesNotMatch(body[0], /countCharsSentToModel/, `${fn} 在缺 Key 那一关这一侧，记不得账`);
   }
 
@@ -389,7 +390,7 @@ test('「发给模型的字符数」一次调用记一笔，不多不少', () =>
   // 回退那一次走的就是 translateBatchWithAI，于是自然记第二笔 —— 靠的是这一句，
   // 不是在回退处另记一笔。回退也带着这一页的附加说明（R33 A4）：语域与词表都不能在
   // 第二次请求里丢掉。
-  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings, addenda\);/);
+  assert.match(bg, /return translateBatchWithAI\(texts, targetLang, profile, settings, addenda\);/);
   // 求和只有一处（shared/auto-stats.js 的 sentChars：源文本加页面上下文），三个
   // 调用点不各抄一遍。
   assert.equal((bg.match(/AutoStats\.sentChars\(/g) || []).length, 3);
@@ -406,11 +407,11 @@ test('textsChars( is called only inside shared/auto-stats.js: every counter goes
   assert.match(engineSource(), /AutoStats\.sentChars\(\s*Array\.isArray\(message\.texts\) \? message\.texts : message\.text,\s*message\.addenda,?\s*\)/);
 });
 
-test('the three TRANSLATE handlers validate addenda before counting and calling the model', () => {
+test('the two TRANSLATE handlers validate addenda before counting and calling the model', () => {
   const bg = workerSource();
+  // P1-D 删了 TRANSLATE_BATCH 与 handleBatchTranslate：编号批只剩快速批的回退。
   for (const [fn, call] of [
     ['handleTranslate', 'translateTextWithMode'],
-    ['handleBatchTranslate', 'translateBatchWithAI'],
     ['handleBatchTranslateFast', 'translateBatchFastWithAI'],
   ]) {
     const body = bg.match(new RegExp(`async function ${fn}\\([^)]*addenda\\) \\{[\\s\\S]*?\\n\\}`));
@@ -419,7 +420,7 @@ test('the three TRANSLATE handlers validate addenda before counting and calling 
     const called = body[0].search(new RegExp(`${call}\\([^)]*addenda\\)`));
     assert.ok(validated > 0 && called > validated, `${fn} must validate addenda, then pass it to ${call}`);
   }
-  for (const type of ['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']) {
+  for (const type of ['TRANSLATE', 'TRANSLATE_BATCH_FAST']) {
     const route = bg.match(new RegExp(`case '${type}':\\s*\\n\\s*handle\\w+\\(([^)]*)\\)`));
     assert.ok(route && /message\.addenda/.test(route[1]), `${type} does not hand message.addenda on`);
   }
