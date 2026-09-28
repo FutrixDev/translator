@@ -65,6 +65,11 @@
     return String(s == null ? '' : s).normalize('NFC').trim().replace(/\s+/g, ' ');
   }
 
+  /** 添加词条时「区分大小写」的缺省：原文含大写字母就区分（设置页表单、划词卡片共用）。 */
+  function caseSensitiveByDefault(s) {
+    return /\p{Lu}/u.test(s);
+  }
+
   function isPresent(value) {
     return value !== undefined && value !== null && value !== '';
   }
@@ -296,6 +301,7 @@
     userErrorKey,
     newId: collection.newId,
     normalizeSource,
+    caseSensitiveByDefault,
     dedupeKey,
     validateEntry,
     pick,

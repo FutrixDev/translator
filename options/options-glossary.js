@@ -310,7 +310,7 @@ function openGlossaryEditor(entry) {
     let touched = false;
     caseBox.addEventListener('change', () => { touched = true; });
     fields.source.addEventListener('input', () => {
-      if (!touched) caseBox.checked = /\p{Lu}/u.test(fields.source.value);
+      if (!touched) caseBox.checked = Glossary.caseSensitiveByDefault(fields.source.value);
     });
   }
   // 站点失焦时规范化后回填，存进去的就是看到的。规范化后什么都不剩的（'...'）
