@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -211,27 +212,21 @@ export function repoSource(rel) {
   return readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
-// 产品代码之外的目录：测试自己、第三方、文档、产物、别的 worktree。
-const NON_PRODUCT_DIRS = new Set(['node_modules', '.worktrees', '.git', 'test', 'vendor', 'docs', 'dist']);
+// 仓库里跟踪着、但不是产品代码的三棵树：测试自己、第三方、文档。
+const NON_PRODUCT_TREES = ['test/', 'vendor/', 'docs/'];
 
 /**
  * 仓库里全部产品源码的相对路径（.js / .mjs / .html，排好序）。「某种写法只准在
  * 一个文件里出现」这类扫描守卫从这里取清单，不各写一份目录遍历。
+ *
+ * 只认 `git ls-files` 列出的已跟踪文件（D-390）：别的会话留在工作区里的未跟踪
+ * 副本（`.claude/worktrees/*` 之类）不是产品源码，按磁盘遍历会把它们当成产品扫。
  */
 export function productSourceFiles() {
-  const out = [];
-  const walk = (dir) => {
-    for (const name of readdirSync(path.join(ROOT, dir))) {
-      const rel = dir ? `${dir}/${name}` : name;
-      if (statSync(path.join(ROOT, rel)).isDirectory()) {
-        if (!NON_PRODUCT_DIRS.has(name)) walk(rel);
-      } else if (/\.(m?js|html)$/.test(name)) {
-        out.push(rel);
-      }
-    }
-  };
-  walk('');
-  return out.sort();
+  return execFileSync('git', ['-C', ROOT, 'ls-files', '-z'], { encoding: 'utf8' })
+    .split('\0')
+    .filter((rel) => /\.(m?js|html)$/.test(rel) && !NON_PRODUCT_TREES.some((tree) => rel.startsWith(tree)))
+    .sort();
 }
 
 /**
