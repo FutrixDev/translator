@@ -115,10 +115,16 @@ html body #ai-translator-caption-more[aria-expanded="true"] {
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* Box properties are pinned, not inherited: YouTube's delhi-modern player
+   pads every `.ytp-button svg` by 12px a side (border-box), which squeezes a
+   22px icon to zero width and left an empty black slot in the control bar. */
 html body #ai-translator-caption-more svg {
   width: 12px;
   height: 12px;
   display: block;
+  box-sizing: content-box;
+  margin: 0;
+  padding: 0;
   opacity: 1;
   filter: none;
   transform: none;
@@ -129,6 +135,9 @@ html body #ai-translator-caption-btn svg {
   width: 22px;
   height: 22px;
   display: block;
+  box-sizing: content-box;
+  margin: 0;
+  padding: 0;
   opacity: 1;
   filter: none;
   transform: none;

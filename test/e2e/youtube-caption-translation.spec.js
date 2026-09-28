@@ -764,6 +764,60 @@ test('on the split control bar the button joins the caption-side group, beside C
   ]);
 });
 
+// The live delhi-modern player pads every `.ytp-button svg` (YouTube's own
+// rule, copied verbatim below). Our button wears `ytp-button` to take the
+// bar's sizing, and with that padding the 22px border-box icon was squeezed to
+// zero width: the viewer saw an empty black slot beside the chevron.
+const delhiModernBarHtml = splitBarHtml
+  .replace('</style>', `  .ytp-delhi-modern-icons .ytp-chrome-controls .ytp-button svg{padding:var(--yt-delhi-pill-top-height,12px) 12px;box-sizing:border-box;}
+</style>`)
+  .replace('<div id="movie_player">', '<div id="movie_player" class="ytp-delhi-modern-icons">')
+  .replace('<div class="ytp-chrome-bottom">', '<div class="ytp-chrome-bottom"><div class="ytp-chrome-controls">')
+  .replace(`      </div>
+    </div>
+  </div>
+  <button class="ytp-subtitles-button" aria-pressed="true"></button>`, `      </div>
+    </div></div>
+  </div>
+  <button class="ytp-subtitles-button" aria-pressed="true"></button>`);
+
+test('on the delhi-modern bar the icon still draws inside its button', async ({ page, context }) => {
+  expect(delhiModernBarHtml).toContain('ytp-chrome-controls');
+  await openPlayer(page, context, BASE_SETTINGS, delhiModernBarHtml);
+  const btn = page.locator('.ytp-chrome-controls .ytp-right-controls-left > #ai-translator-caption-btn');
+  await expect(btn).toHaveCount(1);
+
+  const geometry = await page.evaluate(() => {
+    const box = (sel) => {
+      const el = document.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      const inner = el.querySelector('svg').getBoundingClientRect();
+      const cs = getComputedStyle(el.querySelector('svg'));
+      return {
+        outer: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+        svg: { left: inner.left, right: inner.right, top: inner.top, bottom: inner.bottom },
+        content: {
+          width: inner.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+          height: inner.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+        },
+      };
+    };
+    return { icon: box('#ai-translator-caption-btn'), more: box('#ai-translator-caption-more') };
+  });
+
+  // The drawing area, not just the element: a padded border-box svg keeps its
+  // 22px box while the paths inside get nothing.
+  expect(geometry.icon.content.width).toBe(22);
+  expect(geometry.icon.content.height).toBe(22);
+  expect(geometry.more.content.width).toBe(12);
+  for (const { outer, svg } of [geometry.icon, geometry.more]) {
+    expect(svg.left).toBeGreaterThanOrEqual(outer.left);
+    expect(svg.right).toBeLessThanOrEqual(outer.right);
+    expect(svg.top).toBeGreaterThanOrEqual(outer.top);
+    expect(svg.bottom).toBeLessThanOrEqual(outer.bottom);
+  }
+});
+
 // ------------------------------------------------------------------- PR-9
 // 替观众按播放器自己的 CC 按钮。YouTube 上这件事尤其值——大多数视频没有人工字幕，
 // 而 CC 按钮点出来的自动字幕走的是同一个 /api/timedtext，拦截器照样收得到。
@@ -839,4 +893,41 @@ test('a video with no captions at all says so, instead of offering a dead button
 
   await nativeRow.click();
   expect(await page.evaluate(() => window.__ccClicks)).toBe(1);
+});
+
+// The plate is the viewer's pick, and a light or fully transparent one takes
+// away the only thing that separated the lines from the picture. The original
+// line had no edge of its own, so over a bright frame it simply vanished while
+// the translated line (which had a shadow) still read.
+test('both caption lines keep an edge when the plate is transparent', async ({ page, context }) => {
+  await openPlayer(page, context, {
+    ...BASE_SETTINGS,
+    youtubeCaptionBgColor: '#ffffff',
+    youtubeCaptionBgOpacity: 0,
+  });
+  await playCue(page);
+  const overlay = page.locator('#ai-translator-caption-overlay');
+  await expect(overlay.locator('.ai-translator-caption-original')).toHaveText('Hello world');
+  await expect(overlay.locator('.ai-translator-caption-line')).toHaveText('你好世界');
+
+  const lines = await page.evaluate(() => {
+    const o = document.querySelector('#ai-translator-caption-overlay');
+    const read = (sel) => {
+      const el = o.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      return { shadow: getComputedStyle(el).textShadow, width: r.width, height: r.height };
+    };
+    return {
+      plate: getComputedStyle(o.querySelector('.ai-translator-caption-block')).backgroundColor,
+      original: read('.ai-translator-caption-original'),
+      translated: read('.ai-translator-caption-line'),
+    };
+  });
+  expect(lines.plate).toBe('rgba(255, 255, 255, 0)');
+  for (const line of [lines.original, lines.translated]) {
+    expect(line.width).toBeGreaterThan(0);
+    expect(line.height).toBeGreaterThan(0);
+    expect(line.shadow).not.toBe('none');
+  }
+  expect(lines.original.shadow).toBe(lines.translated.shadow);
 });

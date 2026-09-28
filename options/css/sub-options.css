@@ -90,6 +90,8 @@
   padding: 3px 12px;
   border-radius: 6px;
   background: var(--cap-preview-bg, rgba(8, 8, 8, 0.82));
+  /* Both lines inherit it, as in the player (light-theme.css). */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .caption-preview-original {
@@ -108,5 +110,4 @@
   line-height: 1.35;
   text-align: center;
   color: var(--cap-preview-fg, #ffffff);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
