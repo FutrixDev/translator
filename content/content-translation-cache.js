@@ -13,38 +13,25 @@
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
 
-  const PROFILE_KEYS = ['apiEndpoint', 'modelName', 'customPrompt'];
+  // 接口地址和模型来自这次请求解析出的 AI 配置档（ctx.aiProfiles，P1-D §3.4），
+  // sync 里只剩自定义提示词这一键要读。apiKey 不进键：它不改变译文，而键会以明文
+  // 落进 storage；镜像里本来也没有它。
+  const PROMPT_KEYS = ['customPrompt'];
 
-  let profilePromise = null;
+  let promptPromise = null;
 
-  /**
-   * 读出影响译文内容的那几项设置。
-   *
-   * 刻意不写默认值：键只需要稳定且可区分，不需要认得出「这是出厂值」。
-   * 在这里重述一遍 apiEndpoint/modelName 的默认值，就是把同一份常量抄到第三个
-   * 地方（background.js 和 options.js 已经各有一份），而它带来的全部好处是
-   * 用户手动把模型填成出厂同名值时少一次缓存失效。
-   *
-   * apiKey 不在这里，也不该在：它不改变译文，而键会以明文落进 storage。
-   */
-  function loadProfile() {
-    if (!profilePromise) {
-      profilePromise = chrome.storage.sync.get(PROFILE_KEYS).then((stored) => ({
-        endpoint: stored.apiEndpoint || '',
-        model: stored.modelName || '',
-        prompt: stored.customPrompt || '',
-        // 内置提示词（background.js 的 DEFAULT_BATCH_PROMPT 那一套）没有版本号，
-        // 版本号就是它的版本号：改提示词必然伴随一次发版，而发版必然改这里。
-        version: chrome.runtime.getManifest().version
-      })).catch((error) => {
-        // 读不到设置就不缓存，而不是拿一组空因子去建键：那会把不同模型、
-        // 不同提示词的译文混进同一个键里。
-        console.warn('Blab Translation: translation cache profile unavailable', error);
-        profilePromise = null;
-        return null;
-      });
+  /** 自定义提示词。读失败就抛（不拿空串建键，那会把两套提示词的译文混进一个键）。 */
+  function loadPrompt() {
+    if (!promptPromise) {
+      promptPromise = chrome.storage.sync.get(PROMPT_KEYS).then(
+        (stored) => stored.customPrompt || '',
+        (error) => {
+          promptPromise = null;
+          throw error;
+        },
+      );
     }
-    return profilePromise;
+    return promptPromise;
   }
 
   // ---- 本页内存缓存的代数：ctx.translationProfile ----
@@ -58,14 +45,16 @@
   //   - 设置：bootstrap 的 storage 监听写完 ctx.settings 之后转来 sync 增量
   //     （onSettingsChanged）。sync 的监听只有 bootstrap 一处。
   //   - 词表：订阅 ctx.glossary，本页生效词条的签名（id 加 u）真变了才加一代。
-  //   - 规则：订阅 ctx.customRules.onProfileChange（本站规则钉住的引擎或领域变了
-  //     才回调）。manifest 里 content/page/custom-rule.js 因此排在这个文件之前。
+  //   - 规则：订阅 ctx.customRules.onProfileChange（本站规则钉住的引擎、领域或
+  //     配置档变了才回调）。manifest 里 content/page/custom-rule.js 因此排在这个文件之前。
+  //   - 配置档：订阅 ctx.aiProfiles，本页任一功能解析出的档的接口地址或模型真变了
+  //     才加一代（content/content-ai-profiles.js 同样排在前面）。
   //
   // 子帧不自己加代，只跟顶层指令里的代数走（inherit，content/frames/child.js）：
   // 它的请求都在顶层执行，顶层的代数才是「这次按什么译」的那一份。
   const GENERATION_KEYS = [
-    'apiEndpoint', 'modelName', 'customPrompt', 'translationEngine', 'autoTranslateEngine',
-    'engineFallback', 'promptDomain', 'aiPageContext', 'provider',
+    'customPrompt', 'translationEngine', 'autoTranslateEngine', 'engineFallback', 'promptDomain',
+    'aiPageContext',
   ];
 
   let generation = 0;
@@ -105,6 +94,23 @@
 
   ctx.customRules.onProfileChange(bump);
 
+  // 镜像还没回话时什么都解析不出来，也就没有按它译过的东西：只记下第一次就绪时
+  // 的签名，不加代。
+  function profilesSignature() {
+    return JSON.stringify(globalThis.AIProfiles.FEATURES.map((feature) => {
+      const resolved = ctx.aiProfiles.resolve(feature);
+      return resolved.profile ? [resolved.profile.apiEndpoint, resolved.profile.modelName] : resolved.error;
+    }));
+  }
+
+  let profilesSigned = null;
+  ctx.aiProfiles.subscribe(() => {
+    if (ctx.aiProfiles.status() !== 'ready') return;
+    const next = profilesSignature();
+    if (profilesSigned !== null && next !== profilesSigned) bump();
+    profilesSigned = next;
+  });
+
   ctx.translationProfile = {
     generation: () => generation,
     subscribe(fn) {
@@ -112,7 +118,7 @@
       return () => generationSubscribers.delete(fn);
     },
     onSettingsChanged(changes) {
-      if (PROFILE_KEYS.some((key) => key in changes)) profilePromise = null;
+      if (PROMPT_KEYS.some((key) => key in changes)) promptPromise = null;
       if (GENERATION_KEYS.some((key) => key in changes)) bump();
     },
     inherit(next) {
@@ -155,19 +161,22 @@
       return ctx.sendTranslation(message);
     }
 
-    // 词表快照与领域、上下文开关只取这一次，一起经 opts 交给送出那一步：键里的
-    // 附加说明戳和真正发出去的提示词出自同一份。算键之后到送出之前还隔着读
-    // storage、等在途请求，那期间设置或词表变了只影响下一次请求（D-384 F1）。
-    // 有效领域要问本站规则，所以先等规则到。
+    // 词表快照、领域与上下文开关、配置档都只取这一次，一起经 opts 交给送出那一步：
+    // 键里的接口地址、模型、附加说明戳和真正发出去的请求出自同一份。算键之后到送出
+    // 之前还隔着读 storage、等在途请求，那期间设置、词表或配置档变了只影响下一次
+    // 请求（D-384 F1，P1-D §3.2）。有效领域和规则指定的档都要问本站规则，所以先等规则到。
     await ctx.customRules.whenReady();
+    await ctx.aiProfiles.whenReady();
     const snap = await ctx.engine.glossary.current(message.targetLang);
     const addendaSettings = ctx.engine.addenda.settings();
-    const sendOpts = { glossary: snap, addendaSettings };
+    const profile = ctx.aiProfiles.resolve(message.feature);
+    const sendOpts = { glossary: snap, addendaSettings, profile };
+    // 这个功能没有可用的档：没有键可建，交给送出那一步报出真实原因（未配置 / 档已删）。
+    if (!profile.profile) return ctx.sendTranslation(message, sendOpts);
     // message.addenda 是发起请求那一页的语域（R33 A4）：同一段文字在论坛上和在
     // 新闻站上可以译得不一样。键读它，没命中的那几条也带着它经
     // ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会各算各的。
-    const profile = await loadProfile();
-    if (!profile) return ctx.sendTranslation(message, sendOpts);
+    const prompt = await loadPrompt();
 
     // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
     // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
@@ -175,7 +184,12 @@
     const factors = {
       targetLang: message.targetLang || '',
       sourceLang: message.sourceLang || '',
-      ...profile,
+      endpoint: profile.profile.apiEndpoint,
+      model: profile.profile.modelName,
+      prompt,
+      // 内置提示词（background/prompts.js 那一套）没有版本号，扩展的版本号就是它的
+      // 版本号：改提示词必然伴随一次发版。
+      version: chrome.runtime.getManifest().version,
       // 按每段文字求值（serve 里）：语域戳加上这段命中的词条、领域和上下文开关，
       // 改一条词条只有含它的文字失效。怎么拼只有 content/engine/addenda.js 一处。
       addenda: (text) => ctx.engine.addenda.stamp(message.addenda, snap, text, addendaSettings)

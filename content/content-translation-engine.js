@@ -752,7 +752,8 @@
    *
    * `opts.glossary` 是调用方已经取好的词表快照、`opts.addendaSettings` 是它取好的
    * 领域与上下文开关（eng.addenda.settings()）：缓存层算键前取一次，键和请求出自
-   * 同一份（D-384 F1）；没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
+   * 同一份（D-384 F1）；`opts.profile` 是它解析好的配置档（P1-D §3.2，键里的接口
+   * 地址和模型出自它）。没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
    */
   ctx.sendTranslation = async function(message, opts = {}) {
     // 引擎谓词要问本站规则（siteEngine），规则先到再选；词表同样要先到，快照才
