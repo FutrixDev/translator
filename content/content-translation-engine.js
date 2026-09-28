@@ -652,7 +652,7 @@
       console.warn('Blab Translation: sendToModel has no AI profile (%s, profile %s, feature %s)',
         resolved.error, resolved.id || '(none)', original.feature);
       const t = ctx.t || ((key) => key);
-      return { error: t(resolved.error).replace('{name}', resolved.id || ''), engine: 'ai' };
+      return { error: t(AIProfiles.resolveMessageKey(resolved.error)).replace('{name}', resolved.id || ''), engine: 'ai' };
     }
     const { pageContext: _neighbours, ...unstamped } = original;
     const message = { ...unstamped, profileId: resolved.profile.id };

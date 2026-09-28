@@ -100,6 +100,8 @@ test('J-F5 an export leaves the API key out unless the box is ticked', async ({ 
   expect(plain.body.version).toBe(1);
   expect(plain.body.settings.targetLang).toBe('de');
   expect(plain.body.settings).not.toHaveProperty('apiKey');
+  // P1-D: the key lives in an AI profile now; the profile travels, its key does not.
+  expect(plain.body.aiProfiles.map((profile) => [profile.id, 'apiKey' in profile])).toEqual([['legacy', false]]);
   // Window geometry never travels.
   expect(plain.body.settings).not.toHaveProperty('youtubeCaptionPosXPct');
   expect(plain.body.settings).not.toHaveProperty('siteRules');
@@ -109,7 +111,8 @@ test('J-F5 an export leaves the API key out unless the box is ticked', async ({ 
 
   await page.locator('#transferIncludeApiKey').check();
   const withKey = await exportFile(page);
-  expect(withKey.body.settings.apiKey).toBe(PLACEHOLDER_KEY);
+  expect(withKey.body.settings).not.toHaveProperty('apiKey');
+  expect(withKey.body.aiProfiles.map((profile) => profile.apiKey)).toEqual([PLACEHOLDER_KEY]);
 });
 
 test('J-F6 an import is previewed, merged on confirm, and announced to open tabs', async ({ page, context, extensionId }) => {

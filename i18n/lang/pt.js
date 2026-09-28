@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'Importar e exportar',
-    transferDesc: 'Salve suas configurações, regras de sites, regras de tradução por site e seu glossário em um arquivo e carregue-as em outro navegador. Caches, estatísticas de uso e o login da sua conta ficam neste dispositivo.',
+    transferDesc: 'Salve suas configurações, perfis de IA, regras de sites, regras de tradução por site e seu glossário em um arquivo e carregue-as em outro navegador. Caches, estatísticas de uso e o login da sua conta ficam neste dispositivo.',
     transferExport: 'Exportar configurações',
     transferImport: 'Importar configurações…',
     transferIncludeApiKey: 'Incluir minha chave da API',
@@ -655,4 +655,24 @@
     aiPageContextHint: 'Envia também ao serviço de IA o título da página, para uma tradução mais coesa. Ao traduzir a página inteira, junta-se um trecho curto antes e depois; a tradução automática envia só o título. É enviado mais texto do que o traduzido e usa-se um pouco mais de cota.',
     customRuleDomain: 'Área',
     customRuleDomainInherit: 'Seguir a configuração global',
+    // AI profiles (P1-D)
+    aiProfileRpm: 'Solicitações por minuto',
+    aiProfileConcurrency: 'Solicitações simultâneas',
+    aiProfileTimeout: 'Tempo limite (segundos)',
+    hintAiProfileZeroUnlimited: '0 significa sem limite.',
+    hintAiProfileTimeout: 'Quanto esperar por uma solicitação, de 15 a 240 segundos.',
+    aiProfileMissing: 'O perfil de IA “{name}” não existe mais. Escolha outro nas configurações.',
+    aiProfileInvalid: 'Este perfil de IA não é válido. Verifique o endpoint, o modelo e os limites.',
+    aiProfileTooLarge: 'Este perfil de IA é grande demais para salvar. Encurte o nome, o endpoint ou a chave.',
+    aiProfilesBudgetFull: 'Não há espaço para outro perfil de IA (20 perfis, 8 KiB). Exclua um primeiro.',
+    aiProfileInUse: 'Regras de sites usam este perfil de IA: {rules}. Altere essas regras primeiro.',
+    aiProfileDefaultInUse: 'Este é o perfil de IA padrão. Defina outro perfil como padrão primeiro.',
+    aiProfileSaveFailed: 'Não foi possível salvar o perfil de IA. Tente novamente.',
+    aiProfileKeyMissing: '“{name}” não tem chave de API. Adicione-a nas configurações depois de importar.',
+    apiErrorTimeout: 'A solicitação expirou ({seconds} s)',
+    apiErrorEmpty: 'O serviço de IA retornou uma resposta vazia.',
+    customRuleProfileMissing: 'O perfil de IA usado por esta regra não existe.',
+    customRuleProfileWithBuiltin: 'Uma regra que usa o mecanismo integrado não pode indicar um perfil de IA.',
+    transferSectionAiProfiles: 'Perfis de IA',
+    transferPreviewAiProfiles: 'Perfis de IA: {added} serão adicionados, {replaced} substituídos.',
 };

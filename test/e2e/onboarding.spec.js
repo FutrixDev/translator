@@ -15,7 +15,7 @@
  */
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings, getSyncSettings, writeSyncSettings } = require('./helpers');
+const { setExtensionSettings, getSyncSettings, writeSyncSettings, getDefaultProfile } = require('./helpers');
 const { expectLaidOut } = require('./layout-checks');
 
 const en = (key) => getMessage(key, 'en');
@@ -152,12 +152,18 @@ test('J-F4 setting up AI on this computer writes the preset and opens the connec
     page.locator('#aiOllama').click(),
   ]);
 
-  await expect.poll(async () => getSyncSettings(context, ['translationEngine', 'provider', 'apiEndpoint', 'modelName'])).toEqual({
-    translationEngine: 'ai',
+  // P1-D: the engine switch is a sync setting; the provider, endpoint and model
+  // are the default AI profile, and the four old keys are never written again.
+  await expect.poll(async () => (await getSyncSettings(context, ['translationEngine'])).translationEngine).toBe('ai');
+  await expect.poll(async () => {
+    const profile = await getDefaultProfile(context);
+    return profile && { provider: profile.provider, apiEndpoint: profile.apiEndpoint, modelName: profile.modelName };
+  }).toEqual({
     provider: 'ollama',
     apiEndpoint: preset.endpoint,
     modelName: preset.defaultModel || '',
   });
+  expect(await getSyncSettings(context, ['provider', 'apiEndpoint', 'apiKey', 'modelName'])).toEqual({});
 
   expect(new URL(settingsPage.url()).hash).toBe('#apiSettingsCard');
   await settingsPage.waitForSelector('#provider');

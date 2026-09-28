@@ -39,16 +39,11 @@
     youtubeCaptionScale: '拖出来的设备几何，换一块屏幕就不对',
   });
 
-  // 凭证：只有用户勾了「包含 API Key」才导出。导入端照收 —— 文件里有它，说明
-  // 导出的那个人明确要带上。
-  const SECRET_KEYS = Object.freeze(['apiKey']);
-
   // 类型对了还不够的键：值要长成这样才收。
   const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
   const PATTERNS = Object.freeze({
     youtubeCaptionFontColor: HEX_COLOR,
     youtubeCaptionBgColor: HEX_COLOR,
-    apiEndpoint: /^https?:\/\/\S+$/,
   });
   const RANGES = Object.freeze({
     autoAiDailyBudget: [0, Number.MAX_SAFE_INTEGER],
@@ -96,12 +91,11 @@
    * 枚举表。合法值都从共享模块现取，调用方传进来，不在第二处写死。
    * 值是数组；'' 表示「跟随 / 未设」的那几个键把它列进去。
    */
-  function buildEnums({ providers, uiLanguages, targetLangs, cloudTargets, styles, domains }) {
+  function buildEnums({ uiLanguages, targetLangs, cloudTargets, styles, domains }) {
     return {
       translationEngine: ['builtin', 'ai'],
       autoTranslateEngine: ['builtin', 'ai'],
       engineFallback: ['local-only', 'allow-ai'],
-      provider: [...providers],
       selectionTranslationMode: ['inline', 'popup'],
       selectionTrigger: ['icon', 'modifier', 'both'],
       selectionTranslationHotkey: ['Shift', 'Alt', 'Control', 'Meta'],
@@ -120,12 +114,14 @@
     };
   }
 
-  /** 导出用：只取 schema 里的键；凭证默认不带。 */
-  function pickExport(stored, schema, { includeApiKey }) {
+  /**
+   * 导出用：只取 schema 里的键。settings 里已经没有凭证 —— API Key 跟着配置档走，
+   * 勾不勾「包含 API Key」由 aiProfiles 那一节管（设计 §2.8）。
+   */
+  function pickExport(stored, schema) {
     const out = {};
     for (const key of Object.keys(schema)) {
       if (!Object.prototype.hasOwnProperty.call(stored, key)) continue;
-      if (SECRET_KEYS.includes(key) && !includeApiKey) continue;
       out[key] = stored[key];
     }
     return out;
@@ -185,6 +181,35 @@
       else dropped.push(host);
     }
     return { value, accepted: Object.keys(value).length, dropped };
+  }
+
+  /**
+   * 旧文件（P1-D 之前导出的）把 AI 连接存成 settings 里的四个旧键。导入时把它们
+   * 转成一档（id 固定 legacy），并进 aiProfiles 一节，走同一次 import（设计 §2.8）。
+   *
+   * 四个旧键不在 schema 里，所以无论转没转成都不会写回 settings：转成了就从
+   * settings 里拿掉；转不成（旧值本身不合规，或文件自己的 aiProfiles 里已有
+   * legacy）就留着，由 validateSettings 按名字丢掉，预览照常列出来。文件没带
+   * apiKey（导出时没勾）时这一档也不带 apiKey 字段，导入就沿用本机同 id 档的 Key。
+   *
+   * @param profiles AIProfiles（fromLegacy / validate / LEGACY_ID / LEGACY_KEYS），
+   *                 由调用方传入，这个文件不去全局上找
+   * @returns 新的 file；没有可转的旧键时原样返回
+   */
+  function liftLegacyProfile(file, profiles) {
+    const settings = file.settings;
+    if (!isPlainObject(settings)) return file;
+    const legacy = profiles.fromLegacy(settings);
+    if (!legacy) return file;
+    const section = file.aiProfiles === undefined ? [] : file.aiProfiles;
+    if (!Array.isArray(section)) return file;
+    if (section.some((profile) => isPlainObject(profile) && profile.id === profiles.LEGACY_ID)) return file;
+    if (profiles.validate(legacy)) return file;
+    const profile = Object.assign({ id: profiles.LEGACY_ID }, legacy);
+    if (settings.apiKey === undefined) delete profile.apiKey;
+    const rest = Object.assign({}, settings);
+    for (const key of profiles.LEGACY_KEYS) delete rest[key];
+    return Object.assign({}, file, { settings: rest, aiProfiles: section.concat([profile]) });
   }
 
   function parseFile(text) {
@@ -259,7 +284,6 @@
     VERSION,
     MAX_FILE_BYTES,
     EXCLUDED,
-    SECRET_KEYS,
     TransferError,
     TransferApplyError,
     settingsSchema,
@@ -268,6 +292,7 @@
     validateSettings,
     changedKeys,
     validateSiteRules,
+    liftLegacyProfile,
     parseFile,
     buildFile,
     fileName,

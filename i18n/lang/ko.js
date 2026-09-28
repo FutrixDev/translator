@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: '가져오기 및 내보내기',
-    transferDesc: '설정, 사이트 규칙, 사이트별 번역 규칙, 용어집을 파일로 저장한 뒤 다른 브라우저에서 불러올 수 있습니다. 캐시, 사용 통계, 계정 로그인은 이 기기에만 남습니다.',
+    transferDesc: '설정, AI 프로필, 사이트 규칙, 사이트별 번역 규칙, 용어집을 파일로 저장한 뒤 다른 브라우저에서 불러올 수 있습니다. 캐시, 사용 통계, 계정 로그인은 이 기기에만 남습니다.',
     transferExport: '설정 내보내기',
     transferImport: '설정 가져오기…',
     transferIncludeApiKey: 'API 키 포함',
@@ -655,4 +655,24 @@
     aiPageContextHint: '페이지 제목도 AI 서비스에 함께 보내 번역이 더 자연스럽게 이어지게 합니다. 페이지 전체를 번역할 때는 앞뒤의 짧은 글도 보내고, 자동 번역은 제목만 보냅니다. 번역할 글보다 많은 글이 전송되고 사용량도 조금 더 듭니다.',
     customRuleDomain: '분야',
     customRuleDomainInherit: '전체 설정 따르기',
+    // AI profiles (P1-D)
+    aiProfileRpm: '분당 요청 수',
+    aiProfileConcurrency: '동시 요청 수',
+    aiProfileTimeout: '시간 제한(초)',
+    hintAiProfileZeroUnlimited: '0은 제한 없음입니다.',
+    hintAiProfileTimeout: '요청 하나를 기다리는 최대 시간(15–240초).',
+    aiProfileMissing: 'AI 프로필 “{name}”이(가) 더 이상 없습니다. 설정에서 다른 프로필을 고르세요.',
+    aiProfileInvalid: '이 AI 프로필은 유효하지 않습니다. 엔드포인트, 모델, 제한을 확인하세요.',
+    aiProfileTooLarge: '이 AI 프로필은 너무 커서 저장할 수 없습니다. 이름, 엔드포인트, 키를 줄이세요.',
+    aiProfilesBudgetFull: 'AI 프로필을 더 추가할 수 없습니다(최대 20개, 8 KiB). 먼저 하나를 삭제하세요.',
+    aiProfileInUse: '사이트 규칙이 이 AI 프로필을 사용합니다: {rules}. 먼저 그 규칙을 바꾸세요.',
+    aiProfileDefaultInUse: '기본 AI 프로필입니다. 먼저 다른 프로필을 기본으로 지정하세요.',
+    aiProfileSaveFailed: 'AI 프로필을 저장하지 못했습니다. 다시 시도하세요.',
+    aiProfileKeyMissing: '“{name}”에 API 키가 없습니다. 가져온 뒤 설정에서 입력하세요.',
+    apiErrorTimeout: '요청 시간이 초과되었습니다({seconds}초)',
+    apiErrorEmpty: 'AI 서비스가 빈 응답을 보냈습니다.',
+    customRuleProfileMissing: '이 규칙이 사용하는 AI 프로필이 없습니다.',
+    customRuleProfileWithBuiltin: '기본 제공 엔진을 쓰는 규칙에는 AI 프로필을 지정할 수 없습니다.',
+    transferSectionAiProfiles: 'AI 프로필',
+    transferPreviewAiProfiles: 'AI 프로필: {added}개 추가, {replaced}개 교체.',
 };

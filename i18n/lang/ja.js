@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'インポートとエクスポート',
-    transferDesc: '設定、サイトルール、サイト別の翻訳ルール、用語集をファイルに保存し、別のブラウザで読み込めます。キャッシュ、利用統計、アカウントのログイン状態はこの端末に残ります。',
+    transferDesc: '設定、AI プロファイル、サイトルール、サイト別の翻訳ルール、用語集をファイルに保存し、別のブラウザで読み込めます。キャッシュ、利用統計、アカウントのログイン状態はこの端末に残ります。',
     transferExport: '設定をエクスポート',
     transferImport: '設定をインポート…',
     transferIncludeApiKey: 'API キーを含める',
@@ -655,4 +655,24 @@
     aiPageContextHint: 'ページのタイトルも AI サービスに送り、訳文のつながりを良くします。ページ全体を翻訳するときは前後の短い文章も送り、自動翻訳ではタイトルだけを送ります。翻訳する分より多くの文字が送られ、利用枠も少し多く使います。',
     customRuleDomain: '分野',
     customRuleDomainInherit: '全体の設定に従う',
+    // AI profiles (P1-D)
+    aiProfileRpm: '1 分あたりのリクエスト数',
+    aiProfileConcurrency: '同時リクエスト数',
+    aiProfileTimeout: 'タイムアウト（秒）',
+    hintAiProfileZeroUnlimited: '0 は無制限です。',
+    hintAiProfileTimeout: '1 回のリクエストを待つ最長の秒数（15–240）。',
+    aiProfileMissing: 'AI プロファイル「{name}」が見つかりません。設定で別のものを選んでください。',
+    aiProfileInvalid: 'この AI プロファイルは無効です。エンドポイント、モデル、制限を確認してください。',
+    aiProfileTooLarge: 'この AI プロファイルは大きすぎて保存できません。名前、エンドポイント、キーを短くしてください。',
+    aiProfilesBudgetFull: 'AI プロファイルがいっぱいです（最大 20 件・8 KiB）。先に 1 つ削除してください。',
+    aiProfileInUse: 'この AI プロファイルはサイトルールで使われています：{rules}。先にそのルールを変更してください。',
+    aiProfileDefaultInUse: 'これは既定の AI プロファイルです。先に別のプロファイルを既定にしてください。',
+    aiProfileSaveFailed: 'AI プロファイルを保存できませんでした。もう一度お試しください。',
+    aiProfileKeyMissing: '「{name}」には API キーがありません。読み込んだ後、設定で入力してください。',
+    apiErrorTimeout: 'リクエストがタイムアウトしました（{seconds} 秒）',
+    apiErrorEmpty: 'AI サービスから空の応答が返されました。',
+    customRuleProfileMissing: 'このルールが使う AI プロファイルは存在しません。',
+    customRuleProfileWithBuiltin: '内蔵翻訳を使うルールには AI プロファイルを指定できません。',
+    transferSectionAiProfiles: 'AI プロファイル',
+    transferPreviewAiProfiles: 'AI プロファイル：{added} 件を追加、{replaced} 件を置き換えます。',
 };

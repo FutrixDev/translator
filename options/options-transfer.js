@@ -13,14 +13,14 @@
 //
 // 每一行：
 //   key                  文件里的顶层键
-//   collect({includeApiKey})  → 这一块的值（导出）
+//   collect({includeApiKey})  → 这一块的值（导出）；只有 aiProfiles 看 includeApiKey
 //   validate(raw)        → { value, accepted, dropped: string[] }；整块不对就抛 TransferError
 //   preview(result)      → { lines: string[], warnings: string[] }（预览区的条目和警示）
 //   apply(value)         写进去；失败就抛
 //
 // 值不一定是对象，预览也不假设它是 —— 每一行自己画自己。
 //
-// 「一条一个 sync 键」的集合（站点翻译规则，以后还有 P1-C 的术语表）由
+// 「一条一个 sync 键」的集合（站点翻译规则、术语表、AI 配置档）由
 // collectionSection() 包一层：集合抛的是写给自己卡片的 i18n 键，这里换成整份
 // 导入的两种句式（校验时的 TransferError、写入中途的原因短语）。
 // ---------------------------------------------------------------------------
@@ -31,7 +31,6 @@ function transferSchema() {
 
 function transferEnums() {
   return SettingsTransfer.buildEnums({
-    providers: Object.keys(APICompat.PROVIDERS),
     uiLanguages: UI_LANGUAGES,
     targetLangs: TargetLang.SUPPORTED,
     cloudTargets: TargetLang.CLOUD_TARGETS,
@@ -47,10 +46,10 @@ function fill(template, values) {
 const settingsSection = {
   key: 'settings',
 
-  async collect({ includeApiKey }) {
+  async collect() {
     const schema = transferSchema();
     const stored = await chrome.storage.sync.get(schema);
-    return SettingsTransfer.pickExport(stored, schema, { includeApiKey });
+    return SettingsTransfer.pickExport(stored, schema);
   },
 
   validate(raw) {
@@ -78,10 +77,6 @@ const settingsSection = {
     const current = collectSettings();
     if (!unattendedAiReachable(current) && unattendedAiReachable(Object.assign({}, current, value))) {
       warnings.push(t('transferUnattendedAiWarning'));
-    }
-    // 换了接口地址、文件里却没带 Key：已经存着的那把 Key 会发到新地址去。
-    if (changed.includes('apiEndpoint') && !('apiKey' in value) && APICompat.carriesApiKey(stored.apiKey)) {
-      warnings.push(fill(t('transferEndpointKeyWarning'), { endpoint: value.apiEndpoint }));
     }
     return { lines, warnings };
   },
@@ -121,10 +116,15 @@ const siteRulesSection = {
 // 集合抛出的错误键 → 报错码。表里的键卡片自己也认（CustomRules.userErrorKey），
 // 这里只管它们在整份导入里怎么说。术语表的键卡片认的是 Glossary.userErrorKey。
 const COLLECTION_REFUSALS = {
+  aiProfileInvalid: 'sectionInvalid',
+  aiProfileTooLarge: 'sectionInvalid',
+  aiProfilesBudgetFull: 'sectionBudgetFull',
+  aiProfileSaveFailed: 'sectionSaveFailed', // 只在写入时出现
   customRulesImportInvalid: 'sectionInvalid',
   customRuleTooLarge: 'sectionInvalid',
   customRulesBudgetFull: 'sectionBudgetFull',
   customRuleSaveFailed: 'sectionSaveFailed', // 只在写入时出现
+  customRuleProfileMissing: 'sectionInvalid', // 只在写入时出现：规则指向的档不在
   glossaryImportInvalid: 'sectionInvalid',
   glossaryEntryInvalid: 'sectionInvalid',
   glossaryEntryTooLarge: 'sectionInvalid',
@@ -168,6 +168,67 @@ function collectionSection(spec) {
     },
   });
 }
+
+// AI 配置档（设计 §2.8）。导出没勾「包含 API Key」时整档不带 apiKey 字段；导入
+// 时没带 Key 的档沿用本机同 id 档的 Key（keepKeys）。旧文件 settings 里的四个旧键
+// 在 readImportFile 里先经 SettingsTransfer.liftLegacyProfile 并进这一节。这里的
+// 校验只为预览和「先全校验」：SW 的 import 重新校验，不信这里算的数。
+const aiProfilesSection = collectionSection({
+  key: 'aiProfiles',
+
+  async collect({ includeApiKey }) {
+    return (await readAiProfiles()).map((profile) => {
+      const out = Object.assign({}, profile);
+      if (!includeApiKey) delete out.apiKey;
+      return out;
+    });
+  },
+
+  async validate(raw) {
+    // 空数组是一台没配过 AI 的设备导出的：合法，收下 0 档（applyAll 跳过它）。
+    if (!Array.isArray(raw) || raw.length > AIProfiles.LIMITS.maxItems) {
+      throw new Error('aiProfileInvalid');
+    }
+    const normalized = raw.map((profile) => {
+      if (AIProfiles.validate(profile) || !AIProfiles.collection.validId(profile.id)) throw new Error('aiProfileInvalid');
+      return AIProfiles.normalize(profile);
+    });
+    // 集合规则里导入改不了的两条：至多一个默认档，一个功能至多挂在一档上。
+    const features = normalized.flatMap((profile) => profile.features);
+    const ids = raw.map((profile) => profile.id);
+    if (normalized.filter((profile) => profile.default).length > 1
+      || new Set(features).size !== features.length
+      || new Set(ids).size !== ids.length) {
+      throw new Error('aiProfileInvalid');
+    }
+    const local = new Map((await readAiProfiles()).map((profile) => [profile.id, profile]));
+    const replaced = ids.filter((id) => local.has(id)).length;
+    // 全有或全无，没有丢掉的条目。
+    return { value: raw, accepted: raw.length, dropped: [], added: raw.length - replaced, replaced, local };
+  },
+
+  async preview({ value, added, replaced, local }) {
+    const warnings = [];
+    for (const profile of value) {
+      const mine = local.get(profile.id);
+      // 换了接口地址、文件里却没带 Key：这台设备上同一档的 Key 会发到新地址去。
+      if (profile.apiKey === undefined && mine && mine.apiEndpoint !== profile.apiEndpoint.trim()
+        && APICompat.carriesApiKey(mine.apiKey)) {
+        warnings.push(fill(t('transferEndpointKeyWarning'), { endpoint: profile.apiEndpoint }));
+      }
+      // 进来的这一档要 Key，文件里没有、本机同 id 的档也没有可沿用的：导入后它「未填 Key」。
+      const key = profile.apiKey === undefined ? (mine ? mine.apiKey : '') : profile.apiKey;
+      if (APICompat.isApiKeyMissing(Object.assign({}, profile, { apiKey: key }))) {
+        warnings.push(fill(t('aiProfileKeyMissing'), { name: profile.name }));
+      }
+    }
+    return { lines: [fill(t('transferPreviewAiProfiles'), { added, replaced })], warnings };
+  },
+
+  apply(value) {
+    return AIProfiles.request('import', { profiles: value, keepKeys: true });
+  },
+});
 
 // 预览、合并和额度都在卡片那一个函数里算（previewCustomRulesImport，
 // options-custom-rules.js），这里不算第二遍。
@@ -223,7 +284,8 @@ const glossarySection = collectionSection({
   },
 });
 
-const TRANSFER_SECTIONS = [settingsSection, siteRulesSection, customRulesSection, glossarySection];
+// 配置档排在站点翻译规则前面：规则可以指向文件里新带来的档，SW 写规则时要它已经在。
+const TRANSFER_SECTIONS = [settingsSection, aiProfilesSection, siteRulesSection, customRulesSection, glossarySection];
 
 // ---------------------------------------------------------------------------
 // 控件
@@ -297,6 +359,7 @@ let pendingImport = null;
 
 const TRANSFER_SECTION_NAMES = {
   settings: 'transferSectionSettings',
+  aiProfiles: 'transferSectionAiProfiles',
   siteRules: 'transferSectionSiteRules',
   customRules: 'transferSectionCustomRules',
   glossary: 'transferSectionGlossary',
@@ -361,7 +424,8 @@ async function exportSettings() {
 async function readImportFile(file) {
   resetTransferUi();
   if (file.size > SettingsTransfer.MAX_FILE_BYTES) throw new SettingsTransfer.TransferError('tooLarge');
-  const parsed = SettingsTransfer.parseFile(await file.text());
+  // 旧文件的四个旧键先转成 legacy 档，并进 aiProfiles 一节（设计 §2.8）。
+  const parsed = SettingsTransfer.liftLegacyProfile(SettingsTransfer.parseFile(await file.text()), AIProfiles);
   const validated = await SettingsTransfer.validateAll(parsed, TRANSFER_SECTIONS);
 
   const items = [];

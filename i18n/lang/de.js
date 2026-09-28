@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'Importieren und exportieren',
-    transferDesc: 'Speichern Sie Ihre Einstellungen, Seitenregeln, Übersetzungsregeln pro Seite und Ihr Glossar in einer Datei und laden Sie sie in einem anderen Browser. Caches, Nutzungsstatistiken und die Kontoanmeldung bleiben auf diesem Gerät.',
+    transferDesc: 'Speichern Sie Ihre Einstellungen, AI-Profile, Seitenregeln, Übersetzungsregeln pro Seite und Ihr Glossar in einer Datei und laden Sie sie in einem anderen Browser. Caches, Nutzungsstatistiken und die Kontoanmeldung bleiben auf diesem Gerät.',
     transferExport: 'Einstellungen exportieren',
     transferImport: 'Einstellungen importieren…',
     transferIncludeApiKey: 'Meinen API-Schlüssel einschließen',
@@ -655,4 +655,24 @@
     aiPageContextHint: 'Sendet den Seitentitel an den KI-Dienst, damit die Übersetzung zusammenhängender wird. Beim Übersetzen der ganzen Seite kommt je ein kurzer Abschnitt davor und danach hinzu; die automatische Übersetzung sendet nur den Titel. Es wird mehr Text gesendet als übersetzt, und es wird etwas mehr Kontingent verbraucht.',
     customRuleDomain: 'Fachgebiet',
     customRuleDomainInherit: 'Globale Einstellung verwenden',
+    // AI profiles (P1-D)
+    aiProfileRpm: 'Anfragen pro Minute',
+    aiProfileConcurrency: 'Gleichzeitige Anfragen',
+    aiProfileTimeout: 'Zeitlimit (Sekunden)',
+    hintAiProfileZeroUnlimited: '0 bedeutet unbegrenzt.',
+    hintAiProfileTimeout: 'Wie lange auf eine Anfrage gewartet wird, 15–240 Sekunden.',
+    aiProfileMissing: 'Das AI-Profil „{name}“ existiert nicht mehr. Wählen Sie in den Einstellungen ein anderes.',
+    aiProfileInvalid: 'Dieses AI-Profil ist ungültig. Prüfen Sie Endpunkt, Modell und Limits.',
+    aiProfileTooLarge: 'Dieses AI-Profil ist zu groß zum Speichern. Kürzen Sie Name, Endpunkt oder Schlüssel.',
+    aiProfilesBudgetFull: 'Kein Platz für ein weiteres AI-Profil (20 Profile, 8 KiB). Löschen Sie zuerst eines.',
+    aiProfileInUse: 'Seitenregeln verwenden dieses AI-Profil: {rules}. Ändern Sie zuerst diese Regeln.',
+    aiProfileDefaultInUse: 'Dies ist das Standard-AI-Profil. Machen Sie zuerst ein anderes Profil zum Standard.',
+    aiProfileSaveFailed: 'Das AI-Profil konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.',
+    aiProfileKeyMissing: '„{name}“ hat keinen API-Schlüssel. Tragen Sie ihn nach dem Import in den Einstellungen ein.',
+    apiErrorTimeout: 'Zeitüberschreitung der Anfrage ({seconds} s)',
+    apiErrorEmpty: 'Der AI-Dienst hat eine leere Antwort geliefert.',
+    customRuleProfileMissing: 'Das AI-Profil dieser Regel existiert nicht.',
+    customRuleProfileWithBuiltin: 'Eine Regel mit der integrierten Übersetzung kann kein AI-Profil angeben.',
+    transferSectionAiProfiles: 'AI-Profile',
+    transferPreviewAiProfiles: 'AI-Profile: {added} werden hinzugefügt, {replaced} ersetzt.',
 };

@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: '匯入與匯出',
-    transferDesc: '把設置、網站規則、網站翻譯規則和術語表存成一個檔案，再到另一個瀏覽器裡匯入。快取、使用統計和帳號登入只留在這台裝置上。',
+    transferDesc: '把設置、AI 設定檔、網站規則、網站翻譯規則和術語表存成一個檔案，再到另一個瀏覽器裡匯入。快取、使用統計和帳號登入只留在這台裝置上。',
     transferExport: '匯出設置',
     transferImport: '匯入設置…',
     transferIncludeApiKey: '包含我的 API 密鑰',
@@ -655,4 +655,24 @@
     aiPageContextHint: '把網頁標題一起發給 AI 服務，譯得更連貫：翻譯整頁時還附上前後各一小段文字，自動翻譯只附標題。發出的文字會比要翻譯的多，也會多用一些額度。',
     customRuleDomain: '領域',
     customRuleDomainInherit: '跟隨全域設定',
+    // AI profiles (P1-D)
+    aiProfileRpm: '每分鐘請求數',
+    aiProfileConcurrency: '同時請求數',
+    aiProfileTimeout: '逾時（秒）',
+    hintAiProfileZeroUnlimited: '0 表示不限。',
+    hintAiProfileTimeout: '一次請求最多等多少秒，15–240。',
+    aiProfileMissing: '找不到 AI 設定檔「{name}」，請到設定裡另選一個。',
+    aiProfileInvalid: 'AI 設定檔無效，請檢查端點、模型和限速設定。',
+    aiProfileTooLarge: 'AI 設定檔太大，存不下。請縮短名稱、端點或 Key。',
+    aiProfilesBudgetFull: 'AI 設定檔已滿（至多 20 個、共 8 KiB），請先刪掉一個。',
+    aiProfileInUse: '這個 AI 設定檔正被網站規則使用：{rules}。請先改掉這些規則。',
+    aiProfileDefaultInUse: '這是預設 AI 設定檔，請先把另一個設為預設。',
+    aiProfileSaveFailed: '沒能儲存 AI 設定檔，請再試一次。',
+    aiProfileKeyMissing: '「{name}」未填 Key，匯入後請到設定裡補上。',
+    apiErrorTimeout: '請求逾時（{seconds} 秒）',
+    apiErrorEmpty: 'AI 服務回傳了空的回覆。',
+    customRuleProfileMissing: '規則指定的 AI 設定檔不存在。',
+    customRuleProfileWithBuiltin: '引擎選了內建翻譯時，不能再指定 AI 設定檔。',
+    transferSectionAiProfiles: 'AI 設定檔',
+    transferPreviewAiProfiles: 'AI 設定檔：將新增 {added} 個、取代 {replaced} 個。',
 };

@@ -24,7 +24,9 @@ function uiMessages(settings) {
 /**
  * An error that says which profile could not be used: `key` is
  * 'aiProfileMissing' (a request or rule names a profile that is gone; `id`
- * says which) or 'aiNotConfigured' (there is no profile at all).
+ * says which) or 'aiNotConfigured' (there is no profile at all). These are
+ * AIProfiles.resolve() codes, not i18n keys: AIProfiles.resolveMessageKey()
+ * words them, so "no profile" reads exactly like the popup's configureApiKeyFirst.
  */
 function profileError(key, id) {
   const error = new Error(id ? `${key}: ${id}` : key);
@@ -62,7 +64,7 @@ function apiErrorMessage(error, settings, profile) {
   }
   if (error && error.profileError) {
     const { key, id } = error.profileError;
-    return t(key).replace('{name}', id);
+    return t(globalThis.AIProfiles.resolveMessageKey(key)).replace('{name}', id);
   }
   const profileKey = globalThis.AIProfiles.userErrorKey(error);
   if (profileKey) return t(profileKey);

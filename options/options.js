@@ -18,16 +18,7 @@ const DEFAULT_SELECTION_HOTKEY = globalThis.DefaultSettings.DEFAULT_SELECTION_HO
 // Provider catalog and every model-capability rule live in shared/api-compat.js
 // (loaded by options.html before this file). Adding a model generation is a
 // one-file change there.
-const {
-  PROVIDERS,
-  DEFAULT_TEMPERATURE,
-  isClaudeAPI,
-  openAIHeaders,
-  claudeHeaders,
-  buildOpenAIRequestBody,
-  buildClaudeRequestBody,
-  readAPIResponse
-} = globalThis.APICompat;
+const { PROVIDERS } = globalThis.APICompat;
 // DOM Elements
 const elements = {
   translationEngine: document.getElementById('translationEngine'),
@@ -141,14 +132,10 @@ const PROMPT_PRESETS = {
 
 // Default settings
 const defaultSettings = {
-  // 默认走浏览器内置翻译（端上 NMT，零网络零费用）。下面那一整套 API 配置
-  // 只在用户显式切到 'ai' 时才用得上，或者在内置引擎顶不住时充当回落。
+  // 默认走浏览器内置翻译（端上 NMT，零网络零费用）。AI 那一路的连接配置是
+  // aiProfile:<id> 配置档，不在这张表里（options-ai-profiles.js）。
   translationEngine: 'builtin',
   engineFallback: 'local-only',
-  provider: 'openai',
-  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-  apiKey: '',
-  modelName: 'gpt-4.1-mini',
   // 空 = 跟随浏览器语言，也**就是**「用户没选过」：下面的 collectSettings 在用户
   // 动过语言选择器之前写的一直是空串，所以非空即选过。见 shared/target-lang.js。
   targetLang: '',
@@ -223,30 +210,6 @@ async function loadSettings() {
     const targetLang = TargetLang.effective(result);
     renderLanguageOptions(getUILanguage(result.uiLanguage));
 
-    // Determine provider from saved settings or detect from endpoint
-    let provider = result.provider;
-    if (!provider || !PROVIDERS[provider]) {
-      provider = detectProviderFromEndpoint(result.apiEndpoint);
-    }
-
-    // Set provider dropdown
-    elements.provider.value = provider;
-
-    // Set endpoint
-    elements.apiEndpoint.value = result.apiEndpoint;
-    syncApiKeyPlaceholder();
-
-    // Show/hide custom endpoint group
-    if (provider === 'custom') {
-      elements.customEndpointGroup.style.display = 'block';
-    } else {
-      elements.customEndpointGroup.style.display = 'none';
-    }
-
-    // Update model dropdown and set current model
-    updateModelDropdown(provider, result.modelName);
-
-    elements.apiKey.value = result.apiKey;
     elements.translationEngine.value = result.translationEngine === 'ai' ? 'ai' : 'builtin';
     elements.engineFallback.value = result.engineFallback === 'allow-ai' ? 'allow-ai' : 'local-only';
     elements.targetLang.value = targetLang;
@@ -370,18 +333,12 @@ let targetLangChosen = false;
 
 // Read the whole form. Cheap enough to do wholesale on every change, and
 // writing every key each time keeps storage consistent with what is on screen.
+// The AI connection card is not part of it: that is the default AI profile,
+// saved by options-ai-profiles.js.
 function collectSettings() {
-  // provider / apiEndpoint / apiKey, read the way the connection test reads them.
-  const connection = formConnection();
-
-  // Get model name from dropdown or custom input
-  const modelName = getEffectiveModelName();
-
   return {
     translationEngine: elements.translationEngine.value,
     engineFallback: elements.engineFallback.value,
-    ...connection,
-    modelName: modelName,
     // 没选过就存空串：空是「跟随浏览器」的哨兵，选择器上那个值只是回显。
     targetLang: targetLangChosen ? elements.targetLang.value : '',
     uiLanguage: elements.uiLanguage.value,
@@ -630,9 +587,6 @@ const IMMEDIATE_SAVE_FIELDS = [
 // blur so leaving a field always commits it.
 const DEBOUNCED_SAVE_FIELDS = [
   'autoAiDailyBudget',
-  'apiEndpoint',
-  'apiKey',
-  'modelName',
   'customPrompt',
   'youtubeCaptionFontColor',
   'youtubeCaptionBgColor',
@@ -648,8 +602,6 @@ function setupEventListeners() {
   elements.downloadLanguagePack.addEventListener('click', downloadLanguagePack);
 
   elements.testConnection.addEventListener('click', testConnection);
-  // A loopback / LAN endpoint makes the key optional; say so as it is typed.
-  elements.apiEndpoint.addEventListener('input', syncApiKeyPlaceholder);
   elements.resetPrompt.addEventListener('click', resetPrompt);
   elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
   elements.themeToggle.addEventListener('click', toggleTheme);
@@ -716,25 +668,8 @@ function setupEventListeners() {
   elements.comicSignOut.addEventListener('click', comicSignOut);
   elements.pdfTasksRefresh.addEventListener('click', () => refreshPdfTasks());
 
-  // Provider change rewrites the endpoint and the model list, so the write has
-  // to happen after those, not on the generic handler above.
-  elements.provider.addEventListener('change', () => {
-    onProviderChange();
-    persistSettings();
-  });
-
-  // Also ordered: picking from the dropdown clears the custom-model input, and
-  // getEffectiveModelName prefers that input — saving first would store the
-  // custom name the user just replaced.
-  elements.modelSelect.addEventListener('change', () => {
-    onModelSelectChange();
-    persistSettings();
-  });
-
-  // The write this keystroke also triggers is debounced, so the dropdown is
-  // already released by the time collectSettings reads the pair — regardless of
-  // which listener the browser happens to call first.
-  elements.modelName.addEventListener('input', onCustomModelInput);
+  // The provider, model, endpoint and key boxes belong to the AI profile card
+  // (setupAiProfileForm in options-ai-profiles.js), which saves them itself.
 
   elements.enableSelection.addEventListener('change', syncInlineSettingState);
   elements.enableHoverTranslation.addEventListener('change', syncInlineSettingState);
@@ -908,6 +843,8 @@ function updateCaptionPreview() {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
+  setupAiProfileForm();
+  await loadAiProfileForm();
   setupSyncMirror();
   setupCustomRules();
   setupGlossary();

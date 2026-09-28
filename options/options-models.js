@@ -114,25 +114,3 @@ function getEffectiveModelName() {
   const customValue = elements.modelName.value.trim();
   return customValue || selectValue;
 }
-
-// Detect provider from endpoint URL
-function detectProviderFromEndpoint(endpoint) {
-  if (!endpoint) return 'custom';
-
-  for (const [key, provider] of Object.entries(PROVIDERS)) {
-    if (key !== 'custom' && provider.endpoint && endpoint === provider.endpoint) {
-      return key;
-    }
-  }
-
-  // Check for partial matches
-  if (endpoint.includes('openai.com')) return 'openai';
-  if (endpoint.includes('anthropic.com')) return 'anthropic';
-  if (endpoint.includes('generativelanguage.googleapis.com')) return 'gemini';
-  if (endpoint.includes('deepseek.com')) return 'deepseek';
-  if (endpoint.includes('openrouter.ai')) return 'openrouter';
-  if (endpoint.includes('localhost:11434')) return 'ollama';
-  if (endpoint.includes('localhost:1234')) return 'lmstudio';
-
-  return 'custom';
-}

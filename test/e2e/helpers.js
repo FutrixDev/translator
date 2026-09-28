@@ -436,11 +436,23 @@ async function putLegacyProfile(context, legacy) {
       provider: current.provider, apiEndpoint: current.apiEndpoint,
       apiKey: current.apiKey, modelName: current.modelName,
     } : {};
-    const profile = AIProfiles.fromLegacy({ ...base, ...fields });
-    await AIProfiles.applyWrite({
-      type: 'AI_PROFILES_WRITE', kind: 'put', profile: { ...profile, id: AIProfiles.LEGACY_ID },
-    });
+    const profile = { ...AIProfiles.fromLegacy({ ...base, ...fields }), id: AIProfiles.LEGACY_ID };
+    // 和迁移同一个结果：旧键拼不成一档合规的（没填地址或模型）就是「没有配置档」。
+    if (AIProfiles.validate(profile)) {
+      if (current) await AIProfiles.applyWrite({ type: 'AI_PROFILES_WRITE', kind: 'remove', id: AIProfiles.LEGACY_ID });
+      return;
+    }
+    await AIProfiles.applyWrite({ type: 'AI_PROFILES_WRITE', kind: 'put', profile });
   }, legacy);
+}
+
+/** 默认 AI 配置档（含 Key），没有就是 null。设置页的卡片编辑的就是它。 */
+async function getDefaultProfile(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => {
+    const { AIProfiles } = globalThis;
+    return AIProfiles.defaultOf(await AIProfiles.collection.cached());
+  });
 }
 
 /**
@@ -793,6 +805,7 @@ module.exports = {
   triggerSelectionHotkey,
   getCurrentTheme,
   setExtensionSettings,
+  getDefaultProfile,
   setExtensionAccount,
   sendMessageToActiveTab,
 };

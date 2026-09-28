@@ -217,6 +217,18 @@
     return fallback ? { profile: fallback } : { error: 'aiNotConfigured' };
   }
 
+  // resolve 的两种 {error} 对读者各是哪一句。「一档都没有」就是 D1 之前那句「请先配置
+  // API Key」：弹出窗口（EngineStatus.aiReady 为假）和页面说同一句，不另起一句。
+  const RESOLVE_MESSAGES = Object.freeze({ aiNotConfigured: 'configureApiKeyFirst', aiProfileMissing: 'aiProfileMissing' });
+
+  /** resolve 的错误码 → i18n 键（aiProfileMissing 的 {name} 由调用方填）。 */
+  function resolveMessageKey(code) {
+    if (!Object.prototype.hasOwnProperty.call(RESOLVE_MESSAGES, code)) {
+      throw new TypeError(`AIProfiles.resolveMessageKey: unknown resolve error ${code}`);
+    }
+    return RESOLVE_MESSAGES[code];
+  }
+
   // 给内容脚本的字段：不含 apiKey，只说缺没缺。
   function publicFields(profile) {
     return {
@@ -270,6 +282,30 @@
       concurrency: 0,
       timeoutSec: DEFAULT_TIMEOUT_SEC,
     };
+  }
+
+  /** 集合里的默认档，没有就是 null。 */
+  function defaultOf(profiles) {
+    return (profiles || []).find((profile) => profile.default === true) || null;
+  }
+
+  /**
+   * 设置页的卡片和引导页只编辑默认档（设计 §1 表 D1 行）：把 patch 盖到当前默认档
+   * 上（没有默认档就盖到 DRAFT 上），返回要交给 put 的整档。纯函数 —— 读存储是
+   * 调用方的事。名字没人改过（还是服务商的名字）时跟着服务商走。
+   */
+  function editDefault(profiles, patch) {
+    const current = defaultOf(profiles);
+    const base = current || Object.assign({}, DRAFT, { name: APICompat.PROVIDERS[DRAFT.provider].name });
+    const next = Object.assign({}, base, patch);
+    const renamed = patch.name !== undefined;
+    const followsProvider = hasOwn(APICompat.PROVIDERS, base.provider)
+      && base.name === APICompat.PROVIDERS[base.provider].name;
+    if (!renamed && followsProvider && hasOwn(APICompat.PROVIDERS, next.provider)) {
+      next.name = APICompat.PROVIDERS[next.provider].name;
+    }
+    delete next.updatedAt;
+    return next;
   }
 
   // ------------------------------------------------------------ 写入（SW）
@@ -449,8 +485,11 @@
     validate,
     validateSet,
     resolve,
+    resolveMessageKey,
     publicView,
     fromLegacy,
+    defaultOf,
+    editDefault,
     userErrorKey,
     applyWrite,
     request,

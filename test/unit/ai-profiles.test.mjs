@@ -151,6 +151,44 @@ test('ai-profiles: resolve picks rule profile, then the feature owner, then the 
   assert.throws(() => AIProfiles.resolve(profiles, {}), TypeError);
 });
 
+test('ai-profiles: resolveMessageKey words both resolve errors and throws on anything else', () => {
+  // 「一档都没有」和弹出窗口是同一句 configureApiKeyFirst，不另起一句。
+  assert.equal(AIProfiles.resolveMessageKey('aiNotConfigured'), 'configureApiKeyFirst');
+  assert.equal(AIProfiles.resolveMessageKey('aiProfileMissing'), 'aiProfileMissing');
+  for (const code of ['aiProfileInvalid', 'configureApiKeyFirst', '', undefined, 'toString']) {
+    assert.throws(() => AIProfiles.resolveMessageKey(code), TypeError, String(code));
+  }
+});
+
+test('ai-profiles: defaultOf is the one default or null; editDefault patches it without touching the input', () => {
+  const main = Object.assign({ id: 'main0001', updatedAt: 5 }, AIProfiles.normalize(base({ default: true })));
+  const other = Object.assign({ id: 'ocr00001' }, AIProfiles.normalize(base({ name: 'OCR', features: ['ocr'] })));
+  assert.equal(AIProfiles.defaultOf([other, main]), main);
+  assert.equal(AIProfiles.defaultOf([other]), null);
+  assert.equal(AIProfiles.defaultOf(undefined), null);
+
+  const before = JSON.stringify(main);
+  const edited = AIProfiles.editDefault([other, main], { modelName: 'gpt-4.1', timeoutSec: 15 });
+  assert.equal(JSON.stringify(main), before, '纯函数：不改传进来的档');
+  assert.equal(edited.id, 'main0001', '改的是默认档本身，put 按 id 覆盖');
+  assert.equal(edited.modelName, 'gpt-4.1');
+  assert.equal(edited.timeoutSec, 15);
+  assert.equal(edited.apiKey, 'sk-secret-work', '表单没提 Key 就留着');
+  assert.equal(edited.name, 'Work', '用户起过的名字不跟服务商走');
+  assert.equal('updatedAt' in edited, false, 'updatedAt 由写入口盖');
+
+  // 没有默认档：盖在 DRAFT 上，名字跟着服务商。
+  const fresh = AIProfiles.editDefault([], { provider: 'anthropic', apiEndpoint: 'https://api.anthropic.com/v1/messages', apiKey: 'k' });
+  assert.equal('id' in fresh, false);
+  assert.equal(fresh.name, globalThis.APICompat.PROVIDERS.anthropic.name);
+  assert.equal(fresh.timeoutSec, AIProfiles.DRAFT.timeoutSec);
+  assert.equal(AIProfiles.validate(fresh), null);
+  // 名字还是服务商名的默认档，换服务商时名字跟着换；显式改名则不跟。
+  const named = Object.assign({ id: 'main0001' }, AIProfiles.normalize(base({ name: globalThis.APICompat.PROVIDERS.openai.name, default: true })));
+  assert.equal(AIProfiles.editDefault([named], { provider: 'anthropic' }).name, globalThis.APICompat.PROVIDERS.anthropic.name);
+  assert.equal(AIProfiles.editDefault([named], { provider: 'anthropic', name: 'Mine' }).name, 'Mine');
+});
+
 test('ai-profiles: publicView carries no apiKey, only whether one is missing', () => {
   const view = AIProfiles.publicView(Object.assign({ id: 'main0001' }, AIProfiles.normalize(base())));
   assert.equal('apiKey' in view, false);
