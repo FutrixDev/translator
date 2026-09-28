@@ -26,7 +26,7 @@ const HANS_BLOCK = '这一段是简体中文的正文，长度足够让引擎自
 const { ctx, translateCalls } = await installEngineHarness({ pageText: HANT_PAGE });
 
 const translate = (text, targetLang) =>
-  ctx.requestTranslation({ type: 'TRANSLATE', text, targetLang, mode: 'text' });
+  ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text, targetLang, mode: 'text' });
 
 test('繁体正文配简体目标：真的送进引擎，而不是原样退回', async () => {
   translateCalls.length = 0;

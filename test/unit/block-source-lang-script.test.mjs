@@ -30,6 +30,7 @@ test('a Chinese tweet with a Chinese target never reaches the built-in model', a
   translateCalls.length = 0;
   const response = await ctx.requestTranslation({
     type: 'TRANSLATE_BATCH_FAST',
+    feature: 'page',
     texts: [TWEET],
     targetLang: 'zh-CN',
     delimiter: '⟪⟫⟪⟫⟪⟫',
@@ -43,6 +44,7 @@ test('the same tweet with an English target is translated from Chinese', async (
   translateCalls.length = 0;
   await ctx.requestTranslation({
     type: 'TRANSLATE_BATCH_FAST',
+    feature: 'page',
     texts: [TWEET],
     targetLang: 'en',
     delimiter: '⟪⟫⟪⟫⟪⟫',

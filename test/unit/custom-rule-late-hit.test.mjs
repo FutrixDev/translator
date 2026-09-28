@@ -235,6 +235,8 @@ async function loadScheduler() {
     state: { isTranslatingPage: false, translationsVisible: true, pageScopeOverride: null },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0, pageTranslateScope: 'main' },
     syncMirrors: [],
+    // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
+    aiProfiles: { subscribe: () => () => {} },
     usableSelector: (list) => list.join(','),
     queryAllDeep: (selector) => (selector === '.ai-translator-translated' ? [...page.translated] : page.includeHits),
     composedContains: (ancestor, node) => ancestor === node || ancestor.contains(node),

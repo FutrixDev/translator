@@ -38,12 +38,14 @@ const SCRIPTS = [
   'shared/storage-writer.js',
   'shared/site-rules.js',
   'shared/sync-collection.js',
+  'shared/ai-profiles.js',
   'shared/prompt-addenda.js',
   'shared/text-markers.js',
   'shared/batch-delimiter.js',
   'shared/glossary.js',
   'shared/translation-cache.js',
   'content/content-glossary.js',
+  'content/content-ai-profiles.js',
   'content/engine/languages.js',
   'content/engine/watchdog.js',
   'content/engine/glossary.js',
@@ -53,11 +55,22 @@ const SCRIPTS = [
   'content/frames/shelf.js',
 ];
 
+// 服务工作者答 AI_PROFILES_PUBLIC 的公开形状（P1-D）：迁移出的那一档，有 Key。
+// 每个 frame 直接问服务工作者，不经中继。
+const PUBLIC_PROFILES = [{
+  id: 'legacy', name: 'Legacy', provider: 'openai', apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+  modelName: 'gpt-4.1-mini', features: [], default: true, keyMissing: false,
+}];
+
 /**
  * 一个 frame：自己的全局、自己的 location、自己的一份引擎。`sendMessage` 是这个
- * frame 的 chrome.runtime.sendMessage。返回 ctx 与这个 frame 装上的 onMessage 监听。
+ * frame 的 chrome.runtime.sendMessage。返回 ctx、这个 frame 装上的 onMessage 监听，
+ * 与本 frame AI 配置档镜像就绪的 promise（bootstrap 等它，用例也等它）。
  */
-function frameRealm({ url, role, sendMessage }) {
+function frameRealm({ url, role, sendMessage: send }) {
+  const sendMessage = (message) => (message.type === 'AI_PROFILES_PUBLIC'
+    ? Promise.resolve({ profiles: clone(PUBLIC_PROFILES) })
+    : send(message));
   const listeners = [];
   const sandbox = {
     console: { info() {}, warn() {}, log() {}, error: console.error },
@@ -108,7 +121,7 @@ function frameRealm({ url, role, sendMessage }) {
     getLanguageDetectionText: (text) => String(text || '').slice(0, 400),
     autoTranslate: { isOn: () => false, onStateChange() {} },
     customRules: {
-      whenReady: async () => {}, onChange() {}, engineOverride: () => null,
+      whenReady: async () => {}, onChange() {}, engineOverride: () => null, profileOverride: () => null,
       // P1-C：本站规则钉住的领域（没有规则），与缓存层订阅的「规则变了」。
       domain: () => null, onProfileChange: () => () => {},
     },
@@ -117,7 +130,9 @@ function frameRealm({ url, role, sendMessage }) {
   for (const rel of [...SCRIPTS, `content/frames/${role}.js`]) {
     vm.runInContext(read(rel), sandbox, { filename: rel });
   }
-  return { ctx: sandbox.AI_TRANSLATOR_CONTENT, listeners };
+  const ctx = sandbox.AI_TRANSLATOR_CONTENT;
+  ctx.aiProfiles.init();
+  return { ctx, listeners, ready: ctx.aiProfiles.whenReady() };
 }
 
 /** 调一个 onMessage 监听，按 Chrome 的规矩收它的回话（return true = 异步回话）。 */
@@ -146,6 +161,7 @@ const top = frameRealm({
 });
 top.ctx.frames.setup();
 top.ctx.glossary.init();
+await top.ready;
 assert.equal(top.listeners.length, 1, 'top.js did not listen for its children');
 
 // ------------------------------------------------------------ 中继：服务工作者
@@ -163,21 +179,23 @@ globalThis.chrome = {
 await import('../../background/frame-relay.js');
 const SENDER = { tab: { id: 7 }, frameId: 3, documentId: 'doc-3' };
 
-function childFrame(url) {
-  return frameRealm({
+async function childFrame(url) {
+  const frame = frameRealm({
     url,
     role: 'child',
     sendMessage: (message) => deliver(relayListener, message, SENDER),
   });
+  await frame.ready;
+  return frame;
 }
 
 function translate(ctx) {
-  return ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  return ctx.requestTranslation({ type: 'TRANSLATE', feature: 'hover', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
 }
 
 test('a child frame with a register sends its own, not the top page one', async () => {
   sentToAI.length = 0;
-  const child = childFrame(FORUM);
+  const child = await childFrame(FORUM);
   const result = await translate(child.ctx);
   assert.equal(result.translation, `AI:${BLOCK}`);
   assert.equal(sentToAI.length, 1);
@@ -188,9 +206,9 @@ test('a child frame with a register sends its own, not the top page one', async 
 
 test('a child frame without a register sends empty addenda under a news top page', async () => {
   sentToAI.length = 0;
-  const child = childFrame(PLAIN);
+  const child = await childFrame(PLAIN);
   await translate(child.ctx);
-  await child.ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN', delimiter: '@@' });
+  await child.ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [BLOCK], targetLang: 'zh-CN' });
   assert.equal(sentToAI.length, 2);
   for (const message of sentToAI) {
     assert.deepEqual(message.addenda, {}, `${message.type} carried ${JSON.stringify(message.addenda)}`);
@@ -209,13 +227,13 @@ test('a request is stamped once: stamping a stamped request throws', () => {
   assert.throws(() => top.ctx.withPromptAddenda(stamped), /already stamped/);
 });
 
-test('on a page with no register a second stamp throws too (R33 D-360 F8)', () => {
+test('on a page with no register a second stamp throws too (R33 D-360 F8)', async () => {
   // 没有语域的那一页也盖 `{}`：以前那里不写字段，盖两次守卫也看不出来。
-  const child = childFrame(PLAIN);
+  const child = await childFrame(PLAIN);
   for (const message of [
     { type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN' },
-    { type: 'TRANSLATE_BATCH', texts: [BLOCK], targetLang: 'zh-CN' },
-    { type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN', delimiter: '@@' },
+    // P1-D 删了编号批量（TRANSLATE_BATCH）：翻译消息只剩这两种。
+    { type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN' },
   ]) {
     const once = child.ctx.withPromptAddenda(message);
     assert.deepEqual(clone(once.addenda), {}, message.type);
@@ -224,7 +242,7 @@ test('on a page with no register a second stamp throws too (R33 D-360 F8)', () =
 });
 
 test('a child request, cached or direct: register from the child page, glossary and domain from the top frame (D-382)', async () => {
-  const child = childFrame(FORUM);
+  const child = await childFrame(FORUM);
   // 子帧自己的设置是 general、没有词表镜像：领域和词条只可能来自顶层。
   assert.equal(child.ctx.settings.promptDomain, 'general');
   assert.equal(child.ctx.glossary.entries().length, 0);
@@ -233,8 +251,8 @@ test('a child request, cached or direct: register from the child page, glossary 
     const text = 'The court heard a tort claim about ordinary English prose today.';
     for (const [label, ask] of [
       ['cached', () => child.ctx.requestTranslationCached(
-        { type: 'TRANSLATE_BATCH_FAST', texts: [text], targetLang: 'zh-CN', delimiter: '@@' })],
-      ['direct', () => child.ctx.requestTranslation({ type: 'TRANSLATE', text, targetLang: 'zh-CN', mode: 'text' })],
+        { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [text], targetLang: 'zh-CN' })],
+      ['direct', () => child.ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text, targetLang: 'zh-CN', mode: 'text' })],
     ]) {
       sentToAI.length = 0;
       await ask();

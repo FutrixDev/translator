@@ -438,27 +438,36 @@ test('设置页里两块别处写的数据，要跟着别处一起变', () => {
   assert.match(listener[0], /area === 'local' && changes\.autoStats\) renderAutoStats\(\)/);
 });
 
-test('改对了密钥/地址/模型/回落，停在错误上的那一页要自己重来', () => {
+test('改对了 AI 配置档或回落，停在错误上的那一页要自己重来', () => {
   const auto = code('content/content-auto-translate.js');
   const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
   assert.ok(keys, 'RESTART_KEYS 不见了');
   for (const key of ['autoTranslate', 'siteRules', 'targetLang',
-    'skipTargetLanguageText', 'translationEngine',
-    'apiKey', 'apiEndpoint', 'modelName', 'engineFallback']) {
+    'skipTargetLanguageText', 'translationEngine', 'engineFallback']) {
     assert.ok(keys[1].includes(`'${key}'`), `RESTART_KEYS 少了 ${key}`);
   }
+  // 密钥、地址、模型、服务商搬进了 AI 配置档（P1-D），不再是设置键：名单里还留着
+  // 它们就是在等一个永远不会再来的变化，而改对了配置档的页面照样停在 ERROR 上。
+  for (const key of ['provider', 'apiKey', 'apiEndpoint', 'modelName']) {
+    assert.ok(!keys[1].includes(`'${key}'`), `RESTART_KEYS 里不该再有旧键 ${key}`);
+  }
+  // 救场那一半改走配置档镜像的订阅，与规则变化同一条路（start 重判、重扫）。
+  assert.match(auto, /ctx\.aiProfiles\.subscribe\(\(\) => start\('ai-profiles'\)\)/);
   // 名单在调度层，不在转发那一层 —— 在 bootstrap 里摊成一串 if 就是把它抄一遍，
   // 抄本迟早和正本对不上（这条规则正是因为那份「五个键」的注释过期才立的）。
   const bootstrap = code('content/content-bootstrap.js');
   assert.match(bootstrap, /if \(ctx\.autoTranslate\) ctx\.autoTranslate\.onSettingsChanged\(changes\);/);
   assert.doesNotMatch(bootstrap, /RESTART_KEYS/);
-  // 这四个键真的是设置里存的那四个 —— 拼错一个，这条门就永远不开，而且没有任何
-  // 迹象。engineFallback 归内容侧默认值管，另外三个归后台的 defaultSettings。
+  // 调度器装起来之前配置档镜像已经到了：它和规则、术语表并列等。
+  assert.match(bootstrap, /await Promise\.all\(\[[^\]]*ctx\.aiProfiles\.whenReady\(\)[^\]]*\]\);[\s\S]*?ctx\.setupAutoTranslate\(\)/);
+  // engineFallback 真是设置里存的那个键 —— 拼错了，这条门就永远不开，而且没有
+  // 任何迹象。它归内容侧默认值管。
   assert.ok('engineFallback' in DefaultSettings.CONTENT_DEFAULTS);
+  // 旧三键不再有缺省值：没有配置档就是没配置（设计 §2）。
   const declared = workerSource().match(/const defaultSettings = \{([\s\S]*?)\n\};/);
   assert.ok(declared, 'worker 的 defaultSettings 不见了');
   for (const key of ['apiKey', 'apiEndpoint', 'modelName']) {
-    assert.match(declared[1], new RegExp(`^\\s*${key}:`, 'm'), `defaultSettings 里没有 ${key}`);
+    assert.doesNotMatch(declared[1], new RegExp(`^\\s*${key}:`, 'm'), `defaultSettings 里不该再有 ${key}`);
   }
 });
 

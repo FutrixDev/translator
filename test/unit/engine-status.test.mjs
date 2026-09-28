@@ -190,9 +190,10 @@ test('falling back to the user own API is off unless they asked for it', () => {
   assert.match(allowed.slice(0, allowed.indexOf('\n  }')),
     /return !siteEngine\(\) && settings\.engineFallback === 'allow-ai';/);
   // And the gate comes before the AI-config lookup, so no storage read happens
-  // for a decision that is already made.
-  assert.ok(body.indexOf('aiConfig') > 0, 'the AI-config lookup moved; re-judge this ordering');
-  assert.ok(body.indexOf('fallbackAllowed') < body.indexOf('aiConfig'));
+  // for a decision that is already made. P1-D: the lookup is the frame's AI
+  // profiles mirror (ctx.aiProfiles), no longer a storage read of its own.
+  assert.ok(body.indexOf('aiProfiles') > 0, 'the AI-config lookup moved; re-judge this ordering');
+  assert.ok(body.indexOf('fallbackAllowed') < body.indexOf('aiProfiles'));
 });
 
 test('local-only is the default, in the one dictionary the content scripts read', () => {

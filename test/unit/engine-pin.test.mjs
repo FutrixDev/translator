@@ -36,7 +36,7 @@ function configure(patch) {
 }
 
 const translate = (extra) => ctx.requestTranslation({
-  type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
+  type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
 });
 
 test('an engine the contract does not know is a caller bug, not "no preference"', async () => {
@@ -121,10 +121,10 @@ test('the budget gate refusal on the AI exit is stamped ai', async () => {
 test('engineChoices reads the AI config afresh and reports both sides', async () => {
   configure({});
   setApiKey('');
-  assert.deepEqual({ ...(await ctx.engineChoices('fr')) }, { builtin: true, ai: false });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: false });
   setApiKey('test-key');
   self.isSecureContext = false;
-  assert.deepEqual({ ...(await ctx.engineChoices('fr')) }, { builtin: false, ai: true });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: false, ai: true });
 });
 
 // 卡片正用 AI 译成一门端上没有的语言（fa）时，「改用内置」点了只会报错，所以不给。
@@ -132,12 +132,12 @@ test('engineChoices reads the AI config afresh and reports both sides', async ()
 test('engineChoices offers builtin only for a target the builtin engine knows', async () => {
   configure({});
   setApiKey('test-key');
-  assert.deepEqual({ ...(await ctx.engineChoices('fa')) }, { builtin: false, ai: true });
-  assert.deepEqual({ ...(await ctx.engineChoices('fr')) }, { builtin: true, ai: true });
+  assert.deepEqual({ ...(await ctx.engineChoices('fa', 'selection')) }, { builtin: false, ai: true });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: true });
   // 扩展码先过 toApiLang：zh-TW 在端上是 zh-Hant，认得。
-  assert.equal((await ctx.engineChoices('zh-TW')).builtin, true);
+  assert.equal((await ctx.engineChoices('zh-TW', 'selection')).builtin, true);
   const bt = ctx.builtinTranslator;
   for (const code of ['fa', 'fr', 'ur', 'he', 'zh-TW', 'sw']) {
-    assert.equal((await ctx.engineChoices(code)).builtin, bt.supportsTarget(code), code);
+    assert.equal((await ctx.engineChoices(code, 'selection')).builtin, bt.supportsTarget(code), code);
   }
 });

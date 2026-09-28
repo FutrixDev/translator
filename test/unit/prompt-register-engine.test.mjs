@@ -72,8 +72,8 @@ const REDDIT = 'https://old.reddit.com/r/test/comments/1/a_thread/';
 test('the one exit to the model carries the register label, and only the label', async () => {
   goTo(REDDIT);
   useAI();
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [BLOCK], targetLang: 'zh-CN' });
   assert.equal(sentToAI.length, 2);
   for (const message of sentToAI) {
     assert.equal(JSON.stringify(message.addenda), '{"register":"forum"}', message.type);
@@ -86,11 +86,11 @@ test('the one exit to the model carries the register label, and only the label',
 test('each page gets its own register, and a page without one sends empty addenda', async () => {
   useAI();
   goTo('https://x.com/someone/status/1');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   goTo('https://www.bbc.co.uk/news/articles/x');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   goTo('https://example.test/');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   assert.deepEqual(sentToAI.map((m) => m.addenda.register), ['social', 'news', undefined]);
   assert.equal(JSON.stringify(sentToAI[2].addenda), '{}', 'a page with no register still sends the field, empty');
 });
@@ -99,13 +99,13 @@ test('the built-in engine gets no addenda and other message types are left alone
   goTo(REDDIT);
   useAI();
   Object.assign(ctx.settings, { translationEngine: 'builtin' });
-  const result = await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  const result = await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   assert.equal(result.engine, 'builtin');
   assert.equal(sentToAI.length, 0);
   assert.equal(translateCalls.length, 1);
 
   useAI();
-  await ctx.requestTranslation({ type: 'SOMETHING_ELSE', payload: 1 });
+  await ctx.requestTranslation({ type: 'SOMETHING_ELSE', feature: 'page', payload: 1 });
   assert.equal(sentToAI.length, 1);
   assert.ok(!('addenda' in sentToAI[0]), 'a non-translation message was given addenda');
 });
@@ -114,7 +114,7 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   useAI();
   local.clear();
   const ask = () => ctx.requestTranslationCached({
-    type: 'TRANSLATE_BATCH_FAST', texts: ['A cached paragraph.'], targetLang: 'zh-CN',
+    type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['A cached paragraph.'], targetLang: 'zh-CN',
   });
   globalThis.chrome.runtime.sendMessage = async (message) => {
     sentToAI.push(message);
@@ -174,7 +174,7 @@ test('a domain changed while the cache is read does not split the key from the r
   });
   try {
     const pending = ctx.requestTranslationCached({
-      type: 'TRANSLATE_BATCH_FAST', texts: ['A paragraph read while the domain changes.'],
+      type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['A paragraph read while the domain changes.'],
       targetLang: 'zh-CN',
     });
     await reading;
@@ -221,9 +221,9 @@ test('the register rule reaches every text prompt and no word prompt, default an
     sentToAI.push(message);
     return { translation: 'AI', phonetic: '', isWord: false, translations: [] };
   };
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: ['a', 'b'], targetLang: 'zh-CN' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['a', 'b'], targetLang: 'zh-CN' });
   const [single, word, fast] = sentToAI;
 
   // background.js 的两个处理函数怎么把消息交下去，这里就怎么交：接口、Key、模型、

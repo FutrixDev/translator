@@ -124,6 +124,7 @@
         "shared/frame-eligibility.js",
         "content/content-bootstrap.js",
         "content/content-glossary.js",
+        "content/content-ai-profiles.js",
         "content/content-utils.js",
         "content/content-managed-translation.js",
         "content/content-clip-guard.js",

@@ -4,8 +4,9 @@
 // 文件只做三件事：
 //   - 建本 frame 的镜像：向 SW 要一次本主机的规则（CUSTOM_RULES_FOR_HOST），此后
 //     跟着 bootstrap 转来的增量走（ctx.syncMirrors 登记表）；
-//   - 答「本页生效的是哪条规则」（current / engineOverride / domain），给范围、
-//     收块、site-adapter、引擎谓词、附加说明（content/engine/addenda.js）读；
+//   - 答「本页生效的是哪条规则」（current / engineOverride / profileOverride /
+//     domain），给范围、收块、site-adapter、引擎谓词、AI 选档
+//     （content/content-ai-profiles.js）、附加说明（content/engine/addenda.js）读；
 //   - 本页生效的规则变了，按设计 §3.6 走流水线：CSS 重新挂载 → 清扫被规则禁止的
 //     译文 → 必要时补一轮增量收块 → 回调外部订阅者（frames/top.js 广播指令，
 //     调度器重启）。前三步是这里自己的，一定赶在订阅者之前做完。手动轮或补翻轮
@@ -28,16 +29,17 @@
   const CustomRules = globalThis.CustomRules;
 
   let mirror = null;
-  // 子 frame 的引擎来自顶层指令，自己的规则里写的不算（§3.8）。
+  // 子 frame 的引擎与 AI 配置档来自顶层指令，自己的规则里写的不算（§3.8；P1-D §3.3）。
   let inherited = null;
+  let inheritedProfile = null;
   let memo = null;
   let signature = null;
   let sheet = null;
   let sheetText = null;
   const subscribers = new Set();
   const profileSubscribers = new Set();
-  // 引擎覆盖与领域的签名；init 之前没有规则，两者都是 null。
-  let profileSigned = JSON.stringify([null, null]);
+  // 引擎覆盖、领域与配置档的签名；init 之前没有规则，三者都是 null。
+  let profileSigned = JSON.stringify([null, null, null]);
 
   function request() {
     return chrome.runtime.sendMessage({ type: 'CUSTOM_RULES_FOR_HOST' }).then((reply) => {
@@ -71,6 +73,7 @@
       css: winner.css || '',
       engine: winner.engine || null,
       domain: winner.domain || null,
+      profile: winner.profile || null,
     });
     memo = { key, rule };
     return rule;
@@ -80,6 +83,14 @@
     if (ctx.frameRole !== 'top') return inherited;
     const rule = current();
     return rule ? rule.engine : null;
+  }
+
+  // 本页规则指定的 AI 配置档 id（规则 v3）；没有就是 null（按功能选档）。子 frame
+  // 答顶层指令带下来的那一个。
+  function profileOverride() {
+    if (ctx.frameRole !== 'top') return inheritedProfile;
+    const rule = current();
+    return rule ? rule.profile : null;
   }
 
   // 本页规则设的领域；没有规则、规则没设领域都是 null（跟随全局设置）。规则设了
@@ -94,8 +105,8 @@
   function signatureOf() {
     const rule = current();
     return JSON.stringify(rule
-      ? [rule.id, rule.include, rule.exclude, rule.keepOriginal, rule.css, engineOverride()]
-      : [null, engineOverride()]);
+      ? [rule.id, rule.include, rule.exclude, rule.keepOriginal, rule.css, engineOverride(), profileOverride()]
+      : [null, engineOverride(), profileOverride()]);
   }
 
   // ------------------------------------------------------------ CSS（§3.5）
@@ -267,7 +278,7 @@
   }
 
   function profileSignature() {
-    return JSON.stringify([engineOverride(), domain()]);
+    return JSON.stringify([engineOverride(), domain(), profileOverride()]);
   }
 
   // 引擎或领域真变了才回调；回调抛错只记一条，不挡别的订阅者。
@@ -319,16 +330,19 @@
       if (mirror) mirror.onStorageChange(changes);
     },
     engineOverride,
+    profileOverride,
     domain,
-    inherit(engine) {
+    inherit(engine, profile) {
       inherited = engine || null;
+      inheritedProfile = profile || null;
       recompute();
     },
     onChange(fn) {
       subscribers.add(fn);
       return () => subscribers.delete(fn);
     },
-    // 本页生效的引擎覆盖（engineOverride）或领域（domain）变了才回调，别的字段
+    // 本页生效的引擎覆盖（engineOverride）、领域（domain）或配置档
+    // （profileOverride）变了才回调，别的字段
     // （范围、CSS）变了不回调。
     onProfileChange(fn) {
       profileSubscribers.add(fn);

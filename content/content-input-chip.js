@@ -273,6 +273,7 @@
     try {
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
+        feature: 'input',
         text,
         targetLang,
         mode: 'text',

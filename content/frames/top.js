@@ -8,7 +8,8 @@
 //
 // 指令是子 frame 唯一要知道的东西：
 //
-//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride, generation, host }
+//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride, profileOverride,
+//     generation, host }
 //
 //   epoch          每变一次 +1。子 frame 只认更大的，所以 HELLO 的回话和广播谁先
 //                  到都一样。
@@ -18,6 +19,9 @@
 //   scopeOverride  整页覆盖（state.pageScopeOverride，并行批的正文范围）。
 //   engineOverride 顶层这一页的用户站点规则指定的引擎（'builtin' | 'ai' | null）。
 //                  子 frame 的引擎谓词跟顶层走，不看自己 URL 上的规则（P1-B §3.8）。
+//   profileOverride 顶层这一页的用户站点规则指定的 AI 配置档 id（规则 v3，null = 按
+//                  功能选档）。子 frame 的「AI 能不能用」按它选档（P1-D §3.3）；
+//                  子 frame 的请求本来就在顶层选档执行。
 //   generation     顶层的 ctx.translationProfile.generation()（缓存层那个文件）。子 frame
 //                  的悬停和字幕缓存键带着它：顶层换了模型、提示词或词表，子 frame 的
 //                  旧译文也一起失效。
@@ -60,6 +64,7 @@
       visible: state.translationsVisible !== false,
       scopeOverride: state.pageScopeOverride || null,
       engineOverride: ctx.customRules.engineOverride() || null,
+      profileOverride: ctx.customRules.profileOverride() || null,
       generation: ctx.translationProfile.generation(),
       host: pageHost(),
     };
@@ -72,6 +77,7 @@
       && a.visible === b.visible
       && a.scopeOverride === b.scopeOverride
       && a.engineOverride === b.engineOverride
+      && a.profileOverride === b.profileOverride
       && a.generation === b.generation
       && a.host === b.host;
   }

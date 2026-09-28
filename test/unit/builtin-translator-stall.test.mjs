@@ -37,7 +37,6 @@ const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, imp
 const ENGLISH = 'The quick brown fox jumps over the lazy dog, again and again. ';
 
 let apiKey = 'sk-test';
-let storageListener = () => {};
 const sentToAI = [];
 
 globalThis.self = {
@@ -60,7 +59,9 @@ globalThis.window = {
   // ctx.customRules；这里没有规则）。
   AI_TRANSLATOR_CONTENT: {
     settings: { promptDomain: 'general', aiPageContext: false },
-    customRules: { domain: () => null, engineOverride: () => null, whenReady: async () => {} },
+    customRules: {
+      domain: () => null, engineOverride: () => null, profileOverride: () => null, whenReady: async () => {},
+    },
   },
   addEventListener() {},
   removeEventListener() {},
@@ -77,10 +78,6 @@ Object.defineProperty(globalThis, 'location', {
 globalThis.chrome = {
   i18n: {
     detectLanguage: async () => ({ isReliable: true, languages: [{ language: 'en', percentage: 99 }] }),
-  },
-  storage: {
-    sync: { get: async () => ({ apiKey }) },
-    onChanged: { addListener: (fn) => { storageListener = fn; } },
   },
   runtime: {
     // Stands in for the AI path: the whole point of the fix is that requests
@@ -114,6 +111,30 @@ await import('../../content/engine/languages.js');
 await import('../../content/engine/watchdog.js');
 // 词表快照与附加说明（P1-C）：这里没有 ctx.glossary，快照恒为空。
 await import('../../shared/prompt-addenda.js');
+// AI 配置档（P1-D）：真扩展里 content/content-ai-profiles.js 建镜像；这里换成同步的
+// 替身，keyMissing 跟着上面的 apiKey 变量走。选档走真的 AIProfiles.resolve。
+await import('../../shared/sync-collection.js');
+await import('../../shared/ai-profiles.js');
+{
+  const endpoint = 'https://api.openai.com/v1/chat/completions';
+  const entries = () => [{
+    id: globalThis.AIProfiles.LEGACY_ID, name: 'Legacy', provider: 'openai', apiEndpoint: endpoint,
+    modelName: 'gpt-4.1-mini', features: [], default: true,
+    keyMissing: globalThis.APICompat.isApiKeyMissing({ provider: 'openai', apiEndpoint: endpoint, apiKey }),
+  }];
+  const shelf = globalThis.window.AI_TRANSLATOR_CONTENT;
+  shelf.aiProfiles = {
+    whenReady: async () => {},
+    status: () => 'ready',
+    resolve: (feature) => globalThis.AIProfiles.resolve(entries(),
+      { feature, ruleProfileId: shelf.customRules.profileOverride() }),
+    ready(feature) {
+      const resolved = shelf.aiProfiles.resolve(feature);
+      return Boolean(resolved.profile) && !resolved.profile.keyMissing;
+    },
+    subscribe: () => () => {},
+  };
+}
 await import('../../content/engine/glossary.js');
 await import('../../content/engine/addenda.js');
 await import('../../content/content-translation-engine.js');
@@ -180,7 +201,7 @@ async function isPending(promise) {
 }
 
 function translateRequest(targetLang, extra = {}) {
-  return ctx.requestTranslation({ type: 'TRANSLATE', text: ENGLISH, targetLang, ...extra });
+  return ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: ENGLISH, targetLang, ...extra });
 }
 
 // Every answer carries the engine that produced it, so a fallback is visible in
@@ -217,7 +238,7 @@ test('a whole-page batch gives up once, not once per block', async (t) => {
   const texts = ['First block of text.', 'Second block.', 'Third block.', 'Fourth block.'];
 
   const pending = ctx.requestTranslation({
-    type: 'TRANSLATE_BATCH_FAST', texts, targetLang: 'ru', allowDownload: true,
+    type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts, targetLang: 'ru', allowDownload: true,
   });
   await waitFor(() => calls.length === 1, 'create() to be called');
   t.mock.timers.tick(21_000);
@@ -321,7 +342,7 @@ test('an availability() that never answers is an engine failure, not a bad pair'
 
   const texts = ['First block.', 'Second block.', 'Third block.'];
   const pending = ctx.requestTranslation({
-    type: 'TRANSLATE_BATCH_FAST', texts, targetLang: 'sv', allowDownload: true,
+    type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts, targetLang: 'sv', allowDownload: true,
   });
   await waitFor(() => asked === 1, 'availability() to be called');
   t.mock.timers.tick(16_000);
@@ -362,7 +383,7 @@ test('with no API key there is nothing to fall back to, so the reason is shown',
   // rather than as a progress bar that never moves. ctx.t is absent here, so
   // the i18n key itself comes back.
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  storageListener({ apiKey: { newValue: '' } }, 'sync');
+  apiKey = '';
   self.Translator.availability = async () => 'available';
   const calls = stubCreate(() => new Promise(() => {}));
 
@@ -371,7 +392,7 @@ test('with no API key there is nothing to fall back to, so the reason is shown',
   t.mock.timers.tick(21_000);
 
   assert.deepEqual(await pending, { error: 'builtinUnavailable', engine: 'builtin' });
-  storageListener({ apiKey: { newValue: 'sk-test' } }, 'sync');
+  apiKey = 'sk-test';
 });
 
 test('the progress bar is handed back when the download ends, however it ends', async (t) => {

@@ -44,7 +44,7 @@ function configure(patch) {
 }
 
 const translate = (extra) => ctx.requestTranslation({
-  type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
+  type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
 });
 
 test('手动那边选了 AI，自动这边照样走免费的内置引擎', async () => {
@@ -52,8 +52,8 @@ test('手动那边选了 AI，自动这边照样走免费的内置引擎', async
   // 模式默认开着，凭的就是它不花钱。
   configure({ translationEngine: 'ai' });
 
-  assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'builtin');
-  assert.equal(await ctx.builtinTranslator.effectiveEngine(), 'ai', '手动那一边不该被自动的开关改掉');
+  assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'builtin');
+  assert.equal(await ctx.builtinTranslator.effectiveEngine({ feature: 'selection' }), 'ai', '手动那一边不该被自动的开关改掉');
 
   const result = await translate({ auto: true });
   assert.equal(translateCalls.length, 1, '自动请求没走内置引擎');
@@ -75,7 +75,7 @@ test('同一份设置下，手动请求还是走 AI', async () => {
 test('自动模式自己选了 AI，才花钱，而且过预算闸', async () => {
   configure({ autoTranslateEngine: 'ai' });
 
-  assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'ai');
+  assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'ai');
   await translate({ auto: true });
   assert.equal(sentToAI.length, 1);
   assert.equal(charged.length, 1, '花了钱却没记账');
@@ -140,9 +140,9 @@ test('内置引擎给不出译文、又没开回退：自动模式判 none，不
   const realIsSecure = globalThis.self.isSecureContext;
   globalThis.self.isSecureContext = false; // http:// 页面上内置 API 压根不存在
   try {
-    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'none');
+    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'none');
     ctx.settings.engineFallback = 'allow-ai';
-    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'none',
+    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'none',
       '没有 API Key 时，开了回退也回退不到哪里去');
   } finally {
     globalThis.self.isSecureContext = realIsSecure;

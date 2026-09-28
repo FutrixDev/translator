@@ -89,7 +89,6 @@
         texts,
         targetLang: ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : '',
         trackLang: state.trackLang,
-        delimiter: caps.DELIMITER,
       }));
     } catch (error) {
       // 这一批在这里接住（下面按失败记冷却），日志也只在这里打。

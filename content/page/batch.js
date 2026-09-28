@@ -30,7 +30,6 @@
   // 12 个批同时去抢同一份端上模型，多出来的是排队和内存，不是吞吐；云端引擎
   // 是网络并发，12 才有意义。
   const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12 });
-  const DELIMITER = '⟪⟫⟪⟫⟪⟫';   // 分隔符（使用 Unicode 数学括号，极不可能出现在正文中）
 
   // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
   // 它与 ctx.requestTranslation 同形，只是先去缓存里看一眼。没加载到它就走原路：
@@ -423,9 +422,9 @@
       try {
         const response = await requestBatch(withNeighbours(block, block, {
           type: 'TRANSLATE_BATCH_FAST',
+          feature: 'page',
           texts: [block.text],
           targetLang: target.request,
-          delimiter: DELIMITER,
           allowDownload,
           auto
         }));
@@ -598,9 +597,9 @@
         try {
           const response = await requestBatch(withNeighbours(block, block, {
             type: 'TRANSLATE_BATCH_FAST',
+            feature: 'page',
             texts: sb.map(x => x.text),
             targetLang: target.request,
-            delimiter: DELIMITER,
             allowDownload,
             auto
           }));
@@ -656,9 +655,9 @@
         // 语言包首次下载（进度就显示在下方进度条上），自动那一轮不行。
         const response = await requestBatch(withNeighbours(batch[0], batch[batch.length - 1], {
           type: 'TRANSLATE_BATCH_FAST',
+          feature: 'page',
           texts: texts,
           targetLang: target.request,
-          delimiter: DELIMITER,
           allowDownload,
           auto
         }));

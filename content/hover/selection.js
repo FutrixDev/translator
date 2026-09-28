@@ -263,6 +263,7 @@
     try {
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
+        feature: 'hover',
         text: safeText,
         targetLang,
         mode: 'text'

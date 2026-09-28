@@ -45,6 +45,8 @@ function load() {
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0 },
     t: (key) => key,
     customRules: { isCatchingUp: () => false, onChange() {} },
+    // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
+    aiProfiles: { subscribe: () => () => {} },
     onLanguagePackReady() {},
     readSourceText: (el) => el.text,
     setupAutoDiscovery: () => ({ rescan() {}, stop() {}, suspend() {}, resume() {} }),

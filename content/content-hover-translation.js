@@ -181,6 +181,7 @@
     try {
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
+        feature: 'hover',
         text,
         targetLang,
         mode: 'text',

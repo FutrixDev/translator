@@ -268,6 +268,8 @@
       ctx.customRules.init();
       // 本页的术语表镜像同样先发出去，只在顶层帧建（content/content-glossary.js）。
       ctx.glossary.init();
+      // AI 配置档的公开镜像，每个 frame 都建（content/content-ai-profiles.js）。
+      ctx.aiProfiles.init();
       await ctx.loadSettings();
       // 还没有译文，这一遍只为把 <html> 上的样式 / 仅译文两个属性写对。每个 frame
       // 都要跑：子 frame 里的译文同样要有样式、同样受仅译文控制。
@@ -285,8 +287,8 @@
       if (top && ctx.createFloatBall) ctx.createFloatBall();
       // 调度器的第一个判断就要用到本站规则钉住的引擎。最多等 1.5 s（SW 冷启动），
       // 放在悬浮球之后，好让悬浮球不跟着等。
-      // 术语表和规则并列等：两者都在 1.5 s 上限里，谁也不排在谁后面。
-      await Promise.all([ctx.customRules.whenReady(), ctx.glossary.whenReady()]);
+      // 术语表、规则、配置档并列等：三者都在 1.5 s 上限里，谁也不排在谁后面。
+      await Promise.all([ctx.customRules.whenReady(), ctx.glossary.whenReady(), ctx.aiProfiles.whenReady()]);
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();

@@ -50,6 +50,7 @@ test('a relayed request carries the frame language into the built-in translator'
   translateCalls.length = 0;
   await ctx.requestTranslation({
     type: 'TRANSLATE',
+    feature: 'selection',
     text: 'Bonjour',
     targetLang: 'zh-CN',
     pageSourceLang: 'fr',
@@ -60,6 +61,6 @@ test('a relayed request carries the frame language into the built-in translator'
 
 test('the same request from this document still uses this document language', async () => {
   translateCalls.length = 0;
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'Bonjour', targetLang: 'zh-CN' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'Bonjour', targetLang: 'zh-CN' });
   assert.equal(translateCalls[0].sourceLanguage, 'en');
 });

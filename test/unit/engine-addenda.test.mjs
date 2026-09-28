@@ -26,6 +26,7 @@ const TEXT = 'This ordinary English sentence is the one being translated.';
 const rule = { domain: null };
 ctx.customRules = {
   engineOverride: () => null,
+  profileOverride: () => null,
   domain: () => rule.domain,
   whenReady: async () => {},
 };
@@ -65,7 +66,7 @@ function configure(patch = {}) {
 }
 
 const emptySnap = () => ({ glossary: eng.glossary.fromEntries([], `test-${Math.random()}`) });
-const batch = (extra = {}) => ({ type: 'TRANSLATE_BATCH_FAST', texts: [TEXT], targetLang: 'zh-CN', ...extra });
+const batch = (extra = {}) => ({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [TEXT], targetLang: 'zh-CN', ...extra });
 // 快照是「送出」那一步的参数（缓存层就是这样交的）：先按这一页盖语域，再送出。
 const send = (message) => ctx.sendTranslation(ctx.withPromptAddenda(message), emptySnap());
 
@@ -141,13 +142,13 @@ test('context: only with the switch on; the page title and the neighbours ride a
 
 test('context: the input box (standaloneText) never carries it, even with the switch on', async () => {
   configure({ aiPageContext: true, promptDomain: 'legal' });
-  await send({ type: 'TRANSLATE', text: TEXT, targetLang: 'zh-CN', standaloneText: true });
+  await send({ type: 'TRANSLATE', feature: 'selection', text: TEXT, targetLang: 'zh-CN', standaloneText: true });
   assert.deepEqual(ai.sent[0].addenda, { domain: 'legal' }, 'the domain still applies, the context does not');
 });
 
 test('context: entries without neighbours (hover, selection, captions) carry the title only', async () => {
   configure({ aiPageContext: true });
-  await send({ type: 'TRANSLATE', text: TEXT, targetLang: 'zh-CN' });
+  await send({ type: 'TRANSLATE', feature: 'selection', text: TEXT, targetLang: 'zh-CN' });
   assert.deepEqual(ai.sent[0].addenda, { context: { title: 'A page title', before: '', after: '' } });
 });
 
@@ -168,7 +169,7 @@ test('context: pageContext is stripped before the message goes to the model, wha
   configure({ aiPageContext: true });
   const pageContext = { before: 'x', after: 'y' };
   await send(batch({ pageContext }));
-  await send({ type: 'TRANSLATE', text: TEXT, targetLang: 'zh-CN', pageContext });
+  await send({ type: 'TRANSLATE', feature: 'selection', text: TEXT, targetLang: 'zh-CN', pageContext });
   for (const message of ai.sent) assert.equal('pageContext' in message, false, message.type);
 });
 
@@ -178,7 +179,7 @@ test('context: a split batch sends the same context with every part', async () =
   const texts = terms.map((entry) => `We discuss ${entry.s} today.`);
   const snap = eng.glossary.fromEntries(terms, `test-${Math.random()}`);
   await ctx.sendTranslation(ctx.withPromptAddenda(
-    { type: 'TRANSLATE_BATCH_FAST', texts, targetLang: 'zh-CN', pageContext: { before: 'P', after: 'N' } }),
+    { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts, targetLang: 'zh-CN', pageContext: { before: 'P', after: 'N' } }),
     { glossary: snap });
   assert.equal(ai.sent.length, 2);
   for (const message of ai.sent) {

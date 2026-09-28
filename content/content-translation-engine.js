@@ -420,28 +420,10 @@
 
   // ==================== AI 回落判定 ====================
 
-  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于用户的接口配没配好。
-  // 没配好却回落过去，用户只会收到一句“请先配置 API Key”——
-  // 而真正的原因是“这个语言对内置引擎不支持”或“语言包还没下”。
-  //
-  // 「配好」不是「有 Key」：本地模型（Ollama / LM Studio、回环或局域网端点）不要
-  // Key。答案只有一处，APICompat.isApiKeyMissing（shared/api-compat.js），它只看
-  // 这三个键，于是这里缓存的也就是这三个键。null = 还没读过。
-  const AI_CONFIG_KEYS = ['provider', 'apiEndpoint', 'apiKey'];
-  let aiConfig = null;
-
-  async function refreshAiConfig() {
-    try {
-      aiConfig = await chrome.storage.sync.get({ provider: '', apiEndpoint: '', apiKey: '' });
-    } catch (error) {
-      aiConfig = { provider: '', apiEndpoint: '', apiKey: '' };
-    }
-    return aiConfig;
-  }
-
-  function aiConfigured() {
-    return !!aiConfig && !globalThis.APICompat.isApiKeyMissing(aiConfig);
-  }
+  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于这个功能有没有一档能用的
+  // AI 配置（ctx.aiProfiles.ready，content/content-ai-profiles.js）。没有却回落过去，
+  // 用户只会收到一句「未配置」—— 而真正的原因是「这个语言对内置引擎不支持」或
+  // 「语言包还没下」。
 
   // 选内置引擎就是选了“零费用”。内置这条路走不通时悄悄改走用户自己的接口，
   // 花的是他的钱，而他从没同意过这件事——所以回退默认关闭，开了才回退。
@@ -452,10 +434,10 @@
     return !siteEngine() && settings.engineFallback === 'allow-ai';
   }
 
-  async function canFallBackToAI() {
+  async function canFallBackToAI(feature) {
     if (!fallbackAllowed()) return false;
-    if (!aiConfig) await refreshAiConfig();
-    return aiConfigured();
+    await ctx.aiProfiles.whenReady();
+    return ctx.aiProfiles.ready(feature);
   }
 
   /**
@@ -475,10 +457,10 @@
    * 内置引擎上失败并按 engineFallback 回落到 AI。那一下花的钱由下面
    * requestTranslation 末尾那道预算闸把关。
    */
-  async function effectiveEngine({ auto = false } = {}) {
+  async function effectiveEngine({ auto = false, feature } = {}) {
     if (shouldUseBuiltin(auto)) return 'builtin';
     if (!isBuiltinSelected(auto)) return 'ai';
-    return (await canFallBackToAI()) ? 'ai' : 'none';
+    return (await canFallBackToAI(feature)) ? 'ai' : 'none';
   }
 
   /**
@@ -526,21 +508,6 @@
     lastFallback = { reason, at: Date.now() };
   }
 
-  if (chrome?.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace !== 'sync') return;
-      // 三个键任一变了就把新值并进缓存；还没读过就不并 —— 只并进一个键会把另外
-      // 两个当成空，下一次 canFallBackToAI 自己去读整份就是了。
-      if (aiConfig) {
-        for (const key of AI_CONFIG_KEYS) {
-          if (changes[key]) aiConfig = { ...aiConfig, [key]: changes[key].newValue };
-        }
-      }
-      // 语言对可能因为设置改了目标语言而变化，页面语言缓存不受影响，
-      // 但已建好的实例是按语言对缓存的，无需清理。
-    });
-  }
-
   // targetLang 是这次请求的目标语言。语言对不行时先分清是不是目标语言本身端上译不了：
   // 是的话点名（76 门里大半只有 AI 能译），否则才是笼统的「这一对不行」（多半是源语言）。
   // 走到这里的都是不能回退 AI 的请求，所以只有 LocalOnly 那一句。
@@ -567,7 +534,7 @@
   // 内置引擎能处理的请求类型，只此一份：wantsBuiltin 按它分流，handleWithBuiltin
   // 的 case 标签与它相等（单测断言）。设置和站点规则只管这几种；别的类型没指名
   // 引擎就直接走 AI，http 与 https 上行为一致。
-  const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']);
+  const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH_FAST']);
 
   // 每一段都经词表的占位保护（snap 是这一次请求的快照，空快照什么也不做）。
   async function handleWithBuiltin(message, snap) {
@@ -590,7 +557,6 @@
         return { translation, phonetic: '', isWord: false };
       }
 
-      case 'TRANSLATE_BATCH':
       case 'TRANSLATE_BATCH_FAST': {
         const texts = Array.isArray(message.texts) ? message.texts : [];
         // 目标语言不支持是整批（乃至整页）都成立的事实，先判掉整批抛出去，
@@ -675,9 +641,21 @@
    * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
    * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
    * 交来的那一份（缓存层算键时取的），没交就在这里现取（eng.addenda.settings）。
+   *
+   * `resolved` 是这一次请求选中的 AI 配置档（AIProfiles.resolve 的形状，由两个
+   * 送出口解析）：`{profile}` 就把 profileId 盖进每一份消息，SW 按它取整档；
+   * `{error}`（规则指的档不在了、一档都没有）到这里才变成给用户看的一句话 ——
+   * 走内置引擎的请求从不看它。
    */
-  async function sendToModel(original, snap, frozen) {
-    const { pageContext: _neighbours, ...message } = original;
+  async function sendToModel(original, snap, frozen, resolved) {
+    if (resolved.error) {
+      console.warn('Blab Translation: sendToModel has no AI profile (%s, profile %s, feature %s)',
+        resolved.error, resolved.id || '(none)', original.feature);
+      const t = ctx.t || ((key) => key);
+      return { error: t(resolved.error).replace('{name}', resolved.id || ''), engine: 'ai' };
+    }
+    const { pageContext: _neighbours, ...unstamped } = original;
+    const message = { ...unstamped, profileId: resolved.profile.id };
     if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
     // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
     // 它悄悄丢掉这一页的语域，所以直接抛。
@@ -782,15 +760,20 @@
     await Promise.all([
       ctx.customRules && ctx.customRules.whenReady(),
       ctx.glossary && ctx.glossary.whenReady(),
+      ctx.aiProfiles && ctx.aiProfiles.whenReady(),
     ]);
-    const snap = opts.glossary || await eng.glossary.current(message.targetLang);
+    // 指名了不认识的引擎先抛：那是调用方写错了，排在选档之前。
     const pinned = pinnedEngine(message);
+    const snap = opts.glossary || await eng.glossary.current(message.targetLang);
+    // 选档与取词表快照同一段：没交就在这里现解析（feature 不认识就抛）。走内置
+    // 引擎也照样解析，{error} 只在真要发给模型时才用上（sendToModel）。
+    const profile = opts.profile || ctx.aiProfiles.resolve(message.feature);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
     const auto = !!message.auto;
     const builtin = wantsBuiltin(message, auto);
     // 回落只在没指名引擎时才有：指名了就是这一个引擎的答案，成败都是它的。
-    const mayFallBack = async () => pinned === undefined && canFallBackToAI();
+    const mayFallBack = async () => pinned === undefined && canFallBackToAI(message.feature);
     if (builtin && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
@@ -820,20 +803,20 @@
         throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
-    return sendToModel(message, snap, opts.addendaSettings);
+    return sendToModel(message, snap, opts.addendaSettings, profile);
   };
 
   /**
-   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边先重读一次
-   * 配置 —— 设置页刚填好 Key，这一页的缓存还是旧的。内置那边除了环境，还要端上
+   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边问这个功能
+   * 解析出的档（镜像跟着 sync 增量走，设置页刚填好 Key 这里就知道）。内置那边除了环境，还要端上
    * 有这门目标语言：问的是 eng.supportsTarget，和页内语言菜单标「仅 AI」的是同一个
    * 谓词，不然卡片会对一门「仅 AI」的语言提供「改用内置」，点了只换来一句报错。
    */
-  ctx.engineChoices = async function(targetLang) {
-    await refreshAiConfig();
+  ctx.engineChoices = async function(targetLang, feature) {
+    await ctx.aiProfiles.whenReady();
     return {
       builtin: isBuiltinSupported() && eng.supportsTarget(targetLang),
-      ai: aiConfigured(),
+      ai: ctx.aiProfiles.ready(feature),
     };
   };
 

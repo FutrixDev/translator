@@ -356,13 +356,15 @@ test('the track states the source language, so detection never has to guess', ()
     texts: ['Hello world'],
     targetLang: 'zh-CN',
     trackLang: 'en',
-    delimiter: '|',
   });
   assert.equal(message.type, 'TRANSLATE_BATCH_FAST');
+  // P1-D：字幕这一路按 'subtitles' 选 AI 配置档。
   assert.deepEqual(message.texts, ['Hello world']);
   assert.equal(message.targetLang, 'zh-CN');
   assert.equal(message.sourceLang, 'en');
-  assert.equal(message.delimiter, '|');
+  assert.equal(message.feature, 'subtitles');
+  // P1-D：批量分隔符只在 service worker 一份（shared/batch-delimiter.js），消息里不带。
+  assert.equal('delimiter' in message, false);
   // Subtitles run with the playhead and cannot wait on a language pack.
   assert.equal(message.allowDownload, false);
 });
