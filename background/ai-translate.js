@@ -3,13 +3,14 @@
 // 这一层只管「怎么问模型、怎么读回答」。要不要问（有没有 Key、译成哪门语言）由
 // background.js 的三个 handler 答，怎么发出去由 api-client.js 答。
 //
+// 五个翻译函数都收一个可选的 addenda（语域、领域、词表、页面上下文，形状见
+// shared/prompt-addenda.js，处理函数已把过关），原样交给 buildPrompt 的
+// options.addenda；快速分批回落到编号法时也带着它。计字数统一走
+// AutoStats.sentChars —— 源文本加上下文，语域、词表和领域不计。
+//
 // 内置引擎（Chrome 的 Translator API）不走这里，也走不了：它是
 // [Exposed=Window, SecureContext]，service worker 里根本不存在，那一路在内容脚本
 // 里跑。
-//
-// 五个翻译函数都收一个可选的 addenda（这一页的语域，形状见
-// shared/prompt-addenda.js，处理函数已把过关），原样交给 buildPrompt 的
-// options.addenda；快速分批回落到编号法时也带着它。
 
 import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
@@ -170,7 +171,7 @@ async function translateSingleWordWithAI(text, targetLang, settings, addenda) {
 }
 
 async function translateTextWithMode(text, targetLang, settings, forceWord = false, addenda) {
-  countCharsSentToModel(typeof text === 'string' ? text.length : 0);
+  countCharsSentToModel(globalThis.AutoStats.sentChars(text, addenda));
 
   if (forceWord || isSingleWordText(text)) {
     const result = await translateSingleWordWithAI(text, targetLang, settings, addenda);
@@ -184,7 +185,7 @@ async function translateTextWithMode(text, targetLang, settings, forceWord = fal
 // Translate batch of texts with AI (numbered format)
 async function translateBatchWithAI(texts, targetLang, settings, addenda) {
   // 快速分批回退到这里时会再走一遍这一句 —— 那本来就是第二次真发出去的请求。
-  countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
+  countCharsSentToModel(globalThis.AutoStats.sentChars(texts, addenda));
 
   const targetLangName = languageNames[targetLang] || targetLang;
 
@@ -226,7 +227,7 @@ async function translateBatchWithAI(texts, targetLang, settings, addenda) {
 
 // Fast batch translation with delimiter
 async function translateBatchFastWithAI(texts, targetLang, settings, delimiter = '⟪⟫⟪⟫⟪⟫', addenda) {
-  countCharsSentToModel(globalThis.AutoStats.textsChars(texts));
+  countCharsSentToModel(globalThis.AutoStats.sentChars(texts, addenda));
 
   const targetLangName = languageNames[targetLang] || targetLang;
 

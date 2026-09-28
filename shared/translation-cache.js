@@ -34,10 +34,15 @@
 //                  寿命等于「下一个改提示词的人记得同步 +1」，而版本号在每次发版时
 //                  自动就变了，忘不掉。代价是每次更新扩展作废一次缓存 —— 条目本来
 //                  也只活 30 天，一次重译而已。
-//   addenda     —— 随请求带去的附加说明的戳（shared/prompt-addenda.js 的 stamp()，
-//                  今天是这一页的语域，没有就是空串）。同一句话在论坛上和在新闻站
-//                  上可以译得不一样。上线那一刻所有键都变一次（拼接多了一段），而
-//                  version 本来就让每次发版全部键失效，所以不另做迁移。
+//   addenda     —— 这一段的附加说明戳（content/engine/addenda.js 的 stamp）：发起请求
+//                  那一帧盖上的语域，加上这段命中的词条（大小写标志、原文、译文或
+//                  「保留原文」）、有效领域 id 和上下文开关。同一句话在论坛上和在
+//                  新闻站上、在法律领域和在医学领域可以译得不一样。只含这段命中的
+//                  词条，所以改一条词条只有含它的文字失效；上下文只进开关不进内容，
+//                  前后文每段都不一样，放进键里就等于不缓存。它按每段文字求值，所以
+//                  是本表唯一一个可以是函数的因子 —— 函数只在 serve 里求值，见
+//                  buildKey。上线那一刻所有键都变一次，而 version 本来就让每次发版
+//                  全部键失效，所以不另做迁移。
 //
 // apiKey 不在键里，也永远不该在：它不改变译文，而键会以明文落进 storage。
 //
@@ -105,11 +110,27 @@
   // 因子顺序是键的一部分，别调整，调整了等于清空所有人的缓存。
   const FACTORS = ['text', 'targetLang', 'sourceLang', 'endpoint', 'model', 'prompt', 'version', 'addenda'];
 
+  // 函数因子只该在 serve 里按每段文字求值；漏到这里就是调用方写错了，
+  // String(fn) 会把函数源码当成键的一部分，每个键都一样地错。
   function buildKey(factors) {
     return KEY_PREFIX + hash(FACTORS.map((name) => {
       const value = factors[name];
+      if (typeof value === 'function') {
+        throw new TypeError(`translation cache factor ${name} is a function; only serve() evaluates those`);
+      }
       return value == null ? '' : String(value);
     }).join(SEP));
+  }
+
+  // 一段文字的全部因子：值是函数的因子按这段文字求值。
+  function factorsFor(factors, text) {
+    const out = { text };
+    for (const name of FACTORS) {
+      if (name === 'text') continue;
+      const value = factors[name];
+      out[name] = typeof value === 'function' ? value(text) : value;
+    }
+    return out;
   }
 
   function rememberL1(key, translation) {
@@ -184,14 +205,15 @@
    * 单独成一批发走，回来再按原位置塞回去，而不是把整批打散重排。
    *
    * @param {string[]} texts
-   * @param {object} factors 除 text 之外的键因子（targetLang / sourceLang / endpoint / model / prompt / version / addenda）
+   * @param {object} factors 除 text 之外的键因子（targetLang / sourceLang / endpoint / model / prompt /
+   *        version / addenda）；值可以是 `(text) => string`，按每段文字求值再建键
    * @param {(missing: string[]) => Promise<string[]|null>} fetchMissing
    *        只会收到**去重后**的未命中文本，必须返回等长数组；返回 null 表示这批失败了。
    * @returns {Promise<string[]|null>} 与 texts 等长；fetchMissing 失败时原样返回 null
    */
   async function serve(texts, factors, fetchMissing) {
     followClears();
-    const keys = texts.map((text) => buildKey({ ...factors, text }));
+    const keys = texts.map((text) => buildKey(factorsFor(factors, text)));
     // 本次调用自己的账本。**刻意不拿 L1 当账本**：L1 有容量上限，一次足够大的
     // 调用能把自己早先放进去的条目挤出去，回填时就成了一个空洞 —— 而空洞在
     // 上游就是「A 块挂上 B 块的译文」。

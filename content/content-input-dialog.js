@@ -13,7 +13,6 @@
   const getTargetLangLabel = ctx.getTargetLangLabel;
   const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
-  const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const speech = ctx.speech;
 
   // The dialog is a scratchpad: you paste something in and want it in a
@@ -278,9 +277,8 @@
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
       } catch (error) {
-        const message = isExtensionContextInvalidated(error)
-          ? t('extensionContextInvalidated')
-          : t('translationFailed');
+        console.error('Blab Translation: input translation failed', error);
+        const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
         setPhonetic('');
         showResultSpeak(false);

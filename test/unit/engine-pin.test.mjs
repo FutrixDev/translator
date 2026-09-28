@@ -109,7 +109,7 @@ test('every path stamps the engine that answered', async () => {
 test('the budget gate refusal on the AI exit is stamped ai', async () => {
   configure({ translationEngine: 'ai' });
   globalThis.AutoStats = {
-    textsChars: () => 0,
+    sentChars: () => 0,
     charge: async () => ({ allowed: false }),
   };
   const result = await translate({ unattended: true });

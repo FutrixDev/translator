@@ -1,8 +1,8 @@
 // Blab Translation 设置页 —— 站点翻译规则卡片（设计 §4）
 //
 // options.html 按顺序加载的普通脚本，和 options.js 共用一个全局词法作用域：
-// t、fill、showStatus、currentUILang、syncAutoEngineState、confirmUnattendedAiSpend
-// 都直接叫名字（调用都发生在 DOMContentLoaded 之后）。
+// t、fill、showStatus、downloadFile、currentUILang、syncAutoEngineState、
+// confirmUnattendedAiSpend 都直接叫名字（调用都发生在 DOMContentLoaded 之后）。
 //
 // 读：storage.sync.get(null) 交给 CustomRules.collect —— 集合没有索引键，键名
 // 前缀就是目录。写：一律 CustomRules.request(...)，走服务工作者的单写者队列，
@@ -42,8 +42,16 @@ const CUSTOM_RULE_FIELD_LABELS = [
   ['keepOriginal', 'customRuleKeepOriginal'],
   ['css', 'customRuleCss'],
   ['engine', 'customRuleEngine'],
+  ['domain', 'customRuleDomain'],
 ];
 const fieldLabel = (field) => CUSTOM_RULE_FIELD_LABELS.find(([name]) => name === field)[1];
+
+// 领域的文案键：promptDomainGeneral、promptDomainTech……领域只有
+// PromptAddenda.DOMAINS 一份；规则卡片和全局设置（options.js 的领域下拉）的
+// 选项名字都从这里取。
+function promptDomainLabelKey(domain) {
+  return `promptDomain${domain.charAt(0).toUpperCase()}${domain.slice(1)}`;
+}
 
 // ---------------------------------------------------------------------------
 // 共用给整份导入导出的三个函数（options-transfer.js 的 customRules 一行）
@@ -297,6 +305,26 @@ function engineField(form, value) {
   return select;
 }
 
+// 本站的领域。首项「跟随全局设置」不写字段（规则存成 v1）；选了哪个领域，哪怕是
+// 「通用」，都算这条规则设了领域（v2），以它为准。
+function domainField(form, value) {
+  const group = document.createElement('div');
+  group.className = 'form-group custom-rule-field';
+  const caption = document.createElement('label');
+  caption.htmlFor = 'customRule-domain';
+  caption.textContent = t(fieldLabel('domain'));
+  group.appendChild(caption);
+
+  const select = document.createElement('select');
+  select.id = 'customRule-domain';
+  select.appendChild(new Option(t('customRuleDomainInherit'), ''));
+  for (const domain of PromptAddenda.DOMAINS) select.appendChild(new Option(t(promptDomainLabelKey(domain)), domain));
+  select.value = value || '';
+  group.appendChild(select);
+  form.appendChild(group);
+  return select;
+}
+
 function openCustomRuleEditor(rule) {
   hideCustomRulesError();
   const source = rule || {};
@@ -321,6 +349,7 @@ function openCustomRuleEditor(rule) {
     }),
   };
   const engine = engineField(node, source.engine);
+  const domain = domainField(node, source.domain);
 
   // CSS 边写边查，查法只有 CustomRules.sanitizeCss 一处。
   fields.css.input.addEventListener('input', () => {
@@ -351,7 +380,7 @@ function openCustomRuleEditor(rule) {
   actions.append(save, cancel);
   node.appendChild(actions);
 
-  const editor = { id: rule ? rule.id : null, node, fields, engine, general, save };
+  const editor = { id: rule ? rule.id : null, node, fields, engine, domain, general, save };
   save.addEventListener('click', () => saveCustomRule(editor));
   cancel.addEventListener('click', () => closeCustomRuleEditor());
 
@@ -378,6 +407,7 @@ function readEditor(editor) {
   const draft = { match: editorLines(editor.fields.match), css: editor.fields.css.input.value };
   for (const field of CustomRules.SELECTOR_FIELDS) draft[field] = editorLines(editor.fields[field]);
   if (editor.engine.value) draft.engine = editor.engine.value;
+  if (editor.domain.value) draft.domain = editor.domain.value;
   return draft;
 }
 
@@ -451,12 +481,8 @@ function exportCustomRules() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const file = CustomRules.toExportFile(customRulesList);
-  const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `blab-site-rules-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}.json`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadFile(JSON.stringify(file, null, 2), 'application/json',
+    `blab-site-rules-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}.json`);
 }
 
 function resetRulesImport() {

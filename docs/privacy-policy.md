@@ -60,6 +60,24 @@ If you point these no-click translations at an AI endpoint, you set how many
 characters they may spend per day (200,000 by default); that tally is kept on
 your computer and never uploaded.
 
+**AI 请求里除了要翻译的文字，还可能多带两样东西。** 一是「附带页面上下文」（设置页
+自定义提示词那一节，**默认关**）：打开后，网页标题会随请求发给你配置的 AI 服务，
+帮它译得更连贯；翻译整页时还附上每一批文字前后各至多 300 字，自动翻译只附标题；
+输入框翻译从不附带。二是术语表：与这段
+文字匹配的词条会随请求发给同一个服务。你选的「领域」只是一个名字（如「法律」），
+不含页面内容。**内置翻译不发送这两样**，它们也从不发给我们。
+
+**An AI request can carry two things besides the text being translated.** One is
+"Send page context" (in the custom prompt section of Settings, **off by
+default**): when it is on, the page title goes with the request to the AI
+service you configured, so the translation reads more coherently. Whole-page
+translation also sends at most 300 characters before and after each batch;
+automatic translation sends the title only; the input box never sends it. The other is
+the glossary: entries that match the text go with the request to the same
+service. The "domain" you pick is only a name (such as "Legal") and carries no
+page content. **The built-in translator sends neither**, and neither is ever
+sent to us.
+
 **整页翻译读哪些内容、不读哪些：**
 
 - **嵌在页面里的 frame 和 shadow DOM 里的正文也会翻译。** 文章嵌在 iframe 里、
@@ -134,7 +152,8 @@ and only at the moment you click "translate this image".
 | --- | --- | --- |
 | 设置（接口地址、模型、目标语言、各种开关） | `chrome.storage.sync` | 是 —— 这是 Chrome 的账号同步，数据在 Google 那里，不经过我们 |
 | 站点规则（你对每个网站定下的「总是翻译 / 从不翻译」） | `chrome.storage.sync` | 是，同上 |
-| 自定义站点翻译规则（你给网站写的翻译区域、排除和保留原文的选择器、自定义 CSS、按站点的翻译引擎） | `chrome.storage.sync` | 是，同上。规则里的 CSS 不许加载任何网络资源，保存时和页面上各查一遍 |
+| 自定义站点翻译规则（你给网站写的翻译区域、排除和保留原文的选择器、自定义 CSS、按站点的翻译引擎和领域） | `chrome.storage.sync` | 是，同上。规则里的 CSS 不许加载任何网络资源，保存时和页面上各查一遍 |
+| 术语表（你定下的「这个词这样译 / 保留原文」，可限定网站和目标语言） | `chrome.storage.sync` | 是，同上。一条词条一个键；只在它命中的那段文字要发给你配置的 AI 服务时随请求发出，内置翻译不发送它 |
 | API key | `chrome.storage.sync` | 是，同上。**我们从不读取、不上传它**；它只在你的浏览器里被拼进发给你自己接口的请求 |
 | 登录令牌（漫画 / 文档翻译用） | `chrome.storage.local` | **否**，只在这台设备上 |
 | 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符，以及今天不用点的翻译用掉了多少 AI 字符 —— 每日额度靠它算） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
@@ -179,18 +198,18 @@ button that clears it.
 
 ## 六、删除你的数据 / Deleting your data
 
-- **你电脑上的**：设置、站点规则、译文缓存、本机统计，都能在设置页里清 —— 站点
-  规则一行一个删除按钮，统计和译文缓存各有一颗「清除」；或者直接卸载扩展，Chrome
-  会把这个扩展的 `storage` 一并删掉。
+- **你电脑上的**：设置、站点规则、术语表、译文缓存、本机统计，都能在设置页里清
+  —— 站点规则和术语表一行一个删除按钮，统计和译文缓存各有一颗「清除」；或者直接
+  卸载扩展，Chrome 会把这个扩展的 `storage` 一并删掉。
 - **我们服务器上的**（账号、任务记录、上传过的文件）：**在设置页「退出登录」只是
   删掉这台设备上的令牌，服务器上的东西还在。** 要真删，发邮件到下面那个地址，
   说明要删除账号。
 
-What is on your computer — settings, site rules, the translation cache and the
-local statistics — can be cleared in the settings page or removed wholesale by
-uninstalling the extension. What is on our servers is a separate act: **signing
-out only deletes this device's token**, so ask for account deletion at the
-address below.
+What is on your computer — settings, site rules, the glossary, the translation
+cache and the local statistics — can be cleared in the settings page or removed
+wholesale by uninstalling the extension. What is on our servers is a separate
+act: **signing out only deletes this device's token**, so ask for account
+deletion at the address below.
 
 ---
 

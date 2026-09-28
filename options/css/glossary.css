@@ -1,0 +1,106 @@
+/* Blab Translation 设置页样式 —— 术语表卡片（options-glossary.js）。
+   导入确认行、报错框、按钮行和大小写勾选借用 transfer.css 的 .transfer-*，这里只管
+   工具条、列表和编辑器。 */
+
+.glossary-usage {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.glossary-toolbar {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* forms.css 只给 .form-group 里的输入框上样式，搜索框在工具条上，自己来。 */
+.glossary-search {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.glossary-search:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.glossary-preview-text {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.glossary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.glossary-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.glossary-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.glossary-terms {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.glossary-keep {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.glossary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.glossary-chip {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+/* 编辑和删除成组：整组不收缩，折行只会整组折。 */
+.glossary-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.glossary-editor {
+  padding: 16px;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.glossary-case {
+  margin: 0 0 16px;
+}

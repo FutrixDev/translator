@@ -6,7 +6,7 @@
 // 就没了。这条约定只有 buildPrompt 一个执行点，模板和执行点分在两个文件里，下一
 // 个加模板的人不会知道它存在。
 
-// 附加说明（语域）的形状和英文措辞在共享模块里，这里只拼。
+// 附加说明（语域、词表、领域、页面上下文）的形状、上限和英文措辞在共享模块里，这里只拼。
 import '../shared/prompt-addenda.js';
 
 // Math placeholder rule - always appended to prompts (cannot be overridden by custom prompts)
@@ -90,14 +90,40 @@ function getFastBatchOutputRules(delimiter) {
 6. ${REGISTER_RULE}`;
 }
 
-// 附加说明拼成的一块：今天只有 REGISTER 一行（这一页的体裁，只是标签，不带域名）。
+// 附加说明拼成的一块：REGISTER / DOMAIN / GLOSSARY / PAGE CONTEXT，各有内容才写。
+// 顺序（D-382）：语域和领域说的都是「这是什么样的文字」，相邻放；词表是落笔时逐条
+// 查的对照；页面上下文放最后，离模板最远、紧挨数学规则之前，不会被当成要译的正文。
+// 语域和有效领域是同一个 id（news、academic 两边都有）时只写 DOMAIN 那一行：同一件
+// 事说两遍，领域那句更具体。general 没有句子，不写 DOMAIN。
+// 用户和页面来的字符串一律经 JSON.stringify —— 引号和换行都带反斜杠，块里就不会出现
+// 「segments are separated by "」这句话（mock 服务器和模型都靠它认分隔符）。
 // 调用方（SW 的三个处理函数）已经 validate 过；没有内容时是空串。
 function composePromptAddenda(addenda) {
   if (!addenda) return '';
-  const { REGISTER_SENTENCES, HEADINGS } = globalThis.PromptAddenda;
+  const { REGISTER_SENTENCES, SENTENCES, HEADINGS } = globalThis.PromptAddenda;
   const lines = [];
-  if (addenda.register) {
+  const domain = addenda.domain && SENTENCES[addenda.domain] ? addenda.domain : null;
+  if (addenda.register && addenda.register !== domain) {
     lines.push(`${HEADINGS.register} ${REGISTER_SENTENCES[addenda.register]}`);
+  }
+  if (domain) {
+    lines.push(`${HEADINGS.domain} ${SENTENCES[domain]}`);
+  }
+  if (addenda.glossary && addenda.glossary.length > 0) {
+    lines.push(HEADINGS.glossary);
+    for (const entry of addenda.glossary) {
+      const target = entry.t === undefined ? HEADINGS.keep : JSON.stringify(entry.t);
+      lines.push(`- ${JSON.stringify(entry.s)} → ${target}`);
+    }
+  }
+  if (addenda.context) {
+    const context = {};
+    for (const field of globalThis.PromptAddenda.CONTEXT_FIELDS) {
+      if (addenda.context[field]) context[field] = addenda.context[field];
+    }
+    if (Object.keys(context).length > 0) {
+      lines.push(HEADINGS.context, JSON.stringify(context));
+    }
   }
   return lines.join('\n');
 }

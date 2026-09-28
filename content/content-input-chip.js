@@ -107,16 +107,24 @@
 
   // idle：可点，写着「译成 X」。busy：正在译，点了不算。error：没译成，框里的字
   // 没动，再点一下就是重试。
-  function setChipState(state) {
+  // 'error' 带上要给用户看的那一句（ctx.thrownTranslationMessage 定的，和别的入口
+  // 同一句）。芯片一行放不下长句，截断的部分放在 title 里，悬停能读全。
+  function setChipState(state, errorMessage) {
     if (!chip) return;
+    chip.removeAttribute('title');
     if (state === 'idle') {
       delete chip.dataset.state;
       chip.removeAttribute('aria-busy');
       chip.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.languageName(chip.dataset.targetLang, { inSentence: true }));
+    } else if (state === 'busy') {
+      chip.dataset.state = state;
+      chip.setAttribute('aria-busy', 'true');
+      chip.textContent = t('translating');
     } else {
       chip.dataset.state = state;
-      chip.setAttribute('aria-busy', state === 'busy' ? 'true' : 'false');
-      chip.textContent = t(state === 'busy' ? 'translating' : 'translationFailed');
+      chip.setAttribute('aria-busy', 'false');
+      chip.textContent = errorMessage;
+      chip.setAttribute('title', errorMessage);
     }
     placeChip();
   }
@@ -273,7 +281,13 @@
         standaloneText: true
       });
       if (pending !== request) return;
-      if (response.error) throw new Error(response.error);
+      if (response.error) {
+        // 子 frame 的请求经顶层执行，抛出的错误在消息通道上折成了 {error, passFatal}
+        // （content/frames/top.js）；把标记接回来，文案才和顶层直接抛出时一样。
+        const error = new Error(response.error);
+        if (response.passFatal === true) error.passFatal = true;
+        throw error;
+      }
       if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field) || inComposition()) {
         pending = null;
         setChipState('idle');
@@ -290,7 +304,7 @@
       // 已经作废的请求（芯片收走了、用户改了字）失败了，芯片上没有它的位置。
       if (!writing && pending !== request) return;
       pending = null;
-      if (chipField === field) setChipState('error');
+      if (chipField === field) setChipState('error', ctx.thrownTranslationMessage(error));
     }
   }
 

@@ -4,14 +4,17 @@
 // 文件只做三件事：
 //   - 建本 frame 的镜像：向 SW 要一次本主机的规则（CUSTOM_RULES_FOR_HOST），此后
 //     跟着 bootstrap 转来的增量走（ctx.syncMirrors 登记表）；
-//   - 答「本页生效的是哪条规则」（current / engineOverride），给范围、收块、
-//     site-adapter、引擎谓词读；
+//   - 答「本页生效的是哪条规则」（current / engineOverride / domain），给范围、
+//     收块、site-adapter、引擎谓词、附加说明（content/engine/addenda.js）读；
 //   - 本页生效的规则变了，按设计 §3.6 走流水线：CSS 重新挂载 → 清扫被规则禁止的
 //     译文 → 必要时补一轮增量收块 → 回调外部订阅者（frames/top.js 广播指令，
 //     调度器重启）。前三步是这里自己的，一定赶在订阅者之前做完。手动轮或补翻轮
 //     进行中的变化，第 2、3 步在那一轮结束时（afterRound）补做。
 //     include 区域晚到（scope.js）是同一类事——范围在轮次中途变了——走同一个
 //     rescope()，不另开一条路。
+//   - 本页规则钉住的引擎或领域变了，回调 onProfileChange 的订阅者（缓存层的
+//     ctx.translationProfile 靠它加代，设计 §3.8）。这一问不过 signatureOf 那道门：
+//     领域不改范围、不改 CSS，只改「这段怎么译」。
 //
 // 调 init() 之前（DOM 夹具里只装整页翻译那几个模块时也一样）：current() 与
 // engineOverride() 答 null，whenReady() 立即 resolve —— 等于「没有规则」。
@@ -32,6 +35,9 @@
   let sheet = null;
   let sheetText = null;
   const subscribers = new Set();
+  const profileSubscribers = new Set();
+  // 引擎覆盖与领域的签名；init 之前没有规则，两者都是 null。
+  let profileSigned = JSON.stringify([null, null]);
 
   function request() {
     return chrome.runtime.sendMessage({ type: 'CUSTOM_RULES_FOR_HOST' }).then((reply) => {
@@ -64,6 +70,7 @@
       keepOriginal: winner.keepOriginal || EMPTY,
       css: winner.css || '',
       engine: winner.engine || null,
+      domain: winner.domain || null,
     });
     memo = { key, rule };
     return rule;
@@ -75,6 +82,15 @@
     return rule ? rule.engine : null;
   }
 
+  // 本页规则设的领域；没有规则、规则没设领域都是 null（跟随全局设置）。规则设了
+  // general 也算设了，返回 'general'。
+  function domain() {
+    const rule = current();
+    return rule ? rule.domain : null;
+  }
+
+  // 范围与 CSS 的签名（第 1–3 步和订阅者看它）。不含领域：领域变了不必清扫、不必
+  // 补翻，那一问归 profileSignature。
   function signatureOf() {
     const rule = current();
     return JSON.stringify(rule
@@ -250,7 +266,26 @@
     queueMicrotask(settle);
   }
 
+  function profileSignature() {
+    return JSON.stringify([engineOverride(), domain()]);
+  }
+
+  // 引擎或领域真变了才回调；回调抛错只记一条，不挡别的订阅者。
+  function noteProfile() {
+    const next = profileSignature();
+    if (next === profileSigned) return;
+    profileSigned = next;
+    for (const fn of Array.from(profileSubscribers)) {
+      try {
+        fn();
+      } catch (error) {
+        console.error('Blab Translation: custom rule profile subscriber failed', error);
+      }
+    }
+  }
+
   function recompute() {
+    noteProfile();
     const next = signatureOf();
     if (next === signature) return;
     signature = next;
@@ -264,6 +299,7 @@
     if (mirror) return;
     mirror = CustomRules.mirror({ request, host: location.hostname });
     signature = signatureOf();
+    profileSigned = profileSignature();
     mirror.subscribe(recompute);
     ctx.syncMirrors.push({
       prefix: CustomRules.KEY_PREFIX,
@@ -283,6 +319,7 @@
       if (mirror) mirror.onStorageChange(changes);
     },
     engineOverride,
+    domain,
     inherit(engine) {
       inherited = engine || null;
       recompute();
@@ -290,6 +327,12 @@
     onChange(fn) {
       subscribers.add(fn);
       return () => subscribers.delete(fn);
+    },
+    // 本页生效的引擎覆盖（engineOverride）或领域（domain）变了才回调，别的字段
+    // （范围、CSS）变了不回调。
+    onProfileChange(fn) {
+      profileSubscribers.add(fn);
+      return () => profileSubscribers.delete(fn);
     },
     // 每轮收块开始时由 scope.js 的 beginScopeRound() 调（§3.5 第一个挂载时机）。
     beginRound: mountCss,

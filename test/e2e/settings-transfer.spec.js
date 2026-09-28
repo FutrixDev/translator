@@ -48,9 +48,15 @@ function report(label, text) {
   test.info().annotations.push({ type: label, description: text });
 }
 
+// #provider is static markup, parsed long before options.js wires the transfer
+// card: its listeners are attached after `await loadSettings()` in the
+// DOMContentLoaded handler, so a setInputFiles right after #provider can fire
+// `change` with no listener and the preview never appears. openRulesCard also
+// waits for the rules card's usage line, which is drawn only after its first
+// read lands -- by then the synchronous setup chain (setupCustomRules,
+// setupGlossary, setupTransfer) has run.
 async function openOptions(page, extensionId) {
-  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await page.waitForSelector('#provider');
+  await openRulesCard(page, extensionId);
 }
 
 function blabFile(sections) {

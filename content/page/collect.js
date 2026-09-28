@@ -29,8 +29,7 @@
   // buildTranslationContent），丢了闭标记就在结尾自动闭合。默认引擎正是内置
   // NMT，之前的开关等于让绝大多数用户的译文一个超链接都留不下。
   //
-  // 大小写不敏感同样适用于这条正则：译文里的标记可能是 <A1>。
-  const MARKUP_MARKER_RE = /<\/?[a-z]+\d+>/gi;
+  // 标记和占位符的语法（生成、剥离）在 shared/text-markers.js。
   // 直属文本节点的锚点类名，见 wrapDirectTextRuns
   const TEXT_RUN_CLASS = 'ai-translator-text-run';
 
@@ -38,13 +37,6 @@
     'A', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'SUP', 'SUB', 'MARK', 'SMALL',
     'ABBR', 'DEL', 'INS', 'Q', 'CITE', 'DFN', 'CODE', 'KBD', 'SAMP', 'VAR'
   ]);
-
-  // looksLikeCode/isMainlyUrl/长度阈值这类“对正文的判断”都要先剥掉占位符和
-  // 内联标记再做，否则 <a1></a1> 里的尖括号会把带链接的段落误判成代码。
-  function stripPlaceholders(text) {
-    if (!text) return '';
-    return text.replace(/\{\{\d+\}\}/g, '').replace(MARKUP_MARKER_RE, '');
-  }
 
   // 本轮收集里，受管容器内有多少块连生成内容都承不住而被放弃。翻译流程用它来
   // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
@@ -448,8 +440,10 @@
       // 对于内联元素（如链接、按钮），如果有文本内容，单独翻译
       if (inlineTags.includes(tagName)) {
         const { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
-        // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限
-        const plainText = stripPlaceholders(text).trim();
+        // 长度阈值按剥掉占位符/内联标记后的正文算，标记本身不该把短链接顶出上限；
+        // looksLikeCode/isMainlyUrl 同样要先剥，否则 <a1></a1> 里的尖括号会把带链接
+        // 的段落误判成代码。
+        const plainText = globalThis.TextMarkers.strip(text).trim();
         if (text && plainText.length >= 2 && plainText.length <= 500) {
           // 跳过看起来像代码或主要是URL的文本
           // 这里要 trim：只含公式的元素排除占位符后会剩下空白（如 "{{1}} {{2}}"），
@@ -473,7 +467,7 @@
         let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
-          const textWithoutMath = stripPlaceholders(text).trim();
+          const textWithoutMath = globalThis.TextMarkers.strip(text).trim();
 
           // 排除公式占位符后没有任何正文：整个块就是一条公式，跳过。
           // 典型是 arXiv/LaTeXML 的行间公式——公式包在 <table class="ltx_equation"> 里，
@@ -683,7 +677,7 @@
 
     function addMathPlaceholder(entry) {
       mathIndex += 1;
-      const placeholder = `{{${mathIndex}}}`;
+      const placeholder = globalThis.TextMarkers.placeholder(mathIndex);
       mathElements.push({ placeholder, ...entry });
       return placeholder;
     }
@@ -784,7 +778,7 @@
         if (preserveMarkup && isMarkupElement(node)) {
           const index = markupElements.length + 1;
           const tag = node.tagName.toLowerCase();
-          const open = `<${tag}${index}>`;
+          const open = globalThis.TextMarkers.openTag(tag, index);
           const before = text.length;
           text += open;
           markupElements.push({ index, tag, element: node });
@@ -795,7 +789,7 @@
             text = text.slice(0, before);
             markupElements.pop();
           } else {
-            text += `</${tag}${index}>`;
+            text += globalThis.TextMarkers.closeTag(tag, index);
           }
           return;
         }
@@ -947,9 +941,7 @@
 
   function normalizeComparableText(text) {
     if (!text) return '';
-    return text
-      .replace(/\{\{\d+\}\}/g, '')
-      .replace(MARKUP_MARKER_RE, '')
+    return globalThis.TextMarkers.strip(text)
       .replace(/\s+/g, '')
       .replace(/[\u200B-\u200D\uFEFF]/g, '')
       .trim()
@@ -957,8 +949,6 @@
   }
 
 
-  // 内联格式标记的唯一定义，content-language.js 剥标记时复用
-  ctx.MARKUP_MARKER_RE = MARKUP_MARKER_RE;
   ctx.TEXT_RUN_CLASS = TEXT_RUN_CLASS;
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.isMathElement = isMathElement;

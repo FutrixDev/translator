@@ -2,7 +2,7 @@
 //
 // options.html 按顺序加载的普通脚本，和 options.js 共用同一个全局词法作用域：
 // defaultSettings、collectSettings、hasHotkeyConflict、loadSettings、showStatus、
-// unattendedAiReachable、t、currentUILang 都直接叫名字（调用都发生在点击之后）。
+// downloadFile、unattendedAiReachable、t、currentUILang 都直接叫名字（调用都发生在点击之后）。
 //
 // 文件格式、键级校验和「先全校验、再按序写、第一个失败就停」的编排在
 // shared/settings-transfer.js（纯函数，node 里测）；这里只有这一页的 section 表
@@ -36,6 +36,7 @@ function transferEnums() {
     targetLangs: TargetLang.SUPPORTED,
     cloudTargets: TargetLang.CLOUD_TARGETS,
     styles: TranslationDisplay.STYLES,
+    domains: PromptAddenda.DOMAINS,
   });
 }
 
@@ -118,12 +119,17 @@ const siteRulesSection = {
 };
 
 // 集合抛出的错误键 → 报错码。表里的键卡片自己也认（CustomRules.userErrorKey），
-// 这里只管它们在整份导入里怎么说。P1-C 往同一张表里加术语表的键。
+// 这里只管它们在整份导入里怎么说。术语表的键卡片认的是 Glossary.userErrorKey。
 const COLLECTION_REFUSALS = {
   customRulesImportInvalid: 'sectionInvalid',
   customRuleTooLarge: 'sectionInvalid',
   customRulesBudgetFull: 'sectionBudgetFull',
   customRuleSaveFailed: 'sectionSaveFailed', // 只在写入时出现
+  glossaryImportInvalid: 'sectionInvalid',
+  glossaryEntryInvalid: 'sectionInvalid',
+  glossaryEntryTooLarge: 'sectionInvalid',
+  glossaryBudgetFull: 'sectionBudgetFull',
+  glossarySaveFailed: 'sectionSaveFailed', // 只在写入时出现
 };
 
 // 写入中途失败时，transferErrorApplyFailed 里 {message} 填的原因短语。
@@ -191,11 +197,87 @@ const customRulesSection = collectionSection({
   },
 });
 
-const TRANSFER_SECTIONS = [settingsSection, siteRulesSection, customRulesSection];
+// 术语表在文件里就是它的 CSV 文本（和卡片导出的那份一样），导入走同一个
+// previewGlossaryImport（options-glossary.js）和同一个 SW 的 import。
+const glossarySection = collectionSection({
+  key: 'glossary',
+
+  async collect() {
+    return GlossaryCsv.serialize(await readGlossary());
+  },
+
+  async validate(raw) {
+    if (typeof raw !== 'string') throw new Error('glossaryImportInvalid');
+    const { added, replaced } = await previewGlossaryImport(raw);
+    // 全有或全无，没有丢掉的条目。
+    return { value: raw, accepted: added + replaced, dropped: [], added, replaced };
+  },
+
+  async preview({ added, replaced }) {
+    return { lines: [fill(t('transferPreviewGlossary'), { added, replaced })], warnings: [] };
+  },
+
+  // SW 重新解析这份 CSV，不信这里算的预览。
+  apply(value) {
+    return Glossary.request('import', { csv: value });
+  },
+});
+
+const TRANSFER_SECTIONS = [settingsSection, siteRulesSection, customRulesSection, glossarySection];
 
 // ---------------------------------------------------------------------------
 // 控件
 // ---------------------------------------------------------------------------
+
+// 卡片里面的标记。options.html 只留 <section id="transferCard"> 这个挂载点（那个文件
+// 要守住 1000 行），标记原样搬到这里，加载时一次填进去：下面的 transferElements 在
+// 加载时就按 id 取节点，所以必须先填。文案照旧走 data-i18n，applyI18n 换界面语言时
+// 和别的卡片一起改。整段是写死的常量，不拼任何数据。
+const TRANSFER_CARD_MARKUP = `
+  <h2 class="section-title">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    <span data-i18n="transferTitle">Import / Export Settings</span>
+  </h2>
+  <span class="hint" data-i18n-hint="transferDesc"></span>
+
+  <div class="transfer-actions">
+    <button type="button" id="transferExport" class="btn btn-secondary btn-inline">
+      <span data-i18n="transferExport">Export</span>
+    </button>
+    <button type="button" id="transferImport" class="btn btn-secondary btn-inline">
+      <span data-i18n="transferImport">Import</span>
+    </button>
+    <input type="file" id="transferFile" accept=".json,application/json" hidden>
+  </div>
+
+  <label class="transfer-secret" for="transferIncludeApiKey">
+    <input type="checkbox" id="transferIncludeApiKey">
+    <span data-i18n="transferIncludeApiKey">Include API Key</span>
+  </label>
+  <span class="hint" data-i18n-hint="transferIncludeApiKeyHint"></span>
+
+  <div id="transferError" class="transfer-error" role="alert" hidden></div>
+
+  <div id="transferPreview" class="transfer-preview" hidden>
+    <h3 class="transfer-preview-title" data-i18n="transferPreviewTitle">Review before importing</h3>
+    <ul id="transferPreviewList" class="transfer-preview-list"></ul>
+    <div id="transferWarnings" class="transfer-warnings"></div>
+    <div class="transfer-actions">
+      <button type="button" id="transferConfirm" class="btn btn-primary btn-inline">
+        <span data-i18n="transferConfirm">Confirm import</span>
+      </button>
+      <button type="button" id="transferCancel" class="btn btn-secondary btn-inline">
+        <span data-i18n="transferCancel">Cancel</span>
+      </button>
+    </div>
+  </div>
+`;
+
+document.getElementById('transferCard').innerHTML = TRANSFER_CARD_MARKUP;
 
 const transferElements = {
   exportButton: document.getElementById('transferExport'),
@@ -217,6 +299,7 @@ const TRANSFER_SECTION_NAMES = {
   settings: 'transferSectionSettings',
   siteRules: 'transferSectionSiteRules',
   customRules: 'transferSectionCustomRules',
+  glossary: 'transferSectionGlossary',
 };
 
 function sectionName(key) {
@@ -271,13 +354,7 @@ async function exportSettings() {
   const values = {};
   for (const section of TRANSFER_SECTIONS) values[section.key] = await section.collect({ includeApiKey });
   const file = SettingsTransfer.buildFile(values, now);
-  const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = SettingsTransfer.fileName(now);
-  link.click();
-  // 点击已经把下载交给浏览器了，URL 用完就收。
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadFile(JSON.stringify(file, null, 2), 'application/json', SettingsTransfer.fileName(now));
   showStatus(t('transferExported'), 'success');
 }
 

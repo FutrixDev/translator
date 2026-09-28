@@ -42,7 +42,7 @@ const MAIN_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Harbour notes</title><style>${STYLE}</style></head>
 <body>
   <p id="lead">${LEAD}</p>
-  <p id="second">Fishing boats leave before dawn and come back when the fog lifts over the bay.</p>
+  <p id="second"><span id="short">Fishing boats</span> leave before dawn and come back when the fog lifts over the bay.</p>
   <input id="field" value="Harbour tides and ferry crossings">
   <textarea id="area" rows="2">Harbour tides and ferry crossings</textarea>
   <div id="editable" contenteditable="true">Harbour tides and ferry crossings</div>
@@ -261,6 +261,7 @@ const engineTag = (page) => page.locator('.ai-translator-popup .ai-translator-en
 const retranslateBtn = (page) => page.locator('.ai-translator-popup .ai-translator-retranslate');
 const switchBtn = (page) => page.locator('.ai-translator-popup .ai-translator-switch-engine');
 const copyBtn = (page) => page.locator('.ai-translator-popup .ai-translator-copy');
+const addTermBtn = (page) => page.locator('.ai-translator-popup .ai-translator-add-term');
 
 // The icon's mouseup settle is 100 ms; anything that would have shown it has
 // by this point.
@@ -616,15 +617,18 @@ test.describe('selection icon and card actions', () => {
     const mock = await startMockOpenAIServer();
     try {
       await servePages(context);
-      for (const lang of UI_LANGUAGES) {
+      for (const [i, lang] of UI_LANGUAGES.entries()) {
         await setExtensionSettings(page, aiSettings(mock.endpoint, { uiLanguage: lang }));
         await openPage(page);
         await stubBuiltinTranslator(page);
-        await dragSelect(page, '#lead');
+        // A term-sized selection (1–80 characters), so "Add to glossary" is in
+        // the row too: all four buttons have to fit.
+        await dragSelect(page, '#short');
         await icon(page).click();
         await expect(cardText(page)).toContainText('[T]');
         await expect(retranslateBtn(page)).toBeVisible();
         await expect(switchBtn(page)).toHaveText(getMessage('cardUseBuiltin', lang));
+        await expect(addTermBtn(page)).toHaveText(getMessage('glossaryAdd', lang));
 
         const layout = await page.evaluate(() => {
           const plain = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
@@ -640,7 +644,7 @@ test.describe('selection icon and card actions', () => {
             buttons,
           };
         });
-        expect(layout.buttons.length, lang).toBeGreaterThanOrEqual(3);
+        expect(layout.buttons.length, lang).toBeGreaterThanOrEqual(4);
         expect(layout.rowScroll, lang).toBeLessThanOrEqual(0);
         for (const { cls, rect } of layout.buttons) {
           const where = `${lang} ${cls}`;
@@ -686,6 +690,16 @@ test.describe('selection icon and card actions', () => {
         expect(copied.buttons.find((b) => b.cls.includes('ai-translator-copy')).text, lang)
           .toBe(getMessage('copied', lang));
         expectRowUnchanged(copied, before, `${lang} after copy`);
+
+        // "Add to glossary" -> "Added" (first language) / "Updated existing
+        // term" (the same term again, in every later language): the third
+        // label of the same button, and it too must not move the row.
+        await addTermBtn(page).click();
+        await page.locator('.ai-translator-popup .ai-translator-term-save').click();
+        await expect(addTermBtn(page)).toHaveText(getMessage(i === 0 ? 'glossaryAdded' : 'glossaryUpdated', lang));
+        const added = await actionRow(page);
+        expectRowUnchanged(added, before, `${lang} after adding a term`);
+        expect(await page.evaluate(() => window.__rowHides), lang).toEqual([]);
         await page.keyboard.press('Escape');
       }
     } finally {

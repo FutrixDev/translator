@@ -2,17 +2,30 @@
 // 服务工作者把关后拼进系统提示词。
 //
 // 契约：
-//   - shared/prompt-addenda.js 的 validate() 只收 `{register?}`（缺了也抛），
-//     register 是 REGISTERS 之一；多一个字段（比如 host）就抛。
+//   - shared/prompt-addenda.js 的 validate() 只收 `{register?, glossary?, domain?,
+//     context?}`（缺了也抛），register 是 REGISTERS 之一；多一个字段（比如 host）就抛。
 //   - SiteRules.register(host, path) 只读内置表，没有就是 null。
 //   - buildPrompt 的顺序：模板 → 附加说明块 → 公式占位符规则 → extraRules。
 //   - background/ai-translate.js 的每一条路（单句、单词、编号批、快速批、快速批
 //     回退编号批，各自的默认模板与自定义提示词两支）发出去的系统提示词都带那一句。
 //   - 三个处理函数先 validate 再翻译。
 //
+// shared/prompt-addenda.js 与 background/prompts.js 的 composePromptAddenda：
+// 附加说明（词表、领域、页面上下文）随 AI 请求去，形状在 SW 入口把关，拼成系统
+// 提示词里模板之后、数学规则之前的一块。
+//
+// 钉住四件事（设计 §6.3 那一行）：
+//   - 超限和多余字段都抛，不截断；缺了 addenda 也抛（内容脚本一律盖，R33）；
+//   - general 领域不发句子；
+//   - 块排在数学规则之前，三个 buildPrompt 分支（含单词翻译）都带；
+//   - 块里不会出现 mock 服务器 PROMPT_DELIMITER_RE 认的那句话 —— 用户写的原文
+//     即使就是那句话，经 JSON.stringify 后引号前多了反斜杠，匹配不上。
+//
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { workerSource } from './helpers/sources.mjs';
 
 // ---- 服务工作者那一半在 Node 里要的最少环境 -------------------------------
@@ -297,4 +310,188 @@ test('each TRANSLATE handler validates the addenda before it translates, and the
     assert.match(body.slice(translated), /addenda\)/, `${name} does not pass the addenda on`);
     assert.match(src, new RegExp(`${name}\\([^)]*message\\.addenda\\)`), `the switch drops addenda for ${name}`);
   }
+});
+
+// ---- 词表、领域、页面上下文（P1-C）----------------------------------------
+
+const {
+  MATH_PLACEHOLDER_RULE,
+  SINGLE_WORD_PROMPT,
+  WORD_OUTPUT_RULES,
+  DEFAULT_PROMPT,
+  FAST_BATCH_PROMPT,
+  getFastBatchOutputRules,
+  composePromptAddenda,
+  buildPrompt,
+} = prompts;
+
+// mock 服务器里那条正则，从源码取，不抄一份（抄的会和它走散）。
+const MOCK_SOURCE = readFileSync(
+  fileURLToPath(new URL('../e2e/mock-openai-server.js', import.meta.url)), 'utf8');
+const PROMPT_DELIMITER_RE = (() => {
+  const literal = /const PROMPT_DELIMITER_RE = \/(.+)\/;/.exec(MOCK_SOURCE);
+  assert.ok(literal, 'mock-openai-server.js still declares PROMPT_DELIMITER_RE');
+  return new RegExp(literal[1]);
+})();
+
+const DELIMITER = '⟪⟫⟪⟫⟪⟫';
+
+test('validate: {} and an empty glossary are shape-valid', () => {
+  // undefined 不再合法：内容脚本一律盖 addenda，缺了是缺陷（上面语域那一节的
+  // validate 用例钉住它抛）。
+  assert.doesNotThrow(() => PromptAddenda.validate({}));
+  assert.doesNotThrow(() => PromptAddenda.validate({ glossary: [] }));
+  assert.doesNotThrow(() => PromptAddenda.validate({
+    glossary: [{ s: 'attention', t: '注意力' }, { s: 'Transformer' }],
+    domain: 'tech',
+    context: { title: 't', before: '', after: 'a' },
+  }));
+});
+
+test('validate: every limit is exact — at the limit passes, one over throws', () => {
+  const { LIMITS } = PromptAddenda;
+  const many = (n) => Array.from({ length: n }, (_, i) => ({ s: `term${i}` }));
+  assert.doesNotThrow(() => PromptAddenda.validate({ glossary: many(LIMITS.entries) }));
+  assert.throws(() => PromptAddenda.validate({ glossary: many(LIMITS.entries + 1) }), /glossary entries/);
+
+  assert.doesNotThrow(() => PromptAddenda.validate({ glossary: [{ s: 'x'.repeat(LIMITS.source) }] }));
+  assert.throws(() => PromptAddenda.validate({ glossary: [{ s: 'x'.repeat(LIMITS.source + 1) }] }), /glossary source/);
+  assert.doesNotThrow(() => PromptAddenda.validate({ glossary: [{ s: 'x', t: 'y'.repeat(LIMITS.target) }] }));
+  assert.throws(() => PromptAddenda.validate({ glossary: [{ s: 'x', t: 'y'.repeat(LIMITS.target + 1) }] }), /glossary target/);
+
+  for (const field of ['title', 'before', 'after']) {
+    assert.doesNotThrow(() => PromptAddenda.validate({ context: { [field]: 'c'.repeat(LIMITS[field]) } }));
+    assert.throws(() => PromptAddenda.validate({ context: { [field]: 'c'.repeat(LIMITS[field] + 1) } }),
+      new RegExp(`context ${field}`));
+  }
+});
+
+test('validate: extra fields and wrong types throw; the message carries no user text', () => {
+  const secret = 'PRIVATE-TERM';
+  const cases = [
+    { glossary: [{ s: secret, t: 'x', extra: 1 }] },
+    { glossary: [{ s: secret }], extra: true },
+    { context: { title: secret, url: 'https://x' } },
+    { glossary: [{ s: '' }] },
+    { glossary: [{ s: 1 }] },
+    { glossary: [{ s: secret, t: null }] },
+    { glossary: { s: secret } },
+    { domain: 'poetry' },
+    { context: 'plain' },
+    null,
+    [],
+    'addenda',
+  ];
+  for (const addenda of cases) {
+    assert.throws(() => PromptAddenda.validate(addenda), (error) => {
+      assert.match(error.message, /^PromptAddenda: invalid addenda/);
+      assert.ok(!error.message.includes(secret), 'no user text in the error message');
+      return true;
+    }, JSON.stringify(addenda));
+  }
+});
+
+test('DOMAINS: nine ids, every one has an English sentence, general has none', () => {
+  assert.deepEqual([...PromptAddenda.DOMAINS],
+    ['general', 'tech', 'academic', 'legal', 'medical', 'finance', 'gaming', 'fiction', 'news']);
+  for (const id of PromptAddenda.DOMAINS) {
+    if (id === 'general') continue;
+    assert.ok(PromptAddenda.SENTENCES[id].length > 0, id);
+    assert.doesNotMatch(PromptAddenda.SENTENCES[id], /[^\x20-\x7e]/, `${id} is plain English`);
+  }
+  assert.equal(composePromptAddenda({ domain: 'general' }), '');
+  assert.equal(composePromptAddenda({ domain: 'legal' }), `DOMAIN: ${PromptAddenda.SENTENCES.legal}`);
+});
+
+test('composePromptAddenda: the block of the design, strings through JSON.stringify', () => {
+  const block = composePromptAddenda({
+    glossary: [{ s: 'Transformer' }, { s: 'attention', t: '注意力' }],
+    domain: 'tech',
+    context: { title: 'On "Attention"', before: 'line1\nline2', after: '' },
+  });
+  assert.equal(block, [
+    `DOMAIN: ${PromptAddenda.SENTENCES.tech}`,
+    'GLOSSARY (user-defined; overrides any general rule about keeping terms in their original form):',
+    '- "Transformer" → keep as written',
+    '- "attention" → "注意力"',
+    'PAGE CONTEXT (reference only; do not translate it and do not include it in the output):',
+    '{"title":"On \\"Attention\\"","before":"line1\\nline2"}',
+  ].join('\n'));
+  // 空的附加说明拼出空串，buildPrompt 的输出与没有附加说明时逐字相同。
+  for (const empty of [undefined, {}, { glossary: [] }, { domain: 'general' }, { context: {} }]) {
+    assert.equal(composePromptAddenda(empty), '');
+    assert.equal(buildPrompt(DEFAULT_PROMPT, 'Chinese', {}, '', { addenda: empty }),
+      buildPrompt(DEFAULT_PROMPT, 'Chinese'));
+  }
+});
+
+test('composePromptAddenda: REGISTER, DOMAIN, GLOSSARY, PAGE CONTEXT, in that order (D-382)', () => {
+  const block = composePromptAddenda({
+    register: 'forum',
+    domain: 'legal',
+    glossary: [{ s: 'tort', t: '侵权' }],
+    context: { title: 'A thread' },
+  });
+  assert.equal(block, [
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`,
+    `DOMAIN: ${PromptAddenda.SENTENCES.legal}`,
+    'GLOSSARY (user-defined; overrides any general rule about keeping terms in their original form):',
+    '- "tort" → "侵权"',
+    'PAGE CONTEXT (reference only; do not translate it and do not include it in the output):',
+    '{"title":"A thread"}',
+  ].join('\n'));
+});
+
+test('composePromptAddenda: a register and a domain with the same id send the DOMAIN line only (D-382)', () => {
+  const shared = PromptAddenda.REGISTERS.filter((id) => PromptAddenda.DOMAINS.includes(id));
+  assert.deepEqual(shared, ['news', 'academic'], 'the ids both lists carry');
+  for (const id of shared) {
+    assert.equal(composePromptAddenda({ register: id, domain: id }), `DOMAIN: ${PromptAddenda.SENTENCES[id]}`, id);
+  }
+  // 不同的 id 两行都写；general 没有 DOMAIN 行，语域照写。
+  assert.equal(composePromptAddenda({ register: 'news', domain: 'academic' }), [
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.news}`,
+    `DOMAIN: ${PromptAddenda.SENTENCES.academic}`,
+  ].join('\n'));
+  assert.equal(composePromptAddenda({ register: 'news', domain: 'general' }),
+    `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.news}`);
+});
+
+test('buildPrompt: the block sits after the template and before the math rule, in every branch', () => {
+  const addenda = { glossary: [{ s: 'attention', t: '注意力' }] };
+  const block = composePromptAddenda(addenda);
+
+  const plain = buildPrompt(DEFAULT_PROMPT, 'Chinese', {}, '', { addenda });
+  assert.equal(plain, DEFAULT_PROMPT.replace(/\{targetLang\}/g, 'Chinese') + '\n\n' + block + MATH_PLACEHOLDER_RULE);
+
+  const rules = getFastBatchOutputRules(DELIMITER);
+  const custom = buildPrompt('Translate into {targetLang}.', 'Chinese', { delimiter: DELIMITER }, rules, { addenda });
+  assert.equal(custom, 'Translate into Chinese.\n\n' + block + MATH_PLACEHOLDER_RULE + '\n\n' + rules);
+
+  // 单词翻译不带数学规则，但附加说明一样带，排在输出规则之前。
+  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, '', { includeMathRule: false, addenda });
+  assert.ok(word.endsWith('\n\n' + block));
+  assert.ok(!word.includes(MATH_PLACEHOLDER_RULE.trim()));
+  const customWord = buildPrompt('Custom {targetLang}', 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
+  assert.equal(customWord, 'Custom Chinese\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);
+});
+
+test('the block never carries the sentence the mock reads the delimiter from', () => {
+  // 最坏的输入：用户把那句话本身写成词条原文和译文，页面标题也是它。
+  const hostile = 'segments are separated by "X"';
+  const addenda = {
+    glossary: [{ s: hostile, t: hostile }, { s: 'x"y' }],
+    context: { title: hostile, before: hostile, after: hostile },
+  };
+  PromptAddenda.validate(addenda);
+  const block = composePromptAddenda(addenda);
+  assert.ok(block.includes('segments are separated by \\"X\\"'), 'the text is there, escaped');
+  assert.equal(PROMPT_DELIMITER_RE.exec(block), null);
+
+  // 拼进真实的快批提示词后，第一个匹配仍是模板自己的分隔符 —— 两个分支都是。
+  const fast = buildPrompt(FAST_BATCH_PROMPT, 'Chinese', { delimiter: DELIMITER }, '', { addenda });
+  assert.equal(PROMPT_DELIMITER_RE.exec(fast)?.[1], DELIMITER);
+  const custom = buildPrompt('Translate into {targetLang}.', 'Chinese', { delimiter: DELIMITER },
+    getFastBatchOutputRules(DELIMITER), { addenda });
+  assert.equal(PROMPT_DELIMITER_RE.exec(custom)?.[1], DELIMITER);
 });

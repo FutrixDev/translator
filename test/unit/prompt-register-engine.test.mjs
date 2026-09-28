@@ -41,6 +41,13 @@ Object.assign(globalThis.chrome.storage, {
 });
 globalThis.chrome.runtime.getManifest = () => ({ version: '9.9.9' });
 globalThis.AutoStats = { add() {} };
+// 缓存层在加载时订阅词表镜像（ctx.glossary）和本站规则的 onProfileChange（P1-C）：
+// manifest 里 content/content-glossary.js 与 content/page/custom-rule.js 都排在它
+// 前面。这里装真的镜像（夹具不是顶层帧，镜像为空），规则那一边没有规则、不回调。
+await import('../../shared/sync-collection.js');
+await import('../../shared/glossary.js');
+await import('../../content/content-glossary.js');
+ctx.customRules.onProfileChange = () => () => {};
 await import('../../shared/translation-cache.js');
 await import('../../content/content-translation-cache.js');
 
@@ -122,6 +129,67 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   await ask();
   assert.equal(sentToAI.length, 2, 'a news page reused the forum translation');
   assert.equal(sentToAI[1].addenda.register, 'news');
+
+  // 键和请求出自同一个盖好的对象、同一个因子（D-382）：同一页、同一段，领域一变
+  // 就是另一个键，送出去的请求也带着那个领域和这一页的语域。
+  ctx.settings.promptDomain = 'legal';
+  try {
+    await ask();
+    assert.equal(sentToAI.length, 3, 'a legal-domain request reused the general translation');
+    assert.deepEqual(sentToAI[2].addenda, { register: 'news', domain: 'legal' });
+    await ask();
+    assert.equal(sentToAI.length, 3, 'the second legal-domain request was not served from the cache');
+  } finally {
+    ctx.settings.promptDomain = 'general';
+  }
+});
+
+// 算键（serve 头一步）和送出之间隔着读 storage（readL2）：那期间用户改了领域，
+// 键和发出去的提示词也必须是同一份领域（D-384 F1）。缓存层在算键前取一份
+// {domain, context}，经 opts 交给送出那一步；改之前送出时现读，键说 general、
+// 请求却带着 legal，这一条 legal 的译文就存进了 general 的键。
+test('a domain changed while the cache is read does not split the key from the request (D-384 F1)', async () => {
+  useAI();
+  local.clear();
+  goTo('https://example.test/');
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    sentToAI.push(message);
+    return { translations: message.texts.map((t) => `AI:${t}`) };
+  };
+  const stamps = [];
+  const realStamp = ctx.engine.addenda.stamp;
+  ctx.engine.addenda.stamp = (...args) => {
+    const stamp = realStamp(...args);
+    stamps.push(stamp);
+    return stamp;
+  };
+  const realGet = globalThis.chrome.storage.local.get;
+  let release;
+  const reading = new Promise((resolve) => {
+    globalThis.chrome.storage.local.get = (keys) => {
+      resolve();
+      return new Promise((done) => { release = () => done(realGet(keys)); });
+    };
+  });
+  try {
+    const pending = ctx.requestTranslationCached({
+      type: 'TRANSLATE_BATCH_FAST', texts: ['A paragraph read while the domain changes.'],
+      targetLang: 'zh-CN', delimiter: '@@',
+    });
+    await reading;
+    ctx.settings.promptDomain = 'legal';
+    release();
+    await pending;
+    assert.equal(sentToAI.length, 1);
+    assert.equal(stamps.length, 1);
+    const keyed = stamps[0].match(/\|d:([a-z]+)\|/)[1];
+    const sent = sentToAI[0].addenda.domain || 'general';
+    assert.equal(sent, keyed, `the key says d:${keyed} but the request carried ${sent}`);
+  } finally {
+    globalThis.chrome.storage.local.get = realGet;
+    ctx.engine.addenda.stamp = realStamp;
+    ctx.settings.promptDomain = 'general';
+  }
 });
 
 // ---- 两头接起来：内容脚本发出的消息 → 服务工作者的翻译函数 → 系统提示词 ----

@@ -52,6 +52,8 @@ console.error = () => {};
 // 分批器要落笔就得有 insert.js，比对原文要有 collect.js 的 normalizeComparableText。
 // 按 manifest 顺序加载，跨文件引用全是 ctx.x() 的运行时读取，顺序其实无所谓。
 await import('../../shared/block-identity.js');
+// 收集、落笔、比对原文都在调用时读 globalThis.TextMarkers（占位符与标记的语法）。
+await import('../../shared/text-markers.js');
 // 收集器在调用时读 shadow / notranslate / scope 挂的 ctx.x，这里装真模块，不手写替身；
 // scope.js 读 globalThis.SiteRules，所以 lang-tags、site-rules-builtin、site-rules 排在它前面。
 await import('../../shared/lang-tags.js');
@@ -226,4 +228,95 @@ test('per-block failures are reported, and an abort stops the remaining retries'
   assert.deepEqual(failures, ['boom']);
   assert.equal(requests.length, 1, 'an aborted batch kept issuing per-block requests');
   assert.equal(inserted.length, 0);
+});
+
+// ==================== page context: the neighbours (P1-C C3) ====================
+//
+// 「附带页面上下文」开着时，三处发请求的地方（普通批、超大块的分块、逐块重试）都经
+// batch.js 同一个 neighbourContext 给消息加 pageContext：这一批第一段在本轮收集顺序
+// 里的前一段、最后一段的后一段。截断和去标记在引擎那头（engine-addenda.test.mjs）。
+
+async function runPass(blocks, respond, { pageContext }) {
+  ctx.settings.aiPageContext = pageContext;
+  globalThis.window.innerHeight = 800;
+  const requests = stubRequests(respond);
+  try {
+    await ctx.runTranslationPass(blocks);
+  } finally {
+    delete ctx.settings.aiPageContext;
+  }
+  return requests;
+}
+
+const echo = (message) => ({ translations: message.texts.map((text) => `译:${text}`) });
+const contextOf = (requests) => requests.map((m) => [m.texts.join('|'), m.pageContext]);
+
+test('page context off: no request carries a pageContext field at all', async () => {
+  const blocks = Array.from({ length: 42 }, (_, k) => makeBlock(`Block ${k}.`));
+  const requests = await runPass(blocks, echo, { pageContext: false });
+  assert.equal(requests.length, 2);
+  for (const message of requests) assert.equal('pageContext' in message, false);
+});
+
+test('page context on: a batch gets the block before its first and after its last, in collection order', async () => {
+  // 40 段一批：[0..39] 与 [40, 41] 两批。
+  const blocks = Array.from({ length: 42 }, (_, k) => makeBlock(`Block ${k}.`));
+  const requests = await runPass(blocks, echo, { pageContext: true });
+  assert.deepEqual(requests.map((m) => [m.texts.length, m.pageContext]), [
+    [40, { before: '', after: 'Block 40.' }],
+    [2, { before: 'Block 39.', after: '' }],
+  ]);
+  assert.equal(inserted.length, 42);
+});
+
+test('page context on: one block per batch (builtin pacing) gets its own neighbours', async () => {
+  ctx.builtinTranslator = { isActive: () => true };
+  try {
+    const blocks = ['A.', 'B.', 'C.'].map(makeBlock);
+    const requests = await runPass(blocks, echo, { pageContext: true });
+    assert.deepEqual(contextOf(requests).sort(), [
+      ['A.', { before: '', after: 'B.' }],
+      ['B.', { before: 'A.', after: 'C.' }],
+      ['C.', { before: 'B.', after: '' }],
+    ]);
+  } finally {
+    delete ctx.builtinTranslator;
+  }
+});
+
+test('page context on: the per-block retry of a misaligned batch carries each block\'s own neighbours', async () => {
+  const blocks = ['A.', 'B.', 'C.'].map(makeBlock);
+  const requests = await runPass(blocks, (message) => (
+    message.texts.length > 1 ? { translations: ['merged'] } : echo(message)
+  ), { pageContext: true });
+  assert.deepEqual(contextOf(requests), [
+    ['A.|B.|C.', { before: '', after: '' }],
+    ['A.', { before: '', after: 'B.' }],
+    ['B.', { before: 'A.', after: 'C.' }],
+    ['C.', { before: 'B.', after: '' }],
+  ]);
+});
+
+test('page context on: every chunk of an oversized block carries that block\'s neighbours', async () => {
+  const sentence = 'This sentence is long enough to be one of many chunks. ';
+  const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+  big.oversized = true;
+  const blocks = [makeBlock('Before.'), big, makeBlock('After.')];
+  const requests = await runPass(blocks, echo, { pageContext: true });
+  const chunked = requests.filter((m) => m.texts.join('').includes('many chunks'));
+  assert.ok(chunked.length >= 2, `expected the oversized block in several requests, got ${chunked.length}`);
+  for (const message of chunked) assert.deepEqual(message.pageContext, { before: 'Before.', after: 'After.' });
+});
+
+test('an exported applyFastBatchTranslations call outside a pass carries no neighbours', async () => {
+  ctx.settings.aiPageContext = true;
+  try {
+    const blocks = ['A.', 'B.'].map(makeBlock);
+    const requests = stubRequests(echo);
+    await ctx.applyFastBatchTranslations(blocks, ['one'], {});
+    assert.equal(requests.length, 2);
+    for (const message of requests) assert.equal('pageContext' in message, false);
+  } finally {
+    delete ctx.settings.aiPageContext;
+  }
 });

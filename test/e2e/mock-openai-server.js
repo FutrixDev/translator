@@ -78,6 +78,12 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   // the DOM instead only proves no translation was rendered, which also passes when the text
   // was shipped to the API and the reply merely failed to land.
   const sentTexts = [];
+  // The system prompt of each of those requests, index for index with sentTexts:
+  // systemPrompts[i] is the prompt that carried sentTexts[i]. What the model was
+  // told about the page (the prompt addenda: register, domain, glossary, page
+  // context) only exists here: the page sees the translation, never the
+  // instructions that shaped it.
+  const systemPrompts = [];
   // One entry per vision (image OCR) request — content arrived as an array of parts rather
   // than a string. Recorded so specs can assert the image really left the browser in the
   // OpenAI shape, not just that a popup rendered something.
@@ -86,10 +92,6 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
   // was not sent at all. A request with no key must leave with no auth header —
   // an empty `Bearer ` is still a header, and some servers reject it.
   const authHeaders = [];
-  // The system prompt of every text request, in arrival order. What the model was
-  // told about the page (the register addendum, R33 A4) only exists here: the page
-  // sees the translation, never the instructions that shaped it.
-  const systemPrompts = [];
 
   const { origin, close } = await startMockServer((req, res) => {
     if (req.method !== 'POST') {
@@ -150,8 +152,10 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
         return;
       }
 
-      if (content) sentTexts.push(content);
-      systemPrompts.push(systemPrompt);
+      if (content) {
+        sentTexts.push(content);
+        systemPrompts.push(systemPrompt);
+      }
 
       if (failWhen && typeof content === 'string' && failWhen(content)) {
         res.writeHead(500, { 'Content-Type': 'application/json' });

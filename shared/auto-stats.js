@@ -121,6 +121,24 @@
   }
 
   /**
+   * 一次翻译请求要记多少「送出去的字」：源文本（一段字符串或一组）加页面上下文
+   * 三个字段的字数（附加说明 addenda 的 context，C3）。词表和领域不计 —— 词表是
+   * 用户自己写的，额度量的是网页上有多少字被送了出去。内容脚本的预算闸和 SW 的
+   * 计数都走这一个，textsChars 不在别处直接调用（单测扫描）。
+   */
+  function sentChars(source, addenda) {
+    let total = textsChars(Array.isArray(source) ? source : [source]);
+    const context = addenda && addenda.context;
+    if (context) {
+      // 字段表只在 PromptAddenda 里写一份；带着 context 的地方都装了它。
+      for (const field of root.PromptAddenda.CONTEXT_FIELDS) {
+        if (typeof context[field] === 'string') total += context[field].length;
+      }
+    }
+    return total;
+  }
+
+  /**
    * 缓存命中率，0–1。一次都没量过时是 `null`，不是 0 —— 「还没有数据」和
    * 「一次都没命中」是两句不同的话，把前者显示成 0% 是在冤枉缓存。
    */
@@ -258,6 +276,7 @@
     currentDay,
     mergeDelta,
     textsChars,
+    sentChars,
     cacheHitRate,
     budgetExceeded,
     read,

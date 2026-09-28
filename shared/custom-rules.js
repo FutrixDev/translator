@@ -1,6 +1,6 @@
 /**
  * 用户站点规则：这个站点翻哪一块、哪一块别碰、保留哪些原文、加什么 CSS、用哪个
- * 引擎。
+ * 引擎、按哪个领域译。
  *
  * 双模经典脚本：服务工作者 import 它，内容脚本、设置页用 <script> 装，挂在
  * globalThis.CustomRules 上。popup 不加载。
@@ -11,10 +11,12 @@
  * 四种写入。这个文件里不挂 storage 监听、不 get(null)、不去抖：那些只在集合里
  * 有一份，sync-collection 的单测会扫。
  *
- * 规则的形状（v1）：
- *   { v: 1, match: [...1–8 条 host[/path-glob]], include?, exclude?,
- *     keepOriginal?, css?, engine?: 'builtin'|'ai', updatedAt }
- * id 只在键里（集合负责），空的选择器组不存。
+ * 规则的形状：
+ *   { v: 1|2, match: [...1–8 条 host[/path-glob]], include?, exclude?,
+ *     keepOriginal?, css?, engine?: 'builtin'|'ai', domain?, updatedAt }
+ * domain 是 PromptAddenda.DOMAINS 之一（P1-C）。版本取「最低能表达它的那一版」：
+ * 有 domain 才写 v: 2，没有就是 v: 1，旧版本读得懂的规则照旧是旧版本。v: 2 却
+ * 没有 domain 是坏条目。id 只在键里（集合负责），空的选择器组不存。
  *
  * 抛出的错误一律是 i18n 键（见 ERROR_KEYS），界面直接拿去查文案；写入时别的
  * 失败统一成 customRuleSaveFailed，并在变成这个键的那一处记一条日志。
@@ -28,9 +30,11 @@
   if (!StorageWriter) throw new Error('custom-rules.js 要先装 shared/storage-writer.js');
   const SyncCollection = root.SyncCollection;
   if (!SyncCollection) throw new Error('custom-rules.js 要先装 shared/sync-collection.js');
+  const PromptAddenda = root.PromptAddenda;
+  if (!PromptAddenda) throw new Error('custom-rules.js 要先装 shared/prompt-addenda.js');
 
   const KEY_PREFIX = 'customRule:';
-  const VERSION = 1;
+  const VERSIONS = new Set([1, 2]);
   const FILE_FORMAT = 'blab-site-rules';
   const FILE_VERSION = 1;
 
@@ -148,7 +152,8 @@
    */
   function normalizeRule(rule, checkSelector) {
     if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw new Error('customRuleInvalid');
-    if (rule.v !== undefined && rule.v !== VERSION) throw new Error('customRuleInvalid');
+    if (rule.v !== undefined && !VERSIONS.has(rule.v)) throw new Error('customRuleInvalid');
+    if (rule.v === 2 && (rule.domain == null || rule.domain === '')) throw new Error('customRuleInvalid');
 
     const match = rule.match;
     if (!Array.isArray(match) || !match.length || match.length > LIMITS.maxPatterns) {
@@ -161,7 +166,7 @@
       if (!patterns.includes(normalized)) patterns.push(normalized);
     }
 
-    const out = { v: VERSION, match: patterns };
+    const out = { v: 1, match: patterns };
     for (const field of SELECTOR_FIELDS) {
       const selectors = normalizeSelectors(rule[field], checkSelector);
       if (selectors.length) out[field] = selectors;
@@ -174,17 +179,22 @@
       if (!ENGINES.has(rule.engine)) throw new Error('customRuleInvalid');
       out.engine = rule.engine;
     }
-    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine) {
+    if (rule.domain != null && rule.domain !== '') {
+      if (!PromptAddenda.DOMAINS.includes(rule.domain)) throw new Error('customRuleInvalid');
+      out.domain = rule.domain;
+      out.v = 2;
+    }
+    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine && !out.domain) {
       throw new Error('customRuleInvalid');
     }
     if (Number.isFinite(rule.updatedAt)) out.updatedAt = rule.updatedAt;
     return out;
   }
 
-  // 存储里的一项 -> 规则，或 null：不认识的版本、坏条目都跳过（集合只记数目）。
-  // 这里是 normalizeRule 被接住的那一层，错误变成「跳过」，日志由集合打。
+  // 存储里的一项 -> 规则，或 null：不认识的版本（1、2 之外）、坏条目都跳过（集合
+  // 只记数目）。这里是 normalizeRule 被接住的那一层，错误变成「跳过」，日志由集合打。
   function decode(value) {
-    if (!value || value.v !== VERSION) return null;
+    if (!value || !VERSIONS.has(value.v)) return null;
     try {
       return normalizeRule(value, null);
     } catch (error) {

@@ -37,10 +37,18 @@ const SCRIPTS = [
   'shared/site-rules-builtin.js',
   'shared/storage-writer.js',
   'shared/site-rules.js',
+  'shared/sync-collection.js',
   'shared/prompt-addenda.js',
+  'shared/text-markers.js',
+  'shared/glossary.js',
+  'shared/translation-cache.js',
+  'content/content-glossary.js',
   'content/engine/languages.js',
   'content/engine/watchdog.js',
+  'content/engine/glossary.js',
+  'content/engine/addenda.js',
   'content/content-translation-engine.js',
+  'content/content-translation-cache.js',
   'content/frames/shelf.js',
 ];
 
@@ -61,7 +69,9 @@ function frameRealm({ url, role, sendMessage }) {
       create: async () => ({ translate: async (text) => `builtin:${text}`, destroy() {} }),
     },
     navigator: { userActivation: { isActive: false } },
-    document: { body: { innerText: PAGE } },
+    document: { body: { innerText: PAGE }, title: 'A test page' },
+    // 缓存层（content-translation-cache.js）的命中统计。
+    AutoStats: { add() {} },
     location: new URL(url),
     chrome: {
       i18n: { detectLanguage: async () => ({ isReliable: true, languages: [{ language: 'en', percentage: 99 }] }) },
@@ -72,6 +82,7 @@ function frameRealm({ url, role, sendMessage }) {
       },
       runtime: {
         id: 'test',
+        getManifest: () => ({ version: '9.9.9' }),
         sendMessage,
         onMessage: { addListener: (fn) => listeners.push(fn) },
       },
@@ -85,12 +96,21 @@ function frameRealm({ url, role, sendMessage }) {
   sandbox.AI_TRANSLATOR_CONTENT = {
     frameRole: role,
     state: {},
-    settings: { translationEngine: 'ai', autoTranslateEngine: 'ai', engineFallback: 'allow-ai' },
+    settings: {
+      translationEngine: 'ai', autoTranslateEngine: 'ai', engineFallback: 'allow-ai',
+      // P1-C：引擎在执行帧读有效领域与上下文开关（content/engine/addenda.js）。
+      promptDomain: 'general', aiPageContext: false,
+    },
+    syncMirrors: [],
     t: (key) => key,
     isExtensionContextInvalidated: () => false,
     getLanguageDetectionText: (text) => String(text || '').slice(0, 400),
-    autoTranslate: { onStateChange() {} },
-    customRules: { whenReady: async () => {}, onChange() {}, engineOverride: () => null },
+    autoTranslate: { isOn: () => false, onStateChange() {} },
+    customRules: {
+      whenReady: async () => {}, onChange() {}, engineOverride: () => null,
+      // P1-C：本站规则钉住的领域（没有规则），与缓存层订阅的「规则变了」。
+      domain: () => null, onProfileChange: () => () => {},
+    },
   };
   vm.createContext(sandbox);
   for (const rel of [...SCRIPTS, `content/frames/${role}.js`]) {
@@ -110,15 +130,21 @@ function deliver(listener, message, sender) {
 // ------------------------------------------------------------ 顶层：新闻页
 
 const sentToAI = [];
+// 顶层这一页的词表（P1-C）：只有顶层帧建镜像，向服务工作者要一次。BLOCK 里没有
+// 这个词，前面几条用例的附加说明不受它影响。
+const TORT = { id: 'tort0001', s: 'tort', t: '侵权', l: '*', u: 1 };
 const top = frameRealm({
   url: NEWS,
   role: 'top',
   sendMessage: async (message) => {
+    if (message.type === 'GLOSSARY_FOR_HOST') return { entries: [TORT] };
     sentToAI.push(clone(message));
+    if (message.type === 'TRANSLATE_BATCH_FAST') return { translations: message.texts.map((text) => `AI:${text}`) };
     return { translation: `AI:${message.text}`, phonetic: '', isWord: false };
   },
 });
 top.ctx.frames.setup();
+top.ctx.glossary.init();
 assert.equal(top.listeners.length, 1, 'top.js did not listen for its children');
 
 // ------------------------------------------------------------ 中继：服务工作者
@@ -193,5 +219,30 @@ test('on a page with no register a second stamp throws too (R33 D-360 F8)', () =
     const once = child.ctx.withPromptAddenda(message);
     assert.deepEqual(clone(once.addenda), {}, message.type);
     assert.throws(() => child.ctx.withPromptAddenda(once), /already stamped/, message.type);
+  }
+});
+
+test('a child request, cached or direct: register from the child page, glossary and domain from the top frame (D-382)', async () => {
+  const child = childFrame(FORUM);
+  // 子帧自己的设置是 general、没有词表镜像：领域和词条只可能来自顶层。
+  assert.equal(child.ctx.settings.promptDomain, 'general');
+  assert.equal(child.ctx.glossary.entries().length, 0);
+  top.ctx.settings.promptDomain = 'legal';
+  try {
+    const text = 'The court heard a tort claim about ordinary English prose today.';
+    for (const [label, ask] of [
+      ['cached', () => child.ctx.requestTranslationCached(
+        { type: 'TRANSLATE_BATCH_FAST', texts: [text], targetLang: 'zh-CN', delimiter: '@@' })],
+      ['direct', () => child.ctx.requestTranslation({ type: 'TRANSLATE', text, targetLang: 'zh-CN', mode: 'text' })],
+    ]) {
+      sentToAI.length = 0;
+      await ask();
+      assert.equal(sentToAI.length, 1, label);
+      assert.deepEqual(sentToAI[0].addenda,
+        { register: 'forum', domain: 'legal', glossary: [{ s: 'tort', t: '侵权' }] }, label);
+      assert.equal(sentToAI[0].allowDownload, false, `${label}: it went through the top frame`);
+    }
+  } finally {
+    top.ctx.settings.promptDomain = 'general';
   }
 });

@@ -47,23 +47,102 @@
     return profilePromise;
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'sync') return;
-    if (PROFILE_KEYS.some((key) => key in changes)) profilePromise = null;
+  // ---- 本页内存缓存的代数：ctx.translationProfile ----
+  //
+  // 悬停（content/hover/blocks.js 的 buildCacheKey）和字幕（content/captions/
+  // translate.js 的 getCueKey）各有一份内存缓存，键里只有目标语言和原文，没有
+  // 模型、提示词和词表。这些变了，代数加一，两边的键前面带着代数，旧译文就再也
+  // 读不到。请求在途时换了代，回来的译文存在旧键下，同样不会再被读到。
+  //
+  // 加代的来源：
+  //   - 设置：bootstrap 的 storage 监听写完 ctx.settings 之后转来 sync 增量
+  //     （onSettingsChanged）。sync 的监听只有 bootstrap 一处。
+  //   - 词表：订阅 ctx.glossary，本页生效词条的签名（id 加 u）真变了才加一代。
+  //   - 规则：订阅 ctx.customRules.onProfileChange（本站规则钉住的引擎或领域变了
+  //     才回调）。manifest 里 content/page/custom-rule.js 因此排在这个文件之前。
+  //
+  // 子帧不自己加代，只跟顶层指令里的代数走（inherit，content/frames/child.js）：
+  // 它的请求都在顶层执行，顶层的代数才是「这次按什么译」的那一份。
+  const GENERATION_KEYS = [
+    'apiEndpoint', 'modelName', 'customPrompt', 'translationEngine', 'autoTranslateEngine',
+    'engineFallback', 'promptDomain', 'aiPageContext', 'provider',
+  ];
+
+  let generation = 0;
+  const generationSubscribers = new Set();
+
+  function setGeneration(next) {
+    if (next === generation) return;
+    generation = next;
+    for (const fn of Array.from(generationSubscribers)) {
+      try {
+        fn(generation);
+      } catch (error) {
+        console.error('Blab Translation: translation profile subscriber failed', error);
+      }
+    }
+  }
+
+  function bump() {
+    if (ctx.frameRole !== 'top') return;
+    setGeneration(generation + 1);
+  }
+
+  function glossarySignature() {
+    return ctx.glossary.entries()
+      .map((entry) => `${entry.id}:${entry.u}`)
+      .sort()
+      .join(',');
+  }
+
+  let glossarySigned = glossarySignature();
+  ctx.glossary.subscribe(() => {
+    const next = glossarySignature();
+    if (next === glossarySigned) return;
+    glossarySigned = next;
+    bump();
   });
+
+  ctx.customRules.onProfileChange(bump);
+
+  ctx.translationProfile = {
+    generation: () => generation,
+    subscribe(fn) {
+      generationSubscribers.add(fn);
+      return () => generationSubscribers.delete(fn);
+    },
+    onSettingsChanged(changes) {
+      if (PROFILE_KEYS.some((key) => key in changes)) profilePromise = null;
+      if (GENERATION_KEYS.some((key) => key in changes)) bump();
+    },
+    inherit(next) {
+      if (!Number.isInteger(next) || next < 0) {
+        throw new TypeError(`translation profile generation must be a non-negative integer, got ${next}`);
+      }
+      setGeneration(next);
+    },
+  };
 
   /**
    * 与 ctx.requestTranslation 同形（同样的入参、同样的返回、同样会抛的异常），
    * 只是先去缓存里看一眼。调用方不需要知道这一层存不存在。
+   *
+   * 和 ctx.requestTranslation 一样是两步：在发起请求的这个 frame 盖语域
+   * （ctx.withPromptAddenda，按这个文档的地址），再交给 ctx.sendTranslationCached。
+   * 子 frame 只覆盖第二步（交给顶层去查缓存、去发），所以语域是子文档的，
+   * 词表、领域、上下文是顶层的（D-382）。
    */
-  ctx.requestTranslationCached = async function (message) {
+  ctx.requestTranslationCached = (message) => ctx.sendTranslationCached(ctx.withPromptAddenda(message));
+
+  /** 查缓存、发未命中的那几条：入参是已经盖好语域的请求，不再盖第二次。 */
+  ctx.sendTranslationCached = async function (message) {
     const cache = globalThis.TranslationCache;
     // 只缓存快速批量这一种请求 —— 整页翻译和字幕都发它。划词、悬停、输入框是
     // 用户一次一次点出来的，量小且几乎不重复；而且 TRANSLATE 的返回是
     // {translation, phonetic, isWord}，另一种形状，给它做缓存等于在这里再养一套
     // 回写规则。
     if (!cache || message.type !== 'TRANSLATE_BATCH_FAST' || !Array.isArray(message.texts)) {
-      return ctx.requestTranslation(message);
+      return ctx.sendTranslation(message);
     }
     // 内置引擎（Chrome 端上的 Translator）零网络零费用，缓存它省下的是几十毫秒，
     // 花掉的是用户那 10 MB storage 配额。更要紧的是它按页面语言推断源语言，
@@ -73,25 +152,33 @@
     // 内置）下不带 auto 去问，就会把端上引擎的译文一条条写进 storage —— 正是上
     // 面那段说的串味和配额；反过来则是自动那一轮整个绕过缓存，每一页重新计费。
     if (ctx.builtinTranslator && ctx.builtinTranslator.isActive(message.auto === true)) {
-      return ctx.requestTranslation(message);
+      return ctx.sendTranslation(message);
     }
 
+    // 词表快照与领域、上下文开关只取这一次，一起经 opts 交给送出那一步：键里的
+    // 附加说明戳和真正发出去的提示词出自同一份。算键之后到送出之前还隔着读
+    // storage、等在途请求，那期间设置或词表变了只影响下一次请求（D-384 F1）。
+    // 有效领域要问本站规则，所以先等规则到。
+    await ctx.customRules.whenReady();
+    const snap = await ctx.engine.glossary.current(message.targetLang);
+    const addendaSettings = ctx.engine.addenda.settings();
+    const sendOpts = { glossary: snap, addendaSettings };
+    // message.addenda 是发起请求那一页的语域（R33 A4）：同一段文字在论坛上和在
+    // 新闻站上可以译得不一样。键读它，没命中的那几条也带着它经
+    // ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会各算各的。
     const profile = await loadProfile();
-    if (!profile) return ctx.requestTranslation(message);
+    if (!profile) return ctx.sendTranslation(message, sendOpts);
 
     // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
     // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
     // 顶上那张因子表。
-    // addenda 是这一页的语域（R33 A4）：同一段文字在论坛上和在新闻站上可以译得
-    // 不一样。这里盖一次（与 ctx.requestTranslation 同一个函数），键读它，没命中
-    // 的那几条也带着它经 ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会
-    // 各算各的。
-    const stamped = ctx.withPromptAddenda(message);
     const factors = {
       targetLang: message.targetLang || '',
       sourceLang: message.sourceLang || '',
       ...profile,
-      addenda: globalThis.PromptAddenda.stamp(stamped.addenda)
+      // 按每段文字求值（serve 里）：语域戳加上这段命中的词条、领域和上下文开关，
+      // 改一条词条只有含它的文字失效。怎么拼只有 content/engine/addenda.js 一处。
+      addenda: (text) => ctx.engine.addenda.stamp(message.addenda, snap, text, addendaSettings)
     };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。
@@ -103,7 +190,7 @@
     let missingCount = 0;
     const translations = await cache.serve(message.texts, factors, async (missing) => {
       missingCount = missing.length;
-      const response = await ctx.sendTranslation({ ...stamped, texts: missing });
+      const response = await ctx.sendTranslation({ ...message, texts: missing }, sendOpts);
       if (!response || response.error) {
         failure = response || { error: 'unknown' };
         return null;

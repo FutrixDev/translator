@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { engineSource, familyPaths, workerSource } from './helpers/sources.mjs';
+import { engineSource, familyPaths, productSourceFiles, repoSource, workerSource } from './helpers/sources.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -387,12 +387,42 @@ test('「发给模型的字符数」一次调用记一笔，不多不少', () =>
   }
 
   // 回退那一次走的就是 translateBatchWithAI，于是自然记第二笔 —— 靠的是这一句，
-  // 不是在回退处另记一笔。回退也带着这一页的附加说明（R33 A4）。
+  // 不是在回退处另记一笔。回退也带着这一页的附加说明（R33 A4）：语域与词表都不能在
+  // 第二次请求里丢掉。
   assert.match(bg, /return translateBatchWithAI\(texts, targetLang, settings, addenda\);/);
-  // 求和只有一处（shared/auto-stats.js），三个调用点不各抄一遍。
-  assert.equal((bg.match(/AutoStats\.textsChars\(/g) || []).length, 2);
+  // 求和只有一处（shared/auto-stats.js 的 sentChars：源文本加页面上下文），三个
+  // 调用点不各抄一遍。
+  assert.equal((bg.match(/AutoStats\.sentChars\(/g) || []).length, 3);
+  assert.doesNotMatch(bg, /textsChars\(/);
   assert.equal((bg.match(/AutoStats\.add\(\{ aiChars/g) || []).length, 1);
   assert.doesNotMatch(bg, /countCharsSentToModel\(message\)/, '消息监听器不再记账');
+});
+
+test('textsChars( is called only inside shared/auto-stats.js: every counter goes through sentChars', () => {
+  const callers = productSourceFiles()
+    .filter((rel) => rel !== 'shared/auto-stats.js' && /textsChars\(/.test(repoSource(rel)));
+  assert.deepEqual(callers, []);
+  // 内容脚本的预算闸与 SW 的计数是同一个函数
+  assert.match(engineSource(), /AutoStats\.sentChars\(\s*Array\.isArray\(message\.texts\) \? message\.texts : message\.text,\s*message\.addenda,?\s*\)/);
+});
+
+test('the three TRANSLATE handlers validate addenda before counting and calling the model', () => {
+  const bg = workerSource();
+  for (const [fn, call] of [
+    ['handleTranslate', 'translateTextWithMode'],
+    ['handleBatchTranslate', 'translateBatchWithAI'],
+    ['handleBatchTranslateFast', 'translateBatchFastWithAI'],
+  ]) {
+    const body = bg.match(new RegExp(`async function ${fn}\\([^)]*addenda\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${fn} does not take addenda`);
+    const validated = body[0].indexOf('PromptAddenda.validate(addenda)');
+    const called = body[0].search(new RegExp(`${call}\\([^)]*addenda\\)`));
+    assert.ok(validated > 0 && called > validated, `${fn} must validate addenda, then pass it to ${call}`);
+  }
+  for (const type of ['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']) {
+    const route = bg.match(new RegExp(`case '${type}':\\s*\\n\\s*handle\\w+\\(([^)]*)\\)`));
+    assert.ok(route && /message\.addenda/.test(route[1]), `${type} does not hand message.addenda on`);
+  }
 });
 
 test('设置页里两块别处写的数据，要跟着别处一起变', () => {
@@ -455,7 +485,13 @@ test('凡是喂进判定的设置键，都在 RESTART_KEYS 里', () => {
   // decide() 另外两个入参的出处：调用点从 ctx.settings 上取，名字和这里对不上。
   const viaParams = ['siteRules', 'targetLang'];
   // 读了但**故意**不重来的键写在这里，连同理由 —— 空着就是「一个也没有」。
-  const deliberately = new Map();
+  const deliberately = new Map([
+    // 这两项只改「怎么译」（附加说明里的领域句子、页面上下文），不改「翻不翻」、
+    // 不改走哪条路、不改费用闸；和 customPrompt 一样不重来 —— 重来等于把整页再按
+    // AI 计一次费。已译的块留着，缓存靠 ctx.translationProfile 加代失效。
+    ['promptDomain', '只改译法，不改判定与引擎；缓存靠 translationProfile 加代'],
+    ['aiPageContext', '只改译法，不改判定与引擎；缓存靠 translationProfile 加代'],
+  ]);
 
   const found = new Set(viaParams);
   for (const [file, pattern] of Object.entries(sources)) {

@@ -92,7 +92,7 @@
 
     function addPlaceholder(raw) {
       mathIndex += 1;
-      const placeholder = `{{${mathIndex}}}`;
+      const placeholder = globalThis.TextMarkers.placeholder(mathIndex);
       mathElements.push({ placeholder, type: 'text', text: raw });
       return placeholder;
     }

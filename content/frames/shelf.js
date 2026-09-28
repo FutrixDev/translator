@@ -96,6 +96,10 @@
     return false;
   }
 
+  function frameNoHost() {
+    return '';
+  }
+
   Object.assign(frames, {
     FRAME_MIN_WIDTH,
     FRAME_MIN_HEIGHT,
@@ -111,5 +115,6 @@
     onVisibilityChanged: frameNoop,
     hasSizedChildren: frameNone,
     childrenHaveTranslations: frameNone,
+    topHost: frameNoHost,
   });
 })();

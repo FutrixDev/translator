@@ -740,14 +740,15 @@ test('总开关关着但用户已经在这一页表过态，就不算这个站�
 });
 
 // 装载清单，一份都不能漏：manifest 的 <all_urls> 那一条、service worker 的
-// import（入口和两个自己 import 统计模块的文件）、设置页和弹窗的 <script>。共用模块是按顺序加载的经典脚本，**谁在谁前面
+// import（入口和两个自己 import 统计模块的文件）、设置页、弹窗和首装引导页的 <script>。共用模块是按顺序加载的经典脚本，**谁在谁前面
 // 就是依赖关系本身**——漏一处的表现不是报错，是那一处静静地换了一套行为。
 const LOAD_LISTS = [
-  ['background/background.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
-  ['background/ai-translate.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
-  ['background/api-client.js', (rel) => new RegExp(`import '\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}';`)],
-  ['options/options.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
-  ['popup/popup.html', (rel) => new RegExp(`<script src="\\\\.\\\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
+  ['background/background.js', (rel) => new RegExp(`import '\\.\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['background/ai-translate.js', (rel) => new RegExp(`import '\\.\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['background/api-client.js', (rel) => new RegExp(`import '\\.\\./${rel.replace(/[./]/g, '\\$&')}';`)],
+  ['options/options.html', (rel) => new RegExp(`<script src="\\.\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
+  ['popup/popup.html', (rel) => new RegExp(`<script src="\\.\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
+  ['onboarding/onboarding.html', (rel) => new RegExp(`<script src="\\.\\./${rel.replace(/[./]/g, '\\$&')}"></script>`)],
 ];
 
 // [依赖方, 被依赖方, 漏了会怎样]
@@ -780,7 +781,43 @@ const LOAD_ORDER = [
   ['content/content-translation-engine.js', 'shared/site-rules.js',
    'ctx.withPromptAddenda 给每个翻译请求问 SiteRules.register() 这一页的语域。'],
   ['content/content-translation-cache.js', 'shared/prompt-addenda.js',
-   '译文缓存的键因子 addenda 是 PromptAddenda.stamp() 算的。'],
+   '译文缓存的键因子 addenda 由 ctx.engine.addenda.stamp() 算，语域那一格读 PromptAddenda.stamp()。'],
+  ['shared/custom-rules.js', 'shared/prompt-addenda.js',
+   'custom-rules.js 在加载时取走 PromptAddenda（规则的 domain 按 DOMAINS 校验），缺了就抛，CustomRules 整个不存在。'],
+  // 占位符与标记的语法：语言检测、收集、落笔都问 globalThis.TextMarkers。
+  ['content/content-language.js', 'shared/text-markers.js',
+   'content-language.js 剥标记时问 TextMarkers.strip，没有它语言检测整个抛错。'],
+  // 设置页不装 content-language.js，这一行让设置页的顺序也被查到。
+  ['content/content-translation-engine.js', 'shared/text-markers.js',
+   '引擎比对占位符时问 TextMarkers.placeholderIds，没有它每一句译文都在比对时抛错。'],
+  // 术语表（P1-C）：shared/glossary.js 在加载时取走三样，缺哪样都抛；内容脚本的
+  // 镜像在加载时取走 Glossary；缓存层在加载时订阅 ctx.glossary（算代数的签名）。
+  ['shared/glossary.js', 'shared/site-rules.js',
+   'glossary.js 在加载时就把 SiteRules 取走了（站点限定用 normalizeHost）。'],
+  ['shared/glossary.js', 'shared/storage-writer.js',
+   'glossary.js 在加载时就把 StorageWriter.create 取走了。'],
+  ['shared/glossary.js', 'shared/sync-collection.js',
+   'glossary.js 在加载时就把 SyncCollection.create 取走了。'],
+  ['shared/glossary.js', 'shared/text-markers.js',
+   'glossary.js 在加载时就把 TextMarkers 取走了（词条不许含占位符和标记，D-387）。'],
+  ['shared/glossary-csv.js', 'shared/glossary.js',
+   'glossary-csv.js 在加载时就把 Glossary 取走了（validateEntry、dedupeKey、merge、assertFits），缺了就抛。'],
+  ['content/content-glossary.js', 'shared/glossary.js',
+   'content-glossary.js 在加载时取走 Glossary，缺了它 ctx.glossary 不存在，引擎和缓存层都在调用时抛错。'],
+  ['content/content-translation-cache.js', 'content/content-glossary.js',
+   '缓存层在加载时订阅 ctx.glossary：它不在，整个文件抛错，ctx.requestTranslationCached 与悬停、字幕读的代数都没了。'],
+  ['content/content-translation-cache.js', 'content/page/custom-rule.js',
+   '缓存层在加载时订阅 ctx.customRules.onProfileChange（本站规则的引擎或领域变了加一代）：它不在，整个文件抛错。'],
+  ['content/engine/glossary.js', 'shared/glossary.js',
+   '词表快照按 Glossary.pick 挑本站本语言的词条。'],
+  ['content/engine/glossary.js', 'shared/text-markers.js',
+   '占位保护按 TextMarkers 的语法换出、换回 {{n}}。'],
+  ['content/engine/addenda.js', 'shared/prompt-addenda.js',
+   '按 60 条切份读 PromptAddenda.LIMITS，缺了它每一次 AI 请求都在切份时抛错。'],
+  ['content/content-translation-engine.js', 'content/engine/glossary.js',
+   '引擎这一族顺序与 manifest 一致：词表与附加说明排在入口之前。'],
+  ['content/content-translation-engine.js', 'content/engine/addenda.js',
+   '引擎这一族顺序与 manifest 一致：词表与附加说明排在入口之前。'],
 ];
 
 test('装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {

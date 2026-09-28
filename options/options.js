@@ -82,6 +82,9 @@ const elements = {
   youtubeCaptionPreview: document.getElementById('youtubeCaptionPreview'),
   youtubeSubOptions: document.getElementById('youtubeSubOptions'),
   customPrompt: document.getElementById('customPrompt'),
+  promptDomain: document.getElementById('promptDomain'),
+  promptDomainError: document.getElementById('promptDomainError'),
+  aiPageContext: document.getElementById('aiPageContext'),
   testConnection: document.getElementById('testConnection'),
   resetPrompt: document.getElementById('resetPrompt'),
   toggleApiKey: document.getElementById('toggleApiKey'),
@@ -123,6 +126,18 @@ const PROMPT_PRESETS = {
   literal: 'promptLiteral',
   creative: 'promptCreative'
 };
+
+// 领域下拉的选项在脚本加载时生成（此时 <select> 已在文档里），随后 applyI18n 按
+// data-i18n 翻它们，loadSettings 设 value 时选项已经齐了。文案键与规则卡片的领域
+// 下拉同一个函数取（options-custom-rules.js 的 promptDomainLabelKey）。
+(function populatePromptDomainSelect() {
+  for (const domain of PromptAddenda.DOMAINS) {
+    const option = document.createElement('option');
+    option.value = domain;
+    option.setAttribute('data-i18n', promptDomainLabelKey(domain));
+    elements.promptDomain.appendChild(option);
+  }
+})();
 
 // Default settings
 const defaultSettings = {
@@ -193,6 +208,8 @@ const defaultSettings = {
   youtubeCaptionBgColor: '#080808',
   youtubeCaptionBgOpacity: 82,
   customPrompt: '',
+  promptDomain: 'general',
+  aiPageContext: false,
   theme: 'light'
 };
 // Load settings from storage
@@ -280,6 +297,9 @@ async function loadSettings() {
     updateCaptionPreview();
     syncYoutubeSubState();
     elements.customPrompt.value = result.customPrompt || '';
+    elements.promptDomain.value = result.promptDomain;
+    showPromptDomainError(result.promptDomain);
+    elements.aiPageContext.checked = result.aiPageContext === true;
 
     // Apply theme
     applyTheme(result.theme || 'light');
@@ -395,6 +415,8 @@ function collectSettings() {
     youtubeCaptionBgColor: elements.youtubeCaptionBgColor.value,
     youtubeCaptionBgOpacity: parseInt(elements.youtubeCaptionBgOpacity.value, 10),
     customPrompt: elements.customPrompt.value.trim(),
+    promptDomain: elements.promptDomain.value,
+    aiPageContext: elements.aiPageContext.checked,
     theme: document.documentElement.getAttribute('data-theme') || 'light'
   };
 }
@@ -462,6 +484,16 @@ function resolveStoredHotkeyConflict() {
   return true;
 }
 
+// 领域只认 PromptAddenda.DOMAINS 里的 id。存储里是别的值（旧版本、手改、坏的导入）
+// 时 <select> 显示为空、读回 ''：不强转 general，也不静默跳过 —— 控件旁一直报着，
+// 每一次保存都被拒（见 persistSettings），直到用户选一个合法领域。
+function showPromptDomainError(domain) {
+  elements.promptDomainError.hidden = PromptAddenda.DOMAINS.includes(domain);
+}
+
+// 保存被设置本身的问题拒掉（不是存储出错）：状态条说它自己的文案。
+class SettingsRejectedError extends Error {}
+
 async function persistSettings({ reapplyI18n = false } = {}) {
   clearTimeout(autosaveTimer);
   autosaveTimer = null;
@@ -477,8 +509,17 @@ async function persistSettings({ reapplyI18n = false } = {}) {
   }
 
   try {
+    if (!PromptAddenda.DOMAINS.includes(settings.promptDomain)) {
+      throw new SettingsRejectedError(t('promptDomainUnknown'));
+    }
     await chrome.storage.sync.set(settings);
     lastGoodSettings = settings;
+    showPromptDomainError(settings.promptDomain);
+    // 错误条不会自己消失：上一次被拒的那句还挂着，这一次存进去了就收起它（只收
+    // 它 —— 期间别的消息顶掉了它，就不关我们的事）。
+    if (elements.statusMessage.textContent === t('promptDomainUnknown')) {
+      elements.statusMessage.classList.add('hidden');
+    }
 
     // Notify all tabs about settings change
     TabBroadcast.settingsUpdated(settings);
@@ -496,7 +537,7 @@ async function persistSettings({ reapplyI18n = false } = {}) {
     // are worth interrupting for.
   } catch (error) {
     console.error('Failed to save settings:', error);
-    showStatus(t('connectionFailed'), 'error');
+    showStatus(error instanceof SettingsRejectedError ? error.message : t('connectionFailed'), 'error');
   }
 }
 
@@ -541,6 +582,22 @@ function showStatus(message, type) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Downloads
+//
+// Every export on this page (settings transfer, site rules, glossary) hands its
+// text to the browser the same way: a Blob URL behind a clicked <a download>.
+// ---------------------------------------------------------------------------
+function downloadFile(text, mimeType, fileName) {
+  const url = URL.createObjectURL(new Blob([text], { type: mimeType }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  // The click has already handed the download to the browser; release the URL.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Controls that settle on one value per interaction: write straight away.
 const IMMEDIATE_SAVE_FIELDS = [
   'translationEngine',
@@ -556,6 +613,8 @@ const IMMEDIATE_SAVE_FIELDS = [
   'skipTargetLanguageText',
   'showTranslationOnly',
   'translationStyle',
+  'promptDomain',
+  'aiPageContext',
   'pageTranslateScope',
   'autoTranslate',
   'enableImageOcrTranslation',
@@ -851,6 +910,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupSyncMirror();
   setupCustomRules();
+  setupGlossary();
   setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row

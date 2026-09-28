@@ -5,9 +5,12 @@
 //   ctx.requestTranslation(message)  ——  与 chrome.runtime.sendMessage 同形，响应多盖一个 engine
 //
 // 它是两步：ctx.withPromptAddenda 按**这个文档**的地址给请求盖一次语域，
-// ctx.sendTranslation 把盖好的请求原样送出（选后端、回落、预算闸都在这一步）。
-// 子 frame 只覆写后一步（content/frames/child.js 改成交给顶层），顶层的中继直接
-// 调后一步，所以语域是发起请求的那个 frame 的，一路不被重算。
+// ctx.sendTranslation 把盖好的请求送出（选后端、回落、预算闸都在这一步）。
+// 带缓存的入口 ctx.requestTranslationCached 也是这两步，送出那一步是
+// ctx.sendTranslationCached（content/content-translation-cache.js）。子 frame 只覆写
+// 两个送出步（content/frames/child.js 改成交给顶层），顶层的中继直接调送出步，所以
+// 语域是发起请求的那个 frame 的，一路不被重算。词表、领域、上下文在执行请求的那一
+// 帧（顶层）由 sendToModel 并进同一个 addenda 对象，不覆盖语域（D-382）。
 //
 // 默认走浏览器内置的 Translator API（Chrome 138+，端上 NMT，零网络、零费用）；
 // 内置这条路走不通时，再回落到 background service worker 里的自定义 AI 接口。
@@ -133,6 +136,18 @@
     }
   }
 
+  // 内置引擎把占位符吞了、拆了或翻掉了。`lost` 是原文里有、译文里没有的编号
+  // （字符串）：词表的占位保护（content/engine/glossary.js 的 withGlossary）按它
+  // 分辨丢的是不是自己的；只丢了数学占位符的，照旧算这一段没译成。
+  class PlaceholderLossError extends Error {
+    constructor(lost) {
+      super('builtin translator dropped placeholders');
+      this.name = 'PlaceholderLossError';
+      this.lost = lost;
+    }
+  }
+  eng.PlaceholderLossError = PlaceholderLossError;
+
   // ==================== Translator 实例 ====================
 
   // 缓存的是 Promise 而不是实例：整页翻译会在同一瞬间发起几十个块，
@@ -227,31 +242,24 @@
 
   // ==================== 数学占位符 ====================
 
-  const PLACEHOLDER_RE = /\{\{(\d+)\}\}/g;
-
-  function placeholderIds(text) {
-    const ids = new Set();
-    PLACEHOLDER_RE.lastIndex = 0;
-    let match;
-    while ((match = PLACEHOLDER_RE.exec(String(text || ''))) !== null) {
-      ids.add(match[1]);
-    }
-    return ids;
-  }
-
   // 内置的是 NMT 模型，不像 LLM 那样会遵守“把 {{1}} 原样保留”这种指令，
   // 它可能把占位符拆开、翻掉或整个吞掉。而 restoreMathElements 对缺失的占位符
   // 是静默跳过的——公式会从页面上凭空消失，且不报任何错。
   // 所以这里宁可判本段翻译失败让原文留着，也不返回一个会吞掉公式的译文。
   function keepsPlaceholders(source, translated) {
-    const before = placeholderIds(source);
+    const before = globalThis.TextMarkers.placeholderIds(source);
     if (before.size === 0) return true;
-    const after = placeholderIds(translated);
+    const after = globalThis.TextMarkers.placeholderIds(translated);
     if (before.size !== after.size) return false;
     for (const id of before) {
       if (!after.has(id)) return false;
     }
     return true;
+  }
+
+  function lostPlaceholders(source, translated) {
+    const after = globalThis.TextMarkers.placeholderIds(translated);
+    return Array.from(globalThis.TextMarkers.placeholderIds(source)).filter((id) => !after.has(id));
   }
 
   // ==================== 翻译 ====================
@@ -276,10 +284,16 @@
       const chunks = ctx.splitTextIntoChunks(text, QUOTA_FALLBACK_CHARS);
       if (chunks.length > 0) return chunks;
     }
+    // 设置页没有整页切块器：定长切，但切点落在占位符里就退到它前面。
     const chunks = [];
-    for (let i = 0; i < text.length; i += QUOTA_FALLBACK_CHARS) {
-      chunks.push(text.slice(i, i + QUOTA_FALLBACK_CHARS));
+    let rest = text;
+    while (rest.length > QUOTA_FALLBACK_CHARS) {
+      const at = globalThis.TextMarkers.splitSafe(rest, QUOTA_FALLBACK_CHARS);
+      const cut = at > 0 ? at : QUOTA_FALLBACK_CHARS;
+      chunks.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
     }
+    if (rest) chunks.push(rest);
     return chunks;
   }
 
@@ -309,6 +323,9 @@
    *
    * 抛 EngineUnavailableError 表示整条内置链路当前不可用（应整批放弃并回落 AI）；
    * 其它异常表示这一段没译成（只丢这一段）。
+   *
+   * `options.detectText`：源语言按它判，不按送去翻译的文字判 —— 词表把命中的词条
+   * 换成占位符以后，短文本可能一个字母都不剩。
    */
   async function translateWithBuiltin(text, targetLang, options = {}) {
     if (!isBuiltinSupported()) {
@@ -319,7 +336,7 @@
     if (!source.trim()) return source;
 
     const tgt = eng.toApiLang(targetLang);
-    const src = await eng.resolveSourceLang(source, options.sourceLang, options.standaloneText, options.pageSourceLang);
+    const src = await eng.resolveSourceLang(options.detectText || source, options.sourceLang, options.standaloneText, options.pageSourceLang);
 
     if (!src || !tgt) throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
     // 同语言不需要翻译。原样返回，与 AI 那条路“已是目标语言则原样返回”的约定一致。
@@ -395,7 +412,7 @@
       throw new Error('builtin translator returned empty result');
     }
     if (!keepsPlaceholders(source, translated)) {
-      throw new Error('builtin translator dropped math placeholders');
+      throw new PlaceholderLossError(lostPlaceholders(source, translated));
     }
     return translated;
   }
@@ -492,9 +509,10 @@
   async function refuseAutoAiSpend(message) {
     if (!message || !(message.auto || message.unattended)) return null;
     const t = ctx.t || ((key) => key);
-    const chars = Array.isArray(message.texts)
-      ? globalThis.AutoStats.textsChars(message.texts)
-      : String(message.text == null ? '' : message.text).length;
+    const chars = globalThis.AutoStats.sentChars(
+      Array.isArray(message.texts) ? message.texts : message.text,
+      message.addenda,
+    );
     const verdict = await globalThis.AutoStats.charge(chars, settings.autoAiDailyBudget);
     return verdict.allowed ? null : t('autoBudgetSpent');
   }
@@ -550,7 +568,8 @@
   // 引擎就直接走 AI，http 与 https 上行为一致。
   const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']);
 
-  async function handleWithBuiltin(message) {
+  // 每一段都经词表的占位保护（snap 是这一次请求的快照，空快照什么也不做）。
+  async function handleWithBuiltin(message, snap) {
     const targetLang = message.targetLang;
     const shared = {
       sourceLang: message.sourceLang,
@@ -564,7 +583,7 @@
 
     switch (message.type) {
       case 'TRANSLATE': {
-        const translation = await translateWithBuiltin(message.text, targetLang, shared);
+        const translation = await translateGuarded(snap, message.text, targetLang, shared);
         // 内置是纯翻译模型，给不出音标，所以词典模式退化成普通翻译：
         // isWord 保持 false，调用方据此不显示音标行和发音按钮。
         return { translation, phonetic: '', isWord: false };
@@ -587,7 +606,7 @@
           const hasContent = !!String(text == null ? '' : text).trim();
           if (hasContent) attempted += 1;
           try {
-            const translated = await translateWithBuiltin(text, targetLang, shared);
+            const translated = await translateGuarded(snap, text, targetLang, shared);
             translations.push(translated);
             if (hasContent && translated) produced += 1;
           } catch (error) {
@@ -617,6 +636,72 @@
       default:
         return null;
     }
+  }
+
+  function translateGuarded(snap, text, targetLang, shared) {
+    return eng.glossary.withGlossary(snap, text,
+      (guarded, extra) => translateWithBuiltin(guarded, targetLang, { ...shared, ...extra }));
+  }
+
+  // 发给模型的一份：先过自动模式的预算闸，再发。
+  async function sendPart(message) {
+    const refusal = await refuseAutoAiSpend(message);
+    if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
+    const response = await chrome.runtime.sendMessage(message);
+    return response && { ...response, engine: 'ai' };
+  }
+
+  // `message` 已去掉 pageContext（sendToModel 头一行），`original` 还带着它。
+  // compose 出来的词表、领域、上下文**并进**请求已经带着的 addenda：语域是发起请求
+  // 的那一帧盖的（ctx.withPromptAddenda），这里是执行请求的那一帧，不重算、不覆盖
+  // 它（D-382）。compose 从不产出 register，所以并进去也盖不掉它。
+  function withAddenda(message, part, original, current) {
+    const addenda = eng.addenda.compose(original, part, current);
+    return addenda ? { ...message, addenda: { ...message.addenda, ...addenda } } : message;
+  }
+
+  /**
+   * 这是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这个环境/
+   * 这门语言顶不住、而且用户开了回退，也走到这里。自动模式的预算闸因此只能装在
+   * 这里 —— 装在调度层只挡得住前一半，运行中那次回落会绕过去。拒绝带上
+   * budgetSpent：调用方要分得清「今天的额度花完了」和「这一批出错了」—— 前者要
+   * 跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
+   *
+   * 三种翻译消息在发起帧盖好的语域之上并进附加说明（词表、领域、页面上下文，
+   * content/engine/addenda.js）；
+   * 批量页的 `pageContext` 只用来组装，不随消息发出。批量按 60 条词条上限
+   * 切成几份，一份一份依次发、各自过预算闸；任一份失败（有 error，或 translations
+   * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
+   * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
+   * 交来的那一份（缓存层算键时取的），没交就在这里现取（eng.addenda.settings）。
+   */
+  async function sendToModel(original, snap, frozen) {
+    const { pageContext: _neighbours, ...message } = original;
+    if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
+    // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
+    // 它悄悄丢掉这一页的语域，所以直接抛。
+    if (!('addenda' in message)) {
+      throw new Error('sendToModel: this request was never stamped (ctx.withPromptAddenda)');
+    }
+    const current = frozen || eng.addenda.settings();
+    if (message.type === 'TRANSLATE') {
+      const [part] = snap.plan([message.text]);
+      return sendPart(withAddenda(message, part, original, current));
+    }
+    const texts = Array.isArray(message.texts) ? message.texts : [];
+    const parts = snap.plan(texts);
+    if (parts.length === 1) return sendPart(withAddenda(message, parts[0], original, current));
+    const translations = new Array(texts.length);
+    for (const part of parts) {
+      const partTexts = part.indices.map((index) => texts[index]);
+      const response = await sendPart(withAddenda({ ...message, texts: partTexts }, part, original, current));
+      if (!response || response.error || !Array.isArray(response.translations)
+          || response.translations.length !== partTexts.length) {
+        return response;
+      }
+      part.indices.forEach((index, k) => { translations[index] = response.translations[k]; });
+    }
+    return { translations, engine: 'ai' };
   }
 
   // 一次请求可以指名要哪个引擎（划词卡片上的「换引擎」）。只认这两个值：写错了
@@ -685,11 +770,19 @@
    * `message.engine` 指名了引擎就**不回落**：用户点的就是「用内置」，内置顶不住
    * 就把真实原因给他看，不能换一个引擎、花他的钱把结果递回去（engineFallback 为
    * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
+   *
+   * `opts.glossary` 是调用方已经取好的词表快照、`opts.addendaSettings` 是它取好的
+   * 领域与上下文开关（eng.addenda.settings()）：缓存层算键前取一次，键和请求出自
+   * 同一份（D-384 F1）；没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
    */
-  ctx.sendTranslation = async function(message) {
-    // 引擎谓词要问本站规则（siteEngine），规则先到再选。设置页也加载这一族，
-    // 那里没有 ctx.customRules。
-    if (ctx.customRules) await ctx.customRules.whenReady();
+  ctx.sendTranslation = async function(message, opts = {}) {
+    // 引擎谓词要问本站规则（siteEngine），规则先到再选；词表同样要先到，快照才
+    // 是这一页的。设置页也加载这一族，那里两者都没有。
+    await Promise.all([
+      ctx.customRules && ctx.customRules.whenReady(),
+      ctx.glossary && ctx.glossary.whenReady(),
+    ]);
+    const snap = opts.glossary || await eng.glossary.current(message.targetLang);
     const pinned = pinnedEngine(message);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
@@ -710,7 +803,7 @@
     } else if (builtin) {
       let result = null;
       try {
-        result = await handleWithBuiltin(message);
+        result = await handleWithBuiltin(message, snap);
       } catch (error) {
         const unavailable = error instanceof EngineUnavailableError;
         const reason = unavailable ? error.reason : ENGINE_REASONS.CREATE_FAILED;
@@ -726,17 +819,7 @@
         throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
-    // 这一行是**唯一**一个「发给模型」的出口：选了 AI 走到这里，选了内置但这
-    // 个环境/这门语言顶不住、而且用户开了回退，也走到这里。自动模式的预算闸
-    // 因此只能装在这里 —— 装在调度层只挡得住前一半，运行中那次回落会绕过去。
-    // 拒绝带上 budgetSpent：调用方要分得清「今天的额度花完了」和「这一批出错
-    // 了」—— 前者要跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
-    const refusal = await refuseAutoAiSpend(message);
-    if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
-    // 请求原样送出：addenda 在发起它的那个 frame 里盖过了（ctx.withPromptAddenda），
-    // 这里不再读地址 —— 顶层替子 frame 送的请求，语域是子 frame 的。
-    const response = await chrome.runtime.sendMessage(message);
-    return response && { ...response, engine: 'ai' };
+    return sendToModel(message, snap, opts.addendaSettings);
   };
 
   /**

@@ -38,6 +38,32 @@
   const requestBatch = (message) =>
     (ctx.requestTranslationCached || ctx.requestTranslation)(message);
 
+  const noNeighbours = (first, last, message) => message;
+
+  /**
+   * 页面上下文的前后文（设置「附带页面上下文」）：三处发请求的地方共用这一个函数。
+   * 返回 `(first, last, message) => message'`：给消息加上
+   * `pageContext: {before, after}` —— `first` 在这一轮收集顺序里的前一段、`last` 的
+   * 后一段，没有就是空串。开关关着返回原消息，消息上不出现这个字段。截断、去标记和
+   * 标题都在 content/engine/addenda.js 组装时做；`pageContext` 本身从不发给模型：
+   * 执行请求那一帧的引擎（sendToModel）发出前把它剥掉。子 frame 的请求整条经 SW
+   * 中继转给顶层帧（frames/child.js 的 requestViaTop），它随消息过 SW，到顶层才剥。
+   */
+  function neighbourContext(blocks) {
+    if (settings.aiPageContext !== true) return noNeighbours;
+    const at = new Map(blocks.map((block, index) => [block, index]));
+    const textAt = (index) => (blocks[index] ? blocks[index].text : '');
+    const indexOf = (block) => {
+      const index = at.get(block);
+      if (index === undefined) throw new Error('neighbourContext: block is not in this pass');
+      return index;
+    };
+    return (first, last, message) => ({
+      ...message,
+      pageContext: { before: textAt(indexOf(first) - 1), after: textAt(indexOf(last) + 1) },
+    });
+  }
+
   function estimateTokens(text) {
     if (!text) return 0;
     const cjkMatches = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
@@ -77,15 +103,13 @@
     return { priorityBlocks, deferredBlocks };
   }
 
-  // 若 pos 落在数学占位符 {{数字}} 内部，回退到该占位符起点，避免把占位符切成两半
+  // 若 pos 落在占位符内部，回退到该占位符起点，避免把占位符切成两半（语法与
+  // 判定在 shared/text-markers.js）。退到 start 或更前就等于切不出东西，照旧在
+  // pos 硬切。
   function avoidPlaceholderSplit(text, start, pos) {
-    if (pos <= start || pos >= text.length) return pos;
-    const open = text.lastIndexOf('{{', pos - 1);
-    if (open < start) return pos;             // pos 之前没有未闭合的 {{
-    const close = text.indexOf('}}', open);
-    if (close === -1) return pos;             // 不是有效占位符
-    if (close + 2 <= pos) return pos;         // 占位符已在 pos 之前闭合，安全
-    return open > start ? open : pos;         // pos 位于占位符内部 → 回退到 {{ 之前
+    if (pos <= start) return pos;
+    const safe = globalThis.TextMarkers.splitSafe(text, pos);
+    return safe > start ? safe : pos;
   }
 
   // 将超长文本按标点切分为不超过 maxLen 的块，尽量在句末/子句/空白处断开，
@@ -366,9 +390,11 @@
   // 最坏是某一块拿不到译文而保持原文。
   // target 不传就现读一门：这个函数是导出的（ctx.applyFastBatchTranslations），
   // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
+  // withNeighbours 同理：一轮之外没有「收集顺序」，不带前后文。
   async function applyFastBatchTranslations(
     batch, translations,
-    { onFailure, isAborted, accept, allowDownload, auto, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload, auto, onSettled, target = passTarget(),
+      withNeighbours = noNeighbours } = {}
   ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
@@ -376,7 +402,8 @@
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
-      await translateBlocksOneByOne(batch, { onFailure, isAborted, accept, allowDownload, auto, onSettled, target });
+      await translateBlocksOneByOne(batch,
+        { onFailure, isAborted, accept, allowDownload, auto, onSettled, target, withNeighbours });
       return;
     }
 
@@ -388,21 +415,22 @@
 
   async function translateBlocksOneByOne(
     batch,
-    { onFailure, isAborted, accept, allowDownload = true, auto, onSettled, target = passTarget() } = {}
+    { onFailure, isAborted, accept, allowDownload = true, auto, onSettled, target = passTarget(),
+      withNeighbours = noNeighbours } = {}
   ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
       try {
-        const response = await requestBatch({
+        const response = await requestBatch(withNeighbours(block, block, {
           type: 'TRANSLATE_BATCH_FAST',
           texts: [block.text],
           targetLang: target.request,
           delimiter: DELIMITER,
           allowDownload,
           auto
-        });
+        }));
         if (response.error) {
-          if (onFailure) onFailure(response.error);
+          if (onFailure) onFailure(response.error, { passFatal: response.passFatal === true });
           continue;
         }
         // 单块请求同样守数量：模型把一段拆成两段时放弃该块，而不是插半截译文。
@@ -412,8 +440,9 @@
         if (!translation) continue;
         await insertTranslation(block, translation, { accept, onSettled, target });
       } catch (error) {
-        // 扩展上下文失效意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一置 batchError。
-        if (isExtensionContextInvalidated(error)) throw error;
+        // 扩展上下文失效、整轮致命的错误（passFatal，见 runTranslationPass 的
+        // noteThrown）意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一处理。
+        if (isExtensionContextInvalidated(error) || error.passFatal === true) throw error;
         console.error('Blab Translation: Per-block fallback translation failed', error);
         if (onFailure) onFailure(error.message);
       }
@@ -469,6 +498,11 @@
     const auto = options.auto === true;
     // 这一轮的目标语言，只在这里读一次。见 passTarget。
     const target = passTarget();
+    // 前后文按这一轮收集到的顺序取（blocks 的原顺序，不是分批重排后的顺序）。
+    // 自动翻译只带标题：它按视口成轮，一轮里的块是这一屏新出现、还没译过的那些，
+    // 彼此不一定相邻，「前一段 / 后一段」取出来可能是隔了几段的文字。设置页的说明
+    // （aiPageContextHint）照此承诺，设计 docs/plans/2026-09-25-p1-c-glossary.md §4.3。
+    const withNeighbours = auto ? noNeighbours : neighbourContext(blocks);
     const total = blocks.length;
     let done = 0;
 
@@ -506,10 +540,34 @@
     // 变 —— 没有任何地方看得出来。
     const aborted = () => !!batchError || (typeof options.isAborted === 'function' && options.isAborted());
 
-    const noteBatchFailure = (message) => {
+    // 整轮致命的失败（passFatal：不认得的领域这类配置错，content/engine/addenda.js）
+    // 之后每一批都会一样失败，第一次见到就停，不等累计阈值 —— 一页只有一两批时阈值
+    // 永远到不了，这一轮会被当成「翻完了」收场，页面一个字没变、也没有任何提示。
+    const noteBatchFailure = (message, { passFatal = false } = {}) => {
+      if (passFatal) {
+        if (!batchError) batchError = message;
+        return;
+      }
       if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
       batchFailures += 1;
       if (batchFailures >= MAX_BATCH_FAILURES) batchError = firstFailureMessage;
+    };
+
+    // 请求抛出来的异常在这一层接住（processBatch 与超大块两处 catch），日志也只在
+    // 这里打。整轮致命的错误并发在飞的每一批都会抛一次，只记停下来的那一次。
+    const noteThrown = (error, what) => {
+      if (error && error.passFatal === true) {
+        if (!batchError) console.error('Blab Translation: translation pass stopped', error);
+        noteBatchFailure(error.message, { passFatal: true });
+        return;
+      }
+      console.error(`Blab Translation: ${what} failed`, error);
+      if (isExtensionContextInvalidated(error)) {
+        // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
+        batchError = t('extensionContextInvalidated');
+      } else {
+        noteBatchFailure(error.message);
+      }
     };
 
     // 处理超大块：按标点分块 → 分别翻译（必要时拆成多次请求）→ 按序拼回一个整体插入。
@@ -538,17 +596,17 @@
       for (const sb of subBatches) {
         if (aborted()) return;
         try {
-          const response = await requestBatch({
+          const response = await requestBatch(withNeighbours(block, block, {
             type: 'TRANSLATE_BATCH_FAST',
             texts: sb.map(x => x.text),
             targetLang: target.request,
             delimiter: DELIMITER,
             allowDownload,
             auto
-          });
+          }));
 
           if (response.error) {
-            noteBatchFailure(response.error);
+            noteBatchFailure(response.error, { passFatal: response.passFatal === true });
             return;
           }
 
@@ -561,13 +619,7 @@
             translations[x.index] = response.translations[k];
           });
         } catch (error) {
-          console.error('Blab Translation: Oversized block translation failed', error);
-          if (isExtensionContextInvalidated(error)) {
-            // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
-            batchError = t('extensionContextInvalidated');
-          } else {
-            noteBatchFailure(error.message);
-          }
+          noteThrown(error, 'Oversized block translation');
           return;
         }
       }
@@ -602,18 +654,18 @@
       try {
         // allowDownload 见 runTranslationPass 开头：用户点出来的那一轮可以触发
         // 语言包首次下载（进度就显示在下方进度条上），自动那一轮不行。
-        const response = await requestBatch({
+        const response = await requestBatch(withNeighbours(batch[0], batch[batch.length - 1], {
           type: 'TRANSLATE_BATCH_FAST',
           texts: texts,
           targetLang: target.request,
           delimiter: DELIMITER,
           allowDownload,
           auto
-        });
+        }));
 
         // Check for error in response
         if (response.error) {
-          noteBatchFailure(response.error);
+          noteBatchFailure(response.error, { passFatal: response.passFatal === true });
         } else {
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
           // 走逐块回退，而不是无声丢掉整批。
@@ -624,16 +676,12 @@
             isAborted: aborted,
             accept,
             onSettled,
-            target
+            target,
+            withNeighbours
           });
         }
       } catch (error) {
-        console.error('Blab Translation: Batch translation failed', error);
-        if (isExtensionContextInvalidated(error)) {
-          batchError = t('extensionContextInvalidated');
-        } else {
-          noteBatchFailure(error.message);
-        }
+        noteThrown(error, 'Batch translation');
       }
 
       done += batch.length;

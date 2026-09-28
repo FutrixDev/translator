@@ -27,6 +27,8 @@ globalThis.document = {};
 globalThis.chrome = {};
 
 await import('../../shared/block-identity.js');
+// 收集、落笔、比对原文都在调用时读 globalThis.TextMarkers（占位符与标记的语法）。
+await import('../../shared/text-markers.js');
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');

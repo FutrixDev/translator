@@ -153,7 +153,7 @@
     // 它本身不在 MATH_CONTAINER_SELECTOR 内，isValidBlock 拦不住），翻译无意义，
     // 且译文还原占位符后会把同一条公式在原文下方再渲染一遍。
     // 注意长度判断挡不住：占位符 "{{1}}" 有 5 个字符。
-    if (!text.replace(/\{\{\d+\}\}/g, '').trim()) return;
+    if (!globalThis.TextMarkers.strip(text).trim()) return;
 
     const targetLang = ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
     const cacheKey = hov.buildCacheKey(text, targetLang);
@@ -210,10 +210,9 @@
         () => hov.renderInlineTranslation(block, translation, mathElements, { kind: 'hover', textLang: targetLang })
       );
     } catch (error) {
+      console.error('Blab Translation: hover translation failed', error);
       if (hov.hoverRequestIds.get(block) !== requestId) return;
-      const message = ctx.isExtensionContextInvalidated && ctx.isExtensionContextInvalidated(error)
-        ? t('extensionContextInvalidated')
-        : t('translationFailed');
+      const message = ctx.thrownTranslationMessage(error);
       hov.scheduleInlineReplacement(
         block,
         'hover',
