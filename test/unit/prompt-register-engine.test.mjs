@@ -144,6 +144,54 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   }
 });
 
+// 算键（serve 头一步）和送出之间隔着读 storage（readL2）：那期间用户改了领域，
+// 键和发出去的提示词也必须是同一份领域（D-384 F1）。缓存层在算键前取一份
+// {domain, context}，经 opts 交给送出那一步；改之前送出时现读，键说 general、
+// 请求却带着 legal，这一条 legal 的译文就存进了 general 的键。
+test('a domain changed while the cache is read does not split the key from the request (D-384 F1)', async () => {
+  useAI();
+  local.clear();
+  goTo('https://example.test/');
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    sentToAI.push(message);
+    return { translations: message.texts.map((t) => `AI:${t}`) };
+  };
+  const stamps = [];
+  const realStamp = ctx.engine.addenda.stamp;
+  ctx.engine.addenda.stamp = (...args) => {
+    const stamp = realStamp(...args);
+    stamps.push(stamp);
+    return stamp;
+  };
+  const realGet = globalThis.chrome.storage.local.get;
+  let release;
+  const reading = new Promise((resolve) => {
+    globalThis.chrome.storage.local.get = (keys) => {
+      resolve();
+      return new Promise((done) => { release = () => done(realGet(keys)); });
+    };
+  });
+  try {
+    const pending = ctx.requestTranslationCached({
+      type: 'TRANSLATE_BATCH_FAST', texts: ['A paragraph read while the domain changes.'],
+      targetLang: 'zh-CN', delimiter: '@@',
+    });
+    await reading;
+    ctx.settings.promptDomain = 'legal';
+    release();
+    await pending;
+    assert.equal(sentToAI.length, 1);
+    assert.equal(stamps.length, 1);
+    const keyed = stamps[0].match(/\|d:([a-z]+)\|/)[1];
+    const sent = sentToAI[0].addenda.domain || 'general';
+    assert.equal(sent, keyed, `the key says d:${keyed} but the request carried ${sent}`);
+  } finally {
+    globalThis.chrome.storage.local.get = realGet;
+    ctx.engine.addenda.stamp = realStamp;
+    ctx.settings.promptDomain = 'general';
+  }
+});
+
 // ---- 两头接起来：内容脚本发出的消息 → 服务工作者的翻译函数 → 系统提示词 ----
 // 放在最后：它把服务工作者那一半（连同真的 AutoStats）装进这个进程，上面缓存
 // 那条要的是桩。

@@ -36,6 +36,15 @@ const STYLE = `
 const LONG = 'The Transformer architecture changed how machine translation systems are built, '
   + 'because every token can look at every other token in the sentence at once.';
 
+// Glossary.LIMITS.source 的两边（D-384 A1）：正好 80 字给按钮，81 字不给。全是
+// ASCII，JS 的 length 和 normalizeSource 数的一样；测试里再断言一次长度，改字时
+// 夹具不会悄悄偏到别处。
+const AT_LIMIT = 'Attention lets each token weigh all the other tokens in one sentence at once. Ok';
+const OVER_LIMIT = `${AT_LIMIT}!`;
+
+// 主机当不了术语表键的页面（D-384 A6）：IPv6 字面量。
+const IPV6 = 'https://[::1]';
+
 const html = (body) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Term notes</title><style>${STYLE}</style></head>
 <body>${body}</body></html>`;
@@ -47,18 +56,28 @@ const PAGES = {
   [`${SITE}/framed`]: html(`
     <p id="intro">Notes from readers, embedded from another site.</p>
     <iframe id="embed" src="${EMBED}/note" width="900" height="480" style="border:0;display:block"></iframe>`),
+  [`${SITE}/more`]: html(`
+    <p id="at-limit">${AT_LIMIT}</p>
+    <p id="over-limit">${OVER_LIMIT}</p>
+    <p id="lower-p"><span id="lower">attention</span> decides which tokens matter.</p>`),
+  [`${IPV6}/`]: html(`
+    <p id="lead"><span id="term">Transformer</span> models read a whole sentence at once.</p>`),
   [`${EMBED}/note`]: html(`
     <p id="note"><span id="embed-term">Transformer</span> layers stack attention and feed-forward blocks.</p>`),
 };
 
+function fulfill(route) {
+  const body = PAGES[route.request().url().split(/[?#]/)[0]];
+  if (!body) return route.fulfill({ status: 404, body: 'not found' });
+  return route.fulfill({ status: 200, contentType: 'text/html', body });
+}
+
 async function serve(context) {
   for (const origin of [SITE, EMBED]) {
-    await context.route(`${origin}/**`, (route) => {
-      const body = PAGES[route.request().url().split(/[?#]/)[0]];
-      if (!body) return route.fulfill({ status: 404, body: 'not found' });
-      return route.fulfill({ status: 200, contentType: 'text/html', body });
-    });
+    await context.route(`${origin}/**`, fulfill);
   }
+  // glob 里的方括号是字符类，IPv6 主机只能按 hostname 认。
+  await context.route((url) => url.hostname === '[::1]', fulfill);
 }
 
 function settings(endpoint, extra = {}) {
@@ -106,6 +125,7 @@ const formInput = (root) => form(root).locator('.ai-translator-term-input');
 const formScope = (root) => form(root).locator('.ai-translator-term-scope');
 const formError = (root) => form(root).locator('.ai-translator-term-error');
 const formSave = (root) => form(root).locator('.ai-translator-term-save');
+const cardError = (root) => root.locator('.ai-translator-popup .ai-translator-error');
 
 // 表单里并排的每一样（没有谁包着谁），给 expectLaidOut 量「露出、在视口里、互不
 // 重叠、字对底色 ≥ 4.5:1」。
@@ -129,6 +149,37 @@ function scopeOptions(root) {
 /** 这一页内容脚本的词表代数（ctx.translationProfile.generation()）。 */
 function generation(context, root) {
   return evaluateInContentScript(context, root, 'window.AI_TRANSLATOR_CONTENT.translationProfile.generation()');
+}
+
+/**
+ * 范围下拉框有下拉箭头（D-384 A7-b）：重置把 appearance 设成 none 之后，箭头是
+ * 包着下拉框那一层的 ::after，落在下拉框右边留出的位置里，颜色是次要文字色。
+ */
+async function expectScopeCaret(root) {
+  const look = await formScope(root).evaluate((el) => {
+    const style = getComputedStyle(el);
+    const caret = getComputedStyle(el.parentElement, '::after');
+    const box = el.getBoundingClientRect();
+    return {
+      appearance: style.appearance,
+      padRight: parseFloat(style.paddingRight),
+      content: caret.content,
+      border: caret.borderBottomStyle,
+      color: caret.borderBottomColor,
+      label: getComputedStyle(el.closest('.ai-translator-term-row').querySelector('.ai-translator-term-label')).color,
+      right: parseFloat(caret.right),
+      height: box.height,
+      wrapperHeight: el.parentElement.getBoundingClientRect().height,
+    };
+  });
+  expect(look.appearance).toBe('none');
+  expect(look.content).toBe('""');
+  expect(look.border).toBe('solid');
+  expect(look.color).toBe(look.label);
+  expect(look.padRight).toBeGreaterThanOrEqual(24);
+  expect(look.right).toBeLessThan(look.padRight);
+  // 包层和下拉框一样高：箭头的 top: 50% 就是下拉框的竖直中线。
+  expect(look.wrapperHeight).toBeCloseTo(look.height, 0);
 }
 
 async function openCard(page, selector) {
@@ -175,6 +226,7 @@ test.describe('P1-C C4 add a term from the selection card', () => {
     await expect(formScope(page)).toHaveValue('site');
     // 浅色主题（缺省）下表单可读、不溢出、不重叠。
     console.log(`C-J7 light form contrast: ${await expectLaidOut(page, FORM_PARTS, 'C-J7 light form')}`);
+    await expectScopeCaret(page);
 
     // 译文改成「变换器」，保持仅本站，保存。
     const before = await generation(context, page);
@@ -250,6 +302,7 @@ test.describe('P1-C C4 add a term from the selection card', () => {
     expect(await storedGlossary(context)).toEqual({});
     // 深色主题下表单（连同错误句）可读、不溢出、不重叠。
     console.log(`C-J7 dark form contrast: ${await expectLaidOut(page, [...FORM_PARTS, '.ai-translator-term-error'], 'C-J7 dark form')}`);
+    await expectScopeCaret(page);
 
     // 改短、选「所有网站」，在输入框里按回车保存：存进去的词条没有 h。
     await formInput(page).fill('变换器');
@@ -346,5 +399,129 @@ test.describe('P1-C C4 add a term from the selection card', () => {
     await expect(addTermBtn(page)).toBeVisible();
     await expect(addTermBtn(page)).toBeEnabled();
     expect(await page.evaluate(() => window.__addTermHides)).toEqual([]);
+  });
+
+  test('C-J7 the 80-character limit: exactly 80 offers add-to-glossary, 81 does not (D-384 A1)', async ({ page, context }) => {
+    expect(AT_LIMIT).toHaveLength(80);
+    expect(OVER_LIMIT).toHaveLength(81);
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await page.goto(`${SITE}/more`);
+    await openCard(page, '#at-limit');
+    expect(mock.sentTexts.at(-1)).toBe(AT_LIMIT);
+    await expect(addTermBtn(page)).toBeVisible();
+    await addTermBtn(page).click();
+    await expect(formSource(page)).toHaveText(AT_LIMIT);
+
+    await page.keyboard.press('Escape');
+    await expect(cardText(page)).toHaveCount(0);
+    await dragAcross(page, page.locator('#over-limit'));
+    await icon(page).click();
+    await expect(cardText(page)).toContainText('[T]');
+    expect(mock.sentTexts.at(-1)).toBe(OVER_LIMIT);
+    await expect(retranslateBtn(page)).toBeVisible();
+    await expect(addTermBtn(page)).toHaveCount(1);
+    await expect(addTermBtn(page)).toBeHidden();
+  });
+
+  test('C-J7 add-to-glossary is disabled while a retranslation is in flight (D-384 A2)', async ({ page, context }) => {
+    const slow = await startMockOpenAIServer({ delayMs: 1500 });
+    try {
+      await serve(context);
+      await setExtensionSettings(page, settings(slow.endpoint));
+      await page.goto(`${SITE}/`);
+      await openCard(page, '#term');
+      await expect(addTermBtn(page)).toBeEnabled();
+      await retranslateBtn(page).click();
+      // 请求还在路上（mock 拖 1.5 秒才答）：按钮还在，只是忙。
+      await expect(addTermBtn(page)).toBeVisible();
+      await expect(addTermBtn(page)).toBeDisabled();
+      await expect.poll(() => slow.sentTexts.length).toBe(2);
+      await expect(addTermBtn(page)).toBeDisabled();
+      await expect(retranslateBtn(page)).toBeEnabled();
+      await expect(addTermBtn(page)).toBeEnabled();
+    } finally {
+      await slow.close();
+    }
+  });
+
+  test('C-J7 an all-lowercase term is stored without c, and a new target language puts the label back (D-384 A3, A4)', async ({ page, context }) => {
+    const en = (key) => getMessage(key, 'en');
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await page.goto(`${SITE}/more`);
+    await openCard(page, '#lower');
+    await addTermBtn(page).click();
+    await expect(formSource(page)).toHaveText('attention');
+    await formInput(page).fill('注意力');
+    await formSave(page).click();
+    await expect(addTermBtn(page)).toHaveText(en('glossaryAdded'));
+    // 原文没有大写字母：缺省不区分大小写，存下的词条里没有 c。
+    expect(Object.values(await storedGlossary(context))).toEqual([
+      { s: 'attention', t: '注意力', h: SITE_HOST, l: 'zh-CN', u: expect.any(Number) },
+    ]);
+
+    // 卡片换成法语：「已加入」说的是中文那一条，按钮回到「加入术语表」。
+    await page.locator('.ai-translator-popup .ai-translator-lang-trigger').click();
+    await page.locator('.ai-translator-popup .ai-translator-lang-item[data-lang="fr"]').click();
+    await expect(cardText(page)).toHaveAttribute('lang', 'fr');
+    await expect(cardText(page)).toContainText('[T]');
+    await expect(addTermBtn(page)).toHaveText(en('glossaryAdd'));
+    // 在法语下再存一次，是另一条（l 是 fr），按钮说「已加入」而不是「已更新」。
+    await addTermBtn(page).click();
+    await formInput(page).fill('attention');
+    await formSave(page).click();
+    await expect(addTermBtn(page)).toHaveText(en('glossaryAdded'));
+    const stored = Object.values(await storedGlossary(context));
+    expect(stored).toHaveLength(2);
+    expect(stored).toContainEqual({ s: 'attention', t: 'attention', h: SITE_HOST, l: 'fr', u: expect.any(Number) });
+  });
+
+  test('C-J7 on a page whose host cannot be a site key (an IPv6 literal) the form offers only "All sites" (D-384 A6)', async ({ page, context }) => {
+    const en = (key) => getMessage(key, 'en');
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await page.goto(`${IPV6}/`);
+    await openCard(page, '#term');
+    // 页面自己的主机就是 [::1]：印出来的主机和写入口收的主机是同一个谓词，
+    // 当不了键就和「没拿到指令」一样只给「所有网站」。
+    expect(await evaluateInContentScript(context, page, 'window.AI_TRANSLATOR_CONTENT.frames.topHost()')).toBe('[::1]');
+    await addTermBtn(page).click();
+    await expect(form(page)).toBeVisible();
+    expect(await scopeOptions(page)).toEqual([['all', en('glossaryScopeAll')]]);
+    await expect(formScope(page)).toHaveValue('all');
+    await formInput(page).fill('变换器');
+    await formSave(page).click();
+    await expect(addTermBtn(page)).toHaveText(en('glossaryAdded'));
+    expect(Object.values(await storedGlossary(context))).toEqual([
+      { s: 'Transformer', t: '变换器', c: 1, l: 'zh-CN', u: expect.any(Number) },
+    ]);
+  });
+
+  test('C-J7 in the light theme both error lines on the card read at 4.5:1 or better (D-384 A11)', async ({ page, context }) => {
+    const failing = await startMockOpenAIServer({ failRequests: 1 });
+    try {
+      await serve(context);
+      await setExtensionSettings(page, settings(failing.endpoint, { theme: 'light' }));
+      await page.goto(`${SITE}/`);
+      await waitForContentReady(page);
+      // 第一次请求失败：卡片的错误句。
+      await dragAcross(page, page.locator('#term'));
+      await icon(page).click();
+      await expect(cardError(page)).toBeVisible();
+      await expect(cardError(page)).not.toHaveText('');
+      console.log(`C-J7 light card error contrast: ${await expectLaidOut(page, ['.ai-translator-popup .ai-translator-error'], 'C-J7 light card error')}`);
+
+      // 重译成功后，表单里被服务工作者拒绝的保存：表单的错误句。
+      await retranslateBtn(page).click();
+      await expect(cardText(page)).toContainText('[T]');
+      await addTermBtn(page).click();
+      await formInput(page).fill('变换器'.repeat(54));
+      await formSave(page).click();
+      await expect(formError(page)).not.toHaveText('');
+      console.log(`C-J7 light form error contrast: ${await expectLaidOut(page, ['.ai-translator-term-error'], 'C-J7 light form error')}`);
+    } finally {
+      await failing.close();
+    }
   });
 });

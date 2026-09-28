@@ -45,8 +45,9 @@ class FakeNode {
 
 function deferred() {
   let resolve;
-  const promise = new Promise((r) => { resolve = r; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
 }
 
 // 宏任务边界：芯片里那几个 await 都是 promise，排干它们要等一个 setImmediate。
@@ -75,6 +76,8 @@ function load({ landed = () => false, autocomplete = null } = {}) {
   const ctx = {
     settings: {},
     t: (key) => key,
+    // content-bootstrap.js 那一份的同形替身：passFatal 带着自己的文案，别的一律笼统一句。
+    thrownTranslationMessage: (error) => (error && error.passFatal === true ? error.message : 'translationFailed'),
     languageName: () => 'English',
     normalizeTargetLang: (lang) => lang,
     isSameLanguage: (a, b) => a === b,
@@ -288,4 +291,38 @@ test('译文在路上时开始了输入法组合：译文回来不写，芯片�
   await flush();
   assert.deepEqual(harness.writes, [], '组合开着，译文照样写了进去');
   assert.equal(chip.dataset.state, undefined);
+});
+
+// D-384 F4：整轮致命的配置错（不认得的领域）带着自己的那一句；芯片和别的入口一样
+// 显示它，而不是笼统的「翻译失败」。顶层直接抛出、子 frame 折成 {error, passFatal}
+// 两条路都要到。
+test('passFatal 的失败：芯片显示它自己的文案，两条路一样', async () => {
+  const FATAL = 'promptDomainUnknown 的文案';
+  for (const settle of [
+    (answer) => answer.reject(Object.assign(new Error(FATAL), { passFatal: true })),
+    (answer) => answer.resolve({ error: FATAL, passFatal: true }),
+  ]) {
+    const harness = load();
+    await harness.focus();
+    const chip = harness.chip();
+    harness.clickChip(chip);
+    await flush();
+    settle(harness.requests[0].answer);
+    await flush();
+    await flush();
+    assert.equal(chip.dataset.state, 'error');
+    assert.equal(chip.textContent, FATAL, '芯片没显示 passFatal 的文案');
+    assert.equal(chip.getAttribute('title'), FATAL, '长句被截断，title 里没有全文');
+  }
+
+  // 普通失败仍是笼统一句。
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  harness.clickChip(chip);
+  await flush();
+  harness.requests[0].answer.resolve({ error: 'HTTP 500 from the endpoint' });
+  await flush();
+  await flush();
+  assert.equal(chip.textContent, 'translationFailed');
 });

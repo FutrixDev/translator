@@ -70,7 +70,11 @@ test('点击才译：翻译请求只在点击处理里发，而且声明是独�
 // test/e2e/input-chip.spec.js（Lexical / open shadow root / 译文回来之前字变了）。
 
 test('芯片的三种状态用的是现成的文案', () => {
-  assert.match(CHIP_ONLY, /t\(state === 'busy' \? 'translating' : 'translationFailed'\)/);
+  assert.match(CHIP_ONLY, /chip\.textContent = t\('translating'\)/);
+  // 失败那一句不由芯片自己挑：和悬停、划选、输入框、划词卡片一样问
+  // ctx.thrownTranslationMessage（它在 translationFailed 与 passFatal 的文案之间选，D-384 F4）。
+  assert.match(CHIP_ONLY, /setChipState\('error', ctx\.thrownTranslationMessage\(error\)\)/);
+  assert.ok(!/t\('translationFailed'\)/.test(CHIP_ONLY), '芯片自己写死了 translationFailed，passFatal 的文案就到不了它');
   const css = contentCss();
   assert.match(css, /#ai-translator-input-chip\[data-state="busy"\]/);
   assert.match(css, /#ai-translator-input-chip\[data-state="error"\]/);

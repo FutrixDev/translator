@@ -115,7 +115,6 @@
         "shared/custom-rules.js",
         "shared/glossary.js",
         "shared/block-identity.js",
-        "shared/prompt-addenda.js",
         "shared/translation-cache.js",
         "shared/spa-navigation.js",
         "shared/session-guard.js",

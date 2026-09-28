@@ -279,10 +279,11 @@ floating layers (source peek, card, icon) are placed by one pure function,
 card goes beside the selection, never over it, and is re-placed by a
 ResizeObserver until the user drags it. The card's action row is retranslate,
 switch engine, add to glossary, copy; errors go to its single
-`.ai-translator-error` element (`ctx.showCardError`), never into the translation text. The row wraps, so a
-button whose width followed its label moved a different button under the
-pointer: a button whose label changes is drawn with `ctx.fitLabel(text,
-labels)`, sized for every label it will show, and every copy button is
+`.ai-translator-error` element (`ctx.showCardError`), never into the
+translation text. The row wraps, so a button whose width followed its label
+moved a different button under the pointer: a button whose label changes is
+drawn with `ctx.fitLabel(text, labels)`, sized for every label it will show,
+and every copy button is
 `ctx.copyButtonContent(label)` + `ctx.copyWithFeedback(button, text)` — the one
 place "Copied" is shown and the clipboard written
 (`test/unit/copy-feedback.test.mjs`). The `execCommand` fallback in
@@ -411,9 +412,14 @@ same three paths, the single-text one included. The word/dictionary path never
 carries it, neither `SINGLE_WORD_PROMPT` nor `WORD_OUTPUT_RULES`: a dictionary
 entry has no register to keep, though its addenda still arrive. The eighth translation-cache
 factor (`addenda`) is computed in one place,
-`ctx.engine.addenda.stamp(addenda, snap, text)` in `content/engine/addenda.js`:
-the stamped register (`PromptAddenda.stamp()`), this text's glossary hits, the
-effective domain and the page-context switch. The built-in engine
+`ctx.engine.addenda.stamp(addenda, snap, text, current)` in
+`content/engine/addenda.js`: the stamped register (`PromptAddenda.stamp()`),
+this text's glossary hits, the effective domain and the page-context switch.
+`current` is one `ctx.engine.addenda.settings()` snapshot (`{ domain, context
+}`), read after `ctx.customRules.whenReady()`, and `sendTranslationCached`
+hands the same snapshot and the same glossary snapshot to the send as
+`opts.addendaSettings` / `opts.glossary`, so the key and the prompt read one
+domain; the uncached path reads its own at send time. The built-in engine
 reads no prompt and never sees it. Captions need nothing of their own, because
 they go through `ctx.requestTranslation` too. Covered by
 `test/unit/prompt-addenda.test.mjs`,
@@ -430,11 +436,13 @@ said it). `content/engine/addenda.js` (`ctx.engine.addenda`: `plan`,
 `compose`, `stamp`) builds each request's addenda from a snapshot of the
 glossary, splits a batch into parts of at most 60 glossary entries each, and
 adds the page context (title, and 300 characters either side for a whole-page
-batch; `pageContext` is stripped before the message leaves, and never reaches
-the built-in engine). A domain the table does not know is a configuration
-error: the thrown error carries `passFatal: true`, and a whole-page round
-(`content/page/batch.js`) stops at the first one instead of waiting for the
-failure threshold; a child frame's relay carries the flag back.
+batch). The neighbours travel as `message.pageContext`, which `sendToModel`
+strips in the frame that executes the request, so a child frame's request
+carries it across the relay and the top frame strips it; it never reaches the
+model or the built-in engine. A domain the table does not know is a
+configuration error: the thrown error carries `passFatal: true`, and a
+whole-page round (`content/page/batch.js`) stops at the first one instead of
+waiting for the failure threshold; a child frame's relay carries the flag back.
 
 **`ctx.translationProfile` (`content/content-translation-cache.js`) is the
 generation of the page's in-memory caches.** Hover and captions key their own

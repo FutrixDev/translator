@@ -234,7 +234,10 @@ test('glossary put scope site: h comes from sender.tab.url, never from the paylo
   const sync = fakeSync();
   await withChrome(sync.chrome, async () => {
     const sender = { tab: { url: 'https://www.arxiv.org/abs/1' }, url: 'https://frame.test/embed' };
-    const reply = await write('put', { entry: { s: 'attention', t: '注意力', h: 'evil.test' }, scope: 'site' }, sender);
+    // 网页一侧带来的 h 不再被悄悄换掉，而是整条拒绝（D-384 A8），存储不动。
+    await rejectsWith(write('put', { entry: { s: 'attention', t: '注意力', h: 'evil.test' }, scope: 'site' }, sender), 'glossaryEntryInvalid');
+    assert.deepEqual(sync.data, {});
+    const reply = await write('put', { entry: { s: 'attention', t: '注意力' }, scope: 'site' }, sender);
     assert.equal(sync.data[`glossary:${reply.id}`].h, 'arxiv.org');
 
     await rejectsWith(write('put', { entry: { s: 'x' }, scope: 'site' }, {}), 'glossaryEntryInvalid');
@@ -242,6 +245,45 @@ test('glossary put scope site: h comes from sender.tab.url, never from the paylo
     await rejectsWith(write('put', { entry: { s: 'x' }, scope: 'page' }, sender), 'glossaryEntryInvalid');
     await rejectsWith(write('put', {}), 'glossaryEntryInvalid');
   });
+});
+
+// D-384 A8：网页里的内容脚本（有 sender.tab、sender.url 是网页）带 h 的 put 一律
+// 拒绝，有没有 scope 都一样；我们自己的扩展页 —— 设置页开在标签页里时也带
+// sender.tab —— 和服务工作者自己写（没有 sender）照样可以带 h。
+test('glossary put: a web page may not name a site; the settings page and the worker may', async () => {
+  const sync = fakeSync();
+  await withChrome(sync.chrome, async () => {
+    const page = { tab: { id: 3, url: 'https://arxiv.org/abs/1' }, url: 'https://arxiv.org/abs/1' };
+    const frame = { tab: { id: 3, url: 'https://arxiv.org/abs/1' }, url: 'https://embed.test/x' };
+    for (const sender of [page, frame]) {
+      await rejectsWith(write('put', { entry: { s: 'attention', h: 'arxiv.org' } }, sender), 'glossaryEntryInvalid');
+      await rejectsWith(write('put', { entry: { s: 'attention', h: 'evil.test', l: 'zh-CN' } }, sender), 'glossaryEntryInvalid');
+    }
+    assert.deepEqual(sync.data, {}, 'a refused put wrote something');
+
+    const optionsUrl = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/options/options.html';
+    const optionsTab = { tab: { id: 9, url: optionsUrl }, url: optionsUrl, origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop' };
+    const popup = { url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup/popup.html' };
+    const stored = [];
+    for (const [sender, s] of [[optionsTab, 'loss'], [popup, 'token'], [undefined, 'layer']]) {
+      const reply = await write('put', { entry: { s, h: 'WWW.Example.com' } }, sender);
+      stored.push(sync.data[`glossary:${reply.id}`].h);
+    }
+    assert.deepEqual(stored, ['example.com', 'example.com', 'example.com']);
+  });
+});
+
+test('glossary: siteKey is the one predicate for a site key; normalizeSite refuses exactly what it empties', () => {
+  assert.equal(Glossary.siteKey('WWW.Arxiv.org.'), 'arxiv.org');
+  assert.equal(Glossary.siteKey('localhost'), 'localhost');
+  for (const bad of ['', '[::1]', '[2001:db8::1]', 'a b', 'a/b', 'host:8080', undefined, null, 7]) {
+    assert.equal(Glossary.siteKey(bad), '', `siteKey(${JSON.stringify(bad)}) should be empty`);
+  }
+  // 一个带了 h 的条目：siteKey 给空的，存储一侧就拒绝 —— 同一个谓词。
+  for (const bad of ['...', '[::1]', '[2001:db8::1]', 'a b', 'a/b', 'host:8080', 7]) {
+    assert.throws(() => Glossary.validateEntry({ s: 'x', h: bad }), { message: 'glossaryEntryInvalid' }, `h ${JSON.stringify(bad)}`);
+  }
+  assert.equal(Glossary.validateEntry({ s: 'x', h: 'WWW.Arxiv.org.' }).h, 'arxiv.org');
 });
 
 test('glossary remove: ids are validated, removed counts only what existed', async () => {

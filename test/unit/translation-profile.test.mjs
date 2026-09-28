@@ -45,6 +45,8 @@ function fakeRules() {
       for (const fn of subscribers) fn();
     },
     count: () => subscribers.size,
+    // 缓存入口先等规则就绪（F1），替身一开始就是就绪的。
+    whenReady: async () => {},
   };
 }
 
@@ -157,7 +159,10 @@ test('改了模型之后，持久缓存的键因子重新读：下一次请求�
     },
   };
   globalThis.AutoStats = { add() {} };
-  ctx.engine = { glossary: { current: async () => ({}) }, addenda: { stamp: () => '' } };
+  ctx.engine = {
+    glossary: { current: async () => ({}) },
+    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
+  };
   // 入口先在本 frame 盖语域（引擎的 ctx.withPromptAddenda），再查缓存。
   ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
   ctx.sendTranslation = async () => assert.fail('全部命中，不该发请求');

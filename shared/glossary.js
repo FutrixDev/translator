@@ -80,10 +80,21 @@
     throw invalid();
   }
 
-  function normalizeSite(h) {
-    if (typeof h !== 'string') throw invalid();
+  /**
+   * 站点词条的 h：这台主机能当键就是规范化后的主机，不能（空、非字符串，或带空白、
+   * 斜杠、冒号 —— 比如 `[::1]` 这类 IPv6 字面量）就是空串。写入口的校验
+   * （normalizeSite）和划词卡片表单印出来的「仅本站」（content-add-term.js）问的是
+   * 这同一个谓词：表单给出的站点，写入口一定收（D-384 A6）。
+   */
+  function siteKey(h) {
+    if (typeof h !== 'string') return '';
     const host = SiteRules.normalizeHost(h);
-    if (!host || /[\s/:]/.test(host)) throw invalid();
+    return host && !/[\s/:]/.test(host) ? host : '';
+  }
+
+  function normalizeSite(h) {
+    const host = siteKey(h);
+    if (!host) throw invalid();
     return host;
   }
 
@@ -214,11 +225,25 @@
     return normalizeSite(hostname);
   }
 
+  // 发信的是不是网页里的内容脚本。内容脚本的发信方总带 sender.tab，sender.url 是
+  // 那一帧网页的地址；我们自己的扩展页（设置页、popup）的 sender.url 是
+  // chrome-extension: —— 设置页开在标签页里时同样带 sender.tab，所以不能只看 tab。
+  // 内容脚本不会注入 chrome-extension: 页面，runtime.onMessage 也只收本扩展的消息。
+  function fromWebPage(sender) {
+    if (!sender || !sender.tab) return false;
+    return !String(sender.url || '').startsWith('chrome-extension:');
+  }
+
   // 无 id：同一个 dedupeKey 的那条就替换，没有就新增。有 id：替换那一条（不存在
   // 就以这个 id 新增）；改完和另一条撞 dedupeKey 就拒绝，存储不动。
+  //
+  // 网页一侧（划词卡片）只能说「仅本站」（scope: 'site'，站点由这里按 sender.tab.url
+  // 算）或「所有网站」，自己带 h 一律拒绝：否则任何一页都能替别的站点写词条。设置页
+  // 是扩展页，照样可以带 h（D-384 A8）。
   function writePut({ entry, scope }, sender) {
     if (scope !== undefined && scope !== 'site') throw invalid();
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw invalid();
+    if (fromWebPage(sender) && isPresent(entry.h)) throw invalid();
     const source = scope === 'site' ? Object.assign({}, entry, { h: senderSite(sender) }) : entry;
     const normalized = validateEntry(source);
     const wantedId = entry.id === undefined ? undefined : checkedId(entry.id);
@@ -301,6 +326,7 @@
     userErrorKey,
     newId: collection.newId,
     normalizeSource,
+    siteKey,
     caseSensitiveByDefault,
     dedupeKey,
     validateEntry,

@@ -655,8 +655,8 @@
   // compose 出来的词表、领域、上下文**并进**请求已经带着的 addenda：语域是发起请求
   // 的那一帧盖的（ctx.withPromptAddenda），这里是执行请求的那一帧，不重算、不覆盖
   // 它（D-382）。compose 从不产出 register，所以并进去也盖不掉它。
-  function withAddenda(message, part, original) {
-    const addenda = eng.addenda.compose(original, part);
+  function withAddenda(message, part, original, current) {
+    const addenda = eng.addenda.compose(original, part, current);
     return addenda ? { ...message, addenda: { ...message.addenda, ...addenda } } : message;
   }
 
@@ -672,9 +672,10 @@
    * 批量页的 `pageContext` 只用来组装，不随消息发出。批量按 60 条词条上限
    * 切成几份，一份一份依次发、各自过预算闸；任一份失败（有 error，或 translations
    * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
-   * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。
+   * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
+   * 交来的那一份（缓存层算键时取的），没交就在这里现取（eng.addenda.settings）。
    */
-  async function sendToModel(original, snap) {
+  async function sendToModel(original, snap, frozen) {
     const { pageContext: _neighbours, ...message } = original;
     if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
     // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
@@ -682,17 +683,18 @@
     if (!('addenda' in message)) {
       throw new Error('sendToModel: this request was never stamped (ctx.withPromptAddenda)');
     }
+    const current = frozen || eng.addenda.settings();
     if (message.type === 'TRANSLATE') {
       const [part] = snap.plan([message.text]);
-      return sendPart(withAddenda(message, part, original));
+      return sendPart(withAddenda(message, part, original, current));
     }
     const texts = Array.isArray(message.texts) ? message.texts : [];
     const parts = snap.plan(texts);
-    if (parts.length === 1) return sendPart(withAddenda(message, parts[0], original));
+    if (parts.length === 1) return sendPart(withAddenda(message, parts[0], original, current));
     const translations = new Array(texts.length);
     for (const part of parts) {
       const partTexts = part.indices.map((index) => texts[index]);
-      const response = await sendPart(withAddenda({ ...message, texts: partTexts }, part, original));
+      const response = await sendPart(withAddenda({ ...message, texts: partTexts }, part, original, current));
       if (!response || response.error || !Array.isArray(response.translations)
           || response.translations.length !== partTexts.length) {
         return response;
@@ -769,8 +771,9 @@
    * 就把真实原因给他看，不能换一个引擎、花他的钱把结果递回去（engineFallback 为
    * 'allow-ai' 也一样）；指名 'ai' 就完全跳过内置那一段。指名什么都不持久化。
    *
-   * `opts.glossary` 是调用方已经取好的词表快照（缓存层取一次，键和请求出自同一份）；
-   * 没传就在这里取。第二个参数只在内容脚本内部传，不进消息。
+   * `opts.glossary` 是调用方已经取好的词表快照、`opts.addendaSettings` 是它取好的
+   * 领域与上下文开关（eng.addenda.settings()）：缓存层算键前取一次，键和请求出自
+   * 同一份（D-384 F1）；没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
    */
   ctx.sendTranslation = async function(message, opts = {}) {
     // 引擎谓词要问本站规则（siteEngine），规则先到再选；词表同样要先到，快照才
@@ -816,7 +819,7 @@
         throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
-    return sendToModel(message, snap);
+    return sendToModel(message, snap, opts.addendaSettings);
   };
 
   /**

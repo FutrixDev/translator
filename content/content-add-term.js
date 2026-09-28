@@ -13,7 +13,8 @@
 //     站点由服务工作者按 sender.tab.url 重算（shared/glossary.js 的 senderSite），
 //     子帧里也是顶层的站点；「所有网站」什么 scope 都不带（D-381）。这里印的主机只
 //     给人看：ctx.frames.topHost()（顶层帧是本页，子帧是顶层指令里的 host，还没拿到
-//     指令就是空串，只给「所有网站」）。
+//     指令就是空串，只给「所有网站」），过一遍和写入口同一个谓词 Glossary.siteKey，
+//     当不了键的主机也只给「所有网站」。
 //   - 不在客户端校验长度：超限的译文照样预填、照样送出，由服务工作者按同一份
 //     Glossary.LIMITS 拒绝，错误键在表单里显示，表单不收。
 (function() {
@@ -103,7 +104,7 @@
       </label>
       <label class="ai-translator-term-row">
         <span class="ai-translator-term-label">${t('glossarySite')}</span>
-        <select class="ai-translator-term-scope"></select>
+        <span class="ai-translator-term-select"><select class="ai-translator-term-scope"></select></span>
       </label>
       <div class="ai-translator-term-error" role="alert" hidden></div>
       <div class="ai-translator-term-buttons">
@@ -126,8 +127,10 @@
     return form;
   }
 
+  // 印哪个主机和写入口收哪个主机是同一个谓词（Glossary.siteKey）：当不了键的主机
+  // （[::1] 这类 IPv6 字面量）和还没拿到指令的子帧一样，只给「所有网站」。
   function fillScope(select) {
-    const host = ctx.frames.topHost();
+    const host = Glossary.siteKey(ctx.frames.topHost());
     const options = [];
     if (host) options.push(['site', t('glossaryScopeSite').replace('{host}', host)]);
     options.push(['all', t('glossaryScopeAll')]);

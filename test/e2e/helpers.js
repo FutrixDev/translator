@@ -72,10 +72,6 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
   'shared/storage-writer.js',
   'shared/site-rules.js',
-  // 附加说明（R33 A4）：content-translation-cache.js 建键时取 PromptAddenda.stamp。
-  // 这串模块里今天没有谁读它，照 manifest 的次序带上，免得哪天夹具加了缓存层、
-  // 红在三步之后。
-  'shared/prompt-addenda.js',
   // 用户站点规则（P1-B）：custom-rules.js 加载时取走 SiteRules / StorageWriter /
   // SyncCollection，manifest 里它们紧跟在 auto-stats 之后。夹具不调
   // ctx.customRules.init()（没有扩展运行时），所以本页恒为「没有规则」。
@@ -83,12 +79,14 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
   'shared/sync-collection.js',
+  // 附加说明（shared/prompt-addenda.js，只加载一次，和 manifest 一样）：
   // custom-rules.js 加载时取走 PromptAddenda（规则 v2 的 domain 按 DOMAINS 校验，
   // P1-C C3），缺了它整个文件抛错；manifest 里它排在 custom-rules.js 之前。
   // 上面 block-identity 的守卫只扫 `globalThis.X`，custom-rules.js 写的是
   // `root.PromptAddenda`，漏掉它不会红在那里。夹具也不调 ctx.customRules.init()，
   // 用不到 CustomRules，所以漏掉它时现有 DOM 夹具 spec 照样全绿（实测过）——
-  // 这一行是为了和 manifest 顺序一致，不是哪条 spec 离了它就红。
+  // 这一行是为了和 manifest 顺序一致，不是哪条 spec 离了它就红。这串模块里没有
+  // 译文缓存层（content-translation-cache.js 建键时读 PromptAddenda.stamp）。
   'shared/prompt-addenda.js',
   'shared/custom-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在

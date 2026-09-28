@@ -734,6 +734,31 @@ html body .ai-translator-popup .ai-translator-term-scope {
 
 html body .ai-translator-popup .ai-translator-term-scope {
   cursor: pointer;
+  padding-right: 30px;
+}
+
+/* 重置把下拉框设成 appearance: none，系统的下拉箭头跟着没了（D-384 A7-b）。
+   <select> 上挂不了 ::after，箭头挂在包着它的 span 上：两条边框转 45° 拼成向下
+   的尖角，颜色取 --text-secondary，深浅两套主题各自跟着变，不另写浅色规则；
+   pointer-events: none，点在箭头上就是点在下拉框上。不画成下拉框的背景图 ——
+   那样字底下就多了一层颜色，对比度量的是「字可能落在的每一种底色」。 */
+html body .ai-translator-popup .ai-translator-term-select {
+  position: relative;
+  display: block;
+}
+
+html body .ai-translator-popup .ai-translator-term-select::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 html body .ai-translator-popup .ai-translator-term-scope option {
