@@ -129,6 +129,19 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   await ask();
   assert.equal(sentToAI.length, 2, 'a news page reused the forum translation');
   assert.equal(sentToAI[1].addenda.register, 'news');
+
+  // 键和请求出自同一个盖好的对象、同一个因子（D-382）：同一页、同一段，领域一变
+  // 就是另一个键，送出去的请求也带着那个领域和这一页的语域。
+  ctx.settings.promptDomain = 'legal';
+  try {
+    await ask();
+    assert.equal(sentToAI.length, 3, 'a legal-domain request reused the general translation');
+    assert.deepEqual(sentToAI[2].addenda, { register: 'news', domain: 'legal' });
+    await ask();
+    assert.equal(sentToAI.length, 3, 'the second legal-domain request was not served from the cache');
+  } finally {
+    ctx.settings.promptDomain = 'general';
+  }
 });
 
 // ---- 两头接起来：内容脚本发出的消息 → 服务工作者的翻译函数 → 系统提示词 ----

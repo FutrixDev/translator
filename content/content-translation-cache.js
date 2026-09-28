@@ -172,8 +172,8 @@
       sourceLang: message.sourceLang || '',
       ...profile,
       // 按每段文字求值（serve 里）：语域戳加上这段命中的词条、领域和上下文开关，
-      // 改一条词条只有含它的文字失效。
-      addenda: (text) => `${globalThis.PromptAddenda.stamp(message.addenda)}|${ctx.engine.addenda.stamp(snap, text)}`
+      // 改一条词条只有含它的文字失效。怎么拼只有 content/engine/addenda.js 一处。
+      addenda: (text) => ctx.engine.addenda.stamp(message.addenda, snap, text)
     };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。

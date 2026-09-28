@@ -145,12 +145,17 @@
   }
 
   /**
-   * 缓存键的第八个因子（shared/translation-cache.js 的 `addenda`）：只放决定「这段
-   * 怎么译」的东西 —— 这段命中的词条、有效领域、上下文开关。上下文只进开关不进
-   * 内容：前后文每段都不一样，放进键里就等于不缓存。
+   * 缓存键的第八个因子（shared/translation-cache.js 的 `addenda`），唯一算它的地方：
+   * 只放决定「这段怎么译」的东西 —— 发起请求那一帧盖的语域（`addenda` 就是请求
+   * 身上那一份，键和请求出自同一个对象）、这段命中的词条、有效领域、上下文开关。
+   * 后三样与 compose 读同一份快照、同一个 effectiveDomain，所以键和真正发出去的
+   * 附加说明不会各算各的（D-382）。上下文只进开关不进内容：前后文每段都不一样，
+   * 放进键里就等于不缓存。
    */
-  function addendaStamp(snap, text) {
-    return `${snap.stamp(text)}|d:${effectiveDomain()}|c:${ctx.settings.aiPageContext === true ? 1 : 0}`;
+  function addendaStamp(addenda, snap, text) {
+    const register = globalThis.PromptAddenda.stamp(addenda);
+    const context = ctx.settings.aiPageContext === true ? 1 : 0;
+    return `${register}|${snap.stamp(text)}|d:${effectiveDomain()}|c:${context}`;
   }
 
   eng.addenda = { plan, compose, stamp: addendaStamp, overflowEntries: () => overflow };

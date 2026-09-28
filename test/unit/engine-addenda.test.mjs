@@ -103,7 +103,7 @@ test('domain: an unknown or missing global domain is a defect and throws, it is 
   });
   configure({ promptDomain: 'poetry' });
   assert.throws(() => eng.addenda.compose(batch(), { glossary: [] }), fatal('poetry'));
-  assert.throws(() => eng.addenda.stamp(eng.glossary.fromEntries([], 'empty'), TEXT), fatal('poetry'));
+  assert.throws(() => eng.addenda.stamp({}, eng.glossary.fromEntries([], 'empty'), TEXT), fatal('poetry'));
   configure({ promptDomain: undefined });
   assert.throws(() => eng.addenda.compose(batch(), { glossary: [] }), fatal(undefined));
   configure({ promptDomain: 'legal' });
@@ -217,13 +217,36 @@ test('builtin engine: never sends the context or the domain anywhere', async () 
 test('stamp: the effective domain and the context switch are in the cache key, the neighbours are not', () => {
   const snap = eng.glossary.fromEntries([], `test-${Math.random()}`);
   configure();
-  const plain = eng.addenda.stamp(snap, TEXT);
+  const plain = eng.addenda.stamp({}, snap, TEXT);
   assert.match(plain, /\|d:general\|c:0$/);
   configure({ promptDomain: 'legal' });
-  assert.match(eng.addenda.stamp(snap, TEXT), /\|d:legal\|c:0$/);
+  assert.match(eng.addenda.stamp({}, snap, TEXT), /\|d:legal\|c:0$/);
   rule.domain = 'medical';
-  assert.match(eng.addenda.stamp(snap, TEXT), /\|d:medical\|c:0$/);
+  assert.match(eng.addenda.stamp({}, snap, TEXT), /\|d:medical\|c:0$/);
   configure({ aiPageContext: true });
-  assert.match(eng.addenda.stamp(snap, TEXT), /\|d:general\|c:1$/);
+  assert.match(eng.addenda.stamp({}, snap, TEXT), /\|d:general\|c:1$/);
   configure();
+});
+
+test('stamp is the one cache factor: the same text keys apart when the register, the domain or a glossary hit changes (D-382)', () => {
+  configure();
+  const TERM = { id: 'term0001', s: 'ordinary', t: '普通', l: '*', u: 1 };
+  const none = eng.glossary.fromEntries([], `test-${Math.random()}`);
+  const hit = eng.glossary.fromEntries([TERM], `test-${Math.random()}`);
+  const otherHit = eng.glossary.fromEntries([{ ...TERM, t: '寻常' }], `test-${Math.random()}`);
+  const base = eng.addenda.stamp({}, none, TEXT);
+  const keys = {
+    base,
+    register: eng.addenda.stamp({ register: 'forum' }, none, TEXT),
+    otherRegister: eng.addenda.stamp({ register: 'news' }, none, TEXT),
+    glossaryHit: eng.addenda.stamp({}, hit, TEXT),
+    otherTranslation: eng.addenda.stamp({}, otherHit, TEXT),
+  };
+  configure({ promptDomain: 'legal' });
+  keys.domain = eng.addenda.stamp({}, none, TEXT);
+  configure();
+  assert.equal(new Set(Object.values(keys)).size, Object.keys(keys).length, JSON.stringify(keys));
+  // 语域那一格就是请求身上盖的那一份（PromptAddenda.stamp），不是这一帧的地址。
+  assert.ok(keys.register.startsWith('forum|'), keys.register);
+  assert.equal(eng.addenda.stamp({}, none, TEXT), base, 'nothing changed, the key is the same');
 });
