@@ -278,8 +278,8 @@ floating layers (source peek, card, icon) are placed by one pure function,
 `ctx.placeBeside(size, anchor, options)` in `content/content-utils.js`: the
 card goes beside the selection, never over it, and is re-placed by a
 ResizeObserver until the user drags it. The card's action row is retranslate,
-switch engine, copy; errors go to its single `.ai-translator-error` element
-(`ctx.showCardError`), never into the translation text. The row wraps, so a
+switch engine, add to glossary, copy; errors go to its single
+`.ai-translator-error` element (`ctx.showCardError`), never into the translation text. The row wraps, so a
 button whose width followed its label moved a different button under the
 pointer: a button whose label changes is drawn with `ctx.fitLabel(text,
 labels)`, sized for every label it will show, and every copy button is
@@ -291,6 +291,26 @@ place "Copied" is shown and the clipboard written
 what copies there. Journeys J-D1–J-D11 in `test/e2e/selection-card.spec.js`;
 J-D11 runs the icon and card in a cross-origin frame, whose translations go
 through the top frame's engine.
+
+**Add to glossary** (`.ai-translator-add-term`, `content/content-add-term.js`,
+shelf `ctx.addTerm`) is shown or hidden in exactly one place: `settle(popup,
+translated)`, the first, synchronous statement of `settleCardActions` in
+`content/content-popup.js`. It shows after a successful translation whose
+source, through `Glossary.normalizeSource`, is 1–80 characters, and it is never
+hidden and re-shown while a retranslation or an engine switch is in flight (it
+is only disabled, like the other buttons; the row wraps). Its label goes
+through `ctx.fitLabel` over `glossaryAdd` / `glossaryAdded` /
+`glossaryUpdated`. The form it opens is a child of `.ai-translator-popup`, not
+a new panel root, and it folds whenever a request starts. Saving is one
+`Glossary.request('put')`: "This site only" sends `scope: 'site'` and never an
+`h` — the service worker takes the site from `sender.tab.url`, which in a child
+frame is the top page — and "All sites" sends no scope at all (D-381). The host
+the form prints is only for the reader: `ctx.frames.topHost()`, which a child
+frame answers from the `host` in the top frame's directive, and with `''` (so
+only "All sites" is offered) until one has arrived. Nothing is validated on the
+card: the worker rejects an over-long entry with the same `Glossary.LIMITS`,
+and the form stays open with that message. Saving never retranslates. Journeys
+in `test/e2e/glossary-selection.spec.js`.
 
 ### Translation Engine
 
@@ -402,6 +422,29 @@ they go through `ctx.requestTranslation` too. Covered by
 `child.js` → `frame-relay.js` → `top.js`) and
 `test/e2e/prompt-register.spec.js`.
 
+**The domain and the page context are two settings plus one rule field.**
+`promptDomain` (default `general`, one of `PromptAddenda.DOMAINS`) and
+`aiPageContext` (default off) live in sync settings; a user site rule's
+`domain` outranks `promptDomain` (a rule that says `general` counts as having
+said it). `content/engine/addenda.js` (`ctx.engine.addenda`: `plan`,
+`compose`, `stamp`) builds each request's addenda from a snapshot of the
+glossary, splits a batch into parts of at most 60 glossary entries each, and
+adds the page context (title, and 300 characters either side for a whole-page
+batch; `pageContext` is stripped before the message leaves, and never reaches
+the built-in engine). A domain the table does not know is a configuration
+error: the thrown error carries `passFatal: true`, and a whole-page round
+(`content/page/batch.js`) stops at the first one instead of waiting for the
+failure threshold; a child frame's relay carries the flag back.
+
+**`ctx.translationProfile` (`content/content-translation-cache.js`) is the
+generation of the page's in-memory caches.** Hover and captions key their own
+caches on target language and text only, so the key is prefixed with a
+generation that goes up when a translation-relevant setting changes
+(`GENERATION_KEYS`), when the page's glossary signature changes, or when
+`ctx.customRules.onProfileChange` fires (this site's pinned engine or domain
+changed). A child frame never bumps its own; it inherits the top frame's from
+the directive (`translationProfile.inherit`).
+
 ### User Site Rules
 
 Per-site rules the user writes: which part of a page to translate
@@ -440,6 +483,46 @@ menu or the popup; top frame only).
   only.
 - A rule's engine is a pin: it never falls back, and child frames inherit the
   top frame's through the frame directive (`engineOverride`).
+- A rule may carry a `domain` (P1-C). A rule is written at the lowest version
+  that can express it: `v: 2` only when it has a `domain`, `v: 1` otherwise,
+  and a `v: 2` rule without one is invalid. `ctx.customRules.domain()` answers
+  this page's, and `onProfileChange(fn)` calls back only when the effective
+  `engineOverride` or `domain` changes.
+
+### User Glossary
+
+"Translate this word as that, or leave it alone." `shared/glossary.js`
+(`Glossary`, a dual-mode classic script: the service worker imports it, the
+content scripts and the settings page load it) owns the entry shape, the
+limits (`Glossary.LIMITS`: source 1–80 characters, translation at most 160),
+`normalizeSource`, `caseSensitiveByDefault` (an uppercase letter in the source
+makes a new entry case-sensitive — the settings page and the card both ask it),
+which entry wins, and the three writes. Entries are one sync key each,
+`glossary:<id>`, `{ s, t?, c?, h?, l, u }` (`t` absent = keep the original,
+`h` = a site, `l` = a target language or `*`).
+
+- **Writes** are `GLOSSARY_WRITE` (`put` / `remove` / `import`) through the
+  same `StorageWriter` single-writer queue as the site rules; callers use
+  `Glossary.request(kind, payload)`. Errors come back as i18n keys
+  (`Glossary.userErrorKey`). A `put` with `scope: 'site'` has its `h` set from
+  `sender.tab.url`, never from the message. CSV import and export are
+  `shared/glossary-csv.js`, and the worker re-parses an import itself.
+- **Reads**: `background/glossary-host.js` answers `GLOSSARY_FOR_HOST` with the
+  entries in effect for the sender's host. Only the top frame asks and keeps a
+  mirror (`content/content-glossary.js`, `ctx.glossary`), then follows
+  `glossary:` deltas through `ctx.syncMirrors`; a child frame keeps none,
+  because its requests run in the top frame.
+- **Use**: `content/engine/glossary.js` (`ctx.engine.glossary`) takes one
+  immutable snapshot per request (`current(targetLang)`), matches it, and on
+  the built-in engine swaps hits for `{{n}}` placeholders (at most
+  `MAX_PLACEHOLDERS`, 20) and back (`withGlossary`); the AI engine gets the
+  hits in `addenda.glossary`, which the prompt prints under `GLOSSARY
+  (user-defined; …)`. `TextMarkers.splitSafe` (`shared/text-markers.js`) keeps
+  a split point out of a placeholder, and it recognises only well-formed
+  `{{n}}` ones.
+- The top frame's directive carries its `host` (`SiteRules.normalizeHost` of
+  the top page, `''` when there is none), and a changed host is a new
+  directive; this is what `ctx.frames.topHost()` answers in a child frame.
 
 ### Video Subtitle Translation
 
