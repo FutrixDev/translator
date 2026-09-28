@@ -615,11 +615,10 @@ test('语言包预取记着自己是为哪个语言对挂的，过期了要换�
   // 真正撞上「缺这个包」的时候就地挂上 —— 那一刻 src/tgt 是现成的，换语言、换
   // 引擎、路由切换三种过期情形全由它接住，一次多余的探测往返都不花。
   // 只数真实翻译那条路上的。设置页那颗下载按钮（ensureDownloaded）跑在 options
-  // 页自己的上下文里，那里没有要翻的页面，挂预取没有意义。
-  const translatePath = engine.slice(
-    engine.indexOf('async function translateWithBuiltin'),
-    engine.indexOf('async ensureDownloaded')
-  );
+  // 页自己的上下文里，那里没有要翻的页面，挂预取没有意义。它住在
+  // content/engine/probe.js，engineSource() 里排在入口之前，所以从
+  // translateWithBuiltin 数到这一族的末尾（入口的末尾）就只剩真实翻译那条路。
+  const translatePath = engine.slice(engine.indexOf('async function translateWithBuiltin'));
   const armedBeforeThrow = translatePath.match(
     /ctx\.armLanguagePackPrefetch\(src, tgt\);\s*\n\s*throw new EngineUnavailableError\(ENGINE_REASONS\.NEEDS_DOWNLOAD\);/g
   ) || [];

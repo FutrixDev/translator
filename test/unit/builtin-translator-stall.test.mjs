@@ -117,6 +117,7 @@ await import('../../shared/prompt-addenda.js');
 await import('../../content/engine/glossary.js');
 await import('../../content/engine/addenda.js');
 await import('../../content/content-translation-engine.js');
+await import('../../content/engine/probe.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
 // Every test below ends "...and the request reaches the AI path". That is now

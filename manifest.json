@@ -133,6 +133,7 @@
         "content/engine/glossary.js",
         "content/engine/addenda.js",
         "content/content-translation-engine.js",
+        "content/engine/probe.js",
         "content/content-language-pack.js",
         "content/page/custom-rule.js",
         "content/content-translation-cache.js",

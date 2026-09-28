@@ -128,6 +128,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../content/engine/glossary.js');
   await import('../../../content/engine/addenda.js');
   await import('../../../content/content-translation-engine.js');
+  await import('../../../content/engine/probe.js');
 
   return {
     ctx: globalThis.window.AI_TRANSLATOR_CONTENT,
