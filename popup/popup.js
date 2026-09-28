@@ -25,11 +25,6 @@ const elements = {
 // 里没有一行代码读它 —— 一个从不被读、却和另外三张默认值表不一致的键，是下一个
 // 人照着它改出 bug 的地方。
 const defaultSettings = {
-  // 这三个只为问一件事：AI 引擎要不要 Key（APICompat.isApiKeyMissing，本地模型
-  // 不要）。两个字面量与 background/settings.js 一致，default-settings-agree 守。
-  provider: 'openai',
-  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-  apiKey: '',
   translationEngine: 'builtin',
   autoTranslate: true,
   uiLanguage: '',
@@ -500,16 +495,28 @@ async function probeActiveTabEngine() {
 }
 
 // 最近一次探测的答复（refreshEngineStatus 写）。「翻译此页」的 key 拦截也读它：
-// 这一页用哪个引擎要问页面（站点规则可能钉住了引擎），不能只看设置。还没探到、
-// 探测超时或页面没有内容脚本时，EngineStatus.selectedEngine 退回设置。
+// 这一页用哪个引擎、用哪个 AI 配置档都要问页面（站点规则可能钉住了引擎或档），
+// 不能只看设置。还没探到、探测超时或页面没有内容脚本时，EngineStatus.selectedEngine
+// 退回设置。
 let lastEngineProbe = null;
+
+/**
+ * 这一页「翻译此页」走 AI 能不能发（EngineStatus.aiReady）。有页面的答复听页面的；
+ * 没有（还没探到，或这一页没有内容脚本）就问 SW —— 不带站点规则，因为没有页面。
+ */
+async function pageAiReady(probe) {
+  if (probe) return EngineStatus.aiReady(probe);
+  const reply = await chrome.runtime.sendMessage({ type: 'AI_PROFILES_READY', feature: 'page' });
+  if (!reply || reply.error) throw new Error(`AI_PROFILES_READY: ${reply ? reply.error : 'no reply'}`);
+  return EngineStatus.aiReady(null, reply.ready);
+}
 
 async function refreshEngineStatus(settings) {
   // 总是问页面：站点规则可能把这一页的引擎钉成了和设置不同的那个。
   const reply = await probeActiveTabEngine();
   const probe = reply === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : reply;
   lastEngineProbe = probe;
-  renderStatus(EngineStatus.describeEngineStatus(settings, probe));
+  renderStatus(EngineStatus.describeEngineStatus(settings, probe, await pageAiReady(probe)));
 }
 
 function renderStatus(status) {
@@ -533,7 +540,8 @@ function showStatus(key, ok = true) {
 }
 
 /**
- * 「翻译此页」那一行按下去之前，唯一还要拦一次的事：自定义接口没有 key。
+ * 「翻译此页」那一行按下去之前，唯一还要拦一次的事：AI 那一路没配好（没有选中的
+ * 配置档，或档缺 Key —— 本地模型不要 Key，由 SW 按 APICompat 判）。
  *
  * 内置引擎（默认）不需要 key，所以这道门只对 'ai' 开 —— 按 apiKey 一刀切会把
  * 新用户挡在主操作外面（PR #26 的评审）。过了这道门，动作本身交给页面：
@@ -550,7 +558,7 @@ async function translateCurrentPage() {
     const willTranslate = !isHideAction();
     const settings = await chrome.storage.sync.get(defaultSettings);
     const engine = EngineStatus.selectedEngine(settings, lastEngineProbe);
-    if (willTranslate && engine === 'ai' && APICompat.isApiKeyMissing(settings)) {
+    if (willTranslate && engine === 'ai' && !(await pageAiReady(lastEngineProbe))) {
       showStatus('configureApiKeyFirst', false);
       chrome.runtime.openOptionsPage();
       return;

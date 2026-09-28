@@ -10,10 +10,10 @@
 // judge readiness by `!settings.apiKey` and told every default user "API Not
 // Configured" — an error about a thing they were never meant to configure.
 // Readiness is a property of the *engine in this tab*, and that is what these
-// two functions compute. Even the AI engine is not judged by the key alone: a
-// local model server needs none, and whether one is needed is
-// APICompat.isApiKeyMissing's answer (shared/api-compat.js, which every load
-// list carries ahead of this file).
+// two functions compute. The AI engine is not judged by the global settings
+// either: which AI profile a page uses depends on that page's site rule, so
+// whether AI is ready is the page's answer (`probe.aiReady`), or the service
+// worker's when there is no page to ask (aiReady() below).
 //
 // Loaded as a classic script by the popup and by the content scripts, so it
 // publishes onto the global object rather than using `export`.
@@ -72,6 +72,7 @@
    * @property {string}  reason           a key of REASON_MESSAGE_KEYS, '' when supported
    * @property {'available'|'downloadable'|'downloading'|'unavailable'|'unknown'} availability
    * @property {{reason: string}|null} lastFallback  a fallback that already happened here
+   * @property {boolean} aiReady          page translation's AI profile is usable here
    */
 
   /**
@@ -100,6 +101,31 @@
   }
 
   /**
+   * Whether "Translate this page" can go to the AI engine: is a profile
+   * selected for page translation, and does it have the key it needs.
+   *
+   * The page answers first (`probe.aiReady`): it resolves the profile with this
+   * site's rule. A probe that timed out is UNKNOWN_PROBE, whose `aiReady` is
+   * true: a slow page is not evidence of a problem, and the real request
+   * reports the real reason. With no page answer at all (`probe` is null: no
+   * content script) the caller asks the service worker (AI_PROFILES_READY
+   * {feature: 'page'}, no site rule, since there is no site) and passes that
+   * in as `workerReady`.
+   *
+   * @param {EngineProbe|null} probe
+   * @param {boolean} [workerReady]  required when probe is null
+   * @returns {boolean}
+   */
+  function aiReady(probe, workerReady) {
+    const answer = probe ? probe.aiReady : workerReady;
+    if (typeof answer !== 'boolean') {
+      throw new TypeError(probe ? 'EngineStatus.aiReady: the probe has no aiReady'
+        : 'EngineStatus.aiReady: no probe, and no answer from the service worker');
+    }
+    return answer;
+  }
+
+  /**
    * One line of truth for the popup footer.
    *
    * `probe` is null when the content script could not be reached — a
@@ -110,17 +136,15 @@
    *
    * @param {Object} settings           the user's settings
    * @param {EngineProbe|null} probe
+   * @param {boolean} aiIsReady          aiReady()'s answer for this tab
    * @returns {EngineStatus}
    */
-  function describeEngineStatus(settings, probe) {
+  function describeEngineStatus(settings, probe, aiIsReady) {
     const engine = selectedEngine(settings, probe);
 
     if (engine === 'ai') {
-      // The only engine that can need a key. APICompat is read here, at call
-      // time, so a load list that forgot shared/api-compat.js fails at this
-      // line rather than silently at load.
-      const ready = !root.APICompat.isApiKeyMissing(settings);
-      return status(ready ? 'ready' : 'apiNotConfigured', '', ready);
+      if (typeof aiIsReady !== 'boolean') throw new TypeError('describeEngineStatus: the AI engine needs aiReady()');
+      return status(aiIsReady ? 'ready' : 'apiNotConfigured', '', aiIsReady);
     }
 
     if (probe === null) {
@@ -170,7 +194,8 @@
     supported: true,
     reason: '',
     availability: 'unknown',
-    lastFallback: null
+    lastFallback: null,
+    aiReady: true
   });
 
   root.EngineStatus = {
@@ -179,6 +204,7 @@
     UNKNOWN_PROBE,
     builtinUnsupportedReason,
     selectedEngine,
+    aiReady,
     describeEngineStatus
   };
 })(globalThis);

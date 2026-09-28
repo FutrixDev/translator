@@ -27,7 +27,10 @@
       supported: eng.isBuiltinSupported(),
       reason: '',
       availability: 'unknown',
-      lastFallback: eng.lastFallback()
+      lastFallback: eng.lastFallback(),
+      // 「翻译此页」走 AI 时能不能发：按本页的站点规则选档（P1-D §3.5）。弹出窗口的
+      // 「先去填 Key」和底栏都读它，不再自己读全局设置。
+      aiReady: ctx.aiProfiles.ready('page')
     };
     if (result.engine !== 'builtin') return result;
     if (!result.supported) {

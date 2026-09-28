@@ -118,8 +118,8 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }), token = 
       UNKNOWN_PROBE: { unknown: true },
       describeEngineStatus: () => ({ key: 'ready', detailKey: '', ok: true }),
       selectedEngine: () => 'builtin',
+      aiReady: () => true,
     },
-    APICompat: { isApiKeyMissing: () => false },
     SiteRules: { siteLabel: (host) => host },
   };
   vm.createContext(sandbox);
