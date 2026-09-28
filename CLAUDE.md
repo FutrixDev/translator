@@ -300,10 +300,15 @@ picks a backend (Chrome's built-in Translator API or the user's own AI
 endpoint) and is the **only** place a request leaves for the model. It is two
 steps: `ctx.withPromptAddenda(message)` stamps the request once with this
 document's register (below), and `ctx.sendTranslation(message)` sends a stamped
-request as it is — backend choice, fallback and the budget gate live there. A
-child frame overrides only `ctx.sendTranslation` (it hands the request to the
-top frame), and the top frame's relay calls `ctx.sendTranslation` directly, so
-a relayed request keeps the child's stamp. It is a family of classic scripts
+request — backend choice, fallback and the budget gate live there. The cached
+entry `ctx.requestTranslationCached` is the same two steps, its send being
+`ctx.sendTranslationCached` (`content/content-translation-cache.js`). A child
+frame overrides only the two send steps (they hand the request to the top
+frame), and the top frame's relay calls them directly, so a relayed request
+keeps the child's stamp. The glossary, the prompt domain and the page context
+belong to the frame that executes the request (the top frame for a child's
+request): `sendToModel` merges them into the same `addenda` object and never
+overwrites the register (D-382). It is a family of classic scripts
 sharing one shelf, `ctx.engine`:
 
 | file | what it owns |
@@ -367,8 +372,8 @@ that already carries `addenda`; because every request carries the field, that
 guard also fires on a page with no register. A child frame's request crosses the
 relay untouched, so a child page with no register sends `{}` even under a news
 top page. The translation
-cache stamps once too, keys on that stamp and sends its misses through
-`ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
+cache stamps once too, keys on that stamped `addenda` and sends its misses
+through `ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
 label and never the host. The service
 worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
 translating, and it throws on a missing `addenda`, an unknown register or any
@@ -376,13 +381,19 @@ extra field. The
 handlers pass the addenda down every `ai-translate.js` path, including the
 fast batch's numbered fallback and the single-word prompt. There
 `composePromptAddenda()` places the addenda after the template and before the
-math placeholder rule. Separately, every text path carries `REGISTER_RULE`
+math placeholder rule, in the order REGISTER, DOMAIN, GLOSSARY, PAGE CONTEXT
+(broad to narrow: what kind of page, what field, which words, which
+neighbours). A register and a domain with the same id (`news`, `academic`)
+send the DOMAIN line only; `general` sends no DOMAIN line. Separately, every text path carries `REGISTER_RULE`
 (casual stays casual, formal stays formal): the default single, numbered-batch
 and fast-batch templates, and the rules appended to a custom prompt on those
 same three paths, the single-text one included. The word/dictionary path never
 carries it, neither `SINGLE_WORD_PROMPT` nor `WORD_OUTPUT_RULES`: a dictionary
-entry has no register to keep, though its addenda still arrive. The register is the eighth translation-cache
-factor (`addenda`, a `PromptAddenda.stamp()` string). The built-in engine
+entry has no register to keep, though its addenda still arrive. The eighth translation-cache
+factor (`addenda`) is computed in one place,
+`ctx.engine.addenda.stamp(addenda, snap, text)` in `content/engine/addenda.js`:
+the stamped register (`PromptAddenda.stamp()`), this text's glossary hits, the
+effective domain and the page-context switch. The built-in engine
 reads no prompt and never sees it. Captions need nothing of their own, because
 they go through `ctx.requestTranslation` too. Covered by
 `test/unit/prompt-addenda.test.mjs`,

@@ -5,9 +5,12 @@
 //   ctx.requestTranslation(message)  ——  与 chrome.runtime.sendMessage 同形，响应多盖一个 engine
 //
 // 它是两步：ctx.withPromptAddenda 按**这个文档**的地址给请求盖一次语域，
-// ctx.sendTranslation 把盖好的请求原样送出（选后端、回落、预算闸都在这一步）。
-// 子 frame 只覆写后一步（content/frames/child.js 改成交给顶层），顶层的中继直接
-// 调后一步，所以语域是发起请求的那个 frame 的，一路不被重算。
+// ctx.sendTranslation 把盖好的请求送出（选后端、回落、预算闸都在这一步）。
+// 带缓存的入口 ctx.requestTranslationCached 也是这两步，送出那一步是
+// ctx.sendTranslationCached（content/content-translation-cache.js）。子 frame 只覆写
+// 两个送出步（content/frames/child.js 改成交给顶层），顶层的中继直接调送出步，所以
+// 语域是发起请求的那个 frame 的，一路不被重算。词表、领域、上下文在执行请求的那一
+// 帧（顶层）由 sendToModel 并进同一个 addenda 对象，不覆盖语域（D-382）。
 //
 // 默认走浏览器内置的 Translator API（Chrome 138+，端上 NMT，零网络、零费用）；
 // 内置这条路走不通时，再回落到 background service worker 里的自定义 AI 接口。
