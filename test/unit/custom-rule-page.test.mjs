@@ -11,13 +11,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { contentBundle } from './helpers/sources.mjs';
+import { contentBundle, routeSyncMirrorsOf } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -482,16 +483,93 @@ test('a child frame takes the engine from the directive, not from its own rule',
   assert.equal(rules.engineOverride(), null);
 });
 
-// ---------------------------------------------------------------- 两头的接线
+test('domain(): the rule\'s domain, null without a rule or without a domain; general counts as set', async () => {
+  const { rules } = load({ rules: [{ id: 'a', ...RULE_A, v: 2, domain: 'legal' }] });
+  assert.equal(rules.domain(), null, 'before init');
+  rules.init();
+  await rules.whenReady();
+  assert.equal(rules.domain(), 'legal');
+  assert.equal(rules.current().domain, 'legal');
 
-// bootstrap 里那一段按前缀分流的函数，原样拿出来跑。
-function routeSyncMirrorsOf(ctx) {
-  const source = repoFile('content/content-bootstrap.js');
-  const start = source.indexOf('  function routeSyncMirrors(changes) {');
-  assert.ok(start > 0, 'routeSyncMirrors moved');
-  const end = source.indexOf('\n  }\n', start);
-  return new Function('ctx', `${source.slice(start, end + 4)}\nreturn routeSyncMirrors;`)(ctx);
-}
+  const plain = load({ rules: [{ id: 'a', ...RULE_A }] });
+  plain.rules.init();
+  await plain.rules.whenReady();
+  assert.equal(plain.rules.domain(), null, 'a v1 rule follows the global setting');
+  assert.equal(plain.rules.current().domain, null);
+
+  const general = load({ rules: [{ id: 'a', ...RULE_A, v: 2, domain: 'general' }] });
+  general.rules.init();
+  await general.rules.whenReady();
+  assert.equal(general.rules.domain(), 'general', 'general is a choice, not "unset"');
+});
+
+test('onProfileChange: fires only when the engine override or the domain changes', async () => {
+  const { rules, ctx } = load({ rules: [{ id: 'a', ...RULE_A }] });
+  let calls = 0;
+  const off = rules.onProfileChange(() => { calls += 1; });
+  rules.init();
+  await rules.whenReady();
+  assert.equal(calls, 0, 'the first arrival is the starting point, not a change');
+
+  // 范围与 CSS 变了：签名门那一路的事，与译法无关。
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude: ['.ad', '.promo'], css: '.x { color: red }' }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.equal(calls, 0, 'exclude / css changes fired a profile change');
+
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude: ['.ad', '.promo'], v: 2, domain: 'medical' }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.equal(calls, 1, 'domain only');
+  assert.equal(rules.domain(), 'medical');
+
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude: ['.ad'], v: 2, domain: 'medical', updatedAt: 2 }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.equal(calls, 1, 'same engine, same domain');
+
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, v: 2, domain: 'medical', engine: 'ai' }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.equal(calls, 2, 'engine only');
+
+  off();
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, v: 2, domain: 'legal', engine: 'ai' }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.equal(calls, 2, 'unsubscribed');
+  assert.equal(rules.domain(), 'legal');
+});
+
+test('onProfileChange: a subscriber that throws is logged once and does not stop the others', async () => {
+  const errors = [];
+  const realError = console.error;
+  console.error = (...args) => errors.push(args.map(String).join(' '));
+  try {
+    const { rules, ctx } = load({ rules: [{ id: 'a', ...RULE_A }] });
+    let calls = 0;
+    rules.onProfileChange(() => { throw new Error('boom'); });
+    rules.onProfileChange(() => { calls += 1; });
+    rules.init();
+    await rules.whenReady();
+    ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, v: 2, domain: 'news' }));
+    await sleep(DEBOUNCE_WAIT);
+    assert.equal(calls, 1);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /custom rule profile subscriber failed/);
+  } finally {
+    console.error = realError;
+  }
+});
+
+test('onProfileChange: a child frame\'s inherited engine is a profile change too', async () => {
+  const { rules } = load({ frameRole: 'child', rules: [{ id: 'a', ...RULE_A }] });
+  let calls = 0;
+  rules.onProfileChange(() => { calls += 1; });
+  rules.init();
+  await rules.whenReady();
+  rules.inherit('ai');
+  assert.equal(calls, 1);
+  rules.inherit('ai');
+  assert.equal(calls, 1);
+});
+
+// ---------------------------------------------------------------- 两头的接线
 
 test('bootstrap: prefixed keys go to their mirror and never into settings', () => {
   const got = [];
@@ -528,11 +606,17 @@ function runBootstrapInit() {
     saved[name] = globalThis[name];
   }
   let ready;
+  let glossaryReady;
   const log = [];
   const ctx = {
     customRules: {
       init: () => log.push('rules:init'),
       whenReady: () => new Promise((resolve) => { ready = resolve; }),
+    },
+    // 术语表镜像和规则并列：同一处发出、同一处等（content/content-glossary.js）。
+    glossary: {
+      init: () => log.push('glossary:init'),
+      whenReady: () => new Promise((resolve) => { glossaryReady = resolve; }),
     },
     frames: { setup: () => log.push('frames:setup') },
     createFloatBall: () => log.push('floatBall'),
@@ -559,17 +643,36 @@ function runBootstrapInit() {
     throw error;
   }
   const done = ctx.init();
-  return { log, done, restore, release: () => ready() };
+  return {
+    log, done, restore,
+    releaseRules: () => ready(),
+    release: () => { ready(); glossaryReady(); },
+  };
 }
 
 test('bootstrap: the scheduler starts only after this page\'s rules are ready', async () => {
   const boot = runBootstrapInit();
   try {
     await sleep(10);
-    assert.deepEqual(boot.log, ['rules:init', 'floatBall'], 'the float ball does not wait; the scheduler does');
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall'], 'the float ball does not wait; the scheduler does');
     boot.release();
     await boot.done;
-    assert.deepEqual(boot.log, ['rules:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+  } finally {
+    boot.restore();
+  }
+});
+
+test('bootstrap: the scheduler also waits for this page\'s glossary', async () => {
+  const boot = runBootstrapInit();
+  try {
+    await sleep(10);
+    boot.releaseRules();
+    await sleep(10);
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall'], 'rules alone do not start the scheduler');
+    boot.release();
+    await boot.done;
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall', 'autoTranslate', 'frames:setup']);
   } finally {
     boot.restore();
   }

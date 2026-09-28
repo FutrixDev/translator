@@ -3,36 +3,43 @@
 // 集合抛的是写给自己卡片的 i18n 键（customRulesBudgetFull 之类）。整份导入有自己的
 // 两种句式：校验时整份拒绝（TransferError → TRANSFER_ERROR_KEYS），写入中途停下
 // （transferErrorApplyFailed 的 {message}）。collectionSection 在两处把表里的键换成
-// 这两种句式，表外的错误原样往上抛。这里把设置页的两份脚本装进 vm，配上真的
-// CustomRules / SettingsTransfer 和真的文案目录来跑。
+// 这两种句式，表外的错误原样往上抛。这里把设置页的三份脚本（站点翻译规则卡、
+// 术语表卡、整份导入）装进 vm，配上真的 CustomRules / Glossary / GlossaryCsv /
+// SettingsTransfer 和真的文案目录来跑。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { messageCatalog, repoSource, sharedSource, workerSource } from './helpers/sources.mjs';
+import { messageCatalog, optionsSource, repoSource, sharedSource, workerSource } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
+await import('../../shared/target-lang.js');
+await import('../../shared/glossary.js');
+await import('../../shared/glossary-csv.js');
 await import('../../shared/settings-transfer.js');
-const { CustomRules, SettingsTransfer } = globalThis;
+const { CustomRules, Glossary, GlossaryCsv, SettingsTransfer } = globalThis;
 const catalog = messageCatalog();
 
 const file = (rules) => ({ format: 'blab-site-rules', version: 1, exportedAt: 1, rules });
 
-// 卡片脚本和整份导入脚本加载时都只 getElementById；预览只读 storage.sync。
-// request 换成桩：这一层只管错误怎么转述，写入走 SW 队列那一跳由 custom-rules 的测试管。
+// 卡片脚本和整份导入脚本加载时都只 getElementById（术语表卡还往挂载点里填一次
+// innerHTML）；预览只读 storage.sync。两个 request 都换成桩，记下是谁收到的：这一层
+// 只管错误怎么转述，写入走 SW 队列那一跳由 custom-rules / glossary 的测试管。
 function loadPage({ stored = {}, lang = 'en', request = async () => {} } = {}) {
   const requests = [];
+  const stub = (owner) => (kind, payload) => {
+    requests.push({ owner, kind, payload });
+    return request(kind, payload);
+  };
   const sandbox = {
-    CustomRules: Object.assign({}, CustomRules, {
-      request: (kind, payload) => {
-        requests.push({ kind, payload });
-        return request(kind, payload);
-      },
-    }),
+    CustomRules: Object.assign({}, CustomRules, { request: stub('customRules') }),
+    Glossary: Object.assign({}, Glossary, { request: stub('glossary') }),
+    GlossaryCsv,
     SettingsTransfer,
     console,
     document: {
@@ -44,6 +51,7 @@ function loadPage({ stored = {}, lang = 'en', request = async () => {} } = {}) {
   };
   vm.createContext(sandbox);
   vm.runInContext(repoSource('options/options-custom-rules.js'), sandbox);
+  vm.runInContext(repoSource('options/options-glossary.js'), sandbox);
   vm.runInContext(repoSource('options/options-transfer.js'), sandbox);
   const get = (name) => vm.runInContext(name, sandbox);
   return { get, requests, sandbox };
@@ -53,7 +61,7 @@ const section = (page, key) => page.get('TRANSFER_SECTIONS').find((row) => row.k
 
 test('customRules row: after siteRules, validated by the card\'s one preview function', async () => {
   const page = loadPage({ stored: { 'customRule:aaaa1111': { v: 1, match: ['a.com'], exclude: ['.old'] } } });
-  assert.deepEqual([...page.get('TRANSFER_SECTIONS').map((row) => row.key)], ['settings', 'siteRules', 'customRules']);
+  assert.deepEqual([...page.get('TRANSFER_SECTIONS').map((row) => row.key)], ['settings', 'siteRules', 'customRules', 'glossary']);
   const raw = file([
     { id: 'aaaa1111', match: ['a.com'], exclude: ['.new'] },
     { match: ['b.com'], engine: 'ai' },
@@ -74,6 +82,7 @@ test('customRules row: after siteRules, validated by the card\'s one preview fun
 
   await section(page, 'customRules').apply(raw);
   assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].owner, 'customRules');
   assert.equal(page.requests[0].kind, 'import');
   assert.equal(page.requests[0].payload.file, raw);
 });
@@ -190,5 +199,100 @@ test('transferDesc names every section the file carries', () => {
     for (const key of Object.values(names)) {
       assert.ok(desc.includes(catalog[lang][key].toLowerCase()), `${lang} transferDesc 没提 ${catalog[lang][key]}`);
     }
+  }
+});
+
+// ------------------------------------------------------------ 术语表那一行
+
+const GLOSSARY_HEADER = 'source,target,case_sensitive,site,target_lang';
+
+test('glossary row: last, carries the card\'s CSV export, validated by the card\'s one preview function', async () => {
+  const stored = {
+    'glossary:aaaa0001': { s: 'attention', t: '注意力', l: 'zh-CN', u: 1 },
+    'glossary:aaaa0002': { s: 'GPU', l: '*', u: 2 },
+    theme: 'dark',
+  };
+  const page = loadPage({ stored });
+  const keys = [...page.get('TRANSFER_SECTIONS').map((row) => row.key)];
+  assert.equal(keys[keys.length - 1], 'glossary', '术语表排在 customRules 后面');
+  assert.equal(page.get('TRANSFER_SECTION_NAMES').glossary, 'transferSectionGlossary');
+
+  const exported = await section(page, 'glossary').collect({ includeApiKey: false });
+  assert.equal(exported, GlossaryCsv.serialize(Glossary.collect(stored)), '整份导出里就是卡片导出的那份 CSV');
+
+  // 改一条（同 dedupeKey）、加一条：和卡片的预览同一对数。
+  const raw = `${GLOSSARY_HEADER}\r\nattention,关注,0,,zh-CN\r\nLLM,,1,,*\r\n`;
+  const result = await section(page, 'glossary').validate(raw);
+  assert.equal(result.value, raw, 'CSV 原文带给 apply，SW 重新解析');
+  assert.deepEqual({ ...result, dropped: [...result.dropped] },
+    { value: raw, accepted: 2, dropped: [], added: 1, replaced: 1 });
+  assert.deepEqual(GlossaryCsv.previewImport(Glossary.collect(stored), raw), { added: 1, replaced: 1 });
+  const shown = await section(page, 'glossary').preview(result);
+  assert.deepEqual([...shown.lines], ['Glossary: 1 will be added, 1 replaced.']);
+  assert.deepEqual([...shown.warnings], []);
+
+  // 源码层面：validate 调的就是卡片那个函数，apply 走 SW 的 import。
+  const source = repoSource('options/options-transfer.js');
+  assert.match(source, /await previewGlossaryImport\(raw\)/);
+  assert.match(repoSource('options/options-glossary.js'), /GlossaryCsv\.previewImport\(await readGlossary\(\), text\)/);
+
+  await section(page, 'glossary').apply(raw);
+  assert.equal(page.requests.length, 1);
+  // payload 是 vm 里造的对象，跨 realm 比较先逐项取。
+  const [{ owner, kind, payload }] = page.requests;
+  assert.deepEqual({ owner, kind, keys: Object.keys(payload), csv: payload.csv },
+    { owner: 'glossary', kind: 'import', keys: ['csv'], csv: raw });
+});
+
+test('glossary row: a bad file, a full glossary and a failed write are named as the glossary section', async () => {
+  const page = loadPage({ lang: 'zh-CN' });
+  const text = page.get('transferErrorText');
+  for (const raw of [42, `${GLOSSARY_HEADER}\r\ngood,好\r\n,empty source\r\n`]) {
+    await assert.rejects(section(page, 'glossary').validate(raw), (error) => {
+      assert.ok(error instanceof SettingsTransfer.TransferError);
+      assert.equal(error.code, 'sectionInvalid');
+      assert.equal(error.detail, 'glossary');
+      assert.ok(text(error).includes(catalog['zh-CN'].transferSectionGlossary), text(error));
+      return true;
+    });
+  }
+  const full = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [
+    `glossary:g${String(i).padStart(7, '0')}`, { s: `term${i}`, l: '*', u: 1 },
+  ]));
+  await assert.rejects(section(loadPage({ stored: full }), 'glossary').validate('one more,x'),
+    (error) => error.code === 'sectionBudgetFull' && error.detail === 'glossary');
+
+  const budget = new Error('glossaryBudgetFull');
+  const failing = loadPage({ lang: 'zh-CN', request: async () => { throw budget; } });
+  await assert.rejects(section(failing, 'glossary').apply('a,b'),
+    (error) => error.message === catalog['zh-CN'].transferReasonBudgetFull && error.cause === budget);
+});
+
+test('the five glossary refusals are in the table, and each is a key Glossary throws', () => {
+  const refusals = loadPage().get('COLLECTION_REFUSALS');
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(refusals).filter(([key]) => key.startsWith('glossary'))),
+    {
+      glossaryImportInvalid: 'sectionInvalid',
+      glossaryEntryInvalid: 'sectionInvalid',
+      glossaryEntryTooLarge: 'sectionInvalid',
+      glossaryBudgetFull: 'sectionBudgetFull',
+      glossarySaveFailed: 'sectionSaveFailed',
+    });
+  for (const key of Object.keys(refusals).filter((k) => k.startsWith('glossary'))) {
+    assert.equal(Glossary.userErrorKey(new Error(key)), key, `${key} 不是 Glossary 回给界面的键`);
+  }
+});
+
+test('every export on the settings page downloads through the one downloadFile', () => {
+  const options = optionsSource();
+  // 整份设置、站点规则、术语表三处导出只有一种交给浏览器的方式；第二份 Blob URL
+  // 下载代码回来，就是又多了一条要单独维护的路。
+  assert.equal(options.split('URL.createObjectURL(').length - 1, 1, '设置页只能有一处 createObjectURL');
+  assert.equal(options.split('function downloadFile(').length - 1, 1);
+  for (const exporter of ['exportSettings', 'exportCustomRules', 'exportGlossary']) {
+    const body = options.match(new RegExp(`function ${exporter}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body, `${exporter} 不见了`);
+    assert.match(body[0], /downloadFile\(/, `${exporter} 没走 downloadFile`);
   }
 });

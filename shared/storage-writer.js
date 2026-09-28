@@ -46,7 +46,7 @@
    *   type：写消息的 type（背景页按它分派）；writes：kind → 在 SW 里真正执行的写；
    *   errors：见文件头。
    * @returns {{applyWrite: function, request: function}}
-   *   applyWrite(message)：服务工作者的入口，把一条写入排进这个 writer 的队列；
+   *   applyWrite(message, sender)：服务工作者的入口，把一条写入排进这个 writer 的队列；
    *   request(kind, payload)：在服务工作者里就自己写，在别处就发消息交给它。
    */
   function create({ type, writes, errors }) {
@@ -55,10 +55,12 @@
     const label = writerLabel(type);
     let queue = Promise.resolve();
 
-    function applyWrite(message) {
+    // sender 是 runtime.onMessage 给的发信方（在服务工作者里自己写时没有）：
+    // 需要按发信页面算点什么的写（术语表的 scope: 'site'）从这里拿，不信载荷。
+    function applyWrite(message, sender) {
       const write = message && writes[message.kind];
       if (!write) return Promise.reject(new Error(`unknown ${label} write: ${message && message.kind}`));
-      const result = queue.then(() => write(message), () => write(message));
+      const result = queue.then(() => write(message, sender), () => write(message, sender));
       queue = result.catch(() => {});
       return result;
     }

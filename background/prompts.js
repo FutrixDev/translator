@@ -6,7 +6,7 @@
 // 就没了。这条约定只有 buildPrompt 一个执行点，模板和执行点分在两个文件里，下一
 // 个加模板的人不会知道它存在。
 
-// 附加说明（语域）的形状和英文措辞在共享模块里，这里只拼。
+// 附加说明（语域、词表、领域、页面上下文）的形状、上限和英文措辞在共享模块里，这里只拼。
 import '../shared/prompt-addenda.js';
 
 // Math placeholder rule - always appended to prompts (cannot be overridden by custom prompts)
@@ -90,14 +90,35 @@ function getFastBatchOutputRules(delimiter) {
 6. ${REGISTER_RULE}`;
 }
 
-// 附加说明拼成的一块：今天只有 REGISTER 一行（这一页的体裁，只是标签，不带域名）。
+// 附加说明拼成的一块：REGISTER / GLOSSARY / DOMAIN / PAGE CONTEXT，各有内容才写。用户和
+// 页面来的字符串一律经 JSON.stringify —— 引号和换行都带反斜杠，块里就不会出现
+// 「segments are separated by "」这句话（mock 服务器和模型都靠它认分隔符）。
 // 调用方（SW 的三个处理函数）已经 validate 过；没有内容时是空串。
 function composePromptAddenda(addenda) {
   if (!addenda) return '';
-  const { REGISTER_SENTENCES, HEADINGS } = globalThis.PromptAddenda;
+  const { REGISTER_SENTENCES, SENTENCES, HEADINGS } = globalThis.PromptAddenda;
   const lines = [];
   if (addenda.register) {
     lines.push(`${HEADINGS.register} ${REGISTER_SENTENCES[addenda.register]}`);
+  }
+  if (addenda.glossary && addenda.glossary.length > 0) {
+    lines.push(HEADINGS.glossary);
+    for (const entry of addenda.glossary) {
+      const target = entry.t === undefined ? HEADINGS.keep : JSON.stringify(entry.t);
+      lines.push(`- ${JSON.stringify(entry.s)} → ${target}`);
+    }
+  }
+  if (addenda.domain && SENTENCES[addenda.domain]) {
+    lines.push(`${HEADINGS.domain} ${SENTENCES[addenda.domain]}`);
+  }
+  if (addenda.context) {
+    const context = {};
+    for (const field of globalThis.PromptAddenda.CONTEXT_FIELDS) {
+      if (addenda.context[field]) context[field] = addenda.context[field];
+    }
+    if (Object.keys(context).length > 0) {
+      lines.push(HEADINGS.context, JSON.stringify(context));
+    }
   }
   return lines.join('\n');
 }

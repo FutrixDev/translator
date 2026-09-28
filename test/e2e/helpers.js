@@ -83,10 +83,20 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
   'shared/sync-collection.js',
+  // custom-rules.js 加载时取走 PromptAddenda（规则 v2 的 domain 按 DOMAINS 校验，
+  // P1-C C3），缺了它整个文件抛错；manifest 里它排在 custom-rules.js 之前。
+  // 上面 block-identity 的守卫只扫 `globalThis.X`，custom-rules.js 写的是
+  // `root.PromptAddenda`，漏掉它不会红在那里。夹具也不调 ctx.customRules.init()，
+  // 用不到 CustomRules，所以漏掉它时现有 DOM 夹具 spec 照样全绿（实测过）——
+  // 这一行是为了和 manifest 顺序一致，不是哪条 spec 离了它就红。
+  'shared/prompt-addenda.js',
   'shared/custom-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。
   'shared/translation-display.js',
+  // 占位符与标记的语法（shared/text-markers.js）：收集、落笔、语言检测在调用时
+  // 读 globalThis.TextMarkers；manifest 里它排在 content-language.js 之前。
+  'shared/text-markers.js',
   'content/content-language.js',
   'content/page/batch.js',
   // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
@@ -532,16 +542,32 @@ async function evaluateInContentScript(context, pageOrFrame, expression) {
  * world of a page, or of one of its frames, with one that answers
  * `'[B] ' + text`. Chromium in the e2e run has no on-device model, so the
  * built-in path can only be proven against a stand-in. Every call is counted
- * on `self.__builtinCalls` in that world.
+ * on `self.__builtinCalls` in that world, and the text each call received is
+ * kept on `self.__builtinTexts` (P1-C: a glossary term reaches the built-in
+ * engine as a `{{n}}` placeholder).
+ *
+ * `options.dropPlaceholders`: answer with every `{{n}}` removed, the way an
+ * on-device model sometimes eats them. Leaving it out keeps the answer exactly
+ * as before.
+ *
+ * @param {import('@playwright/test').Page|import('@playwright/test').Frame} pageOrFrame
+ * @param {{dropPlaceholders?: boolean}} [options]
  */
-async function stubBuiltinTranslator(pageOrFrame) {
+async function stubBuiltinTranslator(pageOrFrame, options = {}) {
   const page = typeof pageOrFrame.page === 'function' ? pageOrFrame.page() : pageOrFrame;
+  const dropPlaceholders = options.dropPlaceholders === true;
   return evaluateInContentScript(page.context(), pageOrFrame, `(() => {
+    const dropPlaceholders = ${JSON.stringify(dropPlaceholders)};
     self.__builtinCalls = 0;
+    self.__builtinTexts = [];
     self.Translator = {
       availability: async () => 'available',
       create: async () => ({
-        translate: async (text) => { self.__builtinCalls += 1; return '[B] ' + text; },
+        translate: async (text) => {
+          self.__builtinCalls += 1;
+          self.__builtinTexts.push(text);
+          return '[B] ' + (dropPlaceholders ? text.replace(/\\{\\{\\d+\\}\\}/g, '') : text);
+        },
         destroy() {},
       }),
     };
@@ -606,11 +632,112 @@ async function syncSnapshot(context) {
   }));
 }
 
+/**
+ * 等内容脚本读完设置（P1-C 设计 §6 的就绪办法）：设置里先放
+ * translationStyle: 'underline'，content-bootstrap.js 的 ctx.init 读完设置就经
+ * applyTranslationDisplay 把它写到 <html data-ai-translator-style>。看到了，说明
+ * 这一页的内容脚本已经起来、设置已经读进来。
+ * @param {import('@playwright/test').Page} page
+ */
+async function waitForContentReady(page, style = 'underline') {
+  await expect.poll(() => page.evaluate(
+    () => document.documentElement.getAttribute('data-ai-translator-style'),
+  )).toBe(style);
+}
+
+/** 持久译文缓存落了几条：chrome.storage.local 里 tc: 开头的键。 */
+async function countPersistentCacheKeys(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => Object.keys(await chrome.storage.local.get(null))
+    .filter((key) => key.startsWith('tc:')).length);
+}
+
+/**
+ * 加一条术语表词条：从设置页发 GLOSSARY_WRITE（生产写入路径，经服务工作者的
+ * 单写者队列落到 storage.sync），核对回话和存下的那一整条，再在设置页里按设计
+ * 的算法量一次用量（Glossary.usage(Glossary.collect(整个 sync))）。
+ *
+ * 只用来铺设前置数据：C-J3、C-J8 把加词条标成 [fixture]（设计 §6.1 夹具隔离子
+ * 步骤），走这条消息路径；C-J1 / C-J2 / C-J5 的加词条已改走设置页卡片
+ * （addGlossaryEntryInCard）。
+ * @returns {Promise<{id: string, usage: {count: number, bytes: number, max: number}, stored: object}>}
+ */
+async function addGlossaryEntry(context, extensionId, entry) {
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options/options.html`);
+  const reply = await options.evaluate(
+    (e) => chrome.runtime.sendMessage({ type: 'GLOSSARY_WRITE', kind: 'put', entry: e }),
+    entry,
+  );
+  const usage = await options.evaluate(async () => ({
+    ...Glossary.usage(Glossary.collect(await chrome.storage.sync.get(null))),
+    max: Glossary.LIMITS.maxItems,
+  }));
+  await options.close();
+  expect(reply.value).toEqual({ id: expect.any(String), replaced: false });
+  const key = `glossary:${reply.value.id}`;
+  const stored = (await getSyncSettings(context, [key]))[key];
+  // 存下的是整条：没给范围就是所有语言（l: '*'），写入时戳上 u。
+  expect(stored).toEqual({ l: '*', ...entry, u: expect.any(Number) });
+  return { id: reply.value.id, usage, stored };
+}
+
+/** sync 里全部术语表词条，按键：{ 'glossary:<id>': 存下的那一条 }。 */
+async function storedGlossary(context) {
+  const { items } = await syncSnapshot(context);
+  return Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith('glossary:')));
+}
+
+/**
+ * 打开设置页，等术语表卡片第一次读回存储（用量那一行有了字）。
+ * @returns {Promise<import('@playwright/test').Page>}
+ */
+async function openGlossaryCard(page, extensionId) {
+  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await expect(page.locator('#glossaryUsage')).not.toHaveText('');
+  return page;
+}
+
+/**
+ * 在设置页的术语表卡片上加一条：点「添加词条」，逐项填表（原文、译文、区分
+ * 大小写、站点、目标语言），点「保存」，等表单收起、存储里多出恰好一条新键。
+ * 这是 C-J1 / C-J2 / C-J5 加词条的真实入口；只有铺设用的 addGlossaryEntry 走消息。
+ * @param {import('@playwright/test').Page} options 已由 openGlossaryCard 打开的设置页
+ * @param {{s: string, t?: string, c?: number, h?: string, l?: string}} entry
+ * @returns {Promise<{id: string, stored: object}>}
+ */
+async function addGlossaryEntryInCard(options, context, entry) {
+  const before = await storedGlossary(context);
+  await options.click('#glossaryAdd');
+  const editor = options.locator('.glossary-editor');
+  await editor.locator('#glossary-source').fill(entry.s);
+  await editor.locator('#glossary-target').fill(entry.t || '');
+  // 原文含大写字母时表单会自动勾上「区分大小写」：按词条显式设一次。
+  await editor.locator('#glossary-case').setChecked(Boolean(entry.c));
+  await editor.locator('#glossary-site').fill(entry.h || '');
+  await editor.locator('#glossary-lang').selectOption(entry.l || '*');
+  await editor.locator('.glossary-save').click();
+  await expect(editor).toHaveCount(0);
+  let added = [];
+  await expect.poll(async () => {
+    added = Object.entries(await storedGlossary(context)).filter(([key]) => !(key in before));
+    return added.length;
+  }).toBe(1);
+  const [key, stored] = added[0];
+  return { id: key.slice('glossary:'.length), stored };
+}
+
 module.exports = {
   oursIn,
   ourNodesAt,
   sentSegments,
   syncSnapshot,
+  waitForContentReady,
+  countPersistentCacheKeys,
+  addGlossaryEntry,
+  storedGlossary,
+  openGlossaryCard,
+  addGlossaryEntryInCard,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

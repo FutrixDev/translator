@@ -61,6 +61,14 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   });
   globalThis.window = {
     AI_TRANSLATOR_CONTENT: {
+      // 真扩展里 bootstrap 先把 CONTENT_DEFAULTS 放在 ctx.settings 上；附加说明
+      // （content/engine/addenda.js）每次发 AI 都读这两项，缺了就是缺陷、会抛。
+      settings: { promptDomain: 'general', aiPageContext: false },
+      // content/page/custom-rule.js 在真扩展里装它；附加说明每次都问本站规则钉住
+      // 的领域，这里没有规则。
+      customRules: { domain: () => null, engineOverride: () => null, whenReady: async () => {} },
+      // content-bootstrap.js 装的取文案函数；这里原样回键名，断言按键名比。
+      t: (key) => key,
       // content/content-language.js installs this in the real extension; the
       // engine reads it to build the detection sample.
       getLanguageDetectionText(text) {
@@ -106,13 +114,19 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../shared/target-lang.js');
   // 发给模型的出口问 SiteRules.register() 这一页的语域（R33 A4）；site-rules.js
   // 加载时取走内置表和 StorageWriter，manifest 里三者都排在引擎前面。
-  // prompt-addenda.js 同样排在前面（缓存键的 stamp() 在它那里）。
   await import('../../../shared/site-rules-builtin.js');
   await import('../../../shared/storage-writer.js');
   await import('../../../shared/site-rules.js');
-  await import('../../../shared/prompt-addenda.js');
+  // shared/text-markers.js 同样排在引擎前面：占位符的语法（keepsPlaceholders 取编号）住在那里。
+  await import('../../../shared/text-markers.js');
   await import('../../../content/engine/languages.js');
   await import('../../../content/engine/watchdog.js');
+  // 词表快照与附加说明（P1-C）。夹具没有 ctx.glossary，快照恒为空；切份读
+  // PromptAddenda.LIMITS、缓存键读 stamp()，manifest 里 shared/prompt-addenda.js
+  // 排在引擎前面。
+  await import('../../../shared/prompt-addenda.js');
+  await import('../../../content/engine/glossary.js');
+  await import('../../../content/engine/addenda.js');
   await import('../../../content/content-translation-engine.js');
 
   return {

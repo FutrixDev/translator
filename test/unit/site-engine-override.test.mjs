@@ -20,7 +20,7 @@ const { ctx, translateCalls, sentToAI, setApiKey } = await installEngineHarness(
 
 const charged = [];
 globalThis.AutoStats = {
-  textsChars: (texts) => texts.reduce((sum, text) => sum + String(text || '').length, 0),
+  sentChars: (source) => [].concat(source).reduce((sum, text) => sum + String(text || '').length, 0),
   charge: async (chars, budget) => {
     charged.push({ chars, budget });
     return { allowed: true };
@@ -32,6 +32,8 @@ let ready = Promise.resolve();
 ctx.customRules = {
   whenReady: () => ready,
   engineOverride: () => siteEngine,
+  // 附加说明按有效领域取句子（content/engine/addenda.js）；这里的规则都不设领域。
+  domain: () => null,
 };
 
 function configure(site, patch) {

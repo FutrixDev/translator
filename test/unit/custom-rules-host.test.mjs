@@ -31,6 +31,7 @@ await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
 const { handleMessage } = await import('../../background/custom-rules-host.js');
 

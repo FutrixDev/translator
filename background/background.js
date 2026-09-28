@@ -14,10 +14,22 @@ import '../shared/site-rules.js';
 // Side-effect module: publishes globalThis.AutoStats. 统计的写入点全在这里 ——
 // 每个标签页都在记，读—改—写必须收进单实例（见 shared/auto-stats.js 开头）。
 import '../shared/auto-stats.js';
+// Side-effect module: publishes globalThis.PromptAddenda — the shape and limits
+// of the register/glossary/domain/context addenda the three TRANSLATE handlers validate.
+// custom-rules.js 在加载时取走它（规则的 domain 按 PromptAddenda.DOMAINS 校验），
+// 所以排在规则之前。
+import '../shared/prompt-addenda.js';
 // 「一条一个 sync 键」的集合（sync-collection）和建在它上面的用户站点规则。两者
 // 在加载时就取走 StorageWriter 与 SiteRules，所以排在它们之后。
 import '../shared/sync-collection.js';
 import '../shared/custom-rules.js';
+// 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
+// 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
+import '../shared/target-lang.js';
+import '../shared/glossary.js';
+// 术语表的 CSV：GLOSSARY_WRITE 的 import 在这里重新解析，不信设置页算的结果。
+// 它加载时取走 Glossary，所以排在 glossary.js 之后。
+import '../shared/glossary-csv.js';
 // Side-effect module (no exports): publishes globalThis.ChargeConfirm, the one
 // copy of D9's charge-confirmation logic, which the content scripts and the
 // extension's own pages load as a classic script.
@@ -26,9 +38,9 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
-// Side-effect module: publishes globalThis.PromptAddenda — the shape of the
-// register addenda the three TRANSLATE handlers validate.
-import '../shared/prompt-addenda.js';
+// Side-effect module: publishes globalThis.TextMarkers, the one grammar of {{n}}
+// placeholders and <a1> markers (the glossary protects terms with placeholders).
+import '../shared/text-markers.js';
 // 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
 // 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
 import '../i18n/lang/en.js';
@@ -52,6 +64,7 @@ import { openOnboardingOnInstall } from './install.js';
 // handler。每一样具体的活都在隔壁模块里 —— 菜单、PDF、OCR、AI 翻译。
 import './page-coverage.js';
 import './custom-rules-host.js';
+import './glossary-host.js';
 import { MENU_IDS, createContextMenus } from './context-menus.js';
 import { assertFeatureEnabled } from './feature-gate.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
@@ -83,6 +96,7 @@ const STORAGE_WRITERS = {
   AUTO_STATS_WRITE: () => globalThis.AutoStats,
   CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
   COMIC_HINT_WRITE: () => comicHintWriter,
+  GLOSSARY_WRITE: () => globalThis.Glossary,
 };
 
 // Message listener
@@ -156,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       openShortcutSettings().catch(error => console.warn('Blab Translation: opening shortcut settings failed', error));
       break;
 
-    // 同步存储的三个写消息：站点规则、本机统计、用户站点规则。内容
+    // 同步存储的五个写消息：站点规则、本机统计、用户站点规则、漫画提示、术语表。内容
     // 脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
     // 自己的模块里（STORAGE_WRITERS），这里只管转接。
@@ -164,7 +178,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'AUTO_STATS_WRITE':
     case 'CUSTOM_RULES_WRITE':
     case 'COMIC_HINT_WRITE':
-      STORAGE_WRITERS[message.type]().applyWrite(message)
+    case 'GLOSSARY_WRITE':
+      STORAGE_WRITERS[message.type]().applyWrite(message, sender)
         .then(value => sendResponse({ value }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -334,7 +349,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 // 三个翻译处理函数的次序一样：缺 Key 就回话；然后先把关附加说明
 // （PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能是
-// 缺陷，所以抛、不截断），再调模型。
+// 缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。
 
 // Handle single text translation
 async function handleTranslate(text, targetLang, mode, addenda) {

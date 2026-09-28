@@ -18,7 +18,7 @@ const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 function loadChildFrame() {
   const listeners = [];
-  const calls = { invalidatePageScope: 0, restart: 0, inherited: [], round: [] };
+  const calls = { invalidatePageScope: 0, restart: 0, inherited: [], round: [], generations: [] };
   // 本 frame 自己的补翻轮：测试用 catchUp.hold() 举起、catchUp.end() 放下。
   const catchUp = { done: Promise.resolve(), end: null };
   catchUp.hold = () => {
@@ -41,6 +41,8 @@ function loadChildFrame() {
       whenCaughtUp: () => catchUp.done,
       afterRound: () => calls.round.push(`afterRound:${ctx.state.isTranslatingPage}`),
     },
+    // 缓存层那个文件的 ctx.translationProfile：子 frame 跟顶层指令里的代数（P1-C §3.8）。
+    translationProfile: { inherit: (generation) => { calls.generations.push(generation); } },
     // 手动轮收块、送翻那几样。
     beginScopeRound: () => calls.round.push('begin'),
     collectPageBlocks: () => {
@@ -83,7 +85,7 @@ function loadChildFrame() {
   const send = (fields) => {
     const reply = listeners[0]({
       type: 'FRAME_DIRECTIVE',
-      directive: { translate: false, manualEpoch: 0, visible: true, ...fields },
+      directive: { translate: false, manualEpoch: 0, visible: true, generation: 0, ...fields },
     });
     assert.equal(reply, undefined, 'FRAME_DIRECTIVE is fire-and-forget');
   };
@@ -143,6 +145,14 @@ test('the child inherits the top frame engine override from the directive', () =
 
 // 子 frame 补翻期间收到手动指令（F3）：手动轮等本 frame 的补翻轮收完再收块，
 // 不因「正在补翻」丢掉这一下；收尾先清旗标、再调 afterRound（F7）。
+test('the child inherits the top frame generation from each newer directive, never from a stale one', () => {
+  const { calls, send } = loadChildFrame();
+  send({ epoch: 1, generation: 0 });
+  send({ epoch: 2, generation: 3 });
+  send({ epoch: 2, generation: 9 });
+  assert.deepEqual(calls.generations, [0, 3], 'a stale directive must not move the hover and caption cache keys');
+});
+
 test('a manual directive during the child frame catch-up round runs after it, not lost', async () => {
   const { ctx, calls, catchUp, send, nextEpoch } = loadChildFrame();
   send({ epoch: nextEpoch(), manualEpoch: 0 });

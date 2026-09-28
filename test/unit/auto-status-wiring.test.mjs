@@ -249,7 +249,7 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   // 队列本身在 shared/storage-writer.js（三家共用一份），这张表拿它造自己那一条。
   const writer = code('shared/storage-writer.js');
   assert.match(writer, /const IN_SERVICE_WORKER\s*=/);
-  assert.match(writer, /function applyWrite\(message\)/);
+  assert.match(writer, /function applyWrite\(message, sender\)/);
   // 一个 writer 一条队列，applyWrite 是唯一排队的地方 —— 各排各的等于没排。
   assert.equal((writer.match(/queue\.then\(/g) || []).length, 1, '只有 applyWrite 排队');
   assert.match(writer, /queue = result\.catch/);
@@ -275,7 +275,7 @@ test('同步存储上的读—改—写只有服务工作者一个人做', () =>
   assert.match(background, /case 'SITE_RULES_WRITE':/);
   // 三个写消息共用一张转接表（STORAGE_WRITERS），站点规则那一行必须指向 SiteRules。
   assert.match(background, /SITE_RULES_WRITE: \(\) => globalThis\.SiteRules,/);
-  assert.match(background, /STORAGE_WRITERS\[message\.type\]\(\)\.applyWrite\(message\)/);
+  assert.match(background, /STORAGE_WRITERS\[message\.type\]\(\)\.applyWrite\(message, sender\)/);
   assert.match(background, /import '\.\.\/shared\/site-rules\.js';/);
 });
 

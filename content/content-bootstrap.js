@@ -113,6 +113,18 @@
     return AccountGate.featureState(ctx.settings, key, ctx.signedIn);
   };
 
+  /**
+   * 一次翻译请求抛出来的异常，给用户看哪一句。悬停、划选、输入框、划词卡片四处
+   * catch 共用：扩展上下文没了说那一句；整轮致命的配置错（passFatal，比如
+   * content/engine/addenda.js 的不认得的领域）它自己带着给用户看的文案；别的一律
+   * 是笼统的「翻译失败」。
+   */
+  ctx.thrownTranslationMessage = function(error) {
+    if (ctx.isExtensionContextInvalidated(error)) return ctx.t('extensionContextInvalidated');
+    if (error && error.passFatal === true) return error.message;
+    return ctx.t('translationFailed');
+  };
+
   ctx.loadSettings = async function() {
     try {
       const result = await chrome.storage.sync.get(DefaultSettings.contentDefaults());
@@ -193,6 +205,9 @@
       Object.keys(changes).forEach((key) => {
         ctx.settings[key] = changes[key].newValue;
       });
+      // 缓存层的设置因子和本页内存缓存的代数（content/content-translation-cache.js）。
+      if (ctx.translationProfile) ctx.translationProfile.onSettingsChanged(changes);
+
       if (changes.showFloatBall) {
         console.log('Blab Translation: Storage changed, showFloatBall:', changes.showFloatBall.oldValue, '->', changes.showFloatBall.newValue);
         if (ctx.updateFloatBallVisibility) {
@@ -251,6 +266,8 @@
     try {
       // 本页的用户站点规则：先把请求发出去，和读设置并行（content/page/custom-rule.js）。
       ctx.customRules.init();
+      // 本页的术语表镜像同样先发出去，只在顶层帧建（content/content-glossary.js）。
+      ctx.glossary.init();
       await ctx.loadSettings();
       // 还没有译文，这一遍只为把 <html> 上的样式 / 仅译文两个属性写对。每个 frame
       // 都要跑：子 frame 里的译文同样要有样式、同样受仅译文控制。
@@ -268,7 +285,8 @@
       if (top && ctx.createFloatBall) ctx.createFloatBall();
       // 调度器的第一个判断就要用到本站规则钉住的引擎。最多等 1.5 s（SW 冷启动），
       // 放在悬浮球之后，好让悬浮球不跟着等。
-      await ctx.customRules.whenReady();
+      // 术语表和规则并列等：两者都在 1.5 s 上限里，谁也不排在谁后面。
+      await Promise.all([ctx.customRules.whenReady(), ctx.glossary.whenReady()]);
       // 设置读回来之后才有意义：自动翻译的第一个判断就是总开关。不 await ——
       // 它内部该异步的地方自己会安排，卡住初始化只会让悬浮球晚出来。
       if (ctx.setupAutoTranslate) ctx.setupAutoTranslate();

@@ -15,8 +15,10 @@
   const caps = (ctx.captions = ctx.captions || {});
   const state = caps.state;
 
+  // 代数在前（ctx.translationProfile）：模型、提示词、词表变了，旧译文就读不到。
   function getCueKey(cue) {
-    return `${caps.getTargetLang()}|${state.trackId}|${cue.startMs}|${cue.text}`;
+    const generation = ctx.translationProfile.generation();
+    return `${generation}|${caps.getTargetLang()}|${state.trackId}|${cue.startMs}|${cue.text}`;
   }
 
   function clearTrack() {
@@ -90,6 +92,8 @@
         delimiter: caps.DELIMITER,
       }));
     } catch (error) {
+      // 这一批在这里接住（下面按失败记冷却），日志也只在这里打。
+      console.error('Blab Translation: caption batch failed', error);
       threw = true;
     }
 

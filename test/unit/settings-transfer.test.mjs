@@ -12,7 +12,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { productSourceFiles, repoSource } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
@@ -27,6 +29,7 @@ await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../i18n/messages.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/settings-transfer.js');
 const { SettingsTransfer: ST, SiteRules, APICompat, TargetLang, TranslationDisplay, DefaultSettings, UI_LANGUAGES } = globalThis;
 
@@ -43,15 +46,37 @@ function optionsDefaults() {
   return make(DefaultSettings.DEFAULT_SELECTION_HOTKEY, globalThis.OCRCore, globalThis.AccountGate);
 }
 
-// 和 options-transfer.js 的 transferSchema() / transferEnums() 同一套入参。
-const schema = ST.settingsSchema(DefaultSettings.contentDefaults(), optionsDefaults());
-const enums = ST.buildEnums({
-  providers: Object.keys(APICompat.PROVIDERS),
-  uiLanguages: UI_LANGUAGES,
-  targetLangs: TargetLang.SUPPORTED,
-  cloudTargets: TargetLang.CLOUD_TARGETS,
-  styles: TranslationDisplay.STYLES,
-});
+/**
+ * 设置页真的那两个函数 options-transfer.js 的 transferSchema() / transferEnums()。
+ * 整个脚本读不成模块（顶层就往 #transferCard 里填 markup），把两个函数的源码抠出来，
+ * 在装着同名全局的 vm 里求值 —— 调的是真函数，不在这里复刻一遍入参：复刻的那份
+ * 和设置页传错的表（比如领域表）会一起「对」。
+ */
+function optionsTransferFunctions() {
+  const source = repoFile('options/options-transfer.js');
+  const lift = (name) => {
+    const start = source.indexOf(`function ${name}() {`);
+    assert.notEqual(start, -1, `options-transfer.js has no ${name}()`);
+    return source.slice(start, source.indexOf('\n}\n', start) + 2);
+  };
+  const sandbox = {
+    SettingsTransfer: ST,
+    DefaultSettings,
+    defaultSettings: optionsDefaults(),
+    APICompat,
+    UI_LANGUAGES,
+    TargetLang,
+    TranslationDisplay,
+    PromptAddenda: globalThis.PromptAddenda,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`${lift('transferSchema')}\n${lift('transferEnums')}`, sandbox);
+  return { transferSchema: vm.runInContext('transferSchema', sandbox), transferEnums: vm.runInContext('transferEnums', sandbox) };
+}
+
+const { transferSchema, transferEnums } = optionsTransferFunctions();
+const schema = transferSchema();
+const enums = transferEnums();
 
 // ------------------------------------------------------------ 文件本身
 
@@ -178,6 +203,34 @@ test('an imported page scope must be one the settings page offers', () => {
   const good = ST.validateSettings({ pageTranslateScope: 'page' }, schema, enums);
   assert.equal(good.value.pageTranslateScope, 'page');
   assert.equal(good.accepted, 1);
+});
+
+test('the prompt domain enum is PromptAddenda.DOMAINS; the page-context switch is a boolean', () => {
+  assert.deepEqual(enums.promptDomain, [...globalThis.PromptAddenda.DOMAINS]);
+  const bad = ST.validateSettings({ promptDomain: 'poetry', aiPageContext: 'yes' }, schema, enums);
+  assert.deepEqual(bad.dropped.sort(), ['aiPageContext', 'promptDomain']);
+  for (const promptDomain of globalThis.PromptAddenda.DOMAINS) {
+    const good = ST.validateSettings({ promptDomain, aiPageContext: true }, schema, enums);
+    assert.deepEqual(good.value, { promptDomain, aiPageContext: true });
+  }
+  // 新装配置的默认值：通用、不附带上下文。
+  assert.equal(schema.promptDomain, 'general');
+  assert.equal(schema.aiPageContext, false);
+});
+
+test('no second list of domain ids: every source outside prompt-addenda.js takes PromptAddenda.DOMAINS', () => {
+  // 九个 id 里挑三个不像普通英文词的（academic / gaming / fiction），同一行里出现
+  // 两个以上就是抄出来的列表。测试文件不在扫描范围内。
+  const ids = ['academic', 'gaming', 'fiction'];
+  const copied = [];
+  for (const rel of productSourceFiles()) {
+    if (rel === 'shared/prompt-addenda.js') continue;
+    repoSource(rel).split('\n').forEach((line, index) => {
+      const quoted = ids.filter((id) => new RegExp(`['"\`]${id}['"\`]`).test(line));
+      if (quoted.length >= 2) copied.push(`${rel}:${index + 1}`);
+    });
+  }
+  assert.deepEqual(copied, []);
 });
 
 test('a settings section that is not an object is refused as a whole', () => {
@@ -417,7 +470,11 @@ test('the settings page loads the transfer card after everything it reads by nam
   for (const dep of ['../shared/api-compat.js', '../shared/default-settings.js', '../shared/target-lang.js',
     '../i18n/messages.js', '../shared/storage-writer.js', '../shared/site-rules.js', '../shared/tab-broadcast.js', '../shared/translation-display.js',
     // customRules 那一行调卡片的 readCustomRules / previewCustomRulesImport / customRulesAiNote。
-    '../shared/sync-collection.js', '../shared/custom-rules.js', 'options-custom-rules.js']) {
+    '../shared/sync-collection.js', '../shared/custom-rules.js', 'options-custom-rules.js',
+    // 领域的枚举（buildEnums 的 domains）取自 PromptAddenda.DOMAINS。
+    '../shared/prompt-addenda.js',
+    // glossary 那一行调卡片的 readGlossary / previewGlossaryImport 和 GlossaryCsv。
+    '../shared/glossary.js', '../shared/glossary-csv.js', 'options-glossary.js']) {
     assert.ok(at(dep) >= 0 && at(dep) < card, `${dep} must load before options-transfer.js`);
   }
   // options.js 的 DOMContentLoaded 才调用 setupTransfer，所以它在后面。

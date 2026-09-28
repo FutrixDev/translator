@@ -11,6 +11,7 @@ await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
 const { CustomRules } = globalThis;
 
@@ -86,7 +87,7 @@ test('custom-rules: validateRule refuses with the i18n key that names the proble
   const cases = [
     [null, 'customRuleInvalid'],
     [[], 'customRuleInvalid'],
-    [{ ...ok, v: 2 }, 'customRuleInvalid'],
+    [{ ...ok, v: 3 }, 'customRuleInvalid'],
     [{ match: ['example.com'] }, 'customRuleInvalid'],
     [{ match: ['example.com'], include: [], css: '   ' }, 'customRuleInvalid'],
     [{ ...ok, engine: 'gpt' }, 'customRuleInvalid'],
@@ -110,6 +111,44 @@ test('custom-rules: validateRule refuses with the i18n key that names the proble
   // 上限本身是合法的。
   assert.ok(CustomRules.validateRule({ ...ok, match: Array.from({ length: 8 }, (_, i) => `h${i}.com`) }));
   assert.ok(CustomRules.validateRule({ ...ok, exclude: ['a'.repeat(500)] }));
+});
+
+// 规则 v2（P1-C C3，修-B）：有 domain 才写 v2，没有就写 v1（最低版本）；v2 必须带
+// domain；domain 只认 PromptAddenda.DOMAINS；只设了领域的规则也算一条有内容的规则。
+test('custom-rules: v2 carries a domain and only a domain makes a v2', () => {
+  const v2 = CustomRules.validateRule({ v: 2, match: ['example.com'], domain: 'legal', updatedAt: 3 });
+  assert.deepEqual(v2, { v: 2, match: ['example.com'], domain: 'legal', updatedAt: 3 });
+  // 没写 v 也一样：写出来的版本由内容决定。
+  assert.equal(CustomRules.validateRule({ match: ['example.com'], exclude: ['.ad'], domain: 'general' }).v, 2,
+    '规则写「通用」也算设了领域');
+  // v2 不带 domain 拒。
+  for (const domain of [undefined, null, '']) {
+    assert.throws(() => CustomRules.validateRule({ v: 2, match: ['example.com'], exclude: ['.ad'], domain }),
+      { message: 'customRuleInvalid' }, String(domain));
+  }
+  // 领域不在 PromptAddenda.DOMAINS 里拒。
+  assert.throws(() => CustomRules.validateRule({ match: ['example.com'], domain: 'poetry' }),
+    { message: 'customRuleInvalid' });
+});
+
+test('custom-rules: normalizeRule without a domain still writes v1, and decode reads v1 and v2 only', () => {
+  const v1 = CustomRules.validateRule({ v: 1, match: ['example.com'], engine: 'ai' });
+  assert.equal(v1.v, 1);
+  assert.equal('domain' in v1, false);
+  // 旧的 v1 记录原样读回；v2 读回带 domain；v3 跳过。
+  const warn = captureConsole('warn');
+  let rules;
+  try {
+    rules = CustomRules.collect({
+      'customRule:aaaa1111': { v: 1, match: ['a.com'], exclude: ['.x'] },
+      'customRule:bbbb2222': { v: 2, match: ['b.com'], domain: 'medical' },
+      'customRule:cccc3333': { v: 3, match: ['c.com'], domain: 'medical' },
+    });
+  } finally {
+    warn.restore();
+  }
+  assert.deepEqual(rules.map((rule) => [rule.id, rule.v, rule.domain]),
+    [['aaaa1111', 1, undefined], ['bbbb2222', 2, 'medical']]);
 });
 
 test('custom-rules: checkSelector is asked only where a DOM exists, and a no is customRuleSelectorInvalid', () => {
@@ -202,7 +241,7 @@ test('custom-rules: collect skips newer versions and bad keys, keeps unsafe CSS 
   try {
     rules = CustomRules.collect({
       'customRule:aaaa1111': { v: 1, match: ['a.com'], exclude: ['.x'], id: 'forged', updatedAt: 1 },
-      'customRule:bbbb2222': { v: 2, match: ['a.com'], exclude: ['.x'], newField: true },
+      'customRule:bbbb2222': { v: 3, match: ['a.com'], exclude: ['.x'], newField: true },
       'customRule:cccc3333': { v: 1, match: ['a.com'], css: 'body{background:url(x)}' },
       'customRule:dddd4444': { match: ['a.com'], exclude: ['.x'] },
       siteRules: {},

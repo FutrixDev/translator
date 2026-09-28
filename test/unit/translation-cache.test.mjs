@@ -203,6 +203,36 @@ test('因子边界不会滑动：("ab","c") 与 ("a","bc") 不是同一个键', 
   );
 });
 
+test('第八个因子 addenda：变了键就变；buildKey 遇到函数抛 TypeError', async () => {
+  const { cache } = await freshCache();
+  const base = { text: 'Attention is all you need', ...FACTORS };
+  const plain = cache.buildKey(base);
+  // 没命中词条的戳是空串，与不带这个因子同键：空串和缺省在拼接里是同一段。
+  assert.equal(cache.buildKey({ ...base, addenda: '' }), plain);
+  const withTerm = cache.buildKey({ ...base, addenda: '[0,"attention","注意力"]' });
+  assert.notEqual(withTerm, plain, '命中的词条变了还命中同一个键 —— 旧译文会被当成新译文供出去');
+  assert.notEqual(cache.buildKey({ ...base, addenda: '[0,"attention","关注"]' }), withTerm);
+  assert.throws(() => cache.buildKey({ ...base, addenda: () => '' }), TypeError,
+    '函数因子只该在 serve 里求值，漏到 buildKey 就是调用方写错了');
+});
+
+test('serve 按每段文字求值函数因子：改一条词条只有含它的文字失效', async () => {
+  const { cache } = await freshCache();
+  const stamp = (term) => (text) => (text.includes('attention') ? term : '');
+  const factors = (term) => ({ ...FACTORS, addenda: stamp(term) });
+  const texts = ['attention please', 'plain text'];
+  const seen = [];
+  await cache.serve(texts, factors('[0,"attention","注意力"]'), async (missing) => {
+    seen.push([...missing]);
+    return missing.map((t) => `译:${t}`);
+  });
+  assert.deepEqual(seen, [texts]);
+  const again = recorder();
+  const out = await cache.serve(texts, factors('[0,"attention","关注"]'), again);
+  assert.deepEqual(again.batches, [['attention please']], '只有含这条词条的文字该重发');
+  assert.deepEqual(out, ['译:attention please', '译:plain text']);
+});
+
 test('全新一批：原样发出去，译文按原位置回来', async () => {
   const { cache } = await freshCache();
   const fetchMissing = recorder();

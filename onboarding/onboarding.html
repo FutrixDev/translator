@@ -85,7 +85,10 @@
   </div>
 
   <!-- 顺序和设置页一致：引擎族依赖 lang-tags，端上状态依赖 engine-status，
-       后者依赖 api-compat。test/unit/engine-status.test.mjs 检查这张清单。 -->
+       后者依赖 api-compat；引擎的词表与附加说明依赖 glossary / prompt-addenda /
+       text-markers，glossary 在加载时又取走 site-rules、storage-writer、
+       sync-collection。test/unit/engine-status.test.mjs 与 site-rules.test.mjs
+       的装载清单检查这张清单。 -->
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/default-settings.js"></script>
@@ -103,10 +106,19 @@
   <script src="../i18n/lang/pt.js"></script>
   <script src="../i18n/lang/ru.js"></script>
   <script src="../i18n/messages.js"></script>
+  <script src="../shared/site-rules-builtin.js"></script>
+  <script src="../shared/storage-writer.js"></script>
+  <script src="../shared/site-rules.js"></script>
+  <script src="../shared/sync-collection.js"></script>
+  <script src="../shared/prompt-addenda.js"></script>
+  <script src="../shared/glossary.js"></script>
+  <script src="../shared/text-markers.js"></script>
   <script src="../shared/tab-broadcast.js"></script>
   <script src="../shared/language-pack.js"></script>
   <script src="../content/engine/languages.js"></script>
   <script src="../content/engine/watchdog.js"></script>
+  <script src="../content/engine/glossary.js"></script>
+  <script src="../content/engine/addenda.js"></script>
   <script src="../content/content-translation-engine.js"></script>
   <script src="onboarding.js"></script>
 </body>

@@ -72,8 +72,9 @@
     return { text: element.textContent?.trim() || '', mathElements: [] };
   }
 
+  // 代数在前（ctx.translationProfile）：模型、提示词、词表变了，旧译文就读不到。
   function buildCacheKey(text, targetLang) {
-    return `${targetLang || ''}::${text}`;
+    return `${ctx.translationProfile.generation()}::${targetLang || ''}::${text}`;
   }
 
   function getCachedTranslation(block, cacheKey) {

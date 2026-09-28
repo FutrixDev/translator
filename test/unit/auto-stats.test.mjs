@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 await import('../../shared/storage-writer.js');
 await import('../../shared/auto-stats.js');
+await import('../../shared/prompt-addenda.js');
 const { AutoStats } = globalThis;
 
 test('月份按本地时区，不是 UTC', () => {
@@ -98,6 +99,19 @@ test('textsChars 数的是源文本，不是请求体', () => {
   // 不是数组就是 0，而不是 NaN —— 一个坏掉的调用不该把这个月的计数毁掉。
   assert.equal(AutoStats.textsChars('nope'), 0);
   assert.equal(AutoStats.textsChars(undefined), 0);
+});
+
+test('sentChars: source text plus page context; glossary and domain are not counted', () => {
+  assert.equal(AutoStats.sentChars('hello'), 5);
+  assert.equal(AutoStats.sentChars(['ab', 'cde']), 5);
+  assert.equal(AutoStats.sentChars(null), 0);
+  const addenda = {
+    glossary: [{ s: 'attention', t: '注意力' }],
+    domain: 'tech',
+    context: { title: 'T1', before: 'abc', after: '' },
+  };
+  assert.equal(AutoStats.sentChars(['ab'], addenda), 2 + 2 + 3);
+  assert.equal(AutoStats.sentChars('ab', { glossary: addenda.glossary, domain: 'tech' }), 2);
 });
 
 test('一次都没量过的命中率是 null，不是 0', () => {

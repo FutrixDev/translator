@@ -37,8 +37,7 @@
 
   function normalizeComparableText(text) {
     if (!text) return '';
-    return text
-      .replace(/\{\{\d+\}\}/g, '')
+    return globalThis.TextMarkers.strip(text)
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -305,13 +304,12 @@
         }
       );
     } catch (error) {
+      console.error('Blab Translation: selection translation failed', error);
       if (hov.selectionRequestIds.get(block) !== requestId) {
         state.selectionTranslationPending = false;
         return;
       }
-      const message = ctx.isExtensionContextInvalidated && ctx.isExtensionContextInvalidated(error)
-        ? t('extensionContextInvalidated')
-        : t('translationFailed');
+      const message = ctx.thrownTranslationMessage(error);
       hov.scheduleInlineReplacement(
         block,
         'selection',

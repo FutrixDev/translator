@@ -66,6 +66,10 @@ const defaultSettings = {
   // door, and it only appears over images big enough to plausibly hold text.
   enableImageOcrHoverButton: true,
   customPrompt: '',
+  // 领域与页面上下文由内容脚本读（content/engine/addenda.js）；列在这里是为了
+  // 四张默认值表对得上（default-settings-agree 单测）。
+  promptDomain: 'general',
+  aiPageContext: false,
   theme: 'light',
   // 页面上译文怎么显示。worker 只有 Alt+T（background/commands.js）读前者；
   // 后者列在这里是为了四张默认值表对得上（default-settings-agree 单测）。

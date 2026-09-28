@@ -62,6 +62,11 @@
     showTranslationOnly: false,
     // 译文样式，集合在 shared/translation-display.js。缺省 default：老用户观感不变。
     translationStyle: 'default',
+    // AI 翻译的领域（PromptAddenda.DOMAINS 之一）与「附带页面上下文」。引擎在
+    // 拼附加说明时读（content/engine/addenda.js）；本站规则设了领域的以规则为准。
+    // 上下文默认关：开着时发出去的字比要翻译的多。
+    promptDomain: 'general',
+    aiPageContext: false,
     // 整页翻译的范围。'main' 只翻页面自己标明的正文（跳过导航、侧栏、站点页眉
     // 页脚，信任作者写的 <main>），'page' 从 <body> 起整页翻。判定在
     // content/page/scope.js；悬浮菜单「翻译整个页面」和 Alt+W 临时改成整页。

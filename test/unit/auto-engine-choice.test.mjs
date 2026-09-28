@@ -23,7 +23,7 @@ const { ctx, translateCalls, sentToAI } = await installEngineHarness({ pageText:
 const charged = [];
 let allow = true;
 globalThis.AutoStats = {
-  textsChars: (texts) => texts.reduce((sum, text) => sum + String(text || '').length, 0),
+  sentChars: (source) => [].concat(source).reduce((sum, text) => sum + String(text || '').length, 0),
   charge: async (chars, budget) => {
     charged.push({ chars, budget });
     return { allowed: allow };

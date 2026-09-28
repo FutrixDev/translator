@@ -30,6 +30,7 @@ await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
+await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,6 +104,8 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
       pageScopeOverride: null, translationProgress: { current: 0, total: 0 },
     },
     syncMirrors: [],
+    // 缓存层那个文件的 ctx.translationProfile：顶层指令带它的代数（P1-C §3.8）。
+    translationProfile: { generation: () => 0, subscribe() {} },
     frames: { sendToRelay() {} },
     autoTranslate: { isOn: () => false, onStateChange: (fn) => fn(), markPageExplicit() {} },
     isExtensionContextAvailable: () => true,

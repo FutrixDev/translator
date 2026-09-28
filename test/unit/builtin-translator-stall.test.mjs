@@ -55,7 +55,13 @@ Object.defineProperty(globalThis, 'navigator', {
   writable: true,
 });
 globalThis.window = {
-  AI_TRANSLATOR_CONTENT: {},
+  // bootstrap 放在 ctx.settings 上的默认值里，附加说明（content/engine/addenda.js）
+  // 每次发 AI 都读这两项，也问本站规则钉住的领域（content/page/custom-rule.js 装的
+  // ctx.customRules；这里没有规则）。
+  AI_TRANSLATOR_CONTENT: {
+    settings: { promptDomain: 'general', aiPageContext: false },
+    customRules: { domain: () => null, engineOverride: () => null, whenReady: async () => {} },
+  },
   addEventListener() {},
   removeEventListener() {},
 };
@@ -98,13 +104,18 @@ await import('../../shared/api-compat.js');
 await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
 // site-rules.js takes the built-in table and StorageWriter at load; the manifest
-// loads all three, and prompt-addenda.js, ahead of the engine.
+// loads all three ahead of the engine.
 await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
-await import('../../shared/prompt-addenda.js');
+// The engine reads placeholder ids through TextMarkers, loaded ahead of it in the manifest.
+await import('../../shared/text-markers.js');
 await import('../../content/engine/languages.js');
 await import('../../content/engine/watchdog.js');
+// 词表快照与附加说明（P1-C）：这里没有 ctx.glossary，快照恒为空。
+await import('../../shared/prompt-addenda.js');
+await import('../../content/engine/glossary.js');
+await import('../../content/engine/addenda.js');
 await import('../../content/content-translation-engine.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 

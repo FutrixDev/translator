@@ -14,7 +14,6 @@
   const getTargetLangLabel = ctx.getTargetLangLabel;
   const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
-  const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const speech = ctx.speech;
   const SPEAKER_ICON = speech.SPEAKER_ICON;
 
@@ -655,9 +654,7 @@
     } catch (error) {
       console.error('Blab Translation: Translation failed', error);
       if (isCurrent()) {
-        showCardError(popup, isExtensionContextInvalidated(error)
-          ? t('extensionContextInvalidated')
-          : t('translationFailed'));
+        showCardError(popup, ctx.thrownTranslationMessage(error));
         settleCardActions(popup, undefined);
       }
     }

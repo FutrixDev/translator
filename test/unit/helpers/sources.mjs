@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -211,6 +211,29 @@ export function repoSource(rel) {
   return readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
+// 产品代码之外的目录：测试自己、第三方、文档、产物、别的 worktree。
+const NON_PRODUCT_DIRS = new Set(['node_modules', '.worktrees', '.git', 'test', 'vendor', 'docs', 'dist']);
+
+/**
+ * 仓库里全部产品源码的相对路径（.js / .mjs / .html，排好序）。「某种写法只准在
+ * 一个文件里出现」这类扫描守卫从这里取清单，不各写一份目录遍历。
+ */
+export function productSourceFiles() {
+  const out = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(path.join(ROOT, dir))) {
+      const rel = dir ? `${dir}/${name}` : name;
+      if (statSync(path.join(ROOT, rel)).isDirectory()) {
+        if (!NON_PRODUCT_DIRS.has(name)) walk(rel);
+      } else if (/\.(m?js|html)$/.test(name)) {
+        out.push(rel);
+      }
+    }
+  };
+  walk('');
+  return out.sort();
+}
+
 /**
  * manifest 里某个内容脚本 bundle 的 js 清单。装载顺序的断言从这里取。
  */
@@ -230,4 +253,17 @@ export function contentBundle(marker = 'content/content-utils.js') {
 export function familyPaths(dir, entry) {
   const abs = path.join(ROOT, dir);
   return [...readdirSync(abs).filter((n) => n.endsWith('.js')).sort().map((n) => `${dir}/${n}`), entry];
+}
+
+/**
+ * bootstrap 里那一段按前缀分流 sync 增量的函数（content/content-bootstrap.js 的
+ * routeSyncMirrors），原样拿出来绑在给定的 ctx 上跑：镜像登记进 ctx.syncMirrors
+ * 之后，storage 增量是不是真的送到了它那里，要过这一段才算数。
+ */
+export function routeSyncMirrorsOf(ctx) {
+  const source = readFileSync(path.join(ROOT, 'content/content-bootstrap.js'), 'utf8');
+  const start = source.indexOf('  function routeSyncMirrors(changes) {');
+  if (start < 0) throw new Error('routeSyncMirrors moved');
+  const end = source.indexOf('\n  }\n', start);
+  return new Function('ctx', `${source.slice(start, end + 4)}\nreturn routeSyncMirrors;`)(ctx);
 }
