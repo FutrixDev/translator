@@ -110,6 +110,7 @@
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
         <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin')])}</button>
+        <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
     `;
@@ -517,21 +518,23 @@
     popup._showTranslationSpeak?.(false);
   }
 
-  // 重译 / 换引擎：请求在路上时禁用。
+  // 重译 / 换引擎 / 加入术语表：请求在路上时禁用（术语表拿的是译文，旧的不能拿去预填）。
   function setCardActionsBusy(popup, busy) {
-    for (const btn of popup.querySelectorAll('.ai-translator-retranslate, .ai-translator-switch-engine')) {
+    for (const btn of popup.querySelectorAll('.ai-translator-retranslate, .ai-translator-switch-engine, .ai-translator-add-term')) {
       btn.disabled = busy;
     }
   }
 
   /**
    * 一次请求结算（成功或失败）之后：重译出现；引擎标签说这次是谁译的；另一边
-   * 此刻能用才给「换引擎」，按钮文字说换到哪边。
+   * 此刻能用才给「换引擎」，按钮文字说换到哪边。「加入术语表」在 await 之前同步
+   * 定下（content-add-term.js，translated = 这次出了译文）。
    *
    * 换引擎按钮在答案回来之前保持原样，答案回来一次定下藏或露。先藏再露的话，每点一次
    * 动作行就折一次行再并回来，鼠标下面换成别的按钮。文字换了宽度不变，靠的是 fitLabel。
    */
-  async function settleCardActions(popup, engine) {
+  async function settleCardActions(popup, engine, translated) {
+    ctx.addTerm.settle(popup, translated);
     const retranslate = popup.querySelector('.ai-translator-retranslate');
     const switchBtn = popup.querySelector('.ai-translator-switch-engine');
     const tag = popup.querySelector('.ai-translator-engine-tag');
@@ -587,7 +590,7 @@
       if (!isExtensionContextAvailable()) {
         if (popup) {
           showCardError(popup, t('extensionContextInvalidated'));
-          settleCardActions(popup, undefined);
+          settleCardActions(popup, undefined, false);
         }
         return;
       }
@@ -610,6 +613,7 @@
         parts.error.textContent = '';
         popup._showTranslationSpeak?.(false);
         setCardActionsBusy(popup, true);
+        ctx.addTerm.collapse(popup);
       }
       // 这张卡点过「换引擎」才带 engine；否则按设置走。
       const pinned = popup?.dataset.pinnedEngine;
@@ -650,12 +654,12 @@
           parts.resultBody.classList.add('ai-translator-reveal');
         }
       }
-      settleCardActions(popup, response.engine);
+      settleCardActions(popup, response.engine, !response.error && !!response.translation);
     } catch (error) {
       console.error('Blab Translation: Translation failed', error);
       if (isCurrent()) {
         showCardError(popup, ctx.thrownTranslationMessage(error));
-        settleCardActions(popup, undefined);
+        settleCardActions(popup, undefined, false);
       }
     }
   }

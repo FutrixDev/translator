@@ -689,6 +689,77 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   white-space: pre-line;
 }
 
+/* 划词卡片「加入术语表」展开的小表单（content/content-add-term.js）。它在卡片之内、
+   内容区和动作行之间，不是新的面板根，不进上面的 :is() 列表；输入框、下拉和两个按钮
+   是控件，规则带 `html body` + 面板根（见控件那段重置）。颜色都走面板的变量，浅色
+   主题换变量即可，只有错误色在 light-theme.css 另给一份。 */
+.ai-translator-term-form {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--divider);
+}
+
+.ai-translator-term-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-translator-term-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.ai-translator-term-source {
+  color: var(--text-primary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+html body .ai-translator-popup .ai-translator-term-input,
+html body .ai-translator-popup .ai-translator-term-scope {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+html body .ai-translator-popup .ai-translator-term-scope {
+  cursor: pointer;
+}
+
+html body .ai-translator-popup .ai-translator-term-scope option {
+  background: var(--popup-bg);
+  color: var(--text-primary);
+}
+
+html body .ai-translator-popup .ai-translator-term-input:focus,
+html body .ai-translator-popup .ai-translator-term-scope:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(111, 99, 255, 0.2);
+}
+
+.ai-translator-term-error {
+  color: #f87171;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ai-translator-term-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 
 /* Scrollbar */
 .ai-translator-popup ::-webkit-scrollbar {

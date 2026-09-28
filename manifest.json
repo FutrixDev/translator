@@ -148,6 +148,7 @@
         "content/content-selection.js",
         "content/content-float-ball.js",
         "content/content-popup.js",
+        "content/content-add-term.js",
         "content/content-input-dialog.js",
         "content/content-input-writeback.js",
         "content/content-input-chip.js",

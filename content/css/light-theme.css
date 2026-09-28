@@ -30,6 +30,11 @@ html[data-ai-translator-theme="light"] body .ai-translator-lang-item.is-selected
   background: rgba(111, 99, 255, 0.12);
 }
 
+/* 「加入术语表」表单的错误句：深色的 #f87171 在白底上只有 2.8:1。 */
+[data-ai-translator-theme="light"] .ai-translator-popup .ai-translator-term-error {
+  color: #b91c1c;
+}
+
 [data-ai-translator-theme="light"] .ai-translator-popup ::-webkit-scrollbar-thumb {
   background: #d1d5db;
 }
