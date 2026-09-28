@@ -66,14 +66,15 @@ function configure(patch = {}) {
 
 const emptySnap = () => ({ glossary: eng.glossary.fromEntries([], `test-${Math.random()}`) });
 const batch = (extra = {}) => ({ type: 'TRANSLATE_BATCH_FAST', texts: [TEXT], targetLang: 'zh-CN', ...extra });
-const send = (message) => ctx.requestTranslation(message, emptySnap());
+// 快照是「送出」那一步的参数（缓存层就是这样交的）：先按这一页盖语域，再送出。
+const send = (message) => ctx.sendTranslation(ctx.withPromptAddenda(message), emptySnap());
 
 // ------------------------------------------------------------------ 领域
 
 test('domain: global general sends no domain; a global domain is sent as its id', async () => {
   configure();
   await send(batch());
-  assert.equal('addenda' in ai.sent[0], false, 'general is the default and sends nothing');
+  assert.deepEqual(ai.sent[0].addenda, {}, 'general is the default and sends nothing');
 
   configure({ promptDomain: 'legal' });
   await send(batch());
@@ -88,7 +89,7 @@ test('domain: the site rule wins over the global setting, and a rule set to gene
 
   rule.domain = 'general';
   await send(batch());
-  assert.equal('addenda' in ai.sent[1], false, 'a rule saying general is a choice, not "unset"');
+  assert.deepEqual(ai.sent[1].addenda, {}, 'a rule saying general is a choice, not "unset"');
 
   rule.domain = null;
   await send(batch());
@@ -126,7 +127,7 @@ test('domain: every id the engine accepts comes from PromptAddenda.DOMAINS', () 
 test('context: only with the switch on; the page title and the neighbours ride along', async () => {
   configure();
   await send(batch({ pageContext: { before: 'Earlier paragraph.', after: 'Later paragraph.' } }));
-  assert.equal('addenda' in ai.sent[0], false, 'switch off, no context');
+  assert.deepEqual(ai.sent[0].addenda, {}, 'switch off, no context');
 
   configure({ aiPageContext: true });
   await send(batch({ pageContext: { before: 'Earlier paragraph.', after: 'Later paragraph.' } }));
@@ -173,8 +174,8 @@ test('context: a split batch sends the same context with every part', async () =
   const terms = Array.from({ length: 70 }, (_, k) => ({ s: `term${k}`, t: `术语${k}` }));
   const texts = terms.map((entry) => `We discuss ${entry.s} today.`);
   const snap = eng.glossary.fromEntries(terms, `test-${Math.random()}`);
-  await ctx.requestTranslation(
-    { type: 'TRANSLATE_BATCH_FAST', texts, targetLang: 'zh-CN', pageContext: { before: 'P', after: 'N' } },
+  await ctx.sendTranslation(ctx.withPromptAddenda(
+    { type: 'TRANSLATE_BATCH_FAST', texts, targetLang: 'zh-CN', pageContext: { before: 'P', after: 'N' } }),
     { glossary: snap });
   assert.equal(ai.sent.length, 2);
   for (const message of ai.sent) {

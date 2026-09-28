@@ -130,7 +130,8 @@
   }
 
   /**
-   * 一份的附加说明；什么都没有时是 null，消息里就不带 `addenda`。`message` 是
+   * 一份的附加说明；什么都没有时是 null，消息里的 `addenda` 就只有发起请求那一帧
+   * 盖的语域（引擎的 withAddenda 把这里的结果并进去，不覆盖语域）。`message` 是
    * 这次要发的消息（读 standaloneText 与 pageContext），`part` 是 plan 切出的一份。
    * 批量切成几份时每份都带同一份上下文（每份是一次独立的模型调用），各自计字数。
    */

@@ -3,8 +3,8 @@
 // sendToModel 按份发送。
 //
 // 快照由 eng.glossary.fromEntries 直接建（测试台没有 ctx.glossary），经
-// ctx.requestTranslation 的第二个参数传进去 —— 缓存层就是这样把它那一份快照交给
-// 引擎的。
+// ctx.sendTranslation 的第二个参数传进去 —— 缓存层就是这样把它那一份快照交给
+// 引擎的：先按这一页盖语域（ctx.withPromptAddenda），再送出（request 下面）。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -20,6 +20,7 @@ await import('../../shared/auto-stats.js');
 setApiKey('test-key');
 
 const eng = ctx.engine;
+const request = (message, opts) => ctx.sendTranslation(ctx.withPromptAddenda(message), opts);
 const snapOf = (entries) => eng.glossary.fromEntries(entries, `test-${Math.random()}`);
 const matched = (snap, text) => snap.match(text).map((hit) => text.slice(hit.start, hit.end));
 
@@ -186,7 +187,7 @@ test('builtin engine: PlaceholderLossError.lost names the ids the source had and
   configure({});
   builtin.behave = (text) => `[B] ${text.replace('{{1}}', '')}`;
   const source = 'Energy {{1}} and mass {{2}} are both conserved in this ordinary English sentence.';
-  const { value, warnings } = await captureWarnings(() => ctx.requestTranslation(
+  const { value, warnings } = await captureWarnings(() => request(
     { type: 'TRANSLATE', text: source, targetLang: 'zh-CN', engine: 'builtin' }, { glossary: snapOf([]) }));
   assert.ok(value.error, JSON.stringify(value));
   const failed = warnings.find((args) => args[0] === 'Blab Translation: builtin translation failed');
@@ -202,7 +203,7 @@ test('builtin engine: a page batch through the glossary, then again with the pla
   const plain = 'This ordinary English sentence mentions no glossary term at all.';
   const message = { type: 'TRANSLATE_BATCH_FAST', texts: [hit, plain], targetLang: 'zh-CN' };
 
-  const first = await ctx.requestTranslation(message, { glossary: snap });
+  const first = await request(message, { glossary: snap });
   assert.deepEqual(builtin.calls, ['{{1}} is all you need, says this ordinary English sentence.', plain]);
   assert.deepEqual(first.translations, [`[B] 注意力 is all you need, says this ordinary English sentence.`, `[B] ${plain}`]);
   assert.equal(first.engine, 'builtin');
@@ -211,7 +212,7 @@ test('builtin engine: a page batch through the glossary, then again with the pla
   builtin.calls.length = 0;
   builtin.behave = (text) => `[B] ${text.replace(/\{\{\d+\}\}/g, '')}`;
   const before = eng.glossary.stats().placeholderLosses;
-  const { value } = await captureWarnings(() => ctx.requestTranslation(message, { glossary: snap }));
+  const { value } = await captureWarnings(() => request(message, { glossary: snap }));
   assert.deepEqual(builtin.calls, ['{{1}} is all you need, says this ordinary English sentence.', hit, plain]);
   assert.deepEqual(value.translations, [`[B] ${hit}`, `[B] ${plain}`]);
   assert.equal(eng.glossary.stats().placeholderLosses, before + 1);
@@ -234,7 +235,7 @@ test('sendToModel: over 60 entries splits the batch, sent one part after another
     inFlight -= 1;
     return { translations: message.texts.map((t) => `[T] ${t}`) };
   };
-  const result = await ctx.requestTranslation(
+  const result = await request(
     { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snap });
   assert.equal(overlapped, false, 'parts are sent one after another');
   assert.deepEqual(ai.sent.map((m) => [m.texts.length, m.addenda.glossary.length]), [[60, 60], [10, 10]]);
@@ -251,7 +252,7 @@ test('sendToModel: every part passes the budget gate on its own', async () => {
     return { allowed: true };
   };
   try {
-    await ctx.requestTranslation(
+    await request(
       { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN', auto: true }, { glossary: snapOf(TERMS) });
   } finally {
     globalThis.AutoStats.charge = realCharge;
@@ -263,19 +264,19 @@ test('sendToModel: every part passes the budget gate on its own', async () => {
 test('sendToModel: the first failed part is returned as it is and the rest are not sent', async () => {
   configure({ translationEngine: 'ai' });
   ai.answer = async () => ({ error: 'upstream said no' });
-  const result = await ctx.requestTranslation(
+  const result = await request(
     { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snapOf(TERMS) });
   assert.equal(ai.sent.length, 1);
   assert.deepEqual(result, { error: 'upstream said no', engine: 'ai' });
 });
 
-test('sendToModel: a batch with no hit is one message without addenda; TRANSLATE carries its own hits', async () => {
+test('sendToModel: a batch with no hit carries only the page stamp; TRANSLATE carries its own hits', async () => {
   configure({ translationEngine: 'ai' });
   const snap = snapOf([{ s: 'attention', t: '注意力' }]);
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: ['plain words'], targetLang: 'zh-CN' }, { glossary: snap });
+  await request({ type: 'TRANSLATE_BATCH_FAST', texts: ['plain words'], targetLang: 'zh-CN' }, { glossary: snap });
   assert.equal(ai.sent.length, 1);
-  assert.equal('addenda' in ai.sent[0], false);
+  assert.deepEqual(ai.sent[0].addenda, {}, 'only the stamp this page gave it');
   ai.answer = async () => ({ translation: 'x' });
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'attention please', targetLang: 'zh-CN' }, { glossary: snap });
+  await request({ type: 'TRANSLATE', text: 'attention please', targetLang: 'zh-CN' }, { glossary: snap });
   assert.deepEqual(ai.sent[1].addenda, { glossary: [{ s: 'attention', t: '注意力' }] });
 });

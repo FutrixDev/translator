@@ -649,9 +649,12 @@
   }
 
   // `message` 已去掉 pageContext（sendToModel 头一行），`original` 还带着它。
+  // compose 出来的词表、领域、上下文**并进**请求已经带着的 addenda：语域是发起请求
+  // 的那一帧盖的（ctx.withPromptAddenda），这里是执行请求的那一帧，不重算、不覆盖
+  // 它（D-382）。compose 从不产出 register，所以并进去也盖不掉它。
   function withAddenda(message, part, original) {
     const addenda = eng.addenda.compose(original, part);
-    return addenda ? { ...message, addenda } : message;
+    return addenda ? { ...message, addenda: { ...message.addenda, ...addenda } } : message;
   }
 
   /**
@@ -661,7 +664,8 @@
    * budgetSpent：调用方要分得清「今天的额度花完了」和「这一批出错了」—— 前者要
    * 跟用户说清楚、等明天或等他调额度，后者只是过几秒再试。
    *
-   * 三种翻译消息带上附加说明（词表、领域、页面上下文，content/engine/addenda.js）；
+   * 三种翻译消息在发起帧盖好的语域之上并进附加说明（词表、领域、页面上下文，
+   * content/engine/addenda.js）；
    * 批量页的 `pageContext` 只用来组装，不随消息发出。批量按 60 条词条上限
    * 切成几份，一份一份依次发、各自过预算闸；任一份失败（有 error，或 translations
    * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
@@ -670,6 +674,11 @@
   async function sendToModel(original, snap) {
     const { pageContext: _neighbours, ...message } = original;
     if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
+    // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
+    // 它悄悄丢掉这一页的语域，所以直接抛。
+    if (!('addenda' in message)) {
+      throw new Error('sendToModel: this request was never stamped (ctx.withPromptAddenda)');
+    }
     if (message.type === 'TRANSLATE') {
       const [part] = snap.plan([message.text]);
       return sendPart(withAddenda(message, part, original));
