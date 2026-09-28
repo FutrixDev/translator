@@ -37,10 +37,18 @@ const SCRIPTS = [
   'shared/site-rules-builtin.js',
   'shared/storage-writer.js',
   'shared/site-rules.js',
+  'shared/sync-collection.js',
   'shared/prompt-addenda.js',
+  'shared/glossary.js',
+  'shared/translation-cache.js',
+  'shared/text-markers.js',
+  'content/content-glossary.js',
   'content/engine/languages.js',
   'content/engine/watchdog.js',
+  'content/engine/glossary.js',
+  'content/engine/addenda.js',
   'content/content-translation-engine.js',
+  'content/content-translation-cache.js',
   'content/frames/shelf.js',
 ];
 
@@ -61,7 +69,9 @@ function frameRealm({ url, role, sendMessage }) {
       create: async () => ({ translate: async (text) => `builtin:${text}`, destroy() {} }),
     },
     navigator: { userActivation: { isActive: false } },
-    document: { body: { innerText: PAGE } },
+    document: { body: { innerText: PAGE }, title: 'A test page' },
+    // 缓存层（content-translation-cache.js）的命中统计。
+    AutoStats: { add() {} },
     location: new URL(url),
     chrome: {
       i18n: { detectLanguage: async () => ({ isReliable: true, languages: [{ language: 'en', percentage: 99 }] }) },
@@ -72,6 +82,7 @@ function frameRealm({ url, role, sendMessage }) {
       },
       runtime: {
         id: 'test',
+        getManifest: () => ({ version: '9.9.9' }),
         sendMessage,
         onMessage: { addListener: (fn) => listeners.push(fn) },
       },
@@ -85,12 +96,21 @@ function frameRealm({ url, role, sendMessage }) {
   sandbox.AI_TRANSLATOR_CONTENT = {
     frameRole: role,
     state: {},
-    settings: { translationEngine: 'ai', autoTranslateEngine: 'ai', engineFallback: 'allow-ai' },
+    settings: {
+      translationEngine: 'ai', autoTranslateEngine: 'ai', engineFallback: 'allow-ai',
+      // P1-C：引擎在执行帧读有效领域与上下文开关（content/engine/addenda.js）。
+      promptDomain: 'general', aiPageContext: false,
+    },
+    syncMirrors: [],
     t: (key) => key,
     isExtensionContextInvalidated: () => false,
     getLanguageDetectionText: (text) => String(text || '').slice(0, 400),
     autoTranslate: { onStateChange() {} },
-    customRules: { whenReady: async () => {}, onChange() {}, engineOverride: () => null },
+    customRules: {
+      whenReady: async () => {}, onChange() {}, engineOverride: () => null,
+      // P1-C：本站规则钉住的领域（没有规则），与缓存层订阅的「规则变了」。
+      domain: () => null, onProfileChange: () => () => {},
+    },
   };
   vm.createContext(sandbox);
   for (const rel of [...SCRIPTS, `content/frames/${role}.js`]) {

@@ -134,11 +134,12 @@
    * 调的是哪一个：'cached' 先查缓存（缓存和词表都在顶层，戳要用顶层的那份），
    * 'direct' 直接发。别的值是写错了，抛出来按失败回话。
    *
-   * 'direct' 的请求已经在子 frame 那里盖过语域（它那一页没有语域就是 `{}`），这里
-   * 原样送出：走 ctx.requestTranslation 会撞上「已经盖过」的守卫而抛。
+   * 两种请求都已经在子 frame 那里盖过语域（它那一页没有语域就是 `{}`），这里只走
+   * 「送出」那一步：走 ctx.requestTranslation / ctx.requestTranslationCached 会撞上
+   * 「已经盖过」的守卫而抛。
    */
   function engineFor(via) {
-    if (via === 'cached') return ctx.requestTranslationCached;
+    if (via === 'cached') return ctx.sendTranslationCached;
     if (via === 'direct') return ctx.sendTranslation;
     throw new TypeError(`frame engine request has unknown via ${JSON.stringify(via)}`);
   }

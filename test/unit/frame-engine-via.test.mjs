@@ -1,11 +1,12 @@
 // 子 frame 的翻译请求信封（P1-C §3.8）：缓存和词表都在顶层，子 frame 的缓存查询
 // 也经顶层，信封里的 via 说它在子 frame 里调的是哪一个。
 //
-//   子 frame（content/frames/child.js）：ctx.requestTranslation → via 'direct'，
-//     ctx.requestTranslationCached → via 'cached'；
+//   子 frame（content/frames/child.js）覆写两条入口「送出」的那一步（盖语域留在
+//     子 frame，D-382）：ctx.sendTranslation → via 'direct'，
+//     ctx.sendTranslationCached → via 'cached'；
 //   中继（background/frame-relay.js）：via 原样带到 FRAME_ENGINE_RELAY；
-//   顶层（content/frames/top.js）：'cached' 调 ctx.requestTranslationCached，
-//     'direct' 调 ctx.requestTranslation，别的值抛错、按失败回话；指令带 generation。
+//   顶层（content/frames/top.js）：'cached' 调 ctx.sendTranslationCached，
+//     'direct' 调 ctx.sendTranslation，别的值抛错、按失败回话；指令带 generation。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -57,14 +58,15 @@ test('the child sends both engine calls to the top frame, each saying which one 
     state: {},
     t: (key) => key,
     builtinTranslator: { pageSourceLang: async () => 'fr' },
-    // 缓存层那个文件在 manifest 里排在 child.js 前面：它先挂上的这两个会被覆盖。
-    requestTranslation: () => assert.fail('the child must not run the engine itself'),
-    requestTranslationCached: () => assert.fail('the child must not look up its own cache'),
+    // 引擎和缓存层两个文件在 manifest 里排在 child.js 前面：它们先挂上的这两个
+    // 「送出」会被覆盖。
+    sendTranslation: () => assert.fail('the child must not run the engine itself'),
+    sendTranslationCached: () => assert.fail('the child must not look up its own cache'),
   };
   const { sent } = run(['content/frames/child.js'], ctx);
   const message = { type: 'TRANSLATE_BATCH_FAST', texts: ['x'], targetLang: 'zh-CN' };
-  await ctx.requestTranslationCached(message);
-  await ctx.requestTranslation(message);
+  await ctx.sendTranslationCached(message);
+  await ctx.sendTranslation(message);
   assert.deepEqual(sent.map((m) => [m.type, m.via]), [
     ['FRAME_ENGINE_REQUEST', 'cached'],
     ['FRAME_ENGINE_REQUEST', 'direct'],
@@ -114,11 +116,11 @@ function loadTop() {
       generation: () => generation,
       subscribe: (fn) => generationSubscribers.push(fn),
     },
-    requestTranslation: async (message) => {
+    sendTranslation: async (message) => {
       calls.push(['direct', message.texts]);
       return { translations: ['direct'] };
     },
-    requestTranslationCached: async (message) => {
+    sendTranslationCached: async (message) => {
       calls.push(['cached', message.texts]);
       return { translations: ['cached'] };
     },
@@ -165,8 +167,8 @@ test('an unknown via is a failure answered to the child and logged once, never a
 test('a pass-fatal error (an unknown prompt domain) keeps its mark across the relay, and is logged once', async () => {
   const { ctx, listeners, errors } = loadTop();
   const fatal = Object.assign(new Error('promptDomainUnknown'), { passFatal: true, domain: 'astrology' });
-  ctx.requestTranslationCached = async () => { throw fatal; };
-  ctx.requestTranslation = async () => { throw new Error('plain'); };
+  ctx.sendTranslationCached = async () => { throw fatal; };
+  ctx.sendTranslation = async () => { throw new Error('plain'); };
   // 回话是 vm 那个 realm 里造的对象，原型不同：按 JSON 比内容。
   const reply = async (via) => JSON.parse(JSON.stringify(await relay(listeners[0], via)));
   assert.deepEqual(await reply('cached'), [{ error: 'promptDomainUnknown', passFatal: true }]);

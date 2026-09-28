@@ -158,7 +158,9 @@ test('改了模型之后，持久缓存的键因子重新读：下一次请求�
   };
   globalThis.AutoStats = { add() {} };
   ctx.engine = { glossary: { current: async () => ({}) }, addenda: { stamp: () => '' } };
-  ctx.requestTranslation = async () => assert.fail('全部命中，不该发请求');
+  // 入口先在本 frame 盖语域（引擎的 ctx.withPromptAddenda），再查缓存。
+  ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
+  ctx.sendTranslation = async () => assert.fail('全部命中，不该发请求');
   const message = { type: 'TRANSLATE_BATCH_FAST', texts: ['x'], targetLang: 'zh-CN' };
 
   await ctx.requestTranslationCached(message);

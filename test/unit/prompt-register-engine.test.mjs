@@ -41,6 +41,13 @@ Object.assign(globalThis.chrome.storage, {
 });
 globalThis.chrome.runtime.getManifest = () => ({ version: '9.9.9' });
 globalThis.AutoStats = { add() {} };
+// 缓存层在加载时订阅词表镜像（ctx.glossary）和本站规则的 onProfileChange（P1-C）：
+// manifest 里 content/content-glossary.js 与 content/page/custom-rule.js 都排在它
+// 前面。这里装真的镜像（夹具不是顶层帧，镜像为空），规则那一边没有规则、不回调。
+await import('../../shared/sync-collection.js');
+await import('../../shared/glossary.js');
+await import('../../content/content-glossary.js');
+ctx.customRules.onProfileChange = () => () => {};
 await import('../../shared/translation-cache.js');
 await import('../../content/content-translation-cache.js');
 

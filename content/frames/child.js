@@ -7,8 +7,8 @@
 //      - 自动：content-auto-translate.js 的 resolve() 改问 ctx.frameDecision；
 //      - 手动：顶层每点一次「翻译整页」，这里静默跑一轮（不画进度条）；
 //      - 显隐：顶层藏译文，这里一起藏。
-//   2. 引擎请求交给顶层执行（「送出」那一步 ctx.sendTranslation 和缓存查询
-//      ctx.requestTranslationCached 在这里被覆写）；
+//   2. 引擎请求交给顶层执行（两条入口「送出」的那一步 ctx.sendTranslation 和
+//      ctx.sendTranslationCached 在这里被覆写，盖语域那一步留在本 frame）；
 //   3. 每轮结束汇报一次，顶层据此回答「这一页翻过没有」、替手动轮报错。
 //
 // 所有来往都经服务工作者的中继（background/frame-relay.js），消息名都以 FRAME_
@@ -61,13 +61,15 @@
 
   /**
    * 子 frame 的每一次翻译请求都交给顶层执行：引擎选择、回落、每日 AI 额度闸、
-   * 译文缓存和词表都只有顶层那一份。覆写的是「送出」那一步（ctx.sendTranslation），
-   * 不是入口：入口 ctx.requestTranslation 仍在这个 frame 里按**这个文档**的地址
-   * 盖语域（ctx.withPromptAddenda），顶层原样送出，不拿自己的地址重算。缓存键里的
-   * 词表戳也得用顶层的词表算，所以缓存查询一样经顶层：信封里的 via 说这一次在子
-   * frame 里调的是哪一个 —— 'cached'（ctx.requestTranslationCached，顶层先查缓存）
-   * 或 'direct'（ctx.sendTranslation）。子 frame 的缓存命中和未命中因此记在顶层的
-   * AutoStats 里。
+   * 译文缓存和词表都只有顶层那一份。覆写的是两条入口「送出」的那一步
+   * （ctx.sendTranslation、ctx.sendTranslationCached），不是入口：入口
+   * ctx.requestTranslation / ctx.requestTranslationCached 仍在这个 frame 里按
+   * **这个文档**的地址盖语域（ctx.withPromptAddenda），顶层原样送出，不拿自己的
+   * 地址重算；词表、领域、页面上下文则在顶层的引擎里并进同一个 addenda（D-382）。
+   * 缓存键里的词表戳也得用顶层的词表算，所以缓存查询一样经顶层：信封里的 via 说
+   * 这一次在子 frame 里调的是哪一个 —— 'cached'（ctx.sendTranslationCached，顶层
+   * 先查缓存）或 'direct'（ctx.sendTranslation）。子 frame 的缓存命中和未命中因此
+   * 记在顶层的 AutoStats 里。
    *
    * 凡是要读「本文档」才答得出的量，都在这里算好写进消息，不能让顶层拿自己的
    * 文档去答：
@@ -236,7 +238,7 @@
   // 调用时才读这两个函数，不存引用。
   ctx.frameDecision = frameDecision;
   ctx.sendTranslation = requestViaTop('direct');
-  ctx.requestTranslationCached = requestViaTop('cached');
+  ctx.sendTranslationCached = requestViaTop('cached');
 
   Object.assign(frames, {
     setup: setupChildFrame,

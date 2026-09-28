@@ -126,15 +126,23 @@
   /**
    * 与 ctx.requestTranslation 同形（同样的入参、同样的返回、同样会抛的异常），
    * 只是先去缓存里看一眼。调用方不需要知道这一层存不存在。
+   *
+   * 和 ctx.requestTranslation 一样是两步：在发起请求的这个 frame 盖语域
+   * （ctx.withPromptAddenda，按这个文档的地址），再交给 ctx.sendTranslationCached。
+   * 子 frame 只覆盖第二步（交给顶层去查缓存、去发），所以语域是子文档的，
+   * 词表、领域、上下文是顶层的（D-382）。
    */
-  ctx.requestTranslationCached = async function (message) {
+  ctx.requestTranslationCached = (message) => ctx.sendTranslationCached(ctx.withPromptAddenda(message));
+
+  /** 查缓存、发未命中的那几条：入参是已经盖好语域的请求，不再盖第二次。 */
+  ctx.sendTranslationCached = async function (message) {
     const cache = globalThis.TranslationCache;
     // 只缓存快速批量这一种请求 —— 整页翻译和字幕都发它。划词、悬停、输入框是
     // 用户一次一次点出来的，量小且几乎不重复；而且 TRANSLATE 的返回是
     // {translation, phonetic, isWord}，另一种形状，给它做缓存等于在这里再养一套
     // 回写规则。
     if (!cache || message.type !== 'TRANSLATE_BATCH_FAST' || !Array.isArray(message.texts)) {
-      return ctx.requestTranslation(message);
+      return ctx.sendTranslation(message);
     }
     // 内置引擎（Chrome 端上的 Translator）零网络零费用，缓存它省下的是几十毫秒，
     // 花掉的是用户那 10 MB storage 配额。更要紧的是它按页面语言推断源语言，
@@ -144,19 +152,17 @@
     // 内置）下不带 auto 去问，就会把端上引擎的译文一条条写进 storage —— 正是上
     // 面那段说的串味和配额；反过来则是自动那一轮整个绕过缓存，每一页重新计费。
     if (ctx.builtinTranslator && ctx.builtinTranslator.isActive(message.auto === true)) {
-      return ctx.requestTranslation(message);
+      return ctx.sendTranslation(message);
     }
 
     // 词表快照只取这一次：键里的附加说明戳和真正发出去的提示词出自同一份，
     // 请求在途时词表变了只影响下一次请求（content/engine/glossary.js 顶上）。
     const snap = await ctx.engine.glossary.current(message.targetLang);
-    // addenda 是这一页的语域（R33 A4）：同一段文字在论坛上和在新闻站上可以译得
-    // 不一样。这里盖一次（与 ctx.requestTranslation 同一个函数），键读它，没命中
-    // 的那几条也带着它经 ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会
-    // 各算各的。
-    const stamped = ctx.withPromptAddenda(message);
+    // message.addenda 是发起请求那一页的语域（R33 A4）：同一段文字在论坛上和在
+    // 新闻站上可以译得不一样。键读它，没命中的那几条也带着它经
+    // ctx.sendTranslation 送出 —— 键和请求是同一个对象，不会各算各的。
     const profile = await loadProfile();
-    if (!profile) return ctx.sendTranslation(stamped, { glossary: snap });
+    if (!profile) return ctx.sendTranslation(message, { glossary: snap });
 
     // sourceLang 只有字幕会带（轨道自己声明的那门语言），整页翻译永远是空串。
     // 它必须进键：同一句台词从英语轨和法语轨来是两件事，见 translation-cache.js
@@ -167,7 +173,7 @@
       ...profile,
       // 按每段文字求值（serve 里）：语域戳加上这段命中的词条、领域和上下文开关，
       // 改一条词条只有含它的文字失效。
-      addenda: (text) => `${globalThis.PromptAddenda.stamp(stamped.addenda)}|${ctx.engine.addenda.stamp(snap, text)}`
+      addenda: (text) => `${globalThis.PromptAddenda.stamp(message.addenda)}|${ctx.engine.addenda.stamp(snap, text)}`
     };
 
     // 未命中的那几条为什么失败，只有这一层知道；serve() 只会告诉我们「这批没成」。
@@ -179,7 +185,7 @@
     let missingCount = 0;
     const translations = await cache.serve(message.texts, factors, async (missing) => {
       missingCount = missing.length;
-      const response = await ctx.sendTranslation({ ...stamped, texts: missing }, { glossary: snap });
+      const response = await ctx.sendTranslation({ ...message, texts: missing }, { glossary: snap });
       if (!response || response.error) {
         failure = response || { error: 'unknown' };
         return null;
