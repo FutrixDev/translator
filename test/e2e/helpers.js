@@ -412,7 +412,35 @@ async function applyBaseSettings(context) {
  * @param {object} settings
  */
 async function setExtensionSettings(page, settings) {
-  await writeSyncSettings(page.context(), { ...E2E_BASE_SETTINGS, ...settings });
+  const legacy = {};
+  const rest = { ...E2E_BASE_SETTINGS };
+  for (const [key, value] of Object.entries(settings)) {
+    if (LEGACY_AI_KEYS.includes(key)) legacy[key] = value;
+    else rest[key] = value;
+  }
+  await writeSyncSettings(page.context(), rest);
+  if (Object.keys(legacy).length) await putLegacyProfile(page.context(), legacy);
+}
+
+// 规格里仍用旧的四个键说「AI 接到哪」（P1-D）。产品不再读它们，所以这里把它们
+// 叠到 aiProfile:legacy 那一档上，走 SW 的写队列（AIProfiles.fromLegacy + put）。
+// 只管这一个入口；要真迁移的旅程（D-J1）直接 writeSyncSettings 写旧键。
+const LEGACY_AI_KEYS = Object.freeze(['provider', 'apiEndpoint', 'apiKey', 'modelName']);
+
+async function putLegacyProfile(context, legacy) {
+  const worker = await getServiceWorker(context);
+  await worker.evaluate(async (fields) => {
+    const { AIProfiles } = globalThis;
+    const current = (await AIProfiles.collection.cached()).find((p) => p.id === AIProfiles.LEGACY_ID);
+    const base = current ? {
+      provider: current.provider, apiEndpoint: current.apiEndpoint,
+      apiKey: current.apiKey, modelName: current.modelName,
+    } : {};
+    const profile = AIProfiles.fromLegacy({ ...base, ...fields });
+    await AIProfiles.applyWrite({
+      type: 'AI_PROFILES_WRITE', kind: 'put', profile: { ...profile, id: AIProfiles.LEGACY_ID },
+    });
+  }, legacy);
 }
 
 /**
