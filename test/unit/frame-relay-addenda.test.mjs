@@ -40,6 +40,7 @@ const SCRIPTS = [
   'shared/sync-collection.js',
   'shared/prompt-addenda.js',
   'shared/text-markers.js',
+  'shared/batch-delimiter.js',
   'shared/glossary.js',
   'shared/translation-cache.js',
   'content/content-glossary.js',

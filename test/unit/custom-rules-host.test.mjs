@@ -32,6 +32,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 const { handleMessage } = await import('../../background/custom-rules-host.js');
 

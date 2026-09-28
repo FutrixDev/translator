@@ -17,10 +17,15 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 await import('../../shared/target-lang.js');
 // glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
 await import('../../shared/text-markers.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 await import('../../shared/settings-transfer.js');

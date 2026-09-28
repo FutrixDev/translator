@@ -896,6 +896,8 @@
   <script src="../shared/target-lang.js"></script>
   <!-- resolveCaptionDisplay: the preview has to answer exactly what the player
        will draw, including the migration from the old original-caption box. -->
+  <!-- 批量翻译的分隔符只有一份；glossary.js 在加载时取走它（词条里不许有分隔符）。 -->
+  <script src="../shared/batch-delimiter.js"></script>
   <script src="../shared/caption-core.js"></script>
   <!-- 界面文案：一门语言一个文件，彼此和 messages.js 之间没有先后 —— 前十个把
        自己那格挂进同一张注册表，messages.js 拿的是同一个对象。 -->
@@ -917,6 +919,8 @@
   <script src="../shared/site-rules.js"></script>
   <script src="../shared/auto-stats.js"></script>
   <script src="../shared/sync-collection.js"></script>
+  <!-- AI 配置档（P1-D）建在集合上；custom-rules.js 在加载时取走它（规则 v3 的 profile）。 -->
+  <script src="../shared/ai-profiles.js"></script>
   <script src="../shared/prompt-addenda.js"></script>
   <script src="../shared/custom-rules.js"></script>
   <!-- 占位符与标记的语法：glossary.js 在加载时取走 TextMarkers（词条不许含记号）。 -->

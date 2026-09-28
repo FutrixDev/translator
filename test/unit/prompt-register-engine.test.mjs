@@ -45,6 +45,8 @@ globalThis.AutoStats = { add() {} };
 // manifest 里 content/content-glossary.js 与 content/page/custom-rule.js 都排在它
 // 前面。这里装真的镜像（夹具不是顶层帧，镜像为空），规则那一边没有规则、不回调。
 await import('../../shared/sync-collection.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../content/content-glossary.js');
 ctx.customRules.onProfileChange = () => () => {};

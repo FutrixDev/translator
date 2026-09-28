@@ -79,6 +79,10 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
   'shared/sync-collection.js',
+  // custom-rules.js 加载时取走 AIProfiles（规则 v3 的 profile，P1-D），AIProfiles
+  // 加载时取走 APICompat；manifest 里两者都排在 custom-rules.js 之前。
+  'shared/api-compat.js',
+  'shared/ai-profiles.js',
   // 附加说明（shared/prompt-addenda.js，只加载一次，和 manifest 一样）：
   // custom-rules.js 加载时取走 PromptAddenda（规则 v2 的 domain 按 DOMAINS 校验，
   // P1-C C3），缺了它整个文件抛错；manifest 里它排在 custom-rules.js 之前。

@@ -22,6 +22,9 @@ import '../shared/prompt-addenda.js';
 // 「一条一个 sync 键」的集合（sync-collection）和建在它上面的用户站点规则。两者
 // 在加载时就取走 StorageWriter 与 SiteRules，所以排在它们之后。
 import '../shared/sync-collection.js';
+// AI 配置档（P1-D）：同样建在集合上，还取走 APICompat；custom-rules.js 在加载时
+// 取走它（规则 v3 的 profile 按集合的 id 形状校验），所以排在规则之前。
+import '../shared/ai-profiles.js';
 import '../shared/custom-rules.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
@@ -30,6 +33,9 @@ import '../shared/target-lang.js';
 // placeholders and <a1> markers. glossary.js takes it at load: a term may not
 // contain either (D-387).
 import '../shared/text-markers.js';
+// 批量翻译的分隔符只有一份（globalThis.BATCH_DELIMITER）：glossary.js 在加载时取走
+// 它（词条里不许有分隔符），ai-translate.js 的快速批量按它拼接和拆分。
+import '../shared/batch-delimiter.js';
 import '../shared/glossary.js';
 // 术语表的 CSV：GLOSSARY_WRITE 的 import 在这里重新解析，不信设置页算的结果。
 // 它加载时取走 Glossary，所以排在 glossary.js 之后。
