@@ -16,6 +16,8 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/target-lang.js');
+// glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
+await import('../../shared/text-markers.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 const { Glossary } = globalThis;
@@ -101,6 +103,39 @@ test('glossary: validateEntry rejects every bad shape with glossaryEntryInvalid'
   for (const entry of cases) {
     assert.throws(() => Glossary.validateEntry(entry), { message: 'glossaryEntryInvalid' }, JSON.stringify(entry));
   }
+});
+
+// D-387：词条原文或译文里含占位符 {{n}} 或内联标记 <a1>/</a1>，拒收，不转义 ——
+// 还原进译文后会被插入路径当成公式或页面元素。普通的花括号、尖括号照收。
+test('glossary: validateEntry rejects placeholders and markers in s and in t, keeps plain braces', () => {
+  for (const mark of ['{{1}}', '<a1>', '</a1>', 'GPU {{2}}', 'see <A1>here</a1>', '< a 1 >']) {
+    assert.throws(() => Glossary.validateEntry({ s: mark }), { message: 'glossaryEntryInvalid' }, `s: ${mark}`);
+    assert.throws(() => Glossary.validateEntry({ s: 'attention', t: mark }), { message: 'glossaryEntryInvalid' }, `t: ${mark}`);
+  }
+  for (const plain of ['a < b', '{x}', '<div>', '{{x}}', 'x -> y']) {
+    assert.equal(Glossary.validateEntry({ s: plain }).s, plain, `s: ${plain}`);
+    assert.equal(Glossary.validateEntry({ s: 'attention', t: plain }).t, plain, `t: ${plain}`);
+  }
+});
+
+test('glossary: a stored entry with a marker is unreadable, and a put with one writes nothing', async () => {
+  const warned = captureConsole('warn');
+  try {
+    const entries = Glossary.collect({
+      'glossary:bbbb0001': { s: 'attention', t: '注意力', l: '*', u: 1 },
+      'glossary:bbbb0002': { s: 'loss', t: '<a1>损失</a1>', l: '*', u: 2 },
+      'glossary:bbbb0003': { s: '{{1}}', l: '*', u: 3 },
+    });
+    assert.deepEqual(entries.map((entry) => entry.id), ['bbbb0001']);
+  } finally {
+    warned.restore();
+  }
+  const sync = fakeSync();
+  await withChrome(sync.chrome, async () => {
+    await rejectsWith(write('put', { entry: { s: 'attention', t: '{{1}}' } }), 'glossaryEntryInvalid');
+    await rejectsWith(write('put', { entry: { s: '</a1>', t: 'x' } }), 'glossaryEntryInvalid');
+  });
+  assert.deepEqual(sync.data, {}, 'a refused put wrote something');
 });
 
 test('glossary: collect skips v > 1 and broken entries, keeps v missing or 1', () => {
@@ -394,10 +429,12 @@ test('glossary: an entry over 1 KiB stored is glossaryEntryTooLarge', async () =
 
 test('the worker imports glossary.js and glossary-csv.js and routes GLOSSARY_WRITE with the sender', () => {
   const worker = repoFile('background/background.js');
-  const order = ['shared/sync-collection.js', 'shared/target-lang.js', 'shared/glossary.js', 'shared/glossary-csv.js']
+  const order = ['shared/sync-collection.js', 'shared/target-lang.js', 'shared/glossary.js', 'shared/glossary-csv.js',
+    'shared/text-markers.js']
     .map((file) => worker.indexOf(`import '../${file}';`));
-  assert.ok(order.every((at) => at >= 0), 'all four are imported');
+  assert.ok(order.every((at) => at >= 0), 'all five are imported');
   assert.ok(order[0] < order[2] && order[1] < order[2], 'glossary.js after its dependencies');
+  assert.ok(order[4] < order[2], 'glossary.js after text-markers.js (it takes TextMarkers at load, D-387)');
   assert.ok(order[2] < order[3], 'glossary-csv.js after glossary.js (it takes Glossary at load)');
   assert.match(worker, /GLOSSARY_WRITE: \(\) => globalThis\.Glossary,/);
   assert.match(worker, /case 'GLOSSARY_WRITE':\s*STORAGE_WRITERS\[message\.type\]\(\)\.applyWrite\(message, sender\)/);

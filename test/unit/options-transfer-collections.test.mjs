@@ -19,6 +19,8 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
 await import('../../shared/custom-rules.js');
 await import('../../shared/target-lang.js');
+// glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
+await import('../../shared/text-markers.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 await import('../../shared/settings-transfer.js');

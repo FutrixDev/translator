@@ -30,6 +30,8 @@
   if (!SyncCollection) throw new Error('glossary.js 要先装 shared/sync-collection.js');
   const TargetLang = root.TargetLang;
   if (!TargetLang) throw new Error('glossary.js 要先装 shared/target-lang.js');
+  const TextMarkers = root.TextMarkers;
+  if (!TextMarkers) throw new Error('glossary.js 要先装 shared/text-markers.js');
 
   const KEY_PREFIX = 'glossary:';
   const VERSION = 1;
@@ -108,6 +110,11 @@
    * 返回规范化后的词条（不带 id），或抛 glossaryEntryInvalid。写入口和读出来的
    * 条目（decode）都走这里：词条没有「只查形状的一半」之外的检查。
    * 缺省的 l 记成 '*' 并总是存下；空的 t 等于没写（保留原文）。
+   *
+   * 原文和译文里不许有占位符或内联标记（TextMarkers.hasMarkers，D-387）：词条的
+   * 译文还原进译文块以后，落笔按同一套语法认结构，同编号的记号会被换成公式、
+   * 重建成页面元素或当残片删掉。拒收，不转义 —— 表单、CSV 导入、服务工作者的
+   * 写入口和 decode 读出都经过这里，没有第二处校验。
    */
   function validateEntry(entry) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw invalid();
@@ -117,13 +124,13 @@
     if (entry.v !== undefined && entry.v !== VERSION) throw invalid();
     if (typeof entry.s !== 'string') throw invalid();
     const s = normalizeSource(entry.s);
-    if (!s || s.length > LIMITS.source) throw invalid();
+    if (!s || s.length > LIMITS.source || TextMarkers.hasMarkers(s)) throw invalid();
 
     const out = { s };
     if (isPresent(entry.t)) {
       if (typeof entry.t !== 'string') throw invalid();
       const t = entry.t.normalize('NFC').trim();
-      if (t.length > LIMITS.target) throw invalid();
+      if (t.length > LIMITS.target || TextMarkers.hasMarkers(t)) throw invalid();
       if (t) out.t = t;
     }
     if (normalizeCase(entry.c)) out.c = 1;

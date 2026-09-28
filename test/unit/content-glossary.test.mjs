@@ -18,6 +18,8 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/target-lang.js');
+// glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
+await import('../../shared/text-markers.js');
 await import('../../shared/glossary.js');
 const { Glossary } = globalThis;
 

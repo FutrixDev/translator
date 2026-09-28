@@ -12,6 +12,8 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/target-lang.js');
+// glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
+await import('../../shared/text-markers.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 const { Glossary, GlossaryCsv } = globalThis;
@@ -143,6 +145,12 @@ test('glossary csv parse: all or nothing, the first bad row is the one reported'
   assert.equal(GlossaryCsv.parse(`${HEADER}\r\nGPU,a,1,,*\r\ngpu,b,1,,*\r\n`).length, 2);
   // 原因带在 cause 上
   assert.throws(() => GlossaryCsv.parse(at3(',x')), (error) => error.cause && error.cause.message === 'glossaryEntryInvalid');
+  // D-387：原文或译文里有占位符、标记，整份拒收，报那一行（表头是第 1 行）
+  for (const line of ['attention,{{1}},0,,*', 'loss,<a1>损失</a1>,0,,*', '</a1>,x,0,,*', '{{2}},x']) {
+    invalidAt(() => GlossaryCsv.parse(at3(line)), 3);
+    assert.throws(() => GlossaryCsv.parse(at3(line)), (error) => error.cause && error.cause.message === 'glossaryEntryInvalid');
+  }
+  assert.equal(GlossaryCsv.parse(at3('a < b,{x} <div>,0,,*')).length, 3, 'plain braces and brackets import');
   invalidAt(() => GlossaryCsv.parse(null), 1);
 });
 

@@ -108,6 +108,15 @@
 
   // ==================== 剥离、分段、切片 ====================
 
+  // 文字里有没有落笔时会被当成结构的记号：占位符按 placeholderPattern、标记按
+  // 宽松的 markerParsePattern 认 —— 和 content/page/insert.js 重建译文时认的是
+  // 同两条，所以这里说「没有」，落笔就不会把它当成公式或页面元素。用户写的
+  // 字（术语表词条）靠它拒收，不转义（D-387）。
+  function hasMarkers(text) {
+    const source = String(text || '');
+    return placeholderPattern().test(source) || markerParsePattern().test(source);
+  }
+
   // 去掉占位符和标记，给上下文、计数和语言检测用。空白不动，调用方各自收拾。
   function strip(text) {
     if (!text) return '';
@@ -155,6 +164,7 @@
     markerPattern,
     markerParsePattern,
     debrisScrubber,
+    hasMarkers,
     strip,
     segments,
     splitSafe,

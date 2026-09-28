@@ -509,6 +509,14 @@ which entry wins, and the three writes. Entries are one sync key each,
 `glossary:<id>`, `{ s, t?, c?, h?, l, u }` (`t` absent = keep the original,
 `h` = a site, `l` = a target language or `*`).
 
+- **No markers in a term** (D-387). A source or translation containing a
+  `{{n}}` placeholder or an `<a1>`-style marker is rejected, not escaped:
+  restored into a translated block, it would be read as structure by
+  `content/page/insert.js`. The test is `TextMarkers.hasMarkers`, the same
+  two patterns the insert path parses, called only from
+  `Glossary.validateEntry` — so the form, the card, CSV import and decode all
+  get it. `glossary.js` takes `TextMarkers` at load, so every load list has
+  `shared/text-markers.js` before it.
 - **Writes** are `GLOSSARY_WRITE` (`put` / `remove` / `import`) through the
   same `StorageWriter` single-writer queue as the site rules; callers use
   `Glossary.request(kind, payload)`. Errors come back as i18n keys

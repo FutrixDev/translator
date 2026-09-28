@@ -110,6 +110,18 @@ test('the parser pattern tolerates the casing and whitespace NMT introduces', ()
   assert.deepEqual([m[1], m[2], m[3]], ['/', 'Strong', '12'], 'groups: slash, tag, digits');
 });
 
+test('hasMarkers answers with the two patterns the insert path parses, and nothing wider', () => {
+  // 落笔时会被当成结构的：占位符、标记（开闭、大写、括号里带空白都算，和
+  // insert.js 的宽松解析一致）。用户写进术语表的字靠它拒收（D-387）。
+  for (const text of ['{{1}}', 'x {{12}} y', '<a1>', '</a1>', '<A1>', '< a 1 >', '</ strong2 >', '<h1>']) {
+    assert.equal(TM.hasMarkers(text), true, text);
+  }
+  // 普通的花括号、尖括号不是记号：没有编号就不是
+  for (const text of ['a < b', 'a > b', '{x}', '{{x}}', '{1}', '<div>', '<a>', '</b>', '<1>', 'x->y', '', null, undefined]) {
+    assert.equal(TM.hasMarkers(text), false, String(text));
+  }
+});
+
 // ------------------------------------------------------- 渲染路径只用逐块清理
 
 test('the reader-facing strip is the narrow one, the analysis strips are the broad one', () => {

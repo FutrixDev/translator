@@ -26,6 +26,10 @@ import '../shared/custom-rules.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
 import '../shared/target-lang.js';
+// Side-effect module: publishes globalThis.TextMarkers, the one grammar of {{n}}
+// placeholders and <a1> markers. glossary.js takes it at load: a term may not
+// contain either (D-387).
+import '../shared/text-markers.js';
 import '../shared/glossary.js';
 // 术语表的 CSV：GLOSSARY_WRITE 的 import 在这里重新解析，不信设置页算的结果。
 // 它加载时取走 Glossary，所以排在 glossary.js 之后。
@@ -38,9 +42,6 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
-// Side-effect module: publishes globalThis.TextMarkers, the one grammar of {{n}}
-// placeholders and <a1> markers (the glossary protects terms with placeholders).
-import '../shared/text-markers.js';
 // 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
 // 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
 import '../i18n/lang/en.js';

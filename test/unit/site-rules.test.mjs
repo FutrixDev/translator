@@ -798,6 +798,8 @@ const LOAD_ORDER = [
    'glossary.js 在加载时就把 StorageWriter.create 取走了。'],
   ['shared/glossary.js', 'shared/sync-collection.js',
    'glossary.js 在加载时就把 SyncCollection.create 取走了。'],
+  ['shared/glossary.js', 'shared/text-markers.js',
+   'glossary.js 在加载时就把 TextMarkers 取走了（词条不许含占位符和标记，D-387）。'],
   ['shared/glossary-csv.js', 'shared/glossary.js',
    'glossary-csv.js 在加载时就把 Glossary 取走了（validateEntry、dedupeKey、merge、assertFits），缺了就抛。'],
   ['content/content-glossary.js', 'shared/glossary.js',
