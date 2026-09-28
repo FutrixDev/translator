@@ -427,7 +427,7 @@
       try {
         profile = normalize(legacy);
       } catch (error) {
-        console.warn('AIProfiles migrateLegacy: legacy settings are not a usable profile, dropping them');
+        console.warn('AIProfiles migrateLegacy: legacy settings are not a usable profile, dropping them:', error.message);
         return { result: { migrated: false } };
       }
       const next = Object.assign(profile, { id: LEGACY_ID, updatedAt: Date.now() });
