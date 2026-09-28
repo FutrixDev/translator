@@ -168,3 +168,17 @@ test('a manual directive during the child frame catch-up round runs after it, no
   assert.equal(ctx.state.isTranslatingPage, false);
   assert.equal(ctx.state.pageHasBeenTranslated, true);
 });
+
+// 子 frame 的划词卡片「加入术语表」印的是顶层的主机（D-382）：它只从指令里来，
+// 没拿到指令之前是空串（卡片只给「所有网站」），从不拿本帧自己的主机顶替。
+test('the child answers the top host from the directive, and nothing before one arrives', () => {
+  const { ctx, send, nextEpoch } = loadChildFrame();
+  assert.equal(ctx.frames.topHost(), '', 'no directive yet: no host, and never this frame\'s own');
+  send({ epoch: nextEpoch(), host: 'news.example.com' });
+  assert.equal(ctx.frames.topHost(), 'news.example.com');
+  // 旧指令（epoch 不更大）不改它。
+  send({ epoch: 1, host: 'stale.example.com' });
+  assert.equal(ctx.frames.topHost(), 'news.example.com');
+  send({ epoch: nextEpoch(), host: '' });
+  assert.equal(ctx.frames.topHost(), '');
+});

@@ -240,7 +240,15 @@
   ctx.sendTranslation = requestViaTop('direct');
   ctx.sendTranslationCached = requestViaTop('cached');
 
+  // 顶层这一页的主机，划词卡片「加入术语表」印「仅本站（{host}）」用。还没拿到
+  // 指令（顶层没起、HELLO 还没回话）就是空串：卡片只给「所有网站」，不拿本帧的
+  // 主机顶替 —— 词条按顶层站点存（top.js 头注释的 host）。
+  function topHost() {
+    return directive ? directive.host : '';
+  }
+
   Object.assign(frames, {
     setup: setupChildFrame,
+    topHost,
   });
 })();

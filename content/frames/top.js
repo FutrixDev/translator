@@ -8,7 +8,7 @@
 //
 // 指令是子 frame 唯一要知道的东西：
 //
-//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride, generation }
+//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride, generation, host }
 //
 //   epoch          每变一次 +1。子 frame 只认更大的，所以 HELLO 的回话和广播谁先
 //                  到都一样。
@@ -21,6 +21,10 @@
 //   generation     顶层的 ctx.translationProfile.generation()（缓存层那个文件）。子 frame
 //                  的悬停和字幕缓存键带着它：顶层换了模型、提示词或词表，子 frame 的
 //                  旧译文也一起失效。
+//   host           顶层这一页的主机（SiteRules.normalizeHost，file: / about:blank 为空串）。
+//                  只给子 frame 的划词卡片「加入术语表」印「仅本站（{host}）」用：词条
+//                  按顶层站点存，而子 frame 不知道顶层的地址。存进去的 h 不看它 ——
+//                  服务工作者按 sender.tab.url 重算（shared/glossary.js 的 senderSite）。
 //
 // 登记表在这里，不在服务工作者里：服务工作者随时会被回收，而顶层文档活多久，
 // 这张表就该活多久。
@@ -44,6 +48,11 @@
     return ctx.autoTranslate.isOn() || !!state.isTranslatingPage;
   }
 
+  // 这一页的主机：指令里带给子 frame 的，和本帧卡片自己印的，是同一个。
+  function pageHost() {
+    return globalThis.SiteRules.normalizeHost(location.hostname);
+  }
+
   function computeDirective() {
     return {
       translate: currentTranslate(),
@@ -52,6 +61,7 @@
       scopeOverride: state.pageScopeOverride || null,
       engineOverride: ctx.customRules.engineOverride() || null,
       generation: ctx.translationProfile.generation(),
+      host: pageHost(),
     };
   }
 
@@ -62,7 +72,8 @@
       && a.visible === b.visible
       && a.scopeOverride === b.scopeOverride
       && a.engineOverride === b.engineOverride
-      && a.generation === b.generation;
+      && a.generation === b.generation
+      && a.host === b.host;
   }
 
   function broadcastDirective() {
@@ -207,5 +218,6 @@
     onVisibilityChanged,
     hasSizedChildren,
     childrenHaveTranslations,
+    topHost: pageHost,
   });
 })();

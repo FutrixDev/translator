@@ -16,6 +16,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// top.js 的指令带顶层主机（SiteRules.normalizeHost）：装真的站点规则链。
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+const { SiteRules } = globalThis;
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -101,7 +108,7 @@ test('the relay carries via through to the top frame unchanged', async () => {
   assert.deepEqual(replies, [{ translations: ['[T] x'] }]);
 });
 
-function loadTop() {
+function loadTop({ hostname = 'news.example.com' } = {}) {
   const calls = [];
   let generation = 0;
   const generationSubscribers = [];
@@ -125,14 +132,16 @@ function loadTop() {
       return { translations: ['cached'] };
     },
   };
-  const env = run(['content/frames/top.js'], ctx);
+  // 顶层自己的地址；测试可以改它的 hostname 再让指令重算。
+  const location = { hostname, pathname: '/' };
+  const env = run(['content/frames/top.js'], ctx, { SiteRules, location });
   ctx.frames.sendToRelay = (message) => broadcasts.push(message.directive);
   ctx.frames.setup();
   const bump = () => {
     generation += 1;
     for (const fn of generationSubscribers) fn(generation);
   };
-  return { ctx, calls, broadcasts, bump, ...env };
+  return { ctx, calls, broadcasts, bump, location, ...env };
 }
 
 async function relay(listener, via) {
@@ -190,4 +199,34 @@ test('the top frame directive carries the generation and is re-broadcast when it
   const last = broadcasts[broadcasts.length - 1];
   assert.equal(last.generation, 1);
   assert.equal(last.epoch, 2);
+});
+
+// 子 frame 的划词卡片「加入术语表」印「仅本站（{host}）」要顶层的主机，它只能从指令
+// 里拿（D-382）。主机也是指令的一部分：sameDirective 不比它，换了主机的指令就不会
+// 广播，子 frame 印的还是旧的。
+test('the top frame directive carries its normalized host, and a changed host is a new directive', () => {
+  const { ctx, broadcasts, listeners, location } = loadTop({ hostname: 'WWW.Letters.Example.' });
+  assert.equal(broadcasts.length, 1);
+  assert.equal(broadcasts[0].host, 'letters.example');
+  assert.equal(ctx.frames.topHost(), 'letters.example', 'the top frame prints the host it sends');
+  const hello = [];
+  listeners[0]({ type: 'FRAME_CHILD_HELLO', documentId: 'doc-1', sized: true }, {}, (reply) => hello.push(reply));
+  assert.equal(hello[0].host, 'letters.example');
+
+  // 别的什么都没变，只有主机变了：这是一版新指令。
+  location.hostname = 'mail.example.org';
+  ctx.frames.onVisibilityChanged();
+  assert.equal(broadcasts.length, 2);
+  assert.equal(broadcasts[1].host, 'mail.example.org');
+  assert.equal(broadcasts[1].epoch, 2);
+
+  // 什么都没变：不是新指令。
+  ctx.frames.onVisibilityChanged();
+  assert.equal(broadcasts.length, 2);
+});
+
+test('a page with no hostname sends an empty host', () => {
+  const { ctx, broadcasts } = loadTop({ hostname: '' });
+  assert.equal(broadcasts[0].host, '');
+  assert.equal(ctx.frames.topHost(), '');
 });
