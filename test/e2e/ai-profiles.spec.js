@@ -200,7 +200,13 @@ test('D-J1 [fixture] a legacy setup is migrated into the default profile, shown 
     // 进 sync」：旧版本已不存在，所以四个旧键由 SW 直接写。之后浏览器整个关掉、在
     // 同一个配置目录上重新打开 —— 新 SW 的第一个生命期里 runtime.onStartup 跑
     // ensureMigrated()，和用户升级后第一次开浏览器是同一条路。D2 不改这一步。
-    ({ context } = await launchOnProfile(userDataDir));
+    const first = await launchOnProfile(userDataDir);
+    ({ context } = first);
+    // onInstalled 偶尔晚于下面写四键才到、在这一生命期就迁走：先等这一生命期的迁移（此刻无旧键）落定。
+    const settle = await context.newPage();
+    await settle.goto(optionsUrl(first.extensionId));
+    await settle.evaluate(() => chrome.runtime.sendMessage({ type: 'AI_PROFILES_PUBLIC' }));
+    await settle.close();
     await writeSyncSettings(context, {
       ...E2E_BASE_SETTINGS,
       ...PAGE_SETTINGS,
