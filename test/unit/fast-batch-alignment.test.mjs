@@ -381,6 +381,19 @@ test('a failed batch marks every block in it on a manual pass, and none on an au
   assert.deepEqual(retryMarks.map((m) => [m.block, m.auto]), [[retry[0], true]]);
 });
 
+test('a pass-fatal failure marks no paragraph: the whole-page error says it once', async () => {
+  // 不认得的领域这类配置错（passFatal）点哪一段重试都一样失败；它只在进度条上报。
+  // 三条路各走一遍：抛出的错误、批次回的 {error, passFatal}、逐块回退回的 {error, passFatal}。
+  const thrown = () => { throw Object.assign(new Error('bad domain'), { passFatal: true }); };
+  const replied = () => ({ error: 'bad domain', passFatal: true });
+  const perBlock = (message) => (message.texts.length > 1 ? { translations: ['only one'] } : replied());
+  for (const respond of [thrown, replied, perBlock]) {
+    const blocks = ['A.', 'B.'].map(makeBlock);
+    const marks = await withMarks(() => runPass(blocks, respond, { pageContext: false }));
+    assert.deepEqual(marks, [], `${respond.name} put a marker on a paragraph`);
+  }
+});
+
 test('a misaligned batch whose per-block retries succeed marks nothing', async () => {
   const blocks = ['A.', 'B.', 'C.'].map(makeBlock);
   const marks = await withMarks(() => runPass(blocks, (message) => (

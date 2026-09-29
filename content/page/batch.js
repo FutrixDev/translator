@@ -39,6 +39,11 @@
 
   const noNeighbours = (first, last, message) => message;
   const noBlockFailed = () => {};
+  // 整轮级的失败不落到段落上：passFatal（不认得的领域这类配置错，content/engine/addenda.js）
+  // 和扩展上下文没了。点哪一段重试都同样失败，它由整页报错那一处说（noteBatchFailure /
+  // noteThrown）。failure 是抛出的错误，或者带 passFatal 的 {error} 响应。
+  const failsWholePass = (failure) =>
+    Boolean(failure) && (failure.passFatal === true || isExtensionContextInvalidated(failure));
 
   /**
    * 页面上下文的前后文（设置「附带页面上下文」）：三处发请求的地方共用这一个函数。
@@ -442,7 +447,7 @@
         }));
         if (response.error) {
           if (onFailure) onFailure(response.error, { passFatal: response.passFatal === true });
-          onBlockFailed(block, response.error);
+          if (!failsWholePass(response)) onBlockFailed(block, response.error);
           continue;
         }
         // 单块请求同样守数量：模型把一段拆成两段时放弃该块，而不是插半截译文。
@@ -631,7 +636,7 @@
 
           if (response.error) {
             noteBatchFailure(response.error, { passFatal: response.passFatal === true });
-            markFailed(block, response.error);
+            if (!failsWholePass(response)) markFailed(block, response.error);
             return;
           }
 
@@ -646,7 +651,7 @@
           });
         } catch (error) {
           noteThrown(error, 'Oversized block translation');
-          markFailed(block, error.message);
+          if (!failsWholePass(error)) markFailed(block, error.message);
           return;
         }
       }
@@ -699,7 +704,7 @@
         // Check for error in response
         if (response.error) {
           noteBatchFailure(response.error, { passFatal: response.passFatal === true });
-          batch.forEach((block) => markFailed(block, response.error));
+          if (!failsWholePass(response)) batch.forEach((block) => markFailed(block, response.error));
         } else {
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
           // 走逐块回退，而不是无声丢掉整批。
@@ -717,7 +722,7 @@
         }
       } catch (error) {
         noteThrown(error, 'Batch translation');
-        batch.forEach((block) => markFailed(block, error.message));
+        if (!failsWholePass(error)) batch.forEach((block) => markFailed(block, error.message));
       }
 
       done += batch.length;
