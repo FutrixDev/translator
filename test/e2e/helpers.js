@@ -137,6 +137,30 @@ async function waitForFloatBall(page, timeout = 10000) {
   });
 }
 
+// The page these journeys were written against: example.com as it was, one
+// <h1> and an English paragraph whose first child is text. The live site no
+// longer serves that (by 2026-09 it had no <h1> and its first <p> was a
+// Russian one with an inline <span>), and a live page is not a fixture, so
+// the journeys that select or hover what is on it get this copy instead.
+const EXAMPLE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Example Domain</title></head><body><div>
+<h1>Example Domain</h1>
+<p>This domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.</p>
+<p><a href="https://www.iana.org/domains/example">More information...</a></p>
+</div></body></html>`;
+
+/**
+ * Open https://example.com served from EXAMPLE_PAGE and wait for our float ball.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+async function openExamplePage(page) {
+  await page.route('https://example.com/', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: EXAMPLE_PAGE }));
+  await page.goto('https://example.com');
+  await page.waitForSelector('#ai-translator-float-ball');
+}
+
 /**
  * Open the float ball's menu.
  *
@@ -796,6 +820,7 @@ module.exports = {
   getSyncSetting,
   applyBaseSettings,
   waitForFloatBall,
+  openExamplePage,
   openFloatBallMenu,
   triggerPageTranslation,
   waitForTranslationComplete,

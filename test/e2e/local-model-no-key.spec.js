@@ -22,6 +22,7 @@
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
 const {
+  openExamplePage,
   setExtensionSettings,
   openFloatBallMenu,
   triggerPageTranslation,
@@ -45,23 +46,6 @@ const localSettings = (endpoint, extra = {}) => ({
   selectionTranslationMode: 'popup',
   ...extra,
 });
-
-// example.com used to serve an <h1>Example Domain</h1>; since 2026-09 it
-// serves a lone paragraph, and a live page is not a fixture anyway. The
-// journeys only need a heading to select, so the page is served from here.
-const EXAMPLE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Example Domain</title></head><body>
-<h1>Example Domain</h1>
-<p>This domain is for use in illustrative examples in documents.</p>
-</body></html>`;
-
-/** example.com, served from the fixture above. */
-async function openExamplePage(page) {
-  await page.route('https://example.com/', (route) =>
-    route.fulfill({ status: 200, contentType: 'text/html', body: EXAMPLE_PAGE }));
-  await page.goto('https://example.com');
-  await page.waitForSelector('#ai-translator-float-ball');
-}
 
 /** Select the page heading and ask for its translation from the float ball. */
 async function translateHeadingSelection(page) {
