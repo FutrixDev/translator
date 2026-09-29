@@ -1,14 +1,27 @@
 /* ==================== Float Menu ==================== */
 
+/* 颜色全在根上的 --ait-menu-* 里：light-theme.css 只重新声明这些 token，
+   不再逐条改写菜单项的规则。 */
 #ai-translator-float-menu {
+  --ait-menu-bg: #1a1e2a;
+  --ait-menu-border: rgba(255, 255, 255, 0.08);
+  --ait-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --ait-menu-ink: #f4efe8;
+  --ait-menu-icon: #b0b4c2;
+  --ait-menu-accent: #9d8cff;
+  --ait-menu-hover: rgba(157, 140, 255, 0.14);
+  --ait-menu-active: rgba(157, 140, 255, 0.24);
+  --ait-menu-divider: rgba(255, 255, 255, 0.08);
   position: fixed;
   z-index: 2147483647;
-  width: 180px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(124, 92, 255, 0.1);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  width: 208px;
+  padding: 6px;
+  background: var(--ait-menu-bg);
+  border: 1px solid var(--ait-menu-border);
+  border-radius: 14px;
+  box-shadow: var(--ait-menu-shadow);
+  color: var(--ait-menu-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, sans-serif;
   overflow: hidden;
   animation: ai-translator-menu-in 0.15s ease;
 }
@@ -30,13 +43,16 @@ html body [id="ai-translator-float-menu"] .ai-translator-menu-item {
   justify-content: flex-start;
   gap: 10px;
   width: 100%;
-  padding: 12px 14px;
+  min-height: 34px;
+  padding: 8px 10px;
   margin: 0;
   background: transparent;
   border: none;
-  color: #f0f0f5;
+  border-radius: 8px;
+  color: var(--ait-menu-ink);
   font-family: inherit;
   font-size: 13px;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -44,19 +60,34 @@ html body [id="ai-translator-float-menu"] .ai-translator-menu-item {
 }
 
 html body [id="ai-translator-float-menu"] .ai-translator-menu-item:hover {
-  background: rgba(124, 92, 255, 0.15);
+  background: var(--ait-menu-hover);
 }
 
 html body [id="ai-translator-float-menu"] .ai-translator-menu-item:active {
-  background: rgba(124, 92, 255, 0.25);
+  background: var(--ait-menu-active);
 }
 
-.ai-translator-menu-item svg {
-  color: #7c5cff;
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:focus-visible {
+  outline: 2px solid var(--ait-menu-accent);
+  outline-offset: -2px;
+}
+
+/* 描边图标的 fill="none" / stroke="currentColor" 由 popup.css 防护栏按特性值
+   再说一遍，这里只管颜色和线宽。 */
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item svg {
+  color: var(--ait-menu-icon);
   flex-shrink: 0;
   width: 16px;
   height: 16px;
   min-width: 16px;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: color 0.15s ease;
+}
+
+html body [id="ai-translator-float-menu"] .ai-translator-menu-item:hover svg {
+  color: var(--ait-menu-accent);
 }
 
 .ai-translator-menu-item span {
@@ -66,6 +97,6 @@ html body [id="ai-translator-float-menu"] .ai-translator-menu-item:active {
 
 .ai-translator-menu-divider {
   height: 1px;
-  background: #2a2a3a;
-  margin: 4px 0;
+  background: var(--ait-menu-divider);
+  margin: 5px 4px;
 }

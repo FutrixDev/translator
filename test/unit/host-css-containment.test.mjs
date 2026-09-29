@@ -97,13 +97,13 @@ test('the reset covers both content-script roots', () => {
 });
 
 test('every root list in the reset names the same roots, the rule picker among them', () => {
-  // The block restates one list of roots in nine places. A root added to eight
-  // of them is contained everywhere except in the one rule the ninth carries,
-  // and nothing on the page shows which one that is until a host stylesheet
-  // happens to hit it.
+  // The block restates one list of roots in thirteen places. A root added to
+  // twelve of them is contained everywhere except in the one rule the last
+  // carries, and nothing on the page shows which one that is until a host
+  // stylesheet happens to hit it.
   const lists = [...resetBlock().matchAll(/:is\((\.ai-translator-popup,[^)]*)\)/g)]
     .map(([, inner]) => splitSelectorList(inner).map((s) => s.trim()).sort());
-  assert.equal(lists.length, 9, `expected nine root lists in the reset, found ${lists.length}`);
+  assert.equal(lists.length, 13, `expected thirteen root lists in the reset, found ${lists.length}`);
   for (const roots of lists) {
     assert.deepEqual(roots, lists[0], 'the root lists in the containment reset have drifted apart');
   }
@@ -206,8 +206,34 @@ test('the reset pins the properties that host pages actually leak', () => {
     'letter-spacing',  // inherited, same shape
     'text-transform',  // `button { text-transform: uppercase }` hits our buttons directly
     'font-family',     // the UA gives form controls their own; so do host pages
+    'fill',            // inherited: `svg { fill: red }` paints outline icons solid
+    'stroke',          // inherited: `path { stroke }` reaches icon paths directly
   ]) {
     assert.match(block, new RegExp(`\\n\\s*${property}\\s*:`), `${property} is no longer pinned`);
+  }
+});
+
+test('every SVG paint attribute our markup writes is restated by the reset', () => {
+  // A presentation attribute weighs nothing: a page's `svg { fill: red }` beats
+  // `fill="none"` on our icon and paints the outline icons solid. The reset
+  // restates each value at (0,2,0); a value written in markup and not restated
+  // here is one a host page can still repaint.
+  const block = resetBlock();
+  const used = new Set();
+  for (const file of repoDir('content').filter((f) => f.endsWith('.js'))) {
+    for (const [, attr, value] of repoFile(`content/${file}`).matchAll(/\b(fill|stroke)="([^"$]+)"/g)) {
+      used.add(`${attr}=${value}`);
+    }
+  }
+  assert.ok(used.has('fill=none') && used.has('stroke=currentColor'), 'the markup scan found no SVG paint attributes');
+  for (const pair of used) {
+    const [attr, value] = pair.split('=');
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      block,
+      new RegExp(`\\[${attr}="${escaped}"\\]\\s*\\{\\s*${attr}:\\s*${escaped};\\s*\\}`),
+      `${attr}="${value}" is written in content markup but not restated in the containment reset`,
+    );
   }
 });
 
@@ -225,10 +251,11 @@ test('no selector in the reset carries id weight', () => {
   // (1,0,0) here would beat every deliberate value of ours below it. The dialog
   // is matched as [id="…"] — (0,1,0), the same as a class — so a page rule on a
   // bare tag (0,0,1) still loses to the reset while our own rules win the tie on
-  // source order.
+  // source order. A `#` inside a quoted attribute value — `[fill="url(#…)"]` —
+  // is text, not an id, so quoted values are blanked first.
   for (const selector of selectors(resetBlock())) {
     assert.doesNotMatch(
-      selector,
+      selector.replace(/"[^"]*"/g, '""'),
       /#/,
       `"${selector}" uses an id, so the reset outranks our own opacity/transform/font rules`,
     );

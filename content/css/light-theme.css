@@ -132,55 +132,20 @@ html[data-ai-translator-theme="light"] body .ai-translator-progress-close:hover 
 }
 
 [data-ai-translator-theme="light"] #ai-translator-float-ball-container {
-  background: rgba(230, 230, 238, 0.95);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-[data-ai-translator-theme="light"] #ai-translator-float-ball {
-  background: linear-gradient(145deg, #ffffff 0%, #e8e8f0 100%);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(124, 92, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-[data-ai-translator-theme="light"] #ai-translator-float-ball:hover {
-  box-shadow:
-    0 12px 40px rgba(124, 92, 255, 0.2),
-    0 0 0 1px rgba(124, 92, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 1);
-}
-
-[data-ai-translator-theme="light"] #ai-translator-float-ball svg {
-  filter: drop-shadow(0 2px 6px rgba(124, 92, 255, 0.3));
+  --ait-dock-bg: rgba(255, 250, 243, 0.96);
+  --ait-dock-shadow: 0 2px 12px rgba(16, 23, 42, 0.12), 0 0 0 1px rgba(16, 23, 42, 0.06);
 }
 
 [data-ai-translator-theme="light"] #ai-translator-float-menu {
-  background: #ffffff;
-  border-color: #e0e0e5;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(124, 92, 255, 0.1);
-}
-
-html[data-ai-translator-theme="light"] body .ai-translator-menu-item {
-  color: #1d1d1f;
-}
-
-html[data-ai-translator-theme="light"] body .ai-translator-menu-item:hover {
-  background: rgba(124, 92, 255, 0.08);
-}
-
-[data-ai-translator-theme="light"] .ai-translator-menu-divider {
-  background: #e0e0e5;
-}
-
-[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-status-dot {
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.95);
-}
-
-[data-ai-translator-theme="light"] #ai-translator-float-ball .ai-translator-ball-more {
-  background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.3), 0 2px 6px rgba(0, 0, 0, 0.12);
-  color: #1d1d1f;
+  --ait-menu-bg: #fffaf3;
+  --ait-menu-border: rgba(16, 23, 42, 0.08);
+  --ait-menu-shadow: 0 12px 32px rgba(16, 23, 42, 0.14), 0 2px 6px rgba(16, 23, 42, 0.06);
+  --ait-menu-ink: #10172a;
+  --ait-menu-icon: #4b5264;
+  --ait-menu-accent: #4a55e8;
+  --ait-menu-hover: rgba(74, 85, 232, 0.08);
+  --ait-menu-active: rgba(74, 85, 232, 0.14);
+  --ait-menu-divider: #ebe1d4;
 }
 
 [data-ai-translator-theme="light"] #ai-translator-auto-bar {

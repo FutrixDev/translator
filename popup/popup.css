@@ -1,36 +1,52 @@
-/* CSS Variables - Dark Theme */
-:root,
-[data-theme="dark"] {
-  --bg-primary: #0f0f14;
-  --bg-secondary: #1a1a24;
-  --bg-hover: #252532;
-  --text-primary: #f0f0f5;
-  --text-secondary: #9090a0;
-  --text-muted: #606070;
-  --accent-primary: #7c5cff;
-  --accent-secondary: #5c8cff;
-  --accent-gradient: linear-gradient(135deg, #7c5cff 0%, #5c8cff 100%);
-  --border: #2a2a3a;
+/* Blab Translation popup — the 2026-09-19 brand: warm paper, ink, and the
+   indigo-violet of the front page. Light is the default (`theme: 'light'` in
+   default-settings), so it lives on :root and the panel never opens dark and
+   then flips. Dark redeclares the same tokens; nothing below names a colour. */
+:root {
+  color-scheme: light;
+  --paper: #fffaf3;
+  --surface: #f6efe5;
+  --hover: #f1e8dc;
+  --raised: #ffffff;
+  --line: #ebe1d4;
+  --ink: #10172a;
+  --ink-2: #4b5264;
+  --muted: #858a99;
+  --primary: #4a55e8;
+  --primary-fill: linear-gradient(135deg, #8c72ff 0%, #3f55f2 100%);
+  --primary-shadow: 0 6px 16px -6px rgba(63, 85, 242, 0.55);
+  --on-primary: #ffffff;
+  --switch-off: #ddd2c4;
+  --focus: #6b63f5;
+  /* The four back pages of the mark, read as states. */
+  --ok: #22c08e;
+  --error: #ff5e62;
+  --error-text: #d93a3f;
+  --raised-shadow: 0 1px 2px rgba(16, 23, 42, 0.08), 0 1px 1px rgba(16, 23, 42, 0.04);
   --radius-sm: 6px;
   --radius-md: 10px;
-  --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius-lg: 12px;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans', Roboto, sans-serif;
 }
 
-/* Light Theme */
-[data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f7;
-  --bg-hover: #e8e8ec;
-  --text-primary: #1a1a24;
-  --text-secondary: #606070;
-  --text-muted: #9090a0;
-  --accent-primary: #7c5cff;
-  --accent-secondary: #5c8cff;
-  --accent-gradient: linear-gradient(135deg, #7c5cff 0%, #5c8cff 100%);
-  --border: #e0e0e5;
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12151f;
+  --surface: #1a1e2a;
+  --hover: #222736;
+  --raised: #2a3042;
+  --line: #262b39;
+  --ink: #f4efe8;
+  --ink-2: #b0b4c2;
+  --muted: #7d8294;
+  --primary: #9d8cff;
+  --primary-shadow: 0 6px 18px -6px rgba(110, 96, 255, 0.6);
+  --switch-off: #3a4052;
+  --focus: #9d8cff;
+  --error-text: #ff8a8d;
+  --raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
-/* Reset & Base */
 * {
   margin: 0;
   padding: 0;
@@ -39,132 +55,213 @@
 
 body {
   font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--paper);
+  color: var(--ink);
   width: 280px;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Container */
-.container {
-  background: 
-    radial-gradient(ellipse at top right, rgba(124, 92, 255, 0.06) 0%, transparent 50%),
-    var(--bg-primary);
+button,
+select {
+  font-family: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* Header */
 .header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 9px;
+  padding: 14px 16px 10px;
 }
 
 .logo {
   display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .header h1 {
-  font-size: 15px;
-  font-weight: 600;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-/* Main */
 .main {
-  padding: 8px;
+  padding: 0 8px 6px;
 }
 
-/* Menu Items */
-/* `display: flex` below outranks the browser's [hidden] rule, so a row hidden
-   from script would otherwise stay on screen. */
-.menu-item[hidden] {
+/* Groups. Each is one decision register — this page now, always, how it
+   looks, other things to translate — and a hairline separates them. A group
+   whose rows are all hidden takes its hairline with it. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 0;
+}
+
+.group ~ .group {
+  border-top: 1px solid var(--line);
+}
+
+.group:not(:has(> :not([hidden]))) {
   display: none;
 }
 
+/* Rows */
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   width: 100%;
-  padding: 12px 14px;
+  min-height: 36px;
+  padding: 8px 10px;
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-family: inherit;
   font-size: 13px;
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease;
 }
 
 .menu-item:hover {
-  background: var(--bg-hover);
+  background: var(--hover);
 }
 
 .menu-item:active {
-  background: var(--bg-secondary);
-  transform: scale(0.98);
+  background: var(--surface);
 }
 
-/* A busy entry (a PDF job being started). `disabled` alone is invisible here —
-   .menu-item sets its own colour — so the dimming has to be spelled out, and
-   with it the hover feedback that would otherwise still say "clickable". */
+.menu-item svg {
+  flex-shrink: 0;
+  color: var(--ink-2);
+  transition: color 0.12s ease;
+}
+
+.menu-item:hover svg {
+  color: var(--primary);
+}
+
+.menu-item span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A busy entry (a PDF job being started), or a site whose rule cannot be
+   written. `disabled` alone is invisible here — .menu-item sets its own
+   colour — so the dimming has to be spelled out, and with it the hover
+   feedback that would otherwise still say "clickable". */
 .menu-item:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.menu-item:disabled:hover {
-  background: transparent;
-}
-
+.menu-item:disabled:hover,
 .menu-item:disabled:active {
   background: transparent;
-  transform: none;
-}
-
-.menu-item svg {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.menu-item:hover svg {
-  color: var(--accent-primary);
 }
 
 .menu-item:disabled:hover svg {
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
-.menu-item span {
-  flex: 1;
-}
-
-.menu-item kbd {
+kbd {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
   font-family: inherit;
   font-size: 11px;
-  padding: 3px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
-.menu-item:hover kbd {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: white;
+/* The one thing the popup is for. Its label flips to "Hide translations" once
+   the page has some — still the primary action, since it is the undo. */
+.menu-item.primary {
+  min-height: 42px;
+  padding: 10px 12px;
+  background: var(--primary-fill);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--primary-shadow);
+  color: var(--on-primary);
+  font-weight: 600;
 }
 
-/* Display row — bilingual / translation only, and the translation style.
-   Two lines on purpose: the segmented switch on one, the style and its shortcut
+.menu-item.primary:hover {
+  background: var(--primary-fill);
+  filter: brightness(1.06);
+}
+
+.menu-item.primary:active {
+  filter: brightness(0.96);
+}
+
+.menu-item.primary svg,
+.menu-item.primary:hover svg {
+  color: var(--on-primary);
+}
+
+.menu-item.primary kbd {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: var(--on-primary);
+}
+
+.group-page .primary + .menu-item {
+  margin-top: 4px;
+}
+
+/* Switch rows. The On/Off word stays in the element — it is what a screen
+   reader and the specs read — and the track and thumb are drawn around it;
+   the button's aria-pressed says which way the thumb sits. Before storage has
+   answered, the element is hidden and there is no switch at all (R33 N1). */
+.menu-item .switch {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 18px;
+  padding: 0;
+  background: var(--switch-off);
+  border: none;
+  border-radius: 9px;
+  color: transparent;
+  font-size: 0;
+  transition: background-color 0.15s ease;
+}
+
+.menu-item .switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(16, 23, 42, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.menu-item[aria-pressed="true"] .switch {
+  background: var(--primary);
+}
+
+.menu-item[aria-pressed="true"] .switch::after {
+  transform: translateX(12px);
+}
+
+/* Display — bilingual / translation only, and the translation style. Two
+   lines on purpose: the segmented switch on one, the style and its shortcut
    on the other. Every control may shrink (min-width: 0) and the labels wrap,
    so a long language (de, ru, es) never pushes the popup into a horizontal
    scroll. */
@@ -172,15 +269,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 14px 10px;
+  padding: 4px 10px 6px;
 }
 
 .display-segment {
   display: flex;
+  gap: 2px;
   padding: 2px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border-radius: 9px;
 }
 
 .display-segment button {
@@ -189,28 +286,24 @@ body {
   padding: 5px 6px;
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-family: inherit;
+  border-radius: 7px;
+  color: var(--ink-2);
   font-size: 12px;
   line-height: 1.25;
   overflow-wrap: anywhere;
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .display-segment button:hover {
-  color: var(--text-primary);
+  color: var(--ink);
 }
 
 .display-segment button[aria-pressed="true"] {
-  background: var(--accent-primary);
-  color: #fff;
-}
-
-.display-segment button:focus-visible,
-.display-style select:focus-visible {
-  outline: 2px solid var(--accent-secondary);
-  outline-offset: 1px;
+  background: var(--raised);
+  box-shadow: var(--raised-shadow);
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .display-style {
@@ -222,46 +315,35 @@ body {
 .display-style select {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 5px 6px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: inherit;
+  padding: 5px 26px 5px 9px;
+  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23858a99' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  appearance: none;
   font-size: 12px;
+  cursor: pointer;
 }
 
-.display-style kbd {
-  flex-shrink: 0;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
+.display-style select:hover {
+  border-color: var(--muted);
 }
 
 /* PDF job list — a compact readout, visually one register quieter than the
-   menu items around it. */
-.pdf-jobs[hidden] {
-  display: none;
-}
-
+   rows around it. */
 .pdf-jobs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 2px 8px 4px;
-  padding: 8px 10px;
-  background: var(--bg-secondary);
+  gap: 8px;
+  margin: 4px 2px 2px;
+  padding: 9px 10px;
+  background: var(--surface);
   border-radius: var(--radius-md);
 }
 
 .pdf-job {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .pdf-job-head {
@@ -272,8 +354,8 @@ body {
 
 .pdf-job-name {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
-  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -281,37 +363,38 @@ body {
 
 .pdf-job-status {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--muted);
   white-space: nowrap;
 }
 
 .pdf-job-status.is-error {
-  color: #f87171;
+  color: var(--error-text);
   white-space: normal;
 }
 
 .pdf-job-track {
   height: 4px;
-  background: var(--bg-hover);
+  background: var(--line);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .pdf-job-bar {
   height: 100%;
-  background: var(--accent-gradient);
+  background: var(--primary-fill);
   border-radius: 2px;
   transition: width 0.4s ease;
 }
 
 .pdf-job-open {
+  flex-shrink: 0;
   padding: 3px 10px;
-  background: var(--accent-primary);
+  background: var(--primary-fill);
   border: none;
-  border-radius: 4px;
-  color: #ffffff;
-  font-family: inherit;
+  border-radius: var(--radius-sm);
+  color: var(--on-primary);
   font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -321,17 +404,15 @@ body {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
-  padding: 0;
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--text-muted);
-  font-family: inherit;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
 }
 
 .pdf-job:hover .pdf-job-dismiss,
@@ -340,8 +421,8 @@ body {
 }
 
 .pdf-job-dismiss:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .pdf-job-error {
@@ -367,56 +448,88 @@ body {
   flex-shrink: 0;
   padding: 3px 10px;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
   font-size: 11px;
   cursor: pointer;
 }
 
 .pdf-job-decline:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--hover);
+  color: var(--ink);
 }
 
-/* Divider */
-.divider {
-  height: 1px;
-  background: var(--border);
-  margin: 6px 8px;
-}
-
-/* Footer */
+/* Footer: where the engine stands, and the way to Settings. */
 .footer {
   display: flex;
-  justify-content: center;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  border-top: 1px solid var(--line);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 #statusText {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   /* 状态现在可能是「用不了本地翻译 · 这个页面是 http://」这样的两段话，
      一行放不下就换行，而不是把底栏撑宽。 */
-  text-align: center;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 #statusText::before {
   content: '';
   /* 文案换行时圆点不能被压扁。 */
   flex: none;
-  width: 6px;
-  height: 6px;
-  background: #4ade80;
+  width: 7px;
+  height: 7px;
+  background: var(--ok);
   border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
 }
 
 .status-error #statusText::before {
-  background: #f87171;
+  background: var(--error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent);
+}
+
+.footer-settings {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.footer-settings:hover {
+  background: var(--hover);
+  color: var(--primary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Last, so it outranks every display this sheet sets: renderPageRows and
+   renderGlobalAuto hide rows and pills with the `hidden` attribute, and a
+   `display: flex` above would otherwise keep them on screen. */
+.container [hidden] {
+  display: none;
 }

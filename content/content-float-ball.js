@@ -84,15 +84,13 @@
     state.floatBall = document.createElement('div');
     state.floatBall.id = 'ai-translator-float-ball';
     state.floatBall.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z" fill="url(#iconGradient)"/>
-        <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z" fill="url(#iconGradient)"/>
-        <defs>
-          <linearGradient id="iconGradient" x1="0" y1="0" x2="24" y2="24">
-            <stop offset="0%" stop-color="#a78bfa"/>
-            <stop offset="100%" stop-color="#818cf8"/>
-          </linearGradient>
-        </defs>
+      <svg viewBox="0 -1 100 100" aria-hidden="true" focusable="false">
+        <path class="ait-mark-coral" d="M12.66 32.46L28.92 24.73A9 9 0 0 1 40.91 28.99L53.8 56.08A9 9 0 0 1 49.54 68.07L33.28 75.81A9 9 0 0 1 21.29 71.54L8.4 44.45A9 9 0 0 1 12.66 32.46Z"/>
+        <path class="ait-mark-sky" d="M71.08 24.73L87.34 32.46A9 9 0 0 1 91.6 44.45L78.71 71.54A9 9 0 0 1 66.72 75.81L50.46 68.07A9 9 0 0 1 46.2 56.08L59.09 28.99A9 9 0 0 1 71.08 24.73Z"/>
+        <path class="ait-mark-amber" d="M26.25 25.65L43.81 21.69A9 9 0 0 1 54.57 28.48L61.17 57.75A9 9 0 0 1 54.38 68.51L36.82 72.47A9 9 0 0 1 26.06 65.68L19.45 36.41A9 9 0 0 1 26.25 25.65Z"/>
+        <path class="ait-mark-mint" d="M56.19 21.69L73.75 25.65A9 9 0 0 1 80.55 36.41L73.94 65.68A9 9 0 0 1 63.18 72.47L45.62 68.51A9 9 0 0 1 38.83 57.75L45.43 28.48A9 9 0 0 1 56.19 21.69Z"/>
+        <path class="ait-mark-bubble" d="M41 22H59A9 9 0 0 1 68 31V63C68 69 68.8 75 71.9 78.4Q72.8 79.6 71.2 79.7C66.5 79.6 62 76.8 59.7 72.4Q58.6 70 56.4 70H41A9 9 0 0 1 32 61V31A9 9 0 0 1 41 22Z"/>
+        <path class="ait-mark-play" d="M48.68 37.61A3.36 3.36 0 0 0 43.6 40.5L43.6 51.5A3.36 3.36 0 0 0 48.68 54.39L57.94 48.89A3.36 3.36 0 0 0 57.94 43.11Z"/>
       </svg>
       <button type="button" class="ai-translator-status-dot" data-state="none"></button>
       <button type="button" class="ai-translator-ball-more" aria-expanded="false" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</button>
