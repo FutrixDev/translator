@@ -690,6 +690,8 @@
     aiProfileKeyMissing: '「{name}」未填 Key，导入后请到设置里补上。',
     apiErrorTimeout: '请求超时（{seconds} 秒）',
     apiErrorEmpty: 'AI 服务返回了空的回复。',
+    apiErrorRateLimitedWait: '请求过于频繁：服务要求等待 {seconds} 秒，请稍后重试',
+    aiProfileLimitsHint: '请求失败时会自动重试，最多 3 次。以上限速只作用于这一个配置档。',
     customRuleProfileMissing: '规则指定的 AI 配置档不存在。',
     customRuleProfileWithBuiltin: '引擎选了内置翻译时，不能再指定 AI 配置档。',
     transferSectionAiProfiles: 'AI 配置档',

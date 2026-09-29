@@ -671,6 +671,8 @@
     aiProfileKeyMissing: '„{name}“ hat keinen API-Schlüssel. Tragen Sie ihn nach dem Import in den Einstellungen ein.',
     apiErrorTimeout: 'Zeitüberschreitung der Anfrage ({seconds} s)',
     apiErrorEmpty: 'Der AI-Dienst hat eine leere Antwort geliefert.',
+    apiErrorRateLimitedWait: 'Zu viele Anfragen: Der Dienst bittet, {seconds} s zu warten. Bitte später erneut versuchen',
+    aiProfileLimitsHint: 'Fehlgeschlagene Anfragen werden automatisch wiederholt, bis zu 3 Versuche. Diese Limits gelten nur für dieses Profil.',
     customRuleProfileMissing: 'Das AI-Profil dieser Regel existiert nicht.',
     customRuleProfileWithBuiltin: 'Eine Regel mit der integrierten Übersetzung kann kein AI-Profil angeben.',
     transferSectionAiProfiles: 'AI-Profile',

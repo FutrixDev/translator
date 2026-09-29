@@ -671,6 +671,8 @@
     aiProfileKeyMissing: 'У «{name}» нет ключа API. Добавьте его в настройках после импорта.',
     apiErrorTimeout: 'Истекло время ожидания запроса ({seconds} с)',
     apiErrorEmpty: 'Сервис ИИ вернул пустой ответ.',
+    apiErrorRateLimitedWait: 'Слишком много запросов: сервис просит подождать {seconds} с. Повторите попытку позже',
+    aiProfileLimitsHint: 'Неудачные запросы повторяются автоматически, до 3 попыток. Эти ограничения действуют только для этого профиля.',
     customRuleProfileMissing: 'Профиль ИИ, указанный в правиле, не существует.',
     customRuleProfileWithBuiltin: 'Правило со встроенным движком не может указывать профиль ИИ.',
     transferSectionAiProfiles: 'Профили ИИ',

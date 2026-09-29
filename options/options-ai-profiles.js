@@ -57,6 +57,13 @@ function buildAiProfileLimitInputs() {
     card.insertBefore(group, actions);
     elements[spec.id] = input;
   });
+  // 三格下面一句总说明：失败会自动重试，限速按配置档各算各的（D2，设计 §3.9/§3.10）。
+  const note = document.createElement('p');
+  note.className = 'hint';
+  note.id = 'aiProfileLimitsHint';
+  note.dataset.i18nHint = 'aiProfileLimitsHint';
+  note.textContent = t('aiProfileLimitsHint');
+  card.insertBefore(note, actions);
 }
 
 /** 这一页上的全部配置档（含 Key）。 */

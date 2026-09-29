@@ -671,6 +671,8 @@
     aiProfileKeyMissing: '«{name}» no tiene clave de API. Añádela en la configuración después de importar.',
     apiErrorTimeout: 'La solicitud superó el tiempo de espera ({seconds} s)',
     apiErrorEmpty: 'El servicio de IA devolvió una respuesta vacía.',
+    apiErrorRateLimitedWait: 'Demasiadas solicitudes: el servicio pide esperar {seconds} s. Inténtalo más tarde',
+    aiProfileLimitsHint: 'Las solicitudes fallidas se reintentan automáticamente, hasta 3 intentos. Estos límites se aplican solo a este perfil.',
     customRuleProfileMissing: 'El perfil de IA que usa esta regla no existe.',
     customRuleProfileWithBuiltin: 'Una regla con el motor integrado no puede indicar un perfil de IA.',
     transferSectionAiProfiles: 'Perfiles de IA',

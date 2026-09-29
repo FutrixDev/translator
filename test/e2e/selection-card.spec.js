@@ -351,7 +351,8 @@ test.describe('selection icon and card actions', () => {
   });
 
   test('J-D2: a failed request shows on the card, and retranslate recovers', async ({ page, context }) => {
-    const mock = await startMockOpenAIServer({ failRequests: 1 });
+    // 400 不重试（D2）：第一次请求就是卡片上的失败。
+    const mock = await startMockOpenAIServer({ failRequests: 1, failStatus: 400 });
     try {
       await servePages(context);
       await setExtensionSettings(page, aiSettings(mock.endpoint));

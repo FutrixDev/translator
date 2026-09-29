@@ -671,6 +671,8 @@
     aiProfileKeyMissing: '« {name} » n’a pas de clé API. Ajoutez-la dans les paramètres après l’import.',
     apiErrorTimeout: 'La requête a expiré ({seconds} s)',
     apiErrorEmpty: 'Le service IA a renvoyé une réponse vide.',
+    apiErrorRateLimitedWait: 'Trop de requêtes : le service demande d’attendre {seconds} s. Réessayez plus tard',
+    aiProfileLimitsHint: 'Les requêtes échouées sont relancées automatiquement, jusqu’à 3 essais. Ces limites s’appliquent à ce profil uniquement.',
     customRuleProfileMissing: 'Le profil IA utilisé par cette règle n’existe pas.',
     customRuleProfileWithBuiltin: 'Une règle qui utilise le moteur intégré ne peut pas indiquer de profil IA.',
     transferSectionAiProfiles: 'Profils IA',

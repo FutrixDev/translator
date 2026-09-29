@@ -205,6 +205,9 @@ async function recognizeWithVision({ srcUrl, crop }, profile, settings, uiLang) 
   const user = APICompat.isClaudeAPI(profile.apiEndpoint)
     ? APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64)
     : APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64);
+  // 重试与限速照默认走：用户在等的是这一次的识别结果，一次 429 / 5xx 就报错
+  // 不如由 callModel 再试两次；它也是这一档的请求，占这一档的名额。测试连接不同，
+  // 它要的是「通不通」（ai-profiles-host.js 关掉了两样）。
   const { text: content } = await callModel(profile, {
     system: globalThis.OCRCore.OCR_SYSTEM_PROMPT,
     user,

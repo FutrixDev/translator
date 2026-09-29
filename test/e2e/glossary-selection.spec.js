@@ -499,7 +499,8 @@ test.describe('P1-C C4 add a term from the selection card', () => {
   });
 
   test('C-J7 in the light theme both error lines on the card read at 4.5:1 or better (D-384 A11)', async ({ page, context }) => {
-    const failing = await startMockOpenAIServer({ failRequests: 1 });
+    // 400 不重试（D2）：第一次请求就是卡片上的失败。
+    const failing = await startMockOpenAIServer({ failRequests: 1, failStatus: 400 });
     try {
       await serve(context);
       await setExtensionSettings(page, settings(failing.endpoint, { theme: 'light' }));

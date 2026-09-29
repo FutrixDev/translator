@@ -35,7 +35,7 @@ function pngDataUrlSize(dataUrl) {
 /**
  * @param {object} [options]
  * @param {number} [options.failRequests]
- *   让最前面这么多次翻译请求以 HTTP 500 作答，之后恢复正常。
+ *   让最前面这么多次翻译请求失败（状态码见 failStatus），之后恢复正常。
  *
  *   偶发失败和接口不可用是两回事：一轮里失败不到 MAX_BATCH_FAILURES 次时这一轮
  *   **不报错**（content/page/batch.js），那几块只是一个字都没翻。要证「下一次
@@ -49,7 +49,7 @@ function pngDataUrlSize(dataUrl) {
  *   「出错之前页面上已经有译文了」这个局面只有这一头造得出来 —— 而它正是出错那
  *   条路上最要紧的一个：一个字都没翻成的页面，用户连「隐藏译文」都点不到。
  * @param {?(text: string) => boolean} [options.failWhen]
- *   按**内容**决定这一次答不答：命中就 500。
+ *   按**内容**决定这一次答不答：命中就失败（状态码见 failStatus）。
  *
  *   failRequests / failAfter 数的是「第几次请求」，而整页翻译是 8 个并发在跑，
  *   哪一批先到是赛跑出来的。要造「这几块翻成了、那几块崩了」这种确定的一轮，
@@ -66,10 +66,31 @@ function pngDataUrlSize(dataUrl) {
  *   每次作答前先拖这么久。整页翻译在真实页面上要跑几十秒，一批批往回落 ——
  *   「翻到一半用户按了显示原文」这类旅程，只有在一轮还没跑完的时候才存在，
  *   而答得太快的服务器把那个窗口压成了零。
+ * @param {number} [options.failStatus]
+ *   failRequests / failAfter / failWhen 失败时回的状态码，缺省 500。
+ *
+ *   SW 会自动重试 429、5xx 和网络错误（background/model-client.js，最多 3 次）。
+ *   要证「这一批就是失败了」的测试，挑一个不会被重试的码（400、401、403、404），
+ *   否则 500 被重试吃掉，失败根本到不了页面；要证「重试会自己恢复」的测试才用 500。
+ * @param {?{count: number, retryAfter: (number|string)}} [options.rateLimit]
+ *   前 count 次请求回 429，带 `Retry-After: retryAfter`（秒数或 HTTP 日期），之后
+ *   照常作答。在其余失败选项之前判，命中就不再往下走。
  */
-async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failWhen = null, status = null, delayMs = 0 } = {}) {
+async function startMockOpenAIServer({
+  failRequests = 0, failAfter = null, failWhen = null, status = null, delayMs = 0,
+  failStatus = 500, rateLimit = null
+} = {}) {
   let remainingFailures = failRequests;
+  let remainingRateLimited = rateLimit ? rateLimit.count : 0;
   let served = 0;
+  // 运行中可以换：setFailWhen(fn) 之后的请求按新的判断答（D-J10 先让一段失败、
+  // 再修好它）。
+  let failWhenNow = failWhen;
+  // 每次 POST 到达的时刻（Date.now()），按到达顺序：重试的间隔只能在这里量。
+  const requestTimes = [];
+  // 同一时刻还没答完的 POST 数，和它到过的最大值：限速的并发上限只能在这里量。
+  let inFlight = 0;
+  let maxInFlight = 0;
   // One entry per request that took the fast-batch path, so tests can assert the mock
   // really spoke the delimiter protocol rather than falling through to the single-text path.
   const fastBatchRequests = [];
@@ -103,6 +124,18 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
       res.end();
       return;
     }
+
+    requestTimes.push(Date.now());
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      inFlight -= 1;
+    };
+    res.on('finish', settle);
+    res.on('close', settle);
 
     let body = '';
     req.on('data', (chunk) => {
@@ -162,21 +195,28 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
         systemPrompts.push(systemPrompt);
       }
 
-      if (failWhen && typeof content === 'string' && failWhen(content)) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+      if (remainingRateLimited > 0) {
+        remainingRateLimited -= 1;
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(rateLimit.retryAfter) });
+        res.end(JSON.stringify({ error: { message: 'mock: rate limited' } }));
+        return;
+      }
+
+      if (failWhenNow && typeof content === 'string' && failWhenNow(content)) {
+        res.writeHead(failStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'mock: upstream refused this batch' } }));
         return;
       }
 
       if (remainingFailures > 0) {
         remainingFailures -= 1;
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(failStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'mock: upstream hiccup' } }));
         return;
       }
 
       if (failAfter !== null && served >= failAfter) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(failStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'mock: upstream down' } }));
         return;
       }
@@ -212,6 +252,13 @@ async function startMockOpenAIServer({ failRequests = 0, failAfter = null, failW
     visionRequests,
     authHeaders,
     requestPaths,
+    requestTimes,
+    get maxInFlight() {
+      return maxInFlight;
+    },
+    setFailWhen(fn) {
+      failWhenNow = fn;
+    },
     origin,
     endpoint: `${origin}/v1/chat/completions`,
     close

@@ -2,9 +2,11 @@
 // （background/keepalive.js）和失败的唯一接住点（background/api-errors.js 的
 // replyError），P1-D 设计 §3.6–§3.8。
 //
-// callModel 只在这里测 D1 的三件事：超时、空答案、调用方取消；网络错与服务商
-// 错的形状顺带钉住。重试是 D2 的，流式是 D3 的。fetch 换成桩，桩认 signal：
-// abort 时像真 fetch 一样以 AbortError 拒绝。
+// callModel 在这里测 D1 的三件事：超时、空答案、调用方取消；网络错与服务商
+// 错的形状顺带钉住。D2 的重试（§3.9）也在这里：哪些失败再试、退避与抖动、
+// Retry-After、等待中取消；限速器本身在 model-limiter.test.mjs。流式是 D3 的。
+// fetch 换成桩，桩认 signal：abort 时像真 fetch 一样以 AbortError 拒绝。
+// 会重试的用例传一个 clock：sleep 记下要等的毫秒数、立刻返回，不真等。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -15,7 +17,9 @@ globalThis.chrome.runtime = globalThis.chrome.runtime || {};
 globalThis.chrome.runtime.getPlatformInfo = async () => ({ os: 'mac' });
 
 await import('../../shared/api-compat.js');
-const { callModel } = await import('../../background/model-client.js');
+const { callModel, parseRetryAfter, MAX_ATTEMPTS } = await import('../../background/model-client.js');
+await import('../../i18n/lang/en.js');
+const { replyError } = await import('../../background/api-errors.js');
 const { acquire, release, keepaliveState, PING_MS } = await import('../../background/keepalive.js');
 
 const profile = (over = {}) => Object.assign({
@@ -56,11 +60,26 @@ async function withFetch(answer, run) {
   }
 }
 
-const okJson = (data, status = 200) => ({
+const okJson = (data, status = 200, headers = {}) => ({
   ok: status >= 200 && status < 300,
   status,
+  headers: new Headers(headers),
   json: async () => data,
 });
+
+/** 不真等的时钟：sleep 记下毫秒数立刻返回；random 与 now 可定。 */
+function fakeClock({ random = () => 0.5, now = () => Date.now() } = {}) {
+  const waits = [];
+  return {
+    waits,
+    random,
+    now,
+    sleep: async (ms, signal) => {
+      waits.push(ms);
+      if (signal && signal.aborted) throw Object.assign(new Error('aborted'), { aborted: true });
+    },
+  };
+}
 const chat = (text) => okJson({ choices: [{ message: { content: text } }] });
 
 // ------------------------------------------------------------ callModel
@@ -86,9 +105,12 @@ test('callModel: a profile without a positive timeoutSec is a caller bug', async
 test('callModel: the profile timeout aborts the request as apiFailure.timeout with its seconds', async () => {
   await withFetch(() => 'hang', async () => {
     const started = Date.now();
-    const error = await callModel(profile({ timeoutSec: 0.05 }), request).then(
+    // D2：超时会重试，传不真等的 clock，三次各 0.05 秒仍远小于 2 秒。
+    const clock = fakeClock();
+    const error = await callModel(profile({ timeoutSec: 0.05 }), request, { clock }).then(
       () => assert.fail('should time out'), (err) => err);
     assert.ok(Date.now() - started < 2000, 'the timer, not the test runner, ended it');
+    assert.equal(error.attempts, MAX_ATTEMPTS, 'a timeout is retried');
     assert.equal(error.aborted, undefined);
     assert.equal(error.apiFailure.timeout, true);
     assert.equal(error.apiFailure.seconds, 0.05);
@@ -122,14 +144,17 @@ test('callModel: a caller abort is err.aborted, not an apiFailure', async () => 
     const error = await callModel(profile(), request, { signal: controller.signal })
       .then(() => assert.fail('should abort'), (err) => err);
     assert.equal(error.aborted, true);
-    assert.equal(calls.length, 1);
+    // D2：已经取消的请求在限速器那一关就停下，不再发出去（D1 时是发出去再被拒）。
+    assert.equal(calls.length, 0);
   });
   assert.deepEqual(keepaliveState(), { holders: 0, running: false });
 });
 
 test('callModel: network and provider failures keep their structured shape', async () => {
   await withFetch(() => Promise.reject(new TypeError('Failed to fetch')), async () => {
-    const error = await callModel(profile(), request).then(() => assert.fail('should throw'), (err) => err);
+    // D2：网络错会重试，传不真等的 clock。
+    const error = await callModel(profile(), request, { clock: fakeClock() })
+      .then(() => assert.fail('should throw'), (err) => err);
     assert.equal(error.apiFailure.network, true);
     assert.equal(error.apiFailure.status, 0);
   });
@@ -149,6 +174,203 @@ test('callModel: holds the keepalive while in flight', async () => {
   }, () => callModel(profile(), request));
   assert.deepEqual(seen, { holders: 1, running: true });
   assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+// ------------------------------------------------------------ retry (D2, §3.9)
+
+/** 按顺序回这些答复；用完了就一直回最后一个。 */
+function sequence(...replies) {
+  let i = 0;
+  return () => {
+    const reply = replies[Math.min(i, replies.length - 1)];
+    i += 1;
+    return typeof reply === 'function' ? reply() : reply;
+  };
+}
+const fail = (status, headers) => () => okJson({ error: { message: `status ${status}` } }, status, headers);
+const networkDown = () => Promise.reject(new TypeError('Failed to fetch'));
+
+test('retry: which failures are tried again (network, timeout, 429, 5xx) and which are not', async () => {
+  const retried = [['429', fail(429)], ['500', fail(500)], ['502', fail(502)], ['503', fail(503)], ['599', fail(599)],
+    ['network', networkDown]];
+  for (const [name, reply] of retried) {
+    await withFetch(reply, async (calls) => {
+      const clock = fakeClock();
+      const error = await callModel(profile(), request, { clock }).then(() => assert.fail(name), (err) => err);
+      assert.equal(calls.length, MAX_ATTEMPTS, `RETRY-CLASS ${name} is retried up to ${MAX_ATTEMPTS} tries`);
+      assert.equal(error.attempts, MAX_ATTEMPTS);
+      assert.equal(clock.waits.length, MAX_ATTEMPTS - 1);
+    });
+  }
+  const once = [['400', fail(400)], ['401', fail(401)], ['403', fail(403)], ['404', fail(404)], ['422', fail(422)],
+    ['empty answer', () => chat('')],
+    ['unparseable body', () => ({ ok: true, status: 200, headers: new Headers(), json: async () => { throw new SyntaxError('x'); } })]];
+  for (const [name, reply] of once) {
+    await withFetch(reply, async (calls) => {
+      const clock = fakeClock();
+      const error = await callModel(profile(), request, { clock }).then(() => assert.fail(name), (err) => err);
+      assert.equal(calls.length, 1, `NO-RETRY-CLASS ${name} is not retried`);
+      assert.equal(error.attempts, 1);
+      assert.deepEqual(clock.waits, []);
+    });
+  }
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+test('retry: two failures then an answer returns the answer; the last failure is rethrown as it was', async () => {
+  await withFetch(sequence(fail(429), fail(503), () => chat('Salut')), async (calls) => {
+    const out = await callModel(profile(), request, { clock: fakeClock() });
+    assert.deepEqual(out, { text: 'Salut' });
+    assert.equal(calls.length, 3);
+    assert.notEqual(calls[0].init.signal, calls[1].init.signal, 'each attempt has its own signal');
+  });
+  await withFetch(sequence(fail(503), fail(503), fail(502)), async () => {
+    const error = await callModel(profile(), request, { clock: fakeClock() }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(error.apiFailure.status, 502, 'the last failure is what the caller sees');
+  });
+  // 重试之后第 3 次撞上不可重试的也立刻停。
+  await withFetch(sequence(fail(500), fail(401)), async (calls) => {
+    const error = await callModel(profile(), request, { clock: fakeClock() }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 2);
+    assert.equal(error.apiFailure.status, 401);
+    assert.equal(error.attempts, 2);
+  });
+});
+
+test('retry: backoff is 1 s then 2 s, each times a factor in [0.8, 1.2]', async () => {
+  for (const [r, lo] of [[0, true], [0.5, false], [0.999999, false]]) {
+    await withFetch(fail(500), async () => {
+      const clock = fakeClock({ random: () => r });
+      await callModel(profile(), request, { clock }).catch(() => {});
+      assert.equal(clock.waits.length, 2);
+      const [first, second] = clock.waits;
+      assert.ok(first >= 800 && first <= 1200, `JITTER first wait ${first} within 1000 +-20%`);
+      assert.ok(second >= 1600 && second <= 2400, `JITTER second wait ${second} within 2000 +-20%`);
+      if (lo) assert.deepEqual(clock.waits, [800, 1600]);
+    });
+  }
+  await withFetch(fail(500), async () => {
+    const clock = fakeClock({ random: () => 0.5 });
+    await callModel(profile(), request, { clock }).catch(() => {});
+    assert.deepEqual(clock.waits, [1000, 2000]);
+  });
+});
+
+test('retry: Retry-After in seconds or as an HTTP date replaces the backoff (no jitter)', async () => {
+  await withFetch(sequence(fail(429, { 'Retry-After': '7' }), fail(429, { 'Retry-After': '3' }), () => chat('ok')),
+    async (calls) => {
+      const clock = fakeClock({ random: () => 0 });
+      await callModel(profile(), request, { clock });
+      assert.equal(calls.length, 3);
+      assert.deepEqual(clock.waits, [7000, 3000], 'RETRY-AFTER seconds are waited exactly');
+    });
+  const now = Date.parse('2026-09-29T10:00:00Z');
+  await withFetch(sequence(fail(503, { 'Retry-After': 'Tue, 29 Sep 2026 10:00:05 GMT' }), () => chat('ok')),
+    async () => {
+      const clock = fakeClock({ now: () => now });
+      await callModel(profile(), request, { clock });
+      assert.deepEqual(clock.waits, [5000], 'RETRY-AFTER date minus now');
+    });
+  // 读不懂的 Retry-After：按退避走。
+  await withFetch(sequence(fail(429, { 'Retry-After': 'soon' }), () => chat('ok')), async () => {
+    const clock = fakeClock({ random: () => 0.5 });
+    await callModel(profile(), request, { clock });
+    assert.deepEqual(clock.waits, [1000]);
+  });
+  assert.equal(parseRetryAfter(null, 0), null);
+  assert.equal(parseRetryAfter('', 0), null);
+  assert.equal(parseRetryAfter(' 12 ', 0), 12000);
+  assert.equal(parseRetryAfter('1.5', 0), null, 'not an integer and not a date: unparseable');
+  assert.equal(parseRetryAfter('Tue, 29 Sep 2026 09:59:00 GMT', now), 0, 'a date in the past is 0');
+});
+
+test('retry: Retry-After over 60 s fails at once with the wait, worded apiErrorRateLimitedWait', async () => {
+  for (const header of ['120', 'Tue, 29 Sep 2026 10:02:00 GMT']) {
+    await withFetch(fail(429, { 'Retry-After': header }), async (calls) => {
+      const clock = fakeClock({ now: () => Date.parse('2026-09-29T10:00:00Z') });
+      const error = await callModel(profile(), request, { clock }).then(() => assert.fail('x'), (err) => err);
+      assert.equal(calls.length, 1, 'RATE-LIMITED-WAIT one request only');
+      assert.deepEqual(clock.waits, []);
+      assert.equal(error.apiFailure.rateLimitedWait, 120);
+      const said = globalThis.APICompat.describeAPIFailure(error.apiFailure, (key) => globalThis.getMessage(key, 'en'));
+      assert.match(said, /120/);
+      assert.equal(said, globalThis.getMessage('apiErrorRateLimitedWait', 'en').replace('{seconds}', '120'));
+    });
+  }
+  // 60 秒整还等。
+  await withFetch(sequence(fail(429, { 'Retry-After': '60' }), () => chat('ok')), async () => {
+    const clock = fakeClock();
+    await callModel(profile(), request, { clock });
+    assert.deepEqual(clock.waits, [60000]);
+  });
+});
+
+test('retry: a caller abort during the wait stops at once, with no further request', async () => {
+  await withFetch(fail(503), async (calls) => {
+    const controller = new AbortController();
+    const started = Date.now();
+    // 默认时钟真等 1 秒；10 毫秒后取消。
+    const pending = callModel(profile(), request, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 10);
+    const error = await pending.then(() => assert.fail('should abort'), (err) => err);
+    assert.equal(error.aborted, true, 'ABORT-IN-WAIT is err.aborted');
+    assert.equal(error.apiFailure, undefined);
+    assert.ok(Date.now() - started < 500, 'the wait was cut short');
+    assert.equal(calls.length, 1);
+  });
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+test('retry: the keepalive is held once across attempts and waits', async () => {
+  const seen = [];
+  await withFetch(sequence(fail(500), () => chat('ok')), async () => {
+    const clock = fakeClock();
+    const sleep = clock.sleep;
+    clock.sleep = async (ms, signal) => {
+      seen.push(keepaliveState());
+      return sleep(ms, signal);
+    };
+    await callModel(profile(), request, { clock });
+  });
+  assert.deepEqual(seen, [{ holders: 1, running: true }]);
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+test('retry: retry:false tries once', async () => {
+  await withFetch(fail(503), async (calls) => {
+    const error = await callModel(profile(), request, { retry: false, clock: fakeClock() })
+      .then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 1);
+    assert.equal(error.attempts, 1);
+  });
+});
+
+test('retry: replyError logs once, with how many attempts were made', async () => {
+  const saved = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args);
+  try {
+    await withFetch(fail(503), async () => {
+      const error = await callModel(profile(), request, { clock: fakeClock() }).then(() => assert.fail('x'), (err) => err);
+      const reply = replyError('TRANSLATE', error, { settings: {}, profile: profile(), feature: 'page' });
+      assert.equal(typeof reply.error, 'string');
+    });
+  } finally {
+    console.error = saved;
+  }
+  assert.equal(logged.length, 1, 'the attempts in between are not logged');
+  assert.match(String(logged[0][0]), /^TRANSLATE failed after 3 attempts \(profile p1, feature page\)/);
+});
+
+test('limit: time spent queued for the profile does not count against the attempt timeout', async () => {
+  const slow = profile({ id: 'queued-timeout', concurrency: 1, timeoutSec: 0.3 });
+  await withFetch(() => new Promise((resolve) => setTimeout(() => resolve(chat('ok')), 200)), async (calls) => {
+    const started = Date.now();
+    const [a, b] = await Promise.all([callModel(slow, request), callModel(slow, request)]);
+    assert.deepEqual([a, b], [{ text: 'ok' }, { text: 'ok' }]);
+    assert.ok(Date.now() - started >= 380, 'the second waited for the first (concurrency 1)');
+    assert.equal(calls.length, 2);
+  });
 });
 
 // ------------------------------------------------------------ keepalive
