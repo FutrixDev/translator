@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 test('page translation skips blocks with inline translation', async ({ page }) => {
@@ -16,8 +16,7 @@ test('page translation skips blocks with inline translation', async ({ page }) =
       hoverTranslationHotkey: 'Shift'
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await page.evaluate(() => {
       const container = document.createElement('div');

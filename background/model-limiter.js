@@ -8,7 +8,8 @@
 // - 按档 id 分桶。每次 acquire 读档上当时的 rpm / concurrency，所以改了值从下一次
 //   acquire 起生效；0 表示不限。桶里的限值随最后一次 acquire 更新，排队中的请求
 //   按桶里的限值放行 —— 档被删了，队列照常走完。
-// - 调用方在排队中取消：从队列里拿掉、以 err.aborted 拒绝，不占名额。
+// - 调用方在排队中取消：从队列里拿掉、以 err.aborted 拒绝，不占名额。callModel 的
+//   总预算在排队中用完也走这一条（它断开自己传进来的 signal，再把拒绝换成超时）。
 // - 计数只在内存里，SW 被回收就清零（设计 §8 已接受）。
 // - 排队时间不算这一次尝试的超时（callModel 在放行之后才起超时计时器），但排队
 //   期间的 keepalive 由 callModel 持有。
@@ -23,10 +24,10 @@ function abortedError() {
 }
 
 /**
- * 一个限速器。`now` 与 `setTimer` / `clearTimer` 可替换，单测用它们拨时钟；
+ * 一个限速器。`now` 与 `setTimer` 可替换，单测用它们拨时钟；
  * 产品里只有下面那一个默认实例。
  */
-function createLimiter({ now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+function createLimiter({ now = () => Date.now(), setTimer = setTimeout } = {}) {
   const buckets = new Map();
 
   function bucketFor(profile) {
@@ -125,11 +126,7 @@ function createLimiter({ now = () => Date.now(), setTimer = setTimeout, clearTim
   return { acquire, state };
 }
 
+/** 产品里唯一的限速器。 */
 const limiter = createLimiter();
 
-/** 产品里唯一的限速器。 */
-function acquire(profile, signal) {
-  return limiter.acquire(profile, signal);
-}
-
-export { acquire, createLimiter, WINDOW_MS };
+export { limiter, createLimiter, WINDOW_MS };

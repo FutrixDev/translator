@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // Regression test for the "code container" skip rule in collectTranslatableBlocks
@@ -39,8 +39,7 @@ test('page translation: "highlights"/"language-" lookalikes translate, real code
       skipTargetLanguageText: false
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await page.evaluate(() => {
       // Wikipedia's real <html> class. Nothing below it is a code block, so the whole

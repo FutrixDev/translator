@@ -86,6 +86,8 @@ function load({ rules = [], reply = { rules }, frameRole = 'top', href = 'https:
   };
   const events = [];
   const translated = [];
+  // 挂着失败标记的原文元素（content/page/failed-blocks.js）。清扫收走其中规则禁掉的。
+  const marked = [];
   const ctx = {
     frameRole,
     state: { pageHasBeenTranslated: false, isTranslatingPage: false },
@@ -95,12 +97,17 @@ function load({ rules = [], reply = { rules }, frameRole = 'top', href = 'https:
     queryAllDeep: () => translated,
     ruleForbids: (el) => el.forbidden(),
     releaseTranslation: (el) => events.push(`release:${el.name}`),
+    failedBlocks: {
+      clearWhere: (predicate) => {
+        for (const el of marked) if (predicate(el)) events.push(`clearFailed:${el.name}`);
+      },
+    },
   };
   globalThis.window = { AI_TRANSLATOR_CONTENT: ctx };
   new Function(SOURCE)();
   const rulesApi = ctx.customRules;
   rulesApi.onChange(() => events.push('changed'));
-  return { ctx, rules: rulesApi, events, routes, requests, translated };
+  return { ctx, rules: rulesApi, events, routes, requests, translated, marked };
 }
 
 function navigate(fixture, href) {
@@ -219,6 +226,27 @@ test('the pipeline: CSS, then the sweep, then the subscribers', async () => {
   ctx.syncMirrors[0].onStorageChange(put('a', RULE_A));
   await sleep(DEBOUNCE_WAIT);
   assert.deepEqual(globalThis.document.adoptedStyleSheets, []);
+});
+
+// 失败标记站在译文的位置上（content/page/failed-blocks.js）。规则不许翻的块，不该
+// 留着一个「重试」去翻它：清扫收译文的同一次，把规则禁掉的区域里的标记一起收走
+// （P1-D D2 修复回合 1 的 E）。
+test('the sweep also takes back the failed markers inside the newly forbidden area', async () => {
+  const fixture = load({ rules: [{ id: 'a', ...RULE_A }] });
+  const { rules, ctx, events, marked } = fixture;
+  rules.init();
+  await rules.whenReady();
+  await tick();
+  events.length = 0;
+  let excluded = false;
+  marked.push(
+    { name: 'kept', forbidden: () => false },
+    { name: 'ad', forbidden: () => excluded },
+  );
+  excluded = true;
+  ctx.syncMirrors[0].onStorageChange(put('a', { ...RULE_A, exclude: ['.ad', '.promo'], updatedAt: 2 }));
+  await sleep(DEBOUNCE_WAIT);
+  assert.deepEqual(events, ['clearFailed:ad', 'changed'], 'the marker goes in the sweep, before the subscribers');
 });
 
 test('unsafe CSS is never mounted, and the log carries no rule content', async () => {

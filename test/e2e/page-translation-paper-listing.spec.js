@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // Regression test for LaTeXML code listings (arXiv HTML papers, ar5iv) in
@@ -48,8 +48,7 @@ test('page translation: arXiv/LaTeXML code listings never reach the API, paper p
       skipTargetLanguageText: false
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await page.evaluate((listing) => {
       const container = document.createElement('div');

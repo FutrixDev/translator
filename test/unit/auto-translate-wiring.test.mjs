@@ -239,12 +239,16 @@ test('换了路由或关掉自动翻译之后，在途的那一轮不再发下�
   const batch = code('content/page/batch.js');
   // 「要不要停」只有一个答案：三处问的必须是同一个谓词，否则逐块回退那条路
   // 只认 batchError，外面喊停喊不动它。
-  assert.match(batch, /const aborted = \(\) => !!batchError \|\| \(typeof options\.isAborted === 'function' && options\.isAborted\(\)\)/);
+  assert.match(batch, /const stoppedOutside = \(\) => typeof options\.isAborted === 'function' && options\.isAborted\(\);/);
+  assert.match(batch, /const aborted = \(\) => !!batchError \|\| stoppedOutside\(\);/);
   assert.match(batch, /isAborted: aborted,/);
   // 早先那两处 `if (batchError) return;` 都要换成 aborted()，一处不换就是一个
   // 停不下来的口子。
   assert.doesNotMatch(batch, /if \(batchError\) return;/);
   assert.equal(batch.match(/if \(aborted\(\)\) return;/g).length, 2);
+  // 放失败标记（markFailed）只问外面有没有喊停（P1-D D2 修复回合 1 的 I.3）：三批
+  // 阈值之后在飞的批次失败照样放（行为断言在 fast-batch-alignment.test.mjs）。
+  assert.match(batch, /const markFailed = \(block, reason\) => \{\s*if \(stoppedOutside\(\)\) return;/);
 
   const scheduler = code('content/content-auto-translate.js');
   // 「这一轮还算数吗」只有一个谓词 superseded()：代次变了就不算；地址变了而路由
@@ -531,10 +535,11 @@ test('这一轮没结果的块放回队列，但只放一次', () => {
   assert.match(auto, /if \(retried\.has\(pending\.key\)\)/);
   assert.match(auto, /retried\.add\(pending\.key\);/);
   // 放弃的那些走 commit，台账仍然只有一个写入口。
-  assert.match(auto, /for \(const \[element, block\] of giveUp\) \{\s*commit\(element\);/);
+  assert.match(auto, /for \(const \[element, pending\] of giveUp\) \{\s*commit\(element\);/);
   // 第二次失败（放弃）的那一刻放失败标记，且只在那一处放：第一次失败放回队列，
-  // 不放标记（P1-D D2，设计 §4）。
-  assert.match(auto, /commit\(element\);\s*if \(element\.isConnected\) ctx\.failedBlocks\.mark\(block, error, \{ auto: true \}\);/);
+  // 不放标记（P1-D D2，设计 §4）。title 先用这一段自己的原因（修复回合 1 的 B），
+  // 行为由 auto-failed-reason.test.mjs 钉住。
+  assert.match(auto, /commit\(element\);\s*if \(element\.isConnected\) ctx\.failedBlocks\.mark\(pending\.entry\.block, pending\.reason \|\| error, \{ auto: true \}\);/);
   assert.equal((auto.match(/failedBlocks\.mark\(/g) || []).length, 1);
   // 挂着失败标记的块（手动那一轮失败的）不再被调度层自己送出去：决定在用户手里。
   assert.match(auto, /function takeBatch\(\) \{[\s\S]*?if \(ctx\.failedBlocks\.isMarked\(element\)\) continue;[\s\S]*?inflight\.set\(element/);

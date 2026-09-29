@@ -673,7 +673,7 @@
     apiErrorEmpty: 'AI サービスから空の応答が返されました。',
     apiErrorRateLimitedWait: 'リクエストが多すぎます：{seconds} 秒待つよう求められています。しばらくしてから再試行してください',
     translationFailedRetry: '翻訳に失敗しました · 再試行',
-    aiProfileLimitsHint: '失敗したリクエストは自動的に再試行されます（最大 3 回）。これらの制限はこのプロファイルにのみ適用されます。',
+    aiProfileLimitsHint: '失敗したリクエストは自動的に再試行されます（試行は合計で最大 3 回）。これらの制限はこのプロファイルにのみ適用されます。',
     customRuleProfileMissing: 'このルールが使う AI プロファイルは存在しません。',
     customRuleProfileWithBuiltin: '内蔵翻訳を使うルールには AI プロファイルを指定できません。',
     transferSectionAiProfiles: 'AI プロファイル',

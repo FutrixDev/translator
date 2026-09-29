@@ -21,7 +21,6 @@ function fakeTime() {
       timers.push(timer);
       return timer;
     },
-    clearTimer: (timer) => { timer.done = true; },
     advance(ms) {
       at += ms;
       for (const timer of timers) {

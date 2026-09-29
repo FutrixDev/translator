@@ -10,6 +10,14 @@
 // 排除：那一条选择器归 content/page/visibility.js（PAGE_TRANSLATION_SELECTOR），
 // translation.css 里画译文的选择器同样带 :not(.ai-translator-failed)。
 //
+// 一个标记只对「放下它的那一刻」的这段内容、这门目标语言作数（修复回合 1 的 A/E）。
+// 标记被页面删掉、原文换了（虚拟列表回收节点、SPA 重渲）、目标语言换了，这个条目
+// 就过期：isMarked 与 retry 先核对（stillValid），过期的收走并交回正常流程 —— 自动
+// 翻译的调度层看到 isMarked 为 false 会自己送它，整页翻译下一次收集照常收它。绝不
+// 拿旧的 block.text 去请求，也不把旧内容的译文插进新内容。语言按条目记（不设
+// 「换语言时全清」的广播）：换语言没有一个集中的事件，collect.js 对已翻块的做法也是
+// 收集时逐块核对，这里同一口径。
+//
 // 放标记是「接住失败、展示给用户」的那一层，失败本身已经在 batch.js 记过日志，
 // 这里不再打。唯一的例外是重试那一轮自己抛出来的异常：它在这一层被接住（换成
 // 一个新标记），所以在这一层记一次。
@@ -23,18 +31,51 @@
   const CLASS = 'ai-translator-failed';
   const SELECTOR = `.ai-translator-inline-block.${CLASS}`;
 
-  // 原文元素 → { marker, block, auto }。按元素记：同一段下一轮收集出来的是新的
-  // block 对象，元素还是那一个。
+  // 原文元素 → { marker, block, auto, fingerprint, lang }。按元素记：同一段下一轮
+  // 收集出来的是新的 block 对象，元素还是那一个。byMarker 是反查：clearWhere 从
+  // 文档里找到的是标记节点。
   const markers = new WeakMap();
+  const byMarker = new WeakMap();
+
+  // 与 insert.js 登记译文身份同一口径：readSourceText 跳过我们自己的节点，所以挂在
+  // 段内的标记不改变指纹；只装了整页模块的夹具里没有引擎，语言记 null（不比）。
+  const fingerprintOf = (element) => globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element));
+  const targetLang = () => (ctx.currentTargetLang ? ctx.currentTargetLang() : null);
+
+  function drop(entry) {
+    if (markers.get(entry.block.element) === entry) markers.delete(entry.block.element);
+    byMarker.delete(entry.marker);
+    entry.marker.remove();
+  }
+
+  /**
+   * 这个条目还作不作数：标记和原文都还在文档里、原文指纹没变、目标语言没换
+   * （两边都说了语言才比，与 BlockIdentity.isStale 同一规则）。不作数就收走，回 false。
+   */
+  function stillValid(entry) {
+    const element = entry.block.element;
+    const lang = targetLang();
+    const langChanged = entry.lang != null && lang != null && entry.lang !== lang;
+    if (entry.marker.isConnected && element.isConnected && !langChanged
+      && entry.fingerprint === fingerprintOf(element)) return true;
+    drop(entry);
+    return false;
+  }
 
   /** 这一段身上的失败标记（有就摘掉）。译文插进来之前、重新放标记之前都先调它。 */
   function clear(block) {
     const element = block && block.element;
     if (!element) return;
     const entry = markers.get(element);
-    if (!entry) return;
-    markers.delete(element);
-    entry.marker.remove();
+    if (entry) drop(entry);
+  }
+
+  /** 收走文档里原文元素满足 predicate 的所有标记（自定义规则禁掉的区域）。 */
+  function clearWhere(predicate) {
+    ctx.queryAllDeep(SELECTOR).forEach((marker) => {
+      const entry = byMarker.get(marker);
+      if (entry && predicate(entry.block.element)) drop(entry);
+    });
   }
 
   /**
@@ -49,9 +90,10 @@
 
   function retry(entry) {
     if (markers.get(entry.block.element) !== entry) return;
+    // 内容或语言变了：entry.block 是旧内容，收走标记、交回正常流程，不拿它请求。
+    if (!stillValid(entry)) return;
     clear(entry.block);
     const element = entry.block.element;
-    if (!element.isConnected) return;
     // markFailures：自动翻译那一轮默认不放标记（它自己在 giveUp 那一刻放），
     // 但这一次是用户点出来的，失败就该看得见。
     ctx.runTranslationPass([entry.block], { auto: entry.auto, markFailures: true })
@@ -86,7 +128,7 @@
     marker.tabIndex = 0;
     marker.textContent = t('translationFailedRetry');
     marker.title = reason || t('translationFailed');
-    const entry = { marker, block, auto: auto === true };
+    const entry = { marker, block, auto: auto === true, fingerprint: fingerprintOf(element), lang: targetLang() };
     marker.addEventListener('click', (event) => {
       swallow(event);
       retry(entry);
@@ -100,13 +142,19 @@
     marker.addEventListener('mousedown', (event) => event.stopPropagation());
     marker.addEventListener('mouseup', (event) => event.stopPropagation());
 
-    if (ctx.placeFailureMarker(block, marker)) markers.set(element, entry);
+    if (!ctx.placeFailureMarker(block, marker)) return;
+    markers.set(element, entry);
+    byMarker.set(marker, entry);
   }
 
-  /** 这个原文元素身上是不是挂着失败标记。自动翻译的调度层据此不再自己送它。 */
+  /**
+   * 这个原文元素身上是不是挂着一个还作数的失败标记。自动翻译的调度层据此不再
+   * 自己送它；过期的在这里收走，回 false，调度层就照常送。
+   */
   function isMarked(element) {
-    return markers.has(element);
+    const entry = markers.get(element);
+    return Boolean(entry) && stillValid(entry);
   }
 
-  ctx.failedBlocks = Object.freeze({ CLASS, SELECTOR, mark, clear, isMarked });
+  ctx.failedBlocks = Object.freeze({ CLASS, SELECTOR, mark, clear, clearWhere, isMarked });
 })();

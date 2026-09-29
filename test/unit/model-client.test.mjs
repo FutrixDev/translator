@@ -7,6 +7,8 @@
 // Retry-After、等待中取消；限速器本身在 model-limiter.test.mjs。流式是 D3 的。
 // fetch 换成桩，桩认 signal：abort 时像真 fetch 一样以 AbortError 拒绝。
 // 会重试的用例传一个 clock：sleep 记下要等的毫秒数、立刻返回，不真等。
+// 总预算（修复回合 1 的 H）用 virtualClock：计时器与 sleep 都在虚拟时间上，
+// 没有别的事可做时拨到最早那个计时器，240 秒的路径一瞬间走完。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -16,8 +18,15 @@ globalThis.chrome = globalThis.chrome || {};
 globalThis.chrome.runtime = globalThis.chrome.runtime || {};
 globalThis.chrome.runtime.getPlatformInfo = async () => ({ os: 'mac' });
 
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
+await import('../../shared/ai-profiles.js');
 const { callModel, parseRetryAfter, MAX_ATTEMPTS } = await import('../../background/model-client.js');
+const { createLimiter } = await import('../../background/model-limiter.js');
 await import('../../i18n/lang/en.js');
 const { replyError } = await import('../../background/api-errors.js');
 const { acquire, release, keepaliveState, PING_MS } = await import('../../background/keepalive.js');
@@ -78,7 +87,49 @@ function fakeClock({ random = () => 0.5, now = () => Date.now() } = {}) {
       waits.push(ms);
       if (signal && signal.aborted) throw Object.assign(new Error('aborted'), { aborted: true });
     },
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle),
   };
+}
+
+/**
+ * 虚拟时钟：now 从 0 起；setTimer / sleep 登记在虚拟时间上。每登记一次就排一轮
+ * setImmediate —— 那时桩的 Promise 都已落定，没人再动 —— 把 now 拨到最早的计时器
+ * 并触发它。桩 fetch 的答复都是立即的，所以「拨到下一个计时器」就是真实时间的走法。
+ */
+function virtualClock({ random = () => 0.5 } = {}) {
+  let at = 0;
+  let scheduled = false;
+  const timers = new Set();
+  const waits = [];
+  function fireNext() {
+    scheduled = false;
+    if (timers.size === 0) return;
+    let next = null;
+    for (const timer of timers) if (!next || timer.due < next.due) next = timer;
+    timers.delete(next);
+    at = Math.max(at, next.due);
+    next.fn();
+    schedule();
+  }
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    setImmediate(() => setImmediate(fireNext));
+  }
+  const setTimer = (fn, ms) => {
+    const timer = { fn, due: at + ms };
+    timers.add(timer);
+    schedule();
+    return timer;
+  };
+  const clearTimer = (timer) => timers.delete(timer);
+  const sleep = (ms, signal) => {
+    waits.push(ms);
+    if (signal && signal.aborted) return Promise.reject(Object.assign(new Error('aborted'), { aborted: true }));
+    return new Promise((resolve) => setTimer(resolve, ms));
+  };
+  return { now: () => at, random, setTimer, clearTimer, sleep, waits };
 }
 const chat = (text) => okJson({ choices: [{ message: { content: text } }] });
 
@@ -305,6 +356,20 @@ test('retry: Retry-After over 60 s fails at once with the wait, worded apiErrorR
   });
 });
 
+test('retry: a 5xx with Retry-After over 60 s fails at once, worded as a server failure, not a rate limit', async () => {
+  await withFetch(fail(503, { 'Retry-After': '120' }), async (calls) => {
+    const clock = fakeClock();
+    const error = await callModel(profile(), request, { clock }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 1, 'SERVER-WAIT one request only');
+    assert.deepEqual(clock.waits, []);
+    assert.equal(error.apiFailure.status, 503);
+    assert.equal(error.apiFailure.rateLimitedWait, undefined, 'rateLimitedWait is for 429 only');
+    const text = globalThis.APICompat.describeAPIFailure(error.apiFailure, (key) => globalThis.getMessage(key, 'en'));
+    assert.ok(text.startsWith(globalThis.getMessage('apiErrorUnavailable', 'en')), text);
+    assert.ok(!text.includes('120'), 'no "wait 120 s" for a server failure');
+  });
+});
+
 test('retry: a caller abort during the wait stops at once, with no further request', async () => {
   await withFetch(fail(503), async (calls) => {
     const controller = new AbortController();
@@ -370,6 +435,110 @@ test('limit: time spent queued for the profile does not count against the attemp
     assert.deepEqual([a, b], [{ text: 'ok' }, { text: 'ok' }]);
     assert.ok(Date.now() - started >= 380, 'the second waited for the first (concurrency 1)');
     assert.equal(calls.length, 2);
+  });
+});
+
+// ------------------------------------------------------------ total budget (fix round 1, H)
+
+const BUDGET_MS = globalThis.AIProfiles.LIMITS.timeoutMax * 1000;
+const said = (failure) => globalThis.APICompat.describeAPIFailure(failure, (key) => globalThis.getMessage(key, 'en'));
+
+test('budget: three timeouts stop at the budget; the attempt it cut short reports the seconds it really waited', async () => {
+  await withFetch(() => 'hang', async (calls) => {
+    // 100 + 1 + 100 + 2 = 203 秒，第三次只剩 37 秒。
+    const clock = virtualClock();
+    const error = await callModel(profile({ timeoutSec: 100 }), request, { clock }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 3);
+    assert.equal(error.apiFailure.timeout, true);
+    assert.equal(error.apiFailure.seconds, 37, 'BUDGET the third attempt is cut to what is left');
+    assert.equal(clock.now(), BUDGET_MS, 'the whole call took the budget, not 303 s');
+    assert.equal(said(error.apiFailure), globalThis.getMessage('apiErrorTimeout', 'en').replace('{seconds}', '37'));
+  });
+  await withFetch(() => 'hang', async (calls) => {
+    // 120 + 1 = 121，第二次截到 119 秒；之后剩 0，不再发第三次。
+    const clock = virtualClock();
+    const error = await callModel(profile({ timeoutSec: 120 }), request, { clock }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 2, 'BUDGET no attempt is started without the minimum left');
+    assert.equal(error.attempts, 2);
+    assert.equal(error.apiFailure.seconds, 119);
+    assert.ok(clock.now() <= BUDGET_MS);
+  });
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+test('budget: time queued in the limiter counts, and the retries after it stay inside the budget', async () => {
+  const clock = virtualClock();
+  const limiter = createLimiter({ now: clock.now, setTimer: clock.setTimer });
+  const queued = profile({ id: 'budget-queue', concurrency: 1, timeoutSec: 60 });
+  const release = await limiter.acquire(queued);
+  clock.setTimer(release, 150000);
+  await withFetch(() => 'hang', async (calls) => {
+    // 排队 150 秒，第一次 60 秒，退避 1 秒，第二次只剩 29 秒，然后停。
+    const error = await callModel(queued, request, { clock, limiter }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 2);
+    assert.equal(error.apiFailure.seconds, 29);
+    assert.equal(clock.now(), BUDGET_MS);
+  });
+  assert.deepEqual(limiter.state('budget-queue'), { inFlight: 0, queued: 0, recent: 0 });
+});
+
+test('budget: a Retry-After that would run past the budget is not waited; the last failure is rethrown', async () => {
+  await withFetch(sequence('hang', fail(429, { 'Retry-After': '50' }), () => chat('late')), async (calls) => {
+    // 180 秒超时、退避 1 秒；181 秒时 429 叫等 50 秒，等完只剩 9 秒 < 15。
+    const clock = virtualClock();
+    const error = await callModel(profile({ timeoutSec: 180 }), request, { clock }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(clock.waits, [1000]);
+    assert.equal(error.apiFailure.status, 429);
+    assert.equal(error.attempts, 2);
+    assert.ok(clock.now() <= BUDGET_MS);
+  });
+  await withFetch(sequence(fail(429, { 'Retry-After': '60' }), fail(503, { 'Retry-After': '60' }), () => chat('ok')),
+    async () => {
+      const clock = virtualClock();
+      assert.deepEqual(await callModel(profile(), request, { clock }), { text: 'ok' });
+      assert.deepEqual(clock.waits, [60000, 60000], 'waits that fit are still waited');
+    });
+});
+
+test('budget: queued until the budget runs out rejects as a timeout, leaves the queue and holds no slot', async () => {
+  const clock = virtualClock();
+  const limiter = createLimiter({ now: clock.now, setTimer: clock.setTimer });
+  const busy = profile({ id: 'budget-full', concurrency: 1 });
+  const release = await limiter.acquire(busy);
+  await withFetch(() => chat('never'), async (calls) => {
+    const error = await callModel(busy, request, { clock, limiter }).then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 0);
+    assert.equal(error.aborted, undefined);
+    assert.equal(error.apiFailure.timeout, true);
+    assert.equal(error.apiFailure.seconds, 225, 'seconds actually queued (budget minus one minimal attempt)');
+    assert.equal(said(error.apiFailure), globalThis.getMessage('apiErrorTimeout', 'en').replace('{seconds}', '225'));
+    assert.deepEqual(limiter.state('budget-full'), { inFlight: 1, queued: 0, recent: 0 }, 'only the holder');
+    release();
+    assert.deepEqual(limiter.state('budget-full'), { inFlight: 0, queued: 0, recent: 0 }, 'no slot leaked');
+    assert.deepEqual(await callModel(busy, request, { clock, limiter }), { text: 'never' });
+  });
+  // 排队中调用方取消：仍是 err.aborted，不是超时。
+  const hold = await limiter.acquire(busy);
+  const controller = new AbortController();
+  clock.setTimer(() => controller.abort(), 10000);
+  const error = await callModel(busy, request, { clock, limiter, signal: controller.signal })
+    .then(() => assert.fail('x'), (err) => err);
+  assert.equal(error.aborted, true);
+  assert.equal(error.apiFailure, undefined);
+  hold();
+  assert.deepEqual(limiter.state('budget-full'), { inFlight: 0, queued: 0, recent: 0 });
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
+test('budget: retry:false, limit:false (AI_PROFILE_TEST) is held to the budget too', async () => {
+  await withFetch(() => 'hang', async (calls) => {
+    const clock = virtualClock();
+    const error = await callModel(profile({ timeoutSec: 300 }), request, { retry: false, limit: false, clock })
+      .then(() => assert.fail('x'), (err) => err);
+    assert.equal(calls.length, 1);
+    assert.equal(error.apiFailure.seconds, 240);
+    assert.equal(clock.now(), BUDGET_MS);
   });
 });
 

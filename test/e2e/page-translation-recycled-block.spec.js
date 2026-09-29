@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 内容身份（shared/block-identity.js）在真浏览器里的那一条旅程。
@@ -35,8 +35,7 @@ test('page translation: a recycled block is retranslated, an unchanged one is no
       skipTargetLanguageText: false
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await page.evaluate(({ stable, recycled }) => {
       const container = document.createElement('div');

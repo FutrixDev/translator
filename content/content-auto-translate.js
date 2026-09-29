@@ -494,6 +494,12 @@
             // 每一批发出去之前都问一次 superseded()：地址可能是在这一轮跑到一半
             // 时才换的。
             isAborted: () => superseded(session),
+            // 这一段自己的失败原因（本地化文案）记在它的 inflight 条目上：giveUp
+            // 放标记时拿它做 title。零星几段失败时 error 为空，没有它就只剩通用文案。
+            onBlockFailed: (block, reason) => {
+              const pending = inflight.get(block.element);
+              if (pending && reason) pending.reason = reason;
+            },
           });
         }
       } catch (thrown) {
@@ -512,7 +518,7 @@
         const giveUp = new Map();
         for (const [element, pending] of inflight) {
           if (retried.has(pending.key)) {
-            giveUp.set(element, pending.entry.block);
+            giveUp.set(element, pending);
             continue;
           }
           retried.add(pending.key);
@@ -521,10 +527,11 @@
         gaveUp += giveUp.size;
         // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
         // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
-        // 它放回队列，下一轮多半就翻成了。
-        for (const [element, block] of giveUp) {
+        // 它放回队列，下一轮多半就翻成了。title 用这一段自己的原因；只有整轮级
+        // 的失败（没有逐段原因）才回落到整轮的 error，再没有就是 mark 的通用文案。
+        for (const [element, pending] of giveUp) {
           commit(element);
-          if (element.isConnected) ctx.failedBlocks.mark(block, error, { auto: true });
+          if (element.isConnected) ctx.failedBlocks.mark(pending.entry.block, pending.reason || error, { auto: true });
         }
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——

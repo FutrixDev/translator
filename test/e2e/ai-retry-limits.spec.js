@@ -1,12 +1,13 @@
 // P1-D 批次 D2 的端到端旅程：超时重试与限速（编号同设计
 // docs/plans/2026-09-26-p1-d-engine-layer.md §7.1 与任务书 p1-d-d2 §4）：
 //
-//   D-J7   429 重试：前两次 429、Retry-After 1，卡片最终出译文，三次请求，间隔 ≥ 1 秒
+//   D-J7   429 重试：前两次 429、Retry-After 3，卡片最终出译文，三次请求，间隔 ≥ 2.9 秒
 //   D-J7b  429 要等 120 秒：超过 60 秒不等，一次请求就失败，卡片说出 120
 //   D-J8   不可重试：401 只发一次，卡片说 Key 不对
 //   D-J9   限速：设置页把并发设 1、每分钟 600，整页翻译时在途最多 1 个；对照：不限时 > 1
-//   D-J10  失败段落原地重试：一批失败只标那几段；点标记（鼠标 / Tab+Enter）只重发那一段；
-//          标记和译文一起藏、一起回来
+//   D-J10  失败段落原地重试：一批失败只标那几段；点标记（鼠标 / Tab+Enter / 空格）只重发
+//          那一段；标记和译文一起藏、一起回来（悬浮球菜单展开：原来那个标记，零请求）
+//   D-J10b 链接里的标记只包住文字：宽度约等于文字宽，点行尾空白不重译
 //   D-J11  只剩失败：所有批次失败，发出去的段落都是标记，整页报错照旧，悬浮球仍是「翻译」
 //   D-J12  自动翻译的第二次机会：第一次失败不放标记，第二次失败才放
 //
@@ -52,14 +53,21 @@ const BROKEN_PAGE = html(`
 <p id="t2" tabindex="-1">${BROKEN[1]}</p>
 <p id="t3">${BROKEN[2]}</p>
 <script>
-  window.hostEvents = { click: 0, mousedown: 0, enter: 0 };
+  window.hostEvents = { click: 0, mousedown: 0, enter: 0, space: 0 };
   const card = document.getElementById('card');
   card.addEventListener('click', () => { window.hostEvents.click += 1; });
   card.addEventListener('mousedown', () => { window.hostEvents.mousedown += 1; });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') window.hostEvents.enter += 1;
+    if (event.key === ' ') window.hostEvents.space += 1;
   });
 </script>`);
+
+// D-J10b：整段就是一张可点的卡片（<a> 里包着 <p>），新闻站和社交站的信息流常这样。
+// 标记放在 <p> 后面、仍在 <a> 里；它若占满整行，点行尾空白就成了「重试」。
+const LINK_BROKEN = 'Broken buoy four washed up on the shingle beach below the old fort.';
+const LINK_PAGE = html(`<a id="card" href="#opened" style="display:block; color:inherit">
+<p id="t4">${LINK_BROKEN}</p></a>`);
 
 // D-J11：130 个列表项，首屏内外各六十来个，按每批 40 项切成四批 —— 超过
 // MAX_BATCH_FAILURES（3），整页报错。页面是深色的：标记的字色跟正文走，对比度
@@ -80,6 +88,7 @@ const PAGES = {
   '/': html(`<p id="lead">${LEAD}</p>`),
   '/log': html(PARAGRAPHS.map((text, i) => `<p id="p${i + 1}">${text}</p>`).join('\n')),
   '/broken': BROKEN_PAGE,
+  '/broken-link': LINK_PAGE,
   '/list': LIST_PAGE,
   '/auto-once': html(`<p id="flaky">${FLAKY_ONCE}</p>`),
   '/auto-twice': html(`<p id="flaky">${FLAKY_TWICE}</p>`),
@@ -135,20 +144,23 @@ function translatedCount(page) {
 
 // ------------------------------------------------------------------ D-J7
 
-test('D-J7 two 429s with Retry-After 1 are waited out: the card gets its translation on the third request', async ({ page, context }) => {
-  const mock = await startMockOpenAIServer({ rateLimit: { count: 2, retryAfter: 1 } });
+test('D-J7 two 429s with Retry-After 3 are waited out: the card gets its translation on the third request', async ({ page, context }) => {
+  test.setTimeout(90000);
+  // Retry-After 3，不是 1：普通退避是 1 s / 2 s 加抖动，Retry-After 1 与它分不开 ——
+  // 不读这个头的实现照样能过。3 秒比两级退避都长，间隔 ≥ 2.9 s 只能是读了头。
+  const mock = await startMockOpenAIServer({ rateLimit: { count: 2, retryAfter: 3 } });
   try {
     await serve(context);
     await setExtensionSettings(page, aiSettings(mock.endpoint));
     await selectLeadAndOpenCard(page);
 
-    await expect(cardText(page)).toContainText('[T]', { timeout: 20000 });
+    await expect(cardText(page)).toContainText('[T]', { timeout: 45000 });
     await expect(cardError(page)).toBeHidden();
-    // 「会自动重试」（aiProfileLimitsHint）的兑现：三次请求，每次都等够服务端说的 1 秒。
+    // 「会自动重试」（aiProfileLimitsHint）的兑现：三次请求，每次都等够服务端说的 3 秒。
     expect(mock.requestTimes).toHaveLength(3);
     const gaps = [mock.requestTimes[1] - mock.requestTimes[0], mock.requestTimes[2] - mock.requestTimes[1]];
     console.log(`[D-J7] gaps ${gaps.join(' / ')} ms`);
-    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(1000);
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(2900);
   } finally {
     await mock.close();
   }
@@ -308,16 +320,30 @@ test('D-J10 a failed batch marks only its own paragraphs; a click or Tab+Enter o
     for (const other of [BROKEN[0], BROKEN[2], 'Alpha', 'Bravo']) expect(resent[0]).not.toContain(other);
     expect(await page.evaluate(() => window.hostEvents.enter)).toBe(0);
 
-    // 收起 / 展开：t3 仍是标记。收起时它和译文一起藏；展开时一起回来。
-    // 展开就是再点一次「翻译」，没有译文的 t3 会被重新请求（今天的 translatePage
-    // 本来如此）；让它照旧失败，于是回来的是一个新标记。
+    // 收起 / 展开：t3 仍是标记。收起时它和译文一起藏；从悬浮球菜单的「显示译文」
+    // 展开时一起回来 —— 回来的是**原来那一个**标记（data-old），一个请求也不发。
+    // 菜单这一项只在 ctx.hasPageTranslations() 为真时画（content-float-ball.js），
+    // a/b/t1/t2 的译文藏着也算有，所以这里一定有它。
     mock.setFailWhen((text) => text.includes('Broken buoy'));
     await markerAfter(page, 't3').evaluate((el) => el.setAttribute('data-old', '1'));
+    const oldMarker = page.locator('#t3 + .ai-translator-failed[data-old]');
     before = mock.sentTexts.length;
     await clickFloatBall(page);
     for (const id of ['a', 'b', 't1', 't2']) await expect(translationAfter(page, id)).toBeHidden();
-    await expect(markerAfter(page, 't3')).toBeHidden();
+    await expect(oldMarker).toBeHidden();
 
+    await openFloatBallMenu(page);
+    await page.click('#ai-translator-float-menu [data-action="toggle-translations"]');
+    for (const id of ['a', 'b', 't1', 't2']) await expect(translationAfter(page, id)).toBeVisible();
+    await expect(oldMarker).toBeVisible();
+    await expect(page.locator('.ai-translator-failed')).toHaveCount(1);
+    await page.waitForTimeout(1500);
+    expect(mock.sentTexts.length).toBe(before);
+
+    // 收起之后单击球是「翻译」（togglePageTranslation）：没有译文的 t3 会被重新
+    // 请求；让它照旧失败，于是回来的是一个新标记，旧的那个让位。
+    await clickFloatBall(page);
+    await expect(oldMarker).toBeHidden();
     await clickFloatBall(page);
     for (const id of ['a', 'b', 't1', 't2']) await expect(translationAfter(page, id)).toBeVisible();
     await expect(page.locator('#t3 + .ai-translator-failed:not([data-old])')).toBeVisible({ timeout: 20000 });
@@ -325,6 +351,63 @@ test('D-J10 a failed batch marks only its own paragraphs; a click or Tab+Enter o
     for (const text of mock.sentTexts.slice(before)) {
       for (const other of [BROKEN[0], BROKEN[1], 'Alpha', 'Bravo']) expect(text).not.toContain(other);
     }
+
+    // 空格与 Enter 等价：焦点在 t3 的标记上按空格，只重发 t3，宿主的按键处理一次也没跑。
+    mock.setFailWhen(null);
+    const marker3 = markerAfter(page, 't3');
+    await marker3.focus();
+    await expect(marker3).toBeFocused();
+    before = mock.sentTexts.length;
+    await page.keyboard.press(' ');
+    await expect(translationAfter(page, 't3')).toContainText('[T]', { timeout: 20000 });
+    await expect(marker3).toHaveCount(0);
+    resent = mock.sentTexts.slice(before);
+    expect(resent).toHaveLength(1);
+    expect(resent[0]).toContain(BROKEN[2]);
+    for (const other of [BROKEN[0], BROKEN[1], 'Alpha', 'Bravo']) expect(resent[0]).not.toContain(other);
+    expect(await page.evaluate(() => window.hostEvents.space)).toBe(0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('D-J10b a marker inside a link hugs its text: as wide as its words, and the empty rest of the line is still the link', async ({ page, context }) => {
+  test.setTimeout(90000);
+  const mock = await startMockOpenAIServer({ failWhen: (text) => text.includes('Broken buoy'), failStatus: 400 });
+  try {
+    await serve(context);
+    await setExtensionSettings(page, aiSettings(mock.endpoint));
+    await page.goto(`${ORIGIN}/broken-link`);
+    await clickFloatBall(page);
+
+    const marker = page.locator('#card .ai-translator-failed');
+    await expect(marker).toHaveText(en('translationFailedRetry'), { timeout: 30000 });
+    // 宽度：标记盒 ≈ 它文字的墨迹宽（Range 量），远小于所在行；display 没动（仍是块级）。
+    const geo = await marker.evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return {
+        marker: el.getBoundingClientRect().width,
+        text: range.getBoundingClientRect().width,
+        line: el.parentElement.getBoundingClientRect().width,
+        display: getComputedStyle(el).display,
+      };
+    });
+    console.log(`[D-J10b] marker ${geo.marker} px, text ${geo.text} px, line ${geo.line} px, display ${geo.display}`);
+    expect(geo.display).toBe('block');
+    expect(Math.abs(geo.marker - geo.text)).toBeLessThanOrEqual(2);
+    expect(geo.marker).toBeLessThan(geo.line / 2);
+
+    // 行尾空白：点下去是宿主的链接（跳到 #opened），不是重试 —— 一个请求也不发，
+    // 标记还在。
+    mock.setFailWhen(null);
+    const before = mock.sentTexts.length;
+    const box = await marker.boundingBox();
+    await page.mouse.click(box.x + box.width + 80, box.y + box.height / 2);
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#opened');
+    await page.waitForTimeout(1500);
+    expect(mock.sentTexts.length).toBe(before);
+    await expect(marker).toHaveCount(1);
   } finally {
     await mock.close();
   }
@@ -448,7 +531,7 @@ function failTimes(needle, limit) {
   };
 }
 
-test('D-J12 auto-translate gets a second chance: one failure never shows a marker, the second failure does', async ({ page, context }) => {
+test('D-J12 [fixture] auto-translate gets a second chance: one failure never shows a marker, the second failure does', async ({ page, context }) => {
   test.setTimeout(120000);
   // [fixture] 夹具：failStatus 400（不可重试），「一次失败」就是一次请求，不被
   // service worker 的重试放大；failWhen 按请求计数，不按内容恒真恒假。
@@ -471,6 +554,11 @@ test('D-J12 auto-translate gets a second chance: one failure never shows a marke
   try {
     await serve(context);
     await setExtensionSettings(page, aiSettings(mock.endpoint));
+    // [fixture] 用户入口是 popup / 悬浮球菜单的「总是翻译这个站点」；这里在 service
+    // worker 里直接调 SiteRules.writeUserRule('retry.test', 'always') 代替它 —— 写进去
+    // 的是同一条用户规则，但不经过那条 UI。隔离的是「自动翻译被触发」这一件事：本旅程
+    // 只验调度层第一次失败放回队列、第二次失败才放标记，不验那个按钮
+    // （按钮自己的旅程在 auto-translate-touchpoints / popup-status 两个 spec 里走）。
     const worker = await getServiceWorker(context);
     await worker.evaluate(() => globalThis.SiteRules.writeUserRule('retry.test', 'always'));
 

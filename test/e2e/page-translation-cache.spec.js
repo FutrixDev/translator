@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, getServiceWorker } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, getServiceWorker, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 译文缓存（shared/translation-cache.js + content/content-translation-cache.js）的
@@ -55,8 +55,7 @@ test('page translation cache: a reloaded page renders from cache without a singl
       skipTargetLanguageText: false
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
     await inject();
     await translateAndSettle();
 
@@ -137,8 +136,7 @@ test('translation cache: the settings page button empties it, and the same page 
       skipTargetLanguageText: false
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
     await inject();
     await translateAndSettle();
     const sentAfterFirstPass = sentTexts.length;

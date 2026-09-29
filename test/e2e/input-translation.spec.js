@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
+const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
@@ -62,8 +62,7 @@ test('input translation shows phonetic for words and read-aloud for anything typ
       targetLang: 'zh-CN',
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await openFloatBallMenu(page);
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');

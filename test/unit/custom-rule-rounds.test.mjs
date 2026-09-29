@@ -119,6 +119,8 @@ async function loadTopFrame({ holdRules = false } = {}) {
     queryAllDeep: () => translated,
     ruleForbids: (el) => el.forbidden(),
     releaseTranslation: (el) => log.push(`release:${el.name}`),
+    // P1-D2 修复回合 1：清扫把规则禁掉的区域里的失败标记一起收走；这里没有标记。
+    failedBlocks: { clearWhere() {} },
     runTranslationPass: (blocks, options = {}) => new Promise((resolve) => {
       const n = passes.length + 1;
       log.push(`pass:${n}`);
@@ -326,7 +328,7 @@ function loadScheduler() {
     // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
     aiProfiles: { subscribe: () => () => {} },
     // P1-D2：调度器不再自己送挂着失败标记的块；这里没有块挂标记。
-    failedBlocks: { isMarked: () => false },
+    failedBlocks: { isMarked: () => false, clearWhere() {} },
     onLanguagePackReady() {},
     getEffectiveTargetLang: () => 'zh-CN',
     readSourceText: (element) => element.text,

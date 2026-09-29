@@ -422,3 +422,76 @@ test('a misaligned batch whose per-block retries succeed marks nothing', async (
   assert.deepEqual(marks, []);
   assert.equal(inserted.length, 3);
 });
+
+// ---- 修复回合 1（D-424）：C、I.3，以及逐段原因报给调用方（B 的 batch.js 一半）
+
+test('a block the model hands back unchanged is settled and loses its failed marker (C)', async () => {
+  // 「无需翻译」和「翻好了」一样是终局：上次失败留下的「重试」不该还挂着。
+  const block = makeBlock('Already the same.');
+  const real = ctx.failedBlocks;
+  const cleared = [];
+  const settled = [];
+  ctx.failedBlocks = { ...real, clear: (b) => cleared.push(b) };
+  try {
+    globalThis.window.innerHeight = 800;
+    stubRequests((message) => ({ translations: message.texts }));
+    await ctx.runTranslationPass([block], { onSettled: (b) => settled.push(b) });
+  } finally {
+    ctx.failedBlocks = real;
+  }
+  assert.equal(inserted.length, 0, 'an unchanged reply is not inserted');
+  assert.deepEqual(settled, [block]);
+  assert.deepEqual(cleared, [block], 'the skip branch must clear the marker too');
+});
+
+test('failures after the pass was stopped are neither reported nor marked (I.3)', async () => {
+  // 外面喊停（换了路由、关掉自动翻译）之后回来的失败：那一页已经不归这一轮管了。
+  const blocks = ['A.', 'B.'].map(makeBlock);
+  let stopped = false;
+  const reported = [];
+  const marks = await withMarks(async () => {
+    globalThis.window.innerHeight = 800;
+    stubRequests(() => {
+      stopped = true;
+      return { error: 'boom' };
+    });
+    await ctx.runTranslationPass(blocks, {
+      isAborted: () => stopped,
+      onBlockFailed: (block, reason) => reported.push([block, reason]),
+    });
+  });
+  assert.deepEqual(marks, []);
+  assert.deepEqual(reported, []);
+});
+
+test('the three-batch threshold is not an outside stop: every block that was sent and failed is marked (D-J11)', async () => {
+  // 阈值停下的是「后面的批次别再发」，不是「这一页不归这一轮管了」：在飞的批次
+  // 随后失败，照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试。
+  const perBatch = ctx.PAGE_LIMITS.MAX_BATCH_ITEMS;
+  const blocks = Array.from({ length: perBatch * (ctx.PAGE_LIMITS.CONCURRENCY.ai + 2) }, (_, i) => makeBlock(`Paragraph ${i}.`));
+  let requests;
+  const marks = await withMarks(async () => {
+    globalThis.window.innerHeight = 800;
+    requests = stubRequests(() => ({ error: 'boom' }));
+    await ctx.runTranslationPass(blocks, {});
+  });
+  const sent = requests.reduce((sum, message) => sum + message.texts.length, 0);
+  assert.ok(requests.length > 3, `more than three batches were in flight (got ${requests.length})`);
+  assert.ok(sent < blocks.length, 'the batches after the threshold were not sent');
+  assert.equal(marks.length, sent, 'a batch that failed after the threshold still marks its blocks');
+});
+
+test('every per-block failure is reported to the caller, with or without markers (B)', async () => {
+  // 自动那一轮不放标记，但要拿到这一段自己的原因（giveUp 时做 title）。
+  const blocks = ['C.', 'D.'].map(makeBlock);
+  const reported = [];
+  const marks = await withMarks(async () => {
+    stubRequests(() => ({ error: 'apiErrorUnavailable' }));
+    await ctx.runTranslationPass(blocks, {
+      auto: true,
+      onBlockFailed: (block, reason) => reported.push([block, reason]),
+    });
+  });
+  assert.deepEqual(marks, []);
+  assert.deepEqual(reported, [[blocks[0], 'apiErrorUnavailable'], [blocks[1], 'apiErrorUnavailable']]);
+});

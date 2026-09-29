@@ -10,7 +10,7 @@
 // The fixture below reproduces that shape locally: a wrapper clipped to the
 // height of its own paragraph.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const FIXTURE = `
@@ -55,8 +55,7 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         hoverTranslationHotkey: 'Shift'
       });
 
-      await page.goto('https://example.com');
-      await page.waitForSelector('#ai-translator-float-ball');
+      await openExamplePage(page);
       await page.evaluate(FIXTURE);
 
       const before = await page.evaluate(`(() => {
@@ -104,8 +103,7 @@ test.describe('translations clipped by a collapsed ancestor', () => {
         skipTargetLanguageText: false
       });
 
-      await page.goto('https://example.com');
-      await page.waitForSelector('#ai-translator-float-ball');
+      await openExamplePage(page);
       await page.evaluate(FIXTURE);
 
       await triggerPageTranslation(page);

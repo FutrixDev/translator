@@ -12,6 +12,7 @@ const {
   setExtensionSettings,
   triggerPageTranslation,
   sendMessageToActiveTab,
+  openExamplePage,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -69,8 +70,7 @@ test('the footer reports the engine in the tab, not the popup', async ({ context
   });
 
   const content = await context.newPage();
-  await content.goto('https://example.com');
-  await content.waitForSelector('#ai-translator-float-ball');
+  await openExamplePage(content);
 
   const popup = await context.newPage();
   await popup.goto(popupUrl(extensionId));
@@ -88,8 +88,7 @@ test('the footer reports the engine in the tab, not the popup', async ({ context
 
 test('the probe answers with what this page can actually do', async ({ page }) => {
   await setExtensionSettings(page, { translationEngine: 'builtin', targetLang: 'zh-CN' });
-  await page.goto('https://example.com');
-  await page.waitForSelector('#ai-translator-float-ball');
+  await openExamplePage(page);
 
   const probe = await sendMessageToActiveTab(page, { type: 'PROBE_ENGINE' });
   expect(probe).toBeTruthy();
@@ -131,8 +130,7 @@ test('local-only spends nothing when the built-in engine cannot do the job', asy
       skipTargetLanguageText: false,
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
     await triggerPageTranslation(page);
 
     // The key is right there in storage and the endpoint is up. Not asking is
@@ -162,8 +160,7 @@ test('allow-ai is the same page, with permission', async ({ page }) => {
       skipTargetLanguageText: false,
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
     await triggerPageTranslation(page);
 
     await expect.poll(() => sentTexts.length, {
@@ -193,8 +190,7 @@ test('a fallback that happened is on the footer, not just in the log', async ({ 
       skipTargetLanguageText: false,
     });
 
-    await content.goto('https://example.com');
-    await content.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(content);
     await triggerPageTranslation(content);
     await expect.poll(() => sentTexts.length, { timeout: 15000 }).toBeGreaterThan(0);
 

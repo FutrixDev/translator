@@ -57,6 +57,11 @@ await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
 await import('../../shared/lang-tags.js');
 await import('../../shared/site-rules.js');
+// model-client.js 的整次调用预算读 AIProfiles.LIMITS（shared/ai-profiles.js），SW 里由
+// background.js 装上；这里照同一条依赖链装。
+await import('../../shared/sync-collection.js');
+await import('../../shared/api-compat.js');
+await import('../../shared/ai-profiles.js');
 const prompts = await import('../../background/prompts.js');
 const ai = await import('../../background/ai-translate.js');
 

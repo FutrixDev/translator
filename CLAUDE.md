@@ -55,7 +55,7 @@ file directly.
    - Handles all API requests to translation endpoints (`api-client.js`,
      `ai-translate.js`, `prompts.js`)
    - Manages context menus (`context-menus.js`)
-   - Two TRANSLATE handlers: single and fast batch (delimiter-based, falling back to the numbered `[1]...[2]...` format); every model request goes through one AI profile (`model-client.js`, profiles in `shared/ai-profiles.js`)
+   - Two TRANSLATE handlers: single and fast batch (delimiter-based, falling back to the numbered `[1]...[2]...` format); every model request goes through one AI profile (`model-client.js`, profiles in `shared/ai-profiles.js`). `callModel` retries network errors, timeouts, 429 and 5xx up to 3 attempts in total (1 s / 2 s backoff with jitter, or the server's `Retry-After`; over 60 s it fails at once), each attempt first taking a token from the per-profile rate limiter `model-limiter.js` (rpm / concurrency). The whole call — queueing, every attempt, every wait — stays within one budget of `AIProfiles.LIMITS.timeoutMax` (240 s), so a service-worker event never outlives Chrome's 5-minute cap; `AI_PROFILE_TEST` (`retry: false, limit: false`) is bound by it too
    - Stores default settings and translation prompts (`settings.js`)
    - The account-backed clients live beside it: `comic-client.js`,
      `pdf-client.js`, `pdf-jobs.js`, `pdf-notify.js`, `ocr-recognize.js`,
@@ -72,7 +72,8 @@ file directly.
      concurrency control (at most 40 items or 9000 chars per batch; 4 batches
      at a time on the built-in engine, 12 on AI — `content/page/batch.js`) —
      `content/page/*.js` (collect, insert, batch, visibility, progress,
-     site-adapter, plus `scope.js` for the main-content scope, `shadow.js` for
+     site-adapter, `failed-blocks.js` for the "failed · retry" marker left on a
+     block that still failed after the retries, plus `scope.js` for the main-content scope, `shadow.js` for
      open and closed shadow roots, `notranslate.js` for `translate="no"` /
      `.notranslate`) behind the entry `content-page-translation.js`
    - Frames: `content/frames/` (`shelf.js`, `top.js`, `child.js`, shelf
@@ -847,6 +848,9 @@ for it. A failed request is a structured failure (`readAPIResponse` returns
 `err.apiFailure`), worded only at a boundary that knows the UI language, through
 `APICompat.describeAPIFailure(failure, t)` — `background/api-errors.js` in the
 service worker, which also words the settings page's test button (`AI_PROFILE_TEST`).
+A 429 whose `Retry-After` is over 60 s carries `rateLimitedWait` (seconds) on the
+failure and is worded `apiErrorRateLimitedWait`; a 5xx with the same header keeps
+its status wording (server class), never the rate-limit one.
 
 When a vendor ships a new model generation, `shared/api-compat.js` should be
 the only file that changes. Do not reimplement these checks in a caller —

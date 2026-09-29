@@ -246,8 +246,11 @@ html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-transla
    .ai-translator-inline-block 的类名和排版（同一个插入位置、同一套隐藏），但不是
    译文：上面五种译文样式都用 :not(.ai-translator-failed) 把它排除了。字色跟正文
    走（color: inherit）——强调色 #4f6ef7 在白底上不到 4.5:1，拿它当字色读不清；
-   强调色只画在下划线和焦点框上。`html body` 压过页面的单类名规则，同文件头。 */
+   强调色只画在下划线和焦点框上。`html body` 压过页面的单类名规则，同文件头。
+   width: fit-content：它是块级的（display 归 @layer ai-translator-display，这里
+   不动），不收窄就占满一整行，段落在链接或可点卡片里时点行尾空白也会重译。 */
 html body .ai-translator-inline-block.ai-translator-failed {
+  width: fit-content;
   cursor: pointer;
   color: inherit;
   text-decoration: underline dashed #4f6ef7;

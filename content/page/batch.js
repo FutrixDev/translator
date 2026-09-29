@@ -369,6 +369,8 @@
       // 模型把原文原样还回来了 —— 这一块本来就不用翻。这和「翻好了」一样是**终局**，
       // 所以同样要报出去：自动翻译那一层据此记账，不报的话它下一轮还会被送出来，
       // 再花一次同样的钱，永远如此。
+      // 终局就不该再挂着上次的失败标记（content/page/failed-blocks.js）。
+      ctx.failedBlocks.clear(block);
       if (onSettled) onSettled(block);
       return;
     }
@@ -528,10 +530,19 @@
     // 自动那一轮不放 —— 它的第一次失败只是进台账，第二次失败（giveUp）才放，
     // 那一刻在 content/content-auto-translate.js。点标记重试的那一轮是用户点出来
     // 的，即便沿用自动的引擎也要放，所以它显式传 markFailures: true。
+    // options.onBlockFailed(block, reason)：每一个失败点都报给调用方，与放不放标记
+    // 无关 —— 自动翻译在 giveUp 那一刻要拿这一段自己的原因做标记的 title。
+    // 外面喊停（换了路由、改了设置，options.isAborted）之后回来的失败不报、不放：
+    // 那一页已经不归这一轮管了。累计到三批的阈值不算：那时已经发出去、随后失败的
+    // 几段照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试（设计
+    // §7.1 D-J11）。stoppedOutside 定义在下面，这里只在调用时读它。
     const markFailures = typeof options.markFailures === 'boolean' ? options.markFailures : !auto;
-    const markFailed = markFailures
-      ? (block, reason) => ctx.failedBlocks.mark(block, reason, { auto })
-      : noBlockFailed;
+    const reportFailure = typeof options.onBlockFailed === 'function' ? options.onBlockFailed : noBlockFailed;
+    const markFailed = (block, reason) => {
+      if (stoppedOutside()) return;
+      reportFailure(block, reason);
+      if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
+    };
     const total = blocks.length;
     let done = 0;
 
@@ -567,7 +578,8 @@
     // 回填一条条拒掉，可池子里剩下的批次照样一个接一个发出去。并发 12、几百块的
     // 队列，用户关掉自动翻译或换掉付费引擎之后，账单还在涨，而页面上一个字都不会
     // 变 —— 没有任何地方看得出来。
-    const aborted = () => !!batchError || (typeof options.isAborted === 'function' && options.isAborted());
+    const stoppedOutside = () => typeof options.isAborted === 'function' && options.isAborted();
+    const aborted = () => !!batchError || stoppedOutside();
 
     // 整轮致命的失败（passFatal：不认得的领域这类配置错，content/engine/addenda.js）
     // 之后每一批都会一样失败，第一次见到就停，不等累计阈值 —— 一页只有一两批时阈值
