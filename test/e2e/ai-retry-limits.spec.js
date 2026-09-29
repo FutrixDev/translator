@@ -468,6 +468,10 @@ test('D-J11 only failures left: every sent item is a marker, the page error is u
 
     // 深色页面上标记的字色对比度 ≥ 4.5:1（标记跟正文取色，背景取最近的不透明祖先）。
     const firstMarker = page.locator('#li1 .ai-translator-failed, #li1 + .ai-translator-failed');
+    // 标记借了译文块的 0.25 s 淡入（translation.css ai-translator-block-fade-in）。四批
+    // 同时在飞、退避带抖动，#li1 那一批可能是最后失败的，上面的计数一对上就读会读到
+    // 淡入中途的 opacity：先等它自己的动画放完，再量终态。
+    await firstMarker.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)));
     const colors = await firstMarker.evaluate((el) => {
       let node = el;
       let background = 'rgba(0, 0, 0, 0)';
