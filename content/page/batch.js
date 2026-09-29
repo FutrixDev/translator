@@ -462,7 +462,7 @@
       } catch (error) {
         // 扩展上下文失效、整轮致命的错误（passFatal，见 runTranslationPass 的
         // noteThrown）意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一处理。
-        if (isExtensionContextInvalidated(error) || error.passFatal === true) throw error;
+        if (failsWholePass(error)) throw error;
         console.error('Blab Translation: Per-block fallback translation failed', error);
         if (onFailure) onFailure(error.message);
         onBlockFailed(block, error.message);
