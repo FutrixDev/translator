@@ -4,12 +4,7 @@
 // 这里声明的函数在 options.js 里直接叫名字就能用，反过来也一样（调用发生在
 // DOMContentLoaded 之后，声明早就求值完了）。
 //
-// 测试按钮发的请求和翻译真正会发的请求出自同一个 shared/api-compat.js 构造器 ——
-// 测通了就是真通了。
-
-// Endpoint/model shape helpers live in shared/api-compat.js — the same
-// module the service worker uses, so the connection test below proves the
-// exact request translation will make.
+// 测试按钮交给 SW 的 AI_PROFILE_TEST，走翻译同一条 callModel —— 测通了就是真通了。
 
 // The connection the form describes: a preset's own endpoint unless the preset
 // is "custom", whatever the hidden endpoint box still holds. Saving and the
@@ -62,46 +57,16 @@ async function testConnection() {
 
   showStatus(t('translating'), 'warning');
 
-  // The probe is built by the same helpers the service worker translates with,
-  // so "connection successful" means the real request shape was accepted — not
-  // merely that the endpoint and key exist.
-  const claudeShape = isClaudeAPI(apiEndpoint);
-  // 20 tokens is enough for "Hi", but reasoning/thinking models bill hidden
-  // tokens against the same budget; the shared builder raises the floor for
-  // those, so ask for a small budget and let it decide.
-  const PROBE_TOKENS = 20;
-  const headers = claudeShape ? claudeHeaders(apiKey) : openAIHeaders(apiKey);
-  const body = claudeShape
-    ? buildClaudeRequestBody(modelName, 'Hi', PROBE_TOKENS)
-    : buildOpenAIRequestBody(modelName, [{ role: 'user', content: 'Hi' }], PROBE_TOKENS, DEFAULT_TEMPERATURE);
-
-  try {
-    const response = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body)
-    });
-
-    // Vendors disagree on error shape and some report failures with HTTP 200,
-    // so always read the body rather than trusting response.ok alone.
-    const data = await response.json().catch(() => ({}));
-    const result = readAPIResponse(data, response.status, response.ok, claudeShape);
-    if (result.failure) {
-      showConnectionFailure({ ...result.failure, endpoint: apiEndpoint }, providerKey);
-    } else {
-      showStatus(t('connectionSuccess'), 'success');
-    }
-  } catch (_) {
-    // fetch rejects only when no answer came back at all (server down, DNS).
-    showConnectionFailure({ network: true, endpoint: apiEndpoint }, providerKey);
+  // The probe runs in the service worker through callModel, the same request
+  // path translation takes, with the profile this form describes (saved or
+  // not). It skips the cache, the daily budget and the rate limits, and the
+  // worker words any failure in the UI language.
+  const reply = await chrome.runtime.sendMessage({ type: 'AI_PROFILE_TEST', profile: await aiProfileDraft() });
+  if (reply && reply.ok) {
+    showStatus(t('connectionSuccess'), 'success');
+  } else {
+    showStatus(`${t('connectionFailed')}: ${reply && reply.error}`, 'error');
   }
-}
-
-// Same wording the service worker gives a failed translation, in this page's
-// language, through the one describer in shared/api-compat.js.
-function showConnectionFailure(failure, provider) {
-  const text = globalThis.APICompat.describeAPIFailure(failure, t, { provider });
-  showStatus(`${t('connectionFailed')}: ${text}`, 'error');
 }
 
 // Reset prompt to default

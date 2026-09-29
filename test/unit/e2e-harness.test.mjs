@@ -61,12 +61,18 @@ test('a spec that configures an API endpoint is not answered by the built-in eng
     apiEndpoint: 'http://127.0.0.1:9/v1/chat/completions',
     apiKey: 'test-key',
   });
-  assert.equal(writes.length, 1);
+  // Two writes since P1-D: the sync settings, then the AI connection as the
+  // aiProfile:legacy profile (the product no longer reads the four old keys).
+  assert.equal(writes.length, 2);
   assert.equal(writes[0].translationEngine, 'ai',
     'the mock server a spec stands up never sees a request unless the AI backend is selected');
-  // The caller's own settings still arrive intact.
-  assert.equal(writes[0].apiEndpoint, 'http://127.0.0.1:9/v1/chat/completions');
-  assert.equal(writes[0].apiKey, 'test-key');
+  assert.equal('apiEndpoint' in writes[0], false, 'the old keys must not reach sync settings');
+  assert.equal('apiKey' in writes[0], false, 'the old keys must not reach sync settings');
+  // The caller's own settings still arrive intact, on the profile.
+  assert.deepEqual(writes[1], {
+    apiEndpoint: 'http://127.0.0.1:9/v1/chat/completions',
+    apiKey: 'test-key',
+  });
 });
 
 test('a spec that asks for the built-in engine still gets it', async () => {

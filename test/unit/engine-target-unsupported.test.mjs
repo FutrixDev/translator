@@ -26,7 +26,7 @@ ctx.t = (key) => FR[key];
 await import('../../content/content-language.js');
 
 function request(targetLang) {
-  return ctx.requestTranslation({ type: 'TRANSLATE', text: 'Hello there', targetLang, mode: 'text' });
+  return ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'Hello there', targetLang, mode: 'text' });
 }
 
 test('a target the built-in engine cannot translate into is named, in its in-sentence form', async () => {

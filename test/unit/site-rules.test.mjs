@@ -818,6 +818,20 @@ const LOAD_ORDER = [
    '引擎这一族顺序与 manifest 一致：词表与附加说明排在入口之前。'],
   ['content/content-translation-engine.js', 'content/engine/addenda.js',
    '引擎这一族顺序与 manifest 一致：词表与附加说明排在入口之前。'],
+  // AI 配置档（P1-D）：ai-profiles.js 建在集合上并取走 APICompat；custom-rules.js
+  // 在加载时取走 AIProfiles（规则 v3 的 profile 按集合的 id 形状校验）。
+  ['shared/ai-profiles.js', 'shared/storage-writer.js',
+   'ai-profiles.js 在加载时就把 StorageWriter.create 取走了。'],
+  ['shared/ai-profiles.js', 'shared/sync-collection.js',
+   'ai-profiles.js 在加载时就把 SyncCollection.create 取走了。'],
+  ['shared/ai-profiles.js', 'shared/api-compat.js',
+   'ai-profiles.js 在加载时取走 APICompat（服务商目录与端点校验）。'],
+  ['shared/custom-rules.js', 'shared/ai-profiles.js',
+   'custom-rules.js 在加载时取走 AIProfiles，缺了就抛，CustomRules 整个不存在。'],
+  // 批量分隔符只有一份（shared/batch-delimiter.js），拼接与拆分都在服务工作者；
+  // 内容侧不再随消息传它，只有词表在加载时取走它。
+  ['shared/glossary.js', 'shared/batch-delimiter.js',
+   'glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有分隔符），缺了就抛。'],
 ];
 
 test('装载清单：共用模块和它依赖的那一份，顺序不能倒', async () => {

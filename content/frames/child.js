@@ -200,11 +200,11 @@
       runManualRound();
     }
     if (!prev || prev.translate !== next.translate) restartAuto();
-    // 引擎覆盖跟顶层走，null 也照传（「顶层没有覆盖」）。放在最后：上面的手动轮
+    // 引擎覆盖与配置档跟顶层走，null 也照传（「顶层没有覆盖」）。放在最后：上面的手动轮
     // 已同步置上 isTranslatingPage，规则流水线（custom-rule.js 的 rescope）见了不当
     // 场补翻，只记下 pending；这一轮收尾时 afterRound() 再清扫，并按条件决定要不要
     // 补一轮。
-    ctx.customRules.inherit(next.engineOverride ?? null);
+    ctx.customRules.inherit(next.engineOverride ?? null, next.profileOverride ?? null);
   }
 
   function listenToTop() {

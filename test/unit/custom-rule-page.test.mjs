@@ -19,6 +19,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -607,6 +610,7 @@ function runBootstrapInit() {
   }
   let ready;
   let glossaryReady;
+  let profilesReady;
   const log = [];
   const ctx = {
     customRules: {
@@ -617,6 +621,12 @@ function runBootstrapInit() {
     glossary: {
       init: () => log.push('glossary:init'),
       whenReady: () => new Promise((resolve) => { glossaryReady = resolve; }),
+    },
+    // AI 配置档镜像（P1-D）：每个 frame 都建，和规则、术语表同一处发出、同一处等
+    // （content/content-ai-profiles.js）。
+    aiProfiles: {
+      init: () => log.push('aiProfiles:init'),
+      whenReady: () => new Promise((resolve) => { profilesReady = resolve; }),
     },
     frames: { setup: () => log.push('frames:setup') },
     createFloatBall: () => log.push('floatBall'),
@@ -646,7 +656,8 @@ function runBootstrapInit() {
   return {
     log, done, restore,
     releaseRules: () => ready(),
-    release: () => { ready(); glossaryReady(); },
+    releaseRulesAndGlossary: () => { ready(); glossaryReady(); },
+    release: () => { ready(); glossaryReady(); profilesReady(); },
   };
 }
 
@@ -654,10 +665,10 @@ test('bootstrap: the scheduler starts only after this page\'s rules are ready', 
   const boot = runBootstrapInit();
   try {
     await sleep(10);
-    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall'], 'the float ball does not wait; the scheduler does');
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall'], 'the float ball does not wait; the scheduler does');
     boot.release();
     await boot.done;
-    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall', 'autoTranslate', 'frames:setup']);
   } finally {
     boot.restore();
   }
@@ -669,10 +680,26 @@ test('bootstrap: the scheduler also waits for this page\'s glossary', async () =
     await sleep(10);
     boot.releaseRules();
     await sleep(10);
-    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall'], 'rules alone do not start the scheduler');
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall'], 'rules alone do not start the scheduler');
     boot.release();
     await boot.done;
-    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall', 'autoTranslate', 'frames:setup']);
+  } finally {
+    boot.restore();
+  }
+});
+
+test('bootstrap: the scheduler also waits for this frame\'s AI profiles (P1-D)', async () => {
+  const boot = runBootstrapInit();
+  try {
+    await sleep(10);
+    boot.releaseRulesAndGlossary();
+    await sleep(10);
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall'],
+      'rules and glossary alone do not start the scheduler');
+    boot.release();
+    await boot.done;
+    assert.deepEqual(boot.log, ['rules:init', 'glossary:init', 'aiProfiles:init', 'floatBall', 'autoTranslate', 'frames:setup']);
   } finally {
     boot.restore();
   }
@@ -685,7 +712,10 @@ test('subscribers: the scheduler restarts and the top frame re-broadcasts on a r
   // 指令带上引擎覆盖，比较也比它：只改规则引擎的变化也要广播。
   assert.match(content, /engineOverride: ctx\.customRules\.engineOverride\(\) \|\| null,/);
   assert.match(content, /&& a\.engineOverride === b\.engineOverride/);
-  assert.match(content, /ctx\.customRules\.inherit\(next\.engineOverride \?\? null\);/);
+  // P1-D：规则 v3 指定的配置档同样经指令带下去、同样参与比较。
+  assert.match(content, /profileOverride: ctx\.customRules\.profileOverride\(\) \|\| null,/);
+  assert.match(content, /&& a\.profileOverride === b\.profileOverride/);
+  assert.match(content, /ctx\.customRules\.inherit\(next\.engineOverride \?\? null, next\.profileOverride \?\? null\);/);
 });
 
 // 「调度器在不在跟」两种拼法：肯定式 `=== IDLE || === RUNNING`，否定式

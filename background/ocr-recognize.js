@@ -6,8 +6,9 @@ import '../shared/ocr.js';
 import '../shared/api-compat.js';
 import '../i18n/messages.js';
 import { defaultSettings, uiLanguageOf } from './settings.js';
-import { callClaudeAPI, callOpenAIAPI, isClaudeAPI } from './api-client.js';
-import { apiErrorMessage, missingApiKeyMessage } from './api-errors.js';
+import { callModel } from './model-client.js';
+import { missingApiKeyMessage, replyError } from './api-errors.js';
+import { profileFor } from './ai-profiles-host.js';
 
 // ---------------------------------------------------------------------------
 // Image OCR, step 1: recognition. Two engines — Tesseract in the offscreen
@@ -192,37 +193,24 @@ async function recognizeLocally({ srcUrl, crop, requestId, tabId, frameId }, set
   };
 }
 
-/** Recognise with the user's own vision model. */
-async function recognizeWithVision({ srcUrl, crop }, settings, uiLang) {
-  const missingKey = missingApiKeyMessage(settings);
+/** Recognise with the user's own vision model: the profile resolved for 'ocr'. */
+async function recognizeWithVision({ srcUrl, crop }, profile, settings, uiLang) {
+  const missingKey = missingApiKeyMessage(profile, settings);
   if (missingKey) {
     throw new Error(missingKey);
   }
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
-  const systemPrompt = globalThis.OCRCore.OCR_SYSTEM_PROMPT;
   const instruction = globalThis.OCRCore.OCR_USER_INSTRUCTION;
-
-  let content;
-  if (isClaudeAPI(settings.apiEndpoint)) {
-    content = await callClaudeAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      globalThis.APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64),
-      4000
-    );
-  } else {
-    content = await callOpenAIAPI(
-      settings.apiEndpoint,
-      settings.apiKey,
-      settings.modelName,
-      systemPrompt,
-      globalThis.APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64),
-      4000,
-      globalThis.APICompat.DEFAULT_TEMPERATURE
-    );
-  }
+  const APICompat = globalThis.APICompat;
+  const user = APICompat.isClaudeAPI(profile.apiEndpoint)
+    ? APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64)
+    : APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64);
+  const { text: content } = await callModel(profile, {
+    system: globalThis.OCRCore.OCR_SYSTEM_PROMPT,
+    user,
+    maxTokens: 4000,
+    temperature: APICompat.DEFAULT_TEMPERATURE,
+  });
 
   const parsed = globalThis.OCRCore.parseOcrResponse(content);
   // null means the reply was JSON that broke (token cap, mangled quoting);
@@ -259,13 +247,15 @@ async function handleOcrImage(message, sender) {
     frameId: sender && typeof sender.frameId === 'number' ? sender.frameId : 0
   };
 
+  // Only the vision engine has a profile (resolved here: site rules do not
+  // apply to OCR); the local engine's failures are logged without one.
+  let profile;
   try {
-    return settings.ocrEngine === 'vision'
-      ? await recognizeWithVision(request, settings, uiLang)
-      : await recognizeLocally(request, settings, uiLang);
+    if (settings.ocrEngine !== 'vision') return await recognizeLocally(request, settings, uiLang);
+    profile = await profileFor('ocr');
+    return await recognizeWithVision(request, profile, settings, uiLang);
   } catch (error) {
-    console.error('OCR error:', error);
-    return { error: apiErrorMessage(error, settings) };
+    return replyError('OCR', error, { settings, profile, feature: 'ocr' });
   }
 }
 

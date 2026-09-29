@@ -525,7 +525,7 @@ Rules:
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'Import & Export',
-    transferDesc: 'Save your settings, site rules, site translation rules and glossary to a file, then load them in another browser. Caches, usage statistics and your account sign-in stay on this device.',
+    transferDesc: 'Save your settings, AI profiles, site rules, site translation rules and glossary to a file, then load them in another browser. Caches, usage statistics and your account sign-in stay on this device.',
     transferExport: 'Export Settings',
     transferImport: 'Import Settings…',
     transferIncludeApiKey: 'Include my API key',
@@ -696,4 +696,24 @@ Rules:
     aiPageContextHint: 'Sends the page title to your AI service so the translation reads more coherently. Translating the whole page also sends a short passage before and after; automatic translation sends the title only. More text is sent than is translated, and a little more quota is used.',
     customRuleDomain: 'Domain',
     customRuleDomainInherit: 'Follow the global setting',
+    // AI profiles (P1-D)
+    aiProfileRpm: 'Requests per minute',
+    aiProfileConcurrency: 'Concurrent requests',
+    aiProfileTimeout: 'Timeout (seconds)',
+    hintAiProfileZeroUnlimited: '0 means no limit.',
+    hintAiProfileTimeout: 'How long to wait for one request, 15–240 seconds.',
+    aiProfileMissing: 'The AI profile “{name}” no longer exists. Choose another one in Settings.',
+    aiProfileInvalid: 'This AI profile is not valid. Check the endpoint, the model and the limits.',
+    aiProfileTooLarge: 'This AI profile is too large to save. Shorten its name, endpoint or key.',
+    aiProfilesBudgetFull: 'There is no room for another AI profile (20 profiles, 8 KiB). Delete one first.',
+    aiProfileInUse: 'Site rules use this AI profile: {rules}. Change those rules first.',
+    aiProfileDefaultInUse: 'This is the default AI profile. Make another profile the default first.',
+    aiProfileSaveFailed: 'Could not save the AI profile. Please try again.',
+    aiProfileKeyMissing: '“{name}” has no API key. Add one in Settings after importing.',
+    apiErrorTimeout: 'The request timed out ({seconds} s)',
+    apiErrorEmpty: 'The AI service returned an empty reply.',
+    customRuleProfileMissing: 'The AI profile this rule uses does not exist.',
+    customRuleProfileWithBuiltin: 'A rule that uses the built-in engine cannot name an AI profile.',
+    transferSectionAiProfiles: 'AI profiles',
+    transferPreviewAiProfiles: 'AI profiles: {added} will be added, {replaced} replaced.',
 };

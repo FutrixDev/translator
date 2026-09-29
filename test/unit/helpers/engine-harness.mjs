@@ -66,7 +66,9 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
       settings: { promptDomain: 'general', aiPageContext: false },
       // content/page/custom-rule.js 在真扩展里装它；附加说明每次都问本站规则钉住
       // 的领域，这里没有规则。
-      customRules: { domain: () => null, engineOverride: () => null, whenReady: async () => {} },
+      customRules: {
+        domain: () => null, engineOverride: () => null, profileOverride: () => null, whenReady: async () => {},
+      },
       // content-bootstrap.js 装的取文案函数；这里原样回键名，断言按键名比。
       t: (key) => key,
       // content/content-language.js installs this in the real extension; the
@@ -125,9 +127,33 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   // PromptAddenda.LIMITS、缓存键读 stamp()，manifest 里 shared/prompt-addenda.js
   // 排在引擎前面。
   await import('../../../shared/prompt-addenda.js');
+  // AI 配置档（P1-D）：真扩展里 content/content-ai-profiles.js 建镜像（它自己的单测
+  // 在 content-ai-profiles.test.mjs）；这里换成同步的替身，setApiKey 立刻生效。选档
+  // 走真的 AIProfiles.resolve —— 请求没标 feature 就照样抛。
+  await import('../../../shared/sync-collection.js');
+  await import('../../../shared/ai-profiles.js');
+  const endpoint = 'https://api.openai.com/v1/chat/completions';
+  const entries = () => [{
+    id: globalThis.AIProfiles.LEGACY_ID, name: 'Legacy', provider: 'openai', apiEndpoint: endpoint,
+    modelName: 'gpt-4.1-mini', features: [], default: true,
+    keyMissing: globalThis.APICompat.isApiKeyMissing({ provider: 'openai', apiEndpoint: endpoint, apiKey: state.apiKey }),
+  }];
+  const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
+  ctx.aiProfiles = {
+    whenReady: async () => {},
+    status: () => 'ready',
+    resolve: (feature) => globalThis.AIProfiles.resolve(entries(),
+      { feature, ruleProfileId: ctx.customRules.profileOverride() }),
+    ready(feature) {
+      const resolved = ctx.aiProfiles.resolve(feature);
+      return Boolean(resolved.profile) && !resolved.profile.keyMissing;
+    },
+    subscribe: () => () => {},
+  };
   await import('../../../content/engine/glossary.js');
   await import('../../../content/engine/addenda.js');
   await import('../../../content/content-translation-engine.js');
+  await import('../../../content/engine/probe.js');
 
   return {
     ctx: globalThis.window.AI_TRANSLATOR_CONTENT,

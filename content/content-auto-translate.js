@@ -393,7 +393,7 @@
      * 实情况是额度用完了。
      */
     async function costRefusal() {
-      const engine = await ctx.builtinTranslator.effectiveEngine({ auto: true });
+      const engine = await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' });
       if (engine === 'builtin') return null;
       if (engine === 'none') return COST_REASONS.ENGINE;
       const stats = await globalThis.AutoStats.read();
@@ -687,10 +687,11 @@
     // 重新扫。换引擎也在其中 —— 只作废不重扫的话，那些块进带时已经被摘掉了
     // （发现层「进带即摘」），没有任何变动会把它们再送回来，页面就一直空着。
     //
-    // 后四个是**用来救场的**：一页因为密钥没填、填错、地址或模型写错而停在 ERROR
-    // 之后，用户去设置页把它改对 —— 改对了却不重来，这一页就一直停在那儿，直到
-    // 他自己想起来刷新。engineFallback 同理：内置引擎在这台机器上用不了时，把它
-    // 从 local-only 改成 allow-ai 正是那一页唯一的活路。
+    // engineFallback 是**用来救场的**：内置引擎在这台机器上用不了时，把它从
+    // local-only 改成 allow-ai 正是那一页唯一的活路。密钥、地址、模型不在这里：
+    // 它们住在 AI 配置档里（aiProfile:<id>，不进 ctx.settings），同一条救场路走
+    // 下面的 ctx.aiProfiles.subscribe —— 一页因为密钥没填、填错、地址或模型写错
+    // 而停在 ERROR 之后，用户在设置页把配置档改对，这一页要自己重来。
     //
     // 这份名单不是随手攒的，它有一条可以对照的来源：**凡是喂进「这一页翻不翻」
     // 或者「这一块翻不翻」的设置键，都得在里面**。
@@ -698,8 +699,8 @@
     //   判（shared/site-rules.js 的 decide）   autoTranslate，外加入参的出处 siteRules
     //   译（content/page/batch.js）            skipTargetLanguageText，以及目标语言
     //                                          targetLang（换了语言，同样的文字要重翻）
-    //   engine（哪条路、回落到哪、拿什么去调）  translationEngine、engineFallback、
-    //                                          provider、apiKey、apiEndpoint、modelName
+    //   engine（哪条路、回落到哪）              translationEngine、engineFallback
+    //   拿什么去调                              AI 配置档（订阅，不是设置键）
     //
     // 漏一个的后果都一样，而且都不报错：skipTargetLanguageText 从开改成关之后，
     // 之前被误判成「已经是目标语言」而跳过的那些块，key 还在台账里、元素早被
@@ -708,7 +709,7 @@
     const RESTART_KEYS = [
       'autoTranslate', 'siteRules', 'targetLang',
       'skipTargetLanguageText',
-      'translationEngine', 'provider', 'apiKey', 'apiEndpoint', 'modelName', 'engineFallback',
+      'translationEngine', 'engineFallback',
       // 费用闸的两个（costRefusal）。少了它们，用户在设置页把自动模式的 AI 打开、
       // 或者把预算调大之后，已经停在 OFF 上的那些页面要刷新才活得过来 —— 而他
       // 刚刚做的正是「让它们继续翻」这件事。
@@ -728,6 +729,9 @@
     // 本页生效的用户站点规则变了：与 RESTART_KEYS 同一条路。引擎改成内置能叫醒
     // 费用闸停下的页面；删掉一条 exclude，进带时被摘掉的块也要重扫才回得来。
     ctx.customRules.onChange(() => start('custom-rule'));
+    // AI 配置档变了（任何一档，含只改了 Key 的写入：公开镜像看不见 Key，但照样
+    // 通知）：与 RESTART_KEYS 同一条路，改对了 Key / 地址 / 模型的页面自己重来。
+    ctx.aiProfiles.subscribe(() => start('ai-profiles'));
     start('load');
 
     return {

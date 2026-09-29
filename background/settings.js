@@ -26,12 +26,8 @@ const defaultSettings = {
   // 真正的内置调用发生在 content script（Translator 是 [Exposed=Window]，
   // service worker 里拿不到），这里只负责存这个开关。
   translationEngine: 'builtin',
-  // 设置页选的预设（shared/api-compat.js 的 PROVIDERS 键）。worker 只拿它问一件
-  // 事：这份配置要不要 Key（APICompat.requiresApiKey —— Ollama / LM Studio 不要）。
-  provider: 'openai',
-  apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-  apiKey: '',
-  modelName: 'gpt-4.1-mini',
+  // 接口、Key、模型不在这里：它们是 AI 配置档（shared/ai-profiles.js），没有缺省
+  // 值 —— 没有配置档就是没配置。
   // 空 = 跟随浏览器语言。空**就是**「用户没选过」这个哨兵，不再另有一个布尔量
   // 记它：设置页在用户动过语言选择器之前写的就是空串。见 shared/target-lang.js。
   targetLang: '',

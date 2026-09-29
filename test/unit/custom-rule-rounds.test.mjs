@@ -27,6 +27,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -320,6 +323,8 @@ function loadScheduler() {
     state: { isTranslatingPage: false, translationsVisible: true },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0 },
     customRules: { onChange() {}, isCatchingUp: () => flags.catching },
+    // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
+    aiProfiles: { subscribe: () => () => {} },
     onLanguagePackReady() {},
     getEffectiveTargetLang: () => 'zh-CN',
     readSourceText: (element) => element.text,

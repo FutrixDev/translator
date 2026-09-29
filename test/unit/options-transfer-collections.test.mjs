@@ -17,14 +17,19 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 await import('../../shared/target-lang.js');
 // glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
 await import('../../shared/text-markers.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 await import('../../shared/settings-transfer.js');
-const { CustomRules, Glossary, GlossaryCsv, SettingsTransfer } = globalThis;
+const { AIProfiles, APICompat, CustomRules, Glossary, GlossaryCsv, SettingsTransfer } = globalThis;
 const catalog = messageCatalog();
 
 const file = (rules) => ({ format: 'blab-site-rules', version: 1, exportedAt: 1, rules });
@@ -39,6 +44,8 @@ function loadPage({ stored = {}, lang = 'en', request = async () => {} } = {}) {
     return request(kind, payload);
   };
   const sandbox = {
+    AIProfiles: Object.assign({}, AIProfiles, { request: stub('aiProfiles') }),
+    APICompat,
     CustomRules: Object.assign({}, CustomRules, { request: stub('customRules') }),
     Glossary: Object.assign({}, Glossary, { request: stub('glossary') }),
     GlossaryCsv,
@@ -51,6 +58,9 @@ function loadPage({ stored = {}, lang = 'en', request = async () => {} } = {}) {
     chrome: { storage: { sync: { get: async () => JSON.parse(JSON.stringify(stored)) } } },
     t: (key) => catalog[lang][key],
   };
+  // readAiProfiles 在 options-ai-profiles.js 里，那份脚本加载时要画卡片；这里只取它
+  // 的那一行（源码断言见 aiProfiles 那一行的测试）。
+  sandbox.readAiProfiles = async () => AIProfiles.collection.collect(await sandbox.chrome.storage.sync.get(null));
   vm.createContext(sandbox);
   vm.runInContext(repoSource('options/options-custom-rules.js'), sandbox);
   vm.runInContext(repoSource('options/options-glossary.js'), sandbox);
@@ -63,7 +73,7 @@ const section = (page, key) => page.get('TRANSFER_SECTIONS').find((row) => row.k
 
 test('customRules row: after siteRules, validated by the card\'s one preview function', async () => {
   const page = loadPage({ stored: { 'customRule:aaaa1111': { v: 1, match: ['a.com'], exclude: ['.old'] } } });
-  assert.deepEqual([...page.get('TRANSFER_SECTIONS').map((row) => row.key)], ['settings', 'siteRules', 'customRules', 'glossary']);
+  assert.deepEqual([...page.get('TRANSFER_SECTIONS').map((row) => row.key)], ['settings', 'aiProfiles', 'siteRules', 'customRules', 'glossary']);
   const raw = file([
     { id: 'aaaa1111', match: ['a.com'], exclude: ['.new'] },
     { match: ['b.com'], engine: 'ai' },
@@ -201,6 +211,79 @@ test('transferDesc names every section the file carries', () => {
     for (const key of Object.values(names)) {
       assert.ok(desc.includes(catalog[lang][key].toLowerCase()), `${lang} transferDesc 没提 ${catalog[lang][key]}`);
     }
+  }
+});
+
+// ------------------------------------------------------------ AI 配置档那一行（P1-D）
+
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const storedProfile = (fields) => Object.assign({
+  v: 1, provider: 'openai', apiEndpoint: OPENAI_URL, modelName: 'gpt-4.1-mini', features: [], default: false,
+}, fields);
+
+test('aiProfiles row: second, the key leaves only when the box is ticked, the preview counts and warns', async () => {
+  const stored = {
+    'aiProfile:legacy': storedProfile({ name: 'Default', apiKey: 'sk-local', default: true }),
+    theme: 'dark',
+  };
+  const page = loadPage({ stored, lang: 'zh-CN' });
+  assert.equal(page.get('TRANSFER_SECTIONS')[1].key, 'aiProfiles', '在 customRules 之前：规则的 profile 要先有档');
+  assert.equal(page.get('TRANSFER_SECTION_NAMES').aiProfiles, 'transferSectionAiProfiles');
+
+  const without = await section(page, 'aiProfiles').collect({ includeApiKey: false });
+  assert.deepEqual(without.map((profile) => [profile.id, 'apiKey' in profile]), [['legacy', false]]);
+  const withKey = await section(page, 'aiProfiles').collect({ includeApiKey: true });
+  assert.deepEqual(withKey.map((profile) => [profile.id, profile.apiKey]), [['legacy', 'sk-local']]);
+
+  // 同 id 一档（不带 Key，本机有 Key 可沿用）+ 新的一档（不带 Key，也没得沿用）。
+  const raw = [
+    Object.assign({}, without[0]),
+    { id: 'second01', name: 'Second', provider: 'openai', apiEndpoint: OPENAI_URL, modelName: 'gpt-4.1', features: ['hover'] },
+  ];
+  const result = await section(page, 'aiProfiles').validate(raw);
+  assert.equal(result.value, raw, '值原样带给 apply');
+  assert.deepEqual({ accepted: result.accepted, dropped: [...result.dropped], added: result.added, replaced: result.replaced },
+    { accepted: 2, dropped: [], added: 1, replaced: 1 });
+  const shown = await section(page, 'aiProfiles').preview(result);
+  assert.deepEqual([...shown.lines], ['AI 配置档：将新增 1 个 AI 配置档、替换 1 个。']);
+  assert.deepEqual([...shown.warnings], ['「Second」未填 Key，导入后请到设置里补上。'],
+    '沿用本机 Key 的那一档不警告，没 Key 的新档警告一次');
+
+  // 换了接口地址又没带 Key：本机那把 Key 会发去新地址。
+  const moved = [Object.assign({}, without[0], { apiEndpoint: 'https://example.test/v1/chat/completions' })];
+  const movedShown = await section(page, 'aiProfiles').preview(await section(page, 'aiProfiles').validate(moved));
+  assert.deepEqual([...movedShown.warnings],
+    [catalog['zh-CN'].transferEndpointKeyWarning.replace('{endpoint}', 'https://example.test/v1/chat/completions')]);
+
+  await section(page, 'aiProfiles').apply(raw);
+  const [{ owner, kind, payload }] = page.requests;
+  assert.deepEqual({ owner, kind, keepKeys: payload.keepKeys, profiles: payload.profiles },
+    { owner: 'aiProfiles', kind: 'import', keepKeys: true, profiles: raw });
+
+  // 源码层面：readAiProfiles 就是这里桩的那一行。
+  assert.match(repoSource('options/options-ai-profiles.js'),
+    /async function readAiProfiles\(\) \{\n {2}return AIProfiles\.collection\.collect\(await chrome\.storage\.sync\.get\(null\)\);\n\}/);
+});
+
+test('aiProfiles row: a bad profile, two defaults, a feature twice or a repeated id refuse the whole section', async () => {
+  const page = loadPage();
+  // 没配过 AI 的设备导出的是空数组：收下 0 档，不拒整份（applyAll 跳过 accepted 0 的一节）。
+  const empty = await section(page, 'aiProfiles').validate([]);
+  assert.deepEqual({ accepted: empty.accepted, added: empty.added, replaced: empty.replaced }, { accepted: 0, added: 0, replaced: 0 });
+  const good = (id, fields) => Object.assign({ id, name: id, provider: 'openai', apiEndpoint: OPENAI_URL, modelName: 'm' }, fields);
+  const bad = [
+    'nope',
+    [good('aaaa0001', { apiEndpoint: 'ftp://x' })],
+    [good('bad id')],
+    [good('aaaa0001', { default: true }), good('aaaa0002', { default: true })],
+    [good('aaaa0001', { features: ['page'] }), good('aaaa0002', { features: ['page'] })],
+    [good('aaaa0001'), good('aaaa0001')],
+    Array.from({ length: AIProfiles.LIMITS.maxItems + 1 }, (_, i) => good(`aaaa${String(i).padStart(4, '0')}`)),
+  ];
+  for (const raw of bad) {
+    await assert.rejects(section(page, 'aiProfiles').validate(raw),
+      (error) => error instanceof SettingsTransfer.TransferError && error.code === 'sectionInvalid' && error.detail === 'aiProfiles',
+      JSON.stringify(raw).slice(0, 80));
   }
 });
 

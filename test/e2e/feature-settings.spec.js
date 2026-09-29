@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting } = require('./helpers');
+const { setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting, getDefaultProfile } = require('./helpers');
 const { getMessage } = require('../../i18n/messages');
 
 // 这张卡上已经没有「开 / 关」了：字幕翻不翻跟着主开关和站点规则走。剩下的开关
@@ -68,7 +68,8 @@ test('typed fields autosave after the debounce', async ({ page, context, extensi
   await page.fill('#apiKey', 'sk-typed-not-clicked');
   await page.locator('#apiKey').blur();
 
-  await expect.poll(async () => getSyncSetting(context, 'apiKey')).toBe('sk-typed-not-clicked');
+  // P1-D: the key lives on the default AI profile now, not in a sync key of its own.
+  await expect.poll(async () => (await getDefaultProfile(context)).apiKey).toBe('sk-typed-not-clicked');
 });
 
 /**
@@ -154,7 +155,7 @@ test('a success message does not blank a later message when it expires', async (
  * edited, so the autosave flush runs concurrently with the probe. That flush
  * must not answer a question the user asked of the API.
  */
-test('an autosave flush stays quiet while a connection test is in flight', async ({ page, extensionId }) => {
+test('an autosave flush stays quiet while a connection test is in flight', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
     targetLang: 'en',
     provider: 'openai',
@@ -162,7 +163,9 @@ test('an autosave flush stays quiet while a connection test is in flight', async
     modelName: 'gpt-4.1-mini',
   });
 
-  await page.route('https://api.openai.com/**', async (route) => {
+  // P1-D: the probe runs in the service worker (AI_PROFILE_TEST), which
+  // page.route cannot see.
+  await context.route('https://api.openai.com/**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     await route.fulfill({
       status: 200,

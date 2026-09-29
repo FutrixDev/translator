@@ -24,6 +24,7 @@
 //
 //   content/engine/languages.js   语言码、引擎认哪些语言、源语言探测（整页/单段/输入框）
 //   content/engine/watchdog.js    进 Translator API 的每一次调用都要有的那条死线
+//   content/engine/probe.js       ctx.builtinTranslator 对外面与 popup 的状态探测（排在入口之后）
 //   这一份（入口）                选哪条后端、内置翻译本身、回落与预算闸、对外接口
 //
 // 跨文件的名字一律写成 `eng.foo`、调用时才取，所以这一族谁先装都行。
@@ -419,28 +420,10 @@
 
   // ==================== AI 回落判定 ====================
 
-  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于用户的接口配没配好。
-  // 没配好却回落过去，用户只会收到一句“请先配置 API Key”——
-  // 而真正的原因是“这个语言对内置引擎不支持”或“语言包还没下”。
-  //
-  // 「配好」不是「有 Key」：本地模型（Ollama / LM Studio、回环或局域网端点）不要
-  // Key。答案只有一处，APICompat.isApiKeyMissing（shared/api-compat.js），它只看
-  // 这三个键，于是这里缓存的也就是这三个键。null = 还没读过。
-  const AI_CONFIG_KEYS = ['provider', 'apiEndpoint', 'apiKey'];
-  let aiConfig = null;
-
-  async function refreshAiConfig() {
-    try {
-      aiConfig = await chrome.storage.sync.get({ provider: '', apiEndpoint: '', apiKey: '' });
-    } catch (error) {
-      aiConfig = { provider: '', apiEndpoint: '', apiKey: '' };
-    }
-    return aiConfig;
-  }
-
-  function aiConfigured() {
-    return !!aiConfig && !globalThis.APICompat.isApiKeyMissing(aiConfig);
-  }
+  // 内置引擎顶不住时要不要回落到用户自己的接口，取决于这个功能有没有一档能用的
+  // AI 配置（ctx.aiProfiles.ready，content/content-ai-profiles.js）。没有却回落过去，
+  // 用户只会收到一句「未配置」—— 而真正的原因是「这个语言对内置引擎不支持」或
+  // 「语言包还没下」。
 
   // 选内置引擎就是选了“零费用”。内置这条路走不通时悄悄改走用户自己的接口，
   // 花的是他的钱，而他从没同意过这件事——所以回退默认关闭，开了才回退。
@@ -451,10 +434,10 @@
     return !siteEngine() && settings.engineFallback === 'allow-ai';
   }
 
-  async function canFallBackToAI() {
+  async function canFallBackToAI(feature) {
     if (!fallbackAllowed()) return false;
-    if (!aiConfig) await refreshAiConfig();
-    return aiConfigured();
+    await ctx.aiProfiles.whenReady();
+    return ctx.aiProfiles.ready(feature);
   }
 
   /**
@@ -474,10 +457,10 @@
    * 内置引擎上失败并按 engineFallback 回落到 AI。那一下花的钱由下面
    * requestTranslation 末尾那道预算闸把关。
    */
-  async function effectiveEngine({ auto = false } = {}) {
+  async function effectiveEngine({ auto = false, feature } = {}) {
     if (shouldUseBuiltin(auto)) return 'builtin';
     if (!isBuiltinSelected(auto)) return 'ai';
-    return (await canFallBackToAI()) ? 'ai' : 'none';
+    return (await canFallBackToAI(feature)) ? 'ai' : 'none';
   }
 
   /**
@@ -525,21 +508,6 @@
     lastFallback = { reason, at: Date.now() };
   }
 
-  if (chrome?.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace !== 'sync') return;
-      // 三个键任一变了就把新值并进缓存；还没读过就不并 —— 只并进一个键会把另外
-      // 两个当成空，下一次 canFallBackToAI 自己去读整份就是了。
-      if (aiConfig) {
-        for (const key of AI_CONFIG_KEYS) {
-          if (changes[key]) aiConfig = { ...aiConfig, [key]: changes[key].newValue };
-        }
-      }
-      // 语言对可能因为设置改了目标语言而变化，页面语言缓存不受影响，
-      // 但已建好的实例是按语言对缓存的，无需清理。
-    });
-  }
-
   // targetLang 是这次请求的目标语言。语言对不行时先分清是不是目标语言本身端上译不了：
   // 是的话点名（76 门里大半只有 AI 能译），否则才是笼统的「这一对不行」（多半是源语言）。
   // 走到这里的都是不能回退 AI 的请求，所以只有 LocalOnly 那一句。
@@ -566,7 +534,7 @@
   // 内置引擎能处理的请求类型，只此一份：wantsBuiltin 按它分流，handleWithBuiltin
   // 的 case 标签与它相等（单测断言）。设置和站点规则只管这几种；别的类型没指名
   // 引擎就直接走 AI，http 与 https 上行为一致。
-  const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH', 'TRANSLATE_BATCH_FAST']);
+  const BUILTIN_TYPES = new Set(['TRANSLATE', 'TRANSLATE_BATCH_FAST']);
 
   // 每一段都经词表的占位保护（snap 是这一次请求的快照，空快照什么也不做）。
   async function handleWithBuiltin(message, snap) {
@@ -589,7 +557,6 @@
         return { translation, phonetic: '', isWord: false };
       }
 
-      case 'TRANSLATE_BATCH':
       case 'TRANSLATE_BATCH_FAST': {
         const texts = Array.isArray(message.texts) ? message.texts : [];
         // 目标语言不支持是整批（乃至整页）都成立的事实，先判掉整批抛出去，
@@ -674,9 +641,21 @@
    * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
    * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
    * 交来的那一份（缓存层算键时取的），没交就在这里现取（eng.addenda.settings）。
+   *
+   * `resolved` 是这一次请求选中的 AI 配置档（AIProfiles.resolve 的形状，由两个
+   * 送出口解析）：`{profile}` 就把 profileId 盖进每一份消息，SW 按它取整档；
+   * `{error}`（规则指的档不在了、一档都没有）到这里才变成给用户看的一句话 ——
+   * 走内置引擎的请求从不看它。
    */
-  async function sendToModel(original, snap, frozen) {
-    const { pageContext: _neighbours, ...message } = original;
+  async function sendToModel(original, snap, frozen, resolved) {
+    if (resolved.error) {
+      console.warn('Blab Translation: sendToModel has no AI profile (%s, profile %s, feature %s)',
+        resolved.error, resolved.id || '(none)', original.feature);
+      const t = ctx.t || ((key) => key);
+      return { error: t(AIProfiles.resolveMessageKey(resolved.error)).replace('{name}', resolved.id || ''), engine: 'ai' };
+    }
+    const { pageContext: _neighbours, ...unstamped } = original;
+    const message = { ...unstamped, profileId: resolved.profile.id };
     if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
     // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
     // 它悄悄丢掉这一页的语域，所以直接抛。
@@ -773,7 +752,8 @@
    *
    * `opts.glossary` 是调用方已经取好的词表快照、`opts.addendaSettings` 是它取好的
    * 领域与上下文开关（eng.addenda.settings()）：缓存层算键前取一次，键和请求出自
-   * 同一份（D-384 F1）；没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
+   * 同一份（D-384 F1）；`opts.profile` 是它解析好的配置档（P1-D §3.2，键里的接口
+   * 地址和模型出自它）。没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
    */
   ctx.sendTranslation = async function(message, opts = {}) {
     // 引擎谓词要问本站规则（siteEngine），规则先到再选；词表同样要先到，快照才
@@ -781,15 +761,20 @@
     await Promise.all([
       ctx.customRules && ctx.customRules.whenReady(),
       ctx.glossary && ctx.glossary.whenReady(),
+      ctx.aiProfiles && ctx.aiProfiles.whenReady(),
     ]);
-    const snap = opts.glossary || await eng.glossary.current(message.targetLang);
+    // 指名了不认识的引擎先抛：那是调用方写错了，排在选档之前。
     const pinned = pinnedEngine(message);
+    const snap = opts.glossary || await eng.glossary.current(message.targetLang);
+    // 选档与取词表快照同一段：没交就在这里现解析（feature 不认识就抛）。走内置
+    // 引擎也照样解析，{error} 只在真要发给模型时才用上（sendToModel）。
+    const profile = opts.profile || ctx.aiProfiles.resolve(message.feature);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
     const auto = !!message.auto;
     const builtin = wantsBuiltin(message, auto);
     // 回落只在没指名引擎时才有：指名了就是这一个引擎的答案，成败都是它的。
-    const mayFallBack = async () => pinned === undefined && canFallBackToAI();
+    const mayFallBack = async () => pinned === undefined && canFallBackToAI(message.feature);
     if (builtin && !isBuiltinSupported()) {
       // 选的是内置引擎，但这个环境给不了：Chrome 版本过低，或者页面是 http://
       // （content script 继承文档的非安全上下文，Translator 压根不存在）。
@@ -819,20 +804,20 @@
         throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
-    return sendToModel(message, snap, opts.addendaSettings);
+    return sendToModel(message, snap, opts.addendaSettings, profile);
   };
 
   /**
-   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边先重读一次
-   * 配置 —— 设置页刚填好 Key，这一页的缓存还是旧的。内置那边除了环境，还要端上
+   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边问这个功能
+   * 解析出的档（镜像跟着 sync 增量走，设置页刚填好 Key 这里就知道）。内置那边除了环境，还要端上
    * 有这门目标语言：问的是 eng.supportsTarget，和页内语言菜单标「仅 AI」的是同一个
    * 谓词，不然卡片会对一门「仅 AI」的语言提供「改用内置」，点了只换来一句报错。
    */
-  ctx.engineChoices = async function(targetLang) {
-    await refreshAiConfig();
+  ctx.engineChoices = async function(targetLang, feature) {
+    await ctx.aiProfiles.whenReady();
     return {
       builtin: isBuiltinSupported() && eng.supportsTarget(targetLang),
-      ai: aiConfigured(),
+      ai: ctx.aiProfiles.ready(feature),
     };
   };
 
@@ -854,125 +839,11 @@
 
   ctx.currentTargetLang = currentTargetLang;
 
-  // popup 问的是“这一页现在能不能用内置引擎”。环境那一半是同步的，永远答得出；
-  // 语言对那一半要跑 IPC，给它一个预算，超了就报 'unknown'——“没查出来”和
-  // “查出来是坏的”对用户是两件事，不能混成同一句话。
-  function withinBudget(ms, run) {
-    return Promise.race([
-      Promise.resolve().then(run).catch(() => 'unknown'),
-      new Promise((resolve) => setTimeout(() => resolve('unknown'), ms))
-    ]);
-  }
-
-  async function probeStatus({ budgetMs = 250 } = {}) {
-    const result = {
-      engine: isBuiltinSelected(false) ? 'builtin' : 'ai',
-      supported: isBuiltinSupported(),
-      reason: '',
-      availability: 'unknown',
-      lastFallback
-    };
-    if (result.engine !== 'builtin') return result;
-    if (!result.supported) {
-      result.reason = builtinUnsupportedReason();
-      return result;
-    }
-    // 这里问的是「这一页现在能不能用内置引擎」，要的是真会发出去的那一门语言，
-    // 所以读解析后的结果而不是 settings.targetLang 的原值：空串在身份那一侧是
-    // 「跟随浏览器」的哨兵（见 currentTargetLang），在这里当成它自己会让所有还
-    // 没选过语言的用户看到「不可用」。
-    const tgt = eng.toApiLang(TargetLang.effective(settings));
-    if (!tgt || !eng.supportsLang(tgt)) {
-      result.availability = 'unavailable';
-      return result;
-    }
-    result.availability = await withinBudget(budgetMs, async () => {
-      const src = eng.toApiLang(await eng.pageSourceLang());
-      // 判不出页面语言不等于坏了：真翻译时会再判一次，这里只能说“不知道”。
-      if (!src) return 'unknown';
-      if (!eng.supportsLang(src)) return 'unavailable';
-      if (src === tgt) return 'available';
-      return await probeAvailability(src, tgt);
-    });
-    return result;
-  }
-
-  ctx.builtinTranslator = {
-    isSupported: isBuiltinSupported,
-    isSelected: isBuiltinSelected,
-    isActive: shouldUseBuiltin,
-    fallbackAllowed,
-    effectiveEngine,
-    unsupportedReason: builtinUnsupportedReason,
-    probeStatus,
-    // 这三个的主人是 content/engine/languages.js。包一层而不是直接交出函数：
-    // 调用时才取架子，这一族的装载顺序就不是契约。
-    toApiLang: (lang) => eng.toApiLang(lang),
-    translate: translateWithBuiltin,
-    destroyAll,
-
-    // 一门目标语言（扩展自己的码）端上有没有：页内语言菜单标「仅 AI」、设置页和
-    // 引导页的语言包状态（shared/language-pack.js）问的都是这一句，主人同样是
-    // content/engine/languages.js。
-    supportsTarget: (lang) => eng.supportsTarget(lang),
-
-    // 语言包那一层（content/content-language-pack.js）要问的两件事。归一化后的
-    // 语言码它自己拿 toApiLang 算，这两个只答引擎知道而它不知道的：这门语言引擎
-    // 认不认，以及这一页是什么语言（带缓存，换路由时自己过期）。
-    supportsLang: (code) => eng.supportsLang(code),
-    pageSourceLang: () => eng.pageSourceLang(),
-
-    // 输入框芯片（content/content-input-chip.js）问的那一句：这段刚敲进去的字
-    // 是什么语言。判不出来答空串 —— 它据此决定不出声。
-    detectStandaloneLang: (text) => eng.detectStandaloneLang(text),
-
-    async availability(sourceLang, targetLang) {
-      if (!isBuiltinSupported()) return 'unavailable';
-      const src = eng.toApiLang(sourceLang);
-      const tgt = eng.toApiLang(targetLang);
-      if (!src || !tgt) return 'unavailable';
-      if (src === tgt) return 'available';
-      if (!eng.supportsLang(src) || !eng.supportsLang(tgt)) return 'unavailable';
-      try {
-        return await probeAvailability(src, tgt);
-      } catch (error) {
-        return 'unavailable';
-      }
-    },
-
-    /**
-     * 下载并就绪某个语言对。只应在**真实的用户手势里**调用——create() 触发下载
-     * 要求 user activation。两个调用方：设置页那颗按钮（有地方显示进度），和
-     * content/content-language-pack.js 的预取（借用户在页面上的第一次点击，静默
-     * 进行，不传 onProgress）。
-     */
-    async ensureDownloaded(sourceLang, targetLang, onProgress) {
-      if (!isBuiltinSupported()) {
-        throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_ENV);
-      }
-      const src = eng.toApiLang(sourceLang);
-      const tgt = eng.toApiLang(targetLang);
-      if (!src || !tgt || !eng.supportsLang(src) || !eng.supportsLang(tgt)) {
-        throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
-      }
-      if (src === tgt) return 'available';
-      try {
-        // 这条路是设置页那颗按钮，下载可以很久，但同样不能无限期地转下去：
-        // 看门狗只在下载停住不动时才收网，正常往下走的下载它一次都不会碰。
-        await getTranslator(src, tgt, true, onProgress);
-      } catch (error) {
-        if (isActivationError(error)) {
-          throw new EngineUnavailableError(ENGINE_REASONS.NEEDS_DOWNLOAD);
-        }
-        if (error instanceof eng.TimeoutError) {
-          throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
-        }
-        throw new EngineUnavailableError(ENGINE_REASONS.CREATE_FAILED);
-      }
-      return 'available';
-    }
-  };
-
-  // 语言包模型常驻内存，页面走了就该放掉。
-  window.addEventListener('pagehide', destroyAll);
+  // content/engine/probe.js（ctx.builtinTranslator、popup 的状态探测）要问的引擎内部谓词。
+  Object.assign(eng, {
+    isBuiltinSupported, isBuiltinSelected, shouldUseBuiltin, builtinUnsupportedReason,
+    fallbackAllowed, effectiveEngine, translateWithBuiltin, destroyAll, probeAvailability,
+    getTranslator, isActivationError, EngineUnavailableError, ENGINE_REASONS,
+    lastFallback: () => lastFallback
+  });
 })();

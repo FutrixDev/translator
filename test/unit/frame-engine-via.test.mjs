@@ -118,7 +118,7 @@ function loadTop({ hostname = 'news.example.com' } = {}) {
     state: { translationsVisible: true, pageScopeOverride: null, isTranslatingPage: false },
     t: (key) => key,
     autoTranslate: { isOn: () => true, onStateChange: (fn) => fn() },
-    customRules: { engineOverride: () => null, onChange() {} },
+    customRules: { engineOverride: () => null, profileOverride: () => null, onChange() {} },
     translationProfile: {
       generation: () => generation,
       subscribe: (fn) => generationSubscribers.push(fn),

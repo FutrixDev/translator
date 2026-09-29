@@ -32,6 +32,8 @@
   if (!TargetLang) throw new Error('glossary.js 要先装 shared/target-lang.js');
   const TextMarkers = root.TextMarkers;
   if (!TextMarkers) throw new Error('glossary.js 要先装 shared/text-markers.js');
+  const BATCH_DELIMITER = root.BATCH_DELIMITER;
+  if (!BATCH_DELIMITER) throw new Error('glossary.js 要先装 shared/batch-delimiter.js');
 
   const KEY_PREFIX = 'glossary:';
   const VERSION = 1;
@@ -115,7 +117,14 @@
    * 译文还原进译文块以后，落笔按同一套语法认结构，同编号的记号会被换成公式、
    * 重建成页面元素或当残片删掉。拒收，不转义 —— 表单、CSV 导入、服务工作者的
    * 写入口和 decode 读出都经过这里，没有第二处校验。
+   *
+   * 批量分隔符（shared/batch-delimiter.js）同理拒收：词条进了快速批量的提示词，
+   * 模型照抄回来就会多切出一段，整批错位。
    */
+  function hasStructure(text) {
+    return TextMarkers.hasMarkers(text) || text.includes(BATCH_DELIMITER);
+  }
+
   function validateEntry(entry) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw invalid();
     for (const key of Object.keys(entry)) {
@@ -124,13 +133,13 @@
     if (entry.v !== undefined && entry.v !== VERSION) throw invalid();
     if (typeof entry.s !== 'string') throw invalid();
     const s = normalizeSource(entry.s);
-    if (!s || s.length > LIMITS.source || TextMarkers.hasMarkers(s)) throw invalid();
+    if (!s || s.length > LIMITS.source || hasStructure(s)) throw invalid();
 
     const out = { s };
     if (isPresent(entry.t)) {
       if (typeof entry.t !== 'string') throw invalid();
       const t = entry.t.normalize('NFC').trim();
-      if (t.length > LIMITS.target || TextMarkers.hasMarkers(t)) throw invalid();
+      if (t.length > LIMITS.target || hasStructure(t)) throw invalid();
       if (t) out.t = t;
     }
     if (normalizeCase(entry.c)) out.c = 1;

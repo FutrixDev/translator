@@ -19,6 +19,7 @@ const { ctx, translateCalls } = await installEngineHarness({ pageText: CHINESE_P
 function typedIntoDialog(text, targetLang) {
   return ctx.requestTranslation({
     type: 'TRANSLATE',
+    feature: 'input',
     text,
     targetLang,
     mode: 'text',
@@ -47,7 +48,7 @@ test('the page language is only rejected when its script disagrees', async () =>
 
 test('page text on a Chinese page still falls back to the page language', async () => {
   translateCalls.length = 0;
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: '更多', targetLang: 'en', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'input', text: '更多', targetLang: 'en', mode: 'text' });
 
   assert.equal(translateCalls[0].sourceLanguage, 'zh', 'lost the page-language fallback');
 });

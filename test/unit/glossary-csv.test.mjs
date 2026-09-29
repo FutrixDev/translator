@@ -14,6 +14,8 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/target-lang.js');
 // glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
 await import('../../shared/text-markers.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 const { Glossary, GlossaryCsv } = globalThis;

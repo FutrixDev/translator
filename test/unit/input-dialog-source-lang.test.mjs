@@ -27,6 +27,7 @@ const { ctx, translateCalls } = await installEngineHarness({ pageText: ENGLISH_P
 function typedIntoDialog(text, targetLang) {
   return ctx.requestTranslation({
     type: 'TRANSLATE',
+    feature: 'input',
     text,
     targetLang,
     mode: 'text',
@@ -90,7 +91,7 @@ test('page text still falls back to the page language when it is too short to de
   // the page, where the page's language is the best available answer for a
   // fragment too short to detect on its own. That behaviour has to stay.
   translateCalls.length = 0;
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'Read more', targetLang: 'ja', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'input', text: 'Read more', targetLang: 'ja', mode: 'text' });
 
   assert.equal(translateCalls[0].sourceLanguage, 'en', 'lost the page-language fallback');
 });

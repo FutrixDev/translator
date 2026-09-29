@@ -17,9 +17,17 @@ import { engineSource, familyPaths } from './helpers/sources.mjs';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
-// engine-status.js reads APICompat at call time (the AI engine's readiness is
-// APICompat.isApiKeyMissing), and every page loads api-compat.js before it.
+// Whether the AI engine is ready is no longer engine-status.js's own judgement:
+// the page (probe.aiReady) or the service worker answers it from the selected
+// AI profile, whose keyMissing is APICompat.isApiKeyMissing (P1-D §3.5). The
+// profile chain is loaded so the local-model rule is checked where it now lives.
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
+await import('../../shared/ai-profiles.js');
 await import('../../shared/engine-status.js');
 await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
@@ -69,29 +77,35 @@ const probe = (over = {}) => Object.assign({
 }, over);
 
 test('only the AI engine is judged by the API key', () => {
+  // The AI profile's readiness (aiReady()'s answer) decides, not the settings:
+  // the old global key in `settings` is never read.
   assert.deepEqual(
-    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '' }, null),
+    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: 'sk-x' }, null, false),
     { key: 'apiNotConfigured', detailKey: '', ok: false });
   assert.deepEqual(
-    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: 'sk-x' }, null),
+    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '' }, null, true),
     { key: 'ready', detailKey: '', ok: true });
+  // The AI branch without an answer is a caller bug, not "not configured".
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'ai' }, null), TypeError);
 
   // A local model server needs no key: the Ollama / LM Studio presets, or any
-  // loopback / LAN endpoint. The rule is APICompat's, not a second copy here.
+  // loopback / LAN endpoint. The rule is APICompat's, and it reaches the popup
+  // through the profile's keyMissing (the page's mirror and the worker's
+  // AI_PROFILES_READY both read it), not a second copy here.
+  const keyMissing = (fields) => globalThis.AIProfiles.publicView(
+    Object.assign({ id: 'p', name: 'P', modelName: 'm', features: [], default: true }, fields)).keyMissing;
   for (const local of [
     { provider: 'ollama', apiEndpoint: 'http://localhost:11434/v1/chat/completions' },
     { provider: 'lmstudio', apiEndpoint: 'http://localhost:1234/v1/chat/completions' },
     { provider: 'custom', apiEndpoint: 'http://127.0.0.1:8080/v1/chat/completions' },
     { provider: 'custom', apiEndpoint: 'http://192.168.1.20:11434/v1/chat/completions' },
   ]) {
-    assert.deepEqual(
-      ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '', ...local }, null),
-      { key: 'ready', detailKey: '', ok: true }, JSON.stringify(local));
+    assert.equal(keyMissing({ apiKey: '', ...local }), false, JSON.stringify(local));
   }
   // A remote endpoint still does, whatever the preset is called.
-  assert.equal(ES.describeEngineStatus({
-    translationEngine: 'ai', apiKey: '  ', provider: 'custom', apiEndpoint: 'https://api.example.com/v1/chat/completions',
-  }, null).key, 'apiNotConfigured');
+  assert.equal(keyMissing({
+    apiKey: '  ', provider: 'custom', apiEndpoint: 'https://api.example.com/v1/chat/completions',
+  }), true);
 
   // The regression this file is named after: the default engine is key-free,
   // so a missing key is not an error and must not be reported as one.
@@ -190,9 +204,10 @@ test('falling back to the user own API is off unless they asked for it', () => {
   assert.match(allowed.slice(0, allowed.indexOf('\n  }')),
     /return !siteEngine\(\) && settings\.engineFallback === 'allow-ai';/);
   // And the gate comes before the AI-config lookup, so no storage read happens
-  // for a decision that is already made.
-  assert.ok(body.indexOf('aiConfig') > 0, 'the AI-config lookup moved; re-judge this ordering');
-  assert.ok(body.indexOf('fallbackAllowed') < body.indexOf('aiConfig'));
+  // for a decision that is already made. P1-D: the lookup is the frame's AI
+  // profiles mirror (ctx.aiProfiles), no longer a storage read of its own.
+  assert.ok(body.indexOf('aiProfiles') > 0, 'the AI-config lookup moved; re-judge this ordering');
+  assert.ok(body.indexOf('fallbackAllowed') < body.indexOf('aiProfiles'));
 });
 
 test('local-only is the default, in the one dictionary the content scripts read', () => {
@@ -255,12 +270,16 @@ test('engine-status.js is loaded wherever it is read', () => {
   assert.ok(js.indexOf('shared/engine-status.js') >= 0, 'not in the content scripts at all');
   assert.ok(js.indexOf('shared/engine-status.js') < js.indexOf('content/content-translation-engine.js'));
 
-  // And engine-status.js asks APICompat whether the AI engine has what it needs,
-  // so shared/api-compat.js comes before it in all three load lists. A page
-  // without it throws on the first status line drawn with the AI engine.
+  // engine-status.js no longer asks APICompat anything: whether the AI engine is
+  // ready is the page's answer (probe.aiReady) or the service worker's (P1-D
+  // §3.5). The popup read APICompat only through it, so the popup no longer
+  // loads shared/api-compat.js at all; the other lists still load it for their
+  // own readers, ahead of engine-status.js as before.
+  assert.doesNotMatch(repoFile('shared/engine-status.js'), /APICompat/);
+  assert.doesNotMatch(repoFile('popup/popup.html'), /shared\/api-compat\.js/);
+  assert.doesNotMatch(repoFile('popup/popup.js'), /APICompat\./);
   const lists = {
     'manifest.json': (file) => js.indexOf(file),
-    'popup/popup.html': (file) => repoFile('popup/popup.html').indexOf(`<script src="../${file}"></script>`),
     'options/options.html': (file) => repoFile('options/options.html').indexOf(`<script src="../${file}"></script>`),
     'onboarding/onboarding.html': (file) => repoFile('onboarding/onboarding.html').indexOf(`<script src="../${file}"></script>`),
   };
@@ -307,16 +326,35 @@ test('selectedEngine: the page answer first, the setting only when there is none
   assert.equal(ES.selectedEngine(manualBuiltin, null), 'builtin');
   assert.equal(ES.selectedEngine(manualAi, ES.UNKNOWN_PROBE), 'ai');
   assert.equal(ES.selectedEngine({}, null), 'builtin');
-  // 底栏也经过它：页面说 AI、没 key，就是「没配置」，哪怕设置写着内置。
-  const status = ES.describeEngineStatus({ ...manualBuiltin, apiKey: '' }, { engine: 'ai' });
+  // 底栏也经过它：页面说 AI、档没配好，就是「没配置」，哪怕设置写着内置。
+  const probeAi = { engine: 'ai', aiReady: false };
+  const status = ES.describeEngineStatus({ ...manualBuiltin, apiKey: '' }, probeAi, ES.aiReady(probeAi));
   assert.equal(status.key, 'apiNotConfigured');
 });
 
-test('the popup asks selectedEngine for both the footer and the no-key gate', () => {
+test('aiReady: the page answers first, the worker only when there is no page, a slow page is ready', () => {
+  // 页面按站点规则选档，它说了算；SW 的答复（不带站点规则）此时不看。
+  assert.equal(ES.aiReady({ engine: 'ai', aiReady: false }, true), false);
+  assert.equal(ES.aiReady({ engine: 'builtin', aiReady: true }), true);
+  // 没有内容脚本：问 SW 的那个答复。
+  assert.equal(ES.aiReady(null, false), false);
+  assert.equal(ES.aiReady(null, true), true);
+  // 探测超时不是出了问题的证据：当作就绪，让真正的请求去报真实原因。
+  assert.equal(ES.UNKNOWN_PROBE.aiReady, true);
+  assert.equal(ES.aiReady(ES.UNKNOWN_PROBE), true);
+  // 没有答复就是调用方的错，不冒充「未配置」。
+  assert.throws(() => ES.aiReady(null), TypeError);
+  assert.throws(() => ES.aiReady({ engine: 'ai' }), TypeError);
+});
+
+test('the popup asks selectedEngine and aiReady for both the footer and the no-key gate', () => {
   const popup = repoFile('popup/popup.js');
   assert.match(repoFile('shared/engine-status.js'),
-    /function describeEngineStatus\(settings, probe\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
-  assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(willTranslate && engine === 'ai' && APICompat\.isApiKeyMissing\(settings\)\)/);
+    /function describeEngineStatus\(settings, probe, aiIsReady\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
+  assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
+  assert.match(popup, /renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, await pageAiReady\(probe\)\)\);/);
+  // 没有页面答复时问 SW，且只问 page 这一个功能。
+  assert.match(popup, /chrome\.runtime\.sendMessage\(\{ type: 'AI_PROFILES_READY', feature: 'page' \}\)/);
 });
 
 // 引擎设置（手动 / 自动两张开关与回退）只有这几处直接读：引擎一族自己

@@ -18,7 +18,6 @@
   const caps = (ctx.captions = ctx.captions || {});
   const langTags = globalThis.LangTags;
 
-  const DELIMITER = '⟪⟫⟪⟫⟪⟫';
   const RETRY_COOLDOWN_MS = 8000;
 
   // 一次往前译多远。从前是「整条轨道，一次译完」——一小时的讲座在观众看到第二句
@@ -139,7 +138,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(caps, {
-    DELIMITER, NATIVE_WINDOW_MS, RETRY_COOLDOWN_MS, WINDOW_MS, currentDisplay, getSetting,
+    NATIVE_WINDOW_MS, RETRY_COOLDOWN_MS, WINDOW_MS, currentDisplay, getSetting,
     getTargetLang, getVideoElement, isCaptionsEnabled, sameLanguage, setNativeCaptionsHidden,
     state,
   });

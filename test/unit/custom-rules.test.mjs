@@ -12,6 +12,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 const { CustomRules } = globalThis;
 
@@ -575,6 +578,54 @@ test('custom-rules write addSelector: appends to the winning rule without duplic
 test('custom-rules: newId is the collection one, 8 base36 characters', () => {
   assert.match(CustomRules.newId(), /^[0-9a-z]{8}$/);
   assert.equal(CustomRules.KEY_PREFIX, 'customRule:');
+});
+
+// 规则 v3（P1-D §3.9）：有 profile 才写 v3；v3 必须带 profile；指定了内置引擎的规则
+// 不能再指定配置档；只指定了配置档的规则也算一条有内容的规则。档存不存在只在 SW
+// 的写入口查（put 和 import），形状校验不查。
+test('custom-rules: v3 carries a profile and only a profile makes a v3', () => {
+  const v3 = CustomRules.validateRule({ match: ['example.com'], profile: 'work0001', updatedAt: 3 });
+  assert.deepEqual(v3, { v: 3, match: ['example.com'], profile: 'work0001', updatedAt: 3 });
+  assert.equal(CustomRules.validateRule({ match: ['example.com'], engine: 'ai', domain: 'legal', profile: 'work0001' }).v, 3);
+  for (const profile of [undefined, null, '']) {
+    assert.throws(() => CustomRules.validateRule({ v: 3, match: ['example.com'], engine: 'ai', profile }),
+      { message: 'customRuleInvalid' }, String(profile));
+  }
+  for (const profile of ['bad id!', 7, 'x'.repeat(33)]) {
+    assert.throws(() => CustomRules.validateRule({ match: ['example.com'], profile }),
+      { message: 'customRuleInvalid' }, String(profile));
+  }
+  assert.throws(() => CustomRules.validateRule({ match: ['example.com'], engine: 'builtin', profile: 'work0001' }),
+    { message: 'customRuleProfileWithBuiltin' });
+  // 没有 profile 的规则版本不变
+  assert.equal(CustomRules.validateRule({ match: ['example.com'], engine: 'ai' }).v, 1);
+  assert.equal(CustomRules.validateRule({ match: ['example.com'], domain: 'legal' }).v, 2);
+  // decode 读回 v3
+  const rules = CustomRules.collect({ 'customRule:aaaa1111': { v: 3, match: ['a.com'], profile: 'work0001' } });
+  assert.deepEqual(rules.map((rule) => [rule.id, rule.v, rule.profile]), [['aaaa1111', 3, 'work0001']]);
+});
+
+test('custom-rules write: a rule may only name a profile that exists (put and import)', async () => {
+  const sync = fakeSync({
+    'aiProfile:work0001': { v: 1, name: 'Work', provider: 'openai', apiEndpoint: 'https://api.openai.com/v1/chat/completions',
+      apiKey: '', modelName: 'gpt-4.1-mini', features: [], default: true, rpm: 0, concurrency: 0, timeoutSec: 120 },
+  });
+  await withChrome(sync.chrome, async () => {
+    await rejectsWith(write('put', { rule: { match: ['a.com'], profile: 'gone0001' } }), 'customRuleProfileMissing');
+    await rejectsWith(write('import', { file: file([{ match: ['b.com'], profile: 'gone0001' }]) }), 'customRuleProfileMissing');
+    assert.equal(sync.calls.set.length, 0);
+    const { id } = await write('put', { rule: { match: ['a.com'], profile: 'work0001' } });
+    assert.equal(sync.data[`customRule:${id}`].v, 3);
+    assert.equal(sync.data[`customRule:${id}`].profile, 'work0001');
+    assert.deepEqual(await write('import', { file: file([{ match: ['b.com'], profile: 'work0001' }]) }), { added: 1, replaced: 0 });
+  });
+});
+
+test('custom-rules: loading without AIProfiles throws', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../../shared/custom-rules.js', import.meta.url), 'utf8');
+  const { SiteRules, StorageWriter, SyncCollection, PromptAddenda } = globalThis;
+  assert.throws(() => new Function('globalThis', source)({ SiteRules, StorageWriter, SyncCollection, PromptAddenda }), /ai-profiles/);
 });
 
 test('custom-rules: loading without SiteRules, StorageWriter or SyncCollection throws', async () => {

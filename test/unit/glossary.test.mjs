@@ -18,6 +18,8 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/target-lang.js');
 // glossary.js 在加载时取走 TextMarkers（词条不许含占位符和标记，D-387）。
 await import('../../shared/text-markers.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../shared/glossary-csv.js');
 const { Glossary } = globalThis;
@@ -136,6 +138,27 @@ test('glossary: a stored entry with a marker is unreadable, and a put with one w
     await rejectsWith(write('put', { entry: { s: '</a1>', t: 'x' } }), 'glossaryEntryInvalid');
   });
   assert.deepEqual(sync.data, {}, 'a refused put wrote something');
+});
+
+// P1-D：词条里含批量分隔符会把快速批量切错位，拒收。分隔符只有一份（BATCH_DELIMITER）。
+test('glossary: validateEntry rejects the batch delimiter in s and in t', () => {
+  const delimiter = globalThis.BATCH_DELIMITER;
+  assert.equal(typeof delimiter, 'string');
+  assert.ok(delimiter.length > 0);
+  for (const text of [delimiter, `a${delimiter}b`]) {
+    assert.throws(() => Glossary.validateEntry({ s: text }), { message: 'glossaryEntryInvalid' }, `s: ${text}`);
+    assert.throws(() => Glossary.validateEntry({ s: 'attention', t: text }), { message: 'glossaryEntryInvalid' }, `t: ${text}`);
+  }
+  // 分隔符的一部分不算
+  const piece = delimiter.slice(0, 2);
+  assert.equal(Glossary.validateEntry({ s: `x${piece}y` }).s, `x${piece}y`);
+});
+
+test('glossary: loading without BATCH_DELIMITER throws', () => {
+  const source = repoFile('shared/glossary.js');
+  const { SiteRules, StorageWriter, SyncCollection, TargetLang, TextMarkers } = globalThis;
+  assert.throws(() => new Function('globalThis', source)({ SiteRules, StorageWriter, SyncCollection, TargetLang, TextMarkers }),
+    /batch-delimiter/);
 });
 
 test('glossary: collect skips v > 1 and broken entries, keeps v missing or 1', () => {

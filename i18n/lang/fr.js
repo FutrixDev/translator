@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'Importer et exporter',
-    transferDesc: 'Enregistrez vos paramètres, vos règles de sites, vos règles de traduction par site et votre glossaire dans un fichier, puis chargez-les dans un autre navigateur. Les caches, les statistiques d’utilisation et la connexion à votre compte restent sur cet appareil.',
+    transferDesc: 'Enregistrez vos paramètres, vos profils IA, vos règles de sites, vos règles de traduction par site et votre glossaire dans un fichier, puis chargez-les dans un autre navigateur. Les caches, les statistiques d’utilisation et la connexion à votre compte restent sur cet appareil.',
     transferExport: 'Exporter les paramètres',
     transferImport: 'Importer des paramètres…',
     transferIncludeApiKey: 'Inclure ma clé API',
@@ -655,4 +655,24 @@
     aiPageContextHint: 'Envoie aussi au service d\'IA le titre de la page, pour une traduction plus cohérente. Traduire la page entière ajoute un court passage avant et après ; la traduction automatique n\'envoie que le titre. Le texte envoyé dépasse celui à traduire et consomme un peu plus de quota.',
     customRuleDomain: 'Domaine',
     customRuleDomainInherit: 'Suivre le réglage global',
+    // AI profiles (P1-D)
+    aiProfileRpm: 'Requêtes par minute',
+    aiProfileConcurrency: 'Requêtes simultanées',
+    aiProfileTimeout: 'Délai (secondes)',
+    hintAiProfileZeroUnlimited: '0 signifie sans limite.',
+    hintAiProfileTimeout: 'Durée d’attente maximale d’une requête, de 15 à 240 secondes.',
+    aiProfileMissing: 'Le profil IA « {name} » n’existe plus. Choisissez-en un autre dans les paramètres.',
+    aiProfileInvalid: 'Ce profil IA n’est pas valide. Vérifiez le point d’accès, le modèle et les limites.',
+    aiProfileTooLarge: 'Ce profil IA est trop volumineux pour être enregistré. Raccourcissez le nom, le point d’accès ou la clé.',
+    aiProfilesBudgetFull: 'Plus de place pour un autre profil IA (20 profils, 8 Kio). Supprimez-en un d’abord.',
+    aiProfileInUse: 'Des règles de sites utilisent ce profil IA : {rules}. Modifiez-les d’abord.',
+    aiProfileDefaultInUse: 'C’est le profil IA par défaut. Définissez d’abord un autre profil par défaut.',
+    aiProfileSaveFailed: 'Impossible d’enregistrer le profil IA. Veuillez réessayer.',
+    aiProfileKeyMissing: '« {name} » n’a pas de clé API. Ajoutez-la dans les paramètres après l’import.',
+    apiErrorTimeout: 'La requête a expiré ({seconds} s)',
+    apiErrorEmpty: 'Le service IA a renvoyé une réponse vide.',
+    customRuleProfileMissing: 'Le profil IA utilisé par cette règle n’existe pas.',
+    customRuleProfileWithBuiltin: 'Une règle qui utilise le moteur intégré ne peut pas indiquer de profil IA.',
+    transferSectionAiProfiles: 'Profils IA',
+    transferPreviewAiProfiles: 'Profils IA : {added} ajouté(s), {replaced} remplacé(s).',
 };

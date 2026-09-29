@@ -618,11 +618,12 @@ test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
   const body = popup.slice(popup.indexOf('async function translateCurrentPage()'),
     popup.indexOf('function openSettings()'));
   assert.match(body, /const willTranslate = !isHideAction\(\);/);
-  // 「缺不缺 Key」问的是 APICompat.isApiKeyMissing：本地模型不要 Key，弹窗不能拦它。
-  // 这一页用哪个引擎问 EngineStatus.selectedEngine（页面的答复优先 —— 站点规则
-  // 可能钉住了引擎，没有答复才看设置），和页脚那行字问的是同一个函数。
+  // 「AI 能不能发」问的是这一页选中的 AI 配置档（pageAiReady：页面按站点规则答，
+  // 没页面问 SW；档的 keyMissing 仍是 APICompat.isApiKeyMissing，本地模型不要 Key，
+  // 弹窗不能拦它）。这一页用哪个引擎问 EngineStatus.selectedEngine（页面的答复优先
+  // —— 站点规则可能钉住了引擎，没有答复才看设置），和页脚那行字问的是同一个函数。
   assert.match(body, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);/);
-  assert.match(body, /if \(willTranslate && engine === 'ai' && APICompat\.isApiKeyMissing\(settings\)\)/);
+  assert.match(body, /if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
 });
 
 test('「这一下是不是收起」只有一个出处 —— 按钮上那行字和那道门问的是同一句', () => {

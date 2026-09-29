@@ -30,6 +30,8 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../i18n/messages.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/sync-collection.js');
+await import('../../shared/ai-profiles.js');
 await import('../../shared/settings-transfer.js');
 const { SettingsTransfer: ST, SiteRules, APICompat, TargetLang, TranslationDisplay, DefaultSettings, UI_LANGUAGES } = globalThis;
 
@@ -126,26 +128,30 @@ test('device geometry, the local ask counter and the site rules never ride in se
   }
   // 反过来，确实是设置的那些键都在。
   for (const key of ['translationEngine', 'autoTranslateEngine', 'engineFallback', 'targetLang',
-    'apiEndpoint', 'modelName', 'provider', 'apiKey', 'theme', 'uiLanguage']) {
+    'theme', 'uiLanguage']) {
     assert.ok(key in schema, `${key} is missing from the settings schema`);
+  }
+  // P1-D：AI 连接的四个旧键不再是设置，它们只在配置档里（aiProfiles 一节）。
+  for (const key of globalThis.AIProfiles.LEGACY_KEYS) {
+    assert.ok(!(key in schema), `${key} is a legacy AI key and must not be in the settings schema`);
   }
 });
 
-test('the API key leaves only when the box is ticked', () => {
+test('the settings section never carries an API key; the key rides only in aiProfiles', () => {
+  // P1-D：「包含 API Key」由 aiProfiles 一节管（见下面 aiProfiles 的导出测试）。settings
+  // 这一节不论勾不勾都不带 Key —— 哪怕存储里还躺着一个没迁走的旧 apiKey。
   const stored = Object.assign({}, schema, {
     apiKey: 'placeholder-not-a-key',
+    apiEndpoint: 'https://legacy.example/v1/chat/completions',
     theme: 'dark',
     youtubeCaptionPosXPct: 12,
     comicToken: 'never-exported',
   });
-  const plain = ST.pickExport(stored, schema, { includeApiKey: false });
-  assert.ok(!('apiKey' in plain));
+  const plain = ST.pickExport(stored, schema);
   assert.equal(plain.theme, 'dark');
-  for (const key of [...Object.keys(ST.EXCLUDED), 'comicToken']) assert.ok(!(key in plain), `${key} was exported`);
-
-  const withKey = ST.pickExport(stored, schema, { includeApiKey: true });
-  assert.equal(withKey.apiKey, 'placeholder-not-a-key');
-  for (const key of [...Object.keys(ST.EXCLUDED), 'comicToken']) assert.ok(!(key in withKey), `${key} was exported`);
+  for (const key of [...Object.keys(ST.EXCLUDED), 'comicToken', ...globalThis.AIProfiles.LEGACY_KEYS]) {
+    assert.ok(!(key in plain), `${key} was exported`);
+  }
 });
 
 // ------------------------------------------------------------ 键级校验
@@ -158,7 +164,7 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
     notARealSetting: true,                           // unknown key
     youtubeCaptionFontColor: 'red',                  // not #rrggbb
     youtubeCaptionBgColor: '#00FF7f',                // ok
-    apiEndpoint: 'javascript:alert(1)',              // not http(s)
+    apiEndpoint: 'javascript:alert(1)',              // legacy AI key (P1-D): unknown now
     autoAiDailyBudget: -1,                           // out of range
     youtubeCaptionBgOpacity: Number.NaN,             // not finite
     autoTranslateLangs: ['en'],                      // removed in R33 (D-351): unknown now
@@ -172,7 +178,7 @@ test('a value of the wrong kind is dropped by name, the rest still comes in', ()
   ]);
 
   const good = ST.validateSettings({
-    apiEndpoint: 'http://localhost:11434/v1/chat/completions',
+    youtubeCaptionFontColor: '#112233',
     autoAiDailyBudget: 0,
     targetLang: '',
     uiLanguage: 'zh-TW',
@@ -270,9 +276,9 @@ test('every enum names a real setting, and agrees with the choices on the settin
   }
   assert.deepEqual(enums.translationStyle, [...TranslationDisplay.STYLES]);
   assert.deepEqual(enums.uiLanguage, ['', ...UI_LANGUAGES]);
-  assert.deepEqual(enums.provider, Object.keys(APICompat.PROVIDERS));
+  assert.ok(!('provider' in enums), 'provider is a profile field now, not a setting');
   // 每个默认值都得过得了自己的校验，否则一份刚导出的新装配置导不回来。
-  const roundTrip = ST.validateSettings(ST.pickExport(schema, schema, { includeApiKey: true }), schema, enums);
+  const roundTrip = ST.validateSettings(ST.pickExport(schema, schema), schema, enums);
   assert.deepEqual(roundTrip.dropped, []);
 });
 
@@ -492,4 +498,58 @@ test('the import path reuses the page rules instead of restating them', () => {
   assert.doesNotMatch(card, /selectionTranslationHotkey\s*===/);
   assert.doesNotMatch(card, /type:\s*'SETTINGS_UPDATED'/);
   assert.doesNotMatch(card, /storage\.local/);
+});
+
+// ------------------------------------------------------------ P1-D：旧文件里的四个 AI 键
+
+test('an old file\'s four AI keys become one legacy profile, and never go back into settings', () => {
+  const AIP = globalThis.AIProfiles;
+  const old = {
+    format: 'blab-settings', version: 1,
+    settings: {
+      theme: 'dark',
+      provider: 'deepseek',
+      apiEndpoint: 'https://api.deepseek.com/v1/chat/completions',
+      apiKey: 'placeholder-not-a-key',
+      modelName: 'deepseek-chat',
+    },
+  };
+  const lifted = ST.liftLegacyProfile(old, AIP);
+  assert.deepEqual(lifted.settings, { theme: 'dark' });
+  assert.equal(lifted.aiProfiles.length, 1);
+  const [profile] = lifted.aiProfiles;
+  assert.equal(profile.id, AIP.LEGACY_ID);
+  assert.equal(profile.provider, 'deepseek');
+  assert.equal(profile.apiEndpoint, 'https://api.deepseek.com/v1/chat/completions');
+  assert.equal(profile.apiKey, 'placeholder-not-a-key');
+  assert.equal(profile.modelName, 'deepseek-chat');
+  assert.equal(profile.default, true);
+  assert.equal(AIP.validate(profile), null);
+  // 原文件不被改。
+  assert.equal(old.settings.apiKey, 'placeholder-not-a-key');
+  assert.equal(old.aiProfiles, undefined);
+
+  // 导出时没勾「包含 API Key」：这一档不带 apiKey 字段，导入时沿用本机同 id 档的 Key。
+  const noKey = ST.liftLegacyProfile({ settings: { modelName: 'gpt-4.1-mini' } }, AIP);
+  assert.deepEqual(noKey.settings, {});
+  assert.ok(!('apiKey' in noKey.aiProfiles[0]));
+  assert.equal(noKey.aiProfiles[0].modelName, 'gpt-4.1-mini');
+});
+
+test('a legacy lift that cannot happen leaves the four keys for validateSettings to drop by name', () => {
+  const AIP = globalThis.AIProfiles;
+  // 没有旧键：原样返回。
+  const plain = { settings: { theme: 'dark' } };
+  assert.equal(ST.liftLegacyProfile(plain, AIP), plain);
+  // 旧值本身不合规（地址不是 http(s)）：不造档，四个键留着。
+  const bad = { settings: { apiEndpoint: 'javascript:alert(1)', modelName: 'm' } };
+  assert.equal(ST.liftLegacyProfile(bad, AIP), bad);
+  const dropped = ST.validateSettings(bad.settings, schema, enums).dropped.sort();
+  assert.deepEqual(dropped, ['apiEndpoint', 'modelName']);
+  // 文件自己的 aiProfiles 里已有 legacy：不再造第二个。
+  const has = { settings: { modelName: 'm' }, aiProfiles: [{ id: AIP.LEGACY_ID }] };
+  assert.equal(ST.liftLegacyProfile(has, AIP), has);
+  // aiProfiles 不是数组：交给那一节的 validate 去拒，这里不动。
+  const broken = { settings: { modelName: 'm' }, aiProfiles: 'nope' };
+  assert.equal(ST.liftLegacyProfile(broken, AIP), broken);
 });

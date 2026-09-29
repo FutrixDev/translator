@@ -182,22 +182,30 @@
     showEngine('ai');
   }
 
-  function aiPatch(providerKey) {
-    const patch = { translationEngine: 'ai' };
-    if (!providerKey) return patch;
+  // 本机的服务商（Ollama、LM Studio）改的是默认 AI 配置档，和设置页换服务商时
+  // 一样：接口地址和默认模型跟着换，Key 和限速留着。写经 SW 的 AI_PROFILES_WRITE
+  // put；先问一次 AI_PROFILES_PUBLIC，让旧四键先迁好再读。LM Studio 没有默认模型，
+  // 这一档还不合规、存不下 —— 那就不存，把服务商带到设置页的卡片上，让用户填模型。
+  async function putDefaultProvider(providerKey) {
+    const reply = await chrome.runtime.sendMessage({ type: 'AI_PROFILES_PUBLIC' });
+    if (!reply || reply.error) throw new Error(`AI_PROFILES_PUBLIC failed: ${reply && reply.error}`);
     const provider = APICompat.PROVIDERS[providerKey];
-    // 和设置页换 provider 时一样：接口地址和默认模型跟着换（LM Studio 没有默认
-    // 模型，写空串，设置页会让用户填）。
-    return Object.assign(patch, {
+    const profiles = AIProfiles.collection.collect(await chrome.storage.sync.get(null));
+    const profile = AIProfiles.editDefault(profiles, {
       provider: providerKey,
       apiEndpoint: provider.endpoint,
       modelName: provider.defaultModel || '',
     });
+    if (AIProfiles.validate(profile)) return false;
+    await AIProfiles.request('put', { profile });
+    return true;
   }
 
   async function chooseAiProvider(providerKey) {
-    await save(aiPatch(providerKey));
-    await chrome.tabs.create({ url: chrome.runtime.getURL(SETTINGS_URL) });
+    await save({ translationEngine: 'ai' });
+    const url = new URL(chrome.runtime.getURL(SETTINGS_URL));
+    if (providerKey && !(await putDefaultProvider(providerKey))) url.searchParams.set('provider', providerKey);
+    await chrome.tabs.create({ url: url.href });
   }
 
   // ---------------------------------------------------------------------------

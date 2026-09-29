@@ -431,9 +431,9 @@
     const opts = options || {};
     const message = {
       type: 'TRANSLATE_BATCH_FAST',
+      feature: 'subtitles',
       texts: opts.texts || [],
       targetLang: opts.targetLang || '',
-      delimiter: opts.delimiter,
       // Subtitles run with the playhead, so they cannot wait on a language
       // pack download the way a page translation can.
       allowDownload: false,

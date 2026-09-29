@@ -188,7 +188,7 @@ test('builtin engine: PlaceholderLossError.lost names the ids the source had and
   builtin.behave = (text) => `[B] ${text.replace('{{1}}', '')}`;
   const source = 'Energy {{1}} and mass {{2}} are both conserved in this ordinary English sentence.';
   const { value, warnings } = await captureWarnings(() => request(
-    { type: 'TRANSLATE', text: source, targetLang: 'zh-CN', engine: 'builtin' }, { glossary: snapOf([]) }));
+    { type: 'TRANSLATE', feature: 'selection', text: source, targetLang: 'zh-CN', engine: 'builtin' }, { glossary: snapOf([]) }));
   assert.ok(value.error, JSON.stringify(value));
   const failed = warnings.find((args) => args[0] === 'Blab Translation: builtin translation failed');
   assert.ok(failed, JSON.stringify(warnings.map((args) => args[0])));
@@ -201,7 +201,7 @@ test('builtin engine: a page batch through the glossary, then again with the pla
   const snap = snapOf([{ s: 'attention', t: '注意力' }]);
   const hit = 'Attention is all you need, says this ordinary English sentence.';
   const plain = 'This ordinary English sentence mentions no glossary term at all.';
-  const message = { type: 'TRANSLATE_BATCH_FAST', texts: [hit, plain], targetLang: 'zh-CN' };
+  const message = { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [hit, plain], targetLang: 'zh-CN' };
 
   const first = await request(message, { glossary: snap });
   assert.deepEqual(builtin.calls, ['{{1}} is all you need, says this ordinary English sentence.', plain]);
@@ -236,7 +236,7 @@ test('sendToModel: over 60 entries splits the batch, sent one part after another
     return { translations: message.texts.map((t) => `[T] ${t}`) };
   };
   const result = await request(
-    { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snap });
+    { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snap });
   assert.equal(overlapped, false, 'parts are sent one after another');
   assert.deepEqual(ai.sent.map((m) => [m.texts.length, m.addenda.glossary.length]), [[60, 60], [10, 10]]);
   assert.deepEqual(ai.sent[1].addenda.glossary[0], { s: 'term60', t: '术语60' });
@@ -253,7 +253,7 @@ test('sendToModel: every part passes the budget gate on its own', async () => {
   };
   try {
     await request(
-      { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN', auto: true }, { glossary: snapOf(TERMS) });
+      { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: TERM_TEXTS, targetLang: 'zh-CN', auto: true }, { glossary: snapOf(TERMS) });
   } finally {
     globalThis.AutoStats.charge = realCharge;
   }
@@ -265,7 +265,7 @@ test('sendToModel: the first failed part is returned as it is and the rest are n
   configure({ translationEngine: 'ai' });
   ai.answer = async () => ({ error: 'upstream said no' });
   const result = await request(
-    { type: 'TRANSLATE_BATCH_FAST', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snapOf(TERMS) });
+    { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: TERM_TEXTS, targetLang: 'zh-CN' }, { glossary: snapOf(TERMS) });
   assert.equal(ai.sent.length, 1);
   assert.deepEqual(result, { error: 'upstream said no', engine: 'ai' });
 });
@@ -273,10 +273,10 @@ test('sendToModel: the first failed part is returned as it is and the rest are n
 test('sendToModel: a batch with no hit carries only the page stamp; TRANSLATE carries its own hits', async () => {
   configure({ translationEngine: 'ai' });
   const snap = snapOf([{ s: 'attention', t: '注意力' }]);
-  await request({ type: 'TRANSLATE_BATCH_FAST', texts: ['plain words'], targetLang: 'zh-CN' }, { glossary: snap });
+  await request({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['plain words'], targetLang: 'zh-CN' }, { glossary: snap });
   assert.equal(ai.sent.length, 1);
   assert.deepEqual(ai.sent[0].addenda, {}, 'only the stamp this page gave it');
   ai.answer = async () => ({ translation: 'x' });
-  await request({ type: 'TRANSLATE', text: 'attention please', targetLang: 'zh-CN' }, { glossary: snap });
+  await request({ type: 'TRANSLATE', feature: 'selection', text: 'attention please', targetLang: 'zh-CN' }, { glossary: snap });
   assert.deepEqual(ai.sent[1].addenda, { glossary: [{ s: 'attention', t: '注意力' }] });
 });

@@ -255,6 +255,7 @@
         const targetLang = targetLangOverride || getShownTargetLang();
         const response = await ctx.requestTranslation({
           type: 'TRANSLATE',
+          feature: 'input',
           text: text,
           targetLang: targetLang,
           mode: isInputDictionaryText(text) ? 'word' : 'text',

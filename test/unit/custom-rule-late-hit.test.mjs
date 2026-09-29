@@ -31,6 +31,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
+await import('../../shared/api-compat.js');
+// custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/custom-rules.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -232,6 +235,8 @@ async function loadScheduler() {
     state: { isTranslatingPage: false, translationsVisible: true, pageScopeOverride: null },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0, pageTranslateScope: 'main' },
     syncMirrors: [],
+    // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
+    aiProfiles: { subscribe: () => () => {} },
     usableSelector: (list) => list.join(','),
     queryAllDeep: (selector) => (selector === '.ai-translator-translated' ? [...page.translated] : page.includeHits),
     composedContains: (ancestor, node) => ancestor === node || ancestor.contains(node),

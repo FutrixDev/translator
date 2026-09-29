@@ -557,7 +557,7 @@
     if (!engine) return null;
     const other = engine === 'builtin' ? 'ai' : 'builtin';
     try {
-      const choices = await ctx.engineChoices(targetLang);
+      const choices = await ctx.engineChoices(targetLang, 'selection');
       return choices[other] ? other : null;
     } catch (error) {
       console.error('Blab Translation: reading engine choices for the card failed', error);
@@ -619,6 +619,7 @@
       const pinned = popup?.dataset.pinnedEngine;
       const response = await ctx.requestTranslation({
         type: 'TRANSLATE',
+        feature: 'selection',
         text: text,
         targetLang: targetLang,
         mode: isWord ? 'word' : 'text',

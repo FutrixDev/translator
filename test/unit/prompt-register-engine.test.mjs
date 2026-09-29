@@ -4,7 +4,7 @@
 // 契约：
 //   - 挂的是 `addenda: {register}`，只有标签；消息里不出现这一页的域名；没有
 //     语域的页面挂 `{}`。
-//   - 只挂在三种翻译消息上；这一页内置表里没有语域就不挂这个字段。
+//   - 只挂在两种翻译消息上（P1-D 删了 TRANSLATE_BATCH）；这一页内置表里没有语域就不挂这个字段。
 //   - 同一段文字在论坛页和新闻页上是两个缓存键。
 //   - 两头接起来（R33 N4）：这一半发出的消息交给服务工作者那一半真的翻译函数，
 //     文字路径（单句、编号批、快速批，默认模板与自定义提示词两支）的系统提示词
@@ -45,6 +45,8 @@ globalThis.AutoStats = { add() {} };
 // manifest 里 content/content-glossary.js 与 content/page/custom-rule.js 都排在它
 // 前面。这里装真的镜像（夹具不是顶层帧，镜像为空），规则那一边没有规则、不回调。
 await import('../../shared/sync-collection.js');
+// glossary.js 在加载时取走 BATCH_DELIMITER（词条里不许有批量分隔符，P1-D）。
+await import('../../shared/batch-delimiter.js');
 await import('../../shared/glossary.js');
 await import('../../content/content-glossary.js');
 ctx.customRules.onProfileChange = () => () => {};
@@ -70,10 +72,9 @@ const REDDIT = 'https://old.reddit.com/r/test/comments/1/a_thread/';
 test('the one exit to the model carries the register label, and only the label', async () => {
   goTo(REDDIT);
   useAI();
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH', texts: [BLOCK, BLOCK], targetLang: 'zh-CN' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: [BLOCK], targetLang: 'zh-CN', delimiter: '@@' });
-  assert.equal(sentToAI.length, 3);
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [BLOCK], targetLang: 'zh-CN' });
+  assert.equal(sentToAI.length, 2);
   for (const message of sentToAI) {
     assert.equal(JSON.stringify(message.addenda), '{"register":"forum"}', message.type);
     // 除了要译的文字，整条消息里没有这一页是哪个站。
@@ -85,11 +86,11 @@ test('the one exit to the model carries the register label, and only the label',
 test('each page gets its own register, and a page without one sends empty addenda', async () => {
   useAI();
   goTo('https://x.com/someone/status/1');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   goTo('https://www.bbc.co.uk/news/articles/x');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   goTo('https://example.test/');
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   assert.deepEqual(sentToAI.map((m) => m.addenda.register), ['social', 'news', undefined]);
   assert.equal(JSON.stringify(sentToAI[2].addenda), '{}', 'a page with no register still sends the field, empty');
 });
@@ -98,13 +99,13 @@ test('the built-in engine gets no addenda and other message types are left alone
   goTo(REDDIT);
   useAI();
   Object.assign(ctx.settings, { translationEngine: 'builtin' });
-  const result = await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  const result = await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   assert.equal(result.engine, 'builtin');
   assert.equal(sentToAI.length, 0);
   assert.equal(translateCalls.length, 1);
 
   useAI();
-  await ctx.requestTranslation({ type: 'SOMETHING_ELSE', payload: 1 });
+  await ctx.requestTranslation({ type: 'SOMETHING_ELSE', feature: 'page', payload: 1 });
   assert.equal(sentToAI.length, 1);
   assert.ok(!('addenda' in sentToAI[0]), 'a non-translation message was given addenda');
 });
@@ -113,7 +114,7 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   useAI();
   local.clear();
   const ask = () => ctx.requestTranslationCached({
-    type: 'TRANSLATE_BATCH_FAST', texts: ['A cached paragraph.'], targetLang: 'zh-CN', delimiter: '@@',
+    type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['A cached paragraph.'], targetLang: 'zh-CN',
   });
   globalThis.chrome.runtime.sendMessage = async (message) => {
     sentToAI.push(message);
@@ -173,8 +174,8 @@ test('a domain changed while the cache is read does not split the key from the r
   });
   try {
     const pending = ctx.requestTranslationCached({
-      type: 'TRANSLATE_BATCH_FAST', texts: ['A paragraph read while the domain changes.'],
-      targetLang: 'zh-CN', delimiter: '@@',
+      type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['A paragraph read while the domain changes.'],
+      targetLang: 'zh-CN',
     });
     await reading;
     ctx.settings.promptDomain = 'legal';
@@ -220,21 +221,25 @@ test('the register rule reaches every text prompt and no word prompt, default an
     sentToAI.push(message);
     return { translation: 'AI', phonetic: '', isWord: false, translations: [] };
   };
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  await ctx.requestTranslation({ type: 'TRANSLATE', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH', texts: ['a', 'b'], targetLang: 'zh-CN' });
-  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', texts: ['a', 'b'], targetLang: 'zh-CN', delimiter: '@@' });
-  const [single, word, numbered, fast] = sentToAI;
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
+  await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['a', 'b'], targetLang: 'zh-CN' });
+  const [single, word, fast] = sentToAI;
 
-  // background.js 的三个处理函数怎么把消息交下去，这里就怎么交。
-  const base = {
+  // background.js 的两个处理函数怎么把消息交下去，这里就怎么交：接口、Key、模型、
+  // 超时是消息里 profileId 指的那一档（P1-D），自定义提示词还在设置里。编号批是
+  // 快速批的回退，收的是同一条快速批消息。
+  const profile = {
+    id: 'default',
+    provider: 'openai',
     apiEndpoint: 'https://api.openai.com/v1/chat/completions',
     apiKey: 'test-key',
     modelName: 'gpt-4.1-mini',
+    timeoutSec: 60,
   };
   for (const [label, settings] of [
-    ['default template', { ...base, customPrompt: '' }],
-    ['custom prompt', { ...base, customPrompt: 'Translate into {targetLang}. Be brief.' }],
+    ['default template', { customPrompt: '' }],
+    ['custom prompt', { customPrompt: 'Translate into {targetLang}. Be brief.' }],
   ]) {
     const sent = async (run, answer) => {
       systems.length = 0;
@@ -245,18 +250,18 @@ test('the register rule reaches every text prompt and no word prompt, default an
     };
     const text = {
       single: await sent(() => ai.translateTextWithMode(
-        single.text, single.targetLang, settings, single.mode === 'word', single.addenda), () => 'translated'),
+        single.text, single.targetLang, profile, settings, single.mode === 'word', single.addenda), () => 'translated'),
       numbered: await sent(() => ai.translateBatchWithAI(
-        numbered.texts, numbered.targetLang, settings, numbered.addenda), () => '[1] A\n\n[2] B'),
+        fast.texts, fast.targetLang, profile, settings, fast.addenda), () => '[1] A\n\n[2] B'),
       fast: await sent(() => ai.translateBatchFastWithAI(
-        fast.texts, fast.targetLang, settings, fast.delimiter, fast.addenda), () => 'A@@B'),
+        fast.texts, fast.targetLang, profile, settings, fast.addenda), () => `A${globalThis.BATCH_DELIMITER}B`),
     };
     for (const [path, system] of Object.entries(text)) {
       assert.ok(system.includes(prompts.REGISTER_RULE), `${label} ${path} lacks the register rule:\n${system}`);
       assert.ok(system.includes(FORUM_LINE), `${label} ${path} lost the forum label`);
     }
     const dictionary = await sent(() => ai.translateTextWithMode(
-      word.text, word.targetLang, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好","phonetic":""}');
+      word.text, word.targetLang, profile, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好","phonetic":""}');
     assert.ok(!dictionary.includes(prompts.REGISTER_RULE), `${label} word prompt carries the register rule:\n${dictionary}`);
     assert.ok(dictionary.includes(FORUM_LINE), `${label} word prompt lost the forum label`);
   }

@@ -83,7 +83,8 @@ test('调度层的预判和闸问的是同一个设置、同一个函数', () =>
   // 「自动模式这一刻走哪个引擎」不在调度层算 —— 它只有一个主人，而
   // requestTranslation 还要按同一句话分路。自己再算一遍就会分叉成「状态说在
   // 翻、页面却一片原文」。
-  assert.match(auto, /ctx\.builtinTranslator\.effectiveEngine\(\{ auto: true \}\)/);
+  // P1-D：选档按功能，自动翻译那一趟报 feature: 'page'。
+  assert.match(auto, /ctx\.builtinTranslator\.effectiveEngine\(\{ auto: true, feature: 'page' \}\)/);
   assert.doesNotMatch(auto, /ctx\.settings\.autoTranslateEngine/,
     '调度层又自己读了一遍自动模式的引擎设置');
   // 内置引擎跑得动的页面不花钱，直接放行；给不出引擎又没开回退的那一格安静地停。

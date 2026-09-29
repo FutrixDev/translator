@@ -484,7 +484,7 @@
 
     // 设置导入 / 导出（options/options-transfer.js）
     transferTitle: 'Importar y exportar',
-    transferDesc: 'Guarda tu configuración, tus reglas de sitios, tus reglas de traducción por sitio y tu glosario en un archivo y cárgalos en otro navegador. La caché, las estadísticas de uso y el inicio de sesión de tu cuenta se quedan en este dispositivo.',
+    transferDesc: 'Guarda tu configuración, tus perfiles de IA, tus reglas de sitios, tus reglas de traducción por sitio y tu glosario en un archivo y cárgalos en otro navegador. La caché, las estadísticas de uso y el inicio de sesión de tu cuenta se quedan en este dispositivo.',
     transferExport: 'Exportar configuración',
     transferImport: 'Importar configuración…',
     transferIncludeApiKey: 'Incluir mi clave de API',
@@ -655,4 +655,24 @@
     aiPageContextHint: 'Envía también al servicio de IA el título de la página, para que la traducción sea más coherente. Al traducir la página entera se añade un fragmento breve antes y después; la traducción automática solo envía el título. Se envía más texto del que se traduce y se gasta algo más de cuota.',
     customRuleDomain: 'Ámbito',
     customRuleDomainInherit: 'Seguir el ajuste global',
+    // AI profiles (P1-D)
+    aiProfileRpm: 'Solicitudes por minuto',
+    aiProfileConcurrency: 'Solicitudes simultáneas',
+    aiProfileTimeout: 'Tiempo de espera (segundos)',
+    hintAiProfileZeroUnlimited: '0 significa sin límite.',
+    hintAiProfileTimeout: 'Cuánto esperar una solicitud, de 15 a 240 segundos.',
+    aiProfileMissing: 'El perfil de IA «{name}» ya no existe. Elige otro en la configuración.',
+    aiProfileInvalid: 'Este perfil de IA no es válido. Revisa el endpoint, el modelo y los límites.',
+    aiProfileTooLarge: 'Este perfil de IA es demasiado grande para guardarlo. Acorta el nombre, el endpoint o la clave.',
+    aiProfilesBudgetFull: 'No caben más perfiles de IA (20 perfiles, 8 KiB). Elimina uno primero.',
+    aiProfileInUse: 'Estas reglas de sitio usan este perfil de IA: {rules}. Cámbialas primero.',
+    aiProfileDefaultInUse: 'Este es el perfil de IA predeterminado. Haz predeterminado otro perfil primero.',
+    aiProfileSaveFailed: 'No se pudo guardar el perfil de IA. Inténtalo de nuevo.',
+    aiProfileKeyMissing: '«{name}» no tiene clave de API. Añádela en la configuración después de importar.',
+    apiErrorTimeout: 'La solicitud superó el tiempo de espera ({seconds} s)',
+    apiErrorEmpty: 'El servicio de IA devolvió una respuesta vacía.',
+    customRuleProfileMissing: 'El perfil de IA que usa esta regla no existe.',
+    customRuleProfileWithBuiltin: 'Una regla con el motor integrado no puede indicar un perfil de IA.',
+    transferSectionAiProfiles: 'Perfiles de IA',
+    transferPreviewAiProfiles: 'Perfiles de IA: se añadirán {added} y se reemplazarán {replaced}.',
 };

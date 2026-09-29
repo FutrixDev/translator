@@ -79,6 +79,10 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
   'shared/sync-collection.js',
+  // custom-rules.js 加载时取走 AIProfiles（规则 v3 的 profile，P1-D），AIProfiles
+  // 加载时取走 APICompat；manifest 里两者都排在 custom-rules.js 之前。
+  'shared/api-compat.js',
+  'shared/ai-profiles.js',
   // 附加说明（shared/prompt-addenda.js，只加载一次，和 manifest 一样）：
   // custom-rules.js 加载时取走 PromptAddenda（规则 v2 的 domain 按 DOMAINS 校验，
   // P1-C C3），缺了它整个文件抛错；manifest 里它排在 custom-rules.js 之前。
@@ -408,7 +412,47 @@ async function applyBaseSettings(context) {
  * @param {object} settings
  */
 async function setExtensionSettings(page, settings) {
-  await writeSyncSettings(page.context(), { ...E2E_BASE_SETTINGS, ...settings });
+  const legacy = {};
+  const rest = { ...E2E_BASE_SETTINGS };
+  for (const [key, value] of Object.entries(settings)) {
+    if (LEGACY_AI_KEYS.includes(key)) legacy[key] = value;
+    else rest[key] = value;
+  }
+  await writeSyncSettings(page.context(), rest);
+  if (Object.keys(legacy).length) await putLegacyProfile(page.context(), legacy);
+}
+
+// 规格里仍用旧的四个键说「AI 接到哪」（P1-D）。产品不再读它们，所以这里把它们
+// 叠到 aiProfile:legacy 那一档上，走 SW 的写队列（AIProfiles.fromLegacy + put）。
+// 只管这一个入口；要真迁移的旅程（D-J1）直接 writeSyncSettings 写旧键。
+const LEGACY_AI_KEYS = Object.freeze(['provider', 'apiEndpoint', 'apiKey', 'modelName']);
+
+async function putLegacyProfile(context, legacy) {
+  const worker = await getServiceWorker(context);
+  await worker.evaluate(async (fields) => {
+    const { AIProfiles } = globalThis;
+    const current = (await AIProfiles.collection.cached()).find((p) => p.id === AIProfiles.LEGACY_ID);
+    const base = current ? {
+      provider: current.provider, apiEndpoint: current.apiEndpoint,
+      apiKey: current.apiKey, modelName: current.modelName,
+    } : {};
+    const profile = { ...AIProfiles.fromLegacy({ ...base, ...fields }), id: AIProfiles.LEGACY_ID };
+    // 和迁移同一个结果：旧键拼不成一档合规的（没填地址或模型）就是「没有配置档」。
+    if (AIProfiles.validate(profile)) {
+      if (current) await AIProfiles.applyWrite({ type: 'AI_PROFILES_WRITE', kind: 'remove', id: AIProfiles.LEGACY_ID });
+      return;
+    }
+    await AIProfiles.applyWrite({ type: 'AI_PROFILES_WRITE', kind: 'put', profile });
+  }, legacy);
+}
+
+/** 默认 AI 配置档（含 Key），没有就是 null。设置页的卡片编辑的就是它。 */
+async function getDefaultProfile(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(async () => {
+    const { AIProfiles } = globalThis;
+    return AIProfiles.defaultOf(await AIProfiles.collection.cached());
+  });
 }
 
 /**
@@ -761,6 +805,7 @@ module.exports = {
   triggerSelectionHotkey,
   getCurrentTheme,
   setExtensionSettings,
+  getDefaultProfile,
   setExtensionAccount,
   sendMessageToActiveTab,
 };

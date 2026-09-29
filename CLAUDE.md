@@ -55,7 +55,7 @@ file directly.
    - Handles all API requests to translation endpoints (`api-client.js`,
      `ai-translate.js`, `prompts.js`)
    - Manages context menus (`context-menus.js`)
-   - Three translation methods: single, batch (numbered `[1]...[2]...`), fast batch (delimiter-based)
+   - Two TRANSLATE handlers: single and fast batch (delimiter-based, falling back to the numbered `[1]...[2]...` format); every model request goes through one AI profile (`model-client.js`, profiles in `shared/ai-profiles.js`)
    - Stores default settings and translation prompts (`settings.js`)
    - The account-backed clients live beside it: `comic-client.js`,
      `pdf-client.js`, `pdf-jobs.js`, `pdf-notify.js`, `ocr-recognize.js`,
@@ -396,7 +396,7 @@ top page. The translation
 cache stamps once too, keys on that stamped `addenda` and sends its misses
 through `ctx.sendTranslation`, so the key and the request cannot disagree. It sends the
 label and never the host. The service
-worker's three TRANSLATE handlers run `PromptAddenda.validate()` before
+worker's two TRANSLATE handlers run `PromptAddenda.validate()` before
 translating, and it throws on a missing `addenda`, an unknown register or any
 extra field. The
 handlers pass the addenda down every `ai-translate.js` path, including the
@@ -846,7 +846,7 @@ for it. A failed request is a structured failure (`readAPIResponse` returns
 `{ failure: { status, detail } }`, `callTranslationAPI` throws with
 `err.apiFailure`), worded only at a boundary that knows the UI language, through
 `APICompat.describeAPIFailure(failure, t)` — `background/api-errors.js` in the
-service worker, `showConnectionFailure()` on the settings page.
+service worker, which also words the settings page's test button (`AI_PROFILE_TEST`).
 
 When a vendor ships a new model generation, `shared/api-compat.js` should be
 the only file that changes. Do not reimplement these checks in a caller —
@@ -916,8 +916,7 @@ Follow this process when fixing bugs:
 ## Default Configuration
 
 ```javascript
-apiEndpoint: 'https://api.openai.com/v1/chat/completions'
-modelName: 'gpt-4.1-mini'
+// AI connection (endpoint, key, model) lives in AI profiles (`aiProfile:<id>`), not settings
 targetLang: ''        // empty = follow browser language
 theme: 'light'
 ```

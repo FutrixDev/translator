@@ -12,11 +12,15 @@
  * 有一份，sync-collection 的单测会扫。
  *
  * 规则的形状：
- *   { v: 1|2, match: [...1–8 条 host[/path-glob]], include?, exclude?,
- *     keepOriginal?, css?, engine?: 'builtin'|'ai', domain?, updatedAt }
- * domain 是 PromptAddenda.DOMAINS 之一（P1-C）。版本取「最低能表达它的那一版」：
- * 有 domain 才写 v: 2，没有就是 v: 1，旧版本读得懂的规则照旧是旧版本。v: 2 却
- * 没有 domain 是坏条目。id 只在键里（集合负责），空的选择器组不存。
+ *   { v: 1|2|3, match: [...1–8 条 host[/path-glob]], include?, exclude?,
+ *     keepOriginal?, css?, engine?: 'builtin'|'ai', domain?, profile?, updatedAt }
+ * domain 是 PromptAddenda.DOMAINS 之一（P1-C），profile 是一个 AI 配置档的 id
+ * （P1-D，shared/ai-profiles.js）。版本取「最低能表达它的那一版」：有 profile 写
+ * v: 3，否则有 domain 写 v: 2，都没有就是 v: 1，旧版本读得懂的规则照旧是旧版本。
+ * v: 2 却没有 domain、v: 3 却没有 profile 都是坏条目；内置引擎不读配置档，所以
+ * engine: 'builtin' 带 profile 也拒。profile 指向的配置档必须存在，这一条只在服务
+ * 工作者写入时查（读到的规则指向已删的档，由请求那一层报 aiProfileMissing）。
+ * id 只在键里（集合负责），空的选择器组不存。
  *
  * 抛出的错误一律是 i18n 键（见 ERROR_KEYS），界面直接拿去查文案；写入时别的
  * 失败统一成 customRuleSaveFailed，并在变成这个键的那一处记一条日志。
@@ -32,9 +36,11 @@
   if (!SyncCollection) throw new Error('custom-rules.js 要先装 shared/sync-collection.js');
   const PromptAddenda = root.PromptAddenda;
   if (!PromptAddenda) throw new Error('custom-rules.js 要先装 shared/prompt-addenda.js');
+  const AIProfiles = root.AIProfiles;
+  if (!AIProfiles) throw new Error('custom-rules.js 要先装 shared/ai-profiles.js');
 
   const KEY_PREFIX = 'customRule:';
-  const VERSIONS = new Set([1, 2]);
+  const VERSIONS = new Set([1, 2, 3]);
   const FILE_FORMAT = 'blab-site-rules';
   const FILE_VERSION = 1;
 
@@ -60,6 +66,8 @@
     'customRuleTooLarge',
     'customRulesBudgetFull',
     'customRulesImportInvalid',
+    'customRuleProfileWithBuiltin',
+    'customRuleProfileMissing',
   ]);
 
   // ------------------------------------------------------------ CSS 清洗
@@ -154,6 +162,7 @@
     if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw new Error('customRuleInvalid');
     if (rule.v !== undefined && !VERSIONS.has(rule.v)) throw new Error('customRuleInvalid');
     if (rule.v === 2 && (rule.domain == null || rule.domain === '')) throw new Error('customRuleInvalid');
+    if (rule.v === 3 && (rule.profile == null || rule.profile === '')) throw new Error('customRuleInvalid');
 
     const match = rule.match;
     if (!Array.isArray(match) || !match.length || match.length > LIMITS.maxPatterns) {
@@ -184,14 +193,22 @@
       out.domain = rule.domain;
       out.v = 2;
     }
-    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine && !out.domain) {
+    if (rule.profile != null && rule.profile !== '') {
+      if (typeof rule.profile !== 'string' || !AIProfiles.collection.validId(rule.profile)) {
+        throw new Error('customRuleInvalid');
+      }
+      if (out.engine === 'builtin') throw new Error('customRuleProfileWithBuiltin');
+      out.profile = rule.profile;
+      out.v = 3;
+    }
+    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine && !out.domain && !out.profile) {
       throw new Error('customRuleInvalid');
     }
     if (Number.isFinite(rule.updatedAt)) out.updatedAt = rule.updatedAt;
     return out;
   }
 
-  // 存储里的一项 -> 规则，或 null：不认识的版本（1、2 之外）、坏条目都跳过（集合
+  // 存储里的一项 -> 规则，或 null：不认识的版本（1、2、3 之外）、坏条目都跳过（集合
   // 只记数目）。这里是 normalizeRule 被接住的那一层，错误变成「跳过」，日志由集合打。
   function decode(value) {
     if (!value || !VERSIONS.has(value.v)) return null;
@@ -321,11 +338,21 @@
     return id;
   }
 
+  // 规则指向的配置档必须在集合里（设计 §2.7）。只查这次要写的规则：已存的规则
+  // 指向后来删掉的档，是请求那一层的 aiProfileMissing，不是这次写入的错。
+  async function assertProfilesExist(rules) {
+    const wanted = rules.filter((rule) => rule.profile);
+    if (!wanted.length) return;
+    const ids = new Set((await AIProfiles.collection.cached()).map((profile) => profile.id));
+    if (wanted.some((rule) => !ids.has(rule.profile))) throw new Error('customRuleProfileMissing');
+  }
+
   // 新增，或整条替换同 id 的规则。
   function writePut({ rule }) {
-    return collection.write(() => {
+    return collection.write(async () => {
       const id = rule && rule.id !== undefined ? checkedId(rule.id) : collection.newId();
       const normalized = validateRule(rule);
+      await assertProfilesExist([normalized]);
       normalized.updatedAt = Date.now();
       normalized.id = id;
       return { put: [normalized], result: { id } };
@@ -338,11 +365,13 @@
   }
 
   function writeImport({ file }) {
-    return collection.write((entries) => {
+    return collection.write(async (entries) => {
       const { rules, added, replaced } = mergeImport(entries, file);
       // 没被文件动过的条目还是原来那个对象；新增和替换的都是新对象。
       const untouched = new Set(entries);
-      return { put: rules.filter((rule) => !untouched.has(rule)), result: { added, replaced } };
+      const put = rules.filter((rule) => !untouched.has(rule));
+      await assertProfilesExist(put);
+      return { put, result: { added, replaced } };
     });
   }
 

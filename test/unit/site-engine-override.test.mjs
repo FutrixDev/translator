@@ -32,6 +32,7 @@ let ready = Promise.resolve();
 ctx.customRules = {
   whenReady: () => ready,
   engineOverride: () => siteEngine,
+  profileOverride: () => null,
   // 附加说明按有效领域取句子（content/engine/addenda.js）；这里的规则都不设领域。
   domain: () => null,
 };
@@ -51,7 +52,7 @@ function configure(site, patch) {
 }
 
 const translate = (extra) => ctx.requestTranslation({
-  type: 'TRANSLATE', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
+  type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text', ...extra
 });
 
 test('site engine ai outranks both settings, for manual and automatic requests', async () => {
@@ -144,7 +145,7 @@ test('BUILTIN_TYPES is exactly the set of case labels handleWithBuiltin answers'
 
 test('a request type the built-in engine cannot answer goes to AI, unpinned', async () => {
   configure('builtin', {});
-  const result = await ctx.requestTranslation({ type: 'TRANSLATE_WITH_CONTEXT', text: BLOCK, targetLang: 'zh-CN' });
+  const result = await ctx.requestTranslation({ type: 'TRANSLATE_WITH_CONTEXT', feature: 'selection', text: BLOCK, targetLang: 'zh-CN' });
   assert.equal(result.engine, 'ai');
   assert.equal(sentToAI.length, 1);
 });
@@ -155,11 +156,11 @@ test('a site pinned to builtin on an http page with fallback allowed has no engi
   const realIsSecure = globalThis.self.isSecureContext;
   globalThis.self.isSecureContext = false;
   try {
-    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'none');
-    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: false }), 'none');
+    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'none');
+    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: false, feature: 'selection' }), 'none');
     // 同样的页面没有站点规则：设置说 AI 就是 AI。
     siteEngine = null;
-    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true }), 'ai');
+    assert.equal(await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' }), 'ai');
   } finally {
     globalThis.self.isSecureContext = realIsSecure;
     setApiKey('');
@@ -179,7 +180,7 @@ test('a request type the built-in engine cannot answer goes to AI on an http pag
   const realIsSecure = globalThis.self.isSecureContext;
   globalThis.self.isSecureContext = false;
   try {
-    const result = await ctx.requestTranslation({ type: 'TRANSLATE_WITH_CONTEXT', text: BLOCK, targetLang: 'zh-CN' });
+    const result = await ctx.requestTranslation({ type: 'TRANSLATE_WITH_CONTEXT', feature: 'selection', text: BLOCK, targetLang: 'zh-CN' });
     assert.equal(result.engine, 'ai');
     assert.equal(sentToAI.length, 1);
   } finally {
