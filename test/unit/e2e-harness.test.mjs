@@ -256,3 +256,24 @@ test('CRC-32 lives only in test/e2e/crc32.js', () => {
     .filter(path => path !== home && polynomial.test(readFileSync(testDir + path, 'utf8')));
   assert.deepEqual(offenders, [], "require('./crc32') instead of carrying another CRC table");
 });
+
+// example.com is served from test/e2e/example-page.html, not fetched live: on
+// 2026-09-29 IANA redesigned the page (no <h1>, six multilingual <p>s stacked in
+// one grid cell) and ten tests that point at its markup failed with nothing of
+// ours changed. The route lives in the context fixture, so a spec that opens
+// example.com without that fixture would be back on the live site.
+test('example.com is our page in every spec that opens it', () => {
+  assert.match(repoFile('test/e2e/fixtures.js'), /await serveExamplePage\(context\)/,
+    'fixtures.js must route example.com to the local page in every browser context');
+
+  const page = repoFile('test/e2e/example-page.html');
+  assert.match(page, /<h1>Example Domain<\/h1>/, 'specs select across the page heading');
+  assert.match(page, /<p>[^<]+<p>/, 'specs hover the first <p>, which must be plain text');
+
+  const offenders = specFiles().filter((name) => {
+    const source = repoFile(`test/e2e/${name}`);
+    return /goto\(['`]https:\/\/example\.com/.test(source) && !/require\('\.\/fixtures'\)/.test(source);
+  });
+  assert.deepEqual(offenders, [],
+    'these open example.com without the fixture that serves it locally');
+});

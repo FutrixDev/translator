@@ -4,7 +4,7 @@
  */
 const { test: base, chromium } = require('@playwright/test');
 const path = require('path');
-const { applyBaseSettings } = require('./helpers');
+const { applyBaseSettings, serveExamplePage } = require('./helpers');
 
 // Path to the extension
 const extensionPath = path.resolve(__dirname, '../../');
@@ -83,6 +83,10 @@ const test = base.extend({
     // This runs before the test body, so it lands before the first page.goto()
     // and the content script reads it on load.
     await applyBaseSettings(context);
+
+    // example.com is our page, not IANA's: the specs point at its markup, and
+    // the live one changed under them. See serveExamplePage in helpers.js.
+    await serveExamplePage(context);
 
     await use(context);
     await context.close();
