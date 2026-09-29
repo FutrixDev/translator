@@ -288,6 +288,10 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
   padding: 3px 12px;
   background: var(--ai-caption-bg, rgba(8, 8, 8, 0.82));
   border-radius: 6px;
+  /* On the block, so both lines inherit it. The plate is the viewer's pick and
+     may be light or fully transparent; without an edge of its own, the
+     original line then vanished while the translated line still read. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 /* Between cues there is no text, and a plate with nothing on it is just a
@@ -338,7 +342,6 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
   line-height: 1.35;
   text-align: center;
   color: var(--ai-caption-fg, #fff);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 /* Resize handles — invisible until the caption box is hovered. */
