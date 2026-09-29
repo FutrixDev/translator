@@ -33,7 +33,8 @@ globalThis.window = {
     t: (key) => key,
     escapeHtml: (s) => s,
     isExtensionContextAvailable: () => true,
-    isExtensionContextInvalidated: () => false,
+    // 与 content-bootstrap.js 同一判据（上下文本身在测试里一直可用）。
+    isExtensionContextInvalidated: (error) => Boolean(error) && String(error?.message || error).includes('Extension context invalidated'),
     getEffectiveTargetLang: () => 'zh-CN',
     getLangBase: (lang) => (lang || '').split('-')[0],
     getLanguageDetectionText: (text) => text || '',
@@ -384,8 +385,10 @@ test('a failed batch marks every block in it on a manual pass, and none on an au
 test('a pass-fatal failure marks no paragraph: the whole-page error says it once', async () => {
   // 不认得的领域这类配置错（passFatal）点哪一段重试都一样失败；它只在进度条上报。
   // 六条路各走一遍：批次抛出的错误、批次回的 {error, passFatal}；数量对不上之后逐块
-  // 回退里回的和抛出的；超长段分块请求里回的和抛出的。
+  // 回退里回的和抛出的；超长段分块请求里回的和抛出的。扩展上下文没了是同一类，
+  // 在批次和逐块回退里各抛一次。
   const thrown = () => { throw Object.assign(new Error('bad domain'), { passFatal: true }); };
+  const contextLost = () => { throw new Error('Extension context invalidated.'); };
   const replied = () => ({ error: 'bad domain', passFatal: true });
   const misaligned = (then) => (message) => (message.texts.length > 1 ? { translations: ['only one'] } : then());
   const pair = () => ['A.', 'B.'].map(makeBlock);
@@ -401,7 +404,9 @@ test('a pass-fatal failure marks no paragraph: the whole-page error says it once
     perBlock: [pair, misaligned(replied)],
     perBlockThrown: [pair, misaligned(thrown)],
     oversizedReplied: [oversized, replied],
-    oversizedThrown: [oversized, thrown]
+    oversizedThrown: [oversized, thrown],
+    contextLost: [pair, contextLost],
+    perBlockContextLost: [pair, misaligned(contextLost)]
   };
   for (const [path, [blocks, respond]] of Object.entries(paths)) {
     const marks = await withMarks(() => runPass(blocks(), respond, { pageContext: false }));
