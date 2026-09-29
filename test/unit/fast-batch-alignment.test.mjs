@@ -383,14 +383,29 @@ test('a failed batch marks every block in it on a manual pass, and none on an au
 
 test('a pass-fatal failure marks no paragraph: the whole-page error says it once', async () => {
   // 不认得的领域这类配置错（passFatal）点哪一段重试都一样失败；它只在进度条上报。
-  // 三条路各走一遍：抛出的错误、批次回的 {error, passFatal}、逐块回退回的 {error, passFatal}。
+  // 六条路各走一遍：批次抛出的错误、批次回的 {error, passFatal}；数量对不上之后逐块
+  // 回退里回的和抛出的；超长段分块请求里回的和抛出的。
   const thrown = () => { throw Object.assign(new Error('bad domain'), { passFatal: true }); };
   const replied = () => ({ error: 'bad domain', passFatal: true });
-  const perBlock = (message) => (message.texts.length > 1 ? { translations: ['only one'] } : replied());
-  for (const respond of [thrown, replied, perBlock]) {
-    const blocks = ['A.', 'B.'].map(makeBlock);
-    const marks = await withMarks(() => runPass(blocks, respond, { pageContext: false }));
-    assert.deepEqual(marks, [], `${respond.name} put a marker on a paragraph`);
+  const misaligned = (then) => (message) => (message.texts.length > 1 ? { translations: ['only one'] } : then());
+  const pair = () => ['A.', 'B.'].map(makeBlock);
+  const oversized = () => {
+    const sentence = 'This sentence is long enough to be one of many chunks. ';
+    const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+    big.oversized = true;
+    return [big];
+  };
+  const paths = {
+    thrown: [pair, thrown],
+    replied: [pair, replied],
+    perBlock: [pair, misaligned(replied)],
+    perBlockThrown: [pair, misaligned(thrown)],
+    oversizedReplied: [oversized, replied],
+    oversizedThrown: [oversized, thrown]
+  };
+  for (const [path, [blocks, respond]] of Object.entries(paths)) {
+    const marks = await withMarks(() => runPass(blocks(), respond, { pageContext: false }));
+    assert.deepEqual(marks, [], `${path} put a marker on a paragraph`);
   }
 });
 
