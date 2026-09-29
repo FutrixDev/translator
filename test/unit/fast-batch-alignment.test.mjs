@@ -65,7 +65,8 @@ await import('../../content/page/custom-rule.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
-for (const module of ['batch', 'collect', 'insert', 'visibility', 'progress']) {
+// failed-blocks.js：落笔前摘失败标记（ctx.failedBlocks.clear），失败时放标记。
+for (const module of ['batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }
 // visibility.js 调 ctx.frames 的钩子：装真的 shelf（默认全是空操作），不手写 ctx.frames。
@@ -319,4 +320,72 @@ test('an exported applyFastBatchTranslations call outside a pass carries no neig
   } finally {
     delete ctx.settings.aiPageContext;
   }
+});
+
+// ==================== failed-block markers (P1-D D2) ====================
+//
+// 每个失败点都要把那一段交给 ctx.failedBlocks.mark（content/page/failed-blocks.js），
+// 这里换成记账替身，只看「哪一段、带没带 auto」。真标记长什么样、点了怎么重试在
+// e2e（test/e2e/ai-retry-limits.spec.js 的 D-J10～D-J12）。
+
+async function withMarks(run) {
+  const real = ctx.failedBlocks;
+  const marks = [];
+  ctx.failedBlocks = {
+    ...real,
+    mark: (block, reason, options) => marks.push({ block, reason, auto: options && options.auto }),
+    clear: () => {},
+  };
+  try {
+    await run();
+  } finally {
+    ctx.failedBlocks = real;
+  }
+  return marks;
+}
+
+test('an oversized block with one empty chunk inserts nothing and is marked failed once, not dropped silently', async () => {
+  const sentence = 'This sentence is long enough to be one of many chunks. ';
+  const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+  big.oversized = true;
+  let chunkRequests = 0;
+  const marks = await withMarks(() => runPass([big], (message) => {
+    chunkRequests += 1;
+    // 第一个分块请求里留一个空译文：条数对得上，但这一块缺了一截。
+    const translations = message.texts.map((text) => `译:${text}`);
+    if (chunkRequests === 1) translations[0] = '';
+    return { translations };
+  }, { pageContext: false }));
+  assert.ok(chunkRequests >= 2, `expected several chunk requests, got ${chunkRequests}`);
+  assert.equal(inserted.length, 0, 'a block with a missing chunk must not be inserted');
+  assert.deepEqual(marks.map((m) => [m.block, m.auto]), [[big, false]]);
+});
+
+test('a failed batch marks every block in it on a manual pass, and none on an automatic pass', async () => {
+  const fail = () => ({ error: 'boom' });
+  const manual = ['A.', 'B.'].map(makeBlock);
+  const manualMarks = await withMarks(() => runPass(manual, fail, { pageContext: false }));
+  assert.deepEqual(manualMarks.map((m) => [m.block, m.reason, m.auto]), [[manual[0], 'boom', false], [manual[1], 'boom', false]]);
+
+  // 自动那一轮第一次失败只进台账（content/content-auto-translate.js 在 giveUp 时才放）。
+  const auto = ['C.', 'D.'].map(makeBlock);
+  const autoRequests = stubRequests(fail);
+  const autoMarks = await withMarks(() => ctx.runTranslationPass(auto, { auto: true }));
+  assert.ok(autoRequests.length >= 1, 'the automatic pass never sent its batch');
+  assert.deepEqual(autoMarks, []);
+
+  // 点标记重试的那一轮沿用自动的引擎，但失败要看得见。
+  const retry = [makeBlock('E.')];
+  stubRequests(fail);
+  const retryMarks = await withMarks(() => ctx.runTranslationPass(retry, { auto: true, markFailures: true }));
+  assert.deepEqual(retryMarks.map((m) => [m.block, m.auto]), [[retry[0], true]]);
+});
+
+test('a misaligned batch whose per-block retries succeed marks nothing', async () => {
+  const blocks = ['A.', 'B.', 'C.'].map(makeBlock);
+  const marks = await withMarks(() => runPass(blocks, (message) => (
+    message.texts.length > 1 ? { translations: ['merged'] } : echo(message)
+  ), { pageContext: false }));
+  assert.deepEqual(marks, []);
+  assert.equal(inserted.length, 3);
 });

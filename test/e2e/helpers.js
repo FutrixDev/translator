@@ -111,6 +111,7 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/page/scope.js',
   'content/page/collect.js',
   'content/page/insert.js',
+  'content/page/failed-blocks.js',
   'content/page/visibility.js',
   'content/page/display.js',
   'content/page/progress.js',

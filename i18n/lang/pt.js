@@ -672,6 +672,7 @@
     apiErrorTimeout: 'A solicitação expirou ({seconds} s)',
     apiErrorEmpty: 'O serviço de IA retornou uma resposta vazia.',
     apiErrorRateLimitedWait: 'Muitas solicitações: o serviço pede para esperar {seconds} s. Tente novamente mais tarde',
+    translationFailedRetry: 'Falha na tradução · Tentar novamente',
     aiProfileLimitsHint: 'Solicitações com falha são repetidas automaticamente, até 3 tentativas. Estes limites valem só para este perfil.',
     customRuleProfileMissing: 'O perfil de IA usado por esta regra não existe.',
     customRuleProfileWithBuiltin: 'Uma regra que usa o mecanismo integrado não pode indicar um perfil de IA.',

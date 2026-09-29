@@ -183,31 +183,33 @@ a.ai-translator-inline-block {
      `margin-inline: auto`, and overriding it throws the translation to the
      container's start edge.
    - Page translations only. Selection and hover translations share the class
-     and are excluded by the two :not()s.
+     and are excluded by the first two :not()s; the third excludes the failure
+     marker (content/page/failed-blocks.js), which shares it too and is not a
+     translation.
 
    (0,4,1) plus !important outranks the base rule's background:none /
    border:none / padding:0 and a.ai-translator-inline-block's
    text-decoration:none. The accent #4f6ef7 keeps >= 3:1 against both white and
    near-black after the translation's own opacity .85 is composited. */
-html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="underline"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   text-decoration: underline 2px #4f6ef7 !important;
   text-underline-offset: 3px !important;
 }
 
-html[data-ai-translator-style="dashed"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="dashed"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   outline: 1px dashed #4f6ef7 !important;
   outline-offset: 1px !important;
   border-radius: 3px !important;
 }
 
 /* The shadow extends the tint sideways only, never up into the source line. */
-html[data-ai-translator-style="highlight"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="highlight"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   background-color: rgba(79, 110, 247, 0.16) !important;
   box-shadow: -4px 0 0 rgba(79, 110, 247, 0.16), 4px 0 0 rgba(79, 110, 247, 0.16) !important;
   border-radius: 2px !important;
 }
 
-html[data-ai-translator-style="quote"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="quote"] .ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   border-inline-start: 3px solid #4f6ef7 !important;
   padding-inline-start: 0.6em !important;
 }
@@ -216,7 +218,7 @@ html[data-ai-translator-style="quote"] .ai-translator-inline-block:not(.ai-trans
    translation would leave nothing readable) and on link translations, which
    are pointer-events:none above and could never be hovered open. Tap or click
    reveals one (.ai-translator-revealed, toggled by display.js). */
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   filter: blur(5px) !important;
   transition: filter 0.15s !important;
 }
@@ -224,20 +226,37 @@ html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-transla
 /* 悬停揭开只给真有悬停的指针：触屏点按后元素会一直留在 :hover（粘滞悬停），
    第二下点按摘掉 revealed 也糊不回去。触屏只认 revealed 这一条路。 */
 @media (hover: hover) {
-  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):hover {
+  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed):hover {
     filter: none !important;
   }
 }
 
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):focus-within,
-html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block.ai-translator-revealed:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed):focus-within,
+html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block.ai-translator-revealed:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
   filter: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation) {
+  html[data-ai-translator-style="blur"]:not([data-ai-translator-only]) .ai-translator-inline-block:not(a):not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed) {
     transition: none !important;
   }
+}
+
+/* 失败标记「翻译失败 · 重试」（content/page/failed-blocks.js）。它借用
+   .ai-translator-inline-block 的类名和排版（同一个插入位置、同一套隐藏），但不是
+   译文：上面五种译文样式都用 :not(.ai-translator-failed) 把它排除了。字色跟正文
+   走（color: inherit）——强调色 #4f6ef7 在白底上不到 4.5:1，拿它当字色读不清；
+   强调色只画在下划线和焦点框上。`html body` 压过页面的单类名规则，同文件头。 */
+html body .ai-translator-inline-block.ai-translator-failed {
+  cursor: pointer;
+  color: inherit;
+  text-decoration: underline dashed #4f6ef7;
+  text-underline-offset: 3px;
+}
+
+html body .ai-translator-inline-block.ai-translator-failed:focus-visible {
+  outline: 2px solid #4f6ef7;
+  outline-offset: 2px;
 }
 
 /* 按钮翻译 */

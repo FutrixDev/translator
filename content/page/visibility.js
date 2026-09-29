@@ -18,8 +18,12 @@
   //
   // 这个文件里三处用到它，三处都必须是同一条：显隐开关、「仅显示译文」的逐条计算，
   // 以及 content-page-translation.js 问的「这一页翻过了没有」。
+  //
+  // 第三个 :not() 是失败标记（content/page/failed-blocks.js）：它借译文块的类名
+  // 让收集、发现、划词自动跳过它，但它不是译文 —— 算进来的话，一页只剩失败标记
+  // 时悬浮球会答「收起译文」，用户再也点不出「重新翻译」。
   const PAGE_TRANSLATION_SELECTOR =
-    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+    '.ai-translator-inline-block:not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed)';
 
   /**
    * 「此刻想不想看译文」——**这个开关只有这一处实现**。
@@ -41,6 +45,10 @@
     // 看到的就是这个开关时灵时不灵。一次性的结果由它自己那条路收（点别处、Esc）。
     // queryAllDeep：shadow root 里的译文也在这一批里（content/page/shadow.js）。
     ctx.queryAllDeep(PAGE_TRANSLATION_SELECTOR).forEach((el) => {
+      el.classList.toggle('ai-translator-hidden', !visible);
+    });
+    // 失败标记站在译文的位置上，跟译文一起收、一起放；上面那条选择器特意不认它。
+    ctx.queryAllDeep(ctx.failedBlocks.SELECTOR).forEach((el) => {
       el.classList.toggle('ai-translator-hidden', !visible);
     });
     // 受管容器里的译文整体开关（见 content-managed-translation.js）：它没有自己
@@ -152,12 +160,15 @@
 
   // 找一条隐藏原文配对的译文。隐藏原文有两种形态，配对方向相反：
   // 加了类名的原文块 → 译文是它的下一个兄弟；wrap → 译文是 wrap 的兄弟。
+  // 失败标记（ai-translator-failed）不是译文，不配对。
   function pairedTranslation(hiddenEl) {
     const candidate = hiddenEl.classList.contains('ai-translator-source-wrap')
-      ? hiddenEl.parentElement && hiddenEl.parentElement.querySelector(':scope > .ai-translator-inline-block')
+      ? hiddenEl.parentElement && hiddenEl.parentElement.querySelector(
+        ':scope > .ai-translator-inline-block:not(.ai-translator-failed)')
       : hiddenEl.nextElementSibling;
     return candidate && candidate.classList
-      && candidate.classList.contains('ai-translator-inline-block') ? candidate : null;
+      && candidate.classList.contains('ai-translator-inline-block')
+      && !candidate.classList.contains('ai-translator-failed') ? candidate : null;
   }
 
   function releaseHiddenSource(hiddenEl) {

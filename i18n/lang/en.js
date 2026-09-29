@@ -713,6 +713,7 @@ Rules:
     apiErrorTimeout: 'The request timed out ({seconds} s)',
     apiErrorEmpty: 'The AI service returned an empty reply.',
     apiErrorRateLimitedWait: 'Too many requests: the service asks to wait {seconds} s. Please try again later.',
+    translationFailedRetry: 'Translation failed · Retry',
     aiProfileLimitsHint: 'Failed requests are retried automatically, up to 3 tries. These limits apply to this profile only.',
     customRuleProfileMissing: 'The AI profile this rule uses does not exist.',
     customRuleProfileWithBuiltin: 'A rule that uses the built-in engine cannot name an AI profile.',

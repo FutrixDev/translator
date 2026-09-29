@@ -141,7 +141,7 @@ test('conditions on <html> become :host-context(html...) in the shadow copy', ()
   // 断言按真 translation.css 的原文写：规则的形状变了，这里先红。
   const out = toShadowCss(repoFile(TRANSLATION_CSS));
   const PAIR = '.ai-translator-inline-block';
-  const PAGE_ONLY = ':not(.ai-translator-selection-translation):not(.ai-translator-hover-translation)';
+  const PAGE_ONLY = ':not(.ai-translator-selection-translation):not(.ai-translator-hover-translation):not(.ai-translator-failed)';
   // underline：普通的一行，条件整个进 :host-context。
   assert.ok(out.includes(`\n:host-context(html[data-ai-translator-style="underline"]) ${PAIR}${PAGE_ONLY} {\n  text-decoration: underline`), out);
   // blur 带 :not([data-ai-translator-only]) 的那一行：:not 落在 :host-context 里面，

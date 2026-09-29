@@ -531,7 +531,13 @@ test('这一轮没结果的块放回队列，但只放一次', () => {
   assert.match(auto, /if \(retried\.has\(pending\.key\)\)/);
   assert.match(auto, /retried\.add\(pending\.key\);/);
   // 放弃的那些走 commit，台账仍然只有一个写入口。
-  assert.match(auto, /for \(const element of giveUp\) commit\(element\);/);
+  assert.match(auto, /for \(const \[element, block\] of giveUp\) \{\s*commit\(element\);/);
+  // 第二次失败（放弃）的那一刻放失败标记，且只在那一处放：第一次失败放回队列，
+  // 不放标记（P1-D D2，设计 §4）。
+  assert.match(auto, /commit\(element\);\s*if \(element\.isConnected\) ctx\.failedBlocks\.mark\(block, error, \{ auto: true \}\);/);
+  assert.equal((auto.match(/failedBlocks\.mark\(/g) || []).length, 1);
+  // 挂着失败标记的块（手动那一轮失败的）不再被调度层自己送出去：决定在用户手里。
+  assert.match(auto, /function takeBatch\(\) \{[\s\S]*?if \(ctx\.failedBlocks\.isMarked\(element\)\) continue;[\s\S]*?inflight\.set\(element/);
   assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
   // 代次翻篇整本作废，重来的次数也一样。
   assert.match(auto, /function bumpSession\([\s\S]*?retried\.clear\(\);/);

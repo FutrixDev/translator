@@ -358,6 +358,10 @@
         if (ledger.has(key)) continue;
         // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
         if (alreadyTranslated(element, ticket.textFingerprint)) continue;
+        // 挂着失败标记的块归用户了（点标记重试，content/page/failed-blocks.js）：
+        // 手动那一轮失败的块滚进带里时不再自己悄悄送一次 —— 那样既多花钱，又会让
+        // 标记换成自动那一轮的、重试改走自动的引擎。自动放弃的那些另有台账挡着。
+        if (ctx.failedBlocks.isMarked(element)) continue;
         // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
         // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
         inflight.set(element, { key, entry });
@@ -505,17 +509,23 @@
         //
         // 代次一翻篇 inflight 就被清空，所以这个循环在作废的那一轮里天然是空转，
         // 不会把上一页的块塞进新一页的队列。
-        const giveUp = [];
+        const giveUp = new Map();
         for (const [element, pending] of inflight) {
           if (retried.has(pending.key)) {
-            giveUp.push(element);
+            giveUp.set(element, pending.entry.block);
             continue;
           }
           retried.add(pending.key);
           if (element.isConnected) queue.set(element, pending.entry);
         }
-        gaveUp += giveUp.length;
-        for (const element of giveUp) commit(element);
+        gaveUp += giveUp.size;
+        // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
+        // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
+        // 它放回队列，下一轮多半就翻成了。
+        for (const [element, block] of giveUp) {
+          commit(element);
+          if (element.isConnected) ctx.failedBlocks.mark(block, error, { auto: true });
+        }
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
