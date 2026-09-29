@@ -1,7 +1,10 @@
 /* Blab Translation popup — the 2026-09-19 brand: warm paper, ink, and the
    indigo-violet of the front page. Light is the default (`theme: 'light'` in
    default-settings), so it lives on :root and the panel never opens dark and
-   then flips. Dark redeclares the same tokens; nothing below names a colour. */
+   then flips. Dark redeclares the same tokens. Below the tokens, only colours
+   that are the same in both themes are written out: the switch thumb, the
+   white tints on the gradient button and the select arrow's data URI, which
+   cannot read a variable. */
 :root {
   color-scheme: light;
   --paper: #fffaf3;
@@ -19,8 +22,8 @@
   --switch-off: #ddd2c4;
   --focus: #6b63f5;
   /* The four back pages of the mark, read as states. */
-  --ok: #22c08e;
-  --error: #ff5e62;
+  --ok: #2fcb97;
+  --error: #ff6f6c;
   --error-text: #d93a3f;
   --raised-shadow: 0 1px 2px rgba(16, 23, 42, 0.08), 0 1px 1px rgba(16, 23, 42, 0.04);
   --radius-sm: 6px;
@@ -228,6 +231,7 @@ kbd {
 .menu-item .switch {
   position: relative;
   display: block;
+  flex: none;
   width: 30px;
   height: 18px;
   padding: 0;
@@ -389,13 +393,17 @@ kbd {
 .pdf-job-open {
   flex-shrink: 0;
   padding: 3px 10px;
-  background: var(--primary-fill);
-  border: none;
+  background: transparent;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  color: var(--on-primary);
+  color: var(--primary);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.pdf-job-open:hover {
+  background: var(--hover);
 }
 
 /* Dismiss. Quiet until the row is hovered — it is an escape hatch, not one of

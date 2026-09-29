@@ -119,6 +119,9 @@
   text-transform: none;
   fill: black;
   stroke: none;
+  stroke-width: 1;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
 }
 
 :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) *,
@@ -133,6 +136,9 @@
      The attributes that start that chain are restated just below. */
   fill: inherit;
   stroke: inherit;
+  stroke-width: inherit;
+  stroke-linecap: inherit;
+  stroke-linejoin: inherit;
   /* Both roots declare the panel font. The UA gives form controls one of their
      own, which is why several of our buttons already say `font-family: inherit`
      one at a time; this covers the ones that never did (the language trigger
@@ -141,20 +147,31 @@
   font-family: inherit;
 }
 
-/* SVG paint — the icons are stroke outlines whose `fill="none"` and
-   `stroke="currentColor"` sit on the markup as presentation attributes. Those
-   weigh (0,0,0): any author rule beats them, so one `svg { fill: red }` on
-   the page filled every float-menu icon in solid red, and a `path { stroke }`
-   reaches the paths below it. The block above makes every descendant inherit;
-   here each value our markup writes is restated at (0,2,0), so the element
-   carrying the attribute keeps it against a page's `svg` (0,0,1) or
-   `.kit svg` (0,1,1).
+/* SVG paint — the icons are stroke outlines whose `fill="none"`,
+   `stroke="currentColor"` and stroke geometry sit on the markup as
+   presentation attributes. Those weigh (0,0,0): any author rule beats them, so
+   one `svg { fill: red }` on the page filled every float-menu icon in solid
+   red, and a `path { stroke }` reaches the paths below it. The block above
+   makes every descendant inherit; here each value our markup writes is
+   restated on the element that carries it. The attribute selector is written
+   twice — `[fill="none"][fill]` — which puts it at (0,3,0), above a theme's
+   `.kit button:hover svg` (0,2,2) and not only its `.kit svg` (0,1,1).
+   That weight has a price: a rule of ours that styles an icon's paint must
+   sit on an element that does not carry the attribute (float-menu.css sets
+   stroke-width on menu icons that therefore write none).
    Only values the markup actually uses — test/unit/host-css-containment.test.mjs
-   reads them off content/*.js, so a new one fails until it is mirrored. */
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="none"] { fill: none; }
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="currentColor"] { fill: currentColor; }
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="url(#aiCaptionIconGradient)"] { fill: url(#aiCaptionIconGradient); }
-:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke="currentColor"] { stroke: currentColor; }
+   reads them off every .js file under content/, and fails on a value that is
+   not mirrored here and on a mirror no markup uses any more. */
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="none"][fill] { fill: none; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="currentColor"][fill] { fill: currentColor; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [fill="url(#aiCaptionIconGradient)"][fill] { fill: url(#aiCaptionIconGradient); }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke="currentColor"][stroke] { stroke: currentColor; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-width="1.6"][stroke-width] { stroke-width: 1.6; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-width="2"][stroke-width] { stroke-width: 2; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-width="2.5"][stroke-width] { stroke-width: 2.5; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-width="3"][stroke-width] { stroke-width: 3; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-linecap="round"][stroke-linecap] { stroke-linecap: round; }
+:is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) [stroke-linejoin="round"][stroke-linejoin] { stroke-linejoin: round; }
 
 /* Form controls, which everything above is too light to protect.
 

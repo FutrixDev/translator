@@ -97,13 +97,13 @@ test('the reset covers both content-script roots', () => {
 });
 
 test('every root list in the reset names the same roots, the rule picker among them', () => {
-  // The block restates one list of roots in thirteen places. A root added to
-  // twelve of them is contained everywhere except in the one rule the last
+  // The block restates one list of roots in nineteen places. A root added to
+  // eighteen of them is contained everywhere except in the one rule the last
   // carries, and nothing on the page shows which one that is until a host
   // stylesheet happens to hit it.
   const lists = [...resetBlock().matchAll(/:is\((\.ai-translator-popup,[^)]*)\)/g)]
     .map(([, inner]) => splitSelectorList(inner).map((s) => s.trim()).sort());
-  assert.equal(lists.length, 13, `expected thirteen root lists in the reset, found ${lists.length}`);
+  assert.equal(lists.length, 19, `expected nineteen root lists in the reset, found ${lists.length}`);
   for (const roots of lists) {
     assert.deepEqual(roots, lists[0], 'the root lists in the containment reset have drifted apart');
   }
@@ -194,6 +194,10 @@ test('the reset covers the roots and their descendants', () => {
   );
 });
 
+// The SVG presentation attributes our icons write, and the reset restates.
+const PAINT_ATTRS = ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin'];
+const PAINT = PAINT_ATTRS.join('|');
+
 test('the reset pins the properties that host pages actually leak', () => {
   const block = resetBlock();
   for (const property of [
@@ -206,35 +210,67 @@ test('the reset pins the properties that host pages actually leak', () => {
     'letter-spacing',  // inherited, same shape
     'text-transform',  // `button { text-transform: uppercase }` hits our buttons directly
     'font-family',     // the UA gives form controls their own; so do host pages
-    'fill',            // inherited: `svg { fill: red }` paints outline icons solid
-    'stroke',          // inherited: `path { stroke }` reaches icon paths directly
   ]) {
     assert.match(block, new RegExp(`\\n\\s*${property}\\s*:`), `${property} is no longer pinned`);
   }
+  // SVG paint is pinned twice: to a value on the roots, which starts the chain,
+  // and to `inherit` on every descendant, which carries it past a page's
+  // `svg { stroke-width: 4 }` down to the paths. Either half alone leaks.
+  for (const property of PAINT_ATTRS) {
+    assert.match(block, new RegExp(`\\n\\s*${property}\\s*:\\s*(?!inherit;)[^\\s;][^;]*;`), `${property} is no longer pinned on the roots`);
+    assert.match(block, new RegExp(`\\n\\s*${property}\\s*:\\s*inherit;`), `${property} is no longer inherited below the roots`);
+  }
 });
 
-test('every SVG paint attribute our markup writes is restated by the reset', () => {
-  // A presentation attribute weighs nothing: a page's `svg { fill: red }` beats
-  // `fill="none"` on our icon and paints the outline icons solid. The reset
-  // restates each value at (0,2,0); a value written in markup and not restated
-  // here is one a host page can still repaint.
-  const block = resetBlock();
+/** Every paint attribute value written in content markup, as `attr=value`. */
+function paintAttributesInMarkup() {
   const used = new Set();
   for (const file of repoDir('content').filter((f) => f.endsWith('.js'))) {
-    for (const [, attr, value] of repoFile(`content/${file}`).matchAll(/\b(fill|stroke)="([^"$]+)"/g)) {
+    const source = repoFile(`content/${file}`);
+    // Forms the scan below cannot read: a value computed at run time, a single
+    // quote, or a paint set from script. Each would slip past the mirror check.
+    for (const [form] of source.matchAll(new RegExp(`\\b(?:${PAINT})=(?:"\\$\\{|')`, 'g'))) {
+      assert.fail(`content/${file} writes ${form}…: write SVG paint as a literal, double-quoted attribute so the reset can mirror it`);
+    }
+    for (const [call] of source.matchAll(new RegExp(`setAttribute(?:NS)?\\([^)]*['"](?:${PAINT})['"]`, 'g'))) {
+      assert.fail(`content/${file} calls ${call}…: set SVG paint in markup, where the reset can mirror it`);
+    }
+    for (const [, attr, value] of source.matchAll(new RegExp(`\\b(${PAINT})="([^"]+)"`, 'g'))) {
       used.add(`${attr}=${value}`);
     }
   }
-  assert.ok(used.has('fill=none') && used.has('stroke=currentColor'), 'the markup scan found no SVG paint attributes');
-  for (const pair of used) {
-    const [attr, value] = pair.split('=');
+  return used;
+}
+
+/** Every value the reset restates, as `attr=value`, checking each one's shape. */
+function paintMirrorsInReset() {
+  const mirrored = new Set();
+  const block = resetBlock();
+  for (const [rule, attr, value] of block.matchAll(new RegExp(`\\[(${PAINT})="([^"]+)"\\][^{]*\\{[^}]*\\}`, 'g'))) {
     const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(
-      block,
-      new RegExp(`\\[${attr}="${escaped}"\\]\\s*\\{\\s*${attr}:\\s*${escaped};\\s*\\}`),
-      `${attr}="${value}" is written in content markup but not restated in the containment reset`,
+      rule,
+      new RegExp(`\\[${attr}="${escaped}"\\]\\[${attr}\\]\\s*\\{\\s*${attr}:\\s*${escaped};\\s*\\}`),
+      `the mirror for ${attr}="${value}" must be [${attr}="${value}"][${attr}] { ${attr}: ${value}; }, the doubled selector is its weight`,
     );
+    mirrored.add(`${attr}=${value}`);
   }
+  return mirrored;
+}
+
+test('every SVG paint attribute our markup writes is restated by the reset, and nothing else is', () => {
+  // A presentation attribute weighs nothing: a page's `svg { fill: red }` beats
+  // `fill="none"` on our icon and paints the outline icons solid. The reset
+  // restates each value at (0,3,0), above a theme's `:hover svg` (0,2,2). A
+  // value written in markup and not restated is one a host page can repaint;
+  // a mirror no markup writes is a rule nobody can tell is still needed.
+  const used = paintAttributesInMarkup();
+  const mirrored = paintMirrorsInReset();
+  assert.ok(used.has('fill=none') && used.has('stroke=currentColor'), 'the markup scan found no SVG paint attributes');
+  const missing = [...used].filter((pair) => !mirrored.has(pair));
+  const stale = [...mirrored].filter((pair) => !used.has(pair));
+  assert.deepEqual(missing, [], 'written in content markup but not restated in the containment reset');
+  assert.deepEqual(stale, [], 'restated in the containment reset but no longer written in content markup');
 });
 
 test('the reset is not important', () => {

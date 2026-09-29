@@ -164,8 +164,9 @@ const HOSTILE_PAGE_CSS = `
     color: rgb(255, 255, 255);
     border: 1px solid rgb(0, 2, 22);
   }
-  svg { fill: rgb(255, 0, 0); }
-  path { stroke: rgb(255, 0, 0); }
+  svg { fill: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; }
+  path { stroke: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; stroke-linejoin: bevel; }
+  .host-kit button:hover svg { fill: rgb(255, 0, 0); stroke-width: 4px; }
 `;
 
 /**
@@ -448,6 +449,7 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     // on the page filled every outline icon in the menu solid red.
     expect(await computed(page, '#host-svg', ['fill'])).toEqual({ fill: 'rgb(255, 0, 0)' });
     expect(await computed(page, '#host-svg path', ['stroke'])).toEqual({ stroke: 'rgb(255, 0, 0)' });
+    expect(await computed(page, '#host-svg path', ['stroke-width'])).toEqual({ 'stroke-width': '4px' });
 
     // The ball's mark is four fanned pages behind a bubble. Its colours are
     // ours, and the fan is baked into the path data: the reset pins
@@ -469,6 +471,12 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(iconPaint.stroke).not.toBe('rgb(255, 0, 0)');
     const iconPath = await computed(page, `${icon} path`, ['fill', 'stroke']);
     expect(iconPath).toEqual({ fill: 'none', stroke: iconPaint.color });
+    // Stroke geometry is paint too: the page's `svg { stroke-width: 4px }`
+    // would draw every outline icon at twice its weight.
+    const iconStroke = ['stroke-width', 'stroke-linecap', 'stroke-linejoin'];
+    const outline = { 'stroke-width': '1.8px', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    expect(await computed(page, icon, iconStroke)).toEqual(outline);
+    expect(await computed(page, `${icon} path`, iconStroke)).toEqual(outline);
 
     const item = await computed(page, '.ai-translator-menu-item', [
       'background-color', 'border-radius', 'padding', 'font-size', 'font-weight', 'font-family',
@@ -493,6 +501,13 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(hovered.color).toBe('rgb(16, 23, 42)');
     expect(hovered['border-top-width']).toBe('0px');
     expect(hovered['border-top-style']).toBe('none');
+    // `.host-kit button:hover svg` (0,2,2) is the heaviest thing a theme aims
+    // at an icon; the reset's doubled attribute mirror (0,3,0) is what holds.
+    const hoveredIcon = await computed(page, icon, ['fill', 'stroke', 'color', 'stroke-width']);
+    expect(hoveredIcon.fill).toBe('none');
+    expect(hoveredIcon.stroke).toBe(hoveredIcon.color);
+    expect(hoveredIcon.stroke).not.toBe('rgb(255, 0, 0)');
+    expect(hoveredIcon['stroke-width']).toBe('1.8px');
 
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');
     await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });

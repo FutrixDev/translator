@@ -129,12 +129,12 @@
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="running"] {
-  background: #2f9bf0;
+  background: #3faaf4;
   animation: ai-translator-dot-breathe 1.6s ease-in-out infinite;
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="partial"] {
-  background: #ffa53d;
+  background: #ffb04a;
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="paused"] {
@@ -142,7 +142,7 @@
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="error"] {
-  background: #ff5e62;
+  background: #ff6f6c;
 }
 
 /* 防护栏把每个后代的 opacity 钉成 1，但动画的层级在普通声明之上——这也正是那

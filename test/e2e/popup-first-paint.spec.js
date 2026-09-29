@@ -68,7 +68,7 @@ test('the auto-translate master switch never shows a guessed state while storage
         disabled: button.disabled,
         pressed: button.getAttribute('aria-pressed'),
         status: status.textContent,
-        // kbd 自带底色和边框：空着也画得出一颗空药丸，所以问的是它画没画（D-360 F9）。
+        // 开关自带轨道：空着也画得出一条空轨道，所以问的是它画没画（D-360 F9）。
         drawn: status.getClientRects().length > 0,
       });
       snap();

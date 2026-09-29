@@ -17,8 +17,8 @@ colors:
   primary-to: "#3f55f2"
   focus: "#6b63f5"
   switch-off: "#ddd2c4"
-  ok: "#22c08e"
-  error: "#ff5e62"
+  ok: "#2fcb97"
+  error: "#ff6f6c"
   error-text: "#d93a3f"
   dark-paper: "#12151f"
   dark-surface: "#1a1e2a"
@@ -33,10 +33,7 @@ colors:
   mark-amber: "#ffb04a"
   mark-mint: "#2fcb97"
   mark-bubble: "#5a60f6"
-  state-running: "#2f9bf0"
-  state-partial: "#ffa53d"
   state-paused: "#8a8f9e"
-  state-error: "#ff5e62"
 typography:
   title:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans', Roboto, sans-serif"
@@ -82,7 +79,7 @@ components:
     padding: "10px 12px"
     height: "42px"
   menu-row:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "transparent"
     textColor: "{colors.ink}"
     rounded: "{rounded.md}"
     padding: "8px 10px"
@@ -136,7 +133,7 @@ and the mark keeps its four colours.
 - Exactly one filled, gradient control per surface: "Translate page".
 - Switches are right-aligned toggles on the row they describe, and the whole row is the hit target.
 - The mark's four pages double as the state colours.
-- Light and dark are the same token set redeclared; no rule names a colour directly.
+- Light and dark are the same token set redeclared; a rule names a colour directly only when it is the same in both themes.
 
 ## Colors
 
@@ -145,24 +142,25 @@ four page colours appear only as states.
 
 ### Primary
 - **Indigo-Violet Gradient** (#8c72ff → #3f55f2, 135°): fills the primary "Translate page" button only.
-- **Indigo** (#4a55e8; dark #9d8cff): an "on" switch, the selected segment's text and a hovered icon.
-- **Focus Violet** (#6b63f5; dark #9d8cff): the 2px focus ring on every control.
+- **Indigo** (#4a55e8; dark #9d8cff): an "on" switch, a hovered icon, and the text of the quiet "Open"/"Review" button in the PDF job list.
+- **Focus Violet** (#6b63f5; dark #9d8cff): the 2px focus ring on every popup control. The float menu rings its rows in its own accent token instead.
 
 ### Neutral
 - **Paper** (#fffaf3; dark #12151f): the panel background, and the float ball's face in both themes. The ball's face deepens to #fcebdd, with a peach glow of rgba(255, 178, 120, .3) at the top right.
 - **Sand** (#f6efe5; dark #1a1e2a): the segmented control's track and inset areas.
-- **Sand Hover** (#f1e8dc; dark #222736): the background of a hovered row.
+- **Sand Hover** (#f1e8dc; dark #222736): the background of a hovered popup row. The float menu's hovered row is an accent tint instead (`--ait-menu-hover`).
 - **Seam** (#ebe1d4; dark #262b39): dividers between groups and the footer rule.
 - **Ink / Ink-2 / Muted** (#10172a / #4b5264 / #858a99): labels, icons at rest, and secondary text such as the kbd hints and footer.
 
 ### State (the mark's pages)
-- **Sky** (#2f9bf0): auto-translate is running. It breathes, with opacity 1 → 0.3 over 1.6s.
-- **Amber** (#ffa53d): partially translated.
-- **Grey** (#8a8f9e): paused.
-- **Coral** (#ff5e62): an error. This is also the footer dot when the API is not configured.
-- **Mint** (#22c08e): the footer's "ready" dot.
+The states use the mark's own hex values, not near neighbours of them.
+- **Sky** (#3faaf4): auto-translate is running. It breathes, with opacity 1 → 0.3 over 1.6s.
+- **Amber** (#ffb04a): partially translated.
+- **Grey** (#8a8f9e): paused. It is the one state that is not a page of the mark.
+- **Coral** (#ff6f6c): an error. This is also the footer dot when the API is not configured.
+- **Mint** (#2fcb97): the footer's "ready" dot.
 
-**The Four Pages Rule.** A state colour is always one of the mark's pages, and it only ever shows up as a dot. It never fills a button or a row.
+**The Four Pages Rule.** A state colour is always one of the mark's pages (or paused grey), and it only ever shows up as a dot. It never fills a button or a row.
 
 ## Typography
 
@@ -188,9 +186,9 @@ four page colours appear only as states.
 Mostly flat, with tonal layering. Shadows mark only things that float over something else.
 
 - **Primary lift**: `0 6px 16px -6px rgba(63, 85, 242, .55)`, under the gradient button.
-- **Raised chip**: `0 1px 2px rgba(16, 23, 42, .08), 0 1px 1px rgba(16, 23, 42, .04)`, on the selected segment and the kbd hints.
+- **Raised chip**: `0 1px 2px rgba(16, 23, 42, .08), 0 1px 1px rgba(16, 23, 42, .04)`, on the selected segment only. The kbd hints are flat.
 - **Ball**: `0 4px 14px rgba(16, 23, 42, .18), 0 1px 2px rgba(16, 23, 42, .12), 0 0 0 1px rgba(16, 23, 42, .06)`. On hover it becomes an indigo-tinted glow.
-- **Menu**: a large soft drop plus a 1px border. On paper the border is Seam, in dark it is `rgba(255, 255, 255, .08)`.
+- **Menu**: a large soft drop plus a 1px border: `rgba(16, 23, 42, .08)` on paper, `rgba(255, 255, 255, .08)` in dark.
 
 ## Shapes
 
@@ -211,10 +209,10 @@ Icons are 16–18px outline strokes (width 1.8–2, round caps and joins). They 
 
 ### Menu rows and switch rows
 - Transparent at rest; the Sand Hover fill on hover; the icon turns Indigo on hover.
-- A switch row keeps its label and adds a 32×18 track on the right: Seam-sand when off, Indigo when on. The row carries `aria-pressed`.
+- A switch row keeps its label and adds a 30×18 track on the right: Seam-sand when off, Indigo when on. The row carries `aria-pressed`. The track is a `<span>` whose On/Off word stays in the DOM for screen readers and specs; it is not a `<kbd>`, which is kept for real shortcuts.
 
 ### Display group
-- A two-option segmented control (Bilingual / Translation only) on a Sand track. The selected half is a raised white chip.
+- A two-option segmented control (Bilingual / Translation only) on a Sand track. The selected half is a raised white chip with ink text at weight 600.
 - Under it, the translation-style select sits beside its kbd hint.
 
 ### Footer
@@ -235,7 +233,8 @@ Icons are 16–18px outline strokes (width 1.8–2, round caps and joins). They 
 ### Do:
 - **Do** put any colour that follows the theme in as a token on the root and redeclare it for the other theme. The float ball's mark and dot colours are the one exception: they never follow the theme, so they are written as literals in `float-ball.css`.
 - **Do** bake geometry into SVG path data on any page-injected surface. The containment reset pins `transform: none` on every descendant, so a `transform=` attribute will not work there.
-- **Do** mirror any new SVG `fill=`/`stroke=` attribute value in the reset's SVG paint block. `test/unit/host-css-containment.test.mjs` fails until you do.
+- **Do** mirror any new value of the five SVG paint attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`) in the reset's SVG paint block, as a doubled selector `[attr="v"][attr] { attr: v; }`. The doubling puts it at (0,3,0), above a page's `.kit button:hover svg` (0,2,2). `test/unit/host-css-containment.test.mjs` fails until you do.
+- **Do** put your own paint CSS for a page-injected icon only on elements that carry none of those attributes. A (0,3,0) mirror outweighs an ordinary (0,2,3) rule, so the attribute, not your rule, would win. The float menu's icons leave `stroke-width` off the `<svg>` for this reason.
 
 ### Don't:
 - **Don't** add a second filled or gradient button to a surface.
