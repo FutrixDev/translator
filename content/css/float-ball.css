@@ -1,16 +1,20 @@
 /* ==================== Float Ball ==================== */
 
+/* 球是一张暖白纸上的品牌扇页标志，两套主题都一样：它压在别人的页面上，
+   页面是深是浅我们管不着，一颗在哪儿都认得出的暖白球比跟着主题换色的球更稳。
+   跟主题走的只有停靠时身后的胶囊（light-theme.css 只改这里的 token）。 */
+
 /* Float Ball Container - capsule shaped background for docked state */
 #ai-translator-float-ball-container {
+  --ait-dock-bg: rgba(26, 30, 42, 0.94);
+  --ait-dock-shadow: 0 2px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.06);
   position: fixed;
   z-index: 2147483645;
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(235, 235, 240, 0.95);
-  box-shadow:
-    0 2px 10px rgba(0, 0, 0, 0.12),
-    0 0 1px rgba(0, 0, 0, 0.15);
+  background: var(--ait-dock-bg);
+  box-shadow: var(--ait-dock-shadow);
   pointer-events: none;
 }
 
@@ -36,47 +40,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #2a2a3d 0%, #1a1a28 100%);
-  border: 2px solid transparent;
+  /* 品牌图标的纸底：暖白往下沉一点，右上角一抹桃色的光。 */
+  background:
+    radial-gradient(circle at 72% 22%, rgba(255, 178, 120, 0.3), rgba(255, 178, 120, 0) 60%),
+    linear-gradient(160deg, #fffaf3 0%, #fcebdd 100%);
+  border: 0;
   border-radius: 50%;
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(124, 92, 255, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 4px 14px rgba(16, 23, 42, 0.18),
+    0 1px 2px rgba(16, 23, 42, 0.12),
+    0 0 0 1px rgba(16, 23, 42, 0.06);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   user-select: none;
   overflow: visible;
 }
 
-#ai-translator-float-ball::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  padding: 2px;
-  background: linear-gradient(135deg, #7c5cff 0%, #06b6d4 50%, #7c5cff 100%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0.6;
-  transition: opacity 0.3s ease;
-}
-
 #ai-translator-float-ball:hover {
   transform: scale(1.1);
   box-shadow:
-    0 8px 24px rgba(124, 92, 255, 0.3),
-    0 0 0 1px rgba(124, 92, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 8px 22px rgba(74, 85, 232, 0.24),
+    0 1px 3px rgba(16, 23, 42, 0.12),
+    0 0 0 1px rgba(74, 85, 232, 0.18);
 }
 
 #ai-translator-float-ball.docked:hover {
   transform: scale(1.08);
-}
-
-#ai-translator-float-ball:hover::before {
-  opacity: 1;
 }
 
 #ai-translator-float-ball:active,
@@ -85,20 +74,37 @@
   cursor: grabbing;
 }
 
+/* 28px 里的扇页：四张页的外角离球边还留 4px 多，缩到 16px 的 favicon 那一档
+   才会糊，这里还远。
+   四张页的旋转直接烘进了路径坐标，而不是写成 transform="rotate(…)"：popup.css
+   的防护栏在每个后代上钉了 transform: none，CSS 的 transform 属性盖过 SVG 的
+   transform 特性，四张页会全部转回原位、叠在气泡后面。颜色也不写成 fill 特性：
+   页面一条 `path { fill: currentColor }` 就能盖过特性，这里的 id 规则盖得过它。 */
 #ai-translator-float-ball svg {
-  width: 20px;
-  height: 20px;
-  filter: drop-shadow(0 2px 4px rgba(124, 92, 255, 0.4));
+  width: 28px;
+  height: 28px;
   transition: transform 0.3s ease;
 }
 
+#ai-translator-float-ball svg path {
+  stroke: none;
+}
+
+#ai-translator-float-ball .ait-mark-coral { fill: #ff6f6c; }
+#ai-translator-float-ball .ait-mark-sky { fill: #3faaf4; }
+#ai-translator-float-ball .ait-mark-amber { fill: #ffb04a; }
+#ai-translator-float-ball .ait-mark-mint { fill: #2fcb97; }
+#ai-translator-float-ball .ait-mark-bubble { fill: #5a60f6; }
+#ai-translator-float-ball .ait-mark-play { fill: #ffffff; }
+
 #ai-translator-float-ball:hover svg {
-  transform: scale(1.1);
+  transform: scale(1.06);
 }
 
 /* 状态点：自动翻译此刻的样子，画在球上而不是另起一个角标 —— 一页上只该有一个
    「翻译在这儿」的锚点。不亮的时候是 display:none 而不是透明：一颗常亮的灰点会
-   被当成可以点的东西，而在一个不翻的页面上它没有任何可点的含义。 */
+   被当成可以点的东西，而在一个不翻的页面上它没有任何可点的含义。
+   颜色是品牌的四张页：天蓝在翻、琥珀没翻完、灰色停了、珊瑚出错。 */
 #ai-translator-float-ball .ai-translator-status-dot {
   position: absolute;
   right: 3px;
@@ -106,7 +112,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgba(10, 10, 16, 0.9);
+  box-shadow: 0 0 0 1.5px #fffaf3;
   cursor: pointer;
 }
 
@@ -123,20 +129,20 @@
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="running"] {
-  background: #06b6d4;
+  background: #3faaf4;
   animation: ai-translator-dot-breathe 1.6s ease-in-out infinite;
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="partial"] {
-  background: #f5a524;
+  background: #ffb04a;
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="paused"] {
-  background: #8b8b9a;
+  background: #8a8f9e;
 }
 
 #ai-translator-float-ball .ai-translator-status-dot[data-state="error"] {
-  background: #f43f5e;
+  background: #ff6f6c;
 }
 
 /* 防护栏把每个后代的 opacity 钉成 1，但动画的层级在普通声明之上——这也正是那
@@ -159,10 +165,11 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #2a2a3d;
-  box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.35);
-  color: #e8e8f0;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(16, 23, 42, 0.2), 0 0 0 1px rgba(16, 23, 42, 0.08);
+  color: #10172a;
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: -0.5px;
   cursor: pointer;
   opacity: 0;
@@ -181,6 +188,6 @@
    认，否则 Tab 停到它身上时人看到的是焦点凭空消失了一格。 */
 #ai-translator-float-ball .ai-translator-status-dot:focus-visible,
 #ai-translator-float-ball .ai-translator-ball-more:focus-visible {
-  outline: 2px solid #7c5cff;
+  outline: 2px solid #6b63f5;
   outline-offset: 2px;
 }

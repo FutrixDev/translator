@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### A new look for the popup and the float ball
+
+- **The popup, the float ball and its menu wear the new brand.** Warm paper,
+  ink-dark type and one indigo-violet button for the action that matters,
+  in a light and a dark theme. The popup reads top to bottom: translate this
+  page, the switches for what happens next time, how translations look, the
+  occasional tools, then a footer that says whether anything needs attention.
+  Every row shows and hides exactly as before, with the same wording.
+- **The float ball is the fanned-pages mark on a warm-white ball**, in both
+  themes, so it stays recognisable on dark and light pages alike. Its status
+  dot takes the mark's colours: sky while translating, amber when partly
+  done, grey when paused, coral on an error.
+- **Page styles on bare tags can no longer repaint our icons.** A site rule
+  such as `svg { fill: … }` or `path { stroke-width: … }`, including a
+  `.kit button:hover svg` rule, used to fill in or thicken the outline icons
+  of the float menu; they now keep their colour, stroke width and round ends.
+  A page rule scoped by a class of its own on the path itself can still reach
+  them, and the selection button, the rule picker, the subtitle controls and
+  the auto-translate bar have not moved to the new look yet.
+- `DESIGN.md` at the repository root documents the colours, type, shapes and
+  components of these surfaces.
+
 ### Popup, site policy and prompt register
 
 - **The popup's buttons work the moment it opens.** Clicking the toolbar icon

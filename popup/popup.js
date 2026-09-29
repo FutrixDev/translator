@@ -81,6 +81,14 @@ function applyI18n(lang) {
       el.textContent = text;
     }
   });
+  // 只剩图标的按钮（底栏的设置）把那句话挂在 title 上。
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    const text = t(key);
+    if (text && text !== key) {
+      el.title = text;
+    }
+  });
 }
 
 // Initialize
@@ -263,6 +271,7 @@ function renderPageRows() {
     // 这个字段是 undefined。灰着的行点不动，画成能点的行按下去会把总开关打开。
     const writable = !!pageState.ruleWritable;
     elements.toggleSiteAuto.disabled = !writable;
+    elements.toggleSiteAuto.setAttribute('aria-pressed', String(on));
     elements.siteAutoStatus.textContent = on ? t('on') : t('off');
     elements.toggleSiteAuto.title = pageState.blockReason
       ? t(AutoReasonKeys[pageState.blockReason])

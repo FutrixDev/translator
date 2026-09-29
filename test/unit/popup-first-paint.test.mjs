@@ -261,7 +261,7 @@ test('the master switch is not drawn from a guess: disabled until storage answer
   assert.equal(master.disabled, true, 'the switch can be pressed before anyone knows its state');
   assert.equal(master.getAttribute('aria-pressed'), null, 'the switch claims a state before storage answered');
   assert.equal(status.textContent, '');
-  // 空的也不行：kbd 有底色和边框，空格子画出来是一颗空药丸（D-360 F9）。
+  // 空的也不行：开关画着轨道，空格子画出来是一条空轨道（D-360 F9）。
   assert.equal(status.hidden, true, 'an empty status cell is drawn as an empty pill before storage answers');
   // 监听器照样同步接上了（A1 不动）。
   assert.equal((master.listeners.click || []).length, 1);

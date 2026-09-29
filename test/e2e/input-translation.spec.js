@@ -164,6 +164,9 @@ const HOSTILE_PAGE_CSS = `
     color: rgb(255, 255, 255);
     border: 1px solid rgb(0, 2, 22);
   }
+  svg { fill: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; }
+  path { stroke: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; stroke-linejoin: bevel; }
+  .host-kit button:hover svg { fill: rgb(255, 0, 0); stroke-width: 4px; }
 `;
 
 /**
@@ -230,7 +233,8 @@ async function startTargetLangFixture() {
       // A div of the page's own, so a test can check the page rules are
       // actually live before asserting they did not reach us.
       + '<div id="host-canary">Host div</div>'
-      + '<button id="host-button" type="button">Host button</button></body></html>');
+      + '<button id="host-button" type="button">Host button</button>'
+      + '<svg id="host-svg" width="10" height="10"><path d="M0 0H10V10H0Z"/></svg></body></html>');
   });
 
   return {
@@ -441,13 +445,45 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
       padding: '14px 30px',
     });
 
+    // The SVG half: presentation attributes weigh nothing, so `svg { fill }`
+    // on the page filled every outline icon in the menu solid red.
+    expect(await computed(page, '#host-svg', ['fill'])).toEqual({ fill: 'rgb(255, 0, 0)' });
+    expect(await computed(page, '#host-svg path', ['stroke'])).toEqual({ stroke: 'rgb(255, 0, 0)' });
+    expect(await computed(page, '#host-svg path', ['stroke-width'])).toEqual({ 'stroke-width': '4px' });
+
+    // The ball's mark is four fanned pages behind a bubble. Its colours are
+    // ours, and the fan is baked into the path data: the reset pins
+    // `transform: none` on every descendant, which would stack the pages
+    // straight behind the bubble if they were drawn with `transform=`.
+    const coral = await computed(page, '#ai-translator-float-ball .ait-mark-coral', ['fill', 'stroke']);
+    expect(coral).toEqual({ fill: 'rgb(255, 111, 108)', stroke: 'none' });
+    const [coralBox, bubbleBox] = await page.evaluate(() => ['coral', 'bubble'].map((name) => {
+      const box = document.querySelector(`#ai-translator-float-ball .ait-mark-${name}`).getBoundingClientRect();
+      return { left: box.left, right: box.right };
+    }));
+    expect(coralBox.left).toBeLessThan(bubbleBox.left - 3);
+
     await openFloatBallMenu(page);
+    const icon = '.ai-translator-menu-item[data-action="translate-page"] svg';
+    const iconPaint = await computed(page, icon, ['fill', 'stroke', 'color']);
+    expect(iconPaint.fill).toBe('none');
+    expect(iconPaint.stroke).toBe(iconPaint.color);
+    expect(iconPaint.stroke).not.toBe('rgb(255, 0, 0)');
+    const iconPath = await computed(page, `${icon} path`, ['fill', 'stroke']);
+    expect(iconPath).toEqual({ fill: 'none', stroke: iconPaint.color });
+    // Stroke geometry is paint too: the page's `svg { stroke-width: 4px }`
+    // would draw every outline icon at twice its weight.
+    const iconStroke = ['stroke-width', 'stroke-linecap', 'stroke-linejoin'];
+    const outline = { 'stroke-width': '1.8px', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    expect(await computed(page, icon, iconStroke)).toEqual(outline);
+    expect(await computed(page, `${icon} path`, iconStroke)).toEqual(outline);
+
     const item = await computed(page, '.ai-translator-menu-item', [
       'background-color', 'border-radius', 'padding', 'font-size', 'font-weight', 'font-family',
     ]);
     expect(item['background-color']).toBe('rgba(0, 0, 0, 0)');
-    expect(item['border-radius']).toBe('0px');
-    expect(item.padding).toBe('12px 14px');
+    expect(item['border-radius']).toBe('8px');
+    expect(item.padding).toBe('8px 10px');
     expect(item['font-size']).toBe('13px');
     expect(item['font-weight']).toBe('400');
     expect(item['font-family']).not.toContain('monospace');
@@ -461,10 +497,17 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     const hovered = await computed(page, '.ai-translator-menu-item[data-action="translate-page"]', [
       'background-color', 'color', 'border-top-width', 'border-top-style',
     ]);
-    expect(hovered['background-color']).toBe('rgba(124, 92, 255, 0.08)');
-    expect(hovered.color).toBe('rgb(29, 29, 31)');
+    expect(hovered['background-color']).toBe('rgba(74, 85, 232, 0.08)');
+    expect(hovered.color).toBe('rgb(16, 23, 42)');
     expect(hovered['border-top-width']).toBe('0px');
     expect(hovered['border-top-style']).toBe('none');
+    // `.host-kit button:hover svg` (0,2,2) is the heaviest thing a theme aims
+    // at an icon; the reset's doubled attribute mirror (0,3,0) is what holds.
+    const hoveredIcon = await computed(page, icon, ['fill', 'stroke', 'color', 'stroke-width']);
+    expect(hoveredIcon.fill).toBe('none');
+    expect(hoveredIcon.stroke).toBe(hoveredIcon.color);
+    expect(hoveredIcon.stroke).not.toBe('rgb(255, 0, 0)');
+    expect(hoveredIcon['stroke-width']).toBe('1.8px');
 
     await page.click('.ai-translator-menu-item[data-action="translate-input"]');
     await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });

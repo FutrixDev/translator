@@ -42,9 +42,10 @@
   const IDLE_HIDE_MS = 2500;
   const ACTIVITY_THROTTLE_MS = 100;
 
-  // The float ball's mark, at control-bar size. A gradient is referenced by id
-  // inside the document, so this one carries its own name — sharing the ball's
-  // would make whichever element parsed first define the paint for both.
+  // The old translate glyph (the float ball has since moved to the fanned-pages
+  // mark; this control bar has not). A gradient is referenced by id inside the
+  // document, so this one carries its own name — sharing another panel's would
+  // make whichever element parsed first define the paint for both.
   const BRAND_SVG = `
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
       <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z" fill="url(#aiCaptionIconGradient)"/>

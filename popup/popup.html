@@ -10,157 +10,162 @@
   <div class="container">
     <header class="header">
       <div class="logo">
-        <img src="../icons/icon48.png" width="28" height="28" alt="Blab Translation">
+        <img src="../icons/icon32.png" width="24" height="24" alt="">
       </div>
       <h1>Blab Translation</h1>
     </header>
 
     <main class="main">
-      <!-- 这一页的几行动作。顺序是「以后都这样」→「现在就这一次」→「先停一下」，
-           从最持久的决定走到最临时的那一个。
+      <!-- 四组，从「现在就这一次」走到「别的东西」：这一页（翻译是主按钮，暂停跟着它）
+           → 以后都这样（两个开关）→ 译文长什么样 → 这一页以外能翻的东西。
+           一组的行全藏着时，那一组连同它上面的细线一起不画（popup.css .group）。
            悬浮球和视频字幕两行搬去了设置页：它们是偏好，不是此刻要做的事，而
            popup 每多一行，真正要点的那一行就更难找一次。 -->
+      <div class="group group-page">
+        <button id="translatePage" class="menu-item primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
+            <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
+          </svg>
+          <span id="translatePageLabel" data-i18n="translateCurrentPage">Translate Page</span>
+          <!-- 键位从 chrome.commands.getAll() 读，不写死：用户在
+               chrome://extensions/shortcuts 改过之后，这里印的得是他改成的那个。 -->
+          <kbd id="translatePageShortcut" hidden></kbd>
+        </button>
 
-      <!-- 自动翻译总开关：读写 autoTranslate，和设置页 #autoTranslate 是同一个
-           键、同一句话。常显 —— 它不问页面，没有内容脚本的标签页上也关得掉。
-           关掉以后当前页的调度层当场停（autoTranslate 在 RESTART_KEYS 里）。
-           读回存储以前它是 disabled、没有 aria-pressed、状态格藏着：开着还是
-           关着没人知道，就不画一个猜的（R33 N1）。状态格是 hidden 而不只是空 ——
-           kbd 自带底色和边框，空的也会画出一颗空药丸（D-360 F9）。
-           renderGlobalAuto 第一次画才启用、才露出状态格。 -->
-      <button id="toggleGlobalAuto" class="menu-item" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2v10" stroke-linecap="round"/>
-          <path d="M18.4 6.6a9 9 0 11-12.8 0" stroke-linecap="round"/>
-        </svg>
-        <span data-i18n="autoTranslateEnable">Translate pages automatically</span>
-        <kbd id="globalAutoStatus" hidden></kbd>
-      </button>
+        <button id="togglePagePause" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 5v14M14 5v14" stroke-linecap="round"/>
+          </svg>
+          <span id="pagePauseLabel" data-i18n="popupPausePage">Pause on this page</span>
+        </button>
+      </div>
 
-      <button id="toggleSiteAuto" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l1-8z" stroke-linejoin="round"/>
-        </svg>
-        <span data-i18n="popupSiteAuto">Auto-translate this site</span>
-        <kbd id="siteAutoStatus" data-i18n="off">Off</kbd>
-      </button>
+      <div class="group">
+        <!-- 自动翻译总开关：读写 autoTranslate，和设置页 #autoTranslate 是同一个
+             键、同一句话。常显 —— 它不问页面，没有内容脚本的标签页上也关得掉。
+             关掉以后当前页的调度层当场停（autoTranslate 在 RESTART_KEYS 里）。
+             读回存储以前它是 disabled、没有 aria-pressed、状态格藏着：开着还是
+             关着没人知道，就不画一个猜的（R33 N1）。状态格是 hidden 而不只是空 ——
+             它画成一个开关，空的也会画出一个停在「关」的滑钮（D-360 F9）。
+             renderGlobalAuto 第一次画才启用、才露出状态格。 -->
+        <button id="toggleGlobalAuto" class="menu-item" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v10" stroke-linecap="round"/>
+            <path d="M18.4 6.6a9 9 0 11-12.8 0" stroke-linecap="round"/>
+          </svg>
+          <span data-i18n="autoTranslateEnable">Translate pages automatically</span>
+          <span id="globalAutoStatus" class="switch" hidden></span>
+        </button>
 
-      <!-- 上一行的附行：字幕正在一个没设过规则的站点上翻，而上一行印着「关」。
-           一下写 never，不必先点开再点关。只在页面说该露的时候露，见
-           renderPageRows()。 -->
-      <button id="stopSiteAuto" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>
-        </svg>
-        <span id="stopSiteAutoLabel"></span>
-      </button>
+        <button id="toggleSiteAuto" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l1-8z" stroke-linejoin="round"/>
+          </svg>
+          <span data-i18n="popupSiteAuto">Auto-translate this site</span>
+          <span id="siteAutoStatus" class="switch" data-i18n="off">Off</span>
+        </button>
 
-      <button id="translatePage" class="menu-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>
-          <path d="M18.5 10l-4.5 12h2l1.12-3h4.75L23 22h2l-4.5-12h-2zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
-        </svg>
-        <span id="translatePageLabel" data-i18n="translateCurrentPage">Translate Page</span>
-        <!-- 键位从 chrome.commands.getAll() 读，不写死：用户在
-             chrome://extensions/shortcuts 改过之后，这里印的得是他改成的那个。 -->
-        <kbd id="translatePageShortcut" hidden></kbd>
-      </button>
+        <!-- 上一行的附行：字幕正在一个没设过规则的站点上翻，而上一行印着「关」。
+             一下写 never，不必先点开再点关。只在页面说该露的时候露，见
+             renderPageRows()。 -->
+        <button id="stopSiteAuto" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>
+          </svg>
+          <span id="stopSiteAutoLabel"></span>
+        </button>
+      </div>
 
-      <button id="togglePagePause" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10 5v14M14 5v14" stroke-linecap="round"/>
-        </svg>
-        <span id="pagePauseLabel" data-i18n="popupPausePage">Pause on this page</span>
-      </button>
-
-      <!-- 打开页内拾取器（content/picker/）。露不露由页面答（pickerAvailable），
-           和悬浮球菜单里同一项问的是同一个函数。 -->
-      <button id="pickSiteRegion" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 3l7 17 2.5-7.5L20 10z" stroke-linejoin="round"/>
-        </svg>
-        <span data-i18n="pickSiteRegion">Adjust what gets translated here</span>
-      </button>
-
-      <!-- 显示：双语 / 仅译文，加上译文样式。常显：这是偏好，下一次翻译就按它来。
-           只写存储，页面由内容脚本的 storage 监听落地（popup-display.js）。 -->
-      <div id="displayRow" class="display-row" role="group" aria-label="Display">
-        <div class="display-segment">
-          <button type="button" id="displayBilingual" aria-pressed="true" data-i18n="displayBilingual">Bilingual</button>
-          <button type="button" id="displayTranslationOnly" aria-pressed="false" data-i18n="displayTranslationOnly">Translation only</button>
-        </div>
-        <div class="display-style">
-          <select id="translationStyleSelect"></select>
-          <kbd id="translationOnlyShortcut" hidden></kbd>
+      <div class="group">
+        <!-- 显示：双语 / 仅译文，加上译文样式。常显：这是偏好，下一次翻译就按它来。
+             只写存储，页面由内容脚本的 storage 监听落地（popup-display.js）。 -->
+        <div id="displayRow" class="display-row" role="group" aria-label="Display">
+          <div class="display-segment">
+            <button type="button" id="displayBilingual" aria-pressed="true" data-i18n="displayBilingual">Bilingual</button>
+            <button type="button" id="displayTranslationOnly" aria-pressed="false" data-i18n="displayTranslationOnly">Translation only</button>
+          </div>
+          <div class="display-style">
+            <select id="translationStyleSelect"></select>
+            <kbd id="translationOnlyShortcut" hidden></kbd>
+          </div>
         </div>
       </div>
 
-      <!-- The entry point that does not depend on the context menu, which comic
-           hosts routinely disable. -->
-      <button id="comicTranslatePage" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <path d="M12 3v18"/>
-        </svg>
-        <span data-i18n="comicTranslateThisPage">Translate Comic Page</span>
-      </button>
+      <div class="group">
+        <!-- 打开页内拾取器（content/picker/）。露不露由页面答（pickerAvailable），
+             和悬浮球菜单里同一项问的是同一个函数。 -->
+        <button id="pickSiteRegion" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3l7 17 2.5-7.5L20 10z" stroke-linejoin="round"/>
+          </svg>
+          <span data-i18n="pickSiteRegion">Adjust what gets translated here</span>
+        </button>
 
-      <button id="comicColorizePage" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 22a10 10 0 110-20c5.5 0 10 4 10 9a5 5 0 01-5 5h-2a2 2 0 00-1.5 3.3c.3.4.5.8.5 1.2a1.5 1.5 0 01-2 1.5z"/>
-          <circle cx="7.5" cy="10.5" r="1"/>
-          <circle cx="12" cy="7.5" r="1"/>
-          <circle cx="16.5" cy="10.5" r="1"/>
-        </svg>
-        <span data-i18n="comicColorizeThisPage">Colorize Comic Page</span>
-      </button>
+        <!-- The entry point that does not depend on the context menu, which comic
+             hosts routinely disable. -->
+        <button id="comicTranslatePage" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M12 3v18"/>
+          </svg>
+          <span data-i18n="comicTranslateThisPage">Translate Comic Page</span>
+        </button>
 
-      <!-- No account row here. Sign-in state and the monthly free allowance
-           live in Settings, which is where a user goes to change them; the
-           popup is a list of things to do right now, and a remote balance it
-           had to fetch on every open was neither. -->
+        <button id="comicColorizePage" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22a10 10 0 110-20c5.5 0 10 4 10 9a5 5 0 01-5 5h-2a2 2 0 00-1.5 3.3c.3.4.5.8.5 1.2a1.5 1.5 0 01-2 1.5z"/>
+            <circle cx="7.5" cy="10.5" r="1"/>
+            <circle cx="12" cy="7.5" r="1"/>
+            <circle cx="16.5" cy="10.5" r="1"/>
+          </svg>
+          <span data-i18n="comicColorizeThisPage">Colorize Comic Page</span>
+        </button>
 
-      <!-- PDF translation rides the same account as comics. The first button
-           appears only when the active tab is itself a PDF; the second opens
-           the local-file upload page and is always available while the feature
-           is on. -->
-      <button id="pdfTranslateCurrent" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-        </svg>
-        <span data-i18n="pdfTranslateThis">Translate This PDF</span>
-      </button>
+        <!-- No account row here. Sign-in state and the monthly free allowance
+             live in Settings, which is where a user goes to change them; the
+             popup is a list of things to do right now, and a remote balance it
+             had to fetch on every open was neither. -->
 
-      <button id="pdfTranslateLocal" class="menu-item" hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-        <span data-i18n="pdfTranslateLocal">Translate a Local Document…</span>
-      </button>
+        <!-- PDF translation rides the same account as comics. The first button
+             appears only when the active tab is itself a PDF; the second opens
+             the local-file upload page and is always available while the feature
+             is on. -->
+        <button id="pdfTranslateCurrent" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <span data-i18n="pdfTranslateThis">Translate This PDF</span>
+        </button>
 
-      <!-- The most recent PDF jobs. Populated by popup.js; polls while the
-           popup is open so a running job visibly moves. -->
-      <div id="pdfJobs" class="pdf-jobs" hidden></div>
+        <button id="pdfTranslateLocal" class="menu-item" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span data-i18n="pdfTranslateLocal">Translate a Local Document…</span>
+        </button>
 
-      <div class="divider"></div>
-
-      <button id="openSettings" class="menu-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
-        </svg>
-        <span data-i18n="openSettings">Settings</span>
-      </button>
+        <!-- The most recent PDF jobs. Populated by popup.js; polls while the
+             popup is open so a running job visibly moves. -->
+        <div id="pdfJobs" class="pdf-jobs" hidden></div>
+      </div>
     </main>
 
     <footer class="footer">
       <!-- 文字归 renderStatus() 管（popup.js）：内置引擎那条线还要带上原因，
            不是一个 i18n key 能表达的。这里的 Ready 只是脚本跑起来之前的占位。 -->
       <span id="statusText">Ready</span>
+      <button id="openSettings" class="footer-settings" data-i18n-title="openSettings" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        <span class="sr-only" data-i18n="openSettings">Settings</span>
+      </button>
     </footer>
   </div>
 
