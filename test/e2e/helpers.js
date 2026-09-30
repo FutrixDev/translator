@@ -433,6 +433,32 @@ async function applyBaseSettings(context) {
   await writeSyncSettings(context, { ...E2E_BASE_SETTINGS });
 }
 
+const EXAMPLE_PAGE_HTML = fs.readFileSync(path.join(__dirname, 'example-page.html'), 'utf8');
+
+/**
+ * The page `https://example.com/` answers with, in every browser context.
+ *
+ * A dozen specs open example.com as "an ordinary page": the content scripts
+ * match on it, some assertions are about its host, and the rest point at its
+ * `<h1>` and first `<p>`. Those were the live site's markup, and on 2026-09-29
+ * IANA replaced it — no `<h1>`, and six multilingual `<p>`s stacked in one grid
+ * cell, so the later ones' spans sit over the first and swallow the pointer.
+ * Ten tests failed on main without a line of ours changing. The URL stays (the
+ * host is what the extension sees); the markup is ours, a copy of the page the
+ * suite was last green against, in example-page.html.
+ *
+ * Only `/` is served. Any other path is a 404, so a spec cannot pass on this
+ * page at a URL it did not mean; a spec that wants its own page at another path
+ * routes it itself, and its later route wins.
+ * @param {import('@playwright/test').BrowserContext} context
+ */
+async function serveExamplePage(context) {
+  await context.route('https://example.com/**', (route) => {
+    if (new URL(route.request().url()).pathname !== '/') return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: EXAMPLE_PAGE_HTML });
+  });
+}
+
 /**
  * Set extension settings via chrome.storage, on top of E2E_BASE_SETTINGS.
  * Anything the caller names wins over the baseline.
@@ -822,6 +848,7 @@ module.exports = {
   getSyncSettings,
   getSyncSetting,
   applyBaseSettings,
+  serveExamplePage,
   waitForFloatBall,
   openExamplePage,
   openFloatBallMenu,
