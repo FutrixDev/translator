@@ -144,7 +144,8 @@ test('exclude comes only from the user; keepOriginal is the builtin table joined
   // 没有用户规则：exclude 是空串，keepOriginal 只有内置的。
   const plain = at('x.com', '/alice/status/2');
   assert.equal(plain.exclude, '');
-  assert.equal(plain.keepOriginal, '[data-testid="User-Name"] a,time,[role="group"]');
+  assert.equal(plain.keepOriginal,
+    '[data-testid="User-Name"] a,time,[role="group"],[data-testid="sidebarColumn"]');
 });
 
 test('a user rule on a site with no builtin rule is an adapter of its own', () => {

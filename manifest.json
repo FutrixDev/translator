@@ -160,6 +160,8 @@
         "content/page/shadow.js",
         "content/page/notranslate.js",
         "content/page/scope.js",
+        "content/page/reader-hidden.js",
+        "content/page/not-prose.js",
         "content/page/collect.js",
         "content/page/insert.js",
         "content/page/failed-blocks.js",

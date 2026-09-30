@@ -50,8 +50,9 @@ class FakeClassList {
 }
 
 class FakeElement {
-  constructor({ top = 0, height = 0, width = 100, overflowY = 'visible', position = 'static',
-    classes = [], text = '', scrollHeight = null, lineHeight = '', fontSize = '' } = {}) {
+  constructor({ top = 0, height = 0, width = 100, overflowY = 'visible', overflowX = 'visible',
+    position = 'static', classes = [], text = '', scrollHeight = null, lineHeight = '',
+    fontSize = '', nowrapRow = false } = {}) {
     this.nodeType = 1;
     this.isConnected = true;
     this.parentElement = null;
@@ -65,6 +66,7 @@ class FakeElement {
     this.height = height;
     this.width = width;
     this.overflowY = overflowY;
+    this.overflowX = overflowX;
     this.position = position;
     this.textContent = text;
     this.ownScrollHeight = scrollHeight;
@@ -72,6 +74,9 @@ class FakeElement {
     // —— 默认空串正是那条退路，只有明确给了行高的用例才走比例那条。
     this.lineHeight = lineHeight;
     this.fontSize = fontSize;
+    // white-space:nowrap 的一行：孩子们并排摆，宽度加起来就是要画的宽度，框装不下的
+    // 那截就是切掉的（scrollWidth − clientWidth）。不是 nowrapRow 的框永远不切。
+    this.nowrapRow = nowrapRow;
   }
 
   append(child) { child.parentElement = this; this.children.push(child); return child; }
@@ -109,6 +114,12 @@ class FakeElement {
   // 站点定死的高度，不随内容变 —— 这正是本文件要处理的那类框
   get clientHeight() { return this.hidden ? 0 : this.height; }
   get scrollHeight() { return this.ownScrollHeight === null ? this.clientHeight : this.ownScrollHeight; }
+  get clientWidth() { return this.hidden ? 0 : this.width; }
+  get scrollWidth() {
+    if (!this.nowrapRow) return this.clientWidth;
+    const content = this.children.reduce((sum, c) => sum + (c.hidden ? 0 : c.width), 0);
+    return Math.max(this.clientWidth, content);
+  }
 
   getBoundingClientRect() {
     if (this.hidden) return { top: 0, bottom: 0, height: 0, width: 0 };
@@ -120,7 +131,7 @@ globalThis.Node = { ELEMENT_NODE: 1 };
 globalThis.window = {
   AI_TRANSLATOR_CONTENT: {},
   getComputedStyle: (el) => ({
-    overflowY: el.overflowY, position: el.position,
+    overflowY: el.overflowY, overflowX: el.overflowX, position: el.position,
     lineHeight: el.lineHeight, fontSize: el.fontSize,
   }),
 };
@@ -480,6 +491,7 @@ test('a source nested around the translation is measured by the pair, not twice'
 
 /**
  * 收缩包裹的一列：英文在 112px 里排得下，中文一行排下来把整块撑到 147px。
+ * 插之前的样子直接写成 { width: 112, truncation: [] }：这一组只问宽度那条。
  * @param {{position?: string, sourceWidthAfter?: number, translationWidth?: number}} opts
  *   position 是外层那一列的定位方式 —— 出了流才推不开邻居。
  */
@@ -502,14 +514,14 @@ function shrinkToFitColumn({ position = 'absolute', sourceWidthAfter = 147,
 test('a block that outgrew its column is dropped when the column cannot push its neighbours', () => {
   // 112 → 147px，外面那一列是 absolute：长出来的 35px 推不开隔壁，直接盖上去
   const { translation } = shrinkToFitColumn();
-  assert.equal(ctx.keepTranslationInFlow(translation, 112), false);
+  assert.equal(ctx.keepTranslationInFlow(translation, { width: 112, truncation: [] }), false);
   assert.equal(translation.isConnected, false);
 });
 
 test('the same widening in normal flow is left alone — the neighbours just move over', () => {
   // 表格单元格、按钮、inline-block 变宽都是这一类：页面重排一遍就好了，不关我们的事
   const { translation } = shrinkToFitColumn({ position: 'static' });
-  assert.equal(ctx.keepTranslationInFlow(translation, 112), true);
+  assert.equal(ctx.keepTranslationInFlow(translation, { width: 112, truncation: [] }), true);
   assert.equal(translation.isConnected, true);
 });
 
@@ -518,7 +530,7 @@ test('a translation that got wide on its own, without widening the block, is lef
   // 于是自己从 206px 摊成整行 1585px。可原文块一点没变宽 —— 框没变，谁也没挤到。
   // 判据量的是原文块，不是这一对的并集，就是为了不把这一类算进来。
   const { translation } = shrinkToFitColumn({ sourceWidthAfter: 206, translationWidth: 1585 });
-  assert.equal(ctx.keepTranslationInFlow(translation, 206), true);
+  assert.equal(ctx.keepTranslationInFlow(translation, { width: 206, truncation: [] }), true);
   assert.equal(translation.isConnected, true);
 });
 
@@ -534,8 +546,125 @@ test('a block that outgrew its column is dropped outright, without asking the so
   // 原文让开框还是那么宽 —— 白让一次，还得再撤一次。
   withSourceYielding((yielded) => {
     const { source, translation } = shrinkToFitColumn();
-    assert.equal(ctx.keepTranslationInFlow(translation, 112), false);
+    assert.equal(ctx.keepTranslationInFlow(translation, { width: 112, truncation: [] }), false);
     assert.deepEqual(yielded, [], 'the source was asked to yield for a widening it cannot fix');
     assert.equal(source.hidden, false);
   });
+});
+
+// ---------------------------------------------------------------------------
+// 横向的另一半：**框没变宽，是把字切掉了**（文件头第五节）。
+// ---------------------------------------------------------------------------
+
+/**
+ * X 信息流那一行：`nowrap; overflow:hidden; text-overflow:ellipsis` 的 100px 格子，
+ * 原文 80px 刚好放下。译文在原文后面并排插进来，框一个像素不变，多出来的切掉。
+ * 插之前量一次 baseline —— 跟 insert.js 一样，必须在动 DOM 之前。
+ */
+function ellipsisCell({ overflowX = 'hidden', sourceWidth = 80, translationWidth = 60 } = {}) {
+  const cell = new FakeElement({ top: 0, height: 20, width: 100, overflowX, nowrapRow: true });
+  const source = new FakeElement({
+    top: 0, height: 20, width: sourceWidth,
+    classes: ['ai-translator-translated'], text: 'Steelers',
+  });
+  cell.append(source);
+  body.append(cell);
+  const before = ctx.fitBaseline(source);
+  const translation = new FakeElement({ top: 0, height: 20, width: translationWidth });
+  cell.append(translation);
+  return { cell, source, translation, before };
+}
+
+test('a translation that makes a clipping row cut more off takes the source\'s place', () => {
+  // 80 + 60 = 140 挤进 100：切掉 40px。原文让开，译文 60px 一个人放得下。
+  withSourceYielding((yielded) => {
+    const { cell, source, translation, before } = ellipsisCell();
+    assert.ok(cell.scrollWidth > cell.clientWidth, 'setup: the row must start out cut');
+    assert.equal(ctx.keepTranslationInFlow(translation, before), true);
+    assert.deepEqual(yielded, [source]);
+    assert.equal(translation.isConnected, true);
+    assert.ok(cell.scrollWidth <= cell.clientWidth, 'the row is still cut after the source yielded');
+  });
+});
+
+test('a translation too wide for the clipping row even on its own is dropped, source restored', () => {
+  withSourceYielding(() => {
+    const { cell, source, translation, before } = ellipsisCell({ translationWidth: 130 });
+    assert.equal(ctx.keepTranslationInFlow(translation, before), false);
+    assert.equal(translation.isConnected, false);
+    assert.equal(source.hidden, false, 'the source was left hidden with nothing in its place');
+    assert.ok(cell.scrollWidth <= cell.clientWidth);
+  });
+});
+
+test('a translation inside the source, where the source cannot yield, is dropped', () => {
+  // 水平 flex 那条路：译文挂在原文里面，原文让不动 —— 替身 hideCrowdedSource 找不到
+  // 前一个兄弟，照实返回 false。
+  withSourceYielding((yielded) => {
+    const cell = new FakeElement({ top: 0, height: 20, width: 100, overflowX: 'hidden', nowrapRow: true });
+    const source = new FakeElement({
+      top: 0, height: 20, width: 80, nowrapRow: true,
+      classes: ['ai-translator-translated'], text: 'Steelers',
+    });
+    const label = new FakeElement({ width: 80 });
+    source.append(label);
+    cell.append(source);
+    body.append(cell);
+    const before = ctx.fitBaseline(source);
+    const translation = new FakeElement({ top: 0, height: 20, width: 60 });
+    source.append(translation);
+    source.width = 140;   // 收缩包裹的原文被译文撑宽，格子把多出来的切掉
+
+    assert.equal(ctx.keepTranslationInFlow(translation, before), false);
+    assert.deepEqual(yielded, []);
+    assert.equal(translation.isConnected, false);
+  });
+});
+
+test('a row that scrolls rather than clips is left alone', () => {
+  // overflow-x:auto 的框能滚过去看，切不掉谁
+  for (const overflowX of ['auto', 'scroll', 'visible']) {
+    const { translation, before } = ellipsisCell({ overflowX });
+    assert.equal(ctx.keepTranslationInFlow(translation, before), true, overflowX);
+    assert.equal(translation.isConnected, true, overflowX);
+  }
+});
+
+test('overflow:clip counts as clipping too', () => {
+  const { translation, before } = ellipsisCell({ overflowX: 'clip' });
+  assert.equal(ctx.keepTranslationInFlow(translation, before), false);
+});
+
+test('a row the page already truncated is judged by what the translation added', () => {
+  // 原文 150px 本来就被切成省略号（切掉 50px）：那是页面自己的样子。
+  // 译文只多占 1px —— 在 SLACK 里，不算
+  const { translation, before } = ellipsisCell({ sourceWidth: 150, translationWidth: 1 });
+  assert.equal(before.truncation[0].before, 0, 'the source itself does not clip');
+  assert.equal(before.truncation[1].before, 50, 'the row was cut by 50px before we touched it');
+  assert.equal(ctx.keepTranslationInFlow(translation, before), true);
+  assert.equal(translation.isConnected, true);
+});
+
+test('without a baseline the truncation rule stays out of it', () => {
+  // 悬停/划词那条路不量 baseline —— 没有参照就不判
+  const { translation } = ellipsisCell();
+  assert.equal(ctx.keepTranslationInFlow(translation), true);
+  assert.equal(translation.isConnected, true);
+});
+
+test('fitBaseline records the block and at most two boxes above it, stopping at <body>', () => {
+  const outer = new FakeElement({ width: 300 });
+  const mid = new FakeElement({ width: 200 });
+  const inner = new FakeElement({ width: 100 });
+  const source = new FakeElement({ width: 90 });
+  outer.append(mid); mid.append(inner); inner.append(source);
+  body.append(outer);
+  const before = ctx.fitBaseline(source);
+  assert.equal(before.width, 90);
+  assert.deepEqual(before.truncation.map((e) => e.el), [source, inner, mid]);
+
+  const top = new FakeElement({ width: 50 });
+  body.append(top);
+  assert.deepEqual(ctx.fitBaseline(top).truncation.map((e) => e.el), [top],
+    '<body> itself was recorded as a box to watch');
 });

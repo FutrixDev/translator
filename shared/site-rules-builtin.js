@@ -27,9 +27,17 @@
 (function (root) {
   'use strict';
 
+  // x.com 与 twitter.com 是同一个站，两条 always 共用这一份。用户名、时间、互动条
+  // （回复/转推/喜欢的计数）都不是正文。右栏（趋势、比分、推荐关注）在
+  // <main role="main"> 里面，正文范围减不掉它，只能在这里整栏挡掉（D-429：比分牌被
+  // 翻成「Steelers 钢...」，比分被挤到换行）。
+  const X_KEEP_ORIGINAL = [
+    '[data-testid="User-Name"] a', 'time', '[role="group"]', '[data-testid="sidebarColumn"]',
+  ];
+
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-28',
+    rulesVersion: '2026-09-30',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。
@@ -151,8 +159,7 @@
         state: 'always',
         register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
-        // 用户名、时间、互动条（回复/转推/喜欢的计数）都不是正文。
-        keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        keepOriginalSelectors: X_KEEP_ORIGINAL,
         blockIdAttr: null,
       },
       {
@@ -180,7 +187,7 @@
         state: 'always',
         register: 'social',
         atomicBlockSelectors: ['[data-testid="tweetText"]'],
-        keepOriginalSelectors: ['[data-testid="User-Name"] a', 'time', '[role="group"]'],
+        keepOriginalSelectors: X_KEEP_ORIGINAL,
         blockIdAttr: null,
       },
       {

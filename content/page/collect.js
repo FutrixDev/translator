@@ -200,16 +200,6 @@
       return false;
     }
 
-    // 检查文本是否只由数字与常见数值符号组成（数据表单元格常见，如 0.83、94.2%、±0.02、1,234）。
-    // 这类单元格翻译无意义，还会给结果表添噪，直接跳过。要求至少含一个数字，
-    // 以免误伤 "N/A"、"Method" 等含字母的表头/文本单元格。
-    function isNumericOrSymbolOnly(text) {
-      const t = (text || '').trim();
-      if (!t) return false;
-      if (!/\d/.test(t)) return false;
-      return /^[\d\s.,%±+\-*/()<>=:~×·°∓‰$€£¥–—]+$/.test(t);
-    }
-
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
     function hasTranslatableChildren(element) {
       for (const child of kids(element)) {
@@ -258,7 +248,7 @@
       for (const run of runs) {
         const text = run.map((node) => node.textContent).join('').trim();
         if (text.length < 2) continue;
-        if (looksLikeCode(text) || isMainlyUrl(text) || isNumericOrSymbolOnly(text)) continue;
+        if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) continue;
         const wrap = document.createElement('span');
         wrap.className = TEXT_RUN_CLASS;
         run[0].parentNode.insertBefore(wrap, run[0]);
@@ -352,9 +342,9 @@
       // 跳过数学公式的隐藏辅助元素（只跳过重复的隐藏版本）
       if (element.classList.contains('MJX_Assistive_MathML') ||
           element.classList.contains('katex-mathml') ||
-          element.classList.contains('sr-only') ||
-          element.classList.contains('visually-hidden') ||
           element.classList.contains('MathJax_Preview')) return;
+      // 只写给读屏器的字（content/page/reader-hidden.js）：整棵不收。
+      if (ctx.hiddenFromReaders(window.getComputedStyle(element))) return;
 
       // 跳过 Web Components 的覆盖层 slot 元素
       // 这些元素通常是 absolute 定位覆盖整个区域用于点击跳转
@@ -444,6 +434,9 @@
         // looksLikeCode/isMainlyUrl 同样要先剥，否则 <a1></a1> 里的尖括号会把带链接
         // 的段落误判成代码。
         const plainText = globalThis.TextMarkers.strip(text).trim();
+        // 纯数字、控件短标签（content/page/not-prose.js）：整块不收。要 return——
+        // 落到下面的块级分支，<span>12</span> 会因为有直属文本照样被收进去。
+        if (ctx.notProse(element, plainText)) return;
         if (text && plainText.length >= 2 && plainText.length <= 500) {
           // 跳过看起来像代码或主要是URL的文本
           // 这里要 trim：只含公式的元素排除占位符后会剩下空白（如 "{{1}} {{2}}"），
@@ -477,10 +470,8 @@
           // 这里 return 而不递归：块内只有公式，子元素会被 MATH_CONTAINER_SELECTOR 拦下，递归没有意义。
           if (!textWithoutMath) return;
 
-          // 数据表单元格若只是数字/符号（如 0.83、94.2%），跳过：翻译无意义且会给结果表加噪
-          if ((tagName === 'TD' || tagName === 'TH') && isNumericOrSymbolOnly(textWithoutMath)) {
-            return;
-          }
+          // 纯数字、控件短标签（content/page/not-prose.js）：整块不收。
+          if (ctx.notProse(element, textWithoutMath)) return;
           if (textWithoutMath && (looksLikeCode(textWithoutMath) || isMainlyUrl(textWithoutMath))) {
             // 递归处理子元素，可能有非代码/非URL的部分
             for (const child of kids(element)) {
@@ -653,9 +644,9 @@
 
     // 跳过的隐藏类名。ai-translator-failed 是失败标记（content/page/failed-blocks.js）：
     // 放在 li/td 里面时它是这一段的子节点，不跳就会把「翻译失败 · 重试」当原文送出去。
+    // .sr-only 这类读屏文字不靠类名认，靠下面的 ctx.hiddenFromReaders。
     const hiddenClasses = [
-      'MJX_Assistive_MathML', 'katex-mathml', 'sr-only',
-      'visually-hidden', 'MathJax_Preview', 'ai-translator-failed'
+      'MJX_Assistive_MathML', 'katex-mathml', 'MathJax_Preview', 'ai-translator-failed'
     ];
 
     // 只含空白的文本节点（用户名链接和时间之间的那一个）不直接写进 text：记下它在
@@ -746,9 +737,9 @@
         const classList = node.classList;
         if (hiddenClasses.some(cls => classList?.contains(cls))) return;
 
-        // 跳过 display:none
+        // 跳过 display:none，以及只给读屏器的字
         const style = window.getComputedStyle(node);
-        if (style.display === 'none') return;
+        if (style.display === 'none' || ctx.hiddenFromReaders(style)) return;
 
         // 跳过图标元素（图标是装饰，翻译不需要包含图标）
         if (isIconElement(node)) {

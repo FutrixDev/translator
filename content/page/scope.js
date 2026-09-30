@@ -77,12 +77,11 @@
     });
   }
 
-  // include 之外的那几档：设置是 'page'，或者命中内置规则（X、Hacker News……已经按
-  // 站点调过收块），否则 'main'。
+  // include 之外的那两档：设置是 'page' 就整页，否则 'main'。内置站点不例外
+  // （D-429）：它们曾被强制整页，Reddit 的规则侧栏、X 的导航都被逐条翻译，
+  // 而这些站的正文都在 <main> 里；main 内部的侧栏由内置 keepOriginal 挡掉。
   function fallbackMode() {
-    if (ctx.settings.pageTranslateScope === 'page') return 'page';
-    if (globalThis.SiteRules.matchBuiltin(location.hostname, location.pathname)) return 'page';
-    return 'main';
+    return ctx.settings.pageTranslateScope === 'page' ? 'page' : 'main';
   }
 
   /**
@@ -94,7 +93,7 @@
     //   1. 本页的临时覆盖（「翻译整个页面」、Alt+W）；
     //   2. 用户规则的 include 选择器：至少命中一个渲染出来的元素才算，命中零个
     //      不缓存（下一次再问），命中时范围模式记为 'include'；
-    //   3. 设置是 'page'，或者命中内置规则（X、Hacker News……已经按站点调过收块）；
+    //   3. 设置是 'page'；
     //   4. 默认 'main'。
     if (state.pageScopeOverride === 'page') return 'page';
     if (hasIncludeHit()) return 'include';

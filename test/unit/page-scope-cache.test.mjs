@@ -30,7 +30,8 @@ function load({ bodyChars, mainChars }) {
   const counts = { body: 0, cssRounds: 0, sweeps: 0, includeQueries: 0 };
   const registrations = [];
   // rule / ruleVersion：用户站点规则（ctx.customRules 的桩）；includeHits：include
-  // 选择器在页面上命中的元素（ctx.queryAllDeep 的桩）；builtin：内置规则表命中与否。
+  // 选择器在页面上命中的元素（ctx.queryAllDeep 的桩）；builtin：内置规则表命中与否
+  // （范围不该问它，D-429）。
   // translated：页面上已挂的译文；released：清扫收回的那些。
   const page = {
     bodyChars, mainChars, mainConnected: true, rule: null, ruleVersion: 0, includeHits: [], builtin: null,
@@ -221,13 +222,13 @@ test('include: rendered hits become the roots, outermost only', () => {
   assert.equal(fixture.counts.body, 0, 'include mode counted body');
 });
 
-test('the ladder: override page, then include, then setting page or builtin, then main', () => {
+test('the ladder: override page, then include, then setting page, then main — the builtin table never widens it', () => {
   const fixture = load(SHELL);
   const { ctx, page } = fixture;
   withInclude(fixture, [region(1)]);
   ctx.settings.pageTranslateScope = 'page';
   page.builtin = { match: 'news.example.com' };
-  assert.equal(ctx.pageScopeMode(), 'include', 'include outranks the setting and the builtin table');
+  assert.equal(ctx.pageScopeMode(), 'include', 'include outranks the setting');
   ctx.state.pageScopeOverride = 'page';
   assert.equal(ctx.pageScopeMode(), 'page');
   assert.equal(ctx.resolvePageScope().mode, 'page', 'the whole-page entry outranks include');
@@ -235,7 +236,8 @@ test('the ladder: override page, then include, then setting page or builtin, the
   page.includeHits = [];
   assert.equal(ctx.pageScopeMode(), 'page', 'zero hits fall through to the setting');
   ctx.settings.pageTranslateScope = 'main';
-  assert.equal(ctx.pageScopeMode(), 'page', 'then to the builtin table');
+  assert.equal(ctx.pageScopeMode(), 'main',
+    'a builtin always site (reddit, x) keeps the main scope: its sidebars are not article text');
   page.builtin = null;
   assert.equal(ctx.pageScopeMode(), 'main');
 });

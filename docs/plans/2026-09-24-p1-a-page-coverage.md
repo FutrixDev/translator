@@ -16,7 +16,7 @@
 | 1 | **iframe**：整页翻译连同子 frame 一起翻；自动翻译时子 frame 跟随顶层 | 广告/验证码/支付/登录/播放器 frame 一律不进；过小、隐藏的 frame 不翻；子 frame 不画悬浮球、追问条、popup 状态 |
 | 2 | **Shadow DOM**：open root 与 closed root（`chrome.dom.openOrClosedShadowRoot`）都收；译文样式带进 shadow 树；新长出来的 shadow 内容跟着翻 | 受管容器（`::after` 渲染）在 shadow 树里不支持，照旧走普通插入 |
 | 3 | **notranslate**：`translate="no"` 与 `.notranslate` 元素级生效，最近一层说了算，`translate="yes"` 可在里面重开；行内的不译元素原样保留在译文里 | `<html translate="no">`、`<body class="notranslate">`、`<meta name="google" content="notranslate">` 这类**文档级**声明不认 |
-| 4 | **正文范围**：默认只译正文（`pageTranslateScope: 'main'`），导航、侧栏、菜单、文章外的页眉页脚不翻；设置里可改成整页；另有「翻译整个页面」入口（Alt+W + 悬浮球菜单一项） | 内置站点规则命中的页面照旧整页译（那些规则是按整页调出来的） |
+| 4 | **正文范围**：默认只译正文（`pageTranslateScope: 'main'`），导航、侧栏、菜单、文章外的页眉页脚不翻；设置里可改成整页；另有「翻译整个页面」入口（Alt+W + 悬浮球菜单一项） | ~~内置站点规则命中的页面照旧整页译~~（2026-09-30 D-429 推翻：Reddit 规则侧栏、X 导航被逐条翻译；内置站点也默认 main，main 内的侧栏由内置 keepOriginal 挡掉） |
 
 ### 0.1 自决（台账 D-291 已登记，此处给依据）
 
@@ -215,7 +215,7 @@ directive = {
 - 设置 `pageTranslateScope: 'main' | 'page'`，默认 `'main'`，进 `shared/default-settings.js` 的 `CONTENT_DEFAULTS`（服务工作者、设置页的默认表若也列了它，值必须一致——`test/unit/default-settings-agree.test.mjs`）。
 - 文档级覆盖 `state.pageScopeOverride = 'page'`（整页入口写它，文档存续期内有效）；`ctx.invalidatePageScope()` 清缓存。
 - `ctx.resolvePageScope()` → `{mode, roots, skip, share}`，按顺序：
-  1. 有效模式（`pageScopeMode()`，悬浮菜单每次打开都问，只判模式不找根）依次看：① 本页临时覆盖 `state.pageScopeOverride === 'page'`；② P1-B 的用户规则 `include` 挂点（本轮是空步，只在 `content/page/scope.js` 的判定顺序注释里占位：至少命中一个渲染出来的元素才算，命中零个不缓存，命中时模式记为 `'include'`）；③ 设置为 `'page'` 或内置站点规则命中（`SiteRules.matchBuiltin(location.hostname, location.pathname)`）；④ 默认 `'main'`。①或③成立 → `mode: 'page'`，行为与今天完全相同。覆盖排在最前：它是用户对这一页刚说的话，任何规则都不该盖过它。
+  1. 有效模式（`pageScopeMode()`，悬浮菜单每次打开都问，只判模式不找根）依次看：① 本页临时覆盖 `state.pageScopeOverride === 'page'`；② P1-B 的用户规则 `include` 挂点（本轮是空步，只在 `content/page/scope.js` 的判定顺序注释里占位：至少命中一个渲染出来的元素才算，命中零个不缓存，命中时模式记为 `'include'`）；③ 设置为 `'page'`（内置站点规则命中不再算，D-429）；④ 默认 `'main'`。①或③成立 → `mode: 'page'`，行为与今天完全相同。覆盖排在最前：它是用户对这一页刚说的话，任何规则都不该盖过它。
   2. 唯一的 `main` / `[role=main]` 且其文字量 ≥ body 的 `MAIN_TEXT_SHARE`（≈0.3）→ 它就是根。
   3. 否则 body。
   4. `h1` 不受 header/footer 那条跳过规则约束（仍受 nav/aside/菜单约束），根之外的 `h1` 也一并收——标题常在 `main` 外、在页面级 `<header>` 里；站点把 logo 写成 `h1` 时多译一个站名，代价远小于漏译标题。

@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Reddit and X: only the content is translated
+
+- **Sites on the built-in Always list are translated in their main content
+  only.** Reddit's left nav, rules sidebar and community card, and X's left
+  nav, no longer fill up with translations; X's trends and who-to-follow
+  column keeps its original text. Choosing "whole page" in Settings still
+  translates everything.
+- **Text written only for screen readers stays untranslated.** Reddit's
+  "Go to comments" inside a button, `.sr-only` labels and the like are
+  invisible on the page, yet their translations used to show up next to
+  buttons and links. They are recognised by how they are hidden (clipped to
+  nothing, or a 1px box), not by class name, so this works on any site.
+- **Button labels and bare numbers are left alone.** "Share", "Join", the
+  "Hot" and "Rising" tabs, vote and comment counts, rule numbers and scores
+  used to get a translation squeezed in beside them, which knocked the whole
+  action row out of line (and a number translates to itself). A short label
+  counts only while its control's visible text is short (at most 3 words or
+  30 characters, and not a sentence), so a card built as one big button, or
+  a longer button like "Show more of this", is still translated; so is any
+  control that holds a heading or paragraph, even a three-word one. Chinese,
+  Japanese and Korean labels count two characters as a word, so a whole CJK
+  headline is not mistaken for a label, and an icon's SVG title does not
+  count as visible text. Links are never treated as controls. On Reddit's rules list the rule number no longer
+  gets a column of its own; each rule's translation stays under its text.
+- **A translation that would cut off text in a one-line row is dropped.**
+  Rows that clip their overflow with an ellipsis used to end up showing the
+  first few words of the original and the first few of the translation. Now
+  the translation first gives the space back to the original; if the row
+  still cuts off more than it did before, the translation is removed and the
+  original shows as it did. Rows that scroll sideways are left alone.
+
 ### A new look for the popup and the float ball
 
 - **The popup, the float ball and its menu wear the new brand.** Warm paper,
