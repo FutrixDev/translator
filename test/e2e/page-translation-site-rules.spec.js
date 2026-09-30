@@ -553,3 +553,109 @@ test('site rules: a builtin inline hit on Reddit travels as a placeholder and co
     await close();
   }
 });
+
+// D-429：内置 always 站点不再整页译。它们曾被 scope.js 强制成 'page'，Reddit 的社区
+// 规则侧栏、左侧导航和 X 的右栏（趋势、比分牌）逐条被翻；这些站的正文都在 <main>
+// 里，默认的正文范围就够了。
+//
+// Reddit 的形状照 /r/nfl 实测（Wayback 2026-09-29）缩出来：左侧 <nav>、正文
+// <main id="main-content">、右栏 #right-sidebar-container 在 main **外面**，里面是
+// <aside aria-label="Community information">。
+const SC_POST_TITLE = 'Which quarterback has quietly improved the most since the start of the season';
+const SC_POST_BODY = 'Every week the numbers say one thing and the highlight reels say something completely different.';
+const SC_NAV = 'Popular communities you might like';
+const SC_RULE = 'Be respectful to other users at all times';
+const SC_ABOUT = 'The place to discuss the National Football League with other fans';
+
+const REDDIT_SCOPE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>r/nfl</title></head>
+<body>
+  <div id="subgrid-container">
+    <nav id="left-nav"><p>${SC_NAV}</p></nav>
+    <main id="main-content">
+      <article id="post">
+        <h2 id="post-title">${SC_POST_TITLE}</h2>
+        <p id="post-body">${SC_POST_BODY}</p>
+        <p>${SC_POST_BODY.replace('Every week', 'Some weeks')}</p>
+      </article>
+    </main>
+    <div id="right-sidebar-container">
+      <aside aria-label="Community information" id="about"><p>${SC_ABOUT}</p></aside>
+      <div id="rules"><div class="rule"><span>1</span><p>${SC_RULE}</p></div></div>
+    </div>
+  </div>
+</body></html>`;
+
+test('site rules: an always site is translated in its main content only — the Reddit sidebar and nav are not sent', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://www.reddit.com/**', REDDIT_SCOPE_PAGE);
+
+    await page.goto('https://www.reddit.com/r/nfl/');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#post .ai-translator-inline-block', { timeout: 30000 });
+
+    const all = sentTexts.join('\n');
+    expect(all).toContain(SC_POST_TITLE);
+    expect(all).toContain(SC_POST_BODY);
+    // 侧栏的规则、社区简介、导航：一个字都没送。
+    expect(all).not.toContain(SC_RULE);
+    expect(all).not.toContain(SC_ABOUT);
+    expect(all).not.toContain(SC_NAV);
+    expect(await oursIn(page, 'right-sidebar-container')).toBe(0);
+    expect(await oursIn(page, 'left-nav')).toBe(0);
+  } finally {
+    await close();
+  }
+});
+
+// X 的右栏在 <main role="main"> 里面，正文范围减不掉它，靠内置 keepOriginal 的
+// `[data-testid="sidebarColumn"]` 整栏挡掉。左侧导航是 main 外的 <header role="banner">。
+const SC_TWEET = 'Shipping the new parser took three months and one very long weekend of debugging.';
+const SC_TREND = 'Trending in Sports right now';
+const SC_TEAM = 'Steelers';
+const SC_WHO = 'Who to follow this week';
+
+const X_SCOPE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Home / X</title></head>
+<body>
+  <header role="banner" id="banner"><nav aria-label="Primary"><a href="/explore"><span>Explore the latest</span></a></nav></header>
+  <main role="main">
+    <div data-testid="primaryColumn" id="primary">
+      <article id="tweet"><div data-testid="tweetText"><span>${SC_TWEET}</span></div></article>
+      <article><div data-testid="tweetText"><span>${SC_TWEET.replace('three months', 'two weeks')}</span></div></article>
+    </div>
+    <div data-testid="sidebarColumn" id="sidebar">
+      <section><div><span>${SC_TREND}</span></div>
+        <div id="score"><span>${SC_TEAM}</span><span>24</span><span>Browns</span><span>17</span></div>
+      </section>
+      <section><div><span>${SC_WHO}</span></div></section>
+    </div>
+  </main>
+</body></html>`;
+
+test('site rules: the X sidebar column inside <main> is kept original, the timeline is translated', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, 'https://x.com/**', X_SCOPE_PAGE);
+
+    await page.goto('https://x.com/home');
+    await page.waitForSelector('#ai-translator-float-ball');
+    await page.waitForSelector('#tweet .ai-translator-inline-block', { timeout: 30000 });
+
+    const all = sentTexts.join('\n');
+    expect(all).toContain(SC_TWEET);
+    expect(all).not.toContain(SC_TREND);
+    expect(all).not.toContain(SC_WHO);
+    expect(all).not.toContain('Explore the latest');
+    expect(sentTexts.some((text) => text.includes(SC_TEAM))).toBe(false);
+    expect(await oursIn(page, 'sidebar')).toBe(0);
+    expect(await oursIn(page, 'banner')).toBe(0);
+  } finally {
+    await close();
+  }
+});
