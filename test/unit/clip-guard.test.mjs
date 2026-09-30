@@ -222,6 +222,34 @@ test('a container that still holds a translation stays relaxed', () => {
   assert.equal(wrapper.style.getPropertyValue('max-height'), 'none');
 });
 
+/** 只读 `.a.b:not(.c)` 与 `[attr]` 两种写法、逗号分隔的选择器：node 有 classes / attrs。 */
+function matchesSelector(node, selector) {
+  return selector.split(',').map((part) => part.trim()).some((part) => {
+    const attr = part.match(/^\[([\w-]+)\]$/);
+    if (attr) return node.attrs.includes(attr[1]);
+    const match = part.match(/^((?:\.[\w-]+)+)((?::not\(\.[\w-]+\))*)$/);
+    if (!match) throw new Error(`fake matcher does not read ${part}`);
+    const want = match[1].split('.').filter(Boolean);
+    const not = [...match[2].matchAll(/:not\(\.([\w-]+)\)/g)].map((m) => m[1]);
+    return want.every((name) => node.classes.includes(name)) && not.every((name) => !node.classes.includes(name));
+  });
+}
+
+test('a container left holding only a failed marker is restored: a marker is not a translation', () => {
+  const marker = { classes: ['ai-translator-inline-block', 'ai-translator-failed'], attrs: [] };
+  const translation = { classes: ['ai-translator-inline-block'], attrs: [] };
+  for (const [inside, relaxed] of [[marker, false], [translation, true]]) {
+    const layout = higgsfieldLayout();
+    ctx.keepTranslationVisible(layout.translation);
+    layout.wrapper.querySelector = (selector) => (matchesSelector(inside, selector) ? inside : null);
+    ctx.releaseTranslationClipGuards();
+    assert.equal(layout.wrapper.hasAttribute('data-ai-translator-unclipped'), relaxed,
+      `CLIP-GUARD-FAILED a container holding ${inside.classes.join('.')} ${relaxed ? 'stays relaxed' : 'is restored'}`);
+    layout.wrapper.isConnected = false;
+    ctx.releaseTranslationClipGuards();
+  }
+});
+
 test('a managed handle is measured as its source block, not as itself', () => {
   // 受管译文是原文块的一条 ::after，句柄只是挂在离屏 holder 里的替身。量句柄会走错
   // 整条祖先链：下面的 holder 才是它的父级，而那不是用户看不见译文的原因。

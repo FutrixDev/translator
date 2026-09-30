@@ -5,7 +5,7 @@
 // so a template that forgets a button, or speech wiring that never runs, would
 // otherwise only show up in a user's hands.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu } = require('./helpers');
+const { openExamplePage, setExtensionSettings, openFloatBallMenu } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 
 async function startReplyMockServer(reply) {
@@ -34,8 +34,7 @@ test('the selection popup can read out both the original and the translation', a
       selectionTranslationMode: 'popup',
     });
 
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     const heading = await page.locator('h1').boundingBox();
     await page.mouse.move(heading.x + 2, heading.y + heading.height / 2);

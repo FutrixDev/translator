@@ -400,9 +400,13 @@
       return typeof text === 'string' && text ? text : key;
     };
 
-    // callModel 在 SW 里加的两种失败：档的 timeoutSec 到了，或者模型回了空答案。
+    // callModel 在 SW 里加的三种失败：档的 timeoutSec 到了，模型回了空答案，或者
+    // 服务商要我们等太久。
     if (f.timeout) return say('apiErrorTimeout').replace('{seconds}', String(f.seconds));
     if (f.empty) return say('apiErrorEmpty');
+    // callModel 读到 Retry-After 超过 60 秒的 429：不等，直接说要等多久。排在按
+    // 状态码查表之前，否则 429 会先被说成不带秒数的 apiErrorRateLimited。
+    if (f.rateLimitedWait) return say('apiErrorRateLimitedWait').replace('{seconds}', String(f.rateLimitedWait));
 
     if (f.network) {
       const key = isLocalEndpoint(f.endpoint) ? 'apiErrorLocalUnreachable' : 'apiErrorNetwork';

@@ -38,6 +38,12 @@
     (ctx.requestTranslationCached || ctx.requestTranslation)(message);
 
   const noNeighbours = (first, last, message) => message;
+  const noBlockFailed = () => {};
+  // 整轮级的失败不落到段落上：passFatal（不认得的领域这类配置错，content/engine/addenda.js）
+  // 和扩展上下文没了。点哪一段重试都同样失败，它由整页报错那一处说（noteBatchFailure /
+  // noteThrown）。failure 是抛出的错误，或者带 passFatal 的 {error} 响应。
+  const failsWholePass = (failure) =>
+    Boolean(failure) && (failure.passFatal === true || isExtensionContextInvalidated(failure));
 
   /**
    * 页面上下文的前后文（设置「附带页面上下文」）：三处发请求的地方共用这一个函数。
@@ -363,10 +369,14 @@
       // 模型把原文原样还回来了 —— 这一块本来就不用翻。这和「翻好了」一样是**终局**，
       // 所以同样要报出去：自动翻译那一层据此记账，不报的话它下一轮还会被送出来，
       // 再花一次同样的钱，永远如此。
+      // 终局就不该再挂着上次的失败标记（content/page/failed-blocks.js）。
+      ctx.failedBlocks.clear(block);
       if (onSettled) onSettled(block);
       return;
     }
     if (accept && !accept(block)) return;
+    // 这一段上次失败留下的标记（content/page/failed-blocks.js）让位给译文。
+    ctx.failedBlocks.clear(block);
     ctx.insertTranslationBlock(block, translation, { lang: target.stamp, textLang: target.request });
     // 块在 shadow root 里：给那个 root 补上译文样式、把具名 slot 抄给译文（shadow.js）。
     ctx.afterInsertTranslation(block);
@@ -390,10 +400,12 @@
   // target 不传就现读一门：这个函数是导出的（ctx.applyFastBatchTranslations），
   // 从一轮之外进来的调用没有「这一轮的语言」可带。runTranslationPass 一律带。
   // withNeighbours 同理：一轮之外没有「收集顺序」，不带前后文。
+  // onBlockFailed(block, reason)：某一段拿不到译文的那一刻（失败标记，见
+  // runTranslationPass 的 markFailed）。不传就什么也不做。
   async function applyFastBatchTranslations(
     batch, translations,
     { onFailure, isAborted, accept, allowDownload, auto, onSettled, target = passTarget(),
-      withNeighbours = noNeighbours } = {}
+      withNeighbours = noNeighbours, onBlockFailed = noBlockFailed } = {}
   ) {
     if (!Array.isArray(translations) || translations.length !== batch.length) {
       const returned = Array.isArray(translations) ? translations.length : 0;
@@ -401,13 +413,20 @@
         `Blab Translation: fast-batch returned ${returned} translations for ${batch.length} blocks; ` +
         'retrying block-by-block to avoid misaligned translations'
       );
+      // 转逐条本身不算失败：逐条那一路每一段各自报。
       await translateBlocksOneByOne(batch,
-        { onFailure, isAborted, accept, allowDownload, auto, onSettled, target, withNeighbours });
+        { onFailure, isAborted, accept, allowDownload, auto, onSettled, target, withNeighbours,
+          onBlockFailed });
       return;
     }
 
     await Promise.all(translations.map(async (translation, i) => {
-      if (!batch[i] || !translation) return;
+      if (!batch[i]) return;
+      // 空译文（内置引擎的批次对某一段返回空串也在这里）：这一段失败。
+      if (!translation) {
+        onBlockFailed(batch[i]);
+        return;
+      }
       await insertTranslation(batch[i], translation, { accept, onSettled, target });
     }));
   }
@@ -415,7 +434,7 @@
   async function translateBlocksOneByOne(
     batch,
     { onFailure, isAborted, accept, allowDownload = true, auto, onSettled, target = passTarget(),
-      withNeighbours = noNeighbours } = {}
+      withNeighbours = noNeighbours, onBlockFailed = noBlockFailed } = {}
   ) {
     for (const block of batch) {
       if (isAborted && isAborted()) return;
@@ -430,20 +449,25 @@
         }));
         if (response.error) {
           if (onFailure) onFailure(response.error, { passFatal: response.passFatal === true });
+          if (!failsWholePass(response)) onBlockFailed(block, response.error);
           continue;
         }
         // 单块请求同样守数量：模型把一段拆成两段时放弃该块，而不是插半截译文。
         const translation = Array.isArray(response.translations) && response.translations.length === 1
           ? response.translations[0]
           : null;
-        if (!translation) continue;
+        if (!translation) {
+          onBlockFailed(block);
+          continue;
+        }
         await insertTranslation(block, translation, { accept, onSettled, target });
       } catch (error) {
         // 扩展上下文失效、整轮致命的错误（passFatal，见 runTranslationPass 的
         // noteThrown）意味着后面每一块都必然失败，抛给 processBatch 的 catch 统一处理。
-        if (isExtensionContextInvalidated(error) || error.passFatal === true) throw error;
+        if (failsWholePass(error)) throw error;
         console.error('Blab Translation: Per-block fallback translation failed', error);
         if (onFailure) onFailure(error.message);
+        onBlockFailed(block, error.message);
       }
     }
   }
@@ -502,6 +526,23 @@
     // 彼此不一定相邻，「前一段 / 后一段」取出来可能是隔了几段的文字。设置页的说明
     // （aiPageContextHint）照此承诺，设计 docs/plans/2026-09-25-p1-c-glossary.md §4.3。
     const withNeighbours = auto ? noNeighbours : neighbourContext(blocks);
+    // 失败段落标记（content/page/failed-blocks.js）。手动那一轮每个失败点都放；
+    // 自动那一轮不放 —— 它的第一次失败只是进台账，第二次失败（giveUp）才放，
+    // 那一刻在 content/content-auto-translate.js。点标记重试的那一轮是用户点出来
+    // 的，即便沿用自动的引擎也要放，所以它显式传 markFailures: true。
+    // options.onBlockFailed(block, reason)：每一个失败点都报给调用方，与放不放标记
+    // 无关 —— 自动翻译在 giveUp 那一刻要拿这一段自己的原因做标记的 title。
+    // 外面喊停（换了路由、改了设置，options.isAborted）之后回来的失败不报、不放：
+    // 那一页已经不归这一轮管了。累计到三批的阈值不算：那时已经发出去、随后失败的
+    // 几段照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试（设计
+    // §7.1 D-J11）。stoppedOutside 定义在下面，这里只在调用时读它。
+    const markFailures = typeof options.markFailures === 'boolean' ? options.markFailures : !auto;
+    const reportFailure = typeof options.onBlockFailed === 'function' ? options.onBlockFailed : noBlockFailed;
+    const markFailed = (block, reason) => {
+      if (stoppedOutside()) return;
+      reportFailure(block, reason);
+      if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
+    };
     const total = blocks.length;
     let done = 0;
 
@@ -537,7 +578,8 @@
     // 回填一条条拒掉，可池子里剩下的批次照样一个接一个发出去。并发 12、几百块的
     // 队列，用户关掉自动翻译或换掉付费引擎之后，账单还在涨，而页面上一个字都不会
     // 变 —— 没有任何地方看得出来。
-    const aborted = () => !!batchError || (typeof options.isAborted === 'function' && options.isAborted());
+    const stoppedOutside = () => typeof options.isAborted === 'function' && options.isAborted();
+    const aborted = () => !!batchError || stoppedOutside();
 
     // 整轮致命的失败（passFatal：不认得的领域这类配置错，content/engine/addenda.js）
     // 之后每一批都会一样失败，第一次见到就停，不等累计阈值 —— 一页只有一两批时阈值
@@ -606,12 +648,14 @@
 
           if (response.error) {
             noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+            if (!failsWholePass(response)) markFailed(block, response.error);
             return;
           }
 
-          // 分隔符切分数量不匹配：放弃本块（保持原文），不呈现错位/残缺译文。
+          // 分隔符切分数量不匹配：放弃本块（不呈现错位/残缺译文），标为失败。
           // 这属于单块问题，不设 batchError、不影响整页其它块。
           if (!response.translations || response.translations.length !== sb.length) {
+            markFailed(block);
             return;
           }
           sb.forEach((x, k) => {
@@ -619,15 +663,22 @@
           });
         } catch (error) {
           noteThrown(error, 'Oversized block translation');
+          if (!failsWholePass(error)) markFailed(block, error.message);
           return;
         }
       }
 
-      // 任一分块缺译（未定义或空）则放弃插入，避免呈现残缺译文
-      if (translations.some(x => !x)) return;
+      // 任一分块缺译（未定义或空）：不插残缺译文，整段标失败（从前是悄悄放弃）。
+      if (translations.some(x => !x)) {
+        markFailed(block);
+        return;
+      }
 
       const combined = translations.join('');
-      if (!combined.trim()) return;
+      if (!combined.trim()) {
+        markFailed(block);
+        return;
+      }
       await insertTranslation(block, combined, { accept, onSettled, target });
     };
 
@@ -665,6 +716,7 @@
         // Check for error in response
         if (response.error) {
           noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+          if (!failsWholePass(response)) batch.forEach((block) => markFailed(block, response.error));
         } else {
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
           // 走逐块回退，而不是无声丢掉整批。
@@ -676,11 +728,13 @@
             accept,
             onSettled,
             target,
-            withNeighbours
+            withNeighbours,
+            onBlockFailed: markFailed
           });
         }
       } catch (error) {
         noteThrown(error, 'Batch translation');
+        if (!failsWholePass(error)) batch.forEach((block) => markFailed(block, error.message));
       }
 
       done += batch.length;

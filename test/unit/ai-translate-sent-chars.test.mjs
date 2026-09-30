@@ -11,8 +11,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../../shared/api-compat.js');
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
 await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+await import('../../shared/sync-collection.js');
+await import('../../shared/api-compat.js');
+// model-client.js 的整次调用预算读 AIProfiles.LIMITS（SW 里由 background.js 装上）。
+await import('../../shared/ai-profiles.js');
 await import('../../shared/auto-stats.js');
 await import('../../shared/prompt-addenda.js');
 const { translateTextWithMode, translateBatchWithAI, translateBatchFastWithAI } =

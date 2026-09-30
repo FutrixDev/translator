@@ -332,6 +332,29 @@
     return current != null && lang === current;
   }
 
+  // 失败标记（content/page/failed-blocks.js 造好的那个 span）放在译文本来会落的
+  // 位置：插入点和 insertTranslationBlock 的分支一一对应，只是不复制样式、不登记
+  // 身份 —— 标记不是译文，这一块仍然算「没翻过」。
+  // 受管容器（只读编辑器）不放：编辑器会删掉插进子树的节点，而 ::after 那条路
+  // 只能画纯文本，放不下一个能点的按钮。这一块就和从前一样静默留空。
+  // @returns {boolean} 放上了没有
+  function placeFailureMarker(block, marker) {
+    const element = block.element;
+    if (!element || !element.parentNode) return false;
+    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) return false;
+    if (ctx.isHorizontalFlexParent(element)) {
+      marker.classList.add('ai-translator-inline-right');
+      getInlineTranslationTarget(element).appendChild(marker);
+    } else if (element.hasAttribute('slot') || getTranslationPlacement(element).inside) {
+      element.appendChild(marker);
+    } else {
+      element.after(marker);
+    }
+    // 用户点了「显示原文」之后才失败的块：标记跟上当前状态，和译文一起藏。
+    ctx.applyTranslationVisibility(marker);
+    return true;
+  }
+
   // 插入翻译块
   // lang：见 registerTranslation —— 这一轮译成的是哪门语言，由调用方带进来；
   // 不带就是「没说」，这一块的身份里不记语言。
@@ -547,5 +570,6 @@
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
   ctx.getTranslationPlacement = getTranslationPlacement;
   ctx.insertTranslationBlock = insertTranslationBlock;
+  ctx.placeFailureMarker = placeFailureMarker;
   ctx.releaseTranslation = releaseTranslation;
 })();

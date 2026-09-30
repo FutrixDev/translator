@@ -651,10 +651,11 @@
     const markupElements = [];
     let mathIndex = 0;
 
-    // 跳过的隐藏类名
+    // 跳过的隐藏类名。ai-translator-failed 是失败标记（content/page/failed-blocks.js）：
+    // 放在 li/td 里面时它是这一段的子节点，不跳就会把「翻译失败 · 重试」当原文送出去。
     const hiddenClasses = [
       'MJX_Assistive_MathML', 'katex-mathml', 'sr-only',
-      'visually-hidden', 'MathJax_Preview'
+      'visually-hidden', 'MathJax_Preview', 'ai-translator-failed'
     ];
 
     // 只含空白的文本节点（用户名链接和时间之间的那一个）不直接写进 text：记下它在

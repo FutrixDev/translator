@@ -2,7 +2,7 @@
  * Hover translation E2E tests
  */
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, sendMessageToActiveTab, triggerSelectionHotkey } = require('./helpers');
+const { openExamplePage, setExtensionSettings, sendMessageToActiveTab, triggerSelectionHotkey } = require('./helpers');
 
 async function addTestParagraphs(page) {
   await page.evaluate(() => {
@@ -20,8 +20,7 @@ async function addTestParagraphs(page) {
 
 test.describe('Hover Translation', () => {
   test('keeps hover translations for multiple paragraphs', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await addTestParagraphs(page);
 
@@ -41,8 +40,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('toggles translation on hotkey press and persists after keyup', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     const paragraph = page.locator('p').first();
     await paragraph.scrollIntoViewIfNeeded();
@@ -62,8 +60,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('supports configurable hover hotkey', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, { hoverTranslationHotkey: 'Alt' });
 
@@ -88,8 +85,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('hover translation shows inline loading indicator', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     const paragraph = page.locator('p').first();
     await paragraph.scrollIntoViewIfNeeded();
@@ -124,8 +120,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation persists after selection clears', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     const paragraph = page.locator('p').first();
     await paragraph.scrollIntoViewIfNeeded();
@@ -140,8 +135,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection hotkey toggles translation on and off', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     const paragraph = page.locator('p').first();
     await paragraph.scrollIntoViewIfNeeded();
@@ -155,8 +149,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation shows inline loading indicator', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -192,8 +185,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('escape clears all inline translations', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await addTestParagraphs(page);
 
@@ -216,8 +208,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('right-click on paragraph does not clear inline translation', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await addTestParagraphs(page);
     const paragraphOne = page.locator('#hover-para-one');
@@ -233,8 +224,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('context menu action clears inline translation', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await addTestParagraphs(page);
     const paragraphOne = page.locator('#hover-para-one');
@@ -250,8 +240,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('hover hotkey clears selection translation on the same block', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -292,8 +281,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation inserts after partial selection', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -337,8 +325,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation avoids inserting into math containers', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -398,8 +385,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation preserves MathML elements', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -458,8 +444,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation does not split inline LaTeX', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       selectionTranslationMode: 'inline',
@@ -518,8 +503,7 @@ test.describe('Hover Translation', () => {
   });
 
   test('selection translation works when hover translation is disabled', async ({ page }) => {
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
 
     await setExtensionSettings(page, {
       enableHoverTranslation: false,

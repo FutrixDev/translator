@@ -7,6 +7,7 @@
 //   content/page/collect.js     从 DOM 里挑出该翻的块，读成可送翻的文本
 //   content/page/batch.js       分批、并发、一轮翻译（runTranslationPass）
 //   content/page/insert.js      把译文变成页面上的块
+//   content/page/failed-blocks.js  没译成的那一段：失败标记与点它单段重试
 //   content/page/visibility.js  译文旁边的原文显不显示
 //   content/page/progress.js    右下角那条进度条和它的提示
 //

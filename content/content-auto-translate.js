@@ -358,6 +358,10 @@
         if (ledger.has(key)) continue;
         // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
         if (alreadyTranslated(element, ticket.textFingerprint)) continue;
+        // 挂着失败标记的块归用户了（点标记重试，content/page/failed-blocks.js）：
+        // 手动那一轮失败的块滚进带里时不再自己悄悄送一次 —— 那样既多花钱，又会让
+        // 标记换成自动那一轮的、重试改走自动的引擎。自动放弃的那些另有台账挡着。
+        if (ctx.failedBlocks.isMarked(element)) continue;
         // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
         // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
         inflight.set(element, { key, entry });
@@ -490,6 +494,12 @@
             // 每一批发出去之前都问一次 superseded()：地址可能是在这一轮跑到一半
             // 时才换的。
             isAborted: () => superseded(session),
+            // 这一段自己的失败原因（本地化文案）记在它的 inflight 条目上：giveUp
+            // 放标记时拿它做 title。零星几段失败时 error 为空，没有它就只剩通用文案。
+            onBlockFailed: (block, reason) => {
+              const pending = inflight.get(block.element);
+              if (pending && reason) pending.reason = reason;
+            },
           });
         }
       } catch (thrown) {
@@ -505,17 +515,24 @@
         //
         // 代次一翻篇 inflight 就被清空，所以这个循环在作废的那一轮里天然是空转，
         // 不会把上一页的块塞进新一页的队列。
-        const giveUp = [];
+        const giveUp = new Map();
         for (const [element, pending] of inflight) {
           if (retried.has(pending.key)) {
-            giveUp.push(element);
+            giveUp.set(element, pending);
             continue;
           }
           retried.add(pending.key);
           if (element.isConnected) queue.set(element, pending.entry);
         }
-        gaveUp += giveUp.length;
-        for (const element of giveUp) commit(element);
+        gaveUp += giveUp.size;
+        // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
+        // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
+        // 它放回队列，下一轮多半就翻成了。title 用这一段自己的原因；只有整轮级
+        // 的失败（没有逐段原因）才回落到整轮的 error，再没有就是 mark 的通用文案。
+        for (const [element, pending] of giveUp) {
+          commit(element);
+          if (element.isConnected) ctx.failedBlocks.mark(pending.entry.block, pending.reason || error, { auto: true });
+        }
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。

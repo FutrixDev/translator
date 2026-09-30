@@ -9,6 +9,7 @@ const {
   openFloatBallMenu,
   floatBallExists,
   getCurrentTheme,
+  openExamplePage,
 } = require('./helpers');
 
 async function ballCentre(ball) {
@@ -27,7 +28,7 @@ function paintedAt(page, { x, y }) {
 
 test.describe('Float Ball', () => {
   test('should appear on page load', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     const exists = await floatBallExists(page);
@@ -37,7 +38,7 @@ test.describe('Float Ball', () => {
   // 球本身是翻译 / 还原，菜单挪到了球上那颗 `···`：最常做的那件事该是最省事的
   // 那一下，而菜单里其余六项是偶尔才用一次的。
   test('should open menu from the ··· chip, not from the ball itself', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     // 单击球 —— 菜单不该出来。这一条是反向的：`···` 能开菜单证明不了球不能开。
@@ -71,7 +72,7 @@ test.describe('Float Ball', () => {
   });
 
   test('should apply correct theme', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     const theme = await getCurrentTheme(page);
@@ -79,7 +80,7 @@ test.describe('Float Ball', () => {
   });
 
   test('should hide on fullscreen and restore on exit', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     await page.evaluate(() => {
@@ -107,7 +108,7 @@ test.describe('Float Ball', () => {
   // stayed painted over the video: elementFromPoint at the ball's own centre
   // hit the ball.
   test('should hide over a web-fullscreen player and restore when it shrinks', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
     const ball = page.locator('#ai-translator-float-ball');
 
@@ -139,7 +140,7 @@ test.describe('Float Ball', () => {
   // page's text (a background layer with no loop, so the backdrop rule does
   // not catch it) must not take the ball away.
   test('should stay over a full-viewport video the page covers', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
     const ball = page.locator('#ai-translator-float-ball');
 
@@ -163,7 +164,7 @@ test.describe('Float Ball', () => {
   });
 
   test('should be draggable', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     const floatBall = page.locator('#ai-translator-float-ball');
@@ -185,7 +186,7 @@ test.describe('Float Ball', () => {
   });
 
   test('should stay within viewport bounds', async ({ page }) => {
-    await page.goto('https://example.com');
+    await openExamplePage(page);
     await waitForFloatBall(page);
 
     const floatBall = page.locator('#ai-translator-float-ball');

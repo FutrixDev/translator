@@ -147,7 +147,8 @@ test('auto translation: a block whose batch failed gets another chance, not a si
   // 页面上那一片永远是原文，没有报错，没有重试，什么痕迹都没有。
   //
   // 所以记账要等结果：翻好了算、模型说不用翻算，失败不算。
-  const { close, endpoint, sentTexts } = await startMockOpenAIServer({ failRequests: 1 });
+  // 400 不重试（D2）：500 会被服务工作者重试成功，那一批就不算失败了。
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer({ failRequests: 1, failStatus: 400 });
 
   try {
     await setExtensionSettings(page, settings(endpoint, {
@@ -159,7 +160,7 @@ test('auto translation: a block whose batch failed gets another chance, not a si
     await page.waitForSelector('#ai-translator-float-ball');
 
     const countLead = () => sentTexts.filter((text) => text.includes(LEAD)).length;
-    // 第一批发出去了，服务器 500 —— 文字花了钱，页面上什么也没落地。
+    // 第一批发出去了，服务器 400 —— 文字花了钱，页面上什么也没落地。
     await expect.poll(countLead, { timeout: 30000 }).toBeGreaterThanOrEqual(1);
     await expect(page.locator('#lead-box .ai-translator-inline-block')).toHaveCount(0);
 

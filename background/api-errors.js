@@ -79,7 +79,9 @@ function apiErrorMessage(error, settings, profile) {
 function replyError(operation, error, { settings, profile, profileId, feature }) {
   if (error && error.aborted) return { aborted: true };
   const id = profile ? (profile.id || '(unsaved)') : (profileId || '(none)');
-  console.error(`${operation} failed (profile ${id}, feature ${feature || '(none)'}):`, error);
+  // callModel 重试过的，把一共试了几次写进这一条（中间那几次不另打日志）。
+  const tries = error && error.attempts > 1 ? ` after ${error.attempts} attempts` : '';
+  console.error(`${operation} failed${tries} (profile ${id}, feature ${feature || '(none)'}):`, error);
   return { error: apiErrorMessage(error, settings, profile) };
 }
 

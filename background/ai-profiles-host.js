@@ -71,12 +71,13 @@ async function testProfile(draft) {
   let profile;
   try {
     profile = globalThis.AIProfiles.normalize(draft);
+    // 测试连接要的是立刻知道这一档通不通：不重试，也不进限速器（设计 §3.9）。
     await callModel(profile, {
       system: '',
       user: 'Hi',
       maxTokens: PROBE_TOKENS,
       temperature: globalThis.APICompat.DEFAULT_TEMPERATURE,
-    });
+    }, { retry: false, limit: false });
     return { ok: true };
   } catch (error) {
     return replyError('AI_PROFILE_TEST', error, { settings, profile, feature: '(test)' });

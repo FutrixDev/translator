@@ -163,11 +163,14 @@
 
   // 第 2 步：规则现在禁止的块，把已有的译文收回去。清扫只有这一份。include 晚到
   // 时 scope.js 先把新范围写进缓存再调 rescope()，这里解析到的就是那个 include。
+  // 失败标记（content/page/failed-blocks.js）站在译文的位置上，同一次一起收：
+  // 规则不许翻的块，不该留着一个「重试」去翻它。
   function sweep() {
     const scope = ctx.resolvePageScope();
     for (const el of ctx.queryAllDeep('.ai-translator-translated')) {
       if (ctx.ruleForbids(el, scope)) ctx.releaseTranslation(el);
     }
+    ctx.failedBlocks.clearWhere((el) => ctx.ruleForbids(el, scope));
   }
 
   // 第 3 步：整页翻过、调度器又没在跟这一页时，补一轮把新放开的块翻上。调度器在

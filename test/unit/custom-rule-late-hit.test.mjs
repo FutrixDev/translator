@@ -110,6 +110,8 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
     // 缓存层那个文件的 ctx.translationProfile：顶层指令带它的代数（P1-C §3.8）。
     translationProfile: { generation: () => 0, subscribe() {} },
     frames: { sendToRelay() {} },
+    // P1-D2 修复回合 1：清扫把规则禁掉的区域里的失败标记一起收走；这里没有标记。
+    failedBlocks: { clearWhere() {} },
     autoTranslate: { isOn: () => false, onStateChange: (fn) => fn(), markPageExplicit() {} },
     isExtensionContextAvailable: () => true,
     revealHiddenTranslations() {},
@@ -237,6 +239,8 @@ async function loadScheduler() {
     syncMirrors: [],
     // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
     aiProfiles: { subscribe: () => () => {} },
+    // P1-D2：调度器不再自己送挂着失败标记的块；这里没有块挂标记。
+    failedBlocks: { isMarked: () => false, clearWhere() {} },
     usableSelector: (list) => list.join(','),
     queryAllDeep: (selector) => (selector === '.ai-translator-translated' ? [...page.translated] : page.includeHits),
     composedContains: (ancestor, node) => ancestor === node || ancestor.contains(node),

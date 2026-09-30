@@ -33,7 +33,9 @@
 
   const GUARD_ATTR = 'data-ai-translator-unclipped';
   // 还留着译文的容器不能还原。受管译文没有自己的节点，认原文块上的标记。
-  const TRANSLATION_SELECTOR = '.ai-translator-inline-block, [data-ai-translator-managed]';
+  // 失败标记（ai-translator-failed，content/page/failed-blocks.js）借了译文块的类名
+  // 但不是译文，与 visibility.js、translation.css 同一约定排除它。
+  const TRANSLATION_SELECTOR = '.ai-translator-inline-block:not(.ai-translator-failed), [data-ai-translator-managed]';
 
   // 被放开的祖先 -> 它原来的内联声明（值和 !important 都要记，还原才是原样）
   const guarded = new Map();

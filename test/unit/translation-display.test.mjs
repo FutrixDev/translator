@@ -39,6 +39,8 @@ const ONLY_ATTR = 'data-ai-translator-only';
 const PAGE_ONLY_NOTS = [
   ':not(.ai-translator-selection-translation)',
   ':not(.ai-translator-hover-translation)',
+  // The failed-block marker (content/page/failed-blocks.js) shares the class and is not a translation.
+  ':not(.ai-translator-failed)',
 ];
 
 /** Split on top-level occurrences of `separator`, so `:not(a, b)` and `[x="a b"]` stay whole. */

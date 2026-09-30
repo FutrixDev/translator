@@ -283,7 +283,8 @@ test('D-J1b a setup that never had a key makes no profile, and the popup and the
 // ------------------------------------------------------------------ D-J6
 
 test('D-J6 a profile timed out at 15 s on the settings page says so on the card, and the worker logs it once', async ({ page, context, extensionId }) => {
-  test.setTimeout(90000);
+  // D2：超时可重试（设计 §3.9），三次都超时才上卡片：约 15 + 1 + 15 + 2 + 15 秒。
+  test.setTimeout(150000);
   const mock = await startMockOpenAIServer({ delayMs: 30000 });
   try {
     await serve(context);
@@ -308,24 +309,30 @@ test('D-J6 a profile timed out at 15 s on the settings page says so on the card,
     const worker = await getServiceWorker(context);
     const failures = [];
     worker.on('console', (message) => {
-      if (/^TRANSLATE\w* failed \(profile /.test(message.text())) failures.push(message.text());
+      if (/^TRANSLATE\w* failed( after \d+ attempts)? \(profile /.test(message.text())) failures.push(message.text());
     });
 
     const started = Date.now();
     const card = await translateHeadingSelection(page);
     const expected = zh('apiErrorTimeout').replace('{seconds}', '15');
     expect(expected).toBe('请求超时（15 秒）');
-    await expect(card.locator('.ai-translator-error')).toHaveText(expected, { timeout: 29000 });
+    await expect(card.locator('.ai-translator-error')).toHaveText(expected, { timeout: 70000 });
     const elapsed = Date.now() - started;
-    // 约 15 秒：不是马上失败，也不是等到 mock 30 秒后才作答。
-    expect(elapsed).toBeGreaterThanOrEqual(14000);
-    expect(elapsed).toBeLessThan(29000);
-    console.log(`[D-J6] card error after ${elapsed} ms`);
+    // 三次尝试，每次都在 15 秒上被掐断（不是等到 mock 30 秒后才作答），
+    // 中间隔着 1 秒、2 秒（各 ±20%）的退避。
+    expect(mock.requestTimes).toHaveLength(3);
+    const gaps = [mock.requestTimes[1] - mock.requestTimes[0], mock.requestTimes[2] - mock.requestTimes[1]];
+    expect(gaps[0]).toBeGreaterThanOrEqual(15800);
+    expect(gaps[0]).toBeLessThan(17500);
+    expect(gaps[1]).toBeGreaterThanOrEqual(16600);
+    expect(gaps[1]).toBeLessThan(18500);
+    expect(elapsed).toBeGreaterThanOrEqual(47000);
+    console.log(`[D-J6] card error after ${elapsed} ms, gaps ${gaps.join(' / ')} ms`);
 
     // SW 只有一条：接住错误的那一层（api-errors.js replyError）记一次。
     await page.waitForTimeout(1000);
     expect(failures).toHaveLength(1);
-    expect(failures[0]).toMatch(/^TRANSLATE failed \(profile legacy, feature selection\):/);
+    expect(failures[0]).toMatch(/^TRANSLATE failed after 3 attempts \(profile legacy, feature selection\):/);
     expect(failures[0]).not.toContain(LEGACY_KEY_VALUE);
   } finally {
     await mock.close();

@@ -22,6 +22,7 @@
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
 const {
+  openExamplePage,
   setExtensionSettings,
   openFloatBallMenu,
   triggerPageTranslation,
@@ -48,8 +49,7 @@ const localSettings = (endpoint, extra = {}) => ({
 
 /** Select the page heading and ask for its translation from the float ball. */
 async function translateHeadingSelection(page) {
-  await page.goto('https://example.com');
-  await page.waitForSelector('#ai-translator-float-ball');
+  await openExamplePage(page);
 
   const heading = await page.locator('h1').boundingBox();
   await page.mouse.move(heading.x + 2, heading.y + heading.height / 2);
@@ -106,8 +106,7 @@ test('J-A2: whole-page translation works against a local server with no key', as
   ];
   try {
     await setExtensionSettings(page, localSettings(mock.endpoint, { skipTargetLanguageText: false }));
-    await page.goto('https://example.com');
-    await page.waitForSelector('#ai-translator-float-ball');
+    await openExamplePage(page);
     await page.evaluate((texts) => {
       const container = document.createElement('div');
       container.id = 'local-probe';

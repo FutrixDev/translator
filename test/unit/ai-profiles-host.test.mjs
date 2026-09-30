@@ -189,17 +189,37 @@ test('ai-profiles-host: a failed AI_PROFILE_TEST is worded, logged once, and the
   const error = captureConsole('error');
   let reply;
   try {
-    await withFetch(() => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Incorrect API key' } }) }),
-      async () => { reply = await send({ type: 'AI_PROFILE_TEST', profile: draft }); });
+    // D2：响应要带 headers（callModel 读 Retry-After），真 fetch 的响应总有。
+    await withFetch(() => ({ ok: false, status: 401, headers: new Headers(),
+      json: async () => ({ error: { message: 'Incorrect API key' } }) }),
+    async () => { reply = await send({ type: 'AI_PROFILE_TEST', profile: draft }); });
   } finally {
     error.restore();
   }
   assert.equal(typeof reply.error, 'string');
-  assert.ok(reply.error.length > 0);
+  assert.ok(reply.error.startsWith(globalThis.getMessage('apiErrorAuth', 'en')), reply.error);
   assert.equal(error.logged.length, 1);
   assert.match(String(error.logged[0][0]), /^AI_PROFILE_TEST failed \(profile \(unsaved\), feature \(test\)\)/);
   assert.ok(!JSON.stringify(error.logged, (key, value) => (value instanceof Error ? value.message : value))
     .includes('sk-draft-secret'));
+});
+
+test('ai-profiles-host: AI_PROFILE_TEST tries once even on a retryable failure (no retry, no limiter)', async () => {
+  const error = captureConsole('error');
+  let reply;
+  try {
+    await withFetch(() => ({ ok: false, status: 503, headers: new Headers({ 'retry-after': '1' }),
+      json: async () => ({}) }),
+    async (seen) => {
+      reply = await send({ type: 'AI_PROFILE_TEST', profile: Object.assign({}, draft, { concurrency: 1, rpm: 1 }) });
+      reply = await send({ type: 'AI_PROFILE_TEST', profile: Object.assign({}, draft, { concurrency: 1, rpm: 1 }) });
+      assert.equal(seen.length, 2, 'AI_PROFILE_TEST once per click: no retry, and rpm 1 does not hold the second back');
+    });
+  } finally {
+    error.restore();
+  }
+  assert.ok(reply.error.startsWith(globalThis.getMessage('apiErrorUnavailable', 'en')), reply.error);
+  assert.match(String(error.logged[0][0]), /^AI_PROFILE_TEST failed \(profile/, 'one try: no "after N attempts"');
 });
 
 test('ai-profiles-host: a draft the form described badly is refused with its error key, no request', async () => {

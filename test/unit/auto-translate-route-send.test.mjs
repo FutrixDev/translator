@@ -47,6 +47,8 @@ function load() {
     customRules: { isCatchingUp: () => false, onChange() {} },
     // P1-D：调度器订阅 AI 配置档镜像（换了档就重跑一轮）；这里没有档的变化。
     aiProfiles: { subscribe: () => () => {} },
+    // P1-D2：调度器不再自己送挂着失败标记的块；这里没有块挂标记。
+    failedBlocks: { isMarked: () => false },
     onLanguagePackReady() {},
     readSourceText: (el) => el.text,
     setupAutoDiscovery: () => ({ rescan() {}, stop() {}, suspend() {}, resume() {} }),
