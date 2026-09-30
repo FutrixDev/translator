@@ -21,7 +21,14 @@
   counts only while its control's visible text is short (at most 3 words or
   30 characters, and not a sentence), so a card built as one big button, or
   a longer button like "Show more of this", is still translated. Links are
-  never treated as controls.
+  never treated as controls. On Reddit's rules list the rule number no longer
+  gets a column of its own; each rule's translation stays under its text.
+- **A translation that would cut off text in a one-line row is dropped.**
+  Rows that clip their overflow with an ellipsis used to end up showing the
+  first few words of the original and the first few of the translation. Now
+  the translation first gives the space back to the original; if the row
+  still cuts off more than it did before, the translation is removed and the
+  original shows as it did. Rows that scroll sideways are left alone.
 
 ### A new look for the popup and the float ball
 

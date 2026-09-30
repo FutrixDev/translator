@@ -174,10 +174,11 @@
   // 插入点比检查点多，就是漏了一处。
   // @param {Element} element 原文块。译文节点自己不认识它 —— 兄弟、块内、slot 内、
   //   flex 内联四种形态里，从译文往回找原文各有各的走法，所以由插入方传进来。
-  // @param {number} sourceWidthBefore 插译文之前原文块的宽度。fit guard 的横向判据
-  //   要「页面原本给这一块多少地方」，插完就量不到了，只能在插之前记下来传进去。
+  // @param {object} [before] 插译文之前这一块的样子（ctx.fitBaseline）。fit guard 的
+  //   两条横向判据要「页面原本给这一块多少地方、本来切掉多少」，插完就量不到了，
+  //   只能在插之前记下来传进去。
   // @param {string} textLang 译文实际是哪门语言（这一轮请求的目标），打进 lang / dir。
-  function finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang) {
+  function finishTranslationInsert(element, translationEl, before, lang, textLang) {
     registerTranslation(element, translationEl, false, lang);
     ctx.markLanguage(translationEl, textLang);
     keepTranslationVisible(translationEl);
@@ -185,7 +186,7 @@
     // 才是它真实的处境。反过来先量就会按「原文 + 译文」的高度白撤一批译文。
     if (ctx.isTranslationOnlyActive()) ctx.hideSourceForTranslation(translationEl);
     if (ctx.keepTranslationInFlow &&
-        !ctx.keepTranslationInFlow(translationEl, sourceWidthBefore)) return false;
+        !ctx.keepTranslationInFlow(translationEl, before)) return false;
     // 守卫量完了，这时候才跟上显隐（第 4 步）。撤掉的那一条走不到这里，也不需要。
     if (ctx.applyTranslationVisibility) ctx.applyTranslationVisibility(translationEl);
     return true;
@@ -402,9 +403,10 @@
       return;
     }
 
-    // 页面原本给这一块多少横向空间。插完就问不到了（收缩包裹的框会被译文自己撑宽），
-    // fit guard 的横向判据要的就是这个数，所以在动 DOM 之前量。
-    const sourceWidthBefore = element.getBoundingClientRect().width;
+    // 页面原本给这一块多少横向空间、本来切掉多少。插完就问不到了（收缩包裹的框会被
+    // 译文自己撑宽，nowrap 的框会把多出来的切掉），fit guard 的横向判据要的就是这个，
+    // 所以在动 DOM 之前量。fit guard 跟 keepTranslationInFlow 同一个文件，没装就两样都没有。
+    const before = ctx.fitBaseline ? ctx.fitBaseline(element) : undefined;
 
     // 检测是否在水平布局中
     const isHorizontalFlex = ctx.isHorizontalFlexParent(element);
@@ -454,7 +456,7 @@
 
       // 将翻译作为子元素追加到原元素内部（跟在原文后面）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
+      finishTranslationInsert(element, translationEl, before, lang, textLang);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -550,16 +552,16 @@
           box-sizing: border-box;
         `;
         element.appendChild(internalTranslation);
-        finishTranslationInsert(element, internalTranslation, sourceWidthBefore, lang, textLang);
+        finishTranslationInsert(element, internalTranslation, before, lang, textLang);
       } else if (placement.inside) {
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         element.appendChild(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
+        finishTranslationInsert(element, translationEl, before, lang, textLang);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(element, translationEl, sourceWidthBefore, lang, textLang);
+        finishTranslationInsert(element, translationEl, before, lang, textLang);
       }
     }
   }

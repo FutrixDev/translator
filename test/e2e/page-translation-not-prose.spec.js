@@ -132,6 +132,19 @@ test('control labels and number-only text are neither sent nor shown; prose arou
       expect(shown, text).not.toContain(`[T] ${text}`);
     }
     expect(shown.join('\n')).toContain(LONG_BUTTON);
+
+    // 规则那一行不再长出第三列：序号没有译文，规则正文的译文落在正文那一栏里。
+    const rule = await page.evaluate(() => {
+      const row = document.getElementById('rule');
+      const text = document.getElementById('rule-text').getBoundingClientRect();
+      const ours = [...row.querySelectorAll('.ai-translator-inline-block, .ai-translator-inline-right')]
+        .map((n) => n.getBoundingClientRect());
+      return {
+        columns: [...row.children].filter((c) => c.getBoundingClientRect().width > 0).length,
+        inside: ours.length > 0 && ours.every((r) => r.left >= text.left - 1 && r.right <= text.right + 1),
+      };
+    });
+    expect(rule).toEqual({ columns: 2, inside: true });
   } finally {
     await close();
   }

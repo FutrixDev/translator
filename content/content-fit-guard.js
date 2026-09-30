@@ -93,6 +93,26 @@
 // 画在外面——几何上「修好了」，看上去一模一样。
 //
 // ---------------------------------------------------------------------------
+// 五、横向的另一半：**框没变宽，是把字切掉了**
+//
+// 第四节的框肯长宽，只是长出来的那一截盖到了邻居。更常见的是根本不肯长的框：
+// `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` 的一行。X 信息流的
+// 「Steelers」旁边插进一段译文，框一个像素没变，字被切成「Steelers 钢...」；
+// Reddit 一行 flex 里的比分，右侧挂上译文就把原来那行也挤成了省略号。几何上什么都
+// 没溢出（框外那截根本不画），前四条一条都够不着——可用户看到的是原文和译文各剩半截。
+//
+// 判据：原文块和它上面两层里，有一个**会裁剪**的框（overflow-x 是 hidden/clip）
+// 被切掉的宽度（scrollWidth − clientWidth）比插译文之前多了。插之前就切着的部分是
+// 页面自己的样子（本来就是省略号的一行），只数增量。auto/scroll 不算：那样的框能
+// 滚过去看，切不掉谁。
+//
+// 「插之前切了多少」同样只能记：插入方在动 DOM 之前调 ctx.fitBaseline(原文块)，
+// 连同第四节要的宽度一起记下来，作为第二个参数传回来。
+//
+// 收场走第一节那条：先让原文。译文另起一行、原文在同一个窄框里时，原文让开这一行
+// 就只剩译文，往往就装下了；译文插在原文里面（水平 flex）时原文让不动，直接撤。
+//
+// ---------------------------------------------------------------------------
 // 量法（下面所有数字都是这一套，换算法就不可比了）：只数**看得见**的矩形
 // （checkVisibility，含 opacity/visibility），互相包含的不算，横竖都压过 6px 才算
 // 一处；页面自己本来就有的重叠在插译文**之前**先量一遍，最后相减。译文按它自己那
@@ -243,6 +263,30 @@
     return false;
   }
 
+  // 原文块和它上面 MAX_DEPTH 层的框，从下往上。第五节量的就是这几个。
+  function nearBoxes(element) {
+    const boxes = [];
+    for (let n = element, depth = 0; depth <= MAX_DEPTH && n && n !== document.body && n !== document.documentElement; depth++) {
+      boxes.push(n);
+      n = n.parentElement;
+    }
+    return boxes;
+  }
+
+  function cutWidth(el) {
+    return el.scrollWidth - el.clientWidth;
+  }
+
+  // 第五节：有没有哪个会裁剪的框比 baseline 记下的多切掉了一截。
+  // 先比数、比出来了才读计算样式——绝大多数块一个都比不出来，省掉那几次样式查询。
+  function cutsMore(truncation) {
+    return truncation.some(({ el, before }) => {
+      if (!el.isConnected || cutWidth(el) <= before + SLACK) return false;
+      const overflowX = window.getComputedStyle(el).overflowX;
+      return overflowX === 'hidden' || overflowX === 'clip';
+    });
+  }
+
   // rect 有没有跑到 host 的 padding box 外面。
   // 用 clientTop/clientHeight 而不是 rect.height：溢出发生在 padding box 上，
   // 而 getBoundingClientRect() 含边框。与 clip-guard 的 clipsAway 同一套量法。
@@ -280,11 +324,12 @@
    * max-height 放开，那之后框才是它最终的样子。
    *
    * @param {Element} translationEl 刚插进 DOM 的译文节点
-   * @param {number} [sourceWidthBefore] 插译文之前原文块的宽度，插入方现场量的
-   *   （见文件头第四节）。不传就跳过横向那条判据。
+   * @param {{width: number, truncation: Array<{el: Element, before: number}>}} [before]
+   *   插译文之前的样子，插入方在动 DOM 之前用 ctx.fitBaseline(原文块) 量的
+   *   （见文件头第四、五节）。不传就跳过两条横向判据。
    * @returns {boolean} 译文是否留下了
    */
-  ctx.keepTranslationInFlow = function(translationEl, sourceWidthBefore) {
+  ctx.keepTranslationInFlow = function(translationEl, before) {
     if (!translationEl || translationEl.nodeType !== Node.ELEMENT_NODE || !translationEl.isConnected) {
       return false;
     }
@@ -310,10 +355,16 @@
     // 原文块跟着变宽，这就是「页面给的地方不够了」的信号。并集会把另一码事算进来
     // ——译文继承了原文的 absolute，刚被 keepInFlow 按回 static，于是从一个 206px
     // 的跳转链接摊成整行 1585px。框一点没变宽，谁也没挤到。
-    if (sourceWidthBefore > 0 && source && hasOutOfFlowAncestor(translationEl) &&
-        source.getBoundingClientRect().width > sourceWidthBefore + SLACK) {
+    if (before && before.width > 0 && source && hasOutOfFlowAncestor(translationEl) &&
+        source.getBoundingClientRect().width > before.width + SLACK) {
       // 这里没有「先让原文」那一步：把框撑宽的正是译文，原文让开框还是那么宽。
       return dropTranslation(translationEl);
+    }
+
+    // 横向的另一半：框没变宽，是把字切掉了（见文件头第五节）。让原文之后按同一份
+    // baseline 再量——原文藏起来切得比插之前还少，也算过了。
+    if (before && cutsMore(before.truncation)) {
+      return yieldOrDrop(translationEl, () => cutsMore(before.truncation));
     }
 
     let host = translationEl.parentElement;
@@ -338,5 +389,19 @@
     }
 
     return true;
+  };
+
+  /**
+   * 插译文之前记下这一块的样子，给 keepTranslationInFlow 的两条横向判据当参照
+   * （见文件头第四、五节）。插完就量不到了，所以必须在动 DOM 之前调。
+   *
+   * @param {Element} element 原文块
+   * @returns {{width: number, truncation: Array<{el: Element, before: number}>}}
+   */
+  ctx.fitBaseline = function(element) {
+    return {
+      width: element.getBoundingClientRect().width,
+      truncation: nearBoxes(element).map((el) => ({ el, before: cutWidth(el) })),
+    };
   };
 })();
