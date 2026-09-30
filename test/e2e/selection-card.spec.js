@@ -200,11 +200,33 @@ async function settle(page, selector) {
   }, selector);
 }
 
-// The icon pops in (a 0.2 s scale + translateY); measure it where it lands.
-async function settledIconRect(page) {
-  await settle(page, '#ai-translator-selection-btn');
-  return rectOf(icon(page));
+// Measure a floating layer where it lands. Its entrance has to finish (the
+// icon pops in with a 0.2 s scale + translateY, the card fades in), and so does
+// its placement: the card is re-placed by a ResizeObserver in the rendering
+// update after its content changes, so a rect read in between is the grown card
+// at its old position — on a loaded machine, past the edge of its frame.
+// Samples are taken only in animation-frame callbacks, so each pair has a whole
+// rendering update between them; two that agree mean nothing is still moving.
+async function settledRect(page, root, target) {
+  await settle(page, root);
+  await target.evaluate((el) => new Promise((resolve) => {
+    let last = null;
+    const sample = () => {
+      const r = el.getBoundingClientRect();
+      const now = [r.left, r.top, r.right, r.bottom].join();
+      if (now === last) resolve();
+      else {
+        last = now;
+        requestAnimationFrame(sample);
+      }
+    };
+    requestAnimationFrame(sample);
+  }));
+  return rectOf(target);
 }
+
+const settledIconRect = (page) => settledRect(page, '#ai-translator-selection-btn', icon(page));
+const settledCardRect = (page) => settledRect(page, '.ai-translator-popup', card(page));
 
 // The card's action row, and each visible button in it relative to the row.
 // The card itself is re-placed as its content changes, so positions on the
@@ -288,7 +310,7 @@ test.describe('selection icon and card actions', () => {
       await icon(page).click();
       await expect(cardText(page)).toContainText('[T]');
       await expect(icon(page)).toHaveCount(0);
-      const cardRect = await rectOf(card(page));
+      const cardRect = await settledCardRect(page);
       expectInViewport(cardRect);
       for (const r of sel.rects) expect(intersects(cardRect, r)).toBe(false);
       await expect(engineTag(page)).toHaveText(en('cardEngineAi'));
@@ -725,7 +747,7 @@ test.describe('selection icon and card actions', () => {
       expect(low.box.bottom).toBeGreaterThan(690);
       await icon(page).click();
       await expect(cardText(page)).toContainText('[T]');
-      const lowCard = await rectOf(card(page));
+      const lowCard = await settledCardRect(page);
       expect(lowCard.bottom).toBeLessThanOrEqual(low.box.top + 0.5);
       expectInViewport(lowCard);
       await page.keyboard.press('Escape');
@@ -737,6 +759,7 @@ test.describe('selection icon and card actions', () => {
       const long = await selectionGeometry(page);
       await icon(page).click();
       await expect(cardText(page)).toContainText('[T]');
+      const longCard = await settledCardRect(page);
       const shrunk = await page.evaluate(() => {
         const popup = document.querySelector('.ai-translator-popup');
         const content = popup.querySelector('.ai-translator-content');
@@ -747,7 +770,6 @@ test.describe('selection icon and card actions', () => {
       });
       expect(shrunk.maxHeight).not.toBe('');
       expect(shrunk.scrolls).toBe(true);
-      const longCard = await rectOf(card(page));
       expectInViewport(longCard);
       expect(intersects(longCard, long.box)).toBe(false);
     } finally {
@@ -789,7 +811,7 @@ test.describe('selection icon and card actions', () => {
       await expect(cardText(frame)).toContainText('[T]');
       expect(mock.sentTexts).toHaveLength(1);
       expect(mock.sentTexts[0]).toContain('harbour office');
-      const cardRect = await rectOf(card(frame));
+      const cardRect = await settledCardRect(frame);
       expectInside(cardRect, embedBox);
       for (const r of rects) expect(intersects(cardRect, r)).toBe(false);
       await expect(engineTag(frame)).toHaveText(en('cardEngineAi'));
