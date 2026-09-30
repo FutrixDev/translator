@@ -66,6 +66,7 @@ await import('../../content/page/custom-rule.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
+await import('../../content/page/reader-hidden.js');
 // failed-blocks.js：落笔前摘失败标记（ctx.failedBlocks.clear），失败时放标记。
 for (const module of ['batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);

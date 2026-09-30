@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Reddit and X: only the content is translated
+
+- **Sites on the built-in Always list are translated in their main content
+  only.** Reddit's left nav, rules sidebar and community card, and X's left
+  nav, no longer fill up with translations; X's trends and who-to-follow
+  column keeps its original text. Choosing "whole page" in Settings still
+  translates everything.
+- **Text written only for screen readers stays untranslated.** Reddit's
+  "Go to comments" inside a button, `.sr-only` labels and the like are
+  invisible on the page, yet their translations used to show up next to
+  buttons and links. They are recognised by how they are hidden (clipped to
+  nothing, or a 1px box), not by class name, so this works on any site.
+
 ### A new look for the popup and the float ball
 
 - **The popup, the float ball and its menu wear the new brand.** Warm paper,

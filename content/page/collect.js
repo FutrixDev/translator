@@ -352,9 +352,9 @@
       // 跳过数学公式的隐藏辅助元素（只跳过重复的隐藏版本）
       if (element.classList.contains('MJX_Assistive_MathML') ||
           element.classList.contains('katex-mathml') ||
-          element.classList.contains('sr-only') ||
-          element.classList.contains('visually-hidden') ||
           element.classList.contains('MathJax_Preview')) return;
+      // 只写给读屏器的字（content/page/reader-hidden.js）：整棵不收。
+      if (ctx.hiddenFromReaders(window.getComputedStyle(element))) return;
 
       // 跳过 Web Components 的覆盖层 slot 元素
       // 这些元素通常是 absolute 定位覆盖整个区域用于点击跳转
@@ -653,9 +653,9 @@
 
     // 跳过的隐藏类名。ai-translator-failed 是失败标记（content/page/failed-blocks.js）：
     // 放在 li/td 里面时它是这一段的子节点，不跳就会把「翻译失败 · 重试」当原文送出去。
+    // .sr-only 这类读屏文字不靠类名认，靠下面的 ctx.hiddenFromReaders。
     const hiddenClasses = [
-      'MJX_Assistive_MathML', 'katex-mathml', 'sr-only',
-      'visually-hidden', 'MathJax_Preview', 'ai-translator-failed'
+      'MJX_Assistive_MathML', 'katex-mathml', 'MathJax_Preview', 'ai-translator-failed'
     ];
 
     // 只含空白的文本节点（用户名链接和时间之间的那一个）不直接写进 text：记下它在
@@ -746,9 +746,9 @@
         const classList = node.classList;
         if (hiddenClasses.some(cls => classList?.contains(cls))) return;
 
-        // 跳过 display:none
+        // 跳过 display:none，以及只给读屏器的字
         const style = window.getComputedStyle(node);
-        if (style.display === 'none') return;
+        if (style.display === 'none' || ctx.hiddenFromReaders(style)) return;
 
         // 跳过图标元素（图标是装饰，翻译不需要包含图标）
         if (isIconElement(node)) {
