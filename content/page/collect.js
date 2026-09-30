@@ -200,16 +200,6 @@
       return false;
     }
 
-    // 检查文本是否只由数字与常见数值符号组成（数据表单元格常见，如 0.83、94.2%、±0.02、1,234）。
-    // 这类单元格翻译无意义，还会给结果表添噪，直接跳过。要求至少含一个数字，
-    // 以免误伤 "N/A"、"Method" 等含字母的表头/文本单元格。
-    function isNumericOrSymbolOnly(text) {
-      const t = (text || '').trim();
-      if (!t) return false;
-      if (!/\d/.test(t)) return false;
-      return /^[\d\s.,%±+\-*/()<>=:~×·°∓‰$€£¥–—]+$/.test(t);
-    }
-
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
     function hasTranslatableChildren(element) {
       for (const child of kids(element)) {
@@ -258,7 +248,7 @@
       for (const run of runs) {
         const text = run.map((node) => node.textContent).join('').trim();
         if (text.length < 2) continue;
-        if (looksLikeCode(text) || isMainlyUrl(text) || isNumericOrSymbolOnly(text)) continue;
+        if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) continue;
         const wrap = document.createElement('span');
         wrap.className = TEXT_RUN_CLASS;
         run[0].parentNode.insertBefore(wrap, run[0]);
@@ -444,6 +434,9 @@
         // looksLikeCode/isMainlyUrl 同样要先剥，否则 <a1></a1> 里的尖括号会把带链接
         // 的段落误判成代码。
         const plainText = globalThis.TextMarkers.strip(text).trim();
+        // 纯数字、控件短标签（content/page/not-prose.js）：整块不收。要 return——
+        // 落到下面的块级分支，<span>12</span> 会因为有直属文本照样被收进去。
+        if (ctx.notProse(element, plainText)) return;
         if (text && plainText.length >= 2 && plainText.length <= 500) {
           // 跳过看起来像代码或主要是URL的文本
           // 这里要 trim：只含公式的元素排除占位符后会剩下空白（如 "{{1}} {{2}}"），
@@ -477,10 +470,8 @@
           // 这里 return 而不递归：块内只有公式，子元素会被 MATH_CONTAINER_SELECTOR 拦下，递归没有意义。
           if (!textWithoutMath) return;
 
-          // 数据表单元格若只是数字/符号（如 0.83、94.2%），跳过：翻译无意义且会给结果表加噪
-          if ((tagName === 'TD' || tagName === 'TH') && isNumericOrSymbolOnly(textWithoutMath)) {
-            return;
-          }
+          // 纯数字、控件短标签（content/page/not-prose.js）：整块不收。
+          if (ctx.notProse(element, textWithoutMath)) return;
           if (textWithoutMath && (looksLikeCode(textWithoutMath) || isMainlyUrl(textWithoutMath))) {
             // 递归处理子元素，可能有非代码/非URL的部分
             for (const child of kids(element)) {

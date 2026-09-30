@@ -299,7 +299,7 @@ test('the page-coverage modules load before the collector', () => {
   const collect = bundle.indexOf('content/page/collect.js');
   assert.notEqual(collect, -1);
   for (const rel of ['content/page/shadow.js', 'content/page/notranslate.js', 'content/page/scope.js',
-    'content/page/reader-hidden.js']) {
+    'content/page/reader-hidden.js', 'content/page/not-prose.js']) {
     const at = bundle.indexOf(rel);
     assert.notEqual(at, -1, `${rel} is not in the content bundle`);
     assert.ok(at < collect, `${rel} must load before collect.js`);

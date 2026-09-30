@@ -104,12 +104,14 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
   'content/page/custom-rule.js',
   'content/page/site-adapter.js',
-  // 组合树（shadow.js）、notranslate、正文范围（scope.js）、读屏文字（reader-hidden.js）：
+  // 组合树（shadow.js）、notranslate、正文范围（scope.js）、读屏文字（reader-hidden.js）、
+  // 不是正文的字（not-prose.js）：
   // 收集器和门面在调用时读它们挂的 ctx.x，门面收块走的就是 scope.js 的 ctx.collectPageBlocks。
   'content/page/shadow.js',
   'content/page/notranslate.js',
   'content/page/scope.js',
   'content/page/reader-hidden.js',
+  'content/page/not-prose.js',
   'content/page/collect.js',
   'content/page/insert.js',
   'content/page/failed-blocks.js',

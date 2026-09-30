@@ -14,6 +14,14 @@
   invisible on the page, yet their translations used to show up next to
   buttons and links. They are recognised by how they are hidden (clipped to
   nothing, or a 1px box), not by class name, so this works on any site.
+- **Button labels and bare numbers are left alone.** "Share", "Join", the
+  "Hot" and "Rising" tabs, vote and comment counts, rule numbers and scores
+  used to get a translation squeezed in beside them, which knocked the whole
+  action row out of line (and a number translates to itself). A short label
+  counts only while its control's visible text is short (at most 3 words or
+  30 characters, and not a sentence), so a card built as one big button, or
+  a longer button like "Show more of this", is still translated. Links are
+  never treated as controls.
 
 ### A new look for the popup and the float ball
 
