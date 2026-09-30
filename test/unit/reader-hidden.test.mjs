@@ -42,6 +42,16 @@ test('ordinary visible text is not hidden', () => {
   assert.equal(at({ opacity: '0' }), false);
 });
 
+test('clip-path inset hides only when opposite sides cut away 100% together', () => {
+  for (const clipPath of ['inset(50%)', 'inset(50% 50%)', 'inset(50% 0px)', 'inset(100% 0px 0px)', 'inset(0px 60% 0px 40%)', 'inset(50% round 4px)', 'inset(0px 50%)']) {
+    assert.equal(at({ clipPath }), true, clipPath);
+  }
+  // 只切掉上面六成：下面四成照样看得见。
+  for (const clipPath of ['inset(60% 0px 0px)', 'inset(49%)', 'inset(0px 40%)', 'inset(10px)', 'inset(40% 0px 50%)']) {
+    assert.equal(at({ clipPath }), false, clipPath);
+  }
+});
+
 test('clip only counts where it applies (absolute or fixed)', () => {
   assert.equal(at({ clip: 'rect(0px, 0px, 0px, 0px)' }), false);
   assert.equal(at({ position: 'relative', overflow: 'hidden', width: '1px' }), false);

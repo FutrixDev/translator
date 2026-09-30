@@ -7,7 +7,9 @@
 //
 // 认的是计算样式，不是类名：各家的类名互不相同，落到样式上是同几种裁法——
 //
-// - `clip-path: inset(50%)`：盒子从两边各切掉一半，面积为 0；
+// - `clip-path: inset(…)` 相对两边加起来切掉 100%：`inset(50%)` 是上下左右各一半，
+//   面积为 0；`inset(60% 0 0)` 只切掉上面六成，下面四成照样看得见。四个值按 CSS 的
+//   简写展开，只认百分比（px 不知道盒子多大，当 0）；
 // - 绝对 / 固定定位下 `clip` 是零面积矩形（`rect(0 0 0 0)`、`rect(1px 1px 1px 1px)`）；
 // - 绝对 / 固定定位、溢出裁掉，宽或高不过 1px。
 //
@@ -21,11 +23,20 @@
   if (!ctx) return;
 
   const RECT = /^rect\(\s*([-\d.]+)px,?\s*([-\d.]+)px,?\s*([-\d.]+)px,?\s*([-\d.]+)px\s*\)$/;
-  const INSET = /^inset\(\s*([\d.]+)%/;
+  const INSET = /^inset\(([^)]*)\)/;
+  const PERCENT = /^[\d.]+%$/;
+
+  function insetCutsAway(clipPath) {
+    const inset = INSET.exec(clipPath || '');
+    if (!inset) return false;
+    const values = inset[1].split(/\s+round\s+/)[0].trim().split(/\s+/)
+      .map((v) => (PERCENT.test(v) ? parseFloat(v) : 0));
+    const [top, right = top, bottom = top, left = right] = values;
+    return top + bottom >= 100 || left + right >= 100;
+  }
 
   function hiddenFromReaders(style) {
-    const inset = INSET.exec(style.clipPath || '');
-    if (inset && +inset[1] >= 50) return true;
+    if (insetCutsAway(style.clipPath)) return true;
     if (style.position !== 'absolute' && style.position !== 'fixed') return false;
     // rect(上 右 下 左)：下不过上、或右不过左，面积就是 0。
     const clip = RECT.exec(style.clip || '');

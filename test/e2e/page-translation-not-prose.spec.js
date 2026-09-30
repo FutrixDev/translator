@@ -11,8 +11,9 @@
 // 两条收块路（内联标签、块级标签）和直接文本段都问 ctx.notProse，命中就整块不收——
 // 既不送去翻译，页面上也没有译文节点。
 //
-// 反例同样要断言：整张卡片写成 role=button，卡片里的标题和正文照送；四个词的按钮
-// 是一句话，照送；链接不是控件，照送；规则序号旁边的规则正文照送。
+// 反例同样要断言：整张卡片写成 role=button，卡片里的标题和正文照送——标题只有三个
+// 词也照送；四个词的按钮是一句话，照送；链接不是控件，照送；规则序号旁边的规则正文
+// 照送。图标按钮里 <svg><title> 的长说明不画出来，不能把旁边的「Save」撑成长句。
 //
 // 用的是自动翻译：www.reddit.com 在内置表里是 `state: 'always'`。
 const { test, expect } = require('./fixtures');
@@ -27,11 +28,13 @@ const RULE_TEXT = 'Keep the discussion civil and on topic for everyone here';
 const LINK = 'Read the full breakdown';
 const LONG_BUTTON = 'Show more of this';
 const VOTES_NOTE = 'Upvotes since this post went live early this morning';
+const SHORT_CARD = 'Quarterback rankings updated';
 
 // 不收的字：id → 原文。
 const SKIPPED = {
   share: 'Share',
   join: 'Join',
+  save: 'Save',
   'tab-hot': 'Hot',
   'tab-rising': 'Rising',
   score: '1,284',
@@ -64,12 +67,16 @@ const PAGE = `<!doctype html>
         <a href="/r/nfl/comments/1/" id="comments"><span id="comment-count">12</span></a>
         <button id="share"><span>Share</span><faceplate-screen-reader-content>Share this post with other people</faceplate-screen-reader-content></button>
         <button id="join">Join</button>
+        <button id="save-button"><svg width="16" height="16"><title>Save this post so you can find it again later</title><circle cx="8" cy="8" r="6"/></svg><span id="save">Save</span></button>
         <button id="long-button">${LONG_BUTTON}</button>
       </div>
     </article>
     <div role="button" id="card" tabindex="0">
       <h3 id="card-title">${CARD_TITLE}</h3>
       <p id="card-body">${CARD_BODY}</p>
+    </div>
+    <div role="button" id="short-card" tabindex="0">
+      <h3 id="short-card-title">${SHORT_CARD}</h3>
     </div>
     <div class="row" id="rule">
       <span id="rule-num">1</span>
@@ -105,13 +112,13 @@ test('control labels and number-only text are neither sent nor shown; prose arou
     await page.goto('https://www.reddit.com/r/nfl/');
     await page.waitForSelector('#ai-translator-float-ball');
     // 反例全部落地之后再断言：此时整页一轮已经收完。
-    for (const id of ['post-title', 'card-title', 'card-body', 'rule-text', 'game-note', 'votes-note']) {
+    for (const id of ['post-title', 'card-title', 'card-body', 'short-card-title', 'rule-text', 'game-note', 'votes-note']) {
       await expect.poll(() => ourNodesAt(page, id), { timeout: 30000, message: id }).toBeGreaterThan(0);
     }
 
     const segments = sentSegments(sentTexts, fastBatchRequests).map((s) => s.trim());
     const all = segments.join('\n');
-    for (const prose of [POST_TITLE, CARD_TITLE, CARD_BODY, RULE_TEXT, LINK, LONG_BUTTON, VOTES_NOTE]) {
+    for (const prose of [POST_TITLE, CARD_TITLE, CARD_BODY, SHORT_CARD, RULE_TEXT, LINK, LONG_BUTTON, VOTES_NOTE]) {
       expect(all, prose).toContain(prose);
     }
     for (const [id, text] of Object.entries(SKIPPED)) {

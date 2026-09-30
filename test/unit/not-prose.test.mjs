@@ -109,10 +109,33 @@ test('a control whose visible text is prose is not skipped', () => {
   assert.equal(notProse(el('BUTTON', ['v1.2']), 'v1.2'), true);
 });
 
-test('a CJK label is one word, so only the length cap applies', () => {
-  const thirty = '按钮'.repeat(15);
-  assert.equal(notProse(el('BUTTON', [thirty]), thirty), true);
-  assert.equal(notProse(el('BUTTON', [thirty + '字']), thirty + '字'), false);
+test('two CJK characters count as one word', () => {
+  for (const label of ['分享', '加入', '查看全部评论', 'もっと見る', '공유하기', '分享 3']) {
+    assert.equal(notProse(el('BUTTON', [label]), label), true, label);
+  }
+  // 七个字已经是四个词；一句二十个字的标题更不是标签。
+  const headline = '本周最值得关注的二十条新闻合集来了看看吧';
+  assert.equal(notProse(el('BUTTON', ['查看全部七条评论']), '查看全部七条评论'), false);
+  assert.equal(notProse(el('DIV', [headline], { role: 'button' }), headline), false);
+});
+
+test('a control holding a heading or a paragraph is a card, not a label', () => {
+  // 一句三个词的标题，单独放在 role=button 的卡片里，照样要译。
+  const card = el('DIV', [el('H3', ['Quarterback rankings updated'])], { role: 'button' });
+  assert.equal(notProse(card.children[0], 'Quarterback rankings updated'), false);
+  const cardP = el('DIV', [el('SPAN', ['Hot']), el('P', ['New thread'])], { role: 'button' });
+  assert.equal(notProse(cardP.children[1], 'New thread'), false);
+  // 控件本身就是标题。
+  assert.equal(notProse(el('H2', ['Top stories'], { role: 'button' }), 'Top stories'), false);
+});
+
+test('text inside an <svg> is not a visible label', () => {
+  // <title> 不画出来：按钮看得见的只有 Share。
+  const button = el('BUTTON', [
+    el('svg', [el('title', ['Share this post with the people you follow'])]),
+    el('SPAN', ['Share']),
+  ]);
+  assert.equal(notProse(button.children[1], 'Share'), true);
 });
 
 test('text outside any control is prose', () => {
