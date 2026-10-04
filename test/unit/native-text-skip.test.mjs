@@ -55,7 +55,7 @@ test('有成句的外文就得译：夹一整句、长从句、或外文压过�
   // 整段英文：中文写不成拉丁字母，整段是外文，不问检测器。
   assert.deepEqual(
     L.splitForeignTerms('The quick brown fox jumps over the lazy dog.', 'zh-CN'),
-    { residue: '', foreign: true },
+    { residue: '', foreign: true, sentences: [] },
   );
 });
 
@@ -63,17 +63,17 @@ test('母语站在哪一边看这段文字：拉丁字母写的塞尔维亚语�
   // sr 按 Intl 补全是西里尔；只按默认文字摘，这一句整句被当外文。
   assert.deepEqual(
     L.splitForeignTerms('Ovo je tekst na srpskom jeziku.', 'sr'),
-    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false },
+    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false, sentences: [] },
   );
   // 西里尔写的照旧按非拉丁轴摘英文名词。
   assert.deepEqual(
     L.splitForeignTerms('Ово је чланак о React Server Components.', 'sr'),
-    { residue: 'Ово је чланак о .', foreign: false },
+    { residue: 'Ово је чланак о .', foreign: false, sentences: [] },
   );
   // 反方向同理：uz 按 Intl 补全是拉丁，西里尔写的乌兹别克语照样摘英文名词。
   assert.deepEqual(
     L.splitForeignTerms('Бу мақола React ҳақида.', 'uz'),
-    { residue: 'Бу мақола ҳақида.', foreign: false },
+    { residue: 'Бу мақола ҳақида.', foreign: false, sentences: [] },
   );
   // 拼音、转写俄文也是：检测器会答 zh-Latn / ru-Latn，不能拿去问。
   assert.equal(L.splitForeignTerms('Wo men jin tian qu gong yuan wan.', 'zh-CN').foreign, true);
@@ -300,12 +300,14 @@ test('整段已经判成外文就不再一句句问；整段只有一句时不�
 });
 
 test('塞尔维亚语答成 bs 不算外文；一句读成 sl 的照译', async () => {
-  // 目标用 hr：主分支上 sr 的默认文字是西里尔，拉丁写的塞尔维亚语还走不到这里。
-  target = 'hr';
+  // 拉丁写的塞尔维亚语检测器读 bs：目标 sr 和 hr 都得认它是自己人。
   const serbian = 'Danas je lep dan i idemo u park sa decom i prijateljima. Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.';
   const withSl = 'Danas je lep dan i idemo u park sa decom i prijateljima. Hrvatska vlada je danas predstavila novi plan za gospodarstvo.';
-  asked.length = 0;
-  assert.deepEqual(await translated([serbian, withSl]), [withSl]);
-  // 塞尔维亚语那一段两句都问过，答 bs 都放过了。
-  assert.ok(asked.includes('Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.'), asked.join('\n'));
+  for (const lang of ['sr', 'hr']) {
+    target = lang;
+    asked.length = 0;
+    assert.deepEqual(await translated([serbian, withSl]), [withSl], lang);
+    // 塞尔维亚语那一段两句都问过，答 bs 都放过了。
+    assert.ok(asked.includes('Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.'), asked.join('\n'));
+  }
 });

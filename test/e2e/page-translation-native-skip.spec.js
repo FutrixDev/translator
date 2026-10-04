@@ -72,8 +72,8 @@ const FR_SHORT_EN = "Nous avons publié une nouvelle version de l'application mo
 const FR_TERMS = 'Notre équipe utilise Kubernetes, Docker et GitHub Actions pour le déploiement continu. Il faut cliquer sur le bouton Download pour récupérer la dernière release du projet.';
 const EN_FOR_FR = 'Please read the documentation carefully before you open an issue. We are hiring engineers who love working on hard problems.';
 
-// 拉丁字母写的塞尔维亚语，检测器整段、一句句都答 bs（实测）。对目标 hr 是同一门
-// 语言：按字面比 bs ≠ hr，就整段照译了。
+// 拉丁字母写的塞尔维亚语，检测器整段、一句句都答 bs（实测）。对目标 sr、hr 都是
+// 同一门语言：按字面比 bs ≠ sr，就整段照译了。
 const SERBIAN = 'Danas je lep dan i idemo u park sa decom i prijateljima. Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.';
 
 const LATIN_PAGE = `<!doctype html>
@@ -124,14 +124,16 @@ test('法文段落里夹一整句英文照翻；没把握的短英文和英文�
   }
 });
 
-test('目标是 hr：检测器答 bs 的塞尔维亚语不翻', async ({ page, context }) => {
-  const { close, sentTexts } = await translateLatinPage(page, context, 'hr');
-  try {
-    await page.waitForSelector('#english.ai-translator-translated', { timeout: 30000 });
-    await page.waitForSelector('#fr-with-en.ai-translator-translated', { timeout: 30000 });
-    await expect(page.locator('#serbian')).not.toHaveClass(/ai-translator-translated/);
-    expect(sentTexts.join('\n')).not.toContain('Danas je lep dan');
-  } finally {
-    await close();
-  }
-});
+for (const targetLang of ['sr', 'hr']) {
+  test(`目标是 ${targetLang}：检测器答 bs 的塞尔维亚语不翻`, async ({ page, context }) => {
+    const { close, sentTexts } = await translateLatinPage(page, context, targetLang);
+    try {
+      await page.waitForSelector('#english.ai-translator-translated', { timeout: 30000 });
+      await page.waitForSelector('#fr-with-en.ai-translator-translated', { timeout: 30000 });
+      await expect(page.locator('#serbian')).not.toHaveClass(/ai-translator-translated/);
+      expect(sentTexts.join('\n')).not.toContain('Danas je lep dan');
+    } finally {
+      await close();
+    }
+  });
+}
