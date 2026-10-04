@@ -64,6 +64,26 @@
   }
 
 
+  // 检测器分不开的同一门语言的几种标准写法。塞尔维亚语、克罗地亚语、波斯尼亚语
+  // 是同一套语法、同一批词，chrome.i18n.detectLanguage 在它们之间是随手挑一个：
+  // 实测拉丁字母写的塞尔维亚语一句句都答 bs（isReliable、100%），也会答 hr。
+  // 一句克罗地亚语还答过 sl —— 斯洛文尼亚语是另一门语言，不收，那一段照译就是。
+  const DETECTOR_SYNONYMS = [new Set(['sr', 'hr', 'bs', 'sh', 'cnr'])];
+
+  /**
+   * 检测器读出来的 detected，能不能当成目标语言 target。
+   *
+   * 和 isSameLanguage 只差一处：检测器分不开的那几组（DETECTOR_SYNONYMS）算同一门。
+   * 只给「拿检测器的读数比目标语言」这一种用法 —— 字幕声道、页面语言这些标签是
+   * 作者写的，sr 就是 sr，那边照旧走 isSameLanguage。
+   */
+  function isDetectedAsLanguage(detected, target) {
+    if (isSameLanguage(detected, target)) return true;
+    const a = getLangBase(detected);
+    const b = getLangBase(target);
+    return DETECTOR_SYNONYMS.some((group) => group.has(a) && group.has(b));
+  }
+
   // 简繁的分水岭：每两个字一对，偶数位是简体那一侧，奇数位是繁体那一侧。
   //
   // **只收两侧互不相同、而且各自在另一侧不存在的字。** 像 里/裡、后/後、几/幾、
@@ -214,6 +234,9 @@
    *              TERM_MAX_WORDS 个词的外文、外文词数超过母语的 FOREIGN_RATIO_MAX
    *              倍，或者某一整句都是外文且不止两个词。
    *              有就得译 —— 主体是母语也不行，那几句读者要的就是译文。
+   *   sentences —— 母语站在拉丁那一边时，摘完名词后还长过 TERM_MAX_WORDS 个词的
+   *              那几句。同一种字母写的外文句子（法文段落里的一句英文）拆字是
+   *              看不见的，只能一句句去问检测器；这里给出值得问的那几句。
    *
    * 这里只拆字，不判语言：判语言要问 chrome.i18n.detectLanguage，这一份是纯函数。
    */
@@ -226,6 +249,9 @@
     const foreignRun = latinBlock === langFitsText(targetLang, source) ? NON_LATIN_RUN : LATIN_RUN;
     if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
     const kept = [];
+    // 母语在拉丁那一边，就是摘的是非拉丁那一边。
+    const latinNative = foreignRun === NON_LATIN_RUN;
+    const sentences = [];
     let foreign = false;
     for (const { segment } of sentenceSegmenter.segment(source)) {
       let longest = 0;
@@ -237,13 +263,15 @@
         return ' ';
       });
       if (LETTER.test(rest)) {
-        if (longest > TERM_MAX_WORDS || total > FOREIGN_RATIO_MAX * countWords(rest)) foreign = true;
+        const words = countWords(rest);
+        if (longest > TERM_MAX_WORDS || total > FOREIGN_RATIO_MAX * words) foreign = true;
         kept.push(rest);
+        if (latinNative && words > TERM_MAX_WORDS) sentences.push(rest.replace(/\s+/g, ' ').trim());
       } else if (total >= FOREIGN_SENTENCE_MIN_WORDS) {
         foreign = true;
       }
     }
-    return { residue: kept.join(' ').replace(/\s+/g, ' ').trim(), foreign };
+    return { residue: kept.join(' ').replace(/\s+/g, ' ').trim(), foreign, sentences };
   }
 
   // 只有汉字（没有假名、谚文）的正文。检测器在两三个汉字上会答 ja（实测「使用」→
@@ -258,6 +286,7 @@
     getLangBase,
     getScriptVariant,
     isSameLanguage,
+    isDetectedAsLanguage,
     detectHanScript,
     refineScript,
     hasNonLatinChars,

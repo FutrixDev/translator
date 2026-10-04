@@ -61,3 +61,77 @@ test('中文正文夹英文名词不翻，夹了一整句英文的段落和英�
     await close();
   }
 });
+
+// 同一种字母写的外文句子：拆字看不见，只能一句句问检测器。下面每一段整段问都是
+// fr:100 isReliable（实测），不一句句问，夹了英文的那段就不翻。
+//
+// 三段缺一不可：那句够长、检测器有把握的英文让整段照译；一句检测器没把握的短英文
+// （七个词，实测 en 但 isReliable:false）不算；夹英文名词的法文正文不被当外文。
+const FR_WITH_EN = 'Ceci est une phrase en français. This is a complete English sentence that should be translated. Encore une phrase.';
+const FR_SHORT_EN = "Nous avons publié une nouvelle version de l'application mobile ce matin. Read the full story on our website. La réunion de demain est reportée à la semaine prochaine pour des raisons de planning.";
+const FR_TERMS = 'Notre équipe utilise Kubernetes, Docker et GitHub Actions pour le déploiement continu. Il faut cliquer sur le bouton Download pour récupérer la dernière release du projet.';
+const EN_FOR_FR = 'Please read the documentation carefully before you open an issue. We are hiring engineers who love working on hard problems.';
+
+// 拉丁字母写的塞尔维亚语，检测器整段、一句句都答 bs（实测）。对目标 hr 是同一门
+// 语言：按字面比 bs ≠ hr，就整段照译了。
+const SERBIAN = 'Danas je lep dan i idemo u park sa decom i prijateljima. Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.';
+
+const LATIN_PAGE = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Same-script sentences</title></head>
+<body>
+  <p id="fr-with-en">${FR_WITH_EN}</p>
+  <p id="fr-short-en">${FR_SHORT_EN}</p>
+  <p id="fr-terms">${FR_TERMS}</p>
+  <p id="serbian">${SERBIAN}</p>
+  <p id="english">${EN_FOR_FR}</p>
+</body></html>`;
+
+async function translateLatinPage(page, context, targetLang) {
+  const server = await startMockOpenAIServer();
+  await setExtensionSettings(page, {
+    apiEndpoint: server.endpoint,
+    apiKey: 'test-key',
+    modelName: 'gpt-4.1-mini',
+    targetLang,
+    skipTargetLanguageText: true,
+  });
+  await context.route('https://example.com/**', (route) => {
+    route.fulfill({ status: 200, contentType: 'text/html', body: LATIN_PAGE });
+  });
+  await page.goto('https://example.com/same-script');
+  await page.waitForSelector('#ai-translator-float-ball');
+  await triggerPageTranslation(page);
+  return server;
+}
+
+test('法文段落里夹一整句英文照翻；没把握的短英文和英文名词不算', async ({ page, context }) => {
+  const { close, sentTexts } = await translateLatinPage(page, context, 'fr');
+  try {
+    await page.waitForSelector('#fr-with-en.ai-translator-translated', { timeout: 30000 });
+    await page.waitForSelector('#english.ai-translator-translated', { timeout: 30000 });
+    // 塞尔维亚语对法文读者是外文 —— 闸门没有被「同一种字母」整个打开。
+    await page.waitForSelector('#serbian.ai-translator-translated', { timeout: 30000 });
+
+    const all = sentTexts.join('\n');
+    expect(all).toContain('This is a complete English sentence');
+    for (const id of ['fr-short-en', 'fr-terms']) {
+      await expect(page.locator(`#${id}`), `#${id} 被当成外文译了`).not.toHaveClass(/ai-translator-translated/);
+    }
+    expect(all).not.toContain('Read the full story');
+    expect(all).not.toContain('Notre équipe');
+  } finally {
+    await close();
+  }
+});
+
+test('目标是 hr：检测器答 bs 的塞尔维亚语不翻', async ({ page, context }) => {
+  const { close, sentTexts } = await translateLatinPage(page, context, 'hr');
+  try {
+    await page.waitForSelector('#english.ai-translator-translated', { timeout: 30000 });
+    await page.waitForSelector('#fr-with-en.ai-translator-translated', { timeout: 30000 });
+    await expect(page.locator('#serbian')).not.toHaveClass(/ai-translator-translated/);
+    expect(sentTexts.join('\n')).not.toContain('Danas je lep dan');
+  } finally {
+    await close();
+  }
+});

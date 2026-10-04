@@ -104,9 +104,11 @@ test('两条路问的是同一句：字幕、整页正文', () => {
     /langTags\.isSameLanguage\(/,
     '字幕的 sameLanguage() 要走共用判定',
   );
+  // 整页那边比的是检测器的读数，走 isDetectedAsLanguage —— 同一个 isSameLanguage
+  // 外加检测器分不开的那几组（sr / hr / bs）。
   assert.match(
     repoFile('content/page/batch.js'),
-    /isSameLanguage\(await detectReliableLanguage\(residue\), targetLang\)/,
+    /LangTags\.isDetectedAsLanguage\(await detectReliableLanguage\(residue\), targetLang\)/,
     '整页翻译的「这一段已经是目标语言了」要走共用判定',
   );
 
