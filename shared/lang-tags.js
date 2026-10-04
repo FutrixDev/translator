@@ -142,6 +142,17 @@
     }
   }
 
+  // 默认文字不是拉丁、但拉丁字母也是它的正经写法的语言。Intl 只给默认文字
+  // （sr → Cyrl），分不出这一层，只能列出来。只收目标语言列表里真这样用的：
+  // target-lang 把 sr-Latn 也收成 sr。罗马化的中文、俄文、日文、印地文不算 ——
+  // 选了它们的读者要的就是本族文字，拼音段落得译。
+  const ALSO_WRITTEN_IN_LATIN = new Set(['sr']);
+
+  /** 这门语言的正文可以是拉丁字母写的（en、fr，以及拉丁写法的 sr）。 */
+  function writesInLatin(lang) {
+    return !isNonLatinLang(lang) || ALSO_WRITTEN_IN_LATIN.has(getLangBase(lang));
+  }
+
   // ==================== 母语正文里夹带的外文名词 ====================
 
   // 「这一段是不是已经是目标语言」不能整段交给检测器：中文技术文章满是英文名词，
@@ -155,11 +166,13 @@
   // 段落的假名不能当外文名词摘掉 —— 摘了剩一串汉字，就成了「本来就是中文」。按拉丁
   // 轴摘，假名、谚文都留在剩下的正文里，检测器自己分得出 ja / ko / zh。
   //
-  // 母语站在轴的哪一边，看的是**这段文字**，不只看目标语言的默认文字：sr 按 Intl
-  // 补全是西里尔，可拉丁字母写的塞尔维亚语一样常见（target-lang 把 sr-Latn 也收成
-  // sr）。只按默认文字摘，「Ovo je tekst na srpskom jeziku.」整句被当外文摘空，
-  // 每一段母语都照译。所以目标默认非拉丁、这段却一个非拉丁字都没有时，没有可摘的
-  // 「另一边」—— 整段原样交给检测器，它答什么算什么。
+  //
+  // 母语站在轴的哪一边，一般看目标语言的默认文字。例外是两种文字都正经在用的语言
+  // （writesInLatin）：sr 按 Intl 补全是西里尔，可拉丁字母写的塞尔维亚语一样常见。
+  // 只按默认文字摘，「Ovo je tekst na srpskom jeziku.」整句被当外文摘空、每段都译。
+  // 所以这种语言的一段里没有非拉丁字时，母语按拉丁那一边算。其余非拉丁目标不放：
+  // 检测器对拼音、转写俄文会答 zh-Latn、ru-Latn，而 isSameLanguage 只在中文上看
+  // 文字 —— 放过去，一段拼音就被当成「本来就是中文」跳过了。
 
   // 一串拉丁字母写的外文：从字母开始、到字母或数字结束，中间可以夹空白、数字和
   // 标点（"Next.js App Router"、"iPhone 17 Pro Max"、"kubectl apply -f deployment.yaml"）。
@@ -205,7 +218,8 @@
    */
   function splitForeignTerms(text, targetLang) {
     const source = String(text || '');
-    const foreignRun = isNonLatinLang(targetLang) && hasNonLatinChars(source) ? LATIN_RUN : NON_LATIN_RUN;
+    const latinNative = !isNonLatinLang(targetLang) || (writesInLatin(targetLang) && !hasNonLatinChars(source));
+    const foreignRun = latinNative ? NON_LATIN_RUN : LATIN_RUN;
     if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
     const kept = [];
     let foreign = false;
@@ -244,6 +258,7 @@
     refineScript,
     hasNonLatinChars,
     isNonLatinLang,
+    writesInLatin,
     splitForeignTerms,
     isHanOnly,
   };
