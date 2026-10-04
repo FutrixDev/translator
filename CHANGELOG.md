@@ -22,6 +22,20 @@
   characters, so a foreign sentence at the end is no longer missed. Japanese
   is never mistaken for Chinese, because kana and hangul are never set aside.
 
+### Serbian, Uzbek and Kazakh pages keep their language in either alphabet
+
+- **Short text in a language written in two alphabets keeps the page's
+  language.** Serbian is written in Cyrillic and Latin, Uzbek and Bosnian in
+  Latin and Cyrillic, Kazakh is moving from Cyrillic to Latin. A short block or
+  a typed phrase in the alphabet the language "usually" doesn't use was ruled
+  out as the page's language. It then went to a guess, either English or
+  whatever the detector picked. Both alphabets now count for these languages.
+  The "skip text already in your language" check also no longer reads
+  Latin-script Serbian as foreign.
+- **Pages in a language the built-in translator doesn't support keep their own
+  alphabet.** A short Cyrillic line on a Kazakh or Mongolian page used to be
+  treated as not Kazakh or Mongolian. It is now read as the page's language.
+
 ### Reddit and X: only the content is translated
 
 - **Sites on the built-in Always list are translated in their main content
