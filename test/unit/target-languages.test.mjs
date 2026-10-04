@@ -192,21 +192,18 @@ test('options are in the UI language, menu form, sorted by its collation', () =>
     OLD_TEN.slice().sort());
 });
 
-test('the built-in engine derives its non-Latin set instead of hand-listing it', () => {
-  // NON_LATIN_LANGS decides whether the page's language could plausibly be the
-  // language of something typed into the input dialog. A hardcoded copy would
-  // be another list to keep in step, and forgetting one non-Latin language
-  // there brings back exactly the bug it exists to prevent: the typed text
-  // takes the page's language as its source and comes back untranslated.
+test('the built-in engine asks lang-tags whether the page language fits, instead of keeping a list', () => {
+  // pageLangFits decides whether the page's language could plausibly be the
+  // language of a short block or of something typed into the input dialog. A
+  // list in the engine is another thing to keep in step, and it used to be
+  // filtered to SUPPORTED_LANGS: an unsupported non-Latin page language (kk,
+  // sr) then counted as Latin, so its own Cyrillic text was ruled out.
   const source = engineSource();
-  const start = source.indexOf('const NON_LATIN_LANGS =');
-  assert.notEqual(start, -1, 'could not find NON_LATIN_LANGS');
-  const block = source.slice(start, source.indexOf(';', start));
-  assert.match(block, /\.\.\.SUPPORTED_LANGS/, 'NON_LATIN_LANGS stopped following SUPPORTED_LANGS');
+  assert.doesNotMatch(source, /NON_LATIN_LANGS/, 'the engine grew its own script list again');
+  assert.match(source, /const pageLangFits = LangTags\.langFitsText;/, 'pageLangFits should be lang-tags\' answer');
   // The script question itself has one owner, shared/lang-tags.js, and its
   // answer comes from Intl, not a literal.
-  assert.match(block, /\.filter\(LangTags\.isNonLatinLang\)/, 'NON_LATIN_LANGS should ask LangTags.isNonLatinLang');
-  assert.match(repoFile('shared/lang-tags.js'), /function isNonLatinLang\([^)]*\) \{\s*try \{\s*return new Intl\.Locale/,
+  assert.match(repoFile('shared/lang-tags.js'), /function langFitsText\([^)]*\) \{[\s\S]*?new Intl\.Locale[\s\S]*?\.maximize\(\)\.script/,
     'a language\'s script should be Intl\'s answer, not a literal');
 
   // And the derivation has to actually have an answer for every target we

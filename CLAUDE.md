@@ -463,15 +463,13 @@ English names comes back as `zh:55` unreliable, or even `kk`. Instead,
 `LangTags.splitForeignTerms(text, targetLang)` in `shared/lang-tags.js` splits
 the whole block into sentences with `Intl.Segmenter`. It strips runs of the
 other alphabet (the Latin / non-Latin axis, so kana and hangul are never
-stripped). The native side is the target's default script
-(`isNonLatinLang(target)`), except for a target also written in Latin
-(`LangTags.writesInLatin`, today only `sr`): a block of it with no non-Latin
-letters counts as Latin-native, so Latin-script Serbian goes to the detector
-whole instead of being stripped empty. Other non-Latin targets get no such
-exception, because the detector labels pinyin or transliterated Russian
-`zh-Latn` / `ru-Latn` and `isSameLanguage` compares scripts only for Chinese.
-As for every Latin target, a same-script foreign sentence is not seen by the
-split; the detector reports the dominant language. It reports `foreign` if any sentence
+stripped). Latin runs are stripped only when the block has non-Latin letters
+and `LangTags.langFitsText(target, block)` says the target can be written in
+them, so Latin-script Serbian is not stripped bare. `langFitsText` is also the
+engine's `pageLangFits`. It asks Intl for the default script of every
+language, not only `SUPPORTED_LANGS`. It honours a script subtag in the tag
+(`sr-Latn`), counts both sides for `BOTH_SIDES_LANGS` (sr, bs, uz, kk), and
+vetoes tags Intl cannot place. It reports `foreign` if any sentence
 has a run longer than `TERM_MAX_WORDS` (6), foreign words more than
 `FOREIGN_RATIO_MAX` (2) times the native ones, or no native letters and at
 least `FOREIGN_SENTENCE_MIN_WORDS` (3) foreign words. A foreign sentence
