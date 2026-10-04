@@ -154,6 +154,12 @@
   // 摘的轴是**拉丁 / 非拉丁**，不是「目标语言的文字 / 其余」：目标是中文时，日文
   // 段落的假名不能当外文名词摘掉 —— 摘了剩一串汉字，就成了「本来就是中文」。按拉丁
   // 轴摘，假名、谚文都留在剩下的正文里，检测器自己分得出 ja / ko / zh。
+  //
+  // 母语站在轴的哪一边，看的是**这段文字**，不只看目标语言的默认文字：sr 按 Intl
+  // 补全是西里尔，可拉丁字母写的塞尔维亚语一样常见（target-lang 把 sr-Latn 也收成
+  // sr）。只按默认文字摘，「Ovo je tekst na srpskom jeziku.」整句被当外文摘空，
+  // 每一段母语都照译。所以目标默认非拉丁、这段却一个非拉丁字都没有时，没有可摘的
+  // 「另一边」—— 整段原样交给检测器，它答什么算什么。
 
   // 一串拉丁字母写的外文：从字母开始、到字母或数字结束，中间可以夹空白、数字和
   // 标点（"Next.js App Router"、"iPhone 17 Pro Max"、"kubectl apply -f deployment.yaml"）。
@@ -199,7 +205,7 @@
    */
   function splitForeignTerms(text, targetLang) {
     const source = String(text || '');
-    const foreignRun = isNonLatinLang(targetLang) ? LATIN_RUN : NON_LATIN_RUN;
+    const foreignRun = isNonLatinLang(targetLang) && hasNonLatinChars(source) ? LATIN_RUN : NON_LATIN_RUN;
     if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
     const kept = [];
     let foreign = false;
