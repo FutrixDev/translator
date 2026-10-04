@@ -201,9 +201,13 @@ test('the built-in engine derives its non-Latin set instead of hand-listing it',
   const source = engineSource();
   const start = source.indexOf('const NON_LATIN_LANGS =');
   assert.notEqual(start, -1, 'could not find NON_LATIN_LANGS');
-  const block = source.slice(start, source.indexOf('}));', start));
+  const block = source.slice(start, source.indexOf(';', start));
   assert.match(block, /\.\.\.SUPPORTED_LANGS/, 'NON_LATIN_LANGS stopped following SUPPORTED_LANGS');
-  assert.match(block, /Intl\.Locale/, 'a language\'s script should be Intl\'s answer, not a literal');
+  // The script question itself has one owner, shared/lang-tags.js, and its
+  // answer comes from Intl, not a literal.
+  assert.match(block, /\.filter\(LangTags\.isNonLatinLang\)/, 'NON_LATIN_LANGS should ask LangTags.isNonLatinLang');
+  assert.match(repoFile('shared/lang-tags.js'), /function isNonLatinLang\([^)]*\) \{\s*try \{\s*return new Intl\.Locale/,
+    'a language\'s script should be Intl\'s answer, not a literal');
 
   // And the derivation has to actually have an answer for every target we
   // offer — a language Intl cannot place would fall to the catch branch.

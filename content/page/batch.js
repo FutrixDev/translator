@@ -20,6 +20,7 @@
   // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
   const isSameLanguage = ctx.isSameLanguage;
   const refineScriptTag = ctx.refineScriptTag;
+  const LangTags = globalThis.LangTags;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
   const MAX_BATCH_ITEMS = 40;   // 每批次最大段落数（加大以减少请求）
@@ -266,38 +267,43 @@
     });
   }
 
-  // 采信一次语言判定的门槛。**全仓只有这一处。** 自动翻译的调度层也要判语言
-  // （这一页整体是什么语言，该不该自己动手），第二套阈值意味着「这段不用翻」和
-  // 「这页不用翻」会在同一份文本上给出不同答案。
+  // 采信一次语言判定的门槛。**全仓只有这一处。** 手动整页、自动翻译、子 frame、
+  // 用户站点规则问「这段不用翻」都经 isTargetLanguageText，第二套阈值意味着同一份
+  // 文本在不同入口得到不同答案。
   const LANGUAGE_CONFIDENCE_MIN = 85;
 
   /**
-   * 这段文字是什么语言 —— 只在够有把握时回答。
+   * 检测器认为这段文字是什么语言 —— 只在够有把握时回答。
+   *
+   * 「有把握」分两档，和内置引擎判独立文本同一套（content/engine/languages.js 的
+   * detectStandaloneLang）：带非拉丁字的文字，字母体系本身就是证据，检测器在短
+   * 样本上照例答 isReliable:false 但语言是对的（实测「这个 是 的 引起的。」
+   * zh:100）；纯拉丁的短文本它基本在猜（hello→sr），仍要它自己说有把握。
+   *
+   * 只有汉字的正文不问检测器，直接按中文算，见 shared/lang-tags.js 的 isHanOnly。
    *
    * 回的是**整码**（'en'、'zh-Hant' …），不砍成基码：砍了就再也接不回来，而
-   * 下一步要拿它去判「这一段是不是已经是目标语言了」。
-   *
-   * 中文还要多走一步。chrome.i18n.detectLanguage **分不出简繁**——真实 Chrome
-   * 里繁体和简体都回答 `zh`（两边都是 100%、isReliable），实测过。光把这个 `zh`
-   * 交出去，一份繁体正文配简体的目标语言仍旧会被判成「本来就是目标语言」，整页
-   * 一个字不翻，而那正是用户要的那一件事。所以这里按正文的字把 `zh` 补成
-   * zh-Hans / zh-Hant（refineScript 在 shared/lang-tags.js），补不出来就维持
-   * `zh`。
+   * 下一步要拿它去判「这一段是不是已经是目标语言了」。中文还要补简繁：
+   * chrome.i18n.detectLanguage **分不出简繁**——真实 Chrome 里繁体和简体都回答
+   * `zh`（两边都是 100%、isReliable），实测过。光把这个 `zh` 交出去，一份繁体正文
+   * 配简体的目标语言仍旧会被判成「本来就是目标语言」，整页一个字不翻。所以这里
+   * 按正文的字把 `zh` 补成 zh-Hans / zh-Hant（refineScript 在 shared/lang-tags.js），
+   * 补不出来就维持 `zh`。
    *
    * @returns {Promise<?string>} 语言标签，判不出或不够有把握时 null
    */
   async function detectReliableLanguage(text) {
-    const detectText = getLanguageDetectionText(text);
-    if (detectText.length < 4) return null;
+    if (LangTags.isHanOnly(text)) return refineScriptTag('zh', text);
 
-    const result = await detectLanguage(detectText);
+    const result = await detectLanguage(text);
     const topLang = result?.languages?.[0];
     if (!topLang) return null;
 
     const confidence = typeof topLang.percentage === 'number' ? topLang.percentage : 0;
-    if (confidence < LANGUAGE_CONFIDENCE_MIN || result.isReliable === false) return null;
+    if (confidence < LANGUAGE_CONFIDENCE_MIN) return null;
+    if (result.isReliable === false && !LangTags.hasNonLatinChars(text)) return null;
 
-    return refineScriptTag(topLang.language, detectText) || null;
+    return refineScriptTag(topLang.language, text) || null;
   }
 
   // 一轮翻译只认一门语言 —— 开跑那一刻定下来，之后这一轮里谁都不再去问设置。
@@ -324,12 +330,21 @@
   // 默认现问设置，是给**一轮开跑之前**的那个调用点留的（filterBlocksByLanguage：
   // 那时候还没有「这一轮」，现问就是对的）。一轮之内的调用一律把 target.request
   // 传进来 —— 那一门在开跑时就定死了，见 passTarget。
+  //
+  // 「已经是目标语言」不是「检测器整段答目标语言」，是**主体是母语**：母语读者
+  // 的正文里夹几个外文名词（「用 kubectl apply 部署到 Kubernetes 集群」）照样不用
+  // 翻。所以先按句拆开、把夹带的名词摘掉，再问剩下的正文是什么语言；有成句的
+  // 外文就得翻（shared/lang-tags.js 的 splitForeignTerms）。翻译单位仍是整段，
+  // 按句只是判定的单位。
   async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
     if (!getLangBase(targetLang)) return false;
-    // 比整码，走的是和字幕引擎、和自动翻译决策层同一个判定
-    // （shared/lang-tags.js）。曾经这里比基码而字幕那边比整码：一页 zh-TW 的正文
-    // 配 zh-CN 的目标，字幕翻、正文不翻，同一个问题两条路两个答案。
-    return isSameLanguage(await detectReliableLanguage(text), targetLang);
+    const { residue, foreign } =
+      LangTags.splitForeignTerms(getLanguageDetectionText(text, MAX_BLOCK_CHARS), targetLang);
+    if (foreign || !residue) return false;
+    // 比整码，走的是和字幕引擎同一个判定（shared/lang-tags.js）。曾经这里比基码
+    // 而字幕那边比整码：一页 zh-TW 的正文配 zh-CN 的目标，字幕翻、正文不翻，同一
+    // 个问题两条路两个答案。
+    return isSameLanguage(await detectReliableLanguage(residue), targetLang);
   }
 
   async function shouldSkipTranslation(block, translation, target) {

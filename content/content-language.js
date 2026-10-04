@@ -101,13 +101,16 @@
   ctx.isSameLanguage = globalThis.LangTags.isSameLanguage;
   ctx.refineScriptTag = globalThis.LangTags.refineScript;
 
-  ctx.getLanguageDetectionText = function(text) {
+  // maxChars：默认 400，够检测器定一门语言。整页翻译判「这一段是不是已经是目标
+  // 语言」时要看完整一段（content/page/batch.js）：只看开头，后半段成句的外文就
+  // 被前半段的母语带着一起跳过了。
+  ctx.getLanguageDetectionText = function(text, maxChars = 400) {
     if (!text) return '';
     // 剥掉数学占位符 {{n}} 和内联格式标记 <a1>…</a1>，两者都不是正文，混进去
     // 会拉低语言检测的置信度。两者的语法在 shared/text-markers.js。
     const cleaned = globalThis.TextMarkers.strip(text)
       .replace(/\s+/g, ' ')
       .trim();
-    return cleaned.slice(0, 400);
+    return cleaned.slice(0, maxChars);
   };
 })();

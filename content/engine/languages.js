@@ -134,21 +134,10 @@
   // SUPPORTED_LANGS 里用非拉丁字母书写的那些。判断“页面语言可不可能是这段文字的
   // 语言”只需要这一条：字母体系对不上就一定不是。
   //
-  // 从 SUPPORTED_LANGS 派生，不另抄一张表：zh→Hans、bg→Cyrl 这些 Intl 自己就
-  // 知道，而往 SUPPORTED_LANGS 里加语言的人不该还要记得同步第二处——漏掉一门
-  // 非拉丁语言，正是下面这个 bug 原样复发。
-  const NON_LATIN_LANGS = new Set([...SUPPORTED_LANGS].filter((lang) => {
-    try {
-      return new Intl.Locale(lang).maximize().script !== 'Latn';
-    } catch (error) {
-      // 认不出来就当非拉丁：这个集合只用来否决页面语言，多否决一次最多是源语言
-      // 猜成 en（拉丁文本照样译得出来），少否决一次就是原文原样退回。
-      return true;
-    }
-  }));
-  // Script=Common 涵盖数字、标点、空白和 emoji，Inherited 涵盖组合用附加符号，
-  // 所以 "hello 😀" 和 "café" 都仍算纯拉丁。
-  const HAS_NON_LATIN_CHARS = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
+  // 从 SUPPORTED_LANGS 派生，不另抄一张表：往 SUPPORTED_LANGS 里加语言的人不该还要
+  // 记得同步第二处——漏掉一门非拉丁语言，正是下面这个 bug 原样复发。拉丁 / 非拉丁
+  // 的判定本身在 shared/lang-tags.js。
+  const NON_LATIN_LANGS = new Set([...SUPPORTED_LANGS].filter(LangTags.isNonLatinLang));
 
   /**
    * 输入框里的文字不属于这个页面：读英文页面时想把“动画”翻成英文是常事。拿页面
@@ -162,9 +151,7 @@
    * 拉丁语言在一两个词上本来就分不开。所以只在文本自身带非拉丁字符时才采信
    * “判得不准”的结果，纯拉丁文本仍旧要求 isReliable。
    */
-  function hasNonLatinChars(text) {
-    return HAS_NON_LATIN_CHARS.test(text);
-  }
+  const hasNonLatinChars = LangTags.hasNonLatinChars;
 
   /**
    * 「这段文字自己是什么语言」，判不出来就是空串 —— **不猜、不兜底**。
