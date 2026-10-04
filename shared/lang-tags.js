@@ -156,17 +156,6 @@
     return (script !== 'Latn') === hasNonLatinChars(text);
   }
 
-  // 默认文字不是拉丁、但拉丁字母也是它的正经写法的语言。Intl 只给默认文字
-  // （sr → Cyrl），分不出这一层，只能列出来。只收目标语言列表里真这样用的：
-  // target-lang 把 sr-Latn 也收成 sr。罗马化的中文、俄文、日文、印地文不算 ——
-  // 选了它们的读者要的就是本族文字，拼音段落得译。
-  const ALSO_WRITTEN_IN_LATIN = new Set(['sr']);
-
-  /** 这门语言的正文可以是拉丁字母写的（en、fr，以及拉丁写法的 sr）。 */
-  function writesInLatin(lang) {
-    return !isNonLatinLang(lang) || ALSO_WRITTEN_IN_LATIN.has(getLangBase(lang));
-  }
-
   // ==================== 母语正文里夹带的外文名词 ====================
 
   // 「这一段是不是已经是目标语言」不能整段交给检测器：中文技术文章满是英文名词，
@@ -230,7 +219,11 @@
    */
   function splitForeignTerms(text, targetLang) {
     const source = String(text || '');
-    const foreignRun = hasNonLatinChars(source) && langFitsText(targetLang, source) ? LATIN_RUN : NON_LATIN_RUN;
+    // 这段文字写在哪一边，目标语言又能不能写在这一边：能，就摘另一边；不能，这一边就是外文。
+    // 全拉丁的段落对 zh、ru 目标是外文 —— 拼音、转写俄文交给检测器会答 zh-Latn / ru-Latn，
+    // isSameLanguage 只比中文的文字，ru-Latn 就成了 ru，整段被当母语跳过。
+    const latinBlock = !hasNonLatinChars(source);
+    const foreignRun = latinBlock === langFitsText(targetLang, source) ? NON_LATIN_RUN : LATIN_RUN;
     if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
     const kept = [];
     let foreign = false;

@@ -463,9 +463,13 @@ English names comes back as `zh:55` unreliable, or even `kk`. Instead,
 `LangTags.splitForeignTerms(text, targetLang)` in `shared/lang-tags.js` splits
 the whole block into sentences with `Intl.Segmenter`. It strips runs of the
 other alphabet (the Latin / non-Latin axis, so kana and hangul are never
-stripped). Latin runs are stripped only when the block has non-Latin letters
-and `LangTags.langFitsText(target, block)` says the target can be written in
-them, so Latin-script Serbian is not stripped bare. `langFitsText` is also the
+stripped). Which side is native follows the block: if
+`LangTags.langFitsText(target, block)` says the target can be written in the
+block's own script, the other side is stripped; if not, the block's own script
+is the foreign side. So Latin-script Serbian is not stripped bare. Pinyin or
+transliterated Russian under a zh or ru target is all foreign and never
+reaches the detector. The detector would answer `zh-Latn` or `ru-Latn`, and
+`isSameLanguage` compares scripts only for Chinese. `langFitsText` is also the
 engine's `pageLangFits`. It asks Intl for the default script of every
 language, not only `SUPPORTED_LANGS`. It honours a script subtag in the tag
 (`sr-Latn`), counts both sides for `BOTH_SIDES_LANGS` (sr, bs, uz, kk), and
