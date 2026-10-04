@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Text already in your language is skipped even when it carries foreign terms
+
+- **A paragraph written in your language is left alone even when it is full of
+  foreign names.** "Skip text already in the target language" used to hand the
+  whole paragraph to Chrome's built-in language detection, and a Chinese tech
+  paragraph full of English product names came back unsure or wrong (55% Chinese,
+  sometimes Kazakh or Japanese). It was then translated into the language it
+  was already written in. Each paragraph is now checked sentence by sentence.
+  Short runs of another alphabet, such as "kubectl apply" or "Next.js App Router",
+  are set aside first. Only the remaining text goes to the detector. This works
+  both ways, so an English sentence with one Chinese word in it is English to an
+  English reader.
+- **A real foreign sentence still gets translated.** If any sentence in the
+  paragraph is foreign, the whole paragraph is translated, even when most of it
+  is in your language. That covers a full foreign sentence, a foreign clause
+  longer than six words, or a sentence where foreign words outnumber yours more
+  than two to one. The whole paragraph is now read, not just its first 400
+  characters, so a foreign sentence at the end is no longer missed. Japanese
+  is never mistaken for Chinese, because kana and hangul are never set aside.
+
 ### Reddit and X: only the content is translated
 
 - **Sites on the built-in Always list are translated in their main content

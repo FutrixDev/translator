@@ -106,7 +106,7 @@ test('两条路问的是同一句：字幕、整页正文', () => {
   );
   assert.match(
     repoFile('content/page/batch.js'),
-    /isSameLanguage\(await detectReliableLanguage\(text\), targetLang\)/,
+    /isSameLanguage\(await detectReliableLanguage\(residue\), targetLang\)/,
     '整页翻译的「这一段已经是目标语言了」要走共用判定',
   );
 
@@ -115,7 +115,7 @@ test('两条路问的是同一句：字幕、整页正文', () => {
   // 了，缺陷还在。
   assert.match(
     repoFile('content/page/batch.js'),
-    /return refineScriptTag\(topLang\.language, detectText\) \|\| null;/,
+    /return refineScriptTag\(topLang\.language, text\) \|\| null;/,
     'detectReliableLanguage 要交出补过简繁的整码',
   );
 

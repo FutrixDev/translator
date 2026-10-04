@@ -117,11 +117,128 @@
     return script === 'hant' ? 'zh-Hant' : 'zh-Hans';
   }
 
+  // ==================== 字母体系 ====================
+
+  // Script=Common 涵盖数字、标点、空白和 emoji，Inherited 涵盖组合用附加符号，
+  // 所以 "hello 😀" 和 "café" 都仍算纯拉丁。
+  const HAS_NON_LATIN_CHARS = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
+
+  /** 这段文字里有没有拉丁字母以外的字（数字、标点、emoji 不算）。 */
+  function hasNonLatinChars(text) {
+    return HAS_NON_LATIN_CHARS.test(String(text || ''));
+  }
+
+  /**
+   * 这门语言是不是用拉丁字母以外的文字书写（zh、ja、ru、ar……）。
+   *
+   * 问的是 Intl 而不是一张手抄的表：往支持列表里加语言的人不该还要记得同步第二处。
+   * 认不出来的标签当非拉丁 —— 调用方拿它做的都是「否决」，多否决一次的代价小。
+   */
+  function isNonLatinLang(lang) {
+    try {
+      return new Intl.Locale(String(lang)).maximize().script !== 'Latn';
+    } catch (error) {
+      return true;
+    }
+  }
+
+  // ==================== 母语正文里夹带的外文名词 ====================
+
+  // 「这一段是不是已经是目标语言」不能整段交给检测器：中文技术文章满是英文名词，
+  // 实测（Chrome 的 chrome.i18n.detectLanguage）「这个 bug 是 TypeScript 的
+  // strictNullChecks 引起的。」只给 zh:64，「用 kubectl apply -f deployment.yaml
+  // 部署到 Kubernetes 集群。」干脆答 kk:47 —— 两句都过不了「有把握」那道门，于是
+  // 母语读者自己的正文被花钱译一遍。把另一种字母体系里的名词摘掉之后，剩下的
+  // 「这个 是 的 引起的。」「用 部署到 集群。」都是 zh:100。
+  //
+  // 摘的轴是**拉丁 / 非拉丁**，不是「目标语言的文字 / 其余」：目标是中文时，日文
+  // 段落的假名不能当外文名词摘掉 —— 摘了剩一串汉字，就成了「本来就是中文」。按拉丁
+  // 轴摘，假名、谚文都留在剩下的正文里，检测器自己分得出 ja / ko / zh。
+
+  // 一串拉丁字母写的外文：从字母开始、到字母或数字结束，中间可以夹空白、数字和
+  // 标点（"Next.js App Router"、"iPhone 17 Pro Max"、"kubectl apply -f deployment.yaml"）。
+  const LATIN_RUN = /\p{Script=Latin}(?:[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]*[\p{Script=Latin}\d])?/gu;
+  // 反过来：拉丁正文里一串非拉丁的字（"We use 微服务 architecture"）。
+  const NON_LATIN_RUN = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}](?:[^\p{Script=Latin}]*[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])?/gu;
+  const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+  const LETTER = /\p{L}/u;
+
+  // 一串外文有几个词。不用空格分词的汉字和假名按两个字一个词算。
+  function countWords(run) {
+    const cjk = (run.match(CJK_CHAR) || []).length;
+    const spaced = (run.replace(CJK_CHAR, ' ').match(/[\p{L}\p{M}]+/gu) || []).length;
+    return spaced + Math.ceil(cjk / 2);
+  }
+
+  // 夹在母语句子里的一串外文，多长还算「名词」。实测的技术名词最长是
+  // "kubectl apply -f deployment.yaml"（5 个词）；再长就是一个从句，读者未必读得懂。
+  const TERM_MAX_WORDS = 6;
+  // 一句里外文的词数最多是母语的几倍，还算「母语句子夹名词」。实测的中文技术
+  // 句子里，外文最多到母语的两倍（「iPhone 17 Pro Max 评测：A19 Pro 芯片、
+  // ProMotion 屏幕。」是 6 比 3）；反过来「We use 微服务 architecture for our
+  // backend.」是 6 比 2 —— 那是一句夹了个中文词的英文，得译。
+  const FOREIGN_RATIO_MAX = 2;
+  // 一整句都是外文（这一句里一个母语字都没有）时，多长就不再当成顺手的一句
+  // 「Enjoy!」「Thanks.」，而是读者要读的一句外文。
+  const FOREIGN_SENTENCE_MIN_WORDS = 3;
+
+  let sentenceSegmenter = null;
+
+  /**
+   * 按句拆开，把母语正文里夹带的外文名词摘掉。
+   *
+   * 回答两件事：
+   *   residue —— 摘完名词、按句拼回的正文。拿它去问检测器「这是不是目标语言」。
+   *              一句里一个母语字都不剩的，不进 residue。
+   *   foreign —— 这一段里有没有**成句的外文**：某一句里夹着一串超过
+   *              TERM_MAX_WORDS 个词的外文、外文词数超过母语的 FOREIGN_RATIO_MAX
+   *              倍，或者某一整句都是外文且不止两个词。
+   *              有就得译 —— 主体是母语也不行，那几句读者要的就是译文。
+   *
+   * 这里只拆字，不判语言：判语言要问 chrome.i18n.detectLanguage，这一份是纯函数。
+   */
+  function splitForeignTerms(text, targetLang) {
+    const source = String(text || '');
+    const foreignRun = isNonLatinLang(targetLang) ? LATIN_RUN : NON_LATIN_RUN;
+    if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
+    const kept = [];
+    let foreign = false;
+    for (const { segment } of sentenceSegmenter.segment(source)) {
+      let longest = 0;
+      let total = 0;
+      const rest = segment.replace(foreignRun, (run) => {
+        const words = countWords(run);
+        longest = Math.max(longest, words);
+        total += words;
+        return ' ';
+      });
+      if (LETTER.test(rest)) {
+        if (longest > TERM_MAX_WORDS || total > FOREIGN_RATIO_MAX * countWords(rest)) foreign = true;
+        kept.push(rest);
+      } else if (total >= FOREIGN_SENTENCE_MIN_WORDS) {
+        foreign = true;
+      }
+    }
+    return { residue: kept.join(' ').replace(/\s+/g, ' ').trim(), foreign };
+  }
+
+  // 只有汉字（没有假名、谚文）的正文。检测器在两三个汉字上会答 ja（实测「使用」→
+  // ja:100），可没有假名的日文只出现在「会議」「東京」这种短标签上 —— 对中文读者
+  // 它们本来就读得懂，按中文算。
+  const HAN_ONLY = /^[\p{Script=Han}\p{Script=Common}\p{Script=Inherited}]+$/u;
+  function isHanOnly(text) {
+    return HAN_ONLY.test(text) && /\p{Script=Han}/u.test(text);
+  }
+
   root.LangTags = {
     getLangBase,
     getScriptVariant,
     isSameLanguage,
     detectHanScript,
     refineScript,
+    hasNonLatinChars,
+    isNonLatinLang,
+    splitForeignTerms,
+    isHanOnly,
   };
 })(globalThis);

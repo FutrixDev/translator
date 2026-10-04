@@ -454,6 +454,27 @@ generation that goes up when a translation-relevant setting changes
 changed). A child frame never bumps its own; it inherits the top frame's from
 the directive (`translationProfile.inherit`).
 
+**"Already in the target language" means the body is, not the whole
+paragraph.** `isTargetLanguageText` in `content/page/batch.js` is the one
+predicate behind both the pre-filter (`filterBlocksByLanguage`: manual, auto,
+child frames, user rules) and `shouldSkipTranslation`. It never hands the raw
+paragraph to `chrome.i18n.detectLanguage`. A Chinese tech paragraph full of
+English names comes back as `zh:55` unreliable, or even `kk`. Instead,
+`LangTags.splitForeignTerms(text, targetLang)` in `shared/lang-tags.js` splits
+the whole block into sentences with `Intl.Segmenter`. It strips runs of the
+other alphabet (the Latin / non-Latin axis, chosen by `isNonLatinLang(target)`,
+so kana and hangul are never stripped). It reports `foreign` if any sentence
+has a run longer than `TERM_MAX_WORDS` (6), foreign words more than
+`FOREIGN_RATIO_MAX` (2) times the native ones, or no native letters and at
+least `FOREIGN_SENTENCE_MIN_WORDS` (3) foreign words. A foreign sentence
+translates the whole paragraph, because the translation unit stays the
+paragraph and the sentence is only the unit of judgement. Only the residue is
+asked, under `detectReliableLanguage`'s gate. Han-only residue counts as `zh`
+without asking, since the detector answers `ja` on two Han characters.
+Confidence must be at least 85. `isReliable` is required only for pure-Latin
+residue. Chrome's `LanguageDetector` is not used: it reports unavailable on
+many profiles. Covered by `test/unit/native-text-skip.test.mjs`.
+
 ### User Site Rules
 
 Per-site rules the user writes: which part of a page to translate
