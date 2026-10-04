@@ -20,6 +20,8 @@
   // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
   const isSameLanguage = ctx.isSameLanguage;
   const refineScriptTag = ctx.refineScriptTag;
+  // 拆句、摘外文名词那几个纯函数同在 shared/lang-tags.js，直接取：少装了它，
+  // content-language.js 在加载那一刻就已经抛了，症状和上面两行一致。
   const LangTags = globalThis.LangTags;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
@@ -294,6 +296,8 @@
    */
   async function detectReliableLanguage(text) {
     if (LangTags.isHanOnly(text)) return refineScriptTag('zh', text);
+    // 其余的字太少就不问：一两个字母上检测器只是在猜，宁可照译这一段。
+    if (text.length < 4) return null;
 
     const result = await detectLanguage(text);
     const topLang = result?.languages?.[0];
