@@ -8,7 +8,9 @@
 // 这一份守三件事：
 //   1. splitForeignTerms 的拆法（纯函数，shared/lang-tags.js）；
 //   2. 整页翻译的预筛 filterBlocksByLanguage 真的按摘过名词的正文去问检测器；
-//   3. 一段母语后面跟着一整句外文时，这一段照译 —— 哪怕那句外文在第 400 个字之后。
+//   3. 一段母语后面跟着一整句外文时，这一段照译 —— 哪怕那句外文在第 400 个字之后；
+//   4. 同一种字母写的外文句子（法文段落里的一句英文）一句句问检测器，只采信有把握
+//      的读数，只问够长的句子，中文摘过名词的碎片不这样问。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -53,7 +55,7 @@ test('有成句的外文就得译：夹一整句、长从句、或外文压过�
   // 整段英文：中文写不成拉丁字母，整段是外文，不问检测器。
   assert.deepEqual(
     L.splitForeignTerms('The quick brown fox jumps over the lazy dog.', 'zh-CN'),
-    { residue: '', foreign: true },
+    { residue: '', foreign: true, sentences: [] },
   );
 });
 
@@ -61,17 +63,17 @@ test('母语站在哪一边看这段文字：拉丁字母写的塞尔维亚语�
   // sr 按 Intl 补全是西里尔；只按默认文字摘，这一句整句被当外文。
   assert.deepEqual(
     L.splitForeignTerms('Ovo je tekst na srpskom jeziku.', 'sr'),
-    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false },
+    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false, sentences: [] },
   );
   // 西里尔写的照旧按非拉丁轴摘英文名词。
   assert.deepEqual(
     L.splitForeignTerms('Ово је чланак о React Server Components.', 'sr'),
-    { residue: 'Ово је чланак о .', foreign: false },
+    { residue: 'Ово је чланак о .', foreign: false, sentences: [] },
   );
   // 反方向同理：uz 按 Intl 补全是拉丁，西里尔写的乌兹别克语照样摘英文名词。
   assert.deepEqual(
     L.splitForeignTerms('Бу мақола React ҳақида.', 'uz'),
-    { residue: 'Бу мақола ҳақида.', foreign: false },
+    { residue: 'Бу мақола ҳақида.', foreign: false, sentences: [] },
   );
   // 拼音、转写俄文也是：检测器会答 zh-Latn / ru-Latn，不能拿去问。
   assert.equal(L.splitForeignTerms('Wo men jin tian qu gong yuan wan.', 'zh-CN').foreign, true);
@@ -91,19 +93,77 @@ test('摘的轴是拉丁 / 非拉丁：假名和谚文不当外文名词摘', ()
 test('目标是拉丁语言时反过来：摘的是非拉丁的名词', () => {
   assert.deepEqual(
     L.splitForeignTerms('We use 微服务 architecture for our backend.', 'en'),
-    { residue: 'We use architecture for our backend.', foreign: false },
+    { residue: 'We use architecture for our backend.', foreign: false, sentences: [] },
   );
   // 主体是中文的一段，对英文读者是成句的外文。
   assert.equal(L.splitForeignTerms('我们在 Hacker News 上看到一篇关于 Rust 的文章。', 'en').foreign, true);
+});
+
+test('母语在拉丁那一边时，给出值得一句句问检测器的句子', () => {
+  const block = 'Ceci est une phrase en français. This is a complete English sentence that should be translated. Encore une phrase.';
+  // 拆字看不见那句英文：同一种字母。
+  const split = L.splitForeignTerms(block, 'fr');
+  assert.equal(split.foreign, false);
+  assert.equal(split.residue, block);
+  // 不长过 TERM_MAX_WORDS（6）个词的句子不给：检测器在那上面只是在猜。
+  assert.deepEqual(split.sentences, ['This is a complete English sentence that should be translated.']);
+  // 给的是摘过非拉丁名词的那一句。
+  assert.deepEqual(
+    L.splitForeignTerms('We use 微服务 architecture for our backend services every day.', 'en').sentences,
+    ['We use architecture for our backend services every day.'],
+  );
+  // 母语不在拉丁那一边：摘过名词的中文是碎片，一句也不给。
+  const zh = '我最近在用 React Server Components 和 Next.js App Router 重写博客，SSR 的性能提升很明显。这个 bug 是 TypeScript 的 strictNullChecks 引起的，改完以后编译就通过了。';
+  assert.deepEqual(L.splitForeignTerms(zh, 'zh-CN').sentences, []);
+});
+
+test('检测器分不开塞尔维亚语、克罗地亚语、波斯尼亚语', () => {
+  for (const [detected, target] of [['bs', 'sr'], ['hr', 'sr'], ['sr', 'hr'], ['bs', 'sr-Latn'], ['sh', 'bs'], ['en', 'en-GB'], ['zh', 'zh-TW']]) {
+    assert.equal(L.isDetectedAsLanguage(detected, target), true, `${detected} → ${target}`);
+  }
+  // 斯洛文尼亚语是另一门语言；简繁仍是两套字。
+  for (const [detected, target] of [['sl', 'sr'], ['mk', 'sr'], ['zh-Hant', 'zh-CN'], ['en', 'fr'], [null, 'sr'], ['sr', '']]) {
+    assert.equal(L.isDetectedAsLanguage(detected, target), false, `${detected} → ${target}`);
+  }
+  // 作者写的标签照旧按字面比。
+  assert.equal(L.isSameLanguage('bs', 'sr'), false);
 });
 
 // ==================== 整页翻译的预筛 ====================
 
 // 假的 chrome.i18n.detectLanguage。混排一档是真实 Chrome 对整段的实测：中英混排
 // 的中文技术句子只给 zh:55 且 isReliable:false —— 不摘名词就判不成中文。
+//
+// 纯拉丁的那几档按句子查表，表里是 e2e 那个 Chrome 的实测读数（isReliable 用 R / u
+// 记）：法文、塞尔维亚语、英文句子在九个词上下才开始有把握；拉丁字母写的塞尔维亚语
+// 答 bs。
+const MEASURED = new Map([
+  ['Ceci est une phrase en français. This is a complete English sentence that should be translated. Encore une phrase.', 'R fr'],
+  ['This is a complete English sentence that should be translated.', 'R en'],
+  ['Ceci est une phrase en français.', 'u fr'],
+  ['Encore une phrase.', 'u it'],
+  ["Nous avons publié une nouvelle version de l'application mobile ce matin. Read the full story on our website. La réunion de demain est reportée à la semaine prochaine pour des raisons de planning.", 'R fr'],
+  ["Nous avons publié une nouvelle version de l'application mobile ce matin.", 'R fr'],
+  ['Read the full story on our website.', 'u en'],
+  ['La réunion de demain est reportée à la semaine prochaine pour des raisons de planning.', 'R fr'],
+  ['Le weekend dernier, nous avons fait du shopping au centre commercial avec des amis. I went to the park with my friends yesterday.', 'R fr'],
+  ['Le weekend dernier, nous avons fait du shopping au centre commercial avec des amis.', 'R fr'],
+  ['I went to the park with my friends yesterday.', 'u en'],
+  ['Danas je lep dan i idemo u park sa decom i prijateljima. Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.', 'R bs'],
+  ['Danas je lep dan i idemo u park sa decom i prijateljima.', 'R bs'],
+  ['Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.', 'R bs'],
+  ['Danas je lep dan i idemo u park sa decom i prijateljima. Hrvatska vlada je danas predstavila novi plan za gospodarstvo.', 'R bs'],
+  ['Hrvatska vlada je danas predstavila novi plan za gospodarstvo.', 'R sl'],
+  ['Please read the documentation carefully before you open an issue. We are hiring engineers who love working on hard problems.', 'R en'],
+]);
 const asked = [];
 function fakeCld(text) {
   const has = (re) => re.test(text);
+  const measured = MEASURED.get(text);
+  if (measured) {
+    const [reliable, language] = measured.split(' ');
+    return { isReliable: reliable === 'R', languages: [{ language, percentage: 100 }] };
+  }
   // 摘过名词的短正文，检测器照例答 isReliable:false，语言却是对的（实测）。
   if (has(/\p{Script=Hiragana}|\p{Script=Katakana}/u)) return { isReliable: false, languages: [{ language: 'ja', percentage: 100 }] };
   if (has(/\p{Script=Hangul}/u)) return { isReliable: true, languages: [{ language: 'ko', percentage: 100 }] };
@@ -197,4 +257,57 @@ test('目标是英文：英文正文夹中文名词不翻，中文正文翻', as
   assert.deepEqual(await translated(['We use 微服务 architecture for our backend.', zh]), [zh]);
   // 纯拉丁的剩余正文要检测器自己说有把握；没把握就照译（这道门只放非拉丁的字）。
   assert.deepEqual(await translated(['Hi there']), ['Hi there']);
+});
+
+// ==================== 同一种字母写的外文句子 ====================
+
+const FR_WITH_EN = 'Ceci est une phrase en français. This is a complete English sentence that should be translated. Encore une phrase.';
+
+test('法文段落里夹一整句英文：整段读成 fr，那句英文一句问出来，这一段照译', async () => {
+  target = 'fr';
+  asked.length = 0;
+  assert.deepEqual(await translated([FR_WITH_EN]), [FR_WITH_EN]);
+  // 整段一次、那句英文一次；不到七个词的两句法文不问。
+  assert.deepEqual(asked, [FR_WITH_EN, 'This is a complete English sentence that should be translated.']);
+});
+
+test('检测器对那一句没把握，就不算外文：这一段仍是母语', async () => {
+  target = 'fr';
+  const blocks = [
+    // 七个词，过了下限，检测器答 en 但 isReliable:false（实测）。
+    "Nous avons publié une nouvelle version de l'application mobile ce matin. Read the full story on our website. La réunion de demain est reportée à la semaine prochaine pour des raisons de planning.",
+    // 九个词，也还没把握（实测）。
+    'Le weekend dernier, nous avons fait du shopping au centre commercial avec des amis. I went to the park with my friends yesterday.',
+  ];
+  asked.length = 0;
+  assert.deepEqual(await translated(blocks), []);
+  // 每一段都真的一句句问过了 —— 跳过是因为读数没把握，不是没问。
+  assert.ok(asked.includes('Read the full story on our website.'), asked.join('\n'));
+  assert.ok(asked.includes('I went to the park with my friends yesterday.'), asked.join('\n'));
+});
+
+test('整段已经判成外文就不再一句句问；整段只有一句时不问第二遍', async () => {
+  target = 'fr';
+  asked.length = 0;
+  const english = 'Please read the documentation carefully before you open an issue. We are hiring engineers who love working on hard problems.';
+  assert.deepEqual(await translated([english]), [english]);
+  assert.deepEqual(asked, [english]);
+
+  target = 'en';
+  asked.length = 0;
+  assert.deepEqual(await translated(['This is a complete English sentence that should be translated.']), []);
+  assert.deepEqual(asked, ['This is a complete English sentence that should be translated.']);
+});
+
+test('塞尔维亚语答成 bs 不算外文；一句读成 sl 的照译', async () => {
+  // 拉丁写的塞尔维亚语检测器读 bs：目标 sr 和 hr 都得认它是自己人。
+  const serbian = 'Danas je lep dan i idemo u park sa decom i prijateljima. Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.';
+  const withSl = 'Danas je lep dan i idemo u park sa decom i prijateljima. Hrvatska vlada je danas predstavila novi plan za gospodarstvo.';
+  for (const lang of ['sr', 'hr']) {
+    target = lang;
+    asked.length = 0;
+    assert.deepEqual(await translated([serbian, withSl]), [withSl], lang);
+    // 塞尔维亚语那一段两句都问过，答 bs 都放过了。
+    assert.ok(asked.includes('Ovo je tekst na srpskom jeziku koji treba da ostane netaknut.'), asked.join('\n'));
+  }
 });

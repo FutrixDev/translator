@@ -16,12 +16,10 @@
   const isExtensionContextInvalidated = ctx.isExtensionContextInvalidated;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getLangBase = ctx.getLangBase;
-  // 「这两门语言算一门吗」的判定在 shared/lang-tags.js，由 content-language.js
-  // 转手到 ctx 上。和上面一行一样在这里取，少装一个模块的症状才一致。
-  const isSameLanguage = ctx.isSameLanguage;
   const refineScriptTag = ctx.refineScriptTag;
-  // 拆句、摘外文名词那几个纯函数同在 shared/lang-tags.js，直接取：少装了它，
-  // content-language.js 在加载那一刻就已经抛了，症状和上面两行一致。
+  // 「检测器读出的语言算不算目标语言」、拆句、摘外文名词那几个纯函数都在
+  // shared/lang-tags.js，直接取：少装了它，content-language.js 在加载那一刻就
+  // 已经抛了，症状和上面几行一致。
   const LangTags = globalThis.LangTags;
   const getLanguageDetectionText = ctx.getLanguageDetectionText;
   const MAX_BATCH_CHARS = 9000; // 每批次最大字符数（加大以减少请求）
@@ -340,15 +338,34 @@
   // 翻。所以先按句拆开、把夹带的名词摘掉，再问剩下的正文是什么语言；有成句的
   // 外文就得翻（shared/lang-tags.js 的 splitForeignTerms）。翻译单位仍是整段，
   // 按句只是判定的单位。
+  //
+  // 同一种字母写的外文句子拆字看不见：「Ceci est une phrase en français. This is
+  // a complete English sentence that should be translated. Encore une phrase.」
+  // 整段问检测器答 fr:100，那句英文就永远不译。所以整段判成母语之后，母语在拉丁
+  // 那一边的，再把够长的句子（splitForeignTerms 的 sentences）一句句问一遍：哪一
+  // 句检测器**有把握**地答了别的语言，这一段就得翻。没把握的读数不算数 —— 短的
+  // 纯拉丁文它基本在猜（hello→sr、animation→ja），实测九个词以下的英文句子
+  // 几乎都答 isReliable:false。非拉丁的母语不这样问：中文摘掉名词后剩的是碎片，
+  // 一句句问会答 kk、ja。多出来的检测只花在要跳过的那些段落上。
+  //
+  // 比的是 isDetectedAsLanguage 而不是 isSameLanguage：检测器分不开塞尔维亚语、
+  // 克罗地亚语、波斯尼亚语，塞尔维亚语正文它照例答 bs，按字面比就成了「外文」。
   async function isTargetLanguageText(text, targetLang = getEffectiveTargetLang()) {
     if (!getLangBase(targetLang)) return false;
-    const { residue, foreign } =
+    const { residue, foreign, sentences } =
       LangTags.splitForeignTerms(getLanguageDetectionText(text, MAX_BLOCK_CHARS), targetLang);
     if (foreign || !residue) return false;
-    // 比整码，走的是和字幕引擎同一个判定（shared/lang-tags.js）。曾经这里比基码
-    // 而字幕那边比整码：一页 zh-TW 的正文配 zh-CN 的目标，字幕翻、正文不翻，同一
-    // 个问题两条路两个答案。
-    return isSameLanguage(await detectReliableLanguage(residue), targetLang);
+    // 比整码，底下是和字幕引擎同一个 isSameLanguage（shared/lang-tags.js）。曾经
+    // 这里比基码而字幕那边比整码：一页 zh-TW 的正文配 zh-CN 的目标，字幕翻、正文
+    // 不翻，同一个问题两条路两个答案。
+    if (!LangTags.isDetectedAsLanguage(await detectReliableLanguage(residue), targetLang)) return false;
+    for (const sentence of sentences) {
+      // 整段只有这一句时，上面问的就是它。
+      if (sentence === residue) continue;
+      const lang = await detectReliableLanguage(sentence);
+      if (lang && !LangTags.isDetectedAsLanguage(lang, targetLang)) return false;
+    }
+    return true;
   }
 
   async function shouldSkipTranslation(block, translation, target) {

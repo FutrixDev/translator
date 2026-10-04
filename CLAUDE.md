@@ -483,7 +483,27 @@ asked, under `detectReliableLanguage`'s gate. Han-only residue counts as `zh`
 without asking, since the detector answers `ja` on two Han characters.
 Confidence must be at least 85. `isReliable` is required only for pure-Latin
 residue. Chrome's `LanguageDetector` is not used: it reports unavailable on
-many profiles. Covered by `test/unit/native-text-skip.test.mjs`.
+many profiles.
+
+Splitting cannot see a foreign sentence written in the same alphabet: a French
+paragraph with one English sentence reads `fr:100` as a whole. So when the
+native side is Latin, `splitForeignTerms` also returns `sentences`, the kept
+sentences longer than `TERM_MAX_WORDS` words. After the whole residue passes,
+`isTargetLanguageText` asks each one through the same `detectReliableLanguage`
+gate (a sentence identical to the residue is not asked twice). One reliable
+reading of another language translates the paragraph. Measured in the e2e
+Chrome, pure-Latin sentences of up to about nine words come back
+`isReliable: false`, so a short same-script foreign sentence still slips
+through. Non-Latin native sides get no per-sentence check, because Chinese
+residue with its names stripped is fragments, and the detector reads those as
+`kk` or `ja`. The extra calls are spent only on paragraphs about to be skipped.
+Both comparisons use `LangTags.isDetectedAsLanguage`, not `isSameLanguage`.
+The detector cannot tell Serbian, Croatian and Bosnian apart: Latin-script
+Serbian reliably reads `bs`. One Croatian sentence read `sl`, which is a
+different language and is left out of the group, so that paragraph gets
+translated. Covered by `test/unit/native-text-skip.test.mjs` (a fake detector
+replaying measured readings) and
+`test/e2e/page-translation-native-skip.spec.js` (the real one).
 
 ### User Site Rules
 
