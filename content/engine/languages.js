@@ -131,14 +131,6 @@
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
 
-  // SUPPORTED_LANGS 里用非拉丁字母书写的那些。判断“页面语言可不可能是这段文字的
-  // 语言”只需要这一条：字母体系对不上就一定不是。
-  //
-  // 从 SUPPORTED_LANGS 派生，不另抄一张表：往 SUPPORTED_LANGS 里加语言的人不该还要
-  // 记得同步第二处——漏掉一门非拉丁语言，正是下面这个 bug 原样复发。拉丁 / 非拉丁
-  // 的判定本身在 shared/lang-tags.js。
-  const NON_LATIN_LANGS = new Set([...SUPPORTED_LANGS].filter(LangTags.isNonLatinLang));
-
   /**
    * 输入框里的文字不属于这个页面：读英文页面时想把“动画”翻成英文是常事。拿页面
    * 语言当源语言会得出 src='en'、tgt='en'，被同语言短路原样返回——用户选了目标
@@ -171,10 +163,11 @@
     });
   }
 
-  // 页面语言可不可能是这段文字的语言：字母体系对不上就一定不是。
-  function pageLangFits(pageLang, text) {
-    return NON_LATIN_LANGS.has(pageLang) === hasNonLatinChars(text);
-  }
+  // 页面语言可不可能是这段文字的语言：字母体系对不上就一定不是。问的是所有语言，
+  // 不只是 SUPPORTED_LANGS —— kk 页面上的西里尔短句不能因为端上不支持 kk 就被判
+  // 成「不是 kk」，再被检测器顺手判成 ru 送进 ru 的模型。哪门语言写得出哪套字
+  // （包括 sr 这种两套都常见的）由 shared/lang-tags.js 回答。
+  const pageLangFits = LangTags.langFitsText;
 
   // 页面语言出局之后的最后一步。拉丁文本按英文处理：拉丁字母里英文是压倒性的
   // 多数，而这里的备选不是“更好的猜测”，是彻底放弃。非拉丁文本走到这里说明连

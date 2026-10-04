@@ -200,3 +200,39 @@ test('简繁对照表两侧一一对应，且没有一个字站两边', () => {
   assert.equal(hant.size * 2, table.length, '繁体一侧有重复');
   for (const ch of hans) assert.ok(!hant.has(ch), `${ch} 同时站在两侧`);
 });
+
+test('这段文字可不可能是这门语言：按 Intl 的默认文字，两套都常见的语言两边都算', () => {
+  const fits = [
+    ['en', 'the quick brown fox'],
+    ['ru', 'быстрая лиса'],
+    ['zh-CN', '这是中文'],
+    ['ja', '東京の天気'],
+    // Intl 把 sr 补成西里尔，可拉丁字母的塞尔维亚语一样常见。
+    ['sr', 'Ovo je tekst na srpskom jeziku.'],
+    ['sr', 'Ово је текст на српском језику.'],
+    // 反方向：uz、bs 补成拉丁，西里尔写的一样常见；kk 补成西里尔，正在改用拉丁。
+    ['uz', 'Бу матн'],
+    ['bs', 'Ово је текст'],
+    ['kk', 'Bul matin'],
+    // 不在端上支持列表里的非拉丁语言也照 Intl 回答。
+    ['kk', 'Бұл мәтін'],
+    ['mn', 'Энэ бол текст'],
+  ];
+  for (const [lang, text] of fits) assert.equal(L.langFitsText(lang, text), true, `${lang} 写得出「${text}」`);
+
+  const misfits = [
+    ['en', 'быстрая лиса'],
+    ['en', '这是中文'],
+    ['ru', 'the quick brown fox'],
+    ['zh-CN', 'animation'],
+    ['ja', 'hello'],
+    // 标签写明了文字，就只认那一套。
+    ['sr-Latn', 'Ово је текст'],
+    ['sr-Cyrl', 'Ovo je tekst'],
+    // 认不出来的标签一律否决。
+    ['english', 'hello there'],
+    ['x', 'hello there'],
+    ['', 'hello there'],
+  ];
+  for (const [lang, text] of misfits) assert.equal(L.langFitsText(lang, text), false, `${lang} 写不出「${text}」`);
+});

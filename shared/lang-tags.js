@@ -128,18 +128,32 @@
     return HAS_NON_LATIN_CHARS.test(String(text || ''));
   }
 
+  // 拉丁轴两边都有大量正文的语言。Intl 只给一门语言一个默认文字（sr→Cyrl、
+  // uz→Latn、bs→Latn、kk→Cyrl），而这几门的另一套字一样常见：拉丁字母的塞尔维亚
+  // 语（target-lang.js 把 sr-Latn 也收成 sr）、西里尔字母的乌兹别克语和波斯尼亚语、
+  // 正在改用拉丁字母的哈萨克语。只按默认文字判，这些页面上一半的正文会被判成「不
+  // 可能是这门语言」。两套都是非拉丁的（pa 的古木基和沙穆基）不影响这条轴，不收。
+  const BOTH_SIDES_LANGS = new Set(['sr', 'bs', 'uz', 'kk']);
+
   /**
-   * 这门语言是不是用拉丁字母以外的文字书写（zh、ja、ru、ar……）。
+   * 这段文字可不可能是用这门语言写的 —— 只看拉丁 / 非拉丁这一条轴。
    *
    * 问的是 Intl 而不是一张手抄的表：往支持列表里加语言的人不该还要记得同步第二处。
-   * 认不出来的标签当非拉丁 —— 调用方拿它做的都是「否决」，多否决一次的代价小。
+   * 标签自己写明了文字（sr-Latn、zh-Hant）就只认那一套；没写明的，两套都常见的
+   * 语言两边都算，其余按 Intl 补全的默认文字。认不出来的标签（'english'、'x'）答
+   * 「不可能」—— 调用方拿它做的都是「否决」，多否决一次的代价小。
    */
-  function isNonLatinLang(lang) {
+  function langFitsText(lang, text) {
+    let locale;
     try {
-      return new Intl.Locale(String(lang)).maximize().script !== 'Latn';
+      locale = new Intl.Locale(String(lang));
     } catch (error) {
-      return true;
+      return false;
     }
+    if (!locale.script && BOTH_SIDES_LANGS.has(locale.language)) return true;
+    const script = locale.maximize().script;
+    if (!script) return false;
+    return (script !== 'Latn') === hasNonLatinChars(text);
   }
 
   // ==================== 母语正文里夹带的外文名词 ====================
@@ -154,6 +168,12 @@
   // 摘的轴是**拉丁 / 非拉丁**，不是「目标语言的文字 / 其余」：目标是中文时，日文
   // 段落的假名不能当外文名词摘掉 —— 摘了剩一串汉字，就成了「本来就是中文」。按拉丁
   // 轴摘，假名、谚文都留在剩下的正文里，检测器自己分得出 ja / ko / zh。
+  //
+  // 母语站在轴的哪一边，看的是**这段文字**，不只看目标语言的默认文字：目标是 sr、
+  // 这一段却一个非拉丁字都没有（拉丁字母写的塞尔维亚语），按默认的西里尔一侧摘，
+  // 整句被当外文摘空，每一段母语都照译。所以这段文字有非拉丁字、目标语言又写得
+  // 出非拉丁字时摘拉丁名词，否则摘非拉丁名词 —— 一段纯拉丁的英文配中文目标，没有
+  // 可摘的「另一边」，整段原样交给检测器，它答 en，照译。
 
   // 一串拉丁字母写的外文：从字母开始、到字母或数字结束，中间可以夹空白、数字和
   // 标点（"Next.js App Router"、"iPhone 17 Pro Max"、"kubectl apply -f deployment.yaml"）。
@@ -199,7 +219,7 @@
    */
   function splitForeignTerms(text, targetLang) {
     const source = String(text || '');
-    const foreignRun = isNonLatinLang(targetLang) ? LATIN_RUN : NON_LATIN_RUN;
+    const foreignRun = hasNonLatinChars(source) && langFitsText(targetLang, source) ? LATIN_RUN : NON_LATIN_RUN;
     if (!sentenceSegmenter) sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
     const kept = [];
     let foreign = false;
@@ -237,7 +257,7 @@
     detectHanScript,
     refineScript,
     hasNonLatinChars,
-    isNonLatinLang,
+    langFitsText,
     splitForeignTerms,
     isHanOnly,
   };
