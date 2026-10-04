@@ -462,8 +462,12 @@ paragraph to `chrome.i18n.detectLanguage`. A Chinese tech paragraph full of
 English names comes back as `zh:55` unreliable, or even `kk`. Instead,
 `LangTags.splitForeignTerms(text, targetLang)` in `shared/lang-tags.js` splits
 the whole block into sentences with `Intl.Segmenter`. It strips runs of the
-other alphabet (the Latin / non-Latin axis, chosen by `isNonLatinLang(target)`,
-so kana and hangul are never stripped). It reports `foreign` if any sentence
+other alphabet (the Latin / non-Latin axis, so kana and hangul are never
+stripped). The native side is non-Latin only when the target's default script
+is (`isNonLatinLang(target)`) and the block has non-Latin letters: Latin-script
+Serbian under target `sr` goes to the detector whole instead of being stripped
+empty. Like every Latin target, a same-script foreign sentence is not seen by
+the split; the detector reports the dominant language. It reports `foreign` if any sentence
 has a run longer than `TERM_MAX_WORDS` (6), foreign words more than
 `FOREIGN_RATIO_MAX` (2) times the native ones, or no native letters and at
 least `FOREIGN_SENTENCE_MIN_WORDS` (3) foreign words. A foreign sentence
