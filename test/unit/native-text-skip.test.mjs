@@ -50,10 +50,24 @@ test('有成句的外文就得译：夹一整句、长从句、或外文压过�
   for (const text of cases) {
     assert.equal(L.splitForeignTerms(text, 'zh-CN').foreign, true, `「${text}」该译`);
   }
-  // 整段英文：一句母语都没有，residue 为空。
+  // 整段英文：没有可摘的「另一边」，原样交给检测器（它答 en，照译）。
   assert.deepEqual(
     L.splitForeignTerms('The quick brown fox jumps over the lazy dog.', 'zh-CN'),
-    { residue: '', foreign: true },
+    { residue: 'The quick brown fox jumps over the lazy dog.', foreign: false },
+  );
+});
+
+test('母语站在哪一边看这段文字：拉丁字母写的塞尔维亚语不被摘空', () => {
+  // sr 按 Intl 补全是西里尔；只按默认文字摘，这一句整句被当外文。
+  assert.equal(L.isNonLatinLang('sr'), true);
+  assert.deepEqual(
+    L.splitForeignTerms('Ovo je tekst na srpskom jeziku.', 'sr'),
+    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false },
+  );
+  // 西里尔写的照旧按非拉丁轴摘英文名词。
+  assert.deepEqual(
+    L.splitForeignTerms('Ово је чланак о React Server Components.', 'sr'),
+    { residue: 'Ово је чланак о .', foreign: false },
   );
 });
 
