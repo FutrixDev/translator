@@ -156,6 +156,17 @@
     return (script !== 'Latn') === hasNonLatinChars(text);
   }
 
+  // 默认文字不是拉丁、但拉丁字母也是它的正经写法的语言。Intl 只给默认文字
+  // （sr → Cyrl），分不出这一层，只能列出来。只收目标语言列表里真这样用的：
+  // target-lang 把 sr-Latn 也收成 sr。罗马化的中文、俄文、日文、印地文不算 ——
+  // 选了它们的读者要的就是本族文字，拼音段落得译。
+  const ALSO_WRITTEN_IN_LATIN = new Set(['sr']);
+
+  /** 这门语言的正文可以是拉丁字母写的（en、fr，以及拉丁写法的 sr）。 */
+  function writesInLatin(lang) {
+    return !isNonLatinLang(lang) || ALSO_WRITTEN_IN_LATIN.has(getLangBase(lang));
+  }
+
   // ==================== 母语正文里夹带的外文名词 ====================
 
   // 「这一段是不是已经是目标语言」不能整段交给检测器：中文技术文章满是英文名词，

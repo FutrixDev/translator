@@ -73,6 +73,26 @@ test('母语站在哪一边看这段文字：拉丁字母写的塞尔维亚语�
     L.splitForeignTerms('Бу мақола React ҳақида.', 'uz'),
     { residue: 'Бу мақола ҳақида.', foreign: false },
   );
+  // 拼音、转写俄文也是：检测器会答 zh-Latn / ru-Latn，不能拿去问。
+  assert.equal(L.splitForeignTerms('Wo men jin tian qu gong yuan wan.', 'zh-CN').foreign, true);
+  assert.equal(L.splitForeignTerms('Privet, kak dela u tebya segodnya?', 'ru').foreign, true);
+});
+
+test('母语站在哪一边看这段文字：拉丁字母写的塞尔维亚语不被摘空', () => {
+  // sr 按 Intl 补全是西里尔；只按默认文字摘，这一句整句被当外文。
+  assert.equal(L.isNonLatinLang('sr'), true);
+  assert.equal(L.writesInLatin('sr'), true);
+  assert.equal(L.writesInLatin('en'), true);
+  for (const lang of ['zh-CN', 'ru', 'ja', 'hi']) assert.equal(L.writesInLatin(lang), false, lang);
+  assert.deepEqual(
+    L.splitForeignTerms('Ovo je tekst na srpskom jeziku.', 'sr'),
+    { residue: 'Ovo je tekst na srpskom jeziku.', foreign: false },
+  );
+  // 西里尔写的照旧按非拉丁轴摘英文名词。
+  assert.deepEqual(
+    L.splitForeignTerms('Ово је чланак о React Server Components.', 'sr'),
+    { residue: 'Ово је чланак о .', foreign: false },
+  );
 });
 
 test('摘的轴是拉丁 / 非拉丁：假名和谚文不当外文名词摘', () => {
