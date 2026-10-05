@@ -611,8 +611,9 @@ test('site rules: an always site is translated in its main content only — the 
   }
 });
 
-// X 的右栏在 <main role="main"> 里面，正文范围减不掉它，靠内置 keepOriginal 的
-// `[data-testid="sidebarColumn"]` 整栏挡掉。左侧导航是 main 外的 <header role="banner">。
+// X 的右栏在 <main role="main"> 里面，照译：新闻标题、趋势是读者要读的字（D-464）。
+// 比分这类纯数字不送（not-prose），队名照译。左侧导航是 main 外的 <header role="banner">，正文
+// 范围减掉它。
 const SC_TWEET = 'Shipping the new parser took three months and one very long weekend of debugging.';
 const SC_TREND = 'Trending in Sports right now';
 const SC_TEAM = 'Steelers';
@@ -636,7 +637,7 @@ const X_SCOPE_PAGE = `<!doctype html>
   </main>
 </body></html>`;
 
-test('site rules: the X sidebar column inside <main> is kept original, the timeline is translated', async ({ page, context }) => {
+test('site rules: on X the timeline and the sidebar headlines are translated, the scores and the nav are not', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
@@ -646,14 +647,18 @@ test('site rules: the X sidebar column inside <main> is kept original, the timel
     await page.goto('https://x.com/home');
     await page.waitForSelector('#ai-translator-float-ball');
     await page.waitForSelector('#tweet .ai-translator-inline-block', { timeout: 30000 });
+    await page.waitForSelector('#sidebar .ai-translator-inline-block', { timeout: 30000 });
 
     const all = sentTexts.join('\n');
     expect(all).toContain(SC_TWEET);
-    expect(all).not.toContain(SC_TREND);
-    expect(all).not.toContain(SC_WHO);
+    expect(all).toContain(SC_TREND);
+    expect(all).toContain(SC_WHO);
     expect(all).not.toContain('Explore the latest');
-    expect(sentTexts.some((text) => text.includes(SC_TEAM))).toBe(false);
-    expect(await oursIn(page, 'sidebar')).toBe(0);
+    const segments = all.split(/⟪⟫⟪⟫⟪⟫|\n/).map((text) => text.trim());
+    expect(segments).not.toContain('24');
+    expect(segments).not.toContain('17');
+    // 比分牌上的队名是字，照译；比分是数字，不送。
+    expect(segments).toContain(SC_TEAM);
     expect(await oursIn(page, 'banner')).toBe(0);
   } finally {
     await close();

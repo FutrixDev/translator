@@ -440,7 +440,7 @@ test('the rule handed out is frozen — the adapter layer gets a copy of nothing
   assert.throws(() => rule.keepOriginalSelectors.push('.injected'), TypeError);
   assert.throws(() => { rule.state = 'never'; }, TypeError);
   assert.deepEqual(SiteRules.matchBuiltin('x.com', '/home').keepOriginalSelectors,
-    ['[data-testid="User-Name"] a', 'time', '[role="group"]', '[data-testid="sidebarColumn"]']);
+    ['[data-testid="User-Name"] a', 'time', '[role="group"]']);
 });
 
 test('the shipped table is internally consistent', () => {
