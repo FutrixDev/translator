@@ -28,16 +28,16 @@
   'use strict';
 
   // x.com 与 twitter.com 是同一个站，两条 always 共用这一份。用户名、时间、互动条
-  // （回复/转推/喜欢的计数）都不是正文。右栏（趋势、比分、推荐关注）在
-  // <main role="main"> 里面，正文范围减不掉它，只能在这里整栏挡掉（D-429：比分牌被
-  // 翻成「Steelers 钢...」，比分被挤到换行）。
-  const X_KEEP_ORIGINAL = [
-    '[data-testid="User-Name"] a', 'time', '[role="group"]', '[data-testid="sidebarColumn"]',
-  ];
+  // （回复/转推/喜欢的计数）都不是正文。右栏的新闻、趋势、比分牌照译：新闻标题是
+  // 读者要读的字（D-464，推翻 D-429 的整栏挡掉）。比分牌的队名照译；比分这类纯数字、
+  // 按钮上的短标签由 content/page/not-prose.js 跳过，译文挤到切字由 fit guard 撤回。
+  // 「推荐关注」是 <aside role="complementary">，正文范围本来就跳过它（scope.js 的
+  // ALWAYS）：里面只有人名、@ 名和关注按钮，人名不该翻，所以不为它开例外。
+  const X_KEEP_ORIGINAL = ['[data-testid="User-Name"] a', 'time', '[role="group"]'];
 
   root.SiteRulesBuiltin = {
     schemaVersion: 1,
-    rulesVersion: '2026-09-30',
+    rulesVersion: '2026-10-05',
 
     // 匹配的是主机名后缀：'gov' 命中 irs.gov，也命中 www.irs.gov，但不命中
     // gov.uk（它不以 .gov 结尾），所以多部分的公共后缀要单独写一行。

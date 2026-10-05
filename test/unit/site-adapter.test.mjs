@@ -145,7 +145,7 @@ test('exclude comes only from the user; keepOriginal is the builtin table joined
   const plain = at('x.com', '/alice/status/2');
   assert.equal(plain.exclude, '');
   assert.equal(plain.keepOriginal,
-    '[data-testid="User-Name"] a,time,[role="group"],[data-testid="sidebarColumn"]');
+    '[data-testid="User-Name"] a,time,[role="group"]');
 });
 
 test('a user rule on a site with no builtin rule is an adapter of its own', () => {
