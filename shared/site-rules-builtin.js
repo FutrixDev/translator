@@ -28,10 +28,11 @@
   'use strict';
 
   // x.com 与 twitter.com 是同一个站，两条 always 共用这一份。用户名、时间、互动条
-  // （回复/转推/喜欢的计数）都不是正文。右栏（新闻、趋势、推荐关注）照译：新闻标题
-  // 是读者要读的字（D-464，推翻 D-429 的整栏挡掉）。比分牌的队名照译；比分这类纯
-  // 数字、按钮上的短标签由 content/page/not-prose.js 跳过，译文挤到切字由 fit guard
-  // 撤回。
+  // （回复/转推/喜欢的计数）都不是正文。右栏的新闻、趋势、比分牌照译：新闻标题是
+  // 读者要读的字（D-464，推翻 D-429 的整栏挡掉）。比分牌的队名照译；比分这类纯数字、
+  // 按钮上的短标签由 content/page/not-prose.js 跳过，译文挤到切字由 fit guard 撤回。
+  // 「推荐关注」是 <aside role="complementary">，正文范围本来就跳过它（scope.js 的
+  // ALWAYS）：里面只有人名、@ 名和关注按钮，人名不该翻，所以不为它开例外。
   const X_KEEP_ORIGINAL = ['[data-testid="User-Name"] a', 'time', '[role="group"]'];
 
   root.SiteRulesBuiltin = {

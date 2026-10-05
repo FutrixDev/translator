@@ -4,13 +4,13 @@
 
 ### The X sidebar is translated
 
-- **News headlines, trends and who-to-follow in X's right column are now
-  translated.** The whole sidebar used to be kept in its original language, so
+- **News headlines and trends in X's right column are now translated.** The whole sidebar used to be kept in its original language, so
   auto-translate on X left "Today's News" and "What's happening" in English.
   Scores and other numbers are still left alone, as are short button labels. A
   translation that would overflow its box is still taken back. Team names on a
-  scoreboard are words, so they are translated. The left navigation is still not
-  translated.
+  scoreboard are words, so they are translated. "Who to follow" is still left
+  alone: it is only names, handles and Follow buttons. The left navigation is
+  still not translated.
 
 ### Text already in your language is skipped even when it carries foreign terms
 

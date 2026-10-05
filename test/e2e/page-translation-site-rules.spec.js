@@ -611,13 +611,16 @@ test('site rules: an always site is translated in its main content only — the 
   }
 });
 
-// X 的右栏在 <main role="main"> 里面，照译：新闻标题、趋势是读者要读的字（D-464）。
-// 比分这类纯数字不送（not-prose），队名照译。左侧导航是 main 外的 <header role="banner">，正文
+// X 的右栏在 <main role="main"> 里面，新闻、趋势照译：标题是读者要读的字（D-464）。
+// 比分这类纯数字不送（not-prose），队名照译。「推荐关注」在真站上是
+// <aside role="complementary">，正文范围照常跳过它（只有人名和关注按钮）。左侧导航是 main 外的 <header role="banner">，正文
 // 范围减掉它。
 const SC_TWEET = 'Shipping the new parser took three months and one very long weekend of debugging.';
 const SC_TREND = 'Trending in Sports right now';
 const SC_TEAM = 'Steelers';
-const SC_WHO = 'Who to follow this week';
+const SC_NEWS = 'Senate passes the spending bill after a long overnight session';
+const SC_WHO = 'Who to follow';
+const SC_WHO_NAME = 'Jordan Rivers';
 
 const X_SCOPE_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Home / X</title></head>
@@ -629,15 +632,17 @@ const X_SCOPE_PAGE = `<!doctype html>
       <article><div data-testid="tweetText"><span>${SC_TWEET.replace('three months', 'two weeks')}</span></div></article>
     </div>
     <div data-testid="sidebarColumn" id="sidebar">
-      <section><div><span>${SC_TREND}</span></div>
+      <section role="region"><div><span>${SC_NEWS}</span></div><div><span>${SC_TREND}</span></div>
         <div id="score"><span>${SC_TEAM}</span><span>24</span><span>Browns</span><span>17</span></div>
       </section>
-      <section><div><span>${SC_WHO}</span></div></section>
+      <aside role="complementary" aria-label="Who to follow" id="who"><h2><span>${SC_WHO}</span></h2>
+        <div><a href="/jrivers"><span>${SC_WHO_NAME}</span></a><span>@jrivers</span><button><span>Follow</span></button></div>
+      </aside>
     </div>
   </main>
 </body></html>`;
 
-test('site rules: on X the timeline and the sidebar headlines are translated, the scores and the nav are not', async ({ page, context }) => {
+test('site rules: on X the timeline and the sidebar headlines are translated; scores, who-to-follow and the nav are not', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
@@ -651,14 +656,17 @@ test('site rules: on X the timeline and the sidebar headlines are translated, th
 
     const all = sentTexts.join('\n');
     expect(all).toContain(SC_TWEET);
+    expect(all).toContain(SC_NEWS);
     expect(all).toContain(SC_TREND);
-    expect(all).toContain(SC_WHO);
+    expect(all).not.toContain(SC_WHO);
+    expect(all).not.toContain(SC_WHO_NAME);
     expect(all).not.toContain('Explore the latest');
     const segments = all.split(/⟪⟫⟪⟫⟪⟫|\n/).map((text) => text.trim());
     expect(segments).not.toContain('24');
     expect(segments).not.toContain('17');
     // 比分牌上的队名是字，照译；比分是数字，不送。
     expect(segments).toContain(SC_TEAM);
+    expect(await oursIn(page, 'who')).toBe(0);
     expect(await oursIn(page, 'banner')).toBe(0);
   } finally {
     await close();
