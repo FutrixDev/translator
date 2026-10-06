@@ -407,14 +407,24 @@ async function onPdfTranslateCurrent() {
  * its one sign-in-then-continue (run() in content/content-media-hints.js), so
  * the popup hands the click over rather than keeping a second copy of it.
  *
- * Where the page cannot take it (no content script: a restricted page, an
- * extension just reloaded), the sign-in tab opens from here instead, so the
- * click is never silent; the PDF is then one more click away.
+ * kind: 'pdf' asks for the PDF and nothing else: a URL that looks like a PDF
+ * but serves HTML answers { kind: null } instead of falling through to the
+ * comic on screen, so this row can never start a comic job.
+ *
+ * Every other answer ends in exactly one sign-in tab, opened from here; the
+ * PDF is then one more click away:
+ * - null: no receiver (a restricted page, an extension just reloaded);
+ * - { kind: null }: the page says its document is not a PDF.
  */
 async function handPdfToPage() {
-  const reply = await sendToActiveTab({ type: 'MEDIA_SHORTCUT' });
+  const reply = await sendToActiveTab({ type: 'MEDIA_SHORTCUT', kind: 'pdf' });
   if (!reply || reply.kind !== 'pdf') {
-    console.warn('Blab Translation: the PDF tab did not take the signed-out translate, signing in from the popup', reply);
+    console.warn(
+      reply
+        ? 'Blab Translation: the page says it is not a PDF document, signing in from the popup'
+        : 'Blab Translation: no content script took the signed-out PDF translate, signing in from the popup',
+      reply,
+    );
     chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
   }
   window.close();

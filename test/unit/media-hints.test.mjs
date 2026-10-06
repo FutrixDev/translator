@@ -229,6 +229,33 @@ test('the shortcut dispatches on what the page is', async () => {
   assert.deepEqual(plain.notices, ['mediaShortcutNothing']);
 });
 
+test('the popup asks for the PDF only: a comic on screen is never started, and nothing is said', async () => {
+  // popup/popup-pdf.js handPdfToPage sends MEDIA_SHORTCUT with kind: 'pdf'. A URL
+  // that looks like a PDF but serves HTML with a comic on screen must not turn a
+  // click on "Translate this PDF" into a comic job, nor put the comic notice on
+  // the page; the popup decides what happens next from the null.
+  const comic = load({ kind: 'comic', signedIn: false });
+  assert.equal(comic.ctx.runMediaShortcut('pdf'), null);
+  await flush();
+  await flush();
+  assert.deepEqual(comic.sent, []);
+  assert.deepEqual(comic.comicStarts, []);
+  assert.deepEqual(comic.notices, []);
+
+  const plain = load({ kind: 'plain', signedIn: true });
+  assert.equal(plain.ctx.runMediaShortcut('pdf'), null);
+  await flush();
+  assert.deepEqual(plain.notices, []);
+
+  const pdf = load({ kind: 'pdf', signedIn: false });
+  assert.equal(pdf.ctx.runMediaShortcut('pdf'), 'pdf');
+  await flush();
+  await flush();
+  assert.deepEqual(types(pdf.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+
+  assert.throws(() => pdf.ctx.runMediaShortcut('comic'), /unknown kind comic/);
+});
+
 test('the bar asks the same question as the shortcut: nothing on screen is not a click used up', async () => {
   const page = load({ kind: 'comic', signedIn: true, replies: { COMIC_HINT_WRITE: { value: true } } });
   page.ctx.setupMediaHints();
