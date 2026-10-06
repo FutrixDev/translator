@@ -238,7 +238,7 @@ async function startMockService(
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
 ) {
   const state = {
-    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0,
+    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
   };
 
   const { origin, close } = await startMockServer((req, res, base) => {
@@ -275,7 +275,26 @@ async function startMockService(
       return send(200, RESULT_PNG, 'image/png');
     }
 
+    // The sign-in tab: the real page bounces to the extension's redirect URI
+    // with the token in the fragment, and comic-client.js settles as soon as
+    // the tab starts navigating there (chromiumapp.org itself never loads).
+    if (url.pathname === '/ext/connect') {
+      state.connects += 1;
+      const redirect = url.searchParams.get('redirect_uri');
+      res.writeHead(302, {
+        location: `${redirect}#token=granted-token&expires_at=${Date.now() + 3600_000}`,
+        'cache-control': 'no-store',
+      });
+      return res.end();
+    }
+
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
+
+    // A sign-in ends by reading the account (comic-client.js signIn()).
+    if (url.pathname === '/api/billing/me') {
+      if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+      return send(200, { email: 'reader@example.com', balancePoints: 0, freeQuota: { comic_page: { limit: 40, remaining: 40 } } });
+    }
 
     if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
       let raw = '';

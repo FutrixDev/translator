@@ -290,13 +290,14 @@ test('the master switch stays disabled when storage cannot be read', async () =>
   assert.ok(errors.some((args) => /Failed to check status/.test(String(args[0]))), 'the failure was not logged');
 });
 
-// 漫画那两行只在能用的时候出现：开关开着，这台设备也登录了（AccountGate 的
-// ready）。开关关着或没登录都藏起来 —— 点下去只能答「请登录」或什么都不做。
-test('the comic rows show only where the gate says ready', async () => {
+// 漫画那两行只在用户亲手关掉时藏起来（AccountGate 的 off）。没登录照样出：
+// 点下去页面先请他登录，登上了自己接着做（D-467）。
+test('the comic rows hide only where the gate says off', async () => {
   const rows = (popup) => ['comicTranslatePage', 'comicColorizePage'].map((id) => popup.element(id).hidden);
   const cases = [
     [{ token: 'a-token' }, [false, false]],
-    [{ token: '' }, [true, true]],
+    [{ token: '' }, [false, false]],
+    [{ token: '', syncGet: async (defaults) => ({ ...defaults, enableComicTranslation: false }) }, [true, true]],
     [{ token: 'a-token', syncGet: async (defaults) => ({ ...defaults, enableComicTranslation: false }) }, [true, true]],
   ];
   for (const [options, hidden] of cases) {

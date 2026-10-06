@@ -193,7 +193,7 @@ test.describe('Comic account state', () => {
 });
 
 test.describe('Comic translation switch', () => {
-  test('is off out of the box and hides the popup rows', async ({ context, page, extensionId }) => {
+  test('switched off, it hides the popup rows', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       await connectExtension(context, service.base, { enabled: false });
