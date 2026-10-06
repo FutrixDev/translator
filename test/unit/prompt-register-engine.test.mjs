@@ -219,7 +219,7 @@ test('the register rule reaches every text prompt and no word prompt, default an
   useAI();
   globalThis.chrome.runtime.sendMessage = async (message) => {
     sentToAI.push(message);
-    return { translation: 'AI', phonetic: '', isWord: false, translations: [] };
+    return { translation: 'AI', translations: [] };
   };
   await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
   await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
@@ -261,7 +261,7 @@ test('the register rule reaches every text prompt and no word prompt, default an
       assert.ok(system.includes(FORUM_LINE), `${label} ${path} lost the forum label`);
     }
     const dictionary = await sent(() => ai.translateTextWithMode(
-      word.text, word.targetLang, profile, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好","phonetic":""}');
+      word.text, word.targetLang, profile, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好"}');
     assert.ok(!dictionary.includes(prompts.REGISTER_RULE), `${label} word prompt carries the register rule:\n${dictionary}`);
     assert.ok(dictionary.includes(FORUM_LINE), `${label} word prompt lost the forum label`);
   }

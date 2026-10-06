@@ -8,6 +8,9 @@
 
 // 附加说明（语域、词表、领域、页面上下文）的形状、上限和英文措辞在共享模块里，这里只拼。
 import '../shared/prompt-addenda.js';
+// 词典条目（单词/短语查词）的形状与输出规则只写在共享模块里：校验器认的字段就是
+// 提示词要的字段（shared/dict-entry.js 的 FIELDS）。
+import '../shared/dict-entry.js';
 
 // Math placeholder rule - always appended to prompts (cannot be overridden by custom prompts)
 const MATH_PLACEHOLDER_RULE = `
@@ -23,15 +26,14 @@ Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Ke
 // must not contain {placeholders}.
 const REGISTER_RULE = 'Match the register of the source: casual posts stay casual, with memes and slang rendered as natural equivalents in the target language rather than formal wording or explanations; formal text stays formal';
 
-// Single word/phrase prompt template (no math placeholder rule)
-const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Translate the given word or short phrase to {targetLang}.
-Return JSON only with keys "translation" and "phonetic".
-- "phonetic" should be the IPA of the source word or phrase
-- If phonetic is unavailable, use an empty string`;
+// Dictionary lookup prompt (no math placeholder rule). Both the default template
+// and the custom-prompt branch end in DictEntry.OUTPUT_RULES, so a lookup asks
+// for exactly the entry the service worker accepts (shared/dict-entry.js).
+const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Look up the given word or short phrase for a reader of {targetLang}; write translations and definitions in {targetLang}.
 
-const WORD_OUTPUT_RULES = `OUTPUT FORMAT:
-Return JSON only with keys "translation" and "phonetic".
-"phonetic" should be the IPA of the source word or phrase; if unavailable, use an empty string.`;
+${globalThis.DictEntry.OUTPUT_RULES}`;
+
+const WORD_OUTPUT_RULES = globalThis.DictEntry.OUTPUT_RULES;
 
 // Default prompt template
 const DEFAULT_PROMPT = `You are a professional translator. Translate the given text to {targetLang}.

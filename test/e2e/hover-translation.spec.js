@@ -375,8 +375,6 @@ test.describe('Hover Translation', () => {
       type: 'SHOW_TRANSLATION',
       text: selectedText || 'Energy',
       translation: 'Translated',
-      phonetic: '',
-      isWord: false,
     });
 
     const translation = page.locator('.ai-translator-selection-translation');
@@ -433,8 +431,6 @@ test.describe('Hover Translation', () => {
       type: 'SHOW_TRANSLATION',
       text: 'where {{1}} is defined',
       translation: 'Translated {{1}}',
-      phonetic: '',
-      isWord: false,
     });
 
     const translation = page.locator('.ai-translator-selection-translation');
@@ -490,8 +486,6 @@ test.describe('Hover Translation', () => {
       type: 'SHOW_TRANSLATION',
       text: selectedText || 'Energy',
       translation: 'Translated',
-      phonetic: '',
-      isWord: false,
     });
 
     const latexPreserved = await page.evaluate(() => {

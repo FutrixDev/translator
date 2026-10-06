@@ -145,8 +145,8 @@
     const cache = globalThis.TranslationCache;
     // 只缓存快速批量这一种请求 —— 整页翻译和字幕都发它。划词、悬停、输入框是
     // 用户一次一次点出来的，量小且几乎不重复；而且 TRANSLATE 的返回是
-    // {translation, phonetic, isWord}，另一种形状，给它做缓存等于在这里再养一套
-    // 回写规则。
+    // {translation} 或带词典条目的 {translation, entry}，另一种形状，给它做缓存
+    // 等于在这里再养一套回写规则。
     if (!cache || message.type !== 'TRANSLATE_BATCH_FAST' || !Array.isArray(message.texts)) {
       return ctx.sendTranslation(message);
     }

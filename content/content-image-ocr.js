@@ -360,7 +360,7 @@
       targetLanguage: toApiLang(targetLang || ctx.getEffectiveTargetLang())
     });
 
-    ctx.showTranslationResult(text, '', '', {
+    ctx.showTranslationResult(text, '', {
       sourceLabel: sourceLabelFor(response.language),
       recognizeOnly: !wanted
     });

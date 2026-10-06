@@ -552,9 +552,9 @@
     switch (message.type) {
       case 'TRANSLATE': {
         const translation = await translateGuarded(snap, message.text, targetLang, shared);
-        // 内置是纯翻译模型，给不出音标，所以词典模式退化成普通翻译：
-        // isWord 保持 false，调用方据此不显示音标行和发音按钮。
-        return { translation, phonetic: '', isWord: false };
+        // 内置是纯翻译模型，给不出词典条目：词典模式也只回译文。没有 entry，
+        // engine 是 'builtin'，DictEntry.entryFor 据此不画任何词典块。
+        return { translation };
       }
 
       case 'TRANSLATE_BATCH_FAST': {

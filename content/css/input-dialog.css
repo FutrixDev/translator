@@ -164,15 +164,6 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   white-space: pre-wrap;
 }
 
-.ai-translator-input-phonetic {
-  font-family: 'Times New Roman', serif;
-  font-size: 13px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak,
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-input-speak-result {
   flex-shrink: 0;

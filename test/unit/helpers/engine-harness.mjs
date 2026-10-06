@@ -97,7 +97,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     runtime: {
       sendMessage: async (message) => {
         sentToAI.push(message);
-        return { translation: `AI:${message.text}`, phonetic: '', isWord: false };
+        return { translation: `AI:${message.text}` };
       },
     },
   };

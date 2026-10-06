@@ -1,0 +1,112 @@
+/* Dictionary entry — the blocks shared/dict-entry.js draws under the
+   translation, in the selection card (.ai-translator-popup) and the input
+   dialog alike: phonetics with their speaker buttons, senses by part of
+   speech, examples, word forms.
+
+   Every colour is a theme variable both roots define (popup.css,
+   input-dialog.css, light-theme.css), so the two themes need no rules here.
+   This sheet loads after popup.css, below the containment reset, so the IPA's
+   serif face and the headings' tracking win the tie on source order
+   (test/unit/host-css-containment.test.mjs). The speaker buttons are the
+   shared .ai-translator-icon-btn. */
+
+.ai-translator-dict-entry {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.ai-translator-dict-entry[hidden] {
+  display: none;
+}
+
+.ai-translator-dict-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-translator-dict-phonetics {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.ai-translator-dict-phonetic {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-translator-dict-accent {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ai-translator-dict-ipa {
+  font-family: 'Times New Roman', 'Lucida Sans Unicode', serif;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.ai-translator-dict-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ai-translator-dict-sense {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.ai-translator-dict-pos {
+  flex-shrink: 0;
+  font-style: italic;
+  color: var(--accent);
+}
+
+.ai-translator-dict-defs,
+.ai-translator-dict-example-target,
+.ai-translator-dict-form-value {
+  word-break: break-word;
+}
+
+.ai-translator-dict-example {
+  padding-left: 8px;
+  border-left: 2px solid var(--divider);
+}
+
+.ai-translator-dict-example-source {
+  color: var(--text-primary);
+}
+
+.ai-translator-dict-example-target {
+  color: var(--text-secondary);
+}
+
+.ai-translator-dict-forms {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.ai-translator-dict-forms .ai-translator-dict-heading {
+  flex-basis: 100%;
+}
+
+.ai-translator-dict-form {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ai-translator-dict-form-label {
+  color: var(--text-muted);
+}

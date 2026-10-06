@@ -75,8 +75,8 @@ test('single TRANSLATE (hover, selection card): the page context is counted with
 });
 
 test('single word goes through the same count', async () => {
-  const booked = await charged('{"translation":"注意","phonetic":"/əˈtenʃən/"}', () =>
-    translateTextWithMode('attention', 'zh-CN', profile, settings, false, addenda));
+  const booked = await charged('{"translation":"注意","phonetics":[{"label":"UK","ipa":"/əˈtenʃən/"}]}', () =>
+    translateTextWithMode('attention', 'zh-CN', profile, settings, true, addenda));
   assert.deepEqual(booked, ['attention'.length + CONTEXT_CHARS]);
 });
 

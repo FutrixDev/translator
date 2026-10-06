@@ -20,6 +20,7 @@
 import '../shared/storage-writer.js';
 import '../shared/auto-stats.js';
 import '../shared/batch-delimiter.js';
+import '../shared/dict-entry.js';
 import { languageNames } from './settings.js';
 import {
   BATCH_OUTPUT_RULES,
@@ -34,65 +35,6 @@ import {
 } from './prompts.js';
 import { countCharsSentToModel } from './api-client.js';
 import { callModel } from './model-client.js';
-
-function isSingleWordText(text) {
-  if (!text) return false;
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  if (/[\s\r\n\t]/.test(trimmed)) return false;
-  return trimmed.length <= 40;
-}
-
-function parseWordTranslation(content) {
-  const trimmed = (content || '').trim();
-  if (!trimmed) {
-    return { translation: '', phonetic: '' };
-  }
-
-  let candidate = trimmed;
-  if (!candidate.startsWith('{')) {
-    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      candidate = jsonMatch[0];
-    }
-  }
-
-  if (candidate.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(candidate);
-      return {
-        translation: typeof parsed.translation === 'string' ? parsed.translation.trim() : trimmed,
-        phonetic: typeof parsed.phonetic === 'string' ? parsed.phonetic.trim() : ''
-      };
-    } catch (error) {
-      // Fall through to heuristic parsing
-    }
-  }
-
-  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  let translation = '';
-  let phonetic = '';
-
-  for (const line of lines) {
-    if (!phonetic && /(phonetic|ipa)/i.test(line)) {
-      phonetic = line.replace(/^(phonetic|ipa)\s*[:：]\s*/i, '').trim();
-      continue;
-    }
-    if (!phonetic && /^[/\[].+[/\]]$/.test(line)) {
-      phonetic = line;
-      continue;
-    }
-    if (!translation) {
-      translation = line;
-    }
-  }
-
-  if (!translation) {
-    translation = trimmed;
-  }
-
-  return { translation, phonetic };
-}
 
 // Whether the user's own prompt replaces the default template. One answer for
 // all four paths: a prompt of only whitespace is no prompt, or the single path
@@ -122,27 +64,33 @@ async function translateWithAI(text, targetLang, profile, settings, addenda) {
   return ask(profile, systemPrompt, text, 2000, 0.3);
 }
 
-// Translate single word with IPA (no math placeholder rule)
+// Look a word or short phrase up as a dictionary entry (no math placeholder
+// rule). The answer must be the entry JSON that DictEntry.OUTPUT_RULES asks for;
+// DictEntry.fromModelText validates it and throws { invalidEntry } otherwise —
+// no line-guessing, no raw text passed off as a translation. The entry is bigger
+// than a bare translation, hence 1500 tokens; a model that bills hidden
+// reasoning tokens is raised to api-compat's REASONING_TOKEN_FLOOR (2000).
 async function translateSingleWordWithAI(text, targetLang, profile, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
   const systemPrompt = usesCustomPrompt(settings)
     ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda })
     : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false, addenda });
 
-  // A non-empty answer always parses to a non-empty translation.
-  return parseWordTranslation(await ask(profile, systemPrompt, text, 800, 0.3));
+  return globalThis.DictEntry.fromModelText(await ask(profile, systemPrompt, text, 1500, 0.3));
 }
 
+// One TRANSLATE answer. Only the caller decides whether this is a dictionary
+// lookup (mode 'word'); the answer is then { translation, entry }, otherwise
+// { translation }. The content engine stamps `engine` on either.
 async function translateTextWithMode(text, targetLang, profile, settings, forceWord = false, addenda) {
   countCharsSentToModel(globalThis.AutoStats.sentChars(text, addenda));
 
-  if (forceWord || isSingleWordText(text)) {
-    const result = await translateSingleWordWithAI(text, targetLang, profile, settings, addenda);
-    return { ...result, isWord: true };
+  if (forceWord) {
+    const entry = await translateSingleWordWithAI(text, targetLang, profile, settings, addenda);
+    return { translation: entry.translation, entry };
   }
 
-  const translation = await translateWithAI(text, targetLang, profile, settings, addenda);
-  return { translation, phonetic: '', isWord: false };
+  return { translation: await translateWithAI(text, targetLang, profile, settings, addenda) };
 }
 
 // Translate batch of texts with AI (numbered format)
@@ -256,8 +204,6 @@ function parseNumberedResponse(content, expectedCount) {
 }
 
 export {
-  isSingleWordText,
-  parseWordTranslation,
   parseNumberedResponse,
   translateWithAI,
   translateSingleWordWithAI,

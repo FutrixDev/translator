@@ -10,11 +10,11 @@
 
   // 把一条现成的译文送到划词翻译的展示层。只有 SHOW_TRANSLATION（旧的 background
   // 直推结果）用它；生产代码已不发这条消息，只有 e2e 还在用，登记为遗留。
-  function displaySelectionTranslation({ text, translation, phonetic, isWord }) {
+  function displaySelectionTranslation({ text, translation }) {
     if (ctx.isSelectionInlineEnabled && ctx.isSelectionInlineEnabled() && ctx.showInlineSelectionTranslation) {
       ctx.showInlineSelectionTranslation(text, translation, state.lastSelectionElement, state.lastSelectionRange);
     } else if (ctx.showTranslationResult) {
-      ctx.showTranslationResult(text, translation, phonetic);
+      ctx.showTranslationResult(text, translation);
     }
   }
 
@@ -106,9 +106,7 @@
           if (!settings.enableSelection) break;
           displaySelectionTranslation({
             text: message.text,
-            translation: message.translation,
-            phonetic: message.phonetic,
-            isWord: message.isWord
+            translation: message.translation
           });
           break;
         case 'TRANSLATE_SELECTION_TEXT': {

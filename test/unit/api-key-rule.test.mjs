@@ -183,8 +183,8 @@ function stripComments(src) {
         j += 1;
         while (j < n && /[a-z]/i.test(src[j])) j += 1;
         // A regex reads text (a model's reply, a page) and never shows any,
-        // so its body is blanked too: ai-translate.js accepts a full-width
-        // colon after "phonetic" in what the model writes back.
+        // so its body is blanked too: a pattern may well contain a full-width
+        // character that would otherwise read as visible text.
         out += `/${blank(src.slice(i + 1, close))}${src.slice(close, j)}`;
         i = j;
       } else {

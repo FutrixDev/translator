@@ -3,6 +3,7 @@ const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
+require('../../shared/dict-entry.js');
 
 const en = (key) => getMessage(key, 'en');
 
@@ -32,9 +33,9 @@ async function startInputDictionaryMockServer() {
         text = '';
       }
 
-      const isDictionaryMode = /"translation"\s+and\s+"phonetic"/i.test(systemPrompt);
+      const isDictionaryMode = systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK);
       const content = isDictionaryMode
-        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetic: '/ɒn ðə flaɪ/' })
+        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetics: [{ label: '', ipa: '/ɒn ðə flaɪ/' }] })
         : `[TEXT] ${text}`;
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -47,13 +48,13 @@ async function startInputDictionaryMockServer() {
   return { endpoint: `${origin}/v1/chat/completions`, close };
 }
 
-test('input translation shows phonetic for words and read-aloud for anything typed', async ({ page }) => {
+test('input translation shows a dictionary entry for words and read-aloud for anything typed', async ({ page }) => {
   const { close, endpoint } = await startInputDictionaryMockServer();
 
   try {
     await setExtensionSettings(page, {
       // Dictionary mode only exists on the AI path — the built-in engine gives
-      // back no phonetic and reports isWord: false — and the assertions below
+      // back a translation and no entry — and the assertions below
       // are on this mock's replies, so the backend has to be pinned. See
       // setExtensionSettings in ./helpers.
       apiEndpoint: endpoint,
@@ -80,15 +81,15 @@ test('input translation shows phonetic for words and read-aloud for anything typ
 
     await expect(page.locator('#ai-translator-result-section')).toBeVisible();
     await expect(page.locator('#ai-translator-result-text')).toContainText('[DICT] on the fly');
-    await expect(page.locator('#ai-translator-input-phonetic')).toHaveText('/ɒn ðə flaɪ/');
+    await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('/ɒn ðə flaɪ/');
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
     await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');
     await page.click('#ai-translator-do-translate');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[TEXT] this is a full sentence for translation');
-    // Only the phonetic is dictionary-only; both speakers stay available because
+    // Only the entry is dictionary-only; both speakers stay available because
     // a sentence can be read aloud just as well as a word.
-    await expect(page.locator('#ai-translator-input-phonetic')).toBeHidden();
+    await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
     await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
@@ -218,9 +219,14 @@ async function startTargetLangFixture() {
       // languageNames in background/background.js.
       const asked = Object.entries(LANGUAGE_NAMES)
         .find(([, name]) => systemPrompt.includes(name));
+      const translation = `[${asked ? asked[0] : 'unknown'}] ${text}`;
+      // A short phrase is a dictionary lookup, and that answer is an entry.
+      const content = systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)
+        ? JSON.stringify({ translation })
+        : translation;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        choices: [{ message: { content: `[${asked ? asked[0] : 'unknown'}] ${text}` } }]
+        choices: [{ message: { content } }]
       }));
     });
   });

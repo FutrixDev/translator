@@ -116,7 +116,7 @@ file directly.
   document, so every page rule on a bare tag matches them too — example.com
   ships `div { opacity: .8 }`, and every page builder ships
   `.kit button { … }` plus a heavier `.kit button:hover` twin. One scoped reset
-  at the top of `content/css/popup.css` — the first of the thirteen stylesheets
+  at the top of `content/css/popup.css` — the first of the fourteen stylesheets
   the manifest injects, and that array's order *is* the cascade order — is the
   boundary, and specificity is a four-step band with no `!important` in it:
 
