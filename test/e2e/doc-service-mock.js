@@ -112,6 +112,8 @@ function defaultAfterConfirm() {
  *   a succeeded step may name its result files, `files: ['mono']`.
  * @param {() => object[]} [options.afterConfirm] The GET sequence once confirmed.
  * @param {Record<string, {bytes: Buffer, type: string}>} [options.files] Static files.
+ * @param {'hold'} [options.connect] 'hold' serves the sign-in page and never
+ *   bounces back, so a test can close it the way a user who gives up does.
  */
 async function startDocService(options = {}) {
   const state = {
@@ -212,6 +214,7 @@ async function startDocService(options = {}) {
     // the tab starts navigating there (chromiumapp.org itself never loads).
     if (url.pathname === '/ext/connect') {
       state.connects += 1;
+      if (options.connect === 'hold') return send(200, '<!doctype html><p>Sign in</p>', 'text/html');
       const redirect = url.searchParams.get('redirect_uri');
       res.writeHead(302, {
         location: `${redirect}#token=granted-token&expires_at=${Date.now() + 3600_000}`,
