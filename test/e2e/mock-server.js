@@ -56,4 +56,43 @@ function startMockServer(handler) {
   });
 }
 
-module.exports = { startMockServer };
+/**
+ * The sign-in tab's page, /ext/connect, for every mock that stands in for the
+ * account service. The real page bounces to the extension's redirect URI with
+ * the token in the fragment, and comic-client.js settles as soon as the tab
+ * starts navigating there (chromiumapp.org itself never loads), so that is the
+ * production behaviour. The caller counts the visit; this only answers it.
+ *
+ * @param {URL} url the request URL, carrying redirect_uri
+ * @param {import('node:http').ServerResponse} res
+ * @param {object} [options]
+ * @param {'token'|'denied'|'hold'} [options.answer] 'token' bounces back signed
+ *   in; 'denied' bounces back with the shape a failed authorization takes;
+ *   'hold' serves the sign-in page and never bounces, so a test can close it
+ *   the way a user who gives up does.
+ * @param {number} [options.delayMs] hold the bounce back this long, so a second
+ *   sign-in can arrive while the first is still running.
+ */
+function serveExtConnect(url, res, { answer = 'token', delayMs = 0 } = {}) {
+  if (answer === 'hold') {
+    res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+    res.end('<!doctype html><p>Sign in</p>');
+    return;
+  }
+  const fragments = {
+    token: () => `#token=granted-token&expires_at=${Date.now() + 3600_000}`,
+    denied: () => '#error=access_denied',
+  };
+  if (!fragments[answer]) throw new Error(`serveExtConnect: unknown answer ${answer}`);
+  const bounce = () => {
+    res.writeHead(302, {
+      location: `${url.searchParams.get('redirect_uri')}${fragments[answer]()}`,
+      'cache-control': 'no-store',
+    });
+    res.end();
+  };
+  if (delayMs) setTimeout(bounce, delayMs);
+  else bounce();
+}
+
+module.exports = { startMockServer, serveExtConnect };

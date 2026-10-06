@@ -8,7 +8,10 @@
  *
  *   A1  a PDF tab: both document rows show, no task list is asked for; a click
  *       signs in and then hands the PDF over with no second click; closing the
- *       sign-in tab does nothing at all.
+ *       sign-in tab does nothing at all. Where the page cannot take the click
+ *       (no content script answers) or is not a PDF document after all (a .pdf
+ *       URL serving a comic page), the popup opens exactly one sign-in itself
+ *       and nothing else starts — above all no comic job.
  *   A2  a comic page, and an image opened on its own: the comic rows show; a
  *       click asks for a sign-in on the page and then runs the job by itself.
  *   A3  both switches off, signed in or not: none of the five rows show.
@@ -19,7 +22,7 @@
  * sign-in tab, the mock's /ext/connect bounce, the real job requests.
  */
 const { test, expect } = require('./fixtures');
-const { getServiceWorker, waitForFloatBall } = require('./helpers');
+const { connectExtension, waitForFloatBall } = require('./helpers');
 const { startDocService } = require('./doc-service-mock');
 const comicFixtures = require('./comic-fixtures');
 
@@ -27,40 +30,27 @@ const BAR = '#ai-translator-auto-bar';
 const ROWS = ['#pdfTranslateCurrent', '#pdfTranslateLocal', '#comicTranslatePage', '#comicColorizePage'];
 
 /**
- * Point the extension at `base` with both features switched as given, and with
- * or without a token on this device.
- */
-async function connectExtension(context, base, { signedIn, enabled = true }) {
-  const worker = await getServiceWorker(context);
-  await worker.evaluate(async ({ base, signedIn, enabled }) => {
-    await chrome.storage.sync.set({ enablePdfTranslation: enabled, enableComicTranslation: enabled });
-    await chrome.storage.local.remove([
-      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'comicJobs', 'pdfJobs', 'pdfUrlOps',
-    ]);
-    const values = { comicApiBase: base };
-    if (signedIn) {
-      values.comicToken = 'test-token';
-      values.comicTokenExpiresAt = Date.now() + 3600_000;
-    }
-    await chrome.storage.local.set(values);
-  }, { base, signedIn, enabled });
-  return worker;
-}
-
-/**
  * The popup, asking about `page`. Every runtime message it sends is recorded
  * in `window.__sent`, so a request it must not make can be counted.
+ *
+ * `noReceiver` is a tab with no content script to answer (a restricted page,
+ * an extension reloaded under the page): every chrome.tabs.sendMessage fails
+ * the way Chrome fails it.
  */
-async function openPopupOver(context, extensionId, page) {
+async function openPopupOver(context, extensionId, page, { noReceiver = false } = {}) {
   const popup = await context.newPage();
-  await popup.addInitScript(() => {
+  await popup.addInitScript((noReceiver) => {
     window.__sent = [];
     const send = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = (message, ...rest) => {
       window.__sent.push(message && message.type);
       return send(message, ...rest);
     };
-  });
+    if (noReceiver) {
+      chrome.tabs.sendMessage = () => Promise.reject(
+        new Error('Could not establish connection. Receiving end does not exist.'));
+    }
+  }, noReceiver);
   await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
   // goto() fronted the popup's tab; give the window back to the page and let
   // the popup ask again.
@@ -100,6 +90,8 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       await expect.poll(() => service.state.apiHits.filter(h => h === 'POST /api/pdf/jobs').length,
         { timeout: 20000 }).toBe(1);
       expect(service.state.apiHits.filter(h => h === 'POST /api/pdf/uploads')).toHaveLength(1);
+      // One sign-in tab, all the way to the job: the popup did not open its own.
+      expect(service.state.connects).toBe(1);
     } finally {
       await service.close();
     }
@@ -126,6 +118,9 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       // Nothing sent, nothing said: a cancel is not a failure.
       await page.waitForTimeout(1500);
       expect(service.state.apiHits).toEqual([]);
+      // ...and nothing opened a second sign-in behind the one that was closed.
+      expect(service.state.connects).toBe(1);
+      expect(context.pages().filter(p => /\/ext\/connect/.test(p.url()))).toHaveLength(0);
       expect(await storedToken(worker)).toBe('');
       await expect(page.locator(`${BAR}[data-mode="notice"]`)).toHaveCount(0);
       // The hint is back as it was, ready for another go.
@@ -141,12 +136,75 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
   });
 });
 
+test.describe('A1 · signed out, the page does not take the hand-off', () => {
+  /** The popup's own console, which names which of the two answers it got. */
+  function popupWarnings(popup) {
+    const lines = [];
+    popup.on('console', (m) => { if (m.type() === 'warning') lines.push(m.text()); });
+    return lines;
+  }
+
+  test('no content script answers: one sign-in from the popup, and no PDF job', async ({ context, page, extensionId }) => {
+    const service = await startDocService();
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      await page.goto(`${service.base}/paper.pdf`);
+      await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
+
+      const popup = await openPopupOver(context, extensionId, page, { noReceiver: true });
+      const warnings = popupWarnings(popup);
+      await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
+      await popup.locator('#pdfTranslateCurrent').click();
+
+      await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
+      await expect.poll(() => storedToken(worker)).toBe('granted-token');
+      expect(warnings.join('\n')).toContain('no content script took the signed-out PDF translate');
+      // Signed in, and the PDF is one more click away: nothing went out by itself.
+      await page.waitForTimeout(2000);
+      expect(service.state.connects).toBe(1);
+      expect(service.state.apiHits).toEqual([]);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a .pdf URL that is a comic page: one sign-in, no comic job, no PDF job', async ({ context, page, extensionId }) => {
+    const service = await comicFixtures.startMockService('succeed');
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      await page.goto(`${service.base}/comic.pdf`);
+      await expect(page.locator('img').first()).toBeVisible();
+      await waitForFloatBall(page);
+
+      const popup = await openPopupOver(context, extensionId, page);
+      const warnings = popupWarnings(popup);
+      // The URL looks like a PDF, so the row is offered.
+      await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
+      await popup.locator('#pdfTranslateCurrent').click();
+
+      await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
+      await expect.poll(() => storedToken(worker)).toBe('granted-token');
+      expect(warnings.join('\n')).toContain('the page says it is not a PDF document');
+      // Long enough for a comic job the page started on its own to reach the
+      // service after the sign-in landed.
+      await page.waitForTimeout(3000);
+      expect(service.state.connects).toBe(1);
+      expect(service.state.createBodies).toHaveLength(0);
+      expect(service.state.pdfHits).toEqual([]);
+      await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
+      await expect(page.locator(`${BAR}[data-mode="notice"]`)).toHaveCount(0);
+    } finally {
+      await service.close();
+    }
+  });
+});
+
 test.describe('A2 · signed out, the popup over a comic', () => {
   for (const [name, path] of [['a comic page', '/page'], ['an image opened on its own', '/source.png']]) {
     test(`${name}: the row signs in on the page and the job runs by itself`, async ({ context, page, extensionId }) => {
       const service = await comicFixtures.startMockService('succeed');
       try {
-        const worker = await comicFixtures.connectExtension(context, service.base, { withToken: false });
+        const worker = await connectExtension(context, service.base, { signedIn: false });
         await page.goto(`${service.base}${path}`);
         const img = page.locator('img').first();
         await expect(img).toBeVisible();
@@ -184,7 +242,7 @@ test.describe('A3 · both switches off', () => {
     test(`${signedIn ? 'signed in' : 'signed out'}: none of the five rows show`, async ({ context, page, extensionId }) => {
       const service = await startDocService();
       try {
-        await connectExtension(context, service.base, { signedIn, enabled: false });
+        await connectExtension(context, service.base, { signedIn, comic: false, pdf: false });
         await page.goto(`${service.base}/paper.pdf`);
         await page.waitForLoadState('load');
 

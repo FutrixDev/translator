@@ -229,6 +229,12 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
     .map(u => u.visible).at(-1))).toBe(false);
 
   await page.goto(popupUrl);
+  // Both PDF rows start hidden in popup.html, so "hidden" proves nothing until
+  // the popup has read the switches. The comic row is put on screen by the same
+  // storage read, started in the same tick as the PDF one: once it shows (and a
+  // beat after), the PDF gate has had its say too.
+  await expect(page.locator('#comicTranslatePage')).toBeVisible();
+  await page.waitForTimeout(500);
   await expect(page.locator('#pdfTranslateLocal')).toBeHidden();
   await expect(page.locator('#pdfTranslateCurrent')).toBeHidden();
 

@@ -13,7 +13,7 @@
  * every confirm. Built on startMockServer — a spec that starts its own server
  * is refused by the unit guard.
  */
-const { startMockServer } = require('./mock-server');
+const { startMockServer, serveExtConnect } = require('./mock-server');
 
 const DEFAULT_ACCOUNT = {
   email: 'reader@example.com',
@@ -209,18 +209,9 @@ async function startDocService(options = {}) {
       return send(200, bytes, type);
     }
 
-    // The sign-in tab: the real page bounces to the extension's redirect URI
-    // with the token in the fragment, and comic-client.js settles as soon as
-    // the tab starts navigating there (chromiumapp.org itself never loads).
     if (url.pathname === '/ext/connect') {
       state.connects += 1;
-      if (options.connect === 'hold') return send(200, '<!doctype html><p>Sign in</p>', 'text/html');
-      const redirect = url.searchParams.get('redirect_uri');
-      res.writeHead(302, {
-        location: `${redirect}#token=granted-token&expires_at=${Date.now() + 3600_000}`,
-        'cache-control': 'no-store',
-      });
-      return res.end();
+      return serveExtConnect(url, res, { answer: options.connect === 'hold' ? 'hold' : 'token' });
     }
 
     if (!url.pathname.startsWith('/api/')) return send(404, { error: 'not_found' });

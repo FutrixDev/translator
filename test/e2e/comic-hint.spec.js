@@ -16,8 +16,10 @@
  * before the click, one after it.
  */
 const { test, expect } = require('./fixtures');
-const { getServiceWorker, openFloatBallMenu, setExtensionAccount, waitForFloatBall } = require('./helpers');
-const { SOURCE_PNG, connectExtension, startMockService } = require('./comic-fixtures');
+const {
+  connectExtension, getServiceWorker, openFloatBallMenu, setExtensionAccount, waitForFloatBall,
+} = require('./helpers');
+const { SOURCE_PNG, startMockService } = require('./comic-fixtures');
 
 const READER = 'https://comics-reader.test';
 const ARTICLE = 'https://picture-article.test';
