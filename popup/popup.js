@@ -113,8 +113,8 @@ document.addEventListener('DOMContentLoaded', () => {
  * know whether this device has an account at all — see shared/account-gate.js.
  *
  * Signed out shows them too: the page asks for a sign-in when the job is
- * refused for want of one, and carries on by itself once it has it
- * (runJob() in content/content-comic-translation.js).
+ * refused for want of one, and once the user signs in from that prompt the
+ * same job carries on (runJob() in content/content-comic-translation.js).
  */
 async function refreshComicSection() {
   // Off means gone, not greyed out: the user turned the feature off.
