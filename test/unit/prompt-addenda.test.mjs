@@ -486,8 +486,8 @@ test('buildPrompt: the block sits after the template and before the math rule, i
   assert.equal(custom, 'Translate into Chinese.\n\n' + block + MATH_PLACEHOLDER_RULE + '\n\n' + rules);
 
   // 单词翻译不带数学规则，但附加说明一样带，排在输出规则之前。
-  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, '', { includeMathRule: false, addenda });
-  assert.ok(word.endsWith('\n\n' + block));
+  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
+  assert.equal(word, SINGLE_WORD_PROMPT.replace(/\{targetLang\}/g, 'Chinese') + '\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);
   assert.ok(!word.includes(MATH_PLACEHOLDER_RULE.trim()));
   const customWord = buildPrompt('Custom {targetLang}', 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
   assert.equal(customWord, 'Custom Chinese\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);

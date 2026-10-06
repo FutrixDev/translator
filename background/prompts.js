@@ -26,12 +26,11 @@ Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Ke
 // must not contain {placeholders}.
 const REGISTER_RULE = 'Match the register of the source: casual posts stay casual, with memes and slang rendered as natural equivalents in the target language rather than formal wording or explanations; formal text stays formal';
 
-// Dictionary lookup prompt (no math placeholder rule). Both the default template
-// and the custom-prompt branch end in DictEntry.OUTPUT_RULES, so a lookup asks
-// for exactly the entry the service worker accepts (shared/dict-entry.js).
-const SINGLE_WORD_PROMPT = `You are a bilingual dictionary. Look up the given word or short phrase for a reader of {targetLang}; write translations and definitions in {targetLang}.
-
-${globalThis.DictEntry.OUTPUT_RULES}`;
+// Dictionary lookup prompt (no math placeholder rule). Like a custom prompt, it
+// is followed by WORD_OUTPUT_RULES as buildPrompt's extraRules, so every lookup
+// ends in DictEntry.OUTPUT_RULES — after the addenda too — and asks for exactly
+// the entry the service worker accepts (shared/dict-entry.js).
+const SINGLE_WORD_PROMPT = 'You are a bilingual dictionary. Look up the given word or short phrase for a reader of {targetLang}; write translations and definitions in {targetLang}.';
 
 const WORD_OUTPUT_RULES = globalThis.DictEntry.OUTPUT_RULES;
 

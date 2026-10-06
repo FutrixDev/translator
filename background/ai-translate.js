@@ -72,9 +72,10 @@ async function translateWithAI(text, targetLang, profile, settings, addenda) {
 // reasoning tokens is raised to api-compat's REASONING_TOKEN_FLOOR (2000).
 async function translateSingleWordWithAI(text, targetLang, profile, settings, addenda) {
   const targetLangName = languageNames[targetLang] || targetLang;
-  const systemPrompt = usesCustomPrompt(settings)
-    ? buildPrompt(settings.customPrompt, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda })
-    : buildPrompt(SINGLE_WORD_PROMPT, targetLangName, {}, '', { includeMathRule: false, addenda });
+  // The rules come last whichever template leads, and their last line says the
+  // entry format overrides the template's own reply format (D-472).
+  const template = usesCustomPrompt(settings) ? settings.customPrompt : SINGLE_WORD_PROMPT;
+  const systemPrompt = buildPrompt(template, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
 
   return globalThis.DictEntry.fromModelText(await ask(profile, systemPrompt, text, 1500, 0.3));
 }

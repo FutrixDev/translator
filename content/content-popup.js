@@ -483,14 +483,6 @@
     return normalized;
   }
 
-  function isSingleWordText(text) {
-    if (!text) return false;
-    const trimmed = text.trim();
-    if (!trimmed) return false;
-    if (/[\s\r\n\t]/.test(trimmed)) return false;
-    return trimmed.length <= 40;
-  }
-
   // 卡片「译文」一格里的几块：加载态、译文、词典条目、错误。
   function cardParts(popup) {
     const q = (selector) => popup.querySelector(selector);
@@ -594,7 +586,7 @@
     const popup = state.translationPopup;
     const isCurrent = () => !!popup && state.translationPopup === popup && popup.dataset.requestId === requestId;
     try {
-      const mode = isSingleWordText(text) ? 'word' : 'text';
+      const mode = DictEntry.isLookup(text) ? 'word' : 'text';
       const targetLang = targetLangOverride || getEffectiveTargetLang();
       if (!isExtensionContextAvailable()) {
         if (popup) {
@@ -684,5 +676,4 @@
   ctx.hideTranslationPopup = hideTranslationPopup;
   ctx.setupLanguageDropdown = setupLanguageDropdown;
   ctx.translateText = translateText;
-  ctx.isSingleWordText = isSingleWordText;
 })();

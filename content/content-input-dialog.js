@@ -93,21 +93,6 @@
     });
   }
 
-  // Whether the typed text is a dictionary lookup (a word or short phrase,
-  // mode 'word'). A short sentence — several words ending in sentence
-  // punctuation, e.g. "I run every morning." — is translated, not looked up.
-  function isInputDictionaryText(text) {
-    if (!text) return false;
-    const trimmed = text.trim();
-    if (!trimmed) return false;
-    if (/[\r\n\t]/.test(trimmed)) return false;
-    if (trimmed.length > 80) return false;
-    if (/[=+\-*/^<>]/.test(trimmed)) return false;
-    const segments = trimmed.split(/\s+/).filter(Boolean);
-    if (segments.length >= 2 && /[.!?。！？]$/.test(trimmed)) return false;
-    return segments.length >= 1 && segments.length <= 4;
-  }
-
   function showInputTranslateDialog() {
     if (state.inputDialog) {
       hideInputDialog();
@@ -258,7 +243,7 @@
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
-        const mode = isInputDictionaryText(text) ? 'word' : 'text';
+        const mode = DictEntry.isLookup(text) ? 'word' : 'text';
         const response = await ctx.requestTranslation({
           type: 'TRANSLATE',
           feature: 'input',

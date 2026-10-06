@@ -3,21 +3,39 @@
    dialog alike: phonetics with their speaker buttons, senses by part of
    speech, examples, word forms.
 
-   Every colour is a theme variable both roots define (popup.css,
-   input-dialog.css, light-theme.css), so the two themes need no rules here.
+   Every element states its own colour, font-size, display and padding. The
+   containment reset in popup.css leaves those to our own rules, and the
+   entry is built from bare spans and divs, so a page rule such as
+   `span { color: red; font-size: 30px; display: block }` or
+   `div { padding: 12px; display: inline }` would reach anything that only
+   inherits them. Each rule here weighs one class (0,1,0) and beats a bare-tag
+   rule (0,0,1); test/e2e/dictionary-entry.spec.js serves exactly those rules.
+
+   Colours are theme variables both roots define (popup.css, input-dialog.css,
+   light-theme.css), except --dict-pos below. Small text uses --text-secondary,
+   never --text-muted, which is under 4.5:1 on the light panel.
    This sheet loads after popup.css, below the containment reset, so the IPA's
    serif face and the headings' tracking win the tie on source order
    (test/unit/host-css-containment.test.mjs). The speaker buttons are the
    shared .ai-translator-icon-btn. */
 
 .ai-translator-dict-entry {
+  /* The part of speech is accent-coloured, but the shared --accent (#6f63ff)
+     is about 4.2:1 on both panels. These two shades of it reach 4.5:1 on the
+     panel and on the pill background, dark and light. */
+  --dict-pos: #958dff;
   margin-top: 10px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
+}
+
+[data-ai-translator-theme="light"] .ai-translator-dict-entry {
+  --dict-pos: #5b50e6;
 }
 
 .ai-translator-dict-entry[hidden] {
@@ -28,6 +46,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .ai-translator-dict-phonetics {
@@ -40,56 +61,83 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .ai-translator-dict-accent {
+  display: inline;
+  padding: 0;
   font-size: 12px;
   color: var(--text-secondary);
 }
 
 .ai-translator-dict-ipa {
+  display: inline;
+  padding: 0;
   font-family: 'Times New Roman', 'Lucida Sans Unicode', serif;
   font-size: 14px;
   color: var(--text-secondary);
 }
 
 .ai-translator-dict-heading {
+  display: block;
+  padding: 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .ai-translator-dict-sense {
   display: flex;
   gap: 8px;
   align-items: baseline;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .ai-translator-dict-pos {
+  display: inline;
   flex-shrink: 0;
+  padding: 0;
+  font-size: 13px;
   font-style: italic;
-  color: var(--accent);
+  color: var(--dict-pos);
 }
 
-.ai-translator-dict-defs,
-.ai-translator-dict-example-target,
-.ai-translator-dict-form-value {
+.ai-translator-dict-defs {
+  display: inline;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
   word-break: break-word;
 }
 
 .ai-translator-dict-example {
-  padding-left: 8px;
+  display: block;
+  padding: 0 0 0 8px;
   border-left: 2px solid var(--divider);
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .ai-translator-dict-example-source {
+  display: block;
+  padding: 0;
+  font-size: 13px;
   color: var(--text-primary);
 }
 
 .ai-translator-dict-example-target {
+  display: block;
+  padding: 0;
+  font-size: 13px;
   color: var(--text-secondary);
+  word-break: break-word;
 }
 
 .ai-translator-dict-forms {
@@ -105,8 +153,22 @@
 .ai-translator-dict-form {
   display: inline-flex;
   gap: 4px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .ai-translator-dict-form-label {
-  color: var(--text-muted);
+  display: inline;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-translator-dict-form-value {
+  display: inline;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  word-break: break-word;
 }

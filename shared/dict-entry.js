@@ -1,20 +1,25 @@
 // Blab Translation — the dictionary entry: its shape, the prompt that asks for
 // it, the check on what the model sends back, and the one way it is drawn.
 //
-// Looking up a word (the input dialog with a short text, the selection card
-// with a single word) asks the user's own AI engine for an entry, not just a
-// translation. Nothing else is asked: no third-party dictionary sees the word
-// (D-469). The built-in engine only translates, so its answers carry no entry
+// Looking up a word or short phrase (isLookup: the input dialog and the
+// selection card ask the same question) asks the user's own AI engine for an
+// entry, not just a translation. Nothing else is asked: no third-party
+// dictionary sees the word (D-469). The built-in engine only translates, so its answers carry no entry
 // and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
+//   isLookup      whether a text is looked up at all (D-473). Both surfaces call
+//                 it and keep no check of their own.
 //   FIELDS        the shape. OUTPUT_RULES (what the prompt asks for) and
 //                 normalize() (what the service worker accepts) both read it,
 //                 so the two cannot ask for and accept different keys.
-//   fromModelText the service worker's reading of the model's answer. Anything
-//                 that is not one JSON object of this shape throws an error
-//                 marked `invalidEntry` — there is no line-guessing fallback
-//                 and no "translation only" rescue.
+//   fromModelText the service worker's reading of the model's answer (D-472).
+//                 Three things throw an error marked `invalidEntry`: no JSON
+//                 object to extract, a parse that is not an object, a missing
+//                 or empty translation. There is no line-guessing fallback and
+//                 no "translation only" rescue. Everything optional is lenient:
+//                 a field of the wrong type, or one overlong item, is dropped
+//                 and the rest of the entry kept.
 //   entryFor      which answers carry an entry: an AI answer to a word-mode
 //                 request, and only that one.
 //   render        the DOM. The input dialog and the selection card both call
@@ -35,8 +40,34 @@
 
   // Longest string the entry accepts, in characters. A definition or example is
   // a line, not a paragraph; anything longer is the model writing an essay
-  // instead of following the format, and the lookup fails rather than drawing it.
+  // instead of following the format, and that string is dropped rather than
+  // drawn. A translation that long counts as missing, and the lookup fails.
   const MAX_TEXT = 500;
+
+  // ---- what is looked up (D-473) ---------------------------------------------
+
+  // Sentence punctuation: any of these in the text makes it a sentence.
+  const SENTENCE_PUNCTUATION = /[.!?。！？；;，,：:]/;
+
+  // Scripts that do not separate words with spaces: a lookup in them is counted
+  // in characters, not words.
+  const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
+  const MAX_LOOKUP_WORDS = 3;
+  const MAX_LOOKUP_CHARS = 4;
+
+  /**
+   * Whether `text` is looked up as a dictionary entry (mode 'word') rather than
+   * translated as a sentence. After trimming, it has no sentence punctuation
+   * and is 1–3 words in a space-separated script, or 1–4 characters in a script
+   * without spaces. Nothing else is weighed: "I run daily" is a lookup.
+   */
+  function isLookup(text) {
+    const trimmed = String(text == null ? '' : text).trim();
+    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
+    if (UNSPACED_SCRIPT.test(trimmed)) return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_LOOKUP_CHARS;
+    return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
+  }
 
   // Phonetic labels and the speech tag each one is read aloud in. '' is the one
   // pronunciation of a non-English word: no label, language left to detection.
@@ -88,6 +119,11 @@
   // request by it; it is a stable literal, so do not reword it casually.
   const PROMPT_MARK = 'OUTPUT FORMAT (dictionary entry):';
 
+  // The last line of the rules (D-472). A custom prompt — a preset such as
+  // "Reply with the translation only", or the default restored — comes before
+  // the rules; without this line the model follows it and the lookup fails.
+  const FORMAT_OVERRIDE = 'This output format overrides any earlier instruction about the format of the reply, including any instruction to reply with the translation only.';
+
   function itemSchema(field) {
     const parts = Object.entries(field.item).map(([key, type]) => {
       if (type === 'label') return `"${key}": "UK" | "US" | ""`;
@@ -108,6 +144,7 @@
       : `- "${key}": array (at most ${field.max}) of ${itemSchema(field)}: ${field.describe}`)),
     'Give an empty string or an empty array for anything you are not sure of. Never invent a pronunciation, a sense, an example or a form.',
     'If the input is a whole sentence rather than a word or a short phrase, give only "translation" and leave every list empty.',
+    FORMAT_OVERRIDE,
   ].join('\n');
 
   // ---- validation -----------------------------------------------------------
@@ -120,36 +157,35 @@
 
   const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-  // A string field: missing is '', anything but a string throws, overlong throws.
-  function text(value, where) {
-    if (value === undefined || value === null) return '';
-    if (typeof value !== 'string') throw invalid(`${where} is ${typeof value}, not a string`);
+  // A string field: anything but a string, or a string over MAX_TEXT, is
+  // dropped — read as '', the same as missing (D-472).
+  function text(value) {
+    if (typeof value !== 'string') return '';
     const trimmed = value.trim();
-    if (trimmed.length > MAX_TEXT) throw invalid(`${where} is ${trimmed.length} characters, over ${MAX_TEXT}`);
-    return trimmed;
+    return trimmed.length > MAX_TEXT ? '' : trimmed;
   }
 
-  function label(value, where) {
-    const raw = text(value, where).toUpperCase();
+  function label(value) {
+    const raw = text(value).toUpperCase();
     // An unknown label ("GB", "British") still carries a real pronunciation:
     // keep the IPA, drop the label it cannot be shown under.
     return Object.prototype.hasOwnProperty.call(PHONETIC_LANGS, raw) ? raw : '';
   }
 
-  function texts(value, where, max) {
-    if (value === undefined || value === null) return [];
-    if (!Array.isArray(value)) throw invalid(`${where} is not an array`);
-    return value.map((item, i) => text(item, `${where}[${i}]`)).filter(Boolean).slice(0, max);
+  // Not an array is no strings; a string that is dropped leaves the others.
+  function texts(value, max) {
+    if (!Array.isArray(value)) return [];
+    return value.map(text).filter(Boolean).slice(0, max);
   }
 
-  function normalizeItem(field, raw, where) {
-    if (!isPlainObject(raw)) throw invalid(`${where} is not an object`);
+  // null for anything that is not an object: the item is dropped.
+  function normalizeItem(field, raw) {
+    if (!isPlainObject(raw)) return null;
     const item = {};
     for (const [key, type] of Object.entries(field.item)) {
-      const at = `${where}.${key}`;
-      if (type === 'label') item[key] = label(raw[key], at);
-      else if (type === 'texts') item[key] = texts(raw[key], at, field.maxDefs);
-      else item[key] = text(raw[key], at);
+      if (type === 'label') item[key] = label(raw[key]);
+      else if (type === 'texts') item[key] = texts(raw[key], field.maxDefs);
+      else item[key] = text(raw[key]);
     }
     return item;
   }
@@ -157,26 +193,24 @@
   const filled = (value) => (Array.isArray(value) ? value.length > 0 : !!value);
 
   /**
-   * The entry as the renderer may trust it, or a throw (`invalidEntry`).
-   * Missing lists are empty; unknown keys are ignored and not carried; items
-   * missing a required value are dropped; lists past their cap are cut.
+   * The entry as the renderer may trust it, or a throw (`invalidEntry`) when
+   * `raw` is not an object or its translation is missing or empty — the only
+   * two hard failures here (D-472). Everything else is lenient: a list that is
+   * not an array is empty, an item that is not an object or lacks a required
+   * value is dropped, a string of the wrong type or over MAX_TEXT is dropped,
+   * lists past their cap are cut; unknown keys are ignored and not carried.
    */
   function normalize(raw) {
     if (!isPlainObject(raw)) throw invalid('not a JSON object');
-    const translation = text(raw.translation, 'translation');
-    if (!translation) throw invalid('translation is empty');
+    const translation = text(raw.translation);
+    if (!translation) throw invalid('translation is missing or empty');
     const entry = { translation };
     for (const key of LIST_KEYS) {
       const field = FIELDS[key];
-      const value = raw[key];
-      if (value === undefined || value === null) {
-        entry[key] = [];
-        continue;
-      }
-      if (!Array.isArray(value)) throw invalid(`${key} is not an array`);
+      const value = Array.isArray(raw[key]) ? raw[key] : [];
       entry[key] = value
-        .map((item, i) => normalizeItem(field, item, `${key}[${i}]`))
-        .filter((item) => field.required.every((name) => filled(item[name])))
+        .map((item) => normalizeItem(field, item))
+        .filter((item) => item && field.required.every((name) => filled(item[name])))
         .slice(0, field.max);
     }
     return entry;
@@ -184,12 +218,13 @@
 
   /**
    * The service worker's reading of the model's answer. One JSON object,
-   * optionally inside a single code fence or with a stray sentence around it
-   * (the span from the first `{` to the last `}`). Anything else throws with
-   * `invalidEntry` and the reason in the message.
+   * optionally after a reasoning model's <think>…</think> block, inside a
+   * single code fence or with a stray sentence around it (the span from the
+   * first `{` to the last `}`). No object to extract throws with `invalidEntry`
+   * and the reason in the message; so does what normalize() rejects.
    */
   function fromModelText(content) {
-    let body = String(content == null ? '' : content).trim();
+    let body = String(content == null ? '' : content).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     const fence = body.match(/^```[A-Za-z]*\s*\n([\s\S]*?)\n?```$/);
     if (fence) body = fence[1].trim();
     const start = body.indexOf('{');
@@ -221,7 +256,8 @@
   /**
    * Draw `entry` into `container`, replacing what was there; null clears it.
    * The container is hidden whenever nothing is drawn, so a translation-only
-   * entry leaves no empty heading behind.
+   * entry leaves no empty heading behind. A speaker in the old entry that is
+   * still talking is stopped first: its button is about to leave the page.
    *
    * @param {HTMLElement} container
    * @param {object|null} entry  from entryFor()
@@ -229,7 +265,13 @@
    *   `word` is the looked-up text the speaker buttons read out; `speech` is
    *   ctx.speech (content/content-speech.js).
    */
+  // The visibility setters bindSpeakButton returned for each container's
+  // speakers; setting one false stops that speaker if it is the one talking.
+  const speakerSetters = new WeakMap();
+
   function render(container, entry, options) {
+    for (const setVisible of speakerSetters.get(container) || []) setVisible(false);
+    speakerSetters.delete(container);
     container.replaceChildren();
     if (entry === null) {
       container.hidden = true;
@@ -252,6 +294,8 @@
     };
 
     if (entry.phonetics.length) {
+      const setters = [];
+      speakerSetters.set(container, setters);
       const block = section('phonetics');
       for (const { label: tag, ipa } of entry.phonetics) {
         const row = el('span', 'ai-translator-dict-phonetic');
@@ -262,7 +306,7 @@
         button.dataset.accent = tag;
         button.setAttribute('aria-label', t('pronounceOriginal'));
         button.innerHTML = speech.SPEAKER_ICON;
-        speech.bindSpeakButton(button, () => ({ text: word, lang: PHONETIC_LANGS[tag] }));
+        setters.push(speech.bindSpeakButton(button, () => ({ text: word, lang: PHONETIC_LANGS[tag] })));
         row.appendChild(button);
         block.appendChild(row);
       }
@@ -306,7 +350,9 @@
     MAX_TEXT,
     PHONETIC_LANGS,
     PROMPT_MARK,
+    FORMAT_OVERRIDE,
     OUTPUT_RULES,
+    isLookup,
     normalize,
     fromModelText,
     entryFor,

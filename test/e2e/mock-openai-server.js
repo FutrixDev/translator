@@ -79,9 +79,10 @@ function pngDataUrlSize(dataUrl) {
  * @param {?{count: number, retryAfter: (number|string)}} [options.rateLimit]
  *   前 count 次请求回 429，带 `Retry-After: retryAfter`（秒数或 HTTP 日期），之后
  *   照常作答。在其余失败选项之前判，命中就不再往下走。
- * @param {(text: string) => object} [options.dictEntry]
+ * @param {(text: string) => (object|string)} [options.dictEntry]
  *   A word lookup (the system prompt carries DictEntry.PROMPT_MARK) is answered
- *   with this entry, as JSON. The default is a translation-only entry,
+ *   with this entry, as JSON; a string is sent as the reply as it is (an answer
+ *   that is not an entry). The default is a translation-only entry,
  *   `{ translation: '[T] ' + text }`, so a lookup reads like every other reply.
  */
 async function startMockOpenAIServer({
@@ -233,7 +234,8 @@ async function startMockOpenAIServer({
 
       const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
       if (systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)) {
-        content = JSON.stringify(dictEntry(content));
+        const answer = dictEntry(content);
+        content = typeof answer === 'string' ? answer : JSON.stringify(answer);
       } else if (delimiter) {
         const segments = content.split(delimiter);
         fastBatchRequests.push({ delimiter, segmentCount: segments.length });

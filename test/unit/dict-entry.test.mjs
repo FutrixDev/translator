@@ -1,25 +1,30 @@
 // The dictionary entry has one owner, shared/dict-entry.js (D-469/D-470):
 //
-//   - normalize() is the only check on what the model sends back: a missing
-//     list is empty, a wrong type or an overlong string throws `invalidEntry`,
-//     extra keys are dropped, lists past their cap are cut;
+//   - isLookup() alone decides what is looked up (D-473), checked against the
+//     ruling's own samples;
+//   - normalize() is the only check on what the model sends back (D-472): only
+//     a non-object or a missing/empty translation throws `invalidEntry`; a
+//     wrong-typed optional field or an overlong item is dropped and the rest
+//     kept, a missing list is empty, extra keys are dropped, lists past their
+//     cap are cut;
 //   - the keys the prompt asks for are the keys normalize() reads, because both
 //     are built from FIELDS (checked here from the prompt's own text);
-//   - render() puts model strings on the page as text, never as HTML;
-//   - the input dialog and the selection card both draw with DictEntry.render
-//     and neither builds an entry block of its own;
+//   - render() puts model strings on the page as text, never as HTML, and
+//     stops the old entry's speaker before replacing it;
 //   - only an AI answer in word mode carries an entry (entryFor).
+//
+// That the dialog and the card draw the same entry is checked on the page:
+// test/e2e/dictionary-entry.spec.js compares the two.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { repoSource, workerSource } from './helpers/sources.mjs';
 
 await import('../../shared/dict-entry.js');
-const { FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, normalize, fromModelText, entryFor, render } = globalThis.DictEntry;
-
-const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
+const {
+  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
+} = globalThis.DictEntry;
 
 const FULL = {
   translation: '跑',
@@ -34,6 +39,55 @@ const throwsInvalid = (fn, reason) => assert.throws(fn, (error) => {
   return true;
 }, reason);
 
+// ---- isLookup (D-473) -------------------------------------------------------
+
+// The ruling's samples, every one of them, then the edges of each rule.
+const LOOKUP_TABLE = [
+  ['run', true],
+  ['give up', true],
+  ['look forward to', true],
+  ['I run daily', true],
+  ['我每天早上跑步。', false],
+  ['跑步', true],
+  ['猫', true],
+  ['東京', true],
+  ['Hello, world', false],
+  ['run.', false],
+  // trimmed first
+  ['  give up \n', true],
+  ['', false],
+  ['   ', false],
+  // 1–3 words, by spaces
+  ['look forward to it', false],
+  ['state-of-the-art', true],
+  // 1–4 characters where words are not spaced, by code point
+  ['一石二鳥', true],
+  ['一石二鸟吧', false],
+  ['ありがとう', false],
+  ['猫 狗', true],
+  ['안녕', true],
+  ['𠮷野家', true],
+  // any sentence punctuation, half- or full-width
+  ['run!', false],
+  ['run?', false],
+  ['跑！', false],
+  ['跑？', false],
+  ['跑。', false],
+  ['跑；', false],
+  ['run;', false],
+  ['跑，', false],
+  ['note: run', false],
+  ['跑：', false],
+];
+
+test('isLookup answers the D-473 table', () => {
+  for (const [text, expected] of LOOKUP_TABLE) {
+    assert.equal(isLookup(text), expected, JSON.stringify(text));
+  }
+  assert.equal(isLookup(null), false);
+  assert.equal(isLookup(undefined), false);
+});
+
 // ---- normalize ------------------------------------------------------------
 
 test('a full entry comes back field for field', () => {
@@ -47,17 +101,44 @@ test('missing lists are empty, and only translation is required', () => {
   throwsInvalid(() => normalize({ translation: '   ' }), 'blank translation');
 });
 
-test('wrong types throw rather than being coerced', () => {
+test('only a non-object or a translation that is missing, empty or not a string throws', () => {
   throwsInvalid(() => normalize(null), 'null');
   throwsInvalid(() => normalize('跑'), 'a string');
   throwsInvalid(() => normalize([FULL]), 'an array');
   throwsInvalid(() => normalize({ translation: 42 }), 'number translation');
-  throwsInvalid(() => normalize({ ...FULL, senses: { pos: 'v.' } }), 'senses not an array');
-  throwsInvalid(() => normalize({ ...FULL, examples: ['I run.'] }), 'example item a string');
-  throwsInvalid(() => normalize({ ...FULL, senses: [{ pos: 'v.', defs: '跑' }] }), 'defs a string');
-  throwsInvalid(() => normalize({ ...FULL, senses: [{ pos: 'v.', defs: [1] }] }), 'def a number');
-  throwsInvalid(() => normalize({ ...FULL, phonetics: [{ label: 1, ipa: '/rʌn/' }] }), 'label a number');
-  throwsInvalid(() => normalize({ ...FULL, forms: [{ label: '过去式', value: ['ran'] }] }), 'form value an array');
+  throwsInvalid(() => normalize({ translation: ['跑'] }), 'array translation');
+});
+
+// D-472②: each row is one wrong-typed optional field; that field (or item)
+// goes, everything else in FULL stays.
+const LENIENT_ROWS = [
+  ['senses a string (L2-5)', { senses: 'v. 跑；奔跑' }, { senses: [] }],
+  ['senses an object', { senses: { pos: 'v.' } }, { senses: [] }],
+  ['phonetics a number', { phonetics: 3 }, { phonetics: [] }],
+  ['examples a string', { examples: 'I run.' }, { examples: [] }],
+  ['forms null', { forms: null }, { forms: [] }],
+  ['one example item a string',
+    { examples: ['I run.', ...FULL.examples] }, {}],
+  ['one sense item null',
+    { senses: [null, ...FULL.senses] }, {}],
+  ['defs a string drops the sense',
+    { senses: [{ pos: 'v.', defs: '跑' }, ...FULL.senses] }, {}],
+  ['one def a number',
+    { senses: [{ pos: 'v.', defs: [1, '跑', '奔跑'] }, FULL.senses[1]] }, {}],
+  ['pos a number drops the pos',
+    { senses: [{ pos: 7, defs: ['跑', '奔跑'] }, FULL.senses[1]] },
+    { senses: [{ pos: '', defs: ['跑', '奔跑'] }, FULL.senses[1]] }],
+  ['label a number drops the label',
+    { phonetics: [{ label: 1, ipa: '/rʌn/' }, FULL.phonetics[1]] },
+    { phonetics: [{ label: '', ipa: '/rʌn/' }, FULL.phonetics[1]] }],
+  ['form value an array drops the form',
+    { forms: [{ label: '过去式', value: ['ran'] }, ...FULL.forms] }, {}],
+];
+
+test('a wrong-typed optional field is dropped and the rest of the entry kept', () => {
+  for (const [name, patch, expected] of LENIENT_ROWS) {
+    assert.deepEqual(normalize({ ...FULL, ...patch }), { ...FULL, ...expected }, name);
+  }
 });
 
 test('extra keys are ignored and not carried, at the top and in items', () => {
@@ -85,11 +166,25 @@ test('an unknown phonetic label keeps the pronunciation without a label', () => 
     [{ label: '', ipa: 'māo' }, { label: 'US', ipa: '/x/' }]);
 });
 
-test('overlong strings throw; overlong lists are cut to their cap', () => {
+test('an overlong item is dropped and the rest kept; an overlong translation counts as missing', () => {
   const long = 'x'.repeat(MAX_TEXT + 1);
   throwsInvalid(() => normalize({ translation: long }), 'long translation');
-  throwsInvalid(() => normalize({ ...FULL, examples: [{ source: long, target: 'y' }] }), 'long example');
   assert.equal(normalize({ translation: 'x'.repeat(MAX_TEXT) }).translation.length, MAX_TEXT);
+  const rows = [
+    ['long example source', { examples: [{ source: long, target: 'y' }, ...FULL.examples] }, {}],
+    ['long def', { senses: [{ pos: 'v.', defs: ['跑', long, '奔跑'] }, FULL.senses[1]] }, {}],
+    ['long pos', { senses: [{ pos: long, defs: ['跑', '奔跑'] }, FULL.senses[1]] },
+      { senses: [{ pos: '', defs: ['跑', '奔跑'] }, FULL.senses[1]] }],
+    ['long ipa', { phonetics: [FULL.phonetics[0], { label: 'US', ipa: long }] },
+      { phonetics: [FULL.phonetics[0]] }],
+    ['long form value', { forms: [...FULL.forms, { label: '复数', value: long }] }, {}],
+  ];
+  for (const [name, patch, expected] of rows) {
+    assert.deepEqual(normalize({ ...FULL, ...patch }), { ...FULL, ...expected }, name);
+  }
+});
+
+test('lists past their cap are cut', () => {
 
   const many = (n, make) => Array.from({ length: n }, (_, i) => make(i));
   const entry = normalize({
@@ -115,11 +210,23 @@ test('the model answer is read as one JSON object, fenced or bare', () => {
   assert.deepEqual(fromModelText('Here it is:\n' + json), FULL);
 });
 
+test('a reasoning model\'s <think> block is stripped before the JSON is looked for', () => {
+  const json = JSON.stringify(FULL);
+  const think = '<think>The user wants {"translation": "奔"} — no, {a JSON object}.</think>';
+  assert.deepEqual(fromModelText(think + '\n' + json), FULL);
+  assert.deepEqual(fromModelText('<THINK>\n{x}\n</THINK>\n```json\n' + json + '\n```'), FULL);
+  throwsInvalid(() => fromModelText('<think>{"translation": "跑"}</think>\n跑'), 'only the think block has JSON');
+});
+
 test('an answer that is not an entry throws invalidEntry — no line guessing, no translation-only rescue', () => {
   throwsInvalid(() => fromModelText('跑\n/rʌn/'), 'plain lines');
   throwsInvalid(() => fromModelText('{"translation": "跑", "phonetics": ['), 'truncated JSON');
-  throwsInvalid(() => fromModelText('{"translation": "跑", "phonetic": "/rʌn/", "senses": "v."}'), 'senses a string');
   throwsInvalid(() => fromModelText('{"phonetic": "/rʌn/"}'), 'old shape without translation');
+  throwsInvalid(() => fromModelText('["跑"]'), 'an array, not an object');
+  throwsInvalid(() => fromModelText('{"translation": ""}'), 'empty translation');
+  // A wrong-typed optional field is not one of the three: the rest stands.
+  assert.deepEqual(fromModelText('{"translation": "跑", "phonetic": "/rʌn/", "senses": "v."}'),
+    { translation: '跑', phonetics: [], senses: [], examples: [], forms: [] });
 });
 
 // ---- prompt and validator agree -------------------------------------------
@@ -141,7 +248,7 @@ test('the prompt names exactly the keys the validator reads', () => {
 });
 
 test('both word prompts are built from the shared rules', () => {
-  const prompts = repoFile('background/prompts.js');
+  const prompts = repoSource('background/prompts.js');
   assert.match(prompts, /DictEntry\.OUTPUT_RULES/);
   assert.doesNotMatch(prompts, /"phonetic"/, 'the old {translation, phonetic} shape is gone');
 });
@@ -194,13 +301,22 @@ class FakeElement {
 const doc = { createElement: (tag) => new FakeElement(doc, tag) };
 const MESSAGES = { dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceOriginal: 'Play' };
 
-function draw(entry) {
-  const container = new FakeElement(doc, 'div');
+// `log` records, in order, every visibility change a speaker gets and every
+// time the container is emptied.
+function stubSpeech(log = []) {
   const bound = [];
   const speech = {
     SPEAKER_ICON: ICON,
-    bindSpeakButton: (button, resolve) => { bound.push({ button, resolve }); return () => {}; },
+    bindSpeakButton: (button, resolve) => {
+      bound.push({ button, resolve });
+      return (visible) => log.push(`${button.dataset.accent || '-'}:${visible}`);
+    },
   };
+  return { bound, speech };
+}
+
+function draw(entry, container = new FakeElement(doc, 'div')) {
+  const { bound, speech } = stubSpeech();
   render(container, entry, { word: 'run', t: (key) => MESSAGES[key], speech });
   return { container, bound };
 }
@@ -257,21 +373,22 @@ test('malicious model strings come out as text, never as markup', () => {
   assert.equal(container.textContent.split(evil).length - 1, 7);
 });
 
-// ---- one renderer, two surfaces --------------------------------------------
-
-test('the input dialog and the selection card both draw through DictEntry.render', () => {
-  for (const rel of ['content/content-input-dialog.js', 'content/content-popup.js']) {
-    const code = repoFile(rel);
-    assert.match(code, /DictEntry\.render\(/, `${rel} does not draw with DictEntry.render`);
-    assert.match(code, /DictEntry\.entryFor\(/, `${rel} does not ask DictEntry.entryFor which answers carry an entry`);
-    assert.doesNotMatch(code, /ai-translator-dict-(?!entry\b)[a-z-]+/,
-      `${rel} builds a piece of the entry itself — only shared/dict-entry.js draws its blocks`);
-    assert.doesNotMatch(code, /\bphonetic\b/, `${rel} still reads the old phonetic field`);
-  }
+test('drawing again stops the old entry\'s speakers before their buttons leave', () => {
+  const container = new FakeElement(doc, 'div');
+  const log = [];
+  const realReplace = container.replaceChildren.bind(container);
+  container.replaceChildren = () => { log.push('replaced'); realReplace(); };
+  const t = (key) => MESSAGES[key];
+  render(container, normalize(FULL), { word: 'run', t, speech: stubSpeech(log).speech });
+  assert.deepEqual(log, ['replaced']);
+  render(container, null, { word: 'run', t, speech: stubSpeech(log).speech });
+  assert.deepEqual(log, ['replaced', 'UK:false', 'US:false', 'replaced']);
+  // Nothing left to stop the next time.
+  render(container, null, { word: 'run', t, speech: stubSpeech(log).speech });
+  assert.deepEqual(log.slice(4), ['replaced']);
 });
 
 test('the old shape is gone from the service worker', () => {
-  const worker = repoFile('background/ai-translate.js');
-  assert.doesNotMatch(worker, /parseWordTranslation|phonetic/);
-  assert.match(worker, /DictEntry\.fromModelText\(/);
+  assert.doesNotMatch(workerSource(), /parseWordTranslation|"phonetic"|\.phonetic\b/);
+  assert.match(repoSource('background/ai-translate.js'), /DictEntry\.fromModelText\(/);
 });
