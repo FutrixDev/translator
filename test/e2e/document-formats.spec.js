@@ -15,6 +15,9 @@ const { getServiceWorker } = require('./helpers');
 const { startDocService, TINY_PDF } = require('./doc-service-mock');
 const { FIXTURES, mobiBytes } = require('./doc-fixtures');
 
+/** Where the finished-card screenshots go, when a run is collecting evidence. */
+const shotDir = process.env.DOC_SCREENSHOT_DIR;
+
 const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const MIB = 1024 * 1024;
 
@@ -65,6 +68,17 @@ async function expectLaidOut(page, locators) {
 const message = (page, key) => page.evaluate(k => getMessage(k, 'en'), key);
 
 /**
+ * Click an action that opens a tab and return that tab's address as the
+ * browser has it. Read without waiting for the load: the mock answers the
+ * reader path with a 404, and the address is what is under test.
+ */
+async function urlOpenedBy(context, action) {
+  const [opened] = await Promise.all([context.waitForEvent('page'), action.click()]);
+  await expect.poll(() => opened.url()).not.toBe('about:blank');
+  return opened.url();
+}
+
+/**
  * J-E1 / J-E2: a measurable document goes up with its format and its measured
  * length, comes back succeeded, and saves under "<name> (bilingual).<ext>".
  */
@@ -77,7 +91,12 @@ for (const format of ['docx', 'epub']) {
         await connectExtension(context, service.base);
         await upload(page, extensionId, fixture.fileName, fixture.bytes);
         await expect(page.locator('#docSaveDual')).toBeVisible({ timeout: 20000 });
-        await expect(page.locator('#pdfOpenDual')).toBeHidden();
+        // J2 step 1: View is the one primary action; the file the format
+        // writes back is saved from a secondary button beside it (D-488).
+        await expect(page.locator('#docView')).toBeVisible();
+        await expect(page.locator('#docView')).toHaveClass(/\bbtn-primary\b/);
+        await expect(page.locator('#docSaveDual')).toHaveClass(/\bbtn-secondary\b/);
+        await expect(page.locator('#pdfOpenDual')).toHaveCount(0);
         await expect(page.locator('#pdfError')).toBeHidden();
 
         const [ticket] = service.state.uploadTickets;
@@ -104,8 +123,19 @@ for (const format of ['docx', 'epub']) {
 
         // The extension orders dual, and the engine writes that one file back.
         await expect(page.locator('#docSaveMono')).toBeHidden();
-        await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docSaveDual'),
-          page.locator('#docWebLink')]);
+        await expect(page.locator('#pdfJobCard .job-actions button:visible')).toHaveCount(2);
+        await expect(page.locator('#pdfJobCard a')).toHaveCount(0);
+        await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docView'),
+          page.locator('#docSaveDual')]);
+        if (shotDir && format === 'docx') {
+          await page.emulateMedia({ colorScheme: 'light' });
+          await page.locator('#pdfJobCard').screenshot({ path: `${shotDir}/j2-docx-card.png` });
+        }
+
+        // J2 step 2: View opens the reader on this job.
+        expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1`);
+
+        // J2 step 3: the save is unchanged.
 
         const [download] = await Promise.all([
           page.waitForEvent('download'),
@@ -174,16 +204,18 @@ test('J-E3: a job that turns out longer asks, from the popup, and continues once
     }
   });
 
-test('J-E4: a MOBI declares nothing, goes up typed as MOBI, and is read on the website',
+test('J-E4: a MOBI declares nothing, goes up typed as MOBI, and is read in the reader',
   async ({ context, page, extensionId }) => {
     const service = await startDocService();
     try {
       await connectExtension(context, service.base);
       const bytes = mobiBytes(512);
       await upload(page, extensionId, 'novel.mobi', bytes);
-      await expect(page.locator('#docNoFile')).toBeVisible({ timeout: 20000 });
+      // No file comes back, and none is needed: the reader shows the job.
+      await expect(page.locator('#docView')).toBeVisible({ timeout: 20000 });
       await expect(page.locator('#docSaveDual')).toBeHidden();
-      await expect(page.locator('#pdfOpenDual')).toBeHidden();
+      await expect(page.locator('#docSaveMono')).toBeHidden();
+      await expect(page.locator('#pdfJobCard .job-actions button:visible')).toHaveCount(1);
 
       const [put] = service.state.uploadPuts;
       expect(put.contentType).toBe('application/x-mobipocket-ebook');
@@ -192,8 +224,8 @@ test('J-E4: a MOBI declares nothing, goes up typed as MOBI, and is read on the w
       expect(created.sourceFormat).toBe('mobi');
       expect(created).not.toHaveProperty('declaredUnits');
 
-      await expect(page.locator('#docWebLink')).toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_job_1`);
-      await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docNoFile'), page.locator('#docWebLink')]);
+      await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docView')]);
+      expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1`);
     } finally {
       await service.close();
     }
@@ -231,34 +263,41 @@ test('J-E5: five files the server would refuse are refused here, with no request
     }
   });
 
-test('J-E6: "Open" in the popup shows a finished PDF, and takes every other format to its job page',
+test('J-E6 / J3: "View" in the popup opens a finished job of any format in the reader',
   async ({ context, page, extensionId }) => {
     const service = await startDocService();
     try {
       await connectExtension(context, service.base);
       await upload(page, extensionId, 'paper.pdf', TINY_PDF);
-      await expect(page.locator('#pdfOpenDual')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('#docView')).toBeVisible({ timeout: 20000 });
       await upload(page, extensionId, FIXTURES.txt.fileName, FIXTURES.txt.bytes);
       await expect(page.locator('#docSaveDual')).toBeVisible({ timeout: 20000 });
 
-      const openFromPopup = async (fileName) => {
+      const viewFromPopup = async (fileName, shot) => {
         const popup = await context.newPage();
         await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
         const row = popup.locator('.pdf-job', { hasText: fileName });
-        const open = row.locator('.pdf-job-open');
-        await expect(open).toHaveText(await message(popup, 'pdfOpen'));
-        await expectLaidOut(popup, [row.locator('.pdf-job-name'), row.locator('.pdf-job-status'), open]);
-        const [opened] = await Promise.all([context.waitForEvent('page'), open.click()]);
-        return opened;
+        // J3 step 1: the finished row's one action is View.
+        const view = row.locator('.pdf-job-open');
+        await expect(view).toHaveText(await message(popup, 'docView'));
+        await expectLaidOut(popup, [row.locator('.pdf-job-name'), row.locator('.pdf-job-status'), view]);
+        if (shot) {
+          await popup.emulateMedia({ colorScheme: 'light' });
+          // The popup's document section, so the row is seen where it lives.
+          await popup.locator('#pdfJobs').locator('xpath=..').screenshot({ path: shot });
+        }
+        // J3 step 2: a tab on the reader, and the popup closes behind it.
+        const url = await urlOpenedBy(context, view);
+        await expect.poll(() => popup.isClosed()).toBe(true);
+        return url;
       };
 
-      const pdfTab = await openFromPopup('paper.pdf');
-      await expect.poll(() => pdfTab.url()).toMatch(new RegExp(`^${service.base}/result/pdf_job_1/dual\\.pdf\\?sig=\\d+$`));
-
-      const txtTab = await openFromPopup(FIXTURES.txt.fileName);
-      await expect.poll(() => txtTab.url()).toBe(`chrome-extension://${extensionId}/pdf/upload.html#job=pdf_job_2`);
-      await expect(txtTab.locator('#docSaveDual')).toBeVisible({ timeout: 20000 });
-      await expect(txtTab.locator('#pdfFileName')).toHaveText(FIXTURES.txt.fileName);
+      expect(await viewFromPopup('paper.pdf', shotDir && `${shotDir}/j3-popup-row.png`))
+        .toBe(`${service.base}/app/reader/pdf_job_1`);
+      // Not the PDF's file and not the job page: a finished Word, EPUB, text or
+      // Markdown job is read there too, with its file in the download menu.
+      expect(await viewFromPopup(FIXTURES.txt.fileName)).toBe(`${service.base}/app/reader/pdf_job_2`);
+      expect(context.pages().map((p) => p.url()).filter((u) => u.includes('/result/'))).toEqual([]);
     } finally {
       await service.close();
     }
@@ -282,8 +321,8 @@ test('J-E7: a docx job holding only the translated file offers and saves that fi
       await expect(page.locator('#docSaveMono')).toBeVisible({ timeout: 20000 });
       await expect(page.locator('#docSaveDual')).toBeHidden();
       await expect(page.locator('#pdfError')).toBeHidden();
-      await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docSaveMono'),
-        page.locator('#docWebLink')]);
+      await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docView'),
+        page.locator('#docSaveMono')]);
 
       const [download] = await Promise.all([
         page.waitForEvent('download'),
