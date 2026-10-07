@@ -123,6 +123,22 @@ test('options blab: signed in without a plan disables the option and links the p
   assert.equal(link.textContent, en('blabSubscribe'));
 });
 
+test('options blab: with no account site address the plan note draws no dead link (D-490 N4)', () => {
+  const card = loadCard();
+  card.sandbox.accountSiteBase = '';
+  draw(card, { signedIn: true, blabTranslation: { available: false } });
+  assert.deepEqual(texts(card.manual), [en('blabNotePlanRequired')]);
+  assert.equal(action(card.manual), undefined, 'no href="/app/pricing" relative to the extension');
+});
+
+test('Engines.blabPricingUrl: only an http(s) site address makes a pricing link', () => {
+  assert.equal(Engines.blabPricingUrl('https://blab.test'), 'https://blab.test/app/pricing');
+  assert.equal(Engines.blabPricingUrl('http://localhost:3310/some/path?q=1'), 'http://localhost:3310/app/pricing');
+  for (const base of ['', null, undefined, 'not a url', 'chrome-extension://abc', 'javascript:alert(1)']) {
+    assert.equal(Engines.blabPricingUrl(base), '', String(base));
+  }
+});
+
 test('options blab: available enables the option; the note shows only under a select set to Blab, with the API\'s numbers', () => {
   const card = loadCard({ manual: 'builtin', auto: 'blab' });
   draw(card, AVAILABLE);

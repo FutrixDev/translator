@@ -179,6 +179,7 @@ function transportFor(profile) {
  * 一次尝试：自己的超时、自己的 AbortController，调用方的 signal 转过来。
  * 超时取 min(timeoutSec, 剩余预算)；被预算截短时文案写实际等的整秒数。
  * 发送本身交给 transport.send；它因这个 signal 失败的，这里说成超时或取消。
+ * 同一刻已经拿到真实失败（apiFailure）的不改说法。
  */
 async function attemptOnce(profile, transport, prepared, signal, clock, deadline) {
   const fullMs = profile.timeoutSec * 1000;
@@ -202,7 +203,10 @@ async function attemptOnce(profile, transport, prepared, signal, clock, deadline
   try {
     return await transport.send(prepared, controller.signal, clock);
   } catch (error) {
-    if (!controller.signal.aborted) throw error;
+    // 带 apiFailure 的是服务端真给过的回答（或账户闩），哪怕 signal 恰好同时断了
+    // 也照原样抛：说成超时或取消会把真实原因盖掉。transport 只在 signal 断开时
+    // 抛不带 apiFailure 的原错误，那才是这里要改说法的。
+    if (!controller.signal.aborted || (error && error.apiFailure)) throw error;
     if (timedOut) throw apiError(`Timeout after ${seconds}s: ${endpoint}`, { timeout: true, seconds, endpoint });
     throw callerAborted();
   } finally {

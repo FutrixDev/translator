@@ -79,7 +79,7 @@ function confirmUnattendedAiSpend(messageKey) {
 // Translation；选 Blab 不过这道确认：它花的是订阅里的额度，不是用户自己的钱（§5.4）。
 function onAutoEngineChange() {
   if (elements.autoTranslateEngine.value === 'ai' && !confirmUnattendedAiSpend('autoTranslateEngineAiConfirm')) {
-    elements.autoTranslateEngine.value = lastGoodSettings ? lastGoodSettings.autoTranslateEngine : 'builtin';
+    elements.autoTranslateEngine.value = Engines.normalizeEngine(lastGoodSettings && lastGoodSettings.autoTranslateEngine);
     syncAutoEngineState();
     return;
   }

@@ -337,14 +337,25 @@ test('selectedEngine: the page answer first, the setting only when there is none
   assert.equal(status.key, 'apiNotConfigured');
 });
 
-test('Blab Translation is named, never judged by an API key', () => {
-  // 账户能不能用（登录、订阅、今天的额度）是服务端在请求上答的；底栏只说是哪个引擎。
+test('Blab Translation: the dot follows the account (blabAccess), never an API key', () => {
+  // 点是在说「能用」：只有账户说 AVAILABLE 才绿（D-490 表外）。AI 的就绪与否不相干。
+  const { AVAILABLE, SIGNED_OUT, PLAN_REQUIRED } = globalThis.Engines.BLAB_ACCESS;
   for (const aiIsReady of [true, false, undefined]) {
-    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady),
+    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady, AVAILABLE),
       { key: 'engineBlab', detailKey: '', ok: true });
   }
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false),
+  // 页面钉成 blab（站点规则）也一样问账户。
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false, AVAILABLE),
     { key: 'engineBlab', detailKey: '', ok: true });
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, SIGNED_OUT),
+    { key: 'engineBlab', detailKey: 'blabStatusSignedOut', ok: false });
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, PLAN_REQUIRED),
+    { key: 'engineBlab', detailKey: 'blabStatusPlanRequired', ok: false });
+  // 账户读不到：没说能用，就不绿。
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, null),
+    { key: 'engineBlab', detailKey: 'blabStatusUnknown', ok: false });
+  // 没问账户就来画 blab 是调用方的错，不冒充任何一种状态。
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true), TypeError);
 });
 
 test('aiReady: the page answers first, the worker only when there is no page, a slow page is ready', () => {
@@ -365,9 +376,11 @@ test('aiReady: the page answers first, the worker only when there is no page, a 
 test('the popup asks selectedEngine and aiReady for both the footer and the no-key gate', () => {
   const popup = repoFile('popup/popup.js');
   assert.match(repoFile('shared/engine-status.js'),
-    /function describeEngineStatus\(settings, probe, aiIsReady\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
+    /function describeEngineStatus\(settings, probe, aiIsReady, blabAccess\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
   assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
-  assert.match(popup, /renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, await pageAiReady\(probe\)\)\);/);
+  assert.match(popup, /const \[aiIsReady, blabAccess\] = await Promise\.all\(\[pageAiReady\(probe\), pageBlabAccess\(settings, probe\)\]\);\n\s*renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, aiIsReady, blabAccess\)\);/);
+  // 账户只在这一页走 Blab 时才问，引擎同样经 selectedEngine 定。
+  assert.match(popup, /if \(EngineStatus\.selectedEngine\(settings, probe\) !== 'blab'\) return undefined;/);
   // 没有页面答复时问 SW，且只问 page 这一个功能。
   assert.match(popup, /chrome\.runtime\.sendMessage\(\{ type: 'AI_PROFILES_READY', feature: 'page' \}\)/);
 });

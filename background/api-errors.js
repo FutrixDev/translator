@@ -66,6 +66,9 @@ function missingApiKeyMessage(profile, settings) {
 function apiErrorMessage(error, settings, profile) {
   const t = uiMessages(settings);
   if (error && isBlabAccountFailure(error.apiFailure)) return blabAccountMessage(error.apiFailure, settings, t);
+  if (error && error.apiFailure && globalThis.Engines.isBlabProfile(profile)) {
+    return blabServiceMessage(error.apiFailure, t);
+  }
   if (error && error.apiFailure) {
     return globalThis.APICompat.describeAPIFailure(error.apiFailure, t,
       { provider: profile ? profile.provider : undefined });
@@ -99,6 +102,31 @@ function blabAccountMessage(failure, settings, t) {
 }
 
 /**
+ * Blab Translation's other failures, in its own words (D-490 N3): the service
+ * is ours, so "check your API address and key" (describeAPIFailure's wording
+ * for the user's own AI) would send the reader to a setting that does not
+ * exist. Busy (429, any 5xx including upstream_failed), unreachable, too slow,
+ * an empty answer, or a request the service would not take (another 4xx, with
+ * its status for the bug report).
+ */
+function blabServiceMessage(failure, t) {
+  if (failure.timeout) return t('blabErrorTimeout').replace('{seconds}', String(failure.seconds));
+  if (failure.empty) return t('blabErrorEmpty');
+  if (failure.network) return t('blabErrorNetwork');
+  const status = Number(failure.status);
+  if (failure.rateLimitedWait || status === 429 || status >= 500) return t('blabErrorBusy');
+  return t('blabErrorRequest').replace('{status}', String(failure.status));
+}
+
+/**
+ * The entry an account failure carries to the page (D-490 N2, design §5.2):
+ * the error bar and the selection card draw it as a button. No subscription
+ * gets "Subscribe", a missing or expired sign-in gets "Sign in"; today's
+ * allowance has nothing to press — it comes back by itself.
+ */
+const BLAB_ACCOUNT_ACTIONS = Object.freeze({ plan_required: 'subscribe', unauthorized: 'signin' });
+
+/**
  * The one catch for an AI request: log once, answer `{ error }` in the UI
  * language. A request its caller abandoned (`error.aborted`) has nobody
  * waiting, so it is neither logged nor worded.
@@ -112,7 +140,11 @@ function replyError(operation, error, { settings, profile, profileId, feature })
   const reply = { error: apiErrorMessage(error, settings, profile) };
   // The account's state ends a whole-page pass at once (content/page/batch.js
   // reads passFatal): every other batch would get the same answer.
-  if (isBlabAccountFailure(error && error.apiFailure)) reply.passFatal = true;
+  if (isBlabAccountFailure(error && error.apiFailure)) {
+    reply.passFatal = true;
+    const action = BLAB_ACCOUNT_ACTIONS[error.apiFailure.blab];
+    if (action) reply.action = action;
+  }
   return reply;
 }
 

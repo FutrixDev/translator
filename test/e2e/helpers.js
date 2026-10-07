@@ -928,6 +928,24 @@ const HOSTILE_ENTRY_CSS = `${HOSTILE_PAGE_CSS}
   div { padding: 12px; display: inline; }
 `;
 
+/**
+ * Today's spend on the unattended AI paths (autoStats.autoAiChars, what
+ * autoAiDailyBudget is checked against), written on AutoStats' own local
+ * calendar so the gate reads it as today's.
+ */
+async function seedTodaysAutoAiChars(context, chars) {
+  const worker = await getServiceWorker(context);
+  await worker.evaluate(async (used) => {
+    const now = new Date();
+    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+    const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const day = `${month}-${pad(now.getDate())}`;
+    await chrome.storage.local.set({
+      autoStats: { month, day, pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0, autoAiChars: used },
+    });
+  }, chars);
+}
+
 module.exports = {
   HOSTILE_PAGE_CSS,
   HOSTILE_ENTRY_CSS,
@@ -972,4 +990,5 @@ module.exports = {
   getDefaultProfile,
   setExtensionAccount,
   sendMessageToActiveTab,
+  seedTodaysAutoAiChars,
 };

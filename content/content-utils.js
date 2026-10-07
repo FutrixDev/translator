@@ -13,6 +13,48 @@
     return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   };
 
+  // ==================== Blab 账户错误的入口 ====================
+
+  // 账户错误回话带的 action（background/api-errors.js，D-490 N2）→ 按钮文字。
+  // 每日额度用完没有入口：到点自己就回来了，回话里也就没有 action。
+  const ACCOUNT_ACTION_LABELS = Object.freeze({ subscribe: 'blabSubscribe', signin: 'comicSignIn' });
+
+  /**
+   * 页面错误条和划词卡上那颗「订阅 / 登录」按钮，两处共用这一个。`action` 为空
+   * 返回 null（不画）；不认识的值是 SW 与这里对不上，直接抛。
+   *
+   * 订阅：SW 新开定价页（定价页地址只有 SW 知道）。登录：走和 popup、设置页同一
+   * 条登录流程；成功了调 `onSignedIn`（卡片重译、错误条收起）。取消不说话；别的
+   * 失败在这里打一次日志，按钮换成失败的话，可以再点。
+   */
+  ctx.accountActionButton = function(action, { className, onSignedIn } = {}) {
+    if (!action) return null;
+    const label = ACCOUNT_ACTION_LABELS[action];
+    if (!label) throw new Error(`accountActionButton: unknown action ${JSON.stringify(action)}`);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className || '';
+    button.dataset.accountAction = action;
+    button.textContent = ctx.t(label);
+    // 卡片和错误条都在 mousedown 上做事（拖动、点外面关闭），按钮自己吃掉。
+    button.addEventListener('mousedown', (event) => event.stopPropagation());
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      button.disabled = true;
+      const result = await ctx.comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action });
+      button.disabled = false;
+      if (result.ok) {
+        if (action === 'signin' && onSignedIn) onSignedIn();
+        return;
+      }
+      if (result.error && result.error.code === 'sign_in_cancelled') return;
+      console.error(`Blab Translation: the account entry "${action}" failed`, result.error);
+      button.textContent = ctx.t(action === 'signin' ? 'comicSignInFailed' : 'blabActionFailed');
+    });
+    return button;
+  };
+
   // ==================== 受管 DOM 容器 ====================
 
   // 富文本编辑器把自己的子树和内部 EditorState 对账：Lexical、ProseMirror、Slate

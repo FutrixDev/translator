@@ -137,9 +137,12 @@
    * @param {Object} settings           the user's settings
    * @param {EngineProbe|null} probe
    * @param {boolean} aiIsReady          aiReady()'s answer for this tab
+   * @param {string|null} [blabAccess]   Engines.blabAccess() of the account, or
+   *                                     null when the account could not be read;
+   *                                     required when the engine is 'blab'
    * @returns {EngineStatus}
    */
-  function describeEngineStatus(settings, probe, aiIsReady) {
+  function describeEngineStatus(settings, probe, aiIsReady, blabAccess) {
     const engine = selectedEngine(settings, probe);
 
     if (engine === 'ai') {
@@ -147,11 +150,18 @@
       return status(aiIsReady ? 'ready' : 'apiNotConfigured', '', aiIsReady);
     }
 
-    // Blab Translation: whether the account can use it right now (signed in, a
-    // plan, today's allowance) is the service's answer, given on the request
-    // itself; the footer names the engine and claims nothing more.
+    // Blab Translation: the account says whether it can be used (signed in and
+    // a plan, Engines.blabAccess). The dot is a claim of "works", so it is green
+    // only when the account says AVAILABLE; an account that could not be read
+    // (null) has not said so either. Today's allowance is the request's answer,
+    // not the footer's.
     if (engine === 'blab') {
-      return status('engineBlab', '', true);
+      const access = root.Engines.BLAB_ACCESS;
+      if (blabAccess === access.AVAILABLE) return status('engineBlab', '', true);
+      if (blabAccess === access.SIGNED_OUT) return status('engineBlab', 'blabStatusSignedOut', false);
+      if (blabAccess === access.PLAN_REQUIRED) return status('engineBlab', 'blabStatusPlanRequired', false);
+      if (blabAccess === null) return status('engineBlab', 'blabStatusUnknown', false);
+      throw new TypeError('describeEngineStatus: the Blab engine needs the account\'s blabAccess (or null)');
     }
 
     if (probe === null) {

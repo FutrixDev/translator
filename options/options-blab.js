@@ -10,7 +10,8 @@
 // 不吃 30 秒缓存。三种状态：
 //
 //   signed_out     选项禁用；说明「登录并订阅后可用」+ 登录按钮（账号卡片那条登录流程）
-//   plan_required  选项禁用；说明「订阅后可用」+ 定价页链接（{apiBase}/app/pricing）
+//   plan_required  选项禁用；说明「订阅后可用」+ 定价页链接（Engines.blabPricingUrl；
+//                  账户站地址没答上就不画链接，不回落成相对地址）
 //   available      选项可选；选中时说明「文字发到 Blab 的服务器、订阅包含、每天 X、
 //                  今天已用 Y」，两个数都取接口返回值
 //
@@ -77,7 +78,9 @@ function renderBlabNote(note, access, selected) {
   } else if (access === Engines.BLAB_ACCESS.SIGNED_OUT) {
     parts.push(blabNoteText(t('blabNoteSignedOut')), blabSignInButton());
   } else {
-    parts.push(blabNoteText(t('blabNotePlanRequired')), blabPricingLink());
+    parts.push(blabNoteText(t('blabNotePlanRequired')));
+    const link = blabPricingLink();
+    if (link) parts.push(link);
   }
   note.replaceChildren(...parts);
 }
@@ -99,10 +102,17 @@ function blabSignInButton() {
   return button;
 }
 
+/**
+ * The pricing link, or null when there is no account site to point at
+ * (ACCOUNT_SITE_BASE did not answer — loadAccountSiteBase logs that once).
+ * Never the relative `/app/pricing`, which would open inside the extension.
+ */
 function blabPricingLink() {
+  const href = Engines.blabPricingUrl(accountSiteBase);
+  if (!href) return null;
   const link = document.createElement('a');
   link.className = 'blab-note-action';
-  link.href = `${accountSiteBase}/app/pricing`;
+  link.href = href;
   link.target = '_blank';
   link.rel = 'noopener';
   link.textContent = t('blabSubscribe');

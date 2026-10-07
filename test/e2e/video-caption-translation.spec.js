@@ -7,6 +7,7 @@
 const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings, expectCaptionMenuAnchoredAboveButton, getServiceWorker, getSyncSetting,
+  seedTodaysAutoAiChars,
 } = require('./helpers');
 
 const ORIGIN = 'https://video.test';
@@ -775,20 +776,6 @@ test('popup 上同一行：同一个答案、同一次写入', async ({ context,
 // 字幕是第二条零点击的路：视频一播，每一句都在花钱，没有人一句一句点。所以它的
 // AI 花费和自动翻译记在同一本日额度上（引擎的预算闸看 message.unattended），而
 // 额度花完的那一刻，字幕菜单要说得出原因 —— 不然用户看到的只是「字幕不翻了」。
-
-/** 今天的自动模式用量，按 AutoStats 自己的本地时区日历写进去。 */
-async function seedTodaysAutoAiChars(context, chars) {
-  const worker = await getServiceWorker(context);
-  await worker.evaluate(async (used) => {
-    const now = new Date();
-    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
-    const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-    const day = `${month}-${pad(now.getDate())}`;
-    await chrome.storage.local.set({
-      autoStats: { month, day, pages: 0, aiChars: 0, cacheHits: 0, cacheMisses: 0, autoAiChars: used },
-    });
-  }, chars);
-}
 
 async function todaysAutoAiChars(context) {
   const worker = await getServiceWorker(context);

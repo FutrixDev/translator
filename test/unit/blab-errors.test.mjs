@@ -1,7 +1,9 @@
 // What a failed Blab Translation request says to the reader, and what it tells
 // the page (background/api-errors.js, design §5.2): the account's three states
-// are worded as themselves and end the page's pass (passFatal); every other
-// failure keeps the shared API wording and the page keeps going.
+// are worded as themselves and end the page's pass (passFatal), the two a reader
+// can fix carry their entry (subscribe / sign in); every other failure is worded
+// as Blab's own service (D-490 N3), never as the user's API, and the page keeps
+// going.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -97,4 +99,37 @@ test('blab errors: a failure is logged once with the profile id and never the te
   }
   assert.equal(logged.length, 1);
   assert.match(String(logged[0][0]), /profile blab:service, feature page/);
+});
+
+test('blab errors: the service failures are worded as Blab, never as the user\'s API address or key (D-490 N3)', () => {
+  const cases = [
+    [failure({ status: 0, network: true }), msg('blabErrorNetwork', 'en')],
+    [failure({ status: 0, timeout: true, seconds: 90 }), msg('blabErrorTimeout', 'en').replace('{seconds}', '90')],
+    [failure({ status: 200, empty: true }), msg('blabErrorEmpty', 'en')],
+    [failure({ status: 429, blab: 'rate_limited' }), msg('blabErrorBusy', 'en')],
+    [failure({ status: 503, rateLimitedWait: 120 }), msg('blabErrorBusy', 'en')],
+    [failure({ status: 502, blab: 'upstream_failed' }), msg('blabErrorBusy', 'en')],
+    [failure({ status: 413, blab: 'too_large' }), msg('blabErrorRequest', 'en').replace('{status}', '413')],
+  ];
+  for (const [error, expected] of cases) {
+    const text = apiErrorMessage(error, en, BLAB);
+    assert.equal(text, expected, JSON.stringify(error.apiFailure));
+    assert.ok(!/\{\w+\}/.test(text), `placeholder left in: ${text}`);
+  }
+  // The same failure from the user's own AI keeps the shared API wording.
+  const own = { id: 'p1', provider: 'openai', apiEndpoint: 'https://api.openai.com/v1/chat/completions', apiKey: 'k', modelName: 'gpt-4.1-mini' };
+  assert.notEqual(apiErrorMessage(failure({ status: 502 }), en, own), msg('blabErrorBusy', 'en'));
+});
+
+test('blab errors: the account failure a reader can fix carries its entry; today\'s allowance has none (D-490 N2)', () => {
+  const cases = [
+    [failure({ status: 403, blab: 'plan_required', retryable: false }), 'subscribe'],
+    [failure({ status: 401, blab: 'unauthorized', retryable: false }), 'signin'],
+    [failure({ status: 429, blab: 'daily_limit', retryable: false, resetsAt: '2026-10-08T00:00:00Z' }), undefined],
+    [failure({ status: 502, blab: 'upstream_failed' }), undefined],
+  ];
+  for (const [error, action] of cases) {
+    const reply = quietly(() => replyError('Translation', error, { settings: en, profile: BLAB, feature: 'page' }));
+    assert.equal(reply.action, action, `${error.apiFailure.blab} action`);
+  }
 });

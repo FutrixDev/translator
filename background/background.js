@@ -197,6 +197,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.signIn(), sendResponse);
       return true;
 
+    // The entry on a Blab Translation account error (the page's error bar, the
+    // selection card; reply.action from api-errors.js): "Subscribe" opens the
+    // pricing page in a new tab, "Sign in" runs the same sign-in flow as the
+    // popup and the settings page. A page cannot build the pricing link itself:
+    // the account site's origin lives here.
+    case 'BLAB_ACCOUNT_ACTION':
+      replyComic(runBlabAccountAction(message.action), sendResponse);
+      return true;
+
     case 'COMIC_SIGN_OUT':
       replyComic(comicClient.signOut().then(() => ({ signedIn: false })), sendResponse);
       return true;
@@ -289,6 +298,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
   }
 });
+
+async function runBlabAccountAction(action) {
+  if (action === 'signin') return comicClient.signIn();
+  if (action !== 'subscribe') throw new Error(`BLAB_ACCOUNT_ACTION: unknown action ${JSON.stringify(action)}`);
+  const base = await comicClient.getApiBase();
+  const url = globalThis.Engines.blabPricingUrl(base);
+  if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
+  await chrome.tabs.create({ url });
+  return { opened: url };
+}
 
 /**
  * Settle a comic-client promise into a plain message.

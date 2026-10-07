@@ -19,10 +19,13 @@ const {
   evaluateInContentScript,
   setExtensionSettings,
   getSyncSettings,
+  getServiceWorker,
+  seedTodaysAutoAiChars,
   sendMessageToActiveTab,
   stubBuiltinTranslator,
   triggerPageTranslation,
   waitForFloatBall,
+  writeSyncSettings,
 } = require('./helpers');
 const { startMockBlabService } = require('./mock-blab-service');
 const { startMockOpenAIServer } = require('./mock-openai-server');
@@ -105,6 +108,34 @@ async function expectPassStopped(page, message) {
   await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('[T]');
   await expect(page.locator('body')).not.toContainText('[B]');
+}
+
+// The error bar is the only place a page pass says why it stopped, and an
+// account error's way out is the button inside it: all of it on screen.
+async function expectBarOnScreen(page) {
+  const box = await page.locator('#ai-translator-progress').boundingBox();
+  const { width, height } = page.viewportSize();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
+  expect(box.y + box.height).toBeLessThanOrEqual(height);
+}
+
+const barEntry = (page) => page.locator('#ai-translator-progress [data-account-action]');
+
+function storedToken(context) {
+  return getServiceWorker(context).then((worker) => worker.evaluate(
+    () => chrome.storage.local.get('comicToken').then((r) => r.comicToken || '')));
+}
+
+async function openPopupOver(context, extensionId, page) {
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  // goto() fronted the popup's tab; give the window back to the page and let
+  // the popup ask again, so "the active tab" is the page under test.
+  await page.bringToFront();
+  await popup.reload();
+  return popup;
 }
 
 // Select the text of `selector` with the mouse and open the card from the icon.
@@ -268,7 +299,16 @@ test.describe('J2 Blab Translation without a plan', () => {
       expect(blab.state.completeRequests).toHaveLength(1);
       expect(ai.sentTexts).toHaveLength(0);
       expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+      // D-490 N2: the message comes with its way out, and all of it is on screen.
+      const entry = barEntry(page);
+      await expect(entry).toHaveAttribute('data-account-action', 'subscribe');
+      await expect(entry).toHaveText(en('blabSubscribe'));
+      await expectBarOnScreen(page);
       await walkShot(page, 'J2-3-page-plan-required');
+      // The account site's pricing page, opened from the service worker.
+      const [pricing] = await Promise.all([context.waitForEvent('page'), entry.click()]);
+      expect(pricing.url()).toBe(`${blab.base}/app/pricing`);
+      await pricing.close();
     } finally {
       await close();
     }
@@ -290,6 +330,9 @@ test.describe('J3 Blab Translation over the daily allowance', () => {
       expect(blab.state.completeRequests).toHaveLength(1);
       expect(ai.sentTexts).toHaveLength(0);
       expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+      // Nothing to click for a spent allowance: tomorrow is the way out.
+      await expect(barEntry(page)).toHaveCount(0);
+      await expectBarOnScreen(page);
       await walkShot(page, 'J3-page-daily-limit');
     } finally {
       await close();
@@ -330,6 +373,104 @@ test.describe('an account error stops the automatic session too', () => {
       }
     });
   }
+});
+
+// D-490 "补测试": the server answers 401 to a token it no longer honours.
+test.describe('J2 signed out by the server', () => {
+  test('an expired token: the page and the card offer sign-in, the popup is not green, and signing in translates', async ({ context, page, extensionId }) => {
+    test.setTimeout(120000);
+    const { blab, ai, close } = await setUp(context, page, { mode: 'unauthorized' });
+    try {
+      await openPage(page);
+      await stubBuiltinTranslator(page);
+      await triggerPageTranslation(page);
+      await expectPassStopped(page, en('blabSignInRequired'));
+      expect(blab.state.completeRequests).toHaveLength(1);
+      expect(ai.sentTexts).toHaveLength(0);
+      expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+      // The 401 dropped the token on this device.
+      expect(await storedToken(context)).toBe('');
+      const entry = barEntry(page);
+      await expect(entry).toHaveAttribute('data-account-action', 'signin');
+      await expect(entry).toHaveText(en('comicSignIn'));
+      await expectBarOnScreen(page);
+      await walkShot(page, 'J2-4-page-signed-out');
+
+      // The card says the same, with the same way out, and asks nobody else.
+      const card = await openCardOn(page, '#lead');
+      await expect(card.locator('.ai-translator-error')).toContainText(en('blabSignInRequired'), { timeout: 20000 });
+      await expect(card.locator('.ai-translator-account-action')).toHaveAttribute('data-account-action', 'signin');
+      expect(ai.sentTexts).toHaveLength(0);
+      await walkShot(page, 'J2-4-card-signed-out');
+      await page.keyboard.press('Escape');
+
+      // The popup's status line names the engine and why it cannot run.
+      const popup = await openPopupOver(context, extensionId, page);
+      await expect(popup.locator('#statusText')).toHaveText(`${en('engineBlab')} · ${en('blabStatusSignedOut')}`);
+      await expect(popup.locator('body')).toHaveClass(/status-error/);
+      await popup.close();
+
+      // Signing in from the bar puts it away; the next pass goes through.
+      blab.state.mode = 'available';
+      await barEntry(page).click();
+      await expect.poll(() => storedToken(context), { timeout: 15000 }).toBe('granted-token');
+      await expect(page.locator('#ai-translator-progress')).toBeHidden({ timeout: 15000 });
+      await translatePage(page);
+      expect(blab.state.completeRequests.at(-1).authorization).toBe('Bearer granted-token');
+      expect(ai.sentTexts).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+test.describe('Blab Translation pinned by a site rule', () => {
+  test('the manual engine is built-in, the site\'s rule says Blab: the page goes to Blab only', async ({ context, page }) => {
+    const { blab, ai, close } = await setUp(context, page, { engine: 'builtin' });
+    try {
+      await writeSyncSettings(context, {
+        'customRule:blabpin': { v: 1, match: ['blab-engine.test'], engine: 'blab', updatedAt: Date.now() },
+      });
+      await openPage(page);
+      await stubBuiltinTranslator(page);
+      await translatePage(page);
+      expect(blab.state.completeRequests.length).toBeGreaterThan(0);
+      expect(ai.sentTexts).toHaveLength(0);
+      expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+      await expect(page.locator('body')).not.toContainText('[B]');
+    } finally {
+      await close();
+    }
+  });
+});
+
+// D-490 N8: autoAiDailyBudget is the user's own AI money. Blab's allowance is
+// the account's, metered by the service (D-480), so a spent AI budget does not
+// stop automatic Blab translation.
+test.describe('the AI budget does not gate automatic Blab translation', () => {
+  test('budget spent, automatic engine Blab: the page translates itself through Blab', async ({ context, page }) => {
+    const { blab, ai, close } = await setUp(context, page, {
+      engine: 'builtin',
+      settings: {
+        autoTranslate: true,
+        autoTranslateEngine: 'blab',
+        autoAiDailyBudget: 100,
+        siteRules: { 'blab-engine.test': 'always' },
+      },
+    });
+    try {
+      await seedTodaysAutoAiChars(context, 5000);
+      await page.goto(`${ORIGIN}/notes`);
+      // Nobody clicks: the automatic session does it.
+      await expect(page.locator('#rich + .ai-translator-inline-block')).toContainText('[T]', { timeout: 30000 });
+      expect(blab.state.completeRequests.length).toBeGreaterThan(0);
+      expect(ai.sentTexts).toHaveLength(0);
+      const auto = (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto;
+      expect(auto.status).not.toBe('off');
+    } finally {
+      await close();
+    }
+  });
 });
 
 test.describe('§7 the other engines never reach Blab', () => {

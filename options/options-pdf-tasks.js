@@ -43,9 +43,13 @@ async function loadAccountSiteBase() {
   try {
     response = await chrome.runtime.sendMessage({ type: 'ACCOUNT_SITE_BASE' });
   } catch (error) {
-    response = null;
+    response = { ok: false, error };
   }
   accountSiteBase = (response && response.ok && response.data && response.data.base) || '';
+  // Every link built from it is left out without one — the PDF library, the
+  // Blab pricing page (options-blab.js). Say so once, here, so a settings page
+  // with no links is explained.
+  if (!accountSiteBase) console.error('Blab Translation: the account site address is unavailable', response && response.error);
 
   const link = elements.pdfTasksLibraryLink;
   if (!link) return;

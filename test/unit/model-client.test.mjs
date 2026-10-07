@@ -201,6 +201,25 @@ test('callModel: a caller abort is err.aborted, not an apiFailure', async () => 
   assert.deepEqual(keepaliveState(), { holders: 0, running: false });
 });
 
+test('callModel: a real failure that lands as the caller aborts keeps its own shape (N9)', async () => {
+  // The answer arrives, and the caller gives up while its body is being read:
+  // the attempt's signal is aborted, but what was thrown is the server's 403,
+  // not a cancellation, and it must not be reworded as one.
+  const controller = new AbortController();
+  await withFetch(() => ({
+    ok: false,
+    status: 403,
+    headers: new Headers(),
+    json: async () => { controller.abort(); return { error: { message: 'forbidden' } }; },
+  }), async () => {
+    const error = await callModel(profile(), request, { signal: controller.signal })
+      .then(() => assert.fail('should throw'), (err) => err);
+    assert.equal(error.aborted, undefined);
+    assert.equal(error.apiFailure.status, 403);
+  });
+  assert.deepEqual(keepaliveState(), { holders: 0, running: false });
+});
+
 test('callModel: network and provider failures keep their structured shape', async () => {
   await withFetch(() => Promise.reject(new TypeError('Failed to fetch')), async () => {
     // D2：网络错会重试，传不真等的 clock。

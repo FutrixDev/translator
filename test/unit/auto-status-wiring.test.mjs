@@ -672,8 +672,8 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
     'popup 那两下是用户自己说的，不带 cause');
   const explicit = auto.slice(auto.indexOf('function markPageExplicit()'), auto.indexOf('function onRouteChange('));
   assert.match(explicit,
-    /const wasHeld = pausedByUser;\s*pausedByUser = false;\s*if \(explicit && !wasHeld\) return;/,
-    '闩解了就得重开一轮 —— 哪怕这一页早就表过态，那一轮正停在闩上');
+    /const wasHeld = pausedByUser;\s*pausedByUser = false;\s*if \(explicit && !wasHeld && !broken\) return;/,
+    '闩解了就得重开一轮 —— 哪怕这一页早就表过态，那一轮正停在闩上；出错停下的那一页同理（D-490）');
 
   // 他按的那句话是「**这一页**先别翻了」。SPA 里点进下一篇就是新的一页，闩不解
   // 的话往后全是原文，而「继续」那颗按钮此刻指着的是他早就离开的那一页。

@@ -22,6 +22,8 @@
  *   'daily_limit'    billing/me says available with used == limit; complete
  *                    answers 429 {error:'daily_limit', limit, used, resetsAt}
  *                    with no Retry-After
+ *   'unauthorized'   the token expired or was revoked server-side: billing/me
+ *                    and complete both answer 401 `unauthorized` to any bearer
  * A request without a bearer token is 401 `unauthorized` whatever the mode.
  */
 const { startMockServer, serveExtConnect } = require('./mock-server');
@@ -33,7 +35,7 @@ const quota = { limit: 40, used: 0, remaining: 40, applied: false, resetsAt: '20
 
 /**
  * @param {object} [options]
- * @param {'available'|'plan_required'|'daily_limit'} [options.mode]
+ * @param {'available'|'plan_required'|'daily_limit'|'unauthorized'} [options.mode]
  * @param {number} [options.limit] the daily allowance billing/me and 429 report
  * @param {number} [options.used] what has been spent today before the test
  * @param {(text: string) => (object|string)} [options.dictEntry] the answer to
@@ -65,7 +67,7 @@ async function startMockBlabService({
 
     if (url.pathname === '/api/billing/me') {
       state.meRequests += 1;
-      if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+      if (!authorized || state.mode === 'unauthorized') return send(401, { error: 'unauthorized', loginRequired: true });
       const blabTranslation = state.mode === 'plan_required'
         ? { available: false }
         : { available: true, limit, used: state.mode === 'daily_limit' ? limit : state.used, resetsAt: RESETS_AT };
@@ -82,7 +84,7 @@ async function startMockBlabService({
       req.on('end', () => {
         const body = JSON.parse(raw);
         state.completeRequests.push({ authorization: req.headers.authorization ?? null, body });
-        if (!authorized) return send(401, { error: 'unauthorized' });
+        if (!authorized || state.mode === 'unauthorized') return send(401, { error: 'unauthorized' });
         if (state.mode === 'plan_required') return send(403, { error: 'plan_required' });
         if (state.mode === 'daily_limit') {
           return send(429, { error: 'daily_limit', limit, used: limit, resetsAt: RESETS_AT });

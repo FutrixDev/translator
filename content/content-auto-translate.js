@@ -709,9 +709,14 @@
       // 翻译，这一页新长出来的内容照旧不跟，而他刚刚要的就是翻。
       //
       // 解了闩就得重开一轮，哪怕这一页早就表过态了：那一轮正停在闩上。
+      //
+      // 出错停下的那一页同理（broken）：上一次整页翻译以账户错误收场时，自动会话
+      // 跟着停了（stopForPassFailure）。他订阅或重新登录后再点一次，自动这边该跟着
+      // 回来，而不是等换页。账户还是不能用的话，这一轮的请求在 Blab 客户端的闩上
+      // 就地被拒（background/blab-client.js），手动那一轮一收尾，这里又停下。
       const wasHeld = pausedByUser;
       pausedByUser = false;
-      if (explicit && !wasHeld) return;
+      if (explicit && !wasHeld && !broken) return;
       explicit = true;
       start('explicit');
     }

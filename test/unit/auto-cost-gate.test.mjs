@@ -131,7 +131,8 @@ test('设置页把它切到 AI 要过一道二次确认，说了不就退回去'
   assert.match(options, /!confirmUnattendedAiSpend\('autoTranslateEngineAiConfirm'\)/);
   assert.match(options, /!confirmUnattendedAiSpend\('customRuleEngineAiConfirm'\)/);
   // 说了不：值退回改之前存着的那个引擎（可能是 builtin，也可能是 blab），并且**不**存。
-  assert.match(options, /elements\.autoTranslateEngine\.value = lastGoodSettings \? lastGoodSettings\.autoTranslateEngine : 'builtin';\s*\n\s*syncAutoEngineState\(\);\s*\n\s*return;/);
+  // 存着的值经 Engines.normalizeEngine 读（D-490 N9），不在这里另写一个 'builtin'。
+  assert.match(options, /elements\.autoTranslateEngine\.value = Engines\.normalizeEngine\(lastGoodSettings && lastGoodSettings\.autoTranslateEngine\);\s*\n\s*syncAutoEngineState\(\);\s*\n\s*return;/);
   // 两个字段都真的读进来、也真的写回去；三个引擎都原样保存（D-479）。
   assert.match(options, /autoTranslateEngine: Engines\.normalizeEngine\(elements\.autoTranslateEngine\.value\)/);
   assert.match(options, /autoAiDailyBudget: Math\.max\(0, Math\.floor\(Number\(elements\.autoAiDailyBudget\.value\) \|\| 0\)\)/);

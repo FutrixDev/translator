@@ -523,12 +523,28 @@ async function pageAiReady(probe) {
   return EngineStatus.aiReady(null, reply.ready);
 }
 
+/**
+ * 这一页走 Blab 时账户能不能用（Engines.blabAccess），底栏的点按它着色。别的引擎
+ * 不问（undefined），省一次账户请求。服务端说 token 不认（unauthorized，比如过期）
+ * 等于没登录；别的失败（网络、服务出错）答不上来是 null —— 没说能用，点就不绿。
+ */
+async function pageBlabAccess(settings, probe) {
+  if (EngineStatus.selectedEngine(settings, probe) !== 'blab') return undefined;
+  const reply = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT' });
+  if (reply && reply.ok) return Engines.blabAccess(reply.data);
+  const code = reply && reply.error ? reply.error.code : 'no reply';
+  if (code === 'unauthorized') return Engines.BLAB_ACCESS.SIGNED_OUT;
+  console.warn('Blab Translation: reading the account for the engine status failed (%s)', code);
+  return null;
+}
+
 async function refreshEngineStatus(settings) {
   // 总是问页面：站点规则可能把这一页的引擎钉成了和设置不同的那个。
   const reply = await probeActiveTabEngine();
   const probe = reply === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : reply;
   lastEngineProbe = probe;
-  renderStatus(EngineStatus.describeEngineStatus(settings, probe, await pageAiReady(probe)));
+  const [aiIsReady, blabAccess] = await Promise.all([pageAiReady(probe), pageBlabAccess(settings, probe)]);
+  renderStatus(EngineStatus.describeEngineStatus(settings, probe, aiIsReady, blabAccess));
 }
 
 function renderStatus(status) {

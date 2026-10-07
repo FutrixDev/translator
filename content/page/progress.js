@@ -84,11 +84,9 @@
       let newX = initialX + deltaX;
       let newY = initialY + deltaY;
 
-      // 保持在视口内
-      const progressWidth = 220;
-      const progressHeight = 60;
-      newX = Math.max(0, Math.min(window.innerWidth - progressWidth, newX));
-      newY = Math.max(0, Math.min(window.innerHeight - progressHeight, newY));
+      // 保持在视口内：按条子此刻的真实尺寸（错误条比进度条宽、也高）。
+      newX = Math.max(0, Math.min(window.innerWidth - progressEl.offsetWidth, newX));
+      newY = Math.max(0, Math.min(window.innerHeight - progressEl.offsetHeight, newY));
 
       progressEl.style.left = `${newX}px`;
       progressEl.style.top = `${newY}px`;
@@ -123,6 +121,22 @@
     
     progressEl.style.left = `${left}px`;
     progressEl.style.top = `${top}px`;
+  }
+
+  /**
+   * 换了内容之后把条子收回视口里。positionProgressBar 按进度条的 220×60 摆位，
+   * 错误条却有 280–400 宽、两三行高，原地换内容就会伸出右下角（1280×800 下停在
+   * right:-50px）—— 而 Blab 的账户错误全靠这条说。量的是布局尺寸（offsetWidth），
+   * 不是 getBoundingClientRect：入场动画的 scale 还在跑时，后者是缩小过的。
+   */
+  function keepProgressInViewport(progressEl) {
+    const margin = 10;
+    const left = parseFloat(progressEl.style.left) || 0;
+    const top = parseFloat(progressEl.style.top) || 0;
+    const maxLeft = window.innerWidth - progressEl.offsetWidth - margin;
+    const maxTop = window.innerHeight - progressEl.offsetHeight - margin;
+    progressEl.style.left = `${Math.max(margin, Math.min(left, maxLeft))}px`;
+    progressEl.style.top = `${Math.max(margin, Math.min(top, maxTop))}px`;
   }
 
   function forceHideProgressBar() {
@@ -199,6 +213,7 @@
         </button>
       `;
       progressEl.classList.add('ai-translator-progress-info-state');
+      keepProgressInViewport(progressEl);
       
       // 重新绑定关闭按钮事件
       const closeBtn = progressEl.querySelector('.ai-translator-progress-close');
@@ -224,7 +239,13 @@
     }
   }
 
-  function showTranslationError(errorMessage) {
+  /**
+   * 进度条换成错误条。`action` 是 Blab 账户错误带来的入口（'subscribe' |
+   * 'signin'，background/api-errors.js），画成文字下面的一颗按钮
+   * （ctx.accountActionButton）；带入口的不自动收起 —— 人还没来得及点它，条子
+   * 就没了。登录成功收起这条：错误已经不成立了，再点一次翻译就行。
+   */
+  function showTranslationError(errorMessage, action = null) {
     const progressEl = document.getElementById('ai-translator-progress');
     if (progressEl) {
       // Escape HTML in error message
@@ -236,7 +257,9 @@
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
             <path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          <div class="ai-translator-progress-error-text">${escapedMessage}</div>
+          <div class="ai-translator-progress-error-body">
+            <div class="ai-translator-progress-error-text">${escapedMessage}</div>
+          </div>
         </div>
         <button class="ai-translator-progress-close" title="${t('close')}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
@@ -246,6 +269,12 @@
       `;
       progressEl.classList.remove('ai-translator-progress-info-state');
       progressEl.classList.add('ai-translator-progress-error-state');
+      const entry = ctx.accountActionButton(action, {
+        className: 'ai-translator-progress-action',
+        onSignedIn: forceHideProgressBar
+      });
+      if (entry) progressEl.querySelector('.ai-translator-progress-error-body').appendChild(entry);
+      keepProgressInViewport(progressEl);
 
       // Rebind close button event
       const closeBtn = progressEl.querySelector('.ai-translator-progress-close');
@@ -260,6 +289,7 @@
       });
 
       // Auto close after 8 seconds (longer for errors so user can read)
+      if (entry) return;
       setTimeout(() => {
         if (progressEl.parentNode) {
           progressEl.classList.add('ai-translator-progress-done');
