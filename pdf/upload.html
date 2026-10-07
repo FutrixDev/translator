@@ -47,15 +47,13 @@
         <div id="docConfirmPanel" class="confirm-panel" hidden>
           <p id="docConfirmText" class="confirm-text"></p>
         </div>
-        <p id="docNoFile" class="job-note" data-i18n="docNoFile" hidden>This result is read on the website — there is no file to download.</p>
         <div class="job-actions">
-          <button type="button" id="pdfOpenDual" class="btn btn-primary" hidden>
-            <span data-i18n="pdfOpenDual">Open Bilingual PDF</span>
+          <!-- A finished job of any format is viewed in the web reader, whose
+               download menu has every file (D-488). -->
+          <button type="button" id="docView" class="btn btn-primary" hidden>
+            <span data-i18n="docView">View</span>
           </button>
-          <button type="button" id="pdfOpenMono" class="btn btn-secondary" hidden>
-            <span data-i18n="pdfOpenMono">Open Translated PDF</span>
-          </button>
-          <button type="button" id="docSaveDual" class="btn btn-primary" hidden>
+          <button type="button" id="docSaveDual" class="btn btn-secondary" hidden>
             <span data-i18n="docSaveDual">Save Bilingual File</span>
           </button>
           <button type="button" id="docSaveMono" class="btn btn-secondary" hidden>
@@ -83,7 +81,6 @@
             <span data-i18n="pdfAbandon">Cancel Task</span>
           </button>
         </div>
-        <a id="docWebLink" class="job-link" target="_blank" rel="noopener" data-i18n="pdfTasksViewOnWeb" hidden>View on the web</a>
       </section>
     </main>
   </div>

@@ -54,7 +54,10 @@
   // The job on screen: {id, fileName, format}. Null until a create succeeds.
   let job = null;
   let pollTimer = null;
+  // The account's site, from the worker (ACCOUNT_SITE_BASE), and the error
+  // that came back instead when asking failed.
   let webBase = '';
+  let webBaseError = null;
   // Bumped per chosen file: an inspection that finishes after the user picked
   // another file must not start anything.
   let intake = 0;
@@ -135,7 +138,7 @@
       format: job.format,
       fileName: job.fileName,
       hasFile: !!currentFile,
-      webBase,
+      reader: readerLink(job.id),
       uiLang: currentUILang
     }, t);
     // A job waiting for confirmation does not change by itself, so it is not
@@ -395,13 +398,20 @@
     return response.data;
   }
 
-  /** PDF: Chrome shows it, so the result opens in a tab. */
-  async function openResult(which) {
-    const view = await freshView();
-    if (!view) return;
-    const target = DocJobs.openTargetFor({ status: view.status, format: 'pdf', results: view.results }, which);
-    if (target.kind === 'result') chrome.tabs.create({ url: target.url });
-    else handleView(view);
+  /**
+   * Where "View" leads for a job — the web reader — or why there is nowhere:
+   * the site base never arrived, or it is not an http(s) address.
+   */
+  function readerLink(jobId) {
+    const url = DocJobs.readerUrl(webBase, jobId);
+    if (url) return { url, error: null };
+    return { url: '', error: webBaseError || { code: 'invalid_site_base' } };
+  }
+
+  /** Any format: the reader shows the document and has every download. */
+  function viewResult() {
+    const { url } = readerLink(job && job.id);
+    if (url) chrome.tabs.create({ url });
   }
 
   /**
@@ -548,16 +558,21 @@
     el.signIn.addEventListener('click', signIn);
     el.abandon.addEventListener('click', abandonJob);
     el.confirmContinue.addEventListener('click', continueJob);
-    el.openDual.addEventListener('click', () => openResult('dual'));
-    el.openMono.addEventListener('click', () => openResult('mono'));
+    el.view.addEventListener('click', viewResult);
     el.saveDual.addEventListener('click', () => saveResult('dual'));
     el.saveMono.addEventListener('click', () => saveResult('mono'));
     window.addEventListener('unload', stopPolling);
 
-    // Where the account lives on the web, for the finished job's link. Asked
-    // before the takeover so a finished job's first paint already has it.
+    // Where the account lives on the web, for the finished job's View. Asked
+    // before the takeover so a finished job's first paint already has it. A
+    // failure is kept: it is what the card says instead of offering View.
     const base = await sendMessage({ type: 'ACCOUNT_SITE_BASE' });
-    if (base.ok && base.data) webBase = base.data.base || '';
+    if (base.ok && base.data) {
+      webBase = base.data.base || '';
+    } else {
+      webBaseError = base.error || { code: 'no_response' };
+      console.warn('[pdf] asking for the account site failed:', webBaseError.code || webBaseError.message);
+    }
     takeOverFromHash();
   });
 })();

@@ -27,13 +27,7 @@ let pdfTasksTimer = null;
  *  and every account change; only a change in either half is worth a request. */
 let pdfTasksFetchedFor = null;
 /**
- * Where the account lives on the web. Empty until the service worker answers,
- * which is why every link built from it is conditional: a row that renders
- * before the reply simply has no link, and the next render has one.
- */
-let accountSiteBase = '';
-
-/**
+ * Where the account lives on the web, for the card header's library link.
  * Ask once per page load. The origin is a constant with a storage override, so
  * it does not change under an open settings page, and re-asking on every
  * refresh would be a message per five-second poll for a value that never moves.
@@ -45,11 +39,11 @@ async function loadAccountSiteBase() {
   } catch (error) {
     response = null;
   }
-  accountSiteBase = (response && response.ok && response.data && response.data.base) || '';
+  const base = (response && response.ok && response.data && response.data.base) || '';
 
   const link = elements.pdfTasksLibraryLink;
   if (!link) return;
-  const href = PDF_UI.pdfLibraryUrl(accountSiteBase);
+  const href = PDF_UI.pdfLibraryUrl(base);
   link.href = href;
   link.hidden = !href;
 }
@@ -179,28 +173,13 @@ function pdfTaskRow(job) {
   const actions = document.createElement('div');
   actions.className = 'pdf-task-actions';
 
-  // The web library, opened on this job. Offered for every row the server
-  // knows about, not only the finished ones: the library renders the original
-  // too, so it answers "what was this?" for a job that failed and "how far has
-  // it got?" for one still running. `pdfLibraryUrl` returns '' for a pending
-  // record, whose id names no server job yet.
-  const libraryUrl = PDF_UI.pdfLibraryUrl(accountSiteBase, job.jobId);
-  if (libraryUrl) {
-    const view = document.createElement('a');
-    view.className = 'pdf-task-view';
-    view.href = libraryUrl;
-    view.target = '_blank';
-    view.rel = 'noopener';
-    view.textContent = t('pdfTasksViewOnWeb');
-    actions.appendChild(view);
-  }
-
-  // Open: a finished PDF opens its file, every other format its job page.
-  // Review: the over-page question is answered on the job page. Both go
-  // through the worker, never the URL the list came with: presigned links
-  // expire in minutes and this page can sit open for hours.
+  // One action per row at most. View: a finished job of any format opens the
+  // web reader, which has every download. Review: the over-page question is
+  // answered on the job page. Both go through the worker's PDF_OPEN_JOB, which
+  // polls the job first, so a row drawn hours ago still opens the right place.
+  // A running or failed row has no action; its status line is the answer.
   const openKey = job.pending ? null
-    : job.status === 'succeeded' ? 'pdfOpen'
+    : job.status === 'succeeded' ? 'docView'
       : DocJobs.isAwaitingStatus(job.status) ? 'docReview'
         : null;
   if (openKey) {
@@ -209,7 +188,7 @@ function pdfTaskRow(job) {
     open.className = 'btn btn-text pdf-task-open';
     open.textContent = t(openKey);
     open.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId, which: 'dual' });
+      chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId });
     });
     actions.appendChild(open);
   }

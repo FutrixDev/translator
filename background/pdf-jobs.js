@@ -537,31 +537,40 @@ async function handlePdfJobAbandon(jobId) {
 /**
  * PDF_OPEN_JOB: open a job from a list row or a notification.
  *
- * A finished PDF opens its file (Chrome shows it); everything else opens the
- * job page, which can save a file, ask for a confirmation or say what went
- * wrong. Always via a fresh poll: a presigned URL a record might hold is
- * minutes old and probably expired. If that poll fails the job page is still
- * the right place — it polls again and shows the error in context.
+ * A finished job of any format opens the web reader, which shows the document
+ * and offers every download; everything else opens the job page, which can
+ * ask for a confirmation or say what went wrong. Always via a fresh poll: a
+ * record's status may be minutes old. If that poll fails the job page is the
+ * right place — it polls again and shows the error in context.
+ *
+ * The site base comes from comicClient.getApiBase(), the same answer the job
+ * page gets through ACCOUNT_SITE_BASE. A base that yields no reader URL (a
+ * stored override that is not http(s)) is an error, not a quiet detour to the
+ * job page.
  */
-async function openPdfJob(jobId, which) {
+async function openPdfJob(jobId) {
   if (!jobId || pdfClient.isPendingRecord({ jobId })) {
     throw new ComicApiError('result_unavailable', 'This job has not reached the service yet', 404);
   }
-  const records = await pdfClient.listJobRecords();
-  let record = records.find(r => r.jobId === jobId) || null;
-  let target = { kind: 'page' };
+  let status = null;
   try {
     const view = await pdfClient.getPdfJob(jobId);
-    record = (await foldPageView(jobId, view)) || record;
-    const { sourceFormat } = jobFacts(record, view);
-    target = DocJobs.openTargetFor({ status: view.status, format: sourceFormat, results: view.results }, which);
+    await foldPageView(jobId, view);
+    status = view.status;
   } catch (error) {
     console.warn(`[pdf] refreshing job ${jobId} before opening it failed; opening its page:`,
       error?.code || error?.message || error);
   }
-  const url = target.kind === 'result' ? target.url : chrome.runtime.getURL(DocJobs.jobPagePath(jobId));
+  if (status !== 'succeeded') {
+    await chrome.tabs.create({ url: chrome.runtime.getURL(DocJobs.jobPagePath(jobId)) });
+    return { opened: 'page' };
+  }
+  const url = DocJobs.readerUrl(await comicClient.getApiBase(), jobId);
+  if (!url) {
+    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL', 0);
+  }
   await chrome.tabs.create({ url });
-  return { opened: target.kind };
+  return { opened: 'reader' };
 }
 
 export {

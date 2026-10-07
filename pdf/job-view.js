@@ -25,10 +25,7 @@
     error: 'pdfError',
     confirmPanel: 'docConfirmPanel',
     confirmText: 'docConfirmText',
-    noFile: 'docNoFile',
-    webLink: 'docWebLink',
-    openDual: 'pdfOpenDual',
-    openMono: 'pdfOpenMono',
+    view: 'docView',
     saveDual: 'docSaveDual',
     saveMono: 'docSaveMono',
     confirmContinue: 'docConfirmContinue',
@@ -40,7 +37,7 @@
   };
 
   const BUTTONS = [
-    'openDual', 'openMono', 'saveDual', 'saveMono', 'confirmContinue',
+    'view', 'saveDual', 'saveMono', 'confirmContinue',
     'confirmCharge', 'declineCharge', 'retry', 'signIn', 'abandon'
   ];
 
@@ -61,9 +58,6 @@
     el.error.classList.remove('is-note');
     el.progressTrack.hidden = true;
     el.confirmPanel.hidden = true;
-    el.noFile.hidden = true;
-    el.webLink.hidden = true;
-    el.webLink.removeAttribute('href');
     BUTTONS.forEach((name) => { el[name].hidden = true; });
   }
 
@@ -157,10 +151,12 @@
   /**
    * One job, as the server last described it.
    *
-   * @param model {view, format, fileName, hasFile, webBase, uiLang}
+   * @param model {view, format, fileName, hasFile, reader, uiLang}, where
+   *   `reader` is `{url, error}`: the web reader's URL for this job, or why
+   *   there is none.
    */
   function renderJob(el, model, t) {
-    const { view, format, fileName, hasFile, webBase, uiLang } = model;
+    const { view, format, fileName, hasFile, reader, uiLang } = model;
     reset(el, fileName);
     el.statusText.textContent = t(PDF_UI.pdfStatusKey(view));
     const status = view && view.status;
@@ -182,12 +178,7 @@
 
     if (status === 'succeeded') {
       setProgress(el, 100);
-      renderResults(el, view, format);
-      const href = PDF_UI.pdfLibraryUrl(webBase, view.jobId);
-      if (href) {
-        el.webLink.href = href;
-        el.webLink.hidden = false;
-      }
+      renderResults(el, view, format, reader, t);
       return;
     }
 
@@ -199,20 +190,22 @@
     offerRecovery(el, view.error || { code: status }, hasFile);
   }
 
-  /** PDF opens in Chrome; the other written-back formats save; MOBI has no file. */
-  function renderResults(el, view, format) {
-    const results = view.results || {};
-    if (format === 'pdf') {
-      el.openDual.hidden = !results.dualUrl;
-      el.openMono.hidden = !results.monoUrl;
-      return;
-    }
-    if (DocJobs.writesBackDocument(format)) {
+  /**
+   * Every finished job is viewed in the web reader, whose download menu has
+   * the PDFs and the translated file. Word, EPUB, TXT and Markdown also keep
+   * their two written-back files, saved under the user's own name, because
+   * the reader offers only one of them. With no reader URL there is no View
+   * button, and the message says why.
+   */
+  function renderResults(el, view, format, reader, t) {
+    if (reader && reader.url) el.view.hidden = false;
+    else showMessage(el, PDF_UI.pdfErrorMessage((reader && reader.error) || {}, t), true);
+    // A PDF's two files are both in the reader's menu, so it saves nothing here.
+    if (DocJobs.familyOf(format) === 'flow' && DocJobs.writesBackDocument(format)) {
+      const results = view.results || {};
       el.saveDual.hidden = !results.dualUrl;
       el.saveMono.hidden = !results.monoUrl;
-      return;
     }
-    el.noFile.hidden = false;
   }
 
   /**

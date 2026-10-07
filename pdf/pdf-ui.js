@@ -92,21 +92,15 @@
   }
 
   /**
-   * The web library's URL for a job — the page that renders the document
-   * itself, original and translation side by side, which the extension cannot
-   * do (Chrome's PDF viewer is an out-of-process iframe with a closed shadow
-   * DOM).
+   * The web library's URL: the account's document list on the site. One job
+   * is viewed in the reader instead (DocJobs.readerUrl).
    *
-   * Empty string rather than a broken link when there is nowhere to point:
-   *
-   * - no base yet (the service worker has not answered), or one that is not
-   *   http(s) — the base comes out of chrome.storage, so a value that could
-   *   turn an <a href> into `javascript:` never gets built into one;
-   * - a pending record, whose `local:<operationId>` id names no server job.
-   *   The library treats an unknown `?job=` as a hint and falls back to the
-   *   newest document, so such a link would silently open the wrong one.
+   * Empty string rather than a broken link when there is no base yet (the
+   * service worker has not answered), or one that is not http(s) — the base
+   * comes out of chrome.storage, so a value that could turn an <a href> into
+   * `javascript:` never gets built into one.
    */
-  function pdfLibraryUrl(base, jobId) {
+  function pdfLibraryUrl(base) {
     let origin;
     try {
       origin = new URL(String(base || ''));
@@ -114,11 +108,7 @@
       return '';
     }
     if (!/^https?:$/.test(origin.protocol)) return '';
-    const path = `${origin.origin}/app/settings/pdf`;
-    if (jobId === undefined || jobId === null || jobId === '') return path;
-    const id = String(jobId);
-    if (id.startsWith('local:')) return '';
-    return `${path}?job=${encodeURIComponent(id)}`;
+    return `${origin.origin}/app/settings/pdf`;
   }
 
   globalThis.AI_TRANSLATOR_PDF_UI = {

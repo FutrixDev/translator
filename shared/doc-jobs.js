@@ -1,7 +1,7 @@
 // Blab Translation — the ONE place the extension knows what a document job is.
 //
 // Six formats, their limits and MIME types, the 68-byte sniff, the job status
-// sets, and where "open this job" leads. The upload page, the popup, the
+// sets, and where "view this job" leads. The upload page, the popup, the
 // settings page and the service worker all ask this module; none of them keeps
 // a copy. The format half is a line-for-line port of translator-saas
 // server/lib/pdf/format.ts (DOCUMENT_FORMATS, CONTENT_TYPES, megabyteLabel,
@@ -192,20 +192,31 @@
   }
 
   /**
-   * Where "open" leads. Only a finished PDF opens its file directly (Chrome
-   * shows it); every other format, and every job not finished, goes to the
-   * job page, which knows how to save a file or ask for a confirmation.
+   * The web reader's URL for a job: `<origin>/app/reader/<id>`. The reader
+   * takes a job id as well as an asset id, shows the document, and offers
+   * every download (bilingual PDF, translated PDF, translated file, source),
+   * so a finished job of any format is viewed there and nowhere else.
+   *
+   * Empty string rather than a broken link when there is nowhere to point:
+   *
+   * - no base yet (the service worker has not answered), or one that is not
+   *   http(s) — the base comes out of chrome.storage, so a value that could
+   *   turn a link into `javascript:` never gets built into one;
+   * - no id, or a pending record's `local:<operationId>` id, which names no
+   *   server job.
    */
-  function openTargetFor(job, which) {
-    var j = job || {};
-    var results = j.results || {};
-    if (j.status === 'succeeded' && j.format === 'pdf') {
-      var url = which === 'mono'
-        ? (results.monoUrl || results.dualUrl)
-        : (results.dualUrl || results.monoUrl);
-      if (url) return { kind: 'result', url: url };
+  function readerUrl(base, jobId) {
+    var origin;
+    try {
+      origin = new URL(String(base || ''));
+    } catch (e) {
+      return '';
     }
-    return { kind: 'page' };
+    if (!/^https?:$/.test(origin.protocol)) return '';
+    if (jobId === undefined || jobId === null || jobId === '') return '';
+    var id = String(jobId);
+    if (id.indexOf('local:') === 0) return '';
+    return origin.origin + '/app/reader/' + encodeURIComponent(id);
   }
 
   var api = {
@@ -230,7 +241,7 @@
     jobFormat: jobFormat,
     resultFileName: resultFileName,
     jobPagePath: jobPagePath,
-    openTargetFor: openTargetFor
+    readerUrl: readerUrl
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

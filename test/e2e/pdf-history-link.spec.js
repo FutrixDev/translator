@@ -1,15 +1,17 @@
 /**
- * The settings page's PDF history, and its way out to the web library.
+ * The settings page's document history: a finished job is viewed in the web
+ * reader, and the card's header reaches the web library.
  *
  * The extension cannot render a PDF. Chrome's viewer is an out-of-process
  * iframe with a closed shadow DOM, so "show me the translated layout" is a
- * question only the website can answer — which is why every row in this list
- * links to the same job on blab-translation.com/app/settings/pdf.
+ * question only the website can answer — which is why a finished row's one
+ * action opens <site>/app/reader/<job>, whose download menu has every file
+ * (D-488).
  *
- * What this pins down is the part unit tests cannot see: that the link is built
- * from the origin the service worker is actually configured with (here, the
- * mock's), and that it reaches the DOM on the first render rather than one
- * poll later.
+ * What this pins down is the part unit tests cannot see: that the reader and
+ * library addresses are built from the origin the service worker is actually
+ * configured with (here, the mock's), and that the row's action reaches the
+ * worker and the worker opens the reader.
  */
 const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
@@ -51,6 +53,11 @@ async function startMockService() {
     }
     if (url.pathname === '/api/billing/me') return send(200, ACCOUNT);
     if (url.pathname === '/api/pdf/jobs' && req.method === 'GET') return send(200, { jobs: JOBS });
+    // The worker polls a job before opening it, so the place it opens is the
+    // job's state now, not when the row was drawn.
+    const one = url.pathname.match(/^\/api\/pdf\/jobs\/([^/]+)$/);
+    const job = one && JOBS.find((j) => j.jobId === decodeURIComponent(one[1]));
+    if (job && req.method === 'GET') return send(200, job);
     send(404, { error: 'not_found' });
   });
 
@@ -72,8 +79,10 @@ async function connectExtension(context, base) {
   return worker;
 }
 
-test.describe('PDF history → web library', () => {
-  test('every server-side job links to itself in the web library', async ({ context, page, extensionId }) => {
+const shotDir = process.env.DOC_SCREENSHOT_DIR;
+
+test.describe('Document history → web reader and library', () => {
+  test('a finished job is viewed in the reader; a running or failed one has no action', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
       await connectExtension(context, service.base);
@@ -90,33 +99,36 @@ test.describe('PDF history → web library', () => {
       await expect(history.locator('.pdf-task-meta').nth(1)).toContainText(` · ${await intlName('en')} · `);
       await expect(page.locator('#pdfTasksActiveList .pdf-task-meta')).toContainText(` · ${await intlName('ja')} · `);
 
-      // The link carries the job, so the library opens on the document the
-      // reader clicked rather than on whatever is newest.
-      await expect(history.locator('.pdf-task-view').first())
-        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_done`);
-      // Built from the configured origin, not from a hardcoded production one.
+      // J4 step 1: the finished row has exactly one action, View, and no
+      // separate link to the website.
+      const done = history.locator('.pdf-task').first();
+      await expect(done.locator('button, a')).toHaveCount(1);
+      const view = done.locator('.pdf-task-open');
+      await expect(view).toHaveText(await page.evaluate(() => getMessage('docView', 'en')));
+      // A failed row and a running one have nothing to open; their status
+      // line says what happened.
+      await expect(history.locator('.pdf-task').nth(1).locator('button, a')).toHaveCount(0);
+      await expect(page.locator('#pdfTasksActiveList .pdf-task button, #pdfTasksActiveList .pdf-task a')).toHaveCount(0);
+      if (shotDir) {
+        await page.emulateMedia({ colorScheme: 'light' });
+        await done.screenshot({ path: `${shotDir}/j4-options-row.png` });
+      }
+
+      // J4 step 2: the worker opens the reader on that job, at the configured
+      // origin, not a hardcoded production one.
       expect(service.base.startsWith('http://127.0.0.1:')).toBe(true);
-
-      // A failure gets one too: the library still has the original, which is
-      // how "what was this file?" gets answered.
-      await expect(history.locator('.pdf-task-view').nth(1))
-        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_failed`);
-
-      // And so does a job that is still running — its progress is readable
-      // there while it works.
-      await expect(page.locator('#pdfTasksActiveList .pdf-task-view'))
-        .toHaveAttribute('href', `${service.base}/app/settings/pdf?job=pdf_running`);
+      const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
+      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_done`);
 
       // The card header reaches the library itself, which is the only way in
       // when the list is empty.
       await expect(page.locator('#pdfTasksLibraryLink'))
         .toHaveAttribute('href', `${service.base}/app/settings/pdf`);
       await expect(page.locator('#pdfTasksLibraryLink')).toBeVisible();
-
       // New tab, and severed from this page: an <a target="_blank"> without
       // rel="noopener" hands the opened page a window.opener back to here.
-      await expect(history.locator('.pdf-task-view').first()).toHaveAttribute('target', '_blank');
-      await expect(history.locator('.pdf-task-view').first()).toHaveAttribute('rel', 'noopener');
+      await expect(page.locator('#pdfTasksLibraryLink')).toHaveAttribute('target', '_blank');
+      await expect(page.locator('#pdfTasksLibraryLink')).toHaveAttribute('rel', 'noopener');
     } finally {
       await service.close();
     }

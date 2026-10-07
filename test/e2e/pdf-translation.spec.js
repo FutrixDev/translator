@@ -18,6 +18,9 @@ const { test, expect } = require('./fixtures');
 const { getServiceWorker } = require('./helpers');
 const { startDocService, TINY_PDF } = require('./doc-service-mock');
 
+/** Where the finished-card screenshot goes, when a run is collecting evidence. */
+const shotDir = process.env.DOC_SCREENSHOT_DIR;
+
 /**
  * `behaviour` decides what POST /api/pdf/jobs does — the happy path and the
  * 402 the UI has a distinct answer for. The 401 case needs no behaviour at
@@ -78,10 +81,29 @@ test.describe('PDF translation', () => {
       await expect(page.locator('#pdfProgressTrack')).toBeVisible();
       await expect(page.locator('#pdfStatusText')).not.toBeEmpty();
 
-      // Terminal state: both result buttons, since the mock returned both.
-      await expect(page.locator('#pdfOpenDual')).toBeVisible({ timeout: 20000 });
-      await expect(page.locator('#pdfOpenMono')).toBeVisible();
+      // J1 step 1, terminal state: exactly one action, View, and the primary
+      // one. The reader's download menu has both files, so the card offers no
+      // file of its own and no second way to the website (D-488).
+      const view = page.locator('#docView');
+      await expect(view).toBeVisible({ timeout: 20000 });
+      await expect(view).toHaveText(await page.evaluate(() => getMessage('docView', 'en')));
+      await expect(view).toHaveClass(/\bbtn-primary\b/);
+      await expect(page.locator('#pdfJobCard .job-actions button:visible')).toHaveCount(1);
+      await expect(page.locator('#pdfJobCard a')).toHaveCount(0);
+      for (const gone of ['#pdfOpenDual', '#pdfOpenMono', '#docWebLink']) {
+        await expect(page.locator(gone), gone).toHaveCount(0);
+      }
       await expect(page.locator('#pdfError')).toBeHidden();
+      if (shotDir) {
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.locator('#pdfJobCard').screenshot({ path: `${shotDir}/j1-pdf-card.png` });
+      }
+
+      // J1 step 2: View opens the reader on this job, at the base the worker
+      // was given, and nothing opens the presigned PDF.
+      const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
+      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_job_1`);
+      expect(context.pages().map((p) => p.url()).filter((u) => u.includes('/result/'))).toEqual([]);
 
       // One user action: one ticket, one PUT, one job.
       expect(service.state.uploadTickets).toHaveLength(1);

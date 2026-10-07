@@ -190,9 +190,8 @@ function renderPdfJobs(records) {
       track.appendChild(bar);
       row.appendChild(track);
     } else if (record.status === 'succeeded') {
-      // dual first; the worker falls back to mono when there is none, and
-      // opens the job page instead for every format Chrome cannot show.
-      head.appendChild(pdfOpenJobButton(record, 'pdfOpen'));
+      // The worker opens the web reader, which has every download.
+      head.appendChild(pdfOpenJobButton(record, 'docView'));
     } else if (DocJobs.isAwaitingStatus(record.status) && !record.pending) {
       // The over-page question is answered on the job page.
       head.appendChild(pdfOpenJobButton(record, 'docReview'));
@@ -229,7 +228,7 @@ function pdfOpenJobButton(record, labelKey) {
   button.className = 'pdf-job-open';
   button.textContent = t(labelKey);
   button.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId, which: 'dual' });
+    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId });
     window.close();
   });
   return button;
