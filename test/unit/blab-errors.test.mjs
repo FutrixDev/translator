@@ -73,6 +73,24 @@ test('blab errors: plan_required and unauthorized read as the account state, not
   assert.equal(apiErrorMessage(failure({ status: 0, blab: 'unauthorized', retryable: false }), zh, BLAB), msg('blabSignInRequired', 'zh-CN'));
 });
 
+test('blab errors: the account wording sends nobody to Settings, and a timeout names no seconds (D-497 R1-N6, F6)', () => {
+  // The way out is the entry on the bar or card (Subscribe opens pricing, Sign in
+  // signs in): a message that says "in Settings" points somewhere else.
+  const settingsWord = { en: /settings/i, 'zh-CN': /设置/, 'zh-TW': /設定/, ja: /設定/, ko: /설정/, de: /Einstellungen/,
+    fr: /paramètres/i, es: /configuración/i, pt: /configurações/i, ru: /настройк/i };
+  for (const [lang, word] of Object.entries(settingsWord)) {
+    for (const key of ['blabPlanRequired', 'blabSignInRequired']) {
+      const text = msg(key, lang);
+      assert.ok(text && !word.test(text), `${lang} ${key}: ${text}`);
+    }
+    const timeout = msg('blabErrorTimeout', lang);
+    assert.ok(timeout && !/\d|\{seconds\}/.test(timeout), `${lang} blabErrorTimeout: ${timeout}`);
+  }
+  const said = apiErrorMessage(failure({ status: 0, timeout: true, seconds: 90 }), en, BLAB);
+  assert.equal(said, msg('blabErrorTimeout', 'en'));
+  assert.ok(!/\d/.test(said), said);
+});
+
 test('blab errors: the three account states end the page pass; a 502 does not', () => {
   const cases = [
     [failure({ status: 429, blab: 'daily_limit', retryable: false, resetsAt: '2026-10-08T00:00:00Z' }), true],
@@ -104,7 +122,7 @@ test('blab errors: a failure is logged once with the profile id and never the te
 test('blab errors: the service failures are worded as Blab, never as the user\'s API address or key (D-490 N3)', () => {
   const cases = [
     [failure({ status: 0, network: true }), msg('blabErrorNetwork', 'en')],
-    [failure({ status: 0, timeout: true, seconds: 90 }), msg('blabErrorTimeout', 'en').replace('{seconds}', '90')],
+    [failure({ status: 0, timeout: true, seconds: 90 }), msg('blabErrorTimeout', 'en')],
     [failure({ status: 200, empty: true }), msg('blabErrorEmpty', 'en')],
     [failure({ status: 429, blab: 'rate_limited' }), msg('blabErrorBusy', 'en')],
     [failure({ status: 503, rateLimitedWait: 120 }), msg('blabErrorBusy', 'en')],

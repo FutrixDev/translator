@@ -86,8 +86,10 @@ function apiErrorMessage(error, settings, profile) {
 /**
  * Blab Translation's account state, worded for the reader (design §5.2): today's
  * allowance spent (with the local time it comes back), no subscription, or not
- * signed in. Each names Settings, where signing in and subscribing live. None
- * of them is a reason to try another engine: the reply is the answer.
+ * signed in. None names Settings (D-497 R1-N6): the way out is the entry the
+ * reply carries (BLAB_ACCOUNT_ACTIONS), which signs in or opens the pricing page
+ * itself. None of them is a reason to try another engine: the reply is the
+ * answer.
  */
 function blabAccountMessage(failure, settings, t) {
   if (failure.blab === 'daily_limit') {
@@ -110,7 +112,9 @@ function blabAccountMessage(failure, settings, t) {
  * its status for the bug report).
  */
 function blabServiceMessage(failure, t) {
-  if (failure.timeout) return t('blabErrorTimeout').replace('{seconds}', String(failure.seconds));
+  // No seconds in it (D-497 F6): the figure is the attempt's computed timeout,
+  // which says nothing the reader can act on.
+  if (failure.timeout) return t('blabErrorTimeout');
   if (failure.empty) return t('blabErrorEmpty');
   if (failure.network) return t('blabErrorNetwork');
   const status = Number(failure.status);
