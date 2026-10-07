@@ -17,8 +17,9 @@
   Korean, Thai and similar scripts) gets an entry, so "give up" is looked up
   in both places. Text with a full stop, comma, colon, semicolon, question
   mark or exclamation mark is always translated as a sentence.
-- **A short formula is translated, not looked up.** `$x + y$`, `\alpha` or
-  `a = b` is translated, not sent off as a dictionary word.
+- **A short formula is translated, not looked up.** `$x + y$`, `x - y`,
+  `\alpha` or `a = b` is translated, not sent off as a dictionary word;
+  `x-ray` and `km/h` are still looked up.
 - **Your own translation prompt no longer breaks the entry.** The presets on
   the settings page say "reply with the translation only"; a lookup now tells
   the model that the entry format overrides that, so choosing a preset still
