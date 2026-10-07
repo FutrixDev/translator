@@ -128,11 +128,17 @@
    * 错误条却有 280–400 宽、两三行高，原地换内容就会伸出右下角（1280×800 下停在
    * right:-50px）—— 而 Blab 的账户错误全靠这条说。量的是布局尺寸（offsetWidth），
    * 不是 getBoundingClientRect：入场动画的 scale 还在跑时，后者是缩小过的。
+   *
+   * 先挪到左上角再量：fixed 的条子宽度是收缩适配的，只能占 left 右边剩下的那点
+   * 地方。在原位（悬浮球下面，右边只剩 230px）量出来是被挤窄的 280，按它摆好后
+   * 地方宽了，条子又长到 290，右边就贴死在视口边上。
    */
   function keepProgressInViewport(progressEl) {
     const margin = 10;
     const left = parseFloat(progressEl.style.left) || 0;
     const top = parseFloat(progressEl.style.top) || 0;
+    progressEl.style.left = `${margin}px`;
+    progressEl.style.top = `${margin}px`;
     const maxLeft = window.innerWidth - progressEl.offsetWidth - margin;
     const maxTop = window.innerHeight - progressEl.offsetHeight - margin;
     progressEl.style.left = `${Math.max(margin, Math.min(left, maxLeft))}px`;

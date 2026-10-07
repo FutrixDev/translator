@@ -117,8 +117,10 @@ async function expectBarOnScreen(page) {
   const { width, height } = page.viewportSize();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.y).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(width);
-  expect(box.y + box.height).toBeLessThanOrEqual(height);
+  // Not flush against the edge either: the bar keeps its 10 px margin (a little
+  // less on the box while the entry animation's scale is still settling).
+  expect(box.x + box.width).toBeLessThanOrEqual(width - 8);
+  expect(box.y + box.height).toBeLessThanOrEqual(height - 8);
 }
 
 const barEntry = (page) => page.locator('#ai-translator-progress [data-account-action]');
