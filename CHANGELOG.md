@@ -519,6 +519,27 @@
 
 No new permission.
 
+### A finished document opens in the reader
+
+- **One button, View, for every finished document.** The job page no longer
+  offers "Open Bilingual PDF", "Open Translated PDF" or "View on the web";
+  View opens the document in the web reader, whose download menu has the
+  bilingual and translated PDFs and the translated file. A MOBI, which used to
+  have only the website link, gets View too.
+- **Word, EPUB, TXT and Markdown still save from the page.** "Save Bilingual
+  File" and "Save Translated File" stay beside View, so the file keeps your own
+  name.
+- **The popup, the settings list and a clicked notification go to the same
+  place.** A finished job of any format opens in the reader; a job waiting on
+  your confirmation still opens its page through **Review**. The settings
+  list's per-row "View on the web" link is gone; the link to the web library
+  stays in the card header. A running or failed row has no button; its status
+  line says where it stands.
+- **No dead button.** If the account's site address is not a web address,
+  the page says the reader cannot be opened instead of showing View.
+
+No new permission.
+
 ## 1.4.0 — 2026-09-20
 
 ### New features

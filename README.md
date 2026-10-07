@@ -207,14 +207,13 @@ signed-in account.
    pages continuing will use. **Continue** carries on; **Cancel Task**, or
    doing nothing until the stated time, cancels it with a full refund.
 6. When it is done:
-   - **PDF**: **Open Bilingual PDF** / **Open Translated PDF** open the result
-     in a tab. **Open** in the popup does the same.
-   - **Word, EPUB, TXT, Markdown**: **Save Bilingual File** / **Save
-     Translated File** save it as `<name> (bilingual).<ext>` /
-     `<name> (translated).<ext>`. **Open** in the popup brings you back to the
-     job's page.
-   - **MOBI**: the result is read on the website (**View on the web**); there
-     is no file to download.
+   - **View** opens the document in the web reader, whatever its format; the
+     reader's download menu has the bilingual and translated PDFs and the
+     translated file. **View** in the popup, in the settings list and a
+     clicked notification go to the same place.
+   - **Word, EPUB, TXT, Markdown** also offer **Save Bilingual File** / **Save
+     Translated File**, saving it as `<name> (bilingual).<ext>` /
+     `<name> (translated).<ext>`.
 
 Web PDFs (an open PDF tab, or a link to one) can also be translated from the
 popup's **Translate This PDF** and the right-click menu; that path takes PDFs
@@ -529,12 +528,10 @@ cd translator
    （通知也可以点）；页面上写明继续要多用几页。点「继续」接着翻；点「取消任务」，
    或到页面写的时间还没处理，任务取消并全额退回。
 6. 完成后：
-   - **PDF**：「打开双语 PDF」/「打开译文 PDF」在新标签页打开结果；弹窗里的「打开」
-     也一样。
-   - **Word、EPUB、TXT、Markdown**：「保存双语文件」/「保存译文文件」存成
-     `<文件名> (双语).<扩展名>` / `<文件名> (译文).<扩展名>`；弹窗里的「打开」回到这个
-     任务的页面。
-   - **MOBI**：结果在网站上阅读（「在网页中查看」），没有可下载的文件。
+   - 「查看」在网页阅读台里打开文档，不分格式；阅读台的下载菜单里有双语 PDF、译文
+     PDF 和译文文件。弹窗、设置页任务列表里的「查看」和点通知，都去同一个地方。
+   - **Word、EPUB、TXT、Markdown** 另有「保存双语文件」/「保存译文文件」，存成
+     `<文件名> (双语).<扩展名>` / `<文件名> (译文).<扩展名>`。
 
 网页上的 PDF（打开着的 PDF 标签页，或指向 PDF 的链接）也可以从弹窗的「翻译此 PDF」
 和右键菜单翻译；这条路只接 PDF。
