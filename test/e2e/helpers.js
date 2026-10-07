@@ -92,6 +92,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 这一行是为了和 manifest 顺序一致，不是哪条 spec 离了它就红。这串模块里没有
   // 译文缓存层（content-translation-cache.js 建键时读 PromptAddenda.stamp）。
   'shared/prompt-addenda.js',
+  // 引擎取值（D-479）：custom-rules.js 校验 engine、引擎与批次按它分派；manifest
+  // 里它排在 engine-status.js 之前、custom-rules.js 之前。
+  'shared/engines.js',
   'shared/custom-rules.js',
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。

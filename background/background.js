@@ -25,6 +25,8 @@ import '../shared/sync-collection.js';
 // AI 配置档（P1-D）：同样建在集合上，还取走 APICompat；custom-rules.js 在加载时
 // 取走它（规则 v3 的 profile 按集合的 id 形状校验），所以排在规则之前。
 import '../shared/ai-profiles.js';
+// 引擎取值只有一份（D-479）；custom-rules.js 校验规则的 engine 时读它。
+import '../shared/engines.js';
 import '../shared/custom-rules.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。

@@ -340,6 +340,7 @@
     translationEngine: '翻譯引擎',
     engineBuiltin: 'Chrome 內建翻譯（免費、離線）',
     engineCustomAi: '我的 AI 模型',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'Chrome 內建翻譯在本機執行，不需要 API Key，不花錢，也不連網。想要更高品質的譯文與詞彙講解，可切換到你自己的 AI 模型。影片字幕也走這一個，它用掉的 AI 字數記進自動翻譯設定裡的每日上限。',
     builtinLanguagePack: '語言包',
     downloadLanguagePack: '下載語言包',

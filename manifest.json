@@ -97,6 +97,7 @@
         "shared/default-settings.js",
         "shared/translation-display.js",
         "shared/api-compat.js",
+        "shared/engines.js",
         "shared/engine-status.js",
         "shared/lang-tags.js",
         "shared/target-lang.js",

@@ -30,6 +30,7 @@ await import('../../shared/prompt-addenda.js');
 await import('../../shared/api-compat.js');
 // custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');

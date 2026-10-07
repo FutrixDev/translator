@@ -36,6 +36,7 @@ function transferEnums() {
     cloudTargets: TargetLang.CLOUD_TARGETS,
     styles: TranslationDisplay.STYLES,
     domains: PromptAddenda.DOMAINS,
+    engines: Engines.ENGINES,
   });
 }
 

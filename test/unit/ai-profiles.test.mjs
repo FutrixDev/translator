@@ -17,6 +17,7 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/prompt-addenda.js');
 await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/custom-rules.js');
 const { AIProfiles } = globalThis;
 

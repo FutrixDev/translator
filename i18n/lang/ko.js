@@ -340,6 +340,7 @@
     translationEngine: '번역 엔진',
     engineBuiltin: 'Chrome 내장 번역(무료, 오프라인)',
     engineCustomAi: '내 AI 모델',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'Chrome 내장 번역은 기기에서 실행됩니다. API 키도, 비용도, 네트워크도 필요 없습니다. 더 나은 번역 품질과 단어 설명이 필요하면 내 AI 모델로 전환하세요. 동영상 자막도 이 엔진을 씁니다. 자막이 쓴 AI 문자 수는 자동 번역 설정의 하루 한도에 포함됩니다.',
     builtinLanguagePack: '언어 팩',
     downloadLanguagePack: '언어 팩 다운로드',

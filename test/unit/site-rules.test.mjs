@@ -782,6 +782,9 @@ const LOAD_ORDER = [
    'ctx.withPromptAddenda 给每个翻译请求问 SiteRules.register() 这一页的语域。'],
   ['content/content-translation-cache.js', 'shared/prompt-addenda.js',
    '译文缓存的键因子 addenda 由 ctx.engine.addenda.stamp() 算，语域那一格读 PromptAddenda.stamp()。'],
+  // 引擎取值只有一份（D-479）：custom-rules.js 在加载时取走 Engines。
+  ['shared/custom-rules.js', 'shared/engines.js',
+   'custom-rules.js 在加载时取走 Engines（规则的 engine 按 ENGINES 校验），缺了就抛，CustomRules 整个不存在。'],
   ['shared/custom-rules.js', 'shared/prompt-addenda.js',
    'custom-rules.js 在加载时取走 PromptAddenda（规则的 domain 按 DOMAINS 校验），缺了就抛，CustomRules 整个不存在。'],
   // 占位符与标记的语法：语言检测、收集、落笔都问 globalThis.TextMarkers。

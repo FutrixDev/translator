@@ -340,6 +340,7 @@
     translationEngine: '翻訳エンジン',
     engineBuiltin: 'Chrome 内蔵翻訳（無料・オフライン）',
     engineCustomAi: '自分の AI モデル',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'Chrome の内蔵翻訳は端末上で動きます。API キーも費用もネットワークも要りません。より高品質な訳文と語句の解説がほしいときは、自分の AI モデルに切り替えてください。動画の字幕もこのエンジンを使います。字幕が使った AI の文字数は、自動翻訳の設定にある 1 日の上限に数えられます。',
     builtinLanguagePack: '言語パック',
     downloadLanguagePack: '言語パックをダウンロード',

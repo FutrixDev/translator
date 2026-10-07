@@ -13,12 +13,12 @@
  *
  * 规则的形状：
  *   { v: 1|2|3, match: [...1–8 条 host[/path-glob]], include?, exclude?,
- *     keepOriginal?, css?, engine?: 'builtin'|'ai', domain?, profile?, updatedAt }
+ *     keepOriginal?, css?, engine?: 'builtin'|'ai'|'blab', domain?, profile?, updatedAt }
  * domain 是 PromptAddenda.DOMAINS 之一（P1-C），profile 是一个 AI 配置档的 id
  * （P1-D，shared/ai-profiles.js）。版本取「最低能表达它的那一版」：有 profile 写
  * v: 3，否则有 domain 写 v: 2，都没有就是 v: 1，旧版本读得懂的规则照旧是旧版本。
  * v: 2 却没有 domain、v: 3 却没有 profile 都是坏条目；内置引擎不读配置档，所以
- * engine: 'builtin' 带 profile 也拒。profile 指向的配置档必须存在，这一条只在服务
+ * engine: 'builtin' 或 'blab'（都不读用户的配置档）带 profile 也拒。profile 指向的配置档必须存在，这一条只在服务
  * 工作者写入时查（读到的规则指向已删的档，由请求那一层报 aiProfileMissing）。
  * id 只在键里（集合负责），空的选择器组不存。
  *
@@ -38,6 +38,8 @@
   if (!PromptAddenda) throw new Error('custom-rules.js 要先装 shared/prompt-addenda.js');
   const AIProfiles = root.AIProfiles;
   if (!AIProfiles) throw new Error('custom-rules.js 要先装 shared/ai-profiles.js');
+  const Engines = root.Engines;
+  if (!Engines) throw new Error('custom-rules.js 要先装 shared/engines.js');
 
   const KEY_PREFIX = 'customRule:';
   const VERSIONS = new Set([1, 2, 3]);
@@ -56,7 +58,6 @@
   });
 
   const SELECTOR_FIELDS = Object.freeze(['include', 'exclude', 'keepOriginal']);
-  const ENGINES = new Set(['builtin', 'ai']);
 
   const ERROR_KEYS = new Set([
     'customRuleInvalid',
@@ -185,7 +186,7 @@
       if (rule.css.trim()) out.css = rule.css;
     }
     if (rule.engine != null && rule.engine !== '') {
-      if (!ENGINES.has(rule.engine)) throw new Error('customRuleInvalid');
+      if (!Engines.isEngine(rule.engine)) throw new Error('customRuleInvalid');
       out.engine = rule.engine;
     }
     if (rule.domain != null && rule.domain !== '') {
@@ -197,7 +198,7 @@
       if (typeof rule.profile !== 'string' || !AIProfiles.collection.validId(rule.profile)) {
         throw new Error('customRuleInvalid');
       }
-      if (out.engine === 'builtin') throw new Error('customRuleProfileWithBuiltin');
+      if (out.engine && out.engine !== 'ai') throw new Error('customRuleProfileWithBuiltin');
       out.profile = rule.profile;
       out.v = 3;
     }

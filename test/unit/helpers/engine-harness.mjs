@@ -112,6 +112,8 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   // shared/api-compat.js 也排在引擎前面：回落前问「AI 接口配好没有」的那条规则
   // （APICompat.isApiKeyMissing）住在那里。
   await import('../../../shared/api-compat.js');
+  // 引擎取值（D-479）：引擎判断选了哪个引擎、钉哪个引擎时读 Engines。
+  await import('../../../shared/engines.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
   // 发给模型的出口问 SiteRules.register() 这一页的语域（R33 A4）；site-rules.js

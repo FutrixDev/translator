@@ -340,6 +340,7 @@
     translationEngine: 'Motor de tradução',
     engineBuiltin: 'Tradução integrada do Chrome (grátis, off-line)',
     engineCustomAi: 'Meu modelo de IA',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'A tradução integrada do Chrome é executada no seu dispositivo — sem chave de API, sem custo e sem rede. Mude para o seu próprio modelo de IA para ter mais qualidade e explicações de palavras. As legendas de vídeo também usam este motor; a IA que elas gastam conta no limite diário da tradução automática.',
     builtinLanguagePack: 'Pacote de idioma',
     downloadLanguagePack: 'Baixar pacote de idioma',

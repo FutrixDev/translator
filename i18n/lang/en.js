@@ -211,6 +211,7 @@
     translationEngine: 'Translation Engine',
     engineBuiltin: 'Chrome Built-in (Free, Offline)',
     engineCustomAi: 'My AI Model',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: "Chrome's built-in translation runs on your device — no API key, no cost, no network. Switch to your own AI model for higher quality and word explanations. Video subtitles use this engine too; the AI they spend counts toward the daily limit under automatic translation.",
     builtinLanguagePack: 'Language Pack',
     downloadLanguagePack: 'Download Language Pack',

@@ -64,8 +64,10 @@
             <select id="translationEngine">
               <option value="builtin" data-i18n="engineBuiltin"></option>
               <option value="ai" data-i18n="engineCustomAi"></option>
+              <option value="blab" data-i18n="engineBlab"></option>
             </select>
             <span class="hint" data-i18n-hint="hintTranslationEngine"></span>
+            <div class="blab-note" id="translationEngineBlabNote" hidden></div>
           </div>
 
           <div class="form-group" id="engineFallbackGroup">
@@ -216,8 +218,10 @@
               <select id="autoTranslateEngine">
                 <option value="builtin" data-i18n="autoTranslateEngineBuiltin"></option>
                 <option value="ai" data-i18n="autoTranslateEngineAi"></option>
+                <option value="blab" data-i18n="engineBlab"></option>
               </select>
               <span class="hint" data-i18n-hint="hintAutoTranslateEngine"></span>
+              <div class="blab-note" id="autoTranslateEngineBlabNote" hidden></div>
             </div>
 
             <!-- 每天最多替用户、在他没点的时候发给 AI 多少字符：自动翻译的页面
@@ -888,6 +892,7 @@
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/default-settings.js"></script>
+  <script src="../shared/engines.js"></script>
   <script src="../shared/engine-status.js"></script>
   <script src="../shared/ocr.js"></script>
   <!-- 语言标签的判定（基码、简繁、同语言）只有这一份，caption-core 和

@@ -211,6 +211,7 @@
     translationEngine: '翻译引擎',
     engineBuiltin: 'Chrome 内置翻译（免费、离线）',
     engineCustomAi: '我的 AI 模型',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'Chrome 内置翻译在本机运行，不需要 API Key，不花钱，也不联网。想要更高质量的译文和词汇讲解，可切换到你自己的 AI 模型。视频字幕也走这一个，它用掉的 AI 字数记进自动翻译设置里的每日上限。',
     builtinLanguagePack: '语言包',
     downloadLanguagePack: '下载语言包',

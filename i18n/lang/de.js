@@ -340,6 +340,7 @@
     translationEngine: 'Übersetzungsmodul',
     engineBuiltin: 'In Chrome integriert (kostenlos, offline)',
     engineCustomAi: 'Mein KI-Modell',
+    engineBlab: "Blab Translation",
     hintTranslationEngine: 'Die in Chrome integrierte Übersetzung läuft auf Ihrem Gerät – kein API-Schlüssel, keine Kosten, kein Netzwerk. Für höhere Qualität und Worterklärungen wechseln Sie zu Ihrem eigenen KI-Modell. Auch Videountertitel nutzen diese Engine; die KI, die sie verbrauchen, zählt zum Tageslimit der automatischen Übersetzung.',
     builtinLanguagePack: 'Sprachpaket',
     downloadLanguagePack: 'Sprachpaket herunterladen',
