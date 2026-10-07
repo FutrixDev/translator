@@ -40,46 +40,84 @@
     ctx.font = `${weight} ${size}px ${FONT}`;
     ctx.fillStyle = color;
     ctx.fillText(str, x, y);
+    return x + ctx.measureText(str).width;
   }
-  // 三个用途胶囊，颜色取自扇页
-  const USES = [['双语网页', '#F0605A'], ['PDF · 电子书', '#E89A1C'], ['视频双语字幕', '#2FB67E']];
-  function pills(ctx, x, y, size) {
+  // 卖点：彩色勾选方块 + 粗体关键词 + 常规说明，颜色取自扇页
+  const FEATURES = [
+    ['#F0605A', 'Bilingual web pages', ', math and code kept'],
+    ['#E89A1C', 'PDFs', ' translated with the layout intact'],
+    ['#2FB67E', 'Dual subtitles', ' on YouTube and other players'],
+    [ACCENT, 'EPUB, Word, MOBI', ', comics and images'],
+  ];
+  const MUTED = '#3B4258';
+  function check(ctx, x, y, size, color) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, size * 0.3);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.27, y + size * 0.52);
+    ctx.lineTo(x + size * 0.44, y + size * 0.68);
+    ctx.lineTo(x + size * 0.74, y + size * 0.34);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = size * 0.13;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+  function features(ctx, list, x, y, size, step) {
+    for (const [color, lead, rest] of list) {
+      check(ctx, x, y - size * 0.86, size * 1.05, color);
+      const tx = text(ctx, lead, x + size * 1.6, y, 800, size, INK);
+      if (rest) text(ctx, rest, tx, y, 600, size, MUTED);
+      y += step;
+    }
+  }
+  function pills(ctx, labels, x, y, size) {
     ctx.font = `700 ${size}px ${FONT}`;
-    const padX = size * 0.8, hgt = size * 2;
-    for (const [label, color] of USES) {
+    const padX = size * 0.85, hgt = size * 2;
+    for (const label of labels) {
       const w = ctx.measureText(label).width + padX * 2;
       ctx.beginPath();
       ctx.roundRect(x, y, w, hgt, hgt / 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.35;
-      ctx.lineWidth = Math.max(1, size / 10);
+      ctx.strokeStyle = 'rgba(74,85,232,0.35)';
+      ctx.lineWidth = Math.max(1, size / 12);
       ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = color;
-      ctx.fillText(label, x + padX, y + size * 1.36);
+      ctx.fillStyle = ACCENT;
+      ctx.fillText(label, x + padX, y + size * 1.37);
       x += w + size * 0.6;
     }
   }
   // Chrome 应用店大图 1400×560
   function drawPromoMarquee(ctx) {
-    // 按高缩放：插画整体右移约 90px，给标题让出视频卡左边
-    paintArt(ctx, ART.marquee, 1400, 560, 760, 560 / ART.marquee.height);
-    B.drawTile(ctx, 112, 96, 108);
+    // 按高缩放：插画整体右移约 90px，文字栏到视频卡左边（约 x 650）为止
+    paintArt(ctx, ART.marquee, 1400, 560, 820, 560 / ART.marquee.height);
     ctx.textBaseline = 'alphabetic';
-    text(ctx, 'Blab Translation', 96, 318, 800, 70, INK);
-    text(ctx, '叭叭翻译，翻译一切', 98, 384, 700, 40, ACCENT);
-    pills(ctx, 98, 420, 22);
+    B.drawTile(ctx, 60, 92, 42);
+    text(ctx, 'Blab Translation', 166, 85, 800, 34, INK);
+    text(ctx, 'Translate everything,', 94, 168, 800, 50, INK);
+    text(ctx, 'read it side by side.', 94, 226, 800, 50, ACCENT);
+    features(ctx, FEATURES, 98, 286, 21, 38);
+    pills(ctx, ['76 languages', 'Free on-device engine', 'Bring your own AI'], 96, 424, 16);
+    const tx = text(ctx, 'Works with  ', 100, 500, 600, 16, MUTED);
+    text(ctx, 'OpenAI  ·  Claude  ·  Gemini  ·  DeepSeek  ·  Ollama', tx, 500, 800, 16, MUTED);
   }
-  // Chrome 应用店小图 440×280
+  // Chrome 应用店小图 440×280：文字止于浏览器窗左边（约 x 172）
   function drawPromoSmall(ctx) {
-    paintArt(ctx, ART.small, 440, 280, 260);
-    B.drawTile(ctx, 52, 26, 30);
+    paintArt(ctx, ART.small, 440, 280, 280);
     ctx.textBaseline = 'alphabetic';
-    text(ctx, 'Blab', 26, 138, 800, 50, INK);
-    text(ctx, 'Translation', 27, 172, 700, 28, INK);
-    text(ctx, '叭叭翻译，翻译一切', 27, 212, 700, 18, ACCENT);
+    B.drawTile(ctx, 30, 24, 20);
+    text(ctx, 'Blab', 24, 92, 800, 40, INK);
+    text(ctx, 'Translation', 25, 118, 800, 21, INK);
+    features(ctx, [
+      ['#F0605A', 'Bilingual pages'],
+      ['#E89A1C', 'PDF, EPUB, Word'],
+      ['#2FB67E', 'Video subtitles'],
+    ], 25, 152, 14, 23);
+    text(ctx, '76 languages', 25, 236, 800, 15, ACCENT);
+    text(ctx, 'Free or your own AI', 25, 256, 700, 13, MUTED);
   }
   const sq = (file, size, draw) => ({ file, w: size, h: size, draw: (ctx) => draw(ctx, size) });
   const EXPORTS = [

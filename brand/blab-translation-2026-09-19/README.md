@@ -20,17 +20,20 @@ all sits on a warm tile.
   illustrations in `promo/` (`marquee-art.jpg`, `small-art.jpg`) came from
   Magic Art (`magic image`, 2k: the marquee at 21:9, the small tile at 3:2),
   prompted for no lettering at all. The marquee art is scaled to the tile's
-  height and right-aligned so the title clears its video card; the strip that
-  leaves on the left is filled by stretching the art's soft left edge. The tile, the wordmark, the slogan and the three feature pills are drawn
-  in `export.html`, because an image model cannot be trusted to spell or to
-  reproduce the mark. To change the copy, edit `drawPromoMarquee` /
+  height and right-aligned so the text column clears its video card; the
+  strip that leaves on the left is filled by stretching the art's soft left
+  edge. All the English copy is drawn in `export.html` (the tile, wordmark,
+  headline, feature list, pills and engine line), because an image model
+  cannot be trusted to spell or to reproduce the mark. Every claim must match
+  the store listing (`docs/store-submission-*.md`). To change the copy, edit `drawPromoMarquee` /
   `drawPromoSmall`. To change the picture, replace the JPEG. The export
   launches Chromium with `--allow-file-access-from-files`, so the file://
   JPEG does not taint the canvas.
 - All text (promo copy and the TV banners) is set in two fonts bundled in
   `fonts/`, never the host's: Nunito for Latin, Noto Sans SC for Chinese (SIL
   OFL 1.1, `fonts/OFL.txt`). Both are variable-weight woff2 files cut down to
-  the glyphs the drawings print. After changing any text, add its characters
+  the glyphs the drawings print: all of printable ASCII for Nunito, only the
+  TV banner's Chinese for Noto. After adding a character outside that, add it
   to `fonts/subset.sh` and rerun it against the full TTFs: a character
   missing from a subset is drawn in whatever host font has it. `export.mjs`
   stops if either font fails to load. Canvas rasterisation still differs
