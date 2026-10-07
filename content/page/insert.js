@@ -107,9 +107,10 @@
     // 的标记当普通文本原样保留；错序的闭标记只弹到对应层；缺失的闭标记到结尾
     // 自动闭合。最坏情况（标记全被模型丢掉）退化为纯文本译文，即今天的行为。
     //
-    // 大小写不敏感 + 容空白，是内置 NMT 逼出来的：实测 en→zh-Hans 会把开标记
-    // 大写成 `<A1>`（闭标记仍是 `</a1>`）。按小写严格匹配的话，这条链接不但重
-    // 建不出来，`<A1>` 四个字符还会原样显示给读者。见 shared/text-markers.js。
+    // 大小写不敏感 + 容空白和句点，是内置 NMT 逼出来的：实测 en→zh-Hans 会把
+    // 开标记大写成 `<A1>`（闭标记仍是 `</a1>`），en→pt 会写出 `</span1 . 3>`。
+    // 严格匹配的话，这条链接不但重建不出来，标记还会原样显示给读者。见
+    // shared/text-markers.js。
     const markerRe = globalThis.TextMarkers.markerParsePattern();
     // 解析完仍留在正文里的标记残骸（配不上任何一对，上面 continue 掉的那些）不
     // 能直接给读者看，落笔前清掉。只认本块生成过的标签名和编号，见
@@ -122,9 +123,9 @@
     let lastIndex = 0;
     let match;
     while ((match = markerRe.exec(text)) !== null) {
-      const closing = match[1] === '/';
-      const entry = markupByNumber.get(match[3]);
-      if (!entry || entry.tag !== match[2].toLowerCase()) continue;
+      const { closing, tag, number } = globalThis.TextMarkers.parseMarker(match);
+      const entry = markupByNumber.get(number);
+      if (!entry || entry.tag !== tag) continue;
 
       emit(stack[stack.length - 1].node, text.slice(lastIndex, match.index));
       lastIndex = markerRe.lastIndex;
