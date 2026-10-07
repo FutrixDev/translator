@@ -2,6 +2,9 @@
 // card shows a dictionary entry (phonetics with speakers, senses, examples,
 // word forms) under the translation — from the AI engine only (D-469/D-470).
 // C9: a short formula is translated, not looked up (D-474).
+// J1–J3: the phonetics are the translation's, in the target language, and
+// their speakers read the translation (D-487); the source text keeps its own
+// speaker on each surface.
 //
 // The entry is drawn by one function, DictEntry.render (shared/dict-entry.js),
 // for both surfaces; these journeys assert what reaches the DOM and what the
@@ -37,11 +40,13 @@ p { width: 640px; }</style></head>
   <p id="tail">I will never <span id="phrase">give up</span> the morning.</p>
 </body></html>`;
 
-// What the model answers for a lookup of `run`. One definition carries markup,
-// which must arrive as text: model strings go through textContent only.
+// What the model answers for a lookup of `run` into zh-CN. The phonetics are
+// the translation's: one pinyin row, no UK/US label (D-487). One definition
+// carries markup, which must arrive as text: model strings go through
+// textContent only.
 const RUN_ENTRY = {
   translation: '跑',
-  phonetics: [{ label: 'UK', ipa: '/rʌn/' }, { label: 'US', ipa: '/rʌn/' }],
+  phonetics: [{ label: '', ipa: 'pǎo' }],
   senses: [
     { pos: 'v.', defs: ['跑', '奔跑'] },
     { pos: 'n.', defs: ['跑步', '<img src=x onerror="window.__pwned=1">'] },
@@ -61,9 +66,16 @@ const GIVE_UP_ENTRY = {
   examples: [{ source: 'Never give up.', target: '永不放弃。' }],
 };
 
+// `猫` looked up into English: the translation's two IPA rows, UK and US.
+const CAT_ENTRY = {
+  translation: 'cat',
+  phonetics: [{ label: 'UK', ipa: '/kæt/' }, { label: 'US', ipa: '/kæt/' }],
+};
+
 function dictEntry(text) {
   if (text === 'run') return RUN_ENTRY;
   if (text === 'give up') return GIVE_UP_ENTRY;
+  if (text === '猫') return CAT_ENTRY;
   return { translation: `[T] ${text}` };
 }
 
@@ -88,14 +100,25 @@ function settings(endpoint, extra = {}) {
   };
 }
 
-// speechSynthesis in the content script's world: an en-GB and an en-US voice,
-// and speak() records what it was asked to say and in which language.
+// speechSynthesis in the content script's world: an en-GB, an en-US and a
+// zh-CN voice, and speak() records what it was asked to say and in which
+// language. self.__asked records each speech call as our code makes it (the
+// text and the language it declares) before any script or voice matching:
+// for Han text the matching settles on zh-CN whatever was declared, so only
+// the declared language shows which language a speaker asked for.
 async function stubSpeech(page) {
   await evaluateInContentScript(page.context(), page, `(() => {
     self.__spoken = [];
+    self.__asked = [];
+    const resolveSpokenLang = SpeechLang.resolveSpokenLang;
+    SpeechLang.resolveSpokenLang = (text, declared, detect) => {
+      self.__asked.push({ text, lang: declared });
+      return resolveSpokenLang(text, declared, detect);
+    };
     const voices = [
       { lang: 'en-GB', name: 'Daniel', voiceURI: 'Daniel', localService: true, default: false },
       { lang: 'en-US', name: 'Samantha', voiceURI: 'Samantha', localService: true, default: true },
+      { lang: 'zh-CN', name: 'Tingting', voiceURI: 'Tingting', localService: true, default: false },
     ];
     // A plain utterance: the real one refuses a voice that is not a
     // SpeechSynthesisVoice, and these stub voices are not.
@@ -115,6 +138,7 @@ async function stubSpeech(page) {
 }
 
 const spoken = (page) => evaluateInContentScript(page.context(), page, 'self.__spoken');
+const asked = (page) => evaluateInContentScript(page.context(), page, 'self.__asked');
 
 async function openInputDialog(page) {
   await openFloatBallMenu(page);
@@ -125,6 +149,11 @@ async function openInputDialog(page) {
 async function lookUp(page, text) {
   await page.fill('#ai-translator-input-text', text);
   await page.click('#ai-translator-do-translate');
+}
+
+async function pickInputTargetLang(page, lang) {
+  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
+  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
 }
 
 async function closeInputDialog(page) {
@@ -152,12 +181,13 @@ async function expectRunEntry(page, root) {
   const entry = root.locator('.ai-translator-dict-entry');
   await expect(entry).toBeVisible();
 
+  // The translation's pinyin, one row, no UK/US label.
   const phonetics = entry.locator('.ai-translator-dict-phonetic');
-  await expect(phonetics).toHaveCount(2);
-  await expect(phonetics.nth(0).locator('.ai-translator-dict-accent')).toHaveText(zh('dictUK'));
-  await expect(phonetics.nth(0).locator('.ai-translator-dict-ipa')).toHaveText('/rʌn/');
-  await expect(phonetics.nth(1).locator('.ai-translator-dict-accent')).toHaveText(zh('dictUS'));
-  await expect(phonetics.nth(1).locator('.ai-translator-dict-ipa')).toHaveText('/rʌn/');
+  await expect(phonetics).toHaveCount(1);
+  await expect(phonetics.locator('.ai-translator-dict-ipa')).toHaveText('pǎo');
+  await expect(entry.locator('.ai-translator-dict-accent')).toHaveCount(0);
+  await expect(phonetics).not.toContainText(zh('dictUK'));
+  await expect(phonetics).not.toContainText(zh('dictUS'));
 
   const senses = entry.locator('.ai-translator-dict-sense');
   await expect(senses).toHaveCount(2);
@@ -178,16 +208,15 @@ async function expectRunEntry(page, root) {
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
 }
 
-// Both speakers: UK reads the word in en-GB, US in en-US.
-async function expectAccentSpeakers(page, root) {
-  const speak = (accent) => root.locator(`.ai-translator-dict-speak[data-accent="${accent}"]`);
-  await speak('US').click();
-  await expect.poll(() => spoken(page)).toEqual([{ text: 'run', lang: 'en-US' }]);
-  await speak('UK').click();
-  await expect.poll(() => spoken(page)).toEqual([
-    { text: 'run', lang: 'en-US' },
-    { text: 'run', lang: 'en-GB' },
-  ]);
+// The `run` entry's one speaker reads the translation, 跑, in zh-CN — not the
+// looked-up `run` (D-487).
+async function expectTranslationSpeaker(page, root) {
+  const speak = root.locator('.ai-translator-dict-speak');
+  await expect(speak).toHaveCount(1);
+  await expect(speak).toHaveAttribute('aria-label', zh('pronounceTranslation'));
+  await speak.click();
+  await expect.poll(() => asked(page)).toEqual([{ text: '跑', lang: 'zh-CN' }]);
+  await expect.poll(() => spoken(page)).toEqual([{ text: '跑', lang: 'zh-CN' }]);
 }
 
 const shotDir = process.env.DICT_SCREENSHOT_DIR;
@@ -201,7 +230,6 @@ const ENTRY_STYLES = [
   ['.ai-translator-dict-section', 'flex', '0px', '13px', PRIMARY],
   ['.ai-translator-dict-heading', 'block', '0px', '11px', SECONDARY],
   ['.ai-translator-dict-phonetic', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-accent', 'block', '0px', '12px', SECONDARY],
   ['.ai-translator-dict-ipa', 'block', '0px', '14px', SECONDARY],
   ['.ai-translator-dict-sense', 'flex', '0px', '13px', PRIMARY],
   ['.ai-translator-dict-pos', 'block', '0px', '13px', 'var(--dict-pos)'],
@@ -213,11 +241,15 @@ const ENTRY_STYLES = [
   ['.ai-translator-dict-form-label', 'block', '0px', '13px', SECONDARY],
   ['.ai-translator-dict-form-value', 'block', '0px', '13px', PRIMARY],
 ];
+// The UK/US label is only drawn for an English translation (the `猫` entry).
+const ACCENT_STYLES = [
+  ['.ai-translator-dict-accent', 'block', '0px', '12px', SECONDARY],
+];
 
 // The computed display, padding, font-size and colour of every element above,
 // with the colour each should have: its token, resolved on a probe inside the
 // entry (an inline style, which no page rule outweighs).
-function entryStyles(page, entrySelector) {
+function entryStyles(page, entrySelector, rows) {
   return page.evaluate(({ entrySelector, rows }) => {
     const entry = document.querySelector(entrySelector);
     const probe = document.createElement('i');
@@ -230,12 +262,12 @@ function entryStyles(page, entrySelector) {
     });
     probe.remove();
     return out;
-  }, { entrySelector, rows: ENTRY_STYLES });
+  }, { entrySelector, rows });
 }
 
-async function expectEntryStyles(page, entrySelector) {
-  const measured = await entryStyles(page, entrySelector);
-  for (const [i, [selector, display, padding, fontSize]] of ENTRY_STYLES.entries()) {
+async function expectEntryStyles(page, entrySelector, rows = ENTRY_STYLES) {
+  const measured = await entryStyles(page, entrySelector, rows);
+  for (const [i, [selector, display, padding, fontSize]] of rows.entries()) {
     const [, gotDisplay, gotPadding, gotSize, color, tokenColor] = measured[i];
     expect({ selector, display: gotDisplay, padding: gotPadding, fontSize: gotSize, color })
       .toEqual({ selector, display, padding, fontSize, color: tokenColor });
@@ -249,12 +281,11 @@ const CONTRAST_SELECTORS = [
   '.ai-translator-dict-heading',
   '.ai-translator-dict-form-label',
   '.ai-translator-dict-pos',
-  '.ai-translator-dict-accent',
   '.ai-translator-dict-ipa',
   '.ai-translator-dict-example-target',
 ];
 
-function contrastRatios(page, entrySelector) {
+function contrastRatios(page, entrySelector, selectors) {
   return page.evaluate(({ entrySelector, selectors }) => {
     const parse = (value) => {
       const m = value.match(/rgba?\(([^)]+)\)/);
@@ -291,11 +322,11 @@ function contrastRatios(page, entrySelector) {
       const [hi, lo] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
       return [selector, Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100];
     });
-  }, { entrySelector, selectors: CONTRAST_SELECTORS });
+  }, { entrySelector, selectors });
 }
 
-async function expectReadableContrast(page, entrySelector, label) {
-  for (const [selector, ratio] of await contrastRatios(page, entrySelector)) {
+async function expectReadableContrast(page, entrySelector, label, selectors = CONTRAST_SELECTORS) {
+  for (const [selector, ratio] of await contrastRatios(page, entrySelector, selectors)) {
     expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(4.5);
   }
 }
@@ -308,7 +339,6 @@ test.describe('dictionary entry (batch C)', () => {
       await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN' }));
       await page.goto(`${ORIGIN}/`);
       await waitForFloatBall(page);
-      await stubSpeech(page);
       await openInputDialog(page);
 
       await lookUp(page, 'run');
@@ -323,7 +353,6 @@ test.describe('dictionary entry (batch C)', () => {
         await dialog.locator('.ai-translator-dict-forms').scrollIntoViewIfNeeded();
         await page.locator('.ai-translator-input-modal').screenshot({ path: `${shotDir}/c1-input-light-forms.png` });
       }
-      await expectAccentSpeakers(page, dialog);
 
       // A sentence is translated, not looked up: the plain prompt, no entry.
       await lookUp(page, 'I run every morning.');
@@ -351,7 +380,6 @@ test.describe('dictionary entry (batch C)', () => {
       await page.goto(`${ORIGIN}/`);
       await waitForFloatBall(page);
       await stubBuiltinTranslator(page);
-      await stubSpeech(page);
 
       await page.dblclick('#word');
       const icon = page.locator('#ai-translator-selection-btn .ai-translator-selection-icon');
@@ -367,7 +395,6 @@ test.describe('dictionary entry (batch C)', () => {
         await card.locator('.ai-translator-dict-forms').scrollIntoViewIfNeeded();
         await card.screenshot({ path: `${shotDir}/c2-card-light-forms.png` });
       }
-      await expectAccentSpeakers(page, card);
 
       // Switch to the built-in engine: a translation and nothing else.
       const switchBtn = card.locator('.ai-translator-switch-engine');
@@ -380,7 +407,7 @@ test.describe('dictionary entry (batch C)', () => {
       // And back: the entry is drawn again.
       await switchBtn.click();
       await expect(card.locator('.ai-translator-translation-text')).toHaveText('跑');
-      await expect(card.locator('.ai-translator-dict-phonetic')).toHaveCount(2);
+      await expect(card.locator('.ai-translator-dict-phonetic')).toHaveCount(1);
     } finally {
       await mock.close();
     }
@@ -527,6 +554,12 @@ test.describe('dictionary entry (batch C)', () => {
       await lookUp(page, 'run');
       await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
       await expectEntryStyles(page, '#ai-translator-input-dict');
+      // The UK/US label, from an English translation.
+      await page.fill('#ai-translator-input-text', '');
+      await pickInputTargetLang(page, 'en');
+      await lookUp(page, '猫');
+      await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-accent')).toHaveCount(2);
+      await expectEntryStyles(page, '#ai-translator-input-dict', ACCENT_STYLES);
       await closeInputDialog(page);
 
       const card = await openCardOn(page, '#word');
@@ -551,6 +584,12 @@ test.describe('dictionary entry (batch C)', () => {
         await lookUp(page, 'run');
         await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
         await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`);
+        // The UK/US label, from an English translation.
+        await page.fill('#ai-translator-input-text', '');
+        await pickInputTargetLang(page, 'en');
+        await lookUp(page, '猫');
+        await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-accent')).toHaveCount(2);
+        await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`, ['.ai-translator-dict-accent']);
         await closeInputDialog(page);
 
         const card = await openCardOn(page, '#word');
@@ -581,6 +620,118 @@ test.describe('dictionary entry (batch C)', () => {
       expect(mock.systemPrompts.at(-1)).toContain('Placeholders such as {{1}}');
       await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
       await expect(page.locator('#ai-translator-input-dialog .ai-translator-dict-section')).toHaveCount(0);
+    } finally {
+      await mock.close();
+    }
+  });
+  test('J1: input box into zh-CN — the phonetics are the translation\'s pinyin, and its speaker reads the translation (D-487)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN', targetLang: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await stubSpeech(page);
+      await openInputDialog(page);
+
+      // Step 1: one pinyin row, no UK/US.
+      await lookUp(page, 'run');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('跑');
+      const dict = page.locator('#ai-translator-input-dict');
+      await expect(dict.locator('.ai-translator-dict-phonetic')).toHaveCount(1);
+      await expect(dict.locator('.ai-translator-dict-ipa')).toHaveText('pǎo');
+      await expect(dict.locator('.ai-translator-dict-accent')).toHaveCount(0);
+      await expect(dict.locator('.ai-translator-dict-phonetics')).toHaveText('pǎo');
+      if (shotDir) {
+        await page.waitForTimeout(300);
+        await page.locator('.ai-translator-input-modal').screenshot({ path: `${shotDir}/j1-input-zh.png` });
+      }
+
+      // Step 2: the row's speaker reads 跑 in zh-CN, not `run`.
+      await expectTranslationSpeaker(page, dict);
+
+      // Step 3: the dialog's own source speaker still reads `run`, in no
+      // declared language (detected from the text), as before.
+      await page.locator('#ai-translator-input-speak').click();
+      await expect.poll(() => asked(page)).toEqual([
+        { text: '跑', lang: 'zh-CN' },
+        { text: 'run', lang: '' },
+      ]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J2: input box into English — the translation\'s UK and US IPA, each speaker reading it in its accent (D-487)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { targetLang: 'en' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await stubSpeech(page);
+      await openInputDialog(page);
+
+      // Step 1: two rows, UK and US, the IPA of `cat`.
+      await lookUp(page, '猫');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('cat');
+      const dict = page.locator('#ai-translator-input-dict');
+      const rows = dict.locator('.ai-translator-dict-phonetic');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.locator('.ai-translator-dict-accent')).toHaveText([en('dictUK'), en('dictUS')]);
+      await expect(rows.locator('.ai-translator-dict-ipa')).toHaveText(['/kæt/', '/kæt/']);
+      for (const i of [0, 1]) {
+        await expect(rows.nth(i).locator('.ai-translator-dict-speak')).toHaveAttribute('aria-label', en('pronounceTranslation'));
+      }
+      if (shotDir) {
+        await page.waitForTimeout(300);
+        await page.locator('.ai-translator-input-modal').screenshot({ path: `${shotDir}/j2-input-en.png` });
+      }
+
+      // Step 2: US then UK; both read `cat`, never `猫`.
+      await dict.locator('.ai-translator-dict-speak[data-accent="US"]').click();
+      await expect.poll(() => spoken(page)).toEqual([{ text: 'cat', lang: 'en-US' }]);
+      await dict.locator('.ai-translator-dict-speak[data-accent="UK"]').click();
+      await expect.poll(() => spoken(page)).toEqual([
+        { text: 'cat', lang: 'en-US' },
+        { text: 'cat', lang: 'en-GB' },
+      ]);
+      expect(await asked(page)).toEqual([
+        { text: 'cat', lang: 'en-US' },
+        { text: 'cat', lang: 'en-GB' },
+      ]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J3: the selection card into zh-CN — the translation\'s pinyin and speaker; the card\'s source speaker reads the selection (D-487)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN', targetLang: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await stubSpeech(page);
+
+      const card = await openCardOn(page, '#word');
+      await expect(card.locator('.ai-translator-translation-text')).toHaveText('跑');
+      const dict = card.locator('.ai-translator-dict-entry');
+      await expect(dict.locator('.ai-translator-dict-phonetic')).toHaveCount(1);
+      await expect(dict.locator('.ai-translator-dict-ipa')).toHaveText('pǎo');
+      await expect(dict.locator('.ai-translator-dict-accent')).toHaveCount(0);
+      if (shotDir) {
+        await page.waitForTimeout(400);
+        await card.screenshot({ path: `${shotDir}/j3-card-zh.png` });
+      }
+
+      await expectTranslationSpeaker(page, dict);
+
+      await card.locator('.ai-translator-speak-source').click();
+      await expect.poll(() => asked(page)).toEqual([
+        { text: '跑', lang: 'zh-CN' },
+        { text: 'run', lang: '' },
+      ]);
     } finally {
       await mock.close();
     }

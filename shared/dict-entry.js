@@ -34,7 +34,9 @@
 // this file writes the speaker glyph, a constant from content/content-speech.js.
 //
 // Dual-mode classic script: the service worker imports it, the content scripts
-// load it from the manifest, both read globalThis.DictEntry. No dependencies.
+// load it from the manifest, both read globalThis.DictEntry. render() alone
+// reads globalThis.LangTags (shared/lang-tags.js, before this file in the
+// manifest), and only when it runs: the service worker never renders.
 (function (root) {
   'use strict';
 
@@ -87,9 +89,13 @@
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
   }
 
-  // Phonetic labels and the speech tag each one is read aloud in. '' is the one
-  // pronunciation of a non-English word: no label, language left to detection.
-  const PHONETIC_LANGS = Object.freeze({ UK: 'en-GB', US: 'en-US', '': '' });
+  // The phonetics are the translation's, in the target language (D-487). An
+  // English translation has two labelled pronunciations, each read aloud in its
+  // own accent; any other target language has one with an empty label, read
+  // aloud in that target language (render's `targetLang`). The accent voices
+  // are for an English target only: under any other target a UK/US label is a
+  // wrong optional field, dropped (D-472), and the row is read in `targetLang`.
+  const PHONETIC_LANGS = Object.freeze({ UK: 'en-GB', US: 'en-US' });
 
   // The shape. Each list has its item keys, a cap (longer lists are cut, not
   // rejected — five good examples are not a broken answer), and the sentence the
@@ -105,7 +111,7 @@
       max: 2,
       item: Object.freeze({ label: 'label', ipa: 'text' }),
       required: Object.freeze(['ipa']),
-      describe: 'the pronunciation of the source word. For an English word give two items, "UK" and "US", each IPA wrapped in slashes such as "/rʌn/". For any other language give one item with an empty "label" in that language\'s usual notation (IPA, pinyin, romaji).',
+      describe: 'the pronunciation of the word in "translation", in the target language. When the target language is English give two items, "UK" and "US", each IPA wrapped in slashes such as "/kæt/". For any other target language give one item with an empty "label", in that language\'s usual notation (pinyin with tone marks for Chinese, kana or romaji for Japanese).',
     }),
     senses: Object.freeze({
       kind: 'list',
@@ -186,7 +192,8 @@
   function label(value) {
     const raw = text(value).toUpperCase();
     // An unknown label ("GB", "British") still carries a real pronunciation:
-    // keep the IPA, drop the label it cannot be shown under.
+    // keep it, drop the label it cannot be shown under. '' is the one
+    // pronunciation of a translation in any language but English.
     return Object.prototype.hasOwnProperty.call(PHONETIC_LANGS, raw) ? raw : '';
   }
 
@@ -277,11 +284,18 @@
    * entry leaves no empty heading behind. A speaker in the old entry that is
    * still talking is stopped first: its button is about to leave the page.
    *
+   * The speaker on each phonetic row reads `entry.translation` (D-487): a UK
+   * row in en-GB, a US row in en-US, an unlabelled row in `targetLang`. UK/US
+   * hold only when `targetLang` is English; under any other target the label
+   * is not drawn and the row is read in `targetLang`. The
+   * looked-up text has its own speaker on each surface, outside the entry.
+   *
    * @param {HTMLElement} container
    * @param {object|null} entry  from entryFor()
-   * @param {{word: string, t: (key: string) => string, speech: object}} options
-   *   `word` is the looked-up text the speaker buttons read out; `speech` is
-   *   ctx.speech (content/content-speech.js).
+   * @param {{targetLang: string, t: (key: string) => string, speech: object}} options
+   *   `targetLang` is the language this request translated into; `speech` is
+   *   ctx.speech (content/content-speech.js). Drawing an entry without a
+   *   targetLang throws: an unlabelled row would have no language to speak in.
    */
   // The visibility setters bindSpeakButton returned for each container's
   // speakers; setting one false stops that speaker if it is the one talking.
@@ -296,7 +310,8 @@
       return;
     }
     if (!isPlainObject(entry)) throw new TypeError('DictEntry.render: entry must be an object or null');
-    const { word, t, speech } = options;
+    const { targetLang, t, speech } = options;
+    if (typeof targetLang !== 'string' || !targetLang) throw new TypeError('DictEntry.render: options.targetLang is required');
     const doc = container.ownerDocument;
     const el = (tag, className, value) => {
       const node = doc.createElement(tag);
@@ -315,16 +330,19 @@
       const setters = [];
       speakerSetters.set(container, setters);
       const block = section('phonetics');
-      for (const { label: tag, ipa } of entry.phonetics) {
+      const englishTarget = root.LangTags.getLangBase(targetLang) === 'en';
+      for (const { label: given, ipa } of entry.phonetics) {
+        const tag = englishTarget ? given : '';
         const row = el('span', 'ai-translator-dict-phonetic');
         if (tag) row.appendChild(el('span', 'ai-translator-dict-accent', t(tag === 'UK' ? 'dictUK' : 'dictUS')));
         row.appendChild(el('span', 'ai-translator-dict-ipa', ipa));
         const button = el('button', 'ai-translator-icon-btn ai-translator-dict-speak');
         button.type = 'button';
         button.dataset.accent = tag;
-        button.setAttribute('aria-label', t('pronounceOriginal'));
+        button.setAttribute('aria-label', t('pronounceTranslation'));
         button.innerHTML = speech.SPEAKER_ICON;
-        setters.push(speech.bindSpeakButton(button, () => ({ text: word, lang: PHONETIC_LANGS[tag] })));
+        const lang = tag ? PHONETIC_LANGS[tag] : targetLang;
+        setters.push(speech.bindSpeakButton(button, () => ({ text: entry.translation, lang })));
         row.appendChild(button);
         block.appendChild(row);
       }

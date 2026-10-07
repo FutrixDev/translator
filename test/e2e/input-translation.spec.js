@@ -35,7 +35,7 @@ async function startInputDictionaryMockServer() {
 
       const isDictionaryMode = systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK);
       const content = isDictionaryMode
-        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetics: [{ label: '', ipa: '/ɒn ðə flaɪ/' }] })
+        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetics: [{ label: '', ipa: 'lín shí' }] })
         : `[TEXT] ${text}`;
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -81,7 +81,7 @@ test('input translation shows a dictionary entry for words and read-aloud for an
 
     await expect(page.locator('#ai-translator-result-section')).toBeVisible();
     await expect(page.locator('#ai-translator-result-text')).toContainText('[DICT] on the fly');
-    await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('/ɒn ðə flaɪ/');
+    await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('lín shí');
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
     await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');

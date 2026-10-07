@@ -321,7 +321,23 @@ the shape (translation, phonetics, senses, examples, forms), the prompt rules
 ending in `FORMAT_OVERRIDE`, so a preset's "reply with the translation only"
 never wins — `test/unit/dict-word-prompt.test.mjs`), the parser
 (`fromModelText`) and the one renderer (`render`) the input box and the
-selection card both call. Neither surface builds entry markup or decides what
+selection card both call. **The phonetics are the translation's, in the target
+language** (D-487): `FIELDS.phonetics.describe` asks for the pronunciation of
+`translation` — two items, `UK` and `US` IPA, when the target is English, and
+one item with an empty label in that language's usual notation (pinyin with
+tone marks, kana) for any other target. Every phonetic speaker reads
+`entry.translation` (aria label `pronounceTranslation`): `UK` in `en-GB`, `US`
+in `en-US`, an empty label in the target language. The accent voices hold
+only for an English target (`LangTags.getLangBase(targetLang) === 'en'`, so
+render reads `LangTags`, loaded before it in the manifest): under any other
+target a `UK`/`US` label is dropped at render (D-472) and the row is read in
+the target language — a stale label must not give `correr` an English voice.
+So `render(container,
+entry, { targetLang, t, speech })` takes the target language the caller used
+for this request (the dialog's or card's override, else the shown target) and
+throws on an entry drawn without one; it has no `word` option. The looked-up
+text keeps its own speaker on each surface (`#ai-translator-input-speak`,
+`.ai-translator-speak-source`). Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
 `DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
 (`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
@@ -338,7 +354,8 @@ list item is dropped, never guessed at (D-472). The entry is drawn only for a
 reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
 translation alone. `content/css/dict-entry.css` states colour, size, display
 and padding on every element, because the containment reset leaves those to
-our own rules and the entry is made of bare spans and divs. Journeys C1–C9 in
+our own rules and the entry is made of bare spans and divs. Journeys C1–C9 and
+J1–J3 (the translation's phonetics and speakers, D-487) in
 `test/e2e/dictionary-entry.spec.js`.
 
 ### Translation Engine

@@ -507,7 +507,7 @@
     const parts = cardParts(popup);
     setCardLoading(parts, false);
     if (parts.text) parts.text.textContent = '';
-    showCardEntry(parts, null, '');
+    showCardEntry(parts, null);
     if (parts.resultBody) parts.resultBody.hidden = true;
     parts.error.textContent = message;
     parts.error.hidden = false;
@@ -515,8 +515,10 @@
   }
 
   // 词典条目只经共享渲染器画（与输入框同一份）；null 清空并藏起。
-  function showCardEntry(parts, entry, word) {
-    if (parts.dict) DictEntry.render(parts.dict, entry, { word, t, speech });
+  // 音标是译文的，喇叭按这次请求的目标语言读译文（D-487）；读原文的是卡片自己的
+  // .ai-translator-speak-source。
+  function showCardEntry(parts, entry, targetLang) {
+    if (parts.dict) DictEntry.render(parts.dict, entry, { targetLang, t, speech });
   }
 
   // 重译 / 换引擎 / 加入术语表：请求在路上时禁用（术语表拿的是译文，旧的不能拿去预填）。
@@ -609,7 +611,7 @@
         const parts = cardParts(popup);
         setCardLoading(parts, true);
         if (parts.resultBody) parts.resultBody.hidden = true;
-        showCardEntry(parts, null, '');
+        showCardEntry(parts, null);
         parts.error.hidden = true;
         parts.error.textContent = '';
         popup._showTranslationSpeak?.(false);
@@ -646,7 +648,7 @@
           void parts.text.offsetWidth;
           parts.text.classList.add('ai-translator-translation-flow');
         }
-        showCardEntry(parts, entry, text);
+        showCardEntry(parts, entry, targetLang);
         popup._showTranslationSpeak?.(!!response.translation);
         if (parts.resultBody) {
           parts.resultBody.hidden = false;
