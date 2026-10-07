@@ -82,8 +82,6 @@
     pdfUploading: 'Subiendo…',
     pdfOpen: 'Abrir',
     pdfDismiss: 'Descartar',
-    pdfOpenDual: 'Abrir PDF bilingüe',
-    pdfOpenMono: 'Abrir PDF traducido',
     pdfRetry: 'Reintentar',
     pdfAbandon: 'Cancelar tarea',
     pdfStatusUploading: "Subiendo…",
@@ -145,7 +143,6 @@
     docReview: 'Revisar',
     docSaveDual: 'Guardar archivo bilingüe',
     docSaveMono: 'Guardar archivo traducido',
-    docNoFile: 'Este resultado se lee en el sitio web; no hay ningún archivo para descargar.',
     docResultBilingualSuffix: 'bilingüe',
     docResultTranslatedSuffix: 'traducido',
     docErrUnsupported: 'Este tipo de archivo no es compatible. Usa PDF, Word (.docx), EPUB, MOBI, TXT o Markdown.',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: 'Una regla con el motor integrado no puede indicar un perfil de IA.',
     transferSectionAiProfiles: 'Perfiles de IA',
     transferPreviewAiProfiles: 'Perfiles de IA: se añadirán {added} y se reemplazarán {replaced}.',
+    docView: 'Ver',
+    docErrSiteBase: 'No se puede abrir el lector: la dirección del sitio de la cuenta no es una dirección web válida.',
 };

@@ -83,8 +83,6 @@
     pdfUploading: '正在上传…',
     pdfOpen: '打开',
     pdfDismiss: '不再显示',
-    pdfOpenDual: '打开双语 PDF',
-    pdfOpenMono: '打开译文 PDF',
     pdfRetry: '重试',
     pdfAbandon: '取消任务',
     pdfStatusUploading: "上传中…",
@@ -146,7 +144,6 @@
     docReview: '查看',
     docSaveDual: '保存双语文件',
     docSaveMono: '保存译文文件',
-    docNoFile: '这个结果在网站上阅读，没有可下载的文件。',
     docResultBilingualSuffix: '双语',
     docResultTranslatedSuffix: '译文',
     docErrUnsupported: '不支持这种文件类型。请使用 PDF、Word（.docx）、EPUB、MOBI、TXT 或 Markdown。',
@@ -701,4 +698,6 @@
     customRuleProfileWithBuiltin: '引擎选了内置翻译时，不能再指定 AI 配置档。',
     transferSectionAiProfiles: 'AI 配置档',
     transferPreviewAiProfiles: 'AI 配置档：将新增 {added} 个 AI 配置档、替换 {replaced} 个。',
+    docView: '查看',
+    docErrSiteBase: '无法打开阅读台：账号站点地址不是有效的网址。',
 };

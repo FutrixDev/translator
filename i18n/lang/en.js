@@ -83,8 +83,6 @@
     pdfUploading: 'Uploading…',
     pdfOpen: 'Open',
     pdfDismiss: 'Dismiss',
-    pdfOpenDual: 'Open Bilingual PDF',
-    pdfOpenMono: 'Open Translated PDF',
     pdfRetry: 'Retry',
     pdfAbandon: 'Cancel Task',
     pdfStatusUploading: "Uploading…",
@@ -146,7 +144,6 @@
     docReview: 'Review',
     docSaveDual: 'Save Bilingual File',
     docSaveMono: 'Save Translated File',
-    docNoFile: 'This result is read on the website — there is no file to download.',
     docResultBilingualSuffix: 'bilingual',
     docResultTranslatedSuffix: 'translated',
     docErrUnsupported: 'This file type is not supported. Use PDF, Word (.docx), EPUB, MOBI, TXT or Markdown.',
@@ -723,4 +720,6 @@ Rules:
     customRuleProfileWithBuiltin: 'A rule that uses the built-in engine cannot name an AI profile.',
     transferSectionAiProfiles: 'AI profiles',
     transferPreviewAiProfiles: 'AI profiles: {added} will be added, {replaced} replaced.',
+    docView: 'View',
+    docErrSiteBase: "The reader can't be opened: the account site address is not a web address.",
 };

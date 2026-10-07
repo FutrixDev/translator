@@ -82,8 +82,6 @@
     pdfUploading: '업로드 중…',
     pdfOpen: '열기',
     pdfDismiss: '숨기기',
-    pdfOpenDual: '대역 PDF 열기',
-    pdfOpenMono: '번역본 PDF 열기',
     pdfRetry: '다시 시도',
     pdfAbandon: '작업 취소',
     pdfStatusUploading: "업로드 중…",
@@ -145,7 +143,6 @@
     docReview: '확인',
     docSaveDual: '이중 언어 파일 저장',
     docSaveMono: '번역 파일 저장',
-    docNoFile: '이 결과는 웹사이트에서 읽습니다. 다운로드할 파일은 없습니다.',
     docResultBilingualSuffix: '이중언어',
     docResultTranslatedSuffix: '번역본',
     docErrUnsupported: '지원하지 않는 파일 형식입니다. PDF, Word(.docx), EPUB, MOBI, TXT 또는 Markdown을 사용하세요.',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: '기본 제공 엔진을 쓰는 규칙에는 AI 프로필을 지정할 수 없습니다.',
     transferSectionAiProfiles: 'AI 프로필',
     transferPreviewAiProfiles: 'AI 프로필: {added}개 추가, {replaced}개 교체.',
+    docView: '보기',
+    docErrSiteBase: '리더를 열 수 없습니다. 계정 사이트 주소가 올바른 웹 주소가 아닙니다.',
 };

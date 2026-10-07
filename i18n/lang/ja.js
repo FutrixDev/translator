@@ -82,8 +82,6 @@
     pdfUploading: 'アップロード中…',
     pdfOpen: '開く',
     pdfDismiss: '表示しない',
-    pdfOpenDual: '対訳 PDF を開く',
-    pdfOpenMono: '訳文 PDF を開く',
     pdfRetry: '再試行',
     pdfAbandon: 'タスクをキャンセル',
     pdfStatusUploading: "アップロード中…",
@@ -145,7 +143,6 @@
     docReview: '確認する',
     docSaveDual: '対訳ファイルを保存',
     docSaveMono: '訳文ファイルを保存',
-    docNoFile: 'この結果はウェブサイトで読みます。ダウンロードできるファイルはありません。',
     docResultBilingualSuffix: '対訳',
     docResultTranslatedSuffix: '訳文',
     docErrUnsupported: 'このファイル形式には対応していません。PDF・Word（.docx）・EPUB・MOBI・TXT・Markdown をご利用ください。',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: '内蔵翻訳を使うルールには AI プロファイルを指定できません。',
     transferSectionAiProfiles: 'AI プロファイル',
     transferPreviewAiProfiles: 'AI プロファイル：{added} 件を追加、{replaced} 件を置き換えます。',
+    docView: '表示',
+    docErrSiteBase: 'リーダーを開けません。アカウントのサイトアドレスが有効な URL ではありません。',
 };

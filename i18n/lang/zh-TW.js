@@ -82,8 +82,6 @@
     pdfUploading: '正在上傳…',
     pdfOpen: '開啟',
     pdfDismiss: '不再顯示',
-    pdfOpenDual: '開啟雙語 PDF',
-    pdfOpenMono: '開啟譯文 PDF',
     pdfRetry: '重試',
     pdfAbandon: '取消任務',
     pdfStatusUploading: "上傳中…",
@@ -145,7 +143,6 @@
     docReview: '查看',
     docSaveDual: '儲存雙語檔案',
     docSaveMono: '儲存譯文檔案',
-    docNoFile: '這個結果在網站上閱讀，沒有可下載的檔案。',
     docResultBilingualSuffix: '雙語',
     docResultTranslatedSuffix: '譯文',
     docErrUnsupported: '不支援這種檔案類型。請使用 PDF、Word（.docx）、EPUB、MOBI、TXT 或 Markdown。',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: '引擎選了內建翻譯時，不能再指定 AI 設定檔。',
     transferSectionAiProfiles: 'AI 設定檔',
     transferPreviewAiProfiles: 'AI 設定檔：將新增 {added} 個、取代 {replaced} 個。',
+    docView: '檢視',
+    docErrSiteBase: '無法開啟閱讀台：帳號網站位址不是有效的網址。',
 };

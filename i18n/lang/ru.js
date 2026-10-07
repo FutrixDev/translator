@@ -82,8 +82,6 @@
     pdfUploading: 'Загрузка…',
     pdfOpen: 'Открыть',
     pdfDismiss: 'Скрыть',
-    pdfOpenDual: 'Открыть двуязычный PDF',
-    pdfOpenMono: 'Открыть переведённый PDF',
     pdfRetry: 'Повторить',
     pdfAbandon: 'Отменить задачу',
     pdfStatusUploading: "Загрузка…",
@@ -145,7 +143,6 @@
     docReview: 'Проверить',
     docSaveDual: 'Сохранить двуязычный файл',
     docSaveMono: 'Сохранить переведённый файл',
-    docNoFile: 'Этот результат читается на сайте — файла для скачивания нет.',
     docResultBilingualSuffix: 'двуязычный',
     docResultTranslatedSuffix: 'перевод',
     docErrUnsupported: 'Этот тип файла не поддерживается. Используйте PDF, Word (.docx), EPUB, MOBI, TXT или Markdown.',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: 'Правило со встроенным движком не может указывать профиль ИИ.',
     transferSectionAiProfiles: 'Профили ИИ',
     transferPreviewAiProfiles: 'Профили ИИ: будет добавлено {added}, заменено {replaced}.',
+    docView: 'Просмотреть',
+    docErrSiteBase: 'Не удаётся открыть читалку: адрес сайта аккаунта не является веб-адресом.',
 };

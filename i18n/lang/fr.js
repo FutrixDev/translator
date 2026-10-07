@@ -82,8 +82,6 @@
     pdfUploading: 'Envoi en cours…',
     pdfOpen: 'Ouvrir',
     pdfDismiss: 'Masquer',
-    pdfOpenDual: 'Ouvrir le PDF bilingue',
-    pdfOpenMono: 'Ouvrir le PDF traduit',
     pdfRetry: 'Réessayer',
     pdfAbandon: 'Annuler la tâche',
     pdfStatusUploading: "Téléversement…",
@@ -145,7 +143,6 @@
     docReview: 'Vérifier',
     docSaveDual: 'Enregistrer le fichier bilingue',
     docSaveMono: 'Enregistrer le fichier traduit',
-    docNoFile: 'Ce résultat se lit sur le site web — il n’y a pas de fichier à télécharger.',
     docResultBilingualSuffix: 'bilingue',
     docResultTranslatedSuffix: 'traduit',
     docErrUnsupported: 'Ce type de fichier n’est pas pris en charge. Utilisez PDF, Word (.docx), EPUB, MOBI, TXT ou Markdown.',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: 'Une règle qui utilise le moteur intégré ne peut pas indiquer de profil IA.',
     transferSectionAiProfiles: 'Profils IA',
     transferPreviewAiProfiles: 'Profils IA : {added} ajouté(s), {replaced} remplacé(s).',
+    docView: 'Voir',
+    docErrSiteBase: 'Impossible d’ouvrir le lecteur : l’adresse du site du compte n’est pas une adresse web valide.',
 };

@@ -82,8 +82,6 @@
     pdfUploading: 'Wird hochgeladen…',
     pdfOpen: 'Öffnen',
     pdfDismiss: 'Ausblenden',
-    pdfOpenDual: 'Zweisprachiges PDF öffnen',
-    pdfOpenMono: 'Übersetztes PDF öffnen',
     pdfRetry: 'Erneut versuchen',
     pdfAbandon: 'Aufgabe abbrechen',
     pdfStatusUploading: "Wird hochgeladen…",
@@ -145,7 +143,6 @@
     docReview: 'Prüfen',
     docSaveDual: 'Zweisprachige Datei speichern',
     docSaveMono: 'Übersetzte Datei speichern',
-    docNoFile: 'Dieses Ergebnis lesen Sie auf der Website – es gibt keine Datei zum Herunterladen.',
     docResultBilingualSuffix: 'zweisprachig',
     docResultTranslatedSuffix: 'übersetzt',
     docErrUnsupported: 'Dieser Dateityp wird nicht unterstützt. Verwenden Sie PDF, Word (.docx), EPUB, MOBI, TXT oder Markdown.',
@@ -682,4 +679,6 @@
     customRuleProfileWithBuiltin: 'Eine Regel mit der integrierten Übersetzung kann kein AI-Profil angeben.',
     transferSectionAiProfiles: 'AI-Profile',
     transferPreviewAiProfiles: 'AI-Profile: {added} werden hinzugefügt, {replaced} ersetzt.',
+    docView: 'Ansehen',
+    docErrSiteBase: 'Der Reader kann nicht geöffnet werden: Die Website-Adresse des Kontos ist keine gültige Webadresse.',
 };

@@ -100,6 +100,9 @@
       // Same operation id, different settings (target language changed since
       // the first attempt). Also releases the id; the next click is a new job.
       case 'output_conflict': return 'pdfErrOutputConflict';
+      // The account's site base is not an http(s) address, so there is no
+      // reader to open a finished job in.
+      case 'invalid_site_base': return 'docErrSiteBase';
       case 'unauthorized': return 'pdfSignInRequired';
       case 'feature_disabled': return 'featureDisabled';
       case 'upload_failed':
