@@ -1,6 +1,6 @@
 // The dictionary entry has one owner, shared/dict-entry.js (D-469/D-470):
 //
-//   - isLookup() alone decides what is looked up (D-473, D-474), checked
+//   - isLookup() alone decides what is looked up (D-473–D-475), checked
 //     against the rulings' own samples;
 //   - normalize() is the only check on what the model sends back (D-472): only
 //     a non-object or a missing/empty translation throws `invalidEntry`; a
@@ -9,6 +9,11 @@
 //     cap are cut;
 //   - the keys the prompt asks for are the keys normalize() reads, because both
 //     are built from FIELDS (checked here from the prompt's own text);
+//   - the phonetics asked for are the translation's, in the target language,
+//     and each phonetic speaker reads the translation: UK in en-GB, US in
+//     en-US, an unlabelled row in the request's target language (D-487); UK
+//     and US hold only for an English target, otherwise the label is dropped
+//     and the row is read in the target language;
 //   - render() puts model strings on the page as text, never as HTML, and
 //     stops the old entry's speaker before replacing it;
 //   - only a model engine's answer ('ai' or 'blab') in word mode carries an
@@ -22,15 +27,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource, workerSource } from './helpers/sources.mjs';
 
+// render() reads LangTags; the manifest loads it first (checked below).
+await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
   FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
 } = globalThis.DictEntry;
 
+// `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
+// no label (D-487).
 const FULL = {
   translation: '跑',
-  phonetics: [{ label: 'UK', ipa: '/rʌn/' }, { label: 'US', ipa: '/rʌn/' }],
+  phonetics: [{ label: '', ipa: 'pǎo' }],
   senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }, { pos: 'n.', defs: ['跑步'] }],
   examples: [{ source: 'I run every day.', target: '我每天跑步。' }],
   forms: [{ label: '过去式', value: 'ran' }],
@@ -93,9 +102,28 @@ const LOOKUP_TABLE = [
   ['a = b', false],
   ['1 + 1', false],
   ['x ± y', false],
+  // ASCII arithmetic is formula notation too (D-475): any *, a - or / between
+  // spaces or between bare operands; hyphenated and slashed words stay lookups
+  ['x - y', false],
+  ['a / b', false],
+  ['cost - tax', false],
+  ['miles / hour', false],
+  ['x/y', false],
+  ['2*2', false],
+  ['(x-y)', false],
+  ['a/b', false],
+  ['3/4', false],
+  ['1990-2000', false],
+  ['x-ray', true],
+  ['Wi-Fi', true],
+  ['T-shirt', true],
+  ['e-mail', true],
+  ['COVID-19', true],
+  ['km/h', true],
+  ['and/or', true],
 ];
 
-test('isLookup answers the D-473/D-474 table', () => {
+test('isLookup answers the D-473–D-475 table', () => {
   for (const [text, expected] of LOOKUP_TABLE) {
     assert.equal(isLookup(text), expected, JSON.stringify(text));
   }
@@ -144,8 +172,8 @@ const LENIENT_ROWS = [
     { senses: [{ pos: 7, defs: ['跑', '奔跑'] }, FULL.senses[1]] },
     { senses: [{ pos: '', defs: ['跑', '奔跑'] }, FULL.senses[1]] }],
   ['label a number drops the label',
-    { phonetics: [{ label: 1, ipa: '/rʌn/' }, FULL.phonetics[1]] },
-    { phonetics: [{ label: '', ipa: '/rʌn/' }, FULL.phonetics[1]] }],
+    { phonetics: [{ label: 1, ipa: '/kæt/' }, { label: 'US', ipa: '/kæt/' }] },
+    { phonetics: [{ label: '', ipa: '/kæt/' }, { label: 'US', ipa: '/kæt/' }] }],
   ['form value an array drops the form',
     { forms: [{ label: '过去式', value: ['ran'] }, ...FULL.forms] }, {}],
 ];
@@ -190,7 +218,7 @@ test('an overlong item is dropped and the rest kept; an overlong translation cou
     ['long def', { senses: [{ pos: 'v.', defs: ['跑', long, '奔跑'] }, FULL.senses[1]] }, {}],
     ['long pos', { senses: [{ pos: long, defs: ['跑', '奔跑'] }, FULL.senses[1]] },
       { senses: [{ pos: '', defs: ['跑', '奔跑'] }, FULL.senses[1]] }],
-    ['long ipa', { phonetics: [FULL.phonetics[0], { label: 'US', ipa: long }] },
+    ['long ipa', { phonetics: [FULL.phonetics[0], { label: '', ipa: long }] },
       { phonetics: [FULL.phonetics[0]] }],
     ['long form value', { forms: [...FULL.forms, { label: '复数', value: long }] }, {}],
   ];
@@ -262,6 +290,14 @@ test('the prompt names exactly the keys the validator reads', () => {
   }
 });
 
+test('the phonetics asked for are the translation\'s, in the target language (D-487)', () => {
+  const line = OUTPUT_RULES.split('\n').find((row) => row.startsWith('- "phonetics":'));
+  assert.match(line, /the pronunciation of the word in "translation", in the target language\./);
+  assert.match(line, /When the target language is English give two items, "UK" and "US", each IPA wrapped in slashes/);
+  assert.match(line, /For any other target language give one item with an empty "label", in that language's usual notation \(pinyin with tone marks for Chinese/);
+  assert.doesNotMatch(line, /source/, 'the source word has its own speaker; its pronunciation is not asked for');
+});
+
 test('both word prompts are built from the shared rules', () => {
   const prompts = repoSource('background/prompts.js');
   assert.match(prompts, /DictEntry\.OUTPUT_RULES/);
@@ -316,7 +352,10 @@ class FakeElement {
   }
 }
 const doc = { createElement: (tag) => new FakeElement(doc, tag) };
-const MESSAGES = { dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceOriginal: 'Play' };
+const MESSAGES = { dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceTranslation: 'Read the translation' };
+
+// `猫` looked up into English: two labelled IPA rows for the translation.
+const CAT = { translation: 'cat', phonetics: [{ label: 'UK', ipa: '/kæt/' }, { label: 'US', ipa: '/kæt/' }] };
 
 // `log` records, in order, every visibility change a speaker gets and every
 // time the container is emptied.
@@ -332,23 +371,67 @@ function stubSpeech(log = []) {
   return { bound, speech };
 }
 
-function draw(entry, container = new FakeElement(doc, 'div')) {
+function draw(entry, targetLang = 'zh-CN', container = new FakeElement(doc, 'div')) {
   const { bound, speech } = stubSpeech();
-  render(container, entry, { word: 'run', t: (key) => MESSAGES[key], speech });
+  render(container, entry, { targetLang, t: (key) => MESSAGES[key], speech });
   return { container, bound };
 }
 
-test('render draws every block, and the speaker buttons read the word in en-GB / en-US', () => {
-  const { container, bound } = draw(normalize(FULL));
+test('render draws every block, and the unlabelled speaker reads the translation in the target language', () => {
+  const { container, bound } = draw(normalize(FULL), 'zh-CN');
   assert.equal(container.hidden, false);
-  assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US']);
-  assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['/rʌn/', '/rʌn/']);
+  assert.deepEqual(container.find('ai-translator-dict-accent'), []);
+  assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['pǎo']);
   assert.deepEqual(container.find('ai-translator-dict-pos').map((n) => n.textContent), ['v.', 'n.']);
   assert.deepEqual(container.find('ai-translator-dict-defs').map((n) => n.textContent), ['跑; 奔跑', '跑步']);
   assert.deepEqual(container.find('ai-translator-dict-heading').map((n) => n.textContent), ['Examples', 'Forms']);
   assert.deepEqual(container.find('ai-translator-dict-example-source').map((n) => n.textContent), ['I run every day.']);
   assert.deepEqual(container.find('ai-translator-dict-form-value').map((n) => n.textContent), ['ran']);
-  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'run', lang: 'en-GB' }, { text: 'run', lang: 'en-US' }]);
+  assert.doesNotMatch(container.textContent, /UK|US/);
+  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: '跑', lang: 'zh-CN' }]);
+  assert.deepEqual(bound.map((b) => b.button.attributes['aria-label']), ['Read the translation']);
+});
+
+test('an English translation has UK and US rows whose speakers read it in en-GB / en-US', () => {
+  const { container, bound } = draw(normalize(CAT), 'en');
+  assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US']);
+  assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['/kæt/', '/kæt/']);
+  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'cat', lang: 'en-GB' }, { text: 'cat', lang: 'en-US' }]);
+  assert.deepEqual(bound.map((b) => b.button.attributes['aria-label']), ['Read the translation', 'Read the translation']);
+});
+
+test('an unlabelled row speaks in whichever language the request translated into', () => {
+  const { bound } = draw(normalize({ translation: 'はしる', phonetics: [{ label: '', ipa: 'hashiru' }] }), 'ja');
+  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'はしる', lang: 'ja' }]);
+});
+
+test('a UK/US label under a non-English target is dropped and the row is read in the target language', () => {
+  // A stale or malformed label from the model must not pick an English voice
+  // for a Spanish word: the speech layer trusts the declared language.
+  const { container, bound } = draw(normalize({ translation: 'correr', phonetics: [{ label: 'US', ipa: 'koˈreɾ' }] }), 'es');
+  assert.deepEqual(container.find('ai-translator-dict-accent'), []);
+  assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['koˈreɾ']);
+  assert.doesNotMatch(container.textContent, /UK|US/);
+  assert.deepEqual(bound.map((b) => b.button.dataset.accent), ['']);
+  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'correr', lang: 'es' }]);
+});
+
+test('an English target with a region subtag keeps the UK and US voices', () => {
+  for (const targetLang of ['en-US', 'en-GB', 'EN']) {
+    const { container, bound } = draw(normalize(CAT), targetLang);
+    assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US'], targetLang);
+    assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'cat', lang: 'en-GB' }, { text: 'cat', lang: 'en-US' }], targetLang);
+  }
+});
+
+test('the content scripts load shared/lang-tags.js before shared/dict-entry.js', () => {
+  const js = JSON.parse(repoSource('manifest.json')).content_scripts
+    .filter((entry) => entry.js.includes('shared/dict-entry.js'));
+  assert.ok(js.length > 0, 'the manifest loads shared/dict-entry.js');
+  for (const { js: list } of js) {
+    const at = list.indexOf('shared/lang-tags.js');
+    assert.ok(at >= 0 && at < list.indexOf('shared/dict-entry.js'), 'lang-tags.js must come before dict-entry.js');
+  }
 });
 
 test('a translation-only entry draws nothing and hides the container', () => {
@@ -358,21 +441,22 @@ test('a translation-only entry draws nothing and hides the container', () => {
   assert.equal(bound.length, 0);
 });
 
-test('a phonetic with no label shows no UK/US and lets speech detect the language', () => {
-  const { container, bound } = draw(normalize({ translation: 'cat', phonetics: [{ label: '', ipa: 'māo' }] }));
-  assert.deepEqual(container.find('ai-translator-dict-accent'), []);
-  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'run', lang: '' }]);
-  assert.doesNotMatch(container.textContent, /UK|US/);
-});
-
 test('null clears what was drawn before', () => {
   const container = new FakeElement(doc, 'div');
   const speech = { SPEAKER_ICON: ICON, bindSpeakButton: () => () => {} };
-  render(container, normalize(FULL), { word: 'run', t: (k) => k, speech });
-  render(container, null, { word: 'run', t: (k) => k, speech });
+  render(container, normalize(FULL), { targetLang: 'zh-CN', t: (k) => k, speech });
+  render(container, null, { t: (k) => k, speech });
   assert.equal(container.childElementCount, 0);
   assert.equal(container.hidden, true);
-  assert.throws(() => render(container, 'run', { word: 'run', t: (k) => k, speech }), TypeError);
+  assert.throws(() => render(container, 'run', { targetLang: 'zh-CN', t: (k) => k, speech }), TypeError);
+});
+
+test('drawing an entry without the target language throws: an unlabelled row would have no voice', () => {
+  const container = new FakeElement(doc, 'div');
+  const speech = { SPEAKER_ICON: ICON, bindSpeakButton: () => () => {} };
+  for (const targetLang of [undefined, '', null]) {
+    assert.throws(() => render(container, normalize(FULL), { targetLang, t: (k) => k, speech }), /targetLang is required/);
+  }
 });
 
 test('malicious model strings come out as text, never as markup', () => {
@@ -396,12 +480,12 @@ test('drawing again stops the old entry\'s speakers before their buttons leave',
   const realReplace = container.replaceChildren.bind(container);
   container.replaceChildren = () => { log.push('replaced'); realReplace(); };
   const t = (key) => MESSAGES[key];
-  render(container, normalize(FULL), { word: 'run', t, speech: stubSpeech(log).speech });
+  render(container, normalize(CAT), { targetLang: 'en', t, speech: stubSpeech(log).speech });
   assert.deepEqual(log, ['replaced']);
-  render(container, null, { word: 'run', t, speech: stubSpeech(log).speech });
+  render(container, null, { t, speech: stubSpeech(log).speech });
   assert.deepEqual(log, ['replaced', 'UK:false', 'US:false', 'replaced']);
   // Nothing left to stop the next time.
-  render(container, null, { word: 'run', t, speech: stubSpeech(log).speech });
+  render(container, null, { t, speech: stubSpeech(log).speech });
   assert.deepEqual(log.slice(4), ['replaced']);
 });
 

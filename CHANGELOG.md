@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 — 2026-10-07
 
 ### Blab Translation, a third engine
 
@@ -33,19 +33,27 @@
 
 - **Type or select a single word on the AI engine and you get a dictionary
   entry, not just a translation.** Under the translation, the input box and the
-  selection card now show UK and US pronunciations, each with its own speaker
-  (British and American voices). They also show the senses grouped by part of
-  speech, up to three examples, and the word's forms (past tense, plural and so
-  on). Both surfaces draw the entry from one shared module, so they always look
-  the same.
+  selection card now show how to pronounce the translation, with a speaker
+  that reads it aloud. They also show the senses grouped by part of speech, up
+  to three examples, and the word's forms (past tense, plural and so on). Both
+  surfaces draw the entry from one shared module, so they always look the same.
+- **The pronunciation is the translation's, in your target language.** Look up
+  `run` into Chinese and you get the pinyin of the translation, `pǎo`, and the
+  speaker reads the translation in Chinese. It used to show the British and
+  American IPA of `run` instead, and read `run` aloud. When English is the
+  target, you get UK and US IPA of the English translation, each read in its
+  own accent. Any other target language gets one pronunciation in that
+  language's usual notation, such as kana for Japanese. The word you looked up
+  keeps its own speaker, beside the text you typed or selected.
 - **A word or a short phrase is looked up; anything longer is translated.**
   In both the input box and the card, text with no sentence punctuation that
   is one to three words long (or one to four characters in Chinese, Japanese,
   Korean, Thai and similar scripts) gets an entry, so "give up" is looked up
   in both places. Text with a full stop, comma, colon, semicolon, question
   mark or exclamation mark is always translated as a sentence.
-- **A short formula is translated, not looked up.** `$x + y$`, `\alpha` or
-  `a = b` is translated, not sent off as a dictionary word.
+- **A short formula is translated, not looked up.** `$x + y$`, `x - y`,
+  `\alpha` or `a = b` is translated, not sent off as a dictionary word;
+  `x-ray` and `km/h` are still looked up.
 - **Your own translation prompt no longer breaks the entry.** The presets on
   the settings page say "reply with the translation only"; a lookup now tells
   the model that the entry format overrides that, so choosing a preset still
@@ -542,6 +550,27 @@
   Chinese, Traditional Chinese, Japanese and Korean the right-click item used
   the "whole page" wording while running the main-content scope; it now says
   "Translate Page", like the float ball and the popup.
+
+No new permission.
+
+### A finished document opens in the reader
+
+- **One button, View, for every finished document.** The job page no longer
+  offers "Open Bilingual PDF", "Open Translated PDF" or "View on the web";
+  View opens the document in the web reader, whose download menu has the
+  bilingual and translated PDFs and the translated file. A MOBI, which used to
+  have only the website link, gets View too.
+- **Word, EPUB, TXT and Markdown still save from the page.** "Save Bilingual
+  File" and "Save Translated File" stay beside View, so the file keeps your own
+  name.
+- **The popup, the settings list and a clicked notification go to the same
+  place.** A finished job of any format opens in the reader; a job waiting on
+  your confirmation still opens its page through **Review**. The settings
+  list's per-row "View on the web" link is gone; the link to the web library
+  stays in the card header. A running or failed row has no button; its status
+  line says where it stands.
+- **No dead button.** If the account's site address is not a web address,
+  the page says the reader cannot be opened instead of showing View.
 
 No new permission.
 

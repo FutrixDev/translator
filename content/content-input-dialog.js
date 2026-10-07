@@ -233,7 +233,7 @@
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
       showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
-      showEntry(null, text);
+      showEntry(null);
       showResultSpeak(false);
       copyBtn.hidden = true;
 
@@ -265,24 +265,26 @@
         // engine and sentence translations leave the dictionary blocks empty.
         const entry = DictEntry.entryFor(mode, response);
         showResult({ text: response.translation }, targetLang);
-        showEntry(entry, text);
+        showEntry(entry, targetLang);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
         const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
-        showEntry(null, text);
+        showEntry(null);
         showResultSpeak(false);
         copyBtn.hidden = true;
       }
     };
 
-    // The entry under the translation: phonetics (speaking the typed word),
-    // senses, examples and word forms, drawn by the shared renderer the
-    // selection card uses too. null empties and hides it.
-    function showEntry(entry, word) {
-      DictEntry.render(dictEl, entry, { word, t, speech });
+    // The entry under the translation: the translation's phonetics, each with
+    // a speaker reading the translation in `targetLang` (D-487), then senses,
+    // examples and word forms, drawn by the shared renderer the selection card
+    // uses too. The typed text keeps its own speaker, #ai-translator-input-speak.
+    // null empties and hides it.
+    function showEntry(entry, targetLang) {
+      DictEntry.render(dictEl, entry, { targetLang, t, speech });
     }
 
     translateBtn.addEventListener('click', async () => {

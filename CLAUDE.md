@@ -218,8 +218,10 @@ message names still say `pdf`; what they carry does not.
   is written down**: the formats, their extensions and content types, the byte
   caps (`maxBytesFor`, mirroring the server's env), the magic-byte sniff,
   `isActiveStatus` / `isAwaitingStatus` / `isTerminalStatus` /
-  `isUnsettledStatus`, the result file name, and where "Open" goes
-  (`openTargetFor`). It loads before `shared/pdf-errors.js` in every load list.
+  `isUnsettledStatus`, the result file name, and the reader address a
+  finished job is viewed at (`readerUrl` → `<site>/app/reader/<id>`, `''` for a
+  non-web base or a `local:` id). It loads before `shared/pdf-errors.js` in
+  every load list.
   `shared/doc-measure.js` (`DocMeasure`) counts a flow document's standard pages
   (3,000 characters each) on the page, so an over-800-page book is refused
   before any request; PDF and MOBI are not measured and declare nothing.
@@ -242,11 +244,17 @@ message names still say `pdf`; what they carry does not.
   replaced and notifies on what changed — settled, now awaiting, or no longer
   awaiting (which clears `pdf-confirm-<id>`). A page handler that learns the
   same fact from its own fetch must not notify; the guard test checks.
-- **`PDF_OPEN_JOB` is the one way "Open" leaves a surface** — the popup row,
-  the settings list and a clicked notification. A succeeded PDF opens its
-  result URL in a tab; everything else opens `pdf/upload.html#job=<id>`,
-  where write-back formats are saved as `<name> (bilingual).<ext>` and MOBI
-  links to the website.
+- **A finished job of any format is viewed in the web reader** (D-488),
+  whose download menu has every file. The job page's one primary action is
+  **View** (`#docView`), opening `DocJobs.readerUrl(<site base>, jobId)`;
+  Word, EPUB, TXT and Markdown also keep **Save Bilingual / Translated File**
+  as secondary buttons, saved as `<name> (bilingual).<ext>`. No open-the-file
+  path exists any more.
+- **`PDF_OPEN_JOB` is the one way a row or notification leaves a surface** —
+  the popup row, the settings list and a clicked notification. `openPdfJob`
+  polls the job first; a succeeded job opens the reader at the base
+  `comicClient.getApiBase()` gives (the same one `ACCOUNT_SITE_BASE` answers),
+  everything else — and a poll that fails — opens `pdf/upload.html#job=<id>`.
 
 ### Hover / Selection Translation
 
@@ -321,13 +329,31 @@ the shape (translation, phonetics, senses, examples, forms), the prompt rules
 ending in `FORMAT_OVERRIDE`, so a preset's "reply with the translation only"
 never wins — `test/unit/dict-word-prompt.test.mjs`), the parser
 (`fromModelText`) and the one renderer (`render`) the input box and the
-selection card both call. Neither surface builds entry markup or decides what
+selection card both call. **The phonetics are the translation's, in the target
+language** (D-487): `FIELDS.phonetics.describe` asks for the pronunciation of
+`translation` — two items, `UK` and `US` IPA, when the target is English, and
+one item with an empty label in that language's usual notation (pinyin with
+tone marks, kana) for any other target. Every phonetic speaker reads
+`entry.translation` (aria label `pronounceTranslation`): `UK` in `en-GB`, `US`
+in `en-US`, an empty label in the target language. The accent voices hold
+only for an English target (`LangTags.getLangBase(targetLang) === 'en'`, so
+render reads `LangTags`, loaded before it in the manifest): under any other
+target a `UK`/`US` label is dropped at render (D-472) and the row is read in
+the target language — a stale label must not give `correr` an English voice.
+So `render(container,
+entry, { targetLang, t, speech })` takes the target language the caller used
+for this request (the dialog's or card's override, else the shown target) and
+throws on an entry drawn without one; it has no `word` option. The looked-up
+text keeps its own speaker on each surface (`#ai-translator-input-speak`,
+`.ai-translator-speak-source`). Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
 `DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
 (`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
-command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }` — a formula takes
-the text path, where the math placeholder rule applies; D-474), and 1–3 words in
-a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
+command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }`, D-474; any `*`,
+or a `-` or `/` between spaces or between bare operands — `x - y`, `3/4`,
+`(x-y)` — while `x-ray`, `Wi-Fi` and `km/h` stay lookups, D-475; a formula
+takes the text path, where the math placeholder rule applies), and 1–3 words
+in a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
 (D-473). The parser fails hard, as
 `invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
 (after `<think>…</think>` is stripped), the JSON is not an object, or the
@@ -336,7 +362,8 @@ list item is dropped, never guessed at (D-472). The entry is drawn only for a
 reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
 translation alone. `content/css/dict-entry.css` states colour, size, display
 and padding on every element, because the containment reset leaves those to
-our own rules and the entry is made of bare spans and divs. Journeys C1–C9 in
+our own rules and the entry is made of bare spans and divs. Journeys C1–C9 and
+J1–J3 (the translation's phonetics and speakers, D-487) in
 `test/e2e/dictionary-entry.spec.js`.
 
 ### Translation Engine

@@ -229,25 +229,3 @@ body {
   color: var(--text-primary);
 }
 
-/* MOBI: no file comes back, the result is read on the website. */
-.job-note {
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.job-link {
-  display: inline-block;
-  margin-top: 14px;
-  font-size: 13px;
-  color: var(--accent-primary);
-  text-decoration: none;
-}
-
-.job-link:hover {
-  text-decoration: underline;
-}
-
-.job-link[hidden] {
-  display: none;
-}

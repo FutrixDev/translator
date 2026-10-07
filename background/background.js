@@ -267,8 +267,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(pdfClient.dismissJobRecord(message.jobId), sendResponse);
       return true;
 
+    // The popup closes and the settings page does not wait on the reply, so a
+    // failure is logged here, where it stops.
     case 'PDF_OPEN_JOB':
-      replyComic(openPdfJob(message.jobId, message.which), sendResponse);
+      replyComic(openPdfJob(message.jobId).catch((error) => {
+        console.warn(`[pdf] opening job ${message.jobId} failed:`, error?.code || error?.message || error);
+        throw error;
+      }), sendResponse);
       return true;
 
     // PDF 文档上那条提示条按下的「翻译」或媒体快捷键（content/content-media-hints.js）。
