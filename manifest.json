@@ -137,6 +137,7 @@
         "content/engine/watchdog.js",
         "content/engine/glossary.js",
         "content/engine/addenda.js",
+        "content/engine/model.js",
         "content/content-translation-engine.js",
         "content/engine/probe.js",
         "content/content-language-pack.js",

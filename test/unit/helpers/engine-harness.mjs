@@ -39,7 +39,9 @@ export function detectLanguage(sample) {
 export async function installEngineHarness({ pageText, url = 'https://example.test/' }) {
   const translateCalls = [];
   const sentToAI = [];
-  const state = { apiKey: '' };
+  // account 是 SW 的 COMIC_ACCOUNT 回答的 data（billing/me 的形状）：Blab Translation
+  // 能不能用只看它的 blabTranslation.available（D-476）。默认没登录。
+  const state = { apiKey: '', account: { signedIn: false } };
 
   globalThis.self = {
     isSecureContext: true,
@@ -96,6 +98,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     },
     runtime: {
       sendMessage: async (message) => {
+        if (message.type === 'COMIC_ACCOUNT') return { ok: true, data: state.account };
         sentToAI.push(message);
         return { translation: `AI:${message.text}` };
       },
@@ -154,6 +157,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   };
   await import('../../../content/engine/glossary.js');
   await import('../../../content/engine/addenda.js');
+  await import('../../../content/engine/model.js');
   await import('../../../content/content-translation-engine.js');
   await import('../../../content/engine/probe.js');
 
@@ -162,5 +166,6 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     translateCalls,
     sentToAI,
     setApiKey(key) { state.apiKey = key; },
+    setAccount(account) { state.account = account; },
   };
 }

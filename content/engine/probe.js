@@ -26,7 +26,7 @@
     // 上限）。popup 自己的 300 ms 超时先到，就当 UNKNOWN_PROBE —— 慢不是坏。
     await ctx.aiProfiles.whenReady();
     const result = {
-      engine: eng.isBuiltinSelected(false) ? 'builtin' : 'ai',
+      engine: eng.selectedEngine(false),
       supported: eng.isBuiltinSupported(),
       reason: '',
       availability: 'unknown',

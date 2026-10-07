@@ -121,14 +121,14 @@ test('a spec that asserts labels in another language says so', () => {
   }
 });
 
-test("'ai' is the only value that turns the built-in engine off", () => {
-  // isBuiltinSelected() treats every other value — including a missing one — as
-  // built-in, so the baseline has to spell this one exactly. And it reads one of
+test("the harness pins a model engine, since anything unknown reads as built-in", () => {
+  // selectedEngine() normalizes every value it does not know — including a
+  // missing one — to built-in, so the baseline has to spell 'ai'. And it reads one of
   // two keys: automatic translation picks its engine separately (PRD FR-9), so
   // pinning only the manual one leaves every auto spec on the built-in engine
   // this browser does not have.
   assert.match(engineSource(),
-    /return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/,
+    /return globalThis\.Engines\.normalizeEngine\(auto \? settings\.autoTranslateEngine : settings\.translationEngine\);/,
     'the content script decides the engine by this comparison; E2E_BASE_SETTINGS has to match it');
   const baseline = repoFile('test/e2e/helpers.js');
   const literal = baseline.slice(baseline.indexOf('const E2E_BASE_SETTINGS'));

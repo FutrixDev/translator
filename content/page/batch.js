@@ -30,7 +30,9 @@
   // `for (const text of texts) await translateWithBuiltin(...)`），12 路并发只是让
   // 12 个批同时去抢同一份端上模型，多出来的是排队和内存，不是吞吐；云端引擎
   // 是网络并发，12 才有意义。
-  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12 });
+  // Blab Translation 是我们自己的服务，每个账户一份每天的额度、服务端一份模型网关：
+  // 6 路足够把首屏铺满，又不让一个页面独占网关（设计 §5.3）。
+  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12, blab: 6 });
 
   // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
   // 它与 ctx.requestTranslation 同形，只是先去缓存里看一眼。没加载到它就走原路：
@@ -176,6 +178,14 @@
    */
   function usingBuiltinEngine(auto) {
     return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive(auto));
+  }
+
+  // 不走内置时这一轮的请求发给哪个模型引擎（'ai' | 'blab'），并发按它取。问的是
+  // 引擎自己的解析（content/engine/model.js），本站规则钉住的引擎也在里面。单测只装
+  // content/page/* 时没有引擎一族，那里按 'ai'。
+  function modelEngineOf(auto) {
+    const model = ctx.engine && ctx.engine.model;
+    return model ? model.forRequest({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', auto }).engine : 'ai';
   }
 
   // 智能分批：根据 token/字符数/段落数限制
@@ -590,7 +600,7 @@
     const deferredBatches = createSmartBatches(deferredBlocks, auto);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = usingBuiltinEngine(auto) ? CONCURRENCY.builtin : CONCURRENCY.ai;
+    const concurrency = CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
 
     console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 

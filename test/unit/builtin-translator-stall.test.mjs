@@ -115,6 +115,7 @@ await import('../../shared/prompt-addenda.js');
 // 替身，keyMissing 跟着上面的 apiKey 变量走。选档走真的 AIProfiles.resolve。
 await import('../../shared/sync-collection.js');
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 {
   const endpoint = 'https://api.openai.com/v1/chat/completions';
   const entries = () => [{
@@ -137,6 +138,7 @@ await import('../../shared/ai-profiles.js');
 }
 await import('../../content/engine/glossary.js');
 await import('../../content/engine/addenda.js');
+await import('../../content/engine/model.js');
 await import('../../content/content-translation-engine.js');
 await import('../../content/engine/probe.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;

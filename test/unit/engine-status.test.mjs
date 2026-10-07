@@ -28,6 +28,7 @@ await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/engine-status.js');
 await import('../../shared/account-gate.js');
 await import('../../shared/default-settings.js');
@@ -326,10 +327,24 @@ test('selectedEngine: the page answer first, the setting only when there is none
   assert.equal(ES.selectedEngine(manualBuiltin, null), 'builtin');
   assert.equal(ES.selectedEngine(manualAi, ES.UNKNOWN_PROBE), 'ai');
   assert.equal(ES.selectedEngine({}, null), 'builtin');
+  // 第三个值（D-479）：设置与页面都可能答 blab；不认识的值按内置读，和引擎同一个规则。
+  assert.equal(ES.selectedEngine({ translationEngine: 'blab' }, null), 'blab');
+  assert.equal(ES.selectedEngine(manualAi, { engine: 'blab' }), 'blab');
+  assert.equal(ES.selectedEngine({ translationEngine: 'google' }, null), 'builtin');
   // 底栏也经过它：页面说 AI、档没配好，就是「没配置」，哪怕设置写着内置。
   const probeAi = { engine: 'ai', aiReady: false };
   const status = ES.describeEngineStatus({ ...manualBuiltin, apiKey: '' }, probeAi, ES.aiReady(probeAi));
   assert.equal(status.key, 'apiNotConfigured');
+});
+
+test('Blab Translation is named, never judged by an API key', () => {
+  // 账户能不能用（登录、订阅、今天的额度）是服务端在请求上答的；底栏只说是哪个引擎。
+  for (const aiIsReady of [true, false, undefined]) {
+    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady),
+      { key: 'engineBlab', detailKey: '', ok: true });
+  }
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false),
+    { key: 'engineBlab', detailKey: '', ok: true });
 });
 
 test('aiReady: the page answers first, the worker only when there is no page, a slow page is ready', () => {

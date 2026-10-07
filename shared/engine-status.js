@@ -67,7 +67,7 @@
 
   /**
    * @typedef {Object} EngineProbe  what the content script saw in its own tab
-   * @property {'builtin'|'ai'} engine
+   * @property {'builtin'|'ai'|'blab'} engine
    * @property {boolean} supported        the built-in Translator is usable here
    * @property {string}  reason           a key of REASON_MESSAGE_KEYS, '' when supported
    * @property {'available'|'downloadable'|'downloading'|'unavailable'|'unknown'} availability
@@ -83,7 +83,7 @@
    */
 
   /**
-   * The engine a click on this tab will use: 'builtin' | 'ai'.
+   * The engine a click on this tab will use: one of Engines.ENGINES.
    *
    * The page answers first (`probe.engine`): it knows this site's custom rule,
    * which can pin an engine and outranks the setting. Only when there is no
@@ -93,11 +93,11 @@
    *
    * @param {Object} settings
    * @param {EngineProbe|null} probe
-   * @returns {'builtin'|'ai'}
+   * @returns {'builtin'|'ai'|'blab'}
    */
   function selectedEngine(settings, probe) {
     if (probe && probe.engine) return probe.engine;
-    return settings && settings.translationEngine === 'ai' ? 'ai' : 'builtin';
+    return root.Engines.normalizeEngine(settings && settings.translationEngine);
   }
 
   /**
@@ -145,6 +145,13 @@
     if (engine === 'ai') {
       if (typeof aiIsReady !== 'boolean') throw new TypeError('describeEngineStatus: the AI engine needs aiReady()');
       return status(aiIsReady ? 'ready' : 'apiNotConfigured', '', aiIsReady);
+    }
+
+    // Blab Translation: whether the account can use it right now (signed in, a
+    // plan, today's allowance) is the service's answer, given on the request
+    // itself; the footer names the engine and claims nothing more.
+    if (engine === 'blab') {
+      return status('engineBlab', '', true);
     }
 
     if (probe === null) {

@@ -93,19 +93,28 @@
    * 个为了划词翻译把引擎切到 AI 的用户，从此每一个页面的自动翻译都被费用闸整个
    * 拦掉 —— 满屏原文，没有任何解释。
    *
-   * 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 才走自定义接口。
+   * 设置缺失时按 builtin 处理：内置是默认引擎，只有用户显式选了 'ai' 或 'blab' 才发给模型。
    *
    * 本站的用户规则钉了引擎（siteEngine）就先听它的，两半答同一个值（P1-B）。钉住
    * 落在谓词这一层：费用闸、持久缓存、批次并发、popup 的探测都由这几个谓词拼出来，
    * 只要它们答对，请求走哪条路和它们说走哪条路就是同一句话。
    */
   function isBuiltinSelected(auto) {
-    const site = siteEngine();
-    if (site) return site === 'builtin';
-    return (auto ? settings.autoTranslateEngine : settings.translationEngine) !== 'ai';
+    return selectedEngine(auto) === 'builtin';
   }
 
-  // 本站规则钉住的引擎：'builtin' | 'ai' | null。设置页也加载引擎这一族，那里没有站点。
+  /**
+   * 选的是哪个引擎：'builtin' | 'ai' | 'blab'（shared/engines.js，D-479）。本站规则
+   * 钉了就是它，否则是那一边的设置；设置里不是引擎的值（缺失）按 builtin 读。
+   * 以前这里问的是「是不是 'ai'」，第三个值 'blab' 因此被当成了内置引擎。
+   */
+  function selectedEngine(auto) {
+    const site = siteEngine();
+    if (site) return site;
+    return globalThis.Engines.normalizeEngine(auto ? settings.autoTranslateEngine : settings.translationEngine);
+  }
+
+  // 本站规则钉住的引擎：'builtin' | 'ai' | 'blab' | null。设置页也加载引擎这一族，那里没有站点。
   function siteEngine() {
     return ctx.customRules ? ctx.customRules.engineOverride() : null;
   }
@@ -441,7 +450,7 @@
   }
 
   /**
-   * 这一刻，一次翻译请求实际会走到哪里：`'builtin'` | `'ai'` | `'none'`。
+   * 这一刻，一次翻译请求实际会走到哪里：`'builtin'` | `'ai'` | `'blab'` | `'none'`。
    * `{ auto: true }` 问的是自动模式那一边（它有自己的引擎设置，见
    * isBuiltinSelected）。
    *
@@ -459,7 +468,7 @@
    */
   async function effectiveEngine({ auto = false, feature } = {}) {
     if (shouldUseBuiltin(auto)) return 'builtin';
-    if (!isBuiltinSelected(auto)) return 'ai';
+    if (!isBuiltinSelected(auto)) return selectedEngine(auto);
     return (await canFallBackToAI(feature)) ? 'ai' : 'none';
   }
 
@@ -610,12 +619,14 @@
       (guarded, extra) => translateWithBuiltin(guarded, targetLang, { ...shared, ...extra }));
   }
 
-  // 发给模型的一份：先过自动模式的预算闸，再发。
-  async function sendPart(message) {
-    const refusal = await refuseAutoAiSpend(message);
-    if (refusal) return { error: refusal, budgetSpent: true, engine: 'ai' };
+  // 发给模型的一份，响应盖上真正发往的那个模型引擎（'ai' | 'blab'）。预算闸只拦
+  // 'ai'：autoAiDailyBudget 管的是用户自己的接口、他自己的钱；Blab 的上限是账户
+  // 每天的字数，由服务端的 429 daily_limit 把关（D-480）。
+  async function sendPart(message, engine) {
+    const refusal = engine === 'ai' ? await refuseAutoAiSpend(message) : null;
+    if (refusal) return { error: refusal, budgetSpent: true, engine };
     const response = await chrome.runtime.sendMessage(message);
-    return response && { ...response, engine: 'ai' };
+    return response && { ...response, engine };
   }
 
   // `message` 已去掉 pageContext（sendToModel 头一行），`original` 还带着它。
@@ -642,21 +653,22 @@
    * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
    * 交来的那一份（缓存层算键时取的），没交就在这里现取（eng.addenda.settings）。
    *
-   * `resolved` 是这一次请求选中的 AI 配置档（AIProfiles.resolve 的形状，由两个
-   * 送出口解析）：`{profile}` 就把 profileId 盖进每一份消息，SW 按它取整档；
-   * `{error}`（规则指的档不在了、一档都没有）到这里才变成给用户看的一句话 ——
-   * 走内置引擎的请求从不看它。
+   * `model` 是这一次请求的模型引擎和它的档（content/engine/model.js 的
+   * forRequest，由两个送出口解析）：`resolved` 是 `{profile}` 就把 profileId 盖进每一份
+   * 消息，SW 按它取整档（Blab 是固定的那一档）；`{error}`（规则指的档不在了、一档
+   * 都没有）到这里才变成给用户看的一句话 —— 走内置引擎的请求从不看它。
    */
-  async function sendToModel(original, snap, frozen, resolved) {
+  async function sendToModel(original, snap, frozen, model) {
+    const { engine, resolved } = model;
     if (resolved.error) {
       console.warn('Blab Translation: sendToModel has no AI profile (%s, profile %s, feature %s)',
         resolved.error, resolved.id || '(none)', original.feature);
       const t = ctx.t || ((key) => key);
-      return { error: t(AIProfiles.resolveMessageKey(resolved.error)).replace('{name}', resolved.id || ''), engine: 'ai' };
+      return { error: t(AIProfiles.resolveMessageKey(resolved.error)).replace('{name}', resolved.id || ''), engine };
     }
     const { pageContext: _neighbours, ...unstamped } = original;
     const message = { ...unstamped, profileId: resolved.profile.id };
-    if (!BUILTIN_TYPES.has(message.type)) return sendPart(message);
+    if (!BUILTIN_TYPES.has(message.type)) return sendPart(message, engine);
     // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让
     // 它悄悄丢掉这一页的语域，所以直接抛。
     if (!('addenda' in message)) {
@@ -665,35 +677,33 @@
     const current = frozen || eng.addenda.settings();
     if (message.type === 'TRANSLATE') {
       const [part] = snap.plan([message.text]);
-      return sendPart(withAddenda(message, part, original, current));
+      return sendPart(withAddenda(message, part, original, current), engine);
     }
     const texts = Array.isArray(message.texts) ? message.texts : [];
     const parts = snap.plan(texts);
-    if (parts.length === 1) return sendPart(withAddenda(message, parts[0], original, current));
+    if (parts.length === 1) return sendPart(withAddenda(message, parts[0], original, current), engine);
     const translations = new Array(texts.length);
     for (const part of parts) {
       const partTexts = part.indices.map((index) => texts[index]);
-      const response = await sendPart(withAddenda({ ...message, texts: partTexts }, part, original, current));
+      const response = await sendPart(withAddenda({ ...message, texts: partTexts }, part, original, current), engine);
       if (!response || response.error || !Array.isArray(response.translations)
           || response.translations.length !== partTexts.length) {
         return response;
       }
       part.indices.forEach((index, k) => { translations[index] = response.translations[k]; });
     }
-    return { translations, engine: 'ai' };
+    return { translations, engine };
   }
 
-  // 一次请求可以指名要哪个引擎（划词卡片上的「换引擎」）。只认这两个值：写错了
-  // 是调用方的 bug，当成没传就会悄悄按设置走，和用户点的那颗按钮对不上。
-  const PINNABLE_ENGINES = new Set(['builtin', 'ai']);
-
   /**
-   * 这一次请求指名的引擎：'builtin' | 'ai'，没指名是 undefined。「指名」只在这一
-   * 处判定，优先级（wantsBuiltin）与不回落（requestTranslation）都问它。
+   * 这一次请求指名的引擎：Engines.ENGINES 之一，没指名是 undefined。只认那几个
+   * 值：写错了是调用方的 bug，当成没传就会悄悄按设置走，和用户点的那颗按钮对不上
+   * （划词卡片上的「换引擎」）。「指名」只在这一处判定，优先级（wantsBuiltin）、
+   * 不回落（requestTranslation）和发给哪个模型引擎（content/engine/model.js）都问它。
    */
   function pinnedEngine(message) {
     const engine = message.engine;
-    if (engine !== undefined && !PINNABLE_ENGINES.has(engine)) {
+    if (engine !== undefined && !globalThis.Engines.isEngine(engine)) {
       throw new Error(`requestTranslation: unknown engine ${JSON.stringify(engine)}`);
     }
     return engine;
@@ -742,7 +752,7 @@
 
   /**
    * 把一个已经盖好语域的请求送出，与 chrome.runtime.sendMessage 同形（同样的入参、
-   * 同样的返回），只多一个字段：每个响应都盖上 `engine`（'builtin' | 'ai'），说这一次是谁译的
+   * 同样的返回），只多一个字段：每个响应都盖上 `engine`（Engines.ENGINES 之一），说这一次是谁译的
    * （出错时说是谁没译成）。调用方不需要知道这次走的是内置还是 AI，但卡片要告诉
    * 用户。
    *
@@ -752,8 +762,9 @@
    *
    * `opts.glossary` 是调用方已经取好的词表快照、`opts.addendaSettings` 是它取好的
    * 领域与上下文开关（eng.addenda.settings()）：缓存层算键前取一次，键和请求出自
-   * 同一份（D-384 F1）；`opts.profile` 是它解析好的配置档（P1-D §3.2，键里的接口
-   * 地址和模型出自它）。没传就在送出时取。第二个参数只在内容脚本内部传，不进消息。
+   * 同一份（D-384 F1）；`opts.model` 是它解析好的模型引擎和档（eng.model.forRequest，
+   * P1-D §3.2，键里的接口地址和模型出自它）。没传就在送出时取。第二个参数只在内容
+   * 脚本内部传，不进消息。
    */
   ctx.sendTranslation = async function(message, opts = {}) {
     // 引擎谓词要问本站规则（siteEngine），规则先到再选；词表同样要先到，快照才
@@ -766,9 +777,9 @@
     // 指名了不认识的引擎先抛：那是调用方写错了，排在选档之前。
     const pinned = pinnedEngine(message);
     const snap = opts.glossary || await eng.glossary.current(message.targetLang);
-    // 选档与取词表快照同一段：没交就在这里现解析（feature 不认识就抛）。走内置
-    // 引擎也照样解析，{error} 只在真要发给模型时才用上（sendToModel）。
-    const profile = opts.profile || ctx.aiProfiles.resolve(message.feature);
+    // 选模型引擎和档与取词表快照同一段：没交就在这里现解析（feature 不认识就抛）。
+    // 走内置引擎也照样解析，{error} 只在真要发给模型时才用上（sendToModel）。
+    const model = opts.model || eng.model.forRequest(message);
     // 自动发来的请求问的是另一张开关（autoTranslateEngine）。同一个函数、两套
     // 选择，是因为调用方只有一个：谁也不该为了「这一次是自动的」另走一条路。
     const auto = !!message.auto;
@@ -804,11 +815,12 @@
         throw new Error(`requestTranslation: the builtin engine cannot handle ${message.type}`);
       }
     }
-    return sendToModel(message, snap, opts.addendaSettings, profile);
+    return sendToModel(message, snap, opts.addendaSettings, model);
   };
 
   /**
-   * 卡片上「换引擎」问的：译成 targetLang，两边此刻各能不能用。AI 那边问这个功能
+   * 卡片上「换引擎」问的：译成 targetLang，三个引擎此刻各能不能用。Blab 那边问账户
+   * （billing/me 的 blabTranslation.available，content/engine/model.js）。AI 那边问这个功能
    * 解析出的档（镜像跟着 sync 增量走，设置页刚填好 Key 这里就知道）。内置那边除了环境，还要端上
    * 有这门目标语言：问的是 eng.supportsTarget，和页内语言菜单标「仅 AI」的是同一个
    * 谓词，不然卡片会对一门「仅 AI」的语言提供「改用内置」，点了只换来一句报错。
@@ -818,6 +830,7 @@
     return {
       builtin: isBuiltinSupported() && eng.supportsTarget(targetLang),
       ai: ctx.aiProfiles.ready(feature),
+      blab: await eng.model.blabAvailable(),
     };
   };
 
@@ -841,7 +854,7 @@
 
   // content/engine/probe.js（ctx.builtinTranslator、popup 的状态探测）要问的引擎内部谓词。
   Object.assign(eng, {
-    isBuiltinSupported, isBuiltinSelected, shouldUseBuiltin, builtinUnsupportedReason,
+    isBuiltinSupported, isBuiltinSelected, selectedEngine, pinnedEngine, shouldUseBuiltin, builtinUnsupportedReason,
     fallbackAllowed, effectiveEngine, translateWithBuiltin, destroyAll, probeAvailability,
     getTranslator, isActivationError, EngineUnavailableError, ENGINE_REASONS,
     lastFallback: () => lastFallback
