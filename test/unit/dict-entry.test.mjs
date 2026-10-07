@@ -1,6 +1,6 @@
 // The dictionary entry has one owner, shared/dict-entry.js (D-469/D-470):
 //
-//   - isLookup() alone decides what is looked up (D-473–D-475), checked
+//   - isLookup() alone decides what is looked up (D-473, D-474), checked
 //     against the rulings' own samples;
 //   - normalize() is the only check on what the model sends back (D-472): only
 //     a non-object or a missing/empty translation throws `invalidEntry`; a
@@ -91,28 +91,9 @@ const LOOKUP_TABLE = [
   ['a = b', false],
   ['1 + 1', false],
   ['x ± y', false],
-  // ASCII arithmetic is formula notation too (D-475): any *, a - or / between
-  // spaces or between bare operands; hyphenated and slashed words stay lookups
-  ['x - y', false],
-  ['a / b', false],
-  ['cost - tax', false],
-  ['miles / hour', false],
-  ['x/y', false],
-  ['2*2', false],
-  ['(x-y)', false],
-  ['a/b', false],
-  ['3/4', false],
-  ['1990-2000', false],
-  ['x-ray', true],
-  ['Wi-Fi', true],
-  ['T-shirt', true],
-  ['e-mail', true],
-  ['COVID-19', true],
-  ['km/h', true],
-  ['and/or', true],
 ];
 
-test('isLookup answers the D-473–D-475 table', () => {
+test('isLookup answers the D-473/D-474 table', () => {
   for (const [text, expected] of LOOKUP_TABLE) {
     assert.equal(isLookup(text), expected, JSON.stringify(text));
   }

@@ -8,7 +8,7 @@
 // and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
-//   isLookup      whether a text is looked up at all (D-473–D-475). Both
+//   isLookup      whether a text is looked up at all (D-473, D-474). Both
 //                 surfaces call it and keep no check of their own.
 //   FIELDS        the shape. OUTPUT_RULES (what the prompt asks for) and
 //                 normalize() (what the service worker accepts) both read it,
@@ -49,21 +49,11 @@
   // Sentence punctuation: any of these in the text makes it a sentence.
   const SENTENCE_PUNCTUATION = /[.!?。！？；;，,：:]/;
 
-  // Formula notation: a match for any of these makes the text a formula,
-  // translated so the math placeholder rule applies; the lookup prompt has no
-  // such rule. Hyphenated and slashed words (x-ray, Wi-Fi, km/h, and/or) stay
-  // lookups: an ASCII - or / counts only between spaces or between bare
-  // operands.
-  const FORMULA_NOTATION = Object.freeze([
-    // A LaTeX delimiter ($, \(, \[) or command (\alpha), a math symbol
-    // (\p{Sm}: + = < > | ~ ± × ÷ −), or ^ _ { } (D-474); any * (D-475).
-    /[$^_{}*\p{Sm}]|\\[([A-Za-z]/u,
-    // - or / with whitespace on both sides: x - y, a / b (D-475).
-    /\s[-/]\s/u,
-    // - or / between two bare operands, a single letter or a digit string, with
-    // no letter or digit just outside them: x-y, 3/4, 1990-2000, (x-y) (D-475).
-    /(?<![\p{L}\p{N}])(?:\p{L}|\p{N}+)\s*[-/]\s*(?:\p{L}|\p{N}+)(?![\p{L}\p{N}])/u,
-  ]);
+  // Formula notation (D-474): a LaTeX delimiter ($, \(, \[) or command (\alpha),
+  // a math symbol (\p{Sm}: + = < > | ~ ± × ÷ −), or ^ _ { }. Any of these makes
+  // the text a formula, translated so the math placeholder rule applies; the
+  // lookup prompt has no such rule.
+  const FORMULA_NOTATION = /[$^_{}\p{Sm}]|\\[([A-Za-z]/u;
 
   // Scripts that do not separate words with spaces: a lookup in them is counted
   // in characters, not words.
@@ -77,12 +67,11 @@
    * translated as a sentence. After trimming, it has no sentence punctuation,
    * no formula notation, and is 1–3 words in a space-separated script, or 1–4
    * characters in a script without spaces. Nothing else is weighed: "I run
-   * daily" and "x-ray" are lookups, "$x + y$" and "x - y" are not.
+   * daily" is a lookup, "$x + y$" is not.
    */
   function isLookup(text) {
     const trimmed = String(text == null ? '' : text).trim();
-    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
-    if (FORMULA_NOTATION.some((shape) => shape.test(trimmed))) return false;
+    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed) || FORMULA_NOTATION.test(trimmed)) return false;
     if (UNSPACED_SCRIPT.test(trimmed)) return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_LOOKUP_CHARS;
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
   }

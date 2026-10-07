@@ -325,11 +325,9 @@ selection card both call. Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
 `DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
 (`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
-command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }`, D-474; any `*`,
-or a `-` or `/` between spaces or between bare operands — `x - y`, `3/4`,
-`(x-y)` — while `x-ray`, `Wi-Fi` and `km/h` stay lookups, D-475; a formula
-takes the text path, where the math placeholder rule applies), and 1–3 words
-in a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
+command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }` — a formula takes
+the text path, where the math placeholder rule applies; D-474), and 1–3 words in
+a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
 (D-473). The parser fails hard, as
 `invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
 (after `<think>…</think>` is stripped), the JSON is not an object, or the
