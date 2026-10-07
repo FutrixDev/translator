@@ -304,45 +304,25 @@ test('a disabled menu item in the popup actually looks disabled', () => {
 // ---------------------------------------------------------------------------
 // The link out to the web library
 //
-// The extension cannot render a PDF: Chrome's viewer is an out-of-process
-// iframe with a closed shadow DOM. The website can, so the settings history
-// links each job to it — which only works if the URL is built from the origin
-// the service worker is actually configured with, and refuses to be built at
-// all from anything else.
+// The settings card's header links to the account's document list on the
+// site. One job is viewed in the reader (DocJobs.readerUrl, doc-jobs.test.mjs);
+// the library link takes no job any more. It only works if the URL is built
+// from the origin the service worker is actually configured with, and refuses
+// to be built at all from anything else.
 // ---------------------------------------------------------------------------
 
-test('a job in the history links to the same job in the web library', () => {
-  assert.equal(
-    ui.pdfLibraryUrl('https://blab-translation.com', 'job-1'),
-    'https://blab-translation.com/app/settings/pdf?job=job-1'
-  );
-  // No job: the library itself, which is what the card header links to.
+test('the library link is the site origin plus /app/settings/pdf', () => {
   assert.equal(ui.pdfLibraryUrl('https://blab-translation.com'), 'https://blab-translation.com/app/settings/pdf');
   // A trailing slash or a path on the configured base must not reach the URL.
-  assert.equal(
-    ui.pdfLibraryUrl('https://staging.example.com/', 'job-1'),
-    'https://staging.example.com/app/settings/pdf?job=job-1'
-  );
-  // An id is a server id, but it still goes through encodeURIComponent — a
-  // link is not the place to find out that assumption was wrong.
-  assert.equal(
-    ui.pdfLibraryUrl('https://blab-translation.com', 'a/b?c=d'),
-    'https://blab-translation.com/app/settings/pdf?job=a%2Fb%3Fc%3Dd'
-  );
-});
-
-test('a pending job gets no link, because the server has no such job', () => {
-  // The library reads an unknown ?job= as a hint and falls back to the newest
-  // document, so this link would quietly open the wrong one.
-  assert.equal(ui.pdfLibraryUrl('https://blab-translation.com', 'local:op-1'), '');
+  assert.equal(ui.pdfLibraryUrl('https://staging.example.com/api/'), 'https://staging.example.com/app/settings/pdf');
 });
 
 test('the library link cannot be built from a base that is not a web origin', () => {
   // The base comes out of chrome.storage, and this value ends up in an href.
-  assert.equal(ui.pdfLibraryUrl('javascript:alert(1)', 'job-1'), '');
-  assert.equal(ui.pdfLibraryUrl('', 'job-1'), '');
-  assert.equal(ui.pdfLibraryUrl(null, 'job-1'), '');
-  assert.equal(ui.pdfLibraryUrl('not a url', 'job-1'), '');
+  assert.equal(ui.pdfLibraryUrl('javascript:alert(1)'), '');
+  assert.equal(ui.pdfLibraryUrl(''), '');
+  assert.equal(ui.pdfLibraryUrl(null), '');
+  assert.equal(ui.pdfLibraryUrl('not a url'), '');
 });
 
 // ---------------------------------------------------------------------------
@@ -549,7 +529,11 @@ test('the settings page asks the worker for the origin instead of hardcoding one
   // 设置页拆成了一组同级脚本，哪一行落在哪个文件里是排版；这里问的是这一页。
   const options = optionsSource();
   assert.match(options, /ACCOUNT_SITE_BASE/);
-  assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase, job\.jobId\)/);
+  assert.match(options, /PDF_UI\.pdfLibraryUrl\(base\)/);
+  // A row opens its job through the worker, which builds the reader URL from
+  // the same base (D-488); no row links to the library or names a file.
+  assert.doesNotMatch(options, /pdfLibraryUrl\([^)]*jobId/);
+  assert.match(options, /type: 'PDF_OPEN_JOB', jobId: job\.jobId \}/);
   // The default origin lives in comic-client.js; a second copy here would be
   // the one that goes stale. Both the current origin and the pre-G1 one it
   // replaced are refused: a stale paste of the old name is the same bug, and
