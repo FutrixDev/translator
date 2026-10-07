@@ -16,6 +16,7 @@
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const speech = ctx.speech;
   const SPEAKER_ICON = speech.SPEAKER_ICON;
+  const DictEntry = globalThis.DictEntry;
 
   // 翻译图标：卡片标题、OCR 的「翻译」按钮和划词图标共用这一份路径。
   const TRANSLATE_ICON_PATHS = '<path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04z"/>'
@@ -32,15 +33,18 @@
    * of this before; every control added to one had to be remembered in the
    * other, and the pronunciation buttons would have made that four.
    *
-   * @param {{text: string, phonetic?: string, translation?: string, pending?: boolean}} options
+   * @param {{text: string, translation?: string, pending?: boolean}} options
    *   `pending` renders the loading state instead of a finished translation.
    */
   // `sourceLabel` overrides the "Original" heading. Image OCR uses it to say
-  // which language it recognised ("Original · 日本語"): the phonetic slot below
-  // would be the obvious place, but translateText hides that on every
-  // re-translation, and the recognised language does not stop being true
-  // because the user picked a different target.
-  function buildPopupMarkup({ text, phonetic = '', translation = '', pending = false, sourceLabel = '' }) {
+  // which language it recognised ("Original · 日本語"); it is part of the
+  // heading because the recognised language does not stop being true when the
+  // user picks a different target.
+  //
+  // The dictionary entry (.ai-translator-dict-entry) sits under the translation
+  // and is drawn only by translateText through DictEntry.render — the same
+  // renderer as the input dialog's.
+  function buildPopupMarkup({ text, translation = '', pending = false, sourceLabel = '' }) {
     return `
       <div class="ai-translator-header">
         <div class="ai-translator-header-left">
@@ -73,7 +77,6 @@
             </div>
           </div>
           <div class="ai-translator-text">${escapeHtml(text)}</div>
-          <div class="ai-translator-phonetic" ${phonetic ? '' : 'hidden'}>${escapeHtml(phonetic)}</div>
         </div>
         <div class="ai-translator-divider"></div>
         <div class="ai-translator-result">
@@ -98,6 +101,7 @@
             </div>` : ''}
             <div class="ai-translator-result-body" ${pending ? 'hidden' : ''}>
               <div class="ai-translator-translation-text">${escapeHtml(translation)}</div>
+              <div class="ai-translator-dict-entry" hidden></div>
             </div>
             <div class="ai-translator-error" role="alert" hidden></div>
           </div>
@@ -254,7 +258,7 @@
    * dead end — picking a target language from the dropdown translates, and
    * translateText brings the hidden half back.
    */
-  function showTranslationResult(text, translation, phonetic = '', options = {}) {
+  function showTranslationResult(text, translation, options = {}) {
     hideTranslationPopup();
 
     // Ensure theme is applied
@@ -265,7 +269,6 @@
     state.translationPopup.dataset.sourceText = text;
     state.translationPopup.innerHTML = buildPopupMarkup({
       text,
-      phonetic,
       translation,
       sourceLabel: options.sourceLabel || ''
     });
@@ -480,23 +483,15 @@
     return normalized;
   }
 
-  function isSingleWordText(text) {
-    if (!text) return false;
-    const trimmed = text.trim();
-    if (!trimmed) return false;
-    if (/[\s\r\n\t]/.test(trimmed)) return false;
-    return trimmed.length <= 40;
-  }
-
-  // 卡片「译文」一格里的几块：加载态、译文、错误、音标。
+  // 卡片「译文」一格里的几块：加载态、译文、词典条目、错误。
   function cardParts(popup) {
     const q = (selector) => popup.querySelector(selector);
     return {
       loading: [q('.ai-translator-loading'), q('.ai-translator-loading-lines')].filter(Boolean),
       resultBody: q('.ai-translator-result-body'),
       text: q('.ai-translator-translation-text'),
+      dict: q('.ai-translator-dict-entry'),
       error: q('.ai-translator-error'),
-      phonetic: q('.ai-translator-phonetic'),
     };
   }
 
@@ -512,10 +507,16 @@
     const parts = cardParts(popup);
     setCardLoading(parts, false);
     if (parts.text) parts.text.textContent = '';
+    showCardEntry(parts, null, '');
     if (parts.resultBody) parts.resultBody.hidden = true;
     parts.error.textContent = message;
     parts.error.hidden = false;
     popup._showTranslationSpeak?.(false);
+  }
+
+  // 词典条目只经共享渲染器画（与输入框同一份）；null 清空并藏起。
+  function showCardEntry(parts, entry, word) {
+    if (parts.dict) DictEntry.render(parts.dict, entry, { word, t, speech });
   }
 
   // 重译 / 换引擎 / 加入术语表：请求在路上时禁用（术语表拿的是译文，旧的不能拿去预填）。
@@ -585,7 +586,7 @@
     const popup = state.translationPopup;
     const isCurrent = () => !!popup && state.translationPopup === popup && popup.dataset.requestId === requestId;
     try {
-      const isWord = isSingleWordText(text);
+      const mode = DictEntry.isLookup(text) ? 'word' : 'text';
       const targetLang = targetLangOverride || getEffectiveTargetLang();
       if (!isExtensionContextAvailable()) {
         if (popup) {
@@ -608,7 +609,7 @@
         const parts = cardParts(popup);
         setCardLoading(parts, true);
         if (parts.resultBody) parts.resultBody.hidden = true;
-        if (parts.phonetic) parts.phonetic.hidden = true;
+        showCardEntry(parts, null, '');
         parts.error.hidden = true;
         parts.error.textContent = '';
         popup._showTranslationSpeak?.(false);
@@ -622,7 +623,7 @@
         feature: 'selection',
         text: text,
         targetLang: targetLang,
-        mode: isWord ? 'word' : 'text',
+        mode,
         ...(pinned ? { engine: pinned } : {})
       });
 
@@ -631,6 +632,8 @@
       if (response.error) {
         showCardError(popup, response.error);
       } else {
+        // Only an AI lookup carries an entry; a builtin answer has none.
+        const entry = DictEntry.entryFor(mode, response);
         const parts = cardParts(popup);
         setCardLoading(parts, false);
         if (parts.text) {
@@ -643,10 +646,7 @@
           void parts.text.offsetWidth;
           parts.text.classList.add('ai-translator-translation-flow');
         }
-        if (parts.phonetic) {
-          parts.phonetic.textContent = response.phonetic || '';
-          parts.phonetic.hidden = !response.phonetic;
-        }
+        showCardEntry(parts, entry, text);
         popup._showTranslationSpeak?.(!!response.translation);
         if (parts.resultBody) {
           parts.resultBody.hidden = false;
@@ -676,5 +676,4 @@
   ctx.hideTranslationPopup = hideTranslationPopup;
   ctx.setupLanguageDropdown = setupLanguageDropdown;
   ctx.translateText = translateText;
-  ctx.isSingleWordText = isSingleWordText;
 })();

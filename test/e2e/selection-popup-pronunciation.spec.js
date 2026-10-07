@@ -7,14 +7,21 @@
 const { test, expect } = require('./fixtures');
 const { openExamplePage, setExtensionSettings, openFloatBallMenu } = require('./helpers');
 const { startMockServer } = require('./mock-server');
+require('../../shared/dict-entry.js');
 
+// The heading is two words, so the card looks it up (DictEntry.isLookup) and
+// the model is asked for an entry: that request is answered with one that
+// carries only the translation.
 async function startReplyMockServer(reply) {
   const { origin, close } = await startMockServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
+      const system = JSON.parse(body).messages[0].content;
+      const lookup = system.includes(globalThis.DictEntry.PROMPT_MARK);
+      const content = lookup ? JSON.stringify({ translation: reply }) : reply;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ choices: [{ message: { content: reply } }] }));
+      res.end(JSON.stringify({ choices: [{ message: { content } }] }));
     });
   });
   return { endpoint: `${origin}/v1/chat/completions`, close };

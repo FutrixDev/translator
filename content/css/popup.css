@@ -80,7 +80,7 @@
      matched as `[id="…"]` and not `#…`: an id would be (1,0,0) and would
      silently outrank our own deliberate values — `.ai-translator-result-body`
      (opacity 0 until `.ai-translator-reveal`), the caret's rotate, the
-     phonetic's serif face.
+     dictionary IPA's serif face.
 
    Scope is every root we mount into the page. The float ball, the float menu,
    the progress toast, the selection button and the caption overlay were left
@@ -516,8 +516,8 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 /* A section label with its tools on the right — the popup's original and
    translation, the input dialog's input and result. Reserving the icon
-   button's height keeps the panel below from shifting when a phonetic or a
-   speaker appears. */
+   button's height keeps the panel below from shifting when a speaker
+   appears. */
 .ai-translator-label-row {
   display: flex;
   align-items: center;
@@ -606,13 +606,6 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   to {
     background-position: -120% 0;
   }
-}
-
-.ai-translator-phonetic {
-  margin-top: 6px;
-  font-family: 'Times New Roman', serif;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* Loading State */

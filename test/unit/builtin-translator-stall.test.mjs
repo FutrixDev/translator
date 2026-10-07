@@ -85,7 +85,7 @@ globalThis.chrome = {
     sendMessage: async (message) => {
       sentToAI.push(message);
       if (Array.isArray(message.texts)) return { translations: message.texts.map((x) => `AI:${x}`) };
-      return { translation: `AI:${message.text}`, phonetic: '', isWord: false };
+      return { translation: `AI:${message.text}` };
     },
   },
 };
@@ -206,7 +206,7 @@ function translateRequest(targetLang, extra = {}) {
 
 // Every answer carries the engine that produced it, so a fallback is visible in
 // the result itself: `engine: 'ai'` here is what proves the AI path answered.
-const AI_RESULT = { translation: `AI:${ENGLISH}`, phonetic: '', isWord: false, engine: 'ai' };
+const AI_RESULT = { translation: `AI:${ENGLISH}`, engine: 'ai' };
 
 // ==================== the core failure ====================
 
@@ -327,7 +327,7 @@ test('a timed-out create is not cached, so the next attempt really retries', asy
 
   self.Translator.create = async () => fakeTranslator();
   assert.deepEqual(await translateRequest('fr'), {
-    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false, engine: 'builtin',
+    translation: `builtin:${ENGLISH}`, engine: 'builtin',
   });
 });
 
@@ -371,7 +371,7 @@ test('a translate() that never returns drops the wedged session and falls back',
   // And the session really is gone: the next attempt builds a fresh one.
   self.Translator.create = async () => fakeTranslator();
   assert.deepEqual(await translateRequest('pl'), {
-    translation: `builtin:${ENGLISH}`, phonetic: '', isWord: false, engine: 'builtin',
+    translation: `builtin:${ENGLISH}`, engine: 'builtin',
   });
 });
 

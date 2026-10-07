@@ -53,7 +53,9 @@ function missingApiKeyMessage(profile, settings) {
  * APICompat.describeAPIFailure (the local-server hints need the profile's
  * `provider`). A profile that could not be used carries `profileError`; a
  * profile the settings form described badly throws an AIProfiles error key
- * (AIProfiles.userErrorKey). Anything else was already written for the reader where it was thrown, so its
+ * (AIProfiles.userErrorKey). A dictionary lookup whose answer is not a valid
+ * entry carries `invalidEntry` (shared/dict-entry.js) and reads as
+ * dictEntryUnreadable. Anything else was already written for the reader where it was thrown, so its
  * message stands; a bare Error falls back to the generic "translation failed".
  */
 function apiErrorMessage(error, settings, profile) {
@@ -66,6 +68,7 @@ function apiErrorMessage(error, settings, profile) {
     const { key, id } = error.profileError;
     return t(globalThis.AIProfiles.resolveMessageKey(key)).replace('{name}', id);
   }
+  if (error && error.invalidEntry) return t('dictEntryUnreadable');
   const profileKey = globalThis.AIProfiles.userErrorKey(error);
   if (profileKey) return t(profileKey);
   return (error && error.message) || t('translationFailed');

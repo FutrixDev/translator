@@ -23,7 +23,7 @@
 //   - an `#id` selector would weigh (1,0,0) and silently outrank every
 //     deliberate opacity, transform and font-family of ours below it —
 //     `.ai-translator-result-body` would never start hidden, the caret would
-//     never rotate, the phonetic would lose its serif face.
+//     never rotate, the dictionary IPA would lose its serif face.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -306,8 +306,8 @@ test('the reset is declared before the rules that have to beat it', () => {
   for (const rule of [
     '.ai-translator-result-body {',        // starts at opacity 0
     '.ai-translator-lang-caret {',         // transitions transform
-    '.ai-translator-phonetic {',           // serif face
-    '.ai-translator-input-phonetic {',     // serif face
+    '.ai-translator-dict-ipa {',           // serif face
+    '.ai-translator-dict-heading {',       // 0.3px tracking
     '.ai-translator-label {',              // 0.3px tracking
   ]) {
     const at = CSS.indexOf(rule);

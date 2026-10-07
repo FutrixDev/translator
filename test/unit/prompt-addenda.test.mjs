@@ -239,6 +239,10 @@ test('the register rule is in every text template and text rule set, and in no w
 
 // ---- 每条请求路径都把附加说明送到模型 --------------------------------------
 
+// The word path reads a dictionary entry (shared/dict-entry.js); a bare string
+// is not one and fails the lookup.
+const WORD_REPLY = '{"translation":"你好"}';
+
 async function sentWith(run) {
   requests.length = 0;
   await run();
@@ -250,6 +254,7 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
     reply = () => 'translated';
     const single = await sentWith(() => ai.translateTextWithMode(
       'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, FORUM));
+    reply = () => WORD_REPLY;
     const word = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, FORUM));
 
     reply = () => '[1] A\n\n[2] B';
@@ -288,7 +293,7 @@ test('a custom prompt of only whitespace is no custom prompt, on every path (R33
   const paths = {
     single: [() => 'translated', (settings) => ai.translateTextWithMode(
       'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, {})],
-    word: [() => 'translated', (settings) => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {})],
+    word: [() => WORD_REPLY, (settings) => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {})],
     numbered: [() => '[1] A\n\n[2] B', (settings) => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
     fast: [() => FAST_REPLY, (settings) => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
   };
@@ -481,8 +486,8 @@ test('buildPrompt: the block sits after the template and before the math rule, i
   assert.equal(custom, 'Translate into Chinese.\n\n' + block + MATH_PLACEHOLDER_RULE + '\n\n' + rules);
 
   // 单词翻译不带数学规则，但附加说明一样带，排在输出规则之前。
-  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, '', { includeMathRule: false, addenda });
-  assert.ok(word.endsWith('\n\n' + block));
+  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
+  assert.equal(word, SINGLE_WORD_PROMPT.replace(/\{targetLang\}/g, 'Chinese') + '\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);
   assert.ok(!word.includes(MATH_PLACEHOLDER_RULE.trim()));
   const customWord = buildPrompt('Custom {targetLang}', 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
   assert.equal(customWord, 'Custom Chinese\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);

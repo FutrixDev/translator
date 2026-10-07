@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### A word looks itself up like a dictionary
+
+- **Type or select a single word on the AI engine and you get a dictionary
+  entry, not just a translation.** Under the translation, the input box and the
+  selection card now show UK and US pronunciations, each with its own speaker
+  (British and American voices). They also show the senses grouped by part of
+  speech, up to three examples, and the word's forms (past tense, plural and so
+  on). Both surfaces draw the entry from one shared module, so they always look
+  the same.
+- **A word or a short phrase is looked up; anything longer is translated.**
+  In both the input box and the card, text with no sentence punctuation that
+  is one to three words long (or one to four characters in Chinese, Japanese,
+  Korean, Thai and similar scripts) gets an entry, so "give up" is looked up
+  in both places. Text with a full stop, comma, colon, semicolon, question
+  mark or exclamation mark is always translated as a sentence.
+- **Your own translation prompt no longer breaks the entry.** The presets on
+  the settings page say "reply with the translation only"; a lookup now tells
+  the model that the entry format overrides that, so choosing a preset still
+  gives a full entry.
+- **The built-in engine gives the translation only.** It has no dictionary, so
+  switching the card to the built-in engine removes the entry rather than
+  showing a half-empty one.
+- **A broken entry is reported, not guessed at.** If the model's answer cannot
+  be read as an entry, the box shows "The dictionary entry could not be read.
+  Please try again." It used to guess a phonetic from the first line of
+  whatever came back. A reasoning model's `<think>` block before the entry is
+  ignored, and a part of the entry that comes back in the wrong form (senses
+  written as one line of text, say) is left out rather than failing the whole
+  lookup.
+
 ### PDF and comic translation show in the popup before you sign in
 
 - **The popup offers "Translate this PDF", "Translate a local document" and

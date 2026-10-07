@@ -1,8 +1,9 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./helpers');
+const { setExtensionSettings, openFloatBallMenu, openExamplePage, HOSTILE_PAGE_CSS } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
+require('../../shared/dict-entry.js');
 
 const en = (key) => getMessage(key, 'en');
 
@@ -32,9 +33,9 @@ async function startInputDictionaryMockServer() {
         text = '';
       }
 
-      const isDictionaryMode = /"translation"\s+and\s+"phonetic"/i.test(systemPrompt);
+      const isDictionaryMode = systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK);
       const content = isDictionaryMode
-        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetic: '/ɒn ðə flaɪ/' })
+        ? JSON.stringify({ translation: `[DICT] ${text}`, phonetics: [{ label: '', ipa: '/ɒn ðə flaɪ/' }] })
         : `[TEXT] ${text}`;
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -47,13 +48,13 @@ async function startInputDictionaryMockServer() {
   return { endpoint: `${origin}/v1/chat/completions`, close };
 }
 
-test('input translation shows phonetic for words and read-aloud for anything typed', async ({ page }) => {
+test('input translation shows a dictionary entry for words and read-aloud for anything typed', async ({ page }) => {
   const { close, endpoint } = await startInputDictionaryMockServer();
 
   try {
     await setExtensionSettings(page, {
       // Dictionary mode only exists on the AI path — the built-in engine gives
-      // back no phonetic and reports isWord: false — and the assertions below
+      // back a translation and no entry — and the assertions below
       // are on this mock's replies, so the backend has to be pinned. See
       // setExtensionSettings in ./helpers.
       apiEndpoint: endpoint,
@@ -80,15 +81,15 @@ test('input translation shows phonetic for words and read-aloud for anything typ
 
     await expect(page.locator('#ai-translator-result-section')).toBeVisible();
     await expect(page.locator('#ai-translator-result-text')).toContainText('[DICT] on the fly');
-    await expect(page.locator('#ai-translator-input-phonetic')).toHaveText('/ɒn ðə flaɪ/');
+    await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('/ɒn ðə flaɪ/');
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
     await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');
     await page.click('#ai-translator-do-translate');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[TEXT] this is a full sentence for translation');
-    // Only the phonetic is dictionary-only; both speakers stay available because
+    // Only the entry is dictionary-only; both speakers stay available because
     // a sentence can be read aloud just as well as a word.
-    await expect(page.locator('#ai-translator-input-phonetic')).toBeHidden();
+    await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
     await expect(page.locator('#ai-translator-input-speak')).toBeVisible();
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
@@ -115,60 +116,6 @@ test('input translation shows phonetic for words and read-aloud for anything typ
 });
 
 /**
- * The stylesheet a hostile host page serves.
- *
- * Every rule here targets a bare tag, because that is the whole mechanism: our
- * panels are `div`s and `button`s and `label`s inside the page's own document,
- * so a page rule with no class in it matches them. `div { opacity: .8 }` is
- * real — example.com ships it — and the rest are the same shape, drawn from
- * what page CSS routinely does to bare tags.
- *
- * Three separate defects came out of this one mechanism before it was fixed at
- * the boundary: the box model overflowing the textarea past the modal, the
- * stacking context the opacity built around the dialog header (which sealed
- * the language menu behind the textarea, so the picker looked decorative), and
- * the compounded opacity that let page text show through the panel.
- *
- * The `.host-kit button` rule is the fourth, and it is the shape that matters
- * most in practice. A theme does not style `button` from a bare tag; it styles
- * it from a class on `<body>`, which weighs (0,1,1) — one type selector more
- * than the single-class rules our own controls were written with. This is
- * Elementor's kit rule copied off azulle.com, where it turned the float menu,
- * the popup, the input dialog and the progress toast into stacks of lime pills
- * all at once.
- *
- * Its `:hover`/`:focus` twin is the fifth, and it is heavier still — a state is
- * a pseudo-class, so (0,2,1). It takes whatever the control's own hover rule
- * does not restate, which on the first fix was the border and the colour: the
- * float menu drew a near-black box around the item under the pointer and turned
- * its label white, on a white menu. Both rules are the real values off that
- * site, so the fixture fails the way the site did.
- */
-const HOSTILE_PAGE_CSS = `
-  div { opacity: 0.8; box-sizing: content-box; filter: saturate(0.4); }
-  span { opacity: 0.8; }
-  button { text-transform: uppercase; font-family: monospace; }
-  textarea { box-sizing: content-box; font-family: monospace; transform: translateX(30px); }
-  label { text-transform: uppercase; letter-spacing: 4px; }
-  .host-kit button {
-    background-color: rgb(195, 250, 125);
-    border: 1px solid rgb(195, 250, 125);
-    border-radius: 100px;
-    padding: 14px 30px;
-    font: 600 15.75px monospace;
-  }
-  .host-kit button:hover,
-  .host-kit button:focus {
-    background-color: rgb(0, 2, 22);
-    color: rgb(255, 255, 255);
-    border: 1px solid rgb(0, 2, 22);
-  }
-  svg { fill: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; }
-  path { stroke: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; stroke-linejoin: bevel; }
-  .host-kit button:hover svg { fill: rgb(255, 0, 0); stroke-width: 4px; }
-`;
-
-/**
  * The inherited half, injected once the dialog is up rather than served with
  * the page.
  *
@@ -191,8 +138,8 @@ const HOSTILE_INHERITED_CSS = `
 
 /**
  * A backend that reports which target language the request asked for, plus a
- * page to run it on. The page serves HOSTILE_PAGE_CSS — see above for why that
- * is the point of the fixture rather than incidental to it.
+ * page to run it on. The page serves HOSTILE_PAGE_CSS — see test/e2e/helpers.js
+ * for why that is the point of the fixture rather than incidental to it.
  */
 async function startTargetLangFixture() {
   const LANGUAGE_NAMES = {
@@ -218,9 +165,14 @@ async function startTargetLangFixture() {
       // languageNames in background/background.js.
       const asked = Object.entries(LANGUAGE_NAMES)
         .find(([, name]) => systemPrompt.includes(name));
+      const translation = `[${asked ? asked[0] : 'unknown'}] ${text}`;
+      // A short phrase is a dictionary lookup, and that answer is an entry.
+      const content = systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)
+        ? JSON.stringify({ translation })
+        : translation;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        choices: [{ message: { content: `[${asked ? asked[0] : 'unknown'}] ${text}` } }]
+        choices: [{ message: { content } }]
       }));
     });
   });

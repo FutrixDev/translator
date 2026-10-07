@@ -14,6 +14,7 @@
   const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const speech = ctx.speech;
+  const DictEntry = globalThis.DictEntry;
 
   // The dialog is a scratchpad: you paste something in and want it in a
   // particular language *now*. Reading the target straight off the settings
@@ -92,17 +93,6 @@
     });
   }
 
-  function isInputDictionaryText(text) {
-    if (!text) return false;
-    const trimmed = text.trim();
-    if (!trimmed) return false;
-    if (/[\r\n\t]/.test(trimmed)) return false;
-    if (trimmed.length > 80) return false;
-    if (/[=+\-*/^<>]/.test(trimmed)) return false;
-    const segments = trimmed.split(/\s+/).filter(Boolean);
-    return segments.length >= 1 && segments.length <= 4;
-  }
-
   function showInputTranslateDialog() {
     if (state.inputDialog) {
       hideInputDialog();
@@ -147,7 +137,6 @@
             <div class="ai-translator-label-row">
               <label class="ai-translator-label" for="ai-translator-input-text">${t('inputText')}</label>
               <div class="ai-translator-label-tools">
-                <span class="ai-translator-input-phonetic" id="ai-translator-input-phonetic" hidden></span>
                 <button class="ai-translator-icon-btn ai-translator-input-speak" id="ai-translator-input-speak" type="button" aria-label="${t('pronounceOriginal')}" hidden>
                   ${speech.SPEAKER_ICON}
                 </button>
@@ -171,6 +160,7 @@
               </div>
             </div>
             <div class="ai-translator-input-result" id="ai-translator-result-text"></div>
+            <div class="ai-translator-dict-entry" id="ai-translator-input-dict" hidden></div>
           </div>
         </div>
         <div class="ai-translator-input-footer">
@@ -195,7 +185,7 @@
     const textarea = dialog.querySelector('#ai-translator-input-text');
     const resultSection = dialog.querySelector('#ai-translator-result-section');
     const resultText = dialog.querySelector('#ai-translator-result-text');
-    const phoneticEl = dialog.querySelector('#ai-translator-input-phonetic');
+    const dictEl = dialog.querySelector('#ai-translator-input-dict');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
 
@@ -243,7 +233,7 @@
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
       showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
-      setPhonetic('');
+      showEntry(null, text);
       showResultSpeak(false);
       copyBtn.hidden = true;
 
@@ -253,12 +243,13 @@
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
+        const mode = DictEntry.isLookup(text) ? 'word' : 'text';
         const response = await ctx.requestTranslation({
           type: 'TRANSLATE',
           feature: 'input',
           text: text,
           targetLang: targetLang,
-          mode: isInputDictionaryText(text) ? 'word' : 'text',
+          mode,
           // 这段文字是用户敲进来的，跟当前页面没有任何关系。不声明的话，内置
           // 引擎会拿页面语言当源语言，于是在英文页面上输入“动画”翻成英文就变成
           // en→en，被同语言短路原样退回。
@@ -270,27 +261,28 @@
           return;
         }
 
+        // Only an AI lookup carries an entry (DictEntry.entryFor); the builtin
+        // engine and sentence translations leave the dictionary blocks empty.
+        const entry = DictEntry.entryFor(mode, response);
         showResult({ text: response.translation }, targetLang);
-        // The phonetic belongs to the word that was typed, not to its
-        // translation, so it sits beside the input — matching where the
-        // selection popup puts it.
-        setPhonetic(response.isWord === true ? (response.phonetic || '') : '');
+        showEntry(entry, text);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
         const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
-        setPhonetic('');
+        showEntry(null, text);
         showResultSpeak(false);
         copyBtn.hidden = true;
       }
     };
 
-    function setPhonetic(value) {
-      if (!phoneticEl) return;
-      phoneticEl.textContent = value;
-      phoneticEl.hidden = !value;
+    // The entry under the translation: phonetics (speaking the typed word),
+    // senses, examples and word forms, drawn by the shared renderer the
+    // selection card uses too. null empties and hides it.
+    function showEntry(entry, word) {
+      DictEntry.render(dictEl, entry, { word, t, speech });
     }
 
     translateBtn.addEventListener('click', async () => {

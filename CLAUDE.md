@@ -116,7 +116,7 @@ file directly.
   document, so every page rule on a bare tag matches them too — example.com
   ships `div { opacity: .8 }`, and every page builder ships
   `.kit button { … }` plus a heavier `.kit button:hover` twin. One scoped reset
-  at the top of `content/css/popup.css` — the first of the thirteen stylesheets
+  at the top of `content/css/popup.css` — the first of the fourteen stylesheets
   the manifest injects, and that array's order *is* the cascade order — is the
   boundary, and specificity is a four-step band with no `!important` in it:
 
@@ -313,6 +313,28 @@ only "All sites" is offered) until one has arrived. Nothing is validated on the
 card: the worker rejects an over-long entry with the same `Glossary.LIMITS`,
 and the form stays open with that message. Saving never retranslates. Journeys
 in `test/e2e/glossary-selection.spec.js`.
+
+**Dictionary entry** (`shared/dict-entry.js`, global `DictEntry`, loaded by
+both the content scripts and the service worker) owns the entry end to end:
+the shape (translation, phonetics, senses, examples, forms), the prompt rules
+(`OUTPUT_RULES`, appended after any user, preset or default word prompt and
+ending in `FORMAT_OVERRIDE`, so a preset's "reply with the translation only"
+never wins — `test/unit/dict-word-prompt.test.mjs`), the parser
+(`fromModelText`) and the one renderer (`render`) the input box and the
+selection card both call. Neither surface builds entry markup or decides what
+a lookup is on its own: both send `mode: 'word'` exactly when
+`DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
+(`. ! ? 。！？；; ，, ：:`), and 1–3 words in a spaced script or 1–4 characters
+in Han, kana, hangul, Thai and the like (D-473). The parser fails hard, as
+`invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
+(after `<think>…</think>` is stripped), the JSON is not an object, or the
+translation is missing or empty; a wrong-typed or overlong optional field or
+list item is dropped, never guessed at (D-472). The entry is drawn only for a
+reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
+translation alone. `content/css/dict-entry.css` states colour, size, display
+and padding on every element, because the containment reset leaves those to
+our own rules and the entry is made of bare spans and divs. Journeys C1–C8 in
+`test/e2e/dictionary-entry.spec.js`.
 
 ### Translation Engine
 

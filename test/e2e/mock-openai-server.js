@@ -13,6 +13,10 @@
  * source, and shouldSkipTranslation() then silently drops it as "already translated".
  */
 const { startMockServer } = require('./mock-server');
+// A word lookup asks for a dictionary entry (shared/dict-entry.js), and the
+// service worker rejects anything that is not one. The mock recognises that
+// request by the rules' first line, the same constant the prompt is built from.
+require('../../shared/dict-entry.js');
 
 const PROMPT_DELIMITER_RE = /segments are separated by "([^"]+)"/;
 
@@ -75,10 +79,16 @@ function pngDataUrlSize(dataUrl) {
  * @param {?{count: number, retryAfter: (number|string)}} [options.rateLimit]
  *   前 count 次请求回 429，带 `Retry-After: retryAfter`（秒数或 HTTP 日期），之后
  *   照常作答。在其余失败选项之前判，命中就不再往下走。
+ * @param {(text: string) => (object|string)} [options.dictEntry]
+ *   A word lookup (the system prompt carries DictEntry.PROMPT_MARK) is answered
+ *   with this entry, as JSON; a string is sent as the reply as it is (an answer
+ *   that is not an entry). The default is a translation-only entry,
+ *   `{ translation: '[T] ' + text }`, so a lookup reads like every other reply.
  */
 async function startMockOpenAIServer({
   failRequests = 0, failAfter = null, failWhen = null, status = null, delayMs = 0,
-  failStatus = 500, rateLimit = null
+  failStatus = 500, rateLimit = null,
+  dictEntry = (text) => ({ translation: `[T] ${text}` })
 } = {}) {
   let remainingFailures = failRequests;
   let remainingRateLimited = rateLimit ? rateLimit.count : 0;
@@ -223,7 +233,10 @@ async function startMockOpenAIServer({
       served += 1;
 
       const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
-      if (delimiter) {
+      if (systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)) {
+        const answer = dictEntry(content);
+        content = typeof answer === 'string' ? answer : JSON.stringify(answer);
+      } else if (delimiter) {
         const segments = content.split(delimiter);
         fastBatchRequests.push({ delimiter, segmentCount: segments.length });
         content = segments

@@ -156,7 +156,7 @@ const top = frameRealm({
     if (message.type === 'GLOSSARY_FOR_HOST') return { entries: [TORT] };
     sentToAI.push(clone(message));
     if (message.type === 'TRANSLATE_BATCH_FAST') return { translations: message.texts.map((text) => `AI:${text}`) };
-    return { translation: `AI:${message.text}`, phonetic: '', isWord: false };
+    return { translation: `AI:${message.text}` };
   },
 });
 top.ctx.frames.setup();
