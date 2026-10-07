@@ -13,6 +13,19 @@
    「这一页要翻译吗？」那条询问条上 —— 它在这一版被删掉了：没上任何名单的网站
    现在什么都不做。照抄 1.4.0 的答案，审核员按第 2、3 步走会找不到那条询问条。
 
+**2026-10-07 第一次提交被拒（Yellow Argon，关键词堆砌）。** 审核引用的是英文
+详细说明里两串名字：AI 服务商一串（OpenAI (GPT)、Claude、Gemini、DeepSeek、
+OpenRouter、Ollama、LM Studio）和自动翻译的网站一串（arXiv … Reuters）。第二节
+已改写成不列名单的说法，中文版同步改，私信那句的五个社交网站名也一并去掉；
+更新说明里的 Ollama、LM Studio 也换成「本地运行的模型」。简短说明
+（`appDescription`，十种语言）末尾同样列着 OpenAI、Claude、Gemini（部分语言
+还有 DeepSeek），审核没点名但是同一类问题，一并改成「你自己的 AI 模型」。
+**以后写商店说明：不要成串罗列品牌、服务商或网站名**；要说明支持面，就说类别
+（「你自己的 AI 模型」「常用论文与新闻网站」），具体名单留在扩展的设置页里。
+只有扩展确实专门适配、且说明离不开的名字（如 YouTube 字幕）才写，一处一个。
+简短说明在 zip 里，所以重新提交要**重传 zip**（版本仍是 1.5.0），并把后台「说明」
+整段换成第二节。
+
 ## 一、包信息
 
 | 项 | 值 |
@@ -43,8 +56,8 @@
 
 | 语言 | 简短说明 | 字符数 |
 | --- | --- | --- |
-| zh_CN | 免费的原文/译文双语对照网页翻译：PDF 翻译保留排版，YouTube 等视频双语字幕，EPUB/Word 电子书与文档，漫画翻译，数学公式不乱；支持 OpenAI、Claude、Gemini、DeepSeek 等 AI 大模型。 | 115 |
-| en | Free bilingual web page translation. PDFs keep their layout, dual YouTube subtitles, EPUB/Word, comics. OpenAI, Claude, Gemini. | 127 |
+| zh_CN | 免费的原文/译文双语对照网页翻译：PDF 翻译保留排版，YouTube 等视频双语字幕，EPUB/Word 电子书与文档，漫画翻译，数学公式不乱；也可接入你自己的 AI 大模型。 | 89 |
+| en | Free bilingual web page translation. PDFs keep their layout, dual YouTube subtitles, EPUB/Word, comics. Bring your own AI model. | 128 |
 
 其余八种语言（zh_TW、ja、ko、de、es、fr、pt_BR、ru）同一句式，见各自的
 `messages.json`。
@@ -58,9 +71,9 @@
 ### 中文
 
 > 【叭叭翻译】免费的原文/译文双语对照网页翻译插件。PDF 翻译保留原版排版，
-> YouTube 等视频双语字幕，EPUB、Word、MOBI 电子书与文档翻译，漫画翻译；
-> 支持 OpenAI (GPT)、Claude、Gemini、DeepSeek、OpenRouter 等 AI 大模型，
-> 也支持 Ollama、LM Studio 本地模型和 Chrome 自带的端上离线翻译。
+> YouTube 等视频双语字幕，EPUB、Word、MOBI 电子书与文档翻译，漫画翻译。
+> 默认用 Chrome 自带的端上离线翻译，免费；也可以接入你自己的 AI 大模型，
+> 云端或本地运行的都行。
 >
 > ■ 双语对照网页翻译
 > · 译文排在原文下面，一段对一段，原文的格式、链接、图片都不动；一键切到
@@ -72,11 +85,10 @@
 > · 76 种目标语言，阿拉伯语、希伯来语等从右往左排的语言版式正确。
 >
 > ■ 自动翻译
-> · arXiv、Hugging Face Papers、Google 学术、Reddit、X、Hacker News、Medium、
-> Stack Overflow、纽约时报、BBC、路透社等常用的论文、社区和新闻网站，打开就是
-> 译文；别的网站一键加入「总是翻译」。
+> · 内置一份常用论文、社区和新闻网站的名单，打开就是译文；完整名单在设置页
+> 里，每个网站都能单独关掉；别的网站一键加入「总是翻译」。
 > · 已经是你母语的段落自动跳过，夹着英文术语也认得出来。
-> · X、Facebook、Instagram、Reddit、Bluesky 的私信页面不会自动翻译。
+> · 社交网站的私信页面不会自动翻译。
 > · 每条规则都在设置页里列着，随时删除；Alt+A 暂停当前页。
 >
 > ■ PDF 翻译（保留排版）
@@ -119,9 +131,8 @@
 > Blab Translation — free bilingual web page translation, with the original and
 > the translation side by side. PDF translation that keeps the layout, dual
 > subtitles on YouTube and other video sites, EPUB, Word and MOBI documents,
-> and comics. Works with OpenAI (GPT), Claude, Gemini, DeepSeek, OpenRouter,
-> local models through Ollama or LM Studio, and Chrome's own on-device
-> translator.
+> and comics. Free by default with Chrome's own on-device translator, or
+> connect your own AI model, in the cloud or running on your computer.
 >
 > ■ Bilingual web pages
 > · Each translation sits under its paragraph; the page's formatting, links and
@@ -136,14 +147,12 @@
 > laid out correctly.
 >
 > ■ Automatic translation
-> · arXiv, Hugging Face Papers, Google Scholar, Reddit, X, Hacker News, Medium,
-> Stack Overflow, The New York Times, BBC, Reuters and other paper, community
-> and news sites translate on open. Add any other site to "Always translate"
-> in one click.
+> · A built-in list of popular paper, community and news sites translates on
+> open; the full list is in Settings, each site with its own switch. Add any
+> other site to "Always translate" in one click.
 > · Paragraphs already in your language are skipped, even when they are full
 > of foreign terms.
-> · Private messages on X, Facebook, Instagram, Reddit and Bluesky are never
-> translated automatically.
+> · Private messages on social sites are never translated automatically.
 > · Every rule is listed in Settings and can be deleted; Alt+A pauses the page.
 >
 > ■ PDF translation that keeps the layout
@@ -215,7 +224,7 @@
 > - 已是母语的段落按句判断，夹着外文名词也会跳过。
 > - 视频：默认帮你打开视频自带字幕；播放器里一键开关译文字幕。
 > - Alt+M 翻译当前 PDF 或漫画；未登录时先登录，回来自动继续。
-> - Ollama、LM Studio 等本地模型不用填 API Key；接口错误按界面语言提示。
+> - 本地运行的模型不用填 API Key；接口错误按界面语言提示。
 > - 首次安装有欢迎页；设置可导出导入。
 > - 新的弹窗与悬浮球外观；全屏视频时悬浮球自动让开。
 
@@ -247,7 +256,7 @@
 >   player turns the translated subtitles off and on.
 > - Alt+M translates the PDF or comic on screen; signed out, it signs you in and
 >   carries on.
-> - Local models (Ollama, LM Studio) need no API key; API errors are shown in
+> - Models running on your computer need no API key; API errors are shown in
 >   your interface language.
 > - A welcome page on first install; settings export and import.
 > - A new look for the popup and the float ball, which steps aside for
