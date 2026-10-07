@@ -16,6 +16,7 @@ const path = require('node:path');
 const { test, expect } = require('./fixtures');
 const {
   connectExtension,
+  evaluateInContentScript,
   setExtensionSettings,
   getSyncSettings,
   stubBuiltinTranslator,
@@ -255,10 +256,14 @@ test.describe('J2 Blab Translation without a plan', () => {
       expect(await getSyncSettings(context, ['translationEngine'])).toEqual({ translationEngine: 'blab' });
 
       await openPage(page);
+      // A working built-in engine on the page: an error that fell back to it
+      // would put [B] text on the page, which expectPassStopped rules out.
+      await stubBuiltinTranslator(page);
       await triggerPageTranslation(page);
       await expectPassStopped(page, en('blabPlanRequired'));
       expect(blab.state.completeRequests).toHaveLength(1);
       expect(ai.sentTexts).toHaveLength(0);
+      expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
       await walkShot(page, 'J2-3-page-plan-required');
     } finally {
       await close();
@@ -271,6 +276,7 @@ test.describe('J3 Blab Translation over the daily allowance', () => {
     const { blab, ai, close } = await setUp(context, page, { mode: 'daily_limit' });
     try {
       await openPage(page);
+      await stubBuiltinTranslator(page);
       await triggerPageTranslation(page);
       const [before, after] = en('blabDailyLimit').split('{time}');
       await expectPassStopped(page, before);
@@ -279,6 +285,7 @@ test.describe('J3 Blab Translation over the daily allowance', () => {
       expect(time.trim()).toMatch(/\d/);
       expect(blab.state.completeRequests).toHaveLength(1);
       expect(ai.sentTexts).toHaveLength(0);
+      expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
       await walkShot(page, 'J3-page-daily-limit');
     } finally {
       await close();
