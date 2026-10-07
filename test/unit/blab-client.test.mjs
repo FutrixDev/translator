@@ -4,30 +4,60 @@
 //
 // fetch is a stub that honours its signal; chrome.storage.local is in memory
 // and holds the account's token and the service address, which is all
-// comic-client's apiFetch reads.
+// comic-client's apiFetch reads. chrome.storage.session, also in memory, holds
+// the account-entry click (D-499) and outlives a module instance the way the
+// browser's session storage outlives a recycled service worker.
 //
 // An account failure is remembered for the token it was given for (D-490 N1),
 // so every signIn() below hands out a new token: a case starts from an account
-// the client has not been refused for yet.
+// the client has not been refused for yet, in a fresh browser session.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const store = {};
+const session = {};
+
+// A read held back by holdNextRead: it reads the stored values when it is
+// asked, as a real read would, and hands them back only when the test opens it.
+const heldReads = { local: null, session: null };
+
+function memoryArea(data, name) {
+  return {
+    get: async (defaults) => {
+      const out = { ...defaults };
+      for (const key of Object.keys(defaults)) if (key in data) out[key] = data[key];
+      const gate = heldReads[name];
+      if (gate) {
+        heldReads[name] = null;
+        gate.reached = true;
+        await gate.opened;
+      }
+      return out;
+    },
+    set: async (values) => { Object.assign(data, values); },
+    remove: async (keys) => { for (const key of [].concat(keys)) delete data[key]; },
+  };
+}
+
+/** Hold back the next chrome.storage[area].get; `open()` lets it answer (or disarms it if never reached). */
+function holdNextRead(area) {
+  let open;
+  const gate = { reached: false, opened: new Promise((resolve) => { open = resolve; }) };
+  heldReads[area] = gate;
+  return {
+    reached: () => gate.reached,
+    open: () => {
+      if (heldReads[area] === gate) heldReads[area] = null;
+      open();
+    },
+  };
+}
+
 globalThis.chrome = {
   runtime: { getPlatformInfo: async () => ({ os: 'mac' }) },
-  storage: {
-    local: {
-      get: async (defaults) => {
-        const out = { ...defaults };
-        for (const key of Object.keys(defaults)) if (key in store) out[key] = store[key];
-        return out;
-      },
-      set: async (values) => { Object.assign(store, values); },
-      remove: async (keys) => { for (const key of [].concat(keys)) delete store[key]; },
-    },
-  },
+  storage: { local: memoryArea(store, 'local'), session: memoryArea(session, 'session') },
 };
 
 await import('../../shared/lang-tags.js');
@@ -40,7 +70,7 @@ await import('../../shared/ai-profiles.js');
 await import('../../shared/engines.js');
 const { callModel, MAX_ATTEMPTS } = await import('../../background/model-client.js');
 const {
-  blabRequest, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction,
+  blabRequest, sendBlab, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction,
 } = await import('../../background/blab-client.js');
 
 const BASE = 'http://blab.test';
@@ -52,6 +82,7 @@ function signIn() {
   store.comicApiBase = BASE;
   store.comicToken = `tok-${++tokens}`;
   delete store.comicAccountCache;
+  for (const key of Object.keys(session)) delete session[key];
 }
 
 function abortError() {
@@ -449,7 +480,7 @@ test('F3: after a click, requests nobody made ask billing/me at most every 10 s 
   signIn();
   await withService(service(false, () => PLAN_REQUIRED()), async (calls) => {
     await failureOf(call(request));
-    noteAccountAction();
+    await noteAccountAction();
     await later(1_000, () => refreshAfterAccountAction({ explicit: false }));
     assert.equal(isMe(calls), 1);
     for (const ms of [2_000, 5_000, 10_900]) await later(ms, () => refreshAfterAccountAction({ explicit: false }));
@@ -459,10 +490,16 @@ test('F3: after a click, requests nobody made ask billing/me at most every 10 s 
     // Still no plan: the latch holds and nothing goes to the service.
     await failureOf(later(11_200, () => call(request)));
     assert.equal(calls.length - isMe(calls), 1);
-    // Leave the click used up for the next case.
-    await later(11_300, () => refreshAfterAccountAction({ explicit: true }));
   });
 });
+
+/** The service: billing/me says `available()`; /api/blab/complete translates once it is, refuses before. */
+function paywall(available) {
+  return (init, n, url) => {
+    if (url === ME) return json({ blabTranslation: { available: available() } });
+    return available() ? json({ text: 'ok' }) : PLAN_REQUIRED();
+  };
+}
 
 test('F3: after a click, the next request a person makes asks billing/me first and a plan bought since lets go', async () => {
   signIn();
@@ -471,41 +508,61 @@ test('F3: after a click, the next request a person makes asks billing/me first a
     ? json({ blabTranslation: { available } })
     : (n === 1 ? PLAN_REQUIRED() : json({ text: 'ok' }))), async (calls) => {
     await failureOf(call(request));
-    noteAccountAction();
+    await noteAccountAction();
     available = true;
     // A moment after the refusal, as a click and a new request always are.
     await later(5, () => refreshAfterAccountAction({ explicit: true }));
     assert.equal(isMe(calls), 1);
     assert.deepEqual(await call(request), { text: 'ok' });
   });
-  // One ask per click: the second explicit request does not ask again.
+  // The click stays until billing/me says Blab is available (D-499): every
+  // request a person makes before the plan is bought asks again, the one after
+  // uses the click up, and a refusal after that asks nothing.
   signIn();
   available = false;
-  await withService((init, n, url) => (url === ME ? json({ blabTranslation: { available } }) : PLAN_REQUIRED()), async (calls) => {
+  await withService(paywall(() => available), async (calls) => {
     await failureOf(call(request));
-    noteAccountAction();
-    await refreshAfterAccountAction({ explicit: true });
-    await refreshAfterAccountAction({ explicit: true });
-    assert.equal(isMe(calls), 1);
+    await noteAccountAction();
+    await later(5, () => refreshAfterAccountAction({ explicit: true }));
+    await later(10, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 2, 'not paid yet: each request a person makes asks');
+    available = true;
+    await later(15, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 3);
+    assert.deepEqual(await later(20, () => call(request)), { text: 'ok' });
+    // The plan lapses again: the refusal is remembered, and with the click used
+    // up the next request asks nothing.
+    available = false;
+    await failureOf(later(25, () => call(request)));
+    await later(30, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 3, 'the click was used up');
   });
 });
 
-test('F3: a billing/me failure is the request\'s failure, worded like the service\'s own', async () => {
+test('F3: a billing/me failure is the request\'s failure, worded like the service\'s own, and leaves the click for the next one (journey 3)', async () => {
   signIn();
-  await withService((init, n, url) => (url === ME
-    ? json({ error: 'unavailable' }, 503)
-    : PLAN_REQUIRED()), async (calls) => {
+  let serviceDown = true;
+  await withService((init, n, url) => {
+    if (url === ME) return serviceDown ? json({ error: 'unavailable' }, 503) : json({ blabTranslation: { available: true } });
+    return serviceDown ? PLAN_REQUIRED() : json({ text: 'ok' });
+  }, async (calls) => {
     await failureOf(call(request));
-    noteAccountAction();
-    const error = await failureOf(refreshAfterAccountAction({ explicit: true }));
+    await noteAccountAction();
+    const error = await failureOf(later(5, () => refreshAfterAccountAction({ explicit: true })));
     assert.equal(error.apiFailure.status, 503);
     assert.equal(error.apiFailure.endpoint, ME);
     assert.equal(isMe(calls), 1);
+    // The user had paid; billing/me answers again.
+    serviceDown = false;
+    await later(10, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 2, 'the failed ask did not use the click up');
+    assert.deepEqual(await later(15, () => call(request)), { text: 'ok' });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Who uses up the click (D-498 F3-H) and one billing/me for many batches (N-2)
+// The click survives what the latch does not (D-499), and one billing/me for
+// many batches (N-2)
 // ---------------------------------------------------------------------------
 
 /** A billing/me reply held back until `answer()`: what the batches see while it is on its way. */
@@ -513,22 +570,31 @@ function heldBackMe() {
   const pending = [];
   return {
     reply: (body) => new Promise((resolve) => { pending.push(() => resolve(json(body()))); }),
-    started: () => pending.length,
+    started: () => pending.length > 0,
     answer: () => { for (const resolve of pending.splice(0)) resolve(); },
   };
 }
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Wait, a macrotask at a time, until `ready()`. A single-flight regression that
+ * never gets there fails here instead of leaving `npm run test:unit` hanging.
+ */
+async function until(ready, what) {
+  for (let i = 0; !ready(); i++) {
+    if (i >= 200) throw new Error(`gave up waiting for ${what}`);
+    await tick();
+  }
+}
+
 test('F3-H: the latch runs out, a request nobody made is refused anew; the person\'s next request still asks billing/me and goes through', async () => {
   signIn();
   let available = false;
-  await withService((init, n, url) => (url === ME
-    ? json({ blabTranslation: { available } })
-    : (available ? json({ text: 'ok' }) : PLAN_REQUIRED())), async (calls) => {
+  await withService(paywall(() => available), async (calls) => {
     await failureOf(call(request));
     // The user clicks Subscribe and stays on the pricing page past the latch.
-    noteAccountAction();
+    await noteAccountAction();
     await later(61_000, async () => {
       // An automatic pass, then its refusal: a new latch, given after the click.
       await refreshAfterAccountAction({ explicit: false });
@@ -543,6 +609,59 @@ test('F3-H: the latch runs out, a request nobody made is refused anew; the perso
   });
 });
 
+test('D-499: a click with nothing held, the person\'s request refused by the service, then paid: the next one inside the minute asks billing/me (journey 2)', async () => {
+  signIn();
+  let available = false;
+  await withService(paywall(() => available), async (calls) => {
+    await noteAccountAction();
+    // Nothing is held: the person's request goes out as it is, and is refused.
+    await later(5, async () => {
+      await refreshAfterAccountAction({ explicit: true });
+      await failureOf(call(request));
+    });
+    assert.equal(isMe(calls), 0);
+    assert.equal(calls.length, 1);
+    available = true;
+    await later(10, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 1, 'finding nothing held did not use the click up');
+    assert.deepEqual(await later(15, () => call(request)), { text: 'ok' });
+  });
+});
+
+let restarts = 0;
+
+test('D-499: the click outlives the service worker and the latch does not; after paying, the person\'s request asks billing/me (journey 1)', async () => {
+  signIn();
+  let available = false;
+  await withService(paywall(() => available), async (calls) => {
+    const sent = () => calls.length - isMe(calls);
+    await failureOf(call(request));
+    await noteAccountAction();
+    // Chrome recycles the worker while the user is on the pricing page: a new
+    // instance of the module, over the same session storage.
+    const worker = await import(`../../background/blab-client.js?restart=${++restarts}`);
+    assert.notEqual(worker.sendBlab, sendBlab, 'a new module instance');
+    const send = () => worker.sendBlab(worker.blabRequest(request), new AbortController().signal);
+    await later(1_000, async () => {
+      // The automatic pass in the new worker: no latch there, so it is sent,
+      // refused anew and latched again.
+      await worker.refreshAfterAccountAction({ explicit: false });
+      await failureOf(send());
+    });
+    assert.equal(sent(), 2, 'the new worker held no latch: it sent');
+    assert.equal(isMe(calls), 0);
+    // The old instance still has its own latch in its memory: it sends nothing.
+    await failureOf(call(request));
+    assert.equal(sent(), 2);
+    // The user pays and translates.
+    available = true;
+    await later(1_010, () => worker.refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 1, 'the click outlived the worker');
+    assert.deepEqual(await later(1_020, send), { text: 'ok' });
+    assert.deepEqual(session, {}, 'billing/me said available: the click is used up');
+  });
+});
+
 test('N-2: batches sent together after a click share one billing/me, and every one goes through', async () => {
   signIn();
   let available = false;
@@ -551,7 +670,7 @@ test('N-2: batches sent together after a click share one billing/me, and every o
     ? me.reply(() => ({ blabTranslation: { available } }))
     : (available ? json({ text: 'ok' }) : PLAN_REQUIRED())), async (calls) => {
     await failureOf(call(request));
-    noteAccountAction();
+    await noteAccountAction();
     available = true;
     // A page pass: each batch is a person's request, refreshed before it is sent.
     const batch = async () => {
@@ -560,8 +679,8 @@ test('N-2: batches sent together after a click share one billing/me, and every o
     };
     await later(5, async () => {
       const first = Promise.all([batch(), batch(), batch(), batch()]);
-      while (!me.started()) await tick();
-      // One more arrives after the click was used up, while the answer is on its way.
+      await until(me.started, 'billing/me asked');
+      // One more arrives while the answer is on its way.
       const late = batch();
       await tick(5);
       me.answer();
@@ -582,24 +701,110 @@ test('N-2: a person\'s request that finds an automatic billing/me on its way wai
       : PLAN_REQUIRED()), async (calls) => {
       // Past every earlier case's 10 s spacing, so the automatic request may ask.
       await later(at, () => failureOf(call(request)));
-      noteAccountAction();
+      await noteAccountAction();
       await later(at + 10, async () => {
         const automatic = refreshAfterAccountAction({ explicit: false });
-        while (!me.started()) await tick();
+        await until(me.started, 'the automatic billing/me');
         const person = refreshAfterAccountAction({ explicit: true });
         available = paid;
         me.answer();
         await automatic;
         // Not paid: the latch still holds, and the person's request asks itself.
         if (!paid) {
-          while (!me.started()) await tick();
+          await until(me.started, 'the person\'s own billing/me');
           me.answer();
         }
         await person;
       });
       assert.equal(isMe(calls), paid ? 1 : 2, paid ? 'released: no second ask' : 'still held: asks again');
-      await later(at + 20, () => refreshAfterAccountAction({ explicit: true }));
-      assert.equal(isMe(calls), paid ? 1 : 2, 'the click is used up');
+      // Paid: the automatic ask found Blab available and used the click up, and
+      // nothing is held. Not paid: the click stays, and the next person asks again.
+      await later(at + 20, async () => {
+        const next = refreshAfterAccountAction({ explicit: true });
+        if (!paid) {
+          await until(me.started, 'the next person\'s billing/me');
+          me.answer();
+        }
+        await next;
+      });
+      assert.equal(isMe(calls), paid ? 1 : 3, paid ? 'the click is used up' : 'the click is still there');
     });
   }
+});
+
+test('N-2 (D-499): a request reading the latch or the click while another\'s billing/me starts waits for that one', async () => {
+  for (const reading of ['latch', 'click']) {
+    signIn();
+    let asks = 0;
+    const me = heldBackMe();
+    await withService((init, n, url) => {
+      if (url !== ME) return PLAN_REQUIRED();
+      // The first ask is held back; one asked after it (the regression) answers at once.
+      return ++asks === 1 ? me.reply(() => ({ blabTranslation: { available: false } }))
+        : json({ blabTranslation: { available: false } });
+    }, async (calls) => {
+      await failureOf(call(request));
+      await noteAccountAction();
+      await later(5, async () => {
+        // The latch read starts with the token; the click read is session storage.
+        const read = holdNextRead(reading === 'latch' ? 'local' : 'session');
+        const first = refreshAfterAccountAction({ explicit: true });
+        await until(read.reached, `the first request reading the ${reading}`);
+        const second = refreshAfterAccountAction({ explicit: true });
+        await until(me.started, 'the second request\'s billing/me');
+        // Were the first to go on past a latch read without looking, the click
+        // read would be its next stop: hold it there until the answer is in.
+        const click = reading === 'latch' ? holdNextRead('session') : null;
+        read.open();
+        await tick();
+        me.answer();
+        await second;
+        if (click) click.open();
+        await first;
+      });
+      assert.equal(isMe(calls), 1, `${reading}: one billing/me`);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The latch as each call found it (D-498): batches read it together
+// ---------------------------------------------------------------------------
+
+test('latch: a call letting go of the latch it found leaves one given meanwhile in place', async () => {
+  signIn();
+  await withFetch(PLAN_REQUIRED, async (calls) => {
+    await failureOf(call(request));
+    // Signed in again: the remembered refusal no longer holds.
+    signIn();
+    const tokenRead = holdNextRead('local');
+    const stale = dailyLimitHeld();
+    assert.equal(tokenRead.reached(), true, 'the first call found the old latch and is reading the token');
+    // Meanwhile a request lets the old latch go, is sent, refused: a new latch.
+    await failureOf(call(request));
+    assert.equal(calls.length, 2);
+    tokenRead.open();
+    assert.equal(await stale, false);
+    await failureOf(call(request));
+    assert.equal(calls.length, 2, 'the latch given meanwhile still refuses here');
+  });
+});
+
+test('latch: a call answers by the latch it found, not by what another call left meanwhile', async () => {
+  signIn();
+  const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+  await withFetch(() => dailyLimit(resetsAt), async (calls) => {
+    await failureOf(call(request));
+    // A request reads the latch, and the token as it is now.
+    const tokenRead = holdNextRead('local');
+    const pending = sendBlab(blabRequest(request), new AbortController().signal);
+    assert.equal(tokenRead.reached(), true);
+    // Then the user signs in again and another call lets the latch go.
+    signIn();
+    assert.equal(await dailyLimitHeld(), false);
+    tokenRead.open();
+    const error = await failureOf(pending);
+    assert.equal(error.apiFailure.latched, true, 'refused by the latch it found, for the token it read');
+    assert.equal(calls.length, 1);
+  });
 });

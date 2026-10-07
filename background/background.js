@@ -318,8 +318,10 @@ async function runBlabAccountAction(action) {
     throw new Error(`BLAB_ACCOUNT_ACTION: unknown action ${JSON.stringify(action)}`);
   }
   // The user went to fix the account: the next request asks billing/me again
-  // before the latch refuses it (D-497 F3, blab-client.js).
-  noteAccountAction();
+  // before the latch refuses it (D-497 F3, blab-client.js). Written to session
+  // storage before the entry opens (D-499), so the worker being recycled while
+  // the user is on the site does not lose it.
+  await noteAccountAction();
   if (action === 'signin') return comicClient.signIn();
   const base = await comicClient.getApiBase();
   const url = globalThis.Engines.blabPricingUrl(base);

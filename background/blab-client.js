@@ -48,21 +48,28 @@ const LATCH_TTL_MS = 60_000;
 
 // { failure, message, at, until, token } — the account failure the service gave
 // last, with the token it was given for. null: nothing remembered.
-// Only in the service worker's memory: when Chrome recycles the worker the
-// latch is gone, and at most one more wave of requests goes out before the
-// service answers the same failure again and it is remembered anew.
+// Only in the service worker's memory (D-499): when Chrome recycles the worker
+// the latch is gone, and at most one more wave of requests goes out before the
+// service answers the same failure again and it is remembered anew. That extra
+// wave is the direction R1-N2 accepted; a latch kept across a restart could
+// instead outlive the state it remembers.
 let latch = null;
 
 // After the user clicked an account entry ("Subscribe", "Sign in") the latch may
 // be holding a state the user has just fixed on the site, which nothing tells
-// this device about (D-497 F3). `actionPending` says so until a request a
-// person made has been through refreshAfterAccountAction after the click; only
-// such a request uses it up (D-498 F3-H). Requests nobody clicked (the
-// automatic pass, subtitles) never do — the click may be a minute old and the
-// latch they find a new one — and ask billing/me at most every
-// ACTION_REFRESH_MS meanwhile, not once per batch or line.
+// this device about (D-497 F3). The click is remembered in
+// chrome.storage.session under ACTION_KEY, with no time bound (D-499): the user
+// may take any time to pay, and Chrome recycles an idle worker within a minute,
+// which would forget a click kept in memory and leave a re-latch in place the
+// user has already paid for. It ends with the browser session, and is used up
+// in one place only: a forced billing/me that judges Blab available
+// (askAccount). Nothing else — no latch, a daily_limit latch, a request nobody
+// made, a billing/me that failed or still answers the account failure — lets
+// go of it. Requests nobody clicked (the automatic pass, subtitles) ask
+// billing/me at most every ACTION_REFRESH_MS; the spacing lives in memory, and
+// losing it costs at most one more ask.
+const ACTION_KEY = 'blabAccountAction';
 const ACTION_REFRESH_MS = 10_000;
-let actionPending = false;
 let lastActionRefreshAt = -Infinity;
 
 // The billing/me refresh on its way, { explicit, done }, or null. Every request
@@ -111,10 +118,7 @@ async function latchedFailure() {
   if (held.failure.blab !== 'daily_limit') {
     const cached = await getCachedAccount();
     const judgedSince = cached && cached.fetchedAt > held.at;
-    if (judgedSince && globalThis.Engines.blabAccess({ signedIn: true, ...cached.account })
-      === globalThis.Engines.BLAB_ACCESS.AVAILABLE) {
-      return release();
-    }
+    if (judgedSince && blabAvailable({ signedIn: true, ...cached.account })) return release();
   }
   return held;
 }
@@ -129,21 +133,34 @@ async function dailyLimitHeld() {
   return Boolean(held) && held.failure.blab === 'daily_limit';
 }
 
-/** The user clicked an account entry; see actionPending. */
-function noteAccountAction() {
-  actionPending = true;
+/** Whether billing/me's account (getAccount's shape) lets this device use Blab. */
+function blabAvailable(account) {
+  return globalThis.Engines.blabAccess(account) === globalThis.Engines.BLAB_ACCESS.AVAILABLE;
+}
+
+/**
+ * The user clicked an account entry; see ACTION_KEY. Awaited before the entry
+ * opens, so a request that follows it always finds the click.
+ */
+async function noteAccountAction() {
+  await chrome.storage.session.set({ [ACTION_KEY]: true });
+}
+
+async function actionPending() {
+  const stored = await chrome.storage.session.get({ [ACTION_KEY]: false });
+  return stored[ACTION_KEY] === true;
 }
 
 /**
  * Before a Blab request, after an account entry was clicked: while a
  * plan_required or unauthorized latch holds, ask billing/me (forced past its
  * 30 s cache). latchedFailure then releases the latch if the account is
- * available now. `explicit`: a person asked for this request. Only such a
- * request uses up the pending refresh — by asking billing/me while the latch
- * holds, or by finding nothing held; any other asks at most every
- * ACTION_REFRESH_MS and leaves the click pending. A billing/me failure is this
- * request's failure (and that of every request that waited for it), worded and
- * remembered like the service's own answer.
+ * available now. `explicit`: a person asked for this request, and asks every
+ * time it finds such a latch; any other asks at most every ACTION_REFRESH_MS.
+ * With no latch, or the daily_limit one, nothing is asked and the request goes
+ * as it is. A billing/me failure is this request's failure (and that of every
+ * request that waited for it), worded and remembered like the service's own
+ * answer, and leaves the click in place for the next request.
  */
 async function refreshAfterAccountAction({ explicit }) {
   if (refreshing) {
@@ -153,21 +170,18 @@ async function refreshAfterAccountAction({ explicit }) {
     // nobody's behalf: it looks again, and asks again if the latch still holds.
     if (shared.explicit || !explicit) return;
   }
-  if (!actionPending) return;
   const held = await latchedFailure();
   // Another request started the refresh while this one read the latch.
   if (refreshing) return refreshAfterAccountAction({ explicit });
-  if (!held) {
-    // Nothing is held: a person's request goes out as it is, and its own
-    // answer is the account's. One nobody made leaves the click pending.
-    if (explicit) actionPending = false;
-    return;
-  }
-  // The allowance comes back with the day, not with a click.
-  if (held.failure.blab === 'daily_limit') return;
+  // Nothing held: the request goes out as it is, and its own answer is the
+  // account's. The allowance comes back with the day, not with a click.
+  if (!held || held.failure.blab === 'daily_limit') return;
+  const clicked = await actionPending();
+  // ... or while this one read the click.
+  if (refreshing) return refreshAfterAccountAction({ explicit });
+  if (!clicked) return;
   const now = Date.now();
   if (!explicit && now - lastActionRefreshAt < ACTION_REFRESH_MS) return;
-  if (explicit) actionPending = false;
   lastActionRefreshAt = now;
   const flight = { explicit, done: askAccount() };
   refreshing = flight;
@@ -178,15 +192,20 @@ async function refreshAfterAccountAction({ explicit }) {
   }
 }
 
-/** billing/me, forced; its failure turned into the Blab failure and remembered. */
+/**
+ * billing/me, forced; its failure turned into the Blab failure and remembered.
+ * The one place the click is used up: the account it answers can use Blab.
+ */
 async function askAccount() {
+  let account;
   try {
-    await getAccount({ force: true });
+    account = await getAccount({ force: true });
   } catch (error) {
     const failure = blabFailure(error, `${await getApiBase()}/api/billing/me`);
     if (isBlabAccountFailure(failure.apiFailure)) await rememberAccountFailure(failure);
     throw failure;
   }
+  if (blabAvailable(account)) await chrome.storage.session.remove(ACTION_KEY);
 }
 
 /**

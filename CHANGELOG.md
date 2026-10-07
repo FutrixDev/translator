@@ -24,6 +24,10 @@
   device is signed out, the card or page shows that message (with the reset
   time for the daily allowance) and the page stops sending more paragraphs;
   nothing is retried and nothing falls back to another engine.
+- **Pay or sign in, then translate straight away.** After you click Subscribe
+  or Sign in from one of those errors, your next translation checks the
+  account again before it would be refused, however long you spent on the
+  site and even if Chrome restarted the extension's background meanwhile.
 - **Blab Translation answers like a model.** A single word gets a dictionary
   entry, the card shows "Blab Translation" as the engine, and the daily
   character cap you set for unattended AI spend does not count it: that cap is
