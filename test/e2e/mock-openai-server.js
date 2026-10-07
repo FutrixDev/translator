@@ -37,6 +37,38 @@ function pngDataUrlSize(dataUrl) {
 }
 
 /**
+ * What the mock model answers to one prompt — the protocol every model mock in
+ * this directory speaks (this server's chat completions, and Blab Translation's
+ * /api/blab/complete in mock-blab-service.js, which carries the same prompts):
+ *   - a word lookup (the system prompt carries DictEntry.PROMPT_MARK) gets
+ *     `dictEntry(user)`, as JSON, or as it is when that is a string;
+ *   - a fast batch (the system prompt names its delimiter) gets every non-empty
+ *     segment back as `[T] <segment>`, joined by the same delimiter;
+ *   - anything else gets `[T] <user>`.
+ * `fastBatch` is set for the second case, for specs that pin the protocol.
+ *
+ * @param {string} systemPrompt
+ * @param {string} user
+ * @param {(text: string) => (object|string)} dictEntry
+ * @returns {{text: string, fastBatch: ?{delimiter: string, segmentCount: number}}}
+ */
+function answerPrompt(systemPrompt, user, dictEntry) {
+  if (systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)) {
+    const answer = dictEntry(user);
+    return { text: typeof answer === 'string' ? answer : JSON.stringify(answer), fastBatch: null };
+  }
+  const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
+  if (delimiter) {
+    const segments = user.split(delimiter);
+    return {
+      text: segments.map((segment) => (segment ? `[T] ${segment}` : segment)).join(delimiter),
+      fastBatch: { delimiter, segmentCount: segments.length },
+    };
+  }
+  return { text: user ? `[T] ${user}` : user, fastBatch: null };
+}
+
+/**
  * @param {object} [options]
  * @param {number} [options.failRequests]
  *   让最前面这么多次翻译请求失败（状态码见 failStatus），之后恢复正常。
@@ -232,19 +264,9 @@ async function startMockOpenAIServer({
       }
       served += 1;
 
-      const delimiter = systemPrompt.match(PROMPT_DELIMITER_RE)?.[1];
-      if (systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)) {
-        const answer = dictEntry(content);
-        content = typeof answer === 'string' ? answer : JSON.stringify(answer);
-      } else if (delimiter) {
-        const segments = content.split(delimiter);
-        fastBatchRequests.push({ delimiter, segmentCount: segments.length });
-        content = segments
-          .map((segment) => (segment ? `[T] ${segment}` : segment))
-          .join(delimiter);
-      } else if (content) {
-        content = `[T] ${content}`;
-      }
+      const answer = answerPrompt(systemPrompt, content, dictEntry);
+      if (answer.fastBatch) fastBatchRequests.push(answer.fastBatch);
+      content = answer.text;
 
       const response = JSON.stringify({
         choices: [{ message: { content } }]
@@ -278,4 +300,4 @@ async function startMockOpenAIServer({
   };
 }
 
-module.exports = { startMockOpenAIServer };
+module.exports = { startMockOpenAIServer, answerPrompt };
