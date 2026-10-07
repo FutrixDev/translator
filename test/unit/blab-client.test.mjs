@@ -696,8 +696,10 @@ test('N-2: a person\'s request that finds an automatic billing/me on its way wai
     signIn();
     let available = false;
     const me = heldBackMe();
+    // Once paid, billing/me answers at once: an ask nobody expects then (a click
+    // left pending) shows in the count instead of waiting forever.
     await withService((init, n, url) => (url === ME
-      ? me.reply(() => ({ blabTranslation: { available } }))
+      ? (available ? json({ blabTranslation: { available } }) : me.reply(() => ({ blabTranslation: { available } })))
       : PLAN_REQUIRED()), async (calls) => {
       // Past every earlier case's 10 s spacing, so the automatic request may ask.
       await later(at, () => failureOf(call(request)));
@@ -717,8 +719,14 @@ test('N-2: a person\'s request that finds an automatic billing/me on its way wai
         await person;
       });
       assert.equal(isMe(calls), paid ? 1 : 2, paid ? 'released: no second ask' : 'still held: asks again');
-      // Paid: the automatic ask found Blab available and used the click up, and
-      // nothing is held. Not paid: the click stays, and the next person asks again.
+      // The service refuses the next request (the plan lapsed again, or was
+      // never bought): paid, nothing was held, so it is sent and latched anew;
+      // not paid, the latch still holds and it is refused here.
+      await later(at + 15, () => failureOf(call(request)));
+      assert.equal(calls.length - isMe(calls), paid ? 2 : 1);
+      // Paid: the automatic ask found Blab available and used the click up, so
+      // the next person meets the new latch without asking. Not paid: the click
+      // stays, and the next person asks again.
       await later(at + 20, async () => {
         const next = refreshAfterAccountAction({ explicit: true });
         if (!paid) {
@@ -765,6 +773,32 @@ test('N-2 (D-499): a request reading the latch or the click while another\'s bil
       assert.equal(isMe(calls), 1, `${reading}: one billing/me`);
     });
   }
+});
+
+test('D-500: a request nobody made whose billing/me finds Blab available uses the click up, as a person\'s would', async () => {
+  signIn();
+  let available = false;
+  await withService(paywall(() => available), async (calls) => {
+    const sent = () => calls.length - isMe(calls);
+    // Past every earlier case's 10 s spacing, so the automatic request may ask.
+    const at = 700_000;
+    await later(at, () => failureOf(call(request)));
+    await noteAccountAction();
+    // The user pays; the automatic pass is first to ask.
+    available = true;
+    await later(at + 10, () => refreshAfterAccountAction({ explicit: false }));
+    assert.equal(isMe(calls), 1);
+    assert.deepEqual(session, {}, 'billing/me said available: the click is used up, whoever asked');
+    assert.deepEqual(await later(at + 20, () => call(request)), { text: 'ok' });
+    // The plan lapses: the service refuses and the latch is back, with no click.
+    available = false;
+    await failureOf(later(at + 30, () => call(request)));
+    assert.equal(sent(), 3);
+    await later(at + 40, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 1, 'no click pending: the person\'s request asks nothing');
+    await failureOf(later(at + 50, () => call(request)));
+    assert.equal(sent(), 3, 'refused by the latch');
+  });
 });
 
 // ---------------------------------------------------------------------------
