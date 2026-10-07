@@ -8,8 +8,8 @@
  * here too, to prove it stays out of this entirely.
  */
 const { test, expect } = require('./fixtures');
-const { getServiceWorker } = require('./helpers');
-const { startMockServer } = require('./mock-server');
+const { connectExtension } = require('./helpers');
+const { startMockServer, serveExtConnect } = require('./mock-server');
 
 const RESETS_AT = '2099-02-01T00:00:00.000Z';
 const quota = (limit, remaining) => ({
@@ -48,22 +48,11 @@ async function startMockService({ connect = 'token', meDelayMs = 0, connectDelay
       res.end(JSON.stringify(body));
     };
 
-    // The sign-in tab. comic-client.js watches the tab's URL and settles as
-    // soon as it starts navigating to the redirect URI, so the fact that
-    // chromiumapp.org itself never loads is exactly the production behaviour.
     if (url.pathname === '/ext/connect') {
       state.connectRequests += 1;
-      const redirect = url.searchParams.get('redirect_uri');
-      const fragment = connect === 'token'
-        ? `#token=granted-token&expires_at=${Date.now() + 3600_000}`
-        : '#error=access_denied';
-      const bounce = () => {
-        res.writeHead(302, { location: `${redirect}${fragment}`, 'cache-control': 'no-store' });
-        res.end();
-      };
-      if (connectDelayMs) return setTimeout(bounce, connectDelayMs);
-      bounce();
-      return;
+      return serveExtConnect(url, res, {
+        answer: connect === 'token' ? 'token' : 'denied', delayMs: connectDelayMs,
+      });
     }
 
     if (url.pathname === '/api/billing/me') {
@@ -79,27 +68,6 @@ async function startMockService({ connect = 'token', meDelayMs = 0, connectDelay
   });
 
   return { base: origin, state, close };
-}
-
-/**
- * Point the extension at the mock and give it a token, as a real sign-in would.
- *
- * The feature ships off, so it is switched on here: these tests are about what
- * a user who wants comic translation sees, and the off state has its own tests.
- */
-async function connectExtension(context, base, { withToken = true, enabled = true } = {}) {
-  const worker = await getServiceWorker(context);
-  await worker.evaluate(async ({ base, withToken, enabled }) => {
-    await chrome.storage.sync.set({ enableComicTranslation: enabled });
-    await chrome.storage.local.remove(['comicToken', 'comicTokenExpiresAt', 'comicAccountCache']);
-    const values = { comicApiBase: base };
-    if (withToken) {
-      values.comicToken = 'test-token';
-      values.comicTokenExpiresAt = Date.now() + 3600_000;
-    }
-    await chrome.storage.local.set(values);
-  }, { base, withToken, enabled });
-  return worker;
 }
 
 test.describe('Comic account state', () => {
@@ -161,7 +129,7 @@ test.describe('Comic account state', () => {
   test('options page falls back to signed out when the token is gone', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      await connectExtension(context, service.base, { withToken: false });
+      await connectExtension(context, service.base, { signedIn: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
       await expect(page.locator('#comicSignedOut')).toBeVisible();
@@ -193,12 +161,18 @@ test.describe('Comic account state', () => {
 });
 
 test.describe('Comic translation switch', () => {
-  test('is off out of the box and hides the popup rows', async ({ context, page, extensionId }) => {
+  test('switched off, it hides the popup rows', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      await connectExtension(context, service.base, { enabled: false });
+      await connectExtension(context, service.base, { comic: false });
       await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
 
+      // Both rows start hidden in popup.html, so "hidden" proves nothing until
+      // the popup has read the switches. The PDF row is put on screen by the
+      // same storage read, started in the same tick as the comic one: once it
+      // shows (and a beat after), the comic gate has had its say.
+      await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
+      await page.waitForTimeout(500);
       await expect(page.locator('#comicTranslatePage')).toBeHidden();
       await expect(page.locator('#comicColorizePage')).toBeHidden();
     } finally {
@@ -209,7 +183,7 @@ test.describe('Comic translation switch', () => {
   test('writes immediately and gates the language select', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { enabled: false });
+      const worker = await connectExtension(context, service.base, { comic: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
       // The account panel loads even with both switches off: it is now the only
@@ -251,7 +225,7 @@ test.describe('Comic translation switch', () => {
   test('shows and hides the image context menu entry', async ({ context }) => {
     const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { enabled: false });
+      const worker = await connectExtension(context, service.base, { comic: false });
       // chrome.contextMenus has no read API, so the call the worker makes is the
       // only observable. Record it, then flip the setting the way options does.
       await worker.evaluate(() => {
@@ -297,7 +271,7 @@ test.describe('Advanced Settings login gate', () => {
   test('a failed sign-in snaps the switch back and stores nothing', async ({ context, page, extensionId }) => {
     const service = await startMockService({ connect: 'no-token' });
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      const worker = await connectExtension(context, service.base, { signedIn: false, comic: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedOut')).toBeVisible();
 
@@ -323,7 +297,7 @@ test.describe('Advanced Settings login gate', () => {
   test('picking a language never prompts for sign-in or moves the switch', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { enabled: false });
+      const worker = await connectExtension(context, service.base, { comic: false });
       await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true, pdfTargetLang: '' }));
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedIn')).toBeVisible();
@@ -348,7 +322,7 @@ test.describe('Advanced Settings login gate', () => {
   test('signed out, a synced-on switch goes off without a sign-in and back on only with one', async ({ context, page, extensionId }) => {
     const service = await startMockService({ connect: 'no-token' });
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false, enabled: true });
+      const worker = await connectExtension(context, service.base, { signedIn: false });
       await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: true }));
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedOut')).toBeVisible();
@@ -393,7 +367,7 @@ test.describe('Advanced Settings login gate', () => {
   test('turning a switch on before the account lands does not open a sign-in tab', async ({ context, page, extensionId }) => {
     const service = await startMockService({ meDelayMs: 2000 });
     try {
-      const worker = await connectExtension(context, service.base, { enabled: false });
+      const worker = await connectExtension(context, service.base, { comic: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       // A good token is in local storage; only the answer is outstanding.
       await expect(page.locator('#comicAccountLoading')).toBeVisible();
@@ -417,7 +391,7 @@ test.describe('Advanced Settings login gate', () => {
   test('a create is refused for a feature whose switch is off', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { enabled: false });
+      const worker = await connectExtension(context, service.base, { comic: false });
       await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: false }));
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
 
@@ -451,7 +425,7 @@ test.describe('Advanced Settings login gate', () => {
   test('a successful sign-in renders the account it was handed, without asking again', async ({ context, page, extensionId }) => {
     const service = await startMockService();
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      const worker = await connectExtension(context, service.base, { signedIn: false, comic: false });
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedOut')).toBeVisible();
       // The sign-out state cost nothing to determine: no token, no request.
@@ -476,7 +450,7 @@ test.describe('Advanced Settings login gate', () => {
   test('turning both switches on at once runs one sign-in, not two', async ({ context, page, extensionId }) => {
     const service = await startMockService({ connectDelayMs: 1500 });
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false, enabled: false });
+      const worker = await connectExtension(context, service.base, { signedIn: false, comic: false });
       await worker.evaluate(() => chrome.storage.sync.set({ enablePdfTranslation: false }));
       await page.goto(`chrome-extension://${extensionId}/options/options.html`);
       await expect(page.locator('#comicSignedOut')).toBeVisible();

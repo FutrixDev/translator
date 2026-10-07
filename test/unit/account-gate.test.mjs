@@ -3,9 +3,11 @@
 // in local storage.
 //
 // The rule it enforces is easy to defeat by accident: a new surface reads
-// `enableComicTranslation` straight out of chrome.storage.sync, forgets the
-// account half, and offers a signed-out user a feature whose every entry point
-// can only answer "sign in". That is asserted here rather than eyeballed.
+// `enableComicTranslation` straight out of chrome.storage.sync and forgets the
+// account half, so it can no longer tell "turned off" (show nothing) from "not
+// signed in" (show the entry, and let using it sign in first — D-467), nor
+// "signed in" (the account's own things: task lists, context menus) from
+// either. That is asserted here rather than eyeballed.
 //
 // Run with: npm run test:unit
 import test from 'node:test';

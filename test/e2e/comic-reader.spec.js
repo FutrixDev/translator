@@ -8,7 +8,8 @@
  * 下单、计费、上传那一组在 comic-translation.spec.js；夹具在 comic-fixtures.js。
  */
 const { test, expect } = require('./fixtures');
-const { startMockService, connectExtension, triggerComicTranslation } = require('./comic-fixtures');
+const { connectExtension } = require('./helpers');
+const { startMockService, triggerComicTranslation } = require('./comic-fixtures');
 
 test.describe('Comic page translation — reader', () => {
   /**
@@ -386,7 +387,7 @@ test.describe('Comic page translation — reader', () => {
   test('asks for sign-in instead of failing when no token is stored', async ({ context, page }) => {
     const service = await startMockService('succeed');
     try {
-      const worker = await connectExtension(context, service.base, { withToken: false });
+      const worker = await connectExtension(context, service.base, { signedIn: false });
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 

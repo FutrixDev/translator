@@ -111,13 +111,16 @@ document.addEventListener('DOMContentLoaded', () => {
  * allowance are all reported in Settings now, so the popup no longer waits on a
  * network round-trip to draw a list of buttons. The local token is enough to
  * know whether this device has an account at all — see shared/account-gate.js.
+ *
+ * Signed out shows them too: the page asks for a sign-in when the job is
+ * refused for want of one, and once the user signs in from that prompt the
+ * same job carries on (runJob() in content/content-comic-translation.js).
  */
 async function refreshComicSection() {
-  // Off means gone, not greyed out: these rows would otherwise advertise a
-  // feature with no entry point behind it.
-  const comicReady = await AccountGate.readFeatureState('enableComicTranslation') === AccountGate.FEATURE_STATES.READY;
-  elements.comicTranslatePage.hidden = !comicReady;
-  elements.comicColorizePage.hidden = !comicReady;
+  // Off means gone, not greyed out: the user turned the feature off.
+  const comicOff = await AccountGate.readFeatureState('enableComicTranslation') === AccountGate.FEATURE_STATES.OFF;
+  elements.comicTranslatePage.hidden = comicOff;
+  elements.comicColorizePage.hidden = comicOff;
 }
 
 // Everything the popup asks a tab is about the page the address bar shows, and

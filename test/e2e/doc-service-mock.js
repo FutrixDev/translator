@@ -13,7 +13,7 @@
  * every confirm. Built on startMockServer — a spec that starts its own server
  * is refused by the unit guard.
  */
-const { startMockServer } = require('./mock-server');
+const { startMockServer, serveExtConnect } = require('./mock-server');
 
 const DEFAULT_ACCOUNT = {
   email: 'reader@example.com',
@@ -112,6 +112,8 @@ function defaultAfterConfirm() {
  *   a succeeded step may name its result files, `files: ['mono']`.
  * @param {() => object[]} [options.afterConfirm] The GET sequence once confirmed.
  * @param {Record<string, {bytes: Buffer, type: string}>} [options.files] Static files.
+ * @param {'hold'} [options.connect] 'hold' serves the sign-in page and never
+ *   bounces back, so a test can close it the way a user who gives up does.
  */
 async function startDocService(options = {}) {
   const state = {
@@ -207,17 +209,9 @@ async function startDocService(options = {}) {
       return send(200, bytes, type);
     }
 
-    // The sign-in tab: the real page bounces to the extension's redirect URI
-    // with the token in the fragment, and comic-client.js settles as soon as
-    // the tab starts navigating there (chromiumapp.org itself never loads).
     if (url.pathname === '/ext/connect') {
       state.connects += 1;
-      const redirect = url.searchParams.get('redirect_uri');
-      res.writeHead(302, {
-        location: `${redirect}#token=granted-token&expires_at=${Date.now() + 3600_000}`,
-        'cache-control': 'no-store',
-      });
-      return res.end();
+      return serveExtConnect(url, res, { answer: options.connect === 'hold' ? 'hold' : 'token' });
     }
 
     if (!url.pathname.startsWith('/api/')) return send(404, { error: 'not_found' });

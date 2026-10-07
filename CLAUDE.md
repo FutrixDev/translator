@@ -167,7 +167,7 @@ one of three states:
 | state | meaning | what surfaces do |
 | --- | --- | --- |
 | `off` | the user turned the switch off | nothing appears on its own; only the media shortcut (this page's consent) still works |
-| `signed_out` | switch on, no token on this device | the PDF/comic hints show, and using one signs in first |
+| `signed_out` | switch on, no token on this device | the PDF/comic hints and the popup's PDF/comic rows show, and using one signs in first (the PDF task list, which is the account's, stays hidden) |
 | `ready` | switch on, signed in | every entry point, menus included |
 
 The options page draws `signed_out` as **the switch on plus a pending line**
