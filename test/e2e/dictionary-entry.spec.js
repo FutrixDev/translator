@@ -666,7 +666,7 @@ test.describe('dictionary entry (batch C)', () => {
     const mock = await startMockOpenAIServer({ dictEntry });
     try {
       await servePage(context);
-      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'en', targetLang: 'en' }));
+      await setExtensionSettings(page, settings(mock.endpoint, { targetLang: 'en' }));
       await page.goto(`${ORIGIN}/`);
       await waitForFloatBall(page);
       await stubSpeech(page);
