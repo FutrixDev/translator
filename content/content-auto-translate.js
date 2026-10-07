@@ -777,10 +777,19 @@
     ctx.onLanguagePackReady(() => start('language-pack'));
     // 本页生效的用户站点规则变了：与 RESTART_KEYS 同一条路。引擎改成内置能叫醒
     // 费用闸停下的页面；删掉一条 exclude，进带时被摘掉的块也要重扫才回得来。
-    ctx.customRules.onChange(() => start('custom-rule'));
+    //
+    // 这两条只叫醒没出错的页面（D-497 R1-N3）：出错停下的那一页（broken）要等这一页
+    // 上的一句话 —— 改设置、语言包装好、「继续」、换路由。规则和配置档常常是在别的
+    // 标签页改的，和这一页的失败无关；顺手重开会把一页停在 Blab 账户错误上的页面
+    // 用另一个引擎悄悄翻掉。
+    ctx.customRules.onChange(() => {
+      if (!broken) start('custom-rule');
+    });
     // AI 配置档变了（任何一档，含只改了 Key 的写入：公开镜像看不见 Key，但照样
     // 通知）：与 RESTART_KEYS 同一条路，改对了 Key / 地址 / 模型的页面自己重来。
-    ctx.aiProfiles.subscribe(() => start('ai-profiles'));
+    ctx.aiProfiles.subscribe(() => {
+      if (!broken) start('ai-profiles');
+    });
     start('load');
 
     return {
