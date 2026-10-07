@@ -23,10 +23,12 @@
     })),
   ]);
 
-  // 插画按宽铺满、竖向居中裁；左侧再压一层暖白，保证字的对比度
-  function paintArt(ctx, img, w, h, washTo) {
-    const s = w / img.width, ih = img.height * s;
-    ctx.drawImage(img, 0, (h - ih) / 2, w, ih);
+  // 插画按 scale 缩放（默认按宽铺满）、靠右、竖向居中裁；左边露出的空带用插画
+  // 最左 8px 的柔和底色横向拉满。左侧再压一层暖白，保证字的对比度
+  function paintArt(ctx, img, w, h, washTo, scale = w / img.width) {
+    const iw = img.width * scale, ih = img.height * scale, x0 = w - iw, y0 = (h - ih) / 2;
+    if (x0 > 0) ctx.drawImage(img, 0, 0, 8, img.height, 0, y0, x0 + 1, ih);
+    ctx.drawImage(img, x0, y0, iw, ih);
     const g = ctx.createLinearGradient(0, 0, washTo, 0);
     g.addColorStop(0, 'rgba(255,247,240,0.9)');
     g.addColorStop(0.6, 'rgba(255,247,240,0.55)');
@@ -40,7 +42,7 @@
     ctx.fillText(str, x, y);
   }
   // 三个用途胶囊，颜色取自扇页
-  const USES = [['网页', '#F0605A'], ['PDF · 电子书', '#E89A1C'], ['视频字幕', '#2FB67E']];
+  const USES = [['双语网页', '#F0605A'], ['PDF · 电子书', '#E89A1C'], ['视频双语字幕', '#2FB67E']];
   function pills(ctx, x, y, size) {
     ctx.font = `700 ${size}px ${FONT}`;
     const padX = size * 0.8, hgt = size * 2;
@@ -62,10 +64,11 @@
   }
   // Chrome 应用店大图 1400×560
   function drawPromoMarquee(ctx) {
-    paintArt(ctx, ART.marquee, 1400, 560, 760);
+    // 按高缩放：插画整体右移约 90px，给标题让出视频卡左边
+    paintArt(ctx, ART.marquee, 1400, 560, 760, 560 / ART.marquee.height);
     B.drawTile(ctx, 112, 96, 108);
     ctx.textBaseline = 'alphabetic';
-    text(ctx, 'Blab Translation', 96, 318, 800, 76, INK);
+    text(ctx, 'Blab Translation', 96, 318, 800, 70, INK);
     text(ctx, '叭叭翻译，翻译一切', 98, 384, 700, 40, ACCENT);
     pills(ctx, 98, 420, 22);
   }

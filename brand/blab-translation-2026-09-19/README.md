@@ -18,8 +18,10 @@ all sits on a warm tile.
   `promo-large.png` (1400×560 marquee) and `promo-small.png` (440×280).
 - The promo tiles are an illustration with the brand laid over it. The
   illustrations in `promo/` (`marquee-art.jpg`, `small-art.jpg`) came from
-  Magic Art (poster mode, project `t9wetyqm3l`), prompted for no lettering at
-  all. The tile, the wordmark, the slogan and the three feature pills are drawn
+  Magic Art (`magic image`, 2k: the marquee at 21:9, the small tile at 3:2),
+  prompted for no lettering at all. The marquee art is scaled to the tile's
+  height and right-aligned so the title clears its video card; the strip that
+  leaves on the left is filled by stretching the art's soft left edge. The tile, the wordmark, the slogan and the three feature pills are drawn
   in `export.html`, because an image model cannot be trusted to spell or to
   reproduce the mark. To change the copy, edit `drawPromoMarquee` /
   `drawPromoSmall`. To change the picture, replace the JPEG. The export
