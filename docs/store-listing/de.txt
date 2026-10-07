@@ -1,0 +1,50 @@
+Blab Translation — alles in zwei Sprachen lesen.
+
+Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos und Comics. Nutzen Sie die KI, der Sie vertrauen — Cloud- oder lokale Modelle — oder Chromes kostenlosen Übersetzer direkt auf dem Gerät.
+
+★ ZWEISPRACHIGE WEBSEITEN
+• Die Übersetzung unter jedem Absatz. Formatierung, Links und Bilder bleiben unberührt.
+• Nur die Übersetzung? Eine Taste: Alt+T.
+• Hauptinhalt zuerst — Menüs und Seitenleisten bleiben aus dem Weg. Alt+W für die ganze Seite.
+• Reicht bis in iframes und Shadow DOM.
+• Formeln, LaTeX und Code bleiben intakt. Fachartikel bleiben lesbar.
+• 6 Übersetzungsstile. 76 Sprachen. Rechts-nach-links richtig gesetzt.
+
+★ AUTOMATISCHE ÜBERSETZUNG, DIE WEISS, WANN SCHLUSS IST
+• Sätze, die schon in Ihrer Sprache sind, werden übersprungen — auch wenn sie voller Fremdwörter stecken.
+• Private Nachrichten werden nie automatisch übersetzt.
+• Seitenregeln: Zeigen Sie auf einen beliebigen Bereich — „Hier nicht übersetzen“, „Original beibehalten“ oder „Nur hier übersetzen“. Eine Engine festlegen, CSS hinzufügen. Regeln werden mit Ihrem Browserkonto synchronisiert.
+
+★ PDFS, DIE IHR LAYOUT BEHALTEN
+• Zweisprachige PDFs oder PDFs nur mit Übersetzung — Abbildungen, Formeln und Layout genau dort, wo sie waren.
+• Jeden Monat kostenlose Seiten mit Anmeldung.
+
+★ E-BOOKS & DOKUMENTE
+• Word, EPUB, TXT und Markdown → zweisprachige oder übersetzte Dateien.
+• MOBI und AZW3 zweisprachig im Web-Reader lesen.
+
+★ DOPPEL-UNTERTITEL
+• YouTube-Untertitel live übersetzt: Original und Übersetzung in zwei Zeilen.
+• Funktioniert mit jedem HTML5-Player, der eine Standard-Untertitelspur hat.
+• Mit einem Klick direkt in der Steuerleiste des Players ein- und ausschalten.
+
+★ MARKIEREN, ZEIGEN, NACHSCHLAGEN
+• Text markieren und übersetzen — neu übersetzen, Engine wechseln, kopieren, vorlesen.
+• Integriertes Wörterbuch für Wörter und Wendungen: Aussprache, Bedeutungen, Beispiele, Wortformen.
+• Modifikatortaste halten und mit der Maus zeigen, um einen einzelnen Absatz zu übersetzen.
+• Sie tippen in einer anderen Sprache als die Seite? Mit einem Klick übersetzen.
+
+★ COMICS & BILDER
+• Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.
+• Text in Bildern per OCR auf dem Gerät erkannt und dann übersetzt.
+
+★ STANDARDMÄSSIG PRIVAT
+• Webseiten werden standardmäßig auf Ihrem Gerät übersetzt. Ihr Text verlässt Ihren Computer nicht.
+• Mit einer KI-Engine geht der Text direkt an Ihren Endpunkt, mit Ihrem eigenen Schlüssel — nie über uns.
+• PDF-, Dokument- und Comic-Dateien werden auf unseren Servern verarbeitet und nach 7 Tagen gelöscht.
+• Keine Analyse. Kein Werbe-Tracking.
+
+TASTENKÜRZEL
+Alt+A übersetzen / wiederherstellen · Alt+T zweisprachig / nur Übersetzung · Alt+W ganze Seite · Alt+M PDF oder Comic
+
+Datenschutzerklärung: https://blab-translation.com/app/legal/privacy

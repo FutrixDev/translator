@@ -68,140 +68,14 @@ OpenRouter、Ollama、LM Studio）和自动翻译的网站一串（arXiv … Reu
 
 ## 二、商店详细说明（可直接粘贴进「说明」）
 
-### 中文
+每个语言区域一个文件：[`docs/store-listing/<locale>.txt`](store-listing/)，
+一段 / 一条一行，整份复制粘贴到该语言区域的「说明」框即可。
 
-> 【叭叭翻译】免费的原文/译文双语对照网页翻译插件。PDF 翻译保留原版排版，
-> YouTube 等视频双语字幕，EPUB、Word、MOBI 电子书与文档翻译，漫画翻译。
-> 默认用 Chrome 自带的端上离线翻译，免费；也可以接入你自己的 AI 大模型，
-> 云端或本地运行的都行。
->
-> ■ 双语对照网页翻译
-> · 译文排在原文下面，一段对一段，原文的格式、链接、图片都不动；一键切到
-> 「仅译文」（Alt+T）。
-> · 只翻正文：导航、侧栏、菜单默认保持原文，读起来干净；需要时 Alt+W 翻整页。
-> · iframe 和 Web Components（Shadow DOM）里的文字也能翻。
-> · 数学公式、LaTeX、代码保持原样，学术页面不乱码。
-> · 六种译文样式：默认、下划线、虚线框、高亮、引用条、悬停才显示的模糊。
-> · 76 种目标语言，阿拉伯语、希伯来语等从右往左排的语言版式正确。
->
-> ■ 自动翻译
-> · 内置一份常用论文、社区和新闻网站的名单，打开就是译文；完整名单在设置页
-> 里，每个网站都能单独关掉；别的网站一键加入「总是翻译」。
-> · 已经是你母语的段落自动跳过，夹着英文术语也认得出来。
-> · 社交网站的私信页面不会自动翻译。
-> · 每条规则都在设置页里列着，随时删除；Alt+A 暂停当前页。
->
-> ■ PDF 翻译（保留排版）
-> · 把论文、报告翻成双语对照 PDF 或纯译文 PDF，图表、公式、版式都留在原位，
-> 在网页阅读台里直接看。
-> · 每月有免费页数，登录后使用。
->
-> ■ 电子书与文档翻译
-> · 支持 Word（.docx）、EPUB、TXT、Markdown，输出双语或纯译文文件；
-> MOBI / AZW3 在网页阅读台里双语阅读。
->
-> ■ 视频双语字幕
-> · YouTube 字幕边播边译，原文和译文上下两行。
-> · 其他网站上，凡是带标准字幕轨的 HTML5 播放器都能用。
-> · 播放器控制条里一键开关译文字幕。
->
-> ■ 划词翻译与查词
-> · 选中文字旁出现翻译图标，点开卡片：重译、切换引擎、复制、朗读。
-> · 选中一个单词或短语，给出词典释义：目标语言的读音、词性、例句、词形变化。
-> · 按住修饰键指一段，就译这一段。
-> · 输入框里打的字和网页不是一门语言时，角上出现「译成 …」，点了才翻。
->
-> ■ 漫画与图片翻译
-> · 漫画页面原地重绘成你的语言，也可以上色。
-> · 图片里的文字本地 OCR 识别后翻译。
->
-> ■ 隐私
-> · 网页翻译默认用 Chrome 端上的离线翻译，文字不出你的电脑；选用 AI 时，文字
-> 直接发到你自己填的接口、用你自己的密钥，不经过我们的服务器。
-> · 漫画和 PDF / 文档翻译需要把文件上传到我们的服务器处理，结果 7 天后自动删除。
-> · 不埋点、不做广告追踪。
->
-> 快捷键：Alt+A 翻译 / 还原当前页 · Alt+T 双语 / 仅译文 · Alt+W 翻译整页 ·
-> Alt+M 翻译 PDF 或漫画。可在 chrome://extensions/shortcuts 修改。
->
-> 隐私政策：https://blab-translation.com/app/legal/privacy
-
-### English
-
-> Blab Translation — free bilingual web page translation, with the original and
-> the translation side by side. PDF translation that keeps the layout, dual
-> subtitles on YouTube and other video sites, EPUB, Word and MOBI documents,
-> and comics. Free by default with Chrome's own on-device translator, or
-> connect your own AI model, in the cloud or running on your computer.
->
-> ■ Bilingual web pages
-> · Each translation sits under its paragraph; the page's formatting, links and
-> images stay as they are. Switch to translation only with Alt+T.
-> · Main content only: navigation, sidebars and menus stay in the original so
-> the page reads cleanly. Alt+W translates the whole page when you want it.
-> · Text inside iframes and web components (Shadow DOM) is translated too.
-> · Math, LaTeX and code are kept intact, so papers stay readable.
-> · Six translation styles: default, underline, dashed box, highlight, quote
-> bar, and blur until hovered.
-> · 76 target languages, with right-to-left languages such as Arabic and Hebrew
-> laid out correctly.
->
-> ■ Automatic translation
-> · A built-in list of popular paper, community and news sites translates on
-> open; the full list is in Settings, each site with its own switch. Add any
-> other site to "Always translate" in one click.
-> · Paragraphs already in your language are skipped, even when they are full
-> of foreign terms.
-> · Private messages on social sites are never translated automatically.
-> · Every rule is listed in Settings and can be deleted; Alt+A pauses the page.
->
-> ■ PDF translation that keeps the layout
-> · Turn papers and reports into a bilingual or translation-only PDF, with
-> figures, formulas and layout where they were, and read it in the web reader.
-> · A free monthly page allowance; sign-in required.
->
-> ■ Ebooks and documents
-> · Word (.docx), EPUB, TXT and Markdown, saved as a bilingual or translated
-> file; MOBI / AZW3 are read bilingually in the web reader.
->
-> ■ Dual video subtitles
-> · YouTube subtitles are translated as the video plays, original and
-> translation on two lines.
-> · Works on any other site whose HTML5 player has a standard subtitle track.
-> · One click in the player's control bar turns the translated subtitles on or
-> off.
->
-> ■ Selection translation and dictionary
-> · Select text and click the icon beside it: retranslate, switch engine, copy,
-> read aloud.
-> · Select a word or short phrase for a dictionary entry: pronunciation in your
-> target language, senses by part of speech, examples and word forms.
-> · Hold a modifier key and point at a paragraph to translate just that one.
-> · Typing in another language than the page's? A "Translate to …" chip appears
-> in the text box and translates only when clicked.
->
-> ■ Comics and images
-> · Comic pages are redrawn in your language in place, and can be colorized.
-> · Text in images is recognised by on-device OCR and translated.
->
-> ■ Privacy
-> · Web page translation runs on your device by default, with Chrome's built-in
-> translator: the text never leaves your computer. With an AI engine, the text
-> goes straight to the endpoint you entered, with your own key, never through
-> our servers.
-> · Comic, PDF and document translation upload the file to our servers to do
-> the work; results are deleted automatically after 7 days.
-> · No analytics, no ad tracking.
->
-> Shortcuts: Alt+A translate or restore the page · Alt+T bilingual or
-> translation only · Alt+W translate the whole page · Alt+M translate a PDF or
-> comic. Change them at chrome://extensions/shortcuts.
->
-> Privacy policy: https://blab-translation.com/app/legal/privacy
-
-「隐私」一节就是 1.3.0 起记了三次的那条限定写法：网页翻译默认在端上、不经
-中间服务器；漫画、PDF 与文档要上传到我方服务器。**原来那句无条件的「无中间
-服务器 / no middleman」整句删掉，不要留在后台文案里。**
+- `en.txt` 是默认语言区域（English），其余九份（de / es / fr / ja / ko /
+  pt_BR / ru / zh_CN / zh_TW）都是它的逐段翻译，结构、条目、数字一一对应。
+- **改说明时先改 `en.txt`，再同步改其余九份。** 商店会比对各语言区域与默认
+  语言区域的说明，内容不一致会被当作「误导性元数据」警告（2026-10-07 收到过）。
+- 不要罗列品牌、服务商或站点名（第一次被拒的理由是关键字堆砌），只写类别。
 
 ## 三、本次更新说明（可直接粘贴）
 
