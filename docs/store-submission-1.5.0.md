@@ -56,11 +56,12 @@ OpenRouter、Ollama、LM Studio）和自动翻译的网站一串（arXiv … Reu
 
 | 语言 | 简短说明 | 字符数 |
 | --- | --- | --- |
-| zh_CN | 免费的原文/译文双语对照网页翻译：PDF 翻译保留排版，YouTube 等视频双语字幕，EPUB/Word 电子书与文档，漫画翻译，数学公式不乱；也可接入你自己的 AI 大模型。 | 89 |
+| zh_CN | 免费的双语对照网页翻译。PDF 保留排版，YouTube 双语字幕，EPUB/Word，漫画。也可接入你自己的 AI 模型。 | 62 |
 | en | Free bilingual web page translation. PDFs keep their layout, dual YouTube subtitles, EPUB/Word, comics. Bring your own AI model. | 128 |
 
-其余八种语言（zh_TW、ja、ko、de、es、fr、pt_BR、ru）同一句式，见各自的
-`messages.json`。
+其余八种语言（zh_TW、ja、ko、de、es、fr、pt_BR、ru）都是 en 这句的翻译，见各自的
+`messages.json`。和详细说明一样，**各语言只能翻译 en，不能多写 en 没有的卖点**
+（ja/ko/zh 曾多写「数学公式不乱」「原文/译文」，与默认语言不一致）。
 
 **两样没写进去，因为代码不支持：** DeepL（引擎预设里没有）和 Netflix（字幕翻译
 只有 YouTube 专用通道，加上任何暴露标准 `<track>` / `TextTrack` 的 HTML5 播放
