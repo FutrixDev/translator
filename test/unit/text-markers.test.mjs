@@ -65,6 +65,37 @@ test('placeholder generation, parsing and id sets agree with each other', () => 
   assert.equal(TM.closeTag('strong', 2), '</strong2>');
 });
 
+// 实测内置引擎（Chrome Translator en→pt）真的吐过的形状，见 repairPlaceholders 的说明。
+test('repairPlaceholders: puts back the braces the built-in engine dropped', () => {
+  const R = TM.repairPlaceholders;
+  assert.equal(R('The proof is complete.{{1}}', 'A prova está completa.{1}}'), 'A prova está completa.{{1}}');
+  assert.equal(R('see {{1}}{{2}} here', 'veja {{1}}{2}} aqui'), 'veja {{1}}{{2}} aqui');
+  assert.equal(R('see {{1}}{{2}} here', 'veja {{1}{{2}} aqui'), 'veja {{1}}{{2}} aqui');
+  assert.equal(R('<a3>{{4}}</a3> is set', '<a3>{4}</a3> está definido'), '<a3>{{4}}</a3> está definido');
+  // 同一个编号出现两次，两处都补
+  assert.equal(R('{{1}} and {{1}}', '{1}} e {1}}'), '{{1}} e {{1}}');
+});
+
+test('repairPlaceholders: compares whole ids, so {{12}} is never read as a piece of {{1}}', () => {
+  const R = TM.repairPlaceholders;
+  assert.equal(R('x {{1}} y {{12}}', 'x {1}} y {{12}}'), 'x {{1}} y {{12}}');
+  assert.equal(R('x {{1}} y {{12}}', 'x {{1}} y {12}}'), 'x {{1}} y {{12}}');
+  // {{1}} 已经完整，{1}} 再出现就不是它的残片——旁边的 {{2}} 丢了也一样
+  assert.equal(R('x {{1}} y', 'x {{1}} y {1}}'), 'x {{1}} y {1}}');
+  assert.equal(R('x {{1}} y {{2}}', 'x {{1}} y {2}} {1}}'), 'x {{1}} y {{2}} {1}}');
+});
+
+test('repairPlaceholders: leaves alone what this block did not send and what the page itself wrote', () => {
+  const R = TM.repairPlaceholders;
+  // 没发过 {{3}}：译文里的 {3}} 是别人的字
+  assert.equal(R('a {{1}} b', 'a {{1}} b {3}}'), 'a {{1}} b {3}}');
+  assert.equal(R('a {{1}} b', 'a {1}} b {3}}'), 'a {{1}} b {3}}');
+  // 页面正文（去掉占位符以后）本来就写着 {2}}，同样写法原样留着，丢的照样算丢
+  assert.equal(R('JSON {2}} then {{2}}', 'JSON {2}} então'), 'JSON {2}} então');
+  // 没有占位符的块一个字不动
+  assert.equal(R('plain {1}} text', 'texto {1}} simples'), 'texto {1}} simples');
+});
+
 test('segments round-trip to the original text and label each piece', () => {
   for (const text of [
     '',

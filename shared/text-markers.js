@@ -51,6 +51,27 @@
     return ids;
   }
 
+  // 把译文里掉了花括号的占位符补回 `{{n}}`，返回补好的译文。
+  //
+  // 实测（2026-10-07，Chrome 内置 Translator en→pt，7 个真页面）：带占位符的块有
+  // 22% 丢了至少一个，31 个丢失全是掉括号——30 个 `{n}}`、1 个 `{n}`；前一轮实验
+  // 里相邻的 `}}{{` 还出过 `{{n}`。占位符紧贴在非空白字符后面（`.{{1}}`、
+  // `(Smith){{1}}`、`<a1>{{1}}</a1>`）最常掉，前面是空格也会掉。不补的话整块按
+  // 丢了公式判失败（content/content-translation-engine.js 的 keepsPlaceholders）。
+  //
+  // 只补本块真发出去、译文里又找不到完整写法的编号：页面正文自己就可能写着
+  // `{2}}`（JSON、LaTeX 源码），原文里（去掉占位符以后）出现过的同样写法也不碰。
+  // 编号整段取出再比，所以 `{{12}}` 不会被当成 `{{1` 的残片。
+  function repairPlaceholders(source, translated) {
+    const out = String(translated);
+    const intact = placeholderIds(out);
+    const lost = new Set([...placeholderIds(source)].filter((id) => !intact.has(id)));
+    if (lost.size === 0) return out;
+    const prose = String(source).replace(placeholderPattern(), '');
+    return out.replace(/\{\{?(\d+)\}\}?/g, (shape, id) =>
+      (lost.has(id) && !prose.includes(shape) ? placeholder(id) : shape));
+  }
+
   // ==================== 内联标记 <a1>…</a1> ====================
 
   function openTag(name, i) {
@@ -159,6 +180,7 @@
     placeholderPattern,
     parsePlaceholder,
     placeholderIds,
+    repairPlaceholders,
     openTag,
     closeTag,
     markerPattern,
