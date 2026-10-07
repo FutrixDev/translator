@@ -172,7 +172,7 @@ const BLAB_TRANSPORT = Object.freeze({ prepare: (_profile, request) => blabReque
 
 /** 这一档怎么发：Blab 那一档按 id 认（shared/engines.js），其余都是用户自己的 AI 档。 */
 function transportFor(profile) {
-  return profile.id === globalThis.Engines.BLAB_PROFILE.id ? BLAB_TRANSPORT : PROVIDER_TRANSPORT;
+  return globalThis.Engines.isBlabProfile(profile) ? BLAB_TRANSPORT : PROVIDER_TRANSPORT;
 }
 
 /**

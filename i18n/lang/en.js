@@ -496,6 +496,9 @@ Rules:
     
     // Errors
     configureApiKeyFirst: 'Please configure API Key in settings first',
+    blabDailyLimit: 'Today\'s Blab Translation allowance is used up. It resumes at {time}.',
+    blabPlanRequired: 'Blab Translation needs an active subscription. Subscribe in Settings.',
+    blabSignInRequired: 'Please sign in to your Blab account in Settings to use Blab Translation.',
     apiErrorAuth: 'Authentication failed: check that the API key is correct',
     apiErrorQuota: 'Out of credit: check your account balance or plan',
     apiErrorForbidden: 'Access denied: the API key may not have permission for this',

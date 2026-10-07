@@ -62,5 +62,17 @@
     return isEngine(value) ? value : 'builtin';
   }
 
-  root.Engines = Object.freeze({ ENGINES, MODEL_ENGINES, BLAB_PROFILE, isEngine, isModelEngine, normalizeEngine });
+  /**
+   * Whether `profile` is BLAB_PROFILE: the service worker's one test for "send
+   * this to /api/blab/complete" (callModel's transport, the TRANSLATE handlers'
+   * profile lookup, the missing-key check). By id, because the profile crosses
+   * a message as its id only.
+   */
+  function isBlabProfile(profile) {
+    return Boolean(profile) && profile.id === BLAB_PROFILE.id;
+  }
+
+  root.Engines = Object.freeze({
+    ENGINES, MODEL_ENGINES, BLAB_PROFILE, isEngine, isModelEngine, normalizeEngine, isBlabProfile,
+  });
 })(globalThis);

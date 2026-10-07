@@ -127,6 +127,13 @@ test('ai-profiles-host: a request without profileId is a caller bug; an unknown 
   assert.deepEqual(error.profileError, { key: 'aiProfileMissing', id: 'gone' });
 });
 
+test('ai-profiles-host: the Blab profile id answers the fixed Blab profile, not a stored one', async () => {
+  const before = calls.get;
+  const profile = await profileById(globalThis.Engines.BLAB_PROFILE.id);
+  assert.equal(profile, globalThis.Engines.BLAB_PROFILE);
+  assert.equal(calls.get, before, 'nothing is read from sync for it');
+});
+
 test('ai-profiles-host: profileFor picks by feature (OCR has no site rule)', async () => {
   const profile = await profileFor('ocr');
   assert.equal(profile.id, AIProfiles.LEGACY_ID);
