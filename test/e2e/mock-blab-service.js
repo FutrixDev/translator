@@ -8,7 +8,9 @@
  *                             resetsAt} or {available:false}
  *   POST /api/blab/complete   {system, user, maxTokens, temperature?} ->
  *                             200 {text, usage} or {error, ...} (§2.1)
- *   GET  /ext/connect         the sign-in bounce (serveExtConnect)
+ *   GET  /ext/connect         the sign-in bounce (serveExtConnect), counted in
+ *                             `state.connects` and held `state.connectDelayMs`
+ *                             before it answers (a test may change both)
  *
  * The model's answer is the protocol every model mock here speaks
  * (answerPrompt in mock-openai-server.js), so the extension's own prompts and
@@ -49,6 +51,9 @@ async function startMockBlabService({
     mode,
     used,
     meRequests: 0,
+    // Sign-in tabs opened: one per /ext/connect the extension sent the user to.
+    connects: 0,
+    connectDelayMs: 0,
     // One entry per POST /api/blab/complete, in arrival order: the bearer it
     // carried and the body as parsed. "Only one request" and "zero requests"
     // are assertions on this list.
@@ -63,7 +68,10 @@ async function startMockBlabService({
     };
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
 
-    if (url.pathname === '/ext/connect') return serveExtConnect(url, res);
+    if (url.pathname === '/ext/connect') {
+      state.connects += 1;
+      return serveExtConnect(url, res, { delayMs: state.connectDelayMs });
+    }
 
     if (url.pathname === '/api/billing/me') {
       state.meRequests += 1;

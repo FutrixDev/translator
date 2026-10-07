@@ -4,7 +4,9 @@
 // out, the available state shows the numbers the API returned, and a Blab
 // choice that stopped working is kept and warned about, never rewritten. Both
 // ways out are the account entry: they send BLAB_ACCOUNT_ACTION, so the worker
-// notes the click before it signs in or opens the pricing page (D-500).
+// notes the click before it signs in or opens the pricing page (D-500). A click
+// reaches each listener with the event as its first argument, the way the DOM
+// calls it (D-501).
 //
 // The card script runs in a vm with just enough DOM to draw a note.
 //
@@ -43,7 +45,7 @@ function fakeElement(tagName) {
     },
     replaceChildren(...nodes) { this.children = nodes; },
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
-    dispatch(type) { return Promise.all((listeners[type] || []).map((fn) => fn())); },
+    dispatch(type) { return Promise.all((listeners[type] || []).map((fn) => fn({ type, isTrusted: true }))); },
   };
 }
 
@@ -60,13 +62,15 @@ function fakeSelect(value) {
 
 /**
  * Load options-blab.js with both selects at the given values. `reply` is what
- * the worker answers a message the card sends itself.
+ * the worker answers a message the card sends itself, or, as a function, what
+ * sendMessage does instead (to reject).
  */
 function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } } = {}) {
   const notes = { translationEngineBlabNote: fakeElement('div'), autoTranslateEngineBlabNote: fakeElement('div') };
   const signIns = [];
   const sent = [];
   const statuses = [];
+  const errors = [];
   const sandbox = {
     Engines,
     currentUILang: 'en',
@@ -75,16 +79,23 @@ function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } }
     elements: { translationEngine: fakeSelect(manual), autoTranslateEngine: fakeSelect(auto) },
     document: { getElementById: (id) => notes[id], createElement: fakeElement },
     t: en,
-    comicSignIn: (message) => { signIns.push(message); return Promise.resolve(true); },
-    chrome: { runtime: { sendMessage: async (message) => { sent.push(message); return reply; } } },
+    signInWith: (message) => { signIns.push(message); return Promise.resolve(true); },
+    chrome: {
+      runtime: {
+        sendMessage: async (message) => {
+          sent.push(message);
+          return typeof reply === 'function' ? reply() : reply;
+        },
+      },
+    },
     showStatus: (text, type) => { statuses.push([text, type]); },
-    console: { error: () => {} },
+    console: { error: (...args) => { errors.push(args.map(String).join(' ')); } },
   };
   vm.createContext(sandbox);
   vm.runInContext(repoSource('options/options-blab.js'), sandbox);
   sandbox.setupBlabEngine();
   return {
-    sandbox, notes, signIns, sent, statuses, manual: notes.translationEngineBlabNote, auto: notes.autoTranslateEngineBlabNote,
+    sandbox, notes, signIns, sent, statuses, errors, manual: notes.translationEngineBlabNote, auto: notes.autoTranslateEngineBlabNote,
   };
 }
 
@@ -125,7 +136,7 @@ test('options blab: signed out disables the option and offers the account card\'
   }
   await action(card.manual).dispatch('click');
   assert.deepEqual(plain(card.signIns), [{ type: 'BLAB_ACCOUNT_ACTION', action: 'signin' }],
-    'the account card\'s flow, through the worker\'s account entry');
+    'the account card\'s flow, through the worker\'s account entry, whatever the click passed');
   assert.deepEqual(card.sent, [], 'the card sends nothing else itself');
 });
 
@@ -151,8 +162,21 @@ test('options blab: Subscribe the worker could not open says so on the page', as
   draw(card, { signedIn: true, blabTranslation: { available: false } });
   const subscribe = action(card.manual);
   await subscribe.dispatch('click');
-  assert.deepEqual(card.statuses, [[en('blabActionFailed'), 'error']]);
+  // Not blabActionFailed: that one sends the reader to Settings, and this is Settings.
+  assert.deepEqual(card.statuses, [[en('blabSubscribeFailed'), 'error']]);
+  assert.equal(card.errors.length, 1, 'logged once');
   assert.equal(subscribe.disabled, false, 'can be tried again');
+});
+
+test('options blab: Subscribe whose message never reached the worker says so too, and can be tried again', async () => {
+  const card = loadCard({ reply: () => Promise.reject(new Error('Could not establish connection')) });
+  draw(card, { signedIn: true, blabTranslation: { available: false } });
+  const subscribe = action(card.manual);
+  await subscribe.dispatch('click');
+  assert.deepEqual(card.statuses, [[en('blabSubscribeFailed'), 'error']]);
+  assert.equal(card.errors.length, 1, 'logged once');
+  assert.match(card.errors[0], /Could not establish connection/);
+  assert.equal(subscribe.disabled, false);
 });
 
 test('options blab: with no account site address the plan note draws no dead link (D-490 N4)', () => {
