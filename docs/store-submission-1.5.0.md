@@ -31,9 +31,10 @@
 - 三个新快捷键：`Alt+T`（双语 / 仅译文）、`Alt+W`（翻译整页）、`Alt+M`（翻译
   PDF 或漫画）；
 - `<all_urls>` 那一组内容脚本加了 `all_frames`、`match_about_blank`、
-  `match_origin_as_fallback` —— 让整页翻译能进 iframe 和 Shadow DOM。广告、
-  支付、验证码、登录类的子框在 `shared/frame-eligibility.js` 里被挡掉，内容脚本
-  在那里什么都不建、什么都不读；
+  `match_origin_as_fallback` —— 让整页翻译能进 iframe 和 Shadow DOM。
+  `shared/frame-eligibility.js` 按一份固定的主机名单挡掉广告、支付、验证码、
+  登录服务商的子框，内容脚本在那些子框里什么都不建、什么都不读（名单之外的
+  同类子框不在其内，文案里也只这么说）；
 - 内容脚本清单里新增的文件。
 
 **`permissions`、`host_permissions`、`content_security_policy` 一个字节都没改。**
@@ -75,7 +76,7 @@
 > Stack Overflow、纽约时报、BBC、路透社等常用的论文、社区和新闻网站，打开就是
 > 译文；别的网站一键加入「总是翻译」。
 > · 已经是你母语的段落自动跳过，夹着英文术语也认得出来。
-> · 私信页面永远不会自动翻译。
+> · X、Facebook、Instagram、Reddit、Bluesky 的私信页面不会自动翻译。
 > · 每条规则都在设置页里列着，随时删除；Alt+A 暂停当前页。
 >
 > ■ PDF 翻译（保留排版）
@@ -84,8 +85,8 @@
 > · 每月有免费页数，登录后使用。
 >
 > ■ 电子书与文档翻译
-> · 支持 Word（.docx）、EPUB、MOBI / AZW3、TXT、Markdown，输出双语或纯译文
-> 文件。
+> · 支持 Word（.docx）、EPUB、TXT、Markdown，输出双语或纯译文文件；
+> MOBI / AZW3 在网页阅读台里双语阅读。
 >
 > ■ 视频双语字幕
 > · YouTube 字幕边播边译，原文和译文上下两行。
@@ -141,7 +142,8 @@
 > in one click.
 > · Paragraphs already in your language are skipped, even when they are full
 > of foreign terms.
-> · Private-message pages are never translated automatically.
+> · Private messages on X, Facebook, Instagram, Reddit and Bluesky are never
+> translated automatically.
 > · Every rule is listed in Settings and can be deleted; Alt+A pauses the page.
 >
 > ■ PDF translation that keeps the layout
@@ -150,8 +152,8 @@
 > · A free monthly page allowance; sign-in required.
 >
 > ■ Ebooks and documents
-> · Word (.docx), EPUB, MOBI / AZW3, TXT and Markdown, saved as a bilingual or
-> translated file.
+> · Word (.docx), EPUB, TXT and Markdown, saved as a bilingual or translated
+> file; MOBI / AZW3 are read bilingually in the web reader.
 >
 > ■ Dual video subtitles
 > · YouTube subtitles are translated as the video plays, original and
@@ -198,7 +200,7 @@
 
 > 1.5.0
 > - PDF 之外，新增 Word、EPUB、MOBI、TXT、Markdown 文档翻译；翻完在网页阅读台
->   里看，下载菜单里有双语与纯译文文件。
+>   里看，除 MOBI 外下载菜单里有双语与纯译文文件。
 > - 划词：选中文字旁出现翻译图标；卡片可重译、切换引擎、复制、朗读。选中单词
 >   或短语给出词典释义（目标语言读音、词性、例句、词形），公式照常翻译。
 > - 76 种目标语言，从右往左的语言版式正确。
@@ -222,7 +224,7 @@
 > 1.5.0
 > - Document translation beyond PDF: Word, EPUB, MOBI, TXT and Markdown. A
 >   finished document opens in the web reader, whose download menu has the
->   bilingual and translated files.
+>   bilingual and translated files (MOBI is read in the reader only).
 > - Selection: a translate icon appears beside the selection; the card can
 >   retranslate, switch engine, copy and read aloud. A selected word or phrase
 >   gets a dictionary entry (pronunciation in your target language, senses,
@@ -260,7 +262,7 @@
 
 | 权限 | 理由（可直接粘贴） |
 | --- | --- |
-| `<all_urls>` ⚠️**改写** | The extension's single purpose is translating the page the user is on, and that can be any page, including text inside its iframes and web components. Most pages are translated only when the user asks (toolbar button, context menu, keyboard shortcut). A page may also be translated **automatically**, and that is under the user's control: it runs only while the "Translate pages automatically" switch is on (the first row of the toolbar popup, and in Settings). It applies only to sites the user set to Always and to a short built-in list of reading sites (e.g. arXiv, Google Scholar, Reddit, Hacker News, Stack Overflow, major news sites). **Every other site is left alone: nothing is read for translation and nothing is sent.** Private-message pages (X, Facebook, Instagram, Reddit and Bluesky chats) and mail, banking, payment and document-editing sites are never translated automatically, and frames for ads, payments, captchas and sign-in are never read at all. Text already in the user's language is skipped. Every rule, built-in or the user's own, is listed in Settings and can be turned off there; Alt+A pauses the current page. The default engine is Chrome's on-device Translator, so on default settings **no page text leaves the device**. With an AI engine chosen (which for automatic translation takes an explicit confirmation), the text goes to the endpoint the user entered, with the user's own key, never to us, and no-click translation is capped per day (200,000 characters by default). |
+| `<all_urls>` ⚠️**改写** | The extension's single purpose is translating the page the user is on, and that can be any page, including text inside its iframes and web components. Most pages are translated only when the user asks (toolbar button, context menu, keyboard shortcut). A page may also be translated **automatically**, and that is under the user's control: it runs only while the "Translate pages automatically" switch is on (the first row of the toolbar popup, and in Settings). It applies only to sites the user set to Always and to a short built-in list of reading sites (e.g. arXiv, Google Scholar, Reddit, Hacker News, Stack Overflow, major news sites). **On every other site the page text is left alone: nothing on the page is read for translation and nothing is sent.** The one exception is video subtitles: while the same switch is on, on any site the user has not set to Never, the subtitle lines a video player shows through a standard subtitle track are translated as the video plays, and go to the chosen engine like page text; setting the site to Never or turning the switch off stops them. Private-message pages (X, Facebook, Instagram, Reddit and Bluesky chats) and a built-in list of mail, banking, payment and document-editing sites are excluded from automatic translation; the list is not exhaustive, and a site the user sets to Always is translated. Frames served by a built-in list of ad, payment, captcha and sign-in providers are never read. Text already in the user's language is skipped. Every rule, built-in or the user's own, is listed in Settings and can be turned off there; Alt+A pauses the current page. The default engine is Chrome's on-device Translator, so on default settings **no page text leaves the device**. With an AI engine chosen (which for automatic translation takes an explicit confirmation), the text goes to the endpoint the user entered, with the user's own key, never to us, and no-click translation is capped per day (200,000 characters by default). |
 
 **Single purpose**（不变）：Translate web content — selected text, whole pages,
 video subtitles, text inside images, PDFs and documents — using a translation
