@@ -262,3 +262,40 @@ test('a site keep-original element is a placeholder only when page collection as
   expect(result.pickedText).toBe('Edited 4 hr. ago to fix a typo.');
   expect(result.pickedCount).toBe(0);
 });
+
+test('Wikipedia citations the builtin engine broke up with " . " rebuild as links, not text', async ({ page }) => {
+  // Measured 2026-10-07: Chrome's built-in Translator, en→pt, the lead of
+  // https://en.wikipedia.org/wiki/Football. Each citation [n] is
+  // sup > a > span.mw-reflink-text > span.cite-bracket, ten markers for three
+  // characters, and the engine handed two of them back as `</span1 . 3>` and
+  // `<span1 . 7>`. The parser did not know them and the scrubber did not either,
+  // so the reader saw `[1][</span1 . 3>2]<span1 . 7>[3]`.
+  const cite = (n) => `<sup id="cite_ref-${n}" class="reference"><a href="#cite_note-${n}"><span class="mw-reflink-text"><span class="cite-bracket">[</span>${n}<span class="cite-bracket">]</span></span></a></sup>`;
+  await page.setContent(`<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <p id="lead"><b>Football</b> is a family of <a href="/wiki/Team_sport">team sports</a> in which the object is to get the <a href="/wiki/Ball">ball</a> over a goal line, into a goal, or between goalposts using merely the body (by carrying, throwing, or <a href="/wiki/Kick">kicking</a>).${cite(1)}${cite(2)}${cite(3)}</p>
+  </body></html>`, { waitUntil: 'load' });
+  for (const s of SCRIPTS) await page.addScriptTag({ path: s });
+
+  // What the engine was sent, and what it answered, verbatim.
+  const SENT = '<b1>Football</b1> is a family of <a2>team sports</a2> in which the object is to get the <a3>ball</a3> over a goal line, into a goal, or between goalposts using merely the body (by carrying, throwing, or <a4>kicking</a4>).<sup5><a6><span7><span8>[</span8>1<span9>]</span9></span7></a6></sup5><sup10><a11><span12><span13>[</span13>2<span14>]</span14></span12></a11></sup10><sup15><a16><span17><span18>[</span18>3<span19>]</span19></span17></a16></sup15>';
+  const ANSWERED = '<b1>Football</b1> é uma família de <A2>Esportes de equipe</a2> em que o objetivo é obter a bola <a3>sobre uma linha de gol, em um gol ou entre postes usando apenas o corpo (por carregar, lançar ou <a4>chutando</a4>).<sup5><a6><span7><span8>[</span8>1<span9>]</ span9></span7></a6></sup5><sup10><a11><span12><span13>[</span1 . 3>2<span14>]</span14></span12></a11></sup10><sup15><a16><span1 . 7><span18>[</span18>3<span19>]</span19></span17></a16></sup15>';
+
+  const result = await page.evaluate(({ answered }) => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const block = ctx.collectTranslatableBlocks(document.body).find((b) => b.element.id === 'lead');
+    const out = document.createElement('div');
+    ctx.buildTranslationContent(out, answered, block);
+    return {
+      sent: block.text,
+      text: out.textContent,
+      citations: [...out.querySelectorAll('sup.reference > a')].map((a) => `${a.getAttribute('href')} ${a.textContent}`),
+      brackets: out.querySelectorAll('span.cite-bracket').length,
+    };
+  }, { answered: ANSWERED });
+
+  expect(result.sent).toBe(SENT);
+  expect(result.text).not.toMatch(/[<>]/);
+  expect(result.text.endsWith('chutando).[1][2][3]')).toBe(true);
+  expect(result.citations).toEqual(['#cite_note-1 [1]', '#cite_note-2 [2]', '#cite_note-3 [3]']);
+  expect(result.brackets).toBe(6);
+});
