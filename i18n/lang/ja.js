@@ -341,7 +341,7 @@
     engineBuiltin: 'Chrome 内蔵翻訳（無料・オフライン）',
     engineCustomAi: '自分の AI モデル',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: 'Chrome の内蔵翻訳は端末上で動きます。API キーも費用もネットワークも要りません。より高品質な訳文と語句の解説がほしいときは、自分の AI モデルに切り替えてください。動画の字幕もこのエンジンを使います。字幕が使った AI の文字数は、自動翻訳の設定にある 1 日の上限に数えられます。',
+    hintTranslationEngine: "Chrome の内蔵翻訳は端末上で動きます。API キーも費用もネットワークも要りません。より高品質な訳文と語句の解説がほしいときは、自分の AI モデルか Blab Translation に切り替えてください。Blab Translation は Blab のサブスクリプションに含まれ、API キーは不要ですが、テキストは翻訳のため Blab のサーバーに送信されます。動画の字幕もこのエンジンを使います。字幕が自分の AI モデルで使った文字数は、自動翻訳の設定にある 1 日の上限に数えられます。",
     builtinLanguagePack: '言語パック',
     downloadLanguagePack: '言語パックをダウンロード',
     builtinReady: '準備完了。オフラインで翻訳できます',
@@ -690,7 +690,7 @@
     translationFailedRetry: '翻訳に失敗しました · 再試行',
     aiProfileLimitsHint: '失敗したリクエストは自動的に再試行されます（試行は合計で最大 3 回）。これらの制限はこのプロファイルにのみ適用されます。',
     customRuleProfileMissing: 'このルールが使う AI プロファイルは存在しません。',
-    customRuleProfileWithBuiltin: '内蔵翻訳を使うルールには AI プロファイルを指定できません。',
+    customRuleProfileWithBuiltin: "AI プロファイルを指定できるのは、エンジンが自分の AI モデルのルールだけです。",
     transferSectionAiProfiles: 'AI プロファイル',
     transferPreviewAiProfiles: 'AI プロファイル：{added} 件を追加、{replaced} 件を置き換えます。',
 };

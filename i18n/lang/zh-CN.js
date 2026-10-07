@@ -212,7 +212,7 @@
     engineBuiltin: 'Chrome 内置翻译（免费、离线）',
     engineCustomAi: '我的 AI 模型',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: 'Chrome 内置翻译在本机运行，不需要 API Key，不花钱，也不联网。想要更高质量的译文和词汇讲解，可切换到你自己的 AI 模型。视频字幕也走这一个，它用掉的 AI 字数记进自动翻译设置里的每日上限。',
+    hintTranslationEngine: "Chrome 内置翻译在本机运行，不需要 API Key，不花钱，也不联网。想要更高质量的译文和词汇讲解，可切换到你自己的 AI 模型，或者 Blab Translation：它包含在 Blab 订阅里，不需要 API Key，但选了它，文字会发到 Blab 的服务器翻译。视频字幕也走这一个，它在你自己的 AI 模型上用掉的字数记进自动翻译设置里的每日上限。",
     builtinLanguagePack: '语言包',
     downloadLanguagePack: '下载语言包',
     builtinReady: '已就绪，可离线翻译',
@@ -709,7 +709,7 @@
     translationFailedRetry: '翻译失败 · 重试',
     aiProfileLimitsHint: '请求失败时会自动重试，最多共尝试 3 次。以上限速只作用于这一个配置档。',
     customRuleProfileMissing: '规则指定的 AI 配置档不存在。',
-    customRuleProfileWithBuiltin: '引擎选了内置翻译时，不能再指定 AI 配置档。',
+    customRuleProfileWithBuiltin: "只有引擎选了你自己的 AI 模型时，才能指定 AI 配置档。",
     transferSectionAiProfiles: 'AI 配置档',
     transferPreviewAiProfiles: 'AI 配置档：将新增 {added} 个 AI 配置档、替换 {replaced} 个。',
 };

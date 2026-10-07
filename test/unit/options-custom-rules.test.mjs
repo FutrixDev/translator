@@ -46,6 +46,8 @@ function loadCard(stored) {
     SettingsTransfer,
     // 规则编辑器的领域下拉按 PromptAddenda.DOMAINS 画（options.html 里排在卡片之前）。
     PromptAddenda: globalThis.PromptAddenda,
+    // 引擎下拉按 Engines.ENGINES 画（D-479，options.html 里同样排在卡片之前）。
+    Engines: globalThis.Engines,
     console,
     currentUILang: 'en',
     syncAutoEngineState() {},

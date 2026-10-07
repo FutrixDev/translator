@@ -341,7 +341,7 @@
     engineBuiltin: 'Chrome 내장 번역(무료, 오프라인)',
     engineCustomAi: '내 AI 모델',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: 'Chrome 내장 번역은 기기에서 실행됩니다. API 키도, 비용도, 네트워크도 필요 없습니다. 더 나은 번역 품질과 단어 설명이 필요하면 내 AI 모델로 전환하세요. 동영상 자막도 이 엔진을 씁니다. 자막이 쓴 AI 문자 수는 자동 번역 설정의 하루 한도에 포함됩니다.',
+    hintTranslationEngine: "Chrome 내장 번역은 기기에서 실행됩니다. API 키도, 비용도, 네트워크도 필요 없습니다. 더 나은 번역 품질과 단어 설명이 필요하면 내 AI 모델이나 Blab Translation으로 전환하세요. Blab Translation은 Blab 구독에 포함되어 API 키가 필요 없지만, 텍스트가 번역을 위해 Blab 서버로 전송됩니다. 동영상 자막도 이 엔진을 씁니다. 자막이 내 AI 모델에서 쓴 문자 수는 자동 번역 설정의 하루 한도에 포함됩니다.",
     builtinLanguagePack: '언어 팩',
     downloadLanguagePack: '언어 팩 다운로드',
     builtinReady: '준비 완료. 오프라인에서 번역할 수 있습니다',
@@ -690,7 +690,7 @@
     translationFailedRetry: '번역 실패 · 다시 시도',
     aiProfileLimitsHint: '실패한 요청은 자동으로 다시 시도됩니다(총 최대 3회 시도). 이 제한은 이 프로필에만 적용됩니다.',
     customRuleProfileMissing: '이 규칙이 사용하는 AI 프로필이 없습니다.',
-    customRuleProfileWithBuiltin: '기본 제공 엔진을 쓰는 규칙에는 AI 프로필을 지정할 수 없습니다.',
+    customRuleProfileWithBuiltin: "AI 프로필은 엔진이 내 AI 모델인 규칙에만 지정할 수 있습니다.",
     transferSectionAiProfiles: 'AI 프로필',
     transferPreviewAiProfiles: 'AI 프로필: {added}개 추가, {replaced}개 교체.',
 };

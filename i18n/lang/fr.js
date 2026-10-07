@@ -341,7 +341,7 @@
     engineBuiltin: 'Traduction intégrée de Chrome (gratuite, hors ligne)',
     engineCustomAi: "Mon modèle d'IA",
     engineBlab: "Blab Translation",
-    hintTranslationEngine: "La traduction intégrée de Chrome s'exécute sur votre appareil : aucune clé API, aucun coût, aucun réseau. Passez à votre propre modèle d'IA pour une meilleure qualité et des explications de mots. Les sous-titres vidéo utilisent aussi ce moteur ; l'IA qu'ils consomment compte dans la limite quotidienne de la traduction automatique.",
+    hintTranslationEngine: "La traduction intégrée de Chrome s'exécute sur votre appareil : aucune clé API, aucun coût, aucun réseau. Passez à votre propre modèle d'IA pour une meilleure qualité et des explications de mots, ou à Blab Translation, inclus dans un abonnement Blab et sans clé API : avec Blab Translation, votre texte est envoyé aux serveurs de Blab pour être traduit. Les sous-titres vidéo utilisent aussi ce moteur ; ce qu'ils consomment sur votre propre modèle d'IA compte dans la limite quotidienne de la traduction automatique.",
     builtinLanguagePack: 'Pack de langue',
     downloadLanguagePack: 'Télécharger le pack de langue',
     builtinReady: 'Prêt à traduire hors ligne',
@@ -690,7 +690,7 @@
     translationFailedRetry: 'Échec de la traduction · Réessayer',
     aiProfileLimitsHint: 'Les requêtes échouées sont relancées automatiquement, jusqu’à 3 essais. Ces limites s’appliquent à ce profil uniquement.',
     customRuleProfileMissing: 'Le profil IA utilisé par cette règle n’existe pas.',
-    customRuleProfileWithBuiltin: 'Une règle qui utilise le moteur intégré ne peut pas indiquer de profil IA.',
+    customRuleProfileWithBuiltin: "Une règle ne peut indiquer un profil IA que si son moteur est votre propre modèle d'IA.",
     transferSectionAiProfiles: 'Profils IA',
     transferPreviewAiProfiles: 'Profils IA : {added} ajouté(s), {replaced} remplacé(s).',
 };

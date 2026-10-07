@@ -341,7 +341,7 @@
     engineBuiltin: 'Chrome 內建翻譯（免費、離線）',
     engineCustomAi: '我的 AI 模型',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: 'Chrome 內建翻譯在本機執行，不需要 API Key，不花錢，也不連網。想要更高品質的譯文與詞彙講解，可切換到你自己的 AI 模型。影片字幕也走這一個，它用掉的 AI 字數記進自動翻譯設定裡的每日上限。',
+    hintTranslationEngine: "Chrome 內建翻譯在本機執行，不需要 API Key，不花錢，也不連網。想要更高品質的譯文與詞彙講解，可切換到你自己的 AI 模型，或是 Blab Translation：它包含在 Blab 訂閱中，不需要 API Key，但選了它，文字會傳送到 Blab 的伺服器翻譯。影片字幕也走這一個，它在你自己的 AI 模型上用掉的字數記進自動翻譯設定裡的每日上限。",
     builtinLanguagePack: '語言包',
     downloadLanguagePack: '下載語言包',
     builtinReady: '已就緒，可離線翻譯',
@@ -690,7 +690,7 @@
     translationFailedRetry: '翻譯失敗 · 重試',
     aiProfileLimitsHint: '請求失敗時會自動重試，最多共嘗試 3 次。以上限速只作用於這一個設定檔。',
     customRuleProfileMissing: '規則指定的 AI 設定檔不存在。',
-    customRuleProfileWithBuiltin: '引擎選了內建翻譯時，不能再指定 AI 設定檔。',
+    customRuleProfileWithBuiltin: "只有引擎選了你自己的 AI 模型時，才能指定 AI 設定檔。",
     transferSectionAiProfiles: 'AI 設定檔',
     transferPreviewAiProfiles: 'AI 設定檔：將新增 {added} 個、取代 {replaced} 個。',
 };

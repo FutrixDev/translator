@@ -341,7 +341,7 @@
     engineBuiltin: 'In Chrome integriert (kostenlos, offline)',
     engineCustomAi: 'Mein KI-Modell',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: 'Die in Chrome integrierte Übersetzung läuft auf Ihrem Gerät – kein API-Schlüssel, keine Kosten, kein Netzwerk. Für höhere Qualität und Worterklärungen wechseln Sie zu Ihrem eigenen KI-Modell. Auch Videountertitel nutzen diese Engine; die KI, die sie verbrauchen, zählt zum Tageslimit der automatischen Übersetzung.',
+    hintTranslationEngine: "Die in Chrome integrierte Übersetzung läuft auf Ihrem Gerät – kein API-Schlüssel, keine Kosten, kein Netzwerk. Für höhere Qualität und Worterklärungen wechseln Sie zu Ihrem eigenen KI-Modell oder zu Blab Translation, das in einem Blab-Abo enthalten ist und keinen API-Schlüssel braucht: Mit Blab Translation wird Ihr Text zur Übersetzung an die Server von Blab gesendet. Auch Videountertitel nutzen diese Engine; was sie bei Ihrem eigenen KI-Modell verbrauchen, zählt zum Tageslimit der automatischen Übersetzung.",
     builtinLanguagePack: 'Sprachpaket',
     downloadLanguagePack: 'Sprachpaket herunterladen',
     builtinReady: 'Bereit für die Offline-Übersetzung',
@@ -690,7 +690,7 @@
     translationFailedRetry: 'Übersetzung fehlgeschlagen · Erneut versuchen',
     aiProfileLimitsHint: 'Fehlgeschlagene Anfragen werden automatisch wiederholt, bis zu 3 Versuche. Diese Limits gelten nur für dieses Profil.',
     customRuleProfileMissing: 'Das AI-Profil dieser Regel existiert nicht.',
-    customRuleProfileWithBuiltin: 'Eine Regel mit der integrierten Übersetzung kann kein AI-Profil angeben.',
+    customRuleProfileWithBuiltin: "Eine Regel kann nur dann ein AI-Profil angeben, wenn sie Ihr eigenes KI-Modell nutzt.",
     transferSectionAiProfiles: 'AI-Profile',
     transferPreviewAiProfiles: 'AI-Profile: {added} werden hinzugefügt, {replaced} ersetzt.',
 };

@@ -185,6 +185,26 @@ test('options blab: both selects load and save through Engines.normalizeEngine, 
   assert.equal(Engines.normalizeEngine('blab'), 'blab');
 });
 
+test('options blab: the site-rule editor can pin every engine, Blab included, and only AI asks to confirm spend', () => {
+  const source = repoSource('options/options-custom-rules.js');
+  assert.match(source, /for \(const engine of Engines\.ENGINES\) select\.appendChild\(new Option\(t\(RULE_ENGINE_LABELS\[engine\]\), engine\)\);/);
+  const labels = vm.runInNewContext(`${source.match(/const RULE_ENGINE_LABELS = Object\.freeze\(\{[\s\S]*?\}\);/)[0]} RULE_ENGINE_LABELS`);
+  assert.deepEqual(Object.keys(labels).sort(), [...Engines.ENGINES].sort());
+  for (const key of Object.values(labels)) assert.notEqual(en(key), key, `${key} is a real message`);
+  assert.match(source, /if \(select\.value === 'ai' && previous !== 'ai' && !confirmUnattendedAiSpend\('customRuleEngineAiConfirm'\)\)/);
+});
+
+test('options blab: the engine hint in every language says Blab sends text to Blab\'s servers', async () => {
+  const { messageCatalog } = await import('./helpers/sources.mjs');
+  const catalog = messageCatalog();
+  const langs = Object.keys(catalog);
+  assert.equal(langs.length, 10);
+  for (const lang of langs) {
+    assert.match(catalog[lang].hintTranslationEngine, /Blab Translation/, lang);
+    assert.doesNotMatch(catalog[lang].customRuleProfileWithBuiltin, /built-in|integriert|integrado|intégré|内蔵|기본 제공|встроенн|内置|內建/i, lang);
+  }
+});
+
 test('options blab: content and settings ask the same predicate', () => {
   assert.match(repoSource('content/engine/model.js'), /Engines\.blabAccess\(response\.data\)/);
 });

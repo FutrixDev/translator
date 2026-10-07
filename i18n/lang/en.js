@@ -212,7 +212,7 @@
     engineBuiltin: 'Chrome Built-in (Free, Offline)',
     engineCustomAi: 'My AI Model',
     engineBlab: "Blab Translation",
-    hintTranslationEngine: "Chrome's built-in translation runs on your device — no API key, no cost, no network. Switch to your own AI model for higher quality and word explanations. Video subtitles use this engine too; the AI they spend counts toward the daily limit under automatic translation.",
+    hintTranslationEngine: "Chrome's built-in translation runs on your device — no API key, no cost, no network. Switch to your own AI model for higher quality and word explanations, or to Blab Translation, which is included with a Blab subscription and needs no API key: with Blab Translation your text is sent to Blab's servers to be translated. Video subtitles use this engine too; what they spend on your own AI model counts toward the daily limit under automatic translation.",
     builtinLanguagePack: 'Language Pack',
     downloadLanguagePack: 'Download Language Pack',
     builtinReady: 'Ready to translate offline',
@@ -731,7 +731,7 @@ Rules:
     translationFailedRetry: 'Translation failed · Retry',
     aiProfileLimitsHint: 'Failed requests are retried automatically, up to 3 tries. These limits apply to this profile only.',
     customRuleProfileMissing: 'The AI profile this rule uses does not exist.',
-    customRuleProfileWithBuiltin: 'A rule that uses the built-in engine cannot name an AI profile.',
+    customRuleProfileWithBuiltin: "A rule can name an AI profile only when its engine is your own AI model.",
     transferSectionAiProfiles: 'AI profiles',
     transferPreviewAiProfiles: 'AI profiles: {added} will be added, {replaced} replaced.',
 };
