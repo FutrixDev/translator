@@ -11,7 +11,9 @@
 //     are built from FIELDS (checked here from the prompt's own text);
 //   - the phonetics asked for are the translation's, in the target language,
 //     and each phonetic speaker reads the translation: UK in en-GB, US in
-//     en-US, an unlabelled row in the request's target language (D-487);
+//     en-US, an unlabelled row in the request's target language (D-487); UK
+//     and US hold only for an English target, otherwise the label is dropped
+//     and the row is read in the target language;
 //   - render() puts model strings on the page as text, never as HTML, and
 //     stops the old entry's speaker before replacing it;
 //   - only an AI answer in word mode carries an entry (entryFor).
@@ -24,6 +26,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource, workerSource } from './helpers/sources.mjs';
 
+// render() reads LangTags; the manifest loads it first (checked below).
+await import('../../shared/lang-tags.js');
 await import('../../shared/dict-entry.js');
 const {
   FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
@@ -395,6 +399,35 @@ test('an English translation has UK and US rows whose speakers read it in en-GB 
 test('an unlabelled row speaks in whichever language the request translated into', () => {
   const { bound } = draw(normalize({ translation: 'はしる', phonetics: [{ label: '', ipa: 'hashiru' }] }), 'ja');
   assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'はしる', lang: 'ja' }]);
+});
+
+test('a UK/US label under a non-English target is dropped and the row is read in the target language', () => {
+  // A stale or malformed label from the model must not pick an English voice
+  // for a Spanish word: the speech layer trusts the declared language.
+  const { container, bound } = draw(normalize({ translation: 'correr', phonetics: [{ label: 'US', ipa: 'koˈreɾ' }] }), 'es');
+  assert.deepEqual(container.find('ai-translator-dict-accent'), []);
+  assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['koˈreɾ']);
+  assert.doesNotMatch(container.textContent, /UK|US/);
+  assert.deepEqual(bound.map((b) => b.button.dataset.accent), ['']);
+  assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'correr', lang: 'es' }]);
+});
+
+test('an English target with a region subtag keeps the UK and US voices', () => {
+  for (const targetLang of ['en-US', 'en-GB', 'EN']) {
+    const { container, bound } = draw(normalize(CAT), targetLang);
+    assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US'], targetLang);
+    assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'cat', lang: 'en-GB' }, { text: 'cat', lang: 'en-US' }], targetLang);
+  }
+});
+
+test('the content scripts load shared/lang-tags.js before shared/dict-entry.js', () => {
+  const js = JSON.parse(repoSource('manifest.json')).content_scripts
+    .filter((entry) => entry.js.includes('shared/dict-entry.js'));
+  assert.ok(js.length > 0, 'the manifest loads shared/dict-entry.js');
+  for (const { js: list } of js) {
+    const at = list.indexOf('shared/lang-tags.js');
+    assert.ok(at >= 0 && at < list.indexOf('shared/dict-entry.js'), 'lang-tags.js must come before dict-entry.js');
+  }
 });
 
 test('a translation-only entry draws nothing and hides the container', () => {

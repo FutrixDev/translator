@@ -327,7 +327,12 @@ language** (D-487): `FIELDS.phonetics.describe` asks for the pronunciation of
 one item with an empty label in that language's usual notation (pinyin with
 tone marks, kana) for any other target. Every phonetic speaker reads
 `entry.translation` (aria label `pronounceTranslation`): `UK` in `en-GB`, `US`
-in `en-US`, an empty label in the target language. So `render(container,
+in `en-US`, an empty label in the target language. The accent voices hold
+only for an English target (`LangTags.getLangBase(targetLang) === 'en'`, so
+render reads `LangTags`, loaded before it in the manifest): under any other
+target a `UK`/`US` label is dropped at render (D-472) and the row is read in
+the target language — a stale label must not give `correr` an English voice.
+So `render(container,
 entry, { targetLang, t, speech })` takes the target language the caller used
 for this request (the dialog's or card's override, else the shown target) and
 throws on an entry drawn without one; it has no `word` option. The looked-up

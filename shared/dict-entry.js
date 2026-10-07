@@ -34,7 +34,9 @@
 // this file writes the speaker glyph, a constant from content/content-speech.js.
 //
 // Dual-mode classic script: the service worker imports it, the content scripts
-// load it from the manifest, both read globalThis.DictEntry. No dependencies.
+// load it from the manifest, both read globalThis.DictEntry. render() alone
+// reads globalThis.LangTags (shared/lang-tags.js, before this file in the
+// manifest), and only when it runs: the service worker never renders.
 (function (root) {
   'use strict';
 
@@ -90,7 +92,9 @@
   // The phonetics are the translation's, in the target language (D-487). An
   // English translation has two labelled pronunciations, each read aloud in its
   // own accent; any other target language has one with an empty label, read
-  // aloud in that target language (render's `targetLang`).
+  // aloud in that target language (render's `targetLang`). The accent voices
+  // are for an English target only: under any other target a UK/US label is a
+  // wrong optional field, dropped (D-472), and the row is read in `targetLang`.
   const PHONETIC_LANGS = Object.freeze({ UK: 'en-GB', US: 'en-US' });
 
   // The shape. Each list has its item keys, a cap (longer lists are cut, not
@@ -281,7 +285,9 @@
    * still talking is stopped first: its button is about to leave the page.
    *
    * The speaker on each phonetic row reads `entry.translation` (D-487): a UK
-   * row in en-GB, a US row in en-US, an unlabelled row in `targetLang`. The
+   * row in en-GB, a US row in en-US, an unlabelled row in `targetLang`. UK/US
+   * hold only when `targetLang` is English; under any other target the label
+   * is not drawn and the row is read in `targetLang`. The
    * looked-up text has its own speaker on each surface, outside the entry.
    *
    * @param {HTMLElement} container
@@ -324,7 +330,9 @@
       const setters = [];
       speakerSetters.set(container, setters);
       const block = section('phonetics');
-      for (const { label: tag, ipa } of entry.phonetics) {
+      const englishTarget = root.LangTags.getLangBase(targetLang) === 'en';
+      for (const { label: given, ipa } of entry.phonetics) {
+        const tag = englishTarget ? given : '';
         const row = el('span', 'ai-translator-dict-phonetic');
         if (tag) row.appendChild(el('span', 'ai-translator-dict-accent', t(tag === 'UK' ? 'dictUK' : 'dictUS')));
         row.appendChild(el('span', 'ai-translator-dict-ipa', ipa));
