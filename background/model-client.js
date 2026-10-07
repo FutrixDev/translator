@@ -39,9 +39,17 @@
 //   clock         单测替换的时钟 { random(), sleep(ms, signal), now(), setTimer(fn, ms),
 //                 clearTimer(handle) }；
 //   limiter       单测替换的限速器（model-limiter.js 的 createLimiter()）。
+//
+// 两种送法（transportFor，按档认一次）：用户自己的 AI 档直连服务商（modelRequest
+// + sendToProvider）；Engines.BLAB_PROFILE 发到账户的 /api/blab/complete
+// （blab-client.js，D-477）。重试、限速、keepalive、超时与总预算两边是同一套。
+// Blab 那几种账户状态（daily_limit / plan_required / unauthorized）的失败带
+// retryable: false，不重试（设计 §5.2）。
 
 import '../shared/api-compat.js';
+import '../shared/engines.js';
 import { modelRequest, apiError } from './api-client.js';
+import { blabRequest, sendBlab } from './blab-client.js';
 import { acquire as holdKeepalive, release as dropKeepalive } from './keepalive.js';
 import { limiter as productLimiter } from './model-limiter.js';
 
@@ -116,23 +124,69 @@ function parseRetryAfter(value, now) {
 
 /** 这一次失败之后还要不要再试。apiFailure 之外的错误（调用方取消、程序错）一律不试。 */
 function isRetryable(failure) {
-  if (!failure || failure.empty) return false;
+  if (!failure || failure.empty || failure.retryable === false) return false;
   if (failure.network || failure.timeout) return true;
   const status = Number(failure.status);
   return status === 429 || (status >= 500 && status <= 599);
 }
 
 /**
+ * 直连服务商的一次发送：`signal` 是这一次尝试自己的。被它断开的，原样把错误抛
+ * 回去，由 attemptOnce 说成超时或取消；其余连不上的是网络错。
+ */
+async function sendToProvider(prepared, signal, clock) {
+  const { endpoint, claudeShape, headers, body } = prepared;
+  let response;
+  try {
+    response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw apiError(`Network error: ${endpoint}`, { network: true, status: 0, detail: '', endpoint });
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (signal.aborted) throw error;
+    data = {};
+  }
+
+  const result = readAPIResponse(data, response.status, response.ok, claudeShape);
+  if (result.failure) {
+    const { status, detail } = result.failure;
+    const failure = { ...result.failure, network: false, endpoint };
+    // Retry-After 在响应头里，readAPIResponse 只看正文：这里读，带到失败对象上。
+    const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), clock.now());
+    if (retryAfterMs !== null) failure.retryAfterMs = retryAfterMs;
+    throw apiError(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`, failure);
+  }
+  if (!result.text) {
+    throw apiError(`Empty answer: ${endpoint}`, { empty: true, status: response.status, detail: '', endpoint });
+  }
+  return { text: result.text };
+}
+
+const PROVIDER_TRANSPORT = Object.freeze({ prepare: modelRequest, send: sendToProvider });
+const BLAB_TRANSPORT = Object.freeze({ prepare: (_profile, request) => blabRequest(request), send: sendBlab });
+
+/** 这一档怎么发：Blab 那一档按 id 认（shared/engines.js），其余都是用户自己的 AI 档。 */
+function transportFor(profile) {
+  return profile.id === globalThis.Engines.BLAB_PROFILE.id ? BLAB_TRANSPORT : PROVIDER_TRANSPORT;
+}
+
+/**
  * 一次尝试：自己的超时、自己的 AbortController，调用方的 signal 转过来。
  * 超时取 min(timeoutSec, 剩余预算)；被预算截短时文案写实际等的整秒数。
+ * 发送本身交给 transport.send；它因这个 signal 失败的，这里说成超时或取消。
  */
-async function attemptOnce(profile, prepared, signal, clock, deadline) {
+async function attemptOnce(profile, transport, prepared, signal, clock, deadline) {
   const fullMs = profile.timeoutSec * 1000;
   const remainingMs = deadline - clock.now();
   const cut = remainingMs < fullMs;
   const limitMs = cut ? remainingMs : fullMs;
   const seconds = cut ? wholeSeconds(limitMs) : profile.timeoutSec;
-  const { endpoint, claudeShape, headers, body } = prepared;
+  const { endpoint } = prepared;
   const controller = new AbortController();
   let timedOut = false;
   const timer = clock.setTimer(() => {
@@ -144,46 +198,13 @@ async function attemptOnce(profile, prepared, signal, clock, deadline) {
     if (signal.aborted) controller.abort();
     else signal.addEventListener('abort', onCallerAbort, { once: true });
   }
-  const abortError = () => {
-    if (timedOut) return apiError(`Timeout after ${seconds}s: ${endpoint}`, { timeout: true, seconds, endpoint });
-    return callerAborted();
-  };
 
   try {
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (_) {
-      if (controller.signal.aborted) throw abortError();
-      throw apiError(`Network error: ${endpoint}`, { network: true, status: 0, detail: '', endpoint });
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch (_) {
-      if (controller.signal.aborted) throw abortError();
-      data = {};
-    }
-
-    const result = readAPIResponse(data, response.status, response.ok, claudeShape);
-    if (result.failure) {
-      const { status, detail } = result.failure;
-      const failure = { ...result.failure, network: false, endpoint };
-      // Retry-After 在响应头里，readAPIResponse 只看正文：这里读，带到失败对象上。
-      const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), clock.now());
-      if (retryAfterMs !== null) failure.retryAfterMs = retryAfterMs;
-      throw apiError(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`, failure);
-    }
-    if (!result.text) {
-      throw apiError(`Empty answer: ${endpoint}`, { empty: true, status: response.status, detail: '', endpoint });
-    }
-    return { text: result.text };
+    return await transport.send(prepared, controller.signal, clock);
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+    if (timedOut) throw apiError(`Timeout after ${seconds}s: ${endpoint}`, { timeout: true, seconds, endpoint });
+    throw callerAborted();
   } finally {
     clock.clearTimer(timer);
     if (signal) signal.removeEventListener('abort', onCallerAbort);
@@ -243,7 +264,8 @@ async function callModel(profile, request, {
 } = {}) {
   if (!(profile.timeoutSec > 0)) throw new TypeError('callModel: profile.timeoutSec must be a positive number');
   const { budgetMs, minAttemptMs } = budgetLimits();
-  const prepared = modelRequest(profile, request);
+  const transport = transportFor(profile);
+  const prepared = transport.prepare(profile, request);
   const maxAttempts = retry ? MAX_ATTEMPTS : 1;
   const deadline = clock.now() + budgetMs;
 
@@ -257,7 +279,7 @@ async function callModel(profile, request, {
         : null;
       let error;
       try {
-        return await attemptOnce(profile, prepared, signal, clock, deadline);
+        return await attemptOnce(profile, transport, prepared, signal, clock, deadline);
       } catch (caught) {
         error = caught;
       } finally {
