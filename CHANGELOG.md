@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 — 2026-10-07
 
 ### A word looks itself up like a dictionary
 
