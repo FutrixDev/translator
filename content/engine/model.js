@@ -54,8 +54,7 @@
       console.warn('Blab Translation: account check for Blab Translation failed (%s)', code);
       return false;
     }
-    const account = response.data;
-    return account.signedIn === true && !!account.blabTranslation && account.blabTranslation.available === true;
+    return globalThis.Engines.blabAccess(response.data) === globalThis.Engines.BLAB_ACCESS.AVAILABLE;
   }
 
   eng.model = { forRequest, blabAvailable };

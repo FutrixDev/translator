@@ -848,6 +848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSyncMirror();
   setupCustomRules();
   setupGlossary();
+  setupBlabEngine();
   setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row
@@ -858,5 +859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // one thing that genuinely needs the answer — the sign-in gate — can wait for
   // it rather than read a `comicSignedIn` that is only false because the
   // request has not landed yet.
-  comicAccountReady = refreshComicAccount().catch(() => {});
+  // force: the Blab Translation option reads this account (options-blab.js), and
+  // a subscription bought a minute ago must not wait out the worker's 30s cache.
+  comicAccountReady = refreshComicAccount({ force: true }).catch(() => {});
 });

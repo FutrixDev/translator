@@ -72,7 +72,29 @@
     return Boolean(profile) && profile.id === BLAB_PROFILE.id;
   }
 
+  /** What blabAccess() answers: the three states every surface draws (§5.4). */
+  const BLAB_ACCESS = Object.freeze({
+    SIGNED_OUT: 'signed_out',
+    PLAN_REQUIRED: 'plan_required',
+    AVAILABLE: 'available',
+  });
+
+  /**
+   * Whether an account, as getAccount() answers it (`{signedIn, ...billing/me}`),
+   * can use Blab Translation. Only the server decides (D-476): this reads
+   * `blabTranslation.available` and never infers it from the plan. A signed-in
+   * answer without the field is PLAN_REQUIRED, not available: a server that does
+   * not say yes has not said yes. The settings page and the content side's
+   * engine choice both ask this, so they cannot disagree.
+   */
+  function blabAccess(account) {
+    if (!account || account.signedIn !== true) return BLAB_ACCESS.SIGNED_OUT;
+    const blab = account.blabTranslation;
+    return blab && blab.available === true ? BLAB_ACCESS.AVAILABLE : BLAB_ACCESS.PLAN_REQUIRED;
+  }
+
   root.Engines = Object.freeze({
-    ENGINES, MODEL_ENGINES, BLAB_PROFILE, isEngine, isModelEngine, normalizeEngine, isBlabProfile,
+    ENGINES, MODEL_ENGINES, BLAB_PROFILE, BLAB_ACCESS,
+    isEngine, isModelEngine, normalizeEngine, isBlabProfile, blabAccess,
   });
 })(globalThis);

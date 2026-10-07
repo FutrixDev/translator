@@ -65,6 +65,7 @@ let storedPdfEnabled = false;
  * under them. Called on load and on every account transition.
  */
 function renderAccountFeatures() {
+  renderBlabEngine();
   renderAccountFeature('enableComicTranslation', storedComicEnabled, {
     toggle: elements.enableComicTranslation,
     lang: elements.comicTargetLang,
@@ -153,6 +154,7 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
 
 /** Put a fetched account on screen. Returns whether it is a signed-in one. */
 function showAccount(account) {
+  rememberBlabAccount(account);
   if (!account.signedIn) {
     comicSignedIn = false;
     renderAccountFeatures();
