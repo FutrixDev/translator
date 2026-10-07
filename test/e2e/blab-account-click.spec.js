@@ -199,9 +199,9 @@ test.describe('N-1 who uses up the account click', () => {
       await expect(entry).toHaveText(en('blabSubscribe'));
       const [pricing] = await Promise.all([context.waitForEvent('page'), entry.click()]);
       await pricing.waitForURL(/\/app\/pricing$/, { waitUntil: 'commit' });
-      await pricing.close();
-      // Opening the settings page asks billing/me for itself; count from here.
+      // Settings first: back in view it asks billing/me again; count after both.
       await options.close();
+      await pricing.close();
       const asked = blab.state.meRequests;
 
       // The user pays and translates at once, inside the latch's minute.
