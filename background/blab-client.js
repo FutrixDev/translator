@@ -55,13 +55,21 @@ let latch = null;
 
 // After the user clicked an account entry ("Subscribe", "Sign in") the latch may
 // be holding a state the user has just fixed on the site, which nothing tells
-// this device about (D-497 F3). `actionPending` says so until the next request
-// a person made asks billing/me once (refreshAfterAccountAction); requests
-// nobody clicked (the automatic pass, subtitles) ask at most every
+// this device about (D-497 F3). `actionPending` says so until a request a
+// person made has been through refreshAfterAccountAction after the click; only
+// such a request uses it up (D-498 F3-H). Requests nobody clicked (the
+// automatic pass, subtitles) never do — the click may be a minute old and the
+// latch they find a new one — and ask billing/me at most every
 // ACTION_REFRESH_MS meanwhile, not once per batch or line.
 const ACTION_REFRESH_MS = 10_000;
 let actionPending = false;
 let lastActionRefreshAt = -Infinity;
+
+// The billing/me refresh on its way, { explicit, done }, or null. Every request
+// that arrives meanwhile waits for it instead of asking again (D-498 N-2): a
+// page pass sends its batches together, and a batch that skipped the wait would
+// read the latch before the answer lands and be refused by it.
+let refreshing = null;
 
 async function currentToken() {
   const stored = await getToken();
@@ -90,21 +98,25 @@ async function rememberAccountFailure(error) {
  * available.
  */
 async function latchedFailure() {
-  if (!latch) return null;
-  if (Date.now() >= latch.until || (await currentToken()) !== latch.token) {
-    latch = null;
+  // The latch as this call found it: batches sent together read it at once, and
+  // one of them may let it go (or a new refusal replace it) while another waits
+  // on storage here.
+  const held = latch;
+  if (!held) return null;
+  const release = () => {
+    if (latch === held) latch = null;
     return null;
-  }
-  if (latch.failure.blab !== 'daily_limit') {
+  };
+  if (Date.now() >= held.until || (await currentToken()) !== held.token) return release();
+  if (held.failure.blab !== 'daily_limit') {
     const cached = await getCachedAccount();
-    const judgedSince = cached && cached.fetchedAt > latch.at;
+    const judgedSince = cached && cached.fetchedAt > held.at;
     if (judgedSince && globalThis.Engines.blabAccess({ signedIn: true, ...cached.account })
       === globalThis.Engines.BLAB_ACCESS.AVAILABLE) {
-      latch = null;
-      return null;
+      return release();
     }
   }
-  return latch;
+  return held;
 }
 
 /**
@@ -126,23 +138,48 @@ function noteAccountAction() {
  * Before a Blab request, after an account entry was clicked: while a
  * plan_required or unauthorized latch holds, ask billing/me (forced past its
  * 30 s cache). latchedFailure then releases the latch if the account is
- * available now. `explicit`: a person asked for this request, and it is the one
- * that uses up the pending refresh; any other asks at most every
- * ACTION_REFRESH_MS. A billing/me failure is this request's failure, worded and
+ * available now. `explicit`: a person asked for this request. Only such a
+ * request uses up the pending refresh — by asking billing/me while the latch
+ * holds, or by finding nothing held; any other asks at most every
+ * ACTION_REFRESH_MS and leaves the click pending. A billing/me failure is this
+ * request's failure (and that of every request that waited for it), worded and
  * remembered like the service's own answer.
  */
 async function refreshAfterAccountAction({ explicit }) {
+  if (refreshing) {
+    const shared = refreshing;
+    await shared.done;
+    // A person's request does not settle for an answer asked before it on
+    // nobody's behalf: it looks again, and asks again if the latch still holds.
+    if (shared.explicit || !explicit) return;
+  }
   if (!actionPending) return;
   const held = await latchedFailure();
-  if (!held || held.failure.blab === 'daily_limit') {
-    // Nothing the click could have fixed is held any more.
-    if (!held) actionPending = false;
+  // Another request started the refresh while this one read the latch.
+  if (refreshing) return refreshAfterAccountAction({ explicit });
+  if (!held) {
+    // Nothing is held: a person's request goes out as it is, and its own
+    // answer is the account's. One nobody made leaves the click pending.
+    if (explicit) actionPending = false;
     return;
   }
+  // The allowance comes back with the day, not with a click.
+  if (held.failure.blab === 'daily_limit') return;
   const now = Date.now();
   if (!explicit && now - lastActionRefreshAt < ACTION_REFRESH_MS) return;
   if (explicit) actionPending = false;
   lastActionRefreshAt = now;
+  const flight = { explicit, done: askAccount() };
+  refreshing = flight;
+  try {
+    await flight.done;
+  } finally {
+    if (refreshing === flight) refreshing = null;
+  }
+}
+
+/** billing/me, forced; its failure turned into the Blab failure and remembered. */
+async function askAccount() {
   try {
     await getAccount({ force: true });
   } catch (error) {

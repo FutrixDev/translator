@@ -503,3 +503,103 @@ test('F3: a billing/me failure is the request\'s failure, worded like the servic
     assert.equal(isMe(calls), 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Who uses up the click (D-498 F3-H) and one billing/me for many batches (N-2)
+// ---------------------------------------------------------------------------
+
+/** A billing/me reply held back until `answer()`: what the batches see while it is on its way. */
+function heldBackMe() {
+  const pending = [];
+  return {
+    reply: (body) => new Promise((resolve) => { pending.push(() => resolve(json(body()))); }),
+    started: () => pending.length,
+    answer: () => { for (const resolve of pending.splice(0)) resolve(); },
+  };
+}
+
+const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('F3-H: the latch runs out, a request nobody made is refused anew; the person\'s next request still asks billing/me and goes through', async () => {
+  signIn();
+  let available = false;
+  await withService((init, n, url) => (url === ME
+    ? json({ blabTranslation: { available } })
+    : (available ? json({ text: 'ok' }) : PLAN_REQUIRED())), async (calls) => {
+    await failureOf(call(request));
+    // The user clicks Subscribe and stays on the pricing page past the latch.
+    noteAccountAction();
+    await later(61_000, async () => {
+      // An automatic pass, then its refusal: a new latch, given after the click.
+      await refreshAfterAccountAction({ explicit: false });
+      await failureOf(call(request));
+    });
+    assert.equal(isMe(calls), 0, 'nothing was held when the automatic pass came');
+    // The user pays and translates.
+    available = true;
+    await later(61_010, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 1, 'the click is still pending: the person\'s request asks billing/me');
+    assert.deepEqual(await later(61_020, () => call(request)), { text: 'ok' });
+  });
+});
+
+test('N-2: batches sent together after a click share one billing/me, and every one goes through', async () => {
+  signIn();
+  let available = false;
+  const me = heldBackMe();
+  await withService((init, n, url) => (url === ME
+    ? me.reply(() => ({ blabTranslation: { available } }))
+    : (available ? json({ text: 'ok' }) : PLAN_REQUIRED())), async (calls) => {
+    await failureOf(call(request));
+    noteAccountAction();
+    available = true;
+    // A page pass: each batch is a person's request, refreshed before it is sent.
+    const batch = async () => {
+      await refreshAfterAccountAction({ explicit: true });
+      return call(request);
+    };
+    await later(5, async () => {
+      const first = Promise.all([batch(), batch(), batch(), batch()]);
+      while (!me.started()) await tick();
+      // One more arrives after the click was used up, while the answer is on its way.
+      const late = batch();
+      await tick(5);
+      me.answer();
+      assert.deepEqual(await first, Array(4).fill({ text: 'ok' }));
+      assert.deepEqual(await late, { text: 'ok' });
+    });
+    assert.equal(isMe(calls), 1);
+  });
+});
+
+test('N-2: a person\'s request that finds an automatic billing/me on its way waits for it, and asks again only while the latch still holds', async () => {
+  for (const [paid, at] of [[false, 500_000], [true, 600_000]]) {
+    signIn();
+    let available = false;
+    const me = heldBackMe();
+    await withService((init, n, url) => (url === ME
+      ? me.reply(() => ({ blabTranslation: { available } }))
+      : PLAN_REQUIRED()), async (calls) => {
+      // Past every earlier case's 10 s spacing, so the automatic request may ask.
+      await later(at, () => failureOf(call(request)));
+      noteAccountAction();
+      await later(at + 10, async () => {
+        const automatic = refreshAfterAccountAction({ explicit: false });
+        while (!me.started()) await tick();
+        const person = refreshAfterAccountAction({ explicit: true });
+        available = paid;
+        me.answer();
+        await automatic;
+        // Not paid: the latch still holds, and the person's request asks itself.
+        if (!paid) {
+          while (!me.started()) await tick();
+          me.answer();
+        }
+        await person;
+      });
+      assert.equal(isMe(calls), paid ? 1 : 2, paid ? 'released: no second ask' : 'still held: asks again');
+      await later(at + 20, () => refreshAfterAccountAction({ explicit: true }));
+      assert.equal(isMe(calls), paid ? 1 : 2, 'the click is used up');
+    });
+  }
+});
