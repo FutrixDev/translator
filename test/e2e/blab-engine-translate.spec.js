@@ -53,7 +53,9 @@ const walkDir = process.env.BLAB_WALK_DIR;
 async function walkShot(page, name) {
   if (!walkDir) return;
   fs.mkdirSync(walkDir, { recursive: true });
-  await page.screenshot({ path: path.join(walkDir, `${name}.png`) });
+  // Transitions run to their end state: the error toast slides in and the
+  // settings cards fade, and a mid-flight frame is not what the user sees.
+  await page.screenshot({ path: path.join(walkDir, `${name}.png`), animations: 'disabled' });
 }
 
 /**
