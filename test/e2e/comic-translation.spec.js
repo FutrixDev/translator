@@ -9,9 +9,9 @@
  * 服务是模拟的。
  */
 const { test, expect } = require('./fixtures');
+const { connectExtension } = require('./helpers');
 const {
   startMockService,
-  connectExtension,
   triggerComicTranslation,
   triggerComicPageTranslation,
 } = require('./comic-fixtures');

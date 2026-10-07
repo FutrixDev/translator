@@ -8,7 +8,8 @@
 //
 // A classic script loaded before popup.js, in the same global lexical scope:
 // it looks up its own elements and wires its own listeners in
-// setupPdfSection(), and borrows only t() from popup.js, resolved at call time.
+// setupPdfSection(), and borrows t() and sendToActiveTab() from popup.js,
+// resolved at call time.
 // ---------------------------------------------------------------------------
 
 const PDF_UI = globalThis.AI_TRANSLATOR_PDF_UI;
@@ -41,6 +42,10 @@ let pdfInlinePrompt = null;
 let pdfPlaceholder = null;
 // This section's own elements, looked up by setupPdfSection().
 let pdfEls = null;
+// AccountGate's answer for document translation, as refreshPdfSection() drew
+// it. Off hides the section; signed out shows both entries and no task list
+// (the jobs belong to an account); only ready lists and polls.
+let pdfSectionState = null;
 
 /** The popup's one call into this file, from its DOMContentLoaded. */
 function setupPdfSection() {
@@ -56,9 +61,9 @@ function setupPdfSection() {
   // the instant a create starts, from the context menu as much as from here.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.pdfJobs) return;
-    // Gated off on this device: refreshPdfSection has hidden the whole
-    // section and rendering would put it back on screen.
-    if (pdfEls.translateLocal.hidden) return;
+    // No task list on this device (switched off, or signed out):
+    // refreshPdfSection has hidden it and rendering would put it on screen.
+    if (pdfSectionState !== AccountGate.FEATURE_STATES.READY) return;
     const records = Array.isArray(changes.pdfJobs.newValue) ? changes.pdfJobs.newValue : [];
     renderPdfJobs(records);
   });
@@ -66,8 +71,10 @@ function setupPdfSection() {
 }
 
 async function refreshPdfSection() {
-  const pdfState = await AccountGate.readFeatureState('enablePdfTranslation');
-  if (pdfState !== AccountGate.FEATURE_STATES.READY) {
+  pdfSectionState = await AccountGate.readFeatureState('enablePdfTranslation');
+  // Off means gone. Signed out still offers both entries — using one signs in
+  // first (shared/account-gate.js), which is the whole point of offering it.
+  if (pdfSectionState === AccountGate.FEATURE_STATES.OFF) {
     pdfEls.translateCurrent.hidden = true;
     pdfEls.translateLocal.hidden = true;
     pdfEls.jobs.hidden = true;
@@ -83,6 +90,12 @@ async function refreshPdfSection() {
     pdfEls.translateCurrent.hidden = true;
   }
 
+  // The task list is the account's: signed out there is nothing to list, so
+  // nothing is asked for.
+  if (pdfSectionState !== AccountGate.FEATURE_STATES.READY) {
+    pdfEls.jobs.hidden = true;
+    return;
+  }
   await refreshPdfJobs({ refresh: false });
   schedulePdfPoll();
 }
@@ -307,6 +320,11 @@ async function onPdfTranslateCurrent() {
       return;
     }
 
+    if (pdfSectionState === AccountGate.FEATURE_STATES.SIGNED_OUT) {
+      await handPdfToPage();
+      return;
+    }
+
     pdfInlineError = null;
     pdfInlinePrompt = null;
     const fileName = PDF_UI.pdfFileNameFromUrl(tab.url);
@@ -378,6 +396,38 @@ async function onPdfTranslateCurrent() {
     setPdfBusy(false);
     pdfPlaceholder = null;
   }
+}
+
+/**
+ * Signed out: sign in first, then send this PDF — without a second click.
+ *
+ * The popup cannot do that itself: opening the sign-in tab closes it, and the
+ * wait dies with it. The page's content script outlives the sign-in, and
+ * already does exactly this for the PDF hint and Alt+M — MEDIA_SHORTCUT runs
+ * its one sign-in-then-continue (run() in content/content-media-hints.js), so
+ * the popup hands the click over rather than keeping a second copy of it.
+ *
+ * kind: 'pdf' asks for the PDF and nothing else: a URL that looks like a PDF
+ * but serves HTML answers { kind: null } instead of falling through to the
+ * comic on screen, so this row can never start a comic job.
+ *
+ * Every other answer ends in exactly one sign-in tab, opened from here; the
+ * PDF is then one more click away:
+ * - null: no receiver (a restricted page, an extension just reloaded);
+ * - { kind: null }: the page says its document is not a PDF.
+ */
+async function handPdfToPage() {
+  const reply = await sendToActiveTab({ type: 'MEDIA_SHORTCUT', kind: 'pdf' });
+  if (!reply || reply.kind !== 'pdf') {
+    console.warn(
+      reply
+        ? 'Blab Translation: the page says it is not a PDF document, signing in from the popup'
+        : 'Blab Translation: no content script took the signed-out PDF translate, signing in from the popup',
+      reply,
+    );
+    chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+  }
+  window.close();
 }
 
 /**

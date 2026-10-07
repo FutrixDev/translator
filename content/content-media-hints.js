@@ -127,12 +127,27 @@
   }
 
   /**
-   * Alt+M，和条子上那个按钮。这一页是什么就做什么；都不是就说一句（按了没反应
-   * 看起来像坏了）—— 条子不算用掉，滚到漫画页再点还是它。「屏幕上有没有漫画页」
-   * 只问 ctx.hasComicPageOnScreen() 这一处，快捷键和按钮是同一个答案。
+   * MEDIA_SHORTCUT 的三个发送方：Alt+M、条子上那个按钮、popup 未登录时的
+   * 「翻译此 PDF」。
+   *
+   * 不带 only（Alt+M 和条子）：这一页是什么就做什么；都不是就说一句（按了没
+   * 反应看起来像坏了）—— 条子不算用掉，滚到漫画页再点还是它。「屏幕上有没有
+   * 漫画页」只问 ctx.hasComicPageOnScreen() 这一处，快捷键和按钮是同一个答案。
+   *
+   * only === 'pdf'（popup 那一行）：只做 PDF。网址像 PDF 而文档不是的时候回
+   * null、什么都不做也不说 —— 一个写着「翻译此 PDF」的按钮不能起漫画任务，
+   * 也不该在页面上冒出漫画那句提示；接下来怎么办由 popup 决定（popup-pdf.js
+   * handPdfToPage）。
+   *
    * 回的是做了哪一种，给消息那一头看。
    */
-  function runMediaShortcut() {
+  function runMediaShortcut(only) {
+    if (only !== undefined && only !== 'pdf') throw new Error(`MEDIA_SHORTCUT: unknown kind ${only}`);
+    if (only === 'pdf') {
+      if (!isPdfPage()) return null;
+      run('pdf');
+      return 'pdf';
+    }
     const kind = isPdfPage() ? 'pdf' : (ctx.hasComicPageOnScreen() ? 'comic' : null);
     if (!kind) {
       ctx.showAutoStatusNotice(t('mediaShortcutNothing'));

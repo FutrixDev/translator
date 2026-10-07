@@ -32,6 +32,20 @@
   written as one line of text, say) is left out rather than failing the whole
   lookup.
 
+### PDF and comic translation show in the popup before you sign in
+
+- **The popup offers "Translate this PDF", "Translate a local document" and
+  the two comic rows even when this device is not signed in.** They used to
+  appear only after signing in, so a signed-out user on a PDF or a comic page
+  found nothing to click. Clicking one now asks you to sign in first, then
+  carries on: the PDF is sent, or the comic page is redrawn, without a second
+  click. On a page the extension cannot reach (or a .pdf link that turns out
+  not to be a PDF) the click opens the sign-in and the PDF takes one more click
+  afterwards. Closing the sign-in tab simply does nothing.
+- **Turning a feature off in Settings still hides its rows**, signed in or
+  not. The PDF task list still shows only when signed in, since the tasks
+  belong to the account.
+
 ### The X sidebar is translated
 
 - **News headlines and trends in X's right column are now translated.** The whole sidebar used to be kept in its original language, so

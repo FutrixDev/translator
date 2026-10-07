@@ -229,8 +229,14 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
     .map(u => u.visible).at(-1))).toBe(false);
 
   await page.goto(popupUrl);
+  // Both PDF rows start hidden in popup.html, so "hidden" proves nothing until
+  // the popup has read the switches. The comic row is put on screen by the same
+  // storage read, started in the same tick as the PDF one: once it shows (and a
+  // beat after), the PDF gate has had its say too.
+  await expect(page.locator('#comicTranslatePage')).toBeVisible();
+  await page.waitForTimeout(500);
   await expect(page.locator('#pdfTranslateLocal')).toBeHidden();
-  await expect(page.locator('#pdfTranslateThis')).toBeHidden();
+  await expect(page.locator('#pdfTranslateCurrent')).toBeHidden();
 
   await worker.evaluate(() => { delete globalThis.__pdfMenuUpdates; });
 });
@@ -242,7 +248,8 @@ test('the PDF switch is on by default and its entry points follow it', async ({ 
  * install starts in — both features ship on, so their preference arrives
  * switched on before the user has ever signed in. The settings page shows it as
  * it is (on) and says what is missing, so the user can turn it off without an
- * account (D-365); the entry points that can only answer "sign in" stay hidden.
+ * account (D-365); the popup offers the entry points, and using one signs in
+ * first (D-467) — only the task list, which belongs to the account, stays away.
  */
 test('signed out, a switch that is on shows on and says it waits for a sign-in', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, {
@@ -262,11 +269,13 @@ test('signed out, a switch that is on shows on and says it waits for a sign-in',
   // The task list belongs to the account.
   await expect(page.locator('#pdfTasksCard')).toBeHidden();
 
-  // The popup rows can only answer "sign in", so they stay away.
+  // The popup offers both features; using one signs in first. The task list
+  // is the account's, so it is not drawn.
   await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  await expect(page.locator('#comicTranslatePage')).toBeHidden();
-  await expect(page.locator('#comicColorizePage')).toBeHidden();
-  await expect(page.locator('#pdfTranslateLocal')).toBeHidden();
+  await expect(page.locator('#comicTranslatePage')).toBeVisible();
+  await expect(page.locator('#comicColorizePage')).toBeVisible();
+  await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
+  await expect(page.locator('#pdfJobs')).toBeHidden();
 
   // And drawing the page wrote nothing: the preference belongs to the account.
   expect(await getSyncSetting(context, 'enableComicTranslation')).toBe(true);

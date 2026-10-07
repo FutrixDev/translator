@@ -544,6 +544,38 @@ async function setExtensionAccount(page, signedIn = true) {
 }
 
 /**
+ * Point the extension at a mock account service and start from a clean slate:
+ * comicApiBase is the one base both PDF and comics talk to, and every stored
+ * token, account cache and job record a previous test left behind is cleared —
+ * a record left over would have the next test silently resume a job whose mock
+ * is already closed.
+ *
+ * Both switches are written every time, on unless the test says otherwise, so
+ * a test never inherits one from the profile. `signedIn: false` is a device
+ * with no token: the rows and hints still show, and a click signs in first.
+ *
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string} base the mock's origin
+ * @param {{signedIn?: boolean, comic?: boolean, pdf?: boolean}} [options]
+ */
+async function connectExtension(context, base, { signedIn = true, comic = true, pdf = true } = {}) {
+  const worker = await getServiceWorker(context);
+  await worker.evaluate(async ({ base, signedIn, comic, pdf }) => {
+    await chrome.storage.sync.set({ enableComicTranslation: comic, enablePdfTranslation: pdf });
+    await chrome.storage.local.remove([
+      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'comicJobs', 'pdfJobs', 'pdfUrlOps',
+    ]);
+    const values = { comicApiBase: base };
+    if (signedIn) {
+      values.comicToken = 'test-token';
+      values.comicTokenExpiresAt = Date.now() + 3600_000;
+    }
+    await chrome.storage.local.set(values);
+  }, { base, signedIn, comic, pdf });
+  return worker;
+}
+
+/**
  * Send a message to the active tab from the extension service worker
  * @param {import('@playwright/test').Page} page
  * @param {object} message
@@ -896,6 +928,7 @@ const HOSTILE_ENTRY_CSS = `${HOSTILE_PAGE_CSS}
 module.exports = {
   HOSTILE_PAGE_CSS,
   HOSTILE_ENTRY_CSS,
+  connectExtension,
   oursIn,
   ourNodesAt,
   sentSegments,

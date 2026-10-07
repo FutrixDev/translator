@@ -10,8 +10,7 @@
  * comic-reader.spec.js（读者翻页、页位复用、跨次访问）。
  */
 const zlib = require('node:zlib');
-const { getServiceWorker } = require('./helpers');
-const { startMockServer } = require('./mock-server');
+const { startMockServer, serveExtConnect } = require('./mock-server');
 const { crc32 } = require('./crc32');
 
 /**
@@ -238,7 +237,10 @@ async function startMockService(
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
 ) {
   const state = {
-    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0,
+    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    // Document API requests, which this mock does not serve: a comic spec
+    // asserts none was made.
+    pdfHits: [],
   };
 
   const { origin, close } = await startMockServer((req, res, base) => {
@@ -254,6 +256,10 @@ async function startMockService(
     };
 
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    // A URL that looks like a PDF but serves the comic page as HTML: the
+    // popup offers "Translate this PDF" on it, and that click must not become
+    // a comic job (popup-media-entries.spec.js).
+    if (url.pathname === '/comic.pdf') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/picture-reader') return send(200, PICTURE_READER_HTML, 'text/html; charset=utf-8');
@@ -275,7 +281,18 @@ async function startMockService(
       return send(200, RESULT_PNG, 'image/png');
     }
 
+    if (url.pathname === '/ext/connect') {
+      state.connects += 1;
+      return serveExtConnect(url, res);
+    }
+
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
+
+    // A sign-in ends by reading the account (comic-client.js signIn()).
+    if (url.pathname === '/api/billing/me') {
+      if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+      return send(200, { email: 'reader@example.com', balancePoints: 0, freeQuota: { comic_page: { limit: 40, remaining: 40 } } });
+    }
 
     if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
       let raw = '';
@@ -325,34 +342,11 @@ async function startMockService(
       });
     }
 
+    if (url.pathname.startsWith('/api/pdf/')) state.pdfHits.push(`${req.method} ${url.pathname}`);
     send(404, { error: 'not_found' });
   });
 
   return { base: origin, state, close };
-}
-
-/** Point the extension at the mock and give it a token, as a real sign-in would. */
-async function connectExtension(context, base, { withToken = true } = {}) {
-  const worker = await getServiceWorker(context);
-  await worker.evaluate(async ({ base, withToken }) => {
-    // The feature ships off, and the worker refuses a create while it is: these
-    // tests stand in for a context-menu click, which only exists when the
-    // switch is on, so the switch has to be on for them too.
-    await chrome.storage.sync.set({ enableComicTranslation: true });
-    // comicJobs too: it is the cross-page memory, and a record left behind by
-    // the previous test would have the next one silently resume a job whose
-    // mock service is already closed.
-    await chrome.storage.local.remove([
-      'comicToken', 'comicTokenExpiresAt', 'comicAccountCache', 'comicJobs',
-    ]);
-    const values = { comicApiBase: base };
-    if (withToken) {
-      values.comicToken = 'test-token';
-      values.comicTokenExpiresAt = Date.now() + 3600_000;
-    }
-    await chrome.storage.local.set(values);
-  }, { base, withToken });
-  return worker;
 }
 
 /** Stand in for the context-menu click, which is a native menu Playwright cannot open. */
@@ -391,7 +385,6 @@ module.exports = {
   DATA_PAGES,
   DATA_READER_HTML,
   startMockService,
-  connectExtension,
   triggerComicTranslation,
   triggerComicPageTranslation,
 };

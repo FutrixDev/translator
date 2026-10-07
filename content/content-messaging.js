@@ -40,8 +40,10 @@
           sendResponse({ action: ctx.translateWholePage() });
           break;
         case 'MEDIA_SHORTCUT':
-          // Alt+M（background/commands.js 只发顶层 frame）：这一页的 PDF 或屏上的漫画。
-          sendResponse({ kind: ctx.runMediaShortcut() });
+          // 只发顶层 frame 的两个发送方：Alt+M（background/commands.js，不带 kind：
+          // 这一页的 PDF 或屏上的漫画）和 popup 未登录时的「翻译此 PDF」
+          // （popup/popup-pdf.js，kind: 'pdf'：只做 PDF，不是 PDF 就回 null）。
+          sendResponse({ kind: ctx.runMediaShortcut(message.kind) });
           break;
         case 'OPEN_RULE_PICKER':
           // popup 的「调整本站翻译区域」（只发顶层 frame）；悬浮球菜单直接调同一个函数。
