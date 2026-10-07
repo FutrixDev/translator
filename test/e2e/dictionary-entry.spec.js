@@ -1,6 +1,7 @@
 // Batch C journeys C1–C3: a word looked up in the input box or the selection
 // card shows a dictionary entry (phonetics with speakers, senses, examples,
 // word forms) under the translation — from the AI engine only (D-469/D-470).
+// C9: a short formula is translated, not looked up (D-474).
 //
 // The entry is drawn by one function, DictEntry.render (shared/dict-entry.js),
 // for both surfaces; these journeys assert what reaches the DOM and what the
@@ -560,4 +561,28 @@ test.describe('dictionary entry (batch C)', () => {
       }
     });
   }
+
+  test('C9: a short formula in the input box is translated with the math rule, not looked up (D-474)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await openInputDialog(page);
+
+      // Three tokens and no sentence punctuation, but formula notation: the text
+      // prompt with the math placeholder rule, not the dictionary prompt.
+      const sent = mock.sentTexts.length;
+      await lookUp(page, '$x + y$');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('[T] $x + y$');
+      expect(mock.sentTexts.length).toBe(sent + 1);
+      expect(mock.systemPrompts.at(-1)).not.toContain(globalThis.DictEntry.PROMPT_MARK);
+      expect(mock.systemPrompts.at(-1)).toContain('Placeholders such as {{1}}');
+      await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
+      await expect(page.locator('#ai-translator-input-dialog .ai-translator-dict-section')).toHaveCount(0);
+    } finally {
+      await mock.close();
+    }
+  });
 });

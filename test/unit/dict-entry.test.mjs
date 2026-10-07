@@ -1,7 +1,7 @@
 // The dictionary entry has one owner, shared/dict-entry.js (D-469/D-470):
 //
-//   - isLookup() alone decides what is looked up (D-473), checked against the
-//     ruling's own samples;
+//   - isLookup() alone decides what is looked up (D-473, D-474), checked
+//     against the rulings' own samples;
 //   - normalize() is the only check on what the model sends back (D-472): only
 //     a non-object or a missing/empty translation throws `invalidEntry`; a
 //     wrong-typed optional field or an overlong item is dropped and the rest
@@ -78,9 +78,22 @@ const LOOKUP_TABLE = [
   ['跑，', false],
   ['note: run', false],
   ['跑：', false],
+  // formula notation is translated, never looked up (D-474): LaTeX delimiters
+  // and commands, math symbols, ^ _ { }
+  ['$x + y$', false],
+  ['\\(x + y\\)', false],
+  ['\\[a\\]', false],
+  ['$$E$$', false],
+  ['\\alpha', false],
+  ['x^2', false],
+  ['a_i', false],
+  ['{x}', false],
+  ['a = b', false],
+  ['1 + 1', false],
+  ['x ± y', false],
 ];
 
-test('isLookup answers the D-473 table', () => {
+test('isLookup answers the D-473/D-474 table', () => {
   for (const [text, expected] of LOOKUP_TABLE) {
     assert.equal(isLookup(text), expected, JSON.stringify(text));
   }
