@@ -681,14 +681,27 @@ async function evaluateInContentScript(context, pageOrFrame, expression) {
  * on-device model sometimes eats them. Leaving it out keeps the answer exactly
  * as before.
  *
+ * `options.dropBraces`: answer with a brace knocked off every `{{n}}`, cycling
+ * through the three shapes the real built-in engine was measured to produce
+ * (Chrome Translator en->pt, 2026-10-07): `{n}}`, `{{n}`, `{n}`.
+ *
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} pageOrFrame
- * @param {{dropPlaceholders?: boolean}} [options]
+ * @param {{dropPlaceholders?: boolean, dropBraces?: boolean}} [options]
  */
 async function stubBuiltinTranslator(pageOrFrame, options = {}) {
   const page = typeof pageOrFrame.page === 'function' ? pageOrFrame.page() : pageOrFrame;
   const dropPlaceholders = options.dropPlaceholders === true;
+  const dropBraces = options.dropBraces === true;
   return evaluateInContentScript(page.context(), pageOrFrame, `(() => {
     const dropPlaceholders = ${JSON.stringify(dropPlaceholders)};
+    const dropBraces = ${JSON.stringify(dropBraces)};
+    const shapes = [(n) => '{' + n + '}}', (n) => '{{' + n + '}', (n) => '{' + n + '}'];
+    let shape = 0;
+    const answer = (text) => {
+      if (dropPlaceholders) return text.replace(/\\{\\{\\d+\\}\\}/g, '');
+      if (dropBraces) return text.replace(/\\{\\{(\\d+)\\}\\}/g, (whole, n) => shapes[shape++ % shapes.length](n));
+      return text;
+    };
     self.__builtinCalls = 0;
     self.__builtinTexts = [];
     self.Translator = {
@@ -697,7 +710,7 @@ async function stubBuiltinTranslator(pageOrFrame, options = {}) {
         translate: async (text) => {
           self.__builtinCalls += 1;
           self.__builtinTexts.push(text);
-          return '[B] ' + (dropPlaceholders ? text.replace(/\\{\\{\\d+\\}\\}/g, '') : text);
+          return '[B] ' + answer(text);
         },
         destroy() {},
       }),

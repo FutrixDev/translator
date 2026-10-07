@@ -65,6 +65,37 @@ test('placeholder generation, parsing and id sets agree with each other', () => 
   assert.equal(TM.closeTag('strong', 2), '</strong2>');
 });
 
+// 实测内置引擎（Chrome Translator en→pt）真的吐过的形状，见 repairPlaceholders 的说明。
+test('repairPlaceholders: puts back the braces the built-in engine dropped', () => {
+  const R = TM.repairPlaceholders;
+  assert.equal(R('The proof is complete.{{1}}', 'A prova está completa.{1}}'), 'A prova está completa.{{1}}');
+  assert.equal(R('see {{1}}{{2}} here', 'veja {{1}}{2}} aqui'), 'veja {{1}}{{2}} aqui');
+  assert.equal(R('see {{1}}{{2}} here', 'veja {{1}{{2}} aqui'), 'veja {{1}}{{2}} aqui');
+  assert.equal(R('<a3>{{4}}</a3> is set', '<a3>{4}</a3> está definido'), '<a3>{{4}}</a3> está definido');
+  // 同一个编号出现两次，两处都补
+  assert.equal(R('{{1}} and {{1}}', '{1}} e {1}}'), '{{1}} e {{1}}');
+});
+
+test('repairPlaceholders: compares whole ids, so {{12}} is never read as a piece of {{1}}', () => {
+  const R = TM.repairPlaceholders;
+  assert.equal(R('x {{1}} y {{12}}', 'x {1}} y {{12}}'), 'x {{1}} y {{12}}');
+  assert.equal(R('x {{1}} y {{12}}', 'x {{1}} y {12}}'), 'x {{1}} y {{12}}');
+  // {{1}} 已经完整，{1}} 再出现就不是它的残片——旁边的 {{2}} 丢了也一样
+  assert.equal(R('x {{1}} y', 'x {{1}} y {1}}'), 'x {{1}} y {1}}');
+  assert.equal(R('x {{1}} y {{2}}', 'x {{1}} y {2}} {1}}'), 'x {{1}} y {{2}} {1}}');
+});
+
+test('repairPlaceholders: leaves alone what this block did not send and what the page itself wrote', () => {
+  const R = TM.repairPlaceholders;
+  // 没发过 {{3}}：译文里的 {3}} 是别人的字
+  assert.equal(R('a {{1}} b', 'a {{1}} b {3}}'), 'a {{1}} b {3}}');
+  assert.equal(R('a {{1}} b', 'a {1}} b {3}}'), 'a {{1}} b {3}}');
+  // 页面正文（去掉占位符以后）本来就写着 {2}}，同样写法原样留着，丢的照样算丢
+  assert.equal(R('JSON {2}} then {{2}}', 'JSON {2}} então'), 'JSON {2}} então');
+  // 没有占位符的块一个字不动
+  assert.equal(R('plain {1}} text', 'texto {1}} simples'), 'texto {1}} simples');
+});
+
 test('segments round-trip to the original text and label each piece', () => {
   for (const text of [
     '',
@@ -106,14 +137,50 @@ test('the parser pattern tolerates the casing and whitespace NMT introduces', ()
     'an uppercased opener must still parse');
   // 宽容一点，免得多一个空格就把链接丢了
   assert.match('请阅读< a1 >文档</ a1 >。', TM.markerParsePattern(), 'injected whitespace must still parse');
-  const m = TM.markerParsePattern().exec('</ Strong 12 >');
-  assert.deepEqual([m[1], m[2], m[3]], ['/', 'Strong', '12'], 'groups: slash, tag, digits');
+  assert.deepEqual(TM.parseMarker(TM.markerParsePattern().exec('</ Strong 12 >')),
+    { closing: true, tag: 'strong', number: '12' }, 'parsed: closing, lowercased tag, digits');
+});
+
+// 把一段译文里认得出的标记全部规整成 `/span13` 这种标准写法
+const parsedMarkers = (text) => [...text.matchAll(TM.markerParsePattern())].map((m) => {
+  const { closing, tag, number } = TM.parseMarker(m);
+  return `${closing ? '/' : ''}${tag}${number}`;
+});
+
+test('a marker the model broke up with " . " still parses as the marker it was', () => {
+  // 实测 Chrome 内置 NMT en→pt，Wikipedia「Football」首段的三个引注 [1][2][3]：
+  // 每个引注是 sup > a > span > span.cite-bracket，发出去 10 个标记，回来两个被
+  // 插了 ` . `，原样印在了读者眼前。
+  assert.deepEqual(parsedMarkers('[1][</span1 . 3>2]<span1 . 7>[3]'), ['/span13', 'span17']);
+  // 同一页上其它被插坏的形状：句点插进编号、标签名、斜杠前后、结尾，斜杠后的空格
+  assert.deepEqual(
+    parsedMarkers('</span8. 1> </sup1 . 05> </s . pan48> </su . p13> <a . 38> < . /span16> </spa . N132> </span11 . > <sup . 47> </ span9>'),
+    ['/span81', '/sup105', '/span48', '/sup13', 'a38', '/span16', '/span132', '/span11', 'sup47', '/span9']);
+});
+
+test('a dotted marker is still only debris when its tag and numbers were issued', () => {
+  const scrub = TM.debrisScrubber([...spans(19), { tag: 'sup', index: 5 }]);
+  assert.equal(scrub('[1][</span1 . 3>2]<span1 . 7>[3]'), '[1][2][3]');
+  // 本块没发过 b；200 也拆不成本块发过的编号（1…19 里没有 0、00、200）：页面的字，不动
+  assert.equal(scrub('HTML 里 <b . 9> 不动'), 'HTML 里 <b . 9> 不动');
+  assert.equal(scrub('</span2 . 00>'), '</span2 . 00>');
+  // 普通的句点、尖括号还是普通的字
+  assert.equal(scrub('a < b. 3 > 2.'), 'a < b. 3 > 2.');
+});
+
+test('a long run of dots and spaces inside a would-be marker is judged without backtracking', () => {
+  const started = performance.now();
+  const junk = ' .'.repeat(20000);
+  for (const text of [`<${junk}`, `<a${junk}`, `<a${junk}1${junk}`, `<a1${junk}`, `</${junk}a${junk}`]) {
+    assert.equal(TM.hasMarkers(text), false, text.slice(0, 12));
+  }
+  assert.ok(performance.now() - started < 1000, 'a run of separators took too long');
 });
 
 test('hasMarkers answers with the two patterns the insert path parses, and nothing wider', () => {
-  // 落笔时会被当成结构的：占位符、标记（开闭、大写、括号里带空白都算，和
-  // insert.js 的宽松解析一致）。用户写进术语表的字靠它拒收（D-387）。
-  for (const text of ['{{1}}', 'x {{12}} y', '<a1>', '</a1>', '<A1>', '< a 1 >', '</ strong2 >', '<h1>']) {
+  // 落笔时会被当成结构的：占位符、标记（开闭、大写、括号里带空白或句点都算，
+  // 和 insert.js 的宽松解析一致）。用户写进术语表的字靠它拒收（D-387）。
+  for (const text of ['{{1}}', 'x {{12}} y', '<a1>', '</a1>', '<A1>', '< a 1 >', '</ strong2 >', '<h1>', '</span1 . 3>', '<No. 1>']) {
     assert.equal(TM.hasMarkers(text), true, text);
   }
   // 普通的花括号、尖括号不是记号：没有编号就不是

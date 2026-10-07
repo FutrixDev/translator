@@ -8,8 +8,9 @@
 set -eu
 HERE=$(dirname "$0")
 # Latin comes from Nunito, which is first in the stack; Noto only has to cover the Chinese.
-LATIN=' ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz·'
-CJK='叭翻译，一切网页电子书视频字幕'
+# All of printable ASCII, so promo copy can change without recutting the font.
+LATIN=' !"#$%&'"'"'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~·'
+CJK='电视字幕'
 subset() {
   uv run --with fonttools --with brotli pyftsubset "$1" --flavor=woff2 \
     --text="$2" --layout-features='*' --output-file="$HERE/$3"

@@ -51,6 +51,27 @@
     return ids;
   }
 
+  // 把译文里掉了花括号的占位符补回 `{{n}}`，返回补好的译文。
+  //
+  // 实测（2026-10-07，Chrome 内置 Translator en→pt，7 个真页面）：带占位符的块有
+  // 22% 丢了至少一个，31 个丢失全是掉括号——30 个 `{n}}`、1 个 `{n}`；前一轮实验
+  // 里相邻的 `}}{{` 还出过 `{{n}`。占位符紧贴在非空白字符后面（`.{{1}}`、
+  // `(Smith){{1}}`、`<a1>{{1}}</a1>`）最常掉，前面是空格也会掉。不补的话整块按
+  // 丢了公式判失败（content/content-translation-engine.js 的 keepsPlaceholders）。
+  //
+  // 只补本块真发出去、译文里又找不到完整写法的编号：页面正文自己就可能写着
+  // `{2}}`（JSON、LaTeX 源码），原文里（去掉占位符以后）出现过的同样写法也不碰。
+  // 编号整段取出再比，所以 `{{12}}` 不会被当成 `{{1` 的残片。
+  function repairPlaceholders(source, translated) {
+    const out = String(translated);
+    const intact = placeholderIds(out);
+    const lost = new Set([...placeholderIds(source)].filter((id) => !intact.has(id)));
+    if (lost.size === 0) return out;
+    const prose = String(source).replace(placeholderPattern(), '');
+    return out.replace(/\{\{?(\d+)\}\}?/g, (shape, id) =>
+      (lost.has(id) && !prose.includes(shape) ? placeholder(id) : shape));
+  }
+
   // ==================== 内联标记 <a1>…</a1> ====================
 
   function openTag(name, i) {
@@ -61,17 +82,36 @@
     return `</${name}${i}>`;
   }
 
-  // 严格形状：分析前的剥离用它。大小写不敏感不能丢——实测内置 NMT（Chrome
+  // 严格形状：分析前的剥离用它。分析的都是送翻前的原文，里面的标记是
+  // openTag/closeTag 自己写的，形状一定标准；模型写坏的那些只出现在译文里，归
+  // 下面的 markerParsePattern 管。大小写不敏感不能丢——实测内置 NMT（Chrome
   // Translator，en→zh-Hans）会把开标记 `<a1>` 大写成 `<A1>`，闭标记仍是小写；
   // 少了 i 就漏剥。每次调用返回新实例，理由同 placeholderPattern。
   function markerPattern() {
     return /<\/?[a-z]+\d+>/gi;
   }
 
-  // 宽松解析：模型改了大小写、在尖括号里塞了空白也认，免得多一个空格就把链接
-  // 丢了。分组：1 = '/' 或 ''，2 = 标签名，3 = 编号。每次调用返回新实例。
+  // 宽松解析：模型改了大小写、在尖括号里塞了空白或句点也认，免得多一个空格就
+  // 把链接丢了。实测内置 NMT（en→pt，Wikipedia 引注一条就是 10 个标记）会往
+  // 标记中间插 ` . `：`</span1 . 3>`、`</su . p13>`、`< . /span16>`、
+  // `</span11 . >`，同一页 2866 个标记里 48 个这样坏掉，原样显示给了读者。
+  // 分组：1 = '/' 或 undefined，2 = 标签名，3 = 编号；2、3 里可能还夹着空白和
+  // 句点，别直接用，交给 parseMarker 规整。
+  // 每段分隔只能接在一个字母或数字前面，切分方式唯一：一长串点和空格不会让
+  // 正则回溯。每次调用返回新实例，理由同 placeholderPattern。
   function markerParsePattern() {
-    return /<\s*(\/?)\s*([a-z]+)\s*(\d+)\s*>/gi;
+    return /<[\s.]*(?:(\/)[\s.]*)?([a-z](?:[\s.]*[a-z])*)[\s.]*(\d(?:[\s.]*\d)*)[\s.]*>/gi;
+  }
+
+  // markerParsePattern 的一次匹配 → { closing, tag, number }：标签名小写、
+  // 两段都去掉空白和句点（`</span1 . 3>` → span、13）。重建和清残骸都只从这里
+  // 读，规整规则只写这一处。
+  function parseMarker(match) {
+    return {
+      closing: match[1] === '/',
+      tag: match[2].replace(/[\s.]/g, '').toLowerCase(),
+      number: match[3].replace(/[\s.]/g, ''),
+    };
   }
 
   // 清掉解析后仍留在译文里的标记残骸（配不上任何一对、重建时只能原样跳过的
@@ -102,8 +142,10 @@
       return ok[digits.length];
     };
     const re = markerParsePattern();
-    return (text) => text.replace(re, (marker, slash, tag, digits) =>
-      (tags.has(tag.toLowerCase()) && splitsIntoOwnNumbers(digits) ? '' : marker));
+    return (text) => text.replace(re, (...match) => {
+      const { tag, number } = parseMarker(match);
+      return tags.has(tag) && splitsIntoOwnNumbers(number) ? '' : match[0];
+    });
   }
 
   // ==================== 剥离、分段、切片 ====================
@@ -159,10 +201,12 @@
     placeholderPattern,
     parsePlaceholder,
     placeholderIds,
+    repairPlaceholders,
     openTag,
     closeTag,
     markerPattern,
     markerParsePattern,
+    parseMarker,
     debrisScrubber,
     hasMarkers,
     strip,

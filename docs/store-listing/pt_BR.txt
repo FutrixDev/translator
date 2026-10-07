@@ -1,0 +1,50 @@
+Blab Translation — leia qualquer coisa em dois idiomas.
+
+Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos e HQs. Use a IA em que você confia — modelos na nuvem ou locais — ou o tradutor gratuito do Chrome, que roda no seu dispositivo.
+
+★ PÁGINAS WEB BILÍNGUES
+• A tradução abaixo de cada parágrafo. Formatação, links e imagens intactos.
+• Só a tradução? Uma tecla: Alt+T.
+• Conteúdo principal primeiro — menus e barras laterais não atrapalham. Alt+W para a página inteira.
+• Alcança o interior de iframes e do Shadow DOM.
+• Fórmulas, LaTeX e código ficam intactos. Artigos científicos continuam legíveis.
+• 6 estilos de tradução. 76 idiomas. Idiomas da direita para a esquerda exibidos corretamente.
+
+★ TRADUÇÃO AUTOMÁTICA QUE SABE QUANDO PARAR
+• Frases que já estão no seu idioma são puladas — mesmo cheias de termos estrangeiros.
+• Mensagens privadas nunca são traduzidas automaticamente.
+• Regras por site: aponte para qualquer área — "Não traduzir aqui", "Manter o original" ou "Traduzir só aqui". Fixe um mecanismo, adicione CSS. As regras sincronizam com a sua conta do navegador.
+
+★ PDFS QUE MANTÊM O LAYOUT
+• PDFs bilíngues ou só com a tradução, com figuras, fórmulas e layout exatamente onde estavam.
+• Páginas grátis todo mês, com login.
+
+★ E-BOOKS E DOCUMENTOS
+• Word, EPUB, TXT e Markdown → arquivos bilíngues ou traduzidos.
+• MOBI e AZW3 lidos em modo bilíngue no leitor web.
+
+★ LEGENDAS DUPLAS
+• Legendas do YouTube traduzidas ao vivo: original e tradução, em duas linhas.
+• Funciona com qualquer player HTML5 que tenha uma faixa de legendas padrão.
+• Liga e desliga com um clique, direto na barra de controles do player.
+
+★ SELECIONE, PASSE O MOUSE, CONSULTE
+• Selecione um texto para traduzir — traduzir de novo, trocar de mecanismo, copiar, ler em voz alta.
+• Dicionário integrado para palavras e expressões: pronúncia, sentidos, exemplos, formas da palavra.
+• Segure uma tecla modificadora e passe o mouse para traduzir um único parágrafo.
+• Digitando em um idioma diferente do da página? Traduza com um clique.
+
+★ HQS E IMAGENS
+• Páginas de HQ redesenhadas no seu idioma — e colorizadas, se você quiser.
+• Texto em imagens reconhecido por OCR no dispositivo e depois traduzido.
+
+★ PRIVADO POR PADRÃO
+• Por padrão, as páginas web são traduzidas no seu dispositivo. Seu texto nunca sai do seu computador.
+• Com um mecanismo de IA, o texto vai direto para o seu endpoint, com a sua própria chave — nunca passa por nós.
+• Arquivos PDF, documentos e HQs são processados nos nossos servidores e excluídos após 7 dias.
+• Sem análises de uso. Sem rastreamento de anúncios.
+
+ATALHOS
+Alt+A traduzir / restaurar · Alt+T bilíngue / só tradução · Alt+W página inteira · Alt+M PDF ou HQ
+
+Política de privacidade: https://blab-translation.com/app/legal/privacy

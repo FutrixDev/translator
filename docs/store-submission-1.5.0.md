@@ -13,6 +13,19 @@
    「这一页要翻译吗？」那条询问条上 —— 它在这一版被删掉了：没上任何名单的网站
    现在什么都不做。照抄 1.4.0 的答案，审核员按第 2、3 步走会找不到那条询问条。
 
+**2026-10-07 第一次提交被拒（Yellow Argon，关键词堆砌）。** 审核引用的是英文
+详细说明里两串名字：AI 服务商一串（OpenAI (GPT)、Claude、Gemini、DeepSeek、
+OpenRouter、Ollama、LM Studio）和自动翻译的网站一串（arXiv … Reuters）。第二节
+已改写成不列名单的说法，中文版同步改，私信那句的五个社交网站名也一并去掉；
+更新说明里的 Ollama、LM Studio 也换成「本地运行的模型」。简短说明
+（`appDescription`，十种语言）末尾同样列着 OpenAI、Claude、Gemini（部分语言
+还有 DeepSeek），审核没点名但是同一类问题，一并改成「你自己的 AI 模型」。
+**以后写商店说明：不要成串罗列品牌、服务商或网站名**；要说明支持面，就说类别
+（「你自己的 AI 模型」「常用论文与新闻网站」），具体名单留在扩展的设置页里。
+只有扩展确实专门适配、且说明离不开的名字（如 YouTube 字幕）才写，一处一个。
+简短说明在 zip 里，所以重新提交要**重传 zip**（版本仍是 1.5.0），并把后台「说明」
+整段换成第二节。
+
 ## 一、包信息
 
 | 项 | 值 |
@@ -43,11 +56,12 @@
 
 | 语言 | 简短说明 | 字符数 |
 | --- | --- | --- |
-| zh_CN | 免费的原文/译文双语对照网页翻译：PDF 翻译保留排版，YouTube 等视频双语字幕，EPUB/Word 电子书与文档，漫画翻译，数学公式不乱；支持 OpenAI、Claude、Gemini、DeepSeek 等 AI 大模型。 | 115 |
-| en | Free bilingual web page translation. PDFs keep their layout, dual YouTube subtitles, EPUB/Word, comics. OpenAI, Claude, Gemini. | 127 |
+| zh_CN | 免费的双语对照网页翻译。PDF 保留排版，YouTube 双语字幕，EPUB/Word，漫画。也可接入你自己的 AI 模型。 | 62 |
+| en | Free bilingual web page translation. PDFs keep their layout, dual YouTube subtitles, EPUB/Word, comics. Bring your own AI model. | 128 |
 
-其余八种语言（zh_TW、ja、ko、de、es、fr、pt_BR、ru）同一句式，见各自的
-`messages.json`。
+其余八种语言（zh_TW、ja、ko、de、es、fr、pt_BR、ru）都是 en 这句的翻译，见各自的
+`messages.json`。和详细说明一样，**各语言只能翻译 en，不能多写 en 没有的卖点**
+（ja/ko/zh 曾多写「数学公式不乱」「原文/译文」，与默认语言不一致）。
 
 **两样没写进去，因为代码不支持：** DeepL（引擎预设里没有）和 Netflix（字幕翻译
 只有 YouTube 专用通道，加上任何暴露标准 `<track>` / `TextTrack` 的 HTML5 播放
@@ -55,144 +69,14 @@
 
 ## 二、商店详细说明（可直接粘贴进「说明」）
 
-### 中文
+每个语言区域一个文件：[`docs/store-listing/<locale>.txt`](store-listing/)，
+一段 / 一条一行，整份复制粘贴到该语言区域的「说明」框即可。
 
-> 【叭叭翻译】免费的原文/译文双语对照网页翻译插件。PDF 翻译保留原版排版，
-> YouTube 等视频双语字幕，EPUB、Word、MOBI 电子书与文档翻译，漫画翻译；
-> 支持 OpenAI (GPT)、Claude、Gemini、DeepSeek、OpenRouter 等 AI 大模型，
-> 也支持 Ollama、LM Studio 本地模型和 Chrome 自带的端上离线翻译。
->
-> ■ 双语对照网页翻译
-> · 译文排在原文下面，一段对一段，原文的格式、链接、图片都不动；一键切到
-> 「仅译文」（Alt+T）。
-> · 只翻正文：导航、侧栏、菜单默认保持原文，读起来干净；需要时 Alt+W 翻整页。
-> · iframe 和 Web Components（Shadow DOM）里的文字也能翻。
-> · 数学公式、LaTeX、代码保持原样，学术页面不乱码。
-> · 六种译文样式：默认、下划线、虚线框、高亮、引用条、悬停才显示的模糊。
-> · 76 种目标语言，阿拉伯语、希伯来语等从右往左排的语言版式正确。
->
-> ■ 自动翻译
-> · arXiv、Hugging Face Papers、Google 学术、Reddit、X、Hacker News、Medium、
-> Stack Overflow、纽约时报、BBC、路透社等常用的论文、社区和新闻网站，打开就是
-> 译文；别的网站一键加入「总是翻译」。
-> · 已经是你母语的段落自动跳过，夹着英文术语也认得出来。
-> · X、Facebook、Instagram、Reddit、Bluesky 的私信页面不会自动翻译。
-> · 每条规则都在设置页里列着，随时删除；Alt+A 暂停当前页。
->
-> ■ PDF 翻译（保留排版）
-> · 把论文、报告翻成双语对照 PDF 或纯译文 PDF，图表、公式、版式都留在原位，
-> 在网页阅读台里直接看。
-> · 每月有免费页数，登录后使用。
->
-> ■ 电子书与文档翻译
-> · 支持 Word（.docx）、EPUB、TXT、Markdown，输出双语或纯译文文件；
-> MOBI / AZW3 在网页阅读台里双语阅读。
->
-> ■ 视频双语字幕
-> · YouTube 字幕边播边译，原文和译文上下两行。
-> · 其他网站上，凡是带标准字幕轨的 HTML5 播放器都能用。
-> · 播放器控制条里一键开关译文字幕。
->
-> ■ 划词翻译与查词
-> · 选中文字旁出现翻译图标，点开卡片：重译、切换引擎、复制、朗读。
-> · 选中一个单词或短语，给出词典释义：目标语言的读音、词性、例句、词形变化。
-> · 按住修饰键指一段，就译这一段。
-> · 输入框里打的字和网页不是一门语言时，角上出现「译成 …」，点了才翻。
->
-> ■ 漫画与图片翻译
-> · 漫画页面原地重绘成你的语言，也可以上色。
-> · 图片里的文字本地 OCR 识别后翻译。
->
-> ■ 隐私
-> · 网页翻译默认用 Chrome 端上的离线翻译，文字不出你的电脑；选用 AI 时，文字
-> 直接发到你自己填的接口、用你自己的密钥，不经过我们的服务器。
-> · 漫画和 PDF / 文档翻译需要把文件上传到我们的服务器处理，结果 7 天后自动删除。
-> · 不埋点、不做广告追踪。
->
-> 快捷键：Alt+A 翻译 / 还原当前页 · Alt+T 双语 / 仅译文 · Alt+W 翻译整页 ·
-> Alt+M 翻译 PDF 或漫画。可在 chrome://extensions/shortcuts 修改。
->
-> 隐私政策：https://blab-translation.com/app/legal/privacy
-
-### English
-
-> Blab Translation — free bilingual web page translation, with the original and
-> the translation side by side. PDF translation that keeps the layout, dual
-> subtitles on YouTube and other video sites, EPUB, Word and MOBI documents,
-> and comics. Works with OpenAI (GPT), Claude, Gemini, DeepSeek, OpenRouter,
-> local models through Ollama or LM Studio, and Chrome's own on-device
-> translator.
->
-> ■ Bilingual web pages
-> · Each translation sits under its paragraph; the page's formatting, links and
-> images stay as they are. Switch to translation only with Alt+T.
-> · Main content only: navigation, sidebars and menus stay in the original so
-> the page reads cleanly. Alt+W translates the whole page when you want it.
-> · Text inside iframes and web components (Shadow DOM) is translated too.
-> · Math, LaTeX and code are kept intact, so papers stay readable.
-> · Six translation styles: default, underline, dashed box, highlight, quote
-> bar, and blur until hovered.
-> · 76 target languages, with right-to-left languages such as Arabic and Hebrew
-> laid out correctly.
->
-> ■ Automatic translation
-> · arXiv, Hugging Face Papers, Google Scholar, Reddit, X, Hacker News, Medium,
-> Stack Overflow, The New York Times, BBC, Reuters and other paper, community
-> and news sites translate on open. Add any other site to "Always translate"
-> in one click.
-> · Paragraphs already in your language are skipped, even when they are full
-> of foreign terms.
-> · Private messages on X, Facebook, Instagram, Reddit and Bluesky are never
-> translated automatically.
-> · Every rule is listed in Settings and can be deleted; Alt+A pauses the page.
->
-> ■ PDF translation that keeps the layout
-> · Turn papers and reports into a bilingual or translation-only PDF, with
-> figures, formulas and layout where they were, and read it in the web reader.
-> · A free monthly page allowance; sign-in required.
->
-> ■ Ebooks and documents
-> · Word (.docx), EPUB, TXT and Markdown, saved as a bilingual or translated
-> file; MOBI / AZW3 are read bilingually in the web reader.
->
-> ■ Dual video subtitles
-> · YouTube subtitles are translated as the video plays, original and
-> translation on two lines.
-> · Works on any other site whose HTML5 player has a standard subtitle track.
-> · One click in the player's control bar turns the translated subtitles on or
-> off.
->
-> ■ Selection translation and dictionary
-> · Select text and click the icon beside it: retranslate, switch engine, copy,
-> read aloud.
-> · Select a word or short phrase for a dictionary entry: pronunciation in your
-> target language, senses by part of speech, examples and word forms.
-> · Hold a modifier key and point at a paragraph to translate just that one.
-> · Typing in another language than the page's? A "Translate to …" chip appears
-> in the text box and translates only when clicked.
->
-> ■ Comics and images
-> · Comic pages are redrawn in your language in place, and can be colorized.
-> · Text in images is recognised by on-device OCR and translated.
->
-> ■ Privacy
-> · Web page translation runs on your device by default, with Chrome's built-in
-> translator: the text never leaves your computer. With an AI engine, the text
-> goes straight to the endpoint you entered, with your own key, never through
-> our servers.
-> · Comic, PDF and document translation upload the file to our servers to do
-> the work; results are deleted automatically after 7 days.
-> · No analytics, no ad tracking.
->
-> Shortcuts: Alt+A translate or restore the page · Alt+T bilingual or
-> translation only · Alt+W translate the whole page · Alt+M translate a PDF or
-> comic. Change them at chrome://extensions/shortcuts.
->
-> Privacy policy: https://blab-translation.com/app/legal/privacy
-
-「隐私」一节就是 1.3.0 起记了三次的那条限定写法：网页翻译默认在端上、不经
-中间服务器；漫画、PDF 与文档要上传到我方服务器。**原来那句无条件的「无中间
-服务器 / no middleman」整句删掉，不要留在后台文案里。**
+- `en.txt` 是默认语言区域（English），其余九份（de / es / fr / ja / ko /
+  pt_BR / ru / zh_CN / zh_TW）都是它的逐段翻译，结构、条目、数字一一对应。
+- **改说明时先改 `en.txt`，再同步改其余九份。** 商店会比对各语言区域与默认
+  语言区域的说明，内容不一致会被当作「误导性元数据」警告（2026-10-07 收到过）。
+- 不要罗列品牌、服务商或站点名（第一次被拒的理由是关键字堆砌），只写类别。
 
 ## 三、本次更新说明（可直接粘贴）
 
@@ -215,7 +99,7 @@
 > - 已是母语的段落按句判断，夹着外文名词也会跳过。
 > - 视频：默认帮你打开视频自带字幕；播放器里一键开关译文字幕。
 > - Alt+M 翻译当前 PDF 或漫画；未登录时先登录，回来自动继续。
-> - Ollama、LM Studio 等本地模型不用填 API Key；接口错误按界面语言提示。
+> - 本地运行的模型不用填 API Key；接口错误按界面语言提示。
 > - 首次安装有欢迎页；设置可导出导入。
 > - 新的弹窗与悬浮球外观；全屏视频时悬浮球自动让开。
 
@@ -247,7 +131,7 @@
 >   player turns the translated subtitles off and on.
 > - Alt+M translates the PDF or comic on screen; signed out, it signs you in and
 >   carries on.
-> - Local models (Ollama, LM Studio) need no API key; API errors are shown in
+> - Models running on your computer need no API key; API errors are shown in
 >   your interface language.
 > - A welcome page on first install; settings export and import.
 > - A new look for the popup and the float ball, which steps aside for

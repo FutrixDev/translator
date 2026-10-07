@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Traducción web bilingüe gratis: PDF con su diseño, subtítulos dobles en YouTube, EPUB/Word y cómics. Con OpenAI, Claude y Gemini.",
+    "message": "Traducción web bilingüe gratis: PDF con su diseño, subtítulos dobles en YouTube, EPUB/Word y cómics. Con tu propio modelo de IA.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

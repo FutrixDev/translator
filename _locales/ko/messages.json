@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "무료 원문/번역문 이중 언어 웹 번역. PDF는 레이아웃 그대로, YouTube 등 동영상 이중 자막, EPUB/Word 문서와 만화 번역, 수식도 그대로. OpenAI·Claude·Gemini·DeepSeek 등 AI 모델 지원.",
+    "message": "무료 이중 언어 웹 페이지 번역. PDF는 레이아웃 그대로, YouTube 이중 자막, EPUB/Word, 만화. 원하는 AI 모델 연결 지원.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {
