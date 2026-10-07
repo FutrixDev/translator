@@ -426,7 +426,15 @@
   color: var(--text-primary);
 }
 
-.blab-note a.blab-note-action {
+/* Subscribe is a button (it goes through the worker, options-blab.js) drawn as
+   the link it replaced: the UA's underline and pointer, none of a button's. */
+.blab-note .blab-note-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   color: var(--accent-primary);
   font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
 }

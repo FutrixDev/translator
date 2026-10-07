@@ -2,7 +2,9 @@
 // design §5.4): whether it can be chosen is the server's answer only
 // (Engines.blabAccess), the two unavailable states each carry their own way
 // out, the available state shows the numbers the API returned, and a Blab
-// choice that stopped working is kept and warned about, never rewritten.
+// choice that stopped working is kept and warned about, never rewritten. Both
+// ways out are the account entry: they send BLAB_ACCOUNT_ACTION, so the worker
+// notes the click before it signs in or opens the pricing page (D-500).
 //
 // The card script runs in a vm with just enough DOM to draw a note.
 //
@@ -34,14 +36,14 @@ function fakeElement(tagName) {
   const classes = new Set();
   const listeners = {};
   return {
-    tagName, children: [], textContent: '', className: '', hidden: false, disabled: false, value: '',
+    tagName, children: [], textContent: '', className: '', hidden: false, disabled: false, value: '', dataset: {},
     classList: {
       toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
       contains: (name) => classes.has(name),
     },
     replaceChildren(...nodes) { this.children = nodes; },
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
-    dispatch(type) { for (const fn of listeners[type] || []) fn(); },
+    dispatch(type) { return Promise.all((listeners[type] || []).map((fn) => fn())); },
   };
 }
 
@@ -56,10 +58,15 @@ function fakeSelect(value) {
   return select;
 }
 
-/** Load options-blab.js with both selects at the given values. */
-function loadCard({ manual = 'builtin', auto = 'builtin' } = {}) {
+/**
+ * Load options-blab.js with both selects at the given values. `reply` is what
+ * the worker answers a message the card sends itself.
+ */
+function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } } = {}) {
   const notes = { translationEngineBlabNote: fakeElement('div'), autoTranslateEngineBlabNote: fakeElement('div') };
   const signIns = [];
+  const sent = [];
+  const statuses = [];
   const sandbox = {
     Engines,
     currentUILang: 'en',
@@ -68,16 +75,23 @@ function loadCard({ manual = 'builtin', auto = 'builtin' } = {}) {
     elements: { translationEngine: fakeSelect(manual), autoTranslateEngine: fakeSelect(auto) },
     document: { getElementById: (id) => notes[id], createElement: fakeElement },
     t: en,
-    comicSignIn: () => { signIns.push(1); return Promise.resolve(true); },
+    comicSignIn: (message) => { signIns.push(message); return Promise.resolve(true); },
+    chrome: { runtime: { sendMessage: async (message) => { sent.push(message); return reply; } } },
+    showStatus: (text, type) => { statuses.push([text, type]); },
+    console: { error: () => {} },
   };
   vm.createContext(sandbox);
   vm.runInContext(repoSource('options/options-blab.js'), sandbox);
   sandbox.setupBlabEngine();
-  return { sandbox, notes, signIns, manual: notes.translationEngineBlabNote, auto: notes.autoTranslateEngineBlabNote };
+  return {
+    sandbox, notes, signIns, sent, statuses, manual: notes.translationEngineBlabNote, auto: notes.autoTranslateEngineBlabNote,
+  };
 }
 
 const texts = (note) => note.children.filter((node) => node.tagName === 'span').map((node) => node.textContent);
-const action = (note) => note.children.find((node) => node.tagName === 'button' || node.tagName === 'a');
+const action = (note) => note.children.find((node) => node.tagName !== 'span');
+/** A value built inside the vm, as a plain object of this realm. */
+const plain = (value) => JSON.parse(JSON.stringify(value));
 
 const AVAILABLE = { signedIn: true, blabTranslation: { available: true, limit: 1000000, used: 12345 } };
 
@@ -97,7 +111,7 @@ test('options blab: before the account answers, the option is disabled and both 
   assert.equal(card.sandbox.elements.translationEngine.value, 'blab', 'the stored choice is kept');
 });
 
-test('options blab: signed out disables the option and offers the account card\'s sign-in', () => {
+test('options blab: signed out disables the option and offers the account card\'s sign-in, entered as the account entry', async () => {
   const card = loadCard();
   draw(card, { signedIn: false });
   for (const select of Object.values(card.sandbox.elements)) assert.equal(select.blabOption.disabled, true);
@@ -106,21 +120,39 @@ test('options blab: signed out disables the option and offers the account card\'
     assert.deepEqual(texts(note), [en('blabNoteSignedOut')]);
     assert.equal(action(note).tagName, 'button');
     assert.equal(action(note).textContent, en('comicSignIn'));
+    assert.equal(action(note).dataset.accountAction, 'signin');
     assert.equal(note.classList.contains('blab-note-warning'), false, 'not selected: a hint, not a warning');
   }
-  action(card.manual).dispatch('click');
-  assert.equal(card.signIns.length, 1);
+  await action(card.manual).dispatch('click');
+  assert.deepEqual(plain(card.signIns), [{ type: 'BLAB_ACCOUNT_ACTION', action: 'signin' }],
+    'the account card\'s flow, through the worker\'s account entry');
+  assert.deepEqual(card.sent, [], 'the card sends nothing else itself');
 });
 
-test('options blab: signed in without a plan disables the option and links the pricing page', () => {
+test('options blab: signed in without a plan disables the option, and Subscribe asks the worker to open the pricing page', async () => {
   const card = loadCard();
   draw(card, { signedIn: true, blabTranslation: { available: false } });
   assert.equal(card.sandbox.elements.translationEngine.blabOption.disabled, true);
   assert.deepEqual(texts(card.manual), [en('blabNotePlanRequired')]);
-  const link = action(card.manual);
-  assert.equal(link.tagName, 'a');
-  assert.equal(link.href, 'https://blab.test/app/pricing');
-  assert.equal(link.textContent, en('blabSubscribe'));
+  const subscribe = action(card.manual);
+  // A link would open the page itself, before the worker noted the click.
+  assert.equal(subscribe.tagName, 'button');
+  assert.equal(subscribe.href, undefined);
+  assert.equal(subscribe.dataset.accountAction, 'subscribe');
+  assert.equal(subscribe.textContent, en('blabSubscribe'));
+  await subscribe.dispatch('click');
+  assert.deepEqual(plain(card.sent), [{ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' }]);
+  assert.equal(subscribe.disabled, false);
+  assert.deepEqual(card.statuses, []);
+});
+
+test('options blab: Subscribe the worker could not open says so on the page', async () => {
+  const card = loadCard({ reply: { ok: false, error: { code: 'unknown', message: 'no pricing page' } } });
+  draw(card, { signedIn: true, blabTranslation: { available: false } });
+  const subscribe = action(card.manual);
+  await subscribe.dispatch('click');
+  assert.deepEqual(card.statuses, [[en('blabActionFailed'), 'error']]);
+  assert.equal(subscribe.disabled, false, 'can be tried again');
 });
 
 test('options blab: with no account site address the plan note draws no dead link (D-490 N4)', () => {
@@ -128,7 +160,7 @@ test('options blab: with no account site address the plan note draws no dead lin
   card.sandbox.accountSiteBase = '';
   draw(card, { signedIn: true, blabTranslation: { available: false } });
   assert.deepEqual(texts(card.manual), [en('blabNotePlanRequired')]);
-  assert.equal(action(card.manual), undefined, 'no href="/app/pricing" relative to the extension');
+  assert.equal(action(card.manual), undefined, 'no Subscribe that could only fail');
 });
 
 test('Engines.blabPricingUrl: only an http(s) site address makes a pricing link', () => {
@@ -174,7 +206,7 @@ test('options blab: a Blab choice that stopped working is kept and warned about,
 
   draw(card, { signedIn: true, blabTranslation: { available: false } });
   assert.deepEqual(texts(card.manual), [en('blabNoteSelectedUnavailable'), en('blabNotePlanRequired')]);
-  assert.equal(action(card.manual).tagName, 'a');
+  assert.equal(action(card.manual).dataset.accountAction, 'subscribe');
 });
 
 test('options blab: the card is wired into the account card, the page load and the sync mirror', () => {

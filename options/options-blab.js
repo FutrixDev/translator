@@ -10,8 +10,13 @@
 // 不吃 30 秒缓存。三种状态：
 //
 //   signed_out     选项禁用；说明「登录并订阅后可用」+ 登录按钮（账号卡片那条登录流程）
-//   plan_required  选项禁用；说明「订阅后可用」+ 定价页链接（Engines.blabPricingUrl；
-//                  账户站地址没答上就不画链接，不回落成相对地址）
+//   plan_required  选项禁用；说明「订阅后可用」+ 订阅按钮（账户站地址没答上就不画，
+//                  不回落成相对地址）
+//
+// 这两个按钮和错误条、划词卡上的一样，是账户入口：都发 BLAB_ACCOUNT_ACTION，
+// SW 先把「点过入口」写进会话存储，再去登录或开定价页（设计 §5.2.1、D-500）。
+// 订阅不能是 <a href>：链接自己开页，可能赶在记录落地之前，中键、Ctrl 点击和
+// 右键「在新标签页打开」还根本不经过脚本。
 //   available      选项可选；选中时说明「文字发到 Blab 的服务器、订阅包含、每天 X、
 //                  今天已用 Y」，两个数都取接口返回值
 //
@@ -79,8 +84,8 @@ function renderBlabNote(note, access, selected) {
     parts.push(blabNoteText(t('blabNoteSignedOut')), blabSignInButton());
   } else {
     parts.push(blabNoteText(t('blabNotePlanRequired')));
-    const link = blabPricingLink();
-    if (link) parts.push(link);
+    const subscribe = blabSubscribeButton();
+    if (subscribe) parts.push(subscribe);
   }
   note.replaceChildren(...parts);
 }
@@ -92,31 +97,42 @@ function blabNoteText(text) {
   return span;
 }
 
-/** The account card's own sign-in flow; a success redraws through showAccount(). */
+/**
+ * The account card's own sign-in flow, entered as the account entry: a success
+ * redraws through showAccount(), and the worker has noted the click first.
+ */
 function blabSignInButton() {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn-secondary blab-note-action';
+  button.dataset.accountAction = 'signin';
   button.textContent = t('comicSignIn');
-  button.addEventListener('click', () => { comicSignIn(); });
+  button.addEventListener('click', () => { comicSignIn({ type: 'BLAB_ACCOUNT_ACTION', action: 'signin' }); });
   return button;
 }
 
 /**
- * The pricing link, or null when there is no account site to point at
- * (ACCOUNT_SITE_BASE did not answer — loadAccountSiteBase logs that once).
- * Never the relative `/app/pricing`, which would open inside the extension.
+ * Subscribe, drawn as the link it used to be; the worker opens the pricing page
+ * after noting the click. Null when there is no account site to point at
+ * (ACCOUNT_SITE_BASE did not answer — loadAccountSiteBase logs that once):
+ * never the relative `/app/pricing`, which would open inside the extension.
  */
-function blabPricingLink() {
-  const href = Engines.blabPricingUrl(accountSiteBase);
-  if (!href) return null;
-  const link = document.createElement('a');
-  link.className = 'blab-note-action';
-  link.href = href;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  link.textContent = t('blabSubscribe');
-  return link;
+function blabSubscribeButton() {
+  if (!Engines.blabPricingUrl(accountSiteBase)) return null;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'blab-note-action blab-note-link';
+  button.dataset.accountAction = 'subscribe';
+  button.textContent = t('blabSubscribe');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' });
+    button.disabled = false;
+    if (response && response.ok) return;
+    console.error('Blab Translation: the account entry "subscribe" failed', response && response.error);
+    showStatus(t('blabActionFailed'), 'error');
+  });
+  return button;
 }
 
 function setupBlabEngine() {

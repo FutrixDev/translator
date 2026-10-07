@@ -183,20 +183,25 @@ function showAccount(account) {
  * cancelled one landing after a successful one renders the signed-out panel
  * with a valid token in storage. One flow, one answer, both callers.
  */
-function comicSignIn() {
+function comicSignIn(message = { type: 'COMIC_SIGN_IN' }) {
   if (!comicSignInInFlight) {
-    comicSignInInFlight = runComicSignIn().finally(() => { comicSignInInFlight = null; });
+    comicSignInInFlight = runComicSignIn(message).finally(() => { comicSignInInFlight = null; });
   }
   return comicSignInInFlight;
 }
 
-async function runComicSignIn() {
+/**
+ * `message` is COMIC_SIGN_IN, or, from the Blab Translation note, the account
+ * entry BLAB_ACCOUNT_ACTION 'signin' (options-blab.js): the worker records the
+ * click before it signs in (D-500). Both answer with the account sign-in got.
+ */
+async function runComicSignIn(message) {
   // This decides the account outright, so any read already on the wire is stale
   // from here on — including the one this replaces.
   comicAccountGeneration += 1;
   showComicState('loading');
   elements.comicAccountLoading.textContent = t('comicSigningIn');
-  const response = await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+  const response = await chrome.runtime.sendMessage(message);
   elements.comicAccountLoading.textContent = t('comicAccountLoading');
 
   if (!response || !response.ok) {

@@ -128,17 +128,20 @@ test.describe('J2 Blab Translation without a plan', () => {
     }
   });
 
-  test('no plan: the option is disabled, the note links to pricing, and the service refuses', async ({ context, page, extensionId }) => {
+  test('no plan: the option is disabled, the note offers Subscribe, and the service refuses', async ({ context, page, extensionId }) => {
     const { blab, close } = await setUp(context, page, { mode: 'plan_required', engine: 'ai' });
     try {
       const options = await openOptions(context, extensionId);
       await expect(options.locator('#translationEngine option[value="blab"]')).toBeDisabled();
       const note = options.locator('#translationEngineBlabNote');
       await expect(note.locator('.blab-note-text')).toHaveText(en('blabNotePlanRequired'));
-      const link = note.locator('a');
-      await expect(link).toHaveText(en('blabSubscribe'));
-      expect(await link.getAttribute('href')).toMatch(/\/app\/pricing$/);
+      // The account entry (D-500): the worker opens the pricing page.
+      const subscribe = note.locator('[data-account-action="subscribe"]');
+      await expect(subscribe).toHaveText(en('blabSubscribe'));
       await walkShot(options, 'J2-2-settings-no-plan');
+      const [pricing] = await Promise.all([context.waitForEvent('page'), subscribe.click()]);
+      await pricing.waitForURL(/\/app\/pricing$/, { waitUntil: 'commit' });
+      await pricing.close();
       await options.close();
 
       // The service's side of the same answer, as the contract has it.
