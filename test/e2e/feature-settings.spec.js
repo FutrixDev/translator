@@ -1,5 +1,8 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting, getDefaultProfile } = require('./helpers');
+const {
+  connectExtension, setExtensionSettings, setExtensionAccount, getServiceWorker, getSyncSetting, getDefaultProfile,
+} = require('./helpers');
+const { startMockBlabService } = require('./mock-blab-service');
 const { getMessage } = require('../../i18n/messages');
 
 // 这张卡上已经没有「开 / 关」了：字幕翻不翻跟着主开关和站点规则走。剩下的开关
@@ -292,26 +295,34 @@ test('signing in makes the stored preference count', async ({ page, context, ext
     enableComicTranslation: true,
     enablePdfTranslation: true,
   });
-  await setExtensionAccount(page, false);
+  // The settings page asks the account service afresh when it opens (force:
+  // the Blab Translation option reads the same account, design §5.4), so the
+  // seeded account cache alone is not enough: a service has to answer.
+  const service = await startMockBlabService();
+  try {
+    await connectExtension(context, service.base, { signedIn: false, comic: true, pdf: true });
 
-  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await expect(page.locator('#enableComicTranslation')).toBeChecked();
-  await expect(page.locator('#comicSignInPending')).toBeVisible();
+    await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+    await expect(page.locator('#enableComicTranslation')).toBeChecked();
+    await expect(page.locator('#comicSignInPending')).toBeVisible();
 
-  await setExtensionAccount(page, true);
-  await page.reload();
+    await setExtensionAccount(page, true);
+    await page.reload();
 
-  await expect(page.locator('#comicSignedIn')).toBeVisible();
-  await expect(page.locator('#enableComicTranslation')).toBeChecked();
-  await expect(page.locator('#enablePdfTranslation')).toBeChecked();
-  await expect(page.locator('#comicSignInPending')).toBeHidden();
-  await expect(page.locator('#pdfSignInPending')).toBeHidden();
-  await expect(page.locator('#comicTargetLang')).toBeEnabled();
-  await expect(page.locator('#pdfTargetLang')).toBeEnabled();
+    await expect(page.locator('#comicSignedIn')).toBeVisible();
+    await expect(page.locator('#enableComicTranslation')).toBeChecked();
+    await expect(page.locator('#enablePdfTranslation')).toBeChecked();
+    await expect(page.locator('#comicSignInPending')).toBeHidden();
+    await expect(page.locator('#pdfSignInPending')).toBeHidden();
+    await expect(page.locator('#comicTargetLang')).toBeEnabled();
+    await expect(page.locator('#pdfTargetLang')).toBeEnabled();
 
-  await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  await expect(page.locator('#comicTranslatePage')).toBeVisible();
-  await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
+    await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    await expect(page.locator('#comicTranslatePage')).toBeVisible();
+    await expect(page.locator('#pdfTranslateLocal')).toBeVisible();
+  } finally {
+    await service.close();
+  }
 });
 
 /**
