@@ -196,6 +196,20 @@ test('builtin engine: PlaceholderLossError.lost names the ids the source had and
   assert.deepEqual(failed[1].lost, ['1']);
 });
 
+test('builtin engine: placeholders that lost a brace are repaired before the loss check, glossary ones included', async () => {
+  configure({});
+  const snap = snapOf([{ s: 'attention', t: '注意力' }]);
+  // 实测形状：句点后的 {{1}} 掉成 {1}}，紧挨着的下一个掉成 {{2}
+  builtin.behave = (text) => `[B] ${text.replace('.{{1}}', '.{1}}').replace('{{2}}', '{{2}')}`;
+  const source = 'This ordinary English sentence ends in a formula.{{1}} attention follows it.';
+  const { value, warnings } = await captureWarnings(() => request(
+    { type: 'TRANSLATE', feature: 'selection', text: source, targetLang: 'zh-CN', engine: 'builtin' }, { glossary: snap }));
+  assert.equal(value.error, undefined, JSON.stringify(value));
+  assert.equal(value.translation, '[B] This ordinary English sentence ends in a formula.{{1}} 注意力 follows it.');
+  assert.deepEqual(builtin.calls, ['This ordinary English sentence ends in a formula.{{1}} {{2}} follows it.']);
+  assert.deepEqual(warnings, []);
+});
+
 test('builtin engine: a page batch through the glossary, then again with the placeholders dropped', async () => {
   configure({});
   const snap = snapOf([{ s: 'attention', t: '注意力' }]);

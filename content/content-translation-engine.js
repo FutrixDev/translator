@@ -247,6 +247,8 @@
   // 它可能把占位符拆开、翻掉或整个吞掉。而 restoreMathElements 对缺失的占位符
   // 是静默跳过的——公式会从页面上凭空消失，且不报任何错。
   // 所以这里宁可判本段翻译失败让原文留着，也不返回一个会吞掉公式的译文。
+  // 掉了一边花括号的（`{1}}`、`{{1}`、`{1}`）不算丢：判之前先由
+  // TextMarkers.repairPlaceholders 补回，见那边的实测说明。
   function keepsPlaceholders(source, translated) {
     const before = globalThis.TextMarkers.placeholderIds(source);
     if (before.size === 0) return true;
@@ -412,6 +414,7 @@
     if (typeof translated !== 'string' || !translated.trim()) {
       throw new Error('builtin translator returned empty result');
     }
+    translated = globalThis.TextMarkers.repairPlaceholders(source, translated);
     if (!keepsPlaceholders(source, translated)) {
       throw new PlaceholderLossError(lostPlaceholders(source, translated));
     }
