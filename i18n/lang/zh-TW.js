@@ -557,6 +557,8 @@
     cardUseAi: '改用我的 AI 模型',
     cardEngineBuiltin: 'Chrome 內建',
     cardEngineAi: '我的 AI',
+    cardUseBlab: '改用 Blab Translation',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: '網站翻譯規則',
     customRulesDesc: '按網站指定頁面上哪些區域要翻譯、哪些保留原文、譯文的額外樣式，以及用哪個翻譯引擎。規則跟著瀏覽器帳號同步，儲存後立即生效。',

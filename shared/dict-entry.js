@@ -20,8 +20,8 @@
 //                 no "translation only" rescue. Everything optional is lenient:
 //                 a field of the wrong type, or one overlong item, is dropped
 //                 and the rest of the entry kept.
-//   entryFor      which answers carry an entry: an AI answer to a word-mode
-//                 request, and only that one.
+//   entryFor      which answers carry an entry: a model engine's answer ('ai'
+//                 or 'blab') to a word-mode request, and only that one.
 //   render        the DOM. The input dialog and the selection card both call
 //                 it; neither builds an entry block of its own.
 //
@@ -248,13 +248,14 @@
 
   /**
    * The entry a TRANSLATE response carries, or null when it carries none.
-   * Only an AI answer to a word-mode request has one (the built-in engine only
-   * translates). An AI word answer without one is a broken service worker, so
-   * it throws rather than quietly drawing nothing.
+   * Only a model engine's answer to a word-mode request has one ('ai' or
+   * 'blab', Engines.isModelEngine; the built-in engine only translates). A model
+   * word answer without one is a broken service worker, so it throws rather
+   * than quietly drawing nothing.
    */
   function entryFor(mode, response) {
-    if (mode !== 'word' || !response || response.engine !== 'ai') return null;
-    if (!response.entry) throw new Error('DictEntry.entryFor: an AI word-mode answer carries no entry');
+    if (mode !== 'word' || !response || !globalThis.Engines.isModelEngine(response.engine)) return null;
+    if (!response.entry) throw new Error('DictEntry.entryFor: a model word-mode answer carries no entry');
     return normalize(response.entry);
   }
 

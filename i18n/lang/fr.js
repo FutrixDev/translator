@@ -557,6 +557,8 @@
     cardUseAi: "Utiliser mon modèle d'IA",
     cardEngineBuiltin: 'Intégrée à Chrome',
     cardEngineAi: 'Mon IA',
+    cardUseBlab: 'Utiliser Blab Translation',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'Règles de traduction par site',
     customRulesDesc: 'Choisissez, site par site, les parties d’une page à traduire, celles qui gardent l’original, du CSS supplémentaire pour les traductions et le moteur à utiliser. Les règles se synchronisent avec votre compte de navigateur et s’appliquent dès l’enregistrement.',

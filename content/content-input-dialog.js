@@ -261,7 +261,7 @@
           return;
         }
 
-        // Only an AI lookup carries an entry (DictEntry.entryFor); the builtin
+        // Only a model lookup ('ai' or 'blab') carries an entry (DictEntry.entryFor); the builtin
         // engine and sentence translations leave the dictionary blocks empty.
         const entry = DictEntry.entryFor(mode, response);
         showResult({ text: response.translation }, targetLang);

@@ -557,6 +557,8 @@
     cardUseAi: '自分の AI モデルを使う',
     cardEngineBuiltin: 'Chrome 内蔵',
     cardEngineAi: '自分の AI',
+    cardUseBlab: 'Blab Translation を使う',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'サイト別の翻訳ルール',
     customRulesDesc: 'サイトごとに、ページのどの部分を翻訳するか、どこを原文のまま残すか、訳文に追加する CSS、使う翻訳エンジンを決めます。ルールはブラウザのアカウントで同期され、保存するとすぐに反映されます。',

@@ -557,6 +557,8 @@
     cardUseAi: '내 AI 모델 사용',
     cardEngineBuiltin: 'Chrome 내장',
     cardEngineAi: '내 AI',
+    cardUseBlab: 'Blab Translation 사용',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: '사이트별 번역 규칙',
     customRulesDesc: '사이트마다 페이지의 어느 부분을 번역하고 어디를 원문으로 둘지, 번역문에 더할 CSS, 사용할 번역 엔진을 정합니다. 규칙은 브라우저 계정과 함께 동기화되며 저장하는 즉시 적용됩니다.',

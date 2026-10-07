@@ -166,8 +166,10 @@
   // 3. 翻译引擎
   // ---------------------------------------------------------------------------
 
+  // 引导页只给内置与自己的 AI 两个选项；设置页里选了 Blab Translation（'blab'）的人
+  // 回到这里两项都不勾，不把它画成内置，点了哪一项才写。
   function showEngine(engine) {
-    elements.engineBuiltin.checked = engine !== 'ai';
+    elements.engineBuiltin.checked = globalThis.Engines.normalizeEngine(engine) === 'builtin';
     elements.engineAi.checked = engine === 'ai';
     elements.aiProviders.hidden = engine !== 'ai';
   }

@@ -557,6 +557,8 @@
     cardUseAi: 'Моя модель ИИ',
     cardEngineBuiltin: 'Встроенный Chrome',
     cardEngineAi: 'Мой ИИ',
+    cardUseBlab: 'Использовать Blab Translation',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'Правила перевода для сайтов',
     customRulesDesc: 'Выберите для каждого сайта, какие части страницы переводить, какие оставить в оригинале, дополнительный CSS для переводов и какой движок использовать. Правила синхронизируются с аккаунтом браузера и действуют сразу после сохранения.',

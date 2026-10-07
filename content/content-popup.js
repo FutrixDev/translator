@@ -113,7 +113,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin')])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin'), t('cardUseBlab')])}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
@@ -541,7 +541,7 @@
     const tag = popup.querySelector('.ai-translator-engine-tag');
     retranslate.hidden = false;
     retranslate.disabled = false;
-    tag.textContent = engine ? t(engine === 'builtin' ? 'cardEngineBuiltin' : 'cardEngineAi') : '';
+    tag.textContent = engine ? t(CARD_ENGINE_TAG[engine]) : '';
     tag.hidden = !engine;
     const requestId = popup.dataset.requestId;
     const other = await switchOffer(engine, popup.dataset.targetLang);
@@ -549,17 +549,22 @@
     switchBtn.hidden = !other;
     if (!other) return;
     switchBtn.dataset.engine = other;
-    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(other === 'builtin' ? 'cardUseBuiltin' : 'cardUseAi');
+    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(CARD_USE_ENGINE[other]);
     switchBtn.disabled = false;
   }
 
-  // 这次是 engine 答的，另一边此刻能不能接这张卡的目标语言：能就是另一边，不能是 null。
+  // 卡上的引擎标签与「换到…」按钮文字，每个引擎一条（Engines.ENGINES）。
+  const CARD_ENGINE_TAG = { builtin: 'cardEngineBuiltin', ai: 'cardEngineAi', blab: 'cardEngineBlab' };
+  const CARD_USE_ENGINE = { builtin: 'cardUseBuiltin', ai: 'cardUseAi', blab: 'cardUseBlab' };
+
+  // 这次是 engine 答的，换到哪一个：按 Engines.ENGINES 的顺序取第一个「不是它、此刻
+  // 又能接这张卡的目标语言」的引擎（内置在前，所以 ai 与内置之间的老行为不变）；
+  // 一个都没有是 null。Blab 只在账户此刻能用时才给（设计 §5.4：不切到不可用的引擎）。
   async function switchOffer(engine, targetLang) {
     if (!engine) return null;
-    const other = engine === 'builtin' ? 'ai' : 'builtin';
     try {
       const choices = await ctx.engineChoices(targetLang, 'selection');
-      return choices[other] ? other : null;
+      return globalThis.Engines.ENGINES.find((other) => other !== engine && choices[other]) || null;
     } catch (error) {
       console.error('Blab Translation: reading engine choices for the card failed', error);
       return null;

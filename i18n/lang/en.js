@@ -598,6 +598,8 @@ Rules:
     cardUseAi: 'Use my AI model',
     cardEngineBuiltin: 'Chrome built-in',
     cardEngineAi: 'My AI',
+    cardUseBlab: 'Use Blab Translation',
+    cardEngineBlab: 'Blab Translation',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'Site translation rules',
     customRulesDesc: 'Choose, per site, which parts of a page get translated, which keep the original, extra CSS for the translations and which engine to use. Rules sync with your browser account and take effect as soon as they are saved.',
