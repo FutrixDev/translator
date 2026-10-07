@@ -338,24 +338,57 @@ test('selectedEngine: the page answer first, the setting only when there is none
 });
 
 test('Blab Translation: the dot follows the account (blabAccess), never an API key', () => {
-  // 点是在说「能用」：只有账户说 AVAILABLE 才绿（D-490 表外）。AI 的就绪与否不相干。
+  // 点是在说「能用」：只有账户说 AVAILABLE 且今日额度没用完才绿（D-490 表外、D-497 F1）。
+  // AI 的就绪与否不相干。
   const { AVAILABLE, SIGNED_OUT, PLAN_REQUIRED } = globalThis.Engines.BLAB_ACCESS;
+  const blab = (access, dailyLimit = false) => ({ access, dailyLimit });
   for (const aiIsReady of [true, false, undefined]) {
-    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady, AVAILABLE),
+    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady, blab(AVAILABLE)),
       { key: 'engineBlab', detailKey: '', ok: true });
   }
   // 页面钉成 blab（站点规则）也一样问账户。
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false, AVAILABLE),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false, blab(AVAILABLE)),
     { key: 'engineBlab', detailKey: '', ok: true });
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, SIGNED_OUT),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(SIGNED_OUT)),
     { key: 'engineBlab', detailKey: 'blabStatusSignedOut', ok: false });
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, PLAN_REQUIRED),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(PLAN_REQUIRED)),
     { key: 'engineBlab', detailKey: 'blabStatusPlanRequired', ok: false });
   // 账户读不到：没说能用，就不绿。
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, null),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(null)),
     { key: 'engineBlab', detailKey: 'blabStatusUnknown', ok: false });
-  // 没问账户就来画 blab 是调用方的错，不冒充任何一种状态。
+  // 没问账户就来画 blab 是调用方的错，不冒充任何一种状态；只给了旧式的一个值也是。
   assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, AVAILABLE), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: AVAILABLE }), TypeError);
+});
+
+test('Blab Translation (D-497 F1): today\'s allowance spent is never green, and says so', () => {
+  const { AVAILABLE, SIGNED_OUT, PLAN_REQUIRED } = globalThis.Engines.BLAB_ACCESS;
+  const spent = { key: 'engineBlab', detailKey: 'blabStatusDailyLimit', ok: false };
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: AVAILABLE, dailyLimit: true }), spent);
+  // 账户读不到，但闩说用完了：用完了是知道的那一句。
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: null, dailyLimit: true }), spent);
+  // 没登录、没订阅排在前面：那是要用户去办的，额度自己会回来。
+  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true,
+    { access: SIGNED_OUT, dailyLimit: true }).detailKey, 'blabStatusSignedOut');
+  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true,
+    { access: PLAN_REQUIRED, dailyLimit: true }).detailKey, 'blabStatusPlanRequired');
+});
+
+test('Engines.blabAllowanceSpent: billing/me\'s used reaching its limit on an available account', () => {
+  const E = globalThis.Engines;
+  const account = (blabTranslation, signedIn = true) => ({ signedIn, blabTranslation });
+  assert.equal(E.blabAllowanceSpent(account({ available: true, limit: 100, used: 100 })), true);
+  assert.equal(E.blabAllowanceSpent(account({ available: true, limit: 100, used: 120 })), true);
+  assert.equal(E.blabAllowanceSpent(account({ available: true, limit: 100, used: 99 })), false);
+  // 没有数字就没说用完（老服务端、不计量的套餐）。
+  assert.equal(E.blabAllowanceSpent(account({ available: true })), false);
+  assert.equal(E.blabAllowanceSpent(account({ available: true, limit: 100 })), false);
+  // 没订阅、没登录：那是另一个问题（blabAccess），这里不答是。
+  assert.equal(E.blabAllowanceSpent(account({ available: false, limit: 0, used: 0 })), false);
+  assert.equal(E.blabAllowanceSpent(account({ available: true, limit: 100, used: 100 }, false)), false);
+  assert.equal(E.blabAllowanceSpent({ signedIn: false }), false);
+  assert.equal(E.blabAllowanceSpent(null), false);
 });
 
 test('aiReady: the page answers first, the worker only when there is no page, a slow page is ready', () => {
@@ -376,9 +409,9 @@ test('aiReady: the page answers first, the worker only when there is no page, a 
 test('the popup asks selectedEngine and aiReady for both the footer and the no-key gate', () => {
   const popup = repoFile('popup/popup.js');
   assert.match(repoFile('shared/engine-status.js'),
-    /function describeEngineStatus\(settings, probe, aiIsReady, blabAccess\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
+    /function describeEngineStatus\(settings, probe, aiIsReady, blab\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
   assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
-  assert.match(popup, /const \[aiIsReady, blabAccess\] = await Promise\.all\(\[pageAiReady\(probe\), pageBlabAccess\(settings, probe\)\]\);\n\s*renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, aiIsReady, blabAccess\)\);/);
+  assert.match(popup, /const \[aiIsReady, blab\] = await Promise\.all\(\[pageAiReady\(probe\), pageBlab\(settings, probe\)\]\);\n\s*renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, aiIsReady, blab\)\);/);
   // 账户只在这一页走 Blab 时才问，引擎同样经 selectedEngine 定。
   assert.match(popup, /if \(EngineStatus\.selectedEngine\(settings, probe\) !== 'blab'\) return undefined;/);
   // 没有页面答复时问 SW，且只问 page 这一个功能。

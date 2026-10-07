@@ -524,18 +524,32 @@ async function pageAiReady(probe) {
 }
 
 /**
- * 这一页走 Blab 时账户能不能用（Engines.blabAccess），底栏的点按它着色。别的引擎
- * 不问（undefined），省一次账户请求。服务端说 token 不认（unauthorized，比如过期）
- * 等于没登录；别的失败（网络、服务出错）答不上来是 null —— 没说能用，点就不绿。
+ * 这一页走 Blab 时账户的样子（describeEngineStatus 的 blab 参数），底栏的点按它着色。
+ * 别的引擎不问（undefined），省一次账户请求。
+ * - access：Engines.blabAccess。服务端说 token 不认（unauthorized，比如过期）等于
+ *   没登录；别的失败（网络、服务出错）答不上来是 null —— 没说能用，点就不绿。
+ * - dailyLimit：今日额度用完了没有（D-497 F1）。billing/me 的 used >= limit 是一个
+ *   答案，SW 记着的 daily_limit 闩是另一个（billing/me 的 used 可能落后于刚用掉
+ *   最后一点的那次请求），哪个说是都算。
  */
-async function pageBlabAccess(settings, probe) {
+async function pageBlab(settings, probe) {
   if (EngineStatus.selectedEngine(settings, probe) !== 'blab') return undefined;
-  const reply = await chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT' });
-  if (reply && reply.ok) return Engines.blabAccess(reply.data);
+  const [reply, latch] = await Promise.all([
+    chrome.runtime.sendMessage({ type: 'COMIC_ACCOUNT' }),
+    chrome.runtime.sendMessage({ type: 'BLAB_DAILY_LIMIT' }),
+  ]);
+  // 闩在 SW 内存里，问它不会因账户或网络失败；答不上来是缺陷，抛。
+  if (!latch || !latch.ok) throw new Error(`BLAB_DAILY_LIMIT: ${latch && latch.error ? latch.error.message : 'no reply'}`);
+  if (reply && reply.ok) {
+    return {
+      access: Engines.blabAccess(reply.data),
+      dailyLimit: latch.data.held || Engines.blabAllowanceSpent(reply.data),
+    };
+  }
   const code = reply && reply.error ? reply.error.code : 'no reply';
-  if (code === 'unauthorized') return Engines.BLAB_ACCESS.SIGNED_OUT;
+  if (code === 'unauthorized') return { access: Engines.BLAB_ACCESS.SIGNED_OUT, dailyLimit: latch.data.held };
   console.warn('Blab Translation: reading the account for the engine status failed (%s)', code);
-  return null;
+  return { access: null, dailyLimit: latch.data.held };
 }
 
 async function refreshEngineStatus(settings) {
@@ -543,8 +557,8 @@ async function refreshEngineStatus(settings) {
   const reply = await probeActiveTabEngine();
   const probe = reply === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : reply;
   lastEngineProbe = probe;
-  const [aiIsReady, blabAccess] = await Promise.all([pageAiReady(probe), pageBlabAccess(settings, probe)]);
-  renderStatus(EngineStatus.describeEngineStatus(settings, probe, aiIsReady, blabAccess));
+  const [aiIsReady, blab] = await Promise.all([pageAiReady(probe), pageBlab(settings, probe)]);
+  renderStatus(EngineStatus.describeEngineStatus(settings, probe, aiIsReady, blab));
 }
 
 function renderStatus(status) {

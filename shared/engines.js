@@ -94,6 +94,18 @@
   }
 
   /**
+   * Whether billing/me says today's Blab allowance is spent (D-497 F1): an
+   * available account whose `used` has reached its `limit`. The account is still
+   * AVAILABLE (blabAccess) — the plan is there, today's share is not — so this is
+   * a second question, asked where "works right now" is claimed (the popup's dot).
+   */
+  function blabAllowanceSpent(account) {
+    const blab = account && account.signedIn === true ? account.blabTranslation : null;
+    if (!blab || blab.available !== true) return false;
+    return Number.isFinite(blab.limit) && Number.isFinite(blab.used) && blab.used >= blab.limit;
+  }
+
+  /**
    * Where subscribing to Blab Translation happens: the account site's pricing
    * page, from the base the service worker answers (ACCOUNT_SITE_BASE). The
    * settings page's note and the worker's "Subscribe" entry (the page's error
@@ -117,6 +129,6 @@
 
   root.Engines = Object.freeze({
     ENGINES, MODEL_ENGINES, BLAB_PROFILE, BLAB_ACCESS,
-    isEngine, isModelEngine, normalizeEngine, isBlabProfile, blabAccess, blabPricingUrl,
+    isEngine, isModelEngine, normalizeEngine, isBlabProfile, blabAccess, blabAllowanceSpent, blabPricingUrl,
   });
 })(globalThis);
