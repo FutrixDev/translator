@@ -6,11 +6,18 @@
 
 - **Type or select a single word on the AI engine and you get a dictionary
   entry, not just a translation.** Under the translation, the input box and the
-  selection card now show UK and US pronunciations, each with its own speaker
-  (British and American voices). They also show the senses grouped by part of
-  speech, up to three examples, and the word's forms (past tense, plural and so
-  on). Both surfaces draw the entry from one shared module, so they always look
-  the same.
+  selection card now show how to pronounce the translation, with a speaker
+  that reads it aloud. They also show the senses grouped by part of speech, up
+  to three examples, and the word's forms (past tense, plural and so on). Both
+  surfaces draw the entry from one shared module, so they always look the same.
+- **The pronunciation is the translation's, in your target language.** Look up
+  `run` into Chinese and you get the pinyin of the translation, `pǎo`, and the
+  speaker reads the translation in Chinese. It used to show the British and
+  American IPA of `run` instead, and read `run` aloud. When English is the
+  target, you get UK and US IPA of the English translation, each read in its
+  own accent. Any other target language gets one pronunciation in that
+  language's usual notation, such as kana for Japanese. The word you looked up
+  keeps its own speaker, beside the text you typed or selected.
 - **A word or a short phrase is looked up; anything longer is translated.**
   In both the input box and the card, text with no sentence punctuation that
   is one to three words long (or one to four characters in Chinese, Japanese,
