@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation вернул пустой ответ. Попробуйте ещё раз.",
     blabErrorRequest: "Blab Translation не смог обработать этот запрос (HTTP {status}).",
     blabActionFailed: "Не удалось открыть. Попробуйте ещё раз в настройках.",
+    blabSubscribeFailed: "Не удалось открыть страницу подписки. Попробуйте ещё раз.",
     blabStatusSignedOut: "Доступно после входа",
     blabStatusPlanRequired: "Нужна подписка",
     blabStatusUnknown: "Статус аккаунта недоступен",

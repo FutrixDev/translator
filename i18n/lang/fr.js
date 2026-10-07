@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation a renvoyé une réponse vide. Veuillez réessayer.",
     blabErrorRequest: "Blab Translation n'a pas pu traiter cette requête (HTTP {status}).",
     blabActionFailed: "Impossible de l'ouvrir. Réessayez depuis les paramètres.",
+    blabSubscribeFailed: "Impossible d'ouvrir la page d'abonnement. Veuillez réessayer.",
     blabStatusSignedOut: "Connectez-vous pour l'utiliser",
     blabStatusPlanRequired: "Abonnement requis",
     blabStatusUnknown: "État du compte indisponible",

@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation から空の応答が返されました。もう一度お試しください。",
     blabErrorRequest: "Blab Translation はこのリクエストを処理できませんでした（HTTP {status}）。",
     blabActionFailed: "開けませんでした。設定からもう一度お試しください。",
+    blabSubscribeFailed: "購読ページを開けませんでした。もう一度お試しください。",
     blabStatusSignedOut: "ログインすると使えます",
     blabStatusPlanRequired: "サブスクリプションが必要",
     blabStatusUnknown: "アカウントの状態を確認できません",

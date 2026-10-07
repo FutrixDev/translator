@@ -12,13 +12,14 @@
 //   signed_out     选项禁用；说明「登录并订阅后可用」+ 登录按钮（账号卡片那条登录流程）
 //   plan_required  选项禁用；说明「订阅后可用」+ 订阅按钮（账户站地址没答上就不画，
 //                  不回落成相对地址）
-//
-// 这两个按钮和错误条、划词卡上的一样，是账户入口：都发 BLAB_ACCOUNT_ACTION，
-// SW 先把「点过入口」写进会话存储，再去登录或开定价页（设计 §5.2.1、D-500）。
-// 订阅不能是 <a href>：链接自己开页，可能赶在记录落地之前，中键、Ctrl 点击和
-// 右键「在新标签页打开」还根本不经过脚本。
 //   available      选项可选；选中时说明「文字发到 Blab 的服务器、订阅包含、每天 X、
 //                  今天已用 Y」，两个数都取接口返回值
+//
+// 登录、订阅这两个按钮和错误条、划词卡上的一样，是账户入口：都发
+// BLAB_ACCOUNT_ACTION，SW 先把「点过入口」写进会话存储，再去登录或开定价页
+// （设计 §5.2.1、D-500）。订阅不能是 <a href>：链接自己开页，可能赶在记录落地
+// 之前，中键、Ctrl 点击和右键「在新标签页打开」还根本不经过脚本。账号卡片自己的
+// 「登录」不是 Blab 入口，不记点击（D-501）：换了 token，闩自己就放了。
 //
 // 已经选了 Blab 后来不能用了（退出登录、订阅到期）：选择原样保留、不写设置，
 // 说明换成警告样式，前面多一句「已选但现在用不了」，入口照旧。
@@ -98,16 +99,23 @@ function blabNoteText(text) {
 }
 
 /**
- * The account card's own sign-in flow, entered as the account entry: a success
- * redraws through showAccount(), and the worker has noted the click first.
+ * The note's Sign in: the account card's sign-in flow (signInWith in
+ * options-account.js), entered as the account entry, so the worker notes the
+ * click before it signs in. A success redraws through showAccount(). Clicked
+ * while the card's own sign-in runs, it joins that one and sends nothing.
+ * No parameters: it is the click listener itself.
  */
+function blabSignIn() {
+  return signInWith({ type: 'BLAB_ACCOUNT_ACTION', action: 'signin' });
+}
+
 function blabSignInButton() {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn-secondary blab-note-action';
   button.dataset.accountAction = 'signin';
   button.textContent = t('comicSignIn');
-  button.addEventListener('click', () => { comicSignIn({ type: 'BLAB_ACCOUNT_ACTION', action: 'signin' }); });
+  button.addEventListener('click', blabSignIn);
   return button;
 }
 
@@ -126,13 +134,22 @@ function blabSubscribeButton() {
   button.textContent = t('blabSubscribe');
   button.addEventListener('click', async () => {
     button.disabled = true;
-    const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' });
-    button.disabled = false;
-    if (response && response.ok) return;
-    console.error('Blab Translation: the account entry "subscribe" failed', response && response.error);
-    showStatus(t('blabActionFailed'), 'error');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' });
+      if (!response || !response.ok) blabSubscribeFailed(response && response.error);
+    } catch (error) {
+      blabSubscribeFailed(error);
+    } finally {
+      button.disabled = false;
+    }
   });
   return button;
+}
+
+/** The worker could not open the pricing page, or could not be reached: said once. */
+function blabSubscribeFailed(error) {
+  console.error('Blab Translation: the account entry "subscribe" failed', error);
+  showStatus(t('blabSubscribeFailed'), 'error');
 }
 
 function setupBlabEngine() {

@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation 傳回了空結果，請再試一次。",
     blabErrorRequest: "Blab Translation 無法處理這個請求（HTTP {status}）。",
     blabActionFailed: "沒能開啟，請到設定裡再試。",
+    blabSubscribeFailed: "沒能開啟訂閱頁面，請重試。",
     blabStatusSignedOut: "登入後可用",
     blabStatusPlanRequired: "需要訂閱",
     blabStatusUnknown: "暫時查不到帳戶狀態",

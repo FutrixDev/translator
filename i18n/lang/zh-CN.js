@@ -483,6 +483,7 @@
     blabErrorEmpty: "Blab Translation 返回了空结果，请再试一次。",
     blabErrorRequest: "Blab Translation 无法处理这个请求（HTTP {status}）。",
     blabActionFailed: "没能打开，请到设置里再试。",
+    blabSubscribeFailed: "没能打开订阅页面，请重试。",
     blabStatusSignedOut: "登录后可用",
     blabStatusPlanRequired: "需要订阅",
     blabStatusUnknown: "暂时查不到账户状态",

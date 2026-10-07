@@ -175,26 +175,35 @@ function showAccount(account) {
 }
 
 /**
- * Sign in, or join the sign-in already running.
+ * The account card's Sign in, and the two switches' gate: sign in, or join the
+ * sign-in already running. It takes no argument because it is wired straight
+ * to a click (options.js), and a listener's first argument is the event.
+ */
+function comicSignIn() {
+  return signInWith({ type: 'COMIC_SIGN_IN' });
+}
+
+/**
+ * The one sign-in flow every entry on this page shares. `message` is what the
+ * entry sends: COMIC_SIGN_IN here, or the Blab Translation note's account entry
+ * (blabSignIn in options-blab.js). Never wire this to an event directly.
  *
  * Both switches are live while signed out, so turning them on in quick
- * succession sends two gates here. Two independent flows would open two
- * authentication tabs, and the second to finish would overwrite the first: a
- * cancelled one landing after a successful one renders the signed-out panel
- * with a valid token in storage. One flow, one answer, both callers.
+ * succession sends two gates here, and the card and the note can be clicked
+ * together. Two independent flows would open two authentication tabs, and the
+ * second to finish would overwrite the first: a cancelled one landing after a
+ * successful one renders the signed-out panel with a valid token in storage.
+ * One flow, one answer, every caller; a caller that joins sends nothing of its
+ * own (D-501: the card's sign-in does not record the Blab click either).
  */
-function comicSignIn(message = { type: 'COMIC_SIGN_IN' }) {
+function signInWith(message) {
   if (!comicSignInInFlight) {
     comicSignInInFlight = runComicSignIn(message).finally(() => { comicSignInInFlight = null; });
   }
   return comicSignInInFlight;
 }
 
-/**
- * `message` is COMIC_SIGN_IN, or, from the Blab Translation note, the account
- * entry BLAB_ACCOUNT_ACTION 'signin' (options-blab.js): the worker records the
- * click before it signs in (D-500). Both answer with the account sign-in got.
- */
+/** Both messages answer with the account sign-in got. */
 async function runComicSignIn(message) {
   // This decides the account outright, so any read already on the wire is stale
   // from here on — including the one this replaces.

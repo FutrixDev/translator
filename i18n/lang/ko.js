@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation이 빈 응답을 보냈습니다. 다시 시도해 주세요.",
     blabErrorRequest: "Blab Translation이 이 요청을 처리할 수 없습니다(HTTP {status}).",
     blabActionFailed: "열지 못했습니다. 설정에서 다시 시도해 주세요.",
+    blabSubscribeFailed: "구독 페이지를 열지 못했습니다. 다시 시도해 주세요.",
     blabStatusSignedOut: "로그인하면 사용 가능",
     blabStatusPlanRequired: "구독 필요",
     blabStatusUnknown: "계정 상태를 확인할 수 없음",

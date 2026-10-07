@@ -464,6 +464,7 @@
     blabErrorEmpty: "Blab Translation devolvió una respuesta vacía. Inténtalo de nuevo.",
     blabErrorRequest: "Blab Translation no pudo procesar esta solicitud (HTTP {status}).",
     blabActionFailed: "No se pudo abrir. Inténtalo de nuevo desde Ajustes.",
+    blabSubscribeFailed: "No se pudo abrir la página de suscripción. Inténtalo de nuevo.",
     blabStatusSignedOut: "Inicia sesión para usarlo",
     blabStatusPlanRequired: "Requiere suscripción",
     blabStatusUnknown: "Estado de la cuenta no disponible",

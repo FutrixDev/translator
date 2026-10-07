@@ -505,6 +505,7 @@ Rules:
     blabErrorEmpty: "Blab Translation returned an empty answer. Please try again.",
     blabErrorRequest: "Blab Translation couldn't take this request (HTTP {status}).",
     blabActionFailed: "Couldn't open it. Try again from Settings.",
+    blabSubscribeFailed: "Couldn't open the subscription page. Please try again.",
     blabStatusSignedOut: "Sign in to use",
     blabStatusPlanRequired: "Needs a subscription",
     blabStatusUnknown: "Account status unavailable",

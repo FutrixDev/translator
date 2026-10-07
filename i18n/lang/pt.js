@@ -464,6 +464,7 @@
     blabErrorEmpty: "O Blab Translation retornou uma resposta vazia. Tente novamente.",
     blabErrorRequest: "O Blab Translation não conseguiu processar esta solicitação (HTTP {status}).",
     blabActionFailed: "Não foi possível abrir. Tente novamente nas Configurações.",
+    blabSubscribeFailed: "Não foi possível abrir a página de assinatura. Tente novamente.",
     blabStatusSignedOut: "Entre para usar",
     blabStatusPlanRequired: "Requer assinatura",
     blabStatusUnknown: "Status da conta indisponível",
