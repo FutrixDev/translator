@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Blab Translation, a third engine
+
+- **Blab Translation can now translate pages, selections and the input box,
+  alongside Chrome's built-in translator and your own AI model.** It is
+  included with a Blab subscription and needs no API key; the text you
+  translate with it is sent to Blab's servers. Choose it for the translation
+  engine, the automatic-translation engine, a site translation rule, or one
+  card through the card's engine switch.
+- **The settings page says whether you can choose it.** Signed out, the option
+  is greyed out with a sign-in button; signed in without a plan that includes
+  it, it is greyed out with a link to the pricing page. When it is available
+  and chosen, the note under the engine shows the daily allowance and how much
+  of it is used today, both as the server reports them. The page asks the
+  server afresh each time it opens.
+- **A choice that stops working is kept and flagged, not changed.** If you
+  sign out or the plan ends while Blab Translation is selected, the setting
+  stays as it is and the note turns into a warning with the way back.
+- **Account problems are shown as errors, never papered over with another
+  engine.** When today's allowance is used up, the plan is missing, or the
+  device is signed out, the card or page shows that message (with the reset
+  time for the daily allowance) and the page stops sending more paragraphs;
+  nothing is retried and nothing falls back to another engine.
+- **Blab Translation answers like a model.** A single word gets a dictionary
+  entry, the card shows "Blab Translation" as the engine, and the daily
+  character cap you set for unattended AI spend does not count it: that cap is
+  for your own API key only.
+
 ### A word looks itself up like a dictionary
 
 - **Type or select a single word on the AI engine and you get a dictionary
