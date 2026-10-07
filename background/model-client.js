@@ -43,8 +43,10 @@
 // 两种送法（transportFor，按档认一次）：用户自己的 AI 档直连服务商（modelRequest
 // + sendToProvider）；Engines.BLAB_PROFILE 发到账户的 /api/blab/complete
 // （blab-client.js，D-477）。重试、限速、keepalive、超时与总预算两边是同一套。
-// Blab 那几种账户状态（daily_limit / plan_required / unauthorized）的失败带
-// retryable: false，不重试（设计 §5.2）。
+// 重试与否也按送法（transport.retryable）：AI 档照 isRetryable；Blab 只重试连不上
+// （network）—— 5xx 与超时服务端已经对上游重试过，再试一次是把等待翻倍（D-497 F7）；
+// 那几种账户状态（daily_limit / plan_required / unauthorized）带 retryable: false，
+// 本来就不重试（设计 §5.2）。
 
 import '../shared/api-compat.js';
 import '../shared/engines.js';
@@ -167,8 +169,15 @@ async function sendToProvider(prepared, signal, clock) {
   return { text: result.text };
 }
 
-const PROVIDER_TRANSPORT = Object.freeze({ prepare: modelRequest, send: sendToProvider });
-const BLAB_TRANSPORT = Object.freeze({ prepare: (_profile, request) => blabRequest(request), send: sendBlab });
+/** Blab 那一档只重试连不上的（fetch 被拒）：服务端的 5xx、这一端的超时都不再试。 */
+function isBlabRetryable(failure) {
+  return Boolean(failure) && failure.network === true && failure.retryable !== false;
+}
+
+const PROVIDER_TRANSPORT = Object.freeze({ prepare: modelRequest, send: sendToProvider, retryable: isRetryable });
+const BLAB_TRANSPORT = Object.freeze({
+  prepare: (_profile, request) => blabRequest(request), send: sendBlab, retryable: isBlabRetryable,
+});
 
 /** 这一档怎么发：Blab 那一档按 id 认（shared/engines.js），其余都是用户自己的 AI 档。 */
 function transportFor(profile) {
@@ -246,13 +255,13 @@ async function acquireWithin(limiter, profile, signal, clock, gateAt, endpoint) 
 }
 
 /**
- * 第 attempt 次失败之后等多久再试；不该再试就回 null。
+ * 第 attempt 次失败之后等多久再试；不该再试（transport.retryable 说不）就回 null。
  * Retry-After 超过 60 秒的，在 failure 上记下秒数（rateLimitedWait）再判失败：
  * 这一条排在「最后一次」之前，所以第一次就回 Retry-After: 120 的请求只发一次。
  */
-function nextWait(error, attempt, maxAttempts, clock) {
+function nextWait(error, attempt, maxAttempts, clock, transport) {
   const failure = error && error.apiFailure;
-  if (!isRetryable(failure)) return null;
+  if (!transport.retryable(failure)) return null;
   if (failure.retryAfterMs > RETRY_AFTER_MAX_SEC * 1000) {
     // 「请等 N 秒」只说给 429：5xx 叫你等 2 分钟是服务端出了事，按状态码措辞。
     if (Number(failure.status) === 429) failure.rateLimitedWait = Math.ceil(failure.retryAfterMs / 1000);
@@ -289,7 +298,7 @@ async function callModel(profile, request, {
       } finally {
         if (releaseModelSlot) releaseModelSlot();
       }
-      const wait = nextWait(error, attempt, maxAttempts, clock);
+      const wait = nextWait(error, attempt, maxAttempts, clock, transport);
       // 等完之后剩的预算不够一次有意义的尝试，就不等了：上一次的失败原样抛。
       if (wait === null || clock.now() + wait + minAttemptMs > deadline) {
         error.attempts = attempt;

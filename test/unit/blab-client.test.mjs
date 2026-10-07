@@ -39,7 +39,9 @@ await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
 await import('../../shared/engines.js');
 const { callModel, MAX_ATTEMPTS } = await import('../../background/model-client.js');
-const { blabRequest } = await import('../../background/blab-client.js');
+const {
+  blabRequest, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction,
+} = await import('../../background/blab-client.js');
 
 const BASE = 'http://blab.test';
 const BLAB = globalThis.Engines.BLAB_PROFILE;
@@ -179,22 +181,38 @@ test('blab: with no token on this device nothing is sent, and it reads as unauth
   });
 });
 
-test('blab: upstream_failed (502), unavailable (503) and a network error are retried like any model failure', async () => {
-  for (const reply of [json({ error: 'upstream_failed' }, 502), json({ error: 'unavailable' }, 503), new TypeError('Failed to fetch')]) {
+test('blab (D-497 F7): only a network error is retried; 502, 503 and a timeout are tried once', async () => {
+  // The service already retried its upstream before answering 502/503, and a
+  // timed-out attempt has used the whole wait: a second try only doubles it.
+  for (const reply of [json({ error: 'upstream_failed' }, 502), json({ error: 'unavailable' }, 503)]) {
     signIn();
     await withFetch(() => reply, async (calls) => {
       const clock = fakeClock();
       const error = await failureOf(call(request, { clock }));
-      assert.equal(calls.length, MAX_ATTEMPTS);
-      assert.equal(clock.waits.length, MAX_ATTEMPTS - 1);
-      assert.equal(error.attempts, MAX_ATTEMPTS);
-      assert.notEqual(error.apiFailure.retryable, false);
-      if (reply instanceof Error) assert.equal(error.apiFailure.network, true);
-      else assert.equal(error.apiFailure.status, reply.status);
+      assert.equal(calls.length, 1, `${reply.status} is sent once`);
+      assert.deepEqual(clock.waits, []);
+      assert.equal(error.attempts, 1);
+      assert.equal(error.apiFailure.status, reply.status);
     });
   }
   signIn();
-  await withFetch((_, n) => (n === 1 ? json({ error: 'upstream_failed' }, 502) : json({ text: 'second' })), async (calls) => {
+  await withFetch(() => 'hang', async (calls) => {
+    const error = await failureOf(callModel({ ...BLAB, timeoutSec: 0.05 }, request, { limit: false, clock: fakeClock() }));
+    assert.equal(error.apiFailure.timeout, true);
+    assert.equal(calls.length, 1, 'a timeout is not tried again');
+    assert.equal(error.attempts, 1);
+  });
+  signIn();
+  await withFetch(() => new TypeError('Failed to fetch'), async (calls) => {
+    const clock = fakeClock();
+    const error = await failureOf(call(request, { clock }));
+    assert.equal(calls.length, MAX_ATTEMPTS);
+    assert.equal(clock.waits.length, MAX_ATTEMPTS - 1);
+    assert.equal(error.attempts, MAX_ATTEMPTS);
+    assert.equal(error.apiFailure.network, true);
+  });
+  signIn();
+  await withFetch((_, n) => (n === 1 ? new TypeError('Failed to fetch') : json({ text: 'second' })), async (calls) => {
     assert.deepEqual(await call(request), { text: 'second' });
     assert.equal(calls.length, 2);
   });
@@ -346,10 +364,10 @@ test('latch: billing/me judging the account available since the refusal lets go;
 
 test('latch: a passing failure (503) is not remembered', async () => {
   signIn();
-  await withFetch((_, n) => (n <= MAX_ATTEMPTS ? json({ error: 'unavailable' }, 503) : json({ text: 'ok' })), async (calls) => {
+  await withFetch((_, n) => (n === 1 ? json({ error: 'unavailable' }, 503) : json({ text: 'ok' })), async (calls) => {
     await failureOf(call(request));
     assert.deepEqual(await call(request), { text: 'ok' });
-    assert.equal(calls.length, MAX_ATTEMPTS + 1);
+    assert.equal(calls.length, 2);
   });
 });
 
@@ -367,5 +385,121 @@ test('latch: captions resent every 8 s after an account error send nothing more'
       assert.equal(error.apiFailure.blab, 'daily_limit');
     }
     assert.equal(calls.length, 1);
+  });
+});
+
+test('latch: dailyLimitHeld answers the daily_limit latch only, for the token it was given for', async () => {
+  signIn();
+  const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+  await withFetch(() => dailyLimit(resetsAt), async () => {
+    assert.equal(await dailyLimitHeld(), false);
+    await failureOf(call(request));
+    assert.equal(await dailyLimitHeld(), true);
+    // Past resetsAt it is a new day.
+    assert.equal(await later(3_600_001, () => dailyLimitHeld()), false);
+  });
+  signIn();
+  await withFetch(() => dailyLimit(resetsAt), async () => {
+    await failureOf(call(request));
+    signIn();
+    assert.equal(await dailyLimitHeld(), false, 'another token');
+  });
+  signIn();
+  await withFetch(PLAN_REQUIRED, async () => {
+    await failureOf(call(request));
+    assert.equal(await dailyLimitHeld(), false, 'plan_required is not the allowance');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// After an account entry was clicked (D-497 F3)
+// ---------------------------------------------------------------------------
+
+const ME = `${BASE}/api/billing/me`;
+const isMe = (calls) => calls.filter((c) => c.url === ME).length;
+
+/** The service: billing/me says `available`, /api/blab/complete answers by `complete`. */
+function service(available, complete) {
+  return (init, n, url) => (url === ME ? json({ blabTranslation: { available } }) : complete(n));
+}
+
+async function withService(answer, run) {
+  return withFetch(() => null, async () => {
+    const calls = [];
+    globalThis.fetch = (url, init) => {
+      calls.push({ url, init });
+      return Promise.resolve(answer(init, calls.length, url));
+    };
+    return run(calls);
+  });
+}
+
+test('F3: with no entry clicked, nothing asks billing/me', async () => {
+  signIn();
+  await withService(service(true, (n) => (n === 1 ? PLAN_REQUIRED() : json({ text: 'ok' }))), async (calls) => {
+    await failureOf(call(request));
+    await refreshAfterAccountAction({ explicit: true });
+    await refreshAfterAccountAction({ explicit: false });
+    assert.equal(isMe(calls), 0);
+    await failureOf(call(request));
+  });
+});
+
+test('F3: after a click, requests nobody made ask billing/me at most every 10 s while latched', async () => {
+  signIn();
+  await withService(service(false, () => PLAN_REQUIRED()), async (calls) => {
+    await failureOf(call(request));
+    noteAccountAction();
+    await later(1_000, () => refreshAfterAccountAction({ explicit: false }));
+    assert.equal(isMe(calls), 1);
+    for (const ms of [2_000, 5_000, 10_900]) await later(ms, () => refreshAfterAccountAction({ explicit: false }));
+    assert.equal(isMe(calls), 1, 'inside 10 s of the last ask');
+    await later(11_100, () => refreshAfterAccountAction({ explicit: false }));
+    assert.equal(isMe(calls), 2);
+    // Still no plan: the latch holds and nothing goes to the service.
+    await failureOf(later(11_200, () => call(request)));
+    assert.equal(calls.length - isMe(calls), 1);
+    // Leave the click used up for the next case.
+    await later(11_300, () => refreshAfterAccountAction({ explicit: true }));
+  });
+});
+
+test('F3: after a click, the next request a person makes asks billing/me first and a plan bought since lets go', async () => {
+  signIn();
+  let available = false;
+  await withService((init, n, url) => (url === ME
+    ? json({ blabTranslation: { available } })
+    : (n === 1 ? PLAN_REQUIRED() : json({ text: 'ok' }))), async (calls) => {
+    await failureOf(call(request));
+    noteAccountAction();
+    available = true;
+    // A moment after the refusal, as a click and a new request always are.
+    await later(5, () => refreshAfterAccountAction({ explicit: true }));
+    assert.equal(isMe(calls), 1);
+    assert.deepEqual(await call(request), { text: 'ok' });
+  });
+  // One ask per click: the second explicit request does not ask again.
+  signIn();
+  available = false;
+  await withService((init, n, url) => (url === ME ? json({ blabTranslation: { available } }) : PLAN_REQUIRED()), async (calls) => {
+    await failureOf(call(request));
+    noteAccountAction();
+    await refreshAfterAccountAction({ explicit: true });
+    await refreshAfterAccountAction({ explicit: true });
+    assert.equal(isMe(calls), 1);
+  });
+});
+
+test('F3: a billing/me failure is the request\'s failure, worded like the service\'s own', async () => {
+  signIn();
+  await withService((init, n, url) => (url === ME
+    ? json({ error: 'unavailable' }, 503)
+    : PLAN_REQUIRED()), async (calls) => {
+    await failureOf(call(request));
+    noteAccountAction();
+    const error = await failureOf(refreshAfterAccountAction({ explicit: true }));
+    assert.equal(error.apiFailure.status, 503);
+    assert.equal(error.apiFailure.endpoint, ME);
+    assert.equal(isMe(calls), 1);
   });
 });

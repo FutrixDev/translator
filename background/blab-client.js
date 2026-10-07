@@ -11,14 +11,16 @@
 // It rides comic-client.js's apiFetch: the same account, bearer token, service
 // address and ComicApiError as comics and documents. A failure is turned into
 // the `apiFailure` shape callModel retries on and api-errors.js words:
-//   - network_error               { network: true, status: 0 }  — retryable
-//   - 502 upstream_failed, 503    { status, blab: code }        — retryable (5xx)
+//   - network_error               { network: true, status: 0 }  — retried, the
+//                                 only Blab failure that is (D-497 F7)
+//   - 502 upstream_failed, 503    { status, blab: code }        — not retried:
+//                                 the service already retried its upstream
 //   - daily_limit, plan_required,
 //     unauthorized                { status, blab: code, retryable: false } — the
 //                                 account's state, which another try in a second
 //                                 does not change (design §5.2); daily_limit
 //                                 carries the server's resetsAt
-//   - anything else (400, 413)    { status, blab: code }        — a 4xx, not retried
+//   - anything else (400, 413)    { status, blab: code }        — not retried
 // Nothing here logs: apiFetch warns once per non-ok reply (its existing line)
 // and replyError logs the failure where the handler catches it.
 //
@@ -28,7 +30,7 @@
 // selection card would otherwise each ask the service a question it has already
 // answered.
 
-import { apiFetch, getApiBase, getToken, getCachedAccount, ComicApiError } from './comic-client.js';
+import { apiFetch, getAccount, getApiBase, getToken, getCachedAccount, ComicApiError } from './comic-client.js';
 import { apiError } from './api-client.js';
 
 const PATH = '/api/blab/complete';
@@ -46,7 +48,20 @@ const LATCH_TTL_MS = 60_000;
 
 // { failure, message, at, until, token } — the account failure the service gave
 // last, with the token it was given for. null: nothing remembered.
+// Only in the service worker's memory: when Chrome recycles the worker the
+// latch is gone, and at most one more wave of requests goes out before the
+// service answers the same failure again and it is remembered anew.
 let latch = null;
+
+// After the user clicked an account entry ("Subscribe", "Sign in") the latch may
+// be holding a state the user has just fixed on the site, which nothing tells
+// this device about (D-497 F3). `actionPending` says so until the next request
+// a person made asks billing/me once (refreshAfterAccountAction); requests
+// nobody clicked (the automatic pass, subtitles) ask at most every
+// ACTION_REFRESH_MS meanwhile, not once per batch or line.
+const ACTION_REFRESH_MS = 10_000;
+let actionPending = false;
+let lastActionRefreshAt = -Infinity;
 
 async function currentToken() {
   const stored = await getToken();
@@ -67,7 +82,8 @@ async function rememberAccountFailure(error) {
 }
 
 /**
- * The remembered failure while it still holds, else null. It stops holding when
+ * The remembered latch ({ failure, message, ... }) while it still holds, else
+ * null. It stops holding when
  * its time is up, when the token is not the one it was given for (signed in
  * again, signed out, another account), or — for plan_required and
  * unauthorized — when billing/me has judged the account since and found Blab
@@ -88,7 +104,52 @@ async function latchedFailure() {
       return null;
     }
   }
-  return latch.failure;
+  return latch;
+}
+
+/**
+ * Whether today's allowance is remembered as spent (a daily_limit the service
+ * answered, until its resetsAt). The popup asks it beside billing/me, whose
+ * `used` can lag behind the call that spent the last of it.
+ */
+async function dailyLimitHeld() {
+  const held = await latchedFailure();
+  return Boolean(held) && held.failure.blab === 'daily_limit';
+}
+
+/** The user clicked an account entry; see actionPending. */
+function noteAccountAction() {
+  actionPending = true;
+}
+
+/**
+ * Before a Blab request, after an account entry was clicked: while a
+ * plan_required or unauthorized latch holds, ask billing/me (forced past its
+ * 30 s cache). latchedFailure then releases the latch if the account is
+ * available now. `explicit`: a person asked for this request, and it is the one
+ * that uses up the pending refresh; any other asks at most every
+ * ACTION_REFRESH_MS. A billing/me failure is this request's failure, worded and
+ * remembered like the service's own answer.
+ */
+async function refreshAfterAccountAction({ explicit }) {
+  if (!actionPending) return;
+  const held = await latchedFailure();
+  if (!held || held.failure.blab === 'daily_limit') {
+    // Nothing the click could have fixed is held any more.
+    if (!held) actionPending = false;
+    return;
+  }
+  const now = Date.now();
+  if (!explicit && now - lastActionRefreshAt < ACTION_REFRESH_MS) return;
+  if (explicit) actionPending = false;
+  lastActionRefreshAt = now;
+  try {
+    await getAccount({ force: true });
+  } catch (error) {
+    const failure = blabFailure(error, `${await getApiBase()}/api/billing/me`);
+    if (isBlabAccountFailure(failure.apiFailure)) await rememberAccountFailure(failure);
+    throw failure;
+  }
 }
 
 /**
@@ -122,7 +183,7 @@ function blabFailure(error, endpoint) {
  */
 async function sendBlab(prepared, signal) {
   const latched = await latchedFailure();
-  if (latched) throw apiError(latch.message, { ...latched, latched: true });
+  if (latched) throw apiError(latched.message, { ...latched.failure, latched: true });
   let data;
   try {
     data = await apiFetch(prepared.endpoint, { method: 'POST', body: prepared.body, signal });
@@ -145,4 +206,7 @@ function isBlabAccountFailure(failure) {
   return Boolean(failure) && ACCOUNT_CODES.includes(failure.blab);
 }
 
-export { blabRequest, sendBlab, isBlabAccountFailure, ACCOUNT_CODES };
+export {
+  blabRequest, sendBlab, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction,
+  isBlabAccountFailure, ACCOUNT_CODES,
+};
