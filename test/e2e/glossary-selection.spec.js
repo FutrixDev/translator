@@ -15,10 +15,10 @@ const { test, expect } = require('./fixtures');
 const {
   evaluateInContentScript,
   setExtensionSettings,
-  storedGlossary,
   stubBuiltinTranslator,
   waitForContentReady,
 } = require('./helpers');
+const { storedGlossary } = require('./glossary-helpers');
 const { expectLaidOut } = require('./layout-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');

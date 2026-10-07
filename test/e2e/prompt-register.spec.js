@@ -9,7 +9,8 @@
 // page-translation-site-rules.spec.js 一样。引擎是 AI：test/e2e/helpers.js 的
 // E2E_BASE_SETTINGS 已经把两张开关都钉在 AI 上，语域也只进 AI 的提示词。
 const { test, expect } = require('./fixtures');
-const { addGlossaryEntry, setExtensionSettings } = require('./helpers');
+const { setExtensionSettings } = require('./helpers');
+const { addGlossaryEntry } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 给模型的英文句子只写在 shared/prompt-addenda.js 一处；这里读它，不抄一份。

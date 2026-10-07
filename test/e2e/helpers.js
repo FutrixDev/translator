@@ -784,151 +784,6 @@ async function countPersistentCacheKeys(context) {
 }
 
 /**
- * 加一条术语表词条：从设置页发 GLOSSARY_WRITE（生产写入路径，经服务工作者的
- * 单写者队列落到 storage.sync），核对回话和存下的那一整条，再在设置页里按设计
- * 的算法量一次用量（Glossary.usage(Glossary.collect(整个 sync))）。
- *
- * 只用来铺设前置数据：C-J3、C-J8 把加词条标成 [fixture]（设计 §6.1 夹具隔离子
- * 步骤），走这条消息路径；C-J1 / C-J2 / C-J5 的加词条已改走设置页卡片
- * （addGlossaryEntryInCard）。
- * @returns {Promise<{id: string, usage: {count: number, bytes: number, max: number}, stored: object}>}
- */
-async function addGlossaryEntry(context, extensionId, entry) {
-  const options = await context.newPage();
-  await options.goto(`chrome-extension://${extensionId}/options/options.html`);
-  const reply = await options.evaluate(
-    (e) => chrome.runtime.sendMessage({ type: 'GLOSSARY_WRITE', kind: 'put', entry: e }),
-    entry,
-  );
-  const usage = await options.evaluate(async () => ({
-    ...Glossary.usage(Glossary.collect(await chrome.storage.sync.get(null))),
-    max: Glossary.LIMITS.maxItems,
-  }));
-  await options.close();
-  expect(reply.value).toEqual({ id: expect.any(String), replaced: false });
-  const key = `glossary:${reply.value.id}`;
-  const stored = (await getSyncSettings(context, [key]))[key];
-  // 存下的是整条：没给范围就是所有语言（l: '*'），写入时戳上 u。
-  expect(stored).toEqual({ l: '*', ...entry, u: expect.any(Number) });
-  return { id: reply.value.id, usage, stored };
-}
-
-/** sync 里全部术语表词条，按键：{ 'glossary:<id>': 存下的那一条 }。 */
-async function storedGlossary(context) {
-  const { items } = await syncSnapshot(context);
-  return Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith('glossary:')));
-}
-
-/**
- * 打开设置页，等术语表卡片第一次读回存储（用量那一行有了字）。
- * @returns {Promise<import('@playwright/test').Page>}
- */
-async function openGlossaryCard(page, extensionId) {
-  await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await expect(page.locator('#glossaryUsage')).not.toHaveText('');
-  return page;
-}
-
-/**
- * 在设置页的术语表卡片上加一条：点「添加词条」，逐项填表（原文、译文、区分
- * 大小写、站点、目标语言），点「保存」，等表单收起、存储里多出恰好一条新键。
- * 这是 C-J1 / C-J2 / C-J5 加词条的真实入口；只有铺设用的 addGlossaryEntry 走消息。
- * @param {import('@playwright/test').Page} options 已由 openGlossaryCard 打开的设置页
- * @param {{s: string, t?: string, c?: number, h?: string, l?: string}} entry
- * @returns {Promise<{id: string, stored: object}>}
- */
-async function addGlossaryEntryInCard(options, context, entry) {
-  const before = await storedGlossary(context);
-  await options.click('#glossaryAdd');
-  const editor = options.locator('.glossary-editor');
-  await editor.locator('#glossary-source').fill(entry.s);
-  await editor.locator('#glossary-target').fill(entry.t || '');
-  // 原文含大写字母时表单会自动勾上「区分大小写」：按词条显式设一次。
-  await editor.locator('#glossary-case').setChecked(Boolean(entry.c));
-  await editor.locator('#glossary-site').fill(entry.h || '');
-  await editor.locator('#glossary-lang').selectOption(entry.l || '*');
-  await editor.locator('.glossary-save').click();
-  await expect(editor).toHaveCount(0);
-  let added = [];
-  await expect.poll(async () => {
-    added = Object.entries(await storedGlossary(context)).filter(([key]) => !(key in before));
-    return added.length;
-  }).toBe(1);
-  const [key, stored] = added[0];
-  return { id: key.slice('glossary:'.length), stored };
-}
-
-/**
- * The stylesheet a hostile host page serves.
- *
- * Every rule here targets a bare tag, because that is the whole mechanism: our
- * panels are `div`s and `button`s and `label`s inside the page's own document,
- * so a page rule with no class in it matches them. `div { opacity: .8 }` is
- * real — example.com ships it — and the rest are the same shape, drawn from
- * what page CSS routinely does to bare tags.
- *
- * Three separate defects came out of this one mechanism before it was fixed at
- * the boundary: the box model overflowing the textarea past the modal, the
- * stacking context the opacity built around the dialog header (which sealed
- * the language menu behind the textarea, so the picker looked decorative), and
- * the compounded opacity that let page text show through the panel.
- *
- * The `.host-kit button` rule is the fourth, and it is the shape that matters
- * most in practice. A theme does not style `button` from a bare tag; it styles
- * it from a class on `<body>`, which weighs (0,1,1) — one type selector more
- * than the single-class rules our own controls were written with. This is
- * Elementor's kit rule copied off azulle.com, where it turned the float menu,
- * the popup, the input dialog and the progress toast into stacks of lime pills
- * all at once.
- *
- * Its `:hover`/`:focus` twin is the fifth, and it is heavier still — a state is
- * a pseudo-class, so (0,2,1). It takes whatever the control's own hover rule
- * does not restate, which on the first fix was the border and the colour: the
- * float menu drew a near-black box around the item under the pointer and turned
- * its label white, on a white menu. Both rules are the real values off that
- * site, so the fixture fails the way the site did.
- */
-const HOSTILE_PAGE_CSS = `
-  div { opacity: 0.8; box-sizing: content-box; filter: saturate(0.4); }
-  span { opacity: 0.8; }
-  button { text-transform: uppercase; font-family: monospace; }
-  textarea { box-sizing: content-box; font-family: monospace; transform: translateX(30px); }
-  label { text-transform: uppercase; letter-spacing: 4px; }
-  .host-kit button {
-    background-color: rgb(195, 250, 125);
-    border: 1px solid rgb(195, 250, 125);
-    border-radius: 100px;
-    padding: 14px 30px;
-    font: 600 15.75px monospace;
-  }
-  .host-kit button:hover,
-  .host-kit button:focus {
-    background-color: rgb(0, 2, 22);
-    color: rgb(255, 255, 255);
-    border: 1px solid rgb(0, 2, 22);
-  }
-  svg { fill: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; }
-  path { stroke: rgb(255, 0, 0); stroke-width: 4px; stroke-linecap: square; stroke-linejoin: bevel; }
-  .host-kit button:hover svg { fill: rgb(255, 0, 0); stroke-width: 4px; }
-`;
-
-/**
- * HOSTILE_PAGE_CSS plus the sixth shape: colour, size, display and padding,
- * which the containment reset leaves to our own rules. The dictionary entry is
- * built from bare spans and divs, and before each of its elements said all four
- * for itself, `span { font-size: 30px }` blew a definition up to headline size.
- * test/e2e/dictionary-entry.spec.js serves this sheet under both surfaces.
- *
- * It is kept apart from HOSTILE_PAGE_CSS because the float ball does not yet
- * hold against it: `div { display: inline; padding: 12px }` collapses the fan
- * of its mark, which input-translation.spec.js checks on that page.
- */
-const HOSTILE_ENTRY_CSS = `${HOSTILE_PAGE_CSS}
-  span { color: red; font-size: 30px; display: block; }
-  div { padding: 12px; display: inline; }
-`;
-
-/**
  * Today's spend on the unattended AI paths (autoStats.autoAiChars, what
  * autoAiDailyBudget is checked against), written on AutoStats' own local
  * calendar so the gate reads it as today's.
@@ -947,8 +802,6 @@ async function seedTodaysAutoAiChars(context, chars) {
 }
 
 module.exports = {
-  HOSTILE_PAGE_CSS,
-  HOSTILE_ENTRY_CSS,
   connectExtension,
   oursIn,
   ourNodesAt,
@@ -956,10 +809,6 @@ module.exports = {
   syncSnapshot,
   waitForContentReady,
   countPersistentCacheKeys,
-  addGlossaryEntry,
-  storedGlossary,
-  openGlossaryCard,
-  addGlossaryEntryInCard,
   evaluateInContentScript,
   stubBuiltinTranslator,
   E2E_BASE_SETTINGS,

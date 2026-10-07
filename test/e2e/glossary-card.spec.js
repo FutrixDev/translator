@@ -18,12 +18,10 @@
 const fs = require('fs');
 const { test, expect } = require('./fixtures');
 const {
-  addGlossaryEntryInCard,
-  openGlossaryCard,
   setExtensionSettings,
-  storedGlossary,
   syncSnapshot,
 } = require('./helpers');
+const { addGlossaryEntryInCard, openGlossaryCard, storedGlossary } = require('./glossary-helpers');
 const { expectLaidOut } = require('./layout-checks');
 
 const HEADER = 'source,target,case_sensitive,site,target_lang';

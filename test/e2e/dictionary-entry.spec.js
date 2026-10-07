@@ -21,8 +21,8 @@ const {
   evaluateInContentScript,
   stubBuiltinTranslator,
   waitForFloatBall,
-  HOSTILE_ENTRY_CSS,
 } = require('./helpers');
+const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
