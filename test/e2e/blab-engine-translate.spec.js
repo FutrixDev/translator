@@ -19,6 +19,7 @@ const {
   evaluateInContentScript,
   setExtensionSettings,
   getSyncSettings,
+  sendMessageToActiveTab,
   stubBuiltinTranslator,
   triggerPageTranslation,
   waitForFloatBall,
@@ -62,7 +63,7 @@ async function walkShot(page, name) {
  * Both mocks up, the extension pointed at the Blab one, the user's own AI
  * profile pointed at the other, and the page served. The caller closes both.
  */
-async function setUp(context, page, { mode = 'available', signedIn = true, engine = 'blab', used = 0 } = {}) {
+async function setUp(context, page, { mode = 'available', signedIn = true, engine = 'blab', used = 0, settings = {} } = {}) {
   const blab = await startMockBlabService({ mode, used, dictEntry });
   const ai = await startMockOpenAIServer();
   await connectExtension(context, blab.base, { signedIn });
@@ -76,6 +77,7 @@ async function setUp(context, page, { mode = 'available', signedIn = true, engin
     skipTargetLanguageText: false,
     enableSelection: true,
     selectionTranslationMode: 'popup',
+    ...settings,
   });
   await context.route(`${ORIGIN}/**`, (route) => {
     route.fulfill({ status: 200, contentType: 'text/html', body: PAGE });
@@ -293,6 +295,41 @@ test.describe('J3 Blab Translation over the daily allowance', () => {
       await close();
     }
   });
+});
+
+// D-490 B1: clicking "translate page" also tells the automatic session that the
+// user wants this page translated. When that manual pass stops on an account
+// error, the automatic session must stop with it — not wait for the manual pass
+// to end and send the same paragraphs again through its own engine.
+test.describe('an account error stops the automatic session too', () => {
+  const autoStatus = async (page) => (await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' })).auto.status;
+
+  for (const autoEngine of ['builtin', 'ai', 'blab']) {
+    test(`manual Blab, automatic ${autoEngine}: one request in all, and the page stays untranslated`, async ({ context, page }) => {
+      const { blab, ai, close } = await setUp(context, page, {
+        mode: 'plan_required',
+        settings: { autoTranslate: true, autoTranslateEngine: autoEngine },
+      });
+      try {
+        await openPage(page);
+        await stubBuiltinTranslator(page);
+        await triggerPageTranslation(page);
+        await expectPassStopped(page, en('blabPlanRequired'));
+        await expect.poll(() => autoStatus(page), { timeout: 30000 }).toBe('error');
+        // Quiet: well past the scheduler's retry after a manual pass (500 ms)
+        // and its debounce (250 ms), so a re-send would have happened by now.
+        await page.waitForTimeout(2000);
+        expect(blab.state.completeRequests).toHaveLength(1);
+        expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+        expect(ai.sentTexts).toHaveLength(0);
+        await expect(page.locator('.ai-translator-inline-block')).toHaveCount(0);
+        await expect(page.locator('body')).not.toContainText('[B]');
+        await expect(page.locator('body')).not.toContainText('[T]');
+      } finally {
+        await close();
+      }
+    });
+  }
 });
 
 test.describe('§7 the other engines never reach Blab', () => {

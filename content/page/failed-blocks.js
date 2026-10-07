@@ -97,10 +97,10 @@
     // markFailures：自动翻译那一轮默认不放标记（它自己在 giveUp 那一刻放），
     // 但这一次是用户点出来的，失败就该看得见。
     ctx.runTranslationPass([entry.block], { auto: entry.auto, markFailures: true })
-      .then((error) => {
+      .then((failure) => {
         // 整轮级的失败（扩展上下文没了、配置错）可能停在发请求之前，没放下标记：
         // 补一个，带上那句原因。
-        if (error && !markers.has(element)) mark(entry.block, error, { auto: entry.auto });
+        if (failure && !markers.has(element)) mark(entry.block, failure.message, { auto: entry.auto });
       })
       .catch((error) => {
         console.error('Blab Translation: failed-block retry failed', error);

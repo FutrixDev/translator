@@ -494,7 +494,7 @@
           auto
         }));
         if (response.error) {
-          if (onFailure) onFailure(response.error, { passFatal: response.passFatal === true });
+          if (onFailure) onFailure(response.error, response);
           if (!failsWholePass(response)) onBlockFailed(block, response.error);
           continue;
         }
@@ -540,7 +540,10 @@
 
 
 
-  // 一轮翻译：一组块进来，译文落到页面上。返回致命错误的消息，没有就返回 null。
+  // 一轮翻译：一组块进来，译文落到页面上。返回这一轮的致命错误
+  // `{ message, action }`，没有就返回 null。message 是给读者的那句话；action 是
+  // 那句话附带的入口（'subscribe' | 'signin'，Blab 账户的错误才有，见
+  // background/api-errors.js 的 replyError），调用方把它画成错误条上的按钮。
   //
   // 什么时候显示进度、什么时候算“整页翻完了”，都不在这里——页面级的那一份状态
   // 归 content/content-page-translation.js，将来自动翻译的增量轮次并不需要它。
@@ -613,6 +616,7 @@
     // 不会白白多打几百次请求。
     const MAX_BATCH_FAILURES = 3;
     let batchError = null;
+    let batchAction = null;
     let batchFailures = 0;
     let firstFailureMessage = null;
 
@@ -627,12 +631,27 @@
     const stoppedOutside = () => typeof options.isAborted === 'function' && options.isAborted();
     const aborted = () => !!batchError || stoppedOutside();
 
-    // 整轮致命的失败（passFatal：不认得的领域这类配置错，content/engine/addenda.js）
-    // 之后每一批都会一样失败，第一次见到就停，不等累计阈值 —— 一页只有一两批时阈值
-    // 永远到不了，这一轮会被当成「翻完了」收场，页面一个字没变、也没有任何提示。
-    const noteBatchFailure = (message, { passFatal = false } = {}) => {
-      if (passFatal) {
-        if (!batchError) batchError = message;
+    // 整轮级的失败（failsWholePass：passFatal —— 账户不能用、不认得的领域这类配置错
+    // —— 或者扩展上下文没了）只有这一个落点。之后每一批都会一样失败，第一次见到就
+    // 停，不等累计阈值 —— 一页只有一两批时阈值永远到不了，这一轮会被当成「翻完了」
+    // 收场，页面一个字没变、也没有任何提示。
+    //
+    // 本页的自动会话也在这里停（D-490）：那句失败说的是这一页此刻怎么翻都一样，
+    // 而手动那一轮一收尾，自动那边等着的 pump 就会把同一批块再送一遍。手动、自动、
+    // 规则补翻、子 frame、点标记重试都走 runTranslationPass，所以停在这一处，
+    // 哪一种轮次都不必自己记得。
+    const failWholePass = (message, action) => {
+      if (batchError !== null) return;
+      batchError = message || t('translationFailed');
+      batchAction = action || null;
+      if (ctx.autoTranslate) ctx.autoTranslate.stopForPassFailure(batchError);
+    };
+
+    // `source` 是失败的出处 —— 带 passFatal / action 的 {error} 响应，或者抛出来的
+    // 错误；没有就是普通的一批失败，按累计阈值算。
+    const noteBatchFailure = (message, source) => {
+      if (source && source.passFatal === true) {
+        failWholePass(message, source.action);
         return;
       }
       if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
@@ -645,13 +664,13 @@
     const noteThrown = (error, what) => {
       if (error && error.passFatal === true) {
         if (!batchError) console.error('Blab Translation: translation pass stopped', error);
-        noteBatchFailure(error.message, { passFatal: true });
+        noteBatchFailure(error.message, error);
         return;
       }
       console.error(`Blab Translation: ${what} failed`, error);
       if (isExtensionContextInvalidated(error)) {
         // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
-        batchError = t('extensionContextInvalidated');
+        failWholePass(t('extensionContextInvalidated'));
       } else {
         noteBatchFailure(error.message);
       }
@@ -693,7 +712,7 @@
           }));
 
           if (response.error) {
-            noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+            noteBatchFailure(response.error, response);
             if (!failsWholePass(response)) markFailed(block, response.error);
             return;
           }
@@ -733,7 +752,7 @@
       // 出错了，或者外面已经不要这一轮的结果了
       if (aborted()) return;
       if (!isExtensionContextAvailable()) {
-        batchError = t('extensionContextInvalidated');
+        failWholePass(t('extensionContextInvalidated'));
         return;
       }
 
@@ -761,7 +780,7 @@
 
         // Check for error in response
         if (response.error) {
-          noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+          noteBatchFailure(response.error, response);
           if (!failsWholePass(response)) batch.forEach((block) => markFailed(block, response.error));
         } else {
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
@@ -792,7 +811,7 @@
       await runWithConcurrency(batches, processBatch, concurrency);
     }
 
-    return batchError;
+    return batchError ? { message: batchError, action: batchAction } : null;
   }
 
   ctx.runTranslationPass = runTranslationPass;

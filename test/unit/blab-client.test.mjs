@@ -6,6 +6,10 @@
 // and holds the account's token and the service address, which is all
 // comic-client's apiFetch reads.
 //
+// An account failure is remembered for the token it was given for (D-490 N1),
+// so every signIn() below hands out a new token: a case starts from an account
+// the client has not been refused for yet.
+//
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,9 +45,11 @@ const BASE = 'http://blab.test';
 const BLAB = globalThis.Engines.BLAB_PROFILE;
 const request = { system: 'sys', user: 'hello', maxTokens: 50 };
 
+let tokens = 0;
 function signIn() {
   store.comicApiBase = BASE;
-  store.comicToken = 'tok-1';
+  store.comicToken = `tok-${++tokens}`;
+  delete store.comicAccountCache;
 }
 
 function abortError() {
@@ -117,7 +123,7 @@ test('blab: posts system, user and maxTokens to /api/blab/complete with the acco
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, `${BASE}/api/blab/complete`);
     assert.equal(calls[0].init.method, 'POST');
-    assert.equal(calls[0].init.headers.Authorization, 'Bearer tok-1');
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${store.comicToken}`);
     assert.deepEqual(JSON.parse(calls[0].init.body), { system: 'sys', user: 'hello', maxTokens: 50 });
   });
 });
@@ -211,6 +217,8 @@ test('blab: an empty answer is apiFailure.empty, not an empty translation', asyn
     const error = await failureOf(call(request));
     assert.equal(calls.length, 1);
     assert.equal(error.apiFailure.empty, true);
+    // The full address, as the 'ai' engine words it (N9).
+    assert.equal(error.apiFailure.endpoint, `${BASE}/api/blab/complete`);
   });
 });
 
@@ -229,6 +237,135 @@ test('blab: the attempt timeout is a timeout and the caller abort is err.aborted
     const error = await failureOf(pending);
     assert.equal(error.aborted, true);
     assert.equal(error.apiFailure, undefined);
+    assert.equal(calls.length, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The account-failure latch (D-490 N1)
+// ---------------------------------------------------------------------------
+
+const PLAN_REQUIRED = () => json({ error: 'plan_required', message: 'm' }, 403);
+const dailyLimit = (resetsAt) => json({ error: 'daily_limit', message: 'm', limit: 100, used: 100, resetsAt }, 429);
+
+/** Run `fn` with Date.now moved `ms` ahead. */
+async function later(ms, fn) {
+  const realNow = Date.now;
+  const shifted = realNow() + ms;
+  Date.now = () => shifted;
+  try {
+    return await fn();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+test('latch: after plan_required the next calls are refused here, with the same failure and no request', async () => {
+  signIn();
+  await withFetch(PLAN_REQUIRED, async (calls) => {
+    const first = await failureOf(call(request));
+    assert.equal(calls.length, 1);
+    for (let i = 0; i < 3; i++) {
+      const again = await failureOf(call(request));
+      assert.equal(again.apiFailure.blab, 'plan_required');
+      assert.equal(again.apiFailure.retryable, false);
+      assert.equal(again.apiFailure.latched, true);
+      assert.equal(again.message, first.message);
+    }
+    assert.equal(calls.length, 1, 'refused locally: still the one request');
+  });
+});
+
+test('latch: daily_limit holds until resetsAt and carries it on every refusal', async () => {
+  signIn();
+  const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+  await withFetch((_, n) => (n === 1 ? dailyLimit(resetsAt) : json({ text: 'next day' })), async (calls) => {
+    await failureOf(call(request));
+    // Past the short TTL of the other codes, still before resetsAt: still held.
+    const held = await later(120_000, () => failureOf(call(request)));
+    assert.equal(held.apiFailure.blab, 'daily_limit');
+    assert.equal(held.apiFailure.resetsAt, resetsAt);
+    assert.equal(calls.length, 1);
+    // resetsAt has come: the next call asks the service again.
+    assert.deepEqual(await later(3_600_001, () => call(request)), { text: 'next day' });
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('latch: plan_required is let go after its short TTL', async () => {
+  signIn();
+  await withFetch((_, n) => (n === 1 ? PLAN_REQUIRED() : json({ text: 'ok' })), async (calls) => {
+    await failureOf(call(request));
+    await failureOf(later(30_000, () => call(request)));
+    assert.equal(calls.length, 1);
+    assert.deepEqual(await later(61_000, () => call(request)), { text: 'ok' });
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('latch: a new token (signed in again, another account) lets go at once, daily_limit too', async () => {
+  for (const reply of [PLAN_REQUIRED, () => dailyLimit(new Date(Date.now() + 3_600_000).toISOString())]) {
+    signIn();
+    await withFetch((_, n) => (n === 1 ? reply() : json({ text: 'ok' })), async (calls) => {
+      await failureOf(call(request));
+      signIn();
+      assert.deepEqual(await call(request), { text: 'ok' });
+      assert.equal(calls.length, 2);
+    });
+  }
+});
+
+test('latch: after a server 401 (token dropped) the next sign-in lets go', async () => {
+  signIn();
+  await withFetch((_, n) => (n === 1 ? json({ error: 'unauthorized', message: 'm' }, 401) : json({ text: 'ok' })), async (calls) => {
+    await failureOf(call(request));
+    assert.equal(store.comicToken, undefined);
+    signIn();
+    assert.deepEqual(await call(request), { text: 'ok' });
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('latch: billing/me judging the account available since the refusal lets go; a stale or negative answer does not', async () => {
+  signIn();
+  await withFetch((_, n) => (n === 1 ? PLAN_REQUIRED() : json({ text: 'ok' })), async (calls) => {
+    await failureOf(call(request));
+    // Fetched before the refusal: says nothing about now.
+    store.comicAccountCache = { fetchedAt: Date.now() - 10_000, account: { blabTranslation: { available: true } } };
+    await failureOf(call(request));
+    // Judged since, still no plan.
+    store.comicAccountCache = { fetchedAt: Date.now() + 1, account: { blabTranslation: { available: false } } };
+    await failureOf(call(request));
+    assert.equal(calls.length, 1);
+    // Judged since, plan bought.
+    store.comicAccountCache = { fetchedAt: Date.now() + 2, account: { blabTranslation: { available: true } } };
+    assert.deepEqual(await call(request), { text: 'ok' });
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('latch: a passing failure (503) is not remembered', async () => {
+  signIn();
+  await withFetch((_, n) => (n <= MAX_ATTEMPTS ? json({ error: 'unavailable' }, 503) : json({ text: 'ok' })), async (calls) => {
+    await failureOf(call(request));
+    assert.deepEqual(await call(request), { text: 'ok' });
+    assert.equal(calls.length, MAX_ATTEMPTS + 1);
+  });
+});
+
+test('latch: captions resent every 8 s after an account error send nothing more', async () => {
+  // content/captions/translate.js puts a failed line on an 8 s cooldown
+  // (RETRY_COOLDOWN_MS) and sends it again; each resend is one more callModel
+  // on the Blab profile. A minute of a playing video is seven of them.
+  signIn();
+  const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+  const caption = { system: 'subtitle system', user: 'line', maxTokens: 200 };
+  await withFetch(() => dailyLimit(resetsAt), async (calls) => {
+    await failureOf(call(caption));
+    for (let resend = 1; resend <= 7; resend++) {
+      const error = await later(resend * 8_000, () => failureOf(call(caption)));
+      assert.equal(error.apiFailure.blab, 'daily_limit');
+    }
     assert.equal(calls.length, 1);
   });
 });

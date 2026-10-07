@@ -17,7 +17,7 @@
 //   manualEpoch    顶层每点一次「翻译整页」+1。子 frame 看到它变大就静默跑一轮。
 //   visible        「此刻想不想看译文」（Alt+A、悬浮球的隐藏）。
 //   scopeOverride  整页覆盖（state.pageScopeOverride，并行批的正文范围）。
-//   engineOverride 顶层这一页的用户站点规则指定的引擎（'builtin' | 'ai' | null）。
+//   engineOverride 顶层这一页的用户站点规则指定的引擎（'builtin' | 'ai' | 'blab' | null）。
 //                  子 frame 的引擎谓词跟顶层走，不看自己 URL 上的规则（P1-B §3.8）。
 //   profileOverride 顶层这一页的用户站点规则指定的 AI 配置档 id（规则 v3，null = 按
 //                  功能选档）。子 frame 的「AI 能不能用」按它选档（P1-D §3.3）；
@@ -142,7 +142,7 @@
     // 是用户点出来的，子 frame 静默跑，出了错只能由顶层替它说。
     if (message.manual && message.error) {
       if (!document.getElementById('ai-translator-progress')) ctx.showPageTranslationProgress();
-      ctx.showTranslationError(message.error);
+      ctx.showTranslationError(message.error, message.action || null);
     }
   }
 

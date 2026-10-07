@@ -137,6 +137,7 @@
     state.isTranslatingPage = true;
     let total = 0;
     let error = null;
+    let action = null;
     try {
       // 顶层规则补翻那一轮是顶层的；这里等的是本 frame 自己的补翻轮（custom-rule.js）。
       await ctx.customRules.whenCaughtUp();
@@ -144,7 +145,8 @@
       let blocks = ctx.collectPageBlocks();
       blocks = await ctx.filterBlocksByLanguage(blocks);
       total = blocks.length;
-      if (total > 0) error = (await ctx.runTranslationPass(blocks)) || null;
+      const failure = total > 0 ? await ctx.runTranslationPass(blocks) : null;
+      if (failure) ({ message: error, action } = failure);
       if (!error) state.pageHasBeenTranslated = true;
     } catch (caught) {
       console.error('Blab Translation: frame translation failed', caught);
@@ -153,7 +155,7 @@
       state.isTranslatingPage = false;
       ctx.customRules.afterRound();
     }
-    reportToTop({ manual: true, total, error });
+    reportToTop({ manual: true, total, error, action });
   }
 
   // ------------------------------------------------------------ 尺寸闸

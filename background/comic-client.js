@@ -300,11 +300,20 @@ export async function apiFetch(path, { method = 'GET', body = null, signal } = {
   return data;
 }
 
+/**
+ * The last /api/billing/me answer stored on this device, `{ fetchedAt, account }`,
+ * or null. No request: blab-client.js reads it to learn that the account was
+ * judged again since it last refused (a subscription bought in between).
+ */
+export async function getCachedAccount() {
+  const cached = await chrome.storage.local.get({ [STORAGE_KEYS.account]: null });
+  return cached[STORAGE_KEYS.account];
+}
+
 /** Sign-in state and the monthly free page allowance in one call. */
 export async function getAccount({ force = false } = {}) {
   if (!(await getToken())) return { signedIn: false };
-  const cached = await chrome.storage.local.get({ [STORAGE_KEYS.account]: null });
-  const entry = cached[STORAGE_KEYS.account];
+  const entry = await getCachedAccount();
   // A 30s cache keeps the popup and the options page from re-querying on every
   // open; anything that consumes the allowance passes force.
   if (!force && entry && Date.now() - entry.fetchedAt < 30_000) {

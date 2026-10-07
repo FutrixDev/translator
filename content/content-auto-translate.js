@@ -480,7 +480,7 @@
           // isAborted 和 accept 分工不同，缺一不可：accept 拦的是「回填」，翻都
           // 翻完了才拒，钱已经花掉；isAborted 拦的是「还要不要发下一批」。跑到
           // 一半换了路由时，能省下的是池子里剩下的那几百块。
-          error = await ctx.runTranslationPass(fresh, {
+          const failure = await ctx.runTranslationPass(fresh, {
             accept: acceptBlock,
             // 记账等结果：accept 是「还要不要写回去」，onSettled 是「这一块有结果
             // 了」。失败的块两者都不会走到，于是留在 inflight 里，随这一轮一起
@@ -503,6 +503,7 @@
               if (pending && reason) pending.reason = reason;
             },
           });
+          if (failure) error = failure.message;
         }
       } catch (thrown) {
         console.error('Blab Translation: auto translation pass failed', thrown);
@@ -628,6 +629,30 @@
       bumpSession('paused');
       stopDiscovery();
       setStatus(STATUS.PAUSED);
+    }
+
+    /**
+     * 这一页的某一轮翻译以**整轮级的失败**收尾（content/page/batch.js 的
+     * failsWholePass：账户不能用、配置错、扩展上下文没了）—— 手动那一轮、自动
+     * 这一轮、规则补翻、点标记重试，都由 batch.js 在同一处叫这里（D-490）。
+     *
+     * 那句失败说的是**这一页此刻怎么翻都一样**，所以自动会话跟着停：代次翻篇，
+     * 队列和 inflight 一并作废，在途那一轮回来时不再把块放回队列；发现层停掉，
+     * 状态落在 ERROR 上、记下理由。不停的话，手动那一轮一收尾，等在 isTranslatingPage
+     * 上的那次 pump 就把同一批块再送一遍 —— 自动引擎是内置或用户自己的 AI 时，
+     * 页面上冒出一份他没要过的译文；是 Blab 时，同一句拒绝再要一次。
+     *
+     * 自动会话本来就没在跟这一页（OFF / PAUSED / 已经 ERROR）就没什么可停的。
+     * 重来要一句明确的话：「继续」、改设置、换路由（都走 start()）。
+     */
+    function stopForPassFailure(message) {
+      if (!isOn()) return;
+      bumpSession('pass-failure');
+      broken = true;
+      lastError = message;
+      stopDiscovery();
+      setStatus(STATUS.ERROR);
+      console.warn('Blab Translation: auto translation stopped for this page —', message);
     }
 
     /**
@@ -775,6 +800,7 @@
       pauseCurrentPage,
       resumeCurrentPage,
       markPageExplicit,
+      stopForPassFailure,
       // 子 frame 的指令变了（content/frames/child.js）：重新判、重新扫。
       restart: start,
       isOn,
