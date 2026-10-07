@@ -147,9 +147,9 @@ test('a long run of dots and spaces inside a would-be marker is judged without b
 });
 
 test('hasMarkers answers with the two patterns the insert path parses, and nothing wider', () => {
-  // 落笔时会被当成结构的：占位符、标记（开闭、大写、括号里带空白都算，和
-  // insert.js 的宽松解析一致）。用户写进术语表的字靠它拒收（D-387）。
-  for (const text of ['{{1}}', 'x {{12}} y', '<a1>', '</a1>', '<A1>', '< a 1 >', '</ strong2 >', '<h1>']) {
+  // 落笔时会被当成结构的：占位符、标记（开闭、大写、括号里带空白或句点都算，
+  // 和 insert.js 的宽松解析一致）。用户写进术语表的字靠它拒收（D-387）。
+  for (const text of ['{{1}}', 'x {{12}} y', '<a1>', '</a1>', '<A1>', '< a 1 >', '</ strong2 >', '<h1>', '</span1 . 3>', '<No. 1>']) {
     assert.equal(TM.hasMarkers(text), true, text);
   }
   // 普通的花括号、尖括号不是记号：没有编号就不是
