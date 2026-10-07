@@ -1,0 +1,50 @@
+Blab Translation: lee cualquier cosa en dos idiomas.
+
+El original y la traducción uno junto al otro, en páginas web, PDF, libros electrónicos, vídeos y cómics. Usa la IA en la que confías —modelos en la nube o locales— o el traductor gratuito de Chrome que funciona en tu dispositivo.
+
+★ PÁGINAS WEB BILINGÜES
+• La traducción bajo cada párrafo. Formato, enlaces e imágenes intactos.
+• ¿Solo la traducción? Una tecla: Alt+T.
+• Primero el contenido principal: los menús y las barras laterales no estorban. Alt+W para la página entera.
+• Llega al interior de iframes y Shadow DOM.
+• Fórmulas, LaTeX y código intactos. Los artículos científicos siguen siendo legibles.
+• 6 estilos de traducción. 76 idiomas. Idiomas de derecha a izquierda bien maquetados.
+
+★ TRADUCCIÓN AUTOMÁTICA QUE SABE CUÁNDO PARAR
+• Las frases que ya están en tu idioma se omiten, aunque estén llenas de términos extranjeros.
+• Los mensajes privados nunca se traducen automáticamente.
+• Reglas por sitio: señala cualquier zona —"No traducir aquí", "Conservar el original" o "Traducir solo aquí"—. Fija un motor, añade CSS. Las reglas se sincronizan con tu cuenta del navegador.
+
+★ PDF QUE CONSERVAN SU DISEÑO
+• PDF bilingües o solo con la traducción, con figuras, fórmulas y diseño exactamente donde estaban.
+• Páginas gratis cada mes iniciando sesión.
+
+★ LIBROS ELECTRÓNICOS Y DOCUMENTOS
+• Word, EPUB, TXT y Markdown → archivos bilingües o traducidos.
+• MOBI y AZW3 se leen en modo bilingüe en el lector web.
+
+★ SUBTÍTULOS DOBLES
+• Subtítulos de YouTube traducidos en directo: original y traducción, en dos líneas.
+• Funciona con cualquier reproductor HTML5 que tenga una pista de subtítulos estándar.
+• Actívalos o desactívalos con un clic en la propia barra de controles del reproductor.
+
+★ SELECCIONA, PASA EL RATÓN, CONSULTA
+• Selecciona texto para traducirlo: volver a traducir, cambiar de motor, copiar, leer en voz alta.
+• Diccionario integrado para palabras y frases: pronunciación, acepciones, ejemplos, formas de la palabra.
+• Mantén pulsada una tecla modificadora y pasa el ratón para traducir un solo párrafo.
+• ¿Escribes en un idioma distinto al de la página? Tradúcelo con un clic.
+
+★ CÓMICS E IMÁGENES
+• Páginas de cómic redibujadas en tu idioma, y coloreadas si quieres.
+• El texto de las imágenes se reconoce con OCR en el dispositivo y luego se traduce.
+
+★ PRIVADO POR DEFECTO
+• Por defecto, las páginas web se traducen en tu dispositivo. Tu texto nunca sale de tu ordenador.
+• Con un motor de IA, el texto va directo a tu endpoint con tu propia clave, nunca a través de nosotros.
+• Los archivos PDF, documentos y cómics se procesan en nuestros servidores y se eliminan a los 7 días.
+• Sin analítica. Sin rastreo publicitario.
+
+ATAJOS
+Alt+A traducir / restaurar · Alt+T bilingüe / solo traducción · Alt+W página entera · Alt+M PDF o cómic
+
+Política de privacidad: https://blab-translation.com/app/legal/privacy

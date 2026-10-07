@@ -1,0 +1,50 @@
+Blab Translation — read anything in two languages.
+
+Original and translation side by side, on web pages, PDFs, ebooks, videos and comics. Bring the AI you trust — cloud or local models — or use Chrome's free on-device translator.
+
+★ BILINGUAL WEB PAGES
+• Translation under every paragraph. Formatting, links and images untouched.
+• Translation only? One key: Alt+T.
+• Main content first — menus and sidebars stay out of the way. Alt+W for the whole page.
+• Reaches inside iframes and Shadow DOM.
+• Math, LaTeX and code stay intact. Papers stay readable.
+• 6 translation styles. 76 languages. Right-to-left done right.
+
+★ AUTO-TRANSLATE THAT KNOWS WHEN TO STOP
+• Sentences already in your language are skipped — even when packed with foreign terms.
+• Private messages are never auto-translated.
+• Site rules: point at any area — "Don't translate here", "Keep original" or "Only translate here". Pin an engine, add CSS. Rules sync with your browser account.
+
+★ PDFS THAT KEEP THEIR LAYOUT
+• Bilingual or translation-only PDFs, with figures, formulas and layout exactly where they were.
+• Free pages every month with sign-in.
+
+★ EBOOKS & DOCUMENTS
+• Word, EPUB, TXT and Markdown → bilingual or translated files.
+• MOBI and AZW3 read bilingually in the web reader.
+
+★ DUAL SUBTITLES
+• YouTube subtitles translated live: original and translation, two lines.
+• Works with any HTML5 player that has a standard subtitle track.
+• One-click toggle right in the player's control bar.
+
+★ SELECT, HOVER, LOOK UP
+• Select text to translate — retranslate, switch engine, copy, read aloud.
+• Built-in dictionary for words and phrases: pronunciation, senses, examples, word forms.
+• Hold a modifier key and hover to translate a single paragraph.
+• Typing in a different language from the page? Translate it with one click.
+
+★ COMICS & IMAGES
+• Comic pages redrawn in your language — and colorized if you like.
+• Text in images recognized by on-device OCR, then translated.
+
+★ PRIVATE BY DEFAULT
+• Web pages translate on your device by default. Your text never leaves your computer.
+• With an AI engine, text goes straight to your endpoint with your own key — never through us.
+• PDF, document and comic files are processed on our servers and deleted after 7 days.
+• No analytics. No ad tracking.
+
+SHORTCUTS
+Alt+A translate / restore · Alt+T bilingual / translation only · Alt+W whole page · Alt+M PDF or comic
+
+Privacy policy: https://blab-translation.com/app/legal/privacy
