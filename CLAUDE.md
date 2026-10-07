@@ -324,8 +324,11 @@ never wins — `test/unit/dict-word-prompt.test.mjs`), the parser
 selection card both call. Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
 `DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
-(`. ! ? 。！？；; ，, ：:`), and 1–3 words in a spaced script or 1–4 characters
-in Han, kana, hangul, Thai and the like (D-473). The parser fails hard, as
+(`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
+command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }` — a formula takes
+the text path, where the math placeholder rule applies; D-474), and 1–3 words in
+a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
+(D-473). The parser fails hard, as
 `invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
 (after `<think>…</think>` is stripped), the JSON is not an object, or the
 translation is missing or empty; a wrong-typed or overlong optional field or
@@ -333,7 +336,7 @@ list item is dropped, never guessed at (D-472). The entry is drawn only for a
 reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
 translation alone. `content/css/dict-entry.css` states colour, size, display
 and padding on every element, because the containment reset leaves those to
-our own rules and the entry is made of bare spans and divs. Journeys C1–C8 in
+our own rules and the entry is made of bare spans and divs. Journeys C1–C9 in
 `test/e2e/dictionary-entry.spec.js`.
 
 ### Translation Engine

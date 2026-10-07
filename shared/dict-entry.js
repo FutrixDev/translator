@@ -8,8 +8,8 @@
 // and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
-//   isLookup      whether a text is looked up at all (D-473). Both surfaces call
-//                 it and keep no check of their own.
+//   isLookup      whether a text is looked up at all (D-473, D-474). Both
+//                 surfaces call it and keep no check of their own.
 //   FIELDS        the shape. OUTPUT_RULES (what the prompt asks for) and
 //                 normalize() (what the service worker accepts) both read it,
 //                 so the two cannot ask for and accept different keys.
@@ -49,6 +49,12 @@
   // Sentence punctuation: any of these in the text makes it a sentence.
   const SENTENCE_PUNCTUATION = /[.!?。！？；;，,：:]/;
 
+  // Formula notation (D-474): a LaTeX delimiter ($, \(, \[) or command (\alpha),
+  // a math symbol (\p{Sm}: + = < > | ~ ± × ÷ −), or ^ _ { }. Any of these makes
+  // the text a formula, translated so the math placeholder rule applies; the
+  // lookup prompt has no such rule.
+  const FORMULA_NOTATION = /[$^_{}\p{Sm}]|\\[([A-Za-z]/u;
+
   // Scripts that do not separate words with spaces: a lookup in them is counted
   // in characters, not words.
   const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
@@ -58,13 +64,14 @@
 
   /**
    * Whether `text` is looked up as a dictionary entry (mode 'word') rather than
-   * translated as a sentence. After trimming, it has no sentence punctuation
-   * and is 1–3 words in a space-separated script, or 1–4 characters in a script
-   * without spaces. Nothing else is weighed: "I run daily" is a lookup.
+   * translated as a sentence. After trimming, it has no sentence punctuation,
+   * no formula notation, and is 1–3 words in a space-separated script, or 1–4
+   * characters in a script without spaces. Nothing else is weighed: "I run
+   * daily" is a lookup, "$x + y$" is not.
    */
   function isLookup(text) {
     const trimmed = String(text == null ? '' : text).trim();
-    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
+    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed) || FORMULA_NOTATION.test(trimmed)) return false;
     if (UNSPACED_SCRIPT.test(trimmed)) return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_LOOKUP_CHARS;
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
   }
