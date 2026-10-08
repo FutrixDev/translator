@@ -64,8 +64,10 @@
             <select id="translationEngine">
               <option value="builtin" data-i18n="engineBuiltin"></option>
               <option value="ai" data-i18n="engineCustomAi"></option>
+              <option value="blab" data-i18n="engineBlab"></option>
             </select>
             <span class="hint" data-i18n-hint="hintTranslationEngine"></span>
+            <div class="blab-note" id="translationEngineBlabNote" hidden></div>
           </div>
 
           <div class="form-group" id="engineFallbackGroup">
@@ -216,8 +218,10 @@
               <select id="autoTranslateEngine">
                 <option value="builtin" data-i18n="autoTranslateEngineBuiltin"></option>
                 <option value="ai" data-i18n="autoTranslateEngineAi"></option>
+                <option value="blab" data-i18n="engineBlab"></option>
               </select>
               <span class="hint" data-i18n-hint="hintAutoTranslateEngine"></span>
+              <div class="blab-note" id="autoTranslateEngineBlabNote" hidden></div>
             </div>
 
             <!-- 每天最多替用户、在他没点的时候发给 AI 多少字符：自动翻译的页面
@@ -888,6 +892,7 @@
   <script src="../shared/api-compat.js"></script>
   <script src="../shared/account-gate.js"></script>
   <script src="../shared/default-settings.js"></script>
+  <script src="../shared/engines.js"></script>
   <script src="../shared/engine-status.js"></script>
   <script src="../shared/ocr.js"></script>
   <!-- 语言标签的判定（基码、简繁、同语言）只有这一份，caption-core 和
@@ -939,6 +944,7 @@
   <script src="../content/engine/watchdog.js"></script>
   <script src="../content/engine/glossary.js"></script>
   <script src="../content/engine/addenda.js"></script>
+  <script src="../content/engine/model.js"></script>
   <script src="../content/content-translation-engine.js"></script>
   <script src="../content/engine/probe.js"></script>
   <!-- 设置项多到一个文件装不下，按卡片拆成了几个同级脚本；它们共用一个全局词法
@@ -951,6 +957,7 @@
   <script src="options-languages.js"></script>
   <script src="options-models.js"></script>
   <script src="options-account.js"></script>
+  <script src="options-blab.js"></script>
   <script src="options-pdf-tasks.js"></script>
   <script src="options-auto.js"></script>
   <script src="options-site-editor.js"></script>

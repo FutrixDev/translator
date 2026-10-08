@@ -252,9 +252,11 @@ export async function signOut() {
 // Authenticated requests
 // ---------------------------------------------------------------------------
 
-// Exported for pdf-client.js, which rides the same account, token and error
-// model rather than duplicating them.
-export async function apiFetch(path, { method = 'GET', body = null } = {}) {
+// Exported for pdf-client.js and blab-client.js, which ride the same account,
+// token and error model rather than duplicating them. `signal` aborts the fetch
+// (blab-client passes callModel's per-attempt one); an abort surfaces as
+// network_error here, and the caller that owns the signal tells the two apart.
+export async function apiFetch(path, { method = 'GET', body = null, signal } = {}) {
   const stored = await getToken();
   if (!stored) throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
 
@@ -267,7 +269,8 @@ export async function apiFetch(path, { method = 'GET', body = null } = {}) {
         Authorization: `Bearer ${stored.token}`,
         ...(body ? { 'content-type': 'application/json' } : {})
       },
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
+      signal
     });
   } catch (error) {
     throw new ComicApiError('network_error', error?.message || 'Could not reach the translation service');
@@ -297,11 +300,20 @@ export async function apiFetch(path, { method = 'GET', body = null } = {}) {
   return data;
 }
 
+/**
+ * The last /api/billing/me answer stored on this device, `{ fetchedAt, account }`,
+ * or null. No request: blab-client.js reads it to learn that the account was
+ * judged again since it last refused (a subscription bought in between).
+ */
+export async function getCachedAccount() {
+  const cached = await chrome.storage.local.get({ [STORAGE_KEYS.account]: null });
+  return cached[STORAGE_KEYS.account];
+}
+
 /** Sign-in state and the monthly free page allowance in one call. */
 export async function getAccount({ force = false } = {}) {
   if (!(await getToken())) return { signedIn: false };
-  const cached = await chrome.storage.local.get({ [STORAGE_KEYS.account]: null });
-  const entry = cached[STORAGE_KEYS.account];
+  const entry = await getCachedAccount();
   // A 30s cache keeps the popup and the options page from re-querying on every
   // open; anything that consumes the allowance passes force.
   if (!force && entry && Date.now() - entry.fetchedAt < 30_000) {

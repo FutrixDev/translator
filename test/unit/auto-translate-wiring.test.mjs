@@ -442,7 +442,7 @@ test('设置页里两块别处写的数据，要跟着别处一起变', () => {
   assert.match(listener[0], /area === 'local' && changes\.autoStats\) renderAutoStats\(\)/);
 });
 
-test('改对了 AI 配置档或回落，停在错误上的那一页要自己重来', () => {
+test('改对了回落等设置键，停在错误上的那一页要自己重来；配置档变化不叫醒它', () => {
   const auto = code('content/content-auto-translate.js');
   const keys = auto.match(/const RESTART_KEYS = \[([\s\S]*?)\];/);
   assert.ok(keys, 'RESTART_KEYS 不见了');
@@ -455,8 +455,9 @@ test('改对了 AI 配置档或回落，停在错误上的那一页要自己重�
   for (const key of ['provider', 'apiKey', 'apiEndpoint', 'modelName']) {
     assert.ok(!keys[1].includes(`'${key}'`), `RESTART_KEYS 里不该再有旧键 ${key}`);
   }
-  // 救场那一半改走配置档镜像的订阅，与规则变化同一条路（start 重判、重扫）。
-  assert.match(auto, /ctx\.aiProfiles\.subscribe\(\(\) => start\('ai-profiles'\)\)/);
+  // 配置档镜像的订阅照样重判、重扫，但不叫醒停在错误上的那一页（D-497 R1-N3：
+  // 别的标签页里改的配置档与这一页的失败无关，叫醒它就是背着用户换引擎重译）。
+  assert.match(auto, /ctx\.aiProfiles\.subscribe\(\(\) => \{\s*if \(!broken\) start\('ai-profiles'\);\s*\}\)/);
   // 名单在调度层，不在转发那一层 —— 在 bootstrap 里摊成一串 if 就是把它抄一遍，
   // 抄本迟早和正本对不上（这条规则正是因为那份「五个键」的注释过期才立的）。
   const bootstrap = code('content/content-bootstrap.js');

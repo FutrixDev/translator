@@ -529,7 +529,7 @@ test('the settings page asks the worker for the origin instead of hardcoding one
   // 设置页拆成了一组同级脚本，哪一行落在哪个文件里是排版；这里问的是这一页。
   const options = optionsSource();
   assert.match(options, /ACCOUNT_SITE_BASE/);
-  assert.match(options, /PDF_UI\.pdfLibraryUrl\(base\)/);
+  assert.match(options, /PDF_UI\.pdfLibraryUrl\(accountSiteBase\)/);
   // A row opens its job through the worker, which builds the reader URL from
   // the same base (D-488); no row links to the library or names a file.
   assert.doesNotMatch(options, /pdfLibraryUrl\([^)]*jobId/);

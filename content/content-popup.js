@@ -49,7 +49,7 @@
       <div class="ai-translator-header">
         <div class="ai-translator-header-left">
           ${translateIconSvg(20, 'ai-translator-title-icon')}
-          <span class="ai-translator-title">${t('aiTranslate')}</span>
+          <span class="ai-translator-title">${t('translate')}</span>
         </div>
         <div class="ai-translator-header-right">
           <div class="ai-translator-lang-dropdown">
@@ -113,7 +113,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin')])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin'), t('cardUseBlab')])}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
@@ -503,13 +503,29 @@
    * 卡片出错只有这一种画法：错误写进独立的错误元素（textContent，不拼 HTML），
    * 译文清空藏起 —— 旧译文是另一次请求的结果，留着会被当成这一次的。
    */
-  function showCardError(popup, message) {
+  //
+  // `action` 是 Blab 账户错误带来的入口（'subscribe' | 'signin'，D-490 N2），画在
+  // 错误句下面（ctx.accountActionButton）；登录成功就用这张卡当前的原文和语言重译。
+  function showCardError(popup, message, action = null) {
     const parts = cardParts(popup);
     setCardLoading(parts, false);
     if (parts.text) parts.text.textContent = '';
     showCardEntry(parts, null);
     if (parts.resultBody) parts.resultBody.hidden = true;
     parts.error.textContent = message;
+    const entry = ctx.accountActionButton(action, {
+      className: 'ai-translator-btn ai-translator-btn-primary ai-translator-account-action',
+      onSignedIn: () => {
+        if (state.translationPopup !== popup) return;
+        translateText(popup.dataset.sourceText || '', popup.dataset.targetLang || '');
+      }
+    });
+    if (entry) {
+      const row = document.createElement('div');
+      row.className = 'ai-translator-account-action-row';
+      row.appendChild(entry);
+      parts.error.appendChild(row);
+    }
     parts.error.hidden = false;
     popup._showTranslationSpeak?.(false);
   }
@@ -543,25 +559,34 @@
     const tag = popup.querySelector('.ai-translator-engine-tag');
     retranslate.hidden = false;
     retranslate.disabled = false;
-    tag.textContent = engine ? t(engine === 'builtin' ? 'cardEngineBuiltin' : 'cardEngineAi') : '';
+    tag.textContent = engine ? t(CARD_ENGINE_TAG[engine]) : '';
     tag.hidden = !engine;
+    // 标题说这次是哪个引擎译的（原来恒写「AI 翻译」，内置和 Blab 译出来也这么写）。
+    // 没有引擎（扩展上下文没了、请求抛错）就回到中性的「翻译」。
+    popup.querySelector('.ai-translator-title').textContent = t(engine ? CARD_TITLE[engine] : 'translate');
     const requestId = popup.dataset.requestId;
     const other = await switchOffer(engine, popup.dataset.targetLang);
     if (state.translationPopup !== popup || popup.dataset.requestId !== requestId) return;
     switchBtn.hidden = !other;
     if (!other) return;
     switchBtn.dataset.engine = other;
-    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(other === 'builtin' ? 'cardUseBuiltin' : 'cardUseAi');
+    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(CARD_USE_ENGINE[other]);
     switchBtn.disabled = false;
   }
 
-  // 这次是 engine 答的，另一边此刻能不能接这张卡的目标语言：能就是另一边，不能是 null。
+  // 卡上的引擎标签与「换到…」按钮文字，每个引擎一条（Engines.ENGINES）。
+  const CARD_ENGINE_TAG = { builtin: 'cardEngineBuiltin', ai: 'cardEngineAi', blab: 'cardEngineBlab' };
+  const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab' };
+  const CARD_USE_ENGINE = { builtin: 'cardUseBuiltin', ai: 'cardUseAi', blab: 'cardUseBlab' };
+
+  // 这次是 engine 答的，换到哪一个：按 Engines.ENGINES 的顺序取第一个「不是它、此刻
+  // 又能接这张卡的目标语言」的引擎（内置在前，所以 ai 与内置之间的老行为不变）；
+  // 一个都没有是 null。Blab 只在账户此刻能用时才给（设计 §5.4：不切到不可用的引擎）。
   async function switchOffer(engine, targetLang) {
     if (!engine) return null;
-    const other = engine === 'builtin' ? 'ai' : 'builtin';
     try {
       const choices = await ctx.engineChoices(targetLang, 'selection');
-      return choices[other] ? other : null;
+      return globalThis.Engines.ENGINES.find((other) => other !== engine && choices[other]) || null;
     } catch (error) {
       console.error('Blab Translation: reading engine choices for the card failed', error);
       return null;
@@ -632,7 +657,7 @@
       if (!isCurrent()) return;
 
       if (response.error) {
-        showCardError(popup, response.error);
+        showCardError(popup, response.error, response.action || null);
       } else {
         // Only an AI lookup carries an entry; a builtin answer has none.
         const entry = DictEntry.entryFor(mode, response);

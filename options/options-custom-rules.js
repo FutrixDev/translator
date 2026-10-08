@@ -276,6 +276,14 @@ function editorField(form, { key, label, hint, value, mono }) {
   return { input, error };
 }
 
+// 引擎下拉的选项取 Engines.ENGINES（D-479），一条规则可以把本站钉在任何一个引擎上，
+// Blab 也算（设计 §5.3）；钉成 Blab 不弹 AI 花费确认，那个确认说的是用户自己的钱。
+const RULE_ENGINE_LABELS = Object.freeze({
+  builtin: 'autoTranslateEngineBuiltin',
+  ai: 'autoTranslateEngineAi',
+  blab: 'engineBlab',
+});
+
 function engineField(form, value) {
   const group = document.createElement('div');
   group.className = 'form-group custom-rule-field';
@@ -286,10 +294,8 @@ function engineField(form, value) {
 
   const select = document.createElement('select');
   select.id = 'customRule-engine';
-  for (const [option, key] of [['', 'customRuleEngineFollow'], ['builtin', 'autoTranslateEngineBuiltin'],
-    ['ai', 'autoTranslateEngineAi']]) {
-    select.appendChild(new Option(t(key), option));
-  }
+  select.appendChild(new Option(t('customRuleEngineFollow'), ''));
+  for (const engine of Engines.ENGINES) select.appendChild(new Option(t(RULE_ENGINE_LABELS[engine]), engine));
   select.value = value || '';
   // 从非 AI 改成 AI 要过和自动引擎同一道确认；说了不，退回改之前的那个值。
   let previous = select.value;

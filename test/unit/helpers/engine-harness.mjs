@@ -39,7 +39,9 @@ export function detectLanguage(sample) {
 export async function installEngineHarness({ pageText, url = 'https://example.test/' }) {
   const translateCalls = [];
   const sentToAI = [];
-  const state = { apiKey: '' };
+  // account 是 SW 的 COMIC_ACCOUNT 回答的 data（billing/me 的形状）：Blab Translation
+  // 能不能用只看它的 blabTranslation.available（D-476）。默认没登录。
+  const state = { apiKey: '', account: { signedIn: false } };
 
   globalThis.self = {
     isSecureContext: true,
@@ -96,6 +98,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     },
     runtime: {
       sendMessage: async (message) => {
+        if (message.type === 'COMIC_ACCOUNT') return { ok: true, data: state.account };
         sentToAI.push(message);
         return { translation: `AI:${message.text}` };
       },
@@ -112,6 +115,8 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   // shared/api-compat.js 也排在引擎前面：回落前问「AI 接口配好没有」的那条规则
   // （APICompat.isApiKeyMissing）住在那里。
   await import('../../../shared/api-compat.js');
+  // 引擎取值（D-479）：引擎判断选了哪个引擎、钉哪个引擎时读 Engines。
+  await import('../../../shared/engines.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
   // 发给模型的出口问 SiteRules.register() 这一页的语域（R33 A4）；site-rules.js
@@ -152,6 +157,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   };
   await import('../../../content/engine/glossary.js');
   await import('../../../content/engine/addenda.js');
+  await import('../../../content/engine/model.js');
   await import('../../../content/content-translation-engine.js');
   await import('../../../content/engine/probe.js');
 
@@ -160,5 +166,6 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     translateCalls,
     sentToAI,
     setApiKey(key) { state.apiKey = key; },
+    setAccount(account) { state.account = account; },
   };
 }

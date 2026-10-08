@@ -19,14 +19,13 @@
 // 不是用户播放。
 const { test, expect } = require('./fixtures');
 const {
-  addGlossaryEntryInCard,
   countPersistentCacheKeys,
   evaluateInContentScript,
-  openGlossaryCard,
   sentSegments,
   setExtensionSettings,
   waitForContentReady,
 } = require('./helpers');
+const { addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://glossary-video.test';

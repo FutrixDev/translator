@@ -23,7 +23,7 @@
 // 写成箭头函数，是因为这张表在调用时才解析名字 —— 有几个函数声明在 options.js 里，
 // 本文件加载时它们还没求值。
 const SYNC_MIRROR_DERIVED = {
-  translationEngine: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
+  translationEngine: () => { refreshBuiltinStatus(); syncAutoEngineState(); renderBlabEngine(); },
   engineFallback: () => { refreshBuiltinStatus(); syncAutoEngineState(); },
   enableSelection: () => syncInlineSettingState(),
   selectionTrigger: () => syncSelectionControls(),

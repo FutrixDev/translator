@@ -663,6 +663,12 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   overflow-wrap: anywhere;
 }
 
+/* Blab 账户错误的入口（订阅 / 登录），在错误句下面 */
+.ai-translator-account-action-row {
+  margin-top: 10px;
+  white-space: normal;
+}
+
 /* Actions */
 .ai-translator-actions {
   display: flex;

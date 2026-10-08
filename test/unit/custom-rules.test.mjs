@@ -15,6 +15,7 @@ await import('../../shared/prompt-addenda.js');
 await import('../../shared/api-compat.js');
 // custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/custom-rules.js');
 const { CustomRules } = globalThis;
 
@@ -131,6 +132,14 @@ test('custom-rules: v2 carries a domain and only a domain makes a v2', () => {
   }
   // 领域不在 PromptAddenda.DOMAINS 里拒。
   assert.throws(() => CustomRules.validateRule({ match: ['example.com'], domain: 'poetry' }),
+    { message: 'customRuleInvalid' });
+});
+
+test('custom-rules: a rule can pin each of the three engines, and nothing else', () => {
+  for (const engine of globalThis.Engines.ENGINES) {
+    assert.equal(CustomRules.validateRule({ match: ['example.com'], engine }).engine, engine);
+  }
+  assert.throws(() => CustomRules.validateRule({ match: ['example.com'], engine: 'deepl' }),
     { message: 'customRuleInvalid' });
 });
 
@@ -595,8 +604,11 @@ test('custom-rules: v3 carries a profile and only a profile makes a v3', () => {
     assert.throws(() => CustomRules.validateRule({ match: ['example.com'], profile }),
       { message: 'customRuleInvalid' }, String(profile));
   }
-  assert.throws(() => CustomRules.validateRule({ match: ['example.com'], engine: 'builtin', profile: 'work0001' }),
-    { message: 'customRuleProfileWithBuiltin' });
+  // Blab Translation 也不读用户的配置档（D-479）：钉 blab 的规则带 profile 同样拒。
+  for (const engine of ['builtin', 'blab']) {
+    assert.throws(() => CustomRules.validateRule({ match: ['example.com'], engine, profile: 'work0001' }),
+      { message: 'customRuleProfileWithBuiltin' }, engine);
+  }
   // 没有 profile 的规则版本不变
   assert.equal(CustomRules.validateRule({ match: ['example.com'], engine: 'ai' }).v, 1);
   assert.equal(CustomRules.validateRule({ match: ['example.com'], domain: 'legal' }).v, 2);

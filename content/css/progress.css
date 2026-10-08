@@ -314,3 +314,31 @@ html body [id="ai-translator-progress"] .ai-translator-progress-close:active {
   text-shadow: 0 0 10px rgba(96, 165, 250, 0.6);
   font-weight: 600;
 }
+
+/* 错误条上 Blab 账户错误的入口（订阅 / 登录），在文字下面 */
+.ai-translator-progress-error-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+html body [id="ai-translator-progress"] .ai-translator-progress-action {
+  padding: 4px 12px;
+  font: 600 12px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+  background: #f87171;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+html body [id="ai-translator-progress"] .ai-translator-progress-action:hover {
+  background: #fca5a5;
+}
+
+html body [id="ai-translator-progress"] .ai-translator-progress-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

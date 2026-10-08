@@ -30,7 +30,9 @@
   // `for (const text of texts) await translateWithBuiltin(...)`），12 路并发只是让
   // 12 个批同时去抢同一份端上模型，多出来的是排队和内存，不是吞吐；云端引擎
   // 是网络并发，12 才有意义。
-  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12 });
+  // Blab Translation 是我们自己的服务，每个账户一份每天的额度、服务端一份模型网关：
+  // 6 路足够把首屏铺满，又不让一个页面独占网关（设计 §5.3）。
+  const CONCURRENCY = Object.freeze({ builtin: 4, ai: 12, blab: 6 });
 
   // 整页翻译的所有请求走缓存层（content/content-translation-cache.js），
   // 它与 ctx.requestTranslation 同形，只是先去缓存里看一眼。没加载到它就走原路：
@@ -176,6 +178,14 @@
    */
   function usingBuiltinEngine(auto) {
     return !!(ctx.builtinTranslator && ctx.builtinTranslator.isActive(auto));
+  }
+
+  // 不走内置时这一轮的请求发给哪个模型引擎（'ai' | 'blab'），并发按它取。问的是
+  // 引擎自己的解析（content/engine/model.js），本站规则钉住的引擎也在里面。单测只装
+  // content/page/* 时没有引擎一族，那里按 'ai'。
+  function modelEngineOf(auto) {
+    const model = ctx.engine && ctx.engine.model;
+    return model ? model.forRequest({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', auto }).engine : 'ai';
   }
 
   // 智能分批：根据 token/字符数/段落数限制
@@ -484,7 +494,7 @@
           auto
         }));
         if (response.error) {
-          if (onFailure) onFailure(response.error, { passFatal: response.passFatal === true });
+          if (onFailure) onFailure(response.error, response);
           if (!failsWholePass(response)) onBlockFailed(block, response.error);
           continue;
         }
@@ -530,7 +540,10 @@
 
 
 
-  // 一轮翻译：一组块进来，译文落到页面上。返回致命错误的消息，没有就返回 null。
+  // 一轮翻译：一组块进来，译文落到页面上。返回这一轮的致命错误
+  // `{ message, action }`，没有就返回 null。message 是给读者的那句话；action 是
+  // 那句话附带的入口（'subscribe' | 'signin'，Blab 账户的错误才有，见
+  // background/api-errors.js 的 replyError），调用方把它画成错误条上的按钮。
   //
   // 什么时候显示进度、什么时候算“整页翻完了”，都不在这里——页面级的那一份状态
   // 归 content/content-page-translation.js，将来自动翻译的增量轮次并不需要它。
@@ -590,7 +603,7 @@
     const deferredBatches = createSmartBatches(deferredBlocks, auto);
     // 软优先：首屏批次排在前面，但不阻塞后续批次启动
     const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = usingBuiltinEngine(auto) ? CONCURRENCY.builtin : CONCURRENCY.ai;
+    const concurrency = CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
 
     console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
 
@@ -603,6 +616,7 @@
     // 不会白白多打几百次请求。
     const MAX_BATCH_FAILURES = 3;
     let batchError = null;
+    let batchAction = null;
     let batchFailures = 0;
     let firstFailureMessage = null;
 
@@ -617,12 +631,27 @@
     const stoppedOutside = () => typeof options.isAborted === 'function' && options.isAborted();
     const aborted = () => !!batchError || stoppedOutside();
 
-    // 整轮致命的失败（passFatal：不认得的领域这类配置错，content/engine/addenda.js）
-    // 之后每一批都会一样失败，第一次见到就停，不等累计阈值 —— 一页只有一两批时阈值
-    // 永远到不了，这一轮会被当成「翻完了」收场，页面一个字没变、也没有任何提示。
-    const noteBatchFailure = (message, { passFatal = false } = {}) => {
-      if (passFatal) {
-        if (!batchError) batchError = message;
+    // 整轮级的失败（failsWholePass：passFatal —— 账户不能用、不认得的领域这类配置错
+    // —— 或者扩展上下文没了）只有这一个落点。之后每一批都会一样失败，第一次见到就
+    // 停，不等累计阈值 —— 一页只有一两批时阈值永远到不了，这一轮会被当成「翻完了」
+    // 收场，页面一个字没变、也没有任何提示。
+    //
+    // 本页的自动会话也在这里停（D-490）：那句失败说的是这一页此刻怎么翻都一样，
+    // 而手动那一轮一收尾，自动那边等着的 pump 就会把同一批块再送一遍。手动、自动、
+    // 规则补翻、子 frame、点标记重试都走 runTranslationPass，所以停在这一处，
+    // 哪一种轮次都不必自己记得。
+    const failWholePass = (message, action) => {
+      if (batchError !== null) return;
+      batchError = message || t('translationFailed');
+      batchAction = action || null;
+      if (ctx.autoTranslate) ctx.autoTranslate.stopForPassFailure(batchError);
+    };
+
+    // `source` 是失败的出处 —— 带 passFatal / action 的 {error} 响应，或者抛出来的
+    // 错误；没有就是普通的一批失败，按累计阈值算。
+    const noteBatchFailure = (message, source) => {
+      if (source && source.passFatal === true) {
+        failWholePass(message, source.action);
         return;
       }
       if (!firstFailureMessage) firstFailureMessage = message || t('translationFailed');
@@ -635,13 +664,13 @@
     const noteThrown = (error, what) => {
       if (error && error.passFatal === true) {
         if (!batchError) console.error('Blab Translation: translation pass stopped', error);
-        noteBatchFailure(error.message, { passFatal: true });
+        noteBatchFailure(error.message, error);
         return;
       }
       console.error(`Blab Translation: ${what} failed`, error);
       if (isExtensionContextInvalidated(error)) {
         // 扩展上下文没了，后面每一块都必然失败，没有继续的意义。
-        batchError = t('extensionContextInvalidated');
+        failWholePass(t('extensionContextInvalidated'));
       } else {
         noteBatchFailure(error.message);
       }
@@ -683,7 +712,7 @@
           }));
 
           if (response.error) {
-            noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+            noteBatchFailure(response.error, response);
             if (!failsWholePass(response)) markFailed(block, response.error);
             return;
           }
@@ -723,7 +752,7 @@
       // 出错了，或者外面已经不要这一轮的结果了
       if (aborted()) return;
       if (!isExtensionContextAvailable()) {
-        batchError = t('extensionContextInvalidated');
+        failWholePass(t('extensionContextInvalidated'));
         return;
       }
 
@@ -751,7 +780,7 @@
 
         // Check for error in response
         if (response.error) {
-          noteBatchFailure(response.error, { passFatal: response.passFatal === true });
+          noteBatchFailure(response.error, response);
           if (!failsWholePass(response)) batch.forEach((block) => markFailed(block, response.error));
         } else {
           // translations 缺失/非数组的畸形响应也交给守卫：按“数量不一致”处理，
@@ -782,7 +811,7 @@
       await runWithConcurrency(batches, processBatch, concurrency);
     }
 
-    return batchError;
+    return batchError ? { message: batchError, action: batchAction } : null;
   }
 
   ctx.runTranslationPass = runTranslationPass;

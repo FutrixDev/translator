@@ -42,8 +42,10 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   // 两者之间只允许注释，不允许别的分支；请求原样送出（语域在入口盖过，R33 A4）。
   assert.match(
     engine,
-    /const refusal = await refuseAutoAiSpend\(message\);\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine: 'ai' \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const response = await chrome\.runtime\.sendMessage\(message\);/
+    /const refusal = engine === 'ai' \? await refuseAutoAiSpend\(message\) : null;\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const response = await chrome\.runtime\.sendMessage\(message\);/
   );
+  // 闸只拦用户自己的 AI：Blab Translation 的上限是账户每天的字数，由服务端的 429
+  // 把关，不记在 autoAiDailyBudget 上（D-480）。
   // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
   // 翻译是用户一次一次点出来的，他知道自己在花钱。
   assert.match(engine, /if \(!message \|\| !\(message\.auto \|\| message\.unattended\)\) return null;/);
@@ -58,7 +60,8 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
   // 而那个判断在谓词里，并且真的分得清问的是哪一边 —— 行为在
   // auto-engine-choice.test.mjs 上验。
   // 本站规则钉住的引擎（P1-B）排在设置前面，两半答同一个值；没钉就按 auto 分。
-  assert.match(engine, /function isBuiltinSelected\(auto\) \{\s*\n\s*const site = siteEngine\(\);\s*\n\s*if \(site\) return site === 'builtin';\s*\n\s*return \(auto \? settings\.autoTranslateEngine : settings\.translationEngine\) !== 'ai';/);
+  assert.match(engine, /function selectedEngine\(auto\) \{\s*\n\s*const site = siteEngine\(\);\s*\n\s*if \(site\) return site;\s*\n\s*return globalThis\.Engines\.normalizeEngine\(auto \? settings\.autoTranslateEngine : settings\.translationEngine\);/);
+  assert.match(engine, /function isBuiltinSelected\(auto\) \{\s*\n\s*return selectedEngine\(auto\) === 'builtin';/);
 });
 
 test('「这一批是自动发的」一路带到三个发消息的地方', () => {
@@ -87,9 +90,10 @@ test('调度层的预判和闸问的是同一个设置、同一个函数', () =>
   assert.match(auto, /ctx\.builtinTranslator\.effectiveEngine\(\{ auto: true, feature: 'page' \}\)/);
   assert.doesNotMatch(auto, /ctx\.settings\.autoTranslateEngine/,
     '调度层又自己读了一遍自动模式的引擎设置');
-  // 内置引擎跑得动的页面不花钱，直接放行；给不出引擎又没开回退的那一格安静地停。
-  assert.match(auto, /if \(engine === 'builtin'\) return null;/);
+  // 给不出引擎又没开回退的那一格安静地停；只有 'ai' 记在预算上，内置不花钱、
+  // Blab 的上限在服务端（D-480），都直接放行。
   assert.match(auto, /if \(engine === 'none'\) return COST_REASONS\.ENGINE;/);
+  assert.match(auto, /if \(engine !== 'ai'\) return null;/);
   // 问在 takeBatch 之前：takeBatch 会把队列抽干、把块记进 inflight，被拦下的
   // 这一轮根本不会跑，那些块就此无声消失。
   const gate = auto.indexOf('const refused = await costRefusal();');
@@ -126,10 +130,11 @@ test('设置页把它切到 AI 要过一道二次确认，说了不就退回去'
   assert.match(options, /function confirmUnattendedAiSpend\(messageKey\) \{\s*return window\.confirm\(t\(messageKey\)\);/);
   assert.match(options, /!confirmUnattendedAiSpend\('autoTranslateEngineAiConfirm'\)/);
   assert.match(options, /!confirmUnattendedAiSpend\('customRuleEngineAiConfirm'\)/);
-  // 说了不：值退回 builtin，并且**不**存。
-  assert.match(options, /elements\.autoTranslateEngine\.value = 'builtin';\s*\n\s*syncAutoEngineState\(\);\s*\n\s*return;/);
-  // 两个字段都真的读进来、也真的写回去。
-  assert.match(options, /autoTranslateEngine: elements\.autoTranslateEngine\.value === 'ai' \? 'ai' : 'builtin'/);
+  // 说了不：值退回改之前存着的那个引擎（可能是 builtin，也可能是 blab），并且**不**存。
+  // 存着的值经 Engines.normalizeEngine 读（D-490 N9），不在这里另写一个 'builtin'。
+  assert.match(options, /elements\.autoTranslateEngine\.value = Engines\.normalizeEngine\(lastGoodSettings && lastGoodSettings\.autoTranslateEngine\);\s*\n\s*syncAutoEngineState\(\);\s*\n\s*return;/);
+  // 两个字段都真的读进来、也真的写回去；三个引擎都原样保存（D-479）。
+  assert.match(options, /autoTranslateEngine: Engines\.normalizeEngine\(elements\.autoTranslateEngine\.value\)/);
   assert.match(options, /autoAiDailyBudget: Math\.max\(0, Math\.floor\(Number\(elements\.autoAiDailyBudget\.value\) \|\| 0\)\)/);
 
   const html = code('options/options.html');

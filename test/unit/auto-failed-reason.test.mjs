@@ -122,6 +122,6 @@ test('no per-block reason (a whole-pass failure): the title falls back to the pa
   await s.fire();
   await s.settle(new Map());
   await s.fire();
-  await s.settle(new Map(), 'extensionContextInvalidated');
+  await s.settle(new Map(), { message: 'extensionContextInvalidated', action: null });
   assert.deepEqual(s.marks.map((m) => [m.element.name, m.reason]), [['a', 'extensionContextInvalidated']]);
 });

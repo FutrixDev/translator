@@ -65,6 +65,7 @@ let storedPdfEnabled = false;
  * under them. Called on load and on every account transition.
  */
 function renderAccountFeatures() {
+  renderBlabEngine();
   renderAccountFeature('enableComicTranslation', storedComicEnabled, {
     toggle: elements.enableComicTranslation,
     lang: elements.comicTargetLang,
@@ -153,6 +154,7 @@ async function refreshComicAccount({ force = false, quiet = false } = {}) {
 
 /** Put a fetched account on screen. Returns whether it is a signed-in one. */
 function showAccount(account) {
+  rememberBlabAccount(account);
   if (!account.signedIn) {
     comicSignedIn = false;
     renderAccountFeatures();
@@ -173,28 +175,42 @@ function showAccount(account) {
 }
 
 /**
- * Sign in, or join the sign-in already running.
- *
- * Both switches are live while signed out, so turning them on in quick
- * succession sends two gates here. Two independent flows would open two
- * authentication tabs, and the second to finish would overwrite the first: a
- * cancelled one landing after a successful one renders the signed-out panel
- * with a valid token in storage. One flow, one answer, both callers.
+ * The account card's Sign in, and the two switches' gate: sign in, or join the
+ * sign-in already running. It takes no argument because it is wired straight
+ * to a click (options.js), and a listener's first argument is the event.
  */
 function comicSignIn() {
+  return signInWith({ type: 'COMIC_SIGN_IN' });
+}
+
+/**
+ * The one sign-in flow every entry on this page shares. `message` is what the
+ * entry sends: COMIC_SIGN_IN here, or the Blab Translation note's account entry
+ * (blabSignIn in options-blab.js). Never wire this to an event directly.
+ *
+ * Both switches are live while signed out, so turning them on in quick
+ * succession sends two gates here, and the card and the note can be clicked
+ * together. Two independent flows would open two authentication tabs, and the
+ * second to finish would overwrite the first: a cancelled one landing after a
+ * successful one renders the signed-out panel with a valid token in storage.
+ * One flow, one answer, every caller; a caller that joins sends nothing of its
+ * own (D-501: the card's sign-in does not record the Blab click either).
+ */
+function signInWith(message) {
   if (!comicSignInInFlight) {
-    comicSignInInFlight = runComicSignIn().finally(() => { comicSignInInFlight = null; });
+    comicSignInInFlight = runComicSignIn(message).finally(() => { comicSignInInFlight = null; });
   }
   return comicSignInInFlight;
 }
 
-async function runComicSignIn() {
+/** Both messages answer with the account sign-in got. */
+async function runComicSignIn(message) {
   // This decides the account outright, so any read already on the wire is stale
   // from here on — including the one this replaces.
   comicAccountGeneration += 1;
   showComicState('loading');
   elements.comicAccountLoading.textContent = t('comicSigningIn');
-  const response = await chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+  const response = await chrome.runtime.sendMessage(message);
   elements.comicAccountLoading.textContent = t('comicAccountLoading');
 
   if (!response || !response.ok) {

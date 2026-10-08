@@ -12,16 +12,14 @@
 // storage.sync —— 不直接往存储里写词条键。
 const { test, expect } = require('./fixtures');
 const {
-  addGlossaryEntry,
-  addGlossaryEntryInCard,
   countPersistentCacheKeys,
   evaluateInContentScript,
-  openGlossaryCard,
   sentSegments,
   setExtensionSettings,
   stubBuiltinTranslator,
   waitForContentReady,
 } = require('./helpers');
+const { addGlossaryEntry, addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SITE = 'https://glossary.test';

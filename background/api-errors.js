@@ -12,8 +12,10 @@
 // the original error — never the key, the request body or the user's text).
 
 import '../shared/api-compat.js';
+import '../shared/engines.js';
 import '../i18n/messages.js';
 import { uiLanguageOf } from './settings.js';
+import { isBlabAccountFailure } from './blab-client.js';
 
 /** The UI-language lookup for these settings, t(key) -> string. */
 function uiMessages(settings) {
@@ -41,6 +43,9 @@ function profileError(key, id) {
  * preset) needs none.
  */
 function missingApiKeyMessage(profile, settings) {
+  // Blab Translation has no key of its own: it rides the account's token, and
+  // a missing one comes back from the service as `unauthorized` (below).
+  if (globalThis.Engines.isBlabProfile(profile)) return '';
   return globalThis.APICompat.isApiKeyMissing(profile)
     ? uiMessages(settings)('configureApiKeyFirst')
     : '';
@@ -60,6 +65,10 @@ function missingApiKeyMessage(profile, settings) {
  */
 function apiErrorMessage(error, settings, profile) {
   const t = uiMessages(settings);
+  if (error && isBlabAccountFailure(error.apiFailure)) return blabAccountMessage(error.apiFailure, settings, t);
+  if (error && error.apiFailure && globalThis.Engines.isBlabProfile(profile)) {
+    return blabServiceMessage(error.apiFailure, t);
+  }
   if (error && error.apiFailure) {
     return globalThis.APICompat.describeAPIFailure(error.apiFailure, t,
       { provider: profile ? profile.provider : undefined });
@@ -75,6 +84,53 @@ function apiErrorMessage(error, settings, profile) {
 }
 
 /**
+ * Blab Translation's account state, worded for the reader (design §5.2): today's
+ * allowance spent (with the local time it comes back), no subscription, or not
+ * signed in. None names Settings (D-497 R1-N6): the way out is the entry the
+ * reply carries (BLAB_ACCOUNT_ACTIONS), which signs in or opens the pricing page
+ * itself. None of them is a reason to try another engine: the reply is the
+ * answer.
+ */
+function blabAccountMessage(failure, settings, t) {
+  if (failure.blab === 'daily_limit') {
+    const resets = new Date(failure.resetsAt);
+    const time = Number.isNaN(resets.getTime())
+      ? ''
+      : resets.toLocaleString(uiLanguageOf(settings), { dateStyle: 'short', timeStyle: 'short' });
+    return t('blabDailyLimit').replace('{time}', time);
+  }
+  if (failure.blab === 'plan_required') return t('blabPlanRequired');
+  return t('blabSignInRequired');
+}
+
+/**
+ * Blab Translation's other failures, in its own words (D-490 N3): the service
+ * is ours, so "check your API address and key" (describeAPIFailure's wording
+ * for the user's own AI) would send the reader to a setting that does not
+ * exist. Busy (429, any 5xx including upstream_failed), unreachable, too slow,
+ * an empty answer, or a request the service would not take (another 4xx, with
+ * its status for the bug report).
+ */
+function blabServiceMessage(failure, t) {
+  // No seconds in it (D-497 F6): the figure is the attempt's computed timeout,
+  // which says nothing the reader can act on.
+  if (failure.timeout) return t('blabErrorTimeout');
+  if (failure.empty) return t('blabErrorEmpty');
+  if (failure.network) return t('blabErrorNetwork');
+  const status = Number(failure.status);
+  if (failure.rateLimitedWait || status === 429 || status >= 500) return t('blabErrorBusy');
+  return t('blabErrorRequest').replace('{status}', String(failure.status));
+}
+
+/**
+ * The entry an account failure carries to the page (D-490 N2, design §5.2):
+ * the error bar and the selection card draw it as a button. No subscription
+ * gets "Subscribe", a missing or expired sign-in gets "Sign in"; today's
+ * allowance has nothing to press — it comes back by itself.
+ */
+const BLAB_ACCOUNT_ACTIONS = Object.freeze({ plan_required: 'subscribe', unauthorized: 'signin' });
+
+/**
  * The one catch for an AI request: log once, answer `{ error }` in the UI
  * language. A request its caller abandoned (`error.aborted`) has nobody
  * waiting, so it is neither logged nor worded.
@@ -85,7 +141,15 @@ function replyError(operation, error, { settings, profile, profileId, feature })
   // callModel 重试过的，把一共试了几次写进这一条（中间那几次不另打日志）。
   const tries = error && error.attempts > 1 ? ` after ${error.attempts} attempts` : '';
   console.error(`${operation} failed${tries} (profile ${id}, feature ${feature || '(none)'}):`, error);
-  return { error: apiErrorMessage(error, settings, profile) };
+  const reply = { error: apiErrorMessage(error, settings, profile) };
+  // The account's state ends a whole-page pass at once (content/page/batch.js
+  // reads passFatal): every other batch would get the same answer.
+  if (isBlabAccountFailure(error && error.apiFailure)) {
+    reply.passFatal = true;
+    const action = BLAB_ACCOUNT_ACTIONS[error.apiFailure.blab];
+    if (action) reply.action = action;
+  }
+  return reply;
 }
 
 export { profileError, missingApiKeyMessage, apiErrorMessage, replyError };

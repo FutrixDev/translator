@@ -32,6 +32,7 @@ await import('../../i18n/messages.js');
 await import('../../shared/prompt-addenda.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/settings-transfer.js');
 const { SettingsTransfer: ST, SiteRules, APICompat, TargetLang, TranslationDisplay, DefaultSettings, UI_LANGUAGES } = globalThis;
 
@@ -70,6 +71,7 @@ function optionsTransferFunctions() {
     TargetLang,
     TranslationDisplay,
     PromptAddenda: globalThis.PromptAddenda,
+    Engines: globalThis.Engines,
   };
   vm.createContext(sandbox);
   vm.runInContext(`${lift('transferSchema')}\n${lift('transferEnums')}`, sandbox);

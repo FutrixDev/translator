@@ -22,6 +22,7 @@ await import('../../shared/site-rules.js');
 await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const SOURCE = repoFile('content/content-translation-cache.js');
@@ -207,6 +208,23 @@ test('一个订阅者抛错只记日志，不拦住别的订阅者', () => {
   assert.equal(errors[0][0], 'Blab Translation: translation profile subscriber failed');
 });
 
+// 引擎一族在这几条里只要三样：词表快照、附加说明、模型引擎与档。模型引擎按
+// 用户自己的 AI（ctx.aiProfiles）解析，调用时才取，测试可以中途换掉 resolve。
+function engineShelf(ctx, engine = 'ai') {
+  return {
+    glossary: { current: async () => ({}) },
+    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
+    model: {
+      forRequest: (message) => ({
+        engine,
+        resolved: engine === 'blab'
+          ? { profile: globalThis.Engines.BLAB_PROFILE }
+          : ctx.aiProfiles.resolve(message.feature),
+      }),
+    },
+  };
+}
+
 test('改了提示词之后，持久缓存的键因子重新读：下一次请求带的是新提示词；模型跟着配置档走', async () => {
   const stored = { customPrompt: 'prompt-a' };
   const { ctx, profile, aiProfiles } = load({ stored });
@@ -220,10 +238,7 @@ test('改了提示词之后，持久缓存的键因子重新读：下一次请�
     },
   };
   globalThis.AutoStats = { add() {} };
-  ctx.engine = {
-    glossary: { current: async () => ({}) },
-    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
-  };
+  ctx.engine = engineShelf(ctx);
   // 入口先在本 frame 盖语域（引擎的 ctx.withPromptAddenda），再查缓存。
   ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
   ctx.sendTranslation = async () => assert.fail('全部命中，不该发请求');
@@ -257,10 +272,7 @@ test('读不到自定义提示词就抛，不拿空串建键；下一次请求�
     },
   };
   globalThis.AutoStats = { add() {} };
-  ctx.engine = {
-    glossary: { current: async () => ({}) },
-    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
-  };
+  ctx.engine = engineShelf(ctx);
   ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
   ctx.sendTranslation = async () => assert.fail('读失败不该改成直发');
   const message = { type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['x'], targetLang: 'zh-CN' };
@@ -274,19 +286,40 @@ test('这个功能没有可用的档：不查缓存，把解析结果交给送�
   const { ctx, aiProfiles } = load();
   aiProfiles.resolve = () => ({ error: 'aiNotConfigured' });
   globalThis.TranslationCache = { serve: async () => assert.fail('没有档就没有键') };
-  ctx.engine = {
-    glossary: { current: async () => ({}) },
-    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
-  };
+  ctx.engine = engineShelf(ctx);
   ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
   const sent = [];
   ctx.sendTranslation = async (message, opts) => {
-    sent.push(opts.profile);
+    sent.push(opts.model.resolved);
     return { error: 'not configured' };
   };
   const reply = await ctx.requestTranslationCached({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['x'], targetLang: 'zh-CN' });
   assert.deepEqual(reply, { error: 'not configured' });
   assert.deepEqual(sent, [{ error: 'aiNotConfigured' }]);
+});
+
+test('Blab Translation 的键因子是它那一档的 blab/blab，与用户自己的 AI 档分开（设计 §5.3）', async () => {
+  const { ctx } = load({ stored: { customPrompt: '' } });
+  const keyed = [];
+  globalThis.TranslationCache = {
+    serve: async (texts, factors, sendMissing) => {
+      keyed.push({ endpoint: factors.endpoint, model: factors.model });
+      return sendMissing(texts);
+    },
+  };
+  globalThis.AutoStats = { add() {} };
+  ctx.engine = engineShelf(ctx, 'blab');
+  ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
+  const sent = [];
+  ctx.sendTranslation = async (message, opts) => {
+    sent.push(opts.model);
+    return { translations: message.texts.map((text) => `B:${text}`), engine: 'blab' };
+  };
+  await ctx.requestTranslationCached({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['x'], targetLang: 'zh-CN' });
+  assert.deepEqual(keyed, [{ endpoint: 'blab', model: 'blab' }]);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].engine, 'blab');
+  assert.equal(sent[0].resolved.profile, globalThis.Engines.BLAB_PROFILE, '送出去的是建键的那一档');
 });
 
 test('悬停的内存缓存键随代数变：同一段文字、同一门目标语言，加代前后是两个键', () => {
@@ -359,14 +392,11 @@ test('快照一致（P1-D §3.2）：键因子里的档和送出去的档是同�
     },
   };
   globalThis.AutoStats = { add() {} };
-  ctx.engine = {
-    glossary: { current: async () => ({}) },
-    addenda: { settings: () => ({ domain: 'general', context: false }), stamp: () => '' },
-  };
+  ctx.engine = engineShelf(ctx);
   ctx.withPromptAddenda = (message) => ({ ...message, addenda: {} });
   const sent = [];
   ctx.sendTranslation = async (message, opts) => {
-    sent.push(opts.profile);
+    sent.push(opts.model.resolved);
     return { translations: message.texts.map((text) => `T:${text}`) };
   };
 

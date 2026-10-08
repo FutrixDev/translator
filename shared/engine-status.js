@@ -67,7 +67,7 @@
 
   /**
    * @typedef {Object} EngineProbe  what the content script saw in its own tab
-   * @property {'builtin'|'ai'} engine
+   * @property {'builtin'|'ai'|'blab'} engine
    * @property {boolean} supported        the built-in Translator is usable here
    * @property {string}  reason           a key of REASON_MESSAGE_KEYS, '' when supported
    * @property {'available'|'downloadable'|'downloading'|'unavailable'|'unknown'} availability
@@ -83,7 +83,7 @@
    */
 
   /**
-   * The engine a click on this tab will use: 'builtin' | 'ai'.
+   * The engine a click on this tab will use: one of Engines.ENGINES.
    *
    * The page answers first (`probe.engine`): it knows this site's custom rule,
    * which can pin an engine and outranks the setting. Only when there is no
@@ -93,11 +93,11 @@
    *
    * @param {Object} settings
    * @param {EngineProbe|null} probe
-   * @returns {'builtin'|'ai'}
+   * @returns {'builtin'|'ai'|'blab'}
    */
   function selectedEngine(settings, probe) {
     if (probe && probe.engine) return probe.engine;
-    return settings && settings.translationEngine === 'ai' ? 'ai' : 'builtin';
+    return root.Engines.normalizeEngine(settings && settings.translationEngine);
   }
 
   /**
@@ -137,14 +137,41 @@
    * @param {Object} settings           the user's settings
    * @param {EngineProbe|null} probe
    * @param {boolean} aiIsReady          aiReady()'s answer for this tab
+   * @param {{access: (string|null), dailyLimit: boolean}} [blab]
+   *                                     the account as the Blab engine sees it,
+   *                                     required when the engine is 'blab':
+   *                                     `access` is Engines.blabAccess() (null when
+   *                                     the account could not be read), and
+   *                                     `dailyLimit` whether today's allowance is
+   *                                     spent (billing/me's used >= limit, or the
+   *                                     worker's daily_limit latch)
    * @returns {EngineStatus}
    */
-  function describeEngineStatus(settings, probe, aiIsReady) {
+  function describeEngineStatus(settings, probe, aiIsReady, blab) {
     const engine = selectedEngine(settings, probe);
 
     if (engine === 'ai') {
       if (typeof aiIsReady !== 'boolean') throw new TypeError('describeEngineStatus: the AI engine needs aiReady()');
       return status(aiIsReady ? 'ready' : 'apiNotConfigured', '', aiIsReady);
+    }
+
+    // Blab Translation: the account says whether it can be used (signed in and
+    // a plan, Engines.blabAccess). The dot is a claim of "works", so it is green
+    // only when the account says AVAILABLE and today's allowance is not spent
+    // (D-497 F1); an account that could not be read (null) has not said so
+    // either. Signed out and no plan come first: they are what the user has to
+    // fix, the allowance comes back by itself.
+    if (engine === 'blab') {
+      if (!blab || typeof blab.dailyLimit !== 'boolean') {
+        throw new TypeError('describeEngineStatus: the Blab engine needs {access, dailyLimit}');
+      }
+      const access = root.Engines.BLAB_ACCESS;
+      if (blab.access === access.SIGNED_OUT) return status('engineBlab', 'blabStatusSignedOut', false);
+      if (blab.access === access.PLAN_REQUIRED) return status('engineBlab', 'blabStatusPlanRequired', false);
+      if (blab.dailyLimit) return status('engineBlab', 'blabStatusDailyLimit', false);
+      if (blab.access === access.AVAILABLE) return status('engineBlab', '', true);
+      if (blab.access === null) return status('engineBlab', 'blabStatusUnknown', false);
+      throw new TypeError('describeEngineStatus: the Blab engine needs the account\'s blabAccess (or null) as blab.access');
     }
 
     if (probe === null) {

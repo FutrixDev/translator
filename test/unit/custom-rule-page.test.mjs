@@ -22,6 +22,7 @@ await import('../../shared/prompt-addenda.js');
 await import('../../shared/api-compat.js');
 // custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -735,7 +736,8 @@ test('bootstrap: the scheduler also waits for this frame\'s AI profiles (P1-D)',
 
 test('subscribers: the scheduler restarts and the top frame re-broadcasts on a rule change', () => {
   const content = contentSource();
-  assert.match(content, /ctx\.customRules\.onChange\(\(\) => start\('custom-rule'\)\);/);
+  // 停在错误上的那一页不被规则变化叫醒（D-497 R1-N3）。
+  assert.match(content, /ctx\.customRules\.onChange\(\(\) => \{\s*if \(!broken\) start\('custom-rule'\);\s*\}\);/);
   assert.match(content, /ctx\.customRules\.onChange\(refreshDirective\);/);
   // 指令带上引擎覆盖，比较也比它：只改规则引擎的变化也要广播。
   assert.match(content, /engineOverride: ctx\.customRules\.engineOverride\(\) \|\| null,/);

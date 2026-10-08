@@ -1,7 +1,7 @@
 // message.engine：一次请求指名要哪个引擎（划词卡片上的「换引擎」，P0-D）。
 //
 // 契约（content/content-translation-engine.js 的 requestTranslation）：
-//   - 只认 undefined / 'builtin' / 'ai'，别的值直接抛错；
+//   - 只认 undefined 与 Engines.ENGINES（'builtin' / 'ai' / 'blab'），别的值直接抛错；
 //   - 指名了就不回落：指名内置而内置顶不住，给真实原因，engineFallback 为
 //     'allow-ai' 也不改走 AI；指名 AI 就完全不碰内置；
 //   - 每个响应都盖上 engine，说是谁译的（出错时说是谁没译成）。
@@ -14,7 +14,7 @@ import { installEngineHarness } from './helpers/engine-harness.mjs';
 const PAGE = 'This page is written in ordinary English prose, long enough for the detector to be sure about it.'.repeat(6);
 const BLOCK = 'A paragraph of ordinary English prose, long enough that the engine asks the detector itself.';
 
-const { ctx, translateCalls, sentToAI, setApiKey } = await installEngineHarness({ pageText: PAGE });
+const { ctx, translateCalls, sentToAI, setApiKey, setAccount } = await installEngineHarness({ pageText: PAGE });
 // 回落时记下的细分原因来自 EngineStatus（manifest 里排在引擎前面）。
 await import('../../shared/engine-status.js');
 // AI 那边配好了，engineFallback 为 'allow-ai' 时回落是真的走得通的 —— 不然
@@ -118,13 +118,69 @@ test('the budget gate refusal on the AI exit is stamped ai', async () => {
   assert.equal(sentToAI.length, 0);
 });
 
-test('engineChoices reads the AI config afresh and reports both sides', async () => {
+test('engineChoices reads the AI config afresh and reports every engine', async () => {
   configure({});
   setApiKey('');
-  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: false });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: false, blab: false });
   setApiKey('test-key');
   self.isSecureContext = false;
-  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: false, ai: true });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: false, ai: true, blab: false });
+});
+
+// 「换引擎」从不提供一个点了只会报错的引擎：Blab 只在账户此刻能用时出现，
+// 判定只看服务端给的 blabTranslation.available（D-476），不按套餐推断。
+test('engineChoices offers Blab Translation only when the account can use it now', async () => {
+  configure({});
+  setApiKey('test-key');
+  try {
+    for (const [account, offered] of [
+      [{ signedIn: false }, false],
+      [{ signedIn: true, blabTranslation: { available: false } }, false],
+      [{ signedIn: true }, false],
+      [{ signedIn: true, blabTranslation: { available: true, limit: 1000000, used: 0, resetsAt: '2026-10-08T00:00:00Z' } }, true],
+    ]) {
+      setAccount(account);
+      assert.equal((await ctx.engineChoices('fr', 'selection')).blab, offered, JSON.stringify(account));
+    }
+  } finally {
+    setAccount({ signedIn: false });
+  }
+});
+
+test('a request pinned to Blab Translation goes out with the Blab profile and is stamped blab', async () => {
+  configure({ translationEngine: 'ai' });
+  const result = await translate({ engine: 'blab' });
+  assert.equal(result.engine, 'blab');
+  assert.equal(sentToAI.length, 1);
+  assert.equal(sentToAI[0].profileId, globalThis.Engines.BLAB_PROFILE.id);
+  assert.equal(translateCalls.length, 0, 'a Blab request touched the built-in engine');
+});
+
+test('Blab Translation selected in settings: every model request carries the Blab profile', async () => {
+  configure({ translationEngine: 'blab' });
+  const result = await translate({});
+  assert.equal(result.engine, 'blab');
+  assert.equal(sentToAI[0].profileId, globalThis.Engines.BLAB_PROFILE.id);
+  assert.equal(translateCalls.length, 0);
+});
+
+// D-480：自动翻译的预算闸只管用户自己的 AI；Blab 的上限是账户每天的字数，
+// 由服务端的 429 把关，这里不拦也不记账。
+test('the AI budget gate never refuses or charges a Blab request', async () => {
+  configure({ translationEngine: 'blab', autoTranslateEngine: 'blab' });
+  let charged = 0;
+  globalThis.AutoStats = {
+    sentChars: () => 0,
+    charge: async () => { charged += 1; return { allowed: false }; },
+  };
+  for (const zeroClick of [{ unattended: true }, { auto: true }]) {
+    sentToAI.length = 0;
+    const result = await translate(zeroClick);
+    assert.equal(result.engine, 'blab', JSON.stringify(zeroClick));
+    assert.equal(result.budgetSpent, undefined);
+    assert.equal(sentToAI.length, 1);
+  }
+  assert.equal(charged, 0);
 });
 
 // 卡片正用 AI 译成一门端上没有的语言（fa）时，「改用内置」点了只会报错，所以不给。
@@ -132,8 +188,8 @@ test('engineChoices reads the AI config afresh and reports both sides', async ()
 test('engineChoices offers builtin only for a target the builtin engine knows', async () => {
   configure({});
   setApiKey('test-key');
-  assert.deepEqual({ ...(await ctx.engineChoices('fa', 'selection')) }, { builtin: false, ai: true });
-  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: true });
+  assert.deepEqual({ ...(await ctx.engineChoices('fa', 'selection')) }, { builtin: false, ai: true, blab: false });
+  assert.deepEqual({ ...(await ctx.engineChoices('fr', 'selection')) }, { builtin: true, ai: true, blab: false });
   // 扩展码先过 toApiLang：zh-TW 在端上是 zh-Hant，认得。
   assert.equal((await ctx.engineChoices('zh-TW', 'selection')).builtin, true);
   const bt = ctx.builtinTranslator;

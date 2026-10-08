@@ -131,6 +131,15 @@ html[data-ai-translator-theme="light"] body .ai-translator-progress-close:hover 
   color: #dc2626;
 }
 
+html[data-ai-translator-theme="light"] body [id="ai-translator-progress"] .ai-translator-progress-action {
+  color: #fff;
+  background: #dc2626;
+}
+
+html[data-ai-translator-theme="light"] body [id="ai-translator-progress"] .ai-translator-progress-action:hover {
+  background: #b91c1c;
+}
+
 [data-ai-translator-theme="light"] #ai-translator-float-ball-container {
   --ait-dock-bg: rgba(255, 250, 243, 0.96);
   --ait-dock-shadow: 0 2px 12px rgba(16, 23, 42, 0.12), 0 0 0 1px rgba(16, 23, 42, 0.06);

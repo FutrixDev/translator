@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu, openExamplePage, HOSTILE_PAGE_CSS } = require('./helpers');
+const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./helpers');
+const { HOSTILE_PAGE_CSS } = require('./hostile-css');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');

@@ -27,7 +27,13 @@ let pdfTasksTimer = null;
  *  and every account change; only a change in either half is worth a request. */
 let pdfTasksFetchedFor = null;
 /**
- * Where the account lives on the web, for the card header's library link.
+ * Where the account lives on the web, for the card header's library link and
+ * the Blab pricing link (options-blab.js). Empty until the service worker
+ * answers, which is why every link built from it is conditional.
+ */
+let accountSiteBase = '';
+
+/**
  * Ask once per page load. The origin is a constant with a storage override, so
  * it does not change under an open settings page, and re-asking on every
  * refresh would be a message per five-second poll for a value that never moves.
@@ -37,13 +43,17 @@ async function loadAccountSiteBase() {
   try {
     response = await chrome.runtime.sendMessage({ type: 'ACCOUNT_SITE_BASE' });
   } catch (error) {
-    response = null;
+    response = { ok: false, error };
   }
-  const base = (response && response.ok && response.data && response.data.base) || '';
+  accountSiteBase = (response && response.ok && response.data && response.data.base) || '';
+  // Every link built from it is left out without one — the PDF library, the
+  // Blab pricing page (options-blab.js). Say so once, here, so a settings page
+  // with no links is explained.
+  if (!accountSiteBase) console.error('Blab Translation: the account site address is unavailable', response && response.error);
 
   const link = elements.pdfTasksLibraryLink;
   if (!link) return;
-  const href = PDF_UI.pdfLibraryUrl(base);
+  const href = PDF_UI.pdfLibraryUrl(accountSiteBase);
   link.href = href;
   link.hidden = !href;
 }

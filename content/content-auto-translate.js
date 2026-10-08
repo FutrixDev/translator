@@ -398,8 +398,10 @@
      */
     async function costRefusal() {
       const engine = await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' });
-      if (engine === 'builtin') return null;
       if (engine === 'none') return COST_REASONS.ENGINE;
+      // 只有 'ai' 花的是用户自己的钱、记在 autoAiDailyBudget 上；'builtin' 不计费，
+      // 'blab' 的上限是账户每天的字数，由服务端的 429 把关（D-480）。
+      if (engine !== 'ai') return null;
       const stats = await globalThis.AutoStats.read();
       if (globalThis.AutoStats.budgetExceeded(stats, ctx.settings.autoAiDailyBudget)) {
         return COST_REASONS.BUDGET;
@@ -478,7 +480,7 @@
           // isAborted 和 accept 分工不同，缺一不可：accept 拦的是「回填」，翻都
           // 翻完了才拒，钱已经花掉；isAborted 拦的是「还要不要发下一批」。跑到
           // 一半换了路由时，能省下的是池子里剩下的那几百块。
-          error = await ctx.runTranslationPass(fresh, {
+          const failure = await ctx.runTranslationPass(fresh, {
             accept: acceptBlock,
             // 记账等结果：accept 是「还要不要写回去」，onSettled 是「这一块有结果
             // 了」。失败的块两者都不会走到，于是留在 inflight 里，随这一轮一起
@@ -501,6 +503,7 @@
               if (pending && reason) pending.reason = reason;
             },
           });
+          if (failure) error = failure.message;
         }
       } catch (thrown) {
         console.error('Blab Translation: auto translation pass failed', thrown);
@@ -629,6 +632,30 @@
     }
 
     /**
+     * 这一页的某一轮翻译以**整轮级的失败**收尾（content/page/batch.js 的
+     * failsWholePass：账户不能用、配置错、扩展上下文没了）—— 手动那一轮、自动
+     * 这一轮、规则补翻、点标记重试，都由 batch.js 在同一处叫这里（D-490）。
+     *
+     * 那句失败说的是**这一页此刻怎么翻都一样**，所以自动会话跟着停：代次翻篇，
+     * 队列和 inflight 一并作废，在途那一轮回来时不再把块放回队列；发现层停掉，
+     * 状态落在 ERROR 上、记下理由。不停的话，手动那一轮一收尾，等在 isTranslatingPage
+     * 上的那次 pump 就把同一批块再送一遍 —— 自动引擎是内置或用户自己的 AI 时，
+     * 页面上冒出一份他没要过的译文；是 Blab 时，同一句拒绝再要一次。
+     *
+     * 自动会话本来就没在跟这一页（OFF / PAUSED / 已经 ERROR）就没什么可停的。
+     * 重来要一句明确的话：「继续」、改设置、换路由（都走 start()）。
+     */
+    function stopForPassFailure(message) {
+      if (!isOn()) return;
+      bumpSession('pass-failure');
+      broken = true;
+      lastError = message;
+      stopDiscovery();
+      setStatus(STATUS.ERROR);
+      console.warn('Blab Translation: auto translation stopped for this page —', message);
+    }
+
+    /**
      * 「继续翻这一页」。
      *
      * **藏着译文的时候，继续就是把译文放回来。** 这一页会停下来只有两种可能：
@@ -682,9 +709,14 @@
       // 翻译，这一页新长出来的内容照旧不跟，而他刚刚要的就是翻。
       //
       // 解了闩就得重开一轮，哪怕这一页早就表过态了：那一轮正停在闩上。
+      //
+      // 出错停下的那一页同理（broken）：上一次整页翻译以账户错误收场时，自动会话
+      // 跟着停了（stopForPassFailure）。他订阅或重新登录后再点一次，自动这边该跟着
+      // 回来，而不是等换页。账户还是不能用的话，这一轮的请求在 Blab 客户端的闩上
+      // 就地被拒（background/blab-client.js），手动那一轮一收尾，这里又停下。
       const wasHeld = pausedByUser;
       pausedByUser = false;
-      if (explicit && !wasHeld) return;
+      if (explicit && !wasHeld && !broken) return;
       explicit = true;
       start('explicit');
     }
@@ -745,10 +777,19 @@
     ctx.onLanguagePackReady(() => start('language-pack'));
     // 本页生效的用户站点规则变了：与 RESTART_KEYS 同一条路。引擎改成内置能叫醒
     // 费用闸停下的页面；删掉一条 exclude，进带时被摘掉的块也要重扫才回得来。
-    ctx.customRules.onChange(() => start('custom-rule'));
+    //
+    // 这两条只叫醒没出错的页面（D-497 R1-N3）：出错停下的那一页（broken）要等这一页
+    // 上的一句话 —— 改设置、语言包装好、「继续」、换路由。规则和配置档常常是在别的
+    // 标签页改的，和这一页的失败无关；顺手重开会把一页停在 Blab 账户错误上的页面
+    // 用另一个引擎悄悄翻掉。
+    ctx.customRules.onChange(() => {
+      if (!broken) start('custom-rule');
+    });
     // AI 配置档变了（任何一档，含只改了 Key 的写入：公开镜像看不见 Key，但照样
     // 通知）：与 RESTART_KEYS 同一条路，改对了 Key / 地址 / 模型的页面自己重来。
-    ctx.aiProfiles.subscribe(() => start('ai-profiles'));
+    ctx.aiProfiles.subscribe(() => {
+      if (!broken) start('ai-profiles');
+    });
     start('load');
 
     return {
@@ -773,6 +814,7 @@
       pauseCurrentPage,
       resumeCurrentPage,
       markPageExplicit,
+      stopForPassFailure,
       // 子 frame 的指令变了（content/frames/child.js）：重新判、重新扫。
       restart: start,
       isOn,

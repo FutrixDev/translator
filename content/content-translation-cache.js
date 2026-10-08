@@ -169,8 +169,10 @@
     await ctx.aiProfiles.whenReady();
     const snap = await ctx.engine.glossary.current(message.targetLang);
     const addendaSettings = ctx.engine.addenda.settings();
-    const profile = ctx.aiProfiles.resolve(message.feature);
-    const sendOpts = { glossary: snap, addendaSettings, profile };
+    // 模型引擎与档（content/engine/model.js）：Blab 那一档的接口地址与模型都是 'blab'。
+    const model = ctx.engine.model.forRequest(message);
+    const profile = model.resolved;
+    const sendOpts = { glossary: snap, addendaSettings, model };
     // 这个功能没有可用的档：没有键可建，交给送出那一步报出真实原因（未配置 / 档已删）。
     if (!profile.profile) return ctx.sendTranslation(message, sendOpts);
     // message.addenda 是发起请求那一页的语域（R33 A4）：同一段文字在论坛上和在

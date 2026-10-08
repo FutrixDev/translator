@@ -198,8 +198,8 @@
       ctx.beginScopeRound();
       const blocks = await ctx.filterBlocksByLanguage(ctx.collectPageBlocks());
       if (!blocks.length) return;
-      const error = await ctx.runTranslationPass(blocks);
-      if (error) console.error('Blab Translation: custom rule catch-up round failed:', error);
+      const failure = await ctx.runTranslationPass(blocks);
+      if (failure) console.error('Blab Translation: custom rule catch-up round failed:', failure.message);
     } catch (error) {
       console.error('Blab Translation: custom rule catch-up round failed', error);
     } finally {

@@ -19,6 +19,7 @@ An AI-powered Chrome browser translation extension that supports selection trans
 ### ✨ Features
 
 #### Smart Translation
+- **Three Engines**: Chrome's built-in translator (offline, the default), your own AI model (your API key, your endpoint), or **Blab Translation** (included with a Blab subscription, no API key; the text is sent to Blab's servers). Choose under Settings → Translation engine; Blab can be chosen once this device is signed in to a plan that includes it
 - **Math Formula Preservation**: Automatically detects and preserves MathJax/KaTeX formulas without translation
 - **Code Block Protection**: Code snippets remain untouched during translation
 - **Elegant Menu Translation**: Sidebar translations align perfectly with original text (not icons)
@@ -28,7 +29,7 @@ An AI-powered Chrome browser translation extension that supports selection trans
 - A small translate icon appears next to the last line of a selection; click it to open the translation card
 - Or press the modifier key (⌘ on Mac, Ctrl elsewhere); Settings → Selection trigger picks icon, modifier key, or both
 - The card sits beside the selection instead of covering it, and shrinks and scrolls when the text is long
-- Card actions: retranslate, switch between Chrome built-in and your AI for this card, copy, and read aloud
+- Card actions: retranslate, switch engine for this card (Chrome built-in, your AI, or Blab Translation), copy, and read aloud
 - The card shows which engine translated it; errors show on the card, never as a translation
 - The modifier key, float ball and right-click menu follow the display setting (card or inline)
 
@@ -365,6 +366,7 @@ MIT License
 ### ✨ 功能特性
 
 #### 智能翻译
+- **三个引擎**：Chrome 内置翻译（离线，默认）、你自己的 AI 模型（你的 API Key、你的接口），或 **Blab Translation**（Blab 订阅包含，不需要 API Key；文字会发到 Blab 的服务器）。在 设置 → 翻译引擎 里选；本设备登录了包含它的订阅后才能选
 - **数学公式保留**：自动识别并保留 MathJax/KaTeX 数学公式，不会被翻译破坏
 - **代码块保护**：代码片段在翻译过程中保持原样不变
 - **优雅的菜单翻译**：侧边栏译文与原文精确对齐（而非与图标对齐）
@@ -374,7 +376,7 @@ MIT License
 - 选中文字后，末行旁边出一个小翻译图标，点它打开翻译卡片
 - 也可以按修饰键（Mac 上是 ⌘，其他系统是 Ctrl）；设置 → 划词触发方式可选图标、修饰键或两者都要
 - 卡片贴着选区放，不盖住选中的字；原文很长时卡片缩高、内容区内部滚动
-- 卡片操作：重译、在 Chrome 内置和我的 AI 之间换引擎（只对这张卡片）、复制、朗读
+- 卡片操作：重译、换引擎（Chrome 内置、我的 AI 或 Blab Translation，只对这张卡片）、复制、朗读
 - 卡片标出这次是哪个引擎译的；出错显示在卡片上，不会当成译文
 - 修饰键、悬浮球和右键菜单按显示方式设置出卡片或段落下方译文
 

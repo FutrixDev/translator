@@ -91,10 +91,10 @@
    * 枚举表。合法值都从共享模块现取，调用方传进来，不在第二处写死。
    * 值是数组；'' 表示「跟随 / 未设」的那几个键把它列进去。
    */
-  function buildEnums({ uiLanguages, targetLangs, cloudTargets, styles, domains }) {
+  function buildEnums({ uiLanguages, targetLangs, cloudTargets, styles, domains, engines }) {
     return {
-      translationEngine: ['builtin', 'ai'],
-      autoTranslateEngine: ['builtin', 'ai'],
+      translationEngine: [...engines],
+      autoTranslateEngine: [...engines],
       engineFallback: ['local-only', 'allow-ai'],
       selectionTranslationMode: ['inline', 'popup'],
       selectionTrigger: ['icon', 'modifier', 'both'],

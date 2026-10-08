@@ -17,6 +17,7 @@ await import('../../shared/prompt-addenda.js');
 await import('../../shared/api-compat.js');
 // custom-rules.js 在加载时取走 AIProfiles（规则 v3 的 profile，P1-D）。
 await import('../../shared/ai-profiles.js');
+await import('../../shared/engines.js');
 await import('../../shared/custom-rules.js');
 await import('../../shared/settings-transfer.js');
 const { CustomRules, SettingsTransfer } = globalThis;
@@ -45,6 +46,8 @@ function loadCard(stored) {
     SettingsTransfer,
     // 规则编辑器的领域下拉按 PromptAddenda.DOMAINS 画（options.html 里排在卡片之前）。
     PromptAddenda: globalThis.PromptAddenda,
+    // 引擎下拉按 Engines.ENGINES 画（D-479，options.html 里同样排在卡片之前）。
+    Engines: globalThis.Engines,
     console,
     currentUILang: 'en',
     syncAutoEngineState() {},

@@ -14,6 +14,7 @@
 // 消息监听只认这三条：别的消息既不回话也不 return true。
 
 import '../shared/api-compat.js';
+import '../shared/engines.js';
 import { callModel } from './model-client.js';
 import { profileError, replyError } from './api-errors.js';
 import { defaultSettings } from './settings.js';
@@ -39,9 +40,13 @@ async function profiles() {
   return globalThis.AIProfiles.collection.cached();
 }
 
-/** 消息里带来的那一档（含 Key）。没带 id 是调用方的错；带了却不在是用户能看到的错。 */
+/**
+ * 消息里带来的那一档（含 Key）。没带 id 是调用方的错；带了却不在是用户能看到的错。
+ * 'blab' 引擎的请求带的是 Engines.BLAB_PROFILE 的 id：那一档不存储，原样回它。
+ */
 async function profileById(id) {
   if (!id) throw new TypeError('profileById: the request carries no profileId');
+  if (id === globalThis.Engines.BLAB_PROFILE.id) return globalThis.Engines.BLAB_PROFILE;
   const profile = (await profiles()).find((entry) => entry.id === id);
   if (!profile) throw profileError('aiProfileMissing', id);
   return profile;

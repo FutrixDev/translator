@@ -25,6 +25,8 @@ import '../shared/sync-collection.js';
 // AI 配置档（P1-D）：同样建在集合上，还取走 APICompat；custom-rules.js 在加载时
 // 取走它（规则 v3 的 profile 按集合的 id 形状校验），所以排在规则之前。
 import '../shared/ai-profiles.js';
+// 引擎取值只有一份（D-479）；custom-rules.js 校验规则的 engine 时读它。
+import '../shared/engines.js';
 import '../shared/custom-rules.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
@@ -62,6 +64,7 @@ import '../i18n/lang/pt.js';
 import '../i18n/lang/ru.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
+import { dailyLimitHeld, noteAccountAction, refreshAfterAccountAction } from './blab-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter, openShortcutSettings } from './media-hints.js';
@@ -133,13 +136,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 两条翻译消息都带内容脚本选好的 profileId（和它为哪个功能选的 feature，只用来
     // 记日志）；SW 不再替它选档。
     case 'TRANSLATE':
-      handleTranslate(message.text, message.targetLang, message.mode, message.profileId, message.feature, message.addenda)
+      handleTranslate(message.text, message.targetLang, message.mode, message.profileId, message.feature, message.auto || message.unattended, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true; // Keep channel open for async response
 
     case 'TRANSLATE_BATCH_FAST':
-      handleBatchTranslateFast(message.texts, message.targetLang, message.profileId, message.feature, message.addenda)
+      handleBatchTranslateFast(message.texts, message.targetLang, message.profileId, message.feature, message.auto || message.unattended, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -193,6 +196,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'COMIC_SIGN_IN':
       replyComic(comicClient.signIn(), sendResponse);
+      return true;
+
+    // The entry on a Blab Translation account error (the page's error bar, the
+    // selection card; reply.action from api-errors.js): "Subscribe" opens the
+    // pricing page in a new tab, "Sign in" runs the same sign-in flow as the
+    // popup and the settings page. A page cannot build the pricing link itself:
+    // the account site's origin lives here.
+    case 'BLAB_ACCOUNT_ACTION':
+      replyComic(runBlabAccountAction(message.action), sendResponse);
+      return true;
+
+    // Whether this worker remembers today's Blab allowance as spent (a
+    // daily_limit the service answered, blab-client.js). The popup asks it
+    // beside COMIC_ACCOUNT: billing/me's `used` is one answer, the latch the
+    // other, and either keeps the engine's dot off green (D-497 F1).
+    case 'BLAB_DAILY_LIMIT':
+      replyComic(dailyLimitHeld().then(held => ({ held })), sendResponse);
       return true;
 
     case 'COMIC_SIGN_OUT':
@@ -293,6 +313,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+async function runBlabAccountAction(action) {
+  if (action !== 'signin' && action !== 'subscribe') {
+    throw new Error(`BLAB_ACCOUNT_ACTION: unknown action ${JSON.stringify(action)}`);
+  }
+  // The user went to fix the account: the next request asks billing/me again
+  // before the latch refuses it (D-497 F3, blab-client.js). Written to session
+  // storage before the entry opens (D-499), so the worker being recycled while
+  // the user is on the site does not lose it.
+  await noteAccountAction();
+  if (action === 'signin') return comicClient.signIn();
+  const base = await comicClient.getApiBase();
+  const url = globalThis.Engines.blabPricingUrl(base);
+  if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
+  await chrome.tabs.create({ url });
+  return { opened: url };
+}
+
 /**
  * Settle a comic-client promise into a plain message.
  *
@@ -363,8 +400,18 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // 是缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。失败
 // 只在 replyError 记一次日志（操作名、档 id、功能、原始错误）。
 
+// The Blab engine's step before translating: after the user clicked an account
+// entry, ask billing/me again so a plan bought since releases the latch
+// (blab-client.js, D-497 F3). Other profiles have no account to ask.
+// `zeroClick` is the switch's `message.auto || message.unattended`: the
+// automatic pass and subtitles, the two paths nobody clicked for. Anything
+// else (a click, a selection, the manual page pass) is a person asking now.
+async function beforeModelRequest(profile, zeroClick) {
+  if (globalThis.Engines.isBlabProfile(profile)) await refreshAfterAccountAction({ explicit: !zeroClick });
+}
+
 // Handle single text translation
-async function handleTranslate(text, targetLang, mode, profileId, feature, addenda) {
+async function handleTranslate(text, targetLang, mode, profileId, feature, zeroClick, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
   let profile;
   try {
@@ -374,6 +421,7 @@ async function handleTranslate(text, targetLang, mode, profileId, feature, adden
       return { error: missingKey };
     }
     globalThis.PromptAddenda.validate(addenda);
+    await beforeModelRequest(profile, zeroClick);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
     return await translateTextWithMode(text, effectiveLang, profile, settings, mode === 'word', addenda);
   } catch (error) {
@@ -382,7 +430,7 @@ async function handleTranslate(text, targetLang, mode, profileId, feature, adden
 }
 
 // Handle fast batch translation (the delimiter is shared/batch-delimiter.js)
-async function handleBatchTranslateFast(texts, targetLang, profileId, feature, addenda) {
+async function handleBatchTranslateFast(texts, targetLang, profileId, feature, zeroClick, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
   let profile;
   try {
@@ -392,6 +440,7 @@ async function handleBatchTranslateFast(texts, targetLang, profileId, feature, a
       return { error: missingKey };
     }
     globalThis.PromptAddenda.validate(addenda);
+    await beforeModelRequest(profile, zeroClick);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
     const translations = await translateBatchFastWithAI(texts, effectiveLang, profile, settings, addenda);
     return { translations };

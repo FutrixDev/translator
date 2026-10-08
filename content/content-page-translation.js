@@ -100,16 +100,16 @@
 
       // 进度条归这里管，翻译轮次只报数：自动翻译将来要跑不露面的增量轮次，
       // 那时候同一个 runTranslationPass 不该拖着一条进度条。
-      const batchError = await ctx.runTranslationPass(translatableBlocks, {
+      const failure = await ctx.runTranslationPass(translatableBlocks, {
         onProgress: (done) => {
           state.translationProgress.current = done;
           ctx.updatePageTranslationProgress(done, state.translationProgress.total);
         }
       });
 
-      // Check if there was an error during translation
-      if (batchError) {
-        ctx.showTranslationError(batchError);
+      // 整轮失败：那句话连同它的入口（订阅 / 登录，Blab 账户的错误才有）一起上错误条。
+      if (failure) {
+        ctx.showTranslationError(failure.message, failure.action);
       } else {
         // 标记页面已翻译
         state.pageHasBeenTranslated = true;

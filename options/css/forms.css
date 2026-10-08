@@ -397,3 +397,44 @@
 .btn-preset:hover svg {
   opacity: 1;
 }
+
+/* Blab Translation's line under each engine select (options-blab.js). Its
+   display outranks [hidden] the same way .hint's does, so it restates it. */
+.blab-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.blab-note[hidden] {
+  display: none;
+}
+
+.blab-note .blab-note-text {
+  flex: 1 1 240px;
+}
+
+.blab-note-warning {
+  padding: 8px 12px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+/* Subscribe is a button (it goes through the worker, options-blab.js) drawn as
+   the link it replaced: the UA's underline and pointer, none of a button's. */
+.blab-note .blab-note-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--accent-primary);
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}

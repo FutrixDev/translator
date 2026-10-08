@@ -74,11 +74,12 @@ function confirmUnattendedAiSpend(messageKey) {
   return window.confirm(t(messageKey));
 }
 
-// 说了不，就把值退回 builtin 并且**什么都不写** —— 退回之后再存一次是多余
-// 的：存起来的本来就是 builtin。
+// 说了不，就把值退回改之前存着的那个引擎并且**什么都不写** —— 退回之后再存一
+// 次是多余的：存起来的本来就是它。改之前可能是 builtin，也可能是 Blab
+// Translation；选 Blab 不过这道确认：它花的是订阅里的额度，不是用户自己的钱（§5.4）。
 function onAutoEngineChange() {
   if (elements.autoTranslateEngine.value === 'ai' && !confirmUnattendedAiSpend('autoTranslateEngineAiConfirm')) {
-    elements.autoTranslateEngine.value = 'builtin';
+    elements.autoTranslateEngine.value = Engines.normalizeEngine(lastGoodSettings && lastGoodSettings.autoTranslateEngine);
     syncAutoEngineState();
     return;
   }

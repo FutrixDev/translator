@@ -16,7 +16,8 @@
 //     and the row is read in the target language;
 //   - render() puts model strings on the page as text, never as HTML, and
 //     stops the old entry's speaker before replacing it;
-//   - only an AI answer in word mode carries an entry (entryFor).
+//   - only a model engine's answer ('ai' or 'blab') in word mode carries an
+//     entry (entryFor).
 //
 // That the dialog and the card draw the same entry is checked on the page:
 // test/e2e/dictionary-entry.spec.js compares the two.
@@ -28,6 +29,7 @@ import { repoSource, workerSource } from './helpers/sources.mjs';
 
 // render() reads LangTags; the manifest loads it first (checked below).
 await import('../../shared/lang-tags.js');
+await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
   FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
@@ -304,11 +306,13 @@ test('both word prompts are built from the shared rules', () => {
 
 // ---- entryFor -------------------------------------------------------------
 
-test('only an AI answer in word mode carries an entry', () => {
-  assert.deepEqual(entryFor('word', { engine: 'ai', translation: '跑', entry: FULL }), FULL);
+test('only a model engine answer (ai or blab) in word mode carries an entry', () => {
+  for (const engine of ['ai', 'blab']) {
+    assert.deepEqual(entryFor('word', { engine, translation: '跑', entry: FULL }), FULL, engine);
+    assert.equal(entryFor('text', { engine, translation: '跑' }), null, engine);
+    assert.throws(() => entryFor('word', { engine, translation: '跑' }), /carries no entry/, engine);
+  }
   assert.equal(entryFor('word', { engine: 'builtin', translation: '跑' }), null);
-  assert.equal(entryFor('text', { engine: 'ai', translation: '跑' }), null);
-  assert.throws(() => entryFor('word', { engine: 'ai', translation: '跑' }), /carries no entry/);
 });
 
 // ---- render ---------------------------------------------------------------

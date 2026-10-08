@@ -210,7 +210,7 @@ async function loadSettings() {
     const targetLang = TargetLang.effective(result);
     renderLanguageOptions(getUILanguage(result.uiLanguage));
 
-    elements.translationEngine.value = result.translationEngine === 'ai' ? 'ai' : 'builtin';
+    elements.translationEngine.value = Engines.normalizeEngine(result.translationEngine);
     elements.engineFallback.value = result.engineFallback === 'allow-ai' ? 'allow-ai' : 'local-only';
     elements.targetLang.value = targetLang;
     elements.enableSelection.checked = result.enableSelection;
@@ -229,7 +229,7 @@ async function loadSettings() {
     elements.pageTranslateScope.value = result.pageTranslateScope === 'page' ? 'page' : 'main';
     // 默认开，所以只有存着的 false 才关得掉它。
     elements.autoTranslate.checked = result.autoTranslate !== false;
-    elements.autoTranslateEngine.value = result.autoTranslateEngine === 'ai' ? 'ai' : 'builtin';
+    elements.autoTranslateEngine.value = Engines.normalizeEngine(result.autoTranslateEngine);
     elements.autoAiDailyBudget.value = String(
       Number.isFinite(result.autoAiDailyBudget) && result.autoAiDailyBudget > 0
         ? Math.floor(result.autoAiDailyBudget)
@@ -337,7 +337,7 @@ let targetLangChosen = false;
 // saved by options-ai-profiles.js.
 function collectSettings() {
   return {
-    translationEngine: elements.translationEngine.value,
+    translationEngine: Engines.normalizeEngine(elements.translationEngine.value),
     engineFallback: elements.engineFallback.value,
     // 没选过就存空串：空是「跟随浏览器」的哨兵，选择器上那个值只是回显。
     targetLang: targetLangChosen ? elements.targetLang.value : '',
@@ -355,7 +355,7 @@ function collectSettings() {
     translationStyle: elements.translationStyle.value,
     pageTranslateScope: elements.pageTranslateScope.value === 'page' ? 'page' : 'main',
     autoTranslate: elements.autoTranslate.checked,
-    autoTranslateEngine: elements.autoTranslateEngine.value === 'ai' ? 'ai' : 'builtin',
+    autoTranslateEngine: Engines.normalizeEngine(elements.autoTranslateEngine.value),
     // 空着、负数、写了字母，都是「不限」——和 AutoStats.budgetExceeded 同一个约定。
     autoAiDailyBudget: Math.max(0, Math.floor(Number(elements.autoAiDailyBudget.value) || 0)),
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
@@ -848,6 +848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSyncMirror();
   setupCustomRules();
   setupGlossary();
+  setupBlabEngine();
   setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in
   // the worker, and every task row rendered before it lands would be a row
@@ -858,5 +859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // one thing that genuinely needs the answer — the sign-in gate — can wait for
   // it rather than read a `comicSignedIn` that is only false because the
   // request has not landed yet.
-  comicAccountReady = refreshComicAccount().catch(() => {});
+  // force: the Blab Translation option reads this account (options-blab.js), and
+  // a subscription bought a minute ago must not wait out the worker's 30s cache.
+  comicAccountReady = refreshComicAccount({ force: true }).catch(() => {});
 });

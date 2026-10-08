@@ -39,9 +39,19 @@
 //   clock         单测替换的时钟 { random(), sleep(ms, signal), now(), setTimer(fn, ms),
 //                 clearTimer(handle) }；
 //   limiter       单测替换的限速器（model-limiter.js 的 createLimiter()）。
+//
+// 两种送法（transportFor，按档认一次）：用户自己的 AI 档直连服务商（modelRequest
+// + sendToProvider）；Engines.BLAB_PROFILE 发到账户的 /api/blab/complete
+// （blab-client.js，D-477）。重试、限速、keepalive、超时与总预算两边是同一套。
+// 重试与否也按送法（transport.retryable）：AI 档照 isRetryable；Blab 只重试连不上
+// （network）—— 5xx 与超时服务端已经对上游重试过，再试一次是把等待翻倍（D-497 F7）；
+// 那几种账户状态（daily_limit / plan_required / unauthorized）带 retryable: false，
+// 本来就不重试（设计 §5.2）。
 
 import '../shared/api-compat.js';
+import '../shared/engines.js';
 import { modelRequest, apiError } from './api-client.js';
+import { blabRequest, sendBlab } from './blab-client.js';
 import { acquire as holdKeepalive, release as dropKeepalive } from './keepalive.js';
 import { limiter as productLimiter } from './model-limiter.js';
 
@@ -116,23 +126,77 @@ function parseRetryAfter(value, now) {
 
 /** 这一次失败之后还要不要再试。apiFailure 之外的错误（调用方取消、程序错）一律不试。 */
 function isRetryable(failure) {
-  if (!failure || failure.empty) return false;
+  if (!failure || failure.empty || failure.retryable === false) return false;
   if (failure.network || failure.timeout) return true;
   const status = Number(failure.status);
   return status === 429 || (status >= 500 && status <= 599);
 }
 
 /**
+ * 直连服务商的一次发送：`signal` 是这一次尝试自己的。被它断开的，原样把错误抛
+ * 回去，由 attemptOnce 说成超时或取消；其余连不上的是网络错。
+ */
+async function sendToProvider(prepared, signal, clock) {
+  const { endpoint, claudeShape, headers, body } = prepared;
+  let response;
+  try {
+    response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw apiError(`Network error: ${endpoint}`, { network: true, status: 0, detail: '', endpoint });
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (signal.aborted) throw error;
+    data = {};
+  }
+
+  const result = readAPIResponse(data, response.status, response.ok, claudeShape);
+  if (result.failure) {
+    const { status, detail } = result.failure;
+    const failure = { ...result.failure, network: false, endpoint };
+    // Retry-After 在响应头里，readAPIResponse 只看正文：这里读，带到失败对象上。
+    const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), clock.now());
+    if (retryAfterMs !== null) failure.retryAfterMs = retryAfterMs;
+    throw apiError(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`, failure);
+  }
+  if (!result.text) {
+    throw apiError(`Empty answer: ${endpoint}`, { empty: true, status: response.status, detail: '', endpoint });
+  }
+  return { text: result.text };
+}
+
+/** Blab 那一档只重试连不上的（fetch 被拒）：服务端的 5xx、这一端的超时都不再试。 */
+function isBlabRetryable(failure) {
+  return Boolean(failure) && failure.network === true && failure.retryable !== false;
+}
+
+const PROVIDER_TRANSPORT = Object.freeze({ prepare: modelRequest, send: sendToProvider, retryable: isRetryable });
+const BLAB_TRANSPORT = Object.freeze({
+  prepare: (_profile, request) => blabRequest(request), send: sendBlab, retryable: isBlabRetryable,
+});
+
+/** 这一档怎么发：Blab 那一档按 id 认（shared/engines.js），其余都是用户自己的 AI 档。 */
+function transportFor(profile) {
+  return globalThis.Engines.isBlabProfile(profile) ? BLAB_TRANSPORT : PROVIDER_TRANSPORT;
+}
+
+/**
  * 一次尝试：自己的超时、自己的 AbortController，调用方的 signal 转过来。
  * 超时取 min(timeoutSec, 剩余预算)；被预算截短时文案写实际等的整秒数。
+ * 发送本身交给 transport.send；它因这个 signal 失败的，这里说成超时或取消。
+ * 同一刻已经拿到真实失败（apiFailure）的不改说法。
  */
-async function attemptOnce(profile, prepared, signal, clock, deadline) {
+async function attemptOnce(profile, transport, prepared, signal, clock, deadline) {
   const fullMs = profile.timeoutSec * 1000;
   const remainingMs = deadline - clock.now();
   const cut = remainingMs < fullMs;
   const limitMs = cut ? remainingMs : fullMs;
   const seconds = cut ? wholeSeconds(limitMs) : profile.timeoutSec;
-  const { endpoint, claudeShape, headers, body } = prepared;
+  const { endpoint } = prepared;
   const controller = new AbortController();
   let timedOut = false;
   const timer = clock.setTimer(() => {
@@ -144,46 +208,16 @@ async function attemptOnce(profile, prepared, signal, clock, deadline) {
     if (signal.aborted) controller.abort();
     else signal.addEventListener('abort', onCallerAbort, { once: true });
   }
-  const abortError = () => {
-    if (timedOut) return apiError(`Timeout after ${seconds}s: ${endpoint}`, { timeout: true, seconds, endpoint });
-    return callerAborted();
-  };
 
   try {
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (_) {
-      if (controller.signal.aborted) throw abortError();
-      throw apiError(`Network error: ${endpoint}`, { network: true, status: 0, detail: '', endpoint });
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch (_) {
-      if (controller.signal.aborted) throw abortError();
-      data = {};
-    }
-
-    const result = readAPIResponse(data, response.status, response.ok, claudeShape);
-    if (result.failure) {
-      const { status, detail } = result.failure;
-      const failure = { ...result.failure, network: false, endpoint };
-      // Retry-After 在响应头里，readAPIResponse 只看正文：这里读，带到失败对象上。
-      const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), clock.now());
-      if (retryAfterMs !== null) failure.retryAfterMs = retryAfterMs;
-      throw apiError(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`, failure);
-    }
-    if (!result.text) {
-      throw apiError(`Empty answer: ${endpoint}`, { empty: true, status: response.status, detail: '', endpoint });
-    }
-    return { text: result.text };
+    return await transport.send(prepared, controller.signal, clock);
+  } catch (error) {
+    // 带 apiFailure 的是服务端真给过的回答（或账户闩），哪怕 signal 恰好同时断了
+    // 也照原样抛：说成超时或取消会把真实原因盖掉。transport 只在 signal 断开时
+    // 抛不带 apiFailure 的原错误，那才是这里要改说法的。
+    if (!controller.signal.aborted || (error && error.apiFailure)) throw error;
+    if (timedOut) throw apiError(`Timeout after ${seconds}s: ${endpoint}`, { timeout: true, seconds, endpoint });
+    throw callerAborted();
   } finally {
     clock.clearTimer(timer);
     if (signal) signal.removeEventListener('abort', onCallerAbort);
@@ -221,13 +255,13 @@ async function acquireWithin(limiter, profile, signal, clock, gateAt, endpoint) 
 }
 
 /**
- * 第 attempt 次失败之后等多久再试；不该再试就回 null。
+ * 第 attempt 次失败之后等多久再试；不该再试（transport.retryable 说不）就回 null。
  * Retry-After 超过 60 秒的，在 failure 上记下秒数（rateLimitedWait）再判失败：
  * 这一条排在「最后一次」之前，所以第一次就回 Retry-After: 120 的请求只发一次。
  */
-function nextWait(error, attempt, maxAttempts, clock) {
+function nextWait(error, attempt, maxAttempts, clock, transport) {
   const failure = error && error.apiFailure;
-  if (!isRetryable(failure)) return null;
+  if (!transport.retryable(failure)) return null;
   if (failure.retryAfterMs > RETRY_AFTER_MAX_SEC * 1000) {
     // 「请等 N 秒」只说给 429：5xx 叫你等 2 分钟是服务端出了事，按状态码措辞。
     if (Number(failure.status) === 429) failure.rateLimitedWait = Math.ceil(failure.retryAfterMs / 1000);
@@ -243,7 +277,8 @@ async function callModel(profile, request, {
 } = {}) {
   if (!(profile.timeoutSec > 0)) throw new TypeError('callModel: profile.timeoutSec must be a positive number');
   const { budgetMs, minAttemptMs } = budgetLimits();
-  const prepared = modelRequest(profile, request);
+  const transport = transportFor(profile);
+  const prepared = transport.prepare(profile, request);
   const maxAttempts = retry ? MAX_ATTEMPTS : 1;
   const deadline = clock.now() + budgetMs;
 
@@ -257,13 +292,13 @@ async function callModel(profile, request, {
         : null;
       let error;
       try {
-        return await attemptOnce(profile, prepared, signal, clock, deadline);
+        return await attemptOnce(profile, transport, prepared, signal, clock, deadline);
       } catch (caught) {
         error = caught;
       } finally {
         if (releaseModelSlot) releaseModelSlot();
       }
-      const wait = nextWait(error, attempt, maxAttempts, clock);
+      const wait = nextWait(error, attempt, maxAttempts, clock, transport);
       // 等完之后剩的预算不够一次有意义的尝试，就不等了：上一次的失败原样抛。
       if (wait === null || clock.now() + wait + minAttemptMs > deadline) {
         error.attempts = attempt;
