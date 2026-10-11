@@ -557,9 +557,9 @@
     // 标题说这次是哪个引擎译的（原来恒写「AI 翻译」，内置和 Blab 译出来也这么写）。
     // 没有引擎（扩展上下文没了、请求抛错）就回到中性的「翻译」。
     popup.querySelector('.ai-translator-title').textContent = t(engine ? CARD_TITLE[engine] : 'translate');
+    ctx.showEngineTag(tag, engine);
     const requestId = popup.dataset.requestId;
-    await renderEngineChoice({
-      tag,
+    await ctx.offerEngineSwitch({
       button: switchBtn,
       engine,
       targetLang: popup.dataset.targetLang,
@@ -568,55 +568,9 @@
     });
   }
 
-  // 引擎标签与「换到…」按钮文字，每个引擎一条（Engines.ENGINES）。卡片和输入框对话框共用。
-  const CARD_ENGINE_TAG = { builtin: 'cardEngineBuiltin', ai: 'cardEngineAi', blab: 'cardEngineBlab' };
+  // 卡片标题说这次是哪个引擎译的，每个引擎一条（Engines.ENGINES）。标签与「换到…」按钮在
+  // content-engine-choice.js。
   const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab' };
-  const CARD_USE_ENGINE = { builtin: 'cardUseBuiltin', ai: 'cardUseAi', blab: 'cardUseBlab' };
-
-  /**
-   * 「这次是谁译的、能换到谁」的唯一一份画法：划词卡片（settleCardActions）和输入框
-   * 对话框（content-input-dialog.js，内置引擎查词时的说明行）都调它，谁也不自己拼。
-   *
-   * tag 写上 engine 的标签（没有 engine 就藏起来）。给了 button 才去问另一边此刻能不能用
-   * （ctx.engineChoices，按 feature 解析 AI 档）：能用就露出按钮、dataset.engine 记下换到
-   * 谁、文字说换到哪边；不能用就藏。问的这一下要 await，回来时 isCurrent() 不再成立
-   * （又发了一次请求、卡片关了）就什么都不动——按钮停在原样，等下一次结算来定。
-   * 没给 button 时，标签在第一个 await 之前就画完了（同步）。
-   *
-   * 返回按钮上给出的那个引擎；没给 button、没得换或已不是当前请求都是 null。对话框
-   * 拿它决定「没得换」时露出「打开设置」。
-   *
-   * @param {{tag: HTMLElement, button: ?HTMLElement, engine: (string|undefined),
-   *   targetLang: string, feature: string, isCurrent: () => boolean}} options
-   * @returns {Promise<?string>}
-   */
-  async function renderEngineChoice({ tag, button = null, engine, targetLang, feature, isCurrent }) {
-    tag.textContent = engine ? t(CARD_ENGINE_TAG[engine]) : '';
-    tag.hidden = !engine;
-    if (!button) return null;
-    const other = await switchOffer(engine, targetLang, feature);
-    if (!isCurrent()) return null;
-    button.hidden = !other;
-    if (!other) return null;
-    button.dataset.engine = other;
-    button.querySelector('.ai-translator-btn-label').textContent = t(CARD_USE_ENGINE[other]);
-    button.disabled = false;
-    return other;
-  }
-
-  // 这次是 engine 答的，换到哪一个：按 Engines.ENGINES 的顺序取第一个「不是它、此刻
-  // 又能接这个功能、这门目标语言」的引擎（内置在前，所以 ai 与内置之间的老行为不变）；
-  // 一个都没有是 null。Blab 只在账户此刻能用时才给（设计 §5.4：不切到不可用的引擎）。
-  async function switchOffer(engine, targetLang, feature) {
-    if (!engine) return null;
-    try {
-      const choices = await ctx.engineChoices(targetLang, feature);
-      return globalThis.Engines.ENGINES.find((other) => other !== engine && choices[other]) || null;
-    } catch (error) {
-      console.error('Blab Translation: reading engine choices failed', error);
-      return null;
-    }
-  }
 
   // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
   // 什么都不写进设置。
@@ -728,5 +682,4 @@
   ctx.hideTranslationPopup = hideTranslationPopup;
   ctx.setupLanguageDropdown = setupLanguageDropdown;
   ctx.translateText = translateText;
-  ctx.renderEngineChoice = renderEngineChoice;
 })();

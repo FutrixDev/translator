@@ -153,6 +153,7 @@
         "content/content-video-captions.js",
         "content/content-selection.js",
         "content/content-float-ball.js",
+        "content/content-engine-choice.js",
         "content/content-popup.js",
         "content/content-add-term.js",
         "content/content-input-dialog.js",

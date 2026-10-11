@@ -264,7 +264,7 @@
       copyBtn.hidden = true;
       // The tag names who answered the last request; until this one answers it
       // names nobody. Every exit below either draws a new one or leaves it hidden.
-      ctx.renderEngineChoice({ tag: engineTag, engine: undefined, targetLang: '', feature: 'input', isCurrent });
+      ctx.showEngineTag(engineTag, null);
 
       try {
         if (!isExtensionContextAvailable()) {
@@ -290,7 +290,7 @@
 
         if (response.error) {
           showResult({ html: `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>` }, ctx.uiLanguage());
-          ctx.renderEngineChoice({ tag: engineTag, engine: response.engine, targetLang, feature: 'input', isCurrent });
+          ctx.showEngineTag(engineTag, response.engine);
           return;
         }
 
@@ -314,15 +314,17 @@
         const needsModel = mode === 'word' && response.engine === 'builtin';
         const askedButEmpty = !!entry && dictEl.hidden;
         showNote(needsModel ? t('inputDictNeedsModel') : askedButEmpty ? t('dictEntryEmpty') : '');
-        const offered = await ctx.renderEngineChoice({
-          tag: engineTag,
-          button: needsModel ? switchBtn : null,
-          engine: response.engine,
-          targetLang,
-          feature: 'input',
-          isCurrent,
-        });
-        if (needsModel && !offered && isCurrent()) settingsBtn.hidden = false;
+        ctx.showEngineTag(engineTag, response.engine);
+        if (needsModel) {
+          const offered = await ctx.offerEngineSwitch({
+            button: switchBtn,
+            engine: response.engine,
+            targetLang,
+            feature: 'input',
+            isCurrent,
+          });
+          if (!offered && isCurrent()) settingsBtn.hidden = false;
+        }
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
         if (!isCurrent()) return;
@@ -337,7 +339,7 @@
 
     // The line under the translation that says why no entry was drawn; '' hides
     // it. Its two buttons are shown only once the answer is known — the switch by
-    // ctx.renderEngineChoice when it has an engine to offer, settings when it has
+    // ctx.offerEngineSwitch when it has an engine to offer, settings when it has
     // none — so every new line starts with both hidden.
     function showNote(message) {
       noteText.textContent = message;
