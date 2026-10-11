@@ -105,7 +105,7 @@
     // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
     const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
     const scope = options && options.scope;
-    const limit = (options && options.limit) || Infinity;
+    const limit = options?.limit ?? Infinity;
     const scopeCut = scope && scope.skip ? (el) => ctx.pageScopeCut(el, scope) : null;
     const allowed = ctx.createTranslateJudge();
     // 用于检测代码/脚本内容的模式

@@ -220,8 +220,7 @@
     loadStyleText().then((css) => installStyle(root, css));
   }
 
-  // 每插一块译文调一次：批量回填（batch.js）和页内记忆装回（scope.js 的
-  // restoreRemembered）两个生产插入口都在 insertTranslationBlock 之后跟这一下。
+  // 每插一块译文调一次，紧跟在 insertTranslationBlock 之后。
   function afterInsertTranslation(block) {
     const element = block && block.element;
     if (!element || !element.isConnected) return;
