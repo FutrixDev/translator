@@ -1,7 +1,8 @@
 // Blab Translation — 整页翻译：分批与翻译轮次
 //
-// 一组块进来，译文落到页面上：按首屏排序、按 token/字符/条数分批、并发跑、
-// 失败到什么程度算整体故障。runTranslationPass 是这一轮的全部，
+// 一组块进来，译文落到页面上：按引擎定批的形状与并发，由拉取器
+// （content/page/focus-order.js 的 ctx.focusOrder）在每次拉取那一刻按视口与焦点
+// 组批、并发跑，失败到什么程度算整体故障。runTranslationPass 是这一轮的全部，
 // 它不碰进度条也不管“页面已翻译”那类状态——那些是调用方的事
 // （content/content-page-translation.js）。
 (function() {
@@ -163,32 +164,6 @@
       maxChars: MAX_BATCH_CHARS,
       maxTokens: MAX_BATCH_TOKENS
     };
-  }
-
-  // 并发控制（语言预检用）：按数组顺序取。
-  async function runWithConcurrency(items, processor, concurrency) {
-    const results = [];
-    let index = 0;
-    
-    async function runNext() {
-      const currentIndex = index++;
-      if (currentIndex >= items.length) return;
-      
-      await processor(items[currentIndex]);
-      results[currentIndex] = true;
-      
-      // 继续处理下一个
-      await runNext();
-    }
-    
-    // 启动 concurrency 个并发任务
-    const workers = [];
-    for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-      workers.push(runNext());
-    }
-    
-    await Promise.all(workers);
-    return results;
   }
 
   // 收集可翻译的块级元素
@@ -446,9 +421,12 @@
     if (!settings.skipTargetLanguageText) return blocks;
 
     const keep = new Array(blocks.length).fill(true);
-    const tasks = blocks.map((block, index) => ({ block, index }));
+    // 同一个拉取式并发池（ctx.focusOrder.drainFeeder），按文档顺序一块一块拉；
+    // 拉到的是 { block, index }，池子见到假值才收工，所以不直接拉块下标。
+    let cursor = 0;
+    const inOrder = { next: () => (cursor < blocks.length ? { block: blocks[cursor], index: cursor++ } : null) };
 
-    await runWithConcurrency(tasks, async ({ block, index }) => {
+    await ctx.focusOrder.drainFeeder(inOrder, async ({ block, index }) => {
       try {
         if (await isTargetLanguageText(block.text)) {
           keep[index] = false;
@@ -456,7 +434,7 @@
       } catch (error) {
         console.warn('Blab Translation: Language pre-check failed', error);
       }
-    }, 8);
+    }, 8, () => false);
 
     return blocks.filter((_, index) => keep[index]);
   }
@@ -498,13 +476,16 @@
     // 彼此不一定相邻，「前一段 / 后一段」取出来可能是隔了几段的文字。设置页的说明
     // （aiPageContextHint）照此承诺，设计 docs/plans/2026-09-25-p1-c-glossary.md §4.3。
     const withNeighbours = auto ? noNeighbours : neighbourContext(blocks);
-    // 失败段落标记（content/page/failed-blocks.js）。手动那一轮每个失败点都放；自动
-    // 那一轮不放 —— 第二次失败（giveUp，content/content-auto-translate.js）才放。点
-    // 标记重试的那一轮是用户点出来的，显式传 markFailures: true。
+    // 失败段落标记（content/page/failed-blocks.js）。手动那一轮每个失败点都放；
+    // 自动那一轮不放 —— 它的第一次失败只是进台账，第二次失败（giveUp）才放，
+    // 那一刻在 content/content-auto-translate.js。点标记重试的那一轮是用户点出来
+    // 的，即便沿用自动的引擎也要放，所以它显式传 markFailures: true。
     // options.onBlockFailed(block, reason)：每一个失败点都报给调用方，与放不放标记
-    // 无关（giveUp 要拿这一段自己的原因做标记的 title）。外面喊停（options.isAborted）
-    // 之后回来的失败不报、不放；累计阈值不算喊停：已发出、随后失败的几段照样放标记，
-    // 每一段都是一个可点的重试（设计 §7.1 D-J11）。stoppedOutside 定义在下面。
+    // 无关 —— 自动翻译在 giveUp 那一刻要拿这一段自己的原因做标记的 title。
+    // 外面喊停（换了路由、改了设置，options.isAborted）之后回来的失败不报、不放：
+    // 那一页已经不归这一轮管了。累计到三批的阈值不算：那时已经发出去、随后失败的
+    // 几段照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试（设计
+    // §7.1 D-J11）。stoppedOutside 定义在下面，这里只在调用时读它。
     const markFailures = typeof options.markFailures === 'boolean' ? options.markFailures : !auto;
     const reportFailure = typeof options.onBlockFailed === 'function' ? options.onBlockFailed : noBlockFailed;
     const markFailed = (block, reason) => {
@@ -543,9 +524,12 @@
 
     console.log(`Blab Translation: ${blocks.length} blocks, concurrency: ${concurrency}`);
 
-    // batchError 一旦置上，剩余批次全部跳过。累计到这么多次失败才算整体故障：内置
-    // 引擎一块一批，「一批失败就整页放弃」会让某一段的偶发失败带走后面几百块；
-    // 真故障时每块都失败，照样瞬间就停。
+    // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
+    // 在一批 40 段的年代这没问题：那种粒度下出错基本等于接口不可用。
+    // 内置引擎改成一块一批之后，同一个判断会让某一段的偶发失败带走后面几百块
+    // （并发 12，表现就是零散翻了十几块然后整片空白）。所以改成累计阈值：
+    // 攒够这么多次失败才认定是整体故障。真故障时每块都失败，照样瞬间就停，
+    // 不会白白多打几百次请求。
     const MAX_BATCH_FAILURES = 3;
     let batchError = null;
     let batchAction = null;
@@ -679,7 +663,7 @@
       await insertTranslation(block, combined, { accept, onSettled: settledBlock, target });
     };
 
-    // 使用 Promise 池进行并发控制
+    // 一批：ctx.focusOrder.drainFeeder 空出一个并发位就拉一批交到这里。
     const processBatch = async (batch) => {
       // 出错了，或者外面已经不要这一轮的结果了
       if (aborted()) return;

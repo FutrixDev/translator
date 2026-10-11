@@ -275,14 +275,15 @@
     return { next };
   }
 
-  // 拉取式并发池：空出一个并发位就拉下一批，评分发生在拉取那一刻。stopped() 为真
-  // 就不再拉。
+  // 拉取式并发池，页面翻译唯一的一个：空出一个并发位就 feeder.next() 拉下一项
+  // 交给 processor，拉到假值收工，stopped() 为真就不再拉。拉取器给的是一批块，
+  // 评分发生在拉取那一刻；batch.js 的语言预检给的是 { block, index }。
   async function drainFeeder(feeder, processor, concurrency, stopped) {
     const worker = async () => {
       while (!stopped()) {
-        const batch = feeder.next();
-        if (!batch) return;
-        await processor(batch);
+        const item = feeder.next();
+        if (!item) return;
+        await processor(item);
       }
     };
     await Promise.all(Array.from({ length: concurrency }, worker));
