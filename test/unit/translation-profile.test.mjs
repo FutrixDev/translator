@@ -23,6 +23,8 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
 await import('../../shared/engines.js');
+// 换代时清掉发现层的内容记忆（D-547 N3）；manifest 里它排在缓存层前面。
+await import('../../shared/block-identity.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const SOURCE = repoFile('content/content-translation-cache.js');
@@ -116,6 +118,30 @@ test('本站规则的引擎或领域变了（onProfileChange 回调）加一代�
   const child = load({ frameRole: 'child' });
   child.customRules.fire();
   assert.equal(child.profile.generation(), 0, '子帧只跟顶层的代数');
+});
+
+// D-547 N3：发现层装回用的内容记忆按旧设置记下的译文，换代就整张清掉 —— 顶层
+// 加代、子帧跟着 inherit 都算；不进 GENERATION_KEYS 的设置（跳过目标语言）不清。
+test('a new generation forgets the remembered translations; a setting outside the generation keeps them', () => {
+  const { BlockIdentity } = globalThis;
+  const fp = BlockIdentity.fingerprint('Menu row');
+  const remember = () => BlockIdentity.remember(fp, 'zh-CN',
+    { source: 'Menu row', translation: '菜单行', targetLangChecked: false });
+  BlockIdentity.forgetMemory();
+
+  const { profile } = load();
+  remember();
+  profile.onSettingsChanged({ skipTargetLanguageText: { newValue: true } });
+  assert.equal(BlockIdentity.memorySize(), 1, 'skip-target is not a generation key');
+  profile.onSettingsChanged({ autoTranslateEngine: { newValue: 'ai' } });
+  assert.equal(BlockIdentity.memorySize(), 0);
+
+  const child = load({ frameRole: 'child' });
+  remember();
+  child.profile.inherit(0);
+  assert.equal(BlockIdentity.memorySize(), 1, 'the same generation is not a change');
+  child.profile.inherit(3);
+  assert.equal(BlockIdentity.memorySize(), 0);
 });
 
 test('影响译文的设置键让代数加一；别的键（界面语言、主题）不动', () => {

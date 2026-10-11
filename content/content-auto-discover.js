@@ -111,6 +111,48 @@
     return !!node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && !!node.host;
   }
 
+  function collectAdded(record, out) {
+    for (const node of record.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) out.push(node);
+    }
+  }
+
+  // 装回只看新长出来的子树，不看文字改动。
+  const RECALL_OBSERVE_OPTIONS = Object.freeze({ childList: true, subtree: true });
+
+  /**
+   * 只装回、不发现（D-548 J4.5）。
+   *
+   * 用户把译文藏起来时自动翻译停下，发现层整个停掉（content-auto-translate.js 的
+   * pauseCurrentPage('hidden')），onMutations 里那一步同步装回也跟着没了：藏着时
+   * 切一次菜单，新左栏一条译文都没有，放出来以后要等发现层重启、收集、进带才
+   * 补上 —— 那几百毫秒画的是原文。这个观察器只做那一步：新子树长出来就从页内
+   * 记忆装回（插入路径照当前隐藏态打上隐藏类），不攒脏根、不挂可见观察器、不
+   * 碰调度层，也就不发请求。由 content/page/visibility.js 在藏起时挂上、放出时摘掉。
+   *
+   * @returns {() => void} 摘掉。摘之前把还没派发的记录也装回一遍：放出来那一下
+   *   与其后发现层重启之间，不留一段没人装回的空档。
+   */
+  function watchRecallOnly() {
+    const recallAdded = (records) => {
+      const added = [];
+      for (const record of records) {
+        if (!ownMutation(record)) collectAdded(record, added);
+      }
+      if (added.length > 0) ctx.recallTranslations(added);
+    };
+    const observer = new MutationObserver(recallAdded);
+    const observeRoot = (root) => observer.observe(root, RECALL_OBSERVE_OPTIONS);
+    observeRoot(document.body);
+    const unsubscribeShadowRoots = ctx.onShadowRoot(observeRoot);
+    ctx.shadowRoots().forEach(observeRoot);
+    return function unwatchRecall() {
+      recallAdded(observer.takeRecords());
+      observer.disconnect();
+      unsubscribeShadowRoots();
+    };
+  }
+
   /**
    * 启动发现层。
    *
@@ -146,9 +188,7 @@
       const added = [];
       for (const record of records) {
         if (ownMutation(record)) continue;
-        for (const node of record.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) added.push(node);
-        }
+        collectAdded(record, added);
         const root = mutationRoot(record);
         if (!root) continue;
         dirty = true;
@@ -440,4 +480,5 @@
   }
 
   ctx.setupAutoDiscovery = setupAutoDiscovery;
+  ctx.watchRecallOnly = watchRecallOnly;
 })();

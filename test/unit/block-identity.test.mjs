@@ -255,8 +255,9 @@ test('the 2001st entry evicts the least recently used one', () => {
   assert.equal(recalled(fps[2], 'zh-CN', 'menu row 2'), '菜单 2');
 });
 
-// D-547 N3：译法换了代（引擎、提示词、术语表……）整张清掉。订阅点在
-// content/page/insert.js，下面那条源码检查守着它。
+// D-547 N3：译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
+// content/content-translation-cache.js 的 setGeneration（translation-profile.test.mjs
+// 真跑它），下面那条源码检查守着 insert.js 不再自己订阅一份。
 test('forgetMemory empties the whole memory', () => {
   const fp = BlockIdentity.fingerprint('Forget me');
   BlockIdentity.remember(fp, 'zh-CN', entry('Forget me', '忘掉我'));
@@ -268,14 +269,18 @@ test('forgetMemory empties the whole memory', () => {
 
 test('a new translation profile generation forgets the memory, and recall checks the source and the skip setting', () => {
   const insert = repoFile('content/page/insert.js');
-  assert.match(insert, /ctx\.translationProfile\.subscribe\(\(\) => globalThis\.BlockIdentity\.forgetMemory\(\)\);/,
+  // DOM 夹具（test/e2e/helpers.js 的 PAGE_TRANSLATION_MODULES）装 insert.js 不装缓存层：
+  // insert.js 在加载时碰 ctx.translationProfile 就整个抛错，ctx.insertTranslationBlock 不存在。
+  assert.doesNotMatch(insert, /translationProfile/);
+  assert.match(repoFile('content/content-translation-cache.js'),
+    /generation = next;[\s\S]{0,400}?globalThis\.BlockIdentity\.forgetMemory\(\);/,
     'nothing forgets the memory when the engine, prompt or glossary changes');
   // 记下的原文是收集端给的 block.text，和请求体同一个来源。
   assert.match(insert, /const landed = \{ source: block\.text, translation \};/);
   const scope = repoFile('content/page/scope.js');
   assert.match(scope, /identity\.recall\([^;]*, lang, block\.text\);/,
     'recall no longer compares the new block\'s own source text');
-  assert.match(scope, /if \(ctx\.settings\.skipTargetLanguageText === true && !entry\.targetLangChecked\) return false;/,
+  assert.match(scope, /if \(ctx\.settings\.skipTargetLanguageText === true && !entry\.targetLangChecked\) return null;/,
     'recall restores translations that never passed the skip-target-language check');
 });
 

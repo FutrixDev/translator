@@ -717,12 +717,6 @@
     }
   }
 
-  // 换代即清（D-547 N3）：引擎、提示词、术语表、领域、AI 配置档、站点规则里的
-  // 配置档一换，translationProfile 就加一代（content-translation-cache.js 的
-  // bump；子 frame 跟着顶层 inherit）。旧一代的译文是按旧设置译的，重建后装回
-  // 等于把用户刚改掉的东西又摆回页面，所以整张记忆清掉，重建的块照常去请求。
-  ctx.translationProfile.subscribe(() => globalThis.BlockIdentity.forgetMemory());
-
   ctx.buildTranslationContent = buildTranslationContent;
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;

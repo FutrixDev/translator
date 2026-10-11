@@ -335,27 +335,62 @@
   const RECALL_SCAN_BUDGET = 200;
   const RECALL_RESTORE_BUDGET = 16;
 
-  // 一块：命中就装回并返回 true。语言戳和 batch.js 的 passTarget 同一对：记进身
-  // 份的是 currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
+  // 一块记得什么：命中返回那一条，没命中（或这会儿不该装）返回 null。只查，不
+  // 动 DOM。语言戳和 batch.js 的 passTarget 同一对：记进身份的是
+  // currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
   //
   // 「这块该不该译」由两道判定把关，装回不另写一套（D-547 N3）：
   //   · 收集端那一串（范围、规则、代码、纯数字……）：块本来就是 collectPageBlocks
   //     收上来的，没过的根本到不了这里；
   //   · 跳过目标语言：那道检测在 batch.js（isTargetLanguageText，异步、要等语言
   //     检测），绘制前同步装回等不了它。所以只装落笔时已经过了这道检测的条目
-  //     （targetLangChecked）；现在开着、当初没过的，返回 false 交给批量那条路，
+  //     （targetLangChecked）；现在开着、当初没过的，返回 null 交给批量那条路，
   //     由那道检测本身来判 —— 是目标语言就不译，不是就照常请求。
   // 原文比的是 block.text：收集端 getTextWithMathPlaceholders 产出、请求体里发的
   // 就是它，落笔时记下的也是它（insert.js 的 registerTranslation）。
-  function recallTranslation(block) {
+  function rememberedFor(block, lang) {
     const identity = globalThis.BlockIdentity;
-    const lang = ctx.currentTargetLang();
     const entry = identity.recall(identity.fingerprint(ctx.readSourceText(block.element)), lang, block.text);
-    if (entry === null) return false;
-    if (ctx.settings.skipTargetLanguageText === true && !entry.targetLangChecked) return false;
+    if (entry === null) return null;
+    if (ctx.settings.skipTargetLanguageText === true && !entry.targetLangChecked) return null;
+    return entry;
+  }
+
+  // 装回一块：走和第一次落笔同一条插入路径。
+  function restoreRemembered(block, entry, lang) {
     ctx.insertTranslationBlock(block, entry.translation, { lang, textLang: ctx.getEffectiveTargetLang() });
     ctx.afterInsertTranslation(block);
+  }
+
+  // 一块：命中就装回并返回 true（发现层进带时逐块问的那一句）。
+  function recallTranslation(block) {
+    const lang = ctx.currentTargetLang();
+    const entry = rememberedFor(block, lang);
+    if (entry === null) return false;
+    restoreRemembered(block, entry, lang);
     return true;
+  }
+
+  // 和视口相交（D-548 偏差 h）。只用来排装回的先后，不判可见性：零尺寸的
+  // （display:none 里的、还没撑开的）不算在视口里。
+  function intersectsViewport(element) {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0
+      && rect.bottom > 0 && rect.right > 0
+      && rect.top < window.innerHeight && rect.left < window.innerWidth;
+  }
+
+  // 命中比预算多时，先装和视口相交的，再按 DOM 顺序装其余的（D-548 偏差 h）。
+  // 按 DOM 顺序直接截前 16 块的话，一个滚到底的 30 项菜单整片重建，装回的是
+  // 视口外的头 16 项，看得见的那几项要等发现层进带 —— 正是这一步要消掉的那一
+  // 下闪。位置先一次读完再插：插一块就让版式作废，读插交错是每块一次强制
+  // 版式。命中不超过预算时全装，先后不影响这一帧画出来的东西，就不读位置。
+  function restoreOrder(hits) {
+    if (hits.length <= RECALL_RESTORE_BUDGET) return hits;
+    const inView = hits.map((hit) => intersectsViewport(hit.block.element));
+    const first = hits.filter((_, i) => inView[i]);
+    const rest = hits.filter((_, i) => !inView[i]);
+    return first.concat(rest).slice(0, RECALL_RESTORE_BUDGET);
   }
 
   // 一批新长出来的子树。一条都没记过的页面在这里直接返回、不收块：绝大多数页面
@@ -363,20 +398,22 @@
   // @returns {number} 装回了几块
   function recallTranslations(roots) {
     if (globalThis.BlockIdentity.memorySize() === 0) return 0;
+    const lang = ctx.currentTargetLang();
+    const hits = [];
     let scanned = 0;
-    let restored = 0;
     for (const root of roots.slice(0, RECALL_ROOT_BUDGET)) {
       if (!root.isConnected) continue;
       const blocks = collectPageBlocks(root, { limit: RECALL_SCAN_BUDGET - scanned });
       scanned += blocks.length;
       for (const block of blocks) {
-        if (!recallTranslation(block)) continue;
-        restored += 1;
-        if (restored >= RECALL_RESTORE_BUDGET) return restored;
+        const entry = rememberedFor(block, lang);
+        if (entry !== null) hits.push({ block, entry });
       }
-      if (scanned >= RECALL_SCAN_BUDGET) return restored;
+      if (scanned >= RECALL_SCAN_BUDGET) break;
     }
-    return restored;
+    const chosen = restoreOrder(hits);
+    for (const { block, entry } of chosen) restoreRemembered(block, entry, lang);
+    return chosen.length;
   }
 
   /**

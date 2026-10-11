@@ -1,4 +1,4 @@
-// 自动翻译的路由重建旅程（J4.1–J4.5）：单页应用切菜单时把左栏整片重建，文字一个
+// 自动翻译的路由重建旅程（J4.1–J4.8）：单页应用切菜单时把左栏整片重建，文字一个
 // 字没变，节点全是新的。
 //
 // 在这之前，按节点认身份的那张表查不到新节点：五个菜单名再翻一遍，翻回来之前左栏
@@ -93,8 +93,8 @@ async function builtinTexts(context, page) {
   return evaluateInContentScript(context, page, 'self.__builtinTexts.slice()');
 }
 
-async function openLeftMenu(page, context, endpoint, { mainTag = 'div', beforeAuto } = {}) {
-  await setExtensionSettings(page, settings(endpoint));
+async function openLeftMenu(page, context, endpoint, { mainTag = 'div', beforeAuto, extra } = {}) {
+  await setExtensionSettings(page, settings(endpoint, extra));
   await context.route(`https://${HOST}/**`, (route) => route.fulfill({
     status: 200, contentType: 'text/html', body: leftMenuHtml({ mainTag }),
   }));
@@ -102,7 +102,7 @@ async function openLeftMenu(page, context, endpoint, { mainTag = 'div', beforeAu
   await waitForContentReady(page);
   await stubBuiltinTranslator(page);
   if (beforeAuto) await beforeAuto();
-  await setExtensionSettings(page, settings(endpoint, { siteRules: { [HOST]: 'always' } }));
+  await setExtensionSettings(page, settings(endpoint, { ...extra, siteRules: { [HOST]: 'always' } }));
   await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5, { timeout: 30000 });
   await expect(page.locator('#main .ai-translator-inline-block')).toHaveCount(1, { timeout: 30000 });
 }
@@ -202,7 +202,10 @@ test('J4.4 with a <main>, our own translations never push the scope off the body
   }
 });
 
-test('J4.5 with translations hidden, a menu switch shows no translation and restores them hidden', async ({ page, context }) => {
+// D-548 J4.5：藏着译文时自动翻译停下（发现层整个停掉），但装回不停 —— 藏着时
+// 切菜单，新左栏的译文照样从记忆装回，带着隐藏态；放出来的那一帧就是完整的，
+// 不等发现层重启再补（那之前几百毫秒画的是原文）。藏着时不发请求。
+test('J4.5 with translations hidden, a menu switch recalls them hidden, and showing them is whole at once', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
   try {
     await openLeftMenu(page, context, mock.endpoint);
@@ -217,31 +220,211 @@ test('J4.5 with translations hidden, a menu switch shows no translation and rest
     await page.evaluate((selector) => window.startFrames(selector), shown);
     await page.evaluate(() => window.go('maps'));
     await page.waitForTimeout(1500);
-    const frames = await page.evaluate(() => window.stopFrames());
-    expect(frames.length).toBeGreaterThan(10);
-    expect(frames.filter((count) => count > 0)).toEqual([]);
-    // 藏着就是「我现在想看原文」：自动翻译停着，不发请求。
+    const hiddenFrames = await page.evaluate(() => window.stopFrames());
+    expect(hiddenFrames.length).toBeGreaterThan(10);
+    expect(hiddenFrames.filter((count) => count > 0)).toEqual([]);
+    // 新左栏的五条译文都已经装回来了，全带隐藏态。
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
+    await expect(page.locator(shown)).toHaveCount(0);
+    // 藏着就是「我现在想看原文」：自动翻译停着，不发请求（装回不是请求）。
     expect((await builtinTexts(context, page)).length).toBe(beforeHidden);
 
-    // 放出来：左栏从记忆里装回，一串不重发；只有藏着时换掉的正文进请求。
+    // 放出来：从这一刻起的每一帧左栏都是 5 条译文，一串不重发；只有藏着时换掉
+    // 的正文进请求。
     await setVisible(true);
-    await expect(page.locator(shown)).toHaveCount(5, { timeout: 30000 });
+    await page.evaluate((selector) => window.startFrames(selector), shown);
     await expect(page.locator('#main .ai-translator-inline-block')).toContainText(MAIN.maps.slice(0, 40), { timeout: 30000 });
     await page.waitForTimeout(1500);
+    const shownFrames = await page.evaluate(() => window.stopFrames());
+    expect(shownFrames.length).toBeGreaterThan(10);
+    expect(shownFrames.filter((count) => count < 5)).toEqual([]);
     const revealed = (await builtinTexts(context, page)).slice(beforeHidden);
     expect(navSent(revealed)).toBe(0);
     expect(revealed).toHaveLength(1);
 
-    // 装回走的是正常插入路径，隐藏态跟着插入走：藏着时装回的每一条都带隐藏态。
-    // （藏着时发现层不跑，这里直接调装回入口 —— 它就是 onMutations 里那一步。）
+    // 再藏一次、再切一次：放出来时摘掉的装回观察器，藏起时重新挂上。
     await setVisible(false);
+    const beforeSecond = (await builtinTexts(context, page)).length;
     await page.evaluate(() => window.go('hours'));
-    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(0);
-    const restored = await evaluateInContentScript(context, page,
-      'window.AI_TRANSLATOR_CONTENT.recallTranslations([document.getElementById("nav")])');
-    expect(restored).toBe(5);
     await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
     await expect(page.locator(shown)).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    expect((await builtinTexts(context, page)).length).toBe(beforeSecond);
+    expect(mock.sentTexts).toEqual([]);
+  } finally {
+    await mock.close();
+  }
+});
+
+// D-547 N3：页内记忆只在「这一代译法」里有效。换了引擎（或提示词、术语表、配置
+// 档 —— 都走 translationProfile 换代），记忆整张清掉：重建的左栏照常送新引擎，
+// 不装回上一个引擎的译文。
+const settingsSettled = (context, page, key, value) => expect.poll(() => evaluateInContentScript(context, page,
+  `window.AI_TRANSLATOR_CONTENT.settings[${JSON.stringify(key)}]`), { timeout: 10000 }).toBe(value);
+
+test('J4.6 after the engine changes, a rebuilt menu is sent to the new engine, not recalled', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    await openLeftMenu(page, context, mock.endpoint);
+    expect(navSent(await builtinTexts(context, page))).toBe(5);
+    expect(mock.sentTexts).toEqual([]);
+
+    await setExtensionSettings(page, settings(mock.endpoint, { autoTranslateEngine: 'ai', siteRules: { [HOST]: 'always' } }));
+    await settingsSettled(context, page, 'autoTranslateEngine', 'ai');
+    await page.waitForTimeout(1500);
+    const builtinBefore = (await builtinTexts(context, page)).length;
+
+    await page.evaluate(() => window.go('maps'));
+    await expect.poll(() => navSent(mock.sentTexts), { timeout: 30000 }).toBe(5);
+    const nav = page.locator(NAV_TRANSLATIONS);
+    await expect(nav).toHaveCount(5, { timeout: 30000 });
+    const texts = await nav.allTextContents();
+    expect(texts.every((text) => text.includes('[T] '))).toBe(true);
+    expect(texts.some((text) => text.includes('[B] '))).toBe(false);
+    // 换引擎之后内置引擎一条也没再收到。
+    expect(navSent((await builtinTexts(context, page)).slice(builtinBefore))).toBe(0);
+  } finally {
+    await mock.close();
+  }
+});
+
+// D-547 N3：「跳过目标语言」开着时，已经是目标语言的那一块不装回。它在开关关着时
+// 被翻过、记进了记忆；开关打开后菜单重建，那一块交给批量那条路上的检测
+// （batch.js 的 isTargetLanguageText），判成目标语言 —— 不译，也不再送。
+//
+// 这条走 AI 引擎（mock）：内置引擎认出中文源、目标也是中文时原样退回、不插译文
+// （content/content-translation-engine.js 的 src === tgt 一档），那一行根本进不了记忆。
+// 两次写设置都带着同一个引擎，跳过开关本身不换代（GENERATION_KEYS 里没有它），
+// 记忆留着 —— 测的正是「留着也不装回」。
+test('J4.7 with skip-target-language on, a block already in the target language is not recalled', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  const ai = { autoTranslateEngine: 'ai' };
+  try {
+    await openLeftMenu(page, context, mock.endpoint, { extra: ai });
+    const native = '联系策展人并预约私人参观，我们会在两个工作日内回复您的申请。';
+    await page.evaluate((text) => window.renameNav(4, text), native);
+    await switchTo(page, 'maps');
+    // 开关关着：中文那一行照样送了，也落了译文，进了记忆。
+    expect(mock.sentTexts.filter((text) => text.includes(native))).toHaveLength(1);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
+    // 块级 <a> 的译文落在它后面做兄弟（insert.js 的 element.after），不在它里面。
+    const contact = page.locator('#nav a[data-key="contact"] + .ai-translator-inline-block');
+    await expect(contact).toHaveCount(1);
+
+    await setExtensionSettings(page, settings(mock.endpoint, { ...ai, skipTargetLanguageText: true, siteRules: { [HOST]: 'always' } }));
+    await settingsSettled(context, page, 'skipTargetLanguageText', true);
+    await page.waitForTimeout(1500);
+    const before = mock.sentTexts.length;
+
+    await switchTo(page, 'hours');
+    // 四行英文照常从记忆装回；中文那一行没有译文，也没再送。
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(4, { timeout: 30000 });
+    await expect(contact).toHaveCount(0);
+    const sent = mock.sentTexts.slice(before);
+    expect(sent.filter((text) => text.includes(native))).toEqual([]);
+    expect(navSent(sent)).toBe(0);
+  } finally {
+    await mock.close();
+  }
+});
+
+// D-548 偏差 h：同步装回有 16 块的上限。一个 30 项的左栏滚到底再整片重建，按
+// DOM 顺序装的话装回的是视口外的头 16 项，看得见的那几项要等发现层进带才补 ——
+// 中间那几帧视口里一条译文都没有。先装和视口相交的，再按 DOM 顺序装其余的。
+//
+// 几何是算过的：每项 100px 高，视口 720px，滚到第 22 项（视口里 22–29 共 8 项，
+// 少于 16，且都在 DOM 第 16 项之后）。页尾留 2000px 的空白，重建时页面变矮也不会
+// 把滚动位置夹回来；关掉滚动锚定，视口外上方装回的译文把内容往下推的那一截照实
+// 算：按 DOM 顺序装的 0–15 项连同推下来的高度也够不到视口。
+const LONG_MENU_SIZE = 30;
+const LONG_MENU_TOP = 22;
+
+function longMenuHtml() {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbour Index</title>
+<style>html{overflow-anchor:none}body{margin:0}#menu a[href]{display:block;box-sizing:border-box;min-height:100px;padding:38px 0}#tail{height:2000px}</style></head><body>
+<div id="menu"></div><div id="tail"></div>
+<script>
+const ITEMS = Array.from({ length: ${LONG_MENU_SIZE} }, (_, i) => 'Section ' + (i + 1) + ' of the harbour index lists the pilots and their logbooks.');
+window.go = () => {
+  document.getElementById('menu').innerHTML = ITEMS.map((text, i) => '<a href="/s' + i + '">' + text + '</a>').join('');
+};
+// 逐帧数和视口相交的译文。
+window.startViewFrames = (selector) => {
+  window.__frames = [];
+  window.__framing = true;
+  const tick = () => {
+    let visible = 0;
+    for (const el of document.querySelectorAll(selector)) {
+      const rect = el.getBoundingClientRect();
+      if (rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight) visible += 1;
+    }
+    window.__frames.push(visible);
+    if (window.__framing) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+};
+window.stopFrames = () => { window.__framing = false; return window.__frames; };
+window.go();
+</script></body></html>`;
+}
+
+test('J4.8 a long menu scrolled to the bottom keeps translations in view through a rebuild', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  const host = 'longmenu.test';
+  const translations = '#menu .ai-translator-inline-block';
+  // 译文节点沿用源块的标签（insert.js 按 element.tagName 建），也是 <a>，只是不带
+  // href：菜单项一律按 a[href] 认，样式和下标才不会把译文算进去。
+  const ITEMS = '#menu a[href]';
+  try {
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await context.route(`https://${host}/**`, (route) => route.fulfill({
+      status: 200, contentType: 'text/html', body: longMenuHtml(),
+    }));
+    await page.goto(`https://${host}/`);
+    await waitForContentReady(page);
+    await stubBuiltinTranslator(page);
+    await setExtensionSettings(page, settings(mock.endpoint, { siteRules: { [host]: 'always' } }));
+    // 发现层只翻视口上下一屏之内的：先在顶上翻头一截，再滚到底翻其余的。
+    await expect.poll(() => page.locator(translations).count(), { timeout: 30000 }).toBeGreaterThan(5);
+    const scrollToItem = (i) => page.evaluate(({ items, index }) => {
+      document.querySelectorAll(items)[index].scrollIntoView({ block: 'start' });
+    }, { items: ITEMS, index: i });
+    const scrollToTop = () => scrollToItem(LONG_MENU_TOP);
+    for (let i = 4; i <= LONG_MENU_TOP; i += 4) {
+      await scrollToItem(i);
+      await page.waitForTimeout(300);
+    }
+    await scrollToTop();
+    await expect(page.locator(translations)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
+    await page.waitForTimeout(1500);
+    await scrollToTop();
+
+    // 前提：视口里的菜单项少于 16，而且全在 DOM 第 16 项之后。
+    const inView = await page.evaluate((items) => Array.from(document.querySelectorAll(items))
+      .map((a, i) => ({ i, rect: a.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom > 0 && rect.top < innerHeight)
+      .map(({ i }) => i), ITEMS);
+    expect(inView.length).toBeGreaterThan(0);
+    expect(inView.length).toBeLessThan(16);
+    expect(Math.min(...inView)).toBeGreaterThanOrEqual(16);
+
+    const before = (await builtinTexts(context, page)).length;
+    await page.evaluate((selector) => window.startViewFrames(selector), translations);
+    await page.evaluate(() => window.go());
+    await page.waitForTimeout(1500);
+    const frames = await page.evaluate(() => window.stopFrames());
+    expect(frames.length).toBeGreaterThan(10);
+    // 没有一帧视口里一条译文都没有。
+    expect(frames.filter((count) => count === 0)).toEqual([]);
+    // 其余的由发现层进带时逐块装回：视口上方带外的那几项要滚回去才进带。滚回顶上，
+    // 整片 30 条都在，一串也没重发。
+    for (let i = LONG_MENU_TOP - 4; i >= 0; i -= 4) {
+      await scrollToItem(i);
+      await page.waitForTimeout(300);
+    }
+    await scrollToItem(0);
+    await expect(page.locator(translations)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
+    expect((await builtinTexts(context, page)).length).toBe(before);
     expect(mock.sentTexts).toEqual([]);
   } finally {
     await mock.close();
@@ -312,8 +495,11 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
       const identity = globalThis.BlockIdentity;
       const lang = ctx.currentTargetLang();
       for (const p of document.querySelectorAll('#feed > p:not(' + ctx.constants.OWN_NODES_SELECTOR + ')')) {
-        const text = ctx.readSourceText(p);
-        identity.remember(identity.fingerprint(text), lang, '[B] ' + text);
+        // 和 registerTranslation 写的一样：桶按纯文字指纹，条目带送出去的原文
+        // （collect.js 的 getTextWithMathPlaceholders，preserveMarkup 同收集端）。
+        const source = ctx.getTextWithMathPlaceholders(p, { preserveMarkup: true }).text;
+        identity.remember(identity.fingerprint(ctx.readSourceText(p)), lang,
+          { source, translation: '[B] ' + source, targetLangChecked: false });
       }
       const original = ctx.recallTranslations;
       self.__recallMs = [];

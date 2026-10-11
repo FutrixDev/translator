@@ -666,7 +666,7 @@ test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把
     '带 hidden 的继续不解闩，而且闩还在就得原地停住');
   const visibility = code('content/page/visibility.js');
   assert.match(visibility,
-    /resumeCurrentPage\('hidden'\);\s*else ctx\.autoTranslate\.pauseCurrentPage\('hidden'\);/,
+    /ctx\.autoTranslate\.resumeCurrentPage\('hidden'\);\s*\} else \{[\s\S]*?ctx\.autoTranslate\.pauseCurrentPage\('hidden'\);/,
     '显隐层这两下都要报上名来');
   assert.match(code('content/content-messaging.js'),
     /pauseCurrentPage\(\);\s*else ctx\.autoTranslate\.resumeCurrentPage\(\);/,

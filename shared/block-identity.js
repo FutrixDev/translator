@@ -130,7 +130,7 @@
   //
   // 页内、不落盘：同一页同一门语言里同一段原文的译文，换个节点不会变。跨页的那一
   // 层是 content-translation-cache.js 的事，两层不重叠。引擎、提示词这类译法一换
-  // 代，整张清掉（forgetMemory，由 content/page/insert.js 订阅 translationProfile）。
+  // 代，整张清掉（forgetMemory，由 content/content-translation-cache.js 换代时调用）。
   //
   // 不随会话翻篇清空（bumpSession 不碰这里）：会话翻篇说的是「在途的活作废」，
   // 不是「翻好的东西作废」；换目标语言时键里的语言已经不同，旧的自然查不到。

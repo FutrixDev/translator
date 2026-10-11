@@ -33,6 +33,9 @@
    * 忘了受管容器那批（它们是原文块的 ::after，在下面那串里只有一个不显示的
    * 替身），或者忘了通知自动翻译——用户一边藏译文，新译文一边冒出来。
    */
+  // 藏着时那个只装回的观察器（见下面「停下的是发现层」），没挂就是 null。
+  let unwatchRecall = null;
+
   function setTranslationsVisible(visible) {
     // 无条件置位。这个标记是「用户此刻想不想看译文」唯一的出处，自动翻译那一层
     // （content/content-auto-translate.js 的 start()）也读它 —— 只在「确实藏着
@@ -62,9 +65,23 @@
     //
     // 带上「是显隐干的」：这一停不上闩，这一继续也不解闩。他在 popup 上按下的
     // 暂停是另一句话，不归这个开关撤销（见 pauseCurrentPage）。
+    //
+    // 停下的是发现层，不是装回（D-548 J4.5）：藏着时页面把菜单整片重建，上次的
+    // 译文照样从页内记忆装回去（带着隐藏态），放出来那一下就是完整的。只在这
+    // 一下真把正在跟这一页的自动翻译停下时挂上 —— 自动翻译本来就停着（关着、
+    // 他按了暂停、出错），可见时也没有装回，藏着时不该多出来。
     if (ctx.autoTranslate) {
-      if (visible) ctx.autoTranslate.resumeCurrentPage('hidden');
-      else ctx.autoTranslate.pauseCurrentPage('hidden');
+      if (visible) {
+        if (unwatchRecall !== null) {
+          unwatchRecall();
+          unwatchRecall = null;
+        }
+        ctx.autoTranslate.resumeCurrentPage('hidden');
+      } else {
+        const following = ctx.autoTranslate.isOn();
+        ctx.autoTranslate.pauseCurrentPage('hidden');
+        if (following && unwatchRecall === null) unwatchRecall = ctx.watchRecallOnly();
+      }
     }
     ctx.frames.onVisibilityChanged(visible);
   }
