@@ -48,6 +48,20 @@
   re-encoded first. The 3.75 MiB cap also applies to the vision engine (it
   was 4 MB).
 
+### Page translation follows where you are reading
+
+- **What you are looking at is translated first.** Whole-page and automatic
+  translation now send the paragraphs on screen before the rest of the page,
+  then the ones in the direction you are scrolling. Jump to another part of a
+  long page mid-translation and that part is next: requests already sent are
+  never cancelled, so it waits at most for the few already in flight.
+- **Automatic translation re-checks where you are between rounds.** It sends
+  a bounded number of batches per round and then asks again, so a long queue
+  built up while you scrolled no longer holds a newly visible paragraph back.
+- **One progress count for both kinds of translation.** The whole-page and
+  automatic passes now report into a single source, so what has been found,
+  translated and failed is counted the same way everywhere.
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site
