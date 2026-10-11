@@ -419,6 +419,19 @@ test('runTranslationPass reports progress once per block, 1..N, even when the N 
   assert.deepEqual(calls, [1, 2, 3, 4, 5].map((n) => [n, 5, 'settled']));
 });
 
+test('progress for a batch is delivered once the whole batch is in: no progress write between two inserts (D-553)', async () => {
+  // The progress bar is DOM; written between two inserts it makes the next
+  // block's fit measurement force a layout, once per block.
+  const blocks = [0, 100, 200].map((y, i) => block(y, `q${i}`));
+  ctx.requestTranslation = async (message) => ({ translations: message.texts.map((t) => `译:${t}`) });
+  const events = [];
+  await ctx.runTranslationPass(blocks, {
+    onSettled: (b) => events.push(`settled ${b.label}`),
+    onProgress: (done) => events.push(`progress ${done}`),
+  });
+  assert.deepEqual(events, ['settled q0', 'settled q1', 'settled q2', 'progress 1', 'progress 2', 'progress 3']);
+});
+
 test('a failed block counts once, as failed', async () => {
   const blocks = [0, 100].map((y, i) => block(y, `f${i}`));
   ctx.requestTranslation = async () => ({ error: 'apiErrorUnavailable' });
