@@ -467,6 +467,53 @@ test('a manual pass wired to ctx.progressFeed settles each block exactly once: N
   assert.deepEqual([s.source, s.phase, s.known, s.settled, s.failed, s.inflight], ['manual', 'partial', 6, 6, 1, 0]);
 });
 
+test('a reader jump smaller than the growth since the last scroll is still the reader: the view is sampled at every delivery (D-554 T1)', async () => {
+  // Built-in engine, four calls in flight. The viewport [0, 800) holds v0..v3;
+  // w sits a screen under it (near), x three screens under (far).
+  const seen = [100, 200, 300, 400].map((y, i) => block(y, `v${i}`));
+  const w = block(1600, 'w');
+  const x = block(2500, 'x');
+  const asked = [];
+  const pending = [];
+  ctx.requestTranslation = (message) => new Promise((resolve) => {
+    asked.push(message.texts.join(' '));
+    pending.push(() => resolve({ translations: message.texts.map((t) => `译:${t}`) }));
+  });
+  ctx.builtinTranslator = { isActive: () => true };
+  let jumped = false;
+  try {
+    const pass = ctx.runTranslationPass([...seen, w, x], {
+      onProgress: () => {
+        if (jumped) return;
+        jumped = true;
+        // Right after the first delivery, the reader jumps (an anchor link, find
+        // in page) to x, now at [4500, 5300). 4500 is less than the 6000 the
+        // page grew by with no scroll, same sign: sampled only at scroll events,
+        // the jump would be read as anchoring and w (at its stale 1600) would go
+        // next.
+        queueMicrotask(() => scrollTo(4500));
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(asked, ['Paragraph v0.', 'Paragraph v1.', 'Paragraph v2.', 'Paragraph v3.']);
+    // v0's translation lands under the viewport: the page grows by 6000, no scroll.
+    w.moveTo(4000);
+    x.moveTo(4500);
+    document.documentElement.scrollHeight += 6000;
+    pending[0]();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(asked[4], 'Paragraph x.');
+    for (const resolve of pending.slice(1)) resolve();
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((r) => setTimeout(r, 0));
+      for (const resolve of pending.splice(0)) resolve();
+    }
+    await pass;
+  } finally {
+    delete ctx.builtinTranslator;
+  }
+});
+
 // Last in the file: the pointer it leaves behind would bend every later order.
 test('the pointer is kept in viewport coordinates: after a scroll it points where it is now', () => {
   // The pointer rests 100px from the top of the viewport while the page is at

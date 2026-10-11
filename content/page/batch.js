@@ -189,23 +189,31 @@
   // 不是读者在滚，不改方向、不作废，记进 anchorShift，评分把视口挪回量时的坐标系。
   const viewSignals = { scrollDir: 0, lastScrollY: 0, lastScrollHeight: 0, pointerClientY: null, moveEpoch: 0, anchorShift: 0 };
 
+  // 从上次取样到此刻 scrollY、scrollHeight 各变了多少，归给锚定或读者。两处取样：
+  // scroll 事件，和每批译文交付之后（sampleView 由 runTranslationPass 的
+  // flushProgress 调）。只在 scroll 里取样的话，插在视口及下方的译文让页面变高却
+  // 不发 scroll，dh 就是读者上次滚动以来的全部增高，读者一次不超过它的跳转（目录
+  // 锚点、页内查找、End 键）会被当成锚定，不作废（D-554 T1）。先读 scrollHeight：
+  // 它强制布局，锚定对 scrollY 的修正在布局里做完，随后读到的 scrollY 已经含它。
+  function sampleView() {
+    const height = document.documentElement.scrollHeight;
+    const y = window.scrollY;
+    const dy = y - viewSignals.lastScrollY;
+    const dh = height - viewSignals.lastScrollHeight;
+    const anchored = dy !== 0 && Math.sign(dy) === Math.sign(dh) && Math.abs(dy) <= Math.abs(dh);
+    if (anchored) viewSignals.anchorShift += dy;
+    else if (dy !== 0) {
+      viewSignals.scrollDir = Math.sign(dy);
+      viewSignals.moveEpoch += 1;
+    }
+    viewSignals.lastScrollY = y;
+    viewSignals.lastScrollHeight = height;
+  }
+
   function installViewSignals() {
     viewSignals.lastScrollY = window.scrollY;
     viewSignals.lastScrollHeight = document.documentElement.scrollHeight;
-    window.addEventListener('scroll', () => {
-      const y = window.scrollY;
-      const height = document.documentElement.scrollHeight;
-      const dy = y - viewSignals.lastScrollY;
-      const dh = height - viewSignals.lastScrollHeight;
-      const anchored = dy !== 0 && Math.sign(dy) === Math.sign(dh) && Math.abs(dy) <= Math.abs(dh);
-      if (anchored) viewSignals.anchorShift += dy;
-      else if (dy !== 0) {
-        viewSignals.scrollDir = Math.sign(dy);
-        viewSignals.moveEpoch += 1;
-      }
-      viewSignals.lastScrollY = y;
-      viewSignals.lastScrollHeight = height;
-    }, { passive: true });
+    window.addEventListener('scroll', sampleView, { passive: true });
     // 存视口坐标，读的时候再加上那一刻的 scrollY：指针不动、页面滚了，它指着的
     // 文档位置跟着变。
     window.addEventListener('pointermove', (event) => {
@@ -335,6 +343,8 @@
     let pullsSinceSort = 0;
 
     const measure = () => {
+      // 量之前先取样：开跑前页面自己长高（没有 scroll）也不会被记到读者头上。
+      sampleView();
       boxes = new Map();
       for (const block of remaining) boxes.set(block, measureBlock(block, window.scrollY));
       measuredEpoch = viewSignals.moveEpoch;
@@ -768,8 +778,12 @@
       counted.add(block);
       unreported.push([counted.size, outcome]);
     };
+    // 交付之后取样（sampleView）：插入与进度条已经弄脏布局，这一次强制布局本来就
+    // 要由下一块插入前的量取（fitBaseline）付，挪到这里不多付。放在 onProgress
+    // 之后，否则进度条再写一次 DOM，下一块还得再布局一次。
     const flushProgress = () => {
       for (const [done, outcome] of unreported.splice(0)) onProgress(done, total, outcome);
+      sampleView();
     };
     const settledBlock = (block) => {
       if (onSettled) onSettled(block);
