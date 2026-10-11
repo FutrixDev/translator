@@ -397,9 +397,8 @@
   //
   // 和译文一起记的还有两样（D-547）：
   //   · 送出去的那份原文 landed.source（block.text，收集端 getTextWithMathPlaceholders
-  //     产出、请求体里发的就是它）。指纹只按纯文字算，同样文字、内联结构不同的两
-  //     块（一个带 <a>、一个不带）指纹相同，32 位指纹也会撞；装回时新块的 block.text
-  //     必须逐字等于它才装，标记编号对不上的译文不会被装到别的结构上。
+  //     产出、请求体里发的就是它）。它就是记忆的键（D-552 S1）：装回时新块的
+  //     block.text 逐字等于它才查得到，标记编号对不上的译文不会被装到别的结构上。
   //   · 落笔时「跳过目标语言」开没开。开着时这条译文已经过了 batch.js 那道检测；
   //     关着时没过。之后用户打开它，没过检测的那些不能再装回（scope.js 的
   //     recallTranslation 让它们回到批量那条路，由那道检测本身来判）。
@@ -414,7 +413,15 @@
       managed: !!managed,
       lang
     });
-    globalThis.BlockIdentity.remember(fingerprint, lang, {
+    rememberLanded(lang, landed);
+  }
+
+  // 记一条落了笔的译文。键的口径（语言 + 原文）和条目形状只写在这里和
+  // BlockIdentity 里：测试要往记忆里种条目也走这一句，不另抄一份（D-552 S1）。
+  // @param {string|null} lang  见 registerTranslation
+  // @param {{source: string, translation: string}} landed
+  function rememberLanded(lang, landed) {
+    globalThis.BlockIdentity.remember(lang, {
       source: landed.source,
       translation: landed.translation,
       targetLangChecked: ctx.settings.skipTargetLanguageText === true
@@ -726,4 +733,5 @@
   ctx.insertTranslationBlock = insertTranslationBlock;
   ctx.placeFailureMarker = placeFailureMarker;
   ctx.releaseTranslation = releaseTranslation;
+  ctx.rememberLanded = rememberLanded;
 })();

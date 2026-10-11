@@ -396,13 +396,13 @@
       // 回调里那次同步装回有预算（见 scope.js 的 RECALL_*），超出的、以及藏着
       // 译文时停掉发现层期间重建的，都在进带这一刻逐块再问一次记忆：只问进带
       // 的这几块，不在 flush 里把整片几千块一口气装回（那是一个长任务）。这里
-      // 在绘制之后，可能闪过一帧原文，但不重发。没有记忆的页面不问。
-      const remembers = globalThis.BlockIdentity.memorySize() > 0;
+      // 在绘制之后，可能闪过一帧原文，但不重发。没有记忆的页面 recallTranslation
+      // 自己第一句就返回。
       for (const element of arrived) {
         for (const block of collect(element)) {
           if (!block.element || seen.has(block.element)) continue;
           seen.add(block.element);
-          if (remembers && ctx.recallTranslation(block)) continue;
+          if (ctx.recallTranslation(block)) continue;
           blocks.push(block);
         }
       }

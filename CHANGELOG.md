@@ -92,9 +92,11 @@
   same, but every element is new. Automatic translation used to treat them as
   new text, send the same menu entries again, and show the original for a
   moment until the answer came back. The page now remembers each translation by
-  its text and target language (up to 2,000 short entries, kept only while the
-  page is open) and puts it back onto the rebuilt element before the page is
-  drawn, so the menu never flickers and nothing is sent again. With
+  its text and target language (up to 2,000 entries, each at most 4,096
+  characters of original and translation together, kept only while the page
+  is open) and puts it back onto the rebuilt element before the page is
+  drawn, so the menu never flickers and nothing is sent again. Every rebuilt
+  entry that is on screen comes back in that same frame. With
   translations hidden, a rebuilt menu comes back hidden.
 - **Our own translations no longer move the main-content scope.** When the
   page decides which part is the main content, it now counts only the page's

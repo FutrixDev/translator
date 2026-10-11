@@ -124,8 +124,7 @@ test('本站规则的引擎或领域变了（onProfileChange 回调）加一代�
 // 加代、子帧跟着 inherit 都算；不进 GENERATION_KEYS 的设置（跳过目标语言）不清。
 test('a new generation forgets the remembered translations; a setting outside the generation keeps them', () => {
   const { BlockIdentity } = globalThis;
-  const fp = BlockIdentity.fingerprint('Menu row');
-  const remember = () => BlockIdentity.remember(fp, 'zh-CN',
+  const remember = () => BlockIdentity.remember('zh-CN',
     { source: 'Menu row', translation: '菜单行', targetLangChecked: false });
   BlockIdentity.forgetMemory();
 
