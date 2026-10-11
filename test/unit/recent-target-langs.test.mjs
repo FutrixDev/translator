@@ -3,8 +3,10 @@
 // remembered and rendered by content/content-language.js; the one place that
 // writes it is the menu's click handler in content-popup.js.
 //
-// This file loads shared/lang-tags.js, shared/target-lang.js and
-// content/content-language.js into a vm context of its own, with a fake
+// This file loads shared/lang-tags.js, shared/target-lang.js,
+// content/content-local-pref.js (which owns the read, the settled flag and
+// following other tabs) and content/content-language.js into a vm context of
+// its own, with a fake
 // chrome.storage, rather than adding content-language.js to engine-harness.mjs:
 // the harness's load list is one of the four that must not change.
 //
@@ -16,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const SOURCES = ['shared/lang-tags.js', 'shared/target-lang.js', 'content/content-language.js']
+const SOURCES = ['shared/lang-tags.js', 'shared/target-lang.js', 'content/content-local-pref.js', 'content/content-language.js']
   .map((rel) => [rel, repoFile(rel)]);
 
 // Languages the fake built-in engine can translate into. fa is not one of them,
@@ -38,7 +40,7 @@ function load({ stored = {}, builtin = false } = {}) {
     storage: {
       local: {
         get(key, callback) { pendingRead = () => callback({ [key]: stored[key] }); },
-        set(values) { writes.push(structuredClone(values)); },
+        set(values) { writes.push(structuredClone(values)); return Promise.resolve(); },
       },
       onChanged: { addListener(fn) { listeners.push(fn); } },
     },

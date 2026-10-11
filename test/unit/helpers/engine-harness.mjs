@@ -73,6 +73,8 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
       },
       // content-bootstrap.js 装的取文案函数；这里原样回键名，断言按键名比。
       t: (key) => key,
+      // 也是 bootstrap 装的；装 content-language.js 的单测经 ctx.localPref 读到它。
+      isExtensionContextAvailable: () => true,
       // content/content-language.js installs this in the real extension; the
       // engine reads it to build the detection sample.
       getLanguageDetectionText(text) {
@@ -94,6 +96,8 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
     i18n: { detectLanguage: async (sample) => detectLanguage(sample) },
     storage: {
       sync: { get: async () => ({ apiKey: state.apiKey }) },
+      // content/content-local-pref.js 的初读与写入：什么都没存过，也不会落地。
+      local: { get() {}, set: async () => {} },
       onChanged: { addListener() {} },
     },
     runtime: {

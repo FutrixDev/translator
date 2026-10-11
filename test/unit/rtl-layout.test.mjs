@@ -31,14 +31,20 @@ function fakeElement(computed = {}) {
   };
 }
 
+// content-language.js 加载时经 ctx.localPref（content/content-local-pref.js，
+// manifest 里排在它前面）建「最近使用」；这里什么都没存过，也不会落地。
+const CHROME = { storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } } };
+
 function loadLanguageHelpers({ getTextInset } = {}) {
-  const ctx = { escapeHtml: (s) => s, getTextInset };
+  const ctx = { escapeHtml: (s) => s, getTextInset, isExtensionContextAvailable: () => true };
   const win = {
     AI_TRANSLATOR_CONTENT: ctx,
     getComputedStyle: (el) => el.computed,
   };
-  new Function('window', 'globalThis', 'TargetLang', 'LangTags', read('content/content-language.js'))(
-    win, { LangTags: globalThis.LangTags }, globalThis.TargetLang, globalThis.LangTags);
+  for (const file of ['content/content-local-pref.js', 'content/content-language.js']) {
+    new Function('window', 'globalThis', 'TargetLang', 'LangTags', 'chrome', read(file))(
+      win, { LangTags: globalThis.LangTags }, globalThis.TargetLang, globalThis.LangTags, CHROME);
+  }
   return ctx;
 }
 

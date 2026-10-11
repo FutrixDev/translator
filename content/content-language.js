@@ -37,57 +37,25 @@
   // 处理器），默认语不记——否则默认语永远占首位。放 local 不放 sync：这是一台设备的
   // 习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
   // inputDialogTargetLang 不同）。
-  const RECENT_TARGET_LANGS_KEY = 'recentTargetLangs';
+  // 读、settled、跟随别的标签（或这一页的别的 frame）都归 ctx.localPref
+  // （content/content-local-pref.js）；去重和上限归这里。
   const MAX_RECENT_TARGET_LANGS = 5;
-  let recentLangs = [];
-  // 下面的初读是异步的；在它落地之前已经有一次点击或别的标签的写入定下了列表，
-  // 迟到的旧值就不能再盖回去。
-  let recentSettled = false;
 
   function recentFrom(value) {
     return Array.isArray(value) ? value.filter((code) => typeof code === 'string' && code) : [];
   }
 
+  const recentPref = ctx.localPref('recentTargetLangs', { parse: recentFrom });
+
   ctx.recentTargetLangs = function() {
-    return recentLangs.slice();
+    return recentPref.get().slice();
   };
 
   ctx.rememberRecentTargetLang = function(lang) {
     if (!lang) return;
-    recentSettled = true;
-    recentLangs = [lang, ...recentLangs.filter((code) => code !== lang)]
-      .slice(0, MAX_RECENT_TARGET_LANGS);
-    if (!ctx.isExtensionContextAvailable()) return;
-    try {
-      chrome.storage.local.set({ [RECENT_TARGET_LANGS_KEY]: recentLangs });
-    } catch (error) {
-      // 扩展上下文没了：这一页的菜单仍按内存里的顺序排，只是别的标签看不到。
-      console.warn('[Blab Translation] saving recent target languages failed', error);
-    }
+    recentPref.set([lang, ...recentPref.get().filter((code) => code !== lang)]
+      .slice(0, MAX_RECENT_TARGET_LANGS));
   };
-
-  // 这份文件也被 Node 单测夹具整个装进去（input-chip、rtl-layout、engine-harness…），
-  // 那里没有 chrome.storage.local；扩展里的内容脚本总有。
-  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    try {
-      chrome.storage.local.get(RECENT_TARGET_LANGS_KEY, (result) => {
-        if (chrome.runtime.lastError || recentSettled) return;
-        recentSettled = true;
-        recentLangs = recentFrom(result?.[RECENT_TARGET_LANGS_KEY]);
-      });
-    } catch (error) {
-      console.warn('[Blab Translation] reading recent target languages failed', error);
-    }
-  }
-
-  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-    // 别的标签（或这一页的别的 frame）点了一门语言：跟上。
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace !== 'local' || !changes[RECENT_TARGET_LANGS_KEY]) return;
-      recentSettled = true;
-      recentLangs = recentFrom(changes[RECENT_TARGET_LANGS_KEY].newValue);
-    });
-  }
 
   // 这个菜单属于手动翻译（输入框对话框、划词卡），所以问的是手动引擎：它是内置时，
   // 端上译不了的语言标「仅 AI」—— 和引擎抛 UNSUPPORTED_PAIR 用的是同一个谓词。
@@ -112,7 +80,7 @@
     };
     const options = TargetLang.options(ctx.uiLanguage());
     const all = options.map((option) => item(option, false)).join('');
-    const recent = recentLangs
+    const recent = recentPref.get()
       .map((code) => options.find((option) => option.value === code))
       .filter(Boolean);
     if (!recent.length) return all;

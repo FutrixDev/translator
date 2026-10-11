@@ -24,6 +24,8 @@ const harness = await installEngineHarness({ pageText: PAGE });
 const { ctx, sentToAI, translateCalls } = harness;
 ctx.uiLanguage = () => 'en';
 await import('../../shared/engine-status.js');
+// content-language.js 加载时经 ctx.localPref 建「最近使用」，manifest 里它排在前面。
+await import('../../content/content-local-pref.js');
 await import('../../content/content-language.js');
 
 // 服务工作者的替身：模型的 word 模式回答带条目，和真处理器一样；text 模式只有译文。

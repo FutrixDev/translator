@@ -26,45 +26,13 @@
   // on every other device. Changing the target language in settings clears it
   // (see below) — an explicit choice there is the stronger signal, and a
   // dialog that ignored it would be the same complaint over again.
-  const INPUT_TARGET_LANG_KEY = 'inputDialogTargetLang';
-  let rememberedTargetLang = '';
-  // The read below is async, and this script runs in every frame. Anything that
-  // decides the target for real — a pick, or a settings change — settles the
-  // value, and a read that lands afterwards must not put the old one back.
-  let targetLangSettled = false;
-
-  function loadRememberedTargetLang() {
-    if (!isExtensionContextAvailable()) return;
-    try {
-      chrome.storage.local.get(INPUT_TARGET_LANG_KEY, (result) => {
-        if (chrome.runtime.lastError || targetLangSettled) return;
-        targetLangSettled = true;
-        rememberedTargetLang = result?.[INPUT_TARGET_LANG_KEY] || '';
-      });
-    } catch (error) {
-      // Extension context went away; the settings default still works.
-    }
-  }
-
-  function rememberTargetLang(lang) {
-    const next = lang || '';
-    targetLangSettled = true;
-    // Every frame on the page runs this listener, so a settings change asks all
-    // of them to clear at once. Only the frame that actually holds a different
-    // value needs to write, or a page full of iframes writes the same string
-    // once per frame.
-    if (next === rememberedTargetLang) return;
-    rememberedTargetLang = next;
-    if (!isExtensionContextAvailable()) return;
-    try {
-      chrome.storage.local.set({ [INPUT_TARGET_LANG_KEY]: rememberedTargetLang });
-    } catch (error) {
-      // Same as above: losing the memory is not worth failing the translation.
-    }
-  }
+  //
+  // The read, the settled flag and following other tabs are ctx.localPref's
+  // (content/content-local-pref.js).
+  const targetLangPref = ctx.localPref('inputDialogTargetLang', { parse: (stored) => stored || '' });
 
   function getInputTargetLang() {
-    return rememberedTargetLang || getEffectiveTargetLang();
+    return targetLangPref.get() || getEffectiveTargetLang();
   }
 
   // What an open dialog is actually set to. The dropdown writes its pick to
@@ -76,21 +44,12 @@
     return state.inputDialog?.dataset.targetLang || getInputTargetLang();
   }
 
-  loadRememberedTargetLang();
-
-  if (chrome?.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace === 'sync' && changes.targetLang) {
-        // Someone went and set a default explicitly. Follow it.
-        rememberTargetLang('');
-      } else if (namespace === 'local' && changes[INPUT_TARGET_LANG_KEY]) {
-        // Another tab's dialog picked a language; keep this one in step. This
-        // is the stored value arriving, so it settles the read above too.
-        targetLangSettled = true;
-        rememberedTargetLang = changes[INPUT_TARGET_LANG_KEY].newValue || '';
-      }
-    });
-  }
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    // Someone went and set a default explicitly. Follow it. Every frame on the
+    // page runs this listener; only a frame that holds a remembered language
+    // writes the empty one (localPref's set skips an unchanged value).
+    if (namespace === 'sync' && changes.targetLang) targetLangPref.set('');
+  });
 
   // Why a word came back without an entry, as the i18n key of the one line
   // drawn where the entry would be, or '' when there is nothing to say. The
@@ -397,7 +356,7 @@
 
     if (ctx.setupLanguageDropdown) {
       ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-        rememberTargetLang(lang);
+        targetLangPref.set(lang || '');
         // Picking a language with the box empty is someone setting up before
         // they type, not asking for a translation.
         const text = textarea.value.trim();

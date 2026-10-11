@@ -30,6 +30,8 @@ const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
   .UI_LANGUAGES.map(lang => `i18n/lang/${lang}.js`);
 
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
+  // chrome.storage 的替身：普通页面没有，内容脚本世界里总有（见文件头）。
+  'test/e2e/harness-chrome-storage.js',
   ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
   // default-settings.js 在加载时读 AccountGate.FEATURE_DEFAULTS；manifest 里它
@@ -102,6 +104,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 占位符与标记的语法（shared/text-markers.js）：收集、落笔、语言检测在调用时
   // 读 globalThis.TextMarkers；manifest 里它排在 content-language.js 之前。
   'shared/text-markers.js',
+  // ctx.localPref：content-language.js 加载时就拿它建「最近使用」；manifest 里它
+  // 排在 content-language.js 之前。
+  'content/content-local-pref.js',
   'content/content-language.js',
   'content/page/batch.js',
   // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
