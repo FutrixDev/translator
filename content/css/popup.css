@@ -436,7 +436,7 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 /* 手动引擎是内置时，端上译不了的语言带一个「仅 AI」标记（ctx.buildTargetLangMenu 写进
    data-tag）。只能由这里画：选中时 content-popup.js 把 item.textContent 当标签文字。
-   颜色走 --text-muted；浅色主题下它在白底上不够 4.5:1，light-theme.css 换成 #4b5563，
+   颜色走 --text-muted；浅色主题下它在白底上不够 4.5:1，light-theme.css 换成 --text-tag，
    选中行和悬停行的紫色底上也够（D-549）。 */
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item[data-tag]::after {
   content: attr(data-tag);
