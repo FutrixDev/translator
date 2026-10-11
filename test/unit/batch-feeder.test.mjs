@@ -1,7 +1,7 @@
 // Focus-priority batching for page translation (design
 // docs/design/ext-opt-page-translation.md §3, acceptance §6.1 batch A item 1).
 //
-// createBatchFeeder in content/page/batch.js decides, at every pull, which
+// createBatchFeeder in content/page/focus-order.js decides, at every pull, which
 // blocks go next: the ones nearest the viewport, towards the scroll direction,
 // holding focus. This suite loads the real batch.js against a faked window
 // whose scroll position and element geometry it controls, and pins:
@@ -65,7 +65,7 @@ await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
-for (const module of ['batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
+for (const module of ['focus-order', 'batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }
 await import('../../content/frames/shelf.js');
@@ -128,6 +128,9 @@ function scrollTo(y, dh = 0) {
 
 const labels = (batch) => batch && batch.map((b) => b.label);
 
+// The feeder a manual pass would build: the batch shape the engine table gives.
+const newFeeder = (blocks) => ctx.focusOrder.createBatchFeeder(blocks, ctx.passBatchShape(false));
+
 function withEngine(builtin, fn) {
   if (builtin) ctx.builtinTranslator = { isActive: () => true };
   try {
@@ -154,16 +157,16 @@ test('the score: one point per screen, towards the scroll is cheaper, focus -inf
   const b = block(0);
   const view = (over) => ({ scrollY: 0, height: H, scrollDir: 1, pointerDocY: null, focusBlock: null, ...over });
   // In the viewport: 0.
-  assert.equal(ctx.scoreBlockForViewport(b, { hidden: false, top: 100, bottom: 140 }, view()), 0);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, { hidden: false, top: 100, bottom: 140 }, view()), 0);
   // Two screens below while scrolling down: 2 * 0.8; scrolling up: 2 * 1.2.
   const below = { hidden: false, top: 3 * H, bottom: 3 * H + 40 };
-  assert.equal(ctx.scoreBlockForViewport(b, below, view()), 2 * 0.8);
-  assert.equal(ctx.scoreBlockForViewport(b, below, view({ scrollDir: -1 })), 2 * 1.2);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view()), 2 * 0.8);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ scrollDir: -1 })), 2 * 1.2);
   // The focus block is pinned first, however far it is.
-  assert.equal(ctx.scoreBlockForViewport(b, below, view({ focusBlock: b })), -Infinity);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ focusBlock: b })), -Infinity);
   // The pointer within a screen of the block's top takes 0.5 off.
-  assert.equal(ctx.scoreBlockForViewport(b, below, view({ pointerDocY: 3 * H + 10 })), 2 * 0.8 - 0.5);
-  assert.equal(ctx.scoreBlockForViewport(b, { hidden: true, top: 0, bottom: 0 }, view()), Infinity);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ pointerDocY: 3 * H + 10 })), 2 * 0.8 - 0.5);
+  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, { hidden: true, top: 0, bottom: 0 }, view()), Infinity);
 });
 
 // ==================== the feeder (design §3.2) ====================
@@ -178,7 +181,7 @@ test('viewport blocks are pulled before any block off screen, then the far tier 
   const seen = [2400, 2500, 2600, 2700, 2800, 2900].map((y, i) => block(y, `view${i}`));
   scrollTo(3 * H); // viewport [2400, 3200)
   withEngine(true, () => {
-    const feeder = ctx.createBatchFeeder([...far, ...seen], false);
+    const feeder = newFeeder([...far, ...seen]);
     assert.deepEqual(labels(feeder.next()), ['view0']);
     assert.deepEqual(labels(feeder.next()), ['view1']);
     const rest = [];
@@ -202,7 +205,7 @@ function tierPage() {
 }
 
 test('the AI engine fills one batch with the near tier, skipping a far block that scores between, and keeps the far tier for the next pull', () => {
-  const feeder = ctx.createBatchFeeder(tierPage(), false);
+  const feeder = newFeeder(tierPage());
   assert.deepEqual(labels(feeder.next()), ['nearAbove', 'view0', 'view1', 'view2'], 'the far block is skipped, not the end of the batch');
   assert.deepEqual(labels(feeder.next()), ['far']);
   assert.equal(feeder.next(), null);
@@ -213,7 +216,7 @@ test('a scroll between two pulls re-scores what is left: the next batch is the n
   const middle = [2400, 2500, 2600].map((y, i) => block(y, `mid${i}`));
   const bottom = [4800, 4900, 5000].map((y, i) => block(y, `bot${i}`));
   withEngine(true, () => {
-    const feeder = ctx.createBatchFeeder([...top, ...middle, ...bottom], false);
+    const feeder = newFeeder([...top, ...middle, ...bottom]);
     assert.deepEqual(labels(feeder.next()), ['top0']);
     scrollTo(4800);
     assert.deepEqual(labels(feeder.next()), ['bot0']);
@@ -230,7 +233,7 @@ test('three screens of scroll moves the next AI batch to the blocks now on scree
   const nearAbove = block(2300, 'nearAbove');
   const far = [3200, 3300, 3400, 3500, 3600, 3700].map((y, i) => block(y, `far${i}`));
   const below = block(5000, 'below');
-  const feeder = ctx.createBatchFeeder([...seen, ...mid, nearAbove, ...far, below], false);
+  const feeder = newFeeder([...seen, ...mid, nearAbove, ...far, below]);
   assert.deepEqual(labels(feeder.next()), ['view0', 'view1', 'view2', 'view3', 'view4', 'view5']);
   // Viewport [3200, 4000), heading down. `below` is 1.25 screens down (1.0),
   // nearAbove 1.075 screens up (1.29): near, but it scores after `below`.
@@ -254,11 +257,11 @@ test('focus inside a block five screens away: it rides in the first AI batch, an
   const { all, focused } = focusPage();
   // The focus sits on an input inside the block.
   document.activeElement = input(2 * H + 5 * H + 5, focused.element);
-  const first = labels(ctx.createBatchFeeder(all, false).next());
+  const first = labels(newFeeder(all).next());
   assert.ok(!first.some((label) => label.startsWith('far')), 'the far tier waits for its own batch');
   assert.deepEqual(first, ['view0', 'view1', 'view2', 'view3', 'view4', 'view5', 'focused'], 'the batch is in doc order');
   withEngine(true, () => {
-    assert.deepEqual(labels(ctx.createBatchFeeder(all, false).next()), ['focused']);
+    assert.deepEqual(labels(newFeeder(all).next()), ['focused']);
   });
 });
 
@@ -267,7 +270,7 @@ test('focus inside a block wins its place even when the viewport alone fills an 
   // scored by its distance, would wait behind all of them.
   const { all, focused } = focusPage(ctx.PAGE_LIMITS.MAX_BATCH_ITEMS + 5);
   document.activeElement = input(2 * H + 5 * H + 5, focused.element);
-  const first = labels(ctx.createBatchFeeder(all, false).next());
+  const first = labels(newFeeder(all).next());
   assert.equal(first.length, ctx.PAGE_LIMITS.MAX_BATCH_ITEMS);
   assert.ok(first.includes('focused'), `the focus block is in the first batch: ${first.slice(-3)}`);
 });
@@ -275,7 +278,7 @@ test('focus inside a block wins its place even when the viewport alone fills an 
 test('a selection anchored inside a block makes it the focus block', () => {
   const { all, focused } = focusPage();
   document.getSelection = () => ({ anchorNode: { parentNode: focused.element } });
-  withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder(all, false).next()), ['focused']));
+  withEngine(true, () => assert.deepEqual(labels(newFeeder(all).next()), ['focused']));
 });
 
 test('a focused input in no block pins the nearest block within half a screen of it, and none past that', () => {
@@ -284,16 +287,16 @@ test('a focused input in no block pins the nearest block within half a screen of
   // The input sits 100px under the focus block (and 300px above the next one).
   const next = block(focusTop + 480, 'next');
   document.activeElement = input(focusTop + 140);
-  withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder([...all, next], false).next()), ['focused']));
+  withEngine(true, () => assert.deepEqual(labels(newFeeder([...all, next]).next()), ['focused']));
   // Contenteditable counts as an input.
   document.activeElement = { ...input(focusTop + 140), tagName: 'DIV', isContentEditable: true };
-  withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder([...all, next], false).next()), ['focused']));
+  withEngine(true, () => assert.deepEqual(labels(newFeeder([...all, next]).next()), ['focused']));
   // More than half a screen from every block: nothing is pinned, the viewport goes first.
   document.activeElement = input(focusTop + 40 + H / 2 + 20);
-  withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder(all, false).next()), ['view0']));
+  withEngine(true, () => assert.deepEqual(labels(newFeeder(all).next()), ['view0']));
   // A focused button is not an input: nothing is pinned.
   document.activeElement = { ...input(focusTop + 140), tagName: 'BUTTON' };
-  withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder([...all, next], false).next()), ['view0']));
+  withEngine(true, () => assert.deepEqual(labels(newFeeder([...all, next]).next()), ['view0']));
 });
 
 test('an insertion above the viewport shifts the viewport by the anchoring scroll and measures nothing again', () => {
@@ -304,7 +307,7 @@ test('an insertion above the viewport shifts the viewport by the anchoring scrol
   const b = block(3900, 'b');
   withEngine(true, () => {
     scrollTo(2000);
-    const feeder = ctx.createBatchFeeder([above, view, a, b], false);
+    const feeder = newFeeder([above, view, a, b]);
     assert.deepEqual(labels(feeder.next()), ['view']);
     // A translation 1000px tall lands under `above`: everything after it moves
     // down by 1000, the document grows by 1000 and scroll anchoring moves the
@@ -327,7 +330,7 @@ test('the pass\'s own insertions re-measure nothing: the viewport it started on 
   const seen = [2000, 2100, 2200, 2300, 2400, 2500].map((y, i) => block(y, `view${i}`));
   scrollTo(2000);
   withEngine(true, () => {
-    const feeder = ctx.createBatchFeeder([above, ...seen], false);
+    const feeder = newFeeder([above, ...seen]);
     assert.deepEqual(labels(feeder.next()), ['view0']);
     const reads = rectReads;
     // Translations land inside the viewport: every block after the first moves
@@ -348,7 +351,7 @@ test('a scroll by the reader after insertions re-measures: the jump finds the bl
   const x = block(4000, 'x');
   const y = block(6000, 'y');
   withEngine(true, () => {
-    const feeder = ctx.createBatchFeeder([start, x, y], false);
+    const feeder = newFeeder([start, x, y]);
     assert.deepEqual(labels(feeder.next()), ['start']);
     // Insertions under `start` push x and y down by 1000, with no scroll.
     x.moveTo(5000);
@@ -374,11 +377,11 @@ test('a scroll made by scroll anchoring keeps the scroll direction; a scroll by 
     // An insertion above the viewport: the document grows by 500 and anchoring
     // moves the viewport down by the same 500. Not the reader: still heading up.
     scrollTo(3500, 500);
-    assert.deepEqual(labels(ctx.createBatchFeeder(pair(), false).next()), ['above']);
+    assert.deepEqual(labels(newFeeder(pair()).next()), ['above']);
     // The reader scrolls down past the growth: heading down.
     scrollTo(3000);
     scrollTo(3500, 200);
-    assert.deepEqual(labels(ctx.createBatchFeeder(pair(), false).next()), ['below']);
+    assert.deepEqual(labels(newFeeder(pair()).next()), ['below']);
   });
 });
 
@@ -386,7 +389,7 @@ test('equal scores keep document order and blocks with no layout box go last', (
   const hidden = [block(null, 'hidden0'), block(null, 'hidden1')];
   const seen = [block(100, 'view0'), block(100, 'view1'), block(100, 'view2')];
   withEngine(true, () => {
-    const feeder = ctx.createBatchFeeder([hidden[0], seen[0], hidden[1], seen[1], seen[2]], false);
+    const feeder = newFeeder([hidden[0], seen[0], hidden[1], seen[1], seen[2]]);
     const order = [];
     for (let batch = feeder.next(); batch; batch = feeder.next()) order.push(...labels(batch));
     assert.deepEqual(order, ['view0', 'view1', 'view2', 'hidden0', 'hidden1']);
@@ -396,9 +399,9 @@ test('equal scores keep document order and blocks with no layout box go last', (
 test('the built-in engine pulls one block per batch, the AI engine up to MAX_BATCH_ITEMS', () => {
   const many = Array.from({ length: ctx.PAGE_LIMITS.MAX_BATCH_ITEMS + 5 }, (_, i) => block(i, `v${i}`));
   withEngine(true, () => {
-    assert.equal(ctx.createBatchFeeder(many, false).next().length, 1);
+    assert.equal(newFeeder(many).next().length, 1);
   });
-  const feeder = ctx.createBatchFeeder(many, false);
+  const feeder = newFeeder(many);
   assert.equal(feeder.next().length, ctx.PAGE_LIMITS.MAX_BATCH_ITEMS);
   assert.equal(feeder.next().length, 5);
 });
@@ -523,7 +526,7 @@ test('the pointer is kept in viewport coordinates: after a scroll it points wher
   const below = block(5200, 'below'); // half a screen below: 0.4, the pointer 1100px off
   const above = block(3600, 'above'); // 0.45 screens above: 0.54, the pointer 500px off: 0.04
   withEngine(true, () => {
-    assert.deepEqual(labels(ctx.createBatchFeeder([above, below], false).next()), ['above'],
+    assert.deepEqual(labels(newFeeder([above, below]).next()), ['above'],
       'read at its old document offset (100) the pointer is near neither, and `below` would go first');
   });
 });

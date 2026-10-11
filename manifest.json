@@ -169,6 +169,7 @@
         "content/content-input-writeback.js",
         "content/content-input-chip.js",
         "content/page/progress-feed.js",
+        "content/page/focus-order.js",
         "content/page/batch.js",
         "content/page/site-adapter.js",
         "content/page/shadow.js",

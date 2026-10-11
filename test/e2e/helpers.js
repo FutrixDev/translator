@@ -116,6 +116,8 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/content-dict-lookup.js',
   // ctx.progressFeed：手动整页翻译的 batch.js 与自动调度层都往里报数。
   'content/page/progress-feed.js',
+  // ctx.focusOrder：先翻哪一块（拉取器与并发池），batch.js 和自动调度层在调用时读它。
+  'content/page/focus-order.js',
   'content/page/batch.js',
   // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
   'content/page/custom-rule.js',

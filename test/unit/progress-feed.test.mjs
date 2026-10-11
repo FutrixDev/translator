@@ -8,7 +8,7 @@
 //     capped below 1 until the run is done, subscribers are coalesced per frame;
 //   - the scheduler (content/content-auto-translate.js) reporting into the real
 //     feed, with collection and translation stubbed: a round takes at most
-//     ROUND_CAP batches, known counts what was accepted into flight (never the
+//     roundCap() batches, known counts what was accepted into flight (never the
 //     queue), the rest is re-queued for an immediate next round, and a new
 //     session zeroes the snapshot.
 //
@@ -181,7 +181,7 @@ function loadScheduler({ engine = 'builtin', overBudget = () => false } = {}) {
   const passes = [];
   const frames = [];
   const ctx = {
-    // One block per batch, two concurrency slots: ROUND_CAP = 2 x 2 = 4 batches.
+    // One block per batch, two concurrency slots: roundCap() = 2 x 2 = 4 batches.
     ...docOrderFeeder({ perBatch: 1, concurrency: 2 }),
     frameRole: 'top',
     state: { isTranslatingPage: false, translationsVisible: true },
@@ -269,7 +269,7 @@ function loadScheduler({ engine = 'builtin', overBudget = () => false } = {}) {
 
 const ledger = (s) => [s.phase, s.known, s.settled, s.failed, s.pending, s.inflight];
 
-test('a round takes at most ROUND_CAP batches; known counts what was accepted, the rest waits in pending', async () => {
+test('a round takes at most roundCap() batches; known counts what was accepted, the rest waits in pending', async () => {
   const s = loadScheduler();
   const els = Array.from({ length: 10 }, (_, i) => element(`p${i}`));
   s.offer(...els);
@@ -279,7 +279,7 @@ test('a round takes at most ROUND_CAP batches; known counts what was accepted, t
   await s.fire();
   assert.equal(s.passes.length, 1);
   assert.deepEqual(s.passes[0].blocks.map((b) => b.element.name), ['p0', 'p1', 'p2', 'p3'],
-    'ROUND_CAP = passConcurrency x 2 = 4 one-block batches');
+    'roundCap() = passConcurrency x 2 = 4 one-block batches');
   assert.deepEqual(ledger(s.feed.state()), ['running', 4, 0, 0, 6, 4]);
   assert.ok(s.feed.fraction(s.feed.state()) < 1);
 

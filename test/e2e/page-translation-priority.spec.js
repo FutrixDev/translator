@@ -17,7 +17,7 @@
 // Mutants this has to catch (§6.2): the feeder not sorting (J5.1), the feeder
 // not reading scrollY (J5.1, J5.2), the feeder keeping geometry measured
 // before a scroll (J5.2 natural), the focus block not pinned first (J5.3) and
-// the auto round draining the whole queue instead of stopping at ROUND_CAP
+// the auto round draining the whole queue instead of stopping at roundCap()
 // (J5.4).
 const { test, expect } = require('./fixtures');
 const {

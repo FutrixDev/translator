@@ -198,7 +198,7 @@ globalThis.window = {
     isExtensionContextAvailable: () => true,
     isExtensionContextInvalidated: () => false,
   },
-  // batch.js 加载时挂上滚动/指针/尺寸监听（设计 §3.1）。
+  // focus-order.js 加载时挂上滚动/指针/尺寸监听（设计 §3.1）。
   addEventListener: () => {},
 };
 // 语言那几个 ctx.x 用真的 content-language.js 挂：maxChars 这一条要守的正是它的
@@ -207,6 +207,8 @@ await import('../../content/content-local-pref.js');
 await import('../../content/content-language.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 ctx.getEffectiveTargetLang = () => target;
+// 语言预检的并发池是 focus-order.js 的 drainFeeder，排在 batch.js 前面。
+await import('../../content/page/focus-order.js');
 await import('../../content/page/batch.js');
 
 async function translated(texts) {

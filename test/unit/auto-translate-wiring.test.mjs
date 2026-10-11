@@ -670,15 +670,17 @@ test('语言包预取记着自己是为哪个语言对挂的，过期了要换�
 
 // ---- 焦点优先与统一进度源（设计 ext-opt-page-translation §2、§3.3）--------------
 //
-// 调度层每轮只挑 ROUND_CAP 批，挑法是 batch.js 的拉取器（评分只有一份实现）；剩下
+// 调度层每轮只挑 roundCap() 批，挑法是 focus-order.js 的拉取器（只有一份）；剩下
 // 的留在队里，一轮收尾立刻起下一轮重新评分。账报给 ctx.progressFeed，分子只认
 // 台账，不经 runTranslationPass 的 onProgress 再报一遍。行为由
 // progress-feed.test.mjs 与 batch-feeder.test.mjs 测，这里钉接缝。
 test('自动轮按评分限量取批，剩下的留队、收尾立刻重排', () => {
   const auto = code('content/content-auto-translate.js');
   const take = auto.slice(auto.indexOf('function takeBatch() {'), auto.indexOf('async function costRefusal('));
-  assert.match(take, /ctx\.createBatchFeeder\(/, 'takeBatch 组批走 batch.js 的拉取器');
-  assert.match(take, /const roundCap = ctx\.passConcurrency\(true\) \* 2;/);
+  assert.match(take, /ctx\.focusOrder\.createBatchFeeder\([\s\S]*?ctx\.passBatchShape\(true\)\s*\)/,
+    'takeBatch 组批走 focus-order.js 的拉取器，批的形状问 batch.js');
+  assert.match(take, /for \(let taken = 0, cap = roundCap\(\); taken < cap; taken \+= 1\)/);
+  assert.match(auto, /const roundCap = \(\) => ctx\.passConcurrency\(true\) \* 2;/);
   assert.match(take, /for \(const \[element, item\] of eligible\) queue\.set\(element, item\.entry\);/);
   // 评分不在调度层另写一份。
   assert.doesNotMatch(auto, /getBoundingClientRect|scrollY|innerHeight/);
@@ -686,7 +688,7 @@ test('自动轮按评分限量取批，剩下的留队、收尾立刻重排', ()
   assert.match(auto, /setStatus\(STATUS\.IDLE\);\s*\n\s*if \(queue\.size > 0 && isOn\(\)\) \{[\s\S]*?scheduleStart\(0\);/);
   // 拉取器与进度源都排在调度层之前。
   const at = isolated.indexOf('content/content-auto-translate.js');
-  for (const file of ['content/page/progress-feed.js', 'content/page/batch.js']) {
+  for (const file of ['content/page/progress-feed.js', 'content/page/focus-order.js', 'content/page/batch.js']) {
     const provided = isolated.indexOf(file);
     assert.ok(provided >= 0 && provided < at, `${file} 必须排在调度层之前`);
   }

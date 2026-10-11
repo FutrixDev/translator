@@ -401,7 +401,7 @@ test('出错的那一页，看一眼原文再看回来，不会替他重试一�
     await expect(blocks).not.toHaveCount(0, { timeout: 30000 });
 
     // 接口从这一刻起不答了。新长出来的每一段都超过 MAX_BLOCK_CHARS —— 超大块各自
-    // 单独成批（content/page/batch.js 的 createBatchFeeder），一批一次失败，攒够
+    // 单独成批（content/page/focus-order.js 的 createBatchFeeder），一批一次失败，攒够
     // MAX_BATCH_FAILURES 就是「整体故障」：这一页停在 error 上，而刚才那条译文还
     // 在页面上。
     //

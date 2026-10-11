@@ -39,7 +39,7 @@ const html = (body) => `<!doctype html>
 <body>${body}</body></html>`;
 
 // D-J10：前两段在首屏，三段「Broken buoy」在 3000px 的空白之后。整页翻译按视口
-// 远近分档、一批只装同一档（content/page/batch.js 的
+// 远近分档、一批只装同一档（content/page/focus-order.js 的
 // createBatchFeeder），于是三段坏的自成一批，失败只落在它们身上。
 // #card 和 document 上的计数器是宿主页面自己的点击 / 按键处理：标记上的交互一次
 // 也不该走到它们。

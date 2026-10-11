@@ -8,7 +8,7 @@
 // Key 用 setExtensionSettings 铺设 —— 那是运行环境，不是这条旅程的步骤。
 //
 // 页面由 context.route 供给：三段在首屏，隔 4000px 再三段，于是首屏一批、视口外一批
-// （content/page/batch.js 的 createBatchFeeder：一批只装同一档），两批各有一侧邻段。每段都长于
+// （content/page/focus-order.js 的 createBatchFeeder：一批只装同一档），两批各有一侧邻段。每段都长于
 // 300 字，截断看得见。
 //
 // 标题带 [fixture] 的用例顶替了用户动作，理由写在用例上面。

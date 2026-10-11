@@ -39,7 +39,8 @@ globalThis.window = {
     getLangBase: (lang) => (lang || '').split('-')[0],
     getLanguageDetectionText: (text) => text || '',
   },
-  // 拉取器（createBatchFeeder）按视口评分：读滚动位置、挂滚动/指针/resize 监听。
+  // 拉取器（focus-order.js 的 createBatchFeeder）按视口评分：读滚动位置、挂滚动/
+  // 指针/resize 监听。
   // 这里的块都没有布局盒，评分一律 +∞，按文档顺序出批。
   scrollY: 0,
   innerHeight: 800,
@@ -74,7 +75,7 @@ await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
 // failed-blocks.js：落笔前摘失败标记（ctx.failedBlocks.clear），失败时放标记。
-for (const module of ['batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
+for (const module of ['focus-order', 'batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }
 // visibility.js 调 ctx.frames 的钩子：装真的 shelf（默认全是空操作），不手写 ctx.frames。
