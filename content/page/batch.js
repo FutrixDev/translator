@@ -741,16 +741,13 @@
     // 彼此不一定相邻，「前一段 / 后一段」取出来可能是隔了几段的文字。设置页的说明
     // （aiPageContextHint）照此承诺，设计 docs/plans/2026-09-25-p1-c-glossary.md §4.3。
     const withNeighbours = auto ? noNeighbours : neighbourContext(blocks);
-    // 失败段落标记（content/page/failed-blocks.js）。手动那一轮每个失败点都放；
-    // 自动那一轮不放 —— 它的第一次失败只是进台账，第二次失败（giveUp）才放，
-    // 那一刻在 content/content-auto-translate.js。点标记重试的那一轮是用户点出来
-    // 的，即便沿用自动的引擎也要放，所以它显式传 markFailures: true。
+    // 失败段落标记（content/page/failed-blocks.js）。手动那一轮每个失败点都放；自动
+    // 那一轮不放 —— 第二次失败（giveUp，content/content-auto-translate.js）才放。点
+    // 标记重试的那一轮是用户点出来的，显式传 markFailures: true。
     // options.onBlockFailed(block, reason)：每一个失败点都报给调用方，与放不放标记
-    // 无关 —— 自动翻译在 giveUp 那一刻要拿这一段自己的原因做标记的 title。
-    // 外面喊停（换了路由、改了设置，options.isAborted）之后回来的失败不报、不放：
-    // 那一页已经不归这一轮管了。累计到三批的阈值不算：那时已经发出去、随后失败的
-    // 几段照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试（设计
-    // §7.1 D-J11）。stoppedOutside 定义在下面，这里只在调用时读它。
+    // 无关（giveUp 要拿这一段自己的原因做标记的 title）。外面喊停（options.isAborted）
+    // 之后回来的失败不报、不放；累计阈值不算喊停：已发出、随后失败的几段照样放标记，
+    // 每一段都是一个可点的重试（设计 §7.1 D-J11）。stoppedOutside 定义在下面。
     const markFailures = typeof options.markFailures === 'boolean' ? options.markFailures : !auto;
     const reportFailure = typeof options.onBlockFailed === 'function' ? options.onBlockFailed : noBlockFailed;
     const markFailed = (block, reason) => {
@@ -759,16 +756,20 @@
       if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
       progressed(block, 'failed');
     };
-    // 进度按块计，每块恰好一次（设计 §2）：有结果（译好、模型说不用翻 —— 即
-    // settledBlock）或者失败（markFailed）的那一刻。onProgress(done, total, outcome)，
-    // outcome 是 'settled' | 'failed'。整轮级失败不落到段落上，也就不计 —— 那一轮
-    // 由整页报错收场。
+    // 进度按块计，每块恰好一次（设计 §2）：有结果（settledBlock）或失败（markFailed）
+    // 的那一刻记下，onProgress(done, total, 'settled' | 'failed') 等这一批插完再报
+    // （flushProgress）：进度条是 DOM，逐块写会让下一块插入前的量取每块强制一次布局
+    // （D-553）。整轮级失败不落到段落上，不计 —— 那一轮由整页报错收场。
     const total = blocks.length;
     const counted = new Set();
+    const unreported = [];
     const progressed = (block, outcome) => {
       if (counted.has(block)) return;
       counted.add(block);
-      onProgress(counted.size, total, outcome);
+      unreported.push([counted.size, outcome]);
+    };
+    const flushProgress = () => {
+      for (const [done, outcome] of unreported.splice(0)) onProgress(done, total, outcome);
     };
     const settledBlock = (block) => {
       if (onSettled) onSettled(block);
@@ -781,13 +782,9 @@
 
     console.log(`Blab Translation: ${blocks.length} blocks, concurrency: ${concurrency}`);
 
-
-    // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
-    // 在一批 40 段的年代这没问题：那种粒度下出错基本等于接口不可用。
-    // 内置引擎改成一块一批之后，同一个判断会让某一段的偶发失败带走后面几百块
-    // （并发 12，表现就是零散翻了十几块然后整片空白）。所以改成累计阈值：
-    // 攒够这么多次失败才认定是整体故障。真故障时每块都失败，照样瞬间就停，
-    // 不会白白多打几百次请求。
+    // batchError 一旦置上，剩余批次全部跳过。累计到这么多次失败才算整体故障：内置
+    // 引擎一块一批，「一批失败就整页放弃」会让某一段的偶发失败带走后面几百块；
+    // 真故障时每块都失败，照样瞬间就停。
     const MAX_BATCH_FAILURES = 3;
     let batchError = null;
     let batchAction = null;
@@ -976,7 +973,7 @@
     };
 
     // 空出一个并发位就拉下一批；出错或外面喊停之后不再拉。
-    await drainFeeder(feeder, processBatch, concurrency, aborted);
+    await drainFeeder(feeder, (batch) => processBatch(batch).finally(flushProgress), concurrency, aborted);
 
     return batchError ? { message: batchError, action: batchAction } : null;
   }
