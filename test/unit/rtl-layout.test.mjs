@@ -262,7 +262,8 @@ test('every place a translation lands requires the language of its text', () => 
 // 整条旅程（几何、换语言后标记跟着变）在 test/e2e/target-languages.spec.js 的 J-B8/J-B9。
 test('the card reveals the selected language and marks its translation', () => {
   const popup = read('content/content-popup.js');
-  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
+  // 菜单每次打开现画（最近使用一组随时会变），画完再显出、再滚到已选项。
+  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*menu\.innerHTML = buildTargetLangMenu\(popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
   assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
   const css = read('content/css/popup.css');
   const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);

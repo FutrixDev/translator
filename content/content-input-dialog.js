@@ -11,7 +11,6 @@
   const escapeHtml = ctx.escapeHtml;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getTargetLangLabel = ctx.getTargetLangLabel;
-  const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const speech = ctx.speech;
   const DictEntry = globalThis.DictEntry;
@@ -125,9 +124,7 @@
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
               </button>
-              <div class="ai-translator-lang-menu" hidden>
-                ${buildTargetLangMenu(initialLang)}
-              </div>
+              <div class="ai-translator-lang-menu" hidden></div>
             </div>
             <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
           </div>

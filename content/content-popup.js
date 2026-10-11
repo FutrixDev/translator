@@ -59,9 +59,7 @@
                 <path d="M6 9l6 6 6-6"/>
               </svg>
             </button>
-            <div class="ai-translator-lang-menu" hidden>
-              ${buildTargetLangMenu(getEffectiveTargetLang())}
-            </div>
+            <div class="ai-translator-lang-menu" hidden></div>
           </div>
           <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
         </div>
@@ -422,21 +420,19 @@
     label.textContent = getTargetLangLabel(normalized);
     popup.dataset.targetLang = normalized;
 
-    const items = menu.querySelectorAll('.ai-translator-lang-item');
-    items.forEach((item) => {
-      item.classList.toggle('is-selected', item.dataset.lang === normalized);
-    });
-
     const closeMenu = () => {
       if (menu.hidden) return;
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
     };
 
-    // 76 项里已选的那一项多半在可视区外：打开时把它滚进来。只动菜单自己的
+    // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
+    // 点过、别的标签点过——每次打开都按那一刻的列表和那一刻的手动引擎画。
+    // 76 项里已选的那一项多半在可视区外：画完把它滚进来。只动菜单自己的
     // scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
     const openMenu = () => {
       if (!menu.hidden) return;
+      menu.innerHTML = buildTargetLangMenu(popup.dataset.targetLang);
       menu.hidden = false;
       ctx.revealSelectedLanguage(menu);
       trigger.setAttribute('aria-expanded', 'true');
@@ -457,10 +453,9 @@
       const lang = item.dataset.lang;
       if (!lang) return;
       label.textContent = item.textContent || getTargetLangLabel(lang);
-      items.forEach((btn) => {
-        btn.classList.toggle('is-selected', btn.dataset.lang === lang);
-      });
       popup.dataset.targetLang = lang;
+      // 最近语言的唯一写入点：只记这里的显式点击（D-542 §B.2）。
+      ctx.rememberRecentTargetLang(lang);
       closeMenu();
       if (typeof onChange === 'function') {
         onChange(lang);
