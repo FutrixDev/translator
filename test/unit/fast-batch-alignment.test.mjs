@@ -39,8 +39,13 @@ globalThis.window = {
     getLangBase: (lang) => (lang || '').split('-')[0],
     getLanguageDetectionText: (text) => text || '',
   },
+  // 拉取器（createBatchFeeder）按视口评分：读滚动位置、挂滚动/指针/resize 监听。
+  // 这里的块都没有布局盒，评分一律 +∞，按文档顺序出批。
+  scrollY: 0,
+  innerHeight: 800,
+  addEventListener: () => {},
 };
-globalThis.document = {};
+globalThis.document = { activeElement: null, getSelection: () => null };
 globalThis.chrome = {};
 // 落笔会给每个块登记内容指纹（shared/block-identity.js），指纹是把原文子树读一遍
 // 算出来的，所以这个假 DOM 也得有节点类型常量。
@@ -98,6 +103,7 @@ function makeBlock(text) {
       localName: 'p',
       childNodes: [],
       parentNode: {},
+      getBoundingClientRect: () => ({ top: 0, bottom: 0, width: 0, height: 0 }),
       classList: {
         contains: (c) => classes.has(c),
         add: (c) => classes.add(c),

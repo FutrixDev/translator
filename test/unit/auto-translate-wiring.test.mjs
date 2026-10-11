@@ -349,7 +349,10 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 还回来（不用翻）和真的写回去了，同样是终局，漏报哪一种都会让那一块下一轮再
   // 花一次同样的钱。
   assert.match(batch, /async function insertTranslation\(\s*\n\s*block, translation, \{ accept, onSettled, target = passTarget\(\) \} = \{\}\s*\n\s*\)/);
-  assert.equal((batch.match(/if \(onSettled\) onSettled\(block\);/g) || []).length, 2);
+  // 写回口里的两处终局：模型说不用翻、真的写回去了。
+  const insertBody = batch.slice(batch.indexOf('async function insertTranslation('),
+    batch.indexOf('async function applyFastBatchTranslations('));
+  assert.equal((insertBody.match(/if \(onSettled\) onSettled\(block\);/g) || []).length, 2);
   assert.match(batch, /const onSettled = typeof options\.onSettled === 'function' \? options\.onSettled : null;/);
 
   const auto = code('content/content-auto-translate.js');

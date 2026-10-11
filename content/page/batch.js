@@ -80,37 +80,6 @@
     return Math.ceil(cjkCount * 1.1 + nonCjkCount / 4);
   }
 
-  // 按视口优先拆分：首屏和附近内容优先处理
-  function splitBlocksByViewport(blocks) {
-    const priorityBlocks = [];
-    const deferredBlocks = [];
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
-    const margin = viewportHeight * 1.2;
-
-    blocks.forEach(block => {
-      const el = block.element;
-      if (!el || !el.getBoundingClientRect) {
-        deferredBlocks.push(block);
-        return;
-      }
-
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) {
-        deferredBlocks.push(block);
-        return;
-      }
-
-      const inPriorityRange = rect.bottom >= -margin && rect.top <= viewportHeight + margin;
-      if (inPriorityRange) {
-        priorityBlocks.push(block);
-      } else {
-        deferredBlocks.push(block);
-      }
-    });
-
-    return { priorityBlocks, deferredBlocks };
-  }
-
   // 若 pos 落在占位符内部，回退到该占位符起点，避免把占位符切成两半（语法与
   // 判定在 shared/text-markers.js）。退到 start 或更前就等于切不出东西，照旧在
   // pos 硬切。
@@ -188,61 +157,189 @@
     return model ? model.forRequest({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', auto }).engine : 'ai';
   }
 
-  // 智能分批：根据 token/字符数/段落数限制
-  function createSmartBatches(blocks, auto) {
-    // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
-    // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
-    // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
-    if (usingBuiltinEngine(auto)) {
-      return blocks.map((block) => [block]);
-    }
-
-    const batches = [];
-    let currentBatch = [];
-    let currentChars = 0;
-    let currentTokens = 0;
-    const itemTokenOverhead = 6;
-
-    const flush = () => {
-      if (currentBatch.length > 0) {
-        batches.push(currentBatch);
-        currentBatch = [];
-        currentChars = 0;
-        currentTokens = 0;
-      }
-    };
-
-    for (const block of blocks) {
-      // 超大块单独成批，交由 processBatch 内的分块逻辑（splitTextIntoChunks）处理
-      if (block.oversized) {
-        flush();
-        batches.push([block]);
-        continue;
-      }
-
-      const textLen = block.text.length;
-      const tokenEstimate = estimateTokens(block.text) + itemTokenOverhead;
-
-      // 如果当前批次加入这个 block 后会超限，先保存当前批次
-      if (currentBatch.length > 0 &&
-          (currentTokens + tokenEstimate > MAX_BATCH_TOKENS ||
-           currentChars + textLen > MAX_BATCH_CHARS ||
-           currentBatch.length >= MAX_BATCH_ITEMS)) {
-        flush();
-      }
-
-      currentBatch.push(block);
-      currentChars += textLen;
-      currentTokens += tokenEstimate;
-    }
-
-    // 保存最后一个批次
-    flush();
-
-    return batches;
+  // 这一轮的并发位数（CONCURRENCY）。手动那一轮的池子、自动调度层每轮的批数上限
+  // （content/content-auto-translate.js 的 ROUND_CAP）都问这一处。
+  function passConcurrency(auto) {
+    return CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
   }
 
-  // 并发控制函数
+  // ------------------------------------------------ 焦点优先（设计 §3）
+  //
+  // 先翻哪一块是拉取那一刻现算的，不是开跑时排一次就定死：用户在一轮中途滚到
+  // 哪儿、点进哪一段，下一批就先翻那儿。已经发出去的请求不取消（没有取消接口，
+  // 取消了钱也照花），重排只管下一次拉取。
+
+  // 「近」的那一档：离视口不超过这么多屏，或者焦点就在块里。一批只装同一档的块
+  // —— 近处那批不被远处的块凑满，首屏的请求小、回得快；分界也就是从前「视口
+  // ±1.2 屏先行、各自成批」的那一条。
+  const NEAR_SCREENS = 1.2;
+  // 块多到这个数时，一次排序连用 RESORT_EVERY 次拉取（设计 §3.2：内置引擎一块
+  // 一批，每拉一次就全量排序是 O(n² log n)）。
+  const RESORT_ABOVE = 4000;
+  const RESORT_EVERY = 8;
+  // 一段在批量请求里的分隔与编号开销（token）。
+  const ITEM_TOKEN_OVERHEAD = 6;
+
+  // 评分要的三个页面信号：滚动方向、最近一次指针的文档纵坐标、布局代次（resize
+  // 之后几何要重量）。监听在第一次建拉取器时挂上，之后常驻；都是 passive，只记数。
+  const viewSignals = { installed: false, scrollDir: 0, lastScrollY: 0, pointerDocY: null, layoutEpoch: 0 };
+
+  function installViewSignals() {
+    if (viewSignals.installed) return;
+    viewSignals.installed = true;
+    viewSignals.lastScrollY = window.scrollY;
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY;
+      if (y !== viewSignals.lastScrollY) viewSignals.scrollDir = y > viewSignals.lastScrollY ? 1 : -1;
+      viewSignals.lastScrollY = y;
+    }, { passive: true });
+    window.addEventListener('pointermove', (event) => {
+      viewSignals.pointerDocY = event.clientY + window.scrollY;
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+      viewSignals.layoutEpoch += 1;
+    }, { passive: true });
+  }
+
+  // 此刻的视口，每次拉取读一次。focused 是焦点（activeElement、选区锚点）连同它
+  // 所有祖先：「块里有焦点」就成了一次集合查询，不必对每块调 contains。
+  function readView() {
+    const focused = new Set();
+    const selection = document.getSelection();
+    for (const start of [document.activeElement, selection && selection.anchorNode]) {
+      for (let node = start; node; node = node.parentNode) focused.add(node);
+    }
+    return {
+      scrollY: window.scrollY,
+      height: window.innerHeight,
+      scrollDir: viewSignals.scrollDir,
+      pointerDocY: viewSignals.pointerDocY,
+      focused
+    };
+  }
+
+  // 块的文档纵向区间。没有布局盒（rect 全 0：display:none、已经摘下）记 hidden。
+  function measureBlock(block) {
+    const rect = block.element.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return { hidden: true, top: 0, bottom: 0 };
+    return { hidden: false, top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY };
+  }
+
+  // 块离视口几屏（相交为 0），在视口下方还是上方。
+  function viewportGap(box, view) {
+    const viewBottom = view.scrollY + view.height;
+    if (box.top >= viewBottom) return { screens: (box.top - viewBottom) / view.height, below: true };
+    if (box.bottom <= view.scrollY) return { screens: (view.scrollY - box.bottom) / view.height, below: false };
+    return { screens: 0, below: false };
+  }
+
+  /**
+   * 设计 §3.1 的评分，越小越先翻。**唯一实现**：手动那一轮的拉取器、自动调度层
+   * 每轮挑块（经 createBatchFeeder）都是它。
+   *
+   *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 焦点 2 − 指针同屏 0.5，
+   *   没有布局盒的 +∞。
+   *
+   * box 是 measureBlock 量出的区间，view 是 readView 的快照。
+   */
+  function scoreBlockForViewport(block, box, view) {
+    if (box.hidden) return Infinity;
+    const { screens, below } = viewportGap(box, view);
+    const towards = below ? view.scrollDir >= 0 : view.scrollDir < 0;
+    let score = screens * (towards ? 0.8 : 1.2);
+    if (view.focused.has(block.element)) score -= 2;
+    if (view.pointerDocY !== null && Math.abs(box.top - view.pointerDocY) < view.height) score -= 0.5;
+    return score;
+  }
+
+  function isNear(block, box, view) {
+    if (box.hidden) return false;
+    return viewportGap(box, view).screens <= NEAR_SCREENS || view.focused.has(block.element);
+  }
+
+  /**
+   * 拉取器（设计 §3.2）。每次 next() 按此刻的视口给剩下的块评分，从最先的那块
+   * 起装满一批：40 段 / 9000 字 / 3200 token，内置引擎一块一批（它是端上逐段调用，
+   * 攒批只会让第一段等整批）；超大块单独成批（processOversizedBlock 再切）；一批
+   * 只装同一档（isNear）。批内按文档顺序，给 neighbourContext 取前后文。
+   * 几何开跑时量一次、resize 后重量；之后每次拉取只做算术，不触发布局。
+   * 没有剩下的块时返回 null。
+   */
+  function createBatchFeeder(blocks, auto) {
+    installViewSignals();
+    const perBatch = usingBuiltinEngine(auto) ? 1 : MAX_BATCH_ITEMS;
+    const docIndex = new Map(blocks.map((block, index) => [block, index]));
+    const remaining = new Set(blocks);
+    let boxes = null;
+    let epoch = -1;
+    let order = null;
+    let pullsSinceSort = 0;
+
+    const rank = (view) => {
+      if (order && remaining.size > RESORT_ABOVE && pullsSinceSort < RESORT_EVERY) {
+        pullsSinceSort += 1;
+        return order;
+      }
+      pullsSinceSort = 1;
+      const scored = [...remaining].map((block) => [scoreBlockForViewport(block, boxes.get(block), view), block]);
+      // 两个 +∞ 相减是 NaN，|| 让它落到文档顺序上：同分按文档顺序。
+      scored.sort((a, b) => (a[0] - b[0]) || (docIndex.get(a[1]) - docIndex.get(b[1])));
+      order = scored.map((entry) => entry[1]);
+      return order;
+    };
+
+    function next() {
+      if (remaining.size === 0) return null;
+      if (epoch !== viewSignals.layoutEpoch) {
+        boxes = new Map([...remaining].map((block) => [block, measureBlock(block)]));
+        epoch = viewSignals.layoutEpoch;
+        order = null;
+      }
+      const view = readView();
+      const batch = [];
+      let chars = 0;
+      let tokens = 0;
+      let near = false;
+      for (const block of rank(view)) {
+        if (!remaining.has(block)) continue;
+        if (block.oversized) {
+          if (batch.length === 0) batch.push(block);
+          break;
+        }
+        const blockNear = isNear(block, boxes.get(block), view);
+        const textLen = block.text.length;
+        const tokenEstimate = estimateTokens(block.text) + ITEM_TOKEN_OVERHEAD;
+        if (batch.length > 0 && (
+          blockNear !== near ||
+          batch.length >= perBatch ||
+          chars + textLen > MAX_BATCH_CHARS ||
+          tokens + tokenEstimate > MAX_BATCH_TOKENS)) break;
+        if (batch.length === 0) near = blockNear;
+        batch.push(block);
+        chars += textLen;
+        tokens += tokenEstimate;
+      }
+      for (const block of batch) remaining.delete(block);
+      return batch.sort((a, b) => docIndex.get(a) - docIndex.get(b));
+    }
+
+    return { next };
+  }
+
+  // 拉取式并发池：空出一个并发位就拉下一批，评分发生在拉取那一刻。stopped() 为真
+  // 就不再拉。
+  async function drainFeeder(feeder, processor, concurrency, stopped) {
+    const worker = async () => {
+      while (!stopped()) {
+        const batch = feeder.next();
+        if (!batch) return;
+        await processor(batch);
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, worker));
+  }
+
+  // 并发控制（语言预检用）：按数组顺序取。
   async function runWithConcurrency(items, processor, concurrency) {
     const results = [];
     let index = 0;
@@ -591,21 +688,29 @@
       if (stoppedOutside()) return;
       reportFailure(block, reason);
       if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
+      progressed(block, 'failed');
     };
+    // 进度按块计，每块恰好一次（设计 §2）：有结果（译好、模型说不用翻 —— 即
+    // settledBlock）或者失败（markFailed）的那一刻。onProgress(done, total, outcome)，
+    // outcome 是 'settled' | 'failed'。整轮级失败不落到段落上，也就不计 —— 那一轮
+    // 由整页报错收场。
     const total = blocks.length;
-    let done = 0;
+    const counted = new Set();
+    const progressed = (block, outcome) => {
+      if (counted.has(block)) return;
+      counted.add(block);
+      onProgress(counted.size, total, outcome);
+    };
+    const settledBlock = (block) => {
+      if (onSettled) onSettled(block);
+      progressed(block, 'settled');
+    };
 
-    // 优先处理首屏相关内容
-    const { priorityBlocks, deferredBlocks } = splitBlocksByViewport(blocks);
+    // 拉取式分批：哪一批先发，拉取那一刻按视口与焦点评分（createBatchFeeder）。
+    const feeder = createBatchFeeder(blocks, auto);
+    const concurrency = passConcurrency(auto);
 
-    // 按 token/字符数/段落数智能分批
-    const priorityBatches = createSmartBatches(priorityBlocks, auto);
-    const deferredBatches = createSmartBatches(deferredBlocks, auto);
-    // 软优先：首屏批次排在前面，但不阻塞后续批次启动
-    const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
-
-    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
+    console.log(`Blab Translation: ${blocks.length} blocks, concurrency: ${concurrency}`);
 
 
     // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
@@ -744,7 +849,7 @@
         markFailed(block);
         return;
       }
-      await insertTranslation(block, combined, { accept, onSettled, target });
+      await insertTranslation(block, combined, { accept, onSettled: settledBlock, target });
     };
 
     // 使用 Promise 池进行并发控制
@@ -759,8 +864,6 @@
       // 超大块：单独成批，走分块翻译流程
       if (batch.length === 1 && batch[0].oversized) {
         await processOversizedBlock(batch[0]);
-        done += batch.length;
-        onProgress(done, total);
         return;
       }
 
@@ -791,7 +894,7 @@
             onFailure: noteBatchFailure,
             isAborted: aborted,
             accept,
-            onSettled,
+            onSettled: settledBlock,
             target,
             withNeighbours,
             onBlockFailed: markFailed
@@ -801,15 +904,10 @@
         noteThrown(error, 'Batch translation');
         if (!failsWholePass(error)) batch.forEach((block) => markFailed(block, error.message));
       }
-
-      done += batch.length;
-      onProgress(done, total);
     };
 
-    // 并发执行所有批次，首屏批次在队列前优先开始
-    if (batches.length > 0) {
-      await runWithConcurrency(batches, processBatch, concurrency);
-    }
+    // 空出一个并发位就拉下一批；出错或外面喊停之后不再拉。
+    await drainFeeder(feeder, processBatch, concurrency, aborted);
 
     return batchError ? { message: batchError, action: batchAction } : null;
   }
@@ -822,5 +920,9 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
+  // 焦点优先（设计 §3）：自动调度层每轮挑块也用同一个拉取器与评分。
+  ctx.scoreBlockForViewport = scoreBlockForViewport;
+  ctx.createBatchFeeder = createBatchFeeder;
+  ctx.passConcurrency = passConcurrency;
   ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
 })();
