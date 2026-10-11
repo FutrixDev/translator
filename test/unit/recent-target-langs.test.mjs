@@ -29,7 +29,9 @@ const BUILTIN_TARGETS = new Set(['en', 'zh-CN', 'fr', 'de', 'ja', 'ko', 'ru', 'e
  * A content-script world with content-language.js loaded.
  * `stored` is what chrome.storage.local holds when the script starts; the
  * initial read answers only when `answerRead()` is called, so a test can land
- * it before or after a click.
+ * it before or after a click; `answerRead(error)` answers it the way a failed
+ * read does, with chrome.runtime.lastError set for the callback. console.warn
+ * calls are collected in `warns`.
  */
 function load({ stored = {}, builtin = false } = {}) {
   const writes = [];
@@ -56,7 +58,8 @@ function load({ stored = {}, builtin = false } = {}) {
     },
     isExtensionContextAvailable: () => true,
   };
-  const sandbox = { chrome, console, Intl, structuredClone };
+  const warns = [];
+  const sandbox = { chrome, console: { ...console, warn: (...args) => warns.push(args) }, Intl, structuredClone };
   sandbox.globalThis = sandbox;
   sandbox.window = { AI_TRANSLATOR_CONTENT: ctx };
   vm.createContext(sandbox);
@@ -65,7 +68,15 @@ function load({ stored = {}, builtin = false } = {}) {
     ctx,
     TargetLang: sandbox.TargetLang,
     writes,
-    answerRead: () => pendingRead(),
+    warns,
+    answerRead: (error) => {
+      chrome.runtime.lastError = error;
+      try {
+        pendingRead();
+      } finally {
+        chrome.runtime.lastError = undefined;
+      }
+    },
     change: (changes, namespace) => listeners.forEach((fn) => fn(changes, namespace)),
   };
 }
@@ -131,6 +142,8 @@ test('remember moves the pick to the front, dedupes, keeps five and writes stora
   assert.deepEqual(plain(ctx.recentTargetLangs()), ['ko', 'fr', 'es', 'ru', 'ja'], 'a repeat moves, not duplicates');
   assert.equal(writes.length, 7);
   assert.deepEqual(writes.at(-1), { recentTargetLangs: ['ko', 'fr', 'es', 'ru', 'ja'] });
+  ctx.rememberRecentTargetLang('ko');
+  assert.equal(writes.length, 7, 'picking the language already in front leaves the list as it was: no write');
   ctx.recentTargetLangs().push('xx');
   assert.equal(ctx.recentTargetLangs().length, 5, 'callers get a copy');
 });
@@ -193,6 +206,15 @@ test('the stored list arrives from storage and follows other tabs, not the sync 
   // name arriving in sync is someone else's, and is not followed.
   world.change({ recentTargetLangs: { newValue: ['de'] } }, 'sync');
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'a sync key of the same name is ignored');
+});
+
+test('a failed read is warned about once, by key, and leaves the list empty', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja'] } });
+  world.answerRead({ message: 'storage backend unavailable' });
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), []);
+  assert.equal(world.warns.length, 1);
+  assert.match(String(world.warns[0][0]), /reading recentTargetLangs failed/);
+  assert.equal(world.warns[0][1], 'storage backend unavailable');
 });
 
 test('a read that lands after a pick does not put the old list back', () => {

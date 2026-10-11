@@ -13,8 +13,9 @@
 //   first — a set() here, or a write from another tab — settles it; a read that
 //   lands afterwards must not put the old value back.
 // - set(value) changes this frame at once and writes only when the value is a
-//   different one (=== ). Every frame runs the same listeners, so a change all
-//   frames make at once is written by the frames that held something else.
+//   different one (sameValue: === , or an array with the same items in order).
+//   Every frame runs the same listeners, so a change all frames make at once is
+//   written by the frames that held something else.
 // - A write from any frame or tab arrives through onChanged and replaces the
 //   value here, through parse.
 // - A failed read or write is logged, never thrown: the memory is not worth
@@ -27,6 +28,14 @@
 
   const ctx = window.AI_TRANSLATOR_CONTENT;
   if (!ctx) return;
+
+  // The values kept here are strings and arrays of strings. set() is handed a
+  // freshly built array each time, so arrays compare by their items.
+  function sameValue(a, b) {
+    if (a === b) return true;
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+      && a.every((item, i) => item === b[i]);
+  }
 
   /**
    * @template T
@@ -43,7 +52,12 @@
     if (ctx.isExtensionContextAvailable()) {
       try {
         chrome.storage.local.get(key, (result) => {
-          if (chrome.runtime.lastError || settled) return;
+          const failure = chrome.runtime.lastError;
+          if (failure) {
+            console.warn(`[Blab Translation] reading ${key} failed`, failure.message);
+            return;
+          }
+          if (settled) return;
           settled = true;
           value = parse(result?.[key]);
         });
@@ -62,7 +76,7 @@
       get: () => value,
       set(next) {
         settled = true;
-        if (next === value) return;
+        if (sameValue(next, value)) return;
         value = next;
         if (!ctx.isExtensionContextAvailable()) return;
         const failed = (error) => console.warn(`[Blab Translation] saving ${key} failed`, error);
