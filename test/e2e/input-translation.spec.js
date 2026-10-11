@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./helpers');
+const { setExtensionSettings, openFloatBallMenu, openExamplePage, stubBuiltinTranslator } = require('./helpers');
 const { HOSTILE_PAGE_CSS } = require('./hostile-css');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
@@ -654,3 +654,172 @@ test('the containment reset does not outrank our own fade-in', async ({ page }) 
   }
 });
 
+// ---------------------------------------------------------------------------
+// Why a typed word sometimes has a dictionary entry and sometimes not
+// (design ext-opt-input-translation §A, D-542). The entry comes only from a
+// model engine; the dialog now says which engine answered, and when a word
+// comes back without an entry, says why in one line under the translation.
+// The built-in engine is the STUB from stubBuiltinTranslator ('[B] ' + text).
+
+const RUN_ENTRY = {
+  translation: '跑',
+  phonetics: [{ label: '', ipa: 'pǎo' }],
+  senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }],
+  examples: [{ source: 'I run every morning.', target: '我每天早上跑步。' }],
+};
+const dialogPart = {
+  tag: '#ai-translator-input-dialog .ai-translator-engine-tag',
+  dict: '#ai-translator-input-dict',
+  note: '#ai-translator-input-dict-note',
+  noteText: '#ai-translator-input-dict-note .ai-translator-dict-note-text',
+  switchBtn: '#ai-translator-input-dict-note .ai-translator-switch-engine',
+  result: '#ai-translator-result-text',
+};
+
+async function translateTyped(page, text) {
+  await page.fill('#ai-translator-input-text', text);
+  await page.click('#ai-translator-do-translate');
+}
+
+function aiSettings(endpoint, extra = {}) {
+  return { apiEndpoint: endpoint, apiKey: 'test-key', modelName: 'gpt-4.1-mini', targetLang: 'zh-CN', ...extra };
+}
+
+test('J-I1 a word looked up with the built-in engine says why there is no entry, and one click asks the AI', async ({ page }) => {
+  const mock = await startMockOpenAIServer({ dictEntry: (text) => (text === 'run' ? RUN_ENTRY : { translation: `[T] ${text}` }) });
+  try {
+    // 1. Built-in, local only, on an https page; the AI is configured but not chosen.
+    await setExtensionSettings(page, aiSettings(mock.endpoint, { translationEngine: 'builtin', engineFallback: 'local-only' }));
+    await openExamplePage(page);
+    await stubBuiltinTranslator(page);
+    await openInputDialog(page);
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-title')).toHaveText(en('inputTextTranslation'));
+
+    // 2. The built-in answer, its tag, and the line that says why there is no entry.
+    await translateTyped(page, 'run');
+    await expect(page.locator(dialogPart.result)).toHaveText('[B] run');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
+    await expect(page.locator(dialogPart.noteText)).toHaveText(en('inputDictNeedsModel'));
+    await expect(page.locator(dialogPart.note)).toBeVisible();
+    await expect(page.locator(dialogPart.switchBtn)).toBeVisible();
+    await expect(page.locator(dialogPart.switchBtn)).toHaveText(en('cardUseAi'));
+    await expect(page.locator(dialogPart.dict)).toBeHidden();
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
+    expect(mock.sentTexts).toEqual([]);
+
+    // 3. One click: the same word, asked of the AI, with its entry.
+    await page.click(dialogPart.switchBtn);
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    await expect(page.locator(dialogPart.result)).toHaveText('跑');
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('pǎo');
+    await expect(page.locator(dialogPart.dict)).toContainText('我每天早上跑步。');
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+    expect(mock.sentTexts).toEqual(['run']);
+    expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
+
+    // The click pinned that one request only: the next lookup follows the settings again.
+    await translateTyped(page, 'run');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
+    await expect(page.locator(dialogPart.note)).toBeVisible();
+    expect(mock.sentTexts).toEqual(['run']);
+
+    // 4. With the AI chosen in settings, the entry comes straight away, and nothing to explain.
+    await page.click('#ai-translator-input-dialog .ai-translator-close');
+    await setExtensionSettings(page, { translationEngine: 'ai' });
+    await openInputDialog(page);
+    await translateTyped(page, 'run');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('pǎo');
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+    await expect(page.locator(dialogPart.switchBtn)).toBeHidden();
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J-I2 kana, hangul and a word with a full stop are looked up; a sentence is translated, with nothing to explain', async ({ page }) => {
+  const entryOf = (text) => ({ translation: `[D] ${text}`, phonetics: [{ label: '', ipa: `ipa-${text}` }] });
+  const mock = await startMockOpenAIServer({ dictEntry: entryOf });
+  try {
+    await setExtensionSettings(page, aiSettings(mock.endpoint));
+    await openExamplePage(page);
+    await openInputDialog(page);
+
+    const asLookup = (i) => mock.systemPrompts[i].includes(globalThis.DictEntry.PROMPT_MARK);
+    for (const [i, typed] of ['こんにちは', '안녕하세요', 'apple.'].entries()) {
+      await translateTyped(page, typed);
+      await expect.poll(() => mock.sentTexts.length).toBe(i + 1);
+      expect(mock.sentTexts[i]).toBe(typed);
+      expect(asLookup(i), `${typed} went out as a lookup`).toBe(true);
+      await expect(page.locator(dialogPart.result)).toHaveText(`[D] ${typed}`);
+      await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText(`ipa-${typed}`);
+      await expect(page.locator(dialogPart.note)).toBeHidden();
+    }
+
+    // A sentence: text mode, no entry, and no line under it either.
+    await translateTyped(page, 'How are you doing');
+    await expect.poll(() => mock.sentTexts.length).toBe(4);
+    expect(asLookup(3)).toBe(false);
+    await expect(page.locator(dialogPart.result)).toHaveText('[T] How are you doing');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    await expect(page.locator(dialogPart.dict)).toBeHidden();
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J-I3 a model answer with every list empty says the model gave none', async ({ page }) => {
+  const mock = await startMockOpenAIServer({
+    dictEntry: () => ({ translation: '我爱你', phonetics: [], senses: [], examples: [], forms: [] }),
+  });
+  try {
+    await setExtensionSettings(page, aiSettings(mock.endpoint));
+    await openExamplePage(page);
+    await openInputDialog(page);
+    await translateTyped(page, 'I love you');
+    await expect.poll(() => mock.sentTexts.length).toBe(1);
+    expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
+    await expect(page.locator(dialogPart.result)).toHaveText('我爱你');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    await expect(page.locator(dialogPart.noteText)).toHaveText(en('dictEntryEmpty'));
+    await expect(page.locator(dialogPart.note)).toBeVisible();
+    // Nothing to switch to: it was the model that came back empty.
+    await expect(page.locator(dialogPart.switchBtn)).toBeHidden();
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J-I4 the last thing asked is what the dialog shows: a slow earlier answer lands on nothing', async ({ page }) => {
+  // Answers in arrival order, so which request an answer belongs to is plain on the page.
+  let asked = 0;
+  const mock = await startMockOpenAIServer({
+    delayMs: 1500,
+    dictEntry: () => ({ translation: asked++ === 0 ? 'FIRST (zh-CN)' : 'SECOND (fr)', phonetics: [{ label: '', ipa: `ipa-${asked}` }] }),
+  });
+  try {
+    await setExtensionSettings(page, aiSettings(mock.endpoint));
+    await openExamplePage(page);
+    await openInputDialog(page);
+
+    await translateTyped(page, 'run');
+    await expect.poll(() => mock.sentTexts.length).toBe(1);
+    mock.setDelayMs(100);
+    await pickInputTargetLang(page, 'fr');
+    await expect.poll(() => mock.sentTexts.length).toBe(2);
+    expect(mock.systemPrompts[1]).not.toBe(mock.systemPrompts[0]);
+
+    const result = page.locator(dialogPart.result);
+    await expect(result).toHaveText('SECOND (fr)');
+    await expect(result).toHaveAttribute('lang', 'fr');
+    const firstAnswerDue = mock.requestTimes[0] + 1500;
+    await page.waitForTimeout(Math.max(0, firstAnswerDue - Date.now()) + 700);
+    await expect(result).toHaveText('SECOND (fr)');
+    await expect(result).toHaveAttribute('lang', 'fr');
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('ipa-2');
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+  } finally {
+    await mock.close();
+  }
+});

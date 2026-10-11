@@ -128,6 +128,9 @@ async function startMockOpenAIServer({
   // 运行中可以换：setFailWhen(fn) 之后的请求按新的判断答（D-J10 先让一段失败、
   // 再修好它）。
   let failWhenNow = failWhen;
+  // 同样运行中可换：setDelayMs(ms) 之后到达的请求按新的延迟答，已经在等的不变。
+  // 「先发的慢、后发的快」只能这样造（J-I4：旧请求的答案晚到，不得盖掉新的）。
+  let delayNow = delayMs;
   // 每次 POST 到达的时刻（Date.now()），按到达顺序：重试的间隔只能在这里量。
   const requestTimes = [];
   // 同一时刻还没答完的 POST 数，和它到过的最大值：限速的并发上限只能在这里量。
@@ -275,7 +278,7 @@ async function startMockOpenAIServer({
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(response);
       };
-      if (delayMs > 0) setTimeout(reply, delayMs);
+      if (delayNow > 0) setTimeout(reply, delayNow);
       else reply();
     });
   });
@@ -293,6 +296,9 @@ async function startMockOpenAIServer({
     },
     setFailWhen(fn) {
       failWhenNow = fn;
+    },
+    setDelayMs(ms) {
+      delayNow = ms;
     },
     origin,
     endpoint: `${origin}/v1/chat/completions`,
