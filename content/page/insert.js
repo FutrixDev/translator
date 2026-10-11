@@ -179,8 +179,9 @@
   //   两条横向判据要「页面原本给这一块多少地方、本来切掉多少」，插完就量不到了，
   //   只能在插之前记下来传进去。
   // @param {string} textLang 译文实际是哪门语言（这一轮请求的目标），打进 lang / dir。
-  function finishTranslationInsert(element, translationEl, before, lang, textLang) {
-    registerTranslation(element, translationEl, false, lang);
+  // @param {string} translation 落笔的原样译文，交给 registerTranslation 记进页内记忆。
+  function finishTranslationInsert(element, translationEl, before, lang, textLang, translation) {
+    registerTranslation(element, translationEl, false, lang, translation);
     ctx.markLanguage(translationEl, textLang);
     keepTranslationVisible(translationEl);
     // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
@@ -386,16 +387,24 @@
   // 几十秒，中途的开关只管得到当时已经插好的块 —— 新插进来的这一条得自己跟上当
   // 前状态，否则藏了一次译文还会一批批冒出来。跟上这件事在 finishTranslationInsert
   // 的最后一步做，不在这里：这里跑在两个几何守卫之前（见那边的第 4 条）。
-  function registerTranslation(element, translationEl, managed, lang) {
+  //
+  // 这里也是页内记忆（BlockIdentity.remember）**唯一的写入点**：每一条落到页面上
+  // 的译文都从这里过，所以记下来的永远是真落笔的那条、带着它真实的语言戳。单页应
+  // 用把同样文字的节点整片重建时，发现层拿它在绘制前装回去（scope.js 的
+  // recallTranslations）。记的是传进来的原样译文（含内联标记），装回时按新节点
+  // 自己的标记重建，和第一次落笔走同一条插入路径。
+  function registerTranslation(element, translationEl, managed, lang, translation) {
+    // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
+    // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
+    // 它是我们自己的，不会把它算进原文。
+    const fingerprint = globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element));
     globalThis.BlockIdentity.register(element, {
-      // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
-      // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
-      // 它是我们自己的，不会把它算进原文。
-      fingerprint: globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element)),
+      fingerprint,
       translationEl: translationEl || null,
       managed: !!managed,
       lang
     });
+    globalThis.BlockIdentity.remember(fingerprint, lang, translation);
   }
 
   // 节点被回收去装别的内容了：把上一条译文整条摘掉，让这一块重新变回「没翻过」。
@@ -526,7 +535,7 @@
         { textLang }
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
-      registerTranslation(element, handle, true, lang);
+      registerTranslation(element, handle, true, lang, translation);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return;
@@ -585,7 +594,7 @@
 
       // 将翻译作为子元素追加到原元素内部（跟在原文后面）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(element, translationEl, before, lang, textLang);
+      finishTranslationInsert(element, translationEl, before, lang, textLang, translation);
     } else if (element.hasAttribute('slot')) {
       // 有 slot 属性的元素（Web Components 的内容分发）：在它旁边插兄弟会破坏 Shadow DOM
       // 的结构，译文追加到它内部。要先于 getTranslationPlacement 问：那边找装原文的
@@ -605,7 +614,7 @@
         box-sizing: border-box;
       `;
       element.appendChild(internalTranslation);
-      finishTranslationInsert(element, internalTranslation, before, lang, textLang);
+      finishTranslationInsert(element, internalTranslation, before, lang, textLang, translation);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -684,11 +693,11 @@
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         appendInside(placement.target, translationEl);
-        finishTranslationInsert(element, translationEl, before, lang, textLang);
+        finishTranslationInsert(element, translationEl, before, lang, textLang, translation);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(element, translationEl, before, lang, textLang);
+        finishTranslationInsert(element, translationEl, before, lang, textLang, translation);
       }
     }
   }

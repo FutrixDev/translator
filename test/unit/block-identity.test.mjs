@@ -311,9 +311,9 @@ test('every insertion registers an identity — including the one with no node t
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   // 四种有节点的形态都汇进 finishTranslationInsert，受管 ::after 那条没有节点，
   // 走不到那里，所以它必须自己登记一次。
-  assert.match(body, /registerTranslation\(element, handle, true, lang\)/,
+  assert.match(body, /registerTranslation\(element, handle, true, lang, translation\)/,
     'the managed (::after) branch inserts a translation nobody can later release');
-  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang\);/,
+  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang, translation\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang, translation\);/,
     'the shared post-insert path no longer registers the block identity');
 });
 

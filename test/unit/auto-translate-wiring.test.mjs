@@ -326,7 +326,7 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   // 径都经过它）。语言是**带进来**的，不是在那里现问的 —— 见下面「一轮翻译只认
   // 一门语言」。
   const insert = code('content/page/insert.js');
-  assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang\)/);
+  assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang, translation\)/);
   // 落笔端只有一处能现问设置：裁决两轮同时在飞时谁说了算（supersedesExistingTranslation）。
   // 除它以外一处都不许有 —— 戳必须是发请求时的那一门语言，在这里现问就会把
   // 用户中途改的新语言盖在旧译文上，从此这一块指纹一致、语言「也一致」，再没
