@@ -458,8 +458,13 @@ test('J-L1 the recent group: shared by the dialog and the card, five at most, ke
     await expect(result).toHaveText('[T] a full sentence for translation');
     await expect(result).toHaveAttribute('lang', 'fr');
 
-    // 3. Closed and opened again: fr heads the menu, selected and in view, then all 76.
+    // 3. Closed, the page reloaded (so the list comes back from storage, not
+    // from this page's memory) and opened again: fr heads the menu, selected
+    // and in view, then all 76.
     await closeDialog(page);
+    await page.reload();
+    await waitForFloatBall(page);
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
     const scrollYBefore = await page.evaluate(() => window.scrollY);
     menu = await openDialogMenu(page);
     let parts = await menuParts(menu);
