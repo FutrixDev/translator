@@ -185,17 +185,12 @@
       // 脏根之间可能互相嵌套（父子都变了），同一个块会被收到两次。按元素去重，
       // 不按根去重：判断两个根是否嵌套要 contains()，比直接收完再去重还贵。
       const seen = new Set();
-      // 回调里那次同步装回有预算（40 根 / 200 块），超出的、以及藏着译文时停掉
-      // 发现层期间重建的，都在这里逐块再问一次记忆：可能闪过一下原文，但不重发。
-      // 没有记忆的页面不问。
-      const remembers = globalThis.BlockIdentity.memorySize() > 0;
       for (const root of roots) {
         if (!root || !root.isConnected) continue;
         for (const block of collect(root)) {
           const element = block.element;
           if (!element || seen.has(element)) continue;
           seen.add(element);
-          if (remembers && ctx.recallTranslation(block)) continue;
           watch(element);
         }
       }
@@ -358,10 +353,16 @@
 
       const blocks = [];
       const seen = new Set();
+      // 回调里那次同步装回有预算（见 scope.js 的 RECALL_*），超出的、以及藏着
+      // 译文时停掉发现层期间重建的，都在进带这一刻逐块再问一次记忆：只问进带
+      // 的这几块，不在 flush 里把整片几千块一口气装回（那是一个长任务）。这里
+      // 在绘制之后，可能闪过一帧原文，但不重发。没有记忆的页面不问。
+      const remembers = globalThis.BlockIdentity.memorySize() > 0;
       for (const element of arrived) {
         for (const block of collect(element)) {
           if (!block.element || seen.has(block.element)) continue;
           seen.add(block.element);
+          if (remembers && ctx.recallTranslation(block)) continue;
           blocks.push(block);
         }
       }

@@ -305,8 +305,9 @@
 
   // 生产入口：整页翻译、发现层、子 frame 的手动轮都走这里。
   // 直接调 collectTranslatableBlocks(root)（不带 scope）的行为不变：不做范围过滤。
-  function collectPageBlocks(root = document.body) {
-    return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope() });
+  // limit：收够这么多块就停，给 MutationObserver 回调里的同步装回用。
+  function collectPageBlocks(root = document.body, { limit } = {}) {
+    return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope(), limit });
   }
 
   // ---- 装回：同样的文字换了新节点，把上次的译文放回去 ------------------------
@@ -323,10 +324,16 @@
   // collectPageBlocks 收的。
 
   // 同步装回的硬上限（D-543 第 6 点）：回调里每多做一点，那一帧就晚画一点。
-  // 超出的留给防抖之后那一轮（发现层 flush 里逐块再问一次），仍然不重发，只是
-  // 可能闪一下。
+  // 两道闸：最多看 40 个根、收 200 块（收集按 limit 提前停，不把几千块的新子
+  // 树整片走一遍）；最多装回 RESTORE 块。装回一块要走插入路径的版式读取，
+  // 2000 块的文档上约 0.5 ms 一块，200 块就是 100 ms 的一帧 —— 实测见
+  // docs/delivery/evidence/ext-opt/c/perf.txt，16 块把最坏一次压在 16 ms 内。
+  // 菜单、标签栏这类整片重建的通常就几块到十几块，一次装完。超出的留给发现层
+  // 进带时逐块再问（content-auto-discover.js 的 onBand），仍然不重发，只是可
+  // 能闪一帧。
   const RECALL_ROOT_BUDGET = 40;
-  const RECALL_BLOCK_BUDGET = 200;
+  const RECALL_SCAN_BUDGET = 200;
+  const RECALL_RESTORE_BUDGET = 16;
 
   // 一块：命中就装回并返回 true。语言戳和 batch.js 的 passTarget 同一对：记进身
   // 份的是 currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
@@ -345,14 +352,18 @@
   // @returns {number} 装回了几块
   function recallTranslations(roots) {
     if (globalThis.BlockIdentity.memorySize() === 0) return 0;
+    let scanned = 0;
     let restored = 0;
     for (const root of roots.slice(0, RECALL_ROOT_BUDGET)) {
       if (!root.isConnected) continue;
-      for (const block of collectPageBlocks(root)) {
+      const blocks = collectPageBlocks(root, { limit: RECALL_SCAN_BUDGET - scanned });
+      scanned += blocks.length;
+      for (const block of blocks) {
         if (!recallTranslation(block)) continue;
         restored += 1;
-        if (restored >= RECALL_BLOCK_BUDGET) return restored;
+        if (restored >= RECALL_RESTORE_BUDGET) return restored;
       }
+      if (scanned >= RECALL_SCAN_BUDGET) return restored;
     }
     return restored;
   }
