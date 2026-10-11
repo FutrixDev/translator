@@ -232,10 +232,13 @@ function loadScheduler({ engine = () => 'builtin', overBudget = () => false } = 
   const auto = ctx.setupAutoTranslate();
   const feed = ctx.progressFeed;
   // Every snapshot the feed showed, in order, so a test can check known never fell.
+  // Taken at every publish (the scheduler reads ctx.progressFeed at call time), not
+  // only between test steps: a snapshot that lives for one statement counts too.
   const history = [feed.state()];
   const note = () => {
     if (history[history.length - 1] !== feed.state()) history.push(feed.state());
   };
+  ctx.progressFeed = { ...feed, auto: { publish(partial) { feed.auto.publish(partial); note(); } } };
   const offer = (...els) => {
     onCandidates(els.map((el) => ({ element: el, text: el.text })));
     note();
