@@ -1,9 +1,11 @@
 // Whole-page translation sends what the reader is looking at first (design
-// ext-opt-page-translation §3, journeys J5.1, J5.2 and J5.4).
+// ext-opt-page-translation §3, journeys J5.1, J5.2, J5.3 and J5.4).
 //
-// The page is 200 paragraphs, each in an 800px section of fixed height: a
-// translation lands inside its own section, so nothing moves while the pass
-// runs and the measured geometry stays the page's geometry.
+// The page is 200 paragraphs, in two layouts. `fixed`: each in an 800px
+// section of fixed height, so a translation lands inside its own section and
+// nothing moves. `natural`: paragraphs at their own height, so every
+// translation pushes what follows down, and one above the viewport makes
+// scroll anchoring move scrollY — geometry measured before that is wrong.
 //
 // The built-in engine is a stub (e2e Chromium has no on-device model). It
 // answers '[B] ' + text after a fixed delay, keeps every text it was handed in
@@ -13,11 +15,14 @@
 // (batch.js BUILTIN_BATCH), so the call order is the pull order.
 //
 // Mutants this has to catch (§6.2): the feeder not sorting (J5.1), the feeder
-// not reading scrollY (J5.1, J5.2) and the auto round draining the whole queue
-// instead of stopping at ROUND_CAP (J5.4).
+// not reading scrollY (J5.1, J5.2), the feeder keeping geometry measured
+// before a scroll (J5.2 natural), the focus block not pinned first (J5.3) and
+// the auto round draining the whole queue instead of stopping at ROUND_CAP
+// (J5.4).
 const { test, expect } = require('./fixtures');
 const {
   evaluateInContentScript,
+  sendMessageToActiveTab,
   setExtensionSettings,
   triggerPageTranslation,
   waitForContentReady,
@@ -33,19 +38,32 @@ const STUB_DELAY_MS = 80;
 // when the reader moves.
 const BUILTIN_CONCURRENCY = 4;
 
-const PAGE = `<!doctype html>
+const LAYOUT_CSS = {
+  fixed: `section { height: ${SECTION_PX}px; margin: 0; padding: 0; }
+  section > p { margin: 0; min-height: 680px; }`,
+  natural: `section { margin: 0; padding: 0; }
+  section > p { margin: 0 0 24px; }`,
+};
+
+/** `extra(i)` → { inside, after }: markup inside paragraph i, and after it in its section. */
+function buildPage(layout = 'fixed', extra = () => ({})) {
+  const rows = Array.from({ length: COUNT }, (_, i) => {
+    const { inside = '', after = '' } = extra(i);
+    return `<section><p id="s${i}">Segment ${i}: the harbour ferry leaves the northern pier every morning and returns before dusk.${inside}</p>${after}</section>`;
+  });
+  return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Priority</title>
 <style>
   body { margin: 0; font: 16px/24px sans-serif; }
-  section { height: ${SECTION_PX}px; margin: 0; padding: 0; }
-  section > p { margin: 0; min-height: 680px; }
+  ${LAYOUT_CSS[layout]}
 </style></head>
 <body>
-${Array.from({ length: COUNT }, (_, i) => `<section><p id="s${i}">Segment ${i}: the harbour ferry leaves the northern pier every morning and returns before dusk.</p></section>`).join('\n')}
+${rows.join('\n')}
 </body></html>`;
+}
 
-async function serve(context) {
-  await context.route(`${SITE}/**`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: PAGE }));
+async function serve(context, body = buildPage()) {
+  await context.route(`${SITE}/**`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body }));
 }
 
 function settings(endpoint, extra) {
@@ -150,42 +168,94 @@ test.describe('page translation pulls by viewport', () => {
     await mock.close();
   });
 
-  test('manual pass: the viewport goes first, and a jump mid-pass is served within the in-flight calls (J5.1, J5.2)', async ({ page, context }) => {
-    test.setTimeout(90000);
-    await serve(context);
-    await setExtensionSettings(page, settings(mock.endpoint));
-    await page.goto(`${SITE}/long`);
-    await waitForContentReady(page);
+  // `start` puts the viewport in the middle of the page, straddling paragraphs:
+  // from the top, document order would put the viewport first by itself and
+  // prove nothing.
+  for (const { layout, start, visibleAtStart } of [
+    { layout: 'fixed', start: (px) => window.scrollTo(0, 100 * px + px / 2), visibleAtStart: [100, 101] },
+    { layout: 'natural', start: () => document.getElementById('s100').scrollIntoView(), visibleAtStart: null },
+  ]) {
+    test(`manual pass, ${layout} layout: the viewport goes first, and a jump mid-pass is served within the in-flight calls (J5.1, J5.2)`, async ({ page, context }) => {
+      test.setTimeout(90000);
+      await serve(context, buildPage(layout));
+      await setExtensionSettings(page, settings(mock.endpoint));
+      await page.goto(`${SITE}/long`);
+      await waitForContentReady(page);
 
-    // Start in the middle of the page, straddling two paragraphs: from the top,
-    // document order would put the viewport first by itself and prove nothing.
-    await page.evaluate((y) => window.scrollTo(0, y), 100 * SECTION_PX + SECTION_PX / 2);
-    const visible = await inViewport(page);
-    expect(visible).toEqual([100, 101]);
+      await page.evaluate(start, SECTION_PX);
+      const visible = await inViewport(page);
+      if (visibleAtStart) expect(visible).toEqual(visibleAtStart);
+      else expect(visible.length).toBeGreaterThan(4);
 
-    const JUMP_AT = 20;
-    await installStub(context, page, { jump: { atCall: JUMP_AT, id: 's150' } });
-    await triggerPageTranslation(page);
+      const JUMP_AT = 20;
+      await installStub(context, page, { jump: { atCall: JUMP_AT, id: 's150' } });
+      await triggerPageTranslation(page);
 
-    await expect.poll(() => page.locator('.ai-translator-inline-block').count(), { timeout: 60000 }).toBe(COUNT);
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+      await expect.poll(() => page.locator('.ai-translator-inline-block').count(), { timeout: 60000 }).toBe(COUNT);
+      await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
 
-    const order = await callOrder(context, page);
-    expect(order).toHaveLength(COUNT);
-    expect(new Set(order).size).toBe(COUNT);
+      const order = await callOrder(context, page);
+      expect(order).toHaveLength(COUNT);
+      expect(new Set(order).size).toBe(COUNT);
 
-    // J5.1: every viewport paragraph was called before any paragraph outside it.
-    const lastVisible = Math.max(...visible.map((id) => order.indexOf(id)));
-    const firstOutside = Math.min(...order.map((id, index) => (visible.includes(id) ? Infinity : index)));
-    expect(lastVisible).toBeLessThan(firstOutside);
-    expect(order.slice(0, visible.length).sort((a, b) => a - b)).toEqual(visible);
+      // J5.1: every viewport paragraph was called before any paragraph outside it.
+      const lastVisible = Math.max(...visible.map((id) => order.indexOf(id)));
+      const firstOutside = Math.min(...order.map((id, index) => (visible.includes(id) ? Infinity : index)));
+      expect(lastVisible).toBeLessThan(firstOutside);
+      expect(order.slice(0, visible.length).sort((a, b) => a - b)).toEqual(visible);
 
-    // J5.2: the stub scrolled s150 into view during call JUMP_AT. Nothing in
-    // flight is cancelled, so s150 waits at most for the calls already out.
-    const s150Call = order.indexOf(150) + 1;
-    expect(s150Call).toBeGreaterThan(JUMP_AT);
-    expect(s150Call).toBeLessThanOrEqual(JUMP_AT + BUILTIN_CONCURRENCY);
-  });
+      // J5.2: the stub scrolled s150 into view during call JUMP_AT. Nothing in
+      // flight is cancelled, so s150 waits at most for the calls already out.
+      // On the natural page every landed translation has moved s150 since the
+      // pass began: only geometry measured after the jump finds it.
+      const s150Call = order.indexOf(150) + 1;
+      expect(s150Call).toBeGreaterThan(JUMP_AT);
+      expect(s150Call).toBeLessThanOrEqual(JUMP_AT + BUILTIN_CONCURRENCY);
+    });
+  }
+
+  // J5.3: the focus is on an input inside paragraph s106 (or right after it,
+  // in its section), and the reader has scrolled back up so s106's top is five
+  // screens below the viewport. The pass starts from the context menu
+  // (TRANSLATE_PAGE), which leaves the focus where it is.
+  const FOCUS_TARGET = 106;
+  for (const { engine, where } of [
+    { engine: 'builtin', where: 'inside' },
+    { engine: 'builtin', where: 'beside' },
+    { engine: 'ai', where: 'inside' },
+    { engine: 'ai', where: 'beside' },
+  ]) {
+    test(`manual pass, ${engine} engine: the paragraph with the focus ${where} it goes first, five screens away (J5.3)`, async ({ page, context }) => {
+      test.setTimeout(90000);
+      const field = '<input id="field" type="text" placeholder="reply">';
+      await serve(context, buildPage('fixed', (i) => (i !== FOCUS_TARGET ? {} : where === 'inside' ? { inside: ` ${field}` } : { after: field })));
+      await setExtensionSettings(page, settings(mock.endpoint, engine === 'ai'
+        ? { translationEngine: 'ai', autoTranslateEngine: 'ai' } : {}));
+      await page.goto(`${SITE}/long`);
+      await waitForContentReady(page);
+      if (engine === 'builtin') await installStub(context, page);
+
+      const gapScreens = await page.evaluate((id) => {
+        const target = document.getElementById(id);
+        const top = target.getBoundingClientRect().top + window.scrollY;
+        document.getElementById('field').focus({ preventScroll: true });
+        window.scrollTo(0, top - 6 * window.innerHeight);
+        return (target.getBoundingClientRect().top - window.innerHeight) / window.innerHeight;
+      }, `s${FOCUS_TARGET}`);
+      expect(gapScreens).toBeCloseTo(5, 1);
+      expect(await page.evaluate(() => document.activeElement.id)).toBe('field');
+
+      await sendMessageToActiveTab(page, { type: 'TRANSLATE_PAGE' });
+      await expect.poll(() => page.locator('.ai-translator-inline-block').count(), { timeout: 60000 }).toBe(COUNT);
+
+      if (engine === 'builtin') {
+        expect((await callOrder(context, page))[0], 'built-in call #1').toBe(FOCUS_TARGET);
+      } else {
+        const first = [...String(mock.sentTexts[0]).matchAll(/Segment (\d+):/g)].map((m) => Number(m[1]));
+        expect(first, 'the first AI request').toContain(FOCUS_TARGET);
+      }
+    });
+  }
 
   test('auto pass: after a jump the next round re-scores, so a deep queue does not hold the new viewport back (J5.4)', async ({ page, context }) => {
     test.setTimeout(90000);
