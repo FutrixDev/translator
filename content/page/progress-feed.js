@@ -15,6 +15,11 @@
 //
 // 这里只是纯状态加发布/订阅，不碰 DOM，也不画任何东西（环归 content-float-ball.js）。
 //
+// 手动来源（下面的 manual.begin / settle / fail / end）由批 B 接入（设计 §6），在
+// 那之前只有自动来源发布：手动整页仍走 content-page-translation.js 的 onProgress
+// 与 state.translationProgress。批 B 接入时删掉这一段，旧进度条随之删除，不让两条
+// 进度路径并存（设计 §4.4）。
+//
 // **不变量由这里守，坏了就抛。** 分母在同一代里倒退、分子超过分母，画出来的就是
 // 一个先大后小、或者卡在 100% 之外的环；那是上游记账记错了，悄悄夹住只会把错账
 // 画成一个看起来正常的环。所以 known / settled / failed 在同一来源、同一代（手动是
@@ -101,8 +106,12 @@
     if (!manualActive) throw new Error(`progressFeed.manual.${what}: no manual run in progress`);
   }
 
-  function requireCount(what, n) {
-    if (!Number.isInteger(n) || n < 1) throw new Error(`progressFeed.manual.${what}: n must be a positive integer, got ${n}`);
+  // begin 收的是块数（可以是 0），settle / fail 收的是这一步了结了几块（至少 1）。
+  function requireCount(what, name, n, min) {
+    if (!Number.isInteger(n) || n < min) {
+      const kind = min === 0 ? 'a non-negative' : 'a positive';
+      throw new Error(`progressFeed.manual.${what}: ${name} must be ${kind} integer, got ${n}`);
+    }
   }
 
   function manualStep(changes) {
@@ -114,9 +123,7 @@
   const manual = Object.freeze({
     /** 一轮手动整页翻译开始：known = 这一轮要翻的块数，全部在途。 */
     begin(known) {
-      if (!Number.isInteger(known) || known < 0) {
-        throw new Error(`progressFeed.manual.begin: known must be a non-negative integer, got ${known}`);
-      }
+      requireCount('begin', 'known', known, 0);
       manualActive = true;
       const next = {
         source: 'manual', phase: 'arming', known, settled: 0, failed: 0, pending: 0, inflight: known,
@@ -129,13 +136,13 @@
     /** n 块有了结果（译好或模型说不用翻）。第一块回来时 arming → running。 */
     settle(n = 1) {
       requireManual('settle');
-      requireCount('settle', n);
+      requireCount('settle', 'n', n, 1);
       manualStep({ phase: 'running', settled: current.settled + n, inflight: current.inflight - n });
     },
     /** n 块放弃了（重试后仍失败）：既算有结果，也记进 failed。 */
     fail(n = 1) {
       requireManual('fail');
-      requireCount('fail', n);
+      requireCount('fail', 'n', n, 1);
       manualStep({
         phase: 'running', settled: current.settled + n, failed: current.failed + n, inflight: current.inflight - n
       });

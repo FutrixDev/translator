@@ -78,6 +78,8 @@ test('a manual run reports source manual, counts each settle and fail, and ends 
 test('the manual counters refuse to run past known, and refuse to run outside a manual run', () => {
   const { feed } = loadFeed();
   assert.throws(() => feed.manual.settle(), /no manual run/);
+  assert.throws(() => feed.manual.begin(-1), /begin: known must be a non-negative integer, got -1/);
+  assert.throws(() => feed.manual.begin(1.5), /non-negative integer/);
   feed.manual.begin(2);
   feed.manual.settle(2);
   // Past known, the in-flight count would go negative: refused before settled can exceed known.
