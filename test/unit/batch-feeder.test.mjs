@@ -371,3 +371,17 @@ test('a manual pass wired to ctx.progressFeed settles each block exactly once: N
   const s = feed.state();
   assert.deepEqual([s.source, s.phase, s.known, s.settled, s.failed, s.inflight], ['manual', 'partial', 6, 6, 1, 0]);
 });
+
+// Last in the file: the pointer it leaves behind would bend every later order.
+test('the pointer is kept in viewport coordinates: after a scroll it points where it is now', () => {
+  // The pointer rests 100px from the top of the viewport while the page is at
+  // the top, then the page scrolls to 4000 under it: it now points at 4100.
+  for (const fn of listeners.get('pointermove') || []) fn({ clientY: 100 });
+  scrollTo(4000); // viewport [4000, 4800), heading down
+  const below = block(5200, 'below'); // half a screen below: 0.4, the pointer 1100px off
+  const above = block(3600, 'above'); // 0.45 screens above: 0.54, the pointer 500px off: 0.04
+  withEngine(true, () => {
+    assert.deepEqual(labels(ctx.createBatchFeeder([above, below], false).next()), ['above'],
+      'read at its old document offset (100) the pointer is near neither, and `below` would go first');
+  });
+});
