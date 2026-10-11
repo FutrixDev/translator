@@ -362,12 +362,12 @@ in kana, hangul, Thai and the like (D-473, revised by D-542). The parser fails h
 translation is missing or empty; a wrong-typed or overlong optional field or
 list item is dropped, never guessed at (D-472), and one `console.warn` names
 each dropped field and why, never the text (D-542). The entry is drawn only for a
-reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
-translation alone. `content/css/dict-entry.css` states colour, size, display
-and padding on every element, because the containment reset leaves those to
-our own rules and the entry is made of bare spans and divs. Journeys C1–C9 and
-J1–J3 (the translation's phonetics and speakers, D-487) in
-`test/e2e/dictionary-entry.spec.js`.
+reply from a model engine, `ai` or `blab` (`DictEntry.entryFor`); the built-in engine
+gives the translation alone. `content/css/dict-entry.css` states colour, size, display
+and padding on every element, because the containment reset leaves those to our own
+rules and the entry is made of bare spans and divs. Journeys C1–C9 and J1–J3 (the
+translation's phonetics and speakers, D-487) in `test/e2e/dictionary-entry.spec.js`;
+J-I1–J-I7 (the dialog's no-entry note) in `test/e2e/input-dictionary-note.spec.js`.
 
 ### Translation Engine
 
