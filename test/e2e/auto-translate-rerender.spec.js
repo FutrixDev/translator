@@ -6,14 +6,22 @@
 // 的那一刻 <main> 被推过门槛，范围翻到 <main>，左栏从此不翻。
 //
 // 夹具照真实左栏写：`<div>` 不是 `<nav>`（`'main'` 范围本来就跳过 <nav>，那样测不
-// 到问题），每次 go() 从数据重建 innerHTML。闪白用页面主世界的 rAF 逐帧计数 ——
-// 判据是「有没有一帧画出来的左栏少于 5 条译文」，不是最后数一遍。
+// 到问题），每次 go() 从数据重建 innerHTML。闪白用页面主世界的 rAF 逐帧计数（下面
+// 的 startFrames）—— 判据是「有没有一帧画出来的左栏少于 5 条译文」，不是最后数一遍。
 //
 // 内置引擎桩（默认的自动引擎）：每段一次调用，计数和送出的原文都在内容脚本世界里
 // （self.__builtinCalls / __builtinTexts）。mock AI 服务只是兜底，断言它一条也没收到。
 const fs = require('fs');
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, evaluateInContentScript, stubBuiltinTranslator, waitForContentReady } = require('./helpers');
+const {
+  setExtensionSettings,
+  evaluateInContentScript,
+  serveHtml,
+  scopeProbe,
+  settingsSettled,
+  stubBuiltinTranslator,
+  waitForContentReady,
+} = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const HOST = 'leftmenu.test';
@@ -55,17 +63,6 @@ window.go = (key) => {
   renderNav(key);
 };
 window.renameNav = (i, text) => { NAV[i] = text; };
-// 逐帧数左栏的译文：每一帧记一个数。frames 里出现 < 5 就是有一帧画出了原文。
-window.startFrames = (selector) => {
-  window.__frames = [];
-  window.__framing = true;
-  const tick = () => {
-    window.__frames.push(document.querySelectorAll(selector).length);
-    if (window.__framing) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-};
-window.stopFrames = () => { window.__framing = false; return window.__frames; };
 renderNav('home');
 </script></body></html>`;
 }
@@ -93,16 +90,20 @@ async function builtinTexts(context, page) {
   return evaluateInContentScript(context, page, 'self.__builtinTexts.slice()');
 }
 
-async function openLeftMenu(page, context, endpoint, { mainTag = 'div', beforeAuto, extra } = {}) {
+// 打开一页，装上内置引擎桩，再把这个站点设成「总是翻译」。beforeAuto 在自动
+// 翻译开始之前跑（量翻译前的状态用）。
+async function openAuto(page, context, endpoint, { url, html, beforeAuto, extra } = {}) {
   await setExtensionSettings(page, settings(endpoint, extra));
-  await context.route(`https://${HOST}/**`, (route) => route.fulfill({
-    status: 200, contentType: 'text/html', body: leftMenuHtml({ mainTag }),
-  }));
-  await page.goto(`https://${HOST}/home`);
+  await serveHtml(context, { [url]: html });
+  await page.goto(url);
   await waitForContentReady(page);
   await stubBuiltinTranslator(page);
   if (beforeAuto) await beforeAuto();
-  await setExtensionSettings(page, settings(endpoint, { ...extra, siteRules: { [HOST]: 'always' } }));
+  await setExtensionSettings(page, settings(endpoint, { ...extra, siteRules: { [new URL(url).host]: 'always' } }));
+}
+
+async function openLeftMenu(page, context, endpoint, { mainTag = 'div', beforeAuto, extra } = {}) {
+  await openAuto(page, context, endpoint, { url: `https://${HOST}/home`, html: leftMenuHtml({ mainTag }), beforeAuto, extra });
   await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5, { timeout: 30000 });
   await expect(page.locator('#main .ai-translator-inline-block')).toHaveCount(1, { timeout: 30000 });
 }
@@ -115,13 +116,41 @@ async function switchTo(page, key) {
   await page.waitForTimeout(1500);
 }
 
-// 范围探针：每次先作废「退回 body」的缓存（发现层每一轮开头也是这一步），再问。
-const SCOPE_PROBE = `(() => {
-  const ctx = window.AI_TRANSLATOR_CONTENT;
-  ctx.beginScopeRound();
-  const scope = ctx.resolvePageScope();
-  return { roots: scope.roots.map((root) => root.tagName), share: scope.share };
-})()`;
+// 逐帧计数探针，跑在页面主世界的 rAF 上：每一帧数一遍 selector 里 keep 为真的
+// 节点，记一个数。keep 是按源码（toString）送进页面的，只能用它自己的参数和页面
+// 的全局，不能引用这个文件里的任何东西。
+async function startFrames(page, selector, keep = () => true) {
+  await page.evaluate(`(() => {
+    const keep = ${keep.toString()};
+    window.__frames = [];
+    window.__framing = true;
+    const tick = () => {
+      let count = 0;
+      for (const el of document.querySelectorAll(${JSON.stringify(selector)})) if (keep(el)) count += 1;
+      window.__frames.push(count);
+      if (window.__framing) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })()`);
+}
+
+function stopFrames(page) {
+  return page.evaluate(() => { window.__framing = false; return window.__frames; });
+}
+
+// 和视口相交（高度为 0 的不算）。
+const inView = (el) => {
+  const rect = el.getBoundingClientRect();
+  return rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+};
+
+// 视口里的菜单项，紧跟着它的还不是一条译文（块级 <a> 的译文落在它后面做兄弟）。
+const missingInView = (el) => {
+  const rect = el.getBoundingClientRect();
+  if (!(rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight)) return false;
+  const next = el.nextElementSibling;
+  return !(next && next.classList.contains('ai-translator-inline-block'));
+};
 
 test('J4.1/J4.2/J4.3 a rebuilt left menu keeps its translations: no request, no frame without them', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
@@ -134,9 +163,9 @@ test('J4.1/J4.2/J4.3 a rebuilt left menu keeps its translations: no request, no 
 
     for (const key of ['maps', 'hours']) {
       const before = (await builtinTexts(context, page)).length;
-      await page.evaluate((selector) => window.startFrames(selector), NAV_TRANSLATIONS);
+      await startFrames(page, NAV_TRANSLATIONS);
       await switchTo(page, key);
-      const frames = await page.evaluate(() => window.stopFrames());
+      const frames = await stopFrames(page);
       const sent = (await builtinTexts(context, page)).slice(before);
       // J4.1：只有正文进请求，左栏一串也没重发。
       expect(sent).toHaveLength(1);
@@ -179,20 +208,20 @@ test('J4.4 with a <main>, our own translations never push the scope off the body
     let beforeTranslation = null;
     await openLeftMenu(page, context, mock.endpoint, {
       mainTag: 'main',
-      beforeAuto: async () => { beforeTranslation = await evaluateInContentScript(context, page, SCOPE_PROBE); },
+      beforeAuto: async () => { beforeTranslation = await scopeProbe(context, page, { invalidate: 'round' }); },
     });
     expect(beforeTranslation.roots).toEqual(['BODY']);
     // 夹具要真的贴着门槛，否则这一条证明不了什么（见 MAIN 上方的注释）。
     expect(beforeTranslation.share).toBeGreaterThan(0.25);
     expect(beforeTranslation.share).toBeLessThan(0.3);
 
-    const afterTranslation = await evaluateInContentScript(context, page, SCOPE_PROBE);
+    const afterTranslation = await scopeProbe(context, page, { invalidate: 'round' });
     expect(afterTranslation.roots).toEqual(['BODY']);
     expect(afterTranslation.share).toBeCloseTo(beforeTranslation.share, 2);
 
     for (const key of ['maps', 'hours']) {
       await switchTo(page, key);
-      const afterRoute = await evaluateInContentScript(context, page, SCOPE_PROBE);
+      const afterRoute = await scopeProbe(context, page, { invalidate: 'round' });
       expect(afterRoute.roots).toEqual(['BODY']);
       await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
     }
@@ -217,10 +246,10 @@ test('J4.5 with translations hidden, a menu switch recalls them hidden, and show
     await setVisible(false);
     await expect(page.locator(shown)).toHaveCount(0);
     const beforeHidden = (await builtinTexts(context, page)).length;
-    await page.evaluate((selector) => window.startFrames(selector), shown);
+    await startFrames(page, shown);
     await page.evaluate(() => window.go('maps'));
     await page.waitForTimeout(1500);
-    const hiddenFrames = await page.evaluate(() => window.stopFrames());
+    const hiddenFrames = await stopFrames(page);
     expect(hiddenFrames.length).toBeGreaterThan(10);
     expect(hiddenFrames.filter((count) => count > 0)).toEqual([]);
     // 新左栏的五条译文都已经装回来了，全带隐藏态。
@@ -232,10 +261,10 @@ test('J4.5 with translations hidden, a menu switch recalls them hidden, and show
     // 放出来：从这一刻起的每一帧左栏都是 5 条译文，一串不重发；只有藏着时换掉
     // 的正文进请求。
     await setVisible(true);
-    await page.evaluate((selector) => window.startFrames(selector), shown);
+    await startFrames(page, shown);
     await expect(page.locator('#main .ai-translator-inline-block')).toContainText(MAIN.maps.slice(0, 40), { timeout: 30000 });
     await page.waitForTimeout(1500);
-    const shownFrames = await page.evaluate(() => window.stopFrames());
+    const shownFrames = await stopFrames(page);
     expect(shownFrames.length).toBeGreaterThan(10);
     expect(shownFrames.filter((count) => count < 5)).toEqual([]);
     const revealed = (await builtinTexts(context, page)).slice(beforeHidden);
@@ -259,8 +288,6 @@ test('J4.5 with translations hidden, a menu switch recalls them hidden, and show
 // D-547 N3：页内记忆只在「这一代译法」里有效。换了引擎（或提示词、术语表、配置
 // 档 —— 都走 translationProfile 换代），记忆整张清掉：重建的左栏照常送新引擎，
 // 不装回上一个引擎的译文。
-const settingsSettled = (context, page, key, value) => expect.poll(() => evaluateInContentScript(context, page,
-  `window.AI_TRANSLATOR_CONTENT.settings[${JSON.stringify(key)}]`), { timeout: 10000 }).toBe(value);
 
 test('J4.6 after the engine changes, a rebuilt menu is sent to the new engine, not recalled', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
@@ -328,9 +355,53 @@ test('J4.7 with skip-target-language on, a block already in the target language 
   }
 });
 
-// D-548 偏差 h：同步装回有 16 块的上限。一个 30 项的左栏滚到底再整片重建，按
-// DOM 顺序装的话装回的是视口外的头 16 项，看得见的那几项要等发现层进带才补 ——
-// 中间那几帧视口里一条译文都没有。先装和视口相交的，再按 DOM 顺序装其余的。
+// 菜单夹具：go() 每次从数据把 #menu 的 innerHTML 整片重建，文字一个字不变。
+// 译文节点沿用源块的标签（insert.js 按 element.tagName 建），也是 <a>，只是不带
+// href：菜单项一律按 a[href] 认，样式和下标才不会把译文算进去。
+const MENU_ITEMS = '#menu a[href]';
+const MENU_TRANSLATIONS = '#menu .ai-translator-inline-block';
+
+function menuHtml({ size, css }) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbour Index</title>
+<style>body{margin:0}${css}</style></head><body>
+<div id="menu"></div><div id="tail"></div>
+<script>
+const ITEMS = Array.from({ length: ${size} }, (_, i) => 'Section ' + (i + 1) + ' of the harbour index lists the pilots and their logbooks.');
+window.go = () => {
+  document.getElementById('menu').innerHTML = ITEMS.map((text, i) => '<a href="/s' + i + '">' + text + '</a>').join('');
+};
+window.go();
+</script></body></html>`;
+}
+
+// 包住 ctx.recallTranslations（onMutations 里那一步同步装回就是调它），每次调用
+// 记下装回了几块、花了多久。
+async function recordRecalls(context, page) {
+  await evaluateInContentScript(context, page, `(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const original = ctx.recallTranslations;
+    self.__recallMs = [];
+    self.__recalled = [];
+    ctx.recallTranslations = (roots) => {
+      const start = performance.now();
+      const restored = original(roots);
+      self.__recallMs.push(performance.now() - start);
+      self.__recalled.push(restored);
+      return restored;
+    };
+    return true;
+  })()`);
+}
+
+const recalls = async (context, page) => ({
+  ms: await evaluateInContentScript(context, page, 'self.__recallMs.slice()'),
+  restored: await evaluateInContentScript(context, page, 'self.__recalled.slice()'),
+});
+
+// D-548 偏差 h / D-552 T1：同步装回的 16 块预算只管视口外的命中。一个 30 项的左栏
+// 滚到底再整片重建，按 DOM 顺序装的话装回的是视口外的头 16 项，看得见的那几项要
+// 等发现层进带才补 —— 中间那几帧视口里一条译文都没有。先装和视口相交的，再按
+// DOM 顺序补视口外的。
 //
 // 几何是算过的：每项 100px 高，视口 720px，滚到第 22 项（视口里 22–29 共 8 项，
 // 少于 16，且都在 DOM 第 16 项之后）。页尾留 2000px 的空白，重建时页面变矮也不会
@@ -338,81 +409,43 @@ test('J4.7 with skip-target-language on, a block already in the target language 
 // 算：按 DOM 顺序装的 0–15 项连同推下来的高度也够不到视口。
 const LONG_MENU_SIZE = 30;
 const LONG_MENU_TOP = 22;
-
-function longMenuHtml() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbour Index</title>
-<style>html{overflow-anchor:none}body{margin:0}#menu a[href]{display:block;box-sizing:border-box;min-height:100px;padding:38px 0}#tail{height:2000px}</style></head><body>
-<div id="menu"></div><div id="tail"></div>
-<script>
-const ITEMS = Array.from({ length: ${LONG_MENU_SIZE} }, (_, i) => 'Section ' + (i + 1) + ' of the harbour index lists the pilots and their logbooks.');
-window.go = () => {
-  document.getElementById('menu').innerHTML = ITEMS.map((text, i) => '<a href="/s' + i + '">' + text + '</a>').join('');
-};
-// 逐帧数和视口相交的译文。
-window.startViewFrames = (selector) => {
-  window.__frames = [];
-  window.__framing = true;
-  const tick = () => {
-    let visible = 0;
-    for (const el of document.querySelectorAll(selector)) {
-      const rect = el.getBoundingClientRect();
-      if (rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight) visible += 1;
-    }
-    window.__frames.push(visible);
-    if (window.__framing) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-};
-window.stopFrames = () => { window.__framing = false; return window.__frames; };
-window.go();
-</script></body></html>`;
-}
+const LONG_MENU_CSS = 'html{overflow-anchor:none}#menu a[href]{display:block;box-sizing:border-box;min-height:100px;padding:38px 0}#tail{height:2000px}';
 
 test('J4.8 a long menu scrolled to the bottom keeps translations in view through a rebuild', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
-  const host = 'longmenu.test';
-  const translations = '#menu .ai-translator-inline-block';
-  // 译文节点沿用源块的标签（insert.js 按 element.tagName 建），也是 <a>，只是不带
-  // href：菜单项一律按 a[href] 认，样式和下标才不会把译文算进去。
-  const ITEMS = '#menu a[href]';
   try {
-    await setExtensionSettings(page, settings(mock.endpoint));
-    await context.route(`https://${host}/**`, (route) => route.fulfill({
-      status: 200, contentType: 'text/html', body: longMenuHtml(),
-    }));
-    await page.goto(`https://${host}/`);
-    await waitForContentReady(page);
-    await stubBuiltinTranslator(page);
-    await setExtensionSettings(page, settings(mock.endpoint, { siteRules: { [host]: 'always' } }));
+    await openAuto(page, context, mock.endpoint, {
+      url: 'https://longmenu.test/', html: menuHtml({ size: LONG_MENU_SIZE, css: LONG_MENU_CSS }),
+    });
     // 发现层只翻视口上下一屏之内的：先在顶上翻头一截，再滚到底翻其余的。
-    await expect.poll(() => page.locator(translations).count(), { timeout: 30000 }).toBeGreaterThan(5);
+    await expect.poll(() => page.locator(MENU_TRANSLATIONS).count(), { timeout: 30000 }).toBeGreaterThan(5);
     const scrollToItem = (i) => page.evaluate(({ items, index }) => {
       document.querySelectorAll(items)[index].scrollIntoView({ block: 'start' });
-    }, { items: ITEMS, index: i });
+    }, { items: MENU_ITEMS, index: i });
     const scrollToTop = () => scrollToItem(LONG_MENU_TOP);
     for (let i = 4; i <= LONG_MENU_TOP; i += 4) {
       await scrollToItem(i);
       await page.waitForTimeout(300);
     }
     await scrollToTop();
-    await expect(page.locator(translations)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
+    await expect(page.locator(MENU_TRANSLATIONS)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
     await page.waitForTimeout(1500);
     await scrollToTop();
 
     // 前提：视口里的菜单项少于 16，而且全在 DOM 第 16 项之后。
-    const inView = await page.evaluate((items) => Array.from(document.querySelectorAll(items))
+    const visible = await page.evaluate((items) => Array.from(document.querySelectorAll(items))
       .map((a, i) => ({ i, rect: a.getBoundingClientRect() }))
       .filter(({ rect }) => rect.bottom > 0 && rect.top < innerHeight)
-      .map(({ i }) => i), ITEMS);
-    expect(inView.length).toBeGreaterThan(0);
-    expect(inView.length).toBeLessThan(16);
-    expect(Math.min(...inView)).toBeGreaterThanOrEqual(16);
+      .map(({ i }) => i), MENU_ITEMS);
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.length).toBeLessThan(16);
+    expect(Math.min(...visible)).toBeGreaterThanOrEqual(16);
 
     const before = (await builtinTexts(context, page)).length;
-    await page.evaluate((selector) => window.startViewFrames(selector), translations);
+    await startFrames(page, MENU_TRANSLATIONS, inView);
     await page.evaluate(() => window.go());
     await page.waitForTimeout(1500);
-    const frames = await page.evaluate(() => window.stopFrames());
+    const frames = await stopFrames(page);
     expect(frames.length).toBeGreaterThan(10);
     // 没有一帧视口里一条译文都没有。
     expect(frames.filter((count) => count === 0)).toEqual([]);
@@ -423,7 +456,52 @@ test('J4.8 a long menu scrolled to the bottom keeps translations in view through
       await page.waitForTimeout(300);
     }
     await scrollToItem(0);
-    await expect(page.locator(translations)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
+    await expect(page.locator(MENU_TRANSLATIONS)).toHaveCount(LONG_MENU_SIZE, { timeout: 30000 });
+    expect((await builtinTexts(context, page)).length).toBe(before);
+    expect(mock.sentTexts).toEqual([]);
+  } finally {
+    await mock.close();
+  }
+});
+
+// D-552 T1：视口里的命中不论多少都在重建那一刻同步装回，预算不截它们。40 项的密
+// 菜单每项 16px 高，重建时 40 项全在 720px 的视口里；按「一共 16 块」截的话，第
+// 17 项起要等发现层进带才补，那几帧视口里就有没译文的项。
+const DENSE_MENU_SIZE = 40;
+const DENSE_MENU_CSS = '#menu a{display:block;height:16px;line-height:16px;font-size:12px;white-space:nowrap;overflow:hidden}';
+
+test('J4.8b a dense menu of 40 items in view is restored whole in the same frame as the rebuild', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    await openAuto(page, context, mock.endpoint, {
+      url: 'https://densemenu.test/', html: menuHtml({ size: DENSE_MENU_SIZE, css: DENSE_MENU_CSS }),
+    });
+    await expect(page.locator(MENU_TRANSLATIONS)).toHaveCount(DENSE_MENU_SIZE, { timeout: 30000 });
+    await page.waitForTimeout(1500);
+
+    // 前提：只数菜单项本身，40 项摞起来放得进视口 —— 重建那一刻（译文还没装回）
+    // 40 项全和视口相交。
+    const geometry = await page.evaluate((items) => ({
+      stacked: Array.from(document.querySelectorAll(items)).reduce((sum, a) => sum + a.offsetHeight, 0),
+      viewport: innerHeight,
+      scrollY,
+    }), MENU_ITEMS);
+    expect(geometry.stacked).toBeGreaterThan(0);
+    expect(geometry.stacked).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.scrollY).toBe(0);
+
+    await recordRecalls(context, page);
+    const before = (await builtinTexts(context, page)).length;
+    await startFrames(page, MENU_ITEMS, missingInView);
+    await page.evaluate(() => window.go());
+    await page.waitForTimeout(1500);
+    const frames = await stopFrames(page);
+    // 重建触发的那一次同步装回把 40 项一次装齐。
+    expect((await recalls(context, page)).restored).toEqual([DENSE_MENU_SIZE]);
+    expect(frames.length).toBeGreaterThan(10);
+    // 没有一帧视口里有菜单项缺译文。
+    expect(frames.filter((count) => count > 0)).toEqual([]);
+    await expect(page.locator(MENU_TRANSLATIONS)).toHaveCount(DENSE_MENU_SIZE);
     expect((await builtinTexts(context, page)).length).toBe(before);
     expect(mock.sentTexts).toEqual([]);
   } finally {
@@ -432,10 +510,15 @@ test('J4.8 a long menu scrolled to the bottom keeps translations in view through
 });
 
 // D-543 第 6 点：≥2000 块的容器整片重建时，onMutations 里那一步同步装回要多久。
-// 记忆先按真实入口填满（BlockIdentity.remember，键和 registerTranslation 写的一样），
+// 记忆按真实入口 ctx.rememberLanded 填满（registerTranslation 记的也是这一句），
 // 发现层带宽之外的块自动翻译不会去翻，靠它们自己翻满 2000 条要几分钟。
 // RERENDER_PERF_OUT 设了就把结果写进那个文件（证据目录的 perf.txt）。
 const FEED_SIZE = 2000;
+const RUNS = 10;
+// D-552 F5：C 段（页面版式已算完、只剩装回自己）的 p95 上限。
+const RECALL_P95_CEILING_MS = 50;
+// D-552 T1 那一段的视口高度：重建时（译文还没装回）视口里放得下 40 行以上。
+const TALL_VIEWPORT = { width: 1280, height: 1600 };
 // 译文节点沿用源块的标签和 class（这里是 <p>），填记忆和挑远处那一行都得把我们
 // 自己的节点排除掉，不然译文会被当原文记进去、挤掉最早的那几十条。
 
@@ -465,58 +548,55 @@ document.getElementById('feed').replaceWith(build());
 </script></body></html>`;
 }
 
+// 最近秩 p95：n=10 时就是最大值，报告里照实写 n。
+const p95 = (values) => values.slice().sort((a, b) => a - b)[Math.ceil(0.95 * values.length) - 1];
+
+const stats = (values) => {
+  const sorted = values.slice().sort((a, b) => a - b);
+  const median = (sorted[(values.length - 1) >> 1] + sorted[values.length >> 1]) / 2;
+  return `median=${median.toFixed(2)}ms p95(n=${values.length})=${p95(values).toFixed(2)}ms `
+    + `max=${sorted[values.length - 1].toFixed(2)}ms all=[${values.map((v) => v.toFixed(2)).join(', ')}]`;
+};
+
 test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
   try {
-    await setExtensionSettings(page, settings(mock.endpoint));
-    await context.route(`https://${HOST}/**`, (route) => route.fulfill({
-      status: 200, contentType: 'text/html', body: feedHtml(),
-    }));
-    await page.goto(`https://${HOST}/feed`);
-    await waitForContentReady(page);
-    await stubBuiltinTranslator(page);
-    // 一条都没记过的页面：装回这一步直接返回，不收块。
-    const idle = await evaluateInContentScript(context, page, `(() => {
-      const ctx = window.AI_TRANSLATOR_CONTENT;
-      const size = globalThis.BlockIdentity.memorySize();
-      const feed = document.getElementById('feed');
-      const start = performance.now();
-      const restored = ctx.recallTranslations([feed]);
-      return { size, restored, ms: performance.now() - start };
-    })()`);
+    let idle = null;
+    await openAuto(page, context, mock.endpoint, {
+      url: `https://${HOST}/feed`,
+      html: feedHtml(),
+      // 一条都没记过的页面：装回这一步直接返回，不收块。
+      beforeAuto: async () => {
+        idle = await evaluateInContentScript(context, page, `(() => {
+          const ctx = window.AI_TRANSLATOR_CONTENT;
+          const size = globalThis.BlockIdentity.memorySize();
+          const feed = document.getElementById('feed');
+          const start = performance.now();
+          const restored = ctx.recallTranslations([feed]);
+          return { size, restored, ms: performance.now() - start };
+        })()`);
+      },
+    });
     expect(idle.size).toBe(0);
     expect(idle.restored).toBe(0);
-    await setExtensionSettings(page, settings(mock.endpoint, { siteRules: { [HOST]: 'always' } }));
     await expect.poll(() => page.locator('#feed .ai-translator-inline-block').count(), { timeout: 30000 }).toBeGreaterThan(0);
     await page.waitForTimeout(1500);
 
     const seeded = await evaluateInContentScript(context, page, `(() => {
       const ctx = window.AI_TRANSLATOR_CONTENT;
-      const identity = globalThis.BlockIdentity;
       const lang = ctx.currentTargetLang();
       for (const p of document.querySelectorAll('#feed > p:not(' + ctx.constants.OWN_NODES_SELECTOR + ')')) {
-        // 和 registerTranslation 写的一样：桶按纯文字指纹，条目带送出去的原文
-        // （collect.js 的 getTextWithMathPlaceholders，preserveMarkup 同收集端）。
+        // 送出去的原文就是收集端的 block.text（collect.js 的 getTextWithMathPlaceholders，
+        // preserveMarkup 同收集端），记忆按它和语言认。
         const source = ctx.getTextWithMathPlaceholders(p, { preserveMarkup: true }).text;
-        identity.remember(identity.fingerprint(ctx.readSourceText(p)), lang,
-          { source, translation: '[B] ' + source, targetLangChecked: false });
+        ctx.rememberLanded(lang, { source, translation: '[B] ' + source });
       }
-      const original = ctx.recallTranslations;
-      self.__recallMs = [];
-      self.__recalled = [];
-      ctx.recallTranslations = (roots) => {
-        const start = performance.now();
-        const restored = original(roots);
-        self.__recallMs.push(performance.now() - start);
-        self.__recalled.push(restored);
-        return restored;
-      };
-      return identity.memorySize();
+      return globalThis.BlockIdentity.memorySize();
     })()`);
     expect(seeded).toBeGreaterThanOrEqual(FEED_SIZE);
+    await recordRecalls(context, page);
 
     const callsBefore = (await builtinTexts(context, page)).length;
-    const RUNS = 10;
     for (let i = 0; i < RUNS; i += 1) {
       await page.evaluate(() => window.rerender());
       await page.waitForTimeout(800);
@@ -525,15 +605,31 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
       await page.evaluate(() => window.rerenderLaidOut());
       await page.waitForTimeout(800);
     }
-    const all = await evaluateInContentScript(context, page, 'self.__recallMs.slice()');
-    const recalled = await evaluateInContentScript(context, page, 'self.__recalled.slice()');
+    // D 段（D-552 T1）：视口拉高到 40 行以上，同样只量装回自己。
+    await page.setViewportSize(TALL_VIEWPORT);
+    await page.waitForTimeout(800);
+    for (let i = 0; i < RUNS; i += 1) {
+      await page.evaluate(() => window.rerenderLaidOut());
+      await page.waitForTimeout(800);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(800);
+
+    const { ms: all, restored } = await recalls(context, page);
     const layoutMs = await page.evaluate(() => window.__layoutMs.slice());
-    expect(all).toHaveLength(RUNS * 2);
+    expect(all).toHaveLength(RUNS * 3);
     const ms = all.slice(0, RUNS);
-    const ownMs = all.slice(RUNS);
-    // 每次同步装回顶到装回预算（scope.js 的 RECALL_RESTORE_BUDGET）为止；剩下的
-    // 进带时由发现层逐块从记忆装回，不发请求。
-    expect(recalled.every((n) => n === 16)).toBe(true);
+    const ownMs = all.slice(RUNS, RUNS * 2);
+    const tallMs = all.slice(RUNS * 2);
+    // 每次同步装回的块数 = max(装回预算 16, 重建时视口里的行数)：视口里的全装
+    // （D-552 T1），视口外的补到预算为止；剩下的进带时由发现层逐块从记忆装回，不发
+    // 请求。同一个视口里每次重建一样多；拉高的视口里至少 40 块。
+    const short = restored.slice(0, RUNS * 2);
+    const tall = restored.slice(RUNS * 2);
+    expect(short).toEqual(Array(RUNS * 2).fill(short[0]));
+    expect(short[0]).toBeGreaterThanOrEqual(16);
+    expect(tall).toEqual(Array(RUNS).fill(tall[0]));
+    expect(tall[0]).toBeGreaterThanOrEqual(40);
     // 远处那一块：滚过去，进带时装回，仍然不发请求。
     const far = page.locator('#feed > p:not(.ai-translator-inline-block)').nth(1200);
     await far.scrollIntoViewIfNeeded();
@@ -544,19 +640,17 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
     }), { timeout: 10000 }).toBe(true);
     expect((await builtinTexts(context, page)).length).toBe(callsBefore);
 
-    const stats = (values) => {
-      const sorted = values.slice().sort((a, b) => a - b);
-      const median = (sorted[(values.length - 1) >> 1] + sorted[values.length >> 1]) / 2;
-      return `median=${median.toFixed(2)}ms max=${sorted[values.length - 1].toFixed(2)}ms `
-        + `all=[${values.map((v) => v.toFixed(2)).join(', ')}]`;
-    };
-    const line = `${FEED_SIZE} blocks rebuilt in one added root, scan budget 200 / restore budget 16, runs=${RUNS}\n`
-      + `A recall per onMutations, page layout still pending: ${stats(ms)}\n`
-      + `B page's own first layout of the rebuilt root: ${stats(layoutMs)}\n`
-      + `C recall per onMutations, page layout already done: ${stats(ownMs)}\n`
+    const line = `${FEED_SIZE} blocks rebuilt in one added root, scan budget 200 / restore budget 16 (out-of-view only), runs=${RUNS}\n`
+      + `A recall per onMutations, page layout still pending (720px, restored=${short[0]}): ${stats(ms)}\n`
+      + `B page's own first layout of the rebuilt root: ${stats(layoutMs.slice(0, RUNS))}\n`
+      + `C recall per onMutations, page layout already done (720px, restored=${short[RUNS]}): ${stats(ownMs)}\n`
+      + `D recall per onMutations, page layout already done (${TALL_VIEWPORT.height}px, restored=${tall[0]} = in-view hits): ${stats(tallMs)}\n`
       + `memorySize()=0 (before any translation): restored=${idle.restored} in ${idle.ms.toFixed(3)}ms`;
     console.log(`PERF ${line}`);
     if (process.env.RERENDER_PERF_OUT) fs.writeFileSync(process.env.RERENDER_PERF_OUT, `${line}\n`);
+    // D-552 F5：只量装回自己的那两段（C、D）设上限。
+    expect(p95(ownMs)).toBeLessThanOrEqual(RECALL_P95_CEILING_MS);
+    expect(p95(tallMs)).toBeLessThanOrEqual(RECALL_P95_CEILING_MS);
     expect(mock.sentTexts).toEqual([]);
   } finally {
     await mock.close();
