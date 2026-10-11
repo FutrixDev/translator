@@ -337,7 +337,10 @@ test('two blocks that both fail twice, with nothing settled: failed never runs a
   await s.settle(() => false);
   assert.deepEqual(ledger(s.feed.state()), ['partial', 2, 2, 2, 0, 0]);
   assert.equal(s.feed.fraction(s.feed.state()), 1);
-  for (const snap of s.history) assert.ok(snap.failed <= snap.settled, `failed ${snap.failed} > settled ${snap.settled}`);
+  // Nothing was ever translated, so every settled block is a failed one, in every
+  // snapshot: published between the ledger and the failed count, a snapshot
+  // would show a given-up block as translated (failed 0, settled 1).
+  for (const snap of s.history) assert.equal(snap.failed, snap.settled, `failed ${snap.failed} != settled ${snap.settled}`);
 });
 
 test('a round that stops on an error leaves nothing pending or in flight on the feed', async () => {
