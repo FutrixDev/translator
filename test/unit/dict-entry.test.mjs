@@ -214,6 +214,10 @@ test('normalize warns once, by field name, when it drops what the model sent', (
   normalize(FULL);
   normalize({ translation: '跑' });
   assert.equal(warn.mock.callCount(), 0, 'a clean entry warns nothing');
+  // A translation that cannot be read is a throw, not a drop: no warn either.
+  assert.throws(() => normalize({ translation: 42 }), /translation is missing or empty/);
+  assert.throws(() => normalize({ translation: 'x'.repeat(MAX_TEXT + 1) }), /translation is missing or empty/);
+  assert.equal(warn.mock.callCount(), 0, 'a rejected translation warns nothing');
 
   const secret = 'SECRET-SOURCE-TEXT';
   normalize({ ...FULL, phonetics: 'pǎo', senses: [{ pos: 7, defs: [secret.repeat(40)] }], examples: [secret] });

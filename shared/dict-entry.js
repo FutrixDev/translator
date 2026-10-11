@@ -196,23 +196,23 @@
 
   // A string field: anything but a string, or a string over MAX_TEXT, is
   // dropped — read as '', the same as missing (D-472). A value that was there
-  // and got dropped is noted in `dropped` (field name and reason, never the
-  // text) when the caller keeps such a list.
-  function text(value, dropped, name) {
+  // and got dropped is reported through `drop(name, why)` — the field name and
+  // the reason, never the text.
+  function text(value, drop, name) {
     if (typeof value !== 'string') {
-      if (value != null && dropped) dropped.push(`${name}: not a string`);
+      if (value != null) drop(name, 'not a string');
       return '';
     }
     const trimmed = value.trim();
     if (trimmed.length > MAX_TEXT) {
-      if (dropped) dropped.push(`${name}: over ${MAX_TEXT} characters`);
+      drop(name, `over ${MAX_TEXT} characters`);
       return '';
     }
     return trimmed;
   }
 
-  function label(value, dropped, name) {
-    const raw = text(value, dropped, name).toUpperCase();
+  function label(value, drop, name) {
+    const raw = text(value, drop, name).toUpperCase();
     // An unknown label ("GB", "British") still carries a real pronunciation:
     // keep it, drop the label it cannot be shown under. '' is the one
     // pronunciation of a translation in any language but English.
@@ -220,23 +220,23 @@
   }
 
   // Not an array is no strings; a string that is dropped leaves the others.
-  function texts(value, max, dropped, name) {
+  function texts(value, max, drop, name) {
     if (!Array.isArray(value)) {
-      if (value != null) dropped.push(`${name}: not an array`);
+      if (value != null) drop(name, 'not an array');
       return [];
     }
-    return value.map((item, i) => text(item, dropped, `${name}[${i}]`)).filter(Boolean).slice(0, max);
+    return value.map((item, i) => text(item, drop, `${name}[${i}]`)).filter(Boolean).slice(0, max);
   }
 
   // null for anything that is not an object: the item is dropped.
-  function normalizeItem(field, raw, dropped, name) {
+  function normalizeItem(field, raw, drop, name) {
     if (!isPlainObject(raw)) return null;
     const item = {};
     for (const [key, type] of Object.entries(field.item)) {
       const path = `${name}.${key}`;
-      if (type === 'label') item[key] = label(raw[key], dropped, path);
-      else if (type === 'texts') item[key] = texts(raw[key], field.maxDefs, dropped, path);
-      else item[key] = text(raw[key], dropped, path);
+      if (type === 'label') item[key] = label(raw[key], drop, path);
+      else if (type === 'texts') item[key] = texts(raw[key], field.maxDefs, drop, path);
+      else item[key] = text(raw[key], drop, path);
     }
     return item;
   }
@@ -257,22 +257,25 @@
    */
   function normalize(raw) {
     if (!isPlainObject(raw)) throw invalid('not a JSON object');
-    const translation = text(raw.translation);
+    const dropped = [];
+    const drop = (name, why) => dropped.push(`${name}: ${why}`);
+    // A translation that is dropped throws below, so what it noted is never logged.
+    const translation = text(raw.translation, drop, 'translation');
     if (!translation) throw invalid('translation is missing or empty');
     const entry = { translation };
-    const dropped = [];
     for (const key of LIST_KEYS) {
       const field = FIELDS[key];
-      if (raw[key] != null && !Array.isArray(raw[key])) dropped.push(`${key}: not an array`);
+      if (raw[key] != null && !Array.isArray(raw[key])) drop(key, 'not an array');
       const value = Array.isArray(raw[key]) ? raw[key] : [];
       entry[key] = value
         .map((item, i) => {
           const name = `${key}[${i}]`;
-          const kept = normalizeItem(field, item, dropped, name);
-          if (!kept) dropped.push(`${name}: not an object`);
-          else if (!field.required.every((req) => filled(kept[req]))) dropped.push(`${name}: missing ${field.required.join('/')}`);
-          else return kept;
-          return null;
+          const kept = normalizeItem(field, item, drop, name);
+          const reason = !kept ? 'not an object'
+            : !field.required.every((req) => filled(kept[req])) ? `missing ${field.required.join('/')}`
+              : '';
+          if (reason) drop(name, reason);
+          return reason ? null : kept;
         })
         .filter(Boolean)
         .slice(0, field.max);
