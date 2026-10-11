@@ -4,20 +4,24 @@
 
 ### Input box translation
 
-- **The input box says which engine answered, and why a word got no
-  dictionary entry.** A tag by the result names the engine. When Chrome's
-  built-in translator answers a single word, a note says it does not give
-  pronunciations or examples, with a button that sends that one word to your
-  AI model or Blab Translation instead; the next word goes back to your usual
-  engine. Nothing is sent to a paid engine unless you press the button. When
-  the model's entry comes back empty, the note says so. Sentences get no note.
+- **The input box says which engine answered, and why a short lookup got
+  no dictionary entry.** A tag by the result names the engine. When Chrome's
+  built-in translator answers a short lookup (up to three words), a note says
+  it does not give pronunciations or examples, with a button that sends that
+  same lookup to your AI model or Blab Translation instead, even if you have
+  typed something else in the box since; the next lookup goes back to your
+  usual engine. Nothing is sent to a paid engine unless you press the button.
+  When neither is set up, the note offers a button to the settings page
+  instead. When the model's entry comes back empty, the note says so.
+  Sentences get no note.
 - **A slow answer no longer overwrites a newer one.** If you change the text
   or the target language while a translation is on its way, only the answer
-  to the latest request is shown.
+  to the latest request is shown, and an earlier request that fails late
+  leaves it in place.
 - **Words in Japanese, Korean and Thai count as words.** Up to eight
-  characters of kana, Hangul or Thai are looked up as a dictionary word (Chinese characters stay
-  at four), and one trailing full stop or question mark no longer turns a
-  word into a sentence.
+  characters of kana, Hangul or Thai are looked up as a dictionary word
+  (Chinese characters stay at four), and one trailing sentence stop
+  (. ! ? 。！？) no longer turns a word into a sentence.
 
 ### Target languages
 
