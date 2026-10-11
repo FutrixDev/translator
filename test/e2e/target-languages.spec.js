@@ -32,7 +32,7 @@ const { getMessage } = require('../../i18n/messages');
 const { setExtensionSettings, getSyncSettings, openFloatBallMenu, waitForFloatBall } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
-const { expectLaidOut } = require('./layout-checks');
+const { expectLaidOut, MIN_CONTRAST } = require('./layout-checks');
 
 const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
 
@@ -410,6 +410,45 @@ async function pickInDialog(page, lang) {
   await expect(menu).toBeHidden();
 }
 
+/**
+ * The "AI only" tag's colour (its ::after) against what is painted under the row:
+ * every background from the row up to the first opaque one, composited over white.
+ * `tinted` says whether the row itself paints a background (selected, hovered).
+ */
+function tagContrast(item) {
+  return item.evaluate((el) => {
+    const parse = (value) => {
+      const [r, g, b, a = '1'] = value.match(/rgba?\(([^)]+)\)/)[1].split(/[\s,/]+/).filter(Boolean);
+      return { r: +r, g: +g, b: +b, a: +a };
+    };
+    const over = (top, under) => ({
+      r: top.r * top.a + under.r * (1 - top.a),
+      g: top.g * top.a + under.g * (1 - top.a),
+      b: top.b * top.a + under.b * (1 - top.a),
+      a: 1,
+    });
+    const luminance = ({ r, g, b }) => {
+      const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+    };
+    const layers = [];
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+      const color = parse(getComputedStyle(node).backgroundColor);
+      if (color.a > 0) layers.push(color);
+      if (color.a >= 1) break;
+    }
+    const under = layers.reverse().reduce((acc, top) => over(top, acc), { r: 255, g: 255, b: 255, a: 1 });
+    const text = over(parse(getComputedStyle(el, '::after').color), under);
+    const [hi, lo] = [luminance(text), luminance(under)].sort((p, q) => q - p);
+    return {
+      tag: getComputedStyle(el, '::after').color,
+      row: getComputedStyle(el).backgroundColor,
+      tinted: parse(getComputedStyle(el).backgroundColor).a > 0,
+      ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100,
+    };
+  });
+}
+
 async function closeDialog(page) {
   await page.click('#ai-translator-input-dialog .ai-translator-close');
   await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(0);
@@ -421,7 +460,7 @@ test('J-B10 the languages picked last sit in a group above the full list, which 
     res.end(RECENT_PAGE);
   });
   try {
-    // The built-in engine, so the full list carries "AI only" tags to compare colours with.
+    // The built-in engine, so the full list carries "AI only" tags to measure.
     await setExtensionSettings(page, { targetLang: 'zh-CN', autoTranslate: false, translationEngine: 'builtin' });
     await page.goto(`${site.origin}/`);
     await waitForFloatBall(page);
@@ -439,17 +478,32 @@ test('J-B10 the languages picked last sit in a group above the full list, which 
     // Both copies of the selected language are selected, the recent one first.
     expect(parts.selected).toEqual([['de', true], ['de', false]]);
     await expect(menu.locator('.ai-translator-lang-item[data-lang="de"]')).toHaveCount(2);
-    // Both headings are readable on the light panel (the default theme), and so is
-    // the "AI only" tag, which is drawn in the same colour (D-545).
+    // Both headings are readable on the light panel (the default theme) (D-545).
     console.log(`J-B10 group heading contrast: ${await expectLaidOut(page, [
       '#ai-translator-input-dialog .ai-translator-lang-group:first-child',
       '#ai-translator-input-dialog .ai-translator-lang-item + .ai-translator-lang-group',
     ], 'J-B10 group headings')}`);
-    const colours = await menu.evaluate((el) => ({
-      heading: getComputedStyle(el.querySelector('.ai-translator-lang-group')).color,
-      tag: getComputedStyle(el.querySelector('.ai-translator-lang-item[data-tag]'), '::after').color,
-    }));
-    expect(colours.tag).toBe(colours.heading);
+
+    // So is the "AI only" tag, on all three rows it sits on: a plain one, the
+    // selected one and the one under the mouse, the last two tinted purple (D-549).
+    // Pick a tagged language so the selected row carries a tag too.
+    const tagged = menu.locator('.ai-translator-lang-item[data-tag]:not([data-recent])');
+    const taggedLang = await tagged.first().getAttribute('data-lang');
+    await tagged.first().click();
+    await expect(menu).toBeHidden();
+    await openDialogMenu(page);
+    const plain = menu.locator(`.ai-translator-lang-item[data-tag]:not(.is-selected):not([data-lang="${taggedLang}"])`);
+    const rows = { plain: await tagContrast(plain.first()) };
+    rows.selected = await tagContrast(menu.locator(`.ai-translator-lang-item.is-selected[data-tag][data-lang="${taggedLang}"]:not([data-recent])`));
+    await plain.nth(1).hover();
+    rows.hover = await tagContrast(plain.nth(1));
+    console.log(`J-B10 "AI only" tag contrast: ${JSON.stringify(rows)}`);
+    expect(rows.plain.tinted, JSON.stringify(rows)).toBe(false);
+    expect(rows.selected.tinted, JSON.stringify(rows)).toBe(true);
+    expect(rows.hover.tinted, JSON.stringify(rows)).toBe(true);
+    for (const [row, { ratio }] of Object.entries(rows)) {
+      expect(ratio, `"AI only" tag on the ${row} row: ${JSON.stringify(rows)}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
   } finally {
     await site.close();
   }
