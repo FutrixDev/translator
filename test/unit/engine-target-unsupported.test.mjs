@@ -23,6 +23,8 @@ const UI = 'fr';
 const FR = messageCatalog()[UI];
 ctx.uiLanguage = () => UI;
 ctx.t = (key) => FR[key];
+// content-language.js 加载时经 ctx.localPref 建「最近使用」，manifest 里它排在前面。
+await import('../../content/content-local-pref.js');
 await import('../../content/content-language.js');
 
 function request(targetLang) {

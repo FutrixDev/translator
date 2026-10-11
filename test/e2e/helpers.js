@@ -30,6 +30,8 @@ const I18N_LANG_SCRIPTS = require(path.join(REPO_ROOT, 'i18n/messages.js'))
   .UI_LANGUAGES.map(lang => `i18n/lang/${lang}.js`);
 
 const CONTENT_HARNESS_PRELUDE = Object.freeze([
+  // chrome.storage 的替身：普通页面没有，内容脚本世界里总有（见文件头）。
+  'test/e2e/harness-chrome-storage.js',
   ...I18N_LANG_SCRIPTS,
   'i18n/messages.js',
   // default-settings.js 在加载时读 AccountGate.FEATURE_DEFAULTS；manifest 里它
@@ -102,6 +104,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 占位符与标记的语法（shared/text-markers.js）：收集、落笔、语言检测在调用时
   // 读 globalThis.TextMarkers；manifest 里它排在 content-language.js 之前。
   'shared/text-markers.js',
+  // ctx.localPref：content-language.js 加载时就拿它建「最近使用」；manifest 里它
+  // 排在 content-language.js 之前。
+  'content/content-local-pref.js',
   'content/content-language.js',
   'content/page/batch.js',
   // ctx.customRules：门面每轮先等它，site-adapter / scope / collect 读它。
@@ -184,6 +189,84 @@ async function openFloatBallMenu(page) {
     state: 'visible',
     timeout: 5000,
   });
+}
+
+// The input dialog, in the five steps every journey takes through it. Each is
+// written once here: a spec that clicks `translate-input` itself, or picks a
+// language its own way, is a second answer to "how does a user get there".
+
+/**
+ * Open the input-translation dialog from the float ball's menu, which the
+ * caller has already opened (and may have looked at first).
+ * @param {import('@playwright/test').Page} page
+ */
+async function openInputDialogFromMenu(page) {
+  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
+  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+}
+
+/**
+ * Open the input-translation dialog from the float ball's menu.
+ * @param {import('@playwright/test').Page} page
+ */
+async function openInputDialog(page) {
+  await openFloatBallMenu(page);
+  await openInputDialogFromMenu(page);
+}
+
+/**
+ * Open the input dialog's own language menu, opening the dialog first if it
+ * is not there.
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<import('@playwright/test').Locator>} the open menu
+ */
+async function openDialogMenu(page) {
+  const dialog = page.locator('#ai-translator-input-dialog');
+  if (!(await dialog.count())) await openInputDialog(page);
+  await dialog.locator('.ai-translator-lang-trigger').click();
+  const menu = dialog.locator('.ai-translator-lang-menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * Pick a target language from the input dialog's own language menu, from the
+ * full list (a recent copy of it may be there too).
+ * @param {import('@playwright/test').Page} page
+ * @param {string} lang
+ */
+async function pickInputTargetLang(page, lang) {
+  const menu = await openDialogMenu(page);
+  await menu.locator(`.ai-translator-lang-item[data-lang="${lang}"]:not([data-recent])`).click();
+  await expect(menu).toBeHidden();
+}
+
+/**
+ * Type `text` into the input dialog and press Translate.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} text
+ */
+async function translateInput(page, text) {
+  await page.fill('#ai-translator-input-text', text);
+  await page.click('#ai-translator-do-translate');
+}
+
+/**
+ * Close the input dialog with its close button, or by clicking the overlay
+ * beside the panel, and wait for it to be gone.
+ * @param {import('@playwright/test').Page} page
+ * @param {{ via?: 'close' | 'overlay' }} [options]
+ */
+async function closeInputDialog(page, { via = 'close' } = {}) {
+  const dialog = page.locator('#ai-translator-input-dialog');
+  if (via === 'overlay') {
+    await dialog.locator('.ai-translator-input-overlay').click({ position: { x: 5, y: 5 } });
+  } else if (via === 'close') {
+    await dialog.locator('.ai-translator-close').click();
+  } else {
+    throw new Error(`closeInputDialog: unknown via ${via}`);
+  }
+  await expect(dialog).toHaveCount(0);
 }
 
 /**
@@ -385,6 +468,25 @@ const E2E_BASE_SETTINGS = Object.freeze({
  */
 async function getServiceWorker(context) {
   return context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+}
+
+/**
+ * Chrome recycles the extension's service worker, as it does after half a
+ * minute idle; the DevTools connection Playwright keeps open stops that from
+ * happening by itself. The next message wakes a new worker. A message the
+ * stopped worker was still answering loses its channel: the sender's
+ * sendMessage rejects.
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {import('@playwright/test').Page} page
+ */
+async function recycleWorker(context, page) {
+  const cdp = await context.newCDPSession(page);
+  try {
+    await cdp.send('ServiceWorker.enable');
+    await cdp.send('ServiceWorker.stopAllWorkers');
+  } finally {
+    await cdp.detach();
+  }
 }
 
 /**
@@ -832,6 +934,7 @@ module.exports = {
   PAGE_TRANSLATION_MODULES,
   expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,
+  recycleWorker,
   writeSyncSettings,
   getSyncSettings,
   getSyncSetting,
@@ -840,6 +943,12 @@ module.exports = {
   waitForFloatBall,
   openExamplePage,
   openFloatBallMenu,
+  openInputDialogFromMenu,
+  openInputDialog,
+  openDialogMenu,
+  pickInputTargetLang,
+  translateInput,
+  closeInputDialog,
   triggerPageTranslation,
   waitForTranslationComplete,
   getElementPosition,

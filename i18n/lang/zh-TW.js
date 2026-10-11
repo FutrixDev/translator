@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'AI 設定檔：將新增 {added} 個、取代 {replaced} 個。',
     docView: '檢視',
     docErrSiteBase: '無法開啟閱讀台：帳號網站位址不是有效的網址。',
+    inputDictNeedsModel: '內建引擎只提供譯文，不含音標、釋義和例句；要查字典請改用 AI 模型。',
+    dictEntryEmpty: '模型這次沒有給出音標、釋義和例句。',
+    langRecent: '最近使用',
+    langAll: '所有語言',
 };

@@ -183,6 +183,8 @@ globalThis.chrome = {
       callback(fakeCld(text));
     },
   },
+  // content/content-local-pref.js（content-language.js 加载时经它建「最近使用」）。
+  storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } },
 };
 globalThis.document = {};
 globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
@@ -198,6 +200,7 @@ globalThis.window = {
 };
 // 语言那几个 ctx.x 用真的 content-language.js 挂：maxChars 这一条要守的正是它的
 // getLanguageDetectionText。目标语言换成测试自己的，batch.js 在加载时取走它。
+await import('../../content/content-local-pref.js');
 await import('../../content/content-language.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 ctx.getEffectiveTargetLang = () => target;

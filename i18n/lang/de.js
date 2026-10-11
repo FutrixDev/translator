@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'AI-Profile: {added} werden hinzugefügt, {replaced} ersetzt.',
     docView: 'Ansehen',
     docErrSiteBase: 'Der Reader kann nicht geöffnet werden: Die Website-Adresse des Kontos ist keine gültige Webadresse.',
+    inputDictNeedsModel: 'Die integrierte Engine übersetzt nur. Aussprache, Bedeutungen und Beispiele liefert ein KI-Modell.',
+    dictEntryEmpty: 'Das Modell hat diesmal keine Aussprache, Bedeutungen oder Beispiele geliefert.',
+    langRecent: 'Zuletzt verwendet',
+    langAll: 'Alle Sprachen',
 };

@@ -11,7 +11,6 @@
   const escapeHtml = ctx.escapeHtml;
   const getEffectiveTargetLang = ctx.getEffectiveTargetLang;
   const getTargetLangLabel = ctx.getTargetLangLabel;
-  const buildTargetLangMenu = ctx.buildTargetLangMenu;
   const isExtensionContextAvailable = ctx.isExtensionContextAvailable;
   const speech = ctx.speech;
   const DictEntry = globalThis.DictEntry;
@@ -27,45 +26,13 @@
   // on every other device. Changing the target language in settings clears it
   // (see below) — an explicit choice there is the stronger signal, and a
   // dialog that ignored it would be the same complaint over again.
-  const INPUT_TARGET_LANG_KEY = 'inputDialogTargetLang';
-  let rememberedTargetLang = '';
-  // The read below is async, and this script runs in every frame. Anything that
-  // decides the target for real — a pick, or a settings change — settles the
-  // value, and a read that lands afterwards must not put the old one back.
-  let targetLangSettled = false;
-
-  function loadRememberedTargetLang() {
-    if (!isExtensionContextAvailable()) return;
-    try {
-      chrome.storage.local.get(INPUT_TARGET_LANG_KEY, (result) => {
-        if (chrome.runtime.lastError || targetLangSettled) return;
-        targetLangSettled = true;
-        rememberedTargetLang = result?.[INPUT_TARGET_LANG_KEY] || '';
-      });
-    } catch (error) {
-      // Extension context went away; the settings default still works.
-    }
-  }
-
-  function rememberTargetLang(lang) {
-    const next = lang || '';
-    targetLangSettled = true;
-    // Every frame on the page runs this listener, so a settings change asks all
-    // of them to clear at once. Only the frame that actually holds a different
-    // value needs to write, or a page full of iframes writes the same string
-    // once per frame.
-    if (next === rememberedTargetLang) return;
-    rememberedTargetLang = next;
-    if (!isExtensionContextAvailable()) return;
-    try {
-      chrome.storage.local.set({ [INPUT_TARGET_LANG_KEY]: rememberedTargetLang });
-    } catch (error) {
-      // Same as above: losing the memory is not worth failing the translation.
-    }
-  }
+  //
+  // The read, the settled flag and following other tabs are ctx.localPref's
+  // (content/content-local-pref.js).
+  const targetLangPref = ctx.localPref('inputDialogTargetLang', { parse: (stored) => stored || '' });
 
   function getInputTargetLang() {
-    return rememberedTargetLang || getEffectiveTargetLang();
+    return targetLangPref.get() || getEffectiveTargetLang();
   }
 
   // What an open dialog is actually set to. The dropdown writes its pick to
@@ -77,20 +44,23 @@
     return state.inputDialog?.dataset.targetLang || getInputTargetLang();
   }
 
-  loadRememberedTargetLang();
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    // Someone went and set a default explicitly. Follow it. Every frame on the
+    // page runs this listener; only a frame that holds a remembered language
+    // writes the empty one (localPref's set skips an unchanged value).
+    if (namespace === 'sync' && changes.targetLang) targetLangPref.set('');
+  });
 
-  if (chrome?.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace === 'sync' && changes.targetLang) {
-        // Someone went and set a default explicitly. Follow it.
-        rememberTargetLang('');
-      } else if (namespace === 'local' && changes[INPUT_TARGET_LANG_KEY]) {
-        // Another tab's dialog picked a language; keep this one in step. This
-        // is the stored value arriving, so it settles the read above too.
-        targetLangSettled = true;
-        rememberedTargetLang = changes[INPUT_TARGET_LANG_KEY].newValue || '';
-      }
-    });
+  // Why a word came back without an entry, as the i18n key of the one line
+  // drawn where the entry would be, or '' when there is nothing to say. The
+  // built-in engine gives no entry: the word needs a model (and the note
+  // offers one). A model that answered with every list empty drew nothing:
+  // say it was asked. A sentence is translated, never looked up, and says
+  // nothing.
+  function missingEntryNote({ mode, engine, entry }) {
+    if (mode === 'word' && engine === 'builtin') return 'inputDictNeedsModel';
+    if (entry && !DictEntry.hasContent(entry)) return 'dictEntryEmpty';
+    return '';
   }
 
   function showInputTranslateDialog() {
@@ -125,9 +95,7 @@
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
               </button>
-              <div class="ai-translator-lang-menu" hidden>
-                ${buildTargetLangMenu(initialLang)}
-              </div>
+              <div class="ai-translator-lang-menu" hidden></div>
             </div>
             <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
           </div>
@@ -153,6 +121,7 @@
           <div class="ai-translator-input-section ai-translator-result-section" id="ai-translator-result-section" hidden>
             <div class="ai-translator-label-row">
               <label class="ai-translator-label">${t('translatedText')}</label>
+              <span class="ai-translator-engine-tag" hidden></span>
               <div class="ai-translator-label-tools">
                 <button class="ai-translator-icon-btn ai-translator-input-speak-result" id="ai-translator-input-speak-result" type="button" aria-label="${t('pronounceTranslation')}" hidden>
                   ${speech.SPEAKER_ICON}
@@ -161,6 +130,11 @@
             </div>
             <div class="ai-translator-input-result" id="ai-translator-result-text"></div>
             <div class="ai-translator-dict-entry" id="ai-translator-input-dict" hidden></div>
+            <div class="ai-translator-dict-note" id="ai-translator-input-dict-note" hidden>
+              <span class="ai-translator-dict-note-text"></span>
+              <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'blab'])}</button>
+              <button class="ai-translator-btn ai-translator-open-settings" type="button" hidden>${t('openSettings')}</button>
+            </div>
           </div>
         </div>
         <div class="ai-translator-input-footer">
@@ -186,6 +160,11 @@
     const resultSection = dialog.querySelector('#ai-translator-result-section');
     const resultText = dialog.querySelector('#ai-translator-result-text');
     const dictEl = dialog.querySelector('#ai-translator-input-dict');
+    const noteEl = dialog.querySelector('#ai-translator-input-dict-note');
+    const noteText = noteEl.querySelector('.ai-translator-dict-note-text');
+    const switchBtn = noteEl.querySelector('.ai-translator-switch-engine');
+    const settingsBtn = noteEl.querySelector('.ai-translator-open-settings');
+    const engineTag = dialog.querySelector('.ai-translator-engine-tag');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
 
@@ -226,16 +205,34 @@
       else resultText.innerHTML = content.html;
     }
 
-    const translateInputText = async (targetLangOverride = '') => {
-      const text = textarea.value.trim();
+    // The button, the Enter shortcut and the language menu all start a
+    // translation, and nothing stops two being in flight: a slow model answer
+    // to the first must not land over the second. Each request takes a number,
+    // and only the latest one, in the dialog it was made in, writes (the
+    // selection card does the same with state.translationRequestId).
+    let lastRequestId = 0;
+
+    // `source` is what to translate: the textarea for the button, Ctrl+Enter and
+    // the language menu; the note's "use AI" button re-sends
+    // dialog.dataset.sourceText, the text the note was written about, whatever
+    // the box holds by now (D-545). `engine` pins this one request to an engine —
+    // only that button pins, and the pin is not kept: the next translation
+    // follows the settings again.
+    const translateInputText = async (source, targetLangOverride = '', engine = '') => {
+      const text = source.trim();
       if (!text) return;
+
+      const requestId = String(++lastRequestId);
+      dialog.dataset.requestId = requestId;
+      const isCurrent = () => state.inputDialog === dialog && dialog.dataset.requestId === requestId;
 
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
       showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
-      showEntry(null);
-      showResultSpeak(false);
-      copyBtn.hidden = true;
+      resetResult();
+      // The tag names who answered the last request; until this one answers it
+      // names nobody. Every exit below either draws a new one or leaves it hidden.
+      ctx.showEngineTag(engineTag, null);
 
       try {
         if (!isExtensionContextAvailable()) {
@@ -250,14 +247,18 @@
           text: text,
           targetLang: targetLang,
           mode,
+          ...(engine ? { engine } : {}),
           // 这段文字是用户敲进来的，跟当前页面没有任何关系。不声明的话，内置
           // 引擎会拿页面语言当源语言，于是在英文页面上输入“动画”翻成英文就变成
           // en→en，被同语言短路原样退回。
           standaloneText: true
         });
 
+        if (!isCurrent()) return;
+
         if (response.error) {
           showResult({ html: `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>` }, ctx.uiLanguage());
+          ctx.showEngineTag(engineTag, response.engine);
           return;
         }
 
@@ -268,15 +269,55 @@
         showEntry(entry, targetLang);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
+
+        // A word that comes back without an entry says why (missingEntryNote).
+        // When it needs a model, the note offers the engine that gives one (one
+        // click, never automatic: that one costs). With no engine to offer (no
+        // AI profile for this feature, no Blab account), the note's way forward
+        // is the settings page, where one is set up.
+        const note = missingEntryNote({ mode, engine: response.engine, entry });
+        showNote(note ? t(note) : '');
+        ctx.showEngineTag(engineTag, response.engine);
+        if (note === 'inputDictNeedsModel') {
+          const offered = await ctx.offerEngineSwitch({
+            button: switchBtn,
+            engine: response.engine,
+            targetLang,
+            feature: 'input',
+            isCurrent,
+          });
+          if (!offered && isCurrent()) settingsBtn.hidden = false;
+        }
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
+        if (!isCurrent()) return;
         const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
-        showEntry(null);
-        showResultSpeak(false);
-        copyBtn.hidden = true;
+        resetResult();
       }
     };
+
+    // Everything under the result text that belongs to one answer: the entry,
+    // the note and its buttons, the result speaker, the copy button. Cleared
+    // when a request starts and when it throws; the tag is the engine's and is
+    // drawn by showEngineTag.
+    function resetResult() {
+      showEntry(null);
+      showNote('');
+      showResultSpeak(false);
+      copyBtn.hidden = true;
+    }
+
+    // The line under the translation that says why no entry was drawn; '' hides
+    // it. Its two buttons are shown only once the answer is known — the switch by
+    // ctx.offerEngineSwitch when it has an engine to offer, settings when it has
+    // none — so every new line starts with both hidden.
+    function showNote(message) {
+      noteText.textContent = message;
+      noteEl.hidden = !message;
+      switchBtn.hidden = true;
+      settingsBtn.hidden = true;
+    }
 
     // The entry under the translation: the translation's phonetics, each with
     // a speaker reading the translation in `targetLang` (D-487), then senses,
@@ -288,7 +329,26 @@
     }
 
     translateBtn.addEventListener('click', async () => {
-      await translateInputText();
+      await translateInputText(textarea.value);
+    });
+
+    switchBtn.addEventListener('click', () => {
+      translateInputText(dialog.dataset.sourceText || '', getShownTargetLang(), switchBtn.dataset.engine);
+    });
+
+    // The extension can be reloaded under an open dialog; then the message has
+    // no one to reach, and sendMessage throws or rejects.
+    settingsBtn.addEventListener('click', () => {
+      const failed = (error) => console.warn('Blab Translation: opening settings failed', error);
+      if (!isExtensionContextAvailable()) {
+        failed(new Error('extension context invalidated'));
+        return;
+      }
+      try {
+        chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }).catch(failed);
+      } catch (error) {
+        failed(error);
+      }
     });
 
     copyBtn.addEventListener('click', async () => {
@@ -307,12 +367,16 @@
 
     if (ctx.setupLanguageDropdown) {
       ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-        rememberTargetLang(lang);
+        targetLangPref.set(lang || '');
         // Picking a language with the box empty is someone setting up before
-        // they type, not asking for a translation.
+        // they type, not asking for a translation. A note left from the last
+        // lookup no longer describes what is on screen, so it goes.
         const text = textarea.value.trim();
-        if (!text) return;
-        translateInputText(lang);
+        if (!text) {
+          showNote('');
+          return;
+        }
+        translateInputText(text, lang);
       });
     }
 

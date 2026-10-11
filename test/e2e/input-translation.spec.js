@@ -1,5 +1,13 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu, openExamplePage } = require('./helpers');
+const {
+  setExtensionSettings,
+  openFloatBallMenu,
+  openExamplePage,
+  openInputDialog,
+  openInputDialogFromMenu,
+  pickInputTargetLang,
+  translateInput,
+} = require('./helpers');
 const { HOSTILE_PAGE_CSS } = require('./hostile-css');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
@@ -66,10 +74,7 @@ test('input translation shows a dictionary entry for words and read-aloud for an
 
     await openExamplePage(page);
 
-    await openFloatBallMenu(page);
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await openInputDialog(page);
 
     // The source is readable before anything has been translated — hearing how
     // the word you just typed is pronounced is the whole point of the button.
@@ -85,8 +90,7 @@ test('input translation shows a dictionary entry for words and read-aloud for an
     await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('lín shí');
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
-    await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'this is a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[TEXT] this is a full sentence for translation');
     // Only the entry is dictionary-only; both speakers stay available because
     // a sentence can be read aloud just as well as a word.
@@ -196,17 +200,6 @@ async function startTargetLangFixture() {
   };
 }
 
-async function openInputDialog(page) {
-  await openFloatBallMenu(page);
-  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
-}
-
-async function pickInputTargetLang(page, lang) {
-  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
-  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
-}
-
 test('the input dialog translates into the language picked in it, not the one in settings', async ({ page }) => {
   const fixture = await startTargetLangFixture();
 
@@ -227,8 +220,7 @@ test('the input dialog translates into the language picked in it, not the one in
     await pickInputTargetLang(page, 'ja');
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
-    await page.fill('#ai-translator-input-text', 'a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[ja]');
 
     // Reopening keeps the dialog's own target: the whole point is not having to
@@ -237,8 +229,7 @@ test('the input dialog translates into the language picked in it, not the one in
     await openInputDialog(page);
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
-    await page.fill('#ai-translator-input-text', 'another sentence');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'another sentence');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[ja]');
   } finally {
     await fixture.close();
@@ -270,8 +261,7 @@ test('setting a target language in settings overrides what the input dialog reme
     await openInputDialog(page);
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('fr')));
 
-    await page.fill('#ai-translator-input-text', 'a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[fr]');
   } finally {
     await fixture.close();
@@ -303,8 +293,7 @@ test('the result box carries the language of what it shows: the UI language whil
     const box = page.locator('#ai-translator-result-text');
     const marked = () => box.evaluate((el) => ({ lang: el.lang, dir: el.dir }));
     const translate = async (text) => {
-      await page.fill('#ai-translator-input-text', text);
-      await page.click('#ai-translator-do-translate');
+      await translateInput(page, text);
     };
 
     await translate('a full sentence for translation');
@@ -461,8 +450,7 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(hoveredIcon.stroke).not.toBe('rgb(255, 0, 0)');
     expect(hoveredIcon['stroke-width']).toBe('1.8px');
 
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await openInputDialogFromMenu(page);
     await settleDialogAnimations(page);
 
     // The dialog's own two button shapes: the pill and the icon square.
@@ -653,4 +641,3 @@ test('the containment reset does not outrank our own fade-in', async ({ page }) 
     await fixture.close();
   }
 });
-

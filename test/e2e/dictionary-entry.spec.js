@@ -17,12 +17,16 @@
 const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
-  openFloatBallMenu,
+  openInputDialog,
+  pickInputTargetLang,
+  translateInput,
+  closeInputDialog,
   evaluateInContentScript,
   stubBuiltinTranslator,
   waitForFloatBall,
 } = require('./helpers');
 const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
+const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
@@ -140,27 +144,6 @@ async function stubSpeech(page) {
 const spoken = (page) => evaluateInContentScript(page.context(), page, 'self.__spoken');
 const asked = (page) => evaluateInContentScript(page.context(), page, 'self.__asked');
 
-async function openInputDialog(page) {
-  await openFloatBallMenu(page);
-  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
-}
-
-async function lookUp(page, text) {
-  await page.fill('#ai-translator-input-text', text);
-  await page.click('#ai-translator-do-translate');
-}
-
-async function pickInputTargetLang(page, lang) {
-  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
-  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
-}
-
-async function closeInputDialog(page) {
-  await page.locator('#ai-translator-input-dialog .ai-translator-input-overlay').click({ position: { x: 5, y: 5 } });
-  await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(0);
-}
-
 // Select the text of `selector` with the mouse, as a reader would, and open the
 // card from the selection icon.
 async function openCardOn(page, selector) {
@@ -275,8 +258,8 @@ async function expectEntryStyles(page, entrySelector, rows = ENTRY_STYLES) {
   }
 }
 
-// WCAG contrast of the entry's small secondary text against what is under it:
-// the backgrounds of its ancestors, composited down to the first opaque one.
+// WCAG contrast of the entry's small secondary text against what is painted
+// under it, measured by layout-checks.js (the one implementation of that walk).
 const CONTRAST_SELECTORS = [
   '.ai-translator-dict-heading',
   '.ai-translator-dict-form-label',
@@ -285,49 +268,12 @@ const CONTRAST_SELECTORS = [
   '.ai-translator-dict-example-target',
 ];
 
-function contrastRatios(page, entrySelector, selectors) {
-  return page.evaluate(({ entrySelector, selectors }) => {
-    const parse = (value) => {
-      const m = value.match(/rgba?\(([^)]+)\)/);
-      const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-      return { r, g, b, a };
-    };
-    const over = (top, bottom) => ({
-      r: top.r * top.a + bottom.r * (1 - top.a),
-      g: top.g * top.a + bottom.g * (1 - top.a),
-      b: top.b * top.a + bottom.b * (1 - top.a),
-      a: 1,
-    });
-    const background = (el) => {
-      const layers = [];
-      for (let node = el; node; node = node.parentElement) {
-        const layer = parse(getComputedStyle(node).backgroundColor);
-        if (layer.a === 0) continue;
-        layers.push(layer);
-        if (layer.a === 1) break;
-      }
-      let base = layers.length && layers.at(-1).a === 1 ? layers.pop() : { r: 255, g: 255, b: 255, a: 1 };
-      while (layers.length) base = over(layers.pop(), base);
-      return base;
-    };
-    const luminance = ({ r, g, b }) => {
-      const lin = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
-      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    };
-    const entry = document.querySelector(entrySelector);
-    return selectors.map((selector) => {
-      const el = entry.querySelector(selector);
-      const bg = background(el);
-      const fg = over(parse(getComputedStyle(el).color), bg);
-      const [hi, lo] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
-      return [selector, Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100];
-    });
-  }, { entrySelector, selectors });
-}
-
 async function expectReadableContrast(page, entrySelector, label, selectors = CONTRAST_SELECTORS) {
-  for (const [selector, ratio] of await contrastRatios(page, entrySelector, selectors)) {
-    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(4.5);
+  await waitForSettled(page);
+  const entry = page.locator(entrySelector).first();
+  for (const selector of selectors) {
+    const ratio = await contrastOf(entry.locator(selector).first());
+    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
   }
 }
 
@@ -341,7 +287,7 @@ test.describe('dictionary entry (batch C)', () => {
       await waitForFloatBall(page);
       await openInputDialog(page);
 
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('跑');
       const dialog = page.locator('#ai-translator-input-dialog');
       await expectRunEntry(page, dialog);
@@ -355,14 +301,14 @@ test.describe('dictionary entry (batch C)', () => {
       }
 
       // A sentence is translated, not looked up: the plain prompt, no entry.
-      await lookUp(page, 'I run every morning.');
+      await translateInput(page, 'I run every morning.');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('[T] I run every morning.');
       await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
       await expect(dialog.locator('.ai-translator-dict-section')).toHaveCount(0);
       expect(mock.systemPrompts.at(-1)).not.toContain(globalThis.DictEntry.PROMPT_MARK);
 
       // A translation-only entry draws no empty blocks.
-      await lookUp(page, 'harbour');
+      await translateInput(page, 'harbour');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('[T] harbour');
       expect(mock.systemPrompts.at(-1)).toContain(globalThis.DictEntry.PROMPT_MARK);
       await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
@@ -423,7 +369,7 @@ test.describe('dictionary entry (batch C)', () => {
       await stubBuiltinTranslator(page);
 
       await openInputDialog(page);
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('[B] run');
       await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
       await expect(page.locator('#ai-translator-input-dialog .ai-translator-dict-section')).toHaveCount(0);
@@ -456,14 +402,14 @@ test.describe('dictionary entry (batch C)', () => {
       await waitForFloatBall(page);
 
       await openInputDialog(page);
-      await lookUp(page, 'give up');
+      await translateInput(page, 'give up');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('放弃');
       expect(mock.systemPrompts.at(-1)).toContain(globalThis.DictEntry.PROMPT_MARK);
       const dialog = page.locator('#ai-translator-input-dialog');
       await expect(dialog.locator('.ai-translator-dict-pos')).toHaveText('phr. v.');
       await expect(dialog.locator('.ai-translator-dict-defs')).toHaveText('放弃; 戒掉');
       await expect(dialog.locator('.ai-translator-dict-example-source')).toHaveText('Never give up.');
-      await closeInputDialog(page);
+      await closeInputDialog(page, { via: 'overlay' });
 
       const card = await openCardOn(page, '#phrase');
       await expect(card.locator('.ai-translator-translation-text')).toHaveText('放弃');
@@ -487,14 +433,14 @@ test.describe('dictionary entry (batch C)', () => {
 
       await openInputDialog(page);
       const dialog = page.locator('#ai-translator-input-dialog');
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expect(dialog.locator('.ai-translator-dict-sense')).toHaveCount(2);
       broken = true;
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expect(page.locator('#ai-translator-result-text .ai-translator-input-error')).toHaveText(zh('dictEntryUnreadable'));
       await expect(page.locator('#ai-translator-input-dict')).toBeHidden();
       await expect(dialog.locator('.ai-translator-dict-section')).toHaveCount(0);
-      await closeInputDialog(page);
+      await closeInputDialog(page, { via: 'overlay' });
 
       broken = false;
       const card = await openCardOn(page, '#word');
@@ -521,10 +467,10 @@ test.describe('dictionary entry (batch C)', () => {
       await stubSpeech(page);
 
       await openInputDialog(page);
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
       const fromDialog = await page.locator('#ai-translator-input-dict').innerHTML();
-      await closeInputDialog(page);
+      await closeInputDialog(page, { via: 'overlay' });
 
       const card = await openCardOn(page, '#word');
       await expectRunEntry(page, card);
@@ -551,16 +497,16 @@ test.describe('dictionary entry (batch C)', () => {
       })).toEqual(['rgb(255, 0, 0)', '30px', 'block']);
 
       await openInputDialog(page);
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
       await expectEntryStyles(page, '#ai-translator-input-dict');
       // The UK/US label, from an English translation.
       await page.fill('#ai-translator-input-text', '');
       await pickInputTargetLang(page, 'en');
-      await lookUp(page, '猫');
+      await translateInput(page, '猫');
       await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-accent')).toHaveCount(2);
       await expectEntryStyles(page, '#ai-translator-input-dict', ACCENT_STYLES);
-      await closeInputDialog(page);
+      await closeInputDialog(page, { via: 'overlay' });
 
       const card = await openCardOn(page, '#word');
       await expectRunEntry(page, card);
@@ -581,16 +527,16 @@ test.describe('dictionary entry (batch C)', () => {
         await expect(page.locator('html')).toHaveAttribute('data-ai-translator-theme', theme);
 
         await openInputDialog(page);
-        await lookUp(page, 'run');
+        await translateInput(page, 'run');
         await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
         await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`);
         // The UK/US label, from an English translation.
         await page.fill('#ai-translator-input-text', '');
         await pickInputTargetLang(page, 'en');
-        await lookUp(page, '猫');
+        await translateInput(page, '猫');
         await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-accent')).toHaveCount(2);
         await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`, ['.ai-translator-dict-accent']);
-        await closeInputDialog(page);
+        await closeInputDialog(page, { via: 'overlay' });
 
         const card = await openCardOn(page, '#word');
         await expectRunEntry(page, card);
@@ -613,7 +559,7 @@ test.describe('dictionary entry (batch C)', () => {
       // Three tokens and no sentence punctuation, but formula notation: the text
       // prompt with the math placeholder rule, not the dictionary prompt.
       const sent = mock.sentTexts.length;
-      await lookUp(page, '$x + y$');
+      await translateInput(page, '$x + y$');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('[T] $x + y$');
       expect(mock.sentTexts.length).toBe(sent + 1);
       expect(mock.systemPrompts.at(-1)).not.toContain(globalThis.DictEntry.PROMPT_MARK);
@@ -635,7 +581,7 @@ test.describe('dictionary entry (batch C)', () => {
       await openInputDialog(page);
 
       // Step 1: one pinyin row, no UK/US.
-      await lookUp(page, 'run');
+      await translateInput(page, 'run');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('跑');
       const dict = page.locator('#ai-translator-input-dict');
       await expect(dict.locator('.ai-translator-dict-phonetic')).toHaveCount(1);
@@ -673,7 +619,7 @@ test.describe('dictionary entry (batch C)', () => {
       await openInputDialog(page);
 
       // Step 1: two rows, UK and US, the IPA of `cat`.
-      await lookUp(page, '猫');
+      await translateInput(page, '猫');
       await expect(page.locator('#ai-translator-result-text')).toHaveText('cat');
       const dict = page.locator('#ai-translator-input-dict');
       const rows = dict.locator('.ai-translator-dict-phonetic');

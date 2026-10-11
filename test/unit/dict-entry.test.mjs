@@ -1,6 +1,6 @@
 // The dictionary entry has one owner, shared/dict-entry.js (D-469/D-470):
 //
-//   - isLookup() alone decides what is looked up (D-473–D-475), checked
+//   - isLookup() alone decides what is looked up (D-473–D-475, D-542), checked
 //     against the rulings' own samples;
 //   - normalize() is the only check on what the model sends back (D-472): only
 //     a non-object or a missing/empty translation throws `invalidEntry`; a
@@ -32,7 +32,7 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
-  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
+  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, hasContent, render,
 } = globalThis.DictEntry;
 
 // `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
@@ -50,7 +50,7 @@ const throwsInvalid = (fn, reason) => assert.throws(fn, (error) => {
   return true;
 }, reason);
 
-// ---- isLookup (D-473) -------------------------------------------------------
+// ---- isLookup (D-473, D-542) ------------------------------------------------
 
 // The ruling's samples, every one of them, then the edges of each rule.
 const LOOKUP_TABLE = [
@@ -63,7 +63,18 @@ const LOOKUP_TABLE = [
   ['猫', true],
   ['東京', true],
   ['Hello, world', false],
-  ['run.', false],
+  // one sentence stop at the end is how a word is often typed: dropped first
+  // (D-542)
+  ['run.', true],
+  ['apple.', true],
+  ['good morning!', true],
+  // a stop inside, or more than one, is still a sentence
+  ['e.g.', false],
+  ['U.S.', false],
+  ['3.14', false],
+  ['Mr. Smith', false],
+  ['run..', false],
+  ['?', false],
   // trimmed first
   ['  give up \n', true],
   ['', false],
@@ -71,19 +82,30 @@ const LOOKUP_TABLE = [
   // 1–3 words, by spaces
   ['look forward to it', false],
   ['state-of-the-art', true],
-  // 1–4 characters where words are not spaced, by code point
+  // where words are not spaced, by code point: 1–4 with any Han, 1–8 in kana,
+  // hangul, Thai and the like (D-542)
   ['一石二鳥', true],
   ['一石二鸟吧', false],
-  ['ありがとう', false],
+  ['ありがとう', true],
+  ['こんにちは', true],
+  ['안녕하세요', true],
+  ['감사합니다', true],
+  ['สวัสดี', true],
+  ['ありがとうございます', false],
+  ['食べる', true],
+  ['食べられない', false],
   ['猫 狗', true],
   ['안녕', true],
   ['𠮷野家', true],
-  // any sentence punctuation, half- or full-width
-  ['run!', false],
-  ['run?', false],
-  ['跑！', false],
-  ['跑？', false],
-  ['跑。', false],
+  // any other sentence punctuation, half- or full-width, or a stop that is
+  // not the last character
+  ['run!', true],
+  ['run?', true],
+  ['跑！', true],
+  ['跑？', true],
+  ['跑。', true],
+  ['run?!', false],
+  ['How are you doing', false],
   ['跑；', false],
   ['run;', false],
   ['跑，', false],
@@ -123,7 +145,7 @@ const LOOKUP_TABLE = [
   ['and/or', true],
 ];
 
-test('isLookup answers the D-473–D-475 table', () => {
+test('isLookup answers the D-473–D-475 table, as revised by D-542', () => {
   for (const [text, expected] of LOOKUP_TABLE) {
     assert.equal(isLookup(text), expected, JSON.stringify(text));
   }
@@ -182,6 +204,34 @@ test('a wrong-typed optional field is dropped and the rest of the entry kept', (
   for (const [name, patch, expected] of LENIENT_ROWS) {
     assert.deepEqual(normalize({ ...FULL, ...patch }), { ...FULL, ...expected }, name);
   }
+});
+
+// D-542: lenient is not silent. One warn per normalize() that dropped
+// anything, naming each field and why; never the model's text. A clean entry
+// warns nothing.
+test('normalize warns once, by field name, when it drops what the model sent', (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  normalize(FULL);
+  normalize({ translation: '跑' });
+  assert.equal(warn.mock.callCount(), 0, 'a clean entry warns nothing');
+  // A translation that cannot be read is a throw, not a drop: no warn either.
+  assert.throws(() => normalize({ translation: 42 }), /translation is missing or empty/);
+  assert.throws(() => normalize({ translation: 'x'.repeat(MAX_TEXT + 1) }), /translation is missing or empty/);
+  assert.equal(warn.mock.callCount(), 0, 'a rejected translation warns nothing');
+
+  const secret = 'SECRET-SOURCE-TEXT';
+  normalize({ ...FULL, phonetics: 'pǎo', senses: [{ pos: 7, defs: [secret.repeat(40)] }], examples: [secret] });
+  assert.equal(warn.mock.callCount(), 1, 'one warn for the whole entry');
+  const [message, dropped] = warn.mock.calls[0].arguments;
+  assert.equal(message, 'dict-entry: dropped fields');
+  assert.deepEqual(dropped, [
+    'phonetics: not an array',
+    'senses[0].pos: not a string',
+    `senses[0].defs[0]: over ${MAX_TEXT} characters`,
+    'senses[0]: missing defs',
+    'examples[0]: not an object',
+  ]);
+  assert.ok(!JSON.stringify(warn.mock.calls[0].arguments).includes(secret), 'the text never reaches the log');
 });
 
 test('extra keys are ignored and not carried, at the top and in items', () => {
@@ -439,6 +489,19 @@ test('a translation-only entry draws nothing and hides the container', () => {
   assert.equal(container.childElementCount, 0);
   assert.equal(container.hidden, true);
   assert.equal(bound.length, 0);
+});
+
+test('hasContent is true exactly when render draws a block', () => {
+  assert.equal(hasContent(normalize({ translation: '跑' })), false);
+  assert.equal(hasContent(normalize(FULL)), true);
+  for (const key of Object.keys(FIELDS).filter((name) => FIELDS[name].kind === 'list')) {
+    const one = { translation: '跑', [key]: FULL[key].slice(0, 1) };
+    const entry = normalize(one);
+    assert.equal(hasContent(entry), true, key);
+    const { container } = draw(entry);
+    assert.equal(container.hidden, false, key);
+    assert.equal(container.childElementCount, 1, key);
+  }
 });
 
 test('null clears what was drawn before', () => {

@@ -59,9 +59,7 @@
                 <path d="M6 9l6 6 6-6"/>
               </svg>
             </button>
-            <div class="ai-translator-lang-menu" hidden>
-              ${buildTargetLangMenu(getEffectiveTargetLang())}
-            </div>
+            <div class="ai-translator-lang-menu" hidden></div>
           </div>
           <button class="ai-translator-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
         </div>
@@ -113,7 +111,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin'), t('cardUseBlab')])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'])}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
@@ -422,21 +420,19 @@
     label.textContent = getTargetLangLabel(normalized);
     popup.dataset.targetLang = normalized;
 
-    const items = menu.querySelectorAll('.ai-translator-lang-item');
-    items.forEach((item) => {
-      item.classList.toggle('is-selected', item.dataset.lang === normalized);
-    });
-
     const closeMenu = () => {
       if (menu.hidden) return;
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
     };
 
-    // 76 项里已选的那一项多半在可视区外：打开时把它滚进来。只动菜单自己的
-    // scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
+    // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
+    // 点过、别的标签点过——每次打开都按那一刻的列表和那一刻的手动引擎画。
+    // 画完定好停在哪：有最近组停在顶部，没有就把全表里的已选项滚进来。只动菜单
+    // 自己的 scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
     const openMenu = () => {
       if (!menu.hidden) return;
+      buildTargetLangMenu(menu, popup.dataset.targetLang);
       menu.hidden = false;
       ctx.revealSelectedLanguage(menu);
       trigger.setAttribute('aria-expanded', 'true');
@@ -457,10 +453,9 @@
       const lang = item.dataset.lang;
       if (!lang) return;
       label.textContent = item.textContent || getTargetLangLabel(lang);
-      items.forEach((btn) => {
-        btn.classList.toggle('is-selected', btn.dataset.lang === lang);
-      });
       popup.dataset.targetLang = lang;
+      // 最近语言的唯一写入点：只记这里的显式点击（D-542 §B.2）。
+      ctx.rememberRecentTargetLang(lang);
       closeMenu();
       if (typeof onChange === 'function') {
         onChange(lang);
@@ -559,39 +554,23 @@
     const tag = popup.querySelector('.ai-translator-engine-tag');
     retranslate.hidden = false;
     retranslate.disabled = false;
-    tag.textContent = engine ? t(CARD_ENGINE_TAG[engine]) : '';
-    tag.hidden = !engine;
     // 标题说这次是哪个引擎译的（原来恒写「AI 翻译」，内置和 Blab 译出来也这么写）。
     // 没有引擎（扩展上下文没了、请求抛错）就回到中性的「翻译」。
     popup.querySelector('.ai-translator-title').textContent = t(engine ? CARD_TITLE[engine] : 'translate');
+    ctx.showEngineTag(tag, engine);
     const requestId = popup.dataset.requestId;
-    const other = await switchOffer(engine, popup.dataset.targetLang);
-    if (state.translationPopup !== popup || popup.dataset.requestId !== requestId) return;
-    switchBtn.hidden = !other;
-    if (!other) return;
-    switchBtn.dataset.engine = other;
-    switchBtn.querySelector('.ai-translator-btn-label').textContent = t(CARD_USE_ENGINE[other]);
-    switchBtn.disabled = false;
+    await ctx.offerEngineSwitch({
+      button: switchBtn,
+      engine,
+      targetLang: popup.dataset.targetLang,
+      feature: 'selection',
+      isCurrent: () => state.translationPopup === popup && popup.dataset.requestId === requestId,
+    });
   }
 
-  // 卡上的引擎标签与「换到…」按钮文字，每个引擎一条（Engines.ENGINES）。
-  const CARD_ENGINE_TAG = { builtin: 'cardEngineBuiltin', ai: 'cardEngineAi', blab: 'cardEngineBlab' };
+  // 卡片标题说这次是哪个引擎译的，每个引擎一条（Engines.ENGINES）。标签与「换到…」按钮在
+  // content-engine-choice.js。
   const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab' };
-  const CARD_USE_ENGINE = { builtin: 'cardUseBuiltin', ai: 'cardUseAi', blab: 'cardUseBlab' };
-
-  // 这次是 engine 答的，换到哪一个：按 Engines.ENGINES 的顺序取第一个「不是它、此刻
-  // 又能接这张卡的目标语言」的引擎（内置在前，所以 ai 与内置之间的老行为不变）；
-  // 一个都没有是 null。Blab 只在账户此刻能用时才给（设计 §5.4：不切到不可用的引擎）。
-  async function switchOffer(engine, targetLang) {
-    if (!engine) return null;
-    try {
-      const choices = await ctx.engineChoices(targetLang, 'selection');
-      return globalThis.Engines.ENGINES.find((other) => other !== engine && choices[other]) || null;
-    } catch (error) {
-      console.error('Blab Translation: reading engine choices for the card failed', error);
-      return null;
-    }
-  }
 
   // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
   // 什么都不写进设置。

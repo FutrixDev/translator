@@ -15,6 +15,12 @@
  *         target's lang and dir and its line starts at the right edge; the
  *         card's menu reveals the selected language; picking an LTR target
  *         turns the next translation back to the left edge
+ *   J-B10 recently picked languages sit in a group above the full list (the
+ *         journey design ext-opt-input-translation §B.3 calls "J-B9"; that
+ *         name was taken by the RTL card above)
+ *   J-L1  the recent group across the dialog and the selection card, its cap
+ *         of five, a new default target, and the "AI only" tag (design
+ *         ext-opt-input-translation §C.1, D-542)
  *
  * Expected names are always computed here, in the browser, with Intl — never
  * written out and never asked of the code under test. zh-CN / zh-TW are the
@@ -23,9 +29,18 @@
  */
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings, getSyncSettings, openFloatBallMenu, waitForFloatBall } = require('./helpers');
+const {
+  setExtensionSettings,
+  getSyncSettings,
+  waitForFloatBall,
+  openInputDialog,
+  openDialogMenu,
+  pickInputTargetLang,
+  closeInputDialog,
+} = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { expectLaidOut, contrastOf, MIN_CONTRAST } = require('./layout-checks');
 
 const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
 
@@ -182,9 +197,7 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     await page.goto(`${site.origin}/`);
     await page.waitForSelector('#ai-translator-float-ball');
     await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
-    await openFloatBallMenu(page);
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await openInputDialog(page);
 
     const dialog = page.locator('#ai-translator-input-dialog');
     const scrollYBefore = await page.evaluate(() => window.scrollY);
@@ -322,6 +335,240 @@ test('J-B9 the selection card lays an RTL translation out from the right and an 
     const ltr = await firstLineGeometry(text);
     expect(ltr.lines, JSON.stringify(ltr)).toBe(1);
     expect(Math.abs(ltr.left - ltr.contentLeft), JSON.stringify(ltr)).toBeLessThanOrEqual(1);
+  } finally {
+    await site.close();
+    await mock.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Recently picked target languages (design ext-opt-input-translation §B, D-542).
+// Every Playwright test starts with an empty chrome.storage.local, so the list
+// starts empty here too, which is also why J-B8 above still sees a flat 76.
+
+const RECENT_PAGE = `<!doctype html><html lang="en"><head><style>
+  body { margin: 0; padding: 300px 60px 40px; font: 18px/28px Georgia, serif; }
+</style></head><body><p><span id="phrase">Tide table</span> for the harbour.</p>${TALL}</body></html>`;
+
+/** What the open menu shows: its group headers, its recent items, and the rest. */
+function menuParts(menu) {
+  return menu.evaluate((el) => ({
+    groups: [...el.querySelectorAll('.ai-translator-lang-group')].map((g) => g.textContent),
+    firstIsGroup: !!el.firstElementChild?.matches('.ai-translator-lang-group'),
+    recent: [...el.querySelectorAll('.ai-translator-lang-item[data-recent]')].map((i) => i.dataset.lang),
+    full: el.querySelectorAll('.ai-translator-lang-item:not([data-recent])').length,
+    selected: [...el.querySelectorAll('.is-selected')].map((i) => [i.dataset.lang, i.hasAttribute('data-recent')]),
+  }));
+}
+
+/** The first selected item is inside the open menu's visible box, and the page did not move. */
+async function expectFirstSelectedInView(page, menu, scrollYBefore) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const top = box.top + el.clientTop;
+    const item = el.querySelector('.is-selected').getBoundingClientRect();
+    return { top, bottom: top + el.clientHeight, itemTop: item.top, itemBottom: item.bottom };
+  });
+  expect(view.itemTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
+  expect(view.itemBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+}
+
+/**
+ * With a recent group, an opened menu stays at its top (D-545): scrollTop 0, the
+ * "Recent" heading inside the menu's visible box, and the page did not move —
+ * also when the selected language is not one of the recent ones.
+ */
+async function expectRecentGroupOnTop(page, menu, scrollYBefore) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const top = box.top + el.clientTop;
+    const group = el.querySelector('.ai-translator-lang-group').getBoundingClientRect();
+    return {
+      top, bottom: top + el.clientHeight, groupTop: group.top, groupBottom: group.bottom,
+      scrollTop: el.scrollTop, selectedInRecent: !!el.querySelector('.is-selected[data-recent]'),
+    };
+  });
+  expect(view.scrollTop, JSON.stringify(view)).toBe(0);
+  expect(view.groupTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
+  expect(view.groupBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+  return view;
+}
+
+/**
+ * The "AI only" tag (its ::after) against what is painted under the row, through
+ * the same walk every other contrast check uses. `tinted` says whether the row
+ * itself paints a background (selected, hovered).
+ */
+async function tagContrast(item) {
+  return {
+    ratio: Math.round((await contrastOf(item, '::after')) * 100) / 100,
+    tinted: await item.evaluate((el) => {
+      const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+      const [, , , a = '1'] = m[1].split(/[\s,/]+/).filter(Boolean);
+      return +a > 0;
+    }),
+  };
+}
+
+test('J-B10 the languages picked last sit in a group above the full list, which keeps all 76', async ({ page }) => {
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(RECENT_PAGE);
+  });
+  try {
+    // The built-in engine, so the full list carries "AI only" tags to measure.
+    await setExtensionSettings(page, { targetLang: 'zh-CN', autoTranslate: false, translationEngine: 'builtin' });
+    await page.goto(`${site.origin}/`);
+    await waitForFloatBall(page);
+
+    await pickInputTargetLang(page, 'fr');
+    await pickInputTargetLang(page, 'de');
+    const menu = await openDialogMenu(page);
+    const parts = await menuParts(menu);
+    expect(parts.recent).toEqual(['de', 'fr']);
+    expect(parts.groups).toEqual([getMessage('langRecent', 'en'), getMessage('langAll', 'en')]);
+    expect(parts.firstIsGroup).toBe(true);
+    await expect(menu.locator('.ai-translator-lang-item[data-recent]')).toHaveCount(2);
+    // The full list is untouched: 76, Intl names, collated, the recent ones still in it.
+    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
+    // Both copies of the selected language are selected, the recent one first.
+    expect(parts.selected).toEqual([['de', true], ['de', false]]);
+    await expect(menu.locator('.ai-translator-lang-item[data-lang="de"]')).toHaveCount(2);
+    // Both headings are readable on the light panel (the default theme) (D-545).
+    console.log(`J-B10 group heading contrast: ${await expectLaidOut(page, [
+      '#ai-translator-input-dialog .ai-translator-lang-group:first-child',
+      '#ai-translator-input-dialog .ai-translator-lang-item + .ai-translator-lang-group',
+    ], 'J-B10 group headings')}`);
+
+    // So is the "AI only" tag, on all three rows it sits on: a plain one, the
+    // selected one and the one under the mouse, the last two tinted purple (D-549).
+    // Pick a tagged language so the selected row carries a tag too.
+    const tagged = menu.locator('.ai-translator-lang-item[data-tag]:not([data-recent])');
+    const taggedLang = await tagged.first().getAttribute('data-lang');
+    await tagged.first().click();
+    await expect(menu).toBeHidden();
+    await openDialogMenu(page);
+    const plain = menu.locator(`.ai-translator-lang-item[data-tag]:not(.is-selected):not([data-lang="${taggedLang}"])`);
+    const rows = { plain: await tagContrast(plain.first()) };
+    rows.selected = await tagContrast(menu.locator(`.ai-translator-lang-item.is-selected[data-tag][data-lang="${taggedLang}"]:not([data-recent])`));
+    await plain.nth(1).hover();
+    rows.hover = await tagContrast(plain.nth(1));
+    console.log(`J-B10 "AI only" tag contrast: ${JSON.stringify(rows)}`);
+    expect(rows.plain.tinted, JSON.stringify(rows)).toBe(false);
+    expect(rows.selected.tinted, JSON.stringify(rows)).toBe(true);
+    expect(rows.hover.tinted, JSON.stringify(rows)).toBe(true);
+    for (const [row, { ratio }] of Object.entries(rows)) {
+      expect(ratio, `"AI only" tag on the ${row} row: ${JSON.stringify(rows)}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  } finally {
+    await site.close();
+  }
+});
+
+test('J-L1 the recent group: shared by the dialog and the card, five at most, kept across a new default, tagged like the full list', async ({ page }) => {
+  const mock = await startMockOpenAIServer();
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(RECENT_PAGE);
+  });
+  try {
+    await setExtensionSettings(page, {
+      provider: 'custom',
+      apiEndpoint: mock.endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      translationEngine: 'ai',
+      targetLang: 'zh-CN',
+      enableSelection: true,
+      selectionTrigger: 'icon',
+      selectionTranslationMode: 'popup',
+      autoTranslate: false,
+    });
+    await page.goto(`${site.origin}/`);
+    await waitForFloatBall(page);
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
+
+    // 1. Nothing picked yet: the flat list, as J-B8 sees it.
+    let menu = await openDialogMenu(page);
+    expect(await menuParts(menu)).toMatchObject({ groups: [], recent: [], full: 76 });
+    await page.keyboard.press('Escape'); // Escape closes the whole dialog
+    await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(0);
+
+    // 2. Pick fr with something typed: the translation follows.
+    await openInputDialog(page);
+    await page.fill('#ai-translator-input-text', 'a full sentence for translation');
+    await pickInputTargetLang(page, 'fr');
+    const result = page.locator('#ai-translator-result-text');
+    await expect(result).toHaveText('[T] a full sentence for translation');
+    await expect(result).toHaveAttribute('lang', 'fr');
+
+    // 3. Closed, the page reloaded (so the list comes back from storage, not
+    // from this page's memory) and opened again: fr heads the menu, selected
+    // and in view, then all 76.
+    await closeInputDialog(page);
+    await page.reload();
+    await waitForFloatBall(page);
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+    menu = await openDialogMenu(page);
+    let parts = await menuParts(menu);
+    expect(parts).toMatchObject({
+      groups: [getMessage('langRecent', 'en'), getMessage('langAll', 'en')], firstIsGroup: true, recent: ['fr'], full: 76,
+    });
+    expect(parts.selected[0]).toEqual(['fr', true]);
+    await expectFirstSelectedInView(page, menu, scrollYBefore);
+    await closeInputDialog(page);
+
+    // 4. The selection card's menu draws the same group.
+    const phrase = await page.locator('#phrase').boundingBox();
+    const y = phrase.y + phrase.height / 2;
+    await page.mouse.move(phrase.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(phrase.x + phrase.width - 1, y, { steps: 10 });
+    await page.mouse.up();
+    await page.locator('#ai-translator-selection-btn .ai-translator-selection-icon').click();
+    const card = page.locator('.ai-translator-popup');
+    await expect(card.locator('.ai-translator-translation-text')).toContainText('[T]');
+    const cardScrollY = await page.evaluate(() => window.scrollY);
+    await card.locator('.ai-translator-lang-trigger').click();
+    const cardMenu = card.locator('.ai-translator-lang-menu');
+    await expect(cardMenu).toBeVisible();
+    expect(await menuParts(cardMenu)).toMatchObject({ recent: ['fr'], firstIsGroup: true, full: 76 });
+    // The card's target (zh-CN, the default) was never picked, so it is only in the
+    // full list; the menu still opens on the recent group, not scrolled down to it.
+    expect(await expectRecentGroupOnTop(page, cardMenu, cardScrollY))
+      .toMatchObject({ selectedInRecent: false });
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5);
+    await expect(card).toHaveCount(0);
+
+    // 5. Six more picks: five kept, newest first, de pushed out.
+    for (const lang of ['de', 'ja', 'ko', 'ru', 'es', 'fr']) await pickInputTargetLang(page, lang);
+    menu = await openDialogMenu(page);
+    expect((await menuParts(menu)).recent).toEqual(['fr', 'es', 'ru', 'ko', 'ja']);
+    await closeInputDialog(page);
+
+    // 6. A new default target on the settings side leaves the habit alone. The
+    // dialog's target (en) is not among the recent ones: the menu opens on the group.
+    await setExtensionSettings(page, { targetLang: 'en' });
+    const dialogScrollY = await page.evaluate(() => window.scrollY);
+    menu = await openDialogMenu(page);
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(
+      await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('en')));
+    expect((await menuParts(menu)).recent).toEqual(['fr', 'es', 'ru', 'ko', 'ja']);
+    expect(await expectRecentGroupOnTop(page, menu, dialogScrollY)).toMatchObject({ selectedInRecent: false });
+    await closeInputDialog(page);
+
+    // 7. With the built-in engine chosen, a recent language it cannot translate into carries the tag.
+    await setExtensionSettings(page, { translationEngine: 'builtin' });
+    await pickInputTargetLang(page, 'fa');
+    menu = await openDialogMenu(page);
+    const tag = getMessage('langAiOnly', 'en');
+    expect((await menuParts(menu)).recent).toEqual(['fa', 'fr', 'es', 'ru', 'ko']);
+    await expect(menu.locator('.ai-translator-lang-item[data-recent][data-lang="fa"]')).toHaveAttribute('data-tag', tag);
+    expect(await menu.locator('.ai-translator-lang-item[data-recent][data-lang="fr"]').getAttribute('data-tag')).toBeNull();
   } finally {
     await site.close();
     await mock.close();

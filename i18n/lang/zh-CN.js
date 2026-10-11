@@ -720,4 +720,8 @@
     transferPreviewAiProfiles: 'AI 配置档：将新增 {added} 个 AI 配置档、替换 {replaced} 个。',
     docView: '查看',
     docErrSiteBase: '无法打开阅读台：账号站点地址不是有效的网址。',
+    inputDictNeedsModel: '内置引擎只给译文，不提供音标、释义和例句；要查词典请改用 AI 模型。',
+    dictEntryEmpty: '模型这次没有给出音标、释义和例句。',
+    langRecent: '最近使用',
+    langAll: '全部语言',
 };

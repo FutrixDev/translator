@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'AI 프로필: {added}개 추가, {replaced}개 교체.',
     docView: '보기',
     docErrSiteBase: '리더를 열 수 없습니다. 계정 사이트 주소가 올바른 웹 주소가 아닙니다.',
+    inputDictNeedsModel: '내장 엔진은 번역만 제공하며 발음, 뜻, 예문은 없습니다. 사전처럼 찾아보려면 AI 모델을 사용하세요.',
+    dictEntryEmpty: '모델이 이번에는 발음, 뜻, 예문을 제공하지 않았습니다.',
+    langRecent: '최근 사용',
+    langAll: '모든 언어',
 };

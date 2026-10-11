@@ -436,13 +436,30 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 /* 手动引擎是内置时，端上译不了的语言带一个「仅 AI」标记（ctx.buildTargetLangMenu 写进
    data-tag）。只能由这里画：选中时 content-popup.js 把 item.textContent 当标签文字。
-   颜色走 --text-muted，两种主题在两个面板根上各自定义了它，所以不需要浅色覆盖。 */
+   颜色走 --text-muted；浅色主题下它在白底上不够 4.5:1，light-theme.css 换成 --text-tag，
+   选中行和悬停行的紫色底上也够（D-549）。 */
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item[data-tag]::after {
   content: attr(data-tag);
   float: inline-end;
   margin-inline-start: 8px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* 「最近使用」「全部语言」两个分组标题（ctx.buildTargetLangMenu 只在有最近记录时画）。
+   只是标签，不是选项：不可点、不进选中态。第二个标题上面画一条分隔线，把重复出现在
+   全表里的最近项和置顶那组分开。颜色走 --text-muted；浅色主题的覆盖在 light-theme.css。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-group {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
+}
+
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item + .ai-translator-lang-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--pill-border);
 }
 
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item:hover {

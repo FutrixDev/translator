@@ -110,7 +110,7 @@ file directly.
 
 - **Math formula preservation**: Detects MathJax/KaTeX elements, replaces with placeholders during translation, restores after
 - **Code detection**: Regex patterns skip non-human text (code blocks, JSON, Markdown syntax)
-- **Storage**: Chrome sync storage for cross-device settings
+- **Storage**: Chrome sync storage for cross-device settings; per-device UI memory (`recentTargetLangs`, `inputDialogTargetLang`) goes through `ctx.localPref` (`content/content-local-pref.js`, `chrome.storage.local`)
 - **Theming**: CSS variables for dark/light theme support
 - **Host-page containment**: our panels are a subtree of the page's own
   document, so every page rule on a bare tag matches them too — example.com
@@ -347,24 +347,27 @@ throws on an entry drawn without one; it has no `word` option. The looked-up
 text keeps its own speaker on each surface (`#ai-translator-input-speak`,
 `.ai-translator-speak-source`). Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
-`DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
+`DictEntry.isLookup(text)` holds — trimmed, one sentence stop at the very end
+(`. ! ? 。！？`) dropped (`apple.` and `run?` are lookups, `e.g.` and `3.14`
+are not, D-542), no sentence punctuation
 (`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
 command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }`, D-474; any `*`,
 or a `-` or `/` between spaces or between bare operands — `x - y`, `3/4`,
 `(x-y)` — while `x-ray`, `Wi-Fi` and `km/h` stay lookups, D-475; a formula
 takes the text path, where the math placeholder rule applies), and 1–3 words
-in a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
-(D-473). The parser fails hard, as
+in a spaced script, 1–4 characters when any Han is in it, or 1–8 characters
+in kana, hangul, Thai and the like (D-473, revised by D-542). The parser fails hard, as
 `invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
 (after `<think>…</think>` is stripped), the JSON is not an object, or the
 translation is missing or empty; a wrong-typed or overlong optional field or
-list item is dropped, never guessed at (D-472). The entry is drawn only for a
-reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
-translation alone. `content/css/dict-entry.css` states colour, size, display
-and padding on every element, because the containment reset leaves those to
-our own rules and the entry is made of bare spans and divs. Journeys C1–C9 and
-J1–J3 (the translation's phonetics and speakers, D-487) in
-`test/e2e/dictionary-entry.spec.js`.
+list item is dropped, never guessed at (D-472), and one `console.warn` names
+each dropped field and why, never the text (D-542). The entry is drawn only for a
+reply from a model engine, `ai` or `blab` (`DictEntry.entryFor`); the built-in engine
+gives the translation alone. `content/css/dict-entry.css` states colour, size, display
+and padding on every element, because the containment reset leaves those to our own
+rules and the entry is made of bare spans and divs. Journeys C1–C9 and J1–J3 (the
+translation's phonetics and speakers, D-487) in `test/e2e/dictionary-entry.spec.js`;
+J-I1–J-I7 (the dialog's no-entry note) in `test/e2e/input-dictionary-note.spec.js`.
 
 ### Translation Engine
 
@@ -403,15 +406,15 @@ place, `pinnedEngine(message)` in `content/content-translation-engine.js`; it
 outranks the settings and a pinned engine **never falls back** — its failure is
 the answer. Nothing is persisted. Every response from `ctx.requestTranslation`
 carries `engine: 'builtin' | 'ai' | 'blab'` (on errors: the engine that
-failed). The card's switch-engine button is the only caller that pins, and it
-asks `ctx.engineChoices(targetLang, feature)` (`{ builtin, ai, blab }`) which
-engines are usable right now for the card's target language: `blab` needs the
-signed-in paid account (`eng.model.blabAvailable()`), `builtin` also needs the built-in
-engine to know that target. That is `eng.supportsTarget(targetLang)` in
-`content/engine/languages.js`, the one predicate for "can the built-in engine
-translate into this extension code": the language menus' "AI only" tag, the
-language-pack status and the engine's own error wording ask it too, and no
-caller rebuilds it from `supportsLang(toApiLang(…))`.
+failed). Two callers pin, both through `ctx.offerEngineSwitch` in `content-engine-choice.js`:
+the card's switch-engine button and the input dialog's note button. It asks
+`ctx.engineChoices(targetLang, feature)` (`{ builtin, ai, blab }`) which engines are
+usable now for that target language: `blab` needs the signed-in paid account
+(`eng.model.blabAvailable()`), `builtin` also needs the built-in engine to know that
+target. That is `eng.supportsTarget(targetLang)` in `content/engine/languages.js`, the
+one predicate for "can the built-in engine translate into this extension code": the
+language menus' "AI only" tag, the language-pack status and the engine's own error
+wording ask it too, and no caller rebuilds it from `supportsLang(toApiLang(…))`.
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is

@@ -742,4 +742,8 @@ Rules:
     transferPreviewAiProfiles: 'AI profiles: {added} will be added, {replaced} replaced.',
     docView: 'View',
     docErrSiteBase: "The reader can't be opened: the account site address is not a web address.",
+    inputDictNeedsModel: 'The built-in engine only translates. For pronunciation, meanings and examples, look the word up with an AI model.',
+    dictEntryEmpty: 'The model gave no pronunciation, meanings or examples for this.',
+    langRecent: 'Recent',
+    langAll: 'All languages',
 };

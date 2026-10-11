@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'Perfis de IA: {added} serão adicionados, {replaced} substituídos.',
     docView: 'Ver',
     docErrSiteBase: 'Não é possível abrir o leitor: o endereço do site da conta não é um endereço web válido.',
+    inputDictNeedsModel: 'O mecanismo integrado só traduz. Para pronúncia, significados e exemplos, use um modelo de IA.',
+    dictEntryEmpty: 'Desta vez o modelo não deu pronúncia, significados nem exemplos.',
+    langRecent: 'Recentes',
+    langAll: 'Todos os idiomas',
 };

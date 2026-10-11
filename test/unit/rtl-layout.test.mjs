@@ -31,14 +31,20 @@ function fakeElement(computed = {}) {
   };
 }
 
+// content-language.js 加载时经 ctx.localPref（content/content-local-pref.js，
+// manifest 里排在它前面）建「最近使用」；这里什么都没存过，也不会落地。
+const CHROME = { storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } } };
+
 function loadLanguageHelpers({ getTextInset } = {}) {
-  const ctx = { escapeHtml: (s) => s, getTextInset };
+  const ctx = { escapeHtml: (s) => s, getTextInset, isExtensionContextAvailable: () => true };
   const win = {
     AI_TRANSLATOR_CONTENT: ctx,
     getComputedStyle: (el) => el.computed,
   };
-  new Function('window', 'globalThis', 'TargetLang', 'LangTags', read('content/content-language.js'))(
-    win, { LangTags: globalThis.LangTags }, globalThis.TargetLang, globalThis.LangTags);
+  for (const file of ['content/content-local-pref.js', 'content/content-language.js']) {
+    new Function('window', 'globalThis', 'TargetLang', 'LangTags', 'chrome', read(file))(
+      win, { LangTags: globalThis.LangTags }, globalThis.TargetLang, globalThis.LangTags, CHROME);
+  }
   return ctx;
 }
 
@@ -215,6 +221,7 @@ test('revealSelectedLanguage centres the selected item by moving only the menu',
     scrollIntoView() { scrolledIntoView = true; },
   };
   const menu = {
+    dataset: {},
     scrollTop: 0,
     clientTop: 1,
     clientHeight: 260,
@@ -228,9 +235,19 @@ test('revealSelectedLanguage centres the selected item by moving only the menu',
 });
 
 test('revealSelectedLanguage leaves a menu with nothing selected alone', () => {
-  const menu = { scrollTop: 40, querySelector: () => null };
+  const menu = { dataset: {}, scrollTop: 40, querySelector: () => null };
   ctx.revealSelectedLanguage(menu);
   assert.equal(menu.scrollTop, 40);
+});
+
+test('revealSelectedLanguage parks a grouped menu at the top without looking inside', () => {
+  const menu = {
+    dataset: { grouped: '1' },
+    scrollTop: 300,
+    querySelector: () => { throw new Error('a grouped menu is not searched'); },
+  };
+  ctx.revealSelectedLanguage(menu);
+  assert.equal(menu.scrollTop, 0);
 });
 
 // ==================== 每个落笔口都要知道译文是哪门语言 ====================
@@ -262,7 +279,8 @@ test('every place a translation lands requires the language of its text', () => 
 // 整条旅程（几何、换语言后标记跟着变）在 test/e2e/target-languages.spec.js 的 J-B8/J-B9。
 test('the card reveals the selected language and marks its translation', () => {
   const popup = read('content/content-popup.js');
-  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
+  // 菜单每次打开现画（最近使用一组随时会变），画完再显出、再滚到已选项。
+  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*buildTargetLangMenu\(menu, popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
   assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
   const css = read('content/css/popup.css');
   const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);
