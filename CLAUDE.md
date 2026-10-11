@@ -110,7 +110,7 @@ file directly.
 
 - **Math formula preservation**: Detects MathJax/KaTeX elements, replaces with placeholders during translation, restores after
 - **Code detection**: Regex patterns skip non-human text (code blocks, JSON, Markdown syntax)
-- **Storage**: Chrome sync storage for cross-device settings
+- **Storage**: Chrome sync storage for cross-device settings; per-device UI memory (`recentTargetLangs`, `inputDialogTargetLang`) goes through `ctx.localPref` (`content/content-local-pref.js`, `chrome.storage.local`)
 - **Theming**: CSS variables for dark/light theme support
 - **Host-page containment**: our panels are a subtree of the page's own
   document, so every page rule on a bare tag matches them too — example.com
@@ -406,15 +406,15 @@ place, `pinnedEngine(message)` in `content/content-translation-engine.js`; it
 outranks the settings and a pinned engine **never falls back** — its failure is
 the answer. Nothing is persisted. Every response from `ctx.requestTranslation`
 carries `engine: 'builtin' | 'ai' | 'blab'` (on errors: the engine that
-failed). The card's switch-engine button is the only caller that pins, and it
-asks `ctx.engineChoices(targetLang, feature)` (`{ builtin, ai, blab }`) which
-engines are usable right now for the card's target language: `blab` needs the
-signed-in paid account (`eng.model.blabAvailable()`), `builtin` also needs the built-in
-engine to know that target. That is `eng.supportsTarget(targetLang)` in
-`content/engine/languages.js`, the one predicate for "can the built-in engine
-translate into this extension code": the language menus' "AI only" tag, the
-language-pack status and the engine's own error wording ask it too, and no
-caller rebuilds it from `supportsLang(toApiLang(…))`.
+failed). Two callers pin, both through `ctx.offerEngineSwitch` in `content-engine-choice.js`:
+the card's switch-engine button and the input dialog's note button. It asks
+`ctx.engineChoices(targetLang, feature)` (`{ builtin, ai, blab }`) which engines are
+usable now for that target language: `blab` needs the signed-in paid account
+(`eng.model.blabAvailable()`), `builtin` also needs the built-in engine to know that
+target. That is `eng.supportsTarget(targetLang)` in `content/engine/languages.js`, the
+one predicate for "can the built-in engine translate into this extension code": the
+language menus' "AI only" tag, the language-pack status and the engine's own error
+wording ask it too, and no caller rebuilds it from `supportsLang(toApiLang(…))`.
 
 **Two engine switches, one per half of the extension.** `translationEngine` is
 for what the user clicks (and for subtitles, below); `autoTranslateEngine` is
