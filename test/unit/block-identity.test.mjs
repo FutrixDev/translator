@@ -413,10 +413,8 @@ test('the insertion side replaces an existing translation only for the current t
   const arbiterAt = source.indexOf('function supersedesExistingTranslation');
   assert.ok(arbiterAt !== -1, 'supersedesExistingTranslation is gone; who arbitrates two passes in flight now?');
   const arbiter = source.slice(arbiterAt, source.indexOf('\n  }\n', arbiterAt));
-  assert.match(arbiter, /ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/,
-    'the arbiter stopped asking what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
-  assert.match(arbiter, /lang === current/,
-    'the arbiter no longer requires the incoming result to be the current target language');
+  assert.match(arbiter, /lang === ctx\.currentTargetLang\(\)/,
+    'the arbiter stopped requiring the incoming result to be what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
   assert.match(arbiter, /entry\.lang === lang/,
     'the arbiter stopped deduplicating — every repeat insert now tears the translation down and redraws it');
 });

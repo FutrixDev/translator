@@ -475,16 +475,14 @@
   // 不矛盾：那一条管的是**记什么戳** —— 戳必须是发请求时的那一门，否则戳和译文
   // 对不上；这一条管的是**谁说了算** —— 只能是用户此刻要的那一门。
   //
-  // null 一律当「不知道」，不知道就不动页面。三处都会出现：没登记过身份
-  // （lookup 落空）、登记时没说语言（entry.lang，见 registerTranslation），以及
-  // 只装了整页翻译那几个模块的 DOM 夹具里根本没有引擎（currentTargetLang 不在）。
+  // null 一律当「不知道」，不知道就不动页面。两处会出现：没登记过身份
+  // （lookup 落空），以及登记时没说语言（entry.lang，见 registerTranslation）。
   // 调用方自己没说语言（lang == null）不必单列一条：那时 lang 既不可能等于
   // entry.lang 之外的某个具体值，也不可能等于 current，最后一行自然答 false。
   function supersedesExistingTranslation(element, lang) {
     const entry = globalThis.BlockIdentity.lookup(element);
     if (!entry || entry.lang == null || entry.lang === lang) return false;
-    const current = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
-    return current != null && lang === current;
+    return lang === ctx.currentTargetLang();
   }
 
   // 失败标记（content/page/failed-blocks.js 造好的那个 span）放在译文本来会落的

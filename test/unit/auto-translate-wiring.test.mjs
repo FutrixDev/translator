@@ -335,8 +335,7 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   assert.ok(arbiterAt !== -1, '裁决者没了：两轮同时在飞时谁说了算？');
   const arbiterEnd = insert.indexOf('\n  }\n', arbiterAt);
   const arbiter = insert.slice(arbiterAt, arbiterEnd);
-  assert.match(arbiter, /const current = ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null;/);
-  assert.match(arbiter, /return current != null && lang === current;/);
+  assert.match(arbiter, /return lang === ctx\.currentTargetLang\(\);/);
   assert.doesNotMatch(insert.slice(0, arbiterAt) + insert.slice(arbiterEnd), /currentTargetLang/);
   // 两个问「这块还算翻过吗」的地方都要带上目标语言。
   assert.match(code('content/page/collect.js'), /identity\.isStale\(element, identity\.fingerprint\(readSourceText\(element\)\), target\)/);
