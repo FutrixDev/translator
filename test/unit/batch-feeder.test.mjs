@@ -5,9 +5,14 @@
 // blocks go next: the ones nearest the viewport, towards the scroll direction,
 // holding focus. This suite loads the real batch.js against a faked window
 // whose scroll position and element geometry it controls, and pins:
-//   - viewport blocks are pulled before anything off screen;
-//   - a scroll between two pulls re-scores what is left, on geometry measured
-//     after the scroll (content shifted by an insertion is not read stale);
+//   - viewport blocks are pulled before anything off screen, and the far tier
+//     (past NEAR_SCREENS) goes in document order (D-553);
+//   - a scroll by the reader between two pulls re-measures and re-scores what
+//     is left, so content shifted by earlier insertions is not read stale;
+//   - the pass's own insertions (no reader scroll) re-measure nothing: the
+//     viewport the pass started on keeps going first (J5.1, D-553);
+//   - a scroll made by scroll anchoring is no reader scroll: it keeps the scroll
+//     direction and only shifts the viewport into the measured coordinates;
 //   - a block of the other tier is skipped, not the end of the batch;
 //   - the focus block (focus or selection inside it, or the nearest block
 //     beside a focused input) is pulled first wherever it is;
@@ -42,7 +47,7 @@ globalThis.window = {
     listeners.get(type).push(fn);
   },
 };
-globalThis.document = { activeElement: null, getSelection: () => null };
+globalThis.document = { activeElement: null, getSelection: () => null, documentElement: { scrollHeight: 10000 } };
 globalThis.chrome = {};
 globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 console.warn = () => {};
@@ -79,7 +84,9 @@ let seq = 0;
 // A block whose layout box sits at document offset `top` (40px tall). The rect
 // is read through the live window.scrollY, as getBoundingClientRect would be.
 // `top: null` is a block with no layout box (display:none).
-// `moveTo(y)` shifts it, as an insertion above it would.
+// `moveTo(y)` shifts it, as an insertion above it would. Every rect read is
+// counted in `rectReads`.
+let rectReads = 0;
 function block(top, label = `b${seq++}`) {
   const geo = { top };
   const classes = new Set();
@@ -88,9 +95,12 @@ function block(top, label = `b${seq++}`) {
     localName: 'p',
     childNodes: [],
     parentNode: {},
-    getBoundingClientRect: () => (geo.top === null
-      ? { top: 0, bottom: 0, width: 0, height: 0 }
-      : { top: geo.top - window.scrollY, bottom: geo.top + 40 - window.scrollY, width: 600, height: 40 }),
+    getBoundingClientRect: () => {
+      rectReads += 1;
+      return geo.top === null
+        ? { top: 0, bottom: 0, width: 0, height: 0 }
+        : { top: geo.top - window.scrollY, bottom: geo.top + 40 - window.scrollY, width: 600, height: 40 };
+    },
     classList: {
       contains: (c) => classes.has(c),
       add: (c) => classes.add(c),
@@ -109,7 +119,9 @@ function input(top, parent = null) {
   };
 }
 
-function scrollTo(y) {
+// The document grows by `dh` (an insertion) and the viewport moves to `y`.
+function scrollTo(y, dh = 0) {
+  document.documentElement.scrollHeight += dh;
   window.scrollY = y;
   for (const fn of listeners.get('scroll') || []) fn({});
 }
@@ -128,6 +140,8 @@ function withEngine(builtin, fn) {
 const noSelection = () => null;
 
 test.beforeEach(() => {
+  // Reset the height with no scroll first, so the reset is not read as anchoring.
+  scrollTo(window.scrollY, 10000 - document.documentElement.scrollHeight);
   scrollTo(0);
   document.activeElement = null;
   document.getSelection = noSelection;
@@ -154,10 +168,12 @@ test('the score: one point per screen, towards the scroll is cheaper, focus -inf
 
 // ==================== the feeder (design §3.2) ====================
 
-test('viewport blocks are pulled before any block off screen, even when the page is scrolled past them in doc order', () => {
+test('viewport blocks are pulled before any block off screen, then the far tier in document order', () => {
   // Six blocks three screens above the viewport come first in the document;
   // six blocks in the viewport come after them. Document order would send the
-  // far six first.
+  // far six first. Once the viewport is done the far six go top down, not
+  // nearest first: scored, the far tier spreads out from the viewport both
+  // ways, and that order costs Blink twice the paint per frame (D-553).
   const far = [0, 100, 200, 300, 400, 500].map((y, i) => block(y, `far${i}`));
   const seen = [2400, 2500, 2600, 2700, 2800, 2900].map((y, i) => block(y, `view${i}`));
   scrollTo(3 * H); // viewport [2400, 3200)
@@ -167,7 +183,7 @@ test('viewport blocks are pulled before any block off screen, even when the page
     assert.deepEqual(labels(feeder.next()), ['view1']);
     const rest = [];
     for (let batch = feeder.next(); batch; batch = feeder.next()) rest.push(...labels(batch));
-    assert.deepEqual(rest, ['view2', 'view3', 'view4', 'view5', 'far5', 'far4', 'far3', 'far2', 'far1', 'far0']);
+    assert.deepEqual(rest, ['view2', 'view3', 'view4', 'view5', 'far0', 'far1', 'far2', 'far3', 'far4', 'far5']);
   });
 });
 
@@ -203,8 +219,8 @@ test('a scroll between two pulls re-scores what is left: the next batch is the n
     assert.deepEqual(labels(feeder.next()), ['bot0']);
     assert.deepEqual(labels(feeder.next()), ['bot1']);
     assert.deepEqual(labels(feeder.next()), ['bot2']);
-    // Scrolled down past the middle: it is above now, two screens up.
-    assert.deepEqual(labels(feeder.next()), ['mid2']);
+    // What is left is all in the far tier now: document order.
+    assert.deepEqual(labels(feeder.next()), ['top1']);
   });
 });
 
@@ -280,7 +296,7 @@ test('a focused input in no block pins the nearest block within half a screen of
   withEngine(true, () => assert.deepEqual(labels(ctx.createBatchFeeder([...all, next], false).next()), ['view0']));
 });
 
-test('a scroll after an insertion re-measures: the next pull reads where the blocks are now, not where they were', () => {
+test('an insertion above the viewport shifts the viewport by the anchoring scroll and measures nothing again', () => {
   // Viewport [2000, 2800), heading down. Call #1 is the viewport block.
   const above = block(0, 'above');
   const view = block(2000, 'view');
@@ -291,12 +307,78 @@ test('a scroll after an insertion re-measures: the next pull reads where the blo
     const feeder = ctx.createBatchFeeder([above, view, a, b], false);
     assert.deepEqual(labels(feeder.next()), ['view']);
     // A translation 1000px tall lands under `above`: everything after it moves
-    // down by 1000 and scroll anchoring moves the viewport with it.
+    // down by 1000, the document grows by 1000 and scroll anchoring moves the
+    // viewport with it.
     for (const moved of [view, a, b]) moved.moveTo(moved.element.getBoundingClientRect().top + window.scrollY + 1000);
-    scrollTo(3000);
-    // Now `a` is just under the viewport (3850). Read with the old geometry, `a`
-    // would be above it (2850) and `b` (old 3900) just under it.
+    scrollTo(3000, 1000);
+    const reads = rectReads;
+    // Now `a` is just under the viewport (3850). Against the old geometry with
+    // the viewport not shifted back, `a` (old 2850) would be above it and `b`
+    // (old 3900) just under it.
     assert.deepEqual(labels(feeder.next()), ['a']);
+    assert.equal(rectReads, reads, 'nothing is measured again');
+  });
+});
+
+test('the pass\'s own insertions re-measure nothing: the viewport it started on goes first (J5.1)', () => {
+  // Viewport [2000, 2800). A block sits 24px above it (0.03 screens against the
+  // scroll: 0.036); six blocks are in it.
+  const above = block(1936, 'above');
+  const seen = [2000, 2100, 2200, 2300, 2400, 2500].map((y, i) => block(y, `view${i}`));
+  scrollTo(2000);
+  withEngine(true, () => {
+    const feeder = ctx.createBatchFeeder([above, ...seen], false);
+    assert.deepEqual(labels(feeder.next()), ['view0']);
+    const reads = rectReads;
+    // Translations land inside the viewport: every block after the first moves
+    // down and out of it, the document grows, nothing scrolls. Measured again,
+    // view2 (now 3000) would be 0.25 screens down (0.2) and `above` would go
+    // before it.
+    seen.slice(1).forEach((moved, i) => moved.moveTo(2100 + i * 100 + (i + 1) * 400));
+    document.documentElement.scrollHeight += 2000;
+    const rest = [];
+    for (let batch = feeder.next(); batch; batch = feeder.next()) rest.push(...labels(batch));
+    assert.deepEqual(rest, ['view1', 'view2', 'view3', 'view4', 'view5', 'above']);
+    assert.equal(rectReads, reads, 'no block is measured again');
+  });
+});
+
+test('a scroll by the reader after insertions re-measures: the jump finds the blocks where they are now (J5.2)', () => {
+  const start = block(100, 'start');
+  const x = block(4000, 'x');
+  const y = block(6000, 'y');
+  withEngine(true, () => {
+    const feeder = ctx.createBatchFeeder([start, x, y], false);
+    assert.deepEqual(labels(feeder.next()), ['start']);
+    // Insertions under `start` push x and y down by 1000, with no scroll.
+    x.moveTo(5000);
+    y.moveTo(7000);
+    document.documentElement.scrollHeight += 2000;
+    const reads = rectReads;
+    // The reader jumps to [5000, 5800). Read stale, x (old 4000) would be over a
+    // screen above and y (old 6000) just under: y would go first.
+    scrollTo(5000);
+    assert.deepEqual(labels(feeder.next()), ['x']);
+    assert.equal(rectReads, reads + 2, 'what is left is measured again');
+  });
+});
+
+test('a scroll made by scroll anchoring keeps the scroll direction; a scroll by the reader sets it', () => {
+  // Two near blocks half a screen either side of the viewport [3500, 4300):
+  // heading up, the one above goes first (0.4 against 0.6), heading down the
+  // one below.
+  const pair = () => [block(3060, 'above'), block(4700, 'below')];
+  withEngine(true, () => {
+    scrollTo(4000);
+    scrollTo(3000); // heading up
+    // An insertion above the viewport: the document grows by 500 and anchoring
+    // moves the viewport down by the same 500. Not the reader: still heading up.
+    scrollTo(3500, 500);
+    assert.deepEqual(labels(ctx.createBatchFeeder(pair(), false).next()), ['above']);
+    // The reader scrolls down past the growth: heading down.
+    scrollTo(3000);
+    scrollTo(3500, 200);
+    assert.deepEqual(labels(ctx.createBatchFeeder(pair(), false).next()), ['below']);
   });
 });
 

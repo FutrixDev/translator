@@ -45,7 +45,7 @@ globalThis.window = {
   innerHeight: 800,
   addEventListener: () => {},
 };
-globalThis.document = { activeElement: null, getSelection: () => null };
+globalThis.document = { activeElement: null, getSelection: () => null, documentElement: { scrollHeight: 10000 } };
 globalThis.chrome = {};
 // 落笔会给每个块登记内容指纹（shared/block-identity.js），指纹是把原文子树读一遍
 // 算出来的，所以这个假 DOM 也得有节点类型常量。

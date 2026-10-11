@@ -187,7 +187,7 @@ globalThis.chrome = {
   // content/content-local-pref.js（content-language.js 加载时经它建「最近使用」）。
   storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } },
 };
-globalThis.document = {};
+globalThis.document = { documentElement: { scrollHeight: 0 } };
 globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 let target = 'zh-CN';
 globalThis.window = {

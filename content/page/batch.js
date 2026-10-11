@@ -183,22 +183,28 @@
   // 一段在批量请求里的分隔与编号开销（token）。
   const ITEM_TOKEN_OVERHEAD = 6;
 
-  // 评分要的页面信号：滚动方向、最近一次指针的视口纵坐标、布局代次。内容脚本一
-  // 加载就挂上（首轮之前的滚动和指针也算数），都是 passive，只记数。
-  //
-  // 布局代次：scroll 与 resize 都让量好的几何作废。插译文会把后面的块往下推，
-  // 视口上方插进去的译文还会触发滚动锚定改写 scrollY —— 块与视口的关系变了，
-  // 旧几何会把视口算偏（设计 §3.1，D-551）。作废只是代次加一，真正重量放在下一次
-  // 拉取，同一次拉取前来多少事件都只量一次。
-  const viewSignals = { scrollDir: 0, lastScrollY: 0, pointerClientY: null, layoutEpoch: 0 };
+  // 评分要的页面信号：滚动方向、指针视口纵坐标、读者移动代次，passive、只记数。
+  // 读者滚动、resize 让几何作废（moveEpoch，D-553）；翻译自己插译文不作废，仍按
+  // 开跑那一屏排。视口上方插译文时滚动锚定把 scrollY 同向挪、不超过页面长高的量：
+  // 不是读者在滚，不改方向、不作废，记进 anchorShift，评分把视口挪回量时的坐标系。
+  const viewSignals = { scrollDir: 0, lastScrollY: 0, lastScrollHeight: 0, pointerClientY: null, moveEpoch: 0, anchorShift: 0 };
 
   function installViewSignals() {
     viewSignals.lastScrollY = window.scrollY;
+    viewSignals.lastScrollHeight = document.documentElement.scrollHeight;
     window.addEventListener('scroll', () => {
       const y = window.scrollY;
-      if (y !== viewSignals.lastScrollY) viewSignals.scrollDir = y > viewSignals.lastScrollY ? 1 : -1;
+      const height = document.documentElement.scrollHeight;
+      const dy = y - viewSignals.lastScrollY;
+      const dh = height - viewSignals.lastScrollHeight;
+      const anchored = dy !== 0 && Math.sign(dy) === Math.sign(dh) && Math.abs(dy) <= Math.abs(dh);
+      if (anchored) viewSignals.anchorShift += dy;
+      else if (dy !== 0) {
+        viewSignals.scrollDir = Math.sign(dy);
+        viewSignals.moveEpoch += 1;
+      }
       viewSignals.lastScrollY = y;
-      viewSignals.layoutEpoch += 1;
+      viewSignals.lastScrollHeight = height;
     }, { passive: true });
     // 存视口坐标，读的时候再加上那一刻的 scrollY：指针不动、页面滚了，它指着的
     // 文档位置跟着变。
@@ -206,14 +212,13 @@
       viewSignals.pointerClientY = event.clientY;
     }, { passive: true });
     window.addEventListener('resize', () => {
-      viewSignals.layoutEpoch += 1;
+      viewSignals.moveEpoch += 1;
     }, { passive: true });
   }
 
-  // 此刻的视口，每次拉取读一次。focusBlock 由拉取器按 findFocusBlock 填上（它要
-  // 知道候选块是哪些）。
-  function readView() {
-    const scrollY = window.scrollY;
+  // 此刻的视口，减去量几何之后的锚定位移。focusBlock 由拉取器按 findFocusBlock 填。
+  function readView(shift) {
+    const scrollY = window.scrollY - shift;
     return {
       scrollY,
       height: window.innerHeight,
@@ -305,15 +310,16 @@
   }
 
   /**
-   * 拉取器（设计 §3.2）。每次 next() 按此刻的视口给剩下的块评分，从最先的那块
-   * 起装一批：40 段 / 9000 字 / 3200 token，内置引擎一块一批（它是端上逐段调用，
-   * 攒批只会让第一段等整批）；超大块单独成批（processOversizedBlock 再切）；档位
+   * 拉取器（设计 §3.2）。每次 next() 按此刻的视口排剩下的块，从最先的那块起装
+   * 一批：40 段 / 9000 字 / 3200 token，内置引擎一块一批（它是端上逐段调用，攒批
+   * 只会让第一段等整批）；超大块单独成批（processOversizedBlock 再切）；档位
    * （isNear）和这一批第一块不同的跳过、留给下一拉，不截断这一批（D-551）。批内按
    * 文档顺序，给 neighbourContext 取前后文。
    *
-   * 几何开跑时量一次；scroll/resize 让它作废，下一次重排前重量（只量还没发出去
-   * 的块）。块多于 RESORT_ABOVE 时重排每 RESORT_EVERY 次拉取一次，重量也跟着它
-   * 走（偏差，申报见交付报告）；焦点块换了随时重排。
+   * 近档按 §3.1 评分排，远档按文档顺序（偏差，D-553：远档按分排会从视口往两头
+   * 交替外扩，Blink 每帧 PrePaint/Paint 翻倍），没有布局盒的最后。几何开跑时量
+   * 一次，读者滚动或 resize 后下一次重排前重量剩下的块；锚定位移只挪视口不重量。
+   * 块多于 RESORT_ABOVE 时每 RESORT_EVERY 次拉取重排一次；焦点块换了随时重排。
    * 没有剩下的块时返回 null。
    */
   function createBatchFeeder(blocks, auto) {
@@ -323,30 +329,39 @@
     const remaining = new Set(blocks);
     let boxes = null;
     let measuredEpoch = -1;
+    let measuredShift = 0;
     let order = null;
     let orderedFocus = null;
     let pullsSinceSort = 0;
 
-    const measure = (view) => {
+    const measure = () => {
       boxes = new Map();
-      for (const block of remaining) boxes.set(block, measureBlock(block, view.scrollY));
-      measuredEpoch = viewSignals.layoutEpoch;
+      for (const block of remaining) boxes.set(block, measureBlock(block, window.scrollY));
+      measuredEpoch = viewSignals.moveEpoch;
+      measuredShift = viewSignals.anchorShift;
+    };
+
+    // 近档 §3.1 的分；远档同一个键（按文档顺序）；没有布局盒 +∞。
+    const rankKey = (block, view) => {
+      const box = boxes.get(block);
+      if (box.hidden) return Infinity;
+      return isNear(block, box, view) ? scoreBlockForViewport(block, box, view) : Number.MAX_VALUE;
     };
 
     const rank = (view) => {
-      const scored = [...remaining].map((block) => [scoreBlockForViewport(block, boxes.get(block), view), block]);
-      // 两个 ±∞ 相减是 NaN，|| 让它落到文档顺序上：同分按文档顺序。
-      scored.sort((a, b) => (a[0] - b[0]) || (docIndex.get(a[1]) - docIndex.get(b[1])));
-      order = scored.map((entry) => entry[1]);
+      const keyed = [...remaining].map((block) => [rankKey(block, view), block]);
+      // 两个 ±∞ 相减是 NaN，|| 让它落到文档顺序上：同键按文档顺序。
+      keyed.sort((a, b) => (a[0] - b[0]) || (docIndex.get(a[1]) - docIndex.get(b[1])));
+      order = keyed.map((entry) => entry[1]);
       orderedFocus = view.focusBlock;
       pullsSinceSort = 0;
     };
 
     function next() {
       if (remaining.size === 0) return null;
-      const view = readView();
       const resortDue = !order || remaining.size <= RESORT_ABOVE || pullsSinceSort >= RESORT_EVERY;
-      if (!boxes || (resortDue && measuredEpoch !== viewSignals.layoutEpoch)) measure(view);
+      if (!boxes || (resortDue && measuredEpoch !== viewSignals.moveEpoch)) measure();
+      const view = readView(viewSignals.anchorShift - measuredShift);
       const focus = findFocusBlock(elementBlock, remaining, boxes, view);
       view.focusBlock = focus && remaining.has(focus) ? focus : null;
       if (resortDue || view.focusBlock !== orderedFocus) rank(view);
