@@ -667,3 +667,41 @@ test('语言包预取记着自己是为哪个语言对挂的，过期了要换�
     /if \(tgt !== downloadTargetLang\(\)\) return;\s*\n\s*if \(armedPrefetch &&[\s\S]*?\n\s*disarmLanguagePackPrefetch\(\);/
   );
 });
+
+// ---- 焦点优先与统一进度源（设计 ext-opt-page-translation §2、§3.3）--------------
+//
+// 调度层每轮只挑 ROUND_CAP 批，挑法是 batch.js 的拉取器（评分只有一份实现）；剩下
+// 的留在队里，一轮收尾立刻起下一轮重新评分。账报给 ctx.progressFeed，分子只认
+// 台账，不经 runTranslationPass 的 onProgress 再报一遍。行为由
+// progress-feed.test.mjs 与 batch-feeder.test.mjs 测，这里钉接缝。
+test('自动轮按评分限量取批，剩下的留队、收尾立刻重排', () => {
+  const auto = code('content/content-auto-translate.js');
+  const take = auto.slice(auto.indexOf('function takeBatch() {'), auto.indexOf('async function costRefusal('));
+  assert.match(take, /ctx\.createBatchFeeder\(/, 'takeBatch 组批走 batch.js 的拉取器');
+  assert.match(take, /const roundCap = ctx\.passConcurrency\(true\) \* 2;/);
+  assert.match(take, /for \(const \[element, item\] of eligible\) queue\.set\(element, item\.entry\);/);
+  // 评分不在调度层另写一份。
+  assert.doesNotMatch(auto, /getBoundingClientRect|scrollY|innerHeight/);
+  // 收尾：队里还有就立刻起下一轮，不等 250ms 防抖。
+  assert.match(auto, /setStatus\(STATUS\.IDLE\);\s*\n\s*if \(queue\.size > 0 && isOn\(\)\) \{[\s\S]*?scheduleStart\(0\);/);
+  // 拉取器与进度源都排在调度层之前。
+  const at = isolated.indexOf('content/content-auto-translate.js');
+  for (const file of ['content/page/progress-feed.js', 'content/page/batch.js']) {
+    const provided = isolated.indexOf(file);
+    assert.ok(provided >= 0 && provided < at, `${file} 必须排在调度层之前`);
+  }
+});
+
+test('调度层的进度只从台账报，一处出口', () => {
+  const auto = code('content/content-auto-translate.js');
+  assert.equal((auto.match(/ctx\.progressFeed\.auto\.publish\(/g) || []).length, 1);
+  assert.match(auto, /function publish\(\) \{\s*\n\s*feedProgress\(\);/);
+  assert.match(auto, /ledger\.add\(pending\.key\);\s*\n\s*feedProgress\(\);/);
+  assert.match(auto, /function bumpSession\([\s\S]*?accepted\.clear\(\);\s*\n\s*feedProgress\(\);/);
+  // 自动这一轮不传 onProgress：分子已经是台账，再经 batch.js 报一次就是双计。
+  const pass = auto.slice(auto.indexOf('ctx.runTranslationPass(fresh, {'));
+  assert.doesNotMatch(pass.slice(0, pass.indexOf('});')), /onProgress/);
+  // 分母只在 takeBatch 接纳进 inflight 的那一刻长。
+  assert.equal((auto.match(/accepted\.add\(/g) || []).length, 1);
+  assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);\s*\n\s*accepted\.add\(key\);/);
+});

@@ -18,6 +18,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { SCHEDULER_PRELUDE, docOrderFeeder } from './helpers/scheduler-stubs.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -322,6 +323,7 @@ function loadScheduler() {
   const flags = { catching: false };
   let onCandidates = null;
   const ctx = {
+    ...docOrderFeeder(),
     frameRole: 'top',
     state: { isTranslatingPage: false, translationsVisible: true },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0 },
@@ -366,7 +368,7 @@ function loadScheduler() {
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  for (const rel of ['shared/block-identity.js', 'shared/session-guard.js', 'content/content-auto-translate.js']) {
+  for (const rel of ['shared/block-identity.js', 'shared/session-guard.js', ...SCHEDULER_PRELUDE, 'content/content-auto-translate.js']) {
     vm.runInContext(repoFile(rel), sandbox, { filename: rel });
   }
   ctx.setupAutoTranslate();

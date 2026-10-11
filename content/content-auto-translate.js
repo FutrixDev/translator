@@ -87,6 +87,11 @@
     // 报错 —— 于是那几块被放回队列、再失败、再放回，成了一个每 250ms 一次的
     // 死循环。所以每一块只给一次重来，再失败就记进台账：这一页对它无能为力。
     const retried = new Set();
+    // 这一代里**被接纳进 inflight 过**的块（台账同一种 key）。进度的分母就是它的
+    // 大小（设计 §2）：只认 takeBatch 筛过、真送出去的，不认原始队列 —— 队里还有
+    // 重复、陈旧、已经翻过的，拿队列做分母，环会先大后小。累计、只增不减；放回
+    // 队列再送一次的块 key 不变，不会被计两次。代次一翻篇就整本作废。
+    const accepted = new Set();
 
     let discovery = null;
     let status = STATUS.OFF;
@@ -146,7 +151,39 @@
       };
     }
 
+    // 进度的阶段（设计 §2 的 phase）。手动那一轮正在跑时 ctx.progressFeed 自己
+    // 让手动的上台，这里只管如实报调度层的数。
+    function progressPhase() {
+      if (status === STATUS.PAUSED) return 'paused';
+      if (status === STATUS.ERROR) return 'error';
+      if (status === STATUS.OFF) return reason === COST_REASONS.BUDGET ? 'budget' : 'idle';
+      if (accepted.size === 0) return queue.size > 0 ? 'arming' : 'idle';
+      if (status === STATUS.RUNNING || queue.size > 0 || inflight.size > 0) return 'running';
+      return gaveUp > 0 ? 'partial' : 'done';
+    }
+
+    /**
+     * 把调度层的账报给统一进度源 ctx.progressFeed（content/page/progress-feed.js）。
+     * 分子是台账（onSettled 记的那一本），所以自动这一轮不经 runTranslationPass
+     * 的 onProgress 再报一遍 —— 两边都报，同一块就被计了两次。
+     *
+     * 账一变就报：状态变（publish）、台账记了一笔（commit）、队列进了块、takeBatch
+     * 挑完一轮、代次翻篇。它是纯数据，订阅者按帧合并，报得勤不费事。
+     */
+    function feedProgress() {
+      ctx.progressFeed.auto.publish({
+        phase: progressPhase(),
+        session: guard.version(),
+        known: accepted.size,
+        settled: ledger.size,
+        failed: gaveUp,
+        pending: queue.size,
+        inflight: inflight.size
+      });
+    }
+
     function publish() {
+      feedProgress();
       if (listeners.size === 0) return;
       const snap = snapshot();
       for (const listener of listeners) {
@@ -297,7 +334,9 @@
         queue.set(element, { block, source: guard.stamp(element).textFingerprint });
         added = true;
       }
-      if (added) scheduleStart();
+      if (!added) return;
+      feedProgress();
+      scheduleStart();
     }
 
     // ------------------------------------------------------------------ 译
@@ -328,6 +367,7 @@
       if (!pending) return;
       inflight.delete(element);
       ledger.add(pending.key);
+      feedProgress();
     }
 
     function acceptBlock(block) {
@@ -337,11 +377,26 @@
       return !alreadyTranslated(block.element, ticket.textFingerprint);
     }
 
+    /**
+     * 从队里挑这一轮要送的块（设计 §3.3）。
+     *
+     * 不再抽干整队：按 ctx.createBatchFeeder 的评分（离视口几屏、滚动方向、焦点、
+     * 指针，唯一实现是 ctx.scoreBlockForViewport）组批，组满 ROUND_CAP 批即停，
+     * 剩下的原样留在队里。ROUND_CAP = 并发位 × 2，即每轮最多两个并发波 —— 抽干
+     * 整队的话，用户滚到新位置、新进带的块要排在整队后面；限量之后它们最多等一轮
+     * 就和旧候选同台比分。按批不按块：AI 一批 40 块，按块定会把 12 个并发位只用掉
+     * 两个。
+     */
     function takeBatch() {
       const blocks = [];
       tickets.clear();
       inflight.clear();
-      for (const [element, entry] of queue) {
+      // 先把整队过一遍筛子：过不去的就此丢掉（下面每一条 continue 都是「不放回」），
+      // 过得去的才进评分。
+      const entries = [...queue];
+      queue.clear();
+      const eligible = new Map();
+      for (const [element, entry] of entries) {
         if (!element.isConnected) continue;
         const ticket = guard.stamp(element);
         // 排队那一刻的原样文字和此刻的对不上 = 虚拟列表把这个节点回收给下一条
@@ -362,13 +417,30 @@
         // 手动那一轮失败的块滚进带里时不再自己悄悄送一次 —— 那样既多花钱，又会让
         // 标记换成自动那一轮的、重试改走自动的引擎。自动放弃的那些另有台账挡着。
         if (ctx.failedBlocks.isMarked(element)) continue;
-        // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
-        // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
-        inflight.set(element, { key, entry });
-        tickets.set(element, ticket);
-        blocks.push(entry.block);
+        eligible.set(element, { key, entry, ticket });
       }
-      queue.clear();
+      if (eligible.size > 0) {
+        const feeder = ctx.createBatchFeeder([...eligible.values()].map((item) => item.entry.block), true);
+        const roundCap = ctx.passConcurrency(true) * 2;
+        for (let taken = 0; taken < roundCap; taken += 1) {
+          const batch = feeder.next();
+          if (!batch) break;
+          for (const block of batch) {
+            const element = block.element;
+            const { key, entry, ticket } = eligible.get(element);
+            eligible.delete(element);
+            // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
+            // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
+            inflight.set(element, { key, entry });
+            accepted.add(key);
+            tickets.set(element, ticket);
+            blocks.push(block);
+          }
+        }
+      }
+      // 这一轮没轮到的，按原来的排队顺序放回去，下一轮重新评分。
+      for (const [element, item] of eligible) queue.set(element, item.entry);
+      feedProgress();
       return blocks;
     }
 
@@ -527,7 +599,6 @@
           retried.add(pending.key);
           if (element.isConnected) queue.set(element, pending.entry);
         }
-        gaveUp += giveUp.size;
         // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
         // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
         // 它放回队列，下一轮多半就翻成了。title 用这一段自己的原因；只有整轮级
@@ -536,6 +607,9 @@
           commit(element);
           if (element.isConnected) ctx.failedBlocks.mark(pending.entry.block, pending.reason || error, { auto: true });
         }
+        // 先记账再计数：commit 每一笔都会报进度，failed（= gaveUp）先涨的话，那一刻
+        // 它就比 settled 大，进度源当场拒收。
+        gaveUp += giveUp.size;
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
@@ -570,7 +644,14 @@
       }
 
       setStatus(STATUS.IDLE);
-      if (queue.size > 0) scheduleStart();
+      // 剩下的（ROUND_CAP 没轮到的、失败放回的、这一轮跑的时候新进带的）立刻起下
+      // 一轮，在那一刻重新评分（设计 §3.3）。跑的时候 onCandidates 排下的那个防抖
+      // 定时器先撤掉：它到点时这一轮早结束了，等它就是白等 250ms。
+      if (queue.size > 0 && isOn()) {
+        clearTimeout(startTimer);
+        startTimer = null;
+        scheduleStart(0);
+      }
     }
 
     /**
@@ -600,6 +681,8 @@
       inflight.clear();
       retried.clear();
       ledger.clear();
+      accepted.clear();
+      feedProgress();
     }
 
     /**
