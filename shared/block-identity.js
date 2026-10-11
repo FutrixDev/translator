@@ -121,6 +121,58 @@
     return registry.delete(element);
   }
 
+  // ---- 页内记忆：按内容记住译文 ------------------------------------------
+  //
+  // 上面那张表认的是**节点**，而单页应用切路由时常把左栏整片重建：文字一个字没
+  // 变，节点全是新的，表里查不到 —— 于是同样五个菜单名再翻一遍，翻回来之前左栏
+  // 闪一下原文。这一张认的是**内容**：(目标语言, 指纹) → 上次落笔的那条译文。
+  // 发现层在 MutationObserver 回调里（绘制之前）拿它把译文装回去。
+  //
+  // 页内、不分引擎、不落盘：同一页同一门语言里同一段原文的译文，换个节点不会变。
+  // 跨页的那一层是 content-translation-cache.js 的事，两层不重叠。
+  //
+  // 不随会话翻篇清空（bumpSession 不碰这里）：会话翻篇说的是「在途的活作废」，
+  // 不是「翻好的东西作废」；换目标语言时键里的语言已经不同，旧的自然查不到。
+  //
+  // Map 的插入顺序即 LRU 顺序：命中时删了再放回去挪到最新，满了丢最旧的。
+  const MEMORY_LIMIT = 2000;
+  // 超长的不记：一页里会被整片重建的是菜单、标签、卡片标题这类短串，长文正文
+  // 重建的少见；不设上限的话 2000 条长段落就是几十 MB 常驻在每个标签页里。
+  const MEMORY_TEXT_LIMIT = 4096;
+  const memory = new Map();
+
+  // lang 和 register 里的同一个意思：这一轮译成的那门语言的**身份**（空串是
+  // 「跟随浏览器」）。null 是「没说」—— 不知道是哪门语言的译文不能拿去装回，
+  // 装错语言比重翻一次贵得多，所以不记、也不认。
+  function memoryKey(fp, lang) {
+    return `${lang}:${fp}`;
+  }
+
+  function remember(fp, lang, translation) {
+    if (lang == null || typeof translation !== 'string' || !translation) return;
+    if (translation.length > MEMORY_TEXT_LIMIT) return;
+    const key = memoryKey(fp, lang);
+    memory.delete(key);
+    memory.set(key, translation);
+    if (memory.size > MEMORY_LIMIT) memory.delete(memory.keys().next().value);
+  }
+
+  function recall(fp, lang) {
+    if (lang == null) return null;
+    const key = memoryKey(fp, lang);
+    const translation = memory.get(key);
+    if (translation === undefined) return null;
+    memory.delete(key);
+    memory.set(key, translation);
+    return translation;
+  }
+
+  // 发现层先问这一句再决定要不要收集：一条都没记过的页面（绝大多数页面的头几
+  // 秒、以及从不翻的页面）装回这一步必须是零成本。
+  function memorySize() {
+    return memory.size;
+  }
+
   // normalize 和 hash 不导出：它们分开用就是两个归一化口径的开始，而这个模块的
   // 全部价值在于「登记和比对走同一个入口」。外面只该看得见 fingerprint。
   root.BlockIdentity = {
@@ -129,5 +181,8 @@
     lookup,
     isStale,
     forget,
+    remember,
+    recall,
+    memorySize,
   };
 })(globalThis);

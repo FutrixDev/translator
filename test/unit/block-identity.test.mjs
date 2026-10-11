@@ -159,6 +159,60 @@ test('文字变了就是变了，语言一致也救不回来', () => {
   assert.equal(BlockIdentity.isStale(node, BlockIdentity.fingerprint('Second tweet'), 'zh-CN'), true);
 });
 
+// ==================== 页内记忆：按内容装回 ====================
+//
+// 单页应用切菜单时把左栏整片重建：文字没变、节点全新，上面那张按节点认的表查不
+// 到。记忆按 (语言, 指纹) 认内容，发现层在绘制前拿它把译文装回去（批 C）。
+// 记忆是模块级的一张表，这些测试各用各的原文，互不干扰。
+
+test('a remembered translation comes back for the same text in the same language', () => {
+  const fp = BlockIdentity.fingerprint('Settings');
+  BlockIdentity.remember(fp, 'zh-CN', '设置');
+  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), '设置');
+  // 指纹走的是同一个归一化：重建后多出来的空白不该让它认不出来。
+  assert.equal(BlockIdentity.recall(BlockIdentity.fingerprint('  Settings \n'), 'zh-CN'), '设置');
+  assert.equal(BlockIdentity.recall(BlockIdentity.fingerprint('Settings!'), 'zh-CN'), null);
+});
+
+test('another target language does not get this language\'s translation', () => {
+  const fp = BlockIdentity.fingerprint('Billing');
+  BlockIdentity.remember(fp, 'zh-CN', '账单');
+  assert.equal(BlockIdentity.recall(fp, 'ja'), null);
+  // 空串是「跟随浏览器」这个身份，不是「随便哪门」。
+  assert.equal(BlockIdentity.recall(fp, ''), null);
+  // 不知道是哪门语言：不记、也不认 —— 装错语言比重翻一次贵。
+  assert.equal(BlockIdentity.recall(fp, null), null);
+  const before = BlockIdentity.memorySize();
+  BlockIdentity.remember(BlockIdentity.fingerprint('Unknown target'), null, '未知');
+  assert.equal(BlockIdentity.memorySize(), before);
+});
+
+test('a translation over 4096 characters is not remembered', () => {
+  const fp = BlockIdentity.fingerprint('A very long paragraph');
+  BlockIdentity.remember(fp, 'zh-CN', 'x'.repeat(4097));
+  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), null);
+  BlockIdentity.remember(fp, 'zh-CN', 'x'.repeat(4096));
+  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), 'x'.repeat(4096));
+});
+
+test('the 2001st entry evicts the least recently used one', () => {
+  // 先装满：之前的测试留下的条目也在表里，最旧的那些先被挤掉。
+  const fps = [];
+  for (let i = 0; i < 2000; i++) {
+    const fp = BlockIdentity.fingerprint(`menu row ${i}`);
+    fps.push(fp);
+    BlockIdentity.remember(fp, 'zh-CN', `菜单 ${i}`);
+  }
+  assert.equal(BlockIdentity.memorySize(), 2000);
+  // 命中算一次使用：row 0 被挪到最新，这一轮被挤掉的是 row 1。
+  assert.equal(BlockIdentity.recall(fps[0], 'zh-CN'), '菜单 0');
+  BlockIdentity.remember(BlockIdentity.fingerprint('menu row 2000'), 'zh-CN', '菜单 2000');
+  assert.equal(BlockIdentity.memorySize(), 2000);
+  assert.equal(BlockIdentity.recall(fps[1], 'zh-CN'), null);
+  assert.equal(BlockIdentity.recall(fps[0], 'zh-CN'), '菜单 0');
+  assert.equal(BlockIdentity.recall(fps[2], 'zh-CN'), '菜单 2');
+});
+
 // ==================== 读的是页面自己的文字 ====================
 
 test('the source text comes from the whole subtree — X nests its tweet text in spans', () => {
