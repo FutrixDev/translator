@@ -20,7 +20,7 @@
 // counted here is one the worker sent for a translation.
 const { test, expect } = require('./fixtures');
 const { setUp, openOptions, storedToken, en } = require('./blab-journey');
-const { getServiceWorker } = require('./helpers');
+const { getServiceWorker, recycleWorker } = require('./helpers');
 
 const BLAB = 'blab:service';
 const TEXTS = ['The ferry leaves at noon.', 'Bring a warm coat.'];
@@ -60,21 +60,6 @@ async function refusedThenSubscribe(context, send, blab) {
 async function clickRecord(context) {
   const worker = await getServiceWorker(context);
   return worker.evaluate(() => chrome.storage.session.get('blabAccountAction').then((r) => r.blabAccountAction));
-}
-
-/**
- * Chrome recycles the extension's service worker, as it does after half a
- * minute idle; the DevTools connection Playwright keeps open stops that from
- * happening by itself. The next message wakes a new worker.
- */
-async function recycleWorker(context, page) {
-  const cdp = await context.newCDPSession(page);
-  try {
-    await cdp.send('ServiceWorker.enable');
-    await cdp.send('ServiceWorker.stopAllWorkers');
-  } finally {
-    await cdp.detach();
-  }
 }
 
 test.describe('N-1 who uses up the account click', () => {

@@ -166,6 +166,10 @@ test('the stored list arrives from storage and follows other tabs, not the sync 
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'another tab picked ko');
   world.change({ targetLang: { newValue: 'en' } }, 'sync');
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'a new default does not clear the habit');
+  // The list lives in local storage only (one device's habit): a key of the same
+  // name arriving in sync is someone else's, and is not followed.
+  world.change({ recentTargetLangs: { newValue: ['de'] } }, 'sync');
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'a sync key of the same name is ignored');
 });
 
 test('a read that lands after a pick does not put the old list back', () => {

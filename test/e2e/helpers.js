@@ -187,6 +187,26 @@ async function openFloatBallMenu(page) {
 }
 
 /**
+ * Open the input-translation dialog from the float ball's menu.
+ * @param {import('@playwright/test').Page} page
+ */
+async function openInputDialog(page) {
+  await openFloatBallMenu(page);
+  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
+  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+}
+
+/**
+ * Pick a target language from the input dialog's own language menu.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} lang
+ */
+async function pickInputTargetLang(page, lang) {
+  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
+  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
+}
+
+/**
  * Trigger page translation via float ball menu
  * @param {import('@playwright/test').Page} page
  */
@@ -385,6 +405,25 @@ const E2E_BASE_SETTINGS = Object.freeze({
  */
 async function getServiceWorker(context) {
   return context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+}
+
+/**
+ * Chrome recycles the extension's service worker, as it does after half a
+ * minute idle; the DevTools connection Playwright keeps open stops that from
+ * happening by itself. The next message wakes a new worker. A message the
+ * stopped worker was still answering loses its channel: the sender's
+ * sendMessage rejects.
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {import('@playwright/test').Page} page
+ */
+async function recycleWorker(context, page) {
+  const cdp = await context.newCDPSession(page);
+  try {
+    await cdp.send('ServiceWorker.enable');
+    await cdp.send('ServiceWorker.stopAllWorkers');
+  } finally {
+    await cdp.detach();
+  }
 }
 
 /**
@@ -832,6 +871,7 @@ module.exports = {
   PAGE_TRANSLATION_MODULES,
   expectCaptionMenuAnchoredAboveButton,
   getServiceWorker,
+  recycleWorker,
   writeSyncSettings,
   getSyncSettings,
   getSyncSetting,
@@ -840,6 +880,8 @@ module.exports = {
   waitForFloatBall,
   openExamplePage,
   openFloatBallMenu,
+  openInputDialog,
+  pickInputTargetLang,
   triggerPageTranslation,
   waitForTranslationComplete,
   getElementPosition,

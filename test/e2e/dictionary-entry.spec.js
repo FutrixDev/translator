@@ -17,7 +17,8 @@
 const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
-  openFloatBallMenu,
+  openInputDialog,
+  pickInputTargetLang,
   evaluateInContentScript,
   stubBuiltinTranslator,
   waitForFloatBall,
@@ -140,20 +141,9 @@ async function stubSpeech(page) {
 const spoken = (page) => evaluateInContentScript(page.context(), page, 'self.__spoken');
 const asked = (page) => evaluateInContentScript(page.context(), page, 'self.__asked');
 
-async function openInputDialog(page) {
-  await openFloatBallMenu(page);
-  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
-}
-
 async function lookUp(page, text) {
   await page.fill('#ai-translator-input-text', text);
   await page.click('#ai-translator-do-translate');
-}
-
-async function pickInputTargetLang(page, lang) {
-  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
-  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
 }
 
 async function closeInputDialog(page) {

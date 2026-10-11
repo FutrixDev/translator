@@ -581,21 +581,27 @@
    * （ctx.engineChoices，按 feature 解析 AI 档）：能用就露出按钮、dataset.engine 记下换到
    * 谁、文字说换到哪边；不能用就藏。问的这一下要 await，回来时 isCurrent() 不再成立
    * （又发了一次请求、卡片关了）就什么都不动——按钮停在原样，等下一次结算来定。
+   * 没给 button 时，标签在第一个 await 之前就画完了（同步）。
+   *
+   * 返回按钮上给出的那个引擎；没给 button、没得换或已不是当前请求都是 null。对话框
+   * 拿它决定「没得换」时露出「打开设置」。
    *
    * @param {{tag: HTMLElement, button: ?HTMLElement, engine: (string|undefined),
    *   targetLang: string, feature: string, isCurrent: () => boolean}} options
+   * @returns {Promise<?string>}
    */
   async function renderEngineChoice({ tag, button = null, engine, targetLang, feature, isCurrent }) {
     tag.textContent = engine ? t(CARD_ENGINE_TAG[engine]) : '';
     tag.hidden = !engine;
-    if (!button) return;
+    if (!button) return null;
     const other = await switchOffer(engine, targetLang, feature);
-    if (!isCurrent()) return;
+    if (!isCurrent()) return null;
     button.hidden = !other;
-    if (!other) return;
+    if (!other) return null;
     button.dataset.engine = other;
     button.querySelector('.ai-translator-btn-label').textContent = t(CARD_USE_ENGINE[other]);
     button.disabled = false;
+    return other;
   }
 
   // 这次是 engine 答的，换到哪一个：按 Engines.ENGINES 的顺序取第一个「不是它、此刻

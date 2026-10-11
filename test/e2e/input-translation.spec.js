@@ -1,6 +1,15 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, openFloatBallMenu, openExamplePage, stubBuiltinTranslator } = require('./helpers');
+const {
+  setExtensionSettings,
+  openFloatBallMenu,
+  openExamplePage,
+  openInputDialog,
+  pickInputTargetLang,
+  recycleWorker,
+  stubBuiltinTranslator,
+} = require('./helpers');
 const { HOSTILE_PAGE_CSS } = require('./hostile-css');
+const { expectLaidOut } = require('./layout-checks');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
@@ -194,17 +203,6 @@ async function startTargetLangFixture() {
     url: `${site.origin}/`,
     close: () => Promise.all([api.close(), site.close()]),
   };
-}
-
-async function openInputDialog(page) {
-  await openFloatBallMenu(page);
-  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
-}
-
-async function pickInputTargetLang(page, lang) {
-  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
-  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
 }
 
 test('the input dialog translates into the language picked in it, not the one in settings', async ({ page }) => {
@@ -673,6 +671,7 @@ const dialogPart = {
   note: '#ai-translator-input-dict-note',
   noteText: '#ai-translator-input-dict-note .ai-translator-dict-note-text',
   switchBtn: '#ai-translator-input-dict-note .ai-translator-switch-engine',
+  settingsBtn: '#ai-translator-input-dict-note .ai-translator-open-settings',
   result: '#ai-translator-result-text',
 };
 
@@ -703,6 +702,7 @@ test('J-I1 a word looked up with the built-in engine says why there is no entry,
     await expect(page.locator(dialogPart.note)).toBeVisible();
     await expect(page.locator(dialogPart.switchBtn)).toBeVisible();
     await expect(page.locator(dialogPart.switchBtn)).toHaveText(en('cardUseAi'));
+    await expect(page.locator(dialogPart.settingsBtn)).toBeHidden();
     await expect(page.locator(dialogPart.dict)).toBeHidden();
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
     expect(mock.sentTexts).toEqual([]);
@@ -819,6 +819,89 @@ test('J-I4 the last thing asked is what the dialog shows: a slow earlier answer 
     await expect(result).toHaveAttribute('lang', 'fr');
     await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('ipa-2');
     await expect(page.locator(dialogPart.note)).toBeHidden();
+  } finally {
+    await mock.close();
+  }
+});
+
+const entryWithIpa = (text) => ({ translation: `[D] ${text}`, phonetics: [{ label: '', ipa: `ipa-${text}` }] });
+
+test('J-I5 "use AI" asks about the word the note was written for, not what the box holds by now', async ({ page }) => {
+  const mock = await startMockOpenAIServer({ delayMs: 1500, dictEntry: entryWithIpa });
+  try {
+    await setExtensionSettings(page, aiSettings(mock.endpoint, { translationEngine: 'builtin', engineFallback: 'local-only' }));
+    await openExamplePage(page);
+    await stubBuiltinTranslator(page);
+    await openInputDialog(page);
+    await translateTyped(page, 'apple');
+    await expect(page.locator(dialogPart.result)).toHaveText('[B] apple');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
+    await expect(page.locator(dialogPart.switchBtn)).toBeVisible();
+
+    // Typed over and not translated: the note on screen is still about apple.
+    await page.fill('#ai-translator-input-text', 'I love you');
+    await page.click(dialogPart.switchBtn);
+    // While the model is asked, the tag names nobody: the built-in engine
+    // answered the last request, not this one.
+    const asking = await page.evaluate(([tag]) => ({
+      loading: !!document.querySelector('#ai-translator-input-dialog .ai-translator-input-loading'),
+      tagHidden: document.querySelector(tag).hidden,
+    }), [dialogPart.tag]);
+    expect(asking).toEqual({ loading: true, tagHidden: true });
+
+    await expect(page.locator(dialogPart.result)).toHaveText('[D] apple');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    expect(mock.sentTexts).toEqual(['apple']);
+    expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J-I6 with no engine to switch to, the note offers the settings page', async ({ page, context }) => {
+  // Built-in only: no AI profile, no Blab account.
+  await setExtensionSettings(page, { translationEngine: 'builtin', engineFallback: 'local-only', targetLang: 'zh-CN' });
+  await openExamplePage(page);
+  await stubBuiltinTranslator(page);
+  await openInputDialog(page);
+  await translateTyped(page, 'apple');
+  await expect(page.locator(dialogPart.result)).toHaveText('[B] apple');
+  await expect(page.locator(dialogPart.noteText)).toHaveText(en('inputDictNeedsModel'));
+  await expect(page.locator(dialogPart.settingsBtn)).toHaveText(en('openSettings'));
+  await expect(page.locator(dialogPart.settingsBtn)).toBeVisible();
+  await expect(page.locator(dialogPart.switchBtn)).toBeHidden();
+  console.log('J-I6 note contrast:', await expectLaidOut(page, [dialogPart.noteText, dialogPart.settingsBtn], 'J-I6 note'));
+
+  const [options] = await Promise.all([context.waitForEvent('page'), page.click(dialogPart.settingsBtn)]);
+  await options.waitForLoadState('domcontentloaded');
+  expect(options.url()).toContain('/options/options.html');
+});
+
+test('J-I7 an earlier request that fails late does not write its error over the later answer', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer({ delayMs: 20000, dictEntry: entryWithIpa });
+  try {
+    await setExtensionSettings(page, aiSettings(mock.endpoint));
+    await openExamplePage(page);
+    await openInputDialog(page);
+    await translateTyped(page, 'run');
+    await expect.poll(() => mock.sentTexts.length).toBe(1);
+    mock.setDelayMs(0);
+    await translateTyped(page, 'walk');
+    const result = page.locator(dialogPart.result);
+    await expect(result).toHaveText('[D] walk');
+
+    // 'run' is still out. Stopping the worker drops its message channel, so the
+    // dialog's sendMessage for it rejects now, after 'walk' has answered.
+    const failed = page.waitForEvent('console', {
+      predicate: (message) => message.text().includes('Blab Translation: input translation failed'),
+    });
+    await recycleWorker(context, page);
+    await failed;
+
+    await expect(result).toHaveText('[D] walk');
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('ipa-walk');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
   } finally {
     await mock.close();
   }

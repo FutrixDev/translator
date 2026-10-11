@@ -162,6 +162,7 @@
             <div class="ai-translator-dict-note" id="ai-translator-input-dict-note" hidden>
               <span class="ai-translator-dict-note-text"></span>
               <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBlab')])}</button>
+              <button class="ai-translator-btn ai-translator-open-settings" type="button" hidden>${t('openSettings')}</button>
             </div>
           </div>
         </div>
@@ -191,6 +192,7 @@
     const noteEl = dialog.querySelector('#ai-translator-input-dict-note');
     const noteText = noteEl.querySelector('.ai-translator-dict-note-text');
     const switchBtn = noteEl.querySelector('.ai-translator-switch-engine');
+    const settingsBtn = noteEl.querySelector('.ai-translator-open-settings');
     const engineTag = dialog.querySelector('.ai-translator-engine-tag');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
@@ -239,11 +241,14 @@
     // selection card does the same with state.translationRequestId).
     let lastRequestId = 0;
 
-    // `engine` pins this one request to an engine — the note's "use AI" button
-    // re-sending the same text. Nothing else pins, and the pin is not kept: the
-    // next translation follows the settings again.
-    const translateInputText = async (targetLangOverride = '', engine = '') => {
-      const text = textarea.value.trim();
+    // `source` is what to translate: the textarea for the button, Ctrl+Enter and
+    // the language menu; the note's "use AI" button re-sends
+    // dialog.dataset.sourceText, the text the note was written about, whatever
+    // the box holds by now (D-545). `engine` pins this one request to an engine —
+    // only that button pins, and the pin is not kept: the next translation
+    // follows the settings again.
+    const translateInputText = async (source, targetLangOverride = '', engine = '') => {
+      const text = source.trim();
       if (!text) return;
 
       const requestId = String(++lastRequestId);
@@ -257,6 +262,9 @@
       showNote('');
       showResultSpeak(false);
       copyBtn.hidden = true;
+      // The tag names who answered the last request; until this one answers it
+      // names nobody. Every exit below either draws a new one or leaves it hidden.
+      ctx.renderEngineChoice({ tag: engineTag, engine: undefined, targetLang: '', feature: 'input', isCurrent });
 
       try {
         if (!isExtensionContextAvailable()) {
@@ -299,10 +307,14 @@
         // engine that does (one click, never automatic: that one costs). A model
         // that answered with every list empty drew nothing — say it was asked.
         // A sentence is translated, never looked up, and says nothing.
+        //
+        // With no engine to offer (no AI profile for this feature, no Blab
+        // account), the note's way forward is the settings page, where one is set
+        // up.
         const needsModel = mode === 'word' && response.engine === 'builtin';
         const askedButEmpty = !!entry && dictEl.hidden;
         showNote(needsModel ? t('inputDictNeedsModel') : askedButEmpty ? t('dictEntryEmpty') : '');
-        ctx.renderEngineChoice({
+        const offered = await ctx.renderEngineChoice({
           tag: engineTag,
           button: needsModel ? switchBtn : null,
           engine: response.engine,
@@ -310,6 +322,7 @@
           feature: 'input',
           isCurrent,
         });
+        if (needsModel && !offered && isCurrent()) settingsBtn.hidden = false;
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
         if (!isCurrent()) return;
@@ -319,17 +332,18 @@
         showNote('');
         showResultSpeak(false);
         copyBtn.hidden = true;
-        ctx.renderEngineChoice({ tag: engineTag, engine: undefined, targetLang: '', feature: 'input', isCurrent });
       }
     };
 
     // The line under the translation that says why no entry was drawn; '' hides
-    // it. Its button is shown only by ctx.renderEngineChoice, once it knows an
-    // engine to offer, so every new line starts with the button hidden.
+    // it. Its two buttons are shown only once the answer is known — the switch by
+    // ctx.renderEngineChoice when it has an engine to offer, settings when it has
+    // none — so every new line starts with both hidden.
     function showNote(message) {
       noteText.textContent = message;
       noteEl.hidden = !message;
       switchBtn.hidden = true;
+      settingsBtn.hidden = true;
     }
 
     // The entry under the translation: the translation's phonetics, each with
@@ -342,11 +356,15 @@
     }
 
     translateBtn.addEventListener('click', async () => {
-      await translateInputText();
+      await translateInputText(textarea.value);
     });
 
     switchBtn.addEventListener('click', () => {
-      translateInputText(getShownTargetLang(), switchBtn.dataset.engine);
+      translateInputText(dialog.dataset.sourceText || '', getShownTargetLang(), switchBtn.dataset.engine);
+    });
+
+    settingsBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
     });
 
     copyBtn.addEventListener('click', async () => {
@@ -370,7 +388,7 @@
         // they type, not asking for a translation.
         const text = textarea.value.trim();
         if (!text) return;
-        translateInputText(lang);
+        translateInputText(text, lang);
       });
     }
 
