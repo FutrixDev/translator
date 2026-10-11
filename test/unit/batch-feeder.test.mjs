@@ -9,7 +9,8 @@
 //   - a scroll between two pulls re-scores what is left;
 //   - a focused block five screens away rides in the first batch;
 //   - ties keep document order and blocks with no layout box go last;
-//   - runTranslationPass reports progress once per block, never per batch.
+//   - runTranslationPass reports progress once per block, never per batch, so a
+//     manual run wired to ctx.progressFeed settles exactly N of N.
 //
 // Run with: node --test test/unit/batch-feeder.test.mjs
 import test from 'node:test';
@@ -60,6 +61,7 @@ for (const module of ['batch', 'collect', 'insert', 'failed-blocks', 'visibility
   await import(`../../content/page/${module}.js`);
 }
 await import('../../content/frames/shelf.js');
+await import('../../content/page/progress-feed.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
 ctx.isInsideManagedDomRoot = () => true;
@@ -248,4 +250,28 @@ test('a failed block counts once, as failed', async () => {
     onProgress: (done, total, outcome) => calls.push([done, total, outcome]),
   });
   assert.deepEqual(calls, [[1, 2, 'failed'], [2, 2, 'failed']]);
+});
+
+test('a manual pass wired to ctx.progressFeed settles each block exactly once: N of N, never past known', async () => {
+  const blocks = [0, 100, 200, 300, 400, 500].map((y, i) => block(y, `m${i}`));
+  ctx.requestTranslation = async (message) => (message.texts.some((t) => t.includes('m5'))
+    ? { error: 'apiErrorUnavailable' }
+    : { translations: message.texts.map((t) => `译:${t}`) });
+  const feed = ctx.progressFeed;
+  feed.manual.begin(blocks.length);
+  // Built-in engine: one block per batch, so exactly one block (m5) fails.
+  ctx.builtinTranslator = { isActive: () => true };
+  try {
+    // The wiring the manual entry (content-page-translation.js) is to use: one feed call per onProgress.
+    await ctx.runTranslationPass(blocks, {
+      // The failure marker needs a real document; what is counted does not depend on it.
+      markFailures: false,
+      onProgress: (done, total, outcome) => (outcome === 'failed' ? feed.manual.fail() : feed.manual.settle()),
+    });
+  } finally {
+    delete ctx.builtinTranslator;
+  }
+  feed.manual.end(feed.state().failed > 0 ? 'partial' : 'done');
+  const s = feed.state();
+  assert.deepEqual([s.source, s.phase, s.known, s.settled, s.failed, s.inflight], ['manual', 'partial', 6, 6, 1, 0]);
 });
