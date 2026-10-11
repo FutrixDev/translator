@@ -679,6 +679,9 @@
         imageUrl: imageBase64 ? null : entry.originalSrc,
         imageBase64,
         pageUrl: pageUrl || location.href,
+        // The tab's title, the name the reader knows the page by: comic jobs
+        // start only in the top frame (content/frames/shelf.js).
+        pageTitle: document.title,
         sourceLang: 'auto',
         targetLang,
         mode: entry.mode

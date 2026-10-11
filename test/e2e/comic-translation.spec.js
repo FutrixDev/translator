@@ -49,6 +49,8 @@ test.describe('Comic page translation', () => {
       expect(service.state.createBodies).toHaveLength(1);
       expect(service.state.createBodies[0].operationId).toBeTruthy();
       expect(service.state.createBodies[0].targetLang).toBe('zh-CN');
+      // The library names the job after the page, not the address's last segment.
+      expect(service.state.createBodies[0].pageTitle).toBe('Comic');
       // No mode was sent, and the default must stay the original product.
       expect(service.state.createBodies[0].mode).toBe('translate');
     } finally {
