@@ -14,6 +14,7 @@ const {
   oursIn,
   syncSnapshot,
   writeSyncSettings,
+  serveHtml,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
@@ -21,7 +22,6 @@ const {
   en,
   settings,
   html,
-  serve,
   rule,
   writeRule,
   storedRules,
@@ -71,7 +71,7 @@ test('J-2: a rule made in Settings keeps an inline brand verbatim inside the tra
     await createRule(options, context, { match: ['rules.test'], keepOriginal: ['.brand', '.code-name'] });
     await options.close();
 
-    await serve(context, { [`${RULES}/kettle`]: J2_PAGE });
+    await serveHtml(context, { [`${RULES}/kettle`]: J2_PAGE });
     await page.goto(`${RULES}/kettle`);
     await waitForFloatBall(page);
 
@@ -135,7 +135,7 @@ test('J-2 typography: a verbatim placeholder keeps the page typography, a real f
     await createRule(options, context, { match: ['rules.test'], keepOriginal: ['.brand'] });
     await options.close();
 
-    await serve(context, { [`${RULES}/typography`]: J2T_PAGE });
+    await serveHtml(context, { [`${RULES}/typography`]: J2T_PAGE });
     await page.goto(`${RULES}/typography`);
     await waitForFloatBall(page);
 
@@ -203,7 +203,7 @@ const J4_CSS = '.ai-translator-inline-block { color: rgb(1, 2, 3) !important }';
 /** J-4 两条用例共用的开头：夹具页翻好，设置页开在另一个标签页里。 */
 async function j4Start(page, context, extensionId, endpoint) {
   await setExtensionSettings(page, settings(endpoint));
-  await serve(context, { [`${RULES}/tides`]: J4_PAGE });
+  await serveHtml(context, { [`${RULES}/tides`]: J4_PAGE });
   await page.goto(`${RULES}/tides`);
   await waitForFloatBall(page);
   await triggerPageTranslation(page);
@@ -447,7 +447,7 @@ test('J-6: a rule that pins AI asks first, opens the daily budget, and auto-tran
 
     // 打开夹具：没人点，自动翻译的请求打到 mock，页面出现译文，今天的 AI 用量增加。
     const charsBefore = await autoAiChars(context);
-    await serve(context, { [`${RULES}/cruise`]: J6_PAGE });
+    await serveHtml(context, { [`${RULES}/cruise`]: J6_PAGE });
     await page.bringToFront();
     await page.goto(`${RULES}/cruise`);
     await waitForFloatBall(page);

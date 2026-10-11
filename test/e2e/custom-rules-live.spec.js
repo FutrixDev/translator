@@ -10,13 +10,13 @@ const {
   triggerPageTranslation,
   waitForFloatBall,
   oursIn,
+  serveHtml,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
   TRANSLATED,
   settings,
   html,
-  serve,
   removeRules,
   deleteRule,
   clearTranslationCache,
@@ -55,7 +55,7 @@ test('J-3 late include: when the included region renders late, the translations 
     await createRule(options, context, { match: ['rules.test/late'], include: ['.faq'] });
     await options.close();
 
-    await serve(context, { [`${RULES}/late`]: LATE_PAGE });
+    await serveHtml(context, { [`${RULES}/late`]: LATE_PAGE });
     await page.goto(`${RULES}/late`);
     await waitForFloatBall(page);
 
@@ -159,7 +159,7 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { remo
  * 没有就交给调度器送出去。每遍都重新打开页面，本页记忆从空开始。
  */
 async function j8Journey(page, context, extensionId, endpoint, sentTexts, label, remove) {
-  await serve(context, { [`${RULES}/ferry`]: J8_PAGE });
+  await serveHtml(context, { [`${RULES}/ferry`]: J8_PAGE });
   let options = null;
   const rounds = [
     { autoTranslate: false, returns: 'resend', name: 'autoTranslate off' },
@@ -246,7 +246,7 @@ test('J-9 manual: an iframe follows its own host rule for regions', async ({ pag
       autoTranslateEngine: 'builtin',
     }));
     await saveJ9Rules(context, extensionId);
-    await serve(context, j9Pages(TOP, NOTE));
+    await serveHtml(context, j9Pages(TOP, NOTE));
     await page.bringToFront();
     await page.goto(`${TOP}/museum`);
     await waitForFloatBall(page);
@@ -288,7 +288,7 @@ test('J-9 auto: on http an iframe translates with the engine the top host rule p
       siteRules: { 'rules-top.test': 'always' },
     }));
     await saveJ9Rules(context, extensionId);
-    await serve(context, j9Pages(TOP_HTTP, NOTE_HTTP));
+    await serveHtml(context, j9Pages(TOP_HTTP, NOTE_HTTP));
     await page.bringToFront();
     await page.goto(`${TOP_HTTP}/museum`);
     await waitForFloatBall(page);
@@ -337,7 +337,7 @@ test('J-10: on an http page with no usable engine, a rule pinning AI saved in Se
       engineFallback: 'local-only',
       siteRules: { 'rules-plain.test': 'always' },
     }));
-    await serve(context, { [`${PLAIN}/keeper`]: J10_PAGE });
+    await serveHtml(context, { [`${PLAIN}/keeper`]: J10_PAGE });
     await page.goto(`${PLAIN}/keeper`);
     await waitForFloatBall(page);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);

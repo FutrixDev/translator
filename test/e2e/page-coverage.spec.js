@@ -15,7 +15,7 @@ const {
   waitForTranslationComplete,
   sendMessageToActiveTab,
   getSyncSetting,
-  evaluateInContentScript,
+  scopeProbe,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -378,13 +378,8 @@ test('J-7 without <main>: the scope falls back to body with the same distributio
 // 「翻译后再判」：占比只量原文。译文挂在正文里，量进去的话翻完一轮正文的占比就
 // 被我们自己的节点抬高（或者把别的根挤过阈值），下一轮的范围跟着变。
 // 认出来的 <main> 是缓存住的（beginScopeRound 只作废退回 body 的结果），所以这里
-// 整个丢掉缓存再算：不丢的话「翻译后」拿回的是翻译前那份，占比根本没重量。
-const SCOPE_PROBE = `(() => {
-  const ctx = window.AI_TRANSLATOR_CONTENT;
-  ctx.invalidatePageScope();
-  const scope = ctx.resolvePageScope();
-  return { roots: scope.roots.map((root) => root.tagName), share: scope.share };
-})()`;
+// 整个丢掉缓存再算（scopeProbe 的 invalidate: 'all'）：不丢的话「翻译后」拿回的是
+// 翻译前那份，占比根本没重量。
 
 test('J-7 judged again after translating: the scope and the main share do not move', async ({ page, context }) => {
   const { close, endpoint } = await startMockOpenAIServer();
@@ -394,12 +389,12 @@ test('J-7 judged again after translating: the scope and the main share do not mo
     await page.goto(`${ORIGIN}/news`);
     await page.waitForSelector('#ai-translator-float-ball');
 
-    const before = await evaluateInContentScript(context, page, SCOPE_PROBE);
+    const before = await scopeProbe(context, page, { invalidate: 'all' });
     expect(before.roots).toEqual(['MAIN']);
     await triggerPageTranslation(page);
     await waitForTranslationComplete(page);
     await expectArticleTranslated(page);
-    const after = await evaluateInContentScript(context, page, SCOPE_PROBE);
+    const after = await scopeProbe(context, page, { invalidate: 'all' });
     expect(after.roots).toEqual(['MAIN']);
     expect(Math.abs(after.share - before.share)).toBeLessThan(0.001);
   } finally {

@@ -12,6 +12,7 @@ const {
   oursIn,
   sentSegments,
   openFloatBallMenu,
+  serveHtml,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
@@ -20,7 +21,6 @@ const {
   fill,
   settings,
   html,
-  serve,
   rule,
   writeRule,
   storedRules,
@@ -72,7 +72,7 @@ test('J-1: the picker excludes the comments of a translated page within 1 s, and
   try {
     await page.setViewportSize({ width: 1280, height: 800 });
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, { [`${RULES}/coast`]: J1_PAGE });
+    await serveHtml(context, { [`${RULES}/coast`]: J1_PAGE });
     await page.goto(`${RULES}/coast`);
     await waitForFloatBall(page);
 
@@ -166,7 +166,7 @@ test('J-1 inline: excluding an inline element of a translated page leaves it out
   const { close, endpoint, sentTexts, fastBatchRequests } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, { [`${RULES}/inline`]: J1I_PAGE });
+    await serveHtml(context, { [`${RULES}/inline`]: J1I_PAGE });
     await page.goto(`${RULES}/inline`);
     await waitForFloatBall(page);
     const translation = page.locator(translationOf('inline'));
@@ -239,7 +239,7 @@ test('J-3: the picker narrows a whole-page setting to the FAQ, and "Translate Wh
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint, { pageTranslateScope: 'page' }));
-    await serve(context, { [`${RULES}/help`]: J3_PAGE });
+    await serveHtml(context, { [`${RULES}/help`]: J3_PAGE });
     await page.goto(`${RULES}/help`);
     await waitForFloatBall(page);
 
@@ -314,7 +314,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
     // 上 —— 拾取器开着的时候它要让位，关掉后原样回来。名单外的站点不再冒追问条
     // （D-351），所以窄条要等第一次保存后才出现。
     await setExtensionSettings(page, settings('http://127.0.0.1:9'));
-    await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
+    await serveHtml(context, { [`${RULES}/locks`]: GEO_PAGE });
     await page.goto(`${RULES}/locks`);
     await waitForFloatBall(page);
     const bar = page.locator('#ai-translator-auto-bar');
@@ -398,7 +398,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
 // 它上面。划词与悬停读的是 ctx.constants.OWN_NODES_SELECTOR，同一份界面根清单。
 test('selecting the status bar\'s own text shows no selection button', async ({ page, context }) => {
   await setExtensionSettings(page, settings('http://127.0.0.1:9', { enableSelection: true }));
-  await serve(context, { [`${RULES}/locks`]: GEO_PAGE });
+  await serveHtml(context, { [`${RULES}/locks`]: GEO_PAGE });
   await page.goto(`${RULES}/locks`);
   await waitForFloatBall(page);
   // 让窄条露出来：存一条排除规则，保存提示会一直挂着，直到用户点它的 ×。
@@ -446,7 +446,7 @@ const GREY = {
 
 test('picker: a selector that is invalid or matches nothing greys the three actions (§5.1)', async ({ page, context }) => {
   await setExtensionSettings(page, settings('http://127.0.0.1:9'));
-  await serve(context, { [`${RULES}/ferry`]: html(`<p id="lead">${GREY.lead}</p>`) });
+  await serveHtml(context, { [`${RULES}/ferry`]: html(`<p id="lead">${GREY.lead}</p>`) });
   await page.goto(`${RULES}/ferry`);
   await waitForFloatBall(page);
 
@@ -494,7 +494,7 @@ const TRUSTED = {
 
 test('picker: a click the page script makes neither locks a target nor writes a rule', async ({ page, context }) => {
   await setExtensionSettings(page, settings('http://127.0.0.1:9'));
-  await serve(context, { [`${RULES}/night`]: html(`<p id="lead">${TRUSTED.lead}</p>`) });
+  await serveHtml(context, { [`${RULES}/night`]: html(`<p id="lead">${TRUSTED.lead}</p>`) });
   await page.goto(`${RULES}/night`);
   await waitForFloatBall(page);
   await openPickerFromMenu(page);
@@ -526,7 +526,7 @@ const FOCUS = {
 
 test('picker: Tab and Shift+Tab cycle through the toolbar and never leave it', async ({ page, context }) => {
   await setExtensionSettings(page, settings('http://127.0.0.1:9', { theme: 'light' }));
-  await serve(context, { [`${RULES}/harbour`]: html(`<p id="lead">${FOCUS.lead}</p><a href="#x">a page link</a>`) });
+  await serveHtml(context, { [`${RULES}/harbour`]: html(`<p id="lead">${FOCUS.lead}</p><a href="#x">a page link</a>`) });
   await page.goto(`${RULES}/harbour`);
   await waitForFloatBall(page);
   await openPickerFromMenu(page);
@@ -585,7 +585,7 @@ test('picker: Tab and Shift+Tab cycle through the toolbar and never leave it', a
 
 test('the popup button opens the picker on the page in front', async ({ context, extensionId }) => {
   await setExtensionSettings(await context.newPage(), settings('http://127.0.0.1:9'));
-  await serve(context, { [`${RULES}/popup`]: J1_PAGE });
+  await serveHtml(context, { [`${RULES}/popup`]: J1_PAGE });
   const content = await context.newPage();
   await content.goto(`${RULES}/popup`);
   await waitForFloatBall(content);
@@ -623,7 +623,7 @@ test('[fixture] picker: when this site\'s rule has unsafe CSS, saving says where
     keepOriginal: ['.brand'],
     css: 'body { background: url(http://127.0.0.1:9/leak) }',
   }));
-  await serve(context, { [`${RULES}/bikes`]: html(`<p id="lead">${UNSAFE.lead}</p>`) });
+  await serveHtml(context, { [`${RULES}/bikes`]: html(`<p id="lead">${UNSAFE.lead}</p>`) });
   await page.goto(`${RULES}/bikes`);
   await waitForFloatBall(page);
   const before = await storedRules(context);

@@ -21,11 +21,11 @@ const {
   sentSegments,
   setExtensionSettings,
   waitForContentReady,
+  serveHtml,
 } = require('./helpers');
 const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,
-  serve,
   storedRules,
   newOptionsTab,
   fillRuleEditor,
@@ -202,7 +202,7 @@ test.describe('P1-C prompt domain and page context: regression guards', () => {
   // [fixture] 同上：不认得的领域由 setExtensionSettings 铺进存储。
   test('[fixture] an unrecognised stored domain stops whole-page translation with a visible error, nothing is sent, and a real domain lets the retry through', async ({ page, context, extensionId }) => {
     const SITE = 'https://domain-unknown.test';
-    await serve(context, { [`${SITE}/memo`]: pageOf(TITLE) });
+    await serveHtml(context, { [`${SITE}/memo`]: pageOf(TITLE) });
     await setExtensionSettings(page, settings(mock.endpoint, { promptDomain: 'astrology' }));
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -230,7 +230,7 @@ test.describe('P1-C prompt domain and page context: regression guards', () => {
   test('reopened settings and rule editor keep what was saved; the sent context is stripped of markers; a rule pinned to "general" is still pinned', async ({ page, context, extensionId }) => {
     test.setTimeout(180000);
     const SITE = 'https://guards-c3.test';
-    await serve(context, { [`${SITE}/memo`]: pageOf(TITLE) });
+    await serveHtml(context, { [`${SITE}/memo`]: pageOf(TITLE) });
     await setExtensionSettings(page, settings(mock.endpoint));
 
     // 1. 设置页选「法律」、打开上下文。
@@ -296,7 +296,7 @@ test.describe('P1-C prompt domain and page context: regression guards', () => {
   test('[fixture] hover and the selection card send the title only; a rule domain change on the open page reaches hover without a reload', async ({ page, context, extensionId }) => {
     test.setTimeout(120000);
     const SITE = 'https://hover-guards.test';
-    await serve(context, { [`${SITE}/memo`]: pageOf(RAW_LONG_TITLE) });
+    await serveHtml(context, { [`${SITE}/memo`]: pageOf(RAW_LONG_TITLE) });
     await setExtensionSettings(page, settings(mock.endpoint, {
       aiPageContext: true,
       promptDomain: 'general',
@@ -390,7 +390,7 @@ test.describe('P1-C prompt domain and page context: regression guards', () => {
 <body>
   ${MANY.map((text, i) => `<p id="q${i + 1}">${text}</p>`).join('\n  ')}
 </body></html>`;
-    await serve(context, { [`${SITE}/memo`]: html });
+    await serveHtml(context, { [`${SITE}/memo`]: html });
     await setExtensionSettings(page, settings(mock.endpoint, {
       aiPageContext: true,
       autoTranslate: true,
