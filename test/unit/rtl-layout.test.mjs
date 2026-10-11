@@ -221,6 +221,7 @@ test('revealSelectedLanguage centres the selected item by moving only the menu',
     scrollIntoView() { scrolledIntoView = true; },
   };
   const menu = {
+    dataset: {},
     scrollTop: 0,
     clientTop: 1,
     clientHeight: 260,
@@ -234,9 +235,19 @@ test('revealSelectedLanguage centres the selected item by moving only the menu',
 });
 
 test('revealSelectedLanguage leaves a menu with nothing selected alone', () => {
-  const menu = { scrollTop: 40, querySelector: () => null };
+  const menu = { dataset: {}, scrollTop: 40, querySelector: () => null };
   ctx.revealSelectedLanguage(menu);
   assert.equal(menu.scrollTop, 40);
+});
+
+test('revealSelectedLanguage parks a grouped menu at the top without looking inside', () => {
+  const menu = {
+    dataset: { grouped: '1' },
+    scrollTop: 300,
+    querySelector: () => { throw new Error('a grouped menu is not searched'); },
+  };
+  ctx.revealSelectedLanguage(menu);
+  assert.equal(menu.scrollTop, 0);
 });
 
 // ==================== 每个落笔口都要知道译文是哪门语言 ====================
@@ -269,7 +280,7 @@ test('every place a translation lands requires the language of its text', () => 
 test('the card reveals the selected language and marks its translation', () => {
   const popup = read('content/content-popup.js');
   // 菜单每次打开现画（最近使用一组随时会变），画完再显出、再滚到已选项。
-  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*menu\.innerHTML = buildTargetLangMenu\(popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
+  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*buildTargetLangMenu\(menu, popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
   assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
   const css = read('content/css/popup.css');
   const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);

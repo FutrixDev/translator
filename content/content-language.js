@@ -65,7 +65,11 @@
   // 有最近记录时，先出「最近使用」一组（data-recent="1"），再出「全部语言」全表；全表
   // 不剔除最近项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份
   // 语言清单：存储里认不出的码直接不出。没有记录时输出与只有全表时逐字节相同。
-  ctx.buildTargetLangMenu = function(selectedLang) {
+  //
+  // 画进传入的菜单根，并在根上记下有没有分组（data-grouped）：打开时停在哪由
+  // ctx.revealSelectedLanguage 读这一个标记决定，不再回头从子节点里猜。菜单根跨次
+  // 打开复用，所以没有分组时要把上次留下的标记删掉。
+  ctx.buildTargetLangMenu = function(menu, selectedLang) {
     const normalized = ctx.normalizeTargetLang(selectedLang);
     const bt = ctx.builtinTranslator;
     const tagAiOnly = bt.isSelected(false);
@@ -83,13 +87,18 @@
     const recent = recentPref.get()
       .map((code) => options.find((option) => option.value === code))
       .filter(Boolean);
-    if (!recent.length) return all;
+    if (!recent.length) {
+      menu.innerHTML = all;
+      delete menu.dataset.grouped;
+      return;
+    }
     const group = (key) =>
       `<div class="ai-translator-lang-group" role="presentation">${ctx.escapeHtml(ctx.t(key))}</div>`;
-    return group('langRecent')
+    menu.innerHTML = group('langRecent')
       + recent.map((option) => item(option, true)).join('')
       + group('langAll')
       + all;
+    menu.dataset.grouped = '1';
   };
 
   // 我们放进页面的每一段文字都带上自己的 lang / dir：屏读按 lang 选语音、浏览器按
@@ -127,14 +136,15 @@
     }
   };
 
-  // 菜单刚打开时停在哪：有「最近使用」一组就停在顶部，让这一组露出来（D-545）。
+  // 菜单刚打开时停在哪：有「最近使用」一组（ctx.buildTargetLangMenu 记下的
+  // data-grouped）就停在顶部，让这一组露出来（D-545）。
   // 当前语言不一定在组里：卡片的默认语从不经点选，设置里也可能换了默认语。为了把
   // 全表里的选中项滚到中部而把这组推出视口，就违背了置顶的本意；当前语言已经写在
   // 触发按钮上。菜单节点跨次打开复用，不赌重画后滚动位置自己归零，明确写 0。
   // 没有最近组时，76 项里的已选项多半在视口外，把它放到可见区中部。只动菜单自己的
   // scrollTop；不用 scrollIntoView，那会连宿主页面一起滚。
   ctx.revealSelectedLanguage = function(menu) {
-    if (menu.querySelector('.ai-translator-lang-group')) {
+    if (menu.dataset.grouped) {
       menu.scrollTop = 0;
       return;
     }

@@ -432,7 +432,7 @@
     // 自己的 scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
     const openMenu = () => {
       if (!menu.hidden) return;
-      menu.innerHTML = buildTargetLangMenu(popup.dataset.targetLang);
+      buildTargetLangMenu(menu, popup.dataset.targetLang);
       menu.hidden = false;
       ctx.revealSelectedLanguage(menu);
       trigger.setAttribute('aria-expanded', 'true');

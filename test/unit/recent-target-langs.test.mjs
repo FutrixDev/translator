@@ -90,6 +90,12 @@ function menuBeforeRecents(ctx, TargetLang, selectedLang) {
 // equality tells apart from this realm's.
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
+/** Draws the menu into a stand-in root the way openMenu does; reuse `menu` to reopen. */
+function draw(ctx, selected, menu = { dataset: {} }) {
+  ctx.buildTargetLangMenu(menu, selected);
+  return menu;
+}
+
 /** The menu's top-level pieces, in order: group headers and items. */
 function pieces(html) {
   return [...html.matchAll(/<(div|button) class="([^"]+)"([^>]*)>([^<]*)<\/\1>/g)].map((m) => ({
@@ -108,9 +114,11 @@ test('with nothing remembered the menu is byte-identical to the flat list', () =
     const world = load({ builtin });
     world.answerRead();
     for (const selected of ['fr', 'zh-CN', 'fa', 'pt-BR', '']) {
-      assert.equal(world.ctx.buildTargetLangMenu(selected),
+      const menu = draw(world.ctx, selected);
+      assert.equal(menu.innerHTML,
         menuBeforeRecents(world.ctx, world.TargetLang, selected),
         `builtin=${builtin} selected=${selected || '(empty)'}`);
+      assert.equal(menu.dataset.grouped, undefined, 'a flat menu is not marked grouped');
     }
   }
 });
@@ -130,7 +138,9 @@ test('remember moves the pick to the front, dedupes, keeps five and writes stora
 test('with recents: header, the recent items, header, then all 76', () => {
   const { ctx, TargetLang, answerRead } = load({ stored: { recentTargetLangs: ['de', 'fr'] } });
   answerRead();
-  const all = pieces(ctx.buildTargetLangMenu('de'));
+  const menu = draw(ctx, 'de');
+  assert.equal(menu.dataset.grouped, '1', 'the root says it is grouped');
+  const all = pieces(menu.innerHTML);
   assert.equal(all.length, 1 + 2 + 1 + 76);
   assert.deepEqual(all.filter((p) => p.kind === 'group').map((p) => [p.text, p.role]),
     [['Recent', 'presentation'], ['All languages', 'presentation']]);
@@ -145,17 +155,28 @@ test('with recents: header, the recent items, header, then all 76', () => {
     'both copies of the selected language are selected, recent first');
 });
 
+test('the menu root is reused, so a flat redraw drops the grouped mark', () => {
+  const { ctx, answerRead, change } = load({ stored: { recentTargetLangs: ['de'] } });
+  answerRead();
+  const menu = draw(ctx, 'de');
+  assert.equal(menu.dataset.grouped, '1');
+  change({ recentTargetLangs: { newValue: [] } }, 'local');
+  draw(ctx, 'de', menu);
+  assert.equal(menu.dataset.grouped, undefined, 'another tab cleared the list');
+  assert.equal(pieces(menu.innerHTML).some((p) => p.kind === 'group'), false);
+});
+
 test('recent items get the AI-only tag the same way the full list does', () => {
   const { ctx, answerRead } = load({ builtin: true, stored: { recentTargetLangs: ['fa', 'fr'] } });
   answerRead();
-  const recent = pieces(ctx.buildTargetLangMenu('fr')).filter((p) => p.recent);
+  const recent = pieces(draw(ctx, 'fr').innerHTML).filter((p) => p.recent);
   assert.deepEqual(recent.map((p) => [p.lang, p.tag]), [['fa', 'AI only'], ['fr', undefined]]);
 });
 
 test('codes the list does not offer are not drawn', () => {
   const { ctx, answerRead } = load({ stored: { recentTargetLangs: ['xx-nope', 'fr', 42] } });
   answerRead();
-  const recent = pieces(ctx.buildTargetLangMenu('en')).filter((p) => p.recent);
+  const recent = pieces(draw(ctx, 'en').innerHTML).filter((p) => p.recent);
   assert.deepEqual(recent.map((p) => p.lang), ['fr']);
 });
 
