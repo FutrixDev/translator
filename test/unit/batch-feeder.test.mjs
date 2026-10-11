@@ -525,6 +525,28 @@ test('a reader jump smaller than the growth since the last scroll is still the r
 });
 
 // Last in the file: the pointer they leave behind would bend every later order.
+// Over RESORT_ABOVE blocks the order is kept for RESORT_EVERY pulls, so between
+// two re-sorts it goes stale: a reader scroll moves the near tier, and a block
+// the order still files under the far tier, in document order, can be near now
+// while blocks ahead of it in that order are not. Each pull judges the tier
+// afresh, so the near batch skips the now-far blocks and goes on to it — a
+// `break` there would end the batch at the first now-far block.
+test('over 4000 blocks the order is stale between re-sorts: a near batch still picks up a block that became near since', () => {
+  scrollTo(40000); // viewport [40000, 40800), heading down
+  const filler = Array.from({ length: 4000 }, (_, i) => block(i * 5, `fill${i}`));
+  const aboveNear = block(39100, 'aboveNear'); // 1.125 screens up: near, scores 1.35
+  const seen = Array.from({ length: 40 }, (_, i) => block(40000 + i * 20, `view${i}`));
+  const belowNear = block(41000, 'belowNear'); // 0.25 screens down: near, scores 0.2
+  const fresh = [42500, 42600].map((y, i) => block(y, `fresh${i}`)); // 2.1 screens down: far
+  const feeder = newFeeder([...filler, aboveNear, ...seen, belowNear, ...fresh]);
+  assert.deepEqual(labels(feeder.next()), seen.map((b) => b.label), 'the viewport fills the first AI batch');
+  // 4004 left: no re-sort on the next pull. The order reads belowNear,
+  // aboveNear, the filler, fresh0, fresh1. Viewport [41500, 42300): aboveNear
+  // and the filler are far now, belowNear is still near, fresh0/1 have become near.
+  scrollTo(41500);
+  assert.deepEqual(labels(feeder.next()), ['belowNear', 'fresh0', 'fresh1']);
+});
+
 test('the pointer takes 0.5 off a block within a screen of it', () => {
   scrollTo(4000); // viewport [4000, 4800), heading down
   // The pointer at the viewport's bottom edge (4790): within a screen of a
