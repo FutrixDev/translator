@@ -218,6 +218,10 @@ test.describe('page translation pulls by viewport', () => {
   // in its section), and the reader has scrolled back up so s106's top is five
   // screens below the viewport. The pass starts from the context menu
   // (TRANSLATE_PAGE), which leaves the focus where it is.
+  //
+  // The AI cases use the natural layout: some fifty paragraphs lie within the
+  // near tier there, more than one request carries, so s106 is in the first
+  // request only because it is pinned, not because the near tier had room.
   const FOCUS_TARGET = 106;
   for (const { engine, where } of [
     { engine: 'builtin', where: 'inside' },
@@ -227,8 +231,10 @@ test.describe('page translation pulls by viewport', () => {
   ]) {
     test(`manual pass, ${engine} engine: the paragraph with the focus ${where} it goes first, five screens away (J5.3)`, async ({ page, context }) => {
       test.setTimeout(90000);
-      const field = '<input id="field" type="text" placeholder="reply">';
-      await serve(context, buildPage('fixed', (i) => (i !== FOCUS_TARGET ? {} : where === 'inside' ? { inside: ` ${field}` } : { after: field })));
+      // Beside: closer to s106 (its 24px bottom margin) than to s107.
+      const field = '<input id="field" type="text" placeholder="reply" style="display:block;margin:0 0 40px">';
+      const layout = engine === 'ai' ? 'natural' : 'fixed';
+      await serve(context, buildPage(layout, (i) => (i !== FOCUS_TARGET ? {} : where === 'inside' ? { inside: ` ${field}` } : { after: field })));
       await setExtensionSettings(page, settings(mock.endpoint, engine === 'ai'
         ? { translationEngine: 'ai', autoTranslateEngine: 'ai' } : {}));
       await page.goto(`${SITE}/long`);
@@ -252,6 +258,7 @@ test.describe('page translation pulls by viewport', () => {
         expect((await callOrder(context, page))[0], 'built-in call #1').toBe(FOCUS_TARGET);
       } else {
         const first = [...String(mock.sentTexts[0]).matchAll(/Segment (\d+):/g)].map((m) => Number(m[1]));
+        expect(first.length, 'the first request is full: the near tier alone would fill it').toBe(40);
         expect(first, 'the first AI request').toContain(FOCUS_TARGET);
       }
     });
