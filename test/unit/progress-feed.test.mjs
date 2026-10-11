@@ -173,7 +173,9 @@ function element(name) {
   return { name, text: `${name} text long enough to translate`, isConnected: true };
 }
 
-function loadScheduler() {
+// `engine` is what effectiveEngine answers; `overBudget` is AutoStats.budgetExceeded
+// (asked only when the engine is 'ai').
+function loadScheduler({ engine = 'builtin', overBudget = () => false } = {}) {
   const timers = new Map();
   let timerId = 0;
   const passes = [];
@@ -190,7 +192,7 @@ function loadScheduler() {
     failedBlocks: { isMarked: () => false, mark() {} },
     onLanguagePackReady() {},
     readSourceText: (el) => el.text,
-    builtinTranslator: { effectiveEngine: async () => 'builtin' },
+    builtinTranslator: { effectiveEngine: async () => engine },
     filterBlocksByLanguage: async (blocks) => blocks,
     runTranslationPass: (blocks, options) => new Promise((resolve) => {
       passes.push({ blocks: [...blocks], options, resolve });
@@ -210,7 +212,7 @@ function loadScheduler() {
     clearTimeout: (id) => { timers.delete(id); },
     requestAnimationFrame: (fn) => { frames.push(fn); return frames.length; },
     SiteRules: { decide: () => ({ verdict: 'auto', reason: 'BUILTIN_ALWAYS', refused: false }) },
-    AutoStats: { add() {}, read: async () => ({}), budgetExceeded: () => false },
+    AutoStats: { add() {}, read: async () => ({}), budgetExceeded: () => overBudget() },
     AI_TRANSLATOR_CONTENT: ctx,
   };
   sandbox.window = sandbox;
@@ -255,7 +257,14 @@ function loadScheduler() {
     for (let i = 0; i < 5; i += 1) await tick();
     note();
   };
-  return { auto, feed, passes, history, offer, fire, settle, pendingTimers };
+  // End the latest pass the way runTranslationPass reports a failed round:
+  // nothing settled, a failure with a message.
+  const breakPass = async (message) => {
+    passes[passes.length - 1].resolve({ message });
+    for (let i = 0; i < 5; i += 1) await tick();
+    note();
+  };
+  return { auto, feed, passes, history, offer, fire, settle, breakPass, pendingTimers };
 }
 
 const ledger = (s) => [s.phase, s.known, s.settled, s.failed, s.pending, s.inflight];
@@ -308,6 +317,50 @@ test('a block that fails twice is counted once in known and lands as failed: pha
   await s.settle(() => false);
   assert.deepEqual(ledger(s.feed.state()), ['partial', 2, 2, 1, 0, 0]);
   assert.equal(s.feed.fraction(s.feed.state()), 1);
+});
+
+test('two blocks that both fail twice, with nothing settled: failed never runs ahead of settled', async () => {
+  // The all-fail case (D-551 item 6): the second round gives up on both blocks
+  // at once. The ledger has to take each one before failed counts it — with
+  // failed bumped first, failed is 2 while settled is still 0, and the feed
+  // refuses the snapshot.
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  s.offer(a, b);
+  await s.fire();
+  await s.settle(() => false);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 0, 0, 2, 0], 'both failed once: back in the queue');
+  await s.fire();
+  await s.settle(() => false);
+  assert.deepEqual(ledger(s.feed.state()), ['partial', 2, 2, 2, 0, 0]);
+  assert.equal(s.feed.fraction(s.feed.state()), 1);
+  for (const snap of s.history) assert.ok(snap.failed <= snap.settled, `failed ${snap.failed} > settled ${snap.settled}`);
+});
+
+test('a round that stops on an error leaves nothing pending or in flight on the feed', async () => {
+  const s = loadScheduler();
+  s.offer(...Array.from({ length: 6 }, (_, i) => element(`p${i}`)));
+  await s.fire();
+  assert.deepEqual(ledger(s.feed.state()), ['running', 4, 0, 0, 2, 4]);
+  await s.breakPass('HTTP 500 from the endpoint');
+  const snap = s.feed.state();
+  assert.equal(s.auto.state().status, 'error');
+  assert.deepEqual(ledger(snap), ['error', 4, 0, 0, 0, 0], 'the queue is still there, but nothing will send it');
+  assert.equal(s.pendingTimers().length, 0, 'and indeed no round is scheduled');
+});
+
+test('a round refused by the AI budget leaves nothing pending or in flight on the feed', async () => {
+  let spent = false;
+  const s = loadScheduler({ engine: 'ai', overBudget: () => spent });
+  s.offer(...Array.from({ length: 6 }, (_, i) => element(`p${i}`)));
+  await s.fire();
+  await s.settle();
+  assert.deepEqual(ledger(s.feed.state()), ['running', 4, 4, 0, 2, 0]);
+  spent = true;
+  await s.fire();
+  assert.equal(s.passes.length, 1, 'the budget stopped the next round before it took a block');
+  assert.deepEqual(ledger(s.feed.state()), ['budget', 4, 4, 0, 0, 0]);
 });
 
 test('a new session zeroes the snapshot and moves session forward', async () => {

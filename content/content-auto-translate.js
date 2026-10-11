@@ -171,14 +171,18 @@
      * 挑完一轮、代次翻篇。它是纯数据，订阅者按帧合并，报得勤不费事。
      */
     function feedProgress() {
+      const phase = progressPhase();
+      // 停在预算或出错上：队里剩下的这一页不会再自己送，在途的这一轮也已经收场。
+      // 报成「还有 N 块在等」，进度环就一直画着一件不会发生的事（D-551）。
+      const halted = phase === 'budget' || phase === 'error';
       ctx.progressFeed.auto.publish({
-        phase: progressPhase(),
+        phase,
         session: guard.version(),
         known: accepted.size,
         settled: ledger.size,
         failed: gaveUp,
-        pending: queue.size,
-        inflight: inflight.size
+        pending: halted ? 0 : queue.size,
+        inflight: halted ? 0 : inflight.size
       });
     }
 
