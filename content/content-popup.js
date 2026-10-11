@@ -111,7 +111,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBuiltin'), t('cardUseBlab')])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'])}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>

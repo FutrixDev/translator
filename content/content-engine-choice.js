@@ -7,6 +7,9 @@
 // - showEngineTag(tag, engine) 同步写标签，调用方在第一个 await 之前就画完；
 // - offerEngineSwitch({...}) 异步问另一边此刻能不能用，回来再定「换到…」按钮。
 //
+// 「换到…」按钮的初始标记也从这里出（engineSwitchLabel），按钮定宽用的字和
+// offerEngineSwitch 写上去的字是同一张表。
+//
 // 两者挂在 ctx 上，调用方在调用时读（manifest 里本文件排在 content-popup.js 之前，
 // 但谁也不靠这个顺序）。
 (function() {
@@ -31,6 +34,18 @@
   function showEngineTag(tag, engine) {
     tag.textContent = engine ? t(ENGINE_TAG[engine]) : '';
     tag.hidden = !engine;
+  }
+
+  /**
+   * 「换到…」按钮里的文字 span：先空着，定宽按 engines 里每个引擎的「换到…」说法里
+   * 最宽的那种（ctx.fitLabel）。engines 是这个按钮可能换到的引擎，调用方按自己能
+   * 给出的列。
+   *
+   * @param {string[]} engines
+   * @returns {string}
+   */
+  function engineSwitchLabel(engines) {
+    return ctx.fitLabel('', engines.map((engine) => t(USE_ENGINE[engine])));
   }
 
   /**
@@ -71,6 +86,7 @@
     }
   }
 
+  ctx.engineSwitchLabel = engineSwitchLabel;
   ctx.showEngineTag = showEngineTag;
   ctx.offerEngineSwitch = offerEngineSwitch;
 })();

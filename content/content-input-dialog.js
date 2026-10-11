@@ -132,7 +132,7 @@
             <div class="ai-translator-dict-entry" id="ai-translator-input-dict" hidden></div>
             <div class="ai-translator-dict-note" id="ai-translator-input-dict-note" hidden>
               <span class="ai-translator-dict-note-text"></span>
-              <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBlab')])}</button>
+              <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'blab'])}</button>
               <button class="ai-translator-btn ai-translator-open-settings" type="button" hidden>${t('openSettings')}</button>
             </div>
           </div>
