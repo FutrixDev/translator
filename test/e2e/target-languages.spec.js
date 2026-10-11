@@ -32,7 +32,7 @@ const { getMessage } = require('../../i18n/messages');
 const { setExtensionSettings, getSyncSettings, openFloatBallMenu, waitForFloatBall } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
-const { expectLaidOut, MIN_CONTRAST } = require('./layout-checks');
+const { expectLaidOut, contrastOf, MIN_CONTRAST } = require('./layout-checks');
 
 const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
 
@@ -411,42 +411,19 @@ async function pickInDialog(page, lang) {
 }
 
 /**
- * The "AI only" tag's colour (its ::after) against what is painted under the row:
- * every background from the row up to the first opaque one, composited over white.
- * `tinted` says whether the row itself paints a background (selected, hovered).
+ * The "AI only" tag (its ::after) against what is painted under the row, through
+ * the same walk every other contrast check uses. `tinted` says whether the row
+ * itself paints a background (selected, hovered).
  */
-function tagContrast(item) {
-  return item.evaluate((el) => {
-    const parse = (value) => {
-      const [r, g, b, a = '1'] = value.match(/rgba?\(([^)]+)\)/)[1].split(/[\s,/]+/).filter(Boolean);
-      return { r: +r, g: +g, b: +b, a: +a };
-    };
-    const over = (top, under) => ({
-      r: top.r * top.a + under.r * (1 - top.a),
-      g: top.g * top.a + under.g * (1 - top.a),
-      b: top.b * top.a + under.b * (1 - top.a),
-      a: 1,
-    });
-    const luminance = ({ r, g, b }) => {
-      const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
-      return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
-    };
-    const layers = [];
-    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
-      const color = parse(getComputedStyle(node).backgroundColor);
-      if (color.a > 0) layers.push(color);
-      if (color.a >= 1) break;
-    }
-    const under = layers.reverse().reduce((acc, top) => over(top, acc), { r: 255, g: 255, b: 255, a: 1 });
-    const text = over(parse(getComputedStyle(el, '::after').color), under);
-    const [hi, lo] = [luminance(text), luminance(under)].sort((p, q) => q - p);
-    return {
-      tag: getComputedStyle(el, '::after').color,
-      row: getComputedStyle(el).backgroundColor,
-      tinted: parse(getComputedStyle(el).backgroundColor).a > 0,
-      ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100,
-    };
-  });
+async function tagContrast(item) {
+  return {
+    ratio: Math.round((await contrastOf(item, '::after')) * 100) / 100,
+    tinted: await item.evaluate((el) => {
+      const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+      const [, , , a = '1'] = m[1].split(/[\s,/]+/).filter(Boolean);
+      return +a > 0;
+    }),
+  };
 }
 
 async function closeDialog(page) {

@@ -1,8 +1,9 @@
 /**
  * Geometry and contrast checks for an extension page's own controls
- * (onboarding.spec.js, settings-transfer.spec.js).
+ * (onboarding.spec.js, settings-transfer.spec.js) and for our panels on a
+ * page (target-languages.spec.js).
  *
- * One measurement in the page, four promises about it:
+ * Four promises about the named elements:
  *   - every named element is rendered (non-zero box, not visibility:hidden),
  *   - inside the 1280x720 viewport the fixture opens (the caller scrolls first),
  *   - no two of them overlap,
@@ -13,80 +14,102 @@
  * reached, over the page's white canvas if none is. A gradient counts with
  * every one of its stops and the lowest ratio wins (the settings page's
  * primary button is one). Opacity on the way is folded in too — a 0.6-opacity
- * disabled button is measured as it looks.
+ * disabled button is measured as it looks. `paintedContrast` is the one
+ * implementation of that walk; `contrastOf(locator, '::after')` asks it about a
+ * pseudo-element's text, still measured against what is under its element.
  */
 const { expect } = require('./fixtures');
 
 const MIN_CONTRAST = 4.5;
 
 /**
+ * The contrast of `el`'s text — or of its `pseudo` element's (`'::after'`) —
+ * against everything painted under `el`. Runs in the page, so it is
+ * self-contained: Playwright serializes the function, not its scope.
+ *
+ * @param {Element} el
+ * @param {string|null} pseudo
+ * @returns {number} the lowest ratio over every background the text could sit on
+ */
+function paintedContrast(el, pseudo = null) {
+  const parse = (value) => {
+    const m = value.match(/rgba?\(([^)]+)\)/);
+    if (!m) return { r: 0, g: 0, b: 0, a: 0 };
+    const [r, g, b, a = '1'] = m[1].split(/[\s,/]+/).filter(Boolean);
+    return { r: +r, g: +g, b: +b, a: +a };
+  };
+  const over = (top, under) => ({
+    r: top.r * top.a + under.r * (1 - top.a),
+    g: top.g * top.a + under.g * (1 - top.a),
+    b: top.b * top.a + under.b * (1 - top.a),
+    a: 1,
+  });
+  const luminance = ({ r, g, b }) => {
+    const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+  };
+  const ratio = (x, y) => {
+    const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  // Every colour the text could be sitting on. A gradient paints all of its
+  // stops somewhere under the label, so each stop is a candidate and the
+  // worst one is the answer.
+  const backgroundsUnder = (start) => {
+    const layers = [];
+    for (let node = start; node && node.nodeType === 1; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const stops = (style.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse);
+      const color = parse(style.backgroundColor);
+      const layer = [...(color.a > 0 ? [color] : []), ...stops];
+      if (layer.length) layers.push(layer);
+      if (layer.length && layer.every((c) => c.a >= 1)) break;
+    }
+    return layers.reverse().reduce(
+      (unders, layer) => unders.flatMap((under) => layer.map((top) => over(top, under))),
+      [{ r: 255, g: 255, b: 255, a: 1 }],
+    );
+  };
+  const opacityOf = (start) => {
+    let value = 1;
+    for (let node = start; node && node.nodeType === 1; node = node.parentElement) value *= parseFloat(getComputedStyle(node).opacity);
+    return value;
+  };
+  const text = parse(getComputedStyle(el, pseudo).color);
+  return Math.min(...backgroundsUnder(el)
+    .map((bg) => ratio(over({ ...text, a: text.a * opacityOf(el) }, bg), bg)));
+}
+
+/**
+ * @param {import('@playwright/test').Locator} locator one element
+ * @param {string|null} [pseudo] measure this pseudo-element's text colour instead
+ * @returns {Promise<number>}
+ */
+const contrastOf = (locator, pseudo = null) => locator.evaluate(paintedContrast, pseudo);
+
+/**
  * @param {import('@playwright/test').Page} page
  * @param {string[]} selectors each must match exactly one element
  */
-function measure(page, selectors) {
-  return page.evaluate((selectorList) => {
-    const parse = (value) => {
-      const m = value.match(/rgba?\(([^)]+)\)/);
-      if (!m) return { r: 0, g: 0, b: 0, a: 0 };
-      const [r, g, b, a = '1'] = m[1].split(/[\s,/]+/).filter(Boolean);
-      return { r: +r, g: +g, b: +b, a: +a };
+async function measure(page, selectors) {
+  const found = await page.evaluate((selectorList) => selectorList.map((selector) => {
+    const all = document.querySelectorAll(selector);
+    if (all.length !== 1) return { selector, count: all.length };
+    const el = all[0];
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return {
+      selector,
+      count: 1,
+      box: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+      visible: style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0,
+      viewport: { width: innerWidth, height: innerHeight },
     };
-    const over = (top, under) => ({
-      r: top.r * top.a + under.r * (1 - top.a),
-      g: top.g * top.a + under.g * (1 - top.a),
-      b: top.b * top.a + under.b * (1 - top.a),
-      a: 1,
-    });
-    const luminance = ({ r, g, b }) => {
-      const ch = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
-      return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
-    };
-    const ratio = (x, y) => {
-      const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
-      return (hi + 0.05) / (lo + 0.05);
-    };
-    // Every colour the text could be sitting on. A gradient paints all of its
-    // stops somewhere under the label, so each stop is a candidate and the
-    // worst one is the answer.
-    const backgroundsUnder = (el) => {
-      const layers = [];
-      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        const stops = (style.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse);
-        const color = parse(style.backgroundColor);
-        const layer = [...(color.a > 0 ? [color] : []), ...stops];
-        if (layer.length) layers.push(layer);
-        if (layer.length && layer.every((c) => c.a >= 1)) break;
-      }
-      return layers.reverse().reduce(
-        (unders, layer) => unders.flatMap((under) => layer.map((top) => over(top, under))),
-        [{ r: 255, g: 255, b: 255, a: 1 }],
-      );
-    };
-    const opacityOf = (el) => {
-      let value = 1;
-      for (let node = el; node && node.nodeType === 1; node = node.parentElement) value *= parseFloat(getComputedStyle(node).opacity);
-      return value;
-    };
-    return selectorList.map((selector) => {
-      const all = document.querySelectorAll(selector);
-      if (all.length !== 1) return { selector, count: all.length };
-      const el = all[0];
-      const rect = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
-      const text = parse(style.color);
-      const contrast = Math.min(...backgroundsUnder(el)
-        .map((bg) => ratio(over({ ...text, a: text.a * opacityOf(el) }, bg), bg)));
-      return {
-        selector,
-        count: 1,
-        box: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
-        visible: style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0,
-        contrast,
-        viewport: { width: innerWidth, height: innerHeight },
-      };
-    });
-  }, selectors);
+  }), selectors);
+  for (const item of found) {
+    if (item.count === 1) item.contrast = await contrastOf(page.locator(item.selector));
+  }
+  return found;
 }
 
 const overlaps = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
@@ -124,4 +147,4 @@ async function expectLaidOut(page, selectors, label) {
   return found.map(({ selector, contrast }) => `${selector} ${contrast.toFixed(2)}:1`).join('; ');
 }
 
-module.exports = { expectLaidOut, MIN_CONTRAST };
+module.exports = { expectLaidOut, contrastOf, MIN_CONTRAST };
