@@ -92,6 +92,18 @@
     });
   }
 
+  // Why a word came back without an entry, as the i18n key of the one line
+  // drawn where the entry would be, or '' when there is nothing to say. The
+  // built-in engine gives no entry: the word needs a model (and the note
+  // offers one). A model that answered with every list empty drew nothing:
+  // say it was asked. A sentence is translated, never looked up, and says
+  // nothing.
+  function missingEntryNote({ mode, engine, entry }) {
+    if (mode === 'word' && engine === 'builtin') return 'inputDictNeedsModel';
+    if (entry && !DictEntry.hasContent(entry)) return 'dictEntryEmpty';
+    return '';
+  }
+
   function showInputTranslateDialog() {
     if (state.inputDialog) {
       hideInputDialog();
@@ -258,10 +270,7 @@
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
       showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
-      showEntry(null);
-      showNote('');
-      showResultSpeak(false);
-      copyBtn.hidden = true;
+      resetResult();
       // The tag names who answered the last request; until this one answers it
       // names nobody. Every exit below either draws a new one or leaves it hidden.
       ctx.showEngineTag(engineTag, null);
@@ -302,20 +311,15 @@
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
 
-        // A word that comes back without an entry says why, in one line where
-        // the entry would be. The built-in engine gives none, and offers the
-        // engine that does (one click, never automatic: that one costs). A model
-        // that answered with every list empty drew nothing — say it was asked.
-        // A sentence is translated, never looked up, and says nothing.
-        //
-        // With no engine to offer (no AI profile for this feature, no Blab
-        // account), the note's way forward is the settings page, where one is set
-        // up.
-        const needsModel = mode === 'word' && response.engine === 'builtin';
-        const askedButEmpty = !!entry && dictEl.hidden;
-        showNote(needsModel ? t('inputDictNeedsModel') : askedButEmpty ? t('dictEntryEmpty') : '');
+        // A word that comes back without an entry says why (missingEntryNote).
+        // When it needs a model, the note offers the engine that gives one (one
+        // click, never automatic: that one costs). With no engine to offer (no
+        // AI profile for this feature, no Blab account), the note's way forward
+        // is the settings page, where one is set up.
+        const note = missingEntryNote({ mode, engine: response.engine, entry });
+        showNote(note ? t(note) : '');
         ctx.showEngineTag(engineTag, response.engine);
-        if (needsModel) {
+        if (note === 'inputDictNeedsModel') {
           const offered = await ctx.offerEngineSwitch({
             button: switchBtn,
             engine: response.engine,
@@ -330,12 +334,20 @@
         if (!isCurrent()) return;
         const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
-        showEntry(null);
-        showNote('');
-        showResultSpeak(false);
-        copyBtn.hidden = true;
+        resetResult();
       }
     };
+
+    // Everything under the result text that belongs to one answer: the entry,
+    // the note and its buttons, the result speaker, the copy button. Cleared
+    // when a request starts and when it throws; the tag is the engine's and is
+    // drawn by showEngineTag.
+    function resetResult() {
+      showEntry(null);
+      showNote('');
+      showResultSpeak(false);
+      copyBtn.hidden = true;
+    }
 
     // The line under the translation that says why no entry was drawn; '' hides
     // it. Its two buttons are shown only once the answer is known — the switch by

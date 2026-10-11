@@ -32,7 +32,7 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
-  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, render,
+  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, hasContent, render,
 } = globalThis.DictEntry;
 
 // `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
@@ -485,6 +485,19 @@ test('a translation-only entry draws nothing and hides the container', () => {
   assert.equal(container.childElementCount, 0);
   assert.equal(container.hidden, true);
   assert.equal(bound.length, 0);
+});
+
+test('hasContent is true exactly when render draws a block', () => {
+  assert.equal(hasContent(normalize({ translation: '跑' })), false);
+  assert.equal(hasContent(normalize(FULL)), true);
+  for (const key of Object.keys(FIELDS).filter((name) => FIELDS[name].kind === 'list')) {
+    const one = { translation: '跑', [key]: FULL[key].slice(0, 1) };
+    const entry = normalize(one);
+    assert.equal(hasContent(entry), true, key);
+    const { container } = draw(entry);
+    assert.equal(container.hidden, false, key);
+    assert.equal(container.childElementCount, 1, key);
+  }
 });
 
 test('null clears what was drawn before', () => {

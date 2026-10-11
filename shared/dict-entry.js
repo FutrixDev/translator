@@ -320,6 +320,16 @@
   // ---- drawing ----------------------------------------------------------------
 
   /**
+   * Whether `entry` (from normalize / entryFor) has anything beyond the
+   * translation: a phonetic, a sense, an example or a form. render() draws a
+   * block for each list that has items, so this is exactly "render() draws
+   * something", and the container is hidden when it is false.
+   */
+  function hasContent(entry) {
+    return LIST_KEYS.some((key) => entry[key].length > 0);
+  }
+
+  /**
    * Draw `entry` into `container`, replacing what was there; null clears it.
    * The container is hidden whenever nothing is drawn, so a translation-only
    * entry leaves no empty heading behind. A speaker in the old entry that is
@@ -419,7 +429,7 @@
       }
     }
 
-    container.hidden = container.childElementCount === 0;
+    container.hidden = !hasContent(entry);
   }
 
   root.DictEntry = Object.freeze({
@@ -433,6 +443,7 @@
     normalize,
     fromModelText,
     entryFor,
+    hasContent,
     render,
   });
 })(globalThis);
