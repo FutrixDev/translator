@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'AI プロファイル：{added} 件を追加、{replaced} 件を置き換えます。',
     docView: '表示',
     docErrSiteBase: 'リーダーを開けません。アカウントのサイトアドレスが有効な URL ではありません。',
+    inputDictNeedsModel: '内蔵エンジンは訳文だけで、発音・意味・例文は出ません。辞書として引くには AI モデルを使ってください。',
+    dictEntryEmpty: 'モデルは今回、発音・意味・例文を返しませんでした。',
+    langRecent: '最近使用',
+    langAll: 'すべての言語',
 };

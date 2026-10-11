@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'Perfiles de IA: se añadirán {added} y se reemplazarán {replaced}.',
     docView: 'Ver',
     docErrSiteBase: 'No se puede abrir el lector: la dirección del sitio de la cuenta no es una dirección web válida.',
+    inputDictNeedsModel: 'El motor integrado solo traduce. Para ver pronunciación, significados y ejemplos, usa un modelo de IA.',
+    dictEntryEmpty: 'Esta vez el modelo no dio pronunciación, significados ni ejemplos.',
+    langRecent: 'Recientes',
+    langAll: 'Todos los idiomas',
 };

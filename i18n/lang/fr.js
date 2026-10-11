@@ -701,4 +701,8 @@
     transferPreviewAiProfiles: 'Profils IA : {added} ajouté(s), {replaced} remplacé(s).',
     docView: 'Voir',
     docErrSiteBase: 'Impossible d’ouvrir le lecteur : l’adresse du site du compte n’est pas une adresse web valide.',
+    inputDictNeedsModel: 'Le moteur intégré ne fait que traduire. Pour la prononciation, les sens et des exemples, utilisez un modèle d’IA.',
+    dictEntryEmpty: 'Cette fois, le modèle n’a donné ni prononciation, ni sens, ni exemples.',
+    langRecent: 'Récentes',
+    langAll: 'Toutes les langues',
 };
