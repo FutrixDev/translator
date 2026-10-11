@@ -357,7 +357,7 @@ export async function getAccount({ force = false } = {}) {
  * layer's job — the confirmation UI is, and has to be, on the surface the user
  * is looking at. See shared/comic-charge.js.
  */
-export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, sourceLang, targetLang, mode, confirmCharge }) {
+export async function createJob({ operationId, imageUrl, pageUrl, pageTitle, imageBase64, sourceLang, targetLang, mode, confirmCharge }) {
   // Ask for the token before downloading anything. Acquisition now happens
   // before the POST rather than after a rejection, so without this a signed-out
   // click — the common first one — pulls a multi-megabyte page for nothing.
@@ -380,6 +380,11 @@ export async function createJob({ operationId, imageUrl, pageUrl, imageBase64, s
     body: {
       operationId: operationId || crypto.randomUUID(),
       pageUrl: pageUrl || null,
+      // What the library row is called. The page's own title, because an <img>
+      // off a live page has no file name, and the address's last segment (what
+      // the server fell back to) is a chapter id or, in the web reader, an
+      // asset id. The server trims and caps it.
+      pageTitle: pageTitle || null,
       imageBase64: bytes,
       sourceLang: sourceLang || 'auto',
       targetLang: targetLang || 'zh-CN',

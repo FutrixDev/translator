@@ -123,14 +123,14 @@ sent to us.
 | --- | --- | --- |
 | 你的邮箱，可能还有显示名 —— 由 Google 或 GitHub 在你授权时提供 | 第一次登录 | 登录发生在 `blab-translation.com/ext/connect` 这个网页上，OAuth 全程在那里完成，扩展只拿回一个令牌（`background/comic-client.js` 的 `signIn()`） |
 | 免费额度：这个月还剩几页、几号重置 | 每次用这两项功能 | `GET /api/billing/me`；设置页上那几个数字就是它 |
-| 任务记录：每个漫画 / 文档任务的状态、文档的**文件名**和格式、漫画那张图**所在页面的网址** | 每次发起一个任务 | `/api/comic/jobs`、`/api/pdf/jobs`（`background/comic-client.js`、`background/pdf-client.js`） |
+| 任务记录：每个漫画 / 文档任务的状态、文档的**文件名**和格式、漫画那张图**所在页面的网址和标题**（标题用作你文档库里这一条的名字） | 每次发起一个任务 | `/api/comic/jobs`、`/api/pdf/jobs`（`background/comic-client.js`、`background/pdf-client.js`） |
 | 文件本身：漫画的那张图、文档的整个文件 | 每次发起一个任务 | 字节由扩展上传；六种文档格式都经一次性预签名地址直传对象存储（本机文件由 `pdf/upload.js` 上传，网页上的 PDF 由 `background/pdf-client.js` 上传），不经过我们的 API 服务器 |
 
 两件值得单独说的事：
 
 - **这份记录跟着账号走，不跟着设备走。** 换一台电脑登录同一个账号，看到的是同一份
   历史 —— 设置页里能列出你在别的设备上跑过的任务，就是因为这个。
-- **漫画翻译会把那张图所在页面的网址一起发过来**，这是整份政策里唯一一处网址离开
+- **漫画翻译会把那张图所在页面的网址和标题一起发过来**，这是整份政策里唯一一处网址离开
   你电脑的地方，而且只发生在你亲手点下「翻译这张图」的那一刻。网页翻译、划词、
   字幕、OCR 都不发送任何网址，自动翻译也不发送。
 
@@ -138,8 +138,8 @@ Comic and document translation are the only two features that do not use your ow
 key: they run on our servers against a monthly free page allowance, which is why
 they need an account. Using them means we hold your email address (supplied by
 Google or GitHub when you authorise the sign-in), your remaining free pages, and
-a record of every job — with the file name and format for a document, and **the address of the
-page the image came from** for a comic. That job history belongs to the account,
+a record of every job — with the file name and format for a document, and **the address and
+title of the page the image came from** for a comic (the title names the job in your library). That job history belongs to the account,
 not to the device, which is why the settings page can list jobs you started
 elsewhere. The comic page URL is the only address that ever leaves your computer,
 and only at the moment you click "translate this image".
