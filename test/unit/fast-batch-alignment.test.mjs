@@ -29,6 +29,7 @@ globalThis.window = {
   AI_TRANSLATOR_CONTENT: {
     constants: { MATH_CONTAINER_SELECTOR: '.katex' },
     settings: { skipTargetLanguageText: false },
+    translationProfile: { subscribe() {} },
     state: {},
     t: (key) => key,
     escapeHtml: (s) => s,

@@ -26,6 +26,8 @@ globalThis.window = {
   AI_TRANSLATOR_CONTENT: {
     constants: { MATH_CONTAINER_SELECTOR: '.katex' },
     settings: {},
+    // insert.js 在加载时订阅译法换代（D-547），这里只要有这个口子。
+    translationProfile: { subscribe() {} },
     state: {},
     t: (key) => key,
   },
@@ -162,37 +164,77 @@ test('文字变了就是变了，语言一致也救不回来', () => {
 // ==================== 页内记忆：按内容装回 ====================
 //
 // 单页应用切菜单时把左栏整片重建：文字没变、节点全新，上面那张按节点认的表查不
-// 到。记忆按 (语言, 指纹) 认内容，发现层在绘制前拿它把译文装回去（批 C）。
-// 记忆是模块级的一张表，这些测试各用各的原文，互不干扰。
+// 到。记忆按 (语言, 指纹) 找桶，再拿送出去的原文逐字比对（D-547），发现层在绘制
+// 前拿它把译文装回去（批 C）。记忆是模块级的一张表，这些测试各用各的原文，互不
+// 干扰；清整张表的那一条放在最后。
+
+// 一条记忆：source 是送出去的原文（block.text，带内联标记），这里多数块没有标记，
+// 原文就是纯文字。
+const entry = (source, translation, targetLangChecked = false) => ({ source, translation, targetLangChecked });
+const recalled = (fp, lang, source) => {
+  const hit = BlockIdentity.recall(fp, lang, source);
+  return hit === null ? null : hit.translation;
+};
 
 test('a remembered translation comes back for the same text in the same language', () => {
   const fp = BlockIdentity.fingerprint('Settings');
-  BlockIdentity.remember(fp, 'zh-CN', '设置');
-  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), '设置');
-  // 指纹走的是同一个归一化：重建后多出来的空白不该让它认不出来。
-  assert.equal(BlockIdentity.recall(BlockIdentity.fingerprint('  Settings \n'), 'zh-CN'), '设置');
-  assert.equal(BlockIdentity.recall(BlockIdentity.fingerprint('Settings!'), 'zh-CN'), null);
+  BlockIdentity.remember(fp, 'zh-CN', entry('Settings', '设置'));
+  assert.equal(recalled(fp, 'zh-CN', 'Settings'), '设置');
+  // 指纹走的是同一个归一化：重建后多出来的空白不该让它找不到桶。
+  assert.equal(recalled(BlockIdentity.fingerprint('  Settings \n'), 'zh-CN', 'Settings'), '设置');
+  assert.equal(recalled(BlockIdentity.fingerprint('Settings!'), 'zh-CN', 'Settings!'), null);
+  // 条目原样还回去：调用方要看 targetLangChecked。
+  assert.deepEqual(BlockIdentity.recall(fp, 'zh-CN', 'Settings'), entry('Settings', '设置'));
 });
 
 test('another target language does not get this language\'s translation', () => {
   const fp = BlockIdentity.fingerprint('Billing');
-  BlockIdentity.remember(fp, 'zh-CN', '账单');
-  assert.equal(BlockIdentity.recall(fp, 'ja'), null);
+  BlockIdentity.remember(fp, 'zh-CN', entry('Billing', '账单'));
+  assert.equal(recalled(fp, 'ja', 'Billing'), null);
   // 空串是「跟随浏览器」这个身份，不是「随便哪门」。
-  assert.equal(BlockIdentity.recall(fp, ''), null);
+  assert.equal(recalled(fp, '', 'Billing'), null);
   // 不知道是哪门语言：不记、也不认 —— 装错语言比重翻一次贵。
-  assert.equal(BlockIdentity.recall(fp, null), null);
+  assert.equal(recalled(fp, null, 'Billing'), null);
   const before = BlockIdentity.memorySize();
-  BlockIdentity.remember(BlockIdentity.fingerprint('Unknown target'), null, '未知');
+  BlockIdentity.remember(BlockIdentity.fingerprint('Unknown target'), null, entry('Unknown target', '未知'));
   assert.equal(BlockIdentity.memorySize(), before);
 });
 
-test('a translation over 4096 characters is not remembered', () => {
+// D-547 N1：指纹按纯文字算（readSourceText），一个带 <a>、一个不带的两块指纹
+// 相同，落在同一个桶里。带链接那块的译文里有 <a1>…</a1>，装到不带链接的块上，
+// 标记无处可去，就成了页面上的字。送出去的原文（block.text）不一样，所以不装。
+test('the same words with a different inline structure do not take each other\'s translation', () => {
+  const plain = 'Read the docs';
+  const fp = BlockIdentity.fingerprint(plain);
+  const linked = 'Read the <a1>docs</a1>';
+  BlockIdentity.remember(fp, 'zh-CN', entry(linked, '阅读<a1>文档</a1>'));
+  assert.equal(recalled(fp, 'zh-CN', plain), null, 'the linked block\'s translation landed on the plain one');
+  assert.equal(recalled(fp, 'zh-CN', linked), '阅读<a1>文档</a1>');
+  BlockIdentity.remember(fp, 'zh-CN', entry(plain, '阅读文档'));
+  assert.equal(recalled(fp, 'zh-CN', linked), null, 'the plain block\'s translation landed on the linked one');
+  assert.equal(recalled(fp, 'zh-CN', plain), '阅读文档');
+});
+
+// D-547 N2：32 位指纹会撞。人为让两段不同原文落在同一个桶（同一个 fp 值），
+// 谁也不能拿到对方的译文；桶里只放最后落笔的那一条。
+test('two different sources in one fingerprint bucket never get each other\'s translation', () => {
+  const fp = BlockIdentity.fingerprint('collision bucket');
+  BlockIdentity.remember(fp, 'zh-CN', entry('Open the archive', '打开档案馆'));
+  assert.equal(recalled(fp, 'zh-CN', 'Close the account'), null, 'a colliding source got another block\'s translation');
+  BlockIdentity.remember(fp, 'zh-CN', entry('Close the account', '注销账户'));
+  assert.equal(recalled(fp, 'zh-CN', 'Open the archive'), null, 'the bucket kept serving the entry it replaced');
+  assert.equal(recalled(fp, 'zh-CN', 'Close the account'), '注销账户');
+});
+
+test('a source or a translation over 4096 characters is not remembered', () => {
   const fp = BlockIdentity.fingerprint('A very long paragraph');
-  BlockIdentity.remember(fp, 'zh-CN', 'x'.repeat(4097));
-  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), null);
-  BlockIdentity.remember(fp, 'zh-CN', 'x'.repeat(4096));
-  assert.equal(BlockIdentity.recall(fp, 'zh-CN'), 'x'.repeat(4096));
+  BlockIdentity.remember(fp, 'zh-CN', entry('A very long paragraph', 'x'.repeat(4097)));
+  assert.equal(recalled(fp, 'zh-CN', 'A very long paragraph'), null);
+  const longSource = 'y'.repeat(4097);
+  BlockIdentity.remember(BlockIdentity.fingerprint(longSource), 'zh-CN', entry(longSource, '长'));
+  assert.equal(recalled(BlockIdentity.fingerprint(longSource), 'zh-CN', longSource), null);
+  BlockIdentity.remember(fp, 'zh-CN', entry('A very long paragraph', 'x'.repeat(4096)));
+  assert.equal(recalled(fp, 'zh-CN', 'A very long paragraph'), 'x'.repeat(4096));
 });
 
 test('the 2001st entry evicts the least recently used one', () => {
@@ -201,16 +243,40 @@ test('the 2001st entry evicts the least recently used one', () => {
   for (let i = 0; i < 2000; i++) {
     const fp = BlockIdentity.fingerprint(`menu row ${i}`);
     fps.push(fp);
-    BlockIdentity.remember(fp, 'zh-CN', `菜单 ${i}`);
+    BlockIdentity.remember(fp, 'zh-CN', entry(`menu row ${i}`, `菜单 ${i}`));
   }
   assert.equal(BlockIdentity.memorySize(), 2000);
   // 命中算一次使用：row 0 被挪到最新，这一轮被挤掉的是 row 1。
-  assert.equal(BlockIdentity.recall(fps[0], 'zh-CN'), '菜单 0');
-  BlockIdentity.remember(BlockIdentity.fingerprint('menu row 2000'), 'zh-CN', '菜单 2000');
+  assert.equal(recalled(fps[0], 'zh-CN', 'menu row 0'), '菜单 0');
+  BlockIdentity.remember(BlockIdentity.fingerprint('menu row 2000'), 'zh-CN', entry('menu row 2000', '菜单 2000'));
   assert.equal(BlockIdentity.memorySize(), 2000);
-  assert.equal(BlockIdentity.recall(fps[1], 'zh-CN'), null);
-  assert.equal(BlockIdentity.recall(fps[0], 'zh-CN'), '菜单 0');
-  assert.equal(BlockIdentity.recall(fps[2], 'zh-CN'), '菜单 2');
+  assert.equal(recalled(fps[1], 'zh-CN', 'menu row 1'), null);
+  assert.equal(recalled(fps[0], 'zh-CN', 'menu row 0'), '菜单 0');
+  assert.equal(recalled(fps[2], 'zh-CN', 'menu row 2'), '菜单 2');
+});
+
+// D-547 N3：译法换了代（引擎、提示词、术语表……）整张清掉。订阅点在
+// content/page/insert.js，下面那条源码检查守着它。
+test('forgetMemory empties the whole memory', () => {
+  const fp = BlockIdentity.fingerprint('Forget me');
+  BlockIdentity.remember(fp, 'zh-CN', entry('Forget me', '忘掉我'));
+  assert.ok(BlockIdentity.memorySize() > 0);
+  BlockIdentity.forgetMemory();
+  assert.equal(BlockIdentity.memorySize(), 0);
+  assert.equal(recalled(fp, 'zh-CN', 'Forget me'), null);
+});
+
+test('a new translation profile generation forgets the memory, and recall checks the source and the skip setting', () => {
+  const insert = repoFile('content/page/insert.js');
+  assert.match(insert, /ctx\.translationProfile\.subscribe\(\(\) => globalThis\.BlockIdentity\.forgetMemory\(\)\);/,
+    'nothing forgets the memory when the engine, prompt or glossary changes');
+  // 记下的原文是收集端给的 block.text，和请求体同一个来源。
+  assert.match(insert, /const landed = \{ source: block\.text, translation \};/);
+  const scope = repoFile('content/page/scope.js');
+  assert.match(scope, /identity\.recall\([^;]*, lang, block\.text\);/,
+    'recall no longer compares the new block\'s own source text');
+  assert.match(scope, /if \(ctx\.settings\.skipTargetLanguageText === true && !entry\.targetLangChecked\) return false;/,
+    'recall restores translations that never passed the skip-target-language check');
 });
 
 // ==================== 读的是页面自己的文字 ====================
@@ -311,9 +377,9 @@ test('every insertion registers an identity — including the one with no node t
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   // 四种有节点的形态都汇进 finishTranslationInsert，受管 ::after 那条没有节点，
   // 走不到那里，所以它必须自己登记一次。
-  assert.match(body, /registerTranslation\(element, handle, true, lang, translation\)/,
+  assert.match(body, /registerTranslation\(element, handle, true, lang, landed\)/,
     'the managed (::after) branch inserts a translation nobody can later release');
-  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang, translation\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang, translation\);/,
+  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang, landed\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang, landed\);/,
     'the shared post-insert path no longer registers the block identity');
 });
 

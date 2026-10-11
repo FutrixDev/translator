@@ -223,7 +223,7 @@ test('every place a translation lands requires the language of its text', () => 
   // 四种有节点的形态都经 finishTranslationInsert 打标，每一处都把 textLang 带进去。
   const finishes = insert.match(/finishTranslationInsert\([^)]*\);/g) || [];
   assert.equal(finishes.length, 4);
-  for (const call of finishes) assert.match(call, /, textLang, translation\);$/, call);
+  for (const call of finishes) assert.match(call, /, textLang, landed\);$/, call);
   assert.match(insert, /function finishTranslationInsert\([^)]*\) \{\s*\n[^\n]*\n\s*ctx\.markLanguage\(translationEl, textLang\);/);
 
   const managed = read('content/content-managed-translation.js');

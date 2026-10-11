@@ -128,16 +128,23 @@
   // 闪一下原文。这一张认的是**内容**：(目标语言, 指纹) → 上次落笔的那条译文。
   // 发现层在 MutationObserver 回调里（绘制之前）拿它把译文装回去。
   //
-  // 页内、不分引擎、不落盘：同一页同一门语言里同一段原文的译文，换个节点不会变。
-  // 跨页的那一层是 content-translation-cache.js 的事，两层不重叠。
+  // 页内、不落盘：同一页同一门语言里同一段原文的译文，换个节点不会变。跨页的那一
+  // 层是 content-translation-cache.js 的事，两层不重叠。引擎、提示词这类译法一换
+  // 代，整张清掉（forgetMemory，由 content/page/insert.js 订阅 translationProfile）。
   //
   // 不随会话翻篇清空（bumpSession 不碰这里）：会话翻篇说的是「在途的活作废」，
   // 不是「翻好的东西作废」；换目标语言时键里的语言已经不同，旧的自然查不到。
   //
+  // 键里的指纹只做桶定位（D-547）：它按纯文字算，同样文字、内联结构不同的两块落
+  // 在同一个桶里，32 位指纹也会撞。所以每条还记着当初送出去的那份原文 source（带
+  // 内联标记，和请求体同一个来源），装回时新块的原文逐字相等才算命中。一个桶只
+  // 放最后落笔的那一条，撞上的两条互相顶掉，不会串。
+  //
   // Map 的插入顺序即 LRU 顺序：命中时删了再放回去挪到最新，满了丢最旧的。
   const MEMORY_LIMIT = 2000;
   // 超长的不记：一页里会被整片重建的是菜单、标签、卡片标题这类短串，长文正文
-  // 重建的少见；不设上限的话 2000 条长段落就是几十 MB 常驻在每个标签页里。
+  // 重建的少见；不设上限的话 2000 条长段落就是几十 MB 常驻在每个标签页里。原文
+  // 和译文各自按这个上限算。
   const MEMORY_TEXT_LIMIT = 4096;
   const memory = new Map();
 
@@ -148,23 +155,40 @@
     return `${lang}:${fp}`;
   }
 
-  function remember(fp, lang, translation) {
-    if (lang == null || typeof translation !== 'string' || !translation) return;
-    if (translation.length > MEMORY_TEXT_LIMIT) return;
+  /**
+   * @param {string} fp 纯文字指纹（fingerprint(readSourceText(el))）
+   * @param {string|null} lang
+   * @param {{source: string, translation: string, targetLangChecked: boolean}} entry
+   *   source 是送出去的原文（block.text），targetLangChecked 是落笔时「跳过目标语言」
+   *   开着没有。条目原样存、原样还给 recall 的调用方。
+   */
+  function remember(fp, lang, entry) {
+    if (lang == null || !entry) return;
+    const { source, translation } = entry;
+    if (typeof source !== 'string' || !source || typeof translation !== 'string' || !translation) return;
+    if (source.length > MEMORY_TEXT_LIMIT || translation.length > MEMORY_TEXT_LIMIT) return;
     const key = memoryKey(fp, lang);
     memory.delete(key);
-    memory.set(key, translation);
+    memory.set(key, entry);
     if (memory.size > MEMORY_LIMIT) memory.delete(memory.keys().next().value);
   }
 
-  function recall(fp, lang) {
+  // 命中要两样都对上：桶（语言 + 指纹）和原文逐字相等。原文对不上的桶不算命中，
+  // 也不挪它的 LRU 位置。
+  // @returns {{source: string, translation: string, targetLangChecked: boolean}|null}
+  function recall(fp, lang, source) {
     if (lang == null) return null;
     const key = memoryKey(fp, lang);
-    const translation = memory.get(key);
-    if (translation === undefined) return null;
+    const entry = memory.get(key);
+    if (entry === undefined || entry.source !== source) return null;
     memory.delete(key);
-    memory.set(key, translation);
-    return translation;
+    memory.set(key, entry);
+    return entry;
+  }
+
+  // 整张清掉：译法换了代（见上）。
+  function forgetMemory() {
+    memory.clear();
   }
 
   // 发现层先问这一句再决定要不要收集：一条都没记过的页面（绝大多数页面的头几
@@ -183,6 +207,7 @@
     forget,
     remember,
     recall,
+    forgetMemory,
     memorySize,
   };
 })(globalThis);

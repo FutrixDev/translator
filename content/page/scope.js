@@ -337,12 +337,23 @@
 
   // 一块：命中就装回并返回 true。语言戳和 batch.js 的 passTarget 同一对：记进身
   // 份的是 currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
+  //
+  // 「这块该不该译」由两道判定把关，装回不另写一套（D-547 N3）：
+  //   · 收集端那一串（范围、规则、代码、纯数字……）：块本来就是 collectPageBlocks
+  //     收上来的，没过的根本到不了这里；
+  //   · 跳过目标语言：那道检测在 batch.js（isTargetLanguageText，异步、要等语言
+  //     检测），绘制前同步装回等不了它。所以只装落笔时已经过了这道检测的条目
+  //     （targetLangChecked）；现在开着、当初没过的，返回 false 交给批量那条路，
+  //     由那道检测本身来判 —— 是目标语言就不译，不是就照常请求。
+  // 原文比的是 block.text：收集端 getTextWithMathPlaceholders 产出、请求体里发的
+  // 就是它，落笔时记下的也是它（insert.js 的 registerTranslation）。
   function recallTranslation(block) {
     const identity = globalThis.BlockIdentity;
     const lang = ctx.currentTargetLang();
-    const translation = identity.recall(identity.fingerprint(ctx.readSourceText(block.element)), lang);
-    if (translation === null) return false;
-    ctx.insertTranslationBlock(block, translation, { lang, textLang: ctx.getEffectiveTargetLang() });
+    const entry = identity.recall(identity.fingerprint(ctx.readSourceText(block.element)), lang, block.text);
+    if (entry === null) return false;
+    if (ctx.settings.skipTargetLanguageText === true && !entry.targetLangChecked) return false;
+    ctx.insertTranslationBlock(block, entry.translation, { lang, textLang: ctx.getEffectiveTargetLang() });
     ctx.afterInsertTranslation(block);
     return true;
   }
