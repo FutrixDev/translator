@@ -183,10 +183,11 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 /* Where a word's entry would be, when there is none: one line saying why (the
    built-in engine gives none, or the model left every list empty), and for the
    built-in engine a button to ask a model instead, or to open the settings
-   when no model is set up. The buttons are the shared .ai-translator-btn;
-   nothing here styles a control, so no `html body` prefix is needed
-   (test/unit/host-css-containment.test.mjs). */
-.ai-translator-dict-note {
+   when no model is set up. The buttons are the shared .ai-translator-btn.
+   Nothing here styles a control; the rules still carry the `html body` +
+   panel-root prefix the rest of this file uses, so a page rule naming the
+   same class at single-class weight cannot outrank them. */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-dict-note {
   margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
@@ -197,7 +198,7 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   color: var(--text-secondary);
 }
 
-.ai-translator-dict-note-text {
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-dict-note-text {
   flex: 1 1 200px;
 }
 
