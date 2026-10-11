@@ -153,20 +153,25 @@ test.beforeEach(() => {
 
 // ==================== the score (design §3.1) ====================
 
-test('the score: one point per screen, towards the scroll is cheaper, focus -inf, pointer -0.5, hidden +inf', () => {
-  const b = block(0);
-  const view = (over) => ({ scrollY: 0, height: H, scrollDir: 1, pointerDocY: null, focusBlock: null, ...over });
-  // In the viewport: 0.
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, { hidden: false, top: 100, bottom: 140 }, view()), 0);
-  // Two screens below while scrolling down: 2 * 0.8; scrolling up: 2 * 1.2.
-  const below = { hidden: false, top: 3 * H, bottom: 3 * H + 40 };
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view()), 2 * 0.8);
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ scrollDir: -1 })), 2 * 1.2);
-  // The focus block is pinned first, however far it is.
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ focusBlock: b })), -Infinity);
-  // The pointer within a screen of the block's top takes 0.5 off.
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, below, view({ pointerDocY: 3 * H + 10 })), 2 * 0.8 - 0.5);
-  assert.equal(ctx.focusOrder.scoreBlockForViewport(b, { hidden: true, top: 0, bottom: 0 }, view()), Infinity);
+// The score is not exported: it is pinned through the order the feeder pulls
+// in. Viewport [800, 1600). A block g px below or above is g / 800 screens off;
+// towards the scroll costs 0.8 a screen, against it 1.2, so a block below and
+// one above tie when above = 2/3 below. Each pair sits just either side of
+// that line (600 vs 390 / 410), so a weight off by a few percent flips one.
+function firstOfPair(belowGap, aboveGap) {
+  const above = block(H - aboveGap - 40, 'above');
+  const below = block(2 * H + belowGap, 'below');
+  return withEngine(true, () => labels(newFeeder([above, below]).next())[0]);
+}
+
+test('the score: towards the scroll costs 0.8 a screen, against it 1.2', () => {
+  scrollTo(H); // heading down: below is towards
+  assert.equal(firstOfPair(600, 390), 'above', 'below 0.75 * 0.8 = 0.6, above 0.4875 * 1.2 = 0.585');
+  assert.equal(firstOfPair(600, 410), 'below', 'below 0.6, above 0.5125 * 1.2 = 0.615');
+  scrollTo(2 * H);
+  scrollTo(H); // heading up: above is towards
+  assert.equal(firstOfPair(390, 600), 'below', 'above 0.75 * 0.8 = 0.6, below 0.4875 * 1.2 = 0.585');
+  assert.equal(firstOfPair(410, 600), 'above', 'above 0.6, below 0.5125 * 1.2 = 0.615');
 });
 
 // ==================== the feeder (design §3.2) ====================
@@ -385,9 +390,11 @@ test('a scroll made by scroll anchoring keeps the scroll direction; a scroll by 
   });
 });
 
-test('equal scores keep document order and blocks with no layout box go last', () => {
+test('equal scores keep document order and blocks with no layout box go last, even one holding the focus', () => {
   const hidden = [block(null, 'hidden0'), block(null, 'hidden1')];
   const seen = [block(100, 'view0'), block(100, 'view1'), block(100, 'view2')];
+  // The focus sits in hidden0: no layout box is checked before the focus.
+  document.activeElement = hidden[0].element;
   withEngine(true, () => {
     const feeder = newFeeder([hidden[0], seen[0], hidden[1], seen[1], seen[2]]);
     const order = [];
@@ -517,7 +524,22 @@ test('a reader jump smaller than the growth since the last scroll is still the r
   }
 });
 
-// Last in the file: the pointer it leaves behind would bend every later order.
+// Last in the file: the pointer they leave behind would bend every later order.
+test('the pointer takes 0.5 off a block within a screen of it', () => {
+  scrollTo(4000); // viewport [4000, 4800), heading down
+  // The pointer at the viewport's bottom edge (4790): within a screen of a
+  // block 640px below the viewport (0.8 * 0.8 = 0.64, less 0.5 = 0.14), more
+  // than a screen from any block above it.
+  for (const fn of listeners.get('pointermove') || []) fn({ clientY: 790 });
+  const pair = (aboveGap) => [block(4000 - aboveGap - 40, 'above'), block(4800 + 640, 'below')];
+  withEngine(true, () => {
+    // above 100px up: 0.125 * 1.2 = 0.15. Without the pointer below scores 0.64.
+    assert.deepEqual(labels(newFeeder(pair(100)).next()), ['below']);
+    // above 80px up: 0.12, under below's 0.14: the bonus is not more than ~0.52.
+    assert.deepEqual(labels(newFeeder(pair(80)).next()), ['above']);
+  });
+});
+
 test('the pointer is kept in viewport coordinates: after a scroll it points where it is now', () => {
   // The pointer rests 100px from the top of the viewport while the page is at
   // the top, then the page scrolls to 4000 under it: it now points at 4100.

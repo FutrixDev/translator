@@ -96,19 +96,27 @@
     };
   }
 
-  // 块的文档纵向区间。没有布局盒（rect 全 0：display:none、已经摘下）记 hidden。
+  // 有没有布局盒：display:none、已经摘下的元素 rect 全 0。
+  function hasLayoutBox(rect) {
+    return rect.width !== 0 || rect.height !== 0;
+  }
+
+  // 两段纵向区间 { top, bottom } 之间的空隙，相交为 0。
+  function intervalGap(a, b) {
+    return Math.max(0, a.top - b.bottom, b.top - a.bottom);
+  }
+
+  // 块的文档纵向区间。没有布局盒的记 hidden。
   function measureBlock(block, scrollY) {
     const rect = block.element.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return { hidden: true, top: 0, bottom: 0 };
+    if (!hasLayoutBox(rect)) return { hidden: true, top: 0, bottom: 0 };
     return { hidden: false, top: rect.top + scrollY, bottom: rect.bottom + scrollY };
   }
 
   // 块离视口几屏（相交为 0），在视口下方还是上方。
   function viewportGap(box, view) {
-    const viewBottom = view.scrollY + view.height;
-    if (box.top >= viewBottom) return { screens: (box.top - viewBottom) / view.height, below: true };
-    if (box.bottom <= view.scrollY) return { screens: (view.scrollY - box.bottom) / view.height, below: false };
-    return { screens: 0, below: false };
+    const viewport = { top: view.scrollY, bottom: view.scrollY + view.height };
+    return { screens: intervalGap(box, viewport) / view.height, below: box.top >= viewport.bottom };
   }
 
   function isFormControl(element) {
@@ -134,15 +142,14 @@
     }
     if (!isFormControl(activeOnPage)) return null;
     const rect = activeOnPage.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return null;
-    const top = rect.top + view.scrollY;
-    const bottom = rect.bottom + view.scrollY;
+    if (!hasLayoutBox(rect)) return null;
+    const control = { top: rect.top + view.scrollY, bottom: rect.bottom + view.scrollY };
     let best = null;
     let bestGap = BESIDE_SCREENS * view.height;
     for (const block of candidates) {
       const box = boxes.get(block);
       if (box.hidden) continue;
-      const gap = Math.max(0, box.top - bottom, top - box.bottom);
+      const gap = intervalGap(box, control);
       if (best === null ? gap <= bestGap : gap < bestGap) {
         best = block;
         bestGap = gap;
@@ -151,30 +158,37 @@
     return best;
   }
 
+  // 档位（设计 §3.1/§3.2）：焦点块、近档（离视口不超过 NEAR_SCREENS 屏）、远档、
+  // 没有布局盒。先判没有布局盒：焦点落在一个没有布局盒的块里，它也排最后。
+  const TIER = Object.freeze({ FOCUS: 0, NEAR: 1, FAR: 2, HIDDEN: 3 });
+
+  function tierOf(block, box, view) {
+    if (box.hidden) return TIER.HIDDEN;
+    if (block === view.focusBlock) return TIER.FOCUS;
+    return viewportGap(box, view).screens <= NEAR_SCREENS ? TIER.NEAR : TIER.FAR;
+  }
+
+  // 一批只装同一档：焦点块和近档同属一档 —— 焦点块钉在第一批，第一批就是视口
+  // 那一档，而不是它所在的远处那一档（设计 §3.2）。
+  function isNear(block, box, view) {
+    return tierOf(block, box, view) <= TIER.NEAR;
+  }
+
   /**
-   * 设计 §3.1 的评分，越小越先翻。**唯一实现**：手动那一轮的拉取器、自动调度层
-   * 每轮挑块（经 createBatchFeeder）都是它。
+   * 设计 §3.1 的评分，近档内的次序，越小越先翻：
    *
-   *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 指针同屏 0.5；
-   *   没有布局盒的 +∞；焦点块 −∞（不论多远都排第一）。
+   *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 指针同屏 0.5。
    *
-   * box 是 measureBlock 量出的区间，view 是 readView 的快照（focusBlock 已填）。
+   * 手动那一轮和自动调度层每轮挑块都经 createBatchFeeder 用它；发现层
+   * （content/content-auto-discover.js）的排序另有 distanceFromViewport，归批 C。
+   * box 是 measureBlock 量出的区间，view 是 readView 的快照。
    */
-  function scoreBlockForViewport(block, box, view) {
-    if (box.hidden) return Infinity;
-    if (block === view.focusBlock) return -Infinity;
+  function scoreBlockForViewport(box, view) {
     const { screens, below } = viewportGap(box, view);
     const towards = below ? view.scrollDir >= 0 : view.scrollDir < 0;
     let score = screens * (towards ? 0.8 : 1.2);
     if (view.pointerDocY !== null && Math.abs(box.top - view.pointerDocY) < view.height) score -= 0.5;
     return score;
-  }
-
-  // 近档。焦点块也算近：它钉在第一批，第一批就该是视口那一档，而不是它所在的
-  // 远处那一档（偏差，申报见交付报告）。
-  function isNear(block, box, view) {
-    if (box.hidden) return false;
-    return block === view.focusBlock || viewportGap(box, view).screens <= NEAR_SCREENS;
   }
 
   /**
@@ -184,8 +198,9 @@
    * （isNear）和这一批第一块不同的跳过、留给下一拉，不截断这一批（D-551）。批内按
    * 文档顺序，给 neighbourContext 取前后文。
    *
-   * 近档按 §3.1 评分排，远档按文档顺序（偏差，D-553：远档按分排会从视口往两头
-   * 交替外扩，Blink 每帧 PrePaint/Paint 翻倍），没有布局盒的最后。几何开跑时量
+   * 次序是 [档位, 近档的 §3.1 评分, 文档顺序] 逐项比较：焦点块第一，近档按分，
+   * 远档按文档顺序（设计 §3.1：远档按分排会从视口往两头交替外扩，Blink 每帧
+   * PrePaint/Paint 翻倍，D-553），没有布局盒的最后。几何开跑时量
    * 一次，读者滚动或 resize 后下一次重排前重量剩下的块；锚定位移只挪视口不重量。
    * 块多于 RESORT_ABOVE 时每 RESORT_EVERY 次拉取重排一次；焦点块换了随时重排。
    * 没有剩下的块时返回 null。
@@ -210,18 +225,14 @@
       measuredShift = viewSignals.anchorShift;
     };
 
-    // 近档 §3.1 的分；远档同一个键（按文档顺序）；没有布局盒 +∞。
-    const rankKey = (block, view) => {
-      const box = boxes.get(block);
-      if (box.hidden) return Infinity;
-      return isNear(block, box, view) ? scoreBlockForViewport(block, box, view) : Number.MAX_VALUE;
-    };
-
     const rank = (view) => {
-      const keyed = [...remaining].map((block) => [rankKey(block, view), block]);
-      // 两个 ±∞ 相减是 NaN，|| 让它落到文档顺序上：同键按文档顺序。
-      keyed.sort((a, b) => (a[0] - b[0]) || (docIndex.get(a[1]) - docIndex.get(b[1])));
-      order = keyed.map((entry) => entry[1]);
+      const keyed = [...remaining].map((block) => {
+        const box = boxes.get(block);
+        const tier = tierOf(block, box, view);
+        return [tier, tier === TIER.NEAR ? scoreBlockForViewport(box, view) : 0, docIndex.get(block), block];
+      });
+      keyed.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]));
+      order = keyed.map((entry) => entry[3]);
       orderedFocus = view.focusBlock;
       pullsSinceSort = 0;
     };
@@ -277,7 +288,7 @@
     await Promise.all(Array.from({ length: concurrency }, worker));
   }
 
-  ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView, scoreBlockForViewport });
+  ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });
 
   // 视口信号在模块加载时就开始记（D-551 第 4 项）：第一轮开跑前的滚动方向、指针
   // 位置也要算数。
