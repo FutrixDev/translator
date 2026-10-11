@@ -366,7 +366,8 @@ test('台账等结果再记，且结果由翻译层报上来', () => {
   // 个方向的同一个错：一张只有一两批的小页面可以整页全失败而 error 仍是 null
   // （连错三批才报错），那一页一个字都没译出来，却会被记成「自动翻了一页」。
   assert.equal((auto.match(/translated = true;/g) || []).length, 1);
-  assert.match(auto, /function commit\(element\) \{[\s\S]*?ledger\.add\(pending\.key\);/);
+  assert.match(auto, /function record\(element\) \{[\s\S]*?ledger\.add\(pending\.key\);/);
+  assert.match(auto, /function commit\(element\) \{\s*\n\s*if \(record\(element\)\) feedProgress\(\);/);
   // 被语言滤掉的是有意跳过，也是结果，同样要记。
   assert.match(auto, /for \(const block of blocks\) if \(!keep\.has\(block\.element\)\) commit\(block\.element\);/);
   // 代次翻篇和一轮收尾都要清空在途表：迟到的结果不能往新一代的台账里塞一笔。
@@ -538,15 +539,15 @@ test('这一轮没结果的块放回队列，但只放一次', () => {
   // 的接口会把这里变成每 250ms 一次的死循环。
   assert.match(auto, /if \(retried\.has\(pending\.key\)\)/);
   assert.match(auto, /retried\.add\(pending\.key\);/);
-  // 放弃的那些走 commit，台账仍然只有一个写入口。
-  assert.match(auto, /for \(const \[element, pending\] of giveUp\) \{\s*commit\(element\);/);
+  // 放弃的那些走 record（commit 的记账那一半），台账仍然只有一个写入口。
+  assert.match(auto, /for \(const \[element, pending\] of giveUp\) \{\s*record\(element\);/);
   // 第二次失败（放弃）的那一刻放失败标记，且只在那一处放：第一次失败放回队列，
   // 不放标记（P1-D D2，设计 §4）。title 先用这一段自己的原因（修复回合 1 的 B），
   // 行为由 auto-failed-reason.test.mjs 钉住。
-  assert.match(auto, /commit\(element\);\s*if \(element\.isConnected\) ctx\.failedBlocks\.mark\(pending\.entry\.block, pending\.reason \|\| error, \{ auto: true \}\);/);
+  assert.match(auto, /record\(element\);\s*if \(element\.isConnected\) ctx\.failedBlocks\.mark\(pending\.entry\.block, pending\.reason \|\| error, \{ auto: true \}\);/);
   assert.equal((auto.match(/failedBlocks\.mark\(/g) || []).length, 1);
   // 挂着失败标记的块（手动那一轮失败的）不再被调度层自己送出去：决定在用户手里。
-  assert.match(auto, /function takeBatch\(\) \{[\s\S]*?if \(ctx\.failedBlocks\.isMarked\(element\)\) continue;[\s\S]*?inflight\.set\(element/);
+  assert.match(auto, /function takeBatch\(\) \{[\s\S]*?if \(ctx\.failedBlocks\.isMarked\(element\)\) \{\s*retire\(key\);\s*continue;[\s\S]*?inflight\.set\(element/);
   assert.equal((auto.match(/ledger\.add\(/g) || []).length, 1);
   // 代次翻篇整本作废，重来的次数也一样。
   assert.match(auto, /function bumpSession\([\s\S]*?retried\.clear\(\);/);
@@ -698,12 +699,18 @@ test('调度层的进度只从台账报，一处出口', () => {
   const auto = code('content/content-auto-translate.js');
   assert.equal((auto.match(/ctx\.progressFeed\.auto\.publish\(/g) || []).length, 1);
   assert.match(auto, /function publish\(\) \{\s*\n\s*feedProgress\(\);/);
-  assert.match(auto, /ledger\.add\(pending\.key\);\s*\n\s*feedProgress\(\);/);
-  assert.match(auto, /function bumpSession\([\s\S]*?accepted\.clear\(\);\s*\n\s*feedProgress\(\);/);
+  assert.match(auto, /function commit\(element\) \{\s*\n\s*if \(record\(element\)\) feedProgress\(\);/);
+  // giveUp 那一段记完一串、gaveUp 加完再报一次：failed 不会先于 settled 涨。
+  assert.match(auto, /gaveUp \+= giveUp\.size;\s*\n\s*feedProgress\(\);/);
+  assert.match(auto, /function bumpSession\([\s\S]*?retired\.clear\(\);\s*\n\s*revived = 0;\s*\n\s*feedProgress\(\);/);
+  // 走不到结果的接纳过的 key（retired）算作已了结；只在 retire 里记，接纳时摘掉。
+  assert.match(auto, /known: accepted\.size \+ revived,\s*\n\s*settled: ledger\.size \+ retired\.size \+ revived,/);
+  assert.equal((auto.match(/retired\.add\(/g) || []).length, 1);
+  assert.match(auto, /function retire\(key\) \{\s*\n\s*if \(accepted\.has\(key\) && !ledger\.has\(key\)\) retired\.add\(key\);/);
   // 自动这一轮不传 onProgress：分子已经是台账，再经 batch.js 报一次就是双计。
   const pass = auto.slice(auto.indexOf('ctx.runTranslationPass(fresh, {'));
   assert.doesNotMatch(pass.slice(0, pass.indexOf('});')), /onProgress/);
   // 分母只在 takeBatch 接纳进 inflight 的那一刻长。
   assert.equal((auto.match(/accepted\.add\(/g) || []).length, 1);
-  assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);\s*\n\s*accepted\.add\(key\);/);
+  assert.match(auto, /inflight\.set\(element, \{ key, entry \}\);\s*\n\s*accepted\.add\(key\);\s*\n\s*if \(retired\.delete\(key\)\) revived \+= 1;/);
 });

@@ -173,9 +173,9 @@ function element(name) {
   return { name, text: `${name} text long enough to translate`, isConnected: true };
 }
 
-// `engine` is what effectiveEngine answers; `overBudget` is AutoStats.budgetExceeded
-// (asked only when the engine is 'ai').
-function loadScheduler({ engine = 'builtin', overBudget = () => false } = {}) {
+// `engine` is what effectiveEngine answers (a function: asked at each round's cost
+// check); `overBudget` is AutoStats.budgetExceeded (asked only when the engine is 'ai').
+function loadScheduler({ engine = () => 'builtin', overBudget = () => false } = {}) {
   const timers = new Map();
   let timerId = 0;
   const passes = [];
@@ -192,7 +192,7 @@ function loadScheduler({ engine = 'builtin', overBudget = () => false } = {}) {
     failedBlocks: { isMarked: () => false, mark() {} },
     onLanguagePackReady() {},
     readSourceText: (el) => el.text,
-    builtinTranslator: { effectiveEngine: async () => engine },
+    builtinTranslator: { effectiveEngine: async () => engine() },
     filterBlocksByLanguage: async (blocks) => blocks,
     runTranslationPass: (blocks, options) => new Promise((resolve) => {
       passes.push({ blocks: [...blocks], options, resolve });
@@ -352,7 +352,7 @@ test('a round that stops on an error leaves nothing pending or in flight on the 
 
 test('a round refused by the AI budget leaves nothing pending or in flight on the feed', async () => {
   let spent = false;
-  const s = loadScheduler({ engine: 'ai', overBudget: () => spent });
+  const s = loadScheduler({ engine: () => 'ai', overBudget: () => spent });
   s.offer(...Array.from({ length: 6 }, (_, i) => element(`p${i}`)));
   await s.fire();
   await s.settle();
@@ -361,6 +361,74 @@ test('a round refused by the AI budget leaves nothing pending or in flight on th
   await s.fire();
   assert.equal(s.passes.length, 1, 'the budget stopped the next round before it took a block');
   assert.deepEqual(ledger(s.feed.state()), ['budget', 4, 4, 0, 0, 0]);
+});
+
+test('a round refused because no engine is usable leaves nothing pending or in flight on the feed', async () => {
+  // COST_ENGINE (D-554 T-nit): the same stop as the budget, under another reason.
+  let engine = 'builtin';
+  const s = loadScheduler({ engine: () => engine });
+  s.offer(...Array.from({ length: 6 }, (_, i) => element(`p${i}`)));
+  await s.fire();
+  await s.settle();
+  assert.deepEqual(ledger(s.feed.state()), ['running', 4, 4, 0, 2, 0]);
+  engine = 'none';
+  await s.fire();
+  assert.equal(s.passes.length, 1, 'no engine: the next round never took a block');
+  assert.equal(s.auto.state().status, 'off');
+  assert.deepEqual(ledger(s.feed.state()), ['idle', 4, 4, 0, 0, 0]);
+});
+
+// D-554 T2: a block that was accepted and can no longer reach a result.
+test('a block disconnected while in flight is settled, not left owing the ring a block', async () => {
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  s.offer(a, b);
+  await s.fire();
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 0, 0, 0, 2]);
+  a.isConnected = false;
+  // The pass never settles a detached block; b comes back.
+  await s.settle((el) => el === b);
+  assert.deepEqual(ledger(s.feed.state()), ['done', 2, 2, 0, 0, 0]);
+  assert.equal(s.feed.fraction(s.feed.state()), 1);
+  assert.deepEqual(s.pendingTimers(), [], 'nothing re-queued the detached block');
+});
+
+test('a block that failed once and is then disconnected in the queue is settled too', async () => {
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  s.offer(a, b);
+  await s.fire();
+  await s.settle((el) => el === a);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 1, 0, 1, 0], 'b failed once: back in the queue');
+  b.isConnected = false;
+  await s.fire();
+  assert.equal(s.passes.length, 1, 'the detached block was not sent again');
+  assert.deepEqual(ledger(s.feed.state()), ['done', 2, 2, 0, 0, 0]);
+});
+
+test('a disconnected block reconnected with the same text is accepted again without settling twice', async () => {
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  s.offer(a, b);
+  await s.fire();
+  a.isConnected = false;
+  await s.settle((el) => el === b);
+  assert.deepEqual(ledger(s.feed.state()), ['done', 2, 2, 0, 0, 0]);
+  // Same node, same text: same key. Accepting it again takes it off the retired
+  // list; what was reported settled cannot be taken back (the feed refuses a
+  // falling settled), so it comes back as one more block owed — once.
+  a.isConnected = true;
+  s.offer(a);
+  await s.fire();
+  assert.deepEqual(s.passes[1].blocks.map((block) => block.element.name), ['a']);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 3, 2, 0, 0, 1]);
+  await s.settle();
+  assert.deepEqual(ledger(s.feed.state()), ['done', 3, 3, 0, 0, 0]);
+  assert.equal(s.feed.fraction(s.feed.state()), 1);
+  for (const snap of s.history) assert.ok(snap.settled <= snap.known, `settled ${snap.settled} > known ${snap.known}`);
 });
 
 test('a new session zeroes the snapshot and moves session forward', async () => {

@@ -92,6 +92,17 @@
     // 重复、陈旧、已经翻过的，拿队列做分母，环会先大后小。累计、只增不减；放回
     // 队列再送一次的块 key 不变，不会被计两次。代次一翻篇就整本作废。
     const accepted = new Set();
+    // 接纳过、却再也走不到结果的 key：节点断开了、文字换了、被别处翻好了、被挂上
+    // 失败标记归了用户。分母（accepted）只增不减，这些 key 不记一笔，进度就永远
+    // 差这几块到不了头（D-554 T2）。它们不进 ledger —— 那本台账挡的是「再送一次」，
+    // 而这些块换个样子回来时还得能送；只在报进度时算作已了结。同一个 key 回来、
+    // 又被接纳时从这里摘掉（takeBatch 里 accepted.add 那一处），不然它了结时会被
+    // 记两次，settled 就超过 known。
+    const retired = new Set();
+    // 从 retired 里摘回来、又接纳了一次的次数。进度源要求一代之内 known、settled
+    // 都只增不减：摘掉的那一笔已经报成了结，不能收回，所以它回来算**又欠一块** ——
+    // known 和 settled 各加这个数，再了结时 settled 才跟上 known。
+    let revived = 0;
 
     let discovery = null;
     let status = STATUS.OFF;
@@ -172,14 +183,15 @@
      */
     function feedProgress() {
       const phase = progressPhase();
-      // 停在预算或出错上：队里剩下的这一页不会再自己送，在途的这一轮也已经收场。
-      // 报成「还有 N 块在等」，进度环就一直画着一件不会发生的事（D-551）。
-      const halted = phase === 'budget' || phase === 'error';
+      // 停翻（预算、没有可用的引擎，以及判定不翻）或出错：队里剩下的这一页不会再
+      // 自己送，在途的这一轮也已经收场。报成「还有 N 块在等」，进度环就一直画着一件
+      // 不会发生的事（D-551；没有引擎那一条 D-554）。
+      const halted = status === STATUS.OFF || status === STATUS.ERROR;
       ctx.progressFeed.auto.publish({
         phase,
         session: guard.version(),
-        known: accepted.size,
-        settled: ledger.size,
+        known: accepted.size + revived,
+        settled: ledger.size + retired.size + revived,
         failed: gaveUp,
         pending: halted ? 0 : queue.size,
         inflight: halted ? 0 : inflight.size
@@ -367,11 +379,23 @@
     // 只认还在 inflight 里的：代次一翻篇 inflight 就清空，于是一条迟到的结果不会
     // 往新一代的台账里塞一笔（塞进去就是新一代的那一块永远不翻）。
     function commit(element) {
+      if (record(element)) feedProgress();
+    }
+
+    // commit 的记账那一半，不报进度。giveUp 那一段记完一串、gaveUp 加完再统一报
+    // 一次：逐笔报的话 failed（= gaveUp）不是先于 settled 涨（进度源当场拒收），
+    // 就是要靠语句先后去守这条不变式。
+    function record(element) {
       const pending = inflight.get(element);
-      if (!pending) return;
+      if (!pending) return false;
       inflight.delete(element);
       ledger.add(pending.key);
-      feedProgress();
+      return true;
+    }
+
+    // 接纳过的 key 就此走不到结果（见 retired）。没接纳过的、已经了结的不算。
+    function retire(key) {
+      if (accepted.has(key) && !ledger.has(key)) retired.add(key);
     }
 
     function acceptBlock(block) {
@@ -404,7 +428,11 @@
       queue.clear();
       const eligible = new Map();
       for (const [element, entry] of entries) {
-        if (!element.isConnected) continue;
+        // 丢掉的块若是上一轮接纳过、放回队里的，它就此走不到结果：retire。
+        if (!element.isConnected) {
+          retire(`${guard.blockId(element)}:${entry.source}`);
+          continue;
+        }
         const ticket = guard.stamp(element);
         // 排队那一刻的原样文字和此刻的对不上 = 虚拟列表把这个节点回收给下一条
         // 内容了。entry.block 抄的还是上一条，这一轮会拿它去译、用新内容的指纹
@@ -415,15 +443,25 @@
         //
         // 丢掉就行：改文字本身是一次 characterData 变动，发现层下一轮会把这个块
         // 带着新文字原样送回来。这里不记台账，那一轮才不会被当成翻过了。
-        if (entry.source !== ticket.textFingerprint) continue;
+        if (entry.source !== ticket.textFingerprint) {
+          retire(`${ticket.blockId}:${entry.source}`);
+          continue;
+        }
         const key = `${ticket.blockId}:${ticket.textFingerprint}`;
         if (ledger.has(key)) continue;
         // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
-        if (alreadyTranslated(element, ticket.textFingerprint)) continue;
+        // 只 retire 不记台账：译文若被撤掉、文字没变，这一块还得能再送。
+        if (alreadyTranslated(element, ticket.textFingerprint)) {
+          retire(key);
+          continue;
+        }
         // 挂着失败标记的块归用户了（点标记重试，content/page/failed-blocks.js）：
         // 手动那一轮失败的块滚进带里时不再自己悄悄送一次 —— 那样既多花钱，又会让
         // 标记换成自动那一轮的、重试改走自动的引擎。自动放弃的那些另有台账挡着。
-        if (ctx.failedBlocks.isMarked(element)) continue;
+        if (ctx.failedBlocks.isMarked(element)) {
+          retire(key);
+          continue;
+        }
         eligible.set(element, { key, entry, ticket });
       }
       if (eligible.size > 0) {
@@ -442,6 +480,7 @@
             // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
             inflight.set(element, { key, entry });
             accepted.add(key);
+            if (retired.delete(key)) revived += 1;
             tickets.set(element, ticket);
             blocks.push(block);
           }
@@ -606,19 +645,22 @@
             continue;
           }
           retried.add(pending.key);
+          // 断开了的不放回：没有什么会再把它送来，它就此了结（retire）。同一段文字
+          // 重新接上的话发现层会送回来，再被接纳时从 retired 里摘掉。
           if (element.isConnected) queue.set(element, pending.entry);
+          else retire(pending.key);
         }
         // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
         // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
         // 它放回队列，下一轮多半就翻成了。title 用这一段自己的原因；只有整轮级
         // 的失败（没有逐段原因）才回落到整轮的 error，再没有就是 mark 的通用文案。
         for (const [element, pending] of giveUp) {
-          commit(element);
+          record(element);
           if (element.isConnected) ctx.failedBlocks.mark(pending.entry.block, pending.reason || error, { auto: true });
         }
-        // 先记账再计数：commit 每一笔都会报进度，failed（= gaveUp）先涨的话，那一刻
-        // 它就比 settled 大，进度源当场拒收。
+        // 记完账、加完数再报一次（record 不报，见那里）。
         gaveUp += giveUp.size;
+        feedProgress();
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
@@ -691,6 +733,8 @@
       retried.clear();
       ledger.clear();
       accepted.clear();
+      retired.clear();
+      revived = 0;
       feedProgress();
     }
 
