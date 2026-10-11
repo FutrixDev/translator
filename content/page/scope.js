@@ -13,6 +13,8 @@
 //   - `ctx.outsidePageScope(el, scope)`：只翻用户规则 include 的区域时，el 在不在区域外
 //   - `ctx.collectPageBlocks(root)`：生产入口（手动翻译、发现层、A1 的子 frame 手动轮）
 //   - `ctx.beginScopeRound()`：上面三个入口每轮收集前调一次（缓存规则见 resolvePageScope）
+//   - `ctx.recallTranslations(roots)` / `ctx.recallTranslation(block)`：发现层把页内记忆
+//     里的译文装回重建出来的节点（见下文「装回」）
 //   - `ctx.translateWholePage()`：悬浮菜单「翻译整个页面」与 Alt+W
 (function() {
   'use strict';
@@ -107,10 +109,25 @@
     return text ? text.replace(/\s+/g, '').length : 0;
   }
 
+  // 也扣掉我们自己插进页面的节点（译文块、悬浮球、进度条……）。不扣的话占比跟着
+  // 翻译进度走：正文翻完多出一份译文，单页应用切路由时左栏又连同它的译文一起被
+  // 重建掉，<main> 的占比就被我们自己推过门槛，范围翻到 <main>，左栏从此再也不翻。
+  // 范围是页面的属性，翻译前后必须答同一句。
+  //
+  // 清单用 ctx.constants.OWN_NODES_SELECTOR，不用 collect.js 的 SKIP_OURS：后者还
+  // 含 `.ai-translator-translated` / `.ai-translator-inline-source`，那是挂在**页面
+  // 自己的原文块**上的标记，扣掉它们等于翻完一块就把那块原文从占比里拿走。
+  // 嵌套的只扣最外层：querySelectorAll 按文档顺序给，祖先总排在子孙前面。
   function textLength(el) {
     let length = compactLength(el.textContent);
     for (const code of el.querySelectorAll('script, style, noscript')) {
       length -= compactLength(code.textContent);
+    }
+    let counted = null;
+    for (const own of el.querySelectorAll(ctx.constants.OWN_NODES_SELECTOR)) {
+      if (counted && counted.contains(own)) continue;
+      counted = own;
+      length -= compactLength(own.textContent);
     }
     return Math.max(0, length);
   }
@@ -292,6 +309,54 @@
     return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope() });
   }
 
+  // ---- 装回：同样的文字换了新节点，把上次的译文放回去 ------------------------
+  //
+  // 单页应用切路由时常把左栏整片重建：文字一个字没变，节点全是新的，节点身份查
+  // 不到，于是同样几行再翻一遍（内置引擎不走 storage 缓存，每次都真发），翻回来
+  // 之前那几行先闪一下原文。页内记忆（BlockIdentity.remember，唯一写入点是
+  // insert.js 的 registerTranslation）按 (目标语言, 指纹) 记着上次落笔的译文，
+  // 发现层在 MutationObserver 回调里 —— 绘制之前 —— 拿它装回去。
+  //
+  // 走的是和第一次落笔同一条插入路径：节点身份照登记（之后的 collect 就把它当
+  // 「翻过了」跳过，不进候选、不发请求、不碰调度层的台账）、隐藏译文 / 仅显示
+  // 译文跟着当前状态、shadow root 里的样式照补。范围规则也照常：块是
+  // collectPageBlocks 收的。
+
+  // 同步装回的硬上限（D-543 第 6 点）：回调里每多做一点，那一帧就晚画一点。
+  // 超出的留给防抖之后那一轮（发现层 flush 里逐块再问一次），仍然不重发，只是
+  // 可能闪一下。
+  const RECALL_ROOT_BUDGET = 40;
+  const RECALL_BLOCK_BUDGET = 200;
+
+  // 一块：命中就装回并返回 true。语言戳和 batch.js 的 passTarget 同一对：记进身
+  // 份的是 currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
+  function recallTranslation(block) {
+    const identity = globalThis.BlockIdentity;
+    const lang = ctx.currentTargetLang();
+    const translation = identity.recall(identity.fingerprint(ctx.readSourceText(block.element)), lang);
+    if (translation === null) return false;
+    ctx.insertTranslationBlock(block, translation, { lang, textLang: ctx.getEffectiveTargetLang() });
+    ctx.afterInsertTranslation(block);
+    return true;
+  }
+
+  // 一批新长出来的子树。一条都没记过的页面在这里直接返回、不收块：绝大多数页面
+  // 的头几秒、以及从不翻的页面，这一步必须是零成本。
+  // @returns {number} 装回了几块
+  function recallTranslations(roots) {
+    if (globalThis.BlockIdentity.memorySize() === 0) return 0;
+    let restored = 0;
+    for (const root of roots.slice(0, RECALL_ROOT_BUDGET)) {
+      if (!root.isConnected) continue;
+      for (const block of collectPageBlocks(root)) {
+        if (!recallTranslation(block)) continue;
+        restored += 1;
+        if (restored >= RECALL_BLOCK_BUDGET) return restored;
+      }
+    }
+    return restored;
+  }
+
   /**
    * 悬浮菜单「翻译整个页面」和 Alt+W。本文档存续期内改成整页范围，然后：
    *   - 本来就是整页范围（设置是 'page'，或者已经点过一次）→ 与 Alt+A 同一个动作，
@@ -317,5 +382,7 @@
   ctx.pageScopeStarts = pageScopeStarts;
   ctx.outsidePageScope = outsidePageScope;
   ctx.collectPageBlocks = collectPageBlocks;
+  ctx.recallTranslation = recallTranslation;
+  ctx.recallTranslations = recallTranslations;
   ctx.translateWholePage = translateWholePage;
 })();

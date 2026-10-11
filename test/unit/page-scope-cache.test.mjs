@@ -57,6 +57,8 @@ function load({ bodyChars, mainChars }) {
   const ctx = {
     state: { pageScopeOverride: null },
     settings: { pageTranslateScope: 'main' },
+    // textLength 扣我们自己的节点要用它；这份夹具里元素的 querySelectorAll 一律空。
+    constants: { OWN_NODES_SELECTOR: '.ai-translator-inline-block' },
     customRules: {
       current: () => page.rule,
       get version() {

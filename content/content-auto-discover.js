@@ -143,8 +143,12 @@
     function onMutations(records) {
       if (stopped) return;
       let dirty = false;
+      const added = [];
       for (const record of records) {
         if (ownMutation(record)) continue;
+        for (const node of record.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) added.push(node);
+        }
         const root = mutationRoot(record);
         if (!root) continue;
         dirty = true;
@@ -156,6 +160,11 @@
         }
       }
       if (dirty) schedule();
+      // 绘制前装回（content/page/scope.js 的「装回」）。这个回调是变更所在任务末尾
+      // 的微任务，下一帧还没画：页面把一片文字没变的子树整片重建（单页应用切路由
+      // 时的左栏），在这里把上次的译文装回去，就没有任何一帧露出原文，也不会再
+      // 发一次请求。放在防抖登记之后：它抛错时防抖那一轮照样会来。
+      if (added.length > 0) ctx.recallTranslations(added);
     }
 
     function schedule() {
@@ -176,12 +185,17 @@
       // 脏根之间可能互相嵌套（父子都变了），同一个块会被收到两次。按元素去重，
       // 不按根去重：判断两个根是否嵌套要 contains()，比直接收完再去重还贵。
       const seen = new Set();
+      // 回调里那次同步装回有预算（40 根 / 200 块），超出的、以及藏着译文时停掉
+      // 发现层期间重建的，都在这里逐块再问一次记忆：可能闪过一下原文，但不重发。
+      // 没有记忆的页面不问。
+      const remembers = globalThis.BlockIdentity.memorySize() > 0;
       for (const root of roots) {
         if (!root || !root.isConnected) continue;
         for (const block of collect(root)) {
           const element = block.element;
           if (!element || seen.has(element)) continue;
           seen.add(element);
+          if (remembers && ctx.recallTranslation(block)) continue;
           watch(element);
         }
       }
