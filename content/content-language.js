@@ -159,9 +159,17 @@
     }
   };
 
-  // 76 项的菜单打开时，已选项多半在视口外。只动菜单自己的 scrollTop，把它放到可见区
-  // 中部；不用 scrollIntoView，那会连宿主页面一起滚。
+  // 菜单刚打开时停在哪：有「最近使用」一组就停在顶部，让这一组露出来（D-545）。
+  // 当前语言不一定在组里：卡片的默认语从不经点选，设置里也可能换了默认语。为了把
+  // 全表里的选中项滚到中部而把这组推出视口，就违背了置顶的本意；当前语言已经写在
+  // 触发按钮上。菜单节点跨次打开复用，不赌重画后滚动位置自己归零，明确写 0。
+  // 没有最近组时，76 项里的已选项多半在视口外，把它放到可见区中部。只动菜单自己的
+  // scrollTop；不用 scrollIntoView，那会连宿主页面一起滚。
   ctx.revealSelectedLanguage = function(menu) {
+    if (menu.querySelector('.ai-translator-lang-group')) {
+      menu.scrollTop = 0;
+      return;
+    }
     const item = menu.querySelector('.is-selected');
     if (!item) return;
     const menuTop = menu.getBoundingClientRect().top + menu.clientTop;

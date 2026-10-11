@@ -428,8 +428,8 @@
 
     // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
     // 点过、别的标签点过——每次打开都按那一刻的列表和那一刻的手动引擎画。
-    // 76 项里已选的那一项多半在可视区外：画完把它滚进来。只动菜单自己的
-    // scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
+    // 画完定好停在哪：有最近组停在顶部，没有就把全表里的已选项滚进来。只动菜单
+    // 自己的 scrollTop，宿主页面不跟着滚（见 ctx.revealSelectedLanguage）。
     const openMenu = () => {
       if (!menu.hidden) return;
       menu.innerHTML = buildTargetLangMenu(popup.dataset.targetLang);

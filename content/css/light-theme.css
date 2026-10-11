@@ -30,6 +30,14 @@ html[data-ai-translator-theme="light"] body .ai-translator-lang-item.is-selected
   background: rgba(111, 99, 255, 0.12);
 }
 
+/* 语言菜单里的 12px 小字：分组标题「最近使用」「全部语言」和「仅 AI」标记。浅色面板上
+   --text-muted 只有约 2.6:1，换成 --text-secondary（白底 4.83:1，D-545）。深色主题的
+   --text-muted 够用，不动。伪元素不能进 :is()，所以两条分开写。 */
+html[data-ai-translator-theme="light"] body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-group,
+html[data-ai-translator-theme="light"] body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item[data-tag]::after {
+  color: var(--text-secondary);
+}
+
 /* 卡片上的两种错误句（卡片的 .ai-translator-error 和「加入术语表」表单的
    .ai-translator-term-error）：深色的 #f87171 在白底上只有 2.8:1，浅色主题共用
    这一条（D-384 A11）。页面里行内译文的错误句坐在页面自己的底色上，不归主题管。 */
