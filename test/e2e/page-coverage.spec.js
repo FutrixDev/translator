@@ -15,6 +15,7 @@ const {
   waitForTranslationComplete,
   sendMessageToActiveTab,
   getSyncSetting,
+  evaluateInContentScript,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -369,6 +370,36 @@ test('J-7 without <main>: the scope falls back to body with the same distributio
     await waitForTranslationComplete(page);
     await expectArticleTranslated(page);
     await expectChromeUntranslated(page, sentTexts);
+  } finally {
+    await close();
+  }
+});
+
+// 「翻译后再判」：占比只量原文。译文挂在正文里，量进去的话翻完一轮正文的占比就
+// 被我们自己的节点抬高（或者把别的根挤过阈值），下一轮的范围跟着变。
+const SCOPE_PROBE = `(() => {
+  const ctx = window.AI_TRANSLATOR_CONTENT;
+  ctx.beginScopeRound();
+  const scope = ctx.resolvePageScope();
+  return { roots: scope.roots.map((root) => root.tagName), share: scope.share };
+})()`;
+
+test('J-7 judged again after translating: the scope and the main share do not move', async ({ page, context }) => {
+  const { close, endpoint } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serve(context, NEWS_PAGES);
+    await page.goto(`${ORIGIN}/news`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    const before = await evaluateInContentScript(context, page, SCOPE_PROBE);
+    expect(before.roots).toEqual(['MAIN']);
+    await triggerPageTranslation(page);
+    await waitForTranslationComplete(page);
+    await expectArticleTranslated(page);
+    const after = await evaluateInContentScript(context, page, SCOPE_PROBE);
+    expect(after.roots).toEqual(['MAIN']);
+    expect(Math.abs(after.share - before.share)).toBeLessThan(0.001);
   } finally {
     await close();
   }
