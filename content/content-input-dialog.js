@@ -336,8 +336,19 @@
       translateInputText(dialog.dataset.sourceText || '', getShownTargetLang(), switchBtn.dataset.engine);
     });
 
+    // The extension can be reloaded under an open dialog; then the message has
+    // no one to reach, and sendMessage throws or rejects.
     settingsBtn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+      const failed = (error) => console.warn('Blab Translation: opening settings failed', error);
+      if (!isExtensionContextAvailable()) {
+        failed(new Error('extension context invalidated'));
+        return;
+      }
+      try {
+        chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }).catch(failed);
+      } catch (error) {
+        failed(error);
+      }
     });
 
     copyBtn.addEventListener('click', async () => {
@@ -358,9 +369,13 @@
       ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
         targetLangPref.set(lang || '');
         // Picking a language with the box empty is someone setting up before
-        // they type, not asking for a translation.
+        // they type, not asking for a translation. A note left from the last
+        // lookup no longer describes what is on screen, so it goes.
         const text = textarea.value.trim();
-        if (!text) return;
+        if (!text) {
+          showNote('');
+          return;
+        }
         translateInputText(text, lang);
       });
     }

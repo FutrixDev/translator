@@ -81,6 +81,14 @@ test('J-I1 a word looked up with the built-in engine says why there is no entry,
     await expect(page.locator(dialogPart.note)).toBeVisible();
     expect(mock.sentTexts).toEqual(['run']);
 
+    // Emptying the box and picking another language asks for nothing, and the
+    // note about the last word goes with it: it no longer describes the screen.
+    await page.fill('#ai-translator-input-text', '');
+    await pickInputTargetLang(page, 'fr');
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+    await expect(page.locator(dialogPart.switchBtn)).toBeHidden();
+    expect(mock.sentTexts).toEqual(['run']);
+
     // 4. With the AI chosen in settings, the entry comes straight away, and nothing to explain.
     await page.click('#ai-translator-input-dialog .ai-translator-close');
     await setExtensionSettings(page, { translationEngine: 'ai' });
