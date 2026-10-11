@@ -4,7 +4,9 @@ const {
   openFloatBallMenu,
   openExamplePage,
   openInputDialog,
+  openInputDialogFromMenu,
   pickInputTargetLang,
+  translateInput,
   recycleWorker,
   stubBuiltinTranslator,
 } = require('./helpers');
@@ -75,10 +77,7 @@ test('input translation shows a dictionary entry for words and read-aloud for an
 
     await openExamplePage(page);
 
-    await openFloatBallMenu(page);
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await openInputDialog(page);
 
     // The source is readable before anything has been translated — hearing how
     // the word you just typed is pronounced is the whole point of the button.
@@ -94,8 +93,7 @@ test('input translation shows a dictionary entry for words and read-aloud for an
     await expect(page.locator('#ai-translator-input-dict .ai-translator-dict-ipa')).toHaveText('lín shí');
     await expect(page.locator('#ai-translator-input-speak-result')).toBeVisible();
 
-    await page.fill('#ai-translator-input-text', 'this is a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'this is a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[TEXT] this is a full sentence for translation');
     // Only the entry is dictionary-only; both speakers stay available because
     // a sentence can be read aloud just as well as a word.
@@ -225,8 +223,7 @@ test('the input dialog translates into the language picked in it, not the one in
     await pickInputTargetLang(page, 'ja');
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
-    await page.fill('#ai-translator-input-text', 'a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[ja]');
 
     // Reopening keeps the dialog's own target: the whole point is not having to
@@ -235,8 +232,7 @@ test('the input dialog translates into the language picked in it, not the one in
     await openInputDialog(page);
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('ja')));
 
-    await page.fill('#ai-translator-input-text', 'another sentence');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'another sentence');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[ja]');
   } finally {
     await fixture.close();
@@ -268,8 +264,7 @@ test('setting a target language in settings overrides what the input dialog reme
     await openInputDialog(page);
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-lang-label')).toHaveText(await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('fr')));
 
-    await page.fill('#ai-translator-input-text', 'a full sentence for translation');
-    await page.click('#ai-translator-do-translate');
+    await translateInput(page, 'a full sentence for translation');
     await expect(page.locator('#ai-translator-result-text')).toContainText('[fr]');
   } finally {
     await fixture.close();
@@ -301,8 +296,7 @@ test('the result box carries the language of what it shows: the UI language whil
     const box = page.locator('#ai-translator-result-text');
     const marked = () => box.evaluate((el) => ({ lang: el.lang, dir: el.dir }));
     const translate = async (text) => {
-      await page.fill('#ai-translator-input-text', text);
-      await page.click('#ai-translator-do-translate');
+      await translateInput(page, text);
     };
 
     await translate('a full sentence for translation');
@@ -459,8 +453,7 @@ test('a theme\'s button style cannot reach our controls', async ({ page }) => {
     expect(hoveredIcon.stroke).not.toBe('rgb(255, 0, 0)');
     expect(hoveredIcon['stroke-width']).toBe('1.8px');
 
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+    await openInputDialogFromMenu(page);
     await settleDialogAnimations(page);
 
     // The dialog's own two button shapes: the pill and the icon square.
@@ -675,11 +668,6 @@ const dialogPart = {
   result: '#ai-translator-result-text',
 };
 
-async function translateTyped(page, text) {
-  await page.fill('#ai-translator-input-text', text);
-  await page.click('#ai-translator-do-translate');
-}
-
 function aiSettings(endpoint, extra = {}) {
   return { apiEndpoint: endpoint, apiKey: 'test-key', modelName: 'gpt-4.1-mini', targetLang: 'zh-CN', ...extra };
 }
@@ -695,7 +683,7 @@ test('J-I1 a word looked up with the built-in engine says why there is no entry,
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-title')).toHaveText(en('inputTextTranslation'));
 
     // 2. The built-in answer, its tag, and the line that says why there is no entry.
-    await translateTyped(page, 'run');
+    await translateInput(page, 'run');
     await expect(page.locator(dialogPart.result)).toHaveText('[B] run');
     await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
     await expect(page.locator(dialogPart.noteText)).toHaveText(en('inputDictNeedsModel'));
@@ -718,7 +706,7 @@ test('J-I1 a word looked up with the built-in engine says why there is no entry,
     expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
 
     // The click pinned that one request only: the next lookup follows the settings again.
-    await translateTyped(page, 'run');
+    await translateInput(page, 'run');
     await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
     await expect(page.locator(dialogPart.note)).toBeVisible();
     expect(mock.sentTexts).toEqual(['run']);
@@ -727,7 +715,7 @@ test('J-I1 a word looked up with the built-in engine says why there is no entry,
     await page.click('#ai-translator-input-dialog .ai-translator-close');
     await setExtensionSettings(page, { translationEngine: 'ai' });
     await openInputDialog(page);
-    await translateTyped(page, 'run');
+    await translateInput(page, 'run');
     await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
     await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('pǎo');
     await expect(page.locator(dialogPart.note)).toBeHidden();
@@ -747,7 +735,7 @@ test('J-I2 kana, hangul and a word with a full stop are looked up; a sentence is
 
     const asLookup = (i) => mock.systemPrompts[i].includes(globalThis.DictEntry.PROMPT_MARK);
     for (const [i, typed] of ['こんにちは', '안녕하세요', 'apple.'].entries()) {
-      await translateTyped(page, typed);
+      await translateInput(page, typed);
       await expect.poll(() => mock.sentTexts.length).toBe(i + 1);
       expect(mock.sentTexts[i]).toBe(typed);
       expect(asLookup(i), `${typed} went out as a lookup`).toBe(true);
@@ -757,7 +745,7 @@ test('J-I2 kana, hangul and a word with a full stop are looked up; a sentence is
     }
 
     // A sentence: text mode, no entry, and no line under it either.
-    await translateTyped(page, 'How are you doing');
+    await translateInput(page, 'How are you doing');
     await expect.poll(() => mock.sentTexts.length).toBe(4);
     expect(asLookup(3)).toBe(false);
     await expect(page.locator(dialogPart.result)).toHaveText('[T] How are you doing');
@@ -777,7 +765,7 @@ test('J-I3 a model answer with every list empty says the model gave none', async
     await setExtensionSettings(page, aiSettings(mock.endpoint));
     await openExamplePage(page);
     await openInputDialog(page);
-    await translateTyped(page, 'I love you');
+    await translateInput(page, 'I love you');
     await expect.poll(() => mock.sentTexts.length).toBe(1);
     expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
     await expect(page.locator(dialogPart.result)).toHaveText('我爱你');
@@ -803,7 +791,7 @@ test('J-I4 the last thing asked is what the dialog shows: a slow earlier answer 
     await openExamplePage(page);
     await openInputDialog(page);
 
-    await translateTyped(page, 'run');
+    await translateInput(page, 'run');
     await expect.poll(() => mock.sentTexts.length).toBe(1);
     mock.setDelayMs(100);
     await pickInputTargetLang(page, 'fr');
@@ -833,7 +821,7 @@ test('J-I5 "use AI" asks about the word the note was written for, not what the b
     await openExamplePage(page);
     await stubBuiltinTranslator(page);
     await openInputDialog(page);
-    await translateTyped(page, 'apple');
+    await translateInput(page, 'apple');
     await expect(page.locator(dialogPart.result)).toHaveText('[B] apple');
     await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineBuiltin'));
     await expect(page.locator(dialogPart.switchBtn)).toBeVisible();
@@ -864,7 +852,7 @@ test('J-I6 with no engine to switch to, the note offers the settings page', asyn
   await openExamplePage(page);
   await stubBuiltinTranslator(page);
   await openInputDialog(page);
-  await translateTyped(page, 'apple');
+  await translateInput(page, 'apple');
   await expect(page.locator(dialogPart.result)).toHaveText('[B] apple');
   await expect(page.locator(dialogPart.noteText)).toHaveText(en('inputDictNeedsModel'));
   await expect(page.locator(dialogPart.settingsBtn)).toHaveText(en('openSettings'));
@@ -883,10 +871,10 @@ test('J-I7 an earlier request that fails late does not write its error over the 
     await setExtensionSettings(page, aiSettings(mock.endpoint));
     await openExamplePage(page);
     await openInputDialog(page);
-    await translateTyped(page, 'run');
+    await translateInput(page, 'run');
     await expect.poll(() => mock.sentTexts.length).toBe(1);
     mock.setDelayMs(0);
-    await translateTyped(page, 'walk');
+    await translateInput(page, 'walk');
     const result = page.locator(dialogPart.result);
     await expect(result).toHaveText('[D] walk');
 

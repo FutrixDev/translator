@@ -19,10 +19,11 @@ const {
   evaluateInContentScript,
   getServiceWorker,
   getSyncSetting,
-  openFloatBallMenu,
+  openInputDialog,
   sentSegments,
   setExtensionSettings,
   stubBuiltinTranslator,
+  translateInput,
   waitForContentReady,
 } = require('./helpers');
 const {
@@ -225,11 +226,8 @@ test.describe('P1-C prompt domain and page context', () => {
     // 敲进去的那句。
     const inputMark = mock.sentTexts.length;
     const inputCharsBefore = await aiChars(context);
-    await openFloatBallMenu(page);
-    await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-    await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
-    await page.fill('#ai-translator-input-text', INPUT_TEXT);
-    await page.click('#ai-translator-do-translate');
+    await openInputDialog(page);
+    await translateInput(page, INPUT_TEXT);
     await expect(page.locator('#ai-translator-result-text')).toHaveText(`[T] ${INPUT_TEXT}`);
     expect(mock.sentTexts.slice(inputMark)).toEqual([INPUT_TEXT]);
     const inputPrompt = mock.systemPrompts[inputMark];

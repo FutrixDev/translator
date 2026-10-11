@@ -186,24 +186,82 @@ async function openFloatBallMenu(page) {
   });
 }
 
+// The input dialog, in the five steps every journey takes through it. Each is
+// written once here: a spec that clicks `translate-input` itself, or picks a
+// language its own way, is a second answer to "how does a user get there".
+
+/**
+ * Open the input-translation dialog from the float ball's menu, which the
+ * caller has already opened (and may have looked at first).
+ * @param {import('@playwright/test').Page} page
+ */
+async function openInputDialogFromMenu(page) {
+  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
+  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+}
+
 /**
  * Open the input-translation dialog from the float ball's menu.
  * @param {import('@playwright/test').Page} page
  */
 async function openInputDialog(page) {
   await openFloatBallMenu(page);
-  await page.click('.ai-translator-menu-item[data-action="translate-input"]');
-  await page.waitForSelector('#ai-translator-input-dialog', { state: 'visible' });
+  await openInputDialogFromMenu(page);
 }
 
 /**
- * Pick a target language from the input dialog's own language menu.
+ * Open the input dialog's own language menu, opening the dialog first if it
+ * is not there.
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<import('@playwright/test').Locator>} the open menu
+ */
+async function openDialogMenu(page) {
+  const dialog = page.locator('#ai-translator-input-dialog');
+  if (!(await dialog.count())) await openInputDialog(page);
+  await dialog.locator('.ai-translator-lang-trigger').click();
+  const menu = dialog.locator('.ai-translator-lang-menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * Pick a target language from the input dialog's own language menu, from the
+ * full list (a recent copy of it may be there too).
  * @param {import('@playwright/test').Page} page
  * @param {string} lang
  */
 async function pickInputTargetLang(page, lang) {
-  await page.click('#ai-translator-input-dialog .ai-translator-lang-trigger');
-  await page.click(`#ai-translator-input-dialog .ai-translator-lang-item[data-lang="${lang}"]`);
+  const menu = await openDialogMenu(page);
+  await menu.locator(`.ai-translator-lang-item[data-lang="${lang}"]:not([data-recent])`).click();
+  await expect(menu).toBeHidden();
+}
+
+/**
+ * Type `text` into the input dialog and press Translate.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} text
+ */
+async function translateInput(page, text) {
+  await page.fill('#ai-translator-input-text', text);
+  await page.click('#ai-translator-do-translate');
+}
+
+/**
+ * Close the input dialog with its close button, or by clicking the overlay
+ * beside the panel, and wait for it to be gone.
+ * @param {import('@playwright/test').Page} page
+ * @param {{ via?: 'close' | 'overlay' }} [options]
+ */
+async function closeInputDialog(page, { via = 'close' } = {}) {
+  const dialog = page.locator('#ai-translator-input-dialog');
+  if (via === 'overlay') {
+    await dialog.locator('.ai-translator-input-overlay').click({ position: { x: 5, y: 5 } });
+  } else if (via === 'close') {
+    await dialog.locator('.ai-translator-close').click();
+  } else {
+    throw new Error(`closeInputDialog: unknown via ${via}`);
+  }
+  await expect(dialog).toHaveCount(0);
 }
 
 /**
@@ -880,8 +938,12 @@ module.exports = {
   waitForFloatBall,
   openExamplePage,
   openFloatBallMenu,
+  openInputDialogFromMenu,
   openInputDialog,
+  openDialogMenu,
   pickInputTargetLang,
+  translateInput,
+  closeInputDialog,
   triggerPageTranslation,
   waitForTranslationComplete,
   getElementPosition,
