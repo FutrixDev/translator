@@ -153,6 +153,7 @@
           <div class="ai-translator-input-section ai-translator-result-section" id="ai-translator-result-section" hidden>
             <div class="ai-translator-label-row">
               <label class="ai-translator-label">${t('translatedText')}</label>
+              <span class="ai-translator-engine-tag" hidden></span>
               <div class="ai-translator-label-tools">
                 <button class="ai-translator-icon-btn ai-translator-input-speak-result" id="ai-translator-input-speak-result" type="button" aria-label="${t('pronounceTranslation')}" hidden>
                   ${speech.SPEAKER_ICON}
@@ -161,6 +162,10 @@
             </div>
             <div class="ai-translator-input-result" id="ai-translator-result-text"></div>
             <div class="ai-translator-dict-entry" id="ai-translator-input-dict" hidden></div>
+            <div class="ai-translator-dict-note" id="ai-translator-input-dict-note" hidden>
+              <span class="ai-translator-dict-note-text"></span>
+              <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.fitLabel('', [t('cardUseAi'), t('cardUseBlab')])}</button>
+            </div>
           </div>
         </div>
         <div class="ai-translator-input-footer">
@@ -186,6 +191,10 @@
     const resultSection = dialog.querySelector('#ai-translator-result-section');
     const resultText = dialog.querySelector('#ai-translator-result-text');
     const dictEl = dialog.querySelector('#ai-translator-input-dict');
+    const noteEl = dialog.querySelector('#ai-translator-input-dict-note');
+    const noteText = noteEl.querySelector('.ai-translator-dict-note-text');
+    const switchBtn = noteEl.querySelector('.ai-translator-switch-engine');
+    const engineTag = dialog.querySelector('.ai-translator-engine-tag');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
 
@@ -226,14 +235,29 @@
       else resultText.innerHTML = content.html;
     }
 
-    const translateInputText = async (targetLangOverride = '') => {
+    // The button, the Enter shortcut and the language menu all start a
+    // translation, and nothing stops two being in flight: a slow model answer
+    // to the first must not land over the second. Each request takes a number,
+    // and only the latest one, in the dialog it was made in, writes (the
+    // selection card does the same with state.translationRequestId).
+    let lastRequestId = 0;
+
+    // `engine` pins this one request to an engine — the note's "use AI" button
+    // re-sending the same text. Nothing else pins, and the pin is not kept: the
+    // next translation follows the settings again.
+    const translateInputText = async (targetLangOverride = '', engine = '') => {
       const text = textarea.value.trim();
       if (!text) return;
+
+      const requestId = String(++lastRequestId);
+      dialog.dataset.requestId = requestId;
+      const isCurrent = () => state.inputDialog === dialog && dialog.dataset.requestId === requestId;
 
       resultSection.hidden = false;
       dialog.dataset.sourceText = text;
       showResult({ html: `<div class="ai-translator-input-loading"><div class="ai-translator-spinner"></div><span>${t('translating')}</span></div>` }, ctx.uiLanguage());
       showEntry(null);
+      showNote('');
       showResultSpeak(false);
       copyBtn.hidden = true;
 
@@ -250,14 +274,18 @@
           text: text,
           targetLang: targetLang,
           mode,
+          ...(engine ? { engine } : {}),
           // 这段文字是用户敲进来的，跟当前页面没有任何关系。不声明的话，内置
           // 引擎会拿页面语言当源语言，于是在英文页面上输入“动画”翻成英文就变成
           // en→en，被同语言短路原样退回。
           standaloneText: true
         });
 
+        if (!isCurrent()) return;
+
         if (response.error) {
           showResult({ html: `<div class="ai-translator-input-error">${escapeHtml(response.error)}</div>` }, ctx.uiLanguage());
+          ctx.renderEngineChoice({ tag: engineTag, engine: response.engine, targetLang, feature: 'input', isCurrent });
           return;
         }
 
@@ -268,15 +296,44 @@
         showEntry(entry, targetLang);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
+
+        // A word that comes back without an entry says why, in one line where
+        // the entry would be. The built-in engine gives none, and offers the
+        // engine that does (one click, never automatic: that one costs). A model
+        // that answered with every list empty drew nothing — say it was asked.
+        // A sentence is translated, never looked up, and says nothing.
+        const needsModel = mode === 'word' && response.engine === 'builtin';
+        const askedButEmpty = !!entry && dictEl.hidden;
+        showNote(needsModel ? t('inputDictNeedsModel') : askedButEmpty ? t('dictEntryEmpty') : '');
+        ctx.renderEngineChoice({
+          tag: engineTag,
+          button: needsModel ? switchBtn : null,
+          engine: response.engine,
+          targetLang,
+          feature: 'input',
+          isCurrent,
+        });
       } catch (error) {
         console.error('Blab Translation: input translation failed', error);
+        if (!isCurrent()) return;
         const message = ctx.thrownTranslationMessage(error);
         showResult({ html: `<div class="ai-translator-input-error">${message}</div>` }, ctx.uiLanguage());
         showEntry(null);
+        showNote('');
         showResultSpeak(false);
         copyBtn.hidden = true;
+        ctx.renderEngineChoice({ tag: engineTag, engine: undefined, targetLang: '', feature: 'input', isCurrent });
       }
     };
+
+    // The line under the translation that says why no entry was drawn; '' hides
+    // it. Its button is shown only by ctx.renderEngineChoice, once it knows an
+    // engine to offer, so every new line starts with the button hidden.
+    function showNote(message) {
+      noteText.textContent = message;
+      noteEl.hidden = !message;
+      switchBtn.hidden = true;
+    }
 
     // The entry under the translation: the translation's phonetics, each with
     // a speaker reading the translation in `targetLang` (D-487), then senses,
@@ -289,6 +346,10 @@
 
     translateBtn.addEventListener('click', async () => {
       await translateInputText();
+    });
+
+    switchBtn.addEventListener('click', () => {
+      translateInputText(getShownTargetLang(), switchBtn.dataset.engine);
     });
 
     copyBtn.addEventListener('click', async () => {

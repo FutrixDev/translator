@@ -180,6 +180,26 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   color: #ff6b6b;
 }
 
+/* Where a word's entry would be, when there is none: one line saying why (the
+   built-in engine gives none, or the model left every list empty), and for the
+   built-in engine a button to ask a model instead. The button is the shared
+   .ai-translator-btn; nothing here styles a control, so no `html body` prefix
+   is needed (test/unit/host-css-containment.test.mjs). */
+.ai-translator-dict-note {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ai-translator-dict-note-text {
+  flex: 1 1 200px;
+}
+
 /* ==================== Input Translate Chip ====================
 
    输入框旁边那颗极小的「译成 X」（showInputTranslateChip，默认开）。
