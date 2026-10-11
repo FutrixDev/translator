@@ -517,13 +517,16 @@ const FEED_SIZE = 2000;
 const RUNS = 10;
 // D-552 F5：C 段（页面版式已算完、只剩装回自己）的 p95 上限。
 const RECALL_P95_CEILING_MS = 50;
-// D-552 T1 那一段的视口高度：重建时（译文还没装回）视口里放得下 40 行以上。
-const TALL_VIEWPORT = { width: 1280, height: 1600 };
+// 每行 32px、没有外边距：重建时（译文还没装回）720px 的视口里 23 行（第 23 行
+// 露一半），D 段 1280px 的视口里正好 40 行（D-552 T1 要的 40 条视口内命中）。
+const FEED_ROW_PX = 32;
+const TALL_VIEWPORT = { width: 1280, height: 40 * FEED_ROW_PX };
+
 // 译文节点沿用源块的标签和 class（这里是 <p>），填记忆和挑远处那一行都得把我们
 // 自己的节点排除掉，不然译文会被当原文记进去、挤掉最早的那几十条。
-
 function feedHtml() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Feed</title></head><body>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Feed</title>
+<style>body{margin:0}#feed p{margin:0;height:${FEED_ROW_PX}px;line-height:${FEED_ROW_PX}px;white-space:nowrap;overflow:hidden}</style></head><body>
 <div id="feed"></div>
 <script>
 const rows = Array.from({ length: ${FEED_SIZE} }, (_, i) => 'Entry ' + i + ' of the harbour ledger records a cargo of timber, salt and rope.');
@@ -608,6 +611,7 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
     // D 段（D-552 T1）：视口拉高到 40 行以上，同样只量装回自己。
     await page.setViewportSize(TALL_VIEWPORT);
     await page.waitForTimeout(800);
+    expect(await page.evaluate(() => scrollY)).toBe(0);
     for (let i = 0; i < RUNS; i += 1) {
       await page.evaluate(() => window.rerenderLaidOut());
       await page.waitForTimeout(800);
@@ -623,13 +627,13 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
     const tallMs = all.slice(RUNS * 2);
     // 每次同步装回的块数 = max(装回预算 16, 重建时视口里的行数)：视口里的全装
     // （D-552 T1），视口外的补到预算为止；剩下的进带时由发现层逐块从记忆装回，不发
-    // 请求。同一个视口里每次重建一样多；拉高的视口里至少 40 块。
+    // 请求。同一个视口里每次重建一样多：720px 里 23 块，拉高的视口里 40 块。
     const short = restored.slice(0, RUNS * 2);
     const tall = restored.slice(RUNS * 2);
     expect(short).toEqual(Array(RUNS * 2).fill(short[0]));
-    expect(short[0]).toBeGreaterThanOrEqual(16);
+    expect(short[0]).toBe(23);
     expect(tall).toEqual(Array(RUNS).fill(tall[0]));
-    expect(tall[0]).toBeGreaterThanOrEqual(40);
+    expect(tall[0]).toBe(40);
     // 远处那一块：滚过去，进带时装回，仍然不发请求。
     const far = page.locator('#feed > p:not(.ai-translator-inline-block)').nth(1200);
     await far.scrollIntoViewIfNeeded();
