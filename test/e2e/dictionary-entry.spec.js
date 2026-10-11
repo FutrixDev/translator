@@ -26,6 +26,7 @@ const {
   waitForFloatBall,
 } = require('./helpers');
 const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
+const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
@@ -257,8 +258,8 @@ async function expectEntryStyles(page, entrySelector, rows = ENTRY_STYLES) {
   }
 }
 
-// WCAG contrast of the entry's small secondary text against what is under it:
-// the backgrounds of its ancestors, composited down to the first opaque one.
+// WCAG contrast of the entry's small secondary text against what is painted
+// under it, measured by layout-checks.js (the one implementation of that walk).
 const CONTRAST_SELECTORS = [
   '.ai-translator-dict-heading',
   '.ai-translator-dict-form-label',
@@ -267,49 +268,12 @@ const CONTRAST_SELECTORS = [
   '.ai-translator-dict-example-target',
 ];
 
-function contrastRatios(page, entrySelector, selectors) {
-  return page.evaluate(({ entrySelector, selectors }) => {
-    const parse = (value) => {
-      const m = value.match(/rgba?\(([^)]+)\)/);
-      const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-      return { r, g, b, a };
-    };
-    const over = (top, bottom) => ({
-      r: top.r * top.a + bottom.r * (1 - top.a),
-      g: top.g * top.a + bottom.g * (1 - top.a),
-      b: top.b * top.a + bottom.b * (1 - top.a),
-      a: 1,
-    });
-    const background = (el) => {
-      const layers = [];
-      for (let node = el; node; node = node.parentElement) {
-        const layer = parse(getComputedStyle(node).backgroundColor);
-        if (layer.a === 0) continue;
-        layers.push(layer);
-        if (layer.a === 1) break;
-      }
-      let base = layers.length && layers.at(-1).a === 1 ? layers.pop() : { r: 255, g: 255, b: 255, a: 1 };
-      while (layers.length) base = over(layers.pop(), base);
-      return base;
-    };
-    const luminance = ({ r, g, b }) => {
-      const lin = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
-      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    };
-    const entry = document.querySelector(entrySelector);
-    return selectors.map((selector) => {
-      const el = entry.querySelector(selector);
-      const bg = background(el);
-      const fg = over(parse(getComputedStyle(el).color), bg);
-      const [hi, lo] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
-      return [selector, Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100];
-    });
-  }, { entrySelector, selectors });
-}
-
 async function expectReadableContrast(page, entrySelector, label, selectors = CONTRAST_SELECTORS) {
-  for (const [selector, ratio] of await contrastRatios(page, entrySelector, selectors)) {
-    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(4.5);
+  await waitForSettled(page);
+  const entry = page.locator(entrySelector).first();
+  for (const selector of selectors) {
+    const ratio = await contrastOf(entry.locator(selector).first());
+    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
   }
 }
 

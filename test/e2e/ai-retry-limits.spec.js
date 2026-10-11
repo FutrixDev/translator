@@ -22,6 +22,7 @@ const {
   waitForFloatBall,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { contrastOf, MIN_CONTRAST } = require('./layout-checks');
 const { getMessage } = require('../../i18n/messages');
 
 const en = (key) => getMessage(key, 'en');
@@ -415,23 +416,6 @@ test('D-J10b a marker inside a link hugs its text: as wide as its words, and the
 
 // ----------------------------------------------------------------- D-J11
 
-/** WCAG 2 相对亮度对比度，输入是 computed 的 rgb()/rgba() 串（前景的 alpha 先叠到背景上）。 */
-function contrastRatio(foreground, background) {
-  const parse = (value) => value.match(/[\d.]+/g).map(Number);
-  const [br, bg, bb] = parse(background);
-  const [fr, fg, fb, fa = 1] = parse(foreground);
-  const blend = [fr * fa + br * (1 - fa), fg * fa + bg * (1 - fa), fb * fa + bb * (1 - fa)];
-  const luminance = ([r, g, b]) => {
-    const channel = (c) => {
-      const s = c / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-  };
-  const [light, dark] = [luminance(blend), luminance([br, bg, bb])].sort((x, y) => y - x);
-  return (light + 0.05) / (dark + 0.05);
-}
-
 test('D-J11 only failures left: every sent item is a marker, the page error is unchanged, and the float ball still says Translate', async ({ page, context }) => {
   test.setTimeout(120000);
   // 缺省 500：可重试，service worker 照常重试后才算失败 —— 就是今天真实的那条路。
@@ -472,23 +456,11 @@ test('D-J11 only failures left: every sent item is a marker, the page error is u
     // 同时在飞、退避带抖动，#li1 那一批可能是最后失败的，上面的计数一对上就读会读到
     // 淡入中途的 opacity：先等它自己的动画放完，再量终态。
     await firstMarker.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)));
-    const colors = await firstMarker.evaluate((el) => {
-      let node = el;
-      let background = 'rgba(0, 0, 0, 0)';
-      while (node) {
-        const value = getComputedStyle(node).backgroundColor;
-        if (!/rgba\(.*,\s*0\)$/.test(value) && value !== 'transparent') {
-          background = value;
-          break;
-        }
-        node = node.parentElement;
-      }
-      return { color: getComputedStyle(el).color, opacity: getComputedStyle(el).opacity, background };
-    });
-    const ratio = contrastRatio(colors.color, colors.background);
-    console.log(`[D-J11] marker ${colors.color} on ${colors.background}: ${ratio.toFixed(2)}:1`);
-    expect(colors.opacity).toBe('1');
-    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    const opacity = await firstMarker.evaluate((el) => getComputedStyle(el).opacity);
+    const ratio = await contrastOf(firstMarker);
+    console.log(`[D-J11] marker contrast against what is under it: ${ratio.toFixed(2)}:1`);
+    expect(opacity).toBe('1');
+    expect(ratio).toBeGreaterThanOrEqual(MIN_CONTRAST);
 
     // 悬浮球：标记不算译文。菜单里没有「收起译文」，单击是「翻译」，会重新请求。
     await openFloatBallMenu(page);

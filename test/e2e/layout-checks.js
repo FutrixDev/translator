@@ -88,6 +88,18 @@ function paintedContrast(el, pseudo = null) {
 const contrastOf = (locator, pseudo = null) => locator.evaluate(paintedContrast, pseudo);
 
 /**
+ * Wait for every finite animation and transition on the page to finish — the
+ * settled page is what is read. The page applies the stored theme after its
+ * first paint and the cards transition their colours into it; a panel fades
+ * its body in. Measured mid-way, text sits on a background still on its way
+ * from dark to light, or at a fraction of its opacity.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+const waitForSettled = (page) => page.waitForFunction(() => document.getAnimations()
+  .every((a) => a.playState !== 'running' || a.effect.getComputedTiming().iterations === Infinity));
+
+/**
  * @param {import('@playwright/test').Page} page
  * @param {string[]} selectors each must match exactly one element
  */
@@ -121,12 +133,7 @@ const overlaps = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a
  * @returns {Promise<string>} "selector 7.12:1; …" — the measured contrasts, for the report
  */
 async function expectLaidOut(page, selectors, label) {
-  // The page applies the stored theme after its first paint, and the cards
-  // transition their colours into it: measured mid-way, dark text sits on a
-  // background still on its way from dark to light. Wait for every finite
-  // animation and transition to finish — the settled page is what is read.
-  await page.waitForFunction(() => document.getAnimations()
-    .every((a) => a.playState !== 'running' || a.effect.getComputedTiming().iterations === Infinity));
+  await waitForSettled(page);
   const found = await measure(page, selectors);
   for (const item of found) expect(item.count, `${label}: ${item.selector} matches one element`).toBe(1);
   for (const { selector, visible, box, viewport } of found) {
@@ -147,4 +154,4 @@ async function expectLaidOut(page, selectors, label) {
   return found.map(({ selector, contrast }) => `${selector} ${contrast.toFixed(2)}:1`).join('; ');
 }
 
-module.exports = { expectLaidOut, contrastOf, MIN_CONTRAST };
+module.exports = { expectLaidOut, contrastOf, waitForSettled, MIN_CONTRAST };
