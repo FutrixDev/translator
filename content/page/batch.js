@@ -169,10 +169,13 @@
   // 哪儿、点进哪一段，下一批就先翻那儿。已经发出去的请求不取消（没有取消接口，
   // 取消了钱也照花），重排只管下一次拉取。
 
-  // 「近」的那一档：离视口不超过这么多屏，或者焦点就在块里。一批只装同一档的块
-  // —— 近处那批不被远处的块凑满，首屏的请求小、回得快；分界也就是从前「视口
-  // ±1.2 屏先行、各自成批」的那一条。
+  // 近档（设计 §3.1 的 near）：离视口不超过这么多屏。一批只装同一档的块 —— 近处
+  // 那批不被远处的块凑满，首屏的请求小、回得快。
   const NEAR_SCREENS = 1.2;
+  // 「输入框旁」的段落：焦点在可编辑元素上、又不在任何块里时，纵向离它不超过这么
+  // 多屏的最近一块算焦点块（设计 §3.1，D-551）。
+  const BESIDE_SCREENS = 0.5;
+  const FORM_CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
   // 块多到这个数时，一次排序连用 RESORT_EVERY 次拉取（设计 §3.2：内置引擎一块
   // 一批，每拉一次就全量排序是 O(n² log n)）。
   const RESORT_ABOVE = 4000;
@@ -180,49 +183,51 @@
   // 一段在批量请求里的分隔与编号开销（token）。
   const ITEM_TOKEN_OVERHEAD = 6;
 
-  // 评分要的三个页面信号：滚动方向、最近一次指针的文档纵坐标、布局代次（resize
-  // 之后几何要重量）。监听在第一次建拉取器时挂上，之后常驻；都是 passive，只记数。
-  const viewSignals = { installed: false, scrollDir: 0, lastScrollY: 0, pointerDocY: null, layoutEpoch: 0 };
+  // 评分要的页面信号：滚动方向、最近一次指针的视口纵坐标、布局代次。内容脚本一
+  // 加载就挂上（首轮之前的滚动和指针也算数），都是 passive，只记数。
+  //
+  // 布局代次：scroll 与 resize 都让量好的几何作废。插译文会把后面的块往下推，
+  // 视口上方插进去的译文还会触发滚动锚定改写 scrollY —— 块与视口的关系变了，
+  // 旧几何会把视口算偏（设计 §3.1，D-551）。作废只是代次加一，真正重量放在下一次
+  // 拉取，同一次拉取前来多少事件都只量一次。
+  const viewSignals = { scrollDir: 0, lastScrollY: 0, pointerClientY: null, layoutEpoch: 0 };
 
   function installViewSignals() {
-    if (viewSignals.installed) return;
-    viewSignals.installed = true;
     viewSignals.lastScrollY = window.scrollY;
     window.addEventListener('scroll', () => {
       const y = window.scrollY;
       if (y !== viewSignals.lastScrollY) viewSignals.scrollDir = y > viewSignals.lastScrollY ? 1 : -1;
       viewSignals.lastScrollY = y;
+      viewSignals.layoutEpoch += 1;
     }, { passive: true });
+    // 存视口坐标，读的时候再加上那一刻的 scrollY：指针不动、页面滚了，它指着的
+    // 文档位置跟着变。
     window.addEventListener('pointermove', (event) => {
-      viewSignals.pointerDocY = event.clientY + window.scrollY;
+      viewSignals.pointerClientY = event.clientY;
     }, { passive: true });
     window.addEventListener('resize', () => {
       viewSignals.layoutEpoch += 1;
     }, { passive: true });
   }
 
-  // 此刻的视口，每次拉取读一次。focused 是焦点（activeElement、选区锚点）连同它
-  // 所有祖先：「块里有焦点」就成了一次集合查询，不必对每块调 contains。
+  // 此刻的视口，每次拉取读一次。focusBlock 由拉取器按 findFocusBlock 填上（它要
+  // 知道候选块是哪些）。
   function readView() {
-    const focused = new Set();
-    const selection = document.getSelection();
-    for (const start of [document.activeElement, selection && selection.anchorNode]) {
-      for (let node = start; node; node = node.parentNode) focused.add(node);
-    }
+    const scrollY = window.scrollY;
     return {
-      scrollY: window.scrollY,
+      scrollY,
       height: window.innerHeight,
       scrollDir: viewSignals.scrollDir,
-      pointerDocY: viewSignals.pointerDocY,
-      focused
+      pointerDocY: viewSignals.pointerClientY === null ? null : viewSignals.pointerClientY + scrollY,
+      focusBlock: null
     };
   }
 
   // 块的文档纵向区间。没有布局盒（rect 全 0：display:none、已经摘下）记 hidden。
-  function measureBlock(block) {
+  function measureBlock(block, scrollY) {
     const rect = block.element.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return { hidden: true, top: 0, bottom: 0 };
-    return { hidden: false, top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY };
+    return { hidden: false, top: rect.top + scrollY, bottom: rect.bottom + scrollY };
   }
 
   // 块离视口几屏（相交为 0），在视口下方还是上方。
@@ -233,87 +238,136 @@
     return { screens: 0, below: false };
   }
 
+  function isFormControl(element) {
+    return !!element && (FORM_CONTROL_TAGS.has(element.tagName) || element.isContentEditable === true);
+  }
+
+  /**
+   * 焦点块（设计 §3.1，D-551），至多一个：
+   *   1. activeElement（不是 body/html）或选区锚点落在某块里 → 那一块；
+   *   2. 否则 activeElement 是表单控件/可编辑元素时，纵向离它最近、且不超过
+   *      BESIDE_SCREENS 屏的候选块（「输入框旁」）；同距取文档序靠前的。
+   * elementBlock 是元素 → 块；candidates 是还没发出去的块（文档顺序），boxes 是它们的几何。
+   */
+  function findFocusBlock(elementBlock, candidates, boxes, view) {
+    const active = document.activeElement;
+    const activeOnPage = active && active !== document.body && active !== document.documentElement ? active : null;
+    const selection = document.getSelection();
+    for (const start of [activeOnPage, selection && selection.anchorNode]) {
+      for (let node = start; node; node = node.parentNode) {
+        const block = elementBlock.get(node);
+        if (block) return block;
+      }
+    }
+    if (!isFormControl(activeOnPage)) return null;
+    const rect = activeOnPage.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return null;
+    const top = rect.top + view.scrollY;
+    const bottom = rect.bottom + view.scrollY;
+    let best = null;
+    let bestGap = BESIDE_SCREENS * view.height;
+    for (const block of candidates) {
+      const box = boxes.get(block);
+      if (box.hidden) continue;
+      const gap = Math.max(0, box.top - bottom, top - box.bottom);
+      if (best === null ? gap <= bestGap : gap < bestGap) {
+        best = block;
+        bestGap = gap;
+      }
+    }
+    return best;
+  }
+
   /**
    * 设计 §3.1 的评分，越小越先翻。**唯一实现**：手动那一轮的拉取器、自动调度层
    * 每轮挑块（经 createBatchFeeder）都是它。
    *
-   *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 焦点 2 − 指针同屏 0.5，
-   *   没有布局盒的 +∞。
+   *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 指针同屏 0.5；
+   *   没有布局盒的 +∞；焦点块 −∞（不论多远都排第一）。
    *
-   * box 是 measureBlock 量出的区间，view 是 readView 的快照。
+   * box 是 measureBlock 量出的区间，view 是 readView 的快照（focusBlock 已填）。
    */
   function scoreBlockForViewport(block, box, view) {
     if (box.hidden) return Infinity;
+    if (block === view.focusBlock) return -Infinity;
     const { screens, below } = viewportGap(box, view);
     const towards = below ? view.scrollDir >= 0 : view.scrollDir < 0;
     let score = screens * (towards ? 0.8 : 1.2);
-    if (view.focused.has(block.element)) score -= 2;
     if (view.pointerDocY !== null && Math.abs(box.top - view.pointerDocY) < view.height) score -= 0.5;
     return score;
   }
 
+  // 近档。焦点块也算近：它钉在第一批，第一批就该是视口那一档，而不是它所在的
+  // 远处那一档（偏差，申报见交付报告）。
   function isNear(block, box, view) {
     if (box.hidden) return false;
-    return viewportGap(box, view).screens <= NEAR_SCREENS || view.focused.has(block.element);
+    return block === view.focusBlock || viewportGap(box, view).screens <= NEAR_SCREENS;
   }
 
   /**
    * 拉取器（设计 §3.2）。每次 next() 按此刻的视口给剩下的块评分，从最先的那块
-   * 起装满一批：40 段 / 9000 字 / 3200 token，内置引擎一块一批（它是端上逐段调用，
-   * 攒批只会让第一段等整批）；超大块单独成批（processOversizedBlock 再切）；一批
-   * 只装同一档（isNear）。批内按文档顺序，给 neighbourContext 取前后文。
-   * 几何开跑时量一次、resize 后重量；之后每次拉取只做算术，不触发布局。
+   * 起装一批：40 段 / 9000 字 / 3200 token，内置引擎一块一批（它是端上逐段调用，
+   * 攒批只会让第一段等整批）；超大块单独成批（processOversizedBlock 再切）；档位
+   * （isNear）和这一批第一块不同的跳过、留给下一拉，不截断这一批（D-551）。批内按
+   * 文档顺序，给 neighbourContext 取前后文。
+   *
+   * 几何开跑时量一次；scroll/resize 让它作废，下一次重排前重量（只量还没发出去
+   * 的块）。块多于 RESORT_ABOVE 时重排每 RESORT_EVERY 次拉取一次，重量也跟着它
+   * 走（偏差，申报见交付报告）；焦点块换了随时重排。
    * 没有剩下的块时返回 null。
    */
   function createBatchFeeder(blocks, auto) {
-    installViewSignals();
     const perBatch = usingBuiltinEngine(auto) ? 1 : MAX_BATCH_ITEMS;
     const docIndex = new Map(blocks.map((block, index) => [block, index]));
+    const elementBlock = new Map(blocks.map((block) => [block.element, block]));
     const remaining = new Set(blocks);
     let boxes = null;
-    let epoch = -1;
+    let measuredEpoch = -1;
     let order = null;
+    let orderedFocus = null;
     let pullsSinceSort = 0;
 
+    const measure = (view) => {
+      boxes = new Map();
+      for (const block of remaining) boxes.set(block, measureBlock(block, view.scrollY));
+      measuredEpoch = viewSignals.layoutEpoch;
+    };
+
     const rank = (view) => {
-      if (order && remaining.size > RESORT_ABOVE && pullsSinceSort < RESORT_EVERY) {
-        pullsSinceSort += 1;
-        return order;
-      }
-      pullsSinceSort = 1;
       const scored = [...remaining].map((block) => [scoreBlockForViewport(block, boxes.get(block), view), block]);
-      // 两个 +∞ 相减是 NaN，|| 让它落到文档顺序上：同分按文档顺序。
+      // 两个 ±∞ 相减是 NaN，|| 让它落到文档顺序上：同分按文档顺序。
       scored.sort((a, b) => (a[0] - b[0]) || (docIndex.get(a[1]) - docIndex.get(b[1])));
       order = scored.map((entry) => entry[1]);
-      return order;
+      orderedFocus = view.focusBlock;
+      pullsSinceSort = 0;
     };
 
     function next() {
       if (remaining.size === 0) return null;
-      if (epoch !== viewSignals.layoutEpoch) {
-        boxes = new Map([...remaining].map((block) => [block, measureBlock(block)]));
-        epoch = viewSignals.layoutEpoch;
-        order = null;
-      }
       const view = readView();
+      const resortDue = !order || remaining.size <= RESORT_ABOVE || pullsSinceSort >= RESORT_EVERY;
+      if (!boxes || (resortDue && measuredEpoch !== viewSignals.layoutEpoch)) measure(view);
+      const focus = findFocusBlock(elementBlock, remaining, boxes, view);
+      view.focusBlock = focus && remaining.has(focus) ? focus : null;
+      if (resortDue || view.focusBlock !== orderedFocus) rank(view);
+      pullsSinceSort += 1;
+
       const batch = [];
       let chars = 0;
       let tokens = 0;
       let near = false;
-      for (const block of rank(view)) {
+      for (const block of order) {
         if (!remaining.has(block)) continue;
         if (block.oversized) {
           if (batch.length === 0) batch.push(block);
           break;
         }
+        if (batch.length >= perBatch) break;
         const blockNear = isNear(block, boxes.get(block), view);
+        if (batch.length > 0 && blockNear !== near) continue;
         const textLen = block.text.length;
         const tokenEstimate = estimateTokens(block.text) + ITEM_TOKEN_OVERHEAD;
-        if (batch.length > 0 && (
-          blockNear !== near ||
-          batch.length >= perBatch ||
-          chars + textLen > MAX_BATCH_CHARS ||
-          tokens + tokenEstimate > MAX_BATCH_TOKENS)) break;
+        if (batch.length > 0 && (chars + textLen > MAX_BATCH_CHARS || tokens + tokenEstimate > MAX_BATCH_TOKENS)) break;
         if (batch.length === 0) near = blockNear;
         batch.push(block);
         chars += textLen;
@@ -921,6 +975,7 @@
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
   // 焦点优先（设计 §3）：自动调度层每轮挑块也用同一个拉取器与评分。
+  installViewSignals();
   ctx.scoreBlockForViewport = scoreBlockForViewport;
   ctx.createBatchFeeder = createBatchFeeder;
   ctx.passConcurrency = passConcurrency;
