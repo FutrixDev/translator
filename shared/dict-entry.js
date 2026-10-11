@@ -8,7 +8,7 @@
 // and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
-//   isLookup      whether a text is looked up at all (D-473–D-475). Both
+//   isLookup      whether a text is looked up at all (D-473–D-475, D-542). Both
 //                 surfaces call it and keep no check of their own.
 //   FIELDS        the shape. OUTPUT_RULES (what the prompt asks for) and
 //                 normalize() (what the service worker accepts) both read it,
@@ -46,10 +46,13 @@
   // drawn. A translation that long counts as missing, and the lookup fails.
   const MAX_TEXT = 500;
 
-  // ---- what is looked up (D-473) ---------------------------------------------
+  // ---- what is looked up (D-473, D-542) --------------------------------------
 
-  // Sentence punctuation: any of these in the text makes it a sentence.
+  // Sentence punctuation: any of these in the text makes it a sentence — except
+  // one sentence stop at the very end (TRAILING_STOP), which is how a word is
+  // often typed ("apple.", "run?") and is trimmed before the check (D-542).
   const SENTENCE_PUNCTUATION = /[.!?。！？；;，,：:]/;
+  const TRAILING_STOP = /[.!?。！？]$/u;
 
   // Formula notation: a match for any of these makes the text a formula,
   // translated so the math placeholder rule applies; the lookup prompt has no
@@ -68,24 +71,34 @@
   ]);
 
   // Scripts that do not separate words with spaces: a lookup in them is counted
-  // in characters, not words.
-  const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+  // in characters, not words. An ideograph is a word on its own, so four of
+  // them is already a phrase; a syllable or letter is a fraction of one, and a
+  // common word in kana, hangul or Thai runs to five or six (こんにちは,
+  // 안녕하세요, สวัสดี), so those get eight (D-542). Any ideograph in the text
+  // puts it under the ideographic limit: 食べる counts as Han.
+  const IDEOGRAPHIC_SCRIPT = /\p{Script=Han}/u;
+  const SYLLABIC_SCRIPT = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
   const MAX_LOOKUP_WORDS = 3;
-  const MAX_LOOKUP_CHARS = 4;
+  const MAX_LOOKUP_IDEOGRAPHS = 4;
+  const MAX_LOOKUP_SYLLABLES = 8;
 
   /**
    * Whether `text` is looked up as a dictionary entry (mode 'word') rather than
-   * translated as a sentence. After trimming, it has no sentence punctuation,
-   * no formula notation, and is 1–3 words in a space-separated script, or 1–4
-   * characters in a script without spaces. Nothing else is weighed: "I run
-   * daily" and "x-ray" are lookups, "$x + y$" and "x - y" are not.
+   * translated as a sentence. After trimming, and dropping one sentence stop at
+   * the end, it has no sentence punctuation, no formula notation, and is 1–3
+   * words in a space-separated script, 1–4 characters if it has any Han, or
+   * 1–8 characters in kana, hangul, Thai, Lao, Khmer or Myanmar. Nothing else
+   * is weighed: "I run daily" and "x-ray" are lookups, "$x + y$", "x - y" and
+   * "e.g." are not.
    */
   function isLookup(text) {
-    const trimmed = String(text == null ? '' : text).trim();
+    const trimmed = String(text == null ? '' : text).trim().replace(TRAILING_STOP, '').trimEnd();
     if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
     if (FORMULA_NOTATION.some((shape) => shape.test(trimmed))) return false;
-    if (UNSPACED_SCRIPT.test(trimmed)) return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_LOOKUP_CHARS;
+    const chars = () => Array.from(trimmed.replace(/\s+/g, '')).length;
+    if (IDEOGRAPHIC_SCRIPT.test(trimmed)) return chars() <= MAX_LOOKUP_IDEOGRAPHS;
+    if (SYLLABIC_SCRIPT.test(trimmed)) return chars() <= MAX_LOOKUP_SYLLABLES;
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
   }
 
@@ -182,15 +195,24 @@
   const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
   // A string field: anything but a string, or a string over MAX_TEXT, is
-  // dropped — read as '', the same as missing (D-472).
-  function text(value) {
-    if (typeof value !== 'string') return '';
+  // dropped — read as '', the same as missing (D-472). A value that was there
+  // and got dropped is noted in `dropped` (field name and reason, never the
+  // text) when the caller keeps such a list.
+  function text(value, dropped, name) {
+    if (typeof value !== 'string') {
+      if (value != null && dropped) dropped.push(`${name}: not a string`);
+      return '';
+    }
     const trimmed = value.trim();
-    return trimmed.length > MAX_TEXT ? '' : trimmed;
+    if (trimmed.length > MAX_TEXT) {
+      if (dropped) dropped.push(`${name}: over ${MAX_TEXT} characters`);
+      return '';
+    }
+    return trimmed;
   }
 
-  function label(value) {
-    const raw = text(value).toUpperCase();
+  function label(value, dropped, name) {
+    const raw = text(value, dropped, name).toUpperCase();
     // An unknown label ("GB", "British") still carries a real pronunciation:
     // keep it, drop the label it cannot be shown under. '' is the one
     // pronunciation of a translation in any language but English.
@@ -198,19 +220,23 @@
   }
 
   // Not an array is no strings; a string that is dropped leaves the others.
-  function texts(value, max) {
-    if (!Array.isArray(value)) return [];
-    return value.map(text).filter(Boolean).slice(0, max);
+  function texts(value, max, dropped, name) {
+    if (!Array.isArray(value)) {
+      if (value != null) dropped.push(`${name}: not an array`);
+      return [];
+    }
+    return value.map((item, i) => text(item, dropped, `${name}[${i}]`)).filter(Boolean).slice(0, max);
   }
 
   // null for anything that is not an object: the item is dropped.
-  function normalizeItem(field, raw) {
+  function normalizeItem(field, raw, dropped, name) {
     if (!isPlainObject(raw)) return null;
     const item = {};
     for (const [key, type] of Object.entries(field.item)) {
-      if (type === 'label') item[key] = label(raw[key]);
-      else if (type === 'texts') item[key] = texts(raw[key], field.maxDefs);
-      else item[key] = text(raw[key]);
+      const path = `${name}.${key}`;
+      if (type === 'label') item[key] = label(raw[key], dropped, path);
+      else if (type === 'texts') item[key] = texts(raw[key], field.maxDefs, dropped, path);
+      else item[key] = text(raw[key], dropped, path);
     }
     return item;
   }
@@ -224,20 +250,34 @@
    * not an array is empty, an item that is not an object or lacks a required
    * value is dropped, a string of the wrong type or over MAX_TEXT is dropped,
    * lists past their cap are cut; unknown keys are ignored and not carried.
+   *
+   * Lenient is not silent: when anything the model sent is dropped (a cut past
+   * the cap is the shape, not a drop), one console.warn lists each dropped
+   * field and why — names and reasons only, never the text (D-542).
    */
   function normalize(raw) {
     if (!isPlainObject(raw)) throw invalid('not a JSON object');
     const translation = text(raw.translation);
     if (!translation) throw invalid('translation is missing or empty');
     const entry = { translation };
+    const dropped = [];
     for (const key of LIST_KEYS) {
       const field = FIELDS[key];
+      if (raw[key] != null && !Array.isArray(raw[key])) dropped.push(`${key}: not an array`);
       const value = Array.isArray(raw[key]) ? raw[key] : [];
       entry[key] = value
-        .map((item) => normalizeItem(field, item))
-        .filter((item) => item && field.required.every((name) => filled(item[name])))
+        .map((item, i) => {
+          const name = `${key}[${i}]`;
+          const kept = normalizeItem(field, item, dropped, name);
+          if (!kept) dropped.push(`${name}: not an object`);
+          else if (!field.required.every((req) => filled(kept[req]))) dropped.push(`${name}: missing ${field.required.join('/')}`);
+          else return kept;
+          return null;
+        })
+        .filter(Boolean)
         .slice(0, field.max);
     }
+    if (dropped.length) console.warn('dict-entry: dropped fields', dropped);
     return entry;
   }
 

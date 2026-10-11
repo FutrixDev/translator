@@ -347,18 +347,21 @@ throws on an entry drawn without one; it has no `word` option. The looked-up
 text keeps its own speaker on each surface (`#ai-translator-input-speak`,
 `.ai-translator-speak-source`). Neither surface builds entry markup or decides what
 a lookup is on its own: both send `mode: 'word'` exactly when
-`DictEntry.isLookup(text)` holds — trimmed, no sentence punctuation
+`DictEntry.isLookup(text)` holds — trimmed, one sentence stop at the very end
+(`. ! ? 。！？`) dropped (`apple.` and `run?` are lookups, `e.g.` and `3.14`
+are not, D-542), no sentence punctuation
 (`. ! ? 。！？；; ，, ：:`), no formula notation (`$`, `\(`, `\[`, a backslash
 command such as `\alpha`, any `\p{Sm}` math symbol, `^ _ { }`, D-474; any `*`,
 or a `-` or `/` between spaces or between bare operands — `x - y`, `3/4`,
 `(x-y)` — while `x-ray`, `Wi-Fi` and `km/h` stay lookups, D-475; a formula
 takes the text path, where the math placeholder rule applies), and 1–3 words
-in a spaced script or 1–4 characters in Han, kana, hangul, Thai and the like
-(D-473). The parser fails hard, as
+in a spaced script, 1–4 characters when any Han is in it, or 1–8 characters
+in kana, hangul, Thai and the like (D-473, revised by D-542). The parser fails hard, as
 `invalidEntry` → `dictEntryUnreadable`, only when no JSON can be extracted
 (after `<think>…</think>` is stripped), the JSON is not an object, or the
 translation is missing or empty; a wrong-typed or overlong optional field or
-list item is dropped, never guessed at (D-472). The entry is drawn only for a
+list item is dropped, never guessed at (D-472), and one `console.warn` names
+each dropped field and why, never the text (D-542). The entry is drawn only for a
 reply from engine `ai` (`DictEntry.entryFor`); the built-in engine gives the
 translation alone. `content/css/dict-entry.css` states colour, size, display
 and padding on every element, because the containment reset leaves those to
