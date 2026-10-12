@@ -56,7 +56,7 @@ test('hover/selection translation asks the shared rule where to insert', () => {
   const uses = hoverTranslation.match(/ctx\.getTranslationPlacement\(/g) || [];
   assert.equal(uses.length, 2);
   // 缩进在原文的起始边让出（RTL 原文是右边），量和写都交给 ctx.applyTextInset。
-  const insets = hoverTranslation.match(/ctx\.applyTextInset\(\w+,\s*block,\s*\{\s*fromContentBox:\s*placement\.inside\s*\}\)/g) || [];
+  const insets = hoverTranslation.match(/ctx\.applyTextInset\(\w+,\s*placement\.target,\s*\{\s*fromContentBox:\s*placement\.inside\s*\}\)/g) || [];
   assert.equal(insets.length, 2);
 });
 

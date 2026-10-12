@@ -511,4 +511,71 @@ test.describe('Hover Translation', () => {
 
     await page.waitForSelector('.ai-translator-selection-translation', { state: 'attached' });
   });
+  // Issue #152 through the hover path: hover/render.js places through the same
+  // getTranslationPlacement as page translation. A <p> in a 28px-counter grid <li> keeps the
+  // translation in its own cell, and an <li> that is itself a flex row (icon + direct text)
+  // gets it under the text, inside the item that holds the text, not squeezed beside it.
+  test('grid item and flex row: the hover translation stays in the source column', async ({ page }) => {
+    await openExamplePage(page);
+    await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.innerHTML = `<style>
+          .hv-steps, .hv-icons { list-style: none; padding: 0; width: 600px; }
+          .hv-steps li { display: grid; grid-template-columns: 28px 1fr; gap: 0 12px; }
+          .hv-steps li::before { content: '01'; }
+          .hv-steps li p { margin: 0; }
+          .hv-icons li { display: flex; gap: 8px; align-items: flex-start; }
+        </style>
+        <ol class="hv-steps"><li><p id="hv-step">Every claim in the skill is checked against the
+          source before it is written down, and nothing is assumed.</p></li></ol>
+        <ul class="hv-icons"><li id="hv-icon"><svg width="16" height="16"></svg>Direct text after
+          an icon in a flex list item gets its translation under the text.</li></ul>`;
+      document.body.appendChild(box);
+    });
+
+    const done = '.ai-translator-hover-translation:not(.ai-translator-inline-loading)';
+    await page.keyboard.down('Shift');
+    for (const id of ['hv-step', 'hv-icon']) {
+      await page.locator(`#${id}`).hover();
+      await page.waitForSelector(`#${id} ${done}`, { state: 'attached' });
+    }
+    await page.keyboard.up('Shift');
+
+    const result = await page.evaluate((selector) => {
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, bottom: r.bottom, width: r.width };
+      };
+      const step = document.getElementById('hv-step');
+      const stepTranslation = step.querySelector(selector);
+      const icon = document.getElementById('hv-icon');
+      const iconTranslation = icon.querySelector(selector);
+      const column = iconTranslation.parentElement;
+      const text = document.createRange();
+      text.setStart(column, 0);
+      text.setEndBefore(iconTranslation);
+      return {
+        stepCellItems: step.parentElement.children.length,
+        stepTranslation: rect(stepTranslation),
+        step: rect(step),
+        iconColumn: column.className,
+        iconFlexItems: [...icon.children].map((c) => c.tagName.toLowerCase()),
+        iconTranslation: rect(iconTranslation),
+        iconText: rect(text),
+        iconColumnRect: rect(column)
+      };
+    }, done);
+
+    // Inside the <p>'s cell: the grid <li> still has one item, and the translation is as
+    // wide as the text column, not the 28px counter column.
+    expect(result.stepCellItems).toBe(1);
+    expect(Math.abs(result.stepTranslation.left - result.step.left)).toBeLessThan(1);
+    expect(Math.abs(result.stepTranslation.width - result.step.width)).toBeLessThan(1);
+    // The flex row keeps its icon and one text item; the translation is under the text.
+    expect(result.iconColumn).toBe('ai-translator-text-run');
+    expect(result.iconFlexItems).toEqual(['svg', 'span']);
+    expect(result.iconTranslation.top).toBeGreaterThanOrEqual(result.iconText.bottom - 1);
+    expect(Math.abs(result.iconTranslation.left - result.iconText.left)).toBeLessThan(1);
+    expect(Math.abs(result.iconTranslation.width - result.iconColumnRect.width)).toBeLessThan(1);
+  });
 });

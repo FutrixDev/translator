@@ -33,6 +33,16 @@
   // 直属文本节点的锚点类名，见 wrapDirectTextRuns
   const TEXT_RUN_CLASS = 'ai-translator-text-run';
 
+  // 把一串相邻的文本节点裹进一个锚点 span。收集端给直属文本找锚点（wrapDirectTextRuns）、
+  // 落笔端给横排 flex 里的那段字找一列（insert.js 的 textColumnOf），裹法只有这一处。
+  function wrapTextRun(nodes) {
+    const wrap = document.createElement('span');
+    wrap.className = TEXT_RUN_CLASS;
+    nodes[0].parentNode.insertBefore(wrap, nodes[0]);
+    for (const node of nodes) wrap.appendChild(node);
+    return wrap;
+  }
+
   const MARKUP_TAGS = new Set([
     'A', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'SUP', 'SUB', 'MARK', 'SMALL',
     'ABBR', 'DEL', 'INS', 'Q', 'CITE', 'DFN', 'CODE', 'KBD', 'SAMP', 'VAR'
@@ -249,10 +259,7 @@
         const text = run.map((node) => node.textContent).join('').trim();
         if (text.length < 2) continue;
         if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) continue;
-        const wrap = document.createElement('span');
-        wrap.className = TEXT_RUN_CLASS;
-        run[0].parentNode.insertBefore(wrap, run[0]);
-        for (const node of run) wrap.appendChild(node);
+        wrapTextRun(run);
       }
     }
 
@@ -272,11 +279,14 @@
       return false;
     }
 
-    // 获取元素的直接文本内容（不包括子元素的文本）
+    // 获取元素的直接文本内容（不包括子元素的文本）。我们自己裹的 text-run 也算：
+    // insert.js 的 textColumnOf 会把横排 flex 块的直属文本就地裹起来，译文撤掉后
+    // 那个 span 还在；不认它，重翻时这块就不收了，改收那个 span，译文又挤回字旁边。
     function getDirectText(element) {
       let text = '';
       for (const child of nodesOf(element)) {
-        if (child.nodeType === Node.TEXT_NODE) {
+        if (child.nodeType === Node.TEXT_NODE ||
+            (child.nodeType === Node.ELEMENT_NODE && child.classList.contains(TEXT_RUN_CLASS))) {
           const content = child.textContent.trim();
           if (content) {
             text += content + ' ';
@@ -898,39 +908,6 @@
     return 0;
   }
 
-  // 检测父元素是否是水平布局（flex 或内联水平排列）
-  function isHorizontalFlexParent(element) {
-    const parent = element.parentElement;
-    if (!parent) return false;
-
-    const parentStyle = window.getComputedStyle(parent);
-    const parentDisplay = parentStyle.display;
-    const flexDirection = parentStyle.flexDirection;
-
-    // 检查是否是水平 flex 布局（flex-direction: row 或 row-reverse）
-    if ((parentDisplay === 'flex' || parentDisplay === 'inline-flex') &&
-        (flexDirection === 'row' || flexDirection === 'row-reverse' || flexDirection === '')) {
-      return true;
-    }
-
-    const inlineLayoutTags = new Set(['LI', 'A', 'SPAN', 'LABEL', 'BUTTON']);
-    if (!inlineLayoutTags.has(element.tagName)) return false;
-
-    const elementStyle = window.getComputedStyle(element);
-    const elementDisplay = elementStyle.display;
-
-    const floatValue = elementStyle.cssFloat || elementStyle.getPropertyValue('float');
-    if (floatValue && floatValue !== 'none') {
-      return true;
-    }
-
-    if (elementDisplay === 'inline' || elementDisplay === 'inline-block' || elementDisplay === 'inline-flex') {
-      return true;
-    }
-
-    return false;
-  }
-
   function normalizeComparableText(text) {
     if (!text) return '';
     return globalThis.TextMarkers.strip(text)
@@ -945,7 +922,7 @@
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.isMathElement = isMathElement;
   ctx.isIconElement = isIconElement;
-  ctx.isHorizontalFlexParent = isHorizontalFlexParent;
+  ctx.wrapTextRun = wrapTextRun;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
   /**
    * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
