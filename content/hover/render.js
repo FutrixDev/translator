@@ -58,10 +58,8 @@
     const managedLoading = hov.renderManaged(block, t('translating'), { kind, state: 'loading', className, textLang });
     if (managedLoading) return managedLoading;
 
-    const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
-    const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
-      ? ctx.getInlineTranslationTarget(block)
-      : block;
+    const isHorizontalFlex = ctx.isHorizontalFlexParent(block);
+    const inlineTarget = isHorizontalFlex ? ctx.getInlineTranslationTarget(block) : block;
     const computedStyle = window.getComputedStyle(inlineTarget);
 
     if (isHorizontalFlex) {
@@ -86,12 +84,26 @@
       return loadingEl;
     }
 
+    // 有 slot 属性的元素追加到内部（见 insertTranslationBlock），要先于下面的
+    // getTranslationPlacement 问：那边可能就地裹一次直属文本。
+    if (block.hasAttribute('slot')) {
+      const internalLoading = document.createElement('span');
+      internalLoading.className = `ai-translator-inline-block ${className} ${hov.INLINE_LOADING_CLASS}`;
+      internalLoading.style.cssText = buildBaseStyle(computedStyle, dir) + `
+        display: block;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `;
+      ctx.markLanguage(internalLoading, textLang);
+      block.appendChild(internalLoading);
+      return internalLoading;
+    }
+
     // 往哪儿插和整页翻译共用一套判据——表格单元格、列表项、页面自己画了框的块都只能
     // 往【内部】插，否则分别是多一列、多一条幽灵条目、译文掉到框外面。
-    // 见 content-page-translation.js 的 getTranslationPlacement。
-    const placement = ctx.getTranslationPlacement
-      ? ctx.getTranslationPlacement(block, computedStyle)
-      : { inside: false, tag: 'div' };
+    // 见 content/page/insert.js 的 getTranslationPlacement。
+    const placement = ctx.getTranslationPlacement(block, computedStyle);
     const loadingEl = document.createElement(placement.inside ? placement.tag : block.tagName);
     if (block.className && !placement.inside) {
       loadingEl.className = block.className
@@ -107,24 +119,10 @@
     `;
     ctx.markLanguage(loadingEl, textLang);
 
-    ctx.applyTextInset(loadingEl, block, { fromContentBox: placement.inside });
-
-    if (block.hasAttribute('slot')) {
-      const internalLoading = document.createElement('span');
-      internalLoading.className = `ai-translator-inline-block ${className} ${hov.INLINE_LOADING_CLASS}`;
-      internalLoading.style.cssText = buildBaseStyle(computedStyle, dir) + `
-        display: block;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `;
-      ctx.markLanguage(internalLoading, textLang);
-      block.appendChild(internalLoading);
-      return internalLoading;
-    }
+    ctx.applyTextInset(loadingEl, placement.target, { fromContentBox: placement.inside });
 
     if (placement.inside) {
-      block.appendChild(loadingEl);
+      ctx.appendInside(placement.target, loadingEl);
       return loadingEl;
     }
 
@@ -148,17 +146,15 @@
     });
     if (managed) return managed;
 
-    const isHorizontalFlex = ctx.isHorizontalFlexParent ? ctx.isHorizontalFlexParent(block) : false;
-    const inlineTarget = isHorizontalFlex && ctx.getInlineTranslationTarget
-      ? ctx.getInlineTranslationTarget(block)
-      : block;
+    const isHorizontalFlex = ctx.isHorizontalFlexParent(block);
+    const inlineTarget = isHorizontalFlex ? ctx.getInlineTranslationTarget(block) : block;
     const computedStyle = window.getComputedStyle(inlineTarget);
 
     if (isHorizontalFlex) {
       const translationEl = document.createElement('span');
       translationEl.className = `ai-translator-inline-block ai-translator-inline-right ${className}`;
 
-      if (mathElements.length && ctx.buildTranslationContentWithMath) {
+      if (mathElements.length) {
         ctx.buildTranslationContentWithMath(translationEl, translation, mathElements, ' ');
       } else {
         translationEl.textContent = ` ${translation}`;
@@ -188,44 +184,11 @@
       return translationEl;
     }
 
-    // 见 renderInlineLoading：插入位置和整页翻译共用 getTranslationPlacement
-    const placement = ctx.getTranslationPlacement
-      ? ctx.getTranslationPlacement(block, computedStyle)
-      : { inside: false, tag: 'div' };
-    const translationEl = document.createElement(placement.inside ? placement.tag : block.tagName);
-    if (block.className && !placement.inside) {
-      translationEl.className = block.className
-        .replace('ai-translator-translated', '')
-        .replace(POSITION_CLASSES, '')
-        .trim();
-    }
-    translationEl.classList.add('ai-translator-inline-block', className);
-
     // 内容按「有没有占位符」选构建器；样式按「有没有真公式」（collect.js 的
     // hasRealMath）选：只有 translate="no" 的原样元素时照常套原文排版。
-    const withPlaceholders = mathElements.length && ctx.buildTranslationContentWithMath;
-    if (withPlaceholders) {
-      ctx.buildTranslationContentWithMath(translationEl, translation, mathElements);
-    } else {
-      translationEl.textContent = translation;
-    }
-    if (withPlaceholders && ctx.hasRealMath(mathElements)) {
-      translationEl.style.opacity = '0.85';
-    } else {
-      translationEl.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `;
-    }
-    ctx.markLanguage(translationEl, textLang);
+    const withPlaceholders = mathElements.length > 0;
 
-    if (isError) {
-      translationEl.classList.add('ai-translator-error');
-    }
-
-    ctx.applyTextInset(translationEl, block, { fromContentBox: placement.inside });
-
+    // 见 renderInlineLoading：slot 先问，插入位置和整页翻译共用 getTranslationPlacement
     if (block.hasAttribute('slot')) {
       const internalTranslation = document.createElement('span');
       internalTranslation.className = `ai-translator-inline-block ${className}`;
@@ -254,8 +217,40 @@
       return internalTranslation;
     }
 
+    const placement = ctx.getTranslationPlacement(block, computedStyle);
+    const translationEl = document.createElement(placement.inside ? placement.tag : block.tagName);
+    if (block.className && !placement.inside) {
+      translationEl.className = block.className
+        .replace('ai-translator-translated', '')
+        .replace(POSITION_CLASSES, '')
+        .trim();
+    }
+    translationEl.classList.add('ai-translator-inline-block', className);
+
+    if (withPlaceholders) {
+      ctx.buildTranslationContentWithMath(translationEl, translation, mathElements);
+    } else {
+      translationEl.textContent = translation;
+    }
+    if (withPlaceholders && ctx.hasRealMath(mathElements)) {
+      translationEl.style.opacity = '0.85';
+    } else {
+      translationEl.style.cssText = buildBaseStyle(computedStyle, dir, isError) + `
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `;
+    }
+    ctx.markLanguage(translationEl, textLang);
+
+    if (isError) {
+      translationEl.classList.add('ai-translator-error');
+    }
+
+    ctx.applyTextInset(translationEl, placement.target, { fromContentBox: placement.inside });
+
     if (placement.inside) {
-      block.appendChild(translationEl);
+      ctx.appendInside(placement.target, translationEl);
       return translationEl;
     }
 

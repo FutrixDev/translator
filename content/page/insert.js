@@ -206,16 +206,99 @@
   //     .code-box）：兄弟落在框外面。抄一份页面类名也救不回来——
   //     .ai-translator-inline-block 的 reset 会把 background/border/padding 全抹掉，
   //     结果就是灰框外面挂着一段裸译文，正是 issue #71 的「翻译的内容不在框内」。
+  //   - 网格里的一格（父元素是 grid）：兄弟是网格的又一个子项，按自动排布落进
+  //     下一个空格，而不是原文那一列。issue #152 的 `.steps li` 是
+  //     `grid-template-columns: 28px 1fr`，::before 序号占第一列、<p> 占第二列，
+  //     译文就落到第二行第一列——28px 宽，一行两个字竖着往下排。自动排布的子项
+  //     计算样式里 grid-column 是 auto，问不到原文实际在哪一格，抄不过去。
+  //     「父元素」按排版算（见 layoutParent）：隔着 display:contents
+  //     的包裹层、影子根顶层挂在网格宿主上，都是同一回事。
+  //   - 用 CSS 画成的表格格子（display:table-cell 的 div）：和 <td> 一样，兄弟会
+  //     变成匿名的新一格，表格多出一列。
   //
-  // 插到内部这三件事就都自然成立：页面结构没变，缩进和框都是继承来的。
+  // 插到内部这几件事就都自然成立：页面结构没变，缩进、框和格子都是继承来的。
+  // 要往里插的块自己是横排 flex（带图标的 <li>、网格里的 flex 卡片）时，「内部」
+  // 指的是装着原文的那一项，见 textColumnOf。
   const INSIDE_ONLY_TAGS = new Set(['TD', 'TH', 'LI']);
   // 内容模型只收内联内容的元素：往里插 <div> 是非法嵌套，改用 <span>，块级排版由
   // .ai-translator-inline-block 自带的 display:block 提供。
   const PHRASING_CONTENT_TAGS = new Set(
     ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'DT', 'LABEL', 'A', 'SPAN', 'BUTTON']);
-  // 只有普通块级流才往里插。flex/grid 容器里多一个子节点就是多一个 flex item，
-  // 横排时会挤在原文右边——那种块宁可让译文留在外面。
-  const IN_FLOW_DISPLAYS = new Set(['block', 'flow-root', 'list-item', 'table-cell']);
+  // 自己画了框的块，只在普通块级流里才往里插。是 flex/grid 容器的话，框里多半是
+  // 好几项并排的内容，没有一列放得下译文，留在框外至少不挤。
+  const IN_FLOW_DISPLAYS = new Set(['block', 'flow-root', 'list-item']);
+
+  // 真正给这个元素排版的那个盒子——它的兄弟译文会成为谁的 flex/grid 子项，问的就是它。
+  // parentElement 不一定是：display:contents 的祖先不生成盒子，子项直接归它上一层排；
+  // 影子根里的顶层节点归宿主排；分进 <slot> 的节点归 slot 那一层排（slot 默认也是
+  // contents）。
+  function layoutParent(element) {
+    let node = element;
+    for (;;) {
+      let parent = node.assignedSlot || node.parentNode;
+      if (parent instanceof ShadowRoot) parent = parent.host;
+      if (!(parent instanceof Element)) return null;
+      if (window.getComputedStyle(parent).display !== 'contents') return parent;
+      node = parent;
+    }
+  }
+
+  // 这个盒子是不是横着排子项的 flex 容器（flex-direction: row 或 row-reverse）：
+  // 多出来的一个子项排在原有子项的旁边，不是下面。
+  function isHorizontalFlexContainer(element) {
+    const style = window.getComputedStyle(element);
+    const flexDirection = style.flexDirection;
+    return (style.display === 'flex' || style.display === 'inline-flex') &&
+      (flexDirection === 'row' || flexDirection === 'row-reverse' || flexDirection === '');
+  }
+
+  // 检测父元素是否是水平布局（flex 或内联水平排列）
+  function isHorizontalFlexParent(element) {
+    const parent = layoutParent(element);
+    if (!parent) return false;
+    if (isHorizontalFlexContainer(parent)) return true;
+
+    const inlineLayoutTags = new Set(['LI', 'A', 'SPAN', 'LABEL', 'BUTTON']);
+    if (!inlineLayoutTags.has(element.tagName)) return false;
+
+    const elementStyle = window.getComputedStyle(element);
+    const elementDisplay = elementStyle.display;
+
+    const floatValue = elementStyle.cssFloat || elementStyle.getPropertyValue('float');
+    if (floatValue && floatValue !== 'none') {
+      return true;
+    }
+
+    if (elementDisplay === 'inline' || elementDisplay === 'inline-block' || elementDisplay === 'inline-flex') {
+      return true;
+    }
+
+    return false;
+  }
+
+  function isGridContainer(element) {
+    return /(^|-)grid$/.test(window.getComputedStyle(element).display);
+  }
+
+  function isGridItem(element) {
+    const parent = layoutParent(element);
+    return !!parent && isGridContainer(parent);
+  }
+
+  // 兄弟节点插在它旁边，会不会被父级的排版当成新的一格：CSS 表格格子旁边多出一个
+  // 匿名格子，网格项旁边多出一个被自动排布的网格项。是的话只能往里插。
+  function siblingBecomesLayoutItem(element, computedStyle) {
+    return computedStyle.display === 'table-cell' || isGridItem(element);
+  }
+
+  // 往块【内部】（placement.target）追加译文（或失败标记、悬停的加载占位）。块自己
+  // 就是网格时——issue #152 那种只有直接文本的 grid <li>——追加的节点是网格的又一项，
+  // 照样会被自动排布塞进窄窄的序号列。原文落在哪一格问不到（见上），就让它横跨
+  // 整行：至少不会被挤成一条。
+  function appendInside(element, node) {
+    element.appendChild(node);
+    if (isGridContainer(element)) node.style.setProperty('grid-column', '1 / -1', 'important');
+  }
 
   // 元素自己画了一个看得见的框？只认背景（背景色/背景图）：这是「读者眼里这是一个
   // 框」的强信号。单边框线不算——维基百科那种 border-bottom 的标题只是根分隔线，
@@ -232,14 +315,54 @@
     return alpha > 0.02;
   }
 
-  // @returns {{inside: boolean, tag: string}} inside=true 时 tag 是要新建的标签名
+  // 要往里插的块自己是横排 flex 容器——`<li style="display:flex"><svg/>文字</li>`、
+  // 网格里一张 display:flex 的卡片——追加进去的译文就是它的又一个子项，排在原文
+  // 【旁边】：图标一列、原文一列、译文挤在剩下那一截里。flex 行不折行，译文要落在
+  // 原文下面，只能进装着原文的那一项。这里找出那一项：唯一一个有字的子项，图标和
+  // 公式不算。字是容器的直属文本时，那一项是匿名的，没有节点可挂，先裹进锚点 span
+  // ——它本来就单独成一项，裹起来排版不变。有字的子项不止一个（字和 <strong> 交错着
+  // 各自成项）就没有「那一列」，返回容器本身。
+  // 裹会搬动页面自己的文本节点（visibility.js 的 wrap 记过同一个风险：框架重渲染时
+  // 可能找不到原父节点）。收集端的 wrapDirectTextRuns 默认就这么裹，这里同样接受；
+  // 撤译文时 span 留着不拆，下一轮收集认它是这一块的直属文本（collect.js 的 getDirectText）。
+  // 和 getInlineTranslationTarget 不是一题：那边块自己是横排里的一项（导航菜单的
+  // <li>），译文跟在原文右边，只认唯一一个链接/span 子元素；这里块自己是横排，直属
+  // 文本也是一项，要找的是能在下面再放一行的那一列。
+  function textColumnOf(element) {
+    if (element.shadowRoot || !isHorizontalFlexContainer(element)) return element;
+    const items = [];
+    let run = null;
+    for (const node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (!run) items.push(run = []);
+        run.push(node);
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      run = null;
+      if (ctx.isIconElement(node) || ctx.isMathElement(node)
+          || node.classList.contains('ai-translator-inline-block')) continue;
+      items.push(node);
+    }
+    const textOf = (item) => (Array.isArray(item) ? item.map((node) => node.textContent).join('') : item.textContent);
+    const withText = items.filter((item) => textOf(item).trim());
+    if (withText.length !== 1) return element;
+    const column = withText[0];
+    return Array.isArray(column) ? ctx.wrapTextRun(column) : textColumnOf(column);
+  }
+
+  // @returns {{inside: boolean, target: Element, tag: string}} inside=true 时往 target 里
+  //   追加、tag 是要新建的标签名；target 一般就是 element，横排 flex 时是装原文的那一项。
+  //   找那一项可能就地裹一次直属文本（textColumnOf），所以只在马上要落笔时问。
   function getTranslationPlacement(element, computedStyle) {
     const style = computedStyle || window.getComputedStyle(element);
-    const inside = INSIDE_ONLY_TAGS.has(element.tagName)
+    const inside = INSIDE_ONLY_TAGS.has(element.tagName) || siblingBecomesLayoutItem(element, style)
       || (paintsOwnBox(style) && IN_FLOW_DISPLAYS.has(style.display));
+    const target = inside ? textColumnOf(element) : element;
     return {
       inside,
-      tag: PHRASING_CONTENT_TAGS.has(element.tagName) ? 'span' : 'div'
+      target,
+      tag: PHRASING_CONTENT_TAGS.has(target.tagName) ? 'span' : 'div'
     };
   }
 
@@ -344,13 +467,18 @@
     const element = block.element;
     if (!element || !element.parentNode) return false;
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) return false;
-    if (ctx.isHorizontalFlexParent(element)) {
+    if (isHorizontalFlexParent(element)) {
       marker.classList.add('ai-translator-inline-right');
       getInlineTranslationTarget(element).appendChild(marker);
-    } else if (element.hasAttribute('slot') || getTranslationPlacement(element).inside) {
+    } else if (element.hasAttribute('slot')) {
       element.appendChild(marker);
     } else {
-      element.after(marker);
+      const placement = getTranslationPlacement(element);
+      if (placement.inside) {
+        appendInside(placement.target, marker);
+      } else {
+        element.after(marker);
+      }
     }
     // 用户点了「显示原文」之后才失败的块：标记跟上当前状态，和译文一起藏。
     ctx.applyTranslationVisibility(marker);
@@ -410,7 +538,7 @@
     const before = ctx.fitBaseline ? ctx.fitBaseline(element) : undefined;
 
     // 检测是否在水平布局中
-    const isHorizontalFlex = ctx.isHorizontalFlexParent(element);
+    const isHorizontalFlex = isHorizontalFlexParent(element);
     const inlineTarget = isHorizontalFlex ? getInlineTranslationTarget(element) : element;
 
     // 复制所有关键样式，包括颜色
@@ -458,6 +586,26 @@
       // 将翻译作为子元素追加到原元素内部（跟在原文后面）
       inlineTarget.appendChild(translationEl);
       finishTranslationInsert(element, translationEl, before, lang, textLang);
+    } else if (element.hasAttribute('slot')) {
+      // 有 slot 属性的元素（Web Components 的内容分发）：在它旁边插兄弟会破坏 Shadow DOM
+      // 的结构，译文追加到它内部。要先于 getTranslationPlacement 问：那边找装原文的
+      // 那一项时可能就地裹一次直属文本，这一支用不上。
+      // 使用 span 而不是复制标签名，避免嵌套问题（如 a > a）
+      const internalTranslation = document.createElement('span');
+      internalTranslation.className = 'ai-translator-inline-block';
+      if (hasRichContent) {
+        buildTranslationContent(internalTranslation, translation, block);
+      } else {
+        internalTranslation.textContent = translation;
+      }
+      internalTranslation.style.cssText = baseStyle + `
+        display: block;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `;
+      element.appendChild(internalTranslation);
+      finishTranslationInsert(element, internalTranslation, before, lang, textLang);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -530,34 +678,12 @@
       }
 
       // 原文文字前面有 icon 等前置元素时，译文让出同样的缩进（写在原文的起始边）
-      ctx.applyTextInset(translationEl, element, { fromContentBox: placement.inside });
+      ctx.applyTextInset(translationEl, placement.target, { fromContentBox: placement.inside });
 
-      // 检查元素是否有 slot 属性（Web Components 的内容分发机制）
-      // 如果有 slot 属性，在元素旁边插入兄弟元素会破坏 Shadow DOM 的结构
-      // 应该将翻译追加到元素内部
-      const hasSlotAttr = element.hasAttribute('slot');
-      if (hasSlotAttr) {
-        // 对于有 slot 属性的元素，将翻译作为子元素追加到内部
-        // 使用 span 而不是复制标签名，避免嵌套问题（如 a > a）
-        const internalTranslation = document.createElement('span');
-        internalTranslation.className = 'ai-translator-inline-block';
-        if (hasRichContent) {
-          buildTranslationContent(internalTranslation, translation, block);
-        } else {
-          internalTranslation.textContent = translation;
-        }
-        internalTranslation.style.cssText = baseStyle + `
-          display: block;
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        `;
-        element.appendChild(internalTranslation);
-        finishTranslationInsert(element, internalTranslation, before, lang, textLang);
-      } else if (placement.inside) {
+      if (placement.inside) {
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
-        element.appendChild(translationEl);
+        appendInside(placement.target, translationEl);
         finishTranslationInsert(element, translationEl, before, lang, textLang);
       } else {
         // 插入到原元素后面
@@ -571,7 +697,9 @@
   ctx.buildTranslationContent = buildTranslationContent;
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
+  ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTranslationPlacement = getTranslationPlacement;
+  ctx.appendInside = appendInside;
   ctx.insertTranslationBlock = insertTranslationBlock;
   ctx.placeFailureMarker = placeFailureMarker;
   ctx.releaseTranslation = releaseTranslation;

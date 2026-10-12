@@ -288,7 +288,7 @@ test('every insertion in the whole-page path asks the guards', () => {
 
   // 每一次把译文放进 DOM 之后，都要跟一次 finishTranslationInsert：
   // 「它看得见吗」（clip guard）+「页面给它地方站吗」（fit guard）。
-  const insertions = fn.match(/\.(appendChild|after)\(\w+\)/g) || [];
+  const insertions = fn.match(/\.(appendChild|after)\(\w+\)|appendInside\([\w.]+, \w+\)/g) || [];
   const guards = fn.match(/finishTranslationInsert\(/g) || [];
   assert.ok(insertions.length >= 4, `expected the insertion sites, found ${insertions.length}`);
   assert.equal(guards.length, insertions.length,
