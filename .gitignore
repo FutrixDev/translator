@@ -53,3 +53,6 @@ test-results/
 # Local design docs
 design/
 .gstack/
+
+# Offline dictionary build output (tools/dict/build.sh)
+build/dict/

@@ -406,6 +406,26 @@ def job_tables(data, norm):
 
 
 # ---------------- driver ----------------
+def inputs(data):
+    """Every file under <data-dir> this step reads, relative to it (tools/dict/sources.json
+    pins each one's URL and sha256)."""
+    gloss, fan = needs()
+    paths = {kaikki_path(data, s, ed) for s, ed in gloss if s != ed}
+    paths |= {kaikki_path(data, s, s) for s in fan}
+    langs = set()
+    for a, b in tatoeba_pairs():
+        p, x, y = find_links(data, a, b)
+        paths.add(p)
+        langs |= {x, y}
+    paths |= {os.path.join(data, 'tatoeba', f'{C.TAT[x]}_sentences.tsv.bz2') for x in langs}
+    paths.add(os.path.join(data, 'jmdict', 'JMdict.gz'))
+    paths.add(os.path.join(data, 'cedict', 'cedict_1_0_ts_utf-8_mdbg.txt.gz'))
+    paths |= {os.path.join(data, 'ipa-dict', f'{n}.txt') for n in IPADICT}
+    paths.add(os.path.join(data, 'cmudict', 'cmudict.dict'))
+    paths |= {os.path.join(data, 'opencc', n) for n in OPENCC_FILES}
+    return sorted(os.path.relpath(p, data) for p in paths)
+
+
 def plan(data, norm):
     """[(bytes, fn, args)] for every job; kaikki own-edition files fan out to all targets."""
     gloss, fan = needs()
@@ -441,8 +461,13 @@ def main():
     ap.add_argument('data')
     ap.add_argument('norm')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    ap.add_argument('--list-inputs', action='store_true',
+                    help='print the files under <data-dir> this step reads, then exit')
     a = ap.parse_args()
     data, norm, jobs_n = os.path.abspath(a.data), os.path.abspath(a.norm), a.jobs
+    if a.list_inputs:
+        print('\n'.join(inputs(data)))
+        return
     os.makedirs(norm, exist_ok=True)
     t0 = time.time()
     work = plan(data, norm)
