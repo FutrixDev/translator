@@ -49,7 +49,10 @@ import common as C  # noqa: E402
 import opencc  # noqa: E402
 
 # An English reading: "/UK/|/US/", each side phonemic between slashes or empty, not both.
-EN_READING = re.compile(r'(/[^/|]+/)?\|(/[^/|]+/)?')
+EN_READING = re.compile(r'(/[^/\[\]|]+/)?\|(/[^/\[\]|]+/)?')
+# An IPA target's reading (es/fr/de/pt/ru): one transcription, phonemic or phonetic.
+IPA_READING = re.compile(r'/[^/\[\]|]+/|\[[^/\[\]|]+\]')
+IPA_TARGETS = ('es', 'fr', 'de', 'pt', 'ru')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LICENSE = os.path.join(HERE, 'cc-by-sa-4.0.txt')
@@ -162,6 +165,8 @@ def check_shape(pack, src, tgt, ver, err):
                 and r[3] in used and (r[2] is None or (isinstance(r[2], str) and r[2]))
             if ok and t == 'en' and r[2] is not None:
                 ok = r[2] != '|' and EN_READING.fullmatch(r[2]) is not None
+            if ok and t in IPA_TARGETS and r[2] is not None:
+                ok = IPA_READING.fullmatch(r[2]) is not None
         bad += not ok
     if bad:
         err.append(f'{bad} bad e entries')

@@ -62,25 +62,33 @@ def own_ipa(ipa):
     return ipa
 
 
-def phonemic(ipa):
-    """A phonemic transcription, `/.../`; not phonetic `[...]` or diaphonemic `⫽...⫽`."""
-    return len(ipa) > 2 and ipa[0] == '/' and ipa[-1] == '/' and '/' not in ipa[1:-1] \
-        and '|' not in ipa
+PHONEMIC = re.compile(r'/[^/\[\]|]+/')
+PHONETIC = re.compile(r'\[[^/\[\]|]+\]')
 
 
-def kaikki_ipa_rows(path, own, slashed_only=False):
-    """(word, label, ipa) of every record with IPA; first per (word, label) wins. English
-    readings are written "/UK/|/US/", so for en only phonemic rows count."""
+def one_transcription(ipa, phonetic_ok):
+    """`ipa` when it is exactly one transcription: phonemic `/.../`, or phonetic `[...]` where
+    `phonetic_ok`; else None. English readings are written "/UK/|/US/", so en takes phonemic
+    only. Two transcriptions in one string, an unclosed delimiter, template residue such as
+    `^((h aspiré))\\a.ka\\`, diaphonemic `⫽...⫽` and bare letters are all None."""
+    ok = PHONEMIC.fullmatch(ipa) or (phonetic_ok and PHONETIC.fullmatch(ipa))
+    return ipa if ok else None
+
+
+def kaikki_ipa_rows(path, own, phonetic_ok):
+    """(word, label, ipa) of every record with one well-formed transcription
+    (`one_transcription`); first per (word, label) wins."""
     seen = set()
     for r in C.read_jsonl(path):
         for label, ipa in r.get('ipa') or []:
             key = (r['w'], label)
             if key in seen or not ipa or not C.tsv_ok(r['w'], label, ipa):
                 continue
-            if slashed_only and not phonemic(ipa):
+            ipa = one_transcription(own_ipa(ipa) if own else ipa, phonetic_ok)
+            if not ipa:
                 continue
             seen.add(key)
-            yield r['w'], label, own_ipa(ipa) if own else ipa
+            yield r['w'], label, ipa
 
 
 def table_path(work, t):
@@ -100,7 +108,7 @@ def prepare(norm, work, t):
             p = os.path.join(norm, rel)
             if not os.path.exists(p):
                 continue
-            for w, label, ipa in kaikki_ipa_rows(p, own, slashed_only=t == 'en'):
+            for w, label, ipa in kaikki_ipa_rows(p, own, phonetic_ok=t != 'en'):
                 o.write(f'{w}\t{label}\t{ipa}\t{rank}\n')
                 n += 1
     os.replace(tmp, table_path(work, t))
@@ -111,14 +119,17 @@ def needs_prepare(t):
     return t in ('en', 'es', 'fr', 'de', 'pt', 'ru')
 
 
-def read_tsv_map(path):
+def read_ipa_map(path, phonetic_ok):
+    """word -> IPA from a normalized ipa-dict / CMUdict table, under the same one-transcription
+    rule as kaikki."""
     m = {}
     if os.path.exists(path):
         with open(path, encoding='utf-8') as f:
             for line in f:
                 if '\t' in line:
                     w, v = line.rstrip('\n').split('\t', 1)
-                    m.setdefault(w, v)
+                    if one_transcription(v, phonetic_ok):
+                        m.setdefault(w, v)
     return m
 
 
@@ -150,11 +161,11 @@ class Readings:
                     if k not in d:
                         d[k] = ipa
             if t == 'en':
-                self.uk = read_tsv_map(os.path.join(ipa_dir, 'ipadict-en_UK.tsv'))
-                self.us = read_tsv_map(os.path.join(ipa_dir, 'ipadict-en_US.tsv'))
-                self.cmu = read_tsv_map(os.path.join(ipa_dir, 'cmu-en.tsv'))
+                self.uk = read_ipa_map(os.path.join(ipa_dir, 'ipadict-en_UK.tsv'), False)
+                self.us = read_ipa_map(os.path.join(ipa_dir, 'ipadict-en_US.tsv'), False)
+                self.cmu = read_ipa_map(os.path.join(ipa_dir, 'cmu-en.tsv'), False)
             elif t in IPADICT:
-                self.ipadict = read_tsv_map(os.path.join(ipa_dir, f'ipadict-{IPADICT[t]}.tsv'))
+                self.ipadict = read_ipa_map(os.path.join(ipa_dir, f'ipadict-{IPADICT[t]}.tsv'), True)
             else:
                 self.ipadict = {}
 
