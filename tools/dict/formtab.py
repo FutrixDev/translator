@@ -221,7 +221,7 @@ def build(norm, work, builder):
 
 
 # ---------------- size cut 4: what the source corpus attests ----------------
-# A pack whose no-example brotli is still over its ceiling (common.br_budget) after cuts
+# A pack whose no-example brotli is still over its ceiling (common.br_ceiling) after cuts
 # 1-3 keeps, rung by rung until it fits:
 #   rung 1  `m` only for heads the corpus attests (the head or any of its `f` keys);
 #   rung 2  `f` only for keys of attested heads, plus every key the corpus itself attests.

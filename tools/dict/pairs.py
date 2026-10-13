@@ -13,8 +13,9 @@ Steps:
            Writes out/<pack>/{<pack>.json, LICENSE.txt, ATTRIBUTION.txt} (D-570) and, in
            --stats, <pack>.noex.json (the same pack with x = {}) and <pack>.json (numbers).
 
-Size rules (taskbook): a pack whose no-example brotli is over common.br_budget takes the
-formtab.RUNGS cuts in order until it fits (stats `size_cuts`); then, when the brotli size of
+Size rules (taskbook): a pack whose no-example brotli is over common.br_ceiling takes the
+formtab.RUNGS cuts in order until it fits (stats `size_cuts`); the rungs cut only `f` and `m`,
+so the `e` part's bound (common.br_budget) is check.py's alone. Then, when the brotli size of
 the pack is more than twice that of its no-example variant, the pack is rebuilt with one
 example per head and its stats say so (`examples_cut_to_one`).
 """
@@ -124,9 +125,9 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
     br_no = measure_noex(b, f, m, ver, used_noex, noex_path)
     # Size cut 4 (formtab.RUNGS): only while the no-example variant is over its ceiling, and
     # before `x`, which finds its sentences through the final `f`.
-    budget, cuts, att = C.br_budget(name), [], None
+    ceiling, cuts, att = C.br_ceiling(name), [], None
     for rung in formtab.RUNGS:
-        if br_no <= budget:
+        if br_no <= ceiling:
             break
         att = att or formtab.attested(norm, b.s, b.e, f)
         f, m = formtab.cut(rung, f, m, *att)
@@ -158,7 +159,7 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
           **xstats,
           'examples_head_rate': round(100 * xstats['x_heads'] / len(b.e), 1) if b.e else 0,
           'examples_cut_to_one': cut_x, 'raw': raw,
-          'raw_no_examples': os.path.getsize(noex_path), 'br_budget': budget,
+          'raw_no_examples': os.path.getsize(noex_path), 'br_ceiling': ceiling,
           'br_no_examples': br_no, 'br_with_examples': br_with,
           'reverse_added': b.reverse_added, 'sources': sorted(used),
           'seconds': round(time.time() - t0, 1)}

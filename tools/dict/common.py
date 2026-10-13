@@ -44,19 +44,34 @@ def split_pack(name):
 # ---------------- acceptance lines (taskbook "验收线") ----------------
 # Headword floor: 95% of design §4.1 (spike data/pack_sizes.csv, "full" json rows); packs
 # without a §4.1 row use §1.2 min(headwords, glossed records) (spike data/matrix.csv).
+# Deviation (report.md): the spike counted zh heads as raw `w`, Simplified and Traditional
+# spellings separately; a pack folds them into one Simplified head (D-578). The zh-source
+# bases are therefore the spike's own count folded by OpenCC t2s, reproduced by
+# evidence/offline-dict/a/zhheads.py (raw -> folded: zh-CN-en 272627 -> 223012, zh-CN-ja
+# 47032 -> 31795, zh-CN-ko 20257 -> 17128, zh-CN-fr 18793 -> 14710; the raw figures equal
+# matrix.csv exactly, and the §4.1 zh-CN-en row, 269675, is the same unfolded count).
 HEADS_BASE = {
     'en-zh-CN': 113818, 'en-zh-TW': 113818, 'en-ja': 81027, 'en-ko': 33415, 'en-es': 67931,
     'en-fr': 131160, 'en-de': 71484, 'en-pt': 57484, 'en-ru': 94070,
-    'zh-CN-en': 269675, 'ja-en': 254559, 'ko-en': 37364, 'es-en': 111259, 'fr-en': 166627,
+    'zh-CN-en': 223012, 'ja-en': 254559, 'ko-en': 37364, 'es-en': 111259, 'fr-en': 166627,
     'de-en': 126131, 'pt-en': 79131, 'ru-en': 82892,
-    'zh-CN-ja': 47032, 'ja-zh-CN': 33141, 'ja-zh-TW': 33141, 'es-fr': 40201, 'fr-es': 57131,
+    'zh-CN-ja': 31795, 'ja-zh-CN': 33141, 'ja-zh-TW': 33141, 'es-fr': 40201, 'fr-es': 57131,
     # §1.2 matrix rows (no §4.1 measurement)
-    'zh-CN-ko': 20257, 'zh-CN-fr': 18793, 'ja-ko': 14997, 'de-fr': 139359, 'fr-de': 54185,
+    'zh-CN-ko': 17128, 'zh-CN-fr': 14710, 'ja-ko': 14997, 'de-fr': 139359, 'fr-de': 54185,
     'de-ru': 98181, 'fr-ru': 36750, 'pt-fr': 39241,
 }
 HEADS_FLOOR = 0.95
-# Brotli ceiling for the no-example variant: §4.1 brotli bytes + 10%. Packs §4.1 did not
-# measure use its stated bound "≤ 2 MB br" (en→zh without ECDICT: "≈ 2 MB").
+# The unit a base counts. §1.2 takes min(headwords, glossed_records); where the minimum is
+# the record count (matrix.csv glossed_records: de-fr 139359, pt-fr 39241) the floor
+# compares the pack's record count (sum of len(e[h])), not its heads.
+HEADS_UNIT = {'de-fr': 'records', 'pt-fr': 'records'}
+# Brotli budget: §4.1 brotli bytes + 10%. Packs §4.1 did not measure use its stated bound
+# "≤ 2 MB br" (en→zh without ECDICT: "≈ 2 MB").
+# Deviation (report.md, needs a ruling): §4.1 measured `e` alone (spike
+# scripts/pack_sizes.py:5, pack = {v, src, tgt, lic, e}: no `f`, `m` or record origin), and
+# the design sizes `f` separately as "未单测 … brotli ≈ 0.5 MB" (ext-offline-dictionary.md:167).
+# So the budget applies to the pack's `e` part (the pack with x, f, m = {}), and the whole
+# no-example pack is held to budget + F_ALLOWANCE (br_ceiling).
 BR_BASE = {
     'en-ja': 2265243, 'en-ko': 1274632, 'en-es': 2490669, 'en-fr': 3733857, 'en-de': 2799305,
     'en-pt': 2049508, 'en-ru': 3033480, 'zh-CN-en': 5710808, 'ja-en': 6068642, 'ko-en': 1029436,
@@ -68,8 +83,24 @@ BR_DEFAULT = 2000000
 BR_SLACK = 1.10
 
 
+F_ALLOWANCE = 500000
+
+
 def br_budget(name):
+    """Brotli bound of the pack's `e` part."""
     return int(BR_BASE.get(name, BR_DEFAULT) * BR_SLACK)
+
+
+def br_ceiling(name):
+    """Brotli bound of the whole pack without examples (`e` + `f` + `m`)."""
+    return br_budget(name) + F_ALLOWANCE
+
+
+def heads_count(name, e):
+    """What HEADS_BASE[name] counts in `e`: heads, or records (HEADS_UNIT)."""
+    if HEADS_UNIT.get(name) == 'records':
+        return sum(len(v) for v in e.values())
+    return len(e)
 
 
 # Reading rate floor: design §2.1 / spike data/readings/readings.csv reading_pct_of_word_forms,

@@ -78,9 +78,11 @@ files the build reads, and regenerate `sources.json` with their sizes and SHA-25
 | `common.py` | pack list, acceptance lines, caps, shared helpers |
 | `check.py` | the gate: shape, heads, size, reading rate, `x`, D-578; `--report` CSVs |
 
-Acceptance lines (all in `common.py`): heads ≥ 0.95 × `HEADS_BASE`; brotli (`-q 11`) of the
-pack with `x = {}` ≤ 1.1 × `BR_BASE` (2 MB where §4.1 has no row); reading rate ≥
-`READING_BASE` − 3 points; with examples ≤ 2 × without, else one example per head.
+Acceptance lines (all in `common.py`): heads ≥ 0.95 × `HEADS_BASE` (records for the
+`HEADS_UNIT` packs); brotli (`-q 11`) of the `e` part ≤ `br_budget` (1.1 × `BR_BASE`, 2 MB
+where §4.1 has no row) and of the pack with `x = {}` ≤ `br_ceiling` (+ 0.5 MB for `f`/`m`,
+FORMAT.md "Size cuts"); reading rate ≥ `READING_BASE` − 3 points; with examples ≤ 2 ×
+without, else one example per head.
 
 Tests: `test/unit/dict-tools.test.mjs` runs `pairs.py` and `check.py` on the fixture in
 `test/fixtures/dict/` (a small real excerpt, provenance in its README); it needs `python3` and

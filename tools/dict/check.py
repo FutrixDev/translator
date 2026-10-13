@@ -13,10 +13,12 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             MIT / BSD / Apache notices)
   shape     the v1 keys and types, `ver`, record and table caps, every `x`/`m` head and every
             `f` value a head of `e`, no `f` key that is itself a head, en readings "UK|US"
-  heads     len(e) >= 0.95 x common.HEADS_BASE
-  size      brotli -q 11 of the pack with x = {} <= common.br_budget (recomputed here from the
-            shipped pack, not read from the build's stats); with examples <= 2x that, unless
-            the pack was already cut to one example per head
+  heads     common.heads_count (heads, or records for the HEADS_UNIT packs) >= 0.95 x
+            common.HEADS_BASE
+  size      brotli -q 11, recomputed here from the shipped pack (not read from the build's
+            stats): the `e` part (x, f, m = {}) <= common.br_budget, the pack with x = {} <=
+            common.br_ceiling; with examples <= 2x that, unless the pack was already cut to
+            one example per head
   reading   design §2.1 metric on the sample tokens: of the sample types that resolve to a
             head whose records give a translation word (common.translation_word of the first
             record that has one), the share whose record carries a reading; >= READING_BASE - 3
@@ -59,7 +61,8 @@ KO_PARTICLES = ['에서는', '으로는', '에게서', '으로써', '으로서',
                 '마다', '조차', '라고', '께서', '은', '는', '이', '가', '을', '를', '의', '에',
                 '로', '와', '과', '도', '만', '들', '요']
 PACKS_CSV = ('pair', 'heads', 'f_keys', 'reading_rate', 'examples_head_rate', 'raw',
-             'br_no_examples', 'br_with_examples')
+             'br_no_examples', 'br_with_examples', 'heads_unit', 'heads_counted', 'heads_floor',
+             'br_e', 'br_budget', 'br_ceiling', 'reading_floor')
 COVERAGE_CSV = ('pair', 'sample', 'sample_types', 'sample_tokens', 'hit_types_pct',
                 'hit_tokens_pct', 'reading_word_forms', 'reading_found', 'reading_rate',
                 'reading_floor', 'record_reading_rate', 'example_hit_types_pct',
@@ -253,14 +256,19 @@ def check_pack(out, name, opts):
             src, tgt, pack['ver'], used):
         err.append('ATTRIBUTION.txt missing or not the text for the sources used')
     heads = len(pack['e'])
+    unit = C.HEADS_UNIT.get(name, 'heads')
+    counted = C.heads_count(name, pack['e'])
     floor = int(C.HEADS_FLOOR * C.HEADS_BASE[name])
-    if heads < floor:
-        err.append(f'heads {heads} < {floor}')
+    if counted < floor:
+        err.append(f'{unit} {counted} < {floor}')
+    br_e = brotli_bytes(C.dumps({**pack, 'x': {}, 'f': {}, 'm': {}}).encode('utf-8'))
     br_no = brotli_bytes(C.dumps({**pack, 'x': {}}).encode('utf-8'))
     br_with = brotli_bytes(raw_bytes)
-    budget = C.br_budget(name)
-    if br_no > budget:
-        err.append(f'br_no {br_no} > {budget}')
+    budget, ceiling = C.br_budget(name), C.br_ceiling(name)
+    if br_e > budget:
+        err.append(f'br_e {br_e} > {budget}')
+    if br_no > ceiling:
+        err.append(f'br_no {br_no} > {ceiling}')
     one = all(len(rows) <= 1 for rows in pack['x'].values())
     if br_with > EX_RATIO_MAX * br_no and not one:
         err.append(f'br_with {br_with} > {EX_RATIO_MAX}x br_no and examples not cut to one')
@@ -297,17 +305,19 @@ def check_pack(out, name, opts):
     return {'pack': name, 'errors': err, 'heads': heads, 'f_keys': len(pack['f']),
             'reading_rate': own['reading_rate'], 'examples_head_rate': xh,
             'raw': len(raw_bytes), 'br_no_examples': br_no, 'br_with_examples': br_with,
-            'br_budget': budget, 'heads_floor': floor, 'reading_floor': floor_r,
+            'br_e': br_e, 'br_budget': budget, 'br_ceiling': ceiling, 'heads_unit': unit,
+            'heads_counted': counted, 'heads_floor': floor, 'reading_floor': floor_r,
             'x_one': one, 'coverage': rows}
 
 
 def line(r):
     if r['errors']:
         return f"FAIL {r['pack']}: " + '; '.join(r['errors'])
-    return (f"OK {r['pack']} heads={r['heads']} (>={r['heads_floor']}) f={r['f_keys']} "
+    unit = '' if r['heads_unit'] == 'heads' else f" records={r['heads_counted']}"
+    return (f"OK {r['pack']} heads={r['heads']}{unit} (>={r['heads_floor']}) f={r['f_keys']} "
             f"reading={r['reading_rate']}% (>={r['reading_floor']}%) "
-            f"x_heads={r['examples_head_rate']}% br_no={r['br_no_examples']} "
-            f"(<={r['br_budget']}) br_with={r['br_with_examples']}"
+            f"x_heads={r['examples_head_rate']}% br_e={r['br_e']} (<={r['br_budget']}) "
+            f"br_no={r['br_no_examples']} (<={r['br_ceiling']}) br_with={r['br_with_examples']}"
             + (' [x one per head]' if r['x_one'] else ''))
 
 
