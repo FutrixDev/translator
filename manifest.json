@@ -4,7 +4,7 @@
   "version": "1.5.1",
   "description": "__MSG_appDescription__",
   "default_locale": "en",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "130",
   "permissions": [
     "storage",
     "activeTab",
@@ -12,7 +12,8 @@
     "identity",
     "notifications",
     "alarms",
-    "offscreen"
+    "offscreen",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -108,6 +109,7 @@
         "shared/ocr.js",
         "shared/speech-lang.js",
         "shared/dict-entry.js",
+        "shared/dict-pack.js",
         "shared/site-rules-builtin.js",
         "shared/storage-writer.js",
         "shared/site-rules.js",
@@ -141,6 +143,7 @@
         "content/engine/model.js",
         "content/content-translation-engine.js",
         "content/engine/probe.js",
+        "content/content-dict-lookup.js",
         "content/content-language-pack.js",
         "content/page/custom-rule.js",
         "content/content-translation-cache.js",

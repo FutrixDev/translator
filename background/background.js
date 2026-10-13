@@ -69,6 +69,7 @@ import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter, openShortcutSettings } from './media-hints.js';
 import { openOnboardingOnInstall } from './install.js';
+import { DICT_CHECK_ALARM, checkDictPacks, deleteDictPack, ensureDictAlarm, onDictInstalled, wantDictPack } from './dict-packs.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
 // handler。每一样具体的活都在隔壁模块里 —— 菜单、PDF、OCR、AI 翻译。
@@ -310,6 +311,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'ACCOUNT_SITE_BASE':
       replyComic(comicClient.getApiBase().then(base => ({ base })), sendResponse);
       return true;
+
+    // Offline dictionary packs (./dict-packs.js). WANT comes from a lookup that
+    // found its pair missing and has already answered null: it is answered as
+    // soon as the download is queued. DELETE comes from the settings page.
+    case 'DICT_PACK_WANT':
+    case 'DICT_PACK_DELETE':
+      (message.type === 'DICT_PACK_WANT' ? wantDictPack(message) : deleteDictPack(message))
+        .then(sendResponse)
+        .catch((error) => {
+          console.error(`[Blab Translation] ${message.type} failed`, `${message.src}-${message.tgt}`, error);
+          sendResponse({ error: error.message });
+        });
+      return true;
   }
 });
 
@@ -367,6 +381,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     .catch(error => console.error('Translation cache sweep failed:', error));
 });
 
+// The dictionary packs' daily version check (./dict-packs.js).
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== DICT_CHECK_ALARM) return;
+  checkDictPacks().catch(error => console.error('[Blab Translation] dictionary pack check failed:', error));
+});
+
 // Context menu for right-click translation
 chrome.runtime.onInstalled.addListener((details) => {
   createContextMenus();
@@ -378,6 +398,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   // First install only: the welcome page (./install.js decides which reasons).
   Promise.resolve(openOnboardingOnInstall(details))
     .catch(error => console.error('Opening the onboarding page failed:', error));
+  onDictInstalled(details).catch(error => console.error('[Blab Translation] dictionary preinstall failed:', error));
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -385,6 +406,7 @@ chrome.runtime.onStartup.addListener(() => {
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
   ensureMigrated().catch(error => console.error('AI profile migration failed:', error));
+  ensureDictAlarm();
 });
 
 // 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文、Alt+W 翻译整个页面）。分派表和
