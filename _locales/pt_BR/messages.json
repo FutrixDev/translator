@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Tradutor com IA: web bilíngue grátis, tradução de PDF com o layout, tradução de mangá, legendas duplas no YouTube, EPUB/Word.",
+    "message": "Tradutor com IA: web bilíngue grátis, tradução de PDF mantendo o layout, tradução de mangá, legendas duplas no YouTube, EPUB/Word.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {
