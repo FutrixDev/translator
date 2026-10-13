@@ -22,9 +22,10 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             record that has one), the share whose record carries a reading; >= READING_BASE - 3
   x         every row: source sentence <= 80 characters and containing the head or one of its
             `f` forms (common.contains), no repeated sentence, shortest first, ids int or null
-  D-578     a zh-source pack: every `f` key is a Traditional spelling whose OpenCC t2s
-            conversion is its value, or a CC-CEDICT pair (the value is a head written in Han);
-            the share whose t2s differs is reported and must stay under D578_MAX_OTHER
+  D-578     a zh-source pack: every `f` key is a script fold of its value (same length,
+            differing only where both sides are Han, so `00後 -> 00后` and `X射線 -> X射线`
+            pass and a Latin or digit change does not); its OpenCC t2s is its value, or it is
+            a CC-CEDICT variant pair; the share whose t2s differs must stay under D578_MAX_OTHER
 
 Sample tokens are resolved the way the runtime resolves a looked-up word: the token, its
 lower case, then `f` of each, and for ko the KO_PARTICLES stripped (the one runtime rule).
@@ -196,14 +197,28 @@ def check_examples(pack, s, err):
         err.append(f'{len(bad)} x heads fail containment/order (e.g. {bad[0]!r})')
 
 
+# Han code points: CJK Ext A + Unified, Compatibility, the ideographic zero, Ext B and later.
+HAN_RANGES = ((0x3400, 0x9FFF), (0xF900, 0xFAFF), (0x3007, 0x3007), (0x20000, 0x323AF))
+
+
+def is_han(ch):
+    o = ord(ch)
+    return any(a <= o <= b for a, b in HAN_RANGES)
+
+
+def script_fold(key, head):
+    """key and head differ only in Han characters, position by position, at least once."""
+    return (len(key) == len(head) and key != head
+            and all(a == b or (is_han(a) and is_han(b)) for a, b in zip(key, head)))
+
+
 def check_d578(pack, t2s, err):
     """zh source: `f` is the Traditional -> Simplified fold. Returns the share of keys whose
     OpenCC t2s is not their value (CC-CEDICT variant pairs)."""
     f = pack['f']
-    han = re.compile(r'^[㐀-鿿豈-﫿〇]+$')
-    nonhan = sum(1 for k, h in f.items() if not (han.match(k) and han.match(h)))
-    if nonhan:
-        err.append(f'D-578: {nonhan} f keys not Han -> Han')
+    unfolded = sum(1 for k, h in f.items() if not script_fold(k, h))
+    if unfolded:
+        err.append(f'D-578: {unfolded} f keys are not a Han script fold of their value')
     if not f:
         err.append('D-578: zh pack without Traditional keys')
         return None
