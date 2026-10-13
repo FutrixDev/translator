@@ -7,6 +7,7 @@
 //     input box (standalone) the standalone rules (design §3.4);
 //   - one storage read, plus one more for a form-table hit (`~ran` -> run);
 //   - the Korean particle strip;
+//   - a Traditional spelling found through the zh pack's form table (D-578);
 //   - a pair missing from `dict:packs` answers null and sends DICT_PACK_WANT
 //     once per pair per page, even when its keys are already half-seeded;
 //   - the switch off, a non-lookup, a same-language pair: null, no read and
@@ -81,6 +82,7 @@ function seed(pack, { listed = true } = {}) {
 seed(fixture('en-zh-CN'));
 seed(fixture('ja-zh-CN'));
 seed(fixture('ko-en'));
+seed(fixture('zh-CN-ja'));
 
 function setPageLang(lang) {
   page.lang = lang;
@@ -130,6 +132,15 @@ test('kana is Japanese; a JMdict record brings its credit (J-B1.4)', async () =>
   assert.equal(answer.translation, '吃');
   assert.deepEqual(answer.credits.map((c) => c.label), ['JMdict © EDRDG']);
   assert.equal(DictEntry.entryFor('word', answer).translation, '吃');
+});
+
+test('a Traditional spelling reaches its Simplified head through the form table (D-578)', async () => {
+  for (const [text, reads] of [['蘋果', 2], ['苹果', 1], ['學校', 2]]) {
+    const { answer, reads: n, sent: messages } = await lookup(text, 'ja');
+    assert.equal(n, reads, text);
+    assert.deepEqual(messages, [], text);
+    assert.equal(answer.translation, text === '學校' ? '学校' : 'りんご', text);
+  }
 });
 
 test('an unknown word in an installed pack is null, with no request for the pack', async () => {
