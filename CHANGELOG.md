@@ -33,6 +33,21 @@
   sites can be linked, each link opens in a new tab, and a model's answer can
   never add such a line. The card strings for the offline dictionary are in
   all ten languages.
+- **Dictionary packs download, update and can be deleted.** With the offline
+  dictionary switched on, installing the extension fetches the pack from
+  English into your target language, and a pack for another language pair is
+  fetched the first time a word in it is looked up. Every pack is checked
+  against the published checksum before anything is stored: a pack that does
+  not match is refused, the one you had stays in use, and Settings says the
+  download failed and will be tried again. Packs are checked for a new
+  version once a day; the new one replaces the old completely. Settings lists
+  each pack with its size, word count and version, with a Delete button, and
+  a "Dictionary data sources" link at the bottom opens a page naming every
+  dictionary in your packs and its licence. With the switch off nothing is
+  downloaded. The selection card and the input box do not use the packs yet.
+- **Clearing old translations no longer reads the whole local store.** The
+  daily clean-up of the translation cache reads only its own entries, so it
+  stays quick however many dictionary words are stored beside it.
 
 ### Target languages
 
