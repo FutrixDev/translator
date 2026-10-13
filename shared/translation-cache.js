@@ -292,6 +292,11 @@
     return keys.map((key) => resolved.get(key));
   }
 
+  /** 落盘的每一条译文的键：只取键名，不读值。 */
+  async function cacheKeys() {
+    return (await chrome.storage.local.getKeys()).filter((key) => key.startsWith(KEY_PREFIX));
+  }
+
   /**
    * 过期清理 + 字节预算。由 background 的 chrome.alarms 每天叫一次。
    *
@@ -301,7 +306,9 @@
   async function sweep() {
     let all;
     try {
-      all = await chrome.storage.local.get(null);
+      // 只读 tc: 键：storage.local 里还有离线词典的几十万条，get(null) 会把它们
+      // 整个读进内存（design ext-offline-dictionary §4.3）。
+      all = await chrome.storage.local.get(await cacheKeys());
     } catch (error) {
       console.warn('Blab Translation: translation cache sweep failed', error);
       return { removed: 0, kept: 0 };
@@ -310,7 +317,6 @@
     const doomed = [];
     const alive = [];
     for (const [key, entry] of Object.entries(all)) {
-      if (!key.startsWith(KEY_PREFIX)) continue;
       // 形状不对的条目（旧写法、被别的代码踩过）一并扔掉：留着也读不出来。
       if (!entry || typeof entry.t !== 'string' || !(entry.ts > cutoff)) doomed.push(key);
       else alive.push({ key, ts: entry.ts });
@@ -362,8 +368,7 @@
     // 这里**不吞错误**，而 sweep 吞 —— 两者的区别是有没有人在等答案。sweep 由
     // chrome.alarms 半夜叫起来，没清成就下次再说；clear 是有人刚按下按钮，按了
     // 没反应就是「说好能删，其实删不掉」。所以失败往上抛，让设置页说出来。
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(KEY_PREFIX));
+    const keys = await cacheKeys();
     if (keys.length > 0) await chrome.storage.local.remove(keys);
 
     // 广播。写什么无所谓，**变了**就行，所以必须每次都不一样：同一毫秒里连按两次
