@@ -170,6 +170,9 @@
     dictUS: 'US',
     dictExamples: 'Exemples',
     dictForms: 'Formes',
+    dictTitle: 'Dictionnaire',
+    dictCredits: 'Sources :',
+    dictAttributionLink: 'Sources des données du dictionnaire',
     dictEntryUnreadable: 'Impossible de lire l’entrée du dictionnaire. Réessayez.',
     pronounceTranslation: 'Prononcer la traduction',
     stopPronunciation: 'Arrêter la lecture',
@@ -570,6 +573,8 @@
     cardEngineAi: 'Mon IA',
     cardUseBlab: 'Utiliser Blab Translation',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: 'Dictionnaire hors ligne',
+    cardUseAiExplain: 'Expliquer dans ce contexte avec l’IA',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'Règles de traduction par site',
     customRulesDesc: 'Choisissez, site par site, les parties d’une page à traduire, celles qui gardent l’original, du CSS supplémentaire pour les traductions et le moteur à utiliser. Les règles se synchronisent avec votre compte de navigateur et s’appliquent dès l’enregistrement.',

@@ -170,6 +170,9 @@
     dictUS: '美',
     dictExamples: '例句',
     dictForms: '詞形變化',
+    dictTitle: '詞典',
+    dictCredits: '資料來源：',
+    dictAttributionLink: '詞典資料來源',
     dictEntryUnreadable: '詞典條目讀取失敗，請重試。',
     pronounceTranslation: '朗讀譯文',
     stopPronunciation: '停止朗讀',
@@ -570,6 +573,8 @@
     cardEngineAi: '我的 AI',
     cardUseBlab: '改用 Blab Translation',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: '本機詞典',
+    cardUseAiExplain: '用 AI 解釋此處語境',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: '網站翻譯規則',
     customRulesDesc: '按網站指定頁面上哪些區域要翻譯、哪些保留原文、譯文的額外樣式，以及用哪個翻譯引擎。規則跟著瀏覽器帳號同步，儲存後立即生效。',

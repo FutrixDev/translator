@@ -170,6 +170,9 @@
     dictUS: 'US',
     dictExamples: 'Beispiele',
     dictForms: 'Wortformen',
+    dictTitle: 'Wörterbuch',
+    dictCredits: 'Quellen:',
+    dictAttributionLink: 'Quellen der Wörterbuchdaten',
     dictEntryUnreadable: 'Der Wörterbucheintrag ließ sich nicht lesen. Bitte erneut versuchen.',
     pronounceTranslation: 'Übersetzung vorlesen',
     stopPronunciation: 'Vorlesen stoppen',
@@ -570,6 +573,8 @@
     cardEngineAi: 'Meine KI',
     cardUseBlab: 'Blab Translation verwenden',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: 'Offline-Wörterbuch',
+    cardUseAiExplain: 'Mit KI im Kontext erklären',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'Übersetzungsregeln pro Seite',
     customRulesDesc: 'Legen Sie pro Seite fest, welche Bereiche übersetzt werden, welche im Original bleiben, zusätzliches CSS für die Übersetzungen und welche Übersetzungs-Engine gilt. Regeln werden mit Ihrem Browserkonto synchronisiert und gelten sofort nach dem Speichern.',

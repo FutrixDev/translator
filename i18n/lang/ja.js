@@ -170,6 +170,9 @@
     dictUS: '米',
     dictExamples: '例文',
     dictForms: '語形変化',
+    dictTitle: '辞書',
+    dictCredits: 'データ出典：',
+    dictAttributionLink: '辞書データの出典',
     dictEntryUnreadable: '辞書の項目を読み取れませんでした。もう一度お試しください。',
     pronounceTranslation: '訳文を読み上げる',
     stopPronunciation: '読み上げを停止',
@@ -570,6 +573,8 @@
     cardEngineAi: '自分の AI',
     cardUseBlab: 'Blab Translation を使う',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: 'オフライン辞書',
+    cardUseAiExplain: 'AI でこの文脈での意味を説明',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: 'サイト別の翻訳ルール',
     customRulesDesc: 'サイトごとに、ページのどの部分を翻訳するか、どこを原文のまま残すか、訳文に追加する CSS、使う翻訳エンジンを決めます。ルールはブラウザのアカウントで同期され、保存するとすぐに反映されます。',

@@ -175,6 +175,9 @@
     dictUS: '美',
     dictExamples: '例句',
     dictForms: '词形变化',
+    dictTitle: '词典',
+    dictCredits: '数据来源：',
+    dictAttributionLink: '词典数据来源',
     dictEntryUnreadable: '词典条目读取失败，请重试。',
     pronounceTranslation: '朗读译文',
     stopPronunciation: '停止朗读',
@@ -589,6 +592,8 @@
     cardEngineAi: '我的 AI',
     cardUseBlab: '改用 Blab Translation',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: '本地词典',
+    cardUseAiExplain: '用 AI 解释此处语境',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: '站点翻译规则',
     customRulesDesc: '按网站指定页面上哪些区域要翻译、哪些保留原文、译文的额外样式，以及用哪个翻译引擎。规则跟着浏览器账号同步，保存后立即生效。',

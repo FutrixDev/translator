@@ -170,6 +170,9 @@
     dictUS: '미',
     dictExamples: '예문',
     dictForms: '어형 변화',
+    dictTitle: '사전',
+    dictCredits: '데이터 출처:',
+    dictAttributionLink: '사전 데이터 출처',
     dictEntryUnreadable: '사전 항목을 읽을 수 없습니다. 다시 시도해 주세요.',
     pronounceTranslation: '번역문 읽어주기',
     stopPronunciation: '읽기 중지',
@@ -570,6 +573,8 @@
     cardEngineAi: '내 AI',
     cardUseBlab: 'Blab Translation 사용',
     cardEngineBlab: 'Blab Translation',
+    cardEngineDict: '오프라인 사전',
+    cardUseAiExplain: 'AI로 이 문맥의 뜻 설명',
     // Site translation rules: settings card, rule picker, settings transfer (P1-B)
     customRulesTitle: '사이트별 번역 규칙',
     customRulesDesc: '사이트마다 페이지의 어느 부분을 번역하고 어디를 원문으로 둘지, 번역문에 더할 CSS, 사용할 번역 엔진을 정합니다. 규칙은 브라우저 계정과 함께 동기화되며 저장하는 즉시 적용됩니다.',
