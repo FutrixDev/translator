@@ -365,6 +365,14 @@ ARPA = {'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ'
         'UH': 'ʊ', 'UW': 'u', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ'}
 
 
+def first_variant(ipa):
+    """ipa-dict lists variants inside one pair of slashes, `/ðə, ði/`: keep the first, slashed."""
+    ipa = ipa.strip()
+    slashed = ipa.startswith('/')
+    first = ipa.strip('/').split(',')[0].strip()
+    return f'/{first}/' if slashed and first else first
+
+
 def job_tables(data, norm):
     t0, counts = time.time(), {}
     os.makedirs(os.path.join(norm, 'ipa'), exist_ok=True)
@@ -376,7 +384,7 @@ def job_tables(data, norm):
                 if '\t' not in line:
                     continue
                 w, ipa = line.rstrip('\n').split('\t', 1)
-                ipa = ipa.split(',')[0].strip()
+                ipa = first_variant(ipa)
                 if w and ipa and w not in seen:
                     seen.add(w)
                     o.write(f'{w}\t{ipa}\n')

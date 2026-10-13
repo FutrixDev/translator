@@ -12,7 +12,7 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             lists, so it names exactly the datasets used, the date, the Tatoeba id URL and the
             MIT / BSD / Apache notices)
   shape     the v1 keys and types, `ver`, record and table caps, every `x`/`m` head and every
-            `f` value a head of `e`, no `f` key that is itself a head, en readings "UK|US"
+            `f` value a head of `e`, no `f` key that is itself a head, en readings "/UK/|/US/"
   heads     common.heads_count (heads, or records for the HEADS_UNIT packs) >= 0.95 x
             common.HEADS_BASE
   size      brotli -q 11, recomputed here from the shipped pack (not read from the build's
@@ -47,6 +47,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import attribution  # noqa: E402
 import common as C  # noqa: E402
 import opencc  # noqa: E402
+
+# An English reading: "/UK/|/US/", each side phonemic between slashes or empty, not both.
+EN_READING = re.compile(r'(/[^/|]+/)?\|(/[^/|]+/)?')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LICENSE = os.path.join(HERE, 'cc-by-sa-4.0.txt')
@@ -158,7 +161,7 @@ def check_shape(pack, src, tgt, ver, err):
                 and all(isinstance(g, str) and g for g in r[1]) and r[3] in ORIGINS \
                 and r[3] in used and (r[2] is None or (isinstance(r[2], str) and r[2]))
             if ok and t == 'en' and r[2] is not None:
-                ok = r[2].count('|') == 1 and r[2] != '|'
+                ok = r[2] != '|' and EN_READING.fullmatch(r[2]) is not None
         bad += not ok
     if bad:
         err.append(f'{bad} bad e entries')

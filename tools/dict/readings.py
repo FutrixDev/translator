@@ -62,13 +62,22 @@ def own_ipa(ipa):
     return ipa
 
 
-def kaikki_ipa_rows(path, own):
-    """(word, label, ipa) of every record with IPA; first per (word, label) wins."""
+def phonemic(ipa):
+    """A phonemic transcription, `/.../`; not phonetic `[...]` or diaphonemic `⫽...⫽`."""
+    return len(ipa) > 2 and ipa[0] == '/' and ipa[-1] == '/' and '/' not in ipa[1:-1] \
+        and '|' not in ipa
+
+
+def kaikki_ipa_rows(path, own, slashed_only=False):
+    """(word, label, ipa) of every record with IPA; first per (word, label) wins. English
+    readings are written "/UK/|/US/", so for en only phonemic rows count."""
     seen = set()
     for r in C.read_jsonl(path):
         for label, ipa in r.get('ipa') or []:
             key = (r['w'], label)
             if key in seen or not ipa or not C.tsv_ok(r['w'], label, ipa):
+                continue
+            if slashed_only and not phonemic(ipa):
                 continue
             seen.add(key)
             yield r['w'], label, own_ipa(ipa) if own else ipa
@@ -91,7 +100,7 @@ def prepare(norm, work, t):
             p = os.path.join(norm, rel)
             if not os.path.exists(p):
                 continue
-            for w, label, ipa in kaikki_ipa_rows(p, own):
+            for w, label, ipa in kaikki_ipa_rows(p, own, slashed_only=t == 'en'):
                 o.write(f'{w}\t{label}\t{ipa}\t{rank}\n')
                 n += 1
     os.replace(tmp, table_path(work, t))
