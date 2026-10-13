@@ -3,9 +3,10 @@
 //
 // Looking up a word or short phrase (isLookup: the input dialog and the
 // selection card ask the same question) asks the user's own AI engine for an
-// entry, not just a translation. Nothing else is asked: no third-party
-// dictionary sees the word (D-469). The built-in engine only translates, so its answers carry no entry
-// and nothing below is drawn for them (D-470).
+// entry, not just a translation, or finds it in an offline dictionary pack
+// already on the device (DICT_ENGINE, D-561). No third-party service sees the
+// word (D-469). The built-in engine only translates, so its answers carry no
+// entry and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
 //   isLookup      whether a text is looked up at all (D-473–D-475, D-542). Both
@@ -20,15 +21,20 @@
 //                 no "translation only" rescue. Everything optional is lenient:
 //                 a field of the wrong type, or one overlong item, is dropped
 //                 and the rest of the entry kept.
-//   entryFor      which answers carry an entry: a model engine's answer ('ai'
-//                 or 'blab') to a word-mode request, and only that one.
+//   entryFor      which answers carry an entry: a word-mode answer from a
+//                 model engine ('ai' or 'blab') or from the offline
+//                 dictionary (DICT_ENGINE), and only those. It alone reads
+//                 the dictionary's `credits` (validCredits).
 //   render        the DOM. The input dialog and the selection card both call
 //                 it; neither builds an entry block of its own.
 //
 // Message shape (TRANSLATE): an AI answer in word mode is
 // `{ translation, entry }` — `entry.translation` equals `translation`, which
 // stays at the top because every other caller reads it there. Every other
-// answer is `{ translation }`. The content engine adds `engine`.
+// answer is `{ translation }`. The content engine adds `engine`. A local
+// dictionary hit has the same shape with `engine: DICT_ENGINE`, and may add
+// `credits: [{label, href}]` beside `entry` — not in FIELDS, so never asked
+// of a model, and accepted from the dictionary only.
 //
 // Model strings reach the page through textContent only. The one innerHTML in
 // this file writes the speaker glyph, a constant from content/content-speech.js.
@@ -307,15 +313,82 @@
     return normalize(parsed);
   }
 
+  // ---- the offline dictionary (D-561) -----------------------------------------
+
+  // The engine name a local dictionary answer carries. It is not one of
+  // Engines.ENGINES: those are engines a user picks, stores and batches pages
+  // through; the dictionary is none of that, it only answers lookups.
+  const DICT_ENGINE = 'dict';
+
+  // Credits a dictionary entry may show: the sources whose licences ask for a
+  // credit beside the data (JMdict, Tatoeba). Every other source is credited on
+  // the settings page, not on the card. An href must be https on one of these
+  // hosts exactly — no subdomain, no look-alike — and carry no user, password
+  // or port; anything else is dropped.
+  const CREDIT_HOSTS = Object.freeze(['www.edrdg.org', 'tatoeba.org']);
+  const MAX_CREDITS = 4;
+  const MAX_CREDIT_LABEL = 80;
+
+  function creditHref(value) {
+    if (typeof value !== 'string') return '';
+    let url;
+    try {
+      url = new URL(value.trim());
+    } catch {
+      return '';
+    }
+    const plain = url.protocol === 'https:' && !url.username && !url.password && !url.port;
+    return plain && CREDIT_HOSTS.includes(url.hostname) ? url.href : '';
+  }
+
+  /**
+   * The credits a dictionary answer may show: at most MAX_CREDITS
+   * `{label, href}` items, each with a non-empty label of at most
+   * MAX_CREDIT_LABEL characters and an href that creditHref() accepts. An item
+   * that fails is dropped and the rest kept; anything but an array is no
+   * credits. What is dropped is warned about once, by position and reason.
+   */
+  function validCredits(raw) {
+    if (raw == null) return [];
+    if (!Array.isArray(raw)) {
+      console.warn('dict-entry: dropped credits', ['credits: not an array']);
+      return [];
+    }
+    const dropped = [];
+    const kept = raw.map((item, i) => {
+      const object = isPlainObject(item);
+      const label = object && typeof item.label === 'string' ? item.label.trim() : '';
+      const href = object ? creditHref(item.href) : '';
+      const reason = !object ? 'not an object'
+        : !label || label.length > MAX_CREDIT_LABEL ? 'label missing or too long'
+          : !href ? 'href not an allowed https link'
+            : '';
+      if (reason) dropped.push(`credits[${i}]: ${reason}`);
+      return reason ? null : { label, href };
+    }).filter(Boolean).slice(0, MAX_CREDITS);
+    if (dropped.length) console.warn('dict-entry: dropped credits', dropped);
+    return kept;
+  }
+
   /**
    * The entry a TRANSLATE response carries, or null when it carries none.
-   * Only a model engine's answer to a word-mode request has one ('ai' or
-   * 'blab', Engines.isModelEngine; the built-in engine only translates). A model
-   * word answer without one is a broken service worker, so it throws rather
-   * than quietly drawing nothing.
+   * Only a word-mode answer has one, and only from a model engine ('ai' or
+   * 'blab', Engines.isModelEngine) or the offline dictionary (DICT_ENGINE); the
+   * built-in engine only translates. A model or dictionary word answer without
+   * one is a broken caller, so it throws rather than quietly drawing nothing.
+   * A dictionary answer's `credits` that pass validCredits() ride on the entry
+   * as `entry.credits`; a model answer's never do, whatever it sends.
    */
   function entryFor(mode, response) {
-    if (mode !== 'word' || !response || !globalThis.Engines.isModelEngine(response.engine)) return null;
+    if (mode !== 'word' || !response) return null;
+    if (response.engine === DICT_ENGINE) {
+      if (!response.entry) throw new Error('DictEntry.entryFor: a dictionary word-mode answer carries no entry');
+      const entry = normalize(response.entry);
+      const credits = validCredits(response.credits);
+      if (credits.length) entry.credits = credits;
+      return entry;
+    }
+    if (!globalThis.Engines.isModelEngine(response.engine)) return null;
     if (!response.entry) throw new Error('DictEntry.entryFor: a model word-mode answer carries no entry');
     return normalize(response.entry);
   }
@@ -326,7 +399,9 @@
    * Whether `entry` (from normalize / entryFor) has anything beyond the
    * translation: a phonetic, a sense, an example or a form. render() draws a
    * block for each list that has items, so this is exactly "render() draws
-   * something", and the container is hidden when it is false.
+   * something", and the container is hidden when it is false. A dictionary
+   * entry's credits line is not content: it credits the blocks, and is drawn
+   * only beside them.
    */
   function hasContent(entry) {
     return LIST_KEYS.some((key) => entry[key].length > 0);
@@ -432,10 +507,26 @@
       }
     }
 
+    // The dictionary's credits (entryFor kept only allowed https links): one
+    // line under the entry, each source a link that opens in a new tab and
+    // hands the page neither a window handle nor a referrer.
+    if (Array.isArray(entry.credits) && entry.credits.length) {
+      const block = section('credits');
+      block.appendChild(el('span', 'ai-translator-dict-credits-prefix', t('dictCredits')));
+      for (const { label: name, href } of entry.credits) {
+        const link = el('a', 'ai-translator-dict-credit-link', name);
+        link.setAttribute('href', href);
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+        block.appendChild(link);
+      }
+    }
+
     container.hidden = !hasContent(entry);
   }
 
   root.DictEntry = Object.freeze({
+    DICT_ENGINE,
     FIELDS,
     MAX_TEXT,
     PHONETIC_LANGS,
