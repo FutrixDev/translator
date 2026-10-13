@@ -13,8 +13,10 @@ Steps:
            Writes out/<pack>/{<pack>.json, LICENSE.txt, ATTRIBUTION.txt} (D-570) and, in
            --stats, <pack>.noex.json (the same pack with x = {}) and <pack>.json (numbers).
 
-Size rule (taskbook): when the brotli size of the pack is more than twice that of its
-no-example variant, the pack is rebuilt with one example per head and its stats say so.
+Size rules (taskbook): a pack whose no-example brotli is over common.br_budget takes the
+formtab.RUNGS cuts in order until it fits (stats `size_cuts`); then, when the brotli size of
+the pack is more than twice that of its no-example variant, the pack is rebuilt with one
+example per head and its stats say so (`examples_cut_to_one`).
 """
 import argparse
 import os
@@ -86,9 +88,14 @@ def reading_rate(e, t):
 
 
 def compose(b, x, f, m, ver, used):
+    """The pack object. Tables are written in head order and `f` grouped by head (then key):
+    the order means nothing to a lookup, and grouping like keys and like values together
+    makes brotli 7-24% smaller (es-en `f`: 1.94 MB in build order, 1.48 MB grouped)."""
     return {'v': 1, 'src': b.src, 'tgt': b.tgt, 'ver': ver, 'lic': 'CC-BY-SA-4.0',
             'sources': C.sources_rows(used), 'credits': C.credits_for(used),
-            'e': b.e, 'x': x, 'm': m, 'f': f}
+            'e': dict(sorted(b.e.items())), 'x': dict(sorted(x.items())),
+            'm': dict(sorted(m.items())),
+            'f': dict(sorted(f.items(), key=lambda kv: (kv[1], kv[0])))}
 
 
 def layer_sizes(pack, stats_dir, name):
@@ -101,28 +108,41 @@ def layer_sizes(pack, stats_dir, name):
     return out
 
 
+def measure_noex(b, f, m, ver, used, path):
+    write_json(path, compose(b, {}, f, m, ver, used))
+    return brotli_size(path)
+
+
 def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
     t0 = time.time()
     name = C.pack_name(src, tgt)
     b = Builder(norm, work, src, tgt)
     b.build()
     f, m, fstats = formtab.build(norm, work, b)
-    x, xused, xstats = examples.build(norm, b, f)
     used_noex = set(b.used)
-    used = used_noex | xused
-    noex = compose(b, {}, f, m, ver, used_noex)
     noex_path = os.path.join(stats_dir, f'{name}.noex.json')
-    write_json(noex_path, noex)
-    br_no = brotli_size(noex_path)
+    br_no = measure_noex(b, f, m, ver, used_noex, noex_path)
+    # Size cut 4 (formtab.RUNGS): only while the no-example variant is over its ceiling, and
+    # before `x`, which finds its sentences through the final `f`.
+    budget, cuts, att = C.br_budget(name), [], None
+    for rung in formtab.RUNGS:
+        if br_no <= budget:
+            break
+        att = att or formtab.attested(norm, b.s, b.e, f)
+        f, m = formtab.cut(rung, f, m, *att)
+        cuts.append(rung)
+        br_no = measure_noex(b, f, m, ver, used_noex, noex_path)
+    x, xused, xstats = examples.build(norm, b, f)
+    used = used_noex | xused
     pack_dir = os.path.join(out, name)
     os.makedirs(pack_dir, exist_ok=True)
     pack_path = os.path.join(pack_dir, f'{name}.json')
     pack = compose(b, x, f, m, ver, used)
     raw = write_json(pack_path, pack)
     br_with = brotli_size(pack_path)
-    cut = False
+    cut_x = False
     if br_with > EX_RATIO_MAX * br_no:
-        cut = True
+        cut_x = True
         x, xused, xstats = examples.build(norm, b, f, per_head=1)
         used = used_noex | xused
         pack = compose(b, x, f, m, ver, used)
@@ -133,9 +153,12 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
     st = {'pack': name, 'heads': len(b.e), 'records': sum(len(v) for v in b.e.values()),
           'reading_den': den, 'reading_num': num,
           'reading_rate': round(100 * num / den, 1) if den else None,
-          **fstats, **xstats,
+          **fstats, 'f_keys_built': fstats['f_keys'], 'f_keys': len(f),
+          'm_heads_built': fstats['m_heads'], 'm_heads': len(m), 'size_cuts': cuts,
+          **xstats,
           'examples_head_rate': round(100 * xstats['x_heads'] / len(b.e), 1) if b.e else 0,
-          'examples_cut_to_one': cut, 'raw': raw, 'raw_no_examples': os.path.getsize(noex_path),
+          'examples_cut_to_one': cut_x, 'raw': raw,
+          'raw_no_examples': os.path.getsize(noex_path), 'br_budget': budget,
           'br_no_examples': br_no, 'br_with_examples': br_with,
           'reverse_added': b.reverse_added, 'sources': sorted(used),
           'seconds': round(time.time() - t0, 1)}
@@ -185,7 +208,8 @@ def main():
             print(f"  {st['pack']}: heads={st['heads']} f={st['f_keys']} "
                   f"reading={st['reading_rate']}% x_heads={st['examples_head_rate']}% "
                   f"br_no={st['br_no_examples']} br_with={st['br_with_examples']} "
-                  f"{st['seconds']}s" + (' [x cut to 1]' if st['examples_cut_to_one'] else ''),
+                  f"{st['seconds']}s" + (' [x cut to 1]' if st['examples_cut_to_one'] else '')
+                  + (f" [cuts {','.join(st['size_cuts'])}]" if st['size_cuts'] else ''),
                   flush=True)
     print(f'pairs: {len(packs) - failed}/{len(packs)} packs in {round(time.time() - t0)}s',
           flush=True)

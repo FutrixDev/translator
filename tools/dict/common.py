@@ -66,6 +66,11 @@ BR_BASE = {
 }
 BR_DEFAULT = 2000000
 BR_SLACK = 1.10
+
+
+def br_budget(name):
+    return int(BR_BASE.get(name, BR_DEFAULT) * BR_SLACK)
+
 # Reading rate floor: design §2.1 / spike data/readings/readings.csv reading_pct_of_word_forms,
 # minus 3 points. Pairs the spike did not measure take the §2.1 value of their target language.
 READING_BASE = {
@@ -224,7 +229,7 @@ def contains(sentence, surfaces, lang):
 
 # ---------------- sources and credits (v1 `sources[]` / `credits`) ----------------
 # Every dataset a pack can draw on, as the v1 `sources[]` row; a pack lists only the ids it
-# used (D-570). `notice` is the licence line ATTRIBUTION.txt prints for the dataset.
+# used (D-570); attribution.py words its ATTRIBUTION.txt block.
 SOURCES = {
     'wiktionary': {'name': 'Wiktionary (kaikki.org)', 'license': 'CC BY-SA 4.0',
                    'url': 'https://kaikki.org/'},

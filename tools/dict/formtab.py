@@ -34,6 +34,8 @@ DERIVED = frozenset({
 # Spanish clitic-attached forms and voseo forms, then the rare subjunctive future.
 TRIM = frozenset({'combined-form', 'vos-form', 'with-vos'})
 TRIM_EXACT = (frozenset({'future', 'subjunctive'}),)
+# Size cut 3 (ja): the noun + suru class, generated for every suru noun.
+JA_SKIP_CLASSES = frozenset({'vs'})
 FORM_SOURCES = ('en', 'es', 'fr', 'de', 'pt', 'ru', 'ko')
 BAD_KEY = (' ', '/', '(', ')', '\t')
 
@@ -63,14 +65,38 @@ def needs_prepare(s):
 
 
 def rows_of(path, s, rank):
+    """(form, head, tags, rank) of one edition: the inflection rows of each entry and, for an
+    entry that is itself a form of another word, a ('form-of',) row. Dropped rows are kept
+    here; screen() decides."""
     for r in C.read_jsonl(path):
         head = fold_key(r['w'], s)
         for form, tags in r['fm']:
-            if not dropped(tags) and key_ok(fold_key(form, s), s):
-                yield form, head, tags, rank
+            if key_ok(fold_key(form, s), s):
+                yield form, head, tuple(tags), rank
         for lemma in r['lo']:
             if key_ok(head, s):
                 yield r['w'], fold_key(lemma, s), ('form-of',), rank
+
+
+def screen(rows, s):
+    """The rows `f` may use. A form-of row carries no tags, but Wiktionary gives every
+    conjugated form its own form-of page, clitic-attached and voseo forms included, so a
+    form-of row is dropped when its lemma's inflection table lists that form only under
+    dropped tags (otherwise TRIM would come back through the form-of pages)."""
+    rows = list(rows)
+    kept, gone = set(), set()
+    for form, head, tags, *_ in rows:
+        if tags != ('form-of',):
+            (gone if dropped(tags) else kept).add((fold_key(form, s), head))
+    for row in rows:
+        form, head, tags = row[0], row[1], row[2]
+        pair = (fold_key(form, s), head)
+        if tags == ('form-of',):
+            if pair in gone and pair not in kept:
+                continue
+        elif dropped(tags):
+            continue
+        yield row
 
 
 def prepare(norm, work, s):
@@ -81,16 +107,17 @@ def prepare(norm, work, s):
         files.append((f'kaikki/{s}-{s}.jsonl', 1))
     tmp = table_path(work, s) + '.tmp'
     n = 0
-    with open(tmp, 'w', encoding='utf-8') as o:
+    def every():
         for rel, rank in files:
             p = os.path.join(norm, rel)
-            if not os.path.exists(p):
+            if os.path.exists(p):
+                yield from rows_of(p, s, rank)
+    with open(tmp, 'w', encoding='utf-8') as o:
+        for form, head, tags, rank_ in screen(every(), s):
+            if '\t' in head or '\n' in form or '\n' in head:
                 continue
-            for form, head, tags, rank_ in rows_of(p, s, rank):
-                if '\t' in head or '\n' in form or '\n' in head:
-                    continue
-                o.write(f'{form}\t{head}\t{",".join(tags)}\t{rank_}\n')
-                n += 1
+            o.write(f'{form}\t{head}\t{",".join(tags)}\t{rank_}\n')
+            n += 1
     os.replace(tmp, table_path(work, s))
     return s, n
 
@@ -129,9 +156,7 @@ class Forms:
                 slot[kind] = (rank, form)
 
     def kaikki_rows(self, rows):
-        for form, head, tags in rows:
-            if dropped(tags):
-                continue
+        for form, head, tags in screen(rows, self.s):
             key = fold_key(form, self.s)
             if not key_ok(key, self.s):
                 continue
@@ -141,6 +166,9 @@ class Forms:
                 self.show(head, hit[0], hit[1], form)
 
     def jmdict(self, path):
+        """Conjugate the entry's head spelling and its first kana reading only (size cut 3:
+        rare alternative kanji spellings tripled the table for +0.2 sample hits), and not
+        the noun + suru class `vs` (勉強 -> 勉強した): 410k keys for -0.1 type hits."""
         order = {k: i for i, k in enumerate(ja_forms.M_KINDS)}
         for r in C.read_jsonl(path):
             spellings = r['k'] + r['r']
@@ -148,9 +176,9 @@ class Forms:
             if anchor is None:
                 continue
             cls = ja_forms.classes(p for sense in r['s'] for p in sense['p'])
-            if cls is None:
+            if cls is None or cls in JA_SKIP_CLASSES:
                 continue
-            for sp in spellings:
+            for sp in dict.fromkeys([anchor] + r['r'][:1]):
                 for form, kind in ja_forms.forms(sp, cls):
                     self.put(form, anchor)
                     if sp == anchor and kind in order:
@@ -190,3 +218,62 @@ def build(norm, work, builder):
         builder.used.add('cedict')
     f, m = fm.finish()
     return f, m, {'f_keys': len(f), 'f_conflicts': fm.conflicts, 'm_heads': len(m)}
+
+
+# ---------------- size cut 4: what the source corpus attests ----------------
+# A pack whose no-example brotli is still over its ceiling (common.br_budget) after cuts
+# 1-3 keeps, rung by rung until it fits:
+#   rung 1  `m` only for heads the corpus attests (the head or any of its `f` keys);
+#   rung 2  `f` only for keys of attested heads, plus every key the corpus itself attests.
+# The corpus is every Tatoeba sentence in the source language. Keys a Tatoeba sentence
+# contains always survive, so the Tatoeba part of `x` is unchanged by either rung.
+RUNGS = ('m-attested', 'f-attested')
+
+
+def tatoeba_sentences(norm, s):
+    """Every distinct Tatoeba sentence in language s, across all the pair files."""
+    seen = set()
+    d = os.path.join(norm, 'tatoeba')
+    for name in sorted(os.listdir(d)) if os.path.isdir(d) else ():
+        a, b = name[:-len('.tsv')].split('-')
+        if s not in (a, b):
+            continue
+        col = 0 if a == s else 2
+        with open(os.path.join(d, name), encoding='utf-8') as f:
+            for line in f:
+                p = line.rstrip('\n').split('\t')
+                if len(p) == 4 and p[col] not in seen:
+                    seen.add(p[col])
+                    yield p[col + 1]
+
+
+def attested(norm, s, e, f):
+    """{head: number of corpus sentence hits of the head and its `f` keys}, and the set of
+    `f` keys the corpus contains."""
+    want = {C.fold_surface(w, s) for w in e} | {C.fold_surface(k, s) for k in f}
+    hits = {}
+    for text in tatoeba_sentences(norm, s):
+        for key in C.sentence_keys(text, s):
+            if key in want:
+                hits[key] = hits.get(key, 0) + 1
+    by_head, keys = {}, set()
+    for h in e:
+        n = hits.get(C.fold_surface(h, s), 0)
+        if n:
+            by_head[h] = by_head.get(h, 0) + n
+    for k, h in f.items():
+        n = hits.get(C.fold_surface(k, s), 0)
+        if n:
+            keys.add(k)
+            by_head[h] = by_head.get(h, 0) + n
+    return by_head, keys
+
+
+def cut(rung, f, m, by_head, keys):
+    """Apply one rung of size cut 4; returns the new (f, m)."""
+    if rung == 'm-attested':
+        return f, {h: v for h, v in m.items() if h in by_head}
+    if rung == 'f-attested':
+        return {k: h for k, h in f.items() if h in by_head or k in keys}, m
+    raise ValueError(rung)
+
