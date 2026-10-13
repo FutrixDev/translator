@@ -443,6 +443,9 @@ test('a credit that is not an https link to an allowed host is dropped, and the 
     { label: '', href: TATOEBA.href },
     { label: '   ', href: TATOEBA.href },
     { label: 'x'.repeat(81), href: TATOEBA.href },
+    { label: '\u200B\u200C\u200D', href: TATOEBA.href },
+    { label: ' \u2060 \u200B ', href: TATOEBA.href },
+    { label: 'No-break', href: '\u00A0https://tatoeba.org/' },
     { href: TATOEBA.href },
     'Tatoeba',
     null,
@@ -456,8 +459,26 @@ test('a credit that is not an https link to an allowed host is dropped, and the 
   assert.doesNotMatch(JSON.stringify(calls), /Script|javascript|example\.com/);
 });
 
-test('credits are trimmed, cut at four, and anything but an array is none', (t) => {
-  const five = Array.from({ length: 5 }, (_, i) => ({ label: ` Tatoeba ${i} `, href: ` https://tatoeba.org/en/sentences/show/${i} ` }));
+test('a credit label made only of zero-width characters is dropped as invisible', (t) => {
+  const invisible = ['\u200B', '\u200C\u200D', '\u2060', ' \u200B \u2060 ', '\u200B\uFEFF\u200B'];
+  const credits = [...invisible.map((label) => ({ label, href: TATOEBA.href })), { label: '\u200BTatoeba', href: TATOEBA.href }];
+  const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits })));
+  // A label with something visible in it stays as given.
+  assert.deepEqual(out.credits, [{ label: '\u200BTatoeba', href: TATOEBA.href }]);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0][1], invisible.map((_, i) => `credits[${i}]: label has no visible text`));
+});
+
+test('a credit href is taken as it is: one with a leading no-break space is dropped', (t) => {
+  for (const href of ['\u00A0' + TATOEBA.href, '\u2003' + JMDICT.href]) {
+    const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits: [{ label: 'Tatoeba', href }] })));
+    assert.equal('credits' in out, false, JSON.stringify(href));
+    assert.deepEqual(calls[0][1], ['credits[0]: href not an allowed https link'], JSON.stringify(href));
+  }
+});
+
+test('credit labels are trimmed, credits cut at four, and anything but an array is none', (t) => {
+  const five = Array.from({ length: 5 }, (_, i) => ({ label: ` Tatoeba ${i} `, href: `https://tatoeba.org/en/sentences/show/${i}` }));
   const { out } = warnings(t, () => entryFor('word', dictAnswer({ credits: five })));
   assert.deepEqual(out.credits, five.slice(0, 4).map((_, i) => ({
     label: `Tatoeba ${i}`, href: `https://tatoeba.org/en/sentences/show/${i}`,
@@ -514,7 +535,9 @@ class FakeElement {
     return out;
   }
 }
-const doc = { createElement: (tag) => new FakeElement(doc, tag) };
+// A text node: no class, no children, just its text.
+const textNode = (value) => ({ nodeType: 3, className: '', children: [], textContent: String(value) });
+const doc = { createElement: (tag) => new FakeElement(doc, tag), createTextNode: textNode };
 const MESSAGES = {
   dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceTranslation: 'Read the translation',
   dictCredits: 'Sources:',
@@ -595,6 +618,12 @@ test('a dictionary entry with credits ends in one line of links that open in a n
   const [line] = container.find('ai-translator-dict-credits');
   assert.ok(line, 'the credits line is drawn');
   assert.equal(container.children.at(-1), line, 'the credits line is the last block');
+  // Its own line, not a section: sections stack their rows.
+  assert.equal(line.className, 'ai-translator-dict-credits');
+  // Prefix, first link, ' · ', second link; a separator only between links.
+  assert.deepEqual(line.children.map((n) => n.className || n.textContent),
+    ['ai-translator-dict-credits-prefix', 'ai-translator-dict-credit-link', ' · ', 'ai-translator-dict-credit-link']);
+  assert.equal(line.textContent, `Sources:${JMDICT.label} · ${TATOEBA.label}`);
   assert.deepEqual(line.find('ai-translator-dict-credits-prefix').map((n) => n.textContent), ['Sources:']);
   const links = line.find('ai-translator-dict-credit-link');
   assert.deepEqual(links.map((a) => a.tagName), ['A', 'A']);

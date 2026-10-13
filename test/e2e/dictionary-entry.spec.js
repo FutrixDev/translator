@@ -724,6 +724,17 @@ test.describe('dictionary entry (batch C)', () => {
       const line = dict.locator('.ai-translator-dict-credits');
       await expect(line).toHaveCount(1);
       await expect(line.locator('.ai-translator-dict-credits-prefix')).toHaveText(zh('dictCredits'));
+      // One line of its own, not a stacked section: prefix, first link, a
+      // ' · ' text node, second link, in that order. Laying it out on one
+      // row is the stylesheet's job (B2); the order is what render owns.
+      const order = await line.evaluate((el) => ({
+        className: el.className,
+        nodes: [...el.childNodes].map((n) => (n.nodeType === Node.TEXT_NODE ? `text:${n.data}` : n.className)),
+      }));
+      expect(order).toEqual({
+        className: 'ai-translator-dict-credits',
+        nodes: ['ai-translator-dict-credits-prefix', 'ai-translator-dict-credit-link', 'text: · ', 'ai-translator-dict-credit-link'],
+      });
       const links = line.locator('a');
       await expect(links).toHaveText(['JMdict © EDRDG', 'Tatoeba']);
       const attrs = await links.evaluateAll((all) => all.map((a) => ({

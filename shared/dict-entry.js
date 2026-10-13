@@ -328,12 +328,15 @@
   const CREDIT_HOSTS = Object.freeze(['www.edrdg.org', 'tatoeba.org']);
   const MAX_CREDITS = 4;
   const MAX_CREDIT_LABEL = 80;
+  // Characters that take no room on screen: a label made only of these (and
+  // spaces) would draw a link nobody can see, so it counts as no label.
+  const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
 
   function creditHref(value) {
     if (typeof value !== 'string') return '';
     let url;
     try {
-      url = new URL(value.trim());
+      url = new URL(value);
     } catch {
       return '';
     }
@@ -343,8 +346,9 @@
 
   /**
    * The credits a dictionary answer may show: at most MAX_CREDITS
-   * `{label, href}` items, each with a non-empty label of at most
-   * MAX_CREDIT_LABEL characters and an href that creditHref() accepts. An item
+   * `{label, href}` items, each with a label of at most MAX_CREDIT_LABEL
+   * characters that shows something once zero-width characters are gone, and
+   * an href that creditHref() accepts as it is (no trimming). An item
    * that fails is dropped and the rest kept; anything but an array is no
    * credits. What is dropped is warned about once, by position and reason.
    */
@@ -361,8 +365,9 @@
       const href = object ? creditHref(item.href) : '';
       const reason = !object ? 'not an object'
         : !label || label.length > MAX_CREDIT_LABEL ? 'label missing or too long'
-          : !href ? 'href not an allowed https link'
-            : '';
+          : !label.replace(ZERO_WIDTH, '').trim() ? 'label has no visible text'
+            : !href ? 'href not an allowed https link'
+              : '';
       if (reason) dropped.push(`credits[${i}]: ${reason}`);
       return reason ? null : { label, href };
     }).filter(Boolean).slice(0, MAX_CREDITS);
@@ -508,12 +513,15 @@
     }
 
     // The dictionary's credits (entryFor kept only allowed https links): one
-    // line under the entry, each source a link that opens in a new tab and
-    // hands the page neither a window handle nor a referrer.
+    // line under the entry, not a section (sections stack their rows), with
+    // the prefix and the links side by side and ' · ' between two links. Each
+    // source is a link that opens in a new tab and hands the page neither a
+    // window handle nor a referrer.
     if (Array.isArray(entry.credits) && entry.credits.length) {
-      const block = section('credits');
+      const block = container.appendChild(el('div', 'ai-translator-dict-credits'));
       block.appendChild(el('span', 'ai-translator-dict-credits-prefix', t('dictCredits')));
-      for (const { label: name, href } of entry.credits) {
+      for (const [i, { label: name, href }] of entry.credits.entries()) {
+        if (i) block.appendChild(doc.createTextNode(' · '));
         const link = el('a', 'ai-translator-dict-credit-link', name);
         link.setAttribute('href', href);
         link.setAttribute('target', '_blank');
