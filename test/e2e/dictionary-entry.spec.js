@@ -1,7 +1,9 @@
 // Batch C journeys C1–C3: a word looked up in the input box or the selection
 // card shows a dictionary entry (phonetics with speakers, senses, examples,
-// word forms) under the translation — from the AI engine only (D-469/D-470).
+// word forms) under the translation — from a model engine (D-469/D-470) or the
+// offline dictionary (D-561), never the built-in engine.
 // C9: a short formula is translated, not looked up (D-474).
+// C10: an offline dictionary answer draws its credits as safe links (D-561).
 // J1–J3: the phonetics are the translation's, in the target language, and
 // their speakers read the translation (D-487); the source text keeps its own
 // speaker on each surface.
@@ -678,6 +680,70 @@ test.describe('dictionary entry (batch C)', () => {
         { text: '跑', lang: 'zh-CN' },
         { text: 'run', lang: '' },
       ]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  // D-561: an offline dictionary answer ({engine: 'dict', entry, credits}) is
+  // read by the same entryFor and drawn by the same render. Nothing sends one
+  // yet (the lookup is wired in a later batch), so this draws one into the
+  // input box's real entry container from the content script, where the card
+  // and the dialog call render, and reads the links off the page.
+  test('C10: an offline dictionary entry ends in a credits line of safe links; a model answer\'s credits are dropped (D-561)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await openInputDialog(page);
+
+      const drawAnswer = (answer) => evaluateInContentScript(context, page, `(() => {
+        const answer = ${JSON.stringify(answer)};
+        const entry = DictEntry.entryFor('word', answer);
+        DictEntry.render(document.getElementById('ai-translator-input-dict'), entry, {
+          targetLang: 'zh-CN', t: (key) => getMessage(key, 'zh-CN'), speech: null,
+        });
+        return 'credits' in entry;
+      })()`);
+      const entry = { translation: '跑', senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }] };
+      const credits = [
+        { label: 'JMdict © EDRDG', href: 'https://www.edrdg.org/edrdg/licence.html' },
+        { label: 'Script', href: 'javascript:window.__pwned=1' },
+        { label: 'Plain', href: 'http://tatoeba.org/' },
+        { label: 'Elsewhere', href: 'https://example.com/' },
+        { label: 'Tatoeba', href: 'https://tatoeba.org/' },
+      ];
+      const dict = page.locator('#ai-translator-input-dict');
+
+      expect(await drawAnswer({ engine: 'dict', translation: '跑', entry, credits })).toBe(true);
+      // The result area around it stays hidden until a translation arrives;
+      // render itself un-hides the entry container.
+      expect(await dict.evaluate((el) => el.hidden)).toBe(false);
+      const line = dict.locator('.ai-translator-dict-credits');
+      await expect(line).toHaveCount(1);
+      await expect(line.locator('.ai-translator-dict-credits-prefix')).toHaveText(zh('dictCredits'));
+      const links = line.locator('a');
+      await expect(links).toHaveText(['JMdict © EDRDG', 'Tatoeba']);
+      const attrs = await links.evaluateAll((all) => all.map((a) => ({
+        href: a.href, target: a.target, noopener: a.relList.contains('noopener'), noreferrer: a.relList.contains('noreferrer'),
+      })));
+      expect(attrs).toEqual([
+        { href: 'https://www.edrdg.org/edrdg/licence.html', target: '_blank', noopener: true, noreferrer: true },
+        { href: 'https://tatoeba.org/', target: '_blank', noopener: true, noreferrer: true },
+      ]);
+      expect(await dict.locator('a[href^="javascript"], a[href^="http:"], a[href*="example.com"]').count()).toBe(0);
+
+      // The same credits on a model answer: dropped, no line, the entry as before.
+      expect(await drawAnswer({ engine: 'ai', translation: '跑', entry: { ...entry, credits }, credits })).toBe(false);
+      await expect(dict.locator('.ai-translator-dict-sense')).toHaveCount(1);
+      await expect(dict.locator('.ai-translator-dict-credits')).toHaveCount(0);
+      await expect(dict.locator('a')).toHaveCount(0);
+
+      // Nothing here asked a model.
+      expect(mock.systemPrompts).toEqual([]);
+      expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
     } finally {
       await mock.close();
     }

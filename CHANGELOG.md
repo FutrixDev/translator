@@ -23,6 +23,17 @@
   (Chinese characters stay at four), and one trailing sentence stop
   (. ! ? 。！？) no longer turns a word into a sentence.
 
+### Offline dictionary (groundwork)
+
+- **The dictionary entry can now come from an offline dictionary as well as
+  from your AI model.** Nothing looks words up offline yet; this prepares the
+  entry and its wording. An offline entry is drawn exactly like a model's,
+  and ends in a short "Sources:" line linking to the dictionaries whose
+  licences ask for credit on the entry (JMdict and Tatoeba). Only those two
+  sites can be linked, each link opens in a new tab, and a model's answer can
+  never add such a line. The card strings for the offline dictionary are in
+  all ten languages.
+
 ### Target languages
 
 - **The languages you picked last are at the top of the menu.** The
