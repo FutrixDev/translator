@@ -1,6 +1,6 @@
 Blab Translation — leia qualquer coisa em dois idiomas.
 
-Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos e HQs. Use a IA em que você confia — modelos na nuvem ou locais — ou o tradutor gratuito do Chrome, que roda no seu dispositivo.
+Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mangás e HQs. Use a IA em que você confia — modelos na nuvem ou locais — ou o tradutor gratuito do Chrome, que roda no seu dispositivo.
 
 ★ PÁGINAS WEB BILÍNGUES
 • A tradução abaixo de cada parágrafo. Formatação, links e imagens intactos.
@@ -15,7 +15,7 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos e HQs
 • Mensagens privadas nunca são traduzidas automaticamente.
 • Regras por site: aponte para qualquer área — "Não traduzir aqui", "Manter o original" ou "Traduzir só aqui". Fixe um mecanismo, adicione CSS. As regras sincronizam com a sua conta do navegador.
 
-★ PDFS QUE MANTÊM O LAYOUT
+★ TRADUÇÃO DE PDF QUE MANTÉM O LAYOUT
 • PDFs bilíngues ou só com a tradução, com figuras, fórmulas e layout exatamente onde estavam.
 • Páginas grátis todo mês, com login.
 
@@ -34,8 +34,8 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos e HQs
 • Segure uma tecla modificadora e passe o mouse para traduzir um único parágrafo.
 • Digitando em um idioma diferente do da página? Traduza com um clique.
 
-★ HQS E IMAGENS
-• Páginas de HQ redesenhadas no seu idioma — e colorizadas, se você quiser.
+★ MANGÁS, HQS E IMAGENS
+• Páginas de mangá e HQ redesenhadas no seu idioma — e colorizadas, se você quiser.
 • Texto em imagens reconhecido por OCR no dispositivo e depois traduzido.
 
 ★ PRIVADO POR PADRÃO
