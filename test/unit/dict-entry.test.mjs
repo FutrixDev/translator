@@ -16,8 +16,11 @@
 //     and the row is read in the target language;
 //   - render() puts model strings on the page as text, never as HTML, and
 //     stops the old entry's speaker before replacing it;
-//   - only a model engine's answer ('ai' or 'blab') in word mode carries an
-//     entry (entryFor).
+//   - only a word-mode answer from a model engine ('ai' or 'blab') or the
+//     offline dictionary ('dict') carries an entry (entryFor); only the
+//     dictionary's answer may carry credits, kept when each is an https link
+//     to an allowed host, and render draws them as one line of links;
+//   - credits never reach the prompt: OUTPUT_RULES is pinned word for word.
 //
 // That the dialog and the card draw the same entry is checked on the page:
 // test/e2e/dictionary-entry.spec.js compares the two.
@@ -25,6 +28,7 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { repoSource, workerSource } from './helpers/sources.mjs';
 
 // render() reads LangTags; the manifest loads it first (checked below).
@@ -32,7 +36,8 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
-  FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, hasContent, render,
+  DICT_ENGINE, FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, hasContent,
+  render,
 } = globalThis.DictEntry;
 
 // `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
@@ -348,6 +353,17 @@ test('the phonetics asked for are the translation\'s, in the target language (D-
   assert.doesNotMatch(line, /source/, 'the source word has its own speaker; its pronunciation is not asked for');
 });
 
+test('the rules the model is asked to follow are unchanged by the offline dictionary, word for word', () => {
+  // sha256 of OUTPUT_RULES at 90812ca, before the dictionary's credits existed.
+  // Credits are the dictionary's, beside the entry: never a key the model is
+  // asked for, so a change here is a prompt change and needs its own review.
+  assert.equal(createHash('sha256').update(OUTPUT_RULES).digest('hex'),
+    '6798039c7cad1d2f078886b97fd2d861e2a711c965eee4e67b5b1b6fdd5dc901');
+  assert.equal(PROMPT_MARK, 'OUTPUT FORMAT (dictionary entry):');
+  assert.equal('credits' in FIELDS, false);
+  assert.doesNotMatch(OUTPUT_RULES, /credit/i);
+});
+
 test('both word prompts are built from the shared rules', () => {
   const prompts = repoSource('background/prompts.js');
   assert.match(prompts, /DictEntry\.OUTPUT_RULES/);
@@ -356,13 +372,110 @@ test('both word prompts are built from the shared rules', () => {
 
 // ---- entryFor -------------------------------------------------------------
 
-test('only a model engine answer (ai or blab) in word mode carries an entry', () => {
+test('only a model engine answer (ai or blab) or the dictionary\'s, in word mode, carries an entry', () => {
   for (const engine of ['ai', 'blab']) {
     assert.deepEqual(entryFor('word', { engine, translation: '跑', entry: FULL }), FULL, engine);
     assert.equal(entryFor('text', { engine, translation: '跑' }), null, engine);
-    assert.throws(() => entryFor('word', { engine, translation: '跑' }), /carries no entry/, engine);
+    assert.throws(() => entryFor('word', { engine, translation: '跑' }), /a model word-mode answer carries no entry/, engine);
   }
   assert.equal(entryFor('word', { engine: 'builtin', translation: '跑' }), null);
+  assert.equal(entryFor('word', null), null);
+});
+
+// ---- the offline dictionary (D-561) ----------------------------------------
+
+const JMDICT = { label: 'JMdict © EDRDG', href: 'https://www.edrdg.org/edrdg/licence.html' };
+const TATOEBA = { label: 'Tatoeba', href: 'https://tatoeba.org/' };
+const dictAnswer = (extra = {}) => ({ engine: DICT_ENGINE, translation: '跑', entry: FULL, ...extra });
+
+// console.warn calls made while `fn` runs; the warning is the drop being seen.
+function warnings(t, fn) {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const out = fn();
+  return { out, calls: warn.mock.calls.map((call) => call.arguments) };
+}
+
+test('the dictionary engine is \'dict\', and it is not an engine a user picks', () => {
+  assert.equal(DICT_ENGINE, 'dict');
+  assert.equal(globalThis.Engines.ENGINES.includes(DICT_ENGINE), false);
+  assert.equal(globalThis.Engines.isModelEngine(DICT_ENGINE), false);
+});
+
+test('a dictionary answer in word mode carries its entry, normalized like a model\'s', () => {
+  assert.deepEqual(entryFor('word', dictAnswer()), FULL);
+  // normalize, not a pass-through: unknown keys go, a wrong-typed list is empty.
+  assert.deepEqual(entryFor('word', dictAnswer({ entry: { translation: ' 跑 ', senses: 'v.', extra: 1 } })),
+    { translation: '跑', phonetics: [], senses: [], examples: [], forms: [] });
+  assert.equal(entryFor('text', dictAnswer()), null);
+});
+
+test('a dictionary word answer without an entry throws, as a model\'s does', () => {
+  assert.throws(() => entryFor('word', { engine: DICT_ENGINE, translation: '跑' }),
+    /a dictionary word-mode answer carries no entry/);
+  assert.throws(() => entryFor('word', { engine: DICT_ENGINE, entry: null }), /carries no entry/);
+  // An entry with no translation is the same hard failure as a model's.
+  throwsInvalid(() => entryFor('word', { engine: DICT_ENGINE, entry: { senses: [] } }), 'no translation');
+});
+
+test('a dictionary answer\'s credits ride on the entry', () => {
+  const entry = entryFor('word', dictAnswer({ credits: [JMDICT, TATOEBA] }));
+  assert.deepEqual(entry.credits, [JMDICT, TATOEBA]);
+  assert.deepEqual({ ...entry, credits: undefined }, { ...FULL, credits: undefined });
+  // No credits, or none that pass: no key at all, not an empty list.
+  assert.equal('credits' in entryFor('word', dictAnswer()), false);
+  assert.equal('credits' in entryFor('word', dictAnswer({ credits: [] })), false);
+});
+
+test('a credit that is not an https link to an allowed host is dropped, and the rest kept', (t) => {
+  const bad = [
+    { label: 'Script', href: 'javascript:alert(1)' },
+    { label: 'Plain', href: 'http://tatoeba.org/' },
+    { label: 'Elsewhere', href: 'https://example.com/' },
+    { label: 'Look-alike', href: 'https://tatoeba.org.evil.example/' },
+    { label: 'Suffix', href: 'https://eviltatoeba.org/' },
+    { label: 'Subdomain', href: 'https://en.tatoeba.org/' },
+    { label: 'Bare edrdg', href: 'https://edrdg.org/' },
+    { label: 'User', href: 'https://someone@tatoeba.org/' },
+    { label: 'Port', href: 'https://tatoeba.org:8443/' },
+    { label: 'Data', href: 'data:text/html,<b>x</b>' },
+    { label: 'Not a URL', href: 'tatoeba.org' },
+    { label: 'Not a string', href: 42 },
+    { label: '', href: TATOEBA.href },
+    { label: '   ', href: TATOEBA.href },
+    { label: 'x'.repeat(81), href: TATOEBA.href },
+    { href: TATOEBA.href },
+    'Tatoeba',
+    null,
+  ];
+  const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits: [...bad, TATOEBA] })));
+  assert.deepEqual(out.credits, [TATOEBA]);
+  // One warning, by position and reason, and no label or link in it.
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1].length, bad.length);
+  assert.match(calls[0][1][0], /^credits\[0\]: href not an allowed https link$/);
+  assert.doesNotMatch(JSON.stringify(calls), /Script|javascript|example\.com/);
+});
+
+test('credits are trimmed, cut at four, and anything but an array is none', (t) => {
+  const five = Array.from({ length: 5 }, (_, i) => ({ label: ` Tatoeba ${i} `, href: ` https://tatoeba.org/en/sentences/show/${i} ` }));
+  const { out } = warnings(t, () => entryFor('word', dictAnswer({ credits: five })));
+  assert.deepEqual(out.credits, five.slice(0, 4).map((_, i) => ({
+    label: `Tatoeba ${i}`, href: `https://tatoeba.org/en/sentences/show/${i}`,
+  })));
+  for (const credits of ['Tatoeba', { 0: TATOEBA }, 1]) {
+    const { out: entry, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits })));
+    assert.equal('credits' in entry, false, JSON.stringify(credits));
+    assert.equal(calls.length, 1, JSON.stringify(credits));
+  }
+});
+
+test('a model answer never carries credits, whatever it sends', () => {
+  for (const engine of ['ai', 'blab']) {
+    const entry = entryFor('word', { engine, translation: '跑', entry: { ...FULL, credits: [TATOEBA] }, credits: [JMDICT] });
+    assert.deepEqual(entry, FULL, engine);
+    assert.equal('credits' in entry, false, engine);
+  }
+  assert.equal(entryFor('word', { engine: 'builtin', translation: '跑', credits: [TATOEBA] }), null);
 });
 
 // ---- render ---------------------------------------------------------------
@@ -402,7 +515,10 @@ class FakeElement {
   }
 }
 const doc = { createElement: (tag) => new FakeElement(doc, tag) };
-const MESSAGES = { dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceTranslation: 'Read the translation' };
+const MESSAGES = {
+  dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceTranslation: 'Read the translation',
+  dictCredits: 'Sources:',
+};
 
 // `猫` looked up into English: two labelled IPA rows for the translation.
 const CAT = { translation: 'cat', phonetics: [{ label: 'UK', ipa: '/kæt/' }, { label: 'US', ipa: '/kæt/' }] };
@@ -472,6 +588,41 @@ test('an English target with a region subtag keeps the UK and US voices', () => 
     assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US'], targetLang);
     assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'cat', lang: 'en-GB' }, { text: 'cat', lang: 'en-US' }], targetLang);
   }
+});
+
+test('a dictionary entry with credits ends in one line of links that open in a new tab', () => {
+  const { container } = draw(entryFor('word', dictAnswer({ credits: [JMDICT, TATOEBA] })));
+  const [line] = container.find('ai-translator-dict-credits');
+  assert.ok(line, 'the credits line is drawn');
+  assert.equal(container.children.at(-1), line, 'the credits line is the last block');
+  assert.deepEqual(line.find('ai-translator-dict-credits-prefix').map((n) => n.textContent), ['Sources:']);
+  const links = line.find('ai-translator-dict-credit-link');
+  assert.deepEqual(links.map((a) => a.tagName), ['A', 'A']);
+  assert.deepEqual(links.map((a) => a.textContent), [JMDICT.label, TATOEBA.label]);
+  assert.deepEqual(links.map((a) => a.attributes.href), [JMDICT.href, TATOEBA.href]);
+  for (const a of links) {
+    assert.equal(a.attributes.target, '_blank');
+    assert.deepEqual(a.attributes.rel.split(' ').sort(), ['noopener', 'noreferrer']);
+  }
+});
+
+test('an entry without credits draws no credits line, and credits alone are not content', () => {
+  for (const entry of [entryFor('word', dictAnswer()), entryFor('word', { engine: 'ai', entry: FULL, credits: [TATOEBA] })]) {
+    const { container } = draw(entry);
+    assert.deepEqual(container.find('ai-translator-dict-credits'), []);
+    assert.equal(container.childElementCount, 4);
+  }
+  // A translation-only dictionary entry with credits: nothing to credit, so
+  // the container stays hidden.
+  const bare = entryFor('word', { engine: DICT_ENGINE, entry: { translation: '跑' }, credits: [TATOEBA] });
+  assert.equal(hasContent(bare), false);
+  assert.equal(draw(bare).container.hidden, true);
+});
+
+test('a credit label comes out as text, never as markup', () => {
+  const evil = '<img src=x onerror="alert(1)">';
+  const { container } = draw(entryFor('word', dictAnswer({ credits: [{ label: evil, href: TATOEBA.href }] })));
+  assert.deepEqual(container.find('ai-translator-dict-credit-link').map((a) => a.textContent), [evil]);
 });
 
 test('the content scripts load shared/lang-tags.js before shared/dict-entry.js', () => {
