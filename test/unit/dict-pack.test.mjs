@@ -53,6 +53,8 @@ const REFUSALS = [
   ['src equals tgt', (p) => { p.tgt = 'en'; }, /tgt equals src/],
   ['no ver', (p) => { delete p.ver; }, /ver is not a non-empty string/],
   ['a source without a url', (p) => { delete p.sources[0].url; }, /sources\[0\]\.url/],
+  ['a source url that is not https', (p) => { p.sources[0].url = 'javascript:alert(1)'; }, /sources\[0\]\.url is not an https URL/],
+  ['a credit href that is not https', (p) => { p.credits.tatoeba.href = 'http://tatoeba.org/'; }, /credits\.tatoeba\.href is not an https URL/],
   ['an unknown credit', (p) => { p.credits.wiktionary = { label: 'W', href: 'https://kaikki.org/' }; }, /credits\.wiktionary is not jmdict or tatoeba/],
   ['seven records', (p) => { p.e.apple = Array(7).fill(p.e.apple[0]); }, /e\["apple"\] has 7 items/],
   ['five glosses', (p) => { p.e.apple[0][1] = ['a', 'b', 'c', 'd', 'e']; }, /e\["apple"\]\[0\]\[1\] has 5 items/],
@@ -104,11 +106,16 @@ test('seedChunks: heads first, then forms, 5000 keys a chunk, no list item', () 
 
 test('listItem keeps what the settings page and the credits need', () => {
   const pack = fixture('en-zh-CN');
-  const item = DictPack.listItem(pack, { sha256: 'abc', bytes: 10, rawBytes: 20, url: 'ignored' });
+  const url = 'dict/v1/en-zh-CN/2026.10.13/en-zh-CN.json';
+  const item = DictPack.listItem(pack, { sha256: 'abc', bytes: 10, rawBytes: 20, url, heads: 99 });
   assert.deepEqual(item, {
-    src: 'en', tgt: 'zh-CN', ver: '2026.10.13', sha256: 'abc', heads: 3, bytes: 10, rawBytes: 20,
-    sources: pack.sources, credits: pack.credits,
+    src: 'en', tgt: 'zh-CN', ver: '2026.10.13', url, sha256: 'abc', heads: 3, bytes: 10, rawBytes: 20,
+    lic: 'CC-BY-SA-4.0', sources: pack.sources, credits: pack.credits,
   });
+  assert.deepEqual(DictPack.docUrls(item), {
+    license: 'https://dl.blab-translation.com/dict/v1/en-zh-CN/2026.10.13/LICENSE.txt',
+    attribution: 'https://dl.blab-translation.com/dict/v1/en-zh-CN/2026.10.13/ATTRIBUTION.txt',
+  }, 'the two files published beside the pack (D-570)');
 });
 
 function storedRecord(pack, head) {

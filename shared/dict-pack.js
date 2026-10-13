@@ -10,8 +10,8 @@
 //
 //   d:<src>-<tgt>:<head>    {e, x?, m?}   the head's records, examples, forms
 //   d:<src>-<tgt>:~<form>   {h}           an inflected form's head
-//   dict:packs              {<src>-<tgt>: {src, tgt, ver, sha256, heads,
-//                            bytes, rawBytes, sources, credits}}
+//   dict:packs              {<src>-<tgt>: {src, tgt, ver, url, sha256, heads,
+//                            bytes, rawBytes, lic, sources, credits}}
 //   dict:status             {<src>-<tgt>: {state, ver, reason}}
 //
 // The `dict:packs` item is written last and is the only mark that a pack is
@@ -69,6 +69,13 @@
     return value;
   }
 
+  // A link the settings page and the card draw as <a href>: https only, so a
+  // pack can never put a javascript: URL on an extension page.
+  function needLink(value, path) {
+    if (!/^https:\/\/[^\s]+$/.test(needText(value, path))) throw fail(path, 'is not an https URL');
+    return value;
+  }
+
   function needList(value, path, min, max) {
     if (!Array.isArray(value)) throw fail(path, 'is not an array');
     if (value.length < min || value.length > max) throw fail(path, `has ${value.length} items, not ${min}–${max}`);
@@ -84,7 +91,7 @@
   function needCredit(value, path) {
     needObject(value, path);
     needText(value.label, `${path}.label`);
-    needText(value.href, `${path}.href`);
+    needLink(value.href, `${path}.href`);
   }
 
   function checkRecords(e, sourceIds) {
@@ -180,7 +187,8 @@
     const sourceIds = new Set();
     needList(pack.sources, 'sources', 1, Infinity).forEach((source, i) => {
       needObject(source, `sources[${i}]`);
-      for (const key of ['id', 'name', 'license', 'url']) needText(source[key], `sources[${i}].${key}`);
+      for (const key of ['id', 'name', 'license']) needText(source[key], `sources[${i}].${key}`);
+      needLink(source.url, `sources[${i}].url`);
       sourceIds.add(source.id);
     });
     needObject(pack.credits, 'credits');
@@ -237,13 +245,25 @@
       src: pack.src,
       tgt: pack.tgt,
       ver: pack.ver,
+      url: download.url,
       sha256: download.sha256,
       heads: Object.keys(pack.e).length,
       bytes: download.bytes,
       rawBytes: download.rawBytes,
+      lic: pack.lic,
       sources: pack.sources,
       credits: pack.credits,
     };
+  }
+
+  /**
+   * The licence and attribution files published beside a pack (D-570: one
+   * directory per pack holds the JSON, LICENSE.txt and ATTRIBUTION.txt), from
+   * the `url` its list item kept.
+   */
+  function docUrls(item) {
+    const dir = DOWNLOAD_ORIGIN + item.url.slice(0, item.url.lastIndexOf('/') + 1);
+    return { license: `${dir}LICENSE.txt`, attribution: `${dir}ATTRIBUTION.txt` };
   }
 
   // ---- lookup -----------------------------------------------------------------
@@ -341,6 +361,7 @@
     parsePack,
     seedChunks,
     listItem,
+    docUrls,
     foldCandidates,
     toResponse,
   });

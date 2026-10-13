@@ -1,0 +1,85 @@
+/* Blab Translation 设置页样式 —— 离线词典卡片（options-dict.js）和页脚的「词典数据
+   来源」链接。行的样子跟术语表一致（glossary.css 的 .glossary-entry）。 */
+
+.dict-pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dict-pack-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.dict-pack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.dict-pack-name {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.dict-pack-meta,
+.dict-pack-state {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dict-pack-failed {
+  color: var(--error);
+}
+
+/* 页脚左半边：版本号和「词典数据来源」排在一起。 */
+.footer-about {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.footer-link {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.footer-link:hover {
+  color: var(--text-primary);
+}
+
+/* 词典数据来源页（dict-attribution.html）。 */
+.dict-attribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dict-attribution-sources {
+  margin: 8px 0 12px 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.8;
+}
+
+.dict-attribution-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.dict-attribution-list a {
+  color: var(--accent-primary);
+}

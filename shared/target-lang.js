@@ -142,6 +142,11 @@
     return inSentence ? name : menuForm(name, uiLang);
   }
 
+  /** 一个语言对（菜单形）：('en', 'zh-CN', 'zh-CN') → 英语 → 简体中文。离线词典包用它命名。 */
+  function pairName(src, tgt, uiLang) {
+    return `${nameOf(src, uiLang)} → ${nameOf(tgt, uiLang)}`;
+  }
+
   /** 这门语言用它自己写的名字（菜单形）：'zh-TW' → 繁體中文，'zu' → isiZulu。 */
   function autonym(code) {
     return nameOf(code, DISPLAY_TAG[code] || code);
@@ -182,6 +187,7 @@
     browserLanguage,
     effective,
     nameOf,
+    pairName,
     autonym,
     promptName,
     direction,
