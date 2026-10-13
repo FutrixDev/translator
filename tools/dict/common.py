@@ -71,6 +71,7 @@ BR_SLACK = 1.10
 def br_budget(name):
     return int(BR_BASE.get(name, BR_DEFAULT) * BR_SLACK)
 
+
 # Reading rate floor: design §2.1 / spike data/readings/readings.csv reading_pct_of_word_forms,
 # minus 3 points. Pairs the spike did not measure take the §2.1 value of their target language.
 READING_BASE = {
