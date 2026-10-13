@@ -1,0 +1,30 @@
+{
+  "v": 1,
+  "src": "ja",
+  "tgt": "zh-CN",
+  "ver": "2026.10.13",
+  "lic": "CC-BY-SA-4.0",
+  "sources": [
+    { "id": "jmdict", "name": "JMdict", "license": "CC BY-SA 4.0", "url": "https://www.edrdg.org/jmdict/j_jmdict.html" },
+    { "id": "wiktionary", "name": "Wiktionary (kaikki.org)", "license": "CC BY-SA 4.0", "url": "https://kaikki.org/" }
+  ],
+  "credits": {
+    "jmdict": { "label": "JMdict © EDRDG", "href": "https://www.edrdg.org/edrdg/licence.html" }
+  },
+  "e": {
+    "食べる": [["v1", ["吃", "食用"], "chī", "jmdict"]],
+    "猫": [["n", ["猫"], "māo", "wiktionary"]]
+  },
+  "x": {
+    "食べる": [["パンを食べる。", "吃面包。", null, null]]
+  },
+  "m": {
+    "食べる": [["过去式", "食べた"], ["礼貌形", "食べます"]]
+  },
+  "f": {
+    "食べました": "食べる",
+    "食べた": "食べる",
+    "食べます": "食べる",
+    "たべる": "食べる"
+  }
+}

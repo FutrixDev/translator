@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "src": "ko",
+  "tgt": "en",
+  "ver": "2026.10.13",
+  "lic": "CC-BY-SA-4.0",
+  "sources": [
+    { "id": "wiktionary", "name": "Wiktionary (kaikki.org)", "license": "CC BY-SA 4.0", "url": "https://kaikki.org/" }
+  ],
+  "credits": {},
+  "e": {
+    "학교": [["noun", ["school"], "/skuːl/|/skul/", "wiktionary"]],
+    "친구": [["noun", ["friend"], "/frɛnd/|/frɛnd/", "wiktionary"]]
+  },
+  "x": {},
+  "m": {},
+  "f": {}
+}
