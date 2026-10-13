@@ -436,11 +436,13 @@ def plan(data, norm):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    if len(args) != 2:
-        raise SystemExit(__doc__)
-    data, norm = (os.path.abspath(a) for a in args)
-    jobs_n = int(sys.argv[sys.argv.index('--jobs') + 1]) if '--jobs' in sys.argv else (os.cpu_count() or 4)
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('data')
+    ap.add_argument('norm')
+    ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    a = ap.parse_args()
+    data, norm, jobs_n = os.path.abspath(a.data), os.path.abspath(a.norm), a.jobs
     os.makedirs(norm, exist_ok=True)
     t0 = time.time()
     work = plan(data, norm)
