@@ -77,6 +77,7 @@ files the build reads, and regenerate `sources.json` with their sizes and SHA-25
 | `attribution.py` | `LICENSE.txt` / `ATTRIBUTION.txt` of a pack |
 | `common.py` | pack list, acceptance lines, caps, shared helpers |
 | `check.py` | the gate: shape, heads, size, reading rate, `x`, D-578; `--report` CSVs |
+| `mkfixture.py` | cuts the es-en test fixture (`test/fixtures/dict/`) out of a full build's `norm/` |
 
 Acceptance lines (all in `common.py`): heads ≥ 0.95 × `HEADS_BASE` (records for the
 `HEADS_UNIT` packs); brotli (`-q 11`) of the `e` part ≤ `br_budget` (1.1 × `BR_BASE`, 2 MB
