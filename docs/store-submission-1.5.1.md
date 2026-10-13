@@ -37,8 +37,8 @@ manga、AI translator、PDF translation 这几个原词。另一半原因是装�
 
 相对 1.5.0，包里只改了 `manifest.json` 的版本号和 `_locales/*/messages.json` 的
 `appName`、`appDescription` 两个键。设置页、弹窗里显示的名字读的是
-`i18n/messages.js`，不受影响；改名只出现在商店、`chrome://extensions` 和工具栏
-悬停提示里。
+`i18n/messages.js`，不受影响；改名出现在商店、`chrome://extensions`、工具栏
+悬停提示，以及右键菜单里多项并列时 Chrome 自动生成的那一级（标题用扩展名）。
 
 ## 二、扩展名与简短说明（在包里）
 
