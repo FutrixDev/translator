@@ -19,10 +19,9 @@ def tatoeba_path(norm, s, t):
 
 
 def tatoeba_rows(norm, s, t):
-    """(src text, tgt text, src id, tgt id) of every Tatoeba pair of the pack, or []."""
+    """(src text, tgt text, src id, tgt id) of every Tatoeba pair of the pack. normalize.py
+    writes a file for every pack's pair, so a missing one is an error, not "no examples"."""
     path, src_first = tatoeba_path(norm, s, t)
-    if not os.path.exists(path):
-        return []
     out = []
     with open(path, encoding='utf-8') as f:
         for line in f:

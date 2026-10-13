@@ -16,7 +16,7 @@ files run in parallel, largest first. Output (all UTF-8, one JSON object per lin
                          {w, pos, s:[[word, ...], ...]}
   cedict.jsonl           {s, t, p (pinyin with tone marks), g:[gloss]}
   jmdict.jsonl           {k:[keb], r:[reb], nf:int|null, s:[{p:[pos code], m:[misc code], g:[gloss]}]}
-  tatoeba/<a>-<b>.tsv    idA, textA, idB, textB for every Tatoeba link between the two languages
+  tatoeba/<a>-<b>.tsv    idA, textA, idB, textB for every Tatoeba link of the pair (a < b)
   ipa/ipadict-<name>.tsv word, ipa (first variant) from ipa-dict
   ipa/cmu-en.tsv         word, IPA converted from CMUdict ARPAbet
   opencc/*.txt           the OpenCC tables, copied verbatim
@@ -297,7 +297,7 @@ def job_jmdict(path, norm):
 
 # ---------------- Tatoeba ----------------
 def tatoeba_pairs():
-    """Unordered iso pairs the packs need, as (a, b, links file stem)."""
+    """The iso pairs the packs need, each sorted (a < b)."""
     out = {}
     for src, tgt in C.PACKS:
         a, b = sorted((C.iso(src), C.iso(tgt)))
@@ -324,9 +324,13 @@ def job_tatoeba(data, norm):
                 parts = line.rstrip('\n').split('\t')
                 if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
                     rows.append((int(parts[0]), int(parts[1])))
-        links[(x, y)] = rows
-        want.setdefault(x, set()).update(r[0] for r in rows)
-        want.setdefault(y, set()).update(r[1] for r in rows)
+        # Written under the sorted pair name (examples.tatoeba_path), whichever way round
+        # Tatoeba names its links file (eng-deu, fra-deu, cmn-fra ...).
+        if x != a:
+            rows = [(j, i) for i, j in rows]
+        links[(a, b)] = rows
+        want.setdefault(a, set()).update(r[0] for r in rows)
+        want.setdefault(b, set()).update(r[1] for r in rows)
     text = {}
     for lang, ids in want.items():
         m = text.setdefault(lang, {})
