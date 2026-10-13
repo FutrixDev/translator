@@ -176,6 +176,84 @@ def translation_word(glosses, t):
     return ''
 
 
+# ---------------- example containment (common taskbook §x, D-566 item 1) ----------------
+# An example belongs to a head only when its source sentence contains the head or one of the
+# head's `f` forms: CJK and Korean by substring, every other language by whole word after
+# case folding. examples.py picks sentences with it and check.py re-verifies every `x` row.
+SUBSTRING_LANGS = CJK_LANGS
+SUBSTRING_MAX = 10          # longest head/form looked for inside a CJK sentence
+WORD_NGRAM_MAX = 4          # longest multi-word head looked for in a spaced sentence
+SENTENCE_WORD = re.compile(r"[^\W\d_]+(?:['-][^\W\d_]+)*")
+STRESS = '\u0301'
+
+
+def fold_surface(text, lang):
+    """The key a head or form is matched by: case-folded, curly apostrophe straightened, and
+    for ru the stress mark removed (Tatoeba writes none)."""
+    text = text.replace('\u2019', "'").casefold()
+    return text.replace(STRESS, '') if lang == 'ru' else text
+
+
+def sentence_keys(sentence, lang):
+    """Every surface a sentence can be said to contain, folded like fold_surface:
+    substrings (length 1..SUBSTRING_MAX) for zh/ja/ko, else word n-grams (1..WORD_NGRAM_MAX)
+    plus the parts of an apostrophe or hyphen compound (l'homme -> l, homme)."""
+    if lang in SUBSTRING_LANGS:
+        s = sentence.casefold()
+        n = len(s)
+        return {s[i:j] for i in range(n) for j in range(i + 1, min(n, i + SUBSTRING_MAX) + 1)}
+    toks = SENTENCE_WORD.findall(fold_surface(sentence, lang))
+    keys = set()
+    for i in range(len(toks)):
+        for k in range(1, WORD_NGRAM_MAX + 1):
+            if i + k <= len(toks):
+                keys.add(' '.join(toks[i:i + k]))
+        if "'" in toks[i] or '-' in toks[i]:
+            keys.update(p for p in re.split(r"['-]", toks[i]) if p)
+    return keys
+
+
+def contains(sentence, surfaces, lang):
+    """True when `sentence` contains any of `surfaces` (a head and its forms) by the rule above."""
+    if lang in SUBSTRING_LANGS:
+        s = sentence.casefold()
+        return any(x and x.casefold() in s for x in surfaces)
+    keys = sentence_keys(sentence, lang)
+    return any(fold_surface(x, lang) in keys for x in surfaces)
+
+
+# ---------------- sources and credits (v1 `sources[]` / `credits`) ----------------
+# Every dataset a pack can draw on, as the v1 `sources[]` row; a pack lists only the ids it
+# used (D-570). `notice` is the licence line ATTRIBUTION.txt prints for the dataset.
+SOURCES = {
+    'wiktionary': {'name': 'Wiktionary (kaikki.org)', 'license': 'CC BY-SA 4.0',
+                   'url': 'https://kaikki.org/'},
+    'cedict': {'name': 'CC-CEDICT', 'license': 'CC BY-SA 4.0',
+               'url': 'https://www.mdbg.net/chinese/dictionary?page=cc-cedict'},
+    'jmdict': {'name': 'JMdict (EDRDG)', 'license': 'CC BY-SA 4.0',
+               'url': 'https://www.edrdg.org/jmdict/j_jmdict.html'},
+    'tatoeba': {'name': 'Tatoeba', 'license': 'CC BY 2.0 FR', 'url': 'https://tatoeba.org/'},
+    'ipadict': {'name': 'ipa-dict', 'license': 'MIT',
+                'url': 'https://github.com/open-dict-data/ipa-dict'},
+    'cmudict': {'name': 'CMUdict', 'license': 'BSD-2-Clause',
+                'url': 'https://github.com/cmusphinx/cmudict'},
+    'opencc': {'name': 'OpenCC', 'license': 'Apache-2.0', 'url': 'https://github.com/BYVoid/OpenCC'},
+}
+SOURCE_ORDER = tuple(SOURCES)
+CREDITS = {
+    'jmdict': {'label': 'JMdict \u00a9 EDRDG', 'href': 'https://www.edrdg.org/edrdg/licence.html'},
+    'tatoeba': {'label': 'Tatoeba', 'href': 'https://tatoeba.org/'},
+}
+
+
+def sources_rows(used):
+    return [dict(id=k, **SOURCES[k]) for k in SOURCE_ORDER if k in used]
+
+
+def credits_for(used):
+    return {k: dict(v) for k, v in CREDITS.items() if k in used}
+
+
 # ---------------- io ----------------
 def read_jsonl(path):
     with open(path, encoding='utf-8') as f:
