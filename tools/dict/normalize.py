@@ -366,10 +366,11 @@ ARPA = {'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ'
 
 
 def first_variant(ipa):
-    """ipa-dict lists variants inside one pair of slashes, `/ðə, ði/`: keep the first, slashed."""
+    """ipa-dict lists variants inside one pair of slashes (`/ðə, ði/`, en_UK) or each in its
+    own (`/ˈeɪ/, /ə/`, en_US): keep the first, in exactly one pair of slashes."""
     ipa = ipa.strip()
     slashed = ipa.startswith('/')
-    first = ipa.strip('/').split(',')[0].strip()
+    first = ipa.split(',')[0].strip().strip('/').strip()
     return f'/{first}/' if slashed and first else first
 
 
