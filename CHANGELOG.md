@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.1 — 2026-10-13
+
+### Easier to find in the Chrome Web Store
+
+- **The store name and short description now say what the extension does.**
+  The name was the brand alone, so a search for "PDF translation", "AI
+  translation" or "manga translation" never matched it. It now reads "Blab
+  Translation: AI Translator for Web, PDF & Manga", and the short description
+  leads with "AI translator" and names PDF and manga translation. All ten
+  languages say the same thing in their own words. Manga is named because
+  comic pages already work; long webtoon strips are still not supported, so
+  they are not mentioned.
+- **The long descriptions name manga too**, and the PDF heading now says
+  "PDF translation".
+- No code, permission or behaviour changes: everything else is 1.5.0. The name
+  inside Settings and the popup is unchanged.
+
 ## 1.5.0 — 2026-10-07
 
 ### A word looks itself up like a dictionary

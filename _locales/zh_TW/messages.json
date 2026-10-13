@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "叭叭翻譯",
+    "message": "叭叭翻譯：AI 翻譯網頁、PDF 與漫畫",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "免費的雙語對照網頁翻譯。PDF 保留排版，YouTube 雙語字幕，EPUB/Word，漫畫。也可接入你自己的 AI 模型。",
+    "message": "AI 翻譯：免費的雙語對照網頁，保留排版的 PDF 翻譯，漫畫翻譯，YouTube 雙語字幕，EPUB/Word。",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

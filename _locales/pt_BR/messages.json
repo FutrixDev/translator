@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Blab Translation",
+    "message": "Blab Translation: tradutor com IA para web, PDF e mangá",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "Tradução web bilíngue grátis: PDF com o layout original, legendas duplas no YouTube, EPUB/Word e HQs. Use seu próprio modelo de IA.",
+    "message": "Tradutor com IA: web bilíngue grátis, tradução de PDF com o layout, tradução de mangá, legendas duplas no YouTube, EPUB/Word.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

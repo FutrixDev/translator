@@ -1,6 +1,6 @@
 Blab Translation — read anything in two languages.
 
-Original and translation side by side, on web pages, PDFs, ebooks, videos and comics. Bring the AI you trust — cloud or local models — or use Chrome's free on-device translator.
+Original and translation side by side, on web pages, PDFs, ebooks, videos, manga and comics. Bring the AI you trust — cloud or local models — or use Chrome's free on-device translator.
 
 ★ BILINGUAL WEB PAGES
 • Translation under every paragraph. Formatting, links and images untouched.
@@ -15,7 +15,7 @@ Original and translation side by side, on web pages, PDFs, ebooks, videos and co
 • Private messages are never auto-translated.
 • Site rules: point at any area — "Don't translate here", "Keep original" or "Only translate here". Pin an engine, add CSS. Rules sync with your browser account.
 
-★ PDFS THAT KEEP THEIR LAYOUT
+★ PDF TRANSLATION THAT KEEPS THE LAYOUT
 • Bilingual or translation-only PDFs, with figures, formulas and layout exactly where they were.
 • Free pages every month with sign-in.
 
@@ -34,8 +34,8 @@ Original and translation side by side, on web pages, PDFs, ebooks, videos and co
 • Hold a modifier key and hover to translate a single paragraph.
 • Typing in a different language from the page? Translate it with one click.
 
-★ COMICS & IMAGES
-• Comic pages redrawn in your language — and colorized if you like.
+★ MANGA, COMICS & IMAGES
+• Manga and comic pages redrawn in your language — and colorized if you like.
 • Text in images recognized by on-device OCR, then translated.
 
 ★ PRIVATE BY DEFAULT
