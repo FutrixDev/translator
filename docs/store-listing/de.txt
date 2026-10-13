@@ -1,6 +1,6 @@
 Blab Translation — alles in zwei Sprachen lesen.
 
-Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos und Comics. Nutzen Sie die KI, der Sie vertrauen — Cloud- oder lokale Modelle — oder Chromes kostenlosen Übersetzer direkt auf dem Gerät.
+Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos, Mangas und Comics. Nutzen Sie die KI, der Sie vertrauen — Cloud- oder lokale Modelle — oder Chromes kostenlosen Übersetzer direkt auf dem Gerät.
 
 ★ ZWEISPRACHIGE WEBSEITEN
 • Die Übersetzung unter jedem Absatz. Formatierung, Links und Bilder bleiben unberührt.
@@ -15,7 +15,7 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 • Private Nachrichten werden nie automatisch übersetzt.
 • Seitenregeln: Zeigen Sie auf einen beliebigen Bereich — „Hier nicht übersetzen“, „Original beibehalten“ oder „Nur hier übersetzen“. Eine Engine festlegen, CSS hinzufügen. Regeln werden mit Ihrem Browserkonto synchronisiert.
 
-★ PDFS, DIE IHR LAYOUT BEHALTEN
+★ PDF-ÜBERSETZUNG, DIE DAS LAYOUT BEHÄLT
 • Zweisprachige PDFs oder PDFs nur mit Übersetzung — Abbildungen, Formeln und Layout genau dort, wo sie waren.
 • Jeden Monat kostenlose Seiten mit Anmeldung.
 
@@ -34,8 +34,8 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 • Modifikatortaste halten und mit der Maus zeigen, um einen einzelnen Absatz zu übersetzen.
 • Sie tippen in einer anderen Sprache als die Seite? Mit einem Klick übersetzen.
 
-★ COMICS & BILDER
-• Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.
+★ MANGA, COMICS & BILDER
+• Manga- und Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.
 • Text in Bildern per OCR auf dem Gerät erkannt und dann übersetzt.
 
 ★ STANDARDMÄSSIG PRIVAT

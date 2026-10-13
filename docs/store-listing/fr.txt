@@ -1,6 +1,6 @@
 Blab Translation — lisez tout en deux langues.
 
-L'original et la traduction côte à côte, sur les pages web, les PDF, les livres numériques, les vidéos et les bandes dessinées. Utilisez l'IA en laquelle vous avez confiance — modèles cloud ou locaux — ou le traducteur gratuit de Chrome, directement sur votre appareil.
+L'original et la traduction côte à côte, sur les pages web, les PDF, les livres numériques, les vidéos, les mangas et les bandes dessinées. Utilisez l'IA en laquelle vous avez confiance — modèles cloud ou locaux — ou le traducteur gratuit de Chrome, directement sur votre appareil.
 
 ★ PAGES WEB BILINGUES
 • La traduction sous chaque paragraphe. Mise en forme, liens et images intacts.
@@ -15,7 +15,7 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 • Les messages privés ne sont jamais traduits automatiquement.
 • Règles par site : pointez n'importe quelle zone — « Ne pas traduire ici », « Garder l'original » ou « Ne traduire qu'ici ». Fixez un moteur, ajoutez du CSS. Les règles se synchronisent avec votre compte de navigateur.
 
-★ DES PDF QUI GARDENT LEUR MISE EN PAGE
+★ UNE TRADUCTION DE PDF QUI GARDE LA MISE EN PAGE
 • PDF bilingues ou en traduction seule, avec figures, formules et mise en page exactement à leur place.
 • Des pages gratuites chaque mois, avec connexion.
 
@@ -34,8 +34,8 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 • Maintenez une touche de modification et survolez pour traduire un seul paragraphe.
 • Vous écrivez dans une autre langue que celle de la page ? Traduisez en un clic.
 
-★ BANDES DESSINÉES ET IMAGES
-• Les pages de BD redessinées dans votre langue — et colorisées si vous le souhaitez.
+★ MANGAS, BANDES DESSINÉES ET IMAGES
+• Les pages de manga et de BD redessinées dans votre langue — et colorisées si vous le souhaitez.
 • Le texte des images est reconnu par OCR sur l'appareil, puis traduit.
 
 ★ CONFIDENTIEL PAR DÉFAUT
