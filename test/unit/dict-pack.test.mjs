@@ -186,6 +186,12 @@ test('foldCandidates: exact, lower case, NFKC', () => {
   assert.deepEqual(DictPack.foldCandidates('', 'en'), []);
 });
 
+test('foldCandidates: one trailing sentence stop is tried kept, then dropped', () => {
+  assert.deepEqual(DictPack.foldCandidates('Apple.', 'en'), ['Apple.', 'apple.', 'Apple', 'apple']);
+  assert.deepEqual(DictPack.foldCandidates('猫。', 'ja'), ['猫。', '猫']);
+  assert.deepEqual(DictPack.foldCandidates('학교에서?', 'ko').at(-1), '학교');
+});
+
 test('foldCandidates: Korean particles — longest first, once, at least one character left', () => {
   const strip = (word) => DictPack.foldCandidates(word, 'ko').slice(1);
   assert.deepEqual(strip('학교에서'), ['학교'], '에서 before 에');

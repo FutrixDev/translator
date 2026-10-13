@@ -262,16 +262,26 @@
     return Array.from(stem).length >= 1 ? stem : '';
   }
 
+  // DictEntry.isLookup drops one sentence stop at the very end ("apple." and
+  // "run?" are lookups, D-542), so the word is tried both with it ("etc." is a
+  // head of its own) and without it.
+  const TRAILING_STOP = /[.!?。！？]$/u;
+
   /**
    * The spellings to look `text` up under, in order: as written, lower case,
-   * NFKC (full-width to half-width), and for Korean the word with one
-   * particle stripped. No duplicates, no empty strings.
+   * NFKC (full-width to half-width), then the same three with one trailing
+   * sentence stop dropped, and for Korean the word with one particle
+   * stripped. No duplicates, no empty strings.
    */
   function foldCandidates(text, src) {
     const exact = String(text == null ? '' : text).trim();
-    const nfkc = exact.normalize('NFKC');
-    const out = [exact, exact.toLowerCase(), nfkc, nfkc.toLowerCase()];
-    if (src === 'ko') out.push(stripParticle(nfkc));
+    const word = exact.replace(TRAILING_STOP, '').trimEnd();
+    const out = [];
+    for (const spelling of [exact, word]) {
+      const nfkc = spelling.normalize('NFKC');
+      out.push(spelling, spelling.toLowerCase(), nfkc, nfkc.toLowerCase());
+    }
+    if (src === 'ko') out.push(stripParticle(word.normalize('NFKC')));
     return [...new Set(out.filter(Boolean))];
   }
 
