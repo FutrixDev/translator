@@ -68,7 +68,7 @@ def kaikki_ipa_rows(path, own):
     for r in C.read_jsonl(path):
         for label, ipa in r.get('ipa') or []:
             key = (r['w'], label)
-            if key in seen or not ipa or '\t' in ipa:
+            if key in seen or not ipa or not C.tsv_ok(r['w'], label, ipa):
                 continue
             seen.add(key)
             yield r['w'], label, own_ipa(ipa) if own else ipa

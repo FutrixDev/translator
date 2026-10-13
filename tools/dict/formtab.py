@@ -114,7 +114,7 @@ def prepare(norm, work, s):
                 yield from rows_of(p, s, rank)
     with open(tmp, 'w', encoding='utf-8') as o:
         for form, head, tags, rank_ in screen(every(), s):
-            if '\t' in head or '\n' in form or '\n' in head:
+            if not C.tsv_ok(form, head, *tags):
                 continue
             o.write(f'{form}\t{head}\t{",".join(tags)}\t{rank_}\n')
             n += 1

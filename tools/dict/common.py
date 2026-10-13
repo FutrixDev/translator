@@ -261,6 +261,15 @@ def credits_for(used):
 
 
 # ---------------- io ----------------
+TSV_BREAKS = ('\t', '\n', '\r')
+
+
+def tsv_ok(*fields):
+    """True when no field holds a tab or a line break: the work tables are one row per line
+    (text mode also splits on a bare CR). pt Wiktionary has IPA fields with newlines in them."""
+    return not any(b in f for f in fields for b in TSV_BREAKS)
+
+
 def read_jsonl(path):
     with open(path, encoding='utf-8') as f:
         for line in f:
