@@ -111,7 +111,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'], { explain: true })}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
@@ -568,9 +568,9 @@
     });
   }
 
-  // 卡片标题说这次是哪个引擎译的，每个引擎一条（Engines.ENGINES）。标签与「换到…」按钮在
-  // content-engine-choice.js。
-  const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab' };
+  // 卡片标题说这次是谁答的，每个引擎一条（Engines.ENGINES），本地词典答的是「词典」。
+  // 标签与「换到…」按钮在 content-engine-choice.js。
+  const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab', dict: 'dictTitle' };
 
   // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
   // 什么都不写进设置。
@@ -592,7 +592,6 @@
     const popup = state.translationPopup;
     const isCurrent = () => !!popup && state.translationPopup === popup && popup.dataset.requestId === requestId;
     try {
-      const mode = DictEntry.isLookup(text) ? 'word' : 'text';
       const targetLang = targetLangOverride || getEffectiveTargetLang();
       if (!isExtensionContextAvailable()) {
         if (popup) {
@@ -622,9 +621,12 @@
         setCardActionsBusy(popup, true);
         ctx.addTerm.collapse(popup);
       }
-      // 这张卡点过「换引擎」才带 engine；否则按设置走。
+      // 这张卡点过「换引擎」才带 engine；否则先问本地词典（ctx.localDictAnswer），
+      // 没命中再按设置走。本地命中证明这是个词（D-609），所以是 word。
       const pinned = popup?.dataset.pinnedEngine;
-      const response = await ctx.requestTranslation({
+      const local = await ctx.localDictAnswer(text, targetLang, { pinned });
+      const mode = (local || DictEntry.isLookup(text)) ? 'word' : 'text';
+      const response = local || await ctx.requestTranslation({
         type: 'TRANSLATE',
         feature: 'selection',
         text: text,
@@ -638,7 +640,8 @@
       if (response.error) {
         showCardError(popup, response.error, response.action || null);
       } else {
-        // Only an AI lookup carries an entry; a builtin answer has none.
+        // A model lookup or a local dictionary hit carries an entry
+        // (DictEntry.entryFor); a builtin answer has none.
         const entry = DictEntry.entryFor(mode, response);
         const parts = cardParts(popup);
         setCardLoading(parts, false);

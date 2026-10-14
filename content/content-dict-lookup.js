@@ -21,8 +21,10 @@
 //   path meanwhile. A pair the reader deleted (`dict:declined`) is not asked
 //   for: only the settings card downloads it again (D-609).
 //
-// Registered only: no caller uses it yet (batch B2 wires the card and the
-// input box).
+// ctx.localDictAnswer(text, targetLang, { pinned, standalone }) is the one
+// routing rule the selection card and the input box share (design §5.2): a
+// lookup no engine was pinned for goes to ctx.dictLookup first, and only a
+// miss goes on to ctx.requestTranslation.
 (function() {
   'use strict';
 
@@ -110,5 +112,22 @@
     // missing head means a new version began replacing this one between the
     // two reads: there is no answer to give yet.
     return head ? DictPack.toResponse(meta, head, targetLang) : null;
+  };
+
+  /**
+   * The local answer to a lookup, or null when the request goes on to its
+   * engine as before. A request pinned to an engine (the card's "explain in
+   * context with AI", the dialog's "use AI") never takes the local answer;
+   * everything else is decided by ctx.dictLookup (the switch, the pack, the
+   * hit). A miss says nothing, so the caller's path is today's.
+   *
+   * @param {string} text
+   * @param {string} targetLang
+   * @param {{pinned?: string, standalone?: boolean}} [options]
+   * @returns {Promise<object|null>}
+   */
+  ctx.localDictAnswer = function(text, targetLang, { pinned = '', standalone = false } = {}) {
+    if (pinned) return Promise.resolve(null);
+    return ctx.dictLookup(text, targetLang, { standalone });
   };
 })();
