@@ -99,6 +99,8 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     expect(await lookup(context, second, 'apple', 'zh-CN')).toBeNull();
     await second.waitForTimeout(1000);
     expect(await wants()).toBe(0);
+    // Asked directly, the worker refuses it too, before reading the manifest.
+    expect(await sendFromPage(context, second, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'declined' });
     expect(server.hitsOf(MANIFEST_PATH)).toBe(manifestHits);
 
     // The daily check reads the manifest and leaves the pair alone.
