@@ -23,11 +23,10 @@
   (Chinese characters stay at four), and one trailing sentence stop
   (. ! ? 。！？) no longer turns a word into a sentence.
 
-### Offline dictionary (groundwork)
+### Offline dictionary
 
 - **The dictionary entry can now come from an offline dictionary as well as
-  from your AI model.** Nothing looks words up offline yet; this prepares the
-  entry and its wording. An offline entry is drawn exactly like a model's,
+  from your AI model.** An offline entry is drawn exactly like a model's,
   and ends in a short "Sources:" line linking to the dictionaries whose
   licences ask for credit on the entry (JMdict and Tatoeba). Only those two
   sites can be linked, each link opens in a new tab, and a model's answer can
@@ -48,10 +47,19 @@
   press "Download again" on its row; a pack no longer published says "No
   longer updated". A "Dictionary data sources" link at the bottom opens a page
   naming every dictionary in your packs and its licence. With the switch off
-  nothing is downloaded. The selection card and the input box do not use the
-  packs yet. The daily clean-up of the translation cache now reads only its
-  own entries, so it stays quick however many dictionary words are stored
-  beside it.
+  nothing is downloaded. The daily clean-up of the translation cache now
+  reads only its own entries, so it stays quick however many dictionary words
+  are stored beside it.
+- **Words are looked up in the offline dictionary first.** A word you select
+  or type in the input box is answered from an installed pack when the pack
+  has it: the card is titled "Dictionary", the tag says "Offline dictionary",
+  nothing is sent to any engine, and the entry ends in its "Sources:" line,
+  which stays on one line of its own and readable in both themes whatever the
+  page's styles. "Explain in context with AI" on the card sends that word to
+  your AI model or Blab Translation, whichever is available, with the page
+  context your settings allow; the button is hidden when neither is. A word
+  the pack does not have, a sentence, or the switch turned off goes to your
+  usual engine as before, with no "not in the dictionary" message.
 
 ### Target languages
 
