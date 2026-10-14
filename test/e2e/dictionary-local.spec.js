@@ -322,10 +322,24 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
   test('J-B2.4/J-B2.6: a word the pack lacks, and any word with the switch off, go to the engine as before', async ({ page, context }) => {
     const mock = await setUp(page, context);
     try {
+      // Count the lookups' pack reads (every one asks for DictPack.PACKS_KEY).
+      await evaluateInContentScript(context, page, `(() => {
+        const area = chrome.storage.local;
+        const get = area.get.bind(area);
+        self.__packReads = 0;
+        area.get = (keys, ...rest) => {
+          if ([].concat(keys || []).includes(DictPack.PACKS_KEY)) self.__packReads++;
+          return get(keys, ...rest);
+        };
+        return true;
+      })()`);
+      const packReads = () => evaluateInContentScript(context, page, 'self.__packReads');
+
       // J-B2.4 — not in the pack: today's path, nothing said about the pack.
       let card = await openCardOn(page, '#zebra');
       let parts = cardPart(card);
       await expect.poll(() => mock.sentTexts).toEqual(['zebra']);
+      expect(await packReads(), 'a word is looked up in the pack first').toBe(1);
       expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
       await expect(parts.text).toHaveText('[T] zebra');
       await expect(parts.title).toHaveText(zh('aiTranslate'));
@@ -335,13 +349,27 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       await card.screenshot({ path: shotPath('j-b2-4-card-miss.png') });
       await evaluateInContentScript(context, page, 'window.AI_TRANSLATOR_CONTENT.hideTranslationPopup()');
 
+      // A sentence is not a word: it is translated as today and never costs a
+      // pack read (DictEntry.isDictCandidate, the word condition of the rule).
+      await page.evaluate(() => window.getSelection().removeAllRanges());
+      card = await openCardOn(page, '#lead');
+      await expect.poll(() => mock.sentTexts.length).toBe(2);
+      expect(mock.sentTexts[1]).toContain('Yesterday I ran along the river');
+      expect(mock.systemPrompts[1]).not.toContain(globalThis.DictEntry.PROMPT_MARK);
+      await expect(cardPart(card).tag).toHaveText(zh('cardEngineAi'));
+      expect(await packReads(), 'a sentence never reads the pack').toBe(1);
+      await evaluateInContentScript(context, page, 'window.AI_TRANSLATOR_CONTENT.hideTranslationPopup()');
+      await page.evaluate(() => window.getSelection().removeAllRanges());
+
       // J-B2.6 — the switch off: `ran` is in the pack, and goes to the model anyway.
       await writeSyncSettings(context, { offlineDictionary: false });
       await expect.poll(() => evaluateInContentScript(context, page,
         'window.AI_TRANSLATOR_CONTENT.settings.offlineDictionary')).toBe(false);
       card = await openCardOn(page, '#ran');
       parts = cardPart(card);
-      await expect.poll(() => mock.sentTexts).toEqual(['zebra', 'ran']);
+      await expect.poll(() => mock.sentTexts.length).toBe(3);
+      expect(mock.sentTexts[2]).toBe('ran');
+      expect(await packReads(), 'the switch off reads no pack').toBe(1);
       await expect(parts.text).toHaveText('[AI] 跑');
       await expect(parts.title).toHaveText(zh('aiTranslate'));
       await expect(parts.tag).toHaveText(zh('cardEngineAi'));

@@ -118,8 +118,9 @@
    * The local answer to a lookup, or null when the request goes on to its
    * engine as before. A request pinned to an engine (the card's "explain in
    * context with AI", the dialog's "use AI") never takes the local answer;
-   * everything else is decided by ctx.dictLookup (the switch, the pack, the
-   * hit). A miss says nothing, so the caller's path is today's.
+   * everything else is decided by ctx.dictLookup (a word at all, by
+   * DictEntry.isDictCandidate; the switch; the pack; the hit). A miss says
+   * nothing, so the caller's path is today's.
    *
    * @param {string} text
    * @param {string} targetLang
