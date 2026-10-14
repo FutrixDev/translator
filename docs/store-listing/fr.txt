@@ -1,11 +1,12 @@
 Blab Translation — lisez tout en deux langues.
 
-L'original et la traduction côte à côte, sur les pages web, les PDF, les livres numériques, les vidéos, les mangas et les bandes dessinées. Utilisez l'IA en laquelle vous avez confiance — modèles cloud ou locaux — ou le traducteur gratuit de Chrome, directement sur votre appareil.
+L'original et la traduction côte à côte, sur les pages web, les PDF, les livres numériques, les vidéos, les mangas et les bandes dessinées. Choisissez votre moteur : le traducteur gratuit de Chrome, directement sur votre appareil, l'IA en laquelle vous avez confiance — modèles cloud ou locaux, avec votre propre clé — ou Blab Translation, inclus dans l'abonnement, sans clé.
 
 ★ PAGES WEB BILINGUES
 • La traduction sous chaque paragraphe. Mise en forme, liens et images intacts.
 • La traduction seule ? Une touche : Alt+T.
 • Le contenu principal d'abord — menus et barres latérales restent à l'écart. Alt+W pour toute la page.
+• Une seule partie vous intéresse ? Pointez une zone et choisissez « Ne traduire qu’ici ».
 • Va jusque dans les iframes et le Shadow DOM.
 • Formules, LaTeX et code restent intacts. Les articles scientifiques restent lisibles.
 • 6 styles de traduction. 76 langues. Les langues de droite à gauche bien affichées.
@@ -13,7 +14,7 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 ★ UNE TRADUCTION AUTOMATIQUE QUI SAIT S'ARRÊTER
 • Les phrases déjà dans votre langue sont ignorées — même truffées de termes étrangers.
 • Les messages privés ne sont jamais traduits automatiquement.
-• Règles par site : pointez n'importe quelle zone — « Ne pas traduire ici », « Garder l'original » ou « Ne traduire qu'ici ». Fixez un moteur, ajoutez du CSS. Les règles se synchronisent avec votre compte de navigateur.
+• Règles par site : pointez n'importe quelle zone — « Ne pas traduire ici » ou « Garder l'original ». Fixez un moteur, ajoutez du CSS. Les règles se synchronisent avec votre compte de navigateur.
 
 ★ UNE TRADUCTION DE PDF QUI GARDE LA MISE EN PAGE
 • PDF bilingues ou en traduction seule, avec figures, formules et mise en page exactement à leur place.
@@ -31,16 +32,18 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 ★ SÉLECTIONNER, SURVOLER, CHERCHER
 • Sélectionnez du texte pour le traduire — retraduire, changer de moteur, copier, lire à voix haute.
 • Dictionnaire intégré pour les mots et expressions : prononciation, sens, exemples, formes du mot.
+• Les langues choisies récemment s'affichent en haut du menu des langues.
 • Maintenez une touche de modification et survolez pour traduire un seul paragraphe.
 • Vous écrivez dans une autre langue que celle de la page ? Traduisez en un clic.
 
-★ MANGAS, BANDES DESSINÉES ET IMAGES
+★ MANGAS, BANDES DESSINÉES ET TEXTE DES IMAGES (OCR)
 • Les pages de manga et de BD redessinées dans votre langue — et colorisées si vous le souhaitez.
 • Le texte des images est reconnu par OCR sur l'appareil, puis traduit.
 
 ★ CONFIDENTIEL PAR DÉFAUT
 • Par défaut, les pages web sont traduites sur votre appareil. Votre texte ne quitte jamais votre ordinateur.
-• Avec un moteur d'IA, le texte va directement à votre endpoint, avec votre propre clé — jamais par nous.
+• Avec votre propre modèle d'IA, le texte va directement à votre endpoint, avec votre propre clé — jamais par nous.
+• Blab Translation envoie le texte à nos serveurs pour le traduire et n'en garde rien.
 • Les fichiers PDF, documents et BD sont traités sur nos serveurs et supprimés au bout de 7 jours.
 • Aucune analyse d'usage. Aucun pistage publicitaire.
 

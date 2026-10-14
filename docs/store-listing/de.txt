@@ -1,11 +1,12 @@
 Blab Translation — alles in zwei Sprachen lesen.
 
-Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos, Mangas und Comics. Nutzen Sie die KI, der Sie vertrauen — Cloud- oder lokale Modelle — oder Chromes kostenlosen Übersetzer direkt auf dem Gerät.
+Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos, Mangas und Comics. Wählen Sie Ihre Engine: Chromes kostenlosen Übersetzer direkt auf dem Gerät, die KI, der Sie vertrauen — Cloud- oder lokale Modelle, mit Ihrem eigenen Schlüssel — oder Blab Translation, im Abo enthalten, ganz ohne Schlüssel.
 
 ★ ZWEISPRACHIGE WEBSEITEN
 • Die Übersetzung unter jedem Absatz. Formatierung, Links und Bilder bleiben unberührt.
 • Nur die Übersetzung? Eine Taste: Alt+T.
 • Hauptinhalt zuerst — Menüs und Seitenleisten bleiben aus dem Weg. Alt+W für die ganze Seite.
+• Nur einen Teil? Zeigen Sie auf einen Bereich und wählen Sie „Nur hier übersetzen“.
 • Reicht bis in iframes und Shadow DOM.
 • Formeln, LaTeX und Code bleiben intakt. Fachartikel bleiben lesbar.
 • 6 Übersetzungsstile. 76 Sprachen. Rechts-nach-links richtig gesetzt.
@@ -13,7 +14,7 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 ★ AUTOMATISCHE ÜBERSETZUNG, DIE WEISS, WANN SCHLUSS IST
 • Sätze, die schon in Ihrer Sprache sind, werden übersprungen — auch wenn sie voller Fremdwörter stecken.
 • Private Nachrichten werden nie automatisch übersetzt.
-• Seitenregeln: Zeigen Sie auf einen beliebigen Bereich — „Hier nicht übersetzen“, „Original beibehalten“ oder „Nur hier übersetzen“. Eine Engine festlegen, CSS hinzufügen. Regeln werden mit Ihrem Browserkonto synchronisiert.
+• Seitenregeln: Zeigen Sie auf einen beliebigen Bereich — „Hier nicht übersetzen“ oder „Original beibehalten“. Eine Engine festlegen, CSS hinzufügen. Regeln werden mit Ihrem Browserkonto synchronisiert.
 
 ★ PDF-ÜBERSETZUNG, DIE DAS LAYOUT BEHÄLT
 • Zweisprachige PDFs oder PDFs nur mit Übersetzung — Abbildungen, Formeln und Layout genau dort, wo sie waren.
@@ -31,16 +32,18 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 ★ MARKIEREN, ZEIGEN, NACHSCHLAGEN
 • Text markieren und übersetzen — neu übersetzen, Engine wechseln, kopieren, vorlesen.
 • Integriertes Wörterbuch für Wörter und Wendungen: Aussprache, Bedeutungen, Beispiele, Wortformen.
+• Ihre zuletzt gewählten Sprachen stehen oben im Sprachmenü.
 • Modifikatortaste halten und mit der Maus zeigen, um einen einzelnen Absatz zu übersetzen.
 • Sie tippen in einer anderen Sprache als die Seite? Mit einem Klick übersetzen.
 
-★ MANGA, COMICS & BILDER
+★ MANGA, COMICS & TEXT IN BILDERN (OCR)
 • Manga- und Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.
 • Text in Bildern per OCR auf dem Gerät erkannt und dann übersetzt.
 
 ★ STANDARDMÄSSIG PRIVAT
 • Webseiten werden standardmäßig auf Ihrem Gerät übersetzt. Ihr Text verlässt Ihren Computer nicht.
-• Mit einer KI-Engine geht der Text direkt an Ihren Endpunkt, mit Ihrem eigenen Schlüssel — nie über uns.
+• Mit Ihrem eigenen KI-Modell geht der Text direkt an Ihren Endpunkt, mit Ihrem eigenen Schlüssel — nie über uns.
+• Blab Translation schickt den Text zum Übersetzen an unsere Server und speichert nichts davon.
 • PDF-, Dokument- und Comic-Dateien werden auf unseren Servern verarbeitet und nach 7 Tagen gelöscht.
 • Keine Analyse. Kein Werbe-Tracking.
 

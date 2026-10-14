@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Blab Translation: KI-Übersetzer für Web, PDF & Manga",
+    "message": "Blab Translation: KI-Übersetzer für Web, PDF, Manga & Untertitel",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "KI-Übersetzer: gratis zweisprachige Webseiten, layouttreue PDF-Übersetzung, Manga-Übersetzung, YouTube-Doppeluntertitel, EPUB/Word.",
+    "message": "Zweisprachige Webseiten oder nur ein gewählter Bereich, layouttreue PDFs, E-Books & Word, Manga, Bildtext (OCR), YouTube-Untertitel.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {
