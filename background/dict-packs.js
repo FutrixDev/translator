@@ -367,12 +367,13 @@ export async function checkDictPacks() {
   const manifest = await readManifest({ fresh: true });
   const packs = await readMap(DictPack.PACKS_KEY);
   const status = await readMap(DictPack.STATUS_KEY);
-  const declined = await readDeclined();
   const pairs = new Set([...Object.keys(packs), ...Object.keys(status), await preinstallPair()].filter(Boolean));
   const jobs = [];
   for (const pair of pairs) {
     const row = manifest.get(pair);
-    if (!row || declined.includes(pair)) continue;
+    // A declined pair is turned away by runInstall, the one place that also
+    // catches a delete made while the job waited in the queue.
+    if (!row) continue;
     const listed = packs[pair];
     if (listed && listed.ver === row.ver) continue;
     jobs.push(queueInstall('check', row));

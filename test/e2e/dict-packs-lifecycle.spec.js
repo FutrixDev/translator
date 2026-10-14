@@ -110,6 +110,15 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     expect(server.hitsOf(row.url)).toBe(1);
     expect(await packItem(context, EN_ZH)).toBeUndefined();
 
+    // An extension update preinstalls the target pair, but not a declined one:
+    // it does not even read the manifest.
+    const checkedHits = server.hitsOf(MANIFEST_PATH);
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => chrome.runtime.onInstalled.dispatch({ reason: 'update' }));
+    await second.waitForTimeout(1000);
+    expect(server.hitsOf(MANIFEST_PATH)).toBe(checkedHits);
+    expect(server.hitsOf(row.url)).toBe(1);
+
     await pack.locator('.dict-pack-redownload').click();
     await listedAt(context, EN_ZH, row.ver);
     expect(server.hitsOf(row.url)).toBe(2);
