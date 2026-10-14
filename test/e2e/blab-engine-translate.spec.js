@@ -51,6 +51,8 @@ test.describe('J1 Blab Translation with a plan', () => {
       const note = options.locator('#translationEngineBlabNote');
       await expect(note).toHaveText(en('blabNoteAvailable')
         .replace('{limit}', count(1000000)).replace('{used}', count(0)));
+      // The allowance is metered in tokens (D-564), and the note says so.
+      await expect(note).toContainText('1,000,000 tokens a day');
       await expect(note).not.toHaveClass(/blab-note-warning/);
       await walkShot(options, 'J1-1-2-settings-available');
       await options.close();
@@ -102,6 +104,7 @@ test.describe('J1 Blab Translation with a plan', () => {
       options = await openOptions(context, extensionId);
       await expect(options.locator('#translationEngineBlabNote')).toHaveText(en('blabNoteAvailable')
         .replace('{limit}', count(1000000)).replace('{used}', count(blab.state.used)));
+      await expect(options.locator('#translationEngineBlabNote')).toContainText('1,000,000 tokens a day');
       await walkShot(options, 'J1-7-settings-used-moved');
       await options.close();
     } finally {

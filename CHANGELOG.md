@@ -23,6 +23,13 @@
   (Chinese characters stay at four), and one trailing sentence stop
   (. ! ? 。！？) no longer turns a word into a sentence.
 
+### Blab Translation
+
+- **The daily Blab Translation allowance is counted in tokens.** The note
+  under the translation engine now reads "1,000,000 tokens a day" rather than
+  characters, matching how the account service meters it: the tokens the
+  model provider reports for each request.
+
 ### Target languages
 
 - **The languages you picked last are at the top of the menu.** The

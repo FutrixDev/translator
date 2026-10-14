@@ -624,7 +624,7 @@
 
   // 发给模型的一份，响应盖上真正发往的那个模型引擎（'ai' | 'blab'）。预算闸只拦
   // 'ai'：autoAiDailyBudget 管的是用户自己的接口、他自己的钱；Blab 的上限是账户
-  // 每天的字数，由服务端的 429 daily_limit 把关（D-480）。
+  // 每天的 token 数（模型商报的用量，D-564），由服务端的 429 daily_limit 把关（D-480）。
   async function sendPart(message, engine) {
     const refusal = engine === 'ai' ? await refuseAutoAiSpend(message) : null;
     if (refusal) return { error: refusal, budgetSpent: true, engine };

@@ -455,7 +455,7 @@
     blabSignInRequired: 'Blab Translation を使うには Blab アカウントにログインしてください。',
     blabNoteSignedOut: "Blab アカウントにログインしてサブスクリプションに登録すると使えます。",
     blabNotePlanRequired: "Blab Translation はサブスクリプションに含まれています。",
-    blabNoteAvailable: "テキストは翻訳のため Blab のサーバーに送信されます。サブスクリプションに含まれ、1 日 {limit} 文字まで、本日の使用量は {used} 文字です。",
+    blabNoteAvailable: "テキストは翻訳のため Blab のサーバーに送信されます。サブスクリプションに含まれ、1 日 {limit} トークンまで、本日の使用量は {used} トークンです。",
     blabNoteSelectedUnavailable: "Blab Translation が選択されていますが、このアカウントでは現在使えません。",
     blabSubscribe: "登録する",
     blabErrorBusy: "Blab Translation は現在混み合っています。しばらくしてからもう一度お試しください。",
