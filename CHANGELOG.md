@@ -99,7 +99,9 @@
   popup is unchanged.
 - **The long descriptions** name the three engines, translating only the area
   you point at, the Recent languages and OCR, and say that Blab Translation
-  sends text to our servers.
+  sends text to our servers. OCR has a section of its own rather than a line
+  under manga, because it reads the text in any image you right-click — a
+  screenshot, a photo, a chart — not only comic pages.
 
 ## 1.5.0 — 2026-10-07
 

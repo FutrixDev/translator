@@ -36,9 +36,13 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 • Modifikatortaste halten und mit der Maus zeigen, um einen einzelnen Absatz zu übersetzen.
 • Sie tippen in einer anderen Sprache als die Seite? Mit einem Klick übersetzen.
 
-★ MANGA, COMICS & TEXT IN BILDERN (OCR)
+★ MANGA & COMICS
 • Manga- und Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.
-• Text in Bildern per OCR auf dem Gerät erkannt und dann übersetzt.
+
+★ TEXT IN JEDEM BILD (OCR)
+• Rechtsklick auf ein beliebiges Bild — Screenshot, Foto, Diagramm —, um den Text darin zu lesen und zu übersetzen.
+• Das ganze Bild oder nur ein Bereich, den Sie aufziehen. Große Bilder zeigen beim Darüberfahren außerdem die Schaltfläche „Text erkennen“.
+• Erkannt auf Ihrem Gerät, offline — oder von einem Vision-Modell mit Ihrem eigenen Schlüssel, für Fotos und verzierte Schrift.
 
 ★ STANDARDMÄSSIG PRIVAT
 • Webseiten werden standardmäßig auf Ihrem Gerät übersetzt. Ihr Text verlässt Ihren Computer nicht.

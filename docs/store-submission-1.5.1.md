@@ -90,7 +90,10 @@ PDF translation 这几个原词。另一半原因是装机量（当时 48 个用
   （`pickerInclude`）；站点规则那条相应去掉重复的「只翻译这里」；
 - 「划词、悬停、查词」一节新增一条：最近选过的语言排在语言菜单最前面
   （`langRecent`）；
-- 漫画一节的标题加上 OCR（「MANGA, COMICS & TEXT IN IMAGES (OCR)」）；
+- OCR 从漫画一节拆出来单列（「TEXT IN ANY IMAGE (OCR)」）：任意图片都能右键识别，
+  不只是漫画——截图、照片、图表都行；整张或自己框一块，大图悬停有「Recognize Text」按钮
+  （`ocrRecognizeText`，各语言写各自的界面文字）；本机离线识别，或用自带密钥的视觉模型。
+  漫画一节只剩「MANGA & COMICS」一条；
 - 隐私一节：原来写的是「选 AI 引擎时文本直接发到你的接口，从不经过我们」，
   有了 Blab 引擎之后这句不再全对，改成「自己的 AI 模型」，并新增一条：Blab Translation
   会把文本发到我们的服务器翻译，不保存任何内容。
