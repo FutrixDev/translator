@@ -77,8 +77,9 @@
 
 /* ==================== Image OCR: the hover shortcut button ====================
 
-   A small floating action pinned near the top-right corner of a large image
-   while the cursor rests on it (enableImageOcrHoverButton, off by default).
+   A small floating action pinned near the top-right corner of an <img> of at
+   least 200×200 CSS px while the cursor rests on it (enableImageOcrHoverButton,
+   on by default).
    Clicking it runs the same whole-image recognition as the context menu entry.
 
    Styled by #id like the selection button above: (1,0,0) outranks any theme's
