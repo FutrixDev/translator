@@ -109,6 +109,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     await second.waitForTimeout(1000);
     expect(server.hitsOf(row.url)).toBe(1);
     expect(await packItem(context, EN_ZH)).toBeUndefined();
+    expect(await statusOf(context, EN_ZH)).toBeUndefined();
 
     // An extension update preinstalls the target pair, but not a declined one:
     // it does not even read the manifest.
