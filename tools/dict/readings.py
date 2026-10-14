@@ -4,14 +4,17 @@ target language, looked up at build time and written into every `e` record.
   en      "/UK/|/US/": UK = kaikki en IPA labelled UK/RP, then ipa-dict en_UK; US = kaikki
           US/GA, then ipa-dict en_US, then CMUdict; an unlabelled kaikki IPA counts as US when
           neither side was found. A missing side is the empty string.
-  zh      CC-CEDICT pinyin with tone marks; several readings -> the one whose English gloss
-          shares a word with the source entry's English (§2.3), else the first.
+  zh      CC-CEDICT pinyin with tone marks, keyed on the Simplified head (zh-CN) or the
+          Traditional head (zh-TW, whose glosses are converted before the lookup); several
+          readings -> the one whose English gloss shares a word with the source entry's
+          English (§2.3), else the first.
   ja      JMdict, the first reading of the entry.
   ko      Revised Romanization, computed per syllable (no data, no sound change rules).
   es/fr/de/pt/ru  kaikki IPA (English edition first, then the language's own edition), then
-          ipa-dict; ru strips the stress mark U+0301 before the lookup.
+          ipa-dict; the word is folded first (common.fold_word: ru drops the stress mark).
 
-Nothing found -> None; a reading is never guessed. Every lookup also names the dataset that
+Nothing found -> None; a reading is never guessed, and a reading in the wrong script
+(common.reading_problem) is None too. Every lookup also names the dataset that
 answered (a `sources[]` id), so a pack lists exactly the datasets it uses.
 
 The big kaikki IPA columns are extracted once per language into <work>/read-<t>.tsv
@@ -30,7 +33,6 @@ RR_V = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 
 RR_T = ['', 'k', 'k', 'k', 'n', 'n', 'n', 't', 'l', 'k', 'm', 'l', 'l', 'l', 'l', 'l', 'm', 'p',
         'p', 't', 't', 'ng', 't', 't', 'k', 't', 'p', 't']
 IPADICT = {'en_UK': 'en', 'en_US': 'en', 'es': 'es_ES', 'fr': 'fr_FR', 'de': 'de', 'pt': 'pt_BR'}
-STRESS = '́'
 WORDS = re.compile(r"[a-z]+")
 GLOSS_STOP = {'a', 'an', 'the', 'to', 'of', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'at',
               'be', 'as', 'sb', 'sth', 'one', 'etc', 'used', 'see', 'also', 'variant', 'cl'}
@@ -137,20 +139,23 @@ def read_ipa_map(path, phonetic_ok):
 class Readings:
     """lookup(word, src_gloss_en=None) -> (reading | None, source id | None) for one target."""
 
-    def __init__(self, norm, work, t):
+    def __init__(self, norm, work, t, traditional=False):
         self.t = t
         ipa_dir = os.path.join(norm, 'ipa')
         if t == 'zh':
+            key = 't' if traditional else 's'
             self.cedict = {}
             for r in C.read_jsonl(os.path.join(norm, 'cedict.jsonl')):
-                self.cedict.setdefault(r['s'], []).append((r['p'], r['g']))
+                self.cedict.setdefault(r[key], []).append((r['p'], r['g']))
         elif t == 'ja':
             self.jmdict = {}
             for r in C.read_jsonl(os.path.join(norm, 'jmdict.jsonl')):
                 if not r['r']:
                     continue
-                for w in (r['k'] or r['r']):
+                for w in r['k']:
                     self.jmdict.setdefault(w, r['r'][0])
+                for w in r['r']:
+                    self.jmdict.setdefault(w, w)
         elif t != 'ko':
             self.kaikki = {}
             with open(table_path(work, t), encoding='utf-8') as f:
@@ -170,10 +175,16 @@ class Readings:
                 self.ipadict = {}
 
     def lookup(self, word, src_gloss_en=None):
+        """(reading, source ids) for a translation word, or (None, None). A reading that
+        breaks the target's script rule (common.reading_problem) is no reading: null, not a
+        wrong one."""
         if not word:
             return None, None
-        return getattr(self, '_' + (self.t if self.t in ('en', 'zh', 'ja', 'ko') else 'ipa'))(
+        r, ids = getattr(self, '_' + (self.t if self.t in ('en', 'zh', 'ja', 'ko') else 'ipa'))(
             word, src_gloss_en)
+        if r is None or C.reading_problem(r, self.t, word):
+            return None, None
+        return r, ids
 
     def _en(self, word, _):
         k = self.kaikki.get(word) or self.kaikki.get(word.lower()) or {}
@@ -203,8 +214,6 @@ class Readings:
 
     def _zh(self, word, src_gloss_en):
         rs = self.cedict.get(word)
-        if not rs and len(word) > 2 and word[-1] in '的地':
-            rs = self.cedict.get(word[:-1])
         if not rs:
             return None, None
         pick = rs[0][0]
@@ -225,11 +234,13 @@ class Readings:
         return (r, ()) if r else (None, None)
 
     def _ipa(self, word, _):
-        if self.t == 'ru':
-            word = word.replace(STRESS, '')
-        k = self.kaikki.get(word) or self.kaikki.get(word.lower())
-        if k:
-            return next(iter(k.values())), ('wiktionary',)
-        r = self.ipadict.get(word) or self.ipadict.get(word.lower())
-        return (r, ('ipadict',)) if r else (None, None)
+        word = C.fold_word(word, self.t)
+        keys = (word, word.lower(), word[:1].upper() + word[1:])
+        for w in keys:
+            if w in self.kaikki:
+                return next(iter(self.kaikki[w].values())), ('wiktionary',)
+        for w in keys:
+            if w in self.ipadict:
+                return self.ipadict[w], ('ipadict',)
+        return None, None
 

@@ -41,7 +41,7 @@ BAD_KEY = (' ', '/', '(', ')', '\t')
 
 
 def fold_key(form, s):
-    return form.replace(C.STRESS, '') if s == 'ru' else form
+    return C.fold_word(form, s)
 
 
 def dropped(tags):

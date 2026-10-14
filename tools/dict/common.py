@@ -175,7 +175,7 @@ def pair_files(norm, src, tgt):
 
 
 # ---------------- word form (design §2.2, spike pairdata.word_form) ----------------
-PAREN = re.compile(r'\([^)]*\)|\[[^\]]*\]|（[^）]*）|【[^】]*】|<[^>]*>')
+PAREN = re.compile(r'\([^()]*\)|\[[^\[\]]*\]|（[^（）]*）|【[^【】]*】|<[^<>]*>')
 ARTICLES = {
     'en': ('to ', 'a ', 'an ', 'the ', 'be ', 'become '),
     'de': ('der ', 'die ', 'das ', 'ein ', 'eine ', 'sich '),
@@ -185,12 +185,42 @@ ARTICLES = {
 }
 CJK = re.compile(r'^[぀-ヿ㐀-鿿가-힯ｦ-ﾟー々]+$')
 LATIN_WORD = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*")
+SEGMENT = re.compile(r'[；;,，、/]| or ')
+STRESS = chr(0x301)
+
+
+def fold_word(text, lang):
+    """The one stress fold (design §2.1): Russian glosses and heads carry the stress mark
+    U+0301, which no reading table, Tatoeba sentence or user selection has. Every lookup key
+    (word_form, readings, fold_surface, formtab.fold_key) goes through here; the gloss shown
+    in a pack keeps its stress mark. Other languages are untouched (a decomposed e + U+0301
+    in French is an accent, not a stress mark)."""
+    return text.replace(STRESS, '') if lang == 'ru' else text
+
+
+def strip_parens(text):
+    """Remove bracketed asides, innermost first, until nothing changes: `dog (Canis (lupus)
+    familiaris)` -> `dog`."""
+    while True:
+        out = PAREN.sub('', text)
+        if out == text:
+            return out
+        text = out
+
+
+def first_segment(gloss):
+    """The first segment of a gloss (§2.2): parentheticals removed, cut at the first
+    `；;,，、/` or " or ", trailing sentence stops and spaces removed."""
+    g = SEGMENT.split(strip_parens(gloss))[0].strip()
+    return g.rstrip('.。!?！？').strip()
 
 
 def word_form(gloss, t):
-    """One dictionary word form out of a gloss string in target language t (iso), or ''."""
-    g = PAREN.sub('', gloss).strip()
-    g = re.split(r'[；;,，、/]| or ', g)[0].strip().strip('.。!?')
+    """One dictionary word form out of a gloss string in target language t (iso), or ''.
+    The first segment only, articles dropped, stress folded; a definition sentence's capital
+    (`Manger (pour les humains).` -> `manger`) is lowered except in German, whose nouns are
+    capitalised."""
+    g = fold_word(first_segment(gloss), t)
     low = g.lower()
     for a in ARTICLES.get(t, ()):
         if low.startswith(a):
@@ -200,16 +230,46 @@ def word_form(gloss, t):
         return ''
     if t in CJK_LANGS:
         return g if CJK.match(g) and len(g) <= 8 else ''
-    return g if LATIN_WORD.fullmatch(g) and len(g) <= 30 else ''
+    if not (LATIN_WORD.fullmatch(g) and len(g) <= 30):
+        return ''
+    if t != 'de' and g[:1].isupper() and g[1:].islower():
+        g = g[0].lower() + g[1:]
+    return g
 
 
 def translation_word(glosses, t):
-    """The translation word a record's reading belongs to: the word form of the first gloss
-    that has one. pairs.py looks the reading up for it; check.py uses it as the denominator."""
-    for g in glosses:
-        wf = word_form(g, t)
-        if wf:
-            return wf
+    """The translation word a record's reading belongs to (design l.264, D-614 R2): the word
+    form of the first segment of the first gloss, or '' (then the record has no reading).
+    A later gloss is never used. pairs.py looks the reading up for it; check.py uses it as
+    the reading-rate denominator and for G1."""
+    return word_form(glosses[0], t) if glosses else ''
+
+
+# ---------------- reading script (L1 N1, L2 N7) ----------------
+PINYIN = re.compile(r"[A-Za-züÜāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜńňǹḿ]+(?:[ ·'’-][A-Za-züÜāáǎàēéěè"
+                    r"īíǐìōóǒòūúǔùǖǘǚǜńňǹḿ]+)*")
+HAN = re.compile(r'[㐀-鿿]+')
+KANA = re.compile(r'[぀-ヿー・ ]+')
+ROMAN_KO = re.compile(r"[a-z]+(?:[ '-][a-z]+)*")
+
+
+def reading_problem(reading, t, word):
+    """Why a reading cannot belong to `word` in target t (iso), or '' when it can.
+    zh: tone-marked Latin, one syllable per Han character when the word is all Han
+    (an erhua reading such as `wánr` for 玩儿 fails, and goes null); ja: kana; ko: lowercase
+    Revised Romanization. The pipeline sets a reading with a problem to null, check.py
+    fails it: one rule for both."""
+    if t == 'zh':
+        if not PINYIN.fullmatch(reading):
+            return 'zh reading is not tone-marked Latin'
+        if HAN.fullmatch(word) and len(re.split(r"[ ·'’-]+", reading)) != len(word):
+            return 'zh syllables != Han characters'
+    elif t == 'ja':
+        if not KANA.fullmatch(reading):
+            return 'ja reading is not kana'
+    elif t == 'ko':
+        if not ROMAN_KO.fullmatch(reading):
+            return 'ko reading is not lowercase Latin'
     return ''
 
 
@@ -220,41 +280,64 @@ def translation_word(glosses, t):
 SUBSTRING_LANGS = CJK_LANGS
 SUBSTRING_MAX = 10          # longest head/form looked for inside a CJK sentence
 WORD_NGRAM_MAX = 4          # longest multi-word head looked for in a spaced sentence
+CHUNK = re.compile(r"\w+(?:['-]\w+)*")
 SENTENCE_WORD = re.compile(r"[^\W\d_]+(?:['-][^\W\d_]+)*")
-STRESS = '\u0301'
+CLAUSE = re.compile(r'[.!?…;:,，。！？；：、"“”«»()\[\]]')
 
 
 def fold_surface(text, lang):
     """The key a head or form is matched by: case-folded, curly apostrophe straightened, and
-    for ru the stress mark removed (Tatoeba writes none)."""
-    text = text.replace('\u2019', "'").casefold()
-    return text.replace(STRESS, '') if lang == 'ru' else text
+    the stress fold (fold_word; Tatoeba writes no stress marks)."""
+    return fold_word(text.replace('\u2019', "'").casefold(), lang)
+
+
+def clauses(sentence, lang):
+    """The sentence cut at punctuation (CLAUSE), folded: no key spans a comma or a stop, so
+    `Alors, que` gives `alors` and `que` but never `alors que` (L2 N3)."""
+    return [c for c in CLAUSE.split(fold_surface(sentence, lang)) if c.strip()]
 
 
 def sentence_keys(sentence, lang):
-    """Every surface a sentence can be said to contain, folded like fold_surface:
-    substrings (length 1..SUBSTRING_MAX) for zh/ja/ko, else word n-grams (1..WORD_NGRAM_MAX)
-    plus the parts of an apostrophe or hyphen compound (l'homme -> l, homme)."""
-    if lang in SUBSTRING_LANGS:
-        s = sentence.casefold()
-        n = len(s)
-        return {s[i:j] for i in range(n) for j in range(i + 1, min(n, i + SUBSTRING_MAX) + 1)}
-    toks = SENTENCE_WORD.findall(fold_surface(sentence, lang))
+    """Every surface a sentence can be said to contain, folded like fold_surface, never across
+    punctuation (clauses): substrings (length 1..SUBSTRING_MAX) for zh/ja/ko, else word
+    n-grams (1..WORD_NGRAM_MAX) plus the parts of an apostrophe or hyphen compound
+    (l'homme -> l, homme). A word glued to digits (13e, 5G, K2, 22h20) is no word."""
     keys = set()
-    for i in range(len(toks)):
-        for k in range(1, WORD_NGRAM_MAX + 1):
-            if i + k <= len(toks):
-                keys.add(' '.join(toks[i:i + k]))
-        if "'" in toks[i] or '-' in toks[i]:
-            keys.update(p for p in re.split(r"['-]", toks[i]) if p)
+    for c in clauses(sentence, lang):
+        if lang in SUBSTRING_LANGS:
+            n = len(c)
+            keys.update(c[i:j] for i in range(n) for j in range(i + 1, min(n, i + SUBSTRING_MAX) + 1))
+            continue
+        for toks in word_runs(c):
+            for i in range(len(toks)):
+                for k in range(1, WORD_NGRAM_MAX + 1):
+                    if i + k <= len(toks):
+                        keys.add(' '.join(toks[i:i + k]))
+                if "'" in toks[i] or '-' in toks[i]:
+                    keys.update(p for p in re.split(r"['-]", toks[i]) if p)
     return keys
+
+
+def word_runs(clause):
+    """The clause's words in runs: a chunk with a digit or underscore in it (13e, 5G, K2,
+    22h20) is no word and ends the run, so no n-gram reaches across it."""
+    runs, cur = [], []
+    for chunk in CHUNK.findall(clause):
+        if SENTENCE_WORD.fullmatch(chunk):
+            cur.append(chunk)
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    return runs
 
 
 def contains(sentence, surfaces, lang):
     """True when `sentence` contains any of `surfaces` (a head and its forms) by the rule above."""
     if lang in SUBSTRING_LANGS:
-        s = sentence.casefold()
-        return any(x and x.casefold() in s for x in surfaces)
+        cs = clauses(sentence, lang)
+        return any(x and fold_surface(x, lang) in c for x in surfaces for c in cs)
     keys = sentence_keys(sentence, lang)
     return any(fold_surface(x, lang) in keys for x in surfaces)
 
