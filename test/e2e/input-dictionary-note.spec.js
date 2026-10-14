@@ -303,6 +303,10 @@ test('J-B2.5 a typed word the offline pack has is answered from it: its entry, n
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
     expect(mock.sentTexts).toEqual([]);
     expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
+    // Evidence for the batch (DICT_B2_EVIDENCE), else the test's own output folder.
+    const shots = process.env.DICT_B2_EVIDENCE || test.info().outputPath();
+    await page.locator('#ai-translator-input-dialog .ai-translator-input-modal')
+      .screenshot({ path: require('path').join(shots, 'j-b2-5-input-local.png') });
   } finally {
     await mock.close();
   }

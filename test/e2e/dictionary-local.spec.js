@@ -346,6 +346,7 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       await expect(parts.title).toHaveText(zh('aiTranslate'));
       await expect(parts.tag).toHaveText(zh('cardEngineAi'));
       await expect(parts.credits).toHaveCount(0);
+      await card.screenshot({ path: shotPath('j-b2-6-card-switch-off.png') });
     } finally {
       await mock.close();
     }
