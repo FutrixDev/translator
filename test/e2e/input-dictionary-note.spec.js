@@ -3,6 +3,8 @@
 // model engine; the dialog now says which engine answered, and when a word
 // comes back without an entry, says why in one line under the translation.
 // The built-in engine is the STUB from stubBuiltinTranslator ('[B] ' + text).
+// J-B2.5 (offline dictionary, batch B2): a typed word the installed pack has is
+// answered from it, whatever engine is chosen, and needs no note.
 const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
@@ -12,9 +14,12 @@ const {
   translateInput,
   recycleWorker,
   stubBuiltinTranslator,
+  evaluateInContentScript,
 } = require('./helpers');
 const { expectLaidOut } = require('./layout-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { DictPackServer, fixturePack, packBytes } = require('./dict-pack-server');
+const { install } = require('./dict-pack-journeys');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
 
@@ -265,6 +270,39 @@ test('J-I7 an earlier request that fails late does not write its error over the 
     await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('ipa-walk');
     await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineAi'));
     await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J-B2.5 a typed word the offline pack has is answered from it: its entry, no note, nothing sent', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer({ dictEntry: (text) => ({ translation: `[T] ${text}` }) });
+  try {
+    // The en→zh-CN fixture pack with `school` added, served from the mocked pack host.
+    const pack = fixturePack('en-zh-CN');
+    pack.e.school = [['n.', ['学校'], 'xuéxiào', 'wiktionary']];
+    const server = new DictPackServer();
+    server.publish(packBytes(pack));
+    await server.attach(context);
+
+    // The built-in engine chosen (the case that otherwise says "no entry"), the AI configured.
+    await setExtensionSettings(page, aiSettings(mock.endpoint, { translationEngine: 'builtin', engineFallback: 'local-only' }));
+    await openExamplePage(page);
+    await stubBuiltinTranslator(page);
+    await install(context, page, 'en', 'zh-CN', pack.ver);
+
+    await openInputDialog(page);
+    await translateInput(page, 'school');
+    await expect(page.locator(dialogPart.result)).toHaveText('学校');
+    await expect(page.locator(dialogPart.tag)).toHaveText(en('cardEngineDict'));
+    await expect(page.locator(dialogPart.dict)).toBeVisible();
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-ipa`)).toHaveText('xuéxiào');
+    await expect(page.locator(`${dialogPart.dict} .ai-translator-dict-defs`)).toHaveText('学校');
+    await expect(page.locator(dialogPart.note)).toBeHidden();
+    await expect(page.locator(dialogPart.switchBtn)).toBeHidden();
+    await expect(page.locator('#ai-translator-input-dialog .ai-translator-input-error')).toHaveCount(0);
+    expect(mock.sentTexts).toEqual([]);
+    expect(await evaluateInContentScript(context, page, 'self.__builtinCalls')).toBe(0);
   } finally {
     await mock.close();
   }

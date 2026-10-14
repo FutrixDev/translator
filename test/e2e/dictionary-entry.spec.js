@@ -686,10 +686,11 @@ test.describe('dictionary entry (batch C)', () => {
   });
 
   // D-561: an offline dictionary answer ({engine: 'dict', entry, credits}) is
-  // read by the same entryFor and drawn by the same render. Nothing sends one
-  // yet (the lookup is wired in a later batch), so this draws one into the
-  // input box's real entry container from the content script, where the card
-  // and the dialog call render, and reads the links off the page.
+  // read by the same entryFor and drawn by the same render. This draws hand-made
+  // answers (unsafe links among them) into the input box's real entry
+  // container from the content script, where the card and the dialog call
+  // render, and reads the links off the page. A real pack answer, entered from
+  // the page, is dictionary-local.spec.js (J-B2.1–J-B2.7).
   test('C10: an offline dictionary entry ends in a credits line of safe links; a model answer\'s credits are dropped (D-561)', async ({ page, context }) => {
     const mock = await startMockOpenAIServer({ dictEntry });
     try {
@@ -698,6 +699,11 @@ test.describe('dictionary entry (batch C)', () => {
       await page.goto(`${ORIGIN}/`);
       await waitForFloatBall(page);
       await openInputDialog(page);
+      // A word looked up first, so the result area is on screen and the line
+      // below has a layout to measure; nothing after it asks a model.
+      await translateInput(page, 'run');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('跑');
+      const asked = mock.systemPrompts.length;
 
       const drawAnswer = (answer) => evaluateInContentScript(context, page, `(() => {
         const answer = ${JSON.stringify(answer)};
@@ -725,8 +731,8 @@ test.describe('dictionary entry (batch C)', () => {
       await expect(line).toHaveCount(1);
       await expect(line.locator('.ai-translator-dict-credits-prefix')).toHaveText(zh('dictCredits'));
       // One line of its own, not a stacked section: prefix, first link, a
-      // ' · ' text node, second link, in that order. Laying it out on one
-      // row is the stylesheet's job (B2); the order is what render owns.
+      // ' · ' text node, second link, in that order (render owns the order),
+      // laid out side by side on one row (dict-entry.css owns that).
       const order = await line.evaluate((el) => ({
         className: el.className,
         nodes: [...el.childNodes].map((n) => (n.nodeType === Node.TEXT_NODE ? `text:${n.data}` : n.className)),
@@ -735,6 +741,12 @@ test.describe('dictionary entry (batch C)', () => {
         className: 'ai-translator-dict-credits',
         nodes: ['ai-translator-dict-credits-prefix', 'ai-translator-dict-credit-link', 'text: · ', 'ai-translator-dict-credit-link'],
       });
+      const row = await line.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        tops: [...el.children].map((child) => child.offsetTop),
+      }));
+      expect(row.height, JSON.stringify(row)).toBeGreaterThan(0);
+      expect(new Set(row.tops).size, `prefix and links on one row: ${JSON.stringify(row)}`).toBe(1);
       const links = line.locator('a');
       await expect(links).toHaveText(['JMdict © EDRDG', 'Tatoeba']);
       const attrs = await links.evaluateAll((all) => all.map((a) => ({
@@ -752,8 +764,8 @@ test.describe('dictionary entry (batch C)', () => {
       await expect(dict.locator('.ai-translator-dict-credits')).toHaveCount(0);
       await expect(dict.locator('a')).toHaveCount(0);
 
-      // Nothing here asked a model.
-      expect(mock.systemPrompts).toEqual([]);
+      // Nothing after the first word asked a model.
+      expect(mock.systemPrompts).toHaveLength(asked);
       expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
     } finally {
       await mock.close();
