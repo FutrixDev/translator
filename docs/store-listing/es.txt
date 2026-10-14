@@ -36,9 +36,13 @@ El original y la traducción uno junto al otro, en páginas web, PDF, libros ele
 • Mantén pulsada una tecla modificadora y pasa el ratón para traducir un solo párrafo.
 • ¿Escribes en un idioma distinto al de la página? Tradúcelo con un clic.
 
-★ MANGA, CÓMICS Y TEXTO EN IMÁGENES (OCR)
+★ MANGA Y CÓMICS
 • Páginas de manga y cómic redibujadas en tu idioma, y coloreadas si quieres.
-• El texto de las imágenes se reconoce con OCR en el dispositivo y luego se traduce.
+
+★ TEXTO EN CUALQUIER IMAGEN (OCR)
+• Haz clic derecho en cualquier imagen —una captura, una foto, un gráfico— para leer su texto y traducirlo.
+• La imagen entera o solo la zona que delimites. Las imágenes grandes también muestran el botón "Reconocer texto" al pasar el cursor.
+• Se lee en tu dispositivo, sin conexión: inglés, y también chino, japonés o coreano si es el idioma de tu interfaz; o con un modelo de visión y tu propia clave para otros idiomas, fotos y letras estilizadas.
 
 ★ PRIVADO POR DEFECTO
 • Por defecto, las páginas web se traducen en tu dispositivo. Tu texto nunca sale de tu ordenador.

@@ -36,9 +36,13 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 • Maintenez une touche de modification et survolez pour traduire un seul paragraphe.
 • Vous écrivez dans une autre langue que celle de la page ? Traduisez en un clic.
 
-★ MANGAS, BANDES DESSINÉES ET TEXTE DES IMAGES (OCR)
+★ MANGAS ET BANDES DESSINÉES
 • Les pages de manga et de BD redessinées dans votre langue — et colorisées si vous le souhaitez.
-• Le texte des images est reconnu par OCR sur l'appareil, puis traduit.
+
+★ TEXTE DE N'IMPORTE QUELLE IMAGE (OCR)
+• Clic droit sur n'importe quelle image — capture d'écran, photo, graphique — pour lire son texte et le traduire.
+• L'image entière ou seulement la zone que vous tracez. Les grandes images affichent aussi un bouton « Reconnaître le texte » au survol.
+• Lu hors ligne sur votre appareil : l'anglais, ainsi que le chinois, le japonais ou le coréen si c'est la langue de votre interface — ou par un modèle de vision avec votre propre clé pour les autres langues, les photos et les lettrages stylisés.
 
 ★ CONFIDENTIEL PAR DÉFAUT
 • Par défaut, les pages web sont traduites sur votre appareil. Votre texte ne quitte jamais votre ordinateur.
