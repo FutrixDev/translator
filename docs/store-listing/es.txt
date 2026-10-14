@@ -41,8 +41,8 @@ El original y la traducción uno junto al otro, en páginas web, PDF, libros ele
 
 ★ TEXTO EN CUALQUIER IMAGEN (OCR)
 • Haz clic derecho en cualquier imagen —una captura, una foto, un gráfico— para leer su texto y traducirlo.
-• La imagen entera o solo la zona que delimites. Las imágenes grandes también muestran el botón «Reconocer texto» al pasar el cursor.
-• Se lee en tu dispositivo, sin conexión, o con un modelo de visión y tu propia clave, para fotos y letras estilizadas.
+• La imagen entera o solo la zona que delimites. Las imágenes grandes también muestran el botón "Reconocer texto" al pasar el cursor.
+• Se lee en tu dispositivo, sin conexión: inglés, y también chino, japonés o coreano si es el idioma de tu interfaz; o con un modelo de visión y tu propia clave para otros idiomas, fotos y letras estilizadas.
 
 ★ PRIVADO POR DEFECTO
 • Por defecto, las páginas web se traducen en tu dispositivo. Tu texto nunca sale de tu ordenador.

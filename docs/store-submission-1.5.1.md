@@ -92,7 +92,9 @@ PDF translation 这几个原词。另一半原因是装机量（当时 48 个用
   （`langRecent`）；
 - OCR 从漫画一节拆出来单列（「TEXT IN ANY IMAGE (OCR)」）：任意图片都能右键识别，
   不只是漫画——截图、照片、图表都行；整张或自己框一块，大图悬停有「Recognize Text」按钮
-  （`ocrRecognizeText`，各语言写各自的界面文字）；本机离线识别，或用自带密钥的视觉模型。
+  （`ocrRecognizeText`，各语言写各自的界面文字）；本机离线识别只写英文，界面语言是中日韩时
+  再加该语言——`vendor/tesseract/lang` 只带这四种，`resolveOcrLanguagePlan` 按界面语言选；
+  其他语言、照片和花体字写成交给自带密钥的视觉模型。
   漫画一节只剩「MANGA & COMICS」一条；
 - 隐私一节：原来写的是「选 AI 引擎时文本直接发到你的接口，从不经过我们」，
   有了 Blab 引擎之后这句不再全对，改成「自己的 AI 模型」，并新增一条：Blab Translation

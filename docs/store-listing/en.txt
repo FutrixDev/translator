@@ -42,7 +42,7 @@ Original and translation side by side, on web pages, PDFs, ebooks, videos, manga
 ★ TEXT IN ANY IMAGE (OCR)
 • Right-click any image — a screenshot, a photo, a chart — to read the text in it and translate it.
 • The whole image, or just an area you draw. Large images also show a "Recognize Text" button when you hover.
-• Read on your device, offline — or by a vision model with your own key, for photos and stylized lettering.
+• Read offline on your device: English, plus Chinese, Japanese or Korean when that is your interface language — or by a vision model with your own key for other languages, photos and stylized lettering.
 
 ★ PRIVATE BY DEFAULT
 • Web pages translate on your device by default. Your text never leaves your computer.

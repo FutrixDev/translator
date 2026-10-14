@@ -42,7 +42,7 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 ★ TEXT IN JEDEM BILD (OCR)
 • Rechtsklick auf ein beliebiges Bild — Screenshot, Foto, Diagramm —, um den Text darin zu lesen und zu übersetzen.
 • Das ganze Bild oder nur ein Bereich, den Sie aufziehen. Große Bilder zeigen beim Darüberfahren außerdem die Schaltfläche „Text erkennen“.
-• Erkannt auf Ihrem Gerät, offline — oder von einem Vision-Modell mit Ihrem eigenen Schlüssel, für Fotos und verzierte Schrift.
+• Offline auf Ihrem Gerät erkannt: Englisch, dazu Chinesisch, Japanisch oder Koreanisch, wenn das Ihre Oberflächensprache ist — oder von einem Vision-Modell mit Ihrem eigenen Schlüssel für andere Sprachen, Fotos und verzierte Schrift.
 
 ★ STANDARDMÄSSIG PRIVAT
 • Webseiten werden standardmäßig auf Ihrem Gerät übersetzt. Ihr Text verlässt Ihren Computer nicht.

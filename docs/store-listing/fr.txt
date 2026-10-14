@@ -39,10 +39,10 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 ★ MANGAS ET BANDES DESSINÉES
 • Les pages de manga et de BD redessinées dans votre langue — et colorisées si vous le souhaitez.
 
-★ TEXTE DE N’IMPORTE QUELLE IMAGE (OCR)
-• Clic droit sur n’importe quelle image — capture d’écran, photo, graphique — pour lire son texte et le traduire.
-• L’image entière ou seulement la zone que vous tracez. Les grandes images affichent aussi un bouton « Reconnaître le texte » au survol.
-• Lu sur votre appareil, hors ligne — ou par un modèle de vision avec votre propre clé, pour les photos et les lettrages stylisés.
+★ TEXTE DE N'IMPORTE QUELLE IMAGE (OCR)
+• Clic droit sur n'importe quelle image — capture d'écran, photo, graphique — pour lire son texte et le traduire.
+• L'image entière ou seulement la zone que vous tracez. Les grandes images affichent aussi un bouton « Reconnaître le texte » au survol.
+• Lu hors ligne sur votre appareil : l'anglais, plus le chinois, le japonais ou le coréen si c'est la langue de votre interface — ou par un modèle de vision avec votre propre clé pour les autres langues, les photos et les lettrages stylisés.
 
 ★ CONFIDENTIEL PAR DÉFAUT
 • Par défaut, les pages web sont traduites sur votre appareil. Votre texte ne quitte jamais votre ordinateur.

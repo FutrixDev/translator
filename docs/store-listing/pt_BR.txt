@@ -42,7 +42,7 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mang
 ★ TEXTO EM QUALQUER IMAGEM (OCR)
 • Clique com o botão direito em qualquer imagem — uma captura de tela, uma foto, um gráfico — para ler o texto dela e traduzi-lo.
 • A imagem inteira ou só a área que você demarcar. Imagens grandes também mostram o botão "Reconhecer texto" ao passar o mouse.
-• Lido no seu dispositivo, offline — ou por um modelo de visão com sua própria chave, para fotos e letras estilizadas.
+• Lido offline no seu dispositivo: inglês, e também chinês, japonês ou coreano quando for o idioma da sua interface — ou por um modelo de visão com sua própria chave para outros idiomas, fotos e letras estilizadas.
 
 ★ PRIVADO POR PADRÃO
 • Por padrão, as páginas web são traduzidas no seu dispositivo. Seu texto nunca sai do seu computador.
