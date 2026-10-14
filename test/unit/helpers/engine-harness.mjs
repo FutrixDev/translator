@@ -123,6 +123,10 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../shared/engines.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
+  // 离线词典（D-561）：manifest 里 dict-entry.js / dict-pack.js 排在 target-lang.js 之后，
+  // content-dict-lookup.js 排在引擎（probe.js）之后；ctx.dictLookup 读引擎的语言族。
+  await import('../../../shared/dict-entry.js');
+  await import('../../../shared/dict-pack.js');
   // 发给模型的出口问 SiteRules.register() 这一页的语域（R33 A4）；site-rules.js
   // 加载时取走内置表和 StorageWriter，manifest 里三者都排在引擎前面。
   await import('../../../shared/site-rules-builtin.js');
@@ -164,6 +168,7 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../content/engine/model.js');
   await import('../../../content/content-translation-engine.js');
   await import('../../../content/engine/probe.js');
+  await import('../../../content/content-dict-lookup.js');
 
   return {
     ctx: globalThis.window.AI_TRANSLATOR_CONTENT,

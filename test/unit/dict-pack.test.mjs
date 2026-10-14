@@ -31,11 +31,21 @@ const metaOf = (pack) => DictPack.listItem(pack, { sha256: 'x', bytes: 1, rawByt
 
 test('keys: entries, forms and the list item', () => {
   assert.equal(DictPack.PACKS_KEY, 'dict:packs');
+  assert.equal(DictPack.DECLINED_KEY, 'dict:declined');
   assert.equal(DictPack.MANIFEST_URL, 'https://dl.blab-translation.com/dict/v1/manifest.json');
   assert.equal(DictPack.entryKey('en', 'zh-CN', 'run'), 'd:en-zh-CN:run');
   assert.equal(DictPack.formKey('en', 'zh-CN', 'ran'), 'd:en-zh-CN:~ran');
   assert.equal(DictPack.prefixOf('ko', 'en'), 'd:ko-en:');
   assert.equal(DictPack.pairOf('ja', 'zh-CN'), 'ja-zh-CN');
+});
+
+test('splitPair splits at a known language code, either side may carry a hyphen', () => {
+  assert.deepEqual(DictPack.splitPair('en-zh-CN'), { src: 'en', tgt: 'zh-CN' });
+  assert.deepEqual(DictPack.splitPair('zh-CN-en'), { src: 'zh-CN', tgt: 'en' });
+  assert.deepEqual(DictPack.splitPair('zh-TW-ja'), { src: 'zh-TW', tgt: 'ja' });
+  for (const bad of ['en', 'en-it', 'it-en', 'en-', '', 'zh-CN']) {
+    assert.throws(() => DictPack.splitPair(bad), /is not a language pair/, bad);
+  }
 });
 
 test('parsePack accepts the three fixture packs', () => {
@@ -55,10 +65,13 @@ const REFUSALS = [
   ['a source without a url', (p) => { delete p.sources[0].url; }, /sources\[0\]\.url/],
   ['a source url that is not https', (p) => { p.sources[0].url = 'javascript:alert(1)'; }, /sources\[0\]\.url is not an https URL/],
   ['a credit href that is not https', (p) => { p.credits.tatoeba.href = 'http://tatoeba.org/'; }, /credits\.tatoeba\.href is not an https URL/],
+  ['a credit href on a host the card drops (D-609 N7)', (p) => { p.credits.tatoeba.href = 'https://kaikki.org/'; }, /credits\.tatoeba\.href is not an https URL on www\.edrdg\.org or tatoeba\.org/],
+  ['a credit href with a port (D-609 N7)', (p) => { p.credits.tatoeba.href = 'https://tatoeba.org:8443/'; }, /credits\.tatoeba\.href is not an https URL/],
   ['an unknown credit', (p) => { p.credits.wiktionary = { label: 'W', href: 'https://kaikki.org/' }; }, /credits\.wiktionary is not jmdict or tatoeba/],
   ['seven records', (p) => { p.e.apple = Array(7).fill(p.e.apple[0]); }, /e\["apple"\] has 7 items/],
   ['five glosses', (p) => { p.e.apple[0][1] = ['a', 'b', 'c', 'd', 'e']; }, /e\["apple"\]\[0\]\[1\] has 5 items/],
   ['no non-empty gloss (D-576 N4)', (p) => { p.e.apple[0][1] = ['', '']; }, /e\["apple"\]\[0\]\[1\] has no non-empty gloss/],
+  ['only whitespace glosses (D-609 N8)', (p) => { p.e.apple[0][1] = [' ', '\u3000']; }, /e\["apple"\]\[0\]\[1\] has no non-empty gloss/],
   ['an overlong gloss', (p) => { p.e.apple[0][1] = ['x'.repeat(DictEntry.MAX_TEXT + 1)]; }, /e\["apple"\]\[0\]\[1\]\[0\] is over/],
   ['an empty reading', (p) => { p.e.apple[0][2] = ''; }, /e\["apple"\]\[0\]\[2\]/],
   ['an origin not in sources', (p) => { p.e.apple[0][3] = 'ecdict'; }, /e\["apple"\]\[0\]\[3\] is not an id in sources/],
@@ -177,9 +190,9 @@ test('toResponse: ko→en — UK and US, an empty side dropped, null is none', (
   assert.deepEqual(DictPack.toResponse(meta, none, 'en').entry.phonetics, []);
 });
 
-test('toResponse: the translation is the first non-empty gloss, and empty glosses are no defs', () => {
+test('toResponse: the translation is the first non-empty gloss, and empty or blank glosses are no defs (D-609 N8)', () => {
   const pack = fixture('en-zh-CN');
-  const record = { e: [['v.', ['', '跑'], null, 'wiktionary'], ['n.', ['跑步', ''], null, 'wiktionary']] };
+  const record = { e: [['v.', [' ', '跑'], null, 'wiktionary'], ['n.', ['跑步', ''], null, 'wiktionary']] };
   const response = DictPack.toResponse(metaOf(pack), record, 'zh-CN');
   assert.equal(response.translation, '跑');
   assert.deepEqual(response.entry.senses, [{ pos: 'v.', defs: ['跑'] }, { pos: 'n.', defs: ['跑步'] }]);
@@ -207,6 +220,8 @@ test('foldCandidates: Korean particles — longest first, once, at least one cha
   assert.deepEqual(strip('친구으로'), ['친구']);
   assert.deepEqual(strip('학교는은'), ['학교는'], 'only one particle is stripped');
   assert.deepEqual(strip('에서'), [], 'a particle alone is not stripped to nothing');
+  assert.deepEqual(strip('이나'), ['이'], '이나 would leave nothing, so 나 is tried next (D-609 N9)');
+  assert.deepEqual(strip('이랑'), ['이'], '이랑 would leave nothing, so 랑 is tried next');
   assert.deepEqual(strip('가'), []);
   assert.deepEqual(strip('학교'), []);
   assert.deepEqual(DictPack.foldCandidates('학교에서', 'ja'), ['학교에서'], 'only for a Korean source');

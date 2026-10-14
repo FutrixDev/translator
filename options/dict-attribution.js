@@ -47,7 +47,8 @@
     const files = document.createElement('p');
     files.className = 'dict-attribution-files';
     files.append(
-      link(docs.license, `${t('dictAttributionLicense')}: ${item.lic}`),
+      // 冒号随语言（zh/ja 全角），所以整句模板交给 i18n。
+      link(docs.license, t('dictAttributionLicense').split('{lic}').join(item.lic)),
       link(docs.attribution, t('dictAttributionFile')),
     );
 

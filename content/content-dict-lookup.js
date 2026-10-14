@@ -5,8 +5,9 @@
 // directly and never wakes the service worker: a stopped worker costs ~100 ms
 // to start, a storage read under a millisecond (design §4.3).
 //
-// - It looks up only what DictEntry.isLookup() calls a lookup, and only while
-//   the offlineDictionary switch is on.
+// - It looks up only what DictEntry.isDictCandidate() lets through (every
+//   isLookup() lookup, plus short kanji-and-kana words such as 食べました,
+//   D-609), and only while the offlineDictionary switch is on.
 // - The source language follows design §3.4: the script decides first (kana
 //   ja, hangul ko, Han zh-CN, Cyrillic ru); Latin text follows the page
 //   language, or for the input box (standalone) the standalone rules of
@@ -17,7 +18,8 @@
 // - A pair absent from `dict:packs` (the only sign a pack is fully seeded)
 //   answers null and asks the worker, once per pair per page, to fetch the
 //   pack if the manifest has it (DICT_PACK_WANT). The caller takes its usual
-//   path meanwhile.
+//   path meanwhile. A pair the reader deleted (`dict:declined`) is not asked
+//   for: only the settings card downloads it again (D-609).
 //
 // Registered only: no caller uses it yet (batch B2 wires the card and the
 // input box).
@@ -77,7 +79,7 @@
    */
   ctx.dictLookup = async function(text, targetLang, { standalone = false } = {}) {
     const { DictPack, DictEntry, LangTags } = globalThis;
-    if (!ctx.settings.offlineDictionary || !DictEntry.isLookup(text)) return null;
+    if (!ctx.settings.offlineDictionary || !DictEntry.isDictCandidate(text)) return null;
     if (!DictPack.LANGS.includes(targetLang)) return null;
     const word = String(text).trim();
     const src = await sourceOf(word, standalone);
@@ -88,10 +90,13 @@
     const candidates = DictPack.foldCandidates(word, src);
     const entryKeys = candidates.map((c) => DictPack.entryKey(src, targetLang, c));
     const formKeys = candidates.map((c) => DictPack.formKey(src, targetLang, c));
-    const found = await chrome.storage.local.get([DictPack.PACKS_KEY, ...entryKeys, ...formKeys]);
-    const meta = (found[DictPack.PACKS_KEY] || {})[DictPack.pairOf(src, targetLang)];
+    const found = await chrome.storage.local.get([
+      DictPack.PACKS_KEY, DictPack.DECLINED_KEY, ...entryKeys, ...formKeys,
+    ]);
+    const pair = DictPack.pairOf(src, targetLang);
+    const meta = (found[DictPack.PACKS_KEY] || {})[pair];
     if (!meta) {
-      wantPack(src, targetLang);
+      if (!(found[DictPack.DECLINED_KEY] || []).includes(pair)) wantPack(src, targetLang);
       return null;
     }
 

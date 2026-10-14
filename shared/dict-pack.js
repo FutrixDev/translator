@@ -33,6 +33,9 @@
 
   const PACKS_KEY = 'dict:packs';
   const STATUS_KEY = 'dict:status';
+  // The pairs the reader deleted: they are not fetched again until the reader
+  // asks for them on the settings card (D-609).
+  const DECLINED_KEY = 'dict:declined';
   const DOWNLOAD_ORIGIN = 'https://dl.blab-translation.com/';
   const MANIFEST_URL = `${DOWNLOAD_ORIGIN}dict/v1/manifest.json`;
   const CHUNK_KEYS = 5000;
@@ -46,6 +49,16 @@
   // ---- keys -------------------------------------------------------------------
 
   const pairOf = (src, tgt) => `${src}-${tgt}`;
+  // A pair back into its languages. Either side may carry a hyphen (zh-CN -> en,
+  // en -> zh-CN), so it is split at a known language code, not at the first
+  // hyphen. Anything that is not a pair of LANGS throws.
+  function splitPair(pair) {
+    for (const src of LANGS) {
+      const tgt = String(pair).slice(src.length + 1);
+      if (String(pair).startsWith(`${src}-`) && LANGS.includes(tgt)) return { src, tgt };
+    }
+    throw new Error(`dictionary packs: ${pair} is not a language pair`);
+  }
   const prefixOf = (src, tgt) => `d:${pairOf(src, tgt)}:`;
   const entryKey = (src, tgt, head) => `${prefixOf(src, tgt)}${head}`;
   const formKey = (src, tgt, form) => `${prefixOf(src, tgt)}${FORM_MARK}${form}`;
@@ -58,6 +71,8 @@
 
   const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const isText = (value) => typeof value === 'string' && value.length > 0;
+  // A gloss is shown, so one made only of whitespace counts as empty (D-609 N8).
+  const hasWords = (value) => typeof value === 'string' && value.trim().length > 0;
 
   function needObject(value, path) {
     if (!isObject(value)) throw fail(path, 'is not an object');
@@ -88,10 +103,15 @@
     if (!Number.isInteger(value) || value <= 0) throw fail(path, 'is not a sentence id or null');
   }
 
+  // The card draws a credit's href only when DictEntry.creditHref() accepts
+  // it, so a pack is held to the same rule (one list of hosts, D-609 N7).
   function needCredit(value, path) {
     needObject(value, path);
     needText(value.label, `${path}.label`);
-    needLink(value.href, `${path}.href`);
+    const { CREDIT_HOSTS, creditHref } = root.DictEntry;
+    if (!creditHref(needText(value.href, `${path}.href`))) {
+      throw fail(`${path}.href`, `is not an https URL on ${CREDIT_HOSTS.join(' or ')}`);
+    }
   }
 
   function checkRecords(e, sourceIds) {
@@ -116,7 +136,7 @@
         });
         // D-576 N4: a record with no gloss would make an answer with nothing
         // but a credits line. The whole pack is refused, not the record.
-        if (!glosses.some(isText)) throw fail(`${at}[1]`, 'has no non-empty gloss');
+        if (!glosses.some(hasWords)) throw fail(`${at}[1]`, 'has no non-empty gloss');
         if (reading !== null && !isText(reading)) throw fail(`${at}[2]`, 'is not a non-empty string or null');
         if (!sourceIds.has(origin)) throw fail(`${at}[3]`, 'is not an id in sources');
         if (origin === 'jmdict') jmdict = true;
@@ -275,17 +295,14 @@
     '로', '으로', '만', '부터', '까지', '보다', '처럼', '이나', '나', '랑', '이랑',
   ].sort((a, b) => b.length - a.length));
 
+  // The longest particle that leaves a stem: 이나 is the whole word, so 나
+  // is tried next (D-609 N9).
   function stripParticle(word) {
-    const particle = KO_PARTICLES.find((p) => word.endsWith(p));
-    if (!particle) return '';
-    const stem = word.slice(0, -particle.length);
-    return Array.from(stem).length >= 1 ? stem : '';
+    for (const particle of KO_PARTICLES) {
+      if (word.endsWith(particle) && word.length > particle.length) return word.slice(0, -particle.length);
+    }
+    return '';
   }
-
-  // DictEntry.isLookup drops one sentence stop at the very end ("apple." and
-  // "run?" are lookups, D-542), so the word is tried both with it ("etc." is a
-  // head of its own) and without it.
-  const TRAILING_STOP = /[.!?。！？]$/u;
 
   /**
    * The spellings to look `text` up under, in order: as written, lower case,
@@ -295,7 +312,10 @@
    */
   function foldCandidates(text, src) {
     const exact = String(text == null ? '' : text).trim();
-    const word = exact.replace(TRAILING_STOP, '').trimEnd();
+    // DictEntry.isLookup drops one sentence stop at the very end ("apple." and
+    // "run?" are lookups, D-542), so the word is tried both with it ("etc." is
+    // a head of its own) and without it.
+    const word = exact.replace(root.DictEntry.TRAILING_STOP, '').trimEnd();
     const out = [];
     for (const spelling of [exact, word]) {
       const nfkc = spelling.normalize('NFKC');
@@ -305,7 +325,6 @@
     return [...new Set(out.filter(Boolean))];
   }
 
-  const nonEmpty = (value) => typeof value === 'string' && value.length > 0;
   const isEnglish = (lang) => String(lang || '').toLowerCase().split('-')[0] === 'en';
 
   // The translation's pronunciation (D-487): an English target has a UK and a
@@ -328,7 +347,7 @@
   function toResponse(meta, record, targetLang) {
     const records = record.e;
     const examples = record.x || [];
-    const translation = records[0][1].find(nonEmpty);
+    const translation = records[0][1].find(hasWords);
     const credits = [];
     if (records.some((r) => r[3] === 'jmdict')) credits.push(meta.credits.jmdict);
     if (examples.some((x) => x[2] !== null || x[3] !== null)) credits.push(meta.credits.tatoeba);
@@ -337,7 +356,7 @@
       entry: {
         translation,
         phonetics: phoneticsOf(records[0][2], targetLang),
-        senses: records.map(([pos, glosses]) => ({ pos, defs: glosses.filter(nonEmpty) })),
+        senses: records.map(([pos, glosses]) => ({ pos, defs: glosses.filter(hasWords) })),
         examples: examples.map(([source, target]) => ({ source, target })),
         forms: (record.m || []).map(([label, value]) => ({ label, value })),
       },
@@ -349,12 +368,14 @@
   root.DictPack = Object.freeze({
     PACKS_KEY,
     STATUS_KEY,
+    DECLINED_KEY,
     DOWNLOAD_ORIGIN,
     MANIFEST_URL,
     CHUNK_KEYS,
     LANGS,
     KO_PARTICLES,
     pairOf,
+    splitPair,
     prefixOf,
     entryKey,
     formKey,

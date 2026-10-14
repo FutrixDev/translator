@@ -108,6 +108,30 @@
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
   }
 
+  // Japanese written with kanji and kana: an inflected verb or adjective runs
+  // past the four-character Han limit (勉強しました, 美しかった) yet is one
+  // word, and the offline dictionary's form table can answer it. Eight is the
+  // kana limit; anything longer is a phrase (D-609).
+  const KANA_SCRIPT = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+  const MAX_KANJI_KANA = 8;
+
+  /**
+   * Whether the offline dictionary is asked about `text` (D-609): every
+   * lookup (isLookup), and also text with both Han and kana that is at most
+   * eight characters without whitespace, with no sentence punctuation (a
+   * trailing stop included) and no formula notation. A pack hit proves it is
+   * a word; a miss leaves the caller on its usual path, so isLookup alone
+   * still decides between a model's word entry and a translation.
+   */
+  function isDictCandidate(text) {
+    if (isLookup(text)) return true;
+    const trimmed = String(text == null ? '' : text).trim();
+    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
+    if (FORMULA_NOTATION.some((shape) => shape.test(trimmed))) return false;
+    if (!IDEOGRAPHIC_SCRIPT.test(trimmed) || !KANA_SCRIPT.test(trimmed)) return false;
+    return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_KANJI_KANA;
+  }
+
   // The phonetics are the translation's, in the target language (D-487). An
   // English translation has two labelled pronunciations, each read aloud in its
   // own accent; any other target language has one with an empty label, read
@@ -541,7 +565,11 @@
     PROMPT_MARK,
     FORMAT_OVERRIDE,
     OUTPUT_RULES,
+    TRAILING_STOP,
+    CREDIT_HOSTS,
     isLookup,
+    isDictCandidate,
+    creditHref,
     normalize,
     fromModelText,
     entryFor,

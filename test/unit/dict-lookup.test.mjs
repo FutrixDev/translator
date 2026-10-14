@@ -10,7 +10,8 @@
 //   - a Traditional spelling found through the zh pack's form table (D-578);
 //   - a pair missing from `dict:packs` answers null and sends DICT_PACK_WANT
 //     once per pair per page, even when its keys are already half-seeded;
-//   - the switch off, a non-lookup, a same-language pair: null, no read and
+//   - a pair in `dict:declined` answers null with no DICT_PACK_WANT (D-609);
+//   - the switch off, a non-candidate, a same-language pair: null, no read and
 //     no DICT_PACK_WANT.
 //
 // Run with: npm run test:unit
@@ -127,7 +128,9 @@ test('a Korean particle is stripped and an English target has UK and US (J-B1.3)
 });
 
 test('kana is Japanese; a JMdict record brings its credit (J-B1.4)', async () => {
-  const { answer, reads: n } = await lookup('食べた', 'zh-CN');
+  // 食べました is past isLookup's four-Han limit: isDictCandidate lets it in (D-609).
+  assert.equal(DictEntry.isLookup('食べました'), false);
+  const { answer, reads: n } = await lookup('食べました', 'zh-CN');
   assert.equal(n, 2);
   assert.equal(answer.translation, '吃');
   assert.deepEqual(answer.credits.map((c) => c.label), ['JMdict © EDRDG']);
@@ -194,6 +197,20 @@ test('a missing pair asks once per page, and stays null meanwhile (J-B1.5)', asy
   assert.deepEqual(second.sent, [], 'once per pair per page');
 });
 
+test('a pair the reader deleted is not asked for (D-609)', async () => {
+  storage.set(DictPack.DECLINED_KEY, ['en-es']);
+  try {
+    const { answer, reads: n, sent: messages } = await lookup('apple', 'es');
+    assert.equal(answer, null);
+    assert.equal(n, 1);
+    assert.deepEqual(messages, []);
+  } finally {
+    storage.delete(DictPack.DECLINED_KEY);
+  }
+  assert.deepEqual((await lookup('apple', 'es')).sent, [{ type: 'DICT_PACK_WANT', src: 'en', tgt: 'es' }],
+    'once the pair is no longer declined, the page asks');
+});
+
 test('seeded keys without the list item are not a pack', async () => {
   seed(fixture('en-zh-CN'), { listed: false });
   const pack = fixture('ko-en');
@@ -224,6 +241,8 @@ test('the switch off: null, no read, no request (J-B1.9)', async () => {
 test('not a lookup, an unsupported target, or the same language: null, no read, no request', async () => {
   for (const [text, tgt] of [
     ['I ran. Then I stopped', 'zh-CN'],
+    ['私は学生です。', 'zh-CN'],
+    ['今日は良い天気ですね', 'zh-CN'],
     ['run', 'it'],
     ['run', 'en'],
     ['猫', 'zh-TW'],

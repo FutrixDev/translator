@@ -27,7 +27,9 @@ function t(key) {
 // Apply i18n to page
 function applyI18n(lang) {
   currentUILang = getUILanguage(lang);
-  
+  // 屏幕阅读器和断词按 <html lang> 走，options.html 里写死的 en 只是起点（D-609）。
+  document.documentElement.lang = currentUILang;
+
   // Update all elements with data-i18n attribute
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');

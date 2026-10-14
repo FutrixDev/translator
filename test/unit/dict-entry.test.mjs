@@ -36,8 +36,8 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
-  DICT_ENGINE, FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, normalize, fromModelText, entryFor, hasContent,
-  render,
+  DICT_ENGINE, FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, isDictCandidate, normalize, fromModelText, entryFor,
+  hasContent, render,
 } = globalThis.DictEntry;
 
 // `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
@@ -156,6 +156,44 @@ test('isLookup answers the D-473–D-475 table, as revised by D-542', () => {
   }
   assert.equal(isLookup(null), false);
   assert.equal(isLookup(undefined), false);
+});
+
+// ---- isDictCandidate (D-609) -------------------------------------------------
+
+// Japanese inflections run past isLookup's four-Han limit but are one word the
+// pack's form table can answer; sentences are still not asked about.
+const DICT_CANDIDATE_TABLE = [
+  ['食べました', true],
+  ['勉強しました', true],
+  ['美しかった', true],
+  ['食べられない', true],
+  ['  食べました ', true],
+  // sentence punctuation, even one stop at the end, keeps it a sentence
+  ['私は学生です。', false],
+  ['食べました。', false],
+  // past eight characters it is a phrase
+  ['今日は良い天気ですね', false],
+  ['勉強させられました', false],
+  // Han without kana, or kana without Han, is isLookup's call alone
+  ['一石二鸟吧', false],
+  ['ありがとうございます', false],
+  // formula notation is never a word
+  ['食べ$x$た', false],
+  ['', false],
+];
+
+test('isDictCandidate is every lookup, plus short kanji-and-kana words', () => {
+  for (const [text, expected] of DICT_CANDIDATE_TABLE) {
+    assert.equal(isDictCandidate(text), expected, JSON.stringify(text));
+  }
+  assert.equal(Array.from('今日は良い天気ですね').length, 10, 'rejected by the eight-character limit, not by punctuation');
+  for (const [text, expected] of LOOKUP_TABLE) {
+    if (expected) assert.equal(isDictCandidate(text), true, `every lookup is a candidate: ${JSON.stringify(text)}`);
+  }
+  assert.equal(isDictCandidate(null), false);
+  for (const text of ['食べました', '勉強しました', '美しかった']) {
+    assert.equal(isLookup(text), false, `isLookup itself is unchanged: ${text}`);
+  }
 });
 
 // ---- normalize ------------------------------------------------------------

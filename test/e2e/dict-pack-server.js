@@ -7,7 +7,12 @@
  * A manifest row is built from the bytes it serves, the way the build pipeline
  * builds it: sha256 and byte length of the file, the head count, and the path
  * dict/v1/<src>-<tgt>/<ver>/pack.json. `publish(bytes, { serve })` can serve
- * other bytes than the row was built from, which is how a tampered pack looks.
+ * other bytes than the row was built from, which is how a tampered pack looks;
+ * `publish(bytes, { row })` overrides fields of the row itself.
+ *
+ * `hold(path)` keeps the next request for a path waiting until the test
+ * releases it; `fail(path)` makes every request for it fail at the network
+ * until `restore(path)`.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -47,6 +52,8 @@ class DictPackServer {
     this.rows = new Map(); // pair -> manifest row
     this.files = new Map(); // path under ORIGIN -> bytes
     this.hits = []; // every path requested, in order
+    this.holds = new Map(); // path -> the hold armed for its next request
+    this.failing = new Set(); // paths whose requests fail at the network
   }
 
   /**
@@ -54,8 +61,8 @@ class DictPackServer {
    * `serve` (default: the same bytes) at the row's url.
    * @returns {object} the manifest row
    */
-  publish(bytes, { serve = bytes } = {}) {
-    const row = rowFor(bytes);
+  publish(bytes, { serve = bytes, row: fields = {} } = {}) {
+    const row = { ...rowFor(bytes), ...fields };
     this.rows.set(`${row.src}-${row.tgt}`, row);
     this.files.set(row.url, serve);
     return row;
@@ -66,15 +73,44 @@ class DictPackServer {
     return this.publish(packBytes(fixturePack(pair)));
   }
 
+  /**
+   * Keep the next request for `pathUnderOrigin` waiting.
+   * @returns {{ hit: Promise<void>, release: () => void }} `hit` resolves when
+   *   the request arrives; `release` lets it be answered.
+   */
+  hold(pathUnderOrigin) {
+    let arrived;
+    let release;
+    const hit = new Promise((resolve) => { arrived = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    this.holds.set(pathUnderOrigin, { arrived, gate });
+    return { hit, release };
+  }
+
+  fail(pathUnderOrigin) {
+    this.failing.add(pathUnderOrigin);
+  }
+
+  restore(pathUnderOrigin) {
+    this.failing.delete(pathUnderOrigin);
+  }
+
   hitsOf(pathUnderOrigin) {
     return this.hits.filter((p) => p === pathUnderOrigin).length;
   }
 
   /** @param {import('@playwright/test').BrowserContext} context */
   async attach(context) {
-    await context.route(`${ORIGIN}**`, (route) => {
+    await context.route(`${ORIGIN}**`, async (route) => {
       const at = new URL(route.request().url()).pathname.replace(/^\//, '');
       this.hits.push(at);
+      const held = this.holds.get(at);
+      if (held) {
+        this.holds.delete(at);
+        held.arrived();
+        await held.gate;
+      }
+      if (this.failing.has(at)) return route.abort('failed');
       if (at === MANIFEST_PATH) {
         const manifest = { v: 1, packs: [...this.rows.values()] };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manifest) });
