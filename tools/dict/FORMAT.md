@@ -55,8 +55,9 @@ is the cross-batch v1 contract; `check.py` verifies every rule below on every pa
 
 ### Readings (design §2, D-487)
 
-`reading` is the pronunciation of the record's **translation word** (the word form of its
-first gloss that has one, `common.translation_word`), in the target language:
+`reading` is the pronunciation of the record's **translation word** (the word form of the
+first segment of its first gloss, `common.translation_word`; when that segment is not a single
+word form, the record has no reading and no later gloss is tried), in the target language:
 
 | target | notation | source order |
 | --- | --- | --- |
