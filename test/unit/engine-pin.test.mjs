@@ -164,7 +164,7 @@ test('Blab Translation selected in settings: every model request carries the Bla
   assert.equal(translateCalls.length, 0);
 });
 
-// D-480：自动翻译的预算闸只管用户自己的 AI；Blab 的上限是账户每天的字数，
+// D-480：自动翻译的预算闸只管用户自己的 AI；Blab 的上限是账户每天的 token 数，
 // 由服务端的 429 把关，这里不拦也不记账。
 test('the AI budget gate never refuses or charges a Blab request', async () => {
   configure({ translationEngine: 'blab', autoTranslateEngine: 'blab' });

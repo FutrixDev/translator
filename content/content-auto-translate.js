@@ -400,7 +400,7 @@
       const engine = await ctx.builtinTranslator.effectiveEngine({ auto: true, feature: 'page' });
       if (engine === 'none') return COST_REASONS.ENGINE;
       // 只有 'ai' 花的是用户自己的钱、记在 autoAiDailyBudget 上；'builtin' 不计费，
-      // 'blab' 的上限是账户每天的字数，由服务端的 429 把关（D-480）。
+      // 'blab' 的上限是账户每天的 token 数（D-564），由服务端的 429 把关（D-480）。
       if (engine !== 'ai') return null;
       const stats = await globalThis.AutoStats.read();
       if (globalThis.AutoStats.budgetExceeded(stats, ctx.settings.autoAiDailyBudget)) {

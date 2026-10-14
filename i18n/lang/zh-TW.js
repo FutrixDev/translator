@@ -455,7 +455,7 @@
     blabSignInRequired: '登入 Blab 帳號後即可使用 Blab Translation。',
     blabNoteSignedOut: "登入 Blab 帳號並訂閱後即可使用。",
     blabNotePlanRequired: "訂閱後即可使用 Blab Translation。",
-    blabNoteAvailable: "文字會傳送到 Blab 的伺服器翻譯。訂閱已包含，每天 {limit} 字，今天已用 {used}。",
+    blabNoteAvailable: "文字會傳送到 Blab 的伺服器翻譯。訂閱已包含，每天 {limit} token，今天已用 {used}。",
     blabNoteSelectedUnavailable: "已選擇 Blab Translation，但這個帳號目前無法使用。",
     blabSubscribe: "訂閱",
     blabErrorBusy: "Blab Translation 暫時忙碌，請稍後再試。",
