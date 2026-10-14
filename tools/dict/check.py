@@ -1,8 +1,8 @@
-#!/usr/bin/env python3 -I
+#!/usr/bin/env -S python3 -I
 """Check every built dictionary pack against the v1 contract and the acceptance lines.
 
-Usage: python3 -I tools/dict/check.py <out-dir> [--samples DIR] [--opencc DIR]
-           [--packs a-b,c-d] [--ver YYYY.MM.DD] [--report DIR] [--jobs N]
+Usage: python3 -I tools/dict/check.py <out-dir> [--samples DIR] [--opencc DIR] [--norm DIR]
+           [--work DIR] [--packs a-b,c-d] [--ver YYYY.MM.DD] [--report DIR] [--jobs N]
 
 One line per pack (`OK <pack> ...` or `FAIL <pack>: <reasons>`), then a summary line; the exit
 status is non-zero when any pack fails or is missing. Checked per pack:
@@ -13,8 +13,9 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             MIT / BSD / Apache notices)
   shape     the v1 keys and types, `ver`, record and table caps, every `x`/`m` head and every
             `f` value a head of `e`, no `f` key that is itself a head, en readings "/UK/|/US/"
-  heads     common.heads_count (heads, or records for the HEADS_UNIT packs) >= 0.95 x
-            common.HEADS_BASE
+  heads     common.heads_count >= 0.95 x common.HEADS_BASE, in the unit of
+            common.heads_unit: records (HEADS_UNIT), entries (FORM_SOURCES packs: heads plus
+            the words the R8 gloss-text form-of rule moved to `f`) or heads
   size      brotli -q 11, recomputed here from the shipped pack (not read from the build's
             stats): the `e` part (x, f, m = {}) <= common.br_budget, the pack with x = {} <=
             common.br_ceiling; with examples <= 2x that, unless the pack was already cut to
@@ -23,7 +24,23 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             head whose records give a translation word (common.translation_word of the first
             record that has one), the share whose record carries a reading; >= READING_BASE - 3
   x         every row: source sentence <= 80 characters and containing the head or one of its
-            `f` forms (common.contains), no repeated sentence, shortest first, ids int or null
+            `f` forms (common.contains), no repeated sentence, shortest first, the two Tatoeba
+            ids both int or both null
+  records   (check_records) every record of `e`:
+            script  a zh/ja/ko reading passes common.reading_problem for its translation word:
+                    tone-marked Latin with one syllable per Han character, kana, lowercase
+                    Latin (L1 N1, L2 N7)
+            G1      a reading is one the reading tables hold for the record's translation word
+                    (readings.Readings.candidates of the first segment of the first gloss), so
+                    it belongs to the word the card shows
+            G2      a zh target's first gloss has no Cantonese/Min marker character
+                    (common.ZH_DIALECT_CHARS) and no Cyrillic
+            G3      no Wiktionary first gloss is a form-of explanation (common.form_of_lemma):
+                    such a sense is an `f` mapping, not a record. Wiktionary only: normalize
+                    turns only kaikki senses into `f`, and JMdict and CC-CEDICT glosses that
+                    read like one are content ("variant of concern", "variant of gobang")
+            G4      zh source: a head whose first record is CC-CEDICT meta (common.CEDICT_META:
+                    surname, variant of, used in, abbr. for) has no content record after it
   D-578     a zh-source pack: every `f` key is a script fold of its value (same length,
             differing only where both sides are Han, so `00後 -> 00后` and `X射線 -> X射线`
             pass and a Latin or digit change does not); its OpenCC t2s is its value, or it is
@@ -47,6 +64,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import attribution  # noqa: E402
 import common as C  # noqa: E402
 import opencc  # noqa: E402
+import readings as R  # noqa: E402
 
 # An English reading: "/UK/|/US/", each side phonemic between slashes or empty, not both.
 EN_READING = re.compile(r'(/[^/\[\]|]+/)?\|(/[^/\[\]|]+/)?')
@@ -172,7 +190,8 @@ def check_shape(pack, src, tgt, ver, err):
         err.append(f'{bad} bad e entries')
     bad = sum(not (h in e and isinstance(rows, list) and 0 < len(rows) <= C.MAX_EX and all(
         isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) and isinstance(r[1], str)
-        and r[1] and all(i is None or isinstance(i, int) for i in r[2:]) for r in rows))
+        and r[1] and all(i is None or isinstance(i, int) for i in r[2:])
+        and (r[2] is None) == (r[3] is None) for r in rows))
         for h, rows in x.items())
     if bad:
         err.append(f'{bad} bad x entries')
@@ -206,6 +225,35 @@ def check_examples(pack, s, err):
                 break
     if bad:
         err.append(f'{len(bad)} x heads fail containment/order (e.g. {bad[0]!r})')
+
+
+RECORD_RULES = ('script', 'G1', 'G2', 'G3', 'G4')
+
+
+def check_records(pack, s, t, reads, err):
+    """The per-record rules (module docstring, `records`); one error per rule that fails,
+    with a count and the first head."""
+    hits = {k: [] for k in RECORD_RULES}
+    for h, recs in pack['e'].items():
+        for r in recs:
+            first = r[1][0]
+            word = C.translation_word(r[1], t)
+            if r[2] is not None:
+                if C.reading_problem(r[2], t, word):
+                    hits['script'].append(h)
+                if r[2] not in reads.candidates(word):
+                    hits['G1'].append(h)
+            if t == 'zh' and (any(ch in first for ch in C.ZH_DIALECT_CHARS)
+                              or C.CYRILLIC.search(first)):
+                hits['G2'].append(h)
+            if r[3] == 'wiktionary' and C.form_of_lemma(first, t) is not None:
+                hits['G3'].append(h)
+        if s == 'zh' and recs[0][3] == 'cedict' and C.CEDICT_META.match(recs[0][1][0]) and any(
+                not C.CEDICT_META.match(r[1][0]) for r in recs[1:]):
+            hits['G4'].append(h)
+    for k in RECORD_RULES:
+        if hits[k]:
+            err.append(f'{k}: {len(hits[k])} records (e.g. {hits[k][0]!r})')
 
 
 # Han code points: CJK Ext A + Unified, Compatibility, the ideographic zero, Ext B and later.
@@ -264,8 +312,8 @@ def check_pack(out, name, opts):
             src, tgt, pack['ver'], used):
         err.append('ATTRIBUTION.txt missing or not the text for the sources used')
     heads = len(pack['e'])
-    unit = C.HEADS_UNIT.get(name, 'heads')
-    counted = C.heads_count(name, pack['e'])
+    unit = C.heads_unit(name)
+    counted = C.heads_count(name, pack['e'], pack['f'], opts['norm'])
     floor = int(C.HEADS_FLOOR * C.HEADS_BASE[name])
     if counted < floor:
         err.append(f'{unit} {counted} < {floor}')
@@ -281,6 +329,7 @@ def check_pack(out, name, opts):
     if br_with > EX_RATIO_MAX * br_no and not one:
         err.append(f'br_with {br_with} > {EX_RATIO_MAX}x br_no and examples not cut to one')
     check_examples(pack, s, err)
+    check_records(pack, s, t, R.Readings(opts['norm'], opts['work'], t, tgt == 'zh-TW'), err)
     t2s = opencc.t2s(opts['opencc']) if s == 'zh' else None
     d578 = check_d578(pack, t2s, err) if s == 'zh' else None
     den = num = 0
@@ -321,7 +370,7 @@ def check_pack(out, name, opts):
 def line(r):
     if r['errors']:
         return f"FAIL {r['pack']}: " + '; '.join(r['errors'])
-    unit = '' if r['heads_unit'] == 'heads' else f" records={r['heads_counted']}"
+    unit = '' if r['heads_unit'] == 'heads' else f" {r['heads_unit']}={r['heads_counted']}"
     return (f"OK {r['pack']} heads={r['heads']}{unit} (>={r['heads_floor']}) f={r['f_keys']} "
             f"reading={r['reading_rate']}% (>={r['reading_floor']}%) "
             f"x_heads={r['examples_head_rate']}% br_e={r['br_e']} (<={r['br_budget']}) "
@@ -351,6 +400,8 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--samples', help='tokens.<lang>.tsv directory (default <out>/../samples)')
     ap.add_argument('--opencc', help='OpenCC tables (default <out>/../norm/opencc)')
+    ap.add_argument('--norm', help='normalized datasets for G1 (default <out>/../norm)')
+    ap.add_argument('--work', help='pairs.py work tables for G1 (default <out>/../work)')
     ap.add_argument('--packs', default='')
     ap.add_argument('--ver', default='')
     ap.add_argument('--report')
@@ -360,6 +411,8 @@ def main():
     base = os.path.dirname(out)
     opts = {'samples': os.path.abspath(a.samples or os.path.join(base, 'samples')),
             'opencc': os.path.abspath(a.opencc or os.path.join(base, 'norm', 'opencc')),
+            'norm': os.path.abspath(a.norm or os.path.join(base, 'norm')),
+            'work': os.path.abspath(a.work or os.path.join(base, 'work')),
             'ver': a.ver}
     for lang in C.LANGS:
         if not os.path.exists(os.path.join(opts['samples'], f'tokens.{lang}.tsv')):

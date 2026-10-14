@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 -I
+#!/usr/bin/env -S python3 -I
 """Build the dictionary packs (v1 contract) from the normalized datasets.
 
 Usage: python3 -I tools/dict/pairs.py <norm-dir> <out-dir> --work <dir> --stats <dir>
@@ -119,7 +119,7 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
     name = C.pack_name(src, tgt)
     b = Builder(norm, work, src, tgt)
     b.build()
-    f, m, fstats = formtab.build(norm, work, b)
+    f, m, moved, fstats = formtab.build(norm, work, b)
     used_noex = set(b.used)
     noex_path = os.path.join(stats_dir, f'{name}.noex.json')
     br_no = measure_noex(b, f, m, ver, used_noex, noex_path)
@@ -130,7 +130,7 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
         if br_no <= ceiling:
             break
         att = att or formtab.attested(norm, b.s, b.e, f)
-        f, m = formtab.cut(rung, f, m, *att)
+        f, m = formtab.cut(rung, f, m, *att, moved)
         cuts.append(rung)
         br_no = measure_noex(b, f, m, ver, used_noex, noex_path)
     x, xused, xstats = examples.build(norm, b, f)

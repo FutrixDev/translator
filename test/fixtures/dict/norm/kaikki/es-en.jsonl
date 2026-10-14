@@ -1,22 +1,22 @@
-{"w":"A","pos":"character","fm":[["a",["lowercase"]]],"lo":[],"ipa":[],"g":["The first letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"A","pos":"character","fm":[["a",["lowercase"]]],"lo":[],"ipa":[],"g":["The first letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"A","pos":"noun","fm":[],"lo":[],"ipa":[],"g":["bishop"],"ex":[["19. Ac4xd5, Ab7xd5","19. Bc4xd5, Bb7xd5"]],"r":null}
-{"w":"y","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The twenty-sixth letter of the Spanish alphabet, called ye or i griega and written in the Latin script."],"ex":[],"r":null}
+{"w":"y","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The twenty-sixth letter of the Spanish alphabet, called ye or i griega and written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"y","pos":"conj","fm":[["e",["alternative"]]],"lo":[],"ipa":[],"g":["and","and","plus, and","well"],"ex":[["jamon y queso","ham and cheese"]],"r":null}
-{"w":"de","pos":"noun","fm":[["des",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter D/d."],"ex":[],"r":null}
+{"w":"de","pos":"noun","fm":[["des",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter D/d."],"ex":[],"r":null,"mn":1}
 {"w":"de","pos":"prep","fm":[],"lo":[],"ipa":[],"g":["of; 's; used after the thing owned and before the owner","from (with the source or provenance of or at)","of (expressing composition, substance)","about (concerning; with regard to)"],"ex":[["la cola del perro","the dog’s tail"]],"r":null}
 {"w":"en","pos":"prep","fm":[],"lo":[],"ipa":[],"g":["in, at, on","in (a time)","in (a language)","used after some verbs and translated by various prepositions in English"],"ex":[["en un bus","on/in a bus"]],"r":null}
-{"w":"o","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The sixteenth letter of the Spanish alphabet, called o and written in the Latin script."],"ex":[],"r":null}
+{"w":"o","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The sixteenth letter of the Spanish alphabet, called o and written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"o","pos":"noun","fm":[["oes",["plural"]]],"lo":["O"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"o","pos":"conj","fm":[],"lo":[],"ipa":[],"g":["or"],"ex":[["¿Quieres un café o algo más?","Do you want a coffee or something else?"]],"r":null}
 {"w":"o","pos":"conj","fm":[],"lo":[],"ipa":[],"g":["either … or"],"ex":[],"r":null}
 {"w":"o","pos":"adv","fm":[],"lo":[],"ipa":[],"g":["where"],"ex":[],"r":null}
-{"w":"be","pos":"noun","fm":[["bes",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter B/b."],"ex":[],"r":null}
+{"w":"be","pos":"noun","fm":[["bes",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter B/b."],"ex":[],"r":null,"mn":1}
 {"w":"be","pos":"noun","fm":[["bes",["plural"]]],"lo":[],"ipa":[],"g":["baa (bleating of a sheep)"],"ex":[],"r":null}
 {"w":"estar","pos":"verb","fm":[["estoy",["first-person","present","singular"]],["estuve",["first-person","preterite","singular"]],["estado",["participle","past"]],["estando",["gerund"]],["estado",["masculine","participle","past","singular"]],["estoy",["first-person","indicative","present","singular"]],["está",["indicative","present","singular","third-person"]],["estuve",["first-person","indicative","preterite","singular"]],["está",["imperative","second-person","singular"]],["estándose",["gerund"]],["estado",["masculine","participle","past","singular"]],["me estoy",["first-person","indicative","present","singular"]],["me estuve",["first-person","indicative","preterite","singular"]]],"lo":[],"ipa":[],"g":["to be (have a temporary or permanent location in space)","to be present","to be (denotes a copula, in a transient fashion)","to be (auxiliary verb for the progressive/continuous aspect, preceding the gerund of the verb)"],"ex":[["¿Dónde estás?","Where are you?"]],"r":null}
 {"w":"AL","pos":"name","fm":[],"lo":["América Latina"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"país","pos":"noun","fm":[["países",["plural"]]],"lo":[],"ipa":[],"g":["country (the territory of a nation)","country, land (a set region of land having particular human occupation or agreed limits)"],"ex":[["Michael Wallace, deportado a Jamaica, su país de origen, padece epilepsia.","Michael Wallace, deported to Jamaica, his country of origin, suffers from epilepsy."]],"r":null}
 {"w":"industrial","pos":"adj","fm":[],"lo":[],"ipa":[],"g":["industrial"],"ex":[],"r":null}
-{"w":"X","pos":"character","fm":[["x",["lowercase"]]],"lo":[],"ipa":[],"g":["The twenty-fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"X","pos":"character","fm":[["x",["lowercase"]]],"lo":[],"ipa":[],"g":["The twenty-fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"X","pos":"name","fm":[],"lo":[],"ipa":[],"g":["X (social network formerly known as Twitter)"],"ex":[],"r":null}
 {"w":"el","pos":"article","fm":[["los",["plural"]],["la",["feminine"]],["las",["feminine","plural"]],["lo",["neuter"]]],"lo":[],"ipa":[],"g":["masculine singular definite article; the"],"ex":[],"r":null}
 {"w":"el","pos":"article","fm":[["las",["feminine","plural"]]],"lo":[],"ipa":[],"g":["feminine singular definite article used before nouns which start with a stressed /a/"],"ex":[["el alma, las almas","the soul, the souls"]],"r":null}
@@ -41,10 +41,10 @@
 {"w":"era","pos":"noun","fm":[["eras",["plural"]]],"lo":[],"ipa":[],"g":["threshing floor","tipple"],"ex":[],"r":null}
 {"w":"ir","pos":"verb","fm":[["voy",["first-person","present","singular"]],["fui",["first-person","preterite","singular"]],["ido",["participle","past"]],["ir",["infinitive"]],["yendo",["gerund"]],["ido",["masculine","participle","past","singular"]],["voy",["first-person","indicative","present","singular"]],["fui",["first-person","indicative","preterite","singular"]],["fue",["indicative","preterite","singular","third-person"]],["iré",["first-person","future","indicative","singular"]],["vaya",["first-person","present","singular","subjunctive"]],["vaya",["present","singular","subjunctive","third-person"]],["vayan",["plural","present","subjunctive","third-person"]],["ve",["imperative","informal","second-person","singular"]],["vaya",["formal","imperative","second-person-semantically","singular","third-person"]],["vaya",["imperative","singular","third-person"]]],"lo":[],"ipa":[],"g":["to go (away from speaker and listener)","to be suitable or apt for its purpose, to match or suit well (of clothing)","to head towards or lead to a place away from the speaker","to extend in time or space, from one point to another"],"ex":[["Nos gusta ir al cine.","We like to go to the movies."]],"r":null}
 {"w":"far","pos":"verb","fm":[["fo",["first-person","present","singular"]],["fe",["first-person","preterite","singular"]],["fado",["participle","past"]],["fando",["gerund"]],["fado",["masculine","participle","past","singular"]],["fo",["first-person","indicative","present","singular"]],["fe",["first-person","indicative","preterite","singular"]],["fase",["first-person","imperfect","imperfect-se","singular","subjunctive"]],["fase",["imperfect","imperfect-se","singular","subjunctive","third-person"]],["fándose",["gerund"]],["fado",["masculine","participle","past","singular"]],["me fo",["first-person","indicative","present","singular"]],["me fe",["first-person","indicative","preterite","singular"]]],"lo":["hacer"],"ipa":[],"g":[],"ex":[],"r":null}
-{"w":"e","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
-{"w":"e","pos":"noun","fm":[["es",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter E/e."],"ex":[],"r":null}
+{"w":"e","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
+{"w":"e","pos":"noun","fm":[["es",["plural"]]],"lo":[],"ipa":[],"g":["The name of the Latin script letter E/e."],"ex":[],"r":null,"mn":1}
 {"w":"e","pos":"conj","fm":[["y",["alternative"]]],"lo":[],"ipa":[],"g":["and"],"ex":[["Hablo francés e inglés.","I speak French and English."]],"r":null}
-{"w":"p","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The seventeenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"p","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The seventeenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"ese","pos":"pron","fm":[["esa",["feminine"]],["eso",["neuter"]],["esos",["masculine","plural"]],["esas",["feminine","plural"]],["este",["error-unrecognized-form","masculine","proximal","singular"]],["ese",["error-unrecognized-form","masculine","medial","singular"]],["esta",["error-unrecognized-form","feminine","proximal","singular"]],["estos",["error-unrecognized-form","masculine","plural","proximal"]]],"lo":["ése"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"mayor","pos":"adj","fm":[],"lo":["grande","viejo"],"ipa":[],"g":["of age; adult; grown-up","major; main","head; boss","major"],"ex":[["Cuando (yo) sea mayor voy a ser médico","When I'm grown-up I'm going to be a doctor"]],"r":null}
 {"w":"mayor","pos":"noun","fm":[["mayores",["plural"]]],"lo":[],"ipa":[],"g":["major (military rank)","boss; head","ancestors","old person"],"ex":[],"r":null}
@@ -174,19 +174,19 @@
 {"w":"hasta","pos":"prep","fm":[],"lo":[],"ipa":[],"g":["until","up to, to the point of, as much as"],"ex":[],"r":null}
 {"w":"cada","pos":"det","fm":[],"lo":[],"ipa":[],"g":["each; every"],"ex":[["Cada día alguien me habla de ti\nintentando sacar el dolor de mi alma\nCada día alguien me habla de ti\nintentando explicarme que ya no volverás","Every day someone speaks of you to me,\ntrying to quell the pain in my soul\nEvery day someone speaks of you to me,\ntrying to explain to me that you aren't coming back"]],"r":null}
 {"w":"cada","pos":"adv","fm":[],"lo":[],"ipa":[],"g":["every time"],"ex":[["Si me dieran 1 peso por cada que vea a alguien decir que es Spiderman, tendría 5 pesos.","If I had 1 peso for every time I've seen someone say they're Spiderman, I'd have 5 pesos."]],"r":null}
-{"w":"a","pos":"character","fm":[["A",["uppercase"]]],"lo":[],"ipa":[],"g":["The first letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"a","pos":"character","fm":[["A",["uppercase"]]],"lo":[],"ipa":[],"g":["The first letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"a","pos":"noun","fm":[["aes",["plural"]]],"lo":["A"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"a","pos":"prep","fm":[],"lo":[],"ipa":[],"g":["to","by","at","Used before words referring to people, pets, or personified objects or places that function as direct objects: personal a."],"ex":[["Ven a la casa.","Come home."]],"r":null}
 {"w":"a","pos":"verb","fm":[],"lo":["ha"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"a","pos":"intj","fm":[],"lo":["ah"],"ipa":[],"g":["Used to express indiference or sarcasm."],"ex":[],"r":null}
-{"w":"E","pos":"character","fm":[["e",["lowercase"]]],"lo":[],"ipa":[],"g":["The fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"E","pos":"character","fm":[["e",["lowercase"]]],"lo":[],"ipa":[],"g":["The fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"E","pos":"noun","fm":[],"lo":["este"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"Luz","pos":"name","fm":[],"lo":[],"ipa":[],"g":["a female given name"],"ex":[],"r":null}
-{"w":"O","pos":"character","fm":[["o",["lowercase"]]],"lo":[],"ipa":[],"g":["The sixteenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"O","pos":"character","fm":[["o",["lowercase"]]],"lo":[],"ipa":[],"g":["The sixteenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"O","pos":"noun","fm":[],"lo":["oeste"],"ipa":[],"g":[],"ex":[],"r":null}
-{"w":"P","pos":"character","fm":[["p",["lowercase"]]],"lo":[],"ipa":[],"g":["The seventeenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"P","pos":"character","fm":[["p",["lowercase"]]],"lo":[],"ipa":[],"g":["The seventeenth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"Su","pos":"name","fm":[],"lo":[],"ipa":[],"g":["a diminutive of the female given name Susana"],"ex":[],"r":null}
-{"w":"Y","pos":"character","fm":[["y",["lowercase"]]],"lo":[],"ipa":[],"g":["The twenty-sixth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"Y","pos":"character","fm":[["y",["lowercase"]]],"lo":[],"ipa":[],"g":["The twenty-sixth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"como","pos":"adv","fm":[],"lo":[],"ipa":[],"g":["as (to such an extent or degree)","like, about (approximately)"],"ex":[["No es tan alta como nosotras.","She's not as tall as us."]],"r":null}
 {"w":"como","pos":"conj","fm":[],"lo":[],"ipa":[],"g":["as (introducing a basis of comparison or equality)","as, since (being that)","how (in which way)","if, unless (under the condition that)"],"ex":[["¿Tienes tanta hambre como yo?","Are you as hungry as I am?"]],"r":null}
 {"w":"como","pos":"prep","fm":[],"lo":[],"ipa":[],"g":["as (in the manner or role specified)","such as (for example)","like (similar to, reminiscent of)"],"ex":[["Mis ahijados me ven como un tío.","My godchildren see me as an uncle."]],"r":null}
@@ -233,7 +233,7 @@
 {"w":"otros","pos":"intj","fm":[],"lo":["otro"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"otros","pos":"pron","fm":[],"lo":["otro"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"estas","pos":"det","fm":[["este",["error-unrecognized-form","masculine","proximal","singular"]],["ese",["error-unrecognized-form","masculine","medial","singular"]],["esta",["error-unrecognized-form","feminine","proximal","singular"]],["estos",["error-unrecognized-form","masculine","plural","proximal"]]],"lo":["este"],"ipa":[],"g":[],"ex":[],"r":null}
-{"w":"x","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The twenty-fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null}
+{"w":"x","pos":"character","fm":[],"lo":[],"ipa":[],"g":["The twenty-fifth letter of the Spanish alphabet, written in the Latin script."],"ex":[],"r":null,"mn":1}
 {"w":"x","pos":"prep","fm":[],"lo":["por"],"ipa":[],"g":[],"ex":[],"r":null}
 {"w":"x","pos":"pron","fm":[],"lo":[],"ipa":[],"g":["someone"],"ex":[["X: No me gustan tus vídeos. Yo: No me importa.","Someone: I don't like your videos. Me: I don't care."]],"r":null}
 {"w":"esta","pos":"det","fm":[["este",["error-unrecognized-form","masculine","proximal","singular"]],["ese",["error-unrecognized-form","masculine","medial","singular"]],["esta",["error-unrecognized-form","feminine","proximal","singular"]],["estos",["error-unrecognized-form","masculine","plural","proximal"]]],"lo":["este"],"ipa":[],"g":[],"ex":[],"r":null}

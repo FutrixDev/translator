@@ -99,7 +99,8 @@ def table_path(work, t):
 
 def prepare(norm, work, t):
     """Write <work>/read-<t>.tsv (word, label, ipa, rank) for a kaikki-IPA target language.
-    rank 0 = English edition, 1 = own edition; en has only the English edition (en-en)."""
+    rank 0 = English edition, 1 = own edition; en has only the English edition (en-en). A
+    missing slice raises (L1 N4)."""
     os.makedirs(work, exist_ok=True)
     files = [(f'kaikki/{t}-en.jsonl', 0, False)] if t != 'en' else []
     files.append((f'kaikki/{t}-{t}.jsonl', 1 if t != 'en' else 0, t != 'en'))
@@ -108,8 +109,6 @@ def prepare(norm, work, t):
     with open(tmp, 'w', encoding='utf-8') as o:
         for rel, rank, own in files:
             p = os.path.join(norm, rel)
-            if not os.path.exists(p):
-                continue
             for w, label, ipa in kaikki_ipa_rows(p, own, phonetic_ok=t != 'en'):
                 o.write(f'{w}\t{label}\t{ipa}\t{rank}\n')
                 n += 1
@@ -123,15 +122,13 @@ def needs_prepare(t):
 
 def read_ipa_map(path, phonetic_ok):
     """word -> IPA from a normalized ipa-dict / CMUdict table, under the same one-transcription
-    rule as kaikki."""
+    rule as kaikki. normalize.py writes every table, so a missing one raises (L1 N4)."""
     m = {}
-    if os.path.exists(path):
-        with open(path, encoding='utf-8') as f:
-            for line in f:
-                if '\t' in line:
-                    w, v = line.rstrip('\n').split('\t', 1)
-                    if one_transcription(v, phonetic_ok):
-                        m.setdefault(w, v)
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            w, v = line.rstrip('\n').split('\t', 1)
+            if one_transcription(v, phonetic_ok):
+                m.setdefault(w, v)
     return m
 
 

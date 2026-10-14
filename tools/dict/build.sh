@@ -16,7 +16,9 @@
 #   out/<pack>/{<pack>.json, LICENSE.txt, ATTRIBUTION.txt}
 #   stats/    per-pack numbers and the no-example variants
 #   samples/  the sample tables, copied for check.py
-# norm/, work/, out/ and stats/ are rebuilt from scratch on every run.
+# norm/, work/, out/ and stats/ are rebuilt from scratch on every run. The last step runs
+# check.py over out/ (npm run dict:check runs it alone), so a build that writes a pack the
+# gates refuse exits non-zero.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,6 +53,9 @@ packs=()
 python3 -I "$here/pairs.py" "$build/norm" "$build/out" --work "$build/work" \
   --stats "$build/stats" --ver "$ver" --license "$here/cc-by-sa-4.0.txt" --jobs "$jobs" \
   ${packs[@]+"${packs[@]}"}
+
+step "check"
+python3 -I "$here/check.py" "$build/out"
 
 step "done"
 echo "dict:build: ver $ver in $(( $(date +%s) - start ))s"

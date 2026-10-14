@@ -18,8 +18,6 @@ VOICED_TE = set('ぐぬぶむ')     # te/ta become で/だ
 GODAN_CLASSES = {'v5u': 'う', 'v5k': 'く', 'v5g': 'ぐ', 'v5s': 'す', 'v5t': 'つ', 'v5n': 'ぬ',
                  'v5b': 'ぶ', 'v5m': 'む', 'v5r': 'る', 'v5k-s': 'く', 'v5r-i': 'る',
                  'v5u-s': 'う', 'v5aru': 'る', 'vs-c': 'す'}
-CLASSES = tuple(GODAN_CLASSES) + ('v1', 'v1-s', 'vk', 'vs', 'vs-i', 'vs-s', 'vz', 'adj-i',
-                                  'adj-ix')
 # Order of preference when an entry lists several classes (the first one present is used).
 PREFERENCE = ('v1', 'v1-s', 'v5k-s', 'v5r-i', 'v5u-s', 'v5aru') + tuple(
     c for c in GODAN_CLASSES if c not in ('v5k-s', 'v5r-i', 'v5u-s', 'v5aru')) + (

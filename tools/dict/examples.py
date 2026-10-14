@@ -5,8 +5,12 @@ of the pack's own gloss slice (no Tatoeba ids). A candidate belongs to a head on
 source sentence contains the head or one of the head's `f` forms (common.contains: substring
 for zh/ja/ko, whole word after case folding otherwise) and is at most EX_SRC_CHARS long.
 Each head keeps at most `per_head` (MAX_EX) rows, shortest source sentence first, one row per
-source sentence. Chinese translations follow the pack's target: OpenCC t2s for zh-CN (Tatoeba
-mixes both scripts), s2twp for zh-TW. Source sentences are kept as written.
+source sentence and one per translation: Tatoeba holds a Chinese sentence in both scripts,
+and the two rows of 你們/你们 translate alike (L2 N6). Chinese translations follow the pack's
+target: OpenCC t2s for zh-CN (Tatoeba mixes both scripts), s2twp alone for zh-TW (no t2s step
+first: s2twp leaves Traditional text as it is). Source sentences
+are kept as written. A sentence that starts with a colon is the tail of a cut-up example
+(":It's a ...") and is no candidate (L2 N9).
 """
 import os
 
@@ -25,15 +29,18 @@ def tatoeba_rows(norm, s, t):
     out = []
     with open(path, encoding='utf-8') as f:
         for line in f:
-            p = line.rstrip('\n').split('\t')
-            if len(p) != 4:
-                continue
-            ia, ta, ib, tb = p
+            ia, ta, ib, tb = line.rstrip('\n').split('\t')   # normalize.py writes 4 fields
             if src_first:
                 out.append((ta, tb, int(ia), int(ib)))
             else:
                 out.append((tb, ta, int(ib), int(ia)))
     return out
+
+
+def usable(text, tr):
+    """A candidate pair short enough (EX_SRC_CHARS) and not the tail of a cut-up example."""
+    return (len(text) <= C.EX_SRC_CHARS and not text.lstrip().startswith((':', '：'))
+            and not tr.lstrip().startswith((':', '：')))
 
 
 def surface_index(e, f, s):
@@ -54,14 +61,14 @@ def build(norm, builder, f, per_head=C.MAX_EX):
     conv = builder.s2twp or (builder.t2s if t == 'zh' else None)
     cands = []
     for text, tr, si, ti in tatoeba_rows(norm, s, t):
-        if len(text) <= C.EX_SRC_CHARS:
+        if usable(text, tr):
             cands.append((len(text), si, text, tr, si, ti, None))
     tat = bool(cands)
     for head, rows in builder.kaikki_ex.items():
         if head not in builder.e:
             continue
         for text, tr in rows:
-            if len(text) <= C.EX_SRC_CHARS:
+            if usable(text, tr):
                 cands.append((len(text), 0, text, tr, None, None, head))
     # Shortest first; Tatoeba before kaikki at equal length (smaller id = older, reviewed).
     cands.sort(key=lambda c: (c[0], c[4] is None, c[1]))
@@ -85,11 +92,13 @@ def build(norm, builder, f, per_head=C.MAX_EX):
             rows = x.setdefault(h, [])
             if len(rows) >= per_head:
                 continue
-            done = seen.setdefault(h, set())
-            if text in done:
+            shown = conv(tr) if conv else tr
+            texts, trs = seen.setdefault(h, (set(), set()))
+            if text in texts or shown in trs:
                 continue
-            done.add(text)
-            rows.append([text, conv(tr) if conv else tr, si, ti])
+            texts.add(text)
+            trs.add(shown)
+            rows.append([text, shown, si, ti])
     x = {h: rows for h, rows in x.items() if rows}
     used = set()
     if any(r[2] is not None for rows in x.values() for r in rows):

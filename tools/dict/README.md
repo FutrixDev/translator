@@ -7,7 +7,9 @@ the extension at runtime; the packs are published separately.
 
 ## Datasets
 
-Every file the build reads is pinned in [sources.json](sources.json) (URL, bytes, SHA-256).
+Every file the build reads is pinned in [sources.json](sources.json): URL, bytes, SHA-256,
+the dataset it belongs to, its licence and its version date (the day it was downloaded, for
+sources that republish under one URL). `attribution.py` takes the date it prints from there.
 
 | id | dataset | licence | used for |
 | --- | --- | --- | --- |
@@ -43,13 +45,22 @@ python3 -I tools/dict/check.py build/dict/out --report <dir>   # + packs.csv / c
 `$DICT_DATA_DIR/../samples/tokens`), `DICT_VER` (default today, UTC, `YYYY.MM.DD`),
 `DICT_JOBS` (default the CPU count), `DICT_PACKS` (comma list such as `en-ja,ja-en`, default
 all 30). Steps: verify (`download.sh --offline`) → `normalize.py` → copy the samples →
-`pairs.py`. Output under `build/dict/`: `norm/` (normalized data), `work/` (per-language
+`pairs.py` → `check.py` (so a build that exits 0 has passed the check too). Output under `build/dict/`: `norm/` (normalized data), `work/` (per-language
 tables shared by packs), `out/<pack>/` (`<pack>.json`, `LICENSE.txt`, `ATTRIBUTION.txt`),
 `stats/` (per-pack numbers and the no-example variant), `samples/`.
 
 **Samples.** The reading-rate gate (design §2.1) measures packs on sample tokens,
 `tokens.<lang>.tsv` (a header row, then `token<TAB>count`) for the ten source languages. They are
-derived from crawled pages and are not committed; `build.sh` refuses to run without them.
+derived from crawled pages and are not committed; `build.sh` refuses to run without them, and
+`check.py` names the missing `tokens.<lang>.tsv`. They come from the 74 pages listed in the
+offline-dictionary spike (`docs/delivery/evidence/offline-dict/spike/`, `data/urls.tsv`),
+fetched through crawl-store and cut into tokens with `Intl.Segmenter`, keeping only what the
+extension's own `DictEntry.isLookup` treats as a lookup:
+
+```sh
+python3 -I spike/scripts/crawl_pages.py urls.tsv pages/          # crawl-store REST, cached
+node spike/scripts/sample_tokens.mjs translator/shared pages/ tokens/
+```
 
 **The data is untrusted.** Every script runs as `python3 -I` with paths as arguments, and
 nothing inside the data directory is executed or imported.
@@ -79,8 +90,9 @@ files the build reads, and regenerate `sources.json` with their sizes and SHA-25
 | `check.py` | the gate: shape, heads, size, reading rate, `x`, D-578; `--report` CSVs |
 | `mkfixture.py` | cuts the es-en test fixture (`test/fixtures/dict/`) out of a full build's `norm/` |
 
-Acceptance lines (all in `common.py`): heads ≥ 0.95 × `HEADS_BASE` (records for the
-`HEADS_UNIT` packs); brotli (`-q 11`) of the `e` part ≤ `br_budget` (1.1 × `BR_BASE`, 2 MB
+Acceptance lines (all in `common.py`): heads ≥ 0.95 × `HEADS_BASE` (in the unit of
+`heads_unit`: records for the `HEADS_UNIT` packs; entries — heads plus the words the R8
+gloss-text form-of rule moved to `f` — for the `FORM_SOURCES` packs); brotli (`-q 11`) of the `e` part ≤ `br_budget` (1.1 × `BR_BASE`, 2 MB
 where §4.1 has no row) and of the pack with `x = {}` ≤ `br_ceiling` (+ 0.5 MB for `f`/`m`,
 FORMAT.md "Size cuts"); reading rate ≥ `READING_BASE` − 3 points; with examples ≤ 2 ×
 without, else one example per head.

@@ -1,186 +1,186 @@
-{"w":"inglés","pos":"adj","s":[["English"],["Englishman","English"],["English"]]}
-{"w":"inglés","pos":"noun","s":[["English"],["Englishman","English"],["English"]]}
-{"w":"be","pos":"noun","s":[["baa"]]}
-{"w":"uno","pos":"num","s":[["one"],["some"]]}
-{"w":"uno","pos":"noun","s":[["one"],["some"]]}
-{"w":"uno","pos":"noun","s":[["one"],["some"]]}
-{"w":"uno","pos":"adj","s":[["one"],["some"]]}
-{"w":"uno","pos":"pron","s":[["one"],["some"]]}
-{"w":"España","pos":"name","s":[["Spain"]]}
-{"w":"comer","pos":"verb","s":[["eat"],["have lunch"],["capture"]]}
-{"w":"comer","pos":"verb","s":[["eat"],["have lunch"],["capture"]]}
-{"w":"ir","pos":"verb","s":[["go"],["be going to"],["let 's"]]}
-{"w":"ir","pos":"verb","s":[["go"],["be going to"],["let 's"]]}
-{"w":"ser","pos":"verb","s":[["be"],["being"]]}
-{"w":"ser","pos":"verb","s":[["be"],["being"]]}
-{"w":"ser","pos":"noun","s":[["be"],["being"]]}
-{"w":"este","pos":"adj","s":[["this"]]}
-{"w":"este","pos":"pron","s":[["this"]]}
-{"w":"este","pos":"noun","s":[["east"]]}
-{"w":"este","pos":"adj","s":[["east"]]}
-{"w":"año","pos":"noun","s":[["year"]]}
-{"w":"haber","pos":"verb","s":[["have"],["there is"]]}
-{"w":"haber","pos":"verb","s":[["have"],["there is"]]}
-{"w":"haber","pos":"verb","s":[["have"],["there is"]]}
-{"w":"haber","pos":"noun","s":[["have"],["there is"]]}
-{"w":"luz","pos":"noun","s":[["light"]]}
-{"w":"también","pos":"adv","s":[["too"],["also"]]}
-{"w":"país","pos":"noun","s":[["nation","country","land"]]}
-{"w":"país","pos":"noun","s":[["nation","country","land"]]}
-{"w":"planta","pos":"noun","s":[["plant"],["floor"]]}
-{"w":"uso","pos":"noun","s":[["use"]]}
-{"w":"o","pos":"character","s":[["o"]]}
-{"w":"o","pos":"noun","s":[["o"]]}
-{"w":"o","pos":"conj","s":[["or"]]}
-{"w":"hasta","pos":"prep","s":[["until","up to","even"]]}
-{"w":"hasta","pos":"adv","s":[["until","up to","even"]]}
-{"w":"hasta","pos":"noun","s":[["until","up to","even"]]}
-{"w":"agua","pos":"noun","s":[["water"]]}
-{"w":"carbono","pos":"noun","s":[["carbon"]]}
-{"w":"partir","pos":"verb","s":[["part"],["depart"]]}
-{"w":"partir","pos":"verb","s":[["part"],["depart"]]}
-{"w":"do","pos":"noun","s":[["C"]]}
-{"w":"dos","pos":"num","s":[["two"]]}
-{"w":"dos","pos":"num","s":[["two"]]}
-{"w":"dos","pos":"adj","s":[["two"]]}
-{"w":"dos","pos":"noun","s":[["two"]]}
-{"w":"dos","pos":"noun","s":[["two"]]}
-{"w":"molécula","pos":"noun","s":[["molecule"]]}
-{"w":"oxígeno","pos":"noun","s":[["oxygen"]]}
-{"w":"Inglaterra","pos":"name","s":[["England"]]}
-{"w":"trabajar","pos":"verb","s":[["work"]]}
-{"w":"trabajar","pos":"verb","s":[["work"]]}
-{"w":"línea","pos":"noun","s":[["line"]]}
-{"w":"línea","pos":"noun","s":[["line"]]}
-{"w":"octubre","pos":"noun","s":[["October"]]}
-{"w":"trabajo","pos":"noun","s":[["work"],["job"]]}
-{"w":"cloroplasto","pos":"noun","s":[["chloroplast"]]}
-{"w":"pero","pos":"conj","s":[["but"],["though"]]}
-{"w":"pero","pos":"adv","s":[["but"],["though"]]}
-{"w":"pero","pos":"noun","s":[["but"],["though"]]}
-{"w":"pero","pos":"noun","s":[["apple tree"],["apple"]]}
-{"w":"y","pos":"conj","s":[["and"]]}
-{"w":"con","pos":"prep","s":[["with"]]}
-{"w":"de","pos":"prep","s":[["'s"],["of"]]}
-{"w":"tener","pos":"verb","s":[["have"],["hold"],["feel"],["be"],["must"]]}
-{"w":"vida","pos":"noun","s":[["life"]]}
-{"w":"ferrocarril","pos":"noun","s":[["railway","railroad"]]}
-{"w":"parar","pos":"verb","s":[["stop"],["stand"]]}
-{"w":"parar","pos":"verb","s":[["stop"],["stand"]]}
-{"w":"que","pos":"pron","s":[["that"],["than"],["so that"]]}
-{"w":"que","pos":"conj","s":[["that"],["than"],["so that"]]}
-{"w":"Europa","pos":"name","s":[["Europe"],["Europa"]]}
-{"w":"electrón","pos":"noun","s":[["electron"]]}
-{"w":"energía","pos":"noun","s":[["energy"]]}
-{"w":"objeto","pos":"noun","s":[["object"]]}
-{"w":"ya","pos":"adv","s":[["already"]]}
-{"w":"ya","pos":"conj","s":[["already"]]}
-{"w":"ya","pos":"intj","s":[["already"]]}
-{"w":"millón","pos":"noun","s":[["million"]]}
-{"w":"primera","pos":"noun","s":[["first"]]}
-{"w":"cuando","pos":"conj","s":[["when"],["though"],["if"]]}
-{"w":"cuando","pos":"prep","s":[["when"],["though"],["if"]]}
-{"w":"la","pos":"article","s":[["the"],["her","it"]]}
-{"w":"la","pos":"pron","s":[["her","it"]]}
-{"w":"la","pos":"noun","s":[["la"]]}
-{"w":"ácido","pos":"adj","s":[["sour","tart"],["acid"]]}
-{"w":"ácido","pos":"noun","s":[["sour","tart"],["acid"]]}
-{"w":"más","pos":"adv","s":[["more"],["plus"]]}
-{"w":"más","pos":"noun","s":[["more"],["plus"]]}
-{"w":"más","pos":"adj","s":[["more"],["plus"]]}
-{"w":"más","pos":"pron","s":[["more"],["plus"]]}
-{"w":"más","pos":"pron","s":[["more"],["plus"]]}
-{"w":"mayor","pos":"adj","s":[["bigger"],["elder"],["major"]]}
-{"w":"mayor","pos":"noun","s":[["bigger"],["elder"],["major"]]}
-{"w":"para","pos":"prep","s":[["for"]]}
-{"w":"estar","pos":"noun","s":[["be"]]}
-{"w":"grande","pos":"adj","s":[["large","big"],["great","grand"]]}
-{"w":"grande","pos":"noun","s":[["large","big"],["great","grand"]]}
-{"w":"poder","pos":"noun","s":[["may"],["be able to","can"],["power"]]}
-{"w":"poder","pos":"verb","s":[["may"],["be able to","can"],["power"]]}
-{"w":"poder","pos":"verb","s":[["may"],["be able to","can"],["power"]]}
-{"w":"poder","pos":"verb","s":[["may"],["be able to","can"],["power"]]}
-{"w":"poder","pos":"verb","s":[["may"],["be able to","can"],["power"]]}
-{"w":"no","pos":"adv","s":[["no","nay","nope"],["not"]]}
-{"w":"no","pos":"noun","s":[["no","nay","nope"],["not"]]}
-{"w":"no","pos":"intj","s":[["no","nay","nope"],["not"]]}
-{"w":"el","pos":"article","s":[["the"]]}
-{"w":"ese","pos":"pron","s":[["that"]]}
-{"w":"ese","pos":"adj","s":[["that"]]}
-{"w":"como","pos":"verb","s":[["how","like","as"]]}
-{"w":"todo","pos":"adj","s":[["all"],["everything"]]}
-{"w":"todo","pos":"pron","s":[["all"],["everything"]]}
-{"w":"todo","pos":"noun","s":[["all"],["everything"]]}
-{"w":"todo","pos":"adv","s":[["all"],["everything"]]}
-{"w":"en","pos":"prep","s":[["in"],["into"],["at"]]}
-{"w":"muy","pos":"adv","s":[["very"]]}
-{"w":"otro","pos":"adj","s":[["other","another"]]}
-{"w":"otro","pos":"pron","s":[["other","another"]]}
-{"w":"sin","pos":"prep","s":[["without","sans"]]}
-{"w":"entrar","pos":"verb","s":[["go in"]]}
-{"w":"entrar","pos":"verb","s":[["go in"]]}
-{"w":"los","pos":"article","s":[["the"],["them"]]}
-{"w":"los","pos":"pron","s":[["the"],["them"]]}
-{"w":"x","pos":"character","s":[["x"]]}
-{"w":"desde","pos":"prep","s":[["from"]]}
-{"w":"lo","pos":"article","s":[["the","that which is"],["that","him","it"]]}
-{"w":"lo","pos":"pron","s":[["the","that which is"],["that","him","it"]]}
-{"w":"vapor","pos":"noun","s":[["vapor","vapour","steam"],["steamboat"]]}
-{"w":"sobre","pos":"prep","s":[["above"],["envelope"]]}
-{"w":"sobre","pos":"noun","s":[["above"],["envelope"]]}
-{"w":"entre","pos":"prep","s":[["between","among"]]}
-{"w":"donde","pos":"adv","s":[["where"]]}
-{"w":"donde","pos":"prep","s":[["where"]]}
-{"w":"por","pos":"prep","s":[["by","for"]]}
-{"w":"cada","pos":"pron","s":[["each"]]}
-{"w":"su","pos":"adj","s":[["his","her","its","their"],["your"]]}
-{"w":"usar","pos":"verb","s":[["use"]]}
-{"w":"usar","pos":"verb","s":[["use"]]}
-{"w":"producir","pos":"verb","s":[["produce"]]}
-{"w":"aquel","pos":"pron","s":[["that"]]}
-{"w":"aquel","pos":"adj","s":[["that"]]}
-{"w":"aquel","pos":"noun","s":[["that"]]}
-{"w":"máquina","pos":"noun","s":[["machine"]]}
-{"w":"asir","pos":"verb","s":[["grasp"]]}
-{"w":"asir","pos":"verb","s":[["grasp"]]}
-{"w":"las","pos":"article","s":[["the"],["them"]]}
-{"w":"las","pos":"pron","s":[["the"],["them"]]}
-{"w":"forma","pos":"noun","s":[["form"]]}
-{"w":"transporte","pos":"noun","s":[["transport"]]}
-{"w":"construcción","pos":"noun","s":[["construction"]]}
-{"w":"parir","pos":"verb","s":[["give birth"]]}
-{"w":"fotosíntesis","pos":"noun","s":[["photosynthesis"]]}
-{"w":"desarrollo","pos":"noun","s":[["development"]]}
-{"w":"parte","pos":"noun","s":[["part"]]}
-{"w":"parte","pos":"noun","s":[["part"]]}
-{"w":"siglo","pos":"noun","s":[["century"]]}
-{"w":"solo","pos":"adj","s":[["alone"],["only"]]}
-{"w":"solo","pos":"noun","s":[["alone"],["only"]]}
-{"w":"solo","pos":"adv","s":[["only"]]}
-{"w":"primero","pos":"num","s":[["first"]]}
-{"w":"primero","pos":"adv","s":[["first"]]}
-{"w":"editar","pos":"verb","s":[["edit"]]}
-{"w":"comentario","pos":"noun","s":[["comment"]]}
-{"w":"población","pos":"noun","s":[["population"]]}
-{"w":"proceso","pos":"noun","s":[["process"]]}
-{"w":"Bretaña","pos":"name","s":[["Brittany"]]}
-{"w":"clorofila","pos":"noun","s":[["chlorophyll"]]}
-{"w":"O","pos":"character","s":[["o"]]}
-{"w":"medio","pos":"adj","s":[["half"],["middle","mid"],["average","standard","generic"],["way"],["channel","media"]]}
-{"w":"medio","pos":"noun","s":[["half"],["middle","mid"],["average","standard","generic"],["way"],["channel","media"]]}
-{"w":"medio","pos":"adv","s":[["half"],["middle","mid"],["average","standard","generic"],["way"],["channel","media"]]}
-{"w":"principal","pos":"adj","s":[["principal"]]}
-{"w":"principal","pos":"noun","s":[["principal"]]}
-{"w":"principal","pos":"noun","s":[["principal"]]}
-{"w":"industria","pos":"noun","s":[["industry"]]}
-{"w":"industrial","pos":"adj","s":[["industrial"]]}
-{"w":"vez","pos":"noun","s":[["time"]]}
-{"w":"ejemplo","pos":"noun","s":[["example"]]}
-{"w":"formar","pos":"verb","s":[["form","shape"]]}
-{"w":"formar","pos":"verb","s":[["form","shape"]]}
-{"w":"mientras","pos":"adv","s":[["while"]]}
-{"w":"mientras","pos":"conj","s":[["while"]]}
-{"w":"esa","pos":"pron","s":[["that"]]}
-{"w":"producción","pos":"noun","s":[["production"]]}
-{"w":"pigmento","pos":"noun","s":[["pigment"]]}
-{"w":"dióxido","pos":"noun","s":[["dioxide"]]}
+{"w":"inglés","pos":"adj","s":[["English"],["English"],["Englishman","English"]],"b":[32,28,24],"ew":95,"pt":1}
+{"w":"inglés","pos":"noun","s":[["English"],["English"],["Englishman","English"]],"b":[32,28,24],"ew":95,"pt":1}
+{"w":"be","pos":"noun","s":[["baa"]],"b":[2],"ew":2,"pt":1}
+{"w":"uno","pos":"num","s":[["some"],["one"]],"b":[2,1],"ew":85}
+{"w":"uno","pos":"noun","s":[["some"],["one"]],"b":[2,1],"ew":85}
+{"w":"uno","pos":"noun","s":[["some"],["one"]],"b":[2,1],"ew":85}
+{"w":"uno","pos":"adj","s":[["some"],["one"]],"b":[2,1],"ew":85}
+{"w":"uno","pos":"pron","s":[["some"],["one"]],"b":[2,1],"ew":85}
+{"w":"España","pos":"name","s":[["Spain"]],"b":[71],"ew":77,"pt":1}
+{"w":"comer","pos":"verb","s":[["eat"],["have lunch"],["capture"]],"b":[17,5,2],"ew":83}
+{"w":"comer","pos":"verb","s":[["eat"],["have lunch"],["capture"]],"b":[17,5,2],"ew":83}
+{"w":"ir","pos":"verb","s":[["go"],["be going to"],["let 's"]],"b":[1,1,1],"ew":28}
+{"w":"ir","pos":"verb","s":[["go"],["be going to"],["let 's"]],"b":[1,1,1],"ew":28}
+{"w":"ser","pos":"verb","s":[["be"],["being"]],"b":[42,9],"ew":63,"pt":1}
+{"w":"ser","pos":"verb","s":[["be"],["being"]],"b":[42,9],"ew":63,"pt":1}
+{"w":"ser","pos":"noun","s":[["be"],["being"]],"b":[42,9],"ew":63,"pt":1}
+{"w":"este","pos":"adj","s":[["this"]],"b":[27],"ew":77,"pt":1}
+{"w":"este","pos":"pron","s":[["this"]],"b":[27],"ew":77,"pt":1}
+{"w":"este","pos":"noun","s":[["east"]],"b":[44],"ew":70,"pt":1}
+{"w":"este","pos":"adj","s":[["east"]],"b":[44],"ew":70,"pt":1}
+{"w":"año","pos":"noun","s":[["year"]],"b":[25],"ew":27,"pt":1}
+{"w":"haber","pos":"verb","s":[["there is"],["have"]],"b":[5,1],"ew":24}
+{"w":"haber","pos":"verb","s":[["there is"],["have"]],"b":[5,1],"ew":24}
+{"w":"haber","pos":"verb","s":[["there is"],["have"]],"b":[5,1],"ew":24}
+{"w":"haber","pos":"noun","s":[["there is"],["have"]],"b":[5,1],"ew":24}
+{"w":"luz","pos":"noun","s":[["light"]],"b":[45],"ew":54,"pt":1}
+{"w":"también","pos":"adv","s":[["too"],["also"]],"b":[3,2],"ew":31}
+{"w":"país","pos":"noun","s":[["nation","country","land"]],"b":[36],"ew":44,"pt":1}
+{"w":"país","pos":"noun","s":[["nation","country","land"]],"b":[36],"ew":44,"pt":1}
+{"w":"planta","pos":"noun","s":[["plant"],["floor"]],"b":[16,3],"ew":30,"pt":1}
+{"w":"uso","pos":"noun","s":[["use"]],"b":[1],"ew":8}
+{"w":"o","pos":"character","s":[["o"]],"b":[4],"ew":5,"pt":1}
+{"w":"o","pos":"noun","s":[["o"]],"b":[4],"ew":5,"pt":1}
+{"w":"o","pos":"conj","s":[["or"]],"b":[32],"ew":48,"pt":1}
+{"w":"hasta","pos":"prep","s":[["until","up to","even"]],"b":[5],"ew":20,"pt":1}
+{"w":"hasta","pos":"adv","s":[["until","up to","even"]],"b":[5],"ew":20,"pt":1}
+{"w":"hasta","pos":"noun","s":[["until","up to","even"]],"b":[5],"ew":20,"pt":1}
+{"w":"agua","pos":"noun","s":[["water"]],"b":[260],"ew":289,"pt":1}
+{"w":"carbono","pos":"noun","s":[["carbon"]],"b":[22],"ew":23,"pt":1}
+{"w":"partir","pos":"verb","s":[["depart"],["part"]],"b":[2,1],"ew":8,"pt":1}
+{"w":"partir","pos":"verb","s":[["depart"],["part"]],"b":[2,1],"ew":8,"pt":1}
+{"w":"do","pos":"noun","s":[["C"]],"b":[3],"ew":3,"pt":1}
+{"w":"dos","pos":"num","s":[["two"]],"b":[51],"ew":78,"pt":1}
+{"w":"dos","pos":"num","s":[["two"]],"b":[51],"ew":78,"pt":1}
+{"w":"dos","pos":"adj","s":[["two"]],"b":[51],"ew":78,"pt":1}
+{"w":"dos","pos":"noun","s":[["two"]],"b":[51],"ew":78,"pt":1}
+{"w":"dos","pos":"noun","s":[["two"]],"b":[51],"ew":78,"pt":1}
+{"w":"molécula","pos":"noun","s":[["molecule"]],"b":[17],"ew":18,"pt":1}
+{"w":"oxígeno","pos":"noun","s":[["oxygen"]],"b":[61],"ew":66,"pt":1}
+{"w":"Inglaterra","pos":"name","s":[["England"]],"b":[19],"ew":22,"pt":1}
+{"w":"trabajar","pos":"verb","s":[["work"]],"b":[16],"ew":24,"pt":1}
+{"w":"trabajar","pos":"verb","s":[["work"]],"b":[16],"ew":24,"pt":1}
+{"w":"línea","pos":"noun","s":[["line"]],"b":[1],"ew":12}
+{"w":"línea","pos":"noun","s":[["line"]],"b":[1],"ew":12}
+{"w":"octubre","pos":"noun","s":[["October"]],"b":[26],"ew":28,"pt":1}
+{"w":"trabajo","pos":"noun","s":[["work"],["job"]],"b":[17,1],"ew":19,"pt":1}
+{"w":"cloroplasto","pos":"noun","s":[["chloroplast"]],"b":[4],"ew":4,"pt":1}
+{"w":"pero","pos":"conj","s":[["but"],["though"]],"b":[4,2],"ew":40}
+{"w":"pero","pos":"adv","s":[["but"],["though"]],"b":[4,2],"ew":40}
+{"w":"pero","pos":"noun","s":[["but"],["though"]],"b":[4,2],"ew":40}
+{"w":"pero","pos":"noun","s":[["apple"],["apple tree"]],"b":[5,2],"ew":7,"pt":1}
+{"w":"y","pos":"conj","s":[["and"]],"b":[8],"ew":67}
+{"w":"con","pos":"prep","s":[["with"]],"b":[17],"ew":19,"pt":1}
+{"w":"de","pos":"prep","s":[["'s"],["of"]],"b":[7,1],"ew":11,"pt":1}
+{"w":"tener","pos":"verb","s":[["must"],["have"],["hold"],["feel"],["be"]],"b":[4,2,1,1,1],"ew":33}
+{"w":"vida","pos":"noun","s":[["life"]],"b":[4],"ew":36}
+{"w":"ferrocarril","pos":"noun","s":[["railway","railroad"]],"b":[46],"ew":50,"pt":1}
+{"w":"parar","pos":"verb","s":[["stop"],["stand"]],"b":[7,1],"ew":8,"pt":1}
+{"w":"parar","pos":"verb","s":[["stop"],["stand"]],"b":[7,1],"ew":8,"pt":1}
+{"w":"que","pos":"pron","s":[["than"],["so that"],["that"]],"b":[4,2,1],"ew":20,"pt":1}
+{"w":"que","pos":"conj","s":[["than"],["so that"],["that"]],"b":[4,2,1],"ew":20,"pt":1}
+{"w":"Europa","pos":"name","s":[["Europe"],["Europa"]],"b":[27,1],"ew":31,"pt":1}
+{"w":"electrón","pos":"noun","s":[["electron"]],"b":[13],"ew":14,"pt":1}
+{"w":"energía","pos":"noun","s":[["energy"]],"b":[16],"ew":17,"pt":1}
+{"w":"objeto","pos":"noun","s":[["object"]],"b":[6],"ew":17,"pt":1}
+{"w":"ya","pos":"adv","s":[["already"]],"b":[13],"ew":17,"pt":1}
+{"w":"ya","pos":"conj","s":[["already"]],"b":[13],"ew":17,"pt":1}
+{"w":"ya","pos":"intj","s":[["already"]],"b":[13],"ew":17,"pt":1}
+{"w":"millón","pos":"noun","s":[["million"]],"b":[11],"ew":11,"pt":1}
+{"w":"primera","pos":"noun","s":[["first"]],"b":[3],"ew":3,"pt":1}
+{"w":"cuando","pos":"conj","s":[["though"],["when"],["if"]],"b":[3,2,2],"ew":67}
+{"w":"cuando","pos":"prep","s":[["though"],["when"],["if"]],"b":[3,2,2],"ew":67}
+{"w":"la","pos":"article","s":[["the"],["her","it"]],"b":[3,1],"ew":6,"pt":1}
+{"w":"la","pos":"pron","s":[["her","it"]],"b":[3],"ew":5,"pt":1}
+{"w":"la","pos":"noun","s":[["la"]],"b":[2],"ew":2,"pt":1}
+{"w":"ácido","pos":"adj","s":[["sour","tart"],["acid"]],"b":[52,1],"ew":104,"pt":1}
+{"w":"ácido","pos":"noun","s":[["sour","tart"],["acid"]],"b":[52,1],"ew":104,"pt":1}
+{"w":"más","pos":"adv","s":[["more"],["plus"]],"b":[4,1],"ew":8,"pt":1}
+{"w":"más","pos":"noun","s":[["more"],["plus"]],"b":[4,1],"ew":8,"pt":1}
+{"w":"más","pos":"adj","s":[["more"],["plus"]],"b":[4,1],"ew":8,"pt":1}
+{"w":"más","pos":"pron","s":[["more"],["plus"]],"b":[4,1],"ew":8,"pt":1}
+{"w":"más","pos":"pron","s":[["more"],["plus"]],"b":[4,1],"ew":8,"pt":1}
+{"w":"mayor","pos":"adj","s":[["bigger"],["elder"],["major"]],"b":[5,3,1],"ew":9,"pt":1}
+{"w":"mayor","pos":"noun","s":[["bigger"],["elder"],["major"]],"b":[5,3,1],"ew":9,"pt":1}
+{"w":"para","pos":"prep","s":[["for"]],"b":[6],"ew":9,"pt":1}
+{"w":"estar","pos":"noun","s":[["be"]],"b":[18],"ew":23,"pt":1}
+{"w":"grande","pos":"adj","s":[["large","big"],["great","grand"]],"b":[12,3],"ew":46}
+{"w":"grande","pos":"noun","s":[["large","big"],["great","grand"]],"b":[12,3],"ew":46}
+{"w":"poder","pos":"noun","s":[["be able to","can"],["may"],["power"]],"b":[2,1,1],"ew":26}
+{"w":"poder","pos":"verb","s":[["be able to","can"],["may"],["power"]],"b":[2,1,1],"ew":26}
+{"w":"poder","pos":"verb","s":[["be able to","can"],["may"],["power"]],"b":[2,1,1],"ew":26}
+{"w":"poder","pos":"verb","s":[["be able to","can"],["may"],["power"]],"b":[2,1,1],"ew":26}
+{"w":"poder","pos":"verb","s":[["be able to","can"],["may"],["power"]],"b":[2,1,1],"ew":26}
+{"w":"no","pos":"adv","s":[["no","nay","nope"],["not"]],"b":[6,4],"ew":94}
+{"w":"no","pos":"noun","s":[["no","nay","nope"],["not"]],"b":[6,4],"ew":94}
+{"w":"no","pos":"intj","s":[["no","nay","nope"],["not"]],"b":[6,4],"ew":94}
+{"w":"el","pos":"article","s":[["the"]],"b":[18],"ew":27,"pt":1}
+{"w":"ese","pos":"pron","s":[["that"]],"b":[15],"ew":19,"pt":1}
+{"w":"ese","pos":"adj","s":[["that"]],"b":[15],"ew":19,"pt":1}
+{"w":"como","pos":"verb","s":[["how","like","as"]],"b":[5],"ew":12,"pt":1}
+{"w":"todo","pos":"adj","s":[["all"],["everything"]],"b":[15,1],"ew":21,"pt":1}
+{"w":"todo","pos":"pron","s":[["all"],["everything"]],"b":[15,1],"ew":21,"pt":1}
+{"w":"todo","pos":"noun","s":[["all"],["everything"]],"b":[15,1],"ew":21,"pt":1}
+{"w":"todo","pos":"adv","s":[["all"],["everything"]],"b":[15,1],"ew":21,"pt":1}
+{"w":"en","pos":"prep","s":[["into"],["in"],["at"]],"b":[3,1,1],"ew":55}
+{"w":"muy","pos":"adv","s":[["very"]],"b":[17],"ew":23,"pt":1}
+{"w":"otro","pos":"adj","s":[["other","another"]],"b":[4],"ew":30}
+{"w":"otro","pos":"pron","s":[["other","another"]],"b":[4],"ew":30}
+{"w":"sin","pos":"prep","s":[["without","sans"]],"b":[17],"ew":21,"pt":1}
+{"w":"entrar","pos":"verb","s":[["go in"]],"b":[7],"ew":11,"pt":1}
+{"w":"entrar","pos":"verb","s":[["go in"]],"b":[7],"ew":11,"pt":1}
+{"w":"los","pos":"article","s":[["the"],["them"]],"b":[2,1],"ew":4,"pt":1}
+{"w":"los","pos":"pron","s":[["the"],["them"]],"b":[2,1],"ew":4,"pt":1}
+{"w":"x","pos":"character","s":[["x"]],"b":[2],"ew":2,"pt":1}
+{"w":"desde","pos":"prep","s":[["from"]],"b":[11],"ew":19,"pt":1}
+{"w":"lo","pos":"article","s":[["the","that which is"],["that","him","it"]],"b":[2,2],"ew":8,"pt":1}
+{"w":"lo","pos":"pron","s":[["the","that which is"],["that","him","it"]],"b":[2,2],"ew":8,"pt":1}
+{"w":"vapor","pos":"noun","s":[["vapor","vapour","steam"],["steamboat"]],"b":[48,1],"ew":57,"pt":1}
+{"w":"sobre","pos":"prep","s":[["above"],["envelope"]],"b":[7,3],"ew":14,"pt":1}
+{"w":"sobre","pos":"noun","s":[["above"],["envelope"]],"b":[7,3],"ew":14,"pt":1}
+{"w":"entre","pos":"prep","s":[["between","among"]],"b":[4],"ew":13,"pt":1}
+{"w":"donde","pos":"adv","s":[["where"]],"b":[4],"ew":26}
+{"w":"donde","pos":"prep","s":[["where"]],"b":[4],"ew":26}
+{"w":"por","pos":"prep","s":[["by","for"]],"b":[9],"ew":22,"pt":1}
+{"w":"cada","pos":"pron","s":[["each"]],"b":[9],"ew":10,"pt":1}
+{"w":"su","pos":"adj","s":[["his","her","its","their"],["your"]],"b":[6,5],"ew":31,"pt":1}
+{"w":"usar","pos":"verb","s":[["use"]],"b":[1],"ew":4}
+{"w":"usar","pos":"verb","s":[["use"]],"b":[1],"ew":4}
+{"w":"producir","pos":"verb","s":[["produce"]],"b":[10],"ew":25,"pt":1}
+{"w":"aquel","pos":"pron","s":[["that"]],"b":[11],"ew":13,"pt":1}
+{"w":"aquel","pos":"adj","s":[["that"]],"b":[11],"ew":13,"pt":1}
+{"w":"aquel","pos":"noun","s":[["that"]],"b":[11],"ew":13,"pt":1}
+{"w":"máquina","pos":"noun","s":[["machine"]],"b":[14],"ew":14,"pt":1}
+{"w":"asir","pos":"verb","s":[["grasp"]],"b":[2],"ew":2,"pt":1}
+{"w":"asir","pos":"verb","s":[["grasp"]],"b":[2],"ew":2,"pt":1}
+{"w":"las","pos":"article","s":[["the"],["them"]],"b":[2,1],"ew":4,"pt":1}
+{"w":"las","pos":"pron","s":[["the"],["them"]],"b":[2,1],"ew":4,"pt":1}
+{"w":"forma","pos":"noun","s":[["form"]],"b":[6],"ew":6,"pt":1}
+{"w":"transporte","pos":"noun","s":[["transport"]],"b":[2],"ew":6,"pt":1}
+{"w":"construcción","pos":"noun","s":[["construction"]],"b":[12],"ew":14,"pt":1}
+{"w":"parir","pos":"verb","s":[["give birth"]],"b":[2],"ew":9}
+{"w":"fotosíntesis","pos":"noun","s":[["photosynthesis"]],"b":[6],"ew":6,"pt":1}
+{"w":"desarrollo","pos":"noun","s":[["development"]],"b":[3],"ew":7,"pt":1}
+{"w":"parte","pos":"noun","s":[["part"]],"b":[1],"ew":5}
+{"w":"parte","pos":"noun","s":[["part"]],"b":[1],"ew":5}
+{"w":"siglo","pos":"noun","s":[["century"]],"b":[9],"ew":13,"pt":1}
+{"w":"solo","pos":"adj","s":[["only"],["alone"]],"b":[3,2],"ew":9,"pt":1}
+{"w":"solo","pos":"noun","s":[["only"],["alone"]],"b":[3,2],"ew":9,"pt":1}
+{"w":"solo","pos":"adv","s":[["only"]],"b":[2],"ew":3,"pt":1}
+{"w":"primero","pos":"num","s":[["first"]],"b":[1],"ew":28}
+{"w":"primero","pos":"adv","s":[["first"]],"b":[1],"ew":28}
+{"w":"editar","pos":"verb","s":[["edit"]],"b":[1],"ew":6}
+{"w":"comentario","pos":"noun","s":[["comment"]],"b":[8],"ew":8,"pt":1}
+{"w":"población","pos":"noun","s":[["population"]],"b":[1],"ew":62}
+{"w":"proceso","pos":"noun","s":[["process"]],"b":[3],"ew":4,"pt":1}
+{"w":"Bretaña","pos":"name","s":[["Brittany"]],"b":[6],"ew":6,"pt":1}
+{"w":"clorofila","pos":"noun","s":[["chlorophyll"]],"b":[3],"ew":3,"pt":1}
+{"w":"O","pos":"character","s":[["o"]],"b":[4],"ew":4,"pt":1}
+{"w":"medio","pos":"adj","s":[["half"],["way"],["average","standard","generic"],["channel","media"],["middle","mid"]],"b":[5,3,3,2,1],"ew":28,"pt":1}
+{"w":"medio","pos":"noun","s":[["half"],["way"],["average","standard","generic"],["channel","media"],["middle","mid"]],"b":[5,3,3,2,1],"ew":28,"pt":1}
+{"w":"medio","pos":"adv","s":[["half"],["way"],["average","standard","generic"],["channel","media"],["middle","mid"]],"b":[5,3,3,2,1],"ew":28,"pt":1}
+{"w":"principal","pos":"adj","s":[["principal"]],"b":[1],"ew":3}
+{"w":"principal","pos":"noun","s":[["principal"]],"b":[1],"ew":3}
+{"w":"principal","pos":"noun","s":[["principal"]],"b":[1],"ew":3}
+{"w":"industria","pos":"noun","s":[["industry"]],"b":[4],"ew":4,"pt":1}
+{"w":"industrial","pos":"adj","s":[["industrial"]],"b":[31],"ew":45,"pt":1}
+{"w":"vez","pos":"noun","s":[["time"]],"b":[16],"ew":23,"pt":1}
+{"w":"ejemplo","pos":"noun","s":[["example"]],"b":[11],"ew":13,"pt":1}
+{"w":"formar","pos":"verb","s":[["form","shape"]],"b":[9],"ew":10,"pt":1}
+{"w":"formar","pos":"verb","s":[["form","shape"]],"b":[9],"ew":10,"pt":1}
+{"w":"mientras","pos":"adv","s":[["while"]],"b":[1],"ew":2,"pt":1}
+{"w":"mientras","pos":"conj","s":[["while"]],"b":[1],"ew":2,"pt":1}
+{"w":"esa","pos":"pron","s":[["that"]],"b":[6],"ew":7,"pt":1}
+{"w":"producción","pos":"noun","s":[["production"]],"b":[9],"ew":11,"pt":1}
+{"w":"pigmento","pos":"noun","s":[["pigment"]],"b":[9],"ew":9,"pt":1}
+{"w":"dióxido","pos":"noun","s":[["dioxide"]],"b":[1],"ew":1,"pt":1}

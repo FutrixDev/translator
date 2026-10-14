@@ -27,11 +27,31 @@ is the cross-batch v1 contract; `check.py` verifies every rule below on every pa
 - Heads are written in the source script; a zh source is folded to Simplified (the
   Traditional spellings go to `f`, D-578). A zh-TW target pack holds its glosses converted by
   OpenCC s2twp.
-- Record order follows dataset priority (`common.pair_files`): CC-CEDICT (zh→en), JMdict
-  (ja→en), the kaikki gloss slice, then kaikki translation tables. No pair goes through a
-  third language.
+- Record order (`entries.Builder.order_records`, D-614 R6/R8/R9): content records first,
+  then minor ones (a letter, unit, abbreviation or symbol sense), then meta ones (a zh→en
+  CC-CEDICT entry that is only cross-references, "surname …", "variant of …", "abbr. for …",
+  or a proper name with capitalised pinyin). Within a kind, dataset priority
+  (`common.pair_files`: CC-CEDICT for zh→en, JMdict for ja→en, the kaikki gloss slice, then
+  kaikki translation tables), then the dataset's own order. No pair goes through a third
+  language.
+- Translation tables are read widest first: the table most languages translate is the word's
+  main sense, then sense-level tables before the entry-level ones of older dumps, then sense
+  order. A table word is the target's standard language only (zh: Mandarin, no Cantonese,
+  Min, Wu, Hakka, Gan or Dungan, no Cyrillic; de: no Alemannic or Bavarian), never a sentence
+  fragment, and a prefix or suffix only under a prefix or suffix head.
+- zh→en: one record per CC-CEDICT entry, its content glosses before its meta glosses. A
+  polyphone's entries (要 yào / yāo) are ordered by how many content glosses each has, most
+  first. A cross-reference inside a gloss, `Traditional|Simplified[pin1 yin1]` or
+  `Word[pin1 yin1]`, is written as the Simplified word alone: `abbr. for 書經|书经[Shu1 jing1]`
+  becomes `abbr. for 书经`.
+- A weak head (all its records minor, or all reverse lookups, or, from an English source,
+  no content translation-table record) that is a plain inflected form of another head leaves
+  `e` for `f` (`children` → child, `is` → be).
 - en→zh adds the CC-CEDICT reverse lookup: an English gloss that names exactly one
   Simplified head becomes a record of that head under the English word (`origin: cedict`).
+  Only a short plain gloss (at most 3 words, a leading "to " dropped) is a lookup key: one
+  with a digit, `( / ; , :`, a classifier, a cross-reference, "surname" or "abbr" is a
+  note, not a word (`entries.REVERSE_REJECT`).
 
 ### Readings (design §2, D-487)
 

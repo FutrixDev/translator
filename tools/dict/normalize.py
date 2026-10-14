@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 -I
+#!/usr/bin/env -S python3 -I
 """Normalize the downloaded datasets into the line-per-record shapes pairs.py reads.
 
 Usage: python3 -I tools/dict/normalize.py <data-dir> <norm-dir> [--jobs N]
@@ -9,11 +9,14 @@ files run in parallel, largest first. Output (all UTF-8, one JSON object per lin
 
   kaikki/<s>-<ed>.jsonl  kaikki edition <ed>, words of language <s>, glossed in <ed>:
                          {w, pos, g:[gloss], lo:[lemma], ex:[[text, translation]],
-                          fm:[[form, [tags]]], ipa:[[label, ipa]], r:kana|null}
+                          fm:[[form, [tags]]], ipa:[[label, ipa]], r:kana|null, mn?:1, lt?:1}
+                         (kaikki_record: form-of senses -> lo, minor glosses last)
   kaikki/<s>-<s>.jsonl   own edition (and en-en), slim: {w, pos, fm, lo, ipa}; only for the
                          Latin-script sources whose f table and readings need it
-  tr/<s>-<t>.jsonl       translation tables of <s> words into <t>, one list per sense:
-                         {w, pos, s:[[word, ...], ...]}
+  tr/<s>-<t>.jsonl       translation tables of <s> words into <t>, one list per table, widest
+                         first (kaikki_senses_tr): {w, pos, s:[[word, ...], ...],
+                         b:[languages per table], ew:items of the whole entry,
+                          mn?:[indices of minor tables]}
   cedict.jsonl           {s, t, p (pinyin with tone marks), g:[gloss]}
   jmdict.jsonl           {k:[keb], r:[reb], nf:int|null, s:[{p:[pos code], m:[misc code], g:[gloss]}]}
   tatoeba/<a>-<b>.tsv    idA, textA, idB, textB for every Tatoeba link of the pair (a < b)
@@ -91,23 +94,37 @@ def kaikki_forms(e):
 
 
 def kaikki_record(e, ed, slim):
-    """One normalized record of a kaikki entry, or None when it carries nothing usable."""
+    """One normalized record of a kaikki entry, or None when it carries nothing usable.
+
+    A form-of or alt-of sense (kaikki `form_of`/`alt_of`, or a gloss that explains a form:
+    common.form_of_lemma) is no gloss: its lemma goes into `lo` and `f` maps the word to it
+    (D-614 R8). Letter, unit and abbreviation glosses (common.minor_sense) come after the
+    others, and `mn` is 1 when they are all the record has. `lt` is 1 when a sense was found
+    to be a form by its gloss text alone: the spike took that gloss as content and counted
+    the word as a head (common.heads_count)."""
     w = e.get('word')
     if not w or not isinstance(w, str):
         return None
-    glosses, lemma_of, ex = [], [], []
+    glosses, minor, lemma_of, ex = [], [], [], []
+    text_form_of = False
     for sense in e.get('senses') or []:
-        tags = set(sense.get('tags') or [])
         fo = sense.get('form_of') or sense.get('alt_of') or []
         if fo:
             lemma_of.extend(x.get('word') for x in fo if x.get('word'))
-            if 'form-of' in tags or 'alt-of' in tags:
-                continue
+            continue
         if slim:
             continue
         gl = sense.get('glosses') or sense.get('raw_glosses') or []
-        if gl:
-            glosses.append(gl[-1] if len(gl) > 1 else gl[0])
+        if not gl:
+            continue
+        g = gl[-1] if len(gl) > 1 else gl[0]
+        lemma = C.form_of_lemma(g, ed)
+        if lemma is not None:
+            text_form_of = True
+            if lemma:
+                lemma_of.append(lemma)
+            continue
+        (minor if C.minor_sense(sense) else glosses).append(g)
         for x in sense.get('examples') or []:
             text = x.get('text')
             # English edition: the translation is English ('english' in older dumps); every
@@ -126,28 +143,123 @@ def kaikki_record(e, ed, slim):
         if {'hiragana', 'katakana', 'kana'} & tags:
             reading = x.get('form')
             break
-    rec.update(g=glosses, ex=ex, r=reading)
-    return rec if (glosses or lemma_of) else None
+    rec.update(g=glosses + minor, ex=ex, r=reading)
+    if minor and not glosses:
+        rec['mn'] = 1
+    if text_form_of:
+        rec['lt'] = 1
+    return rec if (rec['g'] or lemma_of) else None
+
+
+# A translation-table word that is a sentence or a note, not a translation (D-614 R8): it
+# ends like a sentence or is a "a/b" fragment (zh writes "Traditional /Simplified", which
+# entries.tr_word splits). The sentence test applies to a one-word head only: a phrase or a
+# proverb ("fall on deaf ears", "where are we") is translated by a phrase or a sentence
+# ("tomber dans l'oreille d'un sourd"). Length alone is no test: a one-word head may need a
+# long translation (Grenzpolizist: "agent de la police des frontières").
+TR_SENTENCE = re.compile(r'[.!?。！？]$')
+# A table some editor filled with an example sentence cut into items (would: "ob der Bus
+# diesmal zu spät käme.", "Выключите" / "пожалуйста" / "телевизор.", "¿Podría usted ...").
+# One such piece spoils every word of that language in that table. "!" is left out
+# ("Hallo!" is a translation of hello), and so is a short dotted token ("usw.").
+TR_PIECE = re.compile(r'^[¿¡]|\S\s+\S.*[.?。？]$|[^\W\d_]{5,}[.。]$')
+# The same item of three or more words under three or more languages is the English
+# example the editor left in the table ("We sat on the bench" under fr, de, ru, es, pt).
+TR_SHARED_WORDS = 3
+TR_SHARED_CODES = 3
+# An English usage note in a non-English column ("future tense", "colloquial or regional
+# usage", "present tense form is often used"); only checked on words of two or more tokens.
+TR_NOTE = re.compile(r'\b(?:tense|used|colloquial|equivalent|expressed|literally)\b')
+
+
+def tr_item_word(x, t, phrase, affix):
+    """The word of one translation item into target t, or None when it is not one. `phrase`:
+    the head is more than one word (comment above); `affix`: the head is a prefix or suffix."""
+    word = x.get('word')
+    if not word or not isinstance(word, str):
+        return None
+    word = ' '.join(word.split())
+    if not phrase and TR_SENTENCE.search(word):
+        return None
+    if ' ' in word and t != 'en' and TR_NOTE.search(word):
+        return None
+    if '/' in (word.replace(' /', '', 1) if t == 'zh' else word):
+        return None
+    # The target's standard language only (R7: Mandarin for zh; Alemannic and Bavarian are
+    # not German), and no stray Cyrillic (Dungan) word under zh.
+    tags = list(x.get('tags') or []) + list(x.get('raw_tags') or [])
+    if C.other_variety(t, tags, x.get('lang')) or (t == 'zh' and C.CYRILLIC.search(word)):
+        return None
+    # A suffix or prefix translates only a suffix or prefix (fr will: "-ra", "-rons").
+    if not affix and (word[:1] == '-' or word[-1:] == '-'):
+        return None
+    return word
 
 
 def kaikki_senses_tr(e, code_to_t):
-    """{t: [[words of one sense], ...]} from entry-level and per-sense translation lists."""
-    pools = [e.get('translations') or []]
-    for sense in e.get('senses') or []:
+    """({t: (senses, breadth, minor, primary)}, weight) from the entry's translation tables:
+    senses is [[word, ...]] per table, breadth the number of languages each table translates
+    into, minor the indices of letter/unit/abbreviation tables, primary whether t has words
+    for the entry's widest non-minor table; weight is the number of translation items of the
+    whole entry, every language and table counted.
+
+    Tables are ordered by how many languages translate them (D-614 R6: the widest table is
+    the word's main sense; kaikki attaches tables to senses unevenly, e.g. dog's "male
+    canine" sense precedes the 683-language "animal" table), then sense-level before the
+    entry-level tables of older dumps, then sense order. Minor tables go last. The weight
+    orders a word's entries (parts of speech) against each other in entries.read_tr: need
+    has 227 verb items and 175 noun items, so the verb comes first. Primary goes before the
+    weight there (D-614 R6): will's verb entry outweighs its noun, but its widest table is
+    the modal one, which has no Japanese, Russian or Portuguese row, and what those targets
+    have of the verb is the rare "to wish"."""
+    groups = {}   # key -> (minor, top-level, sense index, codes, {t: [words]}, {spoilt t})
+    weight = 0
+    head = str(e.get('word') or '')
+    phrase = len(head.split()) > 1
+    affix = head[:1] == '-' or head[-1:] == '-'
+    shared = {}   # item of TR_SHARED_WORDS+ words -> the language codes it is listed under
+    pools = [(-1, None, e.get('translations') or [])]
+    for i, sense in enumerate(e.get('senses') or []):
         if sense.get('translations'):
-            pools.append(sense['translations'])
-    by_sense = {}
-    for i, items in enumerate(pools):
+            pools.append((i, sense, sense['translations']))
+    for i, sense, items in pools:
         for x in items:
-            t = code_to_t.get(x.get('lang_code') or x.get('code'))
-            word = x.get('word')
-            if not t or not word or not isinstance(word, str):
+            weight += 1
+            label = x.get('sense') or str(x.get('sense_index') or '')
+            key = (i, label)
+            g = groups.get(key)
+            if g is None:
+                minor = C.minor_sense(sense if sense is not None else {'glosses': [label]})
+                g = groups[key] = (minor, i < 0, i, set(), {}, set())
+            code = x.get('lang_code') or x.get('code')
+            g[3].add(code)
+            raw = ' '.join(x['word'].split()) if isinstance(x.get('word'), str) else ''
+            if len(raw.split()) >= TR_SHARED_WORDS:
+                shared.setdefault(raw, set()).add(code)
+            t = code_to_t.get(code)
+            if t and not phrase and TR_PIECE.search(raw):
+                g[5].add(t)
+            word = tr_item_word(x, t, phrase, affix) if t else None
+            if word:
+                words = g[4].setdefault(t, [])
+                if word not in words:
+                    words.append(word)
+    order = sorted(groups.values(), key=lambda g: (g[0], -len(g[3]), g[1], g[2]))
+    widest = max((len(g[3]) for g in order if not g[0]), default=0)
+    out = {}
+    for minor, _top, _i, codes, by_t, spoilt in order:
+        for t, words in by_t.items():
+            words = [w for w in words if len(shared.get(w, ())) < TR_SHARED_CODES]
+            if t in spoilt or not words:
                 continue
-            key = (i, x.get('sense') or str(x.get('sense_index') or ''))
-            words = by_sense.setdefault(t, {}).setdefault(key, [])
-            if word not in words:
-                words.append(word)
-    return {t: list(senses.values()) for t, senses in by_sense.items()}
+            senses, breadth, mn, primary = out.setdefault(t, ([], [], [], [False]))
+            if minor:
+                mn.append(len(senses))
+            elif len(codes) == widest:
+                primary[0] = True
+            senses.append(words)
+            breadth.append(len(codes))
+    return {t: (s, b, mn, p[0]) for t, (s, b, mn, p) in out.items()}, weight
 
 
 def job_kaikki(path, norm, s, ed, gloss_slice, fan_targets, slim_own):
@@ -164,13 +276,15 @@ def job_kaikki(path, norm, s, ed, gloss_slice, fan_targets, slim_own):
             counts[rel] = 0
         return outs[rel]
     code_to_t = {code: t for t in fan_targets for code in C.tr_codes(t)}
+    skipped = 0      # lines that are not a JSON object (D-614 L1 N4: counted, not silent)
     with gzip.open(path, 'rt', encoding='utf-8') as f:
         for line in f:
             try:
                 e = json.loads(line)
             except ValueError:
-                continue
+                e = None
             if not isinstance(e, dict):
+                skipped += 1
                 continue
             if gloss_slice:
                 rec = kaikki_record(e, ed, slim=False)
@@ -183,12 +297,20 @@ def job_kaikki(path, norm, s, ed, gloss_slice, fan_targets, slim_own):
                     dump(out(f'kaikki/{s}-{s}.jsonl'), rec)
                     counts[f'kaikki/{s}-{s}.jsonl'] += 1
             if code_to_t and e.get('word'):
-                for t, senses in kaikki_senses_tr(e, code_to_t).items():
+                by_t, weight = kaikki_senses_tr(e, code_to_t)
+                for t, (senses, breadth, mn, primary) in by_t.items():
                     rel = f'tr/{s}-{t}.jsonl'
-                    dump(out(rel), {'w': e['word'], 'pos': e.get('pos') or '', 's': senses})
+                    rec = {'w': e['word'], 'pos': e.get('pos') or '', 's': senses,
+                           'b': breadth, 'ew': weight}
+                    if mn:
+                        rec['mn'] = mn
+                    if primary:
+                        rec['pt'] = 1
+                    dump(out(rel), rec)
                     counts[rel] += 1
     for fh in outs.values():
         fh.close()
+    counts['skipped:not-json'] = skipped
     return os.path.basename(path), counts, round(time.time() - t0, 1)
 
 
@@ -229,7 +351,7 @@ def pinyin_marks(num):
 
 
 def job_cedict(path, norm):
-    t0, n = time.time(), 0
+    t0, n, skipped = time.time(), 0, 0
     with gzip.open(path, 'rt', encoding='utf-8') as f, \
             open(os.path.join(norm, 'cedict.jsonl'), 'w', encoding='utf-8') as o:
         for line in f:
@@ -237,11 +359,12 @@ def job_cedict(path, norm):
                 continue
             m = CEDICT_LINE.match(line)
             if not m:
+                skipped += 1
                 continue
             trad, simp, py, gl = m.groups()
             dump(o, {'s': simp, 't': trad, 'p': pinyin_marks(py), 'g': [g for g in gl.split('/') if g]})
             n += 1
-    return 'cedict', {'cedict.jsonl': n}, round(time.time() - t0, 1)
+    return 'cedict', {'cedict.jsonl': n, 'skipped:unparsed': skipped}, round(time.time() - t0, 1)
 
 
 # ---------------- JMdict ----------------
@@ -314,7 +437,7 @@ def find_links(data, a, b):
 
 
 def job_tatoeba(data, norm):
-    t0 = time.time()
+    t0, bad = time.time(), 0
     links, want = {}, {}
     for a, b in tatoeba_pairs():
         p, x, y = find_links(data, a, b)
@@ -324,6 +447,8 @@ def job_tatoeba(data, norm):
                 parts = line.rstrip('\n').split('\t')
                 if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
                     rows.append((int(parts[0]), int(parts[1])))
+                else:
+                    bad += 1
         # Written under the sorted pair name (examples.tatoeba_path), whichever way round
         # Tatoeba names its links file (eng-deu, fra-deu, cmn-fra ...).
         if x != a:
@@ -354,6 +479,7 @@ def job_tatoeba(data, norm):
                     o.write(f'{i}\t{tx}\t{j}\t{ty}\n')
                     n += 1
         counts[rel] = n
+    counts['skipped:bad-link'] = bad
     return 'tatoeba', counts, round(time.time() - t0, 1)
 
 

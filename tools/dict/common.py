@@ -65,6 +65,15 @@ HEADS_FLOOR = 0.95
 # the record count (matrix.csv glossed_records: de-fr 139359, pt-fr 39241) the floor
 # compares the pack's record count (sum of len(e[h])), not its heads.
 HEADS_UNIT = {'de-fr': 'records', 'pt-fr': 'records'}
+# Sources whose `f` takes kaikki inflection tables and form-of entries (formtab).
+FORM_SOURCES = ('en', 'es', 'fr', 'de', 'pt', 'ru', 'ko')
+# Their packs count entries (D-614 R8): the spike took a gloss that explains a form
+# ("cemeteries: cemeteryの複数形") as content and counted the word as a head; R8 reads such a
+# gloss as form-of and moves the word to `f` (design line 167). It still answers a lookup, so
+# a word of the pack's gloss slices that the gloss-text rule made form-of (`lt`) and that `f`
+# resolves counts beside the heads of `e`. A word kaikki itself marks form_of was `f` in the
+# spike too and is not counted, and one `f` cannot take (a multiword plural, a lemma the pack
+# lacks) does not count, so a real loss still shows against the floor.
 # Brotli budget: §4.1 brotli bytes + 10%. Packs §4.1 did not measure use its stated bound
 # "≤ 2 MB br" (en→zh without ECDICT: "≈ 2 MB").
 # Deviation (report.md, needs a ruling): §4.1 measured `e` alone (spike
@@ -96,10 +105,30 @@ def br_ceiling(name):
     return br_budget(name) + F_ALLOWANCE
 
 
-def heads_count(name, e):
-    """What HEADS_BASE[name] counts in `e`: heads, or records (HEADS_UNIT)."""
-    if HEADS_UNIT.get(name) == 'records':
+def heads_unit(name):
+    """What HEADS_BASE[name] is compared with: 'records', 'entries' or 'heads'."""
+    if name in HEADS_UNIT:
+        return HEADS_UNIT[name]
+    return 'entries' if iso(split_pack(name)[0]) in FORM_SOURCES else 'heads'
+
+
+def form_of_entries(norm, name):
+    """The words of the pack's gloss slices that the gloss-text form-of rule moved out of
+    `e` (normalize `lt`), folded as `f` keys are (formtab.fold_key)."""
+    src, tgt = split_pack(name)
+    s = iso(src)
+    return {fold_word(r['w'], s) for path, kind in pair_files(norm, src, tgt) if kind == 'gloss'
+            for r in read_jsonl(path) if r['lo'] and r.get('lt')}
+
+
+def heads_count(name, e, f, norm):
+    """The pack's count in the unit of heads_unit(name)."""
+    unit = heads_unit(name)
+    if unit == 'records':
         return sum(len(v) for v in e.values())
+    if unit == 'entries':
+        moved = form_of_entries(norm, name)
+        return len(e) + sum(1 for k in f if k in moved and k not in e)
     return len(e)
 
 
@@ -125,8 +154,10 @@ MAX_FORMS_M = 8
 GLOSS_CHARS = 120
 EX_SRC_CHARS = 80
 
+# Translation-table language codes per target. Chinese is Mandarin only (D-614 R7): yue, nan,
+# hak, wuu, gan, dng and the other Sinitic codes are not aliases.
 TR_ALIASES = {
-    'zh': ('zh', 'cmn', 'zh-Hans', 'zh-Hant', 'zh-cn', 'zh-tw', 'zh-hans', 'zh-hant', 'yue',
+    'zh': ('zh', 'cmn', 'zh-Hans', 'zh-Hant', 'zh-cn', 'zh-tw', 'zh-hans', 'zh-hant',
            'zh-CN', 'zh-TW'),
     'pt': ('pt', 'pt-BR', 'pt-br'),
 }
@@ -151,14 +182,17 @@ CJK_LANGS = ('zh', 'ja', 'ko')
 def pair_files(norm, src, tgt):
     """Normalized datasets for one pack, in priority order: [(path, kind)], kind is 'gloss'
     (records carry glosses in the target language) or 'tr' (translation table slice).
-    Mirrors spike hitrate.pair_files minus ECDICT (D-566) and the empty cmn slice."""
+    Mirrors spike hitrate.pair_files minus ECDICT (D-566) and the empty cmn slice. Every
+    slice listed here is expected: a missing one raises instead of building a smaller pack
+    (D-614 L1 N4)."""
     s, t = iso(src), iso(tgt)
     out = []
 
     def add(rel, kind):
         p = os.path.join(norm, rel)
-        if os.path.exists(p):
-            out.append((p, kind))
+        if not os.path.exists(p):
+            raise FileNotFoundError(f'{pack_name(src, tgt)} expects the normalized slice {rel}')
+        out.append((p, kind))
     if s == 'zh' and t == 'en':
         add('cedict.jsonl', 'cedict')
     if s == 'ja' and t == 'en':
@@ -172,6 +206,169 @@ def pair_files(norm, src, tgt):
     if s != 'en':
         add(f'tr/{s}-{t}.jsonl', 'tr')
     return out
+
+
+# ---------------- sense classification (D-614 R7, R8, R9; check.py G2-G4) ----------------
+# Chinese translations that are not Mandarin although their code is zh/cmn: kaikki tags and
+# language names of the dialect (R7). G2 checks the shown gloss for the Cantonese/Min marker
+# characters as well.
+ZH_DIALECT_TAGS = frozenset({
+    'Cantonese', 'Hokkien', 'Teochew', 'Hakka', 'Wu', 'Gan', 'Xiang', 'Jin', 'Min', 'Min-Nan',
+    'Min-Bei', 'Min-Dong', 'Puxian-Min', 'Hainanese', 'Shanghainese', 'Taishanese', 'Dungan',
+    'Xiamen', 'Kinmen', 'Zhangzhou', 'Quanzhou', 'Sichuanese', 'Guangdong'})
+ZH_DIALECT_LANG = re.compile(r'\b(Cantonese|Hokkien|Teochew|Hakka|Wu|Gan|Xiang|Jin|Min|'
+                             r'Sichuanese|Dungan|Taishanese|Shanghainese|Hainanese)\b')
+ZH_DIALECT_CHARS = '佢嘅喺睇畀嚟冇哋啲咗'
+CYRILLIC = re.compile('[\u0400-\u04ff]')
+
+
+# The same rule for the other targets: en-de child listed "Chind" (tag Alemannic-German) and
+# "kindl" (lang "Bavarian German") beside Kind, all under code de. A dialect tag, or a language
+# name that names the target's language but is not it ("Bavarian German", "Louisiana French",
+# "Old Russian", "Middle Korean", "Classical Chinese"), marks another variety; the standard
+# regional varieties below stay. Regional tags (Austria, Brazil, Quebec, Mexico) stay too: they
+# mark a standard variety's regional word, which the pack keeps.
+DIALECT_TAGS = ZH_DIALECT_TAGS | frozenset({
+    'dialectal', 'Alemannic', 'Alemannic-German', 'Alsatian', 'Alsatian Alemannic German',
+    'Bavarian', 'Swiss-German', 'Palatine', 'Rhine-Franconian', 'Silesian East Central German',
+    'Louisiana', 'Kansai', 'Kagoshima', 'Kyūshū', 'Chūgoku', 'Gangwon', 'Gyeongsang', 'Jeolla',
+    'Yanbian'})
+STANDARD_VARIETIES = frozenset({
+    'Chinese', 'Chinese Mandarin', 'Mandarin', 'Simplified Chinese', 'Traditional Chinese',
+    'Chinese Traditional', 'Austrian German', 'Canadian French', 'French Canadian',
+    'Brazilian Portuguese', 'Brazil Portuguese', 'European Portuguese'})
+
+
+def other_variety(t, tags, lang):
+    """Whether a translation item into target t belongs to another variety of t's language
+    (R7 for zh: not Mandarin). `lang` is the item's language name, English in the English
+    edition; another edition's names never contain the English one and are not judged."""
+    lang = lang or ''
+    if DIALECT_TAGS & set(tags):
+        return True
+    if t == 'zh' and ZH_DIALECT_LANG.search(lang):
+        return True
+    name = KAIKKI_EN_NAME.get(t)
+    return bool(name) and name in lang and lang not in STANDARD_VARIETIES and lang != name
+
+
+# A form-of gloss names its lemma and says which form this is ("plural of dog",
+# "Plural von Hund", "dogの複数形"). Such a sense is no record: the lemma goes into the
+# record's `lo` and `f` maps the form to it (R8, design line 167). One list per gloss
+# language; group `l` is the lemma when the pattern can capture it. check.py G3 reuses it.
+_L = r"[\"“«「『]?(?P<l>[^\W\d_][\w'’ -]*?)[\"”»」』]?"
+_TAIL = r"\s*(?:\([^()]*\))?\s*[.。]?$"
+# Japanese: the form is a grammar term ending in 形 (複数形, 過去形, 異形, 名詞形), a
+# participle, a comparative or a spelling; a bare 形 after any noun (夏の大三角形, 円形) is a
+# shape, not a form.
+_JA_FORM = r'(?:[数數去在称性異別略縮約詞帰格原語他化]形|分詞|比較級|最上級|綴り|変化|表記|異綴|別綴|格)'
+# Romance editions: the noun after "de" in "comparativo de igualdad", "tercera persona del
+# plural", "pluriel de majesté" is a grammar term, not a lemma.
+_NOT_TERM = (r'(?!(?:igualdad|superioridad|inferioridad|plural|singular|pluriel|singulier|'
+             r'majesté|modestie|politesse|supériorité|infériorité|égalité|igualdade|'
+             r'superioridade|inferioridade)\b)')
+_NOT_ART = r'(?!(?:an?|the) )'
+FORM_OF = {
+    # A bare "form of X" is a noun phrase ("form of government"), so `form` needs a
+    # qualifier; a lemma opening with an article is a description ("variant of a Chinese
+    # character"), not a word.
+    'en': [r'^(?:(?:an? |the )?(?:alternative|obsolete|archaic|dated|nonstandard|rare|eye '
+           r'dialect|informal|euphemistic|abbreviated|pronunciation) )*(?:spelling|variant|'
+           r'letter-case form)s? of ' + _NOT_ART + _L + _TAIL,
+           r'^(?:(?:an? |the )?(?:alternative|obsolete|archaic|dated|nonstandard|rare|eye '
+           r'dialect|informal|euphemistic|abbreviated|pronunciation) )+forms? of ' + _NOT_ART +
+           _L + _TAIL,
+           r'^(?:common )?misspelling of ' + _L + _TAIL,
+           r'^(?:(?:simple )?past tense|past participle|present participle|plural|'
+           r'(?:third-person )?singular|comparative|superlative|inflection|gerund|'
+           r'(?:simple past|past) (?:tense )?and past participle)(?: form)?'
+           r'(?: [\w-]+)*? of ' + _L + _TAIL],
+    'ja': [r'^(?:[（(][^（）()]*[）)])?' + _L + r'\s*の[^。、]{0,14}?' + _JA_FORM +
+           r'(?:[（(][^（）()]*[）)])?' + _TAIL,
+           r'^[（(]' + _L + r'\s*の[^（）()]{0,20}?' + _JA_FORM + r'[）)]'],
+    'ko': [_L + r'\s*의\s*(?:과거분사|과거형|과거|복수형|복수|비교급|최상급|현재분사|'
+           r'3인칭 단수|삼인칭 단수)[^.]{0,8}' + _TAIL],
+    'zh': [_L + r'\s*的(?:复数|複數|过去式|過去式|过去分词|過去分詞|现在分词|現在分詞|比较级|'
+           r'比較級|最高级|最高級|第三人称单数|第三人稱單數)[^。]{0,8}' + _TAIL,
+           # A usage note that only says which form this is: "(用于第三人称单数现在式) 是".
+           # It names no lemma; the form table (forms-en) supplies is -> be.
+           r'^[（(]用[於于][^（）()]*(?:人[稱称]|[過过]去|複數|复数|分[詞词]|現在式|现在式)'
+           r'[^（）()]*[）)](?P<l>)'],
+    'de': [r'^(?:Plural|Genitiv|Dativ|Akkusativ|Nominativ|Partizip (?:Perfekt|Präsens|I|II)|'
+           r'Präteritum|Komparativ|Superlativ|(?:alternative |veraltete )?Schreibweise|'
+           r'Variante|Nebenform|(?:\d\.|erste|zweite|dritte) Person[\w .]*?)'
+           r'[\w .,]* (?:von|des|der|zu) (?:dem |der |des )?(?:Substantivs |Verbs |'
+           r'Adjektivs |Wortes )?' + _L + _TAIL],
+    'es': [r'^(?:Tiempo pasado|Participio (?:presente|pasado)|Gerundio|Grafía (?:obsoleta|'
+           r'alternativa|arcaica)|Forma (?:alternativa|obsoleta)|Variante|Comparativo|'
+           r'Superlativo|Plural|(?:Primera|Segunda|Tercera) persona)[\w ,()]* (?:de|del)'
+           r'(?: verbo| sustantivo| adjetivo)?(?: \(to\))? ' + _NOT_TERM + _L + _TAIL],
+    'fr': [r'^(?:Pluriel|(?:Première|Deuxième|Troisième) personne|Participe (?:passé|'
+           r'présent)|(?:Ancienne )?(?:Variante|Graphie)|(?:Ancienne )?forme (?:alternative|'
+           r'ancienne|archaïque|vieillie|abrégée|courte|longue|conjuguée|fléchie|féminine|'
+           r'masculine|plurielle|du (?:verbe|nom|pluriel|féminin))|Comparatif|Superlatif|'
+           r'Féminin|Masculin)[\w ,()’\'-]* (?:de |d’|d\'|du )' + _NOT_TERM + _L + _TAIL],
+    'pt': [r'^(?:variante ortográfica|grafia (?:alternativa|antiga|obsoleta)|forma '
+           r'(?:alternativa|antiga)|gerúndio|particípio|plural|pretérito|(?:primeira|'
+           r'segunda|terceira) pessoa)[\w ,()-]* (?:de|do|da) ' + _NOT_TERM + _L + _TAIL],
+    # A bare "форма X" / "вариант X" is a noun phrase ("форма листа", "вариант Самсона");
+    # only "вариант написания" and the grammar abbreviations name a lemma.
+    'ru': [r'^(?:устар\. )?(?:вариант написания|мн\. ч\. от|превосх\. ст\. к(?: прил\.)?|'
+           r'сравн\. ст\. к(?: прил\.)?|то же, что) ' + _L + _TAIL],
+}
+FORM_OF = {lang: [re.compile(p, re.I) for p in ps] for lang, ps in FORM_OF.items()}
+# What a gloss may start with that is not part of it: wiki markup ("*hebe的复数形式",
+# ":Template:廢 ache的過去分詞") and stray punctuation (", variante de 叫 (jiào)"). The one
+# definition for form-of detection here and for entries.Builder.gloss, so a form-of gloss
+# cannot hide from normalize behind a prefix the shown gloss loses (D-614 G3).
+GLOSS_LEAD = re.compile(r'^(?:[\s,.;:!?、，。；：！？%)\]）】}>|/\\*#=+•]+|Template:\S*)+')
+
+
+def form_of_lemma(gloss, lang):
+    """The lemma a form-of gloss in language `lang` names; '' when the gloss is a form-of
+    explanation whose lemma could not be cut out; None when it is not one."""
+    gloss = GLOSS_LEAD.sub('', gloss.strip())
+    for p in FORM_OF.get(lang, ()):
+        m = p.match(gloss)
+        if m:
+            return (m.group('l') or '').strip()
+    return None
+
+
+# Letter, unit and abbreviation senses: they go after every other sense of the word (R8:
+# are 公亩, is ай, a 甲), and a word whose only senses are these yields to its `f` lemma.
+MINOR_TAGS = frozenset({'abbreviation', 'initialism', 'acronym', 'letter', 'symbol'})
+MINOR_TOPICS = frozenset({'units-of-measure', 'letter', 'letters', 'alphabet'})
+# Sense glosses that say "letter / unit / abbreviation" in each edition's language. Each
+# needs the explaining context (an ordinal, "of measure", "of"), since the bare word is
+# itself an ordinary gloss (en "unity" -> de "Einheit").
+MINOR_GLOSS = re.compile(
+    r'\b(?:letter of the|letter in the|unit of|abbreviation of|abbreviation for|initialism '
+    r'of|acronym of|symbol for|name of the (?:\w+ )*letter)\b|alphabet|alfabeto|abecedario|'
+    r'алфавит|アルファベット|字母|알파벳|lettre de l|'
+    r'unité de mesure|abréviation de|letra del (?:alfabeto|abecedario)|unidad de medida|'
+    r'abreviatura de|Buchstabe des|Maßeinheit|Abkürzung (?:von|für)|буква .{0,30}алфавита|'
+    r'единица измерения|сокращение от|letra do alfabeto|unidade de medida|abreviatura de|'
+    r'第[0-9０-９一二三四五六七八九十]+(?:字|文字|番目)|の単位|の略|第.{1,3}个字母|的单位|'
+    r'的單位|的缩写|的縮寫|[（(][^（）()]*(?:单位|單位|単位)|번째 (?:글자|문자)|의 단위|의 약어|'
+    r'도량형|제곱미터', re.I)
+
+
+def minor_sense(sense):
+    """Whether a kaikki sense is a letter, unit or abbreviation sense."""
+    if MINOR_TAGS & set(sense.get('tags') or ()):
+        return True
+    if MINOR_TOPICS & set(sense.get('topics') or ()):
+        return True
+    gl = sense.get('glosses') or sense.get('raw_glosses') or ['']
+    return bool(MINOR_GLOSS.search(gl[0]))
+
+
+# CC-CEDICT meta entries (R9, check.py G4): surnames, variants, bound forms and
+# abbreviations, which go after the content entries of the same head.
+CEDICT_META = re.compile(r'^(?:surname |(?:\(old\) |old |archaic |erroneous )?variant of |'
+                         r'used in |abbr\. for |see |also written |Japanese variant of |'
+                         r'\(archaic\) variant of )')
 
 
 # ---------------- word form (design §2.2, spike pairdata.word_form) ----------------
@@ -401,7 +598,9 @@ def dumps(obj):
 
 
 def read_samples(samples_dir, lang):
-    """[(token, count)] from tools/dict/samples/tokens.<lang>.tsv (header row first)."""
+    """[(token, count)] from <samples_dir>/tokens.<lang>.tsv (header row first).
+
+    samples_dir is build/dict/samples, copied there by build.sh from DICT_SAMPLES_DIR."""
     out = []
     with open(os.path.join(samples_dir, f'tokens.{lang}.tsv'), encoding='utf-8') as f:
         next(f)

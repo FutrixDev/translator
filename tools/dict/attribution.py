@@ -5,7 +5,9 @@ extraction date, the statement that the entries were selected, reordered and mer
 Tatoeba sentence id is looked up, and the full notices the MIT (ipa-dict), BSD (CMUdict) and
 Apache 2.0 (OpenCC) licences ask to travel with the data. The notice texts are kept verbatim in
 tools/dict/notices/ so a build never reads a licence out of the downloaded (untrusted) data.
+The extraction dates are sources.json's: each dataset's is the version of its files.
 """
+import json
 import os
 import shutil
 
@@ -13,7 +15,7 @@ import common as C
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOTICES = os.path.join(HERE, 'notices')
-EXTRACTED = '2026-10-13'
+SOURCES_JSON = os.path.join(HERE, 'sources.json')
 TATOEBA_SHOW = 'https://tatoeba.org/sentences/show/<id>'
 
 # What each dataset contributed, in the words ATTRIBUTION.txt uses.
@@ -36,8 +38,25 @@ NOTICE_FILE = {
 }
 
 
-def text(src, tgt, ver, used):
+def extracted(path=SOURCES_JSON):
+    """{dataset id: extraction date} from sources.json. A file whose licence is not its
+    dataset's v1 `sources[]` licence (common.SOURCES) is an error, so the two cannot drift."""
+    with open(path, encoding='utf-8') as f:
+        files = json.load(f)['files']
+    dates = {}
+    for r in files:
+        ds = r['dataset']
+        if r['license'] != C.SOURCES[ds]['license']:
+            raise ValueError(f"sources.json: {r['path']} is {r['license']!r}, "
+                             f"common.SOURCES[{ds!r}] says {C.SOURCES[ds]['license']!r}")
+        dates[ds] = max(dates.get(ds, ''), r['version'])
+    return dates
+
+
+def text(src, tgt, ver, used, dates=None):
     rows = C.sources_rows(used)
+    dates = dates or extracted()
+    when = max(dates[r['id']] for r in rows)
     out = [
         f'Blab Translation offline dictionary pack {C.pack_name(src, tgt)}, version {ver}',
         '',
@@ -45,7 +64,7 @@ def text(src, tgt, ver, used):
         'International licence (CC BY-SA 4.0); the full text is in LICENSE.txt.',
         '',
         'It is a derived work. Its entries were selected, filtered, reordered and merged from',
-        f'the datasets below, extracted on {EXTRACTED}; glosses were shortened, Chinese text was',
+        f'the datasets below, extracted on {when}; glosses were shortened, Chinese text was',
         'converted between Simplified and Traditional script, and inflected forms and readings',
         'were attached to the entries they belong to. No dataset was used unmodified.',
         '',
@@ -53,7 +72,7 @@ def text(src, tgt, ver, used):
     ]
     for r in rows:
         out += [f'- {r["name"]}', f'  {r["url"]}', f'  Licence: {r["license"]}',
-                f'  Extracted: {EXTRACTED}', f'  Used for: {ROLE[r["id"]]}']
+                f'  Extracted: {dates[r["id"]]}', f'  Used for: {ROLE[r["id"]]}']
     if 'tatoeba' in used:
         out += ['', 'Tatoeba sentences keep their ids: an example row carries the id of its source',
                 'sentence and of its translation, and either sentence (with its author and',

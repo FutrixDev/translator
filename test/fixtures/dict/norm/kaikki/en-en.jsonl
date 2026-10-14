@@ -1,15 +1,12 @@
 {"w":"A","pos":"character","fm":[],"lo":[],"ipa":[["UK","/eɪ̯/"],["","/æɪ/"]]}
 {"w":"may","pos":"verb","fm":[],"lo":[],"ipa":[["UK","/meɪ/"],["","/mæɪ/"]]}
-{"w":"October","pos":"name","fm":[],"lo":[],"ipa":[["UK","/ɒkˈtəʊ.bə/"],["US","/ɑkˈtoʊ.bəɹ/"]]}
 {"w":"product","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈpɹɒd.əkt/"],["US","/ˈpɹɑ.dəkt/"],["","/ˈpɹɒd.əkt/"]]}
 {"w":"head","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/hɛd/"],["","/hed/"]]}
 {"w":"about","pos":"prep","fm":[],"lo":[],"ipa":[["UK","/əˈbaʊ̯t/"],["","/əˈbɐʊ̯t/"]]}
 {"w":"above","pos":"prep","fm":[],"lo":[],"ipa":[["UK","/əˈbʌv/"],["","/əˈbʊv/"]]}
-{"w":"English","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/ˈɪŋ.(ɡ)lɪʃ/"],["US","/ˈɪŋ.(ɡ)lɪʃ/"],["","/ˈiŋ.(ɡ)lɪʃ/"]]}
 {"w":"the","pos":"article","fm":[],"lo":[],"ipa":[["","/ðə/"]]}
 {"w":"die","pos":"verb","fm":[],"lo":[],"ipa":[["","/daɪ/"],["UK","[däɪ̯]"]]}
 {"w":"in","pos":"prep","fm":[],"lo":[],"ipa":[["","/ən/"]]}
-{"w":"can","pos":"verb","fm":[],"lo":[],"ipa":[["UK","/kæn/"],["","/kæːn/"],["US","/kæn/"]]}
 {"w":"o","pos":"character","fm":[],"lo":[],"ipa":[["UK","/ˈəʊ/"],["US","/ˈoʊ/"]]}
 {"w":"acid","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/ˈæsɪd/"]]}
 {"w":"one","pos":"num","fm":[],"lo":[],"ipa":[["UK","/wʌn/"],["","/wɐn/"]]}
@@ -31,7 +28,6 @@
 {"w":"work","pos":"noun","fm":[],"lo":[],"ipa":[["","/wɜː(ɹ)k/"],["UK","/wɜːk/"],["US","/wɝk/"]]}
 {"w":"first","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/fɜːst/"],["","/feːst/"],["US","/fɚst/"]]}
 {"w":"time","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/taɪm/"],["","/təɪm/"]]}
-{"w":"Spain","pos":"name","fm":[],"lo":[],"ipa":[["UK","/speɪn/"],["","/spæɪn/"]]}
 {"w":"industrial","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/ɪnˈdʌs.tɹi.əl/"],["","/ɪnˈdɐs.tɹi.əl/"]]}
 {"w":"automatic","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/ˌɔː.təˈmæt.ɪk/"],["US","/ˌɔː.təˈmæt.ɪk/"],["","/ˌɑː.təˈmæt.ɪk/"]]}
 {"w":"access","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈæksɛs/"],["US","/ˈækˌsɛs/"]]}
@@ -39,7 +35,6 @@
 {"w":"yes","pos":"particle","fm":[],"lo":[],"ipa":[["","/jɛs/"]]}
 {"w":"stand","pos":"verb","fm":[],"lo":[],"ipa":[["UK","/ˈstænd/"],["","/ˈstand/"],["US","/ˈstænd/"]]}
 {"w":"plant","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/plɑːnt/"],["","/plɐːnt/"],["US","/plænt/"]]}
-{"w":"England","pos":"name","fm":[],"lo":[],"ipa":[["UK","/ˈɪŋ.ɡlənd/"],["US","/ˈɪŋ.ɡlənd/"],["","/ˈɪŋ.ɡlənd/"]]}
 {"w":"your","pos":"det","fm":[],"lo":[],"ipa":[["","/jɔː(ɹ)/"],["US","/jɔɹ/"]]}
 {"w":"yet","pos":"adv","fm":[],"lo":[],"ipa":[["UK","/jɛt/"],["","/jet/"]]}
 {"w":"age","pos":"noun","fm":[],"lo":[],"ipa":[["","/eɪd͡ʒ/"]]}
@@ -60,7 +55,6 @@
 {"w":"his","pos":"det","fm":[],"lo":[],"ipa":[["","/ɪz/ [ɪ̈z]"],["UK","/hɪz/"]]}
 {"w":"her","pos":"det","fm":[],"lo":[],"ipa":[["UK","/ˈhɜː/"],["","/hɛː/"],["US","/ˈhɝ/"]]}
 {"w":"action","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈækʃən̩/"],["US","/ˈækʃən/"]]}
-{"w":"Englishman","pos":"noun","fm":[],"lo":[],"ipa":[["","/ˈɪŋ.lɪʃ.mən/"]]}
 {"w":"all","pos":"det","fm":[],"lo":[],"ipa":[["UK","/ɔːl/"],["","/u(ɫ)/"],["US","/ɔl/"]]}
 {"w":"as","pos":"adv","fm":[],"lo":[],"ipa":[["","/əz/"]]}
 {"w":"east","pos":"noun","fm":[],"lo":[],"ipa":[["","/iːst/"],["UK","/ɪjst/"]]}
@@ -84,6 +78,7 @@
 {"w":"do","pos":"verb","fm":[],"lo":[],"ipa":[["","/də/"]]}
 {"w":"rain","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ɹeɪn/"],["","/ɹæɪn/"]]}
 {"w":"usage","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈjuːsɪd͡ʒ/"],["US","/ˈjusɪd͡ʒ/"],["","/ˈjʉːsɪd͡ʒ/"]]}
+{"w":"whether","pos":"conj","fm":[],"lo":[],"ipa":[["","/ˈwɛðə(ɹ)/"]]}
 {"w":"while","pos":"noun","fm":[],"lo":[],"ipa":[["","/ʍaɪl/"]]}
 {"w":"train","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈtɹeɪn/"],["","/ˈtɹæɪ̯n/"]]}
 {"w":"environment","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ɪnˈvaɪ.ɹə.mənt/"],["US","/ɪnˈvaɪ.ɚn.mənt/"]]}
@@ -133,7 +128,6 @@
 {"w":"someone","pos":"pron","fm":[],"lo":[],"ipa":[["UK","/ˈsʌmwʌn/"]]}
 {"w":"electron","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ɪˈlɛk.tɹɒn/"],["US","/ɪˈlɛk.tɹɑn/"]]}
 {"w":"energy","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈɛnəd͡ʒi/"],["US","/ˈɛnɚd͡ʒi/"],["","/ˈenəd͡ʒi/"]]}
-{"w":"Europe","pos":"name","fm":[],"lo":[],"ipa":[["UK","/ˈjʊə.ɹəp/"],["","/ˈjʉə.ɹəp/"],["US","/ˈjʊɚ.əp/"]]}
 {"w":"stop","pos":"verb","fm":[],"lo":[],"ipa":[["UK","/stɒp/"],["","/stɑp/"]]}
 {"w":"party","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈpɑːti/"],["US","/ˈpɑɹti/"],["","/ˈpɐːti/"]]}
 {"w":"objective","pos":"adj","fm":[],"lo":[],"ipa":[["UK","/ɒbˈd͡ʒɛk.tɪv/"],["US","/əbˈd͡ʒɛk.tɪv/"],["","/əbˈd͡ʒek.tɪv/"]]}
@@ -155,7 +149,6 @@
 {"w":"half","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈhɑːf/"],["","/ˈhaːf/"],["US","/ˈhæf/"]]}
 {"w":"well","pos":"adv","fm":[],"lo":[],"ipa":[["UK","/ˈwɛl/"],["","/ˈwɛʊ̯/"]]}
 {"w":"town","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈtaʊ̯n/"],["","/ˈtæʊ̯n/"]]}
-{"w":"Brittany","pos":"name","fm":[],"lo":[],"ipa":[["UK","/ˈbɹɪ.tə.ni/"],["US","[ˈbɹɪʔn̩.ni]"]]}
 {"w":"steam","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/stiːm/"],["US","/stiːm/"]]}
 {"w":"whence","pos":"adv","fm":[],"lo":[],"ipa":[["","/ʍɛns/"]]}
 {"w":"produce","pos":"verb","fm":[],"lo":[],"ipa":[["","/pɹəˈd͡ʒuːs/"]]}
@@ -170,6 +163,7 @@
 {"w":"grandee","pos":"noun","fm":[],"lo":[],"ipa":[["","/ɡɹænˈdiː/"]]}
 {"w":"publish","pos":"verb","fm":[],"lo":[],"ipa":[["","/ˈpʌblɪʃ/"]]}
 {"w":"lumen","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈluːmən/"],["US","/ˈlumən/"]]}
+{"w":"turn","pos":"verb","fm":[],"lo":[],"ipa":[["UK","/tɜːn/"],["","/tɔːn/"],["US","/tɜɹn/"]]}
 {"w":"trial","pos":"noun","fm":[],"lo":[],"ipa":[["","/ˈtɹaɪəl/"]]}
 {"w":"major","pos":"adj","fm":[],"lo":[],"ipa":[["","/ˈmeɪ.d͡ʒə(ɹ)/"],["UK","[ˈmeɪ̯d͡ʒə(ɹ)]"],["US","[ˈmeɪ̯d͡ʒɚ]"]]}
 {"w":"process","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈpɹəʊ.sɛs/"],["US","/ˈpɹɑ.sɛs/"],["","/ˈpɹəʉˌses/"]]}
@@ -240,7 +234,6 @@
 {"w":"prime","pos":"adj","fm":[],"lo":[],"ipa":[["","/pɹaɪ̯m/"]]}
 {"w":"exist","pos":"verb","fm":[],"lo":[],"ipa":[["","/ɪɡˈzɪst/"]]}
 {"w":"explain","pos":"verb","fm":[],"lo":[],"ipa":[["","/ɪkˈspleɪn/"]]}
-{"w":"Europa","pos":"name","fm":[],"lo":[],"ipa":[["","/jʊˈɹoʊpə/"]]}
 {"w":"comment","pos":"noun","fm":[],"lo":[],"ipa":[["UK","/ˈkɒmɛnt/"],["US","/ˈkɑmɛnt/"],["","/ˈkɔment/"]]}
 {"w":"toward","pos":"prep","fm":[],"lo":[],"ipa":[["UK","/təˈwɔːd/"],["US","/tɔɹd/"],["","/to(ː)ɹd/"]]}
 {"w":"behalf","pos":"noun","fm":[],"lo":[],"ipa":[["US","/bɪˈhæf/"],["UK","/bɪˈhɑːf/"]]}
@@ -282,6 +275,7 @@
 {"w":"tasteful","pos":"adj","fm":[],"lo":[],"ipa":[["","/ˈteɪstfəl/"]]}
 {"w":"a","pos":"character","fm":[],"lo":[],"ipa":[["","/æ/"]]}
 {"w":"C","pos":"character","fm":[],"lo":[],"ipa":[["","/siː/"]]}
+{"w":"english","pos":"noun","fm":[],"lo":[],"ipa":[["US","/ˈɪŋ.ɡlɪʃ/"]]}
 {"w":"prosecute","pos":"verb","fm":[],"lo":[],"ipa":[["","/ˈpɹɒsɪkjuːt/"]]}
 {"w":"meanwhile","pos":"noun","fm":[],"lo":[],"ipa":[["","/ˈmiːnwaɪl/"]]}
 {"w":"sus","pos":"noun","fm":[],"lo":[],"ipa":[["","/sʌs/"]]}
