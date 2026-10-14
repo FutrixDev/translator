@@ -61,9 +61,10 @@ PDF translation 这几个原词。另一半原因是装机量（当时 48 个用
 | en | Blab Translation: AI Translator for Web, PDF, Manga & Subtitles（63） | Bilingual web pages or just the part you pick, PDFs with layout kept, ebooks & Word, manga, image text (OCR), YouTube subtitles.（128） |
 | zh_CN | 叭叭翻译：AI 翻译网页、PDF、漫画与字幕 | 双语对照网页（也可只译选定区域），保留排版的 PDF，电子书与 Word，漫画，图片文字（OCR），YouTube 字幕。 |
 
-扩展名放搜索量最大的几项（AI 翻译、网页、PDF、漫画、字幕）。简短说明不重复
-扩展名里的词，把七项能力写全：网页（或只译选定的区域）、PDF、电子书与文档、
-漫画、OCR、YouTube 字幕。其余八种语言都是 en 的翻译，拉丁字母的语种都不超过
+扩展名放搜索量最大的几项（AI 翻译、网页、PDF、漫画、字幕）。简短说明把七项能力
+写全：网页、网页里选定的区域、PDF、电子书与文档、漫画、图片文字（OCR）、YouTube
+字幕。网页、PDF、漫画、字幕在扩展名和简短说明里各出现一次（1.5.0 的两栏也是
+这样），同一栏里不重复。其余八种语言都是 en 的翻译，拉丁字母的语种都不超过
 132 个字符（de、pt_BR 正好 132）。
 
 扩展名只出现在商店、`chrome://extensions`、工具栏悬停提示，以及右键菜单里多项
@@ -72,7 +73,7 @@ PDF translation 这几个原词。另一半原因是装机量（当时 48 个用
 
 写法沿用 1.5.0 两次被警告后定下的规矩：
 
-- 每个关键词只出现一次，不成串罗列品牌、服务商或网站名，不写任何竞品名。
+- 同一栏里每个关键词只出现一次，不成串罗列品牌、服务商或网站名，不写任何竞品名。
 - 只写代码做得到的事。漫画只写 manga / comics，**不写 webtoon、manhwa**，因为
   长条漫画在 `content/comic/prompts.js` 里会报 `webtoon_strip` 不支持。
   「保留排版」只用来形容 PDF：Word / EPUB 等产出的是双语文件，MOBI 是在阅读台里
@@ -125,7 +126,7 @@ PDF translation 这几个原词。另一半原因是装机量（当时 48 个用
 `<all_urls>` 一栏整段换成下面这段：前面与 1.5.0 相同，只改了最后一句并补了
 Blab 一句。
 
-> The extension's single purpose is translating the page the user is on, and that can be any page, including text inside its iframes and web components. Most pages are translated only when the user asks (toolbar button, context menu, keyboard shortcut). A page may also be translated **automatically**, and that is under the user's control: it runs only while the "Translate pages automatically" switch is on (the first row of the toolbar popup, and in Settings). It applies only to sites the user set to Always and to a short built-in list of reading sites (e.g. arXiv, Google Scholar, Reddit, Hacker News, Stack Overflow, major news sites). **On every other site the page text is left alone: nothing on the page is read for translation and nothing is sent.** The one exception is video subtitles: while the same switch is on, on any site the user has not set to Never, the subtitle lines a video player shows through a standard subtitle track are translated as the video plays, and go to the chosen engine like page text; setting the site to Never or turning the switch off stops them. Private-message pages (X, Facebook, Instagram, Reddit and Bluesky chats) and a built-in list of mail, banking, payment and document-editing sites are excluded from automatic translation; the list is not exhaustive, and a site the user sets to Always is translated. Frames served by a built-in list of ad, payment, captcha and sign-in providers are never read. Text already in the user's language is skipped. Every rule, built-in or the user's own, is listed in Settings and can be turned off there; Alt+A pauses the current page. The default engine is Chrome's on-device Translator, so on default settings **no page text leaves the device**. With the user's own AI model chosen (which for automatic translation takes an explicit confirmation), the text goes to the endpoint the user entered, with the user's own key, never to us, and no-click translation is capped per day (200,000 characters by default). The third engine, Blab Translation, can be chosen only by a signed-in subscriber (it is greyed out otherwise) and is used only after the user selects it; with it chosen, the text to translate is sent to our service at blab-translation.com, translated by our model provider and not stored.
+> The extension's single purpose is translating the page the user is on, and that can be any page, including text inside its iframes and web components. Most pages are translated only when the user asks (toolbar button, context menu, keyboard shortcut). A page may also be translated **automatically**, and that is under the user's control: it runs only while the "Translate pages automatically" switch is on (the first row of the toolbar popup, and in Settings). It applies only to sites the user set to Always and to a short built-in list of reading sites (e.g. arXiv, Google Scholar, Reddit, Hacker News, Stack Overflow, major news sites). **On every other site the page text is left alone: nothing on the page is read for translation and nothing is sent.** The one exception is video subtitles: while the same switch is on, on any site the user has not set to Never, the subtitle lines a video player shows through a standard subtitle track are translated as the video plays, and go to the chosen engine like page text; setting the site to Never or turning the switch off stops them. Private-message pages (X, Facebook, Instagram, Reddit and Bluesky chats) and a built-in list of mail, banking, payment and document-editing sites are excluded from automatic translation; the list is not exhaustive, and a site the user sets to Always is translated. Frames served by a built-in list of ad, payment, captcha and sign-in providers are never read. Text already in the user's language is skipped. Every rule, built-in or the user's own, is listed in Settings and can be turned off there; Alt+A pauses the current page. The default engine is Chrome's on-device Translator, so on default settings **no page text leaves the device**. With the user's own AI model chosen (which for automatic translation takes an explicit confirmation), the text goes to the endpoint the user entered, with the user's own key, never to us, and no-click translation is capped per day (200,000 characters by default). The third engine, Blab Translation, is used only after the user selects it; Settings greys it out unless the signed-in account includes it, and our service refuses requests from accounts without it. With it chosen, the text to translate is sent to our service at blab-translation.com, translated by our model provider and not stored.
 
 **Single purpose**（不变）：Translate web content — selected text, whole pages,
 video subtitles, text inside images, PDFs and documents — using a translation
@@ -150,8 +151,9 @@ token 数。漫画任务现在会带上页面标题（#150），和页面网址�
 > PDF, document and comic translation, and the optional Blab Translation
 > engine, are the only features that use our servers. They need a sign-in
 > (Google or GitHub). Nothing is uploaded until the user presses Translate or
-> Alt+M, and Blab Translation is used only after a subscriber selects it as
-> the translation engine in Settings, in a site rule, or on one card.
+> Alt+M, and Blab Translation is used only after the user selects it as the
+> translation engine in Settings, in a site rule, or on one card; requests
+> from accounts whose plan does not include it are refused.
 
 ## 六、提交前 checklist
 

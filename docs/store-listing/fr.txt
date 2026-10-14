@@ -6,7 +6,7 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 • La traduction sous chaque paragraphe. Mise en forme, liens et images intacts.
 • La traduction seule ? Une touche : Alt+T.
 • Le contenu principal d'abord — menus et barres latérales restent à l'écart. Alt+W pour toute la page.
-• Une seule partie vous intéresse ? Pointez une zone et choisissez « Ne traduire qu'ici ».
+• Une seule partie vous intéresse ? Pointez une zone et choisissez « Ne traduire qu’ici ».
 • Va jusque dans les iframes et le Shadow DOM.
 • Formules, LaTeX et code restent intacts. Les articles scientifiques restent lisibles.
 • 6 styles de traduction. 76 langues. Les langues de droite à gauche bien affichées.
