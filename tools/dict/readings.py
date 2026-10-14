@@ -186,6 +186,16 @@ class Readings:
             return None, None
         return r, ids
 
+    def candidates(self, word):
+        """Every reading the tables hold for `word` (check.py G1: a record's reading must be
+        one of these for its translation word)."""
+        if not word:
+            return set()
+        if self.t == 'zh':
+            return {p for p, _ in self.cedict.get(word, ())}
+        r, _ = self.lookup(word)
+        return {r} if r else set()
+
     def _en(self, word, _):
         k = self.kaikki.get(word) or self.kaikki.get(word.lower()) or {}
         low = word.lower()

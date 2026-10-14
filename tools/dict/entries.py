@@ -9,8 +9,10 @@ Records come from the pack's datasets in common.pair_files order, up to MAX_RECS
   tr       kaikki translation tables: one record per sense, its words in the target script
 
 Chinese content is built in Simplified; a zh-TW pack converts every gloss with OpenCC s2twp
-at the end (readings are looked up first, on the Simplified word, which is what CC-CEDICT
-keys on). Every record's reading belongs to its translation word (common.translation_word).
+before the readings, drops the duplicates the conversion creates (inside a record and between
+records), and looks readings up on the converted word in CC-CEDICT's Traditional column
+(s2twp also changes words: 软件 -> 軟體, whose reading is not 软件's). Every record's reading
+belongs to its translation word (common.translation_word).
 
 en->zh adds the CC-CEDICT reverse lookup: an English gloss that names exactly one Chinese
 head becomes a record of that head under the English word (origin cedict, its own pinyin).
@@ -36,7 +38,7 @@ LATIN = re.compile(r'[A-Za-zÀ-ɏ]')
 
 # CC-CEDICT reverse lookup (en->zh): which English glosses are clean enough to be a head.
 REVERSE_MAX_WORDS = 3
-REVERSE_REJECT = re.compile(r'[(/\d]|CL:|variant of|\bsee\b|surname|abbr', re.I)
+REVERSE_REJECT = re.compile(r'[(/\d;,:]|CL:|variant of|\bsee\b|surname|abbr', re.I)
 
 
 def jm_pos(codes):
@@ -203,21 +205,33 @@ class Builder:
         self.reverse_added = self.cedict_reverse() if (self.s, self.t) == ('en', 'zh') else 0
         if (self.s, self.t) == ('ja', 'zh'):
             self.jm_hints()
-        rd = Readings(self.norm, self.work, self.t)
+        if self.s2twp:
+            self.to_traditional()
+        rd = Readings(self.norm, self.work, self.t, traditional=bool(self.s2twp))
         for head, recs in self.e.items():
             for rec in recs:
                 self.used.add(rec[3])
-                if rec[2] is not None:
-                    continue
                 word = C.translation_word(rec[1], self.t)
+                if rec[2] is not None:
+                    if C.reading_problem(rec[2], self.t, word):
+                        rec[2] = None
+                    continue
                 if not word:
                     continue
                 hint = [head] if self.s == 'en' else self.hint.get(head)
                 reading, ids = rd.lookup(word, hint)
                 rec[2] = reading
                 self.used.update(ids or ())
-        if self.s2twp:
-            for recs in self.e.values():
-                for rec in recs:
-                    rec[1] = [self.s2twp(g) for g in rec[1]]
         return self.e
+
+    def to_traditional(self):
+        """zh-TW: convert every gloss, then drop the duplicates the conversion made. A preset
+        reading (the reverse lookup's pinyin) belonged to the Simplified word and is looked up
+        again on the converted one."""
+        for head, recs in self.e.items():
+            out = []
+            for pos, glosses, _reading, origin in recs:
+                glosses = list(dict.fromkeys(self.s2twp(g) for g in glosses))
+                if all(r[1] != glosses for r in out):
+                    out.append([pos, glosses, None, origin])
+            self.e[head] = out

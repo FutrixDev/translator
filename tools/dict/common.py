@@ -210,8 +210,13 @@ def strip_parens(text):
 
 def first_segment(gloss):
     """The first segment of a gloss (§2.2): parentheticals removed, cut at the first
-    `；;,，、/` or " or ", trailing sentence stops and spaces removed."""
-    g = SEGMENT.split(strip_parens(gloss))[0].strip()
+    `；;,，、/` or " or ", trailing sentence stops and spaces removed. A first segment that
+    ends in a full stop while the gloss goes on is an abbreviated label (`мед., юр. общая
+    практика`), not a word: ''."""
+    parts = SEGMENT.split(strip_parens(gloss))
+    g = parts[0].strip()
+    if g.endswith('.') and any(p.strip() for p in parts[1:]):
+        return ''
     return g.rstrip('.。!?！？').strip()
 
 
