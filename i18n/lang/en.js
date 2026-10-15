@@ -499,7 +499,7 @@ Rules:
     blabSignInRequired: 'Sign in to your Blab account to use Blab Translation.',
     blabNoteSignedOut: "Sign in to your Blab account and subscribe to use Blab Translation.",
     blabNotePlanRequired: "Blab Translation is included with a subscription.",
-    blabNoteAvailable: "Text is sent to Blab's servers to be translated. Included with your subscription: {limit} characters a day, {used} used today.",
+    blabNoteAvailable: "Text is sent to Blab's servers to be translated. Included with your subscription: {limit} tokens a day, {used} used today.",
     blabNoteSelectedUnavailable: "Blab Translation is still selected, but this account can't use it right now.",
     blabSubscribe: "Subscribe",
     blabErrorBusy: "Blab Translation is busy right now. Please try again in a moment.",

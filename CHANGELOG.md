@@ -2,27 +2,6 @@
 
 ## Unreleased
 
-### Input box translation
-
-- **The input box says which engine answered, and why a short lookup got
-  no dictionary entry.** A tag by the result names the engine. When Chrome's
-  built-in translator answers a short lookup (up to three words), a note says
-  it does not give pronunciations or examples, with a button that sends that
-  same lookup to your AI model or Blab Translation instead, even if you have
-  typed something else in the box since; the next lookup goes back to your
-  usual engine. Nothing is sent to a paid engine unless you press the button.
-  When neither is set up, the note offers a button to the settings page
-  instead. When the model's entry comes back empty, the note says so.
-  Sentences get no note.
-- **A slow answer no longer overwrites a newer one.** If you change the text
-  or the target language while a translation is on its way, only the answer
-  to the latest request is shown, and an earlier request that fails late
-  leaves it in place.
-- **Words in Japanese, Korean and Thai count as words.** Up to eight
-  characters of kana, Hangul or Thai are looked up as a dictionary word
-  (Chinese characters stay at four), and one trailing sentence stop
-  (. ! ? 。！？) no longer turns a word into a sentence.
-
 ### Offline dictionary
 
 - **The dictionary entry can now come from an offline dictionary as well as
@@ -63,32 +42,7 @@
   switch turned off goes to your usual engine as before, with no "not in the
   dictionary" message.
 
-### Target languages
-
-- **The languages you picked last are at the top of the menu.** The
-  in-page language menu, in the input box and on the selection card, starts
-  with a "Recent" group of up to five languages you picked there, newest
-  first, followed by the full list of 76. Changing the default target
-  language in settings leaves the group as it is.
-
-## 1.5.1 — 2026-10-13
-
-### Easier to find in the Chrome Web Store
-
-- **The store name and short description now say what the extension does.**
-  The name was the brand alone, so a search for "PDF translation", "AI
-  translation" or "manga translation" never matched it. It now reads "Blab
-  Translation: AI Translator for Web, PDF & Manga", and the short description
-  leads with "AI translator" and names PDF and manga translation. All ten
-  languages say the same thing in their own words. Manga is named because
-  comic pages already work; long webtoon strips are still not supported, so
-  they are not mentioned.
-- **The long descriptions name manga too**, and the PDF heading now says
-  "PDF translation".
-- No code, permission or behaviour changes: everything else is 1.5.0. The name
-  inside Settings and the popup is unchanged.
-
-## 1.5.0 — 2026-10-07
+## 1.5.1 — 2026-10-14
 
 ### Blab Translation, a third engine
 
@@ -120,6 +74,78 @@
   entry, the card shows "Blab Translation" as the engine, and the daily
   character cap you set for unattended AI spend does not count it: that cap is
   for your own API key only.
+- **The daily Blab Translation allowance is counted in tokens.** The note
+  under the translation engine now reads "1,000,000 tokens a day" rather than
+  characters, matching how the account service meters it: the tokens the
+  model provider reports for each request.
+
+### Input box translation
+
+- **The input box says which engine answered, and why a short lookup got
+  no dictionary entry.** A tag by the result names the engine. When Chrome's
+  built-in translator answers a short lookup (up to three words), a note says
+  it does not give pronunciations or examples, with a button that sends that
+  same lookup to your AI model or Blab Translation instead, even if you have
+  typed something else in the box since; the next lookup goes back to your
+  usual engine. Nothing is sent to a paid engine unless you press the button.
+  When neither is set up, the note offers a button to the settings page
+  instead. When the model's entry comes back empty, the note says so.
+  Sentences get no note.
+- **A slow answer no longer overwrites a newer one.** If you change the text
+  or the target language while a translation is on its way, only the answer
+  to the latest request is shown, and an earlier request that fails late
+  leaves it in place.
+- **Words in Japanese, Korean and Thai count as words.** Up to eight
+  characters of kana, Hangul or Thai are looked up as a dictionary word
+  (Chinese characters stay at four), and one trailing sentence stop
+  (. ! ? 。！？) no longer turns a word into a sentence.
+
+### Target languages
+
+- **The languages you picked last are at the top of the menu.** The
+  in-page language menu, in the input box and on the selection card, starts
+  with a "Recent" group of up to five languages you picked there, newest
+  first, followed by the full list of 76. Changing the default target
+  language in settings leaves the group as it is.
+
+### Fixes
+
+- **Inline formulas and untranslated words no longer fail a paragraph on the
+  built-in engine.** Chrome's built-in translator often drops one brace of
+  the placeholder that stands in for a formula or a `translate="no"` word,
+  and the whole paragraph was then left in the original with the "failed"
+  marker. A placeholder that comes back with a brace missing is now repaired.
+- **Citation markers no longer show up as text on the built-in engine.** The
+  engine sometimes breaks the inline markers that carry links and footnotes
+  apart with " . " (`</span1 . 3>`), and those were printed in the
+  translation. They are now rebuilt like any other marker.
+- **Comic translations are named after the page in your library.** A comic
+  job now sends the page title along with its address, so the library row
+  reads like the page instead of a chapter id.
+- **Translations stay in the source's own column on grid, table-cell and
+  flex layouts.** On a list whose items are a grid with a narrow number
+  column, the translation used to fall into that column, one or two
+  characters per line; it now sits under the text it translates.
+
+### Easier to find in the Chrome Web Store
+
+- **The store name and short description say what the extension does.** The
+  name was the brand alone, so a search for "PDF translation", "AI
+  translation" or "manga translation" never matched it. It now reads "Blab
+  Translation: AI Translator for Web, PDF, Manga & Subtitles", and the short
+  description names what it translates: web pages or just the part you pick,
+  PDFs, ebooks and Word files, manga, text in images (OCR) and YouTube
+  subtitles. All ten languages say the same thing in their own words. Manga
+  is named because comic pages already work; long webtoon strips are still
+  not supported, so they are not mentioned. The name inside Settings and the
+  popup is unchanged.
+- **The long descriptions** name the three engines, translating only the area
+  you point at, the Recent languages and OCR, and say that Blab Translation
+  sends text to our servers. OCR has a section of its own rather than a line
+  under manga, because it reads the text in any image you right-click — a
+  screenshot, a photo, a chart — not only comic pages.
+
+## 1.5.0 — 2026-10-07
 
 ### A word looks itself up like a dictionary
 

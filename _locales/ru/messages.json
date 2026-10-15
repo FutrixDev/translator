@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Blab Translation: ИИ-переводчик сайтов, PDF и манги",
+    "message": "Blab Translation: ИИ-переводчик сайтов, PDF, манги и субтитров",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "ИИ-переводчик: бесплатные двуязычные сайты, перевод PDF с сохранением вёрстки, перевод манги, двойные субтитры YouTube, EPUB/Word.",
+    "message": "Двуязычные сайты или выбранная область, PDF с сохранением вёрстки, книги и Word, манга, текст на картинках (OCR), субтитры YouTube.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Blab Translation: 웹·PDF·만화 AI 번역",
+    "message": "Blab Translation: 웹·PDF·만화·자막 AI 번역",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "AI 번역기: 무료 이중 언어 웹 페이지, 레이아웃 그대로인 PDF 번역, 만화 번역, YouTube 이중 자막, EPUB/Word.",
+    "message": "이중 언어 웹 페이지(선택한 영역만도 가능), 레이아웃 그대로인 PDF, 전자책·Word, 만화, 이미지 속 글자(OCR), YouTube 자막.",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

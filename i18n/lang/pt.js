@@ -458,7 +458,7 @@
     blabSignInRequired: 'Entre na sua conta Blab para usar o Blab Translation.',
     blabNoteSignedOut: "Entre na sua conta Blab e assine para usar o Blab Translation.",
     blabNotePlanRequired: "O Blab Translation está incluído na assinatura.",
-    blabNoteAvailable: "O texto é enviado aos servidores da Blab para ser traduzido. Incluído na sua assinatura: {limit} caracteres por dia, {used} usados hoje.",
+    blabNoteAvailable: "O texto é enviado aos servidores da Blab para ser traduzido. Incluído na sua assinatura: {limit} tokens por dia, {used} usados hoje.",
     blabNoteSelectedUnavailable: "O Blab Translation continua selecionado, mas esta conta não pode usá-lo agora.",
     blabSubscribe: "Assinar",
     blabErrorBusy: "O Blab Translation está ocupado no momento. Tente novamente daqui a pouco.",

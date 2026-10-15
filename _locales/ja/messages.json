@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Blab Translation：Web・PDF・マンガのAI翻訳",
+    "message": "Blab Translation：Web・PDF・マンガ・字幕のAI翻訳",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "appDescription": {
-    "message": "AI翻訳：無料の対訳Webページ、レイアウトそのままのPDF翻訳、マンガ翻訳、YouTubeの二言語字幕、EPUB/Word。",
+    "message": "対訳Webページ（選んだ範囲だけも可）、レイアウトそのままのPDF、電子書籍・Word、マンガ、画像の文字（OCR）、YouTube字幕。",
     "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
   },
   "cmdTogglePage": {

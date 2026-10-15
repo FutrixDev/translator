@@ -458,7 +458,7 @@
     blabSignInRequired: 'Blab Translation을 사용하려면 Blab 계정에 로그인하세요.',
     blabNoteSignedOut: "Blab 계정에 로그인하고 구독하면 사용할 수 있습니다.",
     blabNotePlanRequired: "Blab Translation은 구독에 포함되어 있습니다.",
-    blabNoteAvailable: "텍스트가 번역을 위해 Blab 서버로 전송됩니다. 구독에 포함되며 하루 {limit}자, 오늘 {used}자를 사용했습니다.",
+    blabNoteAvailable: "텍스트가 번역을 위해 Blab 서버로 전송됩니다. 구독에 포함되며 하루 {limit} 토큰, 오늘 {used} 토큰을 사용했습니다.",
     blabNoteSelectedUnavailable: "Blab Translation이 선택되어 있지만 이 계정은 지금 사용할 수 없습니다.",
     blabSubscribe: "구독하기",
     blabErrorBusy: "Blab Translation이 지금 혼잡합니다. 잠시 후 다시 시도해 주세요.",

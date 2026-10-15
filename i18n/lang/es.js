@@ -458,7 +458,7 @@
     blabSignInRequired: 'Inicia sesión en tu cuenta de Blab para usar Blab Translation.',
     blabNoteSignedOut: "Inicia sesión en tu cuenta de Blab y suscríbete para usar Blab Translation.",
     blabNotePlanRequired: "Blab Translation está incluido en la suscripción.",
-    blabNoteAvailable: "El texto se envía a los servidores de Blab para traducirlo. Incluido en tu suscripción: {limit} caracteres al día, {used} usados hoy.",
+    blabNoteAvailable: "El texto se envía a los servidores de Blab para traducirlo. Incluido en tu suscripción: {limit} tokens al día, {used} usados hoy.",
     blabNoteSelectedUnavailable: "Blab Translation sigue seleccionado, pero esta cuenta no puede usarlo ahora.",
     blabSubscribe: "Suscribirse",
     blabErrorBusy: "Blab Translation está muy ocupado ahora mismo. Inténtalo de nuevo en un momento.",

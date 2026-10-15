@@ -477,7 +477,7 @@
     blabSignInRequired: '登录 Blab 账号后即可使用 Blab Translation。',
     blabNoteSignedOut: "登录 Blab 账号并订阅后可用。",
     blabNotePlanRequired: "订阅后可用 Blab Translation。",
-    blabNoteAvailable: "文字会发到 Blab 的服务器翻译。订阅包含，每天 {limit} 字，今天已用 {used}。",
+    blabNoteAvailable: "文字会发到 Blab 的服务器翻译。订阅包含，每天 {limit} token，今天已用 {used}。",
     blabNoteSelectedUnavailable: "已选 Blab Translation，但这个账号现在用不了。",
     blabSubscribe: "订阅",
     blabErrorBusy: "Blab Translation 暂时繁忙，请稍后再试。",

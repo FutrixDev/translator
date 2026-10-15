@@ -202,7 +202,7 @@ test('options blab: available enables the option; the note shows only under a se
   assert.equal(card.manual.hidden, true, 'builtin chosen: nothing to say about Blab');
   assert.equal(card.auto.hidden, false);
   const [line] = texts(card.auto);
-  assert.ok(line.includes('1,000,000'), line);
+  assert.ok(line.includes('1,000,000 tokens a day'), line);
   assert.ok(line.includes('12,345'), line);
   assert.ok(!/\{limit\}|\{used\}/.test(line));
 
@@ -212,6 +212,22 @@ test('options blab: available enables the option; the note shows only under a se
   card.sandbox.elements.translationEngine.value = 'blab';
   card.sandbox.elements.translationEngine.dispatch('change');
   assert.equal(card.manual.hidden, false, 'choosing Blab redraws its note');
+});
+
+// D-564: the service meters the daily allowance in provider-reported tokens, so
+// billing/me's limit/used are tokens. A locale that still says characters would
+// put the server's token count next to the wrong unit.
+test('options blab: every locale words the daily allowance in tokens, with both numbers', async () => {
+  const unit = { en: 'tokens', 'zh-CN': 'token', 'zh-TW': 'token', ja: 'トークン', ko: '토큰',
+    fr: 'tokens', de: 'Tokens', es: 'tokens', pt: 'tokens', ru: 'токенов' };
+  assert.deepEqual(Object.keys(unit).sort(), [...globalThis.UI_LANGUAGES].sort());
+  for (const lang of globalThis.UI_LANGUAGES) {
+    await import(`../../i18n/lang/${lang}.js`);
+    const text = globalThis.I18N_MESSAGES[lang].blabNoteAvailable;
+    assert.ok(text.includes('{limit}') && text.includes('{used}'), `${lang}: ${text}`);
+    assert.ok(text.includes(unit[lang]), `${lang}: ${text}`);
+    assert.ok(!/characters|Zeichen|caract[eè]res|символ|\{limit\} ?文?字|\{limit\}자/.test(text), `${lang}: ${text}`);
+  }
 });
 
 test('options blab: a Blab choice that stopped working is kept and warned about, with the way back', () => {

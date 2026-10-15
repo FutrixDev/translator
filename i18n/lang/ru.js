@@ -458,7 +458,7 @@
     blabSignInRequired: 'Войдите в аккаунт Blab, чтобы пользоваться Blab Translation.',
     blabNoteSignedOut: "Войдите в аккаунт Blab и оформите подписку, чтобы пользоваться Blab Translation.",
     blabNotePlanRequired: "Blab Translation входит в подписку.",
-    blabNoteAvailable: "Текст отправляется на серверы Blab для перевода. Входит в подписку: {limit} символов в день, сегодня использовано {used}.",
+    blabNoteAvailable: "Текст отправляется на серверы Blab для перевода. Входит в подписку: {limit} токенов в день, сегодня использовано {used}.",
     blabNoteSelectedUnavailable: "Blab Translation по-прежнему выбран, но этот аккаунт сейчас не может им пользоваться.",
     blabSubscribe: "Оформить подписку",
     blabErrorBusy: "Blab Translation сейчас перегружен. Попробуйте ещё раз чуть позже.",
