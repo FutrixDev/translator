@@ -54,12 +54,14 @@
   or type in the input box is answered from an installed pack when the pack
   has it: the card is titled "Dictionary", the tag says "Offline dictionary",
   nothing is sent to any engine, and the entry ends in its "Sources:" line,
-  which stays on one line of its own and readable in both themes whatever the
-  page's styles. "Explain in context with AI" on the card sends that word to
-  your AI model or Blab Translation, whichever is available, with the page
-  context your settings allow; the button is hidden when neither is. A word
-  the pack does not have, a sentence, or the switch turned off goes to your
-  usual engine as before, with no "not in the dictionary" message.
+  which stays on one line of its own and readable in both themes, and is not
+  restyled by a page's rules for plain links and text. "Explain in context
+  with AI" on the card sends that word to your AI model or Blab Translation,
+  whichever is available, together with the sentence it was selected in, and
+  answers with a dictionary entry for the word as used there; the button is
+  hidden when neither is. A word the pack does not have, a sentence, or the
+  switch turned off goes to your usual engine as before, with no "not in the
+  dictionary" message.
 
 ### Target languages
 

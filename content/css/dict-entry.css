@@ -176,9 +176,10 @@
 /* The credits line (DictEntry.render, D-573): the prefix, then each source as
    a link, ' · ' between two. Inline flow, not flex: the ' · ' is a bare text
    node, and a narrow card wraps the line like a sentence. A page's `a {}` or
-   `span {}` is a bare tag (0,0,1) and loses to one class, but `a:hover` and
-   `a:visited` weigh (0,1,1) and tie it, so the link rules carry two classes
-   and restate the colour on every state a page styles. The link takes
+   `span {}` is a bare tag (0,0,1) and loses to one class (0,1,0), but
+   `a:hover` and `a:visited` weigh (0,1,1) and beat one class, so the link
+   rules carry two classes (0,2,0) and restate the colour on every state a
+   page styles. The link takes
    --dict-pos (4.5:1 on both panels, dark and light) and keeps its underline,
    so it reads as a link without leaning on the hue. */
 .ai-translator-dict-credits {

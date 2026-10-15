@@ -21,10 +21,11 @@
 //   path meanwhile. A pair the reader deleted (`dict:declined`) is not asked
 //   for: only the settings card downloads it again (D-609).
 //
-// ctx.localDictAnswer(text, targetLang, { pinned, standalone }) is the one
-// routing rule the selection card and the input box share (design §5.2): a
-// lookup no engine was pinned for goes to ctx.dictLookup first, and only a
-// miss goes on to ctx.requestTranslation.
+// ctx.dictRoute(text, targetLang, { pinned, provenWord, standalone }) is the
+// one routing rule the selection card and the input box share (design §5.2,
+// D-641): the local answer, and the mode of the request that goes out when
+// there is none. A lookup no engine was pinned for goes to ctx.dictLookup
+// first, and only a miss goes on to ctx.requestTranslation.
 (function() {
   'use strict';
 
@@ -115,20 +116,26 @@
   };
 
   /**
-   * The local answer to a lookup, or null when the request goes on to its
-   * engine as before. A request pinned to an engine (the card's "explain in
-   * context with AI", the dialog's "use AI") never takes the local answer;
-   * everything else is decided by ctx.dictLookup (a word at all, by
-   * DictEntry.isDictCandidate; the switch; the pack; the hit). A miss says
+   * The local answer to a lookup, and the mode of the request that goes to an
+   * engine when there is none. A request pinned to an engine (the card's
+   * "explain in context with AI", the dialog's "use AI") never takes the local
+   * answer; everything else is decided by ctx.dictLookup (a word at all, by
+   * DictEntry.isDictCandidate; the switch; the pack; the hit).
+   *
+   * The mode is 'word' when the pack answered (a hit proves a word, D-609),
+   * when the caller says the pack already proved this text a word
+   * (`provenWord`: the card that settled with the pack's answer, asked again
+   * pinned to a model), and otherwise as DictEntry.isLookup says. A miss says
    * nothing, so the caller's path is today's.
    *
    * @param {string} text
    * @param {string} targetLang
-   * @param {{pinned?: string, standalone?: boolean}} [options]
-   * @returns {Promise<object|null>}
+   * @param {{pinned?: string, provenWord?: boolean, standalone?: boolean}} [options]
+   * @returns {Promise<{local: (object|null), mode: ('word'|'text')}>}
    */
-  ctx.localDictAnswer = function(text, targetLang, { pinned = '', standalone = false } = {}) {
-    if (pinned) return Promise.resolve(null);
-    return ctx.dictLookup(text, targetLang, { standalone });
+  ctx.dictRoute = async function(text, targetLang, { pinned = '', provenWord = false, standalone = false } = {}) {
+    const local = pinned ? null : await ctx.dictLookup(text, targetLang, { standalone });
+    const word = !!local || provenWord || globalThis.DictEntry.isLookup(text);
+    return { local, mode: word ? 'word' : 'text' };
   };
 })();

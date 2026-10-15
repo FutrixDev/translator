@@ -11,7 +11,7 @@
 // offerEngineSwitch 写上去的字是同一张表。
 //
 // 本地词典（DictEntry.DICT_ENGINE）答的这次，按钮不说「换到某引擎」，说「用 AI
-// 解释此处语境」（cardUseAiExplain），并且只换到此刻能用的模型引擎（设计 §5.3）。
+// 解释此处语境」（cardUseAiExplain），并且只换到此刻能用的模型引擎（设计 §5.4）。
 //
 // 两者挂在 ctx 上，调用方在调用时读（manifest 里本文件排在 content-popup.js 之前，
 // 但谁也不靠这个顺序）。
@@ -75,6 +75,9 @@
     const offer = await switchOffer(engine, targetLang, feature);
     if (!isCurrent()) return null;
     button.hidden = !offer;
+    // The card reads this on the click: the explaining request carries the
+    // sentence around the selection (content-popup.js, D-641).
+    button.toggleAttribute('data-explain', offer?.labelKey === EXPLAIN_IN_CONTEXT);
     if (!offer) return null;
     button.dataset.engine = offer.engine;
     button.querySelector('.ai-translator-btn-label').textContent = t(offer.labelKey);
@@ -84,7 +87,7 @@
 
   // 这次是 engine 答的，换到哪一个、按钮怎么说：
   // - 本地词典答的：只在 Engines.MODEL_ENGINES 里取第一个此刻能用的，说「用 AI 解释
-  //   此处语境」（设计 §5.3）；没有能用的模型引擎就是 null，按钮藏起来。
+  //   此处语境」（设计 §5.4）；没有能用的模型引擎就是 null，按钮藏起来。
   // - 其余：按 Engines.ENGINES 的顺序取第一个「不是它、此刻又能接这个功能、这门目标
   //   语言」的引擎（内置在前，所以 ai 与内置之间的老行为不变），说「换到…」。
   // 一个都没有是 null。Blab 只在账户此刻能用时才给（设计 §5.4：不切到不可用的引擎）。

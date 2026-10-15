@@ -28,7 +28,13 @@ const {
   waitForFloatBall,
 } = require('./helpers');
 const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
-const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
+const {
+  ACCENT_STYLES,
+  MODEL_CONTRAST_SELECTORS,
+  MODEL_ENTRY_STYLES,
+  expectEntryStyles,
+  expectReadableContrast,
+} = require('./dict-entry-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
@@ -205,79 +211,6 @@ async function expectTranslationSpeaker(page, root) {
 }
 
 const shotDir = process.env.DICT_SCREENSHOT_DIR;
-
-// What each element of the entry computes to, whatever the page says about
-// bare spans and divs. A flex item's display is blockified, so the spans in a
-// flex row compute to block (or flex for an inline-flex one).
-const PRIMARY = 'var(--text-primary)';
-const SECONDARY = 'var(--text-secondary)';
-const ENTRY_STYLES = [
-  ['.ai-translator-dict-section', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-heading', 'block', '0px', '11px', SECONDARY],
-  ['.ai-translator-dict-phonetic', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-ipa', 'block', '0px', '14px', SECONDARY],
-  ['.ai-translator-dict-sense', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-pos', 'block', '0px', '13px', 'var(--dict-pos)'],
-  ['.ai-translator-dict-defs', 'block', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-example', 'block', '0px 0px 0px 8px', '13px', PRIMARY],
-  ['.ai-translator-dict-example-source', 'block', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-example-target', 'block', '0px', '13px', SECONDARY],
-  ['.ai-translator-dict-form', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-form-label', 'block', '0px', '13px', SECONDARY],
-  ['.ai-translator-dict-form-value', 'block', '0px', '13px', PRIMARY],
-];
-// The UK/US label is only drawn for an English translation (the `猫` entry).
-const ACCENT_STYLES = [
-  ['.ai-translator-dict-accent', 'block', '0px', '12px', SECONDARY],
-];
-
-// The computed display, padding, font-size and colour of every element above,
-// with the colour each should have: its token, resolved on a probe inside the
-// entry (an inline style, which no page rule outweighs).
-function entryStyles(page, entrySelector, rows) {
-  return page.evaluate(({ entrySelector, rows }) => {
-    const entry = document.querySelector(entrySelector);
-    const probe = document.createElement('i');
-    entry.appendChild(probe);
-    const out = rows.map(([selector, , , , token]) => {
-      const el = entry.querySelector(selector);
-      const style = getComputedStyle(el);
-      probe.style.color = token;
-      return [selector, style.display, style.padding, style.fontSize, style.color, getComputedStyle(probe).color];
-    });
-    probe.remove();
-    return out;
-  }, { entrySelector, rows });
-}
-
-async function expectEntryStyles(page, entrySelector, rows = ENTRY_STYLES) {
-  const measured = await entryStyles(page, entrySelector, rows);
-  for (const [i, [selector, display, padding, fontSize]] of rows.entries()) {
-    const [, gotDisplay, gotPadding, gotSize, color, tokenColor] = measured[i];
-    expect({ selector, display: gotDisplay, padding: gotPadding, fontSize: gotSize, color })
-      .toEqual({ selector, display, padding, fontSize, color: tokenColor });
-    expect(color, selector).not.toBe('rgb(255, 0, 0)');
-  }
-}
-
-// WCAG contrast of the entry's small secondary text against what is painted
-// under it, measured by layout-checks.js (the one implementation of that walk).
-const CONTRAST_SELECTORS = [
-  '.ai-translator-dict-heading',
-  '.ai-translator-dict-form-label',
-  '.ai-translator-dict-pos',
-  '.ai-translator-dict-ipa',
-  '.ai-translator-dict-example-target',
-];
-
-async function expectReadableContrast(page, entrySelector, label, selectors = CONTRAST_SELECTORS) {
-  await waitForSettled(page);
-  const entry = page.locator(entrySelector).first();
-  for (const selector of selectors) {
-    const ratio = await contrastOf(entry.locator(selector).first());
-    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
-  }
-}
 
 test.describe('dictionary entry (batch C)', () => {
   test('C1: the input box looks a word up, and a sentence is only translated', async ({ page, context }) => {
@@ -501,7 +434,7 @@ test.describe('dictionary entry (batch C)', () => {
       await openInputDialog(page);
       await translateInput(page, 'run');
       await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
-      await expectEntryStyles(page, '#ai-translator-input-dict');
+      await expectEntryStyles(page, '#ai-translator-input-dict', MODEL_ENTRY_STYLES);
       // The UK/US label, from an English translation.
       await page.fill('#ai-translator-input-text', '');
       await pickInputTargetLang(page, 'en');
@@ -512,7 +445,7 @@ test.describe('dictionary entry (batch C)', () => {
 
       const card = await openCardOn(page, '#word');
       await expectRunEntry(page, card);
-      await expectEntryStyles(page, '.ai-translator-popup .ai-translator-dict-entry');
+      await expectEntryStyles(page, '.ai-translator-popup .ai-translator-dict-entry', MODEL_ENTRY_STYLES);
     } finally {
       await mock.close();
     }
@@ -531,7 +464,7 @@ test.describe('dictionary entry (batch C)', () => {
         await openInputDialog(page);
         await translateInput(page, 'run');
         await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
-        await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`);
+        await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`, MODEL_CONTRAST_SELECTORS);
         // The UK/US label, from an English translation.
         await page.fill('#ai-translator-input-text', '');
         await pickInputTargetLang(page, 'en');
@@ -542,7 +475,7 @@ test.describe('dictionary entry (batch C)', () => {
 
         const card = await openCardOn(page, '#word');
         await expectRunEntry(page, card);
-        await expectReadableContrast(page, '.ai-translator-popup .ai-translator-dict-entry', `${theme} card`);
+        await expectReadableContrast(page, '.ai-translator-popup .ai-translator-dict-entry', `${theme} card`, MODEL_CONTRAST_SELECTORS);
       } finally {
         await mock.close();
       }

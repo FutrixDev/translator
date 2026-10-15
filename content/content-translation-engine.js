@@ -632,7 +632,8 @@
     return response && { ...response, engine };
   }
 
-  // `message` 已去掉 pageContext（sendToModel 头一行），`original` 还带着它。
+  // `message` 已去掉 pageContext 与 explainContext（sendToModel 头一行），`original`
+  // 还带着它们。
   // compose 出来的词表、领域、上下文**并进**请求已经带着的 addenda：语域是发起请求
   // 的那一帧盖的（ctx.withPromptAddenda），这里是执行请求的那一帧，不重算、不覆盖
   // 它（D-382）。compose 从不产出 register，所以并进去也盖不掉它。
@@ -650,7 +651,8 @@
    *
    * 三种翻译消息在发起帧盖好的语域之上并进附加说明（词表、领域、页面上下文，
    * content/engine/addenda.js）；
-   * 批量页的 `pageContext` 只用来组装，不随消息发出。批量按 60 条词条上限
+   * 消息上的 `pageContext`（批量页的邻段、解释语境的卡片那一句）和
+   * `explainContext` 只用来组装，不随消息发出。批量按 60 条词条上限
    * 切成几份，一份一份依次发、各自过预算闸；任一份失败（有 error，或 translations
    * 不是等长数组）就原样返回那一份的响应，后面的不再发，已发的不退额度；全部成功
    * 按 indices 拼回原顺序。单条（TRANSLATE）只有一份。领域与上下文开关用调用方
@@ -669,7 +671,7 @@
       const t = ctx.t || ((key) => key);
       return { error: t(AIProfiles.resolveMessageKey(resolved.error)).replace('{name}', resolved.id || ''), engine };
     }
-    const { pageContext: _neighbours, ...unstamped } = original;
+    const { pageContext: _neighbours, explainContext: _explain, ...unstamped } = original;
     const message = { ...unstamped, profileId: resolved.profile.id };
     if (!BUILTIN_TYPES.has(message.type)) return sendPart(message, engine);
     // 没盖过语域的翻译请求是有人绕过了 ctx.withPromptAddenda：并进一个空对象会让

@@ -243,10 +243,10 @@
         }
         const targetLang = targetLangOverride || getShownTargetLang();
         // A pinned request goes to its engine; any other asks the offline
-        // dictionary first (ctx.localDictAnswer, the card's rule too) and sends
-        // TRANSLATE only on a miss. A hit proves a word (D-609): word mode.
-        const local = await ctx.localDictAnswer(text, targetLang, { pinned: engine, standalone: true });
-        const mode = (local || DictEntry.isLookup(text)) ? 'word' : 'text';
+        // dictionary first and sends TRANSLATE only on a miss. The answer and
+        // the mode both come from ctx.dictRoute, the card's rule too. The box
+        // offers no "explain" after a hit, so it never claims a proven word.
+        const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned: engine, standalone: true });
         const response = local || await ctx.requestTranslation({
           type: 'TRANSLATE',
           feature: 'input',

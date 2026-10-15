@@ -2,7 +2,11 @@
 // installed pack first (design ext-offline-dictionary §5, task book
 // offline-dict-b2-wiring.md). Journeys J-B2.1–J-B2.4, J-B2.6, J-B2.7 and the
 // cold-start latency line; J-B2.5 (the input box) is in
-// input-dictionary-note.spec.js beside the other notes.
+// input-dictionary-note.spec.js beside the other notes. Fix round 1 (D-641,
+// offline-dict-b2-r1.md): J-B2.2 runs under the default settings and finds the
+// selection's sentence in the prompt, J-B2.2b sends no sentence for an
+// ordinary lookup, J-B2.9 explains a Japanese word the pack proved a word, and
+// J-B2.10 takes a sentence on the same page as text again.
 //
 // Every step starts in the real UI: a word selected with the mouse and the
 // card opened from the selection icon, or a word typed into the input box.
@@ -27,12 +31,19 @@ const {
   writeSyncSettings,
 } = require('./helpers');
 const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
-const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
+const { waitForSettled } = require('./layout-checks');
+const {
+  CONTRAST_SELECTORS,
+  ENTRY_STYLES,
+  expectEntryStyles,
+  expectReadableContrast,
+} = require('./dict-entry-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { DictPackServer } = require('./dict-pack-server');
 const { install } = require('./dict-pack-journeys');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
+require('../../shared/prompt-addenda.js');
 
 const ORIGIN = 'https://dictionary.test';
 const PACK_VER = '2026.10.13';
@@ -52,16 +63,29 @@ const JA_PAGE = `<!doctype html>
 <style>body { margin: 0; padding: 40px 60px; font: 18px/28px sans-serif; color: #222; background: #fff; }
 p { width: 640px; }</style></head>
 <body>
-  <p id="lead">今朝はパンを <span id="tabemashita">食べました</span> 、とてもおいしかったです。</p>
+  <p id="lead">今朝はパンを <span id="tabemashita">食べました</span> 、とてもおいしかったです。昼はうどんにします。</p>
+  <p id="tail">午後は公園をゆっくり散歩しました。</p>
 </body></html>`;
 
-// What the model answers when it is asked about `ran` in context: marked so the
-// entry on the card can only have come from the model.
-const MODEL_RAN = {
-  translation: '[AI] 跑',
-  senses: [{ pos: 'v.', defs: ['[AI] 跑（过去式）'] }],
+// What the model answers when it is asked about `ran` or 食べました in
+// context: marked so the entry on the card can only have come from the model.
+const MODEL_ENTRIES = {
+  ran: { translation: '[AI] 跑', senses: [{ pos: 'v.', defs: ['[AI] 跑（过去式）'] }] },
+  食べました: { translation: '[AI] 吃', senses: [{ pos: 'v.', defs: ['[AI] 吃（过去式）'] }] },
 };
-const modelEntry = (text) => (text === 'ran' ? MODEL_RAN : { translation: `[T] ${text}` });
+const modelEntry = (text) => MODEL_ENTRIES[text] || { translation: `[T] ${text}` };
+
+// The PAGE CONTEXT addendum of a system prompt (background/prompts.js: the
+// heading line, then the context as one line of JSON), or null without one.
+function pageContextIn(prompt) {
+  const lines = prompt.split('\n');
+  const at = lines.indexOf(globalThis.PromptAddenda.HEADINGS.context);
+  return at < 0 ? null : JSON.parse(lines[at + 1]);
+}
+
+// The text of `selector` as the reader sees it: whitespace runs folded.
+const pageText = (page, selector) => page.locator(selector)
+  .evaluate((el) => el.textContent.replace(/\s+/g, ' ').trim());
 
 const evidenceDir = () => process.env.DICT_B2_EVIDENCE || test.info().outputPath();
 function shotPath(name) {
@@ -89,8 +113,6 @@ function settings(endpoint, extra = {}) {
     enableSelection: true,
     selectionTranslationMode: 'popup',
     uiLanguage: 'zh-CN',
-    // The model is asked with the page around the word (J-B2.2).
-    aiPageContext: true,
     ...extra,
   };
 }
@@ -191,53 +213,22 @@ function creditsLayout(line) {
   });
 }
 
-// The credits line's computed styles, each against the token it should be:
-// resolved on a probe inside the same entry (an inline style no page rule
-// outweighs).
-function creditsStyles(line) {
-  return line.evaluate((el) => {
-    const probe = document.createElement('i');
-    el.closest('.ai-translator-dict-entry').appendChild(probe);
-    const token = (value) => {
-      probe.style.color = value;
-      return getComputedStyle(probe).color;
-    };
-    const read = (node) => {
-      const s = getComputedStyle(node);
-      return { display: s.display, padding: s.padding, fontSize: s.fontSize, color: s.color, decoration: s.textDecorationLine };
-    };
-    const out = {
-      line: read(el),
-      prefix: read(el.querySelector('.ai-translator-dict-credits-prefix')),
-      link: read(el.querySelector('.ai-translator-dict-credit-link')),
-      secondary: token('var(--text-secondary)'),
-      pos: token('var(--dict-pos)'),
-    };
-    probe.remove();
-    return out;
-  });
-}
-
-async function expectCreditsHold(line, label) {
+// The credits line stays one line: the prefix and every link on one row.
+async function expectCreditsOneLine(line, label) {
   const layout = await creditsLayout(line);
   expect(new Set(layout.offsetTops).size, `${label}: prefix and links share one offsetTop ${JSON.stringify(layout)}`).toBe(1);
   expect(new Set(layout.rectTops).size, `${label}: one row ${JSON.stringify(layout)}`).toBe(1);
   expect(layout.height, `${label}: one line high ${JSON.stringify(layout)}`).toBeLessThan(layout.lineHeight * 1.5);
+}
 
-  const styles = await creditsStyles(line);
-  expect({ label, ...styles.line, color: styles.line.color })
-    .toEqual({ label, display: 'block', padding: '0px', fontSize: '12px', color: styles.secondary, decoration: 'none' });
-  expect({ label, ...styles.prefix })
-    .toEqual({ label, display: 'inline', padding: '0px 4px 0px 0px', fontSize: '12px', color: styles.secondary, decoration: 'none' });
-  expect({ label, ...styles.link })
-    .toEqual({ label, display: 'inline', padding: '0px', fontSize: '12px', color: styles.pos, decoration: 'underline' });
-  for (const part of ['line', 'prefix', 'link']) expect(styles[part].color, `${label} ${part}`).not.toBe('rgb(255, 0, 0)');
-
-  for (const selector of ['.ai-translator-dict-credits-prefix', '.ai-translator-dict-credit-link']) {
-    const ratio = await contrastOf(line.locator(selector).first());
-    console.log(`J-B2.7 contrast ${label} ${selector}: ${ratio.toFixed(2)}`);
-    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
-  }
+// J-B2.7: the offline entry, credits line included, holds the computed styles
+// and the contrast C7/C8 hold a model's entry to (dict-entry-checks.js).
+async function expectEntryHolds(page, line, entrySelector, label) {
+  await line.scrollIntoViewIfNeeded();
+  await waitForSettled(page);
+  await expectCreditsOneLine(line, label);
+  await expectEntryStyles(page, entrySelector, ENTRY_STYLES);
+  await expectReadableContrast(page, entrySelector, label, CONTRAST_SELECTORS);
 }
 
 test.describe('offline dictionary in the card and the input box (batch B2)', () => {
@@ -266,12 +257,16 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       await card.screenshot({ path: shotPath('j-b2-1-card-credits.png') });
       expect(mock.sentTexts).toEqual([]);
 
-      // J-B2.2 — one click: the same word to the model, with the page context.
+      // J-B2.2 — one click: the same word to the model, with the sentence it
+      // was selected in, under the default settings (aiPageContext off).
+      expect(await evaluateInContentScript(context, page,
+        'window.AI_TRANSLATOR_CONTENT.settings.aiPageContext')).not.toBe(true);
+      const sentence = await pageText(page, '#lead');
       await parts.switchBtn.click();
       await expect.poll(() => mock.sentTexts).toEqual(['ran']);
       expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
-      expect(mock.systemPrompts[0]).toContain('PAGE CONTEXT');
-      expect(mock.systemPrompts[0]).toContain('River notes');
+      expect(pageContextIn(mock.systemPrompts[0])).toEqual({ title: 'River notes', before: sentence });
+      expect(mock.systemPrompts[0]).not.toContain(await pageText(page, '#tail'));
       await expect(parts.tag).toHaveText(zh('cardEngineAi'));
       await expect(parts.title).toHaveText(zh('aiTranslate'));
       await expect(parts.text).toHaveText('[AI] 跑');
@@ -279,11 +274,30 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       await expect(parts.credits).toHaveCount(0);
       await card.screenshot({ path: shotPath('j-b2-2-card-model.png') });
 
-      // The card stays pinned: asking again goes to the model, not the pack.
+      // The card stays pinned: asking again goes to the model, not the pack,
+      // still as an explanation with the sentence.
       await parts.retranslate.click();
       await expect.poll(() => mock.sentTexts.length).toBe(2);
+      expect(mock.systemPrompts[1]).toContain(globalThis.DictEntry.PROMPT_MARK);
+      expect(pageContextIn(mock.systemPrompts[1])).toEqual({ title: 'River notes', before: sentence });
       await expect(parts.tag).toHaveText(zh('cardEngineAi'));
       await expect(parts.credits).toHaveCount(0);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J-B2.2b: an ordinary lookup on the same page sends no page context', async ({ page, context }) => {
+    const mock = await setUp(page, context);
+    try {
+      const card = await openCardOn(page, '#zebra');
+      const parts = cardPart(card);
+      await expect.poll(() => mock.sentTexts).toEqual(['zebra']);
+      expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
+      expect(pageContextIn(mock.systemPrompts[0])).toBeNull();
+      expect(mock.systemPrompts[0]).not.toContain(await pageText(page, '#tail'));
+      await expect(parts.tag).toHaveText(zh('cardEngineAi'));
+      await expect(parts.text).toHaveText('[T] zebra');
     } finally {
       await mock.close();
     }
@@ -314,6 +328,56 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       expect(opened.url()).toBe('https://www.edrdg.org/edrdg/licence.html');
       expect(opened).not.toBe(page);
       expect(mock.sentTexts).toEqual([]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J-B2.9/J-B2.10: explaining a word the pack proved asks for an entry; a new sentence is text again', async ({ page, context }) => {
+    const mock = await setUp(page, context, { url: `${ORIGIN}/ja` });
+    try {
+      // J-B2.3 again: 食べました is answered by the pack.
+      let card = await openCardOn(page, '#tabemashita');
+      let parts = cardPart(card);
+      await expect(parts.tag).toHaveText(zh('cardEngineDict'));
+      await expect(parts.text).toHaveText('吃');
+      await expect(parts.switchBtn).toHaveText(zh('cardUseAiExplain'));
+      expect(mock.sentTexts).toEqual([]);
+
+      // J-B2.9 — the model is asked for a dictionary entry of the word, with
+      // its sentence and not the next one.
+      const lead = await pageText(page, '#lead');
+      const sentence = lead.slice(0, lead.indexOf('。') + 1);
+      const next = lead.slice(sentence.length).trim();
+      expect(next.length).toBeGreaterThan(0);
+      await parts.switchBtn.click();
+      await expect.poll(() => mock.sentTexts).toEqual(['食べました']);
+      expect(mock.systemPrompts[0]).toContain(globalThis.DictEntry.PROMPT_MARK);
+      expect(pageContextIn(mock.systemPrompts[0])).toEqual({ title: '朝ごはん', before: sentence });
+      expect(mock.systemPrompts[0]).not.toContain(next);
+      await expect(parts.text).toHaveText('[AI] 吃');
+      await expect(parts.entry.locator('.ai-translator-dict-pos')).toHaveText(['v.']);
+      await expect(parts.entry.locator('.ai-translator-dict-defs')).toHaveText(['[AI] 吃（过去式）']);
+      await expect(parts.tag).toHaveText(zh('cardEngineAi'));
+      // The title names the engine that answered (CARD_TITLE in content-popup.js).
+      await expect(parts.title).toHaveText(zh('aiTranslate'));
+      await expect(parts.credits).toHaveCount(0);
+      await card.screenshot({ path: shotPath('j-b2-9-card-explain-ja.png') });
+      await evaluateInContentScript(context, page, 'window.AI_TRANSLATOR_CONTENT.hideTranslationPopup()');
+      await page.evaluate(() => window.getSelection().removeAllRanges());
+
+      // J-B2.10 — a sentence on the same page: translated as text, no entry,
+      // no page context.
+      card = await openCardOn(page, '#tail');
+      parts = cardPart(card);
+      const tail = await pageText(page, '#tail');
+      await expect.poll(() => mock.sentTexts).toEqual(['食べました', tail]);
+      expect(mock.systemPrompts[1]).not.toContain(globalThis.DictEntry.PROMPT_MARK);
+      expect(pageContextIn(mock.systemPrompts[1])).toBeNull();
+      await expect(parts.tag).toHaveText(zh('cardEngineAi'));
+      await expect(parts.text).toHaveText(`[T] ${tail}`);
+      await expect(parts.entry).toBeHidden();
+      await card.screenshot({ path: shotPath('j-b2-10-card-sentence.png') });
     } finally {
       await mock.close();
     }
@@ -393,10 +457,7 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
         await expect(page.locator('html')).toHaveAttribute('data-ai-translator-theme', theme);
         const card = await openCardOn(page, '#ran');
         await expectLocalRunEntry(card);
-        const line = cardPart(card).credits;
-        await line.scrollIntoViewIfNeeded();
-        await waitForSettled(page);
-        await expectCreditsHold(line, `${theme} card`);
+        await expectEntryHolds(page, cardPart(card).credits, '.ai-translator-popup .ai-translator-dict-entry', `${theme} card`);
         await card.screenshot({ path: shotPath(`j-b2-7-card-${theme}-hostile.png`) });
         await evaluateInContentScript(context, page, 'window.AI_TRANSLATOR_CONTENT.hideTranslationPopup()');
 
@@ -404,9 +465,7 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
         await translateInput(page, 'ran');
         const dialogLine = page.locator('#ai-translator-input-dict .ai-translator-dict-credits');
         await expect(dialogLine.locator('a')).toHaveText(['Tatoeba']);
-        await dialogLine.scrollIntoViewIfNeeded();
-        await waitForSettled(page);
-        await expectCreditsHold(dialogLine, `${theme} input box`);
+        await expectEntryHolds(page, dialogLine, '#ai-translator-input-dict', `${theme} input box`);
         await page.locator('#ai-translator-input-dialog .ai-translator-input-modal').screenshot({ path: shotPath(`j-b2-7-input-${theme}-hostile.png`) });
         await closeInputDialog(page);
         expect(mock.sentTexts).toEqual([]);
