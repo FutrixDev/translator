@@ -162,6 +162,8 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
           'raw_no_examples': os.path.getsize(noex_path), 'br_ceiling': ceiling,
           'br_no_examples': br_no, 'br_with_examples': br_with,
           'reverse_added': b.reverse_added, 'sources': sorted(used),
+          'dropped_form_heads': sorted(b.dropped_form_heads),
+          'dropped_long_glosses': b.dropped_long_glosses,
           'seconds': round(time.time() - t0, 1)}
     if layers:
         st['br_layers'] = layer_sizes(pack, stats_dir, name)
@@ -209,6 +211,8 @@ def main():
             print(f"  {st['pack']}: heads={st['heads']} f={st['f_keys']} "
                   f"reading={st['reading_rate']}% x_heads={st['examples_head_rate']}% "
                   f"br_no={st['br_no_examples']} br_with={st['br_with_examples']} "
+                  f"dropped_form_heads={len(st['dropped_form_heads'])} "
+                  f"dropped_long_glosses={st['dropped_long_glosses']} "
                   f"{st['seconds']}s" + (' [x cut to 1]' if st['examples_cut_to_one'] else '')
                   + (f" [cuts {','.join(st['size_cuts'])}]" if st['size_cuts'] else ''),
                   flush=True)

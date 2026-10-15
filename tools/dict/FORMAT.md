@@ -22,7 +22,17 @@ is the cross-batch v1 contract; `check.py` verifies every rule below on every pa
 
 - A head has at most 6 records (`MAX_RECS`), a record at most 4 glosses (`MAX_GLOSS`), each
   at most 120 characters (`GLOSS_CHARS`, cut with `…`). Duplicate gloss lists are dropped.
-- `pos` is the dataset's part of speech (kaikki `pos`, JMdict coarse class), `''` if none.
+- The runtime (`shared/dict-pack.js` `parsePack`, D-641) refuses the whole pack over one
+  record it cannot read, so the build drops such input where it comes in
+  (`entries.Builder`): a head starting with `~` (the runtime's form-key mark; kaikki has
+  entries for the tilde itself), and a translation-table word longer than 500 UTF-16 code
+  units (`GLOSS_MAX`, the runtime's `MAX_TEXT`; the only gloss path not cut to 120). A
+  record left without a gloss is not written, a head without a record is not a head, and
+  `x`, `m` and `f` hold only heads of `e`. `stats/<pack>.json` counts both
+  (`dropped_form_heads`, `dropped_long_glosses`). Wiktionary's list glosses `a , b` are
+  written `a, b`. `npm run dict:runtime-check` reads every pack with that parser.
+- `pos` is the head's part of speech written as the source language's dictionaries write it
+  (below), `''` if the dataset names none.
 - `origin` is the `sources[]` id the record came from (`wiktionary`, `cedict`, `jmdict`).
 - Heads are written in the source script; a zh source is folded to Simplified (the
   Traditional spellings go to `f`, D-578). A zh-TW target pack holds its glosses converted by
@@ -67,7 +77,54 @@ word form, the record has no reading and no later gloss is tried), in the target
 | ko | Revised Romanization | computed per syllable |
 | es / fr / de / pt / ru | IPA | kaikki (English edition, then own edition) → ipa-dict |
 
-Nothing found → `null`; a reading is never guessed.
+Nothing found → `null`; a reading is never guessed. A transcription with no letter in it
+(`[…]`, Wiktionary's placeholder for a missing one) is not a reading.
+
+### Part of speech (D-677)
+
+The runtime prints `pos` as it is in front of the glosses (`dict-entry.js`), so it is an
+abbreviation in the language of the **head** (the pack's source), never an English tag name.
+The build maps every tag a dataset hands it (kaikki `pos`, JMdict's coarse class through
+`entries.JM_POS`, the translation tables' `pos`) with `common.pos_abbr`: the tag picks a row,
+the source language a column. A tag in no row stops the build. CC-CEDICT has no part of
+speech, so its records carry `''`. `check.py` fails a pack holding a value outside its column
+and `''`. The table is `common.POS_CLASS` × `common.POS_ABBR`; `test/unit/dict-tools.test.mjs`
+holds this copy to it.
+
+| tags | en | zh-CN/zh-TW | ja | ko | es | fr | de | pt | ru |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `noun` | n. | 名 | 名 | 명 | s. | n. | Subst. | s. | сущ. |
+| `name` | pr.n. | 专名 | 固 | 고유 | n. pr. | n. pr. | Eigenn. | n. pr. | собств. |
+| `verb` `participle` `gerund` | v. | 动 | 動 | 동 | v. | v. | Verb | v. | гл. |
+| `adj` | adj. | 形 | 形 | 형 | adj. | adj. | Adj. | adj. | прил. |
+| `adj_noun` | adj. | 形 | 形動 | 형 | adj. | adj. | Adj. | adj. | прил. |
+| `adv` | adv. | 副 | 副 | 부 | adv. | adv. | Adv. | adv. | нареч. |
+| `pron` | pron. | 代 | 代 | 대 | pron. | pron. | Pron. | pron. | мест. |
+| `det` | det. | 代 | 連体 | 관 | det. | dét. | Det. | det. | мест. |
+| `article` | art. | 冠 | 冠 | 관 | art. | art. | Art. | art. | арт. |
+| `num` | num. | 数 | 数 | 수 | num. | num. | Num. | num. | числ. |
+| `counter` `classifier` | n. | 量 | 助数 | 의명 | s. | n. | Subst. | s. | сущ. |
+| `prep` | prep. | 介 | 前置 | 전치 | prep. | prép. | Präp. | prep. | предл. |
+| `postp` | postp. | 方位 | 助 | 조 | posp. | postp. | Postp. | posp. | послел. |
+| `conj` | conj. | 连 | 接 | 접속 | conj. | conj. | Konj. | conj. | союз |
+| `intj` `interj` | int. | 叹 | 感 | 감 | interj. | interj. | Interj. | interj. | межд. |
+| `particle` | part. | 助 | 助 | 조 | part. | part. | Partikel | part. | част. |
+| `aux` | aux. | 助动 | 助動 | 보동 | v. | v. | Verb | v. | гл. |
+| `adnominal` | adj. | 形 | 連体 | 관 | adj. | adj. | Adj. | adj. | прил. |
+| `prefix` | pref. | 前缀 | 接頭 | 접두 | pref. | préf. | Präf. | pref. | прист. |
+| `suffix` | suf. | 后缀 | 接尾 | 접미 | suf. | suff. | Suff. | suf. | суфф. |
+| `abbrev` | abbr. | 缩略 | 略 | 약 | abrev. | abrév. | Abk. | abrev. | сокр. |
+| `phrase` `prep_phrase` `adv_phrase` `proverb` | phr. | 短语 | 連語 | 구 | loc. | loc. | Redew. | loc. | выраж. |
+
+`''` (no part of speech): `''`, `affix`, `character`, `circumfix`, `circumpos`, `combining_form`, `contraction`, `infix`, `interfix`, `onomatopeia`, `onomatopoeia`, `punct`, `romanization`, `root`, `soft-redirect`, `stem`, `syllable`, `symbol`, `typographic variant`, `unknown`.
+
+The abbreviations follow each language's general dictionaries: en n./v./adj.; zh 名/动/形
+(现代汉语词典); ja 名/動/形/形動/連体 (国語辞典; JMdict `adj-na` is a 形容動詞, 形動); ko 명/동/형
+(표준국어대사전; a counter is a 의존 명사, 의명); es/pt s. for sustantivo/substantivo, loc. for a
+locución/locução; fr n./v./loc.; de Subst./Verb/Adj./Redew. (Duden); ru сущ./гл./прил./выраж..
+Rows a language's dictionaries do not keep apart share its nearest class: an English counter or
+classifier is a noun, a determiner in zh or ru is a pronoun, an auxiliary in es/fr/pt/de/ru is a
+verb, a participle or gerund is a verb everywhere.
 
 ## `x` — examples (D-566 item 1)
 
@@ -157,6 +214,13 @@ A pack over its ceiling is cut in this order, and `stats/<pack>.json` lists what
 `tools/dict/cc-by-sa-4.0.txt`) and `ATTRIBUTION.txt` (each dataset used with URL, licence,
 extraction date 2026-10-13 and role; the selected/filtered/reordered/merged statement; the
 Tatoeba id lookup; the EDRDG notice; the MIT/BSD/Apache notices from `notices/`) (D-570).
+
+`sources[].url` is https. `credits` holds only `jmdict` and `tatoeba`, each only when the pack
+uses that dataset, with its `href` on the runtime's credit hosts (`www.edrdg.org`,
+`tatoeba.org`; `common.CREDIT_HOSTS`): the card's credit line stays those two (design §6).
+Wiktionary is credited by the pack itself: a pack with a `wiktionary` record lists Wiktionary
+in `sources` (CC BY-SA 4.0, https url) and names it in `ATTRIBUTION.txt`, and `check.py` fails
+it otherwise (D-677).
 
 ## Deviation from design §4.1
 

@@ -154,6 +154,119 @@ MAX_FORMS_M = 8
 GLOSS_CHARS = 120
 EX_SRC_CHARS = 80
 
+# The extension's parser (shared/dict-pack.js parsePack, D-641) refuses a whole pack over one
+# record it cannot read: a head starting with its form-key mark, or a gloss longer than
+# DictEntry.MAX_TEXT, counted as JavaScript counts a string's length (UTF-16 code units).
+# The build drops both where they come in (entries.Builder); check.py and runtime-check.cjs
+# fail a pack that still has one.
+FORM_MARK = '~'
+GLOSS_MAX = 500
+SOURCE_URL = re.compile(r'^https://\S+$')
+CREDIT_HOSTS = ('www.edrdg.org', 'tatoeba.org')
+
+
+def js_len(s):
+    """A string's length as JavaScript counts it: UTF-16 code units."""
+    return len(s.encode('utf-16-le')) // 2
+
+
+def gloss_fits(g):
+    """A gloss the runtime shows: some non-space text, at most GLOSS_MAX code units."""
+    return bool(g.strip()) and js_len(g) <= GLOSS_MAX
+
+
+SPACE_COMMA = re.compile(r' +,')
+
+
+def tidy_commas(s):
+    """'a , b' -> 'a, b': Wiktionary's list glosses keep the space before a comma."""
+    return SPACE_COMMA.sub(',', s)
+
+
+# Part of speech, as the runtime prints it: an abbreviation in the SOURCE language
+# (dict-entry.js: the pos is the head's, written as that language's dictionaries write it).
+# Every tag a source can hand the build (kaikki pos, the tr tables, JMdict through
+# entries.JM_POS) maps to one class; a class maps to one abbreviation per source language.
+# A tag that names no part of speech (a character, a syllable, a root, ...) maps to '' and
+# the record is printed without one. A tag not listed here is a build error, not a guess.
+POS_CLASS = {
+    'noun': 'n', 'name': 'prop',
+    'verb': 'v', 'participle': 'v', 'gerund': 'v',
+    'adj': 'adj', 'adj_noun': 'adjn', 'adv': 'adv', 'pron': 'pron', 'det': 'det',
+    'article': 'art', 'num': 'num', 'counter': 'cl', 'classifier': 'cl',
+    'prep': 'prep', 'postp': 'postp', 'conj': 'conj', 'intj': 'intj', 'interj': 'intj',
+    'particle': 'part', 'aux': 'aux', 'adnominal': 'adn',
+    'prefix': 'pref', 'suffix': 'suf', 'abbrev': 'abbr',
+    'phrase': 'phr', 'prep_phrase': 'phr', 'adv_phrase': 'phr', 'proverb': 'phr',
+}
+POS_NONE = frozenset((
+    '', 'unknown', 'character', 'syllable', 'root', 'stem', 'symbol', 'punct',
+    'romanization', 'soft-redirect', 'typographic variant', 'combining_form', 'affix',
+    'infix', 'interfix', 'circumfix', 'circumpos', 'contraction', 'onomatopoeia',
+    'onomatopeia',
+))
+POS_ABBR = {
+    'en': {'n': 'n.', 'prop': 'pr.n.', 'v': 'v.', 'adj': 'adj.', 'adjn': 'adj.',
+           'adv': 'adv.', 'pron': 'pron.', 'det': 'det.', 'art': 'art.', 'num': 'num.',
+           'cl': 'n.', 'prep': 'prep.', 'postp': 'postp.', 'conj': 'conj.', 'intj': 'int.',
+           'part': 'part.', 'aux': 'aux.', 'adn': 'adj.', 'pref': 'pref.', 'suf': 'suf.',
+           'abbr': 'abbr.', 'phr': 'phr.'},
+    'de': {'n': 'Subst.', 'prop': 'Eigenn.', 'v': 'Verb', 'adj': 'Adj.', 'adjn': 'Adj.',
+           'adv': 'Adv.', 'pron': 'Pron.', 'det': 'Det.', 'art': 'Art.', 'num': 'Num.',
+           'cl': 'Subst.', 'prep': 'Präp.', 'postp': 'Postp.', 'conj': 'Konj.',
+           'intj': 'Interj.', 'part': 'Partikel', 'aux': 'Verb', 'adn': 'Adj.',
+           'pref': 'Präf.', 'suf': 'Suff.', 'abbr': 'Abk.', 'phr': 'Redew.'},
+    'es': {'n': 's.', 'prop': 'n. pr.', 'v': 'v.', 'adj': 'adj.', 'adjn': 'adj.',
+           'adv': 'adv.', 'pron': 'pron.', 'det': 'det.', 'art': 'art.', 'num': 'num.',
+           'cl': 's.', 'prep': 'prep.', 'postp': 'posp.', 'conj': 'conj.', 'intj': 'interj.',
+           'part': 'part.', 'aux': 'v.', 'adn': 'adj.', 'pref': 'pref.', 'suf': 'suf.',
+           'abbr': 'abrev.', 'phr': 'loc.'},
+    'fr': {'n': 'n.', 'prop': 'n. pr.', 'v': 'v.', 'adj': 'adj.', 'adjn': 'adj.',
+           'adv': 'adv.', 'pron': 'pron.', 'det': 'dét.', 'art': 'art.', 'num': 'num.',
+           'cl': 'n.', 'prep': 'prép.', 'postp': 'postp.', 'conj': 'conj.', 'intj': 'interj.',
+           'part': 'part.', 'aux': 'v.', 'adn': 'adj.', 'pref': 'préf.', 'suf': 'suff.',
+           'abbr': 'abrév.', 'phr': 'loc.'},
+    'pt': {'n': 's.', 'prop': 'n. pr.', 'v': 'v.', 'adj': 'adj.', 'adjn': 'adj.',
+           'adv': 'adv.', 'pron': 'pron.', 'det': 'det.', 'art': 'art.', 'num': 'num.',
+           'cl': 's.', 'prep': 'prep.', 'postp': 'posp.', 'conj': 'conj.', 'intj': 'interj.',
+           'part': 'part.', 'aux': 'v.', 'adn': 'adj.', 'pref': 'pref.', 'suf': 'suf.',
+           'abbr': 'abrev.', 'phr': 'loc.'},
+    'ru': {'n': 'сущ.', 'prop': 'собств.', 'v': 'гл.', 'adj': 'прил.', 'adjn': 'прил.',
+           'adv': 'нареч.', 'pron': 'мест.', 'det': 'мест.', 'art': 'арт.', 'num': 'числ.',
+           'cl': 'сущ.', 'prep': 'предл.', 'postp': 'послел.', 'conj': 'союз',
+           'intj': 'межд.', 'part': 'част.', 'aux': 'гл.', 'adn': 'прил.',
+           'pref': 'прист.', 'suf': 'суфф.', 'abbr': 'сокр.', 'phr': 'выраж.'},
+    'zh': {'n': '名', 'prop': '专名', 'v': '动', 'adj': '形', 'adjn': '形', 'adv': '副',
+           'pron': '代', 'det': '代', 'art': '冠', 'num': '数', 'cl': '量', 'prep': '介',
+           'postp': '方位', 'conj': '连', 'intj': '叹', 'part': '助', 'aux': '助动',
+           'adn': '形', 'pref': '前缀', 'suf': '后缀', 'abbr': '缩略', 'phr': '短语'},
+    'ja': {'n': '名', 'prop': '固', 'v': '動', 'adj': '形', 'adjn': '形動', 'adv': '副',
+           'pron': '代', 'det': '連体', 'art': '冠', 'num': '数', 'cl': '助数', 'prep': '前置',
+           'postp': '助', 'conj': '接', 'intj': '感', 'part': '助', 'aux': '助動',
+           'adn': '連体', 'pref': '接頭', 'suf': '接尾', 'abbr': '略', 'phr': '連語'},
+    'ko': {'n': '명', 'prop': '고유', 'v': '동', 'adj': '형', 'adjn': '형', 'adv': '부',
+           'pron': '대', 'det': '관', 'art': '관', 'num': '수', 'cl': '의명', 'prep': '전치',
+           'postp': '조', 'conj': '접속', 'intj': '감', 'part': '조', 'aux': '보동',
+           'adn': '관', 'pref': '접두', 'suf': '접미', 'abbr': '약', 'phr': '구'},
+}
+
+
+def pos_abbr(src_iso, tag):
+    """The abbreviation a record from a `src_iso` head is printed with, for a source tag.
+
+    Raises on a tag no table lists, so a new tag in a dump stops the build instead of
+    printing an English name the runtime would show as a word of the target language."""
+    if tag in POS_NONE:
+        return ''
+    if tag not in POS_CLASS:
+        raise ValueError(f'unknown part-of-speech tag {tag!r} (add it to POS_CLASS or POS_NONE)')
+    return POS_ABBR[src_iso][POS_CLASS[tag]]
+
+
+def pos_values(src_iso):
+    """Every pos a pack whose heads are in `src_iso` may carry."""
+    return frozenset(POS_ABBR[src_iso].values()) | {''}
+
 # Translation-table language codes per target. Chinese is Mandarin only (D-614 R7): yue, nan,
 # hak, wuu, gan, dng and the other Sinitic codes are not aliases.
 TR_ALIASES = {

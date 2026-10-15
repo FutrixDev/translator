@@ -10,9 +10,18 @@ status is non-zero when any pack fails or is missing. Checked per pack:
   files     <pack>.json, LICENSE.txt (byte-equal to tools/dict/cc-by-sa-4.0.txt) and
             ATTRIBUTION.txt (equal to what attribution.text writes for the sources the pack
             lists, so it names exactly the datasets used, the date, the Tatoeba id URL and the
-            MIT / BSD / Apache notices)
+            MIT / BSD / Apache notices); a pack with a Wiktionary record names Wiktionary
+            (CC BY-SA 4.0, https) in `sources` and in ATTRIBUTION.txt (D-677 C4)
   shape     the v1 keys and types, `ver`, record and table caps, every `x`/`m` head and every
             `f` value a head of `e`, no `f` key that is itself a head, en readings "/UK/|/US/"
+            and IPA readings one transcription (readings.one_transcription); and everything
+            the extension's parsePack refuses a whole pack over (D-641): a head starting with
+            common.FORM_MARK, a blank gloss or one over common.GLOSS_MAX UTF-16 units, an
+            `x` row with an empty sentence or an id that is not a positive integer, a source
+            url that is not https, a credit other than jmdict/tatoeba or off CREDIT_HOSTS.
+            tools/dict/runtime-check.cjs runs parsePack itself on the same packs
+  pos       every record's pos is '' or a value of the source language's table
+            (common.POS_ABBR, FORMAT.md; D-677 C3)
   heads     common.heads_count >= 0.95 x common.HEADS_BASE, in the unit of
             common.heads_unit: records (HEADS_UNIT), entries (FORM_SOURCES packs: heads plus
             the words the R8 gloss-text form-of rule moved to `f`) or heads
@@ -58,6 +67,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 from concurrent.futures import ProcessPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -66,10 +76,9 @@ import common as C  # noqa: E402
 import opencc  # noqa: E402
 import readings as R  # noqa: E402
 
-# An English reading: "/UK/|/US/", each side phonemic between slashes or empty, not both.
-EN_READING = re.compile(r'(/[^/\[\]|]+/)?\|(/[^/\[\]|]+/)?')
-# An IPA target's reading (es/fr/de/pt/ru): one transcription, phonemic or phonetic.
-IPA_READING = re.compile(r'/[^/\[\]|]+/|\[[^/\[\]|]+\]')
+# An English reading: "/UK/|/US/", each side one phonemic transcription or empty, not both.
+# An IPA target's reading (es/fr/de/pt/ru): one transcription, phonemic or phonetic. Both
+# are readings.one_transcription, the rule the build keeps a reading by.
 IPA_TARGETS = ('es', 'fr', 'de', 'pt', 'ru')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -156,6 +165,56 @@ def sample_metrics(pack, s, t, sample, skip=frozenset()):
 
 
 # ---------------- per pack ----------------
+def reading_ok(reading, t):
+    if reading is None:
+        return True
+    if not isinstance(reading, str) or not reading:
+        return False
+    if t == 'en':
+        sides = reading.split('|')
+        return len(sides) == 2 and any(sides) and all(
+            not v or R.one_transcription(v, False) for v in sides)
+    if t in IPA_TARGETS:
+        return R.one_transcription(reading, True) is not None
+    return True
+
+
+def record_ok(r, t, used):
+    """One `e` record as parsePack reads it (dict-pack.js checkRecords): [pos, glosses,
+    reading, origin], 1..MAX_GLOSS glosses each with text and at most GLOSS_MAX UTF-16 units,
+    an origin the pack's sources list."""
+    return isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) \
+        and isinstance(r[1], list) and 0 < len(r[1]) <= C.MAX_GLOSS \
+        and all(isinstance(g, str) and C.gloss_fits(g) for g in r[1]) \
+        and r[3] in ORIGINS and r[3] in used and reading_ok(r[2], t)
+
+
+def credits_runtime_ok(credits):
+    """dict-entry.js creditHref: only jmdict/tatoeba, a label, an https href on CREDIT_HOSTS
+    with no user or port."""
+    if not isinstance(credits, dict) or not set(credits) <= {'jmdict', 'tatoeba'}:
+        return False
+    for c in credits.values():
+        u = urllib.parse.urlsplit(c.get('href') or '') if isinstance(c, dict) else None
+        if not (u and c.get('label') and u.scheme == 'https' and u.hostname in C.CREDIT_HOSTS
+                and not u.username and not u.password and u.port is None
+                and u.netloc == u.hostname):
+            return False
+    return True
+
+
+def wiktionary_attributed(pack, attribution_text):
+    """D-677 C4: a pack with a Wiktionary record names Wiktionary in `sources` (CC BY-SA 4.0,
+    an https url) and in ATTRIBUTION.txt. The card credits only jmdict and tatoeba (design
+    §6), so these two places are Wiktionary's whole attribution."""
+    if not any(r[3] == 'wiktionary' for recs in pack['e'].values() for r in recs):
+        return True
+    row = next((r for r in pack['sources'] if r.get('id') == 'wiktionary'), None)
+    return bool(row and 'Wiktionary' in row.get('name', '') and row.get('license') == 'CC BY-SA 4.0'
+                and C.SOURCE_URL.match(row.get('url') or '')
+                and 'Wiktionary' in attribution_text and 'CC BY-SA 4.0' in attribution_text)
+
+
 def check_shape(pack, src, tgt, ver, err):
     if tuple(pack) != KEYS:
         err.append(f'keys {list(pack)}')
@@ -169,28 +228,32 @@ def check_shape(pack, src, tgt, ver, err):
     used = {r.get('id') for r in pack['sources']} if isinstance(pack['sources'], list) else set()
     if not used <= set(C.SOURCES) or pack['sources'] != C.sources_rows(used):
         err.append('sources rows')
+    if not all(isinstance(r.get('url'), str) and C.SOURCE_URL.match(r['url'])
+               for r in pack['sources'] if isinstance(r, dict)):
+        err.append('source url not https')
     if pack['credits'] != C.credits_for(used):
         err.append('credits')
-    t = C.iso(tgt)
+    if not credits_runtime_ok(pack['credits']):
+        err.append('credits outside the runtime hosts (jmdict/tatoeba on CREDIT_HOSTS only)')
+    s, t = C.iso(src), C.iso(tgt)
     e, x, m, f = pack['e'], pack['x'], pack['m'], pack['f']
-    bad = 0
+    pos_ok = C.pos_values(s)
+    bad = bad_pos = 0
     for h, recs in e.items():
-        ok = isinstance(h, str) and h and isinstance(recs, list) and 0 < len(recs) <= C.MAX_RECS
+        ok = isinstance(h, str) and h and not h.startswith(C.FORM_MARK) \
+            and isinstance(recs, list) and 0 < len(recs) <= C.MAX_RECS
         for r in recs if ok else ():
-            ok = ok and isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) \
-                and isinstance(r[1], list) and 0 < len(r[1]) <= C.MAX_GLOSS \
-                and all(isinstance(g, str) and g for g in r[1]) and r[3] in ORIGINS \
-                and r[3] in used and (r[2] is None or (isinstance(r[2], str) and r[2]))
-            if ok and t == 'en' and r[2] is not None:
-                ok = r[2] != '|' and EN_READING.fullmatch(r[2]) is not None
-            if ok and t in IPA_TARGETS and r[2] is not None:
-                ok = IPA_READING.fullmatch(r[2]) is not None
+            ok = ok and record_ok(r, t, used)
+            if ok and r[0] not in pos_ok:
+                bad_pos += 1
         bad += not ok
     if bad:
         err.append(f'{bad} bad e entries')
+    if bad_pos:
+        err.append(f'{bad_pos} records with a pos outside the {s} table (FORMAT.md)')
     bad = sum(not (h in e and isinstance(rows, list) and 0 < len(rows) <= C.MAX_EX and all(
         isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) and isinstance(r[1], str)
-        and r[1] and all(i is None or isinstance(i, int) for i in r[2:])
+        and r[0] and r[1] and all(i is None or (type(i) is int and i > 0) for i in r[2:])
         and (r[2] is None) == (r[3] is None) for r in rows))
         for h, rows in x.items())
     if bad:
@@ -308,9 +371,12 @@ def check_pack(out, name, opts):
     if not os.path.exists(lic) or open(lic, 'rb').read() != want:
         err.append('LICENSE.txt missing or not the CC BY-SA 4.0 text')
     att = os.path.join(d, 'ATTRIBUTION.txt')
-    if not os.path.exists(att) or open(att, encoding='utf-8').read() != attribution.text(
-            src, tgt, pack['ver'], used):
+    att_text = open(att, encoding='utf-8').read() if os.path.exists(att) else ''
+    if att_text != attribution.text(src, tgt, pack['ver'], used):
         err.append('ATTRIBUTION.txt missing or not the text for the sources used')
+    if not wiktionary_attributed(pack, att_text):
+        err.append('Wiktionary records but Wiktionary (CC BY-SA 4.0, https) missing from '
+                   'sources or ATTRIBUTION.txt')
     heads = len(pack['e'])
     unit = C.heads_unit(name)
     counted = C.heads_count(name, pack['e'], pack['f'], opts['norm'])

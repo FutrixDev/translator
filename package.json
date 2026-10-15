@@ -19,7 +19,8 @@
     "test:nav": "npx playwright test horizontal-nav.spec.js",
     "test:report": "npx playwright show-report test/reports",
     "dict:build": "bash tools/dict/build.sh",
-    "dict:check": "python3 -I tools/dict/check.py build/dict/out"
+    "dict:check": "python3 -I tools/dict/check.py build/dict/out",
+    "dict:runtime-check": "node tools/dict/runtime-check.cjs"
   },
   "keywords": [
     "chrome-extension",

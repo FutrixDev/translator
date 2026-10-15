@@ -57,11 +57,12 @@ from readings import Readings
 # source language's own edition, 1).
 FORM_ROWS_RANK = 2
 
-# JMdict part-of-speech codes -> the kaikki vocabulary the other packs use.
-JM_POS = (('adj-', 'adj'), ('adv', 'adv'), ('aux', 'aux'), ('conj', 'conj'), ('cop', 'verb'),
-          ('ctr', 'counter'), ('exp', 'phrase'), ('int', 'intj'), ('num', 'num'),
-          ('pn', 'pron'), ('pref', 'prefix'), ('prt', 'particle'), ('suf', 'suffix'),
-          ('v', 'verb'), ('n', 'noun'), ('unc', ''))
+# JMdict part-of-speech codes -> the kaikki vocabulary the other packs use (then
+# common.pos_abbr, the ja table: adj-na is a 形容動詞, 形動).
+JM_POS = (('adj-na', 'adj_noun'), ('adj-', 'adj'), ('adv', 'adv'), ('aux', 'aux'),
+          ('conj', 'conj'), ('cop', 'verb'), ('ctr', 'counter'), ('exp', 'phrase'),
+          ('int', 'intj'), ('num', 'num'), ('pn', 'pron'), ('pref', 'prefix'),
+          ('prt', 'particle'), ('suf', 'suffix'), ('v', 'verb'), ('n', 'noun'), ('unc', ''))
 
 HAN = re.compile(r'[㐀-鿿豈-﫿]')
 KANA = re.compile(r'[぀-ヿ]')
@@ -130,6 +131,8 @@ class Builder:
         self.reverse_idx = None       # the file_idx of the en->zh reverse lookup
         self.tr_idx = set()           # the file_idx of every translation-table dataset
         self.weak_heads = set()       # heads that may yield to their lemma (module docstring)
+        self.dropped_form_heads = set()   # heads starting with C.FORM_MARK, never kept (D-641)
+        self.dropped_long_glosses = 0     # translation words over C.GLOSS_MAX (D-677)
         opencc_dir = os.path.join(norm, 'opencc')
         self.t2s = opencc.t2s(opencc_dir) if 'zh' in (self.s, self.t) else None
         self.s2twp = opencc.s2twp(opencc_dir) if tgt == 'zh-TW' else None
@@ -141,9 +144,16 @@ class Builder:
         """Keep one record. Records carry their sort key (kind, dataset, order, arrival) as a
         fifth field until build() sorts, cuts and drops it. Two records with the same glosses
         are one: the one that sorts first stays, so en-de `still` keeps the adverb's "noch"
-        rather than the copy an earlier adjective table carried."""
+        rather than the copy an earlier adjective table carried. A head starting with the
+        runtime's form-key mark (C.FORM_MARK: kaikki's "~" entry) is no head; its x, m and f
+        rows never exist, as those tables only keep heads of `e`. The source tag becomes the
+        source language's abbreviation here (C.pos_abbr), once for every dataset."""
         if not head or not glosses or '*' in head:
             return False
+        if head.startswith(C.FORM_MARK):
+            self.dropped_form_heads.add(head)
+            return False
+        pos = C.pos_abbr(self.s, pos)
         if self.s == 'zh' and kind == CONTENT and C.CEDICT_META.match(glosses[0]):
             kind = META
         recs = self.e.setdefault(head, [])
@@ -186,6 +196,7 @@ class Builder:
             g = g.rstrip('。')
             if not CJK_TEXT.search(g) and LATIN.search(g) and g != head:
                 return ''
+        g = C.tidy_commas(g)
         if len(g) > C.GLOSS_CHARS:
             g = g[:C.GLOSS_CHARS - 1] + '…'
         return g
@@ -201,10 +212,18 @@ class Builder:
         return out
 
     def tr_word(self, word):
-        word = ' '.join(word.split())
+        """A translation-table word as a gloss, '' when it is none. Table words are not cut
+        like glosses: one over the runtime's limit (C.GLOSS_MAX, a whole paragraph pasted into
+        a de-en table) is dropped, and the sense's next word takes its place (D-677)."""
+        word = C.tidy_commas(' '.join(word.split()))
         if self.t == 'zh':
             word = word.rsplit(' /', 1)[1].strip() if ' /' in word else self.t2s(word)
-        return word if word and fits_script(word, self.t) else ''
+        if not word or not fits_script(word, self.t):
+            return ''
+        if C.js_len(word) > C.GLOSS_MAX:
+            self.dropped_long_glosses += 1
+            return ''
+        return word
 
     # ---------------- sources ----------------
     def read_cedict(self, path):

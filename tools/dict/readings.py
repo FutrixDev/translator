@@ -66,15 +66,17 @@ def own_ipa(ipa):
 
 PHONEMIC = re.compile(r'/[^/\[\]|]+/')
 PHONETIC = re.compile(r'\[[^/\[\]|]+\]')
+IPA_LETTER = re.compile(r'[^\W\d_]')
 
 
 def one_transcription(ipa, phonetic_ok):
     """`ipa` when it is exactly one transcription: phonemic `/.../`, or phonetic `[...]` where
     `phonetic_ok`; else None. English readings are written "/UK/|/US/", so en takes phonemic
     only. Two transcriptions in one string, an unclosed delimiter, template residue such as
-    `^((h aspiré))\\a.ka\\`, diaphonemic `⫽...⫽` and bare letters are all None."""
+    `^((h aspiré))\\a.ka\\`, diaphonemic `⫽...⫽` and bare letters are all None, and so is
+    a pair of delimiters with no letter inside: Wiktionary's elided "[…]" (en-de, fr-de)."""
     ok = PHONEMIC.fullmatch(ipa) or (phonetic_ok and PHONETIC.fullmatch(ipa))
-    return ipa if ok else None
+    return ipa if ok and IPA_LETTER.search(ipa) else None
 
 
 def kaikki_ipa_rows(path, own, phonetic_ok):

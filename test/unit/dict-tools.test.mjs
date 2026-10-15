@@ -402,7 +402,7 @@ b.add('still', 'adj', ['noch'], 'wiktionary', order=5)
 b.add('still', 'adv', ['noch'], 'wiktionary', order=1)
 b.add('still', 'adj', ['noch'], 'wiktionary', order=7)
 print(json.dumps([r[:4] for r in b.e['still']]))`, tmp);
-  assert.deepEqual(recs, [['adv', ['noch'], null, 'wiktionary']]);
+  assert.deepEqual(recs, [['adv.', ['noch'], null, 'wiktionary']]);
 });
 
 test('translation tables: another variety of the target, and an affix under a word, are dropped', () => {
@@ -439,4 +439,199 @@ f = {'curios': 'curio', 'curioz': 'curio', 'went': 'go'}
 f2, _m = formtab.cut('f-attested', f, {}, {'go'}, set(), frozenset({'curios'}))
 print(json.dumps(f2))`);
   assert.deepEqual(out, { curios: 'curio', went: 'go' });
+});
+
+// ---------------- the runtime contract (D-641) and source-language pos (D-677) ----------------
+
+test('D-641: a head starting with the form-key mark never enters e, so no x/m/f row can follow it', () => {
+  const out = pyJson(`
+import entries
+b = entries.Builder(sys.argv[2], sys.argv[2], 'en', 'de')
+kept = [b.add(h, 'noun', ['Tilde'], 'wiktionary') for h in ('~', '~ly', 'tilde')]
+print(json.dumps({'kept': kept, 'heads': sorted(b.e), 'dropped': sorted(b.dropped_form_heads)}))`, tmp);
+  assert.deepEqual(out, { kept: [false, false, true], heads: ['tilde'], dropped: ['~', '~ly'] });
+});
+
+test('D-641: a translation word over 500 UTF-16 units is dropped whole, not cut', () => {
+  const out = pyJson(`
+import entries, common as C
+b = entries.Builder(sys.argv[2], sys.argv[2], 'de', 'en')
+words = ['a' * 500, 'a' * 501, 'ein ' + 'x' * 497, 'the dog , the cat']
+print(json.dumps({'tr': [b.tr_word(w) for w in words], 'dropped': b.dropped_long_glosses,
+                  'len': [C.js_len('a'), C.js_len('\\U00020000'), C.js_len('é')]}))`, tmp);
+  assert.deepEqual(out.tr, ['a'.repeat(500), '', '', 'the dog, the cat']);
+  assert.equal(out.dropped, 2);
+  assert.deepEqual(out.len, [1, 2, 1], 'an astral character is two units, as String.length counts');
+});
+
+test('glosses: Wiktionary list glosses "a , b" are written "a, b"', () => {
+  const out = pyJson(`
+import entries
+b = entries.Builder(sys.argv[2], sys.argv[2], 'de', 'en')
+print(json.dumps([b.gloss(g, 'Hund') for g in ('dog , hound', 'dog, hound', 'dog  ,  hound , cur')]))`, tmp);
+  assert.deepEqual(out, ['dog, hound', 'dog, hound', 'dog, hound, cur']);
+});
+
+test('readings: a transcription with no letter in it ("[…]") is no reading', () => {
+  const out = pyJson(`
+import readings as R
+print(json.dumps([R.one_transcription(v, True) for v in ('[…]', '/…/', '[...]', '[ ]', '[ˈʃtɪl]', '/fɔʁ/')]))`);
+  assert.deepEqual(out, [null, null, null, null, '[ˈʃtɪl]', '/fɔʁ/']);
+});
+
+test('check.py fails a head starting with "~", the runtime form-key mark', () => {
+  const r = check(mutant('tilde', (_dir, pack) => { pack.e['~x'] = [['s.', ['tilde'], null, 'wiktionary']]; }));
+  assert.notEqual(r.status, 0);
+  assert.ok(r.reasons.includes('1 bad e entries'), r.stdout);
+});
+
+test('check.py fails a gloss over 500 characters and a blank one', () => {
+  for (const g of ['x'.repeat(501), '   ']) {
+    const r = check(mutant(`gloss${g.length}`, (_dir, pack) => { Object.values(pack.e)[0][0][1] = [g]; }));
+    assert.notEqual(r.status, 0);
+    assert.ok(r.reasons.includes('1 bad e entries'), r.stdout);
+  }
+});
+
+test('check.py fails an x row whose Tatoeba id is not a positive integer', () => {
+  for (const id of [0, -3, 1.5]) {
+    const r = check(mutant(`xid${id}`, (_dir, pack) => {
+      const row = Object.values(pack.x).flat().find((x) => x[2] !== null);
+      row[2] = id;
+    }));
+    assert.notEqual(r.status, 0);
+    assert.ok(r.reasons.includes('1 bad x entries'), `${id}: ${r.stdout}`);
+  }
+});
+
+test('check.py fails a source url that is not https and a credit off the runtime hosts', () => {
+  let r = check(mutant('http', (_dir, pack) => {
+    pack.sources[0].url = pack.sources[0].url.replace('https:', 'http:');
+  }));
+  assert.ok(r.reasons.includes('source url not https'), r.stdout);
+  r = check(mutant('credit', (_dir, pack) => {
+    pack.credits.tatoeba.href = 'https://tatoeba.org.example.com/';
+  }));
+  assert.ok(r.reasons.includes('credits outside the runtime hosts (jmdict/tatoeba on CREDIT_HOSTS only)'),
+    r.stdout);
+  const ok = pyJson(`
+import check
+print(json.dumps([check.credits_runtime_ok(c) for c in json.loads(sys.argv[2])]))`, JSON.stringify([
+    { jmdict: { label: 'JMdict', href: 'https://www.edrdg.org/wiki/' } },
+    { wiktionary: { label: 'Wiktionary', href: 'https://en.wiktionary.org/' } },
+    { tatoeba: { label: 'Tatoeba', href: 'https://user@tatoeba.org/' } },
+    { tatoeba: { label: 'Tatoeba', href: 'https://tatoeba.org:8443/' } },
+  ]));
+  assert.deepEqual(ok, [true, false, false, false]);
+});
+
+test('D-677 C3: the build writes the source language\'s abbreviation, check.py fails any other pos', () => {
+  const pos = new Set(Object.values(readPack().e).flat().map((r) => r[0]));
+  const allowed = new Set(pyJson(`
+import common as C
+print(json.dumps(sorted(C.pos_values('es'))))`));
+  for (const p of pos) assert.ok(allowed.has(p), `es-en pos ${JSON.stringify(p)} is in the es table`);
+  assert.ok(pos.has('s.') && pos.has('v.'), [...pos].join(' '));
+  for (const bad of ['verb', 'unknown', 'n.']) {
+    const r = check(mutant(`pos-${bad}`, (_dir, pack) => { Object.values(pack.e)[0][0][0] = bad; }));
+    if (bad === 'n.') {
+      // n. is fr's noun, not es's: the column is the source language's.
+      assert.ok(r.reasons.includes('1 records with a pos outside the es table (FORMAT.md)'), r.stdout);
+      continue;
+    }
+    assert.notEqual(r.status, 0);
+    assert.ok(r.reasons.includes('1 records with a pos outside the es table (FORMAT.md)'), `${bad}: ${r.stdout}`);
+  }
+  const map = pyJson(`
+import common as C
+out = {s: [C.pos_abbr(s, t) for t in ('noun', 'name', 'unknown', 'character', '')] for s in ('en', 'zh', 'ja', 'ko', 'de')}
+try:
+    C.pos_abbr('en', 'gerundive')
+    out['unknown_tag'] = 'kept'
+except ValueError:
+    out['unknown_tag'] = 'raised'
+print(json.dumps(out, ensure_ascii=False))`);
+  assert.deepEqual(map, {
+    en: ['n.', 'pr.n.', '', '', ''], zh: ['名', '专名', '', '', ''], ja: ['名', '固', '', '', ''],
+    ko: ['명', '고유', '', '', ''], de: ['Subst.', 'Eigenn.', '', '', ''], unknown_tag: 'raised',
+  });
+});
+
+test('D-677 C3: the FORMAT.md part-of-speech table is the one the build uses', () => {
+  const md = readFileSync(path.join(TOOLS, 'FORMAT.md'), 'utf8');
+  const lines = md.slice(md.indexOf('### Part of speech')).split('\n');
+  const head = lines.findIndex((l) => l.startsWith('| tags |'));
+  const cols = lines[head].split('|').slice(2, -1).map((c) => c.trim());
+  const rows = [];
+  for (const l of lines.slice(head + 2)) {
+    if (!l.startsWith('|')) break;
+    const cells = l.split('|').slice(1, -1).map((c) => c.trim());
+    rows.push([[...cells[0].matchAll(/`([^`]+)`/g)].map((m) => m[1]), cells.slice(1)]);
+  }
+  const none = /^`''` \(no part of speech\): (.*)\.$/m.exec(md)[1].split(', ').map((t) => t.slice(1, -1));
+  const code = pyJson(`
+import common as C
+print(json.dumps({'cls': C.POS_CLASS, 'abbr': C.POS_ABBR, 'none': sorted(C.POS_NONE)}, ensure_ascii=False))`);
+  const iso = (c) => (c === 'zh-CN/zh-TW' ? 'zh' : c);
+  assert.deepEqual(cols.map(iso).sort(), Object.keys(code.abbr).sort(), 'one column per source language');
+  const tags = rows.flatMap(([t]) => t);
+  assert.deepEqual([...tags].sort(), Object.keys(code.cls).sort(), 'every tag in exactly one row');
+  for (const [rowTags, cells] of rows) {
+    const cls = code.cls[rowTags[0]];
+    for (const t of rowTags) assert.equal(code.cls[t], cls, `${t} shares its row's class`);
+    cells.forEach((v, i) => assert.equal(v, code.abbr[iso(cols[i])][cls], `${rowTags[0]} / ${cols[i]}`));
+  }
+  assert.deepEqual(none.map((t) => (t === "''" ? '' : t)).sort(), code.none);
+});
+
+test('D-677 C4: a Wiktionary pack names Wiktionary in sources and ATTRIBUTION.txt', () => {
+  const reason = 'Wiktionary records but Wiktionary (CC BY-SA 4.0, https) missing from sources or ATTRIBUTION.txt';
+  assert.ok(!check(OUT).reasons.includes(reason));
+  const r = check(mutant('wikt-att', (dir) => {
+    const att = path.join(dir, 'ATTRIBUTION.txt');
+    writeFileSync(att, readFileSync(att, 'utf8').replaceAll('Wiktionary', 'W.'));
+  }));
+  assert.notEqual(r.status, 0);
+  assert.ok(r.reasons.includes(reason), r.stdout);
+  const fn = pyJson(`
+import check
+pack = json.loads(sys.argv[2])
+att = 'Wiktionary (kaikki.org) CC BY-SA 4.0'
+rows = pack['sources']
+no_row = dict(pack, sources=[s for s in rows if s['id'] != 'wiktionary'])
+http = dict(pack, sources=[dict(s, url='http://kaikki.org/') if s['id'] == 'wiktionary' else s for s in rows])
+no_wikt = dict(pack, e={'x': [['', ['y'], None, 'tatoeba']]})
+print(json.dumps([check.wiktionary_attributed(p, a) for p, a in
+                  ((pack, att), (no_row, att), (http, att), (pack, 'Tatoeba'), (no_wikt, ''))]))`,
+  JSON.stringify(readPack()));
+  assert.deepEqual(fn, [true, false, false, false, true]);
+});
+
+test('runtime-check.cjs: one line per pack, non-zero unless every pack the parser reads passes', () => {
+  // A stand-in for shared/: the real parser is the gate's (npm run dict:runtime-check
+  // --runtime <checkout>); this holds the script's own plumbing to its word.
+  const rt = path.join(tmp, 'runtime');
+  mkdirSync(path.join(rt, 'shared'), { recursive: true });
+  writeFileSync(path.join(rt, 'shared/lang-tags.js'), 'globalThis.__order = ["lang-tags"];\n');
+  writeFileSync(path.join(rt, 'shared/dict-entry.js'), 'globalThis.__order.push("dict-entry");\n');
+  writeFileSync(path.join(rt, 'shared/dict-pack.js'), `
+globalThis.DictPack = { parsePack(text) {
+  if (globalThis.__order.join() !== 'lang-tags,dict-entry') throw new Error('load order');
+  const p = JSON.parse(text);
+  for (const h of Object.keys(p.e)) if (h.startsWith('~')) throw new Error('dictionary pack: e[' + JSON.stringify(h) + '] starts with "~"');
+  return p;
+} };\n`);
+  const rc = (...args) => run('node', [path.join(TOOLS, 'runtime-check.cjs'), '--runtime', rt, ...args]);
+  const heads = Object.keys(readPack().e).length;
+  let r = rc('--packs', PACK, OUT);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.stdout.split('\n').includes(`${PACK} ok heads=${heads}`), r.stdout);
+  r = rc('--packs', PACK, mutant('rc-tilde', (_dir, pack) => { pack.e['~x'] = [['s.', ['x'], null, 'wiktionary']]; }));
+  assert.equal(r.status, 1);
+  assert.ok(r.stdout.includes(`${PACK} FAIL dictionary pack: e["~x"] starts with "~"`), r.stdout);
+  r = rc(OUT);
+  assert.equal(r.status, 1, 'the other 29 packs are missing');
+  assert.equal(r.stdout.split('\n').filter((l) => / FAIL missing /.test(l)).length, 29, r.stdout);
+  assert.match(r.stdout, /runtime-check: 1\/30 packs parse/);
+  assert.equal(rc('--packs', 'xx-yy', OUT).status, 2);
 });
