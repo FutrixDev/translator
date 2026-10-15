@@ -15,8 +15,10 @@
  * The model's answer is the protocol every model mock here speaks
  * (answerPrompt in mock-openai-server.js), so the extension's own prompts and
  * parsing are what is under test, not a canned reply. A successful call adds
- * `system.length + user.length` to `used`, the way the server meters (§2.1),
- * so the settings page's "used today" can be seen to move.
+ * its tokens to `used`, so the settings page's "used today" can be seen to
+ * move. The server meters what the model provider reports, prompt plus
+ * completion (D-564); with no provider behind this stub, a token stands in
+ * for every four characters of system, user and answer.
  *
  * `state.mode` says what the account is right now and can change mid-test:
  *   'available'      billing/me says available; complete answers 200
@@ -97,9 +99,10 @@ async function startMockBlabService({
         if (state.mode === 'daily_limit') {
           return send(429, { error: 'daily_limit', limit, used: limit, resetsAt: RESETS_AT });
         }
-        state.used += body.system.length + body.user.length;
+        const { text } = answerPrompt(body.system, body.user, dictEntry);
+        state.used += Math.ceil((body.system.length + body.user.length + text.length) / 4);
         return send(200, {
-          text: answerPrompt(body.system, body.user, dictEntry).text,
+          text,
           usage: { used: state.used, limit, resetsAt: RESETS_AT },
         });
       });

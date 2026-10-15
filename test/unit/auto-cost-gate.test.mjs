@@ -44,7 +44,7 @@ test('闸装在唯一那个发给模型的出口上，不在调度层', () => {
     engine,
     /const refusal = engine === 'ai' \? await refuseAutoAiSpend\(message\) : null;\s*\n\s*if \(refusal\) return \{ error: refusal, budgetSpent: true, engine \};\s*\n(?:\s*\/\/[^\n]*\n)*\s*const response = await chrome\.runtime\.sendMessage\(message\);/
   );
-  // 闸只拦用户自己的 AI：Blab Translation 的上限是账户每天的字数，由服务端的 429
+  // 闸只拦用户自己的 AI：Blab Translation 的上限是账户每天的 token 数，由服务端的 429
   // 把关，不记在 autoAiDailyBudget 上（D-480）。
   // 只拦零点击的那两条路：自动整页翻译（auto）和视频字幕（unattended）。手动
   // 翻译是用户一次一次点出来的，他知道自己在花钱。

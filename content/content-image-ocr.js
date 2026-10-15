@@ -374,10 +374,11 @@
   //
   // The context menu is the primary surface, but it is two clicks and hidden
   // behind a right-click nobody performs on an image they merely wonder about.
-  // With enableImageOcrHoverButton on, resting the cursor on a large image
-  // shows a small "recognize text" button at its top-right corner; clicking it
-  // runs exactly the whole-image flow above. Off by default — a button that
-  // appears over pictures is a change to every page, so it is opted into.
+  // With enableImageOcrHoverButton on, resting the cursor on an <img> of at
+  // least HOVER_MIN_SIZE in both dimensions shows a small "recognize text"
+  // button at its top-right corner; clicking it runs exactly the whole-image
+  // flow above. On by default (background/settings.js) — the size floor keeps
+  // it off icons and thumbnails, and the options page can turn it off.
 
   const HOVER_BTN_ID = 'ai-translator-ocr-hover-btn';
 

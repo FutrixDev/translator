@@ -1,11 +1,12 @@
 Blab Translation — leia qualquer coisa em dois idiomas.
 
-Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mangás e HQs. Use a IA em que você confia — modelos na nuvem ou locais — ou o tradutor gratuito do Chrome, que roda no seu dispositivo.
+Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mangás e HQs. Escolha o mecanismo: o tradutor gratuito do Chrome, que roda no seu dispositivo, a IA em que você confia — modelos na nuvem ou locais, com a sua própria chave — ou o Blab Translation, incluído na assinatura, sem chave.
 
 ★ PÁGINAS WEB BILÍNGUES
 • A tradução abaixo de cada parágrafo. Formatação, links e imagens intactos.
 • Só a tradução? Uma tecla: Alt+T.
 • Conteúdo principal primeiro — menus e barras laterais não atrapalham. Alt+W para a página inteira.
+• Quer só uma parte? Aponte para uma área e escolha "Traduzir só aqui".
 • Alcança o interior de iframes e do Shadow DOM.
 • Fórmulas, LaTeX e código ficam intactos. Artigos científicos continuam legíveis.
 • 6 estilos de tradução. 76 idiomas. Idiomas da direita para a esquerda exibidos corretamente.
@@ -13,7 +14,7 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mang
 ★ TRADUÇÃO AUTOMÁTICA QUE SABE QUANDO PARAR
 • Frases que já estão no seu idioma são puladas — mesmo cheias de termos estrangeiros.
 • Mensagens privadas nunca são traduzidas automaticamente.
-• Regras por site: aponte para qualquer área — "Não traduzir aqui", "Manter o original" ou "Traduzir só aqui". Fixe um mecanismo, adicione CSS. As regras sincronizam com a sua conta do navegador.
+• Regras por site: aponte para qualquer área — "Não traduzir aqui" ou "Manter o original". Fixe um mecanismo, adicione CSS. As regras sincronizam com a sua conta do navegador.
 
 ★ TRADUÇÃO DE PDF QUE MANTÉM O LAYOUT
 • PDFs bilíngues ou só com a tradução, com figuras, fórmulas e layout exatamente onde estavam.
@@ -31,16 +32,22 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mang
 ★ SELECIONE, PASSE O MOUSE, CONSULTE
 • Selecione um texto para traduzir — traduzir de novo, trocar de mecanismo, copiar, ler em voz alta.
 • Dicionário integrado para palavras e expressões: pronúncia, sentidos, exemplos, formas da palavra.
+• Os idiomas que você escolheu por último ficam no topo do menu de idiomas.
 • Segure uma tecla modificadora e passe o mouse para traduzir um único parágrafo.
 • Digitando em um idioma diferente do da página? Traduza com um clique.
 
-★ MANGÁS, HQS E IMAGENS
+★ MANGÁS E HQS
 • Páginas de mangá e HQ redesenhadas no seu idioma — e colorizadas, se você quiser.
-• Texto em imagens reconhecido por OCR no dispositivo e depois traduzido.
+
+★ TEXTO EM QUALQUER IMAGEM (OCR)
+• Clique com o botão direito em qualquer imagem — uma captura de tela, uma foto, um gráfico — para ler o texto dela e traduzi-lo.
+• A imagem inteira ou só a área que você demarcar. Imagens grandes também mostram o botão "Reconhecer texto" ao passar o mouse.
+• Lido offline no seu dispositivo: inglês, e também chinês, japonês ou coreano quando for o idioma da sua interface — ou por um modelo de visão com sua própria chave para outros idiomas, fotos e letras estilizadas.
 
 ★ PRIVADO POR PADRÃO
 • Por padrão, as páginas web são traduzidas no seu dispositivo. Seu texto nunca sai do seu computador.
-• Com um mecanismo de IA, o texto vai direto para o seu endpoint, com a sua própria chave — nunca passa por nós.
+• Com o seu próprio modelo de IA, o texto vai direto para o seu endpoint, com a sua própria chave — nunca passa por nós.
+• O Blab Translation envia o texto aos nossos servidores para traduzi-lo e não guarda nada.
 • Arquivos PDF, documentos e HQs são processados nos nossos servidores e excluídos após 7 dias.
 • Sem análises de uso. Sem rastreamento de anúncios.
 
