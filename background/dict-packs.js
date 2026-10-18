@@ -37,12 +37,21 @@
 // A worker stopped mid-job leaves its pair `downloading` and, mid-seed, half
 // its keys. The first check, lookup request or settings page in the next
 // worker queues one recovery job that marks those pairs failed and removes
-// the orphaned keys (D-609).
+// the orphaned keys (D-609). Each such stop counts against that version in
+// `dict:status` (`interrupts`); after MAX_INTERRUPTS in a row a lookup no
+// longer fetches it, and only the daily check does (N2).
+//
+// A download holds the worker awake (keepalive.js) from the request to the
+// last byte: Chrome stops an extension worker that has made no extension API
+// call for 30 s, and a fetch in flight is not one. A pack is tens of MB, and
+// a slow line or a response that is slow to start would otherwise never
+// finish (N2).
 import '../shared/storage-writer.js';
 import '../shared/dict-entry.js';
 import '../shared/dict-pack.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { ensureDailyAlarm } from './daily-alarm.js';
+import { acquire as holdAwake, release as letSleep } from './keepalive.js';
 
 const { DictPack, StorageWriter } = globalThis;
 
@@ -138,9 +147,33 @@ function isCurrent(packs, pair, row) {
   return Boolean(packs[pair]) && packs[pair].ver === row.ver;
 }
 
-/** A `dict:status` item: what the settings page shows for a pair. */
-function status(state, ver, reason = '') {
-  return { state, ver, reason };
+/**
+ * A `dict:status` item: what the settings page shows for a pair, and how many
+ * times in a row a worker stopped while fetching `ver` (only when some did).
+ */
+function status(state, ver, reason = '', interrupts = 0) {
+  return interrupts ? { state, ver, reason, interrupts } : { state, ver, reason };
+}
+
+// The reason a recovery writes: the pair was not refused, its worker stopped.
+const INTERRUPTED = 'interrupted';
+
+// Stops in a row at one version after which a lookup no longer fetches it.
+const MAX_INTERRUPTS = 3;
+
+/** The stops in a row `last` records against `ver`; another version starts at 0. */
+function interruptsOf(last, ver) {
+  return last && last.ver === ver ? last.interrupts || 0 : 0;
+}
+
+/**
+ * Whether a lookup leaves `row` to the daily check: it already failed at this
+ * version, by a refusal, or by a worker stopped mid-job MAX_INTERRUPTS times
+ * in a row. A pair interrupted fewer times did not fail, and is fetched again.
+ */
+function leftToCheck(last, row) {
+  if (!last || last.state !== 'failed' || last.ver !== row.ver) return false;
+  return last.reason !== INTERRUPTED || interruptsOf(last, row.ver) >= MAX_INTERRUPTS;
 }
 
 async function setDeclined(pair, declined) {
@@ -165,15 +198,25 @@ function hex(buffer) {
   return Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** The body at `url`, the worker held awake from the request to the last byte. */
+async function download(url) {
+  holdAwake();
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.arrayBuffer();
+  } finally {
+    letSleep();
+  }
+}
+
 /**
  * Download the pack in `row` and check it: HTTP status, the sha256 of the
  * bytes the browser handed over (already brotli-decoded), the v1 contract,
  * and that it is the pack the row names. Throws on the first failure.
  */
 async function fetchPack(row) {
-  const response = await fetch(DictPack.DOWNLOAD_ORIGIN + row.url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const buffer = await response.arrayBuffer();
+  const buffer = await download(DictPack.DOWNLOAD_ORIGIN + row.url);
   const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
   if (sha256 !== row.sha256) throw new Error(`sha256 mismatch: manifest ${row.sha256}, downloaded ${sha256}`);
   const pack = DictPack.parsePack(new TextDecoder().decode(buffer));
@@ -206,7 +249,11 @@ async function runInstall({ op, row }) {
   // The caller read the list before it queued this job; another job may have
   // seeded this version since (D-609 N4).
   if (isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return { state: 'installed' };
-  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver));
+  // Read again on the queue: the lookup's own read can come before the
+  // recovery that counts the last stop.
+  const last = (await readMap(DictPack.STATUS_KEY))[pair];
+  if (op === 'want' && leftToCheck(last, row)) return { state: 'failed' };
+  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver, '', interruptsOf(last, row.ver)));
   try {
     await installPack(row);
   } catch (error) {
@@ -231,21 +278,20 @@ async function deletePair({ src, tgt }) {
   return { state: 'deleted' };
 }
 
-// The reason a recovery writes: the pair was not refused, its worker stopped.
-const INTERRUPTED = 'interrupted';
-
 // Only a job on this queue writes `downloading`, and this runs on the queue,
 // so every `downloading` it finds is from a worker that stopped mid-job. The
 // pair is marked failed (the check retries it); a pair with no list item was
 // being seeded from scratch or replaced, and its keys are orphans (D-609 N6).
+// The stop is counted on top of those before it at the same version.
 async function recoverPairs() {
   const statuses = await readMap(DictPack.STATUS_KEY);
   const packs = await readMap(DictPack.PACKS_KEY);
-  for (const [pair, { state, ver }] of Object.entries(statuses)) {
+  for (const [pair, last] of Object.entries(statuses)) {
+    const { state, ver } = last;
     if (state !== 'downloading') continue;
     console.warn('[Blab Translation] dictionary pack interrupted', { pair, ver });
     if (!packs[pair]) await removePairKeys(pair);
-    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', ver, INTERRUPTED));
+    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', ver, INTERRUPTED, interruptsOf(last, ver) + 1));
   }
   return { state: 'recovered' };
 }
@@ -277,23 +323,27 @@ const packWriter = StorageWriter.create({
   errors: 'throw',
 });
 
-const joinable = new Map(); // pair -> { ver, job }: the queued or running install
+const joinable = new Map(); // pair -> { op, ver, job }: the queued or running install
 
 /**
  * Queue the install of `row`, or join the install of its pair already queued
  * at the same version. A job for another version is not joined: it carries
  * its own manifest row, and joining it would seed that version instead of
  * `row`'s. A redownload never joins: a job asked for before the reader's
- * click finds the pair declined. Resolves when it is seeded
+ * click finds the pair declined. Only a lookup joins a lookup's job: that job
+ * gives up on a version stopped MAX_INTERRUPTS times (runInstall), and a
+ * check or preinstall must still fetch it. Resolves when it is seeded
  * ({state:'installed'}), has failed ({state:'failed'}, already logged and
  * shown), or was declined.
  */
 function queueInstall(op, row) {
   const pair = DictPack.pairOf(row.src, row.tgt);
   const queued = joinable.get(pair);
-  if (op !== 'redownload' && queued && queued.ver === row.ver) return queued.job;
+  if (op !== 'redownload' && queued && queued.ver === row.ver && (queued.op !== 'want' || op === 'want')) {
+    return queued.job;
+  }
   const job = packWriter.applyWrite({ kind: 'install', op, row });
-  const entry = { ver: row.ver, job };
+  const entry = { op, ver: row.ver, job };
   joinable.set(pair, entry);
   const settle = () => {
     if (joinable.get(pair) === entry) joinable.delete(pair);
@@ -352,7 +402,8 @@ export async function onDictInstalled(details) {
  * and the manifest has it. A pack that already failed at the manifest's
  * version is left to the daily check, so a broken pack is not downloaded
  * again on every page; a pack whose worker was stopped mid-job (reason
- * 'interrupted') did not fail, and is fetched again now.
+ * 'interrupted') did not fail, and is fetched again now, up to
+ * MAX_INTERRUPTS stops in a row at that version (N2).
  * @returns {Promise<{state: string}>} what was done: off, declined, absent,
  *   installed, failed, or queued (the job is not awaited)
  */
@@ -364,8 +415,7 @@ async function wantDictPack(message) {
   const row = (await readManifest()).get(pair);
   if (!row) return { state: 'absent' };
   if (isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return { state: 'installed' };
-  const last = (await readMap(DictPack.STATUS_KEY))[pair];
-  if (last && last.state === 'failed' && last.reason !== INTERRUPTED && last.ver === row.ver) return { state: 'failed' };
+  if (leftToCheck((await readMap(DictPack.STATUS_KEY))[pair], row)) return { state: 'failed' };
   detach('want', pair, queueInstall('want', row));
   return { state: 'queued' };
 }

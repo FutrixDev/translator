@@ -5,7 +5,9 @@
  * a preinstall that failed, a worker stopped mid-job is cleaned up after, two
  * requests for one pack fetch it once, a swap never shows a half-seeded pack,
  * a pack that is not the one its row names is refused, a pair the manifest
- * drops says so, and the manifest is revalidated only by the daily check.
+ * drops says so, the manifest is revalidated only by the daily check, and a
+ * version whose worker is stopped mid-download three times in a row is left
+ * to the daily check (N2).
  *
  * Packs come from test/fixtures/dict-runtime through DictPackServer, as in
  * dict-packs.spec.js; the real host never resolves in a test browser.
@@ -227,7 +229,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     const options = await openOptions(context, extensionId);
     // Read through the settings page: storage as a page sees it, across the worker restart.
     await expect.poll(async () => (await localValue(options, STATUS_KEY) || {})[EN_ZH], { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted' });
+      .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 1 });
     expect(await countKeys(options, keysOf(EN_ZH))).toBe(0);
     expect((await localValue(options, PACKS_KEY) || {})[EN_ZH]).toBeUndefined();
     const pack = packRow(options, EN_ZH);
@@ -247,7 +249,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
 
     expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'absent' });
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted' });
+      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', interrupts: 1 });
     expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
     expect(warnings).toHaveLength(1);
     expect(await warnings[0].args()[1].jsonValue()).toEqual({ pair: EN_ZH, ver: '2026.10.13' });
@@ -267,13 +269,56 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
 
     await fireAlarm(context, DICT_CHECK_ALARM);
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted' });
+      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', interrupts: 1 });
     const worker = await getServiceWorker(context);
     expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
     await expect.poll(() => statusOf(context, KO_EN))
-      .toEqual({ state: 'failed', ver: '2026.12.01', reason: 'interrupted' });
+      .toEqual({ state: 'failed', ver: '2026.12.01', reason: 'interrupted', interrupts: 1 });
     expect(await countKeys(worker, keysOf(KO_EN))).toBe(1);
     expect((await packItem(context, KO_EN)).ver).toBe(koRow.ver);
+  });
+
+  test('J-B1.25 a version stopped mid-download three times in a row is no longer fetched by a lookup, only by the daily check', async ({ context, page, extensionId }) => {
+    const server = new DictPackServer();
+    const row = server.publishFixture(EN_ZH);
+    await server.attach(context);
+    await openExample(context, page);
+    // Read through the settings page: storage as a page sees it, across the
+    // worker restarts. Loading it also has the next worker run its recovery.
+    const options = await openOptions(context, extensionId);
+    const statusNow = async () => (await localValue(options, STATUS_KEY) || {})[EN_ZH];
+
+    for (let stopped = 1; stopped <= 3; stopped += 1) {
+      const held = server.hold(row.url);
+      try {
+        expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'queued' });
+        await held.hit;
+        await expect.poll(statusNow).toMatchObject({ state: 'downloading', ver: row.ver });
+        await recycleWorker(context, page);
+      } finally {
+        held.release();
+      }
+      await options.reload();
+      await expect.poll(statusNow, { timeout: 15000 })
+        .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: stopped });
+      expect(server.hitsOf(row.url)).toBe(stopped);
+    }
+
+    // The fourth lookup is turned away and fetches nothing.
+    expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'failed' });
+    await page.waitForTimeout(1000);
+    expect(server.hitsOf(row.url)).toBe(3);
+    expect(await statusNow()).toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 3 });
+    const pack = packRow(options, EN_ZH);
+    await expect(pack.locator('.dict-pack-failed')).toHaveText(`Version ${row.ver} failed to download. It will be tried again later.`);
+
+    // The daily check still fetches it; seeded, the count is gone with the mark.
+    await options.evaluate((name) => chrome.alarms.create(name, { when: Date.now() }), DICT_CHECK_ALARM);
+    await expect.poll(async () => ((await localValue(options, PACKS_KEY) || {})[EN_ZH] || {}).ver, { timeout: 15000 }).toBe(row.ver);
+    expect(server.hitsOf(row.url)).toBe(4);
+    await expect.poll(statusNow).toBeUndefined();
+    expect((await lookup(context, page, 'apple', 'zh-CN')).translation).toBe('苹果');
+    await options.close();
   });
 
   test('J-B1.18 two tabs asking for one pack fetch it once', async ({ context, page }) => {

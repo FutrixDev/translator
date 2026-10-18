@@ -12,12 +12,14 @@
 //   d:<src>-<tgt>:~<form>   {h}           an inflected form's head
 //   dict:packs              {<src>-<tgt>: {src, tgt, ver, url, sha256, heads,
 //                            bytes, rawBytes, lic, sources, credits}}
-//   dict:status             {<src>-<tgt>: {state, ver, reason}}
+//   dict:status             {<src>-<tgt>: {state, ver, reason, interrupts?}}
 //
 // The `dict:packs` item is written last and is the only mark that a pack is
 // seeded: a lookup trusts no `d:` key of a pair that is not listed there.
 // `dict:status` is what the settings page shows while a pack downloads or
-// after it failed; it never decides whether a pack is usable.
+// after it failed; it never decides whether a pack is usable. Its optional
+// `interrupts` counts the workers stopped in a row while fetching `ver` (left
+// out at 0); after three a lookup no longer fetches that version (N2).
 //
 // Folding at lookup time is only what foldCandidates() does: exact, lower
 // case, NFKC, and the one runtime rule, the Korean particle strip. Every other
