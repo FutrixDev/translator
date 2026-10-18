@@ -3,8 +3,8 @@
 //
 //   - L1: a pair a stopped worker left failed with reason 'interrupted' did
 //     not fail, so the next lookup's DICT_PACK_WANT fetches it again at once;
-//     a pair that really failed at the manifest's version is left to the
-//     daily check;
+//     a pair that really failed at the manifest's version is not fetched
+//     again inside its backoff;
 //   - L2: an install queued at one version is joined only by a request for
 //     that same version; a request for a newer version queues its own job,
 //     and that version is the one left seeded;
@@ -13,16 +13,29 @@
 //     a version after three in a row, and a new version starts again from 0;
 //   - L4 (N2): in a new worker, a lookup that reads the count before the
 //     recovery adds the third stop is still refused on the queue; a daily
-//     check or preinstall does not join that lookup's job, and fetches.
+//     check or preinstall does not join that lookup's job, and fetches;
+//   - L5 (D-719): a refused fetch records its time and the refusals in a row
+//     at that version; a lookup fetches it again only once the backoff for
+//     that count has passed (each tier to the millisecond), the count rides
+//     on `downloading` and on the recovery's interrupted item, a new version
+//     starts again from 0, and the daily check ignores the backoff.
+//
+// Time is the injected clock below (`clock`), never a real wait.
 //
 // The module is imported once more for each new worker (newWorker()): its
 // once-per-worker recovery and its queue start over, the storage stays.
 //
 // Run with: npm run test:unit
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+
+// Date.now() as the module sees it: the real one unless a test set `clock`.
+let clock = null;
+const realNow = Date.now;
+Date.now = () => (clock === null ? realNow() : clock);
+afterEach(() => { clock = null; });
 
 const local = {};
 const sync = { offlineDictionary: true };
@@ -66,7 +79,7 @@ globalThis.chrome = {
   },
 };
 
-const { handleDictMessage } = await import('../../background/dict-packs.js');
+const { handleDictMessage, checkDictPacks } = await import('../../background/dict-packs.js');
 let workers = 0;
 const newWorker = () => import(`../../background/dict-packs.js?worker=${(workers += 1)}`);
 const { keepaliveState } = await import('../../background/keepalive.js');
@@ -155,6 +168,14 @@ async function until(predicate, what) {
 }
 
 const seededVer = (pair) => (local[DictPack.PACKS_KEY] || {})[pair]?.ver;
+const statusOf = (pair) => (local[DictPack.STATUS_KEY] || {})[pair];
+
+/** A failed `dict:status` item less its `at`, after checking `at` is a time. */
+function withoutAt(item) {
+  const { at, ...rest } = item;
+  assert.equal(typeof at, 'number', 'a failed item records when it failed');
+  return rest;
+}
 
 test('L1: an interrupted pack is fetched again by the next lookup', async () => {
   const pair = 'en-zh-CN';
@@ -167,10 +188,12 @@ test('L1: an interrupted pack is fetched again by the next lookup', async () => 
   assert.ok(local[DictPack.entryKey('en', 'zh-CN', 'run')], 'its heads are in storage');
 });
 
-test('L1: a pack that really failed at this version waits for the daily check', async () => {
+test('L1: a pack that really failed at this version is not fetched again inside its backoff', async () => {
   const pair = 'ko-en';
   const row = publish(pair, '2026.10.14');
-  local[DictPack.STATUS_KEY] = { [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500' } };
+  local[DictPack.STATUS_KEY] = {
+    [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500', at: Date.now(), refusals: 1 },
+  };
   const before = fetched.length;
   assert.deepEqual(await want(pair), { state: 'failed' });
   assert.equal(fetched.length, before, 'nothing is downloaded');
@@ -257,7 +280,7 @@ test('L4: a lookup that reads the count before the recovery adds the third stop 
   assert.deepEqual(await wantIn(worker, pair), { state: 'queued' });
   recovered();
   await drained(worker);
-  assert.deepEqual(local[DictPack.STATUS_KEY][pair], {
+  assert.deepEqual(withoutAt(local[DictPack.STATUS_KEY][pair]), {
     state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 3,
   }, 'the job gave up without writing downloading');
   assert.ok(!fetched.includes(DictPack.DOWNLOAD_ORIGIN + row.url), 'the pack was never fetched');
@@ -308,4 +331,139 @@ test('L4: a daily check does not join a lookup job refused on the queue; it fetc
   assert.equal(seededVer(pair), row.ver);
   assert.deepEqual(fetched.filter((url) => url.endsWith(row.url)), [DictPack.DOWNLOAD_ORIGIN + row.url]);
   assert.equal(seededVer(blocker), blockerRow.ver);
+});
+
+// ---- L5: backoff after a refusal (D-719) -------------------------------------
+
+// The waits D-719 fixes, after the 1st..6th refusal in a row. Written out here,
+// not read from the module: a table that drifts fails the boundary test.
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const WAITS = [10 * MINUTE, HOUR, 4 * HOUR, 12 * HOUR, 24 * HOUR, 24 * HOUR];
+const T0 = Date.UTC(2026, 9, 18, 9, 0, 0);
+
+const urlOf = (row) => DictPack.DOWNLOAD_ORIGIN + row.url;
+const hitsOf = (row) => fetched.filter((url) => url === urlOf(row)).length;
+const failedNow = (pair) => statusOf(pair)?.state === 'failed';
+
+test('L5: a refusal records at and refusals; inside the backoff a lookup fetches nothing, after it the pack is seeded', async () => {
+  const pair = 'ko-en';
+  const row = publish(pair, '2026.10.20');
+  files.delete(urlOf(row)); // the pack answers 404
+  clock = T0;
+  assert.deepEqual(await want(pair), { state: 'queued' });
+  await until(() => failedNow(pair), 'the refusal to be recorded');
+  assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0, refusals: 1 });
+
+  clock = T0 + 10 * MINUTE - 1;
+  assert.deepEqual(await want(pair), { state: 'failed' }, 'inside the backoff');
+  assert.equal(hitsOf(row), 1, 'nothing is downloaded inside the backoff');
+
+  publish(pair, row.ver); // the pack is back
+  clock = T0 + 10 * MINUTE;
+  assert.deepEqual(await want(pair), { state: 'queued' }, 'the backoff has passed');
+  await until(() => seededVer(pair) === row.ver, 'the pack to be seeded');
+  assert.equal(hitsOf(row), 2);
+  assert.equal(statusOf(pair), undefined, 'a seeded pack clears the failure');
+});
+
+test('L5: each backoff tier holds to 1 ms before its end and fetches at its end', async () => {
+  const pair = 'en-zh-CN';
+  for (const [i, wait] of WAITS.entries()) {
+    const refusals = i + 1;
+    const row = publish(pair, `2026.11.0${refusals}`);
+    local[DictPack.STATUS_KEY] = {
+      [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500', at: T0, refusals },
+    };
+    clock = T0 + wait - 1;
+    assert.deepEqual(await want(pair), { state: 'failed' }, `refusals ${refusals}: 1 ms before the end`);
+    assert.equal(hitsOf(row), 0, `refusals ${refusals}: nothing is downloaded before the end`);
+    clock = T0 + wait;
+    assert.deepEqual(await want(pair), { state: 'queued' }, `refusals ${refusals}: at the end`);
+    await until(() => seededVer(pair) === row.ver, `refusals ${refusals}: the pack to be seeded`);
+    assert.equal(hitsOf(row), 1);
+  }
+});
+
+test('L5: a retry carries the refusals on downloading, and a second refusal counts 2', async () => {
+  const pair = 'ja-zh-CN';
+  const row = publish(pair, '2026.10.20');
+  files.delete(urlOf(row));
+  local[DictPack.STATUS_KEY] = {
+    [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500', at: T0, refusals: 1 },
+  };
+  const response = gate();
+  gates.set(urlOf(row), response.promise);
+  clock = T0 + 10 * MINUTE;
+  assert.deepEqual(await want(pair), { state: 'queued' });
+  await until(() => fetched.includes(urlOf(row)), 'the retry to start');
+  const during = statusOf(pair);
+  response.release(); // before asserting, so a red here does not leave the queue held for later tests
+  assert.deepEqual(during, { state: 'downloading', ver: row.ver, reason: '', refusals: 1 });
+  await until(() => failedNow(pair), 'the second refusal');
+  gates.delete(urlOf(row));
+  assert.deepEqual(statusOf(pair), {
+    state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0 + 10 * MINUTE, refusals: 2,
+  });
+  clock = T0 + 10 * MINUTE + HOUR - 1;
+  assert.deepEqual(await want(pair), { state: 'failed' }, 'the second wait is an hour');
+});
+
+test('L5: a new version starts the refusals again from 0', async () => {
+  const pair = 'zh-CN-ja';
+  const old = publish(pair, '2026.10.20');
+  local[DictPack.STATUS_KEY] = {
+    [pair]: { state: 'failed', ver: old.ver, reason: 'HTTP 500', at: T0, refusals: 4 },
+  };
+  const row = publish(pair, '2026.10.21');
+  files.delete(urlOf(row));
+  clock = T0 + 1;
+  assert.deepEqual(await want(pair), { state: 'queued' }, 'the old version’s backoff does not hold the new one');
+  await until(() => failedNow(pair) && statusOf(pair).ver === row.ver, 'the new version to be refused');
+  assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0 + 1, refusals: 1 });
+});
+
+test('L5: the recovery of a worker stopped mid-retry keeps the refusals, and the next refusal counts on', async () => {
+  const worker = await newWorker();
+  const pair = 'ko-en';
+  const row = publish(pair, '2026.10.21');
+  files.delete(urlOf(row));
+  local[DictPack.STATUS_KEY] = { [pair]: { state: 'downloading', ver: row.ver, reason: '', refusals: 2 } };
+  let recovered;
+  holdWrite((values) => {
+    if (recoveryOf(pair)(values)) recovered = clone(values[DictPack.STATUS_KEY][pair]);
+    return false; // only watched, never held
+  });
+  clock = T0;
+  assert.deepEqual(await wantIn(worker, pair), { state: 'queued' });
+  await drained(worker);
+  heldWrites.length = 0;
+  assert.deepEqual(recovered, {
+    state: 'failed', ver: row.ver, reason: 'interrupted', at: T0, interrupts: 1, refusals: 2,
+  }, 'the interrupted item carries the refusals');
+  assert.equal(hitsOf(row), 1, 'an interrupted pair is fetched again at once');
+  assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0, refusals: 3 });
+});
+
+test('L5: a failed item with no at counts as past its backoff: the next lookup fetches once', async () => {
+  const pair = 'ja-zh-CN';
+  const row = publish(pair, '2026.10.22');
+  local[DictPack.STATUS_KEY] = { [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500' } };
+  assert.deepEqual(await want(pair), { state: 'queued' });
+  await until(() => seededVer(pair) === row.ver, 'the pack to be seeded');
+  assert.equal(hitsOf(row), 1);
+  assert.equal(statusOf(pair), undefined);
+});
+
+test('L5: the daily check retries a refused pair inside its backoff', async () => {
+  const pair = 'zh-CN-ja';
+  const row = publish(pair, '2026.10.23');
+  local[DictPack.STATUS_KEY] = {
+    [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500', at: T0, refusals: 5 },
+  };
+  clock = T0 + 1;
+  assert.deepEqual(await want(pair), { state: 'failed' }, 'a lookup waits');
+  await checkDictPacks();
+  assert.equal(seededVer(pair), row.ver, 'the check does not');
+  assert.equal(hitsOf(row), 1);
 });
