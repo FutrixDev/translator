@@ -114,6 +114,7 @@
    `body { line-height: 1.8 }` without breaking the chain. */
 :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) {
   visibility: visible;
+  direction: var(--ai-translator-ui-dir, ltr);
   line-height: normal;
   letter-spacing: normal;
   text-transform: none;
@@ -122,6 +123,17 @@
   stroke-width: 1;
   stroke-linecap: butt;
   stroke-linejoin: miter;
+}
+
+/* Direction follows the UI language, never the page: an Arabic UI reads right
+   to left on an English page, an English UI left to right on an Arabic one.
+   ctx.applyUIDirection (content/content-bootstrap.js) sets the attribute on
+   the page's <html>; the variable it carries inherits to our roots, which read
+   it in the root rule above. Only the roots are set — descendants inherit, and
+   each translation we place inside a panel carries its own `dir`
+   (TargetLang.mark), which `direction: inherit` on every node would override. */
+html[data-ai-translator-ui-dir="rtl"] {
+  --ai-translator-ui-dir: rtl;
 }
 
 :is(.ai-translator-popup, [id="ai-translator-input-dialog"], [id="ai-translator-float-menu"], [id="ai-translator-float-ball"], [id="ai-translator-float-ball-container"], [id="ai-translator-progress"], [id="ai-translator-selection-btn"], [id="ai-translator-caption-overlay"], [id="ai-translator-caption-controls"], [id="ai-translator-caption-btn"], [id="ai-translator-caption-more"], [id="ai-translator-caption-menu"], [id="ai-translator-ocr-region"], [id="ai-translator-ocr-hover-btn"], [id="ai-translator-input-chip"], [id="ai-translator-auto-bar"], [id="ai-translator-source-peek"], [id="ai-translator-rule-picker"]) *,

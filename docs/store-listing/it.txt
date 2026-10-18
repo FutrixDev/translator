@@ -1,0 +1,58 @@
+Blab Translation — traduzione IA per pagine web, PDF, manga e sottotitoli.
+
+Leggi pagine web, PDF, ebook, manga e fumetti con l'originale e la traduzione fianco a fianco, guarda YouTube con sottotitoli doppi e traduci il testo di qualsiasi immagine (OCR). Scegli uno dei tre motori: il traduttore gratuito di Chrome sul dispositivo, l'IA di cui ti fidi — modelli cloud o locali, con la tua chiave — oppure Blab Translation, incluso in un abbonamento, senza bisogno di chiave.
+
+★ PAGINE WEB BILINGUI
+• La traduzione sotto ogni paragrafo. Formattazione, link e immagini restano intatti.
+• Solo la traduzione? Un tasto: Alt+T.
+• Prima il contenuto principale — menu e barre laterali non si mettono in mezzo. Alt+W per tutta la pagina.
+• Ti serve solo una parte? Indica un'area e scegli «Traduci solo qui».
+• Arriva anche dentro iframe e Shadow DOM.
+• Formule matematiche, LaTeX e codice restano intatti. Gli articoli scientifici restano leggibili.
+• 6 stili di traduzione. 76 lingue. Scrittura da destra a sinistra gestita come si deve.
+
+★ TRADUZIONE AUTOMATICA CHE SA QUANDO FERMARSI
+• Le frasi già nella tua lingua vengono saltate — anche se piene di termini stranieri.
+• I messaggi privati non vengono mai tradotti automaticamente.
+• Regole per sito: indica un'area qualsiasi — «Non tradurre qui» o «Mantieni l'originale». Fissa un motore, aggiungi CSS. Le regole si sincronizzano con l'account del browser.
+
+★ TRADUZIONE DI PDF CHE MANTIENE L'IMPAGINAZIONE
+• PDF bilingui o solo tradotti, con figure, formule e impaginazione esattamente dov'erano.
+• Pagine gratuite ogni mese con l'accesso.
+
+★ EBOOK E DOCUMENTI
+• Word, EPUB, TXT e Markdown → file bilingui o tradotti.
+• MOBI e AZW3 si leggono in versione bilingue nel lettore web.
+
+★ SOTTOTITOLI DOPPI
+• Sottotitoli di YouTube tradotti in tempo reale: originale e traduzione, su due righe.
+• Funziona con qualsiasi player HTML5 che abbia una traccia di sottotitoli standard.
+• Attivazione con un clic direttamente nella barra dei controlli del player.
+
+★ SELEZIONA, PASSA IL MOUSE, CONSULTA
+• Seleziona il testo per tradurlo — ritraduci, cambia motore, copia, leggi ad alta voce.
+• Dizionario integrato per parole ed espressioni: pronuncia, significati, esempi, forme della parola.
+• Le lingue scelte per ultime stanno in cima al menu delle lingue.
+• Tieni premuto un tasto modificatore e passa il mouse per tradurre un singolo paragrafo.
+• Scrivi in una lingua diversa da quella della pagina? Traducilo con un clic.
+
+★ MANGA E FUMETTI
+• Pagine di manga e fumetti ridisegnate nella tua lingua — e colorate, se vuoi.
+
+★ TESTO IN QUALSIASI IMMAGINE (OCR)
+• Fai clic con il tasto destro su qualsiasi immagine — uno screenshot, una foto, un grafico — per leggerne il testo e tradurlo.
+• Tutta l'immagine o solo un'area che disegni. Sulle immagini grandi, al passaggio del mouse compare anche un pulsante «Riconosci testo».
+• Lettura offline sul dispositivo: inglese, più cinese, giapponese o coreano se è la lingua della tua interfaccia — oppure con un modello visivo e la tua chiave per altre lingue, foto e scritte stilizzate.
+
+★ PRIVATO PER IMPOSTAZIONE PREDEFINITA
+• Per impostazione predefinita le pagine web vengono tradotte sul tuo dispositivo. Il tuo testo non lascia mai il computer.
+• Con il tuo modello IA, il testo va direttamente al tuo endpoint con la tua chiave — mai attraverso di noi.
+• Blab Translation invia il testo ai nostri server per tradurlo e non ne conserva nulla.
+• I file PDF, i documenti e i fumetti vengono elaborati sui nostri server ed eliminati dopo 7 giorni.
+• I pacchetti del dizionario offline vengono scaricati dal nostro server e conservati sul tuo dispositivo; è a questo che serve il permesso di archiviazione illimitata. Cercare una parola in un pacchetto non invia nulla.
+• Nessuna analisi statistica. Nessun tracciamento pubblicitario.
+
+SCORCIATOIE
+Alt+A traduci / ripristina · Alt+T bilingue / solo traduzione · Alt+W tutta la pagina · Alt+M PDF o fumetto
+
+Informativa sulla privacy: https://blab-translation.com/app/legal/privacy

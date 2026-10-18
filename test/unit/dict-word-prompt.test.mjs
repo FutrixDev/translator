@@ -91,7 +91,8 @@ test('every preset, in every UI language, is overridden by the entry format that
   const targetName = (await wordSystemPrompt('{targetLang}')).split('\n\n')[0];
   assert.match(targetName, /Chinese/);
   const languages = Object.keys(CATALOG);
-  assert.equal(languages.length, 10);
+  await import('../../i18n/messages.js');
+  assert.deepEqual(languages.slice().sort(), [...globalThis.UI_LANGUAGES].sort());
   for (const lang of languages) {
     for (const key of PRESET_KEYS) {
       // What the settings page writes into the box: t(key) in that UI

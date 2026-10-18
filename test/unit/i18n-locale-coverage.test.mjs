@@ -1,4 +1,4 @@
-// A ratchet on the ten locales.
+// A ratchet on every UI locale.
 //
 // getMessage() falls back to English for a key a locale does not have, so a
 // missing translation is invisible: the settings page just quietly turns half
@@ -8,7 +8,7 @@
 // KNOWN_GAP is empty now — PR-10 translated the last twenty-seven. It stays
 // empty: a new English-only key fails here, in the PR that adds it, instead of
 // being found by a user in Lisbon. Adding a name back to the set is not how a
-// failure here gets fixed; the ten translations are.
+// failure here gets fixed; the translations are.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -25,7 +25,7 @@ const { I18N_MESSAGES, UI_LANGUAGES, getMessage } = globalThis;
 const MODEL_FACING = new Set(['promptStandard', 'promptLiteral', 'promptCreative']);
 
 // Empty, and meant to stay that way: every string visible in options.html is
-// translated in all ten locales. It is kept as a set rather than deleted
+// translated in every locale. It is kept as a set rather than deleted
 // because the two tests below are what hold the line, and a future gap that
 // genuinely cannot be closed in its own PR has somewhere honest to be listed
 // — visible, countable, and failing the moment it is translated.
@@ -44,7 +44,7 @@ test('no locale is missing a key that is not already on the list', () => {
     }
   }
   assert.deepEqual(added, [],
-    'new English-only UI strings. Add the ten translations — do not add them to KNOWN_GAP.');
+    'new English-only UI strings. Add every translation — do not add them to KNOWN_GAP.');
 });
 
 test('the list has no entries that are already translated', () => {

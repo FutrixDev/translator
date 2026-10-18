@@ -1,6 +1,6 @@
 // Blab Translation 界面文案 —— 한국어
 //
-// 十门语言一门一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
+// 每门语言一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
 // 自己那一格挂进同一张注册表（谁先到谁把它建出来），真正去读是在 getMessage()
 // 被调用的时候。要紧的只是「都装上了」—— 少一门的表现不是报错，是那门语言的
 // 界面整个退回英文。
@@ -127,6 +127,11 @@
     pdfNotifyRunningTitle: "이 PDF는 이미 번역 중입니다",
     pdfNotifyDoneTitle: '문서 번역이 완료되었습니다',
     pdfNotifyDoneBody: '번역이 준비되었습니다. 클릭하여 여세요.',
+    // The one store-rating ask after the third finished PDF (background/rating-ask.js).
+    ratingAskTitle: 'Blab Translation을 평가해 주시겠어요?',
+    ratingAskBody: 'PDF를 몇 개 번역하셨네요. 시간이 되시면 Chrome 웹 스토어에 평가를 남겨 저희와 다른 분들께 생각을 알려 주세요. 다시 묻지 않을게요.',
+    ratingAskRate: 'Chrome 웹 스토어에서 평가',
+    ratingAskNoThanks: '괜찮아요',
     pdfNotifyFailTitle: '문서 번역에 실패했습니다',
     pdfChargeRequired: '이 문서는 {points} 포인트가 필요합니다 (잔액 {balance} 포인트)',
     pdfChargeConfirm: '이 문서는 포인트가 필요합니다. 번역할까요?',

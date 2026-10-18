@@ -42,7 +42,7 @@
       event.stopPropagation();
       event.preventDefault();
       button.disabled = true;
-      const result = await ctx.comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action });
+      const result = await ctx.comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action, via: 'page' });
       button.disabled = false;
       if (result.ok) {
         if (action === 'signin' && onSignedIn) onSignedIn();

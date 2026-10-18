@@ -102,7 +102,7 @@ test.describe('PDF translation', () => {
       // J1 step 2: View opens the reader on this job, at the base the worker
       // was given, and nothing opens the presigned PDF.
       const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
-      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_job_1`);
+      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_job_1?utm_source=extension&utm_medium=upload`);
       expect(context.pages().map((p) => p.url()).filter((u) => u.includes('/result/'))).toEqual([]);
 
       // One user action: one ticket, one PUT, one job.

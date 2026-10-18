@@ -175,7 +175,7 @@ test('额度那一格灰不灰，看的是四条零点击的 AI 路里还有没�
   assert.match(options, /elements\.engineFallback\.addEventListener\('change', syncAutoEngineState\)/);
 });
 
-test('确认文案写明花的是用户自己的钱，而且十门语言都有', async () => {
+test('确认文案写明花的是用户自己的钱，而且每门界面语言都有', async () => {
   await import('../../i18n/messages.js');
   const { I18N_MESSAGES, UI_LANGUAGES } = globalThis;
   const keys = ['autoTranslateEngineAiConfirm', 'autoTranslateEngineLabel', 'autoTranslateEngineBuiltin',

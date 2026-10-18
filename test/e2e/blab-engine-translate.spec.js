@@ -143,7 +143,7 @@ test.describe('J2 Blab Translation without a plan', () => {
       await expect(subscribe).toHaveText(en('blabSubscribe'));
       await walkShot(options, 'J2-2-settings-no-plan');
       const [pricing] = await Promise.all([context.waitForEvent('page'), subscribe.click()]);
-      await pricing.waitForURL(/\/app\/pricing$/, { waitUntil: 'commit' });
+      await pricing.waitForURL(/\/app\/pricing\?utm_source=extension&utm_medium=options$/, { waitUntil: 'commit' });
       await pricing.close();
       await options.close();
 
@@ -191,7 +191,7 @@ test.describe('J2 Blab Translation without a plan', () => {
       await walkShot(page, 'J2-3-page-plan-required');
       // The account site's pricing page, opened from the service worker.
       const [pricing] = await Promise.all([context.waitForEvent('page'), entry.click()]);
-      expect(pricing.url()).toBe(`${blab.base}/app/pricing`);
+      expect(pricing.url()).toBe(`${blab.base}/app/pricing?utm_source=extension&utm_medium=page`);
       await pricing.close();
     } finally {
       await close();

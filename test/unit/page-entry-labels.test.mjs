@@ -22,7 +22,7 @@ await import('../../i18n/messages.js');
 const { I18N_MESSAGES, UI_LANGUAGES } = globalThis;
 
 test('the context menu item reads exactly like the float ball item, in every locale', () => {
-  assert.equal(UI_LANGUAGES.length, 10);
+  assert.deepEqual(Object.keys(I18N_MESSAGES).sort(), [...UI_LANGUAGES].sort());
   for (const lang of UI_LANGUAGES) {
     const table = I18N_MESSAGES[lang];
     assert.ok(table.translatePage, `${lang}: translatePage is missing`);

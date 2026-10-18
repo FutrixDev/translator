@@ -10,7 +10,9 @@
 
 ## 🌐 Blab Translation - Chrome Extension
 
-An AI-powered Chrome browser translation extension that supports selection translation and full-page translation, making web translation smarter and more natural.
+AI translation for web pages, PDFs, manga and subtitles, in one Chrome extension. Read web pages, PDFs, ebooks, manga and comics with the original and the translation side by side, watch YouTube with dual subtitles, and translate the text in any image (OCR). Pick one of three engines: Chrome's free on-device translator, the AI you trust — cloud or local models, with your own key — or Blab Translation, included with a subscription, no key needed.
+
+[Chrome Web Store](https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Chrome](https://img.shields.io/badge/Chrome-Extension-green.svg)
@@ -357,7 +359,11 @@ MIT License
 
 ## 🌐 叭叭翻译 - 智能翻译插件
 
-一款基于 AI 的 Chrome 浏览器翻译插件，支持划词翻译和全文翻译，让网页翻译更智能、更自然。
+用 AI 翻译网页、PDF、漫画与字幕的 Chrome 插件。网页、PDF、电子书、漫画都能原文与译文对照阅读，YouTube 看双语字幕，任意图片里的文字也能识别翻译（OCR）。三个引擎任选：Chrome 免费的本地翻译、你信任的 AI（云端或本地模型，用你自己的 Key），或订阅包含、无需 Key 的 Blab Translation。
+
+[Chrome 应用商店](https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo)
+
+本仓库建议的 GitHub topics：`translator`、`manga-translator`、`pdf-translator`、`chrome-extension`。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Chrome](https://img.shields.io/badge/Chrome-Extension-green.svg)

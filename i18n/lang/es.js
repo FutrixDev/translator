@@ -1,6 +1,6 @@
 // Blab Translation 界面文案 —— Español
 //
-// 十门语言一门一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
+// 每门语言一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
 // 自己那一格挂进同一张注册表（谁先到谁把它建出来），真正去读是在 getMessage()
 // 被调用的时候。要紧的只是「都装上了」—— 少一门的表现不是报错，是那门语言的
 // 界面整个退回英文。
@@ -127,6 +127,11 @@
     pdfNotifyRunningTitle: "Este PDF ya se está traduciendo",
     pdfNotifyDoneTitle: 'Traducción del documento terminada',
     pdfNotifyDoneBody: 'Tu traducción está lista. Haz clic para abrirla.',
+    // The one store-rating ask after the third finished PDF (background/rating-ask.js).
+    ratingAskTitle: '¿Valorar Blab Translation?',
+    ratingAskBody: 'Ya has traducido varios PDF. Si tienes un minuto, una valoración en Chrome Web Store nos cuenta a nosotros y a otras personas qué te parece. No volveremos a preguntar.',
+    ratingAskRate: 'Valorar en Chrome Web Store',
+    ratingAskNoThanks: 'No, gracias',
     pdfNotifyFailTitle: 'No se pudo traducir el documento',
     pdfChargeRequired: 'Este documento cuesta {points} créditos. Te quedan {balance}.',
     pdfChargeConfirm: 'Este documento cuesta créditos. ¿Traducirlo?',

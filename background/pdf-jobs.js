@@ -6,6 +6,7 @@
 
 import '../shared/comic-charge.js';
 import '../shared/pdf-url.js';
+import '../shared/site-links.js';
 import * as comicClient from './comic-client.js';
 import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
@@ -24,11 +25,13 @@ import {
   pdfMessage,
   pdfNotificationLang,
 } from './pdf-notify.js';
+import { noteJobSettled } from './rating-ask.js';
 
 const ChargeConfirm = globalThis.ChargeConfirm;
 // pdf-client.js imports shared/doc-jobs.js, and imports are evaluated before
 // this body runs, so the shelf is there by now.
 const DocJobs = globalThis.DocJobs;
+const SiteLinks = globalThis.SiteLinks;
 // 「这是不是一份 PDF」「它叫什么名字」的唯一实现，见 shared/pdf-url.js。
 // 从这里再导出去，是因为右键菜单那一层本来就从这个模块要它们。
 const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
@@ -70,12 +73,30 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function refreshPdfJobs() {
   const { records, changes } = await pdfClient.refreshJobRecords();
   for (const change of changes) {
-    if (change.leftAwaiting) clearPdfConfirmNotification(change.record.jobId);
+    // The job's own notification is raised before the rating ask is counted;
+    // neither waits for the other to be shown.
     if (change.transition === 'settled') notifyPdfTerminal(change.record);
     else if (change.transition === 'awaiting') notifyPdfConfirm(change.record);
+    await foldedSideEffects(change);
   }
   await ensurePdfPollAlarm();
   return records;
+}
+
+/**
+ * What a record changing means beyond the job's own notifications, whichever
+ * path saw the change — the poll or a page. A confirm question that is
+ * answered or moot goes; a finished job counts toward the one rating ask
+ * (rating-ask.js), which is about this device's history, not the job's
+ * progress, so a page seeing the job finish counts as much as the poll.
+ */
+async function foldedSideEffects(change) {
+  if (change.leftAwaiting) clearPdfConfirmNotification(change.record.jobId);
+  if (change.transition !== 'settled') return;
+  // An aside to the job: a failure here is logged and the job's own handling
+  // (its notification, the page's answer) goes on.
+  await noteJobSettled(change.record).catch(error =>
+    console.warn(`[rating] counting job ${change.record.jobId} failed:`, error?.message || error));
 }
 
 // A notification about one job opens that job. Registered at the top level so
@@ -89,7 +110,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     clear();
     return;
   }
-  openPdfJob(jobId)
+  openPdfJob(jobId, 'notification')
     .catch(error => console.warn(`[pdf] opening job ${jobId} from its notification failed:`,
       error?.code || error?.message || error))
     .finally(clear);
@@ -502,8 +523,7 @@ function jobFacts(record, view) {
  */
 async function foldPageView(jobId, view) {
   const change = await pdfClient.updateRecordFromView(jobId, view);
-  // The question the confirm notification asked is answered or moot.
-  if (change?.leftAwaiting) clearPdfConfirmNotification(jobId);
+  if (change) await foldedSideEffects(change);
   await ensurePdfPollAlarm();
   return change ? change.record : null;
 }
@@ -535,7 +555,8 @@ async function handlePdfJobAbandon(jobId) {
 }
 
 /**
- * PDF_OPEN_JOB: open a job from a list row or a notification.
+ * PDF_OPEN_JOB: open a job from a list row or a notification. `via` is the
+ * entry it was opened from (SiteLinks.MEDIUMS), carried onto the reader link.
  *
  * A finished job of any format opens the web reader, which shows the document
  * and offers every download; everything else opens the job page, which can
@@ -548,7 +569,8 @@ async function handlePdfJobAbandon(jobId) {
  * stored override that is not http(s)) is an error, not a quiet detour to the
  * job page.
  */
-async function openPdfJob(jobId) {
+async function openPdfJob(jobId, via) {
+  SiteLinks.assertMedium(via);
   if (!jobId || pdfClient.isPendingRecord({ jobId })) {
     throw new ComicApiError('result_unavailable', 'This job has not reached the service yet', 404);
   }
@@ -565,7 +587,7 @@ async function openPdfJob(jobId) {
     await chrome.tabs.create({ url: chrome.runtime.getURL(DocJobs.jobPagePath(jobId)) });
     return { opened: 'page' };
   }
-  const url = DocJobs.readerUrl(await comicClient.getApiBase(), jobId);
+  const url = SiteLinks.reader(await comicClient.getApiBase(), jobId, via);
   if (!url) {
     throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL', 0);
   }

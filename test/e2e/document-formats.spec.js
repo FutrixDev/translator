@@ -133,7 +133,7 @@ for (const format of ['docx', 'epub']) {
         }
 
         // J2 step 2: View opens the reader on this job.
-        expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1`);
+        expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1?utm_source=extension&utm_medium=upload`);
 
         // J2 step 3: the save is unchanged.
 
@@ -225,7 +225,7 @@ test('J-E4: a MOBI declares nothing, goes up typed as MOBI, and is read in the r
       expect(created).not.toHaveProperty('declaredUnits');
 
       await expectLaidOut(page, [page.locator('#pdfFileName'), page.locator('#docView')]);
-      expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1`);
+      expect(await urlOpenedBy(context, page.locator('#docView'))).toBe(`${service.base}/app/reader/pdf_job_1?utm_source=extension&utm_medium=upload`);
     } finally {
       await service.close();
     }
@@ -293,10 +293,10 @@ test('J-E6 / J3: "View" in the popup opens a finished job of any format in the r
       };
 
       expect(await viewFromPopup('paper.pdf', shotDir && `${shotDir}/j3-popup-row.png`))
-        .toBe(`${service.base}/app/reader/pdf_job_1`);
+        .toBe(`${service.base}/app/reader/pdf_job_1?utm_source=extension&utm_medium=popup`);
       // Not the PDF's file and not the job page: a finished Word, EPUB, text or
       // Markdown job is read there too, with its file in the download menu.
-      expect(await viewFromPopup(FIXTURES.txt.fileName)).toBe(`${service.base}/app/reader/pdf_job_2`);
+      expect(await viewFromPopup(FIXTURES.txt.fileName)).toBe(`${service.base}/app/reader/pdf_job_2?utm_source=extension&utm_medium=popup`);
       expect(context.pages().map((p) => p.url()).filter((u) => u.includes('/result/'))).toEqual([]);
     } finally {
       await service.close();

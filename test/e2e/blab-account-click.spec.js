@@ -42,7 +42,7 @@ const batch = (flags = {}) => ({
 async function subscribe(context, send) {
   const [pricing, action] = await Promise.all([
     context.waitForEvent('page'),
-    send({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' }),
+    send({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'page' }),
   ]);
   expect(action.ok).toBe(true);
   await pricing.close();
@@ -183,7 +183,7 @@ test.describe('N-1 who uses up the account click', () => {
       const entry = options.locator('#translationEngineBlabNote .blab-note-action');
       await expect(entry).toHaveText(en('blabSubscribe'));
       const [pricing] = await Promise.all([context.waitForEvent('page'), entry.click()]);
-      await pricing.waitForURL(/\/app\/pricing$/, { waitUntil: 'commit' });
+      await pricing.waitForURL(/\/app\/pricing\?utm_source=extension&utm_medium=options$/, { waitUntil: 'commit' });
       // Settings first: back in view it asks billing/me again; count after both.
       await options.close();
       await pricing.close();

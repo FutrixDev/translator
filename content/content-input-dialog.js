@@ -115,6 +115,7 @@
             <textarea
               class="ai-translator-input-textarea"
               id="ai-translator-input-text"
+              dir="auto"
               placeholder="${t('inputPlaceholder')}"
               rows="4"
             ></textarea>
@@ -130,7 +131,7 @@
                 </button>
               </div>
             </div>
-            <div class="ai-translator-input-result" id="ai-translator-result-text"></div>
+            <div class="ai-translator-input-result" id="ai-translator-result-text" dir="auto"></div>
             <div class="ai-translator-dict-entry" id="ai-translator-input-dict" hidden></div>
             <div class="ai-translator-dict-note" id="ai-translator-input-dict-note" hidden>
               <span class="ai-translator-dict-note-text"></span>

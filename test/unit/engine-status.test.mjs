@@ -435,7 +435,7 @@ const EXEMPT = {
   'onboarding/': 'onboarding reads the settings to fill its engine form',
 };
 const NOT_PRODUCT = {
-  // 十个语言文件里的同名键是文案键（`translationEngine: '翻译引擎'`），不是读设置。
+  // 语言文件里的同名键是文案键（`translationEngine: '翻译引擎'`），不是读设置。
   'i18n/': 'copy strings keyed by the same names',
   // 开发脚本（提交信息检查、图标生成、注入测量），不进扩展包。
   'scripts/': 'development scripts, not shipped',

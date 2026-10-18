@@ -118,12 +118,12 @@ test.describe('Document history → web reader and library', () => {
       // origin, not a hardcoded production one.
       expect(service.base.startsWith('http://127.0.0.1:')).toBe(true);
       const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
-      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_done`);
+      await expect.poll(() => reader.url()).toBe(`${service.base}/app/reader/pdf_done?utm_source=extension&utm_medium=options`);
 
       // The card header reaches the library itself, which is the only way in
       // when the list is empty.
       await expect(page.locator('#pdfTasksLibraryLink'))
-        .toHaveAttribute('href', `${service.base}/app/settings/pdf`);
+        .toHaveAttribute('href', `${service.base}/app/settings/pdf?utm_source=extension&utm_medium=options`);
       await expect(page.locator('#pdfTasksLibraryLink')).toBeVisible();
       // New tab, and severed from this page: an <a target="_blank"> without
       // rel="noopener" hands the opened page a window.opener back to here.

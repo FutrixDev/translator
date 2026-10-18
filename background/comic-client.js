@@ -11,6 +11,10 @@
 // host_permissions covers it. That is also why the extension can retry an image
 // the server was not allowed to fetch — see fetchImageAsBase64().
 
+import '../shared/site-links.js';
+
+const SiteLinks = globalThis.SiteLinks;
+
 // The apex, not an `app.` subdomain: the marketing site and the account/API
 // half are one Cloudflare Worker on one origin, so /login and /api/* live here
 // too. Keep in sync with PRODUCTION_ORIGIN in translator-saas/server.
@@ -230,7 +234,8 @@ export async function signIn() {
   const base = await getApiBase();
   const redirectUri = chrome.identity.getRedirectURL();
   const state = crypto.randomUUID();
-  const authUrl = `${base}/ext/connect?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const authUrl = SiteLinks.connect(base, state, redirectUri);
+  if (!authUrl) throw new ComicApiError('sign_in_failed', `The account site address is not a web origin: ${base}`);
 
   const finalUrl = await runAuthTab(authUrl, redirectUri);
   if (!finalUrl) throw new ComicApiError('sign_in_cancelled', 'Sign-in was cancelled');

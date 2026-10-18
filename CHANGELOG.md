@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Store listing and links to the site
+
+- **One request for a store rating, once.** After this device's third
+  finished PDF, a notification asks whether you would rate the extension on
+  the Chrome Web Store, with **Rate on Chrome Web Store** and **No thanks**.
+  Whatever you do with it, it is never shown again. The count stays in this
+  browser's local storage and is not sent anywhere; the ask offers nothing in
+  return and does not ask for a good rating. In all fifteen languages.
+- **Links to the Blab site say which part of the extension they came from.**
+  The pricing, PDF library and reader links carry
+  `utm_source=extension&utm_medium=<entry>` (popup, options, upload,
+  notification, page), and nothing else: no identifier, no settings. One
+  module, `shared/site-links.js`, builds every such link, and a test fails if
+  another file builds one.
+- **The store description opens with what the extension does**: web pages,
+  PDFs, manga and subtitles, image text (OCR), and the three engines — in a
+  sentence, not a list of keywords, in all fifteen languages.
+- **Five more interface and store languages: Arabic, Indonesian, Vietnamese,
+  Turkish and Italian**, fifteen in all. Each is a full interface table, a
+  store name and summary, and a store description. In Arabic the popup, the
+  settings pages and the panels drawn into a page read right to left; the page
+  itself and each translation keep their own direction.
+
 ### Offline dictionary
 
 - **The dictionary entry can now come from an offline dictionary as well as

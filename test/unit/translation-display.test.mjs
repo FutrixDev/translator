@@ -123,7 +123,7 @@ test('applyStyleAttribute puts the style on <html>, and default means no attribu
   assert.equal(attrs.has(STYLE_ATTR), false, 'an unknown style reads as the default');
 });
 
-test('every style has a name in all ten UI languages', () => {
+test('every style has a name in every UI language', () => {
   const catalog = messageCatalog();
   const keys = Display.STYLES.map((style) => Display.styleLabelKey(style));
   assert.equal(Display.styleLabelKey('underline'), 'translationStyleUnderline');
@@ -133,7 +133,7 @@ test('every style has a name in all ten UI languages', () => {
       assert.ok(typeof table[key] === 'string' && table[key].trim(), `${lang} has no ${key}`);
     }
   }
-  assert.equal(Object.keys(catalog).length, 10);
+  assert.deepEqual(Object.keys(catalog).sort(), [...globalThis.UI_LANGUAGES].sort());
 });
 
 // ------------------------------------------------------- 2. CSS <-> STYLES
@@ -343,7 +343,9 @@ test('Alt+T is declared, within Chrome\'s four suggested keys, and named in ever
   assert.equal(command.suggested_key.default, 'Alt+T');
   assert.equal(command.description, '__MSG_cmdToggleTranslationOnly__');
   const locales = repoDir('_locales');
-  assert.equal(locales.length, 10);
+  // Chrome's folder names: an underscore for the region, Portuguese as pt_BR.
+  const folder = (tag) => (tag === 'pt' ? 'pt_BR' : tag.replace('-', '_'));
+  assert.deepEqual(locales.slice().sort(), globalThis.UI_LANGUAGES.map(folder).sort());
   for (const locale of locales) {
     const messages = JSON.parse(repoFile(`_locales/${locale}/messages.json`));
     assert.ok(messages.cmdToggleTranslationOnly && messages.cmdToggleTranslationOnly.message.trim(),

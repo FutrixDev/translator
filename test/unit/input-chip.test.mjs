@@ -144,7 +144,7 @@ test('芯片进了宿主页容纳复位的清单', () => {
 
 // getMessage 不支持占位符，整个代码库的约定是 t(key).replace('{x}', …)。哪一门
 // 语言的串里漏掉 {lang}，那门语言下的芯片就是一句不说语言的「译成」。
-test('十门语言的芯片文案都留着 {lang}', () => {
+test('每门界面语言的芯片文案都留着 {lang}', () => {
   const catalog = messageCatalog();
   const tags = Object.keys(catalog);
   assert.ok(tags.length >= 10, `只有 ${tags.length} 门语言`);

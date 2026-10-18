@@ -1,0 +1,26 @@
+{
+  "appName": {
+    "message": "Blab Translation: traduttore IA per web, PDF, manga e sottotitoli",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "Pagine web bilingui o solo la parte scelta, PDF a layout intatto, ebook e Word, manga, testo in immagini (OCR), sottotitoli YouTube.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Traduci o ripristina questa pagina",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "Passa da bilingue a solo traduzione e viceversa",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Traduci l'intera pagina, inclusi navigazione e barre laterali",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Traduci questo PDF o il fumetto sullo schermo",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  }
+}

@@ -228,7 +228,7 @@ function pdfOpenJobButton(record, labelKey) {
   button.className = 'pdf-job-open';
   button.textContent = t(labelKey);
   button.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId });
+    chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: record.jobId, via: 'popup' });
     window.close();
   });
   return button;

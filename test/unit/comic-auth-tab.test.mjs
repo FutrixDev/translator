@@ -194,7 +194,10 @@ test('the ordinary ordering — create first, then the redirect — is unaffecte
 
   chromeFake.finishCreate({ id: TAB_ID });
   await settleMicrotasks();
-  assert.match(chromeFake.createArgs.url, /\/ext\/connect\?state=/);
+  const opened = new URL(chromeFake.createArgs.url);
+  assert.equal(opened.pathname, '/ext/connect');
+  assert.ok(opened.searchParams.get('state'));
+  assert.equal(opened.searchParams.get('utm_medium'), 'signin');
 
   chromeFake.emitUpdated(TAB_ID, {}, { id: TAB_ID, url: `${REDIRECT_URI}#token=tok-normal` });
   const account = await mustSettle(signInPromise, 'signIn()');

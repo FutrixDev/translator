@@ -105,30 +105,8 @@
     return Number.isFinite(blab.limit) && Number.isFinite(blab.used) && blab.used >= blab.limit;
   }
 
-  /**
-   * Where subscribing to Blab Translation happens: the account site's pricing
-   * page, from the base the service worker answers (ACCOUNT_SITE_BASE). The
-   * settings page's note and the worker's "Subscribe" entry (the page's error
-   * bar, the selection card) both build it here.
-   *
-   * '' rather than a broken link when there is nowhere to point: no base, or one
-   * that is not http(s). The base comes out of chrome.storage, so a value that
-   * would turn an <a href> into `javascript:` is never built into one, and an
-   * empty base never becomes the relative `/app/pricing` of the extension page.
-   */
-  function blabPricingUrl(base) {
-    let origin;
-    try {
-      origin = new URL(String(base || ''));
-    } catch {
-      return '';
-    }
-    if (!/^https?:$/.test(origin.protocol)) return '';
-    return `${origin.origin}/app/pricing`;
-  }
-
   root.Engines = Object.freeze({
     ENGINES, MODEL_ENGINES, BLAB_PROFILE, BLAB_ACCESS,
-    isEngine, isModelEngine, normalizeEngine, isBlabProfile, blabAccess, blabAllowanceSpent, blabPricingUrl,
+    isEngine, isModelEngine, normalizeEngine, isBlabProfile, blabAccess, blabAllowanceSpent,
   });
 })(globalThis);

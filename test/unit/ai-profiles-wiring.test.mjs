@@ -9,7 +9,7 @@
 //     modelName），也没有缺省值把它们塞回设置；
 //   - 三份装载清单（manifest、设置页、e2e 夹具）和 Node 夹具都在引擎之前装好
 //     shared/ai-profiles.js 与本页镜像；
-//   - D1 的文案十门语言都有、占位符一个不少、产品代码真的读它。
+//   - D1 的文案每门界面语言都有、占位符一个不少、产品代码真的读它。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -189,10 +189,10 @@ const D1_KEYS = [
   'customRuleProfileWithBuiltin', 'transferSectionAiProfiles', 'transferPreviewAiProfiles',
 ];
 
-test('ai-profiles wiring: every D1 string exists in all ten languages with the same placeholders', async () => {
+test('ai-profiles wiring: every D1 string exists in every UI language with the same placeholders', async () => {
   const { UI_LANGUAGES } = await import('../../i18n/messages.js');
   const catalog = messageCatalog();
-  assert.equal(UI_LANGUAGES.length, 10);
+  assert.deepEqual(Object.keys(catalog).sort(), [...UI_LANGUAGES].sort());
   for (const key of D1_KEYS) {
     const placeholders = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
     const english = catalog.en[key];

@@ -1,0 +1,26 @@
+{
+  "appName": {
+    "message": "Blab Translation: Penerjemah AI untuk Web, PDF, Manga & Subtitle",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "Halaman web dwibahasa atau bagian pilihan, PDF dengan tata letak utuh, ebook & Word, manga, teks gambar (OCR), subtitle YouTube.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Terjemahkan atau kembalikan halaman ini",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "Beralih antara dwibahasa dan hanya terjemahan",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Terjemahkan seluruh halaman, termasuk navigasi dan bilah samping",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Terjemahkan PDF ini, atau komik di layar",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  }
+}

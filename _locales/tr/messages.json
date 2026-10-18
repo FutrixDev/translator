@@ -1,0 +1,26 @@
+{
+  "appName": {
+    "message": "Blab Translation: Web, PDF, Manga ve Altyazı için Yapay Zeka Çevirmeni",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "İki dilli web sayfaları ya da seçilen kısım, düzeni korunan PDF, e-kitap ve Word, manga, görsel metni (OCR), YouTube altyazıları.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Bu sayfayı çevir veya geri al",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "İki dilli ile yalnızca çeviri arasında geçiş yap",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Gezinme ve kenar çubukları dahil tüm sayfayı çevir",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Bu PDF dosyasını veya ekrandaki çizgi romanı çevir",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  }
+}

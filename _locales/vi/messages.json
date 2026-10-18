@@ -1,0 +1,26 @@
+{
+  "appName": {
+    "message": "Blab Translation: Trình dịch AI cho web, PDF, manga và phụ đề",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "Trang web song ngữ hoặc chỉ phần bạn chọn, PDF giữ bố cục, ebook và Word, manga, chữ trong ảnh (OCR), phụ đề YouTube.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "Dịch hoặc khôi phục trang này",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "Chuyển giữa song ngữ và chỉ bản dịch",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "Dịch toàn bộ trang, kể cả thanh điều hướng và thanh bên",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "Dịch PDF này hoặc truyện tranh trên màn hình",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  }
+}

@@ -72,6 +72,7 @@ function t(key) {
 // Apply i18n to page
 function applyI18n(lang) {
   currentUILang = getUILanguage(lang);
+  TargetLang.mark(document.documentElement, currentUILang);
   
   // Update all elements with data-i18n attribute
   document.querySelectorAll('[data-i18n]').forEach(el => {

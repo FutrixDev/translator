@@ -53,7 +53,7 @@ async function loadAccountSiteBase() {
 
   const link = elements.pdfTasksLibraryLink;
   if (!link) return;
-  const href = PDF_UI.pdfLibraryUrl(accountSiteBase);
+  const href = SiteLinks.library(accountSiteBase, 'options');
   link.href = href;
   link.hidden = !href;
 }
@@ -198,7 +198,7 @@ function pdfTaskRow(job) {
     open.className = 'btn btn-text pdf-task-open';
     open.textContent = t(openKey);
     open.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId });
+      chrome.runtime.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId, via: 'options' });
     });
     actions.appendChild(open);
   }

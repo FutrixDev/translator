@@ -105,7 +105,15 @@ file directly.
 
 5. **i18n** (`i18n/messages.js` + `i18n/lang/<tag>.js`) - one string table per
    language, registered onto one catalog; `messages.js` holds only the lookup and
-   the UI-language resolution. Every load list carries all ten, in any order.
+   the UI-language resolution. Every load list carries every UI language, in any order.
+   A right-to-left UI language (Arabic) is one attribute per surface: extension
+   pages call `TargetLang.mark(document.documentElement, uiLang)` (the same
+   call that marks a translation's `lang`/`dir`), and content scripts set
+   `data-ai-translator-ui-dir` on the page's `<html>`
+   (`ctx.applyUIDirection`), which `content/css/popup.css` turns into
+   `direction` on the panel roots only — never on the page, and never with
+   `inherit` below a root, so a translation's own `dir` still wins
+   (`test/e2e/ui-rtl.spec.js`).
 
 ### Key Technical Patterns
 
@@ -219,15 +227,20 @@ message names still say `pdf`; what they carry does not.
   is written down**: the formats, their extensions and content types, the byte
   caps (`maxBytesFor`, mirroring the server's env), the magic-byte sniff,
   `isActiveStatus` / `isAwaitingStatus` / `isTerminalStatus` /
-  `isUnsettledStatus`, the result file name, and the reader address a
-  finished job is viewed at (`readerUrl` → `<site>/app/reader/<id>`, `''` for a
-  non-web base or a `local:` id). It loads before `shared/pdf-errors.js` in
-  every load list.
+  `isUnsettledStatus`, and the result file name. It loads before
+  `shared/pdf-errors.js` in every load list.
   `shared/doc-measure.js` (`DocMeasure`) counts a flow document's standard pages
   (3,000 characters each) on the page, so an over-800-page book is refused
   before any request; PDF and MOBI are not measured and declare nothing.
   `test/unit/doc-guards.test.mjs` fails on a byte cap, a hand-built
   `queued`/`running` set or base64 anywhere in the document surfaces.
+- **`shared/site-links.js` (`SiteLinks`) builds every link to the account
+  site**: `pricing`, `library` and `reader` (`<site>/app/reader/<id>`, `''` for
+  a non-web base or a `local:` id), each tagged
+  `utm_source=extension&utm_medium=<entry>` with the entry from `MEDIUMS`
+  (an unknown one throws). It is a URL parameter only — the extension counts
+  and sends nothing. `test/unit/site-links.test.mjs` fails on a site path
+  built anywhere else.
 - **The page PUTs the bytes; the worker never holds them.** The page asks the
   worker for a ticket (`PDF_UPLOAD_TICKET`), PUTs the file itself to the
   one-time presigned `uploadUrl` (no bearer token — the signature is the
@@ -245,15 +258,21 @@ message names still say `pdf`; what they carry does not.
   replaced and notifies on what changed — settled, now awaiting, or no longer
   awaiting (which clears `pdf-confirm-<id>`). A page handler that learns the
   same fact from its own fetch must not notify; the guard test checks.
+  Both paths run `foldedSideEffects`, where a settled job also counts toward
+  the one store-rating ask (`background/rating-ask.js`): after the third
+  succeeded PDF on this device it asks once, neutrally, and never again. The
+  count is a list of job ids in `chrome.storage.local` `ratingAsk` and never
+  leaves the device.
 - **A finished job of any format is viewed in the web reader** (D-488),
   whose download menu has every file. The job page's one primary action is
-  **View** (`#docView`), opening `DocJobs.readerUrl(<site base>, jobId)`;
+  **View** (`#docView`), opening `SiteLinks.reader(<site base>, jobId, 'upload')`;
   Word, EPUB, TXT and Markdown also keep **Save Bilingual / Translated File**
   as secondary buttons, saved as `<name> (bilingual).<ext>`. No open-the-file
   path exists any more.
 - **`PDF_OPEN_JOB` is the one way a row or notification leaves a surface** —
   the popup row, the settings list and a clicked notification. `openPdfJob`
-  polls the job first; a succeeded job opens the reader at the base
+  polls the job first; a succeeded job opens the reader (tagged with the
+  message's `via`, the surface it came from) at the base
   `comicClient.getApiBase()` gives (the same one `ACCOUNT_SITE_BASE` answers),
   everything else — and a poll that fails — opens `pdf/upload.html#job=<id>`.
 

@@ -27,7 +27,8 @@ globalThis.window = globalThis.window || { AI_TRANSLATOR_CONTENT: {} };
 await import('../../content/engine/languages.js');
 const eng = globalThis.window.AI_TRANSLATOR_CONTENT.engine;
 
-const UI_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
+await import('../../i18n/messages.js');
+const { UI_LANGUAGES } = globalThis;
 const OLD_TEN = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
 
 /** The built-in engine's capability list, read off its source. */
@@ -251,7 +252,7 @@ test('the prompt names every target: English name plus autonym', async () => {
   }
 });
 
-test('the ten locales carry the four new strings, and none of the eleven old names', async () => {
+test('every locale carries the four new strings, and none of the eleven old names', async () => {
   await import('../../i18n/messages.js');
   const { I18N_MESSAGES } = globalThis;
   // Each old key named exactly: a /^lang/ prefix would also catch langAiOnly.

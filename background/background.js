@@ -27,6 +27,9 @@ import '../shared/sync-collection.js';
 import '../shared/ai-profiles.js';
 // 引擎取值只有一份（D-479）；custom-rules.js 校验规则的 engine 时读它。
 import '../shared/engines.js';
+// Every link to the account site (pricing, reader), tagged with the entry it
+// was opened from.
+import '../shared/site-links.js';
 import '../shared/custom-rules.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
@@ -50,7 +53,7 @@ import '../shared/ocr.js';
 // Side-effect module: publishes globalThis.TranslationCache. Background 只用它的
 // sweep()——写入发生在内容脚本里，过期清理和字节预算只能由常驻侧按闹钟来做。
 import '../shared/translation-cache.js';
-// 界面文案：十门语言一门一个文件，加上取文案的那几个函数。彼此没有先后（注册表
+// 界面文案：每门语言一个文件，加上取文案的那几个函数。彼此没有先后（注册表
 // 谁先到谁建），但少一门的表现是那门语言的界面整个退回英文，所以这里列全。
 import '../i18n/lang/en.js';
 import '../i18n/lang/zh-CN.js';
@@ -62,6 +65,11 @@ import '../i18n/lang/de.js';
 import '../i18n/lang/es.js';
 import '../i18n/lang/pt.js';
 import '../i18n/lang/ru.js';
+import '../i18n/lang/ar.js';
+import '../i18n/lang/id.js';
+import '../i18n/lang/vi.js';
+import '../i18n/lang/tr.js';
+import '../i18n/lang/it.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import { dailyLimitHeld, noteAccountAction, refreshAfterAccountAction } from './blab-client.js';
@@ -206,7 +214,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // popup and the settings page. A page cannot build the pricing link itself:
     // the account site's origin lives here.
     case 'BLAB_ACCOUNT_ACTION':
-      replyComic(runBlabAccountAction(message.action), sendResponse);
+      replyComic(runBlabAccountAction(message.action, message.via), sendResponse);
       return true;
 
     // Whether this worker remembers today's Blab allowance as spent (a
@@ -281,7 +289,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // The popup closes and the settings page does not wait on the reply, so a
     // failure is logged here, where it stops.
     case 'PDF_OPEN_JOB':
-      replyComic(openPdfJob(message.jobId).catch((error) => {
+      replyComic(openPdfJob(message.jobId, message.via).catch((error) => {
         console.warn(`[pdf] opening job ${message.jobId} failed:`, error?.code || error?.message || error);
         throw error;
       }), sendResponse);
@@ -331,10 +339,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function runBlabAccountAction(action) {
+async function runBlabAccountAction(action, via) {
   if (action !== 'signin' && action !== 'subscribe') {
     throw new Error(`BLAB_ACCOUNT_ACTION: unknown action ${JSON.stringify(action)}`);
   }
+  if (action === 'subscribe') globalThis.SiteLinks.assertMedium(via);
   // The user went to fix the account: the next request asks billing/me again
   // before the latch refuses it (D-497 F3, blab-client.js). Written to session
   // storage before the entry opens (D-499), so the worker being recycled while
@@ -342,7 +351,7 @@ async function runBlabAccountAction(action) {
   await noteAccountAction();
   if (action === 'signin') return comicClient.signIn();
   const base = await comicClient.getApiBase();
-  const url = globalThis.Engines.blabPricingUrl(base);
+  const url = globalThis.SiteLinks.pricing(base, via);
   if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
   await chrome.tabs.create({ url });
   return { opened: url };

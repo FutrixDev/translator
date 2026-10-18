@@ -1,6 +1,6 @@
 // P1-C C4：划词卡片「加入术语表」（设计 docs/plans/2026-09-25-p1-c-glossary.md §5、
 // §6.1 C-J7）。J-D9 的点击清单（点「加入术语表」保存后动作行几何不变）在
-// test/e2e/selection-card.spec.js 的 J-D9 里，十种界面语言各点一次。
+// test/e2e/selection-card.spec.js 的 J-D9 里，每种界面语言各点一次。
 //
 // 全部走真实界面：真实拖选出图标、点图标出卡片、点按钮展开表单、在表单里改字选
 // 范围、点保存。只有观察点用辅助函数：读 mock 收到的 system prompt、读存储里的

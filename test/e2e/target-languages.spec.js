@@ -126,14 +126,18 @@ test('J-B1 the settings page lists 76 target languages by their Intl names and k
   await expect(page.locator('#comicTargetLang option')).toHaveCount(11);
   await expect(page.locator('#pdfTargetLang option')).toHaveCount(11);
   // The UI language picker names each language in itself.
-  const autonyms = await page.evaluate(({ scriptTags }) => [...document.querySelectorAll('#uiLanguage option')]
-    .filter((o) => o.value !== '')
-    .map((o) => {
-      const tag = scriptTags[o.value] || o.value;
-      const name = new Intl.DisplayNames([tag], { type: 'language' }).of(tag);
-      return { text: o.textContent, want: name.charAt(0).toLocaleUpperCase(tag) + name.slice(1) };
-    }), { scriptTags: SCRIPT_TAGS });
-  expect(autonyms).toHaveLength(10);
+  // One option per UI language the catalog has, whatever that count is.
+  const { autonyms, uiLanguages } = await page.evaluate(({ scriptTags }) => ({
+    uiLanguages: [...globalThis.UI_LANGUAGES],
+    autonyms: [...document.querySelectorAll('#uiLanguage option')]
+      .filter((o) => o.value !== '')
+      .map((o) => {
+        const tag = scriptTags[o.value] || o.value;
+        const name = new Intl.DisplayNames([tag], { type: 'language' }).of(tag);
+        return { value: o.value, text: o.textContent, want: name.charAt(0).toLocaleUpperCase(tag) + name.slice(1) };
+      }),
+  }), { scriptTags: SCRIPT_TAGS });
+  expect(autonyms.map((a) => a.value).sort()).toEqual(uiLanguages.sort());
   for (const { text, want } of autonyms) expect(text).toBe(want);
 
   // Switching the UI language renames everything and loses no selection.

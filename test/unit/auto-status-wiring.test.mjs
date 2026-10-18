@@ -368,7 +368,7 @@ test('Alt+A 和右键菜单、popup 那一行是同一个动作', () => {
   assert.doesNotMatch(code('popup/popup.html'), /Alt\+A/);
 });
 
-test('manifest 里每个 __MSG__ 占位符，十个 _locales 都得有', () => {
+test('manifest 里每个 __MSG__ 占位符，每个 _locales 都得有', () => {
   // 少一个 Chrome 直接拒装，而且报的是「无法载入扩展程序」这种不指哪儿的错。
   const placeholders = new Set(
     [...read('manifest.json').matchAll(/__MSG_([A-Za-z0-9_]+)__/g)].map((m) => m[1])

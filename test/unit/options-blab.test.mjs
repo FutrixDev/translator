@@ -17,9 +17,10 @@ import vm from 'node:vm';
 import { optionsSource, repoSource } from './helpers/sources.mjs';
 
 await import('../../shared/engines.js');
+await import('../../shared/site-links.js');
 await import('../../i18n/lang/en.js');
 await import('../../i18n/messages.js');
-const { Engines } = globalThis;
+const { Engines, SiteLinks } = globalThis;
 const en = (key) => globalThis.getMessage(key, 'en');
 
 test('Engines.blabAccess: only the server saying available makes it available', () => {
@@ -73,6 +74,7 @@ function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } }
   const errors = [];
   const sandbox = {
     Engines,
+    SiteLinks,
     currentUILang: 'en',
     comicSignedIn: null,
     accountSiteBase: 'https://blab.test',
@@ -152,7 +154,7 @@ test('options blab: signed in without a plan disables the option, and Subscribe 
   assert.equal(subscribe.dataset.accountAction, 'subscribe');
   assert.equal(subscribe.textContent, en('blabSubscribe'));
   await subscribe.dispatch('click');
-  assert.deepEqual(plain(card.sent), [{ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' }]);
+  assert.deepEqual(plain(card.sent), [{ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'options' }]);
   assert.equal(subscribe.disabled, false);
   assert.deepEqual(card.statuses, []);
 });
@@ -187,14 +189,6 @@ test('options blab: with no account site address the plan note draws no dead lin
   assert.equal(action(card.manual), undefined, 'no Subscribe that could only fail');
 });
 
-test('Engines.blabPricingUrl: only an http(s) site address makes a pricing link', () => {
-  assert.equal(Engines.blabPricingUrl('https://blab.test'), 'https://blab.test/app/pricing');
-  assert.equal(Engines.blabPricingUrl('http://localhost:3310/some/path?q=1'), 'http://localhost:3310/app/pricing');
-  for (const base of ['', null, undefined, 'not a url', 'chrome-extension://abc', 'javascript:alert(1)']) {
-    assert.equal(Engines.blabPricingUrl(base), '', String(base));
-  }
-});
-
 test('options blab: available enables the option; the note shows only under a select set to Blab, with the API\'s numbers', () => {
   const card = loadCard({ manual: 'builtin', auto: 'blab' });
   draw(card, AVAILABLE);
@@ -219,14 +213,15 @@ test('options blab: available enables the option; the note shows only under a se
 // put the server's token count next to the wrong unit.
 test('options blab: every locale words the daily allowance in tokens, with both numbers', async () => {
   const unit = { en: 'tokens', 'zh-CN': 'token', 'zh-TW': 'token', ja: 'トークン', ko: '토큰',
-    fr: 'tokens', de: 'Tokens', es: 'tokens', pt: 'tokens', ru: 'токенов' };
+    fr: 'tokens', de: 'Tokens', es: 'tokens', pt: 'tokens', ru: 'токенов',
+    ar: 'token', id: 'token', vi: 'token', tr: 'token', it: 'token' };
   assert.deepEqual(Object.keys(unit).sort(), [...globalThis.UI_LANGUAGES].sort());
   for (const lang of globalThis.UI_LANGUAGES) {
     await import(`../../i18n/lang/${lang}.js`);
     const text = globalThis.I18N_MESSAGES[lang].blabNoteAvailable;
     assert.ok(text.includes('{limit}') && text.includes('{used}'), `${lang}: ${text}`);
     assert.ok(text.includes(unit[lang]), `${lang}: ${text}`);
-    assert.ok(!/characters|Zeichen|caract[eè]res|символ|\{limit\} ?文?字|\{limit\}자/.test(text), `${lang}: ${text}`);
+    assert.ok(!/characters|Zeichen|caract[eè]res|символ|\{limit\} ?文?字|\{limit\}자|حرف|أحرف|karakter|ký tự|caratteri/.test(text), `${lang}: ${text}`);
   }
 });
 
@@ -286,7 +281,7 @@ test('options blab: the engine hint in every language says Blab sends text to Bl
   const { messageCatalog } = await import('./helpers/sources.mjs');
   const catalog = messageCatalog();
   const langs = Object.keys(catalog);
-  assert.equal(langs.length, 10);
+  assert.deepEqual(langs.slice().sort(), [...globalThis.UI_LANGUAGES].sort());
   for (const lang of langs) {
     assert.match(catalog[lang].hintTranslationEngine, /Blab Translation/, lang);
     assert.doesNotMatch(catalog[lang].customRuleProfileWithBuiltin, /built-in|integriert|integrado|intégré|内蔵|기본 제공|встроенн|内置|內建/i, lang);

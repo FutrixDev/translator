@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/text-markers.js');
+await import('../../shared/target-lang.js');
 const L = globalThis.LangTags;
 
 // ==================== splitForeignTerms ====================

@@ -123,10 +123,10 @@ function blabSignInButton() {
  * Subscribe, drawn as the link it used to be; the worker opens the pricing page
  * after noting the click. Null when there is no account site to point at
  * (ACCOUNT_SITE_BASE did not answer — loadAccountSiteBase logs that once):
- * never the relative `/app/pricing`, which would open inside the extension.
+ * never a relative pricing path, which would open inside the extension.
  */
 function blabSubscribeButton() {
-  if (!Engines.blabPricingUrl(accountSiteBase)) return null;
+  if (!SiteLinks.pricing(accountSiteBase, 'options')) return null;
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'blab-note-action blab-note-link';
@@ -135,7 +135,7 @@ function blabSubscribeButton() {
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe' });
+      const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'options' });
       if (!response || !response.ok) blabSubscribeFailed(response && response.error);
     } catch (error) {
       blabSubscribeFailed(error);
