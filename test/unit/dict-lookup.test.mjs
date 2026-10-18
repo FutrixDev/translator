@@ -2,9 +2,11 @@
 // lookup, over the real engine language family (content/engine/languages.js)
 // and a fake chrome.storage.local seeded from the hand-made v1 fixture packs:
 //
-//   - the source language: kana ja, hangul ko, Han zh-CN, Cyrillic ru; Latin
-//     follows the page (en/es/fr/de/pt, anything else is tried as en), the
-//     input box (standalone) the standalone rules (design §3.4);
+//   - the source language (design §3.4, revised by D-686): kana ja, hangul
+//     ko, Cyrillic ru; Han zh-CN, or ja in a selection on a Japanese page;
+//     Latin follows the page (a pack language is that pack, another
+//     Latin-script language is no lookup, no reading or a non-Latin page is
+//     tried as en), the input box (standalone) the standalone rules;
 //   - one storage read, plus one more for a form-table hit (`~ran` -> run);
 //   - the Korean particle strip;
 //   - a Traditional spelling found through the zh pack's form table (D-578);
@@ -160,11 +162,25 @@ test('Han without kana is zh-CN and Cyrillic is ru', async () => {
   assert.deepEqual((await lookup('кот', 'en')).sent, [{ type: 'DICT_PACK_WANT', src: 'ru', tgt: 'en' }]);
 });
 
-test('Latin text follows the page; a page outside en/es/fr/de/pt is tried as English', async () => {
+test('Han selected on a Japanese page is Japanese; typed Han is still zh-CN (D-686)', async () => {
+  setPageLang('ja');
+  assert.deepEqual((await lookup('猫', 'ko')).sent, [{ type: 'DICT_PACK_WANT', src: 'ja', tgt: 'ko' }]);
+  assert.deepEqual((await lookup('猫', 'ru', { standalone: true })).sent,
+    [{ type: 'DICT_PACK_WANT', src: 'zh-CN', tgt: 'ru' }], 'the input box is not the page');
+  setPageLang('en');
+});
+
+test('Latin text follows the page: a pack language, no lookup, or English (D-686)', async () => {
   setPageLang('fr');
   assert.deepEqual((await lookup('chat', 'zh-CN')).sent, [{ type: 'DICT_PACK_WANT', src: 'fr', tgt: 'zh-CN' }]);
   setPageLang('it');
-  assert.equal((await lookup('ran', 'zh-CN')).answer.translation, '跑');
+  const burro = await lookup('burro', 'zh-CN');
+  assert.equal(burro.answer, null, 'an Italian page: no pack holds Italian');
+  assert.equal(burro.reads, 0);
+  assert.deepEqual(burro.sent, [], 'and none is asked for');
+  assert.equal((await lookup('ran', 'zh-CN')).answer, null, 'not even an English head');
+  setPageLang('');
+  assert.equal((await lookup('ran', 'zh-CN')).answer.translation, '跑', 'no reading: English');
   setPageLang('zh');
   assert.equal((await lookup('ran', 'zh-CN')).answer.translation, '跑', 'a Chinese page: Latin is English');
   setPageLang('en');

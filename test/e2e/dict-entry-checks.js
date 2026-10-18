@@ -1,4 +1,9 @@
 /**
+ * The dictionary specs' shared harness (dictionary-entry.spec.js,
+ * dictionary-local.spec.js, input-dictionary-note.spec.js): the page origin,
+ * the settings, the page route, opening the card from a mouse selection, the
+ * zh-CN / en message lookups, and the entry checks below.
+ *
  * What a drawn dictionary entry must compute to, whatever the host page's
  * stylesheet says, and how readable its small text must be: the one copy of
  * these checks, for C7/C8 (dictionary-entry.spec.js, an entry from a model) and
@@ -14,6 +19,52 @@
  */
 const { expect } = require('./fixtures');
 const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
+const { getMessage } = require('../../i18n/messages');
+
+// Pages are served on an https origin: the built-in engine is a SecureContext API.
+const ORIGIN = 'https://dictionary.test';
+const zh = (key) => getMessage(key, 'zh-CN');
+const en = (key) => getMessage(key, 'en');
+
+// A model endpoint, the selection icon opening the card, and `extra` on top.
+function settings(endpoint, extra = {}) {
+  return {
+    provider: 'custom',
+    apiEndpoint: endpoint,
+    apiKey: 'test-key',
+    modelName: 'gpt-4.1-mini',
+    targetLang: 'zh-CN',
+    enableSelection: true,
+    selectionTranslationMode: 'popup',
+    ...extra,
+  };
+}
+
+// Serve `pages` (pathname -> html) on ORIGIN; any other path gets pages['/'].
+// `css` is appended to every page's head, as a page stylesheet.
+async function servePages(context, pages, css = '') {
+  const withCss = (html) => (css ? html.replace('</head>', `<style>${css}</style></head>`) : html);
+  await context.route(`${ORIGIN}/**`, (route) => {
+    const at = new URL(route.request().url()).pathname;
+    const body = pages[at] || pages['/'];
+    route.fulfill({ status: 200, contentType: 'text/html', body: withCss(body) });
+  });
+}
+
+// Select the text of `selector` with the mouse, as a reader would, and open the
+// card from the selection icon.
+async function openCardOn(page, selector) {
+  const box = await page.locator(selector).boundingBox();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + 1, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 1, y, { steps: 5 });
+  await page.mouse.up();
+  const icon = page.locator('#ai-translator-selection-btn .ai-translator-selection-icon');
+  await expect(icon).toBeVisible();
+  await icon.click();
+  return page.locator('.ai-translator-popup');
+}
 
 const PRIMARY = 'var(--text-primary)';
 const SECONDARY = 'var(--text-secondary)';
@@ -115,6 +166,12 @@ async function expectReadableContrast(page, entrySelector, label, selectors) {
 }
 
 module.exports = {
+  ORIGIN,
+  zh,
+  en,
+  settings,
+  servePages,
+  openCardOn,
   ENTRY_STYLES,
   MODEL_ENTRY_STYLES,
   ACCENT_STYLES,

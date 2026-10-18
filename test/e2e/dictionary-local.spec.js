@@ -23,6 +23,7 @@ const { test, expect } = require('./fixtures');
 const {
   closeInputDialog,
   evaluateInContentScript,
+  getServiceWorker,
   openInputDialog,
   recycleWorker,
   setExtensionSettings,
@@ -35,19 +36,21 @@ const { waitForSettled } = require('./layout-checks');
 const {
   CONTRAST_SELECTORS,
   ENTRY_STYLES,
+  ORIGIN,
   expectEntryStyles,
   expectReadableContrast,
+  openCardOn,
+  servePages,
+  settings,
+  zh,
 } = require('./dict-entry-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { DictPackServer } = require('./dict-pack-server');
-const { install } = require('./dict-pack-journeys');
-const { getMessage } = require('../../i18n/messages');
+const { DictPack, install, listedAt } = require('./dict-pack-journeys');
 require('../../shared/dict-entry.js');
 require('../../shared/prompt-addenda.js');
 
-const ORIGIN = 'https://dictionary.test';
 const PACK_VER = '2026.10.13';
-const zh = (key) => getMessage(key, 'zh-CN');
 
 const EN_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>River notes</title>
@@ -65,6 +68,7 @@ p { width: 640px; }</style></head>
 <body>
   <p id="lead">今朝はパンを <span id="tabemashita">食べました</span> 、とてもおいしかったです。昼はうどんにします。</p>
   <p id="tail">午後は公園をゆっくり散歩しました。</p>
+  <p id="note">明日は <span id="sensei">先生</span> に会います。</p>
 </body></html>`;
 
 // What the model answers when it is asked about `ran` or 食べました in
@@ -94,61 +98,22 @@ function shotPath(name) {
   return path.join(dir, name);
 }
 
-async function servePages(context, css = '') {
-  const withCss = (html) => (css ? html.replace('</head>', `<style>${css}</style></head>`) : html);
-  await context.route(`${ORIGIN}/**`, (route) => {
-    const at = new URL(route.request().url()).pathname;
-    const body = at === '/ja' ? JA_PAGE : EN_PAGE;
-    route.fulfill({ status: 200, contentType: 'text/html', body: withCss(body) });
-  });
-}
-
-function settings(endpoint, extra = {}) {
-  return {
-    provider: 'custom',
-    apiEndpoint: endpoint,
-    apiKey: 'test-key',
-    modelName: 'gpt-4.1-mini',
-    targetLang: 'zh-CN',
-    enableSelection: true,
-    selectionTranslationMode: 'popup',
-    uiLanguage: 'zh-CN',
-    ...extra,
-  };
-}
-
 /**
  * The model mock, the pack host with en→zh-CN and ja→zh-CN published, the
- * settings, and `url` open with both packs installed.
+ * settings, and `url` open with the packs of the `installed` sources installed.
  */
-async function setUp(page, context, { url = `${ORIGIN}/`, css = '', extra = {} } = {}) {
+async function setUp(page, context, { url = `${ORIGIN}/`, css = '', extra = {}, installed = ['en', 'ja'] } = {}) {
   const mock = await startMockOpenAIServer({ dictEntry: modelEntry });
   const server = new DictPackServer();
   server.publishFixture('en-zh-CN');
   server.publishFixture('ja-zh-CN');
   await server.attach(context);
-  await servePages(context, css);
-  await setExtensionSettings(page, settings(mock.endpoint, extra));
+  await servePages(context, { '/': EN_PAGE, '/ja': JA_PAGE }, css);
+  await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN', ...extra }));
   await page.goto(url);
   await waitForFloatBall(page);
-  await install(context, page, 'en', 'zh-CN', PACK_VER);
-  await install(context, page, 'ja', 'zh-CN', PACK_VER);
+  for (const src of installed) await install(context, page, src, 'zh-CN', PACK_VER);
   return mock;
-}
-
-// Select the text of `selector` with the mouse, as a reader would, and open the
-// card from the selection icon.
-async function openCardOn(page, selector) {
-  const box = await page.locator(selector).boundingBox();
-  const y = box.y + box.height / 2;
-  await page.mouse.move(box.x + 1, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 1, y, { steps: 5 });
-  await page.mouse.up();
-  const icon = page.locator('#ai-translator-selection-btn .ai-translator-selection-icon');
-  await expect(icon).toBeVisible();
-  await icon.click();
-  return page.locator('.ai-translator-popup');
 }
 
 const cardPart = (card) => ({
@@ -328,6 +293,33 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       expect(opened.url()).toBe('https://www.edrdg.org/edrdg/licence.html');
       expect(opened).not.toBe(page);
       expect(mock.sentTexts).toEqual([]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  // D-686 (design §3.4 revised): Han without kana in a selection on a Japanese
+  // page is Japanese. 先生 is not in the ja→zh-CN pack, so this asks for the
+  // pack before it is installed: the worker must be asked for ja-zh-CN. Read
+  // as Chinese, the pair would be zh-CN→zh-CN, which is no lookup at all, and
+  // no pack would ever be asked for.
+  test('J-B2.11: kanji alone on a Japanese page ask for the Japanese pack, not the Chinese one (D-686)', async ({ page, context }) => {
+    const mock = await setUp(page, context, { url: `${ORIGIN}/ja`, installed: ['en'] });
+    try {
+      const worker = await getServiceWorker(context);
+      await worker.evaluate(() => {
+        self.__dictWanted = [];
+        chrome.runtime.onMessage.addListener((message) => {
+          if (message && message.type === 'DICT_PACK_WANT') self.__dictWanted.push(`${message.src}-${message.tgt}`);
+        });
+      });
+      const card = await openCardOn(page, '#sensei');
+      const parts = cardPart(card);
+      // No pack for the pair yet: the card takes its usual path meanwhile.
+      await expect.poll(() => mock.sentTexts).toEqual(['先生']);
+      await expect(parts.tag).toHaveText(zh('cardEngineAi'));
+      await expect.poll(() => worker.evaluate(() => self.__dictWanted)).toEqual([DictPack.pairOf('ja', 'zh-CN')]);
+      await listedAt(context, DictPack.pairOf('ja', 'zh-CN'), PACK_VER);
     } finally {
       await mock.close();
     }

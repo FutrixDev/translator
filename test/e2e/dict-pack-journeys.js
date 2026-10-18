@@ -7,6 +7,11 @@
 const { expect } = require('./fixtures');
 const { evaluateInContentScript, getServiceWorker, waitForContentReady, writeSyncSettings } = require('./helpers');
 const { fixturePack } = require('./dict-pack-server');
+require('../../shared/dict-pack.js');
+
+// The storage keys and pair names come from the production module, so a test
+// cannot drift from what the service worker writes.
+const { DictPack } = globalThis;
 
 const EN_ZH = 'en-zh-CN';
 const DICT_CHECK_ALARM = 'dict-packs-check';
@@ -43,23 +48,25 @@ function sendFromPage(context, page, message) {
   return evaluateInContentScript(context, page, `chrome.runtime.sendMessage(${JSON.stringify(message)})`);
 }
 
-async function localValue(context, key) {
-  const worker = await getServiceWorker(context);
-  return worker.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key);
+/**
+ * One chrome.storage.local value, read through `target`: the service worker or
+ * any extension page (a page answers after a worker restart without waking it).
+ */
+function localValue(target, key) {
+  return target.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key);
+}
+
+/** How many keys start with `prefix`, by key name only, read through `target`. */
+function countKeys(target, prefix) {
+  return target.evaluate(async (p) => (await chrome.storage.local.getKeys()).filter((k) => k.startsWith(p)).length, prefix);
 }
 
 async function packItem(context, pair) {
-  return ((await localValue(context, 'dict:packs')) || {})[pair];
+  return ((await localValue(await getServiceWorker(context), DictPack.PACKS_KEY)) || {})[pair];
 }
 
 async function statusOf(context, pair) {
-  return ((await localValue(context, 'dict:status')) || {})[pair];
-}
-
-/** How many keys start with `prefix`, by key name only. */
-async function countKeys(context, prefix) {
-  const worker = await getServiceWorker(context);
-  return worker.evaluate(async (p) => (await chrome.storage.local.getKeys()).filter((k) => k.startsWith(p)).length, prefix);
+  return ((await localValue(await getServiceWorker(context), DictPack.STATUS_KEY)) || {})[pair];
 }
 
 /** Wait until `pair` is listed at `ver`. */
@@ -67,10 +74,18 @@ async function listedAt(context, pair, ver) {
   await expect.poll(async () => (await packItem(context, pair) || {}).ver, { timeout: 15000 }).toBe(ver);
 }
 
-/** Ask for a pack the way a lookup does, and wait until it is listed. */
+/**
+ * Ask for a pack the way a lookup does, and wait until it is listed: at `ver`
+ * when given, at any version otherwise.
+ */
 async function install(context, page, src, tgt, ver) {
   expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src, tgt })).toEqual({ state: 'queued' });
-  await listedAt(context, `${src}-${tgt}`, ver);
+  const pair = DictPack.pairOf(src, tgt);
+  if (ver) {
+    await listedAt(context, pair, ver);
+    return;
+  }
+  await expect.poll(async () => Boolean(await packItem(context, pair)), { timeout: 15000 }).toBe(true);
 }
 
 /** Count the DICT_PACK_WANT messages the worker receives from now on. */
@@ -104,6 +119,7 @@ function packRow(options, pair) {
 
 module.exports = {
   DICT_CHECK_ALARM,
+  DictPack,
   EN_ZH,
   countKeys,
   countWants,

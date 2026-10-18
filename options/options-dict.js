@@ -164,7 +164,7 @@ async function sendDictPack(type, src, tgt, button, expected, failedKey) {
     reply = await chrome.runtime.sendMessage({ type, src, tgt });
   } catch (error) {
     // 消息没送到 service worker：那边没有日志，记在这一层。
-    console.error(`[Blab Translation] ${type} failed`, `${src}-${tgt}`, error);
+    console.error(`[Blab Translation] ${type} failed`, DictPack.pairOf(src, tgt), error);
   }
   if (reply && reply.state === expected) return;
   // {error} 的回复已由 service worker 记过一次日志（带语言对和原始错误）；清单里

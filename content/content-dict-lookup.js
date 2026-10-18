@@ -8,11 +8,15 @@
 // - It looks up only what DictEntry.isDictCandidate() lets through (every
 //   isLookup() lookup, plus short kanji-and-kana words such as 食べました,
 //   D-609), and only while the offlineDictionary switch is on.
-// - The source language follows design §3.4: the script decides first (kana
-//   ja, hangul ko, Han zh-CN, Cyrillic ru); Latin text follows the page
+// - The source language follows design §3.4 as revised by D-686: the script
+//   decides first (kana ja, hangul ko, Cyrillic ru). Han without kana is
+//   zh-CN, except in a selection on a Japanese page, where it is ja (先生 on a
+//   Japanese page is not the Chinese word). Latin text follows the page
 //   language, or for the input box (standalone) the standalone rules of
-//   content/engine/languages.js, and any language without a Latin-script pack
-//   is tried as English.
+//   content/engine/languages.js: a language with a pack is that pack; a
+//   Latin-script language without one is no pack at all (burro on an Italian
+//   page goes to the model, not to the English pack); no reading, or a
+//   language written in another script, is tried as English.
 // - One storage read fetches the pack list and every candidate key; a word
 //   found only in the form table (`~form` -> {h}) costs one more read.
 // - A pair absent from `dict:packs` (the only sign a pack is fully seeded)
@@ -37,23 +41,33 @@
   const HAN = /\p{Script=Han}/u;
   const CYRILLIC = /\p{Script=Cyrillic}/u;
   const LATIN = /\p{Script=Latin}/u;
-  // The Latin-script source packs. Latin text on a page in any other language
-  // is tried as English only: trying more packs turns "pie" into Spanish.
-  const LATIN_SOURCES = new Set(['en', 'es', 'fr', 'de', 'pt']);
-
+  // Latin text with no reading is tried as English only: trying more packs
+  // turns "pie" into Spanish.
   async function latinSource(text, standalone) {
+    const { DictPack, LangTags } = globalThis;
     const eng = ctx.engine;
     const lang = standalone
       ? await eng.resolveSourceLang(text, '', true)
       : eng.toApiLang(await eng.pageSourceLang());
-    return LATIN_SOURCES.has(lang) ? lang : 'en';
+    // A reading in another script (a Chinese or Japanese page) says nothing
+    // about a Latin word.
+    if (!lang || !LangTags.langFitsText(lang, text)) return 'en';
+    return DictPack.isPackLang(lang) ? lang : '';
   }
 
-  // The source pack's language, '' when no pack can hold this script.
-  function sourceOf(text, standalone) {
+  // The page's own language decides Han in a selection: kanji alone on a
+  // Japanese page are Japanese words.
+  async function hanSource(standalone) {
+    if (standalone) return 'zh-CN';
+    const eng = ctx.engine;
+    return eng.toApiLang(await eng.pageSourceLang()) === 'ja' ? 'ja' : 'zh-CN';
+  }
+
+  // The source pack's language, '' when no pack holds this text.
+  async function sourceOf(text, standalone) {
     if (KANA.test(text)) return 'ja';
     if (HANGUL.test(text)) return 'ko';
-    if (HAN.test(text)) return 'zh-CN';
+    if (HAN.test(text)) return hanSource(standalone);
     if (CYRILLIC.test(text)) return 'ru';
     if (LATIN.test(text)) return latinSource(text, standalone);
     return '';
@@ -83,7 +97,7 @@
   ctx.dictLookup = async function(text, targetLang, { standalone = false } = {}) {
     const { DictPack, DictEntry, LangTags } = globalThis;
     if (!ctx.settings.offlineDictionary || !DictEntry.isDictCandidate(text)) return null;
-    if (!DictPack.LANGS.includes(targetLang)) return null;
+    if (!DictPack.isPackLang(targetLang)) return null;
     const word = String(text).trim();
     const src = await sourceOf(word, standalone);
     // zh-CN and zh-TW share a base: that is script conversion, not a lookup,

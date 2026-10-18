@@ -46,8 +46,9 @@
   }
 
   // 一组词条编成一个正则：每条一个捕获组，命中哪组就是哪条。不用正则的内联
-  // 大小写修饰符（Chrome 125 才有，manifest 的 minimum_chrome_version 是 116），
-  // 区分和不区分大小写各编一个；单测扫描这一族里没有那种写法。
+  // 大小写修饰符（Chrome 125 才有，定这条时 manifest 的最低版本还是 116；现在是
+  // 130，但两个正则的写法不变），区分和不区分大小写各编一个；单测扫描这一族里
+  // 没有那种写法。
   function compileGroup(entries, flags) {
     if (!entries.length) return null;
     const ordered = entries.slice().sort(byLengthThenText);

@@ -15,6 +15,7 @@ const { getServiceWorker, recycleWorker, waitForContentReady, writeSyncSettings 
 const { DictPackServer, MANIFEST_PATH, fixturePack, packBytes } = require('./dict-pack-server');
 const {
   DICT_CHECK_ALARM,
+  DictPack,
   EN_ZH,
   countKeys,
   countWants,
@@ -34,6 +35,13 @@ const {
 } = require('./dict-pack-journeys');
 
 const JA_ZH = 'ja-zh-CN';
+const KO_EN = DictPack.pairOf('ko', 'en');
+const { PACKS_KEY, STATUS_KEY, DECLINED_KEY } = DictPack;
+/** The storage key prefix of every entry of `pair`. */
+const keysOf = (pair) => {
+  const { src, tgt } = DictPack.splitPair(pair);
+  return DictPack.prefixOf(src, tgt);
+};
 const CACHE_SWEEP_ALARM = 'translation-cache-sweep';
 
 async function openSecondTab(context) {
@@ -52,30 +60,19 @@ function collectConsole(worker, type, needle) {
   return found;
 }
 
-/** Storage as an extension page sees it (works across a worker restart). */
-function pageLocal(page, key) {
-  return page.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key);
-}
-
-function pageCountKeys(page, prefix) {
-  return page.evaluate(async (p) => (await chrome.storage.local.getKeys()).filter((k) => k.startsWith(p)).length, prefix);
-}
-
 /** A worker stopped mid-job, as the next worker finds it: `downloading`, keys, maybe a list item. */
 async function leaveInterrupted(context, pairs) {
+  const status = {};
+  const packs = {};
+  const items = {};
+  for (const { pair, ver, listed, heads } of pairs) {
+    const { src, tgt } = DictPack.splitPair(pair);
+    status[pair] = { state: 'downloading', ver, reason: '' };
+    if (listed) packs[pair] = { src, tgt, ver: listed, heads: heads.length, bytes: 1 };
+    for (const head of heads) items[DictPack.entryKey(src, tgt, head)] = { e: [['n.', ['x'], null, 'wiktionary']] };
+  }
   const worker = await getServiceWorker(context);
-  await worker.evaluate(async (list) => {
-    const status = {};
-    const packs = {};
-    const keys = {};
-    for (const { pair, ver, listed, heads } of list) {
-      status[pair] = { state: 'downloading', ver, reason: '' };
-      const [src, ...rest] = pair.split('-');
-      if (listed) packs[pair] = { src, tgt: rest.join('-'), ver: listed, heads: heads.length, bytes: 1 };
-      for (const head of heads) keys[`d:${pair}:${head}`] = { e: [['n.', ['x'], null, 'wiktionary']] };
-    }
-    await chrome.storage.local.set({ 'dict:status': status, 'dict:packs': packs, ...keys });
-  }, pairs);
+  await worker.evaluate((values) => chrome.storage.local.set(values), { [STATUS_KEY]: status, [PACKS_KEY]: packs, ...items });
 }
 
 test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)', () => {
@@ -90,7 +87,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     const pack = packRow(options, EN_ZH);
     await pack.locator('.dict-pack-delete').click();
     await expect(pack.locator('.dict-pack-declined')).toHaveText('Deleted');
-    expect(await localValue(context, 'dict:declined')).toEqual([EN_ZH]);
+    expect(await localValue(await getServiceWorker(context), DECLINED_KEY)).toEqual([EN_ZH]);
 
     // A fresh page has sent no request yet: only the declined list stops it.
     const second = await openSecondTab(context);
@@ -123,7 +120,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     await pack.locator('.dict-pack-redownload').click();
     await listedAt(context, EN_ZH, row.ver);
     expect(server.hitsOf(row.url)).toBe(2);
-    expect(await localValue(context, 'dict:declined')).toEqual([]);
+    expect(await localValue(await getServiceWorker(context), DECLINED_KEY)).toEqual([]);
     await expect(pack.locator('.dict-pack-meta')).toHaveText(`${kbLabel(row.bytes)} · 3 words · version ${row.ver}`);
     await expect(pack.locator('.dict-pack-delete')).toHaveText('Delete');
     expect((await lookup(context, second, 'apple', 'zh-CN')).translation).toBe('苹果');
@@ -209,29 +206,30 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
 
     // The job writes every key, then never gets to write its list item.
     const worker = await getServiceWorker(context);
-    await worker.evaluate((pair) => {
+    await worker.evaluate(({ pair, packsKey }) => {
       const area = chrome.storage.local;
       const set = area.set;
       area.set = function (items, ...rest) {
-        if (items && items['dict:packs'] && items['dict:packs'][pair]) {
+        if (items && items[packsKey] && items[packsKey][pair]) {
           self.__dictSeedStopped = true;
           return new Promise(() => {});
         }
         return set.call(this, items, ...rest);
       };
-    }, EN_ZH);
+    }, { pair: EN_ZH, packsKey: PACKS_KEY });
     expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'queued' });
     await expect.poll(() => worker.evaluate(() => self.__dictSeedStopped === true), { timeout: 15000 }).toBe(true);
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBeGreaterThan(0);
+    expect(await countKeys(worker, keysOf(EN_ZH))).toBeGreaterThan(0);
     expect(await statusOf(context, EN_ZH)).toMatchObject({ state: 'downloading', ver: row.ver });
 
     await recycleWorker(context, page);
 
     const options = await openOptions(context, extensionId);
-    await expect.poll(async () => (await pageLocal(options, 'dict:status') || {})[EN_ZH], { timeout: 15000 })
+    // Read through the settings page: storage as a page sees it, across the worker restart.
+    await expect.poll(async () => (await localValue(options, STATUS_KEY) || {})[EN_ZH], { timeout: 15000 })
       .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted' });
-    expect(await pageCountKeys(options, `d:${EN_ZH}:`)).toBe(0);
-    expect((await pageLocal(options, 'dict:packs') || {})[EN_ZH]).toBeUndefined();
+    expect(await countKeys(options, keysOf(EN_ZH))).toBe(0);
+    expect((await localValue(options, PACKS_KEY) || {})[EN_ZH]).toBeUndefined();
     const pack = packRow(options, EN_ZH);
     await expect(pack.locator('.dict-pack-failed')).toHaveText(`Version ${row.ver} failed to download. It will be tried again later.`);
     await expect(pack.locator('.dict-pack-delete')).toHaveText('Delete');
@@ -250,31 +248,32 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'absent' });
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
       .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted' });
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBe(0);
+    expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
     expect(warnings).toHaveLength(1);
     expect(await warnings[0].args()[1].jsonValue()).toEqual({ pair: EN_ZH, ver: '2026.10.13' });
   });
 
   test('J-B1.17 the daily check after a stopped worker cleans up first, and keeps a pack still listed', async ({ context, page }) => {
     const server = new DictPackServer();
-    const koRow = server.publishFixture('ko-en'); // en-zh-CN is not listed
+    const koRow = server.publishFixture(KO_EN); // en-zh-CN is not listed
     await server.attach(context);
     await openExample(context, page);
     await leaveInterrupted(context, [
       // Stopped while seeding a new pair: no list item, orphaned keys.
       { pair: EN_ZH, ver: '2026.10.13', listed: null, heads: ['apple'] },
       // Stopped while downloading an update: the old version is still listed and whole.
-      { pair: 'ko-en', ver: '2026.12.01', listed: koRow.ver, heads: ['학교'] },
+      { pair: KO_EN, ver: '2026.12.01', listed: koRow.ver, heads: ['학교'] },
     ]);
 
     await fireAlarm(context, DICT_CHECK_ALARM);
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
       .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted' });
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBe(0);
-    await expect.poll(() => statusOf(context, 'ko-en'))
+    const worker = await getServiceWorker(context);
+    expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
+    await expect.poll(() => statusOf(context, KO_EN))
       .toEqual({ state: 'failed', ver: '2026.12.01', reason: 'interrupted' });
-    expect(await countKeys(context, 'd:ko-en:')).toBe(1);
-    expect((await packItem(context, 'ko-en')).ver).toBe(koRow.ver);
+    expect(await countKeys(worker, keysOf(KO_EN))).toBe(1);
+    expect((await packItem(context, KO_EN)).ver).toBe(koRow.ver);
   });
 
   test('J-B1.18 two tabs asking for one pack fetch it once', async ({ context, page }) => {
@@ -314,9 +313,9 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     try {
       expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'ja', tgt: 'zh-CN' })).toEqual({ state: 'queued' });
       await held.hit;
-      // The next read of dict:status in the worker waits: that is the second
+      // The next read of the status key in the worker waits: that is the second
       // request, past its list read, about to decide to queue.
-      await worker.evaluate(() => {
+      await worker.evaluate((statusKey) => {
         const area = chrome.storage.local;
         const get = area.get;
         let gate;
@@ -324,14 +323,14 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
         self.__statusHeld = false;
         self.__statusRelease = () => gate();
         area.get = function (keys, ...rest) {
-          if (keys === 'dict:status' && !self.__statusHeld) {
+          if (keys === statusKey && !self.__statusHeld) {
             self.__statusHeld = true;
             area.get = get;
             return self.__statusGate.then(() => get.call(this, keys, ...rest));
           }
           return get.call(this, keys, ...rest);
         };
-      });
+      }, STATUS_KEY);
       second = sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'ja', tgt: 'zh-CN' });
       await expect.poll(() => worker.evaluate(() => self.__statusHeld), { timeout: 15000 }).toBe(true);
     } finally {
@@ -354,17 +353,16 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     await install(context, page, 'en', 'zh-CN', '2026.10.13');
 
     const worker = await getServiceWorker(context);
-    await worker.evaluate((pair) => {
+    await worker.evaluate(({ pair, prefix, packsKey }) => {
       const area = chrome.storage.local;
       const { set, remove } = area;
-      const prefix = `d:${pair}:`;
       self.__dictWrites = [];
       area.set = function (items, ...rest) {
         const keys = Object.keys(items);
         self.__dictWrites.push({
           op: 'set',
           touchesPair: keys.some((k) => k.startsWith(prefix)),
-          packsHasPair: 'dict:packs' in items ? Boolean(items['dict:packs'][pair]) : null,
+          packsHasPair: packsKey in items ? Boolean(items[packsKey][pair]) : null,
         });
         return set.call(this, items, ...rest);
       };
@@ -373,7 +371,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
         return remove.call(this, keys, ...rest);
       };
       self.__dictWritesRestore = () => { area.set = set; area.remove = remove; };
-    }, EN_ZH);
+    }, { pair: EN_ZH, prefix: keysOf(EN_ZH), packsKey: PACKS_KEY });
 
     const row = server.publish(packBytes(enZhV2()));
     try {

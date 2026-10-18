@@ -49,6 +49,7 @@ Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos
 • Mit Ihrem eigenen KI-Modell geht der Text direkt an Ihren Endpunkt, mit Ihrem eigenen Schlüssel — nie über uns.
 • Blab Translation schickt den Text zum Übersetzen an unsere Server und speichert nichts davon.
 • PDF-, Dokument- und Comic-Dateien werden auf unseren Servern verarbeitet und nach 7 Tagen gelöscht.
+• Offline-Wörterbuchpakete werden von unserem Server geladen und auf Ihrem Gerät gespeichert; dafür ist die Berechtigung für unbegrenzten Speicher da. Ein Wort im Paket nachzuschlagen sendet nichts.
 • Keine Analyse. Kein Werbe-Tracking.
 
 TASTENKÜRZEL

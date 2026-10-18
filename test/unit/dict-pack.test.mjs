@@ -59,20 +59,50 @@ test('parsePack accepts the three fixture packs', () => {
 const REFUSALS = [
   ['not JSON', () => '{', /\(root\) is not JSON/],
   ['v is not 1', (p) => { p.v = 2; }, /v is not 1/],
-  ['unknown source language', (p) => { p.src = 'it'; }, /src is not a supported language/],
-  ['src equals tgt', (p) => { p.tgt = 'en'; }, /tgt equals src/],
+  ['unknown source language', (p) => { p.src = 'it'; }, /it-zh-CN is not a language pair/],
+  ['unknown target language', (p) => { p.tgt = 'it'; }, /en-it is not a language pair/],
+  ['src equals tgt', (p) => { p.tgt = 'en'; }, /en-en is not a language pair/],
   ['no ver', (p) => { delete p.ver; }, /ver is not a non-empty string/],
   ['a source without a url', (p) => { delete p.sources[0].url; }, /sources\[0\]\.url/],
   ['a source url that is not https', (p) => { p.sources[0].url = 'javascript:alert(1)'; }, /sources\[0\]\.url is not an https URL/],
   ['a credit href that is not https', (p) => { p.credits.tatoeba.href = 'http://tatoeba.org/'; }, /credits\.tatoeba\.href is not an https URL/],
-  ['a credit href on a host the card drops (D-609 N7)', (p) => { p.credits.tatoeba.href = 'https://kaikki.org/'; }, /credits\.tatoeba\.href is not an https URL on www\.edrdg\.org or tatoeba\.org/],
+  ['a credit href on a host the card drops (D-609 N7)', (p) => { p.credits.tatoeba.href = 'https://kaikki.org/'; }, /credits\.tatoeba\.href is not an https URL on tatoeba\.org/],
   ['a credit href with a port (D-609 N7)', (p) => { p.credits.tatoeba.href = 'https://tatoeba.org:8443/'; }, /credits\.tatoeba\.href is not an https URL/],
+  // Every credit refusal entryFor used to make (D-686 moved them all here).
+  ...[
+    ['javascript:', 'javascript:alert(1)'],
+    ['data:', 'data:text/html,<b>x</b>'],
+    ['a look-alike host', 'https://tatoeba.org.evil.example/'],
+    ['a host suffix', 'https://eviltatoeba.org/'],
+    ['a subdomain', 'https://en.tatoeba.org/'],
+    ['a user', 'https://someone@tatoeba.org/'],
+    ['no scheme', 'tatoeba.org'],
+    ['a leading no-break space', '\u00A0https://tatoeba.org/'],
+    ['a leading em space', '\u2003https://tatoeba.org/'],
+    ['the other credit\'s host', 'https://www.edrdg.org/edrdg/licence.html'],
+  ].map(([what, href]) => [`a credit href: ${what}`, (p) => { p.credits.tatoeba.href = href; },
+    /credits\.tatoeba\.href is not an https URL on tatoeba\.org/]),
+  ['a credit href that is not a string', (p) => { p.credits.tatoeba.href = 42; }, /credits\.tatoeba\.href is not a non-empty string/],
+  ['a credit that is not an object', (p) => { p.credits.tatoeba = 'Tatoeba'; }, /credits\.tatoeba is not an object/],
+  ['an empty credit label', (p) => { p.credits.tatoeba.label = ''; }, /credits\.tatoeba\.label is not a non-empty string/],
+  ['a blank credit label', (p) => { p.credits.tatoeba.label = '   '; }, /credits\.tatoeba\.label has no visible characters/],
+  ['a zero-width credit label', (p) => { p.credits.tatoeba.label = ' \u200B\u2060 '; }, /credits\.tatoeba\.label has no visible characters/],
+  ['an overlong credit label', (p) => { p.credits.tatoeba.label = 'x'.repeat(DictPack.LIMITS.MAX_LABEL + 1); }, /credits\.tatoeba\.label is over 80 characters/],
   ['an unknown credit', (p) => { p.credits.wiktionary = { label: 'W', href: 'https://kaikki.org/' }; }, /credits\.wiktionary is not jmdict or tatoeba/],
   ['seven records', (p) => { p.e.apple = Array(7).fill(p.e.apple[0]); }, /e\["apple"\] has 7 items/],
   ['five glosses', (p) => { p.e.apple[0][1] = ['a', 'b', 'c', 'd', 'e']; }, /e\["apple"\]\[0\]\[1\] has 5 items/],
   ['no non-empty gloss (D-576 N4)', (p) => { p.e.apple[0][1] = ['', '']; }, /e\["apple"\]\[0\]\[1\] has no non-empty gloss/],
   ['only whitespace glosses (D-609 N8)', (p) => { p.e.apple[0][1] = [' ', '\u3000']; }, /e\["apple"\]\[0\]\[1\] has no non-empty gloss/],
-  ['an overlong gloss', (p) => { p.e.apple[0][1] = ['x'.repeat(DictEntry.MAX_TEXT + 1)]; }, /e\["apple"\]\[0\]\[1\]\[0\] is over/],
+  ['an overlong gloss', (p) => { p.e.apple[0][1] = ['x'.repeat(DictPack.LIMITS.MAX_TEXT + 1)]; }, /e\["apple"\]\[0\]\[1\]\[0\] is over 500 characters/],
+  // The L4 caps (D-686), one refusal each.
+  ['an overlong part of speech', (p) => { p.e.apple[0][0] = 'x'.repeat(DictPack.LIMITS.MAX_LABEL + 1); }, /e\["apple"\]\[0\]\[0\] is over 80 characters/],
+  ['an overlong head', (p) => { p.e['x'.repeat(DictPack.LIMITS.MAX_KEY + 1)] = p.e.apple; }, /e\["x{201}"\] is over 200 characters/],
+  ['an overlong form', (p) => { p.f['x'.repeat(DictPack.LIMITS.MAX_KEY + 1)] = 'apple'; }, /f\["x{201}"\] is over 200 characters/],
+  ['an overlong form label', (p) => { p.m.run[0][0] = 'x'.repeat(DictPack.LIMITS.MAX_LABEL + 1); }, /m\["run"\]\[0\]\[0\] is over 80 characters/],
+  ['an overlong form value', (p) => { p.m.run[0][1] = 'x'.repeat(DictPack.LIMITS.MAX_TEXT + 1); }, /m\["run"\]\[0\]\[1\] is over 500 characters/],
+  ['an overlong example sentence', (p) => { p.x.run[0][0] = 'x'.repeat(DictPack.LIMITS.MAX_TEXT + 1); }, /x\["run"\]\[0\]\[0\] is over 500 characters/],
+  ['an overlong example translation', (p) => { p.x.run[0][1] = 'x'.repeat(DictPack.LIMITS.MAX_TEXT + 1); }, /x\["run"\]\[0\]\[1\] is over 500 characters/],
+  ['nine sources', (p) => { p.sources = [...p.sources, ...Array.from({ length: 7 }, (_, i) => ({ ...p.sources[0], id: `s${i}` }))]; }, /sources has 9 items/],
   ['an empty reading', (p) => { p.e.apple[0][2] = ''; }, /e\["apple"\]\[0\]\[2\]/],
   ['an origin not in sources', (p) => { p.e.apple[0][3] = 'ecdict'; }, /e\["apple"\]\[0\]\[3\] is not an id in sources/],
   ['a head that looks like a form key', (p) => { p.e['~apple'] = p.e.apple; }, /e\["~apple"\] starts with "~"/],
@@ -99,13 +129,47 @@ test('parsePack refuses a JMdict record without the JMdict credit', () => {
   assert.throws(() => DictPack.parsePack(JSON.stringify(pack)), /credits\.jmdict is missing/);
 });
 
+test('parsePack holds the JMdict credit to www.edrdg.org alone', () => {
+  for (const href of ['https://edrdg.org/', 'https://tatoeba.org/', 'http://www.edrdg.org/']) {
+    const pack = fixture('ja-zh-CN');
+    pack.credits.jmdict.href = href;
+    assert.throws(() => DictPack.parsePack(JSON.stringify(pack)),
+      /credits\.jmdict\.href is not an https URL on www\.edrdg\.org/, href);
+  }
+});
+
+test('LIMITS is one frozen table, and its text cap is the entry\'s', () => {
+  assert.ok(Object.isFrozen(DictPack.LIMITS));
+  assert.deepEqual(Object.keys(DictPack.LIMITS), [
+    'MAX_RECORDS', 'MAX_GLOSSES', 'MAX_EXAMPLES', 'MAX_FORMS', 'MAX_TEXT',
+    'MAX_LABEL', 'MAX_KEY', 'MAX_SOURCES', 'MAX_CREDITS',
+  ]);
+  // The first gloss is the answer's translation, which the entry refuses
+  // past DictEntry.MAX_TEXT: the two caps are one number.
+  assert.equal(DictPack.LIMITS.MAX_TEXT, DictEntry.MAX_TEXT);
+  assert.equal(DictPack.LIMITS.MAX_CREDITS, 2);
+});
+
+test('needPair and isPackLang: the one check on a language pair', () => {
+  assert.equal(DictPack.needPair('en', 'zh-CN'), 'en-zh-CN');
+  assert.equal(DictPack.needPair('zh-TW', 'ja'), 'zh-TW-ja');
+  for (const [src, tgt] of [['it', 'en'], ['en', 'it'], ['en', 'en'], ['', 'en'], [undefined, 'en'], ['EN', 'zh-CN']]) {
+    assert.throws(() => DictPack.needPair(src, tgt), /is not a language pair/, `${src}-${tgt}`);
+  }
+  assert.equal(DictPack.isPackLang('pt'), true);
+  for (const lang of ['it', 'zh', '', null, 'en-US']) assert.equal(DictPack.isPackLang(lang), false, String(lang));
+});
+
 test('seedChunks: heads first, then forms, 5000 keys a chunk, no list item', () => {
   const pack = fixture('en-zh-CN');
   for (let i = 0; i < 12000; i += 1) pack.e[`w${i}`] = [['n.', [`词${i}`], null, 'wiktionary']];
   for (let i = 0; i < 3000; i += 1) pack.f[`f${i}`] = `w${i}`;
   const chunks = [...DictPack.seedChunks(DictPack.parsePack(JSON.stringify(pack)))];
   const total = Object.keys(pack.e).length + Object.keys(pack.f).length;
-  assert.deepEqual(chunks.map((c) => Object.keys(c).length), [5000, 5000, 5000, total - 15000]);
+  const full = Math.floor(total / DictPack.CHUNK_KEYS);
+  assert.equal(full, 3, 'the fixture fills three chunks and starts a fourth');
+  assert.deepEqual(chunks.map((c) => Object.keys(c).length),
+    [...Array(full).fill(DictPack.CHUNK_KEYS), total - full * DictPack.CHUNK_KEYS]);
   const keys = chunks.flatMap((c) => Object.keys(c));
   assert.equal(new Set(keys).size, total);
   assert.ok(!keys.includes(DictPack.PACKS_KEY));
@@ -225,5 +289,12 @@ test('foldCandidates: Korean particles — longest first, once, at least one cha
   assert.deepEqual(strip('가'), []);
   assert.deepEqual(strip('학교'), []);
   assert.deepEqual(DictPack.foldCandidates('학교에서', 'ja'), ['학교에서'], 'only for a Korean source');
-  assert.equal(DictPack.KO_PARTICLES.length, 26);
+  // Every particle in the list strips, the two-syllable ones before their tails.
+  const particles = [
+    '은', '는', '이', '가', '을', '를', '에', '에서', '에게', '한테', '께서', '의', '와', '과', '도',
+    '로', '으로', '만', '부터', '까지', '보다', '처럼', '이나', '나', '랑', '이랑',
+  ];
+  for (const particle of particles) assert.deepEqual(strip(`학교${particle}`), ['학교'], particle);
+  assert.deepEqual(strip('학교하고'), [], 'a word ending in no particle of the 26 is not stripped');
+  assert.equal('KO_PARTICLES' in DictPack, false, 'tested through foldCandidates, not exported');
 });

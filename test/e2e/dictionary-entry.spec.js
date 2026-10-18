@@ -3,7 +3,7 @@
 // word forms) under the translation — from a model engine (D-469/D-470) or the
 // offline dictionary (D-561), never the built-in engine.
 // C9: a short formula is translated, not looked up (D-474).
-// C10: an offline dictionary answer draws its credits as safe links (D-561).
+// C10: an offline dictionary answer draws its credits as links (D-561).
 // J1–J3: the phonetics are the translation's, in the target language, and
 // their speakers read the translation (D-487); the source text keeps its own
 // speaker on each surface.
@@ -32,16 +32,18 @@ const {
   ACCENT_STYLES,
   MODEL_CONTRAST_SELECTORS,
   MODEL_ENTRY_STYLES,
+  ORIGIN,
+  en,
   expectEntryStyles,
   expectReadableContrast,
+  openCardOn,
+  servePages,
+  settings,
+  zh,
 } = require('./dict-entry-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
-const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
 
-const ORIGIN = 'https://dictionary.test';
-const zh = (key) => getMessage(key, 'zh-CN');
-const en = (key) => getMessage(key, 'en');
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Morning notes</title>
@@ -92,25 +94,7 @@ function dictEntry(text) {
 }
 
 // The page, optionally with a hostile stylesheet in its head.
-async function servePage(context, css = '') {
-  const body = css ? PAGE.replace('</head>', `<style>${css}</style></head>`) : PAGE;
-  await context.route(`${ORIGIN}/**`, (route) => {
-    route.fulfill({ status: 200, contentType: 'text/html', body });
-  });
-}
-
-function settings(endpoint, extra = {}) {
-  return {
-    provider: 'custom',
-    apiEndpoint: endpoint,
-    apiKey: 'test-key',
-    modelName: 'gpt-4.1-mini',
-    targetLang: 'zh-CN',
-    enableSelection: true,
-    selectionTranslationMode: 'popup',
-    ...extra,
-  };
-}
+const servePage = (context, css = '') => servePages(context, { '/': PAGE }, css);
 
 // speechSynthesis in the content script's world: an en-GB, an en-US and a
 // zh-CN voice, and speak() records what it was asked to say and in which
@@ -151,21 +135,6 @@ async function stubSpeech(page) {
 
 const spoken = (page) => evaluateInContentScript(page.context(), page, 'self.__spoken');
 const asked = (page) => evaluateInContentScript(page.context(), page, 'self.__asked');
-
-// Select the text of `selector` with the mouse, as a reader would, and open the
-// card from the selection icon.
-async function openCardOn(page, selector) {
-  const box = await page.locator(selector).boundingBox();
-  const y = box.y + box.height / 2;
-  await page.mouse.move(box.x + 1, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 1, y, { steps: 5 });
-  await page.mouse.up();
-  const icon = page.locator('#ai-translator-selection-btn .ai-translator-selection-icon');
-  await expect(icon).toBeVisible();
-  await icon.click();
-  return page.locator('.ai-translator-popup');
-}
 
 // The blocks of a fully drawn `run` entry, under `root`.
 async function expectRunEntry(page, root) {
@@ -619,12 +588,14 @@ test.describe('dictionary entry (batch C)', () => {
   });
 
   // D-561: an offline dictionary answer ({engine: 'dict', entry, credits}) is
-  // read by the same entryFor and drawn by the same render. This draws hand-made
-  // answers (unsafe links among them) into the input box's real entry
-  // container from the content script, where the card and the dialog call
-  // render, and reads the links off the page. A real pack answer, entered from
-  // the page, is dictionary-local.spec.js (J-B2.1–J-B2.7).
-  test('C10: an offline dictionary entry ends in a credits line of safe links; a model answer\'s credits are dropped (D-561)', async ({ page, context }) => {
+  // read by the same entryFor and drawn by the same render. This draws a
+  // hand-made answer into the input box's real entry container from the
+  // content script, where the card and the dialog call render, and reads the
+  // links off the page. The answer carries the two credits a pack can carry:
+  // an unsafe credit never reaches a card, because parsePack refuses the whole
+  // pack (D-686; test/unit/dict-pack.test.mjs). A real pack answer, entered
+  // from the page, is dictionary-local.spec.js (J-B2.1–J-B2.7).
+  test('C10: an offline dictionary entry ends in a credits line of links; a model answer\'s credits are dropped (D-561); unsafe credits are refused by parsePack (unit)', async ({ page, context }) => {
     const mock = await startMockOpenAIServer({ dictEntry });
     try {
       await servePage(context);
@@ -649,9 +620,6 @@ test.describe('dictionary entry (batch C)', () => {
       const entry = { translation: '跑', senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }] };
       const credits = [
         { label: 'JMdict © EDRDG', href: 'https://www.edrdg.org/edrdg/licence.html' },
-        { label: 'Script', href: 'javascript:window.__pwned=1' },
-        { label: 'Plain', href: 'http://tatoeba.org/' },
-        { label: 'Elsewhere', href: 'https://example.com/' },
         { label: 'Tatoeba', href: 'https://tatoeba.org/' },
       ];
       const dict = page.locator('#ai-translator-input-dict');
@@ -689,7 +657,6 @@ test.describe('dictionary entry (batch C)', () => {
         { href: 'https://www.edrdg.org/edrdg/licence.html', target: '_blank', noopener: true, noreferrer: true },
         { href: 'https://tatoeba.org/', target: '_blank', noopener: true, noreferrer: true },
       ]);
-      expect(await dict.locator('a[href^="javascript"], a[href^="http:"], a[href*="example.com"]').count()).toBe(0);
 
       // The same credits on a model answer: dropped, no line, the entry as before.
       expect(await drawAnswer({ engine: 'ai', translation: '跑', entry: { ...entry, credits }, credits })).toBe(false);
@@ -699,7 +666,6 @@ test.describe('dictionary entry (batch C)', () => {
 
       // Nothing after the first word asked a model.
       expect(mock.systemPrompts).toHaveLength(asked);
-      expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
     } finally {
       await mock.close();
     }

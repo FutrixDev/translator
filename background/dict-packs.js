@@ -30,7 +30,7 @@
 // fails its check never touches storage), then remove the pair's `dict:packs`
 // item (from here on lookups see no pack), remove every old `d:<pair>:` key,
 // write the new keys chunk by chunk, and write the `dict:packs` item last. A
-// job that fails is caught in one place, runJob(): one console.error with the
+// job that fails is caught in one place, runInstall(): one console.error with the
 // operation, pair and ver, and `dict:status` marks the pair failed for the
 // settings page. Nothing is retried there and no old version is put back.
 //
@@ -71,7 +71,11 @@ function badRow(i, why) {
 
 function checkRow(row, i) {
   if (!row || typeof row !== 'object') throw badRow(i, 'is not an object');
-  if (!DictPack.LANGS.includes(row.src) || !DictPack.LANGS.includes(row.tgt)) throw badRow(i, 'has an unknown pair');
+  try {
+    DictPack.needPair(row.src, row.tgt);
+  } catch (error) {
+    throw badRow(i, `.src/.tgt: ${error.message}`);
+  }
   for (const key of ['ver', 'url', 'sha256']) {
     if (typeof row[key] !== 'string' || !row[key]) throw badRow(i, `.${key} is not a string`);
   }
@@ -124,6 +128,21 @@ async function readDeclined() {
   return (await chrome.storage.local.get(DictPack.DECLINED_KEY))[DictPack.DECLINED_KEY] || [];
 }
 
+/** The reader deleted `pair`: nothing but a redownload fetches it again. */
+async function isDeclined(pair) {
+  return (await readDeclined()).includes(pair);
+}
+
+// Seeded at the version `row` names: nothing to fetch.
+function isCurrent(packs, pair, row) {
+  return Boolean(packs[pair]) && packs[pair].ver === row.ver;
+}
+
+/** A `dict:status` item: what the settings page shows for a pair. */
+function status(state, ver, reason = '') {
+  return { state, ver, reason };
+}
+
 async function setDeclined(pair, declined) {
   const list = (await readDeclined()).filter((p) => p !== pair);
   if (declined) list.push(pair);
@@ -159,7 +178,8 @@ async function fetchPack(row) {
   if (sha256 !== row.sha256) throw new Error(`sha256 mismatch: manifest ${row.sha256}, downloaded ${sha256}`);
   const pack = DictPack.parsePack(new TextDecoder().decode(buffer));
   if (pack.src !== row.src || pack.tgt !== row.tgt || pack.ver !== row.ver) {
-    throw new Error(`pack is ${pack.src}-${pack.tgt} ${pack.ver}, manifest row is ${row.src}-${row.tgt} ${row.ver}`);
+    const packPair = DictPack.pairOf(pack.src, pack.tgt);
+    throw new Error(`pack is ${packPair} ${pack.ver}, manifest row is ${DictPack.pairOf(row.src, row.tgt)} ${row.ver}`);
   }
   return pack;
 }
@@ -182,19 +202,18 @@ async function runInstall({ op, row }) {
   // A pair deleted after this job was asked for stays deleted; the reader's
   // own "Download again" is the one job that takes it off the list.
   if (op === 'redownload') await setDeclined(pair, false);
-  else if ((await readDeclined()).includes(pair)) return { state: 'declined' };
+  else if (await isDeclined(pair)) return { state: 'declined' };
   // The caller read the list before it queued this job; another job may have
   // seeded this version since (D-609 N4).
-  const listed = (await readMap(DictPack.PACKS_KEY))[pair];
-  if (listed && listed.ver === row.ver) return { state: 'installed' };
-  await writeMapItem(DictPack.STATUS_KEY, pair, { state: 'downloading', ver: row.ver, reason: '' });
+  if (isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return { state: 'installed' };
+  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver));
   try {
     await installPack(row);
   } catch (error) {
     // The one place a pack's failure stops: logged once, shown on the
     // settings page through dict:status. No user data: the pair and ver only.
     console.error('[Blab Translation] dictionary pack failed', { op, pair, ver: row.ver }, error);
-    await writeMapItem(DictPack.STATUS_KEY, pair, { state: 'failed', ver: row.ver, reason: String(error.message || error) });
+    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', row.ver, String(error.message || error)));
     return { state: 'failed' };
   }
   await writeMapItem(DictPack.STATUS_KEY, pair, undefined);
@@ -212,18 +231,21 @@ async function deletePair({ src, tgt }) {
   return { state: 'deleted' };
 }
 
+// The reason a recovery writes: the pair was not refused, its worker stopped.
+const INTERRUPTED = 'interrupted';
+
 // Only a job on this queue writes `downloading`, and this runs on the queue,
 // so every `downloading` it finds is from a worker that stopped mid-job. The
 // pair is marked failed (the check retries it); a pair with no list item was
 // being seeded from scratch or replaced, and its keys are orphans (D-609 N6).
 async function recoverPairs() {
-  const status = await readMap(DictPack.STATUS_KEY);
+  const statuses = await readMap(DictPack.STATUS_KEY);
   const packs = await readMap(DictPack.PACKS_KEY);
-  for (const [pair, { state, ver }] of Object.entries(status)) {
+  for (const [pair, { state, ver }] of Object.entries(statuses)) {
     if (state !== 'downloading') continue;
     console.warn('[Blab Translation] dictionary pack interrupted', { pair, ver });
     if (!packs[pair]) await removePairKeys(pair);
-    await writeMapItem(DictPack.STATUS_KEY, pair, { state: 'failed', ver, reason: 'interrupted' });
+    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', ver, INTERRUPTED));
   }
   return { state: 'recovered' };
 }
@@ -233,17 +255,17 @@ async function recoverPairs() {
 // goes when the manifest lists the pair again.
 async function markUnlisted({ listed }) {
   const packs = await readMap(DictPack.PACKS_KEY);
-  const status = await readMap(DictPack.STATUS_KEY);
+  const statuses = await readMap(DictPack.STATUS_KEY);
   let changed = false;
   for (const pair of Object.keys(packs)) {
     const unlisted = !listed.includes(pair);
-    const marked = Boolean(status[pair]) && status[pair].state === 'unlisted';
+    const marked = Boolean(statuses[pair]) && statuses[pair].state === 'unlisted';
     if (unlisted === marked) continue;
-    if (unlisted) status[pair] = { state: 'unlisted', ver: packs[pair].ver, reason: '' };
-    else delete status[pair];
+    if (unlisted) statuses[pair] = status('unlisted', packs[pair].ver);
+    else delete statuses[pair];
     changed = true;
   }
-  if (changed) await chrome.storage.local.set({ [DictPack.STATUS_KEY]: status });
+  if (changed) await chrome.storage.local.set({ [DictPack.STATUS_KEY]: statuses });
   return { state: 'listed' };
 }
 
@@ -255,22 +277,26 @@ const packWriter = StorageWriter.create({
   errors: 'throw',
 });
 
-const joinable = new Map(); // pair -> the queued or running install job
+const joinable = new Map(); // pair -> { ver, job }: the queued or running install
 
 /**
- * Queue the install of `row`, or join the install of its pair already
- * queued. A redownload never joins: a job asked for before the reader's
+ * Queue the install of `row`, or join the install of its pair already queued
+ * at the same version. A job for another version is not joined: it carries
+ * its own manifest row, and joining it would seed that version instead of
+ * `row`'s. A redownload never joins: a job asked for before the reader's
  * click finds the pair declined. Resolves when it is seeded
  * ({state:'installed'}), has failed ({state:'failed'}, already logged and
  * shown), or was declined.
  */
 function queueInstall(op, row) {
   const pair = DictPack.pairOf(row.src, row.tgt);
-  if (op !== 'redownload' && joinable.has(pair)) return joinable.get(pair);
+  const queued = joinable.get(pair);
+  if (op !== 'redownload' && queued && queued.ver === row.ver) return queued.job;
   const job = packWriter.applyWrite({ kind: 'install', op, row });
-  joinable.set(pair, job);
+  const entry = { ver: row.ver, job };
+  joinable.set(pair, entry);
   const settle = () => {
-    if (joinable.get(pair) === job) joinable.delete(pair);
+    if (joinable.get(pair) === entry) joinable.delete(pair);
   };
   job.then(settle, settle);
   return job;
@@ -298,15 +324,7 @@ function recoverOnce() {
 // language with no packs.
 async function preinstallPair() {
   const tgt = getEffectiveTargetLang(await chrome.storage.sync.get(defaultSettings));
-  return tgt === 'en' || !DictPack.LANGS.includes(tgt) ? '' : DictPack.pairOf('en', tgt);
-}
-
-function needPair(type, message) {
-  const { src, tgt } = message || {};
-  if (!DictPack.LANGS.includes(src) || !DictPack.LANGS.includes(tgt)) {
-    throw new Error(`${type}: unknown pair ${src}-${tgt}`);
-  }
-  return DictPack.pairOf(src, tgt);
+  return tgt === 'en' || !DictPack.isPackLang(tgt) ? '' : DictPack.needPair('en', tgt);
 }
 
 // ---- the entry points -------------------------------------------------------
@@ -322,11 +340,9 @@ export async function onDictInstalled(details) {
   if (!details || (details.reason !== 'install' && details.reason !== 'update')) return;
   if (!(await switchOn())) return;
   const pair = await preinstallPair();
-  if (!pair || (await readDeclined()).includes(pair)) return;
+  if (!pair || (await isDeclined(pair))) return;
   const row = (await readManifest()).get(pair);
-  if (!row) return;
-  const listed = (await readMap(DictPack.PACKS_KEY))[pair];
-  if (listed && listed.ver === row.ver) return;
+  if (!row || isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return;
   detach('preinstall', pair, queueInstall('preinstall', row));
 }
 
@@ -335,21 +351,21 @@ export async function onDictInstalled(details) {
  * it in the background when the switch is on, the reader has not deleted it,
  * and the manifest has it. A pack that already failed at the manifest's
  * version is left to the daily check, so a broken pack is not downloaded
- * again on every page.
+ * again on every page; a pack whose worker was stopped mid-job (reason
+ * 'interrupted') did not fail, and is fetched again now.
  * @returns {Promise<{state: string}>} what was done: off, declined, absent,
  *   installed, failed, or queued (the job is not awaited)
  */
 async function wantDictPack(message) {
-  const pair = needPair('DICT_PACK_WANT', message);
+  const pair = DictPack.needPair(message.src, message.tgt);
   if (!(await switchOn())) return { state: 'off' };
-  if ((await readDeclined()).includes(pair)) return { state: 'declined' };
+  if (await isDeclined(pair)) return { state: 'declined' };
   detach('recover', '', recoverOnce());
   const row = (await readManifest()).get(pair);
   if (!row) return { state: 'absent' };
-  const listed = (await readMap(DictPack.PACKS_KEY))[pair];
-  if (listed && listed.ver === row.ver) return { state: 'installed' };
-  const status = (await readMap(DictPack.STATUS_KEY))[pair];
-  if (status && status.state === 'failed' && status.ver === row.ver) return { state: 'failed' };
+  if (isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return { state: 'installed' };
+  const last = (await readMap(DictPack.STATUS_KEY))[pair];
+  if (last && last.state === 'failed' && last.reason !== INTERRUPTED && last.ver === row.ver) return { state: 'failed' };
   detach('want', pair, queueInstall('want', row));
   return { state: 'queued' };
 }
@@ -366,16 +382,14 @@ export async function checkDictPacks() {
   await recoverOnce();
   const manifest = await readManifest({ fresh: true });
   const packs = await readMap(DictPack.PACKS_KEY);
-  const status = await readMap(DictPack.STATUS_KEY);
-  const pairs = new Set([...Object.keys(packs), ...Object.keys(status), await preinstallPair()].filter(Boolean));
+  const statuses = await readMap(DictPack.STATUS_KEY);
+  const pairs = new Set([...Object.keys(packs), ...Object.keys(statuses), await preinstallPair()].filter(Boolean));
   const jobs = [];
   for (const pair of pairs) {
     const row = manifest.get(pair);
     // A declined pair is turned away by runInstall, the one place that also
     // catches a delete made while the job waited in the queue.
-    if (!row) continue;
-    const listed = packs[pair];
-    if (listed && listed.ver === row.ver) continue;
+    if (!row || isCurrent(packs, pair, row)) continue;
     jobs.push(queueInstall('check', row));
   }
   jobs.push(packWriter.applyWrite({ kind: 'listing', listed: [...manifest.keys()] }));
@@ -388,8 +402,8 @@ export async function checkDictPacks() {
  * `d:<pair>:` key.
  */
 async function deleteDictPack(message) {
-  const { src, tgt } = DictPack.splitPair(needPair('DICT_PACK_DELETE', message));
-  return packWriter.applyWrite({ kind: 'delete', src, tgt });
+  DictPack.needPair(message.src, message.tgt);
+  return packWriter.applyWrite({ kind: 'delete', src: message.src, tgt: message.tgt });
 }
 
 /**
@@ -398,7 +412,7 @@ async function deleteDictPack(message) {
  * @returns {Promise<{state: string}>} absent, or queued (not awaited)
  */
 async function redownloadDictPack(message) {
-  const pair = needPair('DICT_PACK_INSTALL', message);
+  const pair = DictPack.needPair(message.src, message.tgt);
   const row = (await readManifest()).get(pair);
   if (!row) return { state: 'absent' };
   detach('redownload', pair, queueInstall('redownload', row));

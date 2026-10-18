@@ -41,6 +41,12 @@
   hidden when neither is. A word the pack does not have, a sentence, or the
   switch turned off goes to your usual engine as before, with no "not in the
   dictionary" message.
+- **Chrome 130 or later is now required, and the extension asks for unlimited
+  storage.** The dictionary packs live in the extension's own storage on your
+  computer (a few packs run to tens of megabytes, more than Chrome's default
+  10 MB allows), and reading a pack's entries one by one needs Chrome 130.
+  Copies of Chrome from 116 to 129 keep the version they have and receive no
+  further updates until Chrome is updated.
 
 ## 1.5.1 — 2026-10-14
 

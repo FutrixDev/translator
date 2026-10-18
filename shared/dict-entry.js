@@ -23,8 +23,9 @@
 //                 and the rest of the entry kept.
 //   entryFor      which answers carry an entry: a word-mode answer from a
 //                 model engine ('ai' or 'blab') or from the offline
-//                 dictionary (DICT_ENGINE), and only those. It alone reads
-//                 the dictionary's `credits` (validCredits).
+//                 dictionary (DICT_ENGINE), and only those. It alone puts
+//                 the dictionary's `credits` on the entry, as they are:
+//                 DictPack.parsePack() checked them (D-686).
 //   render        the DOM. The input dialog and the selection card both call
 //                 it; neither builds an entry block of its own.
 //
@@ -32,9 +33,9 @@
 // `{ translation, entry }` — `entry.translation` equals `translation`, which
 // stays at the top because every other caller reads it there. Every other
 // answer is `{ translation }`. The content engine adds `engine`. A local
-// dictionary hit has the same shape with `engine: DICT_ENGINE`, and may add
-// `credits: [{label, href}]` beside `entry` — not in FIELDS, so never asked
-// of a model, and accepted from the dictionary only.
+// dictionary hit has the same shape with `engine: DICT_ENGINE`, and adds
+// `credits: [{label, href}]` beside `entry` (empty when the pack has none) —
+// not in FIELDS, so never asked of a model, and taken from the dictionary only.
 //
 // Model strings reach the page through textContent only. The one innerHTML in
 // this file writes the speaker glyph, a constant from content/content-speech.js.
@@ -310,7 +311,7 @@
         .filter(Boolean)
         .slice(0, field.max);
     }
-    if (dropped.length) console.warn('dict-entry: dropped fields', dropped);
+    if (dropped.length) console.warn('[Blab Translation] dict-entry: dropped fields', dropped);
     return entry;
   }
 
@@ -344,82 +345,26 @@
   // through; the dictionary is none of that, it only answers lookups.
   const DICT_ENGINE = 'dict';
 
-  // Credits a dictionary entry may show: the sources whose licences ask for a
-  // credit beside the data (JMdict, Tatoeba). Every other source is credited on
-  // the settings page, not on the card. An href must be https on one of these
-  // hosts exactly — no subdomain, no look-alike — and carry no user, password
-  // or port; anything else is dropped.
-  const CREDIT_HOSTS = Object.freeze(['www.edrdg.org', 'tatoeba.org']);
-  const MAX_CREDITS = 4;
-  const MAX_CREDIT_LABEL = 80;
-  // Characters that take no room on screen: a label made only of these (and
-  // spaces) would draw a link nobody can see, so it counts as no label.
-  const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
-
-  function creditHref(value) {
-    if (typeof value !== 'string') return '';
-    let url;
-    try {
-      url = new URL(value);
-    } catch {
-      return '';
-    }
-    const plain = url.protocol === 'https:' && !url.username && !url.password && !url.port;
-    return plain && CREDIT_HOSTS.includes(url.hostname) ? url.href : '';
-  }
-
-  /**
-   * The credits a dictionary answer may show: at most MAX_CREDITS
-   * `{label, href}` items, each with a label of at most MAX_CREDIT_LABEL
-   * characters that shows something once zero-width characters are gone, and
-   * an href that creditHref() accepts as it is (no trimming). An item
-   * that fails is dropped and the rest kept; anything but an array is no
-   * credits. What is dropped is warned about once, by position and reason.
-   */
-  function validCredits(raw) {
-    if (raw == null) return [];
-    if (!Array.isArray(raw)) {
-      console.warn('dict-entry: dropped credits', ['credits: not an array']);
-      return [];
-    }
-    const dropped = [];
-    const kept = raw.map((item, i) => {
-      const object = isPlainObject(item);
-      const label = object && typeof item.label === 'string' ? item.label.trim() : '';
-      const href = object ? creditHref(item.href) : '';
-      const reason = !object ? 'not an object'
-        : !label || label.length > MAX_CREDIT_LABEL ? 'label missing or too long'
-          : !label.replace(ZERO_WIDTH, '').trim() ? 'label has no visible text'
-            : !href ? 'href not an allowed https link'
-              : '';
-      if (reason) dropped.push(`credits[${i}]: ${reason}`);
-      return reason ? null : { label, href };
-    }).filter(Boolean).slice(0, MAX_CREDITS);
-    if (dropped.length) console.warn('dict-entry: dropped credits', dropped);
-    return kept;
-  }
-
   /**
    * The entry a TRANSLATE response carries, or null when it carries none.
    * Only a word-mode answer has one, and only from a model engine ('ai' or
    * 'blab', Engines.isModelEngine) or the offline dictionary (DICT_ENGINE); the
    * built-in engine only translates. A model or dictionary word answer without
    * one is a broken caller, so it throws rather than quietly drawing nothing.
-   * A dictionary answer's `credits` that pass validCredits() ride on the entry
-   * as `entry.credits`; a model answer's never do, whatever it sends.
+   * A dictionary answer's `credits` ride on the entry as `entry.credits`, as
+   * they are: DictPack.parsePack() is the one check on them, made when the
+   * pack was downloaded (D-686). A model answer's never do, whatever it sends.
    */
   function entryFor(mode, response) {
     if (mode !== 'word' || !response) return null;
-    if (response.engine === DICT_ENGINE) {
-      if (!response.entry) throw new Error('DictEntry.entryFor: a dictionary word-mode answer carries no entry');
-      const entry = normalize(response.entry);
-      const credits = validCredits(response.credits);
-      if (credits.length) entry.credits = credits;
-      return entry;
+    const dict = response.engine === DICT_ENGINE;
+    if (!dict && !globalThis.Engines.isModelEngine(response.engine)) return null;
+    if (!response.entry) {
+      throw new Error(`DictEntry.entryFor: a ${dict ? 'dictionary' : 'model'} word-mode answer carries no entry`);
     }
-    if (!globalThis.Engines.isModelEngine(response.engine)) return null;
-    if (!response.entry) throw new Error('DictEntry.entryFor: a model word-mode answer carries no entry');
-    return normalize(response.entry);
+    const entry = normalize(response.entry);
+    if (dict && response.credits.length) entry.credits = response.credits;
+    return entry;
   }
 
   // ---- drawing ----------------------------------------------------------------
@@ -536,7 +481,8 @@
       }
     }
 
-    // The dictionary's credits (entryFor kept only allowed https links): one
+    // The dictionary's credits (parsePack let through only https links on each
+    // source's own host, and entryFor copies them as they are): one
     // line under the entry, not a section (sections stack their rows), with
     // the prefix and the links side by side and ' · ' between two links. Each
     // source is a link that opens in a new tab and hands the page neither a
@@ -566,10 +512,8 @@
     FORMAT_OVERRIDE,
     OUTPUT_RULES,
     TRAILING_STOP,
-    CREDIT_HOSTS,
     isLookup,
     isDictCandidate,
-    creditHref,
     normalize,
     fromModelText,
     entryFor,

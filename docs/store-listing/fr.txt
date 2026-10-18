@@ -49,6 +49,7 @@ L'original et la traduction côte à côte, sur les pages web, les PDF, les livr
 • Avec votre propre modèle d'IA, le texte va directement à votre endpoint, avec votre propre clé — jamais par nous.
 • Blab Translation envoie le texte à nos serveurs pour le traduire et n'en garde rien.
 • Les fichiers PDF, documents et BD sont traités sur nos serveurs et supprimés au bout de 7 jours.
+• Les dictionnaires hors ligne sont téléchargés depuis notre serveur et conservés sur votre appareil ; c'est à cela que sert l'autorisation de stockage illimité. Chercher un mot dans un dictionnaire n'envoie rien.
 • Aucune analyse d'usage. Aucun pistage publicitaire.
 
 RACCOURCIS

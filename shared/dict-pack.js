@@ -26,8 +26,9 @@
 //
 // Dual-mode classic script: the service worker imports it, the content scripts
 // and the settings page load it as a script, all read globalThis.DictPack.
-// parsePack() and toResponse() read globalThis.DictEntry when they run, so the
-// load order between the two files does not matter.
+// foldCandidates() and toResponse() read globalThis.DictEntry, and toResponse()
+// globalThis.LangTags, when they run, so the load order between the files does
+// not matter. parsePack() reads neither: it is the only check on a pack.
 (function (root) {
   'use strict';
 
@@ -40,24 +41,54 @@
   const MANIFEST_URL = `${DOWNLOAD_ORIGIN}dict/v1/manifest.json`;
   const CHUNK_KEYS = 5000;
   const LANGS = Object.freeze(['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru']);
-  const MAX_RECORDS = 6;
-  const MAX_GLOSSES = 4;
-  const MAX_EXAMPLES = 2;
-  const MAX_FORMS = 8;
   const FORM_MARK = '~';
+
+  // The credits a pack may carry, by id, and the one host each may link to.
+  // The card draws them as <a href> beside the entry (JMdict and Tatoeba ask
+  // for a credit beside the data; every other source is credited on the
+  // settings page). parsePack() is the only check on them (D-686).
+  const CREDITS = Object.freeze({ jmdict: 'www.edrdg.org', tatoeba: 'tatoeba.org' });
+
+  // Every size a pack is held to. parsePack() refuses a pack past any of
+  // them, and the build's runtime check reads this table (D-686), so a cap is
+  // written here and nowhere else.
+  const LIMITS = Object.freeze({
+    MAX_RECORDS: 6, // records under one head
+    MAX_GLOSSES: 4, // glosses in one record
+    MAX_EXAMPLES: 2, // examples under one head
+    MAX_FORMS: 8, // forms under one head
+    // A gloss, an example sentence, a form's value. Equal to DictEntry.MAX_TEXT
+    // (a test holds them together): the first gloss is the answer's
+    // translation, and the entry refuses a longer one rather than cut it.
+    MAX_TEXT: 500,
+    MAX_LABEL: 80, // a part of speech, a form's label, a credit's label
+    MAX_KEY: 200, // a head or a form, the tail of its storage key
+    MAX_SOURCES: 8, // the pack's sources list
+    MAX_CREDITS: Object.keys(CREDITS).length, // one per id in CREDITS
+  });
 
   // ---- keys -------------------------------------------------------------------
 
   const pairOf = (src, tgt) => `${src}-${tgt}`;
+  const isPackLang = (lang) => LANGS.includes(lang);
+  const notAPair = (pair) => new Error(`dictionary packs: ${pair} is not a language pair`);
+
+  /** The pair's name, when both languages have packs and differ; throws otherwise. */
+  function needPair(src, tgt) {
+    if (!isPackLang(src) || !isPackLang(tgt) || src === tgt) throw notAPair(pairOf(src, tgt));
+    return pairOf(src, tgt);
+  }
+
   // A pair back into its languages. Either side may carry a hyphen (zh-CN -> en,
   // en -> zh-CN), so it is split at a known language code, not at the first
-  // hyphen. Anything that is not a pair of LANGS throws.
+  // hyphen. Anything needPair() would refuse throws.
   function splitPair(pair) {
-    for (const src of LANGS) {
-      const tgt = String(pair).slice(src.length + 1);
-      if (String(pair).startsWith(`${src}-`) && LANGS.includes(tgt)) return { src, tgt };
-    }
-    throw new Error(`dictionary packs: ${pair} is not a language pair`);
+    const text = String(pair);
+    const src = LANGS.find((lang) => text.startsWith(`${lang}-`) && isPackLang(text.slice(lang.length + 1)));
+    if (!src) throw notAPair(text);
+    const tgt = text.slice(src.length + 1);
+    needPair(src, tgt);
+    return { src, tgt };
   }
   const prefixOf = (src, tgt) => `d:${pairOf(src, tgt)}:`;
   const entryKey = (src, tgt, head) => `${prefixOf(src, tgt)}${head}`;
@@ -79,9 +110,14 @@
     return value;
   }
 
-  function needText(value, path) {
-    if (!isText(value)) throw fail(path, 'is not a non-empty string');
+  function needLength(value, path, max) {
+    if (value.length > max) throw fail(path, `is over ${max} characters`);
     return value;
+  }
+
+  function needText(value, path, max = Infinity) {
+    if (!isText(value)) throw fail(path, 'is not a non-empty string');
+    return needLength(value, path, max);
   }
 
   // A link the settings page and the card draw as <a href>: https only, so a
@@ -103,36 +139,54 @@
     if (!Number.isInteger(value) || value <= 0) throw fail(path, 'is not a sentence id or null');
   }
 
-  // The card draws a credit's href only when DictEntry.creditHref() accepts
-  // it, so a pack is held to the same rule (one list of hosts, D-609 N7).
-  function needCredit(value, path) {
-    needObject(value, path);
-    needText(value.label, `${path}.label`);
-    const { CREDIT_HOSTS, creditHref } = root.DictEntry;
-    if (!creditHref(needText(value.href, `${path}.href`))) {
-      throw fail(`${path}.href`, `is not an https URL on ${CREDIT_HOSTS.join(' or ')}`);
+  // Characters that take no room on screen: a label made only of these (and
+  // spaces) would draw a link nobody can see, so it counts as no label.
+  const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+  // `href` as the URL parser writes it back, when it is https on `host`
+  // exactly (no subdomain, no look-alike) with no user, password or port;
+  // '' otherwise.
+  function creditHref(href, host) {
+    let url;
+    try {
+      url = new URL(href);
+    } catch {
+      return '';
     }
+    const plain = url.protocol === 'https:' && !url.username && !url.password && !url.port;
+    return plain && url.hostname === host ? url.href : '';
+  }
+
+  // A credit the card draws as it is: a label that shows something, and an
+  // href already in the parser's own spelling (nothing is trimmed or
+  // repaired), on the one host its id may link to (D-609 N7).
+  function needCredit(id, value, path) {
+    if (!Object.hasOwn(CREDITS, id)) throw fail(path, `is not ${Object.keys(CREDITS).join(' or ')}`);
+    needObject(value, path);
+    const label = needText(value.label, `${path}.label`, LIMITS.MAX_LABEL);
+    if (!label.replace(ZERO_WIDTH, '').trim()) throw fail(`${path}.label`, 'has no visible characters');
+    const href = needText(value.href, `${path}.href`);
+    if (creditHref(href, CREDITS[id]) !== href) throw fail(`${path}.href`, `is not an https URL on ${CREDITS[id]}`);
   }
 
   function checkRecords(e, sourceIds) {
     let jmdict = false;
     for (const [head, records] of Object.entries(e)) {
       const path = `e[${JSON.stringify(head)}]`;
-      if (!head) throw fail(path, 'is an empty head');
+      needText(head, path, LIMITS.MAX_KEY);
       // A head written as a form key would be read back as a form pointer.
       if (head.startsWith(FORM_MARK)) throw fail(path, `starts with "${FORM_MARK}", the form-key mark`);
-      needList(records, path, 1, MAX_RECORDS);
+      needList(records, path, 1, LIMITS.MAX_RECORDS);
       records.forEach((record, i) => {
         const at = `${path}[${i}]`;
         needList(record, at, 4, 4);
         const [pos, glosses, reading, origin] = record;
         if (typeof pos !== 'string') throw fail(`${at}[0]`, 'is not a string');
-        needList(glosses, `${at}[1]`, 1, MAX_GLOSSES);
+        needLength(pos, `${at}[0]`, LIMITS.MAX_LABEL);
+        needList(glosses, `${at}[1]`, 1, LIMITS.MAX_GLOSSES);
         glosses.forEach((gloss, g) => {
           if (typeof gloss !== 'string') throw fail(`${at}[1][${g}]`, 'is not a string');
-          // The first gloss becomes the answer's translation, and the entry
-          // refuses a translation longer than this rather than cut it.
-          if (gloss.length > root.DictEntry.MAX_TEXT) throw fail(`${at}[1][${g}]`, `is over ${root.DictEntry.MAX_TEXT} characters`);
+          needLength(gloss, `${at}[1][${g}]`, LIMITS.MAX_TEXT);
         });
         // D-576 N4: a record with no gloss would make an answer with nothing
         // but a credits line. The whole pack is refused, not the record.
@@ -145,20 +199,24 @@
     return jmdict;
   }
 
+  // An example is a Tatoeba pair when it carries a sentence id; a kaikki
+  // example has null on both sides.
+  const isTatoeba = (example) => example[2] !== null || example[3] !== null;
+
   function checkExamples(x, e) {
     let tatoeba = false;
     for (const [head, examples] of Object.entries(x)) {
       const path = `x[${JSON.stringify(head)}]`;
       if (!Object.hasOwn(e, head)) throw fail(path, 'has no head in e');
-      needList(examples, path, 1, MAX_EXAMPLES);
+      needList(examples, path, 1, LIMITS.MAX_EXAMPLES);
       examples.forEach((example, i) => {
         const at = `${path}[${i}]`;
         needList(example, at, 4, 4);
-        needText(example[0], `${at}[0]`);
-        needText(example[1], `${at}[1]`);
+        needText(example[0], `${at}[0]`, LIMITS.MAX_TEXT);
+        needText(example[1], `${at}[1]`, LIMITS.MAX_TEXT);
         needSentenceId(example[2], `${at}[2]`);
         needSentenceId(example[3], `${at}[3]`);
-        if (example[2] !== null || example[3] !== null) tatoeba = true;
+        if (isTatoeba(example)) tatoeba = true;
       });
     }
     return tatoeba;
@@ -168,11 +226,11 @@
     for (const [head, forms] of Object.entries(m)) {
       const path = `m[${JSON.stringify(head)}]`;
       if (!Object.hasOwn(e, head)) throw fail(path, 'has no head in e');
-      needList(forms, path, 1, MAX_FORMS);
+      needList(forms, path, 1, LIMITS.MAX_FORMS);
       forms.forEach((form, i) => {
         needList(form, `${path}[${i}]`, 2, 2);
-        needText(form[0], `${path}[${i}][0]`);
-        needText(form[1], `${path}[${i}][1]`);
+        needText(form[0], `${path}[${i}][0]`, LIMITS.MAX_LABEL);
+        needText(form[1], `${path}[${i}][1]`, LIMITS.MAX_TEXT);
       });
     }
   }
@@ -180,7 +238,7 @@
   function checkPointers(f, e) {
     for (const [form, head] of Object.entries(f)) {
       const path = `f[${JSON.stringify(form)}]`;
-      if (!form) throw fail(path, 'is an empty form');
+      needText(form, path, LIMITS.MAX_KEY);
       if (typeof head !== 'string' || !Object.hasOwn(e, head)) throw fail(path, 'does not name a head in e');
     }
   }
@@ -199,23 +257,18 @@
     }
     needObject(pack, '(root)');
     if (pack.v !== 1) throw fail('v', 'is not 1');
-    if (!LANGS.includes(pack.src)) throw fail('src', 'is not a supported language');
-    if (!LANGS.includes(pack.tgt)) throw fail('tgt', 'is not a supported language');
-    if (pack.src === pack.tgt) throw fail('tgt', 'equals src');
+    needPair(pack.src, pack.tgt);
     needText(pack.ver, 'ver');
     needText(pack.lic, 'lic');
     const sourceIds = new Set();
-    needList(pack.sources, 'sources', 1, Infinity).forEach((source, i) => {
+    needList(pack.sources, 'sources', 1, LIMITS.MAX_SOURCES).forEach((source, i) => {
       needObject(source, `sources[${i}]`);
       for (const key of ['id', 'name', 'license']) needText(source[key], `sources[${i}].${key}`);
       needLink(source.url, `sources[${i}].url`);
       sourceIds.add(source.id);
     });
     needObject(pack.credits, 'credits');
-    for (const [key, credit] of Object.entries(pack.credits)) {
-      if (key !== 'jmdict' && key !== 'tatoeba') throw fail(`credits.${key}`, 'is not jmdict or tatoeba');
-      needCredit(credit, `credits.${key}`);
-    }
+    for (const [id, credit] of Object.entries(pack.credits)) needCredit(id, credit, `credits.${id}`);
     const e = needObject(pack.e, 'e');
     if (!Object.keys(e).length) throw fail('e', 'has no heads');
     const usesJmdict = checkRecords(e, sourceIds);
@@ -290,6 +343,7 @@
 
   // The Korean particles a looked-up word may carry (D-578: the one fold made
   // at lookup time). Longest first, so 에서 is tried before 에 and 으로 before 로.
+  // Tested through foldCandidates(), not exported.
   const KO_PARTICLES = Object.freeze([
     '은', '는', '이', '가', '을', '를', '에', '에서', '에게', '한테', '께서', '의', '와', '과', '도',
     '로', '으로', '만', '부터', '까지', '보다', '처럼', '이나', '나', '랑', '이랑',
@@ -325,7 +379,7 @@
     return [...new Set(out.filter(Boolean))];
   }
 
-  const isEnglish = (lang) => String(lang || '').toLowerCase().split('-')[0] === 'en';
+  const isEnglish = (lang) => root.LangTags.getLangBase(lang) === 'en';
 
   // The translation's pronunciation (D-487): an English target has a UK and a
   // US reading, "/UK/|/US/", either side possibly empty; any other target has
@@ -350,7 +404,7 @@
     const translation = records[0][1].find(hasWords);
     const credits = [];
     if (records.some((r) => r[3] === 'jmdict')) credits.push(meta.credits.jmdict);
-    if (examples.some((x) => x[2] !== null || x[3] !== null)) credits.push(meta.credits.tatoeba);
+    if (examples.some(isTatoeba)) credits.push(meta.credits.tatoeba);
     return {
       translation,
       entry: {
@@ -373,8 +427,10 @@
     MANIFEST_URL,
     CHUNK_KEYS,
     LANGS,
-    KO_PARTICLES,
+    LIMITS,
     pairOf,
+    isPackLang,
+    needPair,
     splitPair,
     prefixOf,
     entryKey,

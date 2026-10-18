@@ -15,16 +15,11 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('./fixtures');
-const {
-  evaluateInContentScript,
-  getServiceWorker,
-  recycleWorker,
-  waitForContentReady,
-  writeSyncSettings,
-} = require('./helpers');
+const { evaluateInContentScript, getServiceWorker, recycleWorker } = require('./helpers');
 const { DictPackServer, packBytes } = require('./dict-pack-server');
+const { DictPack, EN_ZH, countKeys, install, openExample } = require('./dict-pack-journeys');
 
-const EN_ZH = 'en-zh-CN';
+const EN_JA = DictPack.pairOf('en', 'ja');
 
 /** A synthetic v1 pack: `heads` heads with two glosses, one example every tenth head, `forms` form pointers. */
 function bigPack(src, tgt, heads, forms) {
@@ -61,23 +56,6 @@ function summary(latencies) {
     p95: round(percentile(sorted, 95)),
     max: round(sorted[sorted.length - 1]),
   };
-}
-
-async function openExample(context, page) {
-  await writeSyncSettings(context, { translationStyle: 'underline', targetLang: 'zh-CN' });
-  await page.goto('https://example.com/');
-  await waitForContentReady(page, 'underline');
-}
-
-async function install(context, page, src, tgt) {
-  const reply = await evaluateInContentScript(context, page,
-    `chrome.runtime.sendMessage({ type: 'DICT_PACK_WANT', src: ${JSON.stringify(src)}, tgt: ${JSON.stringify(tgt)} })`);
-  expect(reply).toEqual({ state: 'queued' });
-  const worker = await getServiceWorker(context);
-  await expect.poll(() => worker.evaluate(async (pair) => {
-    const packs = (await chrome.storage.local.get('dict:packs'))['dict:packs'] || {};
-    return Boolean(packs[pair]);
-  }, `${src}-${tgt}`), { timeout: 15000 }).toBe(true);
 }
 
 test.describe('offline dictionary packs: acceptance numbers (B1)', () => {
@@ -122,8 +100,8 @@ test.describe('offline dictionary packs: acceptance numbers (B1)', () => {
       const latencies = [];
       let misses = 0;
       for (;;) {
-        const packs = (await chrome.storage.local.get('dict:packs'))['dict:packs'] || {};
-        if (packs['en-ja'] || performance.now() - start > 120000) break;
+        const packs = (await chrome.storage.local.get(${JSON.stringify(DictPack.PACKS_KEY)}))[${JSON.stringify(DictPack.PACKS_KEY)}] || {};
+        if (packs[${JSON.stringify(EN_JA)}] || performance.now() - start > 120000) break;
         const t = performance.now();
         const answer = await window.AI_TRANSLATOR_CONTENT.dictLookup('apple', 'zh-CN');
         latencies.push(performance.now() - t);
@@ -133,8 +111,7 @@ test.describe('offline dictionary packs: acceptance numbers (B1)', () => {
       return { reply, ms: performance.now() - start, latencies, misses };
     })()`);
 
-    const worker = await getServiceWorker(context);
-    const keys = await worker.evaluate(async () => (await chrome.storage.local.getKeys()).filter((k) => k.startsWith('d:en-ja:')).length);
+    const keys = await countKeys(await getServiceWorker(context), DictPack.prefixOf('en', 'ja'));
     const lookups = summary(measured.latencies);
     record('seed-100k', {
       keys, heads: 70000, forms: 30000, packBytes: row.bytes,

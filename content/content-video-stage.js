@@ -126,7 +126,7 @@
   // open is display:none, which would hide the box the rest of the time.
   //
   // No catch: the popover API is in every Chrome the manifest allows (114+,
-  // minimum_chrome_version 116), and the states showPopover / hidePopover
+  // minimum_chrome_version 130), and the states showPopover / hidePopover
   // throw on are checked first. It has the popover attribute; it is shown only
   // when not already open, and only from placeOverlay, after the box is in
   // the document; it is hidden only while open (a box removed from the page

@@ -324,7 +324,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleDictMessage(message, sender)
         .then(sendResponse)
         .catch((error) => {
-          console.error(`[Blab Translation] ${message.type} failed`, `${message.src}-${message.tgt}`, error);
+          console.error(`[Blab Translation] ${message.type} failed`, globalThis.DictPack.pairOf(message.src, message.tgt), error);
           sendResponse({ error: error.message });
         });
       return true;

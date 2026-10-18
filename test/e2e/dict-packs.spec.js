@@ -15,6 +15,7 @@ const { evaluateInContentScript, getServiceWorker, writeSyncSettings } = require
 const { DictPackServer, MANIFEST_PATH, packBytes } = require('./dict-pack-server');
 const {
   DICT_CHECK_ALARM,
+  DictPack,
   EN_ZH,
   countKeys,
   countWants,
@@ -31,6 +32,9 @@ const {
   packRow,
   statusOf,
 } = require('./dict-pack-journeys');
+
+const EN_ZH_KEYS = DictPack.prefixOf('en', 'zh-CN');
+const EN_JA_KEYS = DictPack.prefixOf('en', 'ja');
 
 test.describe('offline dictionary packs (B1)', () => {
   test('J-B1.1 install fetches en -> target and the settings page lists it', async ({ context, page, extensionId }) => {
@@ -157,10 +161,10 @@ test.describe('offline dictionary packs (B1)', () => {
     await fireAlarm(context, DICT_CHECK_ALARM);
     await listedAt(context, EN_ZH, row.ver);
 
-    const prefix = `d:${EN_ZH}:`;
-    expect(await localValue(context, `${prefix}colour`)).toBeUndefined();
-    expect(await localValue(context, `${prefix}~colours`)).toBeUndefined();
-    expect(await countKeys(context, prefix)).toBe(Object.keys(v2.e).length + Object.keys(v2.f).length);
+    const worker = await getServiceWorker(context);
+    expect(await localValue(worker, DictPack.entryKey('en', 'zh-CN', 'colour'))).toBeUndefined();
+    expect(await localValue(worker, DictPack.formKey('en', 'zh-CN', 'colours'))).toBeUndefined();
+    expect(await countKeys(worker, EN_ZH_KEYS)).toBe(Object.keys(v2.e).length + Object.keys(v2.f).length);
     expect((await packItem(context, EN_ZH)).heads).toBe(2);
     expect(await lookup(context, page, 'colour', 'zh-CN')).toBeNull();
     expect((await lookup(context, page, 'apples', 'zh-CN')).translation).toBe('苹果果实');
@@ -173,9 +177,9 @@ test.describe('offline dictionary packs (B1)', () => {
     await openExample(context, page);
     await install(context, page, 'en', 'zh-CN', '2026.10.13');
     const before = await packItem(context, EN_ZH);
-    const keysBefore = await countKeys(context, `d:${EN_ZH}:`);
-
     const worker = await getServiceWorker(context);
+    const keysBefore = await countKeys(worker, EN_ZH_KEYS);
+
     const failures = [];
     worker.on('console', (message) => {
       if (message.type() === 'error' && message.text().includes('dictionary pack failed')) failures.push(message);
@@ -196,7 +200,7 @@ test.describe('offline dictionary packs (B1)', () => {
     expect(failures[0].text()).not.toContain('苹果');
 
     expect(await packItem(context, EN_ZH)).toEqual(before);
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBe(keysBefore);
+    expect(await countKeys(await getServiceWorker(context), EN_ZH_KEYS)).toBe(keysBefore);
     expect((await lookup(context, page, 'apple', 'zh-CN')).translation).toBe('苹果');
 
     const options = await openOptions(context, extensionId);
@@ -213,7 +217,7 @@ test.describe('offline dictionary packs (B1)', () => {
     await server.attach(context);
     await openExample(context, page);
     await install(context, page, 'en', 'zh-CN', '2026.10.13');
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBeGreaterThan(0);
+    expect(await countKeys(await getServiceWorker(context), EN_ZH_KEYS)).toBeGreaterThan(0);
 
     const options = await openOptions(context, extensionId);
     const pack = packRow(options, EN_ZH);
@@ -225,10 +229,11 @@ test.describe('offline dictionary packs (B1)', () => {
     await expect(pack.locator('.dict-pack-delete')).toHaveCount(0);
     await options.close();
 
-    expect(await countKeys(context, `d:${EN_ZH}:`)).toBe(0);
+    const worker = await getServiceWorker(context);
+    expect(await countKeys(worker, EN_ZH_KEYS)).toBe(0);
     expect(await packItem(context, EN_ZH)).toBeUndefined();
     expect(await statusOf(context, EN_ZH)).toBeUndefined();
-    expect(await localValue(context, 'dict:declined')).toEqual([EN_ZH]);
+    expect(await localValue(worker, DictPack.DECLINED_KEY)).toEqual([EN_ZH]);
   });
 
   test('J-B1.9 with the switch off nothing is looked up or fetched', async ({ context, page }) => {
@@ -287,16 +292,15 @@ test.describe('offline dictionary packs (B1)', () => {
 
   test('J-B1.11 the translation cache sweep reads only tc: keys beside 50,000 dictionary keys', async ({ context }) => {
     const worker = await getServiceWorker(context);
-    await worker.evaluate(async () => {
-      const prefix = 'd:en-ja:';
+    await worker.evaluate(async (prefix) => {
       for (let start = 0; start < 50000; start += 5000) {
         const chunk = {};
         for (let i = start; i < start + 5000; i++) chunk[`${prefix}w${i}`] = { e: [['n.', [`w${i}`], null, 'wiktionary']] };
         await chrome.storage.local.set(chunk);
       }
       await chrome.storage.local.set({ 'tc:old': { t: 'x', ts: 1 }, 'tc:live': { t: 'y', ts: Date.now() } });
-    });
-    expect(await countKeys(context, 'd:en-ja:')).toBe(50000);
+    }, EN_JA_KEYS);
+    expect(await countKeys(worker, EN_JA_KEYS)).toBe(50000);
 
     const wrapped = await worker.evaluate(() => {
       const area = chrome.storage.local;
@@ -324,7 +328,7 @@ test.describe('offline dictionary packs (B1)', () => {
     } finally {
       await worker.evaluate(() => self.__dictSweepRestore());
     }
-    expect(await localValue(context, 'tc:live')).toMatchObject({ t: 'y' });
-    expect(await countKeys(context, 'd:en-ja:')).toBe(50000);
+    expect(await localValue(worker, 'tc:live')).toMatchObject({ t: 'y' });
+    expect(await countKeys(worker, EN_JA_KEYS)).toBe(50000);
   });
 });

@@ -266,7 +266,7 @@ test('normalize warns once, by field name, when it drops what the model sent', (
   normalize({ ...FULL, phonetics: 'pǎo', senses: [{ pos: 7, defs: [secret.repeat(40)] }], examples: [secret] });
   assert.equal(warn.mock.callCount(), 1, 'one warn for the whole entry');
   const [message, dropped] = warn.mock.calls[0].arguments;
-  assert.equal(message, 'dict-entry: dropped fields');
+  assert.equal(message, '[Blab Translation] dict-entry: dropped fields');
   assert.deepEqual(dropped, [
     'phonetics: not an array',
     'senses[0].pos: not a string',
@@ -424,14 +424,9 @@ test('only a model engine answer (ai or blab) or the dictionary\'s, in word mode
 
 const JMDICT = { label: 'JMdict © EDRDG', href: 'https://www.edrdg.org/edrdg/licence.html' };
 const TATOEBA = { label: 'Tatoeba', href: 'https://tatoeba.org/' };
-const dictAnswer = (extra = {}) => ({ engine: DICT_ENGINE, translation: '跑', entry: FULL, ...extra });
-
-// console.warn calls made while `fn` runs; the warning is the drop being seen.
-function warnings(t, fn) {
-  const warn = t.mock.method(console, 'warn', () => {});
-  const out = fn();
-  return { out, calls: warn.mock.calls.map((call) => call.arguments) };
-}
+// DictPack.toResponse() always sends a credits list, empty when the pack has
+// none.
+const dictAnswer = (extra = {}) => ({ engine: DICT_ENGINE, translation: '跑', entry: FULL, credits: [], ...extra });
 
 test('the dictionary engine is \'dict\', and it is not an engine a user picks', () => {
   assert.equal(DICT_ENGINE, 'dict');
@@ -455,77 +450,16 @@ test('a dictionary word answer without an entry throws, as a model\'s does', () 
   throwsInvalid(() => entryFor('word', { engine: DICT_ENGINE, entry: { senses: [] } }), 'no translation');
 });
 
-test('a dictionary answer\'s credits ride on the entry', () => {
+test('a dictionary answer\'s credits ride on the entry as they are', () => {
   const entry = entryFor('word', dictAnswer({ credits: [JMDICT, TATOEBA] }));
   assert.deepEqual(entry.credits, [JMDICT, TATOEBA]);
   assert.deepEqual({ ...entry, credits: undefined }, { ...FULL, credits: undefined });
-  // No credits, or none that pass: no key at all, not an empty list.
+  // As they are: DictPack.parsePack() is the one check (D-686), so a label is
+  // not trimmed here and nothing is dropped or warned about.
+  const padded = [{ label: ' Tatoeba ', href: TATOEBA.href }];
+  assert.deepEqual(entryFor('word', dictAnswer({ credits: padded })).credits, padded);
+  // An empty list: no key at all, not an empty list.
   assert.equal('credits' in entryFor('word', dictAnswer()), false);
-  assert.equal('credits' in entryFor('word', dictAnswer({ credits: [] })), false);
-});
-
-test('a credit that is not an https link to an allowed host is dropped, and the rest kept', (t) => {
-  const bad = [
-    { label: 'Script', href: 'javascript:alert(1)' },
-    { label: 'Plain', href: 'http://tatoeba.org/' },
-    { label: 'Elsewhere', href: 'https://example.com/' },
-    { label: 'Look-alike', href: 'https://tatoeba.org.evil.example/' },
-    { label: 'Suffix', href: 'https://eviltatoeba.org/' },
-    { label: 'Subdomain', href: 'https://en.tatoeba.org/' },
-    { label: 'Bare edrdg', href: 'https://edrdg.org/' },
-    { label: 'User', href: 'https://someone@tatoeba.org/' },
-    { label: 'Port', href: 'https://tatoeba.org:8443/' },
-    { label: 'Data', href: 'data:text/html,<b>x</b>' },
-    { label: 'Not a URL', href: 'tatoeba.org' },
-    { label: 'Not a string', href: 42 },
-    { label: '', href: TATOEBA.href },
-    { label: '   ', href: TATOEBA.href },
-    { label: 'x'.repeat(81), href: TATOEBA.href },
-    { label: '\u200B\u200C\u200D', href: TATOEBA.href },
-    { label: ' \u2060 \u200B ', href: TATOEBA.href },
-    { label: 'No-break', href: '\u00A0https://tatoeba.org/' },
-    { href: TATOEBA.href },
-    'Tatoeba',
-    null,
-  ];
-  const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits: [...bad, TATOEBA] })));
-  assert.deepEqual(out.credits, [TATOEBA]);
-  // One warning, by position and reason, and no label or link in it.
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][1].length, bad.length);
-  assert.match(calls[0][1][0], /^credits\[0\]: href not an allowed https link$/);
-  assert.doesNotMatch(JSON.stringify(calls), /Script|javascript|example\.com/);
-});
-
-test('a credit label made only of zero-width characters is dropped as invisible', (t) => {
-  const invisible = ['\u200B', '\u200C\u200D', '\u2060', ' \u200B \u2060 ', '\u200B\uFEFF\u200B'];
-  const credits = [...invisible.map((label) => ({ label, href: TATOEBA.href })), { label: '\u200BTatoeba', href: TATOEBA.href }];
-  const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits })));
-  // A label with something visible in it stays as given.
-  assert.deepEqual(out.credits, [{ label: '\u200BTatoeba', href: TATOEBA.href }]);
-  assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0][1], invisible.map((_, i) => `credits[${i}]: label has no visible text`));
-});
-
-test('a credit href is taken as it is: one with a leading no-break space is dropped', (t) => {
-  for (const href of ['\u00A0' + TATOEBA.href, '\u2003' + JMDICT.href]) {
-    const { out, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits: [{ label: 'Tatoeba', href }] })));
-    assert.equal('credits' in out, false, JSON.stringify(href));
-    assert.deepEqual(calls[0][1], ['credits[0]: href not an allowed https link'], JSON.stringify(href));
-  }
-});
-
-test('credit labels are trimmed, credits cut at four, and anything but an array is none', (t) => {
-  const five = Array.from({ length: 5 }, (_, i) => ({ label: ` Tatoeba ${i} `, href: `https://tatoeba.org/en/sentences/show/${i}` }));
-  const { out } = warnings(t, () => entryFor('word', dictAnswer({ credits: five })));
-  assert.deepEqual(out.credits, five.slice(0, 4).map((_, i) => ({
-    label: `Tatoeba ${i}`, href: `https://tatoeba.org/en/sentences/show/${i}`,
-  })));
-  for (const credits of ['Tatoeba', { 0: TATOEBA }, 1]) {
-    const { out: entry, calls } = warnings(t, () => entryFor('word', dictAnswer({ credits })));
-    assert.equal('credits' in entry, false, JSON.stringify(credits));
-    assert.equal(calls.length, 1, JSON.stringify(credits));
-  }
 });
 
 test('a model answer never carries credits, whatever it sends', () => {
