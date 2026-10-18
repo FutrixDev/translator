@@ -1,0 +1,735 @@
+{
+ "note": "Every file under <data-dir> the build reads (normalize.py --list-inputs), as downloaded on 2026-10-13. download.sh fetches a missing one and checks every sha256; kaikki and Tatoeba publish new dumps under the same URL, so a fresh download is expected to fail the check until this file is regenerated. Each file names its dataset (the v1 `sources[]` id), the licence it is published under and its version: the date it was downloaded, since every one of these is a rolling dump or a branch head with no release number. attribution.py takes the extraction date from `downloaded`.",
+ "downloaded": "2026-10-13",
+ "files": [
+  {
+   "path": "cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz",
+   "dataset": "cedict",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz",
+   "bytes": 3980393,
+   "sha256": "dace310e1279fb51666bb8fc743131f9f12b8e6bdb11a36f58087bdf9f1f49df"
+  },
+  {
+   "path": "cmudict/cmudict.dict",
+   "dataset": "cmudict",
+   "license": "BSD-2-Clause",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict",
+   "bytes": 3618488,
+   "sha256": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22"
+  },
+  {
+   "path": "ipa-dict/de.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/de.txt",
+   "bytes": 30726400,
+   "sha256": "d36d11dbcc226468a22f0fb3a0794ee0ce142bf277e26e517a8bfd0de1ec2653"
+  },
+  {
+   "path": "ipa-dict/en_UK.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/en_UK.txt",
+   "bytes": 1684124,
+   "sha256": "221394caef0cf723b4f2df81a98ac33191293257b88aed5b1fb89466d3a0dc77"
+  },
+  {
+   "path": "ipa-dict/en_US.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/en_US.txt",
+   "bytes": 3180267,
+   "sha256": "2af6f154a5c363275f052d1f85acedef38ed185ca9745aa4314be77f6b70de67"
+  },
+  {
+   "path": "ipa-dict/es_ES.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/es_ES.txt",
+   "bytes": 16310951,
+   "sha256": "5c1f7afc5afcf8083075430fbd31d293d2ab272c78c92a739acc5a5f05caf4b4"
+  },
+  {
+   "path": "ipa-dict/fr_FR.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/fr_FR.txt",
+   "bytes": 6153972,
+   "sha256": "def906754262cfae80ee7a639e945114d98a2a104df62ad765c96475a83168cd"
+  },
+  {
+   "path": "ipa-dict/ja.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/ja.txt",
+   "bytes": 6795765,
+   "sha256": "66fc9b2187be77627d155269288df0ed45ca8c8fbf465341f8a70b4f758c82b6"
+  },
+  {
+   "path": "ipa-dict/ko.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/ko.txt",
+   "bytes": 2232325,
+   "sha256": "369f0c900841e9314c7c8b903a64775f22470b24dc5d59820255e7c077bee87a"
+  },
+  {
+   "path": "ipa-dict/pt_BR.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/pt_BR.txt",
+   "bytes": 2828684,
+   "sha256": "db5d17ce85cb6f6751e55728453330edfae70a48d810d67f1ddf7762c4f0b67c"
+  },
+  {
+   "path": "ipa-dict/zh_hans.txt",
+   "dataset": "ipadict",
+   "license": "MIT",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/open-dict-data/ipa-dict/master/data/zh_hans.txt",
+   "bytes": 1369263,
+   "sha256": "10fe876988e576daddc2eafefebc0c0da1f3680c143ceaa564453785ca2b4ae3"
+  },
+  {
+   "path": "jmdict/JMdict.gz",
+   "dataset": "jmdict",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "http://ftp.edrdg.org/pub/Nihongo/JMdict.gz",
+   "bytes": 22201648,
+   "sha256": "d4559e4bce4707adddc003b595b42b412ca212bcaaf47cc7e9f27fe41117a223"
+  },
+  {
+   "path": "kaikki-de/de.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dewiktionary/Deutsch/kaikki.org-dictionary-Deutsch.jsonl.gz",
+   "bytes": 310459727,
+   "sha256": "6bf232f2858e8554c8b3da130deadb8f4dd8916914e1842818551ec5e0bd20d4"
+  },
+  {
+   "path": "kaikki-de/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dewiktionary/Englisch/kaikki.org-dictionary-Englisch.jsonl.gz",
+   "bytes": 6926860,
+   "sha256": "20959b9e942fe8fb83cb4832c4f577641a6777fd85297ede6c2c1c31b15890b5"
+  },
+  {
+   "path": "kaikki-de/fr.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dewiktionary/Französisch/kaikki.org-dictionary-Französisch.jsonl.gz",
+   "bytes": 2704552,
+   "sha256": "f28e401db364aa998a8c8bef0d774e7d426b54c89d9f78fa161fc64cab3502f5"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Chinese.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Chinese/kaikki.org-dictionary-Chinese.jsonl.gz",
+   "bytes": 155053585,
+   "sha256": "be38ed4cf2ae0667baa31e25b831b25e0a170fd891cfc212683240c09f08bf38"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-English.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl.gz",
+   "bytes": 523331798,
+   "sha256": "6d40e0067718aeb3321db30297761ca803838390627111a29a5426fee4557faf"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-French.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl.gz",
+   "bytes": 58232930,
+   "sha256": "d59a0a31764dd0d8619e7d0d8c2c664a1de7804e47f17251488042715f800182"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-German.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/German/kaikki.org-dictionary-German.jsonl.gz",
+   "bytes": 98333861,
+   "sha256": "ff03802fa4d034a80c03fd72a78243834cc06e69d7031c7be9d745a02c78b34e"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Japanese.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Japanese/kaikki.org-dictionary-Japanese.jsonl.gz",
+   "bytes": 48224341,
+   "sha256": "e983e06ee719f8c274a6e7cc8a661c6eff1fc6aa16611dcd34b108b2323b3ae8"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Korean.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Korean/kaikki.org-dictionary-Korean.jsonl.gz",
+   "bytes": 21271438,
+   "sha256": "9292a122e5a051aa9e43bb66525fb062ce8623d419b09f7d5a565fd92cdc662e"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Portuguese.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Portuguese/kaikki.org-dictionary-Portuguese.jsonl.gz",
+   "bytes": 56809380,
+   "sha256": "026e1bd88b2652fb2ae8a5ade030a4273d74bdf3522f9caadea68558a788cb1d"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Russian.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Russian/kaikki.org-dictionary-Russian.jsonl.gz",
+   "bytes": 90334004,
+   "sha256": "4ac3a0df8d0de598f51e8f5c4274380a7b3348e8a0bb3c5d774c56b79557100c"
+  },
+  {
+   "path": "kaikki-en/kaikki.org-dictionary-Spanish.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/dictionary/Spanish/kaikki.org-dictionary-Spanish.jsonl.gz",
+   "bytes": 95164223,
+   "sha256": "c805cfb9f13c1769400d08e4a01bc4aeefb67775cbb36e2e4deb199e0af57b38"
+  },
+  {
+   "path": "kaikki-es/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/eswiktionary/Inglés/kaikki.org-dictionary-Inglés.jsonl.gz",
+   "bytes": 4934340,
+   "sha256": "c21dc668783a9acc972ca37bdde51a06540171f2054c11cd7bf4e2d1c8f38706"
+  },
+  {
+   "path": "kaikki-es/es.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/eswiktionary/Español/kaikki.org-dictionary-Español.jsonl.gz",
+   "bytes": 108490404,
+   "sha256": "c545b8b742ee4cddffb3826b3d2cbae67b3d3ea5db10b34a8f67ea4f098087ea"
+  },
+  {
+   "path": "kaikki-es/fr.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/eswiktionary/Francés/kaikki.org-dictionary-Francés.jsonl.gz",
+   "bytes": 1277102,
+   "sha256": "5c20d954af77dd8608d3b8c38f8713ef1b2e44f13e762ea82ce040883c3628b8"
+  },
+  {
+   "path": "kaikki-fr/de.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Allemand/kaikki.org-dictionary-Allemand.jsonl.gz",
+   "bytes": 106066629,
+   "sha256": "5bd70850917c0d5705cfeb7a42a0ecde60c11e5da2d43f2e13090d66e60061be"
+  },
+  {
+   "path": "kaikki-fr/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Anglais/kaikki.org-dictionary-Anglais.jsonl.gz",
+   "bytes": 22826164,
+   "sha256": "39557ce8c5ca9a5465131a581eb081675aad6db8b8113ce60cf7fea9dc7729b1"
+  },
+  {
+   "path": "kaikki-fr/es.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Espagnol/kaikki.org-dictionary-Espagnol.jsonl.gz",
+   "bytes": 22539301,
+   "sha256": "8cd5eb9381f0c9e08d2348d831a15b99fcd593d1d8d3db0d3bbec62db6b571d9"
+  },
+  {
+   "path": "kaikki-fr/fr.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Français/kaikki.org-dictionary-Français.jsonl.gz",
+   "bytes": 392371931,
+   "sha256": "ee5355d822960f6d40fe0a10e780c3248c60850c1652fc36088af2a22855b557"
+  },
+  {
+   "path": "kaikki-fr/pt.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Portugais/kaikki.org-dictionary-Portugais.jsonl.gz",
+   "bytes": 29456215,
+   "sha256": "cc6c9c93fe15db10b97d210315c4f6536a068b9752e8cf334a4f2ece3d879601"
+  },
+  {
+   "path": "kaikki-fr/zh.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/frwiktionary/Chinois/kaikki.org-dictionary-Chinois.jsonl.gz",
+   "bytes": 3855493,
+   "sha256": "b24060c79a908fffd25fb94b269ccc4384bc98bbd30c834eba36526997b87eb4"
+  },
+  {
+   "path": "kaikki-ja/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/jawiktionary/英語/kaikki.org-dictionary-英語.jsonl.gz",
+   "bytes": 8971683,
+   "sha256": "b76160e90506cb8a2c91725e9539c36f30e341bb3910d5771a5fa3e9ff9dc73b"
+  },
+  {
+   "path": "kaikki-ja/ja.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/jawiktionary/日本語/kaikki.org-dictionary-日本語.jsonl.gz",
+   "bytes": 25469864,
+   "sha256": "870cfaac0d8e486209585c5f1802d4e14bcef58a21dc76fb79a1ae39f2952619"
+  },
+  {
+   "path": "kaikki-ja/zh.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/jawiktionary/中国語/kaikki.org-dictionary-中国語.jsonl.gz",
+   "bytes": 5445433,
+   "sha256": "7a19186fcb04ead9e29c3bcd99c4f5f05c25404978dcab99f165b6247f615fb3"
+  },
+  {
+   "path": "kaikki-ko/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/kowiktionary/영어/kaikki.org-dictionary-영어.jsonl.gz",
+   "bytes": 2067478,
+   "sha256": "c04fafb28e9d030cf7ab49d2e33f5434549d820a5918cecdee17784310883479"
+  },
+  {
+   "path": "kaikki-ko/ja.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/kowiktionary/일본어/kaikki.org-dictionary-일본어.jsonl.gz",
+   "bytes": 1335383,
+   "sha256": "b5d7b11847071595d19d6893aa3153dbfb9d18b98f7f1182bc34237c97e3aca8"
+  },
+  {
+   "path": "kaikki-ko/ko.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/kowiktionary/한국어/kaikki.org-dictionary-한국어.jsonl.gz",
+   "bytes": 15520168,
+   "sha256": "e6b3a89ffcde6ee035e5c07d92cf12f962845096948e831555cb84b3dad03ba0"
+  },
+  {
+   "path": "kaikki-ko/zh.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/kowiktionary/중국어/kaikki.org-dictionary-중국어.jsonl.gz",
+   "bytes": 2529100,
+   "sha256": "d8d83478e0ed98e45ec13670b3353c102dab24dedfd82ef7e92fcc890c3a312b"
+  },
+  {
+   "path": "kaikki-pt/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ptwiktionary/Inglês/kaikki.org-dictionary-Inglês.jsonl.gz",
+   "bytes": 1860463,
+   "sha256": "a554b3199bdb17731188a429f55149e081189583e15e0332f34fb71250591362"
+  },
+  {
+   "path": "kaikki-pt/pt.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ptwiktionary/Português/kaikki.org-dictionary-Português.jsonl.gz",
+   "bytes": 33084891,
+   "sha256": "3ef769f61cadf439c2e1184310e9dd929c1c9d397d180a0866a3a25c95f978d2"
+  },
+  {
+   "path": "kaikki-ru/de.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ruwiktionary/Немецкий/kaikki.org-dictionary-Немецкий.jsonl.gz",
+   "bytes": 10506906,
+   "sha256": "0a3409f324f46bf9bc4360e31c48a6901ce53d5ee430380b23d404f577c3588f"
+  },
+  {
+   "path": "kaikki-ru/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ruwiktionary/Английский/kaikki.org-dictionary-Английский.jsonl.gz",
+   "bytes": 9562305,
+   "sha256": "d1dc061898ff4c65cbafc5d9cce49a8e136a04a08dc91c283978d3f545996d99"
+  },
+  {
+   "path": "kaikki-ru/fr.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ruwiktionary/Французский/kaikki.org-dictionary-Французский.jsonl.gz",
+   "bytes": 3809580,
+   "sha256": "c6c899f1c8af64bbf9f9a3ebb7de7c7c2068e1d89cb88e219e4876dd10f7748e"
+  },
+  {
+   "path": "kaikki-ru/ru.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/ruwiktionary/Русский/kaikki.org-dictionary-Русский.jsonl.gz",
+   "bytes": 202307105,
+   "sha256": "f0a7d1a6a68e0e88c557db701673598e901ea67f7394a4ec113cbeb7776eabe4"
+  },
+  {
+   "path": "kaikki-zh/en.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/zhwiktionary/英語/kaikki.org-dictionary-英語.jsonl.gz",
+   "bytes": 9799603,
+   "sha256": "d5b770483610b3e66453d5f878ac1b5ac97faa241e44e129d82f3712c8e19ee5"
+  },
+  {
+   "path": "kaikki-zh/ja.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/zhwiktionary/日語/kaikki.org-dictionary-日語.jsonl.gz",
+   "bytes": 10271638,
+   "sha256": "4b85df08e18e041a6c8bbf515a41e83bad5524048a3c755a1f3494db29762122"
+  },
+  {
+   "path": "kaikki-zh/zh.jsonl.gz",
+   "dataset": "wiktionary",
+   "license": "CC BY-SA 4.0",
+   "version": "2026-10-13",
+   "url": "https://kaikki.org/zhwiktionary/漢語/kaikki.org-dictionary-漢語.jsonl.gz",
+   "bytes": 91222158,
+   "sha256": "83b5e3551709fe24bc71aec55acec4fa88179cd3215219dffd3fcf836dca2082"
+  },
+  {
+   "path": "opencc/STCharacters.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/STCharacters.txt",
+   "bytes": 36026,
+   "sha256": "a0ca1601c70648cf48b33c3c6210ccbecc5c7eead4b4c3daf76587ba2c03582b"
+  },
+  {
+   "path": "opencc/STPhrases.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/STPhrases.txt",
+   "bytes": 1007834,
+   "sha256": "f6eab5e5c6dd7640597878d3dfc6599ee1279d2bc91561eadd8e114194e2925a"
+  },
+  {
+   "path": "opencc/TSCharacters.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/TSCharacters.txt",
+   "bytes": 104520,
+   "sha256": "9ff46a7d30e5765375eb13d33f2b03a34d298913caf2b120380679f33ae1642d"
+  },
+  {
+   "path": "opencc/TSPhrases.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/TSPhrases.txt",
+   "bytes": 8835,
+   "sha256": "9a23666e95c97dbf8668b5d71ca19f09f33b4f3a3aa9e05677dab4b608cef102"
+  },
+  {
+   "path": "opencc/TWPhrases.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/TWPhrases.txt",
+   "bytes": 19429,
+   "sha256": "bcb435b744ee3e522beb9b18fcc5486a36ed4763c6aa642ce18112fb5d604e31"
+  },
+  {
+   "path": "opencc/TWVariants.txt",
+   "dataset": "opencc",
+   "license": "Apache-2.0",
+   "version": "2026-10-13",
+   "url": "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/TWVariants.txt",
+   "bytes": 978,
+   "sha256": "245b94eb5842957e735dd44b7e7d4ff469a3643126cc8fa511adda5281e9cb86"
+  },
+  {
+   "path": "tatoeba/cmn-fra_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/cmn/cmn-fra_links.tsv.bz2",
+   "bytes": 126603,
+   "sha256": "0201dca092d8f14442d5cfbbe9ef5929645501fdd38b63b849dedb147644ae88"
+  },
+  {
+   "path": "tatoeba/cmn-jpn_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/cmn/cmn-jpn_links.tsv.bz2",
+   "bytes": 99528,
+   "sha256": "8413d4cbaf9969a0b893e9d0c9648d0285d03501991607464260823f2d6999de"
+  },
+  {
+   "path": "tatoeba/cmn-kor_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/cmn/cmn-kor_links.tsv.bz2",
+   "bytes": 16984,
+   "sha256": "acd1d178e452c8ebe6a71b013001799e28a4d918be134b55c1184f36bf2ef376"
+  },
+  {
+   "path": "tatoeba/cmn_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/cmn/cmn_sentences.tsv.bz2",
+   "bytes": 1258831,
+   "sha256": "91ded8d50ee05db5aca76e23dd9c7f2eeb2e948bcb538fa301cc82f8f4d8048e"
+  },
+  {
+   "path": "tatoeba/deu-rus_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/deu/deu-rus_links.tsv.bz2",
+   "bytes": 1477460,
+   "sha256": "5ffd69665b2284a616a49dcfc9f290ce1e3ba1fad31a39f529ba5a8de298b202"
+  },
+  {
+   "path": "tatoeba/deu_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/deu/deu_sentences.tsv.bz2",
+   "bytes": 12085998,
+   "sha256": "7fb0b466dfaf4610cc3841b9e7f0f352b7fa3e3665bf8fd0558945d32e5ecbfa"
+  },
+  {
+   "path": "tatoeba/eng-cmn_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-cmn_links.tsv.bz2",
+   "bytes": 482207,
+   "sha256": "ed0604832d995e824d5bdebda7ef490978e1cb1658e24df4dc81fc8859b4d3da"
+  },
+  {
+   "path": "tatoeba/eng-deu_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-deu_links.tsv.bz2",
+   "bytes": 3549924,
+   "sha256": "529fca602c082e355b202802e86a881d30ffd34b67f2d59d4dad925f04daf687"
+  },
+  {
+   "path": "tatoeba/eng-fra_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-fra_links.tsv.bz2",
+   "bytes": 2668020,
+   "sha256": "fc05adc4b3bc78871c6809d979d754e41b67ed10477d8ba6b877bc16f036c2bc"
+  },
+  {
+   "path": "tatoeba/eng-jpn_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-jpn_links.tsv.bz2",
+   "bytes": 1437557,
+   "sha256": "7f6947bf35356e750887725593ae068c9a150e58a2ab0fa41b0ed1c958164c1c"
+  },
+  {
+   "path": "tatoeba/eng-kor_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-kor_links.tsv.bz2",
+   "bytes": 68959,
+   "sha256": "1121cca419d45dc6f4f914cfdcede261834c8552cd57d5c57991bf88c224d4f8"
+  },
+  {
+   "path": "tatoeba/eng-por_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-por_links.tsv.bz2",
+   "bytes": 1863381,
+   "sha256": "9e80828dda6f29c111d91639a20aa50dea0c0be1c1d7e7718b485ec5d3d471d2"
+  },
+  {
+   "path": "tatoeba/eng-rus_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-rus_links.tsv.bz2",
+   "bytes": 4998338,
+   "sha256": "f023e9dd396ff8513c721313934ffb85335bf7b314fa0ec3013d65623930b806"
+  },
+  {
+   "path": "tatoeba/eng-spa_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng-spa_links.tsv.bz2",
+   "bytes": 1760236,
+   "sha256": "3009b84ae398f39f21ce27e2d012d456c9ee8732a201ae5523f1ab2f8d5658f3"
+  },
+  {
+   "path": "tatoeba/eng_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2",
+   "bytes": 24904358,
+   "sha256": "0eabb52f54350bbb39807190920bfddaf9fee2ba50ca75af67e11a22ec475c29"
+  },
+  {
+   "path": "tatoeba/fra-deu_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/fra/fra-deu_links.tsv.bz2",
+   "bytes": 1003964,
+   "sha256": "5b99f11d7c60d3620d152bfc34f30abaa31f032db98ff5b8bf1a42816a0bbf27"
+  },
+  {
+   "path": "tatoeba/fra-por_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/fra/fra-por_links.tsv.bz2",
+   "bytes": 225090,
+   "sha256": "60d9ef6cf78876b41f7a44d66784aa397e11ed7b4b9b13c94bd75d3b7e9782ae"
+  },
+  {
+   "path": "tatoeba/fra-rus_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/fra/fra-rus_links.tsv.bz2",
+   "bytes": 2827686,
+   "sha256": "8b98b03533432c138a38c42459423feabe03e39cd4c1510c5868b5a518b0a3bc"
+  },
+  {
+   "path": "tatoeba/fra_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/fra/fra_sentences.tsv.bz2",
+   "bytes": 9765138,
+   "sha256": "fac31d82b216c95affee7dffcee6c0ae59c45f254ebbfbbf8abb9e66da86ee8f"
+  },
+  {
+   "path": "tatoeba/jpn-kor_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/jpn/jpn-kor_links.tsv.bz2",
+   "bytes": 14042,
+   "sha256": "52f4da341dcd2d6cb437f01f4c7ad93195392dbf94c26b44a452733dc42c51ec"
+  },
+  {
+   "path": "tatoeba/jpn_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/jpn/jpn_sentences.tsv.bz2",
+   "bytes": 3417875,
+   "sha256": "ba55cb50f7d51f46769a9ab95b1bf40e2e09e75898d02ad1d84d19903af9a0d1"
+  },
+  {
+   "path": "tatoeba/kor_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/kor/kor_sentences.tsv.bz2",
+   "bytes": 194389,
+   "sha256": "a1aa17c42d7c22c9c83a5e4f2259fd254ac208162cb29a3b53922847e7ec5d6a"
+  },
+  {
+   "path": "tatoeba/por_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/por/por_sentences.tsv.bz2",
+   "bytes": 6390141,
+   "sha256": "396a9416796b494c889e845075a5e2fa49a34f58831fd6e73d8bf38b7d926845"
+  },
+  {
+   "path": "tatoeba/rus_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/rus/rus_sentences.tsv.bz2",
+   "bytes": 15528204,
+   "sha256": "7953f006c1685805f5a6a58581463dd38849c2029d5dceb0adaad05f2022bf62"
+  },
+  {
+   "path": "tatoeba/spa-fra_links.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/spa/spa-fra_links.tsv.bz2",
+   "bytes": 391897,
+   "sha256": "45788a251c9c99356f866fbe70d2f5e5d9c9bc2fbdc7adf5e5d7167e47c5a03c"
+  },
+  {
+   "path": "tatoeba/spa_sentences.tsv.bz2",
+   "dataset": "tatoeba",
+   "license": "CC BY 2.0 FR",
+   "version": "2026-10-13",
+   "url": "https://downloads.tatoeba.org/exports/per_language/spa/spa_sentences.tsv.bz2",
+   "bytes": 6361569,
+   "sha256": "d1f7aa997368571e8bbba341ab60f9145fefe14970f21065bd97be8e03c8e6fb"
+  }
+ ]
+}

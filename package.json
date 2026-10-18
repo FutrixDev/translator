@@ -17,7 +17,10 @@
     "test:sidebar": "npx playwright test sidebar-translation.spec.js",
     "test:math": "npx playwright test math-and-code.spec.js",
     "test:nav": "npx playwright test horizontal-nav.spec.js",
-    "test:report": "npx playwright show-report test/reports"
+    "test:report": "npx playwright show-report test/reports",
+    "dict:build": "bash tools/dict/build.sh",
+    "dict:check": "python3 -I tools/dict/check.py build/dict/out",
+    "dict:runtime-check": "node tools/dict/runtime-check.cjs build/dict/out"
   },
   "keywords": [
     "chrome-extension",

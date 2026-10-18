@@ -47,6 +47,13 @@
   10 MB allows), and reading a pack's entries one by one needs Chrome 130.
   Copies of Chrome from 116 to 129 keep the version they have and receive no
   further updates until Chrome is updated.
+- **The offline dictionary packs can be rebuilt from open data on one
+  machine.** `tools/dict/` downloads the pinned datasets (Wiktionary via
+  kaikki.org, CC-CEDICT, JMdict, Tatoeba, ipa-dict, CMUdict, OpenCC tables),
+  builds the 30 packs for the 34 language pairs in about eight minutes
+  (`npm run dict:build`), and checks every pack against its format, size,
+  pronunciation-coverage and licence rules (`npm run dict:check`). Each pack
+  ships with its CC BY-SA 4.0 licence and a list of the sources it used.
 
 ## 1.5.1 — 2026-10-14
 

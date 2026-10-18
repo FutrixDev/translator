@@ -8,6 +8,8 @@ node_modules
 dist/
 build/
 *.zip
+# Python bytecode of tools/dict (the scripts run as python3 -I, which still writes it)
+__pycache__/
 
 # IDE
 .idea/
@@ -51,3 +53,4 @@ test-results/
 # Local design docs
 design/
 .gstack/
+
