@@ -12,8 +12,8 @@
 //   - want: a lookup found its pair missing from `dict:packs` and sent
 //     DICT_PACK_WANT;
 //   - check: the daily alarm compares each installed (or failed) pack's `ver`
-//     with the manifest's, and fetches the preinstall pair when it is missing
-//     (a preinstall that failed is retried here, D-609);
+//     with the manifest's, and fetches the preinstall pair when it is missing;
+//     it retries every failed pair, whatever its backoff (below);
 //   - redownload: the settings page's "Download again" on a deleted pair.
 // With the offlineDictionary switch off none of the first three fetches
 // anything; packs already seeded stay until the user deletes them on the
@@ -32,14 +32,22 @@
 // write the new keys chunk by chunk, and write the `dict:packs` item last. A
 // job that fails is caught in one place, runInstall(): one console.error with the
 // operation, pair and ver, and `dict:status` marks the pair failed for the
-// settings page. Nothing is retried there and no old version is put back.
+// settings page, with the time (`at`). No old version is put back.
+//
+// A failed job (its download, its checks or its writes) is retried without
+// the reader doing or seeing anything (D-719). Each refusal in a row at one
+// version counts in `dict:status` (`refusals`, a new version starts at 0), and
+// a lookup fetches that version again only once REFUSAL_BACKOFF has passed
+// since `at`: 10 min after the first refusal, then 1 h, 4 h, 12 h, and 24 h
+// from the fifth on. There is no giving up; the daily check retries anyway.
 //
 // A worker stopped mid-job leaves its pair `downloading` and, mid-seed, half
 // its keys. The first check, lookup request or settings page in the next
 // worker queues one recovery job that marks those pairs failed and removes
 // the orphaned keys (D-609). Each such stop counts against that version in
-// `dict:status` (`interrupts`); after MAX_INTERRUPTS in a row a lookup no
-// longer fetches it, and only the daily check does (N2).
+// `dict:status` (`interrupts`), apart from the refusals; a lookup fetches an
+// interrupted pair again at once, and after MAX_INTERRUPTS in a row no longer
+// does, leaving it to the daily check (N2).
 //
 // A download holds the worker awake (keepalive.js) from the request to the
 // last byte: Chrome stops an extension worker that has made no extension API
@@ -148,11 +156,17 @@ function isCurrent(packs, pair, row) {
 }
 
 /**
- * A `dict:status` item: what the settings page shows for a pair, and how many
- * times in a row a worker stopped while fetching `ver` (only when some did).
+ * A `dict:status` item, the only way one is built: what the settings page
+ * shows for a pair; for a failure, when it happened (`at`); and how many times
+ * in a row a worker stopped while fetching `ver` (`interrupts`) and a fetch of
+ * `ver` was refused (`refusals`), each only when some did.
  */
-function status(state, ver, reason = '', interrupts = 0) {
-  return interrupts ? { state, ver, reason, interrupts } : { state, ver, reason };
+function status(state, ver, reason = '', { interrupts = 0, refusals = 0 } = {}) {
+  const item = { state, ver, reason };
+  if (state === 'failed') item.at = Date.now();
+  if (interrupts) item.interrupts = interrupts;
+  if (refusals) item.refusals = refusals;
+  return item;
 }
 
 // The reason a recovery writes: the pair was not refused, its worker stopped.
@@ -161,19 +175,41 @@ const INTERRUPTED = 'interrupted';
 // Stops in a row at one version after which a lookup no longer fetches it.
 const MAX_INTERRUPTS = 3;
 
-/** The stops in a row `last` records against `ver`; another version starts at 0. */
-function interruptsOf(last, ver) {
-  return last && last.ver === ver ? last.interrupts || 0 : 0;
+// How long after its nth refusal in a row (index n - 1) a lookup waits before
+// fetching that version again; the last wait holds from then on (D-719).
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const REFUSAL_BACKOFF = [10 * MINUTE, HOUR, 4 * HOUR, 12 * HOUR, 24 * HOUR];
+
+/** The wait after `refusals` refusals in a row; none before the first. */
+function backoff(refusals) {
+  if (refusals < 1) return 0;
+  return REFUSAL_BACKOFF[Math.min(refusals, REFUSAL_BACKOFF.length) - 1];
 }
 
 /**
- * Whether a lookup leaves `row` to the daily check: it already failed at this
- * version, by a refusal, or by a worker stopped mid-job MAX_INTERRUPTS times
- * in a row. A pair interrupted fewer times did not fail, and is fetched again.
+ * The stops (`interrupts`) and refusals in a row that `last` records against
+ * `ver`; another version starts both at 0.
+ */
+function countsOf(last, ver) {
+  if (!last || last.ver !== ver) return { interrupts: 0, refusals: 0 };
+  return { interrupts: last.interrupts || 0, refusals: last.refusals || 0 };
+}
+
+/**
+ * Whether a lookup now leaves `row` alone: it was refused at this version less
+ * than backoff(refusals) ago, or a worker stopped mid-job MAX_INTERRUPTS times
+ * in a row while fetching it. Inside the backoff the pack is fetched by the
+ * daily check or by the first lookup after the backoff, whichever comes first;
+ * past MAX_INTERRUPTS, by the daily check. A failure with no refusals (an item
+ * from before D-719 has neither them nor `at`) has no backoff, and a pair
+ * interrupted fewer times did not fail: both are fetched again.
  */
 function leftToCheck(last, row) {
   if (!last || last.state !== 'failed' || last.ver !== row.ver) return false;
-  return last.reason !== INTERRUPTED || interruptsOf(last, row.ver) >= MAX_INTERRUPTS;
+  const { interrupts, refusals } = countsOf(last, row.ver);
+  if (last.reason !== INTERRUPTED) return Date.now() - last.at < backoff(refusals);
+  return interrupts >= MAX_INTERRUPTS;
 }
 
 async function setDeclined(pair, declined) {
@@ -253,14 +289,20 @@ async function runInstall({ op, row }) {
   // recovery that counts the last stop.
   const last = (await readMap(DictPack.STATUS_KEY))[pair];
   if (op === 'want' && leftToCheck(last, row)) return { state: 'failed' };
-  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver, '', interruptsOf(last, row.ver)));
+  // `downloading` carries the counts so far: the recovery of a worker stopped
+  // mid-job counts on from both, and this job's own refusal counts on the
+  // refusals and, being a refusal, clears the interrupts.
+  const counts = countsOf(last, row.ver);
+  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver, '', counts));
   try {
     await installPack(row);
   } catch (error) {
     // The one place a pack's failure stops: logged once, shown on the
     // settings page through dict:status. No user data: the pair and ver only.
     console.error('[Blab Translation] dictionary pack failed', { op, pair, ver: row.ver }, error);
-    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', row.ver, String(error.message || error)));
+    const reason = String(error.message || error);
+    const failed = status('failed', row.ver, reason, { refusals: counts.refusals + 1 });
+    await writeMapItem(DictPack.STATUS_KEY, pair, failed);
     return { state: 'failed' };
   }
   await writeMapItem(DictPack.STATUS_KEY, pair, undefined);
@@ -282,7 +324,8 @@ async function deletePair({ src, tgt }) {
 // so every `downloading` it finds is from a worker that stopped mid-job. The
 // pair is marked failed (the check retries it); a pair with no list item was
 // being seeded from scratch or replaced, and its keys are orphans (D-609 N6).
-// The stop is counted on top of those before it at the same version.
+// The stop is counted on top of those before it at the same version, and the
+// refusals so far are kept.
 async function recoverPairs() {
   const statuses = await readMap(DictPack.STATUS_KEY);
   const packs = await readMap(DictPack.PACKS_KEY);
@@ -291,7 +334,9 @@ async function recoverPairs() {
     if (state !== 'downloading') continue;
     console.warn('[Blab Translation] dictionary pack interrupted', { pair, ver });
     if (!packs[pair]) await removePairKeys(pair);
-    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', ver, INTERRUPTED, interruptsOf(last, ver) + 1));
+    const { interrupts, refusals } = countsOf(last, ver);
+    const stopped = status('failed', ver, INTERRUPTED, { interrupts: interrupts + 1, refusals });
+    await writeMapItem(DictPack.STATUS_KEY, pair, stopped);
   }
   return { state: 'recovered' };
 }
@@ -331,10 +376,10 @@ const joinable = new Map(); // pair -> { op, ver, job }: the queued or running i
  * its own manifest row, and joining it would seed that version instead of
  * `row`'s. A redownload never joins: a job asked for before the reader's
  * click finds the pair declined. Only a lookup joins a lookup's job: that job
- * gives up on a version stopped MAX_INTERRUPTS times (runInstall), and a
- * check or preinstall must still fetch it. Resolves when it is seeded
- * ({state:'installed'}), has failed ({state:'failed'}, already logged and
- * shown), or was declined.
+ * gives up on a version refused within its backoff or stopped MAX_INTERRUPTS
+ * times (runInstall), and a check or preinstall must still fetch it. Resolves
+ * when it is seeded ({state:'installed'}), has failed ({state:'failed'},
+ * already logged and shown), or was declined.
  */
 function queueInstall(op, row) {
   const pair = DictPack.pairOf(row.src, row.tgt);
@@ -399,8 +444,9 @@ export async function onDictInstalled(details) {
 /**
  * DICT_PACK_WANT: a lookup found `src`-`tgt` missing from `dict:packs`. Fetch
  * it in the background when the switch is on, the reader has not deleted it,
- * and the manifest has it. A pack that already failed at the manifest's
- * version is left to the daily check, so a broken pack is not downloaded
+ * and the manifest has it. A pack refused at the manifest's version is
+ * fetched again only once its backoff since that refusal has passed (10 min
+ * after the first, up to 24 h, D-719), so a broken pack is not downloaded
  * again on every page; a pack whose worker was stopped mid-job (reason
  * 'interrupted') did not fail, and is fetched again now, up to
  * MAX_INTERRUPTS stops in a row at that version (N2).

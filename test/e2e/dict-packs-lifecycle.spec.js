@@ -7,7 +7,8 @@
  * a pack that is not the one its row names is refused, a pair the manifest
  * drops says so, the manifest is revalidated only by the daily check, and a
  * version whose worker is stopped mid-download three times in a row is left
- * to the daily check (N2).
+ * to the daily check (N2), and a refused pack is fetched again by the first
+ * lookup after its backoff, with nothing shown for it (D-719).
  *
  * Packs come from test/fixtures/dict-runtime through DictPackServer, as in
  * dict-packs.spec.js; the real host never resolves in a test browser.
@@ -229,7 +230,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     const options = await openOptions(context, extensionId);
     // Read through the settings page: storage as a page sees it, across the worker restart.
     await expect.poll(async () => (await localValue(options, STATUS_KEY) || {})[EN_ZH], { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 1 });
+      .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', at: expect.any(Number), interrupts: 1 });
     expect(await countKeys(options, keysOf(EN_ZH))).toBe(0);
     expect((await localValue(options, PACKS_KEY) || {})[EN_ZH]).toBeUndefined();
     const pack = packRow(options, EN_ZH);
@@ -249,7 +250,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
 
     expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'absent' });
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', interrupts: 1 });
+      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', at: expect.any(Number), interrupts: 1 });
     expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
     expect(warnings).toHaveLength(1);
     expect(await warnings[0].args()[1].jsonValue()).toEqual({ pair: EN_ZH, ver: '2026.10.13' });
@@ -269,11 +270,11 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
 
     await fireAlarm(context, DICT_CHECK_ALARM);
     await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
-      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', interrupts: 1 });
+      .toEqual({ state: 'failed', ver: '2026.10.13', reason: 'interrupted', at: expect.any(Number), interrupts: 1 });
     const worker = await getServiceWorker(context);
     expect(await countKeys(worker, keysOf(EN_ZH))).toBe(0);
     await expect.poll(() => statusOf(context, KO_EN))
-      .toEqual({ state: 'failed', ver: '2026.12.01', reason: 'interrupted', interrupts: 1 });
+      .toEqual({ state: 'failed', ver: '2026.12.01', reason: 'interrupted', at: expect.any(Number), interrupts: 1 });
     expect(await countKeys(worker, keysOf(KO_EN))).toBe(1);
     expect((await packItem(context, KO_EN)).ver).toBe(koRow.ver);
   });
@@ -300,7 +301,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
       }
       await options.reload();
       await expect.poll(statusNow, { timeout: 15000 })
-        .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: stopped });
+        .toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', at: expect.any(Number), interrupts: stopped });
       expect(server.hitsOf(row.url)).toBe(stopped);
     }
 
@@ -308,7 +309,7 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     expect(await sendFromPage(context, page, { type: 'DICT_PACK_WANT', src: 'en', tgt: 'zh-CN' })).toEqual({ state: 'failed' });
     await page.waitForTimeout(1000);
     expect(server.hitsOf(row.url)).toBe(3);
-    expect(await statusNow()).toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 3 });
+    expect(await statusNow()).toEqual({ state: 'failed', ver: row.ver, reason: 'interrupted', at: expect.any(Number), interrupts: 3 });
     const pack = packRow(options, EN_ZH);
     await expect(pack.locator('.dict-pack-failed')).toHaveText(`Version ${row.ver} failed to download. It will be tried again later.`);
 
@@ -319,6 +320,48 @@ test.describe('offline dictionary packs over their life (B1 fix round 1, D-609)'
     await expect.poll(statusNow).toBeUndefined();
     expect((await lookup(context, page, 'apple', 'zh-CN')).translation).toBe('苹果');
     await options.close();
+  });
+
+  test('J-B1.26 a pack refused with HTTP 500 is not fetched inside its backoff, and the first lookup after it seeds it', async ({ context, page }) => {
+    const server = new DictPackServer();
+    const row = server.publishFixture(EN_ZH);
+    server.fail(row.url, { status: 500 });
+    await server.attach(context);
+    await openExample(context, page);
+
+    // The lookup asks for the pack, and the host refuses it.
+    expect(await lookup(context, page, 'apple', 'zh-CN')).toBeNull();
+    await expect.poll(() => statusOf(context, EN_ZH), { timeout: 15000 })
+      .toEqual({ state: 'failed', ver: row.ver, reason: 'HTTP 500', at: expect.any(Number), refusals: 1 });
+    expect(server.hitsOf(row.url)).toBe(1);
+
+    // A new page asks again inside the 10 min backoff: no request for the pack.
+    const second = await openSecondTab(context);
+    const wants = await countWants(context);
+    expect(await lookup(context, second, 'apple', 'zh-CN')).toBeNull();
+    await expect.poll(() => wants()).toBe(1);
+    await second.waitForTimeout(1000);
+    expect(server.hitsOf(row.url)).toBe(1);
+
+    // Fixture, not a journey step (as J-B1.25's stops are made, not waited
+    // for): the refusal is put more than 10 min in the past.
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(async ({ key, pair }) => {
+      const status = (await chrome.storage.local.get(key))[key];
+      status[pair].at -= 10 * 60 * 1000 + 1000;
+      await chrome.storage.local.set({ [key]: status });
+    }, { key: STATUS_KEY, pair: EN_ZH });
+
+    // The host serves the pack again; a page that has not asked yet asks.
+    server.restore(row.url);
+    const third = await openSecondTab(context);
+    expect(await lookup(context, third, 'apple', 'zh-CN')).toBeNull();
+    await listedAt(context, EN_ZH, row.ver);
+    expect(server.hitsOf(row.url)).toBe(2);
+    expect(await statusOf(context, EN_ZH)).toBeUndefined();
+    expect((await lookup(context, third, 'apple', 'zh-CN')).translation).toBe('苹果');
+    await third.close();
+    await second.close();
   });
 
   test('J-B1.18 two tabs asking for one pack fetch it once', async ({ context, page }) => {
