@@ -4,20 +4,22 @@
 # Environment:
 #   DICT_DATA_DIR     the datasets, laid out as tools/dict/sources.json says (required; fill it
 #                     with `bash tools/dict/download.sh "$DICT_DATA_DIR"`). Read only, never run.
-#   DICT_SAMPLES_DIR  the per-language sample token tables check.py measures hits and readings
-#                     on (default: $DICT_DATA_DIR/../samples/tokens)
-#   DICT_VER          the packs' `ver` (default: today, UTC, YYYY.MM.DD)
+#   DICT_SAMPLES_DIR  the per-language sample token tables runtime-check.cjs measures hits and
+#                     readings on (default: $DICT_DATA_DIR/../samples/tokens)
+#   DICT_VER          the packs' `ver` (default: today, UTC, YYYY.MM.DD). Set it explicitly for
+#                     a release: the published manifest names one ver, and a build that runs
+#                     past midnight UTC, or a rebuild, must write the same one.
 #   DICT_JOBS         processes (default: all cores)
 #   DICT_PACKS        a comma-separated subset such as es-en,ja-en (default: all 30)
 #   DICT_RUNTIME_DIR  the checkout whose shared/dict-pack.js reads the packs in the last step
-#                     (default: this repository)
+#                     (default: this repository). Checked first, before any dataset is read.
 #
 # Output under build/dict/ (git-ignored):
 #   norm/     the normalized datasets (normalize.py)
 #   work/     per-language tables several packs share (pairs.py prepare)
 #   out/<pack>/{<pack>.json, LICENSE.txt, ATTRIBUTION.txt}
 #   stats/    per-pack numbers and the no-example variants
-#   samples/  the sample tables, copied for check.py
+#   samples/  the sample tables, copied for runtime-check.cjs
 # norm/, work/, out/ and stats/ are rebuilt from scratch on every run. The last two steps run
 # check.py over out/ (npm run dict:check runs it alone) and then the extension's own parser
 # (runtime-check.cjs, npm run dict:runtime-check), so a build that writes a pack the gates or
@@ -26,6 +28,12 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
+runtime="${DICT_RUNTIME_DIR:-$root}"
+# The last step reads the packs with this runtime; fail now, not after an hour of build.
+[[ -f "$runtime/shared/dict-pack.js" ]] || {
+  echo "no shared/dict-pack.js under $runtime (set DICT_RUNTIME_DIR to a translator checkout)" >&2
+  exit 1
+}
 data="${DICT_DATA_DIR:?set DICT_DATA_DIR to the dataset directory (see tools/dict/README.md)}"
 data="$(cd "$data" && pwd)"
 samples="${DICT_SAMPLES_DIR:-$data/../samples/tokens}"
@@ -58,10 +66,10 @@ python3 -I "$here/pairs.py" "$build/norm" "$build/out" --work "$build/work" \
   ${packs[@]+"${packs[@]}"}
 
 step "check"
-python3 -I "$here/check.py" "$build/out"
+python3 -I "$here/check.py" "$build/out" --ver "$ver" ${packs[@]+"${packs[@]}"}
 
 step "runtime check"
-node "$here/runtime-check.cjs" --runtime "${DICT_RUNTIME_DIR:-$root}" "$build/out"
+node "$here/runtime-check.cjs" --runtime "$runtime" ${packs[@]+"${packs[@]}"} "$build/out"
 
 step "done"
 echo "dict:build: ver $ver in $(( $(date +%s) - start ))s"

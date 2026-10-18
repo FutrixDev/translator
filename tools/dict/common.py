@@ -7,6 +7,7 @@ directory back explicitly before importing this module.
 import json
 import os
 import re
+import subprocess
 
 # The ten extension language codes (§1.2). zh-CN and zh-TW share one Chinese source pack.
 LANGS = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru']
@@ -134,6 +135,8 @@ def heads_count(name, e, f, norm):
 
 # Reading rate floor: design §2.1 / spike data/readings/readings.csv reading_pct_of_word_forms,
 # minus 3 points. Pairs the spike did not measure take the §2.1 value of their target language.
+# The rate is measured on the sample tokens by runtime-check.cjs, which resolves each token
+# with the extension's own DictPack.foldCandidates and reads the floor from reading_floor.
 READING_BASE = {
     'en-zh-CN': 70.3, 'en-zh-TW': 70.3, 'en-ja': 71.4, 'en-ko': 95.4, 'en-es': 92.1,
     'en-fr': 89.5, 'en-de': 90.6, 'en-pt': 93.9, 'en-ru': 88.3,
@@ -146,7 +149,18 @@ READING_BASE = {
 }
 READING_SLACK = 3.0
 
-# Pack record caps (common taskbook v1 contract).
+
+def reading_floor(name):
+    return round(READING_BASE[name] - READING_SLACK, 1)
+
+
+# Examples: a pack whose brotli size with examples is over EX_RATIO_MAX x the size without
+# them keeps one example per head (pairs.py cuts, check.py holds the result to it).
+EX_RATIO_MAX = 2.0
+
+# Pack record caps (common taskbook v1 contract), the runtime's DictPack.LIMITS
+# MAX_RECORDS / MAX_GLOSSES / MAX_EXAMPLES / MAX_FORMS. The build cuts at them where an entry
+# comes in, so they are restated here; runtime-check.cjs fails when the two disagree.
 MAX_RECS = 6
 MAX_GLOSS = 4
 MAX_EX = 2
@@ -158,7 +172,9 @@ EX_SRC_CHARS = 80
 # record it cannot read: a head starting with its form-key mark, or a gloss longer than
 # DictEntry.MAX_TEXT, counted as JavaScript counts a string's length (UTF-16 code units).
 # The build drops both where they come in (entries.Builder); check.py and runtime-check.cjs
-# fail a pack that still has one.
+# fail a pack that still has one. runtime-check.cjs pins FORM_MARK, GLOSS_MAX (LIMITS.MAX_TEXT,
+# DictEntry.MAX_TEXT), LANGS and CREDIT_HOSTS (the one host each of CREDITS may link to, as
+# parsePack's credit check takes them) to the runtime and fails on any difference.
 FORM_MARK = '~'
 GLOSS_MAX = 500
 SOURCE_URL = re.compile(r'^https://\S+$')
@@ -555,9 +571,28 @@ def word_form(gloss, t):
 def translation_word(glosses, t):
     """The translation word a record's reading belongs to (design l.264, D-614 R2): the word
     form of the first segment of the first gloss, or '' (then the record has no reading).
-    A later gloss is never used. pairs.py looks the reading up for it; check.py uses it as
-    the reading-rate denominator and for G1."""
+    A later gloss is never used. pairs.py looks the reading up for it; reading_rate and
+    runtime-check.cjs use it as the reading-rate denominator, check.py for G1."""
     return word_form(glosses[0], t) if glosses else ''
+
+
+def first_word_record(recs, t):
+    """The record whose translation word the card shows first (§2.1: the first candidate)."""
+    for rec in recs:
+        if translation_word(rec[1], t):
+            return rec
+    return None
+
+
+def reading_rate(e, t):
+    """(records with a translation word, of those with a reading): the reading-rate fraction."""
+    den = num = 0
+    for recs in e.values():
+        for rec in recs:
+            if translation_word(rec[1], t):
+                den += 1
+                num += rec[2] is not None
+    return den, num
 
 
 # ---------------- reading script (L1 N1, L2 N7) ----------------
@@ -708,6 +743,12 @@ def read_jsonl(path):
 
 def dumps(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+
+
+def brotli_size(data):
+    """The size of `data` (bytes) after `brotli -q 11`: every size rule is in this unit."""
+    return len(subprocess.run(['brotli', '-q', '11', '-c'], input=data, capture_output=True,
+                              check=True).stdout)
 
 
 def read_samples(samples_dir, lang):

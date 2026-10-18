@@ -16,12 +16,11 @@ Steps:
 Size rules (taskbook): a pack whose no-example brotli is over common.br_ceiling takes the
 formtab.RUNGS cuts in order until it fits (stats `size_cuts`); the rungs cut only `f` and `m`,
 so the `e` part's bound (common.br_budget) is check.py's alone. Then, when the brotli size of
-the pack is more than twice that of its no-example variant, the pack is rebuilt with one
-example per head and its stats say so (`examples_cut_to_one`).
+the pack is more than common.EX_RATIO_MAX times that of its no-example variant, the pack is
+rebuilt with one example per head and its stats say so (`examples_cut_to_one`).
 """
 import argparse
 import os
-import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -34,20 +33,15 @@ import formtab  # noqa: E402
 import readings  # noqa: E402
 from entries import Builder  # noqa: E402
 
-EX_RATIO_MAX = 2.0
-
-
-def brotli_size(path):
-    return len(subprocess.run(['brotli', '-q', '11', '-c', path], capture_output=True,
-                              check=True).stdout)
-
 
 def write_json(path, obj):
+    """Write `obj` as common.dumps does and return the bytes written."""
+    data = C.dumps(obj).encode('utf-8')
     tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        f.write(C.dumps(obj))
+    with open(tmp, 'wb') as f:
+        f.write(data)
     os.replace(tmp, path)
-    return os.path.getsize(path)
+    return data
 
 
 # ---------------- prepare ----------------
@@ -77,17 +71,6 @@ def run_prepare(norm, work, packs, reuse, n):
 
 
 # ---------------- one pack ----------------
-def reading_rate(e, t):
-    """(records with a translation word, of those with a reading): the reading-rate fraction."""
-    den = num = 0
-    for recs in e.values():
-        for rec in recs:
-            if C.translation_word(rec[1], t):
-                den += 1
-                num += rec[2] is not None
-    return den, num
-
-
 def compose(b, x, f, m, ver, used):
     """The pack object. Tables are written in head order and `f` grouped by head (then key):
     the order means nothing to a lookup, and grouping like keys and like values together
@@ -103,15 +86,13 @@ def layer_sizes(pack, stats_dir, name):
     out = {}
     for k in ('e', 'x', 'm', 'f'):
         p = os.path.join(stats_dir, f'{name}.layer-{k}.json')
-        write_json(p, pack[k])
-        out[k] = brotli_size(p)
+        out[k] = C.brotli_size(write_json(p, pack[k]))
         os.remove(p)
     return out
 
 
 def measure_noex(b, f, m, ver, used, path):
-    write_json(path, compose(b, {}, f, m, ver, used))
-    return brotli_size(path)
+    return C.brotli_size(write_json(path, compose(b, {}, f, m, ver, used)))
 
 
 def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
@@ -139,18 +120,18 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
     os.makedirs(pack_dir, exist_ok=True)
     pack_path = os.path.join(pack_dir, f'{name}.json')
     pack = compose(b, x, f, m, ver, used)
-    raw = write_json(pack_path, pack)
-    br_with = brotli_size(pack_path)
+    data = write_json(pack_path, pack)
+    br_with = C.brotli_size(data)
     cut_x = False
-    if br_with > EX_RATIO_MAX * br_no:
+    if br_with > C.EX_RATIO_MAX * br_no:
         cut_x = True
         x, xused, xstats = examples.build(norm, b, f, per_head=1)
         used = used_noex | xused
         pack = compose(b, x, f, m, ver, used)
-        raw = write_json(pack_path, pack)
-        br_with = brotli_size(pack_path)
+        data = write_json(pack_path, pack)
+        br_with = C.brotli_size(data)
     attribution.write(pack_dir, src, tgt, ver, used, license_path)
-    den, num = reading_rate(b.e, b.t)
+    den, num = C.reading_rate(b.e, b.t)
     st = {'pack': name, 'heads': len(b.e), 'records': sum(len(v) for v in b.e.values()),
           'reading_den': den, 'reading_num': num,
           'reading_rate': round(100 * num / den, 1) if den else None,
@@ -158,7 +139,7 @@ def build_pack(norm, out, work, stats_dir, ver, license_path, src, tgt, layers):
           'm_heads_built': fstats['m_heads'], 'm_heads': len(m), 'size_cuts': cuts,
           **xstats,
           'examples_head_rate': round(100 * xstats['x_heads'] / len(b.e), 1) if b.e else 0,
-          'examples_cut_to_one': cut_x, 'raw': raw,
+          'examples_cut_to_one': cut_x, 'raw': len(data),
           'raw_no_examples': os.path.getsize(noex_path), 'br_ceiling': ceiling,
           'br_no_examples': br_no, 'br_with_examples': br_with,
           'reverse_added': b.reverse_added, 'sources': sorted(used),

@@ -5,10 +5,12 @@
 // from the small real excerpt in test/fixtures/dict/ (provenance in its README)
 // with pairs.py, then hold check.py — the acceptance gate — to its word: the
 // shipped pack passes every rule except the heads floor (an excerpt cannot reach
-// 0.95 x the full dictionary), and each broken copy (licence deleted, readings
-// nulled, a bad example inserted) adds exactly its own reason and keeps the exit
-// status non-zero. Without python3 or brotli on PATH these tests fail; they never
-// skip, because a gate nobody runs is no gate.
+// 0.95 x the full dictionary), and each broken copy (licence deleted, a bad example
+// inserted) adds exactly its own reason and keeps the exit status non-zero.
+// runtime-check.cjs reads the same pack with the extension's shared/ code and
+// measures coverage with DictPack.foldCandidates; a copy of tools/dict whose
+// common.py disagrees with the runtime must fail it. Without python3 or brotli on
+// PATH these tests fail; they never skip, because a gate nobody runs is no gate.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -64,12 +66,19 @@ const readPack = (out = OUT) => JSON.parse(readFileSync(packFile(out), 'utf8'));
 /** check.py on one out dir: its exit status and the reasons on the pack's FAIL line. */
 function check(out, norm = path.join(FIXTURE, 'norm')) {
   const r = python('check.py', [
-    out, '--samples', path.join(FIXTURE, 'samples'), '--norm', norm,
+    out, '--norm', norm,
     '--work', path.join(tmp, 'work'), '--packs', PACK, '--jobs', '1',
   ]);
   const fail = r.stdout.split('\n').find((l) => l.startsWith(`FAIL ${PACK}: `));
   const reasons = fail ? fail.slice(`FAIL ${PACK}: `.length).split('; ') : [];
   return { status: r.status, reasons, stdout: r.stdout, stderr: r.stderr };
+}
+
+/** runtime-check.cjs (from `tools`, default this checkout's) against this checkout's shared/,
+ *  measured on the fixture's sample tables. */
+function runtimeCheck(args, tools = TOOLS) {
+  return run('node', [path.join(tools, 'runtime-check.cjs'), '--runtime', ROOT,
+    '--samples', path.join(FIXTURE, 'samples'), ...args]);
 }
 
 /** A copy of the built pack directory, changed by `mutate(dir, pack)`. */
@@ -174,12 +183,13 @@ test('check.py fails a pack whose LICENSE.txt is gone', () => {
   assert.ok(r.reasons.includes('LICENSE.txt missing or not the CC BY-SA 4.0 text'), r.stdout);
 });
 
-test('check.py fails a pack whose readings are all null', () => {
-  const r = check(mutant('readings', (_dir, pack) => {
+test('runtime-check.cjs fails a pack whose readings are all null, under its reading floor', () => {
+  const r = runtimeCheck(['--packs', PACK, mutant('readings', (_dir, pack) => {
     for (const recs of Object.values(pack.e)) for (const rec of recs) rec[2] = null;
-  }));
-  assert.notEqual(r.status, 0);
-  assert.ok(r.reasons.some((x) => /^reading 0\.0% < 93\.8%$/.test(x)), r.stdout);
+  })]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stdout.includes(
+    `${PACK} FAIL reading_rate 0.0% (sample es, floor 93.8%): under common.reading_floor`), r.stdout);
 });
 
 test('check.py fails an English reading with a phonetic [..] side', () => {
@@ -504,7 +514,7 @@ test('check.py fails an x row whose Tatoeba id is not a positive integer', () =>
   }
 });
 
-test('check.py fails a source url that is not https and a credit off the runtime hosts', () => {
+test('check.py fails a source url that is not https and credits other than the ones it used', () => {
   let r = check(mutant('http', (_dir, pack) => {
     pack.sources[0].url = pack.sources[0].url.replace('https:', 'http:');
   }));
@@ -512,17 +522,16 @@ test('check.py fails a source url that is not https and a credit off the runtime
   r = check(mutant('credit', (_dir, pack) => {
     pack.credits.tatoeba.href = 'https://tatoeba.org.example.com/';
   }));
-  assert.ok(r.reasons.includes('credits outside the runtime hosts (jmdict/tatoeba on CREDIT_HOSTS only)'),
-    r.stdout);
-  const ok = pyJson(`
-import check
-print(json.dumps([check.credits_runtime_ok(c) for c in json.loads(sys.argv[2])]))`, JSON.stringify([
-    { jmdict: { label: 'JMdict', href: 'https://www.edrdg.org/wiki/' } },
-    { wiktionary: { label: 'Wiktionary', href: 'https://en.wiktionary.org/' } },
-    { tatoeba: { label: 'Tatoeba', href: 'https://user@tatoeba.org/' } },
-    { tatoeba: { label: 'Tatoeba', href: 'https://tatoeba.org:8443/' } },
-  ]));
-  assert.deepEqual(ok, [true, false, false, false]);
+  assert.ok(r.reasons.includes('credits'), r.stdout);
+});
+
+test('runtime-check.cjs: a credit href off the runtime host is a pack nobody can install', () => {
+  for (const href of ['https://tatoeba.org.example.com/', 'https://user@tatoeba.org/', 'https://tatoeba.org:8443/']) {
+    const out = mutant(`rc-credit-${href.length}`, (_dir, pack) => { pack.credits.tatoeba.href = href; });
+    const r = runtimeCheck(['--packs', PACK, out]);
+    assert.equal(r.status, 1, `${href}: ${r.stdout}`);
+    assert.match(r.stdout, new RegExp(`^${PACK} FAIL .*credits`, 'm'), `${href}: ${r.stdout}`);
+  }
 });
 
 test('D-677 C3: the build writes the source language\'s abbreviation, check.py fails any other pos', () => {
@@ -608,30 +617,46 @@ print(json.dumps([check.wiktionary_attributed(p, a) for p, a in
 });
 
 test('runtime-check.cjs: one line per pack, non-zero unless every pack the parser reads passes', () => {
-  // A stand-in for shared/: the real parser is the gate's (npm run dict:runtime-check
-  // --runtime <checkout>); this holds the script's own plumbing to its word.
-  const rt = path.join(tmp, 'runtime');
-  mkdirSync(path.join(rt, 'shared'), { recursive: true });
-  writeFileSync(path.join(rt, 'shared/lang-tags.js'), 'globalThis.__order = ["lang-tags"];\n');
-  writeFileSync(path.join(rt, 'shared/dict-entry.js'), 'globalThis.__order.push("dict-entry");\n');
-  writeFileSync(path.join(rt, 'shared/dict-pack.js'), `
-globalThis.DictPack = { parsePack(text) {
-  if (globalThis.__order.join() !== 'lang-tags,dict-entry') throw new Error('load order');
-  const p = JSON.parse(text);
-  for (const h of Object.keys(p.e)) if (h.startsWith('~')) throw new Error('dictionary pack: e[' + JSON.stringify(h) + '] starts with "~"');
-  return p;
-} };\n`);
-  const rc = (...args) => run('node', [path.join(TOOLS, 'runtime-check.cjs'), '--runtime', rt, ...args]);
   const heads = Object.keys(readPack().e).length;
-  let r = rc('--packs', PACK, OUT);
+  let r = runtimeCheck(['--packs', PACK, OUT]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.ok(r.stdout.split('\n').includes(`${PACK} ok heads=${heads}`), r.stdout);
-  r = rc('--packs', PACK, mutant('rc-tilde', (_dir, pack) => { pack.e['~x'] = [['s.', ['x'], null, 'wiktionary']]; }));
+  assert.ok(r.stdout.split('\n').includes('contract ok'), r.stdout);
+  assert.match(r.stdout, new RegExp(`^${PACK} ok heads=${heads} reading_rate \\d+\\.\\d% \\(sample es, floor 93\\.8%\\) `, 'm'));
+  r = runtimeCheck(['--packs', PACK, mutant('rc-tilde', (_dir, pack) => { pack.e['~x'] = [['s.', ['x'], null, 'wiktionary']]; })]);
   assert.equal(r.status, 1);
   assert.ok(r.stdout.includes(`${PACK} FAIL dictionary pack: e["~x"] starts with "~"`), r.stdout);
-  r = rc(OUT);
+  r = runtimeCheck([OUT]);
   assert.equal(r.status, 1, 'the other 29 packs are missing');
   assert.equal(r.stdout.split('\n').filter((l) => / FAIL missing /.test(l)).length, 29, r.stdout);
-  assert.match(r.stdout, /runtime-check: 1\/30 packs parse/);
-  assert.equal(rc('--packs', 'xx-yy', OUT).status, 2);
+  assert.match(r.stdout, /runtime-check: contract ok, 1\/30 packs pass/);
+  assert.equal(runtimeCheck(['--packs', 'xx-yy', OUT]).status, 2);
+});
+
+test('runtime-check.cjs: a common.py constant the runtime does not hold fails the contract', () => {
+  // A copy of tools/dict with one constant changed, run against this checkout's shared/.
+  const variant = (name, edit) => {
+    const dir = path.join(tmp, `tools-${name}`);
+    cpSync(TOOLS, dir, { recursive: true });
+    const file = path.join(dir, 'common.py');
+    const src = readFileSync(file, 'utf8');
+    const changed = edit(src);
+    assert.notEqual(changed, src, `${name}: the edit applies`);
+    writeFileSync(file, changed);
+    return dir;
+  };
+  const cases = [
+    ['recs', (s) => s.replace(/^MAX_RECS = \d+$/m, 'MAX_RECS = 1'),
+      'contract FAIL common.MAX_RECS=1 != DictPack.LIMITS.MAX_RECORDS=6'],
+    ['mark', (s) => s.replace(/^FORM_MARK = '~'$/m, "FORM_MARK = '^'"),
+      'contract FAIL common.FORM_MARK="^" != the mark DictPack.formKey writes="~"'],
+    ['host', (s) => s.replace(/^CREDIT_HOSTS = \(/m, "CREDIT_HOSTS = ('example.org', "),
+      'contract FAIL common.CREDIT_HOSTS example.org: parsePack takes https://example.org/ under 0 credit ids'],
+  ];
+  for (const [name, edit, line] of cases) {
+    const r = runtimeCheck(['--packs', PACK, OUT], variant(name, edit));
+    assert.equal(r.status, 1, `${name}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.stdout.includes(line), `${name}: ${r.stdout}`);
+    assert.match(r.stdout, /runtime-check: contract FAIL, 1\/1 packs pass/, name);
+  }
+  assert.equal(runtimeCheck(['--packs', PACK, OUT], variant('same', (s) => `${s}\n`)).status, 0);
 });

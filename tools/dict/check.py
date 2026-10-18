@@ -1,8 +1,8 @@
 #!/usr/bin/env -S python3 -I
 """Check every built dictionary pack against the v1 contract and the acceptance lines.
 
-Usage: python3 -I tools/dict/check.py <out-dir> [--samples DIR] [--opencc DIR] [--norm DIR]
-           [--work DIR] [--packs a-b,c-d] [--ver YYYY.MM.DD] [--report DIR] [--jobs N]
+Usage: python3 -I tools/dict/check.py <out-dir> [--opencc DIR] [--norm DIR] [--work DIR]
+           [--packs a-b,c-d] [--ver YYYY.MM.DD] [--report DIR] [--jobs N]
 
 One line per pack (`OK <pack> ...` or `FAIL <pack>: <reasons>`), then a summary line; the exit
 status is non-zero when any pack fails or is missing. Checked per pack:
@@ -18,8 +18,9 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             the extension's parsePack refuses a whole pack over (D-641): a head starting with
             common.FORM_MARK, a blank gloss or one over common.GLOSS_MAX UTF-16 units, an
             `x` row with an empty sentence or an id that is not a positive integer, a source
-            url that is not https, a credit other than jmdict/tatoeba or off CREDIT_HOSTS.
-            tools/dict/runtime-check.cjs runs parsePack itself on the same packs
+            url that is not https; `credits` exactly common.credits_for the sources used.
+            tools/dict/runtime-check.cjs runs parsePack itself on the same packs, and so
+            holds every credit to the runtime's own host rule (creditHref)
   pos       every record's pos is '' or a value of the source language's table
             (common.POS_ABBR, FORMAT.md; D-677 C3)
   heads     common.heads_count >= 0.95 x common.HEADS_BASE, in the unit of
@@ -27,11 +28,8 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             the words the R8 gloss-text form-of rule moved to `f`) or heads
   size      brotli -q 11, recomputed here from the shipped pack (not read from the build's
             stats): the `e` part (x, f, m = {}) <= common.br_budget, the pack with x = {} <=
-            common.br_ceiling; with examples <= 2x that, unless the pack was already cut to
-            one example per head
-  reading   design §2.1 metric on the sample tokens: of the sample types that resolve to a
-            head whose records give a translation word (common.translation_word of the first
-            record that has one), the share whose record carries a reading; >= READING_BASE - 3
+            common.br_ceiling; with examples <= common.EX_RATIO_MAX x that, unless the pack
+            was already cut to one example per head
   x         every row: source sentence <= 80 characters and containing the head or one of its
             `f` forms (common.contains), no repeated sentence, shortest first, the two Tatoeba
             ids both int or both null
@@ -55,20 +53,18 @@ status is non-zero when any pack fails or is missing. Checked per pack:
             pass and a Latin or digit change does not); its OpenCC t2s is its value, or it is
             a CC-CEDICT variant pair; the share whose t2s differs must stay under D578_MAX_OTHER
 
-Sample tokens are resolved the way the runtime resolves a looked-up word: the token, its
-lower case, then `f` of each, and for ko the KO_PARTICLES stripped (the one runtime rule).
---report writes packs.csv and coverage.csv (sample hit rates, reading rate, sample example
-rate and, for en->zh, the hit rate without the CC-CEDICT reverse-lookup heads).
+The sample coverage (hit rates and the design §2.1 reading rate, gated at
+common.reading_floor) is not measured here: runtime-check.cjs resolves every sample token
+with the extension's own DictPack.foldCandidates. --report writes packs.csv.
 """
 import argparse
 import csv
 import json
 import os
 import re
-import subprocess
 import sys
-import urllib.parse
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import attribution  # noqa: E402
@@ -86,82 +82,10 @@ LICENSE = os.path.join(HERE, 'cc-by-sa-4.0.txt')
 KEYS = ('v', 'src', 'tgt', 'ver', 'lic', 'sources', 'credits', 'e', 'x', 'm', 'f')
 VER = re.compile(r'^\d{4}\.\d{2}\.\d{2}$')
 ORIGINS = ('wiktionary', 'cedict', 'jmdict')
-EX_RATIO_MAX = 2.0
 D578_MAX_OTHER = 0.05
-# Korean particles stripped from a looked-up word (spike hitrate.KO_PARTICLES, verbatim).
-KO_PARTICLES = ['에서는', '으로는', '에게서', '으로써', '으로서', '에서도', '한테서', '까지는',
-                '부터는', '이라고', '으로', '에서', '에게', '한테', '까지', '부터', '처럼', '보다',
-                '마다', '조차', '라고', '께서', '은', '는', '이', '가', '을', '를', '의', '에',
-                '로', '와', '과', '도', '만', '들', '요']
-PACKS_CSV = ('pair', 'heads', 'f_keys', 'reading_rate', 'examples_head_rate', 'raw',
-             'br_no_examples', 'br_with_examples', 'heads_unit', 'heads_counted', 'heads_floor',
-             'br_e', 'br_budget', 'br_ceiling', 'reading_floor')
-COVERAGE_CSV = ('pair', 'sample', 'sample_types', 'sample_tokens', 'hit_types_pct',
-                'hit_tokens_pct', 'reading_word_forms', 'reading_found', 'reading_rate',
-                'reading_floor', 'record_reading_rate', 'example_hit_types_pct',
-                'example_hit_tokens_pct', 'cedict_reverse_heads', 'hit_types_pct_without_reverse',
-                'hit_tokens_pct_without_reverse', 'f_t2s_other')
-
-
-def brotli_bytes(data):
-    return len(subprocess.run(['brotli', '-q', '11', '-c'], input=data, capture_output=True,
-                              check=True).stdout)
-
-
-# ---------------- the runtime resolver ----------------
-def candidates(tok, s):
-    out = [tok]
-    low = tok.lower()
-    if low != tok:
-        out.append(low)
-    if s == 'ko':
-        out += [tok[:-len(p)] for p in KO_PARTICLES if tok.endswith(p) and len(tok) > len(p)]
-    return out
-
-
-def resolve(tok, s, e, f):
-    for c in candidates(tok, s):
-        if c in e:
-            return c
-        h = f.get(c)
-        if h is not None:
-            return h
-    return None
-
-
-def first_word_record(recs, t):
-    """The record whose translation word the card shows first (§2.1: the first candidate)."""
-    for rec in recs:
-        if C.translation_word(rec[1], t):
-            return rec
-    return None
-
-
-def sample_metrics(pack, s, t, sample, skip=frozenset()):
-    e, f, x = pack['e'], pack['f'], pack['x']
-    if skip:
-        e = {h: v for h, v in e.items() if h not in skip}
-        f = {k: h for k, h in f.items() if h not in skip}
-    hit_t = hit_n = wf = rd = ex_t = ex_n = 0
-    for tok, n in sample:
-        h = resolve(tok, s, e, f)
-        if h is None:
-            continue
-        hit_t += 1
-        hit_n += n
-        if h in x:
-            ex_t += 1
-            ex_n += n
-        rec = first_word_record(e[h], t)
-        if rec is not None:
-            wf += 1
-            rd += rec[2] is not None
-    types, tokens = len(sample), sum(n for _, n in sample)
-    pct = (lambda a, b: round(100 * a / b, 1) if b else 0.0)
-    return {'sample_types': types, 'sample_tokens': tokens,
-            'hit_types_pct': pct(hit_t, types), 'hit_tokens_pct': pct(hit_n, tokens),
-            'reading_word_forms': wf, 'reading_found': rd, 'reading_rate': pct(rd, wf),
-            'example_hit_types_pct': pct(ex_t, hit_t), 'example_hit_tokens_pct': pct(ex_n, hit_n)}
+PACKS_CSV = ('pair', 'heads', 'f_keys', 'examples_head_rate', 'raw', 'br_no_examples',
+             'br_with_examples', 'heads_unit', 'heads_counted', 'heads_floor', 'br_e',
+             'br_budget', 'br_ceiling', 'f_t2s_other')
 
 
 # ---------------- per pack ----------------
@@ -180,27 +104,14 @@ def reading_ok(reading, t):
 
 
 def record_ok(r, t, used):
-    """One `e` record as parsePack reads it (dict-pack.js checkRecords): [pos, glosses,
-    reading, origin], 1..MAX_GLOSS glosses each with text and at most GLOSS_MAX UTF-16 units,
-    an origin the pack's sources list."""
+    """One `e` record, held stricter than parsePack (dict-pack.js checkRecords) holds it:
+    [pos, glosses, reading, origin], 1..MAX_GLOSS glosses, every one (not just some) with
+    text and at most GLOSS_MAX UTF-16 units, an origin the pack's sources list, a reading
+    of the target's form (reading_ok). A record that passes here parses there."""
     return isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) \
         and isinstance(r[1], list) and 0 < len(r[1]) <= C.MAX_GLOSS \
         and all(isinstance(g, str) and C.gloss_fits(g) for g in r[1]) \
         and r[3] in ORIGINS and r[3] in used and reading_ok(r[2], t)
-
-
-def credits_runtime_ok(credits):
-    """dict-entry.js creditHref: only jmdict/tatoeba, a label, an https href on CREDIT_HOSTS
-    with no user or port."""
-    if not isinstance(credits, dict) or not set(credits) <= {'jmdict', 'tatoeba'}:
-        return False
-    for c in credits.values():
-        u = urllib.parse.urlsplit(c.get('href') or '') if isinstance(c, dict) else None
-        if not (u and c.get('label') and u.scheme == 'https' and u.hostname in C.CREDIT_HOSTS
-                and not u.username and not u.password and u.port is None
-                and u.netloc == u.hostname):
-            return False
-    return True
 
 
 def wiktionary_attributed(pack, attribution_text):
@@ -233,8 +144,6 @@ def check_shape(pack, src, tgt, ver, err):
         err.append('source url not https')
     if pack['credits'] != C.credits_for(used):
         err.append('credits')
-    if not credits_runtime_ok(pack['credits']):
-        err.append('credits outside the runtime hosts (jmdict/tatoeba on CREDIT_HOSTS only)')
     s, t = C.iso(src), C.iso(tgt)
     e, x, m, f = pack['e'], pack['x'], pack['m'], pack['f']
     pos_ok = C.pos_values(s)
@@ -365,13 +274,11 @@ def check_pack(out, name, opts):
     used = check_shape(pack, src, tgt, opts['ver'], err)
     if used is None:
         return {'pack': name, 'errors': err}
-    lic = os.path.join(d, 'LICENSE.txt')
-    with open(LICENSE, 'rb') as a:
-        want = a.read()
-    if not os.path.exists(lic) or open(lic, 'rb').read() != want:
+    lic = Path(d, 'LICENSE.txt')
+    if not lic.exists() or lic.read_bytes() != Path(LICENSE).read_bytes():
         err.append('LICENSE.txt missing or not the CC BY-SA 4.0 text')
-    att = os.path.join(d, 'ATTRIBUTION.txt')
-    att_text = open(att, encoding='utf-8').read() if os.path.exists(att) else ''
+    att = Path(d, 'ATTRIBUTION.txt')
+    att_text = att.read_text(encoding='utf-8') if att.exists() else ''
     if att_text != attribution.text(src, tgt, pack['ver'], used):
         err.append('ATTRIBUTION.txt missing or not the text for the sources used')
     if not wiktionary_attributed(pack, att_text):
@@ -383,54 +290,27 @@ def check_pack(out, name, opts):
     floor = int(C.HEADS_FLOOR * C.HEADS_BASE[name])
     if counted < floor:
         err.append(f'{unit} {counted} < {floor}')
-    br_e = brotli_bytes(C.dumps({**pack, 'x': {}, 'f': {}, 'm': {}}).encode('utf-8'))
-    br_no = brotli_bytes(C.dumps({**pack, 'x': {}}).encode('utf-8'))
-    br_with = brotli_bytes(raw_bytes)
+    br_e = C.brotli_size(C.dumps({**pack, 'x': {}, 'f': {}, 'm': {}}).encode('utf-8'))
+    br_no = C.brotli_size(C.dumps({**pack, 'x': {}}).encode('utf-8'))
+    br_with = C.brotli_size(raw_bytes)
     budget, ceiling = C.br_budget(name), C.br_ceiling(name)
     if br_e > budget:
         err.append(f'br_e {br_e} > {budget}')
     if br_no > ceiling:
         err.append(f'br_no {br_no} > {ceiling}')
     one = all(len(rows) <= 1 for rows in pack['x'].values())
-    if br_with > EX_RATIO_MAX * br_no and not one:
-        err.append(f'br_with {br_with} > {EX_RATIO_MAX}x br_no and examples not cut to one')
+    if br_with > C.EX_RATIO_MAX * br_no and not one:
+        err.append(f'br_with {br_with} > {C.EX_RATIO_MAX}x br_no and examples not cut to one')
     check_examples(pack, s, err)
     check_records(pack, s, t, R.Readings(opts['norm'], opts['work'], t, tgt == 'zh-TW'), err)
     t2s = opencc.t2s(opts['opencc']) if s == 'zh' else None
     d578 = check_d578(pack, t2s, err) if s == 'zh' else None
-    den = num = 0
-    for recs in pack['e'].values():
-        for rec in recs:
-            if C.translation_word(rec[1], t):
-                den += 1
-                num += rec[2] is not None
-    rows = []
-    reverse = {h for h, recs in pack['e'].items() if all(r[3] == 'cedict' for r in recs)} \
-        if (s, t) == ('en', 'zh') else set()
-    samples = [src] + [o for o, _ in C.SERVES.get((src, tgt), ())]
-    floor_r = round(C.READING_BASE[name] - C.READING_SLACK, 1)
-    for lang in samples:
-        sample = C.read_samples(opts['samples'], lang)
-        r = {'pair': name, 'sample': lang, **sample_metrics(pack, s, t, sample),
-             'reading_floor': floor_r,
-             'record_reading_rate': round(100 * num / den, 1) if den else 0.0,
-             'f_t2s_other': d578 if d578 is not None else ''}
-        if reverse:
-            wo = sample_metrics(pack, s, t, sample, skip=reverse)
-            r.update(cedict_reverse_heads=len(reverse),
-                     hit_types_pct_without_reverse=wo['hit_types_pct'],
-                     hit_tokens_pct_without_reverse=wo['hit_tokens_pct'])
-        rows.append(r)
-    own = rows[0]
-    if own['reading_rate'] < floor_r:
-        err.append(f"reading {own['reading_rate']}% < {floor_r}%")
     xh = round(100 * len(pack['x']) / heads, 1) if heads else 0.0
     return {'pack': name, 'errors': err, 'heads': heads, 'f_keys': len(pack['f']),
-            'reading_rate': own['reading_rate'], 'examples_head_rate': xh,
-            'raw': len(raw_bytes), 'br_no_examples': br_no, 'br_with_examples': br_with,
-            'br_e': br_e, 'br_budget': budget, 'br_ceiling': ceiling, 'heads_unit': unit,
-            'heads_counted': counted, 'heads_floor': floor, 'reading_floor': floor_r,
-            'x_one': one, 'coverage': rows}
+            'examples_head_rate': xh, 'raw': len(raw_bytes), 'br_no_examples': br_no,
+            'br_with_examples': br_with, 'br_e': br_e, 'br_budget': budget,
+            'br_ceiling': ceiling, 'heads_unit': unit, 'heads_counted': counted,
+            'heads_floor': floor, 'x_one': one, 'f_t2s_other': '' if d578 is None else d578}
 
 
 def line(r):
@@ -438,7 +318,6 @@ def line(r):
         return f"FAIL {r['pack']}: " + '; '.join(r['errors'])
     unit = '' if r['heads_unit'] == 'heads' else f" {r['heads_unit']}={r['heads_counted']}"
     return (f"OK {r['pack']} heads={r['heads']}{unit} (>={r['heads_floor']}) f={r['f_keys']} "
-            f"reading={r['reading_rate']}% (>={r['reading_floor']}%) "
             f"x_heads={r['examples_head_rate']}% br_e={r['br_e']} (<={r['br_budget']}) "
             f"br_no={r['br_no_examples']} (<={r['br_ceiling']}) br_with={r['br_with_examples']}"
             + (' [x one per head]' if r['x_one'] else ''))
@@ -452,19 +331,12 @@ def write_report(rep, results):
         for r in results:
             if 'heads' in r:
                 w.writerow({**r, 'pair': r['pack']})
-    with open(os.path.join(rep, 'coverage.csv'), 'w', newline='', encoding='utf-8') as fh:
-        w = csv.DictWriter(fh, COVERAGE_CSV, extrasaction='ignore')
-        w.writeheader()
-        for r in results:
-            for row in r.get('coverage', ()):
-                w.writerow(row)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('out')
-    ap.add_argument('--samples', help='tokens.<lang>.tsv directory (default <out>/../samples)')
     ap.add_argument('--opencc', help='OpenCC tables (default <out>/../norm/opencc)')
     ap.add_argument('--norm', help='normalized datasets for G1 (default <out>/../norm)')
     ap.add_argument('--work', help='pairs.py work tables for G1 (default <out>/../work)')
@@ -475,14 +347,10 @@ def main():
     a = ap.parse_args()
     out = os.path.abspath(a.out)
     base = os.path.dirname(out)
-    opts = {'samples': os.path.abspath(a.samples or os.path.join(base, 'samples')),
-            'opencc': os.path.abspath(a.opencc or os.path.join(base, 'norm', 'opencc')),
+    opts = {'opencc': os.path.abspath(a.opencc or os.path.join(base, 'norm', 'opencc')),
             'norm': os.path.abspath(a.norm or os.path.join(base, 'norm')),
             'work': os.path.abspath(a.work or os.path.join(base, 'work')),
             'ver': a.ver}
-    for lang in C.LANGS:
-        if not os.path.exists(os.path.join(opts['samples'], f'tokens.{lang}.tsv')):
-            raise SystemExit(f"check: no sample tokens.{lang}.tsv in {opts['samples']}")
     names = a.packs.split(',') if a.packs else [C.pack_name(*p) for p in C.PACKS]
     for n in names:
         if C.split_pack(n) not in C.PACKS:
