@@ -61,6 +61,7 @@ const elements = {
   enableImageOcrTranslation: document.getElementById('enableImageOcrTranslation'),
   ocrEngine: document.getElementById('ocrEngine'),
   enableImageOcrHoverButton: document.getElementById('enableImageOcrHoverButton'),
+  offlineDictionary: document.getElementById('offlineDictionary'),
   ocrSubOptions: document.getElementById('ocrSubOptions'),
   captionDisplayMode: document.getElementById('captionDisplayMode'),
   captionTranslationPosition: document.getElementById('captionTranslationPosition'),
@@ -172,6 +173,8 @@ const defaultSettings = {
   // The hover shortcut over large images — on by default, it is the flow's
   // front door. Matches background.js.
   enableImageOcrHoverButton: true,
+  // The offline dictionary card (options-dict.js draws its pack list).
+  offlineDictionary: true,
   // enableComicTranslation / enablePdfTranslation: shared/account-gate.js (see
   // the note on defaultSettings in background/settings.js). Empty
   // comicTargetLang / pdfTargetLang follow targetLang above.
@@ -242,6 +245,7 @@ async function loadSettings() {
     // Default-on, so only a stored false turns it off.
     elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton !== false;
     syncOcrSubState();
+    elements.offlineDictionary.checked = result.offlineDictionary !== false;
     // The switches themselves are drawn by renderAccountFeatures, which also
     // says under a switch that is on when this device has no account yet.
     storedComicEnabled = !!result.enableComicTranslation;
@@ -361,6 +365,7 @@ function collectSettings() {
     enableImageOcrTranslation: elements.enableImageOcrTranslation.checked,
     ocrEngine: elements.ocrEngine.value,
     enableImageOcrHoverButton: elements.enableImageOcrHoverButton.checked,
+    offlineDictionary: elements.offlineDictionary.checked,
     captionDisplayMode: elements.captionDisplayMode.value,
     captionTranslationPosition: elements.captionTranslationPosition.value,
     autoEnableCaptions: elements.autoEnableCaptions.checked,
@@ -577,6 +582,7 @@ const IMMEDIATE_SAVE_FIELDS = [
   'enableImageOcrTranslation',
   'ocrEngine',
   'enableImageOcrHoverButton',
+  'offlineDictionary',
   'captionDisplayMode',
   'captionTranslationPosition',
   'autoEnableCaptions',
@@ -848,6 +854,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSyncMirror();
   setupCustomRules();
   setupGlossary();
+  setupDictPacks();
   setupBlabEngine();
   setupTransfer();
   // Awaited, unlike the account below: this one only reads chrome.storage in

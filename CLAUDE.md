@@ -582,7 +582,8 @@ menu or the popup; top frame only).
 - **Key layout**: one `chrome.storage.sync` key per rule, `customRule:<id>`,
   and no index key — two devices adding rules at once would overwrite an
   index. Reading every rule is `get(null)` filtered by
-  `CustomRules.KEY_PREFIX` (Chrome 116 has no `getKeys()`).
+  `CustomRules.KEY_PREFIX`: a read needs the values, so one `get(null)`
+  beats `getKeys()` plus a second `get`.
 - **Writes** go through the service worker's single-writer queue built by
   `shared/storage-writer.js` (`StorageWriter.create`), shared with
   `SiteRules` and `AutoStats`; the quota check is

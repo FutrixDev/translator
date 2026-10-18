@@ -10,6 +10,14 @@ const { applyBaseSettings, serveExamplePage } = require('./helpers');
 const extensionPath = path.resolve(__dirname, '../../');
 
 const ONBOARDING_PATH = '/onboarding/onboarding.html';
+
+// The offline dictionary's download host never resolves in a test browser. A
+// fresh install fetches the dictionary manifest from it whenever the target
+// language is not English (background/dict-packs.js), and every context here is
+// a fresh install: without this each run would download real packs. A spec that
+// wants packs serves its own with context.route (dict-packs.spec.js); a routed
+// request is answered before any lookup of the host.
+const DICT_HOST_UNREACHABLE = '--host-resolver-rules=MAP dl.blab-translation.com ~NOTFOUND';
 const ONBOARDING_WAIT_MS = 10_000;
 
 /**
@@ -60,6 +68,7 @@ const test = base.extend({
         `--load-extension=${extensionPath}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
+        DICT_HOST_UNREACHABLE,
       ],
       viewport: { width: 1280, height: 720 },
     });

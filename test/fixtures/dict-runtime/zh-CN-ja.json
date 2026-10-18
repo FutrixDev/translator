@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "src": "zh-CN",
+  "tgt": "ja",
+  "ver": "2026.10.13",
+  "lic": "CC-BY-SA-4.0",
+  "sources": [
+    { "id": "wiktionary", "name": "Wiktionary (kaikki.org)", "license": "CC BY-SA 4.0", "url": "https://kaikki.org/" }
+  ],
+  "credits": {},
+  "e": {
+    "苹果": [["noun", ["りんご"], "りんご", "wiktionary"]],
+    "学校": [["noun", ["学校"], "がっこう", "wiktionary"]]
+  },
+  "x": {},
+  "m": {},
+  "f": {
+    "蘋果": "苹果",
+    "學校": "学校"
+  }
+}

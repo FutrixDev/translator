@@ -21,10 +21,11 @@
   'use strict';
 
   // The Chrome release where the Translator API reached stable. manifest.json
-  // stays at minimum_chrome_version 116 on purpose — everything else in the
-  // extension works there, and a user on 116 with their own API key has a
-  // perfectly good product. What they must not get is silence: on 116–137 the
-  // built-in engine is simply absent, and the status line says so.
+  // stays below it on purpose (minimum_chrome_version 130, for the offline
+  // dictionary's storage.local.getKeys()) — everything else in the extension
+  // works there, and a user on 130 with their own API key has a perfectly good
+  // product. What they must not get is silence: on 130–137 the built-in engine
+  // is simply absent, and the status line says so.
   const BUILTIN_MIN_CHROME = 138;
 
   /**

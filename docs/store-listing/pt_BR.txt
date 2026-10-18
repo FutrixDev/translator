@@ -49,6 +49,7 @@ Original e tradução lado a lado, em páginas web, PDFs, e-books, vídeos, mang
 • Com o seu próprio modelo de IA, o texto vai direto para o seu endpoint, com a sua própria chave — nunca passa por nós.
 • O Blab Translation envia o texto aos nossos servidores para traduzi-lo e não guarda nada.
 • Arquivos PDF, documentos e HQs são processados nos nossos servidores e excluídos após 7 dias.
+• Os pacotes de dicionário offline são baixados do nosso servidor e ficam no seu dispositivo; é para isso que serve a permissão de armazenamento ilimitado. Procurar uma palavra num pacote não envia nada.
 • Sem análises de uso. Sem rastreamento de anúncios.
 
 ATALHOS

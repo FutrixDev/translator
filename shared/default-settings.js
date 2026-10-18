@@ -83,6 +83,8 @@
     // defaultSettings. (There is no auto-translate setting: OCR is always
     // recognise-first, with a Translate button in the popup.)
     enableImageOcrHoverButton: true,
+    // The offline dictionary: ctx.dictLookup answers null while it is off.
+    offlineDictionary: true,
     // enableComicTranslation / enablePdfTranslation: shared/account-gate.js.
     ...root.AccountGate.FEATURE_DEFAULTS,
     comicTargetLang: '',

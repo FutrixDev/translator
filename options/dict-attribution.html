@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dictionary data sources</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/dict.css">
+</head>
+<body>
+  <!-- 词典数据来源（设计 §6、D-570）：设置页页脚的链接打开这一页。按本机
+       chrome.storage.local 的 dict:packs 列出每个已装包的数据来源和许可，并链到
+       包旁边发布的 LICENSE.txt / ATTRIBUTION.txt。只读，不写任何东西。 -->
+  <div class="container">
+    <header class="header">
+      <div class="header-text">
+        <h1 id="dictAttributionTitle"></h1>
+        <p id="dictAttributionIntro"></p>
+      </div>
+    </header>
+    <main id="dictAttributionList" class="dict-attribution-list"></main>
+  </div>
+
+  <script src="../shared/lang-tags.js"></script>
+  <script src="../shared/target-lang.js"></script>
+  <script src="../i18n/lang/en.js"></script>
+  <script src="../i18n/lang/zh-CN.js"></script>
+  <script src="../i18n/lang/zh-TW.js"></script>
+  <script src="../i18n/lang/ja.js"></script>
+  <script src="../i18n/lang/ko.js"></script>
+  <script src="../i18n/lang/fr.js"></script>
+  <script src="../i18n/lang/de.js"></script>
+  <script src="../i18n/lang/es.js"></script>
+  <script src="../i18n/lang/pt.js"></script>
+  <script src="../i18n/lang/ru.js"></script>
+  <script src="../i18n/messages.js"></script>
+  <script src="../shared/dict-pack.js"></script>
+  <script src="dict-attribution.js"></script>
+</body>
+</html>

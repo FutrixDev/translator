@@ -1,0 +1,93 @@
+/* Blab Translation 设置页样式 —— 离线词典卡片（options-dict.js）和页脚的「词典数据
+   来源」链接。行的样子跟术语表一致（glossary.css 的 .glossary-entry）。 */
+
+.dict-pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dict-pack-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.dict-pack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.dict-pack-name {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* 文字色用 --text-secondary 不用 --text-muted：muted 在行底（--bg-secondary）上
+   浅色 3.26:1、暗色 3.02:1，secondary 是 5.07:1 / 5.93:1（D-609 要求 ≥ 4.5）。 */
+.dict-pack-meta,
+.dict-pack-state,
+#dictCard .hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dict-pack-failed {
+  color: var(--error);
+}
+
+/* 页脚左半边：版本号和「词典数据来源」排在一起。 */
+.footer-about {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 页脚在 --bg-primary 上：muted 只有 2.99:1（浅）/ 3.2:1（暗），secondary 是
+   4.66:1 / 6.29:1。 */
+.footer-link {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.footer-link:hover {
+  color: var(--text-primary);
+}
+
+/* 词典数据来源页（dict-attribution.html）。 */
+.dict-attribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dict-attribution-sources {
+  margin: 8px 0 12px 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.8;
+}
+
+.dict-attribution-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+}
+
+/* 卡片底（--bg-card）上 --accent-primary 浅色 4.35:1、暗色 4.17:1，都不到 4.5；
+   没有哪个强调色两档都够，链接改用正文色加下划线（15.9:1 以上）。 */
+.dict-attribution-list a {
+  color: var(--text-primary);
+  text-decoration: underline;
+}

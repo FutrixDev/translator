@@ -27,7 +27,9 @@ function t(key) {
 // Apply i18n to page
 function applyI18n(lang) {
   currentUILang = getUILanguage(lang);
-  
+  // 屏幕阅读器和断词按 <html lang> 走，options.html 里写死的 en 只是起点（D-609）。
+  document.documentElement.lang = currentUILang;
+
   // Update all elements with data-i18n attribute
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
@@ -76,13 +78,15 @@ function applyI18n(lang) {
   // Update document title
   document.title = `${t('appName')} - ${t('settings')}`;
 
-  // 站点审计表、本机统计、站点翻译规则和术语表是运行时画出来的（主机名、按 locale 格式
-  // 化的数字、「总是翻译」这类行内文案），身上没有 data-i18n，上面那几轮选择器一
-  // 个也扫不到。不在这里重画，换过界面语言的中文页面上就留着一排英文的按钮。
+  // 站点审计表、本机统计、站点翻译规则、术语表和离线词典包列表是运行时画出来的
+  // （主机名、按 locale 格式化的数字、「总是翻译」这类行内文案），身上没有
+  // data-i18n，上面那几轮选择器一个也扫不到。不在这里重画，换过界面语言的中文
+  // 页面上就留着一排英文的按钮。
   renderSiteRules();
   renderAutoStats();
   drawCustomRules();
   drawGlossary();
+  drawDictPacks();
 
   // Show the real extension version from the manifest instead of a hard-coded
   // string, so the settings page never drifts from the released version.

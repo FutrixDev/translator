@@ -69,6 +69,8 @@ import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter, openShortcutSettings } from './media-hints.js';
 import { openOnboardingOnInstall } from './install.js';
+import { DICT_CHECK_ALARM, checkDictPacks, ensureDictAlarm, handleDictMessage, onDictInstalled } from './dict-packs.js';
+import { ensureDailyAlarm } from './daily-alarm.js';
 
 // 这个文件是 worker 的接线板：消息路由、生命周期、闹钟，加上路由直接分派的那几个
 // handler。每一样具体的活都在隔壁模块里 —— 菜单、PDF、OCR、AI 翻译。
@@ -310,6 +312,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'ACCOUNT_SITE_BASE':
       replyComic(comicClient.getApiBase().then(base => ({ base })), sendResponse);
       return true;
+
+    // Offline dictionary packs (MESSAGES in ./dict-packs.js). WANT comes
+    // from a lookup that found its pair missing and has already answered null:
+    // it is answered as soon as the download is queued. DELETE, INSTALL
+    // ("Download again") and RECOVER come from the settings page.
+    case 'DICT_PACK_WANT':
+    case 'DICT_PACK_DELETE':
+    case 'DICT_PACK_INSTALL':
+    case 'DICT_PACK_RECOVER':
+      handleDictMessage(message, sender)
+        .then(sendResponse)
+        .catch((error) => {
+          console.error(`[Blab Translation] ${message.type} failed`, globalThis.DictPack.pairOf(message.src, message.tgt), error);
+          sendResponse({ error: error.message });
+        });
+      return true;
   }
 });
 
@@ -357,14 +375,23 @@ function replyComic(promise, sendResponse) {
 // 都不是需要分钟级响应的东西。
 const CACHE_SWEEP_ALARM = 'translation-cache-sweep';
 
+// Only when it is not already set: re-creating it on every start would push
+// the sweep a day past each browser start (./daily-alarm.js).
 function ensureCacheSweepAlarm() {
-  chrome.alarms.create(CACHE_SWEEP_ALARM, { periodInMinutes: 24 * 60 });
+  ensureDailyAlarm(CACHE_SWEEP_ALARM)
+    .catch(error => console.error('Setting the translation cache sweep alarm failed:', error));
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== CACHE_SWEEP_ALARM) return;
   globalThis.TranslationCache.sweep()
     .catch(error => console.error('Translation cache sweep failed:', error));
+});
+
+// The dictionary packs' daily version check (./dict-packs.js).
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== DICT_CHECK_ALARM) return;
+  checkDictPacks().catch(error => console.error('[Blab Translation] dictionary pack check failed:', error));
 });
 
 // Context menu for right-click translation
@@ -378,6 +405,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   // First install only: the welcome page (./install.js decides which reasons).
   Promise.resolve(openOnboardingOnInstall(details))
     .catch(error => console.error('Opening the onboarding page failed:', error));
+  onDictInstalled(details).catch(error => console.error('[Blab Translation] dictionary preinstall failed:', error));
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -385,6 +413,7 @@ chrome.runtime.onStartup.addListener(() => {
   ensurePdfPollAlarm().catch(() => {});
   ensureCacheSweepAlarm();
   ensureMigrated().catch(error => console.error('AI profile migration failed:', error));
+  ensureDictAlarm().catch(error => console.error('[Blab Translation] setting the dictionary check alarm failed:', error));
 });
 
 // 快捷键（Alt+A 翻译整页、Alt+T 双语 / 仅译文、Alt+W 翻译整个页面）。分派表和

@@ -6,12 +6,13 @@
 // 不可控 —— 这个模块存在的全部理由就是这句话。
 //
 // **只缓存 AI 引擎的结果。** 内置引擎（Chrome 端上的 Translator）零网络、零费用，
-// 把它的译文也塞进来，省下的是几十毫秒，花掉的是用户 chrome.storage.local 那
-// 10 MB 配额里的一大块（本扩展没申请 unlimitedStorage，PDF 任务和漫画令牌也住在
-// 同一块地方）。顺带省掉了一个真问题：内置引擎的源语言是按**页面语言**推断出来
-// 的，同一段英文出现在法语页面和英语页面上，译出来可以不一样 —— 而推断出来的那
-// 个值不在请求里，键因子看不见它，跨页复用就会串味。（请求里**声明**的源语言是
-// 另一回事，它看得见，见下面的 sourceLang。）
+// 把它的译文也塞进来，省下的是几十毫秒，花掉的是用户 chrome.storage.local 里的
+// 空间（本扩展为离线词典包申请了 unlimitedStorage，配额不再是 10 MB 的硬顶，但
+// 词典包、PDF 任务和漫画令牌都住在同一块地方，缓存不该把它撑大）。顺带省掉了一
+// 个真问题：内置引擎的源语言是按**页面语言**推断出来的，同一段英文出现在法语
+// 页面和英语页面上，译出来可以不一样 —— 而推断出来的那个值不在请求里，键因子
+// 看不见它，跨页复用就会串味。（请求里**声明**的源语言是另一回事，它看得见，
+// 见下面的 sourceLang。）
 //
 // 键里有八个因子，少一个都会在某个时刻无声地供应错误的译文：
 //
@@ -292,6 +293,11 @@
     return keys.map((key) => resolved.get(key));
   }
 
+  /** 落盘的每一条译文的键：只取键名，不读值。 */
+  async function cacheKeys() {
+    return (await chrome.storage.local.getKeys()).filter((key) => key.startsWith(KEY_PREFIX));
+  }
+
   /**
    * 过期清理 + 字节预算。由 background 的 chrome.alarms 每天叫一次。
    *
@@ -301,7 +307,9 @@
   async function sweep() {
     let all;
     try {
-      all = await chrome.storage.local.get(null);
+      // 只读 tc: 键：storage.local 里还有离线词典的几十万条，get(null) 会把它们
+      // 整个读进内存（design ext-offline-dictionary §4.3）。
+      all = await chrome.storage.local.get(await cacheKeys());
     } catch (error) {
       console.warn('Blab Translation: translation cache sweep failed', error);
       return { removed: 0, kept: 0 };
@@ -310,7 +318,6 @@
     const doomed = [];
     const alive = [];
     for (const [key, entry] of Object.entries(all)) {
-      if (!key.startsWith(KEY_PREFIX)) continue;
       // 形状不对的条目（旧写法、被别的代码踩过）一并扔掉：留着也读不出来。
       if (!entry || typeof entry.t !== 'string' || !(entry.ts > cutoff)) doomed.push(key);
       else alive.push({ key, ts: entry.ts });
@@ -362,8 +369,7 @@
     // 这里**不吞错误**，而 sweep 吞 —— 两者的区别是有没有人在等答案。sweep 由
     // chrome.alarms 半夜叫起来，没清成就下次再说；clear 是有人刚按下按钮，按了
     // 没反应就是「说好能删，其实删不掉」。所以失败往上抛，让设置页说出来。
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(KEY_PREFIX));
+    const keys = await cacheKeys();
     if (keys.length > 0) await chrome.storage.local.remove(keys);
 
     // 广播。写什么无所谓，**变了**就行，所以必须每次都不一样：同一毫秒里连按两次

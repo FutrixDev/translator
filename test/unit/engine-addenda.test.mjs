@@ -173,6 +173,42 @@ test('context: pageContext is stripped before the message goes to the model, wha
   for (const message of ai.sent) assert.equal('pageContext' in message, false, message.type);
 });
 
+// 划词卡片的「用 AI 解释此处语境」（D-641）：请求自己带 explainContext，开关关着也
+// 发上下文；带来的那一句走同一条去标记、截上限的路，SW 的 validate 照样放行。
+const SENTENCE = 'The cat sat on the mat while {{1}}<b1>the dog</b1> slept.';
+const explained = (extra = {}) => ({
+  type: 'TRANSLATE', feature: 'selection', text: 'sat', targetLang: 'zh-CN', mode: 'word',
+  explainContext: true, pageContext: { before: SENTENCE, after: '' }, ...extra,
+});
+
+test('context: explainContext sends the card\'s sentence with the switch off (D-641)', async () => {
+  configure();
+  await send(explained());
+  const { addenda } = ai.sent[0];
+  assert.deepEqual(addenda, {
+    context: { title: 'A page title', before: 'The cat sat on the mat while the dog slept.', after: '' },
+  });
+  assert.doesNotThrow(() => globalThis.PromptAddenda.validate(addenda), 'the SW gate accepts it');
+  assert.equal('explainContext' in ai.sent[0], false, 'the flag never reaches the worker');
+  assert.equal('pageContext' in ai.sent[0], false, 'the sentence travels only inside addenda');
+  assert.equal(ctx.settings.aiPageContext, false, 'the flag never writes the setting');
+});
+
+test('context: explainContext keeps the before limit; without it there is no context', async () => {
+  configure();
+  await send(explained({ pageContext: { before: 'S'.repeat(LIMITS.before + 40), after: '' } }));
+  assert.equal(ai.sent[0].addenda.context.before.length, LIMITS.before);
+  configure();
+  await send(explained({ explainContext: undefined }));
+  assert.deepEqual(ai.sent[0].addenda, {}, 'no flag, switch off: no context');
+});
+
+test('context: explainContext never puts a context on the input box (standaloneText)', async () => {
+  configure();
+  await send(explained({ standaloneText: true }));
+  assert.deepEqual(ai.sent[0].addenda, {});
+});
+
 test('context: a split batch sends the same context with every part', async () => {
   configure({ aiPageContext: true });
   const terms = Array.from({ length: 70 }, (_, k) => ({ s: `term${k}`, t: `术语${k}` }));
