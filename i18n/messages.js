@@ -1,11 +1,11 @@
 // Blab Translation i18n Messages
 // Supports multiple languages based on user's target language setting
 //
-// 这里只剩「怎么取一条文案」和「界面语言算哪一门」。十门语言的字符串表在
+// 这里只剩「怎么取一条文案」和「界面语言算哪一门」。每门语言的字符串表在
 // i18n/lang/<tag>.js，一门一个文件，各自把自己那一格挂进下面这张注册表 —— 四千行
 // 挤在一个文件里的时候，改一句日文和改一句俄文落在同一份 diff 上。
 //
-// 注册表是谁先到谁建：这个文件和那十个文件在任何一份装载清单里都没有先后之分，
+// 注册表是谁先到谁建：这个文件和那些语言文件在任何一份装载清单里都没有先后之分，
 // 读它发生在 getMessage() 被调用的时候，那时该装的早装完了。
 const I18N_MESSAGES = (globalThis.I18N_MESSAGES = globalThis.I18N_MESSAGES || {});
 
@@ -32,7 +32,7 @@ function getMessage(key, lang = 'en') {
 }
 
 // The languages this file actually carries a full string table for.
-const UI_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
+const UI_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru', 'ar', 'id', 'vi', 'tr', 'it'];
 
 // Region-tagged tags the browser really reports, mapped onto the table above.
 // Chinese is the one that cannot be resolved by stripping the region: zh-HK and
@@ -88,7 +88,7 @@ function getUILanguage(explicitUiLang) {
 }
 
 // Node 这一侧没有装载清单可倚 —— 单测 import 这个文件、e2e spec require 它，两种
-// 写法在这个包里都落到 CommonJS，谁都不会顺带把十张表带进来。所以这里自己拉一遍。
+// 写法在这个包里都落到 CommonJS，谁都不会顺带把各语言的表带进来。所以这里自己拉一遍。
 // 浏览器里这一段不跑：service worker 按 ESM 装，页面按经典脚本装，两边都没有 require。
 if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
   for (const lang of UI_LANGUAGES) require(`./lang/${lang}.js`);

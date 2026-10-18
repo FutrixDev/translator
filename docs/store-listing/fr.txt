@@ -1,6 +1,6 @@
-Blab Translation — lisez tout en deux langues.
+Blab Translation — traduction IA pour les pages web, les PDF, les mangas et les sous-titres.
 
-L'original et la traduction côte à côte, sur les pages web, les PDF, les livres numériques, les vidéos, les mangas et les bandes dessinées. Choisissez votre moteur : le traducteur gratuit de Chrome, directement sur votre appareil, l'IA en laquelle vous avez confiance — modèles cloud ou locaux, avec votre propre clé — ou Blab Translation, inclus dans l'abonnement, sans clé.
+Lisez les pages web, les PDF, les livres numériques, les mangas et les bandes dessinées avec l'original et la traduction côte à côte, regardez YouTube avec des sous-titres bilingues et traduisez le texte de n'importe quelle image (OCR). Choisissez l'un des trois moteurs : le traducteur gratuit de Chrome, directement sur votre appareil, l'IA en laquelle vous avez confiance — modèles cloud ou locaux, avec votre propre clé — ou Blab Translation, inclus dans l'abonnement, sans clé.
 
 ★ PAGES WEB BILINGUES
 • La traduction sous chaque paragraphe. Mise en forme, liens et images intacts.

@@ -1,6 +1,6 @@
-Blab Translation — alles in zwei Sprachen lesen.
+Blab Translation — KI-Übersetzung für Webseiten, PDFs, Mangas und Untertitel.
 
-Original und Übersetzung nebeneinander, auf Webseiten, in PDFs, E-Books, Videos, Mangas und Comics. Wählen Sie Ihre Engine: Chromes kostenlosen Übersetzer direkt auf dem Gerät, die KI, der Sie vertrauen — Cloud- oder lokale Modelle, mit Ihrem eigenen Schlüssel — oder Blab Translation, im Abo enthalten, ganz ohne Schlüssel.
+Lesen Sie Webseiten, PDFs, E-Books, Mangas und Comics mit Original und Übersetzung nebeneinander, schauen Sie YouTube mit zweisprachigen Untertiteln und übersetzen Sie den Text in jedem Bild (OCR). Wählen Sie eine von drei Engines: Chromes kostenlosen Übersetzer direkt auf dem Gerät, die KI, der Sie vertrauen — Cloud- oder lokale Modelle, mit Ihrem eigenen Schlüssel — oder Blab Translation, im Abo enthalten, ganz ohne Schlüssel.
 
 ★ ZWEISPRACHIGE WEBSEITEN
 • Die Übersetzung unter jedem Absatz. Formatierung, Links und Bilder bleiben unberührt.

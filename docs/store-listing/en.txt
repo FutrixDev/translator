@@ -1,6 +1,6 @@
-Blab Translation — read anything in two languages.
+Blab Translation — AI translation for web pages, PDFs, manga and subtitles.
 
-Original and translation side by side, on web pages, PDFs, ebooks, videos, manga and comics. Pick your engine: Chrome's free on-device translator, the AI you trust — cloud or local models, with your own key — or Blab Translation, included with a subscription, no key needed.
+Read web pages, PDFs, ebooks, manga and comics with the original and the translation side by side, watch YouTube with dual subtitles, and translate the text in any image (OCR). Pick one of three engines: Chrome's free on-device translator, the AI you trust — cloud or local models, with your own key — or Blab Translation, included with a subscription, no key needed.
 
 ★ BILINGUAL WEB PAGES
 • Translation under every paragraph. Formatting, links and images untouched.

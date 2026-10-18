@@ -91,26 +91,6 @@
     return { text: t(pdfStatusKey(view)), isError: false };
   }
 
-  /**
-   * The web library's URL: the account's document list on the site. One job
-   * is viewed in the reader instead (DocJobs.readerUrl).
-   *
-   * Empty string rather than a broken link when there is no base yet (the
-   * service worker has not answered), or one that is not http(s) — the base
-   * comes out of chrome.storage, so a value that could turn an <a href> into
-   * `javascript:` never gets built into one.
-   */
-  function pdfLibraryUrl(base) {
-    let origin;
-    try {
-      origin = new URL(String(base || ''));
-    } catch {
-      return '';
-    }
-    if (!/^https?:$/.test(origin.protocol)) return '';
-    return `${origin.origin}/app/settings/pdf`;
-  }
-
   globalThis.AI_TRANSLATOR_PDF_UI = {
     pdfErrorMessageKey,
     pdfErrorMessage,
@@ -118,7 +98,6 @@
     pdfStatusLine,
     isRetryablePdfFailure,
     isLikelyPdfUrl,
-    pdfLibraryUrl,
     pdfFileNameFromUrl
   };
 })();

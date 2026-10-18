@@ -1,0 +1,26 @@
+{
+  "appName": {
+    "message": "Blab Translation: مترجم ذكاء اصطناعي للويب وPDF والمانغا والترجمة النصية",
+    "description": "Extension name shown in Chrome and the Web Store."
+  },
+  "appDescription": {
+    "message": "صفحات ويب ثنائية اللغة أو الجزء الذي تختاره، وPDF مع حفظ التخطيط، وكتب إلكترونية وWord، ومانغا، ونص الصور (OCR)، وترجمات YouTube.",
+    "description": "Extension description shown in Chrome and the Web Store (<=132 chars)."
+  },
+  "cmdTogglePage": {
+    "message": "ترجمة هذه الصفحة أو استعادتها",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdToggleTranslationOnly": {
+    "message": "التبديل بين العرض ثنائي اللغة والترجمة فقط",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateWholePage": {
+    "message": "ترجمة الصفحة بالكامل، بما فيها شريط التنقل والأشرطة الجانبية",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  },
+  "cmdTranslateMedia": {
+    "message": "ترجمة ملف PDF هذا أو القصة المصورة الظاهرة على الشاشة",
+    "description": "Keyboard shortcut description shown in chrome://extensions/shortcuts."
+  }
+}

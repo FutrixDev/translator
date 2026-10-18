@@ -150,25 +150,3 @@ test('jobPagePath is the upload page, taking over one job', () => {
   assert.equal(DocJobs.jobPagePath('job-1'), 'pdf/upload.html#job=job-1');
   assert.equal(DocJobs.jobPagePath('a b/c'), 'pdf/upload.html#job=a%20b%2Fc');
 });
-
-test('readerUrl: <origin>/app/reader/<encoded id>, the site path not kept', () => {
-  assert.equal(DocJobs.readerUrl('https://blab-translation.com', 'job-1'), 'https://blab-translation.com/app/reader/job-1');
-  assert.equal(DocJobs.readerUrl('https://staging.example.com/', 'job-1'), 'https://staging.example.com/app/reader/job-1');
-  assert.equal(DocJobs.readerUrl('http://127.0.0.1:8787/api/', 'job-1'), 'http://127.0.0.1:8787/app/reader/job-1');
-  assert.equal(DocJobs.readerUrl('https://blab-translation.com', 'a/b?c=d#e f'),
-    'https://blab-translation.com/app/reader/a%2Fb%3Fc%3Dd%23e%20f');
-});
-
-test('readerUrl: empty for no usable base, no id, or a pending local: id', () => {
-  for (const base of ['', null, undefined, 'not a url', 'javascript:alert(1)', 'chrome-extension://abc/', 'file:///x']) {
-    assert.equal(DocJobs.readerUrl(base, 'job-1'), '', String(base));
-  }
-  for (const id of ['', null, undefined]) {
-    assert.equal(DocJobs.readerUrl('https://blab-translation.com', id), '', String(id));
-  }
-  // A pending record names no server job; the reader would show "not found".
-  assert.equal(DocJobs.readerUrl('https://blab-translation.com', 'local:op-1'), '');
-  // Only the prefix marks a pending record.
-  assert.equal(DocJobs.readerUrl('https://blab-translation.com', 'job-local:1'),
-    'https://blab-translation.com/app/reader/job-local%3A1');
-});

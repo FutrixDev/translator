@@ -93,6 +93,13 @@
     document.documentElement.setAttribute('data-ai-translator-theme', theme);
   };
 
+  // 我们的面板按界面语言排版：阿拉伯语界面从右往左，别的界面一律从左往右，不随
+  // 页面自己的 dir。页面的 <html dir> 不动，只挂一个属性给 content/css/popup.css
+  // 的根规则读，和主题属性同一个做法。
+  ctx.applyUIDirection = function() {
+    document.documentElement.setAttribute('data-ai-translator-ui-dir', TargetLang.direction(ctx.uiLanguage()));
+  };
+
   ctx.isExtensionContextAvailable = function() {
     return typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage;
   };
@@ -130,6 +137,7 @@
       const result = await chrome.storage.sync.get(DefaultSettings.contentDefaults());
       Object.assign(ctx.settings, result);
       ctx.applyTheme(ctx.settings.theme);
+      ctx.applyUIDirection();
     } catch (error) {
       console.error('Blab Translation: Failed to load settings', error);
       Object.assign(ctx.settings, DefaultSettings.contentDefaults());
@@ -222,6 +230,10 @@
 
       if (changes.theme) {
         ctx.applyTheme(ctx.settings.theme);
+      }
+
+      if (changes.uiLanguage) {
+        ctx.applyUIDirection();
       }
 
       if (changes.enableHoverTranslation && !ctx.settings.enableHoverTranslation) {

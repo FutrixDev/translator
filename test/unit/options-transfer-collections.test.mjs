@@ -107,7 +107,7 @@ test('customRules row: export is the card\'s export file, the section value unwr
   assert.deepEqual(value.rules.map((rule) => rule.id), ['aaaa1111']);
 });
 
-test('every collection refusal has a sentence in all ten languages and is thrown somewhere', () => {
+test('every collection refusal has a sentence in every UI language and is thrown somewhere', () => {
   const page = loadPage();
   const refusals = page.get('COLLECTION_REFUSALS');
   const errorKeys = page.get('TRANSFER_ERROR_KEYS');

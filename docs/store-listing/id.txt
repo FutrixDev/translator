@@ -1,0 +1,58 @@
+Blab Translation — terjemahan AI untuk halaman web, PDF, manga, dan subtitle.
+
+Baca halaman web, PDF, ebook, manga, dan komik dengan teks asli dan terjemahannya berdampingan, tonton YouTube dengan subtitle ganda, dan terjemahkan teks di gambar apa pun (OCR). Pilih salah satu dari tiga mesin: penerjemah gratis bawaan Chrome yang berjalan di perangkat, AI yang Anda percayai — model cloud atau lokal, dengan kunci Anda sendiri — atau Blab Translation, termasuk dalam langganan, tanpa perlu kunci.
+
+★ HALAMAN WEB DWIBAHASA
+• Terjemahan di bawah setiap paragraf. Format, tautan, dan gambar tidak berubah.
+• Hanya terjemahan? Cukup satu tombol: Alt+T.
+• Konten utama didahulukan — menu dan bilah samping tidak mengganggu. Alt+W untuk seluruh halaman.
+• Hanya ingin satu bagian? Tunjuk sebuah area lalu pilih "Hanya terjemahkan di sini".
+• Menjangkau isi iframe dan Shadow DOM.
+• Rumus, LaTeX, dan kode tetap utuh. Makalah tetap mudah dibaca.
+• 6 gaya terjemahan. 76 bahasa. Teks kanan-ke-kiri ditampilkan dengan benar.
+
+★ TERJEMAHAN OTOMATIS YANG TAHU KAPAN BERHENTI
+• Kalimat yang sudah dalam bahasa Anda dilewati — meski penuh istilah asing.
+• Pesan pribadi tidak pernah diterjemahkan secara otomatis.
+• Aturan situs: tunjuk area mana pun — "Jangan terjemahkan di sini" atau "Biarkan asli". Tetapkan mesin, tambahkan CSS. Aturan disinkronkan dengan akun browser Anda.
+
+★ TERJEMAHAN PDF YANG MEMPERTAHANKAN TATA LETAK
+• PDF dwibahasa atau hanya terjemahan, dengan gambar, rumus, dan tata letak tepat di tempat semula.
+• Halaman gratis setiap bulan dengan masuk ke akun.
+
+★ EBOOK & DOKUMEN
+• Word, EPUB, TXT, dan Markdown → file dwibahasa atau terjemahan.
+• MOBI dan AZW3 dibaca secara dwibahasa di pembaca web.
+
+★ SUBTITLE GANDA
+• Subtitle YouTube diterjemahkan langsung: asli dan terjemahan, dua baris.
+• Berfungsi di pemutar HTML5 mana pun yang memiliki trek subtitle standar.
+• Aktifkan/nonaktifkan dengan satu klik langsung di bilah kontrol pemutar.
+
+★ PILIH, ARAHKAN KURSOR, CARI ARTI
+• Pilih teks untuk menerjemahkan — terjemahkan ulang, ganti mesin, salin, bacakan.
+• Kamus bawaan untuk kata dan frasa: pelafalan, arti, contoh, bentuk kata.
+• Bahasa yang terakhir Anda pilih ada di bagian atas menu bahasa.
+• Tahan tombol pengubah dan arahkan kursor untuk menerjemahkan satu paragraf.
+• Mengetik dalam bahasa yang berbeda dari halaman? Terjemahkan dengan satu klik.
+
+★ MANGA & KOMIK
+• Halaman manga dan komik digambar ulang dalam bahasa Anda — dan diwarnai jika Anda mau.
+
+★ TEKS DI GAMBAR APA PUN (OCR)
+• Klik kanan gambar apa pun — tangkapan layar, foto, grafik — untuk membaca teks di dalamnya dan menerjemahkannya.
+• Seluruh gambar, atau hanya area yang Anda tandai. Gambar besar juga menampilkan tombol "Kenali Teks" saat kursor diarahkan.
+• Dibaca secara offline di perangkat Anda: bahasa Inggris, serta Mandarin, Jepang, atau Korea jika itu bahasa antarmuka Anda — atau dengan model visi memakai kunci Anda sendiri untuk bahasa lain, foto, dan huruf bergaya.
+
+★ PRIVAT SECARA DEFAULT
+• Secara default, halaman web diterjemahkan di perangkat Anda. Teks Anda tidak pernah meninggalkan komputer Anda.
+• Dengan model AI Anda sendiri, teks langsung dikirim ke endpoint Anda dengan kunci Anda sendiri — tidak pernah melalui kami.
+• Blab Translation mengirim teks ke server kami untuk diterjemahkan dan tidak menyimpannya sama sekali.
+• File PDF, dokumen, dan komik diproses di server kami dan dihapus setelah 7 hari.
+• Paket kamus offline diunduh dari server kami dan disimpan di perangkat Anda; itulah fungsi izin penyimpanan tanpa batas. Mencari kata di paket tidak mengirim apa pun.
+• Tanpa analitik. Tanpa pelacakan iklan.
+
+PINTASAN
+Alt+A terjemahkan / kembalikan · Alt+T dwibahasa / hanya terjemahan · Alt+W seluruh halaman · Alt+M PDF atau komik
+
+Kebijakan privasi: https://blab-translation.com/app/legal/privacy

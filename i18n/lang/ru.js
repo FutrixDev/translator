@@ -1,6 +1,6 @@
 // Blab Translation 界面文案 —— Русский
 //
-// 十门语言一门一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
+// 每门语言一个文件，彼此之间、和 i18n/messages.js 之间都没有先后：每一份把
 // 自己那一格挂进同一张注册表（谁先到谁把它建出来），真正去读是在 getMessage()
 // 被调用的时候。要紧的只是「都装上了」—— 少一门的表现不是报错，是那门语言的
 // 界面整个退回英文。
@@ -127,6 +127,11 @@
     pdfNotifyRunningTitle: "Этот PDF уже переводится",
     pdfNotifyDoneTitle: 'Перевод документа завершён',
     pdfNotifyDoneBody: 'Перевод готов. Нажмите, чтобы открыть его.',
+    // The one store-rating ask after the third finished PDF (background/rating-ask.js).
+    ratingAskTitle: 'Оценить Blab Translation?',
+    ratingAskBody: 'Вы перевели уже несколько PDF. Если найдётся минута, оценка в Интернет-магазине Chrome расскажет нам и другим, что вы думаете. Больше не спросим.',
+    ratingAskRate: 'Оценить в Интернет-магазине Chrome',
+    ratingAskNoThanks: 'Нет, спасибо',
     pdfNotifyFailTitle: 'Не удалось перевести документ',
     pdfChargeRequired: 'Этот документ стоит {points} кредитов. У вас {balance}.',
     pdfChargeConfirm: 'Этот документ стоит кредитов. Перевести его?',

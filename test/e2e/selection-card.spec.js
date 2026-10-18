@@ -635,7 +635,7 @@ test.describe('selection icon and card actions', () => {
     }
   });
 
-  test('J-D9: the action row fits the card and stays put when a label changes, in all ten interface languages', async ({ page, context }) => {
+  test('J-D9: the action row fits the card and stays put when a label changes, in every interface language', async ({ page, context }) => {
     test.setTimeout(300_000);
     const mock = await startMockOpenAIServer();
     try {

@@ -74,7 +74,7 @@
               </button>
             </div>
           </div>
-          <div class="ai-translator-text">${escapeHtml(text)}</div>
+          <div class="ai-translator-text" dir="auto">${escapeHtml(text)}</div>
         </div>
         <div class="ai-translator-divider"></div>
         <div class="ai-translator-result">
@@ -98,7 +98,7 @@
               <div class="ai-translator-loading-line short"></div>
             </div>` : ''}
             <div class="ai-translator-result-body" ${pending ? 'hidden' : ''}>
-              <div class="ai-translator-translation-text">${escapeHtml(translation)}</div>
+              <div class="ai-translator-translation-text" dir="auto">${escapeHtml(translation)}</div>
               <div class="ai-translator-dict-entry" hidden></div>
             </div>
             <div class="ai-translator-error" role="alert" hidden></div>

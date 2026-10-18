@@ -1,0 +1,58 @@
+Blab Translation — web sayfaları, PDF dosyaları, manga ve altyazılar için yapay zeka çevirisi.
+
+Web sayfalarını, PDF dosyalarını, e-kitapları, mangaları ve çizgi romanları orijinali ve çevirisi yan yana olacak şekilde okuyun, YouTube videolarını çift altyazıyla izleyin ve herhangi bir görseldeki metni çevirin (OCR). Üç motordan birini seçin: Chrome cihaz üstü ücretsiz çevirmeni, güvendiğiniz yapay zeka (kendi anahtarınızla bulut veya yerel modeller) ya da aboneliğe dahil olan ve anahtar gerektirmeyen Blab Translation.
+
+★ İKİ DİLLİ WEB SAYFALARI
+• Her paragrafın altında çevirisi. Biçimlendirme, bağlantılar ve görseller olduğu gibi kalır.
+• Yalnızca çeviri mi? Tek tuş: Alt+T.
+• Önce ana içerik — menüler ve kenar çubukları araya girmez. Tüm sayfa için Alt+W.
+• Yalnızca bir kısmı mı istiyorsunuz? Bir alanı gösterip "Yalnızca burayı çevir" seçeneğini seçin.
+• iframe ve Shadow DOM içine de ulaşır.
+• Matematik, LaTeX ve kod bozulmaz. Makaleler okunaklı kalır.
+• 6 çeviri stili. 76 dil. Sağdan sola yazılan diller de doğru görünür.
+
+★ NE ZAMAN DURACAĞINI BİLEN OTOMATİK ÇEVİRİ
+• Zaten sizin dilinizde olan cümleler atlanır — yabancı terimlerle dolu olsalar bile.
+• Özel mesajlar hiçbir zaman otomatik çevrilmez.
+• Site kuralları: herhangi bir alanı gösterin — "Burayı çevirme" veya "Orijinal kalsın". Bir motor sabitleyin, CSS ekleyin. Kurallar tarayıcı hesabınızla senkronize edilir.
+
+★ DÜZENİ KORUYAN PDF ÇEVİRİSİ
+• Şekiller, formüller ve sayfa düzeni tam yerinde kalan iki dilli veya yalnızca çeviri içeren PDF dosyaları.
+• Giriş yaparak her ay ücretsiz sayfa.
+
+★ E-KİTAPLAR VE BELGELER
+• Word, EPUB, TXT ve Markdown → iki dilli veya çevrilmiş dosyalar.
+• MOBI ve AZW3 web okuyucuda iki dilli okunur.
+
+★ ÇİFT ALTYAZI
+• YouTube altyazıları canlı çevrilir: orijinal ve çeviri, iki satır.
+• Standart altyazı parçası olan her HTML5 oynatıcıyla çalışır.
+• Oynatıcının denetim çubuğunda tek tıkla açıp kapatma.
+
+★ SEÇ, ÜZERİNE GEL, SÖZLÜKTE BAK
+• Çevirmek için metni seçin — yeniden çevirin, motor değiştirin, kopyalayın, sesli okutun.
+• Kelimeler ve ifadeler için yerleşik sözlük: telaffuz, anlamlar, örnekler, kelime biçimleri.
+• En son seçtiğiniz diller dil menüsünün en üstünde durur.
+• Tek bir paragrafı çevirmek için bir değiştirici tuşu basılı tutup üzerine gelin.
+• Sayfadan farklı bir dilde mi yazıyorsunuz? Tek tıkla çevirin.
+
+★ MANGA VE ÇİZGİ ROMAN
+• Manga ve çizgi roman sayfaları sizin dilinizde yeniden çizilir — isterseniz renklendirilir de.
+
+★ HER GÖRSELDEKİ METİN (OCR)
+• İçindeki metni okuyup çevirmek için herhangi bir görsele — ekran görüntüsü, fotoğraf, grafik — sağ tıklayın.
+• Görselin tamamı ya da yalnızca çizdiğiniz bir alan. Büyük görsellerin üzerine gelince bir "Metni tanı" düğmesi de görünür.
+• Cihazınızda çevrimdışı okunur: İngilizce, arayüz diliniz buysa Çince, Japonca veya Korece de — diğer diller, fotoğraflar ve süslü yazılar içinse kendi anahtarınızla bir görüntü modeli okur.
+
+★ VARSAYILAN OLARAK GİZLİ
+• Web sayfaları varsayılan olarak cihazınızda çevrilir. Metniniz bilgisayarınızdan hiç çıkmaz.
+• Kendi yapay zeka modelinizle metin, kendi anahtarınızla doğrudan uç noktanıza gider — asla bizim üzerimizden geçmez.
+• Blab Translation metni çevirmek için sunucularımıza gönderir ve hiçbir kısmını saklamaz.
+• PDF, belge ve çizgi roman dosyaları sunucularımızda işlenir ve 7 gün sonra silinir.
+• Çevrimdışı sözlük paketleri sunucumuzdan indirilir ve cihazınızda saklanır; sınırsız depolama izni bunun içindir. Bir pakette kelimeye bakmak hiçbir şey göndermez.
+• Analiz yok. Reklam takibi yok.
+
+KISAYOLLAR
+Alt+A çevir / geri al · Alt+T iki dilli / yalnızca çeviri · Alt+W tüm sayfa · Alt+M PDF veya çizgi roman
+
+Gizlilik politikası: https://blab-translation.com/app/legal/privacy

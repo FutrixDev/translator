@@ -1,9 +1,9 @@
 // Guard for the in-player caption control's copy.
 //
-// Every string the button and its menu draw comes from i18n/messages.js, and
-// that file is ten sibling object literals — one per UI language — with no
-// schema between them. A key added to the English block and forgotten in the
-// other nine does not fail anything: getMessage() falls back to English, so the
+// Every string the button and its menu draw comes from the i18n tables,
+// sibling object literals — one per UI language — with no schema between
+// them. A key added to the English block and forgotten in the
+// others does not fail anything: getMessage() falls back to English, so the
 // menu simply renders in English for a reader who set the extension to Korean,
 // and nothing says so until somebody looks at it in Korean.
 //
@@ -74,7 +74,7 @@ test('every UI language block exists', () => {
   }
 });
 
-test('the caption control copy is complete in all ten languages', () => {
+test('the caption control copy is complete in every UI language', () => {
   const missing = [];
   for (const lang of LANGS) {
     for (const key of CAPTION_KEYS) {

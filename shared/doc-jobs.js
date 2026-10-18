@@ -191,34 +191,6 @@
     return 'pdf/upload.html#job=' + encodeURIComponent(jobId);
   }
 
-  /**
-   * The web reader's URL for a job: `<origin>/app/reader/<id>`. The reader
-   * takes a job id as well as an asset id, shows the document, and offers
-   * every download (bilingual PDF, translated PDF, translated file, source),
-   * so a finished job of any format is viewed there and nowhere else.
-   *
-   * Empty string rather than a broken link when there is nowhere to point:
-   *
-   * - no base yet (the service worker has not answered), or one that is not
-   *   http(s) — the base comes out of chrome.storage, so a value that could
-   *   turn a link into `javascript:` never gets built into one;
-   * - no id, or a pending record's `local:<operationId>` id, which names no
-   *   server job.
-   */
-  function readerUrl(base, jobId) {
-    var origin;
-    try {
-      origin = new URL(String(base || ''));
-    } catch (e) {
-      return '';
-    }
-    if (!/^https?:$/.test(origin.protocol)) return '';
-    if (jobId === undefined || jobId === null || jobId === '') return '';
-    var id = String(jobId);
-    if (id.indexOf('local:') === 0) return '';
-    return origin.origin + '/app/reader/' + encodeURIComponent(id);
-  }
-
   var api = {
     DOCUMENT_FORMATS: DOCUMENT_FORMATS,
     SNIFF_BYTES: SNIFF_BYTES,
@@ -240,8 +212,7 @@
     isUnsettledStatus: isUnsettledStatus,
     jobFormat: jobFormat,
     resultFileName: resultFileName,
-    jobPagePath: jobPagePath,
-    readerUrl: readerUrl
+    jobPagePath: jobPagePath
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

@@ -172,6 +172,16 @@
     return RTL_SCRIPTS.has(new Intl.Locale(prefix).maximize().script) ? 'rtl' : 'ltr';
   }
 
+  /**
+   * 给一个元素标上它的语言：lang 管屏读语音和字形，dir 管标点和换行往哪边走。
+   * 页内的每段译文、扩展页面的 <html>（按界面语言，阿拉伯语界面因此从右往左）
+   * 都走这一处。LTR 也明写：靠继承会继承到方向相反的外层。
+   */
+  function mark(el, code) {
+    el.lang = code;
+    el.dir = direction(code);
+  }
+
   /** 选择器的数据：[{ value, label }]，label 为菜单形，按界面语言的排序规则排。 */
   function options(uiLang, codes = SUPPORTED) {
     const collator = new Intl.Collator(uiLang);
@@ -191,6 +201,7 @@
     autonym,
     promptName,
     direction,
+    mark,
     options
   };
 })(globalThis);

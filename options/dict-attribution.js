@@ -74,7 +74,7 @@
     const settings = await chrome.storage.sync.get({ uiLanguage: '', theme: 'light' });
     document.documentElement.setAttribute('data-theme', settings.theme || 'light');
     uiLang = getUILanguage(settings.uiLanguage);
-    document.documentElement.lang = uiLang;
+    TargetLang.mark(document.documentElement, uiLang);
     document.title = t('dictAttributionLink');
     document.getElementById('dictAttributionTitle').textContent = t('dictAttributionLink');
     document.getElementById('dictAttributionIntro').textContent = t('dictAttributionIntro');

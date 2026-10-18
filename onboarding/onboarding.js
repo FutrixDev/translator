@@ -54,7 +54,7 @@
       el.textContent = t(el.getAttribute('data-i18n'));
     });
     document.title = t('onboardingPageTitle');
-    document.documentElement.lang = uiLang;
+    TargetLang.mark(document.documentElement, uiLang);
   }
 
   function showError(error) {

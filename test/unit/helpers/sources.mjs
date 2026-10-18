@@ -83,7 +83,7 @@ export function uploadPageSource() {
 }
 
 /**
- * 界面文案全体：十门语言的表（i18n/lang/*.js）加上 i18n/messages.js 自己。
+ * 界面文案全体：每门语言的表（i18n/lang/*.js）加上 i18n/messages.js 自己。
  *
  * 「这句话所有语言都有吗」问的是这一面，不是某个文件 —— 表拆开之后，某个 key 落
  * 在哪个文件里只由它是哪门语言决定。

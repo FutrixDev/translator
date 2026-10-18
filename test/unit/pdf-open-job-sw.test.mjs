@@ -91,6 +91,8 @@ async function clickNotification(jobId) {
   for (let i = 0; i < 200 && opened.length === before; i++) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+  // Long enough for a second listener's tab to land too, had one opened it.
+  await new Promise((resolve) => setTimeout(resolve, 20));
   return opened.slice(before);
 }
 
@@ -103,14 +105,13 @@ const finished = (jobId, format) => ({
 });
 
 test('J5: a finished PDF\'s notification opens the reader, not the result file', async () => {
-  assert.equal(clickListeners.length, 1, 'the worker registers one notification click listener');
   jobView = finished('pdf_job_7', 'pdf');
-  assert.deepEqual(await clickNotification('pdf_job_7'), ['https://site.test/app/reader/pdf_job_7']);
+  assert.deepEqual(await clickNotification('pdf_job_7'), ['https://site.test/app/reader/pdf_job_7?utm_source=extension&utm_medium=notification']);
 });
 
 test('J5: a finished Word job opens the reader too', async () => {
   jobView = finished('doc job/8', 'docx');
-  assert.deepEqual(await clickNotification('doc job/8'), ['https://site.test/app/reader/doc%20job%2F8']);
+  assert.deepEqual(await clickNotification('doc job/8'), ['https://site.test/app/reader/doc%20job%2F8?utm_source=extension&utm_medium=notification']);
 });
 
 test('an awaiting or running job opens the extension job page', async () => {
@@ -128,9 +129,9 @@ test('a job the poll cannot refresh opens its job page, which shows the error', 
 test('PDF_OPEN_JOB from a row: a finished job opens the reader and says so', async () => {
   jobView = finished('pdf_job_12', 'pdf');
   const before = opened.length;
-  const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'pdf_job_12' });
+  const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'pdf_job_12', via: 'popup' });
   assert.deepEqual(reply, { ok: true, data: { opened: 'reader' } });
-  assert.deepEqual(opened.slice(before), ['https://site.test/app/reader/pdf_job_12']);
+  assert.deepEqual(opened.slice(before), ['https://site.test/app/reader/pdf_job_12?utm_source=extension&utm_medium=popup']);
 });
 
 test('PDF_OPEN_JOB: a base that is not http(s) is an error, not a detour', async () => {
@@ -139,7 +140,7 @@ test('PDF_OPEN_JOB: a base that is not http(s) is an error, not a detour', async
   local.comicApiBase = 'javascript:alert(1)';
   const before = opened.length;
   try {
-    const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'pdf_job_13' });
+    const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'pdf_job_13', via: 'popup' });
     assert.equal(reply.ok, false);
     assert.equal(reply.error.code, 'invalid_site_base');
     assert.deepEqual(opened.slice(before), [], 'nothing opened');
@@ -150,8 +151,17 @@ test('PDF_OPEN_JOB: a base that is not http(s) is an error, not a detour', async
 
 test('PDF_OPEN_JOB: a pending local: record names no job and opens nothing', async () => {
   const before = opened.length;
-  const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'local:op-1' });
+  const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'local:op-1', via: 'popup' });
   assert.equal(reply.ok, false);
   assert.equal(reply.error.code, 'result_unavailable');
   assert.deepEqual(opened.slice(before), []);
+});
+
+test('PDF_OPEN_JOB: an entry the site links do not know is an error, not an untagged link', async () => {
+  jobView = finished('pdf_job_14', 'pdf');
+  const before = opened.length;
+  const reply = await send({ type: 'PDF_OPEN_JOB', jobId: 'pdf_job_14' });
+  assert.equal(reply.ok, false);
+  assert.match(reply.error.message, /SiteLinks: unknown entry/);
+  assert.deepEqual(opened.slice(before), [], 'nothing opened');
 });

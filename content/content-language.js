@@ -101,13 +101,9 @@
     menu.dataset.grouped = '1';
   };
 
-  // 我们放进页面的每一段文字都带上自己的 lang / dir：屏读按 lang 选语音、浏览器按
-  // lang 选字形，dir 决定标点和换行往哪边走。LTR 也明写 —— 译文常常挂在一个方向
-  // 相反的原文块里，靠继承就继承到了原文的方向。
-  ctx.markLanguage = function(el, code) {
-    el.lang = code;
-    el.dir = TargetLang.direction(code);
-  };
+  // 我们放进页面的每一段文字都带上自己的 lang / dir（TargetLang.mark）：译文常常挂在
+  // 一个方向相反的原文块里，靠继承就继承到了原文的方向。
+  ctx.markLanguage = TargetLang.mark;
 
   // 原文方向的起始边：LTR 是左，RTL 是右。缩进和行内译文的间隙都开在这一边。
   ctx.startSide = function(style) {

@@ -64,6 +64,7 @@
 
   function applyI18n(uiLanguage) {
     currentUILang = getUILanguage(uiLanguage);
+    TargetLang.mark(document.documentElement, currentUILang);
     document.querySelectorAll('[data-i18n]').forEach(node => {
       const key = node.getAttribute('data-i18n');
       const text = t(key);
@@ -403,7 +404,7 @@
    * the site base never arrived, or it is not an http(s) address.
    */
   function readerLink(jobId) {
-    const url = DocJobs.readerUrl(webBase, jobId);
+    const url = SiteLinks.reader(webBase, jobId, 'upload');
     if (url) return { url, error: null };
     return { url: '', error: webBaseError || { code: 'invalid_site_base' } };
   }

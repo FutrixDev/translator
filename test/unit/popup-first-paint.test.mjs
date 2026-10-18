@@ -112,6 +112,7 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }), token = 
     clearTimeout,
     getMessage: (key) => key,
     getUILanguage: () => 'en',
+    TargetLang: { mark() {} },
     setupDisplayRow() {},
     setupPdfSection() {},
     EngineStatus: {
