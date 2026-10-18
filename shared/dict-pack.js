@@ -19,10 +19,10 @@
 // seeded: a lookup trusts no `d:` key of a pair that is not listed there.
 // `dict:status` is what the settings page shows while a pack downloads or
 // after it failed; it never decides whether a pack is usable. A failed item
-// carries its time (`at`). The optional `interrupts` counts the workers
-// stopped in a row while fetching `ver`, and `refusals` the fetches of `ver`
-// refused in a row (each left out at 0); a lookup waits out a backoff after a
-// refusal (D-719) and stops fetching a version after three stops (N2).
+// carries the time it failed (`at`); `interrupts` counts the workers stopped
+// in a row while fetching `ver`, and `refusals` the fetches of `ver` refused
+// in a row, each left out at 0. When they hold a fetch back is
+// background/dict-packs.js's to say.
 //
 // Folding at lookup time is only what foldCandidates() does: exact, lower
 // case, NFKC, and the one runtime rule, the Korean particle strip. Every other

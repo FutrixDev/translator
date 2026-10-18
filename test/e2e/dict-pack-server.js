@@ -54,7 +54,8 @@ class DictPackServer {
     this.files = new Map(); // path under ORIGIN -> bytes
     this.hits = []; // every path requested, in order
     this.holds = new Map(); // path -> the hold armed for its next request
-    this.failing = new Map(); // path -> the HTTP status its requests get, or null: they fail at the network
+    // path -> the HTTP status its requests get, or null: they fail at the network
+    this.failing = new Map();
   }
 
   /**

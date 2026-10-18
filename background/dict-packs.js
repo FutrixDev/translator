@@ -34,7 +34,7 @@
 // operation, pair and ver, and `dict:status` marks the pair failed for the
 // settings page, with the time (`at`). No old version is put back.
 //
-// A failed fetch (network, HTTP status, sha256, contract) is retried without
+// A failed job (its download, its checks or its writes) is retried without
 // the reader doing or seeing anything (D-719). Each refusal in a row at one
 // version counts in `dict:status` (`refusals`, a new version starts at 0), and
 // a lookup fetches that version again only once REFUSAL_BACKOFF has passed
@@ -187,27 +187,29 @@ function backoff(refusals) {
   return REFUSAL_BACKOFF[Math.min(refusals, REFUSAL_BACKOFF.length) - 1];
 }
 
-/** The stops in a row `last` records against `ver`; another version starts at 0. */
-function interruptsOf(last, ver) {
-  return last && last.ver === ver ? last.interrupts || 0 : 0;
-}
-
-/** The refusals in a row `last` records against `ver`; another version starts at 0. */
-function refusalsOf(last, ver) {
-  return last && last.ver === ver ? last.refusals || 0 : 0;
+/**
+ * The stops (`interrupts`) and refusals in a row that `last` records against
+ * `ver`; another version starts both at 0.
+ */
+function countsOf(last, ver) {
+  if (!last || last.ver !== ver) return { interrupts: 0, refusals: 0 };
+  return { interrupts: last.interrupts || 0, refusals: last.refusals || 0 };
 }
 
 /**
- * Whether a lookup at `now` leaves `row` to the daily check: it was refused at
- * this version less than backoff(refusals) ago (a failure without `at` counts
- * as long past), or a worker stopped mid-job MAX_INTERRUPTS times in a row
- * while fetching it. A pair interrupted fewer times did not fail, and is
- * fetched again.
+ * Whether a lookup now leaves `row` alone: it was refused at this version less
+ * than backoff(refusals) ago, or a worker stopped mid-job MAX_INTERRUPTS times
+ * in a row while fetching it. Inside the backoff the pack is fetched by the
+ * daily check or by the first lookup after the backoff, whichever comes first;
+ * past MAX_INTERRUPTS, by the daily check. A failure with no refusals (an item
+ * from before D-719 has neither them nor `at`) has no backoff, and a pair
+ * interrupted fewer times did not fail: both are fetched again.
  */
-function leftToCheck(last, row, now) {
+function leftToCheck(last, row) {
   if (!last || last.state !== 'failed' || last.ver !== row.ver) return false;
-  if (last.reason !== INTERRUPTED) return now - (last.at || 0) < backoff(refusalsOf(last, row.ver));
-  return interruptsOf(last, row.ver) >= MAX_INTERRUPTS;
+  const { interrupts, refusals } = countsOf(last, row.ver);
+  if (last.reason !== INTERRUPTED) return Date.now() - last.at < backoff(refusals);
+  return interrupts >= MAX_INTERRUPTS;
 }
 
 async function setDeclined(pair, declined) {
@@ -286,22 +288,21 @@ async function runInstall({ op, row }) {
   // Read again on the queue: the lookup's own read can come before the
   // recovery that counts the last stop.
   const last = (await readMap(DictPack.STATUS_KEY))[pair];
-  if (op === 'want' && leftToCheck(last, row, Date.now())) return { state: 'failed' };
-  // The counts so far ride on `downloading`, so the recovery of a stopped
-  // worker and this job's own failure both count on from them.
-  const started = status('downloading', row.ver, '', {
-    interrupts: interruptsOf(last, row.ver),
-    refusals: refusalsOf(last, row.ver),
-  });
-  await writeMapItem(DictPack.STATUS_KEY, pair, started);
+  if (op === 'want' && leftToCheck(last, row)) return { state: 'failed' };
+  // `downloading` carries the counts so far: the recovery of a worker stopped
+  // mid-job counts on from both, and this job's own refusal counts on the
+  // refusals and, being a refusal, clears the interrupts.
+  const counts = countsOf(last, row.ver);
+  await writeMapItem(DictPack.STATUS_KEY, pair, status('downloading', row.ver, '', counts));
   try {
     await installPack(row);
   } catch (error) {
     // The one place a pack's failure stops: logged once, shown on the
     // settings page through dict:status. No user data: the pair and ver only.
     console.error('[Blab Translation] dictionary pack failed', { op, pair, ver: row.ver }, error);
-    const refusals = refusalsOf(started, row.ver) + 1;
-    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', row.ver, String(error.message || error), { refusals }));
+    const reason = String(error.message || error);
+    const failed = status('failed', row.ver, reason, { refusals: counts.refusals + 1 });
+    await writeMapItem(DictPack.STATUS_KEY, pair, failed);
     return { state: 'failed' };
   }
   await writeMapItem(DictPack.STATUS_KEY, pair, undefined);
@@ -333,8 +334,9 @@ async function recoverPairs() {
     if (state !== 'downloading') continue;
     console.warn('[Blab Translation] dictionary pack interrupted', { pair, ver });
     if (!packs[pair]) await removePairKeys(pair);
-    const counts = { interrupts: interruptsOf(last, ver) + 1, refusals: refusalsOf(last, ver) };
-    await writeMapItem(DictPack.STATUS_KEY, pair, status('failed', ver, INTERRUPTED, counts));
+    const { interrupts, refusals } = countsOf(last, ver);
+    const stopped = status('failed', ver, INTERRUPTED, { interrupts: interrupts + 1, refusals });
+    await writeMapItem(DictPack.STATUS_KEY, pair, stopped);
   }
   return { state: 'recovered' };
 }
@@ -375,9 +377,9 @@ const joinable = new Map(); // pair -> { op, ver, job }: the queued or running i
  * `row`'s. A redownload never joins: a job asked for before the reader's
  * click finds the pair declined. Only a lookup joins a lookup's job: that job
  * gives up on a version refused within its backoff or stopped MAX_INTERRUPTS
- * times (runInstall), and a check or preinstall must still fetch it. Resolves when it is seeded
- * ({state:'installed'}), has failed ({state:'failed'}, already logged and
- * shown), or was declined.
+ * times (runInstall), and a check or preinstall must still fetch it. Resolves
+ * when it is seeded ({state:'installed'}), has failed ({state:'failed'},
+ * already logged and shown), or was declined.
  */
 function queueInstall(op, row) {
   const pair = DictPack.pairOf(row.src, row.tgt);
@@ -459,7 +461,7 @@ async function wantDictPack(message) {
   const row = (await readManifest()).get(pair);
   if (!row) return { state: 'absent' };
   if (isCurrent(await readMap(DictPack.PACKS_KEY), pair, row)) return { state: 'installed' };
-  if (leftToCheck((await readMap(DictPack.STATUS_KEY))[pair], row, Date.now())) return { state: 'failed' };
+  if (leftToCheck((await readMap(DictPack.STATUS_KEY))[pair], row)) return { state: 'failed' };
   detach('want', pair, queueInstall('want', row));
   return { state: 'queued' };
 }

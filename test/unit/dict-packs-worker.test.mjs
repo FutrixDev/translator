@@ -18,7 +18,8 @@
 //     at that version; a lookup fetches it again only once the backoff for
 //     that count has passed (each tier to the millisecond), the count rides
 //     on `downloading` and on the recovery's interrupted item, a new version
-//     starts again from 0, and the daily check ignores the backoff.
+//     starts again from 0, and the daily check ignores the backoff; a lookup
+//     that read the status before a check's refusal is refused on the queue.
 //
 // Time is the injected clock below (`clock`), never a real wait.
 //
@@ -26,7 +27,7 @@
 // once-per-worker recovery and its queue start over, the storage stays.
 //
 // Run with: npm run test:unit
-import test, { afterEach } from 'node:test';
+import test, { after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -36,11 +37,16 @@ let clock = null;
 const realNow = Date.now;
 Date.now = () => (clock === null ? realNow() : clock);
 afterEach(() => { clock = null; });
+after(() => { Date.now = realNow; });
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const T0 = Date.UTC(2026, 9, 18, 9, 0, 0);
 
 const local = {};
 const sync = { offlineDictionary: true };
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 const heldWrites = []; // { matches(values), gate }: a local.set that waits once
+const heldReads = []; // { matches(keys), gate, held }: a local.get that answers late once
 let syncReads = 0;
 
 /** Hold the next chrome.storage.local.set that `matches` until the returned release(). */
@@ -48,6 +54,19 @@ function holdWrite(matches) {
   let release;
   heldWrites.push({ matches, gate: new Promise((resolve) => { release = resolve; }) });
   return release;
+}
+
+/**
+ * Hold the next chrome.storage.local.get that `matches`: it reads storage at
+ * once and answers only on release(), as a read that came before writes made
+ * meanwhile. `held` resolves once a read is held.
+ */
+function holdRead(matches) {
+  let release;
+  let onHeld;
+  const held = new Promise((resolve) => { onHeld = resolve; });
+  heldReads.push({ matches, gate: new Promise((resolve) => { release = resolve; }), held: onHeld });
+  return { release, held };
 }
 
 globalThis.chrome = {
@@ -66,6 +85,12 @@ globalThis.chrome = {
         const names = typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : Object.keys(keys);
         const out = typeof keys === 'object' && !Array.isArray(keys) ? clone(keys) : {};
         for (const key of names) if (key in local) out[key] = clone(local[key]);
+        const held = heldReads.findIndex((hold) => hold.matches(keys));
+        if (held >= 0) {
+          const hold = heldReads.splice(held, 1)[0];
+          hold.held();
+          await hold.gate;
+        }
         return out;
       },
       set: async (values) => {
@@ -170,13 +195,6 @@ async function until(predicate, what) {
 const seededVer = (pair) => (local[DictPack.PACKS_KEY] || {})[pair]?.ver;
 const statusOf = (pair) => (local[DictPack.STATUS_KEY] || {})[pair];
 
-/** A failed `dict:status` item less its `at`, after checking `at` is a time. */
-function withoutAt(item) {
-  const { at, ...rest } = item;
-  assert.equal(typeof at, 'number', 'a failed item records when it failed');
-  return rest;
-}
-
 test('L1: an interrupted pack is fetched again by the next lookup', async () => {
   const pair = 'en-zh-CN';
   const row = publish(pair, '2026.10.14');
@@ -275,13 +293,14 @@ test('L4: a lookup that reads the count before the recovery adds the third stop 
   const seeded = seededVer(pair);
   local[DictPack.STATUS_KEY] = { [pair]: { state: 'downloading', ver: row.ver, reason: '', interrupts: 2 } };
   const recovered = holdWrite(recoveryOf(pair));
+  clock = T0;
   // The lookup wakes the worker and reads `downloading`: the third stop is
   // not counted yet, so it queues, behind the recovery.
   assert.deepEqual(await wantIn(worker, pair), { state: 'queued' });
   recovered();
   await drained(worker);
-  assert.deepEqual(withoutAt(local[DictPack.STATUS_KEY][pair]), {
-    state: 'failed', ver: row.ver, reason: 'interrupted', interrupts: 3,
+  assert.deepEqual(local[DictPack.STATUS_KEY][pair], {
+    state: 'failed', ver: row.ver, reason: 'interrupted', at: T0, interrupts: 3,
   }, 'the job gave up without writing downloading');
   assert.ok(!fetched.includes(DictPack.DOWNLOAD_ORIGIN + row.url), 'the pack was never fetched');
   assert.equal(seededVer(pair), seeded, 'the version seeded before is kept');
@@ -337,16 +356,14 @@ test('L4: a daily check does not join a lookup job refused on the queue; it fetc
 
 // The waits D-719 fixes, after the 1st..6th refusal in a row. Written out here,
 // not read from the module: a table that drifts fails the boundary test.
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
 const WAITS = [10 * MINUTE, HOUR, 4 * HOUR, 12 * HOUR, 24 * HOUR, 24 * HOUR];
-const T0 = Date.UTC(2026, 9, 18, 9, 0, 0);
 
 const urlOf = (row) => DictPack.DOWNLOAD_ORIGIN + row.url;
 const hitsOf = (row) => fetched.filter((url) => url === urlOf(row)).length;
 const failedNow = (pair) => statusOf(pair)?.state === 'failed';
 
-test('L5: a refusal records at and refusals; inside the backoff a lookup fetches nothing, after it the pack is seeded', async () => {
+test('L5: a refusal records at and refusals; inside the backoff a lookup fetches nothing,'
+  + ' after it the pack is seeded', async () => {
   const pair = 'ko-en';
   const row = publish(pair, '2026.10.20');
   files.delete(urlOf(row)); // the pack answers 404
@@ -445,10 +462,12 @@ test('L5: the recovery of a worker stopped mid-retry keeps the refusals, and the
   assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0, refusals: 3 });
 });
 
-test('L5: a failed item with no at counts as past its backoff: the next lookup fetches once', async () => {
+test('L5: a failed item with neither at nor refusals has no backoff: the next lookup fetches once', async () => {
   const pair = 'ja-zh-CN';
   const row = publish(pair, '2026.10.22');
+  // As written before D-719.
   local[DictPack.STATUS_KEY] = { [pair]: { state: 'failed', ver: row.ver, reason: 'HTTP 500' } };
+  clock = T0;
   assert.deepEqual(await want(pair), { state: 'queued' });
   await until(() => seededVer(pair) === row.ver, 'the pack to be seeded');
   assert.equal(hitsOf(row), 1);
@@ -466,4 +485,33 @@ test('L5: the daily check retries a refused pair inside its backoff', async () =
   await checkDictPacks();
   assert.equal(seededVer(pair), row.ver, 'the check does not');
   assert.equal(hitsOf(row), 1);
+});
+
+test('L5: a lookup that read the status before a check\'s refusal is refused on the queue', async () => {
+  const pair = 'ko-en';
+  const row = publish(pair, '2026.10.24');
+  files.delete(urlOf(row));
+  local[DictPack.STATUS_KEY] = {
+    [pair]: { state: 'failed', ver: row.ver, reason: 'interrupted', at: T0, interrupts: 1 },
+  };
+  clock = T0;
+  const response = gate();
+  gates.set(urlOf(row), response.promise);
+  const check = checkDictPacks();
+  await until(() => fetched.includes(urlOf(row)), 'the check to start its download');
+  // The lookup reads `downloading` while the check's download is held, and
+  // queues only after the check is refused and gone: its own job, not the
+  // check's.
+  const read = holdRead((keys) => keys === DictPack.STATUS_KEY);
+  const asked = want(pair);
+  await read.held;
+  response.release();
+  await check;
+  gates.delete(urlOf(row));
+  assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0, refusals: 1 });
+  read.release();
+  assert.deepEqual(await asked, { state: 'queued' }, 'the lookup read no refusal');
+  await drained({ handleDictMessage });
+  assert.equal(hitsOf(row), 1, 'the lookup\'s job fetched nothing');
+  assert.deepEqual(statusOf(pair), { state: 'failed', ver: row.ver, reason: 'HTTP 404', at: T0, refusals: 1 });
 });
