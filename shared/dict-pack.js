@@ -12,14 +12,17 @@
 //   d:<src>-<tgt>:~<form>   {h}           an inflected form's head
 //   dict:packs              {<src>-<tgt>: {src, tgt, ver, url, sha256, heads,
 //                            bytes, rawBytes, lic, sources, credits}}
-//   dict:status             {<src>-<tgt>: {state, ver, reason, interrupts?}}
+//   dict:status             {<src>-<tgt>: {state, ver, reason, at?,
+//                            interrupts?, refusals?}}
 //
 // The `dict:packs` item is written last and is the only mark that a pack is
 // seeded: a lookup trusts no `d:` key of a pair that is not listed there.
 // `dict:status` is what the settings page shows while a pack downloads or
-// after it failed; it never decides whether a pack is usable. Its optional
-// `interrupts` counts the workers stopped in a row while fetching `ver` (left
-// out at 0); after three a lookup no longer fetches that version (N2).
+// after it failed; it never decides whether a pack is usable. A failed item
+// carries the time it failed (`at`); `interrupts` counts the workers stopped
+// in a row while fetching `ver`, and `refusals` the fetches of `ver` refused
+// in a row, each left out at 0. When they hold a fetch back is
+// background/dict-packs.js's to say.
 //
 // Folding at lookup time is only what foldCandidates() does: exact, lower
 // case, NFKC, and the one runtime rule, the Korean particle strip. Every other

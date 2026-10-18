@@ -11,8 +11,9 @@
  * `publish(bytes, { row })` overrides fields of the row itself.
  *
  * `hold(path)` keeps the next request for a path waiting until the test
- * releases it; `fail(path)` makes every request for it fail at the network
- * until `restore(path)`.
+ * releases it; `fail(path)` makes every request for it fail at the network,
+ * and `fail(path, { status })` answers every one with that HTTP status, until
+ * `restore(path)`.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -53,7 +54,8 @@ class DictPackServer {
     this.files = new Map(); // path under ORIGIN -> bytes
     this.hits = []; // every path requested, in order
     this.holds = new Map(); // path -> the hold armed for its next request
-    this.failing = new Set(); // paths whose requests fail at the network
+    // path -> the HTTP status its requests get, or null: they fail at the network
+    this.failing = new Map();
   }
 
   /**
@@ -87,8 +89,8 @@ class DictPackServer {
     return { hit, release };
   }
 
-  fail(pathUnderOrigin) {
-    this.failing.add(pathUnderOrigin);
+  fail(pathUnderOrigin, { status = null } = {}) {
+    this.failing.set(pathUnderOrigin, status);
   }
 
   restore(pathUnderOrigin) {
@@ -110,7 +112,10 @@ class DictPackServer {
         held.arrived();
         await held.gate;
       }
-      if (this.failing.has(at)) return route.abort('failed');
+      if (this.failing.has(at)) {
+        const status = this.failing.get(at);
+        return status === null ? route.abort('failed') : route.fulfill({ status, body: '' });
+      }
       if (at === MANIFEST_PATH) {
         const manifest = { v: 1, packs: [...this.rows.values()] };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manifest) });
