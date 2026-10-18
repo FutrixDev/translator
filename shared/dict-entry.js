@@ -3,9 +3,10 @@
 //
 // Looking up a word or short phrase (isLookup: the input dialog and the
 // selection card ask the same question) asks the user's own AI engine for an
-// entry, not just a translation. Nothing else is asked: no third-party
-// dictionary sees the word (D-469). The built-in engine only translates, so its answers carry no entry
-// and nothing below is drawn for them (D-470).
+// entry, not just a translation, or finds it in an offline dictionary pack
+// already on the device (DICT_ENGINE, D-561). No third-party service sees the
+// word (D-469). The built-in engine only translates, so its answers carry no
+// entry and nothing below is drawn for them (D-470).
 //
 // One owner for every half of it:
 //   isLookup      whether a text is looked up at all (D-473–D-475, D-542). Both
@@ -20,15 +21,21 @@
 //                 no "translation only" rescue. Everything optional is lenient:
 //                 a field of the wrong type, or one overlong item, is dropped
 //                 and the rest of the entry kept.
-//   entryFor      which answers carry an entry: a model engine's answer ('ai'
-//                 or 'blab') to a word-mode request, and only that one.
+//   entryFor      which answers carry an entry: a word-mode answer from a
+//                 model engine ('ai' or 'blab') or from the offline
+//                 dictionary (DICT_ENGINE), and only those. It alone puts
+//                 the dictionary's `credits` on the entry, as they are:
+//                 DictPack.parsePack() checked them (D-686).
 //   render        the DOM. The input dialog and the selection card both call
 //                 it; neither builds an entry block of its own.
 //
 // Message shape (TRANSLATE): an AI answer in word mode is
 // `{ translation, entry }` — `entry.translation` equals `translation`, which
 // stays at the top because every other caller reads it there. Every other
-// answer is `{ translation }`. The content engine adds `engine`.
+// answer is `{ translation }`. The content engine adds `engine`. A local
+// dictionary hit has the same shape with `engine: DICT_ENGINE`, and adds
+// `credits: [{label, href}]` beside `entry` (empty when the pack has none) —
+// not in FIELDS, so never asked of a model, and taken from the dictionary only.
 //
 // Model strings reach the page through textContent only. The one innerHTML in
 // this file writes the speaker glyph, a constant from content/content-speech.js.
@@ -100,6 +107,30 @@
     if (IDEOGRAPHIC_SCRIPT.test(trimmed)) return chars() <= MAX_LOOKUP_IDEOGRAPHS;
     if (SYLLABIC_SCRIPT.test(trimmed)) return chars() <= MAX_LOOKUP_SYLLABLES;
     return trimmed.split(/\s+/).length <= MAX_LOOKUP_WORDS;
+  }
+
+  // Japanese written with kanji and kana: an inflected verb or adjective runs
+  // past the four-character Han limit (勉強しました, 美しかった) yet is one
+  // word, and the offline dictionary's form table can answer it. Eight is the
+  // kana limit; anything longer is a phrase (D-609).
+  const KANA_SCRIPT = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+  const MAX_KANJI_KANA = 8;
+
+  /**
+   * Whether the offline dictionary is asked about `text` (D-609): every
+   * lookup (isLookup), and also text with both Han and kana that is at most
+   * eight characters without whitespace, with no sentence punctuation (a
+   * trailing stop included) and no formula notation. A pack hit proves it is
+   * a word; a miss leaves the caller on its usual path, so isLookup alone
+   * still decides between a model's word entry and a translation.
+   */
+  function isDictCandidate(text) {
+    if (isLookup(text)) return true;
+    const trimmed = String(text == null ? '' : text).trim();
+    if (!trimmed || SENTENCE_PUNCTUATION.test(trimmed)) return false;
+    if (FORMULA_NOTATION.some((shape) => shape.test(trimmed))) return false;
+    if (!IDEOGRAPHIC_SCRIPT.test(trimmed) || !KANA_SCRIPT.test(trimmed)) return false;
+    return Array.from(trimmed.replace(/\s+/g, '')).length <= MAX_KANJI_KANA;
   }
 
   // The phonetics are the translation's, in the target language (D-487). An
@@ -280,7 +311,7 @@
         .filter(Boolean)
         .slice(0, field.max);
     }
-    if (dropped.length) console.warn('dict-entry: dropped fields', dropped);
+    if (dropped.length) console.warn('[Blab Translation] dict-entry: dropped fields', dropped);
     return entry;
   }
 
@@ -307,17 +338,33 @@
     return normalize(parsed);
   }
 
+  // ---- the offline dictionary (D-561) -----------------------------------------
+
+  // The engine name a local dictionary answer carries. It is not one of
+  // Engines.ENGINES: those are engines a user picks, stores and batches pages
+  // through; the dictionary is none of that, it only answers lookups.
+  const DICT_ENGINE = 'dict';
+
   /**
    * The entry a TRANSLATE response carries, or null when it carries none.
-   * Only a model engine's answer to a word-mode request has one ('ai' or
-   * 'blab', Engines.isModelEngine; the built-in engine only translates). A model
-   * word answer without one is a broken service worker, so it throws rather
-   * than quietly drawing nothing.
+   * Only a word-mode answer has one, and only from a model engine ('ai' or
+   * 'blab', Engines.isModelEngine) or the offline dictionary (DICT_ENGINE); the
+   * built-in engine only translates. A model or dictionary word answer without
+   * one is a broken caller, so it throws rather than quietly drawing nothing.
+   * A dictionary answer's `credits` ride on the entry as `entry.credits`, as
+   * they are: DictPack.parsePack() is the one check on them, made when the
+   * pack was downloaded (D-686). A model answer's never do, whatever it sends.
    */
   function entryFor(mode, response) {
-    if (mode !== 'word' || !response || !globalThis.Engines.isModelEngine(response.engine)) return null;
-    if (!response.entry) throw new Error('DictEntry.entryFor: a model word-mode answer carries no entry');
-    return normalize(response.entry);
+    if (mode !== 'word' || !response) return null;
+    const dict = response.engine === DICT_ENGINE;
+    if (!dict && !globalThis.Engines.isModelEngine(response.engine)) return null;
+    if (!response.entry) {
+      throw new Error(`DictEntry.entryFor: a ${dict ? 'dictionary' : 'model'} word-mode answer carries no entry`);
+    }
+    const entry = normalize(response.entry);
+    if (dict && response.credits.length) entry.credits = response.credits;
+    return entry;
   }
 
   // ---- drawing ----------------------------------------------------------------
@@ -326,7 +373,9 @@
    * Whether `entry` (from normalize / entryFor) has anything beyond the
    * translation: a phonetic, a sense, an example or a form. render() draws a
    * block for each list that has items, so this is exactly "render() draws
-   * something", and the container is hidden when it is false.
+   * something", and the container is hidden when it is false. A dictionary
+   * entry's credits line is not content: it credits the blocks, and is drawn
+   * only beside them.
    */
   function hasContent(entry) {
     return LIST_KEYS.some((key) => entry[key].length > 0);
@@ -432,17 +481,39 @@
       }
     }
 
+    // The dictionary's credits (parsePack let through only https links on each
+    // source's own host, and entryFor copies them as they are): one
+    // line under the entry, not a section (sections stack their rows), with
+    // the prefix and the links side by side and ' · ' between two links. Each
+    // source is a link that opens in a new tab and hands the page neither a
+    // window handle nor a referrer.
+    if (Array.isArray(entry.credits) && entry.credits.length) {
+      const block = container.appendChild(el('div', 'ai-translator-dict-credits'));
+      block.appendChild(el('span', 'ai-translator-dict-credits-prefix', t('dictCredits')));
+      for (const [i, { label: name, href }] of entry.credits.entries()) {
+        if (i) block.appendChild(doc.createTextNode(' · '));
+        const link = el('a', 'ai-translator-dict-credit-link', name);
+        link.setAttribute('href', href);
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+        block.appendChild(link);
+      }
+    }
+
     container.hidden = !hasContent(entry);
   }
 
   root.DictEntry = Object.freeze({
+    DICT_ENGINE,
     FIELDS,
     MAX_TEXT,
     PHONETIC_LANGS,
     PROMPT_MARK,
     FORMAT_OVERRIDE,
     OUTPUT_RULES,
+    TRAILING_STOP,
     isLookup,
+    isDictCandidate,
     normalize,
     fromModelText,
     entryFor,

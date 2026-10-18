@@ -1,0 +1,39 @@
+{
+  "v": 1,
+  "src": "en",
+  "tgt": "zh-CN",
+  "ver": "2026.10.13",
+  "lic": "CC-BY-SA-4.0",
+  "sources": [
+    { "id": "wiktionary", "name": "Wiktionary (kaikki.org)", "license": "CC BY-SA 4.0", "url": "https://kaikki.org/" },
+    { "id": "tatoeba", "name": "Tatoeba", "license": "CC BY 2.0 FR", "url": "https://tatoeba.org/" }
+  ],
+  "credits": {
+    "tatoeba": { "label": "Tatoeba", "href": "https://tatoeba.org/" }
+  },
+  "e": {
+    "run": [
+      ["v.", ["跑", "奔跑", "经营"], "pǎo", "wiktionary"],
+      ["n.", ["跑步", "一段路程"], null, "wiktionary"]
+    ],
+    "apple": [["n.", ["苹果"], "píngguǒ", "wiktionary"]],
+    "colour": [["n.", ["颜色"], "yánsè", "wiktionary"]]
+  },
+  "x": {
+    "run": [
+      ["I run every morning.", "我每天早上跑步。", 1234, 5678],
+      ["She runs a small shop.", "她经营一家小店。", null, null]
+    ],
+    "apple": [["An apple a day.", "一天一个苹果。", null, null]]
+  },
+  "m": {
+    "run": [["过去式", "ran"], ["过去分词", "run"], ["现在分词", "running"]]
+  },
+  "f": {
+    "ran": "run",
+    "running": "run",
+    "runs": "run",
+    "apples": "apple",
+    "colours": "colour"
+  }
+}

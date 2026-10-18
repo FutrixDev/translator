@@ -1,7 +1,7 @@
 # 隐私政策 — 叭叭翻译 / Blab Translation Privacy Policy
 
-最后更新：2026-09-21 ｜ 适用版本：1.4.0 起
-Last updated: 2026-09-25 ｜ Applies from: version 1.4.0
+最后更新：2026-10-18 ｜ 适用版本：1.4.0 起
+Last updated: 2026-10-18 ｜ Applies from: version 1.4.0
 
 > 这一页要能贴到 Chrome 网上应用店的 **Privacy policy URL** 里，所以它写的是
 > 事实，不是承诺：每一条都能在源码里指到具体文件。哪天代码改了而这一页没改，
@@ -44,18 +44,22 @@ account and none of that exists.** Section 2 is the itemised list.
 | 图片文字识别（OCR） | **默认在本机**（打包在扩展里的 Tesseract，离线运行）；也可以选用你自己的视觉模型 | 选本机引擎时图片不出电脑。选视觉模型时，图片会发到你填的那个接口。 |
 | **漫画翻译** | **我们的服务器**（`blab-translation.com`） | 需要登录。图片上传到我们的服务器处理，处理完返回结果。连同上传的还有**那张图所在的网址**，见第二节。 |
 | **文档翻译**（PDF、Word、EPUB、MOBI、TXT、Markdown） | **我们的服务器**（`blab-translation.com`） | 需要登录。整个文件经一次性预签名地址直接上传到对象存储（本机文件由扩展的上传页上传；网页上的 PDF 由扩展后台下载后上传），文件名跟着任务记录一起存下来。Word、EPUB、TXT、Markdown 在上传前会在本机数一下篇幅（只把页数报给服务器，不另外发送内容）。任务在服务器上排队；比预计长时会先问你，完成后通知你。 |
+| **离线词典（下载词典包）** | **我们的下载服务器**（`dl.blab-translation.com`） | 只下载，不上传。查词本身在本机的词典包里完成，什么都不发。下载请求里没有你查的词、没有网址、没有账号，只看得出要的是哪一对语言的包（比如英语 → 中文）；和任何网络请求一样，服务器能看到你的 IP 地址。「离线词典」开关默认开，这时会在三个时机发出请求：**安装或更新扩展时**，预装「英语 → 你的目标语言」那一包（目标语言是英语时不装）；**查词时这对语言在本机还没有包**，先取一次包清单，清单里有就下载那一包；**每天一次**，查已装的包有没有新版本，有就下载新版。在设置里关掉「离线词典」，这三样都不再发生；你在设置页删掉的那一对也不再自动下载（`background/dict-packs.js`）。 |
 
 **自动翻译不改变这张表。** 它改变的只是「什么时候开始翻译」—— 从「你点一下」
 变成「这一页符合你设的规则时自动开始」，视频字幕也一样。发出去的还是同样的文字，
 发到同样的地方，用同样的引擎。默认引擎是离线的那个，所以**一台没改过设置的机器上，
-自动翻译不产生任何网络请求**。你让这些不用点的翻译走 AI 接口时，它们每天最多花
+自动翻译不产生任何翻译请求**；扩展仍会按上表最后一行下载和更新离线词典包，那些请求
+里没有页面上的文字。你让这些不用点的翻译走 AI 接口时，它们每天最多花
 多少字符由你在设置页里定（默认 20 万），这个数在本机记账，不上传。
 
 **Automatic translation does not change that table.** It changes *when*
 translation starts — from "you clicked" to "this page matches a rule you set,"
 and the same goes for video subtitles. The same text goes to the same place
 through the same engine. The default engine is the offline one, so on a machine
-with default settings, automatic translation makes no network request at all.
+with default settings, automatic translation sends no translation request. The
+extension still downloads and updates the offline dictionary packs, as the last
+row of the table says, and those requests carry no text from the page.
 If you point these no-click translations at an AI endpoint, you set how many
 characters they may spend per day (200,000 by default); that tally is kept on
 your computer and never uploaded.
@@ -65,7 +69,13 @@ your computer and never uploaded.
 帮它译得更连贯；翻译整页时还附上每一批文字前后各至多 300 字，自动翻译只附标题；
 输入框翻译从不附带。二是术语表：与这段
 文字匹配的词条会随请求发给同一个服务。你选的「领域」只是一个名字（如「法律」），
-不含页面内容。**内置翻译不发送这两样**，它们也从不发给我们。
+不含页面内容。**内置翻译不发送这两样**；它们只随发给模型引擎的请求出去 —— 你配置的
+AI 服务，或者你选了叭叭翻译时我们的服务器。
+
+**「结合上下文解释」不看这个开关。** 划词卡片上的词典词条下面有这颗按钮，点它的那
+一次请求，无论「附带页面上下文」开没开，都会带上网页标题和你选的词所在的那句话，发给
+你的 AI 服务或叭叭翻译（后者跑在我们的服务器上），让它按这句话里的意思解释这个词。只
+管这一次，不改设置（`content/content-popup.js`、`content/engine/addenda.js`）。
 
 **An AI request can carry two things besides the text being translated.** One is
 "Send page context" (in the custom prompt section of Settings, **off by
@@ -75,8 +85,17 @@ translation also sends at most 300 characters before and after each batch;
 automatic translation sends the title only; the input box never sends it. The other is
 the glossary: entries that match the text go with the request to the same
 service. The "domain" you pick is only a name (such as "Legal") and carries no
-page content. **The built-in translator sends neither**, and neither is ever
-sent to us.
+page content. **The built-in translator sends neither**; both go only with a
+request to a model engine — the AI service you configured, or our servers when
+you picked Blab Translation.
+
+**"Explain in context with AI" ignores that switch.** The button sits under a
+dictionary entry on the selection card. The one request it sends carries the
+page title and the sentence the word was selected in, whether "Send page
+context" is on or off, to your AI service or to Blab Translation (which runs on
+our servers), so the word is explained as used in that sentence. It applies to
+that request only and changes no setting (`content/content-popup.js`,
+`content/engine/addenda.js`).
 
 **整页翻译读哪些内容、不读哪些：**
 
@@ -89,7 +108,7 @@ sent to us.
   这样标的跳过；句子里这样标的词（产品名、人名）原样留在本机，不进翻译请求。
 - **默认只翻正文。** 导航、侧栏、页眉页脚不送去翻译；要翻整页，用悬浮球菜单里的
   「翻译整个页面」，或在设置里把范围改成整页。
-- **这些都没有新增权限。** 权限清单和上一版一样，见第四节。
+- **这些都没有新增权限。** 权限清单见第四节。
 
 **What page translation reads, and what it never reads:**
 
@@ -108,8 +127,8 @@ sent to us.
   headers and footers are not sent; to translate the whole page, use
   "Translate Whole Page" in the float ball's menu, or change the scope in
   Settings.
-- **None of this adds a permission.** The permission list is unchanged; see
-  section four.
+- **None of this adds a permission.** The permission list is in section
+  four.
 
 ---
 
@@ -158,6 +177,7 @@ and only at the moment you click "translate this image".
 | 登录令牌（漫画 / 文档翻译用） | `chrome.storage.local` | **否**，只在这台设备上 |
 | 本机统计（这个月自动翻了几页、缓存省了多少、发出去多少字符，以及今天不用点的翻译用掉了多少 AI 字符 —— 每日额度靠它算） | `chrome.storage.local` | **否，而且从不上传**。见 `shared/auto-stats.js` |
 | 译文缓存（30 天过期） | `chrome.storage.local` | 否 |
+| 离线词典包（词条、各包的版本和下载状态、你删掉的语言对） | `chrome.storage.local` | **否**，只在这台设备上。设置页「离线词典」一节能逐包删除；卸载扩展时一并删掉 |
 
 **「本机统计」那一块是给你自己看的镜子，不是我们的埋点。** 它之所以放在
 `local` 而不是 `sync`，正是为了这句话能站得住：`sync` 跟着账号走，这几个数字不
@@ -179,7 +199,8 @@ button that clears it.
 | `contextMenus` | 右键菜单里的那几条 |
 | `identity` | 漫画 / 文档翻译的登录流程 |
 | `notifications` | 文档任务完成、需要你确认（比预计长）、已取消时告诉你 |
-| `alarms` | 只在有文档任务运行时，每分钟查一次它的状态（MV3 的 service worker 不能长期挂定时器）；没有运行中的任务就撤掉 |
+| `alarms` | 有文档任务运行时，每分钟查一次它的状态（MV3 的 service worker 不能长期挂定时器），没有运行中的任务就撤掉；另有两个每天一次的闹钟，一个清理过期的译文缓存，一个检查离线词典包有没有新版本（「离线词典」关掉时它什么都不下载） / A one-minute alarm only while a document job is running; two daily alarms, one that sweeps expired translation cache entries and one that checks the offline dictionary packs for a new version (it downloads nothing while the offline dictionary is switched off) |
+| `unlimitedStorage` | 离线词典包存在本机的 `chrome.storage.local` 里，几包加起来会超过 Chrome 默认的 10 MB 上限；这项权限只放宽本机存储的上限，不让扩展多读、多发任何东西 / The offline dictionary packs live in `chrome.storage.local`, and a few packs together pass Chrome's default 10 MB limit; the permission only raises the local storage limit and lets the extension read or send nothing more |
 | `offscreen` | 跑本机 OCR 引擎（它需要 Web Worker 和 WebAssembly，service worker 里跑不了） |
 
 ---
@@ -198,15 +219,16 @@ button that clears it.
 
 ## 六、删除你的数据 / Deleting your data
 
-- **你电脑上的**：设置、站点规则、术语表、译文缓存、本机统计，都能在设置页里清
-  —— 站点规则和术语表一行一个删除按钮，统计和译文缓存各有一颗「清除」；或者直接
+- **你电脑上的**：设置、站点规则、术语表、译文缓存、本机统计、离线词典包，都能在
+  设置页里清 —— 站点规则和术语表一行一个删除按钮，统计和译文缓存各有一颗「清除」，
+  词典包一包一个删除按钮；或者直接
   卸载扩展，Chrome 会把这个扩展的 `storage` 一并删掉。
 - **我们服务器上的**（账号、任务记录、上传过的文件）：**在设置页「退出登录」只是
   删掉这台设备上的令牌，服务器上的东西还在。** 要真删，发邮件到下面那个地址，
   说明要删除账号。
 
 What is on your computer — settings, site rules, the glossary, the translation
-cache and the local statistics — can be cleared in the settings page or removed
+cache, the local statistics and the offline dictionary packs — can be cleared in the settings page or removed
 wholesale by uninstalling the extension. What is on our servers is a separate
 act: **signing out only deletes this device's token**, so ask for account
 deletion at the address below.

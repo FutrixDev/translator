@@ -52,7 +52,8 @@ async function settleLive() {
  */
 function makeChromeStub(seed = {}) {
   const store = new Map(Object.entries(seed));
-  const calls = { get: 0, set: 0, remove: 0, bytes: 0 };
+  // read：每次 get 要的键。get(null) 记作 null —— 缓存从不整个读 storage.local。
+  const calls = { get: 0, set: 0, remove: 0, bytes: 0, read: [] };
   const listeners = [];
   const fire = (changes) => {
     if (Object.keys(changes).length === 0) return;
@@ -63,6 +64,7 @@ function makeChromeStub(seed = {}) {
       local: {
         async get(keys) {
           calls.get += 1;
+          calls.read.push(keys === null || keys === undefined ? null : [].concat(keys));
           if (keys === null || keys === undefined) return Object.fromEntries(store);
           const out = {};
           for (const key of [].concat(keys)) {
@@ -88,6 +90,9 @@ function makeChromeStub(seed = {}) {
             store.delete(key);
           }
           fire(changes);
+        },
+        async getKeys() {
+          return [...store.keys()];
         },
         async getBytesInUse(keys) {
           calls.bytes += 1;
@@ -389,6 +394,27 @@ test('sweep 扔掉过期和畸形条目，留下新鲜的，不碰别人的键',
   assert.equal(result.removed, 2);
   assert.equal(result.kept, 1);
   assert.deepEqual([...store.keys()].sort(), [fresh, 'pdf-job:1'].sort());
+});
+
+test('sweep 与 clear 只读 tc: 键，不 get(null)：离线词典的几十万条不进内存 (J-B1.11)', async () => {
+  const probe = await freshCache();
+  const fresh = probe.cache.buildKey({ ...FACTORS, text: 'fresh' });
+  const stale = probe.cache.buildKey({ ...FACTORS, text: 'stale' });
+  const dict = { 'dict:packs': { 'en-zh-CN': { ver: '1' } }, 'd:en-zh-CN:run': { t: ['跑'] }, 'd:en-zh-CN:~ran': { h: 'run' } };
+  const { cache, store, calls } = await freshCache({
+    [fresh]: { t: '新', ts: Date.now() },
+    [stale]: { t: '旧', ts: Date.now() - probe.cache.TTL_MS - 1 },
+    ...dict,
+  });
+
+  assert.deepEqual(await cache.sweep(), { removed: 1, kept: 1 });
+  assert.equal(calls.read.length, 1);
+  assert.deepEqual(calls.read[0].sort(), [fresh, stale].sort(), 'sweep 读到了 tc: 以外的键');
+
+  calls.read.length = 0;
+  assert.deepEqual(await cache.clear(), { removed: 1 });
+  assert.deepEqual(calls.read, [], 'clear 只要键名，不读值');
+  for (const key of Object.keys(dict)) assert.equal(store.has(key), true, `${key} 被缓存清扫碰了`);
 });
 
 test('超出字节预算就按时间扔掉最旧的四分之一', async () => {

@@ -65,10 +65,11 @@ test('the version is asked first, because it is the only fact that stands alone'
 test('the cutoff is the Chrome release the Translator API shipped in', () => {
   assert.equal(ES.BUILTIN_MIN_CHROME, 138);
   // And manifest.json deliberately does not follow it: everything else works
-  // on 116, so a user with their own API key still has a working extension.
-  // The status line is what keeps that honest.
+  // on 130 (the offline dictionary's chrome.storage.local.getKeys()), so a
+  // user with their own API key still has a working extension. The status
+  // line is what keeps that honest.
   const manifest = JSON.parse(repoFile('manifest.json'));
-  assert.equal(manifest.minimum_chrome_version, '116');
+  assert.equal(manifest.minimum_chrome_version, '130');
 });
 
 // ------------------------------------------------------ the one status line

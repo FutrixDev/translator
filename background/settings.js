@@ -70,7 +70,10 @@ const defaultSettings = {
   // 页面上译文怎么显示。worker 只有 Alt+T（background/commands.js）读前者；
   // 后者列在这里是为了四张默认值表对得上（default-settings-agree 单测）。
   showTranslationOnly: false,
-  translationStyle: 'default'
+  translationStyle: 'default',
+  // The offline dictionary (background/dict-packs.js): on by default (D-566).
+  // Off means no lookup, no download and no preinstall; seeded packs stay.
+  offlineDictionary: true
 };
 
 // Get effective target language (browser language if the user never picked one)

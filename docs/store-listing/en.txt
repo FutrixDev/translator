@@ -49,6 +49,7 @@ Original and translation side by side, on web pages, PDFs, ebooks, videos, manga
 • With your own AI model, text goes straight to your endpoint with your own key — never through us.
 • Blab Translation sends the text to our servers to translate it and keeps none of it.
 • PDF, document and comic files are processed on our servers and deleted after 7 days.
+• Offline dictionary packs are downloaded from our server and kept on your device; that is what the unlimited storage permission is for. Looking a word up in a pack sends nothing.
 • No analytics. No ad tracking.
 
 SHORTCUTS

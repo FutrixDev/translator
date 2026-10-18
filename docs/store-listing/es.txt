@@ -49,6 +49,7 @@ El original y la traducción uno junto al otro, en páginas web, PDF, libros ele
 • Con tu propio modelo de IA, el texto va directo a tu endpoint con tu propia clave, nunca a través de nosotros.
 • Blab Translation envía el texto a nuestros servidores para traducirlo y no guarda nada.
 • Los archivos PDF, documentos y cómics se procesan en nuestros servidores y se eliminan a los 7 días.
+• Los paquetes de diccionario sin conexión se descargan de nuestro servidor y se guardan en tu dispositivo; para eso sirve el permiso de almacenamiento ilimitado. Buscar una palabra en un paquete no envía nada.
 • Sin analítica. Sin rastreo publicitario.
 
 ATAJOS

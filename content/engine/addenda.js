@@ -9,9 +9,12 @@
 //   - 词表：这一份文字命中的词条（快照切份时算好）。
 //   - 领域：有效领域 = 本站规则的 domain（ctx.customRules.domain()）?? 全局
 //     settings.promptDomain。规则写「general」也算写了；有效领域是 general 就不发。
-//   - 页面上下文：只在 settings.aiPageContext 开着、而且不是输入框（standaloneText）
-//     时附带。标题是执行请求的这一帧（顶层）的 document.title；前后文只有整页批量
-//     有，由 content/page/batch.js 放进消息的 `pageContext: {before, after}`。这里
+//   - 页面上下文：settings.aiPageContext 开着、或者这一次请求自己带了
+//     `explainContext: true`（划词卡片的「用 AI 解释此处语境」，D-641：不看开关），
+//     而且不是输入框（standaloneText）时附带。标题是执行请求的这一帧（顶层）的
+//     document.title；前后文由发请求的一方放进消息的 `pageContext: {before, after}`：
+//     整页批量（content/page/batch.js）放邻段，解释语境的卡片（content-popup.js 的
+//     sentenceAround）把选区所在的那一句整句放进 before、after 为空。这里
 //     先过 TextMarkers.strip 再按 PromptAddenda.LIMITS 截：before 取最后 300 字，
 //     after 取前 300 字，标题取前 200 字。`pageContext` 从不发给模型：执行请求的
 //     那一帧的引擎（content-translation-engine.js 的 sendToModel）在发出前把它从消息
@@ -143,15 +146,17 @@
   /**
    * 一份的附加说明；什么都没有时是 null，消息里的 `addenda` 就只有发起请求那一帧
    * 盖的语域（引擎的 withAddenda 把这里的结果并进去，不覆盖语域）。`message` 是
-   * 这次要发的消息（读 standaloneText 与 pageContext），`part` 是 plan 切出的一份，
-   * `current` 是 settings() 取的那一份领域与上下文开关。
+   * 这次要发的消息（读 standaloneText、explainContext 与 pageContext），`part` 是
+   * plan 切出的一份，`current` 是 settings() 取的那一份领域与上下文开关。消息自己的
+   * `explainContext: true` 和开关一样打开上下文，但只管这一次，从不写回设置。
    * 批量切成几份时每份都带同一份上下文（每份是一次独立的模型调用），各自计字数。
    */
   function compose(message, part, current) {
     const addenda = {};
     if (part.glossary.length) addenda.glossary = part.glossary;
     if (current.domain !== 'general') addenda.domain = current.domain;
-    if (current.context && message.standaloneText !== true) addenda.context = pageContextOf(message);
+    const context = current.context || message.explainContext === true;
+    if (context && message.standaloneText !== true) addenda.context = pageContextOf(message);
     return Object.keys(addenda).length ? addenda : null;
   }
 
@@ -162,7 +167,10 @@
    * 后三样出自调用方交来的词表快照 `snap` 和 settings() 那一份 `current`：缓存层
    * 把同一对快照经 opts 交给送出那一步，compose 用的就是它们，所以键和真正发出去
    * 的附加说明不会各算各的（D-382、D-384 F1）。上下文只进开关不进内容：前后文
-   * 每段都不一样，放进键里就等于不缓存。
+   * 每段都不一样，放进键里就等于不缓存。消息上的 `explainContext` 不进键：带它的
+   * 只有划词卡片的 TRANSLATE，而缓存只收 TRANSLATE_BATCH_FAST
+   * （content-translation-cache.js 的 sendTranslationCached），带不带那一句的两次
+   * 请求不会共用一条缓存（D-641）。
    */
   function addendaStamp(addenda, snap, text, current) {
     const register = globalThis.PromptAddenda.stamp(addenda);

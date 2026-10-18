@@ -53,11 +53,13 @@
 
   // Why a word came back without an entry, as the i18n key of the one line
   // drawn where the entry would be, or '' when there is nothing to say. The
-  // built-in engine gives no entry: the word needs a model (and the note
-  // offers one). A model that answered with every list empty drew nothing:
-  // say it was asked. A sentence is translated, never looked up, and says
-  // nothing.
+  // offline dictionary answered from a pack entry and says nothing (design
+  // §5.4). The built-in engine gives no entry: the word needs a model (and the
+  // note offers one). A model that answered with every list empty drew
+  // nothing: say it was asked. A sentence is translated, never looked up, and
+  // says nothing.
   function missingEntryNote({ mode, engine, entry }) {
+    if (engine === DictEntry.DICT_ENGINE) return '';
     if (mode === 'word' && engine === 'builtin') return 'inputDictNeedsModel';
     if (entry && !DictEntry.hasContent(entry)) return 'dictEntryEmpty';
     return '';
@@ -240,8 +242,12 @@
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
-        const mode = DictEntry.isLookup(text) ? 'word' : 'text';
-        const response = await ctx.requestTranslation({
+        // A pinned request goes to its engine; any other asks the offline
+        // dictionary first and sends TRANSLATE only on a miss. The answer and
+        // the mode both come from ctx.dictRoute, the card's rule too. The box
+        // offers no "explain" after a hit, so it never claims a proven word.
+        const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned: engine, standalone: true });
+        const response = local || await ctx.requestTranslation({
           type: 'TRANSLATE',
           feature: 'input',
           text: text,
@@ -262,8 +268,10 @@
           return;
         }
 
-        // Only a model lookup ('ai' or 'blab') carries an entry (DictEntry.entryFor); the builtin
-        // engine and sentence translations leave the dictionary blocks empty.
+        // A model lookup ('ai' or 'blab') or a local dictionary hit carries an
+        // entry (DictEntry.entryFor, with the pack's credits for a hit); the
+        // builtin engine and sentence translations leave the dictionary blocks
+        // empty.
         const entry = DictEntry.entryFor(mode, response);
         showResult({ text: response.translation }, targetLang);
         showEntry(entry, targetLang);

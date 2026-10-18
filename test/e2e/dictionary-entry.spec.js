@@ -1,7 +1,9 @@
 // Batch C journeys C1–C3: a word looked up in the input box or the selection
 // card shows a dictionary entry (phonetics with speakers, senses, examples,
-// word forms) under the translation — from the AI engine only (D-469/D-470).
+// word forms) under the translation — from a model engine (D-469/D-470) or the
+// offline dictionary (D-561), never the built-in engine.
 // C9: a short formula is translated, not looked up (D-474).
+// C10: an offline dictionary answer draws its credits as links (D-561).
 // J1–J3: the phonetics are the translation's, in the target language, and
 // their speakers read the translation (D-487); the source text keeps its own
 // speaker on each surface.
@@ -26,14 +28,22 @@ const {
   waitForFloatBall,
 } = require('./helpers');
 const { HOSTILE_ENTRY_CSS } = require('./hostile-css');
-const { contrastOf, waitForSettled, MIN_CONTRAST } = require('./layout-checks');
+const {
+  ACCENT_STYLES,
+  MODEL_CONTRAST_SELECTORS,
+  MODEL_ENTRY_STYLES,
+  ORIGIN,
+  en,
+  expectEntryStyles,
+  expectReadableContrast,
+  openCardOn,
+  servePages,
+  settings,
+  zh,
+} = require('./dict-entry-checks');
 const { startMockOpenAIServer } = require('./mock-openai-server');
-const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
 
-const ORIGIN = 'https://dictionary.test';
-const zh = (key) => getMessage(key, 'zh-CN');
-const en = (key) => getMessage(key, 'en');
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Morning notes</title>
@@ -84,25 +94,7 @@ function dictEntry(text) {
 }
 
 // The page, optionally with a hostile stylesheet in its head.
-async function servePage(context, css = '') {
-  const body = css ? PAGE.replace('</head>', `<style>${css}</style></head>`) : PAGE;
-  await context.route(`${ORIGIN}/**`, (route) => {
-    route.fulfill({ status: 200, contentType: 'text/html', body });
-  });
-}
-
-function settings(endpoint, extra = {}) {
-  return {
-    provider: 'custom',
-    apiEndpoint: endpoint,
-    apiKey: 'test-key',
-    modelName: 'gpt-4.1-mini',
-    targetLang: 'zh-CN',
-    enableSelection: true,
-    selectionTranslationMode: 'popup',
-    ...extra,
-  };
-}
+const servePage = (context, css = '') => servePages(context, { '/': PAGE }, css);
 
 // speechSynthesis in the content script's world: an en-GB, an en-US and a
 // zh-CN voice, and speak() records what it was asked to say and in which
@@ -143,21 +135,6 @@ async function stubSpeech(page) {
 
 const spoken = (page) => evaluateInContentScript(page.context(), page, 'self.__spoken');
 const asked = (page) => evaluateInContentScript(page.context(), page, 'self.__asked');
-
-// Select the text of `selector` with the mouse, as a reader would, and open the
-// card from the selection icon.
-async function openCardOn(page, selector) {
-  const box = await page.locator(selector).boundingBox();
-  const y = box.y + box.height / 2;
-  await page.mouse.move(box.x + 1, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 1, y, { steps: 5 });
-  await page.mouse.up();
-  const icon = page.locator('#ai-translator-selection-btn .ai-translator-selection-icon');
-  await expect(icon).toBeVisible();
-  await icon.click();
-  return page.locator('.ai-translator-popup');
-}
 
 // The blocks of a fully drawn `run` entry, under `root`.
 async function expectRunEntry(page, root) {
@@ -203,79 +180,6 @@ async function expectTranslationSpeaker(page, root) {
 }
 
 const shotDir = process.env.DICT_SCREENSHOT_DIR;
-
-// What each element of the entry computes to, whatever the page says about
-// bare spans and divs. A flex item's display is blockified, so the spans in a
-// flex row compute to block (or flex for an inline-flex one).
-const PRIMARY = 'var(--text-primary)';
-const SECONDARY = 'var(--text-secondary)';
-const ENTRY_STYLES = [
-  ['.ai-translator-dict-section', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-heading', 'block', '0px', '11px', SECONDARY],
-  ['.ai-translator-dict-phonetic', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-ipa', 'block', '0px', '14px', SECONDARY],
-  ['.ai-translator-dict-sense', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-pos', 'block', '0px', '13px', 'var(--dict-pos)'],
-  ['.ai-translator-dict-defs', 'block', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-example', 'block', '0px 0px 0px 8px', '13px', PRIMARY],
-  ['.ai-translator-dict-example-source', 'block', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-example-target', 'block', '0px', '13px', SECONDARY],
-  ['.ai-translator-dict-form', 'flex', '0px', '13px', PRIMARY],
-  ['.ai-translator-dict-form-label', 'block', '0px', '13px', SECONDARY],
-  ['.ai-translator-dict-form-value', 'block', '0px', '13px', PRIMARY],
-];
-// The UK/US label is only drawn for an English translation (the `猫` entry).
-const ACCENT_STYLES = [
-  ['.ai-translator-dict-accent', 'block', '0px', '12px', SECONDARY],
-];
-
-// The computed display, padding, font-size and colour of every element above,
-// with the colour each should have: its token, resolved on a probe inside the
-// entry (an inline style, which no page rule outweighs).
-function entryStyles(page, entrySelector, rows) {
-  return page.evaluate(({ entrySelector, rows }) => {
-    const entry = document.querySelector(entrySelector);
-    const probe = document.createElement('i');
-    entry.appendChild(probe);
-    const out = rows.map(([selector, , , , token]) => {
-      const el = entry.querySelector(selector);
-      const style = getComputedStyle(el);
-      probe.style.color = token;
-      return [selector, style.display, style.padding, style.fontSize, style.color, getComputedStyle(probe).color];
-    });
-    probe.remove();
-    return out;
-  }, { entrySelector, rows });
-}
-
-async function expectEntryStyles(page, entrySelector, rows = ENTRY_STYLES) {
-  const measured = await entryStyles(page, entrySelector, rows);
-  for (const [i, [selector, display, padding, fontSize]] of rows.entries()) {
-    const [, gotDisplay, gotPadding, gotSize, color, tokenColor] = measured[i];
-    expect({ selector, display: gotDisplay, padding: gotPadding, fontSize: gotSize, color })
-      .toEqual({ selector, display, padding, fontSize, color: tokenColor });
-    expect(color, selector).not.toBe('rgb(255, 0, 0)');
-  }
-}
-
-// WCAG contrast of the entry's small secondary text against what is painted
-// under it, measured by layout-checks.js (the one implementation of that walk).
-const CONTRAST_SELECTORS = [
-  '.ai-translator-dict-heading',
-  '.ai-translator-dict-form-label',
-  '.ai-translator-dict-pos',
-  '.ai-translator-dict-ipa',
-  '.ai-translator-dict-example-target',
-];
-
-async function expectReadableContrast(page, entrySelector, label, selectors = CONTRAST_SELECTORS) {
-  await waitForSettled(page);
-  const entry = page.locator(entrySelector).first();
-  for (const selector of selectors) {
-    const ratio = await contrastOf(entry.locator(selector).first());
-    expect(ratio, `${label} ${selector}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
-  }
-}
 
 test.describe('dictionary entry (batch C)', () => {
   test('C1: the input box looks a word up, and a sentence is only translated', async ({ page, context }) => {
@@ -499,7 +403,7 @@ test.describe('dictionary entry (batch C)', () => {
       await openInputDialog(page);
       await translateInput(page, 'run');
       await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
-      await expectEntryStyles(page, '#ai-translator-input-dict');
+      await expectEntryStyles(page, '#ai-translator-input-dict', MODEL_ENTRY_STYLES);
       // The UK/US label, from an English translation.
       await page.fill('#ai-translator-input-text', '');
       await pickInputTargetLang(page, 'en');
@@ -510,7 +414,7 @@ test.describe('dictionary entry (batch C)', () => {
 
       const card = await openCardOn(page, '#word');
       await expectRunEntry(page, card);
-      await expectEntryStyles(page, '.ai-translator-popup .ai-translator-dict-entry');
+      await expectEntryStyles(page, '.ai-translator-popup .ai-translator-dict-entry', MODEL_ENTRY_STYLES);
     } finally {
       await mock.close();
     }
@@ -529,7 +433,7 @@ test.describe('dictionary entry (batch C)', () => {
         await openInputDialog(page);
         await translateInput(page, 'run');
         await expectRunEntry(page, page.locator('#ai-translator-input-dialog'));
-        await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`);
+        await expectReadableContrast(page, '#ai-translator-input-dict', `${theme} input box`, MODEL_CONTRAST_SELECTORS);
         // The UK/US label, from an English translation.
         await page.fill('#ai-translator-input-text', '');
         await pickInputTargetLang(page, 'en');
@@ -540,7 +444,7 @@ test.describe('dictionary entry (batch C)', () => {
 
         const card = await openCardOn(page, '#word');
         await expectRunEntry(page, card);
-        await expectReadableContrast(page, '.ai-translator-popup .ai-translator-dict-entry', `${theme} card`);
+        await expectReadableContrast(page, '.ai-translator-popup .ai-translator-dict-entry', `${theme} card`, MODEL_CONTRAST_SELECTORS);
       } finally {
         await mock.close();
       }
@@ -678,6 +582,90 @@ test.describe('dictionary entry (batch C)', () => {
         { text: '跑', lang: 'zh-CN' },
         { text: 'run', lang: '' },
       ]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  // D-561: an offline dictionary answer ({engine: 'dict', entry, credits}) is
+  // read by the same entryFor and drawn by the same render. This draws a
+  // hand-made answer into the input box's real entry container from the
+  // content script, where the card and the dialog call render, and reads the
+  // links off the page. The answer carries the two credits a pack can carry:
+  // an unsafe credit never reaches a card, because parsePack refuses the whole
+  // pack (D-686; test/unit/dict-pack.test.mjs). A real pack answer, entered
+  // from the page, is dictionary-local.spec.js (J-B2.1–J-B2.7).
+  test('C10: an offline dictionary entry ends in a credits line of links; a model answer\'s credits are dropped (D-561); unsafe credits are refused by parsePack (unit)', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await openInputDialog(page);
+      // A word looked up first, so the result area is on screen and the line
+      // below has a layout to measure; nothing after it asks a model.
+      await translateInput(page, 'run');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('跑');
+      const asked = mock.systemPrompts.length;
+
+      const drawAnswer = (answer) => evaluateInContentScript(context, page, `(() => {
+        const answer = ${JSON.stringify(answer)};
+        const entry = DictEntry.entryFor('word', answer);
+        DictEntry.render(document.getElementById('ai-translator-input-dict'), entry, {
+          targetLang: 'zh-CN', t: (key) => getMessage(key, 'zh-CN'), speech: null,
+        });
+        return 'credits' in entry;
+      })()`);
+      const entry = { translation: '跑', senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }] };
+      const credits = [
+        { label: 'JMdict © EDRDG', href: 'https://www.edrdg.org/edrdg/licence.html' },
+        { label: 'Tatoeba', href: 'https://tatoeba.org/' },
+      ];
+      const dict = page.locator('#ai-translator-input-dict');
+
+      expect(await drawAnswer({ engine: 'dict', translation: '跑', entry, credits })).toBe(true);
+      // The result area around it stays hidden until a translation arrives;
+      // render itself un-hides the entry container.
+      expect(await dict.evaluate((el) => el.hidden)).toBe(false);
+      const line = dict.locator('.ai-translator-dict-credits');
+      await expect(line).toHaveCount(1);
+      await expect(line.locator('.ai-translator-dict-credits-prefix')).toHaveText(zh('dictCredits'));
+      // One line of its own, not a stacked section: prefix, first link, a
+      // ' · ' text node, second link, in that order (render owns the order),
+      // laid out side by side on one row (dict-entry.css owns that).
+      const order = await line.evaluate((el) => ({
+        className: el.className,
+        nodes: [...el.childNodes].map((n) => (n.nodeType === Node.TEXT_NODE ? `text:${n.data}` : n.className)),
+      }));
+      expect(order).toEqual({
+        className: 'ai-translator-dict-credits',
+        nodes: ['ai-translator-dict-credits-prefix', 'ai-translator-dict-credit-link', 'text: · ', 'ai-translator-dict-credit-link'],
+      });
+      const row = await line.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        tops: [...el.children].map((child) => child.offsetTop),
+      }));
+      expect(row.height, JSON.stringify(row)).toBeGreaterThan(0);
+      expect(new Set(row.tops).size, `prefix and links on one row: ${JSON.stringify(row)}`).toBe(1);
+      const links = line.locator('a');
+      await expect(links).toHaveText(['JMdict © EDRDG', 'Tatoeba']);
+      const attrs = await links.evaluateAll((all) => all.map((a) => ({
+        href: a.href, target: a.target, noopener: a.relList.contains('noopener'), noreferrer: a.relList.contains('noreferrer'),
+      })));
+      expect(attrs).toEqual([
+        { href: 'https://www.edrdg.org/edrdg/licence.html', target: '_blank', noopener: true, noreferrer: true },
+        { href: 'https://tatoeba.org/', target: '_blank', noopener: true, noreferrer: true },
+      ]);
+
+      // The same credits on a model answer: dropped, no line, the entry as before.
+      expect(await drawAnswer({ engine: 'ai', translation: '跑', entry: { ...entry, credits }, credits })).toBe(false);
+      await expect(dict.locator('.ai-translator-dict-sense')).toHaveCount(1);
+      await expect(dict.locator('.ai-translator-dict-credits')).toHaveCount(0);
+      await expect(dict.locator('a')).toHaveCount(0);
+
+      // Nothing after the first word asked a model.
+      expect(mock.systemPrompts).toHaveLength(asked);
     } finally {
       await mock.close();
     }

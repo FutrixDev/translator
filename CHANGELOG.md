@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased
+
+### Offline dictionary
+
+- **The dictionary entry can now come from an offline dictionary as well as
+  from your AI model.** An offline entry is drawn exactly like a model's,
+  and ends in a short "Sources:" line linking to the dictionaries whose
+  licences ask for credit on the entry (JMdict and Tatoeba). Only those two
+  sites can be linked, each link opens in a new tab, and a model's answer can
+  never add such a line. The card strings for the offline dictionary are in
+  all ten languages.
+- **Dictionary packs download, update and can be deleted.** With the offline
+  dictionary switched on, installing the extension fetches the pack from
+  English into your target language, and a pack for another language pair is
+  fetched the first time a word in it is looked up. Every pack is checked
+  against the published checksum before anything is stored: a pack that does
+  not match is refused, the one you had stays in use, and Settings names the
+  version that failed and says it will be tried again. Packs are checked for a
+  new version once a day, and a pack that could not be fetched at install is
+  fetched then; the new one replaces the old completely, and a download cut
+  short is cleaned up at the next check or when Settings opens. Settings lists
+  each pack with its size, word count and version, with a Delete button. A
+  deleted pack stays deleted, even when you look up a word in it, until you
+  press "Download again" on its row; a pack no longer published says "No
+  longer updated". A "Dictionary data sources" link at the bottom opens a page
+  naming every dictionary in your packs and its licence. With the switch off
+  nothing is downloaded. The daily clean-up of the translation cache now
+  reads only its own entries, so it stays quick however many dictionary words
+  are stored beside it.
+- **Words are looked up in the offline dictionary first.** A word you select
+  or type in the input box is answered from an installed pack when the pack
+  has it: the card is titled "Dictionary", the tag says "Offline dictionary",
+  nothing is sent to any engine, and the entry ends in its "Sources:" line,
+  which stays on one line of its own and readable in both themes, and is not
+  restyled by a page's rules for plain links and text. "Explain in context
+  with AI" on the card sends that word to your AI model or Blab Translation,
+  whichever is available, together with the sentence it was selected in, and
+  answers with a dictionary entry for the word as used there; the button is
+  hidden when neither is. A word the pack does not have, a sentence, or the
+  switch turned off goes to your usual engine as before, with no "not in the
+  dictionary" message.
+- **Chrome 130 or later is now required, and the extension asks for unlimited
+  storage.** The dictionary packs live in the extension's own storage on your
+  computer (a few packs run to tens of megabytes, more than Chrome's default
+  10 MB allows), and reading a pack's entries one by one needs Chrome 130.
+  Copies of Chrome from 116 to 129 keep the version they have and receive no
+  further updates until Chrome is updated.
+
 ## 1.5.1 — 2026-10-14
 
 ### Blab Translation, a third engine

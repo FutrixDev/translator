@@ -111,7 +111,7 @@
           ${t('translate')}
         </button>
         <button class="ai-translator-btn ai-translator-retranslate" type="button" hidden>${t('cardRetranslate')}</button>
-        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'])}</button>
+        <button class="ai-translator-btn ai-translator-switch-engine" type="button" hidden>${ctx.engineSwitchLabel(['ai', 'builtin', 'blab'], { explain: true })}</button>
         <button class="ai-translator-btn ai-translator-add-term" type="button" hidden>${ctx.fitLabel('', [t('glossaryAdd'), t('glossaryAdded'), t('glossaryUpdated')])}</button>
         <button class="ai-translator-btn ai-translator-copy" type="button" title="${t('copyTranslation')}">${ctx.copyButtonContent(t('copy'))}</button>
       </div>
@@ -210,6 +210,57 @@
     popup._resizeObserver = observer;
   }
 
+  // The element whose text holds the selection: the nearest ancestor that is
+  // not laid out inline.
+  function blockOf(node) {
+    let element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    while (element && element !== document.body) {
+      const display = getComputedStyle(element).display;
+      if (display !== 'inline' && display !== 'contents') return element;
+      element = element.parentElement;
+    }
+    return document.body;
+  }
+
+  /**
+   * The page context "explain in context with AI" sends (D-641): the sentence
+   * that holds the start of the selection, cut from its block's text by
+   * Intl.Segmenter, whitespace runs folded to one space. The whole sentence goes
+   * in `before` (after is empty) so the model reads it as one string; a sentence
+   * longer than PromptAddenda.LIMITS.before keeps the stretch centred on the
+   * selection. content/engine/addenda.js strips the markers and holds the limits
+   * as for every page context. No range (the context-menu card) is no sentence.
+   *
+   * @param {?Range} range
+   * @returns {?{before: string, after: string}}
+   */
+  function sentenceAround(range) {
+    if (!range) return null;
+    const block = blockOf(range.startContainer);
+    const lead = document.createRange();
+    lead.selectNodeContents(block);
+    const blockText = lead.toString();
+    lead.setEnd(range.startContainer, range.startOffset);
+    const start = lead.toString().length;
+    const end = Math.min(blockText.length, start + range.toString().length);
+    const segment = new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(blockText).containing(start);
+    if (!segment) return null;
+    const fold = (value) => value.replace(/\s+/g, ' ');
+    const from = segment.index;
+    const to = Math.max(from + segment.segment.length, end);
+    const pre = fold(blockText.slice(from, start)).trimStart();
+    const selected = fold(blockText.slice(start, end));
+    const post = fold(blockText.slice(end, to)).trimEnd();
+    const limit = globalThis.PromptAddenda.LIMITS.before;
+    if (pre.length + selected.length + post.length <= limit) {
+      return { before: pre + selected + post, after: '' };
+    }
+    const room = Math.max(0, limit - selected.length);
+    const head = pre.slice(pre.length - Math.min(pre.length, Math.ceil(room / 2)));
+    const tail = post.slice(0, room - head.length);
+    return { before: (head + selected + tail).slice(0, limit), after: '' };
+  }
+
   function showTranslationPopup(text, { range = null } = {}) {
     hideTranslationPopup();
 
@@ -220,6 +271,9 @@
     state.translationPopup = popup;
     popup.className = 'ai-translator-popup';
     popup.dataset.sourceText = text;
+    // Read now, while the selection is the reader's and the card is not yet in
+    // the page: only "explain in context with AI" sends it (translateText).
+    popup._explainContext = sentenceAround(range);
     popup.innerHTML = buildPopupMarkup({ text, pending: true });
     document.body.appendChild(popup);
     keepCardPlaced(popup, anchorCard(range));
@@ -568,9 +622,9 @@
     });
   }
 
-  // 卡片标题说这次是哪个引擎译的，每个引擎一条（Engines.ENGINES）。标签与「换到…」按钮在
-  // content-engine-choice.js。
-  const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab' };
+  // 卡片标题说这次是谁答的，每个引擎一条（Engines.ENGINES），本地词典答的是「词典」。
+  // 标签与「换到…」按钮在 content-engine-choice.js。
+  const CARD_TITLE = { builtin: 'translate', ai: 'aiTranslate', blab: 'engineBlab', dict: 'dictTitle' };
 
   // 重译用卡片当前的原文和目标语言重发；换引擎先把这张卡固定到另一边再重发。
   // 什么都不写进设置。
@@ -583,6 +637,9 @@
     const switchBtn = popup.querySelector('.ai-translator-switch-engine');
     switchBtn.addEventListener('click', () => {
       popup.dataset.pinnedEngine = switchBtn.dataset.engine;
+      // "Explain in context with AI" (content-engine-choice.js marks the
+      // button) makes this card send its sentence until it switches again.
+      popup.toggleAttribute('data-explain', switchBtn.hasAttribute('data-explain'));
       resend();
     });
   }
@@ -592,7 +649,6 @@
     const popup = state.translationPopup;
     const isCurrent = () => !!popup && state.translationPopup === popup && popup.dataset.requestId === requestId;
     try {
-      const mode = DictEntry.isLookup(text) ? 'word' : 'text';
       const targetLang = targetLangOverride || getEffectiveTargetLang();
       if (!isExtensionContextAvailable()) {
         if (popup) {
@@ -622,23 +678,42 @@
         setCardActionsBusy(popup, true);
         ctx.addTerm.collapse(popup);
       }
-      // 这张卡点过「换引擎」才带 engine；否则按设置走。
+      // The card's pinned engine (after a switch), the answer the offline
+      // dictionary gave and the request mode all come from ctx.dictRoute, the
+      // input box's rule too (D-641). A card the pack answered has proven this
+      // text a word (popup.dataset.provenWord), so asking a model about it
+      // again is still a word lookup; other text on the same card (an OCR
+      // card's recognised text) is not proven.
       const pinned = popup?.dataset.pinnedEngine;
-      const response = await ctx.requestTranslation({
+      if (popup && popup.dataset.provenWord !== undefined && popup.dataset.provenWord !== text) {
+        delete popup.dataset.provenWord;
+        popup.removeAttribute('data-explain');
+      }
+      const provenWord = !!popup && popup.dataset.provenWord === text;
+      const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
+      // "Explain in context with AI" always sends the sentence the selection
+      // sits in, whatever aiPageContext says (D-641); content/engine/addenda.js
+      // turns it into the PAGE CONTEXT addendum.
+      const explain = !!popup && popup.hasAttribute('data-explain');
+      const response = local || await ctx.requestTranslation({
         type: 'TRANSLATE',
         feature: 'selection',
         text: text,
         targetLang: targetLang,
         mode,
-        ...(pinned ? { engine: pinned } : {})
+        ...(pinned ? { engine: pinned } : {}),
+        ...(explain ? { explainContext: true } : {}),
+        ...(explain && popup._explainContext ? { pageContext: popup._explainContext } : {})
       });
 
       if (!isCurrent()) return;
+      if (response.engine === DictEntry.DICT_ENGINE) popup.dataset.provenWord = text;
 
       if (response.error) {
         showCardError(popup, response.error, response.action || null);
       } else {
-        // Only an AI lookup carries an entry; a builtin answer has none.
+        // A model lookup or a local dictionary hit carries an entry
+        // (DictEntry.entryFor); a builtin answer has none.
         const entry = DictEntry.entryFor(mode, response);
         const parts = cardParts(popup);
         setCardLoading(parts, false);

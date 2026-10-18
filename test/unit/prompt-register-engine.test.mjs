@@ -145,6 +145,29 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   }
 });
 
+// 「用 AI 解释此处语境」带着那一句的 TRANSLATE 与不带的同一个词不能共用一条缓存
+// （D-641）：TRANSLATE 根本不进缓存，每一次都发到模型，storage 里不留键。
+test('a selection TRANSLATE, explained or not, never enters the cache (D-641)', async () => {
+  useAI();
+  local.clear();
+  goTo('https://example.test/');
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    sentToAI.push(message);
+    return { translation: 'AI' };
+  };
+  const ask = (extra) => ctx.requestTranslationCached({
+    type: 'TRANSLATE', feature: 'selection', text: 'sat', targetLang: 'zh-CN', mode: 'word', ...extra,
+  });
+  await ask({});
+  await ask({ explainContext: true, pageContext: { before: 'The cat sat on the mat.', after: '' } });
+  await ask({});
+  assert.equal(sentToAI.length, 3, 'a selection request was answered from the cache');
+  assert.equal(sentToAI[0].addenda.context, undefined);
+  assert.equal(sentToAI[1].addenda.context.before, 'The cat sat on the mat.');
+  assert.equal(sentToAI[2].addenda.context, undefined, 'the explained answer leaked into a plain request');
+  assert.equal(local.size, 0, 'a selection request wrote a cache entry');
+});
+
 // 算键（serve 头一步）和送出之间隔着读 storage（readL2）：那期间用户改了领域，
 // 键和发出去的提示词也必须是同一份领域（D-384 F1）。缓存层在算键前取一份
 // {domain, context}，经 opts 交给送出那一步；改之前送出时现读，键说 general、
