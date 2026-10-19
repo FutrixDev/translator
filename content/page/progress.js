@@ -50,10 +50,15 @@
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
+      // 用户亲手关掉的语言包下载条，这一轮手动整页里不再建回来（下一下点击清掉）。
+      if (progressEl.dataset.kind === 'download') downloadBarDismissed = true;
       forceHideProgressBar();
     });
     placeBarNearBall(progressEl);
   }
+
+  // 这一轮手动整页里，用户关掉过语言包下载条（armProgressRing 在下一轮清掉）。
+  let downloadBarDismissed = false;
 
   // 每条条子至多一个待收的计时器。换内容时作废上一个：成功条 5 s 后要收，
   // 子 frame 随后报来带入口的错误条（frames/top.js）不该被它顺手收掉。
@@ -264,9 +269,10 @@
 
   // 语言包首次下载是几十 MB 级别的，期间一条译文都出不来，环停在 arming 上转。
   // 只转不说的话看起来像卡死了，所以下载的百分比用一条提示条说出来；这条不自动
-  // 收，下载这一程结束时（onBuiltinDownloadEnded）收。
+  // 收，下载这一程结束时（onBuiltinDownloadEnded）收。用户关掉了它，这一轮就不再
+  // 建；台上是别的条子（子框架报来的错误条之类），也不拿下载的百分比盖掉它。
   ctx.onBuiltinDownloadProgress = function(loaded) {
-    if (!state.isTranslatingPage) return;
+    if (!state.isTranslatingPage || downloadBarDismissed) return;
     const pct = Math.max(0, Math.min(100, Math.round((loaded || 0) * 100)));
     if (pct >= 100) {
       ctx.onBuiltinDownloadEnded();
@@ -278,6 +284,7 @@
       existing.querySelector('.ai-translator-progress-info span').textContent = text;
       return;
     }
+    if (existing && !existing.classList.contains('ai-translator-progress-done')) return;
     const progressEl = ensureBar();
     renderInfo(progressEl, text);
     progressEl.dataset.kind = 'download';
@@ -608,6 +615,7 @@
 
   /** 手动整页刚点下：环立刻进 arming，不等块收齐。 */
   function armProgressRing() {
+    downloadBarDismissed = false;
     ring.armedFrom = ctx.progressFeed.state();
     paintProgressRing();
   }
