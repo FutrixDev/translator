@@ -74,6 +74,10 @@ const PAGES = {
 <p id="t1">${BROKEN} one drifted past the harbour mouth during the night.</p>
 <p id="t2">${BROKEN} two was found tangled in the nets of a trawler at dawn.</p>`, 'body { font: 16px/24px sans-serif; }'),
   '/one': html(`<div id="log"><p id="first">First entry: ${SENTENCE}</p></div>`),
+  // /partial with nothing below the fold: an auto round sees all three at once.
+  '/stuck': html(`<p id="a">Alpha: ${SENTENCE}</p>
+<p id="t1">${BROKEN} one drifted past the harbour mouth during the night.</p>
+<p id="b">Bravo: ${SENTENCE}</p>`, 'body { font: 16px/24px sans-serif; }'),
 };
 
 async function serve(context) {
@@ -116,6 +120,8 @@ const PROBE = `(() => {
       dot: dot ? dot.dataset.state : null,
       title: ball ? ball.getAttribute('title') : null,
       track: document.querySelector('.ai-translator-progress-track') !== null,
+      // A manual page round is between its click and its finally.
+      manualOpen: !!self.AI_TRANSLATOR_CONTENT.state.isTranslatingPage,
       feed: { ...feed.state() },
     };
   };
@@ -186,14 +192,60 @@ function doneToHidden(probe, source) {
   return { ms: after[hidden].t - done.t, after: after.slice(0, hidden) };
 }
 
+/**
+ * A language pack that still has to come down: the next built-in call fetches it,
+ * reporting 0, 25, 50, 75 and 100 % a step apart. self.__dl.ticks has the time
+ * of each report, self.__dl.done says it is in.
+ */
+const stubLanguagePack = (context, page, stepMs = 300) => evaluateInContentScript(context, page, `(() => {
+  const real = self.Translator;
+  self.__dl = { ticks: [] };
+  self.Translator = {
+    availability: async () => (self.__dl.done ? 'available' : 'downloadable'),
+    create: async (options) => {
+      const target = new EventTarget();
+      if (options && typeof options.monitor === 'function') options.monitor(target);
+      for (const loaded of [0, 0.25, 0.5, 0.75, 1]) {
+        await new Promise((r) => setTimeout(r, ${stepMs}));
+        const ev = new Event('downloadprogress');
+        ev.loaded = loaded;
+        target.dispatchEvent(ev);
+        self.__dl.ticks.push(performance.now());
+      }
+      self.__dl.done = true;
+      return real.create(options);
+    },
+  };
+  return true;
+})()`);
+
+/**
+ * Record each moment a live language-pack bar is on the page (not one fading out)
+ * into self.__downloadBars, and the moment its close button is pressed into
+ * self.__downloadBarClosedAt.
+ */
+const watchDownloadBars = (context, page) => evaluateInContentScript(context, page, `(() => {
+  self.__downloadBars = [];
+  new MutationObserver(() => {
+    const bar = document.getElementById('ai-translator-progress');
+    if (bar && bar.dataset.kind === 'download' && !bar.classList.contains('ai-translator-progress-done')) {
+      self.__downloadBars.push(performance.now());
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#ai-translator-progress .ai-translator-progress-close')) self.__downloadBarClosedAt = performance.now();
+  }, true);
+  return true;
+})()`);
+
 // One mock server per test, closed after it.
 let mock;
 const countIn = (title) => (/Translated \d+\/\d+/.exec(title || '') || [null])[0];
 
 /** A manual round on /partial that leaves the amber ring held: 2 of 4 given up. */
-async function heldPartial(page, context) {
+async function heldPartial(page, context, extra = {}) {
   await serve(context);
-  await setExtensionSettings(page, settings(mock.endpoint));
+  await setExtensionSettings(page, settings(mock.endpoint, extra));
   await page.goto(`${ORIGIN}/partial`);
   await waitForContentReady(page);
   await installProbe(context, page);
@@ -328,6 +380,11 @@ test.describe('float ball progress ring', () => {
     await expect(ring(page)).toHaveAttribute('data-phase', 'partial', { timeout: 30000 });
     const snap = await feedState(context, page);
     expect({ known: snap.known, settled: snap.settled, failed: snap.failed }).toEqual({ known: 4, settled: 4, failed: 2 });
+    // The bar it ends on says what is left, not that it is complete.
+    await waitForPageRoundEnd(page);
+    const bar = page.locator(ROUND_END_BAR);
+    await expect(bar).toHaveClass(/ai-translator-progress-info-state/);
+    await expect(bar).not.toContainText('Complete');
     // The gap is the two given up: (settled − failed) / known = 1/2.
     await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
 
@@ -618,28 +675,8 @@ test.describe('float ball progress ring', () => {
     await page.goto(`${ORIGIN}/long`);
     await waitForContentReady(page);
     await stubBuiltinTranslator(page, { delaysMs: [60] });
-    // A language pack that still has to come down: the click fetches it, and once
-    // it is in the page restarts its auto session (a new session on the same page).
-    await evaluateInContentScript(context, page, `(() => {
-      const real = self.Translator;
-      self.__dl = {};
-      self.Translator = {
-        availability: async () => (self.__dl.done ? 'available' : 'downloadable'),
-        create: async (options) => {
-          const target = new EventTarget();
-          if (options && typeof options.monitor === 'function') options.monitor(target);
-          for (const loaded of [0, 0.25, 0.5, 0.75, 1]) {
-            await new Promise((r) => setTimeout(r, 300));
-            const ev = new Event('downloadprogress');
-            ev.loaded = loaded;
-            target.dispatchEvent(ev);
-          }
-          self.__dl.done = true;
-          return real.create(options);
-        },
-      };
-      return true;
-    })()`);
+    // Once the pack is in, the page restarts its auto session (a new session on the same page).
+    await stubLanguagePack(context, page);
     await installProbe(context, page);
     await clickBall(page);
     await waitForRoundEnd(context, page, { source: 'manual' });
@@ -698,5 +735,196 @@ test.describe('float ball progress ring', () => {
     await waitForContentReady(page);
     const ball = await page.locator('#ai-translator-float-ball').boundingBox();
     expect(ball.x - 4, 'reloaded on the left: the ring band').toBeGreaterThanOrEqual(0);
+  });
+
+  test('route change with auto translation off: the held amber ring goes to idle in the first write after it', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    // Off: no auto session to turn over, so only the route signal itself can take the ring down.
+    await heldPartial(page, context, { autoTranslate: false });
+    const before = await feedState(context, page);
+    const since = await evaluateInContentScript(context, page, `(() => {
+      const at = performance.now();
+      history.pushState({}, '', '/partial?page=2');
+      return at;
+    })()`);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'idle', { timeout: 5000 });
+    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /.+/);
+    const probe = await readProbe(context, page);
+    const after = probe.writes.filter((w) => w.t > since);
+    expect(after.length, 'a write after the route change').toBeGreaterThan(0);
+    expect(after[0].phase).toBe('idle');
+    expect(after[0].title).toBeNull();
+    expect([...new Set(after.map((w) => w.phase))]).toEqual(['idle']);
+    test.info().annotations.push({
+      type: 'route, auto off',
+      description: `feed ${before.source}/${before.phase} s${before.session} -> ${after[0].feed.source}/${after[0].feed.phase} s${after[0].feed.session}`,
+    });
+  });
+
+  test('a language-pack bar the user closes is not built again for the rest of that round', async ({ page, context }) => {
+    test.setTimeout(120000);
+    mock = await startMockOpenAIServer();
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, BUILTIN));
+    await page.goto(`${ORIGIN}/one`);
+    await waitForContentReady(page);
+    await stubBuiltinTranslator(page, { delaysMs: [60] });
+    await stubLanguagePack(context, page, 500);
+    await watchDownloadBars(context, page);
+
+    await clickBall(page);
+    const bar = page.locator('#ai-translator-progress[data-kind="download"]');
+    await expect(bar).toBeVisible({ timeout: 15000 });
+    await bar.locator('.ai-translator-progress-close').click();
+    await expect.poll(() => evaluateInContentScript(context, page, '!!self.__dl.done'), { timeout: 15000 }).toBe(true);
+    const { closedAt, ticks, bars } = await evaluateInContentScript(context, page,
+      '({ closedAt: self.__downloadBarClosedAt, ticks: self.__dl.ticks, bars: self.__downloadBars })');
+    expect(closedAt, 'the close button was pressed').toBeGreaterThan(0);
+    expect(ticks.filter((t) => t > closedAt).length, 'reports after the close').toBeGreaterThanOrEqual(2);
+    expect(bars.filter((t) => t > closedAt)).toEqual([]);
+    await waitForPageRoundEnd(page);
+  });
+
+  test('a language-pack report leaves a bar that is not the download bar alone', async ({ page, context }) => {
+    test.setTimeout(120000);
+    mock = await startMockOpenAIServer();
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, BUILTIN));
+    await page.goto(`${ORIGIN}/one`);
+    await waitForContentReady(page);
+    await stubBuiltinTranslator(page, { delaysMs: [60] });
+    await stubLanguagePack(context, page, 500);
+    await watchDownloadBars(context, page);
+
+    await clickBall(page);
+    await expect(page.locator('#ai-translator-progress[data-kind="download"]')).toBeVisible({ timeout: 15000 });
+    // Another bar takes the slot mid-download (a subframe's error, say).
+    const since = await evaluateInContentScript(context, page,
+      "(() => { self.AI_TRANSLATOR_CONTENT.showTranslationError('Subframe failed'); return performance.now(); })()");
+    await expect.poll(() => evaluateInContentScript(context, page, '!!self.__dl.done'), { timeout: 15000 }).toBe(true);
+    const { ticks, bars } = await evaluateInContentScript(context, page, '({ ticks: self.__dl.ticks, bars: self.__downloadBars })');
+    expect(ticks.filter((t) => t > since).length, 'reports after the error bar').toBeGreaterThanOrEqual(2);
+    expect(bars.filter((t) => t > since)).toEqual([]);
+    await waitForPageRoundEnd(page);
+  });
+
+  test('pause after the done sequence has played shows nothing: the ring stays off screen', async ({ page, context }) => {
+    test.setTimeout(90000);
+    // Slow enough that the round spans many frames: the done sequence plays.
+    mock = await startMockOpenAIServer({ delayMs: 300 });
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await page.goto(`${ORIGIN}/one`);
+    await waitForContentReady(page);
+    await installProbe(context, page);
+    await clickBall(page);
+    await waitForRoundEnd(context, page, { source: 'manual' });
+    expect((await readProbe(context, page)).frames.some((f) => f.phase === 'done'), 'done played').toBe(true);
+    await expect(ring(page)).toBeHidden();
+
+    const since = await evaluateInContentScript(context, page,
+      '(() => { self.AI_TRANSLATOR_CONTENT.autoTranslate.pauseCurrentPage(); return performance.now(); })()');
+    await expect.poll(async () => (await feedState(context, page)).phase).toBe('paused');
+    await page.waitForTimeout(1000);
+    const probe = await readProbe(context, page);
+    const frames = probe.frames.filter((f) => f.t > since);
+    expect(frames.some((f) => f.feed.phase === 'paused'), 'frames of the paused feed').toBe(true);
+    expect([...new Set(frames.map((f) => `${f.phase}/${f.display}`))]).toEqual(['idle/none']);
+    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /.+/);
+  });
+
+  test('a page round that never reaches its first block drops its arming ring, and the auto round waiting on it passes the gate', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ delayMs: 30 });
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, { siteRules: { [HOST]: 'always' } }));
+    await page.goto(`${ORIGIN}/one`);
+    await page.waitForSelector('#first + .ai-translator-inline-block', { timeout: 30000 });
+    await expect.poll(async () => (await feedState(context, page)).phase).toBe('done');
+    await installProbe(context, page);
+    // The page round waits 1.5 s on a rule catch-up, then finds nothing to send:
+    // it ends before manual.begin. Meanwhile the page grows a paragraph, which the
+    // auto scheduler queues and holds until the page round is over.
+    const since = await evaluateInContentScript(context, page, `(() => {
+      const c = self.AI_TRANSLATOR_CONTENT;
+      const caughtUp = c.customRules.whenCaughtUp;
+      const filter = c.filterBlocksByLanguage;
+      let empty = false;
+      c.customRules.whenCaughtUp = async () => {
+        await new Promise((r) => setTimeout(r, 1500));
+        empty = true;
+        return caughtUp();
+      };
+      c.filterBlocksByLanguage = async (blocks) => {
+        if (!empty) return filter(blocks);
+        empty = false;
+        return [];
+      };
+      const at = performance.now();
+      c.translatePage(); // the ball menu's "Translate page"
+      return at;
+    })()`);
+    await page.waitForTimeout(300);
+    await page.evaluate((text) => {
+      const p = document.createElement('p');
+      p.id = 'late';
+      p.textContent = text;
+      document.getElementById('log').appendChild(p);
+    }, `A later entry: ${SENTENCE}`);
+    await waitForPageRoundEnd(page);
+    await page.waitForSelector('#late + .ai-translator-inline-block', { timeout: 30000 });
+    await page.waitForTimeout(2000);
+    const probe = await readProbe(context, page);
+
+    const records = [...probe.writes, ...probe.frames].filter((r) => r.t > since).sort((a, b) => a.t - b.t);
+    expect(records.some((r) => r.manualOpen && r.phase === 'arming'), 'the click armed the ring').toBe(true);
+    expect(records.filter((r) => r.feed.source === 'manual'), 'the page round never began').toEqual([]);
+    const ended = probe.writes.find((w) => w.t > since && !w.manualOpen);
+    expect(ended, 'a write once the page round ended').toBeTruthy();
+    expect(`${ended.feed.source}/${ended.feed.phase}`, 'the auto round waiting on it').toBe('auto/arming');
+    expect(ended.phase).toBe('idle');
+    // From there the auto round is under the gate like any other.
+    const shown = probe.frames.filter((f) => f.t > ended.t && f.phase !== 'idle');
+    if (shown.length) expect(shown[0].t - ended.t).toBeGreaterThanOrEqual(GATE_MS - FRAME_MS);
+  });
+
+  test('the first arming paint of a page round has no count from the round before it', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    // Off: the held round's snapshot stays on the feed, count and all.
+    await heldPartial(page, context, { autoTranslate: false });
+    await expect(page.locator('#ai-translator-float-ball')).toHaveAttribute('title', /Translated 2\/4/);
+    const since = await evaluateInContentScript(context, page, `(() => {
+      const at = performance.now();
+      self.AI_TRANSLATOR_CONTENT.translatePage(); // the ball menu's "Translate page"
+      return at;
+    })()`);
+    await waitForPageRoundEnd(page);
+    const probe = await readProbe(context, page);
+    const armed = probe.writes.find((w) => w.t > since && w.phase === 'arming');
+    expect(armed, 'an arming write').toBeTruthy();
+    expect(armed.feed, 'the feed still had the last round').toMatchObject({ source: 'manual', phase: 'partial', known: 4 });
+    expect(armed.title).not.toMatch(/Translated \d/);
+  });
+
+  test('an auto amber ring goes to idle when the session turns over on the same page', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, { siteRules: { [HOST]: 'always' } }));
+    await page.goto(`${ORIGIN}/stuck`);
+    await waitForContentReady(page);
+    await installProbe(context, page);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'partial', { timeout: 30000 });
+    const before = await feedState(context, page);
+    expect(`${before.source}/${before.phase}`).toBe('auto/partial');
+
+    await evaluateInContentScript(context, page, "self.AI_TRANSLATOR_CONTENT.autoTranslate.bumpSession('test')");
+    await expect(ring(page)).toHaveAttribute('data-phase', 'idle', { timeout: 5000 });
+    const probe = await readProbe(context, page);
+    const turned = probe.paints.find((p) => p.feed.session > before.session);
+    expect(turned, 'a paint of the new session').toBeTruthy();
+    expect(turned.phase).toBe('idle');
   });
 });
