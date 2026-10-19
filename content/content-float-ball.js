@@ -112,10 +112,8 @@
           let validDocked = docked;
 
           // Recalculate docked position for current viewport
-          if (docked === 'right') {
-            validX = viewportWidth - FLOAT_BALL_SIZE - DOCK_PADDING_BACK;
-          } else if (docked === 'left') {
-            validX = DOCK_PADDING_FRONT;
+          if (docked === 'right' || docked === 'left') {
+            validX = dockedBallX(docked, viewportWidth);
           } else {
             validX = Math.max(8, Math.min(x, viewportWidth - FLOAT_BALL_SIZE - 8));
             validDocked = null;
@@ -172,6 +170,12 @@
       // On error, use current settings value
       updateFloatBallVisibility();
     });
+  }
+
+  // 贴边时球离屏幕边 DOCK_PADDING_BACK，朝里那一侧探出胶囊 DOCK_PADDING_FRONT 的
+  // 负值那么多；左右两边互为镜像。球外一圈 4px 的进度环因此整圈都在视口里。
+  function dockedBallX(side, viewportWidth) {
+    return side === 'right' ? viewportWidth - FLOAT_BALL_SIZE - DOCK_PADDING_BACK : DOCK_PADDING_BACK;
   }
 
   // Set docked state with container background
@@ -326,14 +330,12 @@
         let dockedSide = null;
 
         // Snap to left or right edge (dock to edge)
-        // Ball nearly flush with container front edge
         if (distLeft <= EDGE_SNAP_THRESHOLD && distLeft < distRight) {
-          finalX = DOCK_PADDING_FRONT;
           dockedSide = 'left';
         } else if (distRight <= EDGE_SNAP_THRESHOLD) {
-          finalX = viewportWidth - FLOAT_BALL_SIZE - DOCK_PADDING_BACK;
           dockedSide = 'right';
         }
+        if (dockedSide) finalX = dockedBallX(dockedSide, viewportWidth);
 
         // Clamp vertical position
         const maxY = viewportHeight - FLOAT_BALL_SIZE - 8;
@@ -410,11 +412,11 @@
 
       let newX = rect.left;
       if (isDockedRight) {
-        newX = viewportWidth - FLOAT_BALL_SIZE - DOCK_PADDING_BACK;
+        newX = dockedBallX('right', viewportWidth);
         state.floatBall.style.left = newX + 'px';
         state.floatBallContainer.style.right = '0';
       } else if (isDockedLeft) {
-        newX = DOCK_PADDING_FRONT;
+        newX = dockedBallX('left', viewportWidth);
         state.floatBall.style.left = newX + 'px';
       }
 
