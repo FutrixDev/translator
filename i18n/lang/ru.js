@@ -189,8 +189,6 @@
     translatedText: 'Переведённый текст',
     copyTranslation: 'Копировать перевод',
     translateShortcutHint: '⌘/Ctrl + Enter — перевести',
-    translatingProgress: 'Перевод...',
-    pleaseWait: 'Идёт перевод, подождите...',
     translationComplete: 'Перевод завершён',
     pageAlreadyTranslated: 'Страница уже переведена',
     pageContentNotTranslatable: 'Текст этой страницы не может вместить перевод на месте. Выделите текст, чтобы прочитать перевод во всплывающем окне.',
@@ -736,4 +734,5 @@
     dictPackDeclined: 'Удалено',
     dictPackRedownload: 'Загрузить снова',
     dictPackRedownloadFailed: 'Сейчас загрузить не удалось. Попробуйте позже.',
+    progressCount: 'Переведено: {settled}/{known}',
 };

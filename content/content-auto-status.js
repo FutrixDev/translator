@@ -74,12 +74,26 @@
     return t(key);
   }
 
+  /**
+   * 「已翻 n/m」：球上不画数字（36px 放不下），数字只在悬停 title / 读屏
+   * aria-label 里说。分子分母都取统一进度源（content/page/progress-feed.js）。
+   */
+  function progressCountLine() {
+    const feed = ctx.progressFeed.state();
+    if (feed.phase === 'idle' || feed.known === 0) return '';
+    return t('progressCount')
+      .replace('{settled}', String(feed.settled))
+      .replace('{known}', String(feed.known));
+  }
+
   function explainLine(snap) {
     const parts = [stateLabel(snap)];
     const reasonKey = REASON_KEYS[snap.reason];
     if (reasonKey) parts.push(t(reasonKey));
     // 引擎那句原话留在最后：密钥没填、地址写错这类错误，只有它说得出是哪一条。
     if (snap.status === STATUS.ERROR && snap.error) parts.push(String(snap.error));
+    // 进度源此刻报的是自动这边的账，才拼进自动的这句话；手动那一轮的数归它自己。
+    if (ctx.progressFeed.state().source === 'auto') parts.push(progressCountLine());
     return parts.filter(Boolean).join(' · ');
   }
 
@@ -256,6 +270,15 @@
   // ------------------------------------------------------------------ 装配
 
   ctx.paintAutoStatusDot = paintDot;
+
+  /**
+   * 进度环悬停 / 读屏的那句话（content/page/progress.js 画环时来问）：手动整页
+   * 只说「已翻 n/m」，自动的说状态点那一句（它已经带上了计数）。
+   */
+  ctx.describeProgress = function () {
+    if (ctx.progressFeed.state().source === 'manual') return progressCountLine();
+    return explainLine(latest || {});
+  };
   ctx.showAutoStatusNotice = setNotice;
   ctx.showAutoStatusOffer = setOffer;
 
@@ -284,5 +307,8 @@
       latest = snap;
       render();
     });
+    // 计数跟着进度源变，调度状态却可能一整轮都是 RUNNING：状态点的 title 和
+    // 展开的那一行要跟着计数重画。
+    ctx.progressFeed.subscribe(() => render());
   };
 })();

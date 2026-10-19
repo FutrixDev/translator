@@ -17,6 +17,7 @@
   const t = ctx.t;
   const applyTheme = ctx.applyTheme;
   let floatBallWatchdog = null;
+  let nudgeTimer = null;
   // Stepping aside for a video that fills the screen — standard or web
   // fullscreen — is content/content-video-stage.js's call, not ours. The stage
   // is watched only while the ball is wanted at all: switched off in settings,
@@ -92,6 +93,7 @@
         <path class="ait-mark-bubble" d="M41 22H59A9 9 0 0 1 68 31V63C68 69 68.8 75 71.9 78.4Q72.8 79.6 71.2 79.7C66.5 79.6 62 76.8 59.7 72.4Q58.6 70 56.4 70H41A9 9 0 0 1 32 61V31A9 9 0 0 1 41 22Z"/>
         <path class="ait-mark-play" d="M48.68 37.61A3.36 3.36 0 0 0 43.6 40.5L43.6 51.5A3.36 3.36 0 0 0 48.68 54.39L57.94 48.89A3.36 3.36 0 0 0 57.94 43.11Z"/>
       </svg>
+      <svg class="ai-translator-ring" viewBox="0 0 44 44" aria-hidden="true" focusable="false" data-phase="idle"><circle class="ai-translator-ring-track" cx="22" cy="22" r="19.5"/><circle class="ai-translator-ring-arc" cx="22" cy="22" r="19.5"/></svg>
       <button type="button" class="ai-translator-status-dot" data-state="none"></button>
       <button type="button" class="ai-translator-ball-more" aria-expanded="false" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</button>
     `;
@@ -150,6 +152,9 @@
     // 看门狗随时会把球整个重建一遍，innerHTML 一换，状态点就回到了初始的空白。
     // 重建之后补一笔，否则一次页面脚本的误删会让那颗点永久消失。
     if (ctx.paintAutoStatusDot) ctx.paintAutoStatusDot();
+    // 进度环同理：重建出来的是 data-phase="idle" 的空环。环怎么画归 content/page/progress.js
+    // （它订阅 ctx.progressFeed），这里只请它照进度源此刻的样子补画一笔。
+    ctx.paintProgressRing();
     // 同理：··· 上的 aria-expanded 也是 innerHTML 里的初始值，重建时菜单可能正开着。
     setMoreExpanded(!!state.floatMenu);
     console.log('Blab Translation: Float ball created');
@@ -806,6 +811,18 @@
     }
   }
 
+  /** 已经在翻时又点了一次「翻译整页」：球点一下头（scale 1→1.12→1，300 ms）。 */
+  function nudgeFloatBall() {
+    const ball = state.floatBall;
+    if (!ball) return;
+    clearTimeout(nudgeTimer);
+    ball.classList.remove('ai-translator-ball-nudge');
+    void ball.offsetWidth; // 摘掉再挂上，连点时动画才会从头再来
+    ball.classList.add('ai-translator-ball-nudge');
+    nudgeTimer = setTimeout(() => ball.classList.remove('ai-translator-ball-nudge'), 400);
+  }
+
+  ctx.nudgeFloatBall = nudgeFloatBall;
   ctx.ensureFloatBallExists = ensureFloatBallExists;
   ctx.createFloatBall = createFloatBall;
   ctx.updateFloatBallVisibility = updateFloatBallVisibility;

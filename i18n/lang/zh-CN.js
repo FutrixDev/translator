@@ -198,8 +198,6 @@
     translateShortcutHint: '按 ⌘/Ctrl + Enter 快速翻译',
     
     // Progress Bar
-    translatingProgress: '正在翻译...',
-    pleaseWait: '翻译中，请稍候...',
     translationComplete: '翻译完成',
     pageAlreadyTranslated: '页面已翻译',
     pageContentNotTranslatable: '本页正文无法就地承载译文。选中文字，可在弹窗中查看翻译。',
@@ -755,4 +753,5 @@
     dictPackDeclined: '已删除',
     dictPackRedownload: '重新下载',
     dictPackRedownloadFailed: '现在无法下载，请稍后再试。',
+    progressCount: '已翻 {settled}/{known}',
 };

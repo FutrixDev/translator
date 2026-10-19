@@ -47,8 +47,9 @@ const CONTENT_HARNESS_PRELUDE = Object.freeze([
 
 // 整页翻译不是一个文件了：collect/batch/insert/visibility 加门面，少一个就是
 // 某个 ctx.x 不存在，报出来的还是三步之后的 TypeError。要整页翻译就要这一串。
-// progress.js 不在里面：进度条是页面级 UI，DOM 夹具里没有它要挂的地方，门面在
-// 调用前就会因为拿不到 showPageTranslationProgress 报错——所以它也在。
+// progress.js 也在里面：门面收尾要报成功 / 错误条（showTranslationComplete、
+// showTranslationError），点下时要转环（armProgressRing）。夹具页上没有悬浮球，
+// 环找不到要画的地方就什么也不做；条子照常挂在 body 上。
 const PAGE_TRANSLATION_MODULES = Object.freeze([
   // shared/ 的模块也在这串里：collect.js / insert.js 通过 `globalThis.BlockIdentity`
   // 拿内容身份，manifest 里它排在两者之前。夹具漏掉它的症状和上面那段说的一样难
@@ -309,27 +310,30 @@ async function triggerPageTranslation(page) {
  * @param {number} timeout
  */
 async function waitForTranslationComplete(page, timeout = 60000) {
-  // Wait for progress bar to appear and then disappear
-  try {
-    await page.waitForSelector('#ai-translator-progress', {
-      state: 'visible',
-      timeout: 5000,
-    });
-  } catch {
-    // Progress bar might not appear for quick translations
-  }
-
   // Wait for at least one translated element
   await page.waitForSelector('.ai-translator-translated', {
     state: 'attached',
     timeout,
   });
+  await waitForPageRoundEnd(page, timeout);
+}
 
-  // Wait for progress bar to disappear (translation complete)
-  await page.waitForSelector('#ai-translator-progress', {
-    state: 'hidden',
-    timeout,
-  }).catch(() => {});
+// 一轮手动整页翻译收尾时挂出的那一条：成功（翻完了，含有几块没翻成）、提示（没有
+// 可翻的）、报错。翻的过程中没有条子，进度在悬浮球的环上；新一轮点下时上一轮的条子
+// 被立刻收走，所以等到的这一条一定是这一轮的。
+const ROUND_END_BAR = ['success', 'info', 'error']
+  .map((name) => `#ai-translator-progress.ai-translator-progress-${name}-state`)
+  .join(', ');
+
+/**
+ * Wait for the manual page-translation round to end: its success, notice or
+ * error bar is attached. (The round shows no bar while it runs, so waiting for
+ * the bar to be hidden would pass at once.)
+ * @param {import('@playwright/test').Page} page
+ * @param {number} timeout
+ */
+async function waitForPageRoundEnd(page, timeout = 30000) {
+  await page.waitForSelector(ROUND_END_BAR, { state: 'attached', timeout });
 }
 
 /**
@@ -977,6 +981,7 @@ module.exports = {
   closeInputDialog,
   triggerPageTranslation,
   waitForTranslationComplete,
+  waitForPageRoundEnd,
   getElementPosition,
   verifyAlignment,
   countElements,

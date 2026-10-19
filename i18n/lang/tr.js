@@ -198,8 +198,6 @@
     translateShortcutHint: 'Çevirmek için ⌘/Ctrl + Enter tuşlarına basın',
 
     // Progress Bar
-    translatingProgress: 'Çevriliyor...',
-    pleaseWait: 'Çevriliyor, lütfen bekleyin...',
     translationComplete: 'Çeviri tamamlandı',
     pageAlreadyTranslated: 'Sayfa zaten çevrildi',
     pageContentNotTranslatable: 'Bu sayfanın metni çeviriyi yerinde gösteremiyor. Çeviriyi bunun yerine açılır pencerede okumak için metni seçin.',
@@ -756,4 +754,5 @@
     dictPackDeclined: 'Silindi',
     dictPackRedownload: 'Yeniden indir',
     dictPackRedownloadFailed: 'Şu anda indirilemedi. Daha sonra tekrar deneyin.',
+    progressCount: 'Çevrilen: {settled}/{known}',
 };

@@ -24,6 +24,7 @@ const {
   triggerPageTranslation,
   openFloatBallMenu,
   writeSyncSettings,
+  waitForPageRoundEnd,
 } = require('./helpers');
 
 const ORIGIN = 'https://feed.test';
@@ -70,7 +71,7 @@ async function openFeed(page, context, endpoint, settings = {}) {
   for (let i = 1; i <= PARAGRAPHS.length; i += 1) {
     await expect(page.locator(`#p${i} + .ai-translator-inline-block`)).toHaveCount(1, { timeout: 30000 });
   }
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
 }
 
 /** display and the start-side padding of each paragraph and the translation after it. */

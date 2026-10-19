@@ -15,11 +15,6 @@
 //
 // 这里只是纯状态加发布/订阅，不碰 DOM，也不画任何东西（环归 content-float-ball.js）。
 //
-// 手动来源（下面的 manual.begin / settle / fail / end）还没有接上，在那之前只有
-// 自动来源发布：手动整页仍走 content-page-translation.js 的 onProgress 与
-// state.translationProgress。手动整页接上它时删掉这一段，旧进度条随之删除，不让
-// 两条进度路径并存。
-//
 // **不变量由这里守，坏了就抛。** 分母在同一代里倒退、分子超过分母，画出来的就是
 // 一个先大后小、或者卡在 100% 之外的环；那是上游记账记错了，悄悄夹住只会把错账
 // 画成一个看起来正常的环。所以 known / settled / failed 在同一来源、同一代（手动是

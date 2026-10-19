@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, getServiceWorker, openExamplePage } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, getServiceWorker, openExamplePage, waitForPageRoundEnd } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 译文缓存（shared/translation-cache.js + content/content-translation-cache.js）的
@@ -42,8 +42,8 @@ test('page translation cache: a reloaded page renders from cache without a singl
     await triggerPageTranslation(page);
     await expect(page.locator('#cache-probe .ai-translator-inline-block'))
       .toHaveCount(paragraphs.length, { timeout: 30000 });
-    // 整轮跑完（进度条自己收掉）之后再读计数，否则读到的是“还没发完”。
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    // 整轮跑完（收尾的条子挂出来）之后再读计数，否则读到的是“还没发完”。
+    await waitForPageRoundEnd(page);
   };
 
   try {
@@ -118,7 +118,7 @@ test('translation cache: the settings page button empties it, and the same page 
     await triggerPageTranslation(page);
     await expect(page.locator('#clear-probe .ai-translator-inline-block'))
       .toHaveCount(paragraphs.length, { timeout: 30000 });
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
   };
 
   const worker = await getServiceWorker(context);

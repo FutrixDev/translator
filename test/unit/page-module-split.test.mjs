@@ -66,13 +66,13 @@ test('一轮翻译只报数，进度条归页面那一层', () => {
   const fn = batch.slice(batch.indexOf('async function runTranslationPass'));
   const body = fn.slice(0, fn.indexOf('\n  }') + 4);
   assert.ok(body.includes('onProgress('), 'the pass no longer reports progress to its caller');
-  assert.doesNotMatch(body, /translationProgress|PageTranslationProgress/,
-    'runTranslationPass reaches back into the page-level progress bar');
+  assert.doesNotMatch(body, /progressFeed|ProgressRing/,
+    'runTranslationPass reaches back into the page-level progress');
 
-  // 页面那一层还在：整页翻译当然要显示进度。
+  // 页面那一层还在：整页翻译把每块的结果报给进度源，环自己去读。
   const facade = repoFile('content/content-page-translation.js');
   assert.match(facade, /onProgress:/);
-  assert.match(facade, /ctx\.updatePageTranslationProgress\(/);
+  assert.match(facade, /ctx\.progressFeed\.manual\b/);
 });
 
 test('没有一个文件重新长回一千行', () => {

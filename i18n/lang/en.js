@@ -198,8 +198,6 @@
     translateShortcutHint: 'Press ⌘/Ctrl + Enter to translate',
     
     // Progress Bar
-    translatingProgress: 'Translating...',
-    pleaseWait: 'Translating, please wait...',
     translationComplete: 'Translation Complete',
     pageAlreadyTranslated: 'Page Already Translated',
     pageContentNotTranslatable: "This page's text cannot hold a translation in place. Select the text to read the translation in a popup instead.",
@@ -756,4 +754,5 @@
     dictPackDeclined: 'Deleted',
     dictPackRedownload: 'Download again',
     dictPackRedownloadFailed: 'Could not download it now. Try again later.',
+    progressCount: 'Translated {settled}/{known}',
 };

@@ -189,8 +189,6 @@
     translatedText: 'Übersetzter Text',
     copyTranslation: 'Übersetzung kopieren',
     translateShortcutHint: '⌘/Strg + Enter zum Übersetzen',
-    translatingProgress: 'Übersetze...',
-    pleaseWait: 'Übersetze, bitte warten...',
     translationComplete: 'Übersetzung abgeschlossen',
     pageAlreadyTranslated: 'Seite bereits übersetzt',
     pageContentNotTranslatable: 'Der Text dieser Seite kann keine Übersetzung an Ort und Stelle aufnehmen. Markieren Sie den Text, um die Übersetzung in einem Pop-up zu lesen.',
@@ -736,4 +734,5 @@
     dictPackDeclined: 'Gelöscht',
     dictPackRedownload: 'Erneut herunterladen',
     dictPackRedownloadFailed: 'Download gerade nicht möglich. Später erneut versuchen.',
+    progressCount: 'Übersetzt: {settled}/{known}',
 };

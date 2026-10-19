@@ -141,7 +141,6 @@
     // 自动轮次出的错不弹：自动翻译自己的错也只画在状态点上，不弹提示；手动那一轮
     // 是用户点出来的，子 frame 静默跑，出了错只能由顶层替它说。
     if (message.manual && message.error) {
-      if (!document.getElementById('ai-translator-progress')) ctx.showPageTranslationProgress();
       ctx.showTranslationError(message.error, message.action || null);
     }
   }

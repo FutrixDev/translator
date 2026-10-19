@@ -1,5 +1,5 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage, waitForPageRoundEnd } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // Regression test for the "code container" skip rule in collectTranslatableBlocks
@@ -101,9 +101,9 @@ test('page translation: "highlights"/"language-" lookalikes translate, real code
     await expect(page.locator('#highlights-section .ai-translator-inline-block')).toContainText('[T]');
     await expect(page.locator('#lang-switcher .ai-translator-inline-block')).toHaveCount(1);
 
-    // Wait until the whole run settles (progress bar auto-removes on completion) so the
+    // Wait until the whole run settles (the end-of-round bar is up) so the
     // negative assertions below mean "never translated", not "not translated yet".
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
 
     for (const id of ['pygments-para', 'rouge-para', 'github-para', 'prism-para']) {
       await expect(page.locator(`#${id}`)).not.toHaveClass(/ai-translator-translated/);

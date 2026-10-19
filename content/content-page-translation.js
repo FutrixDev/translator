@@ -9,7 +9,7 @@
 //   content/page/insert.js      把译文变成页面上的块
 //   content/page/failed-blocks.js  没译成的那一段：失败标记与点它单段重试
 //   content/page/visibility.js  译文旁边的原文显不显示
-//   content/page/progress.js    右下角那条进度条和它的提示
+//   content/page/progress.js    提示 / 成功 / 报错那条小条子，和悬浮球上的进度环
 //
 // 拆开是因为这个文件到过 2282 行，四件互不相干的事写在一个闭包里，
 // 谁也没法单独改。它们之间只通过 ctx 上导出的函数说话。
@@ -25,7 +25,6 @@
 
   async function translatePage() {
     if (!isExtensionContextAvailable()) {
-      ctx.showPageTranslationProgress();
       ctx.showTranslationError(t('extensionContextInvalidated'));
       return;
     }
@@ -35,29 +34,24 @@
     ctx.revealHiddenTranslations();
     if (state.isTranslatingPage) {
       console.log('Blab Translation: Already translating page');
-      // 如果进度条被关闭了，重新显示它并恢复进度
-      let existingProgress = document.getElementById('ai-translator-progress');
-      if (!existingProgress) {
-        ctx.showPageTranslationProgress();
-        existingProgress = document.getElementById('ai-translator-progress');
-        // 恢复当前进度
-        if (state.translationProgress.total > 0) {
-          ctx.updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total);
-        }
-      }
-      // 闪烁提示正在翻译中
-      ctx.showTranslatingHint(existingProgress);
+      // 已经在翻：球点一下头，告诉他「收到了，正在翻」。进度一直在环上。
+      ctx.nudgeFloatBall();
       return;
     }
 
     state.isTranslatingPage = true;
-    state.translationProgress = { current: 0, total: 0 };
-    ctx.showPageTranslationProgress();
+    // 上一轮留下的条子说的是上一轮的事；这一轮点下去，环立刻转起来（arming），
+    // 不等块收齐 —— 用户点了，要立刻有回应。
+    ctx.closePageBar();
+    ctx.armProgressRing();
     // 用户在这一页表过态了。此后长出来的新内容跟着翻，不必再点一次。
     if (ctx.autoTranslate) ctx.autoTranslate.markPageExplicit();
     // 子 frame 跟着翻：各自静默跑一轮（content/frames/）。
     ctx.frames.onManualTranslate();
 
+    const feed = ctx.progressFeed.manual;
+    // manual.begin 之后、end 之前：这一轮在进度源上还开着，出什么事都得收一次尾。
+    let feedOpen = false;
     try {
       // 本页的站点规则（范围、排除、引擎）要先到：SW 冷启动时最多等 1.5 s。
       await ctx.customRules.whenReady();
@@ -75,8 +69,7 @@
 
       if (translatableBlocks.length === 0 && ctx.frames.hasSizedChildren()) {
         // 这一层没东西可翻，内容在 iframe 里：它们各自静默翻，这里报「已翻译」或
-        // 「无可译内容」都是错话。
-        ctx.hidePageTranslationProgress();
+        // 「无可译内容」都是错话。环由 finally 那一笔从 arming 退回来。
         return;
       }
       if (translatableBlocks.length === 0) {
@@ -85,7 +78,6 @@
         // “已翻译”是彻头彻尾的误导。
         if (!managedSkipped) state.pageHasBeenTranslated = true;
         ctx.showPageNotice(managedSkipped ? t('pageContentNotTranslatable') : t('pageAlreadyTranslated'));
-        state.isTranslatingPage = false;
         return;
       }
 
@@ -96,31 +88,40 @@
         console.info(`Blab Translation: ${managedSkipped} block(s) inside a managed editor root cannot carry generated content`);
       }
 
-      state.translationProgress.total = translatableBlocks.length;
-
-      // 进度条归这里管，翻译轮次只报数：自动翻译将来要跑不露面的增量轮次，
-      // 那时候同一个 runTranslationPass 不该拖着一条进度条。
+      // 分母是过滤之后真要送的块数。进度只报给进度源，环自己去读：翻译轮次只
+      // 报数，不拖着任何界面 —— 自动翻译的增量轮用的是同一个 runTranslationPass。
+      feed.begin(translatableBlocks.length);
+      feedOpen = true;
       const failure = await ctx.runTranslationPass(translatableBlocks, {
-        onProgress: (done) => {
-          state.translationProgress.current = done;
-          ctx.updatePageTranslationProgress(done, state.translationProgress.total);
+        onProgress: (done, total, outcome) => {
+          if (outcome === 'failed') feed.fail();
+          else feed.settle();
         }
       });
 
       // 整轮失败：那句话连同它的入口（订阅 / 登录，Blab 账户的错误才有）一起上错误条。
+      feedOpen = false;
       if (failure) {
+        feed.end('error');
         ctx.showTranslationError(failure.message, failure.action);
       } else {
-        // 标记页面已翻译
+        // 有几块重试后仍没译成：环停在琥珀上，缺口就是那几块（点标记可单段重试）。
+        feed.end(ctx.progressFeed.state().failed > 0 ? 'partial' : 'done');
         state.pageHasBeenTranslated = true;
-        ctx.hidePageTranslationProgress();
+        ctx.showTranslationComplete();
       }
     } catch (error) {
       console.error('Blab Translation: Page translation failed', error);
+      if (feedOpen) {
+        feedOpen = false;
+        feed.end('error');
+      }
       ctx.showTranslationError(error.message || t('translationFailed'));
     } finally {
       state.isTranslatingPage = false;
-      state.translationProgress = { current: 0, total: 0 };
+      // 环要在 isTranslatingPage 落下之后再看一眼：没走到 begin 的那几条路（只有
+      // iframe、一块也没有、begin 之前就抛了）进度源没动过，环得自己从 arming 退回来。
+      ctx.paintProgressRing();
       ctx.frames.onManualTranslateEnd();
       // 这一轮进行中规则变过的，补做清扫与补翻。放在最后：它和手动轮的成对收尾
       // （onManualTranslateEnd）无关，也不该因为它出错而漏掉那一步。

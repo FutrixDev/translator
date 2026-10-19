@@ -154,19 +154,20 @@ test.describe('the error bar next to the float ball', () => {
       await clickBall(page);
       await expect(barEntry(page)).toHaveAttribute('data-account-action', 'subscribe', { timeout: 30000 });
 
-      // Every state the bar goes through from here on.
+      // Every state the bar and the ball's ring go through from here on.
       await page.evaluate(() => {
         window.__barStates = [];
         const note = () => {
           const el = document.getElementById('ai-translator-progress');
-          if (!el) return;
+          const ring = document.querySelector('#ai-translator-float-ball svg.ai-translator-ring');
           window.__barStates.push({
-            className: el.className,
-            track: !!el.querySelector('.ai-translator-progress-track'),
+            bar: el ? el.className : null,
+            track: !!(el && el.querySelector('.ai-translator-progress-track')),
+            ring: ring ? ring.dataset.phase : null,
           });
         };
         new MutationObserver(note).observe(document.body, {
-          subtree: true, childList: true, attributes: true, attributeFilter: ['class'],
+          subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'data-phase'],
         });
       });
       await writeSyncSettings(context, { translationEngine: 'ai' });
@@ -177,8 +178,15 @@ test.describe('the error bar next to the float ball', () => {
       await expect(barEntry(page)).toHaveCount(0);
       expect(ai.sentTexts.length).toBeGreaterThan(0);
       const states = await page.evaluate(() => window.__barStates);
-      // The pass showed its progress: a fresh bar with a track, no error on it.
-      expect(states.some((s) => s.track && !/error-state/.test(s.className)), JSON.stringify(states)).toBe(true);
+      const seen = JSON.stringify(states);
+      // The click put the last pass's error bar away at once; the pass showed its
+      // progress on the ring, and the only bar it put up is its own success bar.
+      const cleared = states.findIndex((s) => s.bar === null);
+      expect(cleared, seen).toBeGreaterThanOrEqual(0);
+      const pass = states.slice(cleared);
+      expect(pass.some((s) => s.ring === 'arming' || s.ring === 'running'), seen).toBe(true);
+      expect(pass.every((s) => s.bar === null || /success-state/.test(s.bar)), seen).toBe(true);
+      expect(states.some((s) => s.track), seen).toBe(false);
     } finally {
       await close();
     }

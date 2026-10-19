@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contentCss, hoverSource, messagesSource, workerSource } from './helpers/sources.mjs';
@@ -797,4 +798,94 @@ test('「不再自动翻译」先落规则再还原 —— 反过来译文会自
   const fail = body.indexOf("ctx.showAutoStatusNotice(t('popupSiteRuleFailed'))");
   assert.ok(fail > 0 && fail < restore, '写失败得说一声');
   assert.match(body.slice(fail), /^[\s\S]{0,80}?return;/, '写失败之后不该接着还原');
+});
+
+// ------------------------------------------------------------------ 「已翻 n/m」
+//
+// 球上不画数字，数字只在状态点 / 进度环的 title 与 aria-label 里说。这一组在 vm 里
+// 真把 content-auto-status.js 跑起来：分子分母从进度源来，跟着进度源重画，状态点的
+// 颜色映射不因为进度源而变。
+
+function loadStatusWithFeed() {
+  const dot = { dataset: {}, title: '', attrs: {}, setAttribute(name, value) { dot.attrs[name] = value; } };
+  let feed = Object.freeze({
+    source: 'none', phase: 'idle', known: 0, settled: 0, failed: 0, pending: 0, inflight: 0, session: 0
+  });
+  const subscribers = [];
+  let publish = null;
+  const strings = { progressCount: 'Translated {settled}/{known}' };
+  const ctx = {
+    t: (key) => strings[key] || key,
+    settings: {},
+    STATUS_AUTO: { OFF: 'OFF', IDLE: 'IDLE', RUNNING: 'RUNNING', PAUSED: 'PAUSED', ERROR: 'ERROR' },
+    videoStage: { stepAside: () => (wanted) => wanted },
+    autoTranslate: { onStateChange(listener) { publish = listener; } },
+    progressFeed: { state: () => feed, subscribe(fn) { subscribers.push(fn); return () => {}; } },
+  };
+  const sandbox = {
+    console: { warn() {}, log() {}, error() {} },
+    document: {
+      body: { contains: () => false, appendChild() {} },
+      querySelector: (selector) => (selector.includes('ai-translator-status-dot') ? dot : null),
+      addEventListener() {},
+    },
+  };
+  sandbox.globalThis = sandbox;
+  sandbox.window = { AI_TRANSLATOR_CONTENT: ctx };
+  vm.createContext(sandbox);
+  vm.runInContext(read('shared/auto-reason-keys.js'), sandbox);
+  vm.runInContext(read('content/content-auto-status.js'), sandbox);
+  ctx.setupAutoStatus();
+  return {
+    ctx,
+    dot,
+    status(snap) { publish(snap); },
+    feed(next) {
+      feed = Object.freeze({ ...feed, ...next });
+      for (const fn of subscribers) fn(feed);
+    },
+  };
+}
+
+test('自动那一轮的说明句末尾带「已翻 n/m」，数从进度源来，跟着进度源重画', () => {
+  const page = loadStatusWithFeed();
+  page.status({ status: 'RUNNING', gaveUp: 0 });
+  page.feed({ source: 'auto', phase: 'running', known: 10, settled: 3, inflight: 7 });
+  assert.match(page.dot.title, /Translated 3\/10$/);
+  assert.equal(page.dot.attrs['aria-label'], page.dot.title, 'title 与 aria-label 是同一句');
+  assert.equal(page.ctx.describeProgress(), page.dot.title, '进度环问到的也是这一句');
+  // 调度状态一整轮都是 RUNNING：只有进度源在动，句子也得跟着动。
+  page.feed({ settled: 7, inflight: 3 });
+  assert.match(page.dot.title, /Translated 7\/10$/);
+  // 状态点的颜色映射不看进度源。
+  assert.equal(page.dot.dataset.state, 'running');
+});
+
+test('没在数的时候不拼计数：idle 或分母为 0', () => {
+  const page = loadStatusWithFeed();
+  page.status({ status: 'RUNNING', gaveUp: 0 });
+  page.feed({ source: 'auto', phase: 'arming', known: 0 });
+  assert.doesNotMatch(page.dot.title, /Translated/);
+  page.feed({ phase: 'idle', known: 4, settled: 4 });
+  assert.doesNotMatch(page.dot.title, /Translated/);
+});
+
+test('手动整页的数只给进度环，不拼进自动的说明句', () => {
+  const page = loadStatusWithFeed();
+  page.status({ status: 'IDLE', gaveUp: 0 });
+  page.feed({ source: 'manual', phase: 'running', known: 80, settled: 40, inflight: 40 });
+  assert.equal(page.ctx.describeProgress(), 'Translated 40/80');
+  assert.doesNotMatch(page.dot.title, /Translated/);
+  assert.equal(page.dot.dataset.state, 'none', '手动那一轮不点亮状态点');
+});
+
+test('progressCount 每种语言都有，而且带着两个占位符', () => {
+  const dir = path.join(REPO_ROOT, 'i18n/lang');
+  const files = fs.readdirSync(dir).filter((name) => name.endsWith('.js'));
+  assert.ok(files.length >= 10);
+  for (const name of files) {
+    const match = read(`i18n/lang/${name}`).match(/\bprogressCount:\s*(['"])(.*?)\1/);
+    assert.ok(match, `${name} 缺 progressCount`);
+    assert.ok(match[2].includes('{settled}') && match[2].includes('{known}'), `${name}: ${match[2]}`);
+  }
 });

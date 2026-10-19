@@ -86,6 +86,11 @@ function load() {
       // Subscribing replays the current state at once, as the scheduler does.
       onStateChange(listener) { listener({ status: 'IDLE', gaveUp: 0 }); },
     },
+    // The explain line appends the feed's count; nothing is counting here.
+    progressFeed: {
+      state: () => ({ source: 'none', phase: 'idle', known: 0, settled: 0, failed: 0, pending: 0, inflight: 0, session: 0 }),
+      subscribe: () => () => {},
+    },
   };
   const sandbox = {
     console: { warn() {}, log() {}, error() {} },

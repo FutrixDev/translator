@@ -190,8 +190,6 @@
     copyTranslation: 'نسخ الترجمة',
     translateShortcutHint: 'اضغط ⌘/Ctrl + Enter للترجمة',
 
-    translatingProgress: 'جارٍ الترجمة...',
-    pleaseWait: 'جارٍ الترجمة، يُرجى الانتظار...',
     translationComplete: 'اكتملت الترجمة',
     pageAlreadyTranslated: 'الصفحة مترجمة بالفعل',
     pageContentNotTranslatable: 'لا يتسع نص هذه الصفحة لإدراج الترجمة في مكانها. حدّد النص لقراءة ترجمته في نافذة منبثقة بدلًا من ذلك.',
@@ -729,4 +727,5 @@
     dictPackDeclined: 'محذوفة',
     dictPackRedownload: 'التنزيل مرة أخرى',
     dictPackRedownloadFailed: 'تعذّر تنزيلها الآن. حاول مرة أخرى لاحقًا.',
+    progressCount: 'تُرجم {settled}/{known}',
 };

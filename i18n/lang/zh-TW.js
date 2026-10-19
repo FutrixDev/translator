@@ -189,8 +189,6 @@
     translatedText: '譯文',
     copyTranslation: '複製譯文',
     translateShortcutHint: '按 ⌘/Ctrl + Enter 快速翻譯',
-    translatingProgress: '正在翻譯...',
-    pleaseWait: '翻譯中，請稍候...',
     translationComplete: '翻譯完成',
     pageAlreadyTranslated: '頁面已翻譯',
     pageContentNotTranslatable: '本頁內文無法就地承載譯文。選取文字，可在彈出視窗中查看翻譯。',
@@ -736,4 +734,5 @@
     dictPackDeclined: '已刪除',
     dictPackRedownload: '重新下載',
     dictPackRedownloadFailed: '現在無法下載，請稍後再試。',
+    progressCount: '已翻譯 {settled}/{known}',
 };
