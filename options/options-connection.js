@@ -69,18 +69,18 @@ async function testConnection() {
   }
 }
 
-// Reset prompt to default
+// Reset prompt to default: the default preset, which is stored as ''
 async function resetPrompt() {
-  elements.customPrompt.value = t(DEFAULT_PROMPT_KEY);
+  elements.customPrompt.value = PromptPresets.TEMPLATES[PromptPresets.DEFAULT];
   await persistSettings();
   showStatus(t('resetToDefault'), 'success');
 }
 
 // Apply preset prompt
 async function applyPresetPrompt(presetName) {
-  const presetKey = PROMPT_PRESETS[presetName];
-  if (!presetKey) return;
-  elements.customPrompt.value = t(presetKey);
+  const template = PromptPresets.TEMPLATES[presetName];
+  if (!template) throw new Error(`unknown prompt preset: ${presetName}`);
+  elements.customPrompt.value = template;
   // After the write, so the message the user is left with names what they did
   // rather than the generic save confirmation persistSettings would show.
   await persistSettings();

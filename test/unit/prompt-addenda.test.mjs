@@ -205,33 +205,32 @@ test('buildPrompt puts the addenda after the template and before the math rule a
 test('the fast batch prompt still announces its delimiter with an addendum on it', () => {
   // test/e2e/mock-openai-server.js 靠这句找分隔符；附加说明拼在模板之后，不能挡着它。
   const PROMPT_DELIMITER_RE = /segments are separated by "([^"]+)"/;
-  for (const [template, extra] of [
-    [prompts.FAST_BATCH_PROMPT, ''],
-    ['Custom {targetLang}', prompts.getFastBatchOutputRules('@@')],
-  ]) {
-    const built = prompts.buildPrompt(template, 'Chinese', { delimiter: '@@' }, extra, { addenda: FORUM });
+  // 默认模板与自定义提示词走同一条：模板 + 快批规则，分隔符那句在规则里。
+  for (const template of [PromptPresets.textTemplate(''), 'Custom {targetLang}']) {
+    const built = prompts.buildPrompt(template, 'Chinese', { delimiter: '@@' },
+      prompts.getFastBatchOutputRules('@@'), { addenda: FORUM });
     assert.equal(built.match(PROMPT_DELIMITER_RE)?.[1], '@@');
     assert.ok(built.includes(FORUM_LINE));
   }
 });
 
-test('the register rule is in every text template and text rule set, and in no word one', () => {
+test('the register rule is in every text rule set, in no preset and in no word one', () => {
   // 单词/词典那一路没有语域可守（R33 N4），只在文字路径上。
+  // 预设（含默认）不带它：每条文字路径把它放在自己的规则里，正好一次。
   for (const [name, text] of Object.entries({
     SINGLE_WORD_PROMPT: prompts.SINGLE_WORD_PROMPT,
     WORD_OUTPUT_RULES: prompts.WORD_OUTPUT_RULES,
+    ...PromptPresets.TEMPLATES,
   })) {
     assert.ok(!text.includes(prompts.REGISTER_RULE), `${name} carries the register rule`);
   }
   const texts = {
-    DEFAULT_PROMPT: prompts.DEFAULT_PROMPT,
-    DEFAULT_BATCH_PROMPT: prompts.DEFAULT_BATCH_PROMPT,
+    REGISTER_RULE: prompts.REGISTER_RULE,
     BATCH_OUTPUT_RULES: prompts.BATCH_OUTPUT_RULES,
-    FAST_BATCH_PROMPT: prompts.FAST_BATCH_PROMPT,
     getFastBatchOutputRules: prompts.getFastBatchOutputRules('@@'),
   };
   for (const [name, text] of Object.entries(texts)) {
-    assert.ok(text.includes(prompts.REGISTER_RULE), `${name} lacks the register rule`);
+    assert.equal(text.split(prompts.REGISTER_RULE).length - 1, 1, `${name} lacks the register rule or repeats it`);
   }
   // 自定义提示词那一支在变量替换之后才拼规则，规则里出现 {x} 就是一个不会被替换的洞。
   assert.doesNotMatch(prompts.REGISTER_RULE, /[{}]/);
@@ -306,6 +305,30 @@ test('a custom prompt of only whitespace is no custom prompt, on every path (R33
   }
 });
 
+test('the default prompt is the free-translation preset on every text path, register rule once; the word path keeps its own', async () => {
+  // 首装用户（customPrompt 为空）在设置页看到的就是意译预设，发出去的也是它
+  // 加上各路自己的规则 —— 语域规则只在规则里出现一次，不因模板再重复。
+  const [head, tail] = PromptPresets.TEMPLATES.creative.split('{targetLang}');
+  for (const settings of [SETTINGS, { ...SETTINGS, customPrompt: PromptPresets.TEMPLATES.creative + '\n' }]) {
+    reply = () => 'translated';
+    const [single] = await sentWith(() => ai.translateTextWithMode(
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, {}));
+    reply = () => '[1] A\n\n[2] B';
+    const [numbered] = await sentWith(() => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {}));
+    reply = () => FAST_REPLY;
+    const [fast] = await sentWith(() => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {}));
+    for (const [path, sent] of Object.entries({ single, numbered, fast })) {
+      assert.ok(sent.startsWith(head) && sent.indexOf(tail) < head.length + 40,
+        `${path} does not start with the creative preset:\n${sent}`);
+      assert.equal(sent.split(prompts.REGISTER_RULE).length - 1, 1, `${path}: register rule count`);
+    }
+    reply = () => WORD_REPLY;
+    const [word] = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {}));
+    assert.ok(word.startsWith(prompts.SINGLE_WORD_PROMPT.split('{targetLang}')[0]), `word path:\n${word}`);
+    assert.ok(!word.includes(prompts.REGISTER_RULE));
+  }
+});
+
 // ---- 服务工作者的两个处理函数：先把关，再翻译 ------------------------------
 
 test('each TRANSLATE handler validates the addenda before it translates, and the switch hands them over', () => {
@@ -335,12 +358,11 @@ const {
   MATH_PLACEHOLDER_RULE,
   SINGLE_WORD_PROMPT,
   WORD_OUTPUT_RULES,
-  DEFAULT_PROMPT,
-  FAST_BATCH_PROMPT,
   getFastBatchOutputRules,
   composePromptAddenda,
   buildPrompt,
 } = prompts;
+const DEFAULT_PROMPT = PromptPresets.textTemplate('');
 
 // mock 服务器里那条正则，从源码取，不抄一份（抄的会和它走散）。
 const MOCK_SOURCE = readFileSync(
@@ -506,7 +528,8 @@ test('the block never carries the sentence the mock reads the delimiter from', (
   assert.equal(PROMPT_DELIMITER_RE.exec(block), null);
 
   // 拼进真实的快批提示词后，第一个匹配仍是模板自己的分隔符 —— 两个分支都是。
-  const fast = buildPrompt(FAST_BATCH_PROMPT, 'Chinese', { delimiter: DELIMITER }, '', { addenda });
+  const fast = buildPrompt(DEFAULT_PROMPT, 'Chinese', { delimiter: DELIMITER },
+    getFastBatchOutputRules(DELIMITER), { addenda });
   assert.equal(PROMPT_DELIMITER_RE.exec(fast)?.[1], DELIMITER);
   const custom = buildPrompt('Translate into {targetLang}.', 'Chinese', { delimiter: DELIMITER },
     getFastBatchOutputRules(DELIMITER), { addenda });

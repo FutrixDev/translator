@@ -8,8 +8,6 @@
 // 读写设置的那条通路（loadSettings / collectSettings / 自动保存 / 快捷键冲突）、
 // 状态条，以及最后的事件绑定与引导。
 
-// Default prompt template
-const DEFAULT_PROMPT_KEY = 'promptStandard';
 // Same value the content scripts start with — one definition, in
 // shared/default-settings.js (loaded by options.html before this file).
 const DEFAULT_SELECTION_HOTKEY = globalThis.DefaultSettings.DEFAULT_SELECTION_HOTKEY;
@@ -110,13 +108,6 @@ const elements = {
   pdfTasksActiveList: document.getElementById('pdfTasksActiveList'),
   pdfTasksHistoryGroup: document.getElementById('pdfTasksHistoryGroup'),
   pdfTasksHistoryList: document.getElementById('pdfTasksHistoryList')
-};
-
-// Preset prompt templates
-const PROMPT_PRESETS = {
-  standard: 'promptStandard',
-  literal: 'promptLiteral',
-  creative: 'promptCreative'
 };
 
 // 领域下拉的选项在脚本加载时生成（此时 <select> 已在文档里），随后 applyI18n 按
@@ -263,7 +254,8 @@ async function loadSettings() {
     elements.youtubeCaptionBgOpacity.value = result.youtubeCaptionBgOpacity != null ? result.youtubeCaptionBgOpacity : 82;
     updateCaptionPreview();
     syncYoutubeSubState();
-    elements.customPrompt.value = result.customPrompt || '';
+    // An empty prompt is the default preset, and the box shows it as such.
+    elements.customPrompt.value = PromptPresets.textTemplate(result.customPrompt);
     elements.promptDomain.value = result.promptDomain;
     showPromptDomainError(result.promptDomain);
     elements.aiPageContext.checked = result.aiPageContext === true;
@@ -376,7 +368,9 @@ function collectSettings() {
     youtubeCaptionFontColor: elements.youtubeCaptionFontColor.value,
     youtubeCaptionBgColor: elements.youtubeCaptionBgColor.value,
     youtubeCaptionBgOpacity: parseInt(elements.youtubeCaptionBgOpacity.value, 10),
-    customPrompt: elements.customPrompt.value.trim(),
+    // The default preset is stored as '', so it stays the default (and the word
+    // path keeps its dictionary prompt) rather than becoming a prompt of the user's.
+    customPrompt: PromptPresets.isDefault(elements.customPrompt.value) ? '' : elements.customPrompt.value.trim(),
     promptDomain: elements.promptDomain.value,
     aiPageContext: elements.aiPageContext.checked,
     theme: document.documentElement.getAttribute('data-theme') || 'light'

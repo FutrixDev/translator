@@ -17,13 +17,6 @@ import assert from 'node:assert/strict';
 await import('../../i18n/messages.js');
 const { I18N_MESSAGES, UI_LANGUAGES, getMessage } = globalThis;
 
-// Sent to the translation model, never shown to anyone. They are instructions
-// in English because that is what they are written in — a Russian rendering of
-// "reply with the translation only" is not a better instruction, and the text
-// the model actually translates carries its own language. Deliberately English
-// in every locale, so PR-10 must not "fill these in".
-const MODEL_FACING = new Set(['promptStandard', 'promptLiteral', 'promptCreative']);
-
 // Empty, and meant to stay that way: every string visible in options.html is
 // translated in every locale. It is kept as a set rather than deleted
 // because the two tests below are what hold the line, and a future gap that
@@ -39,7 +32,7 @@ test('no locale is missing a key that is not already on the list', () => {
     if (lang === 'en') continue;
     for (const key of englishKeys) {
       if (key in I18N_MESSAGES[lang]) continue;
-      if (MODEL_FACING.has(key) || KNOWN_GAP.has(key)) continue;
+      if (KNOWN_GAP.has(key)) continue;
       added.push(`${lang}.${key}`);
     }
   }
@@ -55,8 +48,8 @@ test('the list has no entries that are already translated', () => {
     UI_LANGUAGES.every(lang => key in I18N_MESSAGES[lang]));
   assert.deepEqual(stale, [], 'translated now — delete these from KNOWN_GAP');
 
-  const unknown = [...KNOWN_GAP, ...MODEL_FACING].filter(key => !(key in I18N_MESSAGES.en));
-  assert.deepEqual(unknown, [], 'no longer exist in en — delete these from the lists');
+  const unknown = [...KNOWN_GAP].filter(key => !(key in I18N_MESSAGES.en));
+  assert.deepEqual(unknown, [], 'no longer exist in en — delete these from KNOWN_GAP');
 });
 
 test('a locale never carries a key English does not have', () => {
@@ -89,7 +82,6 @@ test('the fallback chain ends at a sentence, never at a key name', () => {
 });
 
 test('zh-CN is complete, because it is the only locale with a live audience', () => {
-  const missing = englishKeys.filter(key =>
-    !(key in I18N_MESSAGES['zh-CN']) && !MODEL_FACING.has(key));
+  const missing = englishKeys.filter(key => !(key in I18N_MESSAGES['zh-CN']));
   assert.deepEqual(missing, []);
 });

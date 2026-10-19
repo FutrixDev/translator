@@ -1,12 +1,12 @@
 // A word lookup through the service worker's real prompt path (D-472①).
 //
-// A preset prompt — or the default the settings page restores — says "Reply
-// with the translation only". It is the user's custom prompt, so a lookup puts
-// it first and DictEntry.OUTPUT_RULES after it; the rules' last line has to say
-// that the entry format overrides any earlier word on the reply's format, or
-// the model answers with a bare translation and every lookup fails. Checked
-// here for every preset in every UI language, on the system prompt the worker
-// actually sends.
+// A preset prompt says "Reply with the translation only". Picked by the user
+// it is their custom prompt, so a lookup puts it first and
+// DictEntry.OUTPUT_RULES after it; the rules' last line has to say that the
+// entry format overrides any earlier word on the reply's format, or the model
+// answers with a bare translation and every lookup fails. The default preset
+// is not a custom prompt: a lookup under it keeps SINGLE_WORD_PROMPT. Checked
+// for every preset on the system prompt the worker actually sends.
 //
 // And the other end: an answer that is not an entry reaches the reader as
 // dictEntryUnreadable in their UI language (background/api-errors.js).
@@ -14,7 +14,7 @@
 // Run with: npm run test:unit
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { messageCatalog, optionsSource } from './helpers/sources.mjs';
+import { messageCatalog } from './helpers/sources.mjs';
 
 // ---- the least service worker that loads -----------------------------------
 const requests = [];
@@ -60,12 +60,11 @@ const PROFILE = {
   timeoutSec: 60,
 };
 
-// The settings page's own list of presets, and the prompt "reset" restores.
-const options = optionsSource();
-const PRESET_KEYS = [...options.match(/const PROMPT_PRESETS = \{([^}]*)\}/)[1].matchAll(/'([A-Za-z]+)'/g)]
-  .map((m) => m[1]);
-const DEFAULT_PROMPT_KEY = options.match(/const DEFAULT_PROMPT_KEY = '([A-Za-z]+)'/)[1];
+// The presets the settings page offers, and the one "reset" restores: one
+// table, shared/prompt-presets.js, loaded by the worker through prompts.js.
+const { TEMPLATES, DEFAULT } = globalThis.PromptPresets;
 const CATALOG = messageCatalog();
+await import('../../i18n/messages.js');
 
 async function wordSystemPrompt(customPrompt) {
   requests.length = 0;
@@ -81,32 +80,29 @@ test('the override clause is the last line of the rules and says what it overrid
   assert.match(FORMAT_OVERRIDE, /translation only/i);
 });
 
-test('the presets are the three the settings page offers, and reset restores one of them', () => {
-  assert.deepEqual(PRESET_KEYS, ['promptStandard', 'promptLiteral', 'promptCreative']);
-  assert.ok(PRESET_KEYS.includes(DEFAULT_PROMPT_KEY));
+test('the presets are the three the settings page offers, and the default is one of them', () => {
+  assert.deepEqual(Object.keys(TEMPLATES), ['standard', 'literal', 'creative']);
+  assert.equal(DEFAULT, 'creative');
+  for (const [name, template] of Object.entries(TEMPLATES)) {
+    assert.ok(template.includes('{targetLang}'), `${name} is not a prompt template`);
+  }
 });
 
-test('every preset, in every UI language, is overridden by the entry format that follows it', async () => {
+test('every preset the user picks is overridden by the entry format that follows it', async () => {
   // The name {targetLang} becomes for zh-CN, read off the path itself.
   const targetName = (await wordSystemPrompt('{targetLang}')).split('\n\n')[0];
   assert.match(targetName, /Chinese/);
-  const languages = Object.keys(CATALOG);
-  await import('../../i18n/messages.js');
-  assert.deepEqual(languages.slice().sort(), [...globalThis.UI_LANGUAGES].sort());
-  for (const lang of languages) {
-    for (const key of PRESET_KEYS) {
-      // What the settings page writes into the box: t(key) in that UI
-      // language (the presets are English-only today and fall back to it).
-      const preset = globalThis.getMessage(key, lang);
-      assert.ok(preset && preset.includes('{targetLang}'), `${lang}.${key} is not a prompt template`);
-      const system = await wordSystemPrompt(preset);
-      const substituted = preset.replace(/\{targetLang\}/g, targetName);
-      const at = system.indexOf(substituted);
-      assert.notEqual(at, -1, `${lang}.${key}: the preset is not in the system prompt`);
-      assert.ok(system.lastIndexOf(FORMAT_OVERRIDE) > at + substituted.length,
-        `${lang}.${key}: the override clause does not come after the preset`);
-      assert.ok(system.endsWith(FORMAT_OVERRIDE), `${lang}.${key}: something follows the override clause`);
-    }
+  for (const [name, preset] of Object.entries(TEMPLATES)) {
+    const system = await wordSystemPrompt(preset);
+    // The default in the box is the default, not a custom prompt: the word
+    // path keeps its dictionary prompt for it (shared/prompt-presets.js).
+    const expected = name === DEFAULT ? prompts.SINGLE_WORD_PROMPT : preset;
+    const substituted = expected.replace(/\{targetLang\}/g, targetName);
+    const at = system.indexOf(substituted);
+    assert.equal(at, 0, `${name}: the system prompt does not start with ${name === DEFAULT ? 'the word prompt' : 'the preset'}`);
+    assert.ok(system.lastIndexOf(FORMAT_OVERRIDE) > at + substituted.length,
+      `${name}: the override clause does not come after the template`);
+    assert.ok(system.endsWith(FORMAT_OVERRIDE), `${name}: something follows the override clause`);
   }
 });
 
