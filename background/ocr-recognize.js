@@ -10,6 +10,7 @@ import { defaultSettings, uiLanguageOf } from './settings.js';
 import { callModel } from './model-client.js';
 import { missingApiKeyMessage, replyError } from './api-errors.js';
 import { profileFor } from './ai-profiles-host.js';
+import { beforeModelRequest } from './blab-client.js';
 
 // ---------------------------------------------------------------------------
 // Image OCR, step 1: recognition. Two engines — Tesseract in the offscreen
@@ -101,6 +102,12 @@ async function fetchImageForOcr(srcUrl, uiLang, crop) {
   let out = await canvas.convertToBlob({ type: 'image/png' });
   if (out.size > OCR_MAX_BYTES) {
     out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  }
+  // The canvas is at most OCR_MAX_DIMENSION square, where JPEG 0.85 lands far
+  // below the cap even for noise. Over it anyway is a broken assumption, said
+  // here rather than as the service's bare 413.
+  if (out.size > OCR_MAX_BYTES) {
+    throw new Error(`OCR image is ${out.size} bytes after re-encoding (cap ${OCR_MAX_BYTES})`);
   }
   return { base64: arrayBufferToBase64(await out.arrayBuffer()), mediaType: out.type };
 }

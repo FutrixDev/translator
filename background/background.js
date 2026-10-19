@@ -72,7 +72,7 @@ import '../i18n/lang/tr.js';
 import '../i18n/lang/it.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
-import { dailyLimitHeld, noteAccountAction, refreshAfterAccountAction } from './blab-client.js';
+import { dailyLimitHeld, noteAccountAction, beforeModelRequest } from './blab-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter } from './media-hints.js';
@@ -442,16 +442,6 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // 说明（PromptAddenda.validate —— 内容脚本造不出不合法的附加说明，走到这里只能
 // 是缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。失败
 // 只在 replyError 记一次日志（操作名、档 id、功能、原始错误）。
-
-// The Blab engine's step before translating: after the user clicked an account
-// entry, ask billing/me again so a plan bought since releases the latch
-// (blab-client.js, D-497 F3). Other profiles have no account to ask.
-// `zeroClick` is the switch's `message.auto || message.unattended`: the
-// automatic pass and subtitles, the two paths nobody clicked for. Anything
-// else (a click, a selection, the manual page pass) is a person asking now.
-async function beforeModelRequest(profile, zeroClick) {
-  if (globalThis.Engines.isBlabProfile(profile)) await refreshAfterAccountAction({ explicit: !zeroClick });
-}
 
 // Handle single text translation
 async function handleTranslate(text, targetLang, mode, profileId, feature, zeroClick, addenda) {

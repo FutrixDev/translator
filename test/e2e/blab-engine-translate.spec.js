@@ -35,6 +35,7 @@ const {
   openCardOn,
   openOptions,
 } = require('./blab-journey');
+const { OCR_TEXT } = require('./mock-blab-service');
 
 const count = (n) => n.toLocaleString('en');
 
@@ -301,6 +302,47 @@ test.describe('J2 signed out by the server', () => {
       await expect(page.locator('#ai-translator-progress')).toBeHidden({ timeout: 15000 });
       await translatePage(page);
       expect(blab.state.completeRequests.at(-1).authorization).toBe('Bearer granted-token');
+      expect(ai.sentTexts).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+// D-740: the image card's Sign in runs the recognition again — the card holds
+// no source text, so the selection card's retry (translate the text on it)
+// would have nothing to send.
+test.describe('Blab Translation reads an image', () => {
+  test('signed out, the image card offers sign-in; signing in reads the image with the new token', async ({ context, page }) => {
+    test.setTimeout(120000);
+    const { blab, ai, close } = await setUp(context, page, {
+      signedIn: false, settings: { ocrEngine: 'blab', enableImageOcrTranslation: true },
+    });
+    try {
+      await openPage(page);
+      const srcUrl = await page.evaluate(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 120;
+        canvas.getContext('2d').fillRect(0, 0, 10, 10);
+        return canvas.toDataURL('image/png');
+      });
+      await sendMessageToActiveTab(page, { type: 'OCR_TRANSLATE_IMAGE', srcUrl, targetLang: 'zh-CN', translate: false });
+
+      const card = page.locator('.ai-translator-popup');
+      await expect(card.locator('.ai-translator-error')).toContainText(en('blabSignInRequired'), { timeout: 30000 });
+      const entry = card.locator('.ai-translator-account-action');
+      await expect(entry).toHaveAttribute('data-account-action', 'signin');
+      expect(blab.state.completeRequests).toHaveLength(0);
+
+      await entry.click();
+      await expect.poll(() => storedToken(context), { timeout: 15000 }).toBe('granted-token');
+      await expect(card.locator('.ai-translator-text')).toContainText(OCR_TEXT, { timeout: 30000 });
+      await expect(card.locator('.ai-translator-error')).toBeHidden();
+      expect(blab.state.completeRequests).toHaveLength(1);
+      const [sent] = blab.state.completeRequests;
+      expect(sent.authorization).toBe('Bearer granted-token');
+      expect(sent.body.image.mime).toBe('image/png');
       expect(ai.sentTexts).toHaveLength(0);
     } finally {
       await close();

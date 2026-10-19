@@ -261,12 +261,21 @@ async function sendBlab(prepared, signal) {
   return { text };
 }
 
+// Every Blab request's step before the model call: after the user clicked an
+// account entry, ask billing/me again so a plan bought since releases the latch
+// (D-497 F3). Other profiles have no account to ask. `zeroClick` is true for the
+// paths nobody clicked for (the automatic pass, subtitles); a click, a
+// selection, an image recognition or the manual page pass is a person asking now.
+async function beforeModelRequest(profile, zeroClick) {
+  if (globalThis.Engines.isBlabProfile(profile)) await refreshAfterAccountAction({ explicit: !zeroClick });
+}
+
 /** Whether this failure is the account's state (signed out, no plan, today's allowance spent). */
 function isBlabAccountFailure(failure) {
   return Boolean(failure) && ACCOUNT_CODES.includes(failure.blab);
 }
 
 export {
-  blabRequest, sendBlab, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction,
+  blabRequest, sendBlab, dailyLimitHeld, noteAccountAction, refreshAfterAccountAction, beforeModelRequest,
   isBlabAccountFailure, ACCOUNT_CODES,
 };

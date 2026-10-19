@@ -319,6 +319,11 @@
       // whole image is the honest fallback; it is the other menu entry.
     }
 
+    await recognizeImage({ srcUrl, crop, targetLang, translate });
+  }
+
+  /** Step 1 and, when wanted, step 2 for a region already chosen. */
+  async function recognizeImage({ srcUrl, crop, targetLang, translate }) {
     const popup = openPendingPopup();
     const requestId = `ocr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     activeRequest = { requestId, popup };
