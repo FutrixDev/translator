@@ -35,9 +35,11 @@ const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const HOST = 'ring.test';
 const ORIGIN = `https://${HOST}`;
-// 122.5 × (1 − 0.99): the least the arc may leave open while anything is still
-// out. The ring writes offsets with toFixed(2), so the cap reads back as 1.23.
-const CAP_OFFSET = 1.23;
+// The arc's circle has pathLength="1", so offsets run from 1 (empty) to 0 (full).
+// 1 − 0.99: the least the arc may leave open while anything is still out.
+const CAP_OFFSET = 0.01;
+// Half the arc open: a manual round on /partial with 2 of its 4 blocks given up.
+const HALF_OPEN = /stroke-dashoffset: 0\.5;/;
 const GATE_MS = 600;
 // One frame either side of a timer: the probe sees a change in the first frame
 // after it happens.
@@ -190,7 +192,6 @@ function doneToHidden(probe, source) {
 
 // One mock server per test, closed after it.
 let mock;
-const RING_LENGTH = 122.5;
 const countIn = (title) => (/Translated \d+\/\d+/.exec(title || '') || [null])[0];
 
 /** A manual round on /partial that leaves the amber ring held: 2 of 4 given up. */
@@ -202,7 +203,7 @@ async function heldPartial(page, context) {
   await installProbe(context, page);
   await clickBall(page);
   await expect(ring(page)).toHaveAttribute('data-phase', 'partial', { timeout: 30000 });
-  await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+  await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
 }
 
 /** Drag the ball to (x, y) and let go, then take the pointer off it. */
@@ -342,7 +343,7 @@ test.describe('float ball progress ring', () => {
     const snap = await feedState(context, page);
     expect({ known: snap.known, settled: snap.settled, failed: snap.failed }).toEqual({ known: 4, settled: 4, failed: 2 });
     // The gap is the two given up: (settled − failed) / known = 1/2.
-    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
 
     const since = await evaluateInContentScript(context, page, 'performance.now()');
     await page.waitForTimeout(5200);
@@ -566,7 +567,7 @@ test.describe('float ball progress ring', () => {
     expect(after.length, 'a paint of the bumped session').toBeGreaterThan(0);
     expect([...new Set(after.map((p) => p.phase))]).toEqual(['partial']);
     await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
-    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
     await expect(page.locator('#ai-translator-float-ball')).toHaveAttribute('title', /Translated 2\/4/);
   });
 
@@ -583,7 +584,7 @@ test.describe('float ball progress ring', () => {
       return !!ball && ball !== window.__oldBall;
     }), { timeout: 15000 }).toBe(true);
     await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
-    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
     await expect(page.locator('#ai-translator-float-ball')).toHaveAttribute('title', /Translated 2\/4/);
   });
 
@@ -613,7 +614,7 @@ test.describe('float ball progress ring', () => {
     expect(last.phase, 'running up to the pause').toBe('running');
     expect(paused.feed.known, 'the paused report carries no count of its own').toBe(0);
     expect(paused.offset, 'the arc it had').toBe(last.offset);
-    expect(paused.offset).toBeLessThan(RING_LENGTH);
+    expect(paused.offset).toBeLessThan(1);
     expect(countIn(paused.title), 'the count it had').toBe(countIn(last.title));
     expect(countIn(paused.title)).not.toBeNull();
     // And it stays there.

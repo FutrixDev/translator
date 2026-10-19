@@ -93,7 +93,7 @@
         <path class="ait-mark-bubble" d="M41 22H59A9 9 0 0 1 68 31V63C68 69 68.8 75 71.9 78.4Q72.8 79.6 71.2 79.7C66.5 79.6 62 76.8 59.7 72.4Q58.6 70 56.4 70H41A9 9 0 0 1 32 61V31A9 9 0 0 1 41 22Z"/>
         <path class="ait-mark-play" d="M48.68 37.61A3.36 3.36 0 0 0 43.6 40.5L43.6 51.5A3.36 3.36 0 0 0 48.68 54.39L57.94 48.89A3.36 3.36 0 0 0 57.94 43.11Z"/>
       </svg>
-      <svg class="ai-translator-ring" viewBox="0 0 44 44" aria-hidden="true" focusable="false" data-phase="idle"><circle class="ai-translator-ring-track" cx="22" cy="22" r="19.5"/><circle class="ai-translator-ring-arc" cx="22" cy="22" r="19.5"/></svg>
+      <svg class="ai-translator-ring" viewBox="0 0 44 44" aria-hidden="true" focusable="false" data-phase="idle"><circle class="ai-translator-ring-track" cx="22" cy="22" r="19.5"/><circle class="ai-translator-ring-arc" cx="22" cy="22" r="19.5" pathLength="1"/></svg>
       <button type="button" class="ai-translator-status-dot" data-state="none"></button>
       <button type="button" class="ai-translator-ball-more" aria-expanded="false" title="${t('floatBallMore')}" aria-label="${t('floatBallMore')}">···</button>
     `;

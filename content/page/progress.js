@@ -320,23 +320,32 @@
   // data-phase，比例落成弧的 stroke-dashoffset。颜色、旋转、脉冲、淡出全在
   // float-ball.css 里按 data-phase 画；这里只决定「此刻是哪一态、弧多长、什么时候
   // 露面、什么时候退场」。环不收事件（pointer-events:none），点击和拖动照旧落在球上。
+  // 弧的 circle 带 pathLength="1"：周长记作 1，offset 就是 1 − 比例。
 
-  const RING_LENGTH = 122.5; // 2π × 19.5，样张的周长
-  // 环此刻的呈现状态。view 是画在环上的样子，count 是悬停那句「已翻 n/m」说的
-  // 那份账（随 view 一起定格，序列放到一半进度源再变也不改口）；gate 是自动轮的门
-  // （null / 计时器 / 'open'）；sequence 是正在放的完成 / 预算序列；carried 说这段
-  // 序列是上一代留下的；href 是环上一次见到的网址；armedFrom 是手动整页点下那一刻
-  // 进度源上的快照。
+  // 环此刻在干什么（mode），只有这一处说了算：
+  //   idle     不在屏幕上
+  //   gating   不在屏幕上，自动轮在门里等：到点还在跑才露面（gateTimer 在走）
+  //   live     露着一态：arming、running，或过了门的自动轮
+  //   playing  在放完成 / 预算序列（sequence 是哪一段）；carriedOver 说这段序列
+  //            是上一代留下的，只对 playing 有意义
+  //   held     停着一个常驻态：partial、paused、error，直到翻篇或下一轮真露了面
+  // 门的计时器和 mode 互不相干：常驻态底下也可以有一轮自动在门里等。
+  // view 是画在环上的样子，snap 是悬停那句「已翻 n/m」说的那份账（随 view 一起
+  // 定格，序列放到一半进度源再变也不改口）。ledger 是最近一份有数的账（known > 0），
+  // 每次画都记、门开没开都记：暂停那一下进度源上只剩空账，环拿它定格。armedFrom 是
+  // 手动整页点下那一刻进度源上的快照，routeLeft 是换路由那一刻的快照。
   const ring = {
-    view: { phase: 'idle', fade: false, offset: RING_LENGTH, count: null },
-    session: null,
-    href: null,
-    gate: null,
-    timers: [],
+    mode: 'idle',
+    carriedOver: false,
     sequence: null,
-    carried: false,
+    gateTimer: null,
+    view: { phase: 'idle', fade: false, offset: 1, snap: null },
+    ledger: null,
+    session: null,
+    timers: [],
     budgetKey: '',
-    armedFrom: null
+    armedFrom: null,
+    routeLeft: null
   };
   const RING_ARMING_FRACTION = 0.25; // arming：一段 90° 的弧在转，还不代表进度
   // 自动的增量轮常常只有几块、几百毫秒：600 ms 内收场的那一轮整个不露面，只有
@@ -361,7 +370,7 @@
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  /** 这一态的弧该空出多少（stroke-dashoffset）。比例只问进度源的 fraction。 */
+  /** 这一态的弧该空出多少（stroke-dashoffset，周长为 1）。比例只问进度源的 fraction。 */
   function ringOffset(snap, phase) {
     let fraction;
     switch (phase) {
@@ -375,51 +384,80 @@
       case 'budget': fraction = snap.known ? snap.settled / snap.known : 0; break;
       default: fraction = 1; // done、error：满圈
     }
-    return RING_LENGTH * (1 - fraction);
+    return 1 - fraction;
+  }
+
+  /** 此刻环在屏幕上，而且说的是这一代的事（上一代留下、还没放完的序列不算）。 */
+  function ringShown() {
+    return ring.mode === 'live' || (ring.mode === 'playing' && !ring.carriedOver);
+  }
+
+  /** 环上停着的东西不让给同一页上的翻代次：常驻态，或上一代没放完的序列。 */
+  function ringStale() {
+    return ring.mode === 'held' || (ring.mode === 'playing' && ring.carriedOver);
   }
 
   function clearRingTimers() {
     for (const timer of ring.timers) clearTimeout(timer);
     ring.timers = [];
     ring.sequence = null;
-    ring.carried = false;
+    ring.carriedOver = false;
   }
 
   function clearRingGate() {
-    if (ring.gate && ring.gate !== 'open') clearTimeout(ring.gate);
-    ring.gate = null;
+    clearTimeout(ring.gateTimer);
+    ring.gateTimer = null;
+    if (ring.mode === 'gating') ring.mode = 'idle';
   }
 
-  function setRingView(phase, offset, count) {
-    ring.view = { phase, fade: false, offset, count };
+  function setRingView(phase, offset, snap) {
+    ring.view = { phase, fade: false, offset, snap };
   }
 
-  /** 常驻地显示一态（arming、running、partial、paused、error）。 */
-  function showRing(phase, offset, count) {
+  /** 常驻地显示一态：arming、running 是 live，partial、paused、error 是 held。 */
+  function showRing(phase, offset, snap) {
     clearRingTimers();
     clearRingGate();
-    setRingView(phase, offset, count);
+    ring.mode = RING_HELD_PHASES.includes(phase) ? 'held' : 'live';
+    setRingView(phase, offset, snap);
   }
 
-  function hideRing(offset, count) {
+  function hideRing(offset, snap) {
     clearRingTimers();
     clearRingGate();
-    setRingView('idle', offset, count);
+    ring.mode = 'idle';
+    setRingView('idle', offset, snap);
   }
 
-  function runRingSequence(name, offset, count) {
+  /** 自动轮进门：看不见，到点还在跑就露面。常驻态底下的门不改 mode。 */
+  function startRingGate() {
+    if (ring.mode === 'idle') ring.mode = 'gating';
+    if (ring.gateTimer) return;
+    ring.gateTimer = setTimeout(() => {
+      ring.gateTimer = null;
+      // 计时器可能赶在把收场那一笔画上去的那一帧之前：到点时真的还在跑才算门开了。
+      const phase = ctx.progressFeed.state().phase;
+      if (phase === 'arming' || phase === 'running') ring.mode = 'live';
+      paintProgressRing();
+    }, RING_GATE_MS);
+  }
+
+  function runRingSequence(name, offset, snap) {
     clearRingTimers();
     clearRingGate();
+    ring.mode = 'playing';
     ring.sequence = name;
     for (const [at, step] of RING_SEQUENCES[name]) {
       const apply = () => {
         if (step === 'fade') {
           ring.view = { ...ring.view, fade: true };
         } else {
-          setRingView(step, offset, count);
+          setRingView(step, offset, snap);
           if (step === 'idle') {
+            // 放的时候底下若有一轮自动进了门，退场后接着在门里等。
+            ring.mode = ring.gateTimer ? 'gating' : 'idle';
             ring.sequence = null;
-            ring.carried = false;
+            ring.carriedOver = false;
           }
         }
         applyRing();
@@ -430,113 +468,129 @@
   }
 
   /**
-   * 把进度源此刻的快照画到环上。订阅回调、看门狗重建球、手动整页收尾都走这里；
-   * 同一份快照画几遍都一样（序列和门不会因为重画而重启）。
+   * 把进度源此刻的快照画到环上。订阅回调、门到点、看门狗重建球、手动整页收尾
+   * 都走这里；同一份快照画几遍都一样（序列和门不会因为重画而重启）。
    */
   function paintProgressRing() {
     const snap = ctx.progressFeed.state();
-    const before = ring.view;
+    // 暂停那一下调度层先翻代次再报暂停，同一帧画：先记下翻代次之前环在不在屏幕上。
+    let wasOnScreen = ring.mode === 'live' || ring.mode === 'playing' || ring.mode === 'held';
     if (ring.session !== snap.session) startRingSession(snap.session);
+    if (snap !== ring.routeLeft) ring.routeLeft = null;
 
     let phase = snap.phase;
-    let count = snap;
+    let shot = snap;
     if (state.isTranslatingPage && (snap.source !== 'manual' || snap === ring.armedFrom)) {
       // 手动整页已经点下，块还在收（规则要先到、要过滤）：进度源上还没有这一轮，
       // 台上的是自动的数或上一轮手动的终态。环先转起来，用户点了要立刻有回应。
       phase = 'arming';
-      count = RING_BLANK_MANUAL;
-    } else if (ring.armedFrom) {
-      // 那一轮没走到 manual.begin 就收场了（只有 iframe、一块也没有、begin 之前就
-      // 抛了）：台上还是点下之前那份快照。它的完成 / 预算序列早已放完，不再放一遍。
-      if (snap === ring.armedFrom && (phase === 'done' || phase === 'budget')) phase = 'idle';
-      ring.armedFrom = null;
+      shot = RING_BLANK_MANUAL;
+    } else {
+      if (ring.armedFrom) {
+        // 那一轮没走到 manual.begin 就收场了（只有 iframe、一块也没有、begin 之前就
+        // 抛了）：台上是点下之前那份快照，或者其间自动报来的一份。环上转着的 arming
+        // 是那一下点击的，不是这份快照的 —— 先收起，这份快照按自己的规矩来（自动的
+        // 照样过门，没露过面的完成不放序列）。点下之前那份的完成 / 预算序列早已放完。
+        if (snap.source !== 'manual' || snap === ring.armedFrom) {
+          hideRing(ring.view.offset, ring.view.snap);
+          wasOnScreen = false;
+        }
+        if (snap === ring.armedFrom && (phase === 'done' || phase === 'budget')) phase = 'idle';
+        ring.armedFrom = null;
+      }
+      // 换路由时台上那份快照说的是已经离开的那一页：重画多少遍也不再露面。
+      if (snap === ring.routeLeft) phase = 'idle';
     }
     if (phase !== 'budget') ring.budgetKey = '';
+    if (phase !== 'idle' && shot.known > 0) ring.ledger = shot;
     if (phase === 'paused' && snap.known === 0) {
-      // 暂停那一下调度层先翻了代次，台上只剩一份空账。环要停在喊停那一刻：
-      // 弧长和「已翻 n/m」都取暂停前画着的那份账，只是变灰。
-      count = before.count && before.count.known > 0
-        ? { ...before.count, source: snap.source, phase: 'paused' }
-        : snap;
+      // 暂停那一下调度层先翻了代次，台上只剩一份空账。环在屏幕上的话停在喊停那
+      // 一刻：弧长和「已翻 n/m」都取最近那份账，只是变灰。环本来就不在屏幕上（已经
+      // 放完退场、或者还在门里），暂停什么也不画。
+      if (wasOnScreen && ring.ledger) shot = { ...ring.ledger, source: snap.source, phase: 'paused' };
+      else phase = 'idle';
     }
 
-    const offset = ringOffset(count, phase);
+    const offset = ringOffset(shot, phase);
     // 环上停着一个常驻态（手动那一轮的 partial / error），或者上一代没放完的完成
-    // 序列（carried）。自动开着的页面上，手动一收尾调度层就会再报数：把放弃的块
+    // 序列（carriedOver）。自动开着的页面上，手动一收尾调度层就会再报数：把放弃的块
     // 重新排队、报一个 idle，或者门内就收场的一小轮；语言包装好、暂停也会翻代次。
     // 那都不是「下一轮」—— 它们只让给换路由、手动的新一轮、和过了门真露面的
     // 自动轮，否则那圈珊瑚闪一帧就没了，完成序列也放不完。
-    const stale = (RING_HELD_PHASES.includes(ring.view.phase) && !ring.sequence) || ring.carried;
-    const shown = ring.view.phase !== 'idle' && !stale;
+    const stale = ringStale();
+    const shown = ringShown();
     switch (phase) {
       case 'idle':
         if (stale) clearRingGate();
-        else if (!ring.sequence) hideRing(offset, count);
+        else if (ring.mode !== 'playing') hideRing(offset, shot);
         break;
       case 'arming':
       case 'running':
-        if (snap.source === 'manual' || state.isTranslatingPage || shown || ring.gate === 'open') {
-          showRing(phase, offset, count);
+        if (snap.source === 'manual' || state.isTranslatingPage || shown) {
+          showRing(phase, offset, shot);
         } else {
           // 门还没开：弧长和账照写（看不见），到点还在跑就露面。看得见的不动它。
-          if (!stale) ring.view = { ...ring.view, offset, count };
-          if (!ring.gate) {
-            ring.gate = setTimeout(() => {
-              ring.gate = 'open';
-              paintProgressRing();
-            }, RING_GATE_MS);
-          }
+          if (!stale) ring.view = { ...ring.view, offset, snap: shot };
+          startRingGate();
         }
         break;
       case 'done':
         if (ring.sequence === 'done' || ring.sequence === 'doneReduced') break;
         // 没露过面的一轮（门内收场，或序列已经放完）就不露面；常驻态留着。
         if (stale) clearRingGate();
-        else if (!shown) hideRing(offset, count);
-        else runRingSequence(prefersReducedMotion() ? 'doneReduced' : 'done', offset, count);
+        else if (!shown) hideRing(offset, shot);
+        else runRingSequence(prefersReducedMotion() ? 'doneReduced' : 'done', offset, shot);
         break;
       case 'budget': {
         // 同一份预算账只放一次「停 4 s 再淡出」，之后的重画不再把它叫回来。上一代
         // 留下的序列也放完再说：翻代次后的空账不该把它截成一圈空弧。
         const key = `${snap.session}:${snap.known}:${snap.settled}`;
-        if (ring.budgetKey === key || ring.carried) break;
+        if (ring.budgetKey === key || (ring.mode === 'playing' && ring.carriedOver)) break;
         ring.budgetKey = key;
-        runRingSequence('budget', offset, count);
+        runRingSequence('budget', offset, shot);
         break;
       }
       default: // partial、paused、error：常驻，直到换路由或下一轮
-        showRing(phase, offset, count);
+        showRing(phase, offset, shot);
     }
     applyRing();
   }
 
   /**
-   * 进度源翻了代次。只有换了路由才是翻篇：环立刻回 idle，账一并清掉，新一轮按门
-   * 的规则重新出现。别的翻代次（语言包装好重判、暂停、继续、整轮失败）还在同一页
-   * 上：正在放的完成 / 预算序列放完，手动那一轮停下的 partial / error 留着。自动
-   * 自己的态（在转的弧、自动的 partial / paused / error）说的是上一代调度层的
-   * 状态，新一代会自己报，收掉 —— 账留着，暂停要拿它定格。
+   * 进度源在同一路由上翻了代次（换路由由下面的 onRouteChange 直接收）：语言包装好
+   * 重判、暂停、继续、整轮失败。正在放的完成 / 预算序列放完，手动那一轮停下的
+   * partial / error 留着。自动自己的态（在转的弧、自动的 partial / paused / error）
+   * 说的是上一代调度层的状态，新一代会自己报，收掉 —— 账留着。
    */
   function startRingSession(session) {
-    const href = globalThis.SpaNavigation.currentUrl();
-    const routeChanged = ring.href !== null && ring.href !== href;
-    const { phase, count } = ring.view;
     ring.session = session;
-    ring.href = href;
     ring.budgetKey = '';
-    if (routeChanged) hideRing(RING_LENGTH, null);
-    else if (ring.sequence) ring.carried = true;
-    else if (!(RING_HELD_PHASES.includes(phase) && count && count.source === 'manual')) hideRing(RING_LENGTH, count);
+    if (ring.mode === 'playing') ring.carriedOver = true;
+    else if (!(ring.mode === 'held' && ring.view.snap && ring.view.snap.source === 'manual')) {
+      hideRing(1, ring.view.snap);
+    }
+  }
+
+  // 换了路由就是翻篇：环立刻回 idle，账一并清掉，新一页的轮次按门的规则重新出现。
+  // 不等进度源翻代次 —— 自动翻译关着的页面上，手动留下的环换页后进度源一动不动。
+  if (globalThis.SpaNavigation) {
+    globalThis.SpaNavigation.onRouteChange(() => {
+      ring.routeLeft = ctx.progressFeed.state();
+      ring.ledger = null;
+      ring.budgetKey = '';
+      hideRing(1, null);
+      applyRing();
+    });
   }
 
   function applyRing() {
     const ball = state.floatBall;
     const svg = ball && ball.querySelector('svg.ai-translator-ring');
     if (!svg) return;
-    const { phase, fade, offset, count } = ring.view;
+    const { phase, fade, offset, snap } = ring.view;
     svg.dataset.phase = phase;
     svg.classList.toggle('ai-translator-ring-fade', fade);
-    svg.querySelector('.ai-translator-ring-arc').style.strokeDashoffset = offset.toFixed(2);
+    svg.querySelector('.ai-translator-ring-arc').style.strokeDashoffset = offset.toFixed(4);
     // 数字不画在球上：悬停看球的 title，读屏读环的 aria-label，说的是同一句。
     if (phase === 'idle') {
       ball.removeAttribute('title');
@@ -545,7 +599,7 @@
       svg.setAttribute('aria-hidden', 'true');
       return;
     }
-    const line = ctx.describeProgress(count);
+    const line = ctx.describeProgress(snap);
     ball.title = line;
     svg.removeAttribute('aria-hidden');
     svg.setAttribute('role', 'img');
