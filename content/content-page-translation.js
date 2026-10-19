@@ -105,10 +105,12 @@
         feed.end('error');
         ctx.showTranslationError(failure.message, failure.action);
       } else {
-        // 有几块重试后仍没译成：环停在琥珀上，缺口就是那几块（点标记可单段重试）。
-        feed.end(ctx.progressFeed.state().failed > 0 ? 'partial' : 'done');
+        // 有几块重试后仍没译成：环停在琥珀上、收尾条子照实说剩几块（点标记可单段重试）。
+        const failed = ctx.progressFeed.state().failed;
+        feed.end(failed > 0 ? 'partial' : 'done');
         state.pageHasBeenTranslated = true;
-        ctx.showTranslationComplete();
+        if (failed > 0) ctx.showPageNotice(t('autoStatePartial').replace('{count}', String(failed)));
+        else ctx.showTranslationComplete();
       }
     } catch (error) {
       console.error('Blab Translation: Page translation failed', error);
