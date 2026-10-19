@@ -15,8 +15,8 @@ const {
   setExtensionSettings,
   stubBuiltinTranslator,
   waitForContentReady,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SITE = 'https://placeholder-braces.test';

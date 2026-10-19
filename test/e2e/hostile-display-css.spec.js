@@ -24,8 +24,8 @@ const {
   triggerPageTranslation,
   openFloatBallMenu,
   writeSyncSettings,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const ORIGIN = 'https://feed.test';
 

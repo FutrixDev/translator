@@ -31,6 +31,7 @@ const {
   waitForContentReady,
   writeSyncSettings,
 } = require('./helpers');
+const { clickBall, dragBall, ring, ROUND_END_BAR, waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const HOST = 'ring.test';
@@ -137,11 +138,6 @@ const installProbe = (context, page) => evaluateInContentScript(context, page, P
 const readProbe = (context, page) => evaluateInContentScript(context, page, 'self.__ringProbe');
 const feedState = (context, page) =>
   evaluateInContentScript(context, page, 'self.AI_TRANSLATOR_CONTENT.progressFeed.state()');
-const ring = (page) => page.locator('#ai-translator-float-ball svg.ai-translator-ring');
-
-async function clickBall(page) {
-  await page.click('#ai-translator-float-ball', { position: { x: 18, y: 18 } });
-}
 
 /**
  * Wait until the probe has seen the feed reach `phase` from `source`, then until
@@ -204,16 +200,6 @@ async function heldPartial(page, context) {
   await clickBall(page);
   await expect(ring(page)).toHaveAttribute('data-phase', 'partial', { timeout: 30000 });
   await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', HALF_OPEN);
-}
-
-/** Drag the ball to (x, y) and let go, then take the pointer off it. */
-async function dragBall(page, x, y) {
-  const box = await page.locator('#ai-translator-float-ball').boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(x, y, { steps: 12 });
-  await page.mouse.up();
-  await page.mouse.move(400, 300);
 }
 
 test.describe('float ball progress ring', () => {

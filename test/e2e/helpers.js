@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { expect } = require('@playwright/test');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -314,17 +315,6 @@ async function waitForTranslationComplete(page, timeout = 60000) {
     timeout,
   });
   await waitForPageRoundEnd(page, timeout);
-}
-
-// 一轮手动整页收尾挂出的那一条：成功、提示（没有可翻的，或还剩几块没翻成）、报错。
-// 翻的过程中没有条子；新一轮点下时上一轮的被立刻收走，等到的一定是这一轮的。
-const ROUND_END_BAR = ['success', 'info', 'error']
-  .map((name) => `#ai-translator-progress.ai-translator-progress-${name}-state`)
-  .join(', ');
-
-/** Wait for the manual page round's end bar (success, notice or error) to attach. */
-async function waitForPageRoundEnd(page, timeout = 30000) {
-  await page.waitForSelector(ROUND_END_BAR, { state: 'attached', timeout });
 }
 
 /**
@@ -981,7 +971,6 @@ module.exports = {
   closeInputDialog,
   triggerPageTranslation,
   waitForTranslationComplete,
-  waitForPageRoundEnd,
   getElementPosition,
   verifyAlignment,
   countElements,

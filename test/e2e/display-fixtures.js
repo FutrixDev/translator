@@ -11,7 +11,8 @@
  * extension actually built.
  */
 const { expect } = require('@playwright/test');
-const { setExtensionSettings, triggerPageTranslation, writeSyncSettings, waitForPageRoundEnd } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, writeSyncSettings } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const ORIGIN = 'https://styles.test';
 

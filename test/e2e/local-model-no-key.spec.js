@@ -28,8 +28,8 @@ const {
   triggerPageTranslation,
   getServiceWorker,
   openPopupOver,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const en = (key) => getMessage(key, 'en');

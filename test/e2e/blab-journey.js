@@ -13,8 +13,8 @@ const {
   getServiceWorker,
   triggerPageTranslation,
   waitForFloatBall,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockBlabService } = require('./mock-blab-service');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');

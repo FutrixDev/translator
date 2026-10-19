@@ -27,8 +27,8 @@ const {
   triggerPageTranslation,
   waitForContentReady,
   writeSyncSettings,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SITE = 'https://priority.test';

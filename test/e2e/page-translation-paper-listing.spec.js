@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, openExamplePage, waitForPageRoundEnd } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // Regression test for LaTeXML code listings (arXiv HTML papers, ar5iv) in

@@ -24,8 +24,8 @@ const {
   sentSegments,
   setExtensionSettings,
   waitForContentReady,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 

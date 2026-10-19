@@ -15,7 +15,8 @@
  * where the text lands, not what it says.
  */
 const { expect } = require('@playwright/test');
-const { setExtensionSettings, triggerPageTranslation, waitForPageRoundEnd } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const ORIGIN = 'https://rtl.test';
 

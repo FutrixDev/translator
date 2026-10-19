@@ -20,8 +20,8 @@ const {
   waitForFloatBall,
   writeSyncSettings,
   openPopupOver,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,
   ORIGIN,

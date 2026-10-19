@@ -18,8 +18,8 @@ const {
   setExtensionSettings,
   stubBuiltinTranslator,
   waitForContentReady,
-  waitForPageRoundEnd,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { addGlossaryEntry, addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 

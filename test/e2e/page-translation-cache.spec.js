@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, getServiceWorker, openExamplePage, waitForPageRoundEnd } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, getServiceWorker, openExamplePage } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 译文缓存（shared/translation-cache.js + content/content-translation-cache.js）的

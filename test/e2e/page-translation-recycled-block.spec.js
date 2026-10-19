@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings, triggerPageTranslation, openExamplePage, waitForPageRoundEnd } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 内容身份（shared/block-identity.js）在真浏览器里的那一条旅程。
