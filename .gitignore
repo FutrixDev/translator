@@ -54,3 +54,5 @@ test-results/
 design/
 .gstack/
 
+# Local agent guidance, kept per checkout
+CLAUDE.md
