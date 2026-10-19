@@ -579,16 +579,15 @@
   }
 
   // 换了路由就是翻篇：环立刻回 idle，账一并清掉，新一页的轮次按门的规则重新出现。
-  // 不等进度源翻代次 —— 自动翻译关着的页面上，手动留下的环换页后进度源一动不动。
-  if (globalThis.SpaNavigation) {
-    globalThis.SpaNavigation.onRouteChange(() => {
-      ring.routeLeft = ctx.progressFeed.state();
-      ring.ledger = null;
-      ring.budgetKey = '';
-      hideRing(1, null);
-      applyRing();
-    });
-  }
+  // 不等进度源翻代次 —— 调度层换路由也翻代次，但手动留下的 partial / error 不让给翻代次
+  // （startRingSession），手动那一轮还在途时进度源上也仍是它的快照（routeLeft）。
+  globalThis.SpaNavigation.onRouteChange(() => {
+    ring.routeLeft = ctx.progressFeed.state();
+    ring.ledger = null;
+    ring.budgetKey = '';
+    hideRing(1, null);
+    applyRing();
+  });
 
   function applyRing() {
     const ball = state.floatBall;
