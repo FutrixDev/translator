@@ -65,6 +65,18 @@
   and a round stopped by the daily budget or an error no longer shows
   paragraphs as still waiting. Whole-page translation moves onto the same
   count together with its new progress ring.
+- **Progress is a ring around the float ball.** Click to translate the page
+  and the ring starts turning at once; as paragraphs come back the arc fills,
+  and it never closes while any paragraph is still out. A finished page turns
+  the ring mint for a moment and it fades away; paragraphs that could not be
+  translated leave an amber ring with the gap still open, and a failed page a
+  coral one, until the next round or the next page. An automatic round that
+  ends in under 0.6 s shows no ring at all, only the status dot. Hover the
+  ball, or ask a screen reader, for the count; no number is drawn on the ball.
+  With reduced motion the ring neither spins nor fills. The bar beside the
+  ball no longer has a track or a percentage: it only carries a notice (the
+  page is already translated, a language pack is downloading), the finished
+  message or an error.
 
 ### Language menu
 
