@@ -813,7 +813,7 @@ function loadStatusWithFeed() {
   });
   const subscribers = [];
   let publish = null;
-  const strings = { progressCount: 'Translated {settled}/{known}' };
+  const strings = { progressCount: 'Translated {settled}/{known}', translating: 'Translating...' };
   const ctx = {
     t: (key) => strings[key] || key,
     settings: {},
@@ -844,6 +844,7 @@ function loadStatusWithFeed() {
       feed = Object.freeze({ ...feed, ...next });
       for (const fn of subscribers) fn(feed);
     },
+    get snapshot() { return feed; },
   };
 }
 
@@ -853,7 +854,7 @@ test('自动那一轮的说明句末尾带「已翻 n/m」，数从进度源来�
   page.feed({ source: 'auto', phase: 'running', known: 10, settled: 3, inflight: 7 });
   assert.match(page.dot.title, /Translated 3\/10$/);
   assert.equal(page.dot.attrs['aria-label'], page.dot.title, 'title 与 aria-label 是同一句');
-  assert.equal(page.ctx.describeProgress(), page.dot.title, '进度环问到的也是这一句');
+  assert.equal(page.ctx.describeProgress(page.snapshot), page.dot.title, '进度环拿同一份账问到的也是这一句');
   // 调度状态一整轮都是 RUNNING：只有进度源在动，句子也得跟着动。
   page.feed({ settled: 7, inflight: 3 });
   assert.match(page.dot.title, /Translated 7\/10$/);
@@ -874,9 +875,31 @@ test('手动整页的数只给进度环，不拼进自动的说明句', () => {
   const page = loadStatusWithFeed();
   page.status({ status: 'IDLE', gaveUp: 0 });
   page.feed({ source: 'manual', phase: 'running', known: 80, settled: 40, inflight: 40 });
-  assert.equal(page.ctx.describeProgress(), 'Translated 40/80');
+  assert.equal(page.ctx.describeProgress(page.snapshot), 'Translated 40/80');
   assert.doesNotMatch(page.dot.title, /Translated/);
   assert.equal(page.dot.dataset.state, 'none', '手动那一轮不点亮状态点');
+});
+
+test('「已翻」不算放弃的块：分子是 settled − failed', () => {
+  const page = loadStatusWithFeed();
+  page.status({ status: 'RUNNING', gaveUp: 0 });
+  page.feed({ source: 'auto', phase: 'running', known: 10, settled: 6, failed: 2, inflight: 4 });
+  assert.match(page.dot.title, /Translated 4\/10$/);
+  page.feed({ source: 'manual', phase: 'partial', known: 10, settled: 10, failed: 3, inflight: 0 });
+  assert.equal(page.ctx.describeProgress(page.snapshot), 'Translated 7/10');
+});
+
+test('进度环问的是它定格的那份账，不是进度源此刻的', () => {
+  const page = loadStatusWithFeed();
+  page.status({ status: 'IDLE', gaveUp: 0 });
+  // 手动整页刚点下、块还没收齐：那一份是空账，只说「正在翻译」，不报自动或上一轮的数。
+  page.feed({ source: 'auto', phase: 'running', known: 30, settled: 12, inflight: 18 });
+  const blank = { source: 'manual', phase: 'arming', known: 0, settled: 0, failed: 0, pending: 0, inflight: 0 };
+  assert.equal(page.ctx.describeProgress(blank), 'Translating...');
+  // 完成序列还在放，进度源已经翻到下一代的空账：环上那句照旧报完成时的数。
+  const done = { source: 'manual', phase: 'done', known: 80, settled: 80, failed: 0, pending: 0, inflight: 0 };
+  page.feed({ source: 'auto', phase: 'idle', known: 0, settled: 0, inflight: 0, session: 4 });
+  assert.equal(page.ctx.describeProgress(done), 'Translated 80/80');
 });
 
 test('progressCount 每种语言都有，而且带着两个占位符', () => {

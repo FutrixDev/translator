@@ -76,24 +76,24 @@
 
   /**
    * 「已翻 n/m」：球上不画数字（36px 放不下），数字只在悬停 title / 读屏
-   * aria-label 里说。分子分母都取统一进度源（content/page/progress-feed.js）。
+   * aria-label 里说。账是统一进度源（content/page/progress-feed.js）的一份快照；
+   * 放弃的块不算「已翻」。
    */
-  function progressCountLine() {
-    const feed = ctx.progressFeed.state();
+  function progressCountLine(feed) {
     if (feed.phase === 'idle' || feed.known === 0) return '';
     return t('progressCount')
-      .replace('{settled}', String(feed.settled))
+      .replace('{settled}', String(feed.settled - feed.failed))
       .replace('{known}', String(feed.known));
   }
 
-  function explainLine(snap) {
+  function explainLine(snap, feed) {
     const parts = [stateLabel(snap)];
     const reasonKey = REASON_KEYS[snap.reason];
     if (reasonKey) parts.push(t(reasonKey));
     // 引擎那句原话留在最后：密钥没填、地址写错这类错误，只有它说得出是哪一条。
     if (snap.status === STATUS.ERROR && snap.error) parts.push(String(snap.error));
     // 进度源此刻报的是自动这边的账，才拼进自动的这句话；手动那一轮的数归它自己。
-    if (ctx.progressFeed.state().source === 'auto') parts.push(progressCountLine());
+    if (feed.source === 'auto') parts.push(progressCountLine(feed));
     return parts.filter(Boolean).join(' · ');
   }
 
@@ -128,7 +128,7 @@
     dot.dataset.state = next;
     // 这颗点没有文字，它的名字就是它此刻在说的那句话 —— 鼠标看 title，读屏看
     // aria-label，两边说的必须是同一句。
-    const line = latest ? explainLine(latest) : '';
+    const line = latest ? explainLine(latest, ctx.progressFeed.state()) : '';
     dot.title = line;
     dot.setAttribute('aria-label', line);
   }
@@ -264,7 +264,7 @@
     }
 
     bar.querySelector('.ai-translator-auto-text').textContent =
-      mode === 'notice' ? notice : explainLine(snap);
+      mode === 'notice' ? notice : explainLine(snap, ctx.progressFeed.state());
   }
 
   // ------------------------------------------------------------------ 装配
@@ -272,12 +272,13 @@
   ctx.paintAutoStatusDot = paintDot;
 
   /**
-   * 进度环悬停 / 读屏的那句话（content/page/progress.js 画环时来问）：手动整页
-   * 只说「已翻 n/m」，自动的说状态点那一句（它已经带上了计数）。
+   * 进度环悬停 / 读屏的那句话（content/page/progress.js 画环时拿环上定格的那份账
+   * 来问）：手动整页只说「已翻 n/m」，块还没收齐时说「正在翻译」；自动的说状态点
+   * 那一句，计数取这份账。
    */
-  ctx.describeProgress = function () {
-    if (ctx.progressFeed.state().source === 'manual') return progressCountLine();
-    return explainLine(latest || {});
+  ctx.describeProgress = function (feed) {
+    if (feed.source === 'manual') return progressCountLine(feed) || t('translating');
+    return explainLine(latest || {}, feed);
   };
   ctx.showAutoStatusNotice = setNotice;
   ctx.showAutoStatusOffer = setOffer;
