@@ -161,8 +161,8 @@ test('auto translation: a block whose batch failed gets another chance, not a si
 
     const countLead = () => sentTexts.filter((text) => text.includes(LEAD)).length;
     // 第一批发出去了，服务器 400 —— 文字花了钱，页面上什么也没落地。
-    // 这里不断言「此刻还没有译文」：一轮跑完队列里还有东西就立刻起下一轮
-    // （ext-opt-page-translation §3.3），失败块放回队列后的那次重试紧跟着就发，
+    // 这里不断言「此刻还没有译文」：一轮跑完队列里还有东西就立刻起下一轮，
+    // 失败块放回队列后的那次重试紧跟着就发，
     // 不再隔 250ms，「还没落地」的窗口已经测不到了。记账若在发出那一刻，
     // 放回重试和下面的重新发现都会被台账跳过，countLead 停在 1，下面照样红。
     await expect.poll(countLead, { timeout: 30000 }).toBeGreaterThanOrEqual(1);

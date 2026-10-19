@@ -1,5 +1,5 @@
-// The auto-translation scheduler's progress ledger (content/content-auto-ledger.js,
-// design docs/design/ext-opt-page-translation.md §2, D-560 code-quality SF-1).
+// The auto-translation scheduler's progress ledger
+// (content/content-auto-ledger.js).
 //
 // The scheduler owns no counter of its own: every book is behind these methods, and
 // counts() is what ctx.progressFeed is told. Pinned here on its own:

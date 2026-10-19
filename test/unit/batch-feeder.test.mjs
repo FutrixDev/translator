@@ -1,16 +1,15 @@
-// Focus-priority batching for page translation (design
-// docs/design/ext-opt-page-translation.md §3, acceptance §6.1 batch A item 1).
+// Focus-priority batching for page translation.
 //
 // createBatchFeeder in content/page/focus-order.js decides, at every pull, which
 // blocks go next: the ones nearest the viewport, towards the scroll direction,
 // holding focus. This suite loads the real batch.js against a faked window
 // whose scroll position and element geometry it controls, and pins:
 //   - viewport blocks are pulled before anything off screen, and the far tier
-//     (past NEAR_SCREENS) goes in document order (D-553);
+//     (past NEAR_SCREENS) goes in document order;
 //   - a scroll by the reader between two pulls re-measures and re-scores what
 //     is left, so content shifted by earlier insertions is not read stale;
 //   - the pass's own insertions (no reader scroll) re-measure nothing: the
-//     viewport the pass started on keeps going first (J5.1, D-553);
+//     viewport the pass started on keeps going first (J5.1);
 //   - a scroll made by scroll anchoring is no reader scroll: it keeps the scroll
 //     direction and only shifts the viewport into the measured coordinates;
 //   - a block of the other tier is skipped, not the end of the batch;
@@ -151,7 +150,7 @@ test.beforeEach(() => {
   window.innerHeight = H;
 });
 
-// ==================== the score (design §3.1) ====================
+// ==================== the score ====================
 
 // The score is not exported: it is pinned through the order the feeder pulls
 // in. Viewport [800, 1600). A block g px below or above is g / 800 screens off;
@@ -174,14 +173,14 @@ test('the score: towards the scroll costs 0.8 a screen, against it 1.2', () => {
   assert.equal(firstOfPair(410, 600), 'above', 'above 0.6, below 0.5125 * 1.2 = 0.615');
 });
 
-// ==================== the feeder (design §3.2) ====================
+// ==================== the feeder ====================
 
 test('viewport blocks are pulled before any block off screen, then the far tier in document order', () => {
   // Six blocks three screens above the viewport come first in the document;
   // six blocks in the viewport come after them. Document order would send the
   // far six first. Once the viewport is done the far six go top down, not
   // nearest first: scored, the far tier spreads out from the viewport both
-  // ways, and that order costs Blink twice the paint per frame (D-553).
+  // ways, and that order costs Blink twice the paint per frame.
   const far = [0, 100, 200, 300, 400, 500].map((y, i) => block(y, `far${i}`));
   const seen = [2400, 2500, 2600, 2700, 2800, 2900].map((y, i) => block(y, `view${i}`));
   scrollTo(3 * H); // viewport [2400, 3200)
@@ -419,7 +418,7 @@ test('the concurrency the pool and the auto round cap read is the engine table, 
   assert.equal(ctx.pagePass.concurrency(true), 12);
 });
 
-// ==================== progress counts blocks (design §2) ====================
+// ==================== progress counts blocks ====================
 
 test('runTranslationPass reports progress once per block, 1..N, even when the N blocks share one batch', async () => {
   const blocks = [0, 100, 200, 300, 400].map((y, i) => block(y, `p${i}`));
@@ -429,7 +428,7 @@ test('runTranslationPass reports progress once per block, 1..N, even when the N 
   assert.deepEqual(calls, [1, 2, 3, 4, 5].map((n) => [n, 5, 'settled']));
 });
 
-test('progress for a batch is delivered once the whole batch is in: no progress write between two inserts (D-553)', async () => {
+test('progress for a batch is delivered once the whole batch is in: no progress write between two inserts', async () => {
   // The progress bar is DOM; written between two inserts it makes the next
   // block's fit measurement force a layout, once per block.
   const blocks = [0, 100, 200].map((y, i) => block(y, `q${i}`));
@@ -477,7 +476,7 @@ test('a manual pass wired to ctx.progressFeed settles each block exactly once: N
   assert.deepEqual([s.source, s.phase, s.known, s.settled, s.failed, s.inflight], ['manual', 'partial', 6, 6, 1, 0]);
 });
 
-test('a reader jump smaller than the growth since the last scroll is still the reader: the view is sampled at every delivery (D-554 T1)', async () => {
+test('a reader jump smaller than the growth since the last scroll is still the reader: the view is sampled at every delivery', async () => {
   // Built-in engine, four calls in flight. The viewport [0, 800) holds v0..v3;
   // w sits a screen under it (near), x three screens under (far).
   const seen = [100, 200, 300, 400].map((y, i) => block(y, `v${i}`));
@@ -580,7 +579,7 @@ test('the pointer is kept in viewport coordinates: after a scroll it points wher
 // drainFeeder (content/page/focus-order.js) is the one concurrency pool behind a
 // page pass and the language pre-check. On the first error every slot stops
 // pulling, the items already in hand finish, and that first error is what the
-// pool throws (D-560 NIT 3).
+// pool throws.
 
 const ticks = async (n) => {
   for (let i = 0; i < n; i += 1) await new Promise((resolve) => setImmediate(resolve));

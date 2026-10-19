@@ -198,7 +198,7 @@ globalThis.window = {
     isExtensionContextAvailable: () => true,
     isExtensionContextInvalidated: () => false,
   },
-  // focus-order.js 加载时挂上滚动/指针/尺寸监听（设计 §3.1）。
+  // focus-order.js 加载时挂上滚动/指针/尺寸监听。
   addEventListener: () => {},
 };
 // 语言那几个 ctx.x 用真的 content-language.js 挂：maxChars 这一条要守的正是它的

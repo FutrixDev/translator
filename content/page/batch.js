@@ -495,10 +495,10 @@
       if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
       progressed(block, 'failed');
     };
-    // 进度按块计，每块恰好一次（设计 §2）：有结果（settledBlock）或失败（markFailed）
+    // 进度按块计，每块恰好一次：有结果（settledBlock）或失败（markFailed）
     // 的那一刻记下，onProgress(done, total, 'settled' | 'failed') 等这一批插完再报
-    // （flushProgress）：进度条是 DOM，逐块写会让下一块插入前的量取每块强制一次布局
-    // （D-553）。整轮级失败不落到段落上，不计 —— 那一轮由整页报错收场。
+    // （flushProgress）：进度条是 DOM，逐块写会让下一块插入前的量取每块强制一次布局。
+    // 整轮级失败不落到段落上，不计 —— 那一轮由整页报错收场。
     const total = blocks.length;
     const counted = new Set();
     const unreported = [];
@@ -739,7 +739,7 @@
   // （content/content-auto-translate.js）按同一张引擎表定批数上限与批的形状。
   const LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
   ctx.pagePass = Object.freeze({ concurrency: passConcurrency, batchShape: passBatchShape, LIMITS });
-  // content/page/collect.js 还按旧名读 MAX_BLOCK_CHARS；那个文件归批 C，这一批不动
-  // 它。同一个冻结对象，不是第二份数。
+  // content/page/collect.js 还按旧名读 MAX_BLOCK_CHARS，所以留着这个别名。
+  // 同一个冻结对象，不是第二份数。
   ctx.PAGE_LIMITS = LIMITS;
 })();

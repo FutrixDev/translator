@@ -1,5 +1,4 @@
-// One progress source for page translation: ctx.progressFeed (design
-// docs/design/ext-opt-page-translation.md §2, acceptance §6.1 batch A item 2).
+// One progress source for page translation: ctx.progressFeed.
 //
 // Two halves:
 //   - the feed itself (content/page/progress-feed.js) in a fresh vm per test:
@@ -325,7 +324,7 @@ test('a block that fails twice is counted once in known and lands as failed: pha
 });
 
 test('two blocks that both fail twice, with nothing settled: failed never runs ahead of settled', async () => {
-  // The all-fail case (D-551 item 6): the second round gives up on both blocks
+  // The all-fail case: the second round gives up on both blocks
   // at once. The ledger has to take each one before failed counts it — with
   // failed bumped first, failed is 2 while settled is still 0, and the feed
   // refuses the snapshot.
@@ -372,7 +371,7 @@ test('a round refused by the AI budget leaves nothing pending or in flight on th
 });
 
 test('a round refused because no engine is usable leaves nothing pending or in flight on the feed', async () => {
-  // COST_ENGINE (D-554 T-nit): the same stop as the budget, under another reason.
+  // COST_ENGINE: the same stop as the budget, under another reason.
   let engine = 'builtin';
   const s = loadScheduler({ engine: () => engine });
   s.offer(...Array.from({ length: 6 }, (_, i) => element(`p${i}`)));
@@ -386,7 +385,7 @@ test('a round refused because no engine is usable leaves nothing pending or in f
   assert.deepEqual(ledger(s.feed.state()), ['idle', 4, 4, 0, 0, 0]);
 });
 
-// D-554 T2: a block that was accepted and can no longer reach a result.
+// A block that was accepted and can no longer reach a result.
 test('a block disconnected while in flight is settled, not left owing the ring a block', async () => {
   const s = loadScheduler();
   const a = element('a');
@@ -439,7 +438,7 @@ test('a disconnected block reconnected with the same text is accepted again with
   for (const snap of s.history) assert.ok(snap.settled <= snap.known, `settled ${snap.settled} > known ${snap.known}`);
 });
 
-// D-560 SF-1: a node the discovery layer hands back with new text replaces its
+// A node the discovery layer hands back with new text replaces its
 // queued copy. The old copy's key was accepted once (it failed a round and was put
 // back) and can no longer reach a result, so it is retired; without that, known
 // stays one ahead of settled and the ring never closes.

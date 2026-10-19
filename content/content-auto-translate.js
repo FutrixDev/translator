@@ -150,7 +150,7 @@
       };
     }
 
-    // 进度的阶段（设计 §2 的 phase）。手动那一轮正在跑时 ctx.progressFeed 自己
+    // 进度的阶段（ctx.progressFeed 的 phase）。手动那一轮正在跑时 ctx.progressFeed 自己
     // 让手动的上台，这里只管如实报调度层的数。
     function progressPhase({ known, failed }) {
       if (status === STATUS.PAUSED) return 'paused';
@@ -173,7 +173,7 @@
       const counts = ledger.counts();
       // 停翻（预算、没有可用的引擎，以及判定不翻）或出错：队里剩下的这一页不会再
       // 自己送，在途的这一轮也已经收场。报成「还有 N 块在等」，进度环就一直画着一件
-      // 不会发生的事（D-551；没有引擎那一条 D-554）。
+      // 不会发生的事。
       const halted = status === STATUS.OFF || status === STATUS.ERROR;
       ctx.progressFeed.auto.publish({
         phase: progressPhase(counts),
@@ -395,15 +395,15 @@
       return !alreadyTranslated(block.element, ticket.textFingerprint);
     }
 
-    // 一轮最多组几批：并发位 × 2，即两个并发波（设计 §3.3）。
+    // 一轮最多组几批：并发位 × 2，即两个并发波。
     const roundCap = () => ctx.pagePass.concurrency(true) * 2;
 
     /**
-     * 从队里挑这一轮要送的块（设计 §3.3）。
+     * 从队里挑这一轮要送的块。
      *
      * 不再抽干整队：按 ctx.focusOrder.createBatchFeeder 的次序（离视口几屏、滚动
      * 方向、焦点、指针；挑块的次序只此一份，手动那一轮用的是同一个 feeder。发现层
-     * 给候选排序另有 content-auto-discover.js 的 distanceFromViewport，归批 C）组批，
+     * 给候选排序另有 content-auto-discover.js 的 distanceFromViewport，不经这里）组批，
      * 组满 roundCap() 批即停，剩下的原样留在队里。每轮最多两个并发波 —— 抽干整队
      * 的话，用户滚到新位置、新进带的块要排在整队后面；限量之后它们最多等一轮就和
      * 旧候选同台比分。按批不按块：AI 一批 40 块，按块定会把 12 个并发位只用掉两个。
@@ -689,7 +689,7 @@
 
       setStatus(STATUS.IDLE);
       // 剩下的（roundCap() 没轮到的、失败放回的、这一轮跑的时候新进带的）立刻起下
-      // 一轮，在那一刻重新评分（设计 §3.3）。跑的时候 onCandidates 排下的那个防抖
+      // 一轮，在那一刻重新评分。跑的时候 onCandidates 排下的那个防抖
       // 定时器先撤掉：它到点时这一轮早结束了，等它就是白等 250ms。
       if (queue.size > 0 && isOn()) {
         clearTimeout(startTimer);

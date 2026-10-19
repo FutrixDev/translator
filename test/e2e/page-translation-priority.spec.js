@@ -1,5 +1,5 @@
-// Whole-page translation sends what the reader is looking at first (design
-// ext-opt-page-translation §3, journeys J5.1, J5.2, J5.3 and J5.4).
+// Whole-page translation sends what the reader is looking at first
+// (journeys J5.1, J5.2, J5.3 and J5.4).
 //
 // The page is 200 paragraphs, in two layouts. `fixed`: each in an 800px
 // section of fixed height, so a translation lands inside its own section and
@@ -14,7 +14,7 @@
 // happens to fire. The built-in engine sends one block per call
 // (batch.js BUILTIN_BATCH), so the call order is the pull order.
 //
-// Mutants this has to catch (§6.2): the feeder not sorting (J5.1), the feeder
+// Mutants this has to catch: the feeder not sorting (J5.1), the feeder
 // not reading scrollY (J5.1, J5.2), the feeder keeping geometry measured
 // before a scroll (J5.2 natural), the focus block not pinned first (J5.3) and
 // the auto round draining the whole queue instead of stopping at roundCap()

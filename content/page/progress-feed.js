@@ -1,4 +1,4 @@
-// Blab Translation — 整页翻译：统一进度源 ctx.progressFeed（设计 §2）
+// Blab Translation — 整页翻译：统一进度源 ctx.progressFeed
 //
 // 手动整页翻译和自动翻译的调度层各报各的进度，球上的进度环只读这一份。两个
 // 来源，一个快照：
@@ -15,10 +15,10 @@
 //
 // 这里只是纯状态加发布/订阅，不碰 DOM，也不画任何东西（环归 content-float-ball.js）。
 //
-// 手动来源（下面的 manual.begin / settle / fail / end）由批 B 接入（设计 §6），在
-// 那之前只有自动来源发布：手动整页仍走 content-page-translation.js 的 onProgress
-// 与 state.translationProgress。批 B 接入时删掉这一段，旧进度条随之删除，不让两条
-// 进度路径并存（设计 §4.4）。
+// 手动来源（下面的 manual.begin / settle / fail / end）还没有接上，在那之前只有
+// 自动来源发布：手动整页仍走 content-page-translation.js 的 onProgress 与
+// state.translationProgress。手动整页接上它时删掉这一段，旧进度条随之删除，不让
+// 两条进度路径并存。
 //
 // **不变量由这里守，坏了就抛。** 分母在同一代里倒退、分子超过分母，画出来的就是
 // 一个先大后小、或者卡在 100% 之外的环；那是上游记账记错了，悄悄夹住只会把错账
@@ -38,7 +38,7 @@
   // 手动一轮的四种收尾。
   const MANUAL_OUTCOMES = Object.freeze(['done', 'partial', 'error', 'paused']);
   const COUNTS = Object.freeze(['known', 'settled', 'failed', 'pending', 'inflight']);
-  // 只要还有块没回来，比例就不画满：满格只属于 done（设计 §2）。
+  // 只要还有块没回来，比例就不画满：满格只属于 done。
   const RUNNING_CAP = 0.99;
 
   const blank = (session) => Object.freeze({
