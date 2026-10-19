@@ -32,4 +32,4 @@
 - Batch translations append strict output-format rules to keep parsing stable.
 
 ## Commit Messages
-- Commit messages are English only, and so are PR titles (GitHub writes the title into the commit that lands on `main`). No Chinese characters and no full-width punctuation; `.githooks/commit-msg` rejects them. The full rule is under "Shipping Changes" in `CLAUDE.md`.
+- Commit messages are English only, and so are PR titles (GitHub writes the title into the commit that lands on `main`). No Chinese characters and no full-width punctuation; `.githooks/commit-msg` rejects them. The check lives in `scripts/check-commit-message.mjs`.
