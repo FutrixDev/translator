@@ -324,6 +324,20 @@ test.describe('float ball progress ring', () => {
     const held = probe.frames.filter((f) => f.t >= since);
     expect(held[held.length - 1].t - since).toBeGreaterThanOrEqual(5000);
     expect([...new Set(held.map((f) => `${f.phase}/${f.display}`))]).toEqual(['partial/block']);
+
+    // The ring takes no events: its track overhangs the 36 px ball by 4 px, and
+    // a click on that band, while the ring is on screen, belongs to the page.
+    const ball = await page.locator('#ai-translator-float-ball').boundingBox();
+    const band = { x: ball.x + ball.width / 2 - 19.5, y: ball.y + ball.height / 2 };
+    await page.evaluate(() => {
+      window.__bandClicks = [];
+      document.addEventListener('click', (e) => {
+        window.__bandClicks.push(e.target.closest('#ai-translator-float-ball') ? 'ball' : 'page');
+      }, true);
+    });
+    await page.mouse.click(band.x, band.y);
+    expect(await page.evaluate(() => window.__bandClicks)).toEqual(['page']);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
   });
 
   test('B-3 / J3.4: a one-block auto round that ends inside 600 ms never shows the ring', async ({ page, context }) => {
