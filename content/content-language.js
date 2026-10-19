@@ -39,7 +39,7 @@
   // 设备的习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
   // inputDialogTargetLang 不同）。
   // 读、settled、跟随别的标签（或这一页的别的 frame）都归 ctx.localPref
-  // （content/content-local-pref.js）；去重和上限归这里。
+  // （content/content-local-pref.js）；去重、上限和「已在首位不写」归这里。
   const MAX_RECENT_TARGET_LANGS = 5;
 
   function recentFrom(value) {
@@ -52,8 +52,9 @@
     return recentPref.get().slice();
   };
 
+  // 已在首位就什么都不写：同一语言连着翻译是常态，每次派发都会走到这里。
   ctx.rememberRecentTargetLang = function(lang) {
-    if (!lang) return;
+    if (!lang || recentPref.get()[0] === lang) return;
     recentPref.set([lang, ...recentPref.get().filter((code) => code !== lang)]
       .slice(0, MAX_RECENT_TARGET_LANGS));
   };
