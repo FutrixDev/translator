@@ -95,13 +95,19 @@
           //
           // 这是整个监听器里唯一一条要异步回话的消息，所以只有它 return true
           // ——其余分支返回 undefined，通道立即关闭，保持原样。
+          //
+          // 答不上来也答「不知道」（UNKNOWN_PROBE），不答 null：popup 把 null 读成
+          // 「这一页没有 content script」，会劝人重载一页明明在跑的页面。
           if (!ctx.builtinTranslator) {
-            sendResponse(null);
+            sendResponse(EngineStatus.UNKNOWN_PROBE);
             return;
           }
           ctx.builtinTranslator.probeStatus()
             .then(sendResponse)
-            .catch(() => sendResponse(null));
+            .catch((error) => {
+              console.warn('Blab Translation: probing the built-in engine failed', error);
+              sendResponse(EngineStatus.UNKNOWN_PROBE);
+            });
           return true;
         case 'SHOW_TRANSLATION':
           // 右键菜单翻译选中文本的结果显示

@@ -27,11 +27,11 @@ const {
   openFloatBallMenu,
   triggerPageTranslation,
   getServiceWorker,
+  openPopupOver,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const en = (key) => getMessage(key, 'en');
-const popupUrl = (extensionId) => `chrome-extension://${extensionId}/popup/popup.html`;
 const optionsUrl = (extensionId) => `chrome-extension://${extensionId}/options/options.html`;
 
 // A local setup exactly as the Ollama and LM Studio guides describe it: an
@@ -204,12 +204,14 @@ test('J-A6: the popup and the settings page both call a keyless local setup read
     const page = await context.newPage();
     await setExtensionSettings(page, localSettings(mock.endpoint));
 
-    // The popup footer: not "API not configured".
-    await page.goto(popupUrl(extensionId));
-    const status = page.locator('#statusText');
+    // The popup footer over a page: not "API not configured".
+    await openExamplePage(page);
+    const popup = await openPopupOver(context, extensionId, page);
+    const status = popup.locator('#statusText');
     await expect(status).toHaveText(en('ready'));
     await expect(status).not.toHaveText(en('apiNotConfigured'));
-    await expect(page.locator('body')).not.toHaveClass(/status-error/);
+    await expect(popup.locator('body')).not.toHaveClass(/status-error/);
+    await popup.close();
 
     // The settings page: the key box says it is optional here, and the
     // connection test goes through to the server instead of asking for a key.

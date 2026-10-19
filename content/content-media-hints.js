@@ -174,17 +174,20 @@
     const shortcut = ctx.commandShortcut(COMMAND);
     ctx.showAutoStatusOffer({
       text: hintText(hint, shortcut),
-      link: shortcut === '' ? { text: t('mediaHintSetShortcut'), onClick: openShortcutSettings } : null,
+      link: shortcut === '' ? { text: t('setShortcut'), onClick: openShortcutSettings } : null,
       busy,
       accept: runMediaShortcut,
       dismiss,
     });
   }
 
-  // 服务工作者不回话（它只管开标签页），所以用 promise 形式：没人回是 resolve，
-  // 送不到（扩展刚重载、上下文失效）才 reject —— 就在这一层说一声。
+  // 服务工作者开好标签页回 {ok}，开不了回 {error}；送不到（扩展刚重载、上下文
+  // 失效）是 reject —— 都在这一层说一声。
   function openShortcutSettings() {
     chrome.runtime.sendMessage({ type: 'OPEN_SHORTCUT_SETTINGS' })
+      .then((reply) => {
+        if (!reply || !reply.ok) console.warn('Blab Translation: open shortcut settings failed', reply && reply.error);
+      })
       .catch(error => console.warn('Blab Translation: open shortcut settings failed', error));
   }
 

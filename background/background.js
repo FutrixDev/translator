@@ -75,7 +75,7 @@ import * as comicClient from './comic-client.js';
 import { dailyLimitHeld, noteAccountAction, refreshAfterAccountAction } from './blab-client.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
-import { comicHintWriter, openShortcutSettings } from './media-hints.js';
+import { comicHintWriter } from './media-hints.js';
 import { openOnboardingOnInstall } from './install.js';
 import { DICT_CHECK_ALARM, checkDictPacks, ensureDictAlarm, handleDictMessage, onDictInstalled } from './dict-packs.js';
 import { ensureDailyAlarm } from './daily-alarm.js';
@@ -179,10 +179,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 媒体提示条上的「设置快捷键」：页面打不开 chrome:// 网址。
+    // 媒体提示条、popup、欢迎页上的「设置快捷键」：页面打不开 chrome:// 网址。
     case 'OPEN_SHORTCUT_SETTINGS':
-      openShortcutSettings().catch(error => console.warn('Blab Translation: opening shortcut settings failed', error));
-      break;
+      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          console.warn('Blab Translation: opening shortcut settings failed', error);
+          sendResponse({ error: error.message });
+        });
+      return true;
 
     // 同步存储的六个写消息：站点规则、本机统计、用户站点规则、漫画提示、AI 配置档、
     // 术语表。内容脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，

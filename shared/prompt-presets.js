@@ -42,18 +42,19 @@ Rules:
 
   const DEFAULT = 'creative';
 
-  // What the worker sends for this stored value: the user's own prompt, or the
-  // default template when there is none (whitespace only counts as none).
-  function textTemplate(customPrompt) {
-    return isDefault(customPrompt) ? TEMPLATES[DEFAULT] : customPrompt;
-  }
-
-  // Whether this stored or typed value means "the default": empty, whitespace,
-  // or the default template itself (the settings page stores '' for that).
-  function isDefault(prompt) {
+  // The user's own prompt in this stored or typed value, trimmed; '' when it
+  // means "the default": empty, whitespace, or the default template itself (the
+  // settings page stores '' for that).
+  function ownPrompt(prompt) {
     const trimmed = (prompt || '').trim();
-    return trimmed === '' || trimmed === TEMPLATES[DEFAULT];
+    return trimmed === TEMPLATES[DEFAULT] ? '' : trimmed;
   }
 
-  root.PromptPresets = Object.freeze({ TEMPLATES, DEFAULT, textTemplate, isDefault });
+  // What the worker sends for this stored value: the user's own prompt, or the
+  // default template when there is none.
+  function textTemplate(customPrompt) {
+    return ownPrompt(customPrompt) || TEMPLATES[DEFAULT];
+  }
+
+  root.PromptPresets = Object.freeze({ TEMPLATES, DEFAULT, ownPrompt, textTemplate });
 })(globalThis);

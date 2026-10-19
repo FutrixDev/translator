@@ -33,13 +33,6 @@ import {
 import { countCharsSentToModel } from './api-client.js';
 import { callModel } from './model-client.js';
 
-// The template the three text paths send: the user's own prompt, or the default
-// preset when there is none. Each path appends its own rules after it, so the
-// prompt the settings page shows is what goes out.
-function textTemplate(settings) {
-  return globalThis.PromptPresets.textTemplate(settings.customPrompt);
-}
-
 // One call to this profile's model. callModel throws on an empty answer
 // ({ empty }), so every path below reads a non-empty `text`. Claude ignores
 // `temperature` (api-compat drops it for models that reject it).
@@ -54,7 +47,7 @@ async function translateWithAI(text, targetLang, profile, settings, addenda) {
 
   // The register rule follows the template, as the batch paths append their
   // format rules.
-  const systemPrompt = buildPrompt(textTemplate(settings), targetLangName, {}, REGISTER_RULE, { addenda });
+  const systemPrompt = buildPrompt(globalThis.PromptPresets.textTemplate(settings.customPrompt), targetLangName, {}, REGISTER_RULE, { addenda });
 
   return ask(profile, systemPrompt, text, 2000, 0.3);
 }
@@ -71,9 +64,7 @@ async function translateSingleWordWithAI(text, targetLang, profile, settings, ad
   // entry format overrides the template's own reply format (D-472). Only a prompt
   // of the user's own leads here: the default text preset is a page-translation
   // template, and a lookup without one keeps the dictionary prompt.
-  const template = globalThis.PromptPresets.isDefault(settings.customPrompt)
-    ? SINGLE_WORD_PROMPT
-    : settings.customPrompt;
+  const template = globalThis.PromptPresets.ownPrompt(settings.customPrompt) || SINGLE_WORD_PROMPT;
   const systemPrompt = buildPrompt(template, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
 
   return globalThis.DictEntry.fromModelText(await ask(profile, systemPrompt, text, 1500, 0.3));
@@ -104,7 +95,7 @@ async function translateBatchWithAI(texts, targetLang, profile, settings, addend
   const numberedTexts = texts.map((text, i) => `[${i + 1}] ${text}`).join('\n\n');
 
   // The template with the numbered output format enforced after it
-  const systemPrompt = buildPrompt(textTemplate(settings), targetLangName, {}, BATCH_OUTPUT_RULES, { addenda });
+  const systemPrompt = buildPrompt(globalThis.PromptPresets.textTemplate(settings.customPrompt), targetLangName, {}, BATCH_OUTPUT_RULES, { addenda });
 
   const content = await ask(profile, systemPrompt, numberedTexts, 4000, 0.3);
   return parseNumberedResponse(content, texts.length);
@@ -120,7 +111,7 @@ async function translateBatchFastWithAI(texts, targetLang, profile, settings, ad
   // Join texts with delimiter
   const joinedTexts = texts.join(delimiter);
 
-  const systemPrompt = buildPrompt(textTemplate(settings), targetLangName, { delimiter }, getFastBatchOutputRules(delimiter), { addenda });
+  const systemPrompt = buildPrompt(globalThis.PromptPresets.textTemplate(settings.customPrompt), targetLangName, { delimiter }, getFastBatchOutputRules(delimiter), { addenda });
 
   const content = await ask(profile, systemPrompt, joinedTexts, 16000, 0.1);
 

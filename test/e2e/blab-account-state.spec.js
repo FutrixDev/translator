@@ -17,6 +17,7 @@ const {
   sendMessageToActiveTab,
   stubBuiltinTranslator,
   triggerPageTranslation,
+  openPopupOver,
 } = require('./helpers');
 const {
   en,
@@ -26,7 +27,6 @@ const {
   expectPassStopped,
   barEntry,
   storedToken,
-  openPopupOver,
   openCardOn,
 } = require('./blab-journey');
 
@@ -78,17 +78,16 @@ test.describe('F1 the popup over a spent allowance', () => {
 });
 
 test.describe('M11 the popup when the server no longer honours the token', () => {
-  test('a token on this device, billing/me answers 401: sign in, not green', async ({ context, extensionId }) => {
-    const { blab, close } = await setUp(context, await context.newPage(), { mode: 'unauthorized' });
+  test('a token on this device, billing/me answers 401: sign in, not green', async ({ context, page, extensionId }) => {
+    const { blab, close } = await setUp(context, page, { mode: 'unauthorized' });
     try {
+      await openPage(page);
       expect(await storedToken(context)).not.toBe('');
       expect(blab.state.meRequests).toBe(0);
       // The popup is the first to ask, so the 401 is its answer (the 401 drops
       // the token, and a second read would only find no token: signed out by
-      // another road). Opened on its own tab, it has no page to probe and goes
-      // by the settings' engine.
-      const popup = await context.newPage();
-      await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+      // another road).
+      const popup = await openPopupOver(context, extensionId, page);
       await expectPopupStatus(popup, 'blabStatusSignedOut');
       expect(blab.state.meRequests).toBe(1);
       expect(await storedToken(context)).toBe('');

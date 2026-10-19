@@ -117,7 +117,7 @@ function load() {
 function offerOn(page) {
   const offer = {
     text: 'mediaHintComic',
-    link: { text: 'mediaHintSetShortcut', onClick: () => page.calls.push('link') },
+    link: { text: 'setShortcut', onClick: () => page.calls.push('link') },
     accept: () => page.calls.push('accept'),
     dismiss: () => page.calls.push('dismiss'),
   };

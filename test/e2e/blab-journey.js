@@ -117,16 +117,6 @@ function storedToken(context) {
     () => chrome.storage.local.get('comicToken').then((r) => r.comicToken || '')));
 }
 
-async function openPopupOver(context, extensionId, page) {
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  // goto() fronted the popup's tab; give the window back to the page and let
-  // the popup ask again, so "the active tab" is the page under test.
-  await page.bringToFront();
-  await popup.reload();
-  return popup;
-}
-
 // Select the text of `selector` with the mouse and open the card from the icon.
 async function openCardOn(page, selector) {
   const box = await page.locator(selector).boundingBox();
@@ -158,7 +148,6 @@ module.exports = {
   expectBarOnScreen,
   barEntry,
   storedToken,
-  openPopupOver,
   openCardOn,
   openOptions,
 };

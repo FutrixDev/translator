@@ -75,6 +75,8 @@
         <h2 data-i18n="onboardingShortcutsTitle">Keyboard shortcuts</h2>
         <ul id="shortcutList" class="shortcuts"></ul>
         <p class="desc" data-i18n="onboardingShortcutsHint">To change them, type chrome://extensions/shortcuts into the address bar.</p>
+        <!-- 有命令没有键位时才显示：Chrome 只在全新安装时给建议键，且被别的扩展占用的键不会给 -->
+        <button type="button" id="setShortcut" class="btn btn-secondary shortcut-action" hidden data-i18n="setShortcut">Set a shortcut</button>
       </section>
     </main>
 

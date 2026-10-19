@@ -370,7 +370,7 @@ function collectSettings() {
     youtubeCaptionBgOpacity: parseInt(elements.youtubeCaptionBgOpacity.value, 10),
     // The default preset is stored as '', so it stays the default (and the word
     // path keeps its dictionary prompt) rather than becoming a prompt of the user's.
-    customPrompt: PromptPresets.isDefault(elements.customPrompt.value) ? '' : elements.customPrompt.value.trim(),
+    customPrompt: PromptPresets.ownPrompt(elements.customPrompt.value),
     promptDomain: elements.promptDomain.value,
     aiPageContext: elements.aiPageContext.checked,
     theme: document.documentElement.getAttribute('data-theme') || 'light'

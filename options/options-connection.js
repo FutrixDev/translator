@@ -71,7 +71,7 @@ async function testConnection() {
 
 // Reset prompt to default: the default preset, which is stored as ''
 async function resetPrompt() {
-  elements.customPrompt.value = PromptPresets.TEMPLATES[PromptPresets.DEFAULT];
+  elements.customPrompt.value = PromptPresets.textTemplate('');
   await persistSettings();
   showStatus(t('resetToDefault'), 'success');
 }

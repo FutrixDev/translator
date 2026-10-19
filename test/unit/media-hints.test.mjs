@@ -90,10 +90,9 @@ function load({
             setImmediate(() => callback(reply));
             return undefined;
           }
-          // The promise form: a listener that never replies resolves undefined.
           return rejects[message.type]
             ? Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'))
-            : Promise.resolve(undefined);
+            : Promise.resolve(reply);
         },
       },
     },
@@ -155,11 +154,21 @@ test('an unbound shortcut turns the text generic and adds the settings link', as
   await flush();
   const offer = page.lastOffer();
   assert.equal(offer.text, 'mediaHintPdfNoShortcut');
-  assert.equal(offer.link.text, 'mediaHintSetShortcut');
+  assert.equal(offer.link.text, 'setShortcut');
   offer.link.onClick();
   assert.deepEqual(types(page.sent), ['OPEN_SHORTCUT_SETTINGS']);
   await flush();
   assert.deepEqual(page.warnings, []);
+});
+
+test('opening the shortcut settings says so in the console when the worker cannot open the tab', async () => {
+  const page = load({ kind: 'pdf', shortcut: '', replies: { OPEN_SHORTCUT_SETTINGS: { error: 'No tab' } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  page.lastOffer().link.onClick();
+  await flush();
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /open shortcut settings failed No tab/);
 });
 
 test('opening the shortcut settings says so in the console when the worker is out of reach', async () => {

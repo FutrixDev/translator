@@ -16,6 +16,8 @@ const elements = {
   openSettings: document.getElementById('openSettings'),
   comicTranslatePage: document.getElementById('comicTranslatePage'),
   comicColorizePage: document.getElementById('comicColorizePage'),
+  setShortcut: document.getElementById('setShortcut'),
+  reloadPage: document.getElementById('reloadPage'),
   statusText: document.getElementById('statusText')
 };
 
@@ -135,12 +137,12 @@ const TOP_FRAME = { frameId: 0 };
 // srcUrl to send — the content script picks the page(s) on screen.
 async function onComicPageAction(mode) {
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs[0]?.id) return;
-    chrome.tabs.sendMessage(tabs[0].id, {
+    const tab = await activeTab();
+    if (!tab?.id) return;
+    chrome.tabs.sendMessage(tab.id, {
       type: 'COMIC_TRANSLATE_PAGE',
       mode,
-      pageUrl: tabs[0].url || ''
+      pageUrl: tab.url || ''
     }, TOP_FRAME);
     window.close();
   } catch (error) {
@@ -176,10 +178,16 @@ const AUTO_RESUMABLE = new Set(['paused', 'error']);
 
 let pageState = null;
 
+// popup 问的「这一页」：打开 popup 的那个窗口里正在看的标签页。
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
 async function sendToActiveTab(message) {
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tabId = tabs[0] && tabs[0].id;
+    const tab = await activeTab();
+    const tabId = tab && tab.id;
     if (typeof tabId !== 'number') return null;
     return (await chrome.tabs.sendMessage(tabId, message, TOP_FRAME)) || null;
   } catch (error) {
@@ -200,17 +208,28 @@ const SHORTCUT_KBDS = {
  * 走之后，manifest 那行就成了假话；Chrome 报空字符串时这块 kbd 直接不出现。
  */
 async function refreshShortcutHint() {
-  let commands = [];
-  try {
-    commands = await chrome.commands.getAll();
-  } catch (error) {
-    console.warn('Blab Translation: could not read shortcuts', error);
-  }
+  // 读不到就抛（checkStatus 记一次）：不知道有没有键位时，既不印键也不劝人去设。
+  const commands = await chrome.commands.getAll();
   for (const [name, kbd] of Object.entries(SHORTCUT_KBDS)) {
     const found = commands.find((command) => command.name === name);
     const shortcut = (found && found.shortcut) || '';
     kbd.textContent = shortcut;
     kbd.hidden = !shortcut;
+  }
+  // 主按钮没有键位：多半是别的扩展先占了建议键（Chrome 只在全新安装时给建议键，
+  // 撞了就不给），给一条去改的路。
+  elements.setShortcut.hidden = !!elements.translatePageShortcut.textContent;
+}
+
+// chrome://extensions/shortcuts 页面开不了，SW 开（和页面上那条媒体提示同一条路）。
+// 开不了就留着 popup、在这一层记一次。
+async function openShortcutSettings() {
+  try {
+    const reply = await chrome.runtime.sendMessage({ type: 'OPEN_SHORTCUT_SETTINGS' });
+    if (!reply || !reply.ok) throw new Error(reply ? reply.error : 'no reply');
+    window.close();
+  } catch (error) {
+    console.error('Blab Translation: opening shortcut settings failed', error);
   }
 }
 
@@ -433,7 +452,8 @@ async function openRulePicker() {
 async function togglePageTranslation() {
   const reply = await sendToActiveTab({ type: 'TOGGLE_PAGE_TRANSLATION' });
   if (!reply) {
-    showStatus('translationFailed', false);
+    // 没人接：这一页没有内容脚本。说清楚是要重载还是根本译不了，而不是「翻译失败」。
+    setPageReach(await activeTabAbsentReason());
     return;
   }
   if (reply.action === 'translating') showStatus('translating');
@@ -555,11 +575,105 @@ async function pageBlab(settings, probe) {
 
 async function refreshEngineStatus(settings) {
   // 总是问页面：站点规则可能把这一页的引擎钉成了和设置不同的那个。
-  const reply = await probeActiveTabEngine();
+  let reply = await probeActiveTabEngine();
+  if (reply === null) {
+    // 没有内容脚本，哪个引擎都跑不了：先说这一页，不说引擎。
+    const reason = await activeTabAbsentReason();
+    setPageReach(reason);
+    if (reason !== 'notInjected') return;
+    // 「还没注入」也可能只是还没来得及：这一页还在加载，或刚加载完、内容脚本还在
+    // 读设置。等它一会儿，来了就照常往下画。
+    reply = await awaitContentScript();
+    if (reply === null) return;
+    // 页面那几行也只有内容脚本答得上来：它来了，就照它重画。
+    await refreshPageRows();
+  }
+  setPageReach('');
   const probe = reply === PROBE_TIMED_OUT ? EngineStatus.UNKNOWN_PROBE : reply;
   lastEngineProbe = probe;
   const [aiIsReady, blab] = await Promise.all([pageAiReady(probe), pageBlab(settings, probe)]);
   renderStatus(EngineStatus.describeEngineStatus(settings, probe, aiIsReady, blab));
+}
+
+// 当前标签页为什么没有内容脚本（EngineStatus.absentPageReason）；有内容脚本或还没
+// 探到时是 ''。只有 setPageReach 写它。「翻译此页」读它：这一页没人接，点下去只会
+// 再说一遍这句话。
+let absentPage = '';
+
+async function activeTabAbsentReason() {
+  const tab = await activeTab();
+  return EngineStatus.absentPageReason(tab && tab.url,
+    await chrome.extension.isAllowedFileSchemeAccess());
+}
+
+// 内容脚本还没来得及答的那一小段：这一页加载完（至多 TAB_LOAD_DEADLINE_MS），再每
+// CONTENT_RETRY_MS 问一次、至多 CONTENT_RETRIES 次。一直没人答是 null。
+const TAB_LOAD_DEADLINE_MS = 10000;
+const CONTENT_RETRY_MS = 250;
+const CONTENT_RETRIES = 8;
+
+async function awaitContentScript() {
+  const tab = await activeTab();
+  if (tab && tab.status === 'loading') await tabLoaded(tab.id);
+  for (let attempt = 0; attempt < CONTENT_RETRIES; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, CONTENT_RETRY_MS));
+    const reply = await probeActiveTabEngine();
+    if (reply !== null) return reply;
+  }
+  return null;
+}
+
+// 等这个标签页的 status 到 complete。过了 TAB_LOAD_DEADLINE_MS 也放行（一直转圈的页面、
+// 被用户取消的 beforeunload）：调用方接着去问内容脚本，问不到自会说。标签页被关掉是
+// 失败，抛。
+function tabLoaded(tabId) {
+  return new Promise((resolve, reject) => {
+    const done = (settle) => {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+      settle();
+    };
+    const onUpdated = (id, change) => {
+      if (id === tabId && change.status === 'complete') done(resolve);
+    };
+    const onRemoved = (id) => {
+      if (id === tabId) done(() => reject(new Error('the tab closed while loading')));
+    };
+    const timer = setTimeout(() => done(resolve), TAB_LOAD_DEADLINE_MS);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+  });
+}
+
+// 这一页有没有人接，和随之而来的「重载」按钮。reason 为 '' 时页面答了话，底栏留给
+// 引擎状态（调用方接着画）；否则底栏说这一页。
+function setPageReach(reason) {
+  absentPage = reason;
+  elements.reloadPage.hidden = reason !== 'notInjected';
+  if (reason) renderStatus(EngineStatus.describeAbsentPage(reason));
+}
+
+/**
+ * 「重载」：装扩展之前就开着的标签页，重载一次内容脚本就在了。等这一页加载完再把
+ * popup 整个重问一遍 —— 站点行、暂停行、引擎状态都是只有内容脚本答得上来的。
+ * 重载完还是没人接，就不是「还没注入」了：这一页 Blab 跑不了。
+ */
+async function reloadActiveTab() {
+  elements.reloadPage.disabled = true;
+  try {
+    const tab = await activeTab();
+    const loaded = tabLoaded(tab.id);
+    await chrome.tabs.reload(tab.id);
+    await loaded;
+    await checkStatus();
+    if (absentPage) setPageReach('unsupported');
+  } catch (error) {
+    console.error('Blab Translation: reloading the page failed', error);
+    showStatus('translationFailed', false);
+  } finally {
+    elements.reloadPage.disabled = false;
+  }
 }
 
 function renderStatus(status) {
@@ -598,8 +712,14 @@ function showStatus(key, ok = true) {
  */
 async function translateCurrentPage() {
   try {
-    const willTranslate = !isHideAction();
     const settings = await chrome.storage.sync.get(defaultSettings);
+    // popup 打开时这一页没人接：先再问一次（这期间它可能已经加载完了），仍没人接就
+    // 只说这一页，不去拦 key、不开设置页。
+    if (absentPage) {
+      await refreshEngineStatus(settings);
+      if (absentPage) return;
+    }
+    const willTranslate = !isHideAction();
     const engine = EngineStatus.selectedEngine(settings, lastEngineProbe);
     if (willTranslate && engine === 'ai' && !(await pageAiReady(lastEngineProbe))) {
       showStatus('configureApiKeyFirst', false);
@@ -629,6 +749,8 @@ function setupEventListeners() {
   elements.togglePagePause.addEventListener('click', togglePagePause);
   elements.pickSiteRegion.addEventListener('click', openRulePicker);
   elements.openSettings.addEventListener('click', openSettings);
+  elements.setShortcut.addEventListener('click', openShortcutSettings);
+  elements.reloadPage.addEventListener('click', reloadActiveTab);
   elements.comicTranslatePage.addEventListener('click', () => onComicPageAction('translate'));
   elements.comicColorizePage.addEventListener('click', () => onComicPageAction('colorize'));
 }

@@ -22,7 +22,7 @@
  * sign-in tab, the mock's /ext/connect bounce, the real job requests.
  */
 const { test, expect } = require('./fixtures');
-const { connectExtension, waitForFloatBall } = require('./helpers');
+const { connectExtension, openPopupOver, waitForFloatBall } = require('./helpers');
 const { startDocService } = require('./doc-service-mock');
 const comicFixtures = require('./comic-fixtures');
 
@@ -37,9 +37,8 @@ const ROWS = ['#pdfTranslateCurrent', '#pdfTranslateLocal', '#comicTranslatePage
  * an extension reloaded under the page): every chrome.tabs.sendMessage fails
  * the way Chrome fails it.
  */
-async function openPopupOver(context, extensionId, page, { noReceiver = false } = {}) {
-  const popup = await context.newPage();
-  await popup.addInitScript((noReceiver) => {
+function openRecordingPopupOver(context, extensionId, page, { noReceiver = false } = {}) {
+  return openPopupOver(context, extensionId, page, (noReceiver) => {
     window.__sent = [];
     const send = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = (message, ...rest) => {
@@ -51,12 +50,6 @@ async function openPopupOver(context, extensionId, page, { noReceiver = false } 
         new Error('Could not establish connection. Receiving end does not exist.'));
     }
   }, noReceiver);
-  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  // goto() fronted the popup's tab; give the window back to the page and let
-  // the popup ask again.
-  await page.bringToFront();
-  await popup.reload();
-  return popup;
 }
 
 function storedToken(worker) {
@@ -72,7 +65,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       // The page's own hint is up: its content script is there to take the click.
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
 
-      const popup = await openPopupOver(context, extensionId, page);
+      const popup = await openRecordingPopupOver(context, extensionId, page);
       for (const row of ROWS) await expect(popup.locator(row), row).toBeVisible();
       // The task list is the account's: nothing to draw, and nothing asked for.
       await expect(popup.locator('#pdfJobs')).toBeHidden();
@@ -107,7 +100,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       const bar = page.locator(`${BAR}[data-mode="offer"]`);
       await expect(bar).toBeVisible({ timeout: 15000 });
 
-      const popup = await openPopupOver(context, extensionId, page);
+      const popup = await openRecordingPopupOver(context, extensionId, page);
       await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
       const signInTab = context.waitForEvent('page', { predicate: p => p !== popup && p !== page });
       await popup.locator('#pdfTranslateCurrent').click();
@@ -127,7 +120,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       await expect(bar).toBeVisible();
 
       if (!popup.isClosed()) await popup.close();
-      const again = await openPopupOver(context, extensionId, page);
+      const again = await openRecordingPopupOver(context, extensionId, page);
       await expect(again.locator('#pdfTranslateCurrent')).toBeVisible();
       await expect(again.locator('#pdfTranslateLocal')).toBeVisible();
     } finally {
@@ -151,7 +144,7 @@ test.describe('A1 · signed out, the page does not take the hand-off', () => {
       await page.goto(`${service.base}/paper.pdf`);
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
 
-      const popup = await openPopupOver(context, extensionId, page, { noReceiver: true });
+      const popup = await openRecordingPopupOver(context, extensionId, page, { noReceiver: true });
       const warnings = popupWarnings(popup);
       await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
       await popup.locator('#pdfTranslateCurrent').click();
@@ -176,7 +169,7 @@ test.describe('A1 · signed out, the page does not take the hand-off', () => {
       await expect(page.locator('img').first()).toBeVisible();
       await waitForFloatBall(page);
 
-      const popup = await openPopupOver(context, extensionId, page);
+      const popup = await openRecordingPopupOver(context, extensionId, page);
       const warnings = popupWarnings(popup);
       // The URL looks like a PDF, so the row is offered.
       await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
@@ -210,7 +203,7 @@ test.describe('A2 · signed out, the popup over a comic', () => {
         await expect(img).toBeVisible();
         await waitForFloatBall(page);
 
-        const popup = await openPopupOver(context, extensionId, page);
+        const popup = await openRecordingPopupOver(context, extensionId, page);
         await expect(popup.locator('#comicTranslatePage')).toBeVisible();
         await expect(popup.locator('#comicColorizePage')).toBeVisible();
 
@@ -246,7 +239,7 @@ test.describe('A3 · both switches off', () => {
         await page.goto(`${service.base}/paper.pdf`);
         await page.waitForLoadState('load');
 
-        const popup = await openPopupOver(context, extensionId, page);
+        const popup = await openRecordingPopupOver(context, extensionId, page);
         // Drawn: the page rows the popup always answers for are up, so the
         // gate has had its say by now.
         await expect(popup.locator('#translatePage')).toBeVisible();
