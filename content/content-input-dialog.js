@@ -243,10 +243,7 @@
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
-        // Recorded when the request is dispatched, default language included,
-        // not when it answers: asking for it is what using it means (D-743).
-        // The card records its own in translateText; the two share no send
-        // helper below ctx.requestTranslation.
+        // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
         ctx.rememberRecentTargetLang(targetLang);
         // A pinned request goes to its engine; any other asks the offline
         // dictionary first and sends TRANSLATE only on a miss. The answer and

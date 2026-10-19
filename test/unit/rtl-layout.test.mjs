@@ -235,14 +235,12 @@ test('every place a translation lands requires the language of its text', () => 
   assert.match(render, /function textLangOf\(options\) \{\s*\n\s*if \(options\.loading \|\| options\.isError\) return ctx\.uiLanguage\(\);\s*\n\s*if \(!options\.textLang\) throw /);
 });
 
-// 划词卡和输入框对话框共用 content-popup.js 的语言下拉：打开时停在顶部这一行在
-// 那里，两处一起覆盖。卡片译文每次结算都按这次的目标语言打标，对齐取 start —— 不写
-// 就继承宿主页面的 text-align，一段希伯来语会被 `body { text-align: left }` 压到左边。
-// 整条旅程（几何、换语言后标记跟着变）在 test/e2e/target-languages.spec.js 的 J-B8/J-B9。
-test('the card reveals the selected language and marks its translation', () => {
+// 卡片译文每次结算都按这次的目标语言打标，对齐取 start —— 不写就继承宿主页面的
+// text-align，一段希伯来语会被 `body { text-align: left }` 压到左边。整条旅程（几何、
+// 换语言后标记跟着变）在 test/e2e/target-languages.spec.js 的 J-B8/J-B9；语言下拉打开时
+// 停在顶部也在那里（expectRecentGroupOnTop）。
+test('the card marks its translation with the target language and aligns it to start', () => {
   const popup = read('content/content-popup.js');
-  // 菜单每次打开现画（最近使用一组随时会变），画完再显出、再停到顶部。
-  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*buildTargetLangMenu\(menu, popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*menu\.scrollTop = 0;/);
   assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
   const css = read('content/css/popup.css');
   const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);

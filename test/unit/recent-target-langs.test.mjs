@@ -1,9 +1,6 @@
-// Recently used target languages float to the top of the in-page language
-// menu (D-542, design ext-opt-input-translation §B.2). The list is read,
-// remembered and rendered by content/content-language.js; it is written when a
-// translation is dispatched (D-743), by the input dialog's translateInputText
-// and the card's translateText, and the menu is always grouped: with nothing
-// remembered the recent group shows the current language, without writing it.
+// The recently used target languages and the menu's recent group; what they
+// are and when they are written is described by their owner,
+// ctx.rememberRecentTargetLang in content/content-language.js.
 //
 // This file loads shared/lang-tags.js, shared/target-lang.js,
 // content/content-local-pref.js (which owns the read, the settled flag and
@@ -33,8 +30,7 @@ const BUILTIN_TARGETS = new Set(['en', 'zh-CN', 'fr', 'de', 'ja', 'ko', 'ru', 'e
  * initial read answers only when `answerRead()` is called, so a test can land
  * it before or after a click; `answerRead(error)` answers it the way a failed
  * read does, with chrome.runtime.lastError set for the callback. console.warn
- * calls are collected in `warns`. Every set() content-language.js makes on a
- * ctx.localPref is collected in `prefSets`, written to storage or not.
+ * calls are collected in `warns`.
  */
 function load({ stored = {}, builtin = false } = {}) {
   const writes = [];
@@ -66,22 +62,11 @@ function load({ stored = {}, builtin = false } = {}) {
   sandbox.globalThis = sandbox;
   sandbox.window = { AI_TRANSLATOR_CONTENT: ctx };
   vm.createContext(sandbox);
-  const prefSets = [];
-  for (const [rel, source] of SOURCES) {
-    if (rel === 'content/content-language.js') {
-      const localPref = ctx.localPref;
-      ctx.localPref = (key, options) => {
-        const pref = localPref(key, options);
-        return { get: pref.get, set: (value) => { prefSets.push([key, value]); pref.set(value); } };
-      };
-    }
-    vm.runInContext(source, sandbox, { filename: rel });
-  }
+  for (const [rel, source] of SOURCES) vm.runInContext(source, sandbox, { filename: rel });
   return {
     ctx,
     TargetLang: sandbox.TargetLang,
     writes,
-    prefSets,
     warns,
     answerRead: (error) => {
       chrome.runtime.lastError = error;
@@ -136,13 +121,13 @@ test('with nothing remembered the recent group shows the current language and wr
       assert.equal(all.slice(3).some((p) => p.recent), false, label);
     }
     assert.deepEqual(plain(world.ctx.recentTargetLangs()), [], 'drawing the preset does not remember it');
-    assert.equal(world.prefSets.length, 0);
     assert.equal(world.writes.length, 0);
   }
 });
 
 test('remember moves the language to the front, dedupes, keeps five and writes storage', () => {
-  const { ctx, writes } = load();
+  const { ctx, writes, answerRead } = load();
+  answerRead();
   for (const lang of ['de', 'ja', 'ko', 'ru', 'es', 'fr']) ctx.rememberRecentTargetLang(lang);
   assert.deepEqual(plain(ctx.recentTargetLangs()), ['fr', 'es', 'ru', 'ko', 'ja'], 'de fell off the end');
   ctx.rememberRecentTargetLang('ko');
@@ -153,19 +138,25 @@ test('remember moves the language to the front, dedupes, keeps five and writes s
   assert.equal(ctx.recentTargetLangs().length, 5, 'callers get a copy');
 });
 
-test('the language already in front is not set again', () => {
-  const { ctx, writes, prefSets, answerRead } = load({ stored: { recentTargetLangs: ['ko', 'fr'] } });
+test('remembering the language already in front writes nothing', () => {
+  const { ctx, writes, answerRead } = load({ stored: { recentTargetLangs: ['ko', 'fr'] } });
   answerRead();
   ctx.rememberRecentTargetLang('ko');
   ctx.rememberRecentTargetLang('ko');
-  assert.equal(prefSets.length, 0, 'every dispatch reaches remember; a repeat stops there');
-  assert.equal(writes.length, 0);
+  assert.equal(writes.length, 0, 'the same list is not written again');
   ctx.rememberRecentTargetLang('fr');
   ctx.rememberRecentTargetLang('fr');
-  assert.deepEqual(plain(prefSets), [['recentTargetLangs', ['fr', 'ko']]]);
   assert.deepEqual(writes, [{ recentTargetLangs: ['fr', 'ko'] }]);
   ctx.rememberRecentTargetLang('');
-  assert.equal(prefSets.length, 1, 'no language, nothing to remember');
+  assert.equal(writes.length, 1, 'no language, nothing to remember');
+});
+
+test('a code is remembered in the form the language list uses', () => {
+  const { ctx, writes, answerRead } = load({ stored: { recentTargetLangs: ['fr'] } });
+  answerRead();
+  ctx.rememberRecentTargetLang('pt-BR');
+  ctx.rememberRecentTargetLang('FR');
+  assert.deepEqual(writes, [{ recentTargetLangs: ['pt', 'fr'] }, { recentTargetLangs: ['fr', 'pt'] }]);
 });
 
 test('with recents: header, the recent items, header, then all 76', () => {
@@ -244,9 +235,48 @@ test('a failed read is warned about once, by key, and leaves the list empty', ()
   assert.equal(world.warns[0][1], 'storage backend unavailable');
 });
 
-test('a read that lands after a dispatch does not put the old list back', () => {
+test('a dispatch before the read lands waits for it and builds on the stored list', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja', 'ko'] } });
+  world.ctx.rememberRecentTargetLang('fr');
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, [], 'nothing is written over a list not read yet');
+  world.answerRead();
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['de', 'fr', 'ja', 'ko']);
+  assert.deepEqual(world.writes, [
+    { recentTargetLangs: ['fr', 'ja', 'ko'] },
+    { recentTargetLangs: ['de', 'fr', 'ja', 'ko'] },
+  ]);
+});
+
+test('once the read has landed a dispatch is written at once', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja'] } });
+  world.answerRead();
+  world.ctx.rememberRecentTargetLang('fr');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['fr', 'ja'] }]);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr', 'ja']);
+});
+
+test('a failed read writes nothing over the stored list, before or after it fails', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja', 'ko'] } });
+  world.ctx.rememberRecentTargetLang('fr');
+  world.answerRead({ message: 'storage backend unavailable' });
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, []);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), []);
+  assert.equal(world.warns.length, 1, 'the failure is logged once, where the updates are dropped');
+  assert.match(String(world.warns[0][0]), /reading recentTargetLangs failed/);
+  assert.equal(world.warns[0][1], 'storage backend unavailable');
+  // Another tab's write tells this frame the stored list; from then on it is built on.
+  world.change({ recentTargetLangs: { newValue: ['es'] } }, 'local');
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['de', 'es'] }]);
+});
+
+test('another tab writing first settles the list, and the waiting dispatch builds on that', () => {
   const world = load({ stored: { recentTargetLangs: ['ja'] } });
   world.ctx.rememberRecentTargetLang('fr');
+  world.change({ recentTargetLangs: { newValue: ['ko', 'ja'] } }, 'local');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['fr', 'ko', 'ja'] }]);
   world.answerRead();
-  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr']);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr', 'ko', 'ja'], 'the late read is ignored');
 });

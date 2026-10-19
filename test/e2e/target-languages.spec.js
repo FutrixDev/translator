@@ -80,6 +80,58 @@ async function expectIntlNames(page, selector, uiLang, count) {
   return names;
 }
 
+/** What the open menu shows: its group headers, its recent items, and the rest. */
+function menuParts(menu) {
+  return menu.evaluate((el) => ({
+    groups: [...el.querySelectorAll('.ai-translator-lang-group')].map((g) => g.textContent),
+    firstIsGroup: !!el.firstElementChild?.matches('.ai-translator-lang-group'),
+    recent: [...el.querySelectorAll('.ai-translator-lang-item[data-recent]')].map((i) => i.dataset.lang),
+    full: el.querySelectorAll('.ai-translator-lang-item:not([data-recent])').length,
+    selected: [...el.querySelectorAll('.is-selected')].map((i) => [i.dataset.lang, i.hasAttribute('data-recent')]),
+  }));
+}
+
+/** What chrome.storage.local holds for the recent list (undefined: nothing written). */
+async function storedRecent(context) {
+  const worker = await getServiceWorker(context);
+  return worker.evaluate(() => chrome.storage.local.get('recentTargetLangs').then((r) => r.recentTargetLangs));
+}
+
+/** The first selected item is inside the open menu's visible box, and the page did not move. */
+async function expectFirstSelectedInView(page, menu, scrollYBefore) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const top = box.top + el.clientTop;
+    const item = el.querySelector('.is-selected').getBoundingClientRect();
+    return { top, bottom: top + el.clientHeight, itemTop: item.top, itemBottom: item.bottom };
+  });
+  expect(view.itemTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
+  expect(view.itemBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+}
+
+/**
+ * An opened menu stays at the top of its recent group (D-545): scrollTop 0, the
+ * "Recent" heading inside the menu's visible box, and the page did not move —
+ * also when the selected language is not one of the recent ones.
+ */
+async function expectRecentGroupOnTop(page, menu, scrollYBefore) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const top = box.top + el.clientTop;
+    const group = el.querySelector('.ai-translator-lang-group').getBoundingClientRect();
+    return {
+      top, bottom: top + el.clientHeight, groupTop: group.top, groupBottom: group.bottom,
+      scrollTop: el.scrollTop, selectedInRecent: !!el.querySelector('.is-selected[data-recent]'),
+    };
+  });
+  expect(view.scrollTop, JSON.stringify(view)).toBe(0);
+  expect(view.groupTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
+  expect(view.groupBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
+  return view;
+}
+
 // A page taller than the viewport, scrolled a little: a menu that scrolled the
 // page to reveal its item would show up as a changed scrollY.
 const TALL = '<div style="height: 3000px"></div>';
@@ -351,58 +403,6 @@ const RECENT_PAGE = `<!doctype html><html lang="en"><head><style>
   body { margin: 0; padding: 300px 60px 40px; font: 18px/28px Georgia, serif; }
 </style></head><body><p><span id="phrase">Tide table</span> for the harbour.</p>${TALL}</body></html>`;
 
-/** What the open menu shows: its group headers, its recent items, and the rest. */
-function menuParts(menu) {
-  return menu.evaluate((el) => ({
-    groups: [...el.querySelectorAll('.ai-translator-lang-group')].map((g) => g.textContent),
-    firstIsGroup: !!el.firstElementChild?.matches('.ai-translator-lang-group'),
-    recent: [...el.querySelectorAll('.ai-translator-lang-item[data-recent]')].map((i) => i.dataset.lang),
-    full: el.querySelectorAll('.ai-translator-lang-item:not([data-recent])').length,
-    selected: [...el.querySelectorAll('.is-selected')].map((i) => [i.dataset.lang, i.hasAttribute('data-recent')]),
-  }));
-}
-
-/** What chrome.storage.local holds for the recent list (undefined: nothing written). */
-async function storedRecent(context) {
-  const worker = await getServiceWorker(context);
-  return worker.evaluate(() => chrome.storage.local.get('recentTargetLangs').then((r) => r.recentTargetLangs));
-}
-
-/** The first selected item is inside the open menu's visible box, and the page did not move. */
-async function expectFirstSelectedInView(page, menu, scrollYBefore) {
-  const view = await menu.evaluate((el) => {
-    const box = el.getBoundingClientRect();
-    const top = box.top + el.clientTop;
-    const item = el.querySelector('.is-selected').getBoundingClientRect();
-    return { top, bottom: top + el.clientHeight, itemTop: item.top, itemBottom: item.bottom };
-  });
-  expect(view.itemTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
-  expect(view.itemBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
-}
-
-/**
- * An opened menu stays at the top of its recent group (D-545): scrollTop 0, the
- * "Recent" heading inside the menu's visible box, and the page did not move —
- * also when the selected language is not one of the recent ones.
- */
-async function expectRecentGroupOnTop(page, menu, scrollYBefore) {
-  const view = await menu.evaluate((el) => {
-    const box = el.getBoundingClientRect();
-    const top = box.top + el.clientTop;
-    const group = el.querySelector('.ai-translator-lang-group').getBoundingClientRect();
-    return {
-      top, bottom: top + el.clientHeight, groupTop: group.top, groupBottom: group.bottom,
-      scrollTop: el.scrollTop, selectedInRecent: !!el.querySelector('.is-selected[data-recent]'),
-    };
-  });
-  expect(view.scrollTop, JSON.stringify(view)).toBe(0);
-  expect(view.groupTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.top - 1);
-  expect(view.groupBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
-  return view;
-}
-
 /**
  * The "AI only" tag (its ::after) against what is painted under the row, through
  * the same walk every other contrast check uses. `tinted` says whether the row
@@ -521,7 +521,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     // waits for the answer.
     const result = page.locator('#ai-translator-result-text');
     await openInputDialog(page);
-    mock.setDelayMs(6000);
+    mock.setDelayMs(2500);
     await translateInput(page, 'run');
     await expect.poll(() => storedRecent(context), { timeout: 2000 }).toEqual(['zh-CN']);
     // The request did go out, and its answer has not come back yet.

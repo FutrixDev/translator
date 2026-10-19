@@ -693,9 +693,7 @@
         popup.removeAttribute('data-explain');
       }
       const provenWord = !!popup && popup.dataset.provenWord === text;
-      // Recorded when the request is dispatched, default language included,
-      // not when it answers (D-743). OCR's translation comes through here too;
-      // the input dialog records its own in translateInputText.
+      // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
       ctx.rememberRecentTargetLang(targetLang);
       const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
       // "Explain in context with AI" always sends the sentence the selection

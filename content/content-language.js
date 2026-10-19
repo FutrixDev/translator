@@ -33,13 +33,15 @@
   };
 
   // 最近用过的目标语（D-542 §B.2，D-743 改写入点）：对话框与划词卡片共用一份，最近在前、
-  // 最多 5 个。每次派发翻译就记它的目标语，默认语也记（写入点两处：输入框对话框的
-  // translateInputText、划词卡片的 translateText，OCR 的翻译也走后者）；只点菜单不记——
-  // 卡片点了必重译，对话框有字才译，没译的点选不算用过。放 local 不放 sync：这是一台
+  // 最多 5 个，只存规范码。每次派发翻译就记它的目标语，默认语也记；只点菜单不记——
+  // 卡片点了必重译，对话框有字才译，没译的点选不算用过。两条派发路（输入框对话框的
+  // translateInputText、划词卡片的 translateText，OCR 的翻译也走后者）共用的下一步是
+  // ctx.dictRoute，但写入不放进它：dictRoute 只是无副作用的路由（问离线词典还是发请求），
+  // 放进去就成了藏起来的写；所以两处各显式调一次这里。放 local 不放 sync：这是一台
   // 设备的习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
   // inputDialogTargetLang 不同）。
-  // 读、settled、跟随别的标签（或这一页的别的 frame）都归 ctx.localPref
-  // （content/content-local-pref.js）；去重、上限和「已在首位不写」归这里。
+  // 读、settled、初读落地前的排队、跟随别的标签（或这一页的别的 frame）都归
+  // ctx.localPref（content/content-local-pref.js）；规范化、去重和上限归这里。
   const MAX_RECENT_TARGET_LANGS = 5;
 
   function recentFrom(value) {
@@ -52,11 +54,11 @@
     return recentPref.get().slice();
   };
 
-  // 已在首位就什么都不写：同一语言连着翻译是常态，每次派发都会走到这里。同值不落盘本来
-  // 就由 content-local-pref.js 的 sameValue 挡住，这里提前返回省的只是重建数组和那次 set()。
+  // 新表要在存储里那张表上建：用 update 而不是 get + set，初读没落地时排队等它。
   ctx.rememberRecentTargetLang = function(lang) {
-    if (!lang || recentPref.get()[0] === lang) return;
-    recentPref.set([lang, ...recentPref.get().filter((code) => code !== lang)]
+    if (!lang) return;
+    const code = ctx.normalizeTargetLang(lang);
+    recentPref.update((list) => [code, ...list.filter((other) => other !== code)]
       .slice(0, MAX_RECENT_TARGET_LANGS));
   };
 
