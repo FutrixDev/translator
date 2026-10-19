@@ -243,8 +243,6 @@ async function recognizeWithVision({ srcUrl, crop }, profile, settings, uiLang) 
   // 重试与限速照默认走：用户在等的是这一次的识别结果，一次 429 / 5xx 就报错
   // 不如由 callModel 再试两次；它也是这一档的请求，占这一档的名额。测试连接不同，
   // 它要的是「通不通」（ai-profiles-host.js 关掉了两样）。
-  // A recognition is always someone's click, so a plan bought since releases the latch.
-  await beforeModelRequest(profile, false);
   const { text: content } = await callModel(profile, visionRequest(profile, mediaType, base64));
 
   const parsed = globalThis.OCRCore.parseOcrResponse(content);

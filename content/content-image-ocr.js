@@ -345,10 +345,7 @@
     if (state.translationPopup !== popup) return;
 
     if (!response || response.error) {
-      // Signing in from this card runs the same recognition again: the card
-      // holds no source text for the default retry to translate.
-      ctx.showCardError(popup, response?.error || t('translationFailed'), response?.action || null,
-        () => recognizeImage({ srcUrl, crop, targetLang, translate }));
+      ctx.showCardError(popup, response?.error || t('translationFailed'), response?.action || null);
       return;
     }
     const text = response.text || '';
