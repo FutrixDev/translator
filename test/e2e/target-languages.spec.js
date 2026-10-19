@@ -502,6 +502,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
 
     const recentGroups = [getMessage('langRecent', 'en'), getMessage('langAll', 'en')];
+    let parts;
 
     // 1. Nothing used yet: the recent group shows the current language (zh-CN,
     // the default) for show only, as J-B8 sees it; nothing is written.
@@ -534,6 +535,22 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     expect(await storedRecent(context)).toEqual(['zh-CN']);
     await closeInputDialog(page);
 
+    // 1b. Picking a language with the box empty translates nothing, so it is not
+    // a use: no request goes out, it is not written and the recent group does not
+    // show it (D-743: only a dispatch records). The group is drawn from what is
+    // stored here, not from the preset, so 'it' being selected cannot put it there.
+    const sentBeforePick = mock.sentTexts.length;
+    await openInputDialog(page);
+    await expect(page.locator('#ai-translator-input-text')).toHaveValue('');
+    await pickInputTargetLang(page, 'it');
+    menu = await openDialogMenu(page);
+    parts = await menuParts(menu);
+    expect(parts.recent).toEqual(['zh-CN']);
+    expect(parts.selected).toEqual([['it', false]]);
+    expect(await storedRecent(context)).toEqual(['zh-CN']);
+    expect(mock.sentTexts.length).toBe(sentBeforePick);
+    await closeInputDialog(page);
+
     // 2. Pick fr with something typed: the translation follows.
     await openInputDialog(page);
     await page.fill('#ai-translator-input-text', 'a full sentence for translation');
@@ -550,7 +567,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
     const scrollYBefore = await page.evaluate(() => window.scrollY);
     menu = await openDialogMenu(page);
-    let parts = await menuParts(menu);
+    parts = await menuParts(menu);
     expect(parts).toMatchObject({
       groups: recentGroups, firstIsGroup: true, recent: ['fr', 'zh-CN'], full: 76,
     });
