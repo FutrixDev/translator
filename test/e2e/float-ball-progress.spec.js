@@ -1,5 +1,5 @@
-// The progress ring on the float ball (design ext-opt-page-translation §4, §6.1
-// batch B 1-4, journeys J3.1-J3.5, J3.7 and J3.8).
+// The progress ring on the float ball (requirements B-1 to B-4, journeys J3.1-J3.5,
+// J3.7 and J3.8).
 //
 // The ring reads one source, ctx.progressFeed, and writes two things: the
 // phase as data-phase on svg.ai-translator-ring and the share settled as the
@@ -19,7 +19,7 @@
 //           one; the page entry repaints the ring synchronously at the end of
 //           a manual round, and only this list is sure to see that paint.
 //
-// Mutants this has to catch (§6.2): the 0.99 cap gone (J3.5: an auto round
+// Mutants this has to catch: the 0.99 cap gone (J3.5: an auto round
 // between two of its sub-rounds has settled === known while more blocks wait),
 // the 600 ms gate gone (B-3), and progress delivered per 40-block batch again
 // instead of per block (the built-in variant of B-1).
@@ -111,6 +111,7 @@ const PROBE = `(() => {
       display: svg ? getComputedStyle(svg).display : null,
       animation: arc ? getComputedStyle(arc).animationName : null,
       dot: dot ? dot.dataset.state : null,
+      title: ball ? ball.getAttribute('title') : null,
       track: document.querySelector('.ai-translator-progress-track') !== null,
       feed: { ...feed.state() },
     };
@@ -165,7 +166,7 @@ function firstAt(probe, source, phase) {
 
 const busy = (record) => record.feed.pending + record.feed.inflight > 0;
 
-/** §6.1 B-1: while anything is still out, the arc is never drawn full. */
+/** B-1: while anything is still out, the arc is never drawn full. */
 function expectNeverFullWhileBusy(probe, label) {
   const full = probe.paints.filter((p) => busy(p) && p.offset === 0);
   expect(full.map((p) => p.feed), `${label}: offset 0 with blocks still out`).toEqual([]);
@@ -187,9 +188,34 @@ function doneToHidden(probe, source) {
   return { ms: after[hidden].t - done.t, after: after.slice(0, hidden) };
 }
 
-test.describe('float ball progress ring', () => {
-  let mock;
+// One mock server per test, closed after it.
+let mock;
+const RING_LENGTH = 122.5;
+const countIn = (title) => (/Translated \d+\/\d+/.exec(title || '') || [null])[0];
 
+/** A manual round on /partial that leaves the amber ring held: 2 of 4 given up. */
+async function heldPartial(page, context) {
+  await serve(context);
+  await setExtensionSettings(page, settings(mock.endpoint));
+  await page.goto(`${ORIGIN}/partial`);
+  await waitForContentReady(page);
+  await installProbe(context, page);
+  await clickBall(page);
+  await expect(ring(page)).toHaveAttribute('data-phase', 'partial', { timeout: 30000 });
+  await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+}
+
+/** Drag the ball to (x, y) and let go, then take the pointer off it. */
+async function dragBall(page, x, y) {
+  const box = await page.locator('#ai-translator-float-ball').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 12 });
+  await page.mouse.up();
+  await page.mouse.move(400, 300);
+}
+
+test.describe('float ball progress ring', () => {
   test.afterEach(async () => {
     if (mock) await mock.close();
     mock = null;
@@ -422,6 +448,20 @@ test.describe('float ball progress ring', () => {
     await waitForContentReady(page);
     await stubBuiltinTranslator(page, { delaysMs: BUILTIN_DELAYS_MS });
     await installProbe(context, page);
+    // Between two sub-rounds the scheduler reports "all admitted blocks in, more
+    // waiting", then asks which engine the next sub-round gets before it takes the
+    // next batch. Unheld, that question can answer inside the same frame and the
+    // report is coalesced away; held 120 ms (many frames, well inside the gate) the
+    // state is on screen in every run.
+    await evaluateInContentScript(context, page, `(() => {
+      const builtin = self.AI_TRANSLATOR_CONTENT.builtinTranslator;
+      const real = builtin.effectiveEngine;
+      builtin.effectiveEngine = async (opts) => {
+        if (opts && opts.auto && opts.feature === 'page') await new Promise((r) => setTimeout(r, 120));
+        return real(opts);
+      };
+      return true;
+    })()`);
     await writeSyncSettings(context, { siteRules: { [HOST]: 'always' } });
 
     await waitForRoundEnd(context, page, { source: 'auto', timeout: 90000 });
@@ -488,5 +528,169 @@ test.describe('float ball progress ring', () => {
     expect(afterTurn.slice(0, reshown).every((p) => p.phase === 'idle')).toBe(true);
     expect(afterTurn[reshown].feed.session).toBeGreaterThan(before.session);
     expect(['arming', 'running']).toContain(afterTurn[reshown].phase);
+  });
+
+  test('J3.8: a held amber ring goes to idle on a route change, in the first paint of the new page', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    await heldPartial(page, context);
+    const before = await feedState(context, page);
+
+    await page.evaluate(() => {
+      history.pushState({}, '', '/partial?page=2');
+      document.querySelectorAll('p').forEach((el) => el.remove());
+      document.body.insertAdjacentHTML('afterbegin', '<p>Next page, a new paragraph about ferries.</p>');
+    });
+    await expect.poll(async () => (await feedState(context, page)).session, { timeout: 15000 })
+      .toBeGreaterThan(before.session);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'idle');
+    const probe = await readProbe(context, page);
+    const turned = probe.paints.find((p) => p.feed.session > before.session);
+    expect(turned, 'a paint of the new page').toBeTruthy();
+    expect(turned.phase).toBe('idle');
+    expect(turned.title, 'no count from the page that is gone').toBeNull();
+  });
+
+  test('watchdog: a ball rebuilt under a held ring gets the ring back in its phase, gap and count', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    await heldPartial(page, context);
+    await page.evaluate(() => {
+      window.__oldBall = document.getElementById('ai-translator-float-ball');
+      window.__oldBall.remove();
+    });
+    await expect.poll(() => page.evaluate(() => {
+      const ball = document.getElementById('ai-translator-float-ball');
+      return !!ball && ball !== window.__oldBall;
+    }), { timeout: 15000 }).toBe(true);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
+    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+    await expect(page.locator('#ai-translator-float-ball')).toHaveAttribute('title', /Translated 2\/4/);
+  });
+
+  test('pause: the ring freezes grey on the arc and count it had, and stays', async ({ page, context }) => {
+    test.setTimeout(120000);
+    mock = await startMockOpenAIServer();
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, BUILTIN));
+    await page.goto(`${ORIGIN}/long`);
+    await waitForContentReady(page);
+    // Slow answers: the round is still well short of the end when it is paused.
+    await stubBuiltinTranslator(page, { delaysMs: [400, 600, 500] });
+    await installProbe(context, page);
+    await writeSyncSettings(context, { siteRules: { [HOST]: 'always' } });
+    await expect(ring(page)).toHaveAttribute('data-phase', 'running', { timeout: 30000 });
+    await expect.poll(async () => (await feedState(context, page)).settled, { timeout: 30000 }).toBeGreaterThan(4);
+
+    // The popup's pause button: the scheduler turns its session over, then says paused.
+    await evaluateInContentScript(context, page, 'self.AI_TRANSLATOR_CONTENT.autoTranslate.pauseCurrentPage(), true');
+    await expect(ring(page)).toHaveAttribute('data-phase', 'paused');
+    await page.waitForTimeout(1500);
+    const probe = await readProbe(context, page);
+
+    const at = probe.paints.findIndex((p) => p.phase === 'paused');
+    const last = probe.paints[at - 1];
+    const paused = probe.paints[at];
+    expect(last.phase, 'running up to the pause').toBe('running');
+    expect(paused.feed.known, 'the paused report carries no count of its own').toBe(0);
+    expect(paused.offset, 'the arc it had').toBe(last.offset);
+    expect(paused.offset).toBeLessThan(RING_LENGTH);
+    expect(countIn(paused.title), 'the count it had').toBe(countIn(last.title));
+    expect(countIn(paused.title)).not.toBeNull();
+    // And it stays there.
+    const since = probe.frames.filter((f) => f.t > paused.t + FRAME_MS);
+    expect(since[since.length - 1].t - paused.t).toBeGreaterThanOrEqual(1400);
+    expect([...new Set(since.map((f) => `${f.phase}/${f.display}/${f.offset}`))])
+      .toEqual([`paused/block/${paused.offset}`]);
+  });
+
+  test('language pack: the auto session turning over mid-done does not cut the done sequence short', async ({ page, context }) => {
+    test.setTimeout(120000);
+    mock = await startMockOpenAIServer();
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint, BUILTIN));
+    await page.goto(`${ORIGIN}/long`);
+    await waitForContentReady(page);
+    await stubBuiltinTranslator(page, { delaysMs: [60] });
+    // A language pack that still has to come down: the click fetches it, and once
+    // it is in the page restarts its auto session (a new session on the same page).
+    await evaluateInContentScript(context, page, `(() => {
+      const real = self.Translator;
+      self.__dl = {};
+      self.Translator = {
+        availability: async () => (self.__dl.done ? 'available' : 'downloadable'),
+        create: async (options) => {
+          const target = new EventTarget();
+          if (options && typeof options.monitor === 'function') options.monitor(target);
+          for (const loaded of [0, 0.25, 0.5, 0.75, 1]) {
+            await new Promise((r) => setTimeout(r, 300));
+            const ev = new Event('downloadprogress');
+            ev.loaded = loaded;
+            target.dispatchEvent(ev);
+          }
+          self.__dl.done = true;
+          return real.create(options);
+        },
+      };
+      return true;
+    })()`);
+    await installProbe(context, page);
+    await clickBall(page);
+    await waitForRoundEnd(context, page, { source: 'manual' });
+    const probe = await readProbe(context, page);
+
+    const done = firstAt(probe, 'manual', 'done');
+    const { ms, after } = doneToHidden(probe, 'manual');
+    const turned = [...probe.paints, ...probe.writes]
+      .filter((r) => r.t > done.t && r.feed.session > done.feed.session)
+      .sort((a, b) => a.t - b.t)[0];
+    test.info().annotations.push({
+      type: 'language pack',
+      description: `done to hidden ${Math.round(ms)} ms, new session ${turned ? Math.round(turned.t - done.t) : '-'} ms after done`,
+    });
+    expect(turned, 'the session turned over while done was on screen').toBeTruthy();
+    expect(turned.t - done.t).toBeLessThan(ms);
+    expect(ms).toBeGreaterThanOrEqual(1400);
+    expect(ms).toBeLessThanOrEqual(1900);
+    // The count stays in the title for as long as the ring is on screen.
+    const visible = after.filter((f) => f.display !== 'none');
+    expect(visible.length).toBeGreaterThan(0);
+    expect([...new Set(visible.map((f) => countIn(f.title)))]).toEqual(['Translated 80/80']);
+  });
+
+  test('dock: docked on the left, at the top or the bottom, the whole ring is on screen', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    await heldPartial(page, context);
+    const viewport = page.viewportSize();
+    const ringBox = async () => {
+      await expect(page.locator('#ai-translator-float-ball')).toHaveClass(/docked/);
+      await expect.poll(async () => (await page.locator('#ai-translator-float-ball').boundingBox()).width).toBe(36);
+      return ring(page).boundingBox();
+    };
+    const inside = (box, where) => {
+      expect(box, where).toBeTruthy();
+      expect(box.x, `${where}: left`).toBeGreaterThanOrEqual(0);
+      expect(box.y, `${where}: top`).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, `${where}: right`).toBeLessThanOrEqual(viewport.width);
+      expect(box.y + box.height, `${where}: bottom`).toBeLessThanOrEqual(viewport.height);
+    };
+    for (const [where, x, y] of [
+      ['left', 10, viewport.height / 2],
+      ['left top', 10, 0],
+      ['left bottom', 10, viewport.height - 1],
+      ['right top', viewport.width - 10, 0],
+      ['right bottom', viewport.width - 10, viewport.height - 1],
+    ]) {
+      await dragBall(page, x, y);
+      inside(await ringBox(), where);
+      await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
+    }
+    // Reloaded, the saved left dock is laid out the same way.
+    await dragBall(page, 10, viewport.height / 2);
+    await page.reload();
+    await waitForContentReady(page);
+    const ball = await page.locator('#ai-translator-float-ball').boundingBox();
+    expect(ball.x - 4, 'reloaded on the left: the ring band').toBeGreaterThanOrEqual(0);
   });
 });
