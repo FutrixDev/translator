@@ -210,6 +210,10 @@ body {
   color: var(--text-secondary);
 }
 
+.shortcut-action {
+  margin-top: 12px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

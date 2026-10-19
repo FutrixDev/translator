@@ -66,6 +66,8 @@ test.describe('the welcome page a fresh install opens', () => {
       expect(keys.trim().length).toBeGreaterThan(0);
     }
     await expect(page.locator('#shortcutSection .desc')).toContainText('chrome://extensions/shortcuts');
+    // Every command has its key: nothing to offer.
+    await expect(page.locator('#setShortcut')).toBeHidden();
 
     await writeSyncSettings(context, { theme: 'light' });
     await page.reload();
@@ -76,6 +78,22 @@ test.describe('the welcome page a fresh install opens', () => {
     // Reloading is not installing: still exactly one welcome tab.
     expect(context.pages().filter((p) => p.url().startsWith(onboardingUrl(extensionId)))).toHaveLength(1);
   });
+});
+
+test('J-F1b a command Chrome gave no key offers "Set a shortcut", which opens chrome://extensions/shortcuts', async ({ page, context, extensionId }) => {
+  // Chrome gives the suggested keys only on a fresh install, and never one
+  // another extension holds (Alt+A and Alt+W are common ones to lose).
+  await page.addInitScript(() => {
+    const getAll = chrome.commands.getAll.bind(chrome.commands);
+    chrome.commands.getAll = async () => (await getAll()).map((command) =>
+      command.name === 'translate-whole-page' ? { ...command, shortcut: '' } : command);
+  });
+  await openOnboarding(page, extensionId);
+  await expect(page.locator('#shortcutList .shortcut-unset')).toHaveText([en('onboardingShortcutNotSet')]);
+  await expect(page.locator('#setShortcut')).toHaveText(en('setShortcut'));
+  const opened = context.waitForEvent('page');
+  await page.locator('#setShortcut').click();
+  expect((await opened).url()).toBe('chrome://extensions/shortcuts');
 });
 
 test('J-F2 choosing a language on the welcome page writes targetLang', async ({ page, context, extensionId }) => {

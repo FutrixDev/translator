@@ -30,8 +30,8 @@
 //   model       —— 显然。
 //   prompt      —— 用户自定义提示词。换了提示词，旧键会继续按旧口径供货，
 //                  而且没有任何征兆。
-//   version     —— 扩展版本号，代内置提示词（background.js 的 DEFAULT_BATCH_PROMPT
-//                  那一套）。**刻意不用手工维护的 PROMPT_VERSION 常量**：那种常量的
+//   version     —— 扩展版本号，代内置提示词（shared/prompt-presets.js 的默认模板
+//                  与 background/prompts.js 的各路规则）。**刻意不用手工维护的 PROMPT_VERSION 常量**：那种常量的
 //                  寿命等于「下一个改提示词的人记得同步 +1」，而版本号在每次发版时
 //                  自动就变了，忘不掉。代价是每次更新扩展作废一次缓存 —— 条目本来
 //                  也只活 30 天，一次重译而已。

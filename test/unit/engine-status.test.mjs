@@ -82,13 +82,13 @@ test('only the AI engine is judged by the API key', () => {
   // The AI profile's readiness (aiReady()'s answer) decides, not the settings:
   // the old global key in `settings` is never read.
   assert.deepEqual(
-    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: 'sk-x' }, null, false),
+    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: 'sk-x' }, ES.UNKNOWN_PROBE, false),
     { key: 'apiNotConfigured', detailKey: '', ok: false });
   assert.deepEqual(
-    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '' }, null, true),
+    ES.describeEngineStatus({ translationEngine: 'ai', apiKey: '' }, ES.UNKNOWN_PROBE, true),
     { key: 'ready', detailKey: '', ok: true });
   // The AI branch without an answer is a caller bug, not "not configured".
-  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'ai' }, null), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'ai' }, ES.UNKNOWN_PROBE), TypeError);
 
   // A local model server needs no key: the Ollama / LM Studio presets, or any
   // loopback / LAN endpoint. The rule is APICompat's, and it reaches the popup
@@ -117,10 +117,12 @@ test('only the AI engine is judged by the API key', () => {
 });
 
 test('a page with no content script is a different answer from a slow one', () => {
-  // chrome://, the Web Store, a tab we are not injected into.
-  const absent = ES.describeEngineStatus({ translationEngine: 'builtin' }, null);
-  assert.equal(absent.key, 'statusPageUnsupported');
-  assert.equal(absent.ok, false);
+  // No content script is not an engine status: the popup asks absentPageReason()
+  // why, before any engine is named. Painting one anyway is a caller bug.
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'builtin' }, null), TypeError);
+  assert.deepEqual(ES.describeAbsentPage('unsupported'), { key: 'statusPageUnsupported', detailKey: '', ok: false });
+  assert.deepEqual(ES.describeAbsentPage('notInjected'), { key: 'statusPageNeedsReload', detailKey: '', ok: false });
+  assert.throws(() => ES.describeAbsentPage(''), TypeError);
 
   // A probe that did not come back in time is not evidence of a problem, so
   // it must not paint the error state.
@@ -176,10 +178,36 @@ test('every reason the engine can raise has a sentence', () => {
   }
 });
 
+test('a tab with no content script: never injected (reload) or never injectable', () => {
+  // Chrome injects content scripts only into pages loaded after the extension
+  // was installed or updated: every tab open before that has no receiver, and
+  // reloading it is the whole fix. Pages Chrome never lets an extension script
+  // stay unsupported, and so does a file:// page without "Allow access to file URLs".
+  const cases = [
+    ['https://example.com/a', false, 'notInjected'],
+    ['http://localhost:3000/', false, 'notInjected'],
+    ['file:///Users/me/a.html', true, 'notInjected'],
+    ['file:///Users/me/a.html', false, 'unsupported'],
+    ['chrome://extensions/', true, 'unsupported'],
+    ['chrome-extension://abc/popup/popup.html', true, 'unsupported'],
+    ['about:blank', true, 'unsupported'],
+    ['edge://settings', true, 'unsupported'],
+    ['https://chromewebstore.google.com/detail/x', true, 'unsupported'],
+    ['https://chrome.google.com/webstore/detail/x', true, 'unsupported'],
+    ['https://chrome.google.com/search', true, 'notInjected'],
+    ['', true, 'unsupported'],
+    [undefined, true, 'unsupported'],
+  ];
+  for (const [url, fileAccess, reason] of cases) {
+    assert.equal(ES.absentPageReason(url, fileAccess), reason, `${url} (file access ${fileAccess})`);
+  }
+});
+
 test('every key the status line can name exists in every language', () => {
   const keys = [
     'ready', 'apiNotConfigured', 'statusBuiltinReady', 'statusBuiltinPreparing',
-    'statusBuiltinUnavailable', 'statusPageUnsupported', 'statusEngineFellBack',
+    'statusBuiltinUnavailable', 'statusPageUnsupported', 'statusPageNeedsReload', 'reloadPage',
+    'setShortcut', 'statusEngineFellBack',
     ...Object.values(ES.REASON_MESSAGE_KEYS)
   ];
   for (const lang of UI_LANGUAGES) {
@@ -344,35 +372,35 @@ test('Blab Translation: the dot follows the account (blabAccess), never an API k
   const { AVAILABLE, SIGNED_OUT, PLAN_REQUIRED } = globalThis.Engines.BLAB_ACCESS;
   const blab = (access, dailyLimit = false) => ({ access, dailyLimit });
   for (const aiIsReady of [true, false, undefined]) {
-    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, aiIsReady, blab(AVAILABLE)),
+    assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, aiIsReady, blab(AVAILABLE)),
       { key: 'engineBlab', detailKey: '', ok: true });
   }
   // 页面钉成 blab（站点规则）也一样问账户。
   assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'builtin' }, { engine: 'blab' }, false, blab(AVAILABLE)),
     { key: 'engineBlab', detailKey: '', ok: true });
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(SIGNED_OUT)),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, blab(SIGNED_OUT)),
     { key: 'engineBlab', detailKey: 'blabStatusSignedOut', ok: false });
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(PLAN_REQUIRED)),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, blab(PLAN_REQUIRED)),
     { key: 'engineBlab', detailKey: 'blabStatusPlanRequired', ok: false });
   // 账户读不到：没说能用，就不绿。
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, blab(null)),
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, blab(null)),
     { key: 'engineBlab', detailKey: 'blabStatusUnknown', ok: false });
   // 没问账户就来画 blab 是调用方的错，不冒充任何一种状态；只给了旧式的一个值也是。
-  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true), TypeError);
-  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, AVAILABLE), TypeError);
-  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: AVAILABLE }), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, AVAILABLE), TypeError);
+  assert.throws(() => ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, { access: AVAILABLE }), TypeError);
 });
 
 test('Blab Translation (D-497 F1): today\'s allowance spent is never green, and says so', () => {
   const { AVAILABLE, SIGNED_OUT, PLAN_REQUIRED } = globalThis.Engines.BLAB_ACCESS;
   const spent = { key: 'engineBlab', detailKey: 'blabStatusDailyLimit', ok: false };
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: AVAILABLE, dailyLimit: true }), spent);
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, { access: AVAILABLE, dailyLimit: true }), spent);
   // 账户读不到，但闩说用完了：用完了是知道的那一句。
-  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true, { access: null, dailyLimit: true }), spent);
+  assert.deepEqual(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true, { access: null, dailyLimit: true }), spent);
   // 没登录、没订阅排在前面：那是要用户去办的，额度自己会回来。
-  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true,
+  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true,
     { access: SIGNED_OUT, dailyLimit: true }).detailKey, 'blabStatusSignedOut');
-  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, null, true,
+  assert.equal(ES.describeEngineStatus({ translationEngine: 'blab' }, ES.UNKNOWN_PROBE, true,
     { access: PLAN_REQUIRED, dailyLimit: true }).detailKey, 'blabStatusPlanRequired');
 });
 

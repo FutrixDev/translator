@@ -179,6 +179,21 @@ async function openExamplePage(page) {
 }
 
 /**
+ * Open the popup as a tab while `page` stays the active tab, the way the toolbar
+ * popup sees it. goto() fronts the popup's tab, so the window goes back to the
+ * page and the popup asks again. `initScript` (with `arg`) runs in the popup
+ * before its own scripts, to stand in for what Chrome would answer.
+ */
+async function openPopupOver(context, extensionId, page, initScript, arg) {
+  const popup = await context.newPage();
+  if (initScript) await popup.addInitScript(initScript, arg);
+  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  await page.bringToFront();
+  await popup.reload();
+  return popup;
+}
+
+/**
  * Open the float ball's menu.
  *
  * 单击球本身现在是翻译 / 还原（PR-7：最常做的那件事该是最省事的那一下），菜单
@@ -948,6 +963,7 @@ module.exports = {
   serveExamplePage,
   waitForFloatBall,
   openExamplePage,
+  openPopupOver,
   openFloatBallMenu,
   openInputDialogFromMenu,
   openInputDialog,

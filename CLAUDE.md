@@ -345,7 +345,8 @@ in `test/e2e/glossary-selection.spec.js`.
 **Dictionary entry** (`shared/dict-entry.js`, global `DictEntry`, loaded by
 both the content scripts and the service worker) owns the entry end to end:
 the shape (translation, phonetics, senses, examples, forms), the prompt rules
-(`OUTPUT_RULES`, appended after any user, preset or default word prompt and
+(`OUTPUT_RULES`, appended after the default word prompt or the user's own or
+preset prompt, and
 ending in `FORMAT_OVERRIDE`, so a preset's "reply with the translation only"
 never wins — `test/unit/dict-word-prompt.test.mjs`), the parser
 (`fromModelText`) and the one renderer (`render`) the input box and the
@@ -484,9 +485,14 @@ math placeholder rule, in the order REGISTER, DOMAIN, GLOSSARY, PAGE CONTEXT
 (broad to narrow: what kind of page, what field, which words, which
 neighbours). A register and a domain with the same id (`news`, `academic`)
 send the DOMAIN line only; `general` sends no DOMAIN line. Separately, every text path carries `REGISTER_RULE`
-(casual stays casual, formal stays formal): the default single, numbered-batch
-and fast-batch templates, and the rules appended to a custom prompt on those
-same three paths, the single-text one included. The word/dictionary path never
+(casual stays casual, formal stays formal), exactly once, in the rules each of
+the three text paths (single, numbered batch, fast batch) appends to its
+template. The template is the user's custom prompt or, when `customPrompt` is
+empty, the default preset: `shared/prompt-presets.js` (`PromptPresets`, a
+dual-mode classic script) holds the three presets the settings page offers and
+names the default (`creative`, free translation); the settings page shows it in
+the box and stores `''` while the box still holds it. No preset carries the
+rule. The word/dictionary path never
 carries it, neither `SINGLE_WORD_PROMPT` nor `WORD_OUTPUT_RULES`: a dictionary
 entry has no register to keep, though its addenda still arrive. The eighth translation-cache
 factor (`addenda`) is computed in one place,

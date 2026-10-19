@@ -3,7 +3,7 @@
  *
  * Page translation uses the fast-batch path: blocks are joined with the DELIMITER constant
  * from content/content-page-translation.js, and the model is told to separate the
- * translations with that same delimiter (FAST_BATCH_PROMPT in background/background.js).
+ * translations with that same delimiter (getFastBatchOutputRules in background/prompts.js).
  * The mock must honor that contract, so it recovers the delimiter from the system prompt of
  * the request it actually receives instead of hardcoding a copy that can drift out of sync.
  *

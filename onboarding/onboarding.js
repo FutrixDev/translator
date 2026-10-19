@@ -35,6 +35,7 @@
     engineAi: document.getElementById('engineAi'),
     aiProviders: document.getElementById('aiProviders'),
     shortcutList: document.getElementById('shortcutList'),
+    setShortcut: document.getElementById('setShortcut'),
     openSettings: document.getElementById('openSettings'),
     done: document.getElementById('done'),
   };
@@ -215,9 +216,10 @@
   // ---------------------------------------------------------------------------
 
   async function renderShortcuts() {
-    const commands = await chrome.commands.getAll();
+    const commands = (await chrome.commands.getAll())
+      .filter((command) => command.name && !command.name.startsWith('_'));
+    elements.setShortcut.hidden = commands.every((command) => command.shortcut);
     elements.shortcutList.replaceChildren(...commands
-      .filter((command) => command.name && !command.name.startsWith('_'))
       .map((command) => {
         const item = document.createElement('li');
         item.className = 'shortcut';
@@ -260,6 +262,12 @@
     for (const [id, providerKey] of Object.entries(AI_BUTTONS)) {
       document.getElementById(id).addEventListener('click', guarded('choose AI provider', () => chooseAiProvider(providerKey)));
     }
+    // The worker opens chrome://extensions/shortcuts: a link on this page cannot.
+    elements.setShortcut.addEventListener('click', guarded('open shortcut settings',
+      async () => {
+        const reply = await chrome.runtime.sendMessage({ type: 'OPEN_SHORTCUT_SETTINGS' });
+        if (!reply || !reply.ok) throw new Error(`OPEN_SHORTCUT_SETTINGS: ${reply ? reply.error : 'no reply'}`);
+      }));
     elements.openSettings.addEventListener('click', guarded('open settings', () => chrome.runtime.openOptionsPage()));
     elements.done.addEventListener('click', () => window.close());
 

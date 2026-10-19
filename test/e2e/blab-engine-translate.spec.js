@@ -19,6 +19,7 @@ const {
   triggerPageTranslation,
   waitForFloatBall,
   writeSyncSettings,
+  openPopupOver,
 } = require('./helpers');
 const {
   en,
@@ -31,7 +32,6 @@ const {
   expectBarOnScreen,
   barEntry,
   storedToken,
-  openPopupOver,
   openCardOn,
   openOptions,
 } = require('./blab-journey');

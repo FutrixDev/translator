@@ -26,6 +26,7 @@ const {
   E2E_BASE_SETTINGS,
   openFloatBallMenu,
   waitForFloatBall,
+  openPopupOver,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { openOptions: openRulesCard } = require('./custom-rules-fixtures');
@@ -33,7 +34,6 @@ const { openOptions: openRulesCard } = require('./custom-rules-fixtures');
 const en = (key) => getMessage(key, 'en');
 const zh = (key) => getMessage(key, 'zh-CN');
 const optionsUrl = (extensionId) => `chrome-extension://${extensionId}/options/options.html`;
-const popupUrl = (extensionId) => `chrome-extension://${extensionId}/popup/popup.html`;
 
 const LEGACY_PATH = '/legacy/v1/chat/completions';
 const SECOND_PATH = '/second/v1/chat/completions';
@@ -259,8 +259,9 @@ test('D-J1b a setup that never had a key makes no profile, and the popup and the
     // 全新安装：onInstalled 已经跑过一次迁移，没有旧键可迁，什么也没生成。
     await writeSyncSettings(context, PAGE_SETTINGS);
 
-    const popup = await context.newPage();
-    await popup.goto(popupUrl(extensionId));
+    await page.goto(`${TOP}/article`);
+    await waitForFloatBall(page);
+    const popup = await openPopupOver(context, extensionId, page);
     await expect(popup.locator('#translatePage')).toBeVisible();
     const optionsOpened = context.waitForEvent('page');
     await popup.click('#translatePage');

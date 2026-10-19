@@ -32,6 +32,9 @@
                chrome://extensions/shortcuts 改过之后，这里印的得是他改成的那个。 -->
           <kbd id="translatePageShortcut" hidden></kbd>
         </button>
+        <!-- 键位为空（另一个扩展先占了，或用户删了）时代替那块 kbd：Chrome 不让
+             页面打开 chrome://，由 SW 开 chrome://extensions/shortcuts。 -->
+        <button id="setShortcut" class="inline-action" hidden data-i18n="setShortcut">Set a shortcut</button>
 
         <button id="togglePagePause" class="menu-item" hidden>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -159,6 +162,8 @@
       <!-- 文字归 renderStatus() 管（popup.js）：内置引擎那条线还要带上原因，
            不是一个 i18n key 能表达的。这里的 Ready 只是脚本跑起来之前的占位。 -->
       <span id="statusText">Ready</span>
+      <!-- 装扩展之前就开着的标签页没有内容脚本，重载一次就有（EngineStatus.absentPageReason）。 -->
+      <button id="reloadPage" class="footer-action" hidden data-i18n="reloadPage">Reload</button>
       <button id="openSettings" class="footer-settings" data-i18n-title="openSettings" title="Settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/>

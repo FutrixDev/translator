@@ -11,14 +11,16 @@ import '../shared/prompt-addenda.js';
 // 词典条目（单词/短语查词）的形状与输出规则只写在共享模块里：校验器认的字段就是
 // 提示词要的字段（shared/dict-entry.js 的 FIELDS）。
 import '../shared/dict-entry.js';
+// 文本三条路径的模板（用户的提示词，或没有时的默认预设）只写在共享模块里：设置页
+// 框里显示的就是这里发出去的。
+import '../shared/prompt-presets.js';
 
 // Math placeholder rule - always appended to prompts (cannot be overridden by custom prompts)
 const MATH_PLACEHOLDER_RULE = `
 Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Keep each one exactly as written, in place, with no line breaks added around it.`;
 
-// Register rule - part of every text path: every default text template, and the
-// rules appended to a custom prompt on the single-text, numbered-batch and
-// fast-batch paths. The model must not formalise a meme or explain a joke: casual
+// Register rule - part of every text path: the rules appended to the template on
+// the single-text, numbered-batch and fast-batch paths. The model must not formalise a meme or explain a joke: casual
 // text stays casual, formal text stays formal. Only this rule stays off the
 // word/dictionary path, since a dictionary entry has no tone to match; that path
 // still gets the page-kind addenda (composePromptAddenda) like every other one.
@@ -34,28 +36,12 @@ const SINGLE_WORD_PROMPT = 'You are a bilingual dictionary. Look up the given wo
 
 const WORD_OUTPUT_RULES = globalThis.DictEntry.OUTPUT_RULES;
 
-// Default prompt template
-const DEFAULT_PROMPT = `You are a professional translator. Translate the given text to {targetLang}.
-Rules:
-1. Reply with the translation only, no explanations or notes
-2. Maintain the original formatting (line breaks, punctuation)
-3. Keep technical terms, brand names, and proper nouns in their original form when appropriate
-4. If the text is already in the target language, return it unchanged (no paraphrasing or reordering)
-5. Translate naturally, not literally
-6. ${REGISTER_RULE}`;
-
-// Default batch prompt template
-const DEFAULT_BATCH_PROMPT = `You are a professional translator. Translate the given numbered texts to {targetLang}.
-Rules:
-1. Return translations in the same numbered format: [1] translation1 [2] translation2 etc.
-2. Keep the numbering system exactly as given
-3. Maintain original formatting within each translation
-4. Keep technical terms, brand names, and proper nouns in their original form when appropriate
-5. If a text is already in the target language, return it unchanged (no paraphrasing or reordering)
-6. Translate naturally, not literally
-7. ${REGISTER_RULE}`;
-
-// Batch output rules appended when using custom prompts
+// The text paths (single, numbered batch, fast batch) send one template — the
+// user's prompt, or PromptPresets' default when there is none
+// (PromptPresets.textTemplate) — followed by that path's rules below. So the
+// prompt the settings page shows is the prompt that goes out, and each path
+// carries REGISTER_RULE exactly once, in its rules.
+// Batch output rules appended to the template on the numbered-batch path
 const BATCH_OUTPUT_RULES = `BATCH FORMAT RULES:
 1. Return translations in the same numbered format: [1] translation1 [2] translation2 etc.
 2. Keep the numbering system exactly as given
@@ -63,24 +49,8 @@ const BATCH_OUTPUT_RULES = `BATCH FORMAT RULES:
 4. ${REGISTER_RULE}`;
 
 
-// Fast batch prompt template
-const FAST_BATCH_PROMPT = `You are a professional translator. Translate multiple text segments to {targetLang}.
-
-The segments are parsed by a program, so the output format is a contract:
-1. Input segments are separated by "{delimiter}"
-2. Output translations separated by "{delimiter}", in the same order
-3. Output the translations and nothing else
-4. Keep technical terms, brand names, proper nouns in original form
-5. If a segment is already in the target language, return it unchanged (no paraphrasing or reordering)
-6. The number of output segments equals the number of input segments; an empty segment stays empty
-7. Preserve placeholders and inline tags: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> or <strong2>...</strong2> with the same names and numbers, wrapping the translated text they originally wrapped. Do not invent, drop, or renumber tags.
-8. ${REGISTER_RULE}
-
-Example (target language shown as Chinese):
-Input: Hello{delimiter}Read <a1>the docs</a1> first{delimiter}Thank you
-Output: 你好{delimiter}请先阅读<a1>文档</a1>{delimiter}谢谢`;
-
-// Fast batch output rules appended when using custom prompts
+// Fast batch output rules appended to the template on the fast-batch path. The
+// segments are parsed by a program, so this is a contract; the example shows it.
 function getFastBatchOutputRules(delimiter) {
   return `BATCH FORMAT RULES:
 1. Input segments are separated by "${delimiter}"
@@ -88,7 +58,11 @@ function getFastBatchOutputRules(delimiter) {
 3. Output the translations and nothing else
 4. The number of output segments equals the number of input segments; an empty segment stays empty
 5. Preserve placeholders and inline tags: keep {{1}}-style placeholders unchanged, and keep paired tags like <a1>...</a1> with the same names and numbers, wrapping the translated text they originally wrapped. Do not invent, drop, or renumber tags.
-6. ${REGISTER_RULE}`;
+6. ${REGISTER_RULE}
+
+Example (target language shown as Chinese):
+Input: Hello${delimiter}Read <a1>the docs</a1> first${delimiter}Thank you
+Output: 你好${delimiter}请先阅读<a1>文档</a1>${delimiter}谢谢`;
 }
 
 // 附加说明拼成的一块：REGISTER / DOMAIN / GLOSSARY / PAGE CONTEXT，各有内容才写。
@@ -149,10 +123,7 @@ export {
   MATH_PLACEHOLDER_RULE,
   SINGLE_WORD_PROMPT,
   WORD_OUTPUT_RULES,
-  DEFAULT_PROMPT,
-  DEFAULT_BATCH_PROMPT,
   BATCH_OUTPUT_RULES,
-  FAST_BATCH_PROMPT,
   getFastBatchOutputRules,
   REGISTER_RULE,
   composePromptAddenda,

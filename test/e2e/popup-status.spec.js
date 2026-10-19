@@ -13,6 +13,7 @@ const {
   triggerPageTranslation,
   sendMessageToActiveTab,
   openExamplePage,
+  openPopupOver,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -28,22 +29,26 @@ const BUILTIN_SENTENCES = [
   'statusEngineFellBack', 'ready',
 ].map(en);
 
-test('the engine that needs a key is the only one judged by it', async ({ page, extensionId }) => {
+// The footer speaks for a page Blab runs on; on its own tab the popup would be
+// "not this page" instead.
+test('the engine that needs a key is the only one judged by it', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { translationEngine: 'ai', apiKey: '' });
+  await openExamplePage(page);
 
-  await page.goto(popupUrl(extensionId));
-  await expect(page.locator('#statusText')).toHaveText(en('apiNotConfigured'));
-  await expect(page.locator('body')).toHaveClass(/status-error/);
+  const popup = await openPopupOver(context, extensionId, page);
+  await expect(popup.locator('#statusText')).toHaveText(en('apiNotConfigured'));
+  await expect(popup.locator('body')).toHaveClass(/status-error/);
 });
 
-test('a configured key clears the footer', async ({ page, extensionId }) => {
+test('a configured key clears the footer', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { translationEngine: 'ai', apiKey: 'sk-test' });
+  await openExamplePage(page);
 
-  await page.goto(popupUrl(extensionId));
-  await expect(page.locator('#statusText')).toHaveText(en('ready'));
+  const popup = await openPopupOver(context, extensionId, page);
+  await expect(popup.locator('#statusText')).toHaveText(en('ready'));
   // The error class used to be set and never removed, so one bad load left the
   // dot red for the rest of the popup's life.
-  await expect(page.locator('body')).not.toHaveClass(/status-error/);
+  await expect(popup.locator('body')).not.toHaveClass(/status-error/);
 });
 
 test('the default engine never asks for an API key', async ({ page, extensionId }) => {

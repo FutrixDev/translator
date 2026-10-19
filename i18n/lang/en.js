@@ -367,27 +367,6 @@
     presetLiteral: 'Literal',
     presetCreative: 'Creative',
     presetApplied: 'Preset applied',
-    promptStandard: `You are a professional translator. Translate the given text to {targetLang}.
-Rules:
-1. Reply with the translation only, no explanations or notes
-2. Maintain the original formatting (line breaks, punctuation)
-3. Keep technical terms, brand names, and proper nouns in their original form when appropriate
-4. If the text is already in the target language, return it unchanged (no paraphrasing or reordering)
-5. Translate naturally, not literally`,
-    promptLiteral: `You are a precise translator. Translate the given text to {targetLang}.
-Rules:
-1. Reply with the translation only, no explanations
-2. Translate as literally as possible while maintaining grammatical correctness
-3. Preserve the original sentence structure when possible
-4. Keep all technical terms, names, and proper nouns unchanged
-5. If the text is already in the target language, return it unchanged (no paraphrasing or reordering)`,
-    promptCreative: `You are a creative translator and language artist. Translate the given text to {targetLang}.
-Rules:
-1. Reply with the translation only, no explanations
-2. Prioritize natural, fluent expression in the target language
-3. Adapt idioms and cultural references to equivalent expressions in the target culture
-4. Maintain the tone and emotion of the original text
-5. If the text is already in the target language, return it unchanged (no paraphrasing or reordering)`,
 
     // Popup
     translateCurrentPage: 'Translate Page',
@@ -400,6 +379,8 @@ Rules:
     statusBuiltinPreparing: 'Preparing language pack',
     statusBuiltinUnavailable: 'Local translation can\'t run here',
     statusPageUnsupported: 'Blab can\'t run on this page',
+    statusPageNeedsReload: "Reload this page to translate it",
+    reloadPage: "Reload",
     statusEngineFellBack: 'Used your own API instead',
     builtinReasonOldBrowser: 'needs Chrome 138 or later',
     builtinReasonInsecureContext: 'this page is http://',
@@ -416,7 +397,7 @@ Rules:
     mediaHintPdfNoShortcut: 'This is a PDF. Translating it spends page credits.',
     mediaHintComic: 'Press {shortcut} to translate the comic on screen.',
     mediaHintComicNoShortcut: 'Translate the comic on screen?',
-    mediaHintSetShortcut: 'Set a shortcut',
+    setShortcut: 'Set a shortcut',
     mediaShortcutNothing: 'No PDF or comic to translate on this page.',
     mediaShortcutLabel: 'Translate this PDF or the comic on screen',
     autoStopSite: 'Stop auto-translating {site}',

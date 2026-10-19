@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### First run
+
+- **The default AI prompt is the free-translation preset.** A user who never
+  edits the prompt now gets the "creative" preset (natural, idiomatic, keeps
+  the tone) on page, batch and fast-batch translation, and the settings page
+  shows exactly that text in the prompt box. Word lookups keep the
+  dictionary prompt. The three presets live in one table,
+  `shared/prompt-presets.js`, shared by the settings page and the worker.
+- **The target language follows the browser's language until you pick one.**
+  Unchanged, now proven end to end: a fresh install stores no target
+  language, the settings page and the welcome page show the browser's
+  language, and a page translation asks the model for it.
+- **Keyboard shortcuts: a "Set a shortcut" button where one is missing.**
+  Chrome gives an extension its suggested keys (Alt+A, Alt+T, Alt+W, Alt+M)
+  only on a fresh install, and never a key another extension already holds,
+  so a command can arrive with no key at all. The welcome page shows the
+  button when any command has none, and the popup shows it under "Translate
+  this page" when that command has none; both open
+  chrome://extensions/shortcuts.
+- **A tab opened before the extension was installed asks for a reload
+  instead of saying Blab can't run there.** Chrome injects the extension only
+  into pages loaded after it is installed or updated. The popup now tells such
+  a tab apart from a page no extension may run on (chrome://, the Web Store,
+  other extensions' pages, file:// without file access): it says "Reload this
+  page to translate it" with a **Reload** button, reloads the tab and asks
+  again. In all fifteen languages.
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site

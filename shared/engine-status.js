@@ -6,6 +6,10 @@
 //   builtinUnsupportedReason()  why the built-in Translator is not here
 //   describeEngineStatus()      what the user should be told, in one line
 //
+// and, for a tab with no content script to ask, absentPageReason() and
+// describeAbsentPage(): a tab that only needs a reload is not a page Blab
+// cannot run on.
+//
 // The built-in engine is the default and it is key-free, so the popup used to
 // judge readiness by `!settings.apiKey` and told every default user "API Not
 // Configured" — an error about a thing they were never meant to configure.
@@ -126,17 +130,61 @@
     return answer;
   }
 
+  // Pages no extension may script, on hosts that are otherwise http(s).
+  const WEB_STORE = Object.freeze([
+    ['chromewebstore.google.com', '/'],
+    ['chrome.google.com', '/webstore'],
+  ]);
+
   /**
-   * One line of truth for the popup footer.
+   * Why the tab in front has no content script to answer the probe.
    *
-   * `probe` is null when the content script could not be reached — a
-   * chrome:// page, the Web Store, a tab the extension is not injected into.
-   * That is a real answer ("not here"), not a missing one, and it is separate
-   * from a probe that timed out: a timeout is not evidence of a problem, so it
-   * comes back as `{ availability: 'unknown' }` and is read as working.
+   * Chrome injects content scripts only into pages that load after the
+   * extension does: every tab already open when it is installed, updated or
+   * reloaded has none until that tab reloads — 'notInjected', and a reload
+   * fixes it. The rest are pages no extension may script — 'unsupported':
+   * chrome:// and the other browser schemes, other extensions' pages, the Web
+   * Store, and file:// unless the user allowed file access. The popup reads the
+   * tab's URL under <all_urls> and activeTab; a tab whose URL it cannot see
+   * (`url` undefined) is not one it could have scripted either.
+   *
+   * @param {string|undefined} url  the tab's URL
+   * @param {boolean} fileAccess    chrome.extension.isAllowedFileSchemeAccess()
+   * @returns {'notInjected'|'unsupported'}
+   */
+  function absentPageReason(url, fileAccess) {
+    if (!url) return 'unsupported';
+    const { protocol, hostname, pathname } = new URL(url);
+    if (protocol === 'file:') return fileAccess ? 'notInjected' : 'unsupported';
+    if (protocol !== 'http:' && protocol !== 'https:') return 'unsupported';
+    if (WEB_STORE.some(([host, path]) => hostname === host && pathname.startsWith(path))) return 'unsupported';
+    return 'notInjected';
+  }
+
+  /**
+   * The footer for a tab with no content script, whatever the engine: no
+   * engine runs on a page Blab is not in, so the engine's own state (a key, an
+   * account) is not what stands in the way.
+   *
+   * @param {'notInjected'|'unsupported'} reason  absentPageReason()'s answer
+   * @returns {EngineStatus}
+   */
+  function describeAbsentPage(reason) {
+    if (reason === 'notInjected') return status('statusPageNeedsReload', '', false);
+    if (reason === 'unsupported') return status('statusPageUnsupported', '', false);
+    throw new TypeError(`describeAbsentPage: unknown reason ${JSON.stringify(reason)}`);
+  }
+
+  /**
+   * One line of truth for the popup footer, for a tab whose content script
+   * answered.
+   *
+   * A probe that timed out is not evidence of a problem: it comes in as
+   * UNKNOWN_PROBE (`{ availability: 'unknown' }`) and is read as working. A tab
+   * with no content script at all is describeAbsentPage()'s.
    *
    * @param {Object} settings           the user's settings
-   * @param {EngineProbe|null} probe
+   * @param {EngineProbe} probe
    * @param {boolean} aiIsReady          aiReady()'s answer for this tab
    * @param {{access: (string|null), dailyLimit: boolean}} [blab]
    *                                     the account as the Blab engine sees it,
@@ -150,6 +198,7 @@
    */
   function describeEngineStatus(settings, probe, aiIsReady, blab) {
     const engine = selectedEngine(settings, probe);
+    if (!probe) throw new TypeError('describeEngineStatus: a tab with no content script is describeAbsentPage()\'s');
 
     if (engine === 'ai') {
       if (typeof aiIsReady !== 'boolean') throw new TypeError('describeEngineStatus: the AI engine needs aiReady()');
@@ -173,10 +222,6 @@
       if (blab.access === access.AVAILABLE) return status('engineBlab', '', true);
       if (blab.access === null) return status('engineBlab', 'blabStatusUnknown', false);
       throw new TypeError('describeEngineStatus: the Blab engine needs the account\'s blabAccess (or null) as blab.access');
-    }
-
-    if (probe === null) {
-      return status('statusPageUnsupported', '', false);
     }
 
     if (probe.lastFallback) {
@@ -233,6 +278,8 @@
     builtinUnsupportedReason,
     selectedEngine,
     aiReady,
-    describeEngineStatus
+    describeEngineStatus,
+    absentPageReason,
+    describeAbsentPage
   };
 })(globalThis);

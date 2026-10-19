@@ -52,7 +52,3 @@ export const comicHintWriter = StorageWriter.create({
   writes: { claim },
   errors: 'throw',
 });
-
-export function openShortcutSettings() {
-  return chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-}
