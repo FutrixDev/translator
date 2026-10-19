@@ -551,6 +551,25 @@ test.describe('float ball progress ring', () => {
     expect(turned.title, 'no count from the page that is gone').toBeNull();
   });
 
+  test('J3.8: a held amber ring outlives a session bump that is not a route change', async ({ page, context }) => {
+    test.setTimeout(90000);
+    mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
+    await heldPartial(page, context);
+    const before = await feedState(context, page);
+
+    await evaluateInContentScript(context, page, "self.AI_TRANSLATOR_CONTENT.autoTranslate.bumpSession('test')");
+    await expect.poll(async () => (await feedState(context, page)).session, { timeout: 15000 })
+      .toBeGreaterThan(before.session);
+    await page.waitForTimeout(500);
+    const probe = await readProbe(context, page);
+    const after = probe.paints.filter((p) => p.feed.session > before.session);
+    expect(after.length, 'a paint of the bumped session').toBeGreaterThan(0);
+    expect([...new Set(after.map((p) => p.phase))]).toEqual(['partial']);
+    await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
+    await expect(ring(page).locator('.ai-translator-ring-arc')).toHaveAttribute('style', /stroke-dashoffset: 61\.25/);
+    await expect(page.locator('#ai-translator-float-ball')).toHaveAttribute('title', /Translated 2\/4/);
+  });
+
   test('watchdog: a ball rebuilt under a held ring gets the ring back in its phase, gap and count', async ({ page, context }) => {
     test.setTimeout(90000);
     mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
