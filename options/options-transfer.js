@@ -37,6 +37,7 @@ function transferEnums() {
     styles: TranslationDisplay.STYLES,
     domains: PromptAddenda.DOMAINS,
     engines: Engines.ENGINES,
+    ocrEngines: OCRCore.OCR_ENGINES,
   });
 }
 

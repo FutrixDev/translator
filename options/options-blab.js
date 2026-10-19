@@ -4,7 +4,8 @@
 // 这里声明的函数在 options.js / options-account.js 里直接叫名字就能用，反过来
 // 也一样（调用发生在 DOMContentLoaded 之后，声明早就求值完了）。
 //
-// 两个引擎下拉（翻译引擎、自动翻译引擎）各有一个 Blab 选项和它下面的一条说明。
+// 三个引擎下拉（翻译引擎、自动翻译引擎、图片识别引擎）各有一个 Blab 选项和它下面的一条说明。
+// 可用时的说明按下拉分：翻译发的是文字，识别发的是图片（blabNoteOcrAvailable）。
 // 能不能用只问 Engines.blabAccess(account)，账户就是账号卡片刚画的那一份
 // （showAccount 记下，见 options-account.js），设置页打开时那一次是 force 拉的，
 // 不吃 30 秒缓存。三种状态：
@@ -12,7 +13,7 @@
 //   signed_out     选项禁用；说明「登录并订阅后可用」+ 登录按钮（账号卡片那条登录流程）
 //   plan_required  选项禁用；说明「订阅后可用」+ 订阅按钮（账户站地址没答上就不画，
 //                  不回落成相对地址）
-//   available      选项可选；选中时说明「文字发到 Blab 的服务器、订阅包含、每天 X token、
+//   available      选项可选；选中时说明「文字（识别是图片）发到 Blab 的服务器、订阅包含、每天 X token、
 //                  今天已用 Y」，两个数都取接口返回值（单位是 token，D-564）
 //
 // 登录、订阅这两个按钮和错误条、划词卡上的一样，是账户入口：都发
@@ -30,10 +31,11 @@
 /** The account the account card last drew, or null before one has arrived. */
 let blabAccount = null;
 
-/** Each engine select and the note under it. */
+/** Each engine select, the note under it, and what the available note says is sent. */
 const BLAB_NOTES = [
-  { select: 'translationEngine', note: 'translationEngineBlabNote' },
-  { select: 'autoTranslateEngine', note: 'autoTranslateEngineBlabNote' },
+  { select: 'translationEngine', note: 'translationEngineBlabNote', available: 'blabNoteAvailable' },
+  { select: 'autoTranslateEngine', note: 'autoTranslateEngineBlabNote', available: 'blabNoteAvailable' },
+  { select: 'ocrEngine', note: 'ocrEngineBlabNote', available: 'blabNoteOcrAvailable' },
 ];
 
 /** Remember the account the card just drew; renderAccountFeatures() draws it. */
@@ -51,14 +53,14 @@ function currentBlabAccess() {
   return blabAccount ? Engines.blabAccess(blabAccount) : null;
 }
 
-/** Draw both selects' Blab option and note. Called on every account transition
- *  and whenever either select changes. */
+/** Draw every select's Blab option and note. Called on every account transition
+ *  and whenever one of the selects changes. */
 function renderBlabEngine() {
   const access = currentBlabAccess();
-  for (const { select, note } of BLAB_NOTES) {
+  for (const { select, note, available } of BLAB_NOTES) {
     const element = elements[select];
     element.querySelector('option[value="blab"]').disabled = access !== Engines.BLAB_ACCESS.AVAILABLE;
-    renderBlabNote(document.getElementById(note), access, element.value === 'blab');
+    renderBlabNote(document.getElementById(note), access, element.value === 'blab', available);
   }
 }
 
@@ -66,7 +68,7 @@ function blabCount(value) {
   return Number.isFinite(value) ? value.toLocaleString(currentUILang) : '—';
 }
 
-function renderBlabNote(note, access, selected) {
+function renderBlabNote(note, access, selected, availableKey) {
   const unavailable = access === Engines.BLAB_ACCESS.SIGNED_OUT || access === Engines.BLAB_ACCESS.PLAN_REQUIRED;
   note.hidden = access === null || (access === Engines.BLAB_ACCESS.AVAILABLE && !selected);
   note.classList.toggle('blab-note-warning', unavailable && selected);
@@ -78,7 +80,7 @@ function renderBlabNote(note, access, selected) {
   if (unavailable && selected) parts.push(blabNoteText(t('blabNoteSelectedUnavailable')));
   if (access === Engines.BLAB_ACCESS.AVAILABLE) {
     const usage = blabAccount.blabTranslation;
-    parts.push(blabNoteText(t('blabNoteAvailable')
+    parts.push(blabNoteText(t(availableKey)
       .replace('{limit}', blabCount(usage.limit))
       .replace('{used}', blabCount(usage.used))));
   } else if (access === Engines.BLAB_ACCESS.SIGNED_OUT) {

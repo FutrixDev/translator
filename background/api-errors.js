@@ -117,6 +117,9 @@ function blabServiceMessage(failure, t) {
   if (failure.timeout) return t('blabErrorTimeout');
   if (failure.empty) return t('blabErrorEmpty');
   if (failure.network) return t('blabErrorNetwork');
+  // The service's model cannot see images (D-740): only the OCR engine sends
+  // one, and another try gets the same answer until the service changes model.
+  if (failure.blab === 'vision_unavailable') return t('blabVisionUnavailable');
   const status = Number(failure.status);
   if (failure.rateLimitedWait || status === 429 || status >= 500) return t('blabErrorBusy');
   return t('blabErrorRequest').replace('{status}', String(failure.status));

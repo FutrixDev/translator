@@ -72,6 +72,7 @@ function optionsTransferFunctions() {
     TranslationDisplay,
     PromptAddenda: globalThis.PromptAddenda,
     Engines: globalThis.Engines,
+    OCRCore: globalThis.OCRCore,
   };
   vm.createContext(sandbox);
   vm.runInContext(`${lift('transferSchema')}\n${lift('transferEnums')}`, sandbox);
@@ -224,6 +225,12 @@ test('the prompt domain enum is PromptAddenda.DOMAINS; the page-context switch i
   // 新装配置的默认值：通用、不附带上下文。
   assert.equal(schema.promptDomain, 'general');
   assert.equal(schema.aiPageContext, false);
+});
+
+test('the OCR engine enum is OCRCore.OCR_ENGINES, so a file choosing Blab imports', () => {
+  assert.deepEqual(enums.ocrEngine, [...globalThis.OCRCore.OCR_ENGINES]);
+  assert.deepEqual(ST.validateSettings({ ocrEngine: 'blab' }, schema, enums).value, { ocrEngine: 'blab' });
+  assert.equal('ocrEngine' in ST.validateSettings({ ocrEngine: 'quantum' }, schema, enums).value, false);
 });
 
 test('no second list of domain ids: every source outside prompt-addenda.js takes PromptAddenda.DOMAINS', () => {

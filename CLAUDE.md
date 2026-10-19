@@ -915,7 +915,7 @@ nothing, and a migration that runs on every profile can only lose data.)
 Right-click an image → read the text in it. **Two separable steps, and keeping
 them separable is the whole design:**
 
-1. **Recognise.** Two engines behind one contract, `{text, language}`:
+1. **Recognise.** Three engines behind one contract, `{text, language}`:
    - **`local`** (the default) — Tesseract WASM, `vendor/tesseract/`, running in
      `offscreen/`. Free, offline, no API key. A service worker may not spawn a
      nested Worker or instantiate this WASM, which is the only reason the
@@ -925,6 +925,16 @@ them separable is the whole design:**
      because Tesseract's defaults fetch from a CDN.
    - **`vision`** — the user's own vision model, through the same
      `shared/api-compat.js` builders as everything else.
+   - **`blab`** — Blab's own vision model, for a signed-in paid account
+     (`Engines.BLAB_PROFILE`). Only the transport differs from `vision`: the
+     same prompt goes to `/api/blab/complete` as `{system, user, maxTokens}`
+     plus `image: {mime, base64}`, with no `temperature`. The service checks the
+     mime against the bytes, so `fetchImageForOcr` sniffs the format
+     (`sniffImageType`) and re-encodes anything `canSendImageDirectly` refuses
+     (format, 3.75 MiB, 8000 px longest edge) before sending — the same caps
+     apply to `vision`. 403 / 422 / signed out are shown as themselves
+     (`replyError` carries the subscribe/sign-in `action` to the card), and no
+     other engine is tried.
 2. **Translate — optional, and not in either engine.** The content script runs
    it on the recognised text through `ctx.translateText`, the ordinary path.
    Always recognise-first: every entry point sends `translate: false`, the popup

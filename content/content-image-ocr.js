@@ -340,7 +340,7 @@
     if (state.translationPopup !== popup) return;
 
     if (!response || response.error) {
-      ctx.showCardError(popup, response?.error || t('translationFailed'));
+      ctx.showCardError(popup, response?.error || t('translationFailed'), response?.action || null);
       return;
     }
     const text = response.text || '';
