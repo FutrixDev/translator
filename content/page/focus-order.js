@@ -5,6 +5,9 @@
 // （content/page/batch.js 的 runTranslationPass）和自动调度层每轮挑块
 // （content/content-auto-translate.js 的 takeBatch）用的都是这一个拉取器。
 //
+// 装批也在这里：拉取器按调用方给的形状装下一批，一段占多少 token 由这里的
+// estimateTokens 估（整页翻译的 token 估算只此一份）。
+//
 // 视口信号（viewSignals）是模块级的：加载时挂上 scroll / pointermove / resize 监听，
 // 另由 runTranslationPass 在每批译文交付后取样一次（sampleView）。
 // 只认 ctx.focusOrder 这一个出口；批的形状（每批几段、字数与 token 上限）和引擎
@@ -193,8 +196,8 @@
 
   /**
    * 拉取器（设计 §3.2）。每次 next() 按此刻的视口排剩下的块，从最先的那块起装
-   * 一批：shape 是 { perBatch, maxChars, maxTokens }，由调用方按引擎给（batch.js 的
-   * passBatchShape：AI 40 段 / 9000 字 / 3200 token，内置引擎一块一批）；超大块单独成批（processOversizedBlock 再切）；档位
+   * 一批：shape 是 { perBatch, maxChars, maxTokens }，由调用方按引擎给（数值见
+   * ctx.pagePass.batchShape，batch.js）；超大块单独成批（processOversizedBlock 再切）；档位
    * （isNear）和这一批第一块不同的跳过、留给下一拉，不截断这一批（D-551）。批内按
    * 文档顺序，给 neighbourContext 取前后文。
    *
@@ -278,15 +281,30 @@
   // 拉取式并发池，页面翻译唯一的一个：空出一个并发位就 feeder.next() 拉下一项
   // 交给 processor，拉到假值收工，stopped() 为真就不再拉。拉取器给的是一批块，
   // 评分发生在拉取那一刻；batch.js 的语言预检给的是 { block, index }。
-  async function drainFeeder(feeder, processor, concurrency, stopped) {
+  //
+  // 拉取或处理抛错：第一个错误一出，所有并发位都不再拉下一项（手上那一项照常收
+  // 完），全部收场之后把这第一个错误抛出去。只停抛错的那一位的话，其余几位会接着
+  // 拉、接着发请求，把整队拉完才报错。
+  async function drainFeeder(feeder, processor, { concurrency, stopped = () => false }) {
+    let failed = false;
+    let firstError = null;
     const worker = async () => {
-      while (!stopped()) {
-        const item = feeder.next();
-        if (!item) return;
-        await processor(item);
+      while (!failed && !stopped()) {
+        try {
+          const item = feeder.next();
+          if (!item) return;
+          await processor(item);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            firstError = error;
+          }
+          return;
+        }
       }
     };
-    await Promise.all(Array.from({ length: concurrency }, worker));
+    await Promise.allSettled(Array.from({ length: concurrency }, worker));
+    if (failed) throw firstError;
   }
 
   ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });

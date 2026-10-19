@@ -284,7 +284,7 @@ test('a round takes at most roundCap() batches; known counts what was accepted, 
   await s.fire();
   assert.equal(s.passes.length, 1);
   assert.deepEqual(s.passes[0].blocks.map((b) => b.element.name), ['p0', 'p1', 'p2', 'p3'],
-    'roundCap() = passConcurrency x 2 = 4 one-block batches');
+    'roundCap() = pagePass.concurrency x 2 = 4 one-block batches');
   assert.deepEqual(ledger(s.feed.state()), ['running', 4, 0, 0, 6, 4]);
   assert.ok(s.feed.fraction(s.feed.state()) < 1);
 
@@ -437,6 +437,61 @@ test('a disconnected block reconnected with the same text is accepted again with
   assert.deepEqual(ledger(s.feed.state()), ['done', 3, 3, 0, 0, 0]);
   assert.equal(s.feed.fraction(s.feed.state()), 1);
   for (const snap of s.history) assert.ok(snap.settled <= snap.known, `settled ${snap.settled} > known ${snap.known}`);
+});
+
+// D-560 SF-1: a node the discovery layer hands back with new text replaces its
+// queued copy. The old copy's key was accepted once (it failed a round and was put
+// back) and can no longer reach a result, so it is retired; without that, known
+// stays one ahead of settled and the ring never closes.
+test('a block that failed once and changed its text in the queue does not leave its old key owing the ring', async () => {
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  const c = element('c');
+  s.offer(a, b, c);
+  await s.fire();
+  await s.settle((el) => el === a);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 3, 1, 0, 2, 0], 'b and c failed once: back in the queue');
+  b.text = 'b text rewritten by the page while it waited';
+  s.offer(b);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 3, 2, 0, 2, 0], 'the old text of b is retired, not still owed');
+  await s.fire();
+  assert.deepEqual(s.passes[1].blocks.map((block) => block.text), [b.text, c.text]);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 4, 2, 0, 0, 2], 'the new text is one more block owed');
+  // b's new text translates; c fails its second chance and is given up.
+  await s.settle((el) => el === b);
+  const snap = s.feed.state();
+  assert.deepEqual(ledger(snap), ['partial', 4, 4, 1, 0, 0]);
+  assert.equal(snap.known, snap.settled);
+  assert.equal(s.feed.fraction(snap), 1);
+  for (let i = 1; i < s.history.length; i += 1) {
+    assert.ok(s.history[i].known >= s.history[i - 1].known, `known fell at snapshot ${i}`);
+    assert.ok(s.history[i].settled <= s.history[i].known);
+  }
+});
+
+// The same replacement, reached from the other side: the node comes back with new
+// text while its old copy is still in flight, and that round fails. Putting the old
+// copy back would overwrite the new one (the new text is never sent); keeping the
+// new one without retiring the old key leaves the ring short.
+test('a block re-offered with new text while in flight keeps the new text when its round fails', async () => {
+  const s = loadScheduler();
+  const a = element('a');
+  const b = element('b');
+  s.offer(a, b);
+  await s.fire();
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 0, 0, 0, 2]);
+  b.text = 'b text rewritten by the page while in flight';
+  s.offer(b);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 0, 0, 1, 2]);
+  await s.settle((el) => el === a);
+  assert.deepEqual(ledger(s.feed.state()), ['running', 2, 2, 0, 1, 0],
+    'the in-flight copy of b is retired; the queued one with the new text stays');
+  await s.fire();
+  assert.deepEqual(s.passes[1].blocks.map((block) => block.text), [b.text], 'the next round sends the new text');
+  await s.settle();
+  assert.deepEqual(ledger(s.feed.state()), ['done', 3, 3, 0, 0, 0]);
+  assert.equal(s.feed.fraction(s.feed.state()), 1);
 });
 
 test('a new session zeroes the snapshot and moves session forward', async () => {

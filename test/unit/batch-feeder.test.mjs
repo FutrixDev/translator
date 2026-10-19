@@ -129,7 +129,7 @@ function scrollTo(y, dh = 0) {
 const labels = (batch) => batch && batch.map((b) => b.label);
 
 // The feeder a manual pass would build: the batch shape the engine table gives.
-const newFeeder = (blocks) => ctx.focusOrder.createBatchFeeder(blocks, ctx.passBatchShape(false));
+const newFeeder = (blocks) => ctx.focusOrder.createBatchFeeder(blocks, ctx.pagePass.batchShape(false));
 
 function withEngine(builtin, fn) {
   if (builtin) ctx.builtinTranslator = { isActive: () => true };
@@ -273,10 +273,10 @@ test('focus inside a block five screens away: it rides in the first AI batch, an
 test('focus inside a block wins its place even when the viewport alone fills an AI batch', () => {
   // More near blocks than MAX_BATCH_ITEMS: without the pin the focus block,
   // scored by its distance, would wait behind all of them.
-  const { all, focused } = focusPage(ctx.PAGE_LIMITS.MAX_BATCH_ITEMS + 5);
+  const { all, focused } = focusPage(ctx.pagePass.LIMITS.MAX_BATCH_ITEMS + 5);
   document.activeElement = input(2 * H + 5 * H + 5, focused.element);
   const first = labels(newFeeder(all).next());
-  assert.equal(first.length, ctx.PAGE_LIMITS.MAX_BATCH_ITEMS);
+  assert.equal(first.length, ctx.pagePass.LIMITS.MAX_BATCH_ITEMS);
   assert.ok(first.includes('focused'), `the focus block is in the first batch: ${first.slice(-3)}`);
 });
 
@@ -404,19 +404,19 @@ test('equal scores keep document order and blocks with no layout box go last, ev
 });
 
 test('the built-in engine pulls one block per batch, the AI engine up to MAX_BATCH_ITEMS', () => {
-  const many = Array.from({ length: ctx.PAGE_LIMITS.MAX_BATCH_ITEMS + 5 }, (_, i) => block(i, `v${i}`));
+  const many = Array.from({ length: ctx.pagePass.LIMITS.MAX_BATCH_ITEMS + 5 }, (_, i) => block(i, `v${i}`));
   withEngine(true, () => {
     assert.equal(newFeeder(many).next().length, 1);
   });
   const feeder = newFeeder(many);
-  assert.equal(feeder.next().length, ctx.PAGE_LIMITS.MAX_BATCH_ITEMS);
+  assert.equal(feeder.next().length, ctx.pagePass.LIMITS.MAX_BATCH_ITEMS);
   assert.equal(feeder.next().length, 5);
 });
 
 test('the concurrency the pool and the auto round cap read is the engine table, unchanged', () => {
-  assert.deepEqual({ ...ctx.PAGE_LIMITS.CONCURRENCY }, { builtin: 4, ai: 12, blab: 6 });
-  withEngine(true, () => assert.equal(ctx.passConcurrency(true), 4));
-  assert.equal(ctx.passConcurrency(true), 12);
+  assert.deepEqual({ ...ctx.pagePass.LIMITS.CONCURRENCY }, { builtin: 4, ai: 12, blab: 6 });
+  withEngine(true, () => assert.equal(ctx.pagePass.concurrency(true), 4));
+  assert.equal(ctx.pagePass.concurrency(true), 12);
 });
 
 // ==================== progress counts blocks (design §2) ====================
@@ -573,4 +573,61 @@ test('the pointer is kept in viewport coordinates: after a scroll it points wher
     assert.deepEqual(labels(newFeeder([above, below]).next()), ['above'],
       'read at its old document offset (100) the pointer is near neither, and `below` would go first');
   });
+});
+
+// ==================== the pull pool ====================
+//
+// drainFeeder (content/page/focus-order.js) is the one concurrency pool behind a
+// page pass and the language pre-check. On the first error every slot stops
+// pulling, the items already in hand finish, and that first error is what the
+// pool throws (D-560 NIT 3).
+
+const ticks = async (n) => {
+  for (let i = 0; i < n; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+function listFeeder(items, pulled) {
+  const rest = [...items];
+  return { next: () => { const item = rest.shift(); if (item) pulled.push(item); return item || null; } };
+}
+
+test('the pool stops pulling on the first error, lets the items in hand finish, and throws that first error', async () => {
+  const pulled = [];
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let finished = 0;
+  const processor = async (item) => {
+    if (item === 1) throw new Error('first failure');
+    await held;
+    finished += 1;
+    if (item === 3) throw new Error('a later failure');
+  };
+  const run = ctx.focusOrder.drainFeeder(listFeeder([1, 2, 3, 4, 5, 6], pulled), processor, { concurrency: 3 });
+  // Settled the moment the pool settles: what had finished by then is part of the answer.
+  let finishedWhenSettled = null;
+  const outcome = run.then(() => null, (error) => error).finally(() => { finishedWhenSettled = finished; });
+  await ticks(5);
+  assert.deepEqual(pulled, [1, 2, 3], 'item 1 failed: no slot pulls a fourth item');
+  release();
+  const error = await outcome;
+  assert.ok(error instanceof Error, 'the pool rejects');
+  assert.match(error.message, /first failure/, 'with the first error, not a later one');
+  assert.equal(finishedWhenSettled, 2, 'only after the two items in hand finished');
+  assert.deepEqual(pulled, [1, 2, 3], 'and nothing was pulled after they did');
+});
+
+test('a feeder that throws rejects the pool with its error', async () => {
+  const feeder = { next: () => { throw new Error('feeder broke'); } };
+  await assert.rejects(ctx.focusOrder.drainFeeder(feeder, async () => {}, { concurrency: 3 }), /feeder broke/);
+});
+
+test('with nothing failing or stopping it, the pool drains every item once', async () => {
+  const pulled = [];
+  const done = [];
+  await ctx.focusOrder.drainFeeder(listFeeder([1, 2, 3, 4, 5, 6, 7], pulled), async (item) => {
+    await ticks(1);
+    done.push(item);
+  }, { concurrency: 3 });
+  assert.deepEqual(pulled, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual([...done].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7]);
 });

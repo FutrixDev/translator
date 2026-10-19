@@ -6,26 +6,29 @@
 // 之前一轮抽干整队的行为一样。评分本身由 test/unit/batch-feeder.test.mjs 测，限量由
 // test/unit/progress-feed.test.mjs 的调度层用例测。
 //
-// 进度源不用桩：harness 把真的 content/page/progress-feed.js 装进同一个 vm
-// （SCHEDULER_PRELUDE），调度层每报一次账都经过它的不变量校验 —— 账记错了当场抛。
+// 进度源和账本不用桩：harness 把真的 content/page/progress-feed.js、
+// content/content-auto-ledger.js 装进同一个 vm（SCHEDULER_PRELUDE），调度层每报一次
+// 账都经过进度源的不变量校验 —— 账记错了当场抛。
 
 /** 排在 content/content-auto-translate.js 之前装进 vm 的真实文件。 */
-export const SCHEDULER_PRELUDE = Object.freeze(['content/page/progress-feed.js']);
+export const SCHEDULER_PRELUDE = Object.freeze(['content/page/progress-feed.js', 'content/content-auto-ledger.js']);
 
 /**
- * { focusOrder: { createBatchFeeder }, passConcurrency, passBatchShape }：按文档顺序
+ * { focusOrder: { createBatchFeeder }, pagePass: { concurrency, batchShape } }：按文档顺序
  * 每批 perBatch 块，并发位 concurrency（roundCap() = concurrency × 2 批）。
  */
 export function docOrderFeeder({ perBatch = Infinity, concurrency = 4 } = {}) {
   return {
     focusOrder: {
       createBatchFeeder(blocks, shape) {
-        if (!shape || shape.perBatch !== perBatch) throw new Error('docOrderFeeder: shape must come from passBatchShape');
+        if (!shape || shape.perBatch !== perBatch) throw new Error('docOrderFeeder: shape must come from pagePass.batchShape');
         const rest = [...blocks];
         return { next: () => (rest.length > 0 ? rest.splice(0, shape.perBatch) : null) };
       },
     },
-    passConcurrency: () => concurrency,
-    passBatchShape: () => ({ perBatch, maxChars: Infinity, maxTokens: Infinity }),
+    pagePass: {
+      concurrency: () => concurrency,
+      batchShape: () => ({ perBatch, maxChars: Infinity, maxTokens: Infinity }),
+    },
   };
 }

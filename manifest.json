@@ -185,6 +185,7 @@
         "content/page/progress.js",
         "content/content-page-translation.js",
         "content/content-auto-discover.js",
+        "content/content-auto-ledger.js",
         "content/content-auto-translate.js",
         "content/content-auto-status.js",
         "content/content-media-hints.js",

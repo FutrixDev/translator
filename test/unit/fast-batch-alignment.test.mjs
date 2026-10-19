@@ -310,7 +310,7 @@ test('page context on: the per-block retry of a misaligned batch carries each bl
 
 test('page context on: every chunk of an oversized block carries that block\'s neighbours', async () => {
   const sentence = 'This sentence is long enough to be one of many chunks. ';
-  const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+  const big = makeBlock(sentence.repeat(Math.ceil((ctx.pagePass.LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
   big.oversized = true;
   const blocks = [makeBlock('Before.'), big, makeBlock('After.')];
   const requests = await runPass(blocks, echo, { pageContext: true });
@@ -356,7 +356,7 @@ async function withMarks(run) {
 
 test('an oversized block with one empty chunk inserts nothing and is marked failed once, not dropped silently', async () => {
   const sentence = 'This sentence is long enough to be one of many chunks. ';
-  const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+  const big = makeBlock(sentence.repeat(Math.ceil((ctx.pagePass.LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
   big.oversized = true;
   let chunkRequests = 0;
   const marks = await withMarks(() => runPass([big], (message) => {
@@ -403,7 +403,7 @@ test('a pass-fatal failure marks no paragraph: the whole-page error says it once
   const pair = () => ['A.', 'B.'].map(makeBlock);
   const oversized = () => {
     const sentence = 'This sentence is long enough to be one of many chunks. ';
-    const big = makeBlock(sentence.repeat(Math.ceil((ctx.PAGE_LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
+    const big = makeBlock(sentence.repeat(Math.ceil((ctx.pagePass.LIMITS.MAX_BATCH_CHARS * 1.5) / sentence.length)));
     big.oversized = true;
     return [big];
   };
@@ -476,8 +476,8 @@ test('failures after the pass was stopped are neither reported nor marked (I.3)'
 test('the three-batch threshold is not an outside stop: every block that was sent and failed is marked (D-J11)', async () => {
   // 阈值停下的是「后面的批次别再发」，不是「这一页不归这一轮管了」：在飞的批次
   // 随后失败，照样放标记 —— 整页报错之下，发出去过的每一段都是一个可点的重试。
-  const perBatch = ctx.PAGE_LIMITS.MAX_BATCH_ITEMS;
-  const blocks = Array.from({ length: perBatch * (ctx.PAGE_LIMITS.CONCURRENCY.ai + 2) }, (_, i) => makeBlock(`Paragraph ${i}.`));
+  const perBatch = ctx.pagePass.LIMITS.MAX_BATCH_ITEMS;
+  const blocks = Array.from({ length: perBatch * (ctx.pagePass.LIMITS.CONCURRENCY.ai + 2) }, (_, i) => makeBlock(`Paragraph ${i}.`));
   let requests;
   const marks = await withMarks(async () => {
     globalThis.window.innerHeight = 800;

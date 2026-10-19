@@ -34,7 +34,7 @@ const SITE = 'https://priority.test';
 const COUNT = 200;
 const SECTION_PX = 800;
 const STUB_DELAY_MS = 80;
-// PAGE_LIMITS.CONCURRENCY.builtin: how many calls can already be in flight
+// pagePass.LIMITS.CONCURRENCY.builtin: how many calls can already be in flight
 // when the reader moves.
 const BUILTIN_CONCURRENCY = 4;
 

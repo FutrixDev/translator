@@ -151,7 +151,8 @@
   }
 
   // 这一轮的并发位数（CONCURRENCY）。手动那一轮的池子、自动调度层每轮的批数上限
-  // （content/content-auto-translate.js 的 roundCap）都问这一处。
+  // （content/content-auto-translate.js 的 roundCap，经 ctx.pagePass.concurrency）
+  // 都问这一处。
   function passConcurrency(auto) {
     return CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
   }
@@ -434,7 +435,7 @@
       } catch (error) {
         console.warn('Blab Translation: Language pre-check failed', error);
       }
-    }, 8, () => false);
+    }, { concurrency: 8 });
 
     return blocks.filter((_, index) => keep[index]);
   }
@@ -718,7 +719,10 @@
     };
 
     // 空出一个并发位就拉下一批；出错或外面喊停之后不再拉。
-    await ctx.focusOrder.drainFeeder(feeder, (batch) => processBatch(batch).finally(flushProgress), concurrency, aborted);
+    await ctx.focusOrder.drainFeeder(feeder, (batch) => processBatch(batch).finally(flushProgress), {
+      concurrency,
+      stopped: aborted
+    });
 
     return batchError ? { message: batchError, action: batchAction } : null;
   }
@@ -731,9 +735,11 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
-  // 自动调度层每轮挑块（content/content-auto-translate.js）按同一张引擎表定批数
-  // 上限与批的形状。
-  ctx.passConcurrency = passConcurrency;
-  ctx.passBatchShape = passBatchShape;
-  ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
+  // 一轮整页翻译的形状只此一架：并发位、批的形状、上限常数。自动调度层每轮挑块
+  // （content/content-auto-translate.js）按同一张引擎表定批数上限与批的形状。
+  const LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
+  ctx.pagePass = Object.freeze({ concurrency: passConcurrency, batchShape: passBatchShape, LIMITS });
+  // content/page/collect.js 还按旧名读 MAX_BLOCK_CHARS；那个文件归批 C，这一批不动
+  // 它。同一个冻结对象，不是第二份数。
+  ctx.PAGE_LIMITS = LIMITS;
 })();
