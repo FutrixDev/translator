@@ -64,13 +64,10 @@
   // 标记只进 data-tag，由 popup.css 的 ::after 画出来：content-popup.js 选中时把
   // item.textContent 当标签，写进文字就会跟着进标签。
   //
-  // 有最近记录时，先出「最近使用」一组（data-recent="1"），再出「全部语言」全表；全表
-  // 不剔除最近项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份
-  // 语言清单：存储里认不出的码直接不出。没有记录时输出与只有全表时逐字节相同。
-  //
-  // 画进传入的菜单根，并在根上记下有没有分组（data-grouped）：打开时停在哪由
-  // ctx.revealSelectedLanguage 读这一个标记决定，不再回头从子节点里猜。菜单根跨次
-  // 打开复用，所以没有分组时要把上次留下的标记删掉。
+  // 菜单总是两组：先「最近使用」（data-recent="1"），再「全部语言」全表；全表不剔除最近
+  // 项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份语言清单：存储里
+  // 认不出的码直接不出。一个认得出的记录都没有时，最近组只放当前语言——只是显示，不写
+  // 存储（D-743 ④），所以第一次打开就看得到这一组在哪。
   ctx.buildTargetLangMenu = function(menu, selectedLang) {
     const normalized = ctx.normalizeTargetLang(selectedLang);
     const bt = ctx.builtinTranslator;
@@ -86,21 +83,17 @@
     };
     const options = TargetLang.options(ctx.uiLanguage());
     const all = options.map((option) => item(option, false)).join('');
-    const recent = recentPref.get()
+    const known = (codes) => codes
       .map((code) => options.find((option) => option.value === code))
       .filter(Boolean);
-    if (!recent.length) {
-      menu.innerHTML = all;
-      delete menu.dataset.grouped;
-      return;
-    }
+    const stored = known(recentPref.get());
+    const recent = stored.length ? stored : known([normalized]);
     const group = (key) =>
       `<div class="ai-translator-lang-group" role="presentation">${ctx.escapeHtml(ctx.t(key))}</div>`;
     menu.innerHTML = group('langRecent')
       + recent.map((option) => item(option, true)).join('')
       + group('langAll')
       + all;
-    menu.dataset.grouped = '1';
   };
 
   // 我们放进页面的每一段文字都带上自己的 lang / dir（TargetLang.mark）：译文常常挂在
@@ -134,23 +127,12 @@
     }
   };
 
-  // 菜单刚打开时停在哪：有「最近使用」一组（ctx.buildTargetLangMenu 记下的
-  // data-grouped）就停在顶部，让这一组露出来（D-545）。
-  // 当前语言不一定在组里：卡片的默认语从不经点选，设置里也可能换了默认语。为了把
+  // 菜单刚打开时停在顶部，让「最近使用」一组露出来（D-545）；菜单总有这一组
+  // （ctx.buildTargetLangMenu）。当前语言不一定在组里：设置里可能换了默认语。为了把
   // 全表里的选中项滚到中部而把这组推出视口，就违背了置顶的本意；当前语言已经写在
   // 触发按钮上。菜单节点跨次打开复用，不赌重画后滚动位置自己归零，明确写 0。
-  // 没有最近组时，76 项里的已选项多半在视口外，把它放到可见区中部。只动菜单自己的
-  // scrollTop；不用 scrollIntoView，那会连宿主页面一起滚。
   ctx.revealSelectedLanguage = function(menu) {
-    if (menu.dataset.grouped) {
-      menu.scrollTop = 0;
-      return;
-    }
-    const item = menu.querySelector('.is-selected');
-    if (!item) return;
-    const menuTop = menu.getBoundingClientRect().top + menu.clientTop;
-    const itemRect = item.getBoundingClientRect();
-    menu.scrollTop += itemRect.top - menuTop - (menu.clientHeight - itemRect.height) / 2;
+    menu.scrollTop = 0;
   };
 
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里是转手，不是副本。
