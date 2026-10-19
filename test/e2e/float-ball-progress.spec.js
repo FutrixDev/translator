@@ -740,7 +740,8 @@ test.describe('float ball progress ring', () => {
   test('route change with auto translation off: the held amber ring goes to idle in the first write after it', async ({ page, context }) => {
     test.setTimeout(90000);
     mock = await startMockOpenAIServer({ failWhen: (text) => text.includes(BROKEN), failStatus: 400 });
-    // Off: no auto session to turn over, so only the route signal itself can take the ring down.
+    // Off: the scheduler still turns its session over on the route change, but a held manual ring
+    // outlives a session bump, so only the route signal itself can take it down.
     await heldPartial(page, context, { autoTranslate: false });
     const before = await feedState(context, page);
     const since = await evaluateInContentScript(context, page, `(() => {
@@ -760,6 +761,39 @@ test.describe('float ball progress ring', () => {
       type: 'route, auto off',
       description: `feed ${before.source}/${before.phase} s${before.session} -> ${after[0].feed.source}/${after[0].feed.phase} s${after[0].feed.session}`,
     });
+  });
+
+  test('route change mid manual round: a ball rebuilt from the left page\'s snapshot stays idle', async ({ page, context }) => {
+    test.setTimeout(90000);
+    // The answer is slow, so the round is still in flight after the route change. While it is,
+    // the feed keeps showing its snapshot: the scheduler's new session does not reach the screen.
+    mock = await startMockOpenAIServer({ delayMs: 8000 });
+    await serve(context);
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await page.goto(`${ORIGIN}/one`);
+    await waitForContentReady(page);
+    await clickBall(page);
+    await expect.poll(async () => (await feedState(context, page)).source, { timeout: 5000 }).toBe('manual');
+    const left = await feedState(context, page);
+    await page.evaluate(() => history.pushState({}, '', '/one?page=2'));
+    await expect(ring(page)).toHaveAttribute('data-phase', 'idle', { timeout: 5000 });
+    expect(await feedState(context, page), 'the feed still holds the left page\'s snapshot').toEqual(left);
+
+    await page.evaluate(() => {
+      window.__oldBall = document.getElementById('ai-translator-float-ball');
+      window.__oldBall.remove();
+    });
+    await expect.poll(() => page.evaluate(() => {
+      const ball = document.getElementById('ai-translator-float-ball');
+      return !!ball && ball !== window.__oldBall;
+    }), { timeout: 5000 }).toBe(true);
+    // Read once, not polled: a polled assertion would outwait the answer and pass on the round's own end.
+    const rebuilt = await page.evaluate(() => {
+      const ball = document.getElementById('ai-translator-float-ball');
+      return { phase: ball.querySelector('svg.ai-translator-ring').dataset.phase, title: ball.getAttribute('title') || '' };
+    });
+    expect(await feedState(context, page), 'rebuilt before the answer came back').toEqual(left);
+    expect(rebuilt).toEqual({ phase: 'idle', title: '' });
   });
 
   test('a language-pack bar the user closes is not built again for the rest of that round', async ({ page, context }) => {
