@@ -326,17 +326,27 @@ test.describe('float ball progress ring', () => {
     expect([...new Set(held.map((f) => `${f.phase}/${f.display}`))]).toEqual(['partial/block']);
 
     // The ring takes no events: its track overhangs the 36 px ball by 4 px, and
-    // a click on that band, while the ring is on screen, belongs to the page.
-    const ball = await page.locator('#ai-translator-float-ball').boundingBox();
+    // a press on that band, while the ring is on screen, belongs to the page.
+    // Asked of a resting ball. Hovered, the ball grows to scale(1.1), 19.8 px
+    // across the middle of the track, and a press there is a press on the ball:
+    // it shrinks to scale(1.02) under the button, the release lands on the page,
+    // and that release restores the page (content-float-ball.js decides on
+    // mousedown). clickBall left the pointer on the ball, so move it off first.
+    const ballBox = () => page.locator('#ai-translator-float-ball').boundingBox();
+    await page.mouse.move(5, 5);
+    await expect.poll(async () => (await ballBox()).width).toBe(36);
+    const ball = await ballBox();
     const band = { x: ball.x + ball.width / 2 - 19.5, y: ball.y + ball.height / 2 };
     await page.evaluate(() => {
-      window.__bandClicks = [];
-      document.addEventListener('click', (e) => {
-        window.__bandClicks.push(e.target.closest('#ai-translator-float-ball') ? 'ball' : 'page');
-      }, true);
+      window.__bandPresses = [];
+      const record = (e) => {
+        window.__bandPresses.push(`${e.type}:${e.target.closest('#ai-translator-float-ball') ? 'ball' : 'page'}`);
+      };
+      document.addEventListener('mousedown', record, true);
+      document.addEventListener('click', record, true);
     });
     await page.mouse.click(band.x, band.y);
-    expect(await page.evaluate(() => window.__bandClicks)).toEqual(['page']);
+    expect(await page.evaluate(() => window.__bandPresses)).toEqual(['mousedown:page', 'click:page']);
     await expect(ring(page)).toHaveAttribute('data-phase', 'partial');
   });
 
