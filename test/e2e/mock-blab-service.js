@@ -6,8 +6,9 @@
  *   GET  /api/billing/me      the account, with `blabTranslation` in one of its
  *                             two shapes (§2.2): {available, limit, used,
  *                             resetsAt} or {available:false}
- *   POST /api/blab/complete   {system, user, maxTokens, temperature?} ->
- *                             200 {text, usage} or {error, ...} (§2.1)
+ *   POST /api/blab/complete   {system, user, maxTokens, temperature?, image?} ->
+ *                             200 {text, usage} or {error, ...} (§2.1); with
+ *                             an image (D-740) the text reads it as OCR_TEXT
  *   GET  /ext/connect         the sign-in bounce (serveExtConnect), counted in
  *                             `state.connects` and held `state.connectDelayMs`
  *                             before it answers (a test may change both)
@@ -35,6 +36,8 @@ const { answerPrompt } = require('./mock-openai-server');
 require('../../shared/dict-entry.js');
 
 const RESETS_AT = '2099-01-02T00:00:00.000Z';
+// What every image sent with /api/blab/complete is read as.
+const OCR_TEXT = 'HELLO WORLD';
 const quota = { limit: 40, used: 0, remaining: 40, applied: false, resetsAt: '2099-02-01T00:00:00.000Z' };
 
 /**
@@ -99,7 +102,11 @@ async function startMockBlabService({
         if (state.mode === 'daily_limit') {
           return send(429, { error: 'daily_limit', limit, used: limit, resetsAt: RESETS_AT });
         }
-        const { text } = answerPrompt(body.system, body.user, dictEntry);
+        // An image (OCR step 1) is answered in shared/ocr.js's JSON contract,
+        // like mock-openai-server.js's vision branch; the prompts are not echoed.
+        const { text } = body.image
+          ? { text: JSON.stringify({ text: OCR_TEXT, language: 'en' }) }
+          : answerPrompt(body.system, body.user, dictEntry);
         state.used += Math.ceil((body.system.length + body.user.length + text.length) / 4);
         return send(200, {
           text,
@@ -115,4 +122,4 @@ async function startMockBlabService({
   return { base: origin, state, close, RESETS_AT };
 }
 
-module.exports = { startMockBlabService };
+module.exports = { startMockBlabService, OCR_TEXT };

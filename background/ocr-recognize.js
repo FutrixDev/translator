@@ -10,6 +10,7 @@ import { defaultSettings, uiLanguageOf } from './settings.js';
 import { callModel } from './model-client.js';
 import { missingApiKeyMessage, replyError } from './api-errors.js';
 import { profileFor } from './ai-profiles-host.js';
+import { beforeModelRequest } from './blab-client.js';
 
 // ---------------------------------------------------------------------------
 // Image OCR, step 1: recognition. Two engines — Tesseract in the offscreen
@@ -101,6 +102,12 @@ async function fetchImageForOcr(srcUrl, uiLang, crop) {
   let out = await canvas.convertToBlob({ type: 'image/png' });
   if (out.size > OCR_MAX_BYTES) {
     out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  }
+  // The canvas is at most OCR_MAX_DIMENSION square, where JPEG 0.85 lands far
+  // below the cap even for noise. Over it anyway is a broken assumption, said
+  // here rather than as the service's bare 413.
+  if (out.size > OCR_MAX_BYTES) {
+    throw new Error(`OCR image is ${out.size} bytes after re-encoding (cap ${OCR_MAX_BYTES})`);
   }
   return { base64: arrayBufferToBase64(await out.arrayBuffer()), mediaType: out.type };
 }
@@ -236,6 +243,8 @@ async function recognizeWithVision({ srcUrl, crop }, profile, settings, uiLang) 
   // 重试与限速照默认走：用户在等的是这一次的识别结果，一次 429 / 5xx 就报错
   // 不如由 callModel 再试两次；它也是这一档的请求，占这一档的名额。测试连接不同，
   // 它要的是「通不通」（ai-profiles-host.js 关掉了两样）。
+  // A recognition is always someone's click, so a plan bought since releases the latch.
+  await beforeModelRequest(profile, false);
   const { text: content } = await callModel(profile, visionRequest(profile, mediaType, base64));
 
   const parsed = globalThis.OCRCore.parseOcrResponse(content);

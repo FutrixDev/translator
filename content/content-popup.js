@@ -554,8 +554,9 @@
    */
   //
   // `action` 是 Blab 账户错误带来的入口（'subscribe' | 'signin'，D-490 N2），画在
-  // 错误句下面（ctx.accountActionButton）；登录成功就用这张卡当前的原文和语言重译。
-  function showCardError(popup, message, action = null) {
+  // 错误句下面（ctx.accountActionButton）；登录成功就重跑出错的那次请求：默认用这张
+  // 卡当前的原文和语言重译，原文不在卡上的请求（识图）传自己的 `retry`。
+  function showCardError(popup, message, action = null, retry = null) {
     const parts = cardParts(popup);
     setCardLoading(parts, false);
     if (parts.text) parts.text.textContent = '';
@@ -566,7 +567,8 @@
       className: 'ai-translator-btn ai-translator-btn-primary ai-translator-account-action',
       onSignedIn: () => {
         if (state.translationPopup !== popup) return;
-        translateText(popup.dataset.sourceText || '', popup.dataset.targetLang || '');
+        if (retry) retry();
+        else translateText(popup.dataset.sourceText || '', popup.dataset.targetLang || '');
       }
     });
     if (entry) {
