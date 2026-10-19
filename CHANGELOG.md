@@ -29,6 +29,25 @@
   page to translate it" with a **Reload** button, reloads the tab and asks
   again. In all fifteen languages.
 
+### Image OCR
+
+- **Blab Translation can read images, for subscribers.** The OCR engine
+  setting gains a third choice beside the on-device engine and your own vision
+  model: Blab Translation, for a signed-in account with a paid plan. The image
+  is sent to Blab's servers (`/api/blab/complete`, as `{mime, base64}` beside
+  the same recognition prompt the vision engine uses) and counts toward the
+  same daily token allowance as Blab translation. The settings page says so
+  under the select, and offers sign-in or a subscription when either is
+  missing. A refusal is shown as itself: "plan required" offers the
+  subscription, "can't read images right now" says to choose another engine;
+  no other engine is tried behind your back.
+- **An image is checked before it is sent, not after it is refused.** Its
+  format is read off its bytes, not the server's label (a WebP served as
+  `image/jpeg` is sent as WebP), and one over 3.75 MiB or 8000 px on its
+  longest side, or in a format other than PNG, JPEG, WebP or GIF, is
+  re-encoded first. The 3.75 MiB cap also applies to the vision engine (it
+  was 4 MB).
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site

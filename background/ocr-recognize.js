@@ -3,6 +3,7 @@
 // 第二步（把认出来的字译过去）不在这里，在内容脚本里，走的是普通翻译那条路。
 
 import '../shared/ocr.js';
+import '../shared/engines.js';
 import '../shared/api-compat.js';
 import '../i18n/messages.js';
 import { defaultSettings, uiLanguageOf } from './settings.js';
@@ -36,20 +37,23 @@ function arrayBufferToBase64(buffer) {
 }
 
 /**
- * Fetch the image and get it into a shape both engines accept.
+ * Fetch the image and get it into a shape every engine accepts.
  *
  * Fetched from the worker, not the page: host_permissions cover <all_urls>, the
  * request carries the user's cookies (hotlink-guarded CDNs), and a page CSP
- * cannot block it. Bytes already in an accepted format under the size cap pass
- * through untouched; anything else (SVG, BMP, oversized) is decoded and
- * re-encoded via OffscreenCanvas, downscaled to OCR_MAX_DIMENSION.
+ * cannot block it. Bytes whose sniffed format is accepted, under the byte cap
+ * and the longest-edge cap, pass through untouched, labelled with the sniffed
+ * type; anything else (SVG, BMP, oversized, a 720×16000 webtoon strip) is
+ * decoded and re-encoded via OffscreenCanvas, downscaled to OCR_MAX_DIMENSION.
+ * Checked here, before sending, because the vision APIs and Blab refuse an
+ * image past either cap or labelled with a type its bytes are not (D-740).
  *
  * The limits are the vision APIs', and the local engine inherits them rather
  * than getting its own pass: Tesseract has no size cap of its own, but it is
  * also slow enough on a 6000px scan that the downscale is a favour.
  */
 async function fetchImageForOcr(srcUrl, uiLang, crop) {
-  const { canSendImageDirectly, cropSourceRect, computeOcrCanvasSize, OCR_MAX_BYTES } = globalThis.OCRCore;
+  const { canSendImageDirectly, sniffImageType, cropSourceRect, computeOcrCanvasSize, OCR_MAX_BYTES } = globalThis.OCRCore;
 
   let response;
   try {
@@ -62,12 +66,6 @@ async function fetchImageForOcr(srcUrl, uiLang, crop) {
   }
   const blob = await response.blob();
 
-  // The fast path is only fast because nothing is decoded, so it cannot apply
-  // to a crop: cropping is a source rectangle on a decoded bitmap.
-  if (!crop && canSendImageDirectly(blob.type, blob.size)) {
-    return { base64: arrayBufferToBase64(await blob.arrayBuffer()), mediaType: blob.type };
-  }
-
   let bitmap;
   try {
     bitmap = await createImageBitmap(blob);
@@ -75,6 +73,18 @@ async function fetchImageForOcr(srcUrl, uiLang, crop) {
     // SVG being the common case: workers cannot rasterize it.
     throw new Error(getMessage('ocrImageUnsupported', uiLang));
   }
+
+  // The fast path is only fast because nothing is re-encoded, so it cannot
+  // apply to a crop: cropping is a source rectangle on a decoded bitmap.
+  if (!crop) {
+    const bytes = await blob.arrayBuffer();
+    const mediaType = sniffImageType(new Uint8Array(bytes, 0, Math.min(16, bytes.byteLength)));
+    if (canSendImageDirectly({ mediaType, byteLength: bytes.byteLength, width: bitmap.width, height: bitmap.height })) {
+      bitmap.close();
+      return { base64: arrayBufferToBase64(bytes), mediaType };
+    }
+  }
+
   // The crop arrives as fractions of the image — the only thing the page and
   // the worker can agree on, since the two may not even be holding the same
   // resolution (srcset). A crop the page drew but this side cannot use comes
@@ -193,27 +203,40 @@ async function recognizeLocally({ srcUrl, crop, requestId, tabId, frameId }, set
   };
 }
 
-/** Recognise with the user's own vision model: the profile resolved for 'ocr'. */
+/**
+ * The vision request for this profile. Blab Translation takes the image beside
+ * the prompt turns as `{mime, base64}` and builds the multimodal message itself
+ * (D-740), with no temperature (D-482: the gateway picks its own); the user's
+ * own profile gets the provider's multimodal content and api-compat's default.
+ */
+function visionRequest(profile, mediaType, base64) {
+  const instruction = globalThis.OCRCore.OCR_USER_INSTRUCTION;
+  const common = { system: globalThis.OCRCore.OCR_SYSTEM_PROMPT, maxTokens: 4000 };
+  if (globalThis.Engines.isBlabProfile(profile)) {
+    return { ...common, user: instruction, image: { mime: mediaType, base64 } };
+  }
+  const APICompat = globalThis.APICompat;
+  const user = APICompat.isClaudeAPI(profile.apiEndpoint)
+    ? APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64)
+    : APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64);
+  return { ...common, user, temperature: APICompat.DEFAULT_TEMPERATURE };
+}
+
+/**
+ * Recognise with a vision model: the profile resolved for 'ocr' (the user's
+ * own), or Engines.BLAB_PROFILE. One recognition, two transports — callModel
+ * picks the transport by profile, this picks the request's shape.
+ */
 async function recognizeWithVision({ srcUrl, crop }, profile, settings, uiLang) {
   const missingKey = missingApiKeyMessage(profile, settings);
   if (missingKey) {
     throw new Error(missingKey);
   }
   const { base64, mediaType } = await fetchImageForOcr(srcUrl, uiLang, crop);
-  const instruction = globalThis.OCRCore.OCR_USER_INSTRUCTION;
-  const APICompat = globalThis.APICompat;
-  const user = APICompat.isClaudeAPI(profile.apiEndpoint)
-    ? APICompat.buildClaudeVisionUserContent(instruction, mediaType, base64)
-    : APICompat.buildOpenAIVisionUserContent(instruction, mediaType, base64);
   // 重试与限速照默认走：用户在等的是这一次的识别结果，一次 429 / 5xx 就报错
   // 不如由 callModel 再试两次；它也是这一档的请求，占这一档的名额。测试连接不同，
   // 它要的是「通不通」（ai-profiles-host.js 关掉了两样）。
-  const { text: content } = await callModel(profile, {
-    system: globalThis.OCRCore.OCR_SYSTEM_PROMPT,
-    user,
-    maxTokens: 4000,
-    temperature: APICompat.DEFAULT_TEMPERATURE,
-  });
+  const { text: content } = await callModel(profile, visionRequest(profile, mediaType, base64));
 
   const parsed = globalThis.OCRCore.parseOcrResponse(content);
   // null means the reply was JSON that broke (token cap, mangled quoting);
@@ -250,12 +273,16 @@ async function handleOcrImage(message, sender) {
     frameId: sender && typeof sender.frameId === 'number' ? sender.frameId : 0
   };
 
-  // Only the vision engine has a profile (resolved here: site rules do not
-  // apply to OCR); the local engine's failures are logged without one.
+  // Only the vision engines have a profile (resolved here: site rules do not
+  // apply to OCR); the local engine's failures are logged without one. An
+  // engine this build does not know is the default's, as the settings page
+  // draws it.
   let profile;
   try {
-    if (settings.ocrEngine !== 'vision') return await recognizeLocally(request, settings, uiLang);
-    profile = await profileFor('ocr');
+    const engine = globalThis.OCRCore.OCR_ENGINES.includes(settings.ocrEngine)
+      ? settings.ocrEngine : globalThis.OCRCore.DEFAULT_OCR_ENGINE;
+    if (engine === 'local') return await recognizeLocally(request, settings, uiLang);
+    profile = engine === 'blab' ? globalThis.Engines.BLAB_PROFILE : await profileFor('ocr');
     return await recognizeWithVision(request, profile, settings, uiLang);
   } catch (error) {
     return replyError('OCR', error, { settings, profile, feature: 'ocr' });

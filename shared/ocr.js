@@ -33,10 +33,14 @@
   //            (sub-second on clean images), weaker on photos and stylised type.
   // 'vision' — the user's own vision model. Costs money and takes seconds, but
   //            reads images the local engine cannot.
+  // 'blab'   — the same vision recognition sent through Blab Translation, the
+  //            signed-in subscriber's /api/blab/complete (D-740): no key of
+  //            their own, metered against the account's daily allowance.
   //
   // The default is the free one, for the same reason translationEngine defaults
   // to 'builtin'. Both the service worker and the options page read it from
   // here rather than each writing 'local' into their own defaults.
+  const OCR_ENGINES = Object.freeze(['local', 'vision', 'blab']);
   const DEFAULT_OCR_ENGINE = 'local';
 
   // --- Image encoding limits -------------------------------------------------
@@ -46,18 +50,44 @@
   // be re-encoded before upload.
   const OCR_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
-  // Anthropic caps a single image at 5MB of decoded base64; staying under 4MB
-  // of raw bytes keeps the ~4/3 base64 inflation inside that. OpenAI's cap is
-  // higher, so the narrowest bound is the shared one.
-  const OCR_MAX_BYTES = 4 * 1024 * 1024;
+  // Anthropic caps a single image at 5 MiB of base64, which is exactly 3.75 MiB
+  // of raw bytes; Blab's /api/blab/complete enforces the same bound (D-740), and
+  // OpenAI's cap is higher, so the narrowest bound is the shared one.
+  const OCR_MAX_BYTES = 3.75 * 1024 * 1024;
+
+  // Anthropic's hard limit on an image's longest edge, also enforced by Blab.
+  // Only the untouched fast path can get near it: a re-encoded image is already
+  // down to OCR_MAX_DIMENSION.
+  const OCR_MAX_SEND_DIMENSION = 8000;
 
   // Vision models tile large images and read small text worse past ~2k pixels
   // on the long edge, so a bigger upload costs more and reads no better.
   const OCR_MAX_DIMENSION = 2048;
 
-  /** Can these bytes be sent to the API untouched, or must they be re-encoded? */
-  function canSendImageDirectly(mediaType, byteLength) {
-    return OCR_MEDIA_TYPES.includes(mediaType) && byteLength <= OCR_MAX_BYTES;
+  /**
+   * The format these bytes actually are, read off their magic numbers, or null
+   * for anything outside OCR_MEDIA_TYPES. The response's Content-Type is not
+   * asked: CDNs label webp as jpeg (and anything as octet-stream), and a vision
+   * API — Blab's included — refuses a declared type that disagrees with the
+   * bytes. `bytes` is a Uint8Array of at least the first 12 bytes.
+   */
+  function sniffImageType(bytes) {
+    const at = (offset, ascii) => [...ascii].every((ch, i) => bytes[offset + i] === ch.charCodeAt(0));
+    if (bytes[0] === 0x89 && at(1, 'PNG\r\n\x1a\n')) return 'image/png';
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (at(0, 'GIF87a') || at(0, 'GIF89a')) return 'image/gif';
+    if (at(0, 'RIFF') && at(8, 'WEBP')) return 'image/webp';
+    return null;
+  }
+
+  /**
+   * Can these bytes be sent to the API untouched, or must they be re-encoded?
+   * `mediaType` is the sniffed one (sniffImageType), never a Content-Type.
+   */
+  function canSendImageDirectly({ mediaType, byteLength, width, height }) {
+    return OCR_MEDIA_TYPES.includes(mediaType)
+      && byteLength <= OCR_MAX_BYTES
+      && Math.max(width, height) <= OCR_MAX_SEND_DIMENSION;
   }
 
   // --- Region crop -----------------------------------------------------------
@@ -679,6 +709,9 @@ Rules:
     DEFAULT_OCR_ENGINE,
     OCR_MEDIA_TYPES,
     OCR_MAX_BYTES,
+    OCR_MAX_SEND_DIMENSION,
+    OCR_ENGINES,
+    sniffImageType,
     OCR_MAX_DIMENSION,
     OCR_MIN_DIMENSION,
     OCR_LANGUAGES,

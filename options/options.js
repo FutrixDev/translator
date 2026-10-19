@@ -232,7 +232,7 @@ async function loadSettings() {
     syncAutoSubState();
     syncAutoEngineState();
     elements.enableImageOcrTranslation.checked = result.enableImageOcrTranslation !== false;
-    elements.ocrEngine.value = result.ocrEngine === 'vision' ? 'vision' : OCRCore.DEFAULT_OCR_ENGINE;
+    elements.ocrEngine.value = OCRCore.OCR_ENGINES.includes(result.ocrEngine) ? result.ocrEngine : OCRCore.DEFAULT_OCR_ENGINE;
     // Default-on, so only a stored false turns it off.
     elements.enableImageOcrHoverButton.checked = result.enableImageOcrHoverButton !== false;
     syncOcrSubState();

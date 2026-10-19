@@ -62,12 +62,16 @@ function fakeSelect(value) {
 }
 
 /**
- * Load options-blab.js with both selects at the given values. `reply` is what
+ * Load options-blab.js with the three engine selects at the given values. `reply` is what
  * the worker answers a message the card sends itself, or, as a function, what
  * sendMessage does instead (to reject).
  */
-function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } } = {}) {
-  const notes = { translationEngineBlabNote: fakeElement('div'), autoTranslateEngineBlabNote: fakeElement('div') };
+function loadCard({ manual = 'builtin', auto = 'builtin', ocr = 'local', reply = { ok: true } } = {}) {
+  const notes = {
+    translationEngineBlabNote: fakeElement('div'),
+    autoTranslateEngineBlabNote: fakeElement('div'),
+    ocrEngineBlabNote: fakeElement('div'),
+  };
   const signIns = [];
   const sent = [];
   const statuses = [];
@@ -78,7 +82,7 @@ function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } }
     currentUILang: 'en',
     comicSignedIn: null,
     accountSiteBase: 'https://blab.test',
-    elements: { translationEngine: fakeSelect(manual), autoTranslateEngine: fakeSelect(auto) },
+    elements: { translationEngine: fakeSelect(manual), autoTranslateEngine: fakeSelect(auto), ocrEngine: fakeSelect(ocr) },
     document: { getElementById: (id) => notes[id], createElement: fakeElement },
     t: en,
     signInWith: (message) => { signIns.push(message); return Promise.resolve(true); },
@@ -98,6 +102,7 @@ function loadCard({ manual = 'builtin', auto = 'builtin', reply = { ok: true } }
   sandbox.setupBlabEngine();
   return {
     sandbox, notes, signIns, sent, statuses, errors, manual: notes.translationEngineBlabNote, auto: notes.autoTranslateEngineBlabNote,
+    ocr: notes.ocrEngineBlabNote,
   };
 }
 
@@ -208,6 +213,25 @@ test('options blab: available enables the option; the note shows only under a se
   assert.equal(card.manual.hidden, false, 'choosing Blab redraws its note');
 });
 
+test('options blab: the OCR select gets the same Blab option, and its note says the image is what is sent', () => {
+  const card = loadCard({ ocr: 'blab' });
+  card.sandbox.comicSignedIn = false;
+  card.sandbox.renderBlabEngine();
+  assert.equal(card.sandbox.elements.ocrEngine.blabOption.disabled, true, 'signed out: not selectable');
+  assert.deepEqual(texts(card.ocr), [en('blabNoteSelectedUnavailable'), en('blabNoteSignedOut')]);
+
+  draw(card, AVAILABLE);
+  assert.equal(card.sandbox.elements.ocrEngine.blabOption.disabled, false);
+  const [line] = texts(card.ocr);
+  assert.equal(line, en('blabNoteOcrAvailable').replace('{limit}', '1,000,000').replace('{used}', '12,345'));
+  assert.notEqual(en('blabNoteOcrAvailable'), en('blabNoteAvailable'), 'an image, not text, is what leaves');
+  assert.equal(card.manual.hidden, true, 'the translation selects are untouched');
+
+  card.sandbox.elements.ocrEngine.value = 'local';
+  card.sandbox.elements.ocrEngine.dispatch('change');
+  assert.equal(card.ocr.hidden, true, 'leaving Blab folds its note');
+});
+
 // D-564: the service meters the daily allowance in provider-reported tokens, so
 // billing/me's limit/used are tokens. A locale that still says characters would
 // put the server's token count next to the wrong unit.
@@ -218,10 +242,12 @@ test('options blab: every locale words the daily allowance in tokens, with both 
   assert.deepEqual(Object.keys(unit).sort(), [...globalThis.UI_LANGUAGES].sort());
   for (const lang of globalThis.UI_LANGUAGES) {
     await import(`../../i18n/lang/${lang}.js`);
-    const text = globalThis.I18N_MESSAGES[lang].blabNoteAvailable;
-    assert.ok(text.includes('{limit}') && text.includes('{used}'), `${lang}: ${text}`);
-    assert.ok(text.includes(unit[lang]), `${lang}: ${text}`);
-    assert.ok(!/characters|Zeichen|caract[eè]res|символ|\{limit\} ?文?字|\{limit\}자|حرف|أحرف|karakter|ký tự|caratteri/.test(text), `${lang}: ${text}`);
+    for (const key of ['blabNoteAvailable', 'blabNoteOcrAvailable']) {
+      const text = globalThis.I18N_MESSAGES[lang][key];
+      assert.ok(text.includes('{limit}') && text.includes('{used}'), `${lang} ${key}: ${text}`);
+      assert.ok(text.includes(unit[lang]), `${lang} ${key}: ${text}`);
+      assert.ok(!/characters|Zeichen|caract[eè]res|символ|\{limit\} ?文?字|\{limit\}자|حرف|أحرف|karakter|ký tự|caratteri/.test(text), `${lang} ${key}: ${text}`);
+    }
   }
 });
 
@@ -252,6 +278,7 @@ test('options blab: the card is wired into the account card, the page load and t
     'the page-open read skips the 30s cache (design §5.4)');
   assert.match(source, /setupBlabEngine\(\);/);
   assert.match(source, /translationEngine: \(\) => \{[^}]*renderBlabEngine\(\);/);
+  assert.match(source, /ocrEngine: \(\) => renderBlabEngine\(\),/);
   assert.match(repoSource('options/options.html'), /<script src="options-blab\.js"><\/script>/);
 });
 
@@ -284,6 +311,7 @@ test('options blab: the engine hint in every language says Blab sends text to Bl
   assert.deepEqual(langs.slice().sort(), [...globalThis.UI_LANGUAGES].sort());
   for (const lang of langs) {
     assert.match(catalog[lang].hintTranslationEngine, /Blab Translation/, lang);
+    assert.match(catalog[lang].hintOcrEngine, /Blab Translation/, lang);
     assert.doesNotMatch(catalog[lang].customRuleProfileWithBuiltin, /built-in|integriert|integrado|intégré|内蔵|기본 제공|встроенн|内置|內建/i, lang);
   }
 });

@@ -29,6 +29,7 @@ const SYNC_MIRROR_DERIVED = {
   selectionTrigger: () => syncSelectionControls(),
   enableHoverTranslation: () => syncInlineSettingState(),
   enableImageOcrTranslation: () => syncOcrSubState(),
+  ocrEngine: () => renderBlabEngine(),
   autoTranslate: () => { syncAutoSubState(); syncYoutubeSubState(); },
   captionDisplayMode: () => updateCaptionPreview(),
   captionTranslationPosition: () => updateCaptionPreview(),

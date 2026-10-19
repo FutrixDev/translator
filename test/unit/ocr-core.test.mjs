@@ -604,17 +604,41 @@ test('the OCR popup names the language through ctx.languageName, not a key table
 
 // --- Encoding limits ---------------------------------------------------------
 
+const sendable = (over = {}) => ({ mediaType: 'image/png', byteLength: 1024, width: 800, height: 600, ...over });
+
 test('pass-through covers exactly the formats every vision API accepts', () => {
-  for (const type of ['image/jpeg', 'image/png', 'image/webp', 'image/gif']) {
-    assert.ok(OCR.canSendImageDirectly(type, 1024), `${type} should pass through`);
+  for (const mediaType of ['image/jpeg', 'image/png', 'image/webp', 'image/gif']) {
+    assert.ok(OCR.canSendImageDirectly(sendable({ mediaType })), `${mediaType} should pass through`);
   }
-  assert.ok(!OCR.canSendImageDirectly('image/svg+xml', 1024), 'SVG must be re-encoded');
-  assert.ok(!OCR.canSendImageDirectly('image/bmp', 1024), 'BMP must be re-encoded');
+  assert.ok(!OCR.canSendImageDirectly(sendable({ mediaType: 'image/svg+xml' })), 'SVG must be re-encoded');
+  assert.ok(!OCR.canSendImageDirectly(sendable({ mediaType: 'image/bmp' })), 'BMP must be re-encoded');
+  assert.ok(!OCR.canSendImageDirectly(sendable({ mediaType: null })), 'unrecognised bytes must be re-encoded');
 });
 
-test('the byte cap is inclusive at the limit and rejects one byte past it', () => {
-  assert.ok(OCR.canSendImageDirectly('image/png', OCR.OCR_MAX_BYTES));
-  assert.ok(!OCR.canSendImageDirectly('image/png', OCR.OCR_MAX_BYTES + 1));
+test('the byte cap is 3.75 MiB, inclusive at the limit and rejects one byte past it', () => {
+  assert.equal(OCR.OCR_MAX_BYTES, 3932160, 'the D-740 bound on /api/blab/complete');
+  assert.ok(OCR.canSendImageDirectly(sendable({ byteLength: OCR.OCR_MAX_BYTES })));
+  assert.ok(!OCR.canSendImageDirectly(sendable({ byteLength: OCR.OCR_MAX_BYTES + 1 })));
+});
+
+test('the longest-edge cap is 8000 px on either side, inclusive', () => {
+  assert.equal(OCR.OCR_MAX_SEND_DIMENSION, 8000);
+  assert.ok(OCR.canSendImageDirectly(sendable({ width: 8000, height: 10 })));
+  assert.ok(!OCR.canSendImageDirectly(sendable({ width: 8001, height: 10 })));
+  assert.ok(!OCR.canSendImageDirectly(sendable({ width: 10, height: 8001 })));
+});
+
+test('the media type is read off the bytes, not the label', () => {
+  const bytes = (...parts) => Uint8Array.from(parts.flatMap((p) => (typeof p === 'string' ? [...p].map((c) => c.charCodeAt(0)) : p)));
+  assert.equal(OCR.sniffImageType(bytes([0x89], 'PNG\r\n\x1a\n', [0, 0, 0, 0])), 'image/png');
+  assert.equal(OCR.sniffImageType(bytes([0xff, 0xd8, 0xff, 0xe0], [0, 0, 0, 0, 0, 0, 0, 0])), 'image/jpeg');
+  assert.equal(OCR.sniffImageType(bytes('GIF87a', [0, 0, 0, 0, 0, 0])), 'image/gif');
+  assert.equal(OCR.sniffImageType(bytes('GIF89a', [0, 0, 0, 0, 0, 0])), 'image/gif');
+  assert.equal(OCR.sniffImageType(bytes('RIFF', [1, 2, 3, 4], 'WEBP')), 'image/webp');
+  assert.equal(OCR.sniffImageType(bytes('RIFF', [1, 2, 3, 4], 'WAVE')), null, 'a RIFF that is not WebP');
+  assert.equal(OCR.sniffImageType(bytes('<svg xmlns="http')), null);
+  assert.equal(OCR.sniffImageType(bytes('BM', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])), null);
+  assert.equal(OCR.sniffImageType(new Uint8Array(0)), null, 'an empty body');
 });
 
 // --- Prompt ------------------------------------------------------------------

@@ -20,7 +20,8 @@
 //                                 account's state, which another try in a second
 //                                 does not change (design §5.2); daily_limit
 //                                 carries the server's resetsAt
-//   - anything else (400, 413)    { status, blab: code }        — not retried
+//   - anything else (400, 413,    { status, blab: code }        — not retried
+//     422 vision_unavailable)
 // Nothing here logs: apiFetch warns once per non-ok reply (its existing line)
 // and replyError logs the failure where the handler catches it.
 //
@@ -211,11 +212,14 @@ async function askAccount() {
 /**
  * The request body for one call (design §2.1). `temperature` is sent only when
  * the caller gave one (D-482): without it the gateway picks its default, which
- * is not api-compat's DEFAULT_TEMPERATURE.
+ * is not api-compat's DEFAULT_TEMPERATURE. `image` ({mime, base64}: bare,
+ * padded base64 of bytes whose sniffed format is `mime`) only from the OCR
+ * engine (D-740); the service puts it before `user` in one turn.
  */
-function blabRequest({ system, user, maxTokens, temperature }) {
+function blabRequest({ system, user, maxTokens, temperature, image }) {
   const body = { system: system || '', user, maxTokens };
   if (temperature !== undefined) body.temperature = temperature;
+  if (image !== undefined) body.image = { mime: image.mime, base64: image.base64 };
   return { endpoint: PATH, body };
 }
 

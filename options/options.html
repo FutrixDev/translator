@@ -614,16 +614,14 @@
               <select id="ocrEngine">
                 <option value="local" data-i18n="ocrEngineLocal"></option>
                 <option value="vision" data-i18n="ocrEngineVision"></option>
+                <option value="blab" data-i18n="engineBlab"></option>
               </select>
               <span class="hint" data-i18n-hint="hintOcrEngine"></span>
+              <div class="blab-note" id="ocrEngineBlabNote" hidden></div>
             </div>
 
-            <!-- No language picker: recognition always runs the auto plan
-                 (the user's own script first, English as a fallback pass) —
-                 nobody can pre-declare what language tomorrow's images will
-                 be in. No auto-translate toggle either: the popup always
-                 shows the recognised text first, with a Translate button for
-                 the optional second step. -->
+            <!-- No language picker: recognition runs the auto plan (own script first, English as
+                 a fallback). No auto-translate toggle: the popup shows the recognised text first. -->
             <div class="toggle-group">
               <label class="toggle-label">
                 <span data-i18n="enableImageOcrHoverButton">Show Recognize Button on Images</span>
