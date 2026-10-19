@@ -192,7 +192,6 @@
     translationComplete: '翻譯完成',
     pageAlreadyTranslated: '頁面已翻譯',
     pageContentNotTranslatable: '本頁內文無法就地承載譯文。選取文字，可在彈出視窗中查看翻譯。',
-    closeTranslation: '關閉翻譯',
     settings: '設置',
     appName: '叭叭翻譯',
     appNameVersion: '叭叭翻譯 v1.3.1',

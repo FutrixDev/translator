@@ -192,7 +192,6 @@
     translationComplete: 'Übersetzung abgeschlossen',
     pageAlreadyTranslated: 'Seite bereits übersetzt',
     pageContentNotTranslatable: 'Der Text dieser Seite kann keine Übersetzung an Ort und Stelle aufnehmen. Markieren Sie den Text, um die Übersetzung in einem Pop-up zu lesen.',
-    closeTranslation: 'Übersetzung schließen',
     settings: 'Einstellungen',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',

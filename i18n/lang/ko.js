@@ -192,7 +192,6 @@
     translationComplete: '번역 완료',
     pageAlreadyTranslated: '페이지가 이미 번역되었습니다',
     pageContentNotTranslatable: '이 페이지의 본문에는 번역을 그 자리에 표시할 수 없습니다. 텍스트를 선택하면 팝업에서 번역을 볼 수 있습니다.',
-    closeTranslation: '번역 닫기',
     settings: '설정',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',

@@ -192,7 +192,6 @@
     translationComplete: 'Traducción completada',
     pageAlreadyTranslated: 'Página ya traducida',
     pageContentNotTranslatable: 'El texto de esta página no puede alojar una traducción en su lugar. Selecciona el texto para leer la traducción en una ventana emergente.',
-    closeTranslation: 'Cerrar traducción',
     settings: 'Configuración',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',

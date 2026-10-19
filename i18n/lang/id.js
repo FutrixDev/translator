@@ -200,7 +200,6 @@
     translationComplete: 'Terjemahan Selesai',
     pageAlreadyTranslated: 'Halaman Sudah Diterjemahkan',
     pageContentNotTranslatable: 'Teks di halaman ini tidak dapat menampung terjemahan di tempatnya. Pilih teksnya untuk membaca terjemahan di popup.',
-    closeTranslation: 'Tutup Terjemahan',
 
     // Settings / Options
     settings: 'Pengaturan',

@@ -201,7 +201,6 @@
     translationComplete: 'Translation Complete',
     pageAlreadyTranslated: 'Page Already Translated',
     pageContentNotTranslatable: "This page's text cannot hold a translation in place. Select the text to read the translation in a popup instead.",
-    closeTranslation: 'Close Translation',
     
     // Settings / Options
     settings: 'Settings',

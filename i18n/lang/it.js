@@ -201,7 +201,6 @@
     translationComplete: "Traduzione completata",
     pageAlreadyTranslated: "Pagina già tradotta",
     pageContentNotTranslatable: "Il testo di questa pagina non può contenere una traduzione al suo interno. Seleziona il testo per leggere la traduzione in un popup.",
-    closeTranslation: "Chiudi traduzione",
 
     // Settings / Options
     settings: "Impostazioni",

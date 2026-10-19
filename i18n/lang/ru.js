@@ -192,7 +192,6 @@
     translationComplete: 'Перевод завершён',
     pageAlreadyTranslated: 'Страница уже переведена',
     pageContentNotTranslatable: 'Текст этой страницы не может вместить перевод на месте. Выделите текст, чтобы прочитать перевод во всплывающем окне.',
-    closeTranslation: 'Закрыть перевод',
     settings: 'Настройки',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',

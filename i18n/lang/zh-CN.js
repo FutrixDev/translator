@@ -201,7 +201,6 @@
     translationComplete: '翻译完成',
     pageAlreadyTranslated: '页面已翻译',
     pageContentNotTranslatable: '本页正文无法就地承载译文。选中文字，可在弹窗中查看翻译。',
-    closeTranslation: '关闭翻译',
     
     // Settings / Options
     settings: '设置',

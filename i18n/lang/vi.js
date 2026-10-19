@@ -201,7 +201,6 @@
     translationComplete: 'Đã dịch xong',
     pageAlreadyTranslated: 'Trang đã được dịch',
     pageContentNotTranslatable: 'Văn bản trên trang này không thể chèn bản dịch tại chỗ. Hãy chọn văn bản để đọc bản dịch trong cửa sổ bật lên.',
-    closeTranslation: 'Đóng bản dịch',
 
     // Settings / Options
     settings: 'Cài đặt',

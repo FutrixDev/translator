@@ -193,7 +193,6 @@
     translationComplete: 'اكتملت الترجمة',
     pageAlreadyTranslated: 'الصفحة مترجمة بالفعل',
     pageContentNotTranslatable: 'لا يتسع نص هذه الصفحة لإدراج الترجمة في مكانها. حدّد النص لقراءة ترجمته في نافذة منبثقة بدلًا من ذلك.',
-    closeTranslation: 'إغلاق الترجمة',
 
     settings: 'الإعدادات',
     appName: 'Blab Translation',

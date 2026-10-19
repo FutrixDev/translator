@@ -192,7 +192,6 @@
     translationComplete: 'Tradução concluída',
     pageAlreadyTranslated: 'Página já traduzida',
     pageContentNotTranslatable: 'O texto desta página não pode exibir a tradução no próprio lugar. Selecione o texto para ler a tradução numa janela pop-up.',
-    closeTranslation: 'Fechar tradução',
     settings: 'Configurações',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',

@@ -201,7 +201,6 @@
     translationComplete: 'Çeviri tamamlandı',
     pageAlreadyTranslated: 'Sayfa zaten çevrildi',
     pageContentNotTranslatable: 'Bu sayfanın metni çeviriyi yerinde gösteremiyor. Çeviriyi bunun yerine açılır pencerede okumak için metni seçin.',
-    closeTranslation: 'Çeviriyi kapat',
 
     // Settings / Options
     settings: 'Ayarlar',
