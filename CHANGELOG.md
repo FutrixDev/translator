@@ -48,6 +48,12 @@
   re-encoded first. The 3.75 MiB cap also applies to the vision engine (it
   was 4 MB).
 
+### Language menu
+
+- **The language menu's Recent group now fills as you translate.** Every input
+  box or card translation records its target language, the default one
+  included, and with nothing recorded yet the current language is shown there.
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site
