@@ -22,7 +22,6 @@
  *   J-L1  the recent group across the dialog and the selection card: written
  *         when a translation is dispatched, the default language included,
  *         its cap of five, a new default target, and the "AI only" tag
- *         (design ext-opt-input-translation §C.1, D-542, D-743)
  *
  * Expected names are always computed here, in the browser, with Intl — never
  * written out and never asked of the code under test. zh-CN / zh-TW are the
@@ -111,7 +110,7 @@ async function expectFirstSelectedInView(page, menu, scrollYBefore) {
 }
 
 /**
- * An opened menu stays at the top of its recent group (D-545): scrollTop 0, the
+ * An opened menu stays at the top of its recent group: scrollTop 0, the
  * "Recent" heading inside the menu's visible box, and the page did not move —
  * also when the selected language is not one of the recent ones.
  */
@@ -246,8 +245,8 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     const menu = dialog.locator('.ai-translator-lang-menu');
     await expect(menu).toBeVisible();
     // Nothing remembered yet (every test starts with an empty storage): the
-    // recent group holds the selected language alone, for show (D-743), and the
-    // menu opens on it.
+    // recent group shows the selected language alone, without storing it, and
+    // the menu opens on it.
     expect(await menuParts(menu)).toMatchObject({
       groups: [getMessage('langRecent', 'en'), getMessage('langAll', 'en')],
       firstIsGroup: true,
@@ -366,7 +365,8 @@ test('J-B9 the selection card lays an RTL translation out from the right and an 
     expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height);
 
     // The card's own menu: the translation just sent to he put he in the recent
-    // group (D-743), so the selected language is there, in view, the page still.
+    // group when it went out, so the selected language is there, in view, the
+    // page still.
     const scrollYBefore = await page.evaluate(() => window.scrollY);
     expect(scrollYBefore).toBe(SCROLLED_Y);
     await card.locator('.ai-translator-lang-trigger').click();
@@ -395,9 +395,9 @@ test('J-B9 the selection card lays an RTL translation out from the right and an 
 });
 
 // ---------------------------------------------------------------------------
-// Recently used target languages (design ext-opt-input-translation §B, D-542,
-// D-743). Every Playwright test starts with an empty chrome.storage.local, so the
-// list starts empty here too, which is why J-B8 above sees only the preset.
+// Recently used target languages, recorded when a translation is sent. Every
+// Playwright test starts with an empty chrome.storage.local, so the list starts
+// empty here too, which is why J-B8 above sees only the preset.
 
 const RECENT_PAGE = `<!doctype html><html lang="en"><head><style>
   body { margin: 0; padding: 300px 60px 40px; font: 18px/28px Georgia, serif; }
@@ -430,7 +430,7 @@ test('J-B10 the languages used last sit in a group above the full list, which ke
     await page.goto(`${site.origin}/`);
     await waitForFloatBall(page);
 
-    // A language is remembered when a translation is sent to it (D-743), and a
+    // A language is remembered when a translation is sent to it, and a
     // pick translates only with something in the box: type first, then pick.
     await openInputDialog(page);
     await page.fill('#ai-translator-input-text', 'a full sentence for translation');
@@ -516,7 +516,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     expect(await storedRecent(context)).toBeUndefined();
 
     // 1a. Translate with the default language, the menu never touched: zh-CN is
-    // remembered, and when the request is sent, not when it answers (D-743). The
+    // remembered, and when the request is sent, not when it answers. The
     // model is held back so the list has to be written while the dialog still
     // waits for the answer.
     const result = page.locator('#ai-translator-result-text');
@@ -537,7 +537,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
 
     // 1b. Picking a language with the box empty translates nothing, so it is not
     // a use: no request goes out, it is not written and the recent group does not
-    // show it (D-743: only a dispatch records). The group is drawn from what is
+    // show it (only a dispatch records). The group is drawn from what is
     // stored here, not from the preset, so 'it' being selected cannot put it there.
     const sentBeforePick = mock.sentTexts.length;
     await openInputDialog(page);

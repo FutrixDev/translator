@@ -32,7 +32,7 @@
     return ctx.languageName(ctx.normalizeTargetLang(lang));
   };
 
-  // 最近用过的目标语（D-542 §B.2，D-743 改写入点）：对话框与划词卡片共用一份，最近在前、
+  // 最近用过的目标语，在请求发出时记下：对话框与划词卡片共用一份，最近在前、
   // 最多 5 个，只存规范码。每次派发翻译就记它的目标语，默认语也记；只点菜单不记——
   // 卡片点了必重译，对话框有字才译，没译的点选不算用过。两条派发路（输入框对话框的
   // translateInputText、划词卡片的 translateText，OCR 的翻译也走后者）共用的下一步是
@@ -70,7 +70,7 @@
   // 菜单总是两组：先「最近使用」（data-recent="1"），再「全部语言」全表；全表不剔除最近
   // 项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份语言清单：存储里
   // 认不出的码直接不出。一个认得出的记录都没有时，最近组只放当前语言——只是显示，不写
-  // 存储（D-743 ④），所以第一次打开就看得到这一组在哪。
+  // 存储，所以第一次打开就看得到这一组在哪。
   ctx.buildTargetLangMenu = function(menu, selectedLang) {
     const normalized = ctx.normalizeTargetLang(selectedLang);
     const bt = ctx.builtinTranslator;
