@@ -32,10 +32,11 @@
     return ctx.languageName(ctx.normalizeTargetLang(lang));
   };
 
-  // 最近点过的目标语（D-542 §B.2）：对话框与划词卡片共用一份，最近在前、最多 5 个。
-  // 只记菜单里的显式点击（写入点唯一：content-popup.js setupLanguageDropdown 的点击
-  // 处理器），默认语不记——否则默认语永远占首位。放 local 不放 sync：这是一台设备的
-  // 习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
+  // 最近用过的目标语（D-542 §B.2，D-743 改写入点）：对话框与划词卡片共用一份，最近在前、
+  // 最多 5 个。每次派发翻译就记它的目标语，默认语也记（写入点两处：输入框对话框的
+  // translateInputText、划词卡片的 translateText，OCR 的翻译也走后者）；只点菜单不记——
+  // 卡片点了必重译，对话框有字才译，没译的点选不算用过。放 local 不放 sync：这是一台
+  // 设备的习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
   // inputDialogTargetLang 不同）。
   // 读、settled、跟随别的标签（或这一页的别的 frame）都归 ctx.localPref
   // （content/content-local-pref.js）；去重和上限归这里。

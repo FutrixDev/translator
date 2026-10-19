@@ -508,8 +508,6 @@
       if (!lang) return;
       label.textContent = item.textContent || getTargetLangLabel(lang);
       popup.dataset.targetLang = lang;
-      // 最近语言的唯一写入点：只记这里的显式点击（D-542 §B.2）。
-      ctx.rememberRecentTargetLang(lang);
       closeMenu();
       if (typeof onChange === 'function') {
         onChange(lang);
@@ -692,6 +690,10 @@
         popup.removeAttribute('data-explain');
       }
       const provenWord = !!popup && popup.dataset.provenWord === text;
+      // Recorded when the request is dispatched, default language included,
+      // not when it answers (D-743). OCR's translation comes through here too;
+      // the input dialog records its own in translateInputText.
+      ctx.rememberRecentTargetLang(targetLang);
       const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
       // "Explain in context with AI" always sends the sentence the selection
       // sits in, whatever aiPageContext says (D-641); content/engine/addenda.js
