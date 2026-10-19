@@ -482,13 +482,16 @@
 
     // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
     // 译过、别的标签译过——每次打开都按那一刻的列表和那一刻的手动引擎画。
-    // 画完停在顶部，让最近组露出来。只动菜单自己的 scrollTop，宿主页面不跟着滚
-    // （见 ctx.revealSelectedLanguage）。
+    // 画完停在顶部，让「最近使用」一组露出来（D-545）；菜单总有这一组。当前语言不一定在
+    // 组里：设置里可能换了默认语。为了把全表里的选中项滚到中部而把这组推出视口，就违背了
+    // 置顶的本意；当前语言已经写在触发按钮上。只动菜单自己的 scrollTop，不用
+    // scrollIntoView（那会连宿主页面一起滚）。菜单节点跨次打开复用，不赌重画后滚动位置
+    // 自己归零，明确写 0。
     const openMenu = () => {
       if (!menu.hidden) return;
       buildTargetLangMenu(menu, popup.dataset.targetLang);
       menu.hidden = false;
-      ctx.revealSelectedLanguage(menu);
+      menu.scrollTop = 0;
       trigger.setAttribute('aria-expanded', 'true');
     };
 

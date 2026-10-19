@@ -212,20 +212,6 @@ test('getTextInset answers 0 for an element with no box', () => {
   assert.equal(getTextInset(contents), 0);
 });
 
-// ==================== revealSelectedLanguage ====================
-
-// 菜单总有「最近使用」一组（D-743），打开就停在顶部；不找已选项，也不用
-// scrollIntoView —— 那会连宿主页面一起滚。
-test('revealSelectedLanguage parks the menu at the top without looking inside', () => {
-  const menu = {
-    dataset: {},
-    scrollTop: 300,
-    querySelector: () => { throw new Error('the menu is not searched'); },
-  };
-  ctx.revealSelectedLanguage(menu);
-  assert.equal(menu.scrollTop, 0);
-});
-
 // ==================== 每个落笔口都要知道译文是哪门语言 ====================
 
 // 缺 textLang 就抛：一段不知道自己是哪门语言的译文只能靠继承拿到原文的 lang/dir，
@@ -256,7 +242,7 @@ test('every place a translation lands requires the language of its text', () => 
 test('the card reveals the selected language and marks its translation', () => {
   const popup = read('content/content-popup.js');
   // 菜单每次打开现画（最近使用一组随时会变），画完再显出、再停到顶部。
-  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*buildTargetLangMenu\(menu, popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*ctx\.revealSelectedLanguage\(menu\);/);
+  assert.match(popup, /const openMenu = \(\) => \{\s*\n\s*if \(!menu\.hidden\) return;\s*\n\s*buildTargetLangMenu\(menu, popup\.dataset\.targetLang\);\s*\n\s*menu\.hidden = false;\s*\n\s*menu\.scrollTop = 0;/);
   assert.match(popup, /parts\.text\.textContent = response\.translation \|\| '';[\s\S]{0,200}ctx\.markLanguage\(parts\.text, targetLang\);/);
   const css = read('content/css/popup.css');
   const rule = css.match(/\n\.ai-translator-translation-text \{[^}]*\}/);

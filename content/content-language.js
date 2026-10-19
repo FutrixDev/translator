@@ -52,7 +52,8 @@
     return recentPref.get().slice();
   };
 
-  // 已在首位就什么都不写：同一语言连着翻译是常态，每次派发都会走到这里。
+  // 已在首位就什么都不写：同一语言连着翻译是常态，每次派发都会走到这里。同值不落盘本来
+  // 就由 content-local-pref.js 的 sameValue 挡住，这里提前返回省的只是重建数组和那次 set()。
   ctx.rememberRecentTargetLang = function(lang) {
     if (!lang || recentPref.get()[0] === lang) return;
     recentPref.set([lang, ...recentPref.get().filter((code) => code !== lang)]
@@ -125,14 +126,6 @@
       const side = ctx.startSide(window.getComputedStyle(sourceEl));
       translationEl.style.setProperty(`padding-${side}`, `${px}px`, 'important');
     }
-  };
-
-  // 菜单刚打开时停在顶部，让「最近使用」一组露出来（D-545）；菜单总有这一组
-  // （ctx.buildTargetLangMenu）。当前语言不一定在组里：设置里可能换了默认语。为了把
-  // 全表里的选中项滚到中部而把这组推出视口，就违背了置顶的本意；当前语言已经写在
-  // 触发按钮上。菜单节点跨次打开复用，不赌重画后滚动位置自己归零，明确写 0。
-  ctx.revealSelectedLanguage = function(menu) {
-    menu.scrollTop = 0;
   };
 
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里是转手，不是副本。

@@ -2,7 +2,7 @@
 //
 // A preference this device keeps in chrome.storage.local and every frame of
 // every tab follows: the dialog's own target language (content-input-dialog.js)
-// and the recently picked target languages (content-language.js). Both used to
+// and the recently used (translated into) target languages (content-language.js). Both used to
 // carry their own copy of the same machine — the initial read, the settled flag,
 // the onChanged filter, the extension-context check — and the two copies had
 // already drifted (one warned on a failed write, the other swallowed it).
