@@ -816,16 +816,23 @@ async function evaluateInContentScript(context, pageOrFrame, expression) {
  * through the three shapes the real built-in engine was measured to produce
  * (Chrome Translator en->pt, 2026-10-07): `{n}}`, `{{n}`, `{n}`.
  *
+ * `options.delaysMs`: hold call n for `delaysMs[(n - 1) % length]` ms before
+ * answering. Uneven delays spread the answers of the four concurrent calls over
+ * different frames; equal ones land them in the same frame. Leaving it out
+ * answers at once.
+ *
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} pageOrFrame
- * @param {{dropPlaceholders?: boolean, dropBraces?: boolean}} [options]
+ * @param {{dropPlaceholders?: boolean, dropBraces?: boolean, delaysMs?: number[]}} [options]
  */
 async function stubBuiltinTranslator(pageOrFrame, options = {}) {
   const page = typeof pageOrFrame.page === 'function' ? pageOrFrame.page() : pageOrFrame;
   const dropPlaceholders = options.dropPlaceholders === true;
   const dropBraces = options.dropBraces === true;
+  const delaysMs = options.delaysMs || [];
   return evaluateInContentScript(page.context(), pageOrFrame, `(() => {
     const dropPlaceholders = ${JSON.stringify(dropPlaceholders)};
     const dropBraces = ${JSON.stringify(dropBraces)};
+    const delaysMs = ${JSON.stringify(delaysMs)};
     const shapes = [(n) => '{' + n + '}}', (n) => '{{' + n + '}', (n) => '{' + n + '}'];
     let shape = 0;
     const answer = (text) => {
@@ -841,6 +848,10 @@ async function stubBuiltinTranslator(pageOrFrame, options = {}) {
         translate: async (text) => {
           self.__builtinCalls += 1;
           self.__builtinTexts.push(text);
+          if (delaysMs.length) {
+            const ms = delaysMs[(self.__builtinCalls - 1) % delaysMs.length];
+            await new Promise((resolve) => setTimeout(resolve, ms));
+          }
           return '[B] ' + answer(text);
         },
         destroy() {},
