@@ -338,6 +338,8 @@
   // 自动的增量轮常常只有几块、几百毫秒：600 ms 内收场的那一轮整个不露面，只有
   // 状态点在呼吸。CSS 的 animation-delay 做不了「到点还没完才显示」，只能用计时器。
   const RING_GATE_MS = 600;
+  // 常驻的三态：放完就停在环上，直到翻篇或下一轮真露了面。
+  const RING_HELD_PHASES = Object.freeze(['partial', 'paused', 'error']);
   // 两段定时退场：[距开始的毫秒, 视觉态]。'fade' 是在当前态上淡出 300 ms。
   // 完成：先在天蓝上补满（240 ms），再转薄荷（160 ms），停 900 ms，淡出 300 ms。
   // reduced-motion 省掉补满与变色，只留停留与淡出。
@@ -441,18 +443,24 @@
     if (phase !== 'budget') ring.budgetKey = '';
 
     const offset = ringOffset(snap, phase);
-    const shown = ring.view.phase !== 'idle';
+    // 环上停着一个常驻态（手动那一轮的 partial / error）。自动开着的页面上，手动
+    // 一收尾调度层就会再报数：把放弃的块重新排队、报一个 idle，或者门内就收场的
+    // 一小轮。那都不是「下一轮」—— 常驻态只让给翻篇、手动的新一轮、和过了门真露
+    // 面的自动轮，否则那圈珊瑚闪一帧就没了。
+    const held = RING_HELD_PHASES.includes(ring.view.phase) && !ring.sequence;
+    const shown = ring.view.phase !== 'idle' && !held;
     switch (phase) {
       case 'idle':
-        if (!ring.sequence) hideRing(offset);
+        if (held) clearRingGate();
+        else if (!ring.sequence) hideRing(offset);
         break;
       case 'arming':
       case 'running':
         if (snap.source === 'manual' || state.isTranslatingPage || shown || ring.gate === 'open') {
           showRing(phase, offset);
         } else {
-          // 门还没开：弧长照写（看不见），到点还在跑就露面。
-          ring.view = { ...ring.view, offset };
+          // 门还没开：弧长照写（看不见），到点还在跑就露面。常驻态看得见，不动它。
+          if (!held) ring.view = { ...ring.view, offset };
           if (!ring.gate) {
             ring.gate = setTimeout(() => {
               ring.gate = 'open';
@@ -463,8 +471,9 @@
         break;
       case 'done':
         if (ring.sequence === 'done' || ring.sequence === 'doneReduced') break;
-        // 没露过面的一轮（门内收场，或序列已经放完）就不露面。
-        if (!shown) hideRing(offset);
+        // 没露过面的一轮（门内收场，或序列已经放完）就不露面；常驻态留着。
+        if (held) clearRingGate();
+        else if (!shown) hideRing(offset);
         else runRingSequence(prefersReducedMotion() ? 'doneReduced' : 'done', offset);
         break;
       case 'budget': {
