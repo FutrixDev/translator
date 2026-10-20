@@ -320,7 +320,7 @@ test('engine-status.js is loaded wherever it is read', () => {
   }
 });
 
-test('every load list carries the whole engine family, after the lang-tags it needs', () => {
+test('every load list carries the whole engine family, after the lang-tags and spa-navigation it needs', () => {
   // The options page and the onboarding page do not go through the manifest;
   // each lists its own <script> tags one by one. A new file in the family that
   // only makes it into the manifest leaves those pages calling an
@@ -340,6 +340,10 @@ test('every load list carries the whole engine family, after the lang-tags it ne
       assert.ok(at(file) >= 0, `${name} is missing ${file}`);
       assert.ok(at('shared/lang-tags.js') < at(file), `${name} must load shared/lang-tags.js before ${file}`);
     }
+    // languages.js subscribes to SpaNavigation at load, with no existence check.
+    assert.ok(at('shared/spa-navigation.js') >= 0, `${name} does not load shared/spa-navigation.js`);
+    assert.ok(at('shared/spa-navigation.js') < at('content/engine/languages.js'),
+      `${name} must load shared/spa-navigation.js before content/engine/languages.js`);
   }
 });
 

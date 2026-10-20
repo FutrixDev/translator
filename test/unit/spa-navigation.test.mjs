@@ -279,4 +279,13 @@ test('manifest 里装了它 —— 一个没被加载的模块等于没写', asy
   const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'manifest.json'), 'utf8'));
   const isolated = manifest.content_scripts.find((entry) => (entry.world || 'ISOLATED') === 'ISOLATED');
   assert.ok(isolated.js.includes('shared/spa-navigation.js'));
+  // 订阅方直接调 globalThis.SpaNavigation，不判存在：排在它前面就是加载时抛。
+  const at = isolated.js.indexOf('shared/spa-navigation.js');
+  const readers = isolated.js.filter((file) => file !== 'shared/spa-navigation.js'
+    && fs.readFileSync(path.join(REPO_ROOT, file), 'utf8').includes('SpaNavigation.'));
+  assert.ok(readers.includes('content/content-managed-translation.js'));
+  assert.ok(readers.includes('content/engine/languages.js'));
+  for (const file of readers) {
+    assert.ok(isolated.js.indexOf(file) > at, `${file} must load after shared/spa-navigation.js`);
+  }
 });

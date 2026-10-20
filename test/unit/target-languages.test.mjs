@@ -22,8 +22,10 @@ await import('../../shared/target-lang.js');
 const TargetLang = globalThis.TargetLang;
 
 // The engine family's language table, loaded the way the options page loads
-// it: a bare AI_TRANSLATOR_CONTENT shelf and nothing else.
+// it: a bare AI_TRANSLATOR_CONTENT shelf, plus the route signal it subscribes
+// to at load (stubbed: no real route polling here).
 globalThis.window = globalThis.window || { AI_TRANSLATOR_CONTENT: {} };
+globalThis.SpaNavigation = { onRouteChange() {} };
 await import('../../content/engine/languages.js');
 const eng = globalThis.window.AI_TRANSLATOR_CONTENT.engine;
 
