@@ -23,8 +23,11 @@ const { SiteRules } = globalThis;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
-function loadChildFrame() {
+// sized: false 起在 0×0（懒加载、折叠面板）—— setup() 那一刻就挂上尺寸闸的 resize 监听。
+function loadChildFrame({ sized = true } = {}) {
   const listeners = [];
+  // 子 frame 往 window 上挂的监听（resize / pagehide / pageshow），按事件名收着。
+  const windowListeners = {};
   const calls = { invalidatePageScope: 0, restart: 0, inherited: [], round: [], generations: [] };
   // 本 frame 自己的补翻轮：测试用 catchUp.hold() 举起、catchUp.end() 放下。
   const catchUp = { done: Promise.resolve(), end: null };
@@ -67,10 +70,12 @@ function loadChildFrame() {
   };
   const sandbox = {
     console: { log() {}, warn() {}, error() {} },
-    innerWidth: 640,
-    innerHeight: 220,
-    addEventListener() {},
-    removeEventListener() {},
+    innerWidth: sized ? 640 : 0,
+    innerHeight: sized ? 220 : 0,
+    addEventListener: (type, fn) => { windowListeners[type] = fn; },
+    removeEventListener: (type, fn) => {
+      if (windowListeners[type] === fn) delete windowListeners[type];
+    },
     location: { hostname: 'embed.example.com', pathname: '/widget' },
     SiteRules,
     AI_TRANSLATOR_CONTENT: ctx,
@@ -99,7 +104,13 @@ function loadChildFrame() {
   };
   let epoch = 0;
   const directive = (scopeOverride) => send({ epoch: ++epoch, scopeOverride });
-  return { ctx, calls, catchUp, directive, send, nextEpoch: () => ++epoch };
+  // 把 frame 撑开到够大，再像浏览器那样派一次 resize。
+  const resizeTo = (width, height) => {
+    sandbox.innerWidth = width;
+    sandbox.innerHeight = height;
+    if (windowListeners.resize) windowListeners.resize();
+  };
+  return { ctx, calls, catchUp, directive, send, nextEpoch: () => ++epoch, resizeTo, windowListeners };
 }
 
 test('the child mirrors the top frame scope override: set, same value, clear', () => {
@@ -242,4 +253,17 @@ test('a change of recall alone restarts the child, so its recall is synced on th
   // 两样都没变（别的字段变了）：不重开。
   send({ epoch: nextEpoch(), translate: true, recall: true, visible: true, generation: 4 });
   assert.equal(calls.restart, 2);
+});
+
+// 装回也过尺寸闸：frame 还是 0×0 时顶层停在预算上（translate 假、recall 真），之后
+// 撑开了，子 frame 得当场重开一轮把装回挂上。只看 translate 的话，这个 frame 要等到
+// 下一条改了 translate 的指令才会装回。
+test('a frame that grows to size while the top only recalls restarts and hooks recall', () => {
+  const { calls, send, nextEpoch, resizeTo, windowListeners } = loadChildFrame({ sized: false });
+  assert.equal(typeof windowListeners.resize, 'function', 'an unsized frame watches its size');
+  send({ epoch: nextEpoch(), translate: false, recall: true });
+  const before = calls.restart;
+  resizeTo(640, 220);
+  assert.equal(calls.restart, before + 1, 'a frame that grew while the top only recalls never hooked recall');
+  assert.equal(windowListeners.resize, undefined, 'the size watch is dropped once the frame is sized');
 });
