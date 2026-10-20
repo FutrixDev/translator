@@ -115,7 +115,7 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
 
 **`unlimitedStorage` 理由**
 
-> Used only for the offline dictionary. With the offline dictionary switched on (the default; it can be turned off in Settings), the extension downloads a dictionary pack for the user's language pair (checked against a published checksum) and stores it in the extension's IndexedDB so single-word lookups work without sending the word anywhere. A pack can be larger than the default extension storage quota allows. Packs are listed in Settings with their size, and each can be deleted there. No browsing data is stored.
+> Used only for the offline dictionary. With the offline dictionary switched on (the default; it can be turned off in Settings), the extension downloads a dictionary pack for the user's language pair (checked against a published checksum) and stores it in the extension's local storage (chrome.storage.local) so single-word lookups work offline without sending the word anywhere. One pack can take more than the 10 MB that chrome.storage.local allows by default. Packs are listed in Settings with their size, and each can be deleted there. No browsing data is stored.
 
 离线词典包从 `blab-translation.com` 的公开地址下载，内容是词典数据，不是代码，
 Remote code 仍选 No。
