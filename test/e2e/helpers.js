@@ -130,6 +130,8 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/page/scope.js',
   'content/page/reader-hidden.js',
   'content/page/not-prose.js',
+  // 散文 <pre>（prose-pre.js）：收集器碰到 skipTags 时问它。
+  'content/page/prose-pre.js',
   'content/page/collect.js',
   'content/page/insert.js',
   // 装回（recall.js）：发现层与自动翻译的观察器在调用时读 ctx.recallTranslation(s)。

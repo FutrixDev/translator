@@ -254,6 +254,8 @@
 
   // 检测父元素是否是水平布局（flex 或内联水平排列）
   function isHorizontalFlexParent(element) {
+    // 散文 <pre> 的段落锚点是内联 span，却是一整段，见 content/page/prose-pre.js
+    if (ctx.prosePre.isParagraph(element)) return false;
     const parent = layoutParent(element);
     if (!parent) return false;
     if (isHorizontalFlexContainer(parent)) return true;
@@ -648,8 +650,10 @@
       // 会在框里再画一个一模一样的框——内部译文要的样式本来就是继承来的
       if (element.className && !placement.inside) {
         const positionClasses = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
+        // 锚点的类名也不能跟过来：带着它的译文会被收集端当成又一段原文
         translationEl.className = element.className
           .replace('ai-translator-translated', '')
+          .replace(ctx.TEXT_RUN_CLASS, '')
           .replace(positionClasses, '')
           .trim();
       }

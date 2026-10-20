@@ -2,7 +2,8 @@
 //
 // 从 DOM 里挑出该翻的块，并把每块读成一段可以送翻的文本：数学公式换成占位符、
 // 内联格式编码成 <a1>…</a1> 标记、直属文本节点各自成锚。
-// 这里只读页面、不改页面（wrapDirectTextRuns 包 span 是为了拿到锚点），
+// 这里只读页面、不改页面（wrapDirectTextRuns 包 span、散文 <pre> 在空行处切开文本
+// 节点，都是为了拿到锚点），
 // 译文怎么放是 content/page/insert.js 的事。
 (function() {
   'use strict';
@@ -100,6 +101,7 @@
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
     const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR'];
+    const SKIP_TAG_SELECTOR = skipTags.map(t => t.toLowerCase()).join(',');
     // 容器元素 - 这些元素不应作为整体翻译，应递归处理子元素
     // 表格标签作为容器递归下探到单元格（TD/TH 在 blockTags 中）：很多站点（如 Hacker News）
     // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
@@ -212,6 +214,25 @@
       return false;
     }
 
+    // skipTags 管的是整棵子树。散文 <pre>（content/page/prose-pre.js）例外，它自己
+    // 和裹给它的段落照收。段落里面的 <a>/<b> 不单独收：它们是那一段的内联内容，
+    // 跟着那一段的标记走。
+    function skippedByTag(element) {
+      const hit = closestAcross(element, SKIP_TAG_SELECTOR);
+      if (!hit) return false;
+      const ownParagraph = hit === element || ctx.prosePre.isParagraph(element);
+      return !(ownParagraph && ctx.prosePre.isProse(hit, SKIP_TAG_SELECTOR));
+    }
+    // 一串直属文字（或散文 <pre> 的一段）是要翻的正文才裹成锚点；太短、像代码、
+    // 就是个 URL、不是正文的原样留着。@returns 裹好的 span，没裹就是 null。
+    function wrapIfProse(run, element) {
+      const text = run.filter((node) => node.nodeType !== Node.COMMENT_NODE)
+        .map((node) => node.textContent).join('').trim();
+      if (text.length < 2) return null;
+      if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) return null;
+      return wrapTextRun(run);
+    }
+
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
     function hasTranslatableChildren(element) {
       for (const child of kids(element)) {
@@ -257,12 +278,7 @@
         }
         current = null;
       }
-      for (const run of runs) {
-        const text = run.map((node) => node.textContent).join('').trim();
-        if (text.length < 2) continue;
-        if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) continue;
-        wrapTextRun(run);
-      }
+      for (const run of runs) wrapIfProse(run, element);
     }
 
     // 检查元素是否有多个可翻译的直接子元素（用于判断是否应该递归而非整体翻译）
@@ -304,8 +320,8 @@
 
       const tagName = element.tagName;
 
-      // 跳过不需要翻译的元素
-      if (skipTags.includes(tagName)) return;
+      // 跳过不需要翻译的元素，连同它们的子树（散文 <pre> 除外，见 skippedByTag）
+      if (skippedByTag(element)) return;
       if (element.isContentEditable) return;
       // 用户规则 exclude、「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收（先
       // 判 exclude 再判保留原文，见 ruleBlocksElement）。排在作者声明（translate="yes"
@@ -341,9 +357,6 @@
       if (closestAcross(element, SKIP_OURS)) return;
       if (element.classList.contains('ai-translator-translated')) return;
       if (element.classList.contains('ai-translator-inline-source')) return;
-
-      // 跳过被 skipTags 包含的元素
-      if (closestAcross(element, skipTags.map(t => t.toLowerCase()).join(','))) return;
 
       // 跳过代码块容器（codehilite / sourceCode / highlight 变体 / Prism language-*，
       // 统一在 isInsideCodeContainer 里按完整 class token 匹配）
@@ -383,6 +396,15 @@
       // translate="yes" 重新打开的子树。
       if (!allowed(element)) {
         for (const child of kids(element)) processElement(child);
+        return;
+      }
+
+      // 走到这里的 <pre> 只会是散文 <pre>（skippedByTag）：一段一块。
+      if (tagName === 'PRE') {
+        for (const paragraph of ctx.prosePre.paragraphs(element)) {
+          const anchor = Array.isArray(paragraph) ? wrapIfProse(paragraph, element) : paragraph;
+          if (anchor) processElement(anchor);
+        }
         return;
       }
 

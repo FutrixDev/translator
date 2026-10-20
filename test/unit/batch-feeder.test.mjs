@@ -67,6 +67,7 @@ await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
+await import('../../content/page/prose-pre.js');
 // progress.js paints the float-ball ring from ctx.progressFeed and subscribes
 // at load, so the feed goes first, as in the manifest.
 // With a subscriber the feed coalesces its notifications into a frame.
