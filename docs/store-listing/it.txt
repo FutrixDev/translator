@@ -43,11 +43,12 @@ Leggi pagine web, PDF, ebook, manga e fumetti con l'originale e la traduzione fi
 • Fai clic con il tasto destro su qualsiasi immagine — uno screenshot, una foto, un grafico — per leggerne il testo e tradurlo.
 • Tutta l'immagine o solo un'area che disegni. Sulle immagini grandi, al passaggio del mouse compare anche un pulsante «Riconosci testo».
 • Lettura offline sul dispositivo: inglese, più cinese, giapponese o coreano se è la lingua della tua interfaccia — oppure con un modello visivo e la tua chiave per altre lingue, foto e scritte stilizzate.
+• Con un abbonamento le legge anche Blab Translation, senza chiave.
 
 ★ PRIVATO PER IMPOSTAZIONE PREDEFINITA
 • Per impostazione predefinita le pagine web vengono tradotte sul tuo dispositivo. Il tuo testo non lascia mai il computer.
 • Con il tuo modello IA, il testo va direttamente al tuo endpoint con la tua chiave — mai attraverso di noi.
-• Blab Translation invia il testo ai nostri server per tradurlo e non ne conserva nulla.
+• Blab Translation invia il testo (o, per l'OCR, l'immagine) ai nostri server per elaborarlo e non ne conserva nulla.
 • I file PDF, i documenti e i fumetti vengono elaborati sui nostri server ed eliminati dopo 7 giorni.
 • I pacchetti del dizionario offline vengono scaricati dal nostro server e conservati sul tuo dispositivo; è a questo che serve il permesso di archiviazione illimitata. Cercare una parola in un pacchetto non invia nulla.
 • Nessuna analisi statistica. Nessun tracciamento pubblicitario.

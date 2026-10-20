@@ -43,11 +43,12 @@ Baca halaman web, PDF, ebook, manga, dan komik dengan teks asli dan terjemahanny
 • Klik kanan gambar apa pun — tangkapan layar, foto, grafik — untuk membaca teks di dalamnya dan menerjemahkannya.
 • Seluruh gambar, atau hanya area yang Anda tandai. Gambar besar juga menampilkan tombol "Kenali Teks" saat kursor diarahkan.
 • Dibaca secara offline di perangkat Anda: bahasa Inggris, serta Mandarin, Jepang, atau Korea jika itu bahasa antarmuka Anda — atau dengan model visi memakai kunci Anda sendiri untuk bahasa lain, foto, dan huruf bergaya.
+• Dengan langganan, Blab Translation juga bisa membacanya — tanpa perlu kunci.
 
 ★ PRIVAT SECARA DEFAULT
 • Secara default, halaman web diterjemahkan di perangkat Anda. Teks Anda tidak pernah meninggalkan komputer Anda.
 • Dengan model AI Anda sendiri, teks langsung dikirim ke endpoint Anda dengan kunci Anda sendiri — tidak pernah melalui kami.
-• Blab Translation mengirim teks ke server kami untuk diterjemahkan dan tidak menyimpannya sama sekali.
+• Blab Translation mengirim teks (atau, untuk OCR, gambar) ke server kami untuk diproses dan tidak menyimpannya sama sekali.
 • File PDF, dokumen, dan komik diproses di server kami dan dihapus setelah 7 hari.
 • Paket kamus offline diunduh dari server kami dan disimpan di perangkat Anda; itulah fungsi izin penyimpanan tanpa batas. Mencari kata di paket tidak mengirim apa pun.
 • Tanpa analitik. Tanpa pelacakan iklan.

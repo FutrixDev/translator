@@ -43,11 +43,12 @@ Blab Translation — dịch bằng AI cho trang web, PDF, manga và phụ đề.
 • Nhấp chuột phải vào bất kỳ hình ảnh nào — ảnh chụp màn hình, ảnh chụp, biểu đồ — để đọc chữ trong đó và dịch.
 • Cả hình ảnh, hoặc chỉ một vùng bạn khoanh. Ảnh lớn còn hiện nút "Nhận dạng chữ" khi bạn di chuột qua.
 • Đọc ngoại tuyến trên thiết bị của bạn: tiếng Anh, cùng tiếng Trung, tiếng Nhật hoặc tiếng Hàn khi đó là ngôn ngữ giao diện của bạn — hoặc bằng mô hình thị giác với khóa của riêng bạn cho các ngôn ngữ khác, ảnh chụp và chữ cách điệu.
+• Khi đăng ký gói, Blab Translation cũng đọc được — không cần khóa.
 
 ★ RIÊNG TƯ THEO MẶC ĐỊNH
 • Theo mặc định, trang web được dịch ngay trên thiết bị của bạn. Văn bản của bạn không bao giờ rời khỏi máy tính.
 • Với mô hình AI của riêng bạn, văn bản đi thẳng tới điểm cuối của bạn bằng khóa của bạn — không bao giờ qua chúng tôi.
-• Blab Translation gửi văn bản tới máy chủ của chúng tôi để dịch và không lưu lại gì.
+• Blab Translation gửi văn bản (hoặc, với OCR, hình ảnh) tới máy chủ của chúng tôi để xử lý và không lưu lại gì.
 • Tệp PDF, tài liệu và truyện tranh được xử lý trên máy chủ của chúng tôi và bị xóa sau 7 ngày.
 • Gói từ điển ngoại tuyến được tải về từ máy chủ của chúng tôi và lưu trên thiết bị của bạn; đó là lý do cần quyền lưu trữ không giới hạn. Tra một từ trong gói không gửi đi bất cứ thứ gì.
 • Không phân tích dữ liệu. Không theo dõi quảng cáo.

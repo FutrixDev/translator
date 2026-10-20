@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.2 — 2026-10-20
 
 ### First run
 
@@ -102,12 +102,16 @@
   automatically it keeps working even after a stop for the daily budget or an
   error, while a page you paused, or translated by hand on a site that is not
   automatic, is left in the original.
+- **An article written inside a wrapping `<pre>` is translated.** Some blogs
+  and mailing-list archives put the whole article in one `<pre>` with
+  `white-space: pre-wrap`; the page collector skipped every `<pre>`, so only
+  the title, byline and footer were translated. A `<pre>` that wraps, holds no
+  code-style tag and is not inside an editor now counts as prose, split into
+  paragraphs at blank lines. A `<pre>` that does not wrap is still skipped.
 - **Our own translations no longer move the main-content scope.** When the
   page decides which part is the main content, it now counts only the page's
   own text, so translating a page can no longer tip the decision the next time
   it is made.
-
-## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site
 
@@ -126,6 +130,9 @@
 - **The store description opens with what the extension does**: web pages,
   PDFs, manga and subtitles, image text (OCR), and the three engines — in a
   sentence, not a list of keywords, in all fifteen languages.
+- **The store description covers Blab Translation reading images**: the
+  image-text section adds that a subscription reads them with no key, and the
+  privacy section says the image, not only text, goes to the server for OCR.
 - **Five more interface and store languages: Arabic, Indonesian, Vietnamese,
   Turkish and Italian**, fifteen in all. Each is a full interface table, a
   store name and summary, and a store description. In Arabic the popup, the
