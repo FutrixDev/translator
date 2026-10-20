@@ -134,6 +134,9 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../shared/site-rules.js');
   // shared/text-markers.js 同样排在引擎前面：占位符的语法（keepsPlaceholders 取编号）住在那里。
   await import('../../../shared/text-markers.js');
+  // languages.js 加载时就订路由（换页清页面语言缓存）；manifest 里 shared/spa-navigation.js
+  // 排在它前面。这里不跑真的路由轮询，给个空订阅。
+  globalThis.SpaNavigation = { onRouteChange() {} };
   await import('../../../content/engine/languages.js');
   await import('../../../content/engine/watchdog.js');
   // 词表快照与附加说明（P1-C）。夹具没有 ctx.glossary，快照恒为空；切份读

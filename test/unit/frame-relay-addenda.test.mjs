@@ -88,6 +88,8 @@ function frameRealm({ url, role, sendMessage: send }) {
     document: { body: { innerText: PAGE }, title: 'A test page' },
     // 缓存层（content-translation-cache.js）的命中统计。
     AutoStats: { add() {} },
+    // languages.js 加载时订路由；这里不跑真的路由轮询。
+    SpaNavigation: { onRouteChange() {} },
     location: new URL(url),
     chrome: {
       i18n: { detectLanguage: async () => ({ isReliable: true, languages: [{ language: 'en', percentage: 99 }] }) },

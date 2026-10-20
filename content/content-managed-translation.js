@@ -274,11 +274,8 @@
   ctx.sweepOrphanedManagedTranslations = sweepOrphanedHandles;
 
   // 谁拥有这个值，谁负责清 —— 引擎那份语言缓存也是自己订的路由过期
-  // （content-translation-engine.js:192）。守卫留着：只装了整页翻译那几个模块的
-  // DOM 夹具里没有这一层。
-  if (globalThis.SpaNavigation) {
-    globalThis.SpaNavigation.onRouteChange(sweepOrphanedHandles);
-  }
+  // （content/engine/languages.js）。
+  globalThis.SpaNavigation.onRouteChange(sweepOrphanedHandles);
 
   ctx.setManagedTranslationsVisible = function(visible) {
     const root = document.documentElement;

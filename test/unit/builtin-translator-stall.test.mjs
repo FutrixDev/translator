@@ -107,6 +107,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 // The engine reads placeholder ids through TextMarkers, loaded ahead of it in the manifest.
 await import('../../shared/text-markers.js');
+// languages.js subscribes to route changes at load; the manifest loads
+// shared/spa-navigation.js ahead of it. No real route polling here.
+globalThis.SpaNavigation = { onRouteChange() {} };
 await import('../../content/engine/languages.js');
 await import('../../content/engine/watchdog.js');
 // 词表快照与附加说明（P1-C）：这里没有 ctx.glossary，快照恒为空。

@@ -121,12 +121,11 @@
   //
   // 清缓存放在引擎这一层、由它自己订路由，而不是让自动翻译那一层换页时顺手清一下：
   // 划词、悬停、字幕走的是同一个 resolveSourceLang，自动翻译关着的时候它们照样在
-  // 这条路上。谁拥有这个缓存，谁负责让它过期。
-  if (globalThis.SpaNavigation) {
-    globalThis.SpaNavigation.onRouteChange(() => {
-      pageSourceLangPromise = null;
-    });
-  }
+  // 这条路上。谁拥有这个缓存，谁负责让它过期。manifest、设置页和引导页都把
+  // shared/spa-navigation.js 排在这个文件前面；缺了就在这里直接抛。
+  globalThis.SpaNavigation.onRouteChange(() => {
+    pageSourceLangPromise = null;
+  });
 
   // 短文本（划词、悬停、字幕）自身的探测结果不可靠，交给页面级结果兜底。
   const SELF_DETECT_MIN_CHARS = 40;
