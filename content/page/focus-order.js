@@ -104,7 +104,10 @@
     return rect.width !== 0 || rect.height !== 0;
   }
 
-  // 两段纵向区间 { top, bottom } 之间的空隙，相交为 0。
+  // 两段纵向区间 { top, bottom } 之间的空隙（px，相交或相接为 0）。整页翻译里问
+  // 「离视口多远」的两处都用它：这里的评分与分档、发现层挑该观察谁
+  // （content-auto-discover.js 的 distanceFromViewport）。没有布局盒（rect 全 0）的
+  // 怎么算各由调用方定，这里只做算术。
   function intervalGap(a, b) {
     return Math.max(0, a.top - b.bottom, b.top - a.bottom);
   }
@@ -116,31 +119,10 @@
     return { hidden: false, top: rect.top + scrollY, bottom: rect.bottom + scrollY };
   }
 
-  // 一个盒子离视口多远（px，相交或相接为 0）。整页翻译里问「离视口多远」的两处
-  // 都用它：这里的评分与分档、发现层挑该观察谁（content-auto-discover.js 的
-  // distanceFromViewport）。box 与 view 同一坐标系，各是 { top, bottom }；view 带
-  // left / right 时横向一起量，取两轴里大的那段空隙。没有布局盒（rect 全 0）的
-  // 怎么算各由调用方定，这里只做算术。
+  // 块离视口几屏（相交为 0），在视口下方还是上方。
   function viewportGap(box, view) {
-    const vertical = intervalGap(box, view);
-    if (view.left === undefined) return vertical;
-    return Math.max(vertical, box.left - view.right, view.left - box.right);
-  }
-
-  // 盒子和视口有没有重叠的那一片（面积大于 0）。和 viewportGap 的「相接为 0」
-  // 不同：底边正好贴着视口下沿的那一行一个像素也画不出来，不算在视口里。装回
-  // （page/recall.js）用它挑先装哪几块。box 与 view 同上，view 带 left / right
-  // 时横向一起判。
-  function overlapsViewport(box, view) {
-    const vertical = box.top < view.bottom && box.bottom > view.top;
-    if (view.left === undefined) return vertical;
-    return vertical && box.left < view.right && box.right > view.left;
-  }
-
-  // 块离视口几屏（相交为 0），在视口下方还是上方。只量纵向：一轮按文档顺序往下读。
-  function screensFromViewport(box, view) {
     const viewport = { top: view.scrollY, bottom: view.scrollY + view.height };
-    return { screens: viewportGap(box, viewport) / view.height, below: box.top >= viewport.bottom };
+    return { screens: intervalGap(box, viewport) / view.height, below: box.top >= viewport.bottom };
   }
 
   function isFormControl(element) {
@@ -189,7 +171,7 @@
   function tierOf(block, box, view) {
     if (box.hidden) return TIER.HIDDEN;
     if (block === view.focusBlock) return TIER.FOCUS;
-    return screensFromViewport(box, view).screens <= NEAR_SCREENS ? TIER.NEAR : TIER.FAR;
+    return viewportGap(box, view).screens <= NEAR_SCREENS ? TIER.NEAR : TIER.FAR;
   }
 
   // 一批只装同一档：焦点块和近档同属一档 —— 焦点块钉在第一批，第一批就是视口
@@ -205,11 +187,11 @@
    *
    * 手动那一轮和自动调度层每轮挑块都经 createBatchFeeder 用它；发现层
    * （content/content-auto-discover.js）的排序另有 distanceFromViewport，不经这里
-   * （两边量距离用的是同一个 viewportGap）。
+   * （两边量距离用的是同一个 intervalGap）。
    * box 是 measureBlock 量出的区间，view 是 readView 的快照。
    */
   function scoreBlockForViewport(box, view) {
-    const { screens, below } = screensFromViewport(box, view);
+    const { screens, below } = viewportGap(box, view);
     const towards = below ? view.scrollDir >= 0 : view.scrollDir < 0;
     let score = screens * (towards ? 0.8 : 1.2);
     if (view.pointerDocY !== null && Math.abs(box.top - view.pointerDocY) < view.height) score -= 0.5;
@@ -330,8 +312,7 @@
   }
 
   ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });
-  ctx.viewportGap = viewportGap;
-  ctx.overlapsViewport = overlapsViewport;
+  ctx.intervalGap = intervalGap;
 
   // 视口信号在模块加载时就开始记：第一轮开跑前的滚动方向、指针
   // 位置也要算数。

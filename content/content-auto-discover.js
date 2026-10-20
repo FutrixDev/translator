@@ -328,12 +328,12 @@
     // childList/characterData，展开是一次属性变动，它看不见 —— 那时候唯一能把
     // 这一块捞回来的就是还挂在它身上的 IntersectionObserver。
     //
-    // 只量纵向（距离的算术是 page/focus-order.js 的 viewportGap，整页翻译里只此一份）。
+    // 只量纵向（距离的算术是 page/focus-order.js 的 intervalGap，整页翻译里只此一份）。
     function distanceFromViewport(element) {
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) return Infinity;
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      return ctx.viewportGap(rect, { top: 0, bottom: height });
+      return ctx.intervalGap(rect, { top: 0, bottom: height });
     }
 
     function drop(set, element) {

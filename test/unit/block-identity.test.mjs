@@ -5,11 +5,14 @@
 // 那是**节点身份** —— 节点没变，class 还在，里面的文字已经是另一条内容了，于是新
 // 内容被静默跳过：不报错、不重试、永远不翻。
 //
-// 这一组测试盯住三件事：
+// 这一组测试盯住四件事：
 //   1. 指纹稳定且只对「文字变了」有反应（shared/block-identity.js）；
 //   2. 算指纹时读到的是页面自己的文字，不含我们插进去的译文（ctx.readSourceText）；
 //   3. 判定发生在正确的位置，撤除时该收的都收了（content/page/insert.js 的
-//      releaseTranslation，以及它在 collect.js 里被调用的时机）。
+//      releaseTranslation，以及它在 collect.js 里被调用的时机）；
+//   4. 页内记忆：按 (目标语言, 原文) 记上次落笔的译文，LRU 封顶、译法换代整张清，
+//      唯一的写入点在插入端（shared/block-identity.js 的 remember / recall /
+//      forgetMemory）。拿它把译文装回新节点的那一层在 recall.test.mjs。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -49,7 +52,6 @@ await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
 await import('../../content/page/collect.js');
 await import('../../content/page/insert.js');
-await import('../../content/page/recall.js');
 
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 const { BlockIdentity } = globalThis;
@@ -258,54 +260,6 @@ test('looking an entry up does not refresh it in the LRU order, whether or not t
   assert.equal(recalled('zh-CN', 'tab 3', (hit) => hit.translation === '标签 3'), '标签 3');
 });
 
-// 一次装回扫到的命中比装回预算多：视口外的只装前 16 块，剩下的留给发现层进带
-// 时再问。没装的那几条不该因为被扫到就挪到最新端 —— 否则一片装不完的大菜单每
-// 重建一次，就把别处真在用的译文挤出记忆。
-test('a recall that restores only part of its hits leaves the hits it dropped at the old end of the LRU order', () => {
-  const stubs = ['collectPageBlocks', 'passTarget', 'landTranslation', 'overlapsViewport'];
-  const saved = Object.fromEntries(stubs.map((name) => [name, ctx[name]]));
-  const savedSize = [globalThis.window.innerWidth, globalThis.window.innerHeight];
-  try {
-    // 先记 20 条命中，再记 1980 条别的：命中是表里最旧的 20 条。
-    const hits = Array.from({ length: 20 }, (_, i) => `drawer item ${i}`);
-    for (const text of hits) BlockIdentity.remember('zh-CN', entry(text, `抽屉 ${text}`));
-    for (let i = 0; i < 1980; i++) BlockIdentity.remember('zh-CN', entry(`filler ${i}`, `填充 ${i}`));
-    assert.equal(BlockIdentity.memorySize(), 2000);
-
-    // 替身（只换装回之外的那几层）：20 块全在视口下方；收集端按顺序交出这 20
-    // 块；落笔替身照真实落笔（batch.js 的 landTranslation → 插入端）那样再记一次。
-    globalThis.window.innerWidth = 1280;
-    globalThis.window.innerHeight = 800;
-    const below = { top: 5000, bottom: 5040, left: 0, right: 300, width: 300, height: 40 };
-    const blocks = hits.map((text) => ({ text, element: { getBoundingClientRect: () => below } }));
-    ctx.collectPageBlocks = (_root, { limit }) => blocks.slice(0, limit);
-    ctx.passTarget = () => ({ stamp: 'zh-CN', request: 'zh-CN', generation: 0 });
-    ctx.overlapsViewport = (rect, view) => rect.top < view.bottom && rect.bottom > view.top
-      && rect.left < view.right && rect.right > view.left;
-    const landed = [];
-    ctx.landTranslation = (block, translation, target) => {
-      landed.push(block.text);
-      BlockIdentity.remember(target.stamp, { source: block.text, translation, targetLangChecked: false });
-    };
-
-    assert.equal(ctx.recallTranslations([{ isConnected: true }]), 16);
-    assert.deepEqual(landed, hits.slice(0, 16));
-    // 再记 4 条新的：挤掉的是最旧的 4 条 —— 扫到却没装的那 4 块。
-    for (let i = 0; i < 4; i++) BlockIdentity.remember('zh-CN', entry(`newcomer ${i}`, `新 ${i}`));
-    for (const text of hits.slice(16)) {
-      assert.equal(recalled('zh-CN', text), null, `${text} was dropped from the restore yet moved to the most recent end`);
-    }
-    for (const text of hits.slice(0, 16)) assert.equal(recalled('zh-CN', text), `抽屉 ${text}`);
-    for (let i = 0; i < 4; i++) assert.equal(recalled('zh-CN', `filler ${i}`), `填充 ${i}`);
-  } finally {
-    for (const name of stubs) {
-      if (saved[name] === undefined) delete ctx[name];
-      else ctx[name] = saved[name];
-    }
-    [globalThis.window.innerWidth, globalThis.window.innerHeight] = savedSize;
-  }
-});
-
 // 译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
 // content/content-translation-cache.js 的 setGeneration（translation-profile.test.mjs
 // 真跑它），下面那条源码检查守着 insert.js 不再自己订阅一份。
@@ -317,7 +271,7 @@ test('forgetMemory empties the whole memory', () => {
   assert.equal(recalled('zh-CN', 'Forget me'), null);
 });
 
-test('a new translation profile generation forgets the memory, and recall checks the source and the skip setting', () => {
+test('a new translation profile generation forgets the memory, and the insertion side is its only writer', () => {
   const insert = repoFile('content/page/insert.js');
   // DOM 夹具（test/e2e/helpers.js 的 PAGE_TRANSLATION_MODULES）装 insert.js 不装缓存层：
   // insert.js 在加载时碰 ctx.translationProfile 就整个抛错，ctx.insertTranslationBlock 不存在。
@@ -340,13 +294,6 @@ test('a new translation profile generation forgets the memory, and recall checks
     'insertTranslationBlock no longer remembers what it registered');
   assert.equal(insert.match(/BlockIdentity\.remember\(/g).length, 1, 'a second writer of the memory appeared');
   assert.doesNotMatch(insert, /ctx\.rememberLanded/, 'the memory writer is exposed on ctx again');
-  const recall = repoFile('content/page/recall.js');
-  assert.match(recall, /BlockIdentity\.recall\(target\.stamp, block\.text, usableNow\);/,
-    'recall no longer looks up the new block\'s own source text');
-  assert.match(recall, /function usableNow\(entry\) \{\s*\n\s*return ctx\.settings\.skipTargetLanguageText !== true \|\| entry\.targetLangChecked;/,
-    'recall restores translations that never passed the skip-target-language check');
-  assert.equal((recall.match(/ctx\.landTranslation\(block, entry\.translation, target\)/g) || []).length, 2,
-    'recall lands through a second path instead of the one the batch uses');
 });
 
 // ==================== 读的是页面自己的文字 ====================

@@ -72,14 +72,15 @@
     return true;
   }
 
-  // 和视口相交。只用来排装回的先后，不判可见性：零尺寸的（display:none 里的、还没
-  // 撑开的）不算在视口里。判定是 focus-order.js 的 overlapsViewport：只贴着视口边
-  // 的不算；装回横向也判（横向滚动的标签栏，视口外那几项排后面）。
+  // 和视口相交（重叠的那一片面积大于 0）。只用来排装回的先后，不判可见性：零尺寸
+  // 的（display:none 里的、还没撑开的）不算在视口里；只贴着视口边的也不算 —— 底边
+  // 正好贴着视口下沿的那一行一个像素也画不出来。横向也判（横向滚动的标签栏，视口
+  // 外那几项排后面）。
   function intersectsViewport(element) {
     const rect = element.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return false;
-    const view = { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
-    return ctx.overlapsViewport(rect, view);
+    return rect.top < window.innerHeight && rect.bottom > 0
+      && rect.left < window.innerWidth && rect.right > 0;
   }
 
   // 命中比预算多时：和视口相交的全装，视口外的按 DOM 顺序补到预算为止 —— 一共装
