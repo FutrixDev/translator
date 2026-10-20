@@ -94,6 +94,11 @@
     const retried = new Set();
 
     let discovery = null;
+    // 装回的观察器（摘掉它的函数），没挂是 null。挂不挂只看 recallOn()：站点的自动
+    // 判定（不算「翻译整页」那一下）是 auto，且他没按暂停。和发现层是两回事 ——
+    // 藏着译文、预算拒绝、出错停下的是发现层，装回照挂：页面把菜单整片重建，上次
+    // 的译文照样从页内记忆装回去（藏着时带着隐藏态）。
+    let recallWatch = null;
     let status = STATUS.OFF;
     let reason = '';
     let lastError = null;
@@ -273,6 +278,9 @@
     function start(why) {
       decidedHref = location.href;
       bumpSession(why || 'start');
+      // recallOn() 的输入（站点判定、pausedByUser）一变都会走到这里 —— 暂停那一下
+      // 除外，它自己对 —— 所以装回在这里照它对一遍，下面三条路都不再碰它。
+      syncRecall();
       stopDiscovery();
       if (ctx.state.translationsVisible === false || pausedByUser) {
         // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
@@ -318,10 +326,37 @@
       });
     }
 
+    // 停的只是发现层，装回不归它管：预算拒绝、出错停下时装回照挂。
     function stopDiscovery() {
       if (!discovery) return;
       discovery.stop();
       discovery = null;
+    }
+
+    // 装回挂不挂，只问这一句。判定刨掉 explicit（siteAuto）：「翻译整页」只管到
+    // 换路由为止，而装回的观察器先于 onRouteChange 看见新路由的子树 —— 读带
+    // explicit 的判定，手动翻过的页面一换路由就从记忆装回了。
+    function recallOn() {
+      return siteAuto() && !pausedByUser;
+    }
+
+    function syncRecall() {
+      if (recallOn()) watchRecall();
+      else unwatchRecall();
+    }
+
+    // 页面新长出来的子树，在 MutationObserver 回调里 —— 绘制之前 —— 交给装回
+    // （content/page/recall.js）：单页应用整片重建、文字没变的那些节点，上次的
+    // 译文当场放回去，不闪原文、不重发。
+    function watchRecall() {
+      if (recallWatch) return;
+      recallWatch = ctx.watchAddedElements((added) => ctx.recallTranslations(added));
+    }
+
+    function unwatchRecall() {
+      if (!recallWatch) return;
+      recallWatch();
+      recallWatch = null;
     }
 
     // 同一个节点在队里换了一份更新的：旧的那份文字若是接纳过、还没了结，它就此
@@ -363,7 +398,7 @@
       const identity = globalThis.BlockIdentity;
       if (!identity.lookup(element)) return false;
       // 目标语言也要带上：挂在上面那条译文要是上一门语言的，这一块就不算翻过。
-      const target = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+      const target = ctx.currentTargetLang();
       return !identity.isStale(element, textFingerprint, target);
     }
 
@@ -751,6 +786,9 @@
       // resumeCurrentPage。
       if (cause === 'hidden' && status === STATUS.ERROR) return;
       if (cause !== 'hidden') pausedByUser = true;
+      // 上了闩 recallOn() 就是假，装回当场摘掉，不等下一次 start()；藏译文那一停
+      // 不上闩，这里对出来照旧，装回照挂（带着隐藏态）。
+      syncRecall();
       bumpSession('paused');
       stopDiscovery();
       setStatus(STATUS.PAUSED);

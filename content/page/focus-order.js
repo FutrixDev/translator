@@ -104,7 +104,10 @@
     return rect.width !== 0 || rect.height !== 0;
   }
 
-  // 两段纵向区间 { top, bottom } 之间的空隙，相交为 0。
+  // 两段纵向区间 { top, bottom } 之间的空隙（px，相交或相接为 0）。整页翻译里问
+  // 「离视口多远」的两处都用它：这里的评分与分档、发现层挑该观察谁
+  // （content-auto-discover.js 的 distanceFromViewport）。没有布局盒（rect 全 0）的
+  // 怎么算各由调用方定，这里只做算术。
   function intervalGap(a, b) {
     return Math.max(0, a.top - b.bottom, b.top - a.bottom);
   }
@@ -183,7 +186,8 @@
    *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 指针同屏 0.5。
    *
    * 手动那一轮和自动调度层每轮挑块都经 createBatchFeeder 用它；发现层
-   * （content/content-auto-discover.js）的排序另有 distanceFromViewport，不经这里。
+   * （content/content-auto-discover.js）的排序另有 distanceFromViewport，不经这里
+   * （两边量距离用的是同一个 intervalGap）。
    * box 是 measureBlock 量出的区间，view 是 readView 的快照。
    */
   function scoreBlockForViewport(box, view) {
@@ -308,6 +312,7 @@
   }
 
   ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });
+  ctx.intervalGap = intervalGap;
 
   // 视口信号在模块加载时就开始记：第一轮开跑前的滚动方向、指针
   // 位置也要算数。

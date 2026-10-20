@@ -45,17 +45,6 @@ const html = (body) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Rules fixture</title></head>
 <body>${body}</body></html>`;
 
-async function serve(context, pages) {
-  const origins = new Set(Object.keys(pages).map((url) => new URL(url).origin));
-  for (const origin of origins) {
-    await context.route(`${origin}/**`, (route) => {
-      const body = pages[route.request().url().split(/[?#]/)[0]];
-      if (!body) return route.fulfill({ status: 404, body: 'not found' });
-      return route.fulfill({ status: 200, contentType: 'text/html', body });
-    });
-  }
-}
-
 function rule(match, fields) {
   return { v: 1, match, ...fields, updatedAt: Date.now() };
 }
@@ -340,7 +329,6 @@ module.exports = {
   fill,
   settings,
   html,
-  serve,
   rule,
   writeRule,
   removeRules,

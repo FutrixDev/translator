@@ -132,6 +132,8 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/page/not-prose.js',
   'content/page/collect.js',
   'content/page/insert.js',
+  // 装回（recall.js）：发现层与自动翻译的观察器在调用时读 ctx.recallTranslation(s)。
+  'content/page/recall.js',
   'content/page/failed-blocks.js',
   'content/page/visibility.js',
   'content/page/display.js',

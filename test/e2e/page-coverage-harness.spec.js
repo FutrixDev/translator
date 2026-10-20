@@ -287,6 +287,9 @@ test('own UI: the text in the source peek card is never collected', async ({ pag
     <p id="source-p">${SOURCE}</p>`));
   await page.evaluate(() => {
     const ctx = window.AI_TRANSLATOR_CONTENT;
+    // 引擎不在整页翻译这几个模块里，夹具得自己给 currentTargetLang（真实页面上它
+    // 一定在，manifest 里排在前面）：下面再收一次时，收集端要问已翻块的目标语言。
+    ctx.currentTargetLang = () => '';
     ctx.settings.showTranslationOnly = true;
     const block = ctx.collectTranslatableBlocks(document.body).find((b) => b.element.id === 'source-p');
     // textLang 取这个夹具真会请求的那门语言，和 content/page/batch.js 落笔时同一个来源。

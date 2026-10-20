@@ -79,6 +79,7 @@
 
   // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
   // 不做任何范围过滤——e2e 直接调这个函数的地方都是这样用的。
+  // options.limit：收够这么多块就停（MutationObserver 回调里的同步装回，见 scope.js）。
   function collectTranslatableBlocks(root, options) {
     // 单块上限是分批器的口径（content/page/batch.js）：那边按它切块，
     // 这边按它决定一块算不算 oversized，两处必须是同一个数。
@@ -104,6 +105,7 @@
     // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
     const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
     const scope = options && options.scope;
+    const limit = options?.limit ?? Infinity;
     const scopeCut = scope && scope.skip ? (el) => ctx.pageScopeCut(el, scope) : null;
     const allowed = ctx.createTranslateJudge();
     // 用于检测代码/脚本内容的模式
@@ -298,6 +300,7 @@
 
     function processElement(element) {
       if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
+      if (blocks.length >= limit) return;
 
       const tagName = element.tagName;
 
@@ -331,7 +334,7 @@
       if (identity.lookup(element)) {
         // 第三个参数是目标语言：内容没变但语言换了的块也要放开重翻，否则改完
         // 目标语言的页面是花的 —— 先前那批留着旧语言，而且没有任何东西会再动它们。
-        const target = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+        const target = ctx.currentTargetLang();
         if (!identity.isStale(element, identity.fingerprint(readSourceText(element)), target)) return;
         ctx.releaseTranslation(element);
       }

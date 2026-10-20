@@ -386,16 +386,36 @@
   // 几十秒，中途的开关只管得到当时已经插好的块 —— 新插进来的这一条得自己跟上当
   // 前状态，否则藏了一次译文还会一批批冒出来。跟上这件事在 finishTranslationInsert
   // 的最后一步做，不在这里：这里跑在两个几何守卫之前（见那边的第 4 条）。
+  //
   function registerTranslation(element, translationEl, managed, lang) {
+    // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
+    // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
+    // 它是我们自己的，不会把它算进原文。
+    const fingerprint = globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element));
     globalThis.BlockIdentity.register(element, {
-      // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
-      // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
-      // 它是我们自己的，不会把它算进原文。
-      fingerprint: globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element)),
+      fingerprint,
       translationEl: translationEl || null,
       managed: !!managed,
       lang
     });
+  }
+
+  // 页内记忆（BlockIdentity.remember）唯一的写入点：落了笔的译文由
+  // insertTranslationBlock 在插好之后记一次。
+  // 单页应用把同样文字的节点整片重建时，装回那一层（content/page/recall.js）拿它
+  // 把译文放回新节点，不再发请求。
+  //
+  // 条目由落笔的调用方给齐（page/batch.js 的 landTranslation），这里原样记下：
+  //   · source —— 送出去的那份原文 block.text（收集端 getTextWithMathPlaceholders
+  //     产出、请求体里发的就是它），也是记忆的键：装回时新块的 block.text 逐字等于
+  //     它才查得到，标记编号对不上的译文不会被装到别的结构上；
+  //   · translation —— 落笔的原样译文（含内联标记），装回时按新节点自己的标记重建；
+  //   · targetLangChecked —— 这条译文过没过「跳过目标语言」那道检测。之后用户把
+  //     检测打开，没过的那些不能再装回，回到批量那条路由检测本身来判。
+  // @param {string|null} lang 记进身份的那一门（见 registerTranslation）
+  // @param {{source: string, translation: string, targetLangChecked: boolean}} landed
+  function rememberLanded(lang, landed) {
+    globalThis.BlockIdentity.remember(lang, landed);
   }
 
   // 节点被回收去装别的内容了：把上一条译文整条摘掉，让这一块重新变回「没翻过」。
@@ -445,16 +465,14 @@
   // 不矛盾：那一条管的是**记什么戳** —— 戳必须是发请求时的那一门，否则戳和译文
   // 对不上；这一条管的是**谁说了算** —— 只能是用户此刻要的那一门。
   //
-  // null 一律当「不知道」，不知道就不动页面。三处都会出现：没登记过身份
-  // （lookup 落空）、登记时没说语言（entry.lang，见 registerTranslation），以及
-  // 只装了整页翻译那几个模块的 DOM 夹具里根本没有引擎（currentTargetLang 不在）。
+  // null 一律当「不知道」，不知道就不动页面。两处会出现：没登记过身份
+  // （lookup 落空），以及登记时没说语言（entry.lang，见 registerTranslation）。
   // 调用方自己没说语言（lang == null）不必单列一条：那时 lang 既不可能等于
   // entry.lang 之外的某个具体值，也不可能等于 current，最后一行自然答 false。
   function supersedesExistingTranslation(element, lang) {
     const entry = globalThis.BlockIdentity.lookup(element);
     if (!entry || entry.lang == null || entry.lang === lang) return false;
-    const current = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
-    return current != null && lang === current;
+    return lang === ctx.currentTargetLang();
   }
 
   // 失败标记（content/page/failed-blocks.js 造好的那个 span）放在译文本来会落的
@@ -491,17 +509,28 @@
   // textLang：译文文字本身的语言（请求的目标，从不为空），决定 lang / dir 和对齐。
   // 它和 lang 不是一回事：lang 的空串是「跟随浏览器」这个身份，不是一门语言。
   // 必传 —— 漏传是调用方的程序错误，猜一门语言写进 dir 只会把排版悄悄弄反。
-  function insertTranslationBlock(block, translation, { lang = null, textLang } = {}) {
+  // landed：要记进页内记忆的那一条（见 rememberLanded）。不带就是不记 —— 生产上
+  // 只有 page/batch.js 的 landTranslation 调这里，记不记由它按译法代次定。
+  function insertTranslationBlock(block, translation, { lang = null, textLang, landed = null } = {}) {
     if (!textLang) throw new Error('insertTranslationBlock: textLang is required');
+    if (!placeTranslation(block, translation, lang, textLang)) return;
+    // 记的是真登记上的那条：插入端拒收（同语言已有译文、原文壳子、节点已摘下）
+    // 的不记。fit guard 事后把译文撤掉的照记 —— 登记已经发生，重建出来的节点
+    // 装回时同样走 fit guard，再撤一次也不发请求。
+    if (landed !== null) rememberLanded(lang, landed);
+  }
+
+  // 把译文插到页面上并登记身份。@returns {boolean} 登记上了没有（拒收为 false）
+  function placeTranslation(block, translation, lang, textLang) {
     const element = block.element;
-    if (!element || !element.parentNode) return;
+    if (!element || !element.parentNode) return false;
 
     // 这个元素上已经挂着一条译文了。动不动它，见 supersedesExistingTranslation。
     if (element.classList.contains('ai-translator-translated')) {
-      if (!supersedesExistingTranslation(element, lang)) return;
+      if (!supersedesExistingTranslation(element, lang)) return false;
       releaseTranslation(element);
     }
-    if (element.classList.contains('ai-translator-inline-source')) return;
+    if (element.classList.contains('ai-translator-inline-source')) return false;
 
     // 标记为已翻译
     element.classList.add('ai-translator-translated');
@@ -529,7 +558,7 @@
       registerTranslation(element, handle, true, lang);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
-      return;
+      return true;
     }
 
     // 页面原本给这一块多少横向空间、本来切掉多少。插完就问不到了（收缩包裹的框会被
@@ -691,8 +720,8 @@
         finishTranslationInsert(element, translationEl, before, lang, textLang);
       }
     }
+    return true;
   }
-
 
   ctx.buildTranslationContent = buildTranslationContent;
   ctx.buildTranslationContentWithMath = buildTranslationContentWithMath;

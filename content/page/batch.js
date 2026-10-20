@@ -231,11 +231,38 @@
   // 「语言没变」把这些块全跳过，旧语言的译文就永远留在页面上了。反过来（请求用
   // 新的、戳按旧的）只是白翻一轮，不会留下错的东西 —— 但两个读数同源，两种都
   // 不会发生：这一轮整个是旧语言的，改设置由 RESTART_KEYS 另起一轮来接。
+  //
+  // 第三个读数 generation 是译法的代次（缓存层的 translationProfile）。提示词、
+  // 领域、术语表换了，代次加一、页内记忆整张清掉，可自动翻译那一层不为它重开
+  // 一轮：开跑前发出去的那几批照样回来、照样落笔。落在当下这个节点上无妨（和
+  // 没有页内记忆时一样），但不能记进刚清空的记忆 —— 记进去的话，往后每次重建
+  // 都把旧译法的译文装回来，不再发请求。见 landTranslation。
   function passTarget() {
     return {
       request: getEffectiveTargetLang(),
-      stamp: ctx.currentTargetLang ? ctx.currentTargetLang() : null
+      stamp: ctx.currentTargetLang(),
+      generation: ctx.translationProfile.generation()
     };
+  }
+
+  // 一条译文落到页面上：翻译回来的（insertTranslation）和从页内记忆装回的
+  // （content/page/recall.js）走这同一句。target 是 passTarget 的那一份快照。
+  //
+  // 记不记进页内记忆在这里定：译法代次自开跑以来没变才记。记的时候带上「跳过
+  // 目标语言」此刻开没开 —— 落笔前 shouldSkipTranslation 现读的就是它，开着就是
+  // 这条译文过了那道检测（装回那边据此决定之后还能不能装）。落笔端原样记下，
+  // 不再自己去读设置。
+  //
+  // 计费、进度这些不在这里：装回不花钱、也不算这一轮的结果。
+  function landTranslation(block, translation, target) {
+    // 这一段上次失败留下的标记（content/page/failed-blocks.js）让位给译文。
+    ctx.failedBlocks.clear(block);
+    const landed = target.generation === ctx.translationProfile.generation()
+      ? { source: block.text, translation, targetLangChecked: settings.skipTargetLanguageText === true }
+      : null;
+    ctx.insertTranslationBlock(block, translation, { lang: target.stamp, textLang: target.request, landed });
+    // 块在 shadow root 里：给那个 root 补上译文样式、把具名 slot 抄给译文（shadow.js）。
+    ctx.afterInsertTranslation(block);
   }
 
   // 默认现问设置，是给**一轮开跑之前**的那个调用点留的（filterBlocksByLanguage：
@@ -320,11 +347,7 @@
       return;
     }
     if (accept && !accept(block)) return;
-    // 这一段上次失败留下的标记（content/page/failed-blocks.js）让位给译文。
-    ctx.failedBlocks.clear(block);
-    ctx.insertTranslationBlock(block, translation, { lang: target.stamp, textLang: target.request });
-    // 块在 shadow root 里：给那个 root 补上译文样式、把具名 slot 抄给译文（shadow.js）。
-    ctx.afterInsertTranslation(block);
+    landTranslation(block, translation, target);
     // 无条件报结果，不去问插入端「真写进去了吗」。它拒收的三种情形都是终局：
     //   · 这一块上已经挂着一条同语言的译文 —— 那就是有结果了；
     //   · 这一轮译成的已经不是用户此刻要的那门语言了（并发的另一轮把页面翻成了
@@ -728,6 +751,8 @@
   }
 
   ctx.runTranslationPass = runTranslationPass;
+  ctx.passTarget = passTarget;
+  ctx.landTranslation = landTranslation;
   ctx.filterBlocksByLanguage = filterBlocksByLanguage;
   // 单元测试直接驱动这条“译文数量必须与块数一致”的守卫
   // （test/unit/fast-batch-alignment.test.mjs），不必伪造整条整页翻译流水线。

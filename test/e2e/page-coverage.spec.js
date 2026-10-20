@@ -16,6 +16,7 @@ const {
   sendMessageToActiveTab,
   getSyncSetting,
 } = require('./helpers');
+const { scopeProbe, serveHtml } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://coverage.test';
@@ -30,15 +31,6 @@ function settings(endpoint, extra) {
     skipTargetLanguageText: false,
     ...extra,
   };
-}
-
-async function serve(context, pages) {
-  await context.route(`${ORIGIN}/**`, (route) => {
-    const path = new URL(route.request().url()).pathname;
-    const body = pages[path];
-    if (!body) return route.fulfill({ status: 404, body: 'not found' });
-    return route.fulfill({ status: 200, contentType: 'text/html', body });
-  });
 }
 
 const sent = (sentTexts, text) => sentTexts.some((chunk) => chunk.includes(text));
@@ -88,7 +80,7 @@ test('J-5 shadow DOM: open, closed and slotted components are translated, styled
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, { '/components': SHADOW_PAGE });
+    await serveHtml(context, { [`${ORIGIN}/components`]: SHADOW_PAGE });
     await page.goto(`${ORIGIN}/components`);
     await page.waitForSelector('#ai-translator-float-ball');
 
@@ -188,7 +180,7 @@ test('J-6 notranslate: element-level declarations are honoured, the page-level o
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, { '/notes': NOTRANSLATE_PAGE });
+    await serveHtml(context, { [`${ORIGIN}/notes`]: NOTRANSLATE_PAGE });
     await page.goto(`${ORIGIN}/notes`);
     await page.waitForSelector('#ai-translator-float-ball');
 
@@ -254,7 +246,10 @@ function newsPage({ withMain }) {
 </body></html>`;
 }
 
-const NEWS_PAGES = { '/news': newsPage({ withMain: true }), '/news-nomain': newsPage({ withMain: false }) };
+const NEWS_PAGES = {
+  [`${ORIGIN}/news`]: newsPage({ withMain: true }),
+  [`${ORIGIN}/news-nomain`]: newsPage({ withMain: false }),
+};
 
 // 段落的译文是兄弟节点；列表项的译文插在条目内部（insert.js 的 INSIDE_ONLY_TAGS）。
 const translationAfter = (page, id) =>
@@ -290,7 +285,7 @@ test('J-7 main-content scope: the article is translated, site chrome is not, and
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, NEWS_PAGES);
+    await serveHtml(context, NEWS_PAGES);
     await page.goto(`${ORIGIN}/news`);
     await page.waitForSelector('#ai-translator-float-ball');
 
@@ -335,7 +330,7 @@ test('J-7 Alt+W path: TRANSLATE_WHOLE_PAGE translates the chrome too', async ({ 
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, NEWS_PAGES);
+    await serveHtml(context, NEWS_PAGES);
     await page.goto(`${ORIGIN}/news`);
     await page.waitForSelector('#ai-translator-float-ball');
 
@@ -360,7 +355,7 @@ test('J-7 without <main>: the scope falls back to body with the same distributio
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, NEWS_PAGES);
+    await serveHtml(context, NEWS_PAGES);
     await page.goto(`${ORIGIN}/news-nomain`);
     await page.waitForSelector('#ai-translator-float-ball');
 
@@ -374,6 +369,33 @@ test('J-7 without <main>: the scope falls back to body with the same distributio
   }
 });
 
+// 「翻译后再判」：占比只量原文。译文挂在正文里，量进去的话翻完一轮正文的占比就
+// 被我们自己的节点抬高（或者把别的根挤过阈值），下一轮的范围跟着变。
+// 认出来的 <main> 是缓存住的（beginScopeRound 只作废退回 body 的结果），所以这里
+// 整个丢掉缓存再算（scopeProbe 的 invalidate: 'all'）：不丢的话「翻译后」拿回的是
+// 翻译前那份，占比根本没重量。
+
+test('J-7 judged again after translating: the scope and the main share do not move', async ({ page, context }) => {
+  const { close, endpoint } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serveHtml(context, NEWS_PAGES);
+    await page.goto(`${ORIGIN}/news`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    const before = await scopeProbe(context, page, { invalidate: 'all' });
+    expect(before.roots).toEqual(['MAIN']);
+    await triggerPageTranslation(page);
+    await waitForTranslationComplete(page);
+    await expectArticleTranslated(page);
+    const after = await scopeProbe(context, page, { invalidate: 'all' });
+    expect(after.roots).toEqual(['MAIN']);
+    expect(Math.abs(after.share - before.share)).toBeLessThan(0.001);
+  } finally {
+    await close();
+  }
+});
+
 test('J-7 in an iframe: the whole-page menu item carries the scope into the child frame', async ({ page, context }) => {
   // 顶层把整页覆盖放进指令（content/frames/top.js），子 frame 照着设和清
   // （content/frames/child.js 的 applyDirective）。iframe 给足尺寸：尺寸闸是
@@ -381,7 +403,7 @@ test('J-7 in an iframe: the whole-page menu item carries the scope into the chil
   const TOP_LEAD = 'This page embeds the harbour newspaper below so readers can follow it here.';
   const pages = {
     ...NEWS_PAGES,
-    '/framed': `<!doctype html>
+    [`${ORIGIN}/framed`]: `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Framed gazette</title></head>
 <body>
   <p id="top-lead">${TOP_LEAD}</p>
@@ -391,7 +413,7 @@ test('J-7 in an iframe: the whole-page menu item carries the scope into the chil
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
   try {
     await setExtensionSettings(page, settings(endpoint));
-    await serve(context, pages);
+    await serveHtml(context, pages);
     await page.goto(`${ORIGIN}/framed`);
     await page.waitForSelector('#ai-translator-float-ball');
     const frame = page.frameLocator('#news-frame');
@@ -427,7 +449,7 @@ test('J-8 options: choosing "Whole page" is stored and takes effect on the next 
     // 选项页每次自动保存都写整张表单：服务商不是 custom 时，接口地址会被换成
     // 服务商的官方地址。mock 端点是自定义接口，照真实用户那样存成 custom。
     await setExtensionSettings(page, settings(endpoint, { provider: 'custom' }));
-    await serve(context, NEWS_PAGES);
+    await serveHtml(context, NEWS_PAGES);
 
     // 1. 在选项页的真实控件上选「翻译整个页面」。
     await page.goto(`chrome-extension://${extensionId}/options/options.html`);

@@ -44,6 +44,7 @@ const SCRIPTS = [
   'shared/text-markers.js',
   'shared/batch-delimiter.js',
   'shared/glossary.js',
+  'shared/block-identity.js',
   'shared/translation-cache.js',
   'content/content-glossary.js',
   'content/content-ai-profiles.js',

@@ -26,10 +26,10 @@ const {
   translateInput,
   waitForContentReady,
 } = require('./helpers');
+const { serveHtml } = require('./served-page-helpers');
 const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,
-  serve,
   storedRules,
   newOptionsTab,
   fillRuleEditor,
@@ -148,7 +148,7 @@ test.describe('P1-C prompt domain and page context', () => {
   }
 
   test('C-J6 the domain and the page context go with every AI batch; a site rule wins; the input box and the switch keep the context out', async ({ page, context, extensionId }) => {
-    await serve(context, { [`${SITE}/contract`]: PAGE });
+    await serveHtml(context, { [`${SITE}/contract`]: PAGE });
     await setExtensionSettings(page, settings(mock.endpoint));
 
     // 0. 对照程：全局「通用」、上下文关着（出厂值）。没有 DOMAIN 行、没有 PAGE
@@ -252,7 +252,7 @@ test.describe('P1-C prompt domain and page context', () => {
   });
 
   test('a rule left on "follow the global setting" is stored as v1 without a domain, and the global domain applies on its site', async ({ page, context, extensionId }) => {
-    await serve(context, { [`${FOLLOW}/contract`]: PAGE });
+    await serveHtml(context, { [`${FOLLOW}/contract`]: PAGE });
     await setExtensionSettings(page, settings(mock.endpoint));
 
     const options = await openPromptCard(context, extensionId);
@@ -279,7 +279,7 @@ test.describe('P1-C prompt domain and page context', () => {
   // 控件在 C-J6 第 1 步已经走过真实入口，这里要证的是内置引擎那一头什么也不带；
   // e2e 的 Chromium 没有端上模型，内置引擎只能是 stubBuiltinTranslator 的替身。
   test('[fixture] the built-in engine gets the page text and nothing else, with the domain and the context switched on', async ({ page, context }) => {
-    await serve(context, { [`${SITE}/contract`]: PAGE });
+    await serveHtml(context, { [`${SITE}/contract`]: PAGE });
     await setExtensionSettings(page, settings(mock.endpoint, {
       translationEngine: 'builtin',
       promptDomain: 'legal',
