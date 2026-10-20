@@ -353,6 +353,21 @@
     return Array.isArray(column) ? ctx.wrapTextRun(column) : textColumnOf(column);
   }
 
+  const POSITION_CLASSES = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
+
+  // 插在原文块后面的译文照抄原文块的类名，保住页面给这类块的样式（如 ltx_p 用于
+  // MathML 内联显示）。整页翻译和悬停/划选都用这一份，抄的时候拿掉三样：
+  //   · 「翻过了」的标记；
+  //   · 锚点的类名：带着它的译文会被收集端当成又一段原文，还会被锚点那条规则压成内联；
+  //   · 位置类（absolute/fixed/inset-*…）：照抄会把译文甩到页面另一头。
+  function translationClassName(element) {
+    return element.className
+      .replace('ai-translator-translated', '')
+      .replace(ctx.TEXT_RUN_CLASS, '')
+      .replace(POSITION_CLASSES, '')
+      .trim();
+  }
+
   // @returns {{inside: boolean, target: Element, tag: string}} inside=true 时往 target 里
   //   追加、tag 是要新建的标签名；target 一般就是 element，横排 flex 时是装原文的那一项。
   //   找那一项可能就地裹一次直属文本（textColumnOf），所以只在马上要落笔时问。
@@ -643,19 +658,11 @@
       const placement = getTranslationPlacement(element, computedStyle);
       const translationEl = document.createElement(placement.inside ? placement.tag : element.tagName);
 
-      // 复制原始元素的类名，保留页面的 CSS 样式（如 ltx_p 用于 MathML 内联显示）
-      // 然后添加我们的标记类
-      // 需要移除位置相关的类，避免破坏布局（如 absolute, fixed, inset-* 等）
+      // 复制原始元素的类名（见 translationClassName），然后添加我们的标记类。
       // 往内部插时不复制：单元格专属样式（列宽/对齐）会带歪译文块，而页面画的那个框
       // 会在框里再画一个一模一样的框——内部译文要的样式本来就是继承来的
       if (element.className && !placement.inside) {
-        const positionClasses = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
-        // 锚点的类名也不能跟过来：带着它的译文会被收集端当成又一段原文
-        translationEl.className = element.className
-          .replace('ai-translator-translated', '')
-          .replace(ctx.TEXT_RUN_CLASS, '')
-          .replace(positionClasses, '')
-          .trim();
+        translationEl.className = translationClassName(element);
       }
       translationEl.classList.add('ai-translator-inline-block');
 
@@ -732,6 +739,7 @@
   ctx.getInlineTranslationTarget = getInlineTranslationTarget;
   ctx.isHorizontalFlexParent = isHorizontalFlexParent;
   ctx.getTranslationPlacement = getTranslationPlacement;
+  ctx.translationClassName = translationClassName;
   ctx.appendInside = appendInside;
   ctx.insertTranslationBlock = insertTranslationBlock;
   ctx.placeFailureMarker = placeFailureMarker;

@@ -15,8 +15,6 @@
   // 这一族共用的架子，说明见 content/content-hover-translation.js 顶上。
   const hov = (ctx.hover = ctx.hover || {});
 
-  const POSITION_CLASSES = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
-
 
 
   // dir：这段文字自己的方向。对齐照抄原文，方向相反时按 translationTextAlign 改。
@@ -106,10 +104,7 @@
     const placement = ctx.getTranslationPlacement(block, computedStyle);
     const loadingEl = document.createElement(placement.inside ? placement.tag : block.tagName);
     if (block.className && !placement.inside) {
-      loadingEl.className = block.className
-        .replace('ai-translator-translated', '')
-        .replace(POSITION_CLASSES, '')
-        .trim();
+      loadingEl.className = ctx.translationClassName(block);
     }
     loadingEl.classList.add('ai-translator-inline-block', className, hov.INLINE_LOADING_CLASS);
     loadingEl.style.cssText = buildBaseStyle(computedStyle, dir) + `
@@ -220,10 +215,7 @@
     const placement = ctx.getTranslationPlacement(block, computedStyle);
     const translationEl = document.createElement(placement.inside ? placement.tag : block.tagName);
     if (block.className && !placement.inside) {
-      translationEl.className = block.className
-        .replace('ai-translator-translated', '')
-        .replace(POSITION_CLASSES, '')
-        .trim();
+      translationEl.className = ctx.translationClassName(block);
     }
     translationEl.classList.add('ai-translator-inline-block', className);
 

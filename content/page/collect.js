@@ -100,11 +100,9 @@
     const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'FIGCAPTION', 'BLOCKQUOTE', 'DT', 'DD'];
     // 内联可翻译元素 - 这些元素即使不是块级也应单独翻译
     const inlineTags = ['A', 'SPAN', 'LABEL', 'BUTTON'];
-    const skipTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'TEXTAREA', 'INPUT', 'SELECT', 'CODE', 'PRE', 'SVG', 'CANVAS', 'KBD', 'SAMP', 'VAR'];
-    const SKIP_TAG_SELECTOR = skipTags.map(t => t.toLowerCase()).join(',');
     // 容器元素 - 这些元素不应作为整体翻译，应递归处理子元素
     // 表格标签作为容器递归下探到单元格（TD/TH 在 blockTags 中）：很多站点（如 Hacker News）
-    // 用表格做整页布局，若把 TABLE/TR 当作 skipTags 会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
+    // 用表格做整页布局，若把 TABLE/TR 当作跳过的标签（prose-pre.js 的 SKIP_TAG_SELECTOR）会跳过全部正文，导致“0 个可译块 → 误报页面已翻译”。
     const containerTags = ['NAV', 'UL', 'OL', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'MAIN', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'];
     const scope = options && options.scope;
     const limit = options?.limit ?? Infinity;
@@ -214,15 +212,6 @@
       return false;
     }
 
-    // skipTags 管的是整棵子树。散文 <pre>（content/page/prose-pre.js）例外，它自己
-    // 和裹给它的段落照收。段落里面的 <a>/<b> 不单独收：它们是那一段的内联内容，
-    // 跟着那一段的标记走。
-    function skippedByTag(element) {
-      const hit = closestAcross(element, SKIP_TAG_SELECTOR);
-      if (!hit) return false;
-      const ownParagraph = hit === element || ctx.prosePre.isParagraph(element);
-      return !(ownParagraph && ctx.prosePre.isProse(hit, SKIP_TAG_SELECTOR));
-    }
     // 一串直属文字（或散文 <pre> 的一段）是要翻的正文才裹成锚点；太短、像代码、
     // 就是个 URL、不是正文的原样留着。@returns 裹好的 span，没裹就是 null。
     function wrapIfProse(run, element) {
@@ -320,8 +309,8 @@
 
       const tagName = element.tagName;
 
-      // 跳过不需要翻译的元素，连同它们的子树（散文 <pre> 除外，见 skippedByTag）
-      if (skippedByTag(element)) return;
+      // 跳过不需要翻译的元素，连同它们的子树（散文 <pre> 除外，见 content/page/prose-pre.js）
+      if (ctx.prosePre.skippedByTag(element)) return;
       if (element.isContentEditable) return;
       // 用户规则 exclude、「保留原文」（内置规则表 ∪ 用户规则）命中整块：不收（先
       // 判 exclude 再判保留原文，见 ruleBlocksElement）。排在作者声明（translate="yes"
@@ -399,7 +388,7 @@
         return;
       }
 
-      // 走到这里的 <pre> 只会是散文 <pre>（skippedByTag）：一段一块。
+      // 走到这里的 <pre> 只会是散文 <pre>（prosePre.skippedByTag）：一段一块。
       if (tagName === 'PRE') {
         for (const paragraph of ctx.prosePre.paragraphs(element)) {
           const anchor = Array.isArray(paragraph) ? wrapIfProse(paragraph, element) : paragraph;
