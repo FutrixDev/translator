@@ -22,8 +22,8 @@
   let activeHotkey = null;
   // 这一下修饰键被和弦（Alt+A 之类）用掉了，按着的这段时间里不再触发悬停翻译。
   let chordKey = null;
-  // 指针最后停在哪儿（视口坐标），按着鼠标键时是 null（见 pointOf）。单按热键时没有
-  // 鼠标事件可问，散文 <pre> 里是哪一段只有坐标说得出（hover/blocks.js 的 resolveBlock）。
+  // 指针最后停在哪儿（视口坐标）。单按热键时没有鼠标事件可问，散文 <pre> 里是哪一段
+  // 只有坐标说得出（hover/blocks.js 的 resolveBlock）。
   let pointer = null;
 
 
@@ -110,10 +110,8 @@
     if (event.target.tagName === 'PRE') handleMouseOver(event);
   }
 
-  // 按着鼠标键是在划选：不给坐标，散文 <pre> 里就不会为了悬停去裹段、搬动选区下面
-  // 的文本节点。
   function pointOf(event) {
-    return event.buttons ? null : { x: event.clientX, y: event.clientY };
+    return { x: event.clientX, y: event.clientY };
   }
 
   function handleMouseOver(event) {

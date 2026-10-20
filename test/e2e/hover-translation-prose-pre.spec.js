@@ -177,6 +177,16 @@ test('prose <pre>: pressing the hotkey while resting on a paragraph toggles that
     await openPage(page, context, endpoint);
     const translations = page.locator('#post > .ai-translator-hover-translation');
 
+    // Resting on the very first letter of a paragraph counts as resting on it, also
+    // while the <pre> is still one run of text, before any paragraph was looked at.
+    await moveOnto(page, '#post', LAST, { firstGlyph: true });
+    await page.keyboard.press('Shift');
+    await expect(translations).toHaveCount(1, { timeout: 30000 });
+    await expect(translations.nth(0)).toContainText(LAST);
+    expect(sentCount(sentTexts, LAST)).toBe(1);
+    await page.keyboard.press('Shift');
+    await expect(translations).toHaveCount(0);
+
     await moveOnto(page, '#post', LEAD_BEFORE);
     await page.keyboard.press('Shift');
     await expect(translations).toHaveCount(1, { timeout: 30000 });
@@ -184,15 +194,6 @@ test('prose <pre>: pressing the hotkey while resting on a paragraph toggles that
     await expect(translations.nth(0)).not.toContainText(MIDDLE);
     expect(sentCount(sentTexts, LEAD_AFTER)).toBe(1);
     expect(sentCount(sentTexts, MIDDLE)).toBe(0);
-
-    // Resting on the very first letter of a paragraph counts as resting on it.
-    await moveOnto(page, '#post', LAST, { firstGlyph: true });
-    await page.keyboard.press('Shift');
-    await expect(translations).toHaveCount(2, { timeout: 30000 });
-    await expect(translations.nth(1)).toContainText(LAST);
-    expect(sentCount(sentTexts, LAST)).toBe(1);
-    await page.keyboard.press('Shift');
-    await expect(translations).toHaveCount(1);
 
     // Pressed again over the same paragraph: its translation goes away.
     await moveOnto(page, '#post', LEAD_BEFORE);
