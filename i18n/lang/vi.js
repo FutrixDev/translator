@@ -198,12 +198,9 @@
     translateShortcutHint: 'Nhấn ⌘/Ctrl + Enter để dịch',
 
     // Progress Bar
-    translatingProgress: 'Đang dịch...',
-    pleaseWait: 'Đang dịch, vui lòng chờ...',
     translationComplete: 'Đã dịch xong',
     pageAlreadyTranslated: 'Trang đã được dịch',
     pageContentNotTranslatable: 'Văn bản trên trang này không thể chèn bản dịch tại chỗ. Hãy chọn văn bản để đọc bản dịch trong cửa sổ bật lên.',
-    closeTranslation: 'Đóng bản dịch',
 
     // Settings / Options
     settings: 'Cài đặt',
@@ -756,4 +753,5 @@
     dictPackDeclined: 'Đã xóa',
     dictPackRedownload: 'Tải lại',
     dictPackRedownloadFailed: 'Hiện không tải được. Hãy thử lại sau.',
+    progressCount: 'Đã dịch {settled}/{known}',
 };

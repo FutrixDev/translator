@@ -19,6 +19,7 @@ const {
   stubBuiltinTranslator,
   waitForContentReady,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { addGlossaryEntry, addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -87,7 +88,7 @@ async function clickFloatBall(page) {
 }
 
 async function waitRoundDone(page) {
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
 }
 
 function translationOf(target, id) {

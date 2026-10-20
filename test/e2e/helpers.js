@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { expect } = require('@playwright/test');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -47,8 +48,7 @@ const CONTENT_HARNESS_PRELUDE = Object.freeze([
 
 // 整页翻译不是一个文件了：collect/batch/insert/visibility 加门面，少一个就是
 // 某个 ctx.x 不存在，报出来的还是三步之后的 TypeError。要整页翻译就要这一串。
-// progress.js 不在里面：进度条是页面级 UI，DOM 夹具里没有它要挂的地方，门面在
-// 调用前就会因为拿不到 showPageTranslationProgress 报错——所以它也在。
+// progress.js 也在里面：门面收尾要挂条子、点下时要转环；夹具页上没有球，环不画。
 const PAGE_TRANSLATION_MODULES = Object.freeze([
   // shared/ 的模块也在这串里：collect.js / insert.js 通过 `globalThis.BlockIdentity`
   // 拿内容身份，manifest 里它排在两者之前。夹具漏掉它的症状和上面那段说的一样难
@@ -309,27 +309,12 @@ async function triggerPageTranslation(page) {
  * @param {number} timeout
  */
 async function waitForTranslationComplete(page, timeout = 60000) {
-  // Wait for progress bar to appear and then disappear
-  try {
-    await page.waitForSelector('#ai-translator-progress', {
-      state: 'visible',
-      timeout: 5000,
-    });
-  } catch {
-    // Progress bar might not appear for quick translations
-  }
-
   // Wait for at least one translated element
   await page.waitForSelector('.ai-translator-translated', {
     state: 'attached',
     timeout,
   });
-
-  // Wait for progress bar to disappear (translation complete)
-  await page.waitForSelector('#ai-translator-progress', {
-    state: 'hidden',
-    timeout,
-  }).catch(() => {});
+  await waitForPageRoundEnd(page, timeout);
 }
 
 /**
@@ -812,16 +797,21 @@ async function evaluateInContentScript(context, pageOrFrame, expression) {
  * through the three shapes the real built-in engine was measured to produce
  * (Chrome Translator en->pt, 2026-10-07): `{n}}`, `{{n}`, `{n}`.
  *
+ * `options.delaysMs`: hold call n for `delaysMs[(n - 1) % length]` ms before
+ * answering (uneven delays spread concurrent answers over frames).
+ *
  * @param {import('@playwright/test').Page|import('@playwright/test').Frame} pageOrFrame
- * @param {{dropPlaceholders?: boolean, dropBraces?: boolean}} [options]
+ * @param {{dropPlaceholders?: boolean, dropBraces?: boolean, delaysMs?: number[]}} [options]
  */
 async function stubBuiltinTranslator(pageOrFrame, options = {}) {
   const page = typeof pageOrFrame.page === 'function' ? pageOrFrame.page() : pageOrFrame;
   const dropPlaceholders = options.dropPlaceholders === true;
   const dropBraces = options.dropBraces === true;
+  const delaysMs = options.delaysMs || [];
   return evaluateInContentScript(page.context(), pageOrFrame, `(() => {
     const dropPlaceholders = ${JSON.stringify(dropPlaceholders)};
     const dropBraces = ${JSON.stringify(dropBraces)};
+    const delaysMs = ${JSON.stringify(delaysMs)};
     const shapes = [(n) => '{' + n + '}}', (n) => '{{' + n + '}', (n) => '{' + n + '}'];
     let shape = 0;
     const answer = (text) => {
@@ -837,6 +827,10 @@ async function stubBuiltinTranslator(pageOrFrame, options = {}) {
         translate: async (text) => {
           self.__builtinCalls += 1;
           self.__builtinTexts.push(text);
+          if (delaysMs.length) {
+            const ms = delaysMs[(self.__builtinCalls - 1) % delaysMs.length];
+            await new Promise((resolve) => setTimeout(resolve, ms));
+          }
           return '[B] ' + answer(text);
         },
         destroy() {},

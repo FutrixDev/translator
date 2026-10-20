@@ -28,6 +28,7 @@ const {
   waitForContentReady,
   writeSyncSettings,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SITE = 'https://priority.test';
@@ -192,7 +193,7 @@ test.describe('page translation pulls by viewport', () => {
       await triggerPageTranslation(page);
 
       await expect.poll(() => page.locator('.ai-translator-inline-block').count(), { timeout: 60000 }).toBe(COUNT);
-      await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+      await waitForPageRoundEnd(page);
 
       const order = await callOrder(context, page);
       expect(order).toHaveLength(COUNT);

@@ -189,12 +189,9 @@
     translatedText: 'Texte traduit',
     copyTranslation: 'Copier la traduction',
     translateShortcutHint: '⌘/Ctrl + Entrée pour traduire',
-    translatingProgress: 'Traduction en cours...',
-    pleaseWait: 'Traduction en cours, veuillez patienter...',
     translationComplete: 'Traduction terminée',
     pageAlreadyTranslated: 'Page déjà traduite',
     pageContentNotTranslatable: 'Le texte de cette page ne peut pas accueillir de traduction sur place. Sélectionnez le texte pour lire la traduction dans une fenêtre contextuelle.',
-    closeTranslation: 'Fermer la traduction',
     settings: 'Paramètres',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',
@@ -736,4 +733,5 @@
     dictPackDeclined: 'Supprimé',
     dictPackRedownload: 'Télécharger à nouveau',
     dictPackRedownloadFailed: 'Téléchargement impossible pour le moment. Réessayez plus tard.',
+    progressCount: 'Traduit : {settled}/{known}',
 };

@@ -16,6 +16,7 @@ const {
   stubBuiltinTranslator,
   waitForContentReady,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const SITE = 'https://placeholder-braces.test';
@@ -67,7 +68,7 @@ test.describe('built-in engine placeholder braces', () => {
     await stubBuiltinTranslator(page, { dropBraces: true });
     await page.click('#ai-translator-float-ball', { position: { x: 18, y: 18 } });
     for (const id of BLOCKS) await expect(translationOf(page, id)).toContainText('[B]');
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
 
     // 替身真的收到了占位符（掉括号是它做的，不是没东西可掉）：句点后紧贴的
     // {{1}}、紧挨着的一对、链接里单独一个。

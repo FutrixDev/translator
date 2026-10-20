@@ -68,6 +68,8 @@ function tree() {
 // ------------------------------------------------------- 手动轮（真实顶层 frame）
 
 const PAGE_SOURCES = [
+  // The real progress source: a manual round reports its counts there.
+  'content/page/progress-feed.js',
   'content/page/custom-rule.js',
   'content/page/scope.js',
   'content/frames/top.js',
@@ -79,12 +81,11 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
   const url = new URL(href);
   globalThis.location = { href, hostname: url.hostname, pathname: url.pathname };
   const t = tree();
-  let progress = null;
   globalThis.document = {
     adoptedStyleSheets: [],
     body: t.body,
     querySelectorAll: () => [],
-    getElementById: (id) => (id === 'ai-translator-progress' ? progress : null),
+    getElementById: () => null,
   };
   globalThis.CSSStyleSheet = class { replaceSync() {} };
   globalThis.SpaNavigation = { onRouteChange() {} };
@@ -106,7 +107,7 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
     settings: { pageTranslateScope: 'main' },
     state: {
       pageHasBeenTranslated: false, isTranslatingPage: false, translationsVisible: true,
-      pageScopeOverride: null, translationProgress: { current: 0, total: 0 },
+      pageScopeOverride: null,
     },
     syncMirrors: [],
     // 缓存层那个文件的 ctx.translationProfile：顶层指令带它的代数（P1-C §3.8）。
@@ -117,10 +118,11 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
     autoTranslate: { isOn: () => false, onStateChange: (fn) => fn(), markPageExplicit() {} },
     isExtensionContextAvailable: () => true,
     revealHiddenTranslations() {},
-    showPageTranslationProgress: () => { progress = { shown: true }; },
-    hidePageTranslationProgress: () => { progress = null; },
-    updatePageTranslationProgress() {},
-    showTranslatingHint() {},
+    closePageBar() {},
+    armProgressRing() {},
+    paintProgressRing() {},
+    nudgeFloatBall() {},
+    showTranslationComplete() {},
     showTranslationError: (e) => log.push(`error:${e}`),
     showPageNotice: (text) => log.push(`notice:${text}`),
     getManagedSkipCount: () => 0,

@@ -197,12 +197,9 @@
     translateShortcutHint: 'Tekan ⌘/Ctrl + Enter untuk menerjemahkan',
 
     // Progress Bar
-    translatingProgress: 'Menerjemahkan...',
-    pleaseWait: 'Menerjemahkan, harap tunggu...',
     translationComplete: 'Terjemahan Selesai',
     pageAlreadyTranslated: 'Halaman Sudah Diterjemahkan',
     pageContentNotTranslatable: 'Teks di halaman ini tidak dapat menampung terjemahan di tempatnya. Pilih teksnya untuk membaca terjemahan di popup.',
-    closeTranslation: 'Tutup Terjemahan',
 
     // Settings / Options
     settings: 'Pengaturan',
@@ -754,4 +751,5 @@
     dictPackDeclined: 'Dihapus',
     dictPackRedownload: 'Unduh lagi',
     dictPackRedownloadFailed: 'Tidak dapat diunduh sekarang. Coba lagi nanti.',
+    progressCount: 'Diterjemahkan {settled}/{known}',
 };

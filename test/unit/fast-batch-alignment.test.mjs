@@ -75,6 +75,13 @@ await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
 // failed-blocks.js：落笔前摘失败标记（ctx.failedBlocks.clear），失败时放标记。
+// progress.js paints the float-ball ring from ctx.progressFeed and subscribes
+// at load, so the feed goes first, as in the manifest.
+// With a subscriber the feed coalesces its notifications into a frame.
+globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+// It also takes the route reset from SpaNavigation, which the manifest loads first.
+globalThis.SpaNavigation = { onRouteChange() {} };
+await import('../../content/page/progress-feed.js');
 for (const module of ['focus-order', 'batch', 'collect', 'insert', 'failed-blocks', 'visibility', 'progress']) {
   await import(`../../content/page/${module}.js`);
 }

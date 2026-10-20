@@ -21,6 +21,7 @@ const {
   writeSyncSettings,
   openPopupOver,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,
   ORIGIN,
@@ -407,7 +408,7 @@ test.describe('§7 the other engines never reach Blab', () => {
       await stubBuiltinTranslator(page);
       await triggerPageTranslation(page);
       await expect(page.locator('#rich + .ai-translator-inline-block')).toContainText('[B]', { timeout: 30000 });
-      await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+      await waitForPageRoundEnd(page);
       expect(blab.state.completeRequests).toHaveLength(0);
       expect(ai.sentTexts).toHaveLength(0);
     } finally {

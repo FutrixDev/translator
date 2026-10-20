@@ -189,12 +189,9 @@
     translatedText: '翻訳結果',
     copyTranslation: '翻訳をコピー',
     translateShortcutHint: '⌘/Ctrl + Enter で翻訳',
-    translatingProgress: '翻訳中...',
-    pleaseWait: '翻訳中、お待ちください...',
     translationComplete: '翻訳完了',
     pageAlreadyTranslated: 'ページは翻訳済み',
     pageContentNotTranslatable: 'このページの本文には訳文をその場で表示できません。テキストを選択すると、ポップアップで翻訳を確認できます。',
-    closeTranslation: '翻訳を閉じる',
     settings: '設定',
     appName: 'Blab Translation',
     appNameVersion: 'Blab Translation v1.3.1',
@@ -736,4 +733,5 @@
     dictPackDeclined: '削除済み',
     dictPackRedownload: '再ダウンロード',
     dictPackRedownloadFailed: '今はダウンロードできません。後でもう一度お試しください。',
+    progressCount: '翻訳済み {settled}/{known}',
 };

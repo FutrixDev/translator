@@ -25,6 +25,7 @@ const {
   setExtensionSettings,
   waitForContentReady,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { addGlossaryEntryInCard, openGlossaryCard } = require('./glossary-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -75,7 +76,7 @@ async function translatePage(page) {
   for (const id of ['hit', 'plain', 'hover']) {
     await expect(translationOf(page, id)).toContainText('[T]');
   }
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
 }
 
 /** 把播放头放进第一句字幕。 */
@@ -208,7 +209,7 @@ test.describe('P1-C glossary and the translation caches', () => {
     await clickFloatBall(page);
     await expect(translationOf(page, 'hit')).toContainText('[T]');
     await expect(translationOf(page, 'plain')).toContainText('[T]');
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
     const pageRequests = since(beforePage);
     const segments = sentSegments(pageRequests.map((r) => r.text), mock.fastBatchRequests);
     expect(segments.some((segment) => segment.includes(HIT_TEXT))).toBe(true);

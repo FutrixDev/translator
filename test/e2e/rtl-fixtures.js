@@ -16,6 +16,7 @@
  */
 const { expect } = require('@playwright/test');
 const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const ORIGIN = 'https://rtl.test';
 
@@ -114,7 +115,7 @@ async function openTranslatedPage(page, context, endpoint, options) {
   const { paragraphs, nav } = PAGES[options.path];
   await expect(page.locator('#main > p.ai-translator-inline-block')).toHaveCount(paragraphs.length + 1, { timeout: 30000 });
   await expect(page.locator('#nav .ai-translator-inline-right')).toHaveCount(nav.length, { timeout: 30000 });
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
 }
 
 /**

@@ -198,12 +198,9 @@
     translateShortcutHint: "Premi ⌘/Ctrl + Invio per tradurre",
 
     // Progress Bar
-    translatingProgress: "Traduzione...",
-    pleaseWait: "Traduzione in corso, attendi...",
     translationComplete: "Traduzione completata",
     pageAlreadyTranslated: "Pagina già tradotta",
     pageContentNotTranslatable: "Il testo di questa pagina non può contenere una traduzione al suo interno. Seleziona il testo per leggere la traduzione in un popup.",
-    closeTranslation: "Chiudi traduzione",
 
     // Settings / Options
     settings: "Impostazioni",
@@ -755,4 +752,5 @@
     dictPackDeclined: "Eliminato",
     dictPackRedownload: "Scarica di nuovo",
     dictPackRedownloadFailed: "Impossibile scaricarlo ora. Riprova più tardi.",
+    progressCount: "Tradotti: {settled}/{known}",
 };

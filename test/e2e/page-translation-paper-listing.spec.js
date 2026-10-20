@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // Regression test for LaTeXML code listings (arXiv HTML papers, ar5iv) in
@@ -90,7 +91,7 @@ test('page translation: arXiv/LaTeXML code listings never reach the API, paper p
     }
 
     // Let the run settle so the assertions below mean "never sent", not "not sent yet".
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
 
     // Assert on what actually left the browser. Checking the DOM instead would also pass
     // if the source had been shipped and the reply merely failed to render.

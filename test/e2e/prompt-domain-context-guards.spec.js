@@ -22,6 +22,7 @@ const {
   setExtensionSettings,
   waitForContentReady,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,
   serve,
@@ -154,7 +155,7 @@ test.describe('P1-C prompt domain and page context: regression guards', () => {
     for (const id of IDS) {
       await expect(page.locator(`#${id} + .ai-translator-inline-block`)).toContainText('[T]', { timeout: 30000 });
     }
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
     const requests = mock.sentTexts.slice(mark).map((text, i) => ({ text, prompt: mock.systemPrompts[mark + i] }));
     expect(requests.length, 'this run reached the model').toBeGreaterThan(0);
     const sourceChars = sentSegments(requests.map((r) => r.text), mock.fastBatchRequests)

@@ -1,5 +1,6 @@
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, triggerPageTranslation, openExamplePage } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 // 内容身份（shared/block-identity.js）在真浏览器里的那一条旅程。
@@ -60,7 +61,7 @@ test('page translation: a recycled block is retranslated, an unchanged one is no
       );
     }
     // 第一轮整体落停，否则下面记下的请求数会把还在路上的那一份算进第二轮。
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
     await expect(page.locator('#recycle-test .ai-translator-inline-block')).toHaveCount(2);
 
     const firstPassRequests = sentTexts.length;
@@ -90,7 +91,7 @@ test('page translation: a recycled block is retranslated, an unchanged one is no
       RECYCLED_AFTER,
       { timeout: 30000 }
     );
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
 
     // 旧译文被摘掉了，不是旁边再长一条：两块内容 → 还是两条译文。
     await expect(page.locator('#recycle-test .ai-translator-inline-block')).toHaveCount(2);

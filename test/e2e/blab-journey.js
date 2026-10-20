@@ -14,6 +14,7 @@ const {
   triggerPageTranslation,
   waitForFloatBall,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockBlabService } = require('./mock-blab-service');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
@@ -83,7 +84,7 @@ async function openPage(page) {
 async function translatePage(page) {
   await triggerPageTranslation(page);
   await expect(page.locator('#rich + .ai-translator-inline-block')).toContainText('[T]', { timeout: 30000 });
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
 }
 
 // The page's whole pass stopped on an account error: the progress bar's error

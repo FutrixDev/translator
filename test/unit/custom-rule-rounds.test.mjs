@@ -36,6 +36,8 @@ await import('../../shared/custom-rules.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 const PAGE_SOURCES = [
+  // The real progress source: a manual round reports its counts there.
+  'content/page/progress-feed.js',
   'content/page/custom-rule.js',
   'content/page/scope.js',
   'content/frames/top.js',
@@ -57,13 +59,12 @@ async function loadTopFrame({ holdRules = false } = {}) {
   const href = 'https://example.com/news/1';
   const url = new URL(href);
   globalThis.location = { href, hostname: url.hostname, pathname: url.pathname };
-  let progress = null;
   const body = { localName: 'body' };
   globalThis.document = {
     adoptedStyleSheets: [],
     body,
     querySelectorAll: () => [],
-    getElementById: (id) => (id === 'ai-translator-progress' ? progress : null),
+    getElementById: () => null,
   };
   globalThis.CSSStyleSheet = class { replaceSync() {} };
   globalThis.SpaNavigation = { onRouteChange() {} };
@@ -83,7 +84,7 @@ async function loadTopFrame({ holdRules = false } = {}) {
   const passes = [];
   const broadcasts = [];
   const translated = [];
-  const counts = { explicit: 0, hint: 0, errors: 0 };
+  const counts = { explicit: 0, nudges: 0, armed: 0, complete: 0, errors: 0 };
   const ctx = {
     frameRole: 'top',
     t: (key) => key,
@@ -93,7 +94,6 @@ async function loadTopFrame({ holdRules = false } = {}) {
       isTranslatingPage: false,
       translationsVisible: true,
       pageScopeOverride: null,
-      translationProgress: { current: 0, total: 0 },
     },
     syncMirrors: [],
     // 缓存层那个文件的 ctx.translationProfile：顶层指令带它的代数（P1-C §3.8）。
@@ -106,10 +106,12 @@ async function loadTopFrame({ holdRules = false } = {}) {
     },
     isExtensionContextAvailable: () => true,
     revealHiddenTranslations() {},
-    showPageTranslationProgress: () => { progress = { shown: true }; },
-    hidePageTranslationProgress: () => { progress = null; },
-    updatePageTranslationProgress: (done, total) => log.push(`progress:${done}/${total}`),
-    showTranslatingHint: () => { counts.hint += 1; },
+    // The float ball and its bar: only how often each was asked for.
+    closePageBar() {},
+    armProgressRing: () => { counts.armed += 1; },
+    paintProgressRing() {},
+    nudgeFloatBall: () => { counts.nudges += 1; },
+    showTranslationComplete: () => { counts.complete += 1; },
     showTranslationError: () => { counts.errors += 1; },
     showPageNotice: (text) => log.push(`notice:${text}`),
     getManagedSkipCount: () => 0,
@@ -127,7 +129,7 @@ async function loadTopFrame({ holdRules = false } = {}) {
       const n = passes.length + 1;
       log.push(`pass:${n}`);
       passes.push(() => {
-        if (options.onProgress) options.onProgress(blocks.length);
+        if (options.onProgress) options.onProgress(blocks.length, blocks.length, 'settled');
         resolve(null);
       });
     }),
@@ -163,7 +165,6 @@ async function loadTopFrame({ holdRules = false } = {}) {
   };
   return {
     ctx, log, passes, broadcasts, translated, counts, hello, changeRule, release, answerRules,
-    progress: () => progress,
   };
 }
 
@@ -207,7 +208,8 @@ for (const entry of ['translatePage', 'translateWholePage']) {
 
     ctx[entry]();
     await sleep(10);
-    assert.equal(counts.hint, 0, 'the click took the busy branch');
+    assert.equal(counts.nudges, 0, 'the click did not take the busy branch');
+    assert.equal(counts.armed, 1, 'the ring is armed at the click');
     assert.equal(ctx.state.isTranslatingPage, true);
     assert.equal(counts.explicit, 1, 'markPageExplicit');
     assert.equal(hello().manualEpoch, 1, 'children are told to run their own round');
@@ -216,15 +218,32 @@ for (const entry of ['translatePage', 'translateWholePage']) {
     await release(1);
     assert.deepEqual(log, ['collect:main', 'pass:1', `collect:${entry === 'translateWholePage' ? 'page' : 'main'}`, 'pass:2']);
     await release(2);
-    assert.deepEqual(log.slice(4), ['progress:1/1']);
-    assert.equal(top.progress(), null, 'the progress bar is put away');
+    assert.deepEqual(log.slice(4), []);
+    const feed = ctx.progressFeed.state();
+    assert.deepEqual([feed.source, feed.phase, feed.known, feed.settled, feed.inflight], ['manual', 'done', 1, 1, 0]);
+    assert.equal(counts.complete, 1, 'the success bar is shown once');
     assert.equal(ctx.state.isTranslatingPage, false);
-    assert.deepEqual(ctx.state.translationProgress, { current: 0, total: 0 });
-    assert.equal(counts.hint, 0);
+    assert.equal(counts.nudges, 0);
     assert.equal(counts.errors, 0);
     assert.equal(hello().translate, false, 'the manual round has ended');
   });
 }
+
+test('a second click while a manual round runs nudges the ball and starts nothing', async () => {
+  const top = await loadTopFrame();
+  const { ctx, log, counts, release } = top;
+  ctx.translatePage();
+  await sleep(10);
+  assert.deepEqual(log, ['collect:main', 'pass:1']);
+  assert.deepEqual([counts.armed, counts.nudges], [1, 0]);
+
+  ctx.translatePage();
+  await sleep(10);
+  assert.deepEqual([counts.armed, counts.nudges], [1, 1], 'busy: a nudge, no second arming');
+  assert.deepEqual(log, ['collect:main', 'pass:1'], 'busy: nothing collected');
+  await release(1);
+  assert.equal(ctx.progressFeed.state().phase, 'done');
+});
 
 test('a manual round recalls, when it ends, a late translation that landed in a newly excluded area', async () => {
   const top = await loadTopFrame();
@@ -245,7 +264,7 @@ test('a manual round recalls, when it ends, a late translation that landed in a 
   translated.push({ name: 'late', forbidden: () => excluded });
   await release(1);
   // 收尾：先收回挂进新禁止区域的那条，再按第 3 步补一轮（调度器没在跟）。
-  assert.deepEqual(log, ['collect:main', 'pass:1', 'progress:1/1', 'release:late', 'collect:main', 'pass:2']);
+  assert.deepEqual(log, ['collect:main', 'pass:1', 'release:late', 'collect:main', 'pass:2']);
   assert.equal(ctx.customRules.isCatchingUp(), true);
 });
 
@@ -312,7 +331,7 @@ test('a manual round still ends its frame directive when the pending sweep in af
   assert.equal(error && error.message, 'sweep failed', 'afterRound() ran and its error surfaced');
   assert.equal(ends, 1, 'onManualTranslateEnd() ran before afterRound() threw');
   assert.equal(ctx.state.isTranslatingPage, false);
-  assert.deepEqual(ctx.state.translationProgress, { current: 0, total: 0 });
+  assert.equal(ctx.progressFeed.state().phase, 'done', 'the round closed its progress before afterRound() threw');
 });
 
 // ---------------------------------------------------------------- 调度器的 pump

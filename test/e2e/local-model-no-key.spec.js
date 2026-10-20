@@ -29,6 +29,7 @@ const {
   getServiceWorker,
   openPopupOver,
 } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const en = (key) => getMessage(key, 'en');
@@ -122,7 +123,7 @@ test('J-A2: whole-page translation works against a local server with no key', as
     const translated = page.locator('#local-probe .ai-translator-inline-block');
     await expect(translated).toHaveCount(paragraphs.length, { timeout: 30000 });
     await expect(translated.first()).toContainText('[T]');
-    await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+    await waitForPageRoundEnd(page);
 
     expect(mock.authHeaders.length).toBeGreaterThan(0);
     for (const headers of mock.authHeaders) expect(headers).toEqual(noAuth);

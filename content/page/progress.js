@@ -1,8 +1,11 @@
-// Blab Translation — 整页翻译：进度条与提示
+// Blab Translation — 整页翻译：提示条与悬浮球上的进度环
 //
-// 页面右下角那条进度条，连同它的拖动、提示、报错和语言包下载进度。
-// 翻译流程只通过 ctx 上的这几个函数跟它说话，好让不需要露面的翻译轮次
-// （自动翻译的增量轮）可以不带它跑。
+// 页面上那条小条子：提示、成功、报错三种样子，连同它的拖动、摆位和语言包下载
+// 的文字。条子只在有话要说时才出现，翻译流程通过 ctx 上这几个函数跟它说话。
+//
+// 翻了多少不写在条子上，画在悬浮球的环上（文件后半「进度环」一节）：环只读
+// ctx.progressFeed，手动整页和自动调度层报的是同一份数。环的 svg 在球的
+// innerHTML 里（content-float-ball.js），怎么画在这里。
 (function() {
   'use strict';
 
@@ -35,6 +38,7 @@
    */
   function renderBar(progressEl, stateName, contentHtml, closeTitle, fill = null) {
     clearTimeout(closeTimers.get(progressEl));
+    delete progressEl.dataset.kind;
     progressEl.innerHTML = contentHtml + CLOSE_BUTTON(closeTitle);
     if (fill) fill(progressEl);
     setBarState(progressEl, stateName);
@@ -46,10 +50,15 @@
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
+      // 用户亲手关掉的语言包下载条，这一轮手动整页里不再建回来（下一下点击清掉）。
+      if (progressEl.dataset.kind === 'download') downloadBarDismissed = true;
       forceHideProgressBar();
     });
     placeBarNearBall(progressEl);
   }
+
+  // 这一轮手动整页里，用户关掉过语言包下载条（armProgressRing 在下一轮清掉）。
+  let downloadBarDismissed = false;
 
   // 每条条子至多一个待收的计时器。换内容时作废上一个：成功条 5 s 后要收，
   // 子 frame 随后报来带入口的错误条（frames/top.js）不该被它顺手收掉。
@@ -65,29 +74,26 @@
     }, ms));
   }
 
+  /** 立刻收掉，不走淡出：下一样东西马上要占这个位置。 */
+  function closeBar(progressEl) {
+    clearTimeout(closeTimers.get(progressEl));
+    progressEl.remove();
+  }
+
   /**
-   * 新的一轮总是新的一条。上一轮留下的错误条 / 提示条 / 成功条（可能正在淡出，
-   * 也可能挂着「订阅」入口不自动收）不能接着用：进度写不进去，按钮也还是上一回的。
-   * 忙分支（content-page-translation.js）只在没有条子时才进来，不会把正在跑的
-   * 进度条换掉。
+   * 拿到那条条子，没有就现建一条。条子平时不在页面上：一轮翻译开始时什么也不
+   * 建（进度看球上的环），有话要说的时候才建。
    */
-  function showPageTranslationProgress() {
-    const previous = document.getElementById('ai-translator-progress');
-    if (previous) previous.remove();
+  function ensureBar() {
+    const existing = document.getElementById('ai-translator-progress');
+    // 正在淡出的那条（关闭键、到点自收）300 ms 后会被它自己的计时器摘掉，不能接着用。
+    if (existing && !existing.classList.contains('ai-translator-progress-done')) return existing;
+    if (existing) closeBar(existing);
     const progressEl = document.createElement('div');
     progressEl.id = 'ai-translator-progress';
     document.body.appendChild(progressEl);
-    renderBar(progressEl, null, `
-        <div class="ai-translator-progress-content">
-          <div class="ai-translator-progress-header">
-            <span class="ai-translator-progress-text">${t('translatingProgress')}</span>
-            <span class="ai-translator-progress-percent">0%</span>
-          </div>
-          <div class="ai-translator-progress-track">
-            <div class="ai-translator-progress-bar"></div>
-          </div>
-        </div>`, t('closeTranslation'));
     setupProgressBarDrag(progressEl);
+    return progressEl;
   }
 
   function setupProgressBarDrag(progressEl) {
@@ -215,54 +221,15 @@
     // state.isTranslatingPage 只在翻译真正完成时才重置（在 finally 块中）
   }
 
-  function showTranslatingHint(progressEl) {
-    if (!progressEl) return;
-    
-    // 避免重复触发
-    if (progressEl.classList.contains('ai-translator-progress-hint')) return;
-    
-    const textEl = progressEl.querySelector('.ai-translator-progress-text');
-    if (!textEl) return;
-    
-    const originalText = textEl.textContent;
-    
-    // 添加闪烁动画类
-    progressEl.classList.add('ai-translator-progress-hint');
-    
-    // 淡出当前文字
-    textEl.classList.add('ai-translator-text-fade-out');
-    
-    setTimeout(() => {
-      // 切换文字并淡入
-      textEl.textContent = t('pleaseWait');
-      textEl.classList.remove('ai-translator-text-fade-out');
-      textEl.classList.add('ai-translator-text-fade-in');
-      
-      // 1.2秒后淡出提示文字
-      setTimeout(() => {
-        textEl.classList.remove('ai-translator-text-fade-in');
-        textEl.classList.add('ai-translator-text-fade-out');
-        
-        setTimeout(() => {
-          // 切换回原文字并淡入
-          textEl.textContent = originalText;
-          textEl.classList.remove('ai-translator-text-fade-out');
-          textEl.classList.add('ai-translator-text-fade-in');
-          progressEl.classList.remove('ai-translator-progress-hint');
-          
-          setTimeout(() => {
-            textEl.classList.remove('ai-translator-text-fade-in');
-          }, 200);
-        }, 200);
-      }, 1200);
-    }, 200);
-  }
-
-  // 进度条位置上的一条提示。原来只用来说“页面已翻译”，现在还要说“正文翻不了”，
+  // 条子上的一条提示。原来只用来说“页面已翻译”，现在还要说“正文翻不了”，
   // 所以文案由调用方给，函数名也不再替它下结论。
   function showPageNotice(message) {
-    const progressEl = document.getElementById('ai-translator-progress');
-    if (!progressEl) return;
+    const progressEl = ensureBar();
+    renderInfo(progressEl, message);
+    closeBarAfter(progressEl, 3000);
+  }
+
+  function renderInfo(progressEl, message) {
     renderBar(progressEl, 'info', `
         <div class="ai-translator-progress-content ai-translator-progress-info">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -271,18 +238,16 @@
           </svg>
           <span>${escapeHtml(message)}</span>
         </div>`, t('close'));
-    closeBarAfter(progressEl, 3000);
   }
 
   /**
-   * 进度条换成错误条。`action` 是 Blab 账户错误带来的入口（'subscribe' |
+   * 报错条。`action` 是 Blab 账户错误带来的入口（'subscribe' |
    * 'signin'，background/api-errors.js），画成文字下面的一颗按钮
    * （ctx.accountActionButton）；带入口的不自动收起 —— 人还没来得及点它，条子
    * 就没了。登录成功收起这条：错误已经不成立了，再点一次翻译就行。
    */
   function showTranslationError(errorMessage, action = null) {
-    const progressEl = document.getElementById('ai-translator-progress');
-    if (!progressEl) return;
+    const progressEl = ensureBar();
     const entry = ctx.accountActionButton(action, {
       className: 'ai-translator-progress-action',
       onSignedIn: forceHideProgressBar
@@ -302,47 +267,40 @@
     if (!entry) closeBarAfter(progressEl, 8000);
   }
 
-  function updatePageTranslationProgress(current, total) {
-    const progressBar = document.querySelector('#ai-translator-progress .ai-translator-progress-bar');
-    const progressPercent = document.querySelector('#ai-translator-progress .ai-translator-progress-percent');
-    if (progressBar && progressPercent) {
-      const percent = Math.round((current / total) * 100);
-      progressBar.style.width = `${percent}%`;
-      progressPercent.textContent = `${percent}%`;
-    }
-  }
-
-  // 语言包首次下载是几十 MB 级别的，期间一条译文都出不来。不给反馈的话进度条会
-  // 卡在 0% 好一阵子，看起来像卡死了，所以把下载进度借同一条进度条显示出来。
+  // 语言包首次下载是几十 MB 级别的，期间一条译文都出不来，环停在 arming 上转。
+  // 只转不说的话看起来像卡死了，所以下载的百分比用一条提示条说出来；这条不自动
+  // 收，下载这一程结束时（onBuiltinDownloadEnded）收。用户关掉了它，这一轮就不再
+  // 建；台上是别的条子（子框架报来的错误条之类），也不拿下载的百分比盖掉它。
   ctx.onBuiltinDownloadProgress = function(loaded) {
-    const textEl = document.querySelector('#ai-translator-progress .ai-translator-progress-text');
-    const percentEl = document.querySelector('#ai-translator-progress .ai-translator-progress-percent');
-    const barEl = document.querySelector('#ai-translator-progress .ai-translator-progress-bar');
-    if (!textEl || !percentEl || !barEl) return;
-
+    if (!state.isTranslatingPage || downloadBarDismissed) return;
     const pct = Math.max(0, Math.min(100, Math.round((loaded || 0) * 100)));
     if (pct >= 100) {
       ctx.onBuiltinDownloadEnded();
       return;
     }
-    textEl.textContent = t('builtinDownloading');
-    percentEl.textContent = `${pct}%`;
-    barEl.style.width = `${pct}%`;
+    const text = `${t('builtinDownloading')} ${pct}%`;
+    const existing = document.getElementById('ai-translator-progress');
+    if (existing && existing.dataset.kind === 'download') {
+      existing.querySelector('.ai-translator-progress-info span').textContent = text;
+      return;
+    }
+    if (existing && !existing.classList.contains('ai-translator-progress-done')) return;
+    const progressEl = ensureBar();
+    renderInfo(progressEl, text);
+    progressEl.dataset.kind = 'download';
   };
 
   // 下载这一程结束了——下完了、失败了、或者卡住被放弃了。三种情况后面都轮到翻译
-  // 继续走（内置或回落到 AI），所以进度条必须还回去，否则它会停在“正在下载语言包
-  // 45%”上，而页面其实早就在用另一条路翻译了。
+  // 继续走（内置或回落到 AI），所以那条下载提示必须收掉，否则它会停在“正在下载
+  // 语言包 45%”上，而页面其实早就在用另一条路翻译了。别的条子（报错）不动。
   ctx.onBuiltinDownloadEnded = function() {
-    const textEl = document.querySelector('#ai-translator-progress .ai-translator-progress-text');
-    if (!textEl) return;
-    textEl.textContent = t('translatingProgress');
-    updatePageTranslationProgress(state.translationProgress.current, state.translationProgress.total || 1);
+    const progressEl = document.getElementById('ai-translator-progress');
+    if (progressEl && progressEl.dataset.kind === 'download') closeBar(progressEl);
   };
 
-  function hidePageTranslationProgress() {
-    const progressEl = document.getElementById('ai-translator-progress');
-    if (!progressEl) return;
+  /** 这一轮翻完了：一条成功条，5 s 后收。 */
+  function showTranslationComplete() {
+    const progressEl = ensureBar();
     renderBar(progressEl, 'success', `
         <div class="ai-translator-progress-content ai-translator-progress-success">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -354,10 +312,321 @@
     closeBarAfter(progressEl, 5000);
   }
 
-  ctx.showPageTranslationProgress = showPageTranslationProgress;
-  ctx.updatePageTranslationProgress = updatePageTranslationProgress;
-  ctx.hidePageTranslationProgress = hidePageTranslationProgress;
-  ctx.showTranslatingHint = showTranslatingHint;
+  /**
+   * 新的一轮开始：上一轮留下的条子（成功条、提示条、挂着「订阅」入口的错误条）
+   * 立刻收掉。它们说的是上一轮的事，这一轮的进度在环上。
+   */
+  function closePageBar() {
+    const progressEl = document.getElementById('ai-translator-progress');
+    if (progressEl) closeBar(progressEl);
+  }
+
+  // ------------------------------------------------------------------ 进度环
+  //
+  // 环只读 ctx.progressFeed（content/page/progress-feed.js）：phase 落成 svg 上的
+  // data-phase，比例落成弧的 stroke-dashoffset。颜色、旋转、脉冲、淡出全在
+  // float-ball.css 里按 data-phase 画；这里只决定「此刻是哪一态、弧多长、什么时候
+  // 露面、什么时候退场」。环不收事件（pointer-events:none），点击和拖动照旧落在球上。
+  // 弧的 circle 带 pathLength="1"：周长记作 1，offset 就是 1 − 比例。
+
+  // 环此刻在干什么（mode），只有这一处说了算：
+  //   idle     不在屏幕上
+  //   gating   不在屏幕上，自动轮在门里等：到点还在跑才露面（gateTimer 在走）
+  //   live     露着一态：arming、running，或过了门的自动轮
+  //   playing  在放完成 / 预算序列（sequence 是哪一段）；carriedOver 说这段序列
+  //            是上一代留下的，只对 playing 有意义
+  //   held     停着一个常驻态：partial、paused、error，直到翻篇或下一轮真露了面
+  // 门的计时器和 mode 互不相干：常驻态底下也可以有一轮自动在门里等。
+  // view 是画在环上的样子，snap 是悬停那句「已翻 n/m」说的那份账（随 view 一起
+  // 定格，序列放到一半进度源再变也不改口）。ledger 是最近一份有数的账（known > 0），
+  // 每次画都记、门开没开都记：暂停那一下进度源上只剩空账，环拿它定格。armedFrom 是
+  // 手动整页点下那一刻进度源上的快照，routeLeft 是换路由那一刻的快照。
+  const ring = {
+    mode: 'idle',
+    carriedOver: false,
+    sequence: null,
+    gateTimer: null,
+    view: { phase: 'idle', fade: false, offset: 1, snap: null },
+    ledger: null,
+    session: null,
+    timers: [],
+    budgetKey: '',
+    armedFrom: null,
+    routeLeft: null
+  };
+  const RING_ARMING_FRACTION = 0.25; // arming：一段 90° 的弧在转，还不代表进度
+  // 自动的增量轮常常只有几块、几百毫秒：600 ms 内收场的那一轮整个不露面，只有
+  // 状态点在呼吸。CSS 的 animation-delay 做不了「到点还没完才显示」，只能用计时器。
+  const RING_GATE_MS = 600;
+  // 手动整页刚点下、进度源上还没有这一轮：悬停只说「正在翻译」，不报上一轮或自动的数。
+  const RING_BLANK_MANUAL = Object.freeze({
+    source: 'manual', phase: 'arming', known: 0, settled: 0, failed: 0, pending: 0, inflight: 0
+  });
+  // 常驻的三态：放完就停在环上，直到翻篇或下一轮真露了面。
+  const RING_HELD_PHASES = Object.freeze(['partial', 'paused', 'error']);
+  // 两段定时退场：[距开始的毫秒, 视觉态]。'fade' 是在当前态上淡出 300 ms。
+  // 完成：先在天蓝上补满（240 ms），再转薄荷（160 ms），停 900 ms，淡出 300 ms。
+  // reduced-motion 省掉补满与变色，只留停留与淡出。
+  const RING_SEQUENCES = Object.freeze({
+    done: [[0, 'running'], [240, 'done'], [1300, 'fade'], [1600, 'idle']],
+    doneReduced: [[0, 'done'], [900, 'fade'], [1200, 'idle']],
+    budget: [[0, 'budget'], [4000, 'fade'], [4300, 'idle']]
+  });
+
+  function prefersReducedMotion() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /** 这一态的弧该空出多少（stroke-dashoffset，周长为 1）。比例只问进度源的 fraction。 */
+  function ringOffset(snap, phase) {
+    let fraction;
+    switch (phase) {
+      case 'idle': fraction = 0; break;
+      case 'arming': fraction = RING_ARMING_FRACTION; break;
+      // 暂停定格在喊停前那份账上，弧长和在跑时画的一样（还有块没回来就不画满）。
+      case 'running':
+      case 'paused': fraction = ctx.progressFeed.fraction(snap); break;
+      // 缺口画的是放弃的那几块：琥珀色说「有没翻成的」，缺口说「是多少」。
+      case 'partial': fraction = snap.known ? (snap.settled - snap.failed) / snap.known : 0; break;
+      case 'budget': fraction = snap.known ? snap.settled / snap.known : 0; break;
+      default: fraction = 1; // done、error：满圈
+    }
+    return 1 - fraction;
+  }
+
+  /** 此刻环在屏幕上，而且说的是这一代的事（上一代留下、还没放完的序列不算）。 */
+  function ringShown() {
+    return ring.mode === 'live' || (ring.mode === 'playing' && !ring.carriedOver);
+  }
+
+  /** 环上停着的东西不让给同一页上的翻代次：常驻态，或上一代没放完的序列。 */
+  function ringStale() {
+    return ring.mode === 'held' || (ring.mode === 'playing' && ring.carriedOver);
+  }
+
+  function clearRingTimers() {
+    for (const timer of ring.timers) clearTimeout(timer);
+    ring.timers = [];
+    ring.sequence = null;
+    ring.carriedOver = false;
+  }
+
+  function clearRingGate() {
+    clearTimeout(ring.gateTimer);
+    ring.gateTimer = null;
+    if (ring.mode === 'gating') ring.mode = 'idle';
+  }
+
+  function setRingView(phase, offset, snap) {
+    ring.view = { phase, fade: false, offset, snap };
+  }
+
+  /** 常驻地显示一态：arming、running 是 live，partial、paused、error 是 held。 */
+  function showRing(phase, offset, snap) {
+    clearRingTimers();
+    clearRingGate();
+    ring.mode = RING_HELD_PHASES.includes(phase) ? 'held' : 'live';
+    setRingView(phase, offset, snap);
+  }
+
+  function hideRing(offset, snap) {
+    clearRingTimers();
+    clearRingGate();
+    ring.mode = 'idle';
+    setRingView('idle', offset, snap);
+  }
+
+  /** 自动轮进门：看不见，到点还在跑就露面。常驻态底下的门不改 mode。 */
+  function startRingGate() {
+    if (ring.mode === 'idle') ring.mode = 'gating';
+    if (ring.gateTimer) return;
+    ring.gateTimer = setTimeout(() => {
+      ring.gateTimer = null;
+      // 计时器可能赶在把收场那一笔画上去的那一帧之前：到点时真的还在跑才算门开了。
+      const phase = ctx.progressFeed.state().phase;
+      if (phase === 'arming' || phase === 'running') ring.mode = 'live';
+      paintProgressRing();
+    }, RING_GATE_MS);
+  }
+
+  function runRingSequence(name, offset, snap) {
+    clearRingTimers();
+    clearRingGate();
+    ring.mode = 'playing';
+    ring.sequence = name;
+    for (const [at, step] of RING_SEQUENCES[name]) {
+      const apply = () => {
+        if (step === 'fade') {
+          ring.view = { ...ring.view, fade: true };
+        } else {
+          setRingView(step, offset, snap);
+          if (step === 'idle') {
+            // 放的时候底下若有一轮自动进了门，退场后接着在门里等。
+            ring.mode = ring.gateTimer ? 'gating' : 'idle';
+            ring.sequence = null;
+            ring.carriedOver = false;
+          }
+        }
+        applyRing();
+      };
+      if (at === 0) apply();
+      else ring.timers.push(setTimeout(apply, at));
+    }
+  }
+
+  /**
+   * 把进度源此刻的快照画到环上。订阅回调、门到点、看门狗重建球、手动整页收尾
+   * 都走这里；同一份快照画几遍都一样（序列和门不会因为重画而重启）。
+   */
+  function paintProgressRing() {
+    const snap = ctx.progressFeed.state();
+    // 暂停那一下调度层先翻代次再报暂停，同一帧画：先记下翻代次之前环在不在屏幕上。
+    let wasOnScreen = ring.mode === 'live' || ring.mode === 'playing' || ring.mode === 'held';
+    if (ring.session !== snap.session) startRingSession(snap.session);
+    if (snap !== ring.routeLeft) ring.routeLeft = null;
+
+    let phase = snap.phase;
+    let shot = snap;
+    if (state.isTranslatingPage && (snap.source !== 'manual' || snap === ring.armedFrom)) {
+      // 手动整页已经点下，块还在收（规则要先到、要过滤）：进度源上还没有这一轮，
+      // 台上的是自动的数或上一轮手动的终态。环先转起来，用户点了要立刻有回应。
+      phase = 'arming';
+      shot = RING_BLANK_MANUAL;
+    } else {
+      if (ring.armedFrom) {
+        // 那一轮没走到 manual.begin 就收场了（只有 iframe、一块也没有、begin 之前就
+        // 抛了）：台上是点下之前那份快照，或者其间自动报来的一份。环上转着的 arming
+        // 是那一下点击的，不是这份快照的 —— 先收起，这份快照按自己的规矩来（自动的
+        // 照样过门，没露过面的完成不放序列）。点下之前那份的完成 / 预算序列早已放完。
+        if (snap.source !== 'manual' || snap === ring.armedFrom) {
+          hideRing(ring.view.offset, ring.view.snap);
+          wasOnScreen = false;
+        }
+        if (snap === ring.armedFrom && (phase === 'done' || phase === 'budget')) phase = 'idle';
+        ring.armedFrom = null;
+      }
+      // 换路由时台上那份快照说的是已经离开的那一页：重画多少遍也不再露面。
+      if (snap === ring.routeLeft) phase = 'idle';
+    }
+    if (phase !== 'budget') ring.budgetKey = '';
+    if (phase !== 'idle' && shot.known > 0) ring.ledger = shot;
+    if (phase === 'paused' && snap.known === 0) {
+      // 暂停那一下调度层先翻了代次，台上只剩一份空账。环在屏幕上的话停在喊停那
+      // 一刻：弧长和「已翻 n/m」都取最近那份账，只是变灰。环本来就不在屏幕上（已经
+      // 放完退场、或者还在门里），暂停什么也不画。
+      if (wasOnScreen && ring.ledger) shot = { ...ring.ledger, source: snap.source, phase: 'paused' };
+      else phase = 'idle';
+    }
+
+    const offset = ringOffset(shot, phase);
+    // 环上停着一个常驻态（手动那一轮的 partial / error），或者上一代没放完的完成
+    // 序列（carriedOver）。自动开着的页面上，手动一收尾调度层就会再报数：把放弃的块
+    // 重新排队、报一个 idle，或者门内就收场的一小轮；语言包装好、暂停也会翻代次。
+    // 那都不是「下一轮」—— 它们只让给换路由、手动的新一轮、和过了门真露面的
+    // 自动轮，否则那圈珊瑚闪一帧就没了，完成序列也放不完。
+    const stale = ringStale();
+    const shown = ringShown();
+    switch (phase) {
+      case 'idle':
+        if (stale) clearRingGate();
+        else if (ring.mode !== 'playing') hideRing(offset, shot);
+        break;
+      case 'arming':
+      case 'running':
+        if (snap.source === 'manual' || state.isTranslatingPage || shown) {
+          showRing(phase, offset, shot);
+        } else {
+          // 门还没开：弧长和账照写（看不见），到点还在跑就露面。看得见的不动它。
+          if (!stale) ring.view = { ...ring.view, offset, snap: shot };
+          startRingGate();
+        }
+        break;
+      case 'done':
+        if (ring.sequence === 'done' || ring.sequence === 'doneReduced') break;
+        // 没露过面的一轮（门内收场，或序列已经放完）就不露面；常驻态留着。
+        if (stale) clearRingGate();
+        else if (!shown) hideRing(offset, shot);
+        else runRingSequence(prefersReducedMotion() ? 'doneReduced' : 'done', offset, shot);
+        break;
+      case 'budget': {
+        // 同一份预算账只放一次「停 4 s 再淡出」，之后的重画不再把它叫回来。上一代
+        // 留下的序列也放完再说：翻代次后的空账不该把它截成一圈空弧。
+        const key = `${snap.session}:${snap.known}:${snap.settled}`;
+        if (ring.budgetKey === key || (ring.mode === 'playing' && ring.carriedOver)) break;
+        ring.budgetKey = key;
+        runRingSequence('budget', offset, shot);
+        break;
+      }
+      default: // partial、paused、error：常驻，直到换路由或下一轮
+        showRing(phase, offset, shot);
+    }
+    applyRing();
+  }
+
+  /**
+   * 进度源在同一路由上翻了代次（换路由由下面的 onRouteChange 直接收）：语言包装好
+   * 重判、暂停、继续、整轮失败。正在放的完成 / 预算序列放完，手动那一轮停下的
+   * partial / error 留着。自动自己的态（在转的弧、自动的 partial / paused / error）
+   * 说的是上一代调度层的状态，新一代会自己报，收掉 —— 账留着。
+   */
+  function startRingSession(session) {
+    ring.session = session;
+    ring.budgetKey = '';
+    if (ring.mode === 'playing') ring.carriedOver = true;
+    else if (!(ring.mode === 'held' && ring.view.snap && ring.view.snap.source === 'manual')) {
+      hideRing(1, ring.view.snap);
+    }
+  }
+
+  // 换了路由就是翻篇：环立刻回 idle，账一并清掉，新一页的轮次按门的规则重新出现。
+  // 不等进度源翻代次 —— 调度层换路由也翻代次，但手动留下的 partial / error 不让给翻代次
+  // （startRingSession），手动那一轮还在途时进度源上也仍是它的快照（routeLeft）。
+  globalThis.SpaNavigation.onRouteChange(() => {
+    ring.routeLeft = ctx.progressFeed.state();
+    ring.ledger = null;
+    ring.budgetKey = '';
+    hideRing(1, null);
+    applyRing();
+  });
+
+  function applyRing() {
+    const ball = state.floatBall;
+    const svg = ball && ball.querySelector('svg.ai-translator-ring');
+    if (!svg) return;
+    const { phase, fade, offset, snap } = ring.view;
+    svg.dataset.phase = phase;
+    svg.classList.toggle('ai-translator-ring-fade', fade);
+    svg.querySelector('.ai-translator-ring-arc').style.strokeDashoffset = offset.toFixed(4);
+    // 数字不画在球上：悬停看球的 title，读屏读环的 aria-label，说的是同一句。
+    if (phase === 'idle') {
+      ball.removeAttribute('title');
+      svg.removeAttribute('role');
+      svg.removeAttribute('aria-label');
+      svg.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    const line = ctx.describeProgress(snap);
+    ball.title = line;
+    svg.removeAttribute('aria-hidden');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', line);
+  }
+
+  /** 手动整页刚点下：环立刻进 arming，不等块收齐。 */
+  function armProgressRing() {
+    downloadBarDismissed = false;
+    ring.armedFrom = ctx.progressFeed.state();
+    paintProgressRing();
+  }
+
+  // 环画在球上，球归 content-float-ball.js：它重建球之后回头调 paintProgressRing。
+  // 订阅挂在这里一次，每次画都重新找 state.floatBall，被删掉的旧球没人再惦记。
+  ctx.progressFeed.subscribe(paintProgressRing);
+
+  ctx.armProgressRing = armProgressRing;
+  ctx.paintProgressRing = paintProgressRing;
+  ctx.showTranslationComplete = showTranslationComplete;
+  ctx.closePageBar = closePageBar;
   ctx.showPageNotice = showPageNotice;
   ctx.showTranslationError = showTranslationError;
 })();

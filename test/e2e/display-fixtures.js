@@ -12,6 +12,7 @@
  */
 const { expect } = require('@playwright/test');
 const { setExtensionSettings, triggerPageTranslation, writeSyncSettings } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 
 const ORIGIN = 'https://styles.test';
 
@@ -88,7 +89,7 @@ async function openPage(page, context, endpoint, { host = 'light', settings = {}
 
 /**
  * openPage, then translate the page for real through the float ball. Resolves
- * once the round has finished (the progress bar has gone), so request counts
+ * once the round has finished (its end-of-round bar is up), so request counts
  * read afterwards are final.
  */
 async function openTranslatedPage(page, context, endpoint, options = {}) {
@@ -96,7 +97,12 @@ async function openTranslatedPage(page, context, endpoint, options = {}) {
   await triggerPageTranslation(page);
   await expect(page.locator('#main > p.ai-translator-inline-block')).toHaveCount(PARAGRAPHS.length + 1, { timeout: 30000 });
   await expect(page.locator('#nav .ai-translator-inline-right')).toHaveCount(NAV_ITEMS.length, { timeout: 30000 });
-  await page.waitForSelector('#ai-translator-progress', { state: 'hidden', timeout: 30000 });
+  await waitForPageRoundEnd(page);
+  // The round's end bar goes up as the last batch lands, while that batch is
+  // still in its 0.25 s fade-in: computed opacity read now is mid-fade.
+  await page.evaluate(() => Promise.allSettled(document.getAnimations()
+    .filter((animation) => animation.animationName === 'ai-translator-block-fade-in')
+    .map((animation) => animation.finished)));
 }
 
 function htmlAttribute(page, name) {
