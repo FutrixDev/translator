@@ -47,6 +47,7 @@ await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
+await import('../../content/page/prose-pre.js');
 await import('../../content/page/collect.js');
 await import('../../content/page/insert.js');
 

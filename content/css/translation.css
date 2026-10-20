@@ -148,6 +148,12 @@ html body .ai-translator-inline-block::after {
   span.ai-translator-text-run {
     display: inline !important;
   }
+
+  /* 仅显示译文时锚点自己就是要藏的原文（散文 <pre> 的一段，content/page/prose-pre.js）。
+     上面那条 (0,1,1) 比 .ai-translator-source-hidden (0,1,0) 重，同层里会把它压回内联 */
+  span.ai-translator-text-run.ai-translator-source-hidden {
+    display: none !important;
+  }
 }
 
 span.ai-translator-text-run {
