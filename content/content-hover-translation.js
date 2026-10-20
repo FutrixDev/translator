@@ -22,8 +22,8 @@
   let activeHotkey = null;
   // 这一下修饰键被和弦（Alt+A 之类）用掉了，按着的这段时间里不再触发悬停翻译。
   let chordKey = null;
-  // 指针最后停在哪儿（视口坐标）。单按热键时没有鼠标事件可问，散文 <pre> 里是哪一段
-  // 只有坐标说得出（见 hover/blocks.js 的 resolveBlockFromTarget）。
+  // 指针最后停在哪儿（视口坐标），按着鼠标键时是 null（见 pointOf）。单按热键时没有
+  // 鼠标事件可问，散文 <pre> 里是哪一段只有坐标说得出（hover/blocks.js 的 resolveBlock）。
   let pointer = null;
 
 
@@ -106,8 +106,14 @@
   // 散文 <pre> 的几段是同一个元素里的文字，从一段划到下一段没有 mouseover：指针
   // 在 <pre> 的直属文字上移动，就当成又划过了一次。
   function handlePointerMove(event) {
-    pointer = { x: event.clientX, y: event.clientY };
+    pointer = pointOf(event);
     if (event.target.tagName === 'PRE') handleMouseOver(event);
+  }
+
+  // 按着鼠标键是在划选：不给坐标，散文 <pre> 里就不会为了悬停去裹段、搬动选区下面
+  // 的文本节点。
+  function pointOf(event) {
+    return event.buttons ? null : { x: event.clientX, y: event.clientY };
   }
 
   function handleMouseOver(event) {
@@ -123,7 +129,7 @@
       activeHotkey = getHoverHotkey();
     }
 
-    const block = hov.resolveBlockFromInteractionTarget(event.target, { x: event.clientX, y: event.clientY });
+    const block = hov.resolveBlockFromInteractionTarget(event.target, pointOf(event));
     if (!block || hov.hasInlineTranslation(block)) return;
 
     translateHoverBlock(block);

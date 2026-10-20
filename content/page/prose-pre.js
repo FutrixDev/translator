@@ -7,9 +7,10 @@
 // 只有标题、「3905 days ago」和页脚；按住悬停键指着正文，也什么都不翻。
 //
 // 和代码块的分界有两条。一是代码要保住每一行原来的排法，所以几乎不开自动折行。
-// 二是代码会带不翻的标签（<code>/<kbd>/<samp>…）。两条都不沾，才算
-// 散文；每一段裹成锚点之前另外还要再过一次收集器自己的代码 / 网址 / 非正文判定
-// （collect.js 的 wrapIfProse），这里只切段。
+// 二是代码会带不翻的标签（<code>/<kbd>/<samp>…），或者落在语法高亮之类的代码块
+// 容器里（not-prose.js 的 isInsideCodeContainer）。都不沾，才算散文；每一段裹成
+// 锚点之前另外还要再过一次代码 / 网址 / 非正文判定（collect.js 的 wrapIfProse）。
+// 可编辑的 <pre> 不算：切段要搬动文本节点，那是用户正在写的字。
 // white-space: pre（不折行）的纯文本不收：译文会继承不折行，成了一条横穿页面的长行。
 //
 // 整页收集（content/page/collect.js）和悬停（content/hover/blocks.js）都问这里：
@@ -29,10 +30,13 @@
 
   // <pre> 里装着上面的标签之一（<code>/<kbd>…），或者自己落在其中之一里，就是代码。
   // 只读编辑器（CodeMirror 等，MANAGED_DOM_ROOT_SELECTOR）里的 <pre> 是编辑器自己的
-  // 行，不是文章：切段要搬动它的文本节点，编辑器会当成被改坏了重画。
+  // 行，不是文章：切段要搬动它的文本节点，编辑器会当成被改坏了重画。可编辑的
+  // <pre>（WordPress 的预格式块、富文本编辑器）也一样不能动。
   function isProse(el) {
     if (el.tagName !== 'PRE') return false;
+    if (el.isContentEditable) return false;
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(el)) return false;
+    if (ctx.isInsideCodeContainer(el)) return false;
     if (el.querySelector(SKIP_TAG_SELECTOR)) return false;
     const parent = ctx.composedParent(el);
     if (parent && ctx.closestComposed(parent, SKIP_TAG_SELECTOR)) return false;
@@ -104,9 +108,14 @@
   // 拆文本节点，活的 Range 跟着拆开的那一半走，所以位置要用 Range 给，不能给节点。
   // 空行、我们插进来的译文不属于任何一段，给 null。没裹过的段落和整页收集一样先过
   // collect.js 的 wrapIfProse：只是个网址、像代码的那段不裹，也给 null。
+  // 位置正好在一段的第一个字前面时，切开之后它留在前一道空行的末尾（splitText 只
+  // 搬走切点后面的位置），算下一段的。
   function paragraphOf(pre, at) {
     const found = paragraphs(pre);
     let child = at.startContainer === pre ? pre.childNodes[at.startOffset] : at.startContainer;
+    if (child === at.startContainer && isParagraphBreak(child) && at.startOffset === child.data.length) {
+      child = child.nextSibling;
+    }
     while (child && child.parentNode !== pre) child = child.parentNode;
     if (!child) return null;
     const paragraph = found.find((each) => each === child || (Array.isArray(each) && each.includes(child)));

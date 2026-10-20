@@ -24,11 +24,26 @@
   const translationCache = new WeakMap();
 
 
-  // point 是指针此刻的视口坐标。散文 <pre>（content/page/prose-pre.js）的一段是两道
-  // 空行之间的文字，没有自己的元素：指针落在直属文字上时目标是 <pre> 本身，只有
-  // 坐标说得出是哪一段。只有带坐标的悬停会把一段就地裹成锚点；不带坐标的（划选、
-  // 右键）只认已经裹好的段落，不去改页面。
-  function resolveBlockFromTarget(target, point) {
+  // 划选、右键问的是这一个：不改页面，散文 <pre> 里只认已经裹好的段落。
+  function resolveBlockFromTarget(target) {
+    return resolveBlock(target, null);
+  }
+
+  // 悬停（划过、单按热键）问的是这一个。point 是指针此刻的视口坐标，没有就是 null。
+  function resolveBlockFromInteractionTarget(target, point) {
+    if (!target) return null;
+    const translationEl = target.closest?.('.ai-translator-inline-block');
+    if (translationEl && hov.inlineTranslationSources.has(translationEl)) {
+      return hov.inlineTranslationSources.get(translationEl) || null;
+    }
+    return resolveBlock(target, point);
+  }
+
+  // 散文 <pre>（content/page/prose-pre.js）的一段是两道空行之间的文字，没有自己的
+  // 元素：指针落在直属文字上时目标是 <pre> 本身，只有坐标说得出是哪一段。只有带
+  // 坐标的悬停会把一段就地裹成锚点；用户正在这个 <pre> 里划选时也不裹——裹段要
+  // 搬动文本节点，选区会跟着塌掉。
+  function resolveBlock(target, point) {
     if (!target) return null;
     let el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
     if (!el) return null;
@@ -36,7 +51,7 @@
     if (el.closest(SKIP_SELECTOR)) return null;
     const pre = el.closest('pre');
     if (pre && ctx.prosePre.isProse(pre)) {
-      const paragraph = point ? proseParagraphAt(pre, target, point) : wrappedParagraphOf(el);
+      const paragraph = point && !selectingIn(pre) ? proseParagraphAt(pre, target, point) : wrappedParagraphOf(el);
       return paragraph && isValidBlock(paragraph) ? paragraph : null;
     }
     if (ctx.prosePre.skippedByTag(el)) return null;
@@ -51,6 +66,12 @@
     }
 
     return null;
+  }
+
+  function selectingIn(pre) {
+    const selection = document.getSelection();
+    return !!selection && !selection.isCollapsed
+      && (pre.contains(selection.anchorNode) || pre.contains(selection.focusNode));
   }
 
   function wrappedParagraphOf(el) {
@@ -68,15 +89,6 @@
       at.setStart(target, 0);
     }
     return ctx.prosePre.paragraphOf(pre, at);
-  }
-
-  function resolveBlockFromInteractionTarget(target, point) {
-    if (!target) return null;
-    const translationEl = target.closest?.('.ai-translator-inline-block');
-    if (translationEl && hov.inlineTranslationSources.has(translationEl)) {
-      return hov.inlineTranslationSources.get(translationEl) || null;
-    }
-    return resolveBlockFromTarget(target, point);
   }
 
   function isValidBlock(element) {
