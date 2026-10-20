@@ -111,13 +111,15 @@ test('the relay carries via through to the top frame unchanged', async () => {
 function loadTop({ hostname = 'news.example.com' } = {}) {
   const calls = [];
   let generation = 0;
+  // 顶层 autoTranslate.recallOn() 的答案；测试可以改它再让指令重算。
+  const auto = { recall: false };
   const generationSubscribers = [];
   const broadcasts = [];
   const ctx = {
     frameRole: 'top',
     state: { translationsVisible: true, pageScopeOverride: null, isTranslatingPage: false },
     t: (key) => key,
-    autoTranslate: { isOn: () => true, onStateChange: (fn) => fn() },
+    autoTranslate: { isOn: () => true, recallOn: () => auto.recall, onStateChange: (fn) => fn() },
     customRules: { engineOverride: () => null, profileOverride: () => null, onChange() {} },
     translationProfile: {
       generation: () => generation,
@@ -141,7 +143,7 @@ function loadTop({ hostname = 'news.example.com' } = {}) {
     generation += 1;
     for (const fn of generationSubscribers) fn(generation);
   };
-  return { ctx, calls, broadcasts, bump, location, ...env };
+  return { ctx, calls, broadcasts, bump, location, auto, ...env };
 }
 
 async function relay(listener, via) {
@@ -223,6 +225,37 @@ test('the top frame directive carries its normalized host, and a changed host is
   // 什么都没变：不是新指令。
   ctx.frames.onVisibilityChanged();
   assert.equal(broadcasts.length, 2);
+});
+
+// 子 frame 的装回跟顶层的 recallOn() 走，它只能从指令里来。translate 分不出「手动点的
+// 翻译整页」和「站点自动翻」：手动翻完的页面上用户再打开「总是翻译这个站点」，变的
+// 只有 recall —— sameDirective 不比它，这一版就不广播，子 frame 永远挂不上装回。
+test('the top frame directive carries recallOn(), and a recall-only change is a new directive', () => {
+  const { ctx, broadcasts, listeners, auto } = loadTop();
+  assert.equal(broadcasts.length, 1);
+  assert.equal(broadcasts[0].recall, false);
+  assert.equal(broadcasts[0].translate, true);
+  const hello = [];
+  listeners[0]({ type: 'FRAME_CHILD_HELLO', documentId: 'doc-1', sized: true }, {}, (reply) => hello.push(reply));
+  assert.equal(hello[0].recall, false);
+
+  // 别的什么都没变（translate 一直是真），只有 recall 变了：这是一版新指令。
+  auto.recall = true;
+  ctx.frames.onVisibilityChanged();
+  assert.equal(broadcasts.length, 2);
+  assert.equal(broadcasts[1].recall, true);
+  assert.equal(broadcasts[1].translate, true);
+  assert.equal(broadcasts[1].epoch, 2);
+
+  // 什么都没变：不是新指令。
+  ctx.frames.onVisibilityChanged();
+  assert.equal(broadcasts.length, 2);
+
+  // 顶层暂停：recall 变回假，又是一版。
+  auto.recall = false;
+  ctx.frames.onVisibilityChanged();
+  assert.equal(broadcasts.length, 3);
+  assert.equal(broadcasts[2].recall, false);
 });
 
 test('a page with no hostname sends an empty host', () => {

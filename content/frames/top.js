@@ -8,12 +8,16 @@
 //
 // 指令是子 frame 唯一要知道的东西：
 //
-//   { epoch, translate, manualEpoch, visible, scopeOverride, engineOverride, profileOverride,
-//     generation, host }
+//   { epoch, translate, recall, manualEpoch, visible, scopeOverride, engineOverride,
+//     profileOverride, generation, host }
 //
 //   epoch          每变一次 +1。子 frame 只认更大的，所以 HELLO 的回话和广播谁先
 //                  到都一样。
 //   translate      顶层此刻在翻：自动翻译 idle / running，或者手动整页正在跑。
+//   recall         顶层的装回挂不挂（autoTranslate.recallOn()：站点自己会自动翻、且
+//                  没按暂停）。translate 分不出「手动点的翻译整页」和「站点自动翻」，
+//                  这一个分得出：手动翻过、站点没开自动的页面，它是假。子 frame 的
+//                  装回只跟它走（child.js 的 frameDecision）。
 //   manualEpoch    顶层每点一次「翻译整页」+1。子 frame 看到它变大就静默跑一轮。
 //   visible        「此刻想不想看译文」（Alt+A、悬浮球的隐藏）。
 //   scopeOverride  整页覆盖（state.pageScopeOverride，并行批的正文范围）。
@@ -60,6 +64,7 @@
   function computeDirective() {
     return {
       translate: currentTranslate(),
+      recall: ctx.autoTranslate.recallOn(),
       manualEpoch,
       visible: state.translationsVisible !== false,
       scopeOverride: state.pageScopeOverride || null,
@@ -73,6 +78,7 @@
   function sameDirective(a, b) {
     return !!a && !!b
       && a.translate === b.translate
+      && a.recall === b.recall
       && a.manualEpoch === b.manualEpoch
       && a.visible === b.visible
       && a.scopeOverride === b.scopeOverride
@@ -203,7 +209,8 @@
     if (ready) return;
     ready = true;
     listenToChildren();
-    // 自动翻译的状态一变（开始翻、翻完、被关掉），translate 可能跟着变。
+    // 自动翻译的状态一变（开始翻、翻完、被关掉、暂停、站点规则变了），translate
+    // 和 recall 可能跟着变：recallOn() 的输入一变都会走到 setStatus，每次都发布。
     // onStateChange 订阅时会立刻回调一次，那一次正好算出第一版指令。
     ctx.autoTranslate.onStateChange(refreshDirective);
     // 本页生效的用户站点规则变了（含换路由换到另一条规则），引擎覆盖可能跟着变。

@@ -96,16 +96,22 @@
 
   /**
    * content-auto-translate.js 的 resolve() 问的就是这个（形状与 SiteRules.decide()
-   * 一致，判法见 shelf.js 的 decideForFrame）。options.explicit 在这里不起作用：
-   * 子 frame 上没有人点过什么，它的「表过态」就是顶层的指令。
+   * 一致，判法见 shelf.js 的 decideForFrame）。子 frame 上没有人点过什么，它的
+   * 「表过态」就是顶层的指令，options.explicit 选的是读指令里的哪一个量：
+   *   - 默认（「这一页此刻该不该翻」）：translate，顶层此刻在翻，手动的也算；
+   *   - explicit: false（siteAuto()，装回只问这一句）：recall，顶层的装回挂不挂。
+   *     手动翻过、站点没开自动的页面，顶层不装回，子 frame 也不装回；顶层暂停了，
+   *     子 frame 一样不装回。
    */
-  function frameDecision() {
+  function frameDecision(options) {
+    const told = !directive ? false
+      : options && options.explicit === false ? directive.recall : directive.translate;
     return frames.decideForFrame({
       host: location.hostname,
       path: location.pathname,
       userRules: ctx.settings.siteRules,
       settings: ctx.settings,
-      follow: !!(directive && directive.translate) && frames.isFrameSized(window),
+      follow: !!told && frames.isFrameSized(window),
     });
   }
 
@@ -166,7 +172,8 @@
     sizeWatch = null;
     reportToTop({ manual: false, error: null });
     if (manualPending) runManualRound();
-    if (directive && directive.translate) restartAuto();
+    // 装回也过尺寸闸：顶层停在预算上时 translate 是假、recall 是真，撑开了一样要挂上。
+    if (directive && (directive.translate || directive.recall)) restartAuto();
   }
 
   function watchSize() {
@@ -201,7 +208,9 @@
       // 同一批块不会两边各送一次。
       runManualRound();
     }
-    if (!prev || prev.translate !== next.translate) restartAuto();
+    // recall 单独变了也重开：start() 头一件事就是照 recallOn() 对一遍装回。手动翻完
+    // 的页面上用户再打开「总是翻译这个站点」，translate 一直是真，变的只有 recall。
+    if (!prev || prev.translate !== next.translate || prev.recall !== next.recall) restartAuto();
     // 引擎覆盖与配置档跟顶层走，null 也照传（「顶层没有覆盖」）。放在最后：上面的手动轮
     // 已同步置上 isTranslatingPage，规则流水线（custom-rule.js 的 rescope）见了不当
     // 场补翻，只记下 pending；这一轮收尾时 afterRound() 再清扫，并按条件决定要不要

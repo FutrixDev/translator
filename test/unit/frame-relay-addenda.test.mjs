@@ -124,7 +124,7 @@ function frameRealm({ url, role, sendMessage: send }) {
     t: (key) => key,
     isExtensionContextInvalidated: () => false,
     getLanguageDetectionText: (text) => String(text || '').slice(0, 400),
-    autoTranslate: { isOn: () => false, onStateChange() {} },
+    autoTranslate: { isOn: () => false, recallOn: () => false, onStateChange() {} },
     customRules: {
       whenReady: async () => {}, onChange() {}, engineOverride: () => null, profileOverride: () => null,
       // P1-C：本站规则钉住的领域（没有规则），与缓存层订阅的「规则变了」。
