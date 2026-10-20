@@ -1,6 +1,19 @@
 # Chrome 网上应用店提交说明 — v1.5.2
 
-提交日期：2026-10-19 ｜ 上一个提交版本：1.5.1（商店显示 2026-10-14 更新）
+提交日期：2026-10-20 ｜ 上一个提交版本：1.5.1（商店显示 2026-10-14 更新）
+
+> **重打说明（2026-10-20）**：2026-10-19 从 `b9dc1c2` 打的 1.5.2 包从未上传。
+> 之后 main 又合入了首次使用引导（#165）、Blab Translation 识图（#166/#169）、
+> 正在看的部分先译（#170）、最近语言（#171）、单页应用两项修复（#172/#174）、
+> 悬浮球进度环（#173）、`<pre>` 里的文章（#175）。版本号不变，仍是 1.5.2，
+> 从合入本次改动后的 `main` 重新打包；旧包作废，不要上传。
+
+## 上传前先确认：Blab 识图的服务端已在生产上线
+
+这个包让订阅用户可以选 Blab Translation 识别图片文字。它把图片发给账户站的
+`/api/blab/complete`，要求服务端**已经上线接收图片的版本**，并且生产环境配置的
+主模型能读图。否则每次识图都返回 422 `vision_unavailable`（不扣额度），用户看到
+的是错误提示。**先确认服务端，再上传这个包。**
 
 ## 先说一个发现：线上的 1.5.1 不是 main 打的那一版
 
@@ -21,7 +34,7 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
 | --- | --- |
 | 上传文件 | `blab-translation-1.5.2.zip`（`npm run zip` 产物，仓库里不跟踪 zip） |
 | 扩展版本 | 1.5.2 |
-| 打包源 | 本说明所在 PR 合入后的 `main` |
+| 打包源 | 本说明所在 PR 合入后的 `main`（不是 `b9dc1c2`） |
 | 新增权限 | **`unlimitedStorage`**（见第五节） |
 | `minimum_chrome_version` | 116 → **130** |
 | host_permissions / CSP | 未改动 |
@@ -29,6 +42,9 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
 相对 `8fd0719`，`manifest.json` 只多了：`unlimitedStorage`、五个界面语言文件
 （`i18n/lang/{ar,id,vi,tr,it}.js`）、`shared/dict-pack.js`、
 `content/content-dict-lookup.js` 三个内容脚本条目，以及最低 Chrome 版本。
+相对作废的 `b9dc1c2` 包，只多了五个内容脚本（`content/page/progress-feed.js`、
+`focus-order.js`、`prose-pre.js`、`recall.js`、`content/content-auto-ledger.js`），
+权限、host_permissions、CSP、最低 Chrome 版本都没变。
 
 ## 二、扩展名与简短说明（在包里，15 种）
 
@@ -61,6 +77,8 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
   名字会显示，但说明是空的（或回落到英文）。
 - **15 个语言区域都整份粘贴** [`docs/store-listing/<locale>.txt`](store-listing/)。
   线上至少 en 还是更早的旧稿。
+- 这次重打在「图片文字（OCR）」一节加了一条：订阅后也可以交给 Blab Translation
+  识别、无需密钥；「默认保护隐私」一节写明识图时发到服务器的是图片。
 - 截图本地化这一版不做（调研文档 §5：一次只改一个变量）。
 
 ## 四、更新说明（可直接粘贴）
@@ -68,21 +86,25 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
 **中文**
 
 > 1.5.2
-> - 新增 Blab Translation 引擎：订阅自带，无需 API 密钥。
+> - 新增 Blab Translation 引擎：订阅自带，无需 API 密钥；订阅用户也能用它识别图片文字。
 > - 新增离线词典：查单词先查本机词典包，可在设置里下载、更新、删除。
 > - 新增阿拉伯语、印尼语、越南语、土耳其语、意大利语界面。
-> - 输入框标出由哪个引擎翻译；语言菜单顶部显示最近用过的语言。
-> - 修复：内置引擎下公式与引用标记出错、漫画任务名称、网格排版里译文位置。
+> - 整页和自动翻译先译你正在看的部分；悬浮球外圈显示翻译进度。
+> - 首次使用：默认用意译风格；快捷键没分配上时提供「设置快捷键」按钮；安装前打开的标签页会提示刷新后再翻译。
+> - 语言菜单顶部显示最近用过的语言；输入框标出由哪个引擎翻译。
+> - 修复：单页应用重绘菜单时译文闪回原文、写在 <pre> 里的文章不翻译、内置引擎下公式与引用标记出错、漫画任务名称、网格排版里译文位置。
 > - 现在需要 Chrome 130 或更高版本。
 
 **English**
 
 > 1.5.2
-> - New: Blab Translation engine, included with a subscription, no API key needed.
+> - New: Blab Translation engine, included with a subscription, no API key needed. Subscribers can also use it to read text in images.
 > - New: offline dictionary. Word lookups check a downloaded pack first; download, update or delete packs in Settings.
 > - New interface languages: Arabic, Indonesian, Vietnamese, Turkish, Italian.
-> - The input box shows which engine translated; the language menu starts with the languages you used last.
-> - Fixes for formulas and citation markers on the built-in engine, comic job names, and translation placement in grid layouts.
+> - Whole-page and automatic translation start with the part you are reading; a ring around the float ball shows progress.
+> - First run: free translation is the default style, a "Set a shortcut" button appears when a shortcut is missing, and tabs opened before installing ask for a reload instead of failing.
+> - The language menu starts with the languages you used last; the input box shows which engine translated.
+> - Fixes: menus rebuilt by single-page sites no longer flash back to the original, articles inside a wrapping <pre> are translated, plus formulas and citation markers on the built-in engine, comic job names, and translation placement in grid layouts.
 > - Chrome 130 or later is now required.
 
 ## 五、权限理由与审核员说明
@@ -98,9 +120,14 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
 离线词典包从 `blab-translation.com` 的公开地址下载，内容是词典数据，不是代码，
 Remote code 仍选 No。
 
+Blab Translation 识图不新增权限：图片由内容脚本取到、经后台发给已在用的账户站接口，
+和 Blab 翻译同一条通道。Data types 里「网站内容」已勾选，覆盖用户主动送去识别的图片。
+
 ## 六、提交前 checklist
 
-- [x] `manifest.json` 版本是 1.5.2，打包源是 `main`
+- [ ] **先确认 Blab 识图服务端已上线、生产主模型能读图**（见文首）
+- [ ] 隐私政策目前只写了 Blab Translation 发送「文本」；上传前补一句：选 Blab Translation 识图时，图片发到我方服务器识别、不保存
+- [x] `manifest.json` 版本是 1.5.2，打包源是本 PR 合入后的 `main`，不是 `b9dc1c2`
 - [x] 15 种语言 `appName` ≤75、`appDescription` ≤132 字符
 - [ ] 上传 zip；新增 ar/id/vi/tr/it 五个语言区域；15 个区域的说明整份换成
       `docs/store-listing/<locale>.txt`；更新说明贴第四节

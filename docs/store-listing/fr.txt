@@ -43,11 +43,12 @@ Lisez les pages web, les PDF, les livres numériques, les mangas et les bandes d
 • Clic droit sur n'importe quelle image — capture d'écran, photo, graphique — pour lire son texte et le traduire.
 • L'image entière ou seulement la zone que vous tracez. Les grandes images affichent aussi un bouton « Reconnaître le texte » au survol.
 • Lu hors ligne sur votre appareil : l'anglais, ainsi que le chinois, le japonais ou le coréen si c'est la langue de votre interface — ou par un modèle de vision avec votre propre clé pour les autres langues, les photos et les lettrages stylisés.
+• Avec un abonnement, Blab Translation les lit aussi — sans clé.
 
 ★ CONFIDENTIEL PAR DÉFAUT
 • Par défaut, les pages web sont traduites sur votre appareil. Votre texte ne quitte jamais votre ordinateur.
 • Avec votre propre modèle d'IA, le texte va directement à votre endpoint, avec votre propre clé — jamais par nous.
-• Blab Translation envoie le texte à nos serveurs pour le traduire et n'en garde rien.
+• Blab Translation envoie le texte — ou, pour l'OCR, l'image — à nos serveurs pour le traiter et n'en garde rien.
 • Les fichiers PDF, documents et BD sont traités sur nos serveurs et supprimés au bout de 7 jours.
 • Les dictionnaires hors ligne sont téléchargés depuis notre serveur et conservés sur votre appareil ; c'est à cela que sert l'autorisation de stockage illimité. Chercher un mot dans un dictionnaire n'envoie rien.
 • Aucune analyse d'usage. Aucun pistage publicitaire.
