@@ -5,11 +5,14 @@
 // 那是**节点身份** —— 节点没变，class 还在，里面的文字已经是另一条内容了，于是新
 // 内容被静默跳过：不报错、不重试、永远不翻。
 //
-// 这一组测试盯住三件事：
+// 这一组测试盯住四件事：
 //   1. 指纹稳定且只对「文字变了」有反应（shared/block-identity.js）；
 //   2. 算指纹时读到的是页面自己的文字，不含我们插进去的译文（ctx.readSourceText）；
 //   3. 判定发生在正确的位置，撤除时该收的都收了（content/page/insert.js 的
-//      releaseTranslation，以及它在 collect.js 里被调用的时机）。
+//      releaseTranslation，以及它在 collect.js 里被调用的时机）；
+//   4. 页内记忆：按 (目标语言, 原文) 记上次落笔的译文，LRU 封顶、译法换代整张清，
+//      唯一的写入点在插入端（shared/block-identity.js 的 remember / recall /
+//      forgetMemory）。拿它把译文装回新节点的那一层在 recall.test.mjs。
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -160,6 +163,140 @@ test('文字变了就是变了，语言一致也救不回来', () => {
   assert.equal(BlockIdentity.isStale(node, BlockIdentity.fingerprint('Second tweet'), 'zh-CN'), true);
 });
 
+// ==================== 页内记忆：按内容装回 ====================
+//
+// 单页应用切菜单时把左栏整片重建：文字没变、节点全新，上面那张按节点认的表查不
+// 到。记忆按 (语言, 送出去的原文) 认，发现层在绘制前拿它把译文装回去
+// （content/page/recall.js）。记忆是模块级的一张表，这些测试各用各的原文，互不干扰；清整张表的那一
+// 条放在最后。
+
+// 一条记忆：source 是送出去的原文（block.text，带内联标记），这里多数块没有标记，
+// 原文就是纯文字。
+const entry = (source, translation, targetLangChecked = false) => ({ source, translation, targetLangChecked });
+const recalled = (lang, source, usable) => {
+  const hit = BlockIdentity.recall(lang, source, usable);
+  return hit === null ? null : hit.translation;
+};
+
+test('a remembered translation comes back for the same text in the same language', () => {
+  BlockIdentity.remember('zh-CN', entry('Settings', '设置'));
+  assert.equal(recalled('zh-CN', 'Settings'), '设置');
+  // 键是原文逐字，不归一化：原文是收集端产出的同一个串，两边本来就逐字相等。
+  assert.equal(recalled('zh-CN', 'Settings!'), null);
+  // 条目原样还回去：调用方要看 targetLangChecked。
+  assert.deepEqual(BlockIdentity.recall('zh-CN', 'Settings'), entry('Settings', '设置'));
+});
+
+test('another target language does not get this language\'s translation', () => {
+  BlockIdentity.remember('zh-CN', entry('Billing', '账单'));
+  assert.equal(recalled('ja', 'Billing'), null);
+  // 空串是「跟随浏览器」这个身份，不是「随便哪门」。
+  assert.equal(recalled('', 'Billing'), null);
+  // 不知道是哪门语言：不记、也不认 —— 装错语言比重翻一次贵。
+  assert.equal(recalled(null, 'Billing'), null);
+  const before = BlockIdentity.memorySize();
+  BlockIdentity.remember(null, entry('Unknown target', '未知'));
+  assert.equal(BlockIdentity.memorySize(), before);
+});
+
+// 一个带 <a>、一个不带的两块纯文字相同。带链接那块的译文里有
+// <a1>…</a1>，装到不带链接的块上，标记无处可去，就成了页面上的字。送出去的原文
+// （block.text）不一样，键就不一样：两条各记各的，谁也不顶掉谁。
+test('the same words with a different inline structure are two entries that never trade translations', () => {
+  const plain = 'Read the docs';
+  const linked = 'Read the <a1>docs</a1>';
+  BlockIdentity.remember('zh-CN', entry(linked, '阅读<a1>文档</a1>'));
+  assert.equal(recalled('zh-CN', plain), null, 'the linked block\'s translation landed on the plain one');
+  BlockIdentity.remember('zh-CN', entry(plain, '阅读文档'));
+  assert.equal(recalled('zh-CN', linked), '阅读<a1>文档</a1>', 'remembering the plain block evicted the linked one');
+  assert.equal(recalled('zh-CN', plain), '阅读文档');
+});
+
+// 语言和原文拼成一个键：中间那个分隔符保证 (语言, 原文) 两对拼不出同一个串。
+test('a language and a source never run together into another pair\'s key', () => {
+  BlockIdentity.remember('zh', entry('-CN menu', '甲'));
+  assert.equal(recalled('zh-CN', ' menu'), null);
+  assert.equal(recalled('zh-CN', 'menu'), null);
+  assert.equal(recalled('zh', '-CN menu'), '甲');
+});
+
+// 上限是原文和译文**合计** 4096 个 UTF-16 单元。
+test('an entry whose source and translation together pass 4096 characters is not remembered', () => {
+  BlockIdentity.remember('zh-CN', entry('A long paragraph', 'x'.repeat(4097 - 'A long paragraph'.length)));
+  assert.equal(recalled('zh-CN', 'A long paragraph'), null);
+  const longSource = 'y'.repeat(4096);
+  BlockIdentity.remember('zh-CN', entry(longSource, '长'));
+  assert.equal(recalled('zh-CN', longSource), null);
+  BlockIdentity.remember('zh-CN', entry('A long paragraph', 'x'.repeat(4096 - 'A long paragraph'.length)));
+  assert.equal(recalled('zh-CN', 'A long paragraph'), 'x'.repeat(4096 - 'A long paragraph'.length));
+});
+
+test('the 2001st entry evicts the least recently used one', () => {
+  // 先装满：之前的测试留下的条目也在表里，最旧的那些先被挤掉。
+  for (let i = 0; i < 2000; i++) BlockIdentity.remember('zh-CN', entry(`menu row ${i}`, `菜单 ${i}`));
+  assert.equal(BlockIdentity.memorySize(), 2000);
+  // 再记一次算一次使用（装回落笔时就是这一下）：row 0 被挪到最新，这一轮被挤
+  // 掉的是 row 1。
+  BlockIdentity.remember('zh-CN', entry('menu row 0', '菜单 0'));
+  BlockIdentity.remember('zh-CN', entry('menu row 2000', '菜单 2000'));
+  assert.equal(BlockIdentity.memorySize(), 2000);
+  assert.equal(recalled('zh-CN', 'menu row 1'), null);
+  assert.equal(recalled('zh-CN', 'menu row 0'), '菜单 0');
+  assert.equal(recalled('zh-CN', 'menu row 2'), '菜单 2');
+});
+
+// 查不算一次使用，不挪到最新端：调用方说这会儿用不了（装回那边的「跳过目标
+// 语言」检查）的不挪，命中了的也不挪 —— 真装回去的由落笔那一下 remember 挪。
+test('looking an entry up does not refresh it in the LRU order, whether or not the caller can use it', () => {
+  for (let i = 0; i < 2000; i++) BlockIdentity.remember('zh-CN', entry(`tab ${i}`, `标签 ${i}`));
+  assert.equal(recalled('zh-CN', 'tab 0', () => false), null);
+  assert.equal(recalled('zh-CN', 'tab 1', () => true), '标签 1');
+  BlockIdentity.remember('zh-CN', entry('tab 2000', '标签 2000'));
+  BlockIdentity.remember('zh-CN', entry('tab 2001', '标签 2001'));
+  // tab 0 和 tab 1 都还在最旧端，这两条新记的挤掉的就是它们。
+  assert.equal(recalled('zh-CN', 'tab 0'), null, 'a refused lookup moved the entry to the most recent end');
+  assert.equal(recalled('zh-CN', 'tab 1'), null, 'a lookup that hit moved the entry to the most recent end');
+  assert.equal(recalled('zh-CN', 'tab 2'), '标签 2');
+  // usable 拿到的是条目本身。
+  assert.equal(recalled('zh-CN', 'tab 3', (hit) => hit.translation === '标签 3'), '标签 3');
+});
+
+// 译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
+// content/content-translation-cache.js 的 setGeneration（translation-profile.test.mjs
+// 真跑它），下面那条源码检查守着 insert.js 不再自己订阅一份。
+test('forgetMemory empties the whole memory', () => {
+  BlockIdentity.remember('zh-CN', entry('Forget me', '忘掉我'));
+  assert.ok(BlockIdentity.memorySize() > 0);
+  BlockIdentity.forgetMemory();
+  assert.equal(BlockIdentity.memorySize(), 0);
+  assert.equal(recalled('zh-CN', 'Forget me'), null);
+});
+
+test('a new translation profile generation forgets the memory, and the insertion side is its only writer', () => {
+  const insert = repoFile('content/page/insert.js');
+  // DOM 夹具（test/e2e/helpers.js 的 PAGE_TRANSLATION_MODULES）装 insert.js 不装缓存层：
+  // insert.js 在加载时碰 ctx.translationProfile 就整个抛错，ctx.insertTranslationBlock 不存在。
+  assert.doesNotMatch(insert, /translationProfile/);
+  assert.match(repoFile('content/content-translation-cache.js'),
+    /generation = next;[\s\S]{0,400}?globalThis\.BlockIdentity\.forgetMemory\(\);/,
+    'nothing forgets the memory when the engine, prompt or glossary changes');
+  // 记下的原文是收集端给的 block.text，和请求体同一个来源。落笔只有一处
+  // （batch.js 的 landTranslation，批量和装回都走它）：发请求时的译法代次过时了
+  // 就不记 —— 换了提示词、术语表之后才回来的那批旧译文不进刚清空的记忆。
+  const batch = repoFile('content/page/batch.js');
+  assert.match(batch, /function passTarget\(\) \{[\s\S]*?generation: ctx\.translationProfile\.generation\(\)/,
+    'a pass no longer pins the profile generation it was requested under');
+  assert.match(batch,
+    /const landed = target\.generation === ctx\.translationProfile\.generation\(\)\s*\? \{ source: block\.text, translation, targetLangChecked: settings\.skipTargetLanguageText === true \}\s*: null;/,
+    'a translation requested under an older profile generation goes back into the memory');
+  // 记忆唯一的写入口是 rememberLanded，插入端在真登记上之后调它一次；不挂到 ctx
+  // 上（测试也走真实落笔填记忆）。
+  assert.match(insert, /if \(!placeTranslation\(block, translation, lang, textLang\)\) return;\s*\n(?:\s*\/\/[^\n]*\n)*\s*if \(landed !== null\) rememberLanded\(lang, landed\);/,
+    'insertTranslationBlock no longer remembers what it registered');
+  assert.equal(insert.match(/BlockIdentity\.remember\(/g).length, 1, 'a second writer of the memory appeared');
+  assert.doesNotMatch(insert, /ctx\.rememberLanded/, 'the memory writer is exposed on ctx again');
+});
+
 // ==================== 读的是页面自己的文字 ====================
 
 test('the source text comes from the whole subtree — X nests its tweet text in spans', () => {
@@ -284,10 +421,8 @@ test('the insertion side replaces an existing translation only for the current t
   const arbiterAt = source.indexOf('function supersedesExistingTranslation');
   assert.ok(arbiterAt !== -1, 'supersedesExistingTranslation is gone; who arbitrates two passes in flight now?');
   const arbiter = source.slice(arbiterAt, source.indexOf('\n  }\n', arbiterAt));
-  assert.match(arbiter, /ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null/,
-    'the arbiter stopped asking what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
-  assert.match(arbiter, /lang === current/,
-    'the arbiter no longer requires the incoming result to be the current target language');
+  assert.match(arbiter, /lang === ctx\.currentTargetLang\(\)/,
+    'the arbiter stopped requiring the incoming result to be what the page is supposed to be in right now — a late older pass can overwrite the newer translation');
   assert.match(arbiter, /entry\.lang === lang/,
     'the arbiter stopped deduplicating — every repeat insert now tears the translation down and redraws it');
 });

@@ -85,6 +85,28 @@
   box or card translation records its target language, the default one
   included, and with nothing recorded yet the current language is shown there.
 
+### Page translation
+
+- **A menu that the site rebuilds keeps its translations.** Single-page sites
+  often redraw the whole sidebar when you switch sections: the words are the
+  same, but every element is new. Automatic translation used to treat them as
+  new text, send the same menu entries again, and show the original for a
+  moment until the answer came back. The page now remembers each translation by
+  its text and target language (up to 2,000 entries, each at most 4,096
+  characters of original and translation together, kept only while the page
+  is open) and puts it back onto the rebuilt element before the page is
+  drawn, so the menu never flickers and nothing is sent again. Every rebuilt
+  entry that is on screen comes back in that same frame. With
+  translations hidden, a rebuilt menu comes back hidden.
+  Recall follows the automatic verdict only: on a site set to translate
+  automatically it keeps working even after a stop for the daily budget or an
+  error, while a page you paused, or translated by hand on a site that is not
+  automatic, is left in the original.
+- **Our own translations no longer move the main-content scope.** When the
+  page decides which part is the main content, it now counts only the page's
+  own text, so translating a page can no longer tip the decision the next time
+  it is made.
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site

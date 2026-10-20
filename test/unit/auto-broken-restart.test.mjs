@@ -39,6 +39,7 @@ function load() {
       discoveries += 1;
       return { rescan() {}, stop() {}, suspend() {}, resume() {} };
     },
+    watchAddedElements: () => () => {},
   };
   const sandbox = {
     console,

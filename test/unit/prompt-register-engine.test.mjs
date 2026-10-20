@@ -51,6 +51,8 @@ await import('../../shared/glossary.js');
 await import('../../content/content-glossary.js');
 ctx.customRules.onProfileChange = () => () => {};
 await import('../../shared/translation-cache.js');
+// 缓存层换代时清掉发现层的内容记忆（shared/block-identity.js）。
+await import('../../shared/block-identity.js');
 await import('../../content/content-translation-cache.js');
 
 function useAI() {

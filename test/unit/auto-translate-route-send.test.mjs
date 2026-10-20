@@ -54,6 +54,7 @@ function load() {
     onLanguagePackReady() {},
     readSourceText: (el) => el.text,
     setupAutoDiscovery: () => ({ rescan() {}, stop() {}, suspend() {}, resume() {} }),
+    watchAddedElements: () => () => {},
     builtinTranslator: { effectiveEngine: async () => 'builtin' },
     filterBlocksByLanguage: async (blocks) => blocks,
     runTranslationPass: (blocks, options) => new Promise((resolve) => {

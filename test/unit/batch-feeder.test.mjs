@@ -36,6 +36,9 @@ globalThis.window = {
     isExtensionContextAvailable: () => true,
     isExtensionContextInvalidated: () => false,
     getEffectiveTargetLang: () => 'zh-CN',
+    // batch.js 的 passTarget 一轮读一次代数与语言戳（缓存层、引擎层那两个文件不加载）。
+    translationProfile: { generation: () => 0 },
+    currentTargetLang: () => 'zh-CN',
     getLangBase: (lang) => (lang || '').split('-')[0],
     getLanguageDetectionText: (text) => text || '',
   },

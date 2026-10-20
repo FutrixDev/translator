@@ -195,6 +195,22 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   }
 });
 
+test('装回挂不挂只问一句：站点的自动判定（刨掉 explicit）且没被用户暂停', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  assert.match(scheduler, /function recallOn\(\) \{\s*return siteAuto\(\) && !pausedByUser;\s*\}/);
+  // 挂和摘各只有一个调用点，都在 syncRecall 里。它只在两处被叫：start() 一进来
+  // （判定和闩的其余变化都经过那里），和 pauseCurrentPage 上闩之后。停发现层
+  // 不碰装回 —— 预算拒绝、出错停下时装回照挂。
+  assert.equal((scheduler.match(/\bwatchRecall\(\);/g) || []).length, 1);
+  assert.equal((scheduler.match(/\bunwatchRecall\(\);/g) || []).length, 1);
+  assert.match(scheduler, /function syncRecall\(\) \{\s*if \(recallOn\(\)\) watchRecall\(\);\s*else unwatchRecall\(\);\s*\}/);
+  assert.equal((scheduler.match(/\bsyncRecall\(\);/g) || []).length, 2);
+  assert.match(scheduler, /function start\(why\) \{[^}]*?syncRecall\(\);\s*stopDiscovery\(\);/);
+  assert.match(scheduler, /pausedByUser = true;\s*(\/\/[^\n]*\n\s*)*syncRecall\(\);/);
+  assert.match(scheduler, /function stopDiscovery\(\) \{\s*if \(!discovery\) return;\s*discovery\.stop\(\);\s*discovery = null;\s*\}/);
+  assert.doesNotMatch(scheduler, /keepRecall/);
+});
+
 test('上一代跑完的那一轮，不许改这一代的状态', () => {
   const scheduler = code('content/content-auto-translate.js');
   assert.match(scheduler, /const session = guard\.version\(\);/);
@@ -335,8 +351,7 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   assert.ok(arbiterAt !== -1, '裁决者没了：两轮同时在飞时谁说了算？');
   const arbiterEnd = insert.indexOf('\n  }\n', arbiterAt);
   const arbiter = insert.slice(arbiterAt, arbiterEnd);
-  assert.match(arbiter, /const current = ctx\.currentTargetLang \? ctx\.currentTargetLang\(\) : null;/);
-  assert.match(arbiter, /return current != null && lang === current;/);
+  assert.match(arbiter, /return lang === ctx\.currentTargetLang\(\);/);
   assert.doesNotMatch(insert.slice(0, arbiterAt) + insert.slice(arbiterEnd), /currentTargetLang/);
   // 两个问「这块还算翻过吗」的地方都要带上目标语言。
   assert.match(code('content/page/collect.js'), /identity\.isStale\(element, identity\.fingerprint\(readSourceText\(element\)\), target\)/);
@@ -619,8 +634,8 @@ test('一轮翻译只读一次目标语言，然后一路带到落笔', () => {
 
   // 落笔时把它交给唯一的登记口。
   // 译文的 lang/dir 也是这一轮请求的那门语言（request），不是登记用的 stamp。
-  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp, textLang: target\.request \}\)/);
-  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null, textLang \} = \{\}\)/);
+  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp, textLang: target\.request, landed \}\)/);
+  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null, textLang, landed = null \} = \{\}\)/);
 
   // 「这块是不是本来就已经是目标语言」也要按这一轮的那门语言问，否则同一轮里
   // 前后两批会按两门语言判该不该跳过。

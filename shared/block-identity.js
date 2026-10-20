@@ -121,6 +121,84 @@
     return registry.delete(element);
   }
 
+  // ---- 页内记忆：按内容记住译文 ------------------------------------------
+  //
+  // 上面那张表认的是**节点**，而单页应用切路由时常把左栏整片重建：文字一个字没
+  // 变，节点全是新的，表里查不到 —— 于是同样五个菜单名再翻一遍，翻回来之前左栏
+  // 闪一下原文。这一张认的是**内容**：(目标语言, 原文) → 上次落笔的那条译文。
+  // 发现层在 MutationObserver 回调里（绘制之前）拿它把译文装回去。
+  //
+  // 页内、不落盘：同一页同一门语言里同一段原文的译文，换个节点不会变。跨页的那一
+  // 层是 content-translation-cache.js 的事，两层不重叠。引擎、提示词这类译法一换
+  // 代，整张清掉（forgetMemory，由 content/content-translation-cache.js 换代时调用）。
+  //
+  // 不随会话翻篇清空（bumpSession 不碰这里）：会话翻篇说的是「在途的活作废」，
+  // 不是「翻好的东西作废」；换目标语言时键里的语言已经不同，旧的自然查不到。
+  //
+  // 键就是送出去的那份原文 source 本身（带内联标记，和请求体同一个来源）：同样
+  // 文字、内联结构不同的两块（一个带 <a>、一个不带）原文不同，是两条，不会互相
+  // 顶掉，也不会把标记编号对不上的译文装到别的结构上。
+  //
+  // Map 的插入顺序即 LRU 顺序：记一次（remember）就删了再放回去挪到最新，满了丢
+  // 最旧的。查（recall）不挪：装回真把译文落下时，落笔那一下照常 remember，挪的
+  // 只是真装回去的那几条。
+  const MEMORY_LIMIT = 2000;
+  // 超长的不记：一页里会被整片重建的是菜单、标签、卡片标题这类短串，长文正文
+  // 重建的少见。上限按规格算：每条原文和译文**合计**不超过 4096 个
+  // UTF-16 单元，2000 条就是 2000 × 4096 单元 ≈ 8 MB（按每单元 1 字节计，V8 的
+  // 拉丁文字串就是这样存的；全是中日韩字符时翻倍）。键里那份原文另算。
+  const MEMORY_TEXT_LIMIT = 4096;
+  const memory = new Map();
+
+  // lang 和 register 里的同一个意思：这一轮译成的那门语言的**身份**（空串是
+  // 「跟随浏览器」）。null 是「没说」—— 不知道是哪门语言的译文不能拿去装回，
+  // 装错语言比重翻一次贵得多，所以不记、也不认。语言标签里没有 \u0000，拼起来
+  // 不会和另一对 (语言, 原文) 撞。
+  function memoryKey(lang, source) {
+    return `${lang}\u0000${source}`;
+  }
+
+  /**
+   * @param {string|null} lang
+   * @param {{source: string, translation: string, targetLangChecked: boolean}} entry
+   *   source 是送出去的原文（block.text），targetLangChecked 是落笔时「跳过目标语言」
+   *   开着没有。条目原样存、原样还给 recall 的调用方。
+   */
+  function remember(lang, entry) {
+    if (lang == null || !entry) return;
+    const { source, translation } = entry;
+    if (typeof source !== 'string' || !source || typeof translation !== 'string' || !translation) return;
+    if (source.length + translation.length > MEMORY_TEXT_LIMIT) return;
+    const key = memoryKey(lang, source);
+    memory.delete(key);
+    memory.set(key, entry);
+    if (memory.size > MEMORY_LIMIT) memory.delete(memory.keys().next().value);
+  }
+
+  // 命中要 (语言, 原文) 逐字对上，并且调用方的 usable(entry) 说这会儿能用（装回
+  // 那边的「跳过目标语言」检查）。只查，不动 LRU 顺序：被问过、甚至命中了却没装
+  // 回去的（超出装回预算、视口外被丢下的），不该因此比别的条目活得久。
+  // @param {(entry: object) => boolean} [usable]
+  // @returns {{source: string, translation: string, targetLangChecked: boolean}|null}
+  function recall(lang, source, usable) {
+    if (lang == null) return null;
+    const entry = memory.get(memoryKey(lang, source));
+    if (entry === undefined) return null;
+    if (usable && !usable(entry)) return null;
+    return entry;
+  }
+
+  // 整张清掉：译法换了代（见上）。
+  function forgetMemory() {
+    memory.clear();
+  }
+
+  // 发现层先问这一句再决定要不要收集：一条都没记过的页面（绝大多数页面的头几
+  // 秒、以及从不翻的页面）装回这一步必须是零成本。
+  function memorySize() {
+    return memory.size;
+  }
+
   // normalize 和 hash 不导出：它们分开用就是两个归一化口径的开始，而这个模块的
   // 全部价值在于「登记和比对走同一个入口」。外面只该看得见 fingerprint。
   root.BlockIdentity = {
@@ -129,5 +207,9 @@
     lookup,
     isStale,
     forget,
+    remember,
+    recall,
+    forgetMemory,
+    memorySize,
   };
 })(globalThis);

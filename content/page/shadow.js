@@ -220,7 +220,7 @@
     loadStyleText().then((css) => installStyle(root, css));
   }
 
-  // batch.js 每插一块译文调一次（唯一的生产插入口）。
+  // 每插一块译文调一次，紧跟在 insertTranslationBlock 之后。
   function afterInsertTranslation(block) {
     const element = block && block.element;
     if (!element || !element.isConnected) return;

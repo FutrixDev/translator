@@ -38,9 +38,9 @@
   const byMarker = new WeakMap();
 
   // 与 insert.js 登记译文身份同一口径：readSourceText 跳过我们自己的节点，所以挂在
-  // 段内的标记不改变指纹；只装了整页模块的夹具里没有引擎，语言记 null（不比）。
+  // 段内的标记不改变指纹。
   const fingerprintOf = (element) => globalThis.BlockIdentity.fingerprint(ctx.readSourceText(element));
-  const targetLang = () => (ctx.currentTargetLang ? ctx.currentTargetLang() : null);
+  const targetLang = () => ctx.currentTargetLang();
 
   function drop(entry) {
     if (markers.get(entry.block.element) === entry) markers.delete(entry.block.element);
@@ -50,12 +50,12 @@
 
   /**
    * 这个条目还作不作数：标记和原文都还在文档里、原文指纹没变、目标语言没换
-   * （两边都说了语言才比，与 BlockIdentity.isStale 同一规则）。不作数就收走，回 false。
+   * （条目说了语言才比，与 BlockIdentity.isStale 同一规则）。不作数就收走，回 false。
    */
   function stillValid(entry) {
     const element = entry.block.element;
     const lang = targetLang();
-    const langChanged = entry.lang != null && lang != null && entry.lang !== lang;
+    const langChanged = entry.lang != null && entry.lang !== lang;
     if (entry.marker.isConnected && element.isConnected && !langChanged
       && entry.fingerprint === fingerprintOf(element)) return true;
     drop(entry);

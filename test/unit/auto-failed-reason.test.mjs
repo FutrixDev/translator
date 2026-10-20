@@ -77,6 +77,7 @@ function load() {
     onCandidates = options.onCandidates;
     return { rescan() {}, stop() {}, suspend() {}, resume() {} };
   };
+  ctx.watchAddedElements = () => () => {};
   ctx.setupAutoTranslate();
   const offer = (...els) => onCandidates(els.map((el) => ({ element: el, text: el.text })));
   // 起跑那一拍：拨最早的那个定时器，等 pump 走完它的几次 await。

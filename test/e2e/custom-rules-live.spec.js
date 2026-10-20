@@ -11,12 +11,12 @@ const {
   waitForFloatBall,
   oursIn,
 } = require('./helpers');
+const { serveHtml } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
   TRANSLATED,
   settings,
   html,
-  serve,
   removeRules,
   deleteRule,
   clearTranslationCache,
@@ -55,7 +55,7 @@ test('J-3 late include: when the included region renders late, the translations 
     await createRule(options, context, { match: ['rules.test/late'], include: ['.faq'] });
     await options.close();
 
-    await serve(context, { [`${RULES}/late`]: LATE_PAGE });
+    await serveHtml(context, { [`${RULES}/late`]: LATE_PAGE });
     await page.goto(`${RULES}/late`);
     await waitForFloatBall(page);
 
@@ -85,6 +85,8 @@ test('J-3 late include: when the included region renders late, the translations 
 const J8 = {
   keep: 'The ferry timetable changes twice a year, in April and again in October.',
   region: 'Readers can leave comments about the crossing in the discussion area below.',
+  // 排除期间页面把 region 换成的那一句：本页从没翻过它，记忆里没有，只能送出去。
+  fresh: 'Late arrivals may leave their bicycles at the harbour office overnight for free.',
 };
 
 const J8_PAGE = html(`
@@ -92,12 +94,22 @@ const J8_PAGE = html(`
   <div id="region-box" class="comments"><p id="region">${J8.region}</p></div>`);
 
 /**
- * 一轮：手动翻 → 另一个标签页的设置页加 exclude（1 s 内收回）→ 清两半缓存 → 删规则
- * （remove(id) 删掉并回点下删除那一刻；1 s 内回来，原文恰好多发一次）。
- * byScheduler：这次重译必须是调度器收的，也就是记在自动翻译的用量里 —— 「恰好多
- * 发一次」分不出是调度器还是补翻轮收的（两条路收同一块）。
+ * 删规则后 region 怎么回来：
+ * - 'resend'：总开关关着。手动模式没有发现层，补翻轮把原文恰好再送一次。
+ * - 'recall'：总开关开着、记忆命中。发现层从本页译文记忆装回，原文一次不送、不记用量
+ *   （翻过的块重建后不重发、不扣费）。
+ * - 'fresh'：总开关开着、记忆未命中。排除期间页面把 region 换成没翻过的新句子，删规则
+ *   后新句子恰好送一次，并且是调度器收的（记在自动翻译的用量里）——「恰好一次」分不
+ *   出是调度器还是补翻轮收的（两条路收同一块），用量账分得出。
  */
-async function excludeRoundTrip(page, options, context, sentTexts, label, { remove, byScheduler = false }) {
+const J8_RETURNS = ['resend', 'recall', 'fresh'];
+
+/**
+ * 一轮：手动翻 → 另一个标签页的设置页加 exclude（1 s 内收回）→ 清两半缓存 → 删规则
+ * （remove(id) 删掉并回点下删除那一刻；1 s 内回来，原文送几次按 returns 定）。
+ */
+async function excludeRoundTrip(page, options, context, sentTexts, label, { remove, returns }) {
+  expect(J8_RETURNS).toContain(returns);
   await triggerPageTranslation(page);
   await expect(page.locator(translationOf('keep'))).toHaveText(`[T] ${J8.keep}`, { timeout: 30000 });
   await expect(page.locator(translationOf('region'))).toHaveText(`[T] ${J8.region}`, { timeout: 30000 });
@@ -106,10 +118,16 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { remo
   await withinOneSecond(saved, async () => (await oursIn(page, 'region-box')) === 0, `${label} exclude added`);
   expect(await isTranslated(page, 'keep')).toBe(true);
 
+  // 排除期间由页面自己改字：region 已经不归我们管（上面查过零节点），改的是原文。
+  if (returns === 'fresh') {
+    await page.evaluate((text) => { document.getElementById('region').textContent = text; }, J8.fresh);
+  }
+  const regionText = returns === 'fresh' ? J8.fresh : J8.region;
+
   // 基线：清掉两半缓存之后再数一次原文发出去几次。不清的话，删规则后那一块直接
-  // 从缓存里回来，「恰好一次」就没法断言。
+  // 从缓存里回来，「恰好一次」就没法断言。本页的译文记忆不在这两半里。
   await clearTranslationCache(context);
-  const before = sendCount(sentTexts, J8.region);
+  const before = sendCount(sentTexts, regionText);
   const keepBefore = sendCount(sentTexts, J8.keep);
   const charsBefore = await autoAiChars(context);
 
@@ -117,12 +135,15 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { remo
   await withinOneSecond(t0, () => isTranslated(page, 'region'), `${label} exclude removed`);
   // 再等一会儿：确认没有第二条路径把同一块再送一次。
   await page.waitForTimeout(1500);
-  expect(sendCount(sentTexts, J8.region)).toBe(before + 1);
+  await expect(page.locator(translationOf('region'))).toHaveText(`[T] ${regionText}`);
+  expect(sendCount(sentTexts, regionText), `${label}: sends of the region`)
+    .toBe(before + (returns === 'recall' ? 0 : 1));
   expect(sendCount(sentTexts, J8.keep)).toBe(keepBefore);
-  if (byScheduler) {
+  if (returns !== 'resend') {
     const delta = (await autoAiChars(context)) - charsBefore;
     console.log(`[J-8] ${label}: autoStats.autoAiChars +${delta}`);
-    expect(delta).toBeGreaterThan(0);
+    if (returns === 'recall') expect(delta, `${label}: a recalled block is not charged`).toBe(0);
+    else expect(delta, `${label}: the fresh sentence went through the scheduler`).toBeGreaterThan(0);
   }
   await expect(page.locator(translationOf('region'))).toHaveCount(1);
   // 设置页那一头也跟着删除重画：列表里不再有这一条。
@@ -130,26 +151,29 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { remo
 }
 
 /**
- * J-8 的两遍：总开关关着一遍、开着一遍。remove 是删规则的那一下，两条用例只差在它。
+ * J-8 的三遍：总开关关着一遍，开着两遍（记忆命中、记忆未命中）。remove 是删规则的那
+ * 一下，两条用例只差在它。
  *
  * 总开关关着：删规则后由 custom-rule.js 自己补的那一轮接回来。总开关开着：手动翻译
- * 把本页交给调度器（markPageExplicit），删规则后由调度器重启接回来 —— 两条路不收
- * 同一批块，所以原文依旧恰好多发一次。
+ * 把本页交给调度器（markPageExplicit），删规则后由发现层接回来 —— 记忆里有就装回，
+ * 没有就交给调度器送出去。每遍都重新打开页面，本页记忆从空开始。
  */
 async function j8Journey(page, context, extensionId, endpoint, sentTexts, label, remove) {
-  await serve(context, { [`${RULES}/ferry`]: J8_PAGE });
-  await setExtensionSettings(page, settings(endpoint, { autoTranslate: false }));
-  await page.goto(`${RULES}/ferry`);
-  await waitForFloatBall(page);
-  const options = await newOptionsTab(context, extensionId);
-  await excludeRoundTrip(page, options, context, sentTexts, `${label} autoTranslate off`,
-    { remove: (id) => remove(options, id) });
-
-  await setExtensionSettings(page, settings(endpoint, { autoTranslate: true }));
-  await page.goto(`${RULES}/ferry`);
-  await waitForFloatBall(page);
-  await excludeRoundTrip(page, options, context, sentTexts, `${label} autoTranslate on`,
-    { remove: (id) => remove(options, id), byScheduler: true });
+  await serveHtml(context, { [`${RULES}/ferry`]: J8_PAGE });
+  let options = null;
+  const rounds = [
+    { autoTranslate: false, returns: 'resend', name: 'autoTranslate off' },
+    { autoTranslate: true, returns: 'recall', name: 'autoTranslate on, remembered' },
+    { autoTranslate: true, returns: 'fresh', name: 'autoTranslate on, new text' },
+  ];
+  for (const round of rounds) {
+    await setExtensionSettings(page, settings(endpoint, { autoTranslate: round.autoTranslate }));
+    await page.goto(`${RULES}/ferry`);
+    await waitForFloatBall(page);
+    if (!options) options = await newOptionsTab(context, extensionId);
+    await excludeRoundTrip(page, options, context, sentTexts, `${label} ${round.name}`,
+      { remove: (id) => remove(options, id), returns: round.returns });
+  }
 }
 
 test('J-8: an exclude added in Settings in another tab takes a translation back within 1 s, and deleting it there brings it back within 1 s', async ({ page, context, extensionId }) => {
@@ -222,7 +246,7 @@ test('J-9 manual: an iframe follows its own host rule for regions', async ({ pag
       autoTranslateEngine: 'builtin',
     }));
     await saveJ9Rules(context, extensionId);
-    await serve(context, j9Pages(TOP, NOTE));
+    await serveHtml(context, j9Pages(TOP, NOTE));
     await page.bringToFront();
     await page.goto(`${TOP}/museum`);
     await waitForFloatBall(page);
@@ -264,7 +288,7 @@ test('J-9 auto: on http an iframe translates with the engine the top host rule p
       siteRules: { 'rules-top.test': 'always' },
     }));
     await saveJ9Rules(context, extensionId);
-    await serve(context, j9Pages(TOP_HTTP, NOTE_HTTP));
+    await serveHtml(context, j9Pages(TOP_HTTP, NOTE_HTTP));
     await page.bringToFront();
     await page.goto(`${TOP_HTTP}/museum`);
     await waitForFloatBall(page);
@@ -313,7 +337,7 @@ test('J-10: on an http page with no usable engine, a rule pinning AI saved in Se
       engineFallback: 'local-only',
       siteRules: { 'rules-plain.test': 'always' },
     }));
-    await serve(context, { [`${PLAIN}/keeper`]: J10_PAGE });
+    await serveHtml(context, { [`${PLAIN}/keeper`]: J10_PAGE });
     await page.goto(`${PLAIN}/keeper`);
     await waitForFloatBall(page);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);

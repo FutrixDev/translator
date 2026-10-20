@@ -180,6 +180,7 @@
         "content/page/prose-pre.js",
         "content/page/collect.js",
         "content/page/insert.js",
+        "content/page/recall.js",
         "content/page/failed-blocks.js",
         "content/page/visibility.js",
         "content/page/display.js",

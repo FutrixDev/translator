@@ -111,6 +111,51 @@
     return !!node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && !!node.host;
   }
 
+  // 一批记录里页面新长出来的元素（我们自己插的那些不算，见 ownMutation）。
+  function addedElements(records) {
+    const added = [];
+    for (const record of records) {
+      if (ownMutation(record)) continue;
+      for (const node of record.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) added.push(node);
+      }
+    }
+    return added;
+  }
+
+  /**
+   * 让一个 MutationObserver 看整页：document.body，加上收集器登记过的每个 shadow
+   * root（文档上的 subtree 观察看不进 shadow 树；content/page/shadow.js 每发现一个
+   * 就给它追加一份同样的观察）。
+   *
+   * @returns {() => void} 摘掉：断开观察器、退订 shadow root 的登记。
+   */
+  function observeDocument(observer, options) {
+    const observeRoot = (root) => observer.observe(root, options);
+    observeRoot(document.body);
+    const unsubscribeShadowRoots = ctx.onShadowRoot(observeRoot);
+    ctx.shadowRoots().forEach(observeRoot);
+    return function unobserve() {
+      observer.disconnect();
+      unsubscribeShadowRoots();
+    };
+  }
+
+  /**
+   * 页面每长出一批新元素就回调一次 onAdded(elements)，在 MutationObserver 回调里，
+   * 绘制之前。装回（content-auto-translate.js 的 watchRecall）用它：它和发现层的
+   * 生死不同（藏着译文时发现层停、它照挂），所以是自己的一个观察器。
+   *
+   * @returns {() => void} 摘掉
+   */
+  function watchAddedElements(onAdded) {
+    const observer = new MutationObserver((records) => {
+      const added = addedElements(records);
+      if (added.length > 0) onAdded(added);
+    });
+    return observeDocument(observer, { childList: true, subtree: true });
+  }
+
   /**
    * 启动发现层。
    *
@@ -282,13 +327,13 @@
     // 排到最后而不是直接剔除：它们迟早会被展开，而 MutationObserver 只看
     // childList/characterData，展开是一次属性变动，它看不见 —— 那时候唯一能把
     // 这一块捞回来的就是还挂在它身上的 IntersectionObserver。
+    //
+    // 只量纵向（距离的算术是 page/focus-order.js 的 intervalGap，整页翻译里只此一份）。
     function distanceFromViewport(element) {
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) return Infinity;
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      if (rect.top >= height) return rect.top - height;
-      if (rect.bottom <= 0) return -rect.bottom;
-      return 0;
+      return ctx.intervalGap(rect, { top: 0, bottom: height });
     }
 
     function drop(set, element) {
@@ -344,10 +389,15 @@
 
       const blocks = [];
       const seen = new Set();
+      // 变更回调里那次同步装回有预算（见 page/recall.js 的 RECALL_*），超出的
+      // 在进带这一刻逐块再问一次记忆：只问进带的这几块，不在 flush 里把整片几千块
+      // 一口气装回（那是一个长任务）。这里在绘制之后，可能闪过一帧原文，但不重发。
+      // 没有记忆的页面 recallTranslation 自己第一句就返回。
       for (const element of arrived) {
         for (const block of collect(element)) {
           if (!block.element || seen.has(block.element)) continue;
           seen.add(block.element);
+          if (ctx.recallTranslation(block)) continue;
           blocks.push(block);
         }
       }
@@ -394,8 +444,7 @@
     function stop() {
       if (stopped) return;
       stopped = true;
-      domObserver.disconnect();
-      unsubscribeShadowRoots();
+      unobserveDocument();
       bandObserver.disconnect();
       if (timer !== null) {
         clearTimeout(timer);
@@ -414,15 +463,11 @@
 
     window.addEventListener('scroll', onScroll, SCROLL_LISTENER);
 
-    domObserver.observe(document.body, OBSERVE_OPTIONS);
-    // 文档上的 subtree 观察看不进 shadow 树：收集器每发现一个 shadow root
-    // （content/page/shadow.js 的登记表），就给它追加一份同样的观察。
-    const observeShadowRoot = (root) => domObserver.observe(root, OBSERVE_OPTIONS);
-    const unsubscribeShadowRoots = ctx.onShadowRoot(observeShadowRoot);
-    ctx.shadowRoots().forEach(observeShadowRoot);
+    const unobserveDocument = observeDocument(domObserver, OBSERVE_OPTIONS);
 
     return { stop, rescan, suspend, resume };
   }
 
   ctx.setupAutoDiscovery = setupAutoDiscovery;
+  ctx.watchAddedElements = watchAddedElements;
 })();

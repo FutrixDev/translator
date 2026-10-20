@@ -219,7 +219,7 @@ test('getTextInset answers 0 for an element with no box', () => {
 // 界面语言或英文会把这个错藏起来。
 test('every place a translation lands requires the language of its text', () => {
   const insert = read('content/page/insert.js');
-  assert.match(insert, /function insertTranslationBlock\(block, translation, \{ lang = null, textLang \} = \{\}\) \{\s*\n\s*if \(!textLang\) throw /);
+  assert.match(insert, /function insertTranslationBlock\(block, translation, \{ lang = null, textLang, landed = null \} = \{\}\) \{\s*\n\s*if \(!textLang\) throw /);
   // 四种有节点的形态都经 finishTranslationInsert 打标，每一处都把 textLang 带进去。
   const finishes = insert.match(/finishTranslationInsert\([^)]*\);/g) || [];
   assert.equal(finishes.length, 4);

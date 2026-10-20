@@ -107,10 +107,25 @@
     return text ? text.replace(/\s+/g, '').length : 0;
   }
 
+  // 也扣掉我们自己插进页面的节点（译文块、悬浮球、进度条……）。不扣的话占比跟着
+  // 翻译进度走：正文翻完多出一份译文，单页应用切路由时左栏又连同它的译文一起被
+  // 重建掉，<main> 的占比就被我们自己推过门槛，范围翻到 <main>，左栏从此再也不翻。
+  // 范围是页面的属性，翻译前后必须答同一句。
+  //
+  // 清单用 ctx.constants.OWN_NODES_SELECTOR，不用 collect.js 的 SKIP_OURS：后者还
+  // 含 `.ai-translator-translated` / `.ai-translator-inline-source`，那是挂在**页面
+  // 自己的原文块**上的标记，扣掉它们等于翻完一块就把那块原文从占比里拿走。
+  // 嵌套的只扣最外层：querySelectorAll 按文档顺序给，祖先总排在子孙前面。
   function textLength(el) {
     let length = compactLength(el.textContent);
     for (const code of el.querySelectorAll('script, style, noscript')) {
       length -= compactLength(code.textContent);
+    }
+    let counted = null;
+    for (const own of el.querySelectorAll(ctx.constants.OWN_NODES_SELECTOR)) {
+      if (counted && counted.contains(own)) continue;
+      counted = own;
+      length -= compactLength(own.textContent);
     }
     return Math.max(0, length);
   }
@@ -288,8 +303,9 @@
 
   // 生产入口：整页翻译、发现层、子 frame 的手动轮都走这里。
   // 直接调 collectTranslatableBlocks(root)（不带 scope）的行为不变：不做范围过滤。
-  function collectPageBlocks(root = document.body) {
-    return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope() });
+  // limit：收够这么多块就停，给 MutationObserver 回调里的同步装回用（page/recall.js）。
+  function collectPageBlocks(root = document.body, { limit } = {}) {
+    return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope(), limit });
   }
 
   /**
