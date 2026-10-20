@@ -21,6 +21,7 @@ const {
   settingsSettled,
   stubBuiltinTranslator,
   waitForContentReady,
+  writeSyncSettings,
 } = require('./helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -410,13 +411,16 @@ test('J4.6b a translation requested before the prompt changed still lands, but a
     await page.evaluate(() => window.go('maps'));
     await expect.poll(() => mock.sentTexts.some((text) => text.includes(renamed)), { timeout: 10000 }).toBe(true);
 
-    // 答案还在路上时改提示词：换代。
-    await setExtensionSettings(page, settings(mock.endpoint, { ...ai, customPrompt: 'Translate tersely.', siteRules: { [HOST]: 'always' } }));
+    // 答案还在路上时改提示词：换代。只写这一个键，和用户在设置页只改提示词一样
+    // （setExtensionSettings 会连 AI 配置档一起重写，配置档一变自动翻译就整轮
+    // 重开，在途的那一批作废、重发 —— 那就不是这里要测的情形了）。
+    await writeSyncSettings(context, { customPrompt: 'Translate tersely.' });
     await expect.poll(generation, { timeout: 10000 }).toBeGreaterThan(generationBefore);
     await expect(contact).toHaveCount(0);
     mock.setDelayMs(0);
-    // 上一代的答案晚到，照样落下。
+    // 上一代的答案晚到，照样落下；没有重开，这一行只送过那一次。
     await expect(contact).toContainText(`[T] ${renamed}`, { timeout: 30000 });
+    expect(mock.sentTexts.filter((text) => text.includes(renamed))).toHaveLength(1);
 
     // 重建：记忆在换代时清空了，晚到的那一条也没记进去 —— 五行都重新请求。
     const sentBefore = mock.sentTexts.length;

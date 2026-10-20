@@ -116,16 +116,25 @@
     return { hidden: false, top: rect.top + scrollY, bottom: rect.bottom + scrollY };
   }
 
-  // 一个盒子离视口多远（px，相交或相接为 0）。整页翻译里问「离视口多远 / 在不在
-  // 视口里」的三处都用它：这里的评分与分档、发现层挑该观察谁
-  // （content-auto-discover.js 的 distanceFromViewport）、装回先装哪几块
-  // （page/recall.js）。box 与 view 同一坐标系，各是 { top, bottom }；view 带
+  // 一个盒子离视口多远（px，相交或相接为 0）。整页翻译里问「离视口多远」的两处
+  // 都用它：这里的评分与分档、发现层挑该观察谁（content-auto-discover.js 的
+  // distanceFromViewport）。box 与 view 同一坐标系，各是 { top, bottom }；view 带
   // left / right 时横向一起量，取两轴里大的那段空隙。没有布局盒（rect 全 0）的
   // 怎么算各由调用方定，这里只做算术。
   function viewportGap(box, view) {
     const vertical = intervalGap(box, view);
     if (view.left === undefined) return vertical;
     return Math.max(vertical, box.left - view.right, view.left - box.right);
+  }
+
+  // 盒子和视口有没有重叠的那一片（面积大于 0）。和 viewportGap 的「相接为 0」
+  // 不同：底边正好贴着视口下沿的那一行一个像素也画不出来，不算在视口里。装回
+  // （page/recall.js）用它挑先装哪几块。box 与 view 同上，view 带 left / right
+  // 时横向一起判。
+  function overlapsViewport(box, view) {
+    const vertical = box.top < view.bottom && box.bottom > view.top;
+    if (view.left === undefined) return vertical;
+    return vertical && box.left < view.right && box.right > view.left;
   }
 
   // 块离视口几屏（相交为 0），在视口下方还是上方。只量纵向：一轮按文档顺序往下读。
@@ -322,6 +331,7 @@
 
   ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });
   ctx.viewportGap = viewportGap;
+  ctx.overlapsViewport = overlapsViewport;
 
   // 视口信号在模块加载时就开始记：第一轮开跑前的滚动方向、指针
   // 位置也要算数。
