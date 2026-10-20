@@ -228,6 +228,7 @@ function loadScheduler({ engine = () => 'builtin', overBudget = () => false } = 
     onCandidates = options.onCandidates;
     return { rescan() {}, stop() {}, suspend() {}, resume() {} };
   };
+  ctx.watchAddedElements = () => () => {};
   const auto = ctx.setupAutoTranslate();
   const feed = ctx.progressFeed;
   // Every snapshot the feed showed, in order, so a test can check known never fell.

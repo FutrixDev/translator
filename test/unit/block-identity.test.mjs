@@ -26,8 +26,6 @@ globalThis.window = {
   AI_TRANSLATOR_CONTENT: {
     constants: { MATH_CONTAINER_SELECTOR: '.katex' },
     settings: {},
-    // insert.js 在加载时订阅译法换代（D-547），这里只要有这个口子。
-    translationProfile: { subscribe() {} },
     state: {},
     t: (key) => key,
   },
@@ -51,6 +49,7 @@ await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
 await import('../../content/page/collect.js');
 await import('../../content/page/insert.js');
+await import('../../content/page/recall.js');
 
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 const { BlockIdentity } = globalThis;
@@ -164,8 +163,8 @@ test('文字变了就是变了，语言一致也救不回来', () => {
 // ==================== 页内记忆：按内容装回 ====================
 //
 // 单页应用切菜单时把左栏整片重建：文字没变、节点全新，上面那张按节点认的表查不
-// 到。记忆按 (语言, 送出去的原文) 认（D-552 S1），发现层在绘制前拿它把译文装回去
-// （批 C）。记忆是模块级的一张表，这些测试各用各的原文，互不干扰；清整张表的那一
+// 到。记忆按 (语言, 送出去的原文) 认，发现层在绘制前拿它把译文装回去
+// （content/page/recall.js）。记忆是模块级的一张表，这些测试各用各的原文，互不干扰；清整张表的那一
 // 条放在最后。
 
 // 一条记忆：source 是送出去的原文（block.text，带内联标记），这里多数块没有标记，
@@ -197,9 +196,9 @@ test('another target language does not get this language\'s translation', () => 
   assert.equal(BlockIdentity.memorySize(), before);
 });
 
-// D-547 N1：一个带 <a>、一个不带的两块纯文字相同。带链接那块的译文里有
+// 一个带 <a>、一个不带的两块纯文字相同。带链接那块的译文里有
 // <a1>…</a1>，装到不带链接的块上，标记无处可去，就成了页面上的字。送出去的原文
-// （block.text）不一样，键就不一样：两条各记各的，谁也不顶掉谁（D-552 S1）。
+// （block.text）不一样，键就不一样：两条各记各的，谁也不顶掉谁。
 test('the same words with a different inline structure are two entries that never trade translations', () => {
   const plain = 'Read the docs';
   const linked = 'Read the <a1>docs</a1>';
@@ -218,7 +217,7 @@ test('a language and a source never run together into another pair\'s key', () =
   assert.equal(recalled('zh', '-CN menu'), '甲');
 });
 
-// D-552 F3：上限是原文和译文**合计** 4096 个 UTF-16 单元。
+// 上限是原文和译文**合计** 4096 个 UTF-16 单元。
 test('an entry whose source and translation together pass 4096 characters is not remembered', () => {
   BlockIdentity.remember('zh-CN', entry('A long paragraph', 'x'.repeat(4097 - 'A long paragraph'.length)));
   assert.equal(recalled('zh-CN', 'A long paragraph'), null);
@@ -242,7 +241,7 @@ test('the 2001st entry evicts the least recently used one', () => {
   assert.equal(recalled('zh-CN', 'menu row 2'), '菜单 2');
 });
 
-// D-552 Minor 2：调用方说这会儿用不了（装回那边的「跳过目标语言」检查）的条目
+// 调用方说这会儿用不了（装回那边的「跳过目标语言」检查）的条目
 // 不算一次使用，不挪到最新端 —— 只被问过、没装上的，不该比别的条目活得久。
 test('an entry the caller cannot use right now is not refreshed in the LRU order', () => {
   for (let i = 0; i < 2000; i++) BlockIdentity.remember('zh-CN', entry(`tab ${i}`, `标签 ${i}`));
@@ -257,7 +256,7 @@ test('an entry the caller cannot use right now is not refreshed in the LRU order
   assert.equal(recalled('zh-CN', 'tab 3', (hit) => hit.translation === '标签 3'), '标签 3');
 });
 
-// D-547 N3：译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
+// 译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
 // content/content-translation-cache.js 的 setGeneration（translation-profile.test.mjs
 // 真跑它），下面那条源码检查守着 insert.js 不再自己订阅一份。
 test('forgetMemory empties the whole memory', () => {
@@ -276,17 +275,26 @@ test('a new translation profile generation forgets the memory, and recall checks
   assert.match(repoFile('content/content-translation-cache.js'),
     /generation = next;[\s\S]{0,400}?globalThis\.BlockIdentity\.forgetMemory\(\);/,
     'nothing forgets the memory when the engine, prompt or glossary changes');
-  // 记下的原文是收集端给的 block.text，和请求体同一个来源；记忆唯一的写入口是
-  // rememberLanded（D-552 S1），落笔登记走它。
-  assert.match(insert, /const landed = \{ source: block\.text, translation \};/);
-  assert.match(insert, /function registerTranslation\([^)]*\) \{[\s\S]*?rememberLanded\(lang, landed\);\s*\n\s*\}/,
-    'registerTranslation no longer writes the memory through rememberLanded');
+  // 记下的原文是收集端给的 block.text，和请求体同一个来源。落笔只有一处
+  // （batch.js 的 landTranslation，批量和装回都走它）：发请求时的译法代次过时了
+  // 就不记 —— 换了提示词、术语表之后才回来的那批旧译文不进刚清空的记忆。
+  const batch = repoFile('content/page/batch.js');
+  assert.match(batch, /function passTarget\(\) \{[\s\S]*?generation: ctx\.translationProfile\.generation\(\)/,
+    'a pass no longer pins the profile generation it was requested under');
+  assert.match(batch,
+    /const landed = target\.generation === ctx\.translationProfile\.generation\(\)\s*\? \{ source: block\.text, translation, targetLangChecked: settings\.skipTargetLanguageText === true \}\s*: null;/,
+    'a translation requested under an older profile generation goes back into the memory');
+  // 记忆唯一的写入口是 rememberLanded，插入端在真登记上之后调它一次。
+  assert.match(insert, /if \(!placeTranslation\(block, translation, lang, textLang\)\) return;\s*\n(?:\s*\/\/[^\n]*\n)*\s*if \(landed !== null\) rememberLanded\(lang, landed\);/,
+    'insertTranslationBlock no longer remembers what it registered');
   assert.equal(insert.match(/BlockIdentity\.remember\(/g).length, 1, 'a second writer of the memory appeared');
-  const scope = repoFile('content/page/scope.js');
-  assert.match(scope, /BlockIdentity\.recall\(lang, block\.text, usableNow\);/,
+  const recall = repoFile('content/page/recall.js');
+  assert.match(recall, /BlockIdentity\.recall\(target\.stamp, block\.text, usableNow\);/,
     'recall no longer looks up the new block\'s own source text');
-  assert.match(scope, /function usableNow\(entry\) \{\s*\n\s*return ctx\.settings\.skipTargetLanguageText !== true \|\| entry\.targetLangChecked;/,
+  assert.match(recall, /function usableNow\(entry\) \{\s*\n\s*return ctx\.settings\.skipTargetLanguageText !== true \|\| entry\.targetLangChecked;/,
     'recall restores translations that never passed the skip-target-language check');
+  assert.equal((recall.match(/ctx\.landTranslation\(block, entry\.translation, target\)/g) || []).length, 2,
+    'recall lands through a second path instead of the one the batch uses');
 });
 
 // ==================== 读的是页面自己的文字 ====================
@@ -387,9 +395,9 @@ test('every insertion registers an identity — including the one with no node t
   const body = source.slice(source.indexOf('function insertTranslationBlock'));
   // 四种有节点的形态都汇进 finishTranslationInsert，受管 ::after 那条没有节点，
   // 走不到那里，所以它必须自己登记一次。
-  assert.match(body, /registerTranslation\(element, handle, true, lang, landed\)/,
+  assert.match(body, /registerTranslation\(element, handle, true, lang\)/,
     'the managed (::after) branch inserts a translation nobody can later release');
-  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang, landed\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang, landed\);/,
+  assert.match(source, /function finishTranslationInsert\(element, translationEl, before, lang, textLang\) \{\s*\n\s*registerTranslation\(element, translationEl, false, lang\);/,
     'the shared post-insert path no longer registers the block identity');
 });
 

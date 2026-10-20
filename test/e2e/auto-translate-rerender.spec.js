@@ -231,7 +231,7 @@ test('J4.4 with a <main>, our own translations never push the scope off the body
   }
 });
 
-// D-548 J4.5：藏着译文时自动翻译停下（发现层整个停掉），但装回不停 —— 藏着时
+// J4.5：藏着译文时自动翻译停下（发现层整个停掉），但装回不停 —— 藏着时
 // 切菜单，新左栏的译文照样从记忆装回，带着隐藏态；放出来的那一帧就是完整的，
 // 不等发现层重启再补（那之前几百毫秒画的是原文）。藏着时不发请求。
 test('J4.5 with translations hidden, a menu switch recalls them hidden, and showing them is whole at once', async ({ page, context }) => {
@@ -271,7 +271,7 @@ test('J4.5 with translations hidden, a menu switch recalls them hidden, and show
     expect(navSent(revealed)).toBe(0);
     expect(revealed).toHaveLength(1);
 
-    // 再藏一次、再切一次：放出来时摘掉的装回观察器，藏起时重新挂上。
+    // 再藏一次、再切一次：装回观察器跟着自动翻译的判定走，藏起不摘它。
     await setVisible(false);
     const beforeSecond = (await builtinTexts(context, page)).length;
     await page.evaluate(() => window.go('hours'));
@@ -285,7 +285,81 @@ test('J4.5 with translations hidden, a menu switch recalls them hidden, and show
   }
 });
 
-// D-547 N3：页内记忆只在「这一代译法」里有效。换了引擎（或提示词、术语表、配置
+// 装回观察器的去留只看「藏起这一条撇开不算，自动翻译此刻跟不跟这一页」：判定是
+// auto、也没被用户按停，就挂着；否则摘掉。藏着时这个判定照样会变 —— 下面两条一正
+// 一反：藏着时站点改成「从不」，重建的左栏不装回，放出来也没有；改回「总是」，
+// 藏着时重建的左栏照样装回，放出来就是完整的、一条不重发。
+const autoStatus = (context, page) => evaluateInContentScript(context, page,
+  'window.AI_TRANSLATOR_CONTENT.autoTranslate.state().status');
+
+async function setSiteRule(page, context, endpoint, rule) {
+  await setExtensionSettings(page, settings(endpoint, { siteRules: { [HOST]: rule } }));
+  await expect.poll(() => evaluateInContentScript(context, page,
+    `window.AI_TRANSLATOR_CONTENT.settings.siteRules[${JSON.stringify(HOST)}]`), { timeout: 10000 }).toBe(rule);
+}
+
+test('J4.5b with translations hidden, turning the site to never stops recall: a rebuilt menu stays untranslated', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    await openLeftMenu(page, context, mock.endpoint);
+    const setVisible = (visible) => evaluateInContentScript(context, page,
+      `(window.AI_TRANSLATOR_CONTENT.setTranslationsVisible(${visible}), true)`);
+
+    await setVisible(false);
+    await expect.poll(() => autoStatus(context, page), { timeout: 10000 }).toBe('paused');
+    await setSiteRule(page, context, mock.endpoint, 'never');
+    await expect.poll(() => autoStatus(context, page), { timeout: 10000 }).toBe('off');
+    const before = (await builtinTexts(context, page)).length;
+
+    await page.evaluate(() => window.go('maps'));
+    await page.waitForTimeout(1500);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(0);
+
+    await setVisible(true);
+    await page.waitForTimeout(1500);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(0);
+    expect((await builtinTexts(context, page)).length).toBe(before);
+    expect(mock.sentTexts).toEqual([]);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('J4.5c with translations hidden, never then always again: a rebuilt menu is recalled hidden and shown whole, unsent', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    await openLeftMenu(page, context, mock.endpoint);
+    const setVisible = (visible) => evaluateInContentScript(context, page,
+      `(window.AI_TRANSLATOR_CONTENT.setTranslationsVisible(${visible}), true)`);
+    const shown = `${NAV_TRANSLATIONS}:not(.ai-translator-hidden)`;
+
+    await setVisible(false);
+    await setSiteRule(page, context, mock.endpoint, 'never');
+    await expect.poll(() => autoStatus(context, page), { timeout: 10000 }).toBe('off');
+    await setSiteRule(page, context, mock.endpoint, 'always');
+    // 藏着：判定回到 auto，但自动翻译仍停着（paused），装回观察器重新挂上。
+    await expect.poll(() => autoStatus(context, page), { timeout: 10000 }).toBe('paused');
+    const before = (await builtinTexts(context, page)).length;
+
+    await page.evaluate(() => window.go('maps'));
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
+    await expect(page.locator(shown)).toHaveCount(0);
+
+    await setVisible(true);
+    await startFrames(page, shown);
+    await expect(page.locator('#main .ai-translator-inline-block')).toContainText(MAIN.maps.slice(0, 40), { timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const shownFrames = await stopFrames(page);
+    expect(shownFrames.length).toBeGreaterThan(10);
+    expect(shownFrames.filter((count) => count < 5)).toEqual([]);
+    expect(navSent((await builtinTexts(context, page)).slice(before))).toBe(0);
+    expect(mock.sentTexts).toEqual([]);
+  } finally {
+    await mock.close();
+  }
+});
+
+// 页内记忆只在「这一代译法」里有效。换了引擎（或提示词、术语表、配置
 // 档 —— 都走 translationProfile 换代），记忆整张清掉：重建的左栏照常送新引擎，
 // 不装回上一个引擎的译文。
 
@@ -315,7 +389,48 @@ test('J4.6 after the engine changes, a rebuilt menu is sent to the new engine, n
   }
 });
 
-// D-547 N3：「跳过目标语言」开着时，已经是目标语言的那一块不装回。它在开关关着时
+// 提示词不在自动翻译重开的那组键里：改它只换代、清记忆，在途的那一批不作废，晚到
+// 的答案照样落在它的节点上。但它是上一代的译文，不进这一代的记忆（batch.js 的
+// passTarget 记下发出时的代次）—— 否则菜单一重建，它就从记忆装回，那一块再也不
+// 按新提示词请求。
+test('J4.6b a translation requested before the prompt changed still lands, but a rebuilt menu requests it again', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  const ai = { autoTranslateEngine: 'ai' };
+  try {
+    await openLeftMenu(page, context, mock.endpoint, { extra: ai });
+    const generation = () => evaluateInContentScript(context, page,
+      'window.AI_TRANSLATOR_CONTENT.translationProfile.generation()');
+    const renamed = 'Volunteer at the archive and help us transcribe the old pilot logs.';
+    const contact = page.locator('#nav a[data-key="contact"] + .ai-translator-inline-block');
+
+    // 改了名的那一行重建后不在记忆里，送出去，答案压着不回。
+    await page.evaluate((text) => window.renameNav(4, text), renamed);
+    mock.setDelayMs(4000);
+    const generationBefore = await generation();
+    await page.evaluate(() => window.go('maps'));
+    await expect.poll(() => mock.sentTexts.some((text) => text.includes(renamed)), { timeout: 10000 }).toBe(true);
+
+    // 答案还在路上时改提示词：换代。
+    await setExtensionSettings(page, settings(mock.endpoint, { ...ai, customPrompt: 'Translate tersely.', siteRules: { [HOST]: 'always' } }));
+    await expect.poll(generation, { timeout: 10000 }).toBeGreaterThan(generationBefore);
+    await expect(contact).toHaveCount(0);
+    mock.setDelayMs(0);
+    // 上一代的答案晚到，照样落下。
+    await expect(contact).toContainText(`[T] ${renamed}`, { timeout: 30000 });
+
+    // 重建：记忆在换代时清空了，晚到的那一条也没记进去 —— 五行都重新请求。
+    const sentBefore = mock.sentTexts.length;
+    await page.evaluate(() => window.go('hours'));
+    await expect.poll(() => mock.sentTexts.slice(sentBefore).filter((text) => text.includes(renamed)).length,
+      { timeout: 30000 }).toBe(1);
+    expect(navSent(mock.sentTexts.slice(sentBefore))).toBe(4);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5, { timeout: 30000 });
+  } finally {
+    await mock.close();
+  }
+});
+
+// 「跳过目标语言」开着时，已经是目标语言的那一块不装回。它在开关关着时
 // 被翻过、记进了记忆；开关打开后菜单重建，那一块交给批量那条路上的检测
 // （batch.js 的 isTargetLanguageText），判成目标语言 —— 不译，也不再送。
 //
@@ -374,7 +489,7 @@ window.go();
 </script></body></html>`;
 }
 
-// 包住 ctx.recallTranslations（onMutations 里那一步同步装回就是调它），每次调用
+// 包住 ctx.recallTranslations（装回观察器在重建那一刻调的就是它），每次调用
 // 记下装回了几块、花了多久。
 async function recordRecalls(context, page) {
   await evaluateInContentScript(context, page, `(() => {
@@ -398,7 +513,7 @@ const recalls = async (context, page) => ({
   restored: await evaluateInContentScript(context, page, 'self.__recalled.slice()'),
 });
 
-// D-548 偏差 h / D-552 T1：同步装回的 16 块预算只管视口外的命中。一个 30 项的左栏
+// 同步装回的 16 块预算只管视口外的命中。一个 30 项的左栏
 // 滚到底再整片重建，按 DOM 顺序装的话装回的是视口外的头 16 项，看得见的那几项要
 // 等发现层进带才补 —— 中间那几帧视口里一条译文都没有。先装和视口相交的，再按
 // DOM 顺序补视口外的。
@@ -464,7 +579,7 @@ test('J4.8 a long menu scrolled to the bottom keeps translations in view through
   }
 });
 
-// D-552 T1：视口里的命中不论多少都在重建那一刻同步装回，预算不截它们。40 项的密
+// 视口里的命中不论多少都在重建那一刻同步装回，预算不截它们。40 项的密
 // 菜单每项 16px 高，重建时 40 项全在 720px 的视口里；按「一共 16 块」截的话，第
 // 17 项起要等发现层进带才补，那几帧视口里就有没译文的项。
 const DENSE_MENU_SIZE = 40;
@@ -509,16 +624,16 @@ test('J4.8b a dense menu of 40 items in view is restored whole in the same frame
   }
 });
 
-// D-543 第 6 点：≥2000 块的容器整片重建时，onMutations 里那一步同步装回要多久。
+// ≥2000 块的容器整片重建时，装回观察器里那一步同步装回要多久。
 // 记忆按真实入口 ctx.rememberLanded 填满（registerTranslation 记的也是这一句），
 // 发现层带宽之外的块自动翻译不会去翻，靠它们自己翻满 2000 条要几分钟。
 // RERENDER_PERF_OUT 设了就把结果写进那个文件（证据目录的 perf.txt）。
 const FEED_SIZE = 2000;
 const RUNS = 10;
-// D-552 F5：C 段（页面版式已算完、只剩装回自己）的 p95 上限。
+// C 段（页面版式已算完、只剩装回自己）的 p95 上限。
 const RECALL_P95_CEILING_MS = 50;
 // 每行 32px、没有外边距：重建时（译文还没装回）720px 的视口里 23 行（第 23 行
-// 露一半），D 段 1280px 的视口里正好 40 行（D-552 T1 要的 40 条视口内命中）。
+// 露一半），D 段 1280px 的视口里正好 40 行（要量的 40 条视口内命中）。
 const FEED_ROW_PX = 32;
 const TALL_VIEWPORT = { width: 1280, height: 40 * FEED_ROW_PX };
 
@@ -561,7 +676,7 @@ const stats = (values) => {
     + `max=${sorted[values.length - 1].toFixed(2)}ms all=[${values.map((v) => v.toFixed(2)).join(', ')}]`;
 };
 
-test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', async ({ page, context }) => {
+test('perf: synchronous recall on a rebuilt container of 2000 blocks', async ({ page, context }) => {
   const mock = await startMockOpenAIServer();
   try {
     let idle = null;
@@ -592,7 +707,7 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
         // 送出去的原文就是收集端的 block.text（collect.js 的 getTextWithMathPlaceholders，
         // preserveMarkup 同收集端），记忆按它和语言认。
         const source = ctx.getTextWithMathPlaceholders(p, { preserveMarkup: true }).text;
-        ctx.rememberLanded(lang, { source, translation: '[B] ' + source });
+        ctx.rememberLanded(lang, { source, translation: '[B] ' + source, targetLangChecked: false });
       }
       return globalThis.BlockIdentity.memorySize();
     })()`);
@@ -608,7 +723,7 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
       await page.evaluate(() => window.rerenderLaidOut());
       await page.waitForTimeout(800);
     }
-    // D 段（D-552 T1）：视口拉高到 40 行以上，同样只量装回自己。
+    // D 段：视口拉高到 40 行以上，同样只量装回自己。
     await page.setViewportSize(TALL_VIEWPORT);
     await page.waitForTimeout(800);
     expect(await page.evaluate(() => scrollY)).toBe(0);
@@ -625,8 +740,8 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
     const ms = all.slice(0, RUNS);
     const ownMs = all.slice(RUNS, RUNS * 2);
     const tallMs = all.slice(RUNS * 2);
-    // 每次同步装回的块数 = max(装回预算 16, 重建时视口里的行数)：视口里的全装
-    // （D-552 T1），视口外的补到预算为止；剩下的进带时由发现层逐块从记忆装回，不发
+    // 每次同步装回的块数 = max(装回预算 16, 重建时视口里的行数)：视口里的全装，
+    // 视口外的补到预算为止；剩下的进带时由发现层逐块从记忆装回，不发
     // 请求。同一个视口里每次重建一样多：720px 里 23 块，拉高的视口里 40 块。
     const short = restored.slice(0, RUNS * 2);
     const tall = restored.slice(RUNS * 2);
@@ -645,14 +760,14 @@ test('D-543 perf: synchronous recall on a rebuilt container of 2000 blocks', asy
     expect((await builtinTexts(context, page)).length).toBe(callsBefore);
 
     const line = `${FEED_SIZE} blocks rebuilt in one added root, scan budget 200 / restore budget 16 (out-of-view only), runs=${RUNS}\n`
-      + `A recall per onMutations, page layout still pending (720px, restored=${short[0]}): ${stats(ms)}\n`
+      + `A recall per mutation callback, page layout still pending (720px, restored=${short[0]}): ${stats(ms)}\n`
       + `B page's own first layout of the rebuilt root: ${stats(layoutMs.slice(0, RUNS))}\n`
-      + `C recall per onMutations, page layout already done (720px, restored=${short[RUNS]}): ${stats(ownMs)}\n`
-      + `D recall per onMutations, page layout already done (${TALL_VIEWPORT.height}px, restored=${tall[0]} = in-view hits): ${stats(tallMs)}\n`
+      + `C recall per mutation callback, page layout already done (720px, restored=${short[RUNS]}): ${stats(ownMs)}\n`
+      + `D recall per mutation callback, page layout already done (${TALL_VIEWPORT.height}px, restored=${tall[0]} = in-view hits): ${stats(tallMs)}\n`
       + `memorySize()=0 (before any translation): restored=${idle.restored} in ${idle.ms.toFixed(3)}ms`;
     console.log(`PERF ${line}`);
     if (process.env.RERENDER_PERF_OUT) fs.writeFileSync(process.env.RERENDER_PERF_OUT, `${line}\n`);
-    // D-552 F5：只量装回自己的那两段（C、D）设上限。
+    // 只量装回自己的那两段（C、D）设上限。
     expect(p95(ownMs)).toBeLessThanOrEqual(RECALL_P95_CEILING_MS);
     expect(p95(tallMs)).toBeLessThanOrEqual(RECALL_P95_CEILING_MS);
     expect(mock.sentTexts).toEqual([]);

@@ -810,7 +810,7 @@ const LOAD_ORDER = [
   ['content/content-translation-cache.js', 'content/content-glossary.js',
    '缓存层在加载时订阅 ctx.glossary：它不在，整个文件抛错，ctx.requestTranslationCached 与悬停、字幕读的代数都没了。'],
   ['content/content-translation-cache.js', 'shared/block-identity.js',
-   '缓存层换代时清掉发现层的内容记忆（BlockIdentity.forgetMemory，D-547 N3）：它不在，换一次引擎就抛错。'],
+   '缓存层换代时清掉发现层的内容记忆（BlockIdentity.forgetMemory）：它不在，换一次引擎就抛错。'],
   ['content/content-translation-cache.js', 'content/page/custom-rule.js',
    '缓存层在加载时订阅 ctx.customRules.onProfileChange（本站规则的引擎或领域变了加一代）：它不在，整个文件抛错。'],
   ['content/engine/glossary.js', 'shared/glossary.js',

@@ -13,8 +13,6 @@
 //   - `ctx.outsidePageScope(el, scope)`：只翻用户规则 include 的区域时，el 在不在区域外
 //   - `ctx.collectPageBlocks(root)`：生产入口（手动翻译、发现层、A1 的子 frame 手动轮）
 //   - `ctx.beginScopeRound()`：上面三个入口每轮收集前调一次（缓存规则见 resolvePageScope）
-//   - `ctx.recallTranslations(roots)` / `ctx.recallTranslation(block)`：发现层把页内记忆
-//     里的译文装回重建出来的节点（见下文「装回」）
 //   - `ctx.translateWholePage()`：悬浮菜单「翻译整个页面」与 Alt+W
 (function() {
   'use strict';
@@ -305,124 +303,9 @@
 
   // 生产入口：整页翻译、发现层、子 frame 的手动轮都走这里。
   // 直接调 collectTranslatableBlocks(root)（不带 scope）的行为不变：不做范围过滤。
-  // limit：收够这么多块就停，给 MutationObserver 回调里的同步装回用。
+  // limit：收够这么多块就停，给 MutationObserver 回调里的同步装回用（page/recall.js）。
   function collectPageBlocks(root = document.body, { limit } = {}) {
     return ctx.collectTranslatableBlocks(root, { scope: resolvePageScope(), limit });
-  }
-
-  // ---- 装回：同样的文字换了新节点，把上次的译文放回去 ------------------------
-  //
-  // 单页应用切路由时常把左栏整片重建：文字一个字没变，节点全是新的，节点身份查
-  // 不到，于是同样几行再翻一遍（内置引擎不走 storage 缓存，每次都真发），翻回来
-  // 之前那几行先闪一下原文。页内记忆（BlockIdentity.remember，唯一写入点是
-  // insert.js 的 registerTranslation）按 (目标语言, 原文) 记着上次落笔的译文，
-  // 发现层在 MutationObserver 回调里 —— 绘制之前 —— 拿它装回去。
-  //
-  // 走的是和第一次落笔同一条插入路径：节点身份照登记（之后的 collect 就把它当
-  // 「翻过了」跳过，不进候选、不发请求、不碰调度层的台账）、隐藏译文 / 仅显示
-  // 译文跟着当前状态、shadow root 里的样式照补。范围规则也照常：块是
-  // collectPageBlocks 收的。
-
-  // 同步装回的硬上限（D-543 第 6 点）：回调里每多做一点，那一帧就晚画一点。
-  // 两道闸：最多看 40 个根、收 200 块（收集按 limit 提前停、逐块数，不把几千块
-  // 的新子树整片走一遍）；视口外的最多装回 RESTORE 块。装回一块要走插入路径的
-  // 版式读取，2000 块的文档上约 0.5 ms 一块，200 块就是 100 ms 的一帧 —— 实测见
-  // docs/delivery/evidence/ext-opt/c/perf.txt，16 块把最坏一次压在 16 ms 内。
-  // 和视口相交的命中不受这道预算（D-552 T1）：看得见的那几块少装一块就是闪一帧
-  // 原文，正是装回要消掉的东西；一屏装得下的块数本身有限（扫描闸 200 块封顶）。
-  // 菜单、标签栏这类整片重建的通常就几块到十几块，一次装完。视口外超出的留给
-  // 发现层进带时逐块再问（content-auto-discover.js 的 onBand），仍然不重发，只
-  // 是可能闪一帧。
-  const RECALL_ROOT_BUDGET = 40;
-  const RECALL_SCAN_BUDGET = 200;
-  const RECALL_RESTORE_BUDGET = 16;
-
-  // 一块记得什么：命中返回那一条，没命中（或这会儿不该装）返回 null。只查，不
-  // 动 DOM。语言戳和 batch.js 的 passTarget 同一对：记进身份的是
-  // currentTargetLang（空串＝跟随浏览器），打进 lang/dir 的是实际那门。
-  //
-  // 「这块该不该译」由两道判定把关，装回不另写一套（D-547 N3）：
-  //   · 收集端那一串（范围、规则、代码、纯数字……）：块本来就是 collectPageBlocks
-  //     收上来的，没过的根本到不了这里；
-  //   · 跳过目标语言：那道检测在 batch.js（isTargetLanguageText，异步、要等语言
-  //     检测），绘制前同步装回等不了它。所以只装落笔时已经过了这道检测的条目
-  //     （targetLangChecked）；现在开着、当初没过的，返回 null 交给批量那条路，
-  //     由那道检测本身来判 —— 是目标语言就不译，不是就照常请求。
-  // 原文比的是 block.text：收集端 getTextWithMathPlaceholders 产出、请求体里发的
-  // 就是它，落笔时记下的也是它（insert.js 的 registerTranslation）。
-  // 跳过目标语言这道检查交给 recall 先过，过了才挪 LRU（D-552 Minor 2）。
-  function rememberedFor(block, lang) {
-    return globalThis.BlockIdentity.recall(lang, block.text, usableNow);
-  }
-
-  function usableNow(entry) {
-    return ctx.settings.skipTargetLanguageText !== true || entry.targetLangChecked;
-  }
-
-  // 装回一块：走和第一次落笔同一条插入路径。
-  function restoreRemembered(block, entry, lang) {
-    ctx.insertTranslationBlock(block, entry.translation, { lang, textLang: ctx.getEffectiveTargetLang() });
-    ctx.afterInsertTranslation(block);
-  }
-
-  // 「一条都没记过」的那道闸只写这一处（D-552 S6）：绝大多数页面的头几秒、以及
-  // 从不翻的页面，装回这一步必须是零成本。两个入口都先过它，发现层不另问。
-  function remembersNothing() {
-    return globalThis.BlockIdentity.memorySize() === 0;
-  }
-
-  // 一块：命中就装回并返回 true（发现层进带时逐块问的那一句）。
-  function recallTranslation(block) {
-    if (remembersNothing()) return false;
-    const lang = ctx.currentTargetLang();
-    const entry = rememberedFor(block, lang);
-    if (entry === null) return false;
-    restoreRemembered(block, entry, lang);
-    return true;
-  }
-
-  // 和视口相交（D-548 偏差 h）。只用来排装回的先后，不判可见性：零尺寸的
-  // （display:none 里的、还没撑开的）不算在视口里。
-  function intersectsViewport(element) {
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0
-      && rect.bottom > 0 && rect.right > 0
-      && rect.top < window.innerHeight && rect.left < window.innerWidth;
-  }
-
-  // 命中比预算多时：和视口相交的全装（D-552 T1），视口外的按 DOM 顺序补到
-  // 预算为止（D-548 偏差 h）—— 一共装 max(预算, 视口内块数) 块。按 DOM 顺序直接
-  // 截前 16 块的话，一个滚到底的 30 项菜单整片重建，装回的是视口外的头 16 项，
-  // 看得见的那几项要等发现层进带 —— 正是这一步要消掉的那一下闪。位置先一次读
-  // 完再插：插一块就让版式作废，读插交错是每块一次强制版式。命中不超过预算时
-  // 全装，先后不影响这一帧画出来的东西，就不读位置。
-  function restoreOrder(hits) {
-    if (hits.length <= RECALL_RESTORE_BUDGET) return hits;
-    const inView = hits.map((hit) => intersectsViewport(hit.block.element));
-    const visible = hits.filter((_, i) => inView[i]);
-    const rest = hits.filter((_, i) => !inView[i]);
-    return visible.concat(rest.slice(0, Math.max(0, RECALL_RESTORE_BUDGET - visible.length)));
-  }
-
-  // 一批新长出来的子树。一条都没记过的页面在这里直接返回、不收块。
-  // @returns {number} 装回了几块
-  function recallTranslations(roots) {
-    if (remembersNothing()) return 0;
-    const lang = ctx.currentTargetLang();
-    const hits = [];
-    let scanned = 0;
-    scan: for (const root of roots.slice(0, RECALL_ROOT_BUDGET)) {
-      if (!root.isConnected) continue;
-      for (const block of collectPageBlocks(root, { limit: RECALL_SCAN_BUDGET - scanned })) {
-        if (scanned >= RECALL_SCAN_BUDGET) break scan;
-        scanned++;
-        const entry = rememberedFor(block, lang);
-        if (entry !== null) hits.push({ block, entry });
-      }
-    }
-    const chosen = restoreOrder(hits);
-    for (const { block, entry } of chosen) restoreRemembered(block, entry, lang);
-    return chosen.length;
   }
 
   /**
@@ -450,7 +333,5 @@
   ctx.pageScopeStarts = pageScopeStarts;
   ctx.outsidePageScope = outsidePageScope;
   ctx.collectPageBlocks = collectPageBlocks;
-  ctx.recallTranslation = recallTranslation;
-  ctx.recallTranslations = recallTranslations;
   ctx.translateWholePage = translateWholePage;
 })();

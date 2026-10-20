@@ -94,6 +94,12 @@
     const retried = new Set();
 
     let discovery = null;
+    // 装回的观察器（摘掉它的函数），没挂是 null。它跟着「这一页该不该跟」活：判定是
+    // auto 且他没按暂停。和发现层只差一处 —— 藏着译文停下的是发现层，装回照挂：
+    // 藏着时页面把菜单整片重建，上次的译文照样从页内记忆装回去（带着隐藏态），放出
+    // 来那一下就是完整的。自动翻译真停了（关了、他按了暂停、出错）两个一起摘，可见
+    // 时没有装回，藏着时也不该多出来。
+    let recallWatch = null;
     let status = STATUS.OFF;
     let reason = '';
     let lastError = null;
@@ -273,7 +279,7 @@
     function start(why) {
       decidedHref = location.href;
       bumpSession(why || 'start');
-      stopDiscovery();
+      stopDiscovery({ keepRecall: true });
       if (ctx.state.translationsVisible === false || pausedByUser) {
         // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
         // 还得跟上：用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮
@@ -284,6 +290,8 @@
         // 停着的那一页就是暂停，这两条闩都不动。
         const held = resolve();
         reason = held.reason;
+        if (held.verdict === 'auto' && !pausedByUser) watchRecall();
+        else unwatchRecall();
         setStatus(held.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
@@ -293,6 +301,7 @@
       const verdict = resolve();
       reason = verdict.reason;
       if (verdict.verdict !== 'auto') {
+        unwatchRecall();
         setStatus(STATUS.OFF);
         return;
       }
@@ -309,6 +318,7 @@
     // ------------------------------------------------------------------ 发现
 
     function startDiscovery() {
+      watchRecall();
       if (discovery) return;
       discovery = ctx.setupAutoDiscovery({ onCandidates });
       // 头一次扫的是 document_end 时就已经在页面上的全部内容 —— 没有任何
@@ -318,10 +328,26 @@
       });
     }
 
-    function stopDiscovery() {
+    // keepRecall：只停发现层、装回照挂（藏着译文那一停，见 recallWatch）。
+    function stopDiscovery({ keepRecall = false } = {}) {
+      if (!keepRecall) unwatchRecall();
       if (!discovery) return;
       discovery.stop();
       discovery = null;
+    }
+
+    // 页面新长出来的子树，在 MutationObserver 回调里 —— 绘制之前 —— 交给装回
+    // （content/page/recall.js）：单页应用整片重建、文字没变的那些节点，上次的
+    // 译文当场放回去，不闪原文、不重发。
+    function watchRecall() {
+      if (recallWatch) return;
+      recallWatch = ctx.watchAddedElements((added) => ctx.recallTranslations(added));
+    }
+
+    function unwatchRecall() {
+      if (!recallWatch) return;
+      recallWatch();
+      recallWatch = null;
     }
 
     // 同一个节点在队里换了一份更新的：旧的那份文字若是接纳过、还没了结，它就此
@@ -363,7 +389,7 @@
       const identity = globalThis.BlockIdentity;
       if (!identity.lookup(element)) return false;
       // 目标语言也要带上：挂在上面那条译文要是上一门语言的，这一块就不算翻过。
-      const target = ctx.currentTargetLang ? ctx.currentTargetLang() : null;
+      const target = ctx.currentTargetLang();
       return !identity.isStale(element, textFingerprint, target);
     }
 
@@ -752,7 +778,7 @@
       if (cause === 'hidden' && status === STATUS.ERROR) return;
       if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
-      stopDiscovery();
+      stopDiscovery({ keepRecall: cause === 'hidden' });
       setStatus(STATUS.PAUSED);
     }
 

@@ -358,6 +358,7 @@ function loadScheduler() {
       onCandidates = options.onCandidates;
       return { rescan() {}, stop() {}, suspend() {}, resume() {} };
     },
+    watchAddedElements: () => () => {},
     builtinTranslator: {
       effectiveEngine: async () => {
         calls.engine += 1;

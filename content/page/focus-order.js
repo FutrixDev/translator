@@ -116,10 +116,22 @@
     return { hidden: false, top: rect.top + scrollY, bottom: rect.bottom + scrollY };
   }
 
-  // 块离视口几屏（相交为 0），在视口下方还是上方。
+  // 一个盒子离视口多远（px，相交或相接为 0）。整页翻译里问「离视口多远 / 在不在
+  // 视口里」的三处都用它：这里的评分与分档、发现层挑该观察谁
+  // （content-auto-discover.js 的 distanceFromViewport）、装回先装哪几块
+  // （page/recall.js）。box 与 view 同一坐标系，各是 { top, bottom }；view 带
+  // left / right 时横向一起量，取两轴里大的那段空隙。没有布局盒（rect 全 0）的
+  // 怎么算各由调用方定，这里只做算术。
   function viewportGap(box, view) {
+    const vertical = intervalGap(box, view);
+    if (view.left === undefined) return vertical;
+    return Math.max(vertical, box.left - view.right, view.left - box.right);
+  }
+
+  // 块离视口几屏（相交为 0），在视口下方还是上方。只量纵向：一轮按文档顺序往下读。
+  function screensFromViewport(box, view) {
     const viewport = { top: view.scrollY, bottom: view.scrollY + view.height };
-    return { screens: intervalGap(box, viewport) / view.height, below: box.top >= viewport.bottom };
+    return { screens: viewportGap(box, viewport) / view.height, below: box.top >= viewport.bottom };
   }
 
   function isFormControl(element) {
@@ -168,7 +180,7 @@
   function tierOf(block, box, view) {
     if (box.hidden) return TIER.HIDDEN;
     if (block === view.focusBlock) return TIER.FOCUS;
-    return viewportGap(box, view).screens <= NEAR_SCREENS ? TIER.NEAR : TIER.FAR;
+    return screensFromViewport(box, view).screens <= NEAR_SCREENS ? TIER.NEAR : TIER.FAR;
   }
 
   // 一批只装同一档：焦点块和近档同属一档 —— 焦点块钉在第一批，第一批就是视口
@@ -183,11 +195,12 @@
    *   离视口的屏数 × 方向（朝滚动方向 0.8，背向 1.2）− 指针同屏 0.5。
    *
    * 手动那一轮和自动调度层每轮挑块都经 createBatchFeeder 用它；发现层
-   * （content/content-auto-discover.js）的排序另有 distanceFromViewport，不经这里。
+   * （content/content-auto-discover.js）的排序另有 distanceFromViewport，不经这里
+   * （两边量距离用的是同一个 viewportGap）。
    * box 是 measureBlock 量出的区间，view 是 readView 的快照。
    */
   function scoreBlockForViewport(box, view) {
-    const { screens, below } = viewportGap(box, view);
+    const { screens, below } = screensFromViewport(box, view);
     const towards = below ? view.scrollDir >= 0 : view.scrollDir < 0;
     let score = screens * (towards ? 0.8 : 1.2);
     if (view.pointerDocY !== null && Math.abs(box.top - view.pointerDocY) < view.height) score -= 0.5;
@@ -308,6 +321,7 @@
   }
 
   ctx.focusOrder = Object.freeze({ createBatchFeeder, drainFeeder, sampleView });
+  ctx.viewportGap = viewportGap;
 
   // 视口信号在模块加载时就开始记：第一轮开跑前的滚动方向、指针
   // 位置也要算数。

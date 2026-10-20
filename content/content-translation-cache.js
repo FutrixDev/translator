@@ -63,7 +63,7 @@
   function setGeneration(next) {
     if (next === generation) return;
     generation = next;
-    // 换代即清（D-547 N3）：发现层装回用的内容记忆（shared/block-identity.js）也是
+    // 换代即清：发现层装回用的内容记忆（shared/block-identity.js）也是
     // 本页的一份内存缓存。旧一代的译文是按旧设置译的，重建后装回等于把用户刚改掉
     // 的东西又摆回页面，所以整张清掉，重建的块照常去请求。直接在这里清，不走订阅：
     // 记忆和代数同生同灭，不该被订阅者的 try/catch 吞掉。

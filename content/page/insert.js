@@ -179,10 +179,8 @@
   //   两条横向判据要「页面原本给这一块多少地方、本来切掉多少」，插完就量不到了，
   //   只能在插之前记下来传进去。
   // @param {string} textLang 译文实际是哪门语言（这一轮请求的目标），打进 lang / dir。
-  // @param {{source: string, translation: string}} landed 这一块送出去的原文（带内联
-  //   标记）和落笔的原样译文，交给 registerTranslation 记进页内记忆。
-  function finishTranslationInsert(element, translationEl, before, lang, textLang, landed) {
-    registerTranslation(element, translationEl, false, lang, landed);
+  function finishTranslationInsert(element, translationEl, before, lang, textLang) {
+    registerTranslation(element, translationEl, false, lang);
     ctx.markLanguage(translationEl, textLang);
     keepTranslationVisible(translationEl);
     // 「仅显示译文」开着时先藏原文再交给 fit guard：框里只剩译文一个人，量出来的
@@ -389,20 +387,7 @@
   // 前状态，否则藏了一次译文还会一批批冒出来。跟上这件事在 finishTranslationInsert
   // 的最后一步做，不在这里：这里跑在两个几何守卫之前（见那边的第 4 条）。
   //
-  // 这里也是页内记忆（BlockIdentity.remember）**唯一的写入点**：每一条落到页面上
-  // 的译文都从这里过，所以记下来的永远是真落笔的那条、带着它真实的语言戳。单页应
-  // 用把同样文字的节点整片重建时，发现层拿它在绘制前装回去（scope.js 的
-  // recallTranslations）。记的是传进来的原样译文（含内联标记），装回时按新节点
-  // 自己的标记重建，和第一次落笔走同一条插入路径。
-  //
-  // 和译文一起记的还有两样（D-547）：
-  //   · 送出去的那份原文 landed.source（block.text，收集端 getTextWithMathPlaceholders
-  //     产出、请求体里发的就是它）。它就是记忆的键（D-552 S1）：装回时新块的
-  //     block.text 逐字等于它才查得到，标记编号对不上的译文不会被装到别的结构上。
-  //   · 落笔时「跳过目标语言」开没开。开着时这条译文已经过了 batch.js 那道检测；
-  //     关着时没过。之后用户打开它，没过检测的那些不能再装回（scope.js 的
-  //     recallTranslation 让它们回到批量那条路，由那道检测本身来判）。
-  function registerTranslation(element, translationEl, managed, lang, landed) {
+  function registerTranslation(element, translationEl, managed, lang) {
     // 指纹在这里算而不是让收集端算好带过来：算法只有一个入口，收集端和落笔端
     // 就不可能各归一化一套。译文节点这时已经在 DOM 里了，readSourceText 认得出
     // 它是我们自己的，不会把它算进原文。
@@ -413,19 +398,24 @@
       managed: !!managed,
       lang
     });
-    rememberLanded(lang, landed);
   }
 
-  // 记一条落了笔的译文。键的口径（语言 + 原文）和条目形状只写在这里和
-  // BlockIdentity 里：测试要往记忆里种条目也走这一句，不另抄一份（D-552 S1）。
-  // @param {string|null} lang  见 registerTranslation
-  // @param {{source: string, translation: string}} landed
+  // 页内记忆（BlockIdentity.remember）唯一的写入点：落了笔的译文由
+  // insertTranslationBlock 在插好之后记一次，测试要往记忆里种条目也走这一句。
+  // 单页应用把同样文字的节点整片重建时，装回那一层（content/page/recall.js）拿它
+  // 把译文放回新节点，不再发请求。
+  //
+  // 条目由落笔的调用方给齐（page/batch.js 的 landTranslation），这里原样记下：
+  //   · source —— 送出去的那份原文 block.text（收集端 getTextWithMathPlaceholders
+  //     产出、请求体里发的就是它），也是记忆的键：装回时新块的 block.text 逐字等于
+  //     它才查得到，标记编号对不上的译文不会被装到别的结构上；
+  //   · translation —— 落笔的原样译文（含内联标记），装回时按新节点自己的标记重建；
+  //   · targetLangChecked —— 这条译文过没过「跳过目标语言」那道检测。之后用户把
+  //     检测打开，没过的那些不能再装回，回到批量那条路由检测本身来判。
+  // @param {string|null} lang 记进身份的那一门（见 registerTranslation）
+  // @param {{source: string, translation: string, targetLangChecked: boolean}} landed
   function rememberLanded(lang, landed) {
-    globalThis.BlockIdentity.remember(lang, {
-      source: landed.source,
-      translation: landed.translation,
-      targetLangChecked: ctx.settings.skipTargetLanguageText === true
-    });
+    globalThis.BlockIdentity.remember(lang, landed);
   }
 
   // 节点被回收去装别的内容了：把上一条译文整条摘掉，让这一块重新变回「没翻过」。
@@ -519,18 +509,28 @@
   // textLang：译文文字本身的语言（请求的目标，从不为空），决定 lang / dir 和对齐。
   // 它和 lang 不是一回事：lang 的空串是「跟随浏览器」这个身份，不是一门语言。
   // 必传 —— 漏传是调用方的程序错误，猜一门语言写进 dir 只会把排版悄悄弄反。
-  function insertTranslationBlock(block, translation, { lang = null, textLang } = {}) {
+  // landed：要记进页内记忆的那一条（见 rememberLanded）。不带就是不记 —— 生产上
+  // 只有 page/batch.js 的 landTranslation 调这里，记不记由它按译法代次定。
+  function insertTranslationBlock(block, translation, { lang = null, textLang, landed = null } = {}) {
     if (!textLang) throw new Error('insertTranslationBlock: textLang is required');
+    if (!placeTranslation(block, translation, lang, textLang)) return;
+    // 记的是真登记上的那条：插入端拒收（同语言已有译文、原文壳子、节点已摘下）
+    // 的不记。fit guard 事后把译文撤掉的照记 —— 登记已经发生，重建出来的节点
+    // 装回时同样走 fit guard，再撤一次也不发请求。
+    if (landed !== null) rememberLanded(lang, landed);
+  }
+
+  // 把译文插到页面上并登记身份。@returns {boolean} 登记上了没有（拒收为 false）
+  function placeTranslation(block, translation, lang, textLang) {
     const element = block.element;
-    const landed = { source: block.text, translation };
-    if (!element || !element.parentNode) return;
+    if (!element || !element.parentNode) return false;
 
     // 这个元素上已经挂着一条译文了。动不动它，见 supersedesExistingTranslation。
     if (element.classList.contains('ai-translator-translated')) {
-      if (!supersedesExistingTranslation(element, lang)) return;
+      if (!supersedesExistingTranslation(element, lang)) return false;
       releaseTranslation(element);
     }
-    if (element.classList.contains('ai-translator-inline-source')) return;
+    if (element.classList.contains('ai-translator-inline-source')) return false;
 
     // 标记为已翻译
     element.classList.add('ai-translator-translated');
@@ -555,10 +555,10 @@
         { textLang }
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
-      registerTranslation(element, handle, true, lang, landed);
+      registerTranslation(element, handle, true, lang);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
-      return;
+      return true;
     }
 
     // 页面原本给这一块多少横向空间、本来切掉多少。插完就问不到了（收缩包裹的框会被
@@ -614,7 +614,7 @@
 
       // 将翻译作为子元素追加到原元素内部（跟在原文后面）
       inlineTarget.appendChild(translationEl);
-      finishTranslationInsert(element, translationEl, before, lang, textLang, landed);
+      finishTranslationInsert(element, translationEl, before, lang, textLang);
     } else if (element.hasAttribute('slot')) {
       // 有 slot 属性的元素（Web Components 的内容分发）：在它旁边插兄弟会破坏 Shadow DOM
       // 的结构，译文追加到它内部。要先于 getTranslationPlacement 问：那边找装原文的
@@ -634,7 +634,7 @@
         box-sizing: border-box;
       `;
       element.appendChild(internalTranslation);
-      finishTranslationInsert(element, internalTranslation, before, lang, textLang, landed);
+      finishTranslationInsert(element, internalTranslation, before, lang, textLang);
     } else {
       // 对于非水平 flex 布局（如侧边栏），默认插入为同级元素；
       // 哪些块只能往内部插、插什么标签，见 getTranslationPlacement
@@ -713,13 +713,14 @@
         // 译文作为块级子节点追加到原文块【内部】，显示在原内容下方。
         // 用 <div>/<span>（而非复制标签名）避免 td 内嵌 td、li 内嵌 li 这类非法结构。
         appendInside(placement.target, translationEl);
-        finishTranslationInsert(element, translationEl, before, lang, textLang, landed);
+        finishTranslationInsert(element, translationEl, before, lang, textLang);
       } else {
         // 插入到原元素后面
         element.after(translationEl);
-        finishTranslationInsert(element, translationEl, before, lang, textLang, landed);
+        finishTranslationInsert(element, translationEl, before, lang, textLang);
       }
     }
+    return true;
   }
 
   ctx.buildTranslationContent = buildTranslationContent;

@@ -268,6 +268,7 @@ async function loadScheduler() {
         rescan() {}, stop: () => log.push('restart'), suspend: () => log.push('suspend'), resume: () => log.push('resume'),
       };
     },
+    watchAddedElements: () => () => {},
     builtinTranslator: { effectiveEngine: async () => 'builtin' },
     filterBlocksByLanguage: async (blocks) => blocks,
     runTranslationPass: (blocks, options) => new Promise((resolve) => {

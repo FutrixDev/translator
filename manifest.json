@@ -179,6 +179,7 @@
         "content/page/not-prose.js",
         "content/page/collect.js",
         "content/page/insert.js",
+        "content/page/recall.js",
         "content/page/failed-blocks.js",
         "content/page/visibility.js",
         "content/page/display.js",

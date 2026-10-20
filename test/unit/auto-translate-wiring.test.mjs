@@ -172,7 +172,7 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // 都跑不了；而判定照常跟上，否则 popup 上那个站点开关会一直停在「开」。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(\);\s*reason = held\.reason;\s*if \(held\.verdict === 'auto' && !pausedByUser\) watchRecall\(\);\s*else unwatchRecall\(\);\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);
@@ -326,7 +326,7 @@ test('「翻过了」要连目标语言一起问 —— 两个生产调用点都
   // 径都经过它）。语言是**带进来**的，不是在那里现问的 —— 见下面「一轮翻译只认
   // 一门语言」。
   const insert = code('content/page/insert.js');
-  assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang, landed\)/);
+  assert.match(insert, /function registerTranslation\(element, translationEl, managed, lang\)/);
   // 落笔端只有一处能现问设置：裁决两轮同时在飞时谁说了算（supersedesExistingTranslation）。
   // 除它以外一处都不许有 —— 戳必须是发请求时的那一门语言，在这里现问就会把
   // 用户中途改的新语言盖在旧译文上，从此这一块指纹一致、语言「也一致」，再没
@@ -618,8 +618,8 @@ test('一轮翻译只读一次目标语言，然后一路带到落笔', () => {
 
   // 落笔时把它交给唯一的登记口。
   // 译文的 lang/dir 也是这一轮请求的那门语言（request），不是登记用的 stamp。
-  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp, textLang: target\.request \}\)/);
-  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null, textLang \} = \{\}\)/);
+  assert.match(batch, /ctx\.insertTranslationBlock\(block, translation, \{ lang: target\.stamp, textLang: target\.request, landed \}\)/);
+  assert.match(code('content/page/insert.js'), /function insertTranslationBlock\(block, translation, \{ lang = null, textLang, landed = null \} = \{\}\)/);
 
   // 「这块是不是本来就已经是目标语言」也要按这一轮的那门语言问，否则同一轮里
   // 前后两批会按两门语言判该不该跳过。

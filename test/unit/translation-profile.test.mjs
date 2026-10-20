@@ -23,7 +23,7 @@ await import('../../shared/sync-collection.js');
 await import('../../shared/api-compat.js');
 await import('../../shared/ai-profiles.js');
 await import('../../shared/engines.js');
-// 换代时清掉发现层的内容记忆（D-547 N3）；manifest 里它排在缓存层前面。
+// 换代时清掉发现层的内容记忆；manifest 里它排在缓存层前面。
 await import('../../shared/block-identity.js');
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
@@ -120,7 +120,7 @@ test('本站规则的引擎或领域变了（onProfileChange 回调）加一代�
   assert.equal(child.profile.generation(), 0, '子帧只跟顶层的代数');
 });
 
-// D-547 N3：发现层装回用的内容记忆按旧设置记下的译文，换代就整张清掉 —— 顶层
+// 发现层装回用的内容记忆按旧设置记下的译文，换代就整张清掉 —— 顶层
 // 加代、子帧跟着 inherit 都算；不进 GENERATION_KEYS 的设置（跳过目标语言）不清。
 test('a new generation forgets the remembered translations; a setting outside the generation keeps them', () => {
   const { BlockIdentity } = globalThis;

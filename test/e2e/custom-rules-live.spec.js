@@ -94,10 +94,10 @@ const J8_PAGE = html(`
   <div id="region-box" class="comments"><p id="region">${J8.region}</p></div>`);
 
 /**
- * 删规则后 region 怎么回来（D-546）：
- * - 'resend'：总开关关着。手动模式没有发现层（D-543 Q2），补翻轮把原文恰好再送一次。
+ * 删规则后 region 怎么回来：
+ * - 'resend'：总开关关着。手动模式没有发现层，补翻轮把原文恰好再送一次。
  * - 'recall'：总开关开着、记忆命中。发现层从本页译文记忆装回，原文一次不送、不记用量
- *   （D-543 §5：翻过的块重建后不重发、不扣费）。
+ *   （翻过的块重建后不重发、不扣费）。
  * - 'fresh'：总开关开着、记忆未命中。排除期间页面把 region 换成没翻过的新句子，删规则
  *   后新句子恰好送一次，并且是调度器收的（记在自动翻译的用量里）——「恰好一次」分不
  *   出是调度器还是补翻轮收的（两条路收同一块），用量账分得出。
@@ -125,7 +125,7 @@ async function excludeRoundTrip(page, options, context, sentTexts, label, { remo
   const regionText = returns === 'fresh' ? J8.fresh : J8.region;
 
   // 基线：清掉两半缓存之后再数一次原文发出去几次。不清的话，删规则后那一块直接
-  // 从缓存里回来，「恰好一次」就没法断言。本页的译文记忆不在这两半里（D-546）。
+  // 从缓存里回来，「恰好一次」就没法断言。本页的译文记忆不在这两半里。
   await clearTranslationCache(context);
   const before = sendCount(sentTexts, regionText);
   const keepBefore = sendCount(sentTexts, J8.keep);
