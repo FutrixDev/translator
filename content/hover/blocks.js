@@ -20,18 +20,41 @@
     'BLOCKQUOTE', 'FIGCAPTION', 'DT', 'DD'
   ]);
   const SKIP_SELECTOR = ctx.constants.OWN_NODES_SELECTOR;
-  const SKIP_TAG_SELECTOR = 'script, style, noscript, iframe, textarea, input, select, code, pre, svg, canvas, kbd, samp, var';
 
   const translationCache = new WeakMap();
 
 
+  // 划选、右键问的是这一个：不改页面，散文 <pre> 里只认已经裹好的段落。
   function resolveBlockFromTarget(target) {
+    return resolveBlock(target, null);
+  }
+
+  // 悬停（划过、单按热键）问的是这一个。point 是指针此刻的视口坐标，没有就是 null。
+  function resolveBlockFromInteractionTarget(target, point) {
+    if (!target) return null;
+    const translationEl = target.closest?.('.ai-translator-inline-block');
+    if (translationEl && hov.inlineTranslationSources.has(translationEl)) {
+      return hov.inlineTranslationSources.get(translationEl) || null;
+    }
+    return resolveBlock(target, point);
+  }
+
+  // 散文 <pre>（content/page/prose-pre.js）的一段是两道空行之间的文字，没有自己的
+  // 元素：指针落在直属文字上时目标是 <pre> 本身，只有坐标说得出是哪一段。只有带
+  // 坐标的悬停会把一段就地裹成锚点；用户正在这个 <pre> 里划选时也不裹——裹段要
+  // 搬动文本节点，选区会跟着塌掉。
+  function resolveBlock(target, point) {
     if (!target) return null;
     let el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
     if (!el) return null;
 
     if (el.closest(SKIP_SELECTOR)) return null;
-    if (el.closest(SKIP_TAG_SELECTOR)) return null;
+    const pre = el.closest('pre');
+    if (pre && ctx.prosePre.isProse(pre)) {
+      const paragraph = point && !selectingIn(pre) ? proseParagraphAt(pre, target, point) : wrappedParagraphOf(el);
+      return paragraph && isValidBlock(paragraph) ? paragraph : null;
+    }
+    if (ctx.prosePre.skippedByTag(el)) return null;
     if (MATH_CONTAINER_SELECTOR && el.closest(MATH_CONTAINER_SELECTOR)) return null;
 
     while (el && el !== document.body && el !== document.documentElement) {
@@ -45,20 +68,34 @@
     return null;
   }
 
-  function resolveBlockFromInteractionTarget(target) {
-    if (!target) return null;
-    const translationEl = target.closest?.('.ai-translator-inline-block');
-    if (translationEl && hov.inlineTranslationSources.has(translationEl)) {
-      return hov.inlineTranslationSources.get(translationEl) || null;
+  function selectingIn(pre) {
+    const selection = document.getSelection();
+    return !!selection && !selection.isCollapsed
+      && (pre.contains(selection.anchorNode) || pre.contains(selection.focusNode));
+  }
+
+  function wrappedParagraphOf(el) {
+    const anchor = el.closest(`.${ctx.TEXT_RUN_CLASS}`);
+    return anchor && ctx.prosePre.isParagraph(anchor) ? anchor : null;
+  }
+
+  function proseParagraphAt(pre, target, point) {
+    const at = document.createRange();
+    if (target === pre) {
+      const caret = document.caretPositionFromPoint(point.x, point.y);
+      if (!caret || !pre.contains(caret.offsetNode)) return null;
+      at.setStart(caret.offsetNode, caret.offset);
+    } else {
+      at.setStart(target, 0);
     }
-    return resolveBlockFromTarget(target);
+    return ctx.prosePre.paragraphOf(pre, at);
   }
 
   function isValidBlock(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
     if (element.isContentEditable) return false;
     if (element.closest(SKIP_SELECTOR)) return false;
-    if (element.closest(SKIP_TAG_SELECTOR)) return false;
+    if (ctx.prosePre.skippedByTag(element)) return false;
     if (MATH_CONTAINER_SELECTOR && element.closest(MATH_CONTAINER_SELECTOR)) return false;
     if (element.classList.contains('ai-translator-translated')) return false;
     if (ctx.isMathElement && ctx.isMathElement(element)) return false;

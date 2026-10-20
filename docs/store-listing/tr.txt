@@ -43,11 +43,12 @@ Web sayfalarını, PDF dosyalarını, e-kitapları, mangaları ve çizgi romanla
 • İçindeki metni okuyup çevirmek için herhangi bir görsele — ekran görüntüsü, fotoğraf, grafik — sağ tıklayın.
 • Görselin tamamı ya da yalnızca çizdiğiniz bir alan. Büyük görsellerin üzerine gelince bir "Metni tanı" düğmesi de görünür.
 • Cihazınızda çevrimdışı okunur: İngilizce, arayüz diliniz buysa Çince, Japonca veya Korece de — diğer diller, fotoğraflar ve süslü yazılar içinse kendi anahtarınızla bir görüntü modeli okur.
+• Aboneliğiniz varsa Blab Translation da okur — anahtar gerekmez.
 
 ★ VARSAYILAN OLARAK GİZLİ
 • Web sayfaları varsayılan olarak cihazınızda çevrilir. Metniniz bilgisayarınızdan hiç çıkmaz.
 • Kendi yapay zeka modelinizle metin, kendi anahtarınızla doğrudan uç noktanıza gider — asla bizim üzerimizden geçmez.
-• Blab Translation metni çevirmek için sunucularımıza gönderir ve hiçbir kısmını saklamaz.
+• Blab Translation metni (OCR'da görseli) işlemek için sunucularımıza gönderir ve hiçbir kısmını saklamaz.
 • PDF, belge ve çizgi roman dosyaları sunucularımızda işlenir ve 7 gün sonra silinir.
 • Çevrimdışı sözlük paketleri sunucumuzdan indirilir ve cihazınızda saklanır; sınırsız depolama izni bunun içindir. Bir pakette kelimeye bakmak hiçbir şey göndermez.
 • Analiz yok. Reklam takibi yok.

@@ -43,11 +43,12 @@ Read web pages, PDFs, ebooks, manga and comics with the original and the transla
 • Right-click any image — a screenshot, a photo, a chart — to read the text in it and translate it.
 • The whole image, or just an area you draw. Large images also show a "Recognize Text" button when you hover.
 • Read offline on your device: English, plus Chinese, Japanese or Korean when that is your interface language — or by a vision model with your own key for other languages, photos and stylized lettering.
+• With a subscription, Blab Translation reads them too — no key needed.
 
 ★ PRIVATE BY DEFAULT
 • Web pages translate on your device by default. Your text never leaves your computer.
 • With your own AI model, text goes straight to your endpoint with your own key — never through us.
-• Blab Translation sends the text to our servers to translate it and keeps none of it.
+• Blab Translation sends the text — or, for OCR, the image — to our servers to process it and keeps none of it.
 • PDF, document and comic files are processed on our servers and deleted after 7 days.
 • Offline dictionary packs are downloaded from our server and kept on your device; that is what the unlimited storage permission is for. Looking a word up in a pack sends nothing.
 • No analytics. No ad tracking.
