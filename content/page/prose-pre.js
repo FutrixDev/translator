@@ -8,8 +8,8 @@
 //
 // 和代码块的分界有两条。一是代码要保住每一行原来的排法，所以几乎不开自动折行。
 // 二是代码会带不翻的标签（<code>/<kbd>/<samp>…）。两条都不沾，才算
-// 散文；整页翻译时每一段另外还要再过一次收集器自己的代码 / 网址 / 非正文判定，
-// 那一步在 collect.js，这里只切段、裹段。
+// 散文；每一段裹成锚点之前另外还要再过一次收集器自己的代码 / 网址 / 非正文判定
+// （collect.js 的 wrapIfProse），这里只切段。
 // white-space: pre（不折行）的纯文本不收：译文会继承不折行，成了一条横穿页面的长行。
 //
 // 整页收集（content/page/collect.js）和悬停（content/hover/blocks.js）都问这里：
@@ -102,7 +102,8 @@
 
   // at（落在 <pre> 里的一个活的 Range）所在的那一段，没裹过的就地裹成锚点。切段会
   // 拆文本节点，活的 Range 跟着拆开的那一半走，所以位置要用 Range 给，不能给节点。
-  // 空行、我们插进来的译文不属于任何一段，给 null。这一段值不值得翻由调用方判定。
+  // 空行、我们插进来的译文不属于任何一段，给 null。没裹过的段落和整页收集一样先过
+  // collect.js 的 wrapIfProse：只是个网址、像代码的那段不裹，也给 null。
   function paragraphOf(pre, at) {
     const found = paragraphs(pre);
     let child = at.startContainer === pre ? pre.childNodes[at.startOffset] : at.startContainer;
@@ -110,7 +111,7 @@
     if (!child) return null;
     const paragraph = found.find((each) => each === child || (Array.isArray(each) && each.includes(child)));
     if (!paragraph) return null;
-    return Array.isArray(paragraph) ? ctx.wrapTextRun(paragraph) : paragraph;
+    return Array.isArray(paragraph) ? ctx.wrapIfProse(paragraph, pre) : paragraph;
   }
 
   // 散文 <pre> 的一段（paragraphs 交给 collect.js 裹好的锚点）。锚点是内联 span，

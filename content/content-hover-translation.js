@@ -136,7 +136,7 @@
       return;
     }
 
-    const block = hov.resolveBlockFromTarget(event.target, { x: event.clientX, y: event.clientY });
+    const block = hov.resolveBlockFromTarget(event.target);
     if (block && hov.hasInlineTranslation(block)) {
       hov.setInlineTranslationContext(block);
       return;

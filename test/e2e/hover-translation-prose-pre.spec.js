@@ -13,8 +13,14 @@
 //
 // A <pre> that is code stays untouched: one that holds <code>, a plain one that does
 // not wrap, and a read-only editor's line.
+//
+// Hover wraps the paragraph it translates in an anchor span, and page translation
+// takes such an anchor as it is. So hover must not wrap a paragraph page translation
+// would refuse (one that is only a link), and nothing but a hover may wrap at all:
+// a right-click leaves the page as it was.
 const { test, expect } = require('./fixtures');
-const { setExtensionSettings } = require('./helpers');
+const { setExtensionSettings, triggerPageTranslation } = require('./helpers');
+const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://prose-pre.test';
@@ -26,6 +32,7 @@ const LAST = 'Nothing in the new schedule changes the winter timetable, which st
 const WRAPPED_CODE = 'Restart the lighthouse daemon before the evening shift begins.';
 const UNWRAPPED = 'Keep the original column layout of this weather report intact.';
 const EDITOR_LINE = 'Remember to update the tide table before publishing the notice.';
+const LINK_ONLY = 'https://harbour.test/notes/ferry-schedule-2026';
 
 const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Is the ferry safe? - &lt;harbour&gt;</title>
@@ -38,6 +45,8 @@ const PAGE = `<!doctype html>
 <topcomment><article class="comment"><span class="info">keeper 12 days ago.</span><pre id="post">${LEAD_BEFORE} (<a href="/notes/ferry">the note</a>), ${LEAD_AFTER}
 
 ${MIDDLE}
+
+${LINK_ONLY}
 
 ${LAST}</pre></article></topcomment>
 <article class="comment"><pre id="wrapped-code"><code>${WRAPPED_CODE}</code></pre></article>
@@ -176,6 +185,38 @@ test('prose <pre>: pressing the hotkey while resting on a paragraph toggles that
     await page.keyboard.press('Shift');
     await page.waitForTimeout(500);
     await expectCodeLeftAlone(page, sentTexts);
+  } finally {
+    await close();
+  }
+});
+
+test('prose <pre>: hover wraps only paragraphs page translation would take, right-click wraps none', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+
+  try {
+    await openPage(page, context, endpoint);
+    const anchors = page.locator('#post > .ai-translator-text-run');
+
+    // Right-click on a paragraph nobody translated yet: nothing to act on, nothing wrapped.
+    const onLast = await pointOnText(page, '#post', LAST);
+    await page.mouse.click(onLast.x, onLast.y, { button: 'right' });
+    await page.keyboard.press('Escape');
+    await expect(anchors).toHaveCount(0);
+
+    // Hover over the paragraph that is only a link: not translated, not wrapped.
+    await page.keyboard.down('Shift');
+    await moveOnto(page, '#post', LINK_ONLY);
+    await page.waitForTimeout(500);
+    await page.keyboard.up('Shift');
+    await expect(page.locator('.ai-translator-hover-translation')).toHaveCount(0);
+    await expect(anchors).toHaveCount(0);
+
+    // Page translation afterwards still leaves the link alone.
+    await triggerPageTranslation(page);
+    await waitForPageRoundEnd(page, 30000);
+    await expect(anchors).toHaveCount(3);
+    expect(sentCount(sentTexts, MIDDLE)).toBe(1);
+    expect(sentCount(sentTexts, LINK_ONLY)).toBe(0);
   } finally {
     await close();
   }

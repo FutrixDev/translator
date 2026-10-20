@@ -78,6 +78,77 @@
     return !!(adapter.keepOriginal && closestAcross(el, adapter.keepOriginal));
   }
 
+  // 用于检测代码/脚本内容的模式
+  const codePatterns = [
+    /^[\s\S]*<script[\s>]/i,       // 包含 <script 标签
+    /^[\s\S]*<\/script>/i,         // 包含 </script> 标签
+    /^[\s\S]*<noscript[\s>]/i,     // 包含 <noscript 标签
+    /function\s*\([^)]*\)\s*\{/,   // JavaScript 函数定义
+    /var\s+\w+\s*=/,               // var 声明
+    /const\s+\w+\s*=/,             // const 声明
+    /let\s+\w+\s*=/,               // let 声明
+    /document\.(getElementById|querySelector|createElement)/, // DOM 操作
+    /^\s*(import|export)\s+/m,     // ES6 模块
+    /^\s*def\s+\w+\s*\(/m,         // Python 函数
+    /^\s*class\s+\w+[\s:(]/m,      // 类定义
+    /^\s*@\w+\s*$/m,               // 装饰器
+    /^\s*#\s*(include|define|ifdef)/m, // C/C++ 预处理
+    /\{\s*"[^"]+"\s*:\s*/,         // JSON 对象
+    /^\s*```/m,                     // Markdown 代码块标记
+    /self\.\w+\s*=/,               // Python self
+    /super\(\)/,                   // super 调用
+    /nn\.Module/,                  // PyTorch
+    /torch\.\w+/,                  // PyTorch
+    /np\.\w+/,                     // NumPy
+  ];
+
+  // 检查文本是否看起来像代码
+  function looksLikeCode(text) {
+    // 如果包含大量特殊字符，可能是代码
+    const specialCharRatio = (text.match(/[{}()\[\];=<>]/g) || []).length / text.length;
+    if (specialCharRatio > 0.1) return true;
+
+    // 检查代码模式
+    for (const pattern of codePatterns) {
+      if (pattern.test(text)) return true;
+    }
+
+    return false;
+  }
+
+  // 检查文本是否主要是URL（不需要翻译）
+  function isMainlyUrl(text) {
+    // URL正则模式
+    const urlPattern = /https?:\/\/[^\s]+/gi;
+    const urls = text.match(urlPattern) || [];
+    if (urls.length === 0) return false;
+
+    // 计算URL占文本的比例
+    const urlLength = urls.reduce((sum, url) => sum + url.length, 0);
+    const textWithoutUrls = text.replace(urlPattern, '').trim();
+
+    // 如果移除URL后剩余文本很短（少于10个字符或只有标签如 "DOI:", "URL:" 等）
+    // 则认为主要是URL
+    if (textWithoutUrls.length < 10) return true;
+
+    // 如果URL占总文本长度的70%以上，认为主要是URL
+    if (urlLength / text.length > 0.7) return true;
+
+    return false;
+  }
+
+  // 一串直属文字（或散文 <pre> 的一段）是要翻的正文才裹成锚点；太短、像代码、
+  // 就是个 URL、不是正文的原样留着。@returns 裹好的 span，没裹就是 null。
+  // 悬停取散文 <pre> 的一段也走这里（prosePre.paragraphOf）：裹好的锚点下一轮整页
+  // 收集会原样收下，不再过这几条判定，所以没过判定的段落谁都不能裹。
+  function wrapIfProse(run, element) {
+    const text = run.filter((node) => node.nodeType !== Node.COMMENT_NODE)
+      .map((node) => node.textContent).join('').trim();
+    if (text.length < 2) return null;
+    if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) return null;
+    return wrapTextRun(run);
+  }
+
   // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
   // 不做任何范围过滤——e2e 直接调这个函数的地方都是这样用的。
   // options.limit：收够这么多块就停（MutationObserver 回调里的同步装回，见 scope.js）。
@@ -108,29 +179,6 @@
     const limit = options?.limit ?? Infinity;
     const scopeCut = scope && scope.skip ? (el) => ctx.pageScopeCut(el, scope) : null;
     const allowed = ctx.createTranslateJudge();
-    // 用于检测代码/脚本内容的模式
-    const codePatterns = [
-      /^[\s\S]*<script[\s>]/i,       // 包含 <script 标签
-      /^[\s\S]*<\/script>/i,         // 包含 </script> 标签
-      /^[\s\S]*<noscript[\s>]/i,     // 包含 <noscript 标签
-      /function\s*\([^)]*\)\s*\{/,   // JavaScript 函数定义
-      /var\s+\w+\s*=/,               // var 声明
-      /const\s+\w+\s*=/,             // const 声明
-      /let\s+\w+\s*=/,               // let 声明
-      /document\.(getElementById|querySelector|createElement)/, // DOM 操作
-      /^\s*(import|export)\s+/m,     // ES6 模块
-      /^\s*def\s+\w+\s*\(/m,         // Python 函数
-      /^\s*class\s+\w+[\s:(]/m,      // 类定义
-      /^\s*@\w+\s*$/m,               // 装饰器
-      /^\s*#\s*(include|define|ifdef)/m, // C/C++ 预处理
-      /\{\s*"[^"]+"\s*:\s*/,         // JSON 对象
-      /^\s*```/m,                     // Markdown 代码块标记
-      /self\.\w+\s*=/,               // Python self
-      /super\(\)/,                   // super 调用
-      /nn\.Module/,                  // PyTorch
-      /torch\.\w+/,                  // PyTorch
-      /np\.\w+/,                     // NumPy
-    ];
 
     // 代码块容器的 class 检测。全部按【完整 class token】匹配，绝不用 [class*=] 子串匹配：
     //
@@ -175,51 +223,6 @@
         }
       }
       return false;
-    }
-
-    // 检查文本是否看起来像代码
-    function looksLikeCode(text) {
-      // 如果包含大量特殊字符，可能是代码
-      const specialCharRatio = (text.match(/[{}()\[\];=<>]/g) || []).length / text.length;
-      if (specialCharRatio > 0.1) return true;
-
-      // 检查代码模式
-      for (const pattern of codePatterns) {
-        if (pattern.test(text)) return true;
-      }
-
-      return false;
-    }
-
-    // 检查文本是否主要是URL（不需要翻译）
-    function isMainlyUrl(text) {
-      // URL正则模式
-      const urlPattern = /https?:\/\/[^\s]+/gi;
-      const urls = text.match(urlPattern) || [];
-      if (urls.length === 0) return false;
-
-      // 计算URL占文本的比例
-      const urlLength = urls.reduce((sum, url) => sum + url.length, 0);
-      const textWithoutUrls = text.replace(urlPattern, '').trim();
-
-      // 如果移除URL后剩余文本很短（少于10个字符或只有标签如 "DOI:", "URL:" 等）
-      // 则认为主要是URL
-      if (textWithoutUrls.length < 10) return true;
-
-      // 如果URL占总文本长度的70%以上，认为主要是URL
-      if (urlLength / text.length > 0.7) return true;
-
-      return false;
-    }
-
-    // 一串直属文字（或散文 <pre> 的一段）是要翻的正文才裹成锚点；太短、像代码、
-    // 就是个 URL、不是正文的原样留着。@returns 裹好的 span，没裹就是 null。
-    function wrapIfProse(run, element) {
-      const text = run.filter((node) => node.nodeType !== Node.COMMENT_NODE)
-        .map((node) => node.textContent).join('').trim();
-      if (text.length < 2) return null;
-      if (looksLikeCode(text) || isMainlyUrl(text) || ctx.notProse(element, text)) return null;
-      return wrapTextRun(run);
     }
 
     // 检查元素是否有可翻译的子元素（用于判断是否应该递归而非整体翻译）
@@ -937,6 +940,7 @@
   ctx.isMathElement = isMathElement;
   ctx.isIconElement = isIconElement;
   ctx.wrapTextRun = wrapTextRun;
+  ctx.wrapIfProse = wrapIfProse;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
   /**
    * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
