@@ -401,7 +401,7 @@
   }
 
   // 页内记忆（BlockIdentity.remember）唯一的写入点：落了笔的译文由
-  // insertTranslationBlock 在插好之后记一次，测试要往记忆里种条目也走这一句。
+  // insertTranslationBlock 在插好之后记一次。
   // 单页应用把同样文字的节点整片重建时，装回那一层（content/page/recall.js）拿它
   // 把译文放回新节点，不再发请求。
   //
