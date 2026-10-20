@@ -73,10 +73,15 @@
     const queue = new Map();
     // 本轮在途请求的章。一轮之内才有意义，下一轮重新盖。
     const tickets = new Map();
-    // 已经**有结果**的块：`代次内编号:文本指纹`。发现层每次扫描都会把没翻成的块
-    // （已经是中文的、判定跳过的）原样再送一遍，没有这本台账就会一遍遍重新发请求。
-    // 代次一翻篇就整本作废 —— 换了目标语言之后，同样的文字要重新翻。
-    const ledger = new Set();
+    // 进度的四本账（已了结 / 接纳过 / 半路退场 / 放弃）都在这本账本里
+    // （content/content-auto-ledger.js），这一层只经它的方法记账。key 只由 keyOf 拼。
+    //
+    // 已了结那一本（ledger.has）挡的是「再送一次」：发现层每次扫描都会把没翻成的块
+    // （已经是中文的、判定跳过的）原样再送一遍，没有它就会一遍遍重新发请求。代次
+    // 一翻篇就整本作废（bumpSession 里 reset）—— 换了目标语言之后，同样的文字要
+    // 重新翻。
+    const { keyOf } = ctx.autoLedger;
+    const ledger = ctx.autoLedger.create();
     // 这一轮正在路上的块 → 它在台账里的那个 key。**记账要等结果**：批次失败一两次
     // 时这一轮不报错（content/page/batch.js 的 MAX_BATCH_FAILURES 是 3），可那几块
     // 一个字都没翻。先记账的话它们就此永远被当成翻过了 —— 发现层下一轮送回来，
@@ -109,10 +114,6 @@
     // 一轮整体失败就不再自动重试。runTranslationPass 返回错误本身已经意味着它
     // 内部连续失败了三次 —— 到这一步再重试，是在一个明显坏掉的接口上继续烧钱。
     let broken = false;
-    // 这一页上「给过机会还是没翻成」的块数。状态点的黄灯就是它：一轮跑完了，可
-    // 页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
-    // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
-    let gaveUp = 0;
     // 预算那句话在这个文档上说过了。**按文档记，不按代次记**：SPA 里翻一篇帖子
     // 就翻篇一次代次，跟着代次重置等于每点一下都再说一遍同一句话，而 FR-9 要的
     // 是「提示一次」。
@@ -142,11 +143,49 @@
         error: lastError,
         sessionVersion: guard.version(),
         queued: queue.size,
-        gaveUp
+        // 这一页上「给过机会还是没翻成」的块数。状态点的黄灯就是它：一轮跑完了，
+        // 可页面上还剩几段是原文 —— 没有这个数，那一页看上去和「全翻完了」一模一样。
+        // 代次一翻篇就归零：重开一轮时那些块会被重新收走，旧的数字说的是上一页的事。
+        gaveUp: ledger.counts().failed
       };
     }
 
+    // 进度的阶段（ctx.progressFeed 的 phase）。手动那一轮正在跑时 ctx.progressFeed 自己
+    // 让手动的上台，这里只管如实报调度层的数。
+    function progressPhase({ known, failed }) {
+      if (status === STATUS.PAUSED) return 'paused';
+      if (status === STATUS.ERROR) return 'error';
+      if (status === STATUS.OFF) return reason === COST_REASONS.BUDGET ? 'budget' : 'idle';
+      if (known === 0) return queue.size > 0 ? 'arming' : 'idle';
+      if (status === STATUS.RUNNING || queue.size > 0 || inflight.size > 0) return 'running';
+      return failed > 0 ? 'partial' : 'done';
+    }
+
+    /**
+     * 把调度层的账报给统一进度源 ctx.progressFeed（content/page/progress-feed.js）。
+     * 分子是台账（onSettled 记的那一本），所以自动这一轮不经 runTranslationPass
+     * 的 onProgress 再报一遍 —— 两边都报，同一块就被计了两次。
+     *
+     * 账一变就报：状态变（publish）、台账记了一笔（commit）、队列进了块、takeBatch
+     * 挑完一轮、代次翻篇。它是纯数据，订阅者按帧合并，报得勤不费事。
+     */
+    function feedProgress() {
+      const counts = ledger.counts();
+      // 停翻（预算、没有可用的引擎，以及判定不翻）或出错：队里剩下的这一页不会再
+      // 自己送，在途的这一轮也已经收场。报成「还有 N 块在等」，进度环就一直画着一件
+      // 不会发生的事。
+      const halted = status === STATUS.OFF || status === STATUS.ERROR;
+      ctx.progressFeed.auto.publish({
+        phase: progressPhase(counts),
+        session: guard.version(),
+        ...counts,
+        pending: halted ? 0 : queue.size,
+        inflight: halted ? 0 : inflight.size
+      });
+    }
+
     function publish() {
+      feedProgress();
       if (listeners.size === 0) return;
       const snap = snapshot();
       for (const listener of listeners) {
@@ -285,6 +324,12 @@
       discovery = null;
     }
 
+    // 同一个节点在队里换了一份更新的：旧的那份文字若是接纳过、还没了结，它就此
+    // 走不到结果（retire）。不然进度永远差这一块到不了头。
+    function supersede(element, older, newer) {
+      if (older.source !== newer.source) ledger.retire(keyOf(guard.blockId(element), older.source));
+    }
+
     function onCandidates(blocks) {
       if (!isOn()) return;
 
@@ -294,10 +339,15 @@
         if (!element || !element.isConnected) continue;
         // 和 block 同一个任务里读，是一份对得上的快照。指纹走 guard.stamp ——
         // 开跑前那次比对用的是同一个入口，两边就不可能各归一化一套。
-        queue.set(element, { block, source: guard.stamp(element).textFingerprint });
+        const entry = { block, source: guard.stamp(element).textFingerprint };
+        const queued = queue.get(element);
+        if (queued) supersede(element, queued, entry);
+        queue.set(element, entry);
         added = true;
       }
-      if (added) scheduleStart();
+      if (!added) return;
+      feedProgress();
+      scheduleStart();
     }
 
     // ------------------------------------------------------------------ 译
@@ -324,10 +374,18 @@
     // 只认还在 inflight 里的：代次一翻篇 inflight 就清空，于是一条迟到的结果不会
     // 往新一代的台账里塞一笔（塞进去就是新一代的那一块永远不翻）。
     function commit(element) {
+      if (record(element)) feedProgress();
+    }
+
+    // commit 的记账那一半，不报进度。giveUp 那一段记完一串、ledger.giveUp 加完再
+    // 统一报一次：逐笔报的话 failed 不是先于 settled 涨（进度源当场拒收），
+    // 就是要靠语句先后去守这条不变式。
+    function record(element) {
       const pending = inflight.get(element);
-      if (!pending) return;
+      if (!pending) return false;
       inflight.delete(element);
-      ledger.add(pending.key);
+      ledger.settle(pending.key);
+      return true;
     }
 
     function acceptBlock(block) {
@@ -337,12 +395,34 @@
       return !alreadyTranslated(block.element, ticket.textFingerprint);
     }
 
+    // 一轮最多组几批：并发位 × 2，即两个并发波。
+    const roundCap = () => ctx.pagePass.concurrency(true) * 2;
+
+    /**
+     * 从队里挑这一轮要送的块。
+     *
+     * 不再抽干整队：按 ctx.focusOrder.createBatchFeeder 的次序（离视口几屏、滚动
+     * 方向、焦点、指针；挑块的次序只此一份，手动那一轮用的是同一个 feeder。发现层
+     * 给候选排序另有 content-auto-discover.js 的 distanceFromViewport，不经这里）组批，
+     * 组满 roundCap() 批即停，剩下的原样留在队里。每轮最多两个并发波 —— 抽干整队
+     * 的话，用户滚到新位置、新进带的块要排在整队后面；限量之后它们最多等一轮就和
+     * 旧候选同台比分。按批不按块：AI 一批 40 块，按块定会把 12 个并发位只用掉两个。
+     */
     function takeBatch() {
       const blocks = [];
       tickets.clear();
       inflight.clear();
-      for (const [element, entry] of queue) {
-        if (!element.isConnected) continue;
+      // 先把整队过一遍筛子：过不去的就此丢掉（下面每一条 continue 都是「不放回」），
+      // 过得去的才进评分。
+      const entries = [...queue];
+      queue.clear();
+      const eligible = new Map();
+      for (const [element, entry] of entries) {
+        // 丢掉的块若是上一轮接纳过、放回队里的，它就此走不到结果：retire。
+        if (!element.isConnected) {
+          ledger.retire(keyOf(guard.blockId(element), entry.source));
+          continue;
+        }
         const ticket = guard.stamp(element);
         // 排队那一刻的原样文字和此刻的对不上 = 虚拟列表把这个节点回收给下一条
         // 内容了。entry.block 抄的还是上一条，这一轮会拿它去译、用新内容的指纹
@@ -353,22 +433,51 @@
         //
         // 丢掉就行：改文字本身是一次 characterData 变动，发现层下一轮会把这个块
         // 带着新文字原样送回来。这里不记台账，那一轮才不会被当成翻过了。
-        if (entry.source !== ticket.textFingerprint) continue;
-        const key = `${ticket.blockId}:${ticket.textFingerprint}`;
+        if (entry.source !== ticket.textFingerprint) {
+          ledger.retire(keyOf(ticket.blockId, entry.source));
+          continue;
+        }
+        const key = keyOf(ticket.blockId, ticket.textFingerprint);
         if (ledger.has(key)) continue;
         // 已经挂着这门语言的译文了 —— 不必再问一次台账，身份登记本身就是答案。
-        if (alreadyTranslated(element, ticket.textFingerprint)) continue;
+        // 只 retire 不记台账：译文若被撤掉、文字没变，这一块还得能再送。
+        if (alreadyTranslated(element, ticket.textFingerprint)) {
+          ledger.retire(key);
+          continue;
+        }
         // 挂着失败标记的块归用户了（点标记重试，content/page/failed-blocks.js）：
         // 手动那一轮失败的块滚进带里时不再自己悄悄送一次 —— 那样既多花钱，又会让
         // 标记换成自动那一轮的、重试改走自动的引擎。自动放弃的那些另有台账挡着。
-        if (ctx.failedBlocks.isMarked(element)) continue;
-        // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
-        // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
-        inflight.set(element, { key, entry });
-        tickets.set(element, ticket);
-        blocks.push(entry.block);
+        if (ctx.failedBlocks.isMarked(element)) {
+          ledger.retire(key);
+          continue;
+        }
+        eligible.set(element, { key, entry, ticket });
       }
-      queue.clear();
+      if (eligible.size > 0) {
+        const feeder = ctx.focusOrder.createBatchFeeder(
+          [...eligible.values()].map((item) => item.entry.block),
+          ctx.pagePass.batchShape(true)
+        );
+        for (let taken = 0, cap = roundCap(); taken < cap; taken += 1) {
+          const batch = feeder.next();
+          if (!batch) break;
+          for (const block of batch) {
+            const element = block.element;
+            const { key, entry, ticket } = eligible.get(element);
+            eligible.delete(element);
+            // 连 entry 一起留着：这一轮没走到结果的话，要拿它原样放回队列。发现层
+            // 「进带即摘」，不放回就再也没有任何东西会把这一块送回来。
+            inflight.set(element, { key, entry });
+            ledger.accept(key);
+            tickets.set(element, ticket);
+            blocks.push(block);
+          }
+        }
+      }
+      // 这一轮没轮到的，按原来的排队顺序放回去，下一轮重新评分。
+      for (const [element, item] of eligible) queue.set(element, item.entry);
+      feedProgress();
       return blocks;
     }
 
@@ -525,21 +634,30 @@
             continue;
           }
           retried.add(pending.key);
-          if (element.isConnected) queue.set(element, pending.entry);
+          // 断开了的不放回：没有什么会再把它送来，它就此了结（retire）。同一段文字
+          // 重新接上的话发现层会送回来，再被接纳时从 retired 里摘掉。在途期间发现层
+          // 已经把这个节点带着新文字送回队里的，留新的那份：这一份的文字就此走不到
+          // 结果，和 onCandidates 里换下旧份一样 retire。
+          if (!element.isConnected) ledger.retire(pending.key);
+          else if (queue.has(element)) supersede(element, pending.entry, queue.get(element));
+          else queue.set(element, pending.entry);
         }
-        gaveUp += giveUp.size;
         // 第二次也失败了：这一页不再自己送它，放一个失败标记把决定交给用户
         // （content/page/failed-blocks.js）。第一次失败不放 —— 上面那一步已经把
         // 它放回队列，下一轮多半就翻成了。title 用这一段自己的原因；只有整轮级
         // 的失败（没有逐段原因）才回落到整轮的 error，再没有就是 mark 的通用文案。
         for (const [element, pending] of giveUp) {
-          commit(element);
+          record(element);
           if (element.isConnected) ctx.failedBlocks.mark(pending.entry.block, pending.reason || error, { auto: true });
         }
+        ledger.giveUp(giveUp.size);
         inflight.clear();
         // 挂起的是当时那一个。期间换了路由的话，discovery 已经指向新的一个 ——
         // 那个从没被挂起过，去 resume 它只会把它的计数弄负。
         if (suspended) suspended.resume();
+        // 记完账、加完数、在途清空之后再报一次（record 不报，见那里）：先报的话
+        // 这一刻的 inflight 还是这一轮的旧数。
+        feedProgress();
       }
 
       // 翻篇了。这一轮的成败是上一页的事，这一页刚刚判完、状态是新定的，
@@ -570,7 +688,14 @@
       }
 
       setStatus(STATUS.IDLE);
-      if (queue.size > 0) scheduleStart();
+      // 剩下的（roundCap() 没轮到的、失败放回的、这一轮跑的时候新进带的）立刻起下
+      // 一轮，在那一刻重新评分。跑的时候 onCandidates 排下的那个防抖
+      // 定时器先撤掉：它到点时这一轮早结束了，等它就是白等 250ms。
+      if (queue.size > 0 && isOn()) {
+        clearTimeout(startTimer);
+        startTimer = null;
+        scheduleStart(0);
+      }
     }
 
     /**
@@ -594,12 +719,12 @@
 
     function bumpSession(why) {
       guard.bump(why);
-      gaveUp = 0;
       queue.clear();
       tickets.clear();
       inflight.clear();
       retried.clear();
-      ledger.clear();
+      ledger.reset();
+      feedProgress();
     }
 
     /**

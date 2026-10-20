@@ -23,6 +23,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { SCHEDULER_PRELUDE, docOrderFeeder } from './helpers/scheduler-stubs.mjs';
 import { repoSource } from './helpers/sources.mjs';
 
 await import('../../shared/lang-tags.js');
@@ -234,6 +235,7 @@ async function loadScheduler() {
   let onCandidates = null;
   const rule = { id: 'a', v: 1, match: ['example.com'], include: ['.article'], updatedAt: 1 };
   const ctx = {
+    ...docOrderFeeder(),
     frameRole: 'top',
     state: { isTranslatingPage: false, translationsVisible: true, pageScopeOverride: null },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0, pageTranslateScope: 'main' },
@@ -292,7 +294,7 @@ async function loadScheduler() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   for (const rel of ['content/page/custom-rule.js', 'shared/block-identity.js', 'shared/session-guard.js',
-    'content/content-auto-translate.js', 'content/page/scope.js']) {
+    ...SCHEDULER_PRELUDE, 'content/content-auto-translate.js', 'content/page/scope.js']) {
     vm.runInContext(repoSource(rel), sandbox, { filename: rel });
   }
   ctx.customRules.init();

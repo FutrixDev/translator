@@ -1,7 +1,8 @@
 // Blab Translation — 整页翻译：分批与翻译轮次
 //
-// 一组块进来，译文落到页面上：按首屏排序、按 token/字符/条数分批、并发跑、
-// 失败到什么程度算整体故障。runTranslationPass 是这一轮的全部，
+// 一组块进来，译文落到页面上：按引擎定批的形状与并发，由拉取器
+// （content/page/focus-order.js 的 ctx.focusOrder）在每次拉取那一刻按视口与焦点
+// 组批、并发跑，失败到什么程度算整体故障。runTranslationPass 是这一轮的全部，
 // 它不碰进度条也不管“页面已翻译”那类状态——那些是调用方的事
 // （content/content-page-translation.js）。
 (function() {
@@ -70,45 +71,6 @@
       ...message,
       pageContext: { before: textAt(indexOf(first) - 1), after: textAt(indexOf(last) + 1) },
     });
-  }
-
-  function estimateTokens(text) {
-    if (!text) return 0;
-    const cjkMatches = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
-    const cjkCount = cjkMatches ? cjkMatches.length : 0;
-    const nonCjkCount = Math.max(0, text.length - cjkCount);
-    return Math.ceil(cjkCount * 1.1 + nonCjkCount / 4);
-  }
-
-  // 按视口优先拆分：首屏和附近内容优先处理
-  function splitBlocksByViewport(blocks) {
-    const priorityBlocks = [];
-    const deferredBlocks = [];
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
-    const margin = viewportHeight * 1.2;
-
-    blocks.forEach(block => {
-      const el = block.element;
-      if (!el || !el.getBoundingClientRect) {
-        deferredBlocks.push(block);
-        return;
-      }
-
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) {
-        deferredBlocks.push(block);
-        return;
-      }
-
-      const inPriorityRange = rect.bottom >= -margin && rect.top <= viewportHeight + margin;
-      if (inPriorityRange) {
-        priorityBlocks.push(block);
-      } else {
-        deferredBlocks.push(block);
-      }
-    });
-
-    return { priorityBlocks, deferredBlocks };
   }
 
   // 若 pos 落在占位符内部，回退到该占位符起点，避免把占位符切成两半（语法与
@@ -188,84 +150,21 @@
     return model ? model.forRequest({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', auto }).engine : 'ai';
   }
 
-  // 智能分批：根据 token/字符数/段落数限制
-  function createSmartBatches(blocks, auto) {
-    // 内置引擎按段单独调用，攒批只有坏处：攒批是为了摊薄一次 HTTPS 往返 + 一次
-    // LLM 生成的固定开销，而内置引擎是端上调用、没有这份开销。拆成一块一批之后，
-    // 每块译完就能立刻插进页面，用户不用等一整批 40 段都回来才看到内容。
-    if (usingBuiltinEngine(auto)) {
-      return blocks.map((block) => [block]);
-    }
-
-    const batches = [];
-    let currentBatch = [];
-    let currentChars = 0;
-    let currentTokens = 0;
-    const itemTokenOverhead = 6;
-
-    const flush = () => {
-      if (currentBatch.length > 0) {
-        batches.push(currentBatch);
-        currentBatch = [];
-        currentChars = 0;
-        currentTokens = 0;
-      }
-    };
-
-    for (const block of blocks) {
-      // 超大块单独成批，交由 processBatch 内的分块逻辑（splitTextIntoChunks）处理
-      if (block.oversized) {
-        flush();
-        batches.push([block]);
-        continue;
-      }
-
-      const textLen = block.text.length;
-      const tokenEstimate = estimateTokens(block.text) + itemTokenOverhead;
-
-      // 如果当前批次加入这个 block 后会超限，先保存当前批次
-      if (currentBatch.length > 0 &&
-          (currentTokens + tokenEstimate > MAX_BATCH_TOKENS ||
-           currentChars + textLen > MAX_BATCH_CHARS ||
-           currentBatch.length >= MAX_BATCH_ITEMS)) {
-        flush();
-      }
-
-      currentBatch.push(block);
-      currentChars += textLen;
-      currentTokens += tokenEstimate;
-    }
-
-    // 保存最后一个批次
-    flush();
-
-    return batches;
+  // 这一轮的并发位数（CONCURRENCY）。手动那一轮的池子、自动调度层每轮的批数上限
+  // （content/content-auto-translate.js 的 roundCap，经 ctx.pagePass.concurrency）
+  // 都问这一处。
+  function passConcurrency(auto) {
+    return CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
   }
 
-  // 并发控制函数
-  async function runWithConcurrency(items, processor, concurrency) {
-    const results = [];
-    let index = 0;
-    
-    async function runNext() {
-      const currentIndex = index++;
-      if (currentIndex >= items.length) return;
-      
-      await processor(items[currentIndex]);
-      results[currentIndex] = true;
-      
-      // 继续处理下一个
-      await runNext();
-    }
-    
-    // 启动 concurrency 个并发任务
-    const workers = [];
-    for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-      workers.push(runNext());
-    }
-    
-    await Promise.all(workers);
-    return results;
+  // 这一轮一批的形状，交给拉取器（ctx.focusOrder.createBatchFeeder）：内置引擎一块
+  // 一批（它是端上逐段调用，攒批只会让第一段等整批），其余按 MAX_BATCH_*。
+  function passBatchShape(auto) {
+    return {
+      perBatch: usingBuiltinEngine(auto) ? 1 : MAX_BATCH_ITEMS,
+      maxChars: MAX_BATCH_CHARS,
+      maxTokens: MAX_BATCH_TOKENS
+    };
   }
 
   // 收集可翻译的块级元素
@@ -523,9 +422,12 @@
     if (!settings.skipTargetLanguageText) return blocks;
 
     const keep = new Array(blocks.length).fill(true);
-    const tasks = blocks.map((block, index) => ({ block, index }));
+    // 同一个拉取式并发池（ctx.focusOrder.drainFeeder），按文档顺序一块一块拉；
+    // 拉到的是 { block, index }，池子见到假值才收工，所以不直接拉块下标。
+    let cursor = 0;
+    const inOrder = { next: () => (cursor < blocks.length ? { block: blocks[cursor], index: cursor++ } : null) };
 
-    await runWithConcurrency(tasks, async ({ block, index }) => {
+    await ctx.focusOrder.drainFeeder(inOrder, async ({ block, index }) => {
       try {
         if (await isTargetLanguageText(block.text)) {
           keep[index] = false;
@@ -533,7 +435,7 @@
       } catch (error) {
         console.warn('Blab Translation: Language pre-check failed', error);
       }
-    }, 8);
+    }, { concurrency: 8 });
 
     return blocks.filter((_, index) => keep[index]);
   }
@@ -591,22 +493,37 @@
       if (stoppedOutside()) return;
       reportFailure(block, reason);
       if (markFailures) ctx.failedBlocks.mark(block, reason, { auto });
+      progressed(block, 'failed');
     };
+    // 进度按块计，每块恰好一次：有结果（settledBlock）或失败（markFailed）
+    // 的那一刻记下，onProgress(done, total, 'settled' | 'failed') 等这一批插完再报
+    // （flushProgress）：进度条是 DOM，逐块写会让下一块插入前的量取每块强制一次布局。
+    // 整轮级失败不落到段落上，不计 —— 那一轮由整页报错收场。
     const total = blocks.length;
-    let done = 0;
+    const counted = new Set();
+    const unreported = [];
+    const progressed = (block, outcome) => {
+      if (counted.has(block)) return;
+      counted.add(block);
+      unreported.push([counted.size, outcome]);
+    };
+    // 交付之后取样（sampleView）：插入与进度条已经弄脏布局，这一次强制布局本来就
+    // 要由下一块插入前的量取（fitBaseline）付，挪到这里不多付。放在 onProgress
+    // 之后，否则进度条再写一次 DOM，下一块还得再布局一次。
+    const flushProgress = () => {
+      for (const [done, outcome] of unreported.splice(0)) onProgress(done, total, outcome);
+      ctx.focusOrder.sampleView();
+    };
+    const settledBlock = (block) => {
+      if (onSettled) onSettled(block);
+      progressed(block, 'settled');
+    };
 
-    // 优先处理首屏相关内容
-    const { priorityBlocks, deferredBlocks } = splitBlocksByViewport(blocks);
+    // 拉取式分批：哪一批先发，拉取那一刻按视口与焦点评分（createBatchFeeder）。
+    const feeder = ctx.focusOrder.createBatchFeeder(blocks, passBatchShape(auto));
+    const concurrency = passConcurrency(auto);
 
-    // 按 token/字符数/段落数智能分批
-    const priorityBatches = createSmartBatches(priorityBlocks, auto);
-    const deferredBatches = createSmartBatches(deferredBlocks, auto);
-    // 软优先：首屏批次排在前面，但不阻塞后续批次启动
-    const batches = priorityBatches.concat(deferredBatches);
-    const concurrency = CONCURRENCY[usingBuiltinEngine(auto) ? 'builtin' : modelEngineOf(auto)];
-
-    console.log(`Blab Translation: ${blocks.length} blocks, ${batches.length} batches, concurrency: ${concurrency}`);
-
+    console.log(`Blab Translation: ${blocks.length} blocks, concurrency: ${concurrency}`);
 
     // batchError 一旦置上，剩余批次全部跳过。原来是“一批失败就整页放弃”，
     // 在一批 40 段的年代这没问题：那种粒度下出错基本等于接口不可用。
@@ -744,10 +661,10 @@
         markFailed(block);
         return;
       }
-      await insertTranslation(block, combined, { accept, onSettled, target });
+      await insertTranslation(block, combined, { accept, onSettled: settledBlock, target });
     };
 
-    // 使用 Promise 池进行并发控制
+    // 一批：ctx.focusOrder.drainFeeder 空出一个并发位就拉一批交到这里。
     const processBatch = async (batch) => {
       // 出错了，或者外面已经不要这一轮的结果了
       if (aborted()) return;
@@ -759,8 +676,6 @@
       // 超大块：单独成批，走分块翻译流程
       if (batch.length === 1 && batch[0].oversized) {
         await processOversizedBlock(batch[0]);
-        done += batch.length;
-        onProgress(done, total);
         return;
       }
 
@@ -791,7 +706,7 @@
             onFailure: noteBatchFailure,
             isAborted: aborted,
             accept,
-            onSettled,
+            onSettled: settledBlock,
             target,
             withNeighbours,
             onBlockFailed: markFailed
@@ -801,15 +716,13 @@
         noteThrown(error, 'Batch translation');
         if (!failsWholePass(error)) batch.forEach((block) => markFailed(block, error.message));
       }
-
-      done += batch.length;
-      onProgress(done, total);
     };
 
-    // 并发执行所有批次，首屏批次在队列前优先开始
-    if (batches.length > 0) {
-      await runWithConcurrency(batches, processBatch, concurrency);
-    }
+    // 空出一个并发位就拉下一批；出错或外面喊停之后不再拉。
+    await ctx.focusOrder.drainFeeder(feeder, (batch) => processBatch(batch).finally(flushProgress), {
+      concurrency,
+      stopped: aborted
+    });
 
     return batchError ? { message: batchError, action: batchAction } : null;
   }
@@ -822,5 +735,11 @@
   // 内置翻译引擎撞到输入配额上限时要把长文本切开重试，复用这里的切块器，
   // 它保证不会把 {{n}} 数学占位符从中间切断。
   ctx.splitTextIntoChunks = splitTextIntoChunks;
-  ctx.PAGE_LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
+  // 一轮整页翻译的形状只此一架：并发位、批的形状、上限常数。自动调度层每轮挑块
+  // （content/content-auto-translate.js）按同一张引擎表定批数上限与批的形状。
+  const LIMITS = Object.freeze({ MAX_BLOCK_CHARS, MAX_BATCH_CHARS, MAX_BATCH_ITEMS, MAX_BATCH_TOKENS, CONCURRENCY });
+  ctx.pagePass = Object.freeze({ concurrency: passConcurrency, batchShape: passBatchShape, LIMITS });
+  // content/page/collect.js 还按旧名读 MAX_BLOCK_CHARS，所以留着这个别名。
+  // 同一个冻结对象，不是第二份数。
+  ctx.PAGE_LIMITS = LIMITS;
 })();

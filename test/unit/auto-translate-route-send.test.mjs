@@ -19,6 +19,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { SCHEDULER_PRELUDE, docOrderFeeder } from './helpers/scheduler-stubs.mjs';
 import { repoSource } from './helpers/sources.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -40,6 +41,7 @@ function load() {
     sandbox.location.pathname = url.pathname;
   };
   const ctx = {
+    ...docOrderFeeder(),
     frameRole: 'top',
     state: { isTranslatingPage: false, translationsVisible: true },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0 },
@@ -89,7 +91,7 @@ function load() {
   setHref('https://x.com/home');
   vm.createContext(sandbox);
   for (const rel of ['shared/spa-navigation.js', 'shared/block-identity.js', 'shared/session-guard.js',
-    'content/content-auto-translate.js']) {
+    ...SCHEDULER_PRELUDE, 'content/content-auto-translate.js']) {
     vm.runInContext(repoSource(rel), sandbox, { filename: rel });
   }
   sandbox.SpaNavigation.onRouteChange((change) => routes.push(change));
