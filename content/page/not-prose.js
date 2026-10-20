@@ -23,6 +23,14 @@
 // 链接（<a>、role=link）不算控件：帖子标题、正文里的链接都是要读的字。
 // collect.js 收块的两条路（内联标签、块级标签）都问这一处；命中就整块不收，不再往
 // 下落到另一条路。
+//
+// 另外两样也不是给人读的字，同样住在这里：
+//
+// - **代码和网址**（looksLikeCodeOrUrl）：按字面认，一段字像代码、或者主要是网址。
+// - **代码块容器**（isInsideCodeContainer）：按 class 认，语法高亮、LaTeXML 清单。
+//
+// 整页收集（collect.js）和悬停取散文 <pre> 的一段（prose-pre.js）问的是同一处：悬停
+// 裹好的锚点下一轮整页收集会原样收下，两边的判定不能分叉。
 (function() {
   'use strict';
 
@@ -95,5 +103,115 @@
     return !!control && isShortLabel(visibleLabel(control));
   }
 
+  // 用于检测代码/脚本内容的模式
+  const codePatterns = [
+    /^[\s\S]*<script[\s>]/i,       // 包含 <script 标签
+    /^[\s\S]*<\/script>/i,         // 包含 </script> 标签
+    /^[\s\S]*<noscript[\s>]/i,     // 包含 <noscript 标签
+    /function\s*\([^)]*\)\s*\{/,   // JavaScript 函数定义
+    /var\s+\w+\s*=/,               // var 声明
+    /const\s+\w+\s*=/,             // const 声明
+    /let\s+\w+\s*=/,               // let 声明
+    /document\.(getElementById|querySelector|createElement)/, // DOM 操作
+    /^\s*(import|export)\s+/m,     // ES6 模块
+    /^\s*def\s+\w+\s*\(/m,         // Python 函数
+    /^\s*class\s+\w+[\s:(]/m,      // 类定义
+    /^\s*@\w+\s*$/m,               // 装饰器
+    /^\s*#\s*(include|define|ifdef)/m, // C/C++ 预处理
+    /\{\s*"[^"]+"\s*:\s*/,         // JSON 对象
+    /^\s*```/m,                     // Markdown 代码块标记
+    /self\.\w+\s*=/,               // Python self
+    /super\(\)/,                   // super 调用
+    /nn\.Module/,                  // PyTorch
+    /torch\.\w+/,                  // PyTorch
+    /np\.\w+/,                     // NumPy
+  ];
+
+  // 检查文本是否看起来像代码
+  function looksLikeCode(text) {
+    // 如果包含大量特殊字符，可能是代码
+    const specialCharRatio = (text.match(/[{}()\[\];=<>]/g) || []).length / text.length;
+    if (specialCharRatio > 0.1) return true;
+
+    // 检查代码模式
+    for (const pattern of codePatterns) {
+      if (pattern.test(text)) return true;
+    }
+
+    return false;
+  }
+
+  // 检查文本是否主要是URL（不需要翻译）
+  function isMainlyUrl(text) {
+    // URL正则模式
+    const urlPattern = /https?:\/\/[^\s]+/gi;
+    const urls = text.match(urlPattern) || [];
+    if (urls.length === 0) return false;
+
+    // 计算URL占文本的比例
+    const urlLength = urls.reduce((sum, url) => sum + url.length, 0);
+    const textWithoutUrls = text.replace(urlPattern, '').trim();
+
+    // 如果移除URL后剩余文本很短（少于10个字符或只有标签如 "DOI:", "URL:" 等）
+    // 则认为主要是URL
+    if (textWithoutUrls.length < 10) return true;
+
+    // 如果URL占总文本长度的70%以上，认为主要是URL
+    if (urlLength / text.length > 0.7) return true;
+
+    return false;
+  }
+
+  function looksLikeCodeOrUrl(text) {
+    return looksLikeCode(text) || isMainlyUrl(text);
+  }
+
+  // 代码块容器的 class 检测。全部按【完整 class token】匹配，绝不用 [class*=] 子串匹配：
+  //
+  // - highlight / highlighter 及其 - 连接的变体（highlight、highlight-source-js、
+  //   highlighter-rouge、js-highlight）。营销站常用 highlights/highlighted 命名普通
+  //   内容区块——如 retellai.com 用 <section class="c-home-highlights-accordion-2"> 包住
+  //   整篇博客正文，子串命中会把整篇正文当成代码块跳过，整页翻译对正文完全不生效。
+  //
+  // - Prism 的 language-<lang>。这条尤其危险：原来写成 [class*="language-"]，而
+  //   Wikipedia 的 Vector 2022 皮肤在 <html> 上挂了 vector-feature-language-in-header-enabled，
+  //   子串命中的是 <html>，于是 processElement(document.body) 第一步就 return，
+  //   整页一个块都收不到 → 误报“页面已翻译”，全文翻译对所有维基页面彻底失效。
+  //   只按 token 前缀匹配仍然不够：language-switcher / language-list / language-item
+  //   是多语言站导航的常见命名。所以还要求这个祖先真的装着代码（自身是 <pre>/<code>
+  //   或子孙里有），语言切换器不可能满足。
+  //
+  // - LaTeXML 的 ltx_listing / ltx_lstlisting / ltx_listingline / ltx_verbatim
+  //   （arXiv HTML 版与 ar5iv 论文的代码清单）。这条必须单列，上面两条都够不着它：
+  //   LaTeXML 把语种写成 ltx_lst_language_Python，是【下划线】，language- 匹配不到；
+  //   而清单里根本没有 <pre>/<code>——结构是
+  //   <div class="ltx_listing"><div class="ltx_listingline"><span class="ltx_text …">，
+  //   于是每个 <span> 都作为内联可译元素被单独送去翻译（实测泄漏 qa / dspy / Predict /
+  //   "question->answer" / # Out: Prediction(...)）。looksLikeCode() 也接不住：
+  //   拆到单个 span 之后碎片里一个特殊字符都没有。
+  const highlightClassTokenRe = /(^|-)highlight(er)?(-|$)/;
+  const CODE_CONTAINER_CLASSES = new Set([
+    'codehilite', 'sourceCode', 'code-block',
+    'ltx_listing', 'ltx_lstlisting', 'ltx_listingline', 'ltx_verbatim',
+  ]);
+  function holdsCode(el) {
+    const tagName = el.tagName;
+    return tagName === 'PRE' || tagName === 'CODE' || !!el.querySelector('pre, code');
+  }
+  function isInsideCodeContainer(element) {
+    for (let el = element; el; el = ctx.composedParent(el)) {
+      const classList = el.classList;
+      if (!classList) continue;
+      for (const cls of classList) {
+        if (highlightClassTokenRe.test(cls)) return true;
+        if (CODE_CONTAINER_CLASSES.has(cls)) return true;
+        if (cls.startsWith('language-') && holdsCode(el)) return true;
+      }
+    }
+    return false;
+  }
+
   ctx.notProse = notProse;
+  ctx.looksLikeCodeOrUrl = looksLikeCodeOrUrl;
+  ctx.isInsideCodeContainer = isInsideCodeContainer;
 })();

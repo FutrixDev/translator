@@ -130,7 +130,7 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/page/scope.js',
   'content/page/reader-hidden.js',
   'content/page/not-prose.js',
-  // 散文 <pre>（prose-pre.js）：收集器碰到 skipTags 时问它。
+  // 散文 <pre>（prose-pre.js）：整页收集碰到 skipTags 时问它，悬停也问它。
   'content/page/prose-pre.js',
   'content/page/collect.js',
   'content/page/insert.js',
