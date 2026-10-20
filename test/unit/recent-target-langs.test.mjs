@@ -1,7 +1,6 @@
-// Recently picked target languages float to the top of the in-page language
-// menu (D-542, design ext-opt-input-translation §B.2). The list is read,
-// remembered and rendered by content/content-language.js; the one place that
-// writes it is the menu's click handler in content-popup.js.
+// The recently used target languages and the menu's recent group; what they
+// are and when they are written is described by their owner,
+// ctx.rememberRecentTargetLang in content/content-language.js.
 //
 // This file loads shared/lang-tags.js, shared/target-lang.js,
 // content/content-local-pref.js (which owns the read, the settled flag and
@@ -81,22 +80,6 @@ function load({ stored = {}, builtin = false } = {}) {
   };
 }
 
-// The menu as content-language.js drew it before D-542, verbatim. With nothing
-// remembered the new code has to produce exactly this, byte for byte.
-function menuBeforeRecents(ctx, TargetLang, selectedLang) {
-  const normalized = ctx.normalizeTargetLang(selectedLang);
-  const bt = ctx.builtinTranslator;
-  const tagAiOnly = bt.isSelected(false);
-  const aiOnlyTag = ctx.escapeHtml(ctx.t('langAiOnly'));
-  return TargetLang.options(ctx.uiLanguage()).map((option) => {
-    const isSelected = option.value === normalized ? ' is-selected' : '';
-    const tag = tagAiOnly && !bt.supportsTarget(option.value)
-      ? ` data-tag="${aiOnlyTag}"`
-      : '';
-    return `<button class="ai-translator-lang-item${isSelected}" type="button" data-lang="${option.value}"${tag}>${ctx.escapeHtml(option.label)}</button>`;
-  }).join('');
-}
-
 // Arrays made inside the vm have the vm's Array.prototype, which strict deep
 // equality tells apart from this realm's.
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -120,40 +103,66 @@ function pieces(html) {
   }));
 }
 
-test('with nothing remembered the menu is byte-identical to the flat list', () => {
+test('with nothing remembered the recent group shows the current language and writes nothing', () => {
   for (const builtin of [false, true]) {
     const world = load({ builtin });
     world.answerRead();
-    for (const selected of ['fr', 'zh-CN', 'fa', 'pt-BR', '']) {
-      const menu = draw(world.ctx, selected);
-      assert.equal(menu.innerHTML,
-        menuBeforeRecents(world.ctx, world.TargetLang, selected),
-        `builtin=${builtin} selected=${selected || '(empty)'}`);
-      assert.equal(menu.dataset.grouped, undefined, 'a flat menu is not marked grouped');
+    const values = plain(world.TargetLang.options('en').map((o) => o.value));
+    for (const selected of ['fr', 'zh-CN', 'fa', 'pt-BR']) {
+      const label = `builtin=${builtin} selected=${selected}`;
+      const all = pieces(draw(world.ctx, selected).innerHTML);
+      assert.equal(all.length, 1 + 1 + 1 + 76, label);
+      assert.deepEqual(all.filter((p) => p.kind === 'group').map((p) => p.text), ['Recent', 'All languages'], label);
+      assert.deepEqual([all[0].kind, all[2].kind], ['group', 'group'], label);
+      // pt-BR is normalized to the list's pt, the way the trigger and the full list see it.
+      assert.deepEqual([all[1].lang, all[1].recent, all[1].selected],
+        [world.ctx.normalizeTargetLang(selected), true, true], label);
+      assert.deepEqual(all.slice(3).map((p) => p.lang), values, `${label}: the full list is untouched`);
+      assert.equal(all.slice(3).some((p) => p.recent), false, label);
     }
+    assert.deepEqual(plain(world.ctx.recentTargetLangs()), [], 'drawing the preset does not remember it');
+    assert.equal(world.writes.length, 0);
   }
 });
 
-test('remember moves the pick to the front, dedupes, keeps five and writes storage', () => {
-  const { ctx, writes } = load();
+test('remember moves the language to the front, dedupes, keeps five and writes storage', () => {
+  const { ctx, writes, answerRead } = load();
+  answerRead();
   for (const lang of ['de', 'ja', 'ko', 'ru', 'es', 'fr']) ctx.rememberRecentTargetLang(lang);
   assert.deepEqual(plain(ctx.recentTargetLangs()), ['fr', 'es', 'ru', 'ko', 'ja'], 'de fell off the end');
   ctx.rememberRecentTargetLang('ko');
   assert.deepEqual(plain(ctx.recentTargetLangs()), ['ko', 'fr', 'es', 'ru', 'ja'], 'a repeat moves, not duplicates');
   assert.equal(writes.length, 7);
   assert.deepEqual(writes.at(-1), { recentTargetLangs: ['ko', 'fr', 'es', 'ru', 'ja'] });
-  ctx.rememberRecentTargetLang('ko');
-  assert.equal(writes.length, 7, 'picking the language already in front leaves the list as it was: no write');
   ctx.recentTargetLangs().push('xx');
   assert.equal(ctx.recentTargetLangs().length, 5, 'callers get a copy');
+});
+
+test('remembering the language already in front writes nothing', () => {
+  const { ctx, writes, answerRead } = load({ stored: { recentTargetLangs: ['ko', 'fr'] } });
+  answerRead();
+  ctx.rememberRecentTargetLang('ko');
+  ctx.rememberRecentTargetLang('ko');
+  assert.equal(writes.length, 0, 'the same list is not written again');
+  ctx.rememberRecentTargetLang('fr');
+  ctx.rememberRecentTargetLang('fr');
+  assert.deepEqual(writes, [{ recentTargetLangs: ['fr', 'ko'] }]);
+  ctx.rememberRecentTargetLang('');
+  assert.equal(writes.length, 1, 'no language, nothing to remember');
+});
+
+test('a code is remembered in the form the language list uses', () => {
+  const { ctx, writes, answerRead } = load({ stored: { recentTargetLangs: ['fr'] } });
+  answerRead();
+  ctx.rememberRecentTargetLang('pt-BR');
+  ctx.rememberRecentTargetLang('FR');
+  assert.deepEqual(writes, [{ recentTargetLangs: ['pt', 'fr'] }, { recentTargetLangs: ['fr', 'pt'] }]);
 });
 
 test('with recents: header, the recent items, header, then all 76', () => {
   const { ctx, TargetLang, answerRead } = load({ stored: { recentTargetLangs: ['de', 'fr'] } });
   answerRead();
-  const menu = draw(ctx, 'de');
-  assert.equal(menu.dataset.grouped, '1', 'the root says it is grouped');
-  const all = pieces(menu.innerHTML);
+  const all = pieces(draw(ctx, 'de').innerHTML);
   assert.equal(all.length, 1 + 2 + 1 + 76);
   assert.deepEqual(all.filter((p) => p.kind === 'group').map((p) => [p.text, p.role]),
     [['Recent', 'presentation'], ['All languages', 'presentation']]);
@@ -168,15 +177,17 @@ test('with recents: header, the recent items, header, then all 76', () => {
     'both copies of the selected language are selected, recent first');
 });
 
-test('the menu root is reused, so a flat redraw drops the grouped mark', () => {
-  const { ctx, answerRead, change } = load({ stored: { recentTargetLangs: ['de'] } });
+test('the menu root is reused, and a list cleared elsewhere redraws as the preset', () => {
+  const { ctx, answerRead, change } = load({ stored: { recentTargetLangs: ['de', 'fr'] } });
   answerRead();
-  const menu = draw(ctx, 'de');
-  assert.equal(menu.dataset.grouped, '1');
+  const menu = draw(ctx, 'fr');
+  assert.deepEqual(pieces(menu.innerHTML).filter((p) => p.recent).map((p) => p.lang), ['de', 'fr']);
   change({ recentTargetLangs: { newValue: [] } }, 'local');
-  draw(ctx, 'de', menu);
-  assert.equal(menu.dataset.grouped, undefined, 'another tab cleared the list');
-  assert.equal(pieces(menu.innerHTML).some((p) => p.kind === 'group'), false);
+  draw(ctx, 'fr', menu);
+  const all = pieces(menu.innerHTML);
+  assert.deepEqual(all.filter((p) => p.recent).map((p) => p.lang), ['fr'], 'another tab cleared the list');
+  assert.equal(all.filter((p) => p.kind === 'group').length, 2);
+  assert.deepEqual(Object.keys(menu.dataset), [], 'the root carries no mark of its own');
 });
 
 test('recent items get the AI-only tag the same way the full list does', () => {
@@ -193,13 +204,20 @@ test('codes the list does not offer are not drawn', () => {
   assert.deepEqual(recent.map((p) => p.lang), ['fr']);
 });
 
+test('a list of nothing but unknown codes shows the preset', () => {
+  const { ctx, answerRead } = load({ stored: { recentTargetLangs: ['xx-nope', 42] } });
+  answerRead();
+  const recent = pieces(draw(ctx, 'en').innerHTML).filter((p) => p.recent);
+  assert.deepEqual(recent.map((p) => [p.lang, p.selected]), [['en', true]]);
+});
+
 test('the stored list arrives from storage and follows other tabs, not the sync default', () => {
   const world = load({ stored: { recentTargetLangs: ['ja'] } });
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), [], 'nothing until the read lands');
   world.answerRead();
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ja']);
   world.change({ recentTargetLangs: { newValue: ['ko', 'ja'] } }, 'local');
-  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'another tab picked ko');
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'another tab translated into ko');
   world.change({ targetLang: { newValue: 'en' } }, 'sync');
   assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['ko', 'ja'], 'a new default does not clear the habit');
   // The list lives in local storage only (one device's habit): a key of the same
@@ -217,9 +235,48 @@ test('a failed read is warned about once, by key, and leaves the list empty', ()
   assert.equal(world.warns[0][1], 'storage backend unavailable');
 });
 
-test('a read that lands after a pick does not put the old list back', () => {
+test('a dispatch before the read lands waits for it and builds on the stored list', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja', 'ko'] } });
+  world.ctx.rememberRecentTargetLang('fr');
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, [], 'nothing is written over a list not read yet');
+  world.answerRead();
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['de', 'fr', 'ja', 'ko']);
+  assert.deepEqual(world.writes, [
+    { recentTargetLangs: ['fr', 'ja', 'ko'] },
+    { recentTargetLangs: ['de', 'fr', 'ja', 'ko'] },
+  ]);
+});
+
+test('once the read has landed a dispatch is written at once', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja'] } });
+  world.answerRead();
+  world.ctx.rememberRecentTargetLang('fr');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['fr', 'ja'] }]);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr', 'ja']);
+});
+
+test('a failed read writes nothing over the stored list, before or after it fails', () => {
+  const world = load({ stored: { recentTargetLangs: ['ja', 'ko'] } });
+  world.ctx.rememberRecentTargetLang('fr');
+  world.answerRead({ message: 'storage backend unavailable' });
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, []);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), []);
+  assert.equal(world.warns.length, 1, 'the failure is logged once, where the updates are dropped');
+  assert.match(String(world.warns[0][0]), /reading recentTargetLangs failed/);
+  assert.equal(world.warns[0][1], 'storage backend unavailable');
+  // Another tab's write tells this frame the stored list; from then on it is built on.
+  world.change({ recentTargetLangs: { newValue: ['es'] } }, 'local');
+  world.ctx.rememberRecentTargetLang('de');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['de', 'es'] }]);
+});
+
+test('another tab writing first settles the list, and the waiting dispatch builds on that', () => {
   const world = load({ stored: { recentTargetLangs: ['ja'] } });
   world.ctx.rememberRecentTargetLang('fr');
+  world.change({ recentTargetLangs: { newValue: ['ko', 'ja'] } }, 'local');
+  assert.deepEqual(world.writes, [{ recentTargetLangs: ['fr', 'ko', 'ja'] }]);
   world.answerRead();
-  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr']);
+  assert.deepEqual(plain(world.ctx.recentTargetLangs()), ['fr', 'ko', 'ja'], 'the late read is ignored');
 });

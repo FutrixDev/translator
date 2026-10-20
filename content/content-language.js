@@ -32,13 +32,16 @@
     return ctx.languageName(ctx.normalizeTargetLang(lang));
   };
 
-  // 最近点过的目标语（D-542 §B.2）：对话框与划词卡片共用一份，最近在前、最多 5 个。
-  // 只记菜单里的显式点击（写入点唯一：content-popup.js setupLanguageDropdown 的点击
-  // 处理器），默认语不记——否则默认语永远占首位。放 local 不放 sync：这是一台设备的
-  // 习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
+  // 最近用过的目标语，在请求发出时记下：对话框与划词卡片共用一份，最近在前、
+  // 最多 5 个，只存规范码。每次派发翻译就记它的目标语，默认语也记；只点菜单不记——
+  // 卡片点了必重译，对话框有字才译，没译的点选不算用过。两条派发路（输入框对话框的
+  // translateInputText、划词卡片的 translateText，OCR 的翻译也走后者）共用的下一步是
+  // ctx.dictRoute，但写入不放进它：dictRoute 只是无副作用的路由（问离线词典还是发请求），
+  // 放进去就成了藏起来的写；所以两处各显式调一次这里。放 local 不放 sync：这是一台
+  // 设备的习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
   // inputDialogTargetLang 不同）。
-  // 读、settled、跟随别的标签（或这一页的别的 frame）都归 ctx.localPref
-  // （content/content-local-pref.js）；去重和上限归这里。
+  // 读、settled、初读落地前的排队、跟随别的标签（或这一页的别的 frame）都归
+  // ctx.localPref（content/content-local-pref.js）；规范化、去重和上限归这里。
   const MAX_RECENT_TARGET_LANGS = 5;
 
   function recentFrom(value) {
@@ -51,9 +54,11 @@
     return recentPref.get().slice();
   };
 
+  // 新表要在存储里那张表上建：用 update 而不是 get + set，初读没落地时排队等它。
   ctx.rememberRecentTargetLang = function(lang) {
     if (!lang) return;
-    recentPref.set([lang, ...recentPref.get().filter((code) => code !== lang)]
+    const code = ctx.normalizeTargetLang(lang);
+    recentPref.update((list) => [code, ...list.filter((other) => other !== code)]
       .slice(0, MAX_RECENT_TARGET_LANGS));
   };
 
@@ -62,13 +67,10 @@
   // 标记只进 data-tag，由 popup.css 的 ::after 画出来：content-popup.js 选中时把
   // item.textContent 当标签，写进文字就会跟着进标签。
   //
-  // 有最近记录时，先出「最近使用」一组（data-recent="1"），再出「全部语言」全表；全表
-  // 不剔除最近项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份
-  // 语言清单：存储里认不出的码直接不出。没有记录时输出与只有全表时逐字节相同。
-  //
-  // 画进传入的菜单根，并在根上记下有没有分组（data-grouped）：打开时停在哪由
-  // ctx.revealSelectedLanguage 读这一个标记决定，不再回头从子节点里猜。菜单根跨次
-  // 打开复用，所以没有分组时要把上次留下的标记删掉。
+  // 菜单总是两组：先「最近使用」（data-recent="1"），再「全部语言」全表；全表不剔除最近
+  // 项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份语言清单：存储里
+  // 认不出的码直接不出。一个认得出的记录都没有时，最近组只放当前语言——只是显示，不写
+  // 存储，所以第一次打开就看得到这一组在哪。
   ctx.buildTargetLangMenu = function(menu, selectedLang) {
     const normalized = ctx.normalizeTargetLang(selectedLang);
     const bt = ctx.builtinTranslator;
@@ -84,21 +86,17 @@
     };
     const options = TargetLang.options(ctx.uiLanguage());
     const all = options.map((option) => item(option, false)).join('');
-    const recent = recentPref.get()
+    const known = (codes) => codes
       .map((code) => options.find((option) => option.value === code))
       .filter(Boolean);
-    if (!recent.length) {
-      menu.innerHTML = all;
-      delete menu.dataset.grouped;
-      return;
-    }
+    const stored = known(recentPref.get());
+    const recent = stored.length ? stored : known([normalized]);
     const group = (key) =>
       `<div class="ai-translator-lang-group" role="presentation">${ctx.escapeHtml(ctx.t(key))}</div>`;
     menu.innerHTML = group('langRecent')
       + recent.map((option) => item(option, true)).join('')
       + group('langAll')
       + all;
-    menu.dataset.grouped = '1';
   };
 
   // 我们放进页面的每一段文字都带上自己的 lang / dir（TargetLang.mark）：译文常常挂在
@@ -130,25 +128,6 @@
       const side = ctx.startSide(window.getComputedStyle(sourceEl));
       translationEl.style.setProperty(`padding-${side}`, `${px}px`, 'important');
     }
-  };
-
-  // 菜单刚打开时停在哪：有「最近使用」一组（ctx.buildTargetLangMenu 记下的
-  // data-grouped）就停在顶部，让这一组露出来（D-545）。
-  // 当前语言不一定在组里：卡片的默认语从不经点选，设置里也可能换了默认语。为了把
-  // 全表里的选中项滚到中部而把这组推出视口，就违背了置顶的本意；当前语言已经写在
-  // 触发按钮上。菜单节点跨次打开复用，不赌重画后滚动位置自己归零，明确写 0。
-  // 没有最近组时，76 项里的已选项多半在视口外，把它放到可见区中部。只动菜单自己的
-  // scrollTop；不用 scrollIntoView，那会连宿主页面一起滚。
-  ctx.revealSelectedLanguage = function(menu) {
-    if (menu.dataset.grouped) {
-      menu.scrollTop = 0;
-      return;
-    }
-    const item = menu.querySelector('.is-selected');
-    if (!item) return;
-    const menuTop = menu.getBoundingClientRect().top + menu.clientTop;
-    const itemRect = item.getBoundingClientRect();
-    menu.scrollTop += itemRect.top - menuTop - (menu.clientHeight - itemRect.height) / 2;
   };
 
   // 语言标签的判定只有一个主人：shared/lang-tags.js。这里是转手，不是副本。

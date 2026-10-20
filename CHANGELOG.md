@@ -66,6 +66,12 @@
   paragraphs as still waiting. Whole-page translation moves onto the same
   count together with its new progress ring.
 
+### Language menu
+
+- **The language menu's Recent group now fills as you translate.** Every input
+  box or card translation records its target language, the default one
+  included, and with nothing recorded yet the current language is shown there.
+
 ## 1.5.2 — 2026-10-19
 
 ### Store listing and links to the site

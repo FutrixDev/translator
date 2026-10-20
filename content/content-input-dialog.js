@@ -243,6 +243,8 @@
           return;
         }
         const targetLang = targetLangOverride || getShownTargetLang();
+        // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
+        ctx.rememberRecentTargetLang(targetLang);
         // A pinned request goes to its engine; any other asks the offline
         // dictionary first and sends TRANSLATE only on a miss. The answer and
         // the mode both come from ctx.dictRoute, the card's rule too. The box
