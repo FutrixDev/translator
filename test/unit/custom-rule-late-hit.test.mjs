@@ -115,7 +115,7 @@ async function loadTopFrame(rule, { includeHitsAtStart = false } = {}) {
     frames: { sendToRelay() {} },
     // P1-D2 修复回合 1：清扫把规则禁掉的区域里的失败标记一起收走；这里没有标记。
     failedBlocks: { clearWhere() {} },
-    autoTranslate: { isOn: () => false, onStateChange: (fn) => fn(), markPageExplicit() {} },
+    autoTranslate: { isOn: () => false, recallOn: () => false, onStateChange: (fn) => fn(), markPageExplicit() {} },
     isExtensionContextAvailable: () => true,
     revealHiddenTranslations() {},
     closePageBar() {},

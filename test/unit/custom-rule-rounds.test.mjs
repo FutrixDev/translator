@@ -101,6 +101,7 @@ async function loadTopFrame({ holdRules = false } = {}) {
     frames: { sendToRelay: (message) => broadcasts.push(message.directive) },
     autoTranslate: {
       isOn: () => false,
+      recallOn: () => false,
       onStateChange: (fn) => fn(),
       markPageExplicit: () => { counts.explicit += 1; },
     },

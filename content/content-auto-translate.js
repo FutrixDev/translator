@@ -981,6 +981,8 @@
       // 子 frame 的指令变了（content/frames/child.js）：重新判、重新扫。
       restart: start,
       isOn,
+      // 装回挂不挂（frames/top.js 写进指令，子 frame 的装回跟它走）。
+      recallOn,
       bumpSession,
       onSettingsChanged
     };

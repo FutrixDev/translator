@@ -106,6 +106,11 @@
   page decides which part is the main content, it now counts only the page's
   own text, so translating a page can no longer tip the decision the next time
   it is made.
+- **Recall inside iframes follows the top page's automatic verdict.** An
+  embedded frame on a page you translated by hand no longer puts remembered
+  translations back when it rebuilds its content, and an embedded frame on a
+  page you paused stays in the original. Turning on "always translate this
+  site" from the popup starts recall in the page's frames at once.
 
 ## 1.5.2 — 2026-10-19
 

@@ -13,6 +13,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// 子 frame 的判定（shelf.js 的 decideForFrame）先拿自己的主机问一次真的站点规则。
+await import('../../shared/lang-tags.js');
+await import('../../shared/site-rules-builtin.js');
+await import('../../shared/storage-writer.js');
+await import('../../shared/site-rules.js');
+const { SiteRules } = globalThis;
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
@@ -28,7 +35,7 @@ function loadChildFrame() {
   const ctx = {
     frameRole: 'child',
     state: { translationsVisible: true, pageScopeOverride: null, isTranslatingPage: false },
-    settings: { siteRules: {} },
+    settings: { siteRules: {}, autoTranslate: true },
     STATUS_AUTO: { RUNNING: 'running' },
     isExtensionContextInvalidated: () => false,
     invalidatePageScope: () => { calls.invalidatePageScope += 1; },
@@ -65,6 +72,7 @@ function loadChildFrame() {
     addEventListener() {},
     removeEventListener() {},
     location: { hostname: 'embed.example.com', pathname: '/widget' },
+    SiteRules,
     AI_TRANSLATOR_CONTENT: ctx,
     chrome: {
       runtime: {
@@ -181,4 +189,57 @@ test('the child answers the top host from the directive, and nothing before one 
   assert.equal(ctx.frames.topHost(), 'news.example.com');
   send({ epoch: nextEpoch(), host: '' });
   assert.equal(ctx.frames.topHost(), '');
+});
+
+// 子 frame 的装回跟顶层的 recallOn() 走，不跟 translate 走：content-auto-translate.js
+// 的 siteAuto() 问的是 resolve({ explicit: false })，在子 frame 里就是这里的
+// frameDecision({ explicit: false })。translate 在手动点的「翻译整页」上也是真，
+// 拿它判装回，手动翻过、站点没开自动的页面上 iframe 一重建就从记忆装回了。
+test('the child decision reads translate by default and the top recall under explicit:false', () => {
+  const { ctx, send, nextEpoch } = loadChildFrame();
+  const verdict = (options) => ctx.frameDecision(options).verdict;
+  assert.equal(verdict(), 'off', 'no directive yet: nothing');
+  assert.equal(verdict({ explicit: false }), 'off', 'no directive yet: no recall either');
+
+  // 手动翻过、站点没开自动：在翻，但不装回。
+  send({ epoch: nextEpoch(), translate: true, recall: false });
+  assert.equal(verdict(), 'auto');
+  assert.equal(verdict({ explicit: true }), 'auto');
+  assert.equal(verdict({ explicit: false }), 'off', 'a page translated by hand must not recall in its frames');
+
+  // 站点自动翻：两样都是真。
+  send({ epoch: nextEpoch(), translate: true, recall: true });
+  assert.equal(verdict(), 'auto');
+  assert.equal(verdict({ explicit: false }), 'auto');
+
+  // 自动站点停在预算上：此刻不翻，装回照挂。
+  send({ epoch: nextEpoch(), translate: false, recall: true });
+  assert.equal(verdict(), 'off');
+  assert.equal(verdict({ explicit: false }), 'auto');
+
+  // 顶层暂停：都不。
+  send({ epoch: nextEpoch(), translate: false, recall: false });
+  assert.equal(verdict(), 'off');
+  assert.equal(verdict({ explicit: false }), 'off');
+});
+
+test('the child own refusal still wins over the top recall', () => {
+  const { ctx, send, nextEpoch } = loadChildFrame();
+  ctx.settings.siteRules = { 'embed.example.com': 'never' };
+  send({ epoch: nextEpoch(), translate: true, recall: true });
+  const decision = ctx.frameDecision({ explicit: false });
+  assert.equal(decision.verdict, 'off');
+  assert.equal(decision.refused, true);
+});
+
+test('a change of recall alone restarts the child, so its recall is synced on the spot', () => {
+  const { calls, send, nextEpoch } = loadChildFrame();
+  send({ epoch: nextEpoch(), translate: true, recall: false });
+  assert.equal(calls.restart, 1, 'the first directive starts the child');
+  // 手动翻完的页面上用户打开「总是翻译这个站点」：translate 没变，recall 变了。
+  send({ epoch: nextEpoch(), translate: true, recall: true });
+  assert.equal(calls.restart, 2, 'a recall-only change left the child recall as it was');
+  // 两样都没变（别的字段变了）：不重开。
+  send({ epoch: nextEpoch(), translate: true, recall: true, visible: true, generation: 4 });
+  assert.equal(calls.restart, 2);
 });
