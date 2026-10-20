@@ -94,11 +94,10 @@
     const retried = new Set();
 
     let discovery = null;
-    // 装回的观察器（摘掉它的函数），没挂是 null。它跟着「这一页该不该跟」活：判定是
-    // auto 且他没按暂停。和发现层只差一处 —— 藏着译文停下的是发现层，装回照挂：
-    // 藏着时页面把菜单整片重建，上次的译文照样从页内记忆装回去（带着隐藏态），放出
-    // 来那一下就是完整的。自动翻译真停了（关了、他按了暂停、出错）两个一起摘，可见
-    // 时没有装回，藏着时也不该多出来。
+    // 装回的观察器（摘掉它的函数），没挂是 null。挂不挂只看 recallOn()：站点的自动
+    // 判定（不算「翻译整页」那一下）是 auto，且他没按暂停。和发现层是两回事 ——
+    // 藏着译文、预算拒绝、出错停下的是发现层，装回照挂：页面把菜单整片重建，上次
+    // 的译文照样从页内记忆装回去（藏着时带着隐藏态）。
     let recallWatch = null;
     let status = STATUS.OFF;
     let reason = '';
@@ -279,7 +278,8 @@
     function start(why) {
       decidedHref = location.href;
       bumpSession(why || 'start');
-      stopDiscovery({ keepRecall: true });
+      // 装回在这里照 recallOn() 对过一遍，下面三条路都不再各自碰它。
+      stopDiscovery();
       if (ctx.state.translationsVisible === false || pausedByUser) {
         // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
         // 还得跟上：用户在 popup 上把这个站点关掉，规则落地就会重开一轮，而这一轮
@@ -290,8 +290,6 @@
         // 停着的那一页就是暂停，这两条闩都不动。
         const held = resolve();
         reason = held.reason;
-        if (held.verdict === 'auto' && !pausedByUser) watchRecall();
-        else unwatchRecall();
         setStatus(held.verdict === 'off' ? STATUS.OFF : STATUS.PAUSED);
         return;
       }
@@ -301,7 +299,6 @@
       const verdict = resolve();
       reason = verdict.reason;
       if (verdict.verdict !== 'auto') {
-        unwatchRecall();
         setStatus(STATUS.OFF);
         return;
       }
@@ -318,7 +315,6 @@
     // ------------------------------------------------------------------ 发现
 
     function startDiscovery() {
-      watchRecall();
       if (discovery) return;
       discovery = ctx.setupAutoDiscovery({ onCandidates });
       // 头一次扫的是 document_end 时就已经在页面上的全部内容 —— 没有任何
@@ -328,12 +324,24 @@
       });
     }
 
-    // keepRecall：只停发现层、装回照挂（藏着译文那一停，见 recallWatch）。
-    function stopDiscovery({ keepRecall = false } = {}) {
-      if (!keepRecall) unwatchRecall();
+    // 停的只是发现层；装回挂不挂照 recallOn() 重对一遍（他按了暂停就摘）。
+    function stopDiscovery() {
+      syncRecall();
       if (!discovery) return;
       discovery.stop();
       discovery = null;
+    }
+
+    // 装回挂不挂，只问这一句。判定刨掉 explicit（siteAuto）：「翻译整页」只管到
+    // 换路由为止，而装回的观察器先于 onRouteChange 看见新路由的子树 —— 读带
+    // explicit 的判定，手动翻过的页面一换路由就从记忆装回了。
+    function recallOn() {
+      return siteAuto() && !pausedByUser;
+    }
+
+    function syncRecall() {
+      if (recallOn()) watchRecall();
+      else unwatchRecall();
     }
 
     // 页面新长出来的子树，在 MutationObserver 回调里 —— 绘制之前 —— 交给装回
@@ -778,7 +786,7 @@
       if (cause === 'hidden' && status === STATUS.ERROR) return;
       if (cause !== 'hidden') pausedByUser = true;
       bumpSession('paused');
-      stopDiscovery({ keepRecall: cause === 'hidden' });
+      stopDiscovery();
       setStatus(STATUS.PAUSED);
     }
 

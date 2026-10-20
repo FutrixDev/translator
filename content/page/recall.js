@@ -46,8 +46,8 @@
   //     （targetLangChecked）；现在开着、当初没过的，返回 null 交给批量那条路，
   //     由那道检测本身来判 —— 是目标语言就不译，不是就照常请求。
   // 原文比的是 block.text：收集端 getTextWithMathPlaceholders 产出、请求体里发的
-  // 就是它，落笔时记下的也是它。跳过目标语言这道检查交给 recall 先过，过了才挪
-  // LRU。
+  // 就是它，落笔时记下的也是它。查只是查，不挪 LRU：真装回去的那几块由落笔
+  // （landTranslation → 插入端的 remember）挪到最新端，命中了却没装的不挪。
   function rememberedFor(block, target) {
     return globalThis.BlockIdentity.recall(target.stamp, block.text, usableNow);
   }

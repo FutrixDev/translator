@@ -232,8 +232,9 @@ test('the 2001st entry evicts the least recently used one', () => {
   // 先装满：之前的测试留下的条目也在表里，最旧的那些先被挤掉。
   for (let i = 0; i < 2000; i++) BlockIdentity.remember('zh-CN', entry(`menu row ${i}`, `菜单 ${i}`));
   assert.equal(BlockIdentity.memorySize(), 2000);
-  // 命中算一次使用：row 0 被挪到最新，这一轮被挤掉的是 row 1。
-  assert.equal(recalled('zh-CN', 'menu row 0'), '菜单 0');
+  // 再记一次算一次使用（装回落笔时就是这一下）：row 0 被挪到最新，这一轮被挤
+  // 掉的是 row 1。
+  BlockIdentity.remember('zh-CN', entry('menu row 0', '菜单 0'));
   BlockIdentity.remember('zh-CN', entry('menu row 2000', '菜单 2000'));
   assert.equal(BlockIdentity.memorySize(), 2000);
   assert.equal(recalled('zh-CN', 'menu row 1'), null);
@@ -241,19 +242,68 @@ test('the 2001st entry evicts the least recently used one', () => {
   assert.equal(recalled('zh-CN', 'menu row 2'), '菜单 2');
 });
 
-// 调用方说这会儿用不了（装回那边的「跳过目标语言」检查）的条目
-// 不算一次使用，不挪到最新端 —— 只被问过、没装上的，不该比别的条目活得久。
-test('an entry the caller cannot use right now is not refreshed in the LRU order', () => {
+// 查不算一次使用，不挪到最新端：调用方说这会儿用不了（装回那边的「跳过目标
+// 语言」检查）的不挪，命中了的也不挪 —— 真装回去的由落笔那一下 remember 挪。
+test('looking an entry up does not refresh it in the LRU order, whether or not the caller can use it', () => {
   for (let i = 0; i < 2000; i++) BlockIdentity.remember('zh-CN', entry(`tab ${i}`, `标签 ${i}`));
   assert.equal(recalled('zh-CN', 'tab 0', () => false), null);
   assert.equal(recalled('zh-CN', 'tab 1', () => true), '标签 1');
   BlockIdentity.remember('zh-CN', entry('tab 2000', '标签 2000'));
-  // 被拒的 tab 0 还在最旧端，被挤掉的就是它；用过的 tab 1 挪到了最新端。
-  assert.equal(recalled('zh-CN', 'tab 0'), null, 'a refused entry was moved to the most recent end');
-  assert.equal(recalled('zh-CN', 'tab 1'), '标签 1');
+  BlockIdentity.remember('zh-CN', entry('tab 2001', '标签 2001'));
+  // tab 0 和 tab 1 都还在最旧端，这两条新记的挤掉的就是它们。
+  assert.equal(recalled('zh-CN', 'tab 0'), null, 'a refused lookup moved the entry to the most recent end');
+  assert.equal(recalled('zh-CN', 'tab 1'), null, 'a lookup that hit moved the entry to the most recent end');
   assert.equal(recalled('zh-CN', 'tab 2'), '标签 2');
   // usable 拿到的是条目本身。
   assert.equal(recalled('zh-CN', 'tab 3', (hit) => hit.translation === '标签 3'), '标签 3');
+});
+
+// 一次装回扫到的命中比装回预算多：视口外的只装前 16 块，剩下的留给发现层进带
+// 时再问。没装的那几条不该因为被扫到就挪到最新端 —— 否则一片装不完的大菜单每
+// 重建一次，就把别处真在用的译文挤出记忆。
+test('a recall that restores only part of its hits leaves the hits it dropped at the old end of the LRU order', () => {
+  const stubs = ['collectPageBlocks', 'passTarget', 'landTranslation', 'overlapsViewport'];
+  const saved = Object.fromEntries(stubs.map((name) => [name, ctx[name]]));
+  const savedSize = [globalThis.window.innerWidth, globalThis.window.innerHeight];
+  try {
+    // 先记 20 条命中，再记 1980 条别的：命中是表里最旧的 20 条。
+    const hits = Array.from({ length: 20 }, (_, i) => `drawer item ${i}`);
+    for (const text of hits) BlockIdentity.remember('zh-CN', entry(text, `抽屉 ${text}`));
+    for (let i = 0; i < 1980; i++) BlockIdentity.remember('zh-CN', entry(`filler ${i}`, `填充 ${i}`));
+    assert.equal(BlockIdentity.memorySize(), 2000);
+
+    // 替身（只换装回之外的那几层）：20 块全在视口下方；收集端按顺序交出这 20
+    // 块；落笔替身照真实落笔（batch.js 的 landTranslation → 插入端）那样再记一次。
+    globalThis.window.innerWidth = 1280;
+    globalThis.window.innerHeight = 800;
+    const below = { top: 5000, bottom: 5040, left: 0, right: 300, width: 300, height: 40 };
+    const blocks = hits.map((text) => ({ text, element: { getBoundingClientRect: () => below } }));
+    ctx.collectPageBlocks = (_root, { limit }) => blocks.slice(0, limit);
+    ctx.passTarget = () => ({ stamp: 'zh-CN', request: 'zh-CN', generation: 0 });
+    ctx.overlapsViewport = (rect, view) => rect.top < view.bottom && rect.bottom > view.top
+      && rect.left < view.right && rect.right > view.left;
+    const landed = [];
+    ctx.landTranslation = (block, translation, target) => {
+      landed.push(block.text);
+      BlockIdentity.remember(target.stamp, { source: block.text, translation, targetLangChecked: false });
+    };
+
+    assert.equal(ctx.recallTranslations([{ isConnected: true }]), 16);
+    assert.deepEqual(landed, hits.slice(0, 16));
+    // 再记 4 条新的：挤掉的是最旧的 4 条 —— 扫到却没装的那 4 块。
+    for (let i = 0; i < 4; i++) BlockIdentity.remember('zh-CN', entry(`newcomer ${i}`, `新 ${i}`));
+    for (const text of hits.slice(16)) {
+      assert.equal(recalled('zh-CN', text), null, `${text} was dropped from the restore yet moved to the most recent end`);
+    }
+    for (const text of hits.slice(0, 16)) assert.equal(recalled('zh-CN', text), `抽屉 ${text}`);
+    for (let i = 0; i < 4; i++) assert.equal(recalled('zh-CN', `filler ${i}`), `填充 ${i}`);
+  } finally {
+    for (const name of stubs) {
+      if (saved[name] === undefined) delete ctx[name];
+      else ctx[name] = saved[name];
+    }
+    [globalThis.window.innerWidth, globalThis.window.innerHeight] = savedSize;
+  }
 });
 
 // 译法换了代（引擎、提示词、术语表……）整张清掉。清的那一处在
@@ -284,10 +334,12 @@ test('a new translation profile generation forgets the memory, and recall checks
   assert.match(batch,
     /const landed = target\.generation === ctx\.translationProfile\.generation\(\)\s*\? \{ source: block\.text, translation, targetLangChecked: settings\.skipTargetLanguageText === true \}\s*: null;/,
     'a translation requested under an older profile generation goes back into the memory');
-  // 记忆唯一的写入口是 rememberLanded，插入端在真登记上之后调它一次。
+  // 记忆唯一的写入口是 rememberLanded，插入端在真登记上之后调它一次；不挂到 ctx
+  // 上（测试也走真实落笔填记忆）。
   assert.match(insert, /if \(!placeTranslation\(block, translation, lang, textLang\)\) return;\s*\n(?:\s*\/\/[^\n]*\n)*\s*if \(landed !== null\) rememberLanded\(lang, landed\);/,
     'insertTranslationBlock no longer remembers what it registered');
   assert.equal(insert.match(/BlockIdentity\.remember\(/g).length, 1, 'a second writer of the memory appeared');
+  assert.doesNotMatch(insert, /ctx\.rememberLanded/, 'the memory writer is exposed on ctx again');
   const recall = repoFile('content/page/recall.js');
   assert.match(recall, /BlockIdentity\.recall\(target\.stamp, block\.text, usableNow\);/,
     'recall no longer looks up the new block\'s own source text');

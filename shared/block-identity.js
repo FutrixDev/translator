@@ -139,7 +139,9 @@
   // 文字、内联结构不同的两块（一个带 <a>、一个不带）原文不同，是两条，不会互相
   // 顶掉，也不会把标记编号对不上的译文装到别的结构上。
   //
-  // Map 的插入顺序即 LRU 顺序：命中时删了再放回去挪到最新，满了丢最旧的。
+  // Map 的插入顺序即 LRU 顺序：记一次（remember）就删了再放回去挪到最新，满了丢
+  // 最旧的。查（recall）不挪：装回真把译文落下时，落笔那一下照常 remember，挪的
+  // 只是真装回去的那几条。
   const MEMORY_LIMIT = 2000;
   // 超长的不记：一页里会被整片重建的是菜单、标签、卡片标题这类短串，长文正文
   // 重建的少见。上限按规格算：每条原文和译文**合计**不超过 4096 个
@@ -174,18 +176,15 @@
   }
 
   // 命中要 (语言, 原文) 逐字对上，并且调用方的 usable(entry) 说这会儿能用（装回
-  // 那边的「跳过目标语言」检查）。只有真正拿去用的那条才挪到 LRU 最新端 ——
-  // 查到了却不能装的，不该因为被问过就比别的条目活得久。
+  // 那边的「跳过目标语言」检查）。只查，不动 LRU 顺序：被问过、甚至命中了却没装
+  // 回去的（超出装回预算、视口外被丢下的），不该因此比别的条目活得久。
   // @param {(entry: object) => boolean} [usable]
   // @returns {{source: string, translation: string, targetLangChecked: boolean}|null}
   function recall(lang, source, usable) {
     if (lang == null) return null;
-    const key = memoryKey(lang, source);
-    const entry = memory.get(key);
+    const entry = memory.get(memoryKey(lang, source));
     if (entry === undefined) return null;
     if (usable && !usable(entry)) return null;
-    memory.delete(key);
-    memory.set(key, entry);
     return entry;
   }
 

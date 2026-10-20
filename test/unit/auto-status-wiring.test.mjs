@@ -543,7 +543,7 @@ test('译文藏着的时候改了规则也得重判 —— 否则那个站点开
   const auto = code('content/content-auto-translate.js');
   const guard = auto.slice(auto.indexOf('if (ctx.state.translationsVisible === false || pausedByUser)'));
   assert.match(guard.slice(0, 900),
-    /const held = resolve\(\);\s*reason = held\.reason;\s*if \(held\.verdict === 'auto' && !pausedByUser\) watchRecall\(\);\s*else unwatchRecall\(\);\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
+    /const held = resolve\(\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);/,
     '隐藏闩得先重判再返回，不能原地掉头');
   // 规则改了确实会重开一轮，否则上面那段永远跑不到。
   const keys = auto.slice(auto.indexOf('const RESTART_KEYS'), auto.indexOf('function onSettingsChanged'));

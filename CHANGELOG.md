@@ -98,6 +98,10 @@
   drawn, so the menu never flickers and nothing is sent again. Every rebuilt
   entry that is on screen comes back in that same frame. With
   translations hidden, a rebuilt menu comes back hidden.
+  Recall follows the automatic verdict only: on a site set to translate
+  automatically it keeps working even after a stop for the daily budget or an
+  error, while a page you paused, or translated by hand on a site that is not
+  automatic, is left in the original.
 - **Our own translations no longer move the main-content scope.** When the
   page decides which part is the main content, it now counts only the page's
   own text, so translating a page can no longer tip the decision the next time

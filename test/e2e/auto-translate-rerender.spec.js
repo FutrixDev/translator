@@ -16,10 +16,12 @@ const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
   evaluateInContentScript,
+  openPopupOver,
   stubBuiltinTranslator,
   waitForContentReady,
   writeSyncSettings,
 } = require('./helpers');
+const { clickBall, waitForPageRoundEnd } = require('./float-ball-helpers');
 const { serveHtml, scopeProbe, settingsSettled } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
@@ -62,6 +64,13 @@ window.go = (key) => {
   renderNav(key);
 };
 window.renameNav = (i, text) => { NAV[i] = text; };
+// 点菜单项是单页应用的路由切换，不整页跳转。
+document.getElementById('nav').addEventListener('click', (event) => {
+  const link = event.target.closest('a[data-key]');
+  if (!link) return;
+  event.preventDefault();
+  window.go(link.dataset.key);
+});
 renderNav('home');
 </script></body></html>`;
 }
@@ -358,6 +367,105 @@ test('J4.5c with translations hidden, never then always again: a rebuilt menu is
   }
 });
 
+// 装回只跟站点的自动判定走（刨掉「翻译整页」那一下），且他没按暂停。下面三条
+// 是三种停法：用户暂停不装回、手动翻过的页面换路由不装回、预算拒绝停下照样装回。
+// 页面自己重绘左栏（不换路由）用夹具的 renderNav：换路由会重开一轮、解掉暂停，
+// 那就测不到「停着的时候」了。
+const autoReason = (context, page) => evaluateInContentScript(context, page,
+  'window.AI_TRANSLATOR_CONTENT.autoTranslate.state().reason');
+const requestCount = async (context, page, mock) => (await builtinTexts(context, page)).length + mock.sentTexts.length;
+const repaintNav = (page) => page.evaluate(() => window.renderNav(location.pathname.slice(1)));
+
+test('a page the user paused does not recall: a repainted menu stays original and nothing is sent', async ({ page, context, extensionId }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    await openLeftMenu(page, context, mock.endpoint);
+    await page.waitForTimeout(1500);
+    const before = await requestCount(context, page, mock);
+
+    // 用户在 popup 上按「暂停」。
+    const popup = await openPopupOver(context, extensionId, page);
+    await expect(popup.locator('#togglePagePause')).toBeVisible();
+    await popup.locator('#togglePagePause').click();
+    await expect.poll(() => autoStatus(context, page), { timeout: 10000 }).toBe('paused');
+    await page.bringToFront();
+
+    // 夹具：页面自己重绘左栏，不换路由。
+    await repaintNav(page);
+    await page.waitForTimeout(1500);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(0);
+    expect(await page.locator('#nav a').allTextContents()).toEqual(NAV);
+    expect(await requestCount(context, page, mock)).toBe(before);
+    expect(await autoStatus(context, page)).toBe('paused');
+  } finally {
+    await mock.close();
+  }
+});
+
+test('a page translated by hand on a site that is not automatic does not recall after a menu click', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    // 站点没设规则：自动翻译的判定是 DEFAULT_OFF。
+    await setExtensionSettings(page, settings(mock.endpoint));
+    await serveHtml(context, { [`https://${HOST}/home`]: leftMenuHtml({ mainTag: 'div' }) });
+    await page.goto(`https://${HOST}/home`);
+    await waitForContentReady(page);
+    await stubBuiltinTranslator(page);
+    await expect.poll(() => autoReason(context, page), { timeout: 10000 }).toBe('DEFAULT_OFF');
+
+    // 他点悬浮球翻这一页。
+    await clickBall(page);
+    await waitForPageRoundEnd(page);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5, { timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const before = await requestCount(context, page, mock);
+    expect(before).toBeGreaterThan(0);
+
+    // 他点左栏的一项：单页应用换路由、整片重建左栏。
+    await page.locator('#nav a[data-key="maps"]').click();
+    await expect(page).toHaveURL(/\/maps$/);
+    await expect(page.locator('#view')).toHaveText(MAIN.maps);
+    await page.waitForTimeout(1500);
+    // 三条同时成立：左栏是原文、一个请求没发、状态是关。
+    await expect(page.locator('#nav .ai-translator-inline-block, #nav .ai-translator-translated')).toHaveCount(0);
+    expect(await page.locator('#nav a').allTextContents()).toEqual(NAV);
+    expect(await requestCount(context, page, mock)).toBe(before);
+    expect(await autoStatus(context, page)).toBe('off');
+  } finally {
+    await mock.close();
+  }
+});
+
+test('a page stopped on the daily budget still recalls: a repainted menu is whole in every frame, unsent', async ({ page, context }) => {
+  const mock = await startMockOpenAIServer();
+  try {
+    // 自动引擎是 AI，日预算 1 个字符：第一轮放行（用量 0），之后每一轮都拒。
+    await openLeftMenu(page, context, mock.endpoint, { extra: { autoTranslateEngine: 'ai', autoAiDailyBudget: 1 } });
+    await page.waitForTimeout(1500);
+    expect(navSent(mock.sentTexts)).toBe(5);
+    const before = await requestCount(context, page, mock);
+
+    // 他点左栏的一项：新正文进队，那一轮被预算拒下，自动翻译停在 OFF。
+    await page.locator('#nav a[data-key="maps"]').click();
+    await expect.poll(() => autoReason(context, page), { timeout: 10000 }).toBe('COST_BUDGET');
+    expect(await autoStatus(context, page)).toBe('off');
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
+
+    // 夹具：页面自己重绘左栏，不换路由。
+    await startFrames(page, NAV_TRANSLATIONS);
+    await repaintNav(page);
+    await page.waitForTimeout(1500);
+    const frames = await stopFrames(page);
+    expect(frames.length).toBeGreaterThan(10);
+    expect(frames.filter((count) => count < 5)).toEqual([]);
+    await expect(page.locator(NAV_TRANSLATIONS)).toHaveCount(5);
+    expect(await requestCount(context, page, mock)).toBe(before);
+    expect(await autoStatus(context, page)).toBe('off');
+  } finally {
+    await mock.close();
+  }
+});
+
 // 页内记忆只在「这一代译法」里有效。换了引擎（或提示词、术语表、配置
 // 档 —— 都走 translationProfile 换代），记忆整张清掉：重建的左栏照常送新引擎，
 // 不装回上一个引擎的译文。
@@ -627,8 +735,9 @@ test('J4.8b a dense menu of 40 items in view is restored whole in the same frame
 });
 
 // ≥2000 块的容器整片重建时，装回观察器里那一步同步装回要多久。
-// 记忆按真实入口 ctx.rememberLanded 填满（registerTranslation 记的也是这一句），
-// 发现层带宽之外的块自动翻译不会去翻，靠它们自己翻满 2000 条要几分钟。
+// 记忆走真实落笔填满：自动翻译开起来之前，用户点悬浮球把整页手动翻一遍（手动
+// 引擎是内置引擎桩），2000 块逐块落笔、逐块记进记忆。自动翻译只翻发现层带宽里
+// 的块，靠它自己翻满 2000 条要几分钟。
 // RERENDER_PERF_OUT 设了就把结果写进那个文件（证据目录的 perf.txt）。
 const FEED_SIZE = 2000;
 const RUNS = 10;
@@ -639,8 +748,8 @@ const RECALL_P95_CEILING_MS = 50;
 const FEED_ROW_PX = 32;
 const TALL_VIEWPORT = { width: 1280, height: 40 * FEED_ROW_PX };
 
-// 译文节点沿用源块的标签和 class（这里是 <p>），填记忆和挑远处那一行都得把我们
-// 自己的节点排除掉，不然译文会被当原文记进去、挤掉最早的那几十条。
+// 译文节点沿用源块的标签和 class（这里是 <p>），挑远处那一行得把我们自己的节点
+// 排除掉，不然挑中的是一条译文。
 function feedHtml() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Feed</title>
 <style>body{margin:0}#feed p{margin:0;height:${FEED_ROW_PX}px;line-height:${FEED_ROW_PX}px;white-space:nowrap;overflow:hidden}</style></head><body>
@@ -679,14 +788,17 @@ const stats = (values) => {
 };
 
 test('perf: synchronous recall on a rebuilt container of 2000 blocks', async ({ page, context }) => {
+  test.setTimeout(240000);
   const mock = await startMockOpenAIServer();
   try {
     let idle = null;
+    let seeded = 0;
     await openAuto(page, context, mock.endpoint, {
       url: `https://${HOST}/feed`,
       html: feedHtml(),
-      // 一条都没记过的页面：装回这一步直接返回，不收块。
+      extra: { translationEngine: 'builtin' },
       beforeAuto: async () => {
+        // 一条都没记过的页面：装回这一步直接返回，不收块。
         idle = await evaluateInContentScript(context, page, `(() => {
           const ctx = window.AI_TRANSLATOR_CONTENT;
           const size = globalThis.BlockIdentity.memorySize();
@@ -695,25 +807,17 @@ test('perf: synchronous recall on a rebuilt container of 2000 blocks', async ({ 
           const restored = ctx.recallTranslations([feed]);
           return { size, restored, ms: performance.now() - start };
         })()`);
+        // 他点悬浮球手动翻整页：每块落笔时记进记忆。
+        await clickBall(page);
+        await waitForPageRoundEnd(page, 180000);
+        await expect(page.locator('#feed .ai-translator-inline-block')).toHaveCount(FEED_SIZE);
+        seeded = await evaluateInContentScript(context, page, 'globalThis.BlockIdentity.memorySize()');
       },
     });
     expect(idle.size).toBe(0);
     expect(idle.restored).toBe(0);
-    await expect.poll(() => page.locator('#feed .ai-translator-inline-block').count(), { timeout: 30000 }).toBeGreaterThan(0);
+    expect(seeded).toBe(FEED_SIZE);
     await page.waitForTimeout(1500);
-
-    const seeded = await evaluateInContentScript(context, page, `(() => {
-      const ctx = window.AI_TRANSLATOR_CONTENT;
-      const lang = ctx.currentTargetLang();
-      for (const p of document.querySelectorAll('#feed > p:not(' + ctx.constants.OWN_NODES_SELECTOR + ')')) {
-        // 送出去的原文就是收集端的 block.text（collect.js 的 getTextWithMathPlaceholders，
-        // preserveMarkup 同收集端），记忆按它和语言认。
-        const source = ctx.getTextWithMathPlaceholders(p, { preserveMarkup: true }).text;
-        ctx.rememberLanded(lang, { source, translation: '[B] ' + source, targetLangChecked: false });
-      }
-      return globalThis.BlockIdentity.memorySize();
-    })()`);
-    expect(seeded).toBeGreaterThanOrEqual(FEED_SIZE);
     await recordRecalls(context, page);
 
     const callsBefore = (await builtinTexts(context, page)).length;

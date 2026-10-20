@@ -732,5 +732,4 @@
   ctx.insertTranslationBlock = insertTranslationBlock;
   ctx.placeFailureMarker = placeFailureMarker;
   ctx.releaseTranslation = releaseTranslation;
-  ctx.rememberLanded = rememberLanded;
 })();

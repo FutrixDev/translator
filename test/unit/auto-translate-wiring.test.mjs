@@ -172,7 +172,7 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
   // 都跑不了；而判定照常跟上，否则 popup 上那个站点开关会一直停在「开」。
   assert.match(
     scheduler,
-    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(\);\s*reason = held\.reason;\s*if \(held\.verdict === 'auto' && !pausedByUser\) watchRecall\(\);\s*else unwatchRecall\(\);\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
+    /function start\(why\) \{[\s\S]*?if \(ctx\.state\.translationsVisible === false \|\| pausedByUser\) \{[\s\S]*?const held = resolve\(\);\s*reason = held\.reason;\s*setStatus\(held\.verdict === 'off' \? STATUS\.OFF : STATUS\.PAUSED\);\s*return;\s*\}/
   );
   // 所以各个调用点不再各自判一遍 PAUSED。
   assert.doesNotMatch(scheduler, /if \(status === STATUS\.PAUSED\) return;\s*start\(/);
@@ -193,6 +193,18 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
     assert.doesNotMatch(source, /state\.translationsVisible\s*=(?!=)/, `${file} 不该自己写显隐字段`);
     assert.doesNotMatch(source, /autoTranslate\.(pause|resume)CurrentPage/, `${file} 不该越过显隐层直接停调度`);
   }
+});
+
+test('装回挂不挂只问一句：站点的自动判定（刨掉 explicit）且没被用户暂停', () => {
+  const scheduler = code('content/content-auto-translate.js');
+  assert.match(scheduler, /function recallOn\(\) \{\s*return siteAuto\(\) && !pausedByUser;\s*\}/);
+  // 挂和摘各只有一个调用点，都在 syncRecall 里；停发现层的每一处都经它重对一遍，
+  // 不再按调用点各传一个「留不留装回」。
+  assert.equal((scheduler.match(/\bwatchRecall\(\);/g) || []).length, 1);
+  assert.equal((scheduler.match(/\bunwatchRecall\(\);/g) || []).length, 1);
+  assert.match(scheduler, /function syncRecall\(\) \{\s*if \(recallOn\(\)\) watchRecall\(\);\s*else unwatchRecall\(\);\s*\}/);
+  assert.match(scheduler, /function stopDiscovery\(\) \{\s*syncRecall\(\);/);
+  assert.doesNotMatch(scheduler, /keepRecall/);
 });
 
 test('上一代跑完的那一轮，不许改这一代的状态', () => {
