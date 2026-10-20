@@ -278,7 +278,9 @@
     function start(why) {
       decidedHref = location.href;
       bumpSession(why || 'start');
-      // 装回在这里照 recallOn() 对过一遍，下面三条路都不再各自碰它。
+      // recallOn() 的输入（站点判定、pausedByUser）一变都会走到这里 —— 暂停那一下
+      // 除外，它自己对 —— 所以装回在这里照它对一遍，下面三条路都不再碰它。
+      syncRecall();
       stopDiscovery();
       if (ctx.state.translationsVisible === false || pausedByUser) {
         // 「我现在想看原文」「先停一下」拦住的是**开始翻**，不是**重新判**。判定
@@ -324,9 +326,8 @@
       });
     }
 
-    // 停的只是发现层；装回挂不挂照 recallOn() 重对一遍（他按了暂停就摘）。
+    // 停的只是发现层，装回不归它管：预算拒绝、出错停下时装回照挂。
     function stopDiscovery() {
-      syncRecall();
       if (!discovery) return;
       discovery.stop();
       discovery = null;
@@ -785,6 +786,9 @@
       // resumeCurrentPage。
       if (cause === 'hidden' && status === STATUS.ERROR) return;
       if (cause !== 'hidden') pausedByUser = true;
+      // 上了闩 recallOn() 就是假，装回当场摘掉，不等下一次 start()；藏译文那一停
+      // 不上闩，这里对出来照旧，装回照挂（带着隐藏态）。
+      syncRecall();
       bumpSession('paused');
       stopDiscovery();
       setStatus(STATUS.PAUSED);

@@ -198,12 +198,16 @@ test('「隐藏译文」期间没有任何一条路能把自动翻译重开', ()
 test('装回挂不挂只问一句：站点的自动判定（刨掉 explicit）且没被用户暂停', () => {
   const scheduler = code('content/content-auto-translate.js');
   assert.match(scheduler, /function recallOn\(\) \{\s*return siteAuto\(\) && !pausedByUser;\s*\}/);
-  // 挂和摘各只有一个调用点，都在 syncRecall 里；停发现层的每一处都经它重对一遍，
-  // 不再按调用点各传一个「留不留装回」。
+  // 挂和摘各只有一个调用点，都在 syncRecall 里。它只在两处被叫：start() 一进来
+  // （判定和闩的其余变化都经过那里），和 pauseCurrentPage 上闩之后。停发现层
+  // 不碰装回 —— 预算拒绝、出错停下时装回照挂。
   assert.equal((scheduler.match(/\bwatchRecall\(\);/g) || []).length, 1);
   assert.equal((scheduler.match(/\bunwatchRecall\(\);/g) || []).length, 1);
   assert.match(scheduler, /function syncRecall\(\) \{\s*if \(recallOn\(\)\) watchRecall\(\);\s*else unwatchRecall\(\);\s*\}/);
-  assert.match(scheduler, /function stopDiscovery\(\) \{\s*syncRecall\(\);/);
+  assert.equal((scheduler.match(/\bsyncRecall\(\);/g) || []).length, 2);
+  assert.match(scheduler, /function start\(why\) \{[^}]*?syncRecall\(\);\s*stopDiscovery\(\);/);
+  assert.match(scheduler, /pausedByUser = true;\s*(\/\/[^\n]*\n\s*)*syncRecall\(\);/);
+  assert.match(scheduler, /function stopDiscovery\(\) \{\s*if \(!discovery\) return;\s*discovery\.stop\(\);\s*discovery = null;\s*\}/);
   assert.doesNotMatch(scheduler, /keepRecall/);
 });
 
