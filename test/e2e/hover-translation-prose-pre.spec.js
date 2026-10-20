@@ -195,9 +195,17 @@ test('prose <pre>: pressing the hotkey while resting on a paragraph toggles that
     expect(sentCount(sentTexts, LEAD_AFTER)).toBe(1);
     expect(sentCount(sentTexts, MIDDLE)).toBe(0);
 
-    // Pressed again over the same paragraph: its translation goes away.
-    await moveOnto(page, '#post', LEAD_BEFORE);
-    await page.keyboard.press('Shift');
+    // Pressed again over the same paragraph: its translation goes away. A hand on the
+    // mouse drifts a pixel or two while the key is down. A translated paragraph is
+    // already wrapped in its anchor, so that drift lands on the anchor, not on the
+    // <pre>'s own text: the pointermove relay must stay quiet there, or it would
+    // count as sweeping and cancel the press.
+    const rest = await pointOnText(page, '#post', LEAD_BEFORE);
+    await page.mouse.move(rest.x, rest.y);
+    await page.keyboard.down('Shift');
+    await page.mouse.move(rest.x + 2, rest.y + 1);
+    await page.mouse.move(rest.x + 3, rest.y);
+    await page.keyboard.up('Shift');
     await expect(translations).toHaveCount(0);
 
     // Resting on code, the hotkey does nothing.
