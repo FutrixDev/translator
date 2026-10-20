@@ -12,8 +12,8 @@ const {
   oursIn,
   sentSegments,
   openFloatBallMenu,
-  serveHtml,
 } = require('./helpers');
+const { serveHtml } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
   PICKER,

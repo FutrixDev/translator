@@ -25,8 +25,8 @@ const {
   stubBuiltinTranslator,
   translateInput,
   waitForContentReady,
-  serveHtml,
 } = require('./helpers');
+const { serveHtml } = require('./served-page-helpers');
 const { waitForPageRoundEnd } = require('./float-ball-helpers');
 const {
   en,

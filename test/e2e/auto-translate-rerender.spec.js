@@ -16,13 +16,11 @@ const { test, expect } = require('./fixtures');
 const {
   setExtensionSettings,
   evaluateInContentScript,
-  serveHtml,
-  scopeProbe,
-  settingsSettled,
   stubBuiltinTranslator,
   waitForContentReady,
   writeSyncSettings,
 } = require('./helpers');
+const { serveHtml, scopeProbe, settingsSettled } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const HOST = 'leftmenu.test';

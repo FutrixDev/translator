@@ -10,8 +10,8 @@ const {
   triggerPageTranslation,
   waitForFloatBall,
   oursIn,
-  serveHtml,
 } = require('./helpers');
+const { serveHtml } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const {
   TRANSLATED,

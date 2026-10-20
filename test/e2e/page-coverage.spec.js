@@ -15,8 +15,8 @@ const {
   waitForTranslationComplete,
   sendMessageToActiveTab,
   getSyncSetting,
-  scopeProbe,
 } = require('./helpers');
+const { scopeProbe } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 
 const ORIGIN = 'https://coverage.test';
