@@ -50,6 +50,7 @@ await import('../../shared/engines.js');
 await import('../../i18n/messages.js');
 await import('../../i18n/lang/en.js');
 const { handleOcrImage } = await import('../../background/ocr-recognize.js');
+const { noteAccountAction } = await import('../../background/blab-client.js');
 
 const BASE = 'http://blab.test';
 const IMAGE_URL = 'https://cdn.example/page.jpg';
@@ -71,9 +72,9 @@ const json = (data, status = 200) => ({
 /**
  * Run `fn` with the image served as `bytes` (labelled `contentType`, which
  * must not matter) decoding to width × height, and the service answering
- * `reply`. Returns the service calls.
+ * `reply` (or `reply(url)`). `encoded` is the size of every re-encode.
  */
-async function withImage({ bytes, contentType = 'image/jpeg', width = 800, height = 600, reply }, fn) {
+async function withImage({ bytes, contentType = 'image/jpeg', width = 800, height = 600, reply, encoded = PNG_HEAD.length }, fn) {
   const saved = {
     fetch: globalThis.fetch, bitmap: globalThis.createImageBitmap, canvas: globalThis.OffscreenCanvas,
     warn: console.warn, error: console.error,
@@ -85,7 +86,7 @@ async function withImage({ bytes, contentType = 'image/jpeg', width = 800, heigh
       return { ok: true, status: 200, blob: async () => new Blob([Uint8Array.from(bytes)], { type: contentType }) };
     }
     calls.push({ url, init });
-    return reply;
+    return typeof reply === 'function' ? reply(url) : reply;
   };
   globalThis.createImageBitmap = async () => ({ width, height, close() {} });
   globalThis.OffscreenCanvas = class {
@@ -93,7 +94,7 @@ async function withImage({ bytes, contentType = 'image/jpeg', width = 800, heigh
     getContext() { return { drawImage() {} }; }
     async convertToBlob({ type }) {
       encodes.push({ type, width: this.width, height: this.height });
-      return new Blob([Uint8Array.from(PNG_HEAD)], { type });
+      return new Blob([Uint8Array.from(PNG_HEAD), new Uint8Array(encoded - PNG_HEAD.length)], { type });
     }
   };
   console.warn = () => {};
@@ -177,8 +178,28 @@ test('blab ocr: signed out, nothing is sent and the reader is offered sign-in', 
   });
 });
 
-test('blab ocr: the image card carries the refusal\'s entry (subscribe / sign in) to the reader', async () => {
-  const { readFileSync } = await import('node:fs');
-  const source = readFileSync(new URL('../../content/content-image-ocr.js', import.meta.url), 'utf8');
-  assert.match(source, /ctx\.showCardError\(popup, response\?\.error \|\| t\('translationFailed'\), response\?\.action \|\| null\);/);
+test('blab ocr: re-encoded and still over the byte cap, it says so and sends nothing', async () => {
+  signIn();
+  const cap = globalThis.OCRCore.OCR_MAX_BYTES;
+  await withImage({ bytes: [...PNG_HEAD, 0], width: 720, height: 16000, encoded: cap + 1, reply: RECOGNISED }, ({ result, calls, encodes }) => {
+    assert.deepEqual(encodes.map((e) => e.type), ['image/png', 'image/jpeg'], 'PNG, then JPEG');
+    assert.equal(calls.length, 0, 'not sent to be refused as a bare 413');
+    assert.match(result.error, /after re-encoding/);
+  });
+});
+
+test('blab ocr: after the reader clicked subscribe, a plan bought since lets the next recognition through', async () => {
+  signIn();
+  await withImage({ bytes: [...PNG_HEAD, 0], reply: json({ error: 'plan_required' }, 403) }, ({ result }) => {
+    assert.equal(result.action, 'subscribe');
+  });
+  await noteAccountAction();
+  // billing/me's answer releases the latch only when it is newer than the refusal;
+  // a person is never inside the same millisecond, this test can be.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const answer = (url) => (url === `${BASE}/api/billing/me` ? json({ blabTranslation: { available: true } }) : RECOGNISED);
+  await withImage({ bytes: [...PNG_HEAD, 0], reply: answer }, ({ result, calls }) => {
+    assert.equal(result.text, 'Hello', 'the plan_required latch did not hold this one back');
+    assert.deepEqual(calls.map((c) => new URL(c.url).pathname), ['/api/billing/me', '/api/blab/complete']);
+  });
 });
