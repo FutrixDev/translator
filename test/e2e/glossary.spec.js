@@ -43,7 +43,7 @@ const html = (body) => `<!doctype html>
 const FRAME_ATTRS = 'width="640" height="220" style="border:0;display:block"';
 
 // C-J1：命中段在最上面（首屏优先批），隔 4000px 之后才是不命中的段 —— 视口外
-// 的块单独成批（content/page/batch.js 的 splitBlocksByViewport），于是一定有一批
+// 的块单独成批（content/page/focus-order.js 的 createBatchFeeder：一批只装同一档），于是一定有一批
 // 一个词条都不命中，它的请求不该带 GLOSSARY 块。
 const PAGES = {
   [`${SITE}/split`]: html(`

@@ -15,6 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { SCHEDULER_PRELUDE, docOrderFeeder } from './helpers/scheduler-stubs.mjs';
 import { repoSource } from './helpers/sources.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -28,6 +29,7 @@ function load() {
   const passes = [];
   const marks = [];
   const ctx = {
+    ...docOrderFeeder(),
     frameRole: 'top',
     state: { isTranslatingPage: false, translationsVisible: true },
     settings: { autoTranslate: true, siteRules: {}, autoAiDailyBudget: 0 },
@@ -67,7 +69,7 @@ function load() {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   for (const rel of ['shared/spa-navigation.js', 'shared/block-identity.js', 'shared/session-guard.js',
-    'content/content-auto-translate.js']) {
+    ...SCHEDULER_PRELUDE, 'content/content-auto-translate.js']) {
     vm.runInContext(repoSource(rel), sandbox, { filename: rel });
   }
   let onCandidates = null;

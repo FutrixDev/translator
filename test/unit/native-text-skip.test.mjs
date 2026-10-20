@@ -187,7 +187,7 @@ globalThis.chrome = {
   // content/content-local-pref.js（content-language.js 加载时经它建「最近使用」）。
   storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } },
 };
-globalThis.document = {};
+globalThis.document = { documentElement: { scrollHeight: 0 } };
 globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 let target = 'zh-CN';
 globalThis.window = {
@@ -198,6 +198,8 @@ globalThis.window = {
     isExtensionContextAvailable: () => true,
     isExtensionContextInvalidated: () => false,
   },
+  // focus-order.js 加载时挂上滚动/指针/尺寸监听。
+  addEventListener: () => {},
 };
 // 语言那几个 ctx.x 用真的 content-language.js 挂：maxChars 这一条要守的正是它的
 // getLanguageDetectionText。目标语言换成测试自己的，batch.js 在加载时取走它。
@@ -205,6 +207,8 @@ await import('../../content/content-local-pref.js');
 await import('../../content/content-language.js');
 const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 ctx.getEffectiveTargetLang = () => target;
+// 语言预检的并发池是 focus-order.js 的 drainFeeder，排在 batch.js 前面。
+await import('../../content/page/focus-order.js');
 await import('../../content/page/batch.js');
 
 async function translated(texts) {
