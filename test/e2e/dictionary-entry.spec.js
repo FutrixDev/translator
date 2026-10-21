@@ -7,6 +7,13 @@
 // J1–J3: the phonetics are the translation's, in the target language, and
 // their speakers read the translation (D-487); the source text keeps its own
 // speaker on each surface.
+// J4–J6: which entry a model writes for a word follows what is proven about
+// its language. Proven the target's (a script that pins it): the monolingual
+// prompt. Proven another (a script the target is not written in): the
+// bilingual prompt. Neither (a short Latin word, English or not, under an
+// English target): one prompt that lets the model decide, and the entry is
+// drawn as the model says it wrote it: monolingual (a gloss, the word's own
+// IPA read aloud as the word, examples with no translation row) or bilingual.
 //
 // The entry is drawn by one function, DictEntry.render (shared/dict-entry.js),
 // for both surfaces; these journeys assert what reaches the DOM and what the
@@ -52,6 +59,7 @@ p { width: 640px; }</style></head>
 <body>
   <p id="lead">Every day I <span id="word">run</span> along the river before the town wakes up.</p>
   <p id="tail">I will never <span id="phrase">give up</span> the morning.</p>
+  <p id="loan">It was pure <span id="loanword">Schadenfreude</span>, and he knew it.</p>
 </body></html>`;
 
 // What the model answers for a lookup of `run` into zh-CN. The phonetics are
@@ -587,6 +595,155 @@ test.describe('dictionary entry (batch C)', () => {
     }
   });
 
+  // What a model answers to the prompt that lets it decide (the word may or may
+  // not be English, the reader reads English): `monolingual` says which entry
+  // it wrote. popular and run are English, so a monolingual entry whose
+  // examples have no translation; Schadenfreude is German, so a bilingual one.
+  const DECIDED_ENTRIES = {
+    popular: {
+      monolingual: true,
+      translation: 'liked by many people',
+      phonetics: [{ label: 'UK', ipa: '/ˈpɒpjələ/' }, { label: 'US', ipa: '/ˈpɑːpjələr/' }],
+      senses: [{ pos: 'adj.', defs: ['liked or enjoyed by a large number of people', 'of ordinary people'] }],
+      examples: [{ source: 'It was a popular song in the sixties.', target: '' }],
+      forms: [{ label: 'comparative', value: 'more popular' }],
+    },
+    run: {
+      monolingual: true,
+      translation: 'move fast on foot',
+      phonetics: [{ label: 'UK', ipa: '/rʌn/' }, { label: 'US', ipa: '/rʌn/' }],
+      senses: [{ pos: 'v.', defs: ['move at a speed faster than a walk'] }],
+      examples: [{ source: 'I run every morning.', target: '' }],
+    },
+    Schadenfreude: {
+      monolingual: false,
+      translation: 'malicious joy',
+      phonetics: [{ label: 'UK', ipa: '/ˈʃɑːdənfrɔɪdə/' }, { label: 'US', ipa: '/ˈʃɑːdənˌfrɔɪdə/' }],
+      senses: [{ pos: 'n.', defs: ['pleasure taken in someone else\'s misfortune'] }],
+      examples: [{ source: 'Er empfand Schadenfreude.', target: 'He felt a malicious joy.' }],
+    },
+  };
+  const decidedEntry = (text) => DECIDED_ENTRIES[text] || { translation: `[T] ${text}` };
+
+  // The last request went out with the prompt that lets the model decide.
+  function expectDecidingPrompt(mock) {
+    const system = mock.systemPrompts.at(-1);
+    expect(system.startsWith('You are a dictionary for a reader of English.')).toBe(true);
+    expect(system.endsWith(globalThis.DictEntry.RULES.unknown)).toBe(true);
+    expect(system).toContain('"monolingual"');
+  }
+
+  // The entry under `root` has no translation row: UK/US rows whose speakers
+  // read `word`, and examples with no translation.
+  async function expectMonolingualEntry(page, root, word) {
+    const entry = root.locator('.ai-translator-dict-entry');
+    await expect(entry).toBeVisible();
+    const rows = entry.locator('.ai-translator-dict-phonetic');
+    await expect(rows.locator('.ai-translator-dict-accent')).toHaveText([en('dictUK'), en('dictUS')]);
+    for (const i of [0, 1]) {
+      await expect(rows.nth(i).locator('.ai-translator-dict-speak')).toHaveAttribute('aria-label', en('pronounceOriginal'));
+    }
+    const { source } = DECIDED_ENTRIES[word].examples[0];
+    await expect(entry.locator('.ai-translator-dict-example-source')).toHaveText(source);
+    await expect(entry.locator('.ai-translator-dict-example-target')).toHaveCount(0);
+    await expect(entry.locator('.ai-translator-dict-example')).toHaveText(source);
+    const before = (await spoken(page)).length;
+    await entry.locator('.ai-translator-dict-speak[data-accent="US"]').click();
+    await expect.poll(async () => (await spoken(page)).slice(before)).toEqual([{ text: word, lang: 'en-US' }]);
+    await entry.locator('.ai-translator-dict-speak[data-accent="UK"]').click();
+    await expect.poll(async () => (await spoken(page)).slice(before))
+      .toEqual([{ text: word, lang: 'en-US' }, { text: word, lang: 'en-GB' }]);
+  }
+
+  test('J4: input box into English — popular is the model\'s call and comes back monolingual; 猫 is proven foreign and goes out bilingual', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry: decidedEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { targetLang: 'en' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await stubSpeech(page);
+      await openInputDialog(page);
+
+      await translateInput(page, 'popular');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('liked by many people');
+      expectDecidingPrompt(mock);
+      const dialog = page.locator('#ai-translator-input-dialog');
+      await expectMonolingualEntry(page, dialog, 'popular');
+      await expect(dialog.locator('.ai-translator-dict-defs')).toHaveText('liked or enjoyed by a large number of people; of ordinary people');
+      await expect(dialog.locator('.ai-translator-dict-form-value')).toHaveText('more popular');
+      if (shotDir) {
+        await page.waitForTimeout(300);
+        await page.locator('.ai-translator-input-modal').screenshot({ path: `${shotDir}/j4-input-en-en.png` });
+      }
+
+      // Han is not written in English: proven another language, the bilingual
+      // lookup, whatever the model would have said.
+      await translateInput(page, '猫');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('[T] 猫');
+      expect(mock.systemPrompts.at(-1).startsWith('You are a bilingual dictionary.')).toBe(true);
+      expect(mock.systemPrompts.at(-1).endsWith(globalThis.DictEntry.RULES.other)).toBe(true);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J5: the selection card on an English page into English — run comes back monolingual, Schadenfreude bilingual, from the same deciding prompt', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry: decidedEntry });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { targetLang: 'en' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await stubSpeech(page);
+
+      const card = await openCardOn(page, '#word');
+      await expect(card.locator('.ai-translator-translation-text')).toHaveText('move fast on foot');
+      expectDecidingPrompt(mock);
+      await expectMonolingualEntry(page, card, 'run');
+
+      // The same prompt; the model says it translated, so the entry is the
+      // bilingual one: the speakers read the translation, the example keeps
+      // its translation.
+      await page.keyboard.press('Escape');
+      await expect(card).toHaveCount(0);
+      const loan = await openCardOn(page, '#loanword');
+      await expect(loan.locator('.ai-translator-translation-text')).toHaveText('malicious joy');
+      expectDecidingPrompt(mock);
+      const entry = loan.locator('.ai-translator-dict-entry');
+      await expect(entry).toBeVisible();
+      const speakers = entry.locator('.ai-translator-dict-phonetic .ai-translator-dict-speak');
+      await expect(speakers).toHaveCount(2);
+      for (const i of [0, 1]) await expect(speakers.nth(i)).toHaveAttribute('aria-label', en('pronounceTranslation'));
+      await expect(entry.locator('.ai-translator-dict-example-source')).toHaveText('Er empfand Schadenfreude.');
+      await expect(entry.locator('.ai-translator-dict-example-target')).toHaveText('He felt a malicious joy.');
+      const before = (await spoken(page)).length;
+      await entry.locator('.ai-translator-dict-speak[data-accent="US"]').click();
+      await expect.poll(async () => (await spoken(page)).slice(before)).toEqual([{ text: 'malicious joy', lang: 'en-US' }]);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  test('J6: input box into Chinese — 猫 is proven Chinese by its script and goes out monolingual', async ({ page, context }) => {
+    const mock = await startMockOpenAIServer({ dictEntry: (text) => ({ translation: `猫科动物（${text}）` }) });
+    try {
+      await servePage(context);
+      await setExtensionSettings(page, settings(mock.endpoint, { targetLang: 'zh-CN' }));
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      await openInputDialog(page);
+
+      await translateInput(page, '猫');
+      await expect(page.locator('#ai-translator-result-text')).toHaveText('猫科动物（猫）');
+      const system = mock.systemPrompts.at(-1);
+      expect(system.startsWith('You are a monolingual ')).toBe(true);
+      expect(system.endsWith(globalThis.DictEntry.RULES.target)).toBe(true);
+    } finally {
+      await mock.close();
+    }
+  });
+
   // D-561: an offline dictionary answer ({engine: 'dict', entry, credits}) is
   // read by the same entryFor and drawn by the same render. This draws a
   // hand-made answer into the input box's real entry container from the
@@ -613,7 +770,7 @@ test.describe('dictionary entry (batch C)', () => {
         const answer = ${JSON.stringify(answer)};
         const entry = DictEntry.entryFor('word', answer);
         DictEntry.render(document.getElementById('ai-translator-input-dict'), entry, {
-          targetLang: 'zh-CN', t: (key) => getMessage(key, 'zh-CN'), speech: null,
+          targetLang: 'zh-CN', text: 'run', t: (key) => getMessage(key, 'zh-CN'), speech: null,
         });
         return 'credits' in entry;
       })()`);

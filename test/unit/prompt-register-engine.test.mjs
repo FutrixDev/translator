@@ -218,76 +218,147 @@ test('a domain changed while the cache is read does not split the key from the r
   }
 });
 
-// ---- 两头接起来：内容脚本发出的消息 → 服务工作者的翻译函数 → 系统提示词 ----
-// 放在最后：它把服务工作者那一半（连同真的 AutoStats）装进这个进程，上面缓存
-// 那条要的是桩。
+// ---- 两头接起来：内容脚本发出的消息 → 服务工作者的监听器 → 系统提示词 ----
+// 放在最后：它把服务工作者那一半（真的 background.js，连同真的 AutoStats）装进
+// 这个进程，上面缓存那条要的是桩。
+
+/**
+ * 服务工作者加载时碰的、这里不关心的东西（菜单、闹钟、图标、生命周期事件）一律
+ * 回一个无害的替身，模块图照 Chrome 里那样装起来（media-consent-sw.test.mjs 同法）。
+ */
+function standIn() {
+  const fn = () => standIn();
+  return new Proxy(fn, {
+    get: (_target, prop) => (prop === 'then' ? undefined : standIn()),
+    apply: () => undefined,
+  });
+}
+
+function area(store) {
+  return {
+    get: async (keys) => {
+      if (keys == null) return { ...store };
+      const defaults = typeof keys === 'string' ? { [keys]: undefined }
+        : Array.isArray(keys) ? Object.fromEntries(keys.map((key) => [key, undefined])) : keys;
+      const out = {};
+      for (const [key, value] of Object.entries(defaults)) {
+        if (key in store) out[key] = store[key];
+        else if (value !== undefined) out[key] = value;
+      }
+      return out;
+    },
+    set: async (values) => { Object.assign(store, values); },
+    remove: async (keys) => { for (const key of [].concat(keys)) delete store[key]; },
+  };
+}
 
 test('the register rule reaches every text prompt and no word prompt, default and custom', async () => {
-  // ai-translate.js 经 settings.js 摸到 chrome.i18n 与 fetch；fetch 记下系统提示词。
-  globalThis.chrome.i18n.getUILanguage = () => 'en';
-  const systems = [];
-  let reply = () => 'translated';
-  globalThis.fetch = async (_url, init) => {
-    const body = JSON.parse(init.body);
-    systems.push(body.messages[0].content);
-    return new Response(JSON.stringify({ choices: [{ message: { content: reply() } }] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-  const prompts = await import('../../background/prompts.js');
-  const ai = await import('../../background/ai-translate.js');
-  const { PromptAddenda } = globalThis;
-  const FORUM_LINE = `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`;
-
   goTo(REDDIT);
   useAI();
+  sentToAI.length = 0;
   globalThis.chrome.runtime.sendMessage = async (message) => {
     sentToAI.push(message);
     return { translation: 'AI', translations: [] };
   };
   await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: BLOCK, targetLang: 'zh-CN', mode: 'text' });
-  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'hello', targetLang: 'zh-CN', mode: 'word' });
+  await ctx.requestTranslation({ type: 'TRANSLATE', feature: 'selection', text: 'hello', targetLang: 'zh-CN', mode: 'word', wordLang: 'other' });
   await ctx.requestTranslation({ type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: ['a', 'b'], targetLang: 'zh-CN' });
   const [single, word, fast] = sentToAI;
+  assert.equal(sentToAI.length, 3);
 
-  // background.js 的两个处理函数怎么把消息交下去，这里就怎么交：接口、Key、模型、
-  // 超时是消息里 profileId 指的那一档（P1-D），自定义提示词还在设置里。编号批是
-  // 快速批的回退，收的是同一条快速批消息。
-  const profile = {
-    id: 'default',
+  // 内容脚本那一半到此为止；下面换上服务工作者的 chrome，装真的 background.js，
+  // 三条消息交给它注册的监听器 —— 消息怎么拆、怎么交给翻译函数，是 background.js
+  // 自己的事，这里不抄。接口、Key、模型在旧四键里，第一次取档时迁成
+  // aiProfile:legacy（内容脚本这边选的正是那一档）；自定义提示词在设置里。
+  const sync = {
     provider: 'openai',
     apiEndpoint: 'https://api.openai.com/v1/chat/completions',
     apiKey: 'test-key',
     modelName: 'gpt-4.1-mini',
-    timeoutSec: 60,
+    customPrompt: '',
   };
-  for (const [label, settings] of [
-    ['default template', { customPrompt: '' }],
-    ['custom prompt', { customPrompt: 'Translate into {targetLang}. Be brief.' }],
+  const listeners = [];
+  globalThis.chrome = new Proxy({
+    i18n: { getUILanguage: () => 'en', detectLanguage: globalThis.chrome.i18n.detectLanguage },
+    storage: { sync: area(sync), local: area({}), session: area({}), onChanged: { addListener() {} } },
+    runtime: new Proxy({
+      onMessage: { addListener: (fn) => listeners.push(fn) },
+      getURL: (path) => `chrome-extension://test/${path}`,
+      getManifest: () => ({ version: '9.9.9' }),
+      // StorageWriter 在 Node 里认不出服务工作者（IN_SERVICE_WORKER 是加载时定的），
+      // 于是 AutoStats 的记账写成一条消息发出去；这里没人收，回 null。
+      sendMessage: async () => null,
+      lastError: undefined,
+    }, { get: (target, prop) => (prop in target ? target[prop] : standIn()) }),
+  }, { get: (target, prop) => (prop in target ? target[prop] : standIn()) });
+  // fetch 记下每一次真发出去的系统提示词，按次序回 replies 里的答案。
+  const systems = [];
+  let replies = [];
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    systems.push(body.messages[0].content);
+    return new Response(JSON.stringify({ choices: [{ message: { content: replies.shift() } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const prompts = await import('../../background/prompts.js');
+  await import('../../background/background.js');
+  const { PromptAddenda } = globalThis;
+  const FORUM_LINE = `${PromptAddenda.HEADINGS.register} ${PromptAddenda.REGISTER_SENTENCES.forum}`;
+  const send = (message) => new Promise((resolve) => {
+    for (const listener of listeners) listener(message, { tab: { id: 1, url: REDDIT } }, resolve);
+  });
+
+  for (const [label, customPrompt] of [
+    ['default template', ''],
+    ['custom prompt', 'Translate into {targetLang}. Be brief.'],
   ]) {
-    const sent = async (run, answer) => {
+    sync.customPrompt = customPrompt;
+    const sent = async (message, answers) => {
       systems.length = 0;
-      reply = answer;
-      await run();
-      assert.equal(systems.length, 1, `${label}: ${systems.length} requests`);
-      return systems[0];
+      replies = [...answers];
+      const reply = await send(message);
+      assert.ok(reply && !reply.error, `${label} ${message.type}: ${JSON.stringify(reply)}`);
+      assert.equal(systems.length, answers.length, `${label}: ${systems.length} requests`);
+      assert.equal(replies.length, 0);
+      return systems;
     };
-    const text = {
-      single: await sent(() => ai.translateTextWithMode(
-        single.text, single.targetLang, profile, settings, single.mode === 'word', single.addenda), () => 'translated'),
-      numbered: await sent(() => ai.translateBatchWithAI(
-        fast.texts, fast.targetLang, profile, settings, fast.addenda), () => '[1] A\n\n[2] B'),
-      fast: await sent(() => ai.translateBatchFastWithAI(
-        fast.texts, fast.targetLang, profile, settings, fast.addenda), () => `A${globalThis.BATCH_DELIMITER}B`),
-    };
-    for (const [path, system] of Object.entries(text)) {
+    const [textPrompt] = await sent(single, ['translated']);
+    const [fastPrompt] = await sent(fast, [`A${globalThis.BATCH_DELIMITER}B`]);
+    // 分隔符对不上时快速批回退到编号批：同一条消息，第二次真发出去的请求。
+    const [, numberedPrompt] = await sent(fast, ['A', '[1] A\n\n[2] B']);
+    for (const [path, system] of Object.entries({ single: textPrompt, fast: fastPrompt, numbered: numberedPrompt })) {
       assert.ok(system.includes(prompts.REGISTER_RULE), `${label} ${path} lacks the register rule:\n${system}`);
       assert.ok(system.includes(FORUM_LINE), `${label} ${path} lost the forum label`);
     }
-    const dictionary = await sent(() => ai.translateTextWithMode(
-      word.text, word.targetLang, profile, settings, word.mode === 'word', word.addenda), () => '{"translation":"你好"}');
+    assert.ok(numberedPrompt !== fastPrompt, `${label}: the fallback sent the fast prompt again`);
+    const [dictionary] = await sent(word, ['{"translation":"你好"}']);
+    // background.js 把 mode: 'word' 与 wordLang 交下去，选中的是这一档的规则。
+    assert.ok(dictionary.endsWith(prompts.WORD_MODES.other.rules), `${label} word path:\n${dictionary}`);
     assert.ok(!dictionary.includes(prompts.REGISTER_RULE), `${label} word prompt carries the register rule:\n${dictionary}`);
     assert.ok(dictionary.includes(FORUM_LINE), `${label} word prompt lost the forum label`);
+  }
+
+  // 消息的请求那一半（background.js 的 translateRequestOf）：不带 mode 是文本；
+  // 认不出的 mode、没有 wordLang 的词都在发出任何请求之前回错。
+  sync.customPrompt = '';
+  const { mode: _mode, ...noMode } = single;
+  const [untagged] = await (async () => {
+    systems.length = 0;
+    replies = ['translated'];
+    const reply = await send(noMode);
+    assert.deepEqual(reply, { translation: 'translated' });
+    return systems;
+  })();
+  assert.ok(untagged.includes(prompts.REGISTER_RULE), `a message without a mode took the word path:\n${untagged}`);
+  for (const [bad, error] of [
+    [{ ...single, mode: 'dictionary' }, /unknown request mode dictionary/],
+    [{ ...word, wordLang: undefined }, /unknown wordLang undefined/],
+  ]) {
+    systems.length = 0;
+    const reply = await send(bad);
+    assert.match(reply.error, error);
+    assert.equal(systems.length, 0, `${JSON.stringify(bad)} reached the model`);
   }
 });

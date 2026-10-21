@@ -28,13 +28,33 @@ Placeholders such as {{1}}, {{2}} stand for formulas the page renders itself. Ke
 // must not contain {placeholders}.
 const REGISTER_RULE = 'Match the register of the source: casual posts stay casual, with memes and slang rendered as natural equivalents in the target language rather than formal wording or explanations; formal text stays formal';
 
-// Dictionary lookup prompt (no math placeholder rule). Like a custom prompt, it
-// is followed by WORD_OUTPUT_RULES as buildPrompt's extraRules, so every lookup
-// ends in DictEntry.OUTPUT_RULES — after the addenda too — and asks for exactly
-// the entry the service worker accepts (shared/dict-entry.js).
-const SINGLE_WORD_PROMPT = 'You are a bilingual dictionary. Look up the given word or short phrase for a reader of {targetLang}; write translations and definitions in {targetLang}.';
+// Dictionary lookup prompts (no math placeholder rule), one per WORD_LANGS
+// value: what the content side could prove about the word's language
+// (content/content-dict-lookup.js). Like a custom prompt, each is followed by
+// its mode's DictEntry.RULES as buildPrompt's extraRules, so every lookup ends
+// in those rules — after the addenda too — and asks for exactly the entry the
+// service worker accepts (shared/dict-entry.js).
+//   other    the word is in another language: a bilingual dictionary.
+//   target   the word is already in the target language: a monolingual one.
+//   unknown  nobody could tell (a short Latin word): the model decides, and
+//            says which it wrote in "monolingual".
+const { WORD_LANGS, RULES } = globalThis.DictEntry;
+const WORD_PROMPTS = Object.freeze({
+  [WORD_LANGS.OTHER]: 'You are a bilingual dictionary. Look up the given word or short phrase for a reader of {targetLang}; write translations and definitions in {targetLang}.',
+  [WORD_LANGS.TARGET]: 'You are a monolingual {targetLang} dictionary. Look up the given {targetLang} word or short phrase for a reader of {targetLang}; write its gloss, definitions and examples in {targetLang}, without translating it.',
+  [WORD_LANGS.UNKNOWN]: 'You are a dictionary for a reader of {targetLang}. The given word or short phrase may already be a word of {targetLang}, or a word of another language. If it is a word of {targetLang}, look it up as a monolingual {targetLang} dictionary does, without translating it; otherwise look it up as a bilingual dictionary does and translate it into {targetLang}. Write definitions in {targetLang}, and say in "monolingual" which entry you wrote.',
+});
 
-const WORD_OUTPUT_RULES = globalThis.DictEntry.OUTPUT_RULES;
+// Keyed by the request's `wordLang`, the keys of DictEntry.RULES; built from
+// RULES so a mode with rules but no prompt (or the reverse) throws here, at
+// load. DictEntry.fromModelText reads the same key to stamp
+// `entry.monolingual` (fixed when the language was proven, the model's own
+// answer when it was unknown).
+const WORD_MODES = Object.freeze(Object.fromEntries(Object.entries(RULES).map(([wordLang, rules]) => {
+  const prompt = WORD_PROMPTS[wordLang];
+  if (!prompt) throw new Error(`word lookup: no prompt for wordLang ${wordLang}`);
+  return [wordLang, Object.freeze({ prompt, rules })];
+})));
 
 // The text paths (single, numbered batch, fast batch) send one template — the
 // user's prompt, or PromptPresets' default when there is none
@@ -121,8 +141,7 @@ function buildPrompt(template, targetLangName, variables = {}, extraRules = '', 
 
 export {
   MATH_PLACEHOLDER_RULE,
-  SINGLE_WORD_PROMPT,
-  WORD_OUTPUT_RULES,
+  WORD_MODES,
   BATCH_OUTPUT_RULES,
   getFastBatchOutputRules,
   REGISTER_RULE,

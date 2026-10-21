@@ -38,9 +38,11 @@ async function openExample(context, page) {
   await waitForContentReady(page, 'underline');
 }
 
+/** ctx.dictLookup's pack answer (its `answer`; the word's language is unit-tested). */
 function lookup(context, page, text, targetLang, options = {}) {
   return evaluateInContentScript(context, page,
-    `window.AI_TRANSLATOR_CONTENT.dictLookup(${JSON.stringify(text)}, ${JSON.stringify(targetLang)}, ${JSON.stringify(options)})`);
+    `window.AI_TRANSLATOR_CONTENT.dictLookup(${JSON.stringify(text)}, ${JSON.stringify(targetLang)}, ${JSON.stringify(options)})
+      .then(({ answer }) => answer)`);
 }
 
 /** Send a dictionary message from the page's content script, as a lookup does. */

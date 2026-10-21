@@ -65,19 +65,34 @@ async function charged(reply, fn) {
 test('single TRANSLATE (hover, selection card): the page context is counted with the text', async () => {
   const text = 'The model attends to every token.';
   const booked = await charged('模型关注每一个词元。', () =>
-    translateTextWithMode(text, 'zh-CN', profile, settings, false, addenda));
+    translateTextWithMode(text, 'zh-CN', profile, settings, { mode: 'text' }, addenda));
   assert.deepEqual(booked, [text.length + CONTEXT_CHARS]);
 
   // 没有 addenda 就只记源文本 —— 上面那笔多出来的正是上下文。
   const bare = await charged('模型关注每一个词元。', () =>
-    translateTextWithMode(text, 'zh-CN', profile, settings, false, undefined));
+    translateTextWithMode(text, 'zh-CN', profile, settings, { mode: 'text' }, undefined));
   assert.deepEqual(bare, [text.length]);
 });
 
 test('single word goes through the same count', async () => {
   const booked = await charged('{"translation":"注意","phonetics":[{"label":"","ipa":"zhù yì"}]}', () =>
-    translateTextWithMode('attention', 'zh-CN', profile, settings, true, addenda));
+    translateTextWithMode('attention', 'zh-CN', profile, settings, { mode: 'word', wordLang: 'other' }, addenda));
   assert.deepEqual(booked, ['attention'.length + CONTEXT_CHARS]);
+});
+
+test('a word with no known verdict is refused before anything is counted or sent', async () => {
+  for (const wordLang of [undefined, '', 'en', 'same']) {
+    let fetched = 0;
+    const booked = await charged('{"translation":"注意"}', async () => {
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async (...args) => { fetched += 1; return realFetch(...args); };
+      await assert.rejects(
+        translateTextWithMode('attention', 'zh-CN', profile, settings, { mode: 'word', wordLang }, addenda),
+        /unknown wordLang/, String(wordLang));
+    });
+    assert.deepEqual(booked, [], `${String(wordLang)} was counted`);
+    assert.equal(fetched, 0, `${String(wordLang)} reached the model`);
+  }
 });
 
 test('numbered batch: the page context is counted once per request, not once per text', async () => {

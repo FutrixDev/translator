@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 两条翻译消息都带内容脚本选好的 profileId（和它为哪个功能选的 feature，只用来
     // 记日志）；SW 不再替它选档。
     case 'TRANSLATE':
-      handleTranslate(message.text, message.targetLang, message.mode, message.profileId, message.feature, message.auto || message.unattended, message.addenda)
+      handleTranslate(message.text, message.targetLang, translateRequestOf(message), message.profileId, message.feature, message.auto || message.unattended, message.addenda)
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true; // Keep channel open for async response
@@ -443,8 +443,20 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // 是缺陷，所以抛、不截断），再计字数、调模型（计数在 ai-translate.js 里）。失败
 // 只在 replyError 记一次日志（操作名、档 id、功能、原始错误）。
 
-// Handle single text translation
-async function handleTranslate(text, targetLang, mode, profileId, feature, zeroClick, addenda) {
+// The request half of a TRANSLATE message, the shape ctx.dictRoute builds and
+// the card and the input box spread into it: `{ mode: 'word', wordLang }` for
+// a dictionary lookup (wordLang, a DictEntry.WORD_LANGS value), `{ mode:
+// 'text' }` otherwise. A message without a mode is text: the hover, inline
+// and account senders send none or 'text'. Any other mode, and a wordLang
+// that is not a WORD_LANGS value, is carried as it came: translateTextWithMode
+// throws on it inside handleTranslate, before anything is counted, so the
+// failure is replied and logged like any other.
+function translateRequestOf({ mode = 'text', wordLang }) {
+  return mode === 'word' ? { mode, wordLang } : { mode };
+}
+
+// Handle single text translation. `request` is translateRequestOf(message).
+async function handleTranslate(text, targetLang, request, profileId, feature, zeroClick, addenda) {
   const settings = await chrome.storage.sync.get(defaultSettings);
   let profile;
   try {
@@ -456,7 +468,7 @@ async function handleTranslate(text, targetLang, mode, profileId, feature, zeroC
     globalThis.PromptAddenda.validate(addenda);
     await beforeModelRequest(profile, zeroClick);
     const effectiveLang = targetLang || getEffectiveTargetLang(settings);
-    return await translateTextWithMode(text, effectiveLang, profile, settings, mode === 'word', addenda);
+    return await translateTextWithMode(text, effectiveLang, profile, settings, request, addenda);
   } catch (error) {
     return replyError('TRANSLATE', error, { settings, profile, profileId, feature });
   }

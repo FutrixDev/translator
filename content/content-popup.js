@@ -583,10 +583,11 @@
   }
 
   // 词典条目只经共享渲染器画（与输入框同一份）；null 清空并藏起。
-  // 音标是译文的，喇叭按这次请求的目标语言读译文（D-487）；读原文的是卡片自己的
-  // .ai-translator-speak-source。
-  function showCardEntry(parts, entry, targetLang) {
-    if (parts.dict) DictEntry.render(parts.dict, entry, { targetLang, t, speech });
+  // 音标是译文的，喇叭按这次请求的目标语言读译文（D-487）；单语条目（查的词本来就是
+  // 目标语言，entry.monolingual）的音标是这个词自己的，喇叭读查的原文 text。读原文的
+  // 是卡片自己的 .ai-translator-speak-source。
+  function showCardEntry(parts, entry, targetLang, text) {
+    if (parts.dict) DictEntry.render(parts.dict, entry, { targetLang, text, t, speech });
   }
 
   // 重译 / 换引擎 / 加入术语表：请求在路上时禁用（术语表拿的是译文，旧的不能拿去预填）。
@@ -695,7 +696,7 @@
       const provenWord = !!popup && popup.dataset.provenWord === text;
       // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
       ctx.rememberRecentTargetLang(targetLang);
-      const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
+      const { local, request } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
       // "Explain in context with AI" always sends the sentence the selection
       // sits in, whatever aiPageContext says (D-641); content/engine/addenda.js
       // turns it into the PAGE CONTEXT addendum.
@@ -705,7 +706,7 @@
         feature: 'selection',
         text: text,
         targetLang: targetLang,
-        mode,
+        ...request,
         ...(pinned ? { engine: pinned } : {}),
         ...(explain ? { explainContext: true } : {}),
         ...(explain && popup._explainContext ? { pageContext: popup._explainContext } : {})
@@ -719,7 +720,7 @@
       } else {
         // A model lookup or a local dictionary hit carries an entry
         // (DictEntry.entryFor); a builtin answer has none.
-        const entry = DictEntry.entryFor(mode, response);
+        const entry = DictEntry.entryFor(request.mode, response);
         const parts = cardParts(popup);
         setCardLoading(parts, false);
         if (parts.text) {
@@ -732,7 +733,7 @@
           void parts.text.offsetWidth;
           parts.text.classList.add('ai-translator-translation-flow');
         }
-        showCardEntry(parts, entry, targetLang);
+        showCardEntry(parts, entry, targetLang, text);
         popup._showTranslationSpeak?.(!!response.translation);
         if (parts.resultBody) {
           parts.resultBody.hidden = false;

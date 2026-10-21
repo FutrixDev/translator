@@ -10,7 +10,8 @@
 // the same per-path rules it appends to a prompt the user typed, so the box
 // showing it is exactly what goes out. The settings page shows it in the box and
 // stores '' while the box still holds it, so a user who never touched the prompt
-// keeps the default dictionary prompt on the word path (SINGLE_WORD_PROMPT).
+// keeps the mode's dictionary prompt on the word path (background/prompts.js
+// WORD_MODES).
 //
 // Sent to the model, never shown as UI text: English in every UI language, and
 // not in i18n — a translated "reply with the translation only" is not a better

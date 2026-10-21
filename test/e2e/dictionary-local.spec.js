@@ -6,7 +6,8 @@
 // offline-dict-b2-r1.md): J-B2.2 runs under the default settings and finds the
 // selection's sentence in the prompt, J-B2.2b sends no sentence for an
 // ordinary lookup, J-B2.9 explains a Japanese word the pack proved a word, and
-// J-B2.10 takes a sentence on the same page as text again.
+// J-B2.10 takes a sentence on the same page as text again. J-B2.12: a word
+// on a German page that the English pack holds is not proven English.
 //
 // Every step starts in the real UI: a word selected with the mouse and the
 // card opened from the selection icon, or a word typed into the input box.
@@ -71,6 +72,17 @@ p { width: 640px; }</style></head>
   <p id="note">明日は <span id="sensei">先生</span> に会います。</p>
 </body></html>`;
 
+// German, with "Run" in the German sense (a rush on something): a word the
+// en→zh-CN pack holds as English.
+const DE_PAGE = `<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Konzertnotizen</title>
+<style>body { margin: 0; padding: 40px 60px; font: 18px/28px Georgia, serif; color: #222; background: #fff; }
+p { width: 640px; }</style></head>
+<body>
+  <p id="lead">Kaum war der Vorverkauf eröffnet, gab es einen regelrechten <span id="run">Run</span> auf die Karten für das Konzert im Stadtpark.</p>
+  <p id="tail">Wer am Abend noch keine hatte, musste draußen bleiben und hörte die Musik nur von der anderen Seite des Zauns.</p>
+</body></html>`;
+
 // What the model answers when it is asked about `ran` or 食べました in
 // context: marked so the entry on the card can only have come from the model.
 const MODEL_ENTRIES = {
@@ -108,7 +120,7 @@ async function setUp(page, context, { url = `${ORIGIN}/`, css = '', extra = {}, 
   server.publishFixture('en-zh-CN');
   server.publishFixture('ja-zh-CN');
   await server.attach(context);
-  await servePages(context, { '/': EN_PAGE, '/ja': JA_PAGE }, css);
+  await servePages(context, { '/': EN_PAGE, '/ja': JA_PAGE, '/de': DE_PAGE }, css);
   await setExtensionSettings(page, settings(mock.endpoint, { uiLanguage: 'zh-CN', ...extra }));
   await page.goto(url);
   await waitForFloatBall(page);
@@ -320,6 +332,36 @@ test.describe('offline dictionary in the card and the input box (batch B2)', () 
       await expect(parts.tag).toHaveText(zh('cardEngineAi'));
       await expect.poll(() => worker.evaluate(() => self.__dictWanted)).toEqual([DictPack.pairOf('ja', 'zh-CN')]);
       await listedAt(context, DictPack.pairOf('ja', 'zh-CN'), PACK_VER);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  // A word the target language's pack holds is proven the target's only when
+  // nothing says it is another language's. Selected on a German page, "Run"
+  // is German as much as English, so a reader of English gets the prompt that
+  // lets the model decide, not a monolingual English entry. On the English
+  // page the same pack still proves "ran" English.
+  test('J-B2.12: a word on a German page that the English pack holds goes to the model undecided, not as English', async ({ page, context }) => {
+    const mock = await setUp(page, context, { url: `${ORIGIN}/de`, installed: ['en'], extra: { targetLang: 'en' } });
+    const deciding = 'You are a dictionary for a reader of English.';
+    try {
+      let card = await openCardOn(page, '#run');
+      await expect(cardPart(card).tag).toHaveText(zh('cardEngineAi'));
+      await expect.poll(() => mock.sentTexts).toEqual(['Run']);
+      const onGerman = mock.systemPrompts.at(-1);
+      expect(onGerman.startsWith(deciding), onGerman.slice(0, 120)).toBe(true);
+      expect(onGerman.endsWith(globalThis.DictEntry.RULES.unknown)).toBe(true);
+
+      // The control: the installed pack does prove a word on a page in the
+      // target's own language.
+      await page.goto(`${ORIGIN}/`);
+      await waitForFloatBall(page);
+      card = await openCardOn(page, '#ran');
+      await expect.poll(() => mock.sentTexts).toEqual(['Run', 'ran']);
+      const onEnglish = mock.systemPrompts.at(-1);
+      expect(onEnglish.startsWith('You are a monolingual English dictionary.'), onEnglish.slice(0, 120)).toBe(true);
+      expect(onEnglish.endsWith(globalThis.DictEntry.RULES.target)).toBe(true);
     } finally {
       await mock.close();
     }
