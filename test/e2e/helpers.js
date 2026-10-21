@@ -130,6 +130,8 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   'content/page/scope.js',
   'content/page/reader-hidden.js',
   'content/page/not-prose.js',
+  // 文字段锚点（text-runs.js）：收集、散文 <pre>、落笔在调用时读它挂的 ctx.x。
+  'content/page/text-runs.js',
   // 散文 <pre>（prose-pre.js）：整页收集碰到 skipTags 时问它，悬停也问它。
   'content/page/prose-pre.js',
   'content/page/collect.js',

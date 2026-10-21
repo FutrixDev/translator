@@ -70,32 +70,43 @@
     }
   }
 
-  // 用 DOM 操作构建译文内容：还原数学公式占位符 {{n}}，并按内联格式标记
-  // <a1>…</a1> 克隆原元素重建超链接/内联样式。
-  // 不使用 innerHTML：数学元素直接 cloneNode，标记元素浅 clone 后以 DOM API
-  // 组装，译文文本一律走 createTextNode，模型输出里的任何 HTML 都不会被解析。
-  function buildTranslationContent(container, translatedText, block, prefix = '') {
-    const mathElements = (block && block.mathElements) || [];
-    const markupElements = (block && block.markupElements) || [];
+  // 原文按换行分行的块（散文 <pre> 和它的段落、white-space: pre-wrap 之类的盒子）：
+  // 换行是正文的一部分，译文也照样分行（buildTranslationContent 留着换行，
+  // insertTranslationBlock 给译文 pre-wrap：插在块外的译文继承不到块的 white-space，
+  // 用 pre-wrap 而不照抄，是因为 pre 不折行，译文会成一条横穿页面的长行）。
+  // 其余的块里换行只是排版空白。悬停带公式那条路（buildTranslationContentWithMath）照旧收成空格。
+  const LINE_KEEPING_WHITE_SPACE = new Set(['pre', 'pre-wrap', 'pre-line', 'break-spaces']);
 
-    // 清理 LLM 可能添加的换行
-    let text = translatedText.replace(/\s*\n\s*/g, ' ');
+  function keepsLineBreaks(element) {
+    return !!element && LINE_KEEPING_WHITE_SPACE.has(window.getComputedStyle(element).whiteSpace);
+  }
 
-    // 添加前缀（如空格）
-    if (prefix) {
-      text = prefix + text;
-    }
+  // 接上前缀（如空格）。原文不分行的块，模型输出里的换行收成空格。
+  function prepareTranslation(translatedText, prefix, keepLines = false) {
+    return prefix + (keepLines ? translatedText : translatedText.replace(/\s*\n\s*/g, ' '));
+  }
 
+  // 占位符编号 → 数学条目。mathElements 是收集端（getTextWithMathPlaceholders）给的
+  // 数组，没有公式就是 []。
+  function mathByNumberOf(mathElements) {
     const mathByNumber = new Map();
     for (const math of mathElements) {
       const id = globalThis.TextMarkers.parsePlaceholder(math.placeholder);
       if (id) mathByNumber.set(id, math);
     }
+    return mathByNumber;
+  }
 
-    if (markupElements.length === 0) {
-      appendTextWithMath(container, text, mathByNumber);
-      return;
-    }
+  // 用 DOM 操作构建整页翻译一块的译文：还原数学公式占位符 {{n}}，并按内联格式
+  // 标记 <a1>…</a1> 克隆原元素重建超链接/内联样式。block 是收集阶段的块，要带
+  // text（送出去的原文）：清残骸拿它判哪些标记形状是页面自己的字；markupElements 与
+  // mathElements 是收集端给的数组（没有就是 []），缺了是调用方的缺陷，照样抛。
+  // 不使用 innerHTML：数学元素直接 cloneNode，标记元素浅 clone 后以 DOM API
+  // 组装，译文文本一律走 createTextNode，模型输出里的任何 HTML 都不会被解析。
+  function buildTranslationContent(container, translatedText, block, prefix = '') {
+    const { markupElements } = block;
+    const text = prepareTranslation(translatedText, prefix, keepsLineBreaks(block.element));
+    const mathByNumber = mathByNumberOf(block.mathElements);
 
     const markupByNumber = new Map();
     for (const mk of markupElements) {
@@ -104,18 +115,19 @@
 
     // 栈式重建：开标记 → 浅 clone 原元素（保留 href/class/style，去掉 id 和
     // on* 属性）并下钻；闭标记 → 弹回。对模型输出保持防御：编号或标签名对不上
-    // 的标记当普通文本原样保留；错序的闭标记只弹到对应层；缺失的闭标记到结尾
-    // 自动闭合。最坏情况（标记全被模型丢掉）退化为纯文本译文，即今天的行为。
+    // 的标记不重建；错序的闭标记只弹到对应层；缺失的闭标记到结尾自动闭合。最坏
+    // 情况（标记全被模型丢掉）退化为纯文本译文。
     //
     // 大小写不敏感 + 容空白和句点，是内置 NMT 逼出来的：实测 en→zh-Hans 会把
     // 开标记大写成 `<A1>`（闭标记仍是 `</a1>`），en→pt 会写出 `</span1 . 3>`。
     // 严格匹配的话，这条链接不但重建不出来，标记还会原样显示给读者。见
     // shared/text-markers.js。
     const markerRe = globalThis.TextMarkers.markerParsePattern();
-    // 解析完仍留在正文里的标记残骸（配不上任何一对，上面 continue 掉的那些）不
-    // 能直接给读者看，落笔前清掉。只认本块生成过的标签名和编号，见
-    // TextMarkers.debrisScrubber。
-    const scrubDebris = globalThis.TextMarkers.debrisScrubber(markupElements);
+    // 解析完仍留在正文里的标记残骸（配不上任何一对，下面 continue 掉的那些）不
+    // 能直接给读者看，落笔前清掉。一个标记都没发过的块也要清：批量翻译错位时，
+    // 别的块的译文会带着标记落进来。原文里本来就写着的同样形状是页面的字，留着，
+    // 见 TextMarkers.debrisScrubber。
+    const scrubDebris = globalThis.TextMarkers.debrisScrubber(block.text, markupElements);
     const emit = (node, chunk) => {
       appendTextWithMath(node, scrubDebris(chunk), mathByNumber);
     };
@@ -147,9 +159,11 @@
     emit(stack[stack.length - 1].node, text.slice(lastIndex));
   }
 
-  // 向后兼容的旧签名（悬停/划词翻译仍按 mathElements 数组调用）
+  // 悬停/划词翻译的译文：只还原数学占位符。那条路取原文时不发内联标记
+  // （content/hover/blocks.js 不开 preserveMarkup），译文里长得像标记的字只能是
+  // 原文自己写的，原样显示，没有可重建也没有可清的。
   function buildTranslationContentWithMath(container, translatedText, mathElements, prefix = '') {
-    buildTranslationContent(container, translatedText, { mathElements }, prefix);
+    appendTextWithMath(container, prepareTranslation(translatedText, prefix), mathByNumberOf(mathElements));
   }
 
   // 译文插进 DOM 不等于看得见：折叠容器（overflow:hidden + max-height）会把它整条
@@ -254,12 +268,21 @@
 
   // 检测父元素是否是水平布局（flex 或内联水平排列）
   function isHorizontalFlexParent(element) {
-    // 散文 <pre> 的段落锚点是内联 span，却是一整段，见 content/page/prose-pre.js
-    if (ctx.prosePre.isParagraph(element)) return false;
     const parent = layoutParent(element);
     if (!parent) return false;
     if (isHorizontalFlexContainer(parent)) return true;
+    return !placesBelow(element) && sitsInlineBeside(element);
+  }
 
+  // 收集端裹的文字段锚点（text-runs.js：一个元素的直属文字、散文 <pre> 的一段）
+  // 是内联 span，读者眼里却是一段正文：译文当块放在它下面，不挂在它右边——
+  // 挂在右边就是一整段 0.85em 的淡字接在原文段尾，接着折行。
+  function placesBelow(element) {
+    return element.classList.contains(ctx.TEXT_RUN_CLASS);
+  }
+
+  // 内联排的小元素（链接、标签、按钮、浮动的列表项）：译文挂在它右边。
+  function sitsInlineBeside(element) {
     const inlineLayoutTags = new Set(['LI', 'A', 'SPAN', 'LABEL', 'BUTTON']);
     if (!inlineLayoutTags.has(element.tagName)) return false;
 
@@ -332,25 +355,21 @@
   // 文本也是一项，要找的是能在下面再放一行的那一列。
   function textColumnOf(element) {
     if (element.shadowRoot || !isHorizontalFlexContainer(element)) return element;
-    const items = [];
-    let run = null;
-    for (const node of element.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        if (!run) items.push(run = []);
-        run.push(node);
-        continue;
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) continue;
-      run = null;
-      if (ctx.isIconElement(node) || ctx.isMathElement(node)
-          || node.classList.contains('ai-translator-inline-block')) continue;
-      items.push(node);
-    }
-    const textOf = (item) => (Array.isArray(item) ? item.map((node) => node.textContent).join('') : item.textContent);
+    // 切法是 ctx.splitRuns（text-runs.js）：文字与注释并成一段（React 在相邻文本
+    // 节点之间插注释，它们仍是同一个匿名项），图标、公式、我们插进去的译文断开、
+    // 不算一项，别的元素各自是一项。
+    const items = ctx.splitRuns([...element.childNodes], (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return 'run';
+      return ctx.isIconElement(node) || ctx.isMathElement(node)
+        || node.classList.contains('ai-translator-inline-block') ? 'break' : 'anchor';
+    });
+    const textOf = (item) => (Array.isArray(item)
+      ? item.filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.data).join('')
+      : item.textContent);
     const withText = items.filter((item) => textOf(item).trim());
     if (withText.length !== 1) return element;
     const column = withText[0];
-    return Array.isArray(column) ? ctx.wrapTextRun(column) : textColumnOf(column);
+    return Array.isArray(column) ? ctx.wrapLayoutColumn(column) : textColumnOf(column);
   }
 
   const POSITION_CLASSES = /\b(absolute|fixed|sticky|relative|inset-\S*|top-\S*|bottom-\S*|left-\S*|right-\S*|z-\S*)\b/g;
@@ -553,8 +572,6 @@
     element.classList.add('ai-translator-translated');
 
     const hasMathElements = block.mathElements && block.mathElements.length > 0;
-    const hasMarkupElements = block.markupElements && block.markupElements.length > 0;
-    const hasRichContent = hasMathElements || hasMarkupElements;
 
     // 受管容器（只读的 Lexical / ProseMirror 等）会删掉插进子树的译文节点，这里
     // 把译文画成原文块自己的 ::after —— 生成内容不是节点，编辑器看不见它，而且它
@@ -564,11 +581,11 @@
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
       // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
-      // 用 debrisScrubber 而不是笼统的 markerPattern：只剥本块真生成过的
-      // 标签名+编号，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
+      // 用 debrisScrubber 而不是笼统的 markerPattern：原文里本来就写着的同样
+      // 形状留着，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
       const handle = ctx.renderManagedTranslation(
         element,
-        globalThis.TextMarkers.debrisScrubber(block.markupElements)(translation),
+        globalThis.TextMarkers.debrisScrubber(block.text, block.markupElements)(translation),
         { textLang }
       );
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
@@ -598,7 +615,7 @@
       color: ${computedStyle.color};
       letter-spacing: ${computedStyle.letterSpacing};
       opacity: 0.85;
-    `;
+    ` + (keepsLineBreaks(element) ? 'white-space: pre-wrap;' : '');
 
     if (isHorizontalFlex) {
       // 对于水平 flex 布局（如顶部导航），将翻译插入到元素内部
@@ -606,12 +623,7 @@
       const translationEl = document.createElement('span');
       translationEl.className = 'ai-translator-inline-block ai-translator-inline-right';
 
-      if (hasRichContent) {
-        // 使用 DOM 操作构建内容，不用 innerHTML
-        buildTranslationContent(translationEl, translation, block, ' ');
-      } else {
-        translationEl.textContent = ' ' + translation;
-      }
+      buildTranslationContent(translationEl, translation, block, ' ');
 
       translationEl.style.cssText = `
         font-size: 0.85em;
@@ -639,11 +651,7 @@
       // 使用 span 而不是复制标签名，避免嵌套问题（如 a > a）
       const internalTranslation = document.createElement('span');
       internalTranslation.className = 'ai-translator-inline-block';
-      if (hasRichContent) {
-        buildTranslationContent(internalTranslation, translation, block);
-      } else {
-        internalTranslation.textContent = translation;
-      }
+      buildTranslationContent(internalTranslation, translation, block);
       internalTranslation.style.cssText = baseStyle + `
         display: block;
         margin: 0;
@@ -666,12 +674,7 @@
       }
       translationEl.classList.add('ai-translator-inline-block');
 
-      if (hasRichContent) {
-        // 使用 DOM 操作构建内容，不用 innerHTML
-        buildTranslationContent(translationEl, translation, block);
-      } else {
-        translationEl.textContent = translation;
-      }
+      buildTranslationContent(translationEl, translation, block);
       if (ctx.hasRealMath(block.mathElements)) {
         // 有数学公式时，尽量少设置内联样式，让页面 CSS 控制布局
         // 只设置 opacity 来区分译文。只有 translate="no" /「保留原文」的原样元素

@@ -5,6 +5,7 @@
 // 这个模块，守的事变成：
 //   - 通用语法（markerPattern、strip）只给分析用，渲染路径只用逐块的
 //     debrisScrubber——讲 HTML 的页面正文里就写着 <b2>，笼统剥会删掉页面的字；
+//     逐块清理按原文判：原文里没写着的标记形状一律删，写着的一个不动；
 //   - i 标志不能丢：内置 NMT 实测会把开标记大写成 <A1>；
 //   - 工厂每次给新实例，两处交错 exec 不互相改 lastIndex；
 //   - 除了本模块和 test/，仓库里不再有第二份这两种记号的正则字面量。
@@ -158,14 +159,15 @@ test('a marker the model broke up with " . " still parses as the marker it was',
     ['/span81', '/sup105', '/span48', '/sup13', 'a38', '/span16', '/span132', '/span11', 'sup47', '/span9']);
 });
 
-test('a dotted marker is still only debris when its tag and numbers were issued', () => {
-  const scrub = TM.debrisScrubber([...spans(19), { tag: 'sup', index: 5 }]);
+test('a dotted marker is debris unless the source wrote that very shape', () => {
+  const source = '[1][2][3] HTML 里 <b . 9> 不动；a < b. 3 > 2.';
+  const scrub = TM.debrisScrubber(source, [...spans(19), { tag: 'sup', index: 5 }]);
   assert.equal(scrub('[1][</span1 . 3>2]<span1 . 7>[3]'), '[1][2][3]');
-  // 本块没发过 b；200 也拆不成本块发过的编号（1…19 里没有 0、00、200）：页面的字，不动
+  // 原文里原样写着的：页面的字，不动
   assert.equal(scrub('HTML 里 <b . 9> 不动'), 'HTML 里 <b . 9> 不动');
-  assert.equal(scrub('</span2 . 00>'), '</span2 . 00>');
-  // 普通的句点、尖括号还是普通的字
   assert.equal(scrub('a < b. 3 > 2.'), 'a < b. 3 > 2.');
+  // 原文里没有的同类形状：残骸
+  assert.equal(scrub('</span2 . 00>'), '');
 });
 
 test('a long run of dots and spaces inside a would-be marker is judged without backtracking', () => {
@@ -193,20 +195,21 @@ test('hasMarkers answers with the two patterns the insert path parses, and nothi
 
 test('the reader-facing strip is the narrow one, the analysis strips are the broad one', () => {
   // 渲染路径（buildTranslationContent 的 emit、受管容器的 ::after）只能用
-  // debrisScrubber；用笼统的 markerPattern / strip 就会删掉页面正文里本来就有的 <b2>。
+  // debrisScrubber，而且要把本块原文交给它；用笼统的 markerPattern / strip 就会删
+  // 掉页面正文里本来就有的 <b2>。
   const insert = read('content/page/insert.js');
   const build = insert.slice(insert.indexOf('function buildTranslationContent'));
   // 注释里提名字是可以的，这里要看的是代码里真的用了哪条
-  const body = build.slice(0, build.indexOf('\n  // 向后兼容的旧签名'))
+  const body = build.slice(0, build.indexOf('\n  // 悬停/划词翻译的译文'))
     .replace(/^\s*\/\/.*$/gm, '');
-  assert.match(body, /TextMarkers\.debrisScrubber\(markupElements\)/,
+  assert.match(body, /TextMarkers\.debrisScrubber\(block\.text, markupElements\)/,
     'buildTranslationContent no longer scrubs debris before rendering');
   assert.doesNotMatch(body, /markerPattern|TextMarkers\.strip/,
     'the render path must not use the broad pattern — it eats the page\'s own prose');
 
   const managed = insert.slice(insert.indexOf('ctx.renderManagedTranslation(') - 700,
     insert.indexOf('ctx.renderManagedTranslation(') + 200);
-  assert.match(managed, /TextMarkers\.debrisScrubber\(block\.markupElements\)/,
+  assert.match(managed, /TextMarkers\.debrisScrubber\(block\.text, block\.markupElements\)/,
     'the managed ::after path fell back to the broad pattern');
 });
 
@@ -222,54 +225,61 @@ test('language detection strips through TextMarkers, and nobody reads ctx.MARKUP
 // 一块发出去 n 个同名标记：span1 … spann。
 const spans = (n) => Array.from({ length: n }, (_, i) => ({ tag: 'span', index: i + 1 }));
 
-test('the scrubber only ever removes tags and numbers this block handed out', () => {
-  // 本块发出去的是 a1 和 strong2
-  const scrub = TM.debrisScrubber([{ tag: 'a', index: 1 }, { tag: 'strong', index: 2 }]);
+test('the scrubber keeps exactly the marker shapes the source wrote, whoever issued them', () => {
+  // 本块发出去的是 a1 和 strong2；原文自己还写着 <b9>（讲 HTML 的页面）
+  const source = '请阅读<a1>文档</a1>，<strong2>HTML 里 <b9> 是什么意思？</strong2>';
+  const scrub = TM.debrisScrubber(source, [{ tag: 'a', index: 1 }, { tag: 'strong', index: 2 }]);
 
-  // 自己的字：发过的标签名 + 发过的编号，无论怎么串、什么大小写、夹不夹空格
+  // 本块生成的标记：无论怎么串、什么大小写、夹不夹空格，落到这里都是残骸
   assert.equal(scrub('请阅读<a1>文档</a1>。'), '请阅读文档。');
   assert.equal(scrub('请阅读<A1>文档</a1>。'), '请阅读文档。');
   assert.equal(scrub('请阅读< a1 >文档</ a1 >。'), '请阅读文档。');
   assert.equal(scrub('串错了的<strong1>也是残骸'), '串错了的也是残骸');
 
-  // 页面自己的字：没发过 b，也没发过 9，一个都不能动
+  // 页面自己的字：原文里原样写着，一个都不能动
   assert.equal(scrub('HTML 里 <b9> 是什么意思？'), 'HTML 里 <b9> 是什么意思？');
-  assert.equal(scrub('<div1> 不在标记集里'), '<div1> 不在标记集里');
 
-  const none = TM.debrisScrubber([]);
-  assert.equal(none('<a1>原样</a1>'), '<a1>原样</a1>', 'no markers issued → nothing to scrub');
-  assert.equal(TM.debrisScrubber(null)('<a1>'), '<a1>');
+  // 模型编出来的、原文里没有的：不管本块发没发过这个标签名，都不给读者看
+  assert.equal(scrub('<div1> 不在原文里'), ' 不在原文里');
+  assert.equal(scrub('改了名的<span1>后记</span1>'), '改了名的后记');
 });
 
-test('a marker whose number the model fused or doubled is still debris', () => {
+test('a block that issued no markers still scrubs the ones that landed in it', () => {
+  // 批量翻译错位：别的块的译文带着 <span1> 落进一个标记都没发过的块
+  const scrub = TM.debrisScrubber('suggestions for further reading in the', []);
+  assert.equal(scrub('<span1>后记</span1>'), '后记');
+  // 原文里写着的照样留
+  assert.equal(TM.debrisScrubber('use <h1> for titles', [])('标题用 <h1>'), '标题用 <h1>');
+});
+
+test('debrisScrubber takes the source text and the issued markers as a contract', () => {
+  // 缺了原文就分不清页面自己的字和残骸：当空串会把页面写着的 <b2> 当残骸删掉。
+  for (const source of [undefined, null, 42]) {
+    assert.throws(() => TM.debrisScrubber(source, []), TypeError, `source ${source}`);
+  }
+  for (const markup of [undefined, null, {}]) {
+    assert.throws(() => TM.debrisScrubber('use <b2> for bold', markup), TypeError, `markupElements ${markup}`);
+  }
+});
+
+test('a marker whose number the model fused or doubled is debris', () => {
   // 实测：Reddit 卡片头发出 span1…span13，内置引擎把 <span11> 写回成 <span1111>，
   // 一个编号都配不上，原样显示给了读者。
-  const scrub = TM.debrisScrubber(spans(13));
+  const source = Array.from({ length: 13 }, (_, i) => `<span${i + 1}>w</span${i + 1}>`).join(' ');
+  const scrub = TM.debrisScrubber(source, spans(13));
   assert.equal(scrub('4 小时前 帖子<span1111>报告'), '4 小时前 帖子报告');
   // 两个相邻标记粘成一个：<span12><span13> → <span1213>
   assert.equal(scrub('奖励<span1213>分享'), '奖励分享');
   assert.equal(scrub('奖励</span1213>分享'), '奖励分享');
+  assert.equal(scrub('<span99><span0><b12>'), '');
 });
 
-test('a fused number that does not split into this block\'s own numbers is left alone', () => {
-  // 只发过 span1…span3：99 拆不成 1/2/3，0 不是任何编号——不是本块的字，不动
-  const scrub = TM.debrisScrubber(spans(3));
-  assert.equal(scrub('<span99>'), '<span99>');
-  assert.equal(scrub('<span0>'), '<span0>');
-  assert.equal(scrub('<span124>'), '<span124>', '4 was never issued');
-  // 标签名不对，编号再对也不动
-  assert.equal(scrub('<b12>'), '<b12>');
-});
-
-test('a long run of digits is judged in linear time, not by backtracking', () => {
-  // 编号 1、11 互为前缀；写进正则的交替会在这种串上指数回溯
-  const scrub = TM.debrisScrubber(spans(11));
-  const digits = '1'.repeat(5000);
+test('a long marker is judged in linear time', () => {
+  const scrub = TM.debrisScrubber('', spans(11));
+  const digits = '1'.repeat(50000);
   const started = performance.now();
-  assert.equal(scrub(`<span${digits}>`), '');
-  // 0 不是任何编号的开头，00、100 也都没发过：整串拆不开，得一路判到底才知道
-  assert.equal(scrub(`<span${digits}00>`), `<span${digits}00>`);
-  assert.ok(performance.now() - started < 1000, 'splitting a long number took too long');
+  assert.equal(scrub(`<span${digits}>`.repeat(20)), '');
+  assert.ok(performance.now() - started < 1000, 'scrubbing a long marker took too long');
 });
 
 // ------------------------------------------------------- 扫描守卫

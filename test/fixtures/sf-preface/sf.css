@@ -1,0 +1,33 @@
+/* Layout rules of softwarefoundations.cis.upenn.edu common/css/sf.css + lf.css
+   that apply to Preface.html (fonts, background images, the TOC and jQuery UI
+   rules left out). */
+body { padding: 0px 0px 0px 1em; margin: 0px; background-color: white; font-family: "Open Sans", sans-serif; }
+#page { display: block; padding: 0px; margin: 0px; }
+#header { min-height: 100px; max-width: 760px; margin: 0px auto; padding-left: 80px; padding-right: 80px; padding-top: 30px; background-color: rgba(75, 82, 95, 0.53); }
+#header h1 { padding: 0px; margin: 0px; }
+ul#menu { padding: 0px; display: block; margin: auto; }
+ul#menu li, div.button { display: inline-block; background-color: white; padding: 5px; font-size: 0.8em; text-transform: uppercase; width: 30%; text-align: center; font-weight: 600; }
+#main, #main_home { display: block; padding: 60px 80px 80px; font-size: 100%; line-height: 100%; max-width: 760px; background-color: rgb(255, 255, 255); margin: 0px auto; }
+#main h1 { line-height: normal; padding-top: 3px; padding-bottom: 4px; font-size: 200%; }
+#main { color: black; }
+.section { padding-top: 12px; padding-bottom: 11px; padding-left: 8px; margin-bottom: 3px; margin-top: 18px; font-size: 125%; color: rgb(255, 255, 255); }
+.libtitle { max-width: 860px; text-transform: uppercase; margin: 5px auto; font-weight: 500; padding-bottom: 2px; font-size: 120%; letter-spacing: 3px; }
+h2.section { color: rgb(42, 44, 113); background-color: transparent; padding-left: 0px; padding-top: 0px; padding-bottom: 0px; margin-top: 9px; font-size: 135%; }
+h3.section { background-color: white; padding-left: 0px; padding-top: 0px; padding-bottom: 0.5em; margin-top: 9px; font-size: 115%; color: black; }
+#main .doc { margin: 0px auto; font-size: 16px; line-height: 22px; color: black; padding-top: 10px; }
+.inlinecode { display: inline; color: rgb(68, 68, 68); font-family: monospace; }
+.doc .inlinecode { display: inline; font-size: 105%; color: rgb(89, 89, 179); font-family: monospace; }
+h1 .inlinecode .id, h1.section span.inlinecode { color: rgb(255, 255, 255); }
+.doc .code { display: inline; font-size: 120%; color: rgb(89, 89, 179); font-family: monospace; padding-left: 0px; }
+.inlineref { display: inline; color: rgb(128, 128, 204); }
+.code { padding-left: 20px; font-size: 110%; font-family: monospace; line-height: 17px; margin-top: 9px; }
+#footer { font-size: 65%; font-family: sans-serif; }
+.id { display: inline; }
+.id[title="var"], .id[title="variable"] { color: rgb(102, 0, 102); }
+.id[title="keyword"] { color: rgb(105, 127, 47); }
+.inlinecode .id { color: rgb(0, 0, 0); }
+.paragraph { height: 0.6em; }
+ul.doclist { margin-top: 0em; margin-bottom: 0em; }
+.inlinecode { white-space: pre; }
+.inlinecode br { display: none; }
+.section, ul#menu li.section_name, div.button { background-color: rgb(145, 161, 209); }

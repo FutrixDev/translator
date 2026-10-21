@@ -1,0 +1,328 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!-- Excerpt of https://softwarefoundations.cis.upenn.edu/lf-current/Preface.html
+     (coqdoc output, markup kept byte for byte, some sections left out). -->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link href="common/css/sf.css" rel="stylesheet" type="text/css" />
+<title>Preface</title>
+</head>
+
+<body>
+
+<div id="page">
+
+<div id="header">
+<div class='booktitleinheader'><a href='index.html'>Volume 1: Logical Foundations</a></div>
+<ul id='menu'>
+   <li class='section_name'><a href='toc.html'>Table of Contents</a></li>
+   <li class='section_name'><a href='coqindex.html'>Index</a></li>
+   <li class='section_name'><a href='deps.html'>Roadmap</a></li>
+</ul>
+</div>
+
+<div id="main">
+
+<h1 class="libtitle">Preface</h1>
+
+
+
+<div class="doc">
+<a id="lab1"></a><h1 class="section">Welcome</h1>
+
+<div class="paragraph"> </div>
+
+ This is the entry point to a series of electronic textbooks on
+    various aspects of <i>Software Foundations</i>, the mathematical
+    underpinnings of reliable software.  Topics in the series include
+    basic concepts of logic, computer-assisted theorem proving, the
+    Rocq prover, functional programming, operational semantics, logics
+    and techniques for reasoning about programs, static type systems,
+    property-based random testing, verification of practical C
+    code, and security. The exposition is intended for a broad range of
+    readers, from advanced undergraduates to PhD students and researchers.
+    No specific background in logic or programming languages is assumed,
+    though a degree of mathematical maturity will be helpful.
+
+<div class="paragraph"> </div>
+
+    The principal novelty of the series is that it is one hundred
+    percent formalized and machine-checked: each text is literally a
+    script for Rocq.  The books are intended to be read alongside (or
+    inside) an interactive session with Rocq.  All the details in the
+    text are fully formalized in Rocq, and most of the exercises are
+    designed to be worked using Rocq.
+
+<div class="paragraph"> </div>
+
+    This book, <i>Logical Foundations</i>, lays groundwork for the others,
+    introducing the reader to the basic ideas of functional
+    programming, constructive logic, and the Rocq prover.
+</div>
+
+<div class="doc">
+<a id="lab2"></a><h1 class="section">Overview</h1>
+
+<div class="paragraph"> </div>
+
+ Building reliable software is hard -- really hard.  The scale and
+    complexity of modern systems, the number of people involved, and
+    the range of demands placed on them make it challenging to build
+    software that is even more-or-less correct, much less 100%
+    correct.  At the same time, the increasing degree to which
+    information processing is woven into every aspect of society
+    greatly amplifies the cost of bugs and insecurities.
+
+<div class="paragraph"> </div>
+
+    This volume weaves together three conceptual threads:
+
+<div class="paragraph"> </div>
+
+    (A) basic tools from <i>logic</i> for making and justifying precise
+        claims about programs;
+
+<div class="paragraph"> </div>
+
+    (B) the use of <i>proof assistants</i> (or <i>provers</i>) to construct
+        rigorous logical arguments;
+
+<div class="paragraph"> </div>
+
+    (C) <i>functional programming</i>, both as a method of programming that
+        simplifies reasoning about programs and as a bridge between
+        programming and logic.
+<div class="paragraph"> </div>
+
+<a id="lab3"></a><h2 class="section">Logic</h2>
+
+<div class="paragraph"> </div>
+
+ Logic is the field of study whose subject matter is <i>proofs</i> --
+    unassailable arguments for the truth of particular propositions.
+    Volumes have been written about the central role of logic in
+    computer science.  Manna and Waldinger called it "the calculus of
+    computer science," while Halpern et al.'s paper <i>On the Unusual
+    Effectiveness of Logic in Computer Science</i> catalogs scores of
+    ways in which logic offers critical tools and insights.
+
+<div class="paragraph"> </div>
+
+    In particular, the fundamental tools of <i>inductive proof</i> are
+    ubiquitous in all of computer science.  You have surely seen them
+    before, perhaps in a course on discrete math or analysis of
+    algorithms, but in this course we will examine them more deeply
+    than you have probably done so far.
+<div class="paragraph"> </div>
+
+<a id="lab4"></a><h2 class="section">Proof Assistants</h2>
+
+<div class="paragraph"> </div>
+
+ The flow of ideas between logic and computer science has not been
+    unidirectional: CS has also made important contributions to logic.
+    One of these has been the development of software tools for
+    helping construct proofs of logical propositions.  These tools
+    fall into two broad categories:
+
+<div class="paragraph"> </div>
+
+<ul class="doclist">
+<li> <i>Automated theorem provers</i> provide "push-button" operation:
+         you give them a proposition and they return either <i>true</i> or
+         <i>false</i> (or, sometimes, <i>don't know: ran out of time</i>).
+         Although their reasoning capabilities are still limited,
+         they have matured tremendously in recent decades and
+         are used now in a multitude of settings.  Examples of such
+         tools include SAT solvers, SMT solvers, and model checkers.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> <i>Proof assistants</i> are hybrid tools that automate the more
+         routine aspects of building proofs while depending on human
+         guidance for more difficult aspects.  Widely used proof
+         assistants include Isabelle, Agda, Twelf, ACL2, PVS, F*,
+         HOL4, Lean, and Rocq, among many others.
+
+</li>
+</ul>
+
+<div class="paragraph"> </div>
+
+    Rocq has been a critical enabler for a huge variety of work across
+    computer science and mathematics:
+
+<div class="paragraph"> </div>
+
+<ul class="doclist">
+<li> As a <i>platform for modeling programming languages</i>, it has
+      become a standard tool for researchers who need to describe and
+      reason about complex language definitions.  It has been used,
+      for example, to check the security of the JavaCard platform,
+      obtaining the highest level of common criteria certification,
+      and for formal specifications of the x<sub>86</sub> and LLVM instruction
+      sets and programming languages such as C.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> As an <i>environment for developing formally certified software
+      and hardware</i>, Rocq has been used, for example, to build
+      CompCert, a fully-verified optimizing compiler for C, and
+      CertiKOS, a fully verified hypervisor, for proving the
+      correctness of subtle algorithms involving floating point
+      numbers, and as the basis for CertiCrypt, FCF, and SSProve,
+      which are frameworks for proving cryptographic algorithms secure.
+      It is also being used to build verified implementations of the
+      open-source RISC-V processor architecture.
+
+</li>
+</ul>
+</div>
+
+<div class="doc">
+<a id="lab7"></a><h2 class="section">Further Reading</h2>
+
+<div class="paragraph"> </div>
+
+ This text is intended to be self contained, but readers looking
+    for a deeper treatment of particular topics will find some
+    suggestions for further reading in the <a href="Postscript.html"><span class="inlineref">Postscript</span></a> chapter.
+    Bibliographic information for all cited works can be found in the
+    file <a href="Bib.html"><span class="inlineref">Bib</span></a>.
+</div>
+
+<div class="doc">
+<a id="lab8"></a><h1 class="section">Practicalities</h1>
+
+<div class="paragraph"> </div>
+
+<a id="lab9"></a><h2 class="section">System Requirements</h2>
+
+<div class="paragraph"> </div>
+
+ Rocq runs on Windows, Linux, and macOS.  The files in this book
+    have been tested with Rocq 9.0.0.
+<div class="paragraph"> </div>
+
+<a id="lab10"></a><h3 class="section">Recommended Installation Method: VSCode + Docker</h3>
+
+<div class="paragraph"> </div>
+
+ The Visual Studio Code IDE can cooperate with the Docker
+    virtualization platform to compile Rocq scripts without the need
+    for any separate Rocq installation.  This method is recommended for
+    most Software Foundations readers.
+
+<div class="paragraph"> </div>
+
+<ul class="doclist">
+<li> Install Docker from <a href="https://www.docker.com/get-started/"><span class="inlineref" <a href='https://www.docker.com/get-started/</span></a>'>https://www.docker.com/get-started/</span></a></a>or
+      make sure your existing installation is up to date.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> Make sure Docker is running.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> Set up a directory for this SF volume by downloading the
+      provided <span class="inlinecode">.<span class="id" title="var">tgz</span></span> file.  Besides the <span class="inlinecode">.<span class="id" title="var">v</span></span> file for each chapter,
+      this directory will contain a <span class="inlinecode">.<span class="id" title="var">devcontainer</span></span> subdirectory with
+      instructions for VSCode about where to find an appropriate
+      Docker image and a <span class="inlinecode"><span class="id" title="var">_CoqProject</span></span> file, whose presence triggers
+      the VSRocq extension.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> In VSCode, use <span class="inlinecode"><span class="id" title="var">File</span></span> <span class="inlinecode">&gt;</span> <span class="inlinecode"><span class="id" title="keyword">Open</span></span> <span class="inlinecode"><span class="id" title="var">Folder</span></span> to open the new directory.
+      VSCode should ask you whether you want to run the project in the
+      associated Docker container.  (If it does not ask you, you can
+      open the command palette by pressing F<sub>1</sub> and run the command “Dev
+      Containers: Reopen in Container”.)
+
+<div class="paragraph"> </div>
+
+      This step may take some time.
+
+<div class="paragraph"> </div>
+
+
+</li>
+<li> Check that VSRocq is working by double-clicking the file
+      <span class="inlinecode"><span class="id" title="var">Basics.v</span></span> from the list on the left (you should see a blinking
+      cursor in the window that opens; if not you can click in that
+      window to select it), and pressing <span class="inlinecode"><span class="id" title="var">alt</span>+<span class="id" title="var">downarrow</span></span> (on MacOS,
+      <span class="inlinecode"><span class="id" title="var">control</span>+<span class="id" title="var">option</span>+<span class="id" title="var">downarrow</span></span>) a few times.  You should see the
+      cursor move through the file and the region above the cursor get
+      highlighted.
+
+<div class="paragraph"> </div>
+
+<ul class="doclist">
+<li> If VSRocq does not work and you receive an error indicating that
+        <span class="inlinecode"><span class="id" title="var">vsrocqtop</span></span> was not found, open a new terminal in the container
+        (you can do this by opening the command palette and running the
+        command “Terminal: Create New Terminal”) and run the command
+        <span class="inlinecode"><span class="id" title="var">which</span></span> <span class="inlinecode"><span class="id" title="var">vsrocqtop</span></span>. This should print the path to the VSRocq
+        installation inside the container.
+
+<div class="paragraph"> </div>
+
+
+</li>
+</ul>
+
+</li>
+<li> To see what other key bindings are available, press F<sub>1</sub> and then
+      type <span class="inlinecode"><span class="id" title="var">Coq</span>:</span>, or visit the VSRocq web pages:
+      <a href="https://github.com/rocq-prover/vsrocq"><span class="inlineref" <a href='https://github.com/rocq-prover/vsrocq</span></a>.'>https://github.com/rocq-prover/vsrocq</span></a>.</a>
+</li>
+</ul>
+</div>
+
+<div class="doc">
+<a id="lab20"></a><h1 class="section">Translations</h1>
+
+<div class="paragraph"> </div>
+
+ Thanks to the efforts of a team of volunteer translators,
+    <i>Software Foundations</i> can be enjoyed in Japanese at
+    <a href="http://proofcafe.org/sf"><span class="inlineref" <a href='http://proofcafe.org/sf</span></a>.'>http://proofcafe.org/sf</span></a>.</a> A Chinese translation is also underway;
+     you can preview it at <a href="https://rocq-zh.github.io/SF-zh/"><span class="inlineref" <a href='https://rocq-zh.github.io/SF-zh/</span></a>.'>https://rocq-zh.github.io/SF-zh/</span></a>.</a>
+</div>
+
+<div class="doc">
+<a id="lab21"></a><h1 class="section">Thanks</h1>
+
+<div class="paragraph"> </div>
+
+ Development of the <i>Software Foundations</i> series has been
+    supported, in part, by the National Science Foundation under the
+    NSF Expeditions grant 1521523, <i>The Science of Deep
+    Specification</i>.
+</div>
+<div class="code">
+
+<span class="comment">(*&nbsp;2026-08-24&nbsp;10:03&nbsp;*)</span><br/>
+</div>
+</div>
+
+<div id="footer">
+<hr/><a href="coqindex.html">Index</a><hr/>This page has been generated by <a href="http://rocq-prover.org/">coqdoc</a>
+</div>
+
+</div>
+
+</body>
+</html>

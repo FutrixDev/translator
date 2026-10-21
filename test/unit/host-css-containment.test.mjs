@@ -166,7 +166,7 @@ test('the reset\'s root list and the content script\'s own-UI selector name the 
   // 再夹一个 id 也是私列。这几份文件没有别的正当用途要写这个前缀。引用看的是去掉
   // 注释后的代码：注释里提一句常量名，不等于代码真在用它。
   for (const [rel, name] of [
-    ['content/page/collect.js', 'OWN_UI_SELECTOR'],
+    ['content/page/text-runs.js', 'OWN_UI_SELECTOR'],
     ['content/content-auto-discover.js', 'OWN_NODES_SELECTOR'],
     ['content/content-selection.js', 'OWN_NODES_SELECTOR'],
     ['content/hover/blocks.js', 'OWN_NODES_SELECTOR'],

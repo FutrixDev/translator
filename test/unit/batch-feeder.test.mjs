@@ -67,6 +67,7 @@ await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
+await import('../../content/page/text-runs.js');
 await import('../../content/page/prose-pre.js');
 // progress.js paints the float-ball ring from ctx.progressFeed and subscribes
 // at load, so the feed goes first, as in the manifest.
@@ -116,7 +117,7 @@ function block(top, label = `b${seq++}`) {
       remove: (c) => classes.delete(c),
     },
   };
-  return { text: `Paragraph ${label}.`, element, label, moveTo: (y) => { geo.top = y; } };
+  return { text: `Paragraph ${label}.`, element, markupElements: [], label, moveTo: (y) => { geo.top = y; } };
 }
 
 // A focused text input at document offset `top`, inside `parent` (or nowhere).

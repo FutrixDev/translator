@@ -24,7 +24,7 @@ const repoUrl = (rel) => new URL(`../../${rel}`, import.meta.url);
 const repoFile = (rel) => readFileSync(fileURLToPath(repoUrl(rel)), 'utf8');
 
 const pageInsert = repoFile('content/page/insert.js');
-const pageCollect = repoFile('content/page/collect.js');
+const textRuns = repoFile('content/page/text-runs.js');
 const hoverTranslation = hoverSource();
 // Comments in content.css quote the rules that were removed, so strip them before
 // asserting on what the stylesheet actually declares.
@@ -61,9 +61,9 @@ test('hover/selection translation asks the shared rule where to insert', () => {
 });
 
 test('the stray-text-node wrapper class is the one content.css styles', () => {
-  const declared = pageCollect.match(/const TEXT_RUN_CLASS = '([^']+)'/);
-  assert.ok(declared, 'TEXT_RUN_CLASS is gone from content/page/collect.js');
-  assert.match(pageCollect, /ctx\.TEXT_RUN_CLASS\s*=\s*TEXT_RUN_CLASS/);
+  const declared = textRuns.match(/const TEXT_RUN_CLASS = '([^']+)'/);
+  assert.ok(declared, 'TEXT_RUN_CLASS is gone from content/page/text-runs.js');
+  assert.match(textRuns, /ctx\.TEXT_RUN_CLASS\s*=\s*TEXT_RUN_CLASS/);
   // The wrapper is injected into the page's own markup, so it has to render as
   // if it were not there — no box, no font of its own.
   assert.ok(contentCssText.includes(`span.${declared[1]}`),

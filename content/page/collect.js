@@ -12,42 +12,10 @@
   if (!ctx) return;
 
   const { constants } = ctx;
-  const { MATH_CONTAINER_SELECTOR, OWN_UI_SELECTOR } = constants;
-  // 我们的界面根，加上挂在页面块上的译文标记。
-  const SKIP_OURS = `${OWN_UI_SELECTOR}, .ai-translator-translated, .ai-translator-inline-source, .ai-translator-inline-block`;
-  // 内联格式标记：整页翻译提取文本时，把 <a>/<strong>/<em> 等内联格式元素编码成
-  // 成对的 <a1>…</a1> 标记随正文一起送翻，译文再按标记克隆原元素重建（见
-  // buildTranslationContent），从而保留超链接（href）和内联样式（class/style）。
-  //
-  // **两个引擎都生成标记。** 这里曾经只在 AI 引擎下生成，理由是“内置 NMT 没有
-  // 原样保留标记的承诺”——那是假设，实测不成立。拿 Chrome 内置 Translator 跑
-  // en→zh-Hans / zh-Hant / ja，每句连翻三遍结果一致：
-  //
-  //   12 句 × 3 语言里，标记原样往返的 8 成以上；zh-Hans 的两处缺陷是
-  //   `<a1>` 被大写成 `<A1>`（闭标记仍是小写），一处是 `</strong2>` 整个丢失。
-  //
-  // 所以标记是能用的，只是要求解析端宽容：markerRe 大小写不敏感、容空白（见
-  // buildTranslationContent），丢了闭标记就在结尾自动闭合。默认引擎正是内置
-  // NMT，之前的开关等于让绝大多数用户的译文一个超链接都留不下。
-  //
-  // 标记和占位符的语法（生成、剥离）在 shared/text-markers.js。
-  // 直属文本节点的锚点类名，见 wrapDirectTextRuns
-  const TEXT_RUN_CLASS = 'ai-translator-text-run';
-
-  // 把一串相邻的文本节点裹进一个锚点 span。收集端给直属文本找锚点（wrapDirectTextRuns）、
-  // 落笔端给横排 flex 里的那段字找一列（insert.js 的 textColumnOf），裹法只有这一处。
-  function wrapTextRun(nodes) {
-    const wrap = document.createElement('span');
-    wrap.className = TEXT_RUN_CLASS;
-    nodes[0].parentNode.insertBefore(wrap, nodes[0]);
-    for (const node of nodes) wrap.appendChild(node);
-    return wrap;
-  }
-
-  const MARKUP_TAGS = new Set([
-    'A', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'SUP', 'SUB', 'MARK', 'SMALL',
-    'ABBR', 'DEL', 'INS', 'Q', 'CITE', 'DFN', 'CODE', 'KBD', 'SAMP', 'VAR'
-  ]);
+  const { MATH_CONTAINER_SELECTOR } = constants;
+  // 我们自己的节点、内联格式标记的标签表、一段直属文字在哪断：都在 text-runs.js
+  // （manifest 里排在这里前面），和锚点的切法、裹法写在一处。
+  const SKIP_OURS = ctx.SKIP_OURS_SELECTOR;
 
   // 本轮收集里，受管容器内有多少块连生成内容都承不住而被放弃。翻译流程用它来
   // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
@@ -76,18 +44,6 @@
     // "reply"，这些在形状上和正文没有区别，通用启发式挡不住；Hacker News 的
     // `.subtext` 底下还有一串 <a>，它们也一起跳过。
     return !!(adapter.keepOriginal && closestAcross(el, adapter.keepOriginal));
-  }
-
-  // 一串直属文字（或散文 <pre> 的一段）是要翻的正文才裹成锚点；太短、像代码、
-  // 就是个 URL、不是正文的原样留着。@returns 裹好的 span，没裹就是 null。
-  // 悬停取散文 <pre> 的一段也走这里（prosePre.paragraphOf）：裹好的锚点下一轮整页
-  // 收集会原样收下，不再过这几条判定，所以没过判定的段落谁都不能裹。
-  function wrapIfProse(run, element) {
-    const text = run.filter((node) => node.nodeType !== Node.COMMENT_NODE)
-      .map((node) => node.textContent).join('').trim();
-    if (text.length < 2) return null;
-    if (ctx.looksLikeCodeOrUrl(text) || ctx.notProse(element, text)) return null;
-    return wrapTextRun(run);
   }
 
   // options.scope：ctx.resolvePageScope() 的结果（content/page/scope.js）。不带时
@@ -146,27 +102,18 @@
       return false;
     }
 
-    // 把元素的【直属文本节点】按连续段裹进 <span>，给它们一个能收进 blocks、
-    // 之后能挂译文的锚点——文本节点自己两样都做不到。
-    // 只裹真要翻的那几段（太短、像代码、就是个 URL、纯数字的都不裹），页面 DOM
-    // 就一个多余节点都不会多出来；<br>/<span> 这些元素天然把文本分段，分开裹，
-    // 原来的换行结构就还在。
+    // 把元素的【直属文本节点】连同夹在中间的行内元素按段裹进 <span>，给它们一个
+    // 能收进 blocks、之后能挂译文的锚点——文本节点自己两样都做不到。
+    // 一段从哪断（ctx.breaksInlineRun）：块级元素、容器标签、<br>、我们自己的节点。中间的
+    // <i>/<a>/带样式的 <span> 不断：coqdoc 把正文写成 div.doc 的散字，段内斜体、
+    // 链接都是直属子元素，碰到元素就断会把「In particular, the fundamental tools of
+    // <i>inductive proof</i> are ubiquitous…」切成三块送翻，斜体自己还单成一块。
+    // 裹好的那一段是个 SPAN，走内联分支，段内的元素照常编成内联标记。
+    // 只裹真要翻的那几段（ctx.wrapProseRun，content/page/text-runs.js），页面 DOM
+    // 就一个多余节点都不会多出来。
     function wrapDirectTextRuns(element) {
-      const runs = [];
-      let current = null;
-      for (const node of nodesOf(element)) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          // 组合子节点跨了 shadow root 与 light 树：父亲换了就是另一段
-          if (!current || current[0].parentNode !== node.parentNode) {
-            current = [];
-            runs.push(current);
-          }
-          current.push(node);
-          continue;
-        }
-        current = null;
-      }
-      for (const run of runs) wrapIfProse(run, element);
+      const runs = ctx.splitRuns(nodesOf(element), (node) => (ctx.breaksInlineRun(node) ? 'break' : 'run'));
+      for (const run of runs) ctx.wrapProseRun(run, element);
     }
 
     // 检查元素是否有多个可翻译的直接子元素（用于判断是否应该递归而非整体翻译）
@@ -192,7 +139,7 @@
       let text = '';
       for (const child of nodesOf(element)) {
         if (child.nodeType === Node.TEXT_NODE ||
-            (child.nodeType === Node.ELEMENT_NODE && child.classList.contains(TEXT_RUN_CLASS))) {
+            (child.nodeType === Node.ELEMENT_NODE && child.classList.contains(ctx.TEXT_RUN_CLASS))) {
           const content = child.textContent.trim();
           if (content) {
             text += content + ' ';
@@ -290,7 +237,7 @@
       // 走到这里的 <pre> 只会是散文 <pre>（prosePre.skippedByTag）：一段一块。
       if (tagName === 'PRE') {
         for (const paragraph of ctx.prosePre.paragraphs(element)) {
-          const anchor = Array.isArray(paragraph) ? wrapIfProse(paragraph, element) : paragraph;
+          const anchor = ctx.prosePre.anchorOf(paragraph, element);
           if (anchor) processElement(anchor);
         }
         return;
@@ -342,7 +289,9 @@
           // 里面的 <p> 让这里递归，于是 "Write a one-stanza poem…" 一次都没被送去
           // 翻译，页面上只剩 <span>Human:</span> 的译文孤零零挂在原文右边。
           // 同一个坑在超长块那条路上已经栽过一次，见 MAX_BLOCK_CHARS 附近的注释。
-          wrapDirectTextRuns(element);
+          // 本身就是锚点的元素不再往里裹：锚点里的字已经是一段了，再裹只会在
+          // 锚点里套锚点（页面脚本往我们的锚点里塞进块级元素时就会走到这里）。
+          if (!element.classList.contains(ctx.TEXT_RUN_CLASS)) wrapDirectTextRuns(element);
           for (const child of kids(element)) {
             processElement(child);
           }
@@ -542,7 +491,7 @@
   // 带 class 或 style 的——裸 span 没有样式可保，编码它只会给模型添乱。
   function isMarkupElement(node) {
     const tagName = node.tagName;
-    if (MARKUP_TAGS.has(tagName)) return true;
+    if (ctx.MARKUP_TAGS.has(tagName)) return true;
     if (tagName === 'SPAN') {
       return !!(node.getAttribute('class') || node.getAttribute('style'));
     }
@@ -798,9 +747,12 @@
             return rects[0];
           }
         } else if (child.nodeType === Node.ELEMENT_NODE) {
-          // 跳过 icon 类元素
+          // 跳过 icon 类元素。<i> 不按标签名跳：它首先是斜体，coqdoc 的列表项以
+          // <li> <i>Automated theorem provers</i> provide… 开头，跳过它量到的是斜体
+          // 短语后面那个字，整块译文被推到右边一大截。字体图标的 <i> 要么带图标类名
+          // （isIconElement），要么没有文字节点，下面的递归本来就量不到它。
           const tagName = child.tagName.toLowerCase();
-          if (tagName === 'svg' || tagName === 'img' || tagName === 'i' ||
+          if (tagName === 'svg' || tagName === 'img' ||
               tagName === 'icon' || child.classList.contains('icon') ||
               isIconElement(child)) {
             continue;
@@ -831,12 +783,9 @@
   }
 
 
-  ctx.TEXT_RUN_CLASS = TEXT_RUN_CLASS;
   ctx.collectTranslatableBlocks = collectTranslatableBlocks;
   ctx.isMathElement = isMathElement;
   ctx.isIconElement = isIconElement;
-  ctx.wrapTextRun = wrapTextRun;
-  ctx.wrapIfProse = wrapIfProse;
   ctx.getTextWithMathPlaceholders = getTextWithMathPlaceholders;
   /**
    * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
