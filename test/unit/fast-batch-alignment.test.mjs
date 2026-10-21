@@ -77,6 +77,7 @@ await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');
 await import('../../content/page/reader-hidden.js');
 await import('../../content/page/not-prose.js');
+await import('../../content/page/text-runs.js');
 await import('../../content/page/prose-pre.js');
 // failed-blocks.js：落笔前摘失败标记（ctx.failedBlocks.clear），失败时放标记。
 // progress.js paints the float-ball ring from ctx.progressFeed and subscribes
@@ -122,6 +123,7 @@ function makeBlock(text) {
         remove: (c) => classes.delete(c),
       },
     },
+    markupElements: [],
   };
 }
 

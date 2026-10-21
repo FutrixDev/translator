@@ -445,14 +445,15 @@ test('the two TRANSLATE handlers validate addenda before counting and calling th
     ['handleBatchTranslateFast', 'translateBatchFastWithAI'],
   ]) {
     const body = bg.match(new RegExp(`async function ${fn}\\([^)]*addenda\\) \\{[\\s\\S]*?\\n\\}`));
-    assert.ok(body, `${fn} does not take addenda`);
+    assert.ok(body, `${fn} does not take addenda last`);
     const validated = body[0].indexOf('PromptAddenda.validate(addenda)');
     const called = body[0].search(new RegExp(`${call}\\([^)]*addenda\\)`));
     assert.ok(validated > 0 && called > validated, `${fn} must validate addenda, then pass it to ${call}`);
   }
   for (const type of ['TRANSLATE', 'TRANSLATE_BATCH_FAST']) {
-    const route = bg.match(new RegExp(`case '${type}':\\s*\\n\\s*handle\\w+\\(([^)]*)\\)`));
-    assert.ok(route && /message\.addenda/.test(route[1]), `${type} does not hand message.addenda on`);
+    // One level of nested call is allowed: TRANSLATE hands translateRequestOf(message) on.
+    const route = bg.match(new RegExp(`case '${type}':\\s*\\n\\s*handle\\w+\\(((?:[^()]|\\([^()]*\\))*)\\)`));
+    assert.ok(route && /, message\.addenda$/.test(route[1]), `${type} does not hand message.addenda on last`);
   }
 });
 

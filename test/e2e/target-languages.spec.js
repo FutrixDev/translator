@@ -22,6 +22,10 @@
  *   J-L1  the recent group across the dialog and the selection card: written
  *         when a translation is dispatched, the default language included,
  *         its cap of five, a new default target, and the "AI only" tag
+ *   J-L2  the filter box on top of the menu, in the dialog and the card:
+ *         focused on open; "jap", "日" and "ja" each find Japanese first;
+ *         each language shown once; the empty state; arrows, Enter, Escape;
+ *         Enter on an item the Tab key focused picks that item
  *
  * Expected names are always computed here, in the browser, with Intl — never
  * written out and never asked of the code under test. zh-CN / zh-TW are the
@@ -83,11 +87,73 @@ async function expectIntlNames(page, selector, uiLang, count) {
 function menuParts(menu) {
   return menu.evaluate((el) => ({
     groups: [...el.querySelectorAll('.ai-translator-lang-group')].map((g) => g.textContent),
-    firstIsGroup: !!el.firstElementChild?.matches('.ai-translator-lang-group'),
+    // The filter box heads the menu and the recent group comes right under it.
+    filterThenGroup: !!el.firstElementChild?.matches('.ai-translator-lang-filter')
+      && !!el.firstElementChild.nextElementSibling?.matches('.ai-translator-lang-group'),
     recent: [...el.querySelectorAll('.ai-translator-lang-item[data-recent]')].map((i) => i.dataset.lang),
     full: el.querySelectorAll('.ai-translator-lang-item:not([data-recent])').length,
     selected: [...el.querySelectorAll('.is-selected')].map((i) => [i.dataset.lang, i.hasAttribute('data-recent')]),
   }));
+}
+
+/**
+ * What the open menu shows while it is filtered: the filter's value and focus,
+ * the items in view in the order they are drawn on screen (top to bottom, which
+ * the filter sets with CSS order, not by moving nodes), the active one, the
+ * headers in view and the empty-state line.
+ */
+function filterView(menu) {
+  return menu.evaluate((el) => {
+    const visible = (node) => !!node && node.getClientRects().length > 0;
+    const filter = el.querySelector('.ai-translator-lang-filter');
+    const empty = el.querySelector('.ai-translator-lang-empty');
+    return {
+      focused: el.getRootNode().activeElement === filter,
+      query: filter.value,
+      shown: [...el.querySelectorAll('.ai-translator-lang-item')].filter(visible)
+        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+        .map((i) => (i.hasAttribute('data-recent') ? `recent:${i.dataset.lang}` : i.dataset.lang)),
+      active: [...el.querySelectorAll('.ai-translator-lang-item.is-active')].map((i) => i.dataset.lang),
+      groups: [...el.querySelectorAll('.ai-translator-lang-group')].filter(visible).map((g) => g.textContent),
+      empty: visible(empty) ? empty.textContent : null,
+    };
+  });
+}
+
+/**
+ * Tab once from the filter and report the item that took the focus. Tab walks
+ * the document order and the filter ranks with CSS order, so after "ja" the
+ * focus lands on a match that is neither the active one nor the first in view
+ * (Azerbaijani, not Japanese); the caller asserts that before pressing Enter,
+ * so an Enter that picked the active item could not pass for one that picked
+ * the focused item.
+ */
+async function tabToItem(page, menu) {
+  await page.keyboard.press('Tab');
+  return menu.evaluate((el) => {
+    const focused = el.getRootNode().activeElement;
+    if (!focused || !el.contains(focused) || !focused.matches('.ai-translator-lang-item')) return null;
+    return { lang: focused.dataset.lang, label: focused.textContent };
+  });
+}
+
+/** The full list's items in document order: filtering never moves them. */
+function fullDomOrder(menu) {
+  return menu.evaluate((el) => [...el.querySelectorAll('.ai-translator-lang-item:not([data-recent])')]
+    .map((i) => i.dataset.lang).join(','));
+}
+
+/** The active item sits inside the menu's visible box, below the filter stuck on top. */
+async function expectActiveInView(menu) {
+  const view = await menu.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const filter = el.querySelector('.ai-translator-lang-filter').getBoundingClientRect();
+    const item = el.querySelector('.ai-translator-lang-item.is-active').getBoundingClientRect();
+    return { filterBottom: filter.bottom, bottom: box.top + el.clientTop + el.clientHeight, itemTop: item.top, itemBottom: item.bottom, scrollTop: el.scrollTop };
+  });
+  expect(view.itemTop, JSON.stringify(view)).toBeGreaterThanOrEqual(view.filterBottom - 1);
+  expect(view.itemBottom, JSON.stringify(view)).toBeLessThanOrEqual(view.bottom + 1);
+  return view;
 }
 
 /** What chrome.storage.local holds for the recent list (undefined: nothing written). */
@@ -249,7 +315,7 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     // the menu opens on it.
     expect(await menuParts(menu)).toMatchObject({
       groups: [getMessage('langRecent', 'en'), getMessage('langAll', 'en')],
-      firstIsGroup: true,
+      filterThenGroup: true,
       recent: ['fr'],
       selected: [['fr', true], ['fr', false]],
     });
@@ -440,7 +506,7 @@ test('J-B10 the languages used last sit in a group above the full list, which ke
     const parts = await menuParts(menu);
     expect(parts.recent).toEqual(['de', 'fr']);
     expect(parts.groups).toEqual([getMessage('langRecent', 'en'), getMessage('langAll', 'en')]);
-    expect(parts.firstIsGroup).toBe(true);
+    expect(parts.filterThenGroup).toBe(true);
     await expect(menu.locator('.ai-translator-lang-item[data-recent]')).toHaveCount(2);
     // The full list is untouched: 76, Intl names, collated, the recent ones still in it.
     await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
@@ -449,7 +515,7 @@ test('J-B10 the languages used last sit in a group above the full list, which ke
     await expect(menu.locator('.ai-translator-lang-item[data-lang="de"]')).toHaveCount(2);
     // Both headings are readable on the light panel (the default theme) (D-545).
     console.log(`J-B10 group heading contrast: ${await expectLaidOut(page, [
-      '#ai-translator-input-dialog .ai-translator-lang-group:first-child',
+      '#ai-translator-input-dialog .ai-translator-lang-filter + .ai-translator-lang-group',
       '#ai-translator-input-dialog .ai-translator-lang-item + .ai-translator-lang-group',
     ], 'J-B10 group headings')}`);
 
@@ -508,10 +574,14 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     // the default) for show only, as J-B8 sees it; nothing is written.
     let menu = await openDialogMenu(page);
     expect(await menuParts(menu)).toMatchObject({
-      groups: recentGroups, firstIsGroup: true, recent: ['zh-CN'], full: 76,
+      groups: recentGroups, filterThenGroup: true, recent: ['zh-CN'], full: 76,
       selected: [['zh-CN', true], ['zh-CN', false]],
     });
-    await page.keyboard.press('Escape'); // Escape closes the whole dialog
+    // Escape in the open menu closes the menu only; a second one closes the dialog.
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(1);
+    await page.keyboard.press('Escape');
     await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(0);
     expect(await storedRecent(context)).toBeUndefined();
 
@@ -569,7 +639,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     menu = await openDialogMenu(page);
     parts = await menuParts(menu);
     expect(parts).toMatchObject({
-      groups: recentGroups, firstIsGroup: true, recent: ['fr', 'zh-CN'], full: 76,
+      groups: recentGroups, filterThenGroup: true, recent: ['fr', 'zh-CN'], full: 76,
     });
     expect(parts.selected[0]).toEqual(['fr', true]);
     await expectFirstSelectedInView(page, menu, scrollYBefore);
@@ -590,9 +660,13 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     await card.locator('.ai-translator-lang-trigger').click();
     const cardMenu = card.locator('.ai-translator-lang-menu');
     await expect(cardMenu).toBeVisible();
-    expect(await menuParts(cardMenu)).toMatchObject({ recent: ['zh-CN', 'fr'], firstIsGroup: true, full: 76 });
+    expect(await menuParts(cardMenu)).toMatchObject({ recent: ['zh-CN', 'fr'], filterThenGroup: true, full: 76 });
     expect(await expectRecentGroupOnTop(page, cardMenu, cardScrollY))
       .toMatchObject({ selectedInRecent: true });
+    // Escape in the card's menu closes the menu, not the card; a second one closes the card.
+    await page.keyboard.press('Escape');
+    await expect(cardMenu).toBeHidden();
+    await expect(card).toHaveCount(1);
     await page.keyboard.press('Escape');
     await page.mouse.click(5, 5);
     await expect(card).toHaveCount(0);
@@ -628,6 +702,235 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     expect((await menuParts(menu)).recent).toEqual(['fa', 'fr', 'es', 'ru', 'ko']);
     await expect(menu.locator('.ai-translator-lang-item[data-recent][data-lang="fa"]')).toHaveAttribute('data-tag', tag);
     expect(await menu.locator('.ai-translator-lang-item[data-recent][data-lang="fr"]').getAttribute('data-tag')).toBeNull();
+  } finally {
+    await site.close();
+    await mock.close();
+  }
+});
+
+test('J-L2 the language menu filter: focused on open, matches the name, the native name and the code, keyboard, empty state, in the dialog and the card', async ({ page }) => {
+  const mock = await startMockOpenAIServer();
+  const site = await startMockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(RECENT_PAGE);
+  });
+  try {
+    await setExtensionSettings(page, {
+      provider: 'custom',
+      apiEndpoint: mock.endpoint,
+      apiKey: 'test-key',
+      modelName: 'gpt-4.1-mini',
+      translationEngine: 'ai',
+      targetLang: 'zh-CN',
+      enableSelection: true,
+      selectionTrigger: 'icon',
+      selectionTranslationMode: 'popup',
+      autoTranslate: false,
+    });
+    await page.goto(`${site.origin}/`);
+    await waitForFloatBall(page);
+    await page.evaluate((y) => window.scrollTo(0, y), SCROLLED_Y);
+    const names = await page.evaluate(() => {
+      const intl = new Intl.DisplayNames(['en'], { type: 'language' });
+      return { ja: intl.of('ja'), jv: intl.of('jv'), fr: intl.of('fr') };
+    });
+    const dialog = page.locator('#ai-translator-input-dialog');
+    const label = dialog.locator('.ai-translator-lang-label');
+    const result = page.locator('#ai-translator-result-text');
+    const sentence = 'a full sentence for translation';
+
+    // 1. Each way of writing Japanese finds it: its English name, its own name
+    // and its code. The filter has the focus as soon as the menu opens, so the
+    // query is just typed; Enter picks the best match, the translation follows.
+    // Between rounds the dialog's target goes back to fr through the menu.
+    await openInputDialog(page);
+    await page.fill('#ai-translator-input-text', sentence);
+    await pickInputTargetLang(page, 'fr');
+    await expect(result).toHaveAttribute('lang', 'fr');
+    for (const query of ['jap', '日', 'ja']) {
+      const scrollYBefore = await page.evaluate(() => window.scrollY);
+      const menu = await openDialogMenu(page);
+      expect((await filterView(menu)).focused, query).toBe(true);
+      const drawn = await fullDomOrder(menu);
+      await page.keyboard.type(query);
+      const view = await filterView(menu);
+      expect(await fullDomOrder(menu), query).toBe(drawn);
+      expect(view.shown[0], `${query}: ${JSON.stringify(view)}`).toBe('ja');
+      expect(view.active, query).toEqual(['ja']);
+      // Each language once: the recent group (a copy of the full list) is out of
+      // the way while filtering, and so is its header.
+      expect(view.shown.filter((lang) => lang.startsWith('recent:')), query).toEqual([]);
+      expect(view.groups, query).toEqual([getMessage('langAll', 'en')]);
+      expect(view.empty, query).toBeNull();
+      if (query === 'ja') {
+        // The code is an exact hit and goes first, ahead of the names that only
+        // contain it (Azerbaijani, Gujarati, Punjabi), which the alphabet would
+        // put before Japanese.
+        expect(view.shown.slice(1), JSON.stringify(view)).toContain('az');
+      }
+      await page.keyboard.press('Enter');
+      await expect(menu).toBeHidden();
+      await expect(label).toHaveText(names.ja);
+      await expect(result).toHaveAttribute('lang', 'ja');
+      expect(await page.evaluate(() => window.scrollY), query).toBe(scrollYBefore);
+      await pickInputTargetLang(page, 'fr');
+      await expect(result).toHaveAttribute('lang', 'fr');
+    }
+
+    // 1a. A name that starts with the query comes before one that only contains
+    // it: "ma" puts Malay, Marathi, Magyar… ahead of German (gerMAn), which the
+    // alphabet would put first. Everything ahead of German has an English or a
+    // native name that starts with "ma".
+    let menu = await openDialogMenu(page);
+    await page.keyboard.type('ma');
+    let view = await filterView(menu);
+    const german = view.shown.indexOf('de');
+    expect(german, JSON.stringify(view)).toBeGreaterThan(0);
+    expect(await page.evaluate((langs) => langs.filter((lang) => ![
+      new Intl.DisplayNames(['en'], { type: 'language' }).of(lang),
+      new Intl.DisplayNames([lang], { type: 'language' }).of(lang),
+    ].some((name) => name.toLowerCase().startsWith('ma'))), view.shown.slice(0, german)), JSON.stringify(view)).toEqual([]);
+    await page.keyboard.press('Escape');
+
+    // 2. Nothing matches: the empty-state line, no headers, and Enter picks
+    // nothing. Clearing the query brings the menu back as it was drawn, the
+    // full list in its collated order again.
+    menu = await openDialogMenu(page);
+    await page.keyboard.type('qqzx');
+    expect(await filterView(menu)).toMatchObject({ shown: [], groups: [], active: [], empty: getMessage('langNoMatch', 'en') });
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeVisible();
+    await expect(label).toHaveText(names.fr);
+    await menu.locator('.ai-translator-lang-filter').fill('');
+    view = await filterView(menu);
+    expect(view).toMatchObject({
+      groups: [getMessage('langRecent', 'en'), getMessage('langAll', 'en')], active: [], empty: null,
+    });
+    expect(view.shown.filter((lang) => lang.startsWith('recent:'))).toEqual(['recent:fr', 'recent:ja']);
+    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
+    expect(await menu.evaluate((el) => el.scrollTop)).toBe(0);
+
+    // 3. The keyboard: the arrows walk the items in view (top to bottom, the
+    // recent ones first with no query) and stop at the ends, the active one
+    // kept in view under the filter; Enter picks the active one.
+    // ArrowUp with nothing active starts from the bottom; ArrowDown stops there.
+    await page.keyboard.press('ArrowUp');
+    view = await filterView(menu);
+    expect(view.active).toEqual([view.shown.at(-1)]);
+    await expectActiveInView(menu);
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    expect((await filterView(menu)).active).toEqual([view.shown.at(-1)]);
+    await page.keyboard.press('Escape');
+    menu = await openDialogMenu(page);
+    // ArrowDown with nothing active starts from the top (the recent fr); ArrowUp stops there.
+    await page.keyboard.press('ArrowDown');
+    expect((await filterView(menu)).active).toEqual(['fr']);
+    await page.keyboard.press('ArrowUp');
+    expect((await filterView(menu)).active).toEqual(['fr']);
+    for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+    view = await filterView(menu);
+    expect(view.active).toEqual([view.shown[12].replace('recent:', '')]);
+    expect((await expectActiveInView(menu)).scrollTop).toBeGreaterThan(0);
+    for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
+    expect((await filterView(menu)).active).toEqual(['fr']);
+    await expectActiveInView(menu);
+    await page.keyboard.type('ja');
+    await page.keyboard.press('ArrowDown');
+    view = await filterView(menu);
+    expect(view.active).toEqual([view.shown[1]]);
+    expect(view.shown[1]).not.toBe('ja');
+    const second = view.shown[1];
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeHidden();
+    await expect(result).toHaveAttribute('lang', second);
+
+    // 3a. Enter on an item the Tab key focused picks that item, not the active
+    // one: Enter picks the active or first item only from the filter. The
+    // target goes back to fr first, so the pick is seen to change it.
+    await pickInputTargetLang(page, 'fr');
+    await expect(result).toHaveAttribute('lang', 'fr');
+    menu = await openDialogMenu(page);
+    await page.keyboard.type('ja');
+    view = await filterView(menu);
+    expect(view.active).toEqual(['ja']);
+    const tabbed = await tabToItem(page, menu);
+    expect(tabbed, JSON.stringify(view)).not.toBeNull();
+    expect(view.shown, JSON.stringify(view)).toContain(tabbed.lang);
+    expect([view.shown[0], ...view.active], JSON.stringify(view)).not.toContain(tabbed.lang);
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeHidden();
+    await expect(label).toHaveText(tabbed.label);
+    await expect(result).toHaveAttribute('lang', tabbed.lang);
+
+    // 4. Escape closes the menu and only the menu: the dialog stays, the focus
+    // back on the trigger. Reopened, the menu is drawn afresh, the query gone.
+    menu = await openDialogMenu(page);
+    await page.keyboard.type('fre');
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.locator('.ai-translator-lang-trigger')).toBeFocused();
+    menu = await openDialogMenu(page);
+    expect(await filterView(menu)).toMatchObject({ query: '', focused: true, active: [], empty: null });
+    // With the menu still open and the focus moved out of it (into the text
+    // box, without a click, which would close the menu), Escape still closes
+    // the menu only: what counts is that the menu is open, not where the key
+    // came from. The next Escape closes the dialog.
+    await page.locator('#ai-translator-input-text').focus();
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.locator('.ai-translator-lang-trigger')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    // 5. The selection card's menu is the same menu: focused on open, filtered,
+    // picked with Enter, the card translating again into the pick; Escape
+    // closes the menu and leaves the card.
+    const phrase = await page.locator('#phrase').boundingBox();
+    const y = phrase.y + phrase.height / 2;
+    await page.mouse.move(phrase.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(phrase.x + phrase.width - 1, y, { steps: 10 });
+    await page.mouse.up();
+    await page.locator('#ai-translator-selection-btn .ai-translator-selection-icon').click();
+    const card = page.locator('.ai-translator-popup');
+    const text = card.locator('.ai-translator-translation-text');
+    await expect(text).toContainText('[T]');
+    await expect(text).toHaveAttribute('lang', 'zh-CN');
+    await card.locator('.ai-translator-lang-trigger').click();
+    const cardMenu = card.locator('.ai-translator-lang-menu');
+    await expect(cardMenu).toBeVisible();
+    expect((await filterView(cardMenu)).focused).toBe(true);
+    await page.keyboard.type('日');
+    expect(await filterView(cardMenu)).toMatchObject({ shown: ['ja'], active: ['ja'] });
+    await page.keyboard.press('Enter');
+    await expect(cardMenu).toBeHidden();
+    await expect(card.locator('.ai-translator-lang-label')).toHaveText(names.ja);
+    await expect(text).toHaveAttribute('lang', 'ja');
+    await card.locator('.ai-translator-lang-trigger').click();
+    await expect(cardMenu).toBeVisible();
+    await page.keyboard.type('qqzx');
+    expect(await filterView(cardMenu)).toMatchObject({ shown: [], groups: [], empty: getMessage('langNoMatch', 'en') });
+    await page.keyboard.press('Escape');
+    await expect(cardMenu).toBeHidden();
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('.ai-translator-lang-label')).toHaveText(names.ja);
+    // In the card too, Enter on the item Tab focused picks that item.
+    await card.locator('.ai-translator-lang-trigger').click();
+    await expect(cardMenu).toBeVisible();
+    await page.keyboard.type('ja');
+    const cardView = await filterView(cardMenu);
+    expect(cardView.active).toEqual(['ja']);
+    const cardTabbed = await tabToItem(page, cardMenu);
+    expect(cardTabbed, JSON.stringify(cardView)).not.toBeNull();
+    expect(cardView.shown, JSON.stringify(cardView)).toContain(cardTabbed.lang);
+    expect([cardView.shown[0], ...cardView.active], JSON.stringify(cardView)).not.toContain(cardTabbed.lang);
+    await page.keyboard.press('Enter');
+    await expect(cardMenu).toBeHidden();
+    await expect(card.locator('.ai-translator-lang-label')).toHaveText(cardTabbed.label);
+    await expect(text).toHaveAttribute('lang', cardTabbed.lang);
   } finally {
     await site.close();
     await mock.close();

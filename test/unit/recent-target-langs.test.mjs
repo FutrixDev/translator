@@ -49,7 +49,7 @@ function load({ stored = {}, builtin = false } = {}) {
   const ctx = {
     settings: { targetLang: 'zh-CN' },
     uiLanguage: () => 'en',
-    t: (key) => ({ langAiOnly: 'AI only', langRecent: 'Recent', langAll: 'All languages' })[key] || key,
+    t: (key) => ({ langAiOnly: 'AI only', langRecent: 'Recent', langAll: 'All languages', langFilter: 'Search languages', langNoMatch: 'No matching language' })[key] || key,
     escapeHtml: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     builtinTranslator: {
       isSelected: () => builtin,
@@ -90,9 +90,13 @@ function draw(ctx, selected, menu = { dataset: {} }) {
   return menu;
 }
 
-/** The menu's top-level pieces, in order: group headers and items. */
+/**
+ * The menu's top-level pieces, in order: group headers and items. The filter
+ * input above them and the empty-state line below are left out (the filter's
+ * journey is J-L2 in test/e2e/target-languages.spec.js).
+ */
 function pieces(html) {
-  return [...html.matchAll(/<(div|button) class="([^"]+)"([^>]*)>([^<]*)<\/\1>/g)].map((m) => ({
+  return [...html.matchAll(/<(div|button) class="(ai-translator-lang-(?:group|item)[^"]*)"([^>]*)>([^<]*)<\/\1>/g)].map((m) => ({
     kind: m[2].startsWith('ai-translator-lang-group') ? 'group' : 'item',
     selected: /\bis-selected\b/.test(m[2]),
     lang: /data-lang="([^"]+)"/.exec(m[3])?.[1],

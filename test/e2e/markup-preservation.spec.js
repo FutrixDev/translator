@@ -193,11 +193,10 @@ test('a model that mangles or drops markers degrades to plain text', async ({ pa
 
   // Never a fabricated element — a pair we did not hand out does not become a link.
   expect(result.mangledLinks).toBe(0);
-  // <a2> is debris out of our own vocabulary ('a' and 2 were both issued for
-  // this block), so it is scrubbed rather than shown to the reader. <b9> is
-  // not: no <b> marker was ever issued here, so those characters belong to the
-  // page — an HTML tutorial whose prose really does say "<b9>" keeps it.
-  expect(result.mangledText).toBe('请阅读<b9>文档</b9>和说明。');
+  // Neither <b9> nor <a2> is written in this block's source, so both are our
+  // debris and are scrubbed rather than shown to the reader. (An HTML tutorial
+  // whose prose really does say "<b9>" keeps it — see the next test.)
+  expect(result.mangledText).toBe('请阅读文档和说明。');
 
   // Missing close: element still built, content contained.
   expect(result.unclosedLinks).toBe(1);
@@ -207,12 +206,12 @@ test('a model that mangles or drops markers degrades to plain text', async ({ pa
 test('a marker whose number the model fused is scrubbed, the page\'s own <b2> is not', async ({ page }) => {
   // Reddit's feed-card header carried eleven class-bearing spans, so its markers
   // ran span1…span11, and the builtin engine wrote <span11> back as <span1111>.
-  // An exact-match scrub cannot see that: no marker 1111 was ever handed out.
-  // Every digit of it splits into issued numbers (11 + 11), so it is debris of
-  // ours; <b2> is not — no <b> marker was issued — and stays as page prose.
+  // An exact-match rebuild cannot see that: no marker 1111 was ever handed out,
+  // and the source never wrote it, so it is debris. <b2> is written in the
+  // page's own prose, so it stays.
   const words = Array.from({ length: 11 }, (_, i) => `<span class="w">word${i + 1}</span>`).join(' ');
   await page.setContent(`<!doctype html><html><head><meta charset="utf-8"></head><body>
-    <p id="many">${words} and then the sentence finally ends.</p>
+    <p id="many">${words} and in HTML &lt;b2&gt; is bold.</p>
   </body></html>`, { waitUntil: 'load' });
   for (const s of SCRIPTS) await page.addScriptTag({ path: s });
 

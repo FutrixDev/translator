@@ -288,7 +288,7 @@
       }
     });
     setupPopupSpeech(popup);
-    const initialLang = setupLanguageDropdown(popup, getEffectiveTargetLang(), (lang) => {
+    state.translationPopupLangMenu = setupLanguageDropdown(popup, getEffectiveTargetLang(), (lang) => {
       translateText(popup.dataset.sourceText || text, lang);
     });
     wireCardActions(popup);
@@ -297,7 +297,7 @@
     setupPopupDrag(popup);
 
     // Trigger translation
-    translateText(text, initialLang);
+    translateText(text, popup.dataset.targetLang);
   }
 
   // 显示已完成的翻译结果（用于右键菜单翻译）
@@ -370,7 +370,7 @@
     });
     const showTranslationSpeak = setupPopupSpeech(state.translationPopup);
     showTranslationSpeak(!!translation);
-    setupLanguageDropdown(state.translationPopup, getEffectiveTargetLang(), (lang) => {
+    state.translationPopupLangMenu = setupLanguageDropdown(state.translationPopup, getEffectiveTargetLang(), (lang) => {
       translateText(state.translationPopup?.dataset.sourceText || text, lang);
     });
 
@@ -451,9 +451,9 @@
 
   function hideTranslationPopup() {
     if (state.translationPopup) {
-      if (state.translationPopup._langOutsideHandler) {
-        document.removeEventListener('mousedown', state.translationPopup._langOutsideHandler);
-      }
+      // 卡片可能在接上下拉之前就被收起（建到一半抛了错）。
+      state.translationPopupLangMenu?.close();
+      state.translationPopupLangMenu = null;
       if (state.translationPopup._dragAbortController) {
         state.translationPopup._dragAbortController.abort();
       }
@@ -464,73 +464,105 @@
     }
   }
 
+  // 划词卡与输入框对话框共用的目标语言下拉。写下规范化后的 popup.dataset.targetLang
+  // （调用处要初始语言就读它），返回这个下拉：{ isOpen, open, close, dismiss }。调用处
+  // 把它记在自己的 state 里（state.translationPopupLangMenu / state.inputDialogLangMenu），
+  // 收起卡片或对话框之前先 close()，菜单开着时挂在 document 上的两个监听就跟着摘掉。
   function setupLanguageDropdown(popup, selectedLang, onChange) {
     const trigger = popup.querySelector('.ai-translator-lang-trigger');
     const menu = popup.querySelector('.ai-translator-lang-menu');
     const label = popup.querySelector('.ai-translator-lang-label');
-    if (!trigger || !menu || !label) return selectedLang;
+    if (!trigger || !menu || !label) throw new Error('setupLanguageDropdown: the popup has no language dropdown');
+    const { ITEM, FILTER } = ctx.LANG_MENU_SELECTORS;
 
     const normalized = normalizeTargetLang(selectedLang);
     label.textContent = getTargetLangLabel(normalized);
     popup.dataset.targetLang = normalized;
 
-    const closeMenu = () => {
+    // 这一次打开画出来的菜单的控制器（ctx.buildTargetLangMenu 返回）：筛选、看得见的
+    // 选项、当前项和方向键都归它；这里只管开、关和焦点。
+    let controller = null;
+
+    // 点在下拉外面就关菜单。
+    const onOutsideMousedown = (event) => {
+      if (!popup.contains(event.target) || !event.target.closest('.ai-translator-lang-dropdown')) close();
+    };
+    // 菜单开着时 Escape 只关菜单，焦点在哪都一样。它挂在 document 的捕获阶段，用
+    // stopImmediatePropagation 截住，划词卡自己的 Escape（content-selection.js，冒泡阶段）
+    // 就收不到、不会把它当成关卡片；输入框对话框自己的 Escape 也在捕获阶段，菜单开着时
+    // 它让路（content-input-dialog.js）。输入法组字时的 Escape 是输入法的，不碰。
+    const onEscape = (event) => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dismiss();
+    };
+
+    const isOpen = () => !menu.hidden;
+    const close = () => {
       if (menu.hidden) return;
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('mousedown', onOutsideMousedown);
+      document.removeEventListener('keydown', onEscape, true);
     };
-
+    // 用键盘关掉菜单：焦点回到触发按钮，不落到 body 上。
+    const dismiss = () => {
+      close();
+      trigger.focus({ preventScroll: true });
+    };
     // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
     // 译过、别的标签译过——每次打开都按那一刻的列表和那一刻的手动引擎画。
     // 画完停在顶部，让「最近使用」一组露出来；菜单总有这一组。当前语言不一定在
     // 组里：设置里可能换了默认语。为了把全表里的选中项滚到中部而把这组推出视口，就违背了
     // 置顶的本意；当前语言已经写在触发按钮上。只动菜单自己的 scrollTop，不用
     // scrollIntoView（那会连宿主页面一起滚）。菜单节点跨次打开复用，不赌重画后滚动位置
-    // 自己归零，明确写 0。
-    const openMenu = () => {
+    // 自己归零，明确写 0。打开就把焦点放进筛选框，直接打字就是在找语言；
+    // preventScroll 同理，不让聚焦去滚宿主页面。
+    const open = () => {
       if (!menu.hidden) return;
-      buildTargetLangMenu(menu, popup.dataset.targetLang);
+      controller = buildTargetLangMenu(menu, popup.dataset.targetLang);
       menu.hidden = false;
       menu.scrollTop = 0;
       trigger.setAttribute('aria-expanded', 'true');
+      document.addEventListener('mousedown', onOutsideMousedown);
+      document.addEventListener('keydown', onEscape, true);
+      controller.focus();
     };
 
     trigger.addEventListener('click', (event) => {
       event.stopPropagation();
-      if (menu.hidden) {
-        openMenu();
-      } else {
-        closeMenu();
-      }
+      if (menu.hidden) open();
+      else close();
+    });
+
+    // 每输一个字重筛一次，有查询时当前项落在最贴的那一项上。
+    menu.addEventListener('input', (event) => {
+      if (!event.target.matches(FILTER)) return;
+      controller.filter(event.target.value);
+    });
+
+    // 方向键与筛选框里的回车归控制器，处理完就不再往外传。输入法组字时的回车和方向键是
+    // 输入法的，不归菜单。Tab 聚焦到某一项上的回车控制器不接，浏览器照常点那个按钮。
+    menu.addEventListener('keydown', (event) => {
+      if (event.isComposing) return;
+      if (!controller.handleKey(event.key, event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
     });
 
     menu.addEventListener('click', (event) => {
-      const item = event.target.closest('.ai-translator-lang-item');
+      const item = event.target.closest(ITEM);
       if (!item) return;
       const lang = item.dataset.lang;
       if (!lang) return;
       label.textContent = item.textContent || getTargetLangLabel(lang);
       popup.dataset.targetLang = lang;
-      closeMenu();
-      if (typeof onChange === 'function') {
-        onChange(lang);
-      }
+      close();
+      onChange(lang);
     });
 
-    const outsideHandler = (event) => {
-      if (!popup.contains(event.target)) {
-        closeMenu();
-        return;
-      }
-      if (!event.target.closest('.ai-translator-lang-dropdown')) {
-        closeMenu();
-      }
-    };
-
-    popup._langOutsideHandler = outsideHandler;
-    document.addEventListener('mousedown', outsideHandler);
-
-    return normalized;
+    return { isOpen, open, close, dismiss };
   }
 
   // 卡片「译文」一格里的几块：加载态、译文、词典条目、错误。
@@ -583,10 +615,11 @@
   }
 
   // 词典条目只经共享渲染器画（与输入框同一份）；null 清空并藏起。
-  // 音标是译文的，喇叭按这次请求的目标语言读译文（D-487）；读原文的是卡片自己的
-  // .ai-translator-speak-source。
-  function showCardEntry(parts, entry, targetLang) {
-    if (parts.dict) DictEntry.render(parts.dict, entry, { targetLang, t, speech });
+  // 音标是译文的，喇叭按这次请求的目标语言读译文（D-487）；单语条目（查的词本来就是
+  // 目标语言，entry.monolingual）的音标是这个词自己的，喇叭读查的原文 text。读原文的
+  // 是卡片自己的 .ai-translator-speak-source。
+  function showCardEntry(parts, entry, targetLang, text) {
+    if (parts.dict) DictEntry.render(parts.dict, entry, { targetLang, text, t, speech });
   }
 
   // 重译 / 换引擎 / 加入术语表：请求在路上时禁用（术语表拿的是译文，旧的不能拿去预填）。
@@ -695,7 +728,7 @@
       const provenWord = !!popup && popup.dataset.provenWord === text;
       // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
       ctx.rememberRecentTargetLang(targetLang);
-      const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
+      const { local, request } = await ctx.dictRoute(text, targetLang, { pinned, provenWord });
       // "Explain in context with AI" always sends the sentence the selection
       // sits in, whatever aiPageContext says (D-641); content/engine/addenda.js
       // turns it into the PAGE CONTEXT addendum.
@@ -705,7 +738,7 @@
         feature: 'selection',
         text: text,
         targetLang: targetLang,
-        mode,
+        ...request,
         ...(pinned ? { engine: pinned } : {}),
         ...(explain ? { explainContext: true } : {}),
         ...(explain && popup._explainContext ? { pageContext: popup._explainContext } : {})
@@ -719,7 +752,7 @@
       } else {
         // A model lookup or a local dictionary hit carries an entry
         // (DictEntry.entryFor); a builtin answer has none.
-        const entry = DictEntry.entryFor(mode, response);
+        const entry = DictEntry.entryFor(request.mode, response);
         const parts = cardParts(popup);
         setCardLoading(parts, false);
         if (parts.text) {
@@ -732,7 +765,7 @@
           void parts.text.offsetWidth;
           parts.text.classList.add('ai-translator-translation-flow');
         }
-        showCardEntry(parts, entry, targetLang);
+        showCardEntry(parts, entry, targetLang, text);
         popup._showTranslationSpeak?.(!!response.translation);
         if (parts.resultBody) {
           parts.resultBody.hidden = false;

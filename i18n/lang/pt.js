@@ -716,6 +716,8 @@
     dictEntryEmpty: 'Desta vez o modelo não deu pronúncia, significados nem exemplos.',
     langRecent: 'Recentes',
     langAll: 'Todos os idiomas',
+    langFilter: 'Pesquisar idioma',
+    langNoMatch: 'Nenhum idioma encontrado',
     dictOfflineTitle: 'Dicionário offline',
     offlineDictionary: 'Procurar palavras offline',
     offlineDictionaryHint: 'Uma palavra procurada é respondida primeiro por um dicionário instalado neste dispositivo: grátis, imediato e sem modelo. O dicionário de um par de idiomas é baixado na primeira vez que você procura uma palavra nele.',

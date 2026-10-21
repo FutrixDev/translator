@@ -14,7 +14,12 @@
 //     once per pair per page, even when its keys are already half-seeded;
 //   - a pair in `dict:declined` answers null with no DICT_PACK_WANT (D-609);
 //   - the switch off, a non-candidate, a same-language pair: null, no read and
-//     no DICT_PACK_WANT.
+//     no DICT_PACK_WANT;
+//   - the word's language for the model's prompt (wordLang): the target's
+//     own only on proof (a script that pins it, or the word in a seeded pack
+//     of the target language), another only on proof (a script, or a reliable
+//     reading of typed text), and unknown otherwise, never from the page or
+//     the English last resort.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -96,8 +101,15 @@ function setPageLang(lang) {
 async function lookup(text, targetLang, options) {
   reads.length = 0;
   sent.length = 0;
-  const answer = await ctx.dictLookup(text, targetLang, options);
-  return { answer, reads: reads.length, sent: [...sent] };
+  const { answer, wordLang } = await ctx.dictLookup(text, targetLang, options);
+  return { answer, wordLang, reads: reads.length, sent: [...sent] };
+}
+
+// The same, with every key it read.
+async function lookupKeys(text, targetLang, options) {
+  reads.length = 0;
+  const { wordLang } = await ctx.dictLookup(text, targetLang, options);
+  return { wordLang, keys: reads.flat() };
 }
 
 // ---- hits -------------------------------------------------------------------
@@ -260,7 +272,6 @@ test('not a lookup, an unsupported target, or the same language: null, no read, 
     ['私は学生です。', 'zh-CN'],
     ['今日は良い天気ですね', 'zh-CN'],
     ['run', 'it'],
-    ['run', 'en'],
     ['猫', 'zh-TW'],
     ['猫', 'zh-CN'],
   ]) {
@@ -269,4 +280,160 @@ test('not a lookup, an unsupported target, or the same language: null, no read, 
     assert.equal(n, 0, text);
     assert.deepEqual(messages, [], text);
   }
+  // A Latin word under its own page's language is no pack lookup either, but
+  // the one read still asks the target language's packs whether it is theirs.
+  const { answer, reads: n, sent: messages } = await lookup('run', 'en');
+  assert.equal(answer, null);
+  assert.equal(n, 1);
+  assert.deepEqual(messages, []);
+});
+
+// ---- the word's language, for the model's prompt (wordLang) ----------------
+
+const { TARGET, OTHER, UNKNOWN } = DictEntry.WORD_LANGS;
+
+test('a script proves the language: kana, hangul and Han pin theirs, another script is not the target\'s', async () => {
+  for (const [text, tgt, wordLang] of [
+    ['たべる', 'ja', TARGET],
+    ['학교', 'ko', TARGET],
+    ['猫', 'zh-CN', TARGET],
+    ['猫', 'zh-TW', TARGET],
+    ['猫', 'en', OTHER],
+    ['run', 'zh-CN', OTHER],
+    ['кот', 'en', OTHER],
+    ['학교', 'ja', OTHER],
+  ]) {
+    assert.equal((await lookup(text, tgt)).wordLang, wordLang, `${text} -> ${tgt}`);
+  }
+});
+
+test('a script many languages share proves nothing on its own: Cyrillic, Han on a Japanese page', async () => {
+  assert.equal((await lookup('кот', 'ru')).wordLang, UNKNOWN, 'Ukrainian is Cyrillic too');
+  setPageLang('ja');
+  assert.equal((await lookup('先生', 'zh-CN')).wordLang, UNKNOWN, 'kanji on a Japanese page may be Japanese');
+  assert.equal((await lookup('先生', 'zh-CN', { standalone: true })).wordLang, TARGET, 'typed Han is Chinese');
+  setPageLang('en');
+});
+
+test('a word in a seeded pack of the target language is that language\'s, through its form table too', async () => {
+  for (const [text, tgt] of [['run', 'en'], ['Ran', 'en'], ['apple', 'en-GB'], ['猫', 'ja']]) {
+    const { wordLang, reads: n } = await lookup(text, tgt);
+    assert.equal(wordLang, TARGET, `${text} -> ${tgt}`);
+    assert.equal(n, 1, `${text}: the proof rides on the one read`);
+  }
+  // 猫 is in the ja pack, so a Japanese reader gets the Japanese word; Han
+  // that no ja pack holds stays the Chinese reading.
+  assert.equal((await lookup('学校', 'ja')).wordLang, OTHER);
+});
+
+test('a short Latin word with no proof is unknown, wherever the page and the last resort point', async () => {
+  for (const lang of ['en', 'fr', '']) {
+    setPageLang(lang);
+    for (const text of ['popular', 'Schadenfreude', 'Bonjour', 'gato']) {
+      assert.equal((await lookup(text, 'en')).wordLang, UNKNOWN, `${text} on a '${lang}' page`);
+      assert.equal((await lookup(text, 'en', { standalone: true })).wordLang, UNKNOWN, `typed ${text}`);
+    }
+  }
+  setPageLang('en');
+});
+
+test('a reliable reading of typed text proves another language, never the target\'s own', async () => {
+  assert.equal((await lookup('Schmetterling', 'en', { standalone: true })).wordLang, OTHER);
+  assert.equal((await lookup('Schmetterling', 'de', { standalone: true })).wordLang, UNKNOWN);
+  // A selection is read by the page, not the detector.
+  assert.equal((await lookup('Schmetterling', 'en')).wordLang, UNKNOWN);
+});
+
+test('pack proof needs the switch on and the pack listed; the verdict needs neither for a script', async () => {
+  ctx.settings.offlineDictionary = false;
+  try {
+    const run = await lookup('run', 'en');
+    assert.equal(run.wordLang, UNKNOWN);
+    assert.equal(run.reads, 0);
+    assert.equal((await lookup('猫', 'zh-CN')).wordLang, TARGET);
+    assert.equal((await lookup('猫', 'en')).wordLang, OTHER);
+  } finally {
+    ctx.settings.offlineDictionary = true;
+  }
+  const packs = storage.get(DictPack.PACKS_KEY);
+  storage.set(DictPack.PACKS_KEY, Object.fromEntries(Object.entries(packs).filter(([pair]) => pair !== 'en-zh-CN')));
+  try {
+    assert.equal((await lookup('colour', 'en')).wordLang, UNKNOWN, 'seeded keys without the list item prove nothing');
+  } finally {
+    storage.set(DictPack.PACKS_KEY, packs);
+  }
+});
+
+test('a word selected on a page in another language is not proven the target\'s by the target\'s packs', async () => {
+  // run is in the seeded en-zh-CN pack, which proves it English on an English
+  // page. On a German page a word that German can write is the page's as much
+  // as English's (Gift, Rat, Kind): the model decides, and the en packs are
+  // not even asked.
+  setPageLang('de');
+  try {
+    const enKeys = (key) => key.startsWith('d:en-');
+    const { wordLang, keys } = await lookupKeys('run', 'en');
+    assert.equal(wordLang, UNKNOWN);
+    assert.deepEqual(keys.filter(enKeys), [], 'no proof key of an en pack is read');
+    // Typed into the box, the same word has no page around it: the pack proves it.
+    assert.equal((await lookup('run', 'en', { standalone: true })).wordLang, TARGET);
+    // A page in the target's own language still lets the pack prove it.
+    setPageLang('en-GB');
+    assert.equal((await lookup('run', 'en')).wordLang, TARGET);
+  } finally {
+    setPageLang('en');
+  }
+});
+
+// ---- the route (ctx.dictRoute) ----------------------------------------------
+
+async function route(text, targetLang, options) {
+  reads.length = 0;
+  sent.length = 0;
+  const result = await ctx.dictRoute(text, targetLang, options);
+  return { ...result, keys: reads.flat(), sent: [...sent] };
+}
+
+test('a lookup pinned to an engine reads only its verdict: no pack entry, no pack request', async () => {
+  const pairKeysOf = (src, tgt) => (key) => key.startsWith(`d:${DictPack.pairOf(src, tgt)}:`);
+  // apple -> pt: the en-pt pack is not seeded and no lookup has asked for it
+  // yet. ran -> zh-CN and 학교 -> en are in seeded packs. Pinned, the pack never
+  // answers, so none of its keys is read and nothing is asked for.
+  for (const [text, tgt, src] of [['apple', 'pt', 'en'], ['ran', 'zh-CN', 'en'], ['학교', 'en', 'ko']]) {
+    const pinned = await route(text, tgt, { pinned: 'ai' });
+    assert.equal(pinned.local, null, text);
+    assert.equal(pinned.request.mode, 'word', text);
+    assert.deepEqual(pinned.sent, [], `${text}: no DICT_PACK_WANT`);
+    assert.deepEqual(pinned.keys.filter(pairKeysOf(src, tgt)), [], `${text}: no ${src}-${tgt} key read`);
+    assert.equal(pinned.keys.includes(DictPack.DECLINED_KEY), false, text);
+  }
+  // The same lookups unpinned read those keys, and the missing pack is asked for.
+  const unpinned = await route('apple', 'pt');
+  assert.deepEqual(unpinned.sent, [{ type: 'DICT_PACK_WANT', src: 'en', tgt: 'pt' }]);
+  assert.ok(unpinned.keys.some(pairKeysOf('en', 'pt')), 'the unpinned lookup reads the en-pt keys');
+  assert.equal((await route('ran', 'zh-CN')).local.translation, '跑');
+  // The verdict still reads the proof: run pinned for an English reader is English.
+  const proven = await route('run', 'en', { pinned: 'ai' });
+  assert.deepEqual(proven.request, { mode: 'word', wordLang: TARGET });
+  assert.ok(proven.keys.some((key) => key.startsWith('d:en-zh-CN:')), 'the proof keys are read');
+  // Text that is no lookup goes out as text, with nothing read at all.
+  const sentence = await route('I ran. Then I stopped', 'en', { pinned: 'ai' });
+  assert.deepEqual([sentence.request, sentence.keys, sentence.sent], [{ mode: 'text' }, [], []]);
+});
+
+test('an unpinned route answers from the pack and keeps the verdict', async () => {
+  const hit = await route('ran', 'zh-CN');
+  assert.equal(hit.local.translation, '跑');
+  assert.deepEqual(hit.request, { mode: 'word', wordLang: OTHER });
+  // A pack hit proves a word that isLookup would not look up (D-609).
+  assert.equal(DictEntry.isLookup('食べました'), false);
+  assert.equal((await route('食べました', 'zh-CN')).request.mode, 'word');
+  // A provenWord card asked again pinned is still a word.
+  assert.equal((await route('食べました', 'zh-CN', { pinned: 'ai', provenWord: true })).request.mode, 'word');
+  assert.deepEqual((await route('I ran. Then I stopped', 'en')).request, { mode: 'text' });
+});
+
+test('text that is no dictionary candidate has no word language', async () => {
+  const { answer, wordLang, reads: n } = await lookup('I ran. Then I stopped', 'en');
+  assert.deepEqual([answer, wordLang, n], [null, null, 0]);
 });

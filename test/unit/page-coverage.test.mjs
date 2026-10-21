@@ -299,11 +299,15 @@ test('the page-coverage modules load before the collector', () => {
   const collect = bundle.indexOf('content/page/collect.js');
   assert.notEqual(collect, -1);
   for (const rel of ['content/page/shadow.js', 'content/page/notranslate.js', 'content/page/scope.js',
-    'content/page/reader-hidden.js', 'content/page/not-prose.js', 'content/page/prose-pre.js']) {
+    'content/page/reader-hidden.js', 'content/page/not-prose.js', 'content/page/text-runs.js',
+    'content/page/prose-pre.js']) {
     const at = bundle.indexOf(rel);
     assert.notEqual(at, -1, `${rel} is not in the content bundle`);
     assert.ok(at < collect, `${rel} must load before collect.js`);
   }
+  // prose-pre.js wraps its paragraphs through ctx.wrapProseRun.
+  assert.ok(bundle.indexOf('content/page/text-runs.js') < bundle.indexOf('content/page/prose-pre.js'),
+    'text-runs.js must load before prose-pre.js');
 });
 
 test('the production entry points collect through the page scope', () => {

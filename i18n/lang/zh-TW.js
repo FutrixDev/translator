@@ -716,6 +716,8 @@
     dictEntryEmpty: '模型這次沒有給出音標、釋義和例句。',
     langRecent: '最近使用',
     langAll: '所有語言',
+    langFilter: '搜尋語言',
+    langNoMatch: '沒有相符的語言',
     dictOfflineTitle: '離線詞典',
     offlineDictionary: '離線查詞',
     offlineDictionaryHint: '查單字時先用本機的詞典包作答：免費、即時、不用模型。某個語言對第一次查詞時會自動下載它的詞典包。',

@@ -218,8 +218,10 @@ test('the register rule is in every text rule set, in no preset and in no word o
   // 单词/词典那一路没有语域可守（R33 N4），只在文字路径上。
   // 预设（含默认）不带它：每条文字路径把它放在自己的规则里，正好一次。
   for (const [name, text] of Object.entries({
-    SINGLE_WORD_PROMPT: prompts.SINGLE_WORD_PROMPT,
-    WORD_OUTPUT_RULES: prompts.WORD_OUTPUT_RULES,
+    ...Object.fromEntries(Object.entries(prompts.WORD_MODES).flatMap(([wordLang, mode]) => [
+      [`${wordLang} word prompt`, mode.prompt],
+      [`${wordLang} word rules`, mode.rules],
+    ])),
     ...PromptPresets.TEMPLATES,
   })) {
     assert.ok(!text.includes(prompts.REGISTER_RULE), `${name} carries the register rule`);
@@ -252,9 +254,9 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
   test(`every AI path carries the addendum (${label})`, async () => {
     reply = () => 'translated';
     const single = await sentWith(() => ai.translateTextWithMode(
-      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, FORUM));
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, { mode: 'text' }, FORUM));
     reply = () => WORD_REPLY;
-    const word = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, FORUM));
+    const word = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, { mode: 'word', wordLang: 'other' }, FORUM));
 
     reply = () => '[1] A\n\n[2] B';
     const numbered = await sentWith(() => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, FORUM));
@@ -281,7 +283,7 @@ for (const [label, settings] of [['default template', SETTINGS], ['custom prompt
 test('with empty addenda the system prompt carries no register line at all', async () => {
   reply = () => 'translated';
   const sent = await sentWith(() => ai.translateTextWithMode(
-    'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, SETTINGS, false, {}));
+    'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, SETTINGS, { mode: 'text' }, {}));
   assert.doesNotMatch(sent[0], new RegExp(PromptAddenda.HEADINGS.register));
 });
 
@@ -291,8 +293,8 @@ test('a custom prompt of only whitespace is no custom prompt, on every path (R33
   const BLANK = { ...SETTINGS, customPrompt: ' \n\t ' };
   const paths = {
     single: [() => 'translated', (settings) => ai.translateTextWithMode(
-      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, {})],
-    word: [() => WORD_REPLY, (settings) => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {})],
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, { mode: 'text' }, {})],
+    word: [() => WORD_REPLY, (settings) => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, { mode: 'word', wordLang: 'other' }, {})],
     numbered: [() => '[1] A\n\n[2] B', (settings) => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
     fast: [() => FAST_REPLY, (settings) => ai.translateBatchFastWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {})],
   };
@@ -312,7 +314,7 @@ test('the default prompt is the free-translation preset on every text path, regi
   for (const settings of [SETTINGS, { ...SETTINGS, customPrompt: PromptPresets.TEMPLATES.creative + '\n' }]) {
     reply = () => 'translated';
     const [single] = await sentWith(() => ai.translateTextWithMode(
-      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, false, {}));
+      'A sentence long enough not to count as one word.', 'zh-CN', PROFILE, settings, { mode: 'text' }, {}));
     reply = () => '[1] A\n\n[2] B';
     const [numbered] = await sentWith(() => ai.translateBatchWithAI(['a', 'b'], 'zh-CN', PROFILE, settings, {}));
     reply = () => FAST_REPLY;
@@ -323,8 +325,8 @@ test('the default prompt is the free-translation preset on every text path, regi
       assert.equal(sent.split(prompts.REGISTER_RULE).length - 1, 1, `${path}: register rule count`);
     }
     reply = () => WORD_REPLY;
-    const [word] = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, true, {}));
-    assert.ok(word.startsWith(prompts.SINGLE_WORD_PROMPT.split('{targetLang}')[0]), `word path:\n${word}`);
+    const [word] = await sentWith(() => ai.translateTextWithMode('hello', 'zh-CN', PROFILE, settings, { mode: 'word', wordLang: 'other' }, {}));
+    assert.ok(word.startsWith(prompts.WORD_MODES.other.prompt.split('{targetLang}')[0]), `word path:\n${word}`);
     assert.ok(!word.includes(prompts.REGISTER_RULE));
   }
 });
@@ -347,8 +349,9 @@ test('each TRANSLATE handler validates the addenda before it translates, and the
     const translated = body.indexOf(call);
     assert.ok(validated >= 0, `${name} does not validate the addenda`);
     assert.ok(translated > validated, `${name} translates before validating`);
-    assert.match(body.slice(translated), /addenda\)/, `${name} does not pass the addenda on`);
-    assert.match(src, new RegExp(`${name}\\([^)]*message\\.addenda\\)`), `the switch drops addenda for ${name}`);
+    assert.match(body.slice(translated), /^[^)]*addenda\)/, `${name} does not pass the addenda on last`);
+    // One level of nested call is allowed: TRANSLATE hands translateRequestOf(message) on.
+    assert.match(src, new RegExp(`${name}\\((?:[^()]|\\([^()]*\\))*message\\.addenda\\)`), `the switch drops addenda for ${name}`);
   }
 });
 
@@ -356,8 +359,7 @@ test('each TRANSLATE handler validates the addenda before it translates, and the
 
 const {
   MATH_PLACEHOLDER_RULE,
-  SINGLE_WORD_PROMPT,
-  WORD_OUTPUT_RULES,
+  WORD_MODES,
   getFastBatchOutputRules,
   composePromptAddenda,
   buildPrompt,
@@ -508,11 +510,11 @@ test('buildPrompt: the block sits after the template and before the math rule, i
   assert.equal(custom, 'Translate into Chinese.\n\n' + block + MATH_PLACEHOLDER_RULE + '\n\n' + rules);
 
   // 单词翻译不带数学规则，但附加说明一样带，排在输出规则之前。
-  const word = buildPrompt(SINGLE_WORD_PROMPT, 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
-  assert.equal(word, SINGLE_WORD_PROMPT.replace(/\{targetLang\}/g, 'Chinese') + '\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);
+  const word = buildPrompt(WORD_MODES.other.prompt, 'Chinese', {}, WORD_MODES.other.rules, { includeMathRule: false, addenda });
+  assert.equal(word, WORD_MODES.other.prompt.replace(/\{targetLang\}/g, 'Chinese') + '\n\n' + block + '\n\n' + WORD_MODES.other.rules);
   assert.ok(!word.includes(MATH_PLACEHOLDER_RULE.trim()));
-  const customWord = buildPrompt('Custom {targetLang}', 'Chinese', {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
-  assert.equal(customWord, 'Custom Chinese\n\n' + block + '\n\n' + WORD_OUTPUT_RULES);
+  const customWord = buildPrompt('Custom {targetLang}', 'Chinese', {}, WORD_MODES.other.rules, { includeMathRule: false, addenda });
+  assert.equal(customWord, 'Custom Chinese\n\n' + block + '\n\n' + WORD_MODES.other.rules);
 });
 
 test('the block never carries the sentence the mock reads the delimiter from', () => {

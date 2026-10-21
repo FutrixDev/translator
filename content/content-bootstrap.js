@@ -57,10 +57,13 @@
   if (!ctx.state) {
     ctx.state = {
       translationPopup: null,
+      // 划词卡与输入框对话框的目标语言下拉（content-popup.js setupLanguageDropdown）。
+      translationPopupLangMenu: null,
       floatBall: null,
       floatBallContainer: null,
       floatMenu: null,
       inputDialog: null,
+      inputDialogLangMenu: null,
       selectionButton: null,
       lastSelectedText: '',
       lastSelectionElement: null,

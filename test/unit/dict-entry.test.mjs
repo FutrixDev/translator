@@ -20,7 +20,19 @@
 //     offline dictionary ('dict') carries an entry (entryFor); only the
 //     dictionary's answer may carry credits, kept when each is an https link
 //     to an allowed host, and render draws them as one line of links;
-//   - credits never reach the prompt: OUTPUT_RULES is pinned word for word.
+//   - RULES holds one set of rules per WORD_LANGS value, and nothing else;
+//   - credits never reach the prompt: RULES.other is pinned word for word;
+//   - a word already in the target language has its own rules,
+//     RULES.target: the same keys, a gloss for "translation", the
+//     word's own phonetics, examples with no translation; a word whose
+//     language is not known gets RULES.unknown, which adds one key,
+//     "monolingual", for the model to say which entry it wrote;
+//   - fromModelText() stamps entry.monolingual: from the caller's wordLang
+//     when it is known, from the model's own answer when it is not; only a
+//     cross-language entry's example needs its target;
+//   - render() reads a monolingual entry's phonetics as the looked-up word
+//     (the `text` option, required) and draws an example with no translation
+//     as its sentence alone.
 //
 // That the dialog and the card draw the same entry is checked on the page:
 // test/e2e/dictionary-entry.spec.js compares the two.
@@ -36,14 +48,16 @@ await import('../../shared/lang-tags.js');
 await import('../../shared/engines.js');
 await import('../../shared/dict-entry.js');
 const {
-  DICT_ENGINE, FIELDS, MAX_TEXT, OUTPUT_RULES, PROMPT_MARK, isLookup, isDictCandidate, normalize, fromModelText, entryFor,
+  DICT_ENGINE, FIELDS, MAX_TEXT, RULES, WORD_LANGS,
+  PROMPT_MARK, isLookup, isDictCandidate, normalize, fromModelText, entryFor,
   hasContent, render,
 } = globalThis.DictEntry;
 
 // `run` looked up into zh-CN: the phonetics are the translation's, pinyin with
-// no label (D-487).
+// no label (D-487). A cross-language entry: monolingual is false.
 const FULL = {
   translation: '跑',
+  monolingual: false,
   phonetics: [{ label: '', ipa: 'pǎo' }],
   senses: [{ pos: 'v.', defs: ['跑', '奔跑'] }, { pos: 'n.', defs: ['跑步'] }],
   examples: [{ source: 'I run every day.', target: '我每天跑步。' }],
@@ -204,7 +218,7 @@ test('a full entry comes back field for field', () => {
 
 test('missing lists are empty, and only translation is required', () => {
   assert.deepEqual(normalize({ translation: ' 跑 ' }),
-    { translation: '跑', phonetics: [], senses: [], examples: [], forms: [] });
+    { translation: '跑', monolingual: false, phonetics: [], senses: [], examples: [], forms: [] });
   throwsInvalid(() => normalize({ phonetics: [] }), 'no translation');
   throwsInvalid(() => normalize({ translation: '   ' }), 'blank translation');
 });
@@ -279,7 +293,7 @@ test('normalize warns once, by field name, when it drops what the model sent', (
 
 test('extra keys are ignored and not carried, at the top and in items', () => {
   const entry = normalize({ ...FULL, note: 'x', senses: [{ pos: 'v.', defs: ['跑'], rank: 1 }] });
-  assert.deepEqual(Object.keys(entry), ['translation', 'phonetics', 'senses', 'examples', 'forms']);
+  assert.deepEqual(Object.keys(entry), ['translation', 'monolingual', 'phonetics', 'senses', 'examples', 'forms']);
   assert.deepEqual(entry.senses, [{ pos: 'v.', defs: ['跑'] }]);
 });
 
@@ -288,11 +302,12 @@ test('empty arrays stay empty and empty items are dropped', () => {
     translation: '跑',
     phonetics: [{ label: 'UK', ipa: '' }],
     senses: [{ pos: 'v.', defs: ['', '  '] }, { pos: '', defs: ['跑'] }],
-    examples: [{ source: 'I run.', target: '' }],
+    examples: [{ source: '', target: '我跑。' }, { source: 'I run.', target: '' }],
     forms: [],
   });
   assert.deepEqual(entry.phonetics, []);
   assert.deepEqual(entry.senses, [{ pos: '', defs: ['跑'] }]);
+  // A cross-language example needs both halves.
   assert.deepEqual(entry.examples, []);
   assert.deepEqual(entry.forms, []);
 });
@@ -339,52 +354,106 @@ test('lists past their cap are cut', () => {
 
 // ---- fromModelText --------------------------------------------------------
 
+const { TARGET, OTHER, UNKNOWN } = WORD_LANGS;
+
 test('the model answer is read as one JSON object, fenced or bare', () => {
   const json = JSON.stringify(FULL);
-  assert.deepEqual(fromModelText(json), FULL);
-  assert.deepEqual(fromModelText('```json\n' + json + '\n```'), FULL);
-  assert.deepEqual(fromModelText('Here it is:\n' + json), FULL);
+  assert.deepEqual(fromModelText(json, OTHER), FULL);
+  assert.deepEqual(fromModelText('```json\n' + json + '\n```', OTHER), FULL);
+  assert.deepEqual(fromModelText('Here it is:\n' + json, OTHER), FULL);
 });
 
 test('a reasoning model\'s <think> block is stripped before the JSON is looked for', () => {
   const json = JSON.stringify(FULL);
   const think = '<think>The user wants {"translation": "奔"} — no, {a JSON object}.</think>';
-  assert.deepEqual(fromModelText(think + '\n' + json), FULL);
-  assert.deepEqual(fromModelText('<THINK>\n{x}\n</THINK>\n```json\n' + json + '\n```'), FULL);
-  throwsInvalid(() => fromModelText('<think>{"translation": "跑"}</think>\n跑'), 'only the think block has JSON');
+  assert.deepEqual(fromModelText(think + '\n' + json, OTHER), FULL);
+  assert.deepEqual(fromModelText('<THINK>\n{x}\n</THINK>\n```json\n' + json + '\n```', OTHER), FULL);
+  throwsInvalid(() => fromModelText('<think>{"translation": "跑"}</think>\n跑', OTHER), 'only the think block has JSON');
 });
 
 test('an answer that is not an entry throws invalidEntry — no line guessing, no translation-only rescue', () => {
-  throwsInvalid(() => fromModelText('跑\n/rʌn/'), 'plain lines');
-  throwsInvalid(() => fromModelText('{"translation": "跑", "phonetics": ['), 'truncated JSON');
-  throwsInvalid(() => fromModelText('{"phonetic": "/rʌn/"}'), 'old shape without translation');
-  throwsInvalid(() => fromModelText('["跑"]'), 'an array, not an object');
-  throwsInvalid(() => fromModelText('{"translation": ""}'), 'empty translation');
+  throwsInvalid(() => fromModelText('跑\n/rʌn/', OTHER), 'plain lines');
+  throwsInvalid(() => fromModelText('{"translation": "跑", "phonetics": [', OTHER), 'truncated JSON');
+  throwsInvalid(() => fromModelText('{"phonetic": "/rʌn/"}', OTHER), 'old shape without translation');
+  throwsInvalid(() => fromModelText('["跑"]', OTHER), 'an array, not an object');
+  throwsInvalid(() => fromModelText('{"translation": ""}', OTHER), 'empty translation');
   // A wrong-typed optional field is not one of the three: the rest stands.
-  assert.deepEqual(fromModelText('{"translation": "跑", "phonetic": "/rʌn/", "senses": "v."}'),
-    { translation: '跑', phonetics: [], senses: [], examples: [], forms: [] });
+  assert.deepEqual(fromModelText('{"translation": "跑", "phonetic": "/rʌn/", "senses": "v."}', OTHER),
+    { translation: '跑', monolingual: false, phonetics: [], senses: [], examples: [], forms: [] });
+});
+
+test('fromModelText stamps monolingual from the word\'s language, or from the model when that is unknown', (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const answer = (monolingual) => JSON.stringify({ translation: 'liked by many people', monolingual });
+  // A known language decides, whatever the model says.
+  assert.equal(fromModelText(answer(false), TARGET).monolingual, true);
+  assert.equal(fromModelText(answer(true), OTHER).monolingual, false);
+  assert.equal(fromModelText(JSON.stringify({ translation: '跑' }), TARGET).monolingual, true);
+  assert.equal(warn.mock.callCount(), 0);
+  // An unknown one takes the model's answer.
+  assert.equal(fromModelText(answer(true), UNKNOWN).monolingual, true);
+  assert.equal(fromModelText(answer(false), UNKNOWN).monolingual, false);
+  assert.equal(warn.mock.callCount(), 0);
+  // A missing answer reads as the bilingual entry, and is named in the log.
+  assert.equal(fromModelText(JSON.stringify({ translation: '跑' }), UNKNOWN).monolingual, false);
+  assert.deepEqual(warn.mock.calls.at(-1).arguments[1], ['monolingual: missing']);
+  // A wrong-typed one is dropped like any other optional field.
+  assert.equal(fromModelText(answer('yes'), UNKNOWN).monolingual, false);
+  assert.deepEqual(warn.mock.calls.at(-1).arguments[1], ['monolingual: not a boolean']);
+  // The caller always says which of the three it asked for.
+  for (const wordLang of [undefined, '', 'same', true]) {
+    assert.throws(() => fromModelText(answer(true), wordLang), TypeError, String(wordLang));
+  }
+});
+
+test('a cross-language example needs its translation; a monolingual one does not', () => {
+  const examples = [{ source: 'I run every day.', target: '' }, { source: 'She runs.', target: '她跑。' }];
+  assert.deepEqual(normalize({ translation: '跑', examples }).examples, [examples[1]]);
+  assert.deepEqual(normalize({ translation: 'to move fast on foot', monolingual: true, examples }).examples, examples);
+  assert.deepEqual(fromModelText(JSON.stringify({ translation: '跑', examples }), OTHER).examples, [examples[1]]);
+  assert.deepEqual(fromModelText(JSON.stringify({ translation: 'to move fast', examples }), TARGET).examples, examples);
+});
+
+test('normalize takes monolingual from the caller when the caller knows, and then never reads the model\'s', (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const examples = [{ source: 'I run every day.', target: '' }];
+  // The caller's answer wins either way, and the model's is not even checked.
+  assert.equal(normalize({ translation: 'to move fast', monolingual: false, examples }, { monolingual: true }).monolingual, true);
+  assert.deepEqual(normalize({ translation: 'to move fast', examples }, { monolingual: true }).examples, examples);
+  assert.equal(normalize({ translation: '跑', monolingual: true, examples }, { monolingual: false }).monolingual, false);
+  assert.deepEqual(normalize({ translation: '跑', monolingual: true, examples }, { monolingual: false }).examples, []);
+  assert.equal(normalize({ translation: '跑', monolingual: 'yes' }, { monolingual: false }).monolingual, false);
+  assert.equal(warn.mock.calls.filter((call) => call.arguments[1].some((d) => d.startsWith('monolingual'))).length, 0);
+  // Without the option the model's own answer decides.
+  assert.equal(normalize({ translation: 'to move fast', monolingual: true }).monolingual, true);
+  assert.equal(normalize({ translation: 'to move fast', monolingual: true }, {}).monolingual, true);
+  // An option that is not a boolean is the caller's bug, not the model's: it throws.
+  for (const monolingual of [undefined, null, 'true', 1]) {
+    assert.throws(() => normalize({ translation: '跑' }, { monolingual }), TypeError, String(monolingual));
+  }
+  assert.throws(() => normalize({ translation: '跑' }, null), TypeError);
 });
 
 // ---- prompt and validator agree -------------------------------------------
 
 test('the prompt names exactly the keys the validator reads', () => {
-  assert.ok(OUTPUT_RULES.startsWith(PROMPT_MARK));
-  assert.doesNotMatch(OUTPUT_RULES, /\{targetLang\}/, 'the rules are appended after substitution');
+  assert.ok(RULES.other.startsWith(PROMPT_MARK));
+  assert.doesNotMatch(RULES.other, /\{targetLang\}/, 'the rules are appended after substitution');
   // Top-level keys: the `- "key":` lines. Item keys: every other quoted name
   // followed by a colon.
-  const topLevel = [...OUTPUT_RULES.matchAll(/^- "([a-z]+)":/gm)].map((m) => m[1]);
+  const topLevel = [...RULES.other.matchAll(/^- "([a-z]+)":/gm)].map((m) => m[1]);
   assert.deepEqual(topLevel, Object.keys(FIELDS));
-  const itemKeys = new Set([...OUTPUT_RULES.matchAll(/\{([^}]*)\}/g)]
+  const itemKeys = new Set([...RULES.other.matchAll(/\{([^}]*)\}/g)]
     .flatMap((m) => [...m[1].matchAll(/"([a-z]+)":/g)].map((k) => k[1])));
   const expected = new Set(Object.values(FIELDS).flatMap((field) => Object.keys(field.item || {})));
   assert.deepEqual([...itemKeys].sort(), [...expected].sort());
   for (const [key, field] of Object.entries(FIELDS)) {
-    if (field.max) assert.match(OUTPUT_RULES, new RegExp(`- "${key}": array \\(at most ${field.max}\\)`));
+    if (field.max) assert.match(RULES.other, new RegExp(`- "${key}": array \\(at most ${field.max}\\)`));
   }
 });
 
 test('the phonetics asked for are the translation\'s, in the target language (D-487)', () => {
-  const line = OUTPUT_RULES.split('\n').find((row) => row.startsWith('- "phonetics":'));
+  const line = RULES.other.split('\n').find((row) => row.startsWith('- "phonetics":'));
   assert.match(line, /the pronunciation of the word in "translation", in the target language\./);
   assert.match(line, /When the target language is English give two items, "UK" and "US", each IPA wrapped in slashes/);
   assert.match(line, /For any other target language give one item with an empty "label", in that language's usual notation \(pinyin with tone marks for Chinese/);
@@ -392,19 +461,68 @@ test('the phonetics asked for are the translation\'s, in the target language (D-
 });
 
 test('the rules the model is asked to follow are unchanged by the offline dictionary, word for word', () => {
-  // sha256 of OUTPUT_RULES at 90812ca, before the dictionary's credits existed.
+  // sha256 of the bilingual rules (RULES.other) at 90812ca, before the dictionary's credits existed.
   // Credits are the dictionary's, beside the entry: never a key the model is
   // asked for, so a change here is a prompt change and needs its own review.
-  assert.equal(createHash('sha256').update(OUTPUT_RULES).digest('hex'),
+  assert.equal(createHash('sha256').update(RULES.other).digest('hex'),
     '6798039c7cad1d2f078886b97fd2d861e2a711c965eee4e67b5b1b6fdd5dc901');
   assert.equal(PROMPT_MARK, 'OUTPUT FORMAT (dictionary entry):');
   assert.equal('credits' in FIELDS, false);
-  assert.doesNotMatch(OUTPUT_RULES, /credit/i);
+  assert.doesNotMatch(RULES.other, /credit/i);
 });
 
-test('both word prompts are built from the shared rules', () => {
+const keysOf = (text) => [...text.matchAll(/^- "([a-z]+)":/gm)].map((m) => m[1]);
+const lineOf = (rules, key) => rules.split('\n').find((row) => row.startsWith(`- "${key}":`));
+
+test('the monolingual rules name the same keys and ask for a monolingual entry', () => {
+  const rules = RULES.target;
+  const lines = rules.split('\n');
+  assert.equal(lines[0], PROMPT_MARK, 'the mock server and the model key on the first line');
+  assert.match(lines[1], /already in the target language.*do not translate it/);
+  assert.ok(rules.endsWith('\n' + globalThis.DictEntry.FORMAT_OVERRIDE));
+  assert.deepEqual(keysOf(rules), keysOf(RULES.other));
+  assert.match(lineOf(rules, 'translation'), /a short gloss of the word in the same language/);
+  assert.match(lineOf(rules, 'phonetics'), /the pronunciation of the looked-up word itself/);
+  assert.match(lineOf(rules, 'examples'), /Leave "target" empty: the reader needs no translation/);
+  assert.doesNotMatch(rules, /translation in the target language|the word in "translation"/,
+    'nothing asks for a translation of a word that needs none');
+  // Senses and forms read the same in both.
+  for (const key of ['senses', 'forms']) assert.equal(lineOf(rules, key), lineOf(RULES.other, key), key);
+});
+
+test('the conditional rules ask the model to choose, and to say which entry it wrote', () => {
+  const rules = RULES.unknown;
+  const lines = rules.split('\n');
+  assert.equal(lines[0], PROMPT_MARK);
+  assert.match(lines[1], /^First decide whether the word is already a word of the target language/);
+  assert.ok(rules.endsWith('\n' + globalThis.DictEntry.FORMAT_OVERRIDE));
+  // One key more than the bilingual rules, first, so it is decided first.
+  assert.deepEqual(keysOf(rules), ['monolingual', ...keysOf(RULES.other)]);
+  assert.match(lineOf(rules, 'monolingual'), /true when you wrote the monolingual entry.*false when you translated it\. Required\./);
+  // Each key that differs carries both readings: the bilingual one, then the
+  // monolingual one.
+  for (const key of ['translation', 'phonetics', 'examples']) {
+    const line = lineOf(rules, key);
+    assert.ok(line.startsWith(lineOf(RULES.other, key)), `${key}: the bilingual reading first`);
+    assert.match(line, / In a monolingual entry: /, key);
+  }
+  for (const key of ['senses', 'forms']) assert.equal(lineOf(rules, key), lineOf(RULES.other, key), key);
+  // The bilingual and monolingual sets never ask for it.
+  assert.equal(keysOf(RULES.other).includes('monolingual'), false);
+  assert.equal(keysOf(RULES.target).includes('monolingual'), false);
+});
+
+test('RULES holds one frozen set of rules per WORD_LANGS value', () => {
+  assert.deepEqual(Object.keys(RULES).sort(), Object.values(WORD_LANGS).sort());
+  assert.ok(Object.isFrozen(RULES));
+  assert.equal(new Set(Object.values(RULES)).size, Object.keys(RULES).length, 'each mode has rules of its own');
+  for (const rules of Object.values(RULES)) assert.ok(rules.startsWith(PROMPT_MARK + '\n'));
+});
+
+test('the word prompts are built from the shared rules', () => {
   const prompts = repoSource('background/prompts.js');
-  assert.match(prompts, /DictEntry\.OUTPUT_RULES/);
+  assert.match(prompts, /const \{ WORD_LANGS, RULES \} = globalThis\.DictEntry;/);
+  assert.match(prompts, /Object\.entries\(RULES\)/, 'WORD_MODES is keyed by the modes RULES has');
   assert.doesNotMatch(prompts, /"phonetic"/, 'the old {translation, phonetic} shape is gone');
 });
 
@@ -438,7 +556,7 @@ test('a dictionary answer in word mode carries its entry, normalized like a mode
   assert.deepEqual(entryFor('word', dictAnswer()), FULL);
   // normalize, not a pass-through: unknown keys go, a wrong-typed list is empty.
   assert.deepEqual(entryFor('word', dictAnswer({ entry: { translation: ' 跑 ', senses: 'v.', extra: 1 } })),
-    { translation: '跑', phonetics: [], senses: [], examples: [], forms: [] });
+    { translation: '跑', monolingual: false, phonetics: [], senses: [], examples: [], forms: [] });
   assert.equal(entryFor('text', dictAnswer()), null);
 });
 
@@ -512,7 +630,7 @@ const textNode = (value) => ({ nodeType: 3, className: '', children: [], textCon
 const doc = { createElement: (tag) => new FakeElement(doc, tag), createTextNode: textNode };
 const MESSAGES = {
   dictUK: 'UK', dictUS: 'US', dictExamples: 'Examples', dictForms: 'Forms', pronounceTranslation: 'Read the translation',
-  dictCredits: 'Sources:',
+  pronounceOriginal: 'Read the original', dictCredits: 'Sources:',
 };
 
 // `猫` looked up into English: two labelled IPA rows for the translation.
@@ -532,9 +650,12 @@ function stubSpeech(log = []) {
   return { bound, speech };
 }
 
-function draw(entry, targetLang = 'zh-CN', container = new FakeElement(doc, 'div')) {
+// The looked-up text: a monolingual entry's speakers read it.
+const LOOKED = 'word';
+
+function draw(entry, targetLang = 'zh-CN', container = new FakeElement(doc, 'div'), text = LOOKED) {
   const { bound, speech } = stubSpeech();
-  render(container, entry, { targetLang, t: (key) => MESSAGES[key], speech });
+  render(container, entry, { targetLang, text, t: (key) => MESSAGES[key], speech });
   return { container, bound };
 }
 
@@ -659,19 +780,55 @@ test('hasContent is true exactly when render draws a block', () => {
 test('null clears what was drawn before', () => {
   const container = new FakeElement(doc, 'div');
   const speech = { SPEAKER_ICON: ICON, bindSpeakButton: () => () => {} };
-  render(container, normalize(FULL), { targetLang: 'zh-CN', t: (k) => k, speech });
+  render(container, normalize(FULL), { targetLang: 'zh-CN', text: LOOKED, t: (k) => k, speech });
   render(container, null, { t: (k) => k, speech });
   assert.equal(container.childElementCount, 0);
   assert.equal(container.hidden, true);
-  assert.throws(() => render(container, 'run', { targetLang: 'zh-CN', t: (k) => k, speech }), TypeError);
+  assert.throws(() => render(container, 'run', { targetLang: 'zh-CN', text: LOOKED, t: (k) => k, speech }), TypeError);
 });
 
 test('drawing an entry without the target language throws: an unlabelled row would have no voice', () => {
   const container = new FakeElement(doc, 'div');
   const speech = { SPEAKER_ICON: ICON, bindSpeakButton: () => () => {} };
   for (const targetLang of [undefined, '', null]) {
-    assert.throws(() => render(container, normalize(FULL), { targetLang, t: (k) => k, speech }), /targetLang is required/);
+    assert.throws(() => render(container, normalize(FULL), { targetLang, text: LOOKED, t: (k) => k, speech }), /targetLang is required/);
   }
+});
+
+test('drawing an entry without the looked-up text throws: a monolingual row would have nothing to say', () => {
+  const container = new FakeElement(doc, 'div');
+  const speech = { SPEAKER_ICON: ICON, bindSpeakButton: () => () => {} };
+  for (const text of [undefined, null, '', '  ', 7]) {
+    assert.throws(() => render(container, normalize(FULL), { targetLang: 'zh-CN', text, t: (k) => k, speech }),
+      /options\.text is required/, JSON.stringify(text));
+  }
+});
+
+// `popular` looked up with English as the target: a monolingual entry.
+const POPULAR = {
+  translation: 'liked by many people',
+  phonetics: [{ label: 'UK', ipa: '/ˈpɒpjələ/' }, { label: 'US', ipa: '/ˈpɑːpjələr/' }],
+  senses: [{ pos: 'adj.', defs: ['liked or enjoyed by a large number of people'] }],
+  examples: [{ source: 'It is a popular song.', target: '' }],
+  forms: [],
+};
+
+test('a monolingual entry reads the looked-up word and draws its examples without empty rows', () => {
+  for (const targetLang of ['en', 'en-GB', 'en-US']) {
+    const { container, bound } = draw(normalize({ ...POPULAR, monolingual: true }), targetLang, undefined, ' popular ');
+    assert.deepEqual(container.find('ai-translator-dict-accent').map((n) => n.textContent), ['UK', 'US']);
+    assert.deepEqual(container.find('ai-translator-dict-ipa').map((n) => n.textContent), ['/ˈpɒpjələ/', '/ˈpɑːpjələr/']);
+    assert.deepEqual(bound.map((b) => b.resolve()), [{ text: 'popular', lang: 'en-GB' }, { text: 'popular', lang: 'en-US' }]);
+    assert.deepEqual(bound.map((b) => b.button.attributes['aria-label']), ['Read the original', 'Read the original']);
+    assert.deepEqual(container.find('ai-translator-dict-example-source').map((n) => n.textContent), ['It is a popular song.']);
+    assert.deepEqual(container.find('ai-translator-dict-example-target'), [], 'no empty translation row');
+  }
+  // The same rows in a cross-language entry are the translation's: they read
+  // "translation", and the example with no translation is not kept.
+  const { container, bound } = draw(normalize(POPULAR), 'en', undefined, 'popular');
+  assert.deepEqual(bound.map((b) => b.resolve().text), ['liked by many people', 'liked by many people']);
+  assert.deepEqual(bound.map((b) => b.button.attributes['aria-label']), ['Read the translation', 'Read the translation']);
+  assert.deepEqual(container.find('ai-translator-dict-example-source'), []);
 });
 
 test('malicious model strings come out as text, never as markup', () => {
@@ -695,7 +852,7 @@ test('drawing again stops the old entry\'s speakers before their buttons leave',
   const realReplace = container.replaceChildren.bind(container);
   container.replaceChildren = () => { log.push('replaced'); realReplace(); };
   const t = (key) => MESSAGES[key];
-  render(container, normalize(CAT), { targetLang: 'en', t, speech: stubSpeech(log).speech });
+  render(container, normalize(CAT), { targetLang: 'en', text: LOOKED, t, speech: stubSpeech(log).speech });
   assert.deepEqual(log, ['replaced']);
   render(container, null, { t, speech: stubSpeech(log).speech });
   assert.deepEqual(log, ['replaced', 'UK:false', 'US:false', 'replaced']);

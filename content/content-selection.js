@@ -79,9 +79,10 @@
 
     document.addEventListener('keydown', handleSelectionHotkey, true);
 
-    // Hide popup on Escape key
+    // Hide popup on Escape key. An Escape that ends an IME composition
+    // belongs to the IME.
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.isComposing) {
         if (ctx.hideTranslationPopup) ctx.hideTranslationPopup();
         if (ctx.hideFloatMenu) ctx.hideFloatMenu();
         if (ctx.hideSourcePeek) ctx.hideSourcePeek();

@@ -716,6 +716,8 @@
     dictEntryEmpty: '모델이 이번에는 발음, 뜻, 예문을 제공하지 않았습니다.',
     langRecent: '최근 사용',
     langAll: '모든 언어',
+    langFilter: '언어 검색',
+    langNoMatch: '일치하는 언어가 없습니다',
     dictOfflineTitle: '오프라인 사전',
     offlineDictionary: '오프라인으로 단어 찾기',
     offlineDictionaryHint: '단어를 찾으면 이 기기의 사전 팩이 먼저 답합니다. 무료이고 즉시, 모델 없이 동작합니다. 언어 쌍마다 처음 단어를 찾을 때 사전 팩을 내려받습니다.',

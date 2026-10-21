@@ -150,6 +150,8 @@ const FLEX_ROW_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
       item has to get its translation under the text, not squeezed to the right of it.</li>
     <li id="iconSpan"><svg width="16" height="16"></svg><span id="iconSpanText">Text in a span
       after an icon gets its translation inside that span, under the text itself.</span></li>
+    <li id="iconComment"><svg width="16" height="16"></svg>Direct text that a framework split with a
+      comment<!-- --> between its text nodes is still one flex item and gets its translation under it.</li>
   </ul>
   <div class="cards">
     <div class="card" id="card1"><svg width="16" height="16"></svg>The first card of a grid is a
@@ -198,12 +200,13 @@ test('flex row: the translation goes under the text, inside the item that holds 
     return {
       iconText: row('iconText'),
       iconSpan: row('iconSpan'),
+      iconComment: row('iconComment'),
       cards: ['card1', 'card2', 'card3'].map(row),
       gridItems: document.querySelector('.cards').children.length
     };
   });
 
-  for (const [name, r] of [['iconText', result.iconText], ['iconSpan', result.iconSpan], ...result.cards.map((c, i) => [`card${i + 1}`, c])]) {
+  for (const [name, r] of [['iconText', result.iconText], ['iconSpan', result.iconSpan], ['iconComment', result.iconComment], ...result.cards.map((c, i) => [`card${i + 1}`, c])]) {
     expect(r, `${name}: translation is not inside the block`).not.toBeNull();
     expect(r.columnIsChildOfBlock, `${name}: translation is not in a flex item of the row`).toBe(true);
     // Under the source text, starting where it starts, as wide as its column.
@@ -214,6 +217,10 @@ test('flex row: the translation goes under the text, inside the item that holds 
   // Direct text is wrapped into one item; the row keeps exactly its icon and its text.
   expect(result.iconText.column).toBe('ai-translator-text-run');
   expect(result.iconText.flexItems).toEqual(['svg', 'span']);
+  // A comment between two text nodes does not split the anonymous item: both texts are
+  // one column, wrapped together, the comment inside it.
+  expect(result.iconComment.column).toBe('ai-translator-text-run');
+  expect(result.iconComment.flexItems).toEqual(['svg', 'span']);
   expect(result.iconSpan.column).toBe('iconSpanText');
   expect(result.iconSpan.flexItems).toEqual(['svg', 'span']);
   expect(result.cards[0].flexItems).toEqual(['svg', 'span']);

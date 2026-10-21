@@ -103,7 +103,7 @@ test.describe('offline dictionary packs: acceptance numbers (B1)', () => {
         const packs = (await chrome.storage.local.get(${JSON.stringify(DictPack.PACKS_KEY)}))[${JSON.stringify(DictPack.PACKS_KEY)}] || {};
         if (packs[${JSON.stringify(EN_JA)}] || performance.now() - start > 120000) break;
         const t = performance.now();
-        const answer = await window.AI_TRANSLATOR_CONTENT.dictLookup('apple', 'zh-CN');
+        const { answer } = await window.AI_TRANSLATOR_CONTENT.dictLookup('apple', 'zh-CN');
         latencies.push(performance.now() - t);
         if (!answer || answer.translation !== '苹果') misses += 1;
         await new Promise((resolve) => setTimeout(resolve, 25));
@@ -140,7 +140,7 @@ test.describe('offline dictionary packs: acceptance numbers (B1)', () => {
       const answers = [];
       for (let i = 0; i < 50; i++) {
         const t = performance.now();
-        const answer = await window.AI_TRANSLATOR_CONTENT.dictLookup(words[i % words.length], 'zh-CN');
+        const { answer } = await window.AI_TRANSLATOR_CONTENT.dictLookup(words[i % words.length], 'zh-CN');
         latencies.push(performance.now() - t);
         answers.push(answer && answer.engine === 'dict' ? answer.translation : null);
       }

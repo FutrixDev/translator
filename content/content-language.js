@@ -71,6 +71,12 @@
   // 项，按字母找的人照样找得到。最近项是全表选项的子集引用，不是第二份语言清单：存储里
   // 认不出的码直接不出。一个认得出的记录都没有时，最近组只放当前语言——只是显示，不写
   // 存储，所以第一次打开就看得到这一组在哪。
+  //
+  // 两组上面是一个筛选框（.ai-translator-lang-filter），菜单底下是一句「没有匹配的
+  // 语言」（.ai-translator-lang-empty，平时藏着）。返回这一次画出来的菜单的控制器
+  // （langMenu）：筛选、看得见的选项、当前项与方向键/回车都归它。打开、关上、焦点
+  // 回到哪里归打开菜单的那一处（content-popup.js 的 setupLanguageDropdown，划词卡与
+  // 输入框对话框共用），它每次打开都重画一次，拿到新的控制器。
   ctx.buildTargetLangMenu = function(menu, selectedLang) {
     const normalized = ctx.normalizeTargetLang(selectedLang);
     const bt = ctx.builtinTranslator;
@@ -91,13 +97,135 @@
       .filter(Boolean);
     const stored = known(recentPref.get());
     const recent = stored.length ? stored : known([normalized]);
-    const group = (key) =>
-      `<div class="ai-translator-lang-group" role="presentation">${ctx.escapeHtml(ctx.t(key))}</div>`;
-    menu.innerHTML = group('langRecent')
+    const group = (key, which) =>
+      `<div class="ai-translator-lang-group" role="presentation" data-group="${which}">${ctx.escapeHtml(ctx.t(key))}</div>`;
+    const filterLabel = ctx.escapeHtml(ctx.t('langFilter'));
+    menu.innerHTML = `<input class="ai-translator-lang-filter" type="text" placeholder="${filterLabel}" aria-label="${filterLabel}" autocomplete="off" spellcheck="false">`
+      + group('langRecent', 'recent')
       + recent.map((option) => item(option, true)).join('')
-      + group('langAll')
-      + all;
+      + group('langAll', 'all')
+      + all
+      + `<div class="ai-translator-lang-empty" role="status" hidden>${ctx.escapeHtml(ctx.t('langNoMatch'))}</div>`;
+    return langMenu(menu, options.map(matchNames));
   };
+
+  // 一门语言能用哪些名字找到：界面语言下的名字（菜单上写的那个）、英文名、它自己的
+  // 名字（日本語）、语言码。英文名和自称与界面语言无关，算一次记下。全部小写，
+  // 筛选时拿小写的查询去比。
+  const fixedNames = new Map();
+  function matchNames(option) {
+    let fixed = fixedNames.get(option.value);
+    if (!fixed) {
+      fixed = [TargetLang.nameOf(option.value, 'en'), TargetLang.autonym(option.value), option.value];
+      fixedNames.set(option.value, fixed);
+    }
+    return [...new Set([option.label, ...fixed].map((name) => name.toLocaleLowerCase()))];
+  }
+
+  // 查询和一门语言的名字有多贴：0 某个名字就是它（ja、日本語），1 某个名字以它开头，
+  // 2 名字里某个词以它开头（Chinese (Traditional) 里的 trad），3 只是包含它；
+  // -1 对不上。「ja」要先给日语，不能按字母序先给 Azerbaijani。
+  function matchRank(names, query) {
+    if (names.includes(query)) return 0;
+    if (names.some((name) => name.startsWith(query))) return 1;
+    if (names.some((name) => name.split(/[\s()\-]+/).some((word) => word.startsWith(query)))) return 2;
+    if (names.some((name) => name.includes(query))) return 3;
+    return -1;
+  }
+
+  // 菜单里两类节点的选择器，打开菜单的那一处（content-popup.js）也按它们认节点。
+  const ITEM = '.ai-translator-lang-item';
+  const FILTER = '.ai-translator-lang-filter';
+  ctx.LANG_MENU_SELECTORS = Object.freeze({ ITEM, FILTER });
+
+  // 一次画出来的菜单的控制器。`names[i]` 是全表第 i 项的名字（与画出来的顺序一致）。
+  // 节点只在第一次用到时去找：只想看画出了什么的人（单测）不必有一棵 DOM。
+  //
+  // 筛选不挪节点：全表项按贴合度写 CSS order（菜单是一列 flex，见 popup.css），清空
+  // 查询就把 order 去掉，回到画出来的顺序。有查询时只在全表里找、每门语言只出一次：
+  // 最近组是全表的重复，连标题一起藏起；同一档保持原序。一项都没有时露出「没有匹配
+  // 的语言」，「全部语言」的标题也藏起。
+  //
+  // 当前项（is-active）是上下键挑到的那一项：没有当前项时向下从第一项起、向上从最后
+  // 一项起，到头就停。筛选框里的回车选当前项，没有就选第一个看得见的；Tab 聚焦到某一项
+  // 上按的回车不归它：那是按下这个按钮，浏览器照常点它，选的就是它。
+  function langMenu(menu, names) {
+    let dom = null;
+    const nodes = () => dom || (dom = {
+      filter: menu.querySelector(FILTER),
+      empty: menu.querySelector('.ai-translator-lang-empty'),
+      recentGroup: menu.querySelector('.ai-translator-lang-group[data-group="recent"]'),
+      allGroup: menu.querySelector('.ai-translator-lang-group[data-group="all"]'),
+      recent: [...menu.querySelectorAll(`${ITEM}[data-recent]`)],
+      full: [...menu.querySelectorAll(`${ITEM}:not([data-recent])`)],
+    });
+    // 有查询时按显示顺序排好的匹配项；没有查询时为 null，看得见的就是画出来的全部。
+    let matches = null;
+    let active = null;
+
+    // 只动菜单自己的 scrollTop，不用 scrollIntoView（那会连宿主页面一起滚）。筛选框粘在
+    // 菜单顶上，被它挡住的那一截不算露出来：看得见的一段从筛选框底边到菜单可视区底边，
+    // 都按屏幕上量到的位置算。
+    const keepInView = (item) => {
+      const box = item.getBoundingClientRect();
+      const top = nodes().filter.getBoundingClientRect().bottom;
+      const bottom = menu.getBoundingClientRect().top + menu.clientTop + menu.clientHeight;
+      if (box.top < top) menu.scrollTop -= top - box.top;
+      else if (box.bottom > bottom) menu.scrollTop += box.bottom - bottom;
+    };
+    const setActive = (item) => {
+      if (active) active.classList.remove('is-active');
+      active = item;
+      if (item) {
+        item.classList.add('is-active');
+        keepInView(item);
+      }
+    };
+    const visibleItems = () => matches || [...nodes().recent, ...nodes().full];
+
+    return {
+      visibleItems,
+      focus() {
+        nodes().filter.focus({ preventScroll: true });
+      },
+      filter(rawQuery) {
+        const query = String(rawQuery || '').trim().toLocaleLowerCase();
+        const { full, recent, recentGroup, allGroup, empty } = nodes();
+        const ranked = full.map((el, order) => ({ el, order, rank: query ? matchRank(names[order], query) : 0 }));
+        matches = query
+          ? ranked.filter((entry) => entry.rank >= 0)
+            .sort((a, b) => a.rank - b.rank || a.order - b.order)
+            .map((entry) => entry.el)
+          : null;
+        for (const { el, rank } of ranked) el.hidden = rank < 0;
+        if (matches) matches.forEach((el, at) => { el.style.order = String(at + 1); });
+        else for (const el of full) el.style.removeProperty('order');
+        for (const el of recent) el.hidden = !!query;
+        recentGroup.hidden = !!query;
+        allGroup.hidden = !!matches && !matches.length;
+        empty.hidden = !matches || matches.length > 0;
+        menu.scrollTop = 0;
+        setActive(matches ? matches[0] || null : null);
+      },
+      // 方向键，和筛选框里（`target` 是按键落在的节点）的回车；别的键不归它，返回 false。
+      handleKey(key, target) {
+        const shown = visibleItems();
+        if (key === 'ArrowDown' || key === 'ArrowUp') {
+          const at = shown.indexOf(active);
+          const step = key === 'ArrowDown' ? 1 : -1;
+          const next = at < 0 ? (step > 0 ? 0 : shown.length - 1) : Math.min(Math.max(at + step, 0), shown.length - 1);
+          setActive(shown[next] || null);
+          return true;
+        }
+        if (key === 'Enter' && target === nodes().filter) {
+          const pick = shown.includes(active) ? active : shown[0];
+          if (pick) pick.click();
+          return true;
+        }
+        return false;
+      },
+    };
+  }
 
   // 我们放进页面的每一段文字都带上自己的 lang / dir（TargetLang.mark）：译文常常挂在
   // 一个方向相反的原文块里，靠继承就继承到了原文的方向。

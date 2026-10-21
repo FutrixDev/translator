@@ -12,9 +12,9 @@
 // 两件事分开导出：
 //   - 通用语法（markerPattern 等）回答「这是不是一个标记」，给分析用——代码检测、
 //     长度阈值、语言检测、原文译文比对。结果不落到页面上，多剥少剥伤不到读者。
-//   - debrisScrubber(markupElements) 回答「这一块该删哪些残片」，给渲染用，只认
-//     本块真正生成过的标签名和编号。讲 HTML 的页面正文里就写着 <b2> 这类字样，
-//     用笼统的那条会把页面自己的字删掉。
+//   - debrisScrubber(source, markupElements) 回答「这一块该删哪些残片」，给渲染
+//     用：译文里长得像标记、却不是本块原文自己就写着的字，一律删。讲 HTML 的页面
+//     正文里就写着 <b2> 这类字样，用笼统的那条会把页面自己的字删掉。
 //
 // 双模经典脚本：内容脚本和设置页用 <script> 装它，服务工作者和单测 import 它，
 // 都从 globalThis.TextMarkers 取。没有依赖。
@@ -104,8 +104,8 @@
   }
 
   // markerParsePattern 的一次匹配 → { closing, tag, number }：标签名小写、
-  // 两段都去掉空白和句点（`</span1 . 3>` → span、13）。重建和清残骸都只从这里
-  // 读，规整规则只写这一处。
+  // 两段都去掉空白和句点（`</span1 . 3>` → span、13）。重建只从这里读，规整
+  // 规则只写这一处；清残骸不规整，按原样形状比对原文（见 debrisScrubber）。
   function parseMarker(match) {
     return {
       closing: match[1] === '/',
@@ -115,37 +115,34 @@
   }
 
   // 清掉解析后仍留在译文里的标记残骸（配不上任何一对、重建时只能原样跳过的
-  // 标记），返回 (text) => text。两种残骸：
+  // 标记），返回 (text) => text。残骸有好几种，实测都见过：
   //   - 串号：模型把 <a1>/<strong2> 串成了 <strong1>；
-  //   - 粘号：模型把编号叠写或把相邻标记粘成一个。实测内置引擎把 Reddit 卡片
-  //     头的 <span11> 写成了 <span1111>，四个数字配不上任何一个编号，原样显示
-  //     给了读者。
-  // 只认本块**真正生成过**的标签名，编号那一段要能整个拆成本块发过的编号
-  // （1111 = 11·11）——这是为了不动页面正文：讲 HTML 的页面正文里就写着 <b2>
-  // 这类字样，我们没生成过 b 标记时它一个字都不该被删。
-  // 拆分放在替换回调里做，不写进正则：`(?:1|11|…)+` 这种编号互为前缀的交替
-  // 遇上一长串数字会指数回溯。
-  function debrisScrubber(markupElements) {
-    if (!markupElements || markupElements.length === 0) return (text) => text;
-    const tags = new Set(markupElements.map((mk) => mk.tag));
-    const nums = new Set(markupElements.map((mk) => String(mk.index)));
-    const widest = Math.max(...[...nums].map((n) => n.length));
-    // ok[end]：digits 的前 end 位能拆成本块的编号
-    const splitsIntoOwnNumbers = (digits) => {
-      const ok = [true];
-      for (let end = 1; end <= digits.length; end++) {
-        ok[end] = false;
-        for (let start = Math.max(0, end - widest); start < end && !ok[end]; start++) {
-          ok[end] = ok[start] && nums.has(digits.slice(start, end));
-        }
-      }
-      return ok[digits.length];
-    };
+  //   - 粘号：内置引擎把 Reddit 卡片头的 <span11> 写成了 <span1111>；
+  //   - 改名：嵌套的 <a1><span2>Postscript</span2></a1> 被模型并成
+  //     <span1>后记</span1>（coqdoc 页的 Further Reading 段）；
+  //   - 错位：批量翻译对不齐时，别的块的译文连同它的标记落进了一个一个标记都
+  //     没发过的块。
+  // 判据只有一条：留下的标记形状必须在本块原文（source，去掉本块生成的标记）
+  // 里原样出现过——讲 HTML 的页面正文里就写着 <b2>，那是页面自己的字，模型照抄
+  // 回来就照样显示；原文里没有的，不管标签名、编号是不是本块发过的，都是我们的
+  // 残骸，不能给读者看。和 repairPlaceholders「原文里出现过的同样写法不碰」同理。
+  // 两个参数都是契约：source 是本块送出去的原文（字符串），markupElements 是收集端
+  // 给这一块编的标记（数组，没有标记就是 []）。别的东西是调用方的缺陷，抛 TypeError——
+  // 缺了原文就分不清页面自己的字和残骸，悄悄当空串会把页面的字删掉。
+  function debrisScrubber(source, markupElements) {
+    if (typeof source !== 'string') throw new TypeError('TextMarkers.debrisScrubber: source must be a string');
+    if (!Array.isArray(markupElements)) throw new TypeError('TextMarkers.debrisScrubber: markupElements must be an array');
+    const issued = new Set();
+    for (const mk of markupElements) {
+      issued.add(openTag(mk.tag, mk.index));
+      issued.add(closeTag(mk.tag, mk.index));
+    }
+    const literal = new Set();
+    for (const match of source.matchAll(markerParsePattern())) {
+      if (!issued.has(match[0])) literal.add(match[0]);
+    }
     const re = markerParsePattern();
-    return (text) => text.replace(re, (...match) => {
-      const { tag, number } = parseMarker(match);
-      return tags.has(tag) && splitsIntoOwnNumbers(number) ? '' : match[0];
-    });
+    return (text) => text.replace(re, (shape) => (literal.has(shape) ? shape : ''));
   }
 
   // ==================== 剥离、分段、切片 ====================

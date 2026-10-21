@@ -43,16 +43,18 @@ function pngDataUrlSize(dataUrl) {
  *   - a word lookup (the system prompt carries DictEntry.PROMPT_MARK) gets
  *     `dictEntry(user)`, as JSON, or as it is when that is a string;
  *   - a fast batch (the system prompt names its delimiter) gets every non-empty
- *     segment back as `[T] <segment>`, joined by the same delimiter;
- *   - anything else gets `[T] <user>`.
+ *     segment back as `translate(segment)`, joined by the same delimiter;
+ *   - anything else gets `translate(user)`.
+ * `translate` defaults to the echo `[T] <text>`.
  * `fastBatch` is set for the second case, for specs that pin the protocol.
  *
  * @param {string} systemPrompt
  * @param {string} user
  * @param {(text: string) => (object|string)} dictEntry
+ * @param {(text: string) => string} [translate]
  * @returns {{text: string, fastBatch: ?{delimiter: string, segmentCount: number}}}
  */
-function answerPrompt(systemPrompt, user, dictEntry) {
+function answerPrompt(systemPrompt, user, dictEntry, translate = echo) {
   if (systemPrompt.includes(globalThis.DictEntry.PROMPT_MARK)) {
     const answer = dictEntry(user);
     return { text: typeof answer === 'string' ? answer : JSON.stringify(answer), fastBatch: null };
@@ -61,11 +63,15 @@ function answerPrompt(systemPrompt, user, dictEntry) {
   if (delimiter) {
     const segments = user.split(delimiter);
     return {
-      text: segments.map((segment) => (segment ? `[T] ${segment}` : segment)).join(delimiter),
+      text: segments.map((segment) => (segment ? translate(segment) : segment)).join(delimiter),
       fastBatch: { delimiter, segmentCount: segments.length },
     };
   }
-  return { text: user ? `[T] ${user}` : user, fastBatch: null };
+  return { text: user ? translate(user) : user, fastBatch: null };
+}
+
+function echo(text) {
+  return `[T] ${text}`;
 }
 
 /**
@@ -116,11 +122,16 @@ function answerPrompt(systemPrompt, user, dictEntry) {
  *   with this entry, as JSON; a string is sent as the reply as it is (an answer
  *   that is not an entry). The default is a translation-only entry,
  *   `{ translation: '[T] ' + text }`, so a lookup reads like every other reply.
+ * @param {(text: string) => string} [options.translate]
+ *   How one segment (or a whole non-batch request) is answered; the default
+ *   echoes `[T] <text>`. A spec that needs the model to misbehave on one block
+ *   (rename a marker, drop one) answers that block here.
  */
 async function startMockOpenAIServer({
   failRequests = 0, failAfter = null, failWhen = null, status = null, delayMs = 0,
   failStatus = 500, rateLimit = null,
-  dictEntry = (text) => ({ translation: `[T] ${text}` })
+  dictEntry = (text) => ({ translation: `[T] ${text}` }),
+  translate = echo
 } = {}) {
   let remainingFailures = failRequests;
   let remainingRateLimited = rateLimit ? rateLimit.count : 0;
@@ -267,7 +278,7 @@ async function startMockOpenAIServer({
       }
       served += 1;
 
-      const answer = answerPrompt(systemPrompt, content, dictEntry);
+      const answer = answerPrompt(systemPrompt, content, dictEntry, translate);
       if (answer.fastBatch) fastBatchRequests.push(answer.fastBatch);
       content = answer.text;
 

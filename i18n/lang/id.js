@@ -734,6 +734,8 @@
     dictEntryEmpty: 'Model tidak memberikan pelafalan, arti, atau contoh untuk ini.',
     langRecent: 'Terbaru',
     langAll: 'Semua bahasa',
+    langFilter: 'Cari bahasa',
+    langNoMatch: 'Tidak ada bahasa yang cocok',
     dictOfflineTitle: 'Kamus offline',
     offlineDictionary: 'Cari kata secara offline',
     offlineDictionaryHint: 'Kata yang Anda cari dijawab dari paket kamus di perangkat ini: gratis, instan, tanpa model. Paket untuk sebuah pasangan bahasa diunduh saat pertama kali Anda mencari kata dalam pasangan itu.',

@@ -25,8 +25,7 @@ import { languageNames } from './settings.js';
 import {
   BATCH_OUTPUT_RULES,
   REGISTER_RULE,
-  SINGLE_WORD_PROMPT,
-  WORD_OUTPUT_RULES,
+  WORD_MODES,
   buildPrompt,
   getFastBatchOutputRules,
 } from './prompts.js';
@@ -53,31 +52,48 @@ async function translateWithAI(text, targetLang, profile, settings, addenda) {
 }
 
 // Look a word or short phrase up as a dictionary entry (no math placeholder
-// rule). The answer must be the entry JSON that DictEntry.OUTPUT_RULES asks for;
-// DictEntry.fromModelText validates it and throws { invalidEntry } otherwise —
-// no line-guessing, no raw text passed off as a translation. The entry is bigger
-// than a bare translation, hence 1500 tokens; a model that bills hidden
-// reasoning tokens is raised to api-compat's REASONING_TOKEN_FLOOR (2000).
-async function translateSingleWordWithAI(text, targetLang, profile, settings, addenda) {
+// rule). The answer must be the entry JSON that the mode's DictEntry rules ask
+// for; DictEntry.fromModelText validates it and throws { invalidEntry }
+// otherwise — no line-guessing, no raw text passed off as a translation. The
+// entry is bigger than a bare translation, hence 1500 tokens; a model that
+// bills hidden reasoning tokens is raised to api-compat's
+// REASONING_TOKEN_FLOOR (2000).
+//
+// `wordLang` (DictEntry.WORD_LANGS) is what the content side proved about the
+// word's language (ctx.dictRoute) and picks the prompt and the rules
+// (WORD_MODES, one per WORD_LANGS value). translateTextWithMode has already
+// refused any other value.
+async function translateSingleWordWithAI(text, targetLang, profile, settings, addenda, wordLang) {
+  const mode = WORD_MODES[wordLang];
   const targetLangName = languageNames[targetLang] || targetLang;
   // The rules come last whichever template leads, and their last line says the
   // entry format overrides the template's own reply format (D-472). Only a prompt
   // of the user's own leads here: the default text preset is a page-translation
-  // template, and a lookup without one keeps the dictionary prompt.
-  const template = globalThis.PromptPresets.ownPrompt(settings.customPrompt) || SINGLE_WORD_PROMPT;
-  const systemPrompt = buildPrompt(template, targetLangName, {}, WORD_OUTPUT_RULES, { includeMathRule: false, addenda });
+  // template, and a lookup without one keeps the mode's dictionary prompt.
+  const template = globalThis.PromptPresets.ownPrompt(settings.customPrompt) || mode.prompt;
+  const systemPrompt = buildPrompt(template, targetLangName, {}, mode.rules, { includeMathRule: false, addenda });
 
-  return globalThis.DictEntry.fromModelText(await ask(profile, systemPrompt, text, 1500, 0.3));
+  return globalThis.DictEntry.fromModelText(await ask(profile, systemPrompt, text, 1500, 0.3), wordLang);
 }
 
 // One TRANSLATE answer. Only the caller decides whether this is a dictionary
-// lookup (mode 'word'); the answer is then { translation, entry }, otherwise
-// { translation }. The content engine stamps `engine` on either.
-async function translateTextWithMode(text, targetLang, profile, settings, forceWord = false, addenda) {
+// lookup, in `request`: `{ mode: 'text' }`, or `{ mode: 'word', wordLang }`
+// (a DictEntry.WORD_LANGS value) for a lookup, whose answer is then
+// { translation, entry }; text answers { translation }. Any other mode, and a
+// lookup whose wordLang is not a WORD_LANGS value, throws here, before a
+// character is counted or anything is sent. The content engine stamps
+// `engine` on either.
+async function translateTextWithMode(text, targetLang, profile, settings, request, addenda) {
+  if (request.mode !== 'word' && request.mode !== 'text') {
+    throw new Error(`translate: unknown request mode ${request.mode}`);
+  }
+  if (request.mode === 'word' && !Object.values(globalThis.DictEntry.WORD_LANGS).includes(request.wordLang)) {
+    throw new Error(`word lookup: unknown wordLang ${request.wordLang}`);
+  }
   countCharsSentToModel(globalThis.AutoStats.sentChars(text, addenda));
 
-  if (forceWord) {
-    const entry = await translateSingleWordWithAI(text, targetLang, profile, settings, addenda);
+  if (request.mode === 'word') {
+    const entry = await translateSingleWordWithAI(text, targetLang, profile, settings, addenda, request.wordLang);
     return { translation: entry.translation, entry };
   }
 

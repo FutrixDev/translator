@@ -736,6 +736,8 @@
     dictEntryEmpty: 'Mô hình không đưa ra phát âm, nghĩa hay ví dụ nào cho mục này.',
     langRecent: 'Gần đây',
     langAll: 'Tất cả ngôn ngữ',
+    langFilter: 'Tìm ngôn ngữ',
+    langNoMatch: 'Không có ngôn ngữ phù hợp',
     dictOfflineTitle: 'Từ điển ngoại tuyến',
     offlineDictionary: 'Tra từ ngoại tuyến',
     offlineDictionaryHint: 'Từ bạn tra sẽ được trả lời từ gói từ điển trên thiết bị này: miễn phí, tức thì, không cần mô hình. Gói cho một cặp ngôn ngữ sẽ được tải về vào lần đầu bạn tra một từ trong cặp đó.',

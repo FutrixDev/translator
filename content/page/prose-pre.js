@@ -9,14 +9,14 @@
 // 和代码块的分界有两条。一是代码要保住每一行原来的排法，所以几乎不开自动折行。
 // 二是代码会带不翻的标签（<code>/<kbd>/<samp>…），或者落在语法高亮之类的代码块
 // 容器里（not-prose.js 的 isInsideCodeContainer）。都不沾，才算散文；每一段裹成
-// 锚点之前另外还要再过一次代码 / 网址 / 非正文判定（collect.js 的 wrapIfProse）。
+// 锚点之前另外还要再过一次代码 / 网址 / 非正文判定（text-runs.js 的 wrapProseRun）。
 // 可编辑的 <pre> 不算：切段要搬动文本节点，那是用户正在写的字。
 // white-space: pre（不折行）的纯文本不收：译文会继承不折行，成了一条横穿页面的长行。
 //
 // 整页收集（content/page/collect.js）和悬停（content/hover/blocks.js）都问这里：
 // skippedByTag 说一个元素是不是落在代码里（散文 <pre> 和它的段落不算）。收集器收到
 // <pre> 本身时用 paragraphs 把它切成段；悬停用 paragraphOf 取指针底下那一段。
-// content/page/insert.js 问 isParagraph：一段的译文放在这段下面。
+// 悬停（content/hover/blocks.js）问 isParagraph：指着的锚点是不是散文 <pre> 的一段。
 (function() {
   'use strict';
 
@@ -55,8 +55,8 @@
   // 散文 <pre> 的段界是空行，不是元素。所以先在空行那里把文本节点切开，再把
   // 两道空行之间的那一串节点（文字，加上夹在中间的 <a>/<b>）当成一段，由
   // collect.js 整串裹成一个锚点 span：一段就是一块。
-  // wrapDirectTextRuns 的切法用不了：它碰到元素就断开，段中间一个链接就把一段
-  // 切成三块，链接自己还会被当成独立的一块送去翻。
+  // 切法和 collect.js 的 wrapDirectTextRuns 是同一个（ctx.splitRuns，text-runs.js），断点不同：
+  // 那边在块级元素、<br> 处断，这里只在空行处断——<pre> 里的换行就是正文的一部分。
   // 上一轮裹好的段落（TEXT_RUN_CLASS）原样算一段，而且要先认：翻过的段落带着
   // .ai-translator-translated，得交回收集器去做陈旧 / 换目标语言的判定。我们
   // 插进来的译文和界面算段界。
@@ -83,31 +83,18 @@
     for (const node of Array.from(pre.childNodes)) {
       if (node.nodeType === Node.TEXT_NODE) splitAtParagraphBreaks(node);
     }
-    const found = [];
-    let run = [];
-    const flush = () => {
-      if (run.length) found.push(run);
-      run = [];
-    };
-    for (const node of Array.from(pre.childNodes)) {
+    return ctx.splitRuns(Array.from(pre.childNodes), (node) => {
       const element = node.nodeType === Node.ELEMENT_NODE ? node : null;
-      if (element && element.classList.contains(ctx.TEXT_RUN_CLASS)) {
-        flush();
-        found.push(element);
-      } else if (isParagraphBreak(node) || (element && element.matches(ctx.constants.OWN_NODES_SELECTOR))) {
-        flush();
-      } else {
-        run.push(node);
-      }
-    }
-    flush();
-    return found;
+      if (element && element.classList.contains(ctx.TEXT_RUN_CLASS)) return 'anchor';
+      if (isParagraphBreak(node) || (element && element.matches(ctx.constants.OWN_NODES_SELECTOR))) return 'break';
+      return 'run';
+    });
   }
 
   // at（落在 <pre> 里的一个活的 Range）所在的那一段，没裹过的就地裹成锚点。切段会
   // 拆文本节点，活的 Range 跟着拆开的那一半走，所以位置要用 Range 给，不能给节点。
   // 空行、我们插进来的译文不属于任何一段，给 null。没裹过的段落和整页收集一样先过
-  // collect.js 的 wrapIfProse：只是个网址、像代码的那段不裹，也给 null。
+  // anchorOf：只是个网址、像代码的那段不裹，也给 null。
   // 位置正好在一段的第一个字前面时，切开之后它留在前一道空行的末尾（splitText 只
   // 搬走切点后面的位置），算下一段的。
   function paragraphOf(pre, at) {
@@ -120,15 +107,23 @@
     if (!child) return null;
     const paragraph = found.find((each) => each === child || (Array.isArray(each) && each.includes(child)));
     if (!paragraph) return null;
-    return Array.isArray(paragraph) ? ctx.wrapIfProse(paragraph, pre) : paragraph;
+    return anchorOf(paragraph, pre);
   }
 
-  // 散文 <pre> 的一段（paragraphs 交给 collect.js 裹好的锚点）。锚点是内联 span，
-  // 但读者眼里它是一段：insert.js 据此把译文当块放在它后面，而不是挂在它右边。
+  // paragraphs 给的一段的锚点：上一轮裹好的原样交回，没裹过的就地裹（不够格的给
+  // null）。整页收集（collect.js）和悬停（paragraphOf）都经这里。
+  // 判法是 text-runs.js 的 wrapProseRun，只关掉「页面自己的散字要有两个字母」那一条，
+  // 理由写在那条判据旁边。
+  function anchorOf(paragraph, pre) {
+    return Array.isArray(paragraph) ? ctx.wrapProseRun(paragraph, pre, { ownLetters: false }) : paragraph;
+  }
+
+  // 散文 <pre> 的一段（paragraphs 交给 collect.js 裹好的锚点）。译文怎么放不问这里：
+  // 收集端裹的锚点在 insert.js 一律当一段，译文放在它下面。
   function isParagraph(element) {
     return element.classList.contains(ctx.TEXT_RUN_CLASS)
       && !!element.parentElement && element.parentElement.tagName === 'PRE';
   }
 
-  ctx.prosePre = { isProse, skippedByTag, paragraphs, paragraphOf, isParagraph };
+  ctx.prosePre = { isProse, skippedByTag, paragraphs, paragraphOf, anchorOf, isParagraph };
 })();

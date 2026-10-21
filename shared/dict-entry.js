@@ -11,9 +11,11 @@
 // One owner for every half of it:
 //   isLookup      whether a text is looked up at all (D-473–D-475, D-542). Both
 //                 surfaces call it and keep no check of their own.
-//   FIELDS        the shape. OUTPUT_RULES (what the prompt asks for) and
-//                 normalize() (what the service worker accepts) both read it,
-//                 so the two cannot ask for and accept different keys.
+//   FIELDS        the shape. RULES (what the prompt asks for, one set per
+//                 WORD_LANGS value: a word in another language, one already
+//                 in the target language, one nobody could place) and
+//                 normalize() (what the service worker accepts) all read it,
+//                 so the prompt cannot ask for keys the check does not accept.
 //   fromModelText the service worker's reading of the model's answer (D-472).
 //                 Three things throw an error marked `invalidEntry`: no JSON
 //                 object to extract, a parse that is not an object, a missing
@@ -149,6 +151,7 @@
     translation: Object.freeze({
       kind: 'text',
       describe: 'string, the most common translation in the target language. Required, never empty.',
+      describeMonolingual: 'string, a short gloss of the word in the same language: its closest synonym or a brief paraphrase, never the word itself. Required, never empty.',
     }),
     phonetics: Object.freeze({
       kind: 'list',
@@ -156,6 +159,7 @@
       item: Object.freeze({ label: 'label', ipa: 'text' }),
       required: Object.freeze(['ipa']),
       describe: 'the pronunciation of the word in "translation", in the target language. When the target language is English give two items, "UK" and "US", each IPA wrapped in slashes such as "/kæt/". For any other target language give one item with an empty "label", in that language\'s usual notation (pinyin with tone marks for Chinese, kana or romaji for Japanese).',
+      describeMonolingual: 'the pronunciation of the looked-up word itself. When the language is English give two items, "UK" and "US", each IPA wrapped in slashes such as "/kæt/". For any other language give one item with an empty "label", in that language\'s usual notation (pinyin with tone marks for Chinese, kana or romaji for Japanese).',
     }),
     senses: Object.freeze({
       kind: 'list',
@@ -170,7 +174,11 @@
       max: 3,
       item: Object.freeze({ source: 'text', target: 'text' }),
       required: Object.freeze(['source', 'target']),
+      // A monolingual entry has no translation to give (`target` is ''), so
+      // there an example needs its source only.
+      requiredMonolingual: Object.freeze(['source']),
       describe: 'short example sentences in the source language using the word, each with its translation in the target language.',
+      describeMonolingual: 'short example sentences in that language using the word. Leave "target" empty: the reader needs no translation.',
     }),
     forms: Object.freeze({
       kind: 'list',
@@ -201,19 +209,77 @@
     return `{${parts.join(', ')}}`;
   }
 
+  // Which language the looked-up word is in, as the content side could prove
+  // it (content/content-dict-lookup.js): the target language, another one, or
+  // unknown. A word-mode request carries one of these as `wordLang`, and the
+  // service worker picks the prompt and the rules by it
+  // (background/prompts.js WORD_MODES).
+  const WORD_LANGS = Object.freeze({ TARGET: 'target', OTHER: 'other', UNKNOWN: 'unknown' });
+
+  // Said right under PROMPT_MARK in the monolingual rules. A custom prompt
+  // that says "translate into {targetLang}" leads the rules; this line is what
+  // still tells the model there is nothing to translate.
+  const MONOLINGUAL_NOTE = 'The word is already in the target language, the reader\'s own: do not translate it. Describe it in that same language, as a monolingual dictionary does.';
+
+  // Said right under PROMPT_MARK in the conditional rules: nobody could tell
+  // which language the word is in (a short Latin word reads as nothing
+  // reliable), so the model decides and says what it decided in
+  // "monolingual", which normalize() stamps on the entry.
+  const CONDITIONAL_NOTE = 'First decide whether the word is already a word of the target language, the reader\'s own. If it is, write a monolingual entry: do not translate it, describe it in that same language, as a monolingual dictionary does. If it is not, write the bilingual entry: translate it and describe it for a reader of the target language. Where a key below differs between the two, it says what it holds in a monolingual entry.';
+  const MONOLINGUAL_KEY = '- "monolingual": true when you wrote the monolingual entry (the word is already in the target language), false when you translated it. Required.';
+
+  // How each WORD_LANGS value's rules differ, and nothing else: the lines said
+  // right under PROMPT_MARK (`note`), the keys listed before the FIELDS keys
+  // (`extraKeys`) and how a field is described (`describe`).
+  //   other    a word in another language: translated, and described for the
+  //            target language's reader.
+  //   target   a word already in the target language: a monolingual entry
+  //            (`describeMonolingual` where a field has one).
+  //   unknown  either, as the model decides, declared in "monolingual": the
+  //            bilingual description, then the monolingual one where it differs.
+  const RULE_MODES = Object.freeze({
+    [WORD_LANGS.OTHER]: Object.freeze({
+      note: [],
+      extraKeys: [],
+      describe: (field) => field.describe,
+    }),
+    [WORD_LANGS.TARGET]: Object.freeze({
+      note: [MONOLINGUAL_NOTE],
+      extraKeys: [],
+      describe: (field) => field.describeMonolingual || field.describe,
+    }),
+    [WORD_LANGS.UNKNOWN]: Object.freeze({
+      note: [CONDITIONAL_NOTE],
+      extraKeys: [MONOLINGUAL_KEY],
+      describe: (field) => (field.describeMonolingual
+        ? `${field.describe} In a monolingual entry: ${field.describeMonolingual}`
+        : field.describe),
+    }),
+  });
+
   // Built from FIELDS, so the keys the prompt names are exactly the keys
-  // normalize() reads. No {placeholders}: it is appended to a custom prompt
-  // after variable substitution.
-  const OUTPUT_RULES = [
-    PROMPT_MARK,
-    'Return one JSON object only: no prose before or after it, no code fence. Keys:',
-    ...Object.entries(FIELDS).map(([key, field]) => (field.kind === 'text'
-      ? `- "${key}": ${field.describe}`
-      : `- "${key}": array (at most ${field.max}) of ${itemSchema(field)}: ${field.describe}`)),
-    'Give an empty string or an empty array for anything you are not sure of. Never invent a pronunciation, a sense, an example or a form.',
-    'If the input is a whole sentence rather than a word or a short phrase, give only "translation" and leave every list empty.',
-    FORMAT_OVERRIDE,
-  ].join('\n');
+  // normalize() reads; every mode names the same FIELDS keys, only its
+  // RULE_MODES entry differs. No {placeholders}: they are appended to a
+  // custom prompt after variable substitution.
+  function buildRules({ note, extraKeys, describe }) {
+    return [
+      PROMPT_MARK,
+      ...note,
+      'Return one JSON object only: no prose before or after it, no code fence. Keys:',
+      ...extraKeys,
+      ...Object.entries(FIELDS).map(([key, field]) => (field.kind === 'text'
+        ? `- "${key}": ${describe(field)}`
+        : `- "${key}": array (at most ${field.max}) of ${itemSchema(field)}: ${describe(field)}`)),
+      'Give an empty string or an empty array for anything you are not sure of. Never invent a pronunciation, a sense, an example or a form.',
+      'If the input is a whole sentence rather than a word or a short phrase, give only "translation" and leave every list empty.',
+      FORMAT_OVERRIDE,
+    ].join('\n');
+  }
+
+  // The rules each mode's prompt ends in, keyed by WORD_LANGS value
+  // (background/prompts.js WORD_MODES reads them by the same key).
+  const RULES = Object.freeze(Object.fromEntries(
+    Object.entries(RULE_MODES).map(([mode, spec]) => [mode, buildRules(spec)])));
 
   // ---- validation -----------------------------------------------------------
 
@@ -285,17 +351,33 @@
    * Lenient is not silent: when anything the model sent is dropped (a cut past
    * the cap is the shape, not a drop), one console.warn lists each dropped
    * field and why — names and reasons only, never the text (D-542).
+   *
+   * `entry.monolingual` is true only for an entry that describes the word in
+   * its own language. A caller that already knows says so in
+   * `options.monolingual` (a boolean; fromModelText passes it for a word the
+   * request proved), and then `raw.monolingual` is not read at all; without
+   * it the model's own `raw.monolingual === true` decides. Anything else is a
+   * translated entry, whose examples need their translation too (`required`
+   * against `requiredMonolingual`).
    */
-  function normalize(raw) {
+  function normalize(raw, options = {}) {
+    if (!isPlainObject(options)) throw new TypeError('DictEntry.normalize: options must be an object');
+    const known = Object.hasOwn(options, 'monolingual');
+    if (known && typeof options.monolingual !== 'boolean') {
+      throw new TypeError(`DictEntry.normalize: monolingual must be a boolean, got ${typeof options.monolingual}`);
+    }
     if (!isPlainObject(raw)) throw invalid('not a JSON object');
     const dropped = [];
     const drop = (name, why) => dropped.push(`${name}: ${why}`);
     // A translation that is dropped throws below, so what it noted is never logged.
     const translation = text(raw.translation, drop, 'translation');
     if (!translation) throw invalid('translation is missing or empty');
-    const entry = { translation };
+    if (!known && raw.monolingual != null && typeof raw.monolingual !== 'boolean') drop('monolingual', 'not a boolean');
+    const monolingual = known ? options.monolingual : raw.monolingual === true;
+    const entry = { translation, monolingual };
     for (const key of LIST_KEYS) {
       const field = FIELDS[key];
+      const required = (monolingual && field.requiredMonolingual) || field.required;
       if (raw[key] != null && !Array.isArray(raw[key])) drop(key, 'not an array');
       const value = Array.isArray(raw[key]) ? raw[key] : [];
       entry[key] = value
@@ -303,7 +385,7 @@
           const name = `${key}[${i}]`;
           const kept = normalizeItem(field, item, drop, name);
           const reason = !kept ? 'not an object'
-            : !field.required.every((req) => filled(kept[req])) ? `missing ${field.required.join('/')}`
+            : !required.every((req) => filled(kept[req])) ? `missing ${required.join('/')}`
               : '';
           if (reason) drop(name, reason);
           return reason ? null : kept;
@@ -321,8 +403,15 @@
    * single code fence or with a stray sentence around it (the span from the
    * first `{` to the last `}`). No object to extract throws with `invalidEntry`
    * and the reason in the message; so does what normalize() rejects.
+   *
+   * `wordLang` (WORD_LANGS) is what the request knew about the word: a word
+   * proven to be in the target language is a monolingual entry and one proven
+   * to be in another is a translated one, whatever the model says; only an
+   * unknown word takes the model's "monolingual", and a missing one reads as a
+   * translated entry, with a warning.
    */
-  function fromModelText(content) {
+  function fromModelText(content, wordLang) {
+    if (!Object.values(WORD_LANGS).includes(wordLang)) throw new TypeError(`DictEntry.fromModelText: unknown wordLang ${wordLang}`);
     let body = String(content == null ? '' : content).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     const fence = body.match(/^```[A-Za-z]*\s*\n([\s\S]*?)\n?```$/);
     if (fence) body = fence[1].trim();
@@ -335,6 +424,9 @@
     } catch (error) {
       throw invalid(`the answer is not valid JSON (${error.message})`);
     }
+    if (!isPlainObject(parsed)) throw invalid('not a JSON object');
+    if (wordLang !== WORD_LANGS.UNKNOWN) return normalize(parsed, { monolingual: wordLang === WORD_LANGS.TARGET });
+    if (parsed.monolingual === undefined) console.warn('[Blab Translation] dict-entry: dropped fields', ['monolingual: missing']);
     return normalize(parsed);
   }
 
@@ -392,13 +484,19 @@
    * hold only when `targetLang` is English; under any other target the label
    * is not drawn and the row is read in `targetLang`. The
    * looked-up text has its own speaker on each surface, outside the entry.
+   * A monolingual entry (`entry.monolingual`) is the exception: its phonetics
+   * are the looked-up word's and its "translation" is a gloss, so the rows
+   * read `text`. An example with no translation draws its source alone.
    *
    * @param {HTMLElement} container
    * @param {object|null} entry  from entryFor()
-   * @param {{targetLang: string, t: (key: string) => string, speech: object}} options
-   *   `targetLang` is the language this request translated into; `speech` is
-   *   ctx.speech (content/content-speech.js). Drawing an entry without a
-   *   targetLang throws: an unlabelled row would have no language to speak in.
+   * @param {{targetLang: string, text: string,
+   *   t: (key: string) => string, speech: object}} options
+   *   `targetLang` is the language this request translated into; `text` is
+   *   the looked-up text; `speech` is ctx.speech (content/content-speech.js).
+   *   Drawing an entry without a targetLang or a text throws: an unlabelled
+   *   row would have no language to speak in, and a monolingual row nothing
+   *   to say.
    */
   // The visibility setters bindSpeakButton returned for each container's
   // speakers; setting one false stops that speaker if it is the one talking.
@@ -413,8 +511,10 @@
       return;
     }
     if (!isPlainObject(entry)) throw new TypeError('DictEntry.render: entry must be an object or null');
-    const { targetLang, t, speech } = options;
+    const { targetLang, text: looked, t, speech } = options;
     if (typeof targetLang !== 'string' || !targetLang) throw new TypeError('DictEntry.render: options.targetLang is required');
+    if (typeof looked !== 'string' || !looked.trim()) throw new TypeError('DictEntry.render: options.text is required');
+    const { monolingual } = entry;
     const doc = container.ownerDocument;
     const el = (tag, className, value) => {
       const node = doc.createElement(tag);
@@ -442,10 +542,11 @@
         const button = el('button', 'ai-translator-icon-btn ai-translator-dict-speak');
         button.type = 'button';
         button.dataset.accent = tag;
-        button.setAttribute('aria-label', t('pronounceTranslation'));
+        button.setAttribute('aria-label', t(monolingual ? 'pronounceOriginal' : 'pronounceTranslation'));
         button.innerHTML = speech.SPEAKER_ICON;
         const lang = tag ? PHONETIC_LANGS[tag] : targetLang;
-        setters.push(speech.bindSpeakButton(button, () => ({ text: entry.translation, lang })));
+        const spoken = monolingual ? looked.trim() : entry.translation;
+        setters.push(speech.bindSpeakButton(button, () => ({ text: spoken, lang })));
         row.appendChild(button);
         block.appendChild(row);
       }
@@ -466,7 +567,7 @@
       for (const { source, target } of entry.examples) {
         const row = el('div', 'ai-translator-dict-example');
         row.appendChild(el('div', 'ai-translator-dict-example-source', source));
-        row.appendChild(el('div', 'ai-translator-dict-example-target', target));
+        if (target) row.appendChild(el('div', 'ai-translator-dict-example-target', target));
         block.appendChild(row);
       }
     }
@@ -510,7 +611,8 @@
     PHONETIC_LANGS,
     PROMPT_MARK,
     FORMAT_OVERRIDE,
-    OUTPUT_RULES,
+    WORD_LANGS,
+    RULES,
     TRAILING_STOP,
     isLookup,
     isDictCandidate,

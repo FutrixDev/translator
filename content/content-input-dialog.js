@@ -247,15 +247,15 @@
         ctx.rememberRecentTargetLang(targetLang);
         // A pinned request goes to its engine; any other asks the offline
         // dictionary first and sends TRANSLATE only on a miss. The answer and
-        // the mode both come from ctx.dictRoute, the card's rule too. The box
+        // the request fields both come from ctx.dictRoute, the card's rule too. The box
         // offers no "explain" after a hit, so it never claims a proven word.
-        const { local, mode } = await ctx.dictRoute(text, targetLang, { pinned: engine, standalone: true });
+        const { local, request } = await ctx.dictRoute(text, targetLang, { pinned: engine, standalone: true });
         const response = local || await ctx.requestTranslation({
           type: 'TRANSLATE',
           feature: 'input',
           text: text,
           targetLang: targetLang,
-          mode,
+          ...request,
           ...(engine ? { engine } : {}),
           // 这段文字是用户敲进来的，跟当前页面没有任何关系。不声明的话，内置
           // 引擎会拿页面语言当源语言，于是在英文页面上输入“动画”翻成英文就变成
@@ -275,9 +275,9 @@
         // entry (DictEntry.entryFor, with the pack's credits for a hit); the
         // builtin engine and sentence translations leave the dictionary blocks
         // empty.
-        const entry = DictEntry.entryFor(mode, response);
+        const entry = DictEntry.entryFor(request.mode, response);
         showResult({ text: response.translation }, targetLang);
-        showEntry(entry, targetLang);
+        showEntry(entry, targetLang, text);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
 
@@ -286,7 +286,7 @@
         // click, never automatic: that one costs). With no engine to offer (no
         // AI profile for this feature, no Blab account), the note's way forward
         // is the settings page, where one is set up.
-        const note = missingEntryNote({ mode, engine: response.engine, entry });
+        const note = missingEntryNote({ mode: request.mode, engine: response.engine, entry });
         showNote(note ? t(note) : '');
         ctx.showEngineTag(engineTag, response.engine);
         if (note === 'inputDictNeedsModel') {
@@ -331,12 +331,13 @@
     }
 
     // The entry under the translation: the translation's phonetics, each with
-    // a speaker reading the translation in `targetLang` (D-487), then senses,
-    // examples and word forms, drawn by the shared renderer the selection card
-    // uses too. The typed text keeps its own speaker, #ai-translator-input-speak.
-    // null empties and hides it.
-    function showEntry(entry, targetLang) {
-      DictEntry.render(dictEl, entry, { targetLang, t, speech });
+    // a speaker reading the translation in `targetLang` (D-487) — or, in a
+    // monolingual entry (a word already in the target language), the typed
+    // word `text` itself — then senses, examples and word forms, drawn by the
+    // shared renderer the selection card uses too. The typed text keeps its
+    // own speaker, #ai-translator-input-speak. null empties and hides it.
+    function showEntry(entry, targetLang, text) {
+      DictEntry.render(dictEl, entry, { targetLang, text, t, speech });
     }
 
     translateBtn.addEventListener('click', async () => {
@@ -376,20 +377,18 @@
       }
     });
 
-    if (ctx.setupLanguageDropdown) {
-      ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-        targetLangPref.set(lang || '');
-        // Picking a language with the box empty is someone setting up before
-        // they type, not asking for a translation. A note left from the last
-        // lookup no longer describes what is on screen, so it goes.
-        const text = textarea.value.trim();
-        if (!text) {
-          showNote('');
-          return;
-        }
-        translateInputText(text, lang);
-      });
-    }
+    state.inputDialogLangMenu = ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
+      targetLangPref.set(lang || '');
+      // Picking a language with the box empty is someone setting up before
+      // they type, not asking for a translation. A note left from the last
+      // lookup no longer describes what is on screen, so it goes.
+      const text = textarea.value.trim();
+      if (!text) {
+        showNote('');
+        return;
+      }
+      translateInputText(text, lang);
+    });
 
     // Escape to close (capture phase to intercept before other keydown handlers)
     document.addEventListener('keydown', handleInputDialogEscape, true);
@@ -405,11 +404,14 @@
     document.addEventListener('focusout', blockHostFocusTrap, true);
   }
 
+  // While the language menu is open, its Escape is the menu's (the dropdown's
+  // own listener in setupLanguageDropdown, content-popup.js) and this listener
+  // steps aside. An Escape that ends an IME composition belongs to the IME.
   function handleInputDialogEscape(e) {
-    if (e.key === 'Escape' && state.inputDialog) {
-      e.stopImmediatePropagation();
-      hideInputDialog();
-    }
+    if (e.key !== 'Escape' || e.isComposing || !state.inputDialog) return;
+    if (state.inputDialogLangMenu?.isOpen()) return;
+    e.stopImmediatePropagation();
+    hideInputDialog();
   }
 
   function blockHostFocusTrap(e) {
@@ -421,9 +423,8 @@
 
   function hideInputDialog() {
     if (state.inputDialog) {
-      if (state.inputDialog._langOutsideHandler) {
-        document.removeEventListener('mousedown', state.inputDialog._langOutsideHandler);
-      }
+      state.inputDialogLangMenu?.close();
+      state.inputDialogLangMenu = null;
       speech.stopSpeaking();
       state.inputDialog.remove();
       state.inputDialog = null;
