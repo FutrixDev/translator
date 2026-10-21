@@ -70,6 +70,15 @@ function answerPrompt(systemPrompt, user, dictEntry, translate = echo) {
   return { text: user ? translate(user) : user, fastBatch: null };
 }
 
+// The source material of a text request's user turn: the extension fences it in
+// <source> tags (wrapSource in background/prompts.js) on every text path. null
+// when it is not fenced, which the mocks answer with a 500 so a path that skips
+// the fence fails its spec.
+const SOURCE_RE = /^<source>\n([\s\S]*)\n<\/source>$/;
+function sourceOf(user) {
+  return SOURCE_RE.exec(user)?.[1] ?? null;
+}
+
 function echo(text) {
   return `[T] ${text}`;
 }
@@ -247,6 +256,12 @@ async function startMockOpenAIServer({
       }
 
       if (content) {
+        content = sourceOf(content);
+        if (content === null) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: 'mock: user turn is not fenced in <source>' } }));
+          return;
+        }
         sentTexts.push(content);
         systemPrompts.push(systemPrompt);
       }
@@ -317,4 +332,4 @@ async function startMockOpenAIServer({
   };
 }
 
-module.exports = { startMockOpenAIServer, answerPrompt };
+module.exports = { startMockOpenAIServer, answerPrompt, sourceOf };

@@ -32,7 +32,7 @@
  * A request without a bearer token is 401 `unauthorized` whatever the mode.
  */
 const { startMockServer, serveExtConnect } = require('./mock-server');
-const { answerPrompt } = require('./mock-openai-server');
+const { answerPrompt, sourceOf } = require('./mock-openai-server');
 require('../../shared/dict-entry.js');
 
 const RESETS_AT = '2099-01-02T00:00:00.000Z';
@@ -104,9 +104,12 @@ async function startMockBlabService({
         }
         // An image (OCR step 1) is answered in shared/ocr.js's JSON contract,
         // like mock-openai-server.js's vision branch; the prompts are not echoed.
+        // A text request's user turn must be fenced, as that server checks too.
+        const source = body.image ? null : sourceOf(body.user);
+        if (!body.image && source === null) return send(500, { error: 'user turn is not fenced in <source>' });
         const { text } = body.image
           ? { text: JSON.stringify({ text: OCR_TEXT, language: 'en' }) }
-          : answerPrompt(body.system, body.user, dictEntry);
+          : answerPrompt(body.system, source, dictEntry);
         state.used += Math.ceil((body.system.length + body.user.length + text.length) / 4);
         return send(200, {
           text,
