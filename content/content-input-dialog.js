@@ -377,20 +377,18 @@
       }
     });
 
-    if (ctx.setupLanguageDropdown) {
-      ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-        targetLangPref.set(lang || '');
-        // Picking a language with the box empty is someone setting up before
-        // they type, not asking for a translation. A note left from the last
-        // lookup no longer describes what is on screen, so it goes.
-        const text = textarea.value.trim();
-        if (!text) {
-          showNote('');
-          return;
-        }
-        translateInputText(text, lang);
-      });
-    }
+    state.inputDialogLangMenu = ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
+      targetLangPref.set(lang || '');
+      // Picking a language with the box empty is someone setting up before
+      // they type, not asking for a translation. A note left from the last
+      // lookup no longer describes what is on screen, so it goes.
+      const text = textarea.value.trim();
+      if (!text) {
+        showNote('');
+        return;
+      }
+      translateInputText(text, lang);
+    });
 
     // Escape to close (capture phase to intercept before other keydown handlers)
     document.addEventListener('keydown', handleInputDialogEscape, true);
@@ -406,11 +404,14 @@
     document.addEventListener('focusout', blockHostFocusTrap, true);
   }
 
+  // While the language menu is open, its Escape is the menu's (the dropdown's
+  // own listener in setupLanguageDropdown, content-popup.js) and this listener
+  // steps aside. An Escape that ends an IME composition belongs to the IME.
   function handleInputDialogEscape(e) {
-    if (e.key === 'Escape' && state.inputDialog) {
-      e.stopImmediatePropagation();
-      hideInputDialog();
-    }
+    if (e.key !== 'Escape' || e.isComposing || !state.inputDialog) return;
+    if (state.inputDialogLangMenu?.isOpen()) return;
+    e.stopImmediatePropagation();
+    hideInputDialog();
   }
 
   function blockHostFocusTrap(e) {
@@ -422,9 +423,8 @@
 
   function hideInputDialog() {
     if (state.inputDialog) {
-      if (state.inputDialog._langOutsideHandler) {
-        document.removeEventListener('mousedown', state.inputDialog._langOutsideHandler);
-      }
+      state.inputDialogLangMenu?.close();
+      state.inputDialogLangMenu = null;
       speech.stopSpeaking();
       state.inputDialog.remove();
       state.inputDialog = null;

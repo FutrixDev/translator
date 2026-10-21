@@ -716,6 +716,8 @@
     dictEntryEmpty: 'Das Modell hat diesmal keine Aussprache, Bedeutungen oder Beispiele geliefert.',
     langRecent: 'Zuletzt verwendet',
     langAll: 'Alle Sprachen',
+    langFilter: 'Sprache suchen',
+    langNoMatch: 'Keine passende Sprache',
     dictOfflineTitle: 'Offline-Wörterbuch',
     offlineDictionary: 'Wörter offline nachschlagen',
     offlineDictionaryHint: 'Ein nachgeschlagenes Wort beantwortet zuerst ein Wörterbuchpaket auf diesem Gerät: kostenlos, sofort, ohne Modell. Das Paket eines Sprachpaars wird geladen, wenn Sie darin zum ersten Mal ein Wort nachschlagen.',

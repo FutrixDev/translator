@@ -735,6 +735,8 @@
     dictEntryEmpty: "Il modello non ha fornito pronuncia, significati o esempi per questo.",
     langRecent: "Recenti",
     langAll: "Tutte le lingue",
+    langFilter: "Cerca lingua",
+    langNoMatch: "Nessuna lingua corrispondente",
     dictOfflineTitle: "Dizionario offline",
     offlineDictionary: "Cerca le parole offline",
     offlineDictionaryHint: "Una parola che cerchi riceve risposta da un pacchetto dizionario su questo dispositivo: gratuito, istantaneo, senza modello. Il pacchetto di una coppia di lingue si scarica la prima volta che cerchi una parola in quella coppia.",

@@ -716,6 +716,8 @@
     dictEntryEmpty: 'モデルは今回、発音・意味・例文を返しませんでした。',
     langRecent: '最近使用',
     langAll: 'すべての言語',
+    langFilter: '言語を検索',
+    langNoMatch: '一致する言語がありません',
     dictOfflineTitle: 'オフライン辞書',
     offlineDictionary: 'オフラインで単語を調べる',
     offlineDictionaryHint: '単語を調べると、この端末の辞書パックがまず答えます。無料・即時・モデル不要です。言語の組み合わせごとに、初めて単語を調べたときにパックをダウンロードします。',

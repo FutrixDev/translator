@@ -434,6 +434,20 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   overflow-y: auto;
 }
 
+/* 菜单是一列 flex：筛选不挪节点，只给全表项写 CSS order（ctx.buildTargetLangMenu 返回的
+   控制器的 filter），清空查询就去掉 order，回到画出来的顺序。没写 order 的筛选框、
+   「全部语言」标题和「没有匹配」那一句都是 0，排在写了 order 的选项前面。藏起的行是
+   [hidden] 的 display: none !important（本文件开头），这里的 flex 不会把它们放出来。
+   子项不收缩，菜单靠滚动装下长表。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-menu > * {
+  flex-shrink: 0;
+}
+
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item {
   width: 100%;
   text-align: start;
@@ -481,6 +495,45 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item.is-selected {
   background: rgba(111, 99, 255, 0.18);
   color: var(--text-primary);
+}
+
+/* 键盘停在筛选框里用上下键挑到的那一项（菜单控制器的 is-active，见 content-language.js），和悬停
+   同一个样子；画在选中态后面，选中行被挑到时也看得出。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-item.is-active {
+  background: var(--icon-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* 菜单顶上的筛选框（ctx.buildTargetLangMenu 画、它返回的控制器筛）。粘在菜单
+   顶上，滚长表时一直在。粘住时它上面还有菜单 6px 的内边距、下面有 4px 间隙，滚上来的
+   选项会从这两条缝里露出来：两道和菜单同色的实心阴影把缝盖住。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 4px;
+  border: 1px solid var(--pill-border);
+  border-radius: 8px;
+  background: var(--pill-bg);
+  box-shadow: 0 -6px 0 0 var(--popup-bg), 0 4px 0 0 var(--popup-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  padding: 7px 10px;
+  outline: none;
+}
+
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-filter:focus {
+  border-color: var(--accent);
+}
+
+/* 筛选一项都对不上时的那一句「没有匹配的语言」。 */
+html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-translator-lang-empty {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .ai-translator-text {

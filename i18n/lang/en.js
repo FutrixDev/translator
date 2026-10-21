@@ -736,6 +736,8 @@
     dictEntryEmpty: 'The model gave no pronunciation, meanings or examples for this.',
     langRecent: 'Recent',
     langAll: 'All languages',
+    langFilter: 'Search languages',
+    langNoMatch: 'No matching language',
     dictOfflineTitle: 'Offline dictionary',
     offlineDictionary: 'Look up words offline',
     offlineDictionaryHint: 'A word you look up is answered from a dictionary pack on this device: free, instant, no model. The pack for a language pair downloads the first time you look up a word in it.',

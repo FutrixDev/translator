@@ -716,6 +716,8 @@
     dictEntryEmpty: 'Cette fois, le modèle n’a donné ni prononciation, ni sens, ni exemples.',
     langRecent: 'Récentes',
     langAll: 'Toutes les langues',
+    langFilter: 'Rechercher une langue',
+    langNoMatch: 'Aucune langue correspondante',
     dictOfflineTitle: 'Dictionnaire hors ligne',
     offlineDictionary: 'Chercher les mots hors ligne',
     offlineDictionaryHint: 'Un mot recherché est d\'abord trouvé dans un dictionnaire installé sur cet appareil : gratuit, immédiat, sans modèle. Le dictionnaire d\'une paire de langues se télécharge la première fois que vous y cherchez un mot.',

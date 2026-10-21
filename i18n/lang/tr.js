@@ -736,6 +736,8 @@
     dictEntryEmpty: 'Model bunun için telaffuz, anlam veya örnek vermedi.',
     langRecent: 'Son kullanılanlar',
     langAll: 'Tüm diller',
+    langFilter: 'Dil ara',
+    langNoMatch: 'Eşleşen dil yok',
     dictOfflineTitle: 'Çevrimdışı sözlük',
     offlineDictionary: 'Kelimelere çevrimdışı bak',
     offlineDictionaryHint: 'Baktığınız bir kelime bu cihazdaki bir sözlük paketinden yanıtlanır: ücretsiz, anında, model gerekmez. Bir dil çiftinin paketi, o çiftte ilk kez bir kelimeye baktığınızda indirilir.',
