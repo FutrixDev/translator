@@ -49,7 +49,7 @@ const defaultSettings = {
   pdfTargetLang: '',
   // Image OCR needs no account, and on the default engine no API key either,
   // so unlike comics/PDF it defaults on. Its surfaces are the image context
-  // menu entry and the hover button (enableImageOcrHoverButton below).
+  // menu entry and the image hover bar's chip (enableImageOcrHoverButton below).
   enableImageOcrTranslation: true,
   // 'local' vs 'vision'; the default is 'local'. See shared/ocr.js. This is
   // the one OCR sub-setting: no language picker (recognition always runs the
