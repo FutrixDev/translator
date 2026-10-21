@@ -342,6 +342,6 @@
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
     POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
-    pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resultLabel, statusText,
+    pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });
 })();

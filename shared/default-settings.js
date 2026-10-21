@@ -79,7 +79,7 @@
     // 个视频就再也不替他开。
     autoEnableCaptions: true,
     enableImageOcrTranslation: true,
-    // The hover shortcut button defaults on, matching background.js
+    // The hover shortcut bar defaults on, matching background.js
     // defaultSettings. (There is no auto-translate setting: OCR is always
     // recognise-first, with a Translate button in the popup.)
     enableImageOcrHoverButton: true,

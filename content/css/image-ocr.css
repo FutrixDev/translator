@@ -75,21 +75,28 @@
   pointer-events: none;
 }
 
-/* ==================== Image OCR: the hover shortcut button ====================
+/* ==================== Images: the hover shortcut bar ====================
 
-   A small floating action pinned near the top-right corner of an <img> of at
+   A small floating bar pinned near the top-right corner of an <img> of at
    least 200×200 CSS px while the cursor rests on it (enableImageOcrHoverButton,
-   on by default).
-   Clicking it runs the same whole-image recognition as the context menu entry.
+   on by default). It holds up to two chips — "Translate this comic" and
+   "Recognize text" — each running the same flow as its context menu entry
+   (content/content-image-ocr.js decides which chips are offered).
 
    Styled by #id like the selection button above: (1,0,0) outranks any theme's
    `.kit div:hover` and every list in the containment reset, so no `html body`
-   prefix is needed. It still sits in the reset's `:is()` lists so a page rule
-   on a bare tag cannot reach the properties this rule leaves alone. */
+   prefix is needed. The bar still sits in the reset's `:is()` lists so a page
+   rule on a bare tag cannot reach the properties these rules leave alone. */
 
-#ai-translator-ocr-hover-btn {
+#ai-translator-image-hover-bar {
   position: fixed;
   z-index: 2147483646;
+  display: flex;
+  gap: 6px;
+  animation: ai-translator-btn-pop 0.15s ease;
+}
+
+#ai-translator-image-hover-bar .ai-translator-image-hover-chip {
   display: inline-flex;
   align-items: center;
   padding: 6px 12px;
@@ -102,25 +109,25 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  animation: ai-translator-btn-pop 0.15s ease;
 }
 
-#ai-translator-ocr-hover-btn:hover {
+#ai-translator-image-hover-bar .ai-translator-image-hover-chip:hover {
   background: rgba(38, 40, 50, 0.96);
   border-color: #6f63ff;
 }
 
 /* Light theme, per the data-ai-translator-theme convention on <html>. */
-html[data-ai-translator-theme="light"] #ai-translator-ocr-hover-btn {
+html[data-ai-translator-theme="light"] #ai-translator-image-hover-bar .ai-translator-image-hover-chip {
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid #d9d9e3;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
   color: #1f2330;
 }
 
-html[data-ai-translator-theme="light"] #ai-translator-ocr-hover-btn:hover {
+html[data-ai-translator-theme="light"] #ai-translator-image-hover-bar .ai-translator-image-hover-chip:hover {
   background: #f4f3ff;
   border-color: #6f63ff;
 }

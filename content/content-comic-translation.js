@@ -7,10 +7,14 @@
 // translation never has: not signed in, out of free pages for the month, or an
 // image we are not allowed to fetch.
 //
-// There are two ways in: the right-click menu on an image, and the float ball.
-// Both are asked for — nothing offers itself. An earlier build floated the two
-// buttons onto any image the pointer crossed, which on a normal page is every
-// article photo, so the offer is now made only where the user asked for it.
+// The ways in: the right-click menu on an image, the float ball, and the
+// "Translate this comic" chip on the image hover bar (content-image-ocr.js).
+// An earlier build floated two comic-only buttons onto any image the pointer
+// crossed, which on a normal page is every article photo, and they were
+// removed as noise. The chip that came back is bounded the way the menu entry
+// is: only on images of at least 200×200 CSS px, only while comic translation
+// is ready to run (comic.comicEnabled), only in the top frame, and the whole
+// bar sits behind the options page's hover-bar switch.
 //
 // Comic hosts routinely hide the artwork under a decoy image to poison what
 // right-click reports, which is why the click POINT, not `info.srcUrl`, decides
@@ -281,6 +285,16 @@
       return;
     }
     await translateImage(img, { pageUrl, targetLang, mode });
+  }
+
+  /**
+   * Hover-bar entry: the element itself is known, so no srcUrl lookup — and
+   * deliberately not findImage, which prefers the last right-click target over
+   * the image the pointer is on. The decoy swap is the same one findImage does.
+   * Language and mode are the ones the context menu sends.
+   */
+  function startComicImageTranslation(img) {
+    return translateImage(comic.resolveRealPage(img), { targetLang: comicTargetLang(), mode: 'translate' });
   }
 
   /**
@@ -796,6 +810,7 @@
   });
 
   ctx.startComicTranslation = startComicTranslation;
+  ctx.startComicImageTranslation = startComicImageTranslation;
   ctx.startComicPageTranslation = startComicPageTranslation;
   ctx.hasComicPageOnScreen = () => comic.pickComicImages().length > 0;
   // 包一层而不是直接赋值：架子上的这一格由 content/comic/memory.js 挂上，

@@ -57,8 +57,9 @@ const defaultSettings = {
   // images) and no auto-translate switch (the popup always stops at the
   // recognised text and offers a Translate button for step 2).
   ocrEngine: globalThis.OCRCore.DEFAULT_OCR_ENGINE,
-  // The hover shortcut over large images — the same whole-image flow as the
-  // context menu, one hover closer. On by default: it is the flow's front
+  // The hover shortcut bar over large images — the OCR whole-image flow and
+  // the comic flow, each the same as its context menu entry, one hover closer
+  // (content/content-image-ocr.js). On by default: it is those flows' front
   // door, and it only appears over images big enough to plausibly hold text.
   enableImageOcrHoverButton: true,
   customPrompt: '',
