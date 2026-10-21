@@ -1,50 +1,43 @@
-# Chrome 网上应用店提交说明 — v1.5.2
+# Chrome 网上应用店提交说明 — v1.5.3
 
-提交日期：2026-10-20 ｜ 上一个提交版本：1.5.1（商店显示 2026-10-14 更新）
+提交日期：2026-10-21 ｜ 线上版本：1.5.1（2026-10-21 抓取详情页，扩展名仍是
+「AI Translator for Web, PDF & Manga」）
 
-> **重打说明（2026-10-20）**：2026-10-19 从 `b9dc1c2` 打的 1.5.2 包从未上传。
-> 之后 main 又合入了首次使用引导（#165）、Blab Translation 识图（#166/#169）、
-> 正在看的部分先译（#170）、最近语言（#171）、单页应用两项修复（#172/#174）、
-> 悬浮球进度环（#173）、`<pre>` 里的文章（#175）。版本号不变，仍是 1.5.2，
-> 从合入本次改动后的 `main` 重新打包；旧包作废，不要上传。
+> **1.5.2 不再单独上传。** 2026-10-20 从 `main` 打的 1.5.2 包之后，main 又合入了
+> `<pre>` 文章的悬浮翻译（#178）、内嵌框架跟随自动翻译判定（#179）、图片悬浮栏
+> 「翻译这页漫画」（#180）、同语言单词查词与语言菜单搜索框（#181）。版本号升到
+> 1.5.3：不管 1.5.2 是否传过后台，1.5.3 都能上传。1.5.2 的包作废，不要上传。
+> 线上用户仍在 1.5.1，所以第四节的更新说明写的是 1.5.1 → 1.5.3 的全部变化。
 
-## 上传前先确认：Blab 识图的服务端已在生产上线
-
-这个包让订阅用户可以选 Blab Translation 识别图片文字。它把图片发给账户站的
-`/api/blab/complete`，要求服务端**已经上线接收图片的版本**，并且生产环境配置的
-主模型能读图。否则每次识图都返回 422 `vision_unavailable`（不扣额度），用户看到
-的是错误提示。**先确认服务端，再上传这个包。**
-
-## 先说一个发现：线上的 1.5.1 不是 main 打的那一版
+## 线上的 1.5.1 不是 main 打的那一版
 
 2026-10-19 用 crawl-store 抓线上详情页：版本 1.5.1，扩展名「AI Translator for
 Web, PDF & Manga」，简短说明「AI translator: free bilingual web pages, PDF
 translation that keeps layout, manga translation, …」。这两句只存在于
-`release/1.5.1`（`64a8a06`，基于已上架的 1.5.0 代码 `57880d9`）。从 main
-（`8fd0719`）打的 1.5.1 包，扩展名早就是「… Manga & Subtitles」。
+`release/1.5.1`（`64a8a06`，基于已上架的 1.5.0 代码 `57880d9`）。
 
 所以线上用户拿到的还是 1.5.0 的代码加改过的文字，**#149 以来合入的功能都还没发**：
-Blab 引擎、输入框、常用语言优先、离线词典，以及 #146/#147/#150/#153 的修复。
-这一版从 `main` 打包，把它们一次发出去。线上详细说明也仍是旧稿（「Bring the AI
-you trust local models」漏了 cloud or），这次必须整份重贴。
+Blab 引擎、Blab 识图、输入框、常用语言优先、离线词典，以及之后的全部修复。这一版
+从 `main` 打包，把它们一次发出去。线上详细说明也仍是旧稿（「Bring the AI you
+trust local models」漏了 cloud or），这次必须整份重贴。
+
+Blab 识图的服务端已在生产上线，生产主模型能读图（2026-10-20 确认）。
 
 ## 一、包信息
 
 | 项 | 值 |
 | --- | --- |
-| 上传文件 | `blab-translation-1.5.2.zip`（`npm run zip` 产物，仓库里不跟踪 zip） |
-| 扩展版本 | 1.5.2 |
-| 打包源 | 本说明所在 PR 合入后的 `main`（不是 `b9dc1c2`） |
+| 上传文件 | `blab-translation-1.5.3.zip`（`npm run zip` 产物，仓库里不跟踪 zip） |
+| 扩展版本 | 1.5.3 |
+| 打包源 | 本说明所在 PR 合入后的 `main` |
 | 新增权限 | **`unlimitedStorage`**（见第五节） |
 | `minimum_chrome_version` | 116 → **130** |
 | host_permissions / CSP | 未改动 |
 
-相对 `8fd0719`，`manifest.json` 只多了：`unlimitedStorage`、五个界面语言文件
-（`i18n/lang/{ar,id,vi,tr,it}.js`）、`shared/dict-pack.js`、
-`content/content-dict-lookup.js` 三个内容脚本条目，以及最低 Chrome 版本。
-相对作废的 `b9dc1c2` 包，只多了五个内容脚本（`content/page/progress-feed.js`、
-`focus-order.js`、`prose-pre.js`、`recall.js`、`content/content-auto-ledger.js`），
-权限、host_permissions、CSP、最低 Chrome 版本都没变。
+相对线上 1.5.1 所基于的 1.5.0 代码，`manifest.json` 多了：`unlimitedStorage`、
+五个界面语言文件（`i18n/lang/{ar,id,vi,tr,it}.js`）、离线词典与识图等新内容脚本，
+以及最低 Chrome 版本。相对作废的 1.5.2 包（`e64f86be`），只多了一个内容脚本
+`content/page/text-runs.js`，权限、host_permissions、CSP、最低 Chrome 版本都没变。
 
 ## 二、扩展名与简短说明（在包里，15 种）
 
@@ -77,34 +70,38 @@ you trust local models」漏了 cloud or），这次必须整份重贴。
   名字会显示，但说明是空的（或回落到英文）。
 - **15 个语言区域都整份粘贴** [`docs/store-listing/<locale>.txt`](store-listing/)。
   线上至少 en 还是更早的旧稿。
-- 这次重打在「图片文字（OCR）」一节加了一条：订阅后也可以交给 Blab Translation
-  识别、无需密钥；「默认保护隐私」一节写明识图时发到服务器的是图片。
+- 「图片文字（OCR）」一节有一条：订阅后也可以交给 Blab Translation 识别、无需
+  密钥；「默认保护隐私」一节写明识图时发到服务器的是图片。
 - 截图本地化这一版不做（调研文档 §5：一次只改一个变量）。
 
 ## 四、更新说明（可直接粘贴）
 
 **中文**
 
-> 1.5.2
+> 1.5.3
 > - 新增 Blab Translation 引擎：订阅自带，无需 API 密钥；订阅用户也能用它识别图片文字。
+> - 漫画页悬停大图时，可直接点「翻译这页漫画」。
 > - 新增离线词典：查单词先查本机词典包，可在设置里下载、更新、删除。
 > - 新增阿拉伯语、印尼语、越南语、土耳其语、意大利语界面。
 > - 整页和自动翻译先译你正在看的部分；悬浮球外圈显示翻译进度。
 > - 首次使用：默认用意译风格；快捷键没分配上时提供「设置快捷键」按钮；安装前打开的标签页会提示刷新后再翻译。
-> - 语言菜单顶部显示最近用过的语言；输入框标出由哪个引擎翻译。
-> - 修复：单页应用重绘菜单时译文闪回原文、写在 <pre> 里的文章不翻译、内置引擎下公式与引用标记出错、漫画任务名称、网格排版里译文位置。
+> - 查的词已是目标语言时，给出该语言的释义（像单语词典）。
+> - 语言菜单顶部显示最近用过的语言，并可输入名称搜索；输入框标出由哪个引擎翻译。
+> - 修复：单页应用重绘菜单时译文闪回原文、写在 <pre> 里的文章不翻译（悬停也能译）、带斜体的松散段落被拆碎翻译、内置引擎下公式与引用标记出错、漫画任务名称、网格排版里译文位置。
 > - 现在需要 Chrome 130 或更高版本。
 
 **English**
 
-> 1.5.2
+> 1.5.3
 > - New: Blab Translation engine, included with a subscription, no API key needed. Subscribers can also use it to read text in images.
+> - Hover a large image on a comic page and click "Translate This Comic".
 > - New: offline dictionary. Word lookups check a downloaded pack first; download, update or delete packs in Settings.
 > - New interface languages: Arabic, Indonesian, Vietnamese, Turkish, Italian.
 > - Whole-page and automatic translation start with the part you are reading; a ring around the float ball shows progress.
 > - First run: free translation is the default style, a "Set a shortcut" button appears when a shortcut is missing, and tabs opened before installing ask for a reload instead of failing.
-> - The language menu starts with the languages you used last; the input box shows which engine translated.
-> - Fixes: menus rebuilt by single-page sites no longer flash back to the original, articles inside a wrapping <pre> are translated, plus formulas and citation markers on the built-in engine, comic job names, and translation placement in grid layouts.
+> - Looking up a word already in your target language gives a definition in that language, like a monolingual dictionary.
+> - The language menu starts with the languages you used last and has a search box; the input box shows which engine translated.
+> - Fixes: menus rebuilt by single-page sites no longer flash back to the original, articles inside a wrapping <pre> are translated (hover too), loose paragraphs with italics are no longer translated in pieces, plus formulas and citation markers on the built-in engine, comic job names, and translation placement in grid layouts.
 > - Chrome 130 or later is now required.
 
 ## 五、权限理由与审核员说明
@@ -125,14 +122,13 @@ Blab Translation 识图不新增权限：图片由内容脚本取到、经后台
 
 ## 六、提交前 checklist
 
-- [ ] **先确认 Blab 识图服务端已上线、生产主模型能读图**（见文首）
-- [ ] 隐私政策目前只写了 Blab Translation 发送「文本」；上传前补一句：选 Blab Translation 识图时，图片发到我方服务器识别、不保存
-- [x] `manifest.json` 版本是 1.5.2，打包源是本 PR 合入后的 `main`，不是 `b9dc1c2`
+- [x] Blab 识图服务端已上线、生产主模型能读图（2026-10-20 确认）
+- [x] `manifest.json` 版本是 1.5.3，打包源是本 PR 合入后的 `main`
 - [x] 15 种语言 `appName` ≤75、`appDescription` ≤132 字符
 - [ ] 上传 zip；新增 ar/id/vi/tr/it 五个语言区域；15 个区域的说明整份换成
       `docs/store-listing/<locale>.txt`；更新说明贴第四节
 - [ ] Privacy practices：补 `unlimitedStorage` 理由（第五节）；核对隐私政策链接是
       `https://blab-translation.com/app/legal/privacy`
-- [ ] 在调研文档 §7 改动日志记一行「1.5.2 上架」的日期
+- [ ] 在调研文档 §7 改动日志记一行「1.5.3 上架」的日期
 - [ ] 上架一周后复测搜索词：manga translator、pdf translator、ai translator、
       dual subtitles、Blab Translation

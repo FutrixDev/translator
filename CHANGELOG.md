@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.5.3 — 2026-10-21
+
+### Comics and images
+
+- **Translate This Comic, from the image hover bar.** Hovering a large image
+  on a comic page now offers **Translate This Comic** beside **Recognize
+  Text**. It appears where the context menu's comic entry would (comic
+  translation switched on and signed in, top frame only) and orders exactly
+  the same job; hovering alone orders nothing. The setting that controlled the
+  Recognize Text button now controls the whole bar, and is renamed "Show
+  Shortcut Buttons on Images" in all fifteen languages.
+
+### Dictionary and language menus
+
+- **A word already in the target language gets a monolingual entry.** Looking
+  up an English word with English as the target returns an English definition,
+  like a monolingual dictionary, instead of a translation into another
+  language. When the word's language cannot be told, the model decides and
+  says which entry it wrote.
+- **The language menus have a search box.** The selection card's and the
+  input box's target-language menus filter by name as you type; arrow keys,
+  Enter and Escape work inside the list.
+
+### Page translation
+
+- **Hover translates the paragraph you point at inside an article written in
+  a `<pre>`**, the way page translation already did. Code blocks stay
+  skipped.
+- **Loose prose runs translate as whole paragraphs.** Text that sits directly
+  in a container with inline italics and spans between line breaks (as on
+  coqdoc pages) is translated sentence by sentence as one paragraph rather
+  than in pieces, and translation-only mode no longer merges a heading into
+  the next paragraph. Stray marker debris in a model's answer is removed.
+- **Embedded frames follow the page's automatic verdict when a site rebuilds
+  them.** On a page you translated by hand, a rebuilt frame no longer puts
+  remembered translations back by itself; on an "always translate" site it
+  does, and pausing the page stops it in every frame.
+
 ## 1.5.2 — 2026-10-20
 
 ### First run
