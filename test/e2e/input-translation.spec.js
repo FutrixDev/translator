@@ -10,7 +10,7 @@ const {
 } = require('./helpers');
 const { HOSTILE_PAGE_CSS } = require('./hostile-css');
 const { startMockServer } = require('./mock-server');
-const { startMockOpenAIServer } = require('./mock-openai-server');
+const { startMockOpenAIServer, sourceOf } = require('./mock-openai-server');
 const { getMessage } = require('../../i18n/messages');
 require('../../shared/dict-entry.js');
 
@@ -36,7 +36,7 @@ async function startInputDictionaryMockServer() {
       try {
         const data = JSON.parse(body);
         systemPrompt = data?.messages?.[0]?.content || '';
-        text = data?.messages?.[1]?.content || '';
+        text = sourceOf(systemPrompt, data?.messages?.[1]?.content || '');
       } catch (error) {
         systemPrompt = '';
         text = '';
@@ -162,7 +162,7 @@ async function startTargetLangFixture() {
       try {
         const data = JSON.parse(body);
         systemPrompt = data?.messages?.[0]?.content || '';
-        text = data?.messages?.[1]?.content || '';
+        text = sourceOf(systemPrompt, data?.messages?.[1]?.content || '');
       } catch (error) {
         systemPrompt = '';
       }

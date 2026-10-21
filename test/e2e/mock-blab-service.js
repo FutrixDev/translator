@@ -105,7 +105,7 @@ async function startMockBlabService({
         // An image (OCR step 1) is answered in shared/ocr.js's JSON contract,
         // like mock-openai-server.js's vision branch; the prompts are not echoed.
         // A text request's user turn must be fenced, as that server checks too.
-        const source = body.image ? null : sourceOf(body.user);
+        const source = body.image ? null : sourceOf(body.system, body.user);
         if (!body.image && source === null) return send(500, { error: 'user turn is not fenced in <source>' });
         const { text } = body.image
           ? { text: JSON.stringify({ text: OCR_TEXT, language: 'en' }) }
