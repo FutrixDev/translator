@@ -378,17 +378,23 @@
     if (wanted) ctx.translateText(text, targetLang);
   }
 
-  // --- The hover shortcut button ---------------------------------------------
+  // --- The hover shortcut bar ------------------------------------------------
   //
   // The context menu is the primary surface, but it is two clicks and hidden
   // behind a right-click nobody performs on an image they merely wonder about.
   // With enableImageOcrHoverButton on, resting the cursor on an <img> of at
-  // least HOVER_MIN_SIZE in both dimensions shows a small "recognize text"
-  // button at its top-right corner; clicking it runs exactly the whole-image
-  // flow above. On by default (background/settings.js) — the size floor keeps
-  // it off icons and thumbnails, and the options page can turn it off.
+  // least HOVER_MIN_SIZE in both dimensions shows a small bar at its top-right
+  // corner with up to two shortcuts, each running exactly its context-menu
+  // flow for that image:
+  //   - "Recognize text", while image OCR (enableImageOcrTranslation) is on —
+  //     the whole-image flow above;
+  //   - "Translate this comic", while comic translation is ready to run here
+  //     (comic.comicEnabled, the same verdict that shows the menu entry) and
+  //     only in the top frame, where comic jobs run (content/frames/shelf.js).
+  // On by default (background/settings.js) — the size floor keeps it off icons
+  // and thumbnails, and the options page can turn the whole bar off.
 
-  const HOVER_BTN_ID = 'ai-translator-ocr-hover-btn';
+  const HOVER_BAR_ID = 'ai-translator-image-hover-bar';
 
   // Below this the image is an icon, an avatar, a thumbnail — decoration that
   // rarely carries readable text — and a button popping over every one of them
@@ -396,48 +402,71 @@
   // screenshots and photos the feature is actually for.
   const HOVER_MIN_SIZE = 200;
 
-  let hoverButton = null;
-  // The image the visible button belongs to; null whenever the button is off
+  let hoverBar = null;
+  let ocrChip = null;
+  let comicChip = null;
+  // The image the visible bar belongs to; null whenever the bar is off
   // screen. This is the single piece of state the delegated listeners share.
   let hoverImage = null;
 
-  function hideHoverButton() {
+  function hideHoverBar() {
     hoverImage = null;
-    if (hoverButton) hoverButton.remove();
+    if (hoverBar) hoverBar.remove();
   }
 
-  /** One reusable node, its listener attached once — never re-created per hover. */
-  function ensureHoverButton() {
-    if (hoverButton) return hoverButton;
-    hoverButton = document.createElement('div');
-    hoverButton.id = HOVER_BTN_ID;
-    hoverButton.setAttribute('role', 'button');
-    hoverButton.textContent = t('ocrRecognizeText');
-    hoverButton.addEventListener('click', () => {
+  /** One shortcut: hides the bar, then runs its flow on the image it was shown for. */
+  function createHoverChip(id, label, run) {
+    const chip = document.createElement('div');
+    chip.id = id;
+    chip.className = 'ai-translator-image-hover-chip';
+    chip.setAttribute('role', 'button');
+    chip.textContent = label;
+    chip.addEventListener('click', () => {
       const img = hoverImage;
-      hideHoverButton();
-      if (!img) return;
-      // The context-menu whole-image flow, verbatim: same entry point, same
-      // recognise-first popup with its Translate button for step 2.
-      startImageOcrTranslation({
-        srcUrl: img.currentSrc || img.src,
-        translate: false,
-        selectRegion: false
-      });
+      hideHoverBar();
+      if (img) run(img);
     });
-    return hoverButton;
+    return chip;
   }
 
-  function showHoverButton(img) {
-    const btn = ensureHoverButton();
+  /** One reusable bar and two chips, their listeners attached once — never re-created per hover. */
+  function ensureHoverBar() {
+    if (hoverBar) return hoverBar;
+    hoverBar = document.createElement('div');
+    hoverBar.id = HOVER_BAR_ID;
+    // The context-menu whole-image flow, verbatim: same entry point, same
+    // recognise-first popup with its Translate button for step 2.
+    ocrChip = createHoverChip('ai-translator-ocr-hover-btn', t('ocrRecognizeText'), img => startImageOcrTranslation({
+      srcUrl: img.currentSrc || img.src,
+      translate: false,
+      selectRegion: false
+    }));
+    // The context-menu comic flow for this very image (content-comic-translation.js).
+    comicChip = createHoverChip('ai-translator-comic-hover-btn', t('contextTranslateComic'),
+      img => ctx.startComicImageTranslation(img));
+    return hoverBar;
+  }
+
+  /** The chips the bar offers right now; empty means no bar at all. */
+  function hoverChips() {
+    if (!settings.enableImageOcrHoverButton) return [];
+    ensureHoverBar();
+    const chips = [];
+    if (ctx.frameRole === 'top' && ctx.comic.comicEnabled()) chips.push(comicChip);
+    if (settings.enableImageOcrTranslation) chips.push(ocrChip);
+    return chips;
+  }
+
+  function showHoverBar(img, chips) {
     hoverImage = img;
-    document.body.appendChild(btn);
-    // Position after append so the button's own width is measurable. Fixed
+    hoverBar.replaceChildren(...chips);
+    document.body.appendChild(hoverBar);
+    // Position after append so the bar's own width is measurable. Fixed
     // positioning, so rect coordinates are viewport coordinates.
     const rect = img.getBoundingClientRect();
-    const width = btn.offsetWidth || 0;
-    btn.style.top = `${Math.max(4, rect.top + 8)}px`;
-    btn.style.left = `${Math.max(4, Math.min(window.innerWidth - width - 4, rect.right - width - 8))}px`;
+    const width = hoverBar.offsetWidth || 0;
+    hoverBar.style.top = `${Math.max(4, rect.top + 8)}px`;
+    hoverBar.style.left = `${Math.max(4, Math.min(window.innerWidth - width - 4, rect.right - width - 8))}px`;
   }
 
   function isEligibleHoverImage(el) {
@@ -450,37 +479,38 @@
   }
 
   function onHoverMouseOver(event) {
-    // Both switches re-checked per event rather than captured at setup, so
-    // flipping either in the options page takes effect without a reload —
-    // the storage listener in content-bootstrap.js keeps ctx.settings fresh.
-    if (!settings.enableImageOcrTranslation || !settings.enableImageOcrHoverButton) {
-      if (hoverImage) hideHoverButton();
-      return;
-    }
     const target = event.target;
-    // Moving onto the button itself keeps it up — it has to be clickable.
-    if (hoverButton && (target === hoverButton || hoverButton.contains(target))) return;
+    // Moving onto the bar itself keeps it up — it has to be clickable.
+    if (hoverBar && hoverBar.contains(target)) return;
     if (isEligibleHoverImage(target)) {
-      if (target !== hoverImage) showHoverButton(target);
-      return;
+      if (target === hoverImage) return;
+      // The switches and the comic verdict are re-read per image rather than
+      // captured at setup, so flipping one in the options page, or signing
+      // in, takes effect without a reload — the storage listener in
+      // content-bootstrap.js keeps ctx.settings and ctx.signedIn fresh.
+      const chips = hoverChips();
+      if (chips.length) {
+        showHoverBar(target, chips);
+        return;
+      }
     }
     // mouseover on anything else IS the mouseleave of the image (or of the
-    // button): one delegated listener covers both edges, nothing is attached
+    // bar): one delegated listener covers both edges, nothing is attached
     // per image and nothing can leak.
-    if (hoverImage) hideHoverButton();
+    if (hoverImage) hideHoverBar();
   }
 
   /** Called once from content-bootstrap.js; document-level delegation only. */
-  function setupImageOcrHoverButton() {
+  function setupImageHoverBar() {
     document.addEventListener('mouseover', onHoverMouseOver, true);
-    // A fixed-position button drifts off its image the moment the page
+    // A fixed-position bar drifts off its image the moment the page
     // scrolls; hiding is cheaper and calmer than tracking.
     window.addEventListener('scroll', () => {
-      if (hoverImage) hideHoverButton();
+      if (hoverImage) hideHoverBar();
     }, true);
   }
 
   ctx.startImageOcrTranslation = startImageOcrTranslation;
   ctx.handleOcrProgress = onOcrProgress;
-  ctx.setupImageOcrHoverButton = setupImageOcrHoverButton;
+  ctx.setupImageHoverBar = setupImageHoverBar;
 })();

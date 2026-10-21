@@ -30,7 +30,7 @@
       '#ai-translator-caption-more',
       '#ai-translator-caption-menu',
       '#ai-translator-ocr-region',
-      '#ai-translator-ocr-hover-btn',
+      '#ai-translator-image-hover-bar',
       '#ai-translator-input-chip',
       '#ai-translator-auto-bar',
       '#ai-translator-source-peek',
@@ -287,7 +287,7 @@
       if (ctx.applyTranslationDisplay) ctx.applyTranslationDisplay();
       if (ctx.setupSelectionListener) ctx.setupSelectionListener();
       if (ctx.setupHoverTranslation) ctx.setupHoverTranslation();
-      if (ctx.setupImageOcrHoverButton) ctx.setupImageOcrHoverButton();
+      if (ctx.setupImageHoverBar) ctx.setupImageHoverBar();
       if (ctx.setupInputTranslateChip) ctx.setupInputTranslateChip();
       if (ctx.setupMessageListener) ctx.setupMessageListener();
       ctx.setupStorageListener();

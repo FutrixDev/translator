@@ -391,8 +391,8 @@ test('右下角的条子也是一个面板根，进了那道防护栏的名单',
   );
   assert.ok(reset.length > 0, '找不到防护栏那一段');
   const bar = (reset.match(/\[id="ai-translator-auto-bar"\]/g) || []).length;
-  const ocr = (reset.match(/\[id="ai-translator-ocr-hover-btn"\]/g) || []).length;
-  assert.equal(bar, ocr, '每一条 :is() 名单都要带上那张条子，漏一条就是漏一类样式');
+  const hoverBar = (reset.match(/\[id="ai-translator-image-hover-bar"\]/g) || []).length;
+  assert.equal(bar, hoverBar, '每一条 :is() 名单都要带上那张条子，漏一条就是漏一类样式');
 });
 
 test('状态点的显隐只有一套机制', () => {

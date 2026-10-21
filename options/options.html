@@ -622,14 +622,17 @@
 
             <!-- No language picker: recognition runs the auto plan (own script first, English as
                  a fallback). No auto-translate toggle: the popup shows the recognised text first. -->
-            <div class="toggle-group">
-              <label class="toggle-label">
-                <span data-i18n="enableImageOcrHoverButton">Show Recognize Button on Images</span>
-                <input type="checkbox" id="enableImageOcrHoverButton" checked>
-                <span class="toggle-slider"></span>
-              </label>
-              <span class="hint" data-i18n-hint="hintEnableImageOcrHoverButton"></span>
-            </div>
+          </div>
+
+          <!-- Outside #ocrSubOptions on purpose: the hover bar also carries the comic chip, so
+               this switch still means something while OCR is off and must stay clickable. -->
+          <div class="toggle-group">
+            <label class="toggle-label">
+              <span data-i18n="enableImageOcrHoverButton">Show Shortcut Buttons on Images</span>
+              <input type="checkbox" id="enableImageOcrHoverButton" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="hint" data-i18n-hint="hintEnableImageOcrHoverButton"></span>
           </div>
         </section>
 

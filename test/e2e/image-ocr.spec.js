@@ -371,7 +371,7 @@ test.describe('image OCR', () => {
     await page.locator('#big').hover();
     // Give a wrongly-live listener time to render one.
     await page.waitForTimeout(500);
-    await expect(page.locator('#ai-translator-ocr-hover-btn')).toHaveCount(0);
+    await expect(page.locator('#ai-translator-image-hover-bar')).toHaveCount(0);
   });
 
   test('multi-line text keeps its line structure in the popup', async ({ page }) => {

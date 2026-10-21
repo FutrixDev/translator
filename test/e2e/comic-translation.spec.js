@@ -242,15 +242,14 @@ test.describe('Comic page translation', () => {
   });
 
   /**
-   * The pointer buys nothing and offers nothing.
+   * The pointer buys nothing: hovering only offers.
    *
-   * An earlier build floated Translate/Colorize onto whatever image the cursor
-   * crossed. The test that "is this a comic page?" can honestly answer is only
-   * "is this a reasonably large image", which describes every article photo on
-   * the web, so the two paid buttons appeared everywhere. Asking is now the
-   * user's move: right-click, or the float ball.
+   * An earlier build started work from the cursor alone. Now a hover shows the
+   * image hover bar's chip (test/e2e/comic-hover.spec.js owns it) and nothing
+   * else: no job is ordered and no overlay or badge is drawn until the chip,
+   * the context menu or the float ball is pressed.
    */
-  test('shows nothing on hover, even with the feature on', async ({ context, page }) => {
+  test('hovering orders nothing, even with the feature on', async ({ context, page }) => {
     const service = await startMockService('succeed');
     const worker = await connectExtension(context, service.base);
     try {
@@ -264,10 +263,11 @@ test.describe('Comic page translation', () => {
       for (const fraction of [0.3, 0.5, 0.7]) {
         await page.mouse.move(box.x + box.width * fraction, box.y + box.height * fraction);
       }
+      // The offer is there, so the hover landed and the silence below means something.
+      await expect(page.locator('#ai-translator-comic-hover-btn')).toBeVisible();
       await page.waitForTimeout(600);
 
-      expect(await page.locator('.ai-translator-comic-hover-btn').count()).toBe(0);
-      // Nothing of ours at all — a differently-named affordance is the same bug.
+      // No overlay, badge or spinner of ours: those belong to a job.
       expect(await page.locator('[class^="ai-translator-comic"]').count()).toBe(0);
       expect(service.state.createBodies).toHaveLength(0);
     } finally {
