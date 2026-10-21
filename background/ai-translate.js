@@ -28,15 +28,17 @@ import {
   WORD_MODES,
   buildPrompt,
   getFastBatchOutputRules,
+  wrapSource,
 } from './prompts.js';
 import { countCharsSentToModel } from './api-client.js';
 import { callModel } from './model-client.js';
 
-// One call to this profile's model. callModel throws on an empty answer
-// ({ empty }), so every path below reads a non-empty `text`. Claude ignores
+// One call to this profile's model, with `user` (the source material) fenced
+// as the system prompt's SOURCE_TEXT_RULE says. callModel throws on an empty
+// answer ({ empty }), so every path below reads a non-empty `text`. Claude ignores
 // `temperature` (api-compat drops it for models that reject it).
 async function ask(profile, system, user, maxTokens, temperature) {
-  const { text } = await callModel(profile, { system, user, maxTokens, temperature });
+  const { text } = await callModel(profile, { system, user: wrapSource(user), maxTokens, temperature });
   return text;
 }
 
