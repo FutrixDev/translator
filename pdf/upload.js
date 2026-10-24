@@ -120,7 +120,9 @@
   }
 
   function renderFailure(error, hasFile) {
-    JV.renderFailure(el, { fileName: job ? job.fileName : (currentFile && currentFile.name), error, hasFile }, t);
+    JV.renderFailure(el, {
+      fileName: job ? job.fileName : (currentFile && currentFile.name), error, hasFile, uiLang: currentUILang
+    }, t);
   }
 
   /** Draw the job as the server described it; keep polling only while it moves. */
@@ -360,8 +362,26 @@
       return;
     }
     // 402 and anything transient: say so, and leave Continue and Cancel Task
-    // where they are — the question is still open.
+    // where they are — the question is still open. Spent free pages also get
+    // View plans.
     JV.showMessage(el, PDF_UI.pdfErrorMessage(error, t), true);
+    JV.offerQuota(el, error, t, currentUILang);
+  }
+
+  /** The pricing page, tagged as this page's quota prompt; the card stays. */
+  async function viewPlans() {
+    el.viewPlans.disabled = true;
+    const response = await sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'pdf_quota' });
+    el.viewPlans.disabled = false;
+    if (response.ok) return;
+    console.error('Blab Translation: the View plans entry failed', response.error);
+    JV.showMessage(el, t('blabActionFailed'), true);
+  }
+
+  /** "Translate again after {date}": the prompt is answered, the card goes. */
+  function dismissQuota() {
+    el.viewPlans.hidden = true;
+    el.quotaLater.hidden = true;
   }
 
   async function abandonJob() {
@@ -557,6 +577,8 @@
     setupDropZone();
     el.retry.addEventListener('click', startJob);
     el.signIn.addEventListener('click', signIn);
+    el.viewPlans.addEventListener('click', viewPlans);
+    el.quotaLater.addEventListener('click', dismissQuota);
     el.abandon.addEventListener('click', abandonJob);
     el.confirmContinue.addEventListener('click', continueJob);
     el.view.addEventListener('click', viewResult);

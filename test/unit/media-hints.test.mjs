@@ -617,27 +617,42 @@ test('a stored list already over the item quota heals on the next claim', async 
 
 // ------------------------------------------------------------ the failure notification
 
-test('"sign in to translate documents" carries a Sign In button; other failures do not', async () => {
+test('an account refusal carries its entry as a button; other failures do not', async () => {
   const created = [];
   globalThis.chrome = {
     runtime: { getURL: (p) => `chrome-extension://x/${p}`, lastError: undefined },
-    storage: { sync: { get: async (defaults) => ({ ...defaults }) } },
+    storage: { sync: { get: async (defaults) => ({ ...defaults, uiLanguage: 'en' }) } },
     notifications: { create: (...args) => { created.push(args); } },
   };
   const notify = await import('../../background/pdf-notify.js');
-  await notify.notifyPdfError({ error: { code: 'unauthorized', message: 'Sign in' } });
+  await notify.notifyPdfError({ error: { code: 'unauthorized', message: 'Sign in', action: 'signin' } });
   await notify.notifyPdfError({ code: 'network_error' });
-  const [signIn, other] = created;
+  await notify.notifyPdfError({
+    code: 'insufficient_points', action: 'subscribe', resetsAt: '2026-11-01T12:00:00Z', planPages: 1000,
+    quote: { operation: 'pdf_page', pages: 250, freePages: 113 },
+  });
+  const [signIn, other, quota] = created;
   assert.equal(typeof signIn[0], 'string');
-  assert.ok(signIn[0].startsWith(notify.PDF_SIGNIN_NOTIFICATION_PREFIX));
+  assert.ok(signIn[0].startsWith(`${notify.PDF_ACCOUNT_NOTIFICATION_PREFIX}signin-`));
+  assert.equal(notify.accountActionFromNotificationId(signIn[0]), 'signin');
   assert.equal(signIn[1].buttons.length, 1);
   assert.equal(typeof other[0], 'object', 'an ordinary failure got an id of its own');
   assert.equal(other[0].buttons, undefined);
+  assert.equal(notify.accountActionFromNotificationId(quota[0]), 'subscribe');
+  assert.deepEqual(quota[1].buttons, [{ title: 'View plans' }]);
+  const lines = quota[1].message.split('\n');
+  assert.equal(lines.length, 3, quota[1].message);
+  assert.match(lines[0], /250 pages; 113 free pages left/);
+  assert.match(lines[1], /^Free pages reset on Nov 1\.$/);
+  assert.equal(lines[2], 'Plans include 1000 pages a month.');
+  assert.equal(notify.accountActionFromNotificationId('pdf-job-1'), null);
 });
 
-test('the Sign In button opens the popup\'s own sign-in, and only that button does', () => {
+test('the notification button runs the refusal\'s own entry, and only that button does', () => {
   const jobs = read('background/pdf-jobs.js');
-  const arm = jobs.slice(jobs.indexOf('startsWith(PDF_SIGNIN_NOTIFICATION_PREFIX)'));
-  assert.match(arm.slice(0, 400), /comicClient\.signIn\(\)/);
-  assert.equal([...jobs.matchAll(/comicClient\.signIn\(/g)].length, 1);
+  const arm = jobs.slice(jobs.indexOf('accountActionFromNotificationId(notificationId)'));
+  assert.match(arm.slice(0, 400), /runAccountAction\(action, 'pdf_quota'\)/);
+  const actions = read('background/account-actions.js');
+  assert.match(actions, /if \(action === 'signin'\) return comicClient\.signIn\(\);/);
+  assert.equal([...jobs.matchAll(/comicClient\.signIn\(/g)].length, 0);
 });

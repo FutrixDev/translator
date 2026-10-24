@@ -72,7 +72,8 @@ import '../i18n/lang/tr.js';
 import '../i18n/lang/it.js';
 import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
-import { dailyLimitHeld, noteAccountAction, beforeModelRequest } from './blab-client.js';
+import { dailyLimitHeld, beforeModelRequest } from './blab-client.js';
+import { runAccountAction, accountErrorMessage } from './account-actions.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter } from './media-hints.js';
@@ -219,7 +220,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // popup and the settings page. A page cannot build the pricing link itself:
     // the account site's origin lives here.
     case 'BLAB_ACCOUNT_ACTION':
-      replyComic(runBlabAccountAction(message.action, message.via), sendResponse);
+      replyComic(runAccountAction(message.action, message.via), sendResponse);
       return true;
 
     // Whether this worker remembers today's Blab allowance as spent (a
@@ -344,41 +345,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function runBlabAccountAction(action, via) {
-  if (action !== 'signin' && action !== 'subscribe') {
-    throw new Error(`BLAB_ACCOUNT_ACTION: unknown action ${JSON.stringify(action)}`);
-  }
-  if (action === 'subscribe') globalThis.SiteLinks.assertMedium(via);
-  // The user went to fix the account: the next request asks billing/me again
-  // before the latch refuses it (D-497 F3, blab-client.js). Written to session
-  // storage before the entry opens (D-499), so the worker being recycled while
-  // the user is on the site does not lose it.
-  await noteAccountAction();
-  if (action === 'signin') return comicClient.signIn();
-  const base = await comicClient.getApiBase();
-  const url = globalThis.SiteLinks.pricing(base, via);
-  if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
-  await chrome.tabs.create({ url });
-  return { opened: url };
-}
-
 /**
  * Settle a comic-client promise into a plain message.
  *
  * An Error does not survive chrome.runtime messaging, and the codes matter: the
  * page decides between "sign in", "out of free pages" and "this image cannot be
- * translated" purely from `error.code`.
+ * translated" purely from `error.code`, and draws the entry that fixes it from
+ * `error.action` (account-actions.js).
  */
 function replyComic(promise, sendResponse) {
   promise
     .then(data => sendResponse({ ok: true, data }))
-    .catch(error => {
-      if (error instanceof comicClient.ComicApiError) {
-        sendResponse({ ok: false, ...error.toMessage() });
-      } else {
-        sendResponse({ ok: false, error: { code: 'internal_error', message: error?.message || String(error) } });
-      }
-    });
+    .catch(async error => sendResponse({ ok: false, error: await accountErrorMessage(error) }));
 }
 
 // 译文缓存的清理闹钟。

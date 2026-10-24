@@ -100,12 +100,38 @@
     });
   }
 
+  /**
+   * A refusal the account fixes carries its entry (`error.action`,
+   * background/account-actions.js). Spent free pages get View plans, which
+   * opens the pricing page tagged `comic_quota`, beside a dismiss button that
+   * names the date the pages come back; the message adds that date and what a
+   * plan holds (shared/quota-copy.js). Everything else is dismiss only.
+   */
   function showJobError(overlay, error) {
-    // Dismiss is the only action, including for a used-up monthly allowance:
-    // there is nothing to buy, so an "act now" button would lead nowhere. The
-    // message names the reset date instead.
-    overlay.setError(errorText(error));
-    offerDismiss(overlay);
+    if (!error || error.action !== 'subscribe') {
+      overlay.setError(errorText(error));
+      offerDismiss(overlay);
+      return;
+    }
+    const offer = QuotaCopy.offerParts(error, t, ctx.uiLanguage());
+    overlay.setError([errorText(error), offer.reset, offer.plan].filter(Boolean).join(' '));
+    overlay.setActions([
+      {
+        label: t('quotaViewPlans'),
+        variant: 'primary',
+        onClick: async () => {
+          const result = await comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'comic_quota' });
+          if (result.ok) {
+            overlay.destroy();
+            return;
+          }
+          console.error('Blab Translation: the comic View plans entry failed', result.error);
+          overlay.setError(t('blabActionFailed'));
+          offerDismiss(overlay);
+        }
+      },
+      { label: offer.later, onClick: () => overlay.destroy() }
+    ]);
   }
 
   function offerDismiss(overlay) {

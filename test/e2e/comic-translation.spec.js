@@ -58,7 +58,7 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('reports a used-up allowance with nothing to buy, and spends nothing', async ({ context, page }) => {
+  test('a used-up allowance offers the plans and when it comes back, and spends nothing', async ({ context, page }) => {
     const service = await startMockService('insufficient');
     try {
       const worker = await connectExtension(context, service.base);
@@ -69,13 +69,19 @@ test.describe('Comic page translation', () => {
 
       const overlay = page.locator('.ai-translator-comic-overlay');
       await expect(overlay).toHaveClass(/is-error/);
-      // Dismiss is the only way out: the free pages refill next month and there
-      // is no top-up to offer.
-      await expect(overlay.locator('.ai-translator-comic-btn')).toHaveCount(1);
-      await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toHaveCount(0);
+      await expect(overlay).toContainText('Free pages reset on Nov 1.');
+      await expect(overlay).toContainText('Plans include 300 pages a month.');
       // The original page is still what the reader sees. Read the resolved
       // property, not the attribute — an untouched src stays relative.
       expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
+
+      const later = overlay.locator('.ai-translator-comic-btn:not(.is-primary)');
+      await expect(later).toHaveText('Translate again after Nov 1');
+      const viewPlans = overlay.locator('.ai-translator-comic-btn.is-primary');
+      await expect(viewPlans).toHaveText('View plans');
+      const [opened] = await Promise.all([context.waitForEvent('page'), viewPlans.click()]);
+      await expect.poll(() => opened.url()).toBe(`${service.base}/app/pricing?utm_source=extension&utm_medium=comic_quota`);
+      await expect(overlay).toHaveCount(0);
       expect(service.state.polls).toBe(0);
     } finally {
       await service.close();

@@ -182,19 +182,34 @@ test.describe('PDF translation', () => {
     }
   });
 
-  test('reports a used-up allowance with no action, and uploads only once', async ({ context, page, extensionId }) => {
+  test('a used-up allowance says when it comes back, offers the plans, and uploads only once', async ({ context, page, extensionId }) => {
     const service = await startMockService('insufficient');
     try {
       await connectExtension(context, service.base);
       await openUploadPage(page, extensionId);
 
-      // The 402 lands after the upload but before any polling.
-      await expect(page.locator('#pdfError')).toBeVisible({ timeout: 15000 });
-      await expect(page.locator('#pdfError')).not.toBeEmpty();
-      // Nothing to buy and nothing to retry: the month's free pages are spent,
-      // so the page offers no action at all.
-      await expect(page.locator('#pdfRecharge')).toHaveCount(0);
+      // The 402 lands after the upload but before any polling. It says what
+      // happened, when the free pages come back (billing/me) and what a plan
+      // holds (the public rates) — none of the numbers written in the extension.
+      const error = page.locator('#pdfError');
+      await expect(error).toBeVisible({ timeout: 15000 });
+      await expect(error).toContainText('250 pages; 113 free pages left');
+      await expect(error).toContainText('Free pages reset on Nov 1.');
+      await expect(error).toContainText('Plans include 1000 pages a month.');
       await expect(page.locator('#pdfRetry')).toBeHidden();
+
+      const later = page.locator('#docQuotaLater');
+      await expect(later).toHaveText('Translate again after Nov 1');
+      const viewPlans = page.locator('#docViewPlans');
+      await expect(viewPlans).toBeVisible();
+      const [opened] = await Promise.all([context.waitForEvent('page'), viewPlans.click()]);
+      await expect.poll(() => opened.url()).toBe(`${service.base}/app/pricing?utm_source=extension&utm_medium=pdf_quota`);
+      await opened.close();
+
+      // "Later" only puts the offer away.
+      await later.click();
+      await expect(viewPlans).toBeHidden();
+      await expect(later).toBeHidden();
 
       expect(service.state.createBodies).toHaveLength(1);
       expect(service.state.polls).toBe(0);

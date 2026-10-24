@@ -110,6 +110,7 @@
         "shared/batch-delimiter.js",
         "shared/caption-core.js",
         "shared/comic-charge.js",
+        "shared/quota-copy.js",
         "shared/pdf-url.js",
         "shared/ocr.js",
         "shared/speech-lang.js",

@@ -105,10 +105,7 @@ function freePagesLeft(account, operation) {
 
 function formatResetDate(account) {
   const iso = account.freeQuotas?.comic_page?.resetsAt ?? account.freeQuota?.resetsAt;
-  if (!iso) return '—';
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return '—';
-  return at.toLocaleDateString(currentUILang, { month: 'short', day: 'numeric' });
+  return QuotaCopy.formatResetDate(iso, currentUILang) || '—';
 }
 
 /**

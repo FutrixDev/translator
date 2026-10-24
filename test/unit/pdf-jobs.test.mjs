@@ -491,7 +491,10 @@ test('every locale carries the new copy, and none leaks the placeholder', () => 
       { code: 'file_too_large', details: { format: 'pdf' } },
       { code: 'file_too_large' },
       { code: 'unsupported_format', details: { format: 'docx' } },
-      { code: 'unsupported_format' }
+      { code: 'unsupported_format' },
+      { code: 'insufficient_points', quote: { pages: 250, freePages: 113 } },
+      { code: 'insufficient_points', details: { quote: { pages: 250, freePages: 0 } } },
+      { code: 'insufficient_points' }
     ];
     for (const error of errors) {
       const rendered = ui.pdfErrorMessage(error, tr);

@@ -33,12 +33,14 @@
     declineCharge: 'pdfDeclineCharge',
     retry: 'pdfRetry',
     signIn: 'pdfSignIn',
+    viewPlans: 'docViewPlans',
+    quotaLater: 'docQuotaLater',
     abandon: 'pdfAbandon'
   };
 
   const BUTTONS = [
     'view', 'saveDual', 'saveMono', 'confirmContinue',
-    'confirmCharge', 'declineCharge', 'retry', 'signIn', 'abandon'
+    'confirmCharge', 'declineCharge', 'retry', 'signIn', 'viewPlans', 'quotaLater', 'abandon'
   ];
 
   /** The card's elements, looked up once by the page. */
@@ -114,14 +116,31 @@
    * create that did not make it. "Try again" only when the page still holds
    * the file and trying again could come out differently.
    */
-  function renderFailure(el, { fileName, error, hasFile }, t) {
+  function renderFailure(el, { fileName, error, hasFile, uiLang }, t) {
     reset(el, fileName);
     el.statusText.textContent = t('pdfStatusFailed');
     showMessage(el, PDF_UI.pdfErrorMessage(error || {}, t), true);
+    offerQuota(el, error, t, uiLang);
     offerRecovery(el, error, hasFile);
   }
 
+  /**
+   * Spent free pages (`error.action === 'subscribe'`, background/
+   * account-actions.js): the message gains when they come back and what a
+   * plan holds, and View plans sits beside a dismiss button that names the
+   * date. The words are shared/quota-copy.js's, the same on every surface.
+   */
+  function offerQuota(el, error, t, uiLang) {
+    if (!error || error.action !== 'subscribe') return;
+    const offer = QuotaCopy.offerParts(error, t, uiLang);
+    showMessage(el, [el.error.textContent, offer.reset, offer.plan].filter(Boolean).join(' '), true);
+    el.viewPlans.hidden = false;
+    el.quotaLater.textContent = offer.later;
+    el.quotaLater.hidden = false;
+  }
+
   function offerRecovery(el, error, hasFile) {
+    if (error && error.action === 'subscribe') return;
     if (wantsSignIn(error)) {
       el.signIn.hidden = false;
       return;
@@ -230,6 +249,7 @@
   globalThis.DocJobView = {
     elementsOf,
     showMessage,
+    offerQuota,
     wantsSignIn,
     renderUploading,
     renderCharge,
