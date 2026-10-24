@@ -77,6 +77,12 @@
           <button type="button" id="pdfSignIn" class="btn btn-primary" hidden>
             <span data-i18n="comicSignIn">Sign In</span>
           </button>
+          <!-- The free pages are spent: the pricing page, or close the prompt
+               until the date they come back (its label carries the date). -->
+          <button type="button" id="docViewPlans" class="btn btn-primary" hidden>
+            <span data-i18n="quotaViewPlans">View plans</span>
+          </button>
+          <button type="button" id="docQuotaLater" class="btn btn-text" hidden></button>
           <button type="button" id="pdfAbandon" class="btn btn-text" hidden>
             <span data-i18n="pdfAbandon">Cancel Task</span>
           </button>
@@ -108,6 +114,7 @@
   <script src="../shared/comic-charge.js"></script>
   <script src="../shared/doc-jobs.js"></script>
   <script src="../shared/pdf-errors.js"></script>
+  <script src="../shared/quota-copy.js"></script>
   <script src="../shared/pdf-url.js"></script>
   <script src="../shared/site-links.js"></script>
   <script src="pdf-ui.js"></script>

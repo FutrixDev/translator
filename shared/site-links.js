@@ -31,6 +31,9 @@
     'notification',  // a document notification clicked
     'page',          // a web page's error bar or selection card (Subscribe)
     'signin',        // the sign-in tab (/ext/connect), from any surface
+    'pdf_quota',     // a document refused for the used-up free pages: the upload
+                     // page, the popup's row, the notification (View plans)
+    'comic_quota',   // a comic page refused for the same reason, on its overlay
   ]);
 
   /** Throws on an entry the list does not name. Callers that act before they

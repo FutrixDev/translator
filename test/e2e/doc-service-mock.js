@@ -15,10 +15,28 @@
  */
 const { startMockServer, serveExtConnect } = require('./mock-server');
 
+const QUOTA_RESETS_AT = '2026-11-01T12:00:00.000Z';
+
 const DEFAULT_ACCOUNT = {
   email: 'reader@example.com',
   balancePoints: 0,
   freeQuota: { pdf_page: { limit: 20, remaining: 18 }, comic_page: { limit: 40, remaining: 40 } },
+  freeQuotas: {
+    pdf_page: { limit: 300, used: 187, remaining: 113, resetsAt: QUOTA_RESETS_AT },
+    comic_page: { limit: 40, used: 0, remaining: 40, resetsAt: QUOTA_RESETS_AT },
+  },
+};
+
+/**
+ * The public price list's plan allowances, as the service projects them: the
+ * effective monthly pages per plan, never below the free allowance.
+ */
+const RATES = {
+  version: 'test',
+  planQuotas: {
+    pro_monthly: { pdf_page: 1000, comic_page: 300 },
+    pro_plus_monthly: { pdf_page: 3000, comic_page: 1000 },
+  },
 };
 
 /**
@@ -46,7 +64,8 @@ const CREATE_BEHAVIOURS = {
   succeed: () => null,
   'flaky-create': (body, state) => (state.createBodies.length === 1 ? [500, { error: 'internal_error' }] : null),
   insufficient: () => [402, {
-    error: 'insufficient_points', message: 'Not enough points', balance: 0, required: 3, rechargeUrl: '/billing',
+    error: 'insufficient_points', message: 'Not enough points', balance: 0, required: 274,
+    quote: { operation: 'pdf_page', pages: 250, freePages: 113, paidPages: 137, pointsPerPage: 2, points: 274, balancePoints: 0 },
   }],
 };
 
@@ -215,6 +234,8 @@ async function startDocService(options = {}) {
     }
 
     if (!url.pathname.startsWith('/api/')) return send(404, { error: 'not_found' });
+    // Public and unauthenticated, as the real price list is.
+    if (url.pathname === '/api/billing/rates') return send(200, RATES);
     // Only the document API counts: pdf-prompt.spec.js asserts no job request
     // leaves before a click, and the account lookup is not one.
     if (url.pathname.startsWith('/api/pdf/')) state.apiHits.push(`${req.method} ${url.pathname}`);

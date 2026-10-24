@@ -6,6 +6,7 @@
 // 得一模一样，而那正是人会再点一次的原因。
 
 import '../i18n/messages.js';
+import '../shared/quota-copy.js';
 import { defaultSettings, uiLanguageOf } from './settings.js';
 import * as pdfClient from './pdf-client.js';
 
@@ -26,9 +27,18 @@ function pdfMessage(key, uiLang) {
 // prefix (the URL path's `pdf-charge-`) is somebody else's.
 const PDF_JOB_NOTIFICATION_PREFIX = 'pdf-job-';
 const PDF_CONFIRM_NOTIFICATION_PREFIX = 'pdf-confirm-';
-// A failure that only a sign-in fixes. Its one button is the sign-in; the
-// click is routed in pdf-jobs.js, which owns the account entry points.
-const PDF_SIGNIN_NOTIFICATION_PREFIX = 'pdf-signin-';
+// A failure the account fixes: `pdf-account-<action>-<uuid>`. Its one button is
+// the entry (sign in, or view plans); the click is routed in pdf-jobs.js.
+const PDF_ACCOUNT_NOTIFICATION_PREFIX = 'pdf-account-';
+const ACCOUNT_BUTTON_KEYS = Object.freeze({ signin: 'comicSignIn', subscribe: 'quotaViewPlans' });
+
+/** The entry an account notification's button runs, or null for any other id. */
+function accountActionFromNotificationId(notificationId) {
+  const id = String(notificationId || '');
+  if (!id.startsWith(PDF_ACCOUNT_NOTIFICATION_PREFIX)) return null;
+  const action = id.slice(PDF_ACCOUNT_NOTIFICATION_PREFIX.length).split('-')[0];
+  return ACCOUNT_BUTTON_KEYS[action] ? action : null;
+}
 
 /** The job a notification is about, or null when it is not a job notification. */
 function jobIdFromNotificationId(notificationId) {
@@ -137,38 +147,43 @@ async function notifyPdfRunning(fileName) {
 }
 
 /**
- * A document could not be started or finished. When the reason is "not signed
- * in", the notification carries the way out: a Sign In button, the same
- * sign-in the popup and the page hint open (D-353). "Sign in to translate" with
- * nothing to click leaves the user hunting for the toolbar icon.
+ * A document could not be started or finished. When the account is what is in
+ * the way, the notification carries the way out (`error.action`,
+ * account-actions.js): Sign In, the same sign-in the popup and the page hint
+ * open, or View plans when the free pages are spent — with when they come back
+ * and what a plan holds. "Sign in to translate" with nothing to click leaves
+ * the user hunting for the toolbar icon.
  */
 async function notifyPdfError(error) {
   const uiLang = await pdfNotificationLang();
+  const t = key => pdfMessage(key, uiLang);
   // Either the error itself or the {error: {...}} messaging envelope.
   const inner = error && error.error && error.error.code ? error.error : error;
-  const signIn = !!inner && inner.code === 'unauthorized';
+  const offer = globalThis.QuotaCopy.offerParts(inner || {}, t, uiLang);
   const options = {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-    title: pdfMessage('pdfNotifyFailTitle', uiLang),
-    message: pdfClient.pdfErrorMessage(inner, key => pdfMessage(key, uiLang))
+    title: t('pdfNotifyFailTitle'),
+    message: [pdfClient.pdfErrorMessage(inner, t), offer.reset, offer.plan].filter(Boolean).join('\n')
   };
-  if (!signIn) {
+  const action = inner && ACCOUNT_BUTTON_KEYS[inner.action] ? inner.action : null;
+  if (!action) {
     chrome.notifications.create(options, logIfFailed);
     return;
   }
   // An id of its own, so the button click can be told apart from every other
   // PDF notification's.
-  chrome.notifications.create(`${PDF_SIGNIN_NOTIFICATION_PREFIX}${crypto.randomUUID()}`, {
+  chrome.notifications.create(`${PDF_ACCOUNT_NOTIFICATION_PREFIX}${action}-${crypto.randomUUID()}`, {
     ...options,
-    buttons: [{ title: pdfMessage('comicSignIn', uiLang) }]
+    buttons: [{ title: t(ACCOUNT_BUTTON_KEYS[action]) }]
   }, logIfFailed);
 }
 
 export {
   PDF_JOB_NOTIFICATION_PREFIX,
   PDF_CONFIRM_NOTIFICATION_PREFIX,
-  PDF_SIGNIN_NOTIFICATION_PREFIX,
+  PDF_ACCOUNT_NOTIFICATION_PREFIX,
+  accountActionFromNotificationId,
   jobIdFromNotificationId,
   logIfFailed,
   pdfNotificationLang,

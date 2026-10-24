@@ -291,7 +291,17 @@ async function startMockService(
     // A sign-in ends by reading the account (comic-client.js signIn()).
     if (url.pathname === '/api/billing/me') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
-      return send(200, { email: 'reader@example.com', balancePoints: 0, freeQuota: { comic_page: { limit: 40, remaining: 40 } } });
+      return send(200, {
+        email: 'reader@example.com',
+        balancePoints: 0,
+        freeQuota: { comic_page: { limit: 40, remaining: 40 } },
+        freeQuotas: { comic_page: { limit: 40, used: 40, remaining: 0, resetsAt: '2026-11-01T12:00:00.000Z' } },
+      });
+    }
+
+    // The public price list: what each plan raises the monthly pages to.
+    if (url.pathname === '/api/billing/rates') {
+      return send(200, { version: 'test', planQuotas: { pro_monthly: { pdf_page: 1000, comic_page: 300 } } });
     }
 
     if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
@@ -311,7 +321,8 @@ async function startMockService(
             error: 'insufficient_points',
             message: 'Not enough points',
             balance: 0,
-            rechargeUrl: '/billing',
+            required: 2,
+            quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 2, points: 2, balancePoints: 0 },
           });
         }
         send(202, { jobId: 'job_test_1', status: 'queued', progress: 0.05, quote: { points: 10 } });

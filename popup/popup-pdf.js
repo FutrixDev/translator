@@ -278,16 +278,20 @@ function promptPdfCharge(quote) {
 }
 
 /**
- * Create errors the user can act on right here: a sign-in for 401. Everything
- * else — including a used-up monthly allowance, which nothing but waiting
- * fixes — becomes a plain error line.
+ * Create errors the user can act on right here: a sign-in for 401, and for
+ * spent free pages (`error.action === 'subscribe'`) View plans beside a
+ * dismiss button that names the date they come back, with that date and what
+ * a plan holds added to the line (shared/quota-copy.js). Everything else
+ * becomes a plain error line.
  */
 function showPdfCreateError(error) {
   const box = document.createElement('div');
   box.className = 'pdf-job pdf-job-error';
   const text = document.createElement('span');
   text.className = 'pdf-job-status is-error';
-  text.textContent = PDF_UI.pdfErrorMessage(error, t);
+  const quota = error && error.action === 'subscribe' ? QuotaCopy.offerParts(error, t, currentUILang) : null;
+  text.textContent = [PDF_UI.pdfErrorMessage(error, t), quota && quota.reset, quota && quota.plan]
+    .filter(Boolean).join(' ');
   box.appendChild(text);
 
   if (error && (error.code === 'unauthorized' || error.loginRequired)) {
@@ -299,6 +303,29 @@ function showPdfCreateError(error) {
       window.close();
     });
     box.appendChild(button);
+  }
+
+  if (quota) {
+    const plans = document.createElement('button');
+    plans.className = 'pdf-job-open';
+    plans.textContent = t('quotaViewPlans');
+    plans.addEventListener('click', async () => {
+      const response = await chrome.runtime.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'pdf_quota' });
+      if (response && response.ok) {
+        window.close();
+        return;
+      }
+      console.error('Blab Translation: the View plans entry failed', response && response.error);
+      text.textContent = t('blabActionFailed');
+    });
+    const later = document.createElement('button');
+    later.className = 'pdf-job-decline';
+    later.textContent = quota.later;
+    later.addEventListener('click', () => {
+      pdfInlineError = null;
+      refreshPdfJobs({ refresh: false });
+    });
+    box.append(plans, later);
   }
 
   pdfInlineError = box;

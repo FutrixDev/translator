@@ -44,7 +44,13 @@
    */
   function pdfErrorMessageKey(code, error) {
     switch (code) {
-      case 'insufficient_points': return 'pdfErrInsufficientPoints';
+      case 'insufficient_points': {
+        // The refusal's quote says how long the document is and how many free
+        // pages were left for it; without one there is nothing to count.
+        var quote = error ? field(error, 'quote') : null;
+        return quote && Number.isFinite(quote.pages) && Number.isFinite(quote.freePages)
+          ? 'pdfErrInsufficientPages' : 'pdfErrInsufficientPoints';
+      }
       case 'too_many_pages': {
         if (!error) return 'pdfErrTooManyPages';
         if (!field(error, 'maxPages')) return 'docErrTooManyPagesNoMax';
@@ -141,6 +147,10 @@
         text = text.split('{' + name + '}').join(String(value));
       }
     });
+    var quote = field(error, 'quote');
+    if (quote) {
+      text = text.split('{pages}').join(String(quote.pages)).split('{left}').join(String(quote.freePages));
+    }
     return text;
   }
 

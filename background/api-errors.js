@@ -16,6 +16,7 @@ import '../shared/engines.js';
 import '../i18n/messages.js';
 import { uiLanguageOf } from './settings.js';
 import { isBlabAccountFailure } from './blab-client.js';
+import { accountActionFor } from './account-actions.js';
 
 /** The UI-language lookup for these settings, t(key) -> string. */
 function uiMessages(settings) {
@@ -87,7 +88,7 @@ function apiErrorMessage(error, settings, profile) {
  * Blab Translation's account state, worded for the reader (design §5.2): today's
  * allowance spent (with the local time it comes back), no subscription, or not
  * signed in. None names Settings (D-497 R1-N6): the way out is the entry the
- * reply carries (BLAB_ACCOUNT_ACTIONS), which signs in or opens the pricing page
+ * reply carries (ACCOUNT_ACTIONS in account-actions.js), which signs in or opens the pricing page
  * itself. None of them is a reason to try another engine: the reply is the
  * answer.
  */
@@ -126,14 +127,6 @@ function blabServiceMessage(failure, t) {
 }
 
 /**
- * The entry an account failure carries to the page (D-490 N2, design §5.2):
- * the error bar and the selection card draw it as a button. No subscription
- * gets "Subscribe", a missing or expired sign-in gets "Sign in"; today's
- * allowance has nothing to press — it comes back by itself.
- */
-const BLAB_ACCOUNT_ACTIONS = Object.freeze({ plan_required: 'subscribe', unauthorized: 'signin' });
-
-/**
  * The one catch for an AI request: log once, answer `{ error }` in the UI
  * language. A request its caller abandoned (`error.aborted`) has nobody
  * waiting, so it is neither logged nor worded.
@@ -149,7 +142,7 @@ function replyError(operation, error, { settings, profile, profileId, feature })
   // reads passFatal): every other batch would get the same answer.
   if (isBlabAccountFailure(error && error.apiFailure)) {
     reply.passFatal = true;
-    const action = BLAB_ACCOUNT_ACTIONS[error.apiFailure.blab];
+    const action = accountActionFor(error.apiFailure.blab);
     if (action) reply.action = action;
   }
   return reply;

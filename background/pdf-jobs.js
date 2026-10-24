@@ -12,7 +12,7 @@ import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { assertFeatureEnabled, featureRefused } from './feature-gate.js';
 import {
-  PDF_SIGNIN_NOTIFICATION_PREFIX,
+  accountActionFromNotificationId,
   clearPdfConfirmNotification,
   jobIdFromNotificationId,
   logIfFailed,
@@ -26,6 +26,7 @@ import {
   pdfNotificationLang,
 } from './pdf-notify.js';
 import { noteJobSettled } from './rating-ask.js';
+import { accountErrorMessage, runAccountAction } from './account-actions.js';
 
 const ChargeConfirm = globalThis.ChargeConfirm;
 // pdf-client.js imports shared/doc-jobs.js, and imports are evaluated before
@@ -191,7 +192,7 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
         ChargeConfirm.readQuote({ code: error.code, ...(error.details || {}) }));
       return;
     }
-    notifyPdfError(error);
+    notifyPdfError(await accountErrorMessage(error));
   }
 }
 
@@ -265,16 +266,18 @@ async function askPdfCharge(operationId, fileName, quote) {
   }, logIfFailed);
 }
 
-// "Sign in to translate documents" carries a Sign In button (pdf-notify.js).
-// The sign-in is the popup's own one; the document is not retried behind it —
-// the user clicks the entry that failed again, now signed in. Closing the
-// sign-in tab is a cancel and says nothing.
+// An account refusal carries its entry as the notification's one button
+// (pdf-notify.js): Sign In, the popup's own sign-in, or View plans, the pricing
+// page. The document is not retried behind it — the user clicks the entry that
+// failed again, now signed in or subscribed. Closing the sign-in tab is a
+// cancel and says nothing.
 chrome.notifications.onButtonClicked.addListener((notificationId) => {
-  if (!notificationId.startsWith(PDF_SIGNIN_NOTIFICATION_PREFIX)) return;
+  const action = accountActionFromNotificationId(notificationId);
+  if (!action) return;
   chrome.notifications.clear(notificationId);
-  comicClient.signIn().catch((error) => {
+  runAccountAction(action, 'pdf_quota').catch((error) => {
     if (error && error.code === 'sign_in_cancelled') return;
-    console.warn('PDF notification sign-in failed:', error);
+    console.warn(`PDF notification ${action} failed:`, error);
   });
 });
 
