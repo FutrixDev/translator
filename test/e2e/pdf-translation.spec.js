@@ -76,6 +76,11 @@ test.describe('PDF translation', () => {
       await expect(page.locator('#pdfJobCard')).toBeVisible();
       await expect(page.locator('#pdfFileName')).toHaveText('paper.pdf');
 
+      // The header states the account's own monthly allowance (billing/me's
+      // pdf_page limit), not a figure written into the extension.
+      await expect(page.locator('#pdfAllowance')).toHaveText(
+        await page.evaluate(() => getMessage('pdfAccountAllowance', 'en').replace('{pages}', '300')));
+
       // Progress is a real state, not a flicker: the first poll answers
       // `running`, so the bar and a status line must be on screen.
       await expect(page.locator('#pdfProgressTrack')).toBeVisible();
@@ -226,6 +231,9 @@ test.describe('PDF translation', () => {
 
       await expect(page.locator('#pdfError')).toBeVisible({ timeout: 15000 });
       await expect(page.locator('#pdfSignIn')).toBeVisible();
+      // No account, no allowance: the header names no page count at all.
+      await expect(page.locator('#pdfAllowance')).toBeHidden();
+      await expect(page.locator('.header')).not.toContainText(/\d/);
 
       // Signed out, the client must not touch the service at all — no ticket,
       // no upload, no job. The token pre-check is what spares the transfer.

@@ -395,11 +395,36 @@
     else poll();
   }
 
+  /**
+   * The account's monthly page allowance under the header. It is the account's
+   * own figure (billing/me), free or plan, so nothing is written here; signed
+   * out there is no account and no line. The line is an addition to the page,
+   * so a failed lookup is logged and the line stays hidden.
+   */
+  async function showAllowance() {
+    const response = await sendMessage({ type: 'COMIC_ACCOUNT' });
+    if (!response.ok) {
+      const error = response.error || {};
+      console.warn('[pdf] asking for the page allowance failed:', error.code || error.message);
+    }
+    drawAllowance(response.ok ? response.data : null);
+  }
+
+  /** `account` as COMIC_ACCOUNT / COMIC_SIGN_IN answer it; null hides the line. */
+  function drawAllowance(account) {
+    const line = document.getElementById('pdfAllowance');
+    const limit = account && account.signedIn !== false ? account.freeQuotas?.pdf_page?.limit : undefined;
+    line.hidden = !Number.isFinite(limit);
+    if (!line.hidden) line.textContent = fill(t('pdfAccountAllowance'), { pages: limit });
+  }
+
   async function signIn() {
     el.signIn.disabled = true;
     const response = await sendMessage({ type: 'COMIC_SIGN_IN' });
     el.signIn.disabled = false;
     if (!response.ok) return;
+    // Sign-in answers with the fresh account, so the line needs no second ask.
+    drawAllowance(response.data);
     // A job that exists only needs to be looked at again; a create that was
     // refused for want of an account is tried again.
     if (job) poll();
@@ -597,5 +622,6 @@
       console.warn('[pdf] asking for the account site failed:', webBaseError.code || webBaseError.message);
     }
     takeOverFromHash();
+    showAllowance();
   });
 })();
