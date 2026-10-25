@@ -61,6 +61,8 @@
     comicSummaryLabel: 'Bölüm {done}/{total}',
     comicSummaryFailed: 'Çevrilemedi',
     comicSummaryPage: 'Sayfa {n}',
+    comicSummaryWaitingSignIn: 'Giriş bekleyen sayfalar: {n}',
+    comicSummaryWaitingConfirm: 'Onay bekleyen sayfalar: {n}',
     comicSummaryRetry: 'Başarısızları yeniden dene',
     comicSummaryCancelAll: 'Tümünü iptal et',
     comicSummaryOpenReader: 'Bölümü okuyucuda aç',

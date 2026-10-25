@@ -29,21 +29,66 @@
    * One task per page this document asked for, keyed by page id: the latest
    * run of that page, so a retry replaces its failure instead of adding a page.
    * `state` is running, done, failed or cancelled; a cancelled page is no
-   * longer part of the count.
+   * longer part of the count. `waiting` is what a running page is held on:
+   * 'signin', 'confirm' or null.
    */
   const tasks = new Map();
   let view = null;
+  // Nothing on this load has run yet: pages put back finished after a reload
+  // wait here instead of raising a pill no one asked for. The first run folds
+  // them in, so the count still agrees with the chips.
+  let active = false;
+  const restored = new Map();
+  // Finished pages still minting their URL after a reload. The pill holds
+  // still until they land, or it would open at 0/8 for a chapter at 4/12.
+  const restoring = new Set();
 
   function taskOf(entry) {
     const task = tasks.get(entry.pageId);
     return task && task.entry === entry ? task : null;
   }
 
-  /** A run starts on `entry` (translateImage, after the page index is read). */
+  /**
+   * A run starts on `entry`: translateImage after the page index is read, or a
+   * job still in flight picked up after a reload.
+   */
   function summaryBegin(entry, { pageIndex, pageUrl, targetLang, mode }) {
+    if (!active) {
+      active = true;
+      restored.forEach((task, pageId) => tasks.set(pageId, task));
+      restored.clear();
+    }
     tasks.set(entry.pageId, {
-      entry, state: 'running', reason: '', assetId: null, pageIndex, pageUrl, targetLang, mode
+      entry, state: 'running', waiting: null, reason: '', assetId: null, pageIndex, pageUrl, targetLang, mode
     });
+    render();
+  }
+
+  /** A page bought on an earlier load is being put back (resumeRecord). */
+  function summaryRestoring(entry) {
+    restoring.add(entry);
+  }
+
+  /**
+   * That page is back on screen. Counted as done once something on this load
+   * runs; until then it only waits.
+   */
+  function summaryRestored(entry, job, { pageIndex, pageUrl, targetLang, mode }) {
+    restoring.delete(entry);
+    const task = {
+      entry, state: 'done', waiting: null, reason: '', assetId: job.assetId || null,
+      pageIndex: Number.isInteger(job.pageIndex) ? job.pageIndex : pageIndex, pageUrl, targetLang, mode
+    };
+    if (active) tasks.set(entry.pageId, task);
+    else restored.set(entry.pageId, task);
+    render();
+  }
+
+  /** The page stops for the reader — 'signin' or 'confirm' — or goes on (null). */
+  function summaryWaiting(entry, waiting) {
+    const task = taskOf(entry);
+    if (!task || task.state !== 'running') return;
+    task.waiting = waiting;
     render();
   }
 
@@ -68,6 +113,8 @@
    * cancel, a declined sign-in or charge — and the page leaves the count.
    */
   function summarySettle(entry) {
+    // A restore that brought nothing back no longer holds the pill.
+    if (restoring.delete(entry)) render();
     const task = taskOf(entry);
     if (!task || task.state !== 'running') return;
     const reason = !entry.cancelled && entry.overlay ? entry.overlay.failure() : null;
@@ -77,9 +124,10 @@
   }
 
   function counts() {
-    const result = { running: 0, done: 0, failed: 0 };
+    const result = { running: 0, done: 0, failed: 0, signin: 0, confirm: 0 };
     tasks.forEach((task) => {
       if (task.state in result) result[task.state] += 1;
+      if (task.state === 'running' && task.waiting) result[task.waiting] += 1;
     });
     result.total = result.running + result.done + result.failed;
     return result;
@@ -97,6 +145,7 @@
   // Failed pages count toward showing it: a chapter of two whose second page
   // failed still needs the Retry it is the only place for.
   function render() {
+    if (restoring.size) return;
     const count = counts();
     if (!summaryShown(count)) {
       if (view) view.destroy();
@@ -116,6 +165,7 @@
         <span class="ai-translator-comic-summary-label"></span>
       </button>
       <div class="ai-translator-comic-summary-card" hidden>
+        <div class="ai-translator-comic-summary-waiting" hidden></div>
         <div class="ai-translator-comic-summary-heading" hidden></div>
         <div class="ai-translator-comic-summary-list"></div>
         <div class="ai-translator-comic-summary-actions"></div>
@@ -126,6 +176,7 @@
     const pill = root.querySelector('.ai-translator-comic-summary-pill');
     const label = root.querySelector('.ai-translator-comic-summary-label');
     const card = root.querySelector('.ai-translator-comic-summary-card');
+    const waiting = root.querySelector('.ai-translator-comic-summary-waiting');
     const heading = root.querySelector('.ai-translator-comic-summary-heading');
     const list = root.querySelector('.ai-translator-comic-summary-list');
     const actions = root.querySelector('.ai-translator-comic-summary-actions');
@@ -143,13 +194,18 @@
 
     return {
       update(count) {
-        const text = t('comicSummaryLabel')
-          .replace('{done}', String(count.done))
-          .replace('{total}', String(count.total));
+        // Every running page held on the reader: nothing is being translated,
+        // so the pill says what it waits for, sign-in first (it comes before
+        // any price).
+        const held = count.running > 0 && count.signin + count.confirm === count.running;
+        const text = held
+          ? t(count.signin ? 'comicPillSignIn' : 'comicPillConfirm')
+          : t('comicSummaryLabel').replace('{done}', String(count.done)).replace('{total}', String(count.total));
         label.textContent = text;
         pill.title = text;
-        root.classList.toggle('is-busy', count.running > 0);
+        root.classList.toggle('is-busy', count.running > 0 && !held);
         root.classList.toggle('is-error', count.failed > 0 && count.running === 0);
+        renderWaiting(waiting, count);
         renderFailed(heading, list);
         renderActions(actions, count);
       },
@@ -158,6 +214,18 @@
         root.remove();
       }
     };
+  }
+
+  function renderWaiting(waiting, count) {
+    const lines = [];
+    if (count.signin) lines.push(t('comicSummaryWaitingSignIn').replace('{n}', String(count.signin)));
+    if (count.confirm) lines.push(t('comicSummaryWaitingConfirm').replace('{n}', String(count.confirm)));
+    waiting.hidden = !lines.length;
+    waiting.replaceChildren(...lines.map((line) => {
+      const row = document.createElement('div');
+      row.textContent = line;
+      return row;
+    }));
   }
 
   function renderFailed(heading, list) {
@@ -283,6 +351,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    summaryBegin, summaryDone, summarySettle, summaryShown,
+    summaryBegin, summaryRestoring, summaryRestored, summaryWaiting, summaryDone, summarySettle, summaryShown,
   });
 })();

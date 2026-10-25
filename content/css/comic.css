@@ -182,6 +182,10 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-btn.is-prima
   font-size: 12px;
 }
 
+.ai-translator-comic-summary-waiting {
+  font-size: 12px;
+}
+
 .ai-translator-comic-summary-list {
   display: flex;
   flex-direction: column;

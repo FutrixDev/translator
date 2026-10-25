@@ -31,19 +31,27 @@
    *
    * Fixed also means nothing clips it for us: an image half scrolled out of a
    * reader's own scroll box would still have its corner drawn over the reader's
-   * toolbar. So the part of the image that can be seen is worked out here — the
-   * viewport cut by every ancestor that clips — and the element sits at the top
-   * of that part, never lower than the image allows (`anchorHeight()` is the
-   * height that has to fit), and is hidden when none of the image shows.
+   * toolbar. So the part of the image that can be seen is worked out here
+   * (`ctx.visiblePart`, the viewport cut by every ancestor that clips), and the
+   * element sits in that part's corner, never lower than the image allows and
+   * never above the area that can be seen. `anchorSize()` is the size that has
+   * to fit.
+   *
+   * It is hidden when none of the image shows, and also when the image is cut
+   * on an axis and what is left there is a sliver narrower than the element
+   * plus an inset each side: there it could only hang over whatever cuts the
+   * image. An axis on which the whole image shows is never a sliver — a small
+   * image still gets its corner.
    *
    * `shown()` is the caller's own reason to hide it; the image being out of
    * sight, or collapsed to nothing by a reader recycling its slot, is this
    * function's. `onFrame(rect)` runs on every visible frame, before the element
-   * is placed, so a caller can size it first. Ends by itself,
+   * is measured and placed, so a caller can size it first. Ends by itself,
    * calling `onGone()`, once the host leaves the document.
    */
   function pinToCorner(element, {
-    host, corner, shown = () => true, onFrame = null, onGone, anchorHeight = () => element.offsetHeight
+    host, corner, shown = () => true, onFrame = null, onGone,
+    anchorSize = () => ({ width: element.offsetWidth, height: element.offsetHeight })
   }) {
     // Which ancestors clip is a style question, asked once per image and parent
     // rather than at 60 fps; their rects move every frame and are read fresh.
@@ -57,23 +65,31 @@
       if (img !== clippersOf || img.parentNode !== clippersParent) {
         clippersOf = img;
         clippersParent = img.parentNode;
-        clippers = clippingAncestors(img);
+        clippers = ctx.clippingAncestors(img);
       }
       const rect = img.getBoundingClientRect();
-      const clip = visibleArea(clippers);
-      const visible = shown() && rect.width > 0 && rect.height > 0
-        && rect.bottom > clip.top && rect.top < clip.bottom
-        && rect.right > clip.left && rect.left < clip.right;
-      element.style.display = visible ? '' : 'none';
-      if (!visible) return true;
+      const area = ctx.visibleArea(clippers);
+      const part = shown() ? ctx.visiblePart(rect, area) : null;
+      // Drawn before it is measured — a hidden element measures 0, and every
+      // sliver would look wide enough. Nothing paints between here and the
+      // end of this frame, so hiding it again below never flickers.
+      element.style.display = part ? '' : 'none';
+      if (!part) return true;
       if (onFrame) onFrame(rect);
+      const size = anchorSize();
+      const sliver = (seen, whole, own) => seen < whole && seen < own + 2 * CORNER_INSET;
+      if (sliver(part.width, rect.width, size.width) || sliver(part.height, rect.height, size.height)) {
+        element.style.display = 'none';
+        return true;
+      }
       // The top of what can be seen, but still inside the image: a pill that
       // followed the visible edge past the image's bottom would sit on the next
-      // page and report on this one.
-      const top = Math.min(
-        Math.max(rect.top, clip.top) + CORNER_INSET,
-        rect.bottom - anchorHeight() - CORNER_INSET
-      );
+      // page and report on this one. An image shorter than the pill still never
+      // pushes it above the area that can be seen.
+      const top = Math.max(area.top, Math.min(
+        part.top + CORNER_INSET,
+        rect.bottom - size.height - CORNER_INSET
+      ));
       element.style.top = `${top}px`;
       // Anchored by the edge that touches the corner, so a label that changes
       // the width between two frames grows away from the corner instead of
@@ -82,10 +98,9 @@
       // of sight. `right` on a fixed box counts from the viewport's inner edge,
       // which is clientWidth, not innerWidth.
       if (corner === 'top-right') {
-        const right = Math.min(rect.right, clip.right);
-        element.style.right = `${document.documentElement.clientWidth - right + CORNER_INSET}px`;
+        element.style.right = `${document.documentElement.clientWidth - part.right + CORNER_INSET}px`;
       } else {
-        element.style.left = `${Math.max(rect.left, clip.left) + CORNER_INSET}px`;
+        element.style.left = `${part.left + CORNER_INSET}px`;
       }
       return true;
     };
@@ -104,47 +119,6 @@
     place();
     frame = requestAnimationFrame(track);
     return () => cancelAnimationFrame(frame);
-  }
-
-  /**
-   * Every ancestor of `node` that clips its content, nearest first, crossing
-   * shadow roots. The root element and body are left out: their overflow is
-   * the viewport's, which visibleArea() starts from.
-   */
-  function clippingAncestors(node) {
-    const found = [];
-    let current = node.parentNode;
-    while (current && current !== document.body && current !== document.documentElement) {
-      if (current.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-        current = current.host;
-        continue;
-      }
-      if (current.nodeType !== Node.ELEMENT_NODE) break;
-      const style = getComputedStyle(current);
-      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') found.push(current);
-      current = current.parentNode;
-    }
-    return found;
-  }
-
-  /** The viewport cut by each clipping ancestor's padding box. */
-  function visibleArea(clippers) {
-    const area = {
-      top: 0,
-      left: 0,
-      right: document.documentElement.clientWidth,
-      bottom: window.innerHeight
-    };
-    clippers.forEach((element) => {
-      const box = element.getBoundingClientRect();
-      const top = box.top + element.clientTop;
-      const left = box.left + element.clientLeft;
-      area.top = Math.max(area.top, top);
-      area.left = Math.max(area.left, left);
-      area.right = Math.min(area.right, left + element.clientWidth);
-      area.bottom = Math.min(area.bottom, top + element.clientHeight);
-    });
-    return area;
   }
 
   // -------------------------------------------------------------------------
@@ -263,7 +237,7 @@
       shown: () => !hidden,
       onFrame: tick,
       // The card hangs below the pill; only the pill has to fit in the image.
-      anchorHeight: () => pill.offsetHeight,
+      anchorSize: () => ({ width: pill.offsetWidth, height: pill.offsetHeight }),
       onGone: () => destroy()
     });
 

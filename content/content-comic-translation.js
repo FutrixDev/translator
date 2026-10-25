@@ -244,9 +244,13 @@
     // Counted like a page asked for on this load, so the chapter pill and the
     // chips agree after a reload. The record keeps no target language; the
     // one in effect now is what a retry from the pill would ask for anyway.
-    comic.summaryBegin(entry, {
+    // A finished page only joins the count (summaryRestored, below): on its own
+    // it is a page put back, not a chapter being translated.
+    const summaryPage = {
       pageIndex: comic.pageIndexOf(img), pageUrl: record.pageUrl, targetLang: comicTargetLang(), mode: entry.mode
-    });
+    };
+    if (record.status === 'succeeded') comic.summaryRestoring(entry);
+    else comic.summaryBegin(entry, summaryPage);
 
     const overlay = comic.createOverlay(img);
     entry.overlay = overlay;
@@ -264,6 +268,7 @@
         if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
           entry.completedJobId = record.jobId;
           await finishSuccess({ entry, overlay, job: polled.data });
+          if (entry.resultUrl) comic.summaryRestored(entry, polled.data, summaryPage);
           return;
         }
         // Nothing to show, and the reader did not ask for anything on this page
@@ -657,8 +662,13 @@
     const result = await step();
     if (result.ok || result.declined || result.error.code !== 'unauthorized') return result;
     overlay.stopTimer();
-    if (!(await comic.promptSignIn(overlay))) return { ok: false, declined: true };
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    comic.summaryWaiting(entry, 'signin');
+    const signedIn = await comic.promptSignIn(overlay);
+    comic.summaryWaiting(entry, null);
+    if (!signedIn) return { ok: false, declined: true };
+    // Signed in, but the job is still to be made (a price may come next), so
+    // the pill goes back to getting ready, not to translating.
+    overlay.setStatus(t('comicPillPreparing'), { busy: false });
     overlay.startTimer(Date.now());
     return step();
   }
@@ -726,9 +736,12 @@
         // sign-in. Counting the time someone spends reading a price as redraw
         // time would also spend their timeout budget on it.
         overlay.stopTimer();
+        comic.summaryWaiting(entry, 'confirm');
         const approved = await comic.promptCharge(overlay, quote);
+        comic.summaryWaiting(entry, null);
         if (!approved) return false;
-        overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+        // Approved, not yet created: the busy pill comes with the job.
+        overlay.setStatus(t('comicPillPreparing'), { busy: false });
         overlay.startTimer(Date.now());
         return true;
       }

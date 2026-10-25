@@ -60,6 +60,8 @@
     comicSummaryLabel: 'Глава {done}/{total}',
     comicSummaryFailed: 'Не переведено',
     comicSummaryPage: 'Страница {n}',
+    comicSummaryWaitingSignIn: 'Ждут входа, страниц: {n}',
+    comicSummaryWaitingConfirm: 'Ждут подтверждения, страниц: {n}',
     comicSummaryRetry: 'Повторить неудачные',
     comicSummaryCancelAll: 'Отменить всё',
     comicSummaryOpenReader: 'Открыть главу в читалке',

@@ -60,6 +60,8 @@
     comicSummaryLabel: '翻譯本章 {done}/{total}',
     comicSummaryFailed: '未翻譯成功',
     comicSummaryPage: '第 {n} 頁',
+    comicSummaryWaitingSignIn: '{n} 頁在等登入',
+    comicSummaryWaitingConfirm: '{n} 頁在等確認',
     comicSummaryRetry: '重試失敗',
     comicSummaryCancelAll: '全部取消',
     comicSummaryOpenReader: '在閱讀台開啟本章',

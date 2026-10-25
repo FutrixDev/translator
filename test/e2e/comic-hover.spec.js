@@ -166,6 +166,39 @@ test.describe('Comic chip on the image hover bar', () => {
     }
   });
 
+  test('an image wider than its box keeps the bar inside the part of the box it can be seen in', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      // 900 px wide in a 500 px box at scrollLeft 0: the image's right edge,
+      // where the bar used to go, is out of the box.
+      await page.evaluate(() => {
+        const img = document.querySelector('#comic');
+        img.removeAttribute('width');
+        img.style.width = '900px';
+      });
+      const box = await page.locator('#box').evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { left: rect.left + el.clientLeft, top: rect.top + el.clientTop,
+          right: rect.left + el.clientLeft + el.clientWidth, bottom: rect.top + el.clientTop + el.clientHeight,
+          scrollLeft: el.scrollLeft };
+      });
+      expect(box.scrollLeft).toBe(0);
+      expect(await page.locator('#comic').evaluate(img => img.getBoundingClientRect().right)).toBeGreaterThan(box.right);
+
+      await page.mouse.move(100, 250);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const bar = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().toJSON());
+      expect(bar.left).toBeGreaterThanOrEqual(box.left);
+      expect(bar.right).toBeLessThanOrEqual(box.right);
+      expect(bar.top).toBeGreaterThanOrEqual(box.top);
+      expect(bar.bottom).toBeLessThanOrEqual(box.bottom);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('the switches: OCR off leaves the comic chip alone, the bar switch hides both', async ({ context, page }) => {
     const service = await startMockService('succeed');
     try {

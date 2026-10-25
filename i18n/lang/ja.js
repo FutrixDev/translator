@@ -60,6 +60,8 @@
     comicSummaryLabel: 'この章 {done}/{total}',
     comicSummaryFailed: '翻訳できなかったページ',
     comicSummaryPage: '{n} ページ',
+    comicSummaryWaitingSignIn: 'ログイン待ちのページ：{n}',
+    comicSummaryWaitingConfirm: '確認待ちのページ：{n}',
     comicSummaryRetry: '失敗分を再試行',
     comicSummaryCancelAll: 'すべてキャンセル',
     comicSummaryOpenReader: 'リーダーでこの章を開く',

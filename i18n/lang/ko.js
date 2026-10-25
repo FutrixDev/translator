@@ -60,6 +60,8 @@
     comicSummaryLabel: '이 챕터 {done}/{total}',
     comicSummaryFailed: '번역하지 못한 페이지',
     comicSummaryPage: '{n}페이지',
+    comicSummaryWaitingSignIn: '로그인 대기 중인 페이지: {n}',
+    comicSummaryWaitingConfirm: '확인 대기 중인 페이지: {n}',
     comicSummaryRetry: '실패한 페이지 재시도',
     comicSummaryCancelAll: '모두 취소',
     comicSummaryOpenReader: '리더에서 이 챕터 열기',

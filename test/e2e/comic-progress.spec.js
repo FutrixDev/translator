@@ -176,6 +176,11 @@ test.describe('Comic progress pill', () => {
 
       await approve.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
+      // A yes is not yet a job: the pill gets ready again, and turns busy only
+      // once the job has been made.
+      const states = await page.evaluate(() => window.__pillStates);
+      const answered = states.findIndex(state => state.label === 'Awaiting confirmation');
+      expect(states[answered + 1]).toEqual({ busy: false, label: 'Preparing…' });
       // Yes is the same operation again, with the same upload, not a second one.
       const [asked, confirmed] = service.state.createBodies;
       expect(asked.confirmCharge).toBeFalsy();
@@ -205,6 +210,36 @@ test.describe('Comic progress pill', () => {
       await signIn.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       expect(service.state.connects).toBe(1);
+      expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('signed out on a charged page, signing in does not make the pill say translating before the price', async ({ context, page }) => {
+    const service = await startMockService('confirm');
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      await openComicPage(page, service);
+      await recordPill(page);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
+      await expect(signIn).toHaveText('Sign In');
+      await signIn.click();
+      await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Awaiting confirmation', { timeout: 20_000 });
+      // "Signing in…" is the sign-in itself and is busy on purpose; from the
+      // moment it ends until the price is asked, nothing has started.
+      const states = await page.evaluate(() => window.__pillStates);
+      const signedIn = states.map(state => state.label).lastIndexOf('Signing in…');
+      const asked = states.findIndex(state => state.label === 'Awaiting confirmation');
+      expect(signedIn).toBeGreaterThan(-1);
+      expect(asked).toBeGreaterThan(signedIn);
+      expect(states[signedIn + 1]).toEqual({ busy: false, label: 'Preparing…' });
+      states.slice(signedIn + 1, asked + 1).forEach((state) => {
+        expect(state.busy).toBe(false);
+        expect(state.label).not.toBe('Translating the comic…');
+      });
       expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();

@@ -11,6 +11,7 @@ const { startMockService, triggerComicTranslation } = require('./comic-fixtures'
 
 const PILL = '.ai-translator-comic-progress .ai-translator-comic-pill';
 const BADGE = '.ai-translator-comic-badge';
+const RUNNING = '.ai-translator-comic-progress.is-busy .ai-translator-comic-pill';
 
 async function openComicPage(page, service, path) {
   await page.goto(`${service.base}${path}`);
@@ -18,17 +19,36 @@ async function openComicPage(page, service, path) {
 }
 
 const topOf = (page, selector) => page.locator(selector).evaluate(el => Math.round(el.getBoundingClientRect().top));
-const scrollBox = (page, y) => page.locator('#box').evaluate((box, top) => {
-  box.scrollTop = top;
+const scrollBox = (page, to, axis = 'y') => page.locator('#box').evaluate((box, [position, along]) => {
+  if (along === 'x') box.scrollLeft = position;
+  else box.scrollTop = position;
   return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-}, y);
-// Scrolls with `selector`'s old placement wiped first, and waits until the pin
-// has placed it again. The expected top is also the top from before the
+}, [to, axis]);
+/** Scrolls the box so only the last `seen` px of the image, on `axis`, are left in it. */
+const leaveInBox = (page, axis, seen) => page.locator('#comic').evaluate((img, [along, px]) => {
+  const box = document.querySelector('#box');
+  if (along === 'x') box.scrollLeft = img.offsetWidth - px;
+  else box.scrollTop = img.offsetHeight - px;
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}, [axis, seen]);
+const sizeOf = (page, selector, side) => page.locator(selector).evaluate((el, key) => el.getBoundingClientRect()[key], side);
+/** The image 1200 px wide in a 500 px box, and room to scroll all of it out. */
+const widenImage = page => page.evaluate(() => {
+  const img = document.querySelector('#comic');
+  img.removeAttribute('width');
+  img.style.width = '1200px';
+  document.querySelector('#box > div').style.width = '2000px';
+});
+// Scrolls, then wipes `selector`'s placement, in one task, and waits until the
+// pin has placed it again. The expected top is also the top from before the
 // scroll, so a read that could still see the old placement passes on a pin
-// that never followed the box; two frames were not always enough for that.
+// that never followed the box. Split over two evaluates, a frame could re-pin
+// between the wipe and the scroll and the read would see the old answer.
 const scrollBoxRepinned = async (page, selector, y) => {
-  await page.locator(selector).evaluate((el) => { el.style.top = '-1000px'; });
-  await scrollBox(page, y);
+  await page.evaluate(([target, top]) => {
+    document.querySelector('#box').scrollTop = top;
+    document.querySelector(target).style.top = '-1000px';
+  }, [selector, y]);
   await expect.poll(() => topOf(page, selector)).not.toBe(-1000);
 };
 
@@ -80,27 +100,89 @@ test.describe('Comic corner placement', () => {
     }
   });
 
-  test('near the image bottom, the pill stays inside the image rather than on the box edge', async ({ context, page }) => {
+  test('a sliver of the image left sideways hides the pill until there is room for it again', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 60_000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      await widenImage(page);
+      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      // Measured once the job runs: "Translating the comic…" and its number
+      // are the pill at its widest, about 150 px.
+      await expect(page.locator(RUNNING)).toBeVisible({ timeout: 15_000 });
+      const width = await sizeOf(page, PILL, 'width');
+      expect(width + 16).toBeGreaterThan(120);
+
+      // 120 px of the image's right end are left in the box, then 15.
+      await leaveInBox(page, 'x', 120);
+      expect(await page.locator('#box').evaluate(box => box.scrollLeft)).toBe(1080);
+      await expect(page.locator(PILL)).toBeHidden();
+      // Room for the pill and an inset each side: back.
+      await leaveInBox(page, 'x', Math.ceil(width) + 16 + 30);
+      await expect(page.locator(PILL)).toBeVisible();
+      await leaveInBox(page, 'x', 15);
+      expect(await page.locator('#box').evaluate(box => box.scrollLeft)).toBe(1185);
+      await expect(page.locator(PILL)).toBeHidden();
+      await scrollBox(page, 0, 'x');
+      await expect(page.locator(PILL)).toBeVisible();
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a sliver of the image left at the box bottom hides the pill instead of pushing it over the box edge', async ({ context, page }) => {
     const service = await startMockService('succeed', { succeedAfterMs: 60_000 });
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
       await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
-      await expect(page.locator(PILL)).toBeVisible();
+      await expect(page.locator(RUNNING)).toBeVisible({ timeout: 15_000 });
+      const height = await sizeOf(page, PILL, 'height');
+      expect(height + 16).toBeGreaterThan(20);
 
-      // Only the last 20 px of the image are left in the box, less than the
-      // box edge + 8 + the pill: the pill has to ride up with the image bottom.
-      const height = await page.locator('#comic').evaluate(img => img.getBoundingClientRect().height);
-      const pillHeight = await page.locator(PILL).evaluate(el => el.getBoundingClientRect().height);
-      expect(8 + pillHeight).toBeGreaterThan(20);
-      await scrollBoxRepinned(page, PILL, Math.round(height) - 20);
+      await leaveInBox(page, 'y', 20);
+      await expect(page.locator(PILL)).toBeHidden();
+      // With room again it sits on the box edge, inside the image.
+      await leaveInBox(page, 'y', Math.ceil(height) + 16 + 10);
       await expect(page.locator(PILL)).toBeVisible();
-      const gap = () => page.evaluate((selector) => {
-        const img = document.querySelector('#comic').getBoundingClientRect();
-        const pill = document.querySelector(selector).getBoundingClientRect();
-        return Math.round(img.bottom - pill.bottom);
-      }, PILL);
-      await expect.poll(gap).toBe(8);
+      await expect.poll(() => topOf(page, PILL)).toBe(108);
+      await scrollBox(page, 0);
+      await expect(page.locator(PILL)).toBeVisible();
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('the badge judges a sliver by its own size, sideways and down', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      await widenImage(page);
+      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
+      await expect(page.locator(BADGE)).toBeVisible();
+      const width = await sizeOf(page, BADGE, 'width');
+      const height = await sizeOf(page, BADGE, 'height');
+
+      // Whichever end of the image is left, the badge needs its own width and
+      // an inset each side — narrower than the pill, so it stays where the
+      // pill would already be gone.
+      await leaveInBox(page, 'x', Math.floor(width) + 16 - 4);
+      await expect(page.locator(BADGE)).toBeHidden();
+      await leaveInBox(page, 'x', Math.ceil(width) + 16 + 4);
+      await expect(page.locator(BADGE)).toBeVisible();
+      await leaveInBox(page, 'x', 15);
+      await expect(page.locator(BADGE)).toBeHidden();
+      await scrollBox(page, 0, 'x');
+      await expect(page.locator(BADGE)).toBeVisible();
+
+      await leaveInBox(page, 'y', Math.floor(height) + 16 - 4);
+      await expect(page.locator(BADGE)).toBeHidden();
+      await leaveInBox(page, 'y', Math.ceil(height) + 16 + 4);
+      await expect(page.locator(BADGE)).toBeVisible();
+      await scrollBox(page, 0);
+      await expect(page.locator(BADGE)).toBeVisible();
     } finally {
       await service.close();
     }
@@ -134,10 +216,14 @@ test.describe('Comic corner placement', () => {
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       await expect(page.locator(BADGE)).toBeVisible();
       // Scrolled sideways, the image's left edge leaves the box; the badge stays.
-      // Before and after, the right answer is the same 8, so move the badge
-      // off first and read only once the pin has placed it again.
-      await page.locator(BADGE).evaluate((el) => { el.style.left = '-1000px'; });
-      await page.locator('#box').evaluate((box) => { box.scrollLeft = 300; });
+      // Before and after, the right answer is the same 8, so the scroll and
+      // moving the badge off happen in one task — no frame can re-pin it from
+      // the old scroll position in between — and it is read only once the pin
+      // has placed it again.
+      await page.evaluate((badge) => {
+        document.querySelector('#box').scrollLeft = 300;
+        document.querySelector(badge).style.left = '-1000px';
+      }, BADGE);
       await expect.poll(() => page.locator(BADGE).evaluate(el => el.style.left)).not.toBe('-1000px');
       expect((await edges(BADGE)).left).toBe(8);
     } finally {

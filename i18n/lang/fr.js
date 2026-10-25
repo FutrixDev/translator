@@ -60,6 +60,8 @@
     comicSummaryLabel: 'Chapitre {done}/{total}',
     comicSummaryFailed: 'Non traduites',
     comicSummaryPage: 'Page {n}',
+    comicSummaryWaitingSignIn: 'Pages en attente de connexion : {n}',
+    comicSummaryWaitingConfirm: 'Pages en attente de confirmation : {n}',
     comicSummaryRetry: 'Réessayer les échecs',
     comicSummaryCancelAll: 'Tout annuler',
     comicSummaryOpenReader: 'Ouvrir le chapitre dans le lecteur',

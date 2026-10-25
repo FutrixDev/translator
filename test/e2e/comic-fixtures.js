@@ -439,8 +439,8 @@ async function startMockService(
         if (!body.sourceKey || !state.puts.some(put => put.sourceKey === body.sourceKey)) {
           return send(400, { error: 'source_missing' });
         }
-        const chapter = state.chapters[body.pageUrl] || (state.chapters[body.pageUrl] = {});
-        chapter[body.pageId] = body.pageIndex;
+        const pages = state.chapters[body.pageUrl] || (state.chapters[body.pageUrl] = {});
+        pages[body.pageId] = body.pageIndex;
         if (behaviour === 'insufficient') {
           return send(402, {
             error: 'insufficient_points',

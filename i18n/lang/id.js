@@ -60,6 +60,8 @@
     comicSummaryLabel: 'Bab {done}/{total}',
     comicSummaryFailed: 'Tidak diterjemahkan',
     comicSummaryPage: 'Halaman {n}',
+    comicSummaryWaitingSignIn: 'Halaman menunggu masuk: {n}',
+    comicSummaryWaitingConfirm: 'Halaman menunggu konfirmasi: {n}',
     comicSummaryRetry: 'Coba lagi yang gagal',
     comicSummaryCancelAll: 'Batalkan semua',
     comicSummaryOpenReader: 'Buka bab di pembaca',

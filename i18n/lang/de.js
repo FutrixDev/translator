@@ -60,6 +60,8 @@
     comicSummaryLabel: 'Kapitel {done}/{total}',
     comicSummaryFailed: 'Nicht übersetzt',
     comicSummaryPage: 'Seite {n}',
+    comicSummaryWaitingSignIn: 'Seiten, die auf die Anmeldung warten: {n}',
+    comicSummaryWaitingConfirm: 'Seiten, die auf Bestätigung warten: {n}',
     comicSummaryRetry: 'Fehlgeschlagene wiederholen',
     comicSummaryCancelAll: 'Alle abbrechen',
     comicSummaryOpenReader: 'Kapitel im Reader öffnen',

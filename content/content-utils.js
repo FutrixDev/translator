@@ -146,6 +146,70 @@
   };
 
   /**
+   * Every ancestor of `node` that clips its content, nearest first, crossing
+   * shadow roots. The root element and body are left out: their overflow is
+   * the viewport's, which ctx.visibleArea() starts from.
+   *
+   * A layer of ours drawn over an image is fixed-position, so nothing clips it
+   * for us; these are what would have clipped the image, and ask only a style
+   * question — callers that redraw every frame keep the answer per image.
+   */
+  ctx.clippingAncestors = function(node) {
+    const found = [];
+    let current = node.parentNode;
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (current.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        current = current.host;
+        continue;
+      }
+      if (current.nodeType !== Node.ELEMENT_NODE) break;
+      const style = getComputedStyle(current);
+      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') found.push(current);
+      current = current.parentNode;
+    }
+    return found;
+  };
+
+  /**
+   * The viewport cut by each clipping ancestor's padding box. Both viewport
+   * edges are the inner ones (clientWidth / clientHeight), so a page
+   * scrollbar is never counted as room.
+   */
+  ctx.visibleArea = function(clippers) {
+    const area = {
+      top: 0,
+      left: 0,
+      right: document.documentElement.clientWidth,
+      bottom: document.documentElement.clientHeight
+    };
+    clippers.forEach((element) => {
+      const box = element.getBoundingClientRect();
+      const top = box.top + element.clientTop;
+      const left = box.left + element.clientLeft;
+      area.top = Math.max(area.top, top);
+      area.left = Math.max(area.left, left);
+      area.right = Math.min(area.right, left + element.clientWidth);
+      area.bottom = Math.min(area.bottom, top + element.clientHeight);
+    });
+    return area;
+  };
+
+  /**
+   * The part of `rect` inside `area` — `{ top, left, right, bottom, width,
+   * height }` — or null when none of it is there. A rect collapsed to nothing
+   * (a reader recycling an image's slot) has no part either.
+   */
+  ctx.visiblePart = function(rect, area) {
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const top = Math.max(rect.top, area.top);
+    const left = Math.max(rect.left, area.left);
+    const right = Math.min(rect.right, area.right);
+    const bottom = Math.min(rect.bottom, area.bottom);
+    if (right <= left || bottom <= top) return null;
+    return { top, left, right, bottom, width: right - left, height: bottom - top };
+  };
+
+  /**
    * Does this element show the src the context menu reported?
    *
    * `currentSrc` as well as `src`, because a responsive image serves neither

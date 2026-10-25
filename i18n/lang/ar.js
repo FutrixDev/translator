@@ -59,6 +59,8 @@
     comicSummaryLabel: 'الفصل {done}/{total}',
     comicSummaryFailed: 'لم تُترجم',
     comicSummaryPage: 'الصفحة {n}',
+    comicSummaryWaitingSignIn: 'صفحات بانتظار تسجيل الدخول: {n}',
+    comicSummaryWaitingConfirm: 'صفحات بانتظار التأكيد: {n}',
     comicSummaryRetry: 'إعادة محاولة الفاشلة',
     comicSummaryCancelAll: 'إلغاء الكل',
     comicSummaryOpenReader: 'فتح الفصل في القارئ',

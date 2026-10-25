@@ -61,6 +61,8 @@
     comicSummaryLabel: 'Chương {done}/{total}',
     comicSummaryFailed: 'Chưa dịch được',
     comicSummaryPage: 'Trang {n}',
+    comicSummaryWaitingSignIn: 'Số trang chờ đăng nhập: {n}',
+    comicSummaryWaitingConfirm: 'Số trang chờ xác nhận: {n}',
     comicSummaryRetry: 'Thử lại trang lỗi',
     comicSummaryCancelAll: 'Hủy tất cả',
     comicSummaryOpenReader: 'Mở chương trong trình đọc',
