@@ -135,6 +135,34 @@ test.describe('Comic chapter summary', () => {
     }
   });
 
+  test('cancelling all while every page waits on the sign-in card frees them to run again', async ({ context, page }) => {
+    test.setTimeout(90_000);
+    const service = await startMockService('succeed', { chapter: { stepMs: 600 } });
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      const pageUrl = `${service.base}/chapter12`;
+      await page.goto(pageUrl);
+      await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+
+      await triggerComicPageTranslation(worker, pageUrl);
+      await expect(page.locator(LABEL)).toHaveText('Chapter 0/12', { timeout: 20_000 });
+      await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Sign-in needed' }))
+        .toHaveCount(12, { timeout: 20_000 });
+
+      await page.locator(PILL).click();
+      await page.locator(BUTTON, { hasText: 'Cancel all' }).click();
+      await expect(page.locator(ROOT)).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
+
+      // No page is still waiting on a card that is gone: asking again runs all twelve.
+      await triggerComicPageTranslation(worker, pageUrl);
+      await expect(page.locator(LABEL)).toHaveText('Chapter 0/12', { timeout: 20_000 });
+      await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(12);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('cancelling all stops the running pages and keeps the finished ones', async ({ context, page }) => {
     test.setTimeout(90_000);
     const service = await startMockService('succeed', { chapter: { stepMs: 900 } });
