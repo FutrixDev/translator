@@ -30,6 +30,7 @@
     'upload',        // the document page's View
     'notification',  // a document notification clicked
     'page',          // a web page's error bar or selection card (Subscribe)
+    'pdf_page',      // the PDF tab's own bar: View translation once it is done
     'signin',        // the sign-in tab (/ext/connect), from any surface
     'pdf_quota',     // a document refused for the used-up free pages: the upload
                      // page, the popup's row, the notification (View plans)

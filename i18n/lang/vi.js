@@ -399,6 +399,8 @@
     autoOfferDismiss: 'Để sau',
     mediaHintPdf: 'Nhấn {shortcut} để dịch PDF này. Việc này sẽ dùng điểm trang.',
     mediaHintPdfNoShortcut: 'Đây là PDF. Dịch nó sẽ dùng điểm trang.',
+    pdfPageRunning: 'Đang dịch PDF này… {progress}%',
+    pdfViewTranslation: 'Xem bản dịch',
     mediaHintComic: 'Nhấn {shortcut} để dịch truyện tranh trên màn hình.',
     mediaHintComicNoShortcut: 'Dịch truyện tranh trên màn hình?',
     setShortcut: 'Đặt phím tắt',

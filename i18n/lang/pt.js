@@ -382,6 +382,8 @@
     autoOfferDismiss: 'Agora não',
     mediaHintPdf: 'Pressione {shortcut} para traduzir este PDF (consome créditos de páginas).',
     mediaHintPdfNoShortcut: 'Isto é um PDF. Traduzi-lo consome créditos de páginas.',
+    pdfPageRunning: 'Traduzindo este PDF… {progress}%',
+    pdfViewTranslation: 'Ver tradução',
     mediaHintComic: 'Pressione {shortcut} para traduzir a HQ na tela.',
     mediaHintComicNoShortcut: 'Traduzir a HQ na tela?',
     setShortcut: 'Definir atalho',

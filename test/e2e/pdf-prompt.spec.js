@@ -104,12 +104,24 @@ test.describe('PDF offer bar', () => {
         { timeout: 20000 }).toBe(1);
       expect(service.state.apiHits.filter(h => h === 'POST /api/pdf/uploads')).toHaveLength(1);
 
-      // 条子当场收走 —— 接力的是通知，和右键菜单那一路一样。
-      await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeHidden();
+      // 条子不收走，改说这份 PDF 的任务走到哪了：「正在翻译」，没有「不用」可点。
+      const bar = page.locator(`${BAR}[data-mode="offer"]`);
+      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^Translating this PDF… \d+%$/);
+      await expect(bar.locator('[data-act="dismiss"]')).toBeHidden();
 
       const records = await jobRecords(worker);
       expect(records.length).toBeGreaterThan(0);
       expect(records[0].fileName).toBe('paper.pdf');
+      expect(records[0].sourceUrl).toBe(`${service.base}/paper.pdf`);
+
+      // 译好了，同一条条子换成「已完成」和一颗「查看译文」，点下去就是阅读台，
+      // 标着是从这一页进来的。不用去工具栏菜单里翻历史任务。
+      const view = bar.locator('[data-act="translate"]');
+      await expect(view).toHaveText('View translation', { timeout: 30000 });
+      const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
+      await expect.poll(() => reader.url())
+        .toBe(`${service.base}/app/reader/pdf_job_1?utm_source=extension&utm_medium=pdf_page`);
+      expect(service.state.apiHits.filter(h => h === 'POST /api/pdf/jobs')).toHaveLength(1);
     } finally {
       await service.close();
     }
@@ -139,7 +151,8 @@ test.describe('PDF offer bar', () => {
         { timeout: 20000 }).toBe(1);
       const stored = await worker.evaluate(() => chrome.storage.local.get('comicToken'));
       expect(stored.comicToken).toBe('granted-token');
-      await expect(bar).toBeHidden();
+      // 派出去之后，条子跟着这份任务走（不再是提示）。
+      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^(Translating this PDF… \d+%|Document translation finished)$/);
     } finally {
       await service.close();
     }

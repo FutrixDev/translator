@@ -18,6 +18,9 @@ const sync = { enablePdfTranslation: true };
 const opened = [];
 const messageListeners = [];
 const clickListeners = [];
+const buttonListeners = [];
+const created = [];
+const fetched = [];
 let jobView = null;
 
 function area(store) {
@@ -61,6 +64,8 @@ globalThis.chrome = new Proxy({
   }, passThrough()),
   notifications: new Proxy({
     onClicked: { addListener: (fn) => clickListeners.push(fn) },
+    onButtonClicked: { addListener: (fn) => buttonListeners.push(fn) },
+    create: (id, options, callback) => { created.push({ id, options }); if (callback) callback(id); },
     clear: (_id, callback) => { if (callback) callback(true); },
   }, passThrough()),
 }, passThrough());
@@ -68,6 +73,7 @@ globalThis.chrome = new Proxy({
 // Matched on the path alone, so the test can hand the worker a site base the
 // reader link refuses while the job poll still answers.
 globalThis.fetch = async (url) => {
+  fetched.push(String(url));
   if (!jobView || !String(url).includes('/api/pdf/jobs/')) {
     return new Response(JSON.stringify({ error: { code: 'not_found' } }), { status: 404 });
   }
@@ -78,16 +84,21 @@ globalThis.fetch = async (url) => {
 
 await import('../../background/background.js');
 
-function send(message) {
+function send(message, sender = {}) {
   return new Promise((resolve) => {
-    for (const listener of messageListeners) listener(message, {}, resolve);
+    for (const listener of messageListeners) listener(message, sender, resolve);
   });
 }
 
-/** Click a job's notification and wait until the worker has opened something. */
-async function clickNotification(jobId) {
+/**
+ * Click a job's notification — its body, or with `button` its "View
+ * translation" button — and wait until the worker has opened something.
+ */
+async function clickNotification(jobId, { button = false } = {}) {
   const before = opened.length;
-  for (const listener of clickListeners) listener(`pdf-job-${jobId}`);
+  for (const listener of button ? buttonListeners : clickListeners) {
+    listener(`pdf-job-${jobId}`, ...(button ? [0] : []));
+  }
   for (let i = 0; i < 200 && opened.length === before; i++) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -164,4 +175,79 @@ test('PDF_OPEN_JOB: an entry the site links do not know is an error, not an unta
   assert.equal(reply.ok, false);
   assert.match(reply.error.message, /SiteLinks: unknown entry/);
   assert.deepEqual(opened.slice(before), [], 'nothing opened');
+});
+
+test('a finished job\'s "View translation" button opens the reader, like its body', async () => {
+  jobView = finished('pdf_job_15', 'pdf');
+  assert.deepEqual(await clickNotification('pdf_job_15', { button: true }),
+    ['https://site.test/app/reader/pdf_job_15?utm_source=extension&utm_medium=notification']);
+});
+
+test('only a finished job\'s notification carries the View button', async () => {
+  const { notifyPdfTerminal } = await import('../../background/pdf-notify.js');
+  created.length = 0;
+  await notifyPdfTerminal({ jobId: 'job_a', status: 'succeeded', fileName: 'a.pdf' });
+  await notifyPdfTerminal({ jobId: 'job_b', status: 'failed', error: { code: 'job_failed' } });
+  await notifyPdfTerminal({ jobId: 'job_c', status: 'abandoned', error: {} });
+  assert.deepEqual(created.map(({ id, options }) => [id, (options.buttons || []).map(b => b.title)]), [
+    ['pdf-job-job_a', ['View translation']],
+    ['pdf-job-job_b', []],
+    ['pdf-job-job_c', []],
+  ]);
+});
+
+// PDF_PAGE_JOB: the PDF tab's own bar asking after the job started from it.
+const PDF_URL = 'https://papers.test/a.pdf';
+const pdfTab = { tab: { id: 3, url: PDF_URL } };
+const pageRecord = (jobId, status, extra = {}) => ({
+  jobId, status, fileName: 'a.pdf', sourceFormat: 'pdf', sourceUrl: PDF_URL,
+  progress: 0, error: null, createdAt: Date.now(), ...extra,
+});
+
+async function pageJob(records, refresh = false) {
+  local.pdfJobs = records;
+  fetched.length = 0;
+  try {
+    return await send({ type: 'PDF_PAGE_JOB', refresh }, pdfTab);
+  } finally {
+    delete local.pdfJobs;
+  }
+}
+
+test('PDF_PAGE_JOB: the newest job started from this address answers, read from storage alone', async () => {
+  const now = Date.now();
+  const reply = await pageJob([
+    pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
+    pageRecord('job_new', 'running', { progress: 40, createdAt: now }),
+    pageRecord('job_elsewhere', 'running', { sourceUrl: 'https://papers.test/b.pdf', createdAt: now + 1 }),
+    pageRecord('job_upload', 'running', { sourceUrl: null, createdAt: now + 2 }),
+  ]);
+  assert.deepEqual(reply, { ok: true, data: { job: { jobId: 'job_new', phase: 'running', progress: 40, message: '' } } });
+  assert.deepEqual(fetched, [], 'a refresh:false look asks the network nothing');
+});
+
+test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the device', async () => {
+  const reply = await pageJob([pageRecord('job_b', 'succeeded', { sourceUrl: 'https://papers.test/b.pdf' })]);
+  assert.deepEqual(reply, { ok: true, data: { job: null } });
+});
+
+test('PDF_PAGE_JOB: each status maps to the bar\'s phase; a receipt has no job to open yet', async () => {
+  const phase = async (record) => (await pageJob([record])).data.job;
+  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true })),
+    { jobId: null, phase: 'running', progress: 0, message: '' });
+  assert.equal((await phase(pageRecord('job_w', 'awaiting_confirm'))).phase, 'awaiting');
+  const done = await phase(pageRecord('job_d', 'succeeded', { settledAt: Date.now() }));
+  assert.equal(done.phase, 'succeeded');
+  assert.equal(done.message, 'Your translation is ready. Click to open it.');
+  const failed = await phase(pageRecord('job_f', 'failed', { settledAt: Date.now(), error: { code: 'insufficient_credits' } }));
+  assert.equal(failed.phase, 'failed');
+  assert.ok(failed.message && failed.message !== 'insufficient_credits', failed.message);
+  assert.equal((await phase(pageRecord('job_x', 'abandoned', { settledAt: Date.now(), error: {} }))).phase, 'failed');
+});
+
+test('PDF_PAGE_JOB refresh:true polls the job and answers the fresh status', async () => {
+  jobView = { jobId: 'job_r', status: 'succeeded', format: 'pdf', progress: 100 };
+  const reply = await pageJob([pageRecord('job_r', 'running', { progress: 60 })], true);
+  assert.equal(reply.data.job.phase, 'succeeded');
+  assert.ok(fetched.some(url => url.includes('/api/pdf/jobs/')), JSON.stringify(fetched));
 });

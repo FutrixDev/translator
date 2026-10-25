@@ -24,6 +24,7 @@ import {
   notifyPdfTerminal,
   pdfMessage,
   pdfNotificationLang,
+  pdfTerminalText,
 } from './pdf-notify.js';
 import { noteJobSettled } from './rating-ask.js';
 import { accountErrorMessage, runAccountAction } from './account-actions.js';
@@ -100,9 +101,10 @@ async function foldedSideEffects(change) {
     console.warn(`[rating] counting job ${change.record.jobId} failed:`, error?.message || error));
 }
 
-// A notification about one job opens that job. Registered at the top level so
-// a click that wakes a torn-down worker still finds its listener.
-chrome.notifications.onClicked.addListener((notificationId) => {
+// A notification about one job opens that job — its body, or the finished
+// one's "View translation" button. Registered at the top level so a click that
+// wakes a torn-down worker still finds its listener.
+function openJobFromNotification(notificationId) {
   const jobId = jobIdFromNotificationId(notificationId);
   if (!jobId) return;
   const clear = () => chrome.notifications.clear(notificationId, logIfFailed);
@@ -115,7 +117,9 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     .catch(error => console.warn(`[pdf] opening job ${jobId} from its notification failed:`,
       error?.code || error?.message || error))
     .finally(clear);
-});
+}
+chrome.notifications.onClicked.addListener(openJobFromNotification);
+chrome.notifications.onButtonClicked.addListener(openJobFromNotification);
 
 // ---------------------------------------------------------------------------
 // The URL path's charge confirmation
@@ -170,12 +174,12 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
       confirmCharge
     }, { consent });
     // A create can resolve to a job that is already over — the idempotent
-    // adopt of an earlier attempt that died. No poll transition will ever
-    // fire for it, so without this the user saw "started" and then nothing.
-    // (handlePdfCreateJob has already released the operation id, so the
-    // "try again" in the failure copy is true.)
-    if (job && (job.status === 'failed' || job.status === 'abandoned')) {
-      notifyPdfError(job.error || { code: job.status });
+    // adopt of an earlier attempt, finished or dead. No poll transition will
+    // ever fire for it, so without this the user saw "started" and then
+    // nothing. (A dead one's operation id is already released by
+    // handlePdfCreateJob, so the "try again" in the failure copy is true.)
+    if (job && DocJobs.isTerminalStatus(job.status)) {
+      notifyPdfTerminal(job);
     } else if (job && DocJobs.isAwaitingStatus(job.status)) {
       // Adopted an earlier attempt that is waiting on the user. The record is
       // already awaiting, so no poll will see it arrive there: ask now.
@@ -376,7 +380,9 @@ async function handlePdfCreateJob(message, { consent = false } = {}) {
   // row an earlier create left. Every surface reads only these records, and
   // they carry a failure back to a popup that has since closed: the awaited
   // sendMessage promise dies with the popup, this does not.
-  const receipt = pdfClient.receiptRecord({ operationId, fileName, sourceFormat });
+  const receipt = pdfClient.receiptRecord({
+    operationId, fileName, sourceFormat, sourceUrl: isUrl ? source.url : null
+  });
   const pendingId = receipt.jobId;
   await pdfClient.saveJobRecord(receipt);
 
@@ -558,6 +564,42 @@ async function handlePdfJobAbandon(jobId) {
 }
 
 /**
+ * PDF_PAGE_JOB: the PDF tab asks what became of its own document — the newest
+ * record a URL job left for that address (`sourceUrl`), in the words its bar
+ * draws: `phase` is running, awaiting, succeeded or failed, `jobId` is null
+ * while the click is still uploading (there is no job to open yet), and a job
+ * that is over says why in `message`, the notification's own sentence.
+ *
+ * `refresh` runs the poll itself rather than fetching one job for the page:
+ * the tab asks only while what it shows is not over, and the poll is the one
+ * place a change becomes a notification — which the user still wants once they
+ * have looked away. Without it this reads storage only, so a PDF opened with
+ * no job behind it costs no request (test/e2e/pdf-prompt.spec.js).
+ */
+async function handlePdfPageJob(url, { refresh }) {
+  const records = refresh ? await refreshPdfJobs() : await pdfClient.listJobRecords();
+  const record = records
+    .filter(r => url && r.sourceUrl === url)
+    .reduce((newest, r) => (!newest || (r.createdAt || 0) > (newest.createdAt || 0) ? r : newest), null);
+  if (!record) return { job: null };
+  let phase = 'failed';
+  if (DocJobs.isActiveStatus(record.status)) phase = 'running';
+  else if (DocJobs.isAwaitingStatus(record.status)) phase = 'awaiting';
+  else if (record.status === 'succeeded') phase = 'succeeded';
+  const uiLang = await pdfNotificationLang();
+  return {
+    job: {
+      jobId: pdfClient.isPendingRecord(record) ? null : record.jobId,
+      phase,
+      progress: Number.isFinite(record.progress) ? record.progress : 0,
+      message: DocJobs.isTerminalStatus(record.status)
+        ? pdfTerminalText(record, key => pdfMessage(key, uiLang))
+        : ''
+    }
+  };
+}
+
+/**
  * PDF_OPEN_JOB: open a job from a list row or a notification. `via` is the
  * entry it was opened from (SiteLinks.MEDIUMS), carried onto the reader link.
  *
@@ -611,5 +653,6 @@ export {
   handlePdfJobGet,
   handlePdfJobConfirm,
   handlePdfJobAbandon,
+  handlePdfPageJob,
   openPdfJob,
 };

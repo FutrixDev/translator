@@ -398,6 +398,8 @@
     autoOfferDismiss: 'Not now',
     mediaHintPdf: 'Press {shortcut} to translate this PDF. It spends page credits.',
     mediaHintPdfNoShortcut: 'This is a PDF. Translating it spends page credits.',
+    pdfPageRunning: 'Translating this PDF… {progress}%',
+    pdfViewTranslation: 'View translation',
     mediaHintComic: 'Press {shortcut} to translate the comic on screen.',
     mediaHintComicNoShortcut: 'Translate the comic on screen?',
     setShortcut: 'Set a shortcut',

@@ -28,6 +28,13 @@
 // 价格为什么不写成「约消耗 N 页额度」：客户端没有页数，先问一次价本身就是一次
 // 往任务接口发的自动请求。确切的数字由点击之后那一问回答（background/pdf-jobs.js
 // 的 askPdfCharge 通知）。
+//
+// 点下去之后，PDF 这一页的条子不走，改说这份文档的任务：在译（几成）→ 译好了，
+// 「查看译文」一键打开阅读台；要确认就领他去任务页；没成就说为什么、给一个重试。
+// 只靠系统通知不够：它一分钟才轮询一次、没有按钮，系统通知被关掉时干脆看不见，
+// 而用户就停在这一页上等。这一页的任务按网址认（服务工作者的 PDF_PAGE_JOB），
+// 所以重新载入、右键菜单起的任务也认得出来。打开 PDF 时只读本机存储，没有任务
+// 就一个请求都不发（铁律照旧）；只有在译、而且这一页看得见时才每几秒问一次。
 (function () {
   'use strict';
 
@@ -46,6 +53,18 @@
   let done = false;
   // 正在登录 / 正在交任务：按钮钉住，快捷键再按也不派第二份。
   let busy = false;
+
+  // 这份 PDF 的任务（PDF_PAGE_JOB 的回答）：{ jobId, phase, progress, message }，
+  // 没有就是 null。jobId 在上传途中是 null：还没有可以打开的任务。
+  let job = null;
+  // 用户关掉的是哪一档（任务 + phase）：同一档不再出，译好了照样出来说一声。
+  let closedJob = '';
+  // 认出这是一份 PDF 之后才去问它的任务，只问一次（detect 会被叫很多遍）。
+  let pdfPage = false;
+  let pollTimer = null;
+  // 每一问一个号：回来晚了的那一问（可见性切换和轮询撞在一起）不覆盖新的。
+  let syncSeq = 0;
+  const JOB_POLL_MS = 4000;
 
   /**
    * 这个文档是一份 PDF 吗。
@@ -114,12 +133,19 @@
     paint();
     try {
       if (!(await ensureSignedIn())) return;
-      // 条子当场收走，接力的是任务自己的界面（PDF 的通知、漫画卡片）；没送到
-      // 才放回来，让他还有一个能再点一次的东西。
+      // 提示当场收走，接力的是任务自己的界面：漫画是卡片，PDF 是这条条子说的
+      // 任务（先说「在译」，交上去之后照服务工作者记下的改）。没送到才放回来，
+      // 让他还有一个能再点一次的东西。
       const own = kind === hint;
       if (own) done = true;
+      if (kind === 'pdf') job = { jobId: null, phase: 'running', progress: 0, message: '' };
       paint();
-      if (!(await dispatch(kind)) && own) done = false;
+      const sent = await dispatch(kind);
+      if (!sent && own) done = false;
+      if (kind === 'pdf') {
+        if (sent) syncJob(false);
+        else job = null;
+      }
     } finally {
       busy = false;
       paint();
@@ -157,6 +183,89 @@
     return kind;
   }
 
+  // ------------------------------------------------------------------ 这一页的任务
+
+  /**
+   * 问服务工作者这份 PDF 的任务。refresh：先让它轮询一遍（在译时的那几秒一问）；
+   * 否则只读本机存储。
+   */
+  async function syncJob(refresh) {
+    const seq = ++syncSeq;
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    const reply = await ctx.comic.sendMessage({ type: 'PDF_PAGE_JOB', refresh });
+    if (seq !== syncSeq) return;
+    if (!reply.ok) {
+      console.warn('Blab Translation: reading this PDF\'s translation job failed', reply.error);
+      // 扩展重载过：这一页再也问不到了，别每几秒再撞一次。
+      if (reply.error && reply.error.code === 'extension_context') return;
+    } else {
+      job = reply.data.job;
+      paint();
+    }
+    schedulePoll();
+  }
+
+  // 只在译的时候、这一页看得见的时候问。要确认的任务不会自己动：他去任务页确认
+  // 完回来，visibilitychange 那一问就够了。看不见时由服务工作者每分钟的轮询接着
+  // 盯，译好了照样有系统通知。
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    if (!job || job.phase !== 'running' || document.visibilityState !== 'visible') return;
+    pollTimer = setTimeout(() => syncJob(true), JOB_POLL_MS);
+  }
+
+  function onVisibility() {
+    detect();
+    if (!pdfPage) return;
+    if (document.visibilityState !== 'visible') {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+      return;
+    }
+    syncJob(!!job && (job.phase === 'running' || job.phase === 'awaiting'));
+  }
+
+  function jobKey(entry) {
+    return `${entry.jobId}:${entry.phase}`;
+  }
+
+  // 译好了开阅读台，别的开任务页（openPdfJob 自己会再问一次状态）。
+  async function openJob() {
+    const reply = await ctx.comic.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId, via: 'pdf_page' });
+    if (reply.ok) return;
+    console.warn('Blab Translation: opening this PDF\'s translation failed', reply.error);
+    const lost = reply.error && reply.error.code === 'extension_context';
+    ctx.showAutoStatusNotice(t(lost ? 'pdfErrNetwork' : 'pdfErrUnavailable'));
+  }
+
+  function closeJob() {
+    closedJob = jobKey(job);
+    paint();
+  }
+
+  /** 条子此刻该说的任务，或 null（没有任务，或这一档他关掉了）。 */
+  function jobOffer() {
+    if (!job || closedJob === jobKey(job)) return null;
+    const shown = { dismiss: closeJob, dismissText: null };
+    if (job.phase === 'running') {
+      return {
+        ...shown,
+        text: t('pdfPageRunning').replace('{progress}', String(Math.round(job.progress))),
+        accept: job.jobId ? openJob : null,
+        acceptText: t('docView'),
+      };
+    }
+    if (job.phase === 'awaiting') {
+      return { ...shown, text: t('docStatusAwaitingConfirm'), accept: openJob, acceptText: t('docView') };
+    }
+    if (job.phase === 'succeeded') {
+      return { ...shown, text: t('pdfNotifyDoneTitle'), accept: openJob, acceptText: t('pdfViewTranslation') };
+    }
+    return { ...shown, text: job.message, accept: () => run('pdf'), acceptText: t('pdfRetry'), busy };
+  }
+
   // ------------------------------------------------------------------ 说
 
   function hintText(kind, shortcut) {
@@ -166,7 +275,15 @@
 
   function paint() {
     if (!ctx.showAutoStatusOffer) return;
-    if (!hint || dismissed || done || switchedOff(hint)) {
+    const shown = jobOffer();
+    if (shown) {
+      ctx.showAutoStatusOffer(shown);
+      return;
+    }
+    // 这份文档在译或译好了：「按 ⌥M 翻译」已经没有可补充的了（没成的那一份照样
+    // 可以从提示重来）。
+    const settled = !!job && job.phase !== 'failed';
+    if (!hint || dismissed || done || settled || switchedOff(hint)) {
       ctx.showAutoStatusOffer(null);
       return;
     }
@@ -216,6 +333,10 @@
   function detect() {
     if (hint) return;
     if (isPdfPage()) {
+      if (!pdfPage) {
+        pdfPage = true;
+        syncJob(false);
+      }
       if (switchedOff('pdf')) return;
       hint = 'pdf';
       paint();
@@ -237,7 +358,7 @@
     detect();
     requestAnimationFrame(detect);
     window.addEventListener('load', detect, { once: true });
-    document.addEventListener('visibilitychange', detect);
+    document.addEventListener('visibilitychange', onVisibility);
     let scrollTimer = null;
     window.addEventListener('scroll', () => {
       if (hint || comicClaimed || scrollTimer) return;

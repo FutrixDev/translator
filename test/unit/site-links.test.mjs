@@ -63,7 +63,7 @@ test('an entry the list does not name throws instead of filing the visit under a
     assert.throws(() => SiteLinks.pricing('https://blab.test', medium), /SiteLinks: unknown entry/, String(medium));
     assert.throws(() => SiteLinks.assertMedium(medium), /SiteLinks: unknown entry/, String(medium));
   }
-  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'signin', 'pdf_quota', 'comic_quota']);
+  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'pdf_page', 'signin', 'pdf_quota', 'comic_quota']);
 });
 
 test('no other extension file builds a site page link', () => {

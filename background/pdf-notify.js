@@ -62,22 +62,32 @@ const TERMINAL_TITLE_KEYS = {
 };
 
 /**
- * A job just ended. The title says how: finished, cancelled (the user's own
- * decision or the server handing the pages back — not a failure), or failed.
+ * What a job that is over has to say for itself: ready, cancelled (the user's
+ * own decision or the server handing the pages back — not a failure), or why
+ * it failed. The notification and the PDF tab's own bar say the same sentence.
+ */
+function pdfTerminalText(record, t) {
+  if (record.status === 'succeeded') return t('pdfNotifyDoneBody');
+  if (record.status === 'abandoned') return t(pdfClient.pdfAbandonedKey(record.error || {}));
+  return pdfClient.pdfErrorMessage(record.error, t);
+}
+
+/**
+ * A job just ended. The title says how: finished, cancelled, or failed. A
+ * finished one carries "View translation" as a button as well as on the body
+ * click: a notification that only says "click to open" reads as nothing to
+ * click on the platforms that tuck the body click away.
  */
 async function notifyPdfTerminal(record) {
   const uiLang = await pdfNotificationLang();
   const t = key => pdfMessage(key, uiLang);
-  let body;
-  if (record.status === 'succeeded') body = t('pdfNotifyDoneBody');
-  else if (record.status === 'abandoned') body = t(pdfClient.pdfAbandonedKey(record.error || {}));
-  else body = pdfClient.pdfErrorMessage(record.error, t);
   const fileName = record.fileName ? `${record.fileName}\n` : '';
   chrome.notifications.create(`${PDF_JOB_NOTIFICATION_PREFIX}${record.jobId}`, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title: t(TERMINAL_TITLE_KEYS[record.status] || 'pdfNotifyFailTitle'),
-    message: `${fileName}${body}`
+    message: `${fileName}${pdfTerminalText(record, t)}`,
+    ...(record.status === 'succeeded' ? { buttons: [{ title: t('pdfViewTranslation') }] } : {})
   }, logIfFailed);
 }
 
@@ -188,6 +198,7 @@ export {
   logIfFailed,
   pdfNotificationLang,
   pdfMessage,
+  pdfTerminalText,
   notifyPdfTerminal,
   notifyPdfConfirm,
   clearPdfConfirmNotification,

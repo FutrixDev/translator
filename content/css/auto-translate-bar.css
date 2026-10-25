@@ -79,6 +79,11 @@ html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="no
   display: none;
 }
 
+/* offer 不要的那个按钮（一句「正在翻译」没有主按钮，任务的状态没有「不用」）。 */
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[hidden] {
+  display: none;
+}
+
 /* offer 附带的链接（媒体提示解绑了快捷键时的「设置快捷键」）。长得像链接，不像
    第三个按钮：它把人领去别处，不办这一页的事。 */
 html body [id="ai-translator-auto-bar"] .ai-translator-auto-link {

@@ -386,6 +386,8 @@
     autoOfferDismiss: 'ليس الآن',
     mediaHintPdf: 'اضغط {shortcut} لترجمة ملف PDF هذا. يستهلك ذلك من رصيد الصفحات.',
     mediaHintPdfNoShortcut: 'هذا ملف PDF. ترجمته تستهلك من رصيد الصفحات.',
+    pdfPageRunning: 'جارٍ ترجمة ملف PDF هذا… {progress}%',
+    pdfViewTranslation: 'عرض الترجمة',
     mediaHintComic: 'اضغط {shortcut} لترجمة القصة المصورة الظاهرة على الشاشة.',
     mediaHintComicNoShortcut: 'هل تريد ترجمة القصة المصورة الظاهرة على الشاشة؟',
     setShortcut: 'تعيين اختصار',

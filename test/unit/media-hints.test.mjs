@@ -44,6 +44,11 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  *   was reloaded under the page).
  * - `throws`: message types whose send throws at once (the extension context
  *   is already gone: chrome.runtime.sendMessage throws synchronously).
+ *
+ * Timers are the page's own and never fire by themselves: `page.timers` holds
+ * the pending ones and `page.tick()` runs them, so "polls every few seconds"
+ * is a fact a test can count. PDF_PAGE_JOB answers "no job" unless `replies`
+ * says otherwise.
  */
 function load({
   kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
@@ -56,6 +61,8 @@ function load({
   const offers = [];
   const notices = [];
   const comicStarts = [];
+  const timers = new Map();
+  let nextTimer = 1;
   const settings = { enableComicTranslation: enabled, enablePdfTranslation: enabled };
   const ctx = {
     t: (key) => key,
@@ -74,7 +81,8 @@ function load({
   };
   const sandbox = {
     console: { warn: (...args) => { warnings.push(args.map(String).join(' ')); }, log() {}, error() {} },
-    setTimeout,
+    setTimeout: (fn, ms) => { timers.set(nextTimer, { fn, ms }); return nextTimer++; },
+    clearTimeout: (id) => { timers.delete(id); },
     URL,
     requestAnimationFrame: () => 0,
     chrome: {
@@ -85,7 +93,7 @@ function load({
           // against this realm's literals on prototype alone.
           if (throws[message.type]) throw new Error('Extension context invalidated.');
           sent.push(JSON.parse(JSON.stringify(message)));
-          const reply = replies[message.type] || { ok: true };
+          const reply = replies[message.type] || DEFAULT_REPLIES[message.type] || { ok: true };
           if (callback) {
             setImmediate(() => callback(reply));
             return undefined;
@@ -122,14 +130,28 @@ function load({
     sandbox.document.visibilityState = 'visible';
     documentListeners.visibilitychange();
   };
-  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, lastOffer, show };
+  const hide = () => {
+    sandbox.document.visibilityState = 'hidden';
+    documentListeners.visibilitychange();
+  };
+  /** Runs every timer pending now (not the ones they set). */
+  const tick = () => {
+    const due = [...timers.entries()];
+    for (const [id] of due) timers.delete(id);
+    for (const [, timer] of due) timer.fn();
+  };
+  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, timers, lastOffer, show, hide, tick };
 }
+
+const DEFAULT_REPLIES = { PDF_PAGE_JOB: { ok: true, data: { job: null } } };
+// The storage-only look a PDF page takes once it knows it is one.
+const LOOK = { type: 'PDF_PAGE_JOB', refresh: false };
 
 const types = (sent) => sent.map((m) => m.type);
 
 // ------------------------------------------------------------ the hint
 
-test('PDF signed out: the hint shows with the shortcut, and nothing is sent', async () => {
+test('PDF signed out: the hint shows with the shortcut, and only the storage look is sent', async () => {
   const page = load({ kind: 'pdf', signedIn: false });
   page.ctx.setupMediaHints();
   await flush();
@@ -137,15 +159,18 @@ test('PDF signed out: the hint shows with the shortcut, and nothing is sent', as
   assert.ok(offer, 'no hint on a PDF while signed out');
   assert.equal(offer.text, 'mediaHintPdf');
   assert.equal(offer.link, null);
-  assert.deepEqual(page.sent, [], 'the hint sent a message before any click');
+  // PDF_PAGE_JOB without refresh reads the worker's storage and nothing else:
+  // the one message a PDF page sends before any click.
+  assert.deepEqual(page.sent, [LOOK], 'the hint sent a message before any click');
 });
 
-test('PDF switched off by the user: no hint', async () => {
+test('PDF switched off by the user: no hint, but a job started here is still shown', async () => {
   const page = load({ kind: 'pdf', enabled: false, signedIn: true });
   page.ctx.setupMediaHints();
   await flush();
   assert.equal(page.lastOffer(), null);
-  assert.deepEqual(page.sent, []);
+  // Alt+M is consent even with the switch off, so its job has to be findable.
+  assert.deepEqual(page.sent, [LOOK]);
 });
 
 test('an unbound shortcut turns the text generic and adds the settings link', async () => {
@@ -156,7 +181,7 @@ test('an unbound shortcut turns the text generic and adds the settings link', as
   assert.equal(offer.text, 'mediaHintPdfNoShortcut');
   assert.equal(offer.link.text, 'setShortcut');
   offer.link.onClick();
-  assert.deepEqual(types(page.sent), ['OPEN_SHORTCUT_SETTINGS']);
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'OPEN_SHORTCUT_SETTINGS']);
   await flush();
   assert.deepEqual(page.warnings, []);
 });
@@ -260,7 +285,7 @@ test('the popup asks for the PDF only: a comic on screen is never started, and n
   assert.equal(pdf.ctx.runMediaShortcut('pdf'), 'pdf');
   await flush();
   await flush();
-  assert.deepEqual(types(pdf.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+  assert.deepEqual(types(pdf.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL', 'PDF_PAGE_JOB']);
 
   assert.throws(() => pdf.ctx.runMediaShortcut('comic'), /unknown kind comic/);
 });
@@ -308,8 +333,10 @@ test('signed out: sign in first, then carry on with the same PDF', async () => {
   page.lastOffer().accept();
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
-  // The job took over; the bar is gone.
+  await flush();
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN', 'PDF_TRANSLATE_URL', 'PDF_PAGE_JOB']);
+  // The hint is gone; the job's own bar takes over once the worker has a record
+  // (here it has none, so nothing is left to say).
   assert.equal(page.lastOffer(), null);
 });
 
@@ -323,7 +350,7 @@ test('a cancelled sign-in stops silently and puts the bar back as it was', async
   assert.equal(page.lastOffer().busy, true, 'the button is not held while signing in');
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN']);
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN']);
   assert.deepEqual(page.notices, []);
   const offer = page.lastOffer();
   assert.equal(offer.text, 'mediaHintPdf');
@@ -356,7 +383,7 @@ test('a second press while the first is still signing in does not dispatch twice
   page.ctx.runMediaShortcut();
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+  assert.deepEqual(types(page.sent).filter((type) => type === 'PDF_TRANSLATE_URL'), ['PDF_TRANSLATE_URL']);
 });
 
 test('a send that throws at once (the extension is gone) says so, and the hint comes back', async () => {
@@ -389,6 +416,196 @@ test('a comic claim that failed is asked again on the next look, and then the hi
   await flush();
   assert.equal(types(page.sent).filter((type) => type === 'COMIC_HINT_WRITE').length >= 2, true, 'never asked again');
   assert.equal(page.lastOffer() && page.lastOffer().text, 'mediaHintComic');
+});
+
+// ------------------------------------------------------------ the PDF's own job
+
+/** A PDF page whose worker answers PDF_PAGE_JOB with `job`, changeable later. */
+function pdfWithJob(job, options = {}) {
+  const replies = { PDF_PAGE_JOB: { ok: true, data: { job } }, ...(options.replies || {}) };
+  const page = load({ kind: 'pdf', signedIn: true, ...options, replies });
+  const answer = (next) => { replies.PDF_PAGE_JOB = { ok: true, data: { job: next } }; };
+  return { page, replies, answer };
+}
+
+const RUNNING = { jobId: 'job-1', phase: 'running', progress: 42.4, message: '' };
+const DONE = { jobId: 'job-1', phase: 'succeeded', progress: 100, message: 'pdfNotifyDoneBody' };
+const looks = (page) => page.sent.filter((m) => m.type === 'PDF_PAGE_JOB');
+
+test('a finished translation of this PDF is said on the page, with View translation', async () => {
+  const { page } = pdfWithJob(DONE);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  const offer = page.lastOffer();
+  assert.equal(offer.text, 'pdfNotifyDoneTitle');
+  assert.equal(offer.acceptText, 'pdfViewTranslation');
+  assert.equal(offer.dismissText, null, 'a job bar has no "Not now"');
+  assert.deepEqual(page.sent, [LOOK], 'a finished job asked the server again');
+  assert.equal(page.timers.size, 0, 'a finished job is polled');
+
+  offer.accept();
+  await flush();
+  assert.deepEqual(page.sent.at(-1), { type: 'PDF_OPEN_JOB', jobId: 'job-1', via: 'pdf_page' });
+  assert.deepEqual(page.notices, []);
+});
+
+test('a job in flight says how far it is, and polls only while the tab is visible', async () => {
+  const { page, answer } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'pdfPageRunning');
+  assert.equal(page.lastOffer().acceptText, 'docView');
+  assert.equal(page.timers.size, 1);
+  assert.equal([...page.timers.values()][0].ms, 4000);
+
+  page.tick();
+  await flush();
+  await flush();
+  assert.deepEqual(looks(page).map((m) => m.refresh), [false, true], 'the poll did not ask for a refresh');
+  assert.equal(page.timers.size, 1, 'one poll, then the polling stopped');
+
+  page.hide();
+  assert.equal(page.timers.size, 0, 'a hidden tab kept polling');
+
+  // A poll still in flight when the tab hides does not set the next one.
+  page.show();
+  await flush();
+  await flush();
+  page.tick();
+  page.hide();
+  await flush();
+  await flush();
+  assert.equal(page.timers.size, 0, 'a poll that came back to a hidden tab polled again');
+
+  // Finished while the tab was away: coming back asks once and shows it.
+  answer(DONE);
+  page.show();
+  await flush();
+  await flush();
+  assert.deepEqual(looks(page).at(-1), { type: 'PDF_PAGE_JOB', refresh: true });
+  assert.equal(page.lastOffer().text, 'pdfNotifyDoneTitle');
+  assert.equal(page.timers.size, 0);
+});
+
+test('the running bar has no View until the job has an id to open', async () => {
+  const { page } = pdfWithJob({ jobId: null, phase: 'running', progress: 0, message: '' });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'pdfPageRunning');
+  assert.equal(page.lastOffer().accept, null);
+});
+
+test('clicking Translate puts the running bar up at once, then follows the job to done', async () => {
+  const { page, answer } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+
+  answer(RUNNING);
+  page.lastOffer().accept();
+  await flush();
+  assert.equal(page.lastOffer().text, 'pdfPageRunning', 'the click left the bar saying nothing');
+  await flush();
+  await flush();
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'PDF_TRANSLATE_URL', 'PDF_PAGE_JOB']);
+  assert.equal(page.lastOffer().accept !== null, true);
+
+  answer(DONE);
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'pdfNotifyDoneTitle');
+  assert.equal(page.timers.size, 0);
+});
+
+test('a PDF opened with no job behind it asks for nothing more', async () => {
+  const { page } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  page.hide();
+  page.show();
+  await flush();
+  assert.deepEqual(looks(page).map((m) => m.refresh), [false, false], 'a refresh went out with no job to refresh');
+  assert.equal(page.timers.size, 0);
+});
+
+test('a failed job says why and offers a retry that runs the translation again', async () => {
+  const { page, answer } = pdfWithJob({ jobId: null, phase: 'failed', progress: 0, message: 'Out of pages' });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  const offer = page.lastOffer();
+  assert.equal(offer.text, 'Out of pages');
+  assert.equal(offer.acceptText, 'pdfRetry');
+  answer(RUNNING);
+  offer.accept();
+  await flush();
+  await flush();
+  await flush();
+  assert.deepEqual(page.sent.filter((m) => m.type === 'PDF_TRANSLATE_URL'), [{ type: 'PDF_TRANSLATE_URL', url: PDF_URL, consent: true }]);
+  assert.equal(page.lastOffer().text, 'pdfPageRunning');
+});
+
+test('awaiting confirmation sends the user to the job page', async () => {
+  const { page } = pdfWithJob({ jobId: 'job-1', phase: 'awaiting', progress: 10, message: '' });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'docStatusAwaitingConfirm');
+  assert.equal(page.timers.size, 0, 'a job waiting on the user is polled');
+  page.lastOffer().accept();
+  await flush();
+  assert.equal(page.sent.at(-1).type, 'PDF_OPEN_JOB');
+});
+
+test('closing the bar hides that state only: the job finishing says so again', async () => {
+  const { page, answer } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer(), null);
+  assert.equal(page.timers.size, 1, 'closing the bar stopped following the job');
+
+  answer({ ...RUNNING, progress: 80 });
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer(), null, 'a closed running bar came back on progress');
+
+  answer(DONE);
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'pdfNotifyDoneTitle');
+});
+
+test('a View the worker cannot open says so on the page', async () => {
+  const { page } = pdfWithJob(DONE, { replies: { PDF_OPEN_JOB: { ok: false, error: { code: 'network_error' } } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().accept();
+  await flush();
+  assert.deepEqual(page.notices, ['pdfErrUnavailable']);
+  assert.equal(page.warnings.length, 1);
+});
+
+test('a reloaded extension stops the polling instead of failing every few seconds', async () => {
+  const { page, replies } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  replies.PDF_PAGE_JOB = { ok: false, error: { code: 'extension_context', message: 'gone' } };
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.timers.size, 0);
+  assert.equal(page.warnings.length, 1);
+  assert.equal(page.lastOffer().text, 'pdfPageRunning', 'the last thing known was thrown away');
 });
 
 // ------------------------------------------------------------ the comic start it hands off to

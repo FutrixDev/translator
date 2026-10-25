@@ -265,13 +265,18 @@ export function pendingJobId(operationId) {
  * the surfaces have something to show during the upload. Both creates write
  * it — the upload ticket (after the ticket is granted) and the create itself
  * (which resets it, so the stale clock starts at the create, not the upload).
+ *
+ * `sourceUrl` is the address a URL job was fetched from, null for an upload:
+ * it is how the PDF tab showing that address finds its own job again
+ * (PDF_PAGE_JOB). Every later write merges into the record, so it stays.
  */
-export function receiptRecord({ operationId, fileName, sourceFormat }) {
+export function receiptRecord({ operationId, fileName, sourceFormat, sourceUrl = null }) {
   return {
     jobId: pendingJobId(operationId),
     operationId,
     fileName: fileName || `document.${DocJobs.extensionFor(sourceFormat)}`,
     sourceFormat,
+    sourceUrl,
     status: 'queued',
     stage: null,
     progress: 0,

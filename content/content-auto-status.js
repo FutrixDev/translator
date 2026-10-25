@@ -41,10 +41,14 @@
   let notice = '';
 
   // 「这一页还有另一件事可以做」。今天只有一个来源：content/content-media-hints.js
-  // （PDF 文档或漫画阅读页上的「按 {快捷键} 翻译」）。
+  // （PDF 文档或漫画阅读页上的「按 {快捷键} 翻译」，以及点下去之后这份 PDF 的
+  // 任务走到哪了、译好了一键「查看译文」）。
   //
-  // 形状是 { text, accept, dismiss, link?, busy? } 而不是一个 mode 名：link 是
-  // 文字后面的一个附带链接 { text, onClick }，busy 把「翻译」按钮钉住（登录中）。
+  // 形状是 { text, accept?, acceptText?, dismiss, dismissText?, link?, busy? }
+  // 而不是一个 mode 名：link 是文字后面的一个附带链接 { text, onClick }，busy 把
+  // 主按钮钉住（登录中）。主按钮默认叫「翻译」、副按钮默认叫「不用」；没有 accept
+  // 就没有主按钮，dismissText 给 null 就没有副按钮（只剩 ×）—— 一句「正在翻译」
+  // 没有什么可以「不用」的。
   // 这一层不认识 PDF，也不该认识。它认识的只是「有人要借这条窄条说一句话、再收
   // 一次点击」——右下角就这一条窄条，第二条会和第一条叠在一起（和 notice 同一个
   // 道理）。
@@ -173,7 +177,7 @@
     // 「翻译」按钮只在 offer 那一档露出来（见 render），这一下归借条子说话的
     // 那一位：它要办的事它自己知道。先把按钮钉住，免得连点两下办两次。
     if (act === 'translate') {
-      if (currentMode() !== 'offer') return;
+      if (currentMode() !== 'offer' || !offer.accept) return;
       button.disabled = true;
       offer.accept();
       return;
@@ -213,7 +217,7 @@
    * **等用户点**的入口。两者都摆在这一层，因为右下角只画得出一条窄条。
    */
   function setOffer(next) {
-    offer = next && typeof next.accept === 'function' ? next : null;
+    offer = next && typeof next.dismiss === 'function' ? next : null;
     render();
   }
 
@@ -255,11 +259,16 @@
     if (mode === 'offer') {
       bar.querySelector('.ai-translator-auto-text').textContent = offer.text || '';
       if (offer.link) link.textContent = offer.link.text;
-      bar.querySelector('[data-act="translate"]').textContent = t('autoOfferAccept');
-      bar.querySelector('[data-act="dismiss"]').textContent = t('autoOfferDismiss');
+      const accept = bar.querySelector('[data-act="translate"]');
+      const decline = bar.querySelector('[data-act="dismiss"]');
+      const declineText = offer.dismissText === undefined ? t('autoOfferDismiss') : offer.dismissText;
+      accept.hidden = !offer.accept;
+      accept.textContent = offer.acceptText || t('autoOfferAccept');
+      decline.hidden = !declineText;
+      decline.textContent = declineText || '';
       // 上一次 offer 按下去钉住的按钮可能还钉着（同一份 DOM 不重建）；offer 自己
       // 说还在忙（登录中）时照它的。
-      bar.querySelector('[data-act="translate"]').disabled = !!offer.busy;
+      accept.disabled = !!offer.busy;
       return;
     }
 

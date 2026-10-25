@@ -193,3 +193,30 @@ test('one priority: notice over the explain line over the offer, and nothing whi
   page.click('close', true);
   assert.deepEqual(page.calls, ['dismiss']);
 });
+
+test('an offer names its own buttons: no accept hides the primary, a null dismissText hides the decline', () => {
+  const page = load();
+  const button = (act) => page.bar().querySelector(`[data-act="${act}"]`);
+  page.ctx.showAutoStatusOffer({ text: 'pdfPageRunning', dismiss: () => page.calls.push('dismiss'), dismissText: null });
+  assert.equal(page.bar().dataset.mode, 'offer', 'an offer with nothing to accept is still drawn');
+  assert.equal(button('translate').hidden, true);
+  assert.equal(button('dismiss').hidden, true);
+  page.click('translate', true);
+  assert.deepEqual(page.calls, [], 'a hidden primary button ran something');
+
+  page.ctx.showAutoStatusOffer({
+    text: 'pdfNotifyDoneTitle', accept: () => page.calls.push('view'), acceptText: 'pdfViewTranslation',
+    dismiss: () => page.calls.push('dismiss'), dismissText: null,
+  });
+  assert.equal(button('translate').hidden, false);
+  assert.equal(button('translate').textContent, 'pdfViewTranslation');
+  page.click('translate', true);
+  assert.deepEqual(page.calls, ['view']);
+
+  // The same DOM drawn for a plain offer again: both default buttons are back.
+  offerOn(page);
+  assert.equal(button('translate').hidden, false);
+  assert.equal(button('translate').textContent, 'autoOfferAccept');
+  assert.equal(button('dismiss').hidden, false);
+  assert.equal(button('dismiss').textContent, 'autoOfferDismiss');
+});
