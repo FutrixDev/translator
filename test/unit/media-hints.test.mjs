@@ -347,7 +347,7 @@ test('signed out: sign in first, then carry on with the same PDF', async () => {
   await flush();
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN', 'PDF_TRANSLATE_URL', 'PDF_PAGE_JOB']);
   // The hint is gone; the job's own bar takes over once the worker writes a
   // record (here it writes none, so nothing is left to say).
   assert.equal(page.lastOffer(), null);
@@ -467,6 +467,22 @@ test('a finished translation of this PDF is said on the page, with View translat
   assert.deepEqual(page.notices, []);
 });
 
+test('View redraws the bar once the reader is open, so it can be clicked again', async () => {
+  const { page } = pdfWithJob(DONE);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  // The bar pins its button on a click and frees it only when it is drawn again.
+  for (let click = 1; click <= 2; click++) {
+    const drawn = page.offers.length;
+    page.lastOffer().accept.run();
+    await flush();
+    assert.ok(page.offers.length > drawn, `click ${click}: the bar was not drawn again, its View stays pinned`);
+    assert.equal(page.lastOffer().accept.text, 'pdfViewTranslation');
+  }
+  assert.equal(page.sent.filter((m) => m.type === 'PDF_OPEN_JOB').length, 2);
+});
+
 test('a job in flight says how far it is, and polls only while the tab is visible', async () => {
   const { page, answer } = pdfWithJob(RUNNING);
   page.ctx.setupMediaHints();
@@ -524,8 +540,9 @@ test('clicking Translate hands the bar to the job as soon as the worker writes i
   page.lastOffer().accept.run();
   await flush();
   await flush();
-  // The click itself asks nothing more: the record it makes says so.
-  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'PDF_TRANSLATE_URL']);
+  await flush();
+  // After the click only a storage look: the record it made says the rest.
+  assert.deepEqual(page.sent, [LOOK, { type: 'PDF_TRANSLATE_URL', url: PDF_URL, consent: true }, LOOK]);
   assert.equal(page.lastOffer(), null, 'the hint came back after a click that started a job');
 
   // The worker writes the pending record while it is still uploading.
@@ -627,6 +644,25 @@ test('closing a cancelled job or a retryable failure brings the hint back', asyn
     page.lastOffer().dismiss();
     assert.equal(page.lastOffer().text, 'mediaHintPdf', `closing a ${fields.phase} job left no way to start again`);
   }
+});
+
+test('a job started here and then cancelled gives the hint back once it is closed', async () => {
+  const { page, answer } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  answer(RUNNING);
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%', 'the click did not hand the bar to its job');
+
+  answer(job({ phase: 'abandoned', text: 'Cancelled' }));
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Cancelled');
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf', 'a cancelled job closed in this tab left no way to start again');
 });
 
 test('awaiting confirmation sends the user to the job page', async () => {

@@ -94,6 +94,8 @@
   // 译好了开阅读台，别的开任务页（openPdfJob 自己会再问一次状态）。
   async function openJob() {
     const reply = await ctx.comic.sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.jobId, via: 'pdf_page' });
+    // 条子在点下时把按钮钉住了，只有重画才放开：不画，「查看」就只能点一次。
+    hooks.repaint();
     if (reply.ok) return;
     console.warn('Blab Translation: opening this PDF\'s translation failed', reply.error);
     const lost = reply.error && reply.error.code === 'extension_context';
@@ -120,6 +122,19 @@
       chrome.storage.onChanged.addListener(onStorageChanged);
       document.addEventListener('visibilitychange', onVisibility);
       syncJob(false);
+    },
+
+    /**
+     * 再读一遍本机存储，读完才回。翻译交出去之后用：服务工作者回话时记录已经
+     * 写好，条子当场换成任务，不等存储变化那一下。
+     */
+    resync() {
+      return syncJob(false);
+    },
+
+    /** 这一页有没有任务记录（有就由 ownsBar 说提示回不回来）。 */
+    hasJob() {
+      return !!job;
     },
 
     /** 条子此刻该说的任务，或 null（没有任务，或这一档他关掉了）。 */
