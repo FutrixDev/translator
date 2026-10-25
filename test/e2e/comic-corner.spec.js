@@ -134,8 +134,12 @@ test.describe('Comic corner placement', () => {
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       await expect(page.locator(BADGE)).toBeVisible();
       // Scrolled sideways, the image's left edge leaves the box; the badge stays.
+      // Before and after, the right answer is the same 8, so move the badge
+      // off first and read only once the pin has placed it again.
+      await page.locator(BADGE).evaluate((el) => { el.style.left = '-1000px'; });
       await page.locator('#box').evaluate((box) => { box.scrollLeft = 300; });
-      await expect.poll(async () => (await edges(BADGE)).left).toBe(8);
+      await expect.poll(() => page.locator(BADGE).evaluate(el => el.style.left)).not.toBe('-1000px');
+      expect((await edges(BADGE)).left).toBe(8);
     } finally {
       await service.close();
     }
