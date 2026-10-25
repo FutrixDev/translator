@@ -193,6 +193,7 @@
         "content/content-auto-translate.js",
         "content/content-auto-status.js",
         "content/content-media-hints.js",
+        "content/content-pdf-page-job.js",
         "content/hover/blocks.js",
         "content/hover/inline.js",
         "content/hover/latex.js",

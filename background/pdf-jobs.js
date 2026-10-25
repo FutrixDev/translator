@@ -24,7 +24,6 @@ import {
   notifyPdfTerminal,
   pdfMessage,
   pdfNotificationLang,
-  pdfTerminalText,
 } from './pdf-notify.js';
 import { noteJobSettled } from './rating-ask.js';
 import { accountErrorMessage, runAccountAction } from './account-actions.js';
@@ -36,7 +35,7 @@ const DocJobs = globalThis.DocJobs;
 const SiteLinks = globalThis.SiteLinks;
 // 「这是不是一份 PDF」「它叫什么名字」的唯一实现，见 shared/pdf-url.js。
 // 从这里再导出去，是因为右键菜单那一层本来就从这个模块要它们。
-const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
+const { isLikelyPdfUrl, pdfFileNameFromUrl, pdfSourceKey } = globalThis.PdfUrl;
 const { ComicApiError } = comicClient;
 
 // ---------------------------------------------------------------------------
@@ -130,7 +129,7 @@ chrome.notifications.onButtonClicked.addListener(openJobFromNotification);
 // right-click on a link and the toolbar button can fire from any page at all,
 // and that page has no job card to put the question in. (Not for want of a
 // content script on the PDF itself — Chrome's viewer does run one, which is
-// what content/content-media-hints.js draws its offer bar on. The click simply
+// what content/content-pdf-page-job.js follows the job on. The click simply
 // is not tied to any one document.) So this path asks in the one place all of
 // its entries already speak: a notification, with the answer as its buttons.
 //
@@ -565,36 +564,55 @@ async function handlePdfJobAbandon(jobId) {
 
 /**
  * PDF_PAGE_JOB: the PDF tab asks what became of its own document — the newest
- * record a URL job left for that address (`sourceUrl`), in the words its bar
- * draws: `phase` is running, awaiting, succeeded or failed, `jobId` is null
- * while the click is still uploading (there is no job to open yet), and a job
- * that is over says why in `message`, the notification's own sentence.
+ * record a URL job left for that address (`sourceUrl`; records are kept newest
+ * first), as the bar draws it:
+ * - `phase`: running, awaiting, succeeded, failed or abandoned;
+ * - `text`: the sentence for that phase. A failed or cancelled job says it
+ *   through pdfStatusLine, the same line the notification, the popup and the
+ *   jobs page show, so the tab never words a job on its own;
+ * - `retryable`: a failure that another try could fix (isRetryablePdfFailure);
+ * - `jobId`: null while the click is still uploading (no job to open yet);
+ * - `operationId`: the click that made the record, stable from the pending
+ *   record to the real one, which is what the tab remembers a closed bar by.
  *
  * `refresh` runs the poll itself rather than fetching one job for the page:
- * the tab asks only while what it shows is not over, and the poll is the one
- * place a change becomes a notification — which the user still wants once they
- * have looked away. Without it this reads storage only, so a PDF opened with
- * no job behind it costs no request (test/e2e/pdf-prompt.spec.js).
+ * the tab asks only while the job is running, and the poll is the one place a
+ * change becomes a notification — which the user still wants once they have
+ * looked away. Without it this reads storage only, so a PDF opened with no job
+ * behind it costs no request (test/e2e/pdf-prompt.spec.js).
  */
 async function handlePdfPageJob(url, { refresh }) {
+  if (!url) return { job: null };
   const records = refresh ? await refreshPdfJobs() : await pdfClient.listJobRecords();
-  const record = records
-    .filter(r => url && r.sourceUrl === url)
-    .reduce((newest, r) => (!newest || (r.createdAt || 0) > (newest.createdAt || 0) ? r : newest), null);
+  // Records are keyed without the #fragment the viewer adds (pdfSourceKey).
+  const sourceKey = pdfSourceKey(url);
+  const record = records.find(r => r.sourceUrl === sourceKey);
   if (!record) return { job: null };
-  let phase = 'failed';
-  if (DocJobs.isActiveStatus(record.status)) phase = 'running';
-  else if (DocJobs.isAwaitingStatus(record.status)) phase = 'awaiting';
-  else if (record.status === 'succeeded') phase = 'succeeded';
   const uiLang = await pdfNotificationLang();
+  const t = key => pdfMessage(key, uiLang);
+  let phase;
+  let text;
+  if (DocJobs.isActiveStatus(record.status)) {
+    phase = 'running';
+    const progress = Number.isFinite(record.progress) ? Math.round(record.progress) : 0;
+    text = t('pdfPageRunning').split('{progress}').join(String(progress));
+  } else if (DocJobs.isAwaitingStatus(record.status)) {
+    phase = 'awaiting';
+    text = t('docStatusAwaitingConfirm');
+  } else if (record.status === 'succeeded') {
+    phase = 'succeeded';
+    text = t('pdfNotifyDoneTitle');
+  } else {
+    phase = record.status === 'abandoned' ? 'abandoned' : 'failed';
+    text = pdfClient.pdfStatusLine(record, t).text;
+  }
   return {
     job: {
       jobId: pdfClient.isPendingRecord(record) ? null : record.jobId,
+      operationId: record.operationId,
       phase,
-      progress: Number.isFinite(record.progress) ? record.progress : 0,
-      message: DocJobs.isTerminalStatus(record.status)
-        ? pdfTerminalText(record, key => pdfMessage(key, uiLang))
-        : ''
+      text,
+      retryable: phase === 'failed' && pdfClient.isRetryablePdfFailure(record.error),
     }
   };
 }

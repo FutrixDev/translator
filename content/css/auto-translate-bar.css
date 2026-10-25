@@ -43,7 +43,7 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn {
   cursor: pointer;
 }
 
-html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="translate"] {
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="accept"] {
   border-color: transparent;
   background: linear-gradient(135deg, #7c5cff 0%, #06b6d4 100%);
   color: #ffffff;
@@ -61,7 +61,7 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn:hover {
   background: rgba(124, 92, 255, 0.18);
 }
 
-html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="translate"]:hover {
+html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="accept"]:hover {
   border-color: transparent;
   background: linear-gradient(135deg, #8e73ff 0%, #22c8e0 100%);
 }
@@ -72,14 +72,8 @@ html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[data-act="close"
   color: #e8e8f0;
 }
 
-/* 展开说明和「没存上」都只剩一行字和一个关闭。offer 那两个按钮留在 DOM 里不重建
-   —— 用户点掉说明之后，还没回答的 offer 要原样回来。 */
-html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="translate"],
-html body [id="ai-translator-auto-bar"]:is([data-mode="explain"], [data-mode="notice"]) .ai-translator-auto-btn[data-act="dismiss"] {
-  display: none;
-}
-
-/* offer 不要的那个按钮（一句「正在翻译」没有主按钮，任务的状态没有「不用」）。 */
+/* 此刻用不上的按钮：offer 没给的那一个，以及说明和「没存上」那两档里的两个
+   （content-auto-status.js 的 render 每一档都写 hidden）。 */
 html body [id="ai-translator-auto-bar"] .ai-translator-auto-btn[hidden] {
   display: none;
 }

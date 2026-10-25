@@ -200,7 +200,7 @@ test('only a finished job\'s notification carries the View button', async () => 
 const PDF_URL = 'https://papers.test/a.pdf';
 const pdfTab = { tab: { id: 3, url: PDF_URL } };
 const pageRecord = (jobId, status, extra = {}) => ({
-  jobId, status, fileName: 'a.pdf', sourceFormat: 'pdf', sourceUrl: PDF_URL,
+  jobId, operationId: `op-${jobId}`, status, fileName: 'a.pdf', sourceFormat: 'pdf', sourceUrl: PDF_URL,
   progress: 0, error: null, createdAt: Date.now(), ...extra,
 });
 
@@ -216,14 +216,27 @@ async function pageJob(records, refresh = false) {
 
 test('PDF_PAGE_JOB: the newest job started from this address answers, read from storage alone', async () => {
   const now = Date.now();
+  // Stored newest first (saveJobRecord puts a new job at the front), so the first match is the newest.
   const reply = await pageJob([
-    pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
-    pageRecord('job_new', 'running', { progress: 40, createdAt: now }),
-    pageRecord('job_elsewhere', 'running', { sourceUrl: 'https://papers.test/b.pdf', createdAt: now + 1 }),
     pageRecord('job_upload', 'running', { sourceUrl: null, createdAt: now + 2 }),
+    pageRecord('job_elsewhere', 'running', { sourceUrl: 'https://papers.test/b.pdf', createdAt: now + 1 }),
+    pageRecord('job_new', 'running', { progress: 40, createdAt: now }),
+    pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
   ]);
-  assert.deepEqual(reply, { ok: true, data: { job: { jobId: 'job_new', phase: 'running', progress: 40, message: '' } } });
+  assert.deepEqual(reply, { ok: true, data: { job: {
+    jobId: 'job_new', operationId: 'op-job_new', phase: 'running', text: 'Translating this PDF… 40%', retryable: false,
+  } } });
   assert.deepEqual(fetched, [], 'a refresh:false look asks the network nothing');
+});
+
+test('PDF_PAGE_JOB: a tab scrolled to #page=3 still finds the job started from that address', async () => {
+  local.pdfJobs = [pageRecord('job_p', 'running', { progress: 20 })];
+  try {
+    const reply = await send({ type: 'PDF_PAGE_JOB', refresh: false }, { tab: { id: 3, url: `${PDF_URL}#page=3` } });
+    assert.equal(reply.data.job && reply.data.job.jobId, 'job_p');
+  } finally {
+    delete local.pdfJobs;
+  }
 });
 
 test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the device', async () => {
@@ -231,18 +244,31 @@ test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the 
   assert.deepEqual(reply, { ok: true, data: { job: null } });
 });
 
-test('PDF_PAGE_JOB: each status maps to the bar\'s phase; a receipt has no job to open yet', async () => {
+test('PDF_PAGE_JOB: each status maps to the bar\'s phase and line; a receipt has no job to open yet', async () => {
   const phase = async (record) => (await pageJob([record])).data.job;
-  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true })),
-    { jobId: null, phase: 'running', progress: 0, message: '' });
-  assert.equal((await phase(pageRecord('job_w', 'awaiting_confirm'))).phase, 'awaiting');
+  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true, operationId: 'op-2' })),
+    { jobId: null, operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 0%', retryable: false });
+  const waiting = await phase(pageRecord('job_w', 'awaiting_confirm'));
+  assert.equal(waiting.phase, 'awaiting');
+  assert.equal(waiting.text, 'Needs your confirmation');
   const done = await phase(pageRecord('job_d', 'succeeded', { settledAt: Date.now() }));
   assert.equal(done.phase, 'succeeded');
-  assert.equal(done.message, 'Your translation is ready. Click to open it.');
-  const failed = await phase(pageRecord('job_f', 'failed', { settledAt: Date.now(), error: { code: 'insufficient_credits' } }));
-  assert.equal(failed.phase, 'failed');
-  assert.ok(failed.message && failed.message !== 'insufficient_credits', failed.message);
-  assert.equal((await phase(pageRecord('job_x', 'abandoned', { settledAt: Date.now(), error: {} }))).phase, 'failed');
+  assert.equal(done.text, 'Document translation finished');
+  assert.equal(done.jobId, 'job_d');
+
+  // A failure says why, in the same words as the popup row; only one a retry can fix is retryable.
+  const broke = await phase(pageRecord('job_f', 'failed', { settledAt: Date.now(), error: { code: 'insufficient_points' } }));
+  assert.equal(broke.phase, 'failed');
+  assert.equal(broke.retryable, false);
+  assert.ok(broke.text && !broke.text.includes('insufficient_points'), broke.text);
+  const flaky = await phase(pageRecord('job_n', 'failed', { settledAt: Date.now(), error: { code: 'network_error' } }));
+  assert.equal(flaky.retryable, true);
+  assert.notEqual(flaky.text, broke.text);
+
+  // Cancelled is its own phase, never retryable: the bar gives the hint back instead.
+  const gone = await phase(pageRecord('job_x', 'abandoned', { settledAt: Date.now(), error: {} }));
+  assert.equal(gone.phase, 'abandoned');
+  assert.equal(gone.retryable, false);
 });
 
 test('PDF_PAGE_JOB refresh:true polls the job and answers the fresh status', async () => {

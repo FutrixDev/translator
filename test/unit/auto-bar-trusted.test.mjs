@@ -123,7 +123,8 @@ function offerOn(page) {
   const offer = {
     text: 'mediaHintComic',
     link: { text: 'setShortcut', onClick: () => page.calls.push('link') },
-    accept: () => page.calls.push('accept'),
+    accept: { text: 'autoOfferAccept', run: () => page.calls.push('accept') },
+    decline: 'autoOfferDismiss',
     dismiss: () => page.calls.push('dismiss'),
   };
   page.ctx.showAutoStatusOffer(offer);
@@ -133,13 +134,13 @@ function offerOn(page) {
 test('a synthetic click on the offer does nothing, on any of its buttons', () => {
   const page = load();
   offerOn(page);
-  for (const act of ['translate', 'link', 'dismiss', 'close']) page.click(act, false);
+  for (const act of ['accept', 'link', 'dismiss', 'close']) page.click(act, false);
   assert.deepEqual(page.calls, [], 'a page script clicked the bar and something ran');
-  assert.equal(page.bar().querySelector('[data-act="translate"]').disabled, false);
+  assert.equal(page.bar().querySelector('[data-act="accept"]').disabled, false);
   assert.equal(page.bar().dataset.mode, 'offer', 'a synthetic close took the bar away');
 
   // The same buttons answer the user's own hand.
-  page.click('translate', true);
+  page.click('accept', true);
   assert.deepEqual(page.calls, ['accept']);
 });
 
@@ -159,7 +160,7 @@ test('the bar steps aside while a video fills the screen, and comes back as it w
   page.ctx.showAutoStatusOffer(null);
   assert.equal(page.stage.listeners.size, 0, 'the bar went away but kept the stage polling');
   page.stage.filled = true;
-  page.ctx.showAutoStatusOffer({ text: 'mediaHintPdf', accept() {}, dismiss() {} });
+  page.ctx.showAutoStatusOffer({ text: 'mediaHintPdf', accept: null, decline: null, dismiss() {} });
   assert.equal(page.bar(), null);
   page.stage.set(false);
   assert.equal(page.bar().dataset.mode, 'offer');
@@ -174,14 +175,18 @@ test('one priority: notice over the explain line over the offer, and nothing whi
   page.ctx.showAutoStatusNotice('popupSiteRuleFailed');
   assert.equal(mode(), 'notice');
   assert.equal(page.bar().querySelector('.ai-translator-auto-text').textContent, 'popupSiteRuleFailed');
+  // A notice is one line and a close: the offer's buttons do not hang under "could not save".
+  for (const act of ['accept', 'dismiss', 'link']) {
+    assert.equal(page.bar().querySelector(`[data-act="${act}"]`).hidden, true, `the notice kept the ${act} button`);
+  }
 
   page.ctx.yieldAutoStatus(true);
   assert.equal(page.bar(), null, 'the bar stayed under the picker');
   page.ctx.yieldAutoStatus(false);
   assert.equal(mode(), 'notice', 'the notice came back after the picker');
 
-  // "Translate" belongs to the offer: under a notice it is not the offer's button.
-  page.click('translate', true);
+  // The primary button belongs to the offer: under a notice it is not the offer's button.
+  page.click('accept', true);
   assert.deepEqual(page.calls, [], 'the offer was accepted while the bar was saying something else');
 
   // Each close takes away the layer the bar is showing, one at a time.
@@ -194,29 +199,30 @@ test('one priority: notice over the explain line over the offer, and nothing whi
   assert.deepEqual(page.calls, ['dismiss']);
 });
 
-test('an offer names its own buttons: no accept hides the primary, a null dismissText hides the decline', () => {
+test('an offer names its own buttons: no accept hides the primary, no decline hides the second', () => {
   const page = load();
   const button = (act) => page.bar().querySelector(`[data-act="${act}"]`);
-  page.ctx.showAutoStatusOffer({ text: 'pdfPageRunning', dismiss: () => page.calls.push('dismiss'), dismissText: null });
+  page.ctx.showAutoStatusOffer({ text: 'pdfPageRunning', accept: null, decline: null, dismiss: () => page.calls.push('dismiss') });
   assert.equal(page.bar().dataset.mode, 'offer', 'an offer with nothing to accept is still drawn');
-  assert.equal(button('translate').hidden, true);
+  assert.equal(button('accept').hidden, true);
   assert.equal(button('dismiss').hidden, true);
-  page.click('translate', true);
+  page.click('accept', true);
   assert.deepEqual(page.calls, [], 'a hidden primary button ran something');
 
   page.ctx.showAutoStatusOffer({
-    text: 'pdfNotifyDoneTitle', accept: () => page.calls.push('view'), acceptText: 'pdfViewTranslation',
-    dismiss: () => page.calls.push('dismiss'), dismissText: null,
+    text: 'pdfNotifyDoneTitle', accept: { text: 'pdfViewTranslation', run: () => page.calls.push('view') },
+    decline: null, dismiss: () => page.calls.push('dismiss'),
   });
-  assert.equal(button('translate').hidden, false);
-  assert.equal(button('translate').textContent, 'pdfViewTranslation');
-  page.click('translate', true);
+  assert.equal(button('accept').hidden, false);
+  assert.equal(button('accept').textContent, 'pdfViewTranslation');
+  assert.equal(button('dismiss').hidden, true);
+  page.click('accept', true);
   assert.deepEqual(page.calls, ['view']);
 
-  // The same DOM drawn for a plain offer again: both default buttons are back.
+  // The same DOM drawn for the hint again: both of its own labels are back.
   offerOn(page);
-  assert.equal(button('translate').hidden, false);
-  assert.equal(button('translate').textContent, 'autoOfferAccept');
+  assert.equal(button('accept').hidden, false);
+  assert.equal(button('accept').textContent, 'autoOfferAccept');
   assert.equal(button('dismiss').hidden, false);
   assert.equal(button('dismiss').textContent, 'autoOfferDismiss');
 });

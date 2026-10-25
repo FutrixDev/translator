@@ -121,7 +121,7 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn {
   color: #1d1d1f;
 }
 
-html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="translate"] {
+html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="accept"] {
   border-color: transparent;
   color: #ffffff;
 }

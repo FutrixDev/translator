@@ -75,7 +75,7 @@ test.describe('PDF offer bar', () => {
       // 条子自己出来了，而且是 offer 那一模式。整页翻译在这一页上办不到（正文在
       // 外进程的 <embed> 里），内置表的 never 把它按住了。
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
-      await expect(page.locator(`${BAR} [data-act="translate"]`)).toBeVisible();
+      await expect(page.locator(`${BAR} [data-act="accept"]`)).toBeVisible();
 
       // PRD 的那一句：到此为止，往任务接口的请求一个都没有。
       expect(service.state.apiHits).toEqual([]);
@@ -97,7 +97,7 @@ test.describe('PDF offer bar', () => {
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
       expect(service.state.apiHits).toEqual([]);
 
-      await page.locator(`${BAR} [data-act="translate"]`).click();
+      await page.locator(`${BAR} [data-act="accept"]`).click();
 
       // 点下去之后才有第一个请求，而且只有一趟：一次上传票据、一次创建。
       await expect.poll(() => service.state.apiHits.filter(h => h === 'POST /api/pdf/jobs').length,
@@ -116,7 +116,7 @@ test.describe('PDF offer bar', () => {
 
       // 译好了，同一条条子换成「已完成」和一颗「查看译文」，点下去就是阅读台，
       // 标着是从这一页进来的。不用去工具栏菜单里翻历史任务。
-      const view = bar.locator('[data-act="translate"]');
+      const view = bar.locator('[data-act="accept"]');
       await expect(view).toHaveText('View translation', { timeout: 30000 });
       const [reader] = await Promise.all([context.waitForEvent('page'), view.click()]);
       await expect.poll(() => reader.url())
@@ -142,7 +142,7 @@ test.describe('PDF offer bar', () => {
       expect(service.state.apiHits).toEqual([]);
       expect(service.state.connects).toBe(0);
 
-      await bar.locator('[data-act="translate"]').click();
+      await bar.locator('[data-act="accept"]').click();
 
       // 先登录（和 popup 同一个 /ext/connect），登上了接着把这份 PDF 派出去，
       // 不用他再点第二下。

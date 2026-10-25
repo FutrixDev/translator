@@ -23,8 +23,12 @@ import { apiFetch, getToken, ComicApiError } from './comic-client.js';
 // error map reads it.
 import '../shared/doc-jobs.js';
 import '../shared/pdf-errors.js';
+import '../shared/storage-writer.js';
+import '../shared/pdf-url.js';
 
 const DocJobs = globalThis.DocJobs;
+const StorageWriter = globalThis.StorageWriter;
+const { pdfSourceKey } = globalThis.PdfUrl;
 
 function signInError() {
   return new ComicApiError('unauthorized', 'Sign in to translate documents', 401, { loginRequired: true });
@@ -276,7 +280,8 @@ export function receiptRecord({ operationId, fileName, sourceFormat, sourceUrl =
     operationId,
     fileName: fileName || `document.${DocJobs.extensionFor(sourceFormat)}`,
     sourceFormat,
-    sourceUrl,
+    // Keyed like the URL binding, so a tab at x.pdf#page=3 finds this record.
+    sourceUrl: sourceUrl && pdfSourceKey(sourceUrl),
     status: 'queued',
     stage: null,
     progress: 0,
@@ -347,7 +352,30 @@ export function capRecords(records, max = MAX_JOB_RECORDS) {
   return sorted.filter(r => !drop.has(r));
 }
 
-export async function listJobRecords() {
+// The list is one array under one key: read it, change a row, write it all
+// back. The poll, a page's own poll, the popup and an upload in flight all do
+// that at once, and the later write would put back every row the earlier one
+// changed. So every read-modify-write runs on one single-writer queue, one
+// after the other. Only applyWrite is used: nothing outside the worker sends it.
+const jobsWriter = StorageWriter.create({
+  type: 'PDF_JOBS_WRITE',
+  writes: {
+    list: () => sweptRecords(),
+    save: ({ record }) => saveNow(record),
+    replace: ({ oldJobId, record }) => replaceNow(oldJobId, record),
+    dismiss: ({ jobId }) => dismissNow(jobId),
+    views: ({ views }) => applyViewsNow(views),
+  },
+  errors: 'throw',
+});
+
+export function listJobRecords() {
+  return jobsWriter.applyWrite({ kind: 'list' });
+}
+
+// The stored list with expired records swept and dead uploads marked failed,
+// written back only when that changed anything. Runs on the queue.
+async function sweptRecords() {
   const stored = await chrome.storage.local.get({ [JOBS_KEY]: [] });
   const records = Array.isArray(stored[JOBS_KEY]) ? stored[JOBS_KEY] : [];
   const now = Date.now();
@@ -380,8 +408,12 @@ export async function listJobRecords() {
  * Done in a single write so the popup's 3-second poll can never observe the
  * gap where the click has no row at all.
  */
-export async function replaceJobRecord(oldJobId, record) {
-  const records = await listJobRecords();
+export function replaceJobRecord(oldJobId, record) {
+  return jobsWriter.applyWrite({ kind: 'replace', oldJobId, record });
+}
+
+async function replaceNow(oldJobId, record) {
+  const records = await sweptRecords();
   const previous = records.find(r => r.jobId === oldJobId);
   const rest = records.filter(r => r.jobId !== oldJobId && r.jobId !== record.jobId);
   const merged = withSettledAt({ ...(previous || {}), ...record, pending: false });
@@ -391,8 +423,12 @@ export async function replaceJobRecord(oldJobId, record) {
 }
 
 /** Upsert by jobId; newest first; TTL and cap applied on the way through. */
-export async function saveJobRecord(record) {
-  const records = await listJobRecords();
+export function saveJobRecord(record) {
+  return jobsWriter.applyWrite({ kind: 'save', record });
+}
+
+async function saveNow(record) {
+  const records = await sweptRecords();
   const rest = records.filter(r => r.jobId !== record.jobId);
   const existing = records.find(r => r.jobId === record.jobId);
   const merged = withSettledAt({ ...(existing || {}), ...record });
@@ -407,8 +443,12 @@ export async function saveJobRecord(record) {
  * Local only, and deliberately so: the row it removes is the popup's copy, not
  * the job. The server's account of it is untouched.
  */
-export async function dismissJobRecord(jobId) {
-  const records = await listJobRecords();
+export function dismissJobRecord(jobId) {
+  return jobsWriter.applyWrite({ kind: 'dismiss', jobId });
+}
+
+async function dismissNow(jobId) {
+  const records = await sweptRecords();
   const next = records.filter(r => r.jobId !== jobId);
   if (next.length !== records.length) {
     await chrome.storage.local.set({ [JOBS_KEY]: next });
@@ -498,14 +538,37 @@ async function releaseIfBurned(record) {
  * null when there was no record.
  */
 export async function updateRecordFromView(jobId, view) {
-  const records = await listJobRecords();
-  const index = records.findIndex(r => r.jobId === jobId);
-  if (index === -1) return null;
-  const change = applyJobView(records[index], view);
-  records[index] = change.record;
-  await chrome.storage.local.set({ [JOBS_KEY]: records });
-  if (change.transition === 'settled') await releaseIfBurned(change.record);
+  const { changes } = await jobsWriter.applyWrite({ kind: 'views', views: new Map([[jobId, view]]) });
+  const change = changes.find(c => c.record.jobId === jobId) || null;
+  if (change && change.transition === 'settled') await releaseIfBurned(change.record);
   return change;
+}
+
+/**
+ * Fold server views (jobId → view) into the records as they are now, not as
+ * they were when the views were asked for: the requests take seconds, and a
+ * row written meanwhile (a new upload, a page that already saw this job
+ * finish) must survive. A change is measured against the stored record, so two
+ * paths that saw the same job settle report it once. Runs on the queue.
+ *
+ * Every record a view names is in `changes`; `moved` says whether that view
+ * moved anything worth telling: the status, or a transition.
+ */
+async function applyViewsNow(views) {
+  const records = await sweptRecords();
+  const changes = [];
+  let write = false;
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    if (!views.has(record.jobId)) continue;
+    const change = applyJobView(record, views.get(record.jobId));
+    records[i] = change.record;
+    const moved = change.record.status !== record.status || !!change.transition || change.leftAwaiting;
+    if (moved || change.record.progress !== record.progress) write = true;
+    changes.push({ ...change, moved });
+  }
+  if (write) await chrome.storage.local.set({ [JOBS_KEY]: records });
+  return { records, changes };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,9 +594,28 @@ const URL_OPS_KEY = 'pdfUrlOps';
 const URL_OP_TTL_MS = 24 * HOUR_MS;
 const MAX_URL_OPS = 40;
 
-export async function getOrCreateUrlOperationId(url) {
+// One map under one key, read-modify-written by a click and a burned job at
+// once: the same single-writer queue as the job list, its own line.
+const urlOpsWriter = StorageWriter.create({
+  type: 'PDF_URL_OPS_WRITE',
+  writes: {
+    claim: ({ url }) => claimNow(url),
+    release: ({ operationId }) => releaseNow(operationId),
+  },
+  errors: 'throw',
+});
+
+async function storedUrlOps() {
   const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
-  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  return stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+}
+
+export function getOrCreateUrlOperationId(url) {
+  return urlOpsWriter.applyWrite({ kind: 'claim', url });
+}
+
+async function claimNow(url) {
+  const map = await storedUrlOps();
   const cutoff = Date.now() - URL_OP_TTL_MS;
 
   const live = {};
@@ -541,7 +623,9 @@ export async function getOrCreateUrlOperationId(url) {
     if (entry && entry.opId && (entry.createdAt || 0) > cutoff) live[key] = entry;
   }
 
-  let entry = live[url];
+  // The viewer's #page=3 is the same document: one binding, one charge.
+  const sourceKey = pdfSourceKey(url);
+  let entry = live[sourceKey];
   if (!entry) {
     entry = { opId: crypto.randomUUID(), createdAt: Date.now() };
     const keys = Object.keys(live);
@@ -549,7 +633,7 @@ export async function getOrCreateUrlOperationId(url) {
       keys.sort((a, b) => (live[a].createdAt || 0) - (live[b].createdAt || 0));
       for (const key of keys.slice(0, keys.length - MAX_URL_OPS + 1)) delete live[key];
     }
-    live[url] = entry;
+    live[sourceKey] = entry;
   }
 
   await chrome.storage.local.set({ [URL_OPS_KEY]: live });
@@ -570,8 +654,11 @@ export async function getOrCreateUrlOperationId(url) {
  */
 export async function releaseUrlOperationId(operationId) {
   if (!operationId) return;
-  const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
-  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  await urlOpsWriter.applyWrite({ kind: 'release', operationId });
+}
+
+async function releaseNow(operationId) {
+  const map = await storedUrlOps();
   let changed = false;
   for (const [key, entry] of Object.entries(map)) {
     if (entry && entry.opId === operationId) {
@@ -594,8 +681,7 @@ export async function releaseUrlOperationId(operationId) {
  */
 export async function findUrlForOperationId(operationId) {
   if (!operationId) return null;
-  const stored = await chrome.storage.local.get({ [URL_OPS_KEY]: {} });
-  const map = stored[URL_OPS_KEY] && typeof stored[URL_OPS_KEY] === 'object' ? stored[URL_OPS_KEY] : {};
+  const map = await storedUrlOps();
   const cutoff = Date.now() - URL_OP_TTL_MS;
   for (const [url, entry] of Object.entries(map)) {
     if (entry && entry.opId === operationId && (entry.createdAt || 0) > cutoff) return url;
@@ -617,53 +703,42 @@ export async function findUrlForOperationId(operationId) {
  * sweep) is marked failed rather than left "running" forever.
  */
 export async function refreshJobRecords() {
-  const records = await listJobRecords();
-  const changes = [];
-  let changed = false;
-
-  for (let i = 0; i < records.length; i++) {
-    const record = records[i];
+  const views = new Map();
+  for (const record of await listJobRecords()) {
     if (!DocJobs.isUnsettledStatus(record.status)) continue;
     // A pending record names no server job — `getPdfJob('local:…')` would 404
     // and the 404 branch below would wrongly bury a job still uploading.
     if (isPendingRecord(record)) continue;
-    let view;
     try {
-      view = await getPdfJob(record.jobId);
+      views.set(record.jobId, await getPdfJob(record.jobId));
     } catch (error) {
       if (error instanceof ComicApiError && error.status === 404) {
-        view = {
+        views.set(record.jobId, {
           status: 'failed',
           progress: record.progress,
           stage: null,
           pageCount: record.pageCount,
           error: { code: 'engine_error', message: 'The job is no longer known to the service' }
-        };
-      } else {
-        // Auth or network trouble: leave the record as-is, a later poll retries.
-        continue;
+        });
       }
+      // Auth or network trouble: leave the record as-is, a later poll retries.
     }
-    const change = applyJobView(record, view);
-    records[i] = change.record;
-    if (change.record.status !== record.status || change.transition || change.leftAwaiting) {
-      changed = true;
-      changes.push(change);
-    } else if (change.record.progress !== record.progress) {
-      changed = true;
-    }
+  }
+
+  const { records, changes } = await jobsWriter.applyWrite({ kind: 'views', views });
+  const moved = [];
+  for (const { moved: worthTelling, ...change } of changes) {
+    if (!worthTelling) continue;
+    moved.push(change);
     // A failure burns the operation id (see releaseUrlOperationId); a success
     // keeps it — replaying a succeeded id resolves instantly, free.
     if (change.transition === 'settled') await releaseIfBurned(change.record);
   }
-
-  if (changed) {
-    await chrome.storage.local.set({ [JOBS_KEY]: records });
-  }
-  return { records, changes };
+  return { records, changes: moved };
 }
 
-/** The shared map from shared/pdf-errors.js, re-exported for the worker. */
-export const { pdfErrorMessageKey, pdfErrorMessage, pdfAbandonedKey } = globalThis.AI_TRANSLATOR_PDF_ERRORS;
+/** The shared map and status line from shared/pdf-errors.js, re-exported for the worker. */
+export const { pdfErrorMessageKey, pdfErrorMessage, pdfStatusLine, isRetryablePdfFailure } =
+  globalThis.AI_TRANSLATOR_PDF_ERRORS;
 
 export { ComicApiError };

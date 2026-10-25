@@ -139,7 +139,7 @@ test('状态点：暂停时亮灰，点它展开一行说明；恢复后熄灭',
     await expect(bar).toHaveAttribute('data-mode', 'explain');
     await expect(bar.locator('.ai-translator-auto-text')).not.toBeEmpty();
     // 展开态里没有「翻译 / 不用」那两个按钮 —— 它不是在问，是在答。
-    await expect(bar.locator('[data-act="translate"]')).toBeHidden();
+    await expect(bar.locator('[data-act="accept"]')).toBeHidden();
 
     await bar.locator('[data-act="close"]').click();
     await expect(bar).toHaveCount(0);

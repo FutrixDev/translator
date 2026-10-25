@@ -322,6 +322,21 @@ test('a URL keeps its operation id across clicks, until it is released', async (
   assert.notEqual(second, first, 'after a release the next click must mint a fresh id');
 });
 
+test('the viewer\'s #page=3 is the same document: one binding, and the record says so', async () => {
+  // Chrome's PDF viewer writes the page and zoom into the fragment, and a fetch
+  // never sends it. Keyed with it, scrolling to page 3 and clicking again would
+  // mint a second id, which the server charges as a second document.
+  withStorage();
+  const first = await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00003');
+  assert.equal(await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00003#page=3'), first);
+  assert.equal(await pdf.findUrlForOperationId(first), 'https://arxiv.org/pdf/2312.00003');
+  const receipt = pdf.receiptRecord({
+    operationId: first, fileName: 'a.pdf', sourceFormat: 'pdf', sourceUrl: 'https://arxiv.org/pdf/2312.00003#zoom=150',
+  });
+  assert.equal(receipt.sourceUrl, 'https://arxiv.org/pdf/2312.00003');
+  assert.equal(pdf.receiptRecord({ operationId: 'op-u', fileName: 'u.pdf', sourceFormat: 'pdf' }).sourceUrl, null);
+});
+
 test('releasing an id no URL holds leaves the other bindings alone', async () => {
   withStorage();
   const kept = await pdf.getOrCreateUrlOperationId('https://arxiv.org/pdf/2312.00002');

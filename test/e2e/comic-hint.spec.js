@@ -242,7 +242,7 @@ test.describe('Comic hint, signed in', () => {
     await tab.waitForTimeout(1500);
     expect(service.state.createBodies).toHaveLength(0);
 
-    await bar.locator('[data-act="translate"]').click();
+    await bar.locator('[data-act="accept"]').click();
     await expect.poll(() => service.state.createBodies.length, { timeout: 15000 }).toBe(1);
     await expect(bar).toBeHidden();
     // One page on screen, one job: not one per page in the strip.

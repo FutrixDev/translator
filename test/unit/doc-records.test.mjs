@@ -31,6 +31,7 @@ const pdf = await import('../../background/pdf-client.js');
 await import('../../shared/pdf-url.js');
 await import('../../pdf/pdf-ui.js');
 const ui = globalThis.AI_TRANSLATOR_PDF_UI;
+const errors = globalThis.AI_TRANSLATOR_PDF_ERRORS;
 
 const HOUR = 60 * 60 * 1000;
 const STATUSES = ['queued', 'running', 'awaiting_confirm', 'succeeded', 'failed', 'abandoned'];
@@ -222,6 +223,123 @@ test('a success keeps the URL binding so a replay resolves for free', async () =
 });
 
 // ---------------------------------------------------------------------------
+// Writes that overlap
+// ---------------------------------------------------------------------------
+
+/**
+ * chrome.storage.local as it really behaves under load: every call yields to
+ * the event loop, and what get() hands back is a copy. The plain fake above
+ * returns the stored array itself, so a stale write could never lose a row.
+ */
+function withRacingStorage(initial = {}) {
+  const store = structuredClone(initial);
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  globalThis.chrome = {
+    storage: {
+      local: {
+        get: async (defaults) => {
+          await tick();
+          const out = { ...defaults };
+          for (const key of Object.keys(defaults)) {
+            if (key in store) out[key] = structuredClone(store[key]);
+          }
+          return out;
+        },
+        set: async (values) => {
+          await tick();
+          Object.assign(store, structuredClone(values));
+        }
+      }
+    }
+  };
+  return store;
+}
+
+/** A fetch that answers only when told to: the poll's request in flight. */
+function heldFetch() {
+  const held = [];
+  globalThis.fetch = (url) => new Promise(resolve => held.push({ url: String(url), resolve }));
+  return {
+    held,
+    asked: () => new Promise(function wait(resolve) {
+      if (held.length) resolve(); else setImmediate(() => wait(resolve));
+    }),
+    answer: (body) => {
+      for (const { resolve } of held.splice(0)) resolve({ ok: true, status: 200, json: async () => body });
+    }
+  };
+}
+
+test('an upload saved while the poll waits on the server keeps its row', async () => {
+  const store = withRacingStorage({
+    comicToken: 'test-token',
+    pdfJobs: [{ jobId: 'job-1', operationId: 'op-1', status: 'running', createdAt: Date.now() - 1000 }]
+  });
+  const server = heldFetch();
+  const polling = pdf.refreshJobRecords();
+  await server.asked();
+  await pdf.saveJobRecord(pdf.receiptRecord({ operationId: 'op-2', fileName: 'b.pdf', sourceFormat: 'pdf' }));
+  server.answer({ id: 'job-1', status: 'succeeded', progress: 100 });
+  const { changes } = await polling;
+  assert.deepEqual(store.pdfJobs.map(r => [r.jobId, r.status]), [['local:op-2', 'queued'], ['job-1', 'succeeded']]);
+  assert.equal(changes.length, 1);
+});
+
+test('two polls that see the same job finish report it once', async () => {
+  withRacingStorage({
+    comicToken: 'test-token',
+    pdfJobs: [{ jobId: 'job-1', operationId: 'op-1', status: 'running', createdAt: Date.now() }]
+  });
+  const server = heldFetch();
+  const first = pdf.refreshJobRecords();
+  const second = pdf.refreshJobRecords();
+  while (server.held.length < 2) await server.asked().then(() => new Promise(r => setImmediate(r)));
+  server.answer({ id: 'job-1', status: 'succeeded', progress: 100 });
+  const settled = [...(await first).changes, ...(await second).changes].filter(c => c.transition === 'settled');
+  assert.equal(settled.length, 1, 'one notification for one finished job');
+});
+
+test('a page seeing the job finish first leaves the poll nothing to report', async () => {
+  withRacingStorage({
+    comicToken: 'test-token',
+    pdfJobs: [{ jobId: 'job-1', operationId: 'op-1', status: 'running', createdAt: Date.now() }]
+  });
+  const server = heldFetch();
+  const polling = pdf.refreshJobRecords();
+  await server.asked();
+  const page = await pdf.updateRecordFromView('job-1', { status: 'succeeded', progress: 100 });
+  assert.equal(page.transition, 'settled');
+  server.answer({ id: 'job-1', status: 'succeeded', progress: 100 });
+  assert.deepEqual((await polling).changes, []);
+});
+
+test('saves and dismissals at once all land', async () => {
+  const now = Date.now();
+  const store = withRacingStorage({
+    pdfJobs: [{ jobId: 'job-old', status: 'succeeded', createdAt: now - 3000, settledAt: now }]
+  });
+  await Promise.all([
+    pdf.saveJobRecord({ jobId: 'job-a', status: 'running', createdAt: now }),
+    pdf.saveJobRecord({ jobId: 'job-b', status: 'running', createdAt: now - 1000 }),
+    pdf.dismissJobRecord('job-old'),
+  ]);
+  assert.deepEqual(store.pdfJobs.map(r => r.jobId), ['job-a', 'job-b']);
+});
+
+test('URL bindings claimed and released at once all land', async () => {
+  const store = withRacingStorage({
+    pdfUrlOps: { 'https://a.example/old.pdf': { opId: 'op-old', createdAt: Date.now() } }
+  });
+  const [a, b] = await Promise.all([
+    pdf.getOrCreateUrlOperationId('https://a.example/a.pdf'),
+    pdf.getOrCreateUrlOperationId('https://a.example/b.pdf'),
+    pdf.releaseUrlOperationId('op-old'),
+  ]);
+  assert.deepEqual(Object.fromEntries(Object.entries(store.pdfUrlOps).map(([url, e]) => [url, e.opId])),
+    { 'https://a.example/a.pdf': a, 'https://a.example/b.pdf': b });
+});
+
+// ---------------------------------------------------------------------------
 // Error facts and the copy chosen from them (spec §7.1)
 // ---------------------------------------------------------------------------
 
@@ -255,10 +373,10 @@ test('the error map picks the sentence the facts can fill', () => {
 });
 
 test('the abandoned wording is one answer for every surface', () => {
-  assert.equal(pdf.pdfAbandonedKey({ code: 'queue_timeout' }), 'docErrQueueTimeout');
-  assert.equal(pdf.pdfAbandonedKey({ code: 'abandoned', refunded: true }), 'docErrAbandonedRefunded');
-  assert.equal(pdf.pdfAbandonedKey({ code: 'abandoned', details: { refunded: true } }), 'docErrAbandonedRefunded');
-  assert.equal(pdf.pdfAbandonedKey({}), 'pdfStatusAbandoned');
+  assert.equal(errors.pdfAbandonedKey({ code: 'queue_timeout' }), 'docErrQueueTimeout');
+  assert.equal(errors.pdfAbandonedKey({ code: 'abandoned', refunded: true }), 'docErrAbandonedRefunded');
+  assert.equal(errors.pdfAbandonedKey({ code: 'abandoned', details: { refunded: true } }), 'docErrAbandonedRefunded');
+  assert.equal(errors.pdfAbandonedKey({}), 'pdfStatusAbandoned');
 });
 
 test('retry is offered only when a second attempt could answer differently', () => {
