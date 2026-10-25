@@ -230,6 +230,33 @@ const DATA_READER_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * A reader that scrolls inside its own box rather than the window.
+ *
+ * The page is inside an `overflow: auto` box that starts 100 px down, so an
+ * image scrolled half out of it is still on screen as far as the viewport is
+ * concerned — only the box hides it. Anything we pin to the image's corner has
+ * to follow the box's edge, not the window's, and vanish with the image.
+ */
+const SCROLLER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Scroller</title></head>
+<body style="margin:0">
+  <div style="height:100px">toolbar</div>
+  <div id="box" style="height:400px;width:500px;overflow:auto">
+    <img id="comic" src="/source.png" width="400" style="display:block">
+    <div style="height:1200px"></div>
+  </div>
+</body></html>`;
+
+/** One page taller than the window, below a 100 px header. */
+const TALL_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Tall</title></head>
+<body style="margin:0">
+  <div style="height:100px">header</div>
+  <img id="comic" src="/source.png" width="800" style="display:block">
+  <div style="height:1200px"></div>
+</body></html>`;
+
+/**
  * A stand-in for the translation service.
  *
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
@@ -262,11 +289,13 @@ const DATA_READER_HTML = `<!doctype html>
  * create under its pageUrl, `{ [pageId]: pageIndex }`, which is how the real
  * service groups a chapter's pages. `uploadDelayMs` holds the PUT's answer
  * back; `Infinity` never answers it, which is what a stalled storage upload
- * looks like from the worker.
+ * looks like from the worker. `runningProgress` is the figure a running job
+ * reports.
  */
 async function startMockService(
   behaviour = 'succeed',
-  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0 } = {},
+  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
+    runningProgress = 0.4 } = {},
 ) {
   const state = {
     polls: 0, abandons: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
@@ -293,6 +322,8 @@ async function startMockService(
     // popup offers "Translate this PDF" on it, and that click must not become
     // a comic job (popup-media-entries.spec.js).
     if (url.pathname === '/comic.pdf') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/scroller') return send(200, SCROLLER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/tall') return send(200, TALL_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/spread') return send(200, SPREAD_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/chapter') return send(200, CHAPTER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
@@ -420,7 +451,7 @@ async function startMockService(
       // First poll still running, second one done: the UI has to survive at
       // least one non-terminal answer or the progress states are never seen.
       if (held || state.polls < 2) {
-        return send(200, { jobId: 'job_test_1', status: 'running', progress: 0.4 });
+        return send(200, { jobId: 'job_test_1', status: 'running', progress: runningProgress });
       }
       return send(200, {
         jobId: 'job_test_1',

@@ -77,7 +77,7 @@ test.describe('Comic page upload', () => {
     }
   });
 
-  test('an upload that stalls is a network error, and no job is created', async ({ context, page }) => {
+  test('an upload that stalls says it timed out, and no job is created', async ({ context, page }) => {
     // The worker gives the PUT 30 s; the mock never answers it.
     test.setTimeout(90_000);
     const service = await startMockService('succeed', { uploadDelayMs: Infinity });
@@ -92,7 +92,7 @@ test.describe('Comic page upload', () => {
       await expect.poll(() => service.state.puts.length, { timeout: 20_000 }).toBe(1);
 
       await expect(overlay).toHaveClass(/is-error/, { timeout: 45_000 });
-      await expect(overlay).toContainText('Network error. Please try again.');
+      await expect(overlay).toContainText('Uploading the page timed out. Check your connection and try again.');
       // Exactly one try at the storage, and nothing behind it.
       expect(service.state.tickets).toHaveLength(1);
       expect(service.state.puts).toHaveLength(1);

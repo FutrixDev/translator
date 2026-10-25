@@ -29,23 +29,52 @@
    * frame — the image can move for reasons no event reports (CSS animation, a
    * sibling loading in).
    *
+   * Fixed also means nothing clips it for us: an image half scrolled out of a
+   * reader's own scroll box would still have its corner drawn over the reader's
+   * toolbar. So the part of the image that can be seen is worked out here — the
+   * viewport cut by every ancestor that clips — and the element sits at the top
+   * of that part, never lower than the image allows (`anchorHeight()` is the
+   * height that has to fit), and is hidden when none of the image shows.
+   *
    * `shown()` is the caller's own reason to hide it; the image being out of
    * sight, or collapsed to nothing by a reader recycling its slot, is this
    * function's. `onFrame(rect)` runs on every visible frame, before the element
    * is placed, so a caller can size it first. Ends by itself,
    * calling `onGone()`, once the host leaves the document.
    */
-  function pinToCorner(element, { host, corner, shown = () => true, onFrame = null, onGone }) {
+  function pinToCorner(element, {
+    host, corner, shown = () => true, onFrame = null, onGone, anchorHeight = () => element.offsetHeight
+  }) {
+    // Which ancestors clip is a style question, asked once per image and parent
+    // rather than at 60 fps; their rects move every frame and are read fresh.
+    let clippersOf = null;
+    let clippersParent = null;
+    let clippers = [];
     /** Put the element in its corner; false once the host has left the document. */
     const place = () => {
       const img = host();
       if (!img.isConnected) return false;
+      if (img !== clippersOf || img.parentNode !== clippersParent) {
+        clippersOf = img;
+        clippersParent = img.parentNode;
+        clippers = clippingAncestors(img);
+      }
       const rect = img.getBoundingClientRect();
-      const visible = shown() && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+      const clip = visibleArea(clippers);
+      const visible = shown() && rect.width > 0 && rect.height > 0
+        && rect.bottom > clip.top && rect.top < clip.bottom
+        && rect.right > clip.left && rect.left < clip.right;
       element.style.display = visible ? '' : 'none';
       if (!visible) return true;
       if (onFrame) onFrame(rect);
-      element.style.top = `${rect.top + CORNER_INSET}px`;
+      // The top of what can be seen, but still inside the image: a pill that
+      // followed the visible edge past the image's bottom would sit on the next
+      // page and report on this one.
+      const top = Math.min(
+        Math.max(rect.top, clip.top) + CORNER_INSET,
+        rect.bottom - anchorHeight() - CORNER_INSET
+      );
+      element.style.top = `${top}px`;
       // Anchored by the edge that touches the corner, so a label that changes
       // the width between two frames grows away from the corner instead of
       // sliding the box off it. `right` on a fixed box counts from the
@@ -72,6 +101,47 @@
     place();
     frame = requestAnimationFrame(track);
     return () => cancelAnimationFrame(frame);
+  }
+
+  /**
+   * Every ancestor of `node` that clips its content, nearest first, crossing
+   * shadow roots. The root element and body are left out: their overflow is
+   * the viewport's, which visibleArea() starts from.
+   */
+  function clippingAncestors(node) {
+    const found = [];
+    let current = node.parentNode;
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (current.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        current = current.host;
+        continue;
+      }
+      if (current.nodeType !== Node.ELEMENT_NODE) break;
+      const style = getComputedStyle(current);
+      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') found.push(current);
+      current = current.parentNode;
+    }
+    return found;
+  }
+
+  /** The viewport cut by each clipping ancestor's padding box. */
+  function visibleArea(clippers) {
+    const area = {
+      top: 0,
+      left: 0,
+      right: document.documentElement.clientWidth,
+      bottom: window.innerHeight
+    };
+    clippers.forEach((element) => {
+      const box = element.getBoundingClientRect();
+      const top = box.top + element.clientTop;
+      const left = box.left + element.clientLeft;
+      area.top = Math.max(area.top, top);
+      area.left = Math.max(area.left, left);
+      area.right = Math.min(area.right, left + element.clientWidth);
+      area.bottom = Math.min(area.bottom, top + element.clientHeight);
+    });
+    return area;
   }
 
   // -------------------------------------------------------------------------
@@ -165,7 +235,12 @@
         const value = progressBase >= 1
           ? 1
           : Math.min(CREEP_CAP, progressBase + (Date.now() - progressBaseAt) * CREEP_PER_MS);
-        const next = `${Math.floor(value * 100)}%`;
+        // Held at the cap, the number stops moving, so the elapsed time takes
+        // over saying the job is alive — the same clock the card shows.
+        const held = value >= CREEP_CAP && value < 1 && timerFrom;
+        const next = held
+          ? `${Math.floor(value * 100)}% · ${formatElapsed(Date.now() - timerFrom)}`
+          : `${Math.floor(value * 100)}%`;
         if (next !== pctShown) {
           pctShown = next;
           pct.textContent = next;
@@ -178,6 +253,8 @@
       corner: 'top-right',
       shown: () => !hidden,
       onFrame: tick,
+      // The card hangs below the pill; only the pill has to fit in the image.
+      anchorHeight: () => pill.offsetHeight,
       onGone: () => destroy()
     });
 
@@ -256,11 +333,13 @@
         message.hidden = !text;
       },
       /**
-       * The job waits on the reader: the pill keeps saying what it is for but
-       * stops spinning and counting, and the card holds the question.
+       * The job waits on the reader: the pill stops spinning and counting and
+       * says what it is waiting for (`label`), and the card holds the question.
        */
-      ask(text) {
+      ask(text, { label: waitingFor }) {
         root.classList.remove('is-error', 'is-busy');
+        label.textContent = waitingFor;
+        pill.title = waitingFor;
         setProgress(null);
         message.textContent = text;
         message.hidden = !text;

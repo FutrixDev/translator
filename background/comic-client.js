@@ -12,6 +12,7 @@
 // the server was not allowed to fetch — see uploadPage().
 
 import '../shared/site-links.js';
+import { acquire as holdKeepalive, release as dropKeepalive } from './keepalive.js';
 
 const SiteLinks = globalThis.SiteLinks;
 
@@ -373,8 +374,11 @@ export async function uploadPage({ operationId, imageUrl, pageBytes }) {
   } else {
     page = imageUrl ? await fetchPageBytes(imageUrl) : null;
     if (!page) {
+      // The cap travels with the request, so the page re-encodes against the
+      // same number this worker enforces rather than a copy of it.
       throw new ComicApiError('needs_page_bytes', 'The worker could not read the image', 0, {
-        needsPageBytes: true
+        needsPageBytes: true,
+        maxBytes: MAX_UPLOAD_BYTES
       });
     }
   }
@@ -470,29 +474,37 @@ export function abandonJob(jobId) {
  * back.
  */
 export async function putPresigned(uploadUrl, body, { contentType, operationId, label, timeoutMs = 0 }) {
-  const controller = timeoutMs > 0 ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : 0;
-  let response;
+  // A fetch in flight is not activity to Chrome: without a hold, a PUT that
+  // runs past the worker's idle limit dies with the worker, and the page waits
+  // on a job that will never be created.
+  holdKeepalive();
   try {
-    response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'content-type': contentType },
-      body,
-      signal: controller?.signal
-    });
-  } catch (error) {
-    if (controller?.signal.aborted) {
-      console.warn(`[${label}] presigned PUT timed out after ${timeoutMs} ms op=${operationId}`);
-      throw new ComicApiError('upload_timeout', `The upload did not finish within ${timeoutMs / 1000} s`);
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : 0;
+    let response;
+    try {
+      response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'content-type': contentType },
+        body,
+        signal: controller?.signal
+      });
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        console.warn(`[${label}] presigned PUT timed out after ${timeoutMs} ms op=${operationId}`);
+        throw new ComicApiError('upload_timeout', `The upload did not finish within ${timeoutMs / 1000} s`);
+      }
+      console.warn(`[${label}] presigned PUT failed: network op=${operationId}`);
+      throw new ComicApiError('upload_failed', error?.message || 'The upload failed');
+    } finally {
+      clearTimeout(timer);
     }
-    console.warn(`[${label}] presigned PUT failed: network op=${operationId}`);
-    throw new ComicApiError('upload_failed', error?.message || 'The upload failed');
+    if (!response.ok) {
+      console.warn(`[${label}] presigned PUT failed: HTTP ${response.status} op=${operationId}`);
+      throw new ComicApiError('upload_failed', `The upload failed (HTTP ${response.status})`, response.status);
+    }
   } finally {
-    clearTimeout(timer);
-  }
-  if (!response.ok) {
-    console.warn(`[${label}] presigned PUT failed: HTTP ${response.status} op=${operationId}`);
-    throw new ComicApiError('upload_failed', `The upload failed (HTTP ${response.status})`, response.status);
+    dropKeepalive();
   }
 }
 
@@ -546,8 +558,19 @@ function decodePageBytes(dataUrl) {
   return acceptedPage(bytes);
 }
 
+/**
+ * `{ bytes, format }` for a picture the service accepts, null for bytes that
+ * are not one (the next rung may still get one). Too large is an answer of its
+ * own and throws: the canvas would only re-encode the same page, and the
+ * service refuses it before charging anything.
+ */
 function acceptedPage(bytes) {
-  if (!bytes.byteLength || bytes.byteLength > MAX_UPLOAD_BYTES) return null;
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+    throw new ComicApiError('image_too_large', `The page is ${bytes.byteLength} bytes; the limit is ${MAX_UPLOAD_BYTES}`, 0, {
+      maxBytes: MAX_UPLOAD_BYTES
+    });
+  }
+  if (!bytes.byteLength) return null;
   const format = imageFormat(bytes);
   return format ? { bytes, format } : null;
 }

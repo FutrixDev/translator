@@ -648,9 +648,11 @@
     // Only from the element still holding this page. Sign-in or a slow fetch
     // can have taken long enough for the reader to turn away, and a recycled
     // slot would hand over another page's pixels under this job's name.
-    const pageBytes = comic.entryMatchesImage(entry, entry.img) ? capturePageBytes(entry.img) : null;
-    if (!pageBytes) return { ok: false, error: { code: 'image_unreadable' } };
-    return sendUpload(entry, { pageBytes });
+    const capture = comic.entryMatchesImage(entry, entry.img)
+      ? capturePageBytes(entry.img, fromWorker.error.maxBytes)
+      : { code: 'image_unreadable' };
+    if (capture.code) return { ok: false, error: { code: capture.code } };
+    return sendUpload(entry, { pageBytes: capture.dataUrl });
   }
 
   function sendUpload(entry, source) {
@@ -797,14 +799,18 @@
   }
 
   /**
-   * Read the pixels the page already has.
+   * Read the pixels the page already has: `{ dataUrl }`, or `{ code }` when
+   * there is nothing to send.
    *
    * Only works when the image is not cross-origin-tainted — canvas will throw
    * on read otherwise, which is the browser's whole point. That case ends as
-   * "cannot translate this image", not as a silent failure.
+   * "cannot translate this image", not as a silent failure. `maxBytes` is the
+   * worker's cap, handed over with its request for the pixels; a page still
+   * above it as a JPEG is too large, which the service would refuse anyway.
    */
-  function capturePageBytes(img) {
-    if (!img.naturalWidth || !img.naturalHeight) return null;
+  function capturePageBytes(img, maxBytes) {
+    if (!(maxBytes > 0)) throw new Error('capturePageBytes needs the worker\'s maxBytes');
+    if (!img.naturalWidth || !img.naturalHeight) return { code: 'image_unreadable' };
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
@@ -814,14 +820,14 @@
     try {
       dataUrl = canvas.toDataURL('image/png');
     } catch {
-      return null; // tainted canvas
+      return { code: 'image_unreadable' }; // tainted canvas
     }
-    if (base64Bytes(dataUrl) > comic.MAX_UPLOAD_BYTES) {
+    if (base64Bytes(dataUrl) > maxBytes) {
       // PNG of a scanned page is often several times its JPEG original.
       dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-      if (base64Bytes(dataUrl) > comic.MAX_UPLOAD_BYTES) return null;
+      if (base64Bytes(dataUrl) > maxBytes) return { code: 'image_too_large' };
     }
-    return dataUrl;
+    return { dataUrl };
   }
 
   function base64Bytes(dataUrl) {

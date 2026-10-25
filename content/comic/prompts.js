@@ -19,7 +19,7 @@
 
   function promptSignIn(overlay) {
     return new Promise((resolve) => {
-      overlay.ask(t('comicSignInRequired'));
+      overlay.ask(t('comicSignInRequired'), { label: t('comicPillSignIn') });
       overlay.setActions([
         {
           label: t('comicSignIn'),
@@ -69,7 +69,7 @@
    */
   function promptCharge(overlay, quote) {
     return new Promise((resolve) => {
-      overlay.ask(chargeText(quote));
+      overlay.ask(chargeText(quote), { label: t('comicPillConfirm') });
       overlay.setActions([
         {
           label: t('comicChargeApprove'),
@@ -161,9 +161,11 @@
       case 'invalid_image_url': return t('comicUnsupportedFormat');
       case 'gateway_unavailable': return t('comicServiceUnavailable');
       case 'image_unreadable': return t('comicImageUnavailable');
+      // Three causes, three sentences: a stalled PUT, a PUT the storage
+      // refused, and a request that never got an answer at all.
+      case 'upload_timeout': return t('comicUploadTimeout');
+      case 'upload_failed': return t('comicUploadFailed');
       case 'network_error':
-      case 'upload_timeout':
-      case 'upload_failed':
       case 'no_response': return t('comicNetworkError');
       case 'extension_context': return t('extensionContextInvalidated');
       // An overlay that was already open when the switch went off; the worker

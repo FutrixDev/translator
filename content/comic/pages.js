@@ -30,9 +30,6 @@
   // finite, because the alternative is an overlay that never says anything
   // again.
   const ABANDON_TIMEOUT_MS = 15_000;
-  // Same ceiling the server enforces before it charges anything. Re-encoding a
-  // page above this is wasted work.
-  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
   // Below this an <img> is furniture — an icon, a nav thumbnail, or the decoy
   // overlay anti-copy sites stretch across the artwork.
@@ -360,7 +357,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
+    ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, PAGE_ID_ATTR,
     POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pageIndexOf, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });

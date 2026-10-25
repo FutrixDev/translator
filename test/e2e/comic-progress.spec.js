@@ -138,6 +138,8 @@ test.describe('Comic progress pill', () => {
       const approve = card.locator('.ai-translator-comic-btn.is-primary');
       await expect(approve).toHaveText('Use Credits');
       await expectCardUnderPill(page);
+      // The pill says what it is waiting for, not that a redraw is under way.
+      await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Awaiting confirmation');
       expect(service.state.createBodies).toHaveLength(1);
 
       await approve.click();
@@ -164,11 +166,34 @@ test.describe('Comic progress pill', () => {
       const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
       await expect(signIn).toHaveText('Sign In');
       await expectCardUnderPill(page);
+      await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Sign-in needed');
 
       await signIn.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       expect(service.state.connects).toBe(1);
       expect(service.state.createBodies).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('held at 95%, the pill counts the elapsed time instead', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 60_000, runningProgress: 0.95 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
+      await expect(pct).toHaveText(/^95% · \d+:\d{2}$/, { timeout: 15_000 });
+      const first = await pct.textContent();
+      await expect(pct).not.toHaveText(first, { timeout: 2_500 });
+      await expect(pct).toHaveText(/^95% · \d+:\d{2}$/);
+      // Still inside the corner it was given, number and clock both whole.
+      const box = await page.locator(PILL).boundingBox();
+      expect(box.width).toBeLessThanOrEqual(220);
+      const clipped = await pct.evaluate(el => el.scrollWidth > el.clientWidth);
+      expect(clipped).toBe(false);
     } finally {
       await service.close();
     }
