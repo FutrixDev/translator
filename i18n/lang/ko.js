@@ -382,7 +382,7 @@
     autoOfferDismiss: '나중에',
     mediaHintPdf: '{shortcut} 키로 이 PDF 번역 (페이지 수만큼 크레딧 소모)',
     mediaHintPdfNoShortcut: '이 문서는 PDF입니다. 번역하면 페이지 수만큼 크레딧이 소모됩니다.',
-    pdfPageRunning: '이 PDF를 번역하는 중… {progress}%',
+    pdfPageProgress: '{stage} {progress}%',
     pdfViewTranslation: '번역 보기',
     mediaHintComic: '{shortcut} 키로 화면의 만화 번역',
     mediaHintComicNoShortcut: '화면의 만화를 번역할까요?',

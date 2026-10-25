@@ -382,7 +382,7 @@
     autoOfferDismiss: 'Pas maintenant',
     mediaHintPdf: 'Appuyez sur {shortcut} pour traduire ce PDF (crédits de pages consommés).',
     mediaHintPdfNoShortcut: 'Ceci est un PDF. Le traduire consomme des crédits de pages.',
-    pdfPageRunning: 'Traduction de ce PDF… {progress} %',
+    pdfPageProgress: '{stage} {progress} %',
     pdfViewTranslation: 'Voir la traduction',
     mediaHintComic: 'Appuyez sur {shortcut} pour traduire la BD à l’écran.',
     mediaHintComicNoShortcut: 'Traduire la BD à l’écran ?',

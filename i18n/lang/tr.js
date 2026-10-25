@@ -398,7 +398,7 @@
     autoOfferDismiss: 'Şimdi değil',
     mediaHintPdf: 'Bu PDF dosyasını çevirmek için {shortcut} tuşlarına basın. Sayfa kredisi harcar.',
     mediaHintPdfNoShortcut: 'Bu bir PDF. Çevirmek sayfa kredisi harcar.',
-    pdfPageRunning: 'Bu PDF çevriliyor… %{progress}',
+    pdfPageProgress: '{stage} %{progress}',
     pdfViewTranslation: 'Çeviriyi görüntüle',
     mediaHintComic: 'Ekrandaki çizgi romanı çevirmek için {shortcut} tuşlarına basın.',
     mediaHintComicNoShortcut: 'Ekrandaki çizgi roman çevrilsin mi?',

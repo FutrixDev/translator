@@ -237,11 +237,11 @@ test('PDF_PAGE_JOB: the newest job started from this address answers, read from 
   const reply = await pageJob([
     pageRecord('job_upload', 'running', { sourceUrl: null, createdAt: now + 2 }),
     pageRecord('job_elsewhere', 'running', { sourceUrl: 'https://papers.test/b.pdf', createdAt: now + 1 }),
-    pageRecord('job_new', 'running', { progress: 40, createdAt: now }),
+    pageRecord('job_new', 'running', { stage: 'translate', progress: 40, createdAt: now }),
     pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
   ]);
   assert.deepEqual(reply, { ok: true, data: { job: {
-    jobId: 'job_new', operationId: 'op-job_new', createdAt: now, phase: 'running', text: 'Translating this PDF… 40%', retryable: false,
+    jobId: 'job_new', operationId: 'op-job_new', createdAt: now, phase: 'running', text: 'Translating… 40%', retryable: false,
   } } });
   assert.deepEqual(fetched, [], 'a refresh:false look asks the network nothing');
 });
@@ -261,11 +261,27 @@ test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the 
   assert.deepEqual(reply, { ok: true, data: { job: null } });
 });
 
+test('PDF_PAGE_JOB: a running job says its stage, and a percentage only once it has moved', async () => {
+  // The bug: upload, queue and the first seconds of a run all read "… 0%", so
+  // the bar looked stuck until the number jumped.
+  const line = async (extra, status = 'running') => (await pageJob([pageRecord('job_r', status, extra)])).data.job.text;
+  assert.equal(await line({}, 'queued'), 'Queued');
+  // Taken by the server, no worker report yet: still queued, so the first
+  // report ("Analyzing layout…") is a step forward, not back.
+  assert.equal(await line({ stage: null }), 'Queued');
+  assert.equal(await line({ stage: 'parse' }), 'Analyzing layout…');
+  assert.equal(await line({ stage: 'parse', progress: 0.4 }), 'Analyzing layout…', 'rounds to 0: no "0%"');
+  assert.equal(await line({ stage: 'parse', progress: 6 }), 'Analyzing layout… 6%');
+  assert.equal(await line({ stage: 'translate', progress: 33.4 }), 'Translating… 33%');
+  assert.equal(await line({ stage: 'emit', progress: 95 }), 'Retypesetting… 95%');
+  assert.equal(await line({ stage: 'translate', progress: null }), 'Translating…');
+});
+
 test('PDF_PAGE_JOB: each status maps to the bar\'s phase and line; a receipt has no job to open yet', async () => {
   const phase = async (record) => (await pageJob([record])).data.job;
   const receiptAt = Date.now();
   assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true, operationId: 'op-2', createdAt: receiptAt })),
-    { jobId: null, operationId: 'op-2', createdAt: receiptAt, phase: 'running', text: 'Translating this PDF… 0%', retryable: false });
+    { jobId: null, operationId: 'op-2', createdAt: receiptAt, phase: 'running', text: 'Uploading…', retryable: false });
   const waiting = await phase(pageRecord('job_w', 'awaiting_confirm'));
   assert.equal(waiting.phase, 'awaiting');
   assert.equal(waiting.text, 'Needs your confirmation');
