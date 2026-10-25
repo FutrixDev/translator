@@ -567,8 +567,10 @@ async function handlePdfJobAbandon(jobId) {
  * record a URL job left for that address (`sourceUrl`; records are kept newest
  * first), as the bar draws it:
  * - `phase`: running, awaiting, succeeded, failed or abandoned;
- * - `text`: the sentence for that phase. A failed or cancelled job says it
- *   through pdfStatusLine, the same line the notification, the popup and the
+ * - `text`: the sentence for that phase. A job still under way says its stage
+ *   word (uploading, queued, layout, translating, typesetting) and, once it has
+ *   moved, its percentage; a failed or cancelled job says it through
+ *   pdfStatusLine, the same line the notification, the popup and the
  *   jobs page show, so the tab never words a job on its own;
  * - `retryable`: a failure that another try could fix (isRetryablePdfFailure);
  * - `jobId`: null while the click is still uploading (no job to open yet);
@@ -594,8 +596,14 @@ async function handlePdfPageJob(url, { refresh }) {
   let text;
   if (DocJobs.isActiveStatus(record.status)) {
     phase = 'running';
+    // The stage word every surface shows, and a number only once there is one
+    // to show: the upload, the queue and the first seconds of a run all sit at
+    // 0, and "0%" there reads as stuck.
+    const stage = pdfClient.pdfStatusLine(record, t).text;
     const progress = Number.isFinite(record.progress) ? Math.round(record.progress) : 0;
-    text = t('pdfPageRunning').split('{progress}').join(String(progress));
+    text = progress >= 1
+      ? t('pdfPageProgress').split('{stage}').join(stage).split('{progress}').join(String(progress))
+      : stage;
   } else if (DocJobs.isAwaitingStatus(record.status)) {
     phase = 'awaiting';
     text = t('docStatusAwaitingConfirm');

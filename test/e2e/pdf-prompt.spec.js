@@ -104,9 +104,9 @@ test.describe('PDF offer bar', () => {
         { timeout: 20000 }).toBe(1);
       expect(service.state.apiHits.filter(h => h === 'POST /api/pdf/uploads')).toHaveLength(1);
 
-      // 条子不收走，改说这份 PDF 的任务走到哪了：「正在翻译」，没有「不用」可点。
+      // 条子不收走，改说这份 PDF 的任务走到哪了：说阶段，动了才带百分比，没有「不用」可点。
       const bar = page.locator(`${BAR}[data-mode="offer"]`);
-      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^Translating this PDF… \d+%$/);
+      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^(Uploading…|Queued|Analyzing layout…|Translating…|Retypesetting…)( \d+%)?$/);
       await expect(bar.locator('[data-act="dismiss"]')).toBeHidden();
 
       const records = await jobRecords(worker);
@@ -152,7 +152,7 @@ test.describe('PDF offer bar', () => {
       const stored = await worker.evaluate(() => chrome.storage.local.get('comicToken'));
       expect(stored.comicToken).toBe('granted-token');
       // 派出去之后，条子跟着这份任务走（不再是提示）。
-      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^(Translating this PDF… \d+%|Document translation finished)$/);
+      await expect(bar.locator('.ai-translator-auto-text')).toHaveText(/^((Uploading…|Queued|Analyzing layout…|Translating…|Retypesetting…)( \d+%)?|Document translation finished)$/);
     } finally {
       await service.close();
     }

@@ -446,8 +446,8 @@ function pdfWithJob(job, options = {}) {
 // createdAt is the attempt: every create rewrites it, a retry included, even
 // under the same operation id.
 const job = (fields) => ({ jobId: 'job-1', operationId: 'op-1', createdAt: 1, retryable: false, ...fields });
-const UPLOADING = job({ jobId: null, phase: 'running', text: 'Translating this PDF… 0%' });
-const RUNNING = job({ phase: 'running', text: 'Translating this PDF… 42%' });
+const UPLOADING = job({ jobId: null, phase: 'running', text: 'Uploading…' });
+const RUNNING = job({ phase: 'running', text: 'Translating… 42%' });
 const DONE = job({ phase: 'succeeded', text: 'Translated' });
 const looks = (page) => page.sent.filter((m) => m.type === 'PDF_PAGE_JOB');
 
@@ -491,7 +491,7 @@ test('a job in flight says how far it is, and polls only while the tab is visibl
   page.ctx.setupMediaHints();
   await flush();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%');
+  assert.equal(page.lastOffer().text, 'Translating… 42%');
   assert.equal(page.lastOffer().accept.text, 'docView');
   assert.equal(page.timers.size, 1);
   assert.equal([...page.timers.values()][0].ms, 4000);
@@ -530,7 +530,7 @@ test('the running bar has no View until the job has an id to open', async () => 
   page.ctx.setupMediaHints();
   await flush();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  assert.equal(page.lastOffer().text, 'Uploading…');
   assert.equal(page.lastOffer().accept, null);
 });
 
@@ -552,7 +552,7 @@ test('clicking Translate hands the bar to the job as soon as the worker writes i
   answer(UPLOADING);
   page.storageChange();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  assert.equal(page.lastOffer().text, 'Uploading…');
   assert.equal(page.lastOffer().accept, null);
 
   answer(RUNNING);
@@ -583,7 +583,7 @@ test('a job started from the context menu shows up on the open PDF', async () =>
 
   page.storageChange();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%');
+  assert.equal(page.lastOffer().text, 'Translating… 42%');
   assert.equal(page.timers.size, 1, 'a job found through storage is not followed');
 });
 
@@ -610,10 +610,10 @@ test('a failed job that can be retried says why and runs the translation again',
   await flush();
   await flush();
   assert.deepEqual(page.sent.filter((m) => m.type === 'PDF_TRANSLATE_URL'), [{ type: 'PDF_TRANSLATE_URL', url: PDF_URL, consent: true }]);
-  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 5%' }));
+  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating… 5%' }));
   page.storageChange();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
+  assert.equal(page.lastOffer().text, 'Translating… 5%');
 });
 
 test('a failure a retry cannot fix offers no retry: View when there is a job, nothing when there is not', async () => {
@@ -658,7 +658,7 @@ test('a job started here and then cancelled gives the hint back once it is close
   await flush();
   await flush();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%', 'the click did not hand the bar to its job');
+  assert.equal(page.lastOffer().text, 'Translating… 42%', 'the click did not hand the bar to its job');
 
   answer(job({ phase: 'abandoned', text: 'Cancelled' }));
   page.storageChange();
@@ -684,10 +684,10 @@ test('a click that writes no new record keeps the hint away, even over a closed 
   assert.equal(page.lastOffer(), null, 'the hint came back with Translate under an open charge question');
 
   // Once the answer starts a job, its record takes the bar.
-  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 5%' }));
+  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating… 5%' }));
   page.storageChange();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
+  assert.equal(page.lastOffer().text, 'Translating… 5%');
 });
 
 test('a retry under the same operation id that fails again is a new failure, not the old one', async () => {
@@ -716,12 +716,12 @@ test('a failure closed earlier does not hide the next attempt failing the same w
   await flush();
   page.lastOffer().dismiss();
   assert.equal(page.lastOffer().text, 'mediaHintPdf');
-  answer(job({ jobId: null, createdAt: 2, phase: 'running', text: 'Translating this PDF… 0%' }));
+  answer(job({ jobId: null, createdAt: 2, phase: 'running', text: 'Uploading…' }));
   page.lastOffer().accept.run();
   await flush();
   await flush();
   await flush();
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  assert.equal(page.lastOffer().text, 'Uploading…');
   answer({ ...FAILED, createdAt: 2 });
   page.storageChange();
   await flush();
@@ -749,7 +749,7 @@ test('closing the bar hides that state only: the job finishing says so again', a
   assert.equal(page.lastOffer(), null);
   assert.equal(page.timers.size, 1, 'closing the bar stopped following the job');
 
-  answer({ ...RUNNING, text: 'Translating this PDF… 80%' });
+  answer({ ...RUNNING, text: 'Translating… 80%' });
   page.tick();
   await flush();
   await flush();
@@ -796,7 +796,7 @@ test('a reloaded extension stops the polling instead of failing every few second
   await flush();
   assert.equal(page.timers.size, 0);
   assert.equal(page.warnings.length, 1);
-  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%', 'the last thing known was thrown away');
+  assert.equal(page.lastOffer().text, 'Translating… 42%', 'the last thing known was thrown away');
 });
 
 test('the job follower attaches once per page', async () => {

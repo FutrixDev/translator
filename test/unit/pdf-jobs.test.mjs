@@ -147,11 +147,12 @@ test('each engine stage word reads as its phase', () => {
 test('the status line never steps back through a whole run', () => {
   // The bug: `emit` (writing the result file) matched neither loose pattern
   // and read as "Translating…" again after "Retypesetting…".
-  const phase = { pdfStageLayout: 0, pdfStageTranslating: 1, pdfStageTypesetting: 2 };
+  const phase = { pdfStatusQueued: 0, pdfStageLayout: 1, pdfStageTranslating: 2, pdfStageTypesetting: 3 };
+  // Every run starts claimed with no stage yet (null).
   const runs = {
-    pdf: ['parse', 'structure', 'names', 'translate', 'typeset', 'emit'],
-    'split pdf': ['parse', 'structure', 'translate', 'typeset', 'emit', 'merging'],
-    document: ['names', 'normalize', 'translate', 'rewrite', 'emit']
+    pdf: [null, 'parse', 'structure', 'names', 'translate', 'typeset', 'emit'],
+    'split pdf': [null, 'parse', 'structure', 'translate', 'typeset', 'emit', 'merging'],
+    document: [null, 'names', 'normalize', 'translate', 'rewrite', 'emit']
   };
   for (const [name, stages] of Object.entries(runs)) {
     const keys = stages.map(running);
@@ -165,11 +166,13 @@ test('the status line never steps back through a whole run', () => {
   }
 });
 
-test('an unknown or missing stage word reads as the neutral "Translating…"', () => {
+test('an unknown stage word reads as the neutral "Translating…", none yet as still queued', () => {
   assert.equal(running('some_future_stage'), 'pdfStageTranslating');
-  assert.equal(running(''), 'pdfStageTranslating');
-  assert.equal(running(null), 'pdfStageTranslating');
-  assert.equal(running(undefined), 'pdfStageTranslating');
+  // Claimed but not yet reported on: "Translating…" here would step back to
+  // "Analyzing layout…" on the first report.
+  assert.equal(running(''), 'pdfStatusQueued');
+  assert.equal(running(null), 'pdfStatusQueued');
+  assert.equal(running(undefined), 'pdfStatusQueued');
   // Looked up exactly: the pdf2zh-era words the old patterns caught are gone.
   assert.equal(running('render'), 'pdfStageTranslating');
   assert.equal(running('toString'), 'pdfStageTranslating');

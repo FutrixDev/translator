@@ -202,7 +202,7 @@ test('one priority: notice over the explain line over the offer, and nothing whi
 test('an offer names its own buttons: no accept hides the primary, no decline hides the second', () => {
   const page = load();
   const button = (act) => page.bar().querySelector(`[data-act="${act}"]`);
-  page.ctx.showAutoStatusOffer({ text: 'pdfPageRunning', accept: null, decline: null, dismiss: () => page.calls.push('dismiss') });
+  page.ctx.showAutoStatusOffer({ text: 'pdfPageProgress', accept: null, decline: null, dismiss: () => page.calls.push('dismiss') });
   assert.equal(page.bar().dataset.mode, 'offer', 'an offer with nothing to accept is still drawn');
   assert.equal(button('accept').hidden, true);
   assert.equal(button('dismiss').hidden, true);

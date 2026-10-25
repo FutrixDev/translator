@@ -183,10 +183,10 @@
    * story, and it only ever moves forward: `emit` writes the result file, so
    * it reads as the last phase, not as translation again.
    *
-   * A word missing here (none yet, or one the engine adds later) reads as the
-   * neutral "Translating…": the stage is display-only — the service passes
-   * it through without reading its meaning — so a new word on the server must
-   * not break the page.
+   * No word yet still reads as queued (pdfStatusKey). A word missing here
+   * (one the engine adds later) reads as the neutral "Translating…": the
+   * stage is display-only — the service passes it through without reading its
+   * meaning — so a new word on the server must not break the page.
    */
   var PDF_STAGE_KEYS = new Map([
     ['parse', 'pdfStageLayout'],
@@ -210,6 +210,11 @@
     switch (view && view.status) {
       case 'queued': return 'pdfStatusQueued';
       case 'running':
+        // Started but no stage reported yet: the server has taken the job and
+        // no worker has said what it is doing (while capacity is short the
+        // server itself says `queued`). Reading this as "Translating…" would
+        // step back to "Analyzing layout…" on the first report.
+        if (!view.stage) return 'pdfStatusQueued';
         return PDF_STAGE_KEYS.get(view.stage) || 'pdfStageTranslating';
       // Waiting on the user, not on us: the document was longer than the
       // pages reserved for it, and nothing moves until they answer.

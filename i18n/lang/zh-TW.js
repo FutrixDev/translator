@@ -382,7 +382,7 @@
     autoOfferDismiss: '不用',
     mediaHintPdf: '按 {shortcut} 翻譯這份 PDF，按頁數消耗額度',
     mediaHintPdfNoShortcut: '這是一份 PDF 文件，翻譯它會按頁數消耗額度',
-    pdfPageRunning: '正在翻譯這份 PDF… {progress}%',
+    pdfPageProgress: '{stage} {progress}%',
     pdfViewTranslation: '查看譯文',
     mediaHintComic: '按 {shortcut} 翻譯螢幕上的漫畫',
     mediaHintComicNoShortcut: '翻譯螢幕上的漫畫？',

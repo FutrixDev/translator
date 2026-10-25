@@ -382,7 +382,7 @@
     autoOfferDismiss: 'Не сейчас',
     mediaHintPdf: 'Нажмите {shortcut}, чтобы перевести этот PDF (расходует постраничные кредиты).',
     mediaHintPdfNoShortcut: 'Это PDF. Перевод расходует постраничные кредиты.',
-    pdfPageRunning: 'Перевод этого PDF… {progress}%',
+    pdfPageProgress: '{stage} {progress}%',
     pdfViewTranslation: 'Открыть перевод',
     mediaHintComic: 'Нажмите {shortcut}, чтобы перевести комикс на экране.',
     mediaHintComicNoShortcut: 'Перевести комикс на экране?',
