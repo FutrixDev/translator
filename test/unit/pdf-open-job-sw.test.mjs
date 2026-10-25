@@ -224,7 +224,7 @@ test('PDF_PAGE_JOB: the newest job started from this address answers, read from 
     pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
   ]);
   assert.deepEqual(reply, { ok: true, data: { job: {
-    jobId: 'job_new', operationId: 'op-job_new', phase: 'running', text: 'Translating this PDF… 40%', retryable: false,
+    jobId: 'job_new', operationId: 'op-job_new', createdAt: now, phase: 'running', text: 'Translating this PDF… 40%', retryable: false,
   } } });
   assert.deepEqual(fetched, [], 'a refresh:false look asks the network nothing');
 });
@@ -246,8 +246,9 @@ test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the 
 
 test('PDF_PAGE_JOB: each status maps to the bar\'s phase and line; a receipt has no job to open yet', async () => {
   const phase = async (record) => (await pageJob([record])).data.job;
-  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true, operationId: 'op-2' })),
-    { jobId: null, operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 0%', retryable: false });
+  const receiptAt = Date.now();
+  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true, operationId: 'op-2', createdAt: receiptAt })),
+    { jobId: null, operationId: 'op-2', createdAt: receiptAt, phase: 'running', text: 'Translating this PDF… 0%', retryable: false });
   const waiting = await phase(pageRecord('job_w', 'awaiting_confirm'));
   assert.equal(waiting.phase, 'awaiting');
   assert.equal(waiting.text, 'Needs your confirmation');

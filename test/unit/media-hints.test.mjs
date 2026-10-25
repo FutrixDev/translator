@@ -443,7 +443,9 @@ function pdfWithJob(job, options = {}) {
 
 // The worker's answer: the text is already worded there (pdfStatusLine), so the
 // page shows it as it comes.
-const job = (fields) => ({ jobId: 'job-1', operationId: 'op-1', retryable: false, ...fields });
+// createdAt is the attempt: every create rewrites it, a retry included, even
+// under the same operation id.
+const job = (fields) => ({ jobId: 'job-1', operationId: 'op-1', createdAt: 1, retryable: false, ...fields });
 const UPLOADING = job({ jobId: null, phase: 'running', text: 'Translating this PDF… 0%' });
 const RUNNING = job({ phase: 'running', text: 'Translating this PDF… 42%' });
 const DONE = job({ phase: 'succeeded', text: 'Translated' });
@@ -686,6 +688,44 @@ test('a click that writes no new record keeps the hint away, even over a closed 
   page.storageChange();
   await flush();
   assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
+});
+
+test('a retry under the same operation id that fails again is a new failure, not the old one', async () => {
+  // A download failure keeps the URL binding, so the retry is op-1 again and
+  // fails the same way: only the attempt tells the two failures apart.
+  const FAILED = job({ jobId: null, phase: 'failed', retryable: true, text: 'Could not download' });
+  const { page, answer } = pdfWithJob(FAILED);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  answer({ ...FAILED, createdAt: 2 });
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer() && page.lastOffer().accept.text, 'pdfRetry', 'the second failure left the page silent');
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf', 'closing the second failure left no way to start again');
+});
+
+test('a failure closed earlier does not hide the next attempt failing the same way', async () => {
+  const FAILED = job({ jobId: null, phase: 'failed', retryable: true, text: 'Could not download' });
+  const { page, answer } = pdfWithJob(FAILED);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+  answer(job({ jobId: null, createdAt: 2, phase: 'running', text: 'Translating this PDF… 0%' }));
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  answer({ ...FAILED, createdAt: 2 });
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer() && page.lastOffer().text, 'Could not download', 'the new failure was hidden as the closed one');
 });
 
 test('awaiting confirmation sends the user to the job page', async () => {

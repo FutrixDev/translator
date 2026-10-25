@@ -610,6 +610,9 @@ async function handlePdfPageJob(url, { refresh }) {
     job: {
       jobId: pdfClient.isPendingRecord(record) ? null : record.jobId,
       operationId: record.operationId,
+      // 同一个 operationId 会交好几次（网络、下载失败后重试沿用原 id），每交一次
+      // 收据重写 createdAt：页面靠它分清「又失败了一次」和「还是上次那一档」。
+      createdAt: record.createdAt,
       phase,
       text,
       retryable: phase === 'failed' && pdfClient.isRetryablePdfFailure(record.error),

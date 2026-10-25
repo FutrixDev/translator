@@ -24,12 +24,13 @@
   const t = ctx.t;
   const JOB_POLL_MS = 4000;
 
-  // PDF_PAGE_JOB 的回答：{ jobId, operationId, phase, text, retryable }，没有
-  // 就是 null。jobId 在上传途中是 null：还没有可以打开的任务。
+  // PDF_PAGE_JOB 的回答：{ jobId, operationId, createdAt, phase, text, retryable }，
+  // 没有就是 null。jobId 在上传途中是 null：还没有可以打开的任务。
   let job = null;
   // 用户关掉的是哪一档（这一次提交 + phase）：同一档不再出，译好了照样出来说一声。
   // 按 operationId 认，不按 jobId：上传途中还没有 jobId，那一档关掉之后，拿到
-  // jobId 的同一档不该又冒出来。
+  // jobId 的同一档不该又冒出来。operationId 还不够：重试沿用同一个 id，所以再
+  // 加上这一次交的 createdAt，又失败一次是新的一档。
   let closedJob = '';
   // attach 给的两件事：repaint（条子重画）、retry（再交一次）。
   let hooks = null;
@@ -88,7 +89,7 @@
   }
 
   function jobKey(entry) {
-    return `${entry.operationId}:${entry.phase}`;
+    return `${entry.operationId}:${entry.createdAt}:${entry.phase}`;
   }
 
   // 译好了开阅读台，别的开任务页（openPdfJob 自己会再问一次状态）。
@@ -132,7 +133,7 @@
       return syncJob(false);
     },
 
-    /** 这一页任务记录此刻是哪一档（operationId:phase），没有记录是 ''。 */
+    /** 这一页任务记录此刻是哪一档（哪一次提交 + phase），没有记录是 ''。 */
     key() {
       return job ? jobKey(job) : '';
     },
