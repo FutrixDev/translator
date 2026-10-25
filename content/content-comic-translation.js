@@ -250,7 +250,7 @@
       pageIndex: comic.pageIndexOf(img), pageUrl: record.pageUrl, targetLang: comicTargetLang(), mode: entry.mode
     };
     if (record.status === 'succeeded') comic.summaryRestoring(entry);
-    else comic.summaryBegin(entry, summaryPage);
+    else comic.summaryBegin(entry, { ...summaryPage, started: true });
 
     const overlay = comic.createOverlay(img);
     entry.overlay = overlay;
@@ -545,6 +545,7 @@
     entry.jobId = created.data.jobId;
     entry.jobStartedAt = jobStartedAt;
     overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    comic.summaryStarted(entry);
     // From here the job exists server-side and will finish with or without this
     // document, so it becomes findable from the next page load.
     comic.rememberJob(entry, 'running');

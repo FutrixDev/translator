@@ -461,19 +461,27 @@
    * Put the bar in the top-right corner of the part of `img` that can be seen
    * — the same visible part the comic pill is pinned to (ctx.visiblePart), so
    * an image wider than a reader's scroll box does not get a bar hanging over
-   * the box's edge. False, and nothing shown, when none of the image can be.
+   * the box's edge. False, and nothing shown, when none of the image can be
+   * seen, or only a strip too thin to hold the bar (ctx.tooThinFor, the pill's
+   * rule).
    */
   function showHoverBar(img, chips) {
-    const part = ctx.visiblePart(img.getBoundingClientRect(), ctx.visibleArea(ctx.clippingAncestors(img)));
+    const rect = img.getBoundingClientRect();
+    const part = ctx.visiblePart(rect, ctx.visibleArea(ctx.clippingAncestors(img)));
     if (!part) return false;
     hoverImage = img;
     hoverBar.replaceChildren(...chips);
     document.body.appendChild(hoverBar);
     // Position after append so the bar's own width is measurable. Fixed
     // positioning, so rect coordinates are viewport coordinates.
-    const width = hoverBar.offsetWidth || 0;
-    hoverBar.style.top = `${part.top + 8}px`;
-    hoverBar.style.left = `${Math.max(part.left, part.right - width - 8)}px`;
+    const size = { width: hoverBar.offsetWidth || 0, height: hoverBar.offsetHeight || 0 };
+    if (ctx.tooThinFor(part, rect, size)) {
+      hideHoverBar();
+      return false;
+    }
+    const inset = ctx.CORNER_INSET;
+    hoverBar.style.top = `${part.top + inset}px`;
+    hoverBar.style.left = `${Math.max(part.left, part.right - size.width - inset)}px`;
     return true;
   }
 

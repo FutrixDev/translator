@@ -209,6 +209,20 @@
     return { top, left, right, bottom, width: right - left, height: bottom - top };
   };
 
+  // Inside the image, not on its edge: the corner of the artwork is where a page
+  // number or a signature sits, and 8 px clears the rounded corners readers draw.
+  ctx.CORNER_INSET = 8;
+
+  /**
+   * Whether `part` (ctx.visiblePart of `rect`) is a strip too thin for a layer
+   * of `size` in its corner, insets included. Only a cut side counts: an image
+   * seen whole is never too thin, however small.
+   */
+  ctx.tooThinFor = function(part, rect, size) {
+    const thin = (seen, whole, own) => seen < whole && seen < own + 2 * ctx.CORNER_INSET;
+    return thin(part.width, rect.width, size.width) || thin(part.height, rect.height, size.height);
+  };
+
   /**
    * Does this element show the src the context menu reported?
    *

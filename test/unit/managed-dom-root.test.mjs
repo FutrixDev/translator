@@ -341,6 +341,11 @@ test('content-utils.js loads before the surfaces that use it', () => {
   assert.ok(at('content/content-utils.js') < at('content/page/collect.js'));
   // Both modifier-key hotkeys arm their trigger through ctx.armModifierTap.
   assert.ok(at('content/content-utils.js') < at('content/content-selection.js'));
+  // The comic layers and the image hover bar are placed over the visible part
+  // of an image through ctx.visiblePart and ctx.tooThinFor.
+  for (const file of ['content/comic/overlay.js', 'content/content-image-ocr.js']) {
+    assert.ok(at('content/content-utils.js') < at(file), `${file} loads before content-utils.js`);
+  }
 
   // The renderer hangs its helpers off the same ctx object, so it has to run
   // before anything calls them.

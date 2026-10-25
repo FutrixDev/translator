@@ -16,10 +16,6 @@
   // Pinned to a corner of the image
   // -------------------------------------------------------------------------
 
-  // Inside the image, not on its edge: the corner of the artwork is where a page
-  // number or a signature sits, and 8 px clears the rounded corners readers draw.
-  const CORNER_INSET = 8;
-
   /**
    * Keep `element` (fixed-position) in one corner of whatever `host()` returns.
    *
@@ -77,8 +73,7 @@
       if (!part) return true;
       if (onFrame) onFrame(rect);
       const size = anchorSize();
-      const sliver = (seen, whole, own) => seen < whole && seen < own + 2 * CORNER_INSET;
-      if (sliver(part.width, rect.width, size.width) || sliver(part.height, rect.height, size.height)) {
+      if (ctx.tooThinFor(part, rect, size)) {
         element.style.display = 'none';
         return true;
       }
@@ -86,9 +81,10 @@
       // followed the visible edge past the image's bottom would sit on the next
       // page and report on this one. An image shorter than the pill still never
       // pushes it above the area that can be seen.
+      const inset = ctx.CORNER_INSET;
       const top = Math.max(area.top, Math.min(
-        part.top + CORNER_INSET,
-        rect.bottom - size.height - CORNER_INSET
+        part.top + inset,
+        rect.bottom - size.height - inset
       ));
       element.style.top = `${top}px`;
       // Anchored by the edge that touches the corner, so a label that changes
@@ -98,9 +94,9 @@
       // of sight. `right` on a fixed box counts from the viewport's inner edge,
       // which is clientWidth, not innerWidth.
       if (corner === 'top-right') {
-        element.style.right = `${document.documentElement.clientWidth - part.right + CORNER_INSET}px`;
+        element.style.right = `${document.documentElement.clientWidth - part.right + inset}px`;
       } else {
-        element.style.left = `${part.left + CORNER_INSET}px`;
+        element.style.left = `${part.left + inset}px`;
       }
       return true;
     };

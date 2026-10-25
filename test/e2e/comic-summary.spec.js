@@ -7,7 +7,7 @@
  * 汇总一致。服务是 comic-fixtures.js 里那台模拟的（chapter 模式）。
  */
 const { test, expect } = require('./fixtures');
-const { connectExtension } = require('./helpers');
+const { connectExtension, setExtensionAccount } = require('./helpers');
 const { startMockService, triggerComicTranslation, triggerComicPageTranslation } = require('./comic-fixtures');
 
 const ROOT = '.ai-translator-comic-summary';
@@ -66,9 +66,12 @@ test.describe('Comic chapter summary', () => {
       // Step by step: never backwards, and through at least one figure between
       // the start and the end rather than jumping straight to the result.
       const labels = await page.evaluate(() => window.__summaryLabels);
-      // Counted out of every page from the start, running ones included.
-      labels.forEach(label => expect(label).toMatch(/\/12$/));
-      const done = labels.map(doneOf);
+      // Getting ready until the first job exists, then counted out of every
+      // page, running ones included, and never back to getting ready.
+      const counted = labels.slice(labels.findIndex(label => label !== 'Preparing…'));
+      labels.slice(0, labels.length - counted.length).forEach(label => expect(label).toBe('Preparing…'));
+      counted.forEach(label => expect(label).toMatch(/\/12$/));
+      const done = counted.map(doneOf);
       done.forEach((n, i) => { if (i) expect(n).toBeGreaterThanOrEqual(done[i - 1]); });
       expect(done.some(n => n > 0 && n < 10)).toBe(true);
       expect(labels[labels.length - 1]).toBe('Chapter 10/12');
@@ -137,6 +140,7 @@ test.describe('Comic chapter summary', () => {
       await expect(page.locator(ROOT)).not.toHaveClass(/is-busy/);
 
       await page.locator(PILL).click();
+      await expect(page.locator(WAITING)).toBeVisible();
       await expect(page.locator(WAITING)).toHaveText('Pages waiting for confirmation: 12');
       await page.locator(BUTTON, { hasText: 'Cancel all' }).click();
       await expect(page.locator(ROOT)).toHaveCount(0);
@@ -168,6 +172,7 @@ test.describe('Comic chapter summary', () => {
       await expect(page.locator(ROOT)).not.toHaveClass(/is-busy/);
 
       await page.locator(PILL).click();
+      await expect(page.locator(WAITING)).toBeVisible();
       await expect(page.locator(WAITING)).toHaveText('Pages waiting for sign-in: 12');
       await page.locator(BUTTON, { hasText: 'Cancel all' }).click();
       await expect(page.locator(ROOT)).toHaveCount(0);
@@ -177,6 +182,53 @@ test.describe('Comic chapter summary', () => {
       await triggerComicPageTranslation(worker, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Sign-in needed', { timeout: 20_000 });
       await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(12);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('one page on the charge card and one on the sign-in card: the pill asks for the sign-in first', async ({ context, page }) => {
+    test.setTimeout(90_000);
+    const service = await startMockService('confirm', { chapter: { stepMs: 600 } });
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openChapter(page, service);
+
+      await triggerComicTranslation(worker, pageUrl, `${service.base}/source.png?page=1`);
+      await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Awaiting confirmation' }))
+        .toHaveCount(1, { timeout: 20_000 });
+      await setExtensionAccount(page, false);
+      await triggerComicTranslation(worker, pageUrl, `${service.base}/source.png?page=2`);
+      await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Sign-in needed' }))
+        .toHaveCount(1, { timeout: 20_000 });
+
+      // Sign-in comes before any price, so it is what the pill waits for.
+      await expect(page.locator(LABEL)).toHaveText('Sign-in needed');
+      await expect(page.locator(ROOT)).not.toHaveClass(/is-busy/);
+      await page.locator(PILL).click();
+      await expect(page.locator(WAITING)).toBeVisible();
+      await expect(page.locator(`${WAITING} > div`)).toHaveText(['Pages waiting for sign-in: 1', 'Pages waiting for confirmation: 1']);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('while every page is still getting ready the pill does not spin, and it does once a job exists', async ({ context, page }) => {
+    test.setTimeout(90_000);
+    const service = await startMockService('succeed', { chapter: { stepMs: 15_000 }, uploadDelayMs: 2500 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openChapter(page, service);
+
+      await triggerComicPageTranslation(worker, pageUrl);
+      await expect(page.locator(LABEL)).toHaveText('Preparing…', { timeout: 10_000 });
+      await expect(page.locator(ROOT)).not.toHaveClass(/is-busy/);
+      // Read while the uploads are still held: no page had its job yet.
+      expect(service.state.createBodies).toHaveLength(0);
+
+      await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBeGreaterThan(0);
+      await expect(page.locator(ROOT)).toHaveClass(/is-busy/, { timeout: 10_000 });
+      await expect(page.locator(LABEL)).toHaveText(/^Chapter \d+\/12$/);
     } finally {
       await service.close();
     }

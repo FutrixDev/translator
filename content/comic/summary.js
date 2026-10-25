@@ -30,7 +30,7 @@
    * run of that page, so a retry replaces its failure instead of adding a page.
    * `state` is running, done, failed or cancelled; a cancelled page is no
    * longer part of the count. `waiting` is what a running page is held on:
-   * 'signin', 'confirm' or null.
+   * 'signin', 'confirm' or null. `started` is whether its job exists yet.
    */
   const tasks = new Map();
   let view = null;
@@ -50,17 +50,25 @@
 
   /**
    * A run starts on `entry`: translateImage after the page index is read, or a
-   * job still in flight picked up after a reload.
+   * job still in flight picked up after a reload (`started`: its job exists).
    */
-  function summaryBegin(entry, { pageIndex, pageUrl, targetLang, mode }) {
+  function summaryBegin(entry, { pageIndex, pageUrl, targetLang, mode, started = false }) {
     if (!active) {
       active = true;
       restored.forEach((task, pageId) => tasks.set(pageId, task));
       restored.clear();
     }
     tasks.set(entry.pageId, {
-      entry, state: 'running', waiting: null, reason: '', assetId: null, pageIndex, pageUrl, targetLang, mode
+      entry, state: 'running', started, waiting: null, reason: '', assetId: null, pageIndex, pageUrl, targetLang, mode
     });
+    render();
+  }
+
+  /** The page's job exists: from here it is being translated, not got ready. */
+  function summaryStarted(entry) {
+    const task = taskOf(entry);
+    if (!task || task.state !== 'running') return;
+    task.started = true;
     render();
   }
 
@@ -124,10 +132,12 @@
   }
 
   function counts() {
-    const result = { running: 0, done: 0, failed: 0, signin: 0, confirm: 0 };
+    const result = { running: 0, started: 0, done: 0, failed: 0, signin: 0, confirm: 0 };
     tasks.forEach((task) => {
       if (task.state in result) result[task.state] += 1;
-      if (task.state === 'running' && task.waiting) result[task.waiting] += 1;
+      if (task.state !== 'running') return;
+      if (task.started) result.started += 1;
+      if (task.waiting) result[task.waiting] += 1;
     });
     result.total = result.running + result.done + result.failed;
     return result;
@@ -194,12 +204,12 @@
 
     return {
       update(count) {
-        // Every running page held on the reader: nothing is being translated,
-        // so the pill says what it waits for, sign-in first (it comes before
-        // any price).
-        const held = count.running > 0 && count.signin + count.confirm === count.running;
+        // No running page has its job yet: nothing is being translated, so the
+        // pill says what it waits for, sign-in first (it comes before any
+        // price), and otherwise that the pages are getting ready.
+        const held = count.running > 0 && count.started === 0;
         const text = held
-          ? t(count.signin ? 'comicPillSignIn' : 'comicPillConfirm')
+          ? t(count.signin ? 'comicPillSignIn' : count.confirm ? 'comicPillConfirm' : 'comicPillPreparing')
           : t('comicSummaryLabel').replace('{done}', String(count.done)).replace('{total}', String(count.total));
         label.textContent = text;
         pill.title = text;
@@ -351,6 +361,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    summaryBegin, summaryRestoring, summaryRestored, summaryWaiting, summaryDone, summarySettle, summaryShown,
+    summaryBegin, summaryStarted, summaryRestoring, summaryRestored, summaryWaiting, summaryDone, summarySettle, summaryShown,
   });
 })();

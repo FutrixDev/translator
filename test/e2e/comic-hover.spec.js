@@ -199,6 +199,52 @@ test.describe('Comic chip on the image hover bar', () => {
     }
   });
 
+  test('a thin strip of the image left at the box bottom gets no bar; with room it shows inside the box', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      // Leaves the last `seen` px of the image in the 400 px box (top at 100),
+      // then points at that strip from outside it, so the bar is asked afresh.
+      const pointAtStrip = async (seen) => {
+        await page.mouse.move(700, 50);
+        await page.locator('#comic').evaluate((img, px) => {
+          document.querySelector('#box').scrollTop = img.offsetHeight - px;
+          return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }, seen);
+        await page.mouse.move(100, 100 + seen / 2);
+      };
+
+      // Measured on the whole image first: the bar's own height.
+      await page.mouse.move(100, 250);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const height = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().height);
+      expect(height + 16).toBeGreaterThan(20);
+
+      for (const seen of [12, 20]) {
+        await pointAtStrip(seen);
+        // Give a wrongly placed bar time to render.
+        await page.waitForTimeout(300);
+        await expect(page.locator(BAR)).toHaveCount(0);
+      }
+
+      // Room for the bar and an inset each side.
+      await pointAtStrip(Math.ceil(height) + 16 + 10);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const box = await page.locator('#box').evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { top: rect.top + el.clientTop, bottom: rect.top + el.clientTop + el.clientHeight };
+      });
+      const bar = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().toJSON());
+      expect(bar.top).toBeGreaterThanOrEqual(box.top);
+      expect(bar.bottom).toBeLessThanOrEqual(box.bottom);
+      const image = await page.locator('#comic').evaluate(img => img.getBoundingClientRect().bottom);
+      expect(bar.bottom).toBeLessThanOrEqual(image);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('the switches: OCR off leaves the comic chip alone, the bar switch hides both', async ({ context, page }) => {
     const service = await startMockService('succeed');
     try {
