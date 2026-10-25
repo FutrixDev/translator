@@ -382,6 +382,8 @@
     autoOfferDismiss: 'Jetzt nicht',
     mediaHintPdf: 'Drücken Sie {shortcut}, um dieses PDF zu übersetzen (verbraucht Seiten-Guthaben).',
     mediaHintPdfNoShortcut: 'Dies ist ein PDF. Die Übersetzung verbraucht Seiten-Guthaben.',
+    pdfPageRunning: 'Dieses PDF wird übersetzt… {progress} %',
+    pdfViewTranslation: 'Übersetzung ansehen',
     mediaHintComic: 'Drücken Sie {shortcut}, um den Comic auf dem Bildschirm zu übersetzen.',
     mediaHintComicNoShortcut: 'Den Comic auf dem Bildschirm übersetzen?',
     setShortcut: 'Tastenkürzel festlegen',

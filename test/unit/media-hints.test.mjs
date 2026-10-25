@@ -6,7 +6,9 @@
 // AccountGate and PdfUrl are the real shared modules, so "off" versus "signed
 // out" is answered by the one gate the rest of the extension uses; messages go
 // out through the real owner, ctx.comic.sendMessage from
-// content/content-comic-translation.js.
+// content/content-comic-translation.js. The PDF's own job is the real follower
+// too (content/content-pdf-page-job.js, ctx.pdfPageJob), so the bar the page
+// draws is the one the two files agree on.
 //
 // Run with: npm run test:unit
 import test from 'node:test';
@@ -22,6 +24,7 @@ const SOURCES = [
   'shared/account-gate.js',
   'shared/pdf-url.js',
   'content/content-media-hints.js',
+  'content/content-pdf-page-job.js',
 ].map((rel) => [rel, read(rel)]);
 const COMIC_OWNER = read('content/content-comic-translation.js');
 
@@ -44,6 +47,12 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  *   was reloaded under the page).
  * - `throws`: message types whose send throws at once (the extension context
  *   is already gone: chrome.runtime.sendMessage throws synchronously).
+ *
+ * Timers are the page's own and never fire by themselves: `page.timers` holds
+ * the pending ones and `page.tick()` runs them, so "polls every few seconds"
+ * is a fact a test can count. PDF_PAGE_JOB answers "no job" unless `replies`
+ * says otherwise; `page.storageChange()` is the worker writing a job record
+ * (chrome.storage.local pdfJobs).
  */
 function load({
   kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
@@ -53,9 +62,12 @@ function load({
   const warnings = [];
   const sent = [];
   const documentListeners = {};
+  const storageListeners = [];
   const offers = [];
   const notices = [];
   const comicStarts = [];
+  const timers = new Map();
+  let nextTimer = 1;
   const settings = { enableComicTranslation: enabled, enablePdfTranslation: enabled };
   const ctx = {
     t: (key) => key,
@@ -74,10 +86,12 @@ function load({
   };
   const sandbox = {
     console: { warn: (...args) => { warnings.push(args.map(String).join(' ')); }, log() {}, error() {} },
-    setTimeout,
+    setTimeout: (fn, ms) => { timers.set(nextTimer, { fn, ms }); return nextTimer++; },
+    clearTimeout: (id) => { timers.delete(id); },
     URL,
     requestAnimationFrame: () => 0,
     chrome: {
+      storage: { onChanged: { addListener(fn) { storageListeners.push(fn); } } },
       runtime: {
         lastError: undefined,
         sendMessage(message, callback) {
@@ -85,7 +99,7 @@ function load({
           // against this realm's literals on prototype alone.
           if (throws[message.type]) throw new Error('Extension context invalidated.');
           sent.push(JSON.parse(JSON.stringify(message)));
-          const reply = replies[message.type] || { ok: true };
+          const reply = replies[message.type] || DEFAULT_REPLIES[message.type] || { ok: true };
           if (callback) {
             setImmediate(() => callback(reply));
             return undefined;
@@ -102,7 +116,7 @@ function load({
         ? { contentType: 'application/pdf', body: null }
         : { contentType: 'text/html', body: { childElementCount: 3 } }),
       visibilityState: visible ? 'visible' : 'hidden',
-      addEventListener(type, fn) { documentListeners[type] = fn; },
+      addEventListener(type, fn) { (documentListeners[type] ||= []).push(fn); },
     },
   };
   sandbox.globalThis = sandbox;
@@ -118,34 +132,58 @@ function load({
   // The page's featureState is the gate's, over this page's settings and sign-in.
   ctx.featureState = (key) => sandbox.AccountGate.featureState(ctx.settings, key, ctx.signedIn);
   const lastOffer = () => offers[offers.length - 1] || null;
+  const fire = (type) => { for (const fn of documentListeners[type] || []) fn(); };
   const show = () => {
     sandbox.document.visibilityState = 'visible';
-    documentListeners.visibilitychange();
+    fire('visibilitychange');
   };
-  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, lastOffer, show };
+  const hide = () => {
+    sandbox.document.visibilityState = 'hidden';
+    fire('visibilitychange');
+  };
+  /** A storage write landing: by default the worker's job records changing. */
+  const storageChange = (changes = { pdfJobs: {} }, area = 'local') => {
+    for (const fn of storageListeners) fn(changes, area);
+  };
+  /** Runs every timer pending now (not the ones they set). */
+  const tick = () => {
+    const due = [...timers.entries()];
+    for (const [id] of due) timers.delete(id);
+    for (const [, timer] of due) timer.fn();
+  };
+  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, timers, lastOffer, show, hide, tick, storageChange };
 }
+
+const DEFAULT_REPLIES = { PDF_PAGE_JOB: { ok: true, data: { job: null } } };
+// The storage-only look a PDF page takes once it knows it is one.
+const LOOK = { type: 'PDF_PAGE_JOB', refresh: false };
 
 const types = (sent) => sent.map((m) => m.type);
 
 // ------------------------------------------------------------ the hint
 
-test('PDF signed out: the hint shows with the shortcut, and nothing is sent', async () => {
+test('PDF signed out: the hint shows with the shortcut, and only the storage look is sent', async () => {
   const page = load({ kind: 'pdf', signedIn: false });
   page.ctx.setupMediaHints();
   await flush();
   const offer = page.lastOffer();
   assert.ok(offer, 'no hint on a PDF while signed out');
   assert.equal(offer.text, 'mediaHintPdf');
+  assert.equal(offer.accept.text, 'autoOfferAccept');
+  assert.equal(offer.decline, 'autoOfferDismiss');
   assert.equal(offer.link, null);
-  assert.deepEqual(page.sent, [], 'the hint sent a message before any click');
+  // PDF_PAGE_JOB without refresh reads the worker's storage and nothing else:
+  // the one message a PDF page sends before any click.
+  assert.deepEqual(page.sent, [LOOK], 'the hint sent a message before any click');
 });
 
-test('PDF switched off by the user: no hint', async () => {
+test('PDF switched off by the user: no hint, but a job started here is still shown', async () => {
   const page = load({ kind: 'pdf', enabled: false, signedIn: true });
   page.ctx.setupMediaHints();
   await flush();
   assert.equal(page.lastOffer(), null);
-  assert.deepEqual(page.sent, []);
+  // Alt+M is consent even with the switch off, so its job has to be findable.
+  assert.deepEqual(page.sent, [LOOK]);
 });
 
 test('an unbound shortcut turns the text generic and adds the settings link', async () => {
@@ -156,7 +194,7 @@ test('an unbound shortcut turns the text generic and adds the settings link', as
   assert.equal(offer.text, 'mediaHintPdfNoShortcut');
   assert.equal(offer.link.text, 'setShortcut');
   offer.link.onClick();
-  assert.deepEqual(types(page.sent), ['OPEN_SHORTCUT_SETTINGS']);
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'OPEN_SHORTCUT_SETTINGS']);
   await flush();
   assert.deepEqual(page.warnings, []);
 });
@@ -272,7 +310,7 @@ test('the bar asks the same question as the shortcut: nothing on screen is not a
   // Claimed while a page was showing; the reader has since scrolled past the
   // strip to the comments.
   page.state.onScreen = false;
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   await flush();
   assert.deepEqual(page.comicStarts, []);
   assert.deepEqual(page.notices, ['mediaShortcutNothing']);
@@ -280,7 +318,7 @@ test('the bar asks the same question as the shortcut: nothing on screen is not a
 
   // Back on a page: the same bar still works.
   page.state.onScreen = true;
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   await flush();
   assert.deepEqual(page.comicStarts, [{ pageUrl: COMIC_URL, consent: true }]);
   assert.equal(page.lastOffer(), null);
@@ -292,7 +330,7 @@ test('a comic start that found no page puts the bar back', async () => {
   const page = load({ kind: 'comic', signedIn: true, started: false, replies: { COMIC_HINT_WRITE: { value: true } } });
   page.ctx.setupMediaHints();
   await flush();
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   await flush();
   await flush();
   assert.equal(page.comicStarts.length, 1);
@@ -305,11 +343,13 @@ test('a comic start that found no page puts the bar back', async () => {
 test('signed out: sign in first, then carry on with the same PDF', async () => {
   const page = load({ kind: 'pdf', signedIn: false });
   page.ctx.setupMediaHints();
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
-  // The job took over; the bar is gone.
+  await flush();
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN', 'PDF_TRANSLATE_URL', 'PDF_PAGE_JOB']);
+  // The hint is gone; the job's own bar takes over once the worker writes a
+  // record (here it writes none, so nothing is left to say).
   assert.equal(page.lastOffer(), null);
 });
 
@@ -319,11 +359,11 @@ test('a cancelled sign-in stops silently and puts the bar back as it was', async
     replies: { COMIC_SIGN_IN: { ok: false, error: { code: 'sign_in_cancelled' } } },
   });
   page.ctx.setupMediaHints();
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   assert.equal(page.lastOffer().busy, true, 'the button is not held while signing in');
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN']);
+  assert.deepEqual(types(page.sent), ['PDF_PAGE_JOB', 'COMIC_SIGN_IN']);
   assert.deepEqual(page.notices, []);
   const offer = page.lastOffer();
   assert.equal(offer.text, 'mediaHintPdf');
@@ -356,7 +396,7 @@ test('a second press while the first is still signing in does not dispatch twice
   page.ctx.runMediaShortcut();
   await flush();
   await flush();
-  assert.deepEqual(types(page.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+  assert.deepEqual(types(page.sent).filter((type) => type === 'PDF_TRANSLATE_URL'), ['PDF_TRANSLATE_URL']);
 });
 
 test('a send that throws at once (the extension is gone) says so, and the hint comes back', async () => {
@@ -366,7 +406,7 @@ test('a send that throws at once (the extension is gone) says so, and the hint c
   const page = load({ kind: 'pdf', signedIn: true, throws: { PDF_TRANSLATE_URL: true } });
   page.ctx.setupMediaHints();
   await flush();
-  page.lastOffer().accept();
+  page.lastOffer().accept.run();
   await flush();
   await flush();
   assert.deepEqual(page.notices, ['pdfErrNetwork']);
@@ -389,6 +429,381 @@ test('a comic claim that failed is asked again on the next look, and then the hi
   await flush();
   assert.equal(types(page.sent).filter((type) => type === 'COMIC_HINT_WRITE').length >= 2, true, 'never asked again');
   assert.equal(page.lastOffer() && page.lastOffer().text, 'mediaHintComic');
+});
+
+// ------------------------------------------------------------ the PDF's own job
+
+/** A PDF page whose worker answers PDF_PAGE_JOB with `job`, changeable later. */
+function pdfWithJob(job, options = {}) {
+  const replies = { PDF_PAGE_JOB: { ok: true, data: { job } }, ...(options.replies || {}) };
+  const page = load({ kind: 'pdf', signedIn: true, ...options, replies });
+  const answer = (next) => { replies.PDF_PAGE_JOB = { ok: true, data: { job: next } }; };
+  return { page, replies, answer };
+}
+
+// The worker's answer: the text is already worded there (pdfStatusLine), so the
+// page shows it as it comes.
+// createdAt is the attempt: every create rewrites it, a retry included, even
+// under the same operation id.
+const job = (fields) => ({ jobId: 'job-1', operationId: 'op-1', createdAt: 1, retryable: false, ...fields });
+const UPLOADING = job({ jobId: null, phase: 'running', text: 'Translating this PDF… 0%' });
+const RUNNING = job({ phase: 'running', text: 'Translating this PDF… 42%' });
+const DONE = job({ phase: 'succeeded', text: 'Translated' });
+const looks = (page) => page.sent.filter((m) => m.type === 'PDF_PAGE_JOB');
+
+test('a finished translation of this PDF is said on the page, with View translation', async () => {
+  const { page } = pdfWithJob(DONE);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  const offer = page.lastOffer();
+  assert.equal(offer.text, 'Translated');
+  assert.equal(offer.accept.text, 'pdfViewTranslation');
+  assert.equal(offer.decline, null, 'a job bar has no "Not now"');
+  assert.deepEqual(page.sent, [LOOK], 'a finished job asked the server again');
+  assert.equal(page.timers.size, 0, 'a finished job is polled');
+
+  offer.accept.run();
+  await flush();
+  assert.deepEqual(page.sent.at(-1), { type: 'PDF_OPEN_JOB', jobId: 'job-1', via: 'pdf_page' });
+  assert.deepEqual(page.notices, []);
+});
+
+test('View redraws the bar once the reader is open, so it can be clicked again', async () => {
+  const { page } = pdfWithJob(DONE);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  // The bar pins its button on a click and frees it only when it is drawn again.
+  for (let click = 1; click <= 2; click++) {
+    const drawn = page.offers.length;
+    page.lastOffer().accept.run();
+    await flush();
+    assert.ok(page.offers.length > drawn, `click ${click}: the bar was not drawn again, its View stays pinned`);
+    assert.equal(page.lastOffer().busy, false, `click ${click}: the bar was drawn with its button still pinned`);
+    assert.equal(page.lastOffer().accept.text, 'pdfViewTranslation');
+  }
+  assert.equal(page.sent.filter((m) => m.type === 'PDF_OPEN_JOB').length, 2);
+});
+
+test('a job in flight says how far it is, and polls only while the tab is visible', async () => {
+  const { page, answer } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%');
+  assert.equal(page.lastOffer().accept.text, 'docView');
+  assert.equal(page.timers.size, 1);
+  assert.equal([...page.timers.values()][0].ms, 4000);
+
+  page.tick();
+  await flush();
+  await flush();
+  assert.deepEqual(looks(page).map((m) => m.refresh), [false, true], 'the poll did not ask for a refresh');
+  assert.equal(page.timers.size, 1, 'one poll, then the polling stopped');
+
+  page.hide();
+  assert.equal(page.timers.size, 0, 'a hidden tab kept polling');
+
+  // A poll still in flight when the tab hides does not set the next one.
+  page.show();
+  await flush();
+  await flush();
+  page.tick();
+  page.hide();
+  await flush();
+  await flush();
+  assert.equal(page.timers.size, 0, 'a poll that came back to a hidden tab polled again');
+
+  // Finished while the tab was away: coming back asks once and shows it.
+  answer(DONE);
+  page.show();
+  await flush();
+  await flush();
+  assert.deepEqual(looks(page).at(-1), { type: 'PDF_PAGE_JOB', refresh: true });
+  assert.equal(page.lastOffer().text, 'Translated');
+  assert.equal(page.timers.size, 0);
+});
+
+test('the running bar has no View until the job has an id to open', async () => {
+  const { page } = pdfWithJob(UPLOADING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  assert.equal(page.lastOffer().accept, null);
+});
+
+test('clicking Translate hands the bar to the job as soon as the worker writes its record', async () => {
+  const { page, answer } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  // After the click only a storage look: the record it made says the rest.
+  assert.deepEqual(page.sent, [LOOK, { type: 'PDF_TRANSLATE_URL', url: PDF_URL, consent: true }, LOOK]);
+  assert.equal(page.lastOffer(), null, 'the hint came back after a click that started a job');
+
+  // The worker writes the pending record while it is still uploading.
+  answer(UPLOADING);
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  assert.equal(page.lastOffer().accept, null);
+
+  answer(RUNNING);
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().accept.text, 'docView');
+  assert.equal(page.timers.size, 1);
+
+  answer(DONE);
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translated');
+  assert.equal(page.timers.size, 0);
+});
+
+test('a job started from the context menu shows up on the open PDF', async () => {
+  const { page, answer } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  // Somebody else's storage write is not a job record.
+  answer(RUNNING);
+  page.storageChange({ pdfJobs: {} }, 'sync');
+  page.storageChange({ ratingAsk: {} }, 'local');
+  await flush();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+  assert.deepEqual(looks(page).length, 1);
+
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%');
+  assert.equal(page.timers.size, 1, 'a job found through storage is not followed');
+});
+
+test('a PDF opened with no job behind it asks for nothing more', async () => {
+  const { page } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  page.hide();
+  page.show();
+  await flush();
+  assert.deepEqual(looks(page).map((m) => m.refresh), [false], 'a look went out with no job to look at');
+  assert.equal(page.timers.size, 0);
+});
+
+test('a failed job that can be retried says why and runs the translation again', async () => {
+  const { page, answer } = pdfWithJob(job({ jobId: null, phase: 'failed', text: 'Network error', retryable: true }));
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  const offer = page.lastOffer();
+  assert.equal(offer.text, 'Network error');
+  assert.equal(offer.accept.text, 'pdfRetry');
+  offer.accept.run();
+  await flush();
+  await flush();
+  assert.deepEqual(page.sent.filter((m) => m.type === 'PDF_TRANSLATE_URL'), [{ type: 'PDF_TRANSLATE_URL', url: PDF_URL, consent: true }]);
+  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 5%' }));
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
+});
+
+test('a failure a retry cannot fix offers no retry: View when there is a job, nothing when there is not', async () => {
+  const tooBig = pdfWithJob(job({ phase: 'failed', text: 'Too many pages' }));
+  tooBig.page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(tooBig.page.lastOffer().accept.text, 'docView');
+  tooBig.page.lastOffer().accept.run();
+  await flush();
+  assert.deepEqual(tooBig.page.sent.at(-1), { type: 'PDF_OPEN_JOB', jobId: 'job-1', via: 'pdf_page' });
+
+  const refused = pdfWithJob(job({ jobId: null, phase: 'failed', text: 'Out of pages' }));
+  refused.page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(refused.page.lastOffer().text, 'Out of pages');
+  assert.equal(refused.page.lastOffer().accept, null);
+  // Closed, it stays closed: "Press Alt+M to translate" would only fail the same way.
+  refused.page.lastOffer().dismiss();
+  assert.equal(refused.page.lastOffer(), null);
+});
+
+test('closing a cancelled job or a retryable failure brings the hint back', async () => {
+  for (const fields of [{ phase: 'abandoned', text: 'Cancelled' }, { phase: 'failed', text: 'Network error', retryable: true }]) {
+    const { page } = pdfWithJob(job(fields));
+    page.ctx.setupMediaHints();
+    await flush();
+    await flush();
+    assert.equal(page.lastOffer().text, fields.text);
+    page.lastOffer().dismiss();
+    assert.equal(page.lastOffer().text, 'mediaHintPdf', `closing a ${fields.phase} job left no way to start again`);
+  }
+});
+
+test('a job started here and then cancelled gives the hint back once it is closed', async () => {
+  const { page, answer } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  answer(RUNNING);
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%', 'the click did not hand the bar to its job');
+
+  answer(job({ phase: 'abandoned', text: 'Cancelled' }));
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Cancelled');
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf', 'a cancelled job closed in this tab left no way to start again');
+});
+
+test('a click that writes no new record keeps the hint away, even over a closed old job', async () => {
+  // A cancelled job, closed; then Translate, which the worker answers with a
+  // charge question and no record: the newest record is still the old one.
+  const { page, answer } = pdfWithJob(job({ phase: 'abandoned', text: 'Cancelled' }));
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer(), null, 'the hint came back with Translate under an open charge question');
+
+  // Once the answer starts a job, its record takes the bar.
+  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 5%' }));
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
+});
+
+test('a retry under the same operation id that fails again is a new failure, not the old one', async () => {
+  // A download failure keeps the URL binding, so the retry is op-1 again and
+  // fails the same way: only the attempt tells the two failures apart.
+  const FAILED = job({ jobId: null, phase: 'failed', retryable: true, text: 'Could not download' });
+  const { page, answer } = pdfWithJob(FAILED);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  answer({ ...FAILED, createdAt: 2 });
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer() && page.lastOffer().accept.text, 'pdfRetry', 'the second failure left the page silent');
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf', 'closing the second failure left no way to start again');
+});
+
+test('a failure closed earlier does not hide the next attempt failing the same way', async () => {
+  const FAILED = job({ jobId: null, phase: 'failed', retryable: true, text: 'Could not download' });
+  const { page, answer } = pdfWithJob(FAILED);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+  answer(job({ jobId: null, createdAt: 2, phase: 'running', text: 'Translating this PDF… 0%' }));
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 0%');
+  answer({ ...FAILED, createdAt: 2 });
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer() && page.lastOffer().text, 'Could not download', 'the new failure was hidden as the closed one');
+});
+
+test('awaiting confirmation sends the user to the job page', async () => {
+  const { page } = pdfWithJob(job({ phase: 'awaiting', text: 'docStatusAwaitingConfirm' }));
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'docStatusAwaitingConfirm');
+  assert.equal(page.timers.size, 0, 'a job waiting on the user is polled');
+  page.lastOffer().accept.run();
+  await flush();
+  assert.equal(page.sent.at(-1).type, 'PDF_OPEN_JOB');
+});
+
+test('closing the bar hides that state only: the job finishing says so again', async () => {
+  const { page, answer } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer(), null);
+  assert.equal(page.timers.size, 1, 'closing the bar stopped following the job');
+
+  answer({ ...RUNNING, text: 'Translating this PDF… 80%' });
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer(), null, 'a closed running bar came back on progress');
+
+  answer(DONE);
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translated');
+});
+
+test('a running bar closed while uploading stays closed once the job has its id', async () => {
+  const { page, answer } = pdfWithJob(UPLOADING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  answer(RUNNING);
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer(), null, 'the same submission came back once it had a job id');
+});
+
+test('a View the worker cannot open says so on the page', async () => {
+  const { page } = pdfWithJob(DONE, { replies: { PDF_OPEN_JOB: { ok: false, error: { code: 'network_error' } } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().accept.run();
+  await flush();
+  assert.deepEqual(page.notices, ['pdfErrUnavailable']);
+  assert.equal(page.warnings.length, 1);
+});
+
+test('a reloaded extension stops the polling instead of failing every few seconds', async () => {
+  const { page, replies } = pdfWithJob(RUNNING);
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  replies.PDF_PAGE_JOB = { ok: false, error: { code: 'extension_context', message: 'gone' } };
+  page.tick();
+  await flush();
+  await flush();
+  assert.equal(page.timers.size, 0);
+  assert.equal(page.warnings.length, 1);
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 42%', 'the last thing known was thrown away');
+});
+
+test('the job follower attaches once per page', async () => {
+  const { page } = pdfWithJob(null);
+  page.ctx.setupMediaHints();
+  await flush();
+  assert.throws(() => page.ctx.pdfPageJob.attach({ repaint() {}, retry() {} }), /already attached/);
 });
 
 // ------------------------------------------------------------ the comic start it hands off to

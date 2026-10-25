@@ -98,12 +98,12 @@ test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里
 
 // PDF 提示条什么时候出现，由 media-hints.test.mjs 的 PDF 用例跑着问（未登录、被关掉）。
 
-test('offer 有自己的一档和自己的两句按钮文案', () => {
-  const src = repoFile('content/content-auto-status.js');
+test('offer 的两句按钮文案由借条子的那一位给', () => {
   // 模式阶梯 notice > explain > offer 由 auto-bar-trusted.test.mjs 跑着问（currentMode）。
-  // 按钮说的是 offer 自己的话，不借已删掉的追问文案。
-  assert.match(src, /t\('autoOfferAccept'\)/);
-  assert.match(src, /t\('autoOfferDismiss'\)/);
+  // 条子这一层不替 offer 起名字；提示那一档的两句话是 content-media-hints.js 自己的
+  // （media-hints.test.mjs 第一测问它交出去的 accept.text / decline）。
+  assert.doesNotMatch(repoFile('content/content-auto-status.js'), /autoOfferAccept|autoOfferDismiss/);
+  assert.match(repoFile('content/content-media-hints.js'), /t\('autoOfferAccept'\)[\s\S]*t\('autoOfferDismiss'\)/);
   const catalog = messageCatalog();
   for (const lang of Object.keys(catalog)) {
     for (const k of ['autoOfferAccept', 'autoOfferDismiss']) assert.ok(catalog[lang][k], `${lang} 缺 ${k}`);
@@ -111,7 +111,7 @@ test('offer 有自己的一档和自己的两句按钮文案', () => {
   // 两个按钮正是 offer 要的，CSS 不能把它们藏掉。
   const css = contentCss();
   assert.equal(
-    /\[data-mode="offer"\][^\n]*data-act="translate"/.test(css), false,
+    /\[data-mode="offer"\][^\n]*data-act="(accept|dismiss)"/.test(css), false,
     'offer 把自己的按钮藏掉了');
 });
 
@@ -177,4 +177,7 @@ test('两个网址判断的边界没变', () => {
   assert.equal(PdfUrl.isLikelyPdfUrl(''), false);
   assert.equal(PdfUrl.pdfFileNameFromUrl('https://arxiv.org/pdf/2501.00001'), '2501.00001.pdf');
   assert.equal(PdfUrl.pdfFileNameFromUrl('https://example.com/'), 'document.pdf');
+  // The key drops only the fragment: a query can name a different document.
+  assert.equal(PdfUrl.pdfSourceKey('https://example.com/a.pdf?v=2#page=3'), 'https://example.com/a.pdf?v=2');
+  assert.equal(PdfUrl.pdfSourceKey('https://example.com/a.pdf'), 'https://example.com/a.pdf');
 });

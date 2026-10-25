@@ -62,22 +62,23 @@ const TERMINAL_TITLE_KEYS = {
 };
 
 /**
- * A job just ended. The title says how: finished, cancelled (the user's own
- * decision or the server handing the pages back — not a failure), or failed.
+ * A job just ended. The title says how: finished, cancelled, or failed; the
+ * body of a cancelled or failed one is the same status line the popup, the
+ * jobs page and the PDF tab's own bar show (pdfStatusLine). A finished one
+ * carries "View translation" as a button as well as on the body click: a
+ * notification that only says "click to open" reads as nothing to click on
+ * the platforms that tuck the body click away.
  */
 async function notifyPdfTerminal(record) {
   const uiLang = await pdfNotificationLang();
   const t = key => pdfMessage(key, uiLang);
-  let body;
-  if (record.status === 'succeeded') body = t('pdfNotifyDoneBody');
-  else if (record.status === 'abandoned') body = t(pdfClient.pdfAbandonedKey(record.error || {}));
-  else body = pdfClient.pdfErrorMessage(record.error, t);
   const fileName = record.fileName ? `${record.fileName}\n` : '';
   chrome.notifications.create(`${PDF_JOB_NOTIFICATION_PREFIX}${record.jobId}`, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
     title: t(TERMINAL_TITLE_KEYS[record.status] || 'pdfNotifyFailTitle'),
-    message: `${fileName}${body}`
+    message: `${fileName}${record.status === 'succeeded' ? t('pdfNotifyDoneBody') : pdfClient.pdfStatusLine(record, t).text}`,
+    ...(record.status === 'succeeded' ? { buttons: [{ title: t('pdfViewTranslation') }] } : {})
   }, logIfFailed);
 }
 

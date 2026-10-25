@@ -290,16 +290,9 @@ test('规则没存上要说一声，不能只留一行控制台日志', () => {
     /ctx\.showAutoStatusNotice\(t\('popupSiteRuleFailed'\)\)/);
   // 那句话真画到条子上、压在 offer 和展开说明之上、拾取器开着时让位、关掉一次
   // 只关一层：auto-bar-trusted.test.mjs「one priority」跑着问。
-  // 这个模式在样式表里得和 explain 一样只剩一行字和一个关闭，否则那两个按钮会
-  // 挂在一句「没能保存」下面，按下去是「翻译」和「不用」。
-  const css = contentCss();
-  for (const act of ['translate', 'dismiss']) {
-    assert.match(
-      css,
-      new RegExp(`\\[data-mode="notice"\\][^{]*\\[data-act="${act}"\\]`),
-      `notice 模式没藏掉「${act}」那个按钮`,
-    );
-  }
+  // 这一档只剩一行字和一个关闭：render 每一档都给按钮写 hidden（「one priority」
+  // 那一测问 notice 下三个按钮都藏着），样式表得认这个属性。
+  assert.match(contentCss(), /\[id="ai-translator-auto-bar"\] \.ai-translator-auto-btn\[hidden\] \{\s*display: none;/);
 });
 
 test('藏着译文时按「继续」，先把译文放回来', () => {

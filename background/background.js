@@ -101,6 +101,7 @@ import {
   handlePdfJobConfirm,
   handlePdfJobGet,
   handlePdfJobsHistory,
+  handlePdfPageJob,
   handlePdfUploadTicket,
   openPdfJob,
   refreshPdfJobs,
@@ -314,6 +315,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         url: (sender.tab && sender.tab.url) || message.url || '',
         pageUrl: (sender.tab && sender.tab.url) || message.url || '',
         consent: message.consent === true,
+      }), sendResponse);
+      return true;
+
+    // 同一个标签页问它这份 PDF 的任务走到哪了（content/content-pdf-page-job.js
+    // 那条条子）。网址照样以浏览器说的为准，和上面那一条同一个道理。
+    case 'PDF_PAGE_JOB':
+      replyComic(handlePdfPageJob((sender.tab && sender.tab.url) || '', {
+        refresh: message.refresh === true,
       }), sendResponse);
       return true;
 

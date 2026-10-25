@@ -397,6 +397,8 @@
     autoOfferDismiss: 'Nanti saja',
     mediaHintPdf: 'Tekan {shortcut} untuk menerjemahkan PDF ini. Ini memakai kredit halaman.',
     mediaHintPdfNoShortcut: 'Ini adalah PDF. Menerjemahkannya memakai kredit halaman.',
+    pdfPageRunning: 'Menerjemahkan PDF ini… {progress}%',
+    pdfViewTranslation: 'Lihat terjemahan',
     mediaHintComic: 'Tekan {shortcut} untuk menerjemahkan komik di layar.',
     mediaHintComicNoShortcut: 'Terjemahkan komik di layar?',
     setShortcut: 'Atur pintasan',

@@ -398,6 +398,8 @@
     autoOfferDismiss: "Non ora",
     mediaHintPdf: "Premi {shortcut} per tradurre questo PDF. Consuma crediti pagina.",
     mediaHintPdfNoShortcut: "Questo è un PDF. Tradurlo consuma crediti pagina.",
+    pdfPageRunning: 'Traduzione di questo PDF in corso… {progress}%',
+    pdfViewTranslation: 'Vedi traduzione',
     mediaHintComic: "Premi {shortcut} per tradurre il fumetto sullo schermo.",
     mediaHintComicNoShortcut: "Tradurre il fumetto sullo schermo?",
     setShortcut: "Imposta una scorciatoia",

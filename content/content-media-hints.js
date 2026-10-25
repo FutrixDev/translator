@@ -28,6 +28,9 @@
 // 价格为什么不写成「约消耗 N 页额度」：客户端没有页数，先问一次价本身就是一次
 // 往任务接口发的自动请求。确切的数字由点击之后那一问回答（background/pdf-jobs.js
 // 的 askPdfCharge 通知）。
+//
+// 点下去之后，PDF 这一页的条子改说这份文档的任务（content-pdf-page-job.js，
+// ctx.pdfPageJob）：它说的排在这句提示前面。
 (function () {
   'use strict';
 
@@ -42,10 +45,17 @@
   // 这一页的提示是哪一种：'pdf' | 'comic' | null（没有，或还没轮到）。
   let hint = null;
   let dismissed = false;
-  // 做过了（任务交出去了）：条子收走，不再出来。
+  // 做过了（任务交出去了）：条子收走，不再出来。PDF 一有任务记录就改听任务的。
   let done = false;
+  // 交出去那一下条子上是哪一档旧记录（content-pdf-page-job.js 的 key()）：回话之后
+  // 读到的还是它，就是这一下没写新记录（问价、没交成），由 done 说话。真交出去了
+  // 收据总是新的一档（createdAt 每交一次都换），重试沿用同一个 operationId 也一样。
+  let staleJob = '';
   // 正在登录 / 正在交任务：按钮钉住，快捷键再按也不派第二份。
   let busy = false;
+
+  // 认出这是一份 PDF 之后才去跟它的任务，只跟一次（detect 会被叫很多遍）。
+  let pdfPage = false;
 
   /**
    * 这个文档是一份 PDF 吗。
@@ -114,12 +124,16 @@
     paint();
     try {
       if (!(await ensureSignedIn())) return;
-      // 条子当场收走，接力的是任务自己的界面（PDF 的通知、漫画卡片）；没送到
-      // 才放回来，让他还有一个能再点一次的东西。
-      const own = kind === hint;
-      if (own) done = true;
-      paint();
-      if (!(await dispatch(kind)) && own) done = false;
+      // 交出去了，提示就收走，接力的是任务自己的界面：漫画是卡片，PDF 是这条条子
+      // 说的任务（服务工作者回话时记录已经写好，读一遍 ctx.pdfPageJob 就接过条子）。
+      // 没送到就留着，让他还有一个能再点一次的东西。
+      const before = pdfPage ? ctx.pdfPageJob.key() : '';
+      const sent = await dispatch(kind);
+      if (sent && kind === 'pdf' && pdfPage) await ctx.pdfPageJob.resync();
+      if (sent && kind === hint) {
+        done = true;
+        staleJob = before;
+      }
     } finally {
       busy = false;
       paint();
@@ -166,7 +180,16 @@
 
   function paint() {
     if (!ctx.showAutoStatusOffer) return;
-    if (!hint || dismissed || done || switchedOff(hint)) {
+    const shown = pdfPage ? ctx.pdfPageJob.offer({ busy }) : null;
+    if (shown) {
+      ctx.showAutoStatusOffer(shown);
+      return;
+    }
+    // 有新记录时由任务说提示回不回来（取消了、还能重来的失败关掉之后要回来）；
+    // 没有记录、或者还是点之前那一档，由 done 说（问价、没交成）。
+    const current = pdfPage ? ctx.pdfPageJob.key() : '';
+    const handedOff = current && !(done && current === staleJob) ? ctx.pdfPageJob.ownsBar() : done;
+    if (!hint || dismissed || handedOff || switchedOff(hint)) {
       ctx.showAutoStatusOffer(null);
       return;
     }
@@ -176,7 +199,8 @@
       text: hintText(hint, shortcut),
       link: shortcut === '' ? { text: t('setShortcut'), onClick: openShortcutSettings } : null,
       busy,
-      accept: runMediaShortcut,
+      accept: { text: t('autoOfferAccept'), run: () => runMediaShortcut() },
+      decline: t('autoOfferDismiss'),
       dismiss,
     });
   }
@@ -216,6 +240,10 @@
   function detect() {
     if (hint) return;
     if (isPdfPage()) {
+      if (!pdfPage) {
+        pdfPage = true;
+        ctx.pdfPageJob.attach({ repaint: paint, retry: () => run('pdf') });
+      }
       if (switchedOff('pdf')) return;
       hint = 'pdf';
       paint();

@@ -382,6 +382,8 @@
     autoOfferDismiss: '今はしない',
     mediaHintPdf: '{shortcut} でこの PDF を翻訳（ページ数分のクレジットを消費）',
     mediaHintPdfNoShortcut: 'これは PDF です。翻訳するとページ数分のクレジットを消費します。',
+    pdfPageRunning: 'この PDF を翻訳中… {progress}%',
+    pdfViewTranslation: '翻訳を見る',
     mediaHintComic: '{shortcut} で画面上の漫画を翻訳',
     mediaHintComicNoShortcut: '画面上の漫画を翻訳しますか？',
     setShortcut: 'ショートカットを設定',

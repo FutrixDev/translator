@@ -169,16 +169,23 @@ test('the popup scripts declare no top-level name twice', () => {
 // Notifications (spec §5.3)
 // ---------------------------------------------------------------------------
 
-const PAGE_HANDLERS = ['handlePdfCreateJob', 'handlePdfJobGet', 'handlePdfJobConfirm', 'openPdfJob'];
+const PAGE_HANDLERS = ['handlePdfCreateJob', 'handlePdfJobGet', 'handlePdfJobConfirm', 'openPdfJob',
+  'handlePdfPageJob'];
 
 /** What is wrong with where the worker raises notifications, as a list. */
 function notificationProblems(jobs) {
   const problems = [];
   const poll = functionBody(jobs, 'refreshPdfJobs');
   if (!poll) return ['refreshPdfJobs is missing'];
-  const calls = (jobs.match(/notifyPdfTerminal\(/g) || []).length;
-  const inPoll = (poll.match(/notifyPdfTerminal\(/g) || []).length;
-  if (inPoll === 0 || calls !== inPoll) problems.push('notifyPdfTerminal( outside refreshPdfJobs');
+  // The one other place a job can end: a URL create that adopts an earlier
+  // attempt already over. No poll transition will ever fire for that record.
+  const arrival = functionBody(jobs, 'runPdfUrlJob');
+  if (!arrival) return ['runPdfUrlJob is missing'];
+  const count = text => (text.match(/notifyPdfTerminal\(/g) || []).length;
+  const inPoll = count(poll);
+  if (inPoll === 0 || count(jobs) !== inPoll + count(arrival)) {
+    problems.push('notifyPdfTerminal( outside refreshPdfJobs and runPdfUrlJob');
+  }
   for (const name of PAGE_HANDLERS) {
     const body = functionBody(jobs, name);
     if (!body) problems.push(`${name} is missing`);
@@ -196,12 +203,15 @@ test('only the poll turns a job\'s progress into a notification', () => {
   assert.equal(/function notifyPdfTerminal\(/.test(read('background/pdf-notify.js')), true);
 });
 
-test('the notification click listener is registered at the top level', () => {
-  const TOP_LEVEL = /^chrome\.notifications\.onClicked\.addListener\(/m;
+test('the notification click listeners are registered at the top level', () => {
   const jobs = read('background/pdf-jobs.js');
-  assert.equal(TOP_LEVEL.test(jobs.replace(TOP_LEVEL, '  chrome.notifications.onClicked.addListener(')), false,
-    'self-check');
-  assert.ok(TOP_LEVEL.test(jobs));
+  // The body click and the finished job's "View translation" button.
+  for (const event of ['onClicked', 'onButtonClicked']) {
+    const TOP_LEVEL = new RegExp(`^chrome\\.notifications\\.${event}\\.addListener\\(openJobFromNotification\\)`, 'm');
+    assert.equal(TOP_LEVEL.test(jobs.replace(TOP_LEVEL, `  chrome.notifications.${event}.addListener(openJobFromNotification)`)),
+      false, `self-check ${event}`);
+    assert.ok(TOP_LEVEL.test(jobs), event);
+  }
 });
 
 // ---------------------------------------------------------------------------

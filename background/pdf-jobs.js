@@ -35,7 +35,7 @@ const DocJobs = globalThis.DocJobs;
 const SiteLinks = globalThis.SiteLinks;
 // 「这是不是一份 PDF」「它叫什么名字」的唯一实现，见 shared/pdf-url.js。
 // 从这里再导出去，是因为右键菜单那一层本来就从这个模块要它们。
-const { isLikelyPdfUrl, pdfFileNameFromUrl } = globalThis.PdfUrl;
+const { isLikelyPdfUrl, pdfFileNameFromUrl, pdfSourceKey } = globalThis.PdfUrl;
 const { ComicApiError } = comicClient;
 
 // ---------------------------------------------------------------------------
@@ -100,9 +100,10 @@ async function foldedSideEffects(change) {
     console.warn(`[rating] counting job ${change.record.jobId} failed:`, error?.message || error));
 }
 
-// A notification about one job opens that job. Registered at the top level so
-// a click that wakes a torn-down worker still finds its listener.
-chrome.notifications.onClicked.addListener((notificationId) => {
+// A notification about one job opens that job — its body, or the finished
+// one's "View translation" button. Registered at the top level so a click that
+// wakes a torn-down worker still finds its listener.
+function openJobFromNotification(notificationId) {
   const jobId = jobIdFromNotificationId(notificationId);
   if (!jobId) return;
   const clear = () => chrome.notifications.clear(notificationId, logIfFailed);
@@ -115,7 +116,9 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     .catch(error => console.warn(`[pdf] opening job ${jobId} from its notification failed:`,
       error?.code || error?.message || error))
     .finally(clear);
-});
+}
+chrome.notifications.onClicked.addListener(openJobFromNotification);
+chrome.notifications.onButtonClicked.addListener(openJobFromNotification);
 
 // ---------------------------------------------------------------------------
 // The URL path's charge confirmation
@@ -126,7 +129,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 // right-click on a link and the toolbar button can fire from any page at all,
 // and that page has no job card to put the question in. (Not for want of a
 // content script on the PDF itself — Chrome's viewer does run one, which is
-// what content/content-media-hints.js draws its offer bar on. The click simply
+// what content/content-pdf-page-job.js follows the job on. The click simply
 // is not tied to any one document.) So this path asks in the one place all of
 // its entries already speak: a notification, with the answer as its buttons.
 //
@@ -170,12 +173,12 @@ async function runPdfUrlJob({ url, operationId, fileName, pageUrl, confirmCharge
       confirmCharge
     }, { consent });
     // A create can resolve to a job that is already over — the idempotent
-    // adopt of an earlier attempt that died. No poll transition will ever
-    // fire for it, so without this the user saw "started" and then nothing.
-    // (handlePdfCreateJob has already released the operation id, so the
-    // "try again" in the failure copy is true.)
-    if (job && (job.status === 'failed' || job.status === 'abandoned')) {
-      notifyPdfError(job.error || { code: job.status });
+    // adopt of an earlier attempt, finished or dead. No poll transition will
+    // ever fire for it, so without this the user saw "started" and then
+    // nothing. (A dead one's operation id is already released by
+    // handlePdfCreateJob, so the "try again" in the failure copy is true.)
+    if (job && DocJobs.isTerminalStatus(job.status)) {
+      notifyPdfTerminal(job);
     } else if (job && DocJobs.isAwaitingStatus(job.status)) {
       // Adopted an earlier attempt that is waiting on the user. The record is
       // already awaiting, so no poll will see it arrive there: ask now.
@@ -376,7 +379,9 @@ async function handlePdfCreateJob(message, { consent = false } = {}) {
   // row an earlier create left. Every surface reads only these records, and
   // they carry a failure back to a popup that has since closed: the awaited
   // sendMessage promise dies with the popup, this does not.
-  const receipt = pdfClient.receiptRecord({ operationId, fileName, sourceFormat });
+  const receipt = pdfClient.receiptRecord({
+    operationId, fileName, sourceFormat, sourceUrl: isUrl ? source.url : null
+  });
   const pendingId = receipt.jobId;
   await pdfClient.saveJobRecord(receipt);
 
@@ -558,6 +563,64 @@ async function handlePdfJobAbandon(jobId) {
 }
 
 /**
+ * PDF_PAGE_JOB: the PDF tab asks what became of its own document — the newest
+ * record a URL job left for that address (`sourceUrl`; records are kept newest
+ * first), as the bar draws it:
+ * - `phase`: running, awaiting, succeeded, failed or abandoned;
+ * - `text`: the sentence for that phase. A failed or cancelled job says it
+ *   through pdfStatusLine, the same line the notification, the popup and the
+ *   jobs page show, so the tab never words a job on its own;
+ * - `retryable`: a failure that another try could fix (isRetryablePdfFailure);
+ * - `jobId`: null while the click is still uploading (no job to open yet);
+ * - `operationId`: the click that made the record, stable from the pending
+ *   record to the real one, which is what the tab remembers a closed bar by.
+ *
+ * `refresh` runs the poll itself rather than fetching one job for the page:
+ * the tab asks only while the job is running, and the poll is the one place a
+ * change becomes a notification — which the user still wants once they have
+ * looked away. Without it this reads storage only, so a PDF opened with no job
+ * behind it costs no request (test/e2e/pdf-prompt.spec.js).
+ */
+async function handlePdfPageJob(url, { refresh }) {
+  if (!url) return { job: null };
+  const records = refresh ? await refreshPdfJobs() : await pdfClient.listJobRecords();
+  // Records are keyed without the #fragment the viewer adds (pdfSourceKey).
+  const sourceKey = pdfSourceKey(url);
+  const record = records.find(r => r.sourceUrl === sourceKey);
+  if (!record) return { job: null };
+  const uiLang = await pdfNotificationLang();
+  const t = key => pdfMessage(key, uiLang);
+  let phase;
+  let text;
+  if (DocJobs.isActiveStatus(record.status)) {
+    phase = 'running';
+    const progress = Number.isFinite(record.progress) ? Math.round(record.progress) : 0;
+    text = t('pdfPageRunning').split('{progress}').join(String(progress));
+  } else if (DocJobs.isAwaitingStatus(record.status)) {
+    phase = 'awaiting';
+    text = t('docStatusAwaitingConfirm');
+  } else if (record.status === 'succeeded') {
+    phase = 'succeeded';
+    text = t('pdfNotifyDoneTitle');
+  } else {
+    phase = record.status === 'abandoned' ? 'abandoned' : 'failed';
+    text = pdfClient.pdfStatusLine(record, t).text;
+  }
+  return {
+    job: {
+      jobId: pdfClient.isPendingRecord(record) ? null : record.jobId,
+      operationId: record.operationId,
+      // 同一个 operationId 会交好几次（网络、下载失败后重试沿用原 id），每交一次
+      // 收据重写 createdAt：页面靠它分清「又失败了一次」和「还是上次那一档」。
+      createdAt: record.createdAt,
+      phase,
+      text,
+      retryable: phase === 'failed' && pdfClient.isRetryablePdfFailure(record.error),
+    }
+  };
+}
+
+/**
  * PDF_OPEN_JOB: open a job from a list row or a notification. `via` is the
  * entry it was opened from (SiteLinks.MEDIUMS), carried onto the reader link.
  *
@@ -611,5 +674,6 @@ export {
   handlePdfJobGet,
   handlePdfJobConfirm,
   handlePdfJobAbandon,
+  handlePdfPageJob,
   openPdfJob,
 };

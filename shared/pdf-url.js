@@ -43,5 +43,14 @@
     return 'document.pdf';
   }
 
-  root.PdfUrl = { isLikelyPdfUrl, pdfFileNameFromUrl };
+  // 一份网上的 PDF 按哪个键认：去掉 #片段。Chrome 的 PDF 查看器把页码、缩放写进
+  // 片段（x.pdf#page=3），下载时片段也不会发出去，所以它们是同一份文档——任务
+  // 记录、同一网址复用的那个操作号、PDF 页上那条条子找任务，都得按同一个键。
+  function pdfSourceKey(url) {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.href;
+  }
+
+  root.PdfUrl = { isLikelyPdfUrl, pdfFileNameFromUrl, pdfSourceKey };
 })(globalThis);

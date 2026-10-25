@@ -18,6 +18,9 @@ const sync = { enablePdfTranslation: true };
 const opened = [];
 const messageListeners = [];
 const clickListeners = [];
+const buttonListeners = [];
+const created = [];
+const fetched = [];
 let jobView = null;
 
 function area(store) {
@@ -61,13 +64,33 @@ globalThis.chrome = new Proxy({
   }, passThrough()),
   notifications: new Proxy({
     onClicked: { addListener: (fn) => clickListeners.push(fn) },
+    onButtonClicked: { addListener: (fn) => buttonListeners.push(fn) },
+    create: (id, options, callback) => { created.push({ id, options }); if (callback) callback(id); },
     clear: (_id, callback) => { if (callback) callback(true); },
   }, passThrough()),
 }, passThrough());
 
 // Matched on the path alone, so the test can hand the worker a site base the
 // reader link refuses while the job poll still answers.
-globalThis.fetch = async (url) => {
+// A web PDF's create (PDF_TRANSLATE_URL) also fetches the PDF, asks for an
+// upload ticket, PUTs and POSTs the job: `urlCreate` answers those, null keeps
+// the PDF unreachable (a network failure the binding survives).
+let urlCreate = null;
+globalThis.fetch = async (url, init = {}) => {
+  fetched.push(String(url));
+  const json = (body, status = 200) => new Response(JSON.stringify(body), {
+    status, headers: { 'content-type': 'application/json' },
+  });
+  if (String(url).startsWith('https://papers.test/')) {
+    if (!urlCreate) throw new TypeError('Failed to fetch');
+    if (urlCreate.beforeBytes) await urlCreate.beforeBytes();
+    return new Response(new TextEncoder().encode('%PDF-1.4\n%fake\n'), { status: 200 });
+  }
+  if (String(url).endsWith('/api/pdf/uploads')) {
+    return json({ sourceKey: 'k/a.pdf', uploadUrl: 'https://r2.test/put', sourceFormat: 'pdf', maxBytes: 1e8 });
+  }
+  if (String(url) === 'https://r2.test/put') return new Response('', { status: 200 });
+  if (String(url).endsWith('/api/pdf/jobs') && init.method === 'POST') return json(urlCreate.job, 202);
   if (!jobView || !String(url).includes('/api/pdf/jobs/')) {
     return new Response(JSON.stringify({ error: { code: 'not_found' } }), { status: 404 });
   }
@@ -78,16 +101,21 @@ globalThis.fetch = async (url) => {
 
 await import('../../background/background.js');
 
-function send(message) {
+function send(message, sender = {}) {
   return new Promise((resolve) => {
-    for (const listener of messageListeners) listener(message, {}, resolve);
+    for (const listener of messageListeners) listener(message, sender, resolve);
   });
 }
 
-/** Click a job's notification and wait until the worker has opened something. */
-async function clickNotification(jobId) {
+/**
+ * Click a job's notification — its body, or with `button` its "View
+ * translation" button — and wait until the worker has opened something.
+ */
+async function clickNotification(jobId, { button = false } = {}) {
   const before = opened.length;
-  for (const listener of clickListeners) listener(`pdf-job-${jobId}`);
+  for (const listener of button ? buttonListeners : clickListeners) {
+    listener(`pdf-job-${jobId}`, ...(button ? [0] : []));
+  }
   for (let i = 0; i < 200 && opened.length === before; i++) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -164,4 +192,153 @@ test('PDF_OPEN_JOB: an entry the site links do not know is an error, not an unta
   assert.equal(reply.ok, false);
   assert.match(reply.error.message, /SiteLinks: unknown entry/);
   assert.deepEqual(opened.slice(before), [], 'nothing opened');
+});
+
+test('a finished job\'s "View translation" button opens the reader, like its body', async () => {
+  jobView = finished('pdf_job_15', 'pdf');
+  assert.deepEqual(await clickNotification('pdf_job_15', { button: true }),
+    ['https://site.test/app/reader/pdf_job_15?utm_source=extension&utm_medium=notification']);
+});
+
+test('only a finished job\'s notification carries the View button', async () => {
+  const { notifyPdfTerminal } = await import('../../background/pdf-notify.js');
+  created.length = 0;
+  await notifyPdfTerminal({ jobId: 'job_a', status: 'succeeded', fileName: 'a.pdf' });
+  await notifyPdfTerminal({ jobId: 'job_b', status: 'failed', error: { code: 'job_failed' } });
+  await notifyPdfTerminal({ jobId: 'job_c', status: 'abandoned', error: {} });
+  assert.deepEqual(created.map(({ id, options }) => [id, (options.buttons || []).map(b => b.title)]), [
+    ['pdf-job-job_a', ['View translation']],
+    ['pdf-job-job_b', []],
+    ['pdf-job-job_c', []],
+  ]);
+});
+
+// PDF_PAGE_JOB: the PDF tab's own bar asking after the job started from it.
+const PDF_URL = 'https://papers.test/a.pdf';
+const pdfTab = { tab: { id: 3, url: PDF_URL } };
+const pageRecord = (jobId, status, extra = {}) => ({
+  jobId, operationId: `op-${jobId}`, status, fileName: 'a.pdf', sourceFormat: 'pdf', sourceUrl: PDF_URL,
+  progress: 0, error: null, createdAt: Date.now(), ...extra,
+});
+
+async function pageJob(records, refresh = false) {
+  local.pdfJobs = records;
+  fetched.length = 0;
+  try {
+    return await send({ type: 'PDF_PAGE_JOB', refresh }, pdfTab);
+  } finally {
+    delete local.pdfJobs;
+  }
+}
+
+test('PDF_PAGE_JOB: the newest job started from this address answers, read from storage alone', async () => {
+  const now = Date.now();
+  // Stored newest first (saveJobRecord puts a new job at the front), so the first match is the newest.
+  const reply = await pageJob([
+    pageRecord('job_upload', 'running', { sourceUrl: null, createdAt: now + 2 }),
+    pageRecord('job_elsewhere', 'running', { sourceUrl: 'https://papers.test/b.pdf', createdAt: now + 1 }),
+    pageRecord('job_new', 'running', { progress: 40, createdAt: now }),
+    pageRecord('job_old', 'succeeded', { createdAt: now - 60_000, settledAt: now - 30_000 }),
+  ]);
+  assert.deepEqual(reply, { ok: true, data: { job: {
+    jobId: 'job_new', operationId: 'op-job_new', createdAt: now, phase: 'running', text: 'Translating this PDF… 40%', retryable: false,
+  } } });
+  assert.deepEqual(fetched, [], 'a refresh:false look asks the network nothing');
+});
+
+test('PDF_PAGE_JOB: a tab scrolled to #page=3 still finds the job started from that address', async () => {
+  local.pdfJobs = [pageRecord('job_p', 'running', { progress: 20 })];
+  try {
+    const reply = await send({ type: 'PDF_PAGE_JOB', refresh: false }, { tab: { id: 3, url: `${PDF_URL}#page=3` } });
+    assert.equal(reply.data.job && reply.data.job.jobId, 'job_p');
+  } finally {
+    delete local.pdfJobs;
+  }
+});
+
+test('PDF_PAGE_JOB: no job from this address is null, not the newest job on the device', async () => {
+  const reply = await pageJob([pageRecord('job_b', 'succeeded', { sourceUrl: 'https://papers.test/b.pdf' })]);
+  assert.deepEqual(reply, { ok: true, data: { job: null } });
+});
+
+test('PDF_PAGE_JOB: each status maps to the bar\'s phase and line; a receipt has no job to open yet', async () => {
+  const phase = async (record) => (await pageJob([record])).data.job;
+  const receiptAt = Date.now();
+  assert.deepEqual(await phase(pageRecord('local:op-2', 'queued', { pending: true, operationId: 'op-2', createdAt: receiptAt })),
+    { jobId: null, operationId: 'op-2', createdAt: receiptAt, phase: 'running', text: 'Translating this PDF… 0%', retryable: false });
+  const waiting = await phase(pageRecord('job_w', 'awaiting_confirm'));
+  assert.equal(waiting.phase, 'awaiting');
+  assert.equal(waiting.text, 'Needs your confirmation');
+  const done = await phase(pageRecord('job_d', 'succeeded', { settledAt: Date.now() }));
+  assert.equal(done.phase, 'succeeded');
+  assert.equal(done.text, 'Document translation finished');
+  assert.equal(done.jobId, 'job_d');
+
+  // A failure says why, in the same words as the popup row; only one a retry can fix is retryable.
+  const broke = await phase(pageRecord('job_f', 'failed', { settledAt: Date.now(), error: { code: 'insufficient_points' } }));
+  assert.equal(broke.phase, 'failed');
+  assert.equal(broke.retryable, false);
+  assert.ok(broke.text && !broke.text.includes('insufficient_points'), broke.text);
+  const flaky = await phase(pageRecord('job_n', 'failed', { settledAt: Date.now(), error: { code: 'network_error' } }));
+  assert.equal(flaky.retryable, true);
+  assert.notEqual(flaky.text, broke.text);
+
+  // Cancelled is its own phase, never retryable: the bar gives the hint back instead.
+  const gone = await phase(pageRecord('job_x', 'abandoned', { settledAt: Date.now(), error: {} }));
+  assert.equal(gone.phase, 'abandoned');
+  assert.equal(gone.retryable, false);
+});
+
+test('PDF_PAGE_JOB refresh:true polls the job and answers the fresh status', async () => {
+  jobView = { jobId: 'job_r', status: 'succeeded', format: 'pdf', progress: 100 };
+  const reply = await pageJob([pageRecord('job_r', 'running', { progress: 60 })], true);
+  assert.equal(reply.data.job.phase, 'succeeded');
+  assert.ok(fetched.some(url => url.includes('/api/pdf/jobs/')), JSON.stringify(fetched));
+});
+
+// The bar keys a closed state on operationId + createdAt + phase, so createdAt
+// has to mark the attempt: new on every create, the same for that attempt's
+// whole life.
+const attemptKey = (job) => `${job.operationId}:${job.createdAt}:${job.phase}`;
+const lookFromTab = async (refresh = false) => (await send({ type: 'PDF_PAGE_JOB', refresh }, pdfTab)).data.job;
+
+test('a retry under the same operation id is a new attempt: a new createdAt, kept by its poll', async () => {
+  urlCreate = null;
+  try {
+    await send({ type: 'PDF_TRANSLATE_URL', consent: true }, pdfTab);
+    const first = await lookFromTab();
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    await send({ type: 'PDF_TRANSLATE_URL', consent: true }, pdfTab);
+    const second = await lookFromTab();
+    assert.equal(first.phase, 'failed');
+    assert.equal(first.retryable, true);
+    assert.equal(second.operationId, first.operationId, 'a network failure keeps the binding');
+    assert.notEqual(attemptKey(second), attemptKey(first));
+    assert.equal(attemptKey(await lookFromTab(true)), attemptKey(second));
+  } finally {
+    delete local.pdfJobs;
+    delete local.pdfUrlOps;
+  }
+});
+
+test('one attempt keeps its createdAt from the receipt, through the real job, to its poll', async () => {
+  let atReceipt = null;
+  urlCreate = {
+    job: { jobId: 'job_t', status: 'queued', progress: 0 },
+    beforeBytes: async () => { atReceipt = await lookFromTab(); },
+  };
+  try {
+    await send({ type: 'PDF_TRANSLATE_URL', consent: true }, pdfTab);
+    const adopted = await lookFromTab();
+    jobView = { jobId: 'job_t', status: 'running', format: 'pdf', progress: 50 };
+    const polled = await lookFromTab(true);
+    assert.equal(atReceipt && atReceipt.jobId, null, 'the receipt is readable while the PDF downloads');
+    assert.equal(adopted.jobId, 'job_t');
+    assert.equal(attemptKey(adopted), attemptKey(atReceipt));
+    assert.equal(polled.createdAt, atReceipt.createdAt);
+  } finally {
+    urlCreate = null;
+    delete local.pdfJobs;
+    delete local.pdfUrlOps;
+  }
 });
