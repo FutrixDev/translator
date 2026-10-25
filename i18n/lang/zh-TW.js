@@ -32,6 +32,7 @@
     comicSignInRequired: '登入後即可翻譯漫畫',
     comicPillSignIn: '需要登入',
     comicPillConfirm: '等待確認',
+    comicPillPreparing: '準備中…',
     comicSigningIn: '正在登入…',
     comicSignInFailed: '登入失敗，請重試',
     comicChargeRequired: '這一頁需要 {points} 點，你還有 {balance} 點',

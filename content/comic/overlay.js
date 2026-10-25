@@ -77,12 +77,15 @@
       element.style.top = `${top}px`;
       // Anchored by the edge that touches the corner, so a label that changes
       // the width between two frames grows away from the corner instead of
-      // sliding the box off it. `right` on a fixed box counts from the
-      // viewport's inner edge, which is clientWidth, not innerWidth.
+      // sliding the box off it. The corner is the visible part's, sideways as
+      // well as down: an image wider than its scroll box has its own edge out
+      // of sight. `right` on a fixed box counts from the viewport's inner edge,
+      // which is clientWidth, not innerWidth.
       if (corner === 'top-right') {
-        element.style.right = `${document.documentElement.clientWidth - rect.right + CORNER_INSET}px`;
+        const right = Math.min(rect.right, clip.right);
+        element.style.right = `${document.documentElement.clientWidth - right + CORNER_INSET}px`;
       } else {
-        element.style.left = `${rect.left + CORNER_INSET}px`;
+        element.style.left = `${Math.max(rect.left, clip.left) + CORNER_INSET}px`;
       }
       return true;
     };
@@ -220,6 +223,10 @@
     let pctShown = '';
     // Why the job failed, while the pill says it did; null otherwise.
     let failed = null;
+    // A failed page in a chapter is listed on the chapter pill, which is where
+    // the reader looks for it; its own card waits for a click on its chip
+    // rather than opening over the page. Alone on the page, it opens.
+    const opensItself = () => failed === null || !comic.summaryShown();
 
     const tick = (rect) => {
       // Width first, so the box placed this frame is the final one.
@@ -260,9 +267,17 @@
       onGone: () => destroy()
     });
 
+    // Whoever is waiting on this card — a sign-in or charge question — hears
+    // that it is gone, however it went: its own Cancel, the chapter's Cancel
+    // all, or the image leaving the page. Once, however many of those happen.
+    const onDestroyed = [];
+    let destroyed = false;
     function destroy() {
+      if (destroyed) return;
+      destroyed = true;
       stop();
       root.remove();
+      onDestroyed.splice(0).forEach(fn => fn());
     }
 
     function setProgress(progress) {
@@ -286,6 +301,11 @@
     return {
       element: root,
       destroy,
+      /** Run `fn` when the overlay is destroyed (at once if it already was). */
+      onDestroy(fn) {
+        if (destroyed) fn();
+        else onDestroyed.push(fn);
+      },
       /** The reason setError showed, or null while the job is not failed. */
       failure: () => failed,
       /** Follow the job onto the element that now holds its page. */
@@ -354,7 +374,8 @@
        * The card's buttons. A question the reader has to answer opens the card
        * by itself; the Cancel that sits under a running job does not, so it
        * passes `open: false`. No buttons means the question is over, and the
-       * card folds.
+       * card folds. An error's buttons open it only where the error card
+       * would have opened itself.
        */
       setActions(actions, { open = true } = {}) {
         actionsElement.innerHTML = '';
@@ -367,7 +388,7 @@
           actionsElement.appendChild(button);
         });
         if (!actions.length) setOpen(false);
-        else if (open) setOpen(true);
+        else if (open && opensItself()) setOpen(true);
       },
       /** The job is over and did not succeed: the pill says so, the card why. */
       setError(text) {
@@ -381,7 +402,7 @@
         message.hidden = !text;
         timerFrom = 0;
         timerElement.hidden = true;
-        setOpen(true);
+        if (opensItself()) setOpen(true);
       }
     };
   }

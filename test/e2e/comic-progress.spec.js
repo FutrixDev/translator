@@ -31,6 +31,36 @@ function oursAtCentre(page, selector = '#comic') {
   }, OURS);
 }
 
+/**
+ * Every state the pill shows — busy or not, and its words — from before the
+ * job is asked for, so a "translating" flash ahead of the card is caught.
+ */
+function recordPill(page) {
+  return page.evaluate((root) => {
+    window.__pillStates = [];
+    new MutationObserver(() => {
+      const element = document.querySelector(root);
+      if (!element) return;
+      const label = element.querySelector('.ai-translator-comic-label');
+      const state = { busy: element.classList.contains('is-busy'), label: label ? label.textContent : '' };
+      const seen = window.__pillStates;
+      const last = seen[seen.length - 1];
+      if (!last || last.busy !== state.busy || last.label !== state.label) seen.push(state);
+    }).observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
+  }, ROOT);
+}
+
+/** Until the card asks, the pill is waiting, not translating. */
+async function expectNoBusyBefore(page, waitLabel) {
+  const states = await page.evaluate(() => window.__pillStates);
+  const asked = states.findIndex(state => state.label === waitLabel);
+  expect(asked).toBeGreaterThan(-1);
+  states.slice(0, asked + 1).forEach((state) => {
+    expect(state.busy).toBe(false);
+    expect(state.label).not.toBe('Translating the comic…');
+  });
+}
+
 /** The open card hangs under the pill, right-aligned, no wider than 280, with no backdrop. */
 async function expectCardUnderPill(page) {
   const card = page.locator(CARD);
@@ -119,7 +149,7 @@ test.describe('Comic progress pill', () => {
       await page.locator(PILL).click();
       await cancel.click();
       await expect(page.locator(ROOT)).toHaveCount(0);
-      await expect.poll(() => service.state.abandons).toBe(1);
+      await expect.poll(() => service.state.abandoned.length).toBe(1);
       await expect(page.locator('#comic')).toHaveAttribute('src', '/source.png');
     } finally {
       await service.close();
@@ -131,6 +161,7 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
+      await recordPill(page);
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       // The question opens the card by itself: the reader has to answer it.
@@ -140,6 +171,7 @@ test.describe('Comic progress pill', () => {
       await expectCardUnderPill(page);
       // The pill says what it is waiting for, not that a redraw is under way.
       await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Awaiting confirmation');
+      await expectNoBusyBefore(page, 'Awaiting confirmation');
       expect(service.state.createBodies).toHaveLength(1);
 
       await approve.click();
@@ -161,12 +193,14 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base, { signedIn: false });
       await openComicPage(page, service);
+      await recordPill(page);
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
       const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
       await expect(signIn).toHaveText('Sign In');
       await expectCardUnderPill(page);
       await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Sign-in needed');
+      await expectNoBusyBefore(page, 'Sign-in needed');
 
       await signIn.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });

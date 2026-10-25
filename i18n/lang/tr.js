@@ -33,6 +33,7 @@
     comicSignInRequired: 'Çizgi roman sayfalarını çevirmek için giriş yapın',
     comicPillSignIn: 'Giriş gerekli',
     comicPillConfirm: 'Onay bekleniyor',
+    comicPillPreparing: 'Hazırlanıyor…',
     comicSigningIn: 'Giriş yapılıyor…',
     comicSignInFailed: 'Giriş başarısız oldu. Lütfen tekrar deneyin.',
     comicChargeRequired: 'Bu sayfa {points} kredi tutuyor. Bakiyeniz: {balance}.',

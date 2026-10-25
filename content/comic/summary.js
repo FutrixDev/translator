@@ -85,6 +85,11 @@
     return result;
   }
 
+  /** Whether the chapter pill is up — a page's error card defers to it. */
+  function summaryShown(count = counts()) {
+    return count.total >= MIN_SHOWN;
+  }
+
   function byPage(a, b) {
     return a.pageIndex - b.pageIndex;
   }
@@ -93,7 +98,7 @@
   // failed still needs the Retry it is the only place for.
   function render() {
     const count = counts();
-    if (count.total < MIN_SHOWN) {
+    if (!summaryShown(count)) {
       if (view) view.destroy();
       view = null;
       return;
@@ -278,6 +283,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    summaryBegin, summaryDone, summarySettle,
+    summaryBegin, summaryDone, summarySettle, summaryShown,
   });
 })();

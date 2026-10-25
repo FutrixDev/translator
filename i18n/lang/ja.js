@@ -32,6 +32,7 @@
     comicSignInRequired: 'マンガの翻訳にはログインが必要です',
     comicPillSignIn: 'ログインが必要',
     comicPillConfirm: '確認待ち',
+    comicPillPreparing: '準備中…',
     comicSigningIn: 'ログイン中…',
     comicSignInFailed: 'ログインに失敗しました。もう一度お試しください',
     comicChargeRequired: 'このページには {points} ポイントかかります（残り {balance} ポイント）',

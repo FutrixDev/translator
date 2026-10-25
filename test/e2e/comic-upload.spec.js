@@ -102,4 +102,23 @@ test.describe('Comic page upload', () => {
       await service.close();
     }
   });
+
+  test('an upload the storage refuses says so, and no job is created', async ({ context, page }) => {
+    const service = await startMockService('succeed', { putStatus: 500 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/page`);
+      await page.locator('#comic').evaluate(img => img.decode());
+
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      const overlay = page.locator('.ai-translator-comic-progress');
+      await expect(overlay).toHaveClass(/is-error/, { timeout: 20_000 });
+      // The storage's refusal, not a network that never answered.
+      await expect(overlay).toContainText('The page could not be uploaded. Please try again.');
+      expect(service.state.puts).toHaveLength(1);
+      expect(service.state.createBodies).toHaveLength(0);
+    } finally {
+      await service.close();
+    }
+  });
 });

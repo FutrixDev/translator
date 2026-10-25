@@ -31,6 +31,7 @@
     comicSignInRequired: 'سجّل الدخول لترجمة صفحات القصص المصورة',
     comicPillSignIn: 'يلزم تسجيل الدخول',
     comicPillConfirm: 'بانتظار التأكيد',
+    comicPillPreparing: 'جارٍ التحضير…',
     comicSigningIn: 'جارٍ تسجيل الدخول…',
     comicSignInFailed: 'تعذّر تسجيل الدخول. يُرجى المحاولة مرة أخرى.',
     comicChargeRequired: 'تكلّف هذه الصفحة {points} من الرصيد، ولديك {balance}.',

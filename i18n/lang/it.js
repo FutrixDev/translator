@@ -33,6 +33,7 @@
     comicSignInRequired: "Accedi per tradurre le pagine dei fumetti",
     comicPillSignIn: "Accesso richiesto",
     comicPillConfirm: "In attesa di conferma",
+    comicPillPreparing: 'Preparazione…',
     comicSigningIn: "Accesso in corso…",
     comicSignInFailed: "Accesso non riuscito. Riprova.",
     comicChargeRequired: "Questa pagina costa {points} crediti. Ne hai {balance}.",

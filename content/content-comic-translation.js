@@ -241,6 +241,12 @@
     entry.cancelled = false;
     entry.detached = false;
     comic.trackEntry(entry);
+    // Counted like a page asked for on this load, so the chapter pill and the
+    // chips agree after a reload. The record keeps no target language; the
+    // one in effect now is what a retry from the pill would ask for anyway.
+    comic.summaryBegin(entry, {
+      pageIndex: comic.pageIndexOf(img), pageUrl: record.pageUrl, targetLang: comicTargetLang(), mode: entry.mode
+    });
 
     const overlay = comic.createOverlay(img);
     entry.overlay = overlay;
@@ -274,6 +280,7 @@
       await pollJob({ entry, overlay, jobId: record.jobId, startedAt: record.createdAt });
     } finally {
       entry.running = false;
+      comic.summarySettle(entry);
     }
   }
 
@@ -492,8 +499,11 @@
     // pixels, queued, downloading the result — are ours, not the reader's, and
     // narrating them made a 90-second wait look like four separate things going
     // wrong. The clock carries the "still working" signal instead.
+    // Until the job exists the pill only says it is getting ready: the upload
+    // or the create can still stop on a sign-in or a price, and a pill that
+    // said "translating" first would claim work that has not started.
     const startedAt = Date.now();
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    overlay.setStatus(t('comicPillPreparing'), { busy: false });
     overlay.startTimer(startedAt);
 
     const uploaded = await withSignIn({ entry, overlay }, () => uploadPage(entry, page.imageUrl));
@@ -529,6 +539,7 @@
     const jobStartedAt = Date.now();
     entry.jobId = created.data.jobId;
     entry.jobStartedAt = jobStartedAt;
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     // From here the job exists server-side and will finish with or without this
     // document, so it becomes findable from the next page load.
     comic.rememberJob(entry, 'running');
@@ -536,14 +547,6 @@
     await pollJob({ entry, overlay, jobId: entry.jobId, startedAt: jobStartedAt });
   }
 
-  /**
-   * Watch a job to a terminal state.
-   *
-   * Shared by a fresh run and by one picked back up on a later page load, which
-   * is why `startedAt` is a parameter rather than `Date.now()`: the timeout is
-   * measured from when the *job* was created, so a resumed job cannot be granted
-   * a second full budget the server has no intention of honouring.
-   */
   /**
    * Stop a page's run: the chip's Cancel and the chapter pill's Cancel all.
    * Before the job exists there is nothing to abandon; runJob sees `cancelled`
@@ -557,6 +560,14 @@
     comic.summarySettle(entry);
   }
 
+  /**
+   * Watch a job to a terminal state.
+   *
+   * Shared by a fresh run and by one picked back up on a later page load, which
+   * is why `startedAt` is a parameter rather than `Date.now()`: the timeout is
+   * measured from when the *job* was created, so a resumed job cannot be granted
+   * a second full budget the server has no intention of honouring.
+   */
   async function pollJob({ entry, overlay, jobId, startedAt }) {
     overlay.setActions([{
       label: t('comicCancel'),

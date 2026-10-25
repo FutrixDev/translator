@@ -32,6 +32,7 @@
     comicSignInRequired: 'Войдите, чтобы переводить комиксы',
     comicPillSignIn: 'Нужен вход',
     comicPillConfirm: 'Ждёт подтверждения',
+    comicPillPreparing: 'Подготовка…',
     comicSigningIn: 'Вход…',
     comicSignInFailed: 'Не удалось войти. Попробуйте ещё раз.',
     comicChargeRequired: 'Эта страница стоит {points} кредитов. У вас {balance}.',

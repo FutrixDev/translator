@@ -17,8 +17,15 @@
   // Error and account surfaces
   // -------------------------------------------------------------------------
 
+  /**
+   * The two questions a job can stop on. Each settles `false` the moment its
+   * card is destroyed, by whatever means — its own Cancel is just one of them,
+   * so the chapter's Cancel all can never leave a run waiting on a card that
+   * is no longer there.
+   */
   function promptSignIn(overlay) {
     return new Promise((resolve) => {
+      overlay.onDestroy(() => resolve(false));
       overlay.ask(t('comicSignInRequired'), { label: t('comicPillSignIn') });
       overlay.setActions([
         {
@@ -35,7 +42,6 @@
             }
             if (result.error.code === 'sign_in_cancelled') {
               overlay.destroy();
-              resolve(false);
               return;
             }
             overlay.setError(result.error.message || t('comicSignInFailed'));
@@ -43,13 +49,7 @@
             resolve(false);
           }
         },
-        {
-          label: t('comicCancel'),
-          onClick: () => {
-            overlay.destroy();
-            resolve(false);
-          }
-        }
+        { label: t('comicCancel'), onClick: () => overlay.destroy() }
       ]);
     });
   }
@@ -69,6 +69,7 @@
    */
   function promptCharge(overlay, quote) {
     return new Promise((resolve) => {
+      overlay.onDestroy(() => resolve(false));
       overlay.ask(chargeText(quote), { label: t('comicPillConfirm') });
       overlay.setActions([
         {
@@ -80,13 +81,7 @@
             resolve(true);
           }
         },
-        {
-          label: t('comicCancel'),
-          onClick: () => {
-            overlay.destroy();
-            resolve(false);
-          }
-        }
+        { label: t('comicCancel'), onClick: () => overlay.destroy() }
       ]);
     });
   }

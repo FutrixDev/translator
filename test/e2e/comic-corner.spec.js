@@ -80,6 +80,66 @@ test.describe('Comic corner placement', () => {
     }
   });
 
+  test('near the image bottom, the pill stays inside the image rather than on the box edge', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 60_000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await expect(page.locator(PILL)).toBeVisible();
+
+      // Only the last 20 px of the image are left in the box, less than the
+      // box edge + 8 + the pill: the pill has to ride up with the image bottom.
+      const height = await page.locator('#comic').evaluate(img => img.getBoundingClientRect().height);
+      const pillHeight = await page.locator(PILL).evaluate(el => el.getBoundingClientRect().height);
+      expect(8 + pillHeight).toBeGreaterThan(20);
+      await scrollBoxRepinned(page, PILL, Math.round(height) - 20);
+      await expect(page.locator(PILL)).toBeVisible();
+      const gap = () => page.evaluate((selector) => {
+        const img = document.querySelector('#comic').getBoundingClientRect();
+        const pill = document.querySelector(selector).getBoundingClientRect();
+        return Math.round(img.bottom - pill.bottom);
+      }, PILL);
+      await expect.poll(gap).toBe(8);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('an image wider than its box keeps the pill and the badge inside the box', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 1500 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      await page.locator('#comic').evaluate((img) => {
+        img.removeAttribute('width');
+        img.style.width = '900px';
+      });
+      // The box's visible part, inside its border and scrollbar.
+      const edges = (selector) => page.evaluate((target) => {
+        const box = document.querySelector('#box');
+        const rect = box.getBoundingClientRect();
+        const left = rect.left + box.clientLeft;
+        const el = document.querySelector(target).getBoundingClientRect();
+        return { left: Math.round(el.left - left), right: Math.round(left + box.clientWidth - el.right) };
+      }, selector);
+
+      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await expect(page.locator(PILL)).toBeVisible();
+      // The image's own right edge is 400 px past the box's: the pill takes
+      // the box's.
+      await expect.poll(async () => (await edges('.ai-translator-comic-progress')).right).toBe(8);
+
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
+      await expect(page.locator(BADGE)).toBeVisible();
+      // Scrolled sideways, the image's left edge leaves the box; the badge stays.
+      await page.locator('#box').evaluate((box) => { box.scrollLeft = 300; });
+      await expect.poll(async () => (await edges(BADGE)).left).toBe(8);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('with the window scrolled past the image top, the pill sits at the viewport top', async ({ context, page }) => {
     const service = await startMockService('succeed', { succeedAfterMs: 60_000 });
     try {

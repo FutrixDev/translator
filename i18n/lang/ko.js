@@ -32,6 +32,7 @@
     comicSignInRequired: '만화를 번역하려면 로그인하세요',
     comicPillSignIn: '로그인 필요',
     comicPillConfirm: '확인 대기 중',
+    comicPillPreparing: '준비 중…',
     comicSigningIn: '로그인 중…',
     comicSignInFailed: '로그인에 실패했습니다. 다시 시도해 주세요',
     comicChargeRequired: '이 페이지는 {points} 포인트가 필요합니다 (잔액 {balance} 포인트)',

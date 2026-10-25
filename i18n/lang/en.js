@@ -33,6 +33,7 @@
     comicSignInRequired: 'Sign in to translate comic pages',
     comicPillSignIn: 'Sign-in needed',
     comicPillConfirm: 'Awaiting confirmation',
+    comicPillPreparing: 'Preparing…',
     comicSigningIn: 'Signing in…',
     comicSignInFailed: 'Sign-in failed. Please try again.',
     comicChargeRequired: 'This page costs {points} credits. You have {balance}.',

@@ -32,6 +32,7 @@
     comicSignInRequired: 'Inicia sesión para traducir cómics',
     comicPillSignIn: 'Requiere iniciar sesión',
     comicPillConfirm: 'Esperando confirmación',
+    comicPillPreparing: 'Preparando…',
     comicSigningIn: 'Iniciando sesión…',
     comicSignInFailed: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
     comicChargeRequired: 'Esta página cuesta {points} créditos. Te quedan {balance}.',

@@ -32,6 +32,7 @@
     comicSignInRequired: 'Entre para traduzir quadrinhos',
     comicPillSignIn: 'É preciso entrar',
     comicPillConfirm: 'Aguardando confirmação',
+    comicPillPreparing: 'Preparando…',
     comicSigningIn: 'Entrando…',
     comicSignInFailed: 'Falha ao entrar. Tente novamente.',
     comicChargeRequired: 'Esta página custa {points} créditos. Você tem {balance}.',

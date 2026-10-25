@@ -304,8 +304,9 @@ const TALL_HTML = `<!doctype html>
  * create under its pageUrl, `{ [pageId]: pageIndex }`, which is how the real
  * service groups a chapter's pages. `uploadDelayMs` holds the PUT's answer
  * back; `Infinity` never answers it, which is what a stalled storage upload
- * looks like from the worker. `runningProgress` is the figure a running job
- * reports.
+ * looks like from the worker. `putStatus` is the status the PUT answers with,
+ * so a storage refusal can be played. `runningProgress` is the figure a
+ * running job reports. `abandoned` records the job id of every abandon.
  *
  * `chapter` turns the one shared job into one job per create, which is what a
  * whole chapter needs: `job_<n>`, finishing `stepMs × (pageIndex + 1)` after
@@ -318,10 +319,10 @@ const TALL_HTML = `<!doctype html>
 async function startMockService(
   behaviour = 'succeed',
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
-    runningProgress = 0.4, chapter = null } = {},
+    putStatus = 200, runningProgress = 0.4, chapter = null } = {},
 ) {
   const state = {
-    polls: 0, abandons: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    polls: 0, abandoned: [], createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
     tickets: [], puts: [], chapters: {}, jobs: {},
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
@@ -423,7 +424,7 @@ async function startMockService(
         });
         // Infinity leaves it open: the worker's own deadline is the only way out.
         if (uploadDelayMs === Infinity) return;
-        setTimeout(() => send(200, '', 'text/plain'), uploadDelayMs);
+        setTimeout(() => send(putStatus, '', 'text/plain'), uploadDelayMs);
       });
       return;
     }
@@ -470,8 +471,9 @@ async function startMockService(
 
     if (/^\/api\/comic\/jobs\/[^/]+\/abandon$/.test(url.pathname) && req.method === 'POST') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
-      state.abandons += 1;
-      return send(200, { jobId: decodeURIComponent(url.pathname.split('/')[4]), status: 'abandoned' });
+      const jobId = decodeURIComponent(url.pathname.split('/')[4]);
+      state.abandoned.push(jobId);
+      return send(200, { jobId, status: 'abandoned' });
     }
 
     if (url.pathname.startsWith('/api/comic/jobs/') && req.method === 'GET') {

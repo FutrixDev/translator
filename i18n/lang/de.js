@@ -32,6 +32,7 @@
     comicSignInRequired: 'Zum Übersetzen von Comics anmelden',
     comicPillSignIn: 'Anmeldung nötig',
     comicPillConfirm: 'Wartet auf Bestätigung',
+    comicPillPreparing: 'Wird vorbereitet…',
     comicSigningIn: 'Anmeldung läuft…',
     comicSignInFailed: 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.',
     comicChargeRequired: 'Diese Seite kostet {points} Credits. Du hast noch {balance}.',

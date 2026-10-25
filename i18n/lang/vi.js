@@ -33,6 +33,7 @@
     comicSignInRequired: 'Đăng nhập để dịch trang truyện tranh',
     comicPillSignIn: 'Cần đăng nhập',
     comicPillConfirm: 'Đang chờ xác nhận',
+    comicPillPreparing: 'Đang chuẩn bị…',
     comicSigningIn: 'Đang đăng nhập…',
     comicSignInFailed: 'Đăng nhập không thành công. Vui lòng thử lại.',
     comicChargeRequired: 'Trang này cần {points} điểm. Bạn đang có {balance}.',

@@ -32,6 +32,7 @@
     comicSignInRequired: 'Connectez-vous pour traduire des BD',
     comicPillSignIn: 'Connexion requise',
     comicPillConfirm: 'En attente de confirmation',
+    comicPillPreparing: 'Préparation…',
     comicSigningIn: 'Connexion…',
     comicSignInFailed: 'Échec de la connexion. Réessayez.',
     comicChargeRequired: 'Cette page coûte {points} crédits. Il vous en reste {balance}.',

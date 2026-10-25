@@ -32,6 +32,7 @@
     comicSignInRequired: 'Masuk untuk menerjemahkan halaman komik',
     comicPillSignIn: 'Perlu masuk',
     comicPillConfirm: 'Menunggu konfirmasi',
+    comicPillPreparing: 'Menyiapkan…',
     comicSigningIn: 'Sedang masuk…',
     comicSignInFailed: 'Gagal masuk. Silakan coba lagi.',
     comicChargeRequired: 'Halaman ini memerlukan {points} kredit. Kredit Anda: {balance}.',
