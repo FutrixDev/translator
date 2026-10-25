@@ -107,7 +107,8 @@ test.describe('Comic corner placement', () => {
   });
 
   test('an image wider than its box keeps the pill and the badge inside the box', async ({ context, page }) => {
-    const service = await startMockService('succeed', { succeedAfterMs: 1500 });
+    // Held long enough that the pill is still there when its edge is read.
+    const service = await startMockService('succeed', { succeedAfterMs: 5000 });
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
@@ -128,7 +129,7 @@ test.describe('Comic corner placement', () => {
       await expect(page.locator(PILL)).toBeVisible();
       // The image's own right edge is 400 px past the box's: the pill takes
       // the box's.
-      await expect.poll(async () => (await edges('.ai-translator-comic-progress')).right).toBe(8);
+      await expect.poll(async () => (await edges('.ai-translator-comic-progress')).right, { timeout: 3_000 }).toBe(8);
 
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       await expect(page.locator(BADGE)).toBeVisible();
