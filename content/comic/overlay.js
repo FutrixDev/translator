@@ -31,33 +31,45 @@
    *
    * `shown()` is the caller's own reason to hide it; the image being out of
    * sight, or collapsed to nothing by a reader recycling its slot, is this
-   * function's. `onFrame(rect)` runs on every visible frame, before the right
-   * edge is measured, so a caller can size the element first. Ends by itself,
+   * function's. `onFrame(rect)` runs on every visible frame, before the element
+   * is placed, so a caller can size it first. Ends by itself,
    * calling `onGone()`, once the host leaves the document.
    */
   function pinToCorner(element, { host, corner, shown = () => true, onFrame = null, onGone }) {
+    /** Put the element in its corner; false once the host has left the document. */
+    const place = () => {
+      const img = host();
+      if (!img.isConnected) return false;
+      const rect = img.getBoundingClientRect();
+      const visible = shown() && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+      element.style.display = visible ? '' : 'none';
+      if (!visible) return true;
+      if (onFrame) onFrame(rect);
+      element.style.top = `${rect.top + CORNER_INSET}px`;
+      // Anchored by the edge that touches the corner, so a label that changes
+      // the width between two frames grows away from the corner instead of
+      // sliding the box off it. `right` on a fixed box counts from the
+      // viewport's inner edge, which is clientWidth, not innerWidth.
+      if (corner === 'top-right') {
+        element.style.right = `${document.documentElement.clientWidth - rect.right + CORNER_INSET}px`;
+      } else {
+        element.style.left = `${rect.left + CORNER_INSET}px`;
+      }
+      return true;
+    };
     let frame = 0;
     const track = () => {
-      const img = host();
-      if (!img.isConnected) {
+      if (!place()) {
         frame = 0;
         onGone();
         return;
       }
-      const rect = img.getBoundingClientRect();
-      const visible = shown() && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-      element.style.display = visible ? '' : 'none';
-      if (visible) {
-        if (onFrame) onFrame(rect);
-        element.style.top = `${rect.top + CORNER_INSET}px`;
-        // Measured rather than transformed into place: the width changes with
-        // the label, and the box the reader sees is the box that gets placed.
-        element.style.left = corner === 'top-right'
-          ? `${rect.right - CORNER_INSET - element.offsetWidth}px`
-          : `${rect.left + CORNER_INSET}px`;
-      }
       frame = requestAnimationFrame(track);
     };
+    // Placed once now, so an element already in the document is never left for
+    // a frame at its static position; ending is left to the frames, which run
+    // after the caller holds the stop function.
+    place();
     frame = requestAnimationFrame(track);
     return () => cancelAnimationFrame(frame);
   }
@@ -138,7 +150,7 @@
     let pctShown = '';
 
     const tick = (rect) => {
-      // Width first, so the corner is measured on the final box.
+      // Width first, so the box placed this frame is the final one.
       const byArea = (rect.width * rect.height * PILL_MAX_AREA) / Math.max(1, pill.offsetHeight);
       pill.style.maxWidth = `${Math.floor(Math.min(PILL_MAX_WIDTH, byArea))}px`;
       if (timerFrom) {
