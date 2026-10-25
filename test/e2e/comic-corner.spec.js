@@ -18,13 +18,19 @@ async function openComicPage(page, service, path) {
 }
 
 const topOf = (page, selector) => page.locator(selector).evaluate(el => Math.round(el.getBoundingClientRect().top));
-// Scrolls, then lets two frames pass, so the pin has placed its element for the
-// new position. Polling for the value instead would pass on a stale read: the
-// expected top is also the top from before the scroll.
 const scrollBox = (page, y) => page.locator('#box').evaluate((box, top) => {
   box.scrollTop = top;
   return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }, y);
+// Scrolls with `selector`'s old placement wiped first, and waits until the pin
+// has placed it again. The expected top is also the top from before the
+// scroll, so a read that could still see the old placement passes on a pin
+// that never followed the box; two frames were not always enough for that.
+const scrollBoxRepinned = async (page, selector, y) => {
+  await page.locator(selector).evaluate((el) => { el.style.top = '-1000px'; });
+  await scrollBox(page, y);
+  await expect.poll(() => topOf(page, selector)).not.toBe(-1000);
+};
 
 test.describe('Comic corner placement', () => {
   test('in a scroll box, the pill follows the box edge and leaves with the image', async ({ context, page }) => {
@@ -37,7 +43,7 @@ test.describe('Comic corner placement', () => {
       expect(await topOf(page, PILL)).toBe(108);
 
       // The image's top is 100 px above the box's: the pill stays on the box's edge.
-      await scrollBox(page, 200);
+      await scrollBoxRepinned(page, PILL, 200);
       expect(await topOf(page, '#comic')).toBe(-100);
       expect(await topOf(page, PILL)).toBe(108);
       await expect(page.locator(PILL)).toBeVisible();
@@ -63,7 +69,7 @@ test.describe('Comic corner placement', () => {
       await expect(page.locator(BADGE)).toBeVisible();
       expect(await topOf(page, BADGE)).toBe(108);
 
-      await scrollBox(page, 200);
+      await scrollBoxRepinned(page, BADGE, 200);
       expect(await topOf(page, '#comic')).toBe(-100);
       expect(await topOf(page, BADGE)).toBe(108);
 
