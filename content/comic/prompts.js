@@ -1,6 +1,6 @@
 // Blab Translation 漫画翻译 —— 说给人听的话
 //
-// 未登录、要扣费、出错了——这三件事都发生在覆盖层上，都需要用户点一下才继续。文案和
+// 未登录、要扣费、出错了——这三件事都发生在进度标下的卡片里，都需要用户点一下才继续。文案和
 // 按钮排布收在这里，任务流只管在该问的时候问。
 (function() {
   'use strict';
@@ -19,7 +19,7 @@
 
   function promptSignIn(overlay) {
     return new Promise((resolve) => {
-      overlay.setStatus(t('comicSignInRequired'), { busy: false });
+      overlay.ask(t('comicSignInRequired'));
       overlay.setActions([
         {
           label: t('comicSignIn'),
@@ -28,6 +28,8 @@
             overlay.setStatus(t('comicSigningIn'), { busy: true });
             const result = await comic.sendMessage({ type: 'COMIC_SIGN_IN' });
             if (result.ok) {
+              overlay.setMessage('');
+              overlay.setActions([]);
               resolve(true);
               return;
             }
@@ -67,12 +69,13 @@
    */
   function promptCharge(overlay, quote) {
     return new Promise((resolve) => {
-      overlay.setStatus(chargeText(quote), { busy: false });
+      overlay.ask(chargeText(quote));
       overlay.setActions([
         {
           label: t('comicChargeApprove'),
           variant: 'primary',
           onClick: () => {
+            overlay.setMessage('');
             overlay.setActions([]);
             resolve(true);
           }
@@ -157,7 +160,10 @@
       case 'invalid_image_data':
       case 'invalid_image_url': return t('comicUnsupportedFormat');
       case 'gateway_unavailable': return t('comicServiceUnavailable');
+      case 'image_unreadable': return t('comicImageUnavailable');
       case 'network_error':
+      case 'upload_timeout':
+      case 'upload_failed':
       case 'no_response': return t('comicNetworkError');
       case 'extension_context': return t('extensionContextInvalidated');
       // An overlay that was already open when the switch went off; the worker

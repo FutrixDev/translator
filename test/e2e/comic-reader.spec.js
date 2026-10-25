@@ -29,7 +29,7 @@ test.describe('Comic page translation — reader', () => {
       await page.waitForSelector('#comic');
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
-      await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
+      await expect(page.locator('.ai-translator-comic-progress')).toBeVisible();
 
       // The overlay goes up on the click, before the job exists — reloading on
       // that alone tests nothing, because there is no job to come back to. Wait
@@ -46,7 +46,7 @@ test.describe('Comic page translation — reader', () => {
       // ordered it is gone; the job is not.
       await page.reload();
       await page.waitForSelector('#comic');
-      await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
+      await expect(page.locator('.ai-translator-comic-progress')).toBeVisible();
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 30000 },
@@ -140,7 +140,7 @@ test.describe('Comic page translation — reader', () => {
       await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
       // Page 3 is untranslated, so it gets no badge and nothing covering it.
       await expect(page.locator('.ai-translator-comic-badge')).toHaveCount(0);
-      await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
 
       // And it can still be translated on its own: the slot's history must not
       // short-circuit into showing page 1's purchase again.
@@ -163,7 +163,7 @@ test.describe('Comic page translation — reader', () => {
       await expect(page).toHaveURL(readerPage(service.base, 1));
 
       const slots = page.locator('.page_img');
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await triggerReaderTranslation(worker, service.base, 1);
       await expect(overlay).toBeVisible();
 
@@ -200,7 +200,7 @@ test.describe('Comic page translation — reader', () => {
       await expect(page).toHaveURL(readerPage(service.base, 1));
 
       const slots = page.locator('.page_img');
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await triggerReaderTranslation(worker, service.base, 1);
       await expect(overlay).toBeVisible();
 
@@ -393,7 +393,7 @@ test.describe('Comic page translation — reader', () => {
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toBeVisible();
       // Without a token the request must not even be attempted.
       expect(service.state.createBodies).toHaveLength(0);

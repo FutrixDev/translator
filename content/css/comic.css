@@ -1,51 +1,66 @@
 /* ==================== Comic Page Translation ==================== */
-/* Pinned over the image by JS (fixed, rect-tracked) rather than wrapped around
-   it: reparenting an <img> breaks galleries and lazy-loaders on the very sites
-   this feature is for. */
+/* Pinned to the image's corners by JS (fixed, rect-tracked) rather than wrapped
+   around it: reparenting an <img> breaks galleries and lazy-loaders on the very
+   sites this feature is for. */
 
-.ai-translator-comic-overlay {
+/* The pill in the image's top-right corner and the card that opens under it.
+   It covers a corner, never the page: the reader keeps reading while the page
+   is redrawn. Opaque on purpose — it sits on artwork of any colour, and a
+   see-through pill is unreadable on half of it. */
+.ai-translator-comic-progress {
   position: fixed;
   z-index: 2147483646;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  background: rgba(10, 11, 15, 0.55);
-  backdrop-filter: blur(1.5px);
-  border-radius: 4px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  animation: ai-translator-fade-in 0.18s ease;
+  /* Opacity only: a scale or a slide would move the box away from the corner
+     it was measured into, for the length of the animation. */
+  animation: ai-translator-comic-appear 0.18s ease;
 }
 
-.ai-translator-comic-card {
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
+@keyframes ai-translator-comic-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The reset in popup.css (0,2,2) owns every <button> under our roots, so each
+   rule for one carries `html body` and the root to tie it, and wins on order. */
+html body .ai-translator-comic-progress .ai-translator-comic-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  max-width: min(320px, 88%);
-  padding: 16px 20px;
-  border-radius: 12px;
-  background: #15161c;
+  gap: 6px;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid #2a2d36;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
-  color: #f4f5f9;
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
+  background: #15161c;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+html body .ai-translator-comic-progress .ai-translator-comic-pill:hover {
+  background: #1e2028;
 }
 
 .ai-translator-comic-spinner {
-  width: 22px;
-  height: 22px;
+  flex: none;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  border: 2px solid rgba(111, 99, 255, 0.25);
-  border-top-color: #6f63ff;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #ffffff;
   animation: ai-translator-comic-spin 0.8s linear infinite;
   display: none;
 }
 
-.ai-translator-comic-overlay.is-busy .ai-translator-comic-spinner {
+.ai-translator-comic-progress.is-busy .ai-translator-comic-spinner {
   display: block;
 }
 
@@ -53,82 +68,87 @@
   to { transform: rotate(360deg); }
 }
 
-.ai-translator-comic-status {
-  color: #f4f5f9;
+.ai-translator-comic-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.ai-translator-comic-overlay.is-error .ai-translator-comic-status {
+.ai-translator-comic-progress.is-error .ai-translator-comic-label {
   color: #ff8f8f;
 }
 
-/* Tabular figures so a ticking clock does not shuffle its own width. */
+/* Tabular figures so a climbing number does not shuffle its own width. */
+.ai-translator-comic-pct,
+.ai-translator-comic-timer {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.ai-translator-comic-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: max-content;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #15161c;
+  border: 1px solid #2a2d36;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  color: #f4f5f9;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-translator-comic-progress.is-error .ai-translator-comic-message {
+  color: #ff8f8f;
+}
+
 .ai-translator-comic-timer {
   color: #9aa0ae;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum';
   letter-spacing: 0.02em;
 }
 
-.ai-translator-comic-timer[hidden] {
+.ai-translator-comic-progress [hidden] {
   display: none;
-}
-
-.ai-translator-comic-bar {
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: #262a33;
-  overflow: hidden;
-}
-
-.ai-translator-comic-bar[hidden] {
-  display: none;
-}
-
-.ai-translator-comic-bar > span {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: #6f63ff;
-  border-radius: 2px;
-  transition: width 0.4s ease;
 }
 
 .ai-translator-comic-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-end;
 }
 
 .ai-translator-comic-actions:empty {
   display: none;
 }
 
-.ai-translator-comic-btn {
+html body .ai-translator-comic-progress .ai-translator-comic-btn {
   padding: 6px 14px;
   border-radius: 8px;
   border: 1px solid #2f333d;
   background: #1e2028;
   color: #d0d3dd;
   font-size: 12px;
-  font-family: inherit;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.ai-translator-comic-btn:hover {
+html body .ai-translator-comic-progress .ai-translator-comic-btn:hover {
   background: #2a2d36;
 }
 
-.ai-translator-comic-btn.is-primary {
+html body .ai-translator-comic-progress .ai-translator-comic-btn.is-primary {
   background: #6f63ff;
   border-color: #6f63ff;
   color: #fff;
 }
 
-.ai-translator-comic-btn.is-primary:hover {
+html body .ai-translator-comic-progress .ai-translator-comic-btn.is-primary:hover {
   background: #5f53f0;
 }
 

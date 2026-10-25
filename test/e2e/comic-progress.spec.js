@@ -1,0 +1,148 @@
+/**
+ * The progress pill a running comic job shows, and the card under it.
+ *
+ * 跑着的漫画任务只占图片右上角一枚小标：页面中央不能有我们的任何元素，标不超过
+ * 220×40、不超过图面积 6%，数字两秒内至少动一次；悬浮条在任务期间不出；点标打开
+ * 卡片（计时、取消），卡片在标下方、右对齐、不超过 280 宽。服务是 comic-fixtures.js
+ * 里那台模拟的。
+ */
+const { test, expect } = require('./fixtures');
+const { connectExtension } = require('./helpers');
+const { startMockService, triggerComicTranslation, triggerComicPageTranslation } = require('./comic-fixtures');
+
+const ROOT = '.ai-translator-comic-progress';
+const PILL = `${ROOT} .ai-translator-comic-pill`;
+const CARD = `${ROOT} .ai-translator-comic-card`;
+const OURS = '[class*="ai-translator"], [id^="ai-translator"]';
+
+async function openComicPage(page, service, path = '/page') {
+  await page.goto(`${service.base}${path}`);
+  await page.locator('img').first().evaluate(img => img.decode());
+}
+
+/** Every element of ours under the image's centre, top to bottom. */
+function oursAtCentre(page, selector = '#comic') {
+  return page.locator(selector).evaluate((img, ours) => {
+    const rect = img.getBoundingClientRect();
+    return document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      .filter(element => element.matches(ours))
+      .map(element => element.className || element.id);
+  }, OURS);
+}
+
+test.describe('Comic progress pill', () => {
+  test('a running job holds the top-right corner and leaves the page readable', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 12_000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const pill = page.locator(PILL);
+      await expect(pill).toBeVisible();
+      await expect(page.locator(`${ROOT} .ai-translator-comic-pct`)).toBeVisible();
+      expect(await oursAtCentre(page)).toEqual([]);
+
+      const img = await page.locator('#comic').boundingBox();
+      const box = await pill.boundingBox();
+      expect(box.width).toBeLessThanOrEqual(220);
+      expect(box.height).toBeLessThanOrEqual(40);
+      expect(box.width * box.height).toBeLessThanOrEqual(img.width * img.height * 0.06);
+      expect(Math.abs(img.x + img.width - 8 - (box.x + box.width))).toBeLessThanOrEqual(1);
+      expect(Math.abs(img.y + 8 - box.y)).toBeLessThanOrEqual(1);
+
+      // The number is what says the job is alive: it moves within any 2 s.
+      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
+      const samples = [await pct.textContent()];
+      for (let i = 0; i < 2; i++) {
+        await page.waitForTimeout(2000);
+        samples.push(await pct.textContent());
+      }
+      expect(samples[1]).not.toBe(samples[0]);
+      expect(samples[2]).not.toBe(samples[1]);
+      samples.forEach(sample => expect(sample).toMatch(/^\d{1,2}%$/));
+
+      // The hover bar would cover the page the pill is keeping clear.
+      await page.locator('#comic').hover();
+      await page.waitForTimeout(500);
+      await expect(page.locator('#ai-translator-image-hover-bar')).toHaveCount(0);
+      expect(await oursAtCentre(page)).toEqual([]);
+
+      // Done: the pill goes, the badge takes the other corner, the page is replaced.
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 30_000 });
+      await expect(page.locator(ROOT)).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a click on the pill opens the card under it, and Cancel ends the job', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 60_000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const card = page.locator(CARD);
+      const cancel = card.locator('.ai-translator-comic-btn');
+      // Cancel is there before the first poll, folded away until asked for.
+      await expect(cancel).toHaveCount(1);
+      await expect(card).toBeHidden();
+
+      await page.locator(PILL).click();
+      await expect(card).toBeVisible();
+      await expect(card.locator('.ai-translator-comic-timer')).toHaveText(/^\d+:\d{2}$/);
+      await expect(cancel).toHaveText('Cancel');
+
+      const pillBox = await page.locator(PILL).boundingBox();
+      const cardBox = await card.boundingBox();
+      expect(cardBox.width).toBeLessThanOrEqual(280);
+      expect(cardBox.y).toBeGreaterThanOrEqual(pillBox.y + pillBox.height);
+      expect(Math.abs(cardBox.x + cardBox.width - (pillBox.x + pillBox.width))).toBeLessThanOrEqual(1);
+      expect(await oursAtCentre(page)).toEqual([]);
+      // No backdrop: nothing of ours is wider than the card.
+      const widest = await page.locator(ROOT).evaluate(root => root.getBoundingClientRect().width);
+      expect(widest).toBeLessThanOrEqual(280);
+
+      // A second click folds it again.
+      await page.locator(PILL).click();
+      await expect(card).toBeHidden();
+
+      await page.locator(PILL).click();
+      await cancel.click();
+      await expect(page.locator(ROOT)).toHaveCount(0);
+      await expect.poll(() => service.state.abandons).toBe(1);
+      await expect(page.locator('#comic')).toHaveAttribute('src', '/source.png');
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('whole-page translation of a spread gives each page its own pill', async ({ context, page }) => {
+    const service = await startMockService('succeed', { succeedAfterMs: 8_000 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service, '/spread');
+      await triggerComicPageTranslation(worker, `${service.base}/spread`);
+
+      await expect(page.locator(PILL)).toHaveCount(2);
+      for (const id of ['#left', '#right']) {
+        const img = await page.locator(id).boundingBox();
+        const boxes = await page.locator(PILL).evaluateAll(pills => pills.map(p => p.getBoundingClientRect().toJSON()));
+        // One pill in this image's own top-right corner.
+        const inCorner = boxes.filter(box => Math.abs(img.x + img.width - 8 - box.right) <= 1
+          && Math.abs(img.y + 8 - box.top) <= 1);
+        expect(inCorner).toHaveLength(1);
+        expect(await oursAtCentre(page, id)).toEqual([]);
+      }
+
+      await expect(page.locator('#left')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 30_000 });
+      await expect(page.locator('#right')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 30_000 });
+      await expect(page.locator(ROOT)).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-badge')).toHaveCount(2);
+    } finally {
+      await service.close();
+    }
+  });
+});

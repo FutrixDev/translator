@@ -118,6 +118,29 @@ const DECOY_PAGE_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * A spread: two pages side by side, which is the one layout the whole-page
+ * entry translates more than one image of (pickComicImages).
+ */
+const SPREAD_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Spread</title></head>
+<body style="margin:0;display:flex">
+  <img id="left" src="/source.png?page=1" width="300">
+  <img id="right" src="/source.png?page=2" width="300">
+</body></html>`;
+
+/**
+ * A chapter: three pages stacked in reading order on one document, so the
+ * order a reader clicks them in is not the order they are read in.
+ */
+const CHAPTER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Chapter</title></head>
+<body style="margin:0">
+  <img class="page" src="/source.png?page=1" width="200" style="display:block">
+  <img class="page" src="/source.png?page=2" width="200" style="display:block">
+  <img class="page" src="/source.png?page=3" width="200" style="display:block">
+</body></html>`;
+
+/**
  * How a real online reader turns a page: no navigation at all.
  *
  * A small pool of <img> elements is recycled — the element that showed page 1
@@ -237,7 +260,7 @@ async function startMockService(
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
 ) {
   const state = {
-    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    polls: 0, abandons: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -260,6 +283,8 @@ async function startMockService(
     // popup offers "Translate this PDF" on it, and that click must not become
     // a comic job (popup-media-entries.spec.js).
     if (url.pathname === '/comic.pdf') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/spread') return send(200, SPREAD_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/chapter') return send(200, CHAPTER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/picture-reader') return send(200, PICTURE_READER_HTML, 'text/html; charset=utf-8');
@@ -330,6 +355,12 @@ async function startMockService(
       return;
     }
 
+    if (/^\/api\/comic\/jobs\/[^/]+\/abandon$/.test(url.pathname) && req.method === 'POST') {
+      if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+      state.abandons += 1;
+      return send(200, { jobId: 'job_test_1', status: 'abandoned' });
+    }
+
     if (url.pathname.startsWith('/api/comic/jobs/') && req.method === 'GET') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
       state.polls += 1;
@@ -391,6 +422,8 @@ module.exports = {
   DECOY_PNG,
   PAGE_HTML,
   DECOY_PAGE_HTML,
+  SPREAD_HTML,
+  CHAPTER_HTML,
   READER_HTML,
   PICTURE_READER_HTML,
   DATA_PAGES,

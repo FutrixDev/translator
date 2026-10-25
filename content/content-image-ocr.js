@@ -482,7 +482,9 @@
     const target = event.target;
     // Moving onto the bar itself keeps it up — it has to be clickable.
     if (hoverBar && hoverBar.contains(target)) return;
-    if (isEligibleHoverImage(target)) {
+    // An image with our comic pill on it already has its control; a second one
+    // would sit on top of it (content/comic/entries.js pillShownOn).
+    if (isEligibleHoverImage(target) && !ctx.comic.pillShownOn(target)) {
       if (target === hoverImage) return;
       // The switches and the comic verdict are re-read per image rather than
       // captured at setup, so flipping one in the options page, or signing

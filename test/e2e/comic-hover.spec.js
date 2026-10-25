@@ -99,7 +99,7 @@ test.describe('Comic chip on the image hover bar', () => {
       await openComicPage(page, service);
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/);
       // Put the plans offer away, not open it.
       await overlay.locator('.ai-translator-comic-btn:not(.is-primary)').click();

@@ -26,13 +26,13 @@ test.describe('Comic page translation', () => {
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
-      await expect(page.locator('.ai-translator-comic-overlay')).toBeVisible();
+      await expect(page.locator('.ai-translator-comic-progress')).toBeVisible();
 
       // The swap is the whole feature: same element, new pixels.
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
-      await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
 
       const badge = page.locator('.ai-translator-comic-badge');
       await expect(badge).toBeVisible();
@@ -67,7 +67,7 @@ test.describe('Comic page translation', () => {
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/);
       await expect(overlay).toContainText('Free pages reset on Nov 1.');
       await expect(overlay).toContainText('Plans include 300 pages a month.');
@@ -101,7 +101,7 @@ test.describe('Comic page translation', () => {
 
       await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
 
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/, { timeout: 20000 });
       // The unreadable result was NOT swapped in over a page the reader can see.
       expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);

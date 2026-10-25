@@ -244,7 +244,7 @@
 
     const overlay = comic.createOverlay(img);
     entry.overlay = overlay;
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 0.5 });
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     // Only for a job still in flight. A finished one is a single poll to mint a
     // URL, and clocking it from its original creation would open the card at
     // "47:12" for work that ended an hour ago.
@@ -562,7 +562,7 @@
         comic.dropRecord(entry.pageId, entry.mode);
         overlay.destroy();
       }
-    }]);
+    }], { open: false });
 
     while (Date.now() - startedAt < comic.JOB_TIMEOUT_MS) {
       if (entry.cancelled) return;
@@ -593,12 +593,9 @@
         return;
       }
 
-      // Server progress is coarse (queued/running/done). Creeping it with
-      // elapsed time keeps the bar honest about the stage while still moving.
-      const estimate = Math.min(0.9, 0.1 + elapsed / comic.JOB_TIMEOUT_MS * 1.6);
-      overlay.setStatus(comic.statusText(entry.mode), {
-        progress: Math.max(job.progress || 0, estimate)
-      });
+      // The server's figure is a floor; the pill creeps on from it between
+      // polls and never goes back (overlay.js).
+      overlay.setStatus(comic.statusText(entry.mode), { progress: job.progress || 0 });
     }
 
     // Give the page back rather than leaving a reservation stranded. Awaited,
