@@ -47,6 +47,9 @@
   let dismissed = false;
   // 做过了（任务交出去了）：条子收走，不再出来。PDF 一有任务记录就改听任务的。
   let done = false;
+  // 交出去那一下条子上是哪一档旧记录（content-pdf-page-job.js 的 key()）：回话之后
+  // 读到的还是它，就是这一下没写新记录（问价、没交成），由 done 说话。
+  let staleJob = '';
   // 正在登录 / 正在交任务：按钮钉住，快捷键再按也不派第二份。
   let busy = false;
 
@@ -123,9 +126,13 @@
       // 交出去了，提示就收走，接力的是任务自己的界面：漫画是卡片，PDF 是这条条子
       // 说的任务（服务工作者回话时记录已经写好，读一遍 ctx.pdfPageJob 就接过条子）。
       // 没送到就留着，让他还有一个能再点一次的东西。
+      const before = pdfPage ? ctx.pdfPageJob.key() : '';
       const sent = await dispatch(kind);
       if (sent && kind === 'pdf' && pdfPage) await ctx.pdfPageJob.resync();
-      if (sent && kind === hint) done = true;
+      if (sent && kind === hint) {
+        done = true;
+        staleJob = before;
+      }
     } finally {
       busy = false;
       paint();
@@ -177,9 +184,10 @@
       ctx.showAutoStatusOffer(shown);
       return;
     }
-    // 有任务记录时由任务说提示回不回来（取消了、还能重来的失败关掉之后要回来），
-    // done 只管还没有记录的那一下（问价、没交成）。
-    const handedOff = pdfPage && ctx.pdfPageJob.hasJob() ? ctx.pdfPageJob.ownsBar() : done;
+    // 有新记录时由任务说提示回不回来（取消了、还能重来的失败关掉之后要回来）；
+    // 没有记录、或者还是点之前那一档，由 done 说（问价、没交成）。
+    const current = pdfPage ? ctx.pdfPageJob.key() : '';
+    const handedOff = current && !(done && current === staleJob) ? ctx.pdfPageJob.ownsBar() : done;
     if (!hint || dismissed || handedOff || switchedOff(hint)) {
       ctx.showAutoStatusOffer(null);
       return;

@@ -478,6 +478,7 @@ test('View redraws the bar once the reader is open, so it can be clicked again',
     page.lastOffer().accept.run();
     await flush();
     assert.ok(page.offers.length > drawn, `click ${click}: the bar was not drawn again, its View stays pinned`);
+    assert.equal(page.lastOffer().busy, false, `click ${click}: the bar was drawn with its button still pinned`);
     assert.equal(page.lastOffer().accept.text, 'pdfViewTranslation');
   }
   assert.equal(page.sent.filter((m) => m.type === 'PDF_OPEN_JOB').length, 2);
@@ -663,6 +664,28 @@ test('a job started here and then cancelled gives the hint back once it is close
   assert.equal(page.lastOffer().text, 'Cancelled');
   page.lastOffer().dismiss();
   assert.equal(page.lastOffer().text, 'mediaHintPdf', 'a cancelled job closed in this tab left no way to start again');
+});
+
+test('a click that writes no new record keeps the hint away, even over a closed old job', async () => {
+  // A cancelled job, closed; then Translate, which the worker answers with a
+  // charge question and no record: the newest record is still the old one.
+  const { page, answer } = pdfWithJob(job({ phase: 'abandoned', text: 'Cancelled' }));
+  page.ctx.setupMediaHints();
+  await flush();
+  await flush();
+  page.lastOffer().dismiss();
+  assert.equal(page.lastOffer().text, 'mediaHintPdf');
+  page.lastOffer().accept.run();
+  await flush();
+  await flush();
+  await flush();
+  assert.equal(page.lastOffer(), null, 'the hint came back with Translate under an open charge question');
+
+  // Once the answer starts a job, its record takes the bar.
+  answer(job({ operationId: 'op-2', phase: 'running', text: 'Translating this PDF… 5%' }));
+  page.storageChange();
+  await flush();
+  assert.equal(page.lastOffer().text, 'Translating this PDF… 5%');
 });
 
 test('awaiting confirmation sends the user to the job page', async () => {

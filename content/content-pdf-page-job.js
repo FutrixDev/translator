@@ -132,9 +132,9 @@
       return syncJob(false);
     },
 
-    /** 这一页有没有任务记录（有就由 ownsBar 说提示回不回来）。 */
-    hasJob() {
-      return !!job;
+    /** 这一页任务记录此刻是哪一档（operationId:phase），没有记录是 ''。 */
+    key() {
+      return job ? jobKey(job) : '';
     },
 
     /** 条子此刻该说的任务，或 null（没有任务，或这一档他关掉了）。 */
