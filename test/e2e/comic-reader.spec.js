@@ -188,6 +188,36 @@ test.describe('Comic page translation — reader', () => {
     }
   });
 
+  test('a page turned away from during its upload is still ordered as that page', async ({ context, page }) => {
+    // The upload is the first thing a job does, and it can take seconds: the
+    // reader is free to turn the page meanwhile, which leaves the entry holding
+    // no element. Where the page sat, and its URL, were read at the click.
+    const service = await startMockService('succeed', { uploadDelayMs: 3000 });
+    const worker = await connectExtension(context, service.base);
+    try {
+      await page.goto(`${service.base}/reader`);
+      await expect(page).toHaveURL(readerPage(service.base, 1));
+
+      const slots = page.locator('.page_img');
+      await triggerReaderTranslation(worker, service.base, 1);
+      await expect.poll(() => service.state.puts.length).toBe(1);
+      await page.evaluate(() => window.turnTo(2));
+      await page.evaluate(() => window.turnTo(3));
+      await expect(slots.nth(1)).toHaveAttribute('src', '/source.png?page=3');
+
+      await expect.poll(() => service.state.createBodies.length, { timeout: 10000 }).toBe(1);
+      const [created] = service.state.createBodies;
+      expect(created.sourceKey).toBe(service.state.puts[0].sourceKey);
+      expect(Number.isInteger(created.pageIndex)).toBe(true);
+      expect(created.pageId).toBeTruthy();
+
+      await page.evaluate(() => window.turnTo(1));
+      await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+    } finally {
+      await service.close();
+    }
+  });
+
   test('a redraw that lands while the reader has turned away waits for them', async ({ context, page }) => {
     // The reader does not sit and watch: they turn the page while it renders.
     // The card belongs to the page it was started on — leaving it up would

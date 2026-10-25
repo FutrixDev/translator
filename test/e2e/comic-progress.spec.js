@@ -3,7 +3,8 @@
  *
  * 跑着的漫画任务只占图片右上角一枚小标：页面中央不能有我们的任何元素，标不超过
  * 220×40、不超过图面积 6%，数字两秒内至少动一次；悬浮条在任务期间不出；点标打开
- * 卡片（计时、取消），卡片在标下方、右对齐、不超过 280 宽。服务是 comic-fixtures.js
+ * 卡片（计时、取消），要读者回答的（登录、扣费）卡片自己打开；卡片在标下方、右对齐、
+ * 不超过 280 宽、没有遮罩。服务是 comic-fixtures.js
  * 里那台模拟的。
  */
 const { test, expect } = require('./fixtures');
@@ -28,6 +29,20 @@ function oursAtCentre(page, selector = '#comic') {
       .filter(element => element.matches(ours))
       .map(element => element.className || element.id);
   }, OURS);
+}
+
+/** The open card hangs under the pill, right-aligned, no wider than 280, with no backdrop. */
+async function expectCardUnderPill(page) {
+  const card = page.locator(CARD);
+  await expect(card).toBeVisible();
+  const pillBox = await page.locator(PILL).boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(cardBox.width).toBeLessThanOrEqual(280);
+  expect(cardBox.y).toBeGreaterThanOrEqual(pillBox.y + pillBox.height);
+  expect(Math.abs(cardBox.x + cardBox.width - (pillBox.x + pillBox.width))).toBeLessThanOrEqual(1);
+  expect(await oursAtCentre(page)).toEqual([]);
+  const widest = await page.locator(ROOT).evaluate(root => root.getBoundingClientRect().width);
+  expect(widest).toBeLessThanOrEqual(280);
 }
 
 test.describe('Comic progress pill', () => {
@@ -95,15 +110,7 @@ test.describe('Comic progress pill', () => {
       await expect(card.locator('.ai-translator-comic-timer')).toHaveText(/^\d+:\d{2}$/);
       await expect(cancel).toHaveText('Cancel');
 
-      const pillBox = await page.locator(PILL).boundingBox();
-      const cardBox = await card.boundingBox();
-      expect(cardBox.width).toBeLessThanOrEqual(280);
-      expect(cardBox.y).toBeGreaterThanOrEqual(pillBox.y + pillBox.height);
-      expect(Math.abs(cardBox.x + cardBox.width - (pillBox.x + pillBox.width))).toBeLessThanOrEqual(1);
-      expect(await oursAtCentre(page)).toEqual([]);
-      // No backdrop: nothing of ours is wider than the card.
-      const widest = await page.locator(ROOT).evaluate(root => root.getBoundingClientRect().width);
-      expect(widest).toBeLessThanOrEqual(280);
+      await expectCardUnderPill(page);
 
       // A second click folds it again.
       await page.locator(PILL).click();
@@ -114,6 +121,54 @@ test.describe('Comic progress pill', () => {
       await expect(page.locator(ROOT)).toHaveCount(0);
       await expect.poll(() => service.state.abandons).toBe(1);
       await expect(page.locator('#comic')).toHaveAttribute('src', '/source.png');
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a charge is asked in the card under the pill, and saying yes starts the job', async ({ context, page }) => {
+    const service = await startMockService('confirm');
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      // The question opens the card by itself: the reader has to answer it.
+      const card = page.locator(CARD);
+      const approve = card.locator('.ai-translator-comic-btn.is-primary');
+      await expect(approve).toHaveText('Use Credits');
+      await expectCardUnderPill(page);
+      expect(service.state.createBodies).toHaveLength(1);
+
+      await approve.click();
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
+      // Yes is the same operation again, with the same upload, not a second one.
+      const [asked, confirmed] = service.state.createBodies;
+      expect(asked.confirmCharge).toBeFalsy();
+      expect(confirmed.confirmCharge).toBe(true);
+      expect(confirmed.operationId).toBe(asked.operationId);
+      expect(confirmed.sourceKey).toBe(asked.sourceKey);
+      expect(service.state.puts).toHaveLength(1);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('signed out, the card under the pill signs in and the job goes on', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      const worker = await connectExtension(context, service.base, { signedIn: false });
+      await openComicPage(page, service);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
+      await expect(signIn).toHaveText('Sign In');
+      await expectCardUnderPill(page);
+
+      await signIn.click();
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
+      expect(service.state.connects).toBe(1);
+      expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();
     }

@@ -254,13 +254,23 @@ const DATA_READER_HTML = `<!doctype html>
  * has navigated. A count cannot express that: the reload resets nothing
  * server-side, so a job held for two polls is already done by the time the new
  * document asks.
+ *
+ * The page reaches the service the way the real one takes it: a ticket from
+ * POST /api/comic/uploads, a PUT of the bytes to the ticket's presigned URL
+ * (here `/upload/<sourceKey>` on this origin), then the create naming that
+ * `sourceKey`. `tickets` and `puts` record the first two; `chapters` files each
+ * create under its pageUrl, `{ [pageId]: pageIndex }`, which is how the real
+ * service groups a chapter's pages. `uploadDelayMs` holds the PUT's answer
+ * back; `Infinity` never answers it, which is what a stalled storage upload
+ * looks like from the worker.
  */
 async function startMockService(
   behaviour = 'succeed',
-  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
+  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0 } = {},
 ) {
   const state = {
     polls: 0, abandons: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    tickets: [], puts: [], chapters: {},
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -329,18 +339,52 @@ async function startMockService(
       return send(200, { version: 'test', planQuotas: { pro_monthly: { pdf_page: 1000, comic_page: 300 } } });
     }
 
-    if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
-      let raw = '';
-      req.on('data', chunk => { raw += chunk; });
+    if (url.pathname === '/api/comic/uploads' && req.method === 'POST') {
+      return readJson(req, (body) => {
+        state.tickets.push(body);
+        if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+        const pages = Array.isArray(body.pages) ? body.pages : [];
+        if (!body.operationId || pages.length !== 1) return send(400, { error: 'invalid_request' });
+        const [{ index, format }] = pages;
+        if (!UPLOAD_TYPES[format]) return send(400, { error: 'unsupported_format' });
+        const sourceKey = `comic-src/${body.operationId}/${index}.${format}`;
+        send(200, {
+          operationId: body.operationId,
+          maxBytes: 20 * 1024 * 1024,
+          tickets: [{ index, sourceKey, uploadUrl: `${base}/upload/${sourceKey}?sig=test`, contentType: UPLOAD_TYPES[format] }],
+        });
+      });
+    }
+
+    if (url.pathname.startsWith('/upload/') && req.method === 'PUT') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
-        const body = JSON.parse(raw || '{}');
+        state.puts.push({
+          sourceKey: url.pathname.slice('/upload/'.length),
+          contentType: req.headers['content-type'] || '',
+          bytes: Buffer.concat(chunks),
+          authorization: req.headers.authorization || '',
+        });
+        // Infinity leaves it open: the worker's own deadline is the only way out.
+        if (uploadDelayMs === Infinity) return;
+        setTimeout(() => send(200, '', 'text/plain'), uploadDelayMs);
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
+      return readJson(req, (body) => {
         state.createBodies.push(body);
         if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
-        // The service takes bytes and only bytes — there is no "here is a URL,
-        // go fetch it" mode, because a URL the server dereferences is whatever
-        // the page the reader right-clicked said. Mirroring the real 400 means a
-        // client that regressed to posting a URL fails here instead of passing.
-        if (!body.imageBase64) return send(400, { error: 'missing_image' });
+        // The service reads the page from its own storage and nowhere else —
+        // no URL to dereference, no bytes in the body. A create naming a key
+        // nobody uploaded is refused, as the real one is.
+        if (!body.sourceKey || !state.puts.some(put => put.sourceKey === body.sourceKey)) {
+          return send(400, { error: 'source_missing' });
+        }
+        const chapter = state.chapters[body.pageUrl] || (state.chapters[body.pageUrl] = {});
+        chapter[body.pageId] = body.pageIndex;
         if (behaviour === 'insufficient') {
           return send(402, {
             error: 'insufficient_points',
@@ -350,9 +394,16 @@ async function startMockService(
             quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 2, points: 2, balancePoints: 0 },
           });
         }
+        // Credits beyond the allowance: refused until the reader says yes, then
+        // the same operation goes through (shared/comic-charge.js).
+        if (behaviour === 'confirm' && body.confirmCharge !== true) {
+          return send(409, {
+            error: 'QUOTE_CONFIRM_REQUIRED',
+            quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 10, points: 10, balancePoints: 120 },
+          });
+        }
         send(202, { jobId: 'job_test_1', status: 'queued', progress: 0.05, quote: { points: 10 } });
       });
-      return;
     }
 
     if (/^\/api\/comic\/jobs\/[^/]+\/abandon$/.test(url.pathname) && req.method === 'POST') {
@@ -389,6 +440,14 @@ async function startMockService(
   });
 
   return { base: origin, state, close };
+}
+
+const UPLOAD_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
+
+function readJson(req, then) {
+  let raw = '';
+  req.on('data', chunk => { raw += chunk; });
+  req.on('end', () => then(JSON.parse(raw || '{}')));
 }
 
 /** Stand in for the context-menu click, which is a native menu Playwright cannot open. */

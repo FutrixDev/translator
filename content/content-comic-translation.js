@@ -362,6 +362,11 @@
     entry.running = true;
     entry.cancelled = false;
     comic.trackEntry(entry);
+    // Read now, while `img` is certainly this page: the reader may turn away
+    // during the upload, and a detached entry holds neither. The index is the
+    // place the page holds among the comic pages in the DOM, the order the
+    // chapter is read in.
+    const page = { imageUrl: entry.originalSrc, pageIndex: comic.pageIndexOf(img) };
 
     // A retry after an error leaves the previous overlay sitting on the image;
     // two stacked cards over one page is not a state worth having.
@@ -424,7 +429,7 @@
       // twice. A *new* click gets a new id on purpose — reusing one would hand
       // back the previous (failed) job instead of trying again.
       entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await runJob({ entry, overlay, pageUrl, targetLang });
+      await runJob({ entry, overlay, page, pageUrl, targetLang });
     } finally {
       entry.running = false;
     }
@@ -480,7 +485,7 @@
     return false;
   }
 
-  async function runJob({ entry, overlay, pageUrl, targetLang }) {
+  async function runJob({ entry, overlay, page, pageUrl, targetLang }) {
     // One label for the whole run. The stages underneath — preparing, uploading
     // pixels, queued, downloading the result — are ours, not the reader's, and
     // narrating them made a 90-second wait look like four separate things going
@@ -489,39 +494,16 @@
     overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
-    let created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
+    const uploaded = await withSignIn({ entry, overlay }, () => uploadPage(entry, page.imageUrl));
+    if (!uploaded.ok) {
+      if (!uploaded.declined) comic.showJobError(overlay, uploaded.error);
+      return;
+    }
 
+    const created = await withSignIn({ entry, overlay }, () => submitJob({
+      entry, overlay, pageUrl, targetLang, pageIndex: page.pageIndex, sourceKey: uploaded.data.sourceKey
+    }));
     if (!created.ok && created.declined) return;
-
-    if (!created.ok && created.error.code === 'unauthorized') {
-      // Sign-in is the one interruption that is genuinely the user's turn, so
-      // the clock stops rather than counting their typing as redraw time.
-      overlay.stopTimer();
-      const signedIn = await comic.promptSignIn(overlay);
-      if (!signedIn) return;
-      overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
-      overlay.startTimer(Date.now());
-      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
-      if (!created.ok && created.declined) return;
-    }
-
-    if (!created.ok && created.error.needsPageBytes) {
-      // The worker could not read the file — a blob:/data: src, or an origin
-      // that refuses a request without a Referer. The page has already decoded
-      // it either way, so send the pixels we can see.
-      overlay.setStatus(comic.statusText(entry.mode), { progress: 0.05 });
-      // Only from the element still holding this page. Sign-in or a slow fetch
-      // can have taken long enough for the reader to turn away, and a recycled
-      // slot would hand over another page's pixels under this job's name.
-      const imageBase64 = comic.entryMatchesImage(entry, entry.img) ? capturePageBytes(entry.img) : null;
-      if (!imageBase64) {
-        overlay.setError(t('comicImageUnavailable'));
-        comic.offerDismiss(overlay);
-        return;
-      }
-      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 });
-      if (!created.ok && created.declined) return;
-    }
 
     if (!created.ok) {
       comic.showJobError(overlay, created.error);
@@ -635,12 +617,57 @@
   }
 
   /**
+   * Run one request to the service, and if it says the reader is signed out,
+   * offer the sign-in and run it once more.
+   *
+   * Sign-in is the one interruption that is genuinely the user's turn, so the
+   * clock stops rather than counting their typing as redraw time. Resolves to
+   * the step's envelope, or `{ ok: false, declined: true }` when the reader
+   * closed the sign-in.
+   */
+  async function withSignIn({ entry, overlay }, step) {
+    const result = await step();
+    if (result.ok || result.declined || result.error.code !== 'unauthorized') return result;
+    overlay.stopTimer();
+    if (!(await comic.promptSignIn(overlay))) return { ok: false, declined: true };
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    overlay.startTimer(Date.now());
+    return step();
+  }
+
+  /**
+   * Put the page in storage: `{ ok, data: { sourceKey } }`.
+   *
+   * The worker reads the file first. When it cannot — a blob:/data: src, or an
+   * origin that refuses a request without a Referer — the page has already
+   * decoded it either way, so we send the pixels we can see.
+   */
+  async function uploadPage(entry, imageUrl) {
+    const fromWorker = await sendUpload(entry, { imageUrl });
+    if (fromWorker.ok || !fromWorker.error.needsPageBytes) return fromWorker;
+    // Only from the element still holding this page. Sign-in or a slow fetch
+    // can have taken long enough for the reader to turn away, and a recycled
+    // slot would hand over another page's pixels under this job's name.
+    const pageBytes = comic.entryMatchesImage(entry, entry.img) ? capturePageBytes(entry.img) : null;
+    if (!pageBytes) return { ok: false, error: { code: 'image_unreadable' } };
+    return sendUpload(entry, { pageBytes });
+  }
+
+  function sendUpload(entry, source) {
+    return sendMessage({
+      type: 'COMIC_PAGE_UPLOAD',
+      consent: entry.consent === true,
+      page: { operationId: entry.operationId, ...source }
+    });
+  }
+
+  /**
    * Order the page, stopping for the reader's consent if the server asks.
    *
    * Every create in runJob goes through here rather than through createJob,
-   * because the 409 can land on any of them: the first attempt, the retry after
-   * a sign-in (a signed-out user has no balance to quote against, so their
-   * *first* quote arrives here), and the re-upload after needsPageBytes.
+   * because the 409 can land on any of them: the first attempt and the retry
+   * after a sign-in (a signed-out user has no balance to quote against, so
+   * their *first* quote arrives here).
    *
    * The prompt is drawn on the overlay — the card already pinned to the page
    * being ordered. It is the only surface in this feature that can say WHICH
@@ -657,12 +684,13 @@
    * job id exists yet, so there is nothing to abandon, nothing to remember and
    * nothing to refund — the caller just returns.
    */
-  function submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 }) {
+  function submitJob({ entry, overlay, pageUrl, targetLang, pageIndex, sourceKey }) {
     return ComicCharge.submitWithConfirmation({
       // A closure, not a parameter, and that is the point: the retry after a
-      // confirmation can only reach entry.operationId, so it structurally
-      // cannot become a second operation the server would charge twice for.
-      submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }),
+      // confirmation can only reach entry.operationId and this sourceKey, so it
+      // structurally cannot become a second operation the server would charge
+      // twice for, nor a second upload.
+      submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }),
       confirm: async (quote) => {
         // The reader's turn, so the clock stops — exactly as it does for
         // sign-in. Counting the time someone spends reading a price as redraw
@@ -677,7 +705,7 @@
     });
   }
 
-  function createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }) {
+  function createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }) {
     return sendMessage({
       type: 'COMIC_JOB_CREATE',
       consent: entry.consent === true,
@@ -685,15 +713,15 @@
         operationId: entry.operationId,
         // Only ever true, and only after the reader said so — see submitJob.
         confirmCharge: confirmCharge === true,
-        // For the *worker* to fetch, not the service — the service only ever
-        // receives bytes. Skipped once we already hold them.
-        imageUrl: imageBase64 ? null : entry.originalSrc,
-        imageBase64,
+        sourceKey,
+        // The chapter: every page translated off this address is one document.
         pageUrl: pageUrl || location.href,
         // The tab's title, the name the reader knows the page by: comic jobs
         // start only in the top frame (content/frames/shelf.js).
         pageTitle: document.title,
-        sourceLang: 'auto',
+        pageIndex,
+        // Same page, same id: translating it again replaces it in the chapter.
+        pageId: entry.pageId,
         targetLang,
         mode: entry.mode
       }

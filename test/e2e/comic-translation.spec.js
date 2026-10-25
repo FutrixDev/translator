@@ -11,10 +11,22 @@
 const { test, expect } = require('./fixtures');
 const { connectExtension } = require('./helpers');
 const {
+  SOURCE_PNG,
   startMockService,
   triggerComicTranslation,
   triggerComicPageTranslation,
 } = require('./comic-fixtures');
+
+const IMAGE_MAGIC = [Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.from([0xff, 0xd8, 0xff])];
+
+/** The create's page was re-encoded by the page's canvas, not the file the server holds. */
+function expectCanvasUpload(service, created) {
+  expect(created.imageBase64).toBeUndefined();
+  const put = service.state.puts.find(entry => entry.sourceKey === created.sourceKey);
+  expect(put).toBeTruthy();
+  expect(IMAGE_MAGIC.some(magic => put.bytes.subarray(0, magic.length).equals(magic))).toBe(true);
+  expect(put.bytes.equals(SOURCE_PNG)).toBe(false);
+}
 
 test.describe('Comic page translation', () => {
   test('replaces the page in place and can flip back to the original', async ({ context, page }) => {
@@ -135,10 +147,18 @@ test.describe('Comic page translation', () => {
       // fetched the file itself, carrying the site's cookies and exempt from
       // CORS. Nothing in the body tells the service where the pixels came from.
       expect(created.imageUrl).toBeUndefined();
-      expect(created.imageBase64).toBeTruthy();
-      // Bare base64 is the signature of the worker fetch — the page-canvas rung
-      // below sends a data: URL instead, which is how the two are told apart.
-      expect(created.imageBase64.startsWith('data:')).toBe(false);
+      expect(created.imageBase64).toBeUndefined();
+      // One ticket, one PUT of exactly the file the server sent, and the create
+      // names what was put. The bytes going up unchanged is the signature of the
+      // worker fetch — the page-canvas rung below re-encodes them.
+      expect(service.state.tickets).toHaveLength(1);
+      expect(service.state.tickets[0].pages).toEqual([{ index: 0, format: 'png', byteSize: SOURCE_PNG.length }]);
+      expect(service.state.puts).toHaveLength(1);
+      const [put] = service.state.puts;
+      expect(put.contentType).toBe('image/png');
+      expect(put.authorization).toBe('');
+      expect(put.bytes.equals(SOURCE_PNG)).toBe(true);
+      expect(created.sourceKey).toBe(put.sourceKey);
     } finally {
       await service.close();
     }
@@ -166,9 +186,9 @@ test.describe('Comic page translation', () => {
       expect(service.state.createBodies).toHaveLength(1);
       const [upload] = service.state.createBodies;
       expect(upload.imageUrl).toBeUndefined();
-      // A data: URL rather than bare base64 is the signature of the canvas
-      // path: the page re-encoded what it had already decoded.
-      expect(upload.imageBase64.startsWith('data:image/')).toBe(true);
+      // Bytes that are an image but not the file the server holds are the
+      // signature of the canvas path: the page re-encoded what it had decoded.
+      expectCanvasUpload(service, upload);
     } finally {
       await service.close();
     }
@@ -198,7 +218,7 @@ test.describe('Comic page translation', () => {
       const [upload] = service.state.createBodies;
       // Recovered by the canvas, exactly as a 403 does — the point is that the
       // HTML never became an upload.
-      expect(upload.imageBase64.startsWith('data:image/')).toBe(true);
+      expectCanvasUpload(service, upload);
     } finally {
       await service.close();
     }
@@ -308,8 +328,9 @@ test.describe('Comic page translation', () => {
       // and thrown the translation away.
       expect(service.state.createBodies[1].mode).toBe('translate_colorize');
       // And from the original bytes, not from the translated result.
-      expect(service.state.createBodies[1].imageBase64)
-        .toBe(service.state.createBodies[0].imageBase64);
+      const putFor = body => service.state.puts.find(put => put.sourceKey === body.sourceKey);
+      expect(putFor(service.state.createBodies[1]).bytes.equals(SOURCE_PNG)).toBe(true);
+      expect(putFor(service.state.createBodies[0]).bytes.equals(SOURCE_PNG)).toBe(true);
 
       await expect(page.locator('.ai-translator-comic-badge')).toBeVisible({ timeout: 20000 });
       const recordKeys = await worker.evaluate(

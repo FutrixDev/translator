@@ -78,7 +78,7 @@ function send(message) {
 const comicCreate = (consent) => ({
   type: 'COMIC_JOB_CREATE',
   consent,
-  job: { operationId: `op-${consent}`, imageBase64: 'AAAA', pageUrl: 'https://comics.example/read/1', mode: 'translate' },
+  job: { operationId: `op-${consent}`, sourceKey: `comic-src/op-${consent}/0.png`, pageUrl: 'https://comics.example/read/1', mode: 'translate' },
 });
 
 test('comic, switched off: the hint\'s consent runs the job for this page', async () => {
@@ -92,6 +92,18 @@ test('comic, switched off: the hint\'s consent runs the job for this page', asyn
 test('comic, switched off: without consent the create is refused before the network', async () => {
   requests.length = 0;
   const reply = await send(comicCreate(false));
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error.code, 'feature_disabled');
+  assert.deepEqual(requests, []);
+});
+
+test('comic, switched off: the page upload is behind the same switch', async () => {
+  requests.length = 0;
+  const reply = await send({
+    type: 'COMIC_PAGE_UPLOAD',
+    consent: false,
+    page: { operationId: 'op-upload', imageUrl: 'https://comics.example/p1.png' },
+  });
   assert.equal(reply.ok, false);
   assert.equal(reply.error.code, 'feature_disabled');
   assert.deepEqual(requests, []);

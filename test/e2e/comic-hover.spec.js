@@ -14,8 +14,11 @@ const BAR = '#ai-translator-image-hover-bar';
 const COMIC_CHIP = '#ai-translator-comic-hover-btn';
 const OCR_CHIP = '#ai-translator-ocr-hover-btn';
 
-/** Everything in a create request that is not the per-click idempotency key. */
-function withoutOperationId({ operationId, ...rest }) {
+/**
+ * Everything in a create request that is not per click: the idempotency key,
+ * and the storage key the service minted under it for this click's upload.
+ */
+function withoutOperationId({ operationId, sourceKey, ...rest }) {
   return rest;
 }
 
@@ -114,6 +117,7 @@ test.describe('Comic chip on the image hover bar', () => {
       const [fromMenu, fromChip] = service.state.createBodies;
       expect(fromChip.operationId).toBeTruthy();
       expect(fromChip.operationId).not.toBe(fromMenu.operationId);
+      expect(fromChip.sourceKey).toBeTruthy();
       expect(withoutOperationId(fromChip)).toEqual(withoutOperationId(fromMenu));
     } finally {
       await service.close();

@@ -33,7 +33,7 @@ await import('../../shared/comic-charge.js');
 const ComicCharge = globalThis.ComicCharge;
 
 const OPERATION_ID = '1756400000000-op7x3';
-const IMAGE_BASE64 = 'data:image/png;base64,iVBORw0KGgo=';
+const SOURCE_KEY = `comic-src/${OPERATION_ID}/0.png`;
 
 /** A signed-in service worker: a live token and nothing else. */
 function installChrome() {
@@ -108,9 +108,11 @@ const comic = await import('../../background/comic-client.js');
 function submitOnce(confirmCharge) {
   return comic.createJob({
     operationId: OPERATION_ID,
-    imageBase64: IMAGE_BASE64,
+    sourceKey: SOURCE_KEY,
     pageUrl: 'https://example.test/ch1/p3',
-    sourceLang: 'auto',
+    pageTitle: 'Chapter 1',
+    pageIndex: 2,
+    pageId: 'p3',
     targetLang: 'zh-CN',
     mode: 'translate',
     confirmCharge
@@ -137,6 +139,13 @@ test('a 409 that the user confirms is resent as the SAME operation, with confirm
   // one. A new id here would be a second charge for the same page.
   assert.equal(posts[0].body.operationId, OPERATION_ID);
   assert.equal(posts[1].body.operationId, OPERATION_ID);
+  // And the same upload: the confirmed create names the page already put, it
+  // does not ask for a second ticket.
+  assert.equal(posts[0].body.sourceKey, SOURCE_KEY);
+  assert.equal(posts[1].body.sourceKey, SOURCE_KEY);
+  assert.equal(posts[1].body.pageIndex, 2);
+  assert.equal(posts[1].body.pageId, 'p3');
+  assert.equal('imageBase64' in posts[1].body, false);
 
   // The first create makes no claim at all — absent is the server's default and
   // already means "not confirmed" — and only the second one says yes.

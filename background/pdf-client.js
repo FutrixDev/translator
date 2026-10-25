@@ -17,7 +17,7 @@
 // What a document is — formats, limits, MIME types, the sniff, the status sets
 // — lives in shared/doc-jobs.js. Nothing here keeps a copy.
 
-import { apiFetch, getToken, ComicApiError } from './comic-client.js';
+import { apiFetch, getToken, ComicApiError, nonEmptyString, putPresigned } from './comic-client.js';
 // Side-effect modules (no exports): each publishes itself on globalThis, the
 // same dual-mode arrangement as i18n/messages.js. doc-jobs first, because the
 // error map reads it.
@@ -42,10 +42,6 @@ function tooLargeError(format, bytes) {
     413,
     { maxBytes: DocJobs.maxBytesFor(format), bytes, format }
   );
-}
-
-function nonEmptyString(value) {
-  return typeof value === 'string' && value.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,29 +126,11 @@ export async function requestUploadTicket({ operationId, byteSize, sourceFormat 
 }
 
 /**
- * The worker's own presigned PUT (the URL path). No bearer token: the
- * signature in the URL is the entire authorization.
- *
- * The log line carries the status and the operation id and nothing else — the
- * URL is a credential for as long as it lives, and a storage error body can
- * echo it back.
+ * The worker's own presigned PUT (the URL path), through the one presigned-PUT
+ * implementation in comic-client.js.
  */
-export async function putSource(uploadUrl, bytes, format, operationId) {
-  let response;
-  try {
-    response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'content-type': DocJobs.contentTypeFor(format) },
-      body: bytes
-    });
-  } catch (error) {
-    console.warn(`[pdf] presigned PUT failed: network op=${operationId}`);
-    throw new ComicApiError('upload_failed', error?.message || 'Uploading the document failed');
-  }
-  if (!response.ok) {
-    console.warn(`[pdf] presigned PUT failed: HTTP ${response.status} op=${operationId}`);
-    throw new ComicApiError('upload_failed', `Uploading the document failed (HTTP ${response.status})`, response.status);
-  }
+export function putSource(uploadUrl, bytes, format, operationId) {
+  return putPresigned(uploadUrl, bytes, { contentType: DocJobs.contentTypeFor(format), operationId, label: 'pdf' });
 }
 
 /**

@@ -238,6 +238,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // `consent`: the media shortcut or the comic hint asked for this page
     // (content/content-media-hints.js), which runs it even with the switch off.
+    // A page is uploaded first and the job created against its sourceKey.
+    case 'COMIC_PAGE_UPLOAD':
+      replyComic(
+        assertFeatureEnabled('enableComicTranslation', { consent: message.consent === true })
+          .then(() => comicClient.uploadPage(message.page || {})),
+        sendResponse,
+      );
+      return true;
+
     case 'COMIC_JOB_CREATE':
       replyComic(
         assertFeatureEnabled('enableComicTranslation', { consent: message.consent === true })

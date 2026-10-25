@@ -272,6 +272,26 @@
     return kept;
   }
 
+  /**
+   * This page's place in the chapter: its index among the comic pages in the
+   * document, in DOM order — the order a reader scrolls through them, not the
+   * order they were clicked in.
+   *
+   * Every spot counts once (distinctPages), so a placeholder or a decoy in the
+   * same box as a page does not push the pages after it down. An image that
+   * is not itself a comic page (a context-menu click on a small one) is placed
+   * among them all the same. Only decoded images can be judged, so a page a
+   * lazy reader has not loaded yet is not counted; pages are read top down,
+   * so one not loaded yet is nearly always after the page being translated.
+   */
+  function pageIndexOf(img) {
+    const own = img.getBoundingClientRect();
+    const pages = distinctPages(Array.from(document.images).filter(isComicPage))
+      .filter(page => page.img !== img && rectOverlap(page.rect, own) <= SAME_SPOT_RATIO)
+      .map(page => page.img);
+    return pages.filter(page => page.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+  }
+
   // A reader page stacks its pages one under the next; a gallery lays them out in
   // a grid, and an article has one big picture. Three is where "a column of
   // artwork" stops being a coincidence of layout.
@@ -342,6 +362,6 @@
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, MAX_UPLOAD_BYTES, PAGE_ID_ATTR,
     POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
-    pageIdOf, pageIdOfSrc, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
+    pageIdOf, pageIdOfSrc, pageIndexOf, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });
 })();
