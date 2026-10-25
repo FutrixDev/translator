@@ -35,7 +35,8 @@
       '#ai-translator-auto-bar',
       '#ai-translator-source-peek',
       '#ai-translator-rule-picker',
-      '.ai-translator-comic-progress'
+      '.ai-translator-comic-progress',
+      '.ai-translator-comic-summary'
     ].join(', ');
     ctx.constants = {
       FLOAT_BALL_SIZE: 36,

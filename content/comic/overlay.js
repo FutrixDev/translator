@@ -218,6 +218,8 @@
     let progressBase = null;
     let progressBaseAt = 0;
     let pctShown = '';
+    // Why the job failed, while the pill says it did; null otherwise.
+    let failed = null;
 
     const tick = (rect) => {
       // Width first, so the box placed this frame is the final one.
@@ -284,6 +286,8 @@
     return {
       element: root,
       destroy,
+      /** The reason setError showed, or null while the job is not failed. */
+      failure: () => failed,
       /** Follow the job onto the element that now holds its page. */
       rebind(next) {
         host = next;
@@ -321,6 +325,7 @@
        * no number). Not busy means the job is waiting on the reader.
        */
       setStatus(text, { progress = null, busy = true } = {}) {
+        failed = null;
         root.classList.remove('is-error');
         root.classList.toggle('is-busy', busy);
         label.textContent = text;
@@ -337,6 +342,7 @@
        * says what it is waiting for (`label`), and the card holds the question.
        */
       ask(text, { label: waitingFor }) {
+        failed = null;
         root.classList.remove('is-error', 'is-busy');
         label.textContent = waitingFor;
         pill.title = waitingFor;
@@ -365,6 +371,7 @@
       },
       /** The job is over and did not succeed: the pill says so, the card why. */
       setError(text) {
+        failed = text;
         root.classList.add('is-error');
         root.classList.remove('is-busy');
         label.textContent = t('comicFailed');

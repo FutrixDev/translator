@@ -50,6 +50,18 @@ test('the sign-in tab is tagged signin and carries state and redirect_uri; no ta
   }
 });
 
+test('reader: a comic chapter opens at its page; only a non-negative integer is one', () => {
+  assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex: 3 }),
+    `https://blab.test/app/reader/asset_1?${tag('comic_summary')}&pageIndex=3`);
+  assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex: 0 }),
+    `https://blab.test/app/reader/asset_1?${tag('comic_summary')}&pageIndex=0`);
+  for (const pageIndex of [undefined, null, -1, 1.5, '2', NaN]) {
+    assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex }),
+      `https://blab.test/app/reader/asset_1?${tag('comic_summary')}`, String(pageIndex));
+  }
+  assert.equal(SiteLinks.reader('javascript:alert(1)', 'asset_1', 'comic_summary', { pageIndex: 2 }), '');
+});
+
 test('reader: no link for no id or a pending local: id; only the prefix marks one pending', () => {
   for (const id of ['', null, undefined, 'local:op-1']) {
     assert.equal(SiteLinks.reader('https://blab-translation.com', id, 'popup'), '', String(id));
@@ -63,7 +75,7 @@ test('an entry the list does not name throws instead of filing the visit under a
     assert.throws(() => SiteLinks.pricing('https://blab.test', medium), /SiteLinks: unknown entry/, String(medium));
     assert.throws(() => SiteLinks.assertMedium(medium), /SiteLinks: unknown entry/, String(medium));
   }
-  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'pdf_page', 'signin', 'pdf_quota', 'comic_quota']);
+  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'pdf_page', 'signin', 'pdf_quota', 'comic_quota', 'comic_summary']);
 });
 
 test('no other extension file builds a site page link', () => {

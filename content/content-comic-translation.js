@@ -367,6 +367,7 @@
     // place the page holds among the comic pages in the DOM, the order the
     // chapter is read in.
     const page = { imageUrl: entry.originalSrc, pageIndex: comic.pageIndexOf(img) };
+    comic.summaryBegin(entry, { pageIndex: page.pageIndex, pageUrl, targetLang, mode });
 
     // A retry after an error leaves the previous overlay sitting on the image;
     // two stacked cards over one page is not a state worth having.
@@ -432,6 +433,7 @@
       await runJob({ entry, overlay, page, pageUrl, targetLang });
     } finally {
       entry.running = false;
+      comic.summarySettle(entry);
     }
   }
 
@@ -495,6 +497,8 @@
     overlay.startTimer(startedAt);
 
     const uploaded = await withSignIn({ entry, overlay }, () => uploadPage(entry, page.imageUrl));
+    // Cancelled from the chapter pill while the bytes were on their way.
+    if (entry.cancelled) return;
     if (!uploaded.ok) {
       if (!uploaded.declined) comic.showJobError(overlay, uploaded.error);
       return;
@@ -504,6 +508,11 @@
       entry, overlay, pageUrl, targetLang, pageIndex: page.pageIndex, sourceKey: uploaded.data.sourceKey
     }));
     if (!created.ok && created.declined) return;
+    if (entry.cancelled) {
+      // The cancel had no job to name yet; this one exists now and holds a page.
+      if (created.ok) sendMessage({ type: 'COMIC_JOB_ABANDON', jobId: created.data.jobId });
+      return;
+    }
 
     if (!created.ok) {
       comic.showJobError(overlay, created.error);
@@ -535,15 +544,23 @@
    * measured from when the *job* was created, so a resumed job cannot be granted
    * a second full budget the server has no intention of honouring.
    */
+  /**
+   * Stop a page's run: the chip's Cancel and the chapter pill's Cancel all.
+   * Before the job exists there is nothing to abandon; runJob sees `cancelled`
+   * when the create comes back and abandons that job instead.
+   */
+  function cancelJob(entry, jobId = entry.jobId) {
+    entry.cancelled = true;
+    if (jobId) sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
+    comic.dropRecord(entry.pageId, entry.mode);
+    if (entry.overlay) entry.overlay.destroy();
+    comic.summarySettle(entry);
+  }
+
   async function pollJob({ entry, overlay, jobId, startedAt }) {
     overlay.setActions([{
       label: t('comicCancel'),
-      onClick: () => {
-        entry.cancelled = true;
-        sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-        comic.dropRecord(entry.pageId, entry.mode);
-        overlay.destroy();
-      }
+      onClick: () => cancelJob(entry, jobId)
     }], { open: false });
 
     while (Date.now() - startedAt < comic.JOB_TIMEOUT_MS) {
@@ -781,6 +798,7 @@
       entry.overlay = null;
       comic.rememberJob(entry, 'succeeded');
       sendMessage({ type: 'COMIC_ACCOUNT', force: true });
+      comic.summaryDone(entry, job);
       return;
     }
 
@@ -796,6 +814,7 @@
     comic.rememberJob(entry, 'succeeded');
     // The allowance just moved; drop the cached copy so Settings shows the truth.
     sendMessage({ type: 'COMIC_ACCOUNT', force: true });
+    comic.summaryDone(entry, job);
   }
 
   /**
@@ -837,7 +856,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    resumeRecord, sendMessage, watchPageSwaps,
+    cancelJob, resumeRecord, sendMessage, translateImage, watchPageSwaps,
   });
 
   ctx.startComicTranslation = startComicTranslation;

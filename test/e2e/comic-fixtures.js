@@ -247,6 +247,21 @@ const SCROLLER_HTML = `<!doctype html>
   </div>
 </body></html>`;
 
+/**
+ * A whole chapter on one screen: twelve pages in a grid, all in the viewport,
+ * so the page entry (pickComicImages) starts every one of them at once. A
+ * fixed button sits in the viewport's top-right corner, where a reader keeps
+ * its own toolbar, and the chapter pill has to step around it.
+ */
+const CHAPTER12_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Chapter 12</title></head>
+<body style="margin:0">
+  <button id="native" type="button" style="position:fixed;top:8px;right:8px;width:120px;height:40px;margin:0">Menu</button>
+  <div style="display:flex;flex-wrap:wrap;width:960px">
+    ${Array.from({ length: 12 }, (_, i) => `<img class="page" src="/source.png?page=${i + 1}" width="150" style="display:block;margin:0 10px 10px 0">`).join('\n    ')}
+  </div>
+</body></html>`;
+
 /** One page taller than the window, below a 100 px header. */
 const TALL_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Tall</title></head>
@@ -291,15 +306,23 @@ const TALL_HTML = `<!doctype html>
  * back; `Infinity` never answers it, which is what a stalled storage upload
  * looks like from the worker. `runningProgress` is the figure a running job
  * reports.
+ *
+ * `chapter` turns the one shared job into one job per create, which is what a
+ * whole chapter needs: `job_<n>`, finishing `stepMs × (pageIndex + 1)` after
+ * it was created, so the pages land one batch of polls at a time. A page in
+ * `failPages` fails its first job and succeeds when it is asked again. A
+ * succeeded job names the chapter's document (`assetId`) and its page, as the
+ * real job view does. `jobs` records every one, `{ pageIndex, createdAt,
+ * attempt }`.
  */
 async function startMockService(
   behaviour = 'succeed',
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
-    runningProgress = 0.4 } = {},
+    runningProgress = 0.4, chapter = null } = {},
 ) {
   const state = {
     polls: 0, abandons: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
-    tickets: [], puts: [], chapters: {},
+    tickets: [], puts: [], chapters: {}, jobs: {},
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -326,6 +349,7 @@ async function startMockService(
     if (url.pathname === '/tall') return send(200, TALL_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/spread') return send(200, SPREAD_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/chapter') return send(200, CHAPTER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/chapter12') return send(200, CHAPTER12_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/picture-reader') return send(200, PICTURE_READER_HTML, 'text/html; charset=utf-8');
@@ -433,20 +457,28 @@ async function startMockService(
             quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 10, points: 10, balancePoints: 120 },
           });
         }
-        send(202, { jobId: 'job_test_1', status: 'queued', progress: 0.05, quote: { points: 10 } });
+        let jobId = 'job_test_1';
+        if (chapter) {
+          const jobs = Object.values(state.jobs);
+          jobId = `job_${jobs.length + 1}`;
+          const attempt = jobs.filter(job => job.pageIndex === body.pageIndex).length;
+          state.jobs[jobId] = { pageIndex: body.pageIndex, createdAt: Date.now(), attempt };
+        }
+        send(202, { jobId, status: 'queued', progress: 0.05, quote: { points: 10 } });
       });
     }
 
     if (/^\/api\/comic\/jobs\/[^/]+\/abandon$/.test(url.pathname) && req.method === 'POST') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
       state.abandons += 1;
-      return send(200, { jobId: 'job_test_1', status: 'abandoned' });
+      return send(200, { jobId: decodeURIComponent(url.pathname.split('/')[4]), status: 'abandoned' });
     }
 
     if (url.pathname.startsWith('/api/comic/jobs/') && req.method === 'GET') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
       state.polls += 1;
       if (!state.firstPollAt) state.firstPollAt = Date.now();
+      if (chapter) return send(...chapterPoll(chapter, state, decodeURIComponent(url.pathname.split('/')[4]), base));
       const held = succeedAfterMs > 0 && Date.now() - state.firstPollAt < succeedAfterMs;
       // First poll still running, second one done: the UI has to survive at
       // least one non-terminal answer or the progress states are never seen.
@@ -471,6 +503,29 @@ async function startMockService(
   });
 
   return { base: origin, state, close };
+}
+
+/** A chapter job's poll answer: `[status, body]`. */
+function chapterPoll({ failPages = [], stepMs = 600 }, state, jobId, base) {
+  const job = state.jobs[jobId];
+  if (!job) return [404, { error: 'not_found' }];
+  if (Date.now() - job.createdAt < stepMs * (job.pageIndex + 1)) {
+    return [200, { jobId, status: 'running', progress: 0.4 }];
+  }
+  if (failPages.includes(job.pageIndex) && job.attempt === 0) {
+    return [200, { jobId, status: 'failed', progress: 0, error: { code: 'failed' } }];
+  }
+  return [200, {
+    jobId,
+    status: 'succeeded',
+    progress: 1,
+    resultUrl: `${base}/result.png?sig=${jobId}`,
+    width: 800,
+    height: 1200,
+    pointsCharged: 10,
+    assetId: 'asset_chapter_1',
+    pageIndex: job.pageIndex,
+  }];
 }
 
 const UPLOAD_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
@@ -514,6 +569,7 @@ module.exports = {
   DECOY_PAGE_HTML,
   SPREAD_HTML,
   CHAPTER_HTML,
+  CHAPTER12_HTML,
   READER_HTML,
   PICTURE_READER_HTML,
   DATA_PAGES,

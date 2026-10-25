@@ -263,6 +263,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.abandonJob(message.jobId), sendResponse);
       return true;
 
+    case 'COMIC_OPEN_READER':
+      replyComic(comicClient.openReader(message.assetId, message.pageIndex), sendResponse);
+      return true;
+
     // --- Document translation (account-backed, see pdf-client.js) ------------
     // The upload page asks where to PUT the file, PUTs it itself, then creates.
     case 'PDF_UPLOAD_TICKET':

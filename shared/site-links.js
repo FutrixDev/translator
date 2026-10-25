@@ -35,6 +35,7 @@
     'pdf_quota',     // a document refused for the used-up free pages: the upload
                      // page, the popup's row, the notification (View plans)
     'comic_quota',   // a comic page refused for the same reason, on its overlay
+    'comic_summary', // a comic page's chapter pill: Open chapter in reader
   ]);
 
   /** Throws on an entry the list does not name. Callers that act before they
@@ -75,13 +76,18 @@
    * job id as well as an asset id, shows the document, and offers every
    * download, so a finished job of any format is viewed there and nowhere else.
    * '' as well for no id, or a pending record's `local:<operationId>` id, which
-   * names no server job.
+   * names no server job. `pageIndex` (a comic chapter's page, 0-based) is the
+   * page to open at; anything but a non-negative integer leaves it out.
    */
-  function reader(base, jobId, medium) {
+  function reader(base, jobId, medium, { pageIndex } = {}) {
     if (jobId === undefined || jobId === null || jobId === '') return '';
     const id = String(jobId);
     if (id.startsWith('local:')) return '';
-    return siteLink(base, '/app/reader/' + encodeURIComponent(id), medium);
+    const link = siteLink(base, '/app/reader/' + encodeURIComponent(id), medium);
+    if (!link || !Number.isInteger(pageIndex) || pageIndex < 0) return link;
+    const url = new URL(link);
+    url.searchParams.set('pageIndex', String(pageIndex));
+    return url.href;
   }
 
   /**

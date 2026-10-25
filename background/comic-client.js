@@ -454,6 +454,19 @@ export function getJob(jobId) {
   return apiFetch(`/api/comic/jobs/${encodeURIComponent(jobId)}`);
 }
 
+/**
+ * Open a translated chapter in the site's reader, at `pageIndex`: the comic
+ * page's chapter pill. `assetId` is the chapter document every page job of the
+ * chapter reports, so any finished page names the same one.
+ */
+export async function openReader(assetId, pageIndex) {
+  const url = SiteLinks.reader(await getApiBase(), assetId, 'comic_summary', { pageIndex });
+  if (!url) {
+    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL, or the chapter has no id', 0);
+  }
+  await chrome.tabs.create({ url });
+}
+
 export function abandonJob(jobId) {
   return apiFetch(`/api/comic/jobs/${encodeURIComponent(jobId)}/abandon`, { method: 'POST' });
 }
