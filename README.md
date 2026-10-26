@@ -351,7 +351,7 @@ flowchart LR
 
 ### 📄 License
 
-[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal use, study, research, and noncommercial organizations. Commercial use requires a separate license — [open an issue](https://github.com/wangqianqianjun/translator/issues) to ask. Versions released before this change remain under the MIT License.
+[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal use, study, research, and noncommercial organizations. Commercial use requires a separate license — [open an issue](https://github.com/FutrixDev/translator/issues) to ask. Versions released before this change remain under the MIT License.
 
 ---
 
@@ -648,7 +648,7 @@ flowchart LR
 
 ### 📄 License
 
-[PolyForm Noncommercial 1.0.0](LICENSE)。个人使用、学习、研究以及非营利机构可免费使用；任何商业用途需另行取得授权，请[提 issue](https://github.com/wangqianqianjun/translator/issues) 联系。此前已发布的版本仍按 MIT 许可。
+[PolyForm Noncommercial 1.0.0](LICENSE)。个人使用、学习、研究以及非营利机构可免费使用；任何商业用途需另行取得授权，请[提 issue](https://github.com/FutrixDev/translator/issues) 联系。此前已发布的版本仍按 MIT 许可。
 
 ---
 
