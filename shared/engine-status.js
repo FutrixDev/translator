@@ -67,7 +67,9 @@
     unsupportedPair: 'builtinUnsupportedPair',
     needsDownload: 'builtinNeedsDownload',
     createFailed: 'builtinUnavailable',
-    timedOut: 'builtinUnavailable'
+    timedOut: 'builtinUnavailable',
+    probeFailed: 'builtinUnavailable',
+    allSegmentsFailed: 'builtinUnavailable'
   });
 
   /**
