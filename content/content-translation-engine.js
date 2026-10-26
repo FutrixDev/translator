@@ -135,12 +135,17 @@
     // 内置 API 卡住了（见 content/engine/watchdog.js）。对用户来说和“暂时用不了”是一回事，
     // engineErrorMessage 的 default 分支就是它的文案；单独列一档是为了让日志和
     // 回落决策能把“报错了”和“没反应”分开。
-    TIMED_OUT: 'timedOut'
+    TIMED_OUT: 'timedOut',
+    // 问 availability() 本身就抛了（不是超时）。问不出答案不等于这一对不支持。
+    PROBE_FAILED: 'probeFailed',
+    // 整批每一段都没译出来，原因不是语言对：cause 是第一段的真实错误。
+    ALL_SEGMENTS_FAILED: 'allSegmentsFailed'
   };
 
+  // cause 留住真实错误：reason 是给用户看的那一档，cause 是给日志看的那一句。
   class EngineUnavailableError extends Error {
-    constructor(reason) {
-      super(`builtin translator unavailable: ${reason}`);
+    constructor(reason, { cause } = {}) {
+      super(`builtin translator unavailable: ${reason}`, { cause });
       this.name = 'EngineUnavailableError';
       this.reason = reason;
     }
@@ -368,7 +373,7 @@
         // 问都问不出来，那不是这个语言对的问题：判成 UNSUPPORTED_PAIR 的话，
         // 批量里每一段都会再问一次、再等一次超时。
         if (error instanceof eng.TimeoutError) throw new EngineUnavailableError(ENGINE_REASONS.TIMED_OUT);
-        throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
+        throw new EngineUnavailableError(ENGINE_REASONS.PROBE_FAILED, { cause: error });
       }
       if (status === 'unavailable') {
         throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
@@ -581,6 +586,7 @@
         // 整批一段都没译出来就不是了，那是这条链路在这批文本上根本没工作。
         let attempted = 0;
         let produced = 0;
+        let firstError = null;
         for (const text of texts) {
           const hasContent = !!String(text == null ? '' : text).trim();
           if (hasContent) attempted += 1;
@@ -597,6 +603,7 @@
               throw error;
             }
             console.warn('Blab Translation: builtin segment failed, keeping original', error);
+            if (!firstError) firstError = error;
             // 空串而不是原文：上层对 falsy 译文是“跳过、保留原文”，
             // 回填原文反而会被当成一条有效译文插进页面。
             translations.push('');
@@ -605,8 +612,11 @@
         // 一批空串在调用方眼里是“翻译成功了，只是每条都没译文”：它保留原文、
         // 不报错，也不会回落 AI——用户配了接口却什么都没发生。抛出去，让上层
         // 按引擎不可用处理（有接口就回落，没接口就把原因说清楚）。
+        // 报第一段的真实原因：只有它本来就是「语言对不支持」时才这么说，
+        // 否则（空结果、占位符丢失、translate() 抛错……）别冒充成语言对的问题。
         if (attempted > 0 && produced === 0) {
-          throw new EngineUnavailableError(ENGINE_REASONS.UNSUPPORTED_PAIR);
+          if (firstError instanceof EngineUnavailableError) throw firstError;
+          throw new EngineUnavailableError(ENGINE_REASONS.ALL_SEGMENTS_FAILED, { cause: firstError });
         }
         // 逐条翻译，条数天然与输入一致——分隔符那套错位问题在这条路上不存在。
         return { translations };
@@ -809,6 +819,8 @@
         const unavailable = error instanceof EngineUnavailableError;
         const reason = unavailable ? error.reason : ENGINE_REASONS.CREATE_FAILED;
         if (!unavailable) console.warn('Blab Translation: builtin translation failed', error);
+        // 带 cause 的是被归了档的真实错误，这里是它停下的地方：回不回落都记一次原错。
+        else if (error.cause) console.warn('Blab Translation: builtin unavailable (%s)', reason, error.cause);
         if (!(await mayFallBack())) return { error: engineErrorMessage(reason, message.targetLang), engine: 'builtin' };
         if (unavailable) console.info('Blab Translation: builtin unavailable (%s), falling back to AI', reason);
         noteFallback(reason);
