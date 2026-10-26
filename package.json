@@ -27,7 +27,7 @@
     "translator",
     "ai"
   ],
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "devDependencies": {
     "@playwright/test": "^1.57.0"
   }
