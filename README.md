@@ -14,7 +14,7 @@ AI translation for web pages, PDFs, manga and subtitles, in one Chrome extension
 
 [Chrome Web Store](https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg)
 ![Chrome](https://img.shields.io/badge/Chrome-Extension-green.svg)
 ![Manifest](https://img.shields.io/badge/Manifest-V3-orange.svg)
 
@@ -351,7 +351,7 @@ flowchart LR
 
 ### 📄 License
 
-MIT License
+[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal use, study, research, and noncommercial organizations. Commercial use requires a separate license — [open an issue](https://github.com/wangqianqianjun/translator/issues) to ask. Versions released before this change remain under the MIT License.
 
 ---
 
@@ -365,7 +365,7 @@ MIT License
 
 本仓库建议的 GitHub topics：`translator`、`manga-translator`、`pdf-translator`、`chrome-extension`。
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg)
 ![Chrome](https://img.shields.io/badge/Chrome-Extension-green.svg)
 ![Manifest](https://img.shields.io/badge/Manifest-V3-orange.svg)
 
@@ -648,7 +648,7 @@ flowchart LR
 
 ### 📄 License
 
-MIT License
+[PolyForm Noncommercial 1.0.0](LICENSE)。个人使用、学习、研究以及非营利机构可免费使用；任何商业用途需另行取得授权，请[提 issue](https://github.com/wangqianqianjun/translator/issues) 联系。此前已发布的版本仍按 MIT 许可。
 
 ---
 
