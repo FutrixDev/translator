@@ -25,9 +25,10 @@
 // service worker is torn down after ~30s idle and a redraw takes longer than
 // that, while each poll message we send also keeps the worker awake.
 //
-// 这个功能横跨六个文件：认页（content/comic/pages.js）、页面台账（entries.js）、
-// 覆盖层（overlay.js）、跨页任务记忆（memory.js）、说给人听的话（prompts.js），
-// 以及这里的任务流——发起、轮询、拿到结果、跟着读者翻页。六份各自把要给别人用的
+// 这个功能横跨七个文件：认页（content/comic/pages.js）、页面台账（entries.js）、
+// 覆盖层（overlay.js）、跨页任务记忆（memory.js）、说给人听的话（prompts.js）、
+// 本章汇总标（summary.js），以及这里的任务流——发起、轮询、拿到结果、跟着读者
+// 翻页。七份各自把要给别人用的
 // 名字挂到同一张架子 `ctx.comic` 上（谁先装上谁把它建出来），取值都发生在调用时，
 // 所以 manifest 里它们的先后无关紧要。文件里带 `comic.` 前缀的，就是住在别处的。
 (function() {
