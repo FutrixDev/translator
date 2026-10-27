@@ -209,7 +209,9 @@
         // price), and otherwise that the pages are getting ready.
         const held = count.running > 0 && count.started === 0;
         const text = held
-          ? t(count.signin ? 'comicPillSignIn' : count.confirm ? 'comicPillConfirm' : 'comicPillPreparing')
+          ? t(count.signin ? comic.WAITING_LABEL.signin
+            : count.confirm ? comic.WAITING_LABEL.confirm
+              : comic.STAGES.preparing.label)
           : t('comicSummaryLabel').replace('{done}', String(count.done)).replace('{total}', String(count.total));
         label.textContent = text;
         pill.title = text;

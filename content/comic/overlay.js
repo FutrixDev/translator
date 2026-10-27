@@ -333,6 +333,11 @@
         pill.title = text;
         setProgress(busy ? progress : null);
       },
+      /** One of comic.STAGES: its words, spinning or not as the table says. */
+      setStage(name) {
+        const stage = comic.STAGES[name];
+        this.setStatus(t(stage.label), { busy: stage.busy });
+      },
       /** The sentence in the card, or '' for none. */
       setMessage(text) {
         message.textContent = text;
@@ -340,9 +345,11 @@
       },
       /**
        * The job waits on the reader: the pill stops spinning and counting and
-       * says what it is waiting for (`label`), and the card holds the question.
+       * says what it is waiting for (`waiting`, a comic.WAITING_LABEL name),
+       * and the card holds the question.
        */
-      ask(text, { label: waitingFor }) {
+      ask(text, { waiting }) {
+        const waitingFor = t(comic.WAITING_LABEL[waiting]);
         failed = null;
         clocked = false;
         root.classList.remove('is-error', 'is-busy');

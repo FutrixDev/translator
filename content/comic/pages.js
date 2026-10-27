@@ -109,6 +109,24 @@
     return COMIC_MODES.includes(mode) ? mode : 'translate';
   }
 
+  /**
+   * The words the pill shows before a job has its number: the i18n key, and
+   * whether it spins. Uploading and preparing do not — the run can still stop
+   * on a sign-in or a price, and a spinning pill would claim work that has not
+   * started. Loading the result does: the job is done and the bytes are coming.
+   */
+  const STAGES = Object.freeze({
+    uploading: { label: 'comicStageUploading', busy: false },
+    preparing: { label: 'comicPillPreparing', busy: false },
+    loadingResult: { label: 'comicStageLoadingResult', busy: true },
+  });
+
+  /** What a pill says while the run waits on the reader, per question. */
+  const WAITING_LABEL = Object.freeze({
+    signin: 'comicPillSignIn',
+    confirm: 'comicPillConfirm',
+  });
+
   /** The in-progress label: a colorize that says "translating" reads as a bug. */
   function statusText(mode) {
     if (mode === 'colorize') return t('comicColorizing');
@@ -358,7 +376,7 @@
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, STAGES, WAITING_LABEL, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pageIndexOf, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });
 })();

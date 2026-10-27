@@ -26,7 +26,7 @@
   function promptSignIn(overlay) {
     return new Promise((resolve) => {
       overlay.onDestroy(() => resolve(false));
-      overlay.ask(t('comicSignInRequired'), { label: t('comicPillSignIn') });
+      overlay.ask(t('comicSignInRequired'), { waiting: 'signin' });
       overlay.setActions([
         {
           label: t('comicSignIn'),
@@ -69,7 +69,7 @@
   function promptCharge(overlay, quote) {
     return new Promise((resolve) => {
       overlay.onDestroy(() => resolve(false));
-      overlay.ask(chargeText(quote), { label: t('comicPillConfirm') });
+      overlay.ask(chargeText(quote), { waiting: 'confirm' });
       overlay.setActions([
         {
           label: t('comicChargeApprove'),
