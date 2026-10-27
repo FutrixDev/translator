@@ -268,7 +268,7 @@
         const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: record.jobId });
         if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
           entry.completedJobId = record.jobId;
-          await finishSuccess({ entry, overlay, job: polled.data });
+          await finishSuccess({ entry, overlay, job: polled.data, asked: false });
           if (entry.resultUrl) comic.summaryRestored(entry, polled.data, summaryPage);
           return;
         }
@@ -794,7 +794,11 @@
     });
   }
 
-  async function finishSuccess({ entry, overlay, job }) {
+  /**
+   * Put a succeeded job's page on screen. `asked: false` is a page put back
+   * on reload, which the reader did not ask for on this load: it opens no card.
+   */
+  async function finishSuccess({ entry, overlay, job, asked = true }) {
     // Before the download, not after: from here on the redraw exists and has
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
@@ -822,6 +826,10 @@
     }
 
     entry.resultUrl = job.resultUrl;
+    // A page the service handed back as it was, free of charge, says why: on
+    // its card, its badge and the chapter card. Read here, on the one path every
+    // success takes — a fresh job, a recovered one, a page put back on reload.
+    entry.noticeText = comic.noticeText(job.notice);
     // Set before the check below, not after the swap: it is what the reader
     // asked for, so it is the state to come back to whether or not the page is
     // in front of them right now.
@@ -833,8 +841,14 @@
     // back, and swapping it in here would put it on the wrong page.
     const away = entry.detached || !comic.entryMatchesImage(entry, entry.img);
     if (!away) comic.showResult(entry, job.resultUrl);
-    overlay.destroy();
-    entry.overlay = null;
+    // The card stays with the reason only for a page the reader asked for on
+    // this load and is looking at; otherwise it goes, as on any success.
+    if (entry.noticeText && asked && !away) {
+      comic.showNotice(overlay, entry.noticeText);
+    } else {
+      overlay.destroy();
+      entry.overlay = null;
+    }
     if (!away && !entry.badge) comic.attachToggleBadge(entry);
     // The presigned URL in the DOM dies in 30 minutes and the swap is view
     // state a reload throws away — but the redraw itself is in the bucket for

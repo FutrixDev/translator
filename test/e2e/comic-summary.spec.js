@@ -142,6 +142,32 @@ test.describe('Comic chapter summary', () => {
     }
   });
 
+  test('a page handed back with no text on it is counted done, and the chapter card says why', async ({ context, page }) => {
+    test.setTimeout(90_000);
+    const service = await startMockService('succeed', { chapter: { noticePages: [4], stepMs: 300 } });
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openChapter(page, service);
+      await triggerComicPageTranslation(worker, page, pageUrl);
+      await expect(page.locator(LABEL)).toHaveText('Chapter 12/12', { timeout: 30_000 });
+
+      await page.locator(PILL).click();
+      const notes = page.locator(`${ROOT} .ai-translator-comic-summary-list.is-note .ai-translator-comic-summary-item`);
+      await expect(notes).toHaveCount(1);
+      await expect(notes.locator('.ai-translator-comic-summary-page')).toHaveText('Page 5');
+      await expect(notes.locator('.ai-translator-comic-summary-reason')).toBeVisible();
+      await expect(notes.locator('.ai-translator-comic-summary-reason')).toHaveText(
+        'No translatable text was found on this page, so no translation fee was charged for it.',
+      );
+      await expect(page.locator(`${ROOT} .ai-translator-comic-summary-heading.is-note`)).toHaveText('Done, with a note');
+      // Not a failure: nothing to retry.
+      await expect(page.locator(`${ROOT} .ai-translator-comic-summary-list:not(.is-note) .ai-translator-comic-summary-item`)).toHaveCount(0);
+      await expect(page.locator(BUTTON, { hasText: 'Retry' })).toHaveCount(0);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('cancelling all while every page waits on the charge card frees them to run again', async ({ context, page }) => {
     test.setTimeout(90_000);
     const service = await startMockService('confirm', { chapter: { stepMs: 600 } });

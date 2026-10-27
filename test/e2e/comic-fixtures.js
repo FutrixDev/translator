@@ -310,11 +310,15 @@ const TALL_HTML = `<!doctype html>
  * so a storage refusal can be played. `runningProgress` is the figure a
  * running job reports. `abandoned` records the job id of every abandon.
  *
+ * `notice` is put on the succeeded job, `{ code }`, with nothing charged: a page
+ * the service handed back as it was (no text on it, say) and did not bill.
+ *
  * `chapter` turns the one shared job into one job per create, which is what a
  * whole chapter needs: `job_<n>`, finishing `stepMs × (pageIndex + 1)` after
  * it was created, so the pages land one batch of polls at a time. A page in
  * `failPages` fails its first job, with `failCode` (default `failed`), and
- * succeeds when it is asked again. A
+ * succeeds when it is asked again. A page in `noticePages` succeeds with
+ * `noticeCode` (default `comic_no_text`) as its notice. A
  * succeeded job names the chapter's document (`assetId`) and its page, as the
  * real job view does. `jobs` records every one, `{ pageIndex, createdAt,
  * attempt }`.
@@ -322,7 +326,7 @@ const TALL_HTML = `<!doctype html>
 async function startMockService(
   behaviour = 'succeed',
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
-    resultDelayMs = 0, putStatus = 200, runningProgress = 0.4, chapter = null } = {},
+    resultDelayMs = 0, putStatus = 200, runningProgress = 0.4, chapter = null, notice = null } = {},
 ) {
   const state = {
     polls: 0, abandoned: [], createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
@@ -502,7 +506,7 @@ async function startMockService(
         resultUrl: `${base}/result.png?sig=${state.polls}`,
         width: 800,
         height: 1200,
-        pointsCharged: 10,
+        ...(notice ? { pointsCharged: 0, notice } : { pointsCharged: 10 }),
       });
     }
 
@@ -514,7 +518,7 @@ async function startMockService(
 }
 
 /** A chapter job's poll answer: `[status, body]`. */
-function chapterPoll({ failPages = [], failCode = 'failed', stepMs = 600 }, state, jobId, base) {
+function chapterPoll({ failPages = [], failCode = 'failed', noticePages = [], noticeCode = 'comic_no_text', stepMs = 600 }, state, jobId, base) {
   const job = state.jobs[jobId];
   if (!job) return [404, { error: 'not_found' }];
   if (Date.now() - job.createdAt < stepMs * (job.pageIndex + 1)) {
@@ -530,7 +534,7 @@ function chapterPoll({ failPages = [], failCode = 'failed', stepMs = 600 }, stat
     resultUrl: `${base}/result.png?sig=${jobId}`,
     width: 800,
     height: 1200,
-    pointsCharged: 10,
+    ...(noticePages.includes(job.pageIndex) ? { pointsCharged: 0, notice: { code: noticeCode } } : { pointsCharged: 10 }),
     assetId: 'asset_chapter_1',
     pageIndex: job.pageIndex,
   }];

@@ -71,6 +71,37 @@ test.describe('Comic page translation', () => {
     }
   });
 
+  test('a page with no text on it says so, and that it was not charged', async ({ context, page }) => {
+    const service = await startMockService('succeed', { notice: { code: 'comic_no_text', message: 'no text' } });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
+
+      // The job succeeded: the page is swapped and the badge is there, as on
+      // any success — but the card stays, open, with the reason.
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
+      const overlay = page.locator('.ai-translator-comic-progress');
+      await expect(overlay).not.toHaveClass(/is-error/);
+      await expect(overlay.locator('.ai-translator-comic-label')).toHaveText('Done, with a note');
+      await expect(overlay.locator('.ai-translator-comic-message')).toBeVisible();
+      await expect(overlay.locator('.ai-translator-comic-message')).toHaveText(
+        'No translatable text was found on this page, so no translation fee was charged for it.',
+      );
+      const badge = page.locator('.ai-translator-comic-badge');
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveAttribute('title', /no translation fee was charged/);
+
+      await overlay.locator('.ai-translator-comic-btn').click();
+      await expect(overlay).toHaveCount(0);
+      await expect(badge).toBeVisible();
+    } finally {
+      await service.close();
+    }
+  });
+
   test('a used-up allowance offers the plans and when it comes back, and spends nothing', async ({ context, page }) => {
     const service = await startMockService('insufficient');
     try {

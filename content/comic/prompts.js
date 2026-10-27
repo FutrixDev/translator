@@ -142,6 +142,35 @@
   }
 
   /**
+   * The job succeeded with a note (`job.notice`): the service handed back the
+   * page as it was, and did not charge for it, because there was nothing it
+   * could redraw. The card says why, folded when the chapter pill lists it,
+   * as a failure's does.
+   */
+  function showNotice(overlay, text) {
+    const open = !comic.summaryShown();
+    overlay.setNotice(text, { open });
+    overlay.setActions([{ label: t('comicDismiss'), onClick: () => overlay.destroy() }], { open });
+  }
+
+  /**
+   * A succeeded job's notice → the sentence for it, or '' for none. Only the
+   * two codes the service sends today have words; an unknown one says nothing
+   * on the page and names itself once on the console, as errorText does.
+   */
+  function noticeText(notice) {
+    const code = notice && notice.code;
+    if (!code) return '';
+    switch (code) {
+      case 'comic_no_text':
+      case 'comic_unsupported_script': return errorText(notice);
+      default:
+        console.warn('[comic] no wording for notice code', code);
+        return '';
+    }
+  }
+
+  /**
    * Server error codes → something a reader can act on.
    *
    * Codes, never message text: the server's messages are English and written
@@ -202,6 +231,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    promptCharge, promptSignIn, showDetachedError, showFailure, showJobError,
+    noticeText, promptCharge, promptSignIn, showDetachedError, showFailure, showJobError, showNotice,
   });
 })();

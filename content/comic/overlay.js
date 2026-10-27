@@ -421,6 +421,24 @@
         timerFrom = 0;
         timerElement.hidden = true;
         if (open) setOpen(true);
+      },
+      /**
+       * The job succeeded, but with something to say (prompts.js showNotice):
+       * the pill says so, the card says what. Not a failure — `failure()`
+       * stays null and the pill is not drawn as an error.
+       */
+      setNotice(text, { open = true } = {}) {
+        failed = null;
+        clocked = false;
+        root.classList.remove('is-error', 'is-busy');
+        label.textContent = t('comicNoticeLabel');
+        pill.title = t('comicNoticeLabel');
+        setProgress(null);
+        message.textContent = text;
+        message.hidden = !text;
+        timerFrom = 0;
+        timerElement.hidden = true;
+        if (open) setOpen(true);
       }
     };
   }
@@ -442,6 +460,8 @@
     const badge = document.createElement('button');
     badge.type = 'button';
     badge.className = 'ai-translator-comic-badge';
+    // Why the page still looks like the original, when the job said why.
+    if (entry.noticeText) badge.title = entry.noticeText;
     document.body.appendChild(badge);
 
     const showResultLabel = comic.resultLabel(entry.mode);

@@ -171,6 +171,18 @@ html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-t
   font-size: 12px;
 }
 
+/* Pages done with a note: not an error, so not drawn as one. */
+.ai-translator-comic-summary-heading.is-note {
+  color: #c9ced9;
+}
+
+/* The note is the whole point of the row (why the page is unchanged, and that
+   it was free), so it is not cut to two lines. */
+.ai-translator-comic-summary-list.is-note .ai-translator-comic-summary-reason {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
 .ai-translator-comic-summary-waiting {
   font-size: 12px;
 }

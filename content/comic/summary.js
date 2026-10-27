@@ -84,7 +84,7 @@
   function summaryRestored(entry, job, { pageIndex, pageUrl, targetLang, mode }) {
     restoring.delete(entry);
     const task = {
-      entry, state: 'done', waiting: null, reason: '', assetId: job.assetId || null,
+      entry, state: 'done', waiting: null, reason: entry.noticeText || '', assetId: job.assetId || null,
       pageIndex: Number.isInteger(job.pageIndex) ? job.pageIndex : pageIndex, pageUrl, targetLang, mode
     };
     if (active) tasks.set(entry.pageId, task);
@@ -109,7 +109,8 @@
     const task = taskOf(entry);
     if (!task) return;
     task.state = 'done';
-    task.reason = '';
+    // The job's notice, as finishSuccess worded it; '' for an ordinary page.
+    task.reason = entry.noticeText || '';
     task.assetId = job.assetId || null;
     if (Number.isInteger(job.pageIndex)) task.pageIndex = job.pageIndex;
     render();
@@ -171,11 +172,13 @@
       cardBody: `
         <div class="ai-translator-comic-summary-waiting" hidden></div>
         <div class="ai-translator-comic-summary-heading" hidden></div>
-        <div class="ai-translator-comic-summary-list"></div>`,
+        <div class="ai-translator-comic-summary-list"></div>
+        <div class="ai-translator-comic-summary-heading is-note" hidden></div>
+        <div class="ai-translator-comic-summary-list is-note"></div>`,
     });
     const waiting = root.querySelector('.ai-translator-comic-summary-waiting');
-    const heading = root.querySelector('.ai-translator-comic-summary-heading');
-    const list = root.querySelector('.ai-translator-comic-summary-list');
+    const [heading, noteHeading] = root.querySelectorAll('.ai-translator-comic-summary-heading');
+    const [list, noteList] = root.querySelectorAll('.ai-translator-comic-summary-list');
 
     // Placed when it appears and when the window changes, never on scroll: the
     // controls it steps around are the fixed ones, which do not scroll either.
@@ -200,6 +203,8 @@
         root.classList.toggle('is-error', count.failed > 0 && count.running === 0);
         renderWaiting(waiting, count);
         renderPages(heading, list, 'comicSummaryFailed', task => task.state === 'failed');
+        // Done, but handed back as it was: the reader is told why here too.
+        renderPages(noteHeading, noteList, 'comicNoticeLabel', task => task.state === 'done' && !!task.reason);
         renderActions(actions, count);
       },
       destroy() {
