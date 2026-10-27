@@ -285,8 +285,7 @@
       }
       await pollJob({ entry, overlay, jobId: record.jobId, startedAt: record.createdAt });
     } finally {
-      entry.running = false;
-      comic.summarySettle(entry);
+      endRun(entry);
     }
   }
 
@@ -445,8 +444,7 @@
       entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       await runJob({ entry, overlay, page, pageUrl, targetLang });
     } finally {
-      entry.running = false;
-      comic.summarySettle(entry);
+      endRun(entry);
     }
   }
 
@@ -552,6 +550,17 @@
     comic.rememberJob(entry, 'running');
 
     await pollJob({ entry, overlay, jobId: entry.jobId, startedAt: jobStartedAt });
+  }
+
+  /**
+   * A run is over, however it ended (resumeRecord's and translateImage's
+   * finally): the page takes clicks again and the chapter pill counts it as
+   * settled. cancelJob settles the chip at once but does not end the run —
+   * the run is still unwinding, and ends here when it does.
+   */
+  function endRun(entry) {
+    entry.running = false;
+    comic.summarySettle(entry);
   }
 
   /**
@@ -821,19 +830,11 @@
     // job started on is showing someone else's page now. The result is bought
     // and recorded either way — restoreEntry puts it on screen when they turn
     // back, and swapping it in here would put it on the wrong page.
-    if (entry.detached || !comic.entryMatchesImage(entry, entry.img)) {
-      overlay.destroy();
-      entry.overlay = null;
-      comic.rememberJob(entry, 'succeeded');
-      sendMessage({ type: 'COMIC_ACCOUNT', force: true });
-      comic.summaryDone(entry, job);
-      return;
-    }
-
-    comic.showResult(entry, job.resultUrl);
+    const away = entry.detached || !comic.entryMatchesImage(entry, entry.img);
+    if (!away) comic.showResult(entry, job.resultUrl);
     overlay.destroy();
     entry.overlay = null;
-    if (!entry.badge) comic.attachToggleBadge(entry);
+    if (!away && !entry.badge) comic.attachToggleBadge(entry);
     // The presigned URL in the DOM dies in 30 minutes and the swap is view
     // state a reload throws away — but the redraw itself is in the bucket for
     // days. Keeping the record is what lets the next visit to this page mint a
