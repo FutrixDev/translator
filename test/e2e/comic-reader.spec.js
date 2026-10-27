@@ -343,13 +343,23 @@ test.describe('Comic page translation — reader', () => {
     }
   });
 
-  /** The popup's entry point, against a tab whose URL moves under it. */
-  const triggerDataReaderTranslation = (worker, base) => worker.evaluate(async ({ base }) => {
-    const [tab] = await chrome.tabs.query({ url: `${base}/data-reader*` });
-    // No srcUrl: passing a megabyte of base64 through the context menu is not
-    // what happens, and the float ball has none either.
-    await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', targetLang: 'zh-CN' });
-  }, { base });
+  /**
+   * The popup's entry point, against a tab whose URL moves under it.
+   *
+   * Sent only once the shown slot has decoded: the content script picks the
+   * page by its decoded size, so a trigger that lands while the data: URL is
+   * still decoding finds no page, creates no job, and the slot never changes.
+   */
+  const triggerDataReaderTranslation = async (worker, page, base) => {
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.page_img'))
+      .some(img => img.style.display !== 'none' && img.complete && img.naturalWidth > 0));
+    await worker.evaluate(async ({ base }) => {
+      const [tab] = await chrome.tabs.query({ url: `${base}/data-reader*` });
+      // No srcUrl: passing a megabyte of base64 through the context menu is not
+      // what happens, and the float ball has none either.
+      await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', targetLang: 'zh-CN' });
+    }, { base });
+  };
 
   test('tells inlined pages apart without keeping them', async ({ context, page }) => {
     const service = await startMockService('succeed');
@@ -358,7 +368,7 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/data-reader`);
       const slots = page.locator('.page_img');
 
-      await triggerDataReaderTranslation(worker, service.base);
+      await triggerDataReaderTranslation(worker, page, service.base);
       await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
 
       // Page 3 arrives in page 1's slot. Two inlined pages are two different
@@ -384,7 +394,7 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/data-reader`);
       await expect(page.locator('.page_img').nth(1)).toHaveAttribute('src', /^data:image\/png/);
 
-      await triggerDataReaderTranslation(worker, service.base);
+      await triggerDataReaderTranslation(worker, page, service.base);
       await expect(page.locator('.page_img').nth(1)).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
