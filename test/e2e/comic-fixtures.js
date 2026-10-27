@@ -441,10 +441,13 @@ async function startMockService(
         }
         const pages = state.chapters[body.pageUrl] || (state.chapters[body.pageUrl] = {});
         pages[body.pageId] = body.pageIndex;
+        // The service prices a job before creating anything and refuses one the
+        // balance cannot cover with `insufficient_credits` and the shortfall —
+        // not the `insufficient_points` a page that failed mid-run carries.
         if (behaviour === 'insufficient') {
           return send(402, {
-            error: 'insufficient_points',
-            message: 'Not enough points',
+            error: 'insufficient_credits',
+            message: 'This job costs 2 credits and the balance is 0; 2 short',
             balance: 0,
             required: 2,
             quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 2, points: 2, balancePoints: 0 },

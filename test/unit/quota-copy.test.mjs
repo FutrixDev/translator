@@ -67,6 +67,9 @@ test('every locale renders the offer with no placeholder left over', () => {
 test('one table maps a refusal to its entry; spent pages offer the plans', () => {
   const worker = workerSource();
   assert.match(worker, /const ACCOUNT_ACTIONS = Object\.freeze\(\{[^}]*insufficient_points: 'subscribe'/);
+  // A comic job refused before it is created says so with its own code.
+  assert.match(worker, /const ACCOUNT_ACTIONS = Object\.freeze\(\{[^}]*insufficient_credits: 'subscribe'/);
+  assert.match(comicSource(), /case 'insufficient_credits':/);
   assert.equal([...worker.matchAll(/ACCOUNT_ACTIONS = /g)].length, 1, 'a second action table');
   // The plan allowance is read from the public rates, never written down.
   assert.match(worker, /apiFetch\('\/api\/billing\/rates'\)/);

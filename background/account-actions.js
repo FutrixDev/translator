@@ -13,16 +13,22 @@ import { noteAccountAction } from './blab-client.js';
 
 /**
  * Refusal code -> the entry that fixes it. Blab Translation's own codes
- * (`plan_required`, `unauthorized`) and the page allowance's
- * (`insufficient_points`: the free pages are spent and the account has no
- * credits) share one table. Today's Blab allowance (`daily_limit`) has nothing
- * to press — it comes back by itself.
+ * (`plan_required`, `unauthorized`) and the page allowance's share one table.
+ * The allowance refuses with two codes: `insufficient_points` (the free pages
+ * are spent and the account has no credits; a page that did not run) and
+ * `insufficient_credits` (a comic job priced up front and refused before
+ * anything was created, with the shortfall). Today's Blab allowance
+ * (`daily_limit`) has nothing to press — it comes back by itself.
  */
 const ACCOUNT_ACTIONS = Object.freeze({
   plan_required: 'subscribe',
   unauthorized: 'signin',
   insufficient_points: 'subscribe',
+  insufficient_credits: 'subscribe',
 });
+
+/** The allowance's refusals, which also say when the free pages come back. */
+const QUOTA_REFUSALS = new Set(['insufficient_points', 'insufficient_credits']);
 
 /** The entry for a refusal code, or undefined when there is none. */
 function accountActionFor(code) {
@@ -102,7 +108,7 @@ async function accountErrorMessage(error) {
   const message = error.toMessage().error;
   const action = accountActionFor(message.code);
   if (action) message.action = action;
-  if (message.code === 'insufficient_points' && message.quote?.operation) {
+  if (QUOTA_REFUSALS.has(message.code) && message.quote?.operation) {
     Object.assign(message, await quotaOffer(message.quote.operation));
   }
   return message;
