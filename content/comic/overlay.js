@@ -132,6 +132,9 @@
   // stops short of 100; only a finished job gets that.
   const CREEP_PER_MS = 1 / 120_000;
   const CREEP_CAP = 0.95;
+  // The first figure worth printing. Below it a number says nothing the stage
+  // word beside it does not, so the elapsed time stands in until then.
+  const PCT_MIN = 0.01;
 
   /**
    * The progress pill in the image's top-right corner, and the card that
@@ -191,6 +194,9 @@
     let progressBase = null;
     let progressBaseAt = 0;
     let pctShown = '';
+    // A stage the pill names (uploading, translating, loading the result) and
+    // has no number for yet. Off while the reader is asked or the job failed.
+    let clocked = false;
     // Why the job failed, while the pill says it did; null otherwise.
     let failed = null;
     // A failed page in a chapter is listed on the chapter pill, which is where
@@ -210,6 +216,7 @@
           timerElement.textContent = next;
         }
       }
+      let next = '';
       if (progressBase !== null) {
         const value = progressBase >= 1
           ? 1
@@ -217,13 +224,20 @@
         // Held at the cap, the number stops moving, so the elapsed time takes
         // over saying the job is alive — the same clock the card shows.
         const held = value >= CREEP_CAP && value < 1 && timerFrom;
-        const next = held
-          ? `${Math.floor(value * 100)}% · ${formatElapsed(Date.now() - timerFrom)}`
-          : `${Math.floor(value * 100)}%`;
-        if (next !== pctShown) {
-          pctShown = next;
-          pct.textContent = next;
+        if (value >= PCT_MIN) {
+          next = held
+            ? `${Math.floor(value * 100)}% · ${formatElapsed(Date.now() - timerFrom)}`
+            : `${Math.floor(value * 100)}%`;
         }
+      }
+      // No number yet — the upload, the first second of a job, the download of
+      // the result: the stage word says what is happening and the clock says it
+      // still is. Elapsed time, never an invented figure.
+      if (!next && clocked && timerFrom) next = formatElapsed(Date.now() - timerFrom);
+      if (next !== pctShown) {
+        pctShown = next;
+        pct.textContent = next;
+        pct.hidden = !next;
       }
     };
 
@@ -265,7 +279,6 @@
       // figure behind the estimate, must not make the number drop.
       progressBase = Math.max(current, progress);
       progressBaseAt = now;
-      pct.hidden = false;
     }
 
     return {
@@ -311,11 +324,13 @@
         timerElement.hidden = true;
       },
       /**
-       * What the pill says: the job, and how far along it is (0–1, or null for
-       * no number). Not busy means the job is waiting on the reader.
+       * What the pill says: the stage the job is in, and how far along it is
+       * (0–1, or null for no number). Below 1% the pill shows the elapsed time
+       * instead of a number. Not busy means no job exists yet to spin for.
        */
       setStatus(text, { progress = null, busy = true } = {}) {
         failed = null;
+        clocked = true;
         root.classList.remove('is-error');
         root.classList.toggle('is-busy', busy);
         label.textContent = text;
@@ -333,6 +348,7 @@
        */
       ask(text, { label: waitingFor }) {
         failed = null;
+        clocked = false;
         root.classList.remove('is-error', 'is-busy');
         label.textContent = waitingFor;
         pill.title = waitingFor;
@@ -363,6 +379,7 @@
       /** The job is over and did not succeed: the pill says so, the card why. */
       setError(text) {
         failed = text;
+        clocked = false;
         root.classList.add('is-error');
         root.classList.remove('is-busy');
         label.textContent = t('comicFailed');

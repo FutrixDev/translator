@@ -304,14 +304,17 @@ const TALL_HTML = `<!doctype html>
  * create under its pageUrl, `{ [pageId]: pageIndex }`, which is how the real
  * service groups a chapter's pages. `uploadDelayMs` holds the PUT's answer
  * back; `Infinity` never answers it, which is what a stalled storage upload
- * looks like from the worker. `putStatus` is the status the PUT answers with,
+ * looks like from the worker. `resultDelayMs` holds the finished page's
+ * download back the same way, which is the stretch between a job that has
+ * succeeded and the result on screen. `putStatus` is the status the PUT answers with,
  * so a storage refusal can be played. `runningProgress` is the figure a
  * running job reports. `abandoned` records the job id of every abandon.
  *
  * `chapter` turns the one shared job into one job per create, which is what a
  * whole chapter needs: `job_<n>`, finishing `stepMs × (pageIndex + 1)` after
  * it was created, so the pages land one batch of polls at a time. A page in
- * `failPages` fails its first job and succeeds when it is asked again. A
+ * `failPages` fails its first job, with `failCode` (default `failed`), and
+ * succeeds when it is asked again. A
  * succeeded job names the chapter's document (`assetId`) and its page, as the
  * real job view does. `jobs` records every one, `{ pageIndex, createdAt,
  * attempt }`.
@@ -319,7 +322,7 @@ const TALL_HTML = `<!doctype html>
 async function startMockService(
   behaviour = 'succeed',
   { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
-    putStatus = 200, runningProgress = 0.4, chapter = null } = {},
+    resultDelayMs = 0, putStatus = 200, runningProgress = 0.4, chapter = null } = {},
 ) {
   const state = {
     polls: 0, abandoned: [], createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
@@ -369,7 +372,7 @@ async function startMockService(
     if (url.pathname === '/result.png') {
       state.resultHits += 1;
       if (state.resultHits <= resultFailures) return send(403, 'expired', 'text/plain');
-      return send(200, RESULT_PNG, 'image/png');
+      return setTimeout(() => send(200, RESULT_PNG, 'image/png'), resultDelayMs);
     }
 
     if (url.pathname === '/ext/connect') {
@@ -511,14 +514,14 @@ async function startMockService(
 }
 
 /** A chapter job's poll answer: `[status, body]`. */
-function chapterPoll({ failPages = [], stepMs = 600 }, state, jobId, base) {
+function chapterPoll({ failPages = [], failCode = 'failed', stepMs = 600 }, state, jobId, base) {
   const job = state.jobs[jobId];
   if (!job) return [404, { error: 'not_found' }];
   if (Date.now() - job.createdAt < stepMs * (job.pageIndex + 1)) {
     return [200, { jobId, status: 'running', progress: 0.4 }];
   }
   if (failPages.includes(job.pageIndex) && job.attempt === 0) {
-    return [200, { jobId, status: 'failed', progress: 0, error: { code: 'failed' } }];
+    return [200, { jobId, status: 'failed', progress: 0, error: { code: failCode } }];
   }
   return [200, {
     jobId,

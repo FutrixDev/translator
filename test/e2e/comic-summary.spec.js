@@ -123,6 +123,32 @@ test.describe('Comic chapter summary', () => {
     }
   });
 
+  test('a failed page says why, on its own card and in the chapter card', async ({ context, page }) => {
+    test.setTimeout(90_000);
+    const service = await startMockService('succeed', {
+      chapter: { failPages: FAIL_PAGES, failCode: 'comic_unsupported_script', stepMs: 300 }
+    });
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openChapter(page, service);
+      await triggerComicPageTranslation(worker, pageUrl);
+      await expect(page.locator(LABEL)).toHaveText('Chapter 10/12', { timeout: 30_000 });
+
+      await page.locator('.ai-translator-comic-progress.is-error .ai-translator-comic-pill').nth(0).click();
+      await expect(page.locator('.ai-translator-comic-progress.is-error .ai-translator-comic-card').nth(0))
+        .toContainText('This script is not supported yet');
+
+      await page.locator(PILL).click();
+      await expect(page.locator(ITEM)).toHaveCount(2);
+      for (const i of [0, 1]) {
+        await expect(page.locator(ITEM).nth(i).locator('.ai-translator-comic-summary-reason'))
+          .toHaveText('This script is not supported yet');
+      }
+    } finally {
+      await service.close();
+    }
+  });
+
   test('cancelling all while every page waits on the charge card frees them to run again', async ({ context, page }) => {
     test.setTimeout(90_000);
     const service = await startMockService('confirm', { chapter: { stepMs: 600 } });

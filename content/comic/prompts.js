@@ -167,7 +167,21 @@
       // An overlay that was already open when the switch went off; the worker
       // is the one that decides, so this is how that decision reads.
       case 'feature_disabled': return t('featureDisabled');
-      default: return t('comicFailed');
+      // Why the redraw itself failed, as the job's poll names it.
+      case 'comic_unsupported_script': return t('comicUnsupportedScript');
+      case 'comic_no_text': return t('comicNoText');
+      case 'comic_source_unreadable': return t('comicImageUnavailable');
+      // Ours, not the page's: nothing the reader could change would help.
+      case 'comic_translate_unparsable':
+      case 'comic_internal':
+      case 'failed': return t('comicFailed');
+      default:
+        // A code this build does not know yet (the service names failures the
+        // extension learns later). Still a failure the reader is told about,
+        // in general words; the code goes to the console once so it can be
+        // given words of its own.
+        console.warn('[comic] no wording for failure code', code);
+        return t('comicFailed');
     }
   }
 

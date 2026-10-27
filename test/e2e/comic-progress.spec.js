@@ -97,7 +97,9 @@ test.describe('Comic progress pill', () => {
       expect(Math.abs(img.y + 8 - box.y)).toBeLessThanOrEqual(1);
 
       // The number is what says the job is alive: it moves within any 2 s.
+      // Before the job reports one, the pill counts the elapsed time instead.
       const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
+      await expect(pct).toHaveText(/%$/);
       const samples = [await pct.textContent()];
       for (let i = 0; i < 2; i++) {
         await page.waitForTimeout(2000);
@@ -117,6 +119,55 @@ test.describe('Comic progress pill', () => {
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 30_000 });
       await expect(page.locator(ROOT)).toHaveCount(0);
       await expect(page.locator('.ai-translator-comic-badge')).toBeVisible();
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('the upload and the result download each name their stage, and the signal never stops', async ({ context, page }) => {
+    const service = await startMockService('succeed', { uploadDelayMs: 4_500, resultDelayMs: 4_500 });
+    try {
+      const worker = await connectExtension(context, service.base);
+      await openComicPage(page, service);
+      // What the pill says every 250 ms: its stage word, and the figure beside it.
+      await page.evaluate((root) => {
+        window.__signal = [];
+        const t0 = performance.now();
+        setInterval(() => {
+          const element = document.querySelector(root);
+          const img = document.getElementById('comic');
+          window.__signal.push({
+            t: Math.round(performance.now() - t0),
+            label: element ? element.querySelector('.ai-translator-comic-label').textContent : null,
+            pct: element ? element.querySelector('.ai-translator-comic-pct').textContent : null,
+            result: /\/result\.png/.test(img.currentSrc || img.src),
+          });
+        }, 250);
+      }, ROOT);
+      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+
+      const label = page.locator(`${ROOT} .ai-translator-comic-label`);
+      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
+      // The bytes are on their way and no job exists yet.
+      await expect(label).toHaveText('Uploading image…');
+      await expect(pct).toHaveText(/^\d+:\d{2}$/);
+      expect(service.state.createBodies).toHaveLength(0);
+      // The job is done and the page is still the original: the result is loading.
+      await expect(label).toHaveText('Loading result…', { timeout: 15_000 });
+      await expect(page.locator('#comic')).not.toHaveAttribute('src', /\/result\.png/);
+      await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 15_000 });
+
+      const signal = await page.evaluate(() => window.__signal);
+      const shown = signal.filter(sample => sample.label !== null && !sample.result);
+      expect(shown.some(sample => sample.label === 'Uploading image…')).toBe(true);
+      expect(shown.some(sample => sample.label === 'Loading result…')).toBe(true);
+      expect(shown.some(sample => sample.pct === '100%')).toBe(false);
+      // From the first sample to the swap, label or figure changes at least every 2 s.
+      let last = shown[0];
+      for (const sample of shown) {
+        if (sample.label !== last.label || sample.pct !== last.pct) last = sample;
+        expect(sample.t - last.t, JSON.stringify(sample)).toBeLessThanOrEqual(2_000);
+      }
     } finally {
       await service.close();
     }
@@ -235,7 +286,8 @@ test.describe('Comic progress pill', () => {
       const asked = states.findIndex(state => state.label === 'Awaiting confirmation');
       expect(signedIn).toBeGreaterThan(-1);
       expect(asked).toBeGreaterThan(signedIn);
-      expect(states[signedIn + 1]).toEqual({ busy: false, label: 'Preparing…' });
+      // The sign-in was asked for by the upload, so the upload goes on.
+      expect(states[signedIn + 1]).toEqual({ busy: false, label: 'Uploading image…' });
       states.slice(signedIn + 1, asked + 1).forEach((state) => {
         expect(state.busy).toBe(false);
         expect(state.label).not.toBe('Translating the comic…');

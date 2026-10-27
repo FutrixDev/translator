@@ -468,7 +468,7 @@
   const INCONCLUSIVE_POLL = ['network_error', 'no_response', 'extension_context', 'unauthorized'];
 
   async function recoverResult({ entry, overlay }) {
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 1 });
+    overlay.setStatus(t('comicStageLoadingResult'));
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
@@ -500,18 +500,19 @@
   }
 
   async function runJob({ entry, overlay, page, pageUrl, targetLang }) {
-    // One label for the whole run. The stages underneath — preparing, uploading
-    // pixels, queued, downloading the result — are ours, not the reader's, and
-    // narrating them made a 90-second wait look like four separate things going
-    // wrong. The clock carries the "still working" signal instead.
-    // Until the job exists the pill only says it is getting ready: the upload
-    // or the create can still stop on a sign-in or a price, and a pill that
-    // said "translating" first would claim work that has not started.
+    // Three stage words, each long enough to be seen: the upload (seconds on a
+    // large page), the redraw (the number), and loading the result. Each one
+    // shows the elapsed time until it has a number, so the pill never sits
+    // still for the length of a stage.
+    // Until the job exists the pill is not busy: the upload or the create can
+    // still stop on a sign-in or a price, and a pill that said "translating"
+    // first would claim work that has not started.
     const startedAt = Date.now();
-    overlay.setStatus(t('comicPillPreparing'), { busy: false });
+    overlay.setStatus(t('comicStageUploading'), { busy: false });
     overlay.startTimer(startedAt);
 
-    const uploaded = await withSignIn({ entry, overlay }, () => uploadPage(entry, page.imageUrl));
+    const uploaded = await withSignIn({ entry, overlay, stage: 'comicStageUploading' },
+      () => uploadPage(entry, page.imageUrl));
     // Cancelled from the chapter pill while the bytes were on their way.
     if (entry.cancelled) return;
     if (!uploaded.ok) {
@@ -519,7 +520,7 @@
       return;
     }
 
-    const created = await withSignIn({ entry, overlay }, () => submitJob({
+    const created = await withSignIn({ entry, overlay, stage: 'comicPillPreparing' }, () => submitJob({
       entry, overlay, pageUrl, targetLang, pageIndex: page.pageIndex, sourceKey: uploaded.data.sourceKey
     }));
     if (!created.ok && created.declined) return;
@@ -657,9 +658,9 @@
    * Sign-in is the one interruption that is genuinely the user's turn, so the
    * clock stops rather than counting their typing as redraw time. Resolves to
    * the step's envelope, or `{ ok: false, declined: true }` when the reader
-   * closed the sign-in.
+   * closed the sign-in. `stage` is the i18n key the pill goes back to.
    */
-  async function withSignIn({ entry, overlay }, step) {
+  async function withSignIn({ entry, overlay, stage }, step) {
     const result = await step();
     if (result.ok || result.declined || result.error.code !== 'unauthorized') return result;
     overlay.stopTimer();
@@ -668,8 +669,8 @@
     comic.summaryWaiting(entry, null);
     if (!signedIn) return { ok: false, declined: true };
     // Signed in, but the job is still to be made (a price may come next), so
-    // the pill goes back to getting ready, not to translating.
-    overlay.setStatus(t('comicPillPreparing'), { busy: false });
+    // the pill goes back to the step it stopped at, not to translating.
+    overlay.setStatus(t(stage), { busy: false });
     overlay.startTimer(Date.now());
     return step();
   }
@@ -792,7 +793,9 @@
     // this mode re-polls this id instead of reserving again.
     entry.completedByMode = entry.completedByMode || {};
     if (entry.completedJobId) entry.completedByMode[entry.mode] = entry.completedJobId;
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 1 });
+    // The redraw is done; what is left is the download, seconds for a large
+    // page. A pill held at 100% through it reads as stuck.
+    overlay.setStatus(t('comicStageLoadingResult'));
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
