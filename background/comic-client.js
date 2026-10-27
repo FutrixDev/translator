@@ -455,14 +455,17 @@ export function getJob(jobId) {
 }
 
 /**
- * Open a translated chapter in the site's reader, at `pageIndex`: the comic
- * page's chapter pill. `assetId` is the chapter document every page job of the
- * chapter reports, so any finished page names the same one.
+ * Open document `id` in the site's reader, tagged with the entry `via` it was
+ * opened from (SiteLinks.MEDIUMS); `options` go to SiteLinks.reader. Both
+ * readers go through here: a finished document job, and the comic page's
+ * chapter pill (`id` is the chapter document every page job of the chapter
+ * reports, at `{ pageIndex }`). A base that yields no reader URL (a stored
+ * override that is not http(s), or no id) is an error, not a quiet detour.
  */
-export async function openReader(assetId, pageIndex) {
-  const url = SiteLinks.reader(await getApiBase(), assetId, 'comic_summary', { pageIndex });
+export async function openReaderTab(id, via, options) {
+  const url = SiteLinks.reader(await getApiBase(), id, via, options);
   if (!url) {
-    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL, or the chapter has no id', 0);
+    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL, or the document has no id', 0);
   }
   await chrome.tabs.create({ url });
 }

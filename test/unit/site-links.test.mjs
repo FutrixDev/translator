@@ -95,3 +95,11 @@ test('the pages that link out load site-links.js; the worker imports it', () => 
     assert.match(readFileSync(path.join(ROOT, worker), 'utf8'), /^import '\.\.\/shared\/site-links\.js';$/m, worker);
   }
 });
+
+test('the worker opens the reader from one place', () => {
+  const files = execFileSync('git', ['ls-files', 'background/*.js'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const callers = files.filter((file) => /SiteLinks\.reader\(/.test(readFileSync(path.join(ROOT, file), 'utf8')));
+  assert.deepEqual(callers, ['background/comic-client.js'], 'a second reader opener');
+  assert.match(readFileSync(path.join(ROOT, 'background/comic-client.js'), 'utf8'), /export async function openReaderTab\(/);
+});

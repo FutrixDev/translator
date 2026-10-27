@@ -661,11 +661,7 @@ async function openPdfJob(jobId, via) {
     await chrome.tabs.create({ url: chrome.runtime.getURL(DocJobs.jobPagePath(jobId)) });
     return { opened: 'page' };
   }
-  const url = SiteLinks.reader(await comicClient.getApiBase(), jobId, via);
-  if (!url) {
-    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL', 0);
-  }
-  await chrome.tabs.create({ url });
+  await comicClient.openReaderTab(jobId, via);
   return { opened: 'reader' };
 }
 

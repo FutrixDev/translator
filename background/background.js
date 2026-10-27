@@ -264,7 +264,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'COMIC_OPEN_READER':
-      replyComic(comicClient.openReader(message.assetId, message.pageIndex), sendResponse);
+      replyComic(comicClient.openReaderTab(message.assetId, 'comic_summary', { pageIndex: message.pageIndex }), sendResponse);
       return true;
 
     // --- Document translation (account-backed, see pdf-client.js) ------------
