@@ -8,7 +8,7 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension, setExtensionSettings } = require('./helpers');
-const { startMockService, triggerComicTranslation } = require('./comic-fixtures');
+const { startMockService, openComicPage, triggerComicTranslation } = require('./comic-fixtures');
 
 const BAR = '#ai-translator-image-hover-bar';
 const COMIC_CHIP = '#ai-translator-comic-hover-btn';
@@ -20,11 +20,6 @@ const OCR_CHIP = '#ai-translator-ocr-hover-btn';
  */
 function withoutOperationId({ operationId, sourceKey, ...rest }) {
   return rest;
-}
-
-async function openComicPage(page, service, path = '/page') {
-  await page.goto(`${service.base}${path}`);
-  await page.locator('#comic').evaluate(img => img.decode());
 }
 
 test.describe('Comic chip on the image hover bar', () => {
@@ -101,7 +96,7 @@ test.describe('Comic chip on the image hover bar', () => {
       await setExtensionSettings(page, { comicTargetLang: 'zh-CN' });
       await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/);
       // Put the plans offer away, not open it.

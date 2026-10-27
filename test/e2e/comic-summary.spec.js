@@ -8,7 +8,9 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension, setExtensionAccount } = require('./helpers');
-const { startMockService, triggerComicTranslation, triggerComicPageTranslation } = require('./comic-fixtures');
+const {
+  startMockService, imagesDecoded, openComicPage, triggerComicTranslation, triggerComicPageTranslation,
+} = require('./comic-fixtures');
 
 const ROOT = '.ai-translator-comic-summary';
 const PILL = `${ROOT} .ai-translator-comic-summary-pill`;
@@ -35,14 +37,7 @@ function recordLabels(page) {
 const doneOf = text => Number(/(\d+)\/(\d+)/.exec(text)[1]);
 
 /** The twelve-page chapter, every page decoded; resolves to its URL. */
-async function openChapter(page, service) {
-  const pageUrl = `${service.base}/chapter12`;
-  await page.goto(pageUrl);
-  await decodePages(page);
-  return pageUrl;
-}
-
-const decodePages = page => page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+const openChapter = (page, service) => openComicPage(page, service, '/chapter12');
 
 test.describe('Comic chapter summary', () => {
   test('counts a chapter to 10/12, retries only the failed pages, and opens the chapter in the reader', async ({ context, page }) => {
@@ -50,12 +45,10 @@ test.describe('Comic chapter summary', () => {
     const service = await startMockService('succeed', { chapter: { failPages: FAIL_PAGES, stepMs: 600 } });
     try {
       const worker = await connectExtension(context, service.base);
-      const pageUrl = `${service.base}/chapter12`;
-      await page.goto(pageUrl);
-      await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+      const pageUrl = await openChapter(page, service);
       await recordLabels(page);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(12);
       expect(service.state.createBodies.map(body => body.pageIndex).sort((a, b) => a - b))
         .toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
@@ -131,7 +124,7 @@ test.describe('Comic chapter summary', () => {
     try {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Chapter 10/12', { timeout: 30_000 });
 
       await page.locator('.ai-translator-comic-progress.is-error .ai-translator-comic-pill').nth(0).click();
@@ -154,11 +147,9 @@ test.describe('Comic chapter summary', () => {
     const service = await startMockService('confirm', { chapter: { stepMs: 600 } });
     try {
       const worker = await connectExtension(context, service.base);
-      const pageUrl = `${service.base}/chapter12`;
-      await page.goto(pageUrl);
-      await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+      const pageUrl = await openChapter(page, service);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(12);
       // Every page waits on its price: nothing is translating, and the pill
       // says what it waits for instead of spinning.
@@ -173,7 +164,7 @@ test.describe('Comic chapter summary', () => {
       await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
 
       // Every page let go of its card, so asking again asks the service again.
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(24);
       await expect(page.locator(LABEL)).toHaveText('Awaiting confirmation', { timeout: 10_000 });
     } finally {
@@ -186,11 +177,9 @@ test.describe('Comic chapter summary', () => {
     const service = await startMockService('succeed', { chapter: { stepMs: 600 } });
     try {
       const worker = await connectExtension(context, service.base, { signedIn: false });
-      const pageUrl = `${service.base}/chapter12`;
-      await page.goto(pageUrl);
-      await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+      const pageUrl = await openChapter(page, service);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Sign-in needed' }))
         .toHaveCount(12, { timeout: 20_000 });
       // All twelve wait on the reader, so the pill does too, without a spinner.
@@ -205,7 +194,7 @@ test.describe('Comic chapter summary', () => {
       await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
 
       // No page is still waiting on a card that is gone: asking again runs all twelve.
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Sign-in needed', { timeout: 20_000 });
       await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(12);
     } finally {
@@ -220,11 +209,11 @@ test.describe('Comic chapter summary', () => {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
 
-      await triggerComicTranslation(worker, pageUrl, `${service.base}/source.png?page=1`);
+      await triggerComicTranslation(worker, page, pageUrl, `${service.base}/source.png?page=1`);
       await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Awaiting confirmation' }))
         .toHaveCount(1, { timeout: 20_000 });
       await setExtensionAccount(page, false);
-      await triggerComicTranslation(worker, pageUrl, `${service.base}/source.png?page=2`);
+      await triggerComicTranslation(worker, page, pageUrl, `${service.base}/source.png?page=2`);
       await expect(page.locator('.ai-translator-comic-progress .ai-translator-comic-label', { hasText: 'Sign-in needed' }))
         .toHaveCount(1, { timeout: 20_000 });
 
@@ -246,7 +235,7 @@ test.describe('Comic chapter summary', () => {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Preparing…', { timeout: 10_000 });
       await expect(page.locator(ROOT)).not.toHaveClass(/is-busy/);
       // Read while the uploads are still held: no page had its job yet.
@@ -265,11 +254,9 @@ test.describe('Comic chapter summary', () => {
     const service = await startMockService('succeed', { chapter: { stepMs: 900 } });
     try {
       const worker = await connectExtension(context, service.base);
-      const pageUrl = `${service.base}/chapter12`;
-      await page.goto(pageUrl);
-      await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
+      const pageUrl = await openChapter(page, service);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText(/^Chapter [3-6]\/12$/, { timeout: 30_000 });
       await page.locator(PILL).click();
       await page.locator(BUTTON, { hasText: 'Cancel all' }).click();
@@ -297,12 +284,12 @@ test.describe('Comic chapter summary', () => {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
 
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(12);
       await expect(page.locator(LABEL)).toHaveText('Chapter 0/12');
 
       await page.reload();
-      await decodePages(page);
+      await imagesDecoded(page);
       await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(12, { timeout: 15_000 });
       // Picked back up, not asked again: the pill counts the resumed jobs.
       await expect(page.locator(LABEL)).toHaveText('Chapter 0/12');
@@ -318,13 +305,13 @@ test.describe('Comic chapter summary', () => {
     try {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(12);
 
       // Every page is still running on the server when the page goes away, so
       // all twelve outcomes — the two failures too — arrive on resumed jobs.
       await page.reload();
-      await decodePages(page);
+      await imagesDecoded(page);
       await expect(page.locator(LABEL)).toHaveText('Chapter 10/12', { timeout: 80_000 });
       await expect(page.locator(ITEM)).toHaveCount(2, { timeout: 10_000 });
       await expect(page.locator(BUTTON, { hasText: 'Retry failed' })).toHaveCount(1);
@@ -346,7 +333,7 @@ test.describe('Comic chapter summary', () => {
     try {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Chapter 12/12', { timeout: 40_000 });
 
       // No decode wait: the restore swaps finished pages' src under it.
@@ -370,7 +357,7 @@ test.describe('Comic chapter summary', () => {
     try {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Chapter 4/12', { timeout: 60_000 });
 
       // Every label from the reloaded document's first moment on.
@@ -405,7 +392,7 @@ test.describe('Comic chapter summary', () => {
     try {
       const worker = await connectExtension(context, service.base);
       const pageUrl = await openChapter(page, service);
-      await triggerComicPageTranslation(worker, pageUrl);
+      await triggerComicPageTranslation(worker, page, pageUrl);
       await expect(page.locator(LABEL)).toHaveText('Chapter 12/12', { timeout: 40_000 });
 
       // No decode wait: the restore swaps finished pages' src under it.
@@ -421,9 +408,8 @@ test.describe('Comic chapter summary', () => {
         img.width = 150;
         img.style.cssText = 'display:block;margin:0 10px 10px 0';
         document.querySelector('img.page').parentElement.appendChild(img);
-        return img.decode();
       });
-      await triggerComicTranslation(worker, pageUrl, `${service.base}/source.png?page=13`);
+      await triggerComicTranslation(worker, page, pageUrl, `${service.base}/source.png?page=13`);
       await expect(page.locator(LABEL)).toHaveText('Chapter 13/13', { timeout: 20_000 });
       expect(service.state.createBodies).toHaveLength(13);
     } finally {

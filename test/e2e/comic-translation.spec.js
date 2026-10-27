@@ -13,6 +13,7 @@ const { connectExtension } = require('./helpers');
 const {
   SOURCE_PNG,
   startMockService,
+  openComicPage,
   triggerComicTranslation,
   triggerComicPageTranslation,
 } = require('./comic-fixtures');
@@ -36,7 +37,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('.ai-translator-comic-progress')).toBeVisible();
 
@@ -77,7 +78,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/);
@@ -111,7 +112,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/, { timeout: 20000 });
@@ -119,7 +120,7 @@ test.describe('Comic page translation', () => {
       expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
       expect(service.state.createBodies).toHaveLength(1);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -139,7 +140,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(1);
       const [created] = service.state.createBodies;
@@ -168,12 +169,10 @@ test.describe('Comic page translation', () => {
     const service = await startMockService('succeed', { hotlinkGuard: true });
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/page`);
-      await page.waitForSelector('#comic');
       // The reader can see the page; only a request without a Referer is refused.
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -203,11 +202,9 @@ test.describe('Comic page translation', () => {
     const service = await startMockService('succeed', { hotlinkGuard: true, guardStatus: 200 });
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/page`);
-      await page.waitForSelector('#comic');
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -231,10 +228,9 @@ test.describe('Comic page translation', () => {
     const service = await startMockService('succeed');
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/decoy-page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service, '/decoy-page');
 
-      await triggerComicTranslation(worker, `${service.base}/decoy-page`, `${service.base}/decoy.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/decoy-page`, `${service.base}/decoy.png`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -253,10 +249,9 @@ test.describe('Comic page translation', () => {
     const service = await startMockService('succeed');
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/decoy-page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service, '/decoy-page');
 
-      await triggerComicPageTranslation(worker, `${service.base}/decoy-page`);
+      await triggerComicPageTranslation(worker, page, `${service.base}/decoy-page`);
 
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -280,8 +275,7 @@ test.describe('Comic page translation', () => {
     const worker = await connectExtension(context, service.base);
     try {
       await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
-      await page.goto(`${service.base}/decoy-page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service, '/decoy-page');
 
       // Move, don't just land: the old trigger was mousemove-driven, so a
       // single hover point would not have fired it either.
@@ -315,14 +309,14 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
       expect(service.state.createBodies).toHaveLength(1);
       expect(service.state.createBodies[0].mode).toBe('translate');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
       await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(2);
       // The whole point: not 'colorize', which would have redrawn the original
       // and thrown the translation away.
@@ -361,7 +355,7 @@ test.describe('Comic page translation', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
@@ -370,7 +364,7 @@ test.describe('Comic page translation', () => {
       // The other product on the same page: a second paid job, by design.
       await badge.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/source\.png/);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`, 'colorize');
       await expect.poll(() => service.state.createBodies.length, { timeout: 20000 }).toBe(2);
       expect(service.state.createBodies[1].mode).toBe('colorize');
       await expect(page.locator('#comic')).toHaveAttribute(
@@ -383,7 +377,7 @@ test.describe('Comic page translation', () => {
       // than on the src, which matches the same result pattern either way.
       await badge.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/source\.png/);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`, 'translate');
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`, 'translate');
       await expect(badge).toBeVisible({ timeout: 20000 });
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
@@ -408,13 +402,11 @@ test.describe('Comic page translation', () => {
     const worker = await connectExtension(context, service.base);
     try {
       await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: true }));
-      await page.goto(`${service.base}/decoy-page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service, '/decoy-page');
 
       // The decoy is what the right-click reports, and it still has to resolve
       // to the artwork behind it — the same job the translate entry does.
-      await triggerComicTranslation(
-        worker, `${service.base}/decoy-page`, `${service.base}/decoy.png`, 'colorize',
+      await triggerComicTranslation(worker, page, `${service.base}/decoy-page`, `${service.base}/decoy.png`, 'colorize',
       );
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },

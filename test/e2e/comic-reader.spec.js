@@ -9,7 +9,7 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension } = require('./helpers');
-const { startMockService, triggerComicTranslation } = require('./comic-fixtures');
+const { startMockService, triggerComicTranslation, triggerComicPageTranslation } = require('./comic-fixtures');
 
 test.describe('Comic page translation — reader', () => {
   /**
@@ -28,7 +28,7 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       await expect(page.locator('.ai-translator-comic-progress')).toBeVisible();
 
       // The overlay goes up on the click, before the job exists — reloading on
@@ -68,7 +68,7 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       await expect(page.locator('#comic')).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
@@ -343,24 +343,6 @@ test.describe('Comic page translation — reader', () => {
     }
   });
 
-  /**
-   * The popup's entry point, against a tab whose URL moves under it.
-   *
-   * Sent only once the shown slot has decoded: the content script picks the
-   * page by its decoded size, so a trigger that lands while the data: URL is
-   * still decoding finds no page, creates no job, and the slot never changes.
-   */
-  const triggerDataReaderTranslation = async (worker, page, base) => {
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.page_img'))
-      .some(img => img.style.display !== 'none' && img.complete && img.naturalWidth > 0));
-    await worker.evaluate(async ({ base }) => {
-      const [tab] = await chrome.tabs.query({ url: `${base}/data-reader*` });
-      // No srcUrl: passing a megabyte of base64 through the context menu is not
-      // what happens, and the float ball has none either.
-      await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', targetLang: 'zh-CN' });
-    }, { base });
-  };
-
   test('tells inlined pages apart without keeping them', async ({ context, page }) => {
     const service = await startMockService('succeed');
     const worker = await connectExtension(context, service.base);
@@ -368,7 +350,8 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/data-reader`);
       const slots = page.locator('.page_img');
 
-      await triggerDataReaderTranslation(worker, page, service.base);
+      // The popup's entry point, against a tab whose URL moves under it.
+      await triggerComicPageTranslation(worker, page);
       await expect(slots.nth(1)).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20000 });
 
       // Page 3 arrives in page 1's slot. Two inlined pages are two different
@@ -394,7 +377,8 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/data-reader`);
       await expect(page.locator('.page_img').nth(1)).toHaveAttribute('src', /^data:image\/png/);
 
-      await triggerDataReaderTranslation(worker, page, service.base);
+      // The popup's entry point, against a tab whose URL moves under it.
+      await triggerComicPageTranslation(worker, page);
       await expect(page.locator('.page_img').nth(1)).toHaveAttribute(
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
@@ -431,7 +415,7 @@ test.describe('Comic page translation — reader', () => {
       await page.goto(`${service.base}/page`);
       await page.waitForSelector('#comic');
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toBeVisible();

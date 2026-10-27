@@ -9,17 +9,14 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension } = require('./helpers');
-const { startMockService, triggerComicTranslation, triggerComicPageTranslation } = require('./comic-fixtures');
+const {
+  startMockService, openComicPage, triggerComicTranslation, triggerComicPageTranslation,
+} = require('./comic-fixtures');
 
 const ROOT = '.ai-translator-comic-progress';
 const PILL = `${ROOT} .ai-translator-comic-pill`;
 const CARD = `${ROOT} .ai-translator-comic-card`;
 const OURS = '[class*="ai-translator"], [id^="ai-translator"]';
-
-async function openComicPage(page, service, path = '/page') {
-  await page.goto(`${service.base}${path}`);
-  await page.locator('img').first().evaluate(img => img.decode());
-}
 
 /** Every element of ours under the image's centre, top to bottom. */
 function oursAtCentre(page, selector = '#comic') {
@@ -81,7 +78,7 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const pill = page.locator(PILL);
       await expect(pill).toBeVisible();
@@ -144,7 +141,7 @@ test.describe('Comic progress pill', () => {
           });
         }, 250);
       }, ROOT);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const label = page.locator(`${ROOT} .ai-translator-comic-label`);
       const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
@@ -178,7 +175,7 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const card = page.locator(CARD);
       const cancel = card.locator('.ai-translator-comic-btn');
@@ -213,7 +210,7 @@ test.describe('Comic progress pill', () => {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
       await recordPill(page);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       // The question opens the card by itself: the reader has to answer it.
       const card = page.locator(CARD);
@@ -250,7 +247,7 @@ test.describe('Comic progress pill', () => {
       const worker = await connectExtension(context, service.base, { signedIn: false });
       await openComicPage(page, service);
       await recordPill(page);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
       await expect(signIn).toHaveText('Sign In');
@@ -273,7 +270,7 @@ test.describe('Comic progress pill', () => {
       const worker = await connectExtension(context, service.base, { signedIn: false });
       await openComicPage(page, service);
       await recordPill(page);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const signIn = page.locator(`${CARD} .ai-translator-comic-btn.is-primary`);
       await expect(signIn).toHaveText('Sign In');
@@ -303,7 +300,7 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
       await expect(pct).toHaveText(/^95% · \d+:\d{2}$/, { timeout: 15_000 });
@@ -325,7 +322,7 @@ test.describe('Comic progress pill', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/spread');
-      await triggerComicPageTranslation(worker, `${service.base}/spread`);
+      await triggerComicPageTranslation(worker, page, `${service.base}/spread`);
 
       await expect(page.locator(PILL)).toHaveCount(2);
       for (const id of ['#left', '#right']) {

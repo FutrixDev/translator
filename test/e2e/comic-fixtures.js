@@ -544,8 +544,30 @@ function readJson(req, then) {
   req.on('end', () => then(JSON.parse(raw || '{}')));
 }
 
+/**
+ * Every image on the page loaded and decoded, or failed for good.
+ *
+ * The content script picks a page by its decoded size, so a trigger that lands
+ * while an image is still decoding finds no page and orders nothing. Settled,
+ * not resolved: a refused source and a reader's empty slot reject `decode()`,
+ * and that is an answer too. No fixture page lazy-loads, so nothing here waits
+ * on an image that is never fetched.
+ */
+async function imagesDecoded(page) {
+  await page.evaluate(() => Promise.allSettled(Array.from(document.images, img => img.decode())));
+}
+
+/** Opens a fixture page with every image decoded; resolves to its URL. */
+async function openComicPage(page, service, path = '/page') {
+  const pageUrl = `${service.base}${path}`;
+  await page.goto(pageUrl);
+  await imagesDecoded(page);
+  return pageUrl;
+}
+
 /** Stand in for the context-menu click, which is a native menu Playwright cannot open. */
-async function triggerComicTranslation(worker, pageUrl, srcUrl, mode) {
+async function triggerComicTranslation(worker, page, pageUrl, srcUrl, mode) {
+  await imagesDecoded(page);
   await worker.evaluate(async ({ pageUrl, srcUrl, mode }) => {
     const [tab] = await chrome.tabs.query({ url: pageUrl });
     await chrome.tabs.sendMessage(tab.id, {
@@ -559,7 +581,8 @@ async function triggerComicTranslation(worker, pageUrl, srcUrl, mode) {
 }
 
 /** The popup's entry point: no srcUrl, the page picks its own image. */
-async function triggerComicPageTranslation(worker, pageUrl) {
+async function triggerComicPageTranslation(worker, page, pageUrl = page.url()) {
+  await imagesDecoded(page);
   await worker.evaluate(async ({ pageUrl }) => {
     const [tab] = await chrome.tabs.query({ url: pageUrl });
     await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', pageUrl, targetLang: 'zh-CN' });
@@ -583,6 +606,8 @@ module.exports = {
   DATA_PAGES,
   DATA_READER_HTML,
   startMockService,
+  imagesDecoded,
+  openComicPage,
   triggerComicTranslation,
   triggerComicPageTranslation,
 };

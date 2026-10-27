@@ -8,17 +8,14 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension } = require('./helpers');
-const { SOURCE_PNG, startMockService, triggerComicTranslation } = require('./comic-fixtures');
+const { SOURCE_PNG, startMockService, openComicPage, triggerComicTranslation } = require('./comic-fixtures');
 
 const page_ = n => `img.page:nth-of-type(${n})`;
 
-async function openChapter(page, service) {
-  await page.goto(`${service.base}/chapter`);
-  await page.locator('img.page').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
-}
+const openChapter = (page, service) => openComicPage(page, service, '/chapter');
 
 async function translatePage(worker, page, service, n, mode) {
-  await triggerComicTranslation(worker, `${service.base}/chapter`, `${service.base}/source.png?page=${n}`, mode);
+  await triggerComicTranslation(worker, page, `${service.base}/chapter`, `${service.base}/source.png?page=${n}`, mode);
 }
 
 test.describe('Comic page upload', () => {
@@ -83,10 +80,9 @@ test.describe('Comic page upload', () => {
     const service = await startMockService('succeed', { uploadDelayMs: Infinity });
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toBeVisible();
       await expect.poll(() => service.state.puts.length, { timeout: 20_000 }).toBe(1);
@@ -107,10 +103,9 @@ test.describe('Comic page upload', () => {
     const service = await startMockService('succeed', { putStatus: 500 });
     try {
       const worker = await connectExtension(context, service.base);
-      await page.goto(`${service.base}/page`);
-      await page.locator('#comic').evaluate(img => img.decode());
+      await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
       const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/, { timeout: 20_000 });
       // The storage's refusal, not a network that never answered.

@@ -7,16 +7,11 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension } = require('./helpers');
-const { startMockService, triggerComicTranslation } = require('./comic-fixtures');
+const { startMockService, openComicPage, triggerComicTranslation } = require('./comic-fixtures');
 
 const PILL = '.ai-translator-comic-progress .ai-translator-comic-pill';
 const BADGE = '.ai-translator-comic-badge';
 const RUNNING = '.ai-translator-comic-progress.is-busy .ai-translator-comic-pill';
-
-async function openComicPage(page, service, path) {
-  await page.goto(`${service.base}${path}`);
-  await page.locator('#comic').evaluate(img => img.decode());
-}
 
 const topOf = (page, selector) => page.locator(selector).evaluate(el => Math.round(el.getBoundingClientRect().top));
 const scrollBox = (page, to, axis = 'y') => page.locator('#box').evaluate((box, [position, along]) => {
@@ -58,7 +53,7 @@ test.describe('Comic corner placement', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       await expect(page.locator(PILL)).toBeVisible();
       expect(await topOf(page, PILL)).toBe(108);
 
@@ -84,7 +79,7 @@ test.describe('Comic corner placement', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       await expect(page.locator(BADGE)).toBeVisible();
       expect(await topOf(page, BADGE)).toBe(108);
@@ -106,7 +101,7 @@ test.describe('Comic corner placement', () => {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
       await widenImage(page);
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       // Measured once the job runs: "Translating the comic…" and its number
       // are the pill at its widest, about 150 px.
       await expect(page.locator(RUNNING)).toBeVisible({ timeout: 15_000 });
@@ -135,7 +130,7 @@ test.describe('Comic corner placement', () => {
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       await expect(page.locator(RUNNING)).toBeVisible({ timeout: 15_000 });
       const height = await sizeOf(page, PILL, 'height');
       expect(height + 16).toBeGreaterThan(20);
@@ -159,7 +154,7 @@ test.describe('Comic corner placement', () => {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/scroller');
       await widenImage(page);
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
       await expect(page.locator(BADGE)).toBeVisible();
       const width = await sizeOf(page, BADGE, 'width');
@@ -207,7 +202,7 @@ test.describe('Comic corner placement', () => {
         return { left: Math.round(el.left - left), right: Math.round(left + box.clientWidth - el.right) };
       }, selector);
 
-      await triggerComicTranslation(worker, `${service.base}/scroller`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/scroller`, `${service.base}/source.png`);
       await expect(page.locator(PILL)).toBeVisible();
       // The image's own right edge is 400 px past the box's: the pill takes
       // the box's.
@@ -237,7 +232,7 @@ test.describe('Comic corner placement', () => {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service, '/tall');
       expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
-      await triggerComicTranslation(worker, `${service.base}/tall`, `${service.base}/source.png`);
+      await triggerComicTranslation(worker, page, `${service.base}/tall`, `${service.base}/source.png`);
       await expect(page.locator(PILL)).toBeVisible();
       expect(await topOf(page, PILL)).toBe(108);
 
