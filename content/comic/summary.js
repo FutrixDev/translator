@@ -199,7 +199,7 @@
         root.classList.toggle('is-busy', count.running > 0 && !held);
         root.classList.toggle('is-error', count.failed > 0 && count.running === 0);
         renderWaiting(waiting, count);
-        renderFailed(heading, list);
+        renderPages(heading, list, 'comicSummaryFailed', task => task.state === 'failed');
         renderActions(actions, count);
       },
       destroy() {
@@ -221,12 +221,16 @@
     }));
   }
 
-  function renderFailed(heading, list) {
-    const failed = [...tasks.values()].filter(task => task.state === 'failed').sort(byPage);
-    heading.hidden = !failed.length;
-    heading.textContent = t('comicSummaryFailed');
+  /**
+   * The pages `which` picks, under the heading `headingKey`, each with its
+   * reason; a click scrolls to the page. Nothing picked hides the heading.
+   */
+  function renderPages(heading, list, headingKey, which) {
+    const pages = [...tasks.values()].filter(which).sort(byPage);
+    heading.hidden = !pages.length;
+    heading.textContent = t(headingKey);
     list.innerHTML = '';
-    failed.forEach((task) => {
+    pages.forEach((task) => {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'ai-translator-comic-summary-item';
