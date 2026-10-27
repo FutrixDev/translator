@@ -46,16 +46,22 @@
     }
   }
 
-  function siteLink(base, path, medium) {
-    assertMedium(medium);
-    let origin;
+  /** The base's http(s) origin, or '' for a base that is not a web origin. */
+  function origin(base) {
+    let url;
     try {
-      origin = new URL(String(base || ''));
+      url = new URL(String(base || ''));
     } catch {
       return '';
     }
-    if (!/^https?:$/.test(origin.protocol)) return '';
-    const url = new URL(path, origin.origin);
+    return /^https?:$/.test(url.protocol) ? url.origin : '';
+  }
+
+  function siteLink(base, path, medium) {
+    assertMedium(medium);
+    const site = origin(base);
+    if (!site) return '';
+    const url = new URL(path, site);
     url.searchParams.set('utm_source', 'extension');
     url.searchParams.set('utm_medium', medium);
     return url.href;
@@ -103,5 +109,5 @@
     return url.href;
   }
 
-  root.SiteLinks = Object.freeze({ MEDIUMS, assertMedium, pricing, library, reader, connect });
+  root.SiteLinks = Object.freeze({ MEDIUMS, assertMedium, origin, pricing, library, reader, connect });
 })(globalThis);

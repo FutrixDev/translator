@@ -1043,6 +1043,15 @@ test('the account site is never claimed: its reader gets no comic hint', async (
   assert.deepEqual(sync[COMIC_HINT_HOSTS_KEY], ['localhost']);
 });
 
+test('a configured base that is not a web origin keeps no site out: the claim still answers', async () => {
+  const { comicHintWriter, COMIC_HINT_HOSTS_KEY } = await import('../../background/media-hints.js');
+  const sync = workerSync();
+  globalThis.chrome.storage.local = { get: async (defaults) => ({ ...defaults, comicApiBase: 'not a url' }) };
+  const page = { url: 'https://comics.example/read/1', tab: { url: 'https://comics.example/read/1' } };
+  assert.equal(await comicHintWriter.applyWrite({ kind: 'claim', host: 'comics.example' }, page), true);
+  assert.deepEqual(sync[COMIC_HINT_HOSTS_KEY], ['comics.example']);
+});
+
 // ------------------------------------------------------------ the failure notification
 
 test('an account refusal carries its entry as a button; other failures do not', async () => {

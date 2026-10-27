@@ -38,6 +38,14 @@ test('no link from a base that is not a web origin', () => {
   }
 });
 
+test('origin is the base\'s http(s) origin, or empty for anything else', () => {
+  assert.equal(SiteLinks.origin('https://site.example/app/'), 'https://site.example');
+  assert.equal(SiteLinks.origin('http://localhost:3310/'), 'http://localhost:3310');
+  for (const base of ['', null, undefined, 'not a url', 'javascript:alert(1)', 'chrome-extension://abc/', 'file:///x']) {
+    assert.equal(SiteLinks.origin(base), '', String(base));
+  }
+});
+
 test('the sign-in tab is tagged signin and carries state and redirect_uri; no tab from a base that is not a web origin', () => {
   const url = new URL(SiteLinks.connect('https://blab.test/api/', 'st&1', 'https://abc.chromiumapp.org/'));
   assert.equal(url.origin + url.pathname, 'https://blab.test/ext/connect');
