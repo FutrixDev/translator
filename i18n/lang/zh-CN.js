@@ -48,6 +48,7 @@
     comicImageUnavailable: '无法读取这张图片',
     comicUnsupportedScript: '暂不支持这种文字',
     comicNoText: '没有找到可翻译的文字',
+    comicAbandoned: '这次翻译在完成前被中止了，请再试一次。',
     comicInsufficientPoints: '本月的免费漫画页数已用完',
     comicWebtoonUnsupported: '暂不支持长条竖屏漫画',
     comicImageTooLarge: '图片过大，无法翻译',

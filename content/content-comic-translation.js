@@ -613,9 +613,10 @@
       }
       if (job.status === 'failed' || job.status === 'abandoned') {
         // Terminal and refunded. Leaving the record would re-open this card on
-        // every future visit to the page.
+        // every future visit to the page. A job with no error of its own is
+        // worded by how it ended.
         comic.dropRecord(entry.pageId, entry.mode);
-        comic.showJobError(overlay, job.error || { code: 'failed', message: '' });
+        comic.showJobError(overlay, job.error || { code: job.status, message: '' });
         return;
       }
 

@@ -48,6 +48,7 @@
     comicImageUnavailable: "Questa immagine non può essere letta per la traduzione",
     comicUnsupportedScript: 'Questa scrittura non è ancora supportata',
     comicNoText: 'Nessun testo da tradurre trovato',
+    comicAbandoned: 'Questa traduzione è stata interrotta prima della fine. Riprova.',
     comicInsufficientPoints: "Le pagine di fumetto gratuite di questo mese sono esaurite",
     comicWebtoonUnsupported: "Le strisce verticali lunghe non sono ancora supportate",
     comicImageTooLarge: "Questa immagine è troppo grande da tradurre",

@@ -47,6 +47,7 @@
     comicImageUnavailable: 'Dieses Bild kann nicht gelesen werden',
     comicUnsupportedScript: 'Diese Schrift wird noch nicht unterstützt',
     comicNoText: 'Kein übersetzbarer Text gefunden',
+    comicAbandoned: 'Diese Übersetzung wurde vor dem Abschluss abgebrochen. Bitte versuche es erneut.',
     comicInsufficientPoints: 'Die kostenlosen Comic-Seiten dieses Monats sind aufgebraucht',
     comicWebtoonUnsupported: 'Lange vertikale Streifen werden noch nicht unterstützt',
     comicImageTooLarge: 'Dieses Bild ist zu groß',

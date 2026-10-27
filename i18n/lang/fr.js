@@ -47,6 +47,7 @@
     comicImageUnavailable: 'Cette image ne peut pas être lue',
     comicUnsupportedScript: "Cette écriture n'est pas encore prise en charge",
     comicNoText: "Aucun texte à traduire n'a été trouvé",
+    comicAbandoned: 'Cette traduction a été interrompue avant la fin. Veuillez réessayer.',
     comicInsufficientPoints: 'Les pages de BD gratuites du mois sont épuisées',
     comicWebtoonUnsupported: 'Les bandes verticales longues ne sont pas encore prises en charge',
     comicImageTooLarge: 'Cette image est trop grande',

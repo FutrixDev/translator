@@ -46,6 +46,7 @@
     comicImageUnavailable: 'لا يمكن قراءة هذه الصورة لترجمتها',
     comicUnsupportedScript: 'هذا النوع من الكتابة غير مدعوم بعد',
     comicNoText: 'لم يُعثر على نص قابل للترجمة',
+    comicAbandoned: 'توقفت هذه الترجمة قبل أن تكتمل. يُرجى المحاولة مرة أخرى.',
     comicInsufficientPoints: 'نفدت صفحات القصص المصورة المجانية لهذا الشهر',
     comicWebtoonUnsupported: 'الشرائط الطويلة العمودية غير مدعومة بعد',
     comicImageTooLarge: 'هذه الصورة أكبر من أن تُترجم',

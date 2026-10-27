@@ -48,6 +48,7 @@
     comicImageUnavailable: 'Bu görsel çeviri için okunamıyor',
     comicUnsupportedScript: 'Bu yazı sistemi henüz desteklenmiyor',
     comicNoText: 'Çevrilecek metin bulunamadı',
+    comicAbandoned: 'Bu çeviri bitmeden durduruldu. Lütfen tekrar deneyin.',
     comicInsufficientPoints: 'Bu ayın ücretsiz çizgi roman sayfaları bitti',
     comicWebtoonUnsupported: 'Uzun dikey şeritler henüz desteklenmiyor',
     comicImageTooLarge: 'Bu görsel çevrilemeyecek kadar büyük',

@@ -175,6 +175,8 @@
       case 'comic_unsupported_script': return t('comicUnsupportedScript');
       case 'comic_no_text': return t('comicNoText');
       case 'comic_source_unreadable': return t('comicImageUnavailable');
+      // Stopped before it finished, by our timeout or the service's sweep.
+      case 'abandoned': return t('comicAbandoned');
       // Ours, not the page's: nothing the reader could change would help.
       case 'comic_translate_unparsable':
       case 'comic_internal':

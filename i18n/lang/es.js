@@ -47,6 +47,7 @@
     comicImageUnavailable: 'No se puede leer esta imagen',
     comicUnsupportedScript: 'Este sistema de escritura aún no es compatible',
     comicNoText: 'No se encontró texto para traducir',
+    comicAbandoned: 'Esta traducción se detuvo antes de terminar. Inténtalo de nuevo.',
     comicInsufficientPoints: 'Se acabaron las páginas de cómic gratis de este mes',
     comicWebtoonUnsupported: 'Las tiras verticales largas aún no son compatibles',
     comicImageTooLarge: 'Esta imagen es demasiado grande',

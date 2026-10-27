@@ -48,6 +48,7 @@
     comicImageUnavailable: 'Không thể đọc hình ảnh này để dịch',
     comicUnsupportedScript: 'Chưa hỗ trợ loại chữ này',
     comicNoText: 'Không tìm thấy chữ để dịch',
+    comicAbandoned: 'Bản dịch này đã bị dừng trước khi xong. Vui lòng thử lại.',
     comicInsufficientPoints: 'Đã dùng hết số trang truyện tranh miễn phí của tháng này',
     comicWebtoonUnsupported: 'Chưa hỗ trợ dải truyện cuộn dọc dài',
     comicImageTooLarge: 'Hình ảnh này quá lớn để dịch',

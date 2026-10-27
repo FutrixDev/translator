@@ -38,6 +38,10 @@ test('a script the service cannot read yet and a page with no text each say so',
   assert.deepEqual(failureText({ code: 'comic_source_unreadable' }), { shown: 'comicImageUnavailable', warnings: [] });
 });
 
+test('a job stopped before it finished says so, not the general sentence', () => {
+  assert.deepEqual(failureText({ code: 'abandoned' }), { shown: 'comicAbandoned', warnings: [] });
+});
+
 test('both allowance refusals read as spent pages', () => {
   for (const code of ['insufficient_points', 'insufficient_credits']) {
     assert.deepEqual(failureText({ code }), { shown: 'comicInsufficientPoints', warnings: [] }, code);

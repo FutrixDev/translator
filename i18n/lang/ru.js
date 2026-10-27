@@ -47,6 +47,7 @@
     comicImageUnavailable: 'Это изображение не удаётся прочитать',
     comicUnsupportedScript: 'Эта письменность пока не поддерживается',
     comicNoText: 'Текст для перевода не найден',
+    comicAbandoned: 'Перевод был остановлен до завершения. Попробуйте ещё раз.',
     comicInsufficientPoints: 'Бесплатные страницы комиксов на этот месяц закончились',
     comicWebtoonUnsupported: 'Длинные вертикальные полосы пока не поддерживаются',
     comicImageTooLarge: 'Изображение слишком большое',

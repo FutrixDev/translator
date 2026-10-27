@@ -48,6 +48,7 @@
     comicImageUnavailable: 'This image cannot be read for translation',
     comicUnsupportedScript: 'This script is not supported yet',
     comicNoText: 'No text to translate was found',
+    comicAbandoned: 'This translation was stopped before it finished. Please try again.',
     comicInsufficientPoints: "This month's free comic pages are used up",
     comicWebtoonUnsupported: 'Long vertical strips are not supported yet',
     comicImageTooLarge: 'This image is too large to translate',

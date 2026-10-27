@@ -47,6 +47,7 @@
     comicImageUnavailable: 'この画像は読み込めません',
     comicUnsupportedScript: 'この文字にはまだ対応していません',
     comicNoText: '翻訳できる文字が見つかりませんでした',
+    comicAbandoned: 'この翻訳は完了前に中止されました。もう一度お試しください。',
     comicInsufficientPoints: '今月の無料マンガページを使い切りました',
     comicWebtoonUnsupported: '縦長のウェブトゥーンはまだ対応していません',
     comicImageTooLarge: '画像が大きすぎます',

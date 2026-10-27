@@ -47,6 +47,7 @@
     comicImageUnavailable: '無法讀取這張圖片',
     comicUnsupportedScript: '暫不支援這種文字',
     comicNoText: '沒有找到可翻譯的文字',
+    comicAbandoned: '這次翻譯在完成前被中止了，請再試一次。',
     comicInsufficientPoints: '本月的免費漫畫頁數已用完',
     comicWebtoonUnsupported: '暫不支援長條直式漫畫',
     comicImageTooLarge: '圖片過大，無法翻譯',

@@ -47,6 +47,7 @@
     comicImageUnavailable: 'Gambar ini tidak dapat dibaca untuk diterjemahkan',
     comicUnsupportedScript: 'Aksara ini belum didukung',
     comicNoText: 'Tidak ditemukan teks untuk diterjemahkan',
+    comicAbandoned: 'Terjemahan ini dihentikan sebelum selesai. Silakan coba lagi.',
     comicInsufficientPoints: 'Jatah halaman komik gratis bulan ini sudah habis',
     comicWebtoonUnsupported: 'Strip vertikal panjang belum didukung',
     comicImageTooLarge: 'Gambar ini terlalu besar untuk diterjemahkan',
