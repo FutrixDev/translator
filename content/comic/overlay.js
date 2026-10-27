@@ -118,6 +118,56 @@
   }
 
   // -------------------------------------------------------------------------
+  // The pill and its card, shared by a page's chip and the chapter pill
+  // -------------------------------------------------------------------------
+
+  /**
+   * A pill (spinner, label, then `pillTail`) with a folded card under it
+   * (`cardBody`, then the actions row), appended to the body under a root of
+   * class `rootClass`. Clicking the pill opens and folds the card. Both
+   * comic pills are this one shell; what they say and where they sit is
+   * their own. The markup is ours, never the page's.
+   */
+  function pillShell(rootClass, { pillTail = '', cardBody = '' } = {}) {
+    const root = document.createElement('div');
+    root.className = rootClass;
+    root.innerHTML = `
+      <button type="button" class="ai-translator-comic-pill" aria-expanded="false">
+        <span class="ai-translator-comic-spinner"></span>
+        <span class="ai-translator-comic-label"></span>
+        ${pillTail}
+      </button>
+      <div class="ai-translator-comic-card" hidden>
+        ${cardBody}
+        <div class="ai-translator-comic-actions"></div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    const pill = root.querySelector('.ai-translator-comic-pill');
+    const card = root.querySelector('.ai-translator-comic-card');
+    const setOpen = (open) => {
+      card.hidden = !open;
+      pill.setAttribute('aria-expanded', String(open));
+    };
+    pill.addEventListener('click', () => setOpen(card.hidden));
+    return {
+      root, pill, card, setOpen,
+      label: root.querySelector('.ai-translator-comic-label'),
+      actions: root.querySelector('.ai-translator-comic-actions'),
+    };
+  }
+
+  /** A card button; `primary` is the one the card is asking for. */
+  function actionButton({ label, primary = false, onClick }) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-translator-comic-btn${primary ? ' is-primary' : ''}`;
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  // -------------------------------------------------------------------------
   // Progress pill
   // -------------------------------------------------------------------------
 
@@ -154,35 +204,15 @@
     let host = img;
     let hidden = false;
 
-    const root = document.createElement('div');
-    root.className = 'ai-translator-comic-progress';
-    root.innerHTML = `
-      <button type="button" class="ai-translator-comic-pill" aria-expanded="false">
-        <span class="ai-translator-comic-spinner"></span>
-        <span class="ai-translator-comic-label"></span>
-        <span class="ai-translator-comic-pct" hidden></span>
-      </button>
-      <div class="ai-translator-comic-card" hidden>
+    const { root, pill, label, card, setOpen, actions: actionsElement } = pillShell('ai-translator-comic-progress', {
+      pillTail: '<span class="ai-translator-comic-pct" hidden></span>',
+      cardBody: `
         <div class="ai-translator-comic-message" hidden></div>
-        <div class="ai-translator-comic-timer" hidden></div>
-        <div class="ai-translator-comic-actions"></div>
-      </div>
-    `;
-    document.body.appendChild(root);
-
-    const pill = root.querySelector('.ai-translator-comic-pill');
-    const label = root.querySelector('.ai-translator-comic-label');
+        <div class="ai-translator-comic-timer" hidden></div>`,
+    });
     const pct = root.querySelector('.ai-translator-comic-pct');
-    const card = root.querySelector('.ai-translator-comic-card');
     const message = root.querySelector('.ai-translator-comic-message');
     const timerElement = root.querySelector('.ai-translator-comic-timer');
-    const actionsElement = root.querySelector('.ai-translator-comic-actions');
-
-    const setOpen = (open) => {
-      card.hidden = !open;
-      pill.setAttribute('aria-expanded', String(open));
-    };
-    pill.addEventListener('click', () => setOpen(card.hidden));
 
     // Absolute start, not an accumulating counter: the tab can be backgrounded
     // for minutes — which stops rAF — and the elapsed time still has to be right
@@ -369,12 +399,7 @@
       setActions(actions, { open = true } = {}) {
         actionsElement.innerHTML = '';
         actions.forEach(({ label: text, variant, onClick }) => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = `ai-translator-comic-btn${variant === 'primary' ? ' is-primary' : ''}`;
-          button.textContent = text;
-          button.addEventListener('click', onClick);
-          actionsElement.appendChild(button);
+          actionsElement.appendChild(actionButton({ label: text, primary: variant === 'primary', onClick }));
         });
         if (!actions.length) setOpen(false);
         else if (open) setOpen(true);
@@ -506,6 +531,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    attachToggleBadge, createOverlay, swapSource,
+    actionButton, attachToggleBadge, createOverlay, pillShell, swapSource,
   });
 })();

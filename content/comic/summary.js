@@ -167,34 +167,15 @@
   }
 
   function createView() {
-    const root = document.createElement('div');
-    root.className = 'ai-translator-comic-summary';
-    root.innerHTML = `
-      <button type="button" class="ai-translator-comic-summary-pill" aria-expanded="false">
-        <span class="ai-translator-comic-summary-spinner"></span>
-        <span class="ai-translator-comic-summary-label"></span>
-      </button>
-      <div class="ai-translator-comic-summary-card" hidden>
+    const { root, pill, label, actions } = comic.pillShell('ai-translator-comic-summary', {
+      cardBody: `
         <div class="ai-translator-comic-summary-waiting" hidden></div>
         <div class="ai-translator-comic-summary-heading" hidden></div>
-        <div class="ai-translator-comic-summary-list"></div>
-        <div class="ai-translator-comic-summary-actions"></div>
-      </div>
-    `;
-    document.body.appendChild(root);
-
-    const pill = root.querySelector('.ai-translator-comic-summary-pill');
-    const label = root.querySelector('.ai-translator-comic-summary-label');
-    const card = root.querySelector('.ai-translator-comic-summary-card');
+        <div class="ai-translator-comic-summary-list"></div>`,
+    });
     const waiting = root.querySelector('.ai-translator-comic-summary-waiting');
     const heading = root.querySelector('.ai-translator-comic-summary-heading');
     const list = root.querySelector('.ai-translator-comic-summary-list');
-    const actions = root.querySelector('.ai-translator-comic-summary-actions');
-
-    pill.addEventListener('click', () => {
-      card.hidden = !card.hidden;
-      pill.setAttribute('aria-expanded', String(!card.hidden));
-    });
 
     // Placed when it appears and when the window changes, never on scroll: the
     // controls it steps around are the fixed ones, which do not scroll either.
@@ -276,12 +257,7 @@
   function renderActions(actions, count) {
     actions.innerHTML = '';
     const add = (text, onClick, primary = false) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = `ai-translator-comic-summary-btn${primary ? ' is-primary' : ''}`;
-      button.textContent = text;
-      button.addEventListener('click', onClick);
-      actions.appendChild(button);
+      actions.appendChild(comic.actionButton({ label: text, primary, onClick }));
     };
     if (count.failed) add(t('comicSummaryRetry'), retryFailed, true);
     if (count.running) add(t('comicSummaryCancelAll'), cancelAll);

@@ -13,10 +13,10 @@ const {
 } = require('./comic-fixtures');
 
 const ROOT = '.ai-translator-comic-summary';
-const PILL = `${ROOT} .ai-translator-comic-summary-pill`;
-const LABEL = `${ROOT} .ai-translator-comic-summary-label`;
+const PILL = `${ROOT} .ai-translator-comic-pill`;
+const LABEL = `${ROOT} .ai-translator-comic-label`;
 const ITEM = `${ROOT} .ai-translator-comic-summary-item`;
-const BUTTON = `${ROOT} .ai-translator-comic-summary-btn`;
+const BUTTON = `${ROOT} .ai-translator-comic-btn`;
 const WAITING = `${ROOT} .ai-translator-comic-summary-waiting`;
 const RESULTS = 'img.page[src*="/result.png?sig="]';
 const FAIL_PAGES = [3, 8];

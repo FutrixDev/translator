@@ -8,7 +8,7 @@
    is redrawn. Opaque on purpose — it sits on artwork of any colour, and a
    see-through pill is unreadable on half of it. */
 /* The chapter pill (comic/summary.js) is the same pill in the viewport's
-   top-right corner, so it shares every token below by selector. */
+   top-right corner, built by the same shell, so it shares the rules below. */
 .ai-translator-comic-progress,
 .ai-translator-comic-summary {
   position: fixed;
@@ -28,10 +28,11 @@
   to { opacity: 1; }
 }
 
-/* The reset in popup.css (0,2,2) owns every <button> under our roots, so each
-   rule for one carries `html body` and the root to tie it, and wins on order. */
-html body .ai-translator-comic-progress .ai-translator-comic-pill,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-pill {
+/* Both pills are one shell (comic/overlay.js pillShell), so the classes below
+   are shared; the root tells the page's chip from the chapter pill. The reset
+   in popup.css (0,2,2) owns every <button> under our roots, so each rule for
+   one carries `html body` and the roots to tie it, and wins on order. */
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -49,13 +50,11 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-pill {
   cursor: pointer;
 }
 
-html body .ai-translator-comic-progress .ai-translator-comic-pill:hover,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-pill:hover {
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-pill:hover {
   background: #1e2028;
 }
 
-.ai-translator-comic-spinner,
-.ai-translator-comic-summary-spinner {
+.ai-translator-comic-spinner {
   flex: none;
   width: 12px;
   height: 12px;
@@ -66,8 +65,7 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-pill:hover {
   display: none;
 }
 
-.ai-translator-comic-progress.is-busy .ai-translator-comic-spinner,
-.ai-translator-comic-summary.is-busy .ai-translator-comic-summary-spinner {
+:is(.ai-translator-comic-progress, .ai-translator-comic-summary).is-busy .ai-translator-comic-spinner {
   display: block;
 }
 
@@ -75,29 +73,27 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-pill:hover {
   to { transform: rotate(360deg); }
 }
 
-.ai-translator-comic-label,
-.ai-translator-comic-summary-label {
+.ai-translator-comic-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.ai-translator-comic-progress.is-error .ai-translator-comic-label,
-.ai-translator-comic-summary.is-error .ai-translator-comic-summary-label {
+:is(.ai-translator-comic-progress, .ai-translator-comic-summary).is-error .ai-translator-comic-label {
   color: #ff8f8f;
 }
 
-/* Tabular figures so a climbing number does not shuffle its own width. */
+/* Tabular figures so a climbing number does not shuffle its own width. The
+   chapter pill's label is its count. */
 .ai-translator-comic-pct,
 .ai-translator-comic-timer,
-.ai-translator-comic-summary-label {
+.ai-translator-comic-summary .ai-translator-comic-label {
   flex: none;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
 }
 
-.ai-translator-comic-card,
-.ai-translator-comic-summary-card {
+.ai-translator-comic-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -123,26 +119,22 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-pill:hover {
   letter-spacing: 0.02em;
 }
 
-.ai-translator-comic-progress [hidden],
-.ai-translator-comic-summary [hidden] {
+:is(.ai-translator-comic-progress, .ai-translator-comic-summary) [hidden] {
   display: none;
 }
 
-.ai-translator-comic-actions,
-.ai-translator-comic-summary-actions {
+.ai-translator-comic-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.ai-translator-comic-actions:empty,
-.ai-translator-comic-summary-actions:empty {
+.ai-translator-comic-actions:empty {
   display: none;
 }
 
-html body .ai-translator-comic-progress .ai-translator-comic-btn,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-btn {
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-btn {
   padding: 6px 14px;
   border-radius: 8px;
   border: 1px solid #2f333d;
@@ -153,27 +145,24 @@ html body .ai-translator-comic-summary .ai-translator-comic-summary-btn {
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-html body .ai-translator-comic-progress .ai-translator-comic-btn:hover,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-btn:hover {
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-btn:hover {
   background: #2a2d36;
 }
 
-html body .ai-translator-comic-progress .ai-translator-comic-btn.is-primary,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-btn.is-primary {
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-btn.is-primary {
   background: #6f63ff;
   border-color: #6f63ff;
   color: #fff;
 }
 
-html body .ai-translator-comic-progress .ai-translator-comic-btn.is-primary:hover,
-html body .ai-translator-comic-summary .ai-translator-comic-summary-btn.is-primary:hover {
+html body :is(.ai-translator-comic-progress, .ai-translator-comic-summary) .ai-translator-comic-btn.is-primary:hover {
   background: #5f53f0;
 }
 
 /* The chapter card's failed pages: a thumbnail to recognise the page by, its
    number and why. Scrolls inside the card, so a long chapter cannot push the
    buttons off the screen. */
-.ai-translator-comic-summary-card {
+.ai-translator-comic-summary .ai-translator-comic-card {
   width: 280px;
 }
 
